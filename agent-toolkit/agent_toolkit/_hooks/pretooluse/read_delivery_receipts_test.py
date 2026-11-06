@@ -11,7 +11,7 @@ from agent_toolkit._common import plugin_roots, read_triggers, session_state
 from agent_toolkit._hooks import document_reads, notice, rules_context, work_contract
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+from agent_toolkit._testing.pretooluse_support import run_hook_with_notice_details as _run_hook_in_process
 
 
 def _assert_allowed_without_guidance(text):

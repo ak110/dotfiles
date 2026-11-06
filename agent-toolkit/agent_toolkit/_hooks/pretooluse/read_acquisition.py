@@ -26,7 +26,7 @@ def codex_acquisition(path: pathlib.Path, ranges: Sequence[tuple[int, int]] = ()
             selected[-1] = (selected[-1][0], max(end, selected[-1][1]))
         else:
             selected.append((start, end))
-    chunks: list[tuple[int, int, int]] = []
+    chunks: list[tuple[int, int]] = []
     constraints: list[str] = []
     size = 0
     for first, last in selected:
@@ -39,7 +39,7 @@ def codex_acquisition(path: pathlib.Path, ranges: Sequence[tuple[int, int]] = ()
             escaped_bytes = len(json.dumps(line.decode("utf-8", errors="replace"), ensure_ascii=False).encode("utf-8")) - 2
             if (escaped_bytes + 2) // 3 + _RESULT_MARGIN > _TOKEN_LIMIT:
                 if start < number:
-                    chunks.append((start, number - 1, display_bytes))
+                    chunks.append((start, number - 1))
                 constraints.append(
                     f"{path}:{number}は1行だけで出力上限{_TOKEN_LIMIT}トークンを超える見積りであり、"
                     "行範囲では収まらない。必要な項目を抽出するか、保持可能な出力枠を確認して取得方法を選べ。"
@@ -48,13 +48,13 @@ def codex_acquisition(path: pathlib.Path, ranges: Sequence[tuple[int, int]] = ()
                 start, display_bytes = number + 1, 0
                 continue
             if (display_bytes + escaped_bytes + 2) // 3 + _RESULT_MARGIN > _TOKEN_LIMIT:
-                chunks.append((start, number - 1, display_bytes))
+                chunks.append((start, number - 1))
                 start, display_bytes = number, 0
             display_bytes += escaped_bytes
         if start <= last:
-            chunks.append((start, last, display_bytes))
+            chunks.append((start, last))
     if not lines:
-        chunks.append((1, 0, 0))
+        chunks.append((1, 0))
     steps = [
         f"{size}バイト、予算目安{(size + 2) // 3}トークン。"
         "以下の各コードブロックを別々のfunctions.execとして順に実行せよ。"
@@ -62,13 +62,13 @@ def codex_acquisition(path: pathlib.Path, ranges: Sequence[tuple[int, int]] = ()
         "同じセルへまとめる場合は外側max_output_tokensを内側の合計以上にせよ。"
     ]
     quoted = shlex.quote(str(path))
-    for start, end, display_bytes in chunks:
+    for start, end in chunks:
         command = (
             f"cat -- {quoted}"
             if not ranges and len(chunks) == 1 and not constraints
             else f"sed -n '{start},{'$' if end == len(lines) else end}p' -- {quoted}"
         )
-        budget = (display_bytes + 2) // 3 + _RESULT_MARGIN
+        budget = _TOKEN_LIMIT
         arguments = json.dumps({"cmd": command, "max_output_tokens": budget}, ensure_ascii=False)
         steps.append(
             f"取得コマンド: `{command}`\n```javascript\n"

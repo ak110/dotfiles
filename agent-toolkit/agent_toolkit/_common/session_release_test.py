@@ -39,7 +39,13 @@ async def test_release_request_rechecks_owner_and_turn_and_preserves_failures(tm
     """要求後の再開・所有変更を解放せず、解放失敗・残存資源と成功を配送側が区別する。"""
     owner = session_registry.owner_process()
     assert owner is not None
-    session_registry.publish("child", terminal=True, cwd=str(tmp_path), processes=(owner,), state_root=tmp_path)
+    session_registry.publish(
+        "child",
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        cwd=str(tmp_path),
+        processes=(owner,),
+        state_root=tmp_path,
+    )
     session = _Session(terminal=True, cwd=str(tmp_path))
     task = asyncio.create_task(
         asyncio.to_thread(
@@ -62,7 +68,7 @@ async def test_release_request_rechecks_owner_and_turn_and_preserves_failures(tm
         elif condition == "changed-turn":
             session_registry.publish(
                 "child",
-                terminal=True,
+                state=session_registry.PublicationState.RESULT_COMPLETED,
                 cwd=str(tmp_path),
                 turn_seq=2,
                 processes=(owner,),
@@ -110,7 +116,9 @@ async def test_process_requests_rejects_nested_worktree_cwd(
     owner = session_registry.owner_process()
     assert owner is not None
     cwd = tmp_path / "nested" if nested else tmp_path
-    session_registry.publish("child", terminal=True, cwd=str(cwd), processes=(owner,), state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(cwd), processes=(owner,), state_root=tmp_path
+    )
     task = asyncio.create_task(
         asyncio.to_thread(
             session_release.request_release,

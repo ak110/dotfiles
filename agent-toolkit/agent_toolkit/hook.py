@@ -37,7 +37,9 @@ lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import notice as _notice
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks import timing
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
+lazy from agent_toolkit._hooks.pretooluse.warning_context import CODEX_CONTEXT_BYTES, bounded_codex_context
 
 _SUBCOMMANDS: frozenset[str] = frozenset(
     {
@@ -124,7 +126,7 @@ def main(argv: list[str]) -> int:
         module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")
     except Exception as exc:  # noqa: BLE001 -- 読込障害でも操作を継続する
         timing.record(payload, argv[0], started, "import-error")
-        _failure_response(argv[0], exc)
+        _failure_response(argv[0], exc, payload=payload)
         return 0
     cycle: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
     if isinstance(payload, dict) and payload.get("session_id") and argv[0] != "pretooluse":
@@ -143,11 +145,11 @@ def main(argv: list[str]) -> int:
         return result
     except Exception as exc:  # noqa: BLE001 -- フック障害でも操作を継続する
         timing.record(payload, argv[0], started, "error")
-        _failure_response(argv[0], exc)
+        _failure_response(argv[0], exc, payload=payload)
         return 0
 
 
-def _failure_response(subcommand: str, error: Exception, response: dict | None = None) -> dict:
+def _failure_response(subcommand: str, error: Exception, response: dict | None = None, *, payload: object = None) -> dict:
     """通知を受理するイベントだけへ、既存応答と単一JSONで障害を返す。"""
     events = {"pretooluse": "PreToolUse", "posttooluse": "PostToolUse", "user_prompt_submit": "UserPromptSubmit"}
     result = response if response is not None else {}
@@ -162,8 +164,40 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
         )
         specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
     if response is None and result:
+        _bound_pretooluse_context(result, payload, subcommand)
         _notice.emit_response(result)
     return result
+
+
+def _bound_pretooluse_context(response: dict, payload: object, subcommand: str) -> bool:
+    """handlerと障害通知を合流した後、Codexの通知と判定理由を配送枠へ収める。"""
+    if subcommand != "pretooluse" or not isinstance(payload, dict) or not is_codex_payload(payload):
+        return False
+    specific = response.get("hookSpecificOutput")
+    if not isinstance(specific, dict):
+        return False
+    context = specific.get("additionalContext", "")
+    reason = specific.get("permissionDecisionReason", "")
+    context = context if isinstance(context, str) else ""
+    reason = reason if isinstance(reason, str) else ""
+    if len((context + reason).encode("utf-8")) <= CODEX_CONTEXT_BYTES:
+        return False
+    short_reason = reason if len(reason.encode("utf-8")) <= 256 else "判定理由の全文は追加通知の保存先を確認せよ。"
+    full = context + ("\n\npermissionDecisionReason:\n" + reason if reason else "")
+    session_id = payload.get("session_id")
+    specific["additionalContext"] = bounded_codex_context(
+        full,
+        session_id=session_id if isinstance(session_id, str) else "",
+        reserved_bytes=len(short_reason.encode("utf-8")),
+        agent_id=_agent_id.resolve_hook_agent_id(payload),
+    )
+    if reason:
+        specific["permissionDecisionReason"] = short_reason
+    if not specific.get("additionalContext"):
+        specific.pop("additionalContext", None)
+        if set(specific) <= {"hookEventName"}:
+            response.pop("hookSpecificOutput")
+    return True
 
 
 def _invoke_module(module: types.ModuleType, payload_text: str, payload: object, argv: list[str]) -> int:
@@ -191,6 +225,8 @@ def _invoke_module(module: types.ModuleType, payload_text: str, payload: object,
     if error is not None:
         response = _failure_response(argv[0], error, response or {})
         raw = json.dumps(response, ensure_ascii=False) if response else ""
+    if response is not None and _bound_pretooluse_context(response, payload, argv[0]):
+        raw = (json.dumps(response, ensure_ascii=False) + ("\n" if raw.endswith("\n") else "")) if response else ""
     if raw:
         sys.stdout.write(raw)
         if response is not None:

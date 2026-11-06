@@ -224,8 +224,14 @@ async def test_usage_limit_api_migration_and_cold_resume(
         if len(options_seen) == 1:
             streams = [_rejected_stream("seven_day", None, before_init=True, session_id="api-session")]
         else:
-            streams = [[SystemMessage(options.resume or "fresh-session"), AssistantMessage("応答"), ResultMessage("完了")]]
-        streams.append([AssistantMessage("追送の応答"), ResultMessage("追送完了")])
+            streams = [
+                [
+                    SystemMessage(options.resume or "fresh-session"),
+                    AssistantMessage("応答"),
+                    ResultMessage("状態: completed\n完了"),
+                ]
+            ]
+        streams.append([AssistantMessage("追送の応答"), ResultMessage("状態: completed\n追送完了")])
         client = FakeClaudeClient(streams)
         clients.append(client)
         if options.resume:
@@ -515,7 +521,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
             manager.sessions, condition, client_factory=factory, publish_registry=True
         ) as backend:
             install_backend(manager, "claude", backend)
-            session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+            session_registry.publish("child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path))
             # 公開待機が呼ばれるかによらず、上限からのAPI移行と孫sessionの終了による自動再開を常駐監視で進める。
             manager.activate()
             try:
@@ -546,7 +552,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
                 await _until(lambda: session.awaiting_auto_resume)
                 if after_reset:
                     clock["now"] += 150
-                session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+                session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path))
                 result = await asyncio.wait_for(manager.wait(), 3)
                 while result["status"] == "running":
                     result = await asyncio.wait_for(manager.wait(), 3)

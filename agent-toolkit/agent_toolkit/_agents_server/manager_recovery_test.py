@@ -178,6 +178,7 @@ async def _mcp_owner(
     engine: str,
     *,
     on_resume: Callable[[state.SessionState], Awaitable[None]] | None = None,
+    ready_for_requests: bool = False,
 ) -> AsyncGenerator[tuple[AgentsServerManager, _RecoveryBackend]]:
     writer = status_file.StatusFileWriter(
         {},
@@ -194,7 +195,12 @@ async def _mcp_owner(
     with monkeypatch.context() as patch:
         patch.setattr(mcp_tools, "_MANAGER", manager)
         patch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [(engine, "model", "high")])
-        async with mcp_tools._mcp_lifespan(mcp_tools.mcp):
+        lifespan = (
+            mcp_tools._manager_lifespan(manager, ready_for_requests=True)
+            if ready_for_requests
+            else mcp_tools._mcp_lifespan(mcp_tools.mcp)
+        )
+        async with lifespan:
             yield manager, backend
 
 
@@ -429,7 +435,16 @@ async def test_reinterrupted_recovery_retains_original_launch_inputs(
         await session.drain_registration()
         raise RuntimeError("制御した再開途中の失敗")
 
-    async with _mcp_owner(monkeypatch, tmp_path, "failed-resume-root", "parent", "codex", on_resume=fail_after_publication) as (
+    # Codexの要求受付前と同じ初期化を通し、再開予約前の旧中断結果との競合を避ける。
+    async with _mcp_owner(
+        monkeypatch,
+        tmp_path,
+        "failed-resume-root",
+        "parent",
+        "codex",
+        on_resume=fail_after_publication,
+        ready_for_requests=True,
+    ) as (
         owner,
         _,
     ):

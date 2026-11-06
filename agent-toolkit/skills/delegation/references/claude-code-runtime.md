@@ -17,7 +17,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `receiving.md#「受領手段と報告様式の選択」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「受領手段と報告様式の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies.md#「ホストによる背景待機の停止後」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」` |
+| `Agent`ツールで起動した担当を継続する前 | `runtime-routing.md`の「継続と新規起動」「Agentツールの継続」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」「Agentツールの継続」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「完了通知を待ってターンを終える場合」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「完了通知を待ってターンを終える場合」` |
 
 ## 起動パラメーター
@@ -107,7 +107,7 @@
 - `ListAgents`および`TaskStop`は、自身のツール一覧に公開されており、呼び出しが成功する場合にのみ使用する。
 - バックグラウンドで実行中の委譲タスクの稼働状態は`ListAgents`で観測する。単に進捗のみを確認するタイミングでは、成果物ファイルのパスが確定していれば前節の補助観測で確認して`ListAgents`の呼び出しを控え、停滞の判定、催促や巻き取りの要否と宛先の確定、終了を検知するタイミングで呼び出す。成果物パスも管理下のプロセスも存在しない場合は、進捗報告を省略して完了通知の到着を待つ。完了直後の委譲先は一覧に現れない場合があるため、一覧に存在しないことは終了を支持する参考材料にとどめる。
 - `ListAgents`や`TaskStop`が利用できない場合は、起動結果の識別子を保持した上で、出力ファイルの末尾標識（試行回数上限を設定）、前述の補助観測、保持しているプロセスの生存照会を組み合わせて判定する。更新が継続している間は安易に完了とみなさず、催促にとどめる。
-- 待機の解除手段、およびMCPツール呼び出しがバックグラウンドへ移行した場合の扱いについては、`references/waiting-and-monitoring.md`「待機区間の構成」に従う。また、`Agent`ツールによる担当エージェントの継続条件と配送不能の判定は、`references/runtime-routing.md`「継続と新規起動」に従う。
+- 待機の解除手段、およびMCPツール呼び出しがバックグラウンドへ移行した場合の扱いについては、`references/waiting-and-monitoring.md`「待機区間の構成」に従う。また、`Agent`ツールによる担当エージェントの継続条件と配送不能の判定は、`references/runtime-routing.md`「継続と新規起動」「Agentツールの継続」に従う。
 
 ## 待機中の定期再確認と背景転換
 

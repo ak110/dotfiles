@@ -4,7 +4,38 @@ import logging
 
 import pytest
 
-from agent_toolkit._agents_server import state, wait_output_tracking
+from agent_toolkit._agents_server import state, turn_state, wait_output_tracking
+
+
+def test_turn_start_observation_survives_late_send_and_response_loss() -> None:
+    """先着した開始通知の識別子を、後着の送信記録や応答喪失で失わない。"""
+    session = state.SessionState("thread-1", "/work")
+    session.record_turn_started("turn-1")
+    session.record_turn_sent()
+    session.record_turn_ambiguous()
+
+    assert session.turn_start is turn_state.TurnStart.STARTED
+    assert session.turn_id == "turn-1"
+    assert not session.turn_start_ambiguous
+    session.record_turn_completed()
+    assert session.turn_completed
+
+
+def test_turn_end_transitions_keep_start_observation_and_exclusive_projections() -> None:
+    """失敗後の終了待ち・完了・実行中を排他的に表し、開始の識別子を保持する。"""
+    session = state.SessionState("thread-1", "/work")
+    session.record_turn_started("turn-1")
+
+    session.record_failure_pending_completion()
+    assert session.failure_pending_completion and not session.turn_completed
+
+    session.record_turn_completed()
+    assert session.turn_completed and not session.failure_pending_completion
+
+    session.record_turn_running()
+    assert not session.turn_completed and not session.failure_pending_completion
+    assert session.turn_start is turn_state.TurnStart.STARTED
+    assert session.turn_id == "turn-1"
 
 
 def test_result_contract_recovery_consumption_survives_turn_and_resume_state() -> None:
@@ -13,8 +44,7 @@ def test_result_contract_recovery_consumption_survives_turn_and_resume_state() -
         "parent-1",
         "/tmp",
         result_contract_recovery_consumed=True,
-        result_contract_recovery_pending=True,
-        result_contract_recovery_reason="形式違反",
+        hold=turn_state.ResultContractWait({"status": "completed", "agent_message": "", "error": None}, "形式違反"),
     )
 
     state.initialize_turn(session)
@@ -135,7 +165,7 @@ async def test_terminal_transition_logs_safe_fields_once(caplog: pytest.LogCaptu
     session = state.SessionState("session-1", "/tmp")
     session.status = "completed"
     session.agent_message = "秘密の結果本文"
-    session.turn_completed = True
+    session.record_turn_completed()
 
     with caplog.at_level(logging.INFO, logger="agent-toolkit.agents-server.state"):
         session.touch()

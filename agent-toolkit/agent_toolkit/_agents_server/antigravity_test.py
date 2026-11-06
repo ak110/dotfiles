@@ -583,7 +583,6 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
         assert not session.terminal
         assert session.pending_result is not None
         session.live_child_session_ids.clear()
-        session.auto_resume_consumed = True
         delivery = await backend.send_message(session, "子が完了したため継続")
         assert delivery["delivery"] == "reply_started"
         async with asyncio.timeout(10):
@@ -592,10 +591,9 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
         assert session.session_id == "conv-1"
         assert session.agent_message.endswith("子が完了したため継続")
         assert not session.awaiting_auto_resume
-        assert session.auto_resume_consumed
         session.live_child_session_ids.add("second-child")
         await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "完了"}})
-        assert session.terminal
-        assert not session.awaiting_auto_resume
-        assert isinstance(session.error, dict)
-        assert session.error["unobservedSessions"] == ["second-child"]
+        assert not session.terminal
+        assert session.awaiting_auto_resume
+        assert session.live_child_session_ids == {"second-child"}
+        assert session.pending_result == {"status": "completed", "agent_message": "完了", "error": None}

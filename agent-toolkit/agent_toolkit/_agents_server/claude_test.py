@@ -1207,6 +1207,7 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
                 session.session_id: state.SessionResumeState(
                     session_id=session.session_id,
                     cwd=str(tmp_path),
+                    prompt="調査",
                     model=None,
                     effort=None,
                     engine="claude",
@@ -1456,12 +1457,11 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
     ):
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         install_backend(manager, "claude", backend)
-        session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+        session_registry.publish("child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path))
         try:
             started = await manager.start("execute", "親の作業", str(tmp_path))
             session = manager.sessions[started["session_id"]]
             session.terminal_child_session_ids.add("child")
-            session.auto_resume_consumed = True
             tool_use = AssistantMessage("")
             tool_use.content = [
                 SimpleNamespace(
@@ -1492,7 +1492,7 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
             assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
             assert session.pending_result is not None
             assert session.pending_result["status"] == ("failed" if failed else "completed")
-            session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+            session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path))
             result = await asyncio.wait_for(manager.wait(), 2)
             if result["status"] == "running":
                 async with manager._condition:
@@ -1500,7 +1500,7 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
                 result = await asyncio.wait_for(manager.wait(), 2)
             assert result["status"] == "completed"
             assert result["agent_message"] == "子を確認した最終結果"
-            assert session.auto_resume_consumed and len(client.queries) == 2
+            assert len(client.queries) == 2
         finally:
             await manager.close()
         assert client.disconnected and client.readers == 0

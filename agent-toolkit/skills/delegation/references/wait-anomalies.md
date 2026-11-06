@@ -1,6 +1,6 @@
 # 待機の異常時の扱い
 
-本書は、`atk agents wait`や待機中のツール呼び出しが異常終了した場合、ホストから背景待機の停止通知を受けた場合、および`agents_server`のMCPサーバーが再起動した場合の対処手順を定める。平常時の待機手順については`references/waiting-and-monitoring.md`を参照する。
+本書は待機を開始できない場合、`atk agents wait`や待機中のツール呼び出しが異常終了した場合、ホストから背景待機の停止通知を受けた場合、および`agents_server`のMCPサーバーが再起動した場合の対処手順を定める。平常時の待機手順については`references/waiting-and-monitoring.md`を参照する。
 
 ## 名指し参照の読込方法
 
@@ -10,7 +10,14 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
+| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md`の「共通判断」と、診断に対応する詳細節 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md#「共通判断」` |
+
+## 待機を開始できない場合
+
+classifierの`no verdict`などで待機が未起動の場合は、`agent-toolkit:user-confirmation-and-report/references/permission-denial.md`「共通判断」から「一時的な判定不能」へ進む。実際の拒否の場合は同書の拒否主体別の節に従う。
+失敗した待機の起動状態、既存の待機の実行識別子、未回収の子や背景処理の識別子を保持する。元のエラーが許す同じ操作の再試行と指定の遅延を適用し、ホストの回数・turn停止制約を守る。再試行までの間は独立作業を進める。classifierへの再試行間隔を、子の完了を固定sleepで繰り返し照会する方式へ変えない。
+待機の未起動は、子の終了や観測責任の解消を意味しない。既存の許容された待機・回収手段を使える間は、同じ対象の終了観測を継続する。自動再開の能力だけを根拠に終了せず、今回の対象の追跡・結果保留・継続が成立しているかを`waiting-and-monitoring.md`「待機区間の構成」「完了通知を待ってターンを終える場合」で確認する。
+ホスト上限や停止制約により観測を継続できない場合は、未回収対象、待機の起動状態、診断と再開条件を委譲元へ渡し、観測を引き継ぐ主体を明確にする。未回収のまま完了として返さない。
 
 ## 終了コードと呼び出しの失敗
 
@@ -36,7 +43,7 @@
 CIの監視でも同様の判断基準を適用し、既存のコミットSHAやベースライン、あるいは待機専用の記録を用いて`wait_ci.py`による観測を継続する。
 この観測操作によってCIジョブや委譲先の実処理自体が再起動されることはない。
 ホスト注記による行動指示は既存の優先順位に沿って解釈し、実際の権限拒否や技術的な不成立とは区別して扱う。
-権限が拒否された場合は`agent-toolkit:user-confirmation-and-report`の`references/permission-denial.md`に従い、実処理自体の再起動が必要な場合は既存の認可範囲や副作用の有無に基づいて判断する。
+権限が拒否された場合は`agent-toolkit:user-confirmation-and-report`の`references/permission-denial.md`「共通判断」から拒否主体別の詳細を選び、実処理自体の再起動が必要な場合は既存の認可範囲や副作用の有無に基づいて判断する。
 Codexのcell IDやコマンドsession IDについては、公式に提供されている同一実行の継続機能を使って回収する。
 
 ## MCPサーバーの再起動後

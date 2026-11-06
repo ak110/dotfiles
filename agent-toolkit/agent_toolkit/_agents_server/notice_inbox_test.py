@@ -27,7 +27,9 @@ def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp
     }
     for name, payload in payloads.items():
         (directory / name).write_text(json.dumps(payload), encoding="utf-8")
-    session_registry.publish("target", terminal=False, launcher_session_id="parent", state_root=tmp_path)
+    session_registry.publish(
+        "target", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
 
     notices = notice_inbox.take_notices(
         "root", "target", tmp_path, recipient_session_id="parent", owner_status_file="parent.json"

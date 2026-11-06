@@ -140,7 +140,7 @@ def _check_agent_prompt(prompt: str) -> Decision:
         violations.append(line)
     if not violations:
         try:
-            params = launch_requests.parse_named_inputs(lines[1:])
+            params = task_documents.parse_named_inputs(lines[1:])
             launch_requests.builtin_task_prompt(str(document), params)
         except ValueError as error:
             return Decision(

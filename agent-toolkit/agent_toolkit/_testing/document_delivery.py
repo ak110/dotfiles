@@ -12,7 +12,8 @@ from agent_toolkit._common import state_paths
 from agent_toolkit._hooks import notice, rules_context
 from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.pretooluse import agent_checks, dispatch, read_delivery
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, codex_delivered_payload
+from agent_toolkit._testing.pretooluse_support import codex_delivered_payload
+from agent_toolkit._testing.pretooluse_support import run_hook_with_notice_details as _run_hook_in_process
 
 
 def prepare_state(monkeypatch, read, update) -> None:

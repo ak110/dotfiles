@@ -556,7 +556,13 @@ def test_response_cwd_is_accepted_only_for_handoff_start(
 def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, operation, actor):
     """公開PostToolUseのshowでcwdを回復し、同じ子への追送と中断を許可する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    session_registry.publish("owned-child", terminal=False, engine="claude", cwd=str(tmp_path), launcher_session_id="local")
+    session_registry.publish(
+        "owned-child",
+        state=session_registry.PublicationState.PENDING_RUNNING,
+        engine="claude",
+        cwd=str(tmp_path),
+        launcher_session_id="local",
+    )
     payload = {"session_id": "local", "agent_id": actor, "cwd": str(tmp_path)}
     start_input = {"mode": "delegate", "cwd": str(tmp_path)}
     assert (
@@ -624,7 +630,7 @@ def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
     if failure != "unknown":
         session_registry.publish(
             "child",
-            terminal=False,
+            state=session_registry.PublicationState.PENDING_RUNNING,
             engine="claude",
             cwd=str(tmp_path),
             launcher_session_id="foreign" if failure == "foreign" else "local",

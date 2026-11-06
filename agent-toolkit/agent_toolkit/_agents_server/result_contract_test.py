@@ -230,7 +230,7 @@ async def test_backend_terminal_boundary_checks_task_result(
             )
     elif engine == "claude":
         async with claude.ClaudeServerManager() as backend:
-            await backend._consume_result_message(session, ResultMessage(message), False)  # noqa: SLF001
+            await backend._consume_result_message(session, ResultMessage(message))  # noqa: SLF001
     elif engine == "agy":
         async with antigravity.AntigravityManager() as backend:
             await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": message}})
@@ -250,7 +250,6 @@ async def test_backend_terminal_boundary_checks_task_result(
 
 
 @pytest.mark.parametrize("delivery_failure", [False, True])
-@pytest.mark.parametrize("background_consumed", [False, True])
 @pytest.mark.parametrize("explore", [False, True])
 @pytest.mark.parametrize("role", [False, True])
 @pytest.mark.asyncio
@@ -259,17 +258,23 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     delivery_failure: bool,
-    background_consumed: bool,
     explore: bool,
     role: bool,
 ) -> None:
     """同じsessionへ1回だけ継続し、成功後の最終結果と配送失敗時の本文を保持する。"""
     session = _task_session(tmp_path)
+    children = {
+        "live_child_session_ids": {"child-running"},
+        "terminal_child_session_ids": {"child-completed"},
+        "codex_live_subagent_thread_ids": {"thread-running"},
+        "codex_terminal_subagent_thread_ids": {"thread-completed"},
+    }
+    for name, identifiers in children.items():
+        getattr(session, name).update(identifiers)
     if explore:
         session.launch_kind = "explore"
         if not role:
             session.prompt = "調査せよ"
-    session.auto_resume_consumed = background_consumed
     message = "未読が残る" if explore and not role else "続行できない理由: 分割読取が残る"
     assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
 
@@ -281,7 +286,7 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
             assert "成果と追加報告" in prompt and "全体成功行を付けない" in prompt
         else:
             assert "未読・未走査" not in prompt
-        state.begin_reply(current)
+        state.begin_reply(current, preserve_waits=True)
         return {"delivery": "reply_started"}
 
     sender = AsyncMock(side_effect=RuntimeError("配送拒否") if delivery_failure else reply)
@@ -290,8 +295,8 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
         monkeypatch.setattr(owner, "_backend", Mock(return_value=backend))
         await owner._advance_child_session_wait(session)  # noqa: SLF001
         assert session.result_contract_recovery_consumed
-        assert session.auto_resume_consumed is background_consumed
         assert sender.await_count == 1
+        assert {name: getattr(session, name) for name in children} == children
         if delivery_failure:
             assert session.agent_message == message and session.status == "failed"
             assert "配送拒否" in str(session.error) and "resultContract" in str(session.error)
@@ -303,6 +308,7 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
             assert session.result_available and session.agent_message == final
         await owner._advance_child_session_wait(session)  # noqa: SLF001
         assert sender.await_count == 1
+        assert {name: getattr(session, name) for name in children} == children
 
 
 @pytest.mark.asyncio
@@ -329,12 +335,12 @@ async def test_consumption_survives_registry_publication_and_new_owner(
     session = _task_session(tmp_path)
     session.publish_registry = True
     session.status = "completed"
-    session.turn_completed = True
+    session.record_turn_completed()
     session.result_contract_recovery_consumed = True
     session.touch()
     await session.drain_registration()
     # 別の更新主体が項目を省略しても消費済みから未消費へは戻さない。
-    session_registry.publish(session.session_id, terminal=True, cwd=session.cwd)
+    session_registry.publish(session.session_id, state=session_registry.PublicationState.RESULT_COMPLETED, cwd=session.cwd)
     info = session_registry.resolve(session.session_id).resume_info
     assert info is not None and info.result_contract_recovery_consumed
     async with manager.AgentsServerManager() as owner:

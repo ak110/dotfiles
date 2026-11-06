@@ -93,7 +93,7 @@ def test_unconfigured_process_session_preserves_parent_auth(
     if resume:
         session_registry.publish(
             resume,
-            terminal=True,
+            state=session_registry.PublicationState.RESULT_COMPLETED,
             engine="claude",
             cwd=str(tmp_path),
             claude_connection="inherit" if resume == "inherit" else None,
@@ -181,7 +181,7 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
     path.write_text("ANTHROPIC_API_KEY=selected-key\n", encoding="utf-8")
     session_registry.publish(
         "resume-api",
-        terminal=True,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="claude",
         model="sonnet",
         effort="high",
@@ -305,7 +305,7 @@ def test_codex_orchestrator_resume_keeps_saved_provider_until_removed_from_order
     probes = _codex_probes(monkeypatch, chatgpt=True)
     session_registry.publish(
         "orchestrator-thread",
-        terminal=True,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
         engine="codex",
         model="gpt-5.6-sol",
         effort="medium",
@@ -356,7 +356,7 @@ def test_limited_claude_probe_selects_next_connection_for_same_session_launch(
     if resume:
         session_registry.publish(
             "saved-claude",
-            terminal=True,
+            state=session_registry.PublicationState.RESULT_COMPLETED,
             engine="claude",
             cwd=str(tmp_path),
             model="sonnet",

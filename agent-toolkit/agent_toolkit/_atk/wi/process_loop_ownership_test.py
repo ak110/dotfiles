@@ -82,13 +82,15 @@ def test_live_descendant_blocks_takeover_after_parent_loss(tmp_path: pathlib.Pat
     assert first is not None
     process = session_registry.owner_process()
     assert process is not None
-    session_registry.publish("root", terminal=True)
-    session_registry.publish("writer", terminal=False, processes=(process,), launcher_session_id="root")
+    session_registry.publish("root", state=session_registry.PublicationState.RESULT_COMPLETED)
+    session_registry.publish(
+        "writer", state=session_registry.PublicationState.PENDING_RUNNING, processes=(process,), launcher_session_id="root"
+    )
     record = json.loads(first.path.read_text(encoding="utf-8"))
     record["create_time"] = 0
     first.path.write_text(json.dumps(record), encoding="utf-8")
     assert ownership.try_acquire(first.repo_id, worktree=repository, mode="coordinator") is None
-    session_registry.publish("writer", terminal=True, launcher_session_id="root")
+    session_registry.publish("writer", state=session_registry.PublicationState.RESULT_COMPLETED, launcher_session_id="root")
     recovered = ownership.try_acquire(first.repo_id, worktree=repository, mode="coordinator")
     assert recovered is not None
     ownership.release(recovered)

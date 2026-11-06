@@ -98,6 +98,7 @@ Claude Codeが同一プロセス内でセッション識別子を切り替えた
 | 上り通知の回収 | `notice_inbox.py` |
 
 子の追跡は、登録簿の不在・解放済み・読取不能でも維持する。共有された終了時の結果も得られなければ、同じ識別子を保持して終了の観測まで再解決する。回収済みの終了は既存のwait出力追跡で集合から除き、未回収の子の終了を継続の判定に用いる。
+過去の継続を消費した後やCLIのidle時も、未回収の子の観測を保持する。Managerは配送成功した完了IDだけを終了待ち集合から除き、回収済み・未追跡の子の終了応答を集合外として扱う。
 
 Codexバックエンドは、子セッションを起動した委譲先から`atk agents wait`の実行に成功した`commandExecution`を受け取る。
 回収済みの終了セッション識別子は、`_agents_server/wait_output_tracking.py`の`consume_agents_wait_output`によって追跡対象の集合から除外される。
@@ -162,6 +163,10 @@ runファイルが存在しない、読み取れない、または結果デー�
 | 前任エージェントのログ抽出と後任へ渡す引き継ぎプロンプトの作成 | `session_handoff.py`（既存の`review-session`の会話抽出機能を利用する） |
 
 task返却の形式回復を消費した状態は`SessionState.result_contract_recovery_consumed`が保持し、`state.py`の登録処理から`session_registry.py`の共有登録簿へ保存する。同一sessionで真になった値は後続の公開でも保持する。`manager_registry.py`が別所有者へ復元し、`SessionResumeState`と`manager_resume.py`を通して新しいturnへ引き継ぐ。回復待ちと診断はturn単位で初期化し、消費状態は初期化しない。
+
+メモリー上の保留は`SessionState.hold`の理由別データ、開始受理は`turn_start`、終了は`turn_end`で保持する。型は`_agents_server/turn_state.py`、開始・解除・記録の操作は`state.py`が所有し、backend・resume_waits・result_contract・Managerが消費する。保留述語と予定時刻は、この状態から得るreadonlyの射影とする。連鎖履歴と形式回復の消費は別の寿命を保つ。
+登録簿の書込入力は`PublicationState`とし、terminal/statusの許容組から保存値を導出する。読取の解決とv1〜v3の保存・復元契約は維持する。
+reader-fitの入力成果物と対象別完了の形式検査はresult_contractが既存の回復を用いて行う。本文・比較資料・判定範囲の確認が済んだかの意味判断と証拠は、レビュー担当が所有する。
 
 session登録簿の公開・解放・中断履歴更新・掃引と再開予約は、`sessions/.locks/<session_id>.lock`の共有ファイルロック内で読み取りと更新を実行する。
 ロックファイルは保持する。

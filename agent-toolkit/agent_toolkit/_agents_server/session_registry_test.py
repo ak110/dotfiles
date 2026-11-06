@@ -12,7 +12,7 @@ import typing
 import pytest
 
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import mcp_tools, resume_waits, state
+from agent_toolkit._agents_server import mcp_tools, resume_waits, state, turn_state
 from agent_toolkit._common import session_registry as subject
 from agent_toolkit._common import state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule
@@ -26,7 +26,7 @@ from agent_toolkit._testing.agents_server_support import (
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     """同じsessionの実行中状態を終了状態で置き換えて観測する。"""
-    subject.publish("child-session", terminal=False, cwd=str(tmp_path), state_root=tmp_path)
+    subject.publish("child-session", state=subject.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), state_root=tmp_path)
     path = subject.registry_directory(tmp_path) / "child-session.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
 
@@ -37,8 +37,68 @@ def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     datetime.datetime.fromisoformat(payload["updated_at"])
     assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.RUNNING
 
-    subject.publish("child-session", terminal=True, state_root=tmp_path)
+    subject.publish("child-session", state=subject.PublicationState.RESULT_COMPLETED, state_root=tmp_path)
     assert subject.resolve("child-session", state_root=tmp_path).state is subject.Resolution.TERMINAL
+
+
+@pytest.mark.parametrize(
+    ("publication", "terminal", "status"),
+    [
+        (subject.PublicationState.PENDING_STARTING, False, "starting"),
+        (subject.PublicationState.PENDING_RUNNING, False, "running"),
+        (subject.PublicationState.PENDING_COMPLETED, False, "completed"),
+        (subject.PublicationState.PENDING_FAILED, False, "failed"),
+        (subject.PublicationState.PENDING_INTERRUPTED, False, "interrupted"),
+        (subject.PublicationState.RESULT_COMPLETED, True, "completed"),
+        (subject.PublicationState.RESULT_FAILED, True, "failed"),
+        (subject.PublicationState.RESULT_INTERRUPTED, True, "interrupted"),
+    ],
+)
+def test_publication_state_preserves_saved_and_resolved_values(
+    publication: subject.PublicationState,
+    terminal: bool,
+    status: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """公開前の終了statusを含む8組を、sessionから登録簿と再開情報へ同じ値で渡す。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    session = state.SessionState(
+        "published",
+        str(tmp_path),
+        publish_registry=True,
+        status=status,
+        turn_end=turn_state.TurnEnd.COMPLETED if terminal else turn_state.TurnEnd.IN_PROGRESS,
+    )
+
+    assert subject.PublicationState.from_status(status, result_available=terminal) is publication
+    assert session.publish_registration() is None
+
+    payload = json.loads((subject.registry_directory() / "published.json").read_text(encoding="utf-8"))
+    assert payload["version"] == 2
+    assert payload["terminal"] is terminal
+    assert payload["status"] == status
+    resolution = subject.resolve(session.session_id)
+    assert resolution.state is (subject.Resolution.TERMINAL if terminal else subject.Resolution.RUNNING)
+    assert resolution.resume_info is not None and resolution.resume_info.status == status
+
+
+@pytest.mark.parametrize("status", ["starting", "running", "unknown"])
+def test_publication_rejects_unavailable_terminal_status(status: str, tmp_path: pathlib.Path) -> None:
+    """未終了や未知のstatusから公開済みの登録を作成しない。"""
+    with pytest.raises(ValueError):
+        subject.publish(
+            "invalid", state=subject.PublicationState.from_status(status, result_available=True), state_root=tmp_path
+        )
+    assert not (subject.registry_directory(tmp_path) / "invalid.json").exists()
+
+
+@pytest.mark.parametrize("invalid", [True, "completed", (True, "running")])
+def test_publish_requires_publication_state(invalid: object, tmp_path: pathlib.Path) -> None:
+    """型を迂回した値を永続化の境界で拒否する。"""
+    with pytest.raises(TypeError, match="state must be a PublicationState"):
+        subject.publish("invalid", state=typing.cast("subject.PublicationState", invalid), state_root=tmp_path)
+    assert not (subject.registry_directory(tmp_path) / "invalid.json").exists()
 
 
 def test_resume_info_carries_launch_info_and_activity_times_and_accepts_legacy_record(tmp_path: pathlib.Path) -> None:
@@ -46,14 +106,14 @@ def test_resume_info_carries_launch_info_and_activity_times_and_accepts_legacy_r
     launch_info = subject.LaunchInfo(label="lane-05-exec", prompt="依頼本文", created_at="2026-09-25T21:58:13+00:00")
     subject.publish(
         "created",
-        terminal=True,
+        state=subject.PublicationState.RESULT_COMPLETED,
         cwd=str(tmp_path),
         launch_info=launch_info,
         started_at="2026-09-27T14:38:32+00:00",
         session_updated_at="2026-09-27T14:39:16+00:00",
         state_root=tmp_path,
     )
-    subject.publish("legacy", terminal=True, cwd=str(tmp_path), state_root=tmp_path)
+    subject.publish("legacy", state=subject.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path), state_root=tmp_path)
 
     created = subject.resolve("created", state_root=tmp_path).resume_info
     legacy = subject.resolve("legacy", state_root=tmp_path).resume_info
@@ -73,7 +133,7 @@ def test_resume_info_carries_launch_info_and_activity_times_and_accepts_legacy_r
 
 def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
     """起動処理中のsessionを未終了の再開情報として観測する。"""
-    subject.publish("child-session", terminal=False, status="starting", cwd=str(tmp_path), state_root=tmp_path)
+    subject.publish("child-session", state=subject.PublicationState.PENDING_STARTING, cwd=str(tmp_path), state_root=tmp_path)
 
     resolution = subject.resolve("child-session", state_root=tmp_path)
 
@@ -85,7 +145,7 @@ def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize("reason", ["retention_expired", "stopped"])
 def test_release_replaces_record_with_released_state(tmp_path: pathlib.Path, reason: subject.ReleaseReason) -> None:
     """解放したsessionは不在と区別できる解放済みとして解決され、理由と時刻を持ち、再開条件を持たない。"""
-    subject.publish("child-session", terminal=True, state_root=tmp_path)
+    subject.publish("child-session", state=subject.PublicationState.RESULT_COMPLETED, state_root=tmp_path)
     subject.release("child-session", reason=reason, state_root=tmp_path)
 
     resolution = subject.resolve("child-session", state_root=tmp_path)
@@ -128,7 +188,7 @@ async def test_session_state_publishes_state_transitions(
     assert second == first
 
     session.status = "completed"
-    session.turn_completed = True
+    session.record_turn_completed()
     session.touch()
     await session.drain_registration()
     assert subject.resolve("published-session").state is subject.Resolution.TERMINAL
@@ -166,7 +226,7 @@ async def test_observing_wait_keeps_record_and_stop_releases_it(
     """終了を観測した待機処理はレコードを残し、所有主体による破棄だけが解放済みへ置き換える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(_wait_schedule, "get_wait_timeout", lambda _request_bucket: 0.0)
-    subject.publish("child-session", terminal=True, engine="codex", cwd=str(tmp_path))
+    subject.publish("child-session", state=subject.PublicationState.RESULT_COMPLETED, engine="codex", cwd=str(tmp_path))
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         backend = FakeBackend(manager.sessions, "codex")
         install_backend(manager, "codex", backend)
@@ -199,7 +259,7 @@ async def test_retention_expiry_releases_record(
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         session = state.SessionState("expiring-session", str(tmp_path), engine="codex", publish_registry=True)
         session.status = "completed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         manager.sessions[session.session_id] = session
         await session.drain_registration()
@@ -219,7 +279,7 @@ async def test_retention_expiry_releases_record(
 def test_registry_rejects_invalid_session_id(session_id: str, tmp_path: pathlib.Path) -> None:
     """登録簿ディレクトリ外を指し得る識別子を拒否する。"""
     with pytest.raises(ValueError, match="invalid session_id"):
-        subject.publish(session_id, terminal=False, state_root=tmp_path)
+        subject.publish(session_id, state=subject.PublicationState.PENDING_RUNNING, state_root=tmp_path)
 
 
 def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(tmp_path: pathlib.Path) -> None:
@@ -232,7 +292,7 @@ def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(
     reused_pid = subject.ProcessIdentity(owner.pid, owner.create_time - 1.0)
     subject.publish(
         "orphaned",
-        terminal=False,
+        state=subject.PublicationState.PENDING_RUNNING,
         engine="claude",
         cwd=str(tmp_path),
         processes=(exited_process_identity(), reused_pid),
@@ -256,7 +316,9 @@ def test_running_record_with_live_process_or_without_identity_stays_running(reco
     owner = subject.owner_process()
     assert owner is not None
     processes = (exited_process_identity(), owner) if recorded == "one-live" else ()
-    subject.publish("running", terminal=False, cwd=str(tmp_path), processes=processes, state_root=tmp_path)
+    subject.publish(
+        "running", state=subject.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), processes=processes, state_root=tmp_path
+    )
 
     resolution = subject.resolve("running", state_root=tmp_path)
 
@@ -297,7 +359,9 @@ async def test_resume_reservation_prevents_release_and_takeover(
     identifier = "reserved-session"
     subject.publish(
         identifier,
-        terminal=record_kind != "owner-gone",
+        state=subject.PublicationState.PENDING_RUNNING
+        if record_kind == "owner-gone"
+        else subject.PublicationState.RESULT_COMPLETED,
         cwd=str(tmp_path),
         launch_info=subject.LaunchInfo(prompt="保存する依頼"),
         processes=(exited_process_identity(),) if record_kind == "owner-gone" else (),
@@ -314,7 +378,7 @@ async def test_resume_reservation_prevents_release_and_takeover(
     assert pending.resume_info is not None and pending.resume_info.turn_seq == 1
     path = subject.registry_directory(tmp_path) / f"{identifier}.json"
     reserved = path.read_bytes()
-    subject.publish(identifier, terminal=True, turn_seq=0, state_root=tmp_path)
+    subject.publish(identifier, state=subject.PublicationState.RESULT_COMPLETED, turn_seq=0, state_root=tmp_path)
     assert not subject.release(identifier, reason="retention_expired", expected_owner=expected_owner, state_root=tmp_path)
     async with server_manager.AgentsServerManager(None) as manager:
         backend = ThreadReadBackend(manager.sessions, [("old-turn", "completed")])

@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from agent_toolkit._agents_server import manager, notify, shared_layout
+from agent_toolkit._agents_server import manager, notify, shared_layout, turn_state
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._atk import commit, run_skill
 from agent_toolkit._atk.run_skill_progress import Progress
@@ -193,12 +193,12 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
         await owner.send_message("contract-session", "追送本文")
         session = owner.sessions["contract-session"]
         for operation in ("children", "overload", "usage-limit"):
-            session.pending_result = {
+            pending_result = {
                 "status": "completed",
                 "agent_message": "待機中",
                 "error": {"message": "失敗", "usageLimit": {"type": "five_hour"}},
             }
-            session.awaiting_auto_resume = True
+            session.hold_result(turn_state.BackgroundWait(pending_result, None))
             if operation == "children":
                 session.terminal_child_session_ids.add("child-session")
                 await owner._advance_child_session_wait(session)  # noqa: SLF001  # pylint: disable=protected-access

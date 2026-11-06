@@ -11,6 +11,7 @@ import typing
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from agent_toolkit._agents_server import turn_state
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.result_projection import (
@@ -240,12 +241,10 @@ class SessionState:
     # 新規開始または状態互換性を確認して確定した生成先。旧版の選択先とは区別する。
     codex_state_provider: str | None = None
     codex_attempted_provider_ids: set[str] = dataclasses.field(default_factory=set, repr=False)
-    codex_provider_resume_pending: bool = False
     codex_auto_reset_pending: bool = False
     claude_api_env_file: str | None = None
     claude_connection: str | None = None
     claude_role: str | None = None
-    claude_api_resume_pending: bool = False
     claude_connection_diagnostics: tuple[str, ...] = ()
     claude_mcp_diagnostics: tuple[str, ...] = ()
     claude_connection_failures: dict[str, str] = dataclasses.field(default_factory=dict, repr=False)
@@ -278,14 +277,9 @@ class SessionState:
     agent_message: str = ""
     result_delivered: bool = False
     protocol_warnings: list[str] = dataclasses.field(default_factory=list)
-    reply_attempted: bool = False
-    reply_turn_started: bool = False
-    reply_retryable: bool = False
-    turn_start_sent: bool = False
-    turn_start_ambiguous: bool = False
+    turn_start: turn_state.TurnStart = turn_state.TurnStart.UNSENT
     interrupt_requested: bool = False
-    turn_completed: bool = False
-    failure_pending_completion: bool = False
+    turn_end: turn_state.TurnEnd = turn_state.TurnEnd.IN_PROGRESS
     # モデル由来の出力（テキスト、思考、ツール呼び出し）を1回以上受信したか。
     # Claudeでは、APIの応答開始（`message_start`）の受信で真とする。
     # engineの可用性失敗は最初のモデル出力より前に生じるため、`start`はこの値で起動直後の終了待ちを打ち切る。
@@ -305,7 +299,7 @@ class SessionState:
     # 最後に観測した行動。assistantのテキスト出力ではその抜粋、ツール呼び出しではツール名またはitem種別と入力の1行要約を持つ。
     # statuslineが、テキスト出力の無い区間でも稼働を表示するための射影元とする。
     last_action: str = ""
-    awaiting_auto_resume: bool = False
+    hold: turn_state.ResultHold | None = None
     # Claude Code CLIが`session_state_changed`で報告した最新のturn状態（`running`・`idle`・`requires_action`）。
     # 一度も報告を受けていないsession（Codex backendと、報告を発行しないCLI）では`None`とし、
     # `has_pending_auto_resume_targets`は従来どおり追跡集合だけで判定する。
@@ -314,29 +308,19 @@ class SessionState:
     # 状態の報告を受け取らずに`ResultMessage`を受け取り、従来の判定へ戻ったことを警告ログへ記録済みか。
     # sessionごとに1回だけ記録する。
     cli_turn_state_fallback_logged: bool = False
-    # `auto_resume_consumed`を真にするのは、Claude backendのタスク完了通知による再開と、
-    # MCP層が孫sessionの終了を検出して発行する再開の2つの処理だけである。
-    # Codex backendは孫sessionが残るturnの結果を保留し、後者の再開だけに到達する。
-    auto_resume_consumed: bool = False
     result_contract_recovery_consumed: bool = False
-    result_contract_recovery_pending: bool = False
-    result_contract_recovery_reason: str | None = None
-    auto_resume_deadline: float | None = None
     # `start`の可用性確認を終えたか。確認を終える前の過負荷は起動時の候補切替が扱う。
     availability_checked: bool = False
     # 過負荷による自動継続。連鎖の中で行った継続の回数、次の継続を送る時刻（イベントループの時計）と、
     # 連鎖の最初の過負荷の時刻を持つ。過負荷以外の終了、委譲元の`kill`・`send_message`および上限到達で初期化する。
     overload_resume_count: int = 0
-    overload_resume_at: float | None = None
     overload_first_at: str | None = None
     # Claudeが最後に報告した利用枠の状態。待機の対象かの判定と解除予定時刻に使う。
     usage_limit: claude_usage_limit.UsageLimitState | None = None
     # 利用上限の解除待ち。次に同じsessionへ継続を送る時刻（イベントループの時計）、待機の回数と最初の拒否の時刻を持つ。
     # 待機対象以外の終了と委譲元の`kill`・`send_message`で初期化し、回数では打ち切らない。
-    usage_limit_resume_at: float | None = None
     usage_limit_wait_count: int = 0
     usage_limit_first_at: str | None = None
-    pending_result: dict[str, Any] | None = None
     finalized_at: str | None = None
     updated_at: str = dataclasses.field(default_factory=utc_now)
     output_updated_at: str | None = None
@@ -368,9 +352,8 @@ class SessionState:
     # 所有するMCPサーバーの状態ディレクトリのルート。登録簿へ公開し、所有サーバーを失った実行中の案内に使う。
     owner_root_session_id: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_launcher: str | None = dataclasses.field(default=None, repr=False)
-    _published_registry_terminal: bool | None = dataclasses.field(default=None, repr=False)
+    _published_registry_state: session_registry.PublicationState | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
-    _published_registry_status: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
     _published_registry_result_contract_recovery_consumed: bool = dataclasses.field(default=False, repr=False)
     _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
@@ -380,6 +363,118 @@ class SessionState:
     _lifecycle_running: bool = dataclasses.field(default=False, repr=False)
     _registration_task: asyncio.Task[str | None] | None = dataclasses.field(default=None, repr=False)
     _registration_lock: asyncio.Lock = dataclasses.field(default_factory=asyncio.Lock, repr=False)
+
+    def hold_result(self, hold: turn_state.ResultHold) -> None:
+        """結果と理由を不可分に保留する。外部の追跡集合と再開履歴は維持する。"""
+        self.hold = hold
+
+    def clear_hold(self) -> None:
+        """保留を解除する。継続の連鎖と回復消費はそれぞれの所有者が更新する。"""
+        self.hold = None
+
+    def set_background_deadline(self, deadline: float | None) -> None:
+        """背景完了待ちの期限を更新し、異なる理由の保留を変更しない。"""
+        if isinstance(self.hold, turn_state.BackgroundWait):
+            self.hold = dataclasses.replace(self.hold, deadline=deadline)
+
+    @property
+    def awaiting_auto_resume(self) -> bool:
+        """再開または中断の終了確認まで結果を保留しているかを返す。"""
+        return self.hold is not None
+
+    @property
+    def pending_result(self) -> dict[str, Any] | None:
+        """保留理由と一緒に保持された結果を返す。"""
+        return self.hold.result if self.hold is not None else None
+
+    @property
+    def auto_resume_deadline(self) -> float | None:
+        """背景処理の完了通知にだけ適用する期限を返す。"""
+        return self.hold.deadline if isinstance(self.hold, turn_state.BackgroundWait) else None
+
+    @property
+    def overload_resume_at(self) -> float | None:
+        """過負荷の再試行予定を返す。"""
+        return self.hold.resume_at if isinstance(self.hold, turn_state.OverloadWait) else None
+
+    @property
+    def usage_limit_resume_at(self) -> float | None:
+        """利用上限の再開予定を返す。"""
+        return self.hold.resume_at if isinstance(self.hold, turn_state.UsageLimitWait) else None
+
+    @property
+    def claude_api_resume_pending(self) -> bool:
+        """Claudeの接続切替待ちかを返す。"""
+        return isinstance(self.hold, turn_state.ClaudeConnectionWait)
+
+    @property
+    def codex_provider_resume_pending(self) -> bool:
+        """Codexのprovider切替待ちかを返す。"""
+        return isinstance(self.hold, turn_state.CodexProviderWait)
+
+    @property
+    def result_contract_recovery_pending(self) -> bool:
+        """返却形式の回復入力待ちかを返す。"""
+        return isinstance(self.hold, turn_state.ResultContractWait)
+
+    @property
+    def result_contract_recovery_reason(self) -> str | None:
+        """保留中の返却形式の診断を返す。"""
+        return self.hold.reason if isinstance(self.hold, turn_state.ResultContractWait) else None
+
+    @property
+    def turn_start_sent(self) -> bool:
+        """開始要求が未送信・拒否の段階を過ぎたかを返す。"""
+        return self.turn_start in {turn_state.TurnStart.SENT, turn_state.TurnStart.STARTED, turn_state.TurnStart.AMBIGUOUS}
+
+    @property
+    def turn_start_ambiguous(self) -> bool:
+        """開始要求の実行有無が未確定かを返す。"""
+        return self.turn_start is turn_state.TurnStart.AMBIGUOUS
+
+    def record_turn_sent(self) -> None:
+        """開始要求の送信を記録する。先着した開始通知は保持する。"""
+        if self.turn_start is turn_state.TurnStart.UNSENT:
+            self.turn_start = turn_state.TurnStart.SENT
+
+    def record_turn_started(self, turn_id: str | None = None) -> None:
+        """応答または通知で観測した開始を記録する。"""
+        if turn_id is not None:
+            self.turn_id = turn_id
+        self.turn_start = turn_state.TurnStart.STARTED
+
+    def record_turn_ambiguous(self) -> None:
+        """送信済み要求の応答喪失を記録し、既知のturn識別子を保持する。"""
+        if self.turn_start is not turn_state.TurnStart.STARTED:
+            self.turn_start = turn_state.TurnStart.AMBIGUOUS
+
+    def record_turn_rejected(self) -> None:
+        """開始要求が受理されなかったことを記録する。"""
+        self.turn_start = turn_state.TurnStart.REJECTED
+
+    def record_turn_completed(self) -> None:
+        """終了を記録し、応答喪失中だった開始を確定する。"""
+        self.turn_end = turn_state.TurnEnd.COMPLETED
+        if self.turn_start is turn_state.TurnStart.AMBIGUOUS:
+            self.turn_start = turn_state.TurnStart.STARTED
+
+    def record_turn_running(self) -> None:
+        """実行中の終了段階を記録し、開始受理段階を保持する。"""
+        self.turn_end = turn_state.TurnEnd.IN_PROGRESS
+
+    def record_failure_pending_completion(self) -> None:
+        """失敗を観測し、実行中turnの終了を待つ段階を記録する。"""
+        self.turn_end = turn_state.TurnEnd.FAILURE_PENDING
+
+    @property
+    def turn_completed(self) -> bool:
+        """最新turnの終了を観測済みかを返す。"""
+        return self.turn_end is turn_state.TurnEnd.COMPLETED
+
+    @property
+    def failure_pending_completion(self) -> bool:
+        """失敗を観測した実行中turnの終了待ちかを返す。"""
+        return self.turn_end is turn_state.TurnEnd.FAILURE_PENDING
 
     @property
     def terminal(self) -> bool:
@@ -609,28 +704,25 @@ class SessionState:
         return None
 
     def _registration_parameters(self) -> dict[str, Any] | None:
-        registry_terminal = self.result_available
+        if not self.publish_registry or self.result_delivered:
+            return None
+        registry_state = session_registry.PublicationState.from_status(self.status, result_available=self.result_available)
         # 再開ではbackendの初回公開の後に起動情報を写すため、その変化でも更新する。
         launch_info = session_registry.LaunchInfo.of(self)
         if not (
-            self.publish_registry
-            and not self.result_delivered
-            and (
-                registry_terminal != self._published_registry_terminal
-                or self.turn_seq != self._published_registry_turn_seq
-                or self.status != self._published_registry_status
-                or self.launcher_session_id != self._published_registry_launcher
-                or self.fast_mode != self._published_registry_fast_mode
-                or self.result_contract_recovery_consumed != self._published_registry_result_contract_recovery_consumed
-                or launch_info != self._published_registry_launch_info
-                or self.executor_process != self._published_registry_executor
-                or self.owner_root_session_id != self._published_registry_owner_root
-            )
+            registry_state != self._published_registry_state
+            or self.turn_seq != self._published_registry_turn_seq
+            or self.launcher_session_id != self._published_registry_launcher
+            or self.fast_mode != self._published_registry_fast_mode
+            or self.result_contract_recovery_consumed != self._published_registry_result_contract_recovery_consumed
+            or launch_info != self._published_registry_launch_info
+            or self.executor_process != self._published_registry_executor
+            or self.owner_root_session_id != self._published_registry_owner_root
         ):
             return None
         owner = session_registry.owner_process()
         return {
-            "terminal": registry_terminal,
+            "state": registry_state,
             "engine": self.engine,
             "cwd": self.cwd,
             "model": self.model,
@@ -655,15 +747,13 @@ class SessionState:
             if owner is None
             else tuple(process for process in (owner, self.executor_process) if process is not None),
             "owner_root_session_id": self.owner_root_session_id,
-            "status": typing.cast(typing.Literal["starting", "running", "completed", "failed", "interrupted"], self.status),
             "launcher_session_id": self.launcher_session_id,
         }
 
     def _remember_registration(self, parameters: dict[str, Any], executor: session_registry.ProcessIdentity | None) -> None:
         self._published_registry_launcher = parameters["launcher_session_id"]
-        self._published_registry_terminal = parameters["terminal"]
+        self._published_registry_state = parameters["state"]
         self._published_registry_turn_seq = parameters["turn_seq"]
-        self._published_registry_status = parameters["status"]
         self._published_registry_fast_mode = parameters["fast_mode"]
         self._published_registry_result_contract_recovery_consumed = parameters["result_contract_recovery_consumed"]
         self._published_registry_launch_info = parameters["launch_info"]
@@ -827,30 +917,20 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
     session.agent_message = ""
     session.result_delivered = False
     session.protocol_warnings = []
-    session.reply_retryable = False
-    session.turn_start_sent = False
-    session.turn_start_ambiguous = False
+    session.turn_start = turn_state.TurnStart.UNSENT
     session.interrupt_requested = False
-    session.turn_completed = False
-    session.failure_pending_completion = False
-    session.codex_provider_resume_pending = False
-    session.claude_api_resume_pending = False
+    session.record_turn_running()
     if not preserve_waits:
         session.live_child_session_ids.clear()
         session.terminal_child_session_ids.clear()
         session.codex_terminal_subagent_thread_ids.clear()
         session.agents_wait_background_outputs.clear()
         session.child_tool_uses.clear()
-        session.auto_resume_consumed = False
     session.codex_self_message_observed = False
     session.pending_tool_uses.clear()
     session.last_action = ""
-    session.awaiting_auto_resume = False
-    session.auto_resume_deadline = None
-    session.pending_result = None
+    session.clear_hold()
     session.finalized_at = None
-    session.result_contract_recovery_pending = False
-    session.result_contract_recovery_reason = None
     session.retention_deadline = None
     session.started_at = utc_now()
     if reset_progress:
@@ -862,6 +942,4 @@ def begin_reply(session: SessionState, *, preserve_waits: bool = False) -> None:
     """終了済みsessionの新しいturnを開始する準備をする。"""
     session.turn_seq += 1
     initialize_turn(session, reset_progress=False, preserve_waits=preserve_waits)
-    session.reply_attempted = True
-    session.reply_turn_started = False
     session.touch()

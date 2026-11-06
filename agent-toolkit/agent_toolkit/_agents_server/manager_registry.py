@@ -278,7 +278,7 @@ class ManagerRegistry(responses.ManagerResponses):
         await run_file_operation(
             session_registry.publish,
             session_id,
-            terminal=True,
+            state=session_registry.PublicationState.from_status(status, result_available=True),
             engine=info.engine,
             fast_mode=info.fast_mode,
             codex_model_provider=info.codex_model_provider,
@@ -293,7 +293,6 @@ class ManagerRegistry(responses.ManagerResponses):
             model_type=info.model_type,
             launch_kind=info.launch_kind,
             turn_seq=info.turn_seq,
-            status=status,
             launch_info=info.launch_info,
             started_at=info.started_at,
             session_updated_at=info.session_updated_at,
@@ -997,9 +996,8 @@ class ManagerRegistry(responses.ManagerResponses):
                     turn_seq=session.turn_seq,
                 )
                 interrupted.append(session)
-            session.turn_completed = True
-            session.turn_start_ambiguous = False
-            session.awaiting_auto_resume = False
+            session.record_turn_completed()
+            session.clear_hold()
             session.interrupt_requested = False
             session.touch()
         if self._status_writer is not None:

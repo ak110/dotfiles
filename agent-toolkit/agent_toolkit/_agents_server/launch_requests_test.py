@@ -33,7 +33,7 @@ from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import plugin_roots as resource_roots
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import session_registry, state_paths, task_documents
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _REAL_PLUGIN_PREFLIGHT,
@@ -396,7 +396,7 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
             assert expected + "だけの品質本文" in received
             assert all(label + "だけの品質本文" not in received for label in roots if label != expected)
             input_body = delivery_payload(received).rsplit("\n入力:\n", 1)[1]
-            assert launch_requests.parse_named_inputs(input_body.splitlines()) == params
+            assert task_documents.parse_named_inputs(input_body.splitlines()) == params
         # 正式登録を読めない候補は原因付きで除外し、別ホストの候補で配送を再構成する。
         registry.unlink()
         (opencode_config / "agent-toolkit.md").unlink()
@@ -1215,7 +1215,9 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
         await manager.send_message(session_id, "継続本文", timeout=1)
 
         session = manager.sessions[session_id]
-        session_registry.publish("child-session", terminal=True, engine=engine, cwd=str(tmp_path))
+        session_registry.publish(
+            "child-session", state=session_registry.PublicationState.RESULT_COMPLETED, engine=engine, cwd=str(tmp_path)
+        )
         session.live_child_session_ids.add("child-session")
         resume_waits.begin_auto_resume_wait(session, {"status": "completed", "agent_message": "保留本文", "error": None})
         await manager.wait()

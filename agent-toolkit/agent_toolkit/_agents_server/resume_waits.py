@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from typing import Any
 
-from agent_toolkit._agents_server import api_credits, state
+from agent_toolkit._agents_server import api_credits, state, turn_state
 from agent_toolkit._agents_server.result_projection import nonempty_error
 from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._atk import claude_connection, usage_limit_policy
@@ -67,8 +67,7 @@ USAGE_LIMIT_ERROR_TYPE = "usage_limit"
 class HeldTurn:
     """追送が拒否された場合に戻す保留結果。待機対象は現在の集合を維持し、観測済みの完了を取り消さない。"""
 
-    result: dict[str, Any]
-    deadline: float | None
+    hold: turn_state.ResultHold
     turn_seq: int
     turn_id: str
     started_at: str
@@ -77,12 +76,11 @@ class HeldTurn:
     @classmethod
     def capture(cls, session: SessionState) -> HeldTurn | None:
         """保留中だけ復元に必要なturn情報を退避する。"""
-        if not is_background_completion_wait(session):
+        if not is_observation_preserving_reply(session):
             return None
-        assert session.pending_result is not None
+        assert session.hold is not None
         return cls(
-            session.pending_result,
-            session.auto_resume_deadline,
+            session.hold,
             session.turn_seq,
             session.turn_id,
             session.started_at,
@@ -91,21 +89,16 @@ class HeldTurn:
 
     def restore(self, session: SessionState) -> None:
         """未受理の追送を取り消し、同じ待機対象の観測を継続できる保留へ戻す。"""
-        session.pending_result = self.result
-        session.auto_resume_deadline = self.deadline
-        session.awaiting_auto_resume = True
+        session.hold_result(self.hold)
         session.turn_seq = self.turn_seq
         session.turn_id = self.turn_id
         session.started_at = self.started_at
         session.codex_self_message_observed = self.codex_self_message_observed
         session.status = "running"
-        session.turn_completed = True
-        session.turn_start_ambiguous = False
-        session.turn_start_sent = False
-        session.reply_turn_started = False
-        session.reply_retryable = True
-        session.agent_message = self.result["agent_message"]
-        session.error = self.result["error"]
+        session.turn_start = turn_state.TurnStart.UNSENT
+        session.record_turn_completed()
+        session.agent_message = self.hold.result["agent_message"]
+        session.error = self.hold.result["error"]
         session.touch()
 
 
@@ -139,14 +132,12 @@ def has_pending_auto_resume_targets(session: SessionState) -> bool:
 
 def is_background_completion_wait(session: SessionState) -> bool:
     """期限の有無から独立して、子と背景処理の完了待ちの保留を識別する。"""
-    return (
-        session.awaiting_auto_resume
-        and session.pending_result is not None
-        and session.usage_limit_resume_at is None
-        and session.overload_resume_at is None
-        and not session.claude_api_resume_pending
-        and not session.codex_provider_resume_pending
-    )
+    return isinstance(session.hold, turn_state.BackgroundWait)
+
+
+def is_observation_preserving_reply(session: SessionState) -> bool:
+    """背景完了と形式回復の追送は、既存の未回収対象を新turnへ引き継ぐ。"""
+    return isinstance(session.hold, turn_state.BackgroundWait | turn_state.ResultContractWait)
 
 
 def auto_resume_wait_deadline(session: SessionState) -> float | None:
@@ -158,13 +149,13 @@ def auto_resume_wait_deadline(session: SessionState) -> float | None:
     対象の終了通知から次のturnの開始通知までの間にも、古いBash期限を復活させない。
     """
     if session.live_child_session_ids or session.codex_live_subagent_thread_ids:
-        session.auto_resume_deadline = None
+        session.set_background_deadline(None)
         return None
     if any(task.task_type != "local_bash" for task in session.live_tasks.values()):
-        session.auto_resume_deadline = None
+        session.set_background_deadline(None)
         return None
     if not session.live_tasks and cli_turn_may_continue(session):
-        session.auto_resume_deadline = None
+        session.set_background_deadline(None)
         return None
     return session.auto_resume_deadline
 
@@ -191,22 +182,16 @@ def finalize_pending_result(
         raise RuntimeError("auto-resume wait has no pending result")
     unfinished_tasks = set(session.live_tasks)
     unobserved = set(session.live_child_session_ids) | set(session.codex_live_subagent_thread_ids) | set(unobserved_sessions)
-    session.overload_resume_at = None
-    session.claude_api_resume_pending = False
-    session.usage_limit_resume_at = None
+    session.clear_hold()
     if not keep_resume_chain:
         clear_overload_resume(session)
         clear_usage_limit_wait(session)
-    session.awaiting_auto_resume = False
-    session.auto_resume_deadline = None
-    session.pending_result = None
     session.live_child_session_ids.clear()
     session.codex_live_subagent_thread_ids.clear()
     session.status = result["status"]
     session.agent_message = result["agent_message"]
     session.error = result["error"]
-    session.turn_completed = True
-    session.turn_start_ambiguous = False
+    session.record_turn_completed()
     if not keep_resume_chain and (unfinished_tasks or unobserved):
         _merge_error_identifiers(session, UNFINISHED_BACKGROUND_TASKS_KEY, unfinished_tasks)
         _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, unobserved)
@@ -228,7 +213,8 @@ def is_overload_failure(session: SessionState) -> bool:
 def clear_overload_resume(session: SessionState) -> None:
     """過負荷による自動継続の連鎖を終える。"""
     session.overload_resume_count = 0
-    session.overload_resume_at = None
+    if isinstance(session.hold, turn_state.OverloadWait):
+        session.clear_hold()
     session.overload_first_at = None
 
 
@@ -242,10 +228,9 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
     if count >= len(OVERLOAD_RESUME_DELAYS_SECONDS):
         clear_overload_resume(session)
         return False
-    session.pending_result = result
-    session.awaiting_auto_resume = True
-    session.auto_resume_deadline = None
-    session.overload_resume_at = asyncio.get_running_loop().time() + OVERLOAD_RESUME_DELAYS_SECONDS[count]
+    session.hold_result(
+        turn_state.OverloadWait(result, asyncio.get_running_loop().time() + OVERLOAD_RESUME_DELAYS_SECONDS[count])
+    )
     session.overload_resume_count = count + 1
     if session.overload_first_at is None:
         session.overload_first_at = utc_now()
@@ -262,7 +247,8 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
 def clear_usage_limit_wait(session: SessionState) -> None:
     """利用上限の解除待ちの連鎖を終える。"""
     session.usage_limit_wait_count = 0
-    session.usage_limit_resume_at = None
+    if isinstance(session.hold, turn_state.UsageLimitWait):
+        session.clear_hold()
     session.usage_limit_first_at = None
 
 
@@ -356,10 +342,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
         session.claude_api_env_file = selected.api_env_file
         session.claude_connection = selected.kind
         session.claude_role = role
-        session.claude_api_resume_pending = True
-        session.pending_result = result
-        session.awaiting_auto_resume = True
-        session.auto_resume_deadline = None
+        session.hold_result(turn_state.ClaudeConnectionWait(result))
         if limit is not None and limit.is_wait_target:
             _record_usage_limit_error(session, limit, original_error)
         _LOG.info(
@@ -399,10 +382,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     resets_at = limit.resets_at_iso()
     error["usageLimit"] = {"type": limit.limit_type, "resetsAt": resets_at}
     result = {**result, "error": error}
-    session.pending_result = result
-    session.awaiting_auto_resume = True
-    session.auto_resume_deadline = None
-    session.usage_limit_resume_at = asyncio.get_running_loop().time() + limit.delay_seconds(time.time())
+    session.hold_result(turn_state.UsageLimitWait(result, asyncio.get_running_loop().time() + limit.delay_seconds(time.time())))
     session.usage_limit_wait_count += 1
     if session.usage_limit_first_at is None:
         session.usage_limit_first_at = utc_now()
@@ -428,10 +408,8 @@ def _record_usage_limit_error(session: SessionState, limit: claude_usage_limit.U
 
 def begin_auto_resume_wait(session: SessionState, result: dict[str, Any]) -> float | None:
     """終了時の結果を保留し、対象自身の上限を根拠に適用できる通知期限を返す。"""
-    session.pending_result = result
-    session.awaiting_auto_resume = True
     deadline = asyncio.get_running_loop().time() + AUTO_RESUME_DEADLINE_SECONDS
-    session.auto_resume_deadline = deadline
+    session.hold_result(turn_state.BackgroundWait(result, deadline))
     return auto_resume_wait_deadline(session)
 
 
@@ -446,9 +424,7 @@ def release_auto_resume_hold(session: SessionState) -> bool:
     """
     if not is_background_completion_wait(session):
         return False
-    session.pending_result = None
-    session.awaiting_auto_resume = False
-    session.auto_resume_deadline = None
+    session.clear_hold()
     return True
 
 

@@ -22,12 +22,13 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
     status_file,
+    turn_state,
     unavailable_candidates,
     wait_output_tracking,
 )
 from agent_toolkit._atk import config as atk_config
 from agent_toolkit._common import atomic_file, session_registry, state_paths
-from agent_toolkit._testing.agents_server_support import FakeBackend, FakeCodexClient, install_backend
+from agent_toolkit._testing.agents_server_support import FakeBackend, FakeCodexClient, _complete, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -103,7 +104,7 @@ class _TerminalUnavailableBackend(_StartedBackend):
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
         session.status = "failed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.error = {"codexErrorInfo": "usageLimitExceeded"}
         session.touch()
         return session
@@ -194,7 +195,7 @@ async def test_replace_retry_runs_outside_loop(
         elif route in {"terminal", "retain"}:
             assert session is not None
             session.status = "completed"
-            session.turn_completed = True
+            session.record_turn_completed()
             session.touch()
             if route == "terminal":
                 await writer.flush_async()
@@ -304,7 +305,9 @@ async def test_result_changed_during_save_is_not_republished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, race: str
 ) -> None:
     """loop上で回収済みになった結果を、保存完了の反映で再公開しない。"""
-    session = state.SessionState("session", str(tmp_path), announced=True, status="completed", turn_completed=True)
+    session = state.SessionState(
+        "session", str(tmp_path), announced=True, status="completed", turn_end=turn_state.TurnEnd.COMPLETED
+    )
     session.touch()
     writer = status_file.StatusFileWriter(
         {"session": session}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
@@ -334,10 +337,8 @@ async def test_expiry_does_not_restore_result_collected_during_registration_rele
 ) -> None:
     """登録解放の保存中にCLIが回収した結果を、期限解放の保持処理が再公開しない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    session = state.SessionState(
-        "session", str(tmp_path), announced=True, publish_registry=True, status="completed", turn_completed=True
-    )
-    session.touch()
+    session = state.SessionState("session", str(tmp_path), announced=True, publish_registry=True)
+    _complete(session, message="")
     writer = status_file.StatusFileWriter(
         {"session": session}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
     )
@@ -379,7 +380,9 @@ async def test_cancelled_terminal_save_reflects_success_before_next_flush(
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with manager.AgentsServerManager(writer) as owner:
         await writer.activate_async()
-        session = state.SessionState("session", str(tmp_path), status="completed", turn_completed=True, announced=True)
+        session = state.SessionState(
+            "session", str(tmp_path), status="completed", turn_end=turn_state.TurnEnd.COMPLETED, announced=True
+        )
         session.touch()
         owner.sessions[session.session_id] = session
         entered, release = _block_named_replace(monkeypatch, "session.json")
@@ -409,7 +412,9 @@ async def test_kill_waits_for_terminal_save_started_after_initial_drain(
     async with manager.AgentsServerManager(writer) as owner:
         install_backend(owner, "codex", FakeBackend(owner.sessions, "codex"))
         await writer.activate_async()
-        session = state.SessionState("session", str(tmp_path), status="completed", turn_completed=True, announced=True)
+        session = state.SessionState(
+            "session", str(tmp_path), status="completed", turn_end=turn_state.TurnEnd.COMPLETED, announced=True
+        )
         session.agent_message = "回収する本文"
         session.touch()
         owner.sessions[session.session_id] = session
@@ -468,7 +473,7 @@ async def test_auxiliary_save_retry_runs_outside_loop(
                 started = await owner.start("claude:test/medium", "処理", str(tmp_path))
                 session = owner.sessions[started["session_id"]]
                 session.status = "completed"
-                session.turn_completed = True
+                session.record_turn_completed()
                 session.touch()
                 await session.drain_registration()
             config_path = tmp_path / "legacy-config.json"
@@ -565,7 +570,7 @@ async def test_public_responses_finish_registration_before_cli_observation(
         assert shown()["status"] == "running"
         session = owner.sessions[started["session_id"]]
         session.status = "completed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         sent = await owner.send_message(session.session_id, "新turn")
         assert sent["delivery"] == "reply_started"
@@ -636,7 +641,7 @@ async def test_close_propagates_candidate_failure_without_masking_terminal_failu
 
         monkeypatch.setattr(atomic_file.os, "replace", reject)
         session.status = "failed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.error = {"codexErrorInfo": "usageLimitExceeded"}
         session.touch()
         expected = "終了時の結果を保存できない" if terminal_save_fails else "候補記録を保存できない"
@@ -689,10 +694,8 @@ async def test_expiry_save_failure_reaches_observer_after_backend_release(
 ) -> None:
     """期限解放の保存失敗はbackend解放後も保持し、waitまたはcloseで成功へ変換しない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    session = state.SessionState(
-        "session", str(tmp_path), announced=True, publish_registry=True, status="completed", turn_completed=True
-    )
-    session.touch()
+    session = state.SessionState("session", str(tmp_path), announced=True, publish_registry=True)
+    _complete(session, message="")
     writer = status_file.StatusFileWriter(
         {"session": session}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
     )
@@ -777,7 +780,7 @@ async def test_close_waits_for_other_candidate_worker_after_first_save_failure(
                 effort="medium",
                 model_type="execute",
                 status="failed",
-                turn_completed=True,
+                turn_end=turn_state.TurnEnd.COMPLETED,
                 error={"codexErrorInfo": "usageLimitExceeded"},
             )
             owner.sessions[session.session_id] = session

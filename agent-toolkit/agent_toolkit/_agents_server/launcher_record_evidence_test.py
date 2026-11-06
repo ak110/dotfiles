@@ -16,7 +16,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import launch_requests, manager, mcp_tools, record_paths, state, status_file
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import state_paths, task_documents
 from agent_toolkit._testing import agents_server_support
 from agent_toolkit._testing.helpers import delivery_payload
 
@@ -145,7 +145,7 @@ async def test_task_record_reaches_public_evidence(
         assert context["record_engine"] == engine
         assert context["record_path"] == str(records["direct-parent"])
         input_body = delivery_payload(backend.prompts[0]).rsplit("\n入力:\n", 1)[1]
-        delivered_inputs = launch_requests.parse_named_inputs(input_body.splitlines())
+        delivered_inputs = task_documents.parse_named_inputs(input_body.splitlines())
         assert delivered_inputs["投入する要求"] == request
         (tmp_path / "delivered-inputs.json").write_text(json.dumps(delivered_inputs, ensure_ascii=False), encoding="utf-8")
         if source == "delivered":

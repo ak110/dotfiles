@@ -95,7 +95,7 @@ async def test_explore_start_reaches_normal_commands(
             )
             observed.append(result)
             session.status = "completed"
-            session.turn_completed = True
+            session.record_turn_completed()
 
         monkeypatch.setattr(backend, "_start_turn", investigate)
         session = await backend.start("同じ読取調査", str(tmp_path), launch_kind="explore")

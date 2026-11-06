@@ -8,7 +8,7 @@ description: >
   操作や判断について確認が必要かを判定するとき、ユーザーへの確認や報告の手段を選択するとき
   （Claude Codeの`AskUserQuestion`やCodexの構造化質問を呼び出す前を含む）、UWIへ確認事項を退避するとき、
   回答が得られたUWIを元の作業へ反映するとき、Claude Codeのメインエージェントが利用上限の猶予通知を受け取ったとき、
-  あるいはツール呼び出しが権限設定やauto mode classifierによって拒否されたとき（委譲先からその拒否が報告された場合を含む）にも起動する。
+  あるいはツール呼び出しが実行基盤・権限設定・auto mode classifierによって拒否されたときや、classifierが判定不能を返したとき（委譲先からその報告を受けた場合を含む）にも起動する。
   ユーザーと自身の認識が食い違っている可能性があるときや、行動への指摘を繰り返し受けた際にも起動して認識合わせを行う。
 ---
 
@@ -61,7 +61,7 @@ UWIの本文、キューへの投入、状態管理、依存関係の形式は`a
 | 回答済みUWIを元の作業へ反映する時（回答の到達を確認する時を含む）と、`atk run-skill`が起動したセッションで過去の実行のUWIを扱う時 | `references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` | |
 | 規範どうしが矛盾する場合 | `references/conflict-resolution.md`（由来確定） | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/conflict-resolution.md` | |
 | 手順どおりに進められない場合 | `references/procedure-conflict.md`（判定順） | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/procedure-conflict.md` | |
-| ツール呼び出しが権限設定またはauto mode classifierに拒否された場合と、委譲先の返却がその拒否を報告した場合 | `references/permission-denial.md`（拒否の確認手順、既知の誤拒否パターン、偽陽性と判断できる拒否への対応） | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` | |
+| ツール呼び出しが実行基盤・権限設定・auto mode classifierに拒否された場合、classifierが判定不能を返した場合、および委譲先からその報告を受けた場合 | `references/permission-denial.md`の「共通判断」と、診断に対応する詳細節 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md#「共通判断」` | |
 | ユーザーへの確認・報告の手段を選ぶ時と認識合わせを行う時 | `references/communication-methods.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md` | |
 | 実際のユーザー発話を解釈・取り込み、訂正・割り込み・成果物の制限を扱う時 | `references/user-utterance.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md` | |
 | 実ユーザー発話やWI記入欄の入力を受領・分類し、既存判断への介入かを評価する時 | `references/analysis-operations.md`の「ユーザー介入と確認の判定」 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` | |

@@ -50,6 +50,39 @@ INTERRUPTED_TURNS_LIMIT = 16
 """登録簿が保持する中断turnの履歴の件数。新しい順に保ち、超えた古い要素は参照ごと失う。"""
 
 
+class PublicationState(enum.Enum):
+    """登録簿へ書く結果公開可否とstatusの許容組。
+
+    結果を保留している間もstatusは終状態になり得るため、公開前の終状態を個別に表す。
+    """
+
+    PENDING_STARTING = (False, "starting")
+    PENDING_RUNNING = (False, "running")
+    PENDING_COMPLETED = (False, "completed")
+    PENDING_FAILED = (False, "failed")
+    PENDING_INTERRUPTED = (False, "interrupted")
+    RESULT_COMPLETED = (True, "completed")
+    RESULT_FAILED = (True, "failed")
+    RESULT_INTERRUPTED = (True, "interrupted")
+
+    @property
+    def terminal(self) -> bool:
+        """保存する結果公開可否を返す。"""
+        return self.value[0]
+
+    @property
+    def status(self) -> Literal["starting", "running", "completed", "failed", "interrupted"]:
+        """保存するstatusを返す。"""
+        return self.value[1]
+
+    @classmethod
+    def from_status(cls, status: str, *, result_available: bool) -> PublicationState:
+        """sessionの公開状態を登録簿の書込状態へ変換する。"""
+        if not isinstance(result_available, bool):
+            raise TypeError("result_available must be a bool")
+        return cls((result_available, status))
+
+
 class Resolution(enum.StrEnum):
     """登録簿からsessionを観測した区分。"""
 
@@ -321,7 +354,7 @@ def _recorded_turn(payload: dict[str, Any]) -> int | None:
 def publish(
     session_id: str,
     *,
-    terminal: bool,
+    state: PublicationState,
     engine: str = "codex",
     cwd: str = "",
     model: str | None = None,
@@ -336,7 +369,6 @@ def publish(
     model_type: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     turn_seq: int = 0,
-    status: Literal["starting", "running", "completed", "failed", "interrupted"] | None = None,
     launch_info: LaunchInfo | None = None,
     started_at: str | None = None,
     session_updated_at: str | None = None,
@@ -364,16 +396,13 @@ def publish(
     既存の記録の`interrupted_turns`は引き継ぎ、`interruption`を渡した場合は現在のturnを履歴へ加える。
     """
     _validate_session_id(session_id)
-    if not isinstance(terminal, bool):
-        raise TypeError("terminal must be a bool")
-    status = ("completed" if terminal else "running") if status is None else status
-    if status not in _STATUSES:
-        raise ValueError(f"invalid status: {status}")
+    if not isinstance(state, PublicationState):
+        raise TypeError("state must be a PublicationState")
     updated_at = datetime.datetime.now(datetime.UTC).isoformat()
     payload = {
         "version": 2,
         "session_id": session_id,
-        "terminal": terminal,
+        "terminal": state.terminal,
         "engine": engine,
         "cwd": cwd,
         "model": model,
@@ -381,7 +410,7 @@ def publish(
         "model_type": model_type,
         "launch_kind": launch_kind,
         "turn_seq": turn_seq,
-        "status": status,
+        "status": state.status,
         "updated_at": updated_at,
     }
     if launch_info is not None:

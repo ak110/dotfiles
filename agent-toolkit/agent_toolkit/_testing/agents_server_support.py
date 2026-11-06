@@ -99,8 +99,7 @@ def _complete(session: state.SessionState, *, message: str = "完了", error: An
     session.status = "failed" if error is not None else "completed"
     session.agent_message = message
     session.error = error
-    session.turn_completed = True
-    session.turn_start_ambiguous = False
+    session.record_turn_completed()
     session.touch()
 
 
@@ -178,6 +177,8 @@ class FakeBackend:
         model_type: str | None = None,
         launch_kind: state.LaunchKind = "delegate",
         excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
     ) -> state.SessionState:
         self.prompts.append(prompt)
         self.start_calls.append((model, effort, launch_kind))
@@ -191,6 +192,8 @@ class FakeBackend:
             model_type=model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            prompt=request_prompt or "",
+            result_contract_recovery_consumed=result_contract_recovery_consumed,
             turn_seq=1,
         )
         self.sessions[session.session_id] = session
@@ -208,6 +211,8 @@ class FakeBackend:
         model_type: str | None = None,
         launch_kind: state.LaunchKind = "delegate",
         excluded_candidates: frozenset[state.ModelCandidate] = frozenset(),
+        request_prompt: str | None = None,
+        result_contract_recovery_consumed: bool = False,
         turn_seq: int = 0,
         fast_mode: bool | None = None,
         handoff_prompt: str = "",
@@ -227,6 +232,8 @@ class FakeBackend:
             model_type=model_type,
             launch_kind=launch_kind,
             excluded_candidates=excluded_candidates,
+            prompt=request_prompt or "",
+            result_contract_recovery_consumed=result_contract_recovery_consumed,
             turn_seq=turn_seq + 1,
             fast_mode=fast_mode,
             publish_registry=self.publish_registry,
@@ -1318,14 +1325,13 @@ def _publish_recovered_session(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         session_id,
-        terminal=True,
+        state=session_registry.PublicationState.from_status(cast(Any, status), result_available=True),
         engine="codex",
         cwd=str(tmp_path),
         model="model",
         effort="high",
         model_type="execute",
         turn_seq=2,
-        status=cast(Any, status),
     )
 
 
@@ -1428,7 +1434,12 @@ def _publish_orphaned_codex(
     """所有者が終了を公開せずに終了したCodexの`running`記録を保存する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
-        session_id, terminal=False, engine="codex", cwd=str(tmp_path), turn_seq=3, status="running", turn_id=turn_id
+        session_id,
+        state=session_registry.PublicationState.PENDING_RUNNING,
+        engine="codex",
+        cwd=str(tmp_path),
+        turn_seq=3,
+        turn_id=turn_id,
     )
 
 
@@ -1495,7 +1506,7 @@ class OverloadingBackend(FakeBackend):
             self._remaining -= 1
             session.status = "failed"
             session.error = dict(_OVERLOAD_ERROR)
-            session.turn_completed = True
+            session.record_turn_completed()
             if (session.availability_checked or session.turn_seq > 1) and resume_waits.begin_overload_resume_wait(
                 session, {"status": "failed", "agent_message": "", "error": session.error}
             ):

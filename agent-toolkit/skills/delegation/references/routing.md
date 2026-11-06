@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md`の「実行手段」「工程別モデル設定」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」「工程別モデル設定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |

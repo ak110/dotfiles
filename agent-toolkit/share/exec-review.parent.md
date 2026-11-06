@@ -35,7 +35,7 @@
 | 基準の参照時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
 | 基準の参照時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
 | 基準の参照時 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
-| 基準の参照時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 初回起動前 | `../skills/delegation/references/runtime-routing.md#「実行手段」「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」「工程別モデル設定」` |
 | 基準の参照時 | `../skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
 | process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `../skills/process-wi/references/immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 | 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |

@@ -167,7 +167,7 @@ async def test_reply_delivery_is_independent_of_turn_terminal(
                 if outcome == "start-failed":
                     _complete(session, message="", error={"message": "開始不能"})
                 else:
-                    session.turn_start_ambiguous = True
+                    session.record_turn_ambiguous()
             else:
 
                 async def accept(_text: str) -> None:
@@ -592,7 +592,13 @@ async def test_resume_from_legacy_registry_record_without_launch_info(
 ) -> None:
     """起動情報の項目を持たない版数2の登録簿レコードからも再開でき、labelとpromptは空文字列になる。"""
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, _):
-        session_registry.publish("legacy-session", terminal=True, engine="claude", cwd=str(tmp_path), turn_seq=2)
+        session_registry.publish(
+            "legacy-session",
+            state=session_registry.PublicationState.RESULT_COMPLETED,
+            engine="claude",
+            cwd=str(tmp_path),
+            turn_seq=2,
+        )
 
         assert _without_root(await manager.send_message("legacy-session", "続行")) == {"delivery": "reply_started", "label": ""}
 
@@ -839,7 +845,7 @@ async def test_claude_pending_resume_retains_previous_result_after_retention_dea
         session_id = "claude-pending"
         session = state.SessionState(session_id, str(tmp_path), engine="claude")
         session.status = "completed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.agent_message = "期限付き結果"
         session.touch()
         session.retention_deadline = asyncio.get_running_loop().time() + 0.04
@@ -951,7 +957,6 @@ async def test_auto_resume_delivery_failure_terminates_as_failed(
         }
         assert session.awaiting_auto_resume is False
         assert session.pending_result is None
-        assert session.auto_resume_consumed is True
         assert backend.send_calls == 1
         await manager.close()
 
@@ -1166,7 +1171,9 @@ async def test_orphaned_record_keeps_turn_unobserved_unless_takeover_conditions_
             encoding="utf-8",
         )
     else:
-        session_registry.publish(session_id, terminal=False, engine="claude", cwd=str(tmp_path), status="running", turn_seq=3)
+        session_registry.publish(
+            session_id, state=session_registry.PublicationState.PENDING_RUNNING, engine="claude", cwd=str(tmp_path), turn_seq=3
+        )
     async with server_manager.AgentsServerManager(None) as manager:
         backend = ThreadReadBackend(manager.sessions, turns, error)
         _install_backend(manager, "codex", backend)

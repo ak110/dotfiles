@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import claude_agent_sdk
 import pytest
 
-from agent_toolkit._agents_server import claude, codex, manager, state, wait_compaction
+from agent_toolkit._agents_server import claude, codex, manager, state, turn_state, wait_compaction
 from agent_toolkit._testing.agents_server_support import (
     FakeCodexClient,
     QueueClaudeClient,
@@ -88,9 +88,9 @@ async def test_claude_wait_changes_at_compaction_boundaries(tmp_path, monkeypatc
                 SystemMessage("partial-wait"),
                 *tasks,
                 claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"}),
-                ResultMessage("待機中"),
+                ResultMessage("待機中: ci-task"),
             ],
-            [ResultMessage("圧縮完了"), claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"})],
+            [ResultMessage("待機中: ci-task"), claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"})],
         ]
     )
     async with claude_manager(monkeypatch, client) as (owner, backend):
@@ -255,9 +255,9 @@ async def test_claude_compacts_a_background_bash_wait_without_a_child_session(tm
                     task_type="local_bash",
                 ),
                 claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"}),
-                ResultMessage("待機中"),
+                ResultMessage("待機中: ci-task"),
             ],
-            [ResultMessage("圧縮完了"), claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"})],
+            [ResultMessage("待機中: ci-task"), claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"})],
         ]
     )
     async with claude_manager(monkeypatch, client) as (_owner, backend):
@@ -420,9 +420,8 @@ async def test_codex_late_completion_releases_a_cancelled_compaction(tmp_path, m
     """受付後の取消しだけで圧縮終了とせず、後着完了の観測で所有状態を解く。"""
     session = state.SessionState("parent", str(tmp_path), engine="codex", turn_id="work-turn")
     session.live_child_session_ids.add("child")
-    session.awaiting_auto_resume = True
-    session.pending_result = {"status": "completed", "agent_message": "待機中", "error": None}
-    session.turn_completed = True
+    session.hold_result(turn_state.BackgroundWait({"status": "completed", "agent_message": "待機中", "error": None}, None))
+    session.record_turn_completed()
     async with codex.AppServerManager({session.session_id: session}) as backend:
         client = FakeCodexClient()
         backend._clients[session.session_id] = cast(codex.JsonRpcProcess, client)

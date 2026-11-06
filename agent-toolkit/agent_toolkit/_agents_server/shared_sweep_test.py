@@ -15,7 +15,9 @@ _DAY = 24 * 60 * 60
 
 def test_orphaned_release_files_follow_existing_session_sweep(tmp_path: pathlib.Path) -> None:
     """異常終了で残った要求・応答を既存session掃引が回収し、現行登録を保持する。"""
-    session_registry.publish("active", terminal=False, cwd=str(tmp_path), state_root=tmp_path)
+    session_registry.publish(
+        "active", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), state_root=tmp_path
+    )
     directory = session_registry.registry_directory(tmp_path)
     now = time.time()
     records = [directory / "orphan.release-request", directory / "orphan.release-response"]
@@ -51,7 +53,9 @@ def test_instance_diagnostics_follow_references(monkeypatch: pytest.MonkeyPatch,
     unreferenced_old = _diagnostics(tmp_path, "srv-old", age_days=8, now=now)
     unreferenced_new = _diagnostics(tmp_path, "srv-new", age_days=6, now=now)
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", "srv-registry")
-    session_registry.publish("held", terminal=True, status="interrupted", turn_seq=3, state_root=tmp_path)
+    session_registry.publish(
+        "held", state=session_registry.PublicationState.RESULT_INTERRUPTED, turn_seq=3, state_root=tmp_path
+    )
     record = session_registry.registry_directory(tmp_path) / "held.json"
     _age(record, days=5, now=now)
     results = shared_layout.results_directory("root-a", tmp_path)
@@ -83,7 +87,7 @@ def test_instance_diagnostics_capacity_keeps_referenced(monkeypatch: pytest.Monk
     current = _diagnostics(tmp_path, "srv-current", age_days=6, now=now, size=4000)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", logging_config.ServerInstance("srv-current", current))
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", "srv-referenced")
-    session_registry.publish("held", terminal=True, state_root=tmp_path)
+    session_registry.publish("held", state=session_registry.PublicationState.RESULT_COMPLETED, state_root=tmp_path)
     size = referenced.stat().st_size
 
     shared_sweep.sweep_stale_shared_state(

@@ -15,7 +15,7 @@
 | 本文の参照基準を適用する前 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文の参照基準を適用する前 | `pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` |
 | 本文の参照基準を適用する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 本文の参照基準を適用する前 | `permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
+| 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md`の「共通判断」と、診断に対応する詳細節 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md#「共通判断」` |
 | 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 
 ## 手段の選択

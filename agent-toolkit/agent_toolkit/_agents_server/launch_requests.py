@@ -371,35 +371,6 @@ def named_input_lines(params: Mapping[str, str]) -> list[str]:
     return lines
 
 
-def parse_named_inputs(lines: list[str]) -> dict[str, str]:
-    """定型本文の入力を復元し、説明行・重複項目を拒否する。"""
-    params: dict[str, str] = {}
-    current: str | None = None
-    first_continuation = False
-    for number, line in enumerate(lines, 2):
-        if current is not None and line.startswith("  "):
-            params[current] = line[2:] if first_continuation else params[current] + "\n" + line[2:]
-            first_continuation = False
-            continue
-        if not line.strip():
-            continue
-        name, separator, value = line.partition(":")
-        if (
-            not separator
-            or (value and not value.startswith(" "))
-            or not _REQUIRED_INPUT_NAME_PATTERN.fullmatch(name)
-            or name in params
-        ):
-            raise ActionableError(
-                f"入力本文の{number}行目を受理できません: {line}",
-                next_action="指示と宣言済みの名前付き入力だけで再実行する。本文生成にはdelegation-promptを使う",
-            )
-        current = name
-        params[name] = value.removeprefix(" ")
-        first_continuation = not params[name]
-    return params
-
-
 def builtin_task_prompt(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:
     """組み込み委譲へ渡す、役割参照と宣言済み入力だけの本文を生成する。"""
     document = resolve_task_document_path(subagent_md_path)
@@ -493,7 +464,7 @@ def continuation_prompt(
     try:
         if instruction is not None and len(lines) != 1:
             raise ValueError(f"instructionに説明行が混在しています: {instruction}")
-        params = dict(extra_params or {}) if instruction is not None else parse_named_inputs(lines[1:])
+        params = dict(extra_params or {}) if instruction is not None else task_documents.parse_named_inputs(lines[1:])
     except ValueError as error:
         raise ActionableError(str(error), next_action="最小の再実行形: " + minimal_form) from error
     missing = [name for name in contract.required if not params.get(name)]

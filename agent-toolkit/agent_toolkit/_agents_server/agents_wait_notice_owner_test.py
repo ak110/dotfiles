@@ -39,7 +39,9 @@ def test_ancestor_wait_preserves_notice_for_launcher(
             json.dumps({"version": 1, "sessions": [{"session_id": "child", "status": "running"}]}),
             encoding="utf-8",
         )
-    session_registry.publish("child", terminal=False, launcher_session_id="launcher", state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="launcher", state_root=tmp_path
+    )
     wait_targets.retain_wait_targets("ancestor", "root.json", ["child"], tmp_path)
     wait_targets.retain_wait_targets("ancestor", "launcher.json", ["child"], tmp_path)
     assert (
@@ -71,7 +73,9 @@ def test_ancestor_wait_preserves_notice_for_launcher(
 
 def test_stashed_notice_keeps_launcher_ownership(tmp_path: pathlib.Path) -> None:
     """退避後の再開でも、起動主体と異なる受取側は本文と原本を保持する。"""
-    session_registry.publish("child", terminal=False, launcher_session_id="parent", state_root=tmp_path)
+    session_registry.publish(
+        "child", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="parent", state_root=tmp_path
+    )
     stash = tmp_path / "stash"
     stash.mkdir()
     path = stash / "child.notice.json"
@@ -90,7 +94,7 @@ def test_stashed_notice_keeps_launcher_ownership(tmp_path: pathlib.Path) -> None
 
 def test_notice_without_owner_or_launcher_keeps_original(tmp_path: pathlib.Path) -> None:
     """所有投影と起動主体の両方が不明な旧記録では、通知を保持する。"""
-    session_registry.publish("child", terminal=False, state_root=tmp_path)
+    session_registry.publish("child", state=session_registry.PublicationState.PENDING_RUNNING, state_root=tmp_path)
     directory = shared_layout.notices_directory("root", tmp_path)
     directory.mkdir(parents=True)
     path = directory / "child.notice.json"
@@ -150,7 +154,12 @@ def test_current_writer_receives_notice_after_owner_changes(monkeypatch, tmp_pat
         json.dumps({"version": 1, "host_session_id": "current", "sessions": [{"session_id": "child", "status": "running"}]}),
         encoding="utf-8",
     )
-    session_registry.publish("child", terminal=False, launcher_session_id="original-parent", state_root=tmp_path)
+    session_registry.publish(
+        "child",
+        state=session_registry.PublicationState.PENDING_RUNNING,
+        launcher_session_id="original-parent",
+        state_root=tmp_path,
+    )
     assert (
         notify.send_notification(
             "現在の依頼への連絡",

@@ -77,13 +77,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
             pending = session.pending_result
             assert pending is not None
             reason = session.result_contract_recovery_reason or "返却形式を検査できません"
-            session.result_contract_recovery_pending = False
-            session.result_contract_recovery_reason = None
             session.result_contract_recovery_consumed = True
-            auto_resume_consumed = session.auto_resume_consumed
-            finalize_pending_result(session, touch=False)
+            if session.engine not in {"claude", "codex"}:
+                finalize_pending_result(session, touch=False)
             try:
-                await self._send_with_resources(
+                delivery = await self._send_with_resources(
                     session,
                     wrap_delivery_body(
                         "直前の返却は返却形式の契約に適合しない。"
@@ -100,10 +98,10 @@ class ManagerResume(manager_registry.ManagerRegistry):
                         )
                     ),
                 )
+                if delivery.get("delivery") == "reply_failed":
+                    raise RuntimeError("返却形式の回復入力を配送できませんでした")
             except Exception as exc:
-                session.awaiting_auto_resume = False
-                session.auto_resume_deadline = None
-                session.pending_result = None
+                session.clear_hold()
                 session.status = "failed"
                 session.agent_message = pending["agent_message"]
                 session.error = {
@@ -111,12 +109,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     "resultContract": reason,
                     "nextAction": result_contract.RECOVERY_NEXT_ACTION,
                 }
-                session.turn_completed = True
-                session.turn_start_ambiguous = False
+                session.record_turn_completed()
                 session.touch()
-            finally:
-                # 返却形式の回復は、孫完了による自動継続の回数を消費・再初期化しない。
-                session.auto_resume_consumed = auto_resume_consumed
             return
         if session.claude_api_resume_pending:
             await self._resume_claude_wait(
@@ -131,14 +125,14 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         if session.codex_provider_resume_pending:
             pending = session.pending_result
-            finalize_pending_result(session, touch=False)
             try:
                 await self._send_with_resources(session, wrap_delivery_body(codex_providers.CONTINUE_PROMPT))
             except Exception:
+                session.clear_hold()
                 session.status = pending["status"]
                 session.agent_message = pending["agent_message"]
                 session.error = pending["error"]
-                session.turn_completed = True
+                session.record_turn_completed()
                 session.touch()
             return
         if session.overload_resume_at is not None:
@@ -184,8 +178,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
         # 観測不能は終了の証拠にならない。次の監視でも同じ識別子を再解決する。
 
         if not has_pending_auto_resume_targets(session) and (
-            (session.terminal_child_session_ids or session.codex_terminal_subagent_thread_ids)
-            and not session.auto_resume_consumed
+            session.terminal_child_session_ids
+            or session.codex_terminal_subagent_thread_ids
             or session.codex_self_message_observed
             and not session.codex_self_message_repair_consumed
         ):
@@ -207,7 +201,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     else ""
                 ),
             )
-            session.auto_resume_consumed = True
             if repair_message:
                 session.codex_self_message_repair_consumed = True
             pending_result = session.pending_result
@@ -215,14 +208,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
             try:
                 delivery = await self._send_with_resources(session, prompt)
                 if delivery.get("delivery") == "reply_failed":
-                    session.auto_resume_consumed = False
                     if repair_message:
                         session.codex_self_message_repair_consumed = False
                     return
             except Exception as exc:
-                session.awaiting_auto_resume = False
-                session.auto_resume_deadline = None
-                session.pending_result = None
+                session.clear_hold()
                 session.live_child_session_ids.clear()
                 session.status = "failed"
                 session.agent_message = pending_result["agent_message"]
@@ -230,10 +220,10 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     "message": f"{type(exc).__name__}: {exc}",
                     "unobservedSessions": sorted(set(identifiers) | unobserved),
                 }
-                session.turn_completed = True
-                session.turn_start_ambiguous = False
+                session.record_turn_completed()
                 session.touch()
                 return
+            # 配送した完了だけを消費する。別の子の終了と次の実行は新しい観測単位になる。
             session.terminal_child_session_ids.difference_update(identifiers)
             session.codex_terminal_subagent_thread_ids.difference_update(identifiers)
             if self._status_writer is not None:
@@ -253,8 +243,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             if session.interrupt_requested or not session.awaiting_auto_resume or session.pending_result is None:
                 return
             pending = session.pending_result
-            session.claude_api_resume_pending = False
-            session.usage_limit_resume_at = None
             prompt = ResumePrompt(body)
             try:
                 prompt.context = await run_file_operation(
@@ -274,12 +262,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     existing_session=session,
                 )
             except Exception as exc:
-                session.awaiting_auto_resume = False
-                session.pending_result = None
+                session.clear_hold()
                 session.status = pending["status"]
                 session.agent_message = pending["agent_message"]
                 session.error = {"message": f"{type(exc).__name__}: {exc}", "cause": pending["error"]}
-                session.turn_completed = True
+                session.record_turn_completed()
                 session.touch()
             finally:
                 prompt.close()
@@ -303,8 +290,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.status = pending_result["status"]
             session.agent_message = pending_result["agent_message"]
             session.error = {**error, "autoResumeError": f"{type(exc).__name__}: {exc}"} if isinstance(error, dict) else error
-            session.turn_completed = True
-            session.turn_start_ambiguous = False
+            session.record_turn_completed()
             session.touch()
             return
         session.api_error = None
@@ -336,8 +322,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.status = pending_result["status"]
             session.agent_message = pending_result["agent_message"]
             session.error = {**error, "autoResumeError": f"{type(exc).__name__}: {exc}"} if isinstance(error, dict) else error
-            session.turn_completed = True
-            session.turn_start_ambiguous = False
+            session.record_turn_completed()
             session.touch()
             return
         if self._status_writer is not None:
@@ -409,6 +394,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 excluded_candidates=resume_state.excluded_candidates,
                 turn_seq=resume_state.turn_seq,
                 fast_mode=resume_state.fast_mode,
+                request_prompt=resume_state.prompt,
+                result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
                 **provider_args,
             )
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
@@ -523,8 +510,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         if self._pending_resumes.get(session.session_id) is pending:
             self._pending_resumes.pop(session.session_id, None)
         session.status = "interrupted"
-        session.turn_completed = True
-        session.turn_start_ambiguous = False
+        session.record_turn_completed()
         session.interrupt_requested = False
         session.touch()
         await self._notify_waiters()

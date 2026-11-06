@@ -40,6 +40,7 @@ from agent_toolkit._agents_server import (
     shared_roots,
     state,
     status_file,
+    turn_state,
 )
 from agent_toolkit._agents_server import (
     plugin_root as plugin_roots,
@@ -346,8 +347,7 @@ async def test_send_message_reports_thread_writer_conflict(
             else:
                 session_registry.publish(
                     session_id,
-                    terminal=True,
-                    status="completed",
+                    state=session_registry.PublicationState.RESULT_COMPLETED,
                     cwd=str(tmp_path),
                     engine="codex",
                     codex_model_provider=provider,
@@ -539,7 +539,7 @@ async def test_config_changes_apply_to_new_reply_and_restored_turns(
         assert all(params["serviceTier"] == tier for _method, params in client.requests)
         assert session.fast_mode is initial
         session.status = "completed"
-        session.turn_completed = True
+        session.record_turn_completed()
         session.touch()
         set_fast(not initial)
         client.requests.clear()
@@ -784,23 +784,6 @@ async def test_completed_turn_with_live_child_holds_result_for_auto_resume(tmp_p
         await manager.close()
 
 
-@pytest.mark.asyncio
-async def test_completed_turn_after_consumed_auto_resume_publishes_unobserved_child(tmp_path: pathlib.Path) -> None:
-    """そのturnで自動再開を消費済みなら保留せず、残る子sessionを未観測として記録して直ちに公開する。"""
-    session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
-    session.live_child_session_ids.add("child-1")
-    session.auto_resume_consumed = True
-    async with _InspectableAppServerManager({session.session_id: session}) as manager:
-        await manager.handle_notification(_completed_turn(session))
-
-        assert session.result_available is True
-        assert session.status == "completed"
-        assert session.awaiting_auto_resume is False
-        assert session.error == {"unobservedSessions": ["child-1"]}
-        assert session.live_child_session_ids == set()
-        await manager.close()
-
-
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("turn_status", ["completed", "failed", "interrupted"])
@@ -818,8 +801,7 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
         monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
         session = await backend.start("親の作業", str(tmp_path))
         session.terminal_child_session_ids.add("child")
-        session.auto_resume_consumed = True
-        session_registry.publish("child", terminal=False, cwd=str(tmp_path))
+        session_registry.publish("child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path))
         item = {
             "type": "mcpToolCall",
             "id": "reply-child",
@@ -848,10 +830,9 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
             assert shown["status"] == "running" and shown["result_held"]
             assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
             assert not session.result_available
-            session_registry.publish("child", terminal=True, status="completed", cwd=str(tmp_path))
+            session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, cwd=str(tmp_path))
             pending = await manager.wait()
             assert pending["status"] in {"starting", "running"}
-            assert session.auto_resume_consumed
             await backend._handle_notification(_completed_turn(session))
             result = await manager.wait()
             assert result["status"] == "completed"
@@ -2469,15 +2450,16 @@ async def test_codex_connection_failure_preserves_other_engines(tmp_path: pathli
     """共有一覧に他engineと保留中Claudeがあっても、Codex接続の失敗はCodexだけを変更する。"""
     async with subject.AppServerManager() as manager:
         active = state.SessionState("codex-active", str(tmp_path), engine="codex")
-        completed = state.SessionState("codex-done", str(tmp_path), engine="codex", status="completed", turn_completed=True)
+        completed = state.SessionState(
+            "codex-done", str(tmp_path), engine="codex", status="completed", turn_end=turn_state.TurnEnd.COMPLETED
+        )
         others = [
             state.SessionState("claude-active", str(tmp_path), engine="claude", turn_id="claude-turn"),
             state.SessionState(
                 "claude-held",
                 str(tmp_path),
                 engine="claude",
-                awaiting_auto_resume=True,
-                pending_result={"status": "completed", "agent_message": "待機中"},
+                hold=turn_state.BackgroundWait({"status": "completed", "agent_message": "待機中"}, None),
             ),
             state.SessionState("agy-active", str(tmp_path), engine="agy", turn_id="agy-turn"),
         ]
@@ -2741,12 +2723,13 @@ async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
 
 
 @pytest.mark.windows
+@pytest.mark.parametrize("snapshot_has_child", [False, True] if sys.platform == "win32" else [False])
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_stop_reclaims_descendant_started_after_first_listing(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+async def test_stop_reclaims_late_descendant_with_short_lived_parent(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, snapshot_has_child: bool
 ) -> None:
-    """App Serverの終了処理の最初の列挙の後に起動した子孫も終了させ、保持していたファイルを解放する。"""
+    """短命な親から生まれた子を、親の終了と列挙時機によらず回収する。"""
     work = tmp_path / "late"
     work.mkdir()
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
@@ -2758,9 +2741,47 @@ async def test_stop_reclaims_descendant_started_after_first_listing(
         session_id = (await manager.start("plan", "停止試験", str(tmp_path)))["session_id"]
         await _wait_terminal(manager, session_id)
         await asyncio.to_thread(late_descendant.wait_spawner, work)
-        late_descendant.arm(work, monkeypatch.setattr)
-        await asyncio.wait_for(manager.stop(session_id), 60)
-    late_descendant.assert_released(work)
+        if sys.platform == "win32":
+            # 実snapshotへ親子を含めた後、handle保持より先に親を終了させる。
+            # 対照版の列挙だけへ同じsnapshotを渡し、Job版では列挙なしの所属回収を検収する。
+            spawner = psutil.Process(int((work / "spawner.pid").read_text(encoding="utf-8")))
+            (work / "retain-spawner").touch()
+            if snapshot_has_child:
+                await asyncio.to_thread(late_descendant.trigger, work)
+            snapshot = list(psutil.process_iter(["ppid"]))
+            parent = next(process for process in snapshot if process.pid == spawner.pid)
+            parent_created = parent.create_time()
+            # Windowsのvenvランチャーがholderの中間に入る場合も、snapshot上の直接の子を確認する。
+            snapshot_children = [process.pid for process in snapshot if process.info["ppid"] == parent.pid]
+            assert bool(snapshot_children) is snapshot_has_child
+            if not snapshot_has_child:
+                await asyncio.to_thread(late_descendant.trigger, work)
+            holder_pid = int((work / "holder.pid").read_text(encoding="utf-8").split()[0])
+            (work / "exit-spawner").touch()
+            await asyncio.to_thread(spawner.wait, timeout=10)
+            assert not spawner.is_running()
+            process_iter = psutil.process_iter
+            replayed = False
+
+            def snapshot_before_retention(attrs=None, **kwargs):
+                nonlocal replayed
+                if attrs == ["ppid"] and not replayed:
+                    replayed = True
+                    return iter(snapshot)
+                return process_iter(attrs, **kwargs)
+
+            monkeypatch.setattr(psutil, "process_iter", snapshot_before_retention)
+            print(
+                f"retention_boundary: parent={parent.pid} created={parent_created} "
+                f"snapshot_children={snapshot_children} holder={holder_pid} parent_gone=true"
+            )
+        else:
+            late_descendant.arm(work, monkeypatch.setattr)
+        try:
+            await asyncio.wait_for(manager.stop(session_id), 60)
+        finally:
+            # 対照版が失敗した場合も、試験自身のholderを確認後に回収する。
+            await asyncio.to_thread(late_descendant.assert_released, work)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -2782,7 +2803,15 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
             psutil.Process.kill,
         )
         suspends: list[int] = []
+        job_stops: list[bool] = []
         first_stop = True
+        original_job_terminate = subject.windows_job.WindowsJob.terminate
+
+        def terminate_job(job, **kwargs):
+            job_stops.append(first_stop)
+            if first_stop:
+                raise OSError("生成の停止を確認できない: Jobの終了要求を不受理")
+            original_job_terminate(job, **kwargs)
 
         def suspend(process: psutil.Process) -> None:
             suspends.append(process.pid)
@@ -2802,11 +2831,13 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
         monkeypatch.setattr(psutil.Process, "suspend", suspend)
         monkeypatch.setattr(psutil.Process, "terminate", terminate)
         monkeypatch.setattr(psutil.Process, "kill", kill)
+        if sys.platform == "win32":
+            monkeypatch.setattr(subject.windows_job.WindowsJob, "terminate", terminate_job)
         with pytest.raises(ActionableError) as raised:
             await manager.stop(session_id)
         assert "生成の停止を確認できない" in str(raised.value)
         assert session_registry.resolve(session_id).state is not session_registry.Resolution.RELEASED
-        stopped_once = len(suspends)
+        stopped_once = len(job_stops if sys.platform == "win32" else suspends)
         first_stop = False
 
         with caplog.at_level(logging.WARNING, logger="agent_toolkit._common.process_tree"):
@@ -2817,7 +2848,7 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
         assert all("停止操作を再実行しても回収されない" in message for message in retry_warnings)
 
         # 再発行では成功を前提にせず、所有対象から子孫を改めて回収した。
-        assert len(suspends) > stopped_once
+        assert len(job_stops if sys.platform == "win32" else suspends) > stopped_once
         assert not fake.alive(server_pid)
         assert not any(fake.alive(pid) for pid in mcp_pids)
         assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
@@ -2834,6 +2865,12 @@ async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch:
         # 1回目は子孫が終了要求にも強制終了にも応じない状態を作る。
         unkillable = set(mcp_pids)
         original_terminate, original_kill = psutil.Process.terminate, psutil.Process.kill
+        original_job_terminate = subject.windows_job.WindowsJob.terminate
+
+        def terminate_job(job, **kwargs):
+            if unkillable:
+                raise TimeoutError("Jobの終了未確認: " + ", ".join(map(str, sorted(unkillable))))
+            original_job_terminate(job, **kwargs)
 
         def terminate(process: psutil.Process) -> None:
             if process.pid not in unkillable:
@@ -2845,6 +2882,8 @@ async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch:
 
         monkeypatch.setattr(psutil.Process, "terminate", terminate)
         monkeypatch.setattr(psutil.Process, "kill", kill)
+        if sys.platform == "win32":
+            monkeypatch.setattr(subject.windows_job.WindowsJob, "terminate", terminate_job)
         with pytest.raises(ActionableError) as raised:
             await manager.stop(session_id)
         assert session_id in str(raised.value)
