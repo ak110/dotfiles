@@ -1063,14 +1063,19 @@ async def test_local_and_remote_detail_use_same_family_cost(
         remote_hosts=["remote"],
         ssh_runner=runner,
     )
-    local = sessions.read_local_detail(context, "claude", str(parent))
+    local_detail = sessions.read_local_detail(context, "claude", str(parent))
+    assert local_detail["cost"] is None
+    assert local_detail["cost_pending"] is True
+    local = await sessions.session_cost(context, "claude", "local", str(parent))
     remote = await sessions.session_detail(context, "claude", "remote", str(parent))
-    assert remote["cost"] == local["cost"]
-    assert local["cost"]["known_usd"] == pytest.approx(5.0007)
-    assert not local["cost"]["incomplete"]
-    assert local["cost"]["estimated_usd"] == (None if unknown else pytest.approx(5.0007))
-    assert local["cost"]["unknown_responses"] == int(unknown)
-    assert local["cost"]["breakdown"]["claude_subagents"]["known_usd"] == 0
+    assert remote["cost"] == local
+    assert local["known_usd"] == pytest.approx(5.0007)
+    assert not local["incomplete"]
+    assert local["estimated_usd"] == (None if unknown else pytest.approx(5.0007))
+    assert local["unknown_responses"] == int(unknown)
+    assert local["breakdown"]["claude_subagents"]["known_usd"] == 0
+    with pytest.raises(sessions.SessionNotFoundError):
+        await sessions.session_cost(context, "claude", "remote", str(parent))
 
 
 def test_local_and_remote_listing_link_children_from_every_launch_source(
@@ -2016,3 +2021,51 @@ async def test_remote_detail_session_name_follows_local_rules(
     assert codex_detail["session_name"] == "リモートのthread"
     assert unnamed_detail["session_name"] is None
     assert "project" not in codex_detail
+
+
+def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """変更監視が一覧の集合の変化を観測するまで前回の一覧を再利用し、追記した記録の大きさだけを取り直す。
+
+    全件の走査は記録数千件で1秒前後かかり、一覧の要求ごとに走査すると表示が遅れる。
+    監視の取りこぼしに備え、再利用の上限時間を過ぎると全件を走査し直す。
+    """
+    context = _context(tmp_path)
+    record = _claude_record(tmp_path)
+    tracker = sessions.session_watch.RecordChangeTracker(
+        [(tmp_path / "claude" / "projects", "claude"), (tmp_path / "codex" / "sessions", "codex")],
+        lambda _refresh, _records: None,
+        debounce_sec=60.0,
+    )
+    context.state.record_watch = sessions.session_watch.RecordWatch(tracker)
+    scans: list[int] = []
+    original = sessions.session_record_format.claude_session_records
+
+    def counting(claude_home: pathlib.Path) -> typing.Any:
+        scans.append(1)
+        return original(claude_home)
+
+    monkeypatch.setattr(sessions.session_record_format, "claude_session_records", counting)
+    try:
+        first = sessions.list_local_sessions(context)
+        assert [entry.path for entry in first] == [str(record)]
+        assert len(scans) == 1
+
+        with record.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"type": "user", "message": {"content": "続き"}}, ensure_ascii=False) + "\n")
+        tracker.record_changed(record)
+        appended = sessions.list_local_sessions(context)
+        assert len(scans) == 1
+        assert appended[0].size == record.stat().st_size != first[0].size
+        assert appended[0].first_user_message == first[0].first_user_message
+
+        tracker.structure_changed()
+        sessions.list_local_sessions(context)
+        assert len(scans) == 2
+
+        monkeypatch.setattr(sessions, "LOCAL_LIST_REUSE_SEC", 0.0)
+        sessions.list_local_sessions(context)
+        assert len(scans) == 3
+    finally:
+        tracker.stop()

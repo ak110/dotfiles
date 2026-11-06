@@ -3599,6 +3599,53 @@ async def test_uwi_detail_offers_answer_and_other_operations_at_once(browser_har
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_answer_save_records_whole_operation_linked_to_requests(browser_harness: _BrowserHarness) -> None:
+    """回答の保存は、押下から詳細を閉じた後の一覧の再描画までを1件の操作として記録し、操作内の取得と識別子で対応付ける。
+
+    取得単位の記録だけでは、保存後の表示更新までに掛かった時間を追跡できない。
+    """
+    harness = browser_harness
+    page = harness.page
+    harness.operations.enable_file_mutations()
+    await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
+    # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
+    sent: list[dict] = []
+    page.on(
+        "request",
+        lambda request: (
+            sent.extend(json.loads(request.post_data or "{}").get("records", []))
+            if request.url.endswith("/api/timings")
+            else None
+        ),
+    )
+    path = _entry_path(harness.root, "target.md")
+    path.write_text(_POST_APPROVAL_UWI, encoding="utf-8")
+    await page.goto(f"{harness.base_url}/?filename=target.md")
+    detail = page.get_by_role("dialog", name="詳細")
+    await detail.wait_for(state="visible")
+    footer = detail.locator("#detail-footer")
+    await footer.locator("#answer-choices button").first.click()
+    await footer.locator("#save-answer-button").click()
+    await detail.wait_for(state="hidden")
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/timings") and '"mutation:answer"' in (request.post_data or ""),
+        timeout=30000,
+    ):
+        await page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+    records = list(sent)
+    operation = next(record for record in records if record.get("operation") == "mutation:answer")
+    assert (operation["kind"], operation["outcome"], operation["trigger"]) == ("operation", "ok", "click")
+    linked = [
+        record for record in records if record.get("operation_id") == operation["operation_id"] and record is not operation
+    ]
+    routes = {record.get("route") for record in linked}
+    assert {"/api/entries/answer", "/api/entries"} <= routes
+    assert all(isinstance(record.get("request_id"), str) and record["request_id"] for record in linked)
+    saved = next(record for record in linked if record.get("route") == "/api/entries/answer")
+    assert operation["total_ms"] >= saved["fetch_ms"]
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_create_dialog_is_wider_but_narrower_than_detail(browser_harness: _BrowserHarness) -> None:
     """横幅が許す画面では、新規追加ダイアログを従来（42rem）より広く、詳細ダイアログ（72rem）より狭くする。"""
     page = browser_harness.page
@@ -3625,7 +3672,7 @@ async def test_wi_screen_sends_operation_timings_with_request_ids(browser_harnes
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
     await page.goto(browser_harness.base_url + "/")
     # 一覧の記録は描画完了の次のフレームで積まれ、`pagehide`の送信に間に合わない場合は定期送信で届く。
-    # 一覧の記録を含む送信を待ち、どちらの経路で届いても同じ内容を検査する。
+    # 一覧の記録を含む送信を待ち、`pagehide`と定期送信のどちらで届いても同じ内容を検査する。
     async with page.expect_request(
         lambda request: request.url.endswith("/api/timings") and '"/api/entries"' in (request.post_data or ""),
         timeout=30000,

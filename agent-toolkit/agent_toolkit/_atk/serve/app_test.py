@@ -183,6 +183,33 @@ process.stdout.write(JSON.stringify({
     }
 
 
+def test_assets_keep_unsaved_answer_protected_after_switching_mode() -> None:
+    """回答欄を隠す編集モードへ切り替えても、入力途中の回答は保持され、閉じる前に破棄を確認する。"""
+    result = _run_node_ui(
+        """
+const entry = {
+  kind: 'uwi', state: 'inbox', filename: 'question.md', answered: false, answer: '',
+  content: 'question', choices: [], frontmatter_entries: []
+};
+displayEntry(entry);
+openDialog(elements['detail-dialog'], new Element('origin', 'BUTTON'), elements['detail-dialog-body']);
+elements['answer-input'].value = '保持する未保存回答';
+enterEdit();
+const answerHidden = elements['answer-panel'].hidden;
+let confirmations = 0;
+window.confirm = () => { confirmations += 1; return false; };
+closeDetailDialog();
+process.stdout.write(JSON.stringify({
+  answerHidden,
+  confirmations,
+  open: elements['detail-dialog'].open,
+  kept: elements['answer-input'].value
+}));
+"""
+    )
+    assert result == {"answerHidden": True, "confirmations": 1, "open": True, "kept": "保持する未保存回答"}
+
+
 def test_open_detail_dialog_resets_scroll_position() -> None:
     """WI詳細は再表示のたびに本文の先頭から表示する。"""
     result = _run_node_ui(
@@ -2204,6 +2231,15 @@ async def test_timing_api_records_only_allowed_browser_fields(tmp_path: pathlib.
         json={
             "records": [
                 {"screen": "wi", "operation": "GET /api/entries", "fetch_ms": 12.34, "render_ms": 5, "content": "本文"},
+                {
+                    "screen": "wi",
+                    "operation": "save",
+                    "kind": "operation",
+                    "operation_id": "abc123",
+                    "queued_ms": 40,
+                    "total_ms": 812.04,
+                    "query": "検索語",
+                },
                 {"screen": "wi", "fetch_ms": 1},
                 "不正",
             ]
@@ -2213,14 +2249,24 @@ async def test_timing_api_records_only_allowed_browser_fields(tmp_path: pathlib.
 
     assert (response.status_code, invalid.status_code) == (204, 400)
     records = [json.loads(line) for line in timing_log.read_text(encoding="utf-8").splitlines()]
-    assert len(records) == 1
-    assert {key: value for key, value in records[0].items() if key != "at"} == {
-        "source": "browser",
-        "screen": "wi",
-        "operation": "GET /api/entries",
-        "fetch_ms": 12.3,
-        "render_ms": 5.0,
-    }
+    assert [{key: value for key, value in record.items() if key != "at"} for record in records] == [
+        {
+            "source": "browser",
+            "screen": "wi",
+            "operation": "GET /api/entries",
+            "fetch_ms": 12.3,
+            "render_ms": 5.0,
+        },
+        {
+            "source": "browser",
+            "screen": "wi",
+            "operation": "save",
+            "kind": "operation",
+            "operation_id": "abc123",
+            "queued_ms": 40.0,
+            "total_ms": 812.0,
+        },
+    ]
 
 
 def test_timing_log_rotates_to_one_generation(tmp_path: pathlib.Path) -> None:

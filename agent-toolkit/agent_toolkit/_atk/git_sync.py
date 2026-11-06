@@ -207,13 +207,19 @@ class _RepoLock(filelock.FileLock):
             except filelock.Timeout:
                 print(f"共有ロックの取得を待機中: {self._repo_path}", file=sys.stderr, flush=True)
         if result is None:
-            result = super().acquire(
-                timeout,
-                poll_interval,
-                poll_intervall=poll_intervall,
-                blocking=blocking,
-                cancel_check=cancel_check,
-            )
+            try:
+                result = super().acquire(
+                    timeout,
+                    poll_interval,
+                    poll_intervall=poll_intervall,
+                    blocking=blocking,
+                    cancel_check=cancel_check,
+                )
+            except filelock.Timeout:
+                # 取得できずに終わった待ちも、要求の所要のうちロック待ちが占めた区間として記録する。
+                if observer is not None and self._acquired_at is None:
+                    observer.add_lock_wait(time.perf_counter() - wait_started)
+                raise
         _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
         if observer is not None and self._acquired_at is None:
             acquired_at = time.perf_counter()

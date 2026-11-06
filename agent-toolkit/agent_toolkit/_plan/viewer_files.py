@@ -14,7 +14,7 @@ import logging
 import os
 import pathlib
 import typing
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
@@ -171,6 +171,11 @@ def is_listed_path(
     """
     if not is_target_path(path, root, source_id, resolved_root=resolved_root):
         return False
+    return _is_listed_name(path)
+
+
+def _is_listed_name(path: pathlib.Path) -> bool:
+    """`is_target_path`を満たす`path`について、一覧に独立項目として載せる種別かを判定する。"""
     main_exists = False
     if _bundle_kinds.is_review_table_name(path.name):
         main_name = _bundle_kinds.main_name_of(path.name)
@@ -248,12 +253,17 @@ def scan_root(
     scanned: list[dict[str, typing.Any]] = []
     observed: dict[str, float] = {}
     resolved_root = root.resolve()
+    current_only = source_id == LEGACY_SOURCE_ID
     try:
-        for path in root.rglob("*"):
+        for path, is_symlink in _iter_files(root):
             if check_stop is not None:
                 check_stop()
             try:
-                if not path.is_file() or not is_listed_path(path, root, source_id, resolved_root=resolved_root):
+                if is_symlink:
+                    # リンク先が`root`外やドット配下を指す場合を除くため、解決してから判定する。
+                    if not path.is_file() or not is_listed_path(path, root, source_id, resolved_root=resolved_root):
+                        continue
+                elif not _bundle_kinds.is_viewable_name(path.name, current_only=current_only) or not _is_listed_name(path):
                     continue
                 st = path.stat()
             except OSError as error:
@@ -273,6 +283,37 @@ def scan_root(
         migrate_legacy=migrates_legacy_ctime(source_id, migrate_legacy_ctime),
     )
     return [{**item, "ctime_epoch": resolved[item["path"]]} for item in scanned], warning
+
+
+def _iter_files(root: pathlib.Path) -> Iterator[tuple[pathlib.Path, bool]]:
+    """`root`配下のファイルを、シンボリックリンクかどうかとともに返す。
+
+    ドットで始まるディレクトリ・ファイルは`is_target_path`が対象外とするため降りない。
+    ディレクトリへのシンボリックリンクは、引数を指定しない`Path.rglob`と同じくたどらない。
+    リンクでないファイルはリンクでないディレクトリだけを経て到達するため、解決後の`root`からの相対パスが
+    元の相対パスと一致し、ファイルごとの`resolve`を省ける。数千件のrootでは`resolve`と相対化が走査時間の大半を占める。
+    """
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        try:
+            iterator = os.scandir(directory)
+        except OSError:
+            # `root`自身を読めない失敗は呼出し側の警告へ渡す。
+            # 配下の読めないディレクトリは`Path.rglob`と同じく走査から除き、結果に含めない。
+            if directory == root:
+                raise
+            continue
+        with iterator as entries:
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(pathlib.Path(entry.path))
+                elif entry.is_symlink():
+                    yield pathlib.Path(entry.path), True
+                elif entry.is_file(follow_symlinks=False):
+                    yield pathlib.Path(entry.path), False
 
 
 def search_root(

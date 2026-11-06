@@ -540,7 +540,7 @@ atk config set serve_sessions_remote_hosts '["remote-host"]'
 ```
 
 各操作の所要は`atk config get state_dir`が示すディレクトリの`serve/timings.jsonl`へ常に記録される（1MiBごとに1世代を残して回す）。
-画面の操作が遅い場合は、`total_ms`の大きい行と同じ`request_id`の行を比べると、実行枠やロックの待機と処理のどこで時間を使ったかが分かる。
+画面の操作が遅い場合は、`"kind": "operation"`で`total_ms`の大きい行を探し、同じ`operation_id`の取得の行と、その`request_id`のサーバーの行を比べると、画面の描画、実行枠やロックの待機、処理のどこで時間を使ったかが分かる。
 
 リモートホストの自動更新と費用表示には、リモートホスト側のdotfilesの更新が必要である。
 画面の詳細な振る舞いは[design-serve.md](../development/design-serve.md)を参照。

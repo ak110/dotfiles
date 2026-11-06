@@ -1,7 +1,7 @@
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -295,10 +295,10 @@ function setupSentinelObserver() {
   sentinelObserver.observe(sentinel);
 }
 
-async function refreshFiles() {
+async function refreshFiles(timing = {}) {
   const errorBox = document.getElementById("plans-list-error");
   try {
-    const res = await timedFetch("plans", BASE_PATH + "/api/plans/files");
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/files", {}, timing);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     files = await res.json();
     errorBox.hidden = true;
@@ -310,7 +310,7 @@ async function refreshFiles() {
     const retry = document.createElement("button");
     retry.type = "button";
     retry.textContent = "再読み込み";
-    retry.addEventListener("click", refreshFiles);
+    retry.addEventListener("click", () => { void refreshFiles(); });
     errorBox.append(message, retry);
     errorBox.hidden = false;
   }
@@ -578,14 +578,16 @@ function showMissingSelection() {
   void refreshFiles();
 }
 
-async function updatePreview() {
+async function updatePreview(timing = {}) {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("#screen-plans main");
   const scrollTop = main ? main.scrollTop : 0;
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
   try {
-    const res = await timedFetch("plans", BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    const res = await timedFetch(
+      "plans", BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource), {}, timing
+    );
     if (generation !== previewGeneration) return;
     if (!res.ok) {
       showPreviewError(`HTTP ${res.status}`, () => { void updatePreview(); });
@@ -627,9 +629,15 @@ async function openFile(host, path, source, closeDrawer = true) {
   const main = document.querySelector("#screen-plans main");
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
+  // 所要は選択からプレビューの表示（Mermaidなどの非同期の図の描画を含む）までを1件の操作として残す。
+  const operation = beginOperation("plans", "open-file", {trigger: "click"});
+  let outcome = "ok";
   try {
-    const res = await timedFetch("plans", BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
-    if (generation !== previewGeneration) return;
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource), {}, operation.timing);
+    if (generation !== previewGeneration) {
+      outcome = "superseded";
+      return;
+    }
     if (res.status === 404) {
       showMissingSelection();
       if (main) main.scrollTop = 0;
@@ -641,21 +649,35 @@ async function openFile(host, path, source, closeDrawer = true) {
       return;
     }
     const html = await (res.text());
-    if (generation !== previewGeneration) return;
+    if (generation !== previewGeneration) {
+      outcome = "superseded";
+      return;
+    }
     await (applyPreviewHtml(html, 0, generation));
+    if (generation !== previewGeneration) outcome = "superseded";
   } catch (error) {
+    outcome = "error";
     if (generation === previewGeneration) showPreviewError(error.message, () => { void openFile(host, path, source); });
   } finally {
     endPreviewLoading(generation);
+    operation.end(outcome);
   }
 }
 
-async function resyncFromServer() {
-  await (refreshFiles());
-  if (!selectedPath || !selectedHost) return;
-  // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
-  // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
-  if (files.some(isSelectedFile)) await (updatePreview());
+// 所要は契機（変更通知・再接続・表示復帰）の受信から、一覧とプレビューの再描画までを1件の操作として残す。
+async function resyncFromServer({trigger = "resync", event = null, receivedAt} = {}) {
+  const operation = beginOperation("plans", "external-reload", {
+    startedAt: receivedAt, trigger, ...(event ? {notify_delay_ms: notifyDelayMs(event)} : {}),
+  });
+  try {
+    await (refreshFiles(operation.timing));
+    if (!selectedPath || !selectedHost) return;
+    // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
+    // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
+    if (files.some(isSelectedFile)) await (updatePreview(operation.timing));
+  } finally {
+    operation.end();
+  }
 }
 
 async function copySelectedRaw() {
@@ -760,7 +782,10 @@ function subscribeEvents() {
   // 初回・自動再接続・無通信後の再接続のいずれでも確立時にホスト状態とファイル一覧を強制再同期する。
   connectEvents("/api/plans/events", {
     open: forceResync,
-    message: (event) => { void handleSseMessage(event, SSE_MESSAGE_HANDLERS, resyncFromServer); },
+    message: (event) => {
+      const receivedAt = performance.now();
+      void handleSseMessage(event, SSE_MESSAGE_HANDLERS, () => resyncFromServer({trigger: "sse", event, receivedAt}));
+    },
   });
 }
 

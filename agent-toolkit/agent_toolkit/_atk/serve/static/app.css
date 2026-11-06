@@ -845,6 +845,11 @@ main > .toolbar {
   gap: var(--space-2);
   align-items: flex-end;
 }
+/* 入力欄が幅を取っても保存ボタンのラベルを語の途中で折り返さない。 */
+#screen-wi #save-answer-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 #screen-wi #answer-input {
   flex: 1 1 auto;
   min-width: 0;

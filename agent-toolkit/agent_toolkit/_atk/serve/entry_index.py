@@ -21,6 +21,7 @@ import dataclasses
 import datetime
 import os
 import pathlib
+import stat
 import threading
 import time
 import typing
@@ -149,7 +150,7 @@ class EntryIndex:
         refreshed: dict[pathlib.Path, IndexedEntry] = {}
         warnings = [warning for warning in reusable[2] if warning["filename"] not in names]
         scan_started_ns = time.time_ns()
-        real_directories: dict[pathlib.Path, str] = {}
+        real_directories: dict[str, str] = {}
         still_pending: set[pathlib.Path] = set()
         for path in sorted(pending):
             indexed = self._index_path(path, self._cache, real_directories, scan_started_ns, warnings)
@@ -175,7 +176,7 @@ class EntryIndex:
         warnings: list[dict[str, str]] = []
         # ファイルのstatより前に取得し、解析結果の信用判定を保守的にする。
         scan_started_ns = time.time_ns()
-        real_directories: dict[pathlib.Path, str] = {}
+        real_directories: dict[str, str] = {}
         previous_cache = self._cache
         next_cache: dict[str, _CacheEntry] = {}
         pending: set[pathlib.Path] = set()
@@ -199,20 +200,23 @@ class EntryIndex:
         self,
         path: pathlib.Path,
         previous_cache: dict[str, _CacheEntry],
-        real_directories: dict[pathlib.Path, str],
+        real_directories: dict[str, str],
         scan_started_ns: int,
         warnings: list[dict[str, str]],
     ) -> tuple[str, _CacheEntry, IndexedEntry | None] | None:
         """1件の解析結果を返す。読めないファイルは警告へ加えて`None`、状態が不正な項目は項目を`None`にする。"""
         state = "unknown"
         try:
-            file_stat = path.stat()
-            if path.is_symlink():
+            # 数千件の走査で1件ごとの`Path`の生成とシステムコールを減らすため、リンクでなければ`lstat`の結果を使う。
+            file_stat = os.lstat(path)
+            if stat.S_ISLNK(file_stat.st_mode):
+                file_stat = path.stat()
                 real_path = str(path.resolve())
             else:
-                if path.parent not in real_directories:
-                    real_directories[path.parent] = str(path.parent.resolve())
-                real_path = os.path.join(real_directories[path.parent], path.name)
+                directory, name = os.path.split(os.fspath(path))
+                if directory not in real_directories:
+                    real_directories[directory] = os.path.realpath(directory)
+                real_path = os.path.join(real_directories[directory], name)
         except FileNotFoundError:
             return None
         except OSError:

@@ -1,6 +1,7 @@
 """WIの年月固定配置を読む共通のパス境界。"""
 
 import datetime
+import os
 import pathlib
 import re
 from collections.abc import Iterator
@@ -36,13 +37,16 @@ def entry_path(private_notes: pathlib.Path, filename: str, *, fallback_date: dat
 def iter_entry_paths(private_notes: pathlib.Path, *, legacy_states: tuple[str, ...] = ()) -> Iterator[pathlib.Path]:
     """年月配置と、指定された移行前の状態配置の項目を列挙する。"""
     names: set[str] = set()
-    for path in sorted(private_notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")):
-        name = path.name
+    # `Path`同士の比較と`parent`の生成は1件ごとにオブジェクトの生成と正規化を伴い、数千件の列挙で所要の大半を占める。
+    # 並びと年月の判定は文字列で行う。比較キーは`Path`の比較と同じく`os.path.normcase`を通す。
+    for path in sorted(
+        private_notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"), key=lambda path: os.path.normcase(os.fspath(path))
+    ):
         # globの形から保存先はprivate_notes直下の年・月の2階層に限られるため、年月の一致はディレクトリ名だけで判定する。
-        # `Path`同士の比較は1件ごとに正規化を伴い、数千件の列挙で所要の大半を占める。
-        month_dir = path.parent
+        month_dir, name = os.path.split(os.fspath(path))
+        year_dir, month = os.path.split(month_dir)
         if name in names or (
-            DATED_NAME.fullmatch(name) is not None and (month_dir.name != name[4:6] or month_dir.parent.name != name[:4])
+            DATED_NAME.fullmatch(name) is not None and (month != name[4:6] or os.path.basename(year_dir) != name[:4])
         ):
             raise ActionableError(
                 f"WIの固定配置が重複しているか、ファイル名の年月と一致しない: {path}",

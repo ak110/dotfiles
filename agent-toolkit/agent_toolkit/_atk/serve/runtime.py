@@ -174,7 +174,11 @@ class ServeRuntime:
         try:
             await self.read_workers.run(self.operations.warm_index, self.state.stop_requested)
         except Exception as error:  # pylint: disable=broad-exception-caught
-            logger.warning("WI一覧の索引の先行読込に失敗しました: %s", error)
+            logger.warning(
+                "WI一覧の索引の先行読込に失敗しました。最初の一覧表示で走査をやり直します"
+                "（一覧も失敗する場合はこの原因を解消してください）: %s",
+                error,
+            )
             return
         _timings.record_event(self.timing_log, "index-warmup", total_ms=round((time.perf_counter() - started) * 1000, 1))
 

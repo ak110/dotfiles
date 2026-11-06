@@ -1,10 +1,13 @@
 """セッション記録の一覧判定と変更監視のテスト。"""
 
 import json
+import os
 import pathlib
 import threading
 import time
 import typing
+
+import pytest
 
 from agent_toolkit._atk.serve import session_watch
 
@@ -392,3 +395,88 @@ def test_record_watch_keeps_shared_ancestor_while_another_root_is_missing(tmp_pa
         assert collector.wait(lambda: ("codex", str(path)) in collector.records)
     finally:
         watch.stop()
+
+
+def test_summary_index_reuses_saved_results_after_restart(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """保存した解析結果を次の起動で読み込み、変更の無い記録を読み直さず、停止中に変わった記録だけ読み直す。
+
+    記録は数千件・数十GBに及び、起動のたびに全件を読み直すと最初の一覧表示に数分かかる。
+    """
+    monkeypatch.setattr(session_watch.RecordSummaryIndex, "_SAVE_INTERVAL_SEC", 0.0)
+    cache = tmp_path / "state" / "session-summaries.json"
+    stable = _write(tmp_path / "stable.jsonl", [{"type": "user", "cwd": "/a", "message": {"content": "最初"}}])
+    changed = _write(tmp_path / "changed.jsonl", [{"type": "user", "cwd": "/b", "message": {"content": "前"}}])
+    old_ns = time.time_ns() - 10_000_000_000
+    for path in (stable, changed):
+        os.utime(path, ns=(old_ns, old_ns))
+    first = session_watch.RecordSummaryIndex(cache_path=cache)
+    first.begin_scan()
+    for path in (stable, changed):
+        first.summary(path, "claude")
+    first.finish_scan()
+    first.display_messages([(stable, "claude"), (changed, "claude")])
+    first.begin_scan()
+    for path in (stable, changed):
+        first.summary(path, "claude")
+    first.finish_scan()
+    assert cache.is_file()
+
+    _write(changed, [{"type": "user", "cwd": "/c", "message": {"content": "後"}}])
+    os.utime(changed, ns=(old_ns + 5_000_000_000, old_ns + 5_000_000_000))
+    scanned: list[pathlib.Path] = []
+    original = session_watch.scan_record
+
+    def recording(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> session_watch.RecordScan:
+        scanned.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(session_watch, "scan_record", recording)
+    second = session_watch.RecordSummaryIndex(cache_path=cache)
+    second.begin_scan()
+    stable_fields, _ = second.summary(stable, "claude")
+    changed_fields, _ = second.summary(changed, "claude")
+
+    assert scanned == [changed]
+    assert stable_fields[0] == "/a"
+    assert changed_fields[0] == "/c"
+    assert second.display_messages([(stable, "claude")])[str(stable)] == "最初"
+
+
+def test_summary_index_ignores_broken_cache(tmp_path: pathlib.Path) -> None:
+    """壊れた保存内容は無視して空の索引から始め、記録を読み直す。"""
+    cache = tmp_path / "session-summaries.json"
+    cache.write_text("{壊れた", encoding="utf-8")
+    record = _write(tmp_path / "r.jsonl", [{"type": "user", "cwd": "/a", "message": {"content": "x"}}])
+    index = session_watch.RecordSummaryIndex(cache_path=cache)
+    index.begin_scan()
+    fields, _ = index.summary(record, "claude")
+    assert fields[0] == "/a"
+
+
+def test_list_changes_separate_appends_from_changes_to_the_listed_set(tmp_path: pathlib.Path) -> None:
+    """一覧に載る記録への追記はパスだけを渡し、一覧の集合を変え得る変更は一覧の取得し直しとして渡す。
+
+    変更は通知の遅延を待たずに記録し、取り出すと消える。
+    """
+    tracker = _tracker(tmp_path, _Collector())
+    listed = _write(tmp_path / "claude" / "projects" / "p" / "l.jsonl", [{"type": "user", "message": {"content": "a"}}])
+    excluded = _write(tmp_path / "claude" / "projects" / "p" / "e.jsonl", [{"type": "mode"}])
+    tracker.prime(str(listed), True)
+    tracker.prime(str(excluded), False)
+    assert tracker.take_list_changes() == (True, frozenset())
+    assert tracker.take_list_changes() == (False, frozenset())
+
+    tracker.record_changed(listed)
+    tracker.record_changed(excluded)
+    assert tracker.take_list_changes() == (False, frozenset({str(listed)}))
+
+    _write(excluded, [{"type": "user", "message": {"content": "b"}}], append=True)
+    tracker.record_changed(excluded)
+    assert tracker.take_list_changes()[0]
+
+    tracker.record_removed(listed)
+    assert tracker.take_list_changes()[0]
+
+    tracker.structure_changed()
+    assert tracker.take_list_changes()[0]
+    tracker.stop()

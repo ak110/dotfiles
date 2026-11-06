@@ -1,7 +1,7 @@
 // ワークアイテム画面。キューの一覧・詳細・登録・編集・状態遷移を扱う。
 import {
   BASE_PATH, SERVE_HOST, WI_ROOT, diagnostic, connectEvents, renderList, renderWarnings, resyncWhenVisible,
-  timedFetch, recordTiming, notifyDelayMs
+  timedFetch, beginOperation, notifyDelayMs
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -694,7 +694,7 @@ function applyPagination(payload) {
   };
 }
 
-async function loadEntries({announce = false, showLoading = true} = {}) {
+async function loadEntries({announce = false, showLoading = true, timing = {}} = {}) {
   pendingListAnnouncement = pendingListAnnouncement || announce;
   const query = buildQuery(currentPage);
   const generation = ++listRequestGeneration;
@@ -702,7 +702,7 @@ async function loadEntries({announce = false, showLoading = true} = {}) {
   beginListRequest(loadingView, showLoading);
   const pending = (async () => {
     try {
-      const payload = await api(`/api/entries?${query.toString()}`);
+      const payload = await api(`/api/entries?${query.toString()}`, {timing});
       if (generation !== listRequestGeneration) return entries;
       entries = Array.isArray(payload.entries) ? payload.entries : [];
       applyPagination(payload);
@@ -734,13 +734,13 @@ function syncNotificationButton() {
 // 新しく登録されたユーザー対応の項目（未回答UWIと要確認AWI）だけを通知する。
 // 既知集合はファイル名で持ち、初回取得では通知せずに基準だけを作る。
 // 既知の項目の回答・確認状態・対象repoの変化と、削除後の同名の再登録は通知しない。
-async function refreshKnownEntries({notify = false} = {}) {
+async function refreshKnownEntries({notify = false, timing = {}} = {}) {
   const generation = ++knownEntryRequestGeneration;
   let payload;
   try {
     // 通知の対象は新規の処理待ち項目だけのため、未終了の項目に限って取得する。全状態の一覧は数MBに及び、
     // 変更通知のたびに取得すると参照の実行枠を占めて画面の操作を待たせる。
-    payload = await (api('/api/entries?type=all&status=active&answered=all'));
+    payload = await (api('/api/entries?type=all&status=active&answered=all', {timing}));
   } catch (error) {
     if (generation !== knownEntryRequestGeneration) return;
     throw error;
@@ -788,12 +788,12 @@ function replaceOptions(select, values, firstLabel) {
   select.value = values.includes(selected) ? selected : '';
 }
 
-async function loadTargetRepos() {
+async function loadTargetRepos({timing = {}} = {}) {
   const generation = ++targetRepoRequestGeneration;
   const requestedState = byId('state-filter').value;
   try {
     const status = encodeURIComponent(requestedState);
-    const payload = await (api(`/api/repos?status=${status}`));
+    const payload = await (api(`/api/repos?status=${status}`, {timing}));
     if (generation !== targetRepoRequestGeneration ||
         byId('state-filter').value !== requestedState) return false;
     const repos = Array.isArray(payload.repos) ? payload.repos : [];
@@ -813,7 +813,7 @@ async function loadTargetRepos() {
   }
 }
 
-async function clearFilters() {
+async function clearFilters({timing = {}} = {}) {
   cancelSearchTimer();
   const operation = beginUserListOperation();
   byId('search-input').value = '';
@@ -828,9 +828,9 @@ async function clearFilters() {
   currentPage = 1;
   pagination.page = 1;
   try {
-    await (loadTargetRepos());
+    await (loadTargetRepos({timing}));
     if (!isCurrentUserListOperation(operation)) return;
-    await (loadEntries({announce: true}));
+    await (loadEntries({announce: true, timing}));
   } finally {
     endUserListOperation(operation);
   }
@@ -1148,7 +1148,7 @@ function deferDetailReloadWhileMutating() {
   return true;
 }
 
-async function reloadOpenDetailFromExternalChange() {
+async function reloadOpenDetailFromExternalChange({timing = {}} = {}) {
   if (!byId('detail-dialog').open || !currentEntry) return;
   if (detailOriginKey !== entryKey(currentEntry)) return;
   if (deferDetailReloadWhileMutating()) return;
@@ -1166,7 +1166,7 @@ async function reloadOpenDetailFromExternalChange() {
   }
   let resolvedEntry = null;
   try {
-    const payload = await api(`/api/entries/${encodeURIComponent(filename)}`);
+    const payload = await api(`/api/entries/${encodeURIComponent(filename)}`, {timing});
     if (!requestIsCurrent()) return;
     resolvedEntry = payload.entry;
   } catch (error) {
@@ -1229,8 +1229,10 @@ function enterEdit() {
   byId('edit-content').focus();
 }
 
+// 編集・コメント・採否のモードでは回答欄を隠すが、入力途中の回答は保持しているため、表示状態ではなく回答できる項目かで判定する。
 function answerInputChanged() {
-  return !byId('answer-panel').hidden && byId('answer-input').value !== (currentEntry?.answer || '');
+  const answerable = currentEntry?.kind === 'uwi' && MUTABLE_STATES.has(currentEntry.state);
+  return answerable && byId('answer-input').value !== (currentEntry.answer || '');
 }
 
 
@@ -1277,24 +1279,28 @@ function mutationFailureMessage(key, failure, error) {
 }
 
 // 操作の対象と開いている詳細の同一性は、操作で変わり得る状態を除き、詳細を開いた単位とファイル名で判定する。
-function finishDetailMutation(key, filename, sessionGeneration, message) {
+// 成功の表示と一覧の再取得を行い、一覧の再描画を終えるPromiseを返す（操作の所要の終点に使う）。
+function finishDetailMutation(key, filename, sessionGeneration, message, timing = {}) {
   const sameDetail = byId('detail-dialog').open && currentEntry?.filename === filename &&
     sessionGeneration === detailSessionGeneration;
   if (sameDetail) closeDetailDialog({force: true});
-  void loadEntries({showLoading: false}).then(() => {
+  const reloaded = loadEntries({showLoading: false, timing}).then(() => {
     if (!sameDetail || document.activeElement !== document.body) return;
     (entryButtonForKey(key) || document.querySelector('.entry-select') ||
       (!byId('empty-clear-button').hidden && byId('empty-clear-button')) || byId('search-input')).focus();
   });
   if (sameDetail) deliverOperationMessage(message);
   else showToast(message);
+  return reloaded;
 }
 
 // 詳細ダイアログからの全変更操作を実行する共通の処理。送信中は詳細の再読込を保留し、成功時は保留を破棄して
 // 詳細を閉じ成功を通知する。失敗時は保留した再読込を実行してから例外を呼び出し元へ返し、
 // 呼び出し元が表示する失敗の文を再読込の警告で上書きしない。
+// 所要はボタン操作から結果の表示（詳細を閉じた後の一覧の再描画、失敗の表示）までを1件の操作として残す。
 async function runDetailMutation(pendingKey, pendingOptions, request, successMessage) {
   if (pendingOperations.has(pendingKey)) return;
+  const operation = beginOperation('wi', `mutation:${pendingKey}`, {trigger: 'click'});
   const key = entryKey(currentEntry);
   const filename = currentEntry.filename;
   const sessionGeneration = detailSessionGeneration;
@@ -1302,7 +1308,7 @@ async function runDetailMutation(pendingKey, pendingOptions, request, successMes
   detailReloadDeferred = false;
   let result;
   try {
-    result = await (runPending(pendingKey, pendingOptions, request));
+    result = await (runPending(pendingKey, pendingOptions, () => request(operation.timing)));
   } catch (error) {
     detailMutationPending = false;
     if (error.payload?.code === 'sync_incomplete' &&
@@ -1311,29 +1317,33 @@ async function runDetailMutation(pendingKey, pendingOptions, request, successMes
       detailReloadDeferred = false;
       if (pendingKey === 'delete') {
         closeDetailDialog({force: true});
-        await loadEntries({showLoading: false});
+        await loadEntries({showLoading: false, timing: operation.timing});
         deliverOperationMessage(message, true);
       } else {
         syncIncompleteNotice = {sessionGeneration, filename, message};
         // 応答はローカル保存済みを保証する。保存した値を表示へ切り替え、後続の編集では通常の入力保持へ戻す。
         setDetailMode('view');
-        await reloadOpenDetailFromExternalChange();
-        await loadEntries({showLoading: false});
+        await reloadOpenDetailFromExternalChange({timing: operation.timing});
+        await loadEntries({showLoading: false, timing: operation.timing});
         deliverOperationMessage(message, true);
       }
+      operation.end('sync-incomplete');
       return;
     }
     if (detailReloadDeferred) {
       detailReloadDeferred = false;
-      await (reloadOpenDetailFromExternalChange());
+      await (reloadOpenDetailFromExternalChange({timing: operation.timing}));
     }
+    // 失敗の文は呼出し元が例外を受けて同期的に表示するため、その描画後の時刻で記録される。
+    operation.end('error');
     throw error;
   } finally {
     detailMutationPending = false;
   }
   detailReloadDeferred = false;
   const message = typeof successMessage === 'function' ? successMessage(result) : successMessage;
-  finishDetailMutation(key, filename, sessionGeneration, message);
+  void finishDetailMutation(key, filename, sessionGeneration, message, operation.timing)
+    .finally(() => operation.end('ok'));
 }
 
 async function saveEntry() {
@@ -1348,7 +1358,7 @@ async function saveEntry() {
   try {
     await (runDetailMutation('save', {
       container: byId('detail-shell'), button: byId('save-entry-button'), busyLabel: '保存中'
-    }, () => api(path, {method: 'PUT', body: JSON.stringify(payload)}), `${key}を保存しました。`));
+    }, timing => api(path, {method: 'PUT', body: JSON.stringify(payload), timing}), `${key}を保存しました。`));
   } catch (error) {
     const failure = `${key}を保存できませんでした。 ${error.message}`;
     deliverOperationMessage(mutationFailureMessage(key, failure, error), true);
@@ -1366,7 +1376,7 @@ async function toggleImportant() {
   try {
     await runDetailMutation('important', {
       container: byId('detail-shell'), button: byId('important-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/important', {method: 'POST', body: JSON.stringify(payload)}), `${key}を${label}しました。`);
+    }, timing => api('/api/entries/important', {method: 'POST', body: JSON.stringify(payload), timing}), `${key}を${label}しました。`);
   } catch (error) {
     deliverOperationMessage(mutationFailureMessage(key, `${key}を${label}できませんでした。 ${error.message}`, error), true);
   }
@@ -1389,7 +1399,7 @@ async function saveAnswer() {
   try {
     await (runDetailMutation('answer', {
       container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload)}), result =>
+    }, timing => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload), timing}), result =>
       result.state === 'adopted' ? `${key}の回答を保存し、採用済み（adopted）へ移しました。` : `${key}へ回答しました。`));
   } catch (error) {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
@@ -1423,7 +1433,7 @@ async function saveUserComment() {
   try {
     await (runDetailMutation('user-comment', {
       container: byId('detail-shell'), button: byId('save-user-comment-button'), busyLabel: '保存中'
-    }, () => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload)}), savedMessage));
+    }, timing => api('/api/entries/user-comment', {method: 'POST', body: JSON.stringify(payload), timing}), savedMessage));
   } catch (error) {
     if (error.payload?.code === 'edit_conflict' &&
         await (reloadUserCommentAfterConflict(key, sessionGeneration))) return;
@@ -1454,7 +1464,7 @@ async function transitionDetail(action) {
       container: byId('detail-shell'),
       button: byId(action === 'adopt' || action === 'reject' ? `confirm-${action}-button` : `${action}-button`),
       busyLabel: '処理中'
-    }, () => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload)}), `${key}を${completedAction}。`));
+    }, timing => api(`/api/entries/${action}`, {method: 'POST', body: JSON.stringify(payload), timing}), `${key}を${completedAction}。`));
   } catch (error) {
     deliverOperationMessage(`${key}を処理できませんでした。 ${error.message}`, true);
   }
@@ -1566,21 +1576,30 @@ async function createEntry(event) {
     }
   }
   clearDialogMessages('create');
+  // 所要は追加ボタンから、ダイアログを閉じた後の一覧の再描画と結果の表示までを1件の操作として残す。
+  const operation = beginOperation('wi', 'mutation:create', {trigger: 'click'});
+  let outcome = 'ok';
   try {
     const result = await (runPending('create', {
       container: byId('create-form'), button: byId('create-submit-button'), busyLabel: '追加中'
-    }, () => api(isBatch ? '/api/entries/batch' : '/api/entries', {method: 'POST', body: JSON.stringify(payload)})));
+    }, () => api(isBatch ? '/api/entries/batch' : '/api/entries', {
+      method: 'POST', body: JSON.stringify(payload), timing: operation.timing
+    })));
     closeDialog(byId('create-dialog'));
-    await (clearFilters());
+    await (clearFilters({timing: operation.timing}));
     deliverOperationMessage(createResultMessage(isBatch, result));
   } catch (error) {
     if (error.payload?.code === 'sync_incomplete') {
-      await clearFilters();
+      outcome = 'sync-incomplete';
+      await clearFilters({timing: operation.timing});
       deliverOperationMessage(error.message, true);
       return;
     }
+    outcome = 'error';
     deliverOperationMessage(`項目を追加できませんでした。 ${error.message}`, true);
     if (byId('create-dialog').open) byId('create-content').focus();
+  } finally {
+    operation.end(outcome);
   }
 }
 
@@ -1619,7 +1638,7 @@ async function deleteEntry(event) {
   try {
     await (runDetailMutation('delete', {
       container: byId('delete-form'), button: byId('delete-submit-button'), busyLabel: '削除中'
-    }, () => api('/api/entries/remove', {method: 'POST', body: JSON.stringify(payload)}), `${key}を削除しました。`));
+    }, timing => api('/api/entries/remove', {method: 'POST', body: JSON.stringify(payload), timing}), `${key}を削除しました。`));
   } catch (error) {
     const failure = `${key}を削除できませんでした。 ${error.message}`;
     if (error.payload?.code === 'edit_conflict' && byId('detail-dialog').open) {
@@ -1639,24 +1658,30 @@ async function synchronizeAndLoad() {
   const payload = {};
   cancelSearchTimer();
   const operation = beginUserListOperation();
+  // 所要は「今すぐ同期」の押下から、同期後の一覧の再描画までを1件の操作として残す。
+  const measured = beginOperation('wi', 'sync', {trigger: 'click'});
+  const timing = measured.timing;
+  let syncFailed = false;
   try {
     await (runPending('sync', {
       container: document.querySelector('.app-header'), button: byId('refresh-button'), busyLabel: '同期中'
     }, async () => {
       let syncFailure = null;
       try {
-        await api('/api/sync', {method: 'POST', body: JSON.stringify(payload)});
+        await api('/api/sync', {method: 'POST', body: JSON.stringify(payload), timing});
       } catch (error) {
         syncFailure = error;
+        syncFailed = true;
       }
-      await loadTargetRepos();
+      await loadTargetRepos({timing});
       if (!isCurrentUserListOperation(operation)) return;
-      await loadEntries({announce: true});
+      await loadEntries({announce: true, timing});
       if (!isCurrentUserListOperation(operation)) return;
       if (syncFailure) setGlobalError(`Git同期に失敗しました。ローカル内容を表示中です。 ${syncFailure.message}`);
     }));
   } finally {
     endUserListOperation(operation);
+    measured.end(syncFailed ? 'error' : 'ok');
   }
 }
 
@@ -1682,26 +1707,30 @@ let externalReloadQueued = null;
 
 // 変更通知・再接続・表示復帰による再読込を1件ずつ実行し、実行中に届いた要求は1回にまとめて後で実行する。
 // 通知が続く間に同じ再取得を重ねて参照の実行枠を占め、ユーザーの操作を待たせないためである。
+// 所要は契機の受信から再読込の表示完了までを1件の操作として残し、まとめた要求は最初の受信時刻から測る。
 function reloadFromExternalChange(trigger = 'resync', event = null) {
-  const request = {trigger, notify_delay_ms: event ? notifyDelayMs(event) : undefined};
+  const request = {trigger, notify_delay_ms: event ? notifyDelayMs(event) : undefined, receivedAt: performance.now()};
   if (externalReloadRunning) {
-    externalReloadQueued = request;
+    if (externalReloadQueued) externalReloadQueued.trigger = request.trigger;
+    else externalReloadQueued = request;
     return externalReloadRunning;
   }
   externalReloadRunning = (async () => {
     let next = request;
     while (next) {
       externalReloadQueued = null;
-      const started = performance.now();
+      const operation = beginOperation('wi', 'external-reload', {
+        startedAt: next.receivedAt, trigger: next.trigger,
+        ...(Number.isFinite(next.notify_delay_ms) ? {notify_delay_ms: next.notify_delay_ms} : {})
+      });
+      let outcome = 'ok';
       try {
-        await reloadFromExternalChangeOnce();
+        await reloadFromExternalChangeOnce(operation.timing);
+      } catch (error) {
+        outcome = 'error';
+        throw error;
       } finally {
-        // 個々の取得は要求IDごとに記録され、ここでは契機から再読込の完了までを1件で残す。
-        recordTiming({
-          screen: 'wi', operation: 'external-reload', trigger: next.trigger,
-          ...(Number.isFinite(next.notify_delay_ms) ? {notify_delay_ms: next.notify_delay_ms} : {}),
-          total_ms: performance.now() - started
-        });
+        operation.end(outcome);
       }
       next = externalReloadQueued;
     }
@@ -1711,21 +1740,22 @@ function reloadFromExternalChange(trigger = 'resync', event = null) {
   return externalReloadRunning;
 }
 
-async function reloadFromExternalChangeOnce() {
-  void refreshKnownEntries({notify: true}).catch((error) => {
+async function reloadFromExternalChangeOnce(timing = {}) {
+  // 通知用の既知集合の更新は表示に関わらないため待たず、取得の記録だけを同じ操作へ対応付ける。
+  void refreshKnownEntries({notify: true, timing}).catch((error) => {
     setGlobalError(error.message);
   });
   if (userListOperationPending) {
     externalListReloadPending = true;
     return;
   }
-  await (loadTargetRepos());
+  await (loadTargetRepos({timing}));
   if (userListOperationPending) {
     externalListReloadPending = true;
     return;
   }
-  await (loadEntries({announce: false, showLoading: false}));
-  await (reloadOpenDetailFromExternalChange());
+  await (loadEntries({announce: false, showLoading: false, timing}));
+  await (reloadOpenDetailFromExternalChange({timing}));
 }
 
 function attachDialogCloseHandlers(dialogId, closeButtonId, closeHandler = null) {

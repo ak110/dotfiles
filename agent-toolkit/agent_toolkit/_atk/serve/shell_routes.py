@@ -413,6 +413,22 @@ def register_session_routes(
             raise FileNotFoundError(str(error)) from error
         return json_no_store(_with_assistant_html(detail))
 
+    @app.get("/api/sessions/cost")
+    async def sessions_cost() -> quart.Response:
+        unknown = set(quart.request.args) - {"host", "engine", "path"}
+        if unknown:
+            raise _wi_operations.WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+        engine = quart.request.args.get("engine", "")
+        path = quart.request.args.get("path", "")
+        host = quart.request.args.get("host") or context.hostname
+        if not engine or not path:
+            raise _wi_operations.WebApiInputError("engineとpathを指定してください")
+        try:
+            cost = await serve_sessions.session_cost(context, engine, host, path)
+        except serve_sessions.SessionNotFoundError as error:
+            raise FileNotFoundError(str(error)) from error
+        return json_no_store({"cost": cost})
+
     @app.get("/api/sessions/host-status")
     async def sessions_host_status() -> quart.Response:
         return json_no_store({"hosts": await serve_sessions.host_status(context)})

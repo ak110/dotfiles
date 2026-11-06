@@ -155,17 +155,13 @@ def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
 
     def reported_stat(*_args: typing.Any, **_kwargs: typing.Any) -> types.SimpleNamespace:
         return types.SimpleNamespace(
+            st_mode=file_stat.st_mode,
             st_mtime_ns=reported_mtime_ns,
             st_mtime=reported_mtime_ns / 1_000_000_000,
             st_size=file_stat.st_size,
         )
 
-    def path_stat(candidate: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
-        if candidate == path:
-            return reported_stat()
-        return original_stat(candidate, *args, **kwargs)
-
-    monkeypatch.setattr(pathlib.Path, "stat", path_stat)
+    _patch_stat(monkeypatch, path, original_stat, reported_stat)
     index = entry_index.EntryIndex(tmp_path)
     first, _warnings = index.scan(("inbox",))
     replacement = first[0].text.replace("変更前", "変更後")
@@ -186,17 +182,37 @@ def _report_fixed_stat(
 ) -> None:
     """対象ファイルの`stat`の報告値を、書き換え後も同じ更新時刻と書き換え前のサイズへ固定する。"""
     original_stat = pathlib.Path.stat
-    size = path.stat().st_size
+    file_stat = path.stat()
 
     def reported_stat(*_args: typing.Any, **_kwargs: typing.Any) -> types.SimpleNamespace:
-        return types.SimpleNamespace(st_mtime_ns=mtime_ns, st_mtime=mtime_ns / 1_000_000_000, st_size=size)
+        return types.SimpleNamespace(
+            st_mode=file_stat.st_mode, st_mtime_ns=mtime_ns, st_mtime=mtime_ns / 1_000_000_000, st_size=file_stat.st_size
+        )
+
+    _patch_stat(monkeypatch, path, original_stat, reported_stat)
+
+
+def _patch_stat(
+    monkeypatch: pytest.MonkeyPatch,
+    path: pathlib.Path,
+    original_stat: typing.Callable[..., typing.Any],
+    reported_stat: typing.Callable[..., typing.Any],
+) -> None:
+    """対象ファイルの`Path.stat`と、走査が使う`os.lstat`の結果を`reported_stat`へ差し替える。"""
+    original_lstat = os.lstat
 
     def path_stat(candidate: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
         if candidate == path:
             return reported_stat()
         return original_stat(candidate, *args, **kwargs)
 
+    def lstat(candidate: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        if os.fspath(candidate) == os.fspath(path):
+            return reported_stat()
+        return original_lstat(candidate, *args, **kwargs)
+
     monkeypatch.setattr(pathlib.Path, "stat", path_stat)
+    monkeypatch.setattr(os, "lstat", lstat)
 
 
 def test_index_rereads_same_size_rewrite_within_mtime_precision(

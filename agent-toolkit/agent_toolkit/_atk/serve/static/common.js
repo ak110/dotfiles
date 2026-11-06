@@ -218,8 +218,31 @@ function afterRender(done) {
   }, 0);
 }
 
+// 操作の開始から結果の表示までを1件で記録する。呼出し側は結果の表示（ダイアログの開閉、一覧の再描画、
+// 非同期の図の描画など）を終えてから`end`を呼び、次の描画フレームで所要を確定する。操作内の取得へ`timing`を
+// 渡すと取得単位の記録に`operation_id`が付き、操作全体とサーバーの要求記録（`request_id`）を対応付けられる。
+// 変更通知のように実行待ちを経た操作は、`startedAt`へ受信時刻を渡して待ち時間を含め、`queued_ms`にも分けて残す。
+export function beginOperation(screen, operation, {startedAt, ...fields} = {}) {
+  const operationId = newRequestId();
+  const now = performance.now();
+  const started = Number.isFinite(startedAt) ? startedAt : now;
+  let ended = false;
+  return {
+    timing: {operation_id: operationId, ...(fields.trigger ? {trigger: fields.trigger} : {})},
+    end(outcome = "ok") {
+      if (ended) return;
+      ended = true;
+      afterRender((renderedAt) => recordTiming({
+        screen, operation, kind: "operation", operation_id: operationId, outcome, ...fields,
+        ...(now > started ? {queued_ms: now - started} : {}), total_ms: renderedAt - started,
+      }));
+    },
+  };
+}
+
 // 所要を記録する`fetch`。`timing.operation`を省くとqueryを除いたパスを操作名にする。
-// `timing.trigger`は契機（`click`・`sse`など）、`timing.notify_delay_ms`は変更通知の配信から受信までを渡す。
+// `timing.trigger`は契機（`click`・`sse`など）、`timing.notify_delay_ms`は変更通知の配信から受信まで、
+// `timing.operation_id`は`beginOperation`が返す操作の識別子を渡す。
 export async function timedFetch(screen, url, options = {}, timing = {}) {
   const requestId = newRequestId();
   const headers = {...(options.headers || {}), "X-Atk-Request-Id": requestId};
@@ -231,6 +254,7 @@ export async function timedFetch(screen, url, options = {}, timing = {}) {
     route: path,
     request_id: requestId,
     ...(timing.trigger ? {trigger: timing.trigger} : {}),
+    ...(timing.operation_id ? {operation_id: timing.operation_id} : {}),
     ...(Number.isFinite(timing.notify_delay_ms) ? {notify_delay_ms: timing.notify_delay_ms} : {}),
   };
   let response;

@@ -39,9 +39,11 @@ _REQUEST_ID_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}")
 _MAX_BROWSER_RECORDS = 200
 """1回の送信で受理する画面記録の件数の上限。"""
 
-_BROWSER_STRING_FIELDS = frozenset({"screen", "operation", "route", "request_id", "trigger", "outcome", "filename"})
+_BROWSER_STRING_FIELDS = frozenset(
+    {"screen", "operation", "operation_id", "kind", "route", "request_id", "trigger", "outcome", "filename"}
+)
 _BROWSER_NUMBER_FIELDS = frozenset(
-    {"fetch_ms", "render_ms", "total_ms", "status", "notify_delay_ms", "published_at_ms", "started_at_ms"}
+    {"fetch_ms", "render_ms", "total_ms", "queued_ms", "status", "notify_delay_ms", "published_at_ms", "started_at_ms"}
 )
 _MAX_STRING_LENGTH = 200
 
@@ -80,7 +82,12 @@ class TimingLog:
                     stream.write(line)
             except OSError as error:
                 if not self._warned:
-                    logger.warning("所要の記録を書き込めません（以後の同じ失敗は表示しない）: %s: %s", self.path, error)
+                    logger.warning(
+                        "所要の記録を書き込めません。保存先の権限や空き容量など原因を解消すると、次の操作から記録を再開します"
+                        "（同じ失敗は再表示しない）: %s: %s",
+                        self.path,
+                        error,
+                    )
                     self._warned = True
 
 

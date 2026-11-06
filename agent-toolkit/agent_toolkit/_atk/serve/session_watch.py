@@ -7,8 +7,10 @@ watchdogは監視の開始時に遅延importする。
 発話を持たない記録（Codexを起動しただけで入力しなかった記録など）は、選んでも本文がほぼ空になるためである。
 """
 
+import contextlib
 import dataclasses
 import json
+import logging
 import os
 import pathlib
 import threading
@@ -20,6 +22,8 @@ from agent_toolkit._atk.session_record_format import CODEX_ROLLOUT_PREFIX, RECOR
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 # サブエージェントの記録は同じディレクトリの`*.meta.json`で親子関係を確定するため、その作成と削除も一覧を変える。
+logger = logging.getLogger(__name__)
+
 _CLAUDE_META_SUFFIX = ".meta.json"
 # 変更をまとめて通知する時間窓（秒）。書き込みのたびに通知すると、進行中のセッションで通知が連続する。
 DEFAULT_DEBOUNCE_SEC = 0.5
@@ -273,13 +277,94 @@ class RecordSummaryIndex:
     追従させる。固定の上限を置くと、巡回する記録数が上限を超えた時点でLRUが全件を順に破棄し、再利用が止まる。
     走査が停止要求などで途中で終わった場合は破棄せずに残し、次の走査の終わりにまとめて破棄する。
     サーバーとリモートヘルパーの常駐モードが1プロセスに1つ持ち、複数スレッドから使えるようロックで保護する。
+
+    `cache_path`を渡すと、信用できる解析結果と表示用の本文を走査の終わりにファイルへ保存し、次の起動で読み込む。
+    記録は数千件・数十GBに及び、起動のたびに全件を読み直すと最初の一覧表示に数分かかるためである。
+    読み込んだ結果も更新時刻とサイズの一致を確かめてから再利用するため、停止中に変わった記録は読み直す。
+    保存は走査ごとではなく`_SAVE_INTERVAL_SEC`以上の間隔で行い、進行中の記録への追記のたびに全体を書き直さない。
+    間隔は生成時点から数え、短時間で終わる起動（試験や一時的な起動）では書き込まない。
+    全件の読み直しが必要な初回の走査は間隔より長くかかるため、その走査の終わりに保存される。
     """
 
-    def __init__(self) -> None:
+    _CACHE_VERSION = 1
+    _SAVE_INTERVAL_SEC = 60.0
+
+    def __init__(self, cache_path: pathlib.Path | None = None) -> None:
         self._lock = threading.Lock()
         self._records: dict[str, _IndexedRecord] = {}
         self._seen: set[str] = set()
         self._messages: dict[str, tuple[_IndexedRecord, str | None]] = {}
+        self._cache_path = cache_path
+        self._dirty = False
+        self._saved_at = time.monotonic()
+        self._save_warned = False
+        if cache_path is not None:
+            self._load_cache(cache_path)
+
+    def _load_cache(self, path: pathlib.Path) -> None:
+        """保存済みの解析結果を読み込む。不在・破損・版違いは空の索引から始める（補助の記録であるため）。"""
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as error:
+            logger.warning(
+                "セッション一覧の索引を読めないため全件を読み直します（次の保存で作り直します）: %s: %s", path, error
+            )
+            return
+        if not isinstance(payload, dict) or payload.get("version") != self._CACHE_VERSION:
+            return
+        items = payload.get("records")
+        if not isinstance(items, dict):
+            return
+        for key, item in items.items():
+            record = _cached_record(item)
+            if record is None:
+                continue
+            self._records[key] = record
+            if isinstance(item, dict) and "message" in item and (item["message"] is None or isinstance(item["message"], str)):
+                self._messages[key] = (record, item["message"])
+
+    def _save_cache(self) -> None:
+        """信用できる解析結果を原子的に保存する。失敗は警告だけを残し、一覧の取得を失敗させない。"""
+        path = self._cache_path
+        if path is None:
+            return
+        with self._lock:
+            records = {
+                key: {
+                    "mtime_ns": record.mtime_ns,
+                    "size": record.size,
+                    "fields": list(record.fields),
+                    "delegated_ids": sorted(record.delegated_ids),
+                    **(
+                        {"message": self._messages[key][1]}
+                        if key in self._messages and self._messages[key][0] is record
+                        else {}
+                    ),
+                }
+                for key, record in self._records.items()
+                if record.trusted
+            }
+            self._dirty = False
+            self._saved_at = time.monotonic()
+        content = json.dumps({"version": self._CACHE_VERSION, "records": records}, ensure_ascii=False, separators=(",", ":"))
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_text(content, encoding="utf-8")
+            temporary.replace(path)
+        except OSError as error:
+            with contextlib.suppress(OSError):
+                temporary.unlink()
+            if not self._save_warned:
+                logger.warning(
+                    "セッション一覧の索引を保存できません。次回の起動でも全件を読み直します。"
+                    "保存先の権限や空き容量など原因を解消すると次の保存から再開します（同じ失敗は再表示しない）: %s: %s",
+                    path,
+                    error,
+                )
+                self._save_warned = True
 
     def begin_scan(self) -> None:
         """走査の開始を記録し、走査で参照した記録の集合を空にする。"""
@@ -287,10 +372,16 @@ class RecordSummaryIndex:
             self._seen = set()
 
     def finish_scan(self) -> None:
-        """走査で参照しなかった記録の解析結果を破棄する。"""
+        """走査で参照しなかった記録の解析結果を破棄し、保存先があれば間隔を置いて保存する。"""
         with self._lock:
-            self._records = {key: value for key, value in self._records.items() if key in self._seen}
+            kept = {key: value for key, value in self._records.items() if key in self._seen}
+            if len(kept) != len(self._records):
+                self._dirty = True
+            self._records = kept
             self._messages = {key: value for key, value in self._messages.items() if key in self._seen}
+            due = self._dirty and time.monotonic() - self._saved_at >= self._SAVE_INTERVAL_SEC
+        if due:
+            self._save_cache()
 
     def summary(self, path: pathlib.Path, engine: str) -> tuple[SummaryFields, os.stat_result | OSError]:
         """記録の`summary_fields`の値と、無効化の判定に使った`stat`の結果を返す。
@@ -319,6 +410,7 @@ class RecordSummaryIndex:
         with self._lock:
             self._records[key] = record
             self._messages.pop(key, None)
+            self._dirty = True
         return scan.fields, st
 
     def display_messages(self, records: typing.Iterable[tuple[pathlib.Path, str]]) -> dict[str, str | None]:
@@ -330,7 +422,11 @@ class RecordSummaryIndex:
             with self._lock:
                 record = self._records.get(key)
                 cached = self._messages.get(key)
-            message = cached[1] if cached is not None and cached[0] is record else first_user_message(path, engine)
+            if cached is not None and cached[0] is record:
+                message = cached[1]
+            else:
+                message = first_user_message(path, engine)
+                self._dirty = True
             messages[key] = message
             if record is not None:
                 retained[key] = (record, message)
@@ -351,6 +447,32 @@ class RecordSummaryIndex:
         return scan_record(path, engine).delegated_ids
 
 
+def _cached_record(item: typing.Any) -> _IndexedRecord | None:
+    """保存した解析結果1件を復元する。形式が合わない項目は`None`を返して読み直しへ回す。"""
+    if not isinstance(item, dict):
+        return None
+    mtime_ns, size, fields, delegated = item.get("mtime_ns"), item.get("size"), item.get("fields"), item.get("delegated_ids")
+    if not (isinstance(mtime_ns, int) and isinstance(size, int) and isinstance(fields, list) and len(fields) == 4):
+        return None
+    cwd, started_at, has_user, parent_thread_id = fields
+    if not (
+        (cwd is None or isinstance(cwd, str))
+        and (started_at is None or isinstance(started_at, str))
+        and (has_user is None or isinstance(has_user, bool))
+        and (parent_thread_id is None or isinstance(parent_thread_id, str))
+        and isinstance(delegated, list)
+        and all(isinstance(value, str) for value in delegated)
+    ):
+        return None
+    return _IndexedRecord(
+        mtime_ns=mtime_ns,
+        size=size,
+        trusted=True,
+        fields=(cwd, started_at, has_user, parent_thread_id),
+        delegated_ids=frozenset(delegated),
+    )
+
+
 class RecordChangeTracker:
     """記録の変更を、一覧の再取得と記録1件の更新の2種類の通知へ振り分ける。
 
@@ -361,6 +483,9 @@ class RecordChangeTracker:
     `listed`は記録ごとの発話の有無（一覧に載るか）を保持する。一覧の取得時に`prime`で初期化し、
     未知の記録は変更の観測時に判定する。発話は追記で消えないため、一度`True`となった記録は再判定しない。
     watchdogのスレッドから呼ばれるため、状態はロックで保護する。
+
+    通知とは別に、前回の一覧の取得以降の変更を`take_list_changes`で渡す。
+    通知の遅延（`debounce_sec`）を待たずに変更の観測時点で記録し、一覧の再利用で変更を見落とさないようにする。
     """
 
     def __init__(
@@ -379,6 +504,29 @@ class RecordChangeTracker:
         self._pending_records: dict[tuple[str, str], None] = {}
         self._timer: threading.Timer | None = None
         self._stopped = False
+        # 前回の一覧の取得以降に、一覧の集合か親子関係が変わり得る変更があったか。初回は取得させるため真とする。
+        self._list_invalid = True
+        # 前回の一覧の取得以降に追記された、一覧に載っている記録のパス。
+        self._list_appended: set[str] = set()
+
+    def take_list_changes(self) -> tuple[bool, frozenset[str]]:
+        """前回の呼び出し以降の変更を返して消去する。
+
+        戻り値は、一覧を取得し直す必要があるかと、一覧に載っている記録のうち追記されたもののパスである。
+        """
+        with self._lock:
+            invalid = self._list_invalid
+            appended = frozenset(self._list_appended)
+            self._list_invalid = False
+            self._list_appended = set()
+        return invalid, appended
+
+    def _note_list_change(self, appended: str | None = None) -> None:
+        with self._lock:
+            if appended is None:
+                self._list_invalid = True
+            else:
+                self._list_appended.add(appended)
 
     def prime(self, path: str, listed: bool) -> None:
         """一覧の取得で判定した発話の有無を保持する。"""
@@ -408,15 +556,21 @@ class RecordChangeTracker:
             return
         if not path.name.endswith(RECORD_SUFFIX):
             # サブエージェントのmetadataは親子関係を変えるため、一覧の再取得を促す。
+            self._note_list_change()
             self._schedule(refresh=True)
             return
         key = str(path)
         with self._lock:
             known = self._listed.get(key)
         if known:
+            self._note_list_change(key)
             self._schedule(record=(engine, key))
             return
         listed = has_user_message(path, engine)
+        if listed is not False:
+            # 発話を持った記録と、読めずに判定できない記録（一覧は警告付きで載せる）は一覧の集合を変え得る。
+            # 発話の無い記録は一覧に載らないため、一覧の再取得の通知と同じく取得し直さない。
+            self._note_list_change()
         if listed is None:
             return
         with self._lock:
@@ -434,10 +588,12 @@ class RecordChangeTracker:
             known = self._listed.pop(key, None)
         if known is False:
             return
+        self._note_list_change()
         self._schedule(refresh=True)
 
     def structure_changed(self) -> None:
         """ディレクトリの作成など、記録の集合が変わり得る変更を反映する。"""
+        self._note_list_change()
         self._schedule(refresh=True)
 
     def _schedule(self, *, refresh: bool = False, record: tuple[str, str] | None = None) -> None:

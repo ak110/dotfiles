@@ -18,6 +18,7 @@ from agent_toolkit._atk.serve.plans import rendering as plans_rendering
 from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views
 from agent_toolkit._atk.serve.plans.remote import RemoteWatcher
+from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
 
@@ -86,6 +87,49 @@ def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, i
     assert not entries
     assert warning is None
     assert json.loads(index_path.read_text(encoding="utf-8")) == stored
+
+
+def test_unchanged_rescan_does_not_rewrite_creation_time_index(
+    tmp_path: pathlib.Path, index_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一覧の取得ごとの走査で作成日時が変わらなければ、索引全体を書き直さない。"""
+    root = tmp_path / "plans"
+    root.mkdir()
+    _plan(root, "plan.md", mtime=1_000.0)
+    plans_local_scan.list_files(root, "local-host")
+    stored = index_path.read_text(encoding="utf-8")
+    writes: list[object] = []
+    original = plan_creation_times._write_index
+    monkeypatch.setattr(plan_creation_times, "_write_index", lambda index: writes.append(index) or original(index))
+
+    plans_local_scan.list_files(root, "local-host")
+    assert not writes
+    assert index_path.read_text(encoding="utf-8") == stored
+
+    _plan(root, "added.md", mtime=2_000.0)
+    plans_local_scan.list_files(root, "local-host")
+    assert len(writes) == 1
+
+
+def test_scan_follows_only_file_links_that_stay_inside_root(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
+    """走査はドット配下を除き、`root`内を指すファイルのリンクだけを載せ、ディレクトリのリンクはたどらない。"""
+    del index_path
+    root = tmp_path / "plans"
+    (root / "sub").mkdir(parents=True)
+    (root / ".hidden").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _plan(root / "sub", "plan.md", mtime=1_000.0)
+    _plan(root / ".hidden", "secret.md", mtime=1_000.0)
+    _plan(outside, "foreign.md", mtime=1_000.0)
+    (root / "inner-link.md").symlink_to(root / "sub" / "plan.md")
+    (root / "outer-link.md").symlink_to(outside / "foreign.md")
+    (root / "linked-dir").symlink_to(outside, target_is_directory=True)
+
+    entries, warning = plans_local_scan.scan_files(root, "local-host")
+
+    assert warning is None
+    assert sorted(entry.path for entry in entries) == ["inner-link.md", "sub/plan.md"]
 
 
 def test_mermaid_fence_is_rendered_as_escaped_diagram() -> None:

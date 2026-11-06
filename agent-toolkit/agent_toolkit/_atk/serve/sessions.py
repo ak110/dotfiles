@@ -16,9 +16,11 @@ import dataclasses
 import datetime
 import json
 import logging
+import os
 import pathlib
 import socket
 import threading
+import time
 import typing
 
 from agent_toolkit._atk import session_record_format
@@ -33,6 +35,9 @@ logger = logging.getLogger(__name__)
 
 # 一覧が返す最大件数。開始日時の新しい順に並べたうえで打ち切る。
 MAX_LIST_ENTRIES = 2000
+# 変更監視が動いている間に前回のローカル一覧を再利用する上限の秒数。
+# watchdogはinotifyのキュー溢れや監視の追加失敗を通知しないため、取りこぼした変更もこの間隔で全件走査に反映する。
+LOCAL_LIST_REUSE_SEC = 60.0
 # 1件の記録から取得する最大バイト数。過大な記録の全文読み込みにより応答が滞る事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
 # SSE購読者ごとの未配信通知の上限。超えた場合は一覧の再取得を促す1件へまとめる。
@@ -180,6 +185,16 @@ class SessionsContext:
 
 
 @dataclasses.dataclass(slots=True)
+class _LocalListCache:
+    """再利用するローカル一覧と、その変更を記録している監視の対応。"""
+
+    tracker: session_watch.RecordChangeTracker
+    entries: list[SessionSummary]
+    # 走査を始めた時刻（`time.monotonic`）。走査中の変更は次の`take_list_changes`で受け取る。
+    scanned_at: float
+
+
+@dataclasses.dataclass(slots=True)
 class SessionsState:
     """SSE購読者とリモート接続状態を保持する。"""
 
@@ -195,6 +210,8 @@ class SessionsState:
     stop_requested: threading.Event = dataclasses.field(default_factory=threading.Event)
     # ローカルの記録単位の解析結果。要求ごとの走査で変更のない記録を読み直さないために保持する。
     record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
+    # 前回のローカル一覧。変更監視が一覧を変え得る変更を観測していない間だけ再利用する。
+    local_list: _LocalListCache | None = None
     # 進行中の一覧の取得（ローカルの走査とリモートの取得）。同時に届いた一覧の要求はこの1回の結果を共有する。
     list_task: asyncio.Future[tuple[list[SessionSummary], list[dict[str, str]]]] | None = None
 
@@ -213,7 +230,10 @@ def create_context(
     hosts = tuple(remote_hosts or ())
     if resolved_hostname in hosts:
         raise ValueError("ローカルホスト名がリモートホストの指定と重複しています")
-    state = SessionsState()
+    resolved_state_dir = state_dir if state_dir is not None else _state_paths.state_dir()
+    state = SessionsState(
+        record_index=session_watch.RecordSummaryIndex(cache_path=resolved_state_dir / "serve" / "session-summaries.json")
+    )
     state.host_status[resolved_hostname] = "connected"
     for host in hosts:
         state.host_status[host] = "connecting"
@@ -224,7 +244,7 @@ def create_context(
         remote_hosts=hosts,
         runner=ssh_runner if ssh_runner is not None else default_ssh_runner,
         state=state,
-        state_dir=state_dir if state_dir is not None else _state_paths.state_dir(),
+        state_dir=resolved_state_dir,
     )
 
 
@@ -274,7 +294,16 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     ユーザー発話の記録行を持たない記録は、件数上限による切り詰めより前に除外する。
     変更監視が動いている場合は、判定した発話の有無を監視側の判定へ引き継ぐ。
     サーバーの停止要求を受けた場合は記録1件ごとの確認で`ServeStopping`を送出して打ち切る。
+
+    変更監視が動いている間は、一覧の集合か親子関係を変え得る変更が無ければ前回の結果を再利用し、
+    追記された記録の更新日時と大きさだけを取り直す。全件の走査は記録数千件で1秒前後かかるためである。
     """
+    tracker = context.state.record_watch.tracker if context.state.record_watch is not None else None
+    if tracker is not None:
+        reused = _reuse_local_list(context.state, tracker)
+        if reused is not None:
+            return reused
+    scanned_at = time.monotonic()
     stop = context.state.stop_requested
     index = context.state.record_index
     index.begin_scan()
@@ -316,7 +345,34 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
         entries, MAX_LIST_ENTRIES, path_of=lambda entry: entry.path, parent_of=lambda entry: entry.parent_path
     )
     messages = index.display_messages((pathlib.Path(entry.path), entry.engine) for entry in limited)
-    return [dataclasses.replace(entry, first_user_message=messages[entry.path]) for entry in limited]
+    result = [dataclasses.replace(entry, first_user_message=messages[entry.path]) for entry in limited]
+    context.state.local_list = (
+        _LocalListCache(tracker=tracker, entries=result, scanned_at=scanned_at) if tracker is not None else None
+    )
+    return list(result)
+
+
+def _reuse_local_list(state: SessionsState, tracker: session_watch.RecordChangeTracker) -> list[SessionSummary] | None:
+    """前回のローカル一覧を再利用できれば、追記を反映した一覧を返す。再利用できなければ`None`を返す。"""
+    # 変更は再利用しない場合も消費する。続く全件の走査がそれまでの変更を全て反映するためである。
+    invalid, appended = tracker.take_list_changes()
+    cache = state.local_list
+    if invalid or cache is None or cache.tracker is not tracker or time.monotonic() - cache.scanned_at >= LOCAL_LIST_REUSE_SEC:
+        return None
+    entries = list(cache.entries)
+    for position, entry in enumerate(entries):
+        if entry.path not in appended:
+            continue
+        if entry.warning is not None:
+            return None
+        try:
+            st = os.stat(entry.path)
+        except OSError:
+            return None
+        # 一覧の並び（開始日時）と表示する発話は追記で変わらないため、更新日時と大きさだけを更新する。
+        entries[position] = dataclasses.replace(entry, updated_at=_isoformat(st.st_mtime), size=st.st_size)
+    cache.entries = entries
+    return list(entries)
 
 
 def is_local_record_path(context: SessionsContext, raw: str) -> bool:
@@ -340,8 +396,10 @@ class SessionNotFoundError(Exception):
     """指定されたセッション記録へ到達できないことを示す。"""
 
 
-def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> dict[str, typing.Any]:
-    """ローカルの記録を読み、詳細応答を組み立てる。"""
+def _read_local_records(
+    context: SessionsContext, engine: str, raw_path: str
+) -> tuple[pathlib.Path, list[dict[str, typing.Any]], int]:
+    """ローカルの記録を検証して読み、記録のパス、解析した行、解析できない行数を返す。"""
     if engine not in {"claude", "codex"} or not is_local_record_path(context, raw_path):
         raise SessionNotFoundError(raw_path)
     path = pathlib.Path(raw_path)
@@ -352,6 +410,16 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
     if len(data) > MAX_RECORD_BYTES:
         raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")
     records, broken = session_record_format.parse_records(data.decode("utf-8", errors="replace"))
+    return path, records, broken
+
+
+def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> dict[str, typing.Any]:
+    """ローカルの記録を読み、推定費用を除いた詳細応答を組み立てる。
+
+    推定費用は子孫の全記録を読むため、子孫の多いセッションでは数秒かかる。本文の表示を待たせないよう、
+    `cost_pending`を真にして返し、画面が`read_local_cost`を別の要求で取得する。
+    """
+    path, records, broken = _read_local_records(context, engine, raw_path)
     subagents = session_record_format.claude_subagents(path) if engine == "claude" else None
     # ローカルの記録は保存先を直接読むため、サブエージェント記録の有無を常に判定できる。
     detail = build_detail(engine, records, broken_lines=broken, subagents=subagents, subagents_unavailable=False)
@@ -364,7 +432,15 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
         if engine == "claude"
         else session_record_format.codex_thread_name(context.codex_home, detail["session_id"])
     )
-    detail["cost"] = session_cost_records.estimate_detail_cost(
+    detail["cost"] = None
+    detail["cost_pending"] = True
+    return detail
+
+
+def read_local_cost(context: SessionsContext, engine: str, raw_path: str) -> dict[str, typing.Any]:
+    """ローカルの記録と子孫から、詳細の見出しに表示する推定費用を求める。"""
+    path, records, broken = _read_local_records(context, engine, raw_path)
+    return session_cost_records.estimate_detail_cost(
         engine,
         path,
         records,
@@ -374,7 +450,6 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
         state_root=context.state_dir,
         broken_lines=broken,
     )
-    return detail
 
 
 # --------------------------------------------------------------------------------------
@@ -708,6 +783,13 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
     # 算出は記録があるホストで行う。子孫の本文を画面サーバーへ転送しない。
     detail["cost"] = payload.get("cost")
     return detail
+
+
+async def session_cost(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:
+    """ローカルの記録の推定費用を返す。リモートの記録の費用は詳細の応答に含まれるため対象外とする。"""
+    if host != context.hostname:
+        raise SessionNotFoundError(f"推定費用を別に取得できるのはローカルの記録だけです: {host}")
+    return await asyncio.to_thread(read_local_cost, context, engine, path)
 
 
 async def host_status(context: SessionsContext) -> dict[str, str]:
