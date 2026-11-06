@@ -156,6 +156,13 @@ WorktreeCreate/Removeは既存atkの対象設定処理を使う。
 統括と配下writerの終了を確認してから所有解放と既存laneを回収し、停止未確認、未統合、dirty、使用中は保持する。
 登録・候補・回収の契約は[all-repos-orchestration.md](../../agent-toolkit/skills/process-wi/references/all-repos-orchestration.md)が所有する。
 
+所有記録の段階は`process_loop_ownership.py`が4段階の型へ復元し、取得・更新・解放・保留の遷移を所有する。
+保存JSONのbool組合せは読取境界で検証し、PID世代の生存照会は段階と別に扱う。
+対象別結果は`RepositoryResult`と`RepositoryStatus`へ変換し、既存の公開キーへ射影する。
+結果に含む独立投入の受付票は対象repoとの一致と永続移管記録を検証する。
+製品writerの終了・公開検収を保ったまま、別寿命の投入監督へ移管した仕事を常駐の待機集合から分離するためである。
+型の汎用ライブラリーや全工程を写す新しい台帳は設けない。
+
 ## process-loopのworktree隔離
 
 `atk wi process-loop`は影響範囲の大きい主作業ツリーを直接編集せずにセッションを起動する。

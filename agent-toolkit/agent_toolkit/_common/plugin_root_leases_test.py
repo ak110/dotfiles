@@ -174,3 +174,30 @@ def test_legacy_area_not_attributed_to_lease_aware_mcp(
     assert not subject.plugin_root_in_use(area)
     monkeypatch.setattr(type(process), "cmdline", lambda self: ["python", str(area / "agent_toolkit/agents_server_mcp.py")])
     assert subject.plugin_root_in_use(area)
+
+
+@pytest.mark.parametrize(
+    ("status", "reported", "expected"),
+    [
+        ("failed", True, True),
+        ("completed", False, True),
+        ("completed", True, False),
+    ],
+)
+def test_submission_runtime_reference_outlives_process_lease(tmp_path, status, reported, expected):
+    area = tmp_path / "held-plugin"
+    area.mkdir()
+    run = state_paths.state_dir() / "wi-submit/runs" / ("a" * 32) / "run.json"
+    run.parent.mkdir(parents=True)
+    run.write_text(
+        json.dumps(
+            {
+                "runtime_root": str(area / "agent-toolkit"),
+                "status": status,
+                "report_synced": reported,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with subject.plugin_root_lock(area):
+        assert subject.plugin_root_in_use(area) is expected

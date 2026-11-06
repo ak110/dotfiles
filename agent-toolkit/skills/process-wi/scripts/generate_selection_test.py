@@ -279,8 +279,13 @@ def test_generated_addition_saves_once_and_preserves_initial_allocation(
 
 
 @pytest.mark.parametrize("staged", [False, True])
+@pytest.mark.parametrize("phase_correction", [False, True])
 def test_minimal_selection_generation_merge_and_integration(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, staged: bool
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    staged: bool,
+    phase_correction: bool,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """非書込の未列挙と必要最小限の重なり記録で、生成・合流・統合状態を保存する。"""
     repo, notes = environment
@@ -301,9 +306,19 @@ def test_minimal_selection_generation_merge_and_integration(
     data["選定"] = data["選定"][:2]
     data["選定"][1]["レーン"] = "lane-02"
     data["レーンの所要時間"].append({**data["レーンの所要時間"][0], "レーン": "lane-02"})
+    if phase_correction:
+        data["見込みの補正"] = {
+            "実装係数": 2,
+            "統合係数": 3,
+            "共有待ち秒数": 20,
+            "参照した記録": ["plans/phase.jsonl"],
+            "除外した記録": [],
+        }
+        for row in data["レーンの所要時間"]:
+            row.update({"実装秒数": 200, "統合秒数": 30})
     if staged:
         data["レーンの所要時間"][1].update({"段階": 2, "先行レーン": ["lane-01"]})
-        data["単一段階案の完了見込み秒数"] = 220
+        data["単一段階案の完了見込み秒数"] = 280 if phase_correction else 220
     else:
         data["レーン間の重なり"] = [
             {
@@ -318,23 +333,46 @@ def test_minimal_selection_generation_merge_and_integration(
     judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     output = tmp_path / "selection.yaml"
     assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
+    generated_report = capsys.readouterr().out
+    if phase_correction:
+        assert f"全体の完了見込み秒数: {480 if staged else 280}（共有待ち秒数 20を1回含む）" in generated_report
+    else:
+        assert "全体の完了見込み秒数:" not in generated_report
+    with capsys.disabled():
+        print(generated_report, end="")
     saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert "全体の完了見込み秒数" not in saved
     initial = saved["初回配分"]
     assert all("書き込まない反映先" not in item for item in saved["選定"])
     assert bool(saved.get("レーン間の重なり")) != staged
+    assert _dispatch(str(output), "--work-dir", str(repo)) == 0
     assert _dispatch(str(output), "--mark-integrated", "lane-01", "--output", str(output), "--work-dir", str(repo)) == 0
     _wi(notes, "added.md")
     facts, addition = _inputs(tmp_path, ["added.md"])
-    if staged:
+    if staged or phase_correction:
         added = yaml.safe_load(addition.read_text(encoding="utf-8"))
-        added["単一段階案の完了見込み秒数"] = 330
+        if phase_correction:
+            added["見込みの補正"] = {**data["見込みの補正"], "共有待ち秒数": 25}
+            added["レーンの所要時間"][0].update({"実装秒数": 200, "統合秒数": 30})
+        if staged:
+            added["単一段階案の完了見込み秒数"] = 515 if phase_correction else 330
         addition.write_text(yaml.safe_dump(added, allow_unicode=True), encoding="utf-8")
     assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "added.md")) == 0
+    merged_report = capsys.readouterr().out
+    if phase_correction:
+        assert f"全体の完了見込み秒数: {715 if staged else 515}（共有待ち秒数 25を1回含む）" in merged_report
+    with capsys.disabled():
+        print(merged_report, end="")
     saved = yaml.safe_load(output.read_text(encoding="utf-8"))
     assert saved["初回配分"] == initial and saved["追加WI"] == ["added.md"]
     assert saved["選定"][0]["統合状態"] == "統合済み"
     assert "統合状態" not in saved["選定"][-1]
     assert saved["レーンの所要時間"][0]["統合状態"] == "未統合"
+    if phase_correction:
+        assert saved["見込みの補正"] == {**data["見込みの補正"], "共有待ち秒数": 25}
+        merged = saved["レーンの所要時間"][0]
+        assert (merged["補正前の実装秒数"], merged["実装秒数"]) == (200, 400)
+        assert (merged["補正前の統合秒数"], merged["統合秒数"]) == (20, 60)
     assert (
         _dispatch(
             str(output),
@@ -350,3 +388,144 @@ def test_minimal_selection_generation_merge_and_integration(
         == 0
     )
     assert all(row["統合状態"] == "統合済み" for row in yaml.safe_load(output.read_text(encoding="utf-8"))["レーンの所要時間"])
+
+
+@pytest.mark.parametrize(
+    "field,value,expected",
+    [
+        ("実装係数", True, 2),
+        ("統合係数", False, 2),
+        ("実装係数", 0, 2),
+        ("統合係数", -1, 2),
+        ("実装係数", float("inf"), 2),
+        ("統合係数", float("nan"), 2),
+        ("共有待ち秒数", True, 2),
+        ("共有待ち秒数", -1, 2),
+        ("共有待ち秒数", float("inf"), 2),
+        ("共有待ち秒数", float("nan"), 2),
+        ("共有待ち秒数", "20", 2),
+        ("係数", 1, 2),
+        ("実装係数", 2, 1),
+        ("統合係数", 2, 1),
+    ],
+)
+def test_public_phase_correction_rejects_invalid_input_without_saving(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    field: str,
+    value: object,
+    expected: int,
+) -> None:
+    """新形式の型違反と工程別の積の不一致は、初回保存先を変更しない。"""
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
+    data["見込みの補正"] = {
+        "実装係数": 1,
+        "統合係数": 1,
+        "共有待ち秒数": 0,
+        "参照した記録": ["plans/phase.jsonl"],
+        "除外した記録": [],
+        field: value,
+    }
+    judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    output = tmp_path / "selection.yaml"
+    output.write_bytes(b"preserved\n")
+    assert (
+        _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == expected
+    )
+    assert output.read_bytes() == b"preserved\n"
+
+
+def test_public_phase_correction_total_overflow_preserves_destination(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+) -> None:
+    """個々の有限値の合計が非有限になっても保存前に拒否する。"""
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
+    data["見込みの補正"] = {
+        "実装係数": 1,
+        "統合係数": 1,
+        "共有待ち秒数": 20,
+        "参照した記録": [],
+        "除外した記録": [],
+    }
+    data["段階案の完了見込み秒数"] = "成立する段階案なし"
+    data["レーンの所要時間"][0].update({key: 1e308 for key in ("実装秒数", "統合秒数", "補正前の実装秒数", "補正前の統合秒数")})
+    judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    output = tmp_path / "selection.yaml"
+    output.write_bytes(b"preserved\n")
+    assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 1
+    assert output.read_bytes() == b"preserved\n"
+
+
+def test_public_phase_correction_preserves_excluded_incomplete_history(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+) -> None:
+    """未分離の総経過と未計測の待ちは、工程別実測へ置き換えず除外理由を保存する。"""
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
+    correction = {
+        "実装係数": 1,
+        "統合係数": 1,
+        "共有待ち秒数": 0,
+        "参照した記録": [],
+        "除外した記録": [{"記録": "plans/legacy.jsonl", "理由": "総経過のみで工程別区間と共有待ちが未計測"}],
+    }
+    data["見込みの補正"] = correction
+    judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    output = tmp_path / "selection.yaml"
+    assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
+    assert yaml.safe_load(output.read_text(encoding="utf-8"))["見込みの補正"] == correction
+    assert _dispatch(str(output), "--work-dir", str(repo)) == 0
+
+
+@pytest.mark.parametrize("case", ["実装係数", "統合係数", "旧形式", "共有待ち欠落", "参照欠落"])
+def test_public_phase_correction_merge_rejects_mismatch_and_preserves_destination(
+    environment: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    case: str,
+) -> None:
+    """同じ公開生成から合流し、形式・係数・根拠の不整合で既存保存物を保全する。"""
+    repo, notes = environment
+    _wi(notes, "first.md")
+    facts, judgments = _inputs(tmp_path, ["first.md"])
+    data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
+    correction = {"実装係数": 1, "統合係数": 1, "共有待ち秒数": 20, "参照した記録": [], "除外した記録": []}
+    data["見込みの補正"] = correction
+    judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    output = tmp_path / "selection.yaml"
+    assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
+    before = output.read_bytes()
+    _wi(notes, "second.md")
+    facts, addition = _inputs(tmp_path, ["second.md"])
+    data = yaml.safe_load(addition.read_text(encoding="utf-8"))
+    data["見込みの補正"] = correction.copy()
+    if case in ("実装係数", "統合係数"):
+        data["見込みの補正"][case] = 2
+        data["見込みの補正"]["参照した記録"] = ["plans/phase.jsonl"]
+        data["レーンの所要時間"][0]["実装秒数" if case == "実装係数" else "統合秒数"] *= 2
+    elif case == "旧形式":
+        data["見込みの補正"] = {"係数": 1, "参照した記録": [], "除外した記録": []}
+    elif case == "共有待ち欠落":
+        del data["見込みの補正"]["共有待ち秒数"]
+    else:
+        # 積は正しくても参照なしの非1係数は受理しない。
+        data["見込みの補正"]["実装係数"] = 2
+        data["レーンの所要時間"][0]["実装秒数"] = 200
+        saved = yaml.safe_load(before)
+        saved["見込みの補正"].update({"実装係数": 2, "参照した記録": ["plans/phase.jsonl"]})
+        saved["レーンの所要時間"][0]["実装秒数"] = 200
+        output.write_text(yaml.safe_dump(saved, allow_unicode=True), encoding="utf-8")
+        before = output.read_bytes()
+    addition.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    added_before = addition.read_bytes()
+    assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "second.md")) == 2
+    assert output.read_bytes() == before and addition.read_bytes() == added_before

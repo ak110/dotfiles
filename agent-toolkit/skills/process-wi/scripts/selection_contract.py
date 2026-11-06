@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 import typing
 from collections.abc import Callable
 
@@ -607,8 +608,13 @@ def is_string_list(value: object) -> typing.TypeGuard[list[str]]:
 
 
 def is_non_negative_number(value: object) -> bool:
-    """値が真偽値以外の0以上の数値かを返す。"""
-    return isinstance(value, int | float) and not isinstance(value, bool) and value >= 0
+    """値が真偽値以外の0以上の有限数かを返す。"""
+    return (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and value >= 0
+        and (not isinstance(value, float) or math.isfinite(value))
+    )
 
 
 def _record_structure_errors(label: str, field: str, records: object, keys: set[str]) -> list[str]:
@@ -625,12 +631,17 @@ def _record_structure_errors(label: str, field: str, records: object, keys: set[
 def _correction_structure_errors(value: object) -> list[str]:
     """補正係数と参照・除外した記録の型を確かめる。"""
     field = _selection.ESTIMATE_CORRECTION_KEY
-    if not isinstance(value, dict) or set(value) != {"係数", "参照した記録", "除外した記録"}:
-        return [f"`{field}`は係数・参照した記録・除外した記録を持つ写像にする"]
+    records = {"参照した記録", "除外した記録"}
+    coefficients = (_selection.IMPLEMENTATION_COEFFICIENT_KEY, _selection.INTEGRATION_COEFFICIENT_KEY)
+    current = {*coefficients, _selection.SHARED_WAIT_SECONDS_KEY, *records}
+    if not isinstance(value, dict) or set(value) not in (current, {"係数", *records}):
+        return [f"`{field}`は実装係数・統合係数・共有待ち秒数・参照した記録・除外した記録を持つ写像にする"]
     errors = []
-    coefficient = value["係数"]
-    if not is_non_negative_number(coefficient) or coefficient == 0:
-        errors.append(f"`{field}`の係数はbool以外の0より大きい数値にする")
+    for key in ("係数",) if "係数" in value else coefficients:
+        if not is_non_negative_number(value[key]) or value[key] == 0:
+            errors.append(f"`{field}`の{key}はbool以外の0より大きい有限数にする")
+    if _selection.SHARED_WAIT_SECONDS_KEY in value and not is_non_negative_number(value[_selection.SHARED_WAIT_SECONDS_KEY]):
+        errors.append(f"`{field}`の共有待ち秒数はbool以外の0以上の有限数にする")
     if not is_string_list(value["参照した記録"]) or any(not record.strip() for record in value["参照した記録"]):
         errors.append(f"`{field}`の参照した記録は空でない文字列の列にする")
     errors.extend(_record_structure_errors(field, "除外した記録", value["除外した記録"], {"記録", "理由"}))

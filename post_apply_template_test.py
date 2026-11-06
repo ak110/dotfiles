@@ -25,6 +25,14 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig")
 
 
+@pytest.mark.parametrize("template", [LINUX_TEMPLATE, WINDOWS_TEMPLATE])
+def test_reinstall_exempts_only_authored_pyfltr_from_release_wait(template: Path) -> None:
+    """先行APIの導入に必要な自作パッケージだけを公開待機から除く。"""
+    text = _read(template)
+    assert "uv tool install --exclude-newer-package pyfltr=false --editable" in text
+    assert "--exclude-newer " not in text
+
+
 def test_linux_post_apply_is_final_operation() -> None:
     """Linux成功分岐はpost-applyをexecし、後続出力を持たない。"""
     text = _read(LINUX_TEMPLATE)
@@ -35,7 +43,7 @@ def test_linux_post_apply_is_final_operation() -> None:
         '    exec "$post_apply_bin"',
         "else",
         '    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: '
-        'uv tool install --editable \\"{{ .chezmoi.workingTree }}\\" '
+        'uv tool install --exclude-newer-package pyfltr=false --editable \\"{{ .chezmoi.workingTree }}\\" '
         '--with-editable \\"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}\\"を実行し、'
         'update-dotfilesを再実行してください。"',
         "fi",
@@ -61,7 +69,7 @@ def test_windows_post_apply_final_condition_has_branch_local_order() -> None:
         "    exit $LASTEXITCODE",
         "} else {",
         '    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: '
-        'uv tool install --editable `"{{ .chezmoi.workingTree }}`" '
+        'uv tool install --exclude-newer-package pyfltr=false --editable `"{{ .chezmoi.workingTree }}`" '
         '--with-editable `"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}`"を実行し、'
         'update-dotfilesを再実行してください。"',
         "}",
@@ -152,7 +160,7 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     stop_loop = text.index("foreach ($p in $restorableProcs)")
     stop_process = text.index("Stop-Process -Id $p.ProcessId", stop_loop)
     install_guard = text.index("if ($needsReinstall -and -not $reinstallDeferred)")
-    install = text.index('& uv tool install --editable "{{ .chezmoi.workingTree }}"')
+    install = text.index('& uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}"')
     deferred = text.index("} elseif ($reinstallDeferred) {")
 
     assert classification < guard < stop_loop < stop_process < install_guard < install < deferred
@@ -394,7 +402,7 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
     """Linux側は更新対象を保持するプロセスを停止せず、成功時だけハッシュを更新する。"""
     text = _read(LINUX_TEMPLATE)
     install = text.index(
-        "if uv tool install "
+        "if uv tool install --exclude-newer-package pyfltr=false "
         '--editable "{{ .chezmoi.workingTree }}" '
         '--with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}" && test_expected_shims; then'
     )

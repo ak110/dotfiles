@@ -10,6 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 検証の開始前と未コミット結果の再利用前 | `verification-evidence.md`の「検証時本文の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「検証時本文の保存」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/awi-body.md#「完成条件」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「完成条件」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md#「検証とCI」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「検証とCI」` |
@@ -20,6 +21,9 @@
 | 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
 
 ## 実行のしかた
+
+検証の開始前に、`verification-evidence.md`「検証時本文の保存」に従って取得HEAD・変更状態と対象本文を確保する。
+保存済み結果の再利用では、その保存物から復元した本文と現在の対象を比較し、履歴・入力・環境など本文以外の条件も確認する。
 
 - 計画した検証は`agent-toolkit:write-plan/references/plan-file-standards.md`「計画した検証の実行」に従う。計画がなければ引き継ぎ記録のコマンドを使い、同じ実行・判定基準を適用する。検証表の書式と訂正・引き継ぎは同書「検証と公開工程」が定める。
 - 保存済み結果は、`check-execution-operations.md`「保存した実行出力の取得」に従って読み、取得時のHEAD、cwd、終了コードと対応付ける。取得できない出力や未記録の終了状態は成功の根拠にしない。

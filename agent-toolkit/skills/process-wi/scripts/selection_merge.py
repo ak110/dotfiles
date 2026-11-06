@@ -120,8 +120,11 @@ def merge_selection(
         raise ValueError("既存と追加の両YAMLへ`見込みの補正`を記録する")
     correction = typing.cast(dict[str, object], existing[correction_key])
     additional_correction = typing.cast(dict[str, object], added[correction_key])
-    if correction["係数"] != additional_correction["係数"]:
-        raise ValueError("追加YAMLの`見込みの補正`の係数が既存と異なる。同じ係数で追加分を補正する")
+    coefficients = _selection.correction_coefficients(correction)
+    if ("係数" in correction) != ("係数" in additional_correction):
+        raise ValueError("既存と追加の`見込みの補正`の形式が異なる。既存と同じ形式で追加分を記録する")
+    if coefficients != _selection.correction_coefficients(additional_correction):
+        raise ValueError("追加YAMLの`見込みの補正`の係数が既存と異なる。同じ工程別係数で追加分を補正する")
     first, second = _rows(existing), _rows(added)
     names = [str(item[_selection.WI_KEY]) for item in [*first, *second]]
     if len(names) != len(set(names)):
@@ -176,13 +179,16 @@ def merge_selection(
         prior[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         if prior.get(_selection.STAGE_KEY, 1) != row.get(_selection.STAGE_KEY, 1):
             raise ValueError(f"{lane}: 合流するレーンの段階が異なる。最終割当に合う入力へ直す")
-        for key, raw in zip(
-            _SECONDS.values(), (_selection.UNCORRECTED_IMPLEMENTATION_KEY, _selection.UNCORRECTED_INTEGRATION_KEY), strict=True
+        for key, raw, coefficient in zip(
+            _SECONDS.values(),
+            (_selection.UNCORRECTED_IMPLEMENTATION_KEY, _selection.UNCORRECTED_INTEGRATION_KEY),
+            coefficients,
+            strict=True,
         ):
             if raw not in prior or raw not in row:
                 raise ValueError(f"{lane}: 合流する両行へ`{raw}`を記録する")
             prior[raw] = typing.cast(float, prior[raw]) + typing.cast(float, row[raw])
-            prior[key] = typing.cast(float, prior[raw]) * typing.cast(float, correction["係数"])
+            prior[key] = typing.cast(float, prior[raw]) * coefficient
         prior[_selection.RATIONALE_KEY] = f"{prior[_selection.RATIONALE_KEY]}\n{row[_selection.RATIONALE_KEY]}"
         prior[_selection.PRIOR_LANES_KEY] = list(
             dict.fromkeys(
@@ -227,7 +233,7 @@ def merge_selection(
         _selection.LANE_OVERLAPS_KEY: list(overlaps.values()),
         "続行できない理由": ["なし"],
         correction_key: {
-            "係数": correction["係数"],
+            **correction,
             "参照した記録": list(
                 dict.fromkeys(
                     typing.cast(list[str], correction["参照した記録"])
@@ -237,6 +243,11 @@ def merge_selection(
             "除外した記録": list(typing.cast(list[object], correction["除外した記録"])),
         },
     }
+    if _selection.SHARED_WAIT_SECONDS_KEY in correction:
+        # 追加側は全体配分の待ちを再確定する。既存側との加算は同じ待ちを二重に数える。
+        typing.cast(dict[str, object], result[correction_key])[_selection.SHARED_WAIT_SECONDS_KEY] = additional_correction[
+            _selection.SHARED_WAIT_SECONDS_KEY
+        ]
     if _selection.INITIAL_ALLOCATION_KEY in existing:
         result[_selection.INITIAL_ALLOCATION_KEY] = existing[_selection.INITIAL_ALLOCATION_KEY]
     result[_selection.ADDED_WIS_KEY] = [

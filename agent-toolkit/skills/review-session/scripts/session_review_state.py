@@ -31,11 +31,7 @@ def main(argv: list[str] | None = None) -> int:
             if not value:
                 raise ValueError("finishはrun-skillが起動したbatch内で実行する")
             path = pathlib.Path(value)
-            manifest = session_review.read(path)
-            if not manifest.get("prepared") or any(item.get("unconfirmed_scope") for item in manifest["prepared"]):
-                raise ValueError("未準備または未確認範囲のあるbatchは完了できない")
-            manifest["analysis_succeeded"] = True
-            session_review.write(path, manifest)
+            manifest = session_review.BatchWriter(path).analyze()
             result = {"run_id": manifest["run_id"], "analysis_succeeded": True}
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"失敗: {error}\n次の操作: --preparedの準備結果と元記録を確認し、成功した準備結果で再実行する", file=sys.stderr)

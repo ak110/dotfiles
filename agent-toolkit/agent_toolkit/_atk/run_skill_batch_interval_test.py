@@ -18,7 +18,10 @@ from agent_toolkit._common import session_activity, session_review
 
 def _pending(name, *, batch=False):
     path = session_review.directory() / "pending" / f"claude-{name}.json"
-    session_review.write(path, {"key": path.stem, "host": "claude", "session_id": name, "review_batch": batch})
+    session_review.write(
+        path,
+        {"key": path.stem, "host": "claude", "session_id": name, "review_batch": batch, "generation": f"{name}-generation"},
+    )
 
 
 def _previous(*, legacy, now, elapsed):
@@ -126,7 +129,7 @@ def test_public_cli_selects_batch_only_with_other_eligible_targets(monkeypatch, 
         _pending("ordinary")
         if ordinary == "failure-unreported":
             path = session_review.directory() / "pending" / "claude-ordinary.json"
-            session_review.write(path, {**session_review.read(path), "failure_unreported": True})
+            session_review.write(path, {**session_review.read(path), "failure_unreported": True, "failure_key": "failure"})
     if not manual:
         launch_id = "a" * 32
         monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
@@ -212,9 +215,11 @@ def test_public_cli_skips_batch_when_other_target_cannot_be_prepared(tmp_path, m
         return {"session_id": target["session_id"], "scope_path": str(scope)}
 
     def failure(manifest, path, reason, **kwargs):
-        del kwargs
+        del manifest, kwargs
         failures.append(reason)
-        session_review.write(path, {**manifest, "status": "failed", "report_synced": True})
+        writer = session_review.BatchWriter(path)
+        writer.fail("failure", reason)
+        writer.report_failure(synced=True)
 
     def unexpected(args, **kwargs):
         del args, kwargs
@@ -352,9 +357,11 @@ def test_public_failed_run_defers_automatic_retry_but_accepts_manual(tmp_path, m
         return {"session_id": target["session_id"], "scope_path": str(scope)}
 
     def failure(manifest, path, reason, **kwargs):
-        del kwargs
+        del manifest, kwargs
         failures.append(reason)
-        session_review.write(path, {**manifest, "status": "failed", "report_synced": True})
+        writer = session_review.BatchWriter(path)
+        writer.fail("failure", reason)
+        writer.report_failure(synced=True)
 
     def failed_execution(args, **kwargs):
         del args, kwargs

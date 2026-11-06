@@ -56,7 +56,8 @@ fi
 if [ "$needs_reinstall" = 1 ]; then
     echo "  [pytools] ${reason} → 再インストール"
     # Linuxでは更新対象を保持するプロセスを停止せず、失敗時は既存版とハッシュを温存して次回へ延期する。
-    if uv tool install --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}" && test_expected_shims; then
+    # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
+    if uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" --with-editable "{{ joinPath .chezmoi.workingTree "agent-toolkit" }}" && test_expected_shims; then
         mkdir -p "$cache_dir"
         printf '%s' "$current_hash" >"$hash_file"
     else
@@ -76,5 +77,5 @@ if [ -x "$post_apply_bin" ]; then
     # post-applyの案内を更新処理全体の最終出力にするため、後続処理を置かずexecする。
     exec "$post_apply_bin"
 else
-    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: uv tool install --editable \"{{ .chezmoi.workingTree }}\" --with-editable \"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}\"を実行し、update-dotfilesを再実行してください。"
+    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --editable \"{{ .chezmoi.workingTree }}\" --with-editable \"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}\"を実行し、update-dotfilesを再実行してください。"
 fi

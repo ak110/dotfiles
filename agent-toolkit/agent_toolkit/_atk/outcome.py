@@ -72,6 +72,7 @@ STATE_CHANGE_COMMANDS = frozenset(
 
 VALUE_OUTPUT_COMMANDS = frozenset(
     {
+        "atk wi submit",
         "atk worktree-stash save",
         "atk worktree-stash drop",
         "atk review-table init",

@@ -17,7 +17,10 @@ from agent_toolkit._common import session_review
 @pytest.mark.parametrize("status", ["starting", "accepted", "settled", "notified"])
 def test_launch_sweep_preserves_unreported_attempts(status: str) -> None:
     path = session_review.directory() / "launches" / ("a" * 32 + ".json")
-    session_review.write(path, {"status": status})
+    value = {"status": status}
+    if status == "accepted":
+        value["manifest_path"] = "run.json"
+    session_review.write(path, value)
     path.with_suffix(".log").write_text("診断", encoding="utf-8")
     session_review.sweep(now=time.time() + 31 * 24 * 60 * 60)
     assert path.exists() is (status == "starting")
@@ -31,6 +34,9 @@ def test_launch_receipt_transfers_failure_ownership(tmp_path: pathlib.Path, monk
     monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
     manifest = tmp_path / "run.json"
     session_review.launch_result(manifest=manifest)
+    assert session_review.read(path)["manifest_path"] == str(manifest)
+    session_review.launch_result()
+    assert session_review.read(path)["status"] == "accepted"
     assert session_review.read(path)["manifest_path"] == str(manifest)
     assert session_review.launch_notice() is None
 
@@ -270,7 +276,15 @@ def test_reported_failure_becomes_collectable_only_after_pending_is_cleared(tmp_
     log = tmp_path / "failed.log"
     session_review.write(
         run,
-        {"run_id": "failed", "status": "failed", "targets": [target], "report_synced": True, "log_path": str(log)},
+        {
+            "run_id": "failed",
+            "status": "failed",
+            "targets": [target],
+            "report_synced": True,
+            "log_path": str(log),
+            "failure_key": "failure",
+            "error": "失敗",
+        },
     )
     launch = session_review.directory() / "launch.log"
     launch.write_text("起動診断", encoding="utf-8")

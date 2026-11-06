@@ -5,14 +5,34 @@ agent-toolkitの非テストのコードは`git`を直接起動せず、本モ�
 テキストで受け取る出力は常にUTF-8として復号し、復号できないバイトは置換文字へ置き換える。
 """
 
+import contextlib
+import contextvars
+import math
 import pathlib
 import subprocess
 import sys
+import time
 import typing
-from collections.abc import Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
+
+lazy from agent_toolkit._common import process_tree
 
 type _Cwd = str | pathlib.Path | None
 type _Stream = int | typing.IO[typing.Any] | None
+_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar("git_deadline", default=None)
+
+
+@contextlib.contextmanager
+def timeout_scope(seconds: float) -> Generator[None]:
+    """この文脈のGit呼出を残り秒数で制限し、既存の短い期限を保つ。"""
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("Gitの期限は正の有限秒数で指定する")
+    current = _DEADLINE.get()
+    token = _DEADLINE.set(min(time.monotonic() + seconds, current) if current is not None else time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(token)
 
 
 def command_line(args: Sequence[str]) -> list[str]:
@@ -76,8 +96,15 @@ def run(
     `text=True`の出力は、UTF-8として復号して改行を`\\n`へ正規化した文字列で返す。
     """
     raw_input = input.encode("utf-8") if isinstance(input, str) else input
+    deadline = _DEADLINE.get()
+    if deadline is not None:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(command_line(args), 0)
+        timeout = remaining if timeout is None else min(timeout, remaining)
     try:
-        result = subprocess.run(
+        runner = process_tree.run_with_timeout if deadline is not None else subprocess.run
+        result = runner(
             command_line(args),
             cwd=cwd,
             check=False,

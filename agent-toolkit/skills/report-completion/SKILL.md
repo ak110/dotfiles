@@ -39,6 +39,7 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 待機中の登録と残る予定項目を確認する前 | `agent-toolkit:delegation/references/waiting-and-monitoring.md`の「待機中の先行実施」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機中の先行実施」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-session/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
@@ -64,6 +65,7 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 | 作業完了報告の本文を書く前 | `references/report-formats.md`の「検証結果と実行記録」「作業完了報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「検証結果と実行記録」「作業完了報告のフォーマット」` | |
 | 振り返り結果報告かその予告を書く前 | `references/report-formats.md`の「振り返り結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` | |
 | AWI投入結果報告を書く前 | `references/report-formats.md`の「AWI投入結果報告のフォーマット」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「AWI投入結果報告のフォーマット」` | |
+| 独立したWI投入を受付して投入元の終了を判定するとき | `../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` | |
 | 報告用UWIを書く前 | `references/report-formats.md`の「報告用UWIのフォーマット」「報告用UWIの確認と保存」と`../wi-standards/references/uwi-format.md`、`agent-toolkit:wi-standards/SKILL.md` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIのフォーマット」「報告用UWIの確認と保存」`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-save` | |
 | 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
 | Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` | |
@@ -88,6 +90,10 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 完了済みの作業は、新しい要求、結果に影響する変更、新しい失敗、未検証の完成条件を根拠に再開する。
 報告の不足は保存済みの証拠で補い、状況確認だけを理由に検証済みの作業を繰り返さない。
 
+独立したWI投入は`share/wi-submission.md`の受付票を検証し、所有移管済みの要求と未移管の要求を区別する。
+投入元は製品のwriter、公開・CI検収、本回の報告と結果保存を終えたうえで、所有移管済みの投入を待機集合から外して終了できる。
+報告には受付済みで投入結果待ちであることと、要求ごとの照会先を残す。
+
 ## 工程
 
 各番号の手順は必要な入力が揃い次第進め、前の出力に依存しない処理は並行してよい。
@@ -104,6 +110,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 4. 協調モードで作成したコミットがあり、確認済みの公開範囲がコミットよりも先まで及ぶ場合は、`agent-toolkit:commit`の`references/publish.md`に従ってその範囲の公開を完了する。`agent-toolkit:process-wi`および`agent-toolkit:process-wi single-lane`は、それぞれの工程内で公開する。
 5. 元の要求が求めた結果を各工程の成果から確認し、`references/report-formats.md`「作業完了報告のフォーマット」の本文を確定する。成果、検証、公開・反映・回収の到達点、未達、自ら確定した判断、投入したWIを同じ報告へまとめる。未送達の必要事項があれば補う。追加の送達は必要な未送達事項がある場合に限る。
    本文の確定前に、作業記録（計画の`## 進捗ログ`、計画が無ければ引き継ぎ記録）に残る、途中報告でAWI化ステータスを`予定`とした改善点を回収する。今回のAWI投入結果、再利用した既存項目、不要の判断と突き合わせ、各対象を`済`とWIファイル名、または`不要`と理由へ確定して同じ作業記録へ追記する。確定できない対象は理由と残工程を報告へ残す。会話圧縮や担当交代の後も同じ作業記録から復元し、`済`と確定した対象へAWIを重ねて投入しない。報告での記載先は`references/report-formats.md`の各フォーマットに従う。
+   待機中の登録は`agent-toolkit:delegation/references/waiting-and-monitoring.md`「待機中の先行実施」で発見時から進め、本手順は実際に前提が残る`予定`の回収に使う。前提が解消した対象は保存まで再開し、残る対象は不足する判断・認可・入力や具体的競合と再開条件を同じ作業記録へ保持する。修正が次回であることと、登録自体が未完了であることを区別する。
    改善点の報告は、その場の直接的原因と影響の最低限調査、必要な是正、担当外の処置の引き継ぎまでを終える。確定した不具合の処置は`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従う。非同期の振り返りが残る場合も、元作業の送達と終了を進める。
 6. 自律モードでは、確定した作業結果をユーザーが確認し是正を指示できるよう、事後承認型の報告用UWIをセッションにつき1件保存する。これを「報告用UWI」と呼ぶ。本文と保存前の確認は`references/report-formats.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」と、`agent-toolkit:wi-standards`の`references/uwi-format.md`に従う。通常WIの共通起草3資料は報告用だけの保存では取得せず、由来・認可・保存先と投入操作はwi-standardsの該当契約に従い、`atk wi add`と`atk wi edit`の成功メッセージと警告を検収する。原稿作成と保存受付に続けて、実際の保存成功と警告を検収した時点でユーザーへの伝達を完了とする。失敗した場合は既存のWI投入失敗時の対応へ進み、同じUWIの保存を回復する。
    `atk run-skill`による実行では`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保持する。通常起動のscopeはスキル名だけとし、自由記述はscopeに含めない。batchのscopeは`agent-toolkit:review-session batch`とする。保存CLIが付与する`run_skill_run_id`を再開・更新でも維持し、起動元が渡した報告先リポジトリを使用する。報告先は起動元の指定から決め、実行cwdとは区別する。起動元は本文、commit、およびupstream設定時のpushを検収する。batchの振り返り結果はその実行の1件の報告へ集約し、対象セッションの作業完了報告とは別に保存する。

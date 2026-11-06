@@ -28,6 +28,9 @@ NO_STAGED_PLAN = "成立する段階案なし"
 PUBLIC_WRITE_RATIONALES_KEY = "公開工程の規範根拠"
 WRITE_SCOPE_REASONS_KEY = "書込範囲の理由"
 ESTIMATE_CORRECTION_KEY = "見込みの補正"
+IMPLEMENTATION_COEFFICIENT_KEY = "実装係数"
+INTEGRATION_COEFFICIENT_KEY = "統合係数"
+SHARED_WAIT_SECONDS_KEY = "共有待ち秒数"
 UNCORRECTED_IMPLEMENTATION_KEY = "補正前の実装秒数"
 UNCORRECTED_INTEGRATION_KEY = "補正前の統合秒数"
 DERIVED_NEW_PATHS_KEY = "導出した新設先"
@@ -36,6 +39,17 @@ NOT_INTEGRATED = "未統合"
 INTEGRATED = "統合済み"
 INITIAL_ALLOCATION_KEY = "初回配分"
 ADDED_WIS_KEY = "追加WI"
+
+
+def correction_coefficients(correction: dict[str, object]) -> tuple[float, float]:
+    """型検査済みの工程別係数を返す。旧形式の未分離係数は両工程へ適用する。"""
+    if "係数" in correction:
+        coefficient = typing.cast(float, correction["係数"])
+        return coefficient, coefficient
+    return (
+        typing.cast(float, correction[IMPLEMENTATION_COEFFICIENT_KEY]),
+        typing.cast(float, correction[INTEGRATION_COEFFICIENT_KEY]),
+    )
 
 
 def integrated_lanes(selection: object) -> set[str]:

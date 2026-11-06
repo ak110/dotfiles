@@ -45,5 +45,6 @@ run = [
     "env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras",
     "prek install -c .pre-commit-config.yaml",
     "git config --local commit.template .gitmessage",
-    "uv tool install --editable .",
+    # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
+    "uv tool install --exclude-newer-package pyfltr=false --editable .",
 ]

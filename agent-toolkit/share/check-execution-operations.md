@@ -2,6 +2,9 @@
 
 ## 統合実行ツール経由の起動
 
+後続のレビュー・統合で使う検証を起動する前に、`verification-evidence.md`「検証時本文の保存」に従って対象版と必要な本文保存物を確保する。
+出力の保存先、取得HEAD、実行条件と本文保存物の対応は、同書「完成条件証拠の検証記録」へ残す。
+
 - プロジェクトで採用されている統合実行ツール（`pyfltr`など）を利用し、対象範囲を絞り込む場合もその統合ツールに対象パスを渡して実行する。個別のツールを直接単体で起動する運用は、デバッグ、最小限の再現環境の構築、原因特定など、プロジェクト規範で明示的に認められている場面に限定する。
 - チェック実行用のMCPツールが利用できる場合はそれを優先し、pyfltrにおいては`run`ツールを使用する。MCPが利用できない外部のチェックや手動での動作確認は、実行環境が提供する標準の実行機能、背景実行、および待機機能を用いて実行する。検証ログの全量を別の担当エージェントへ引き渡す場合は、自身のセッション用のmanaged-temp内に標準出力と標準エラー出力を個別に分けて保存し、終了コードと取得時点の`git rev-parse HEAD`を`検証結果`に記録する。
 - 同一のOSアカウント内で同時に1プロセスのみ実行を許可する実行枠（スロット）に参加する検証処理は、先行する他の検証が完了するのを待ってから実際の処理を開始する。この実行枠に参加する対象は、pyfltrを起動するすべての手段（CLI、MCPの`run`、pyfltrを呼び出すタスクランナー、commit hookが動く`git commit`など）と、プロジェクトでこの実行枠へ参加するよう設定されたpytestプラグインを読み込むpytestである。以下の起動方法と3つの分類基準は、この対象群に限定して適用する。
@@ -30,6 +33,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 後続へ渡す検証を起動する前 | `verification-evidence.md`の「検証時本文の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「検証時本文の保存」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |

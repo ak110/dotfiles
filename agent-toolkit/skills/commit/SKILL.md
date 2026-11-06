@@ -28,6 +28,7 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「暫定回避と結果報告」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「暫定回避と結果報告」` |
 | 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
+| 未コミット検証の実行前とcommit後の適用確認前 | `agent-toolkit:/share/verification-evidence.md`の「検証時本文の保存」 | 判断 | `section:agent-toolkit:*/share/verification-evidence.md#「検証時本文の保存」` |
 | 取得版の異なる結果をレビューへ渡す前 | `agent-toolkit:/share/exec-review-recording.md#「根拠の書き方」` | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「根拠の書き方」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
@@ -55,6 +56,8 @@ push後にCIが失敗した場合は`agent-basics:bugfix`を起動し、同ス�
 このまとめ方でもコミットフックを実行し、終了状態・診断・個別結果と最終内容の対応を確認する。
 
 以前に保存した検証結果を再利用できるかどうかは、`agent-basics:check-execution/references/verification-scope.md`「実行条件と再実行」に沿って判断する。取得したバージョンの対応付けは、`agent-toolkit:/share/exec-review-recording.md`「根拠の書き方」に従う。内容が確定したあとも有効な成功結果はそのまま活かし、結果に影響を与える変更点や未検証の項目だけを追加で検証する。
+未コミットの状態で後続へ渡す検証を実行する前には、`agent-toolkit:/share/verification-evidence.md`「検証時本文の保存」を適用する。
+commitやフックの後は、その保存本文と最終内容を比較する。cleanな版のOIDと適格な保存結果で対応を確認できる場合は、本文の重複保存や一律の全体再検証を要求しない。
 
 ## 通常commit
 

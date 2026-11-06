@@ -184,6 +184,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "CI失敗を1回確認して新規AWIを投入する。\n\n目的: 常駐監視と共有するCI収集・重複除外・本文生成・保存を1回実行する。\n利用場面: エージェントがprocess-wiの実行途中などにCI失敗を確認するとき。\n対象と出力: --target-repoのローカル作業ツリー、未指定時は現在の作業ツリーを対象とする。GitHubのワークフローとイベント別の直近完了run、GitLabの最新pipelineと有効なPipeline Scheduleを確認し、未投入の失敗をsource=alert-monitor・alert_keys付きのAWIへ保存する。成功行へ投入件数を書き、0件を含め終了コード0で終わる。全体・一部の取得失敗は理由と投入件数を分けて示し、終了コード1で終わる。対象・引数の不正は終了コード2、保存失敗は非0で終わる。\n前提: private-notes、対象のorigin、追跡先またはorigin/HEADとforgeの認証が有効であること。\n復元・後始末: 実行後に終了する。保存したAWIは通常のキュー操作で扱う。process-loop・process-wi・Dependabot監査は起動せず、呼び出す時機は各環境が選ぶ。",
         "epilog": "実行例:\n\n  atk wi check-alerts\n  atk wi check-alerts --target-repo /home/user/repo --forge github",
     },
+    "atk wi submit": {
+        "summary": "自己完結したWI要求を独立監督へ永続受付する",
+        "description": "WI要求を独立した投入実行へ渡す。\n\n目的: 親の終了後もWIの意味確認・保存・報告を完遂する。\n利用場面: 確定済みの要件と由来・逐語原文・証拠を投入専用セッションへ引き渡すとき。\n対象と出力: --request-fileのJSONを状態ディレクトリのwi-submitへ保存し、監督のPID世代と所有移管を確認してJSON受付票を返す。同じrequest_idの同じ入力は同じ受付へ対応し、異なる入力は拒否する。--showは受付と結果・未報告の所在を返す。--finishは対応するrun-skill実行から要求ごとの結果を保存する。\n前提: JSONの項目と投入セッションの契約はshare/wi-submission.mdを参照する。受付票は投入完了と区別する。\n復元・後始末: 未完了・未報告は保持し、SessionStart/SessionEndと--showで再観測する。成否不明の要求を新しいモデルへ再送しない。完了して報告同期済みの受付とログは最終更新から30日後の再観測で回収する。",
+        "epilog": "受付入力: 単一の要求object、または同じtarget_repoと一意のrequest_idを持つ要求objectの非空配列。\n単一入力には単一応答、配列には入力順の応答配列を返す。同時に確定した要求は1つの配列で渡す。\n\n実行例:\n\n  atk wi submit --request-file /absolute/path/request.json\n  atk wi submit --show request-1\n  atk wi submit --finish /absolute/path/result.json\n  atk wi submit --resume request-1",
+    },
     "atk wi submission": {
         "summary": "add-awi-by-userの投入先と作業期間を記録する",
         "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のagent-toolkit:add-awi-by-userの会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
