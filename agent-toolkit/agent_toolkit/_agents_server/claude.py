@@ -595,7 +595,7 @@ class ClaudeServerManager:
     """Claudeセッションの所有タスクと結果メタデータを管理する。"""
 
     START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool] = False
-    """起動の例外は候補を変えても結果が変わらないため、次の候補へ進まずに委譲元へ返す。"""
+    """起動状態や帰属が未確定の一般例外は返す。確認済みの起動前不成立だけを専用型で次候補へ渡す。"""
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool] = False
     """中断の要求にturnの識別子を使わない。"""
     ORPHAN_TAKEOVER: typing.ClassVar[bool] = False

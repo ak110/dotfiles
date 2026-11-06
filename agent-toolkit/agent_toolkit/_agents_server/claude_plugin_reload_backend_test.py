@@ -3,8 +3,10 @@
 import asyncio
 import json
 import pathlib
+import subprocess
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 import claude_agent_sdk
 import pytest
@@ -121,7 +123,7 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
         def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
             if broken and failure == "inventory":
                 raise ValueError("不正な導入一覧")
-            return [claude_plugins._InstalledPlugin(id="agent-toolkit@mine", enabled=True, scope="user", installPath=str(root))]
+            return [claude_plugins._InstalledPlugin(id="agent-toolkit@mine", installPath=str(root))]
 
         async def wait_for_change(self) -> None:
             await changed.wait()
@@ -169,4 +171,180 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
             await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
         assert session.status == "completed" and session.agent_message == "完了"
         assert session.session_id == "reload-failure" and len(client.queries) == 2
+    assert client.disconnected and client.readers == 0
+
+
+@pytest.mark.parametrize("monitor_failure", [False, True])
+@pytest.mark.asyncio
+async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, monitor_failure: bool
+) -> None:
+    """一覧選別と任意監視の縮退を実helperに通し、同接続の後続作業と終了を検証する。"""
+    source = tmp_path / "cache/mine/agent-toolkit/1.0.0"
+    (source / ".claude-plugin").mkdir(parents=True)
+    (source / ".claude-plugin/plugin.json").write_text(
+        json.dumps({"name": "agent-toolkit", "version": "1.0.0"}), encoding="utf-8"
+    )
+    (source / "skills").mkdir()
+    reloaders: list[claude_plugins.ClaudePluginReloader] = []
+    inventory_calls: list[list[str]] = []
+    control_calls: list[dict[str, str]] = []
+    reloaded = asyncio.Event()
+    stopped: list[bool] = []
+
+    def inventory(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        inventory_calls.append(command)
+        # 2.1.319で観測した同期2項目の形と、別の対象外形態を混在させる。
+        entries = [
+            {"id": "agent-toolkit@mine", "scope": "user", "enabled": True, "installPath": str(source)},
+            {"id": "agent-toolkit@synced", "scope": "synced", "enabled": True, "installPath": ""},
+            {"id": "agent-basics@synced", "scope": "synced", "enabled": True, "installPath": ""},
+            {"id": "disabled@mine", "scope": "user", "enabled": False, "installPath": None},
+        ]
+        return subprocess.CompletedProcess(command, 0, json.dumps(entries), "")
+
+    class Reloader(claude_plugins.ClaudePluginReloader):
+        async def prepare(self) -> None:
+            self.options["plugins"] = [{"type": "local", "path": str(source)}]
+            await super().prepare()
+            basics = pathlib.Path(self.options["plugins"][0]["path"]).parent / "agent-basics"
+            (basics / ".claude-plugin").mkdir(parents=True)
+            (basics / ".claude-plugin/plugin.json").write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
+            (basics / "skills").mkdir()
+            reloaders.append(self)
+
+        def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
+            with patch.object(claude_plugins.process_tree, "run_with_timeout", inventory):
+                return super()._inventory()
+
+    class UnavailableObserver:
+        ident = None
+
+        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def start(self) -> None:
+            raise OSError("fixture: monitor unavailable")
+
+        def stop(self) -> None:
+            stopped.append(True)
+
+    async def control(payload: dict[str, str], **_kwargs: Any) -> dict[str, Any]:
+        control_calls.append(payload)
+        mirror = pathlib.Path(reloaders[0].options["plugins"][0]["path"])
+        reloaded.set()
+        return {
+            "plugins": [{"name": "agent-toolkit", "path": str(mirror), "version": "1.0.0"}, {"path": "builtin"}],
+            "error_count": 0,
+        }
+
+    class Client(QueueClaudeClient):
+        _query = SimpleNamespace(_send_control_request=control)
+
+    client = Client(
+        [
+            [claude_agent_sdk.SystemMessage("init", {"session_id": "inventory-boundary"}), ResultMessage("初回完了")],
+            [AssistantMessage("同じ接続の成果"), ResultMessage("後続完了")],
+        ]
+    )
+    monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
+    if monitor_failure:
+        monkeypatch.setattr(claude_plugins, "Observer", UnavailableObserver)
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
+        session = await backend.start("初回", str(tmp_path))
+        async with backend._condition:
+            await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
+        reloader = reloaders[0]
+        mirror = pathlib.Path(reloader.options["plugins"][0]["path"])
+        assert mirror.is_dir() and reloader._roots <= {source.resolve()}
+        if monitor_failure:
+            assert reloader._observer is None and stopped == [True]
+        else:
+            reloader.mark_changed()
+            await asyncio.wait_for(reloaded.wait(), timeout=5)
+        assert (await backend.send_message(session, "後続"))["delivery"] == "reply_started"
+        async with backend._condition:
+            await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
+        assert session.session_id == "inventory-boundary" and session.agent_message == "後続完了"
+        assert len(client.queries) == 2
+    assert len(inventory_calls) == (1 if monitor_failure else 2)
+    assert len(control_calls) == (0 if monitor_failure else 1)
+    assert client.disconnected and client.readers == 0
+    assert not mirror.exists()
+
+
+@pytest.mark.parametrize("failure", ["monitor-stop", "inventory-timeout"])
+@pytest.mark.asyncio
+async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, failure: str
+) -> None:
+    """停止未確認の監視・一覧処理は次queryを止め、所有タスクの回収へ渡す。"""
+    source = tmp_path / "checkout/agent-toolkit"
+    for name in ("agent-toolkit", "agent-basics"):
+        root = source.parent / name
+        (root / ".claude-plugin").mkdir(parents=True)
+        (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": name}), encoding="utf-8")
+        (root / "skills").mkdir()
+    reloaders: list[claude_plugins.ClaudePluginReloader] = []
+    closed = asyncio.Event()
+    stops: list[bool] = []
+
+    class Observer:
+        ident = None
+        started = False
+
+        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+            if self.started:
+                raise OSError("再監視を開始できない")
+
+        def start(self) -> None:
+            self.started = True
+
+        def unschedule_all(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            stops.append(True)
+            if failure == "monitor-stop" and len(stops) == 1:
+                raise OSError("監視を停止できない")
+
+    class Reloader(claude_plugins.ClaudePluginReloader):
+        async def prepare(self) -> None:
+            self.options["plugins"] = [{"type": "local", "path": str(source)}]
+            await super().prepare()
+            reloaders.append(self)
+
+        def _inventory(self) -> list[claude_plugins._InstalledPlugin]:
+            def inventory(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+                if failure == "inventory-timeout" and reloaders:
+                    raise subprocess.TimeoutExpired(command, 30)
+                entries = [{"id": "agent-toolkit@mine", "scope": "user", "enabled": True, "installPath": str(source)}]
+                return subprocess.CompletedProcess(command, 0, json.dumps(entries), "")
+
+            with patch.object(claude_plugins.process_tree, "run_with_timeout", inventory):
+                return super()._inventory()
+
+        async def close(self, *, retain_input: bool = False) -> None:
+            await super().close(retain_input=retain_input)
+            closed.set()
+
+    async def control(_payload: dict[str, str], **_kwargs: Any) -> dict[str, Any]:
+        return {"plugins": [{"name": "agent-toolkit", "path": str(source)}], "error_count": 0}
+
+    class Client(QueueClaudeClient):
+        _query = SimpleNamespace(_send_control_request=control)
+
+    client = Client([[claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}), ResultMessage("初回完了")]])
+    monkeypatch.setattr(claude_plugins, "Observer", Observer)
+    monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
+    async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
+        session = await backend.start("初回", str(tmp_path))
+        async with backend._condition:
+            await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
+        reloaders[0].request_reload()
+        with pytest.raises(claude.SessionOwnerGoneError):
+            await backend.send_message(session, "後続")
+        await asyncio.wait_for(closed.wait(), timeout=5)
+        assert session.status == "failed" and len(client.queries) == 1
+        assert stops == ([True, True] if failure == "monitor-stop" else [True])
     assert client.disconnected and client.readers == 0
