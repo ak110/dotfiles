@@ -17,6 +17,10 @@ WindowsのCodex App Serverでは、この漏れた孫が一時領域を保持し
 
 対象の特定は起点PIDからの子孫関係だけを根拠とする。
 プロセス名の部分一致とパターン一致で対象集合を広げない。
+
+回収できない子孫は、任意機能の失敗・通常の時間上限・警告だけへ変換しない。
+所有する資源の停止を確認できない間に後続の更新や再接続へ進むと、残った子孫と新しい処理が同じ資源を奪い合う。
+`run_with_timeout`と`process_scope`は回収不能を`ReclaimError`で送出し、所有対象を保持して同じ対象の回収を再試行できるようにする。
 """
 
 import contextlib
@@ -83,6 +87,27 @@ class TreeStopResult:
     def unresolved_descriptions(self) -> list[str]:
         """未確定の理由を、残存診断へ渡す形式で返す。"""
         return [f"生成の停止を確認できない: {reason}" for reason in self.unresolved]
+
+
+class ReclaimError(RuntimeError):
+    """起動した子プロセスの停止を確認できない。
+
+    任意機能の失敗を吸収する既存の`except`節（`OSError`、`subprocess.SubprocessError`）に捕まらないよう、
+    `RuntimeError`の派生にする。受け取った呼出元は後続の更新・再接続を始めず、`retry`で同じ対象を回収し直す。
+    """
+
+    def __init__(self, residual: list[str], processes: list[psutil.Process], *, context: str) -> None:
+        super().__init__(residual_message(residual, context=context))
+        self.residual = residual
+        self.processes = processes
+        self.context = context
+
+    def retry(self, *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[str]:
+        """保持した所有対象とその子孫を回収し直し、なお残る対象の記述を返す（空なら回収済み）。"""
+        result = stop_tree(None, known=self.processes, timeout=timeout)
+        self.processes = list(result.residual)
+        self.residual = result.descriptions()
+        return self.residual
 
 
 def stop_tree_by_pid(pid: int, **kwargs: Any) -> TreeStopResult | None:
@@ -448,6 +473,11 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
     """所有する子を子孫ごと停止し、回収できなかったPIDと起動コマンドを返す。"""
+    return _stop_owned_process(process)[0]
+
+
+def _stop_owned_process(process: subprocess.Popen[Any]) -> tuple[list[str], list[psutil.Process]]:
+    """所有する子を子孫ごと停止し、回収できなかった記述と、再試行に使う所有対象を返す。"""
     result = stop_tree_by_pid(process.pid)
     # 所有する子はzombie表示でも回収済みとは限らない。スレッドグループのリーダーだけが先に終了し、
     # 他のスレッドが生存する多スレッドの子はzombieと表示され、`reclaim_processes`の強制終了の対象から外れる。
@@ -460,9 +490,15 @@ def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
     residual = [] if result is None else result.descriptions(exclude_pid=process.pid)
+    owned = [] if result is None else [target for target in result.residual if target.pid != process.pid]
+    if result is not None and result.unresolved:
+        # 生成停止を確認できない場合は、残存一覧に無い子孫も再試行で辿れるよう所有対象全体を保持する。
+        owned = [target for target in result.targets if target.pid != process.pid]
     if process.poll() is None:
         residual.append(f"{process.pid}: {process.args!r}")
-    return residual
+        with contextlib.suppress(psutil.Error):
+            owned.append(psutil.Process(process.pid))
+    return residual, owned
 
 
 @contextlib.contextmanager
@@ -477,14 +513,21 @@ def process_scope(
     try:
         yield process
     finally:
+        in_flight = sys.exception()
         try:
             if process.poll() is None:
                 try:
-                    log_residual(stop_process_tree(process), context="process_scope")
+                    residual, owned = _stop_owned_process(process)
                 finally:
                     if process.poll() is None:
                         process.kill()
                     process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
+                if residual and isinstance(in_flight, ReclaimError):
+                    # 本体が既に回収不能を送出している場合は、同じ例外へ対象を合流させて元の原因を保つ。
+                    in_flight.residual.extend(entry for entry in residual if entry not in in_flight.residual)
+                    in_flight.processes.extend(item for item in owned if item not in in_flight.processes)
+                elif residual:
+                    raise ReclaimError(residual, owned, context="process_scope")
         finally:
             if close_streams:
                 with contextlib.ExitStack() as cleanup:
@@ -514,14 +557,14 @@ def run_with_timeout(
         try:
             stdout, stderr = process.communicate(input, timeout=timeout)
         except subprocess.TimeoutExpired as error:
-            residual = stop_process_tree(process)
-            log_residual(residual, context="run_with_timeout")
-            # 残存がパイプを保持していても、元の時間上限の報告へ戻る。
-            if not residual:
-                stdout, stderr = process.communicate()
-                encoding = kwargs.get("encoding") or "utf-8"
-                error.output = stdout.encode(encoding) if isinstance(stdout, str) else stdout
-                error.stderr = stderr.encode(encoding) if isinstance(stderr, str) else stderr
+            residual, owned = _stop_owned_process(process)
+            if residual:
+                # 残存がパイプを保持していても待たずに戻り、通常の時間上限と区別して回収不能を伝える。
+                raise ReclaimError(residual, owned, context="run_with_timeout") from error
+            stdout, stderr = process.communicate()
+            encoding = kwargs.get("encoding") or "utf-8"
+            error.output = stdout.encode(encoding) if isinstance(stdout, str) else stdout
+            error.stderr = stderr.encode(encoding) if isinstance(stderr, str) else stderr
             raise
     returncode = process.returncode
     assert returncode is not None

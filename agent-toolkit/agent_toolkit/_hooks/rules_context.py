@@ -555,6 +555,12 @@ def _compaction_notice(
             f"ユーザー発話の原文{len(users)}件: {output}。圧縮の要約で文言や範囲が変わり得るため、"
             "ユーザーの要求・判断・行動の訂正を原文と作業契約で比較し、有効な指示を統合して元の未完了工程へ戻れ。"
         )
+    except process_tree.ReclaimError as error:
+        # hookは同じ所有対象を次の起動まで保持できないため、その場で回収し直し、残れば対象を示す。
+        remaining = error.retry()
+        if remaining:
+            lines.append(f"ユーザー発話の抽出の子プロセスを回収できない: {remaining}。PIDと起動コマンドを確かめて終了させよ。")
+        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行せよ。")
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
             try:

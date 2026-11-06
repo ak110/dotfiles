@@ -95,3 +95,31 @@ def test_mise_failure_warns_and_continues(
     assert not mise.refresh_mise_tools(tmp_path)
     warning = capsys.readouterr().err
     assert "process-loopを継続します" in warning and detail in warning
+
+
+def test_unreclaimed_mise_child_blocks_next_install_until_same_target_is_reclaimed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """導入の子を回収できなければ同じ対象を保持し、回収できるまで次の導入を起動しない。"""
+    attempts: list[str] = []
+    retries = iter([["1234: mise install"], ["1234: mise install"], []])
+
+    class Unreclaimed(mise.process_tree.ReclaimError):
+        def retry(self, **_kwargs: object) -> list[str]:
+            attempts.append("retry")
+            return next(retries)
+
+    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        attempts.append("install")
+        if attempts.count("install") == 1:
+            raise Unreclaimed(["1234: mise install"], [], context="run_with_timeout")
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(mise, "_UNRECLAIMED", [])
+    monkeypatch.setattr(mise.process_tree, "run_with_timeout", run)
+
+    assert not mise.refresh_mise_tools(tmp_path)
+    assert "次の導入を止めています" in capsys.readouterr().err
+    assert not mise.refresh_mise_tools(tmp_path)
+    assert mise.refresh_mise_tools(tmp_path)
+    assert attempts == ["install", "retry", "retry", "retry", "install"]

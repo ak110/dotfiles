@@ -221,7 +221,7 @@ def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
     process = mock.Mock()
     process.poll.return_value = None
     monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
-    monkeypatch.setattr(process_tree, "stop_process_tree", mock.Mock(side_effect=RuntimeError("停止失敗")))
+    monkeypatch.setattr(process_tree, "_stop_owned_process", mock.Mock(side_effect=RuntimeError("停止失敗")))
     with pytest.raises(RuntimeError, match="停止失敗"), process_tree.process_scope([]):
         pass
     process.kill.assert_called_once_with()
@@ -624,6 +624,35 @@ def test_run_with_timeout_stops_descendants(monkeypatch, tmp_path):
         assert started and not _still_holding_resources(started)
     finally:
         process_tree.reclaim_descendants(started, timeout=0.1)
+
+
+def test_run_with_timeout_raises_reclaim_error_and_retry_reclaims_same_target(monkeypatch):
+    """時間上限で子孫が残れば通常の時間上限と区別して送出し、保持した同じ対象を再試行で回収する。"""
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as survivor:
+        try:
+            owned = psutil.Process(survivor.pid)
+            monkeypatch.setattr(process_tree, "_stop_owned_process", lambda process: ([f"{owned.pid}: survivor"], [owned]))
+            with pytest.raises(process_tree.ReclaimError) as raised:
+                process_tree.run_with_timeout([sys.executable, "-c", "import time; time.sleep(120)"], timeout=0.05)
+            error = raised.value
+            assert not isinstance(error, (subprocess.SubprocessError, OSError))
+            assert isinstance(error.__cause__, subprocess.TimeoutExpired)
+            assert error.processes == [owned]
+            assert error.retry() == []
+            assert survivor.wait(timeout=10) is not None
+        finally:
+            if survivor.poll() is None:
+                survivor.kill()
+
+
+def test_process_scope_raises_reclaim_error_when_child_remains(monkeypatch):
+    """終了処理で子を回収できなければ、警告だけで戻らず回収不能を送出する。"""
+    monkeypatch.setattr(process_tree, "_stop_owned_process", lambda process: (["1: residual"], []))
+    with (
+        pytest.raises(process_tree.ReclaimError),
+        process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(120)"]),
+    ):
+        pass
 
 
 def test_stop_process_tree_reports_residual(monkeypatch, spawn_parent):

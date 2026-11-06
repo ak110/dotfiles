@@ -560,7 +560,7 @@ async def test_reschedule_failure_keeps_confirmed_reload_and_stops_monitor(
         assert not observer.is_alive()
 
 
-@pytest.mark.parametrize("failure", ["nonzero", "timeout", "oserror"])
+@pytest.mark.parametrize("failure", ["nonzero", "timeout", "oserror", "reclaim"])
 @pytest.mark.asyncio
 async def test_inventory_transport_failure_only_disables_optional_watch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, failure: str
@@ -574,6 +574,8 @@ async def test_inventory_transport_failure_only_disables_optional_watch(
         def fail(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
             if failure == "timeout":
                 raise subprocess.TimeoutExpired(command, 30)
+            if failure == "reclaim":
+                raise claude_plugins.process_tree.ReclaimError(["1234: claude plugin list"], [], context="run_with_timeout")
             raise OSError("実行ファイルを開始できない")
 
         monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", fail)
@@ -581,11 +583,11 @@ async def test_inventory_transport_failure_only_disables_optional_watch(
         async with claude_plugins.ClaudePluginReloader(_options(tmp_path, dynamic), asyncio.get_running_loop()):
             pytest.fail("必須の入力選択が成功した")
     options = _options(tmp_path, static)
-    if failure == "timeout":
-        # helperは停止未確認も同じtimeoutで返すため、静的入力でも縮退できない。
+    if failure == "reclaim":
+        # 子プロセスの停止を確認できない結果は、静的入力でも補助監視の縮退へ変換しない。
         with pytest.raises(claude_plugins.PluginReloadError, match="停止"):
             async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()):
-                pytest.fail("停止保証のないtimeoutを縮退した")
+                pytest.fail("停止未確認を縮退した")
         return
     async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
         assert options["plugins"][0]["path"] == str(static)

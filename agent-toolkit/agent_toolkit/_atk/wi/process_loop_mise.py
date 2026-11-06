@@ -27,8 +27,22 @@ def _mise_output_detail(output: str | bytes | None) -> str:
     return output.strip() if isinstance(output, str) and output.strip() else "出力なし"
 
 
+_UNRECLAIMED: list[process_tree.ReclaimError] = []
+"""前回の導入で停止を確認できなかった子プロセス。回収するまで次の導入を始めない。"""
+
+
 def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
-    """dotfilesのlatest指定ツールをログインシェルを使わずに再評価し、失敗後も呼び出し元を継続させる。"""
+    """dotfilesのlatest指定ツールをログインシェルを使わずに再評価し、失敗後も呼び出し元を継続させる。
+
+    導入が起動した子プロセスを回収できない場合は、同じ所有対象を保持して次の呼び出しで回収し直し、
+    回収できるまで新しい導入を始めない。残った導入と新しい導入が同じツールの導入先を奪い合わないためである。
+    """
+    for pending in list(_UNRECLAIMED):
+        if not pending.retry():
+            _UNRECLAIMED.remove(pending)
+    if _UNRECLAIMED:
+        _report_unreclaimed(_UNRECLAIMED[0], dotfiles_root)
+        return False
     executable = _pl_env.resolve_executable("mise")
     if executable is None:
         return False
@@ -44,6 +58,17 @@ def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
             check=False,
             timeout=_MISE_INSTALL_TIMEOUT_SEC,
         )
+    except process_tree.ReclaimError as error:
+        if error.retry():
+            _UNRECLAIMED.append(error)
+            _report_unreclaimed(error, dotfiles_root)
+            return False
+        _next_action.report(
+            f"mise install --quietが{_MISE_INSTALL_TIMEOUT_SEC}秒でタイムアウトし、子プロセスは再試行で回収しました。"
+            "process-loopを継続します。",
+            next_action=f"対応不要（process-loopは継続した）。原因は`mise install`を{dotfiles_root}で手作業で実行して確認する",
+        )
+        return False
     except subprocess.TimeoutExpired as exc:
         detail = _mise_output_detail(exc.stderr or exc.stdout)
         _next_action.report(
@@ -68,3 +93,14 @@ def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
         )
         return False
     return True
+
+
+def _report_unreclaimed(error: process_tree.ReclaimError, dotfiles_root: pathlib.Path) -> None:
+    """回収できない導入の子プロセスと、次の導入を止めていることを伝える。"""
+    _next_action.report(
+        f"mise install --quietの子プロセスを回収できないため、次の導入を止めています: {error.residual}。",
+        next_action=(
+            "表示されたPIDと起動コマンドを確認し、不要なら終了させる（POSIXは`kill -KILL <PID>`）。"
+            f"回収後は次の更新周期で導入を再開する。原因は`mise install`を{dotfiles_root}で手作業で実行して確認する"
+        ),
+    )

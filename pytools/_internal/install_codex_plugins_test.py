@@ -222,6 +222,22 @@ for line in sys.stdin:
     assert child.stdin is not None and child.stdin.closed
 
 
+def test_hooks_list_reports_unreclaimed_app_server_instead_of_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    """短命app-serverの子孫を回収できなければ、案内取得不能（None）と区別して回収不能を送出する。"""
+    real_popen = subprocess.Popen
+
+    def popen(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
+        return real_popen([sys.executable, "-c", "import sys; sys.stdin.read()"], **kwargs)  # pylint: disable=consider-using-with
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(install_codex_plugins, "_TIMEOUT", 0.1)
+    monkeypatch.setattr(
+        install_codex_plugins.common, "stop_owned_process", lambda process, **_kwargs: (["1234: app-server child"], [])
+    )
+    with pytest.raises(install_codex_plugins.common.ProcessReclaimError):
+        _REAL_HOOKS_LIST()
+
+
 def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """未導入pluginは公式CLIへ導入を委譲し、legacy linkを除去する。"""
     monkeypatch.setattr(host_roles, "is_linux_server", lambda: True)

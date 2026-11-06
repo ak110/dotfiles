@@ -655,7 +655,12 @@ def _supervise(path: pathlib.Path) -> None:
                 try:
                     code = child.wait(timeout=TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired:
-                    process_tree.log_residual(process_tree.stop_process_tree(child), context="wi submit timeout")
+                    failure = recorded_process.stop_recorded_executor(identity) if identity is not None else None
+                    if failure is not None:
+                        # 子孫が残る間は実行を確定しない。監督の消失を検出する処理が、
+                        # 記録した同じ実行者へ停止を再試行してから確定する。
+                        _LOG.error("時間上限の子を回収できない: %s。実行 %s の確定を保留する", failure, run["run_id"])
+                        return
                     child.wait(timeout=10)
                     _finalize(path, failure="timeout")
                     return

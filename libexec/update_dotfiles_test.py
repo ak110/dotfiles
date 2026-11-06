@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import time
+import types
 from collections.abc import Callable
 from typing import Any, Self, cast
 
@@ -467,11 +468,12 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     parent = Process(process.pid, descendants)
     monkeypatch.setattr(psutil, "Process", lambda pid: parent if pid == process.pid else pytest.fail(str(pid)))
     waited: list[tuple[list[int], int]] = []
-    monkeypatch.setattr(
-        psutil,
-        "wait_procs",
-        lambda processes, timeout: waited.append(([item.pid for item in processes], timeout)),
-    )
+
+    def wait_procs(processes: list[Process], timeout: int) -> tuple[list[Process], list[Process]]:
+        waited.append(([item.pid for item in processes], timeout))
+        return processes, []
+
+    monkeypatch.setattr(psutil, "wait_procs", wait_procs)
 
     assert update_dotfiles._run_git_pull(1, 4, timeout=7) == 1  # pylint: disable=protected-access
 
@@ -486,6 +488,31 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     assert "7秒" in captured.err
     assert "UPDATE_DOTFILES_GIT_TIMEOUT_SEC" in captured.err
     assert "子孫プロセスを終了" in captured.err
+
+
+@pytest.mark.parametrize("target", ["dotfiles", "plugin"])
+def test_unreclaimed_git_child_stops_update_before_chezmoi(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], target: str
+) -> None:
+    """時間上限のGit子プロセスを回収できなければ、任意プラグイン更新でも続行せずchezmoiを起動しない。"""
+    calls: list[list[str]] = []
+    process = _TimeoutPopen(["chezmoi", "git"], calls, output_text="", error_text="", communicate_timeouts=[])
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+    if target == "plugin":
+        (tmp_path / "plugins" / "extra" / ".git").mkdir(parents=True)
+        monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+    survivor = types.SimpleNamespace(pid=4242, kill=lambda: None, children=lambda *, recursive: [])
+    monkeypatch.setattr(psutil, "Process", lambda pid: survivor)
+    monkeypatch.setattr(psutil, "wait_procs", lambda processes, timeout: ([], [survivor]))
+
+    assert update_dotfiles.main() == 1
+
+    # 偽のPopenは起動したGit段を`chezmoi git`として記録する。chezmoiの再展開・適用の段は起動しない。
+    assert not [call for call in calls if call[:2] != ["chezmoi", "git"]]
+    assert "回収できないため更新を中止" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("platform_name", ["posix", "nt"])

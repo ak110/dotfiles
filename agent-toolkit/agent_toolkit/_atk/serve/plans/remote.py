@@ -338,10 +338,7 @@ class RemoteWatcher:
         payload: dict[str, typing.Any] = {"id": req_id, "op": op, **args}
         line = json.dumps(payload, ensure_ascii=False) + "\n"
         try:
-            async with self._send_lock:
-                proc.stdin.write(line.encode("utf-8"))
-                await proc.stdin.drain()
-            return await _atk_serve_remote.wait_rpc_response(fut, op=op, timeout=timeout)
+            return await _atk_serve_remote.send_rpc_request(proc, self._send_lock, line, fut, op=op, timeout=timeout)
         finally:
             self._pending.pop(req_id, None)
 
@@ -369,10 +366,11 @@ class RemoteWatcher:
                 await self._set_status("disconnected")
             finally:
                 self._fail_pending(ConnectionError(f"watch disconnected: host={self.host}"))
-                await _atk_serve_remote.stop_resident_helper(proc, self._stderr_task)
-                self._stderr_task = None
-                self._proc = None
+                stderr_task, self._stderr_task = self._stderr_task, None
                 self._connected = False
+                # 停止を確認するまで参照を保持し、確認できない間は次の接続を起動しない。
+                await _atk_serve_remote.stop_resident_helper_until_confirmed(proc, stderr_task, backoff=self._backoff)
+                self._proc = None
             _atk_serve_remote.raise_if_cancelling()
             # 指数バックオフ（上限・±20%ジッタ）。リトライ上限なし。
             jittered = self._backoff * random.uniform(*REMOTE_BACKOFF_JITTER_RANGE)

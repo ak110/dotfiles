@@ -52,6 +52,45 @@ async def test_session_stream_restores_long_rpc_response_and_notifications(tmp_p
     assert future.result() == response
 
 
+@pytest.mark.asyncio
+async def test_unconfirmed_helper_stop_blocks_reconnect_until_same_process_stops(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """常駐ヘルパーの停止を確認できない間は参照を保持し、同じプロセスの停止を確認するまで再接続しない。"""
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    client = sessions.RemoteSessionClient("remote-host", context.state)
+    client._backoff = 0
+    helper = types.SimpleNamespace(stdout=asyncio.StreamReader(), stdin=None, returncode=None, pid=99)
+    helper.stdout.feed_eof()
+    events: list[tuple[str, object]] = []
+    results = iter([False, False, True])
+
+    async def connect() -> object:
+        events.append(("connect", None))
+        if len([event for event in events if event[0] == "connect"]) > 1:
+            raise asyncio.CancelledError
+        return helper
+
+    async def stop(proc: object, _stderr_task: object) -> bool:
+        events.append(("stop", proc))
+        return next(results, True)
+
+    monkeypatch.setattr(client, "_connect", connect)
+    monkeypatch.setattr(_atk_serve_remote, "stop_resident_helper", stop)
+    with pytest.raises(asyncio.CancelledError):
+        await client.run()
+
+    # 最後の停止は、取消された接続試行の後始末（起動前のためプロセスは無い）である。
+    assert events == [
+        ("connect", None),
+        ("stop", helper),
+        ("stop", helper),
+        ("stop", helper),
+        ("connect", None),
+        ("stop", None),
+    ]
+
+
 def _write(path: pathlib.Path, records: typing.Iterable[typing.Any]) -> pathlib.Path:
     """JSON Linesの記録を出力する。"""
     path.parent.mkdir(parents=True, exist_ok=True)

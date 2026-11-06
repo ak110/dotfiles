@@ -324,8 +324,16 @@ def _git_timeout() -> int | None:
     return None if value == 0 else value
 
 
+class _GitReclaimError(RuntimeError):
+    """更新段が起動したGitの子プロセスを回収できない。
+
+    残ったGit操作がindexや作業ツリーを書き換え得るため、任意プラグイン更新の失敗として続行せず、
+    chezmoiの適用へ進まずに更新全体を止める。
+    """
+
+
 def _kill_process_tree(process: subprocess.Popen[str]) -> None:
-    """直接の子を終了する前に子孫を列挙し、起動したプロセスツリーを回収する。"""
+    """直接の子を終了する前に子孫を列挙し、起動したプロセスツリーを回収する。回収できなければ`_GitReclaimError`を送出する。"""
     processes: list[psutil.Process] = []
     try:
         parent = psutil.Process(process.pid)
@@ -338,9 +346,15 @@ def _kill_process_tree(process: subprocess.Popen[str]) -> None:
             child.kill()
         except psutil.NoSuchProcess:
             continue
-    psutil.wait_procs(processes, timeout=_PROCESS_TREE_WAIT_TIMEOUT_SEC)
+    _gone, alive = psutil.wait_procs(processes, timeout=_PROCESS_TREE_WAIT_TIMEOUT_SEC)
     with contextlib.suppress(ProcessLookupError):
         process.kill()
+    if alive:
+        raise _GitReclaimError(
+            "Git操作の子プロセスを回収できないため更新を中止しました: "
+            + ", ".join(str(item.pid) for item in alive)
+            + "。表示されたPIDのプロセスを確認して終了させ、update-dotfilesを再実行してください。"
+        )
 
 
 def _run_git_pull(
@@ -1209,6 +1223,11 @@ def main(argv: list[str] | None = None) -> int:
                             "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
                             "\n".join(daemon_errors),
                         )
+            except _GitReclaimError as error:
+                logger.exception("Git子プロセスの回収失敗")
+                print(str(error), file=sys.stderr)
+                _last_stderr_tail = sync_report.truncate_tail(str(error))
+                return _finish(1)
             except filelock.Timeout:
                 logger.exception("update-dotfilesロック取得失敗")
                 lock_message = (

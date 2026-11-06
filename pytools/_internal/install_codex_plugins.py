@@ -175,9 +175,10 @@ def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
                 cleanup.callback(process.stdout.close)
             if process.stdin is not None:
                 cleanup.callback(process.stdin.close)
-            residual = common.stop_process_tree(process, stdin_grace_seconds=2)
+            residual, owned = common.stop_owned_process(process, stdin_grace_seconds=2)
             if residual:
-                logger.warning("Codex App Serverの子孫を回収できない: %s", residual)
+                # 案内取得の不能（None）と区別し、cache復旧や旧リンク除去などの後続工程を始めさせない。
+                raise common.ProcessReclaimError(residual, owned)
 
 
 def _hook_trust_notice_required(result: dict[str, Any] | None, plugin_id: str) -> bool:

@@ -239,12 +239,17 @@ class ClaudePluginReloader:
                 check=False,
                 timeout=30,
             )
-        except subprocess.TimeoutExpired:
-            # helperは停止未確認も同じtimeoutで返すため、補助監視の縮退には使えない。
+        except process_tree.ReclaimError as error:
+            # 所有資源の停止未確認は任意更新の失敗と分け、所有タスクの回収へ渡す。
             raise _PluginCleanupError(
-                "Claudeの導入一覧が時間上限に達し、子プロセスの停止を確認できない。"
-                "残存プロセスの診断と同じcwd・設定のclaude plugin list --jsonを確認する"
-            ) from None
+                "Claudeの導入一覧の子プロセスの停止を確認できない。"
+                f"{error}。残存プロセスを終了してから同じcwd・設定のclaude plugin list --jsonを確認する"
+            ) from error
+        except subprocess.TimeoutExpired as error:
+            # 子孫を回収済みの時間上限は、補助監視の任意更新の失敗として縮退する。
+            raise _InventoryUnavailable(
+                "Claudeの導入一覧が時間上限に達した（子プロセスは回収済み）。同じcwdと設定でclaude plugin list --jsonを確認する"
+            ) from error
         except OSError as error:
             raise _InventoryUnavailable(
                 f"Claudeの導入一覧を取得できない（{type(error).__name__}）。同じcwdと設定でclaude plugin list --jsonを確認する"

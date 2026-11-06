@@ -1061,6 +1061,26 @@ class TestRun:
             ("後続", True, True),
         ]
 
+    def test_reclaim_failure_blocks_steps_not_yet_started(self) -> None:
+        """先行工程が子プロセスを回収できなければ、後続工程を開始せず失敗として数える。"""
+        calls: list[str] = []
+
+        def unreclaimed() -> post_apply_outcome.PostApplyOutcome:
+            calls.append("before")
+            raise common.ProcessReclaimError(["1234: codex app-server"], [])
+
+        results, _ = post_apply.run(
+            [
+                post_apply._StepSpec("先行", unreclaimed),  # noqa: SLF001
+                post_apply._StepSpec("後続", _make_step("after", calls, changed=True), after=("先行",)),  # noqa: SLF001
+            ]
+        )
+
+        assert calls == ["before"]
+        assert [(result.name, result.ok) for result in results] == [("先行", False), ("後続", False)]
+        assert results[0].reclaim_failed
+        assert "回収できない" in (results[1].reason or "")
+
     def test_after_all_preceding_waits_for_every_earlier_step(self) -> None:
         """列挙順で前にある全ステップの完了後に開始する。"""
         finished: list[str] = []

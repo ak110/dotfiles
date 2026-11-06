@@ -441,10 +441,9 @@ class RemoteSessionClient:
         self._pending[req_id] = future
         line = json.dumps({"id": req_id, "op": op, **(args or {})}, ensure_ascii=False) + "\n"
         try:
-            async with self._send_lock:
-                proc.stdin.write(line.encode("utf-8"))
-                await proc.stdin.drain()
-            return await _atk_serve_remote.wait_rpc_response(future, op=op, timeout=OPERATION_TIMEOUT_SEC[op])
+            return await _atk_serve_remote.send_rpc_request(
+                proc, self._send_lock, line, future, op=op, timeout=OPERATION_TIMEOUT_SEC[op]
+            )
         finally:
             self._pending.pop(req_id, None)
 
@@ -467,10 +466,11 @@ class RemoteSessionClient:
                 await self._set_status("disconnected")
             finally:
                 self._fail_pending(ConnectionError(f"session helper disconnected: host={self.host}"))
-                await _atk_serve_remote.stop_resident_helper(proc, self._stderr_task)
-                self._stderr_task = None
-                self._proc = None
+                stderr_task, self._stderr_task = self._stderr_task, None
                 self._connected = False
+                # 停止を確認するまで参照を保持し、確認できない間は次の接続を起動しない。
+                await _atk_serve_remote.stop_resident_helper_until_confirmed(proc, stderr_task, backoff=self._backoff)
+                self._proc = None
             _atk_serve_remote.raise_if_cancelling()
             await asyncio.sleep(self._backoff)
             self._backoff = min(self._backoff * 2, BACKOFF_MAX_SEC)
