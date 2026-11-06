@@ -895,8 +895,8 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
-    assert "統合先の最新HEADを基点" in lanes
-    assert "統合完了を確認した後に" in lanes
+    assert "先行レーンの統合完了後か、「後段レーンの先行調査」で先行を次の巡回へ回し後段を今回進めると判定した時に" in lanes
+    assert "統合先の最新HEADからworktreeを作成する" in lanes
     output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))

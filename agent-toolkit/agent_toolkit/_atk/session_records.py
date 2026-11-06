@@ -14,7 +14,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from agent_toolkit._atk import session_record_format
-from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
+from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY, PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._common import host_homes, session_state
 from agent_toolkit._common.agy_records import normalize_entries
@@ -32,6 +32,7 @@ _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 # 記録にはホストの前置きや/goalの境界が含まれるため、目的文本体の包含で判定する。
 # 登録全体の統括へ移行した後も、手動process-wiと過去の記録を検出対象に残す。
 _PROCESS_WI_GOAL_BODIES = (
+    PROCESS_LOOP_GOAL_BODY,
     PROCESS_WI_GOAL_BODY,
     "agent-toolkit:process-wi all-reposを完遂する",
     "agent-toolkit:process-wi-all-reposを完遂する",

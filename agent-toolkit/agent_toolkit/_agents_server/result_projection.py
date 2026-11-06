@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import logging_config
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import runtime_inserted, session_registry
 
 RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから`send_message`を再送する"
 """turnが中断中または未終了のため継続要求を受け付けない場合の次の操作。MCP層と各backendが共有する。"""
@@ -37,7 +37,7 @@ READER_FIT_REVIEW_RESULT_NEXT_ACTION = (
 
 # 結果はメインと委譲先の双方が受け取るため、両者が実行できる操作を受け取った主体の役割ごとに示す。
 IMPROVEMENT_RESULT_NEXT_ACTION = (
-    "`agent_message`の`気付いた改善点:`で始まる全行を上流へ渡す。"
+    "`agent_message`の`気付いた改善点:`で始まる全行（箇条書きの項目記号の後に標識がある行を含む）を上流へ渡す。"
     "メインエージェントは次のユーザーへの発話へ転記し、委譲先は受領時点で上流へ逐語で中継し、完了返却の末尾にも残す。"
     "転記する各行は字下げを除く行頭に`気付いた改善点:`を原文のまま置き、標識の前と、標識とコロンの間へ報告元などの語を入れない。"
     "報告元と確かめた範囲は標識行の原文の後ろか別の行に添える。"
@@ -84,7 +84,7 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
             )
         )
     message = result.get("agent_message")
-    if isinstance(message, str) and any(line.lstrip().startswith("気付いた改善点:") for line in message.splitlines()):
+    if isinstance(message, str) and runtime_inserted.reported_improvement_lines(message):
         guidance.append(
             (IMPROVEMENT_RESULT_NEXT_ACTION, ("agent-toolkit:delegation/references/receiving.md#「受領後の扱い」",))
         )

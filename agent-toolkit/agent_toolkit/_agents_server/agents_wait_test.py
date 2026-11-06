@@ -344,7 +344,16 @@ def test_agents_wait_guides_review_result_before_deciding_findings(
 @pytest.mark.parametrize("label", ["add-wi", "lane-01-exec-review", "lane-01-reader-fit-review"])
 @pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
 @pytest.mark.parametrize(
-    "message", ["完了", "本文中の気付いた改善点: は標識ではない", "完了\n  気付いた改善点: 反復した\n気付いた改善点: 再読した"]
+    "message",
+    [
+        "完了",
+        "本文中の気付いた改善点: は標識ではない",
+        "完了\n  気付いた改善点: 反復した\n気付いた改善点: 再読した",
+        "完了\n- 気付いた改善点: 箇条書きで報告した",
+        "完了\n2) 気付いた改善点: 番号付きで報告した",
+        "例:\n```text\n- 気付いた改善点: コード例\n```",
+        "例:\n> - 気付いた改善点: 引用した例\n    気付いた改善点: 字下げしたコード例",
+    ],
 )
 def test_agents_wait_relays_improvements_with_existing_guidance(
     wait_environment: pathlib.Path,

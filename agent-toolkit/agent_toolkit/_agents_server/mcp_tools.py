@@ -467,7 +467,7 @@ async def list_sessions(
 ) -> dict[str, Any]:
     """保持中のsessionの状態を開始順に返す。
 
-    所有する`root_session_id`を常に返す。PostToolUseはこの値をCLI会話の別名索引へ記録する。
+    所有する`root_session_id`を常に返す。
     各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
     ClaudeとCodexのAPI再試行中は`api_error`に種別、HTTPステータスと経過秒を返す。
     Claudeの`api_retry`が示す次の再試行予定時刻は`retry_at`へ返す。

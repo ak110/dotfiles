@@ -66,6 +66,22 @@ def is_runtime_generated(entry: dict[str, Any]) -> bool:
     )
 
 
+# 委譲先は返却契約の行頭形式に加え、Markdownの箇条書きの項目記号を付けて報告することがある。
+# 行頭0〜3スペースの後の`- `・`* `・`+ `・`1. `・`1) `を項目記号とし、4スペース以上とタブはコード例として除く。
+_IMPROVEMENT_LINE = re.compile(rf"^ {{0,3}}(?:(?:[-*+]|\d+[.)])[ \t]+)?({re.escape(IMPROVEMENT_MARKER)}.*)$")
+_LIST_ITEM = re.compile(r"^ {0,3}(?:[-*+]|\d+[.)])[ \t]")
+
+
+def improvement_line(line: str) -> str | None:
+    """1行が改善点の報告行なら項目記号と字下げを除いた本文を返し、引用・コード例の行は報告として扱わない。"""
+    if line.startswith("\t") or line.lstrip().startswith(">"):
+        return None
+    if not _LIST_ITEM.match(line) and line.startswith("    "):
+        return None
+    matched = _IMPROVEMENT_LINE.match(line)
+    return matched[1].rstrip() if matched else None
+
+
 def reported_improvement_lines(text: str, *, deduplicate: bool = True) -> list[str]:
     """実際に報告した行を例から区別し、出所の行順が必要な照会では同文行も保持する。"""
     text = re.sub(rf"<({_message_format.AUTO_ELEMENT_NAME_PATTERN})(?:\s[^>]*)?>.*?</\1>", "", text, flags=re.DOTALL)
@@ -81,6 +97,7 @@ def reported_improvement_lines(text: str, *, deduplicate: bool = True) -> list[s
             elif run[0] == fence[0] and len(run) >= len(fence):
                 fence = None
             continue
-        if fence is None and not line.startswith(("    ", "\t")) and stripped.startswith(IMPROVEMENT_MARKER):
-            found.append(stripped.rstrip())
+        reported = improvement_line(line) if fence is None else None
+        if reported is not None:
+            found.append(reported)
     return list(dict.fromkeys(found)) if deduplicate else found

@@ -18,6 +18,7 @@ from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import orchestrator as _orchestrator
+from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
@@ -80,13 +81,13 @@ def repository_input(
 
 
 def build_process_loop_prompt() -> str:
-    """スキルの完遂だけを目的にする。
+    """統括セッション自身の担当範囲の完遂を目的にする。
 
     工程・終了条件はprocess-wiが所有する。目的文にも持つと定義が二重化し、
     各ターンの目標評価へ再掲されるため、可変入力はSessionStartへ分離する。
     """
     goal = _automated_prompt.wrap(
-        "agent-toolkit:process-wi all-reposを完遂する",
+        _wi_constants.PROCESS_LOOP_GOAL_BODY,
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind=_automated_prompt.KIND_GOAL,
     )

@@ -4,6 +4,7 @@
 保存先を開いて長いJSON行の末尾から`record`と`line`を取り出す追加の呼び出しを不要にするため、保存後の表示でこれらを返す。
 """
 
+import collections
 import json
 import pathlib
 
@@ -38,10 +39,25 @@ def summarize_saved_user_events(path: pathlib.Path) -> None:
         print(line)
 
 
+_MATCH_LIST_LIMIT = 20
+"""保存後に1件1行で示す一致の上限。
+
+保存は大きな結果を直接配送しないために行うため、一致の件数に比例する一覧は保存の目的を失わせる。
+多数の一致を全件表示した結果、保存した全量と同程度の量を配送した実例がある。
+選択の手掛かりには件数の内訳と先頭の一致で足り、残りは保存ファイルから選ぶ。
+"""
+
+_RECORD_COUNT_LIMIT = 10
+"""記録ごとの件数を件数順に示す記録数の上限。残りの記録は件数の合計だけを示す。"""
+
+
 def summarize_saved_matches(path: pathlib.Path) -> None:
-    """検索一致とツール呼び出しを、保存ファイルの順序で選択できる一覧にする。"""
+    """検索一致とツール呼び出しの件数と内訳、保存順の先頭の一致を、保存ファイルから選べる要約にする。"""
     count = 0
     empty = False
+    shown: list[str] = []
+    kinds: collections.Counter[str] = collections.Counter()
+    records: collections.Counter[str] = collections.Counter()
     with path.open(encoding="utf-8", newline="") as stream:
         for raw in stream:
             try:
@@ -54,15 +70,35 @@ def summarize_saved_matches(path: pathlib.Path) -> None:
                 empty = True
             if event.get("kind") not in ("match", "tool-call"):
                 continue
-            fields = "".join(f" {key}={event[key]}" for key in ("role", "tool") if key in event)
-            text = event.get("text")
-            print(
-                f"一致: record={event.get('record')} line={event.get('line')} kind={event['kind']}{fields} "
-                f"{_head(text if isinstance(text, str) else '', length=160)}"
-            )
             count += 1
-    if not count and empty:
-        print("一致: 0件")
+            kinds[" ".join(f"{key}={event[key]}" for key in ("kind", "role", "tool") if key in event)] += 1
+            records[str(event.get("record"))] += 1
+            if len(shown) < _MATCH_LIST_LIMIT:
+                fields = "".join(f" {key}={event[key]}" for key in ("role", "tool") if key in event)
+                text = event.get("text")
+                shown.append(
+                    f"一致: record={event.get('record')} line={event.get('line')} kind={event['kind']}{fields} "
+                    f"{_head(text if isinstance(text, str) else '', length=160)}"
+                )
+    if not count:
+        if empty:
+            print("一致: 0件")
+        return
+    if count > _MATCH_LIST_LIMIT:
+        print(f"一致: 全{count}件（保存順の先頭{len(shown)}件を表示）")
+        print("内訳: " + "、".join(f"{key} {value}件" for key, value in kinds.most_common()))
+        top = records.most_common(_RECORD_COUNT_LIMIT)
+        rest = count - sum(value for _key, value in top)
+        others = f"、他{len(records) - len(top)}記録 {rest}件" if rest else ""
+        print("記録別: " + "、".join(f"{key} {value}件" for key, value in top) + others)
+    for line in shown:
+        print(line)
+    if count > _MATCH_LIST_LIMIT:
+        print(
+            f"残り{count - len(shown)}件は保存先のJSONL（1行1イベント）にある。"
+            f"次の操作: `jq -c 'select(.record == \"<record>\")' -- {path}`のように保存先から記録・kindを限定して読むか、"
+            "照会の条件を狭めて再実行する"
+        )
 
 
 def _head(text: str, *, length: int = _HEAD_LENGTH) -> str:

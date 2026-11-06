@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import pathlib
 import re
@@ -167,29 +168,135 @@ def test_window_budget_and_long_locator(tmp_path: pathlib.Path, capsys: pytest.C
 
 
 @pytest.mark.parametrize("conversation_only", [False, True])
-def test_large_main_rows_use_finite_window(
+def test_long_session_overview_covers_whole_period(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, conversation_only: bool
 ) -> None:
-    """旧表示の最小行を超える多数発話でも準備を止めず、省略位置と詳細取得を保持する。"""
+    """予算を超える長い会話でも、冒頭・中盤・末尾の判断と委譲を全期間の概要に残し、省略本文へ到達できる。"""
     transcript = tmp_path / "main.jsonl"
-    support.write_jsonl(
-        transcript,
-        [support.timestamped_entry("2026-11-01T00:00:00Z", f"発話{index}😀") for index in range(1000)],
-    )
+    base = datetime.datetime(2026, 11, 1, tzinfo=datetime.UTC)
+    entries: list[dict[str, Any]] = [support.timestamped_entry(base.isoformat(), "判断A: 冒頭で方針を決める")]
+    for index in range(3000):
+        moment = (base + datetime.timedelta(seconds=10 * index + 5)).isoformat()
+        if index == 1500:
+            entries.append(support.timestamped_entry(moment, "判断B: 中盤で方針を変える"))
+        if index % 3 == 0:
+            entry = support.assistant_text(f"途中発話{index}😀" + "経過" * 20)
+            entry["timestamp"] = moment
+            entries.append(entry)
+        entries.append(support.claude_call(moment, f"call-{index}", "Bash", {"command": f"echo {index}"}))
+        entries.append(support.claude_result(moment, f"call-{index}", "ok"))
+    entries.append(support.timestamped_entry(None, "時刻なしの発話"))
+    entries.append(support.timestamped_entry((base + datetime.timedelta(hours=9)).isoformat(), "判断C: 末尾で完了を判断する"))
+    support.write_jsonl(transcript, entries)
+    for index in range(3):
+        request = support.timestamped_entry((base + datetime.timedelta(hours=index * 3)).isoformat(), f"担当{index}への依頼")
+        answer = support.assistant_text(f"担当{index}の返却")
+        support.write_subagent(transcript.with_suffix("") / "subagents", f"agent-{index}", [request, answer])
     work = tmp_path / "work"
     work.mkdir()
     arguments = ["--transcript", str(transcript), "--work-dir", str(work)]
     assert _run([*arguments, "--conversation-only"] if conversation_only else arguments) == 0
     result, document = _prepared(capsys)
     assert result["conversation_limit_bytes"] == 100000
-    assert result["conversation_window"]["mode"] == "window"
-    assert "--conversation-after" in document
-    assert _run([str(transcript), "--detail", "claude:main:1000"], "session-review-evidence") == 0
-    assert "発話999😀" in capsys.readouterr().out
+    assert result["conversation_window"] is None
+    for decision in ("判断A: 冒頭", "判断B: 中盤", "判断C: 末尾", "担当0への依頼", "担当2への依頼", "担当2の返却"):
+        assert decision in document
+    assert "（省略: " in document
+    assert "--conversation-window" in document
+    omitted = re.search(r"記録位置(claude:main:\d+)", document.split("（省略: ", 1)[1])
+    assert omitted is not None
+    assert _run([str(transcript), "--detail", omitted[1]], "session-review-evidence") == 0
+    assert capsys.readouterr().out
 
 
-def test_many_delegates_and_unresolved_are_bounded(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """多数担当の旧表示下限と未解決通知の増加を、全量保存と有限表示へ接続する。"""
+def test_overview_orders_requests_returns_and_decisions_across_records(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """メインの依頼、委譲先の返却、メインの判断を、記録をまたいで時刻順に一続きで示す。"""
+    transcript = tmp_path / "main.jsonl"
+    support.write_jsonl(
+        transcript,
+        [
+            support.timestamped_entry("2026-11-01T00:00:00Z", "依頼前のユーザー要求"),
+            support.timestamped_entry("2026-11-01T02:00:00Z", "返却を受けた判断"),
+        ],
+    )
+    request = support.timestamped_entry("2026-11-01T00:30:00Z", "担当への依頼本文")
+    answer = support.assistant_text("担当の返却本文")
+    answer["timestamp"] = "2026-11-01T01:00:00Z"
+    support.write_subagent(transcript.with_suffix("") / "subagents", "agent-a", [request, answer])
+    work = tmp_path / "work"
+    work.mkdir()
+    assert _run(["--transcript", str(transcript), "--work-dir", str(work), "--conversation-only"]) == 0
+    _result, document = _prepared(capsys)
+    order = [
+        document.index(text) for text in ("依頼前のユーザー要求", "担当への依頼本文", "担当の返却本文", "返却を受けた判断")
+    ]
+    assert order == sorted(order)
+
+
+def test_overview_shows_return_only_for_observed_assistant_utterances(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """委譲先の記録に無い返却を示さず、発話なし・途中発話・依頼だけの記録を事実どおりに区別する。"""
+    transcript = tmp_path / "main.jsonl"
+    support.write_jsonl(transcript, [support.timestamped_entry("2026-11-01T00:00:00Z", "メインの要求")])
+    subagents = transcript.with_suffix("") / "subagents"
+    support.write_subagent(
+        subagents,
+        "agent-silent",
+        [
+            support.timestamped_entry("2026-11-01T00:10:00Z", "発話前の依頼"),
+            support.claude_call("2026-11-01T00:11:00Z", "call-1", "Bash", {"command": "ls"}),
+            support.claude_result("2026-11-01T00:12:00Z", "call-1", "ok"),
+        ],
+    )
+    progress = support.assistant_text("途中の発話")
+    progress["timestamp"] = "2026-11-01T00:21:00Z"
+    support.write_subagent(
+        subagents, "agent-progress", [support.timestamped_entry("2026-11-01T00:20:00Z", "途中までの依頼"), progress]
+    )
+    support.write_subagent(subagents, "agent-request", [support.timestamped_entry("2026-11-01T00:30:00Z", "依頼だけの記録")])
+    work = tmp_path / "work"
+    work.mkdir()
+    assert _run(["--transcript", str(transcript), "--work-dir", str(work), "--conversation-only"]) == 0
+    _result, document = _prepared(capsys)
+    assert "最終返却" not in document
+    assert document.count("委譲先の発話未観測（") == 1
+    assert document.count("委譲先の最終観測発話（アシスタント1発話") == 1
+    assert "途中の発話" in document
+    assert "依頼だけの記録" in document
+    assert document.count("\n- 委譲先への依頼 ") == 3
+
+
+def test_many_utterances_and_delegates_fit_whole_document_budget(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """メインの発話と多数の委譲先が同時に予算を超えても、固定部と省略行を含めた文書全体を上限内に収める。"""
+    transcript = tmp_path / "main.jsonl"
+    support.write_jsonl(
+        transcript,
+        [
+            support.timestamped_entry(f"2026-11-01T00:{index // 60:02}:{index % 60:02}Z", f"発話{index}😀" * 20)
+            for index in range(300)
+        ],
+    )
+    for index in range(1010):
+        entry = support.assistant_text(f"担当{index}の返却" + "継続中" * 30)
+        entry["timestamp"] = f"2026-11-01T01:{index // 60 % 60:02}:{index % 60:02}Z"
+        support.write_subagent(transcript.with_suffix("") / "subagents", f"agent-{index:04}", [entry])
+    work = tmp_path / "work"
+    work.mkdir()
+    assert _run(["--transcript", str(transcript), "--work-dir", str(work), "--conversation-only"]) == 0
+    result, document = _prepared(capsys)
+    assert result["conversation_window"] is None
+    assert result["conversation_utf8_bytes"] <= 100000
+    assert "発話0😀" in document and "発話299😀" in document
+    assert "（省略: " in document
+
+
+def test_many_delegates_are_spread_over_whole_period(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """委譲先の記録が多い場合も全期間へ配分した概要を返し、省略した記録へ詳細から到達できる。"""
     transcript = tmp_path / "main.jsonl"
     entries = []
     for index in range(20):
@@ -211,11 +318,12 @@ def test_many_delegates_and_unresolved_are_bounded(tmp_path: pathlib.Path, capsy
     work.mkdir()
     assert _run(["--transcript", str(transcript), "--work-dir", str(work), "--conversation-only"]) == 0
     result, document = _prepared(capsys)
-    assert result["conversation_window"]["unresolved_count"] >= 20
-    assert result["conversation_window"]["has_more"]
-    assert "bundle/unconfirmed.jsonl" in document
-    assert _run([str(transcript), "--detail", "claude:main/agent-1009:1"], "session-review-evidence") == 0
-    assert "担当1009の途中発話" in capsys.readouterr().out
+    assert result["conversation_window"] is None
+    assert len(result["unconfirmed_scope"]) >= 20
+    assert "（省略: " in document
+    assert "担当0の途中発話" in document and "担当1009の途中発話" in document
+    assert _run([str(transcript), "--detail", "claude:main/agent-0500:1"], "session-review-evidence") == 0
+    assert "担当500の途中発話" in capsys.readouterr().out
 
 
 def test_window_exact_fixed_budget_and_saved_jsonl_diagnostic(

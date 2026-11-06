@@ -485,7 +485,9 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(engine_env: _Env, c
         assert argv[argv.index(option) + 1] == value
     session_id = argv[argv.index("--session-id") + 1]
     assert argv[-1] == (
-        '/goal <atk-auto source="run-skill" kind="goal">\nスキル`example-plugin:check-logs`を完遂する\n</atk-auto>'
+        '/goal <atk-auto source="run-skill" kind="goal">\n'
+        "このセッションが担当するスキル`example-plugin:check-logs`の工程を完遂する"
+        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
     data = json.loads(sessions[0]["env"]["AGENT_TOOLKIT_SESSION_START_INPUT"])
     assert data["arguments"] == data["free_text"] == "対象: web"
@@ -966,8 +968,9 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
     assert value["status"] == "completed" and len(value["prepared"]) == 2
     records = _records(engine_env, "session")
     assert records[0]["argv"][-1] == (
-        ("/goal " if engine == "claude" else "")
-        + '<atk-auto source="run-skill" kind="goal">\nスキル`agent-toolkit:review-session batch`を完遂する\n</atk-auto>'
+        ("/goal " if engine == "claude" else "") + '<atk-auto source="run-skill" kind="goal">\n'
+        "このセッションが担当するスキル`agent-toolkit:review-session batch`の工程を完遂する"
+        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
     data = _startup_input(records[0], monkeypatch, capsys)
     assert data["arguments"] == "batch auto 任意の着眼点"
@@ -1008,7 +1011,10 @@ def test_final_goal_is_only_skill_completion(engine_env, monkeypatch, capsys, en
         options.extend(["--args", arguments])
     code, _out, error = _run([*options, "my-skill"], capsys)
     assert code == 0, error
-    expected = '<atk-auto source="run-skill" kind="goal">\nスキル`my-skill`を完遂する\n</atk-auto>'
+    expected = (
+        '<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`my-skill`の工程を完遂する'
+        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+    )
     assert _records(engine_env, "session")[0]["argv"][-1] == ("/goal " if engine == "claude" else "") + expected
     data = _startup_input(_records(engine_env, "session")[0], monkeypatch, capsys)
     assert data["arguments"] == data["free_text"] == arguments
@@ -1050,7 +1056,10 @@ def test_process_modes_reach_public_runner_with_original_arguments(engine_env, m
     )
     assert data["mode"] == mode
     expected_skill = "agent-toolkit:process-wi" + (" " + mode if mode else "")
-    expected = f'<atk-auto source="run-skill" kind="goal">\nスキル`{expected_skill}`を完遂する\n</atk-auto>'
+    expected = (
+        f'<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`{expected_skill}`の工程を完遂する'
+        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
+    )
     assert record["argv"][-1] == ("/goal " if engine == "claude" else "") + expected
 
 

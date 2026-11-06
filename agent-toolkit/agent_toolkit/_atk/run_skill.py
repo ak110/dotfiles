@@ -246,12 +246,15 @@ def _dispatch_once(args: argparse.Namespace) -> int:
 
 
 def build_goal(skill: str, skill_args: str | None) -> str:
-    """スキルと認識したモードの完遂だけを目的にする。
+    """起動したセッション自身が担当するスキルとモードの工程の完遂を目的にする。
 
     工程・終了条件を目的文へ加えるとスキルと定義が二重化し、各ターンの目標評価へ
     再掲される。起動データと終了契約の参照先はSessionStartで渡す。
+    目標の評価は目的文の字義で達成を判定するため、主語をセッション自身に限り、
+    子の終了後に起動元が行う検収と確定を達成範囲から外すことを短く示す。
     """
-    return f"スキル`{skill_modes.invocation_scope(skill, skill_args)}`を完遂する"
+    scope = skill_modes.invocation_scope(skill, skill_args)
+    return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）"
 
 
 def _run_locked(

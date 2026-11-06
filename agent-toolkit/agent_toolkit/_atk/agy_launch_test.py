@@ -78,7 +78,9 @@ def test_process_loop_agy_interactive_and_resume(
     assert argv[argv.index("--effort") + 1] == "medium"
     delivered = argv[argv.index("-i") + 1]
     assert delivered == (
-        '<atk-auto source="process-loop" kind="goal">\nagent-toolkit:process-wi all-reposを完遂する\n</atk-auto>'
+        '<atk-auto source="process-loop" kind="goal">\n'
+        "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
+        "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
     )
     if resume:
         assert argv[argv.index("--conversation") + 1] == resume
@@ -109,7 +111,8 @@ def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytes
     assert run_skill.dispatch(argparse.Namespace(timeout=30, target_repo=str(tmp_path), skill="test:skill", args=None)) == 0
     argv = json.loads(captured.read_text())
     assert argv[argv.index("-p") + 1] == (
-        '<atk-auto source="run-skill" kind="goal">\nスキル`test:skill`を完遂する\n</atk-auto>'
+        '<atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`test:skill`の工程を完遂する'
+        "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
     assert argv[argv.index("--model") + 1] == "gemini-4-argon"
     assert argv[argv.index("--effort") + 1] == "medium"

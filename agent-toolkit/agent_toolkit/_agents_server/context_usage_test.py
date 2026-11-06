@@ -7,6 +7,7 @@ import datetime
 import json
 import os
 import pathlib
+import re
 import sys
 from collections.abc import Callable
 from typing import Any
@@ -14,7 +15,16 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import antigravity, claude, cli_turn, commands, context_usage, state, status_file
+from agent_toolkit._agents_server import (
+    antigravity,
+    claude,
+    cli_turn,
+    commands,
+    context_usage,
+    shared_layout,
+    state,
+    status_file,
+)
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
@@ -200,15 +210,14 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tokens", [0, 53500, -1, True, "53500", None, float("inf"), float("nan")])
-async def test_context_usage_reaches_public_cli_without_activity(
+async def test_context_usage_reaches_human_show_without_activity(
     tokens: object, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """数値が未知の場合、0の場合と不正値を公開のlist/showで区別し、表示の更新では活動時刻を進めない。"""
+    """人間の端末の`show`では数値が未知の場合、0の場合と不正値を区別し、表示の更新では活動時刻を進めない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
-    monkeypatch.setenv("AI_AGENT", "1")
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(name, raising=False)
     session = state.SessionState("session-1", str(tmp_path), announced=True)
     activity = session.updated_at
     output_activity = session.output_updated_at
@@ -222,16 +231,14 @@ async def test_context_usage_reaches_public_cli_without_activity(
         writer.flush()
         assert session.updated_at == activity
         assert session.output_updated_at == output_activity
-        for argv in (["agents", "list"], ["agents", "show", session.session_id]):
-            with pytest.raises(SystemExit, match="0"):
-                atk.main(argv)
-            payload = json.loads(capsys.readouterr().out)
-            row = payload["sessions"][0] if "sessions" in payload else payload
-            if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens >= 0:
-                assert row["context_tokens"] == tokens
-            else:
-                assert "context_tokens" not in row
-            assert row["context_window"] == 1000000
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "show", session.session_id])
+        row = json.loads(capsys.readouterr().out)
+        if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens >= 0:
+            assert row["context_tokens"] == tokens
+        else:
+            assert "context_tokens" not in row
+        assert row["context_window"] == 1000000
         context_usage.record_context_usage(session, 1000, None)
         session.status = "completed"
         session.record_turn_completed()
@@ -246,6 +253,107 @@ async def test_context_usage_reaches_public_cli_without_activity(
         row = json.loads(capsys.readouterr().out)
         assert row["context_tokens"] == 1000
         assert "context_window" not in row
+    finally:
+        state.remove_touch_listener(writer.schedule)
+        writer.deactivate()
+
+
+_UNCLASSIFIED_STATE_VALUES = {"cost_usd": 1.25, "cache_read_tokens": 900, "rate_limit_used_percent": 80}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("human", [False, True])
+async def test_agent_list_and_show_omit_context_usage(
+    human: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`list`・`show`は受信主体ごとに分類した項目だけを返す。
+
+    エージェント環境では文脈量も、状態ファイルへ加わった未分類の値（費用、キャッシュ量、利用枠の使用率）も返さず、
+    状態・ラベル・経過など判断に使う項目を返す。人の端末では分類済みの文脈量だけを加える。
+    """
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
+    for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(name, raising=False)
+    if not human:
+        monkeypatch.setenv("AI_AGENT", "1")
+    session = state.SessionState("session-1", str(tmp_path), announced=True, label="worker")
+    writer = status_file.StatusFileWriter(
+        {session.session_id: session}, status_file.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path
+    )
+    writer.activate()
+    try:
+        context_usage.record_context_usage(session, 53500, 1000000)
+        writer.flush()
+        # 状態の記録側へ将来加わりうる別形態の値を、公開の読出し境界の入力として持ち込む。
+        stored = json.loads(writer.path.read_text(encoding="utf-8"))
+        assert stored["sessions"][0]["context_tokens"] == 53500
+        stored["sessions"][0].update(_UNCLASSIFIED_STATE_VALUES)
+        writer.path.write_text(json.dumps(stored), encoding="utf-8")
+        for argv in (["agents", "list"], ["agents", "show", session.session_id]):
+            with pytest.raises(SystemExit, match="0"):
+                atk.main(argv)
+            output = capsys.readouterr().out
+            for key in _UNCLASSIFIED_STATE_VALUES:
+                assert key not in output
+            if human and argv[1] == "list":
+                # 人の端末の一覧は表形式で、分類済みの文脈量だけを短縮表記で示す。
+                assert "session-1" in output and "worker" in output and "53.5k" in output
+                continue
+            payload = json.loads(output)
+            row = payload["sessions"][0] if "sessions" in payload else payload
+            assert row["session_id"] == "session-1"
+            assert row["label"] == "worker"
+            assert "status" in row
+            if human:
+                assert row["context_tokens"] == 53500
+            else:
+                assert "context_tokens" not in output and "context_window" not in output
+    finally:
+        writer.deactivate()
+
+
+@pytest.mark.asyncio
+async def test_agent_wait_result_and_retained_show_omit_context_usage(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """終了結果の保存に文脈量が含まれても、エージェント環境の`wait`の最終出力・本文ファイルと保持後の`show`へ出さない。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
+    for name in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("AI_AGENT", "1")
+    session = state.SessionState("session-1", str(tmp_path), announced=True, label="worker")
+    writer = status_file.StatusFileWriter(
+        {session.session_id: session}, status_file.StatusFileIdentity("root-session", "root.json", None), state_root=tmp_path
+    )
+    state.add_touch_listener(writer.schedule)
+    writer.activate()
+    try:
+        context_usage.record_context_usage(session, 53500, 1000000)
+        session.agent_message = "状態: completed"
+        session.status = "completed"
+        session.record_turn_completed()
+        session.touch()
+        writer.flush()
+        saved = shared_layout.results_directory("root-session", tmp_path) / "session-1.json"
+        # 保存側は人の端末の詳細表示のために文脈量を保持する。公開の読出し境界で除くことを確かめる前提とする。
+        assert json.loads(saved.read_text(encoding="utf-8"))["session"]["context_tokens"] == 53500
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "show", session.session_id])
+        shown = capsys.readouterr().out
+        assert json.loads(shown)["status"] == "completed"
+        with pytest.raises(SystemExit, match="0"):
+            atk.main(["agents", "wait"])
+        # エージェント環境の`wait`は終了行と本文ファイルの位置を行形式で返す。
+        output = capsys.readouterr().out
+        assert "status=completed" in output and "label=worker" in output
+        body_path = re.search(r"agent_message_path=(\S+)", output)
+        assert body_path is not None
+        body = pathlib.Path(body_path.group(1)).read_text(encoding="utf-8")
+        assert body == "状態: completed"
+        for text in (shown, output, body):
+            assert "context_tokens" not in text and "context_window" not in text
     finally:
         state.remove_touch_listener(writer.schedule)
         writer.deactivate()
