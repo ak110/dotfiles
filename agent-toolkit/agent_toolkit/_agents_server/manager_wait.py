@@ -62,6 +62,33 @@ class ManagerWait(manager_recovery.ManagerRecovery):
             return None
         return self._response_with_notices(response, (await self._take_notices_async(session_id)))
 
+    async def _collect_wait_result(self, session: SessionState) -> dict[str, Any] | None:
+        """同じturnの回収を勝ち取った場合だけ、退避した公開応答を返す。"""
+        if not session.result_available or session.result_delivered:
+            return None
+        turn = session.turn_seq, session.finalized_at
+        response = await self._result_response_async(session, consume=False)
+        if turn != (session.turn_seq, session.finalized_at) or not session.result_available or session.result_delivered:
+            return None
+        if self._status_writer is not None:
+            # 存在確認と消費の間に別の親が回収できるため、本文の返却可否は排他回収の結果だけで決める。
+            await self._status_writer.retain_result_async(session)
+            claimed, error = await self._status_writer.take_result_async(
+                session.session_id, collector="mcp-wait", expected_turn_seq=turn[0]
+            )
+            if error is not None:
+                raise RuntimeError(f"終了時の結果を回収できません: {session.session_id}: {error}")
+            if claimed is None:
+                if turn == (session.turn_seq, session.finalized_at):
+                    session.result_delivered = True
+                    session.touch()
+                return None
+        if turn == (session.turn_seq, session.finalized_at):
+            session.result_delivered = True
+            session.touch()
+        _LOG.info("result_collected session_id=%s collector=mcp-wait", session.session_id)
+        return response
+
     async def wait(self) -> dict[str, Any]:
         """委譲先の終了を待ち、終了時だけ結果本文を返す。
 
@@ -79,7 +106,7 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         終了前に`status: running`が返った場合は、本ツールを再発行して待機を継続する。
         終了時の結果は委譲元が最初の呼び出しで受領するまで保持し、経過時間では解放しない。
         受領した終了時の結果のsessionを破棄する場合は`stop`を発行する。
-        終了時の結果を残さずにsessionが失われた場合だけ、`status`が`expired`の応答を返す。
+        未回収の結果、実行中・保留中の作業、再開対象が無くなった場合は、`status`が`expired`の応答を返す。
         委譲先が実行中に`atk agents notify`で送った通知が未回収である場合は、終了前でもその通知を`notices`へ載せて復帰する。
         再待機の要否は`status`で判定する。
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終了であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
@@ -127,32 +154,14 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                 for session_id in ordered_ids:
                     candidate = self.sessions.get(session_id)
                     if candidate is not None and candidate.result_available and not candidate.result_delivered:
-                        if (
-                            self._status_writer is not None
-                            and await self._status_writer.result_state_async(session_id) == "consumed"
-                        ):
-                            candidate.result_delivered = True
-                            continue
                         terminal.append(candidate)
                 terminal.sort(key=lambda candidate: (candidate.finalized_at or "", candidate.session_id))
                 if terminal:
                     session = terminal[0]
-                    if (
-                        self._status_writer is not None
-                        and await self._status_writer.result_state_async(session.session_id) == "published"
-                    ):
-                        claimed, claim_error = await self._status_writer.take_result_async(
-                            session.session_id, collector="mcp-wait"
-                        )
-                        if claim_error is not None:
-                            raise RuntimeError(f"終了時の結果を回収できません: {session.session_id}: {claim_error}")
-                        if claimed is None:
-                            session.result_delivered = True
-                            continue
-                    _LOG.info("result_collected session_id=%s collector=mcp-wait", session.session_id)
-                    response = self._response_with_notices(
-                        await self._result_response_async(session), await self._take_notices_async(session.session_id)
-                    )
+                    response = await self._collect_wait_result(session)
+                    if response is None:
+                        continue
+                    response = self._response_with_notices(response, await self._take_notices_async(session.session_id))
                     return {"session_id": session.session_id, **response}
 
                 for session_id in ordered_ids:
@@ -168,10 +177,17 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                         continue
                     notices = await self._take_notices_async(session_id)
                     if notices:
-                        response = self._response_with_notices(await self._result_response_async(session), notices)
+                        response = self._response_with_notices(
+                            await self._result_response_async(session, include_result=False), notices
+                        )
                         return {"session_id": session_id, **response}
 
-                retained = [self.sessions[session_id] for session_id in ordered_ids if session_id in self.sessions]
+                retained = [
+                    session
+                    for session_id in ordered_ids
+                    if (session := self.sessions.get(session_id)) is not None
+                    and not (session.result_available and session.result_delivered)
+                ]
                 pending_ids = [session_id for session_id in ordered_ids if session_id in self._pending_resumes]
                 observed_ids = [identifier for identifier in ordered_ids if identifier in self._recovery_targets]
                 if not retained and not pending_ids and not observed_ids:
@@ -197,7 +213,10 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                         return {"session_id": session_id, **response}
                     undelivered = next((candidate for candidate in retained if not candidate.result_delivered), None)
                     if undelivered is not None:
-                        return {"session_id": undelivered.session_id, **await self._result_response_async(undelivered)}
+                        return {
+                            "session_id": undelivered.session_id,
+                            **await self._result_response_async(undelivered, include_result=False),
+                        }
                     session = retained[0]
                     timeout_response: dict[str, Any] = {"status": "running", "progress": ""}
                     elapsed_seconds = turn_elapsed_seconds(session.started_at)

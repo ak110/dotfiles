@@ -358,10 +358,12 @@ async def test_owner_lost_executor_stops_before_same_id_resume(
                     process.wait(timeout=5)
 
 
+@pytest.mark.parametrize("collection_order", ["writer", "observer", "between-state-and-claim"])
 @pytest.mark.asyncio
 async def test_simultaneous_parent_resumes_start_one_writer_and_collect_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    collection_order: str,
 ) -> None:
     """二つの親MCPが同時に復帰しても、同一IDの再開は1回で結果も1回だけ消費する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -398,13 +400,43 @@ async def test_simultaneous_parent_resumes_start_one_writer_and_collect_once(
         ):
             assert (await second.wait())["status"] == "running"
             assert len(first_backend.resume_calls) + len(second_backend.resume_calls) == 1
+            resume_task = first._recovery_attempts[original["session_id"]]
             release.set()
             async with asyncio.timeout(5):
-                results = await asyncio.gather(final_result(first), final_result(second))
+                await asyncio.shield(resume_task)
+                writer = first._status_writer
+                assert writer is not None
+                await writer.flush_async()
+                if collection_order == "writer":
+                    results = [await final_result(first), await final_result(second)]
+                elif collection_order == "observer":
+                    observed = await final_result(second)
+                    results = [await final_result(first), observed]
+                else:
+                    checking, finish_check = asyncio.Event(), asyncio.Event()
+                    result_state = writer.result_state_async
+                    writer_wait: asyncio.Task[dict[str, Any]] | None = None
+
+                    async def state_before_claim(session_id, **kwargs):
+                        value = await result_state(session_id, **kwargs)
+                        if asyncio.current_task() is writer_wait and value == "published" and not checking.is_set():
+                            checking.set()
+                            await finish_check.wait()
+                        return value
+
+                    monkeypatch.setattr(writer, "result_state_async", state_before_claim)
+                    writer_wait = asyncio.create_task(final_result(first))
+                    try:
+                        await checking.wait()
+                        observed = await final_result(second)
+                    finally:
+                        finish_check.set()
+                    results = [await writer_wait, observed]
             completed = [result for result in results if result["status"] == "completed"]
             assert len(completed) == 1
             assert completed[0]["session_id"] == original["session_id"]
             assert completed[0]["agent_message"] == "一度だけの成果"
+            assert sum(result["status"] == "expired" for result in results) == 1
             assert len(first_backend.resume_calls) + len(second_backend.resume_calls) == 1
 
 

@@ -40,7 +40,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path: pathlib.Path) -> None:
-    """配送済みの終了時の結果だけが残る状態で待機上限に達した応答は、本文を含まない`running`を返す。"""
+    """配送済みの完了sessionだけが残る待機は終了し、本文を再配送しない。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         _complete(session, message="最終結果", error={"message": "補足"})
@@ -54,12 +54,39 @@ async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path:
             "error": {"message": "補足"},
             **_default_identity_fields(),
         }
-        assert second["session_id"] == session.session_id
-        assert second["status"] == "running"
-        assert second["progress"] == ""
-        assert isinstance(second["elapsed_seconds"], int)
-        assert "agent_message" not in second
+        assert second == {"session_id": session.session_id, "status": "expired"}
         _assert_no_forbidden_keys(first)
+
+
+@pytest.mark.parametrize("previous_consumed", [False, True])
+@pytest.mark.asyncio
+async def test_reply_cleanup_preserves_a_result_published_before_delivery_returns(tmp_path, monkeypatch, previous_consumed):
+    """追送が戻る前に次turnが完了しても、旧turnの回収で新しい本文を消さない。"""
+    async with _writer_backed_manager(tmp_path) as (manager, writer):
+        session = state.SessionState("reply-generation", str(tmp_path), engine="codex", announced=True, turn_seq=1)
+        manager.sessions[session.session_id] = session
+        _complete(session, message="前の本文")
+        writer.flush()
+        if previous_consumed:
+            claimed, error = retained_results.take_result(
+                "root-session", session.session_id, "root.json", collector="observer", state_root=tmp_path
+            )
+            assert error is None and claimed is not None
+        delete_result = writer.delete_result_async
+
+        async def complete_before_cleanup(identifier, *, collector, **kwargs):
+            if collector == "send-message":
+                _complete(session, message="新しい本文")
+                await writer.flush_async()
+            await delete_result(identifier, collector=collector, **kwargs)
+
+        monkeypatch.setattr(writer, "delete_result_async", complete_before_cleanup)
+        reply = await manager.send_message(session.session_id, "次の作業")
+        assert reply["delivery"] == "reply_started"
+        published = writer.read_result(session.session_id)
+        assert published is not None and published["turn_seq"] == 2 and published["agent_message"] == "新しい本文"
+        assert not session.result_delivered
+        assert (await manager.wait())["agent_message"] == "新しい本文"
 
 
 @pytest.mark.asyncio
