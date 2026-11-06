@@ -174,6 +174,8 @@ def pytest_configure(config: pytest.Config) -> None:
             config.pluginmanager.register(slot_yield.TicketDistribution(owner), "dotfiles-execution-slot-tickets")
     else:
         ticket = config.workerinput.get(slot_yield.TICKET_KEY) if worker else None  # type: ignore[attr-defined]
+        if worker:
+            slot_yield.signal_done_after_hold(stack, config.workerinput)  # type: ignore[attr-defined]
         stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait, participant=ticket))
     previous_children = set(process_tree.collect_descendants(os.getpid()))
     baseline = {child.pid for child in previous_children}

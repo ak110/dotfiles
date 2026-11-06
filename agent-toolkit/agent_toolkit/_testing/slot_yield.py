@@ -10,14 +10,24 @@ commit hookが待ち続けないよう、子の処理を回収した試験の区
 - 祖先（pyfltr・`atk run-command`など）から所有を継承した場合: 参加券を発行せず、従来の`hold`で排他を保つ。
   継承した子から祖先の所有を単独で解除すると、祖先が起動した別の子と待機者の実行が重なるためである。
 
-workerの参加区間は全workerの終了後（pytestのcleanup）に閉じる。xdistはsessionの終了時にworkerを終了させてから
-cleanupへ進むため、終了・回収前のworkerの参加を外して譲渡を許すことがない。
+pyfltrの協調所有者は、登録中の全参加者が区切りで停止した時点だけ譲る。終了した参加者の登録も停止として数えないため、
+先に試験を使い切ったworkerの参加区間を残すと、区切りで止まった別のworkerが再開されずpytestが終了しない。
+そこでworkerは自分の`hold`を抜けた後に完了印を書き、controllerは`pytest_testnodedown`の後にその印を確かめてから
+該当workerの参加区間を閉じる。完了印より前に閉じないため、workerの後始末が終わる前に譲渡を許すことがない。
+異常終了したworkerは完了印を書けないため、xdistが異常終了を通知した時点で閉じる。
+残りの参加区間は全workerの終了後（pytestのcleanup）に閉じる。
+
+各プロセスの最後の試験の後には譲らない。残りの試験が無い区切りで譲ると、取り直しが先に並んだ待機者の終了まで待ち、
+全試験を終えたpytestの終了だけが遅れるためである。
 """
 
 import collections.abc
 import contextlib
 import os
+import pathlib
 import queue
+import shutil
+import tempfile
 import threading
 from typing import Any
 
@@ -28,6 +38,8 @@ from agent_toolkit._common import process_tree
 
 # workerinputで参加券を渡すキー。
 TICKET_KEY = "agent_toolkit_execution_slot_participant"
+# workerinputで完了印のパスを渡すキー。
+DONE_KEY = "agent_toolkit_execution_slot_done"
 # 所有スレッドが参加者の停止を確かめる間隔（秒）。pyfltrの待機の再試行間隔と同程度にする。
 _CHECK_INTERVAL = 0.2
 
@@ -43,8 +55,10 @@ class CooperativeOwner:
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._requests: queue.Queue[queue.Queue[str]] = queue.Queue()
+        self._releases: queue.Queue[tuple[str, pathlib.Path | None]] = queue.Queue()
         self._error: BaseException | None = None
         self.inherited = False
+        self.done_directory = pathlib.Path(tempfile.mkdtemp(prefix="pytest-execution-slot-"))
         self._thread = threading.Thread(target=self._run, name="pytest-execution-slot", daemon=True)
 
     def start(self) -> None:
@@ -71,10 +85,17 @@ class CooperativeOwner:
                 return reply.get(timeout=0.5)
         return None
 
+    def release(self, ticket: str, done: pathlib.Path | None) -> None:
+        """workerの参加区間を閉じるよう求める。`done`があれば、その完了印が書かれてから閉じる。"""
+        self._releases.put((ticket, done))
+
     def close(self) -> None:
         """参加区間と協調所有を閉じてスレッドの終了を待つ。"""
         self._stop.set()
-        self._thread.join()
+        try:
+            self._thread.join()
+        finally:
+            shutil.rmtree(self.done_directory, ignore_errors=True)
 
     def _run(self) -> None:
         entered = False
@@ -85,13 +106,30 @@ class CooperativeOwner:
                 entered = True
                 self._ready.set()
                 with contextlib.ExitStack() as participants:
+                    # 参加券ごとの区間。終了したworkerの区間だけを先に閉じられるよう、個別のExitStackに持つ。
+                    entries: dict[str, contextlib.ExitStack] = {}
+                    pending: list[tuple[str, pathlib.Path | None]] = []
                     while not self._stop.is_set():
                         while True:
                             try:
                                 reply = self._requests.get_nowait()
                             except queue.Empty:
                                 break
-                            reply.put(participants.enter_context(coordinator.participant()))
+                            entry = participants.enter_context(contextlib.ExitStack())
+                            ticket = entry.enter_context(coordinator.participant())
+                            entries[ticket] = entry
+                            reply.put(ticket)
+                        while True:
+                            try:
+                                pending.append(self._releases.get_nowait())
+                            except queue.Empty:
+                                break
+                        for ticket, done in list(pending):
+                            if done is None or done.exists():
+                                pending.remove((ticket, done))
+                                entry = entries.pop(ticket, None)
+                                if entry is not None:
+                                    entry.close()
                         coordinator.checkpoint()
                         self._stop.wait(_CHECK_INTERVAL)
         except ValueError:
@@ -107,16 +145,37 @@ class CooperativeOwner:
 
 
 class TicketDistribution:
-    """xdistのcontrollerで、起動するworkerごとに参加券を`workerinput`へ渡す。"""
+    """xdistのcontrollerで、起動するworkerごとに参加券と完了印のパスを`workerinput`へ渡す。"""
 
     def __init__(self, owner: CooperativeOwner) -> None:
         self._owner = owner
+        self._tickets: dict[str, tuple[str, pathlib.Path]] = {}
 
     def pytest_configure_node(self, node: Any) -> None:
         """workerの起動前に参加券を割り当てる。"""
         ticket = self._owner.ticket()
         if ticket is not None:
+            done = self._owner.done_directory / f"{node.gateway.id}.done"
             node.workerinput[TICKET_KEY] = ticket
+            node.workerinput[DONE_KEY] = str(done)
+            self._tickets[node.gateway.id] = (ticket, done)
+
+    def pytest_testnodedown(self, node: Any, error: object) -> None:
+        """workerの終了後に参加区間を閉じる。異常終了では完了印を待たない。"""
+        assigned = self._tickets.pop(node.gateway.id, None)
+        if assigned is not None:
+            ticket, done = assigned
+            self._owner.release(ticket, done if error is None else None)
+
+
+def signal_done_after_hold(stack: contextlib.ExitStack, workerinput: dict[str, Any]) -> None:
+    """workerが後で開く`hold`を抜けた後に完了印を書く処理を、先に`stack`へ登録する。
+
+    `stack`は後に登録した処理から閉じるため、`hold`より前に登録すると`hold`の終了後に印を書く。
+    """
+    done = workerinput.get(DONE_KEY)
+    if done is not None:
+        stack.callback(pathlib.Path(done).write_text, "", encoding="utf-8")
 
 
 class BoundaryYield:
@@ -127,10 +186,10 @@ class BoundaryYield:
 
     @pytest.hookimpl(wrapper=True, tryfirst=True)
     def pytest_runtest_protocol(self, item: pytest.Item, nextitem: pytest.Item | None) -> Any:
-        """試験の後始末とtimeoutの解除を終えた後に譲る。"""
-        del item, nextitem  # noqa
+        """試験の後始末とtimeoutの解除を終えた後に、残りの試験がある場合だけ譲る。"""
+        del item  # noqa
         result = yield
-        if execution_slot.yield_requested():
+        if nextitem is not None and execution_slot.yield_requested():
             ignored = self._baseline()
             # 試験が起動した子が残る間は譲らない。子の稼働中に待機者の検証が重なるためである。
             if not [child for child in process_tree.collect_descendants(os.getpid()) if child.pid not in ignored]:

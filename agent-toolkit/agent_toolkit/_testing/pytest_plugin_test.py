@@ -11,6 +11,7 @@ import subprocess
 import sys
 import textwrap
 import time
+from types import SimpleNamespace
 from typing import Any, cast
 
 import claude_agent_sdk
@@ -18,7 +19,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import backends
-from agent_toolkit._testing import pytest_plugin
+from agent_toolkit._testing import pytest_plugin, slot_yield
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
 # pylint: disable=protected-access
@@ -742,3 +743,75 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
     last = max(test["ended"] for test in tests)
     # 最外側の所有では残りの試験より先に待機者が実行され、継承時はpytestの終了後まで待つ。
     assert (window["ended"] < last) is not outer, (window, tests)
+
+
+_SLOT_PARTICIPANT = """\
+import pathlib, sys, time
+from pyfltr.command import execution_slot
+
+ticket, mode, done = sys.argv[1:4]
+with execution_slot.hold(participant=ticket):
+    if mode == "boundary":
+        while not execution_slot.yield_requested():
+            time.sleep(0.05)
+        print("yielded", execution_slot.yield_to_waiters(), flush=True)
+pathlib.Path(done).write_text("", encoding="utf-8")
+"""
+
+_SLOT_DETACHED_WAITER = """\
+import subprocess, sys
+
+# 孫を起動して親だけ終了し、待機者を協調所有者の子孫から外す（子孫は所有を継承して待たないため）。
+subprocess.Popen([sys.executable, *sys.argv[1:]], start_new_session=True)
+"""
+
+
+def test_cooperative_owner_yields_after_finished_worker_released(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """先に終了したworkerの参加区間を完了印の後に閉じ、区切りで止まった残りのworkerの間に待機者へ譲る。
+
+    終了した参加者の登録を残すと協調所有者は譲らず、止まったworkerが再開されないままpytestが終了しない。
+    """
+    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "pyfltr"))
+    (tmp_path / "participant.py").write_text(_SLOT_PARTICIPANT, encoding="utf-8")
+    (tmp_path / "detach.py").write_text(_SLOT_DETACHED_WAITER, encoding="utf-8")
+    (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
+    owner = slot_yield.CooperativeOwner(lambda _owner: None)
+    owner.start()
+    try:
+        assert not owner.inherited
+        distribution = slot_yield.TicketDistribution(owner)
+        nodes = [SimpleNamespace(gateway=SimpleNamespace(id=f"gw{index}"), workerinput={}) for index in range(2)]
+        for node in nodes:
+            distribution.pytest_configure_node(node)
+        tickets = [node.workerinput[slot_yield.TICKET_KEY] for node in nodes]
+        dones = [pathlib.Path(node.workerinput[slot_yield.DONE_KEY]) for node in nodes]
+        finished = subprocess.run(
+            [sys.executable, str(tmp_path / "participant.py"), tickets[0], "finish", str(dones[0])], timeout=30, check=False
+        )
+        assert finished.returncode == 0
+        distribution.pytest_testnodedown(nodes[0], None)
+        with subprocess.Popen(
+            [sys.executable, str(tmp_path / "participant.py"), tickets[1], "boundary", str(dones[1])],
+            stdout=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        ) as boundary:
+            waited = tmp_path / "waiter.json"
+            subprocess.run(
+                [sys.executable, str(tmp_path / "detach.py"), str(tmp_path / "waiter.py"), str(waited)],
+                timeout=30,
+                check=True,
+            )
+            try:
+                output, _ = boundary.communicate(timeout=30)
+            finally:
+                if boundary.poll() is None:
+                    boundary.kill()
+        assert boundary.returncode == 0
+        assert "yielded True" in output
+        assert waited.exists()
+    finally:
+        owner.close()
+    assert not owner.done_directory.exists()
