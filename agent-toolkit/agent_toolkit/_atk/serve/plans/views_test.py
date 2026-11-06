@@ -100,7 +100,12 @@ def test_unchanged_rescan_does_not_rewrite_creation_time_index(
     stored = index_path.read_text(encoding="utf-8")
     writes: list[object] = []
     original = plan_creation_times._write_index
-    monkeypatch.setattr(plan_creation_times, "_write_index", lambda index: writes.append(index) or original(index))
+
+    def recording(index: typing.Any) -> typing.Any:
+        writes.append(index)
+        return original(index)
+
+    monkeypatch.setattr(plan_creation_times, "_write_index", recording)
 
     plans_local_scan.list_files(root, "local-host")
     assert not writes
