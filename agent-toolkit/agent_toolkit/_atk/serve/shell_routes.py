@@ -397,16 +397,25 @@ def register_session_routes(
         roots = [str(context.claude_home / "projects"), str(context.codex_home / "sessions")]
         return json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings, "roots": roots})
 
-    @app.get("/api/sessions/detail")
-    async def sessions_detail() -> quart.Response:
+    def session_target() -> tuple[str, str, str]:
+        """詳細と推定費用の要求から、対象の記録を示すhost・engine・pathを取り出す。"""
         unknown = set(quart.request.args) - {"host", "engine", "path"}
         if unknown:
-            raise _wi_operations.WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+            raise _wi_operations.WebApiInputError(
+                f"未知のqueryです: {', '.join(sorted(unknown))}。"
+                "指定できるのはhost・engine・pathだけなので、他のqueryを除いてください"
+            )
         engine = quart.request.args.get("engine", "")
         path = quart.request.args.get("path", "")
-        host = quart.request.args.get("host") or context.hostname
         if not engine or not path:
-            raise _wi_operations.WebApiInputError("engineとpathを指定してください")
+            raise _wi_operations.WebApiInputError(
+                "engineとpathを指定してください。値は/api/sessions/listの各記録のengineとpathを使います"
+            )
+        return quart.request.args.get("host") or context.hostname, engine, path
+
+    @app.get("/api/sessions/detail")
+    async def sessions_detail() -> quart.Response:
+        host, engine, path = session_target()
         try:
             detail = await serve_sessions.session_detail(context, engine, host, path)
         except serve_sessions.SessionNotFoundError as error:
@@ -415,14 +424,7 @@ def register_session_routes(
 
     @app.get("/api/sessions/cost")
     async def sessions_cost() -> quart.Response:
-        unknown = set(quart.request.args) - {"host", "engine", "path"}
-        if unknown:
-            raise _wi_operations.WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
-        engine = quart.request.args.get("engine", "")
-        path = quart.request.args.get("path", "")
-        host = quart.request.args.get("host") or context.hostname
-        if not engine or not path:
-            raise _wi_operations.WebApiInputError("engineとpathを指定してください")
+        host, engine, path = session_target()
         try:
             cost = await serve_sessions.session_cost(context, engine, host, path)
         except serve_sessions.SessionNotFoundError as error:

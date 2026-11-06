@@ -788,7 +788,10 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
 async def session_cost(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:
     """ローカルの記録の推定費用を返す。リモートの記録の費用は詳細の応答に含まれるため対象外とする。"""
     if host != context.hostname:
-        raise SessionNotFoundError(f"推定費用を別に取得できるのはローカルの記録だけです: {host}")
+        raise SessionNotFoundError(
+            f"推定費用を別に取得できるのはローカルの記録だけです: {host}。"
+            "リモートの記録の費用は/api/sessions/detailの応答のcostから取得してください"
+        )
     return await asyncio.to_thread(read_local_cost, context, engine, path)
 
 

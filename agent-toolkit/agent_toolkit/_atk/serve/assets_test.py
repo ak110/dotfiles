@@ -415,6 +415,22 @@ async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Pat
 
 
 @pytest.mark.asyncio
+async def test_session_cost_api_errors_tell_the_next_step(tmp_path: pathlib.Path) -> None:
+    """推定費用APIの入力不正と対象外の記録は、要求を直す手掛かりを応答に含める。"""
+    app = _three_screen_app(tmp_path)
+    client = app.test_client()
+    unknown = await client.get("/api/sessions/cost?engine=claude&path=a.jsonl&extra=1")
+    assert unknown.status_code == 400
+    assert "host・engine・path" in (await unknown.get_json())["error"]
+    missing = await client.get("/api/sessions/cost?engine=claude")
+    assert missing.status_code == 400
+    assert "/api/sessions/list" in (await missing.get_json())["error"]
+    remote = await client.get("/api/sessions/cost?host=other-host&engine=claude&path=a.jsonl")
+    assert remote.status_code == 404
+    assert "/api/sessions/detail" in (await remote.get_json())["error"]
+
+
+@pytest.mark.asyncio
 async def test_cancelled_request_keeps_worker_slot_until_completion() -> None:
     """要求キャンセル後も同期処理が終わるまでSemaphore枠を解放しない。"""
     workers = serve_runtime.BoundedWorkers(1)
