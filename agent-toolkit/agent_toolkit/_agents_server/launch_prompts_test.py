@@ -172,6 +172,9 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
             assert operation in prompt, (backend, operation)
         for reading_rule in ("取得単位の選択にだけ", "読んだ本文で判定", "wc -c", "test -s", "改行文字の数", "'<開始行>,$p'"):
             assert reading_rule in prompt, (backend, reading_rule)
+        # シェル未指定のコマンドがPowerShellで動く環境でも、実在するbashの指定とbashが無い場合の同等の読取へ到達する。
+        for shell_rule in ("POSIXシェル", "実在を確かめたbash", "Get-Content -LiteralPath <絶対パス> -Encoding utf8"):
+            assert shell_rule in prompt, (backend, shell_rule)
         assert "行範囲を分けて最後まで読む" in prompt
         assert "内側コマンドと外側セル" in prompt
         assert "完成条件" in prompt

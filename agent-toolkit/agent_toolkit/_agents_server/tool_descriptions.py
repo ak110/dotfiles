@@ -70,6 +70,8 @@ EXPLORE_BACKEND_CAPABILITIES = {
         "全backendでGitの読取照会（git grep・git show・git diff）、本文・属性検索（rg・find）、"
         "標準の読取（ハーネスのRead、cat、sed -n '<開始行>,<終了行>p' -- <絶対パス>、JSONはjq）と"
         "pyfltr grepなどの読取MCPを使える。長い本文は行範囲を分けて最後まで読む。"
+        "cat・sed・jqはPOSIXシェル前提で、shell未指定のコマンドがPowerShellで動くなら実在を確かめたbashをshellへ指定し、"
+        "bashが無ければGet-Content -LiteralPath <絶対パス> -Encoding utf8とSelect-Object -Skip・-Firstで同じ行範囲を読む。"
         "Codexでは内側コマンドと外側セルの両方へ収め、合計量が不明な全文取得は別セルに分ける。"
         "対象成果物・委譲入力・ユーザーデータの作成・変更・削除は禁止。"
         "実行環境が管理するキャッシュ・状態・保存出力はこの変更禁止対象と区別する。"
