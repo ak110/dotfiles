@@ -959,6 +959,93 @@ def test_context_with_human_input_keeps_quote(
     }
 
 
+def _omission_document(repository: pathlib.Path, input_id: str | None = None) -> dict[str, Any]:
+    document: dict[str, Any] = {
+        "session_id": "evidence-test",
+        "action": "omit-completion",
+        "work_id": "work-1",
+        "reason": "適用規範に従う",
+        "policy_file": str(repository / "CLAUDE.md"),
+        "target_repo": str(repository),
+    }
+    if input_id is not None:
+        document["input_id"] = input_id
+    return document
+
+
+def test_notifications_sharing_the_prompt_id_keep_the_human_input(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Claude Codeが人間の入力と同じ`prompt_id`で届けるtask-notificationの後も、人間の本文と識別子で終了判断を記録できる。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": "完了報告は指示まで省く。\n"})
+    automated_input(tmp_path, "turn-1", "READMEを直してcommitする")
+    supply_commit(repository)
+    for index in range(2):
+        automated_input(tmp_path, "turn-1", f"<task-notification>\n委譲先{index}が終了した\n</task-notification>")
+    status, context = public_context(capsys)
+    assert status == 0
+    assert context == {
+        "session_id": "evidence-test",
+        "input_id": "turn-1",
+        "quote": "READMEを直してcommitする",
+        "work_id": "work-1",
+    }
+    status, reason = public_decision(tmp_path, _omission_document(repository, "turn-1"))
+    assert status == 0, reason
+    work = termination_evidence.session_works({"session_id": "evidence-test"})[0][1]
+    assert work["omit_completion"]["input_id"] == "turn-1"
+
+
+def _queued_command(directory: pathlib.Path, uuid: str, prompt: str, origin: str) -> None:
+    """ターンの途中に届いた入力を、Claude Codeのセッション記録の`queued_command`の形で追記する。"""
+    entry = {
+        "type": "attachment",
+        "uuid": uuid,
+        "attachment": {"type": "queued_command", "prompt": prompt, "origin": {"kind": origin}},
+    }
+    with (directory / "transcript.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+@pytest.mark.parametrize("human_request", [True, False])
+def test_queued_human_input_is_the_current_request_and_machine_queued_input_is_not(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], human_request: bool
+) -> None:
+    """途中で届いた人間の指示を最新の入力として返し、機械の途中入力だけの作業は人間の承認として受理しない。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": "完了報告は指示まで省く。\n"})
+    if human_request:
+        human_input(tmp_path, "request", "成果を作成する")
+    else:
+        automated_input(
+            tmp_path,
+            "goal",
+            automated_prompt.wrap("WIを処理する", source=automated_prompt.SOURCE_PROCESS_LOOP, kind=automated_prompt.KIND_GOAL),
+        )
+    supply_commit(repository)
+    # 公開hookの補助関数は最後に観測した呼び出しの作業ディレクトリのセッション記録を渡すため、同じ記録へ追記する。
+    if human_request:
+        _queued_command(repository, "queued-human", "READMEも直して", "human")
+    _queued_command(
+        repository, "queued-task", "<task-notification>\n委譲先が終了した\n</task-notification>", "task-notification"
+    )
+    status, context = public_context(capsys)
+    assert status == 0 and context is not None
+    if human_request:
+        assert (context["input_id"], context["quote"]) == ("queued-queued-human", "READMEも直して")
+        # 途中の指示に応じた作業を観測した後は、その指示を省略判断の人間入力として受理する。
+        supply_commit(repository, "commit-after-queued")
+        status, reason = public_decision(tmp_path, _omission_document(repository, "queued-queued-human"))
+        assert status == 0, reason
+    else:
+        assert (context["input_id"], context["quote"]) == (None, None)
+        status, reason = public_decision(tmp_path, _omission_document(repository, "queued-queued-task"))
+        assert status != 0 and "input_id" in reason
+
+
 def _register_child(owner: str) -> None:
     def register(state: dict) -> dict:
         state.setdefault("agents_server_sessions", {})["child-1"] = {"owner_agent_id": owner, "pending_observation": True}

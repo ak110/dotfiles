@@ -448,18 +448,87 @@ def observe_user(payload_text: str) -> None:
 
     def update(state: dict[str, Any]) -> dict[str, Any]:
         data = _data(state, payload["session_id"])
+        # この本文より前にセッション記録へ書かれた途中入力を先に取り込み、入力の順序を記録の順序と一致させる。
+        _sync_queued_inputs(data, payload.get("transcript_path"))
         reference = payload.get("turn_id") or payload.get("prompt_id")
         if not isinstance(reference, str) or not reference:
             data["sequence"] += 1
             reference = f"input-{data['sequence']}"
-        data["inputs"][reference] = {"text": prompt, "human": human, "offset": _position(payload)}
-        data["last_input"] = reference
-        if human:
-            data["last_human_input"] = reference
+        _store_input(data, reference, prompt, human=human, offset=_position(payload))
         _compact(data)
         return state
 
     session_state.update_state(payload["session_id"], update)
+
+
+def _store_input(data: dict[str, Any], reference: str, text: str, *, human: bool, offset: int) -> None:
+    """入力を1件の事象として保存し、直近の入力と人間入力の参照を進める。
+
+    Claude Codeの`prompt_id`は人間の入力と同じターンに届くtask-notificationなどにも付くため、事象の一意キーにならない。
+    同じキーに本文か由来の異なる入力が既にある場合は別のキーで保存し、人間入力の本文と由来を書き換えない。
+    同じ入力を重ねて観測した場合は同じキーを使う。
+    """
+    existing = data["inputs"].get(reference)
+    if isinstance(existing, dict) and (existing.get("text") != text or existing.get("human") is not human):
+        data["sequence"] += 1
+        reference = f"{reference}#{data['sequence']}"
+    data["inputs"][reference] = {"text": text, "human": human, "offset": offset}
+    data["last_input"] = reference
+    if human:
+        data["last_human_input"] = reference
+
+
+def _sync_queued_inputs(data: dict[str, Any], transcript_path: object) -> None:
+    """Claude Codeのセッション記録に`queued_command`として届いた入力を、前回の読取位置から取り込む。
+
+    ターンの途中で人間が送った指示はUserPromptSubmitを経ずに`attachment.type=queued_command`として記録される。
+    人間の入力は記録の`origin.kind=human`で判定し、通知や他エージェントの配送は非人間入力として保存する。
+    """
+    if isinstance(transcript_path, str) and transcript_path and transcript_path != data.get("transcript_path"):
+        # 読取位置は記録ファイルごとの値のため、別の記録へ移ったら先頭から読む。
+        data["transcript_path"] = transcript_path
+        data["queued_offset"] = 0
+    path = data.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return
+    start = data.get("queued_offset", 0)
+    start = start if isinstance(start, int) and not isinstance(start, bool) and start >= 0 else 0
+    queued: list[tuple[int, bytes]] = []
+    position = start
+    try:
+        with pathlib.Path(path).open("rb") as stream:
+            stream.seek(start)
+            for raw in stream:
+                # 書込途中の最終行は次回に読む。
+                if not raw.endswith(b"\n"):
+                    break
+                position += len(raw)
+                if b'"queued_command"' in raw:
+                    queued.append((position, raw))
+    except OSError:
+        return
+    for offset, raw in queued:
+        try:
+            entry = json.loads(raw)
+        except ValueError:
+            continue
+        attachment = entry.get("attachment") if isinstance(entry, dict) and entry.get("type") == "attachment" else None
+        if not isinstance(attachment, dict) or attachment.get("type") != "queued_command" or entry.get("isSidechain"):
+            continue
+        prompt = attachment.get("prompt")
+        if not isinstance(prompt, str) or not prompt:
+            continue
+        origin = attachment.get("origin")
+        human = (
+            isinstance(origin, dict)
+            and origin.get("kind") == "human"
+            and not runtime_inserted.is_runtime_inserted_text(prompt)
+            and not automated_prompt.contains(prompt)
+        )
+        uuid = entry.get("uuid")
+        reference = f"queued-{uuid}" if isinstance(uuid, str) and uuid else f"queued-{offset}"
+        _store_input(data, reference, prompt, human=human, offset=offset)
+    data["queued_offset"] = position
 
 
 def observe_tool(payload_text: str, *, after: bool) -> None:
@@ -587,6 +656,7 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
         if not invocations and STATE_KEY not in state:
             return state
         data = _data(state, payload["session_id"])
+        _sync_queued_inputs(data, payload.get("transcript_path"))
         records: Any = data["calls"].get(tool_id)
         if not isinstance(records, list):
             current = _current_work(data)
@@ -743,6 +813,7 @@ def record_decision(document: dict[str, Any]) -> str:
     def update(state: dict[str, Any]) -> dict[str, Any]:
         nonlocal selected
         data = _data(state, session_id)
+        _sync_queued_inputs(data, None)
         evidence: dict[str, Any] = {}
         if action == "omit-completion":
             work = data["works"].get(document.get("work_id"))
@@ -972,6 +1043,16 @@ def main(argv: list[str] | None = None) -> int:
             session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
             if not session_id or not agent_id.is_main_agent_context({}):
                 raise ValueError("--contextは現在のClaude Codeメインで実行する")
+
+            def synchronize(state: dict[str, Any]) -> dict[str, Any] | None:
+                # 直前の作業観測より後に届いた途中入力も、返す人間入力へ含める。
+                current = state.get(STATE_KEY)
+                if not isinstance(current, dict) or current.get("session_id") != session_id:
+                    return None
+                _sync_queued_inputs(current, None)
+                return state
+
+            session_state.update_state(session_id, synchronize)
             data = session_state.read_state(session_id).get(STATE_KEY)
             if (
                 not isinstance(data, dict)
