@@ -961,6 +961,20 @@ def test_update_includes_locked_rust_validation() -> None:
     assert commands.index("cargo update") < commands.index("cargo test") < commands.index("$(MAKE) test")
 
 
+def test_removal_registry_expiry_runs_only_in_scheduled_audit() -> None:
+    """撤去表の期限は定期実行のAuditだけで判定し、push・PR毎のCIでは判定しない。
+
+    期限の判定は実行日で結果が変わるため、無関係な変更のCIとcommit hookを日付で止めないようにする。
+    """
+    audit = yaml.safe_load((REPO_ROOT / ".github/workflows/audit.yaml").read_text(encoding="utf-8"))
+    command = "uv run --frozen python -m pytools._internal.removal_registry_report"
+    steps = audit["jobs"]["removal-registry"]["steps"]
+    assert any(step.get("run") == command for step in steps)
+    assert set(audit[True]) == {"schedule", "workflow_dispatch"}
+    ci_text = (REPO_ROOT / ".github/workflows/ci.yaml").read_text(encoding="utf-8")
+    assert "removal_registry_report" not in ci_text
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Linux Audit jobのbashで検証する")
 @pytest.mark.parametrize(
     ("report", "audit_rc", "expected_rc", "message"),

@@ -1327,23 +1327,6 @@ class TestStripRemovedHooks:
     @pytest.mark.parametrize(
         ("command", "should_be_removed"),
         [
-            # 旧形式 (`uv run --script`): 除去対象
-            (
-                "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_pretooluse.py; exit 0'",
-                True,
-            ),
-            (
-                "sh -c 'uv run --script ~/dotfiles/scripts/claude_hook_stop.py; exit 0'",
-                True,
-            ),
-            (
-                'pwsh -c "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_pretooluse.py"',
-                True,
-            ),
-            (
-                'pwsh -c "uv run --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_stop.py"',
-                True,
-            ),
             # 廃止済みの直接起動形式 (`uv run --no-project --script <旧スクリプト>`): 除去対象
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py; exit 0'",

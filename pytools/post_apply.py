@@ -205,11 +205,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         # agent定義（feedbacks-planner・plan-executor・plan-review-executor）を廃止し、
         # agent-toolkit/agents ディレクトリごと除去したため、旧配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("agent-toolkit/agents"), datetime.date(2026, 9, 3)),
-        # 旧名careful-implの後継スキル名はplan-implだったが、
-        # plan-implもagentsへ移植し廃止したため配布先リンクを除去する。
-        cleanup_paths.RemovedPath(Path("skills/careful-impl"), datetime.date(2026, 5, 8)),
-        # 現在のスキル名はwriting-standards。旧名claude-code-standardsの配布先リンクを除去する。
-        cleanup_paths.RemovedPath(Path("skills/claude-code-standards"), datetime.date(2026, 5, 17)),
         # plan-impl・plan-codex-reviewはagentsへ移植し、fork型スキルとしては廃止した。
         # 旧配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("skills/plan-impl"), datetime.date(2026, 7, 11)),
