@@ -548,7 +548,9 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
     env = _plan_file_state_env(tmp_path)
     _record_skill(env, "ready", "agent-toolkit:delegation")
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
-    assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
+    # 組み込みの汎用Agentの起動には、取得済みでも実行手段の判定を促す警告が`runtime-routing.md`を名指しして出る。
+    # ここでは取得の案内だけが消えることを確かめる。
+    assert "`Skill`で`agent-toolkit:delegation`" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
     result = _run(codex, env)
     assert result.returncode == 0
@@ -565,7 +567,7 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
         key.startswith("read-trigger:") and "/skills/delegation/SKILL.md" in key and "main" in owners
         for key, owners in state[rules_context.OPERATION_SKILL_READY_KEY].items()
     )
-    assert "agent-toolkit:delegation" not in _additional_context(_run(codex, env))
+    assert "/skills/delegation/SKILL.md" not in _additional_context(_run(codex, env))
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
