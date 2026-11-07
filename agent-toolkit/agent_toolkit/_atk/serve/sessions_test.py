@@ -2181,6 +2181,88 @@ def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.P
     assert changed["known_usd"] > first["known_usd"]
 
 
+def _wait_until(condition: typing.Callable[[], bool], timeout: float = 60.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "条件が上限時間内に成立しなかった"
+        time.sleep(0.05)
+
+
+def _start_warmer(context: sessions.SessionsContext) -> sessions._session_costs.FamilyCostWarmer:
+    warmer = sessions._session_costs.FamilyCostWarmer(
+        context.state.family_costs, claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+    )
+    context.state.cost_warmer = warmer
+    return warmer
+
+
+def test_cost_warmer_precomputes_listed_family_in_worker_process(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一覧を走査すると、画面で開く前に別プロセスが家族の推定費用を求め、再起動後の最初の要求も算出し直さない。
+
+    一度も算出していない家族の最初の算出は全記録の解析に数秒かかり、要求の中では1秒以内に返せないためである。
+    """
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    expected = sessions.estimate_local_family(
+        "claude", str(record), claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+    ).cost
+    warmer = _start_warmer(context)
+    try:
+        assert [entry.path for entry in sessions.list_local_sessions(context)] == [str(record)]
+        _wait_until(lambda: context.state.family_costs.get(record) is not None)
+    finally:
+        warmer.stop()
+    assert context.state.family_costs.get(record) == expected
+
+    def unexpected(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        raise AssertionError("背景で求めた推定費用を使わずに算出し直した")
+
+    monkeypatch.setattr(sessions.session_cost_records, "estimate_detail_family", unexpected)
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    assert sessions.read_local_cost(restarted, "claude", str(record)) == expected
+
+
+def test_cost_warmer_stops_after_worker_exit_and_restarts_on_next_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """別プロセスが異常終了したら警告して背景の算出を止め、次の走査で別プロセスを起動し直して算出する。"""
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    original = sessions._session_costs._start_worker
+    started: list[str] = []
+
+    def failing_then_real() -> subprocess.Popen[str]:
+        started.append("worker")
+        if len(started) == 1:
+            return subprocess.Popen(  # pylint: disable=consider-using-with  # warmerが終了を待って閉じる
+                [sys.executable, "-c", "import sys; sys.exit(3)"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+            )
+        return original()
+
+    monkeypatch.setattr(sessions._session_costs, "_start_worker", failing_then_real)
+    warmer = _start_warmer(context)
+    try:
+        with caplog.at_level("WARNING", logger=sessions._session_costs.logger.name):
+            sessions.list_local_sessions(context)
+            _wait_until(lambda: "終了コード3" in caplog.text)
+        assert context.state.family_costs.get(record) is None
+        sessions.list_local_sessions(context)
+        _wait_until(lambda: context.state.family_costs.get(record) is not None)
+    finally:
+        warmer.stop()
+    assert started == ["worker", "worker"]
+
+
 @pytest.mark.asyncio
 async def test_first_list_after_restart_returns_saved_list_and_refreshes_after_background_scan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch

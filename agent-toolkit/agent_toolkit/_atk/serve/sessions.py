@@ -217,6 +217,8 @@ class SessionsState:
     family_costs: _session_costs.FamilyCostCache = dataclasses.field(
         default_factory=lambda: _session_costs.FamilyCostCache(None)
     )
+    # 一覧の記録の家族の推定費用を背景で先に求める。serveの変更監視とともに`start_local_watch`が生成する。
+    cost_warmer: _session_costs.FamilyCostWarmer | None = None
     # 前回のローカル一覧。変更監視が一覧を変え得る変更を観測していない間だけ再利用する。
     local_list: _LocalListCache | None = None
     # 前回の起動で最後に作ったローカル一覧の保存先と、起動時に読み込んだ一覧。
@@ -387,6 +389,9 @@ def _scan_local_sessions(context: SessionsContext, tracker: session_watch.Record
         _LocalListCache(tracker=tracker, entries=result, scanned_at=scanned_at) if tracker is not None else None
     )
     _save_local_list(context.state.local_list_path, result)
+    if context.state.cost_warmer is not None:
+        # 一覧の並び（開始日時の新しい順）で算出し、画面で開かれやすい最近の記録から保持する。
+        context.state.cost_warmer.request([(entry.engine, entry.path) for entry in result if entry.warning is None])
     return list(result)
 
 
@@ -518,6 +523,10 @@ def _read_local_records(
     """ローカルの記録を検証して読み、記録のパス、解析した行、解析できない行数を返す。"""
     if engine not in {"claude", "codex"} or not is_local_record_path(context, raw_path):
         raise SessionNotFoundError(raw_path)
+    return _read_record_file(raw_path)
+
+
+def _read_record_file(raw_path: str) -> tuple[pathlib.Path, list[dict[str, typing.Any]], int]:
     path = pathlib.Path(raw_path)
     try:
         data = path.read_bytes()
@@ -564,20 +573,29 @@ def read_local_cost(context: SessionsContext, engine: str, raw_path: str) -> dic
     if cached is not None:
         return cached
     started_ns = _session_costs.now_ns()
-    path, records, broken = _read_local_records(context, engine, raw_path)
-    estimated = session_cost_records.estimate_detail_family(
+    estimated = estimate_local_family(
+        engine, raw_path, claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+    )
+    if estimated.complete:
+        context.state.family_costs.put(pathlib.Path(raw_path), estimated.members, estimated.cost, started_ns)
+    return estimated.cost
+
+
+def estimate_local_family(
+    engine: str, raw_path: str, *, claude_home: pathlib.Path, codex_home: pathlib.Path, state_dir: pathlib.Path | None
+) -> session_cost_records.DetailCost:
+    """ローカルの記録1件を起点に、子孫を含む家族の推定費用を求める。背景の算出の別プロセスも同じ処理を使う。"""
+    path, records, broken = _read_record_file(raw_path)
+    return session_cost_records.estimate_detail_family(
         engine,
         path,
         records,
         include_descendants=True,
-        claude_home=context.claude_home,
-        codex_home=context.codex_home,
-        state_root=context.state_dir,
+        claude_home=claude_home,
+        codex_home=codex_home,
+        state_root=state_dir,
         broken_lines=broken,
     )
-    if estimated.complete:
-        context.state.family_costs.put(path, estimated.members, estimated.cost, started_ns)
-    return estimated.cost
 
 
 # --------------------------------------------------------------------------------------
@@ -1043,6 +1061,9 @@ def _start_local_record_watch(context: SessionsContext, loop: asyncio.AbstractEv
         logger.warning("セッション記録の監視を開始できません: %s", error)
         return None
     context.state.watch_loop = loop
+    context.state.cost_warmer = _session_costs.FamilyCostWarmer(
+        context.state.family_costs, claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+    )
     return watch
 
 
@@ -1062,10 +1083,16 @@ async def stop_local_watch_async(context: SessionsContext) -> None:
     watch = context.state.record_watch
     if watch is not None:
         await run_sync_operation(watch.stop, on_success=lambda _result: setattr(context.state, "record_watch", None))
+    warmer = context.state.cost_warmer
+    if warmer is not None:
+        await run_sync_operation(warmer.stop, on_success=lambda _result: setattr(context.state, "cost_warmer", None))
 
 
 def stop_local_watch(context: SessionsContext) -> None:
     """ローカルの記録rootの変更監視を終了させる。"""
+    warmer, context.state.cost_warmer = context.state.cost_warmer, None
+    if warmer is not None:
+        warmer.stop()
     watch = context.state.record_watch
     if watch is None:
         return
