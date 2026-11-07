@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
+import watchdog.observers
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
+from watchdog.observers.api import ObservedWatch
 
 from agent_toolkit._agents_server import plugin_root
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -27,6 +30,19 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 
 _LOADABLE_SCOPES = frozenset({"user", "project", "local"})
 """子Claudeが導入先から読み込むscope。これ以外の項目は導入先を持たない場合がある。"""
+
+
+_IN_USE_DIRECTORY = ".in_use"
+"""Claude Code CLIが導入先へ利用中の印として書く一時ファイルの置き場所。
+
+`claude plugin list --json`は実行のたびに各導入先のこの配下へ一時ファイルを作成・改名・削除する（CLI 2.1.319で観測）。
+入力の内容ではないため変更通知から外す。外さないと、再読み込みの一覧取得そのものが次の再読み込みを起こし、
+一覧取得の所要の周期で再読み込みを繰り返す。
+"""
+
+
+_WatchKey = tuple[Path, bool]
+"""監視先のパスと再帰指定の組。"""
 
 
 class PluginReloadError(RuntimeError):
@@ -56,11 +72,15 @@ class _InstalledPlugin(BaseModel):
 
 
 class _Changes(FileSystemEventHandler):
-    def __init__(self, owner: ClaudePluginReloader) -> None:
-        self.owner = owner
+    """1つの監視先の変更を、その監視先を参照する接続へ配る。"""
+
+    def __init__(self) -> None:
+        # 監視threadは配送先の集合を読むだけにし、差し替えは共有監視のlock下で丸ごと置き換える。
+        # 監視threadがlockを取らないため、共有監視がlock下で監視threadの終了を待っても停止しない。
+        self.owners: frozenset[ClaudePluginReloader] = frozenset()
 
     def on_any_event(self, event: FileSystemEvent) -> None:
-        """変更通知をイベントループへ配送する。"""
+        """変更通知を各接続のイベントループへ配送する。"""
         if event.event_type not in {"created", "modified", "deleted", "moved"}:
             return
         if event.is_directory and event.event_type == "modified":
@@ -68,8 +88,91 @@ class _Changes(FileSystemEventHandler):
         paths = [Path(os.fsdecode(event.src_path))]
         if destination := getattr(event, "dest_path", ""):
             paths.append(Path(os.fsdecode(destination)))
-        if any(self.owner.matches(path) for path in paths):
-            self.owner.loop.call_soon_threadsafe(self.owner.mark_changed)
+        for owner in self.owners:
+            if any(owner.matches(path) for path in paths):
+                owner.loop.call_soon_threadsafe(owner.mark_changed)
+
+
+class _SharedWatch:
+    """agents_serverのプロセス内の接続が共有する、プラグイン入力の変更監視。
+
+    watchdogが標準で選ぶObserver（Linuxでは`InotifyObserver`）は監視先ごとにinotifyのインスタンスを確保し、
+    その上限はOSアカウント全体で共有される。接続ごとにObserverを持つと、同じ監視先も接続の数だけ確保し、
+    数件の並行委譲で上限に届く。同じ監視先（パスと再帰指定の組）は参照数付きで1件だけ登録し、
+    最後の参照の解除で登録を外す。全参照が無くなったら監視threadを停止・joinし、資源を残さない。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._observer: Any = None
+        self._watches: dict[_WatchKey, tuple[ObservedWatch, _Changes]] = {}
+
+    @property
+    def observer(self) -> Any:
+        """稼働中のObserverを返す。参照が無ければNone。"""
+        return self._observer
+
+    def acquire(self, owner: ClaudePluginReloader, keys: set[_WatchKey]) -> None:
+        """`keys`を`owner`の参照として加え、途中で登録に失敗したらこの呼び出しで加えた参照を戻して送出する。"""
+        added: list[_WatchKey] = []
+        try:
+            with self._lock:
+                for key in sorted(keys, key=str):
+                    self._add(owner, key)
+                    added.append(key)
+        except BaseException:
+            self.release(owner, set(added))
+            raise
+
+    def release(self, owner: ClaudePluginReloader, keys: set[_WatchKey]) -> None:
+        """`keys`から`owner`の参照を外し、参照の無くなった監視先とObserverを停止する。
+
+        停止の失敗は監視の縮退と区別し、所有タスクの回収へ渡す`_PluginCleanupError`として送出する。
+        """
+        try:
+            with self._lock:
+                for key in keys:
+                    entry = self._watches.get(key)
+                    if entry is None:
+                        continue
+                    watch, handler = entry
+                    handler.owners = handler.owners - {owner}
+                    if not handler.owners:
+                        del self._watches[key]
+                        self._observer.unschedule(watch)
+                if not self._watches and self._observer is not None:
+                    # 停止を確認できるまで保持し、後続の解除（空集合の解除を含む）で停止を再試行する。
+                    self._observer.stop()
+                    if self._observer.ident is not None:
+                        self._observer.join()
+                    self._observer = None
+        except Exception as cleanup_error:
+            raise _PluginCleanupError(
+                "プラグイン変更監視の停止を確認できない。接続所有タスクの回収結果と例外ログを確認する"
+            ) from cleanup_error
+
+    def _add(self, owner: ClaudePluginReloader, key: _WatchKey) -> None:
+        if self._observer is None:
+            # 監視先を持たない状態で開始し、監視先ごとの資源確保の失敗をその登録の失敗として受ける。
+            observer = watchdog.observers.Observer()
+            observer.start()
+            self._observer = observer
+        entry = self._watches.get(key)
+        if entry is None:
+            path, recursive = key
+            handler = _Changes()
+            try:
+                watch = self._observer.schedule(handler, str(path), recursive=recursive)
+            except BaseException:
+                # 開始済みObserverへの登録は、emitterの開始に失敗してもhandlerの対応だけを残す。
+                with contextlib.suppress(KeyError):
+                    self._observer.remove_handler_for_watch(handler, ObservedWatch(str(path), recursive=recursive))
+                raise
+            entry = self._watches[key] = (watch, handler)
+        entry[1].owners = entry[1].owners | {owner}
+
+
+_shared_watch = _SharedWatch()
 
 
 class _LoadedPlugin(BaseModel):
@@ -88,7 +191,7 @@ class _ReloadResponse(BaseModel):
 
 
 class ClaudePluginReloader:
-    """SDK接続ごとの入力と監視threadを所有する。SDK操作は呼出元が直列化する。"""
+    """SDK接続ごとの入力と、共有監視への参照を所有する。SDK操作は呼出元が直列化する。"""
 
     def __init__(self, options: dict[str, Any], loop: asyncio.AbstractEventLoop) -> None:
         self.options = options
@@ -97,7 +200,8 @@ class ClaudePluginReloader:
         self._generation = 0
         self._applied_generation = 0
         self._closed = False
-        self._observer: Any = None
+        # 共有監視へ登録している監視先。Noneは監視を無効にした状態（未開始・縮退・終了）を表す。
+        self._watch_keys: set[_WatchKey] | None = None
         self._roots: set[Path] = set()
         self._files: set[Path] = set()
         self._area: Path | None = None
@@ -132,7 +236,7 @@ class ClaudePluginReloader:
     async def prepare(self) -> None:
         """初期入力と監視を用意し、必要なtoolkit pathだけを置換する。"""
         await run_file_operation(self._prepare)
-        if self._observer is None:
+        if self._watch_keys is None:
             self._changed.clear()
 
     def _prepare(self) -> None:
@@ -147,7 +251,16 @@ class ClaudePluginReloader:
                 # 元の版が既に消えていても、保持複製のmanifestで版付き配置を判定する。
                 version = manifest.get("version")
                 self._versioned = isinstance(version, str) and self._source.name == version
-        installed = self._inventory() if self._versioned else []
+        # 一覧は版付き入力の導入先の選択と変更監視の補助に使う。取得できない場合（子孫は回収済み）の縮退をここへ集約する。
+        # 子孫の停止を確認できない`_PluginCleanupError`は、所有対象の回収へ渡すため送出する。
+        try:
+            installed = self._inventory()
+        except _InventoryUnavailable as error:
+            # 一覧が無いと導入先の版を選べない。明示入力を確定済みの入力としてそのまま使い、監視だけを無効にする。
+            # 保持複製の元の版（`self._source`）は既に消えている場合があり、複製元にできない。
+            self._versioned = False
+            self._disable_watch(error)
+            return
         source = self._select_source(installed)
         if self._versioned:
             self._area = managed_temp.create_output_temp("claude-plugin-input")
@@ -157,16 +270,14 @@ class ClaudePluginReloader:
             plugins = [dict(item) for item in self.options["plugins"]]
             plugins[self._toolkit_index]["path"] = str(self._mirror)
             self.options["plugins"] = plugins
+        self._set_watch_paths(installed, source)
         try:
-            # 静的な明示入力では一覧は監視用。版付き入力の選択失敗とは分ける。
-            if not self._versioned:
-                installed = self._inventory()
-            self._set_watch_paths(installed, source)
-            self._observer = Observer()
-            self._schedule()
-            self._observer.start()
-        except (OSError, _InventoryUnavailable) as error:
+            keys = self._watch_targets()
+            _shared_watch.acquire(self, keys)
+        except OSError as error:
             self._disable_watch(error)
+        else:
+            self._watch_keys = keys
 
     async def wait_for_change(self) -> None:
         """連続した書換えを短い時間窓で集約し、所有タスクを起こす。"""
@@ -180,7 +291,7 @@ class ClaudePluginReloader:
 
     def mark_changed(self) -> None:
         """Observer threadから配送された変更をloop上で記録する。"""
-        if not self._closed and self._observer is not None:
+        if not self._closed and self._watch_keys is not None:
             self._generation += 1
             self._changed.set()
 
@@ -216,7 +327,7 @@ class ClaudePluginReloader:
 
     def matches(self, path: Path) -> bool:
         """入力に関係するイベントだけを通知対象にする。"""
-        if any(part in plugin_root.STABLE_PLUGIN_ROOT_EXCLUDED for part in path.parts):
+        if any(part in plugin_root.STABLE_PLUGIN_ROOT_EXCLUDED or part == _IN_USE_DIRECTORY for part in path.parts):
             return False
         if self._area is not None and path.is_relative_to(self._area):
             return False
@@ -363,8 +474,7 @@ class ClaudePluginReloader:
         if settings is not None and not str(settings).lstrip().startswith("{"):
             self._files.add((cwd / str(settings)).resolve())
 
-    def _schedule(self) -> None:
-        handler = _Changes(self)
+    def _watch_targets(self) -> set[_WatchKey]:
         watches: dict[Path, bool] = {}
         for root in self._roots:
             if root.is_dir():
@@ -374,8 +484,7 @@ class ClaudePluginReloader:
             while not parent.is_dir():
                 parent = parent.parent
             watches.setdefault(parent, False)
-        for path, recursive in watches.items():
-            self._observer.schedule(handler, str(path), recursive=recursive)
+        return set(watches.items())
 
     async def reload(self, client: Any) -> dict[str, Any]:
         """完成した入力へ切替え、SDKのreload応答を検証して変更を確定する。"""
@@ -400,41 +509,55 @@ class ClaudePluginReloader:
         if self._area is not None:
             await run_file_operation(shutil.rmtree, self._area / "previous")
         self._set_watch_paths(installed, source)
-        try:
-            await run_file_operation(self._reschedule)
-        except OSError as error:
-            # SDKへの反映は確定済みなので、監視の再開失敗だけを分離する。
-            await run_file_operation(self._disable_watch, error)
+        # 監視を無効にした接続では再登録しない。開始時の縮退と同じく、確定済み入力で委譲を続ける契約である。
+        if self._watch_keys is not None:
+            try:
+                await run_file_operation(self._reschedule)
+            except OSError as error:
+                # SDKへの反映は確定済みなので、監視の再開失敗だけを分離する。
+                await run_file_operation(self._disable_watch, error)
         self._applied_generation = generation
         self.updated = True
-        if self.dirty and self._observer is not None:
+        if self.dirty and self._watch_keys is not None:
             self._changed.set()
         else:
             self._changed.clear()
         return response
 
-    def _expected_plugins(self, installed: list[_InstalledPlugin]) -> tuple[dict[Path, tuple[str, str | None]], set[Path]]:
-        roots = {Path(item.install_path).resolve() for item in installed}
+    def _expected_plugins(
+        self, installed: list[_InstalledPlugin]
+    ) -> tuple[dict[Path, tuple[str, str | None] | None], set[Path]]:
+        """応答で確かめる名前・版をpathごとに返す。Noneのpathは応答に現れることだけを許し、名前・版を比べない。"""
+        explicit = {Path(item["path"]).resolve() for item in self.options.get("plugins", [])}
         # 明示toolkitは固定入力で検証する。導入版との同名重複を残すかはCLIが判断する。
-        required = {
+        required = set(explicit) | {
             Path(item.install_path).resolve()
             for item in installed
             if self._toolkit_index is None or not item.id.startswith("agent-toolkit@")
         }
-        for item in self.options.get("plugins", []):
-            root = Path(item["path"]).resolve()
-            roots.add(root)
-            required.add(root)
-        expected: dict[Path, tuple[str, str | None]] = {}
-        for root in roots:
-            manifest = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+        expected: dict[Path, tuple[str, str | None] | None] = {}
+        for root in explicit | {Path(item.install_path).resolve() for item in installed}:
+            manifest_path = root / ".claude-plugin/plugin.json"
+            if root not in explicit and not manifest_path.exists():
+                # 一覧由来のプラグインはmanifestを省略でき（例: typescript-lsp@claude-plugins-officialの導入先は
+                # LICENSEとREADME.mdだけを持つ）、CLIの応答の名前・版の出所を観測していない。
+                # 推定した名前・版と比べると再読み込み全体が失敗し続けるため、pathだけを確かめ、必須にもしない。
+                expected[root] = None
+                required.discard(root)
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except FileNotFoundError as error:
+                raise PluginReloadError(f"明示プラグインのmanifestがない: {root}。SDK options.pluginsを確認する") from error
             name, version = manifest.get("name"), manifest.get("version")
             if not isinstance(name, str) or not name or version is not None and not isinstance(version, str):
                 raise PluginReloadError(f"プラグインのmanifestが不正: {root}。nameとversionを確認する")
             expected[root] = name, version
         return expected, required
 
-    def _validate_response(self, response: Any, expected: dict[Path, tuple[str, str | None]], required: set[Path]) -> None:
+    def _validate_response(
+        self, response: Any, expected: dict[Path, tuple[str, str | None] | None], required: set[Path]
+    ) -> None:
         # CLI 2.1.318 / SDK 0.2.177の実応答ではerrors配列の代わりにerror_countを返す。
         try:
             result = _ReloadResponse.model_validate(response)
@@ -456,7 +579,7 @@ class ClaudePluginReloader:
             if not path.is_absolute():
                 raise PluginReloadError("reload_pluginsが相対pathを返した。CLIの診断ログを確認する")
             path = path.resolve()
-            if expected.get(path) != (item.name, item.version):
+            if path not in expected or expected[path] not in (None, (item.name, item.version)):
                 raise PluginReloadError(
                     f"reload_pluginsのプラグイン名・版・pathが入力と一致しない: {item.name}。導入状態を確認する"
                 )
@@ -467,18 +590,17 @@ class ClaudePluginReloader:
             )
 
     def _reschedule(self) -> None:
-        self._observer.unschedule_all()
-        self._schedule()
+        # 新しい監視先を先に加えてから外れた監視先を解除し、他の接続が参照する監視先は共有監視が保持する。
+        assert self._watch_keys is not None
+        keys = self._watch_targets()
+        _shared_watch.acquire(self, keys - self._watch_keys)
+        _shared_watch.release(self, self._watch_keys - keys)
+        self._watch_keys = keys
 
     def _disable_watch(self, error: Exception) -> None:
-        if self._observer is not None:
-            try:
-                self._stop_observer()
-            except Exception as cleanup_error:
-                raise _PluginCleanupError(
-                    "プラグイン変更監視の停止を確認できない。接続所有タスクの回収結果と例外ログを確認する"
-                ) from cleanup_error
-            self._observer = None
+        if self._watch_keys is not None:
+            keys, self._watch_keys = self._watch_keys, None
+            _shared_watch.release(self, keys)
         _LOG.warning(
             "プラグイン変更監視を無効にし、確定済み入力で委譲を継続する: %s。"
             "同じcwd・設定のclaude plugin list --jsonとこの診断を確認し、"
@@ -487,17 +609,13 @@ class ClaudePluginReloader:
         )
 
     async def close(self, *, retain_input: bool = False) -> None:
-        """監視threadの終了を待ち、所有している入力複製を回収する。"""
+        """共有監視への参照を外し、所有している入力複製を回収する。"""
         self._closed = True
         try:
-            if self._observer is not None:
-                await run_file_operation(self._stop_observer)
+            # 縮退時の停止失敗で残ったObserverも、ほかの参照が無ければここで停止を再試行する。
+            keys, self._watch_keys = self._watch_keys or set(), None
+            await run_file_operation(_shared_watch.release, self, keys)
         finally:
             if self._area is not None and not retain_input:
                 await run_file_operation(shutil.rmtree, self._area)
                 self._area = None
-
-    def _stop_observer(self) -> None:
-        self._observer.stop()
-        if self._observer.ident is not None:
-            self._observer.join()

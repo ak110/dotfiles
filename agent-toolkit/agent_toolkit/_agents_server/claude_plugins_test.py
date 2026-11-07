@@ -6,6 +6,7 @@
 import asyncio
 import json
 import subprocess
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -50,7 +51,14 @@ def _inventory(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 @pytest.fixture(name="manual_observer")
 def _manual_observer(monkeypatch: pytest.MonkeyPatch) -> None:
     """OSの通知を確かめない試験で、変更を`mark_changed`だけから与える。"""
-    monkeypatch.setattr(claude_plugins, "Observer", ManualObserver)
+    monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", ManualObserver)
+
+
+@pytest.fixture(autouse=True)
+def _shared_watch_released() -> Iterator[None]:
+    """各試験の終了時に、全接続が共有監視の参照を解除して監視threadが残らないことを確かめる。"""
+    yield
+    assert claude_plugins._shared_watch.observer is None
 
 
 def _options(tmp_path: Path, root: Path) -> dict[str, Any]:
@@ -83,7 +91,7 @@ async def test_local_root_and_cli_settings_are_preserved(tmp_path: Path, invento
             "--json",
         ]
         assert kwargs["cwd"] == str(tmp_path)
-        (root / "skills/content.md").write_text("更新内容", encoding="utf-8")
+        (root / "skills/content.md").write_text("更新後の内容", encoding="utf-8")
         await asyncio.wait_for(reloader.wait_for_change(), timeout=5)
         assert reloader.dirty
 
@@ -113,25 +121,21 @@ async def test_versioned_input_is_separate_from_server_copy(tmp_path: Path, inve
     assert not area.exists()
 
 
-@pytest.mark.parametrize("failure", ["disabled", "other-project", "ambiguous", "bad-json", "nonzero"])
+@pytest.mark.parametrize("failure", ["disabled", "other-project", "ambiguous"])
 @pytest.mark.asyncio
 async def test_invalid_inventory_never_enables_toolkit(tmp_path: Path, inventory: SimpleNamespace, failure: str) -> None:
-    """無効・対象外・曖昧な一覧や取得失敗から子用toolkitを追加しない。"""
+    """一覧を取得できても有効なtoolkitが一意に決まらなければ、子用toolkitを追加しない。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
     inventory.items = [_installed(root)]
     if failure == "disabled":
         inventory.items[0]["enabled"] = False
     elif failure == "other-project":
         inventory.items[0].update(scope="project", projectPath=str(tmp_path / "elsewhere"))
-    elif failure == "ambiguous":
-        inventory.items.append(_installed(tmp_path / "other", id="agent-toolkit@other"))
-    elif failure == "bad-json":
-        inventory.stdout = "{"
     else:
-        inventory.returncode = 1
+        inventory.items.append(_installed(tmp_path / "other", id="agent-toolkit@other"))
     options = _options(tmp_path, root)
     options["setting_sources"] = ["user", "project"]
-    with pytest.raises((claude_plugins.PluginReloadError, ValidationError)):
+    with pytest.raises(claude_plugins.PluginReloadError):
         async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()):
             pytest.fail("不正な導入一覧が受理された")
     assert options["plugins"][0]["path"] == str(root)
@@ -192,7 +196,7 @@ async def test_observer_threads_are_joined_on_cancel(tmp_path: Path, inventory: 
 
     task = asyncio.create_task(run())
     await asyncio.wait_for(ready.wait(), timeout=5)
-    observer = owner[0]._observer
+    observer = claude_plugins._shared_watch.observer
     emitters = list(observer.emitters)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -435,9 +439,10 @@ async def test_unreclaimed_cli_keeps_input_but_stops_watch(tmp_path: Path, inven
     try:
         await reloader.prepare()
         mirror = Path(options["plugins"][0]["path"])
+        observer = claude_plugins._shared_watch.observer
         await reloader.close(retain_input=True)
         assert mirror.is_dir()
-        assert not reloader._observer.is_alive()
+        assert not observer.is_alive()
     finally:
         await reloader.close()
     assert not mirror.parent.exists()
@@ -484,25 +489,58 @@ async def test_selected_installation_path_remains_required(tmp_path: Path, inven
             pytest.fail("不正な利用対象が受理された")
 
 
-@pytest.mark.parametrize("body", ["{", "{}", "[1]"])
+@pytest.mark.parametrize("versioned", [False, True])
+@pytest.mark.parametrize("failure", ["bad-json", "bad-shape", "bad-item", "nonzero", "timeout", "oserror"])
 @pytest.mark.asyncio
-async def test_inventory_structure_failure_requires_dynamic_input_but_preserves_static_input(
-    tmp_path: Path, inventory: SimpleNamespace, body: str, caplog: pytest.LogCaptureFixture
+async def test_inventory_unavailable_keeps_explicit_input_and_only_disables_watch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    inventory: SimpleNamespace,
+    caplog: pytest.LogCaptureFixture,
+    versioned: bool,
+    failure: str,
 ) -> None:
-    """一覧なしでは版を選ばず、確定済み静的入力では補助監視だけを無効にする。"""
-    dynamic = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
-    static = _plugin(tmp_path / "checkout")
-    inventory.stdout = body
-    with pytest.raises(claude_plugins.PluginReloadError, match="一覧の構造"):
-        async with claude_plugins.ClaudePluginReloader(_options(tmp_path, dynamic), asyncio.get_running_loop()):
-            pytest.fail("入力を選択できない状態で準備が成功した")
-    options = _options(tmp_path, static)
+    """一覧を取得できない（子孫は回収済み）場合、版付き・非版付きの入力とも作業を止めず監視だけを無効にする。"""
+    root = _plugin(tmp_path / ("cache/mine/agent-toolkit/1.0.0" if versioned else "checkout"))
+    inventory.stdout = {"bad-json": "{", "bad-shape": "{}", "bad-item": "[1]"}.get(failure)
+    inventory.returncode = 1 if failure == "nonzero" else 0
+    if failure in {"timeout", "oserror"}:
+
+        def fail(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+            if failure == "timeout":
+                # `run_with_timeout`は子孫を回収できた時間上限を`TimeoutExpired`で返す。
+                raise subprocess.TimeoutExpired(command, 30)
+            raise OSError("実行ファイルを開始できない")
+
+        monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", fail)
+    options = _options(tmp_path, root)
     async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
-        assert options["plugins"][0]["path"] == str(static)
-        assert reloader._observer is None
+        assert options["plugins"][0]["path"] == str(root)
+        assert reloader._watch_keys is None
+        assert claude_plugins._shared_watch.observer is None
         reloader.mark_changed()
         assert not reloader.dirty
         assert "変更監視を無効" in caplog.text and "新しい委譲" in caplog.text
+
+
+@pytest.mark.parametrize("versioned", [False, True])
+@pytest.mark.asyncio
+async def test_unreclaimed_inventory_still_fails_and_hands_over_owned_processes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, versioned: bool
+) -> None:
+    """子孫の停止を確認できない一覧取得は、版付き・非版付きとも作業を失敗させ、所有対象を回収へ渡す。"""
+    root = _plugin(tmp_path / ("cache/mine/agent-toolkit/1.0.0" if versioned else "checkout"))
+    unreclaimed = claude_plugins.process_tree.ReclaimError(["1234: claude plugin list"], [], context="run_with_timeout")
+
+    def fail(_command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        raise unreclaimed
+
+    monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", fail)
+    reloader = claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop())
+    with pytest.raises(claude_plugins._PluginCleanupError, match="停止"):
+        async with reloader:
+            pytest.fail("停止未確認を縮退した")
+    assert reloader.unreclaimed == [unreclaimed]
 
 
 @pytest.mark.parametrize("versioned", [False, True])
@@ -516,25 +554,33 @@ async def test_monitor_start_failure_preserves_prepared_input_and_reclaims_monit
     inventory.items = [_installed(root)]
     stopped: list[bool] = []
 
-    class Observer:
-        ident = None
-
-        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+    class Observer(ManualObserver):
+        def schedule(self, *args: Any, **kwargs: Any) -> tuple[str, bool]:
             if failure == "schedule":
                 raise OSError("監視先を確保できない")
+            return super().schedule(*args, **kwargs)
 
         def start(self) -> None:
-            raise OSError("監視threadを開始できない")
+            if failure == "start":
+                raise OSError("監視threadを開始できない")
 
         def stop(self) -> None:
             stopped.append(True)
 
-    monkeypatch.setattr(claude_plugins, "Observer", Observer)
+    monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", Observer)
     options = _options(tmp_path, root)
+    client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock()))
     async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
         input_root = Path(options["plugins"][0]["path"])
         assert (input_root / "skills/content.md").read_text(encoding="utf-8") == "初期内容"
-        assert reloader._observer is None and stopped == [True]
+        # 開始済みの監視threadだけを停止し、開始できなかったthreadは停止の対象にしない。
+        assert reloader._watch_keys is None and stopped == ([True] if failure == "schedule" else [])
+        assert claude_plugins._shared_watch.observer is None
+        # 監視を無効にした接続でも、再読み込みは再登録せずに反映結果を確定する（20261106-201711-002のバグ単位B）。
+        client._query._send_control_request.return_value = _response(input_root)
+        await reloader.reload(client)
+        assert reloader.updated and reloader._watch_keys is None
+        assert claude_plugins._shared_watch.observer is None
     assert input_root.exists() is not versioned
 
 
@@ -564,7 +610,7 @@ async def test_reschedule_failure_keeps_confirmed_reload_and_stops_monitor(
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
     async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
-        observer = reloader._observer
+        observer = claude_plugins._shared_watch.observer
 
         def fail(**_kwargs: Any) -> None:
             raise OSError("監視を再開できない")
@@ -572,42 +618,8 @@ async def test_reschedule_failure_keeps_confirmed_reload_and_stops_monitor(
         monkeypatch.setattr(reloader, "_reschedule", fail)
         client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(return_value=_response(root))))
         await reloader.reload(client)
-        assert reloader.updated and reloader._observer is None
+        assert reloader.updated and reloader._watch_keys is None
         assert not observer.is_alive()
-
-
-@pytest.mark.parametrize("failure", ["nonzero", "timeout", "oserror", "reclaim"])
-@pytest.mark.asyncio
-async def test_inventory_transport_failure_only_disables_optional_watch(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, failure: str
-) -> None:
-    """実際の呼出helperの例外型で、必須選択と静的入力の補助取得を分ける。"""
-    dynamic = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
-    static = _plugin(tmp_path / "checkout")
-    inventory.returncode = 1
-    if failure != "nonzero":
-
-        def fail(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
-            if failure == "timeout":
-                raise subprocess.TimeoutExpired(command, 30)
-            if failure == "reclaim":
-                raise claude_plugins.process_tree.ReclaimError(["1234: claude plugin list"], [], context="run_with_timeout")
-            raise OSError("実行ファイルを開始できない")
-
-        monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", fail)
-    with pytest.raises(claude_plugins.PluginReloadError):
-        async with claude_plugins.ClaudePluginReloader(_options(tmp_path, dynamic), asyncio.get_running_loop()):
-            pytest.fail("必須の入力選択が成功した")
-    options = _options(tmp_path, static)
-    if failure == "reclaim":
-        # 子プロセスの停止を確認できない結果は、静的入力でも補助監視の縮退へ変換しない。
-        with pytest.raises(claude_plugins.PluginReloadError, match="停止"):
-            async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()):
-                pytest.fail("停止未確認を縮退した")
-        return
-    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
-        assert options["plugins"][0]["path"] == str(static)
-        assert reloader._observer is None
 
 
 @pytest.mark.parametrize("failure", ["cleanup", "programming"])
@@ -619,20 +631,127 @@ async def test_monitor_cleanup_and_programming_failures_are_not_hidden(
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
 
-    class Observer:
-        ident = None
+    stops: list[bool] = []
 
-        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
+    class Observer(ManualObserver):
+        def schedule(self, *_args: Any, **_kwargs: Any) -> tuple[str, bool]:
             if failure == "programming":
                 raise ValueError("実装不良")
             raise OSError("監視の開始失敗")
 
         def stop(self) -> None:
-            if failure == "cleanup":
+            stops.append(True)
+            if failure == "cleanup" and len(stops) == 1:
                 raise OSError("監視を停止できない")
 
-    monkeypatch.setattr(claude_plugins, "Observer", Observer)
-    expected = OSError if failure == "cleanup" else ValueError
-    with pytest.raises(expected, match="監視を停止できない|実装不良"):
+    monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", Observer)
+    expected = claude_plugins._PluginCleanupError if failure == "cleanup" else ValueError
+    with pytest.raises(expected, match="停止を確認できない|実装不良"):
         async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()):
             pytest.fail("未解決の不良を縮退成功として扱った")
+    # 停止できなかった監視threadは、接続の終了処理で停止を再試行する。
+    assert stops == ([True, True] if failure == "cleanup" else [True])
+
+
+@pytest.mark.asyncio
+async def test_connections_share_one_registration_per_watch_target(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    """同じ監視先を持つ2接続は監視先ごとに1件だけ登録し、参照が残る間は他方の変更検知を保つ。"""
+    root = _plugin(tmp_path / "checkout")
+    inventory.items = [_installed(root)]
+    loop = asyncio.get_running_loop()
+    first = claude_plugins.ClaudePluginReloader(_options(tmp_path, root), loop)
+    second = claude_plugins.ClaudePluginReloader(_options(tmp_path, root), loop)
+    try:
+        await first.prepare()
+        observer = claude_plugins._shared_watch.observer
+        registered = len(observer.emitters)
+        await second.prepare()
+        assert first._watch_keys == second._watch_keys
+        assert claude_plugins._shared_watch.observer is observer
+        assert len(observer.emitters) == registered == len(first._watch_keys or ())
+        await first.close()
+        assert len(observer.emitters) == registered
+        (root / "skills/content.md").write_text("片方の終了後の更新", encoding="utf-8")
+        await asyncio.wait_for(second.wait_for_change(), timeout=5)
+        assert second.dirty and not first.dirty
+        await second.close()
+        assert not observer.emitters
+        assert not observer.is_alive()
+        assert claude_plugins._shared_watch.observer is None
+    finally:
+        await first.close()
+        await second.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
+async def test_reload_accepts_listed_plugin_without_manifest(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    """manifestを持たない一覧由来のプラグインがあっても、再読み込みはpathの一致で成功する。"""
+    root = _plugin(tmp_path / "checkout")
+    # 2026-11-07のCLI 2.1.319の`claude plugin list --json`で、typescript-lsp@claude-plugins-officialの導入先は
+    # LICENSEとREADME.mdだけを持ち、`.claude-plugin/plugin.json`を持たなかった。
+    bare = tmp_path / "cache/claude-plugins-official/typescript-lsp/1.0.0"
+    bare.mkdir(parents=True)
+    (bare / "README.md").write_text("readme", encoding="utf-8")
+    inventory.items = [_installed(root), _installed(bare, id="typescript-lsp@claude-plugins-official")]
+    async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
+        for listed in (True, False):
+            response = _response(root)
+            if listed:
+                response["plugins"].append({"name": "typescript-lsp", "path": str(bare), "version": "1.0.0"})
+            reloader.mark_changed()
+            client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(return_value=response)))
+            await reloader.reload(client)
+            assert reloader.updated and not reloader.dirty
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
+async def test_explicit_plugin_without_manifest_still_fails_reload(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    """明示入力のmanifestの欠落は、一覧由来の省略と区別して再読み込みを失敗させる。"""
+    root = _plugin(tmp_path / "checkout")
+    inventory.items = [_installed(root)]
+    async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
+        (root / ".claude-plugin/plugin.json").unlink()
+        client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(return_value=_response(root))))
+        with pytest.raises(claude_plugins.PluginReloadError, match="manifestがない"):
+            await reloader.reload(client)
+        client._query._send_control_request.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failed_reload_is_not_retriggered_by_inventory_in_use_markers(
+    tmp_path: Path, inventory: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一覧取得が導入先の`.in_use/`へ書く印では再読み込みを要求せず、入力の変更だけを通知する。"""
+    root = _plugin(tmp_path / "checkout")
+    inventory.items = [_installed(root)]
+    original = claude_plugins.process_tree.run_with_timeout
+
+    def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        # CLI 2.1.319の`claude plugin list --json`と同じく、一時ファイルを作成・改名・削除する。
+        marker = root / ".in_use/4242"
+        marker.parent.mkdir(exist_ok=True)
+        temporary = marker.with_name("4242.tmp.abcd")
+        temporary.write_text("{}", encoding="utf-8")
+        temporary.replace(marker)
+        marker.unlink()
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", run)
+    async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
+        # 所有タスクと同じく、変更通知の集約を終えてから再読み込みする。
+        reloader.mark_changed()
+        await asyncio.wait_for(reloader.wait_for_change(), timeout=5)
+        client = SimpleNamespace(
+            _query=SimpleNamespace(_send_control_request=AsyncMock(side_effect=claude_plugins.PluginReloadError("失敗")))
+        )
+        with pytest.raises(claude_plugins.PluginReloadError):
+            await reloader.reload(client)
+        generation = reloader._generation
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(reloader.wait_for_change(), timeout=1)
+        assert reloader._generation == generation
+        (root / "skills/content.md").write_text("入力の変更", encoding="utf-8")
+        await asyncio.wait_for(reloader.wait_for_change(), timeout=5)
+        assert reloader._generation > generation

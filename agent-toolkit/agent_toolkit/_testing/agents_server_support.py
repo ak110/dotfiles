@@ -137,10 +137,17 @@ class ManualObserver:
 
     ident = None
 
-    def schedule(self, *_args: Any, **_kwargs: Any) -> None:
-        pass
+    def __init__(self) -> None:
+        self.watches: set[tuple[str, bool]] = set()
 
-    def unschedule_all(self) -> None:
+    def schedule(self, _handler: Any, path: str, *, recursive: bool = False, **_kwargs: Any) -> tuple[str, bool]:
+        self.watches.add((path, recursive))
+        return path, recursive
+
+    def unschedule(self, watch: tuple[str, bool]) -> None:
+        self.watches.remove(watch)
+
+    def remove_handler_for_watch(self, *_args: Any, **_kwargs: Any) -> None:
         pass
 
     def start(self) -> None:

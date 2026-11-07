@@ -152,7 +152,7 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
         ]
     )
     monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
-    monkeypatch.setattr(claude_plugins, "Observer", ManualObserver)
+    monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", ManualObserver)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         session = await backend.start("初回", str(tmp_path))
         async with backend._condition:
@@ -220,12 +220,7 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
             with patch.object(claude_plugins.process_tree, "run_with_timeout", inventory):
                 return super()._inventory()
 
-    class UnavailableObserver:
-        ident = None
-
-        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
-            pass
-
+    class UnavailableObserver(ManualObserver):
         def start(self) -> None:
             raise OSError("fixture: monitor unavailable")
 
@@ -251,7 +246,9 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
         ]
     )
     monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
-    monkeypatch.setattr(claude_plugins, "Observer", UnavailableObserver if monitor_failure else ManualObserver)
+    monkeypatch.setattr(
+        claude_plugins.watchdog.observers, "Observer", UnavailableObserver if monitor_failure else ManualObserver
+    )
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         session = await backend.start("初回", str(tmp_path))
         async with backend._condition:
@@ -260,7 +257,8 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
         mirror = pathlib.Path(reloader.options["plugins"][0]["path"])
         assert mirror.is_dir() and reloader._roots <= {source.resolve()}
         if monitor_failure:
-            assert reloader._observer is None and stopped == [True]
+            # 開始できなかった監視threadは停止の対象が無い。
+            assert reloader._watch_keys is None and not stopped
         else:
             reloader.mark_changed()
             await asyncio.wait_for(reloaded.wait(), timeout=5)
@@ -321,20 +319,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
 
     held_child = HeldChild()
 
-    class Observer:
-        ident = None
-        started = False
-
-        def schedule(self, *_args: Any, **_kwargs: Any) -> None:
-            if self.started:
-                raise OSError("再監視を開始できない")
-
-        def start(self) -> None:
-            self.started = True
-
-        def unschedule_all(self) -> None:
-            pass
-
+    class Observer(ManualObserver):
         def stop(self) -> None:
             stops.append(True)
             if failure == "monitor-stop" and len(stops) == 1:
@@ -369,6 +354,11 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
             with patch.object(claude_plugins.process_tree, "run_with_timeout", inventory):
                 return super()._inventory()
 
+        def _reschedule(self) -> None:
+            if failure == "monitor-stop":
+                raise OSError("再監視を開始できない")
+            super()._reschedule()
+
         async def close(self, *, retain_input: bool = False) -> None:
             await super().close(retain_input=retain_input)
             closed.set()
@@ -380,7 +370,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
         _query = SimpleNamespace(_send_control_request=control)
 
     client = Client([[claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}), ResultMessage("初回完了")]])
-    monkeypatch.setattr(claude_plugins, "Observer", Observer)
+    monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", Observer)
     monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         session = await backend.start("初回", str(tmp_path))
