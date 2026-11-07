@@ -155,14 +155,23 @@ Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は`share/claude_settings
 bridgeが接続すると、ダイアログの内部表現が持つ`hasExternalRacer`は真になる。
 自動継続のarmed条件には、この値が偽であることが含まれるためである。
 `~/.claude/settings.json`は`remoteControlAtStartup`が真であり、対話TUIのセッションはこの条件へ該当する。
-armedされた場合の中止条件はタイマー発火以降のユーザー操作と端末フォーカスの保持であり、端末とtmuxのアクティブペインにフォーカスが当たっている間は自動継続しない。
+armedされた場合も、端末フォーカスが`focused`の間は自動継続しない。
+2.1.319の待機処理（`CLAUDE_AFK_TIMEOUT_MS`を参照する関数）は毎秒フォーカスを調べ、`focused`なら待機の起点を現在時刻へ更新するため、期限に達しない。
+タイマー発火後のユーザー操作も自動継続を取り消す。
+フォーカスは端末のfocus-in報告か、`blurred`でない間のキー入力・マウス押下で`focused`になり、focus-out報告まで続く。
+このため、tmuxやherdrで常駐実行のペインをアクティブにしているだけで、設定した期限は満了しない。
+2026年11月7日、process-loopの統括の質問が5分で自動継続せず、ユーザーの回答まで約3時間52分待った事象はこの条件による（herdrのアクティブペインで実行）。
+`atk wi process-loop`が起動したClaudeのメイン会話では、PreToolUse hookが`AskUserQuestion`を拒否し、事前承認型UWIへの記録へ切り替えさせる。
+拒否の判定は`agent-toolkit/agent_toolkit/_hooks/pretooluse/process_loop_question.py`にある。
+フォーカスはhookから観測できず、離席時にペインを非アクティブにする運用に依存せず質問待ちへ上限を与えるためである。
 `dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
 `dialogExpiry`が未設定の場合の値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけである。
 `AskUserQuestion`の転送はこの3箇所のいずれにも該当しない。
 このため`atk wi process-loop`のClaude起動は`--settings`へ`remoteControlAtStartup`の偽を渡し、常駐実行のセッションでbridgeを接続しない。
 常駐実行のセッションでは別端末からの回答ができなくなるが、質問待ちに上限を与える利益を優先する。
-本節の記述は2026年9月7日にClaude Code 2.1.263のバイナリを実読して確定した。
+本節の記述は2026年9月7日にClaude Code 2.1.263のバイナリを実読して確定し、フォーカスの判定は2026年11月7日に2.1.319のバイナリで再確認した。
 再検証ではバイナリから`hasExternalRacer`を設定する箇所と、自動継続のarmed条件でこの値が偽であることを要求する箇所を読む。
+フォーカスの判定は、`CLAUDE_AFK_TIMEOUT_MS`を参照する待機関数と、`terminalFocus`を更新する入力処理（focusイベント、キー入力、マウス押下）を読む。
 続けて`dialogExpiry`が未設定の場合の値を解決する関数の呼び出し元を列挙し、`AskUserQuestion`の転送が含まれないことを確認する。
 
 本節が記録する配布の事実が規範の判断へ及ぼす影響は、[concepts.md](concepts.md)の「確認・合意の運用」が保持する。
