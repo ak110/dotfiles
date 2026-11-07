@@ -16,7 +16,7 @@ from unittest import mock
 import pytest
 
 from agent_toolkit._common import process_tree
-from agent_toolkit._testing import pytest_plugin, resource_diagnostics
+from agent_toolkit._testing import pytest_plugin, resource_diagnostics, slot_yield
 
 
 @pytest.mark.parametrize(
@@ -120,6 +120,8 @@ def test_pytest_cleanup_preserves_failure_and_reports_cause_path(
         pluginmanager=pytest.PytestPluginManager(),
         option=types.SimpleNamespace(basetemp=None),
         getoption=lambda *_args, **_kwargs: None,
+        # `pytest_configure`が読むini設定は、登録時の値（譲渡の累計時間の上限）を返す。
+        getini=lambda _name: str(slot_yield.DEFAULT_YIELD_BUDGET),
         add_cleanup=callbacks.append,
     )
     monkeypatch.setattr(sys, "platform", "win32")
