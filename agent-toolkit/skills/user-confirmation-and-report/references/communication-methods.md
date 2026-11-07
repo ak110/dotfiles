@@ -32,7 +32,7 @@
 
 表の`rules-main.claude-code.md`と`rules-main.codex.md`は`agent-toolkit/share/`配下を指す。
 自律モードの「有効な回答期限」は、起動時に与えられ、回答が無ければ確実に満了する有限の期限を指す。無期限の設定、`askUserQuestionTimeout`などの期限機能が無い環境、期限が無効になる条件が成立している環境、Codex Default modeは「期限なし」とする。認識合わせを期限によらずその場で問うのは、割り込みや是正の直後に理解を確かめるためである。
-`atk wi process-loop`が起動したClaudeのメイン会話は「期限なし」として扱い、認識合わせを含めてその場で質問せず、自分の理解と質問を事前承認型UWIへ記録して回答を要する元項目だけを保留する。Claude Codeは端末フォーカスがある間は`askUserQuestionTimeout`の待機を延長し続け、常駐実行のペインをアクティブにしているだけで期限が満了しないためである（根拠は`docs/development/operations.md`「質問・ダイアログのタイムアウトの配布」）。この会話の`AskUserQuestion`はPreToolUseが拒否する。
+`atk wi process-loop`が起動したClaudeのメイン会話は「期限なし」として扱い、認識合わせを含めてその場で質問せず、自分の理解と質問を事前承認型UWIへ記録して回答を要する元項目だけを保留する。Claude Codeは端末フォーカスがある間は`askUserQuestionTimeout`の待機を延長し続けるためである。端末がペインのfocus-inを報告する環境では、常駐実行のペインをアクティブにしているだけで期限が満了しない（根拠は`docs/development/operations.md`「質問・ダイアログのタイムアウトの配布」）。この会話の`AskUserQuestion`はPreToolUseが拒否する。
 回答が無いまま終わった確認と、事前承認を要する元項目の回答待ちは`pending-decisions.md`に従う。ユーザーとの窓口を持たない委譲先は確認通知で委譲元へ返す（`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」）。
 
 個別UWIの要否は`../SKILL.md`「確認要否の判定」に従う。
