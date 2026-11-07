@@ -938,8 +938,11 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    assert (skill_name in _operation_context(None)) is main_warns
-    assert _operation_context("sub-1") == ""
+    # 組み込みの汎用Agentの起動には、取得済みでも実行手段の判定を促す警告が`agent-toolkit:delegation`を名指しして出る。
+    # ここでは取得の案内の有無だけを確かめる。
+    acquisition = f"`Skill`で`{skill_name}`"
+    assert (acquisition in _operation_context(None)) is main_warns
+    assert acquisition not in _operation_context("sub-1")
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
