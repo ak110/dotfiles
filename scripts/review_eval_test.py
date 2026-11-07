@@ -203,9 +203,11 @@ def test_prepare_builds_condition_table_accepted_by_launch_preflight(tmp_path, m
         f'{{"commits":["{old}","{new}"],"awi":["x.md"]}}\n', encoding="utf-8"
     )
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    # 実行レビューの起動前検査は公開の単独入口を持たないため、agents_serverの`start`と同じ判定関数を直接使う。
+    check_materials = launch_requests._check_exec_review_materials  # pylint: disable=protected-access
     params = {"レビュー基準": "計画", "計画": str(plan_dir / "01-0000_case.md"), "引き継ぎ記録先": "/x/handoff.md（新規）"}
     with pytest.raises(ActionableError, match="review_contract"):
-        launch_requests._check_exec_review_materials(params)
+        check_materials(params)
 
     out = tmp_path / "out"
     assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
@@ -216,7 +218,7 @@ def test_prepare_builds_condition_table_accepted_by_launch_preflight(tmp_path, m
     assert "| 20261001-000000-001.md | 2 | 補足条件 | 条件B \\| 縦線 | 完成条件 2 |" in contract
     assert "| 20261001-000000-001.md | 3 | 主要完成状態 | 新形式の要求 目的の段落。 続きの行。 | H1と冒頭 |" in contract
     assert "20261001-000000-002.md" not in contract
-    launch_requests._check_exec_review_materials(extra_params)
+    check_materials(extra_params)
     subprocess.run(prepared["cleanup"], check=True)
 
 
