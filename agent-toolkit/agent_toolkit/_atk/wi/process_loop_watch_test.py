@@ -829,6 +829,9 @@ def test_observer_scope_releases_after_preparation_or_stop_failure(
         def schedule(self, *_args: Any, **_kwargs: Any) -> None:
             raise RuntimeError("監視準備の失敗")
 
+        def start(self) -> None:
+            pass
+
         def stop(self) -> None:
             calls.append("stop")
             if stage == "stop":
@@ -842,7 +845,7 @@ def test_observer_scope_releases_after_preparation_or_stop_failure(
         if stage == "prepare":
             _pl_watch.wait_for_changes(tmp_path, "example/repo")
         else:
-            with _pl_watch._watch_observer():  # pylint: disable=protected-access
+            with _pl_watch._watch_observer(lambda _observer: None):  # pylint: disable=protected-access
                 pass
     assert calls == ["stop", "join"]
 

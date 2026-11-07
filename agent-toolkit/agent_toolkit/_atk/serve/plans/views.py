@@ -6,7 +6,6 @@ URLと処理の対応付けは`_atk/serve/app.py`が行い、本モジュール�
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import dataclasses
 import hashlib
 import html as html_lib
@@ -47,6 +46,7 @@ from agent_toolkit._atk.serve.plans.roots import (
     deliver_root_status,
     logger,
 )
+from agent_toolkit._common import watch_observer as _watch_observer
 from agent_toolkit._common.async_operations import run_sync_operation
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan.creation_times import cleanup_creation_time_temporaries
@@ -454,20 +454,18 @@ def start_local_watchers(context: PlansContext) -> None:
 
 
 def _start_local_observer(context: PlansContext) -> watchdog.observers.api.BaseObserver | None:
-    observer = watchdog.observers.Observer()
-    with contextlib.ExitStack() as lifetime:
-        lifetime.callback(_stop_local_observer, observer)
-        scheduled = 0
-        for spec in context.roots:
-            if not spec.path.is_dir():
-                continue
+    specs = [spec for spec in context.roots if spec.path.is_dir()]
+    if not specs:
+        return None
+
+    def schedule(observer: watchdog.observers.api.BaseObserver) -> None:
+        for spec in specs:
             observer.schedule(PlansEventHandler(spec.path, context.state, spec.source_id), str(spec.path), recursive=True)
-            scheduled += 1
-        if scheduled == 0:
-            return None
-        observer.start()
-        lifetime.pop_all()
-    return observer
+
+    return _watch_observer.start_observer(
+        schedule,
+        on_fallback=lambda error: logger.warning("%s", _watch_observer.fallback_message(error, restart="`atk serve`")),
+    )
 
 
 async def start_local_watchers_async(context: PlansContext) -> None:

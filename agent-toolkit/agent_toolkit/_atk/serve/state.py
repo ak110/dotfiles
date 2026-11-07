@@ -3,6 +3,7 @@
 import asyncio
 import collections.abc
 import contextlib
+import logging
 import pathlib
 import threading
 import time
@@ -11,7 +12,10 @@ import typing
 import watchdog.events
 import watchdog.observers
 
+from agent_toolkit._common import watch_observer as _watch_observer
 from agent_toolkit._common.async_operations import run_sync_operation
+
+_logger = logging.getLogger(__name__)
 
 _TimerFactory = collections.abc.Callable[[float, collections.abc.Callable[..., None], tuple[typing.Any, ...]], threading.Timer]
 
@@ -89,8 +93,11 @@ class ServeState(watchdog.events.FileSystemEventHandler):
 
     def _start_observer(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
-        self.observer.schedule(self, str(self.root), recursive=True)
-        self.observer.start()
+        self.observer = _watch_observer.start_observer(
+            lambda observer: observer.schedule(self, str(self.root), recursive=True),
+            observer=self.observer,
+            on_fallback=lambda error: _logger.warning("%s", _watch_observer.fallback_message(error, restart="`atk serve`")),
+        )
 
     def is_watching(self) -> bool:
         """ファイルの変更を監視しているかを返す。"""

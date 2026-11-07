@@ -1,13 +1,18 @@
 """監視の獲得直後と配信準備中の例外でも所有した資源を回収する。"""
 
 import asyncio
+import errno
 import pathlib
+import threading
 from typing import Any
 
 import pytest
 
 from agent_toolkit._atk.serve import session_watch, state
+from agent_toolkit._atk.serve.plans import views
 from agent_toolkit._atk.wi import process_loop_watch
+from agent_toolkit._common import watch_observer
+from agent_toolkit._testing.serve_plans_support import _context
 
 
 class _Observer:
@@ -53,17 +58,19 @@ async def test_serve_state_context_cleans_acquisition_and_body_failure(
 async def test_direct_start_failure_releases_partial_watch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, asynchronous: bool
 ) -> None:
-    """公開されたstartメソッド自身が、開始途中に得た監視資源を回収する。"""
+    """通常の監視とポーリング監視の両方を開始できない場合、公開startが開始途中の監視資源を回収して送出する。"""
     observer = _Observer(fail_start=True)
+    polling = _Observer(fail_start=True)
     monkeypatch.setattr(state.watchdog.observers, "Observer", lambda: observer)
+    monkeypatch.setattr(watch_observer.watchdog.observers.polling, "PollingObserver", lambda **_kwargs: polling)
     watched = state.ServeState(tmp_path)
     with pytest.raises(OSError, match="監視開始失敗"):
         if asynchronous:
             await watched.start_async(asyncio.get_running_loop())
         else:
             watched.start(asyncio.get_running_loop())
-    assert observer.stopped == 1
-    assert observer.joined == 0
+    assert observer.stopped >= 1 and polling.stopped >= 1
+    assert observer.joined == polling.joined == 0
 
 
 @pytest.mark.parametrize("fail_start", [False, True])
@@ -105,3 +112,79 @@ def test_record_watch_releases_observer_after_tracker_failure(monkeypatch: pytes
         watched.stop()
     assert [type(error) for error in failed.value.exceptions] == [ValueError, OSError]
     assert observer.stopped == observer.joined == 1
+
+
+class _Exhausted(_Observer):
+    """inotifyの上限到達と同じ`OSError(EMFILE)`で開始に失敗する、watchdogが標準で選ぶObserverの代役。"""
+
+    def start(self) -> None:
+        raise OSError(errno.EMFILE, "inotify instance limit reached")
+
+
+@pytest.fixture(name="exhausted")
+def _exhausted(monkeypatch: pytest.MonkeyPatch) -> list[_Exhausted]:
+    """watchdogが標準で選ぶObserverの開始をinotifyの上限到達で失敗させ、切替後のポーリング間隔を短くする。"""
+    created: list[_Exhausted] = []
+
+    def factory() -> _Exhausted:
+        created.append(_Exhausted())
+        return created[-1]
+
+    monkeypatch.setattr(watch_observer.watchdog.observers, "Observer", factory)
+    monkeypatch.setattr(watch_observer, "POLLING_INTERVAL_SECONDS", 0.05)
+    return created
+
+
+def test_process_loop_wait_falls_back_to_polling_and_warns_once(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], exhausted: list[_Exhausted]
+) -> None:
+    """inotifyの上限到達でもprocess-loopの待機は変更を検知して戻り、切替の警告は待機を繰り返しても1回だけ出る。"""
+    monkeypatch.setattr(process_loop_watch, "_polling_fallback_reported", False)
+    private_notes = tmp_path / "private-notes"
+    for index in range(2):
+        timer = threading.Timer(0.5, (private_notes / f"entry-{index}.md").write_text, ("本文",))
+        timer.start()
+        try:
+            assert process_loop_watch.wait_for_changes(private_notes, None, timeout=10)
+        finally:
+            timer.cancel()
+    assert len(exhausted) == 2 and all(observer.stopped == 1 for observer in exhausted)
+    assert capsys.readouterr().err.count("ポーリング監視へ切り替えた") == 1
+
+
+@pytest.mark.asyncio
+async def test_serve_state_falls_back_to_polling_and_notifies(
+    tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture, exhausted: list[_Exhausted]
+) -> None:
+    """inotifyの上限到達でも`ServeState`は開始し、Markdownの変更を購読者へ届けて切替を警告する。"""
+    async with state.ServeState(tmp_path, debounce_seconds=0) as watched:
+        events = watched.events(heartbeat=30)
+        assert await anext(events) == "event: subscribed\ndata: {}\n\n"
+        await asyncio.to_thread((tmp_path / "entry.md").write_text, "本文")
+        assert (await asyncio.wait_for(anext(events), timeout=10)).startswith("event: changed")
+        await events.aclose()
+    assert len(exhausted) == 1 and exhausted[0].stopped == 1
+    assert "ポーリング監視へ切り替えた" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_plan_watch_falls_back_to_polling_and_notifies(
+    tmp_path: pathlib.Path, index_path: pathlib.Path, caplog: pytest.LogCaptureFixture, exhausted: list[_Exhausted]
+) -> None:
+    """inotifyの上限到達でも計画ファイルの監視は開始し、変更を購読者へ届けて切替を警告する。"""
+    del index_path
+    root = tmp_path / "plans"
+    root.mkdir()
+    context = _context(root)
+    context.state.debounce_sec = 0.01
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    context.state.subscribers.add(queue)
+    await views.start_local_watchers_async(context)
+    try:
+        assert context.state.local_observer is not None
+        await asyncio.to_thread((root / "plan.md").write_text, "# 計画\n")
+        assert await asyncio.wait_for(queue.get(), timeout=10)
+    finally:
+        await views.stop_local_watchers_async(context)
+    assert len(exhausted) == 1 and exhausted[0].stopped == 1
+    assert "ポーリング監視へ切り替えた" in caplog.text
