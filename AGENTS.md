@@ -15,6 +15,7 @@
 - 機構の目的、構造の理由、知識境界、却下した案を記録した設計記録の索引: [docs/development/design.md](docs/development/design.md)
 - 過去のAWIを通じて確定した方針や意向: [docs/development/concepts.md](docs/development/concepts.md)
 - 再発防止の判断材料となる障害や欠陥の記録: [docs/development/incidents.md](docs/development/incidents.md)
+- 導入後に撤去した仕組みを働きで引く台帳（新しい仕組みを加える前の照合に使う）: [docs/development/removed-mechanisms.md](docs/development/removed-mechanisms.md)
 - 各規範の条文が根拠としている検証記録の日付、版数、再検証の手順: [docs/development/audit-records.md](docs/development/audit-records.md)
 
 ## 本リポジトリのスキル

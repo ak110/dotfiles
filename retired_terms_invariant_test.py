@@ -589,6 +589,8 @@ _VERBATIM_RECORD_LOCATIONS = (
     _AllowedLocation("docs/development/norm-restructure-20261022/ledger.tsv"),
     _AllowedLocation("docs/development/norm-restructure-20261022/mapping.json"),
     _AllowedLocation("docs/development/norm-restructure-20261022/reverse-index.tsv"),
+    # 撤去した仕組みの台帳は、撤去した仕組みと役割を当時の名称で記録して照合に使う。
+    _AllowedLocation("docs/development/removed-mechanisms.md"),
 )
 
 

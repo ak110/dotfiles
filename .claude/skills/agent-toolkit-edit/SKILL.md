@@ -5,7 +5,7 @@ description: >
   `agent-toolkit/`・`agent-basics/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
   `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
   `.claude-plugin/marketplace.json`を編集するときに使う。
-  版数更新・marketplace管理・セッション状態フラグの扱いを含む。
+  版数更新・marketplace管理・セッション状態フラグの扱い、レビュー担当の指示・モデル変更時の評価セットの比較を含む。
 ---
 
 # agent-toolkit（Agent Plugins・Claude Code・Codex・Antigravity）
@@ -38,6 +38,7 @@ description: >
 | `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-investigation.md` |
 | `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/atk-serve-static.md` |
 | 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md` |
+| hook、自動チェック、永続状態、配送経路など新しい仕組みを加える計画を起草する前と、その変更を実行レビューする前 | `../edit-dotfiles-norms/SKILL.md`の「撤去した仕組みの照合」 | 判断 | `section:*/skills/edit-dotfiles-norms/SKILL.md#「撤去した仕組みの照合」` |
 | `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump.md`の「plan modeでの取り扱い」節 | 判断 | `section:*/skills/agent-toolkit-edit/references/version-bump.md#「plan modeでの取り扱い」` |
 | 全レーンの完了後にバージョンを更新する時点、および`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
 | `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とインポートを変更する前 | `references/distribution-and-hooks.md`の「agent_toolkitパッケージの配置と層」 | 判断 | `section:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md#「agent_toolkitパッケージの配置と層」` |
@@ -94,3 +95,21 @@ description: >
 | hookの実装・登録・遮断や警告の判定・出力・通知formatterを変更する前 | `references/distribution-and-hooks.md`の「hook開発資料の選択」 | 判断 | `section:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md#「hook開発資料の選択」` |
 | toolkitのPython実装を新設・変更する前 | `references/python.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/python.md` |
 | 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/check-script-design.md` |
+
+## レビュー評価セット
+
+対象はレビュー担当への指示とモデルの割り当てを変える変更である。
+指示の例は`agent-toolkit/share/exec-review*.md`、`agent-toolkit/share/recurrence-self-check.parent.md`、`agent-basics:review-standards`である。
+これらの変更では、`scripts/review_eval_cases.json`の評価セットで変更前後の結果を比べてから採用する。
+見逃しと誤指摘の件数を実例で比べ、改訂が良くなったかを印象ではなく結果で判断するためである。
+モデルの費用がかかるため、CIや定期工程には組み込まない。
+
+1. `uv run --frozen python scripts/review_eval.py prepare --out <managed-tempの絶対パス>`で事例ごとの作業ツリーと計画の複製を作る。出力の`start`をそのままagents_serverの`start`へ渡し、比べるモデルは`model_type`で指定する
+2. 変更前は稼働中のplugin rootの役割名（`exec-review`）、変更後は作業ツリーの`agent-toolkit/share/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映された後の実行と、反映前に保存した結果を比べる
+3. 各担当の終了後、`uv run --frozen python scripts/review_eval.py score --result <事例ID>=<出力のtableのパス>`で事例別の検出・見逃し・誤指摘・未分類と合計を出す。未分類の行は本文を読み、正しい指摘か誤指摘かを手で分類する
+4. 変更後に悪化した事例があれば理由を確かめ、改訂の採否を決める。比較結果の保存先を計画の検証結果へ残し、出力の`cleanup`で作業ツリーを回収する
+
+障害事例や振り返りで、レビューの見逃し（レビュー後に判明した欠陥）か誤指摘（レビュー担当の前提の誤り・撤回で不採用になった指摘）が確定したら、`scripts/review_eval_cases.json`へ事例を追加する。
+入力はprivate-notesの`plans`配下の計画と`.wi-commits.jsonl`から再構成できるものを選び、期待には検出すべき問題か出すべきでない指摘を、同じ指摘行に揃って現れる照合語句（正規表現）で書く。
+メインやレーン担当の技術判断による見送りは誤指摘に数えない。
+実行レビュー以外のレビュー担当の事例も、`role`に役割名を書いて同じ形式で追加できる。

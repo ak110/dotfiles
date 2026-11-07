@@ -23,6 +23,14 @@
 
 経緯は`docs/development/concepts.md`にある。
 
+## 再発の集計
+
+batchでは、対象にdotfilesの作業が含まれる場合に、障害事例集の`再発`行を事例ごとに数える。
+`git -C <dotfilesの作業ツリー> grep -n -F '再発（' -- 'docs/development/incidents*.md'`で行を列挙し、各行が属する事例（事例の書式の先頭行）を原因の単位とする。
+2回以上再発した事例を分析候補にし、`agent-basics:bugfix`の`references/root-cause-severity.md`「前提の再検討」に従って、同じ条文や仕組みを維持・修正・撤去する案を比べる。
+効果確認が`insufficient`の採用済みAWIは件数に加えず、各`再発`行が指す是正AWIと元のAWIの対応を確かめる材料にだけ使う（同じ再発を二重に数えないため）。
+今回の分析で新たに再発と判定した不具合は、`.claude/skills/edit-dotfiles-norms/SKILL.md`「再発の記録」に従って記録する。
+
 ## pyfltr
 
 pyfltrを使った場合は、検索・置換・自動チェックの結果と復旧案内が判断と修正を支援したかを評価する。

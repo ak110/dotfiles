@@ -5,13 +5,14 @@ description: >
   dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、
   `agent-basics/skills/`、`.claude/skills/`などのエージェント向け文書を変更・削除・縮小するとき、
   変更した規範を同じセッションへ適用するとき、規範を変更したセッションで会話圧縮後に作業を続けるとき、
-  変更または新設したスキルを起動するとき、および`agent-toolkit:process-wi`のメインがAWIごとに
-  `プロジェクト規範の指定`を記述するときに起動する。
+  変更または新設したスキルを起動するとき、`agent-toolkit:process-wi`のメインがAWIごとに
+  `プロジェクト規範の指定`を記述するとき、新しい仕組み（hook、自動チェック、永続状態、配送経路、規範の条文など）を
+  加える計画の起草・実行レビューや仕組みの撤去をするとき、および不具合の原因が過去の対策と同じと判定したときに起動する。
 ---
 
 # dotfilesの規範の改訂
 
-このスキルは、本リポジトリのエージェント向け文書を改訂するエージェントに向けて、編集前に参照すべき記録、変更した規範を自身のセッションへ適用する手順、メインエージェントが記述する`プロジェクト規範の指定`、および規範を削除・縮小する際の消失確認手順をまとめたものである。
+このスキルは、本リポジトリのエージェント向け文書を改訂するエージェントに向けて、編集前に参照すべき記録、変更した規範を自身のセッションへ適用する手順、メインエージェントが記述する`プロジェクト規範の指定`、規範を削除・縮小する際の消失確認手順、撤去した仕組みの照合と再発の記録をまとめたものである。
 `agent-toolkit/`配下の配置やバージョン更新、配布の手順は、`agent-toolkit-edit`の読込表から作業に合う資料を選ぶ。
 
 ## 名指し参照の読込方法
@@ -24,6 +25,8 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 不具合の原因が過去の対策と同じかを分類する前 | `agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
+| 撤去した仕組みと一致する案の扱いを決める前 | `agent-toolkit:wi-standards/references/awi-body.md#「配置規約と導入目的の調査」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「配置規約と導入目的の調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
@@ -75,3 +78,26 @@ description: >
 - 初出の確認には、`git log --follow -S '<部分文字列>' -- <ファイル>`や、パスを限定しない`git log -S`を用いる。`git blame`（最後に変更したcommitしかわからない）や、パスを限定した`git log -S`（改名前の履歴を追えない）だけで判断しない。
 - 導入commitや復元commitに`Co-Authored-By`や`Claude-Session`といったtrailerが存在しない場合は、`atk wi grep --summary-only --state all -F`を使い、完了済みのキュー項目から特徴的な語句や反映先パスの固定文字列で検索する。候補が見つかったら`atk wi show`で本文を確認する。候補の`adopt`記録、または計画ファイルの`<計画のstem>.wi-commits.jsonl`（旧形式では進捗ログ）に記録されたOIDが、導入commitの完全OIDの先頭部分と一致するかを確かめる。計画を根拠とする場合は、`関連WI`にその候補が含まれていることも確認する。`agent-toolkit:wi-standards`「由来と承認」に基づいてエージェント由来であると確定できた場合は、その根拠を進捗ログ（なければ引き継ぎ記録やユーザーへの報告）に記録する。キュー項目の内部識別子はcommit本文から除く。
 - trailerが存在しないことだけを理由に作者を確定できないため、trailerのないcommitを安易にユーザーによるcommitだと決めつけない。
+
+## 撤去した仕組みの照合
+
+新しい仕組み（hook、自動チェック、永続状態、配送経路、規範の条文など）を加える計画を起草する担当と、その変更を実行レビューする担当は、`docs/development/removed-mechanisms.md`を照合する。
+名前や名目は導入のたびに変わるため、仕組みの働き（何を補う・何を代替するか）を表す語で検索する。
+導入前に検討して却下しただけの案は台帳に載らないため、同じ時点で`docs/development/design*.md`の却下案の記述も働きの語で検索する。
+
+- 一致する項目があれば、`agent-toolkit:wi-standards`の`references/awi-body.md`「配置規約と導入目的の調査」と同じく過去の状態へ戻す提案として扱い、台帳の方針の所在の本文と比べて撤去理由を新しい案で満たせるかを確定してから進める
+- 照合に使った語、一致した項目、判断を計画の記録（実行レビューでは走査記録）へ残す
+- 仕組みを撤去する変更では、同じcommitで台帳へ項目（働き、撤去日とcommit、理由の要約、方針の所在、再導入の条件）を追加する
+
+## 再発の記録
+
+本節は、dotfilesの不具合を原因分析した担当（process-wiのレーン、add-awi-by-user、review-sessionなど）に適用する。
+`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」の分類で過去の対策と同じ原因（範囲不足・未適用・効果不足）と判定したら、その分析の中で次の2つを記録する。
+記録は振り返りが原因ごとに再発を数え、同じ対策を繰り返す前に条文や仕組みを見直す材料になる。
+
+- `docs/development/incidents*.md`の該当事例へ`再発（YYYY年M月D日）:`行を加え、分類、事象、是正するAWI、元の対策のAWIを書く。元のAWIが無ければ事例への行だけを書き、事例も無ければ元の事象を事例として`incidents.md`「区分」の所在ファイルへ置いてから行を加える
+- 元の対策が採用済みAWIにあれば、次の操作で効果確認を`insufficient`にし、是正するAWIと対応付ける
+
+  ```sh
+  atk wi effect-check <元のAWI> --worktree <対象worktree> --file <元の対策で変更したファイル> --verdict insufficient --checked-on <判定日> --review-record <判定の記録位置> --corrective-awi <是正するAWI>
+  ```
