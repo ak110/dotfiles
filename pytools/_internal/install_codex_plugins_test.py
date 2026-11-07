@@ -229,11 +229,16 @@ def test_hooks_list_reports_unreclaimed_app_server_instead_of_unavailable(monkey
     def popen(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
         return real_popen([sys.executable, "-c", "import sys; sys.stdin.read()"], **kwargs)  # pylint: disable=consider-using-with
 
+    def stop_root_only(process: subprocess.Popen[str], **_kwargs: Any) -> tuple[list[str], list[object]]:
+        # 実際の停止と同じく直接の子は終了・回収し、子孫だけが残った結果を返す。
+        # 起動した実プロセスを残すと、Popenの解放時のResourceWarningが別の試験へ帰属し得る。
+        process.kill()
+        process.wait()
+        return ["1234: app-server child"], []
+
     monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(install_codex_plugins, "_TIMEOUT", 0.1)
-    monkeypatch.setattr(
-        install_codex_plugins.common, "stop_owned_process", lambda process, **_kwargs: (["1234: app-server child"], [])
-    )
+    monkeypatch.setattr(install_codex_plugins.common, "stop_owned_process", stop_root_only)
     with pytest.raises(install_codex_plugins.common.ProcessReclaimError):
         _REAL_HOOKS_LIST()
 
