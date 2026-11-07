@@ -106,6 +106,14 @@ def _read(path: pathlib.Path) -> _Record | None:
         return None
     if not isinstance(record, dict) or not isinstance(record.get("token"), str):
         raise ValueError(f"処理所有記録を解釈できない: {path}")
+    residual = record.get(_RESIDUAL_KEY, [])
+    if not isinstance(residual, list) or not all(
+        isinstance(entry, dict) and isinstance(entry.get("pid"), int) for entry in residual
+    ):
+        raise ValueError(
+            f"処理所有記録の`{_RESIDUAL_KEY}`が不正なため、残存子孫の生存を判定できない: {path}。"
+            f"各項目のPIDと起動コマンドの子孫が残っていないことを確かめてから、記録から`{_RESIDUAL_KEY}`を削除する"
+        )
     return _Record.parse(record)
 
 
@@ -164,11 +172,9 @@ process-loopは巡回ごとに自己再起動するため、プロセス内の�
 
 
 def _residual_processes(record: dict[str, Any]) -> list[psutil.Process]:
-    """保存した残存子孫のうち、同じPIDと起動時刻のまま生存しているものを返す。"""
+    """保存した残存子孫のうち、同じPIDと起動時刻のまま生存しているものを返す。項目の形式は`_read`が検査済みである。"""
     alive: list[psutil.Process] = []
     for entry in record.get(_RESIDUAL_KEY, []):
-        if not isinstance(entry, dict) or not isinstance(entry.get("pid"), int):
-            raise ValueError("処理所有記録の残存プロセスの識別が不正")
         try:
             process = psutil.Process(entry["pid"])
             if process.create_time() == entry.get("create_time") and process.status() != psutil.STATUS_ZOMBIE:
