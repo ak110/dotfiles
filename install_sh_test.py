@@ -64,6 +64,7 @@ def _run_install_sh(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
             pytest.fail(
                 f"install.shが{_INSTALL_TIMEOUT_SECONDS}秒で終わらなかった。"
                 "標準出力の最後の行が完了した工程、残っていたプロセスが止まった工程の手掛かりである。"
+                "残っていたプロセスのコマンドを同じ環境で単独に実行して止まる原因を確かめ、直してから試験を再実行する。"
                 "\n残っていたプロセス:\n"
                 + ("\n".join(remaining) or "（なし）")
                 + f"\n標準出力末尾: {stdout[-2500:]}\n標準エラー末尾: {stderr[-2500:]}"
