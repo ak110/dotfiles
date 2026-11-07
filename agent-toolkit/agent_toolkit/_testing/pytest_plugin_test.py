@@ -682,6 +682,11 @@ def test_slow(index):
     while list(evidence.glob("test-*.json")) and not queued.exists():
         assert time.monotonic() < deadline, "待機者が待ち列へ並ばない"
         time.sleep(0.02)
+    # 印`SLOT_AFTER`の後に始まる試験は、長い待機者が待ち列へ並んだ印`SLOT_LONG_QUEUED`も待つ（指定した試験だけ）。
+    after, long_queued = os.environ.get("SLOT_AFTER"), os.environ.get("SLOT_LONG_QUEUED")
+    while after and long_queued and pathlib.Path(after).exists() and not pathlib.Path(long_queued).exists():
+        assert time.monotonic() < deadline, "長い待機者が待ち列へ並ばない"
+        time.sleep(0.02)
     started = time.time()
     time.sleep(0.4)
     pathlib.Path(os.environ["SLOT_EVIDENCE"], f"test-{index}.json").write_text(
@@ -778,12 +783,16 @@ while not stop.exists():
 """
 
 
-@pytest.mark.parametrize("workers", [2, 0])
-def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(tmp_path: pathlib.Path, workers: int) -> None:
+@pytest.mark.parametrize(("workers", "budget"), [(2, 2.5), (0, 2.5), (2, 6.0)])
+def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
+    tmp_path: pathlib.Path, workers: int, budget: float
+) -> None:
     """長い検証が待ち列へ次々に並んでも、譲渡の累計時間の上限の後は譲らずに残りの試験を完了する。
 
-    短い待機者は従来どおり区切りで先に通り、長い待機者が並び続けてもpytestは有限の譲渡の後に終わることを、
-    同じ実行の試験と待機者の実行区間の記録から確かめる。
+    短い待機者は従来どおり区切りで実行枠を譲られて先に終わり、長い待機者が並び続けてもpytestは有限の譲渡の後に終わることを、
+    同じ実行の試験と待機者の実行区間の記録から確かめる。短い待機者の後に始まる試験は長い待機者が並んだ印を待つため、
+    上限に達する前に、長い待機者が待ち列に並んだ状態が必ず生じる。上限6秒の対照では、同じ数え方で上限2.5秒の許容件数を超える。
+    上限2.5秒は、xdistで短い待機者へ譲る所要（作業者の区切り待ちを含め1秒前後）の後にも長い待機者へ1回は譲れる長さにする。
     """
     evidence = tmp_path / "evidence"
     evidence.mkdir()
@@ -800,10 +809,13 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(tmp
         PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"),
         SLOT_EVIDENCE=str(evidence),
         SLOT_QUEUED=str(tmp_path / "queued"),
-        SLOT_TESTS="8",
+        SLOT_TESTS="12",
+        SLOT_AFTER=str(windows / "short.json"),
+        SLOT_LONG_QUEUED=str(tmp_path / "long-queued"),
     )
     argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
-    argv += ["-o", "execution_slot_yield_budget=1", "-p", "xdist.plugin", "-n", str(workers), str(tmp_path / "probe_test.py")]
+    argv += ["-o", f"execution_slot_yield_budget={budget}", "-p", "xdist.plugin", "-n", str(workers)]
+    argv += [str(tmp_path / "probe_test.py")]
     with contextlib.ExitStack() as stack:
         child = stack.enter_context(
             subprocess.Popen(
@@ -827,7 +839,7 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(tmp
             check=False,
         )
         assert short.returncode == 0
-        long_environment = {**environment, "SLOT_HOLD": "1.5"}
+        long_environment = {**environment, "SLOT_HOLD": "1.5", "SLOT_QUEUED": str(tmp_path / "long-queued")}
         floods = [
             stack.enter_context(
                 subprocess.Popen(
@@ -844,15 +856,20 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(tmp
             for flood in floods:
                 flood.wait(timeout=60)
     assert child.returncode == 0, output
-    assert "8 passed" in output
+    assert "12 passed" in output
     tests = [json.loads(path.read_text(encoding="utf-8")) for path in evidence.glob("test-*.json")]
     last = max(test["ended"] for test in tests)
     short_window = json.loads((windows / "short.json").read_text(encoding="utf-8"))
     # 短い待機者は、残りの試験の区切りで実行枠を譲られて先に終わる。
     assert short_window["ended"] < last, (short_window, tests)
     long_windows = [json.loads(path.read_text(encoding="utf-8")) for path in windows.glob("*-*.json")]
-    # 長い待機者が並び続けても、試験の途中で通したのは上限（1秒）を超えるまでの高々2件に限られる。
-    assert len([window for window in long_windows if window["started"] < last]) <= 2, (long_windows, tests)
+    yielded = len([window for window in long_windows if window["started"] < last])
+    if budget < 6:
+        # 長い待機者（1件1.5秒）へ1回は譲り、並び続けても上限（2.5秒）を超えるまでの高々2件で譲るのをやめる。
+        assert 1 <= yielded <= 2, (long_windows, tests)
+    else:
+        # 上限を広げると同じ条件で3件以上へ譲る。上限2.5秒の件数の制限が上限の効果であることの対照である。
+        assert yielded >= 3, (long_windows, tests)
 
 
 _SLOT_PARTICIPANT = """\
