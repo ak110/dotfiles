@@ -2262,7 +2262,7 @@ def _lane_worktree_plugin(tmp_path, monkeypatch):
     レーンの作業ツリーは主作業ツリーの`.claude/worktrees/`配下に置かれ、手順書は同じ相対位置にある。
     """
     repository = tmp_path / "repo"
-    root, other, contract, lane, integration = _role_plugin(tmp_path, monkeypatch, root=repository / "agent-toolkit")
+    root, other, contract, lane, _integration = _role_plugin(tmp_path, monkeypatch, root=repository / "agent-toolkit")
     init_repository(repository, initial_branch="main", commit_message="手順書を置く")
     worktree = repository / ".claude/worktrees/process-wi-lane-07"
     run_git(repository, "worktree", "add", "--quiet", "-b", "lane-07", str(worktree))
@@ -2330,17 +2330,19 @@ def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host,
     """自身の担当の手順書（別worktreeの同じ位置を含む）と、別リポジトリ・`share`以外の同名ファイルには警告しない。"""
     if case in {"own-role-in-worktree", "outside-share"}:
         _root, worktree_share, other, _contract, _lane = _lane_worktree_plugin(tmp_path, monkeypatch)
+        target = (
+            worktree_share / other.name
+            if case == "own-role-in-worktree"
+            else worktree_share.parent / "docs/reviewer.subagent.md"
+        )
     else:
         _root, other, _contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
+        target = other
     log = tmp_path / "transcript.jsonl"
-    target = other
     payload: dict = {"cwd": str(tmp_path), "transcript_path": str(log)}
     header = read_delivery.task_documents.task_prompt_header
-    if case == "own-role":
+    if case in {"own-role", "own-role-in-worktree"}:
         _write_transcript(log, header(other), codex=host == "codex-exec")
-    elif case == "own-role-in-worktree":
-        _write_transcript(log, header(other), codex=host == "codex-exec")
-        target = worktree_share / other.name
     elif case in {"other-repository", "outside-share"}:
         _write_transcript(log, "作業ツリーの手順書を編集する", codex=host == "codex-exec")
         if case == "other-repository":
@@ -2351,7 +2353,6 @@ def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host,
             )
             target = repository / "agent-toolkit/share/reviewer.subagent.md"
         else:
-            target = worktree_share.parent / "docs/reviewer.subagent.md"
             target.parent.mkdir(parents=True)
             target.write_text("# shareの外\n", encoding="utf-8")
     else:
