@@ -169,6 +169,24 @@ def test_saved_stage_requires_bool(tmp_path: pathlib.Path, key: str, value: obje
         ownership.try_acquire(owner.repo_id, worktree=repo)
 
 
+@pytest.mark.parametrize("residual", [{}, [{}], [{"pid": "1"}], [{"command": "codex exec"}]])
+def test_invalid_residual_processes_name_record_and_pid_independent_check(tmp_path: pathlib.Path, residual: object) -> None:
+    """残存子孫の項目が不正なら、記録のパスと、PIDが無い項目でも実行できる確認手順を示して拒否する。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo)
+    assert owner is not None
+    record = json.loads(owner.path.read_text(encoding="utf-8"))
+    record["residual_processes"] = residual
+    owner.path.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError) as raised:
+        ownership.try_acquire(owner.repo_id, worktree=repo)
+    message = str(raised.value)
+    assert str(owner.path) in message
+    assert "PIDが無い項目" in message
+    assert "ps -eo pid,lstart,args" in message
+    assert "Get-CimInstance Win32_Process" in message
+
+
 @pytest.mark.parametrize("completed", [False, True])
 def test_transitions_preserve_data_and_reject_late_updates(tmp_path: pathlib.Path, completed: bool) -> None:
     """更新・保留・解放の全段階で準備情報を保ち、解放後の更新を拒否する。"""

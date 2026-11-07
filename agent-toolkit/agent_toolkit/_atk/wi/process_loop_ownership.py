@@ -110,9 +110,14 @@ def _read(path: pathlib.Path) -> _Record | None:
     if not isinstance(residual, list) or not all(
         isinstance(entry, dict) and isinstance(entry.get("pid"), int) for entry in residual
     ):
+        # PIDを欠く項目もあり得るため、PIDに頼らない確認手段（起動コマンドか対象リポジトリのパスでの絞り込み）も示す。
         raise ValueError(
             f"処理所有記録の`{_RESIDUAL_KEY}`が不正なため、残存子孫の生存を判定できない: {path}。"
-            f"各項目のPIDと起動コマンドの子孫が残っていないことを確かめてから、記録から`{_RESIDUAL_KEY}`を削除する"
+            "PIDがある項目は、そのPIDのプロセスが無いか、項目の`command`と異なる起動コマンドの別プロセスであることを確かめる。"
+            "PIDが無い項目は、項目の`command`（無ければ記録の`repo_id`の"
+            "リポジトリのパス）を含むプロセスをプロセス一覧（POSIXは`ps -eo pid,lstart,args`、"
+            "Windowsは`Get-CimInstance Win32_Process | Select-Object ProcessId,CreationDate,CommandLine`）で探す。"
+            f"該当するプロセスが残っていないか、残りを終了させたことを確かめてから、記録から`{_RESIDUAL_KEY}`を削除する"
         )
     return _Record.parse(record)
 
