@@ -42,6 +42,7 @@ CHECK_MODULE_NAMES = (
     "termination_order_advisor",
     "submission_report_advisor",
     "queued_notification_advisor",
+    "improvement_status_advisor",
 )
 
 # Codexでは説明言語と、遮断で再報告を求める投入作業の報告用要約を判定する。

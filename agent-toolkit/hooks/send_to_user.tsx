@@ -46,26 +46,79 @@ export const SEND_TO_USER_DELEGATED_DENY =
   "委譲先・サブエージェントからの呼び出しではユーザーの画面へ表示していない。結果本文は委譲元へ返す必要があるため、" +
   "このツールを使わず、報告する本文を全て最終応答（終了の返却）へ書け。";
 
-// `AWI化ステータス: 不要`の理由が始まるべき区分名。区分の定義は`agent-basics:bugfix`の
-// `references/root-cause-prevention.md`「再発防止策の必須性」、値と記入方法の定義元は`share/rules-main.md`「作業中の改善点の報告」にある。
-// 判定は区分名との文字列照合だけとし、理由の意味は推定しない。送達は止めない。
-const UNNEEDED_CATEGORIES = ["非欠陥", "処置済み", "被覆", "見送り"] as const;
-const UNNEEDED_MARKER = /AWI化ステータス:\s*不要[ \t]*/g;
-const UNNEEDED_WARNING = automatedMessage(
+// `AWI化ステータス`の値ごとに、理由の先頭に置く区分名と、区分名で始まらない場合の警告を対応付ける。
+// 値と記入方法の定義元は`share/rules-main.md`「作業中の改善点の報告」、`不要`の区分は`agent-basics:bugfix`の
+// `references/root-cause-prevention.md`「再発防止策の必須性」、`予定`の区分は`agent-toolkit:delegation`の
+// `references/waiting-and-monitoring.md`「待機中の先行実施」にある。`済`・`即時対応`は理由を持たないため検査しない。
+// 判定は区分名と冒頭の語句との文字列照合だけとし、理由の意味は推定しない。送達は止めない。
+const STATUS_CHECKS = [
+  {
+    value: "不要",
+    categories: ["非欠陥", "処置済み", "被覆", "見送り"],
+    warning: automatedMessage(
+      "send-to-user",
+      "warn",
+      "`AWI化ステータス: 不要`の直後が区分名（非欠陥・処置済み・被覆・見送り）で始まらない箇所がある。" +
+        "本文は表示済みである。`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」で区分を判定し、" +
+        "どの区分にも入らなければ再発防止策を検討して、以後の報告で区分名から理由を書け。",
+    ),
+  },
+  {
+    value: "予定",
+    categories: ["判断待ち", "認可待ち", "入力待ち", "書込競合"],
+    warning: automatedMessage(
+      "send-to-user",
+      "warn",
+      "`AWI化ステータス: 予定`の直後が区分名（判断待ち・認可待ち・入力待ち・書込競合）で始まらない箇所がある。" +
+        "本文は表示済みである。待機中に登録できる改善は、その場で既存項目と比較してAWIを保存せよ。" +
+        "`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機中の先行実施」の区分に当たらなければ`予定`を使わず、" +
+        "以後の報告で区分名と再開条件から書け。",
+    ),
+  },
+] as const;
+// `不要`の理由（区分名の後）の冒頭が、原因を調べていないことを見送りの根拠にしている形。「未調査を理由に見送らない」のように助詞が続く説明は除く。
+// Stopの直接応答でも同じ判定を行う（`agent_toolkit/_hooks/improvement_status_advisor.py`の`UNINVESTIGATED_REASON`）。判定語を変える場合は両方を合わせる。
+const UNINVESTIGATED_REASON = /^(?:原因(?:が|は)?(?:まだ)?(?:未調査|未確定|未特定|不明)|原因を(?:まだ)?(?:調べて|調査して|特定して)いない|未調査(?![をにと]))/;
+const UNINVESTIGATED_WARNING = automatedMessage(
   "send-to-user",
   "warn",
-  "`AWI化ステータス: 不要`の直後が区分名（" + UNNEEDED_CATEGORIES.join("・") + "）で始まらない箇所がある。" +
-    "本文は表示済みである。`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」で区分を判定し、" +
-    "どの区分にも入らなければ再発防止策を検討して、以後の報告で区分名から理由を書け。",
+  "`AWI化ステータス: 不要`の理由が、原因を調べていないことを見送りの根拠にしている箇所がある。本文は表示済みである。" +
+    "未調査は処置不要の根拠にならない。直接的原因と影響を確かめる最小調査をその場で行い、処置と担当を決めて報告を更新せよ。" +
+    "担当範囲外なら、観測と残る問いを`agents_server`の委譲先かAWIへ引き継げ。",
 );
+const STATUS_MARKER = /AWI化ステータス:\s*(不要|予定)[ \t]*/g;
 
-// 区分名で始まらない`不要`が1つでもあれば警告本文を返す。
-export function unneededStatusWarning(message: string): string | undefined {
-  for (const matched of message.matchAll(UNNEEDED_MARKER)) {
-    const rest = message.slice((matched.index ?? 0) + matched[0].length);
-    if (!UNNEEDED_CATEGORIES.some((category) => rest.startsWith(category))) return UNNEEDED_WARNING;
+// コードフェンスの中と引用行を除いた本文の行。例示と過去の文面の引用を報告として扱わない。
+function reportedLines(message: string): string[] {
+  const lines: string[] = [];
+  let fence: string | undefined;
+  for (const line of message.split("\n")) {
+    const marker = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (marker) {
+      const run = marker[1]!;
+      if (fence === undefined) fence = run;
+      else if (run[0] === fence[0] && run.length >= fence.length) fence = undefined;
+      continue;
+    }
+    if (fence === undefined && !line.trimStart().startsWith(">")) lines.push(line);
   }
-  return undefined;
+  return lines;
+}
+
+// 区分名で始まらない値と、未調査を理由にした`不要`の警告を、重複を除いて返す。
+export function awiStatusWarnings(message: string): string[] {
+  const warnings = new Set<string>();
+  for (const line of reportedLines(message)) {
+    for (const matched of line.matchAll(STATUS_MARKER)) {
+      const check = STATUS_CHECKS.find((candidate) => candidate.value === matched[1])!;
+      const rest = line.slice((matched.index ?? 0) + matched[0].length);
+      const category = check.categories.find((name) => rest.startsWith(name));
+      if (category === undefined) warnings.add(check.warning);
+      const reason = rest.slice(category?.length ?? 0).replace(/^[ \t、,]+/, "");
+      if (check.value === "不要" && UNINVESTIGATED_REASON.test(reason)) warnings.add(UNINVESTIGATED_WARNING);
+    }
+  }
+  return [...warnings];
 }
 
 const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
@@ -93,13 +146,13 @@ export function register(on: On): void {
     // 英語主体の検出でも判定は成功しているため、判定不能の既往を破棄してから拒否する。
     const note = deliverOnce(delivered, sessionId, check);
     if (check.kind === "violation") return { deny: check.deny };
-    return withNotice(withNotice({ result: DISPLAYED }, note), unneededStatusWarning(message));
+    return awiStatusWarnings(message).reduce(withNotice, withNotice({ result: DISPLAYED }, note));
   }).catch(($, e, next) => {
     if (e.tool !== fullName($.plugin.name)) return next(e);
     const message = messageOf(e);
     if (message === undefined) return { deny: INVALID_MESSAGE };
     const note = deliverOnce(delivered, undefined, languageCheckUnavailable(`send_to_userのtool.callで${next.error.kind}が発生`));
-    return withNotice(withNotice({ result: DISPLAYED }, note), unneededStatusWarning(message));
+    return awiStatusWarnings(message).reduce(withNotice, withNotice({ result: DISPLAYED }, note));
   });
 
   // 呼び出しの行を`message`の全文の`Markdown`で描く。他のツールの行は描き替えない。

@@ -331,3 +331,31 @@ for (const [name, message, warned] of [
     }
   });
 }
+
+// `予定`の区分名の欠落と、原因の未調査を理由にした`不要`へ、それぞれの警告を付けて送達することを検証する。
+// コードフェンス内の例と引用行は報告として扱わず、処置を定めた理由や「未調査を理由に見送らない」説明にも付けない。
+for (const [name, message, expected] of [
+  ["区分名の無い予定", "- A（AWI化ステータス: 予定 公開完了後に既存AWIと照合して登録要否を判定）", ["待機中の先行実施"]],
+  ["区分名で始まる予定", "- A（AWI化ステータス: 予定 認可待ち ユーザーがpushを認可した後）\n- B（AWI化ステータス: 予定 書込競合 lane-03の統合後）", []],
+  ["済と即時対応だけ", "- A（AWI化ステータス: 済 20261106-000000-001.md）\n- B（AWI化ステータス: 即時対応）", []],
+  ["観測した未調査理由", "気付いた改善点: 再現しない失敗（AWI化ステータス: 不要 原因が未調査で、このセッションでは再現条件を特定できないため。必要なら調査する）", ["再発防止策の必須性", "原因を調べていない"]],
+  ["区分名付きの未調査理由", "- A（AWI化ステータス: 不要 見送り 原因を調べていないため）", ["原因を調べていない"]],
+  ["処置を定めた理由", "- A（AWI化ステータス: 不要 処置済み abc1234。原因は未確定だが同じ入力で再現しない）", []],
+  ["未調査を理由にしない説明", "- A（AWI化ステータス: 不要 非欠陥 未調査を理由に見送らず、調査で仕様どおりと確認した）", []],
+  ["コードフェンス内の例", "```text\n気付いた改善点: X（AWI化ステータス: 予定 公開後）\n気付いた改善点: Y（AWI化ステータス: 不要 原因が未調査）\n```", []],
+  ["引用行", "> 気付いた改善点: X（AWI化ステータス: 不要 原因が未調査）", []],
+] as const) {
+  test(`send_to_userは${name}の本文を送達し、該当する警告だけを付ける`, async ($, on) => {
+    mock.env(on, {});
+    on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+    const called = await $.tool.call({ tool: TOOL, message });
+    expect(called.deny).toBeUndefined();
+    expect(called.result).toBe(DISPLAYED);
+    const warnings = (called.context ?? []).filter((note) => note.includes("AWI化ステータス"));
+    expect(warnings).toHaveLength(expected.length);
+    for (const [index, phrase] of expected.entries()) {
+      expect(warnings[index]).toMatch(/^<atk-auto source="send-to-user" kind="warn">\n/);
+      expect(warnings[index]).toMatch(phrase);
+    }
+  });
+}
