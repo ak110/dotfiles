@@ -501,6 +501,7 @@ def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, mon
         ("sqlalchemy", "module.py", "from sqlalchemy import select\n"),
         ("drizzle", "schema.ts", "import { pgTable } from 'drizzle-orm/pg-core';\n"),
         ("svelte", "Component.svelte", "<p>hello</p>\n"),
+        ("react", "Component.tsx", 'import { useEffect } from "react";\n'),
     ],
 )
 @pytest.mark.usefixtures("memory")

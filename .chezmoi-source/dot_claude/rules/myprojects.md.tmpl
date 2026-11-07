@@ -41,5 +41,8 @@
 | `~/gv` | Windows用画像ビューアー | Rust | Windows・Linux | このPCでは`mise run setup-linux`でクロスビルド環境を構築し、`mise run test`（テストはコンパイルまで）と`mise run build`を実行できる（LinuxビルドはRAR展開を除外）。テスト実行はWindows CIで行う。文書生成・文書lintでpnpm併用 |
 | `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows・Linux | このPCでは`mise run setup-linux`で環境を構築し、`mise run test`（dotnet-testを除く）と`mise run build`を実行できる。テスト実行はWindows CIで行う。文書生成・文書lintでpnpm併用 |
 
+`~/dotfiles`が持つagent-toolkitとagent-basicsは、この一覧の外のエンドユーザーやプロジェクト（業務のプロジェクトなど）へも配布される。
+その規範や機能の要否と適用範囲は、この一覧のプロジェクトに場面があるかだけで判断しない。
+
 {{- end }}
 </atk-auto>

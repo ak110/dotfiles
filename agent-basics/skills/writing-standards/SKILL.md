@@ -142,6 +142,7 @@ description: >
 | `sqlalchemy`（2.0系） | `references/sqlalchemy.md` | 操作 | `dependency:sqlalchemy`（実コードまたは依存定義の操作） | |
 | `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` | 操作 | `dependency:drizzle`（実コードまたは依存定義の操作） | |
 | `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2〜3） | `references/svelte.md` | 操作 | `dependency:svelte`（実コードまたは依存定義の操作） | |
+| `react`（関数コンポーネントとHooks） | `references/react.md` | 操作 | `dependency:react`（実コードまたは依存定義の操作） | |
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |

@@ -19,6 +19,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-actions.md#「処置の階層」`、`../../bugfix/references/root-cause-prevention.md#「再発防止としてのテスト」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止としてのテスト」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「テストの原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「テストの原因調査」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/diagnostics.md#「読む出力」` | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
+| 失敗したテストの撤去を判断する前 | `design-heuristics.md#「存在意義の点検」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「存在意義の点検」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「所要の原因調査」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「所要の原因調査」` |
 
 ## 検証単位の優先順位
@@ -159,6 +160,8 @@ fixtureが対象モジュールだけを模擬するのか、共有`sys`など�
 ## 失敗テストの除外による回避禁止
 
 失敗しているテストを無理に通すための対症療法は避ける。これには、テストケースそのものの削除、スキップ指定（`skip`、`skipif`、`xfail`など）の追加、検証対象のデータセット縮小、アサーション条件の緩和（期待値を実際の失敗出力に合わせて書き換える行為を含む）、あるいは再試行回数の引き上げが含まれる。
+テスト自体が不要かは、失敗を通す目的と切り離して`design-heuristics.md`「存在意義の点検」で判定する。
+不要と判定したテストの撤去は同節の認可に従い、撤去したことと判定の根拠を報告する。
 テストが失敗した際は、原因の調査と対策の検討をする前に`agent-basics:bugfix`を起動し、標準化された初動対応、根本原因の分析、および対策の選定プロセスを適用する。実行結果が不安定なflakyテストについては、後述の「安定性: flakyテスト防止」に従って決定論的に動作するよう修正する。
 
 ## 分岐条件の効果の裏付け
