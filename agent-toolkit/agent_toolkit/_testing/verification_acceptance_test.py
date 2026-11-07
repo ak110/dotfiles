@@ -219,6 +219,8 @@ def test_public_verification_entries_share_one_execution_interval(
 
 
 @pytest.mark.parametrize("failure", [False, True])
+# 実serveのObserverが停止・joinを終えてOSの監視資源を解放してから、次の独立検証へ進むことを確かめる。
+@pytest.mark.real_observer
 def test_real_serve_releases_observer_before_next_verification(
     tmp_path: pathlib.Path, failure: bool, record_property: Callable[[str, object], None]
 ) -> None:

@@ -18,6 +18,8 @@ from multiprocessing import resource_tracker
 from typing import Any
 
 import pytest
+import watchdog.observers
+import watchdog.observers.polling
 from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
@@ -76,6 +78,28 @@ class _StubPluginReloader:
 def _isolate_claude_plugin_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     """実監視の試験はclaude_pluginsの実クラスを明示的に使う。"""
     monkeypatch.setattr(claude, "ClaudePluginReloader", _StubPluginReloader)
+
+
+class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
+    """試験で`watchdog.observers.Observer`の代わりに使うObserver。実ファイルの変更を短い間隔の走査で検知し、OSの通知資源を確保しない。"""
+
+    def __init__(self, timeout: float = 0.05, **kwargs: Any) -> None:
+        super().__init__(timeout=timeout, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _observer_without_inotify(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """試験が使う`watchdog.observers.Observer`を、inotifyなどOSの通知資源を使わないポーリング監視へ差し替える。
+
+    watchdogが標準で選ぶObserver（Linuxでは`InotifyObserver`）は監視先ごとにinotifyのインスタンスを確保し、
+    その上限はOSアカウント全体で並行レーンの検証や常駐の`atk serve`と共有される。上限に達すると、
+    変更と無関係な試験の合否が実行環境で変わる。OSの通知そのものや監視資源の解放を確かめる試験だけが
+    `@pytest.mark.real_observer`を付けて実Observerを使い、その宣言が資源依存の一覧になる。
+    ポーリング監視は更新時刻とサイズの差で変更を検知する。更新時刻が1秒単位のファイルシステム（ext3など）では、
+    同じ秒の中で同じサイズのまま書き換えると検知しないため、変更を確かめる試験はサイズの異なる内容を書く。
+    """
+    if request.node.get_closest_marker("real_observer") is None:
+        monkeypatch.setattr(watchdog.observers, "Observer", _TestPollingObserver)
 
 
 def _target_plugin_root(config: pytest.Config) -> pathlib.Path | None:

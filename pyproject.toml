@@ -532,6 +532,7 @@ markers = [
     "browser: 通常のpytest実行から除外するChromium統合テスト（make test-browserで実行）",
     "live_agents: 通常のpytest実行から除外する実backend統合テスト（make test-agents-liveで実行）",
     "windows: Windows CIの「Windows境界テスト」が選択して実行する、Windows実機で確かめる境界の試験",
+    "real_observer: OSの通知や監視資源の解放を確かめるため、試験で差し替えるポーリング監視ではなくwatchdogの実Observerを使う試験",
 ]
 # 読取を終えたpipeの未解放を、GC時の警告も含めてテスト失敗として検出する。
 filterwarnings = ["error::ResourceWarning", "error::pytest.PytestUnraisableExceptionWarning"]
