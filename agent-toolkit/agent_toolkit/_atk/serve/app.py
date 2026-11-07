@@ -7,6 +7,7 @@ import pytilpack.sse
 import quart
 
 from agent_toolkit._atk.serve import config as serve_config
+from agent_toolkit._atk.serve import entry_index as _entry_index
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import runtime as _runtime
 from agent_toolkit._atk.serve import sessions as serve_sessions
@@ -72,7 +73,7 @@ def create_app(
     app.config["SERVE_STATE"] = state
     timing_log = _timings.TimingLog(timing_log_path if timing_log_path is not None else _timings.default_log_path())
     runtime = _runtime.ServeRuntime(
-        operations or _wi_operations.Operations(private_notes),
+        operations or _wi_operations.Operations(private_notes, index_cache_path=_entry_index.default_cache_path()),
         _runtime.BoundedWorkers(worker_limit),
         state,
         read_workers=_runtime.BoundedWorkers(read_worker_limit),

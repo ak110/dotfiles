@@ -13,6 +13,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 import types
 import typing
 
@@ -2119,3 +2120,59 @@ async def test_listed_set_change_returns_previous_list_and_refreshes_after_backg
     finally:
         await sessions.unsubscribe(context.state, queue)
         tracker.stop()
+
+
+def test_first_list_after_restart_reuses_saved_display_messages(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """最初の全件の走査で求めた表示用の本文まで保存し、再起動後の最初の一覧は本文を読み直さない。
+
+    表示用の本文を求める前に索引を保存すると、全件を読み直した直後にserveを止めた場合、次の起動の
+    最初の一覧が表示件数分の本文を読み直し、記録数千件で数十秒かかる。
+    """
+    monkeypatch.setattr(sessions.session_watch.RecordSummaryIndex, "_SAVE_INTERVAL_SEC", 0.0)
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    first = _context(tmp_path, state_dir=tmp_path / "state")
+    assert [entry.first_user_message for entry in sessions.list_local_sessions(first)] == ["やあ"]
+    read: list[pathlib.Path] = []
+    original = sessions.session_watch.first_user_message
+
+    def recording(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str | None:
+        read.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(sessions.session_watch, "first_user_message", recording)
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    assert [entry.first_user_message for entry in sessions.list_local_sessions(restarted)] == ["やあ"]
+    assert not read
+
+
+def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """家族の記録が変わらない間は再起動後も推定費用を算出し直さず、記録へ追記すると算出し直す。"""
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    estimated: list[pathlib.Path] = []
+    original = sessions.session_cost_records.estimate_detail_family
+
+    def recording(engine: str, path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        estimated.append(path)
+        return original(engine, path, *args, **kwargs)
+
+    monkeypatch.setattr(sessions.session_cost_records, "estimate_detail_family", recording)
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    first = sessions.read_local_cost(context, "claude", str(record))
+    assert sessions.read_local_cost(context, "claude", str(record)) == first
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    assert sessions.read_local_cost(restarted, "claude", str(record)) == first
+    assert len(estimated) == 1
+    with record.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-5-5", "usage": {"input_tokens": 1000}}}) + "\n"
+        )
+    os.utime(record, ns=(old_ns + 5_000_000_000, old_ns + 5_000_000_000))
+    changed = sessions.read_local_cost(restarted, "claude", str(record))
+    assert len(estimated) == 2
+    assert changed["known_usd"] > first["known_usd"]

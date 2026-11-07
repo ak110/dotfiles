@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 from typing import Any, cast
 
@@ -22,11 +23,45 @@ def estimate_detail_cost(
     broken_lines: int = 0,
 ) -> dict[str, Any]:
     """起点の本文を再取得せず、必要な子孫だけを解決して費用計算へ渡す。"""
+    return estimate_detail_family(
+        engine,
+        path,
+        entries,
+        include_descendants=include_descendants,
+        claude_home=claude_home,
+        codex_home=codex_home,
+        state_root=state_root,
+        broken_lines=broken_lines,
+    ).cost
+
+
+@dataclasses.dataclass(frozen=True)
+class DetailCost:
+    """推定費用と、算出に使った家族の記録。"""
+
+    cost: dict[str, Any]
+    members: tuple[Path, ...]
+    complete: bool
+    """全ての子孫を解決し、全行を解析できたか。偽なら家族の記録だけでは結果の再利用を判定できない。"""
+
+
+def estimate_detail_family(
+    engine: str,
+    path: Path,
+    entries: list[dict[str, Any]],
+    *,
+    include_descendants: bool,
+    claude_home: Path | None = None,
+    codex_home: Path | None = None,
+    state_root: Path | None = None,
+    broken_lines: int = 0,
+) -> DetailCost:
+    """`estimate_detail_cost`と同じ推定費用を、家族の記録と解決の完全性とともに返す。"""
+    # 子孫の多い記録は数十件の委譲先を解決するため、保存先の一覧を1回だけ読む。
+    locator = record_paths.RecordLocator(claude_home=claude_home, codex_home=codex_home, state_root=state_root)
 
     def resolve(session_id: str) -> tuple[Path, _Runtime] | None:
-        found = record_paths.find_session_record(
-            session_id, claude_home=claude_home, codex_home=codex_home, state_root=state_root
-        )
+        found = locator.find(session_id)
         if found is None or len(found.paths) != 1:
             return None
         return found.paths[0], cast(_Runtime, found.engine)
@@ -47,4 +82,9 @@ def estimate_detail_cost(
         )
         for index, item in enumerate(family)
     ]
-    return session_cost.estimate_family(records, incomplete=bool(unresolved) or broken_lines > 0)
+    complete = not unresolved and broken_lines == 0
+    return DetailCost(
+        session_cost.estimate_family(records, incomplete=not complete),
+        tuple(item.path for item in family),
+        complete,
+    )

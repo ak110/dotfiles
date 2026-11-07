@@ -13,6 +13,7 @@ session識別子は実行系をまたいで一意であるため、探索は識�
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
 import re
 import uuid
@@ -115,6 +116,70 @@ def find_session_record(
         if paths:
             return SessionRecord(engine, paths)
     return None
+
+
+class RecordLocator:
+    """多数の識別子を続けて探す呼び出し向けに、保存先の一覧を1回だけ読み`find_session_record`と同じ結果を返す。
+
+    子孫の多い記録の推定費用は数十件の委譲先を解決する。1件ごとにClaude Codeの全projectとCodexの全ロールアウトを
+    列挙すると、解決だけで数秒かかる。一覧は最初の解決時に読み、同じ探索の間だけ使う。
+    一覧に無い識別子（一覧の後に作られた記録、サブエージェント、Antigravity、OpenCode）は`find_session_record`へ委ねる。
+    """
+
+    def __init__(
+        self,
+        *,
+        codex_home: pathlib.Path | None = None,
+        claude_home: pathlib.Path | None = None,
+        state_root: pathlib.Path | None = None,
+    ) -> None:
+        self._codex_home = codex_home
+        self._claude_home = claude_home
+        self._state_root = state_root
+        self._claude: dict[str, list[pathlib.Path]] | None = None
+        self._codex: dict[str, list[pathlib.Path]] | None = None
+
+    def find(self, session_id: str) -> SessionRecord | None:
+        """`find_session_record`と同じ規則で記録を返す。"""
+        if _SESSION_ID_PATTERN.fullmatch(session_id) is None:
+            return None
+        if self._claude is None:
+            self._claude = self._claude_records()
+        if paths := self._claude.get(session_id):
+            return SessionRecord("claude", tuple(paths))
+        if self._codex is None:
+            self._codex = self._codex_records()
+        if paths := self._codex.get(session_id):
+            return SessionRecord("codex", tuple(paths))
+        return find_session_record(
+            session_id, codex_home=self._codex_home, claude_home=self._claude_home, state_root=self._state_root
+        )
+
+    def _claude_records(self) -> dict[str, list[pathlib.Path]]:
+        projects = (self._claude_home if self._claude_home is not None else host_homes.claude_config_dir()) / "projects"
+        found: dict[str, list[pathlib.Path]] = {}
+        if not projects.is_dir():
+            return found
+        # `find_session_record`と同じくproject名の順に並べ、同じ識別子の全候補を保持する。
+        for project in sorted(projects.iterdir()):
+            if not project.is_dir():
+                continue
+            for entry in os.scandir(project):
+                if entry.name.endswith(RECORD_SUFFIX) and entry.is_file():
+                    found.setdefault(entry.name[: -len(RECORD_SUFFIX)], []).append(project / entry.name)
+        return found
+
+    def _codex_records(self) -> dict[str, list[pathlib.Path]]:
+        sessions = (self._codex_home if self._codex_home is not None else host_homes.codex_home()) / "sessions"
+        found: dict[str, list[pathlib.Path]] = {}
+        if not sessions.is_dir():
+            return found
+        for path in sorted(sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}")):
+            session_id = codex_session_id(path)
+            # `find_codex_records`の検索パターン（`rollout-*-<thread-id>.jsonl`）に一致する記録だけを数える。
+            if path.name.endswith(f"-{session_id}{RECORD_SUFFIX}") and path.is_file():
+                found.setdefault(session_id, []).append(path)
+        return found
 
 
 def agy_session_id(path: pathlib.Path) -> str:

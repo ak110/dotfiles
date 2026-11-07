@@ -337,6 +337,43 @@ def test_parse_frontmatter_runs_typed_loader_only_for_typed_keys(monkeypatch: py
     typed = frontmatter.parse_frontmatter("---\ntype: awi\nimportant: true\n---\n\n本文\n")
 
     assert plain == ({"type": "awi", "flag": "true"}, "\n本文\n")
-    assert plain_loads == 1
+    # 各行が単純な`キー: 値`だけの項目はYAMLを解析しない（`_simple_mapping`）。
+    assert plain_loads == 0
     assert typed == ({"type": "awi", "important": True}, "\n本文\n")
-    assert len(loaders) == 3
+    assert len(loaders) == 2
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "type: awi\nstate: inbox\ntarget_repo: github.com/ak110/dotfiles\n",
+        "title: 日本語の値 と 空白\nurl: https://example.com/a#b\nratio: 1:2\n",
+        'quote: it\'s "ok"\nflag: yes\nempty_like: ~\ncode: 0042\n',
+        "created: '2026-06-21T10:57:03.425545'\n",
+        "comment: value # 注記\n",
+        "colon: a: b\n",
+        "trailing: value:\n",
+        "blank:\n",
+        "list:\n  - a\n",
+        "important: true\n",
+        "- top-level-sequence\n",
+        "key: [a, b]\n",
+        "key: &anchor value\n",
+    ],
+)
+def test_simple_frontmatter_lines_match_yaml_result(source: str) -> None:
+    """YAMLを解析しない単純な行の変換と、YAMLへ委ねる行のどちらでも、YAMLの字面保持の解析と同じ結果になる。"""
+    text = f"---\n{source}---\n本文"
+    try:
+        literal = yaml.load(source, Loader=frontmatter._LiteralScalarLoader)  # pylint: disable=protected-access
+        typed = yaml.load(source, Loader=frontmatter._SafeLoaderBase)  # pylint: disable=protected-access
+    except yaml.YAMLError:
+        literal = typed = None
+    expected = None
+    if isinstance(literal, dict):
+        assert isinstance(typed, dict)
+        expected = (
+            {key: typed[key] if key in {"queue_schedule", "important"} else value for key, value in literal.items()},
+            "本文",
+        )
+    assert frontmatter.parse_frontmatter(text) == expected

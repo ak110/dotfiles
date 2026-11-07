@@ -416,9 +416,9 @@ def _uwi_answer(text: str, kind: str) -> str | None:
 class Operations:
     """同期ファイル操作をWeb API向けに提供する。"""
 
-    def __init__(self, private_notes: pathlib.Path) -> None:
+    def __init__(self, private_notes: pathlib.Path, *, index_cache_path: pathlib.Path | None = None) -> None:
         self.private_notes = private_notes
-        self._entry_index = entry_index.EntryIndex(private_notes)
+        self._entry_index = entry_index.EntryIndex(private_notes, cache_path=index_cache_path)
 
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。

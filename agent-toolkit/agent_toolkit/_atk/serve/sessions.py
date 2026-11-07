@@ -25,6 +25,7 @@ import typing
 
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
+from agent_toolkit._atk.serve import session_costs as _session_costs
 from agent_toolkit._atk.serve import session_parents, session_watch
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import session_cost_records, session_launchers, stream_lines
@@ -210,6 +211,10 @@ class SessionsState:
     stop_requested: threading.Event = dataclasses.field(default_factory=threading.Event)
     # ローカルの記録単位の解析結果。要求ごとの走査で変更のない記録を読み直さないために保持する。
     record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
+    # ローカルの記録の家族ごとの推定費用。家族の記録が変わらない間は算出し直さない。
+    family_costs: _session_costs.FamilyCostCache = dataclasses.field(
+        default_factory=lambda: _session_costs.FamilyCostCache(None)
+    )
     # 前回のローカル一覧。変更監視が一覧を変え得る変更を観測していない間だけ再利用する。
     local_list: _LocalListCache | None = None
     # ローカル一覧の全件の走査を1つずつ実行する。要求の中の走査と背景の再走査が記録単位の索引を同時に更新しないためである。
@@ -243,7 +248,8 @@ def create_context(
         raise ValueError("ローカルホスト名がリモートホストの指定と重複しています")
     resolved_state_dir = state_dir if state_dir is not None else _state_paths.state_dir()
     state = SessionsState(
-        record_index=session_watch.RecordSummaryIndex(cache_path=resolved_state_dir / "serve" / "session-summaries.json")
+        record_index=session_watch.RecordSummaryIndex(cache_path=resolved_state_dir / "serve" / "session-summaries.json"),
+        family_costs=_session_costs.FamilyCostCache(resolved_state_dir / "serve" / "session-costs.json"),
     )
     state.host_status[resolved_hostname] = "connected"
     for host in hosts:
@@ -355,13 +361,15 @@ def _scan_local_sessions(context: SessionsContext, tracker: session_watch.Record
         delegated_ids=lambda path, engine: index.delegated_ids(pathlib.Path(path), engine),
         launcher_of=session_launchers.launcher_reader(context.state_dir),
     )
-    index.finish_scan()
     entries = [dataclasses.replace(entry, parent_path=links.get(entry.path)) for entry, _ in kept]
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
     limited = session_parents.limit_with_ancestors(
         entries, MAX_LIST_ENTRIES, path_of=lambda entry: entry.path, parent_of=lambda entry: entry.parent_path
     )
     messages = index.display_messages((pathlib.Path(entry.path), entry.engine) for entry in limited)
+    # 表示用の本文を求めた後に走査を終え、保存する索引へ本文を含める。先に保存すると、全件を読み直した最初の走査の
+    # 直後にserveを止めた場合、次の起動の最初の一覧が表示件数分の本文を読み直して数十秒かかる。
+    index.finish_scan()
     result = [dataclasses.replace(entry, first_user_message=messages[entry.path]) for entry in limited]
     context.state.local_list = (
         _LocalListCache(tracker=tracker, entries=result, scanned_at=scanned_at) if tracker is not None else None
@@ -511,9 +519,18 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
 
 
 def read_local_cost(context: SessionsContext, engine: str, raw_path: str) -> dict[str, typing.Any]:
-    """ローカルの記録と子孫から、詳細の見出しに表示する推定費用を求める。"""
+    """ローカルの記録と子孫から、詳細の見出しに表示する推定費用を求める。
+
+    家族の記録が前回の算出から変わっていなければ、保持した結果を返す（`session_costs`）。
+    """
+    if engine not in {"claude", "codex"} or not is_local_record_path(context, raw_path):
+        raise SessionNotFoundError(raw_path)
+    cached = context.state.family_costs.get(pathlib.Path(raw_path))
+    if cached is not None:
+        return cached
+    started_ns = _session_costs.now_ns()
     path, records, broken = _read_local_records(context, engine, raw_path)
-    return session_cost_records.estimate_detail_cost(
+    estimated = session_cost_records.estimate_detail_family(
         engine,
         path,
         records,
@@ -523,6 +540,9 @@ def read_local_cost(context: SessionsContext, engine: str, raw_path: str) -> dic
         state_root=context.state_dir,
         broken_lines=broken,
     )
+    if estimated.complete:
+        context.state.family_costs.put(path, estimated.members, estimated.cost, started_ns)
+    return estimated.cost
 
 
 # --------------------------------------------------------------------------------------

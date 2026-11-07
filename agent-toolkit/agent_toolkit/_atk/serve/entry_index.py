@@ -15,10 +15,16 @@
 異なる状態を交互に表示しても、変更のないファイルの解析結果を共有する。
 本文から導く値のうち計算の重いもの（終了項目の処理日時など）は、解析結果ごとの`derived`へ
 呼び出し側が保存し、ファイルが変わらない限り再計算しない。
+
+`cache_path`を渡すと、信用できる解析結果（frontmatterと本文の開始位置）をファイルへ保存し、次の起動で読み込む。
+`atk serve`の起動直後の最初の一覧は全件の走査を待ち、数千件のfrontmatterの解析と本文の読込に数秒かかるためである。
+読み込んだ解析結果も実パス・更新時刻・サイズの一致を確かめてから使い、本文は一覧の表示や検索で必要になった時点で読む。
+本文を読んだ時点で無効化キーが変わっていれば、読んだ本文から本文部分を求め直す（frontmatterは次の走査で更新する）。
 """
 
 import dataclasses
 import datetime
+import json
 import os
 import pathlib
 import stat
@@ -29,6 +35,8 @@ import typing
 from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi.layout import entry_state_from_metadata, iter_entry_paths
+from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.next_action import ActionableError
 
 _RESCAN_SECONDS = 30.0
@@ -38,33 +46,134 @@ _TRUSTED_AGE_NS = 2_000_000_000
 """解析結果を信用するために必要な、走査開始時刻と更新時刻の差。更新時刻の精度が1秒または2秒（FAT）のファイルシステムでも書き換えを区別できる値とする。"""
 
 
+_CACHE_VERSION = 1
+
+_SAVE_INTERVAL_SEC = 60.0
+"""保存した解析結果を書き直す最短の間隔。最初の保存は間隔を待たない。"""
+
+
+def default_cache_path() -> pathlib.Path:
+    """`atk serve`が解析結果を保存するパスを返す。"""
+    return _state_paths.state_dir() / "serve" / "wi-entry-index.json"
+
+
+class _ParsedFile:
+    """状態ディレクトリによらず共通のファイル単位の解析結果。本文は必要になった時点で読む。"""
+
+    __slots__ = (
+        "_body_offset",
+        "_lock",
+        "_path",
+        "_stamp",
+        "_text",
+        "_text_folded",
+        "derived",
+        "frontmatter_broken",
+        "kind",
+        "metadata",
+    )
+
+    def __init__(
+        self,
+        path: str,
+        stamp: tuple[int, int],
+        *,
+        metadata: dict[str, typing.Any],
+        body_offset: int,
+        kind: str | None,
+        frontmatter_broken: bool,
+        text: str | None = None,
+    ) -> None:
+        self._path = path
+        self._stamp = stamp
+        self.metadata = metadata
+        self._body_offset = body_offset
+        self.kind = kind
+        self.frontmatter_broken = frontmatter_broken
+        self._text = text
+        self._text_folded: str | None = None
+        self._lock = threading.Lock()
+        self.derived: dict[str, typing.Any] = {}
+
+    @property
+    def text(self) -> str:
+        """本文全体。保存した解析結果から作った項目は最初の参照で読む。"""
+        if self._text is None:
+            with self._lock:
+                if self._text is None:
+                    self._text = self._read()
+        return self._text
+
+    @property
+    def text_folded(self) -> str:
+        """検索用に大文字小文字を畳み込んだ本文全体。"""
+        if self._text_folded is None:
+            self._text_folded = self.text.casefold()
+        return self._text_folded
+
+    @property
+    def body(self) -> str:
+        """frontmatterの後の本文。"""
+        return self.text[self._body_offset :]
+
+    @property
+    def body_offset(self) -> int:
+        """本文全体のうちfrontmatterの後の本文が始まる位置。"""
+        return self._body_offset
+
+    def _read(self) -> str:
+        try:
+            text = pathlib.Path(self._path).read_text(encoding="utf-8")
+            current = os.stat(self._path)
+        except OSError, UnicodeDecodeError:
+            # 読めなくなった項目は次の走査が警告とともに外すため、ここでは空の本文として扱う。
+            return ""
+        if (current.st_mtime_ns, current.st_size) != self._stamp:
+            # 走査の後に書き換わった本文では保存した本文の開始位置が合わないため、読んだ本文から求め直す。
+            parsed = frontmatter.parse_frontmatter(text)
+            body = parsed[1] if parsed is not None else text.removeprefix("\ufeff")
+            self._body_offset = len(text) - len(body)
+        return text
+
+
 @dataclasses.dataclass(frozen=True)
 class IndexedEntry:
     """一覧走査で得たエントリの解析済み情報。"""
 
     state: str
     path: pathlib.Path
-    text: str
-    text_folded: str
-    metadata: dict[str, typing.Any]
-    body: str
-    kind: str | None
+    parsed: _ParsedFile
     updated_at: str
-    derived: dict[str, typing.Any]
-    """本文から導いた値の保存先。同じ解析結果を再利用する間は同じ辞書を共有する。"""
 
+    @property
+    def text(self) -> str:
+        """本文全体。"""
+        return self.parsed.text
 
-@dataclasses.dataclass(frozen=True)
-class _ParsedFile:
-    """状態ディレクトリによらず共通のファイル単位の解析結果。"""
+    @property
+    def text_folded(self) -> str:
+        """検索用に大文字小文字を畳み込んだ本文全体。"""
+        return self.parsed.text_folded
 
-    text: str
-    text_folded: str
-    metadata: dict[str, typing.Any]
-    body: str
-    kind: str | None
-    frontmatter_broken: bool
-    derived: dict[str, typing.Any] = dataclasses.field(default_factory=dict)
+    @property
+    def metadata(self) -> dict[str, typing.Any]:
+        """frontmatterの値。"""
+        return self.parsed.metadata
+
+    @property
+    def body(self) -> str:
+        """frontmatterの後の本文。"""
+        return self.parsed.body
+
+    @property
+    def kind(self) -> str | None:
+        """正規化した種別。"""
+        return self.parsed.kind
+
+    @property
+    def derived(self) -> dict[str, typing.Any]:
+        """本文から導いた値の保存先。同じ解析結果を再利用する間は同じ辞書を共有する。"""
+        return self.parsed.derived
 
 
 @dataclasses.dataclass(frozen=True)
@@ -80,11 +189,23 @@ class _CacheEntry:
     """更新時刻のISO 8601表記。無効化キーが一致する間は同じ値になるため、解析結果とともに保持する。"""
 
 
+def _json_round_trips(metadata: dict[str, typing.Any]) -> bool:
+    """frontmatterの値をJSONで保存して読み戻しても同じ値になるかを返す（日時や非文字列のキーを含む項目は保存しない）。"""
+    try:
+        return json.loads(json.dumps(metadata, ensure_ascii=False)) == metadata
+    except TypeError, ValueError:
+        return False
+
+
 class EntryIndex:
     """年月固定配置を走査し、変更されたMarkdownだけを解析する。"""
 
-    def __init__(self, private_notes: pathlib.Path) -> None:
+    def __init__(self, private_notes: pathlib.Path, *, cache_path: pathlib.Path | None = None) -> None:
         self._private_notes = private_notes
+        self._cache_path = cache_path
+        self._saved: dict[str, list[typing.Any]] = self._load_saved(cache_path) if cache_path is not None else {}
+        self._saved_dirty = False
+        self._saved_at: float | None = None
         # 実パスの文字列をキーとして保持する。`Path`をキーにすると比較のたびに正規化を伴う。
         self._cache: dict[str, _CacheEntry] = {}
         self._lock = threading.Lock()
@@ -194,7 +315,57 @@ class EntryIndex:
                 result.append(entry)
         self._cache = next_cache
         self._pending = pending
+        if self._cache_path is not None:
+            kept = {key: value for key, value in self._saved.items() if key in next_cache}
+            self._saved_dirty |= len(kept) != len(self._saved)
+            self._saved = kept
+            self._save_if_due()
         return result, warnings
+
+    @staticmethod
+    def _load_saved(path: pathlib.Path) -> dict[str, list[typing.Any]]:
+        """保存した解析結果を読む。不在・破損・版違いは空から始める（補助の記録であるため）。"""
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return {}
+        except OSError, ValueError:
+            return {}
+        if not isinstance(payload, dict) or payload.get("version") != _CACHE_VERSION:
+            return {}
+        entries = payload.get("entries")
+        if not isinstance(entries, dict):
+            return {}
+        return {
+            key: value
+            for key, value in entries.items()
+            if isinstance(value, list)
+            and len(value) == 6
+            and isinstance(value[0], int)
+            and isinstance(value[1], int)
+            and isinstance(value[2], dict)
+            and isinstance(value[3], int)
+            and (value[4] is None or isinstance(value[4], str))
+            and isinstance(value[5], bool)
+        }
+
+    def _save_if_due(self) -> None:
+        """解析結果が変わっていれば、最初は直ちに、以後は間隔を置いて保存する。失敗は一覧の取得を失敗させない。"""
+        if self._cache_path is None or not self._saved_dirty:
+            return
+        if self._saved_at is not None and time.monotonic() - self._saved_at < _SAVE_INTERVAL_SEC:
+            return
+        self._saved_dirty = False
+        self._saved_at = time.monotonic()
+        try:
+            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write(
+                self._cache_path,
+                json.dumps({"version": _CACHE_VERSION, "entries": self._saved}, ensure_ascii=False, separators=(",", ":")),
+            )
+        except OSError:
+            # 保存できない場合も一覧は返せる。次の起動で全件を解析し直すだけである。
+            self._saved_dirty = True
 
     def _index_path(
         self,
@@ -228,7 +399,24 @@ class EntryIndex:
             and cached.trusted
             and (cached.mtime_ns, cached.size) == (file_stat.st_mtime_ns, file_stat.st_size)
         )
-        if not reused:
+        saved = None if reused else self._saved.get(real_path)
+        if saved is not None and (saved[0], saved[1]) == (file_stat.st_mtime_ns, file_stat.st_size):
+            # 前回の起動で信用できた解析結果を使い、本文は必要になった時点で読む。
+            cached = _CacheEntry(
+                mtime_ns=file_stat.st_mtime_ns,
+                size=file_stat.st_size,
+                parsed=_ParsedFile(
+                    os.fspath(path),
+                    (file_stat.st_mtime_ns, file_stat.st_size),
+                    metadata=saved[2],
+                    body_offset=saved[3],
+                    kind=saved[4],
+                    frontmatter_broken=saved[5],
+                ),
+                trusted=True,
+                updated_at=datetime.datetime.fromtimestamp(file_stat.st_mtime, tz=datetime.UTC).isoformat(),
+            )
+        elif not reused:
             try:
                 text = path.read_text(encoding="utf-8")
             except FileNotFoundError:
@@ -244,12 +432,13 @@ class EntryIndex:
             body = parsed_frontmatter[1] if parsed_frontmatter is not None else text.removeprefix("\ufeff")
             kind = wi_constants.normalized_wi_type(metadata.get("type"))
             parsed = _ParsedFile(
-                text=text,
-                text_folded=text.casefold(),
+                os.fspath(path),
+                (file_stat.st_mtime_ns, file_stat.st_size),
                 metadata=metadata,
-                body=body,
+                body_offset=len(text) - len(body),
                 kind=kind,
                 frontmatter_broken=parsed_frontmatter is None,
+                text=text,
             )
             cached = _CacheEntry(
                 mtime_ns=file_stat.st_mtime_ns,
@@ -269,6 +458,16 @@ class EntryIndex:
                 return None
             if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
                 return None
+            if cached.trusted and self._cache_path is not None and _json_round_trips(metadata):
+                self._saved[real_path] = [
+                    file_stat.st_mtime_ns,
+                    file_stat.st_size,
+                    metadata,
+                    parsed.body_offset,
+                    kind,
+                    parsed.frontmatter_broken,
+                ]
+                self._saved_dirty = True
         assert cached is not None
         try:
             state = "inbox" if cached.parsed.frontmatter_broken else entry_state_from_metadata(path, cached.parsed.metadata)
@@ -278,15 +477,5 @@ class EntryIndex:
         return (
             real_path,
             cached,
-            IndexedEntry(
-                state=state,
-                path=path,
-                text=cached.parsed.text,
-                text_folded=cached.parsed.text_folded,
-                metadata=cached.parsed.metadata,
-                body=cached.parsed.body,
-                kind=cached.parsed.kind,
-                updated_at=cached.updated_at,
-                derived=cached.parsed.derived,
-            ),
+            IndexedEntry(state=state, path=path, parsed=cached.parsed, updated_at=cached.updated_at),
         )

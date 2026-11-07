@@ -458,3 +458,61 @@ def test_tracked_index_rereads_only_pending_entries_after_write(
     fresh.unlink()
     entries, _ = index.scan(("inbox",))
     assert ([item.path.name for item in entries], walks) == (["old.md"], 1)
+
+
+def test_saved_index_skips_parsing_after_restart_and_reads_body_on_demand(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存した解析結果を次の起動で使い、変更の無いファイルは解析せず本文も読まない。変わったファイルだけ解析し直す。
+
+    `atk serve`の起動直後の最初の一覧は全件の走査を待つため、数千件の解析と読込を繰り返すと数秒かかる。
+    """
+    notes = tmp_path / "notes"
+    cache = tmp_path / "state" / "wi-entry-index.json"
+    stable = _write_entry(notes, "inbox", "stable.md", "変わらない本文")
+    changed = _write_entry(notes, "inbox", "changed.md", "前の本文")
+    for path in (stable, changed):
+        _age(path)
+    first, _ = entry_index.EntryIndex(notes, cache_path=cache).scan(("inbox",))
+    assert cache.is_file()
+    _write_entry(notes, "processing", "changed.md", "後の本文に変えた")
+    _age(changed)
+    parsed: list[str] = []
+    read: list[pathlib.Path] = []
+    original_parse = entry_index.frontmatter.parse_frontmatter
+    original_read = pathlib.Path.read_text
+
+    def recording_parse(text: str) -> typing.Any:
+        parsed.append(text)
+        return original_parse(text)
+
+    def recording_read(self: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str:
+        if self.suffix == ".md":
+            read.append(self)
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(entry_index.frontmatter, "parse_frontmatter", recording_parse)
+    monkeypatch.setattr(pathlib.Path, "read_text", recording_read)
+    restarted = entry_index.EntryIndex(notes, cache_path=cache)
+    inbox, _ = restarted.scan(("inbox",))
+    processing, _ = restarted.scan(("processing",))
+    assert [entry.path for entry in inbox] == [stable]
+    assert [entry.path for entry in processing] == [changed]
+    assert read == [changed] and len(parsed) == 1
+    assert inbox[0].metadata == first[[entry.path for entry in first].index(stable)].metadata
+    assert inbox[0].body == "\n変わらない本文\n"
+    assert read == [changed, stable]
+    assert processing[0].body == "\n後の本文に変えた\n"
+
+
+def test_body_read_after_rewrite_follows_new_frontmatter(tmp_path: pathlib.Path) -> None:
+    """保存した解析結果の項目を走査した後に書き換えた場合、本文は読んだ時点の内容から求め直す。"""
+    notes = tmp_path / "notes"
+    cache = tmp_path / "state" / "wi-entry-index.json"
+    path = _write_entry(notes, "inbox", "entry.md", "本文")
+    _age(path)
+    entry_index.EntryIndex(notes, cache_path=cache).scan(("inbox",))
+    restarted, _ = entry_index.EntryIndex(notes, cache_path=cache).scan(("inbox",))
+    path.write_text("---\nstate: inbox\ntype: awi\nextra: frontmatterを長くした\n---\n\n書き換えた本文\n", encoding="utf-8")
+    assert restarted[0].body == "\n書き換えた本文\n"
