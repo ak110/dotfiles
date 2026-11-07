@@ -203,9 +203,27 @@ restarts = {
     ),
     "api_key_helper": subprocess.run(claude_connection.api_key_helper(str(key_file)), shell=True, **options),
 }
+# `atk wi submission end`が起動する登録済みスクリプトの子も、継承値を除いた`atk`の環境から読込を成立させる。
+config = pathlib.Path(sys.argv[2])
+session = "11111111-2222-3333-4444-555555555555"
+(config / "projects" / "probe").mkdir(parents=True)
+(config / "projects" / "probe" / f"{session}.jsonl").write_text(
+    json.dumps({"type": "user", "timestamp": "2099-01-01T00:00:00+00:00", "message": {"role": "user", "content": "確認"}})
+    + "\\n",
+    encoding="utf-8",
+)
+os.environ.clear()
+os.environ.update(child)
+os.environ["CLAUDE_CONFIG_DIR"] = str(config)
+from agent_toolkit._atk.wi import submission_findings
+try:
+    findings = [0, len(submission_findings.user_events(session, "2000-01-01T00:00:00+00:00")), ""]
+except Exception as error:
+    findings = [1, 0, str(error)[-2000:]]
 print(json.dumps({
     "child": json.loads(dumped.stdout),
     "restarts": {name: [r.returncode, r.stdout.strip()[-200:], r.stderr.strip()[-2000:]] for name, r in restarts.items()},
+    "submission_findings": findings,
 }))
 """
 
@@ -218,9 +236,12 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
 
     `uv run --no-project`が`PATH`の先頭へ加えるインタープリターの`bin`を模し、起動層がそれも呼出元の値へ戻すことを確かめる。
     内部の再起動は`lane._atk_script`、`api_key_helper`、`direct_environment`を渡す起動（委譲の引き継ぎ・hook）の3形を通す。
+    `atk wi submission end`が登録済みスクリプトを子で起動する抽出（`submission_findings.user_events`）も同じ環境で通す。
     """
     root = tmp_path / "plugin"
     _copy_plugin_code(root)
+    scripts = Path(subject.__file__).resolve().parents[2] / "skills/review-session/scripts"
+    shutil.copytree(scripts, root / "skills/review-session/scripts", ignore=shutil.ignore_patterns("__pycache__", "*_test.py"))
     (root / "probe.py").write_text(_CHILD_ENVIRONMENT_PROBE, encoding="utf-8")
     caller = host_environ()
     for key in (
@@ -244,7 +265,15 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
     }
     bootstrap = Path(subject.__file__).resolve().parents[2] / "scripts/launch.py"
     launched = subprocess.run(
-        [sys.executable, str(bootstrap), "--project", str(root), "probe.py", str(tmp_path / "api-key.env")],
+        [
+            sys.executable,
+            str(bootstrap),
+            "--project",
+            str(root),
+            "probe.py",
+            str(tmp_path / "api-key.env"),
+            str(tmp_path / "claude-config"),
+        ],
         cwd=tmp_path,
         env=launched_environment,
         capture_output=True,
@@ -267,6 +296,7 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
         "api_key_helper": 0,
     }, observed["restarts"]
     assert observed["restarts"]["api_key_helper"][1] == "probe-key"
+    assert observed["submission_findings"] == [0, 1, ""], observed["submission_findings"]
 
 
 def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: Path) -> None:
@@ -375,19 +405,7 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
     environment.pop(subject.RUNTIME_DATA_ENV, None)
     environment.pop(subject.RUNTIME_ENVIRONMENT_ENV, None)
     environment.pop("UV_PROJECT_ENVIRONMENT", None)
-    (root / "uv.lock").unlink()
-    locked = subprocess.run(
-        [uv, "lock", "--offline", "--project", str(root)],
-        # fixtureの新規生成だけ許可し、bootstrapには呼出元の凍結条件を保つ。
-        env={**environment, "UV_FROZEN": "0"},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=15,
-    )
-    assert locked.returncode == 0, locked.stderr
+    _relock_offline(uv, root, environment)
     _prepared(root, environment)
     probe = root / "probe.py"
     probe.write_text(
@@ -435,6 +453,74 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
         root.chmod(0o755)
         for path in root.rglob("*"):
             path.chmod(0o755 if path.is_dir() else 0o644)
+
+
+def _relock_offline(uv: str, root: Path, environment: dict[str, str]) -> None:
+    """配布rootの`uv.lock`を消してオフラインで作り直し、依存の固定内容が変わった未準備の状態にする。"""
+    (root / "uv.lock").unlink()
+    locked = subprocess.run(
+        [uv, "lock", "--offline", "--project", str(root)],
+        # fixtureの新規生成だけ許可し、bootstrapには呼出元の凍結条件を保つ。
+        env={**environment, "UV_FROZEN": "0"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=15,
+    )
+    assert locked.returncode == 0, locked.stderr
+
+
+def test_cli_launcher_prepares_missing_environment_and_hooks_fail_fast(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """依存の固定内容が変わり未準備の配布rootで、CLIの起動部分は準備してから起動し、hookの起動対象は即座に終了する。
+
+    dotfilesの更新直後に主checkoutの`atk`が「共有依存環境が未準備」で終了していた事象の回帰試験である。
+    """
+    root = _root(tmp_path / "updated-plugin")
+    environment = host_environ()
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    environment["UV_PYTHON"] = sys.executable
+    runtime = tmp_path_factory.mktemp("rt")
+    environment.update({"XDG_DATA_HOME": str(runtime), "LOCALAPPDATA": str(runtime)})
+    environment[subject.RUNTIME_DATA_ENV] = str(runtime)
+    environment.pop(subject.RUNTIME_ENVIRONMENT_ENV, None)
+    environment.pop("UV_PROJECT_ENVIRONMENT", None)
+    _relock_offline(uv, root, environment)
+    for name in ("atk.py", "hook.py"):
+        target = root / "agent_toolkit" / name
+        target.parent.mkdir(exist_ok=True)
+        target.write_text(f"print('{name}を起動した')\n", encoding="utf-8")
+    assert subject.prepared_python(root, environment) is None
+    bootstrap = Path(subject.__file__).resolve().parents[2] / "scripts/launch.py"
+
+    def launch(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(bootstrap), "--project", str(root), *arguments],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=120,
+        )
+
+    hook = launch("agent_toolkit/hook.py")
+    assert hook.returncode == 1 and "共有依存環境が未準備" in hook.stderr
+    # 関数hookが起動する`atk.py`も、CLIの起動部分の指定が無ければ待たずに終了する。
+    function_hook = launch("agent_toolkit/atk.py")
+    assert function_hook.returncode == 1 and "共有依存環境が未準備" in function_hook.stderr
+    assert subject.prepared_python(root, environment) is None
+    cli = launch("--prepare-if-missing", "agent_toolkit/atk.py")
+    assert cli.returncode == 0, cli.stderr
+    assert "atk.pyを起動した" in cli.stdout
+    assert "共有依存環境を準備してから起動します" in cli.stderr
+    assert subject.prepared_python(root, environment) is not None
 
 
 def test_runtime_data_is_shared_by_hosts_and_falls_back_to_host_data(tmp_path: Path) -> None:

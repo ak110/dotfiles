@@ -32,7 +32,8 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 前提を壊さない段は、失敗を記録して後続の段を続け、全段の実行後に失敗した段と次の操作の一覧を標準エラーへ表示して終了コード1で終える。
 該当する段は、過去の退避データの整理（旧形式の参照は残り、今回の退避は新しい参照へ保存される）、
 `mise.lock`の差分の破棄（破棄できなかった差分は未コミット内容として退避・復元される）、
-`plugins/`配下の各リポジトリのpull、`chezmoi status`（表示専用）、`chezmoi diff`（表示と記録専用）、
+`plugins/`配下の各リポジトリのpull、agent-toolkitの共有依存環境の準備（後段のpost-applyのウォームアップが再試行する）、
+`chezmoi status`（表示専用）、`chezmoi diff`（表示と記録専用）、
 Codex管理daemonの一時停止と再起動、永続ログの開始（開始できない場合は標準出力・標準エラーだけで続ける）である。
 段を追加するときは、失敗した状態で後続の段へ進むと不確定な内容を配備するかで分類する。
 Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常終了した場合は
@@ -43,6 +44,10 @@ Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常�
 取得したchezmoi出力は、プラットフォームのロケール設定が決める文字コードによらずUTF-8として厳格にデコードする。
 git pull工程は`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`秒で打ち切る。未設定時は600秒、
 `0`は上限なしとし、負数または整数でない値は終了コード2で拒否する。
+
+agent-toolkitの共有依存環境は、dotfiles自身のGit更新の直後に主checkoutの`agent-toolkit/scripts/launch.py --prepare`で準備する。
+依存の固定内容（`agent-toolkit/uv.lock`）が変わる更新では、準備までの間に起動した主checkoutの`atk`が依存環境の未準備で
+終了するため、コードを切り替える段の直後に準備して、その間隔を`chezmoi apply`の所要より短くする。
 
 実行の開始時と終了時に、同期結果を`pytools/_internal/sync_report.py`が定める構造化ファイルへ記録する。
 次に起動するコーディングエージェントが、失敗した段と標準エラーの末尾からAWIの処理を
@@ -1049,6 +1054,22 @@ def _run_codex_daemon_command(codex: str, action: str, timeout: int) -> str | No
     return None
 
 
+def _prepare_agent_toolkit_environment(total: int) -> None:
+    """主checkoutのatkが使う共有依存環境を、Git更新の直後に準備する。失敗は記録して後続の段を続ける。"""
+    title = "agent-toolkitの共有依存環境の準備"
+    launcher = _DOTFILES_ROOT / "agent-toolkit" / "scripts" / "launch.py"
+    argv = ["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher)]
+    returncode, _ = _run_step(1, total, title, [*argv, "--prepare", "agent_toolkit/atk.py"], capture=True, show_heading=False)
+    if returncode != 0:
+        _continue_after_failure(
+            title,
+            "後段のpost-applyのウォームアップが同じ準備を再試行する。続けて失敗する場合は"
+            f'`uv run --no-config --no-project --python 3.15 python "{launcher}" --prepare agent_toolkit/atk.py`'
+            "を実行して診断を確かめてください。",
+            _last_stderr_tail,
+        )
+
+
 def _filter_apply_pending(status_output: str) -> list[str]:
     """`chezmoi status`出力から2列目（apply予定を表す列）が空白以外の行のみ抽出する。
 
@@ -1154,6 +1175,8 @@ def main(argv: list[str] | None = None) -> int:
                                     f"{plugin}で git status と git pull --rebase を実行して原因を確かめてください。",
                                     _last_stderr_tail,
                                 )
+
+                    _prepare_agent_toolkit_environment(total)
 
                     returncode, _ = _run_step(
                         2,

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -17,7 +18,7 @@ from typing import Any
 
 from agent_toolkit._atk import run_script as _run_script
 from agent_toolkit._atk import session_records as _session_records
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import plugin_environment, process_tree
 
 CLASSIFICATIONS = ("考慮漏れ", "ユーザーだけが持つ新しい情報", "前提の誤り", "採用しない提案")
 """add-awi-by-user「指摘の分類と処置」の4分類。追加要求などの要求管理上の扱いは分類の代わりにならない。"""
@@ -98,8 +99,11 @@ def user_events(session_id: str, started_at: str) -> list[dict[str, Any]]:
     script = _run_script.registered_script_path("session-review-evidence")
     try:
         # 同じ配布物の登録済みスクリプトを引数配列で起動し、時間上限では子孫まで停止する。
+        # `atk`は起動時に起動層が加えた`PYTHONPATH`などのモジュール検索パスを環境から外すため、
+        # 子が`agent_toolkit`を読めるよう配布rootを明示して渡す。
         completed = process_tree.run_with_timeout(
             [sys.executable, str(script), "--transcript", str(_transcript(session_id)), "--user-events", "--since", started_at],
+            env=plugin_environment.direct_environment(_run_script.PLUGIN_ROOT, os.environ),
             capture_output=True,
             text=True,
             encoding="utf-8",
