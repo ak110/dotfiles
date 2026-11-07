@@ -42,7 +42,7 @@ description: >
 | 実際にpushする前 | `references/push-and-ci.md` | 操作 | `bash:git push` | |
 | コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `references/message.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/message.md` | |
 | 既存未コミット差分を不採用として破棄する前 | `references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
-| 一時ブランチ、`git stash`の退避または別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
+| 一時ブランチ、`git stash`の退避、hookの退避ファイルまたは別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `references/stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
 
 push後にCIが失敗した場合は`agent-basics:bugfix`を起動し、同スキルの`references/ci-failure-handling.md`に沿って原因を分析する。
 
@@ -77,6 +77,20 @@ statusやdiffの表示とcommit hookの成功を確認しても、保存すべ�
 
 コミットフック（Git hookやhook管理ツール）のチェックをスキップまたは迂回する操作は、pre-commitの退避（stash）が競合を起こし、かつ対象ファイルを所定の手順ですでに検証済みである場合にのみ認める。
 該当する操作には、`--no-verify`、`-n`、`-c core.hooksPath=/dev/null`などのフック無効化オプションや、環境変数`SKIP=<hook名>`の指定が含まれる。通常の検証を省略したり、フックの失敗を安易に回避したりする目的では使用しない。ただし、プロジェクト規範で個別に許可されている`SKIP=<hook名>`はその定めに従う。フックを迂回した場合は、その手段と理由をコミット完了後の報告に明記する。
+
+### hookの打ち切りと退避の復元
+
+POSIXのホストでcommit hookを伴う`git commit`を実行するときは、`timeout -s INT <秒> git commit ...`でcommit自身の時間上限を設け、ホストのコマンド時間上限（Claude Codeの`Bash`の`timeout`など）をその秒数より長くする。
+hook管理ツールのprekはhookの実行中に未ステージの変更を一時ファイルへ退避し、通常終了とSIGINTでは作業ツリーへ戻すが、SIGTERM・SIGKILLやホストの時間上限による強制終了では戻さない（prek 0.5.7で確認）。
+上限に達したcommitは退避を戻して終了コード124で失敗するため、hookが長引いた原因（検証の実行枠の待機など）を確かめてからやり直す。
+Windowsのホストは同等の手段の挙動を確認していないため、この手順の対象外とする。
+
+commitが失敗・中断した出力に`Unstaged changes detected. Temporarily saving them to <パス>`がある場合は、他の操作より先に退避が作業ツリーへ戻ったかを確かめる。
+SIGINTの打ち切りではcommitの終了後にprekが退避を戻すことがあり、`Restored unstaged changes from <パス>`の行の有無だけでは判定できない。
+prekのプロセスが終了してから、作業ツリーと退避ファイル（`~/.cache/prek/patches/`、`PREK_HOME`の指定があればその配下）を比べる。
+比較には`git diff --binary --src-prefix=a/ --dst-prefix=b/`の出力と、退避ファイルから先頭の`#`で始まる注記行を除いた本文を使う（`diff.noprefix`の設定によらず同じ形式で比べるため）。
+一致しなければ退避は戻っておらず、`git apply <退避ファイル>`で復元し、同じ比較で一致することを確かめる。
+復元後の退避ファイルは`references/stash-cleanup.md`のhookの退避ファイルの項に従って扱う。
 
 ## WI実装commitの対応
 

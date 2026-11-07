@@ -1,7 +1,8 @@
 """履歴操作の検収と完全OID対応表の生成。検収しない対応は保存しない。
 
 本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
-rebaseは変更内容の一意な対応を検収する。統合先に既にある同一変更はその既存commitへ対応付け、
+rebaseは変更内容の一意な対応を検収する。統合先に既にある同一変更は、旧commitの変更が新baseに残っている
+（新baseへ逆適用でき、順適用できない）場合に限りその既存commitへ対応付け、
 明示した競合解消commitは件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことで対応付ける。
 同一変更が系列内で繰り返す場合（導入・復元・再導入など）は内容で対応先を決められないため、
 旧新が同数のときに限り位置で対応付ける。rebaseは相対順を保つため、同数の系列で相対順を保つ全単射は
@@ -163,8 +164,9 @@ def _upstream_mapping(
 ) -> dict[str, str]:
     """省略された旧変更を、統合先で追加された同一変更へ一意に対応付ける。
 
-    空白も区別する既存の内容識別を使い、変更した全パスの内容が新baseでも保持される場合に限る。
-    後続の同パス編集は安全側で拒否し、履歴内に同一変更があるだけでは受理しない。
+    空白も区別する既存の内容識別で同一変更を探し、旧commitの変更そのものが新baseに残っている場合に限る。
+    同じpathの後続編集でも、変更箇所とその文脈に重ならなければ受理し、取消し・不採用・重なる書換えは拒否する。
+    履歴内に同一変更があるだけでは受理しない。
     """
     if len(old) <= len(new):
         return {}
@@ -181,22 +183,57 @@ def _upstream_mapping(
         matches = [target for target, candidate in upstream_ids.items() if candidate == content]
         if len(matches) > 1:
             raise ValueError(f"統合先の既存変更との対応が一意ではありません: {oid}")
-        if matches:
-            target = matches[0]
-            paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", target)
-            if paths and not _git(
-                work_dir,
-                "--literal-pathspecs",
-                "diff",
-                "--no-ext-diff",
-                "--name-only",
-                target,
-                new_base,
-                "--",
-                *paths.rstrip("\0").split("\0"),
-            ):
-                mapping[oid] = target
+        if matches and _retained_at(work_dir, oid, new_base):
+            mapping[oid] = matches[0]
     return mapping
+
+
+def _retained_at(work_dir: pathlib.Path, oid: str, base: str) -> bool:
+    """`oid`の変更が`base`に残っていれば真を返す。作業ツリーと実indexは変えない。
+
+    変更が残っていれば`base`へ逆適用でき、同じ変更を二重には加えられない（順適用できない）。
+    取消し・不採用では逆適用の文脈が一致せず順適用が成功し、変更箇所や前後の文脈への後続編集では逆適用が失敗する。
+    差分は接頭辞を明示し（`diff.noprefix`の設定によらず`-p1`で適用できるように）、バイナリーとモード変更も含める。
+    """
+    patch = _git(
+        work_dir,
+        "diff-tree",
+        "-p",
+        "--binary",
+        "--full-index",
+        "--no-renames",
+        "--no-commit-id",
+        "--root",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
+        oid,
+    )
+    with tempfile.TemporaryDirectory(prefix="history-compare-index-") as directory:
+        environment = {**os.environ, "GIT_INDEX_FILE": str(pathlib.Path(directory) / "index")}
+
+        def apply(*args: str) -> int:
+            result = git_command.run(
+                ["--no-pager", "-C", str(work_dir), *args],
+                input=patch,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+                env=environment,
+            )
+            return result.returncode
+
+        loaded = git_command.run(
+            ["--no-pager", "-C", str(work_dir), "read-tree", base],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+            env=environment,
+        )
+        if loaded.returncode:
+            raise ValueError(f"新baseを一時indexへ読み込めません: {base}: {loaded.stderr.strip()}")
+        return apply("apply", "--cached", "--check", "-R") == 0 and apply("apply", "--cached", "--check") != 0
 
 
 def _changed_paths(work_dir: pathlib.Path, oid: str) -> set[str]:

@@ -759,35 +759,66 @@ def test_rebase_rejects_ambiguous_upstream_mapping(repo: pathlib.Path, tmp_path:
     assert not output.exists()
 
 
-@pytest.mark.parametrize("same_path", [False, True])
+_SHARED_LINES = [f"行{index}" for index in range(1, 13)]
+
+
+@pytest.mark.parametrize(
+    ("later_edit", "accepted"),
+    [
+        # 別pathの後続編集は省略された変更に触れない。
+        ("other-path", True),
+        # 同じpathでも、変更箇所と前後3行の文脈から離れた行の編集は変更を残す。
+        ("same-path-far", True),
+        # 変更箇所の文脈（直後の行）の書換えは、変更が残っているかを差分の適用で確かめられない。
+        ("same-path-context", False),
+        # 変更箇所そのものの書換えは変更を失わせる。
+        ("same-path-overlap", False),
+    ],
+)
 @pytest.mark.parametrize("all_skipped", [False, True])
-def test_upstream_retention_bounds_independent_later_edits(
-    repo: pathlib.Path, tmp_path: pathlib.Path, same_path: bool, all_skipped: bool
+def test_upstream_retention_judges_omitted_change_itself(
+    repo: pathlib.Path, tmp_path: pathlib.Path, later_edit: str, all_skipped: bool, accepted: bool
 ) -> None:
-    """省略変更を残す独立編集でも同pathのtree差は拒否し、別pathの編集は許容する。"""
-    base = _commit(repo, "shared.txt", "変更前\n中間\n末尾\n", "準備")
-    omitted = _commit(repo, "shared.txt", "変更後\n中間\n末尾\n", "対象変更")
+    """省略された変更が新baseに残るかを変更そのもので判定し、同じpathの離れた後続編集では統合を止めない。"""
+    before = _SHARED_LINES
+    changed = ["行1を変更", *before[1:]]
+    base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in before), "準備")
+    omitted = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in changed), "対象変更")
     old_head = omitted if all_skipped else _commit(repo, "feature.txt", "成果\n", "実装")
     _git(repo, "checkout", "-b", "upstream", base)
-    upstream = _commit(repo, "shared.txt", "変更後\n中間\n末尾\n", "上流対象変更")
-    new_base = _commit(
-        repo,
-        "shared.txt" if same_path else "unrelated.txt",
-        "変更後\n中間\n独立した末尾編集\n" if same_path else "独立編集\n",
-        "独立した後続編集",
-    )
+    upstream = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in changed), "上流対象変更")
+    edited = list(changed)
+    if later_edit == "other-path":
+        new_base = _commit(repo, "unrelated.txt", "独立編集\n", "独立した後続編集")
+    else:
+        index = {"same-path-far": 11, "same-path-context": 1, "same-path-overlap": 0}[later_edit]
+        edited[index] = "後続編集"
+        new_base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in edited), "後続編集")
     new_head = new_base if all_skipped else _commit(repo, "feature.txt", "成果\n", "実装")
     output = tmp_path / "retention-map.json"
     code = _compare(repo, output, "rebase", (base, old_head, new_base, new_head))
-    if same_path:
-        assert code == 1
-        assert not output.exists()
-    else:
+    if accepted:
         assert code == 0
         expected = {omitted: upstream}
         if not all_skipped:
             expected[old_head] = new_head
         assert json.loads(output.read_text(encoding="utf-8")) == expected
+    else:
+        assert code == 1
+        assert not output.exists()
+
+
+def test_upstream_retention_ignores_diff_prefix_configuration(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """`diff.noprefix`を設定したリポジトリでも、接頭辞を明示した差分で保持を判定する。"""
+    _git(repo, "config", "diff.noprefix", "true")
+    base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in _SHARED_LINES), "準備")
+    changed = "".join(f"{line}\n" for line in ["行1を変更", *_SHARED_LINES[1:]])
+    omitted = _commit(repo, "shared.txt", changed, "対象変更")
+    _git(repo, "checkout", "-b", "upstream", base)
+    upstream = _commit(repo, "shared.txt", changed, "上流対象変更")
+    output = tmp_path / "noprefix-map.json"
+    assert _compare(repo, output, "rebase", (base, omitted, upstream, upstream)) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {omitted: upstream}
 
 
 @pytest.mark.parametrize("all_skipped", [False, True])
