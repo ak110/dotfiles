@@ -16,6 +16,7 @@ import dataclasses
 import datetime
 import json
 import logging
+import math
 import os
 import pathlib
 import socket
@@ -31,6 +32,7 @@ from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import session_cost_records, session_launchers, stream_lines
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.async_operations import run_sync_operation
+from agent_toolkit._common.atomic_file import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -217,6 +219,10 @@ class SessionsState:
     )
     # 前回のローカル一覧。変更監視が一覧を変え得る変更を観測していない間だけ再利用する。
     local_list: _LocalListCache | None = None
+    # 前回の起動で最後に作ったローカル一覧の保存先と、起動時に読み込んだ一覧。
+    # 起動後の最初の一覧は記録数千件の全件の走査に負荷時で数秒かかるため、保存した一覧を返して背景で走査し直す。
+    local_list_path: pathlib.Path | None = None
+    saved_local_list: list[SessionSummary] | None = None
     # ローカル一覧の全件の走査を1つずつ実行する。要求の中の走査と背景の再走査が記録単位の索引を同時に更新しないためである。
     local_scan_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     # 再利用の上限時間を過ぎた後の背景の再走査が動いているか。同時に1つだけ動かす。
@@ -250,7 +256,9 @@ def create_context(
     state = SessionsState(
         record_index=session_watch.RecordSummaryIndex(cache_path=resolved_state_dir / "serve" / "session-summaries.json"),
         family_costs=_session_costs.FamilyCostCache(resolved_state_dir / "serve" / "session-costs.json"),
+        local_list_path=resolved_state_dir / "serve" / "session-list.json",
     )
+    state.saved_local_list = _load_local_list(state.local_list_path)
     state.host_status[resolved_hostname] = "connected"
     for host in hosts:
         state.host_status[host] = "connecting"
@@ -317,6 +325,10 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     """
     tracker = context.state.record_watch.tracker if context.state.record_watch is not None else None
     if tracker is not None:
+        saved, context.state.saved_local_list = context.state.saved_local_list, None
+        if context.state.local_list is None and saved is not None:
+            # 保存した一覧を上限時間の過ぎた前回の一覧として扱い、返した後に背景の走査で取り直させる。
+            context.state.local_list = _LocalListCache(tracker=tracker, entries=saved, scanned_at=-math.inf)
         reused = _reuse_local_list(context, tracker)
         if reused is not None:
             return reused
@@ -374,7 +386,30 @@ def _scan_local_sessions(context: SessionsContext, tracker: session_watch.Record
     context.state.local_list = (
         _LocalListCache(tracker=tracker, entries=result, scanned_at=scanned_at) if tracker is not None else None
     )
+    _save_local_list(context.state.local_list_path, result)
     return list(result)
+
+
+def _load_local_list(path: pathlib.Path | None) -> list[SessionSummary] | None:
+    """保存したローカル一覧を読む。不在・破損・項目の不一致は`None`を返し、要求の中の走査へ戻す。"""
+    if path is None:
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return [SessionSummary(**item) for item in payload["sessions"]]
+    except OSError, ValueError, KeyError, TypeError:
+        return None
+
+
+def _save_local_list(path: pathlib.Path | None, entries: list[SessionSummary]) -> None:
+    """走査したローカル一覧を保存する。失敗は一覧の取得を失敗させない（次の起動が要求の中で走査するだけである）。"""
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(path, json.dumps({"sessions": [entry.to_json() for entry in entries]}, ensure_ascii=False))
+    except OSError as error:
+        logger.debug("セッション一覧を保存できません: %s: %s", path, error)
 
 
 def _reuse_local_list(context: SessionsContext, tracker: session_watch.RecordChangeTracker) -> list[SessionSummary] | None:

@@ -1607,7 +1607,10 @@ def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
 @pytest.mark.asyncio
 async def test_local_watch_notifies_new_records_and_appends(tmp_path: pathlib.Path) -> None:
     """ローカルの記録の追加で一覧の再取得を、一覧に載る記録への追記で記録1件の更新を通知する。"""
-    context = _context(tmp_path)
+    # 未作成の記録rootは最も近い祖先（tmp_path）の直下を監視するため、一覧を保存する状態ディレクトリを先に作り、
+    # 保存先の新設を記録の追加と区別できない通知にしない。
+    (tmp_path / "state").mkdir()
+    context = _context(tmp_path, state_dir=tmp_path / "state")
     (tmp_path / "claude" / "projects").mkdir(parents=True)
     sessions.start_local_watch(context)
     queue = await sessions.subscribe(context.state)
@@ -2176,3 +2179,48 @@ def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.P
     changed = sessions.read_local_cost(restarted, "claude", str(record))
     assert len(estimated) == 2
     assert changed["known_usd"] > first["known_usd"]
+
+
+@pytest.mark.asyncio
+async def test_first_list_after_restart_returns_saved_list_and_refreshes_after_background_scan(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """再起動後の最初の一覧は前回の一覧を要求の中で走査せずに返し、背景の走査の後に`refresh`で取り直させる。
+
+    記録数千件の全件の走査は起動直後の負荷の下で数秒かかり、最初のセッション一覧の表示を待たせるためである。
+    """
+    record = _claude_record(tmp_path)
+    first = _context(tmp_path, state_dir=tmp_path / "state")
+    assert [entry.path for entry in sessions.list_local_sessions(first)] == [str(record)]
+    added = _claude_record(tmp_path, project="-home-aki-other")
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    tracker = sessions.session_watch.RecordChangeTracker(
+        [(tmp_path / "claude" / "projects", "claude"), (tmp_path / "codex" / "sessions", "codex")],
+        lambda _refresh, _records: None,
+        debounce_sec=60.0,
+    )
+    restarted.state.record_watch = sessions.session_watch.RecordWatch(tracker)
+    restarted.state.watch_loop = asyncio.get_running_loop()
+    scanned = threading.Event()
+    release = threading.Event()
+    original = sessions._scan_local_sessions  # pylint: disable=protected-access
+
+    def gated(*args: typing.Any, **kwargs: typing.Any) -> list[sessions.SessionSummary]:
+        scanned.set()
+        assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sessions, "_scan_local_sessions", gated)
+    queue = await sessions.subscribe(restarted.state)
+    try:
+        saved = await asyncio.to_thread(sessions.list_local_sessions, restarted)
+        assert [entry.path for entry in saved] == [str(record)]
+        assert await asyncio.to_thread(scanned.wait, 10)
+        release.set()
+        assert json.loads(await asyncio.wait_for(queue.get(), timeout=10)) == {"type": "refresh"}
+        refreshed = await asyncio.to_thread(sessions.list_local_sessions, restarted)
+        assert sorted(entry.path for entry in refreshed) == sorted([str(record), str(added)])
+    finally:
+        release.set()
+        await sessions.unsubscribe(restarted.state, queue)
+        tracker.stop()
