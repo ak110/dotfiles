@@ -19,7 +19,7 @@
 | 統括がlane_limit 2以上の対象を直接処理する時 | `lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
 | 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
 | リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
-| 先行工程を次の巡回へ回す前 | `run-lanes.md`の「後段レーンの先行調査」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「後段レーンの先行調査」` |
+| 先行工程を次の巡回へ回す前 | `lane-resources.md`の「後段レーンの先行調査」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-resources.md#「後段レーンの先行調査」` |
 | 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 開始と振り分け
@@ -147,7 +147,7 @@ goalの判定は訂正後の最終保存内容と既存工程の証拠に基づ�
 訂正前の記載や正当に延期した項目の存在だけを、当回の到達点の未達としない。
 目標の評価が終了を拒否したら、評価が挙げた残工程と結果の`remaining`を1件ずつ、今回進められる工程と正当な先送り（未来の有効な冷却期限、未回答のUWI、外部の先行項目への依存、ユーザーが許容した後回し）に分ける。
 今回進められる工程は再開し、正当な先送りだけが残る場合は、項目ごとに保存内容と解除条件への対応を示して先送りの判断そのものも拒否の理由と照らして見直す。
-先行工程を次の巡回へ回すときは、それを先行条件にしていた後続の全工程の先行条件を`run-lanes.md`「後段レーンの先行調査」の区別で再判定する。書込競合だけで後段にした工程など先行成果を要さない工程は、先行の統合を待たずに統合先の最新HEADから専用worktreeを作成し、今回の巡回で実装・検証まで進める。次の巡回へ回す後続工程は、`remaining`へ工程ごとに先送りの理由を書く。
+先行工程を次の巡回へ回すときは、それを先行条件にしていた後続の全工程の先行条件を`lane-resources.md`「後段レーンの先行調査」の区別で再判定する。書込競合だけで後段にした工程など先行成果を要さない工程は、先行の統合を待たずに統合先の最新HEADから専用worktreeを作成し、今回の巡回で実装・検証まで進める。次の巡回へ回す後続工程は、`remaining`へ工程ごとに先送りの理由を書く。
 goalのためだけの追加レビューや同じ検証の反復は行わず、不足・不一致がある範囲を補う。
 続行不能時も、実態に合う状態、理由と残工程の保存・読戻しを終えて制御を返す。
 常駐は結果の申告と実際のキュー・レーン登録が一致することを確認する。

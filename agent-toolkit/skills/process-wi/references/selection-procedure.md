@@ -12,7 +12,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 目標起点の判断を行う前 | `lanes.md#「明示された目標からの実行」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lanes.md#「明示された目標からの実行」` |
-| 参照基準の適用前 | `run-lanes.md#「レーンと資源」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/run-lanes.md#「レーンと資源」` |
+| 参照基準の適用前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
 | 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 参照基準の適用前 | `all-repos-orchestration.md#「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「取得済み候補の受領」` |
@@ -34,7 +34,7 @@
 ## 対象と保存先
 
 対象リポジトリと規範はメインの作業ディレクトリから解決し、選定結果はmanaged-temp直下の`pick-wi.yaml`へ保存する。ユーザーの指定があっても、選定はメインエージェント自身が行う。
-開始時には`atk lane delete --list`を実行して前回の残存登録と回収結果を確認し、所有権と稼働状態に応じた再判定や再開処理を[run-lanes.md](run-lanes.md)「レーンと資源」に引き渡す。
+開始時には`atk lane delete --list`を実行して前回の残存登録と回収結果を確認し、所有権と稼働状態に応じた再判定や再開処理を[lane-resources.md](lane-resources.md)「レーン資源の作成・再利用・回収」に引き渡す。
 レーン識別子は、この処置を済ませてから決める。
 統合済みで未commitの差分・統合先に無いcommit・稼働中の担当を持たない不要な登録は、元の所有sessionを指定した`atk lane delete --session-id <所有session>`で回収する。
 未commitの差分、未統合commit、再開する計画を持つ登録と稼働中の資源は保持し、再利用するレーンは識別子を保つ。
@@ -105,7 +105,7 @@ UWIの本文が元の項目を参照している場合は、その項目の保�
 4. 初期配分では書込対象の重複から、同一段階の競合と統合費用を見積もる。6000秒の超過を不可避と判断する前に、レーン数上限の範囲内で互いに独立したグループを同一段階に配置する段階案と、単一段階案とを比較する（例：AがX、BがXとY、CがYを変更する場合、AとCを並行処理して統合した後にBを開始する）。各段階における最長レーンの実装時間と直列統合時間（rebase、自動チェックの再実行を含む）の和を全段階について合計し、共有待ち秒数を1回加えて所要時間の短い案を採用する。比較した数値は所定の比較欄に記録し、比較の理由はレーンの`根拠`に記録する。実際の依存関係や同一再開計画の不可分性、進行中計画の一体性は必ず維持する。後段のレーンは、先行レーンがすべて統合された後、統合先の最新HEADから作成する。
 5. 保存前に別レーンの`書込対象`をパス要素で比較する。同一段階の未統合レーン同士に共通ファイルまたは包含範囲がある場合は、共通ファイルか狭い方の範囲ごとに双方の定義と`交わらない`判定を`レーン間の重なり`へ1件記録する。定義が交わるか独立性が未確定なら同一レーンへまとめるか手順4へ戻る。別段階は書込予定の重複から先行関係を導き、後段の`先行レーン`に直接か推移的に反映する。別段階と統合済み相手の詳細記録は省略できる。
 
-書込競合と成果依存を分け、[run-lanes.md](run-lanes.md)「後段レーンの先行調査」を比較する。
+書込競合と成果依存を分け、[lane-resources.md](lane-resources.md)「後段レーンの先行調査」を比較する。
 先行統合後の差分確認と正式計画の起草・検査も所要時間に含める。
 
 上限との関係は次のように扱う。
