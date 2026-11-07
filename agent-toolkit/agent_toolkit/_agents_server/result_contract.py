@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 from typing import Any
 
@@ -72,15 +73,37 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
         if not lines or not (lines[0] == "状態: completed" or lines[-1] == "状態: completed"):
             return "exploreの返却が完了を示しません。先頭または最終行に状態: completedが必要です"
     if document is not None and document.name == "reader-fit-review.subagent.md":
-        return _reader_fit_reason(session.prompt, message)
+        return _reader_fit_reason(session, document, message)
     return None
 
 
-def _reader_fit_reason(prompt: str, message: str) -> str | None:
+def _current_named_input(session: SessionState, document: pathlib.Path, name: str) -> str:
+    """名前付き入力の現在値を返す。
+
+    宣言された継続指示が同じsessionで値を更新していれば、最も新しい継続入力を使う。
+    役割別の返却検査が入力を参照するときは、継続による更新を見落とさないよう本関数を通す。
+    """
+    declaration = task_documents.read_declaration(document)
+    instructions = (
+        {item.instruction for item in declaration.continuations if name in item.accepted}
+        if isinstance(declaration, task_documents.TaskDocumentDeclaration)
+        else set()
+    )
+    for followup in reversed(session.followup_prompts):
+        lines = followup.strip().splitlines()
+        # 継続本文は`continuation_prompt`が指示の1行と名前付き入力へ正規化して保持している。
+        if lines and lines[0] in instructions:
+            params = task_documents.parse_named_inputs(lines[1:])
+            if name in params:
+                return params[name]
+    # 起動本文には役割全文が先行する。生成側が末尾へ置く入力節だけを解析する。
+    return task_documents.parse_named_inputs(session.prompt.rpartition("\n入力:\n")[2].splitlines())[name]
+
+
+def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: str) -> str | None:
     """入力成果物と個別返却を同じ集合で検収する。集約記述を個別完了へ代用しない。"""
     try:
-        # 起動本文には役割全文が先行する。生成側が末尾へ置く入力節だけを解析する。
-        value = task_documents.parse_named_inputs(prompt.rpartition("\n入力:\n")[2].splitlines())["成果物"].strip()
+        value = _current_named_input(session, document, "成果物").strip()
         targets = json.loads(value) if value.startswith("[") else [value]
     except (ActionableError, KeyError, json.JSONDecodeError) as error:
         return f"reader-fitの入力成果物を復元できません: {error}"

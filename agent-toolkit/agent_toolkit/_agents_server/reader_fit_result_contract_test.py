@@ -92,6 +92,27 @@ async def test_reader_fit_requires_individual_completion(tmp_path, case):
         assert "resultContract" in error  # pylint: disable=unsupported-membership-test
 
 
+@pytest.mark.parametrize("returned", ["updated", "previous"])
+def test_reader_fit_retarget_continuation_updates_target_set(tmp_path, returned):
+    """対象を更新する継続を受理し、返却検査は最新の継続入力の成果物を基準にする。"""
+    paths, prompt, kind, blocks = _reader_request(tmp_path)
+    added = tmp_path / "third.md"
+    added.write_text("# 追加対象\n本文\n", encoding="utf-8")
+    updated = [paths[1], str(added)]
+    followup = launch_requests.continuation_prompt(
+        prompt,
+        (),
+        instruction="対象を更新して再レビューせよ",
+        extra_params={"成果物": json.dumps(updated), "レビュー種別": "再レビュー"},
+    )
+    session = state.SessionState("reader-fit", str(tmp_path), prompt=prompt, launch_kind=kind, followup_prompts=(followup,))
+    if returned == "updated":
+        blocks = [blocks[1], blocks[1].replace(paths[1], str(added))]
+    message = "状態: completed\n未解決の指摘数: 0\n対象別の判定と証拠:\n" + "\n".join(blocks) + "\n新しい要件: なし"
+    result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
+    assert result_contract.hold_invalid_result(session, result) is (returned == "previous")
+
+
 @pytest.mark.parametrize("idle_after_result", [False, True])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
