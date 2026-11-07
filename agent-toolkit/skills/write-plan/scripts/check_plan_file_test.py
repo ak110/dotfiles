@@ -12,11 +12,13 @@ import check_plan_file
 import pytest
 import yaml
 
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import (
     bundle_kinds as _bundle_kinds,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 )
 from agent_toolkit._plan import locations as _plan_file  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._plan import structure as _plan_format  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._plan.structure import verification
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import (
     plan_fixture as _plan_fixture,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -1229,6 +1231,30 @@ def test_public_plan_check_rejects_ambiguous_verification_cell(
     legacy = content.replace("| 変更範囲の検証 |", "| 近接検証 |", 1)
     path.write_text(legacy, encoding="utf-8")
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == (1 if not cell else 0)
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_cd_verification_is_rejected_alike_at_drafting_and_integration(
+    repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str], strict: bool
+) -> None:
+    """`cd <dir> && <command>`の検証行は、起草時の計画検査と統合時の検証行取得が同じく拒否し、書き換え先を示す。
+
+    統合時の検査（`--reject-migration-warnings`）でだけ拒否されると、統合の直列区間で計画の書換えが必要になる。
+    """
+    work_dir, _base = repo
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+        "| 変更範囲の検証 | `pytest` |", "| 変更範囲の検証 | `cd agent-toolkit && uv run --frozen pytest -v` |", 1
+    )
+    path = work_dir / "plan.md"
+    path.write_text(content, encoding="utf-8")
+    options = ["--reject-migration-warnings"] if strict else []
+    assert check_plan_file.main([*options, "--work-dir", str(work_dir), str(path)]) == 1
+    drafting = capsys.readouterr().err
+    assert "shellの再評価を要する検証コマンド" in drafting and "uv run --directory <dir>" in drafting
+    with pytest.raises(ActionableError) as integration:
+        verification.plan_commands(content)
+    assert "shellの再評価を要する検証コマンド" in integration.value.message
+    assert "uv run --directory <dir>" in integration.value.next_action
 
 
 def test_legacy_verification_name_is_readable_but_rejected_for_revision(repo: tuple[pathlib.Path, str]) -> None:

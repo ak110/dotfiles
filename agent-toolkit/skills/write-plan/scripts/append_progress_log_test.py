@@ -535,6 +535,51 @@ def test_public_progress_split_preserves_assignment_and_rejects_loss(
 
 
 @pytest.mark.parametrize("handoff", [False, True])
+def test_public_progress_same_oid_split_adds_awi_or_rejects_outside(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
+) -> None:
+    """旧OIDを同じOIDへ写し旧集合に無いAWIを加えた指定は、許可集合内なら記録し、集合外なら記録を変えずに拒否する。
+
+    成功表示のまま追加したAWIが記録されない事象（実装時の対応付け漏れを公開手段で補正できない）の再現である。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.init_repository(repo)
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "base")
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.git_output(repo, "commit", "--allow-empty", "-m", "implemented")
+    implemented = git_repository.git_output(repo, "rev-parse", "HEAD")
+    wi_a, wi_b, outside = "20261004-044311-001.md", "20261004-044247-001.md", "20261004-044200-001.md"
+    path = tmp_path / "record.md"
+    path.write_text("# 引き継ぎ\n" if handoff else _related_plan(wi_a, wi_b), encoding="utf-8")
+    common = [str(path), "--worktree", str(repo)]
+    if handoff:
+        common += ["--handoff", "--allowed-awi", wi_a, "--allowed-awi", wi_b]
+
+    def dispatch(script: str, *extra: str) -> int:
+        return run_script.dispatch(argparse.Namespace(script_name=script, script_args=[*common, *extra]))
+
+    record = ("--completed-step", "実装", "--result", "成功")
+    assert dispatch("plan-progress", "--commit", implemented, "--previous-head", base, "--awi", wi_a, *record) == 0
+    attachment = path.with_name(path.stem + ".wi-commits.jsonl")
+    saved = path.read_bytes(), attachment.read_bytes()
+    replacement = tmp_path / "add.json"
+    replacement.write_text(json.dumps({implemented: [{"commit": implemented, "awi": [wi_a, outside]}]}), encoding="utf-8")
+    capsys.readouterr()
+    assert dispatch("plan-progress", "--rewrite-map", str(replacement), "--completed-step", "補正", "--result", "失敗") == 1
+    diagnostic = capsys.readouterr().err
+    assert outside in diagnostic and "次の操作:" in diagnostic
+    assert (path.read_bytes(), attachment.read_bytes()) == saved
+    replacement.write_text(json.dumps({implemented: [{"commit": implemented, "awi": [wi_a, wi_b]}]}), encoding="utf-8")
+    assert dispatch("plan-progress", "--rewrite-map", str(replacement), "--completed-step", "補正", "--result", "成功") == 0
+    capsys.readouterr()
+    assert dispatch("plan-commits", "--awi", wi_a, "--awi", wi_b) == 0
+    records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    short = git_repository.git_output(repo, "rev-parse", "--short", implemented)
+    assert {row["awi"]: row["commits"] for row in records} == {wi_a: [short], wi_b: [short]}
+
+
+@pytest.mark.parametrize("handoff", [False, True])
 def test_record_past_ranges_per_awi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool) -> None:
     """HEADを先へ進めた後、公開コマンドから各区間を別AWIへ記録し、両取得コマンドで対応を得る。"""
     repo = tmp_path / "repo"

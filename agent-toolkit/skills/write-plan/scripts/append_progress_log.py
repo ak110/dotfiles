@@ -208,7 +208,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         )
     elif args.rewrite_map:
         mapping = commit_mapping.read_mapping(args.worktree, events, allowed)
-        event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
+        event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping, allowed)
     else:
         parser.error("--handoffには--commitか--rewrite-mapが必要です。対応の取得は`atk run-script plan-commits`で行う")
         return False

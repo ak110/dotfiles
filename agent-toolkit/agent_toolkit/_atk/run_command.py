@@ -31,7 +31,8 @@ _EXIT_WRAPPER_FAILURE = 125
 # 子プロセスの起動前に作業ツリーの状態を取る`git`の時間上限。観測の前処理で実行を止めないよう短く保つ。
 _GIT_STATE_TIMEOUT_SECONDS = 30.0
 # 成功記録の再利用判定で値を比べない環境変数。エージェントの会話・委譲・巡回の識別子と引き継ぎ記録の場所、
-# ホストとのメッセージング、端末・SSH・D-Busのセッション、シェルの作業ディレクトリと階層、miseのセッション差分は、
+# ホストとのメッセージング、端末・SSH・D-Busのセッション、シェルの作業ディレクトリと階層、
+# miseのセッション差分とshimの起動経路（プロセス番号を含む）は、
 # 実行や再開のたびに値が変わり、同じ版・argv・cwdの検証結果を変えない。値まで比較すると再開ごとに同じ全体検証を
 # 繰り返すため、有無だけを比較する。有無は通知先の解決など動作を切り替えうるので比較に残す。
 # 委譲の種別や`1`で有効化するフラグ（`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`、`AGENT_TOOLKIT_DELEGATED_SESSION`、
@@ -62,6 +63,7 @@ _VOLATILE_ENVIRONMENT_NAMES = frozenset(
         "XDG_SESSION_ID",
         "__MISE_DIFF",
         "__MISE_SESSION",
+        "__MISE_SHIM_FALLBACK_CHAIN",
     }
 )
 
@@ -259,7 +261,7 @@ def execution_conditions(environment: dict[str, str] | None = None) -> dict[str,
     for name in _VOLATILE_ENVIRONMENT_NAMES & environment.keys():
         environment[name] = ""
     return {
-        "version": 3,
+        "version": 4,
         "python": {
             key: hashlib.sha256(value.encode("utf-8")).hexdigest()
             for key, value in {
