@@ -358,8 +358,11 @@ def native_run(command, **_kwargs):
 
 
 os.execv = execute
-if os.environ["CODEX_PROBE_WINDOWS"] == "1":
-    codex_launcher.sys = types.SimpleNamespace(**(vars(sys) | {"platform": "win32"}))
+# 模擬するplatformを実行ホストによらず固定する。実Windowsで非Windows経路を模擬する場合も
+# 分岐が実物のprocess_treeへ進まず、差し替えたexecvへ到達するようにする。
+windows = os.environ["CODEX_PROBE_WINDOWS"] == "1"
+codex_launcher.sys = types.SimpleNamespace(**(vars(sys) | {"platform": "win32" if windows else "linux"}))
+if windows:
     codex_launcher.process_tree = types.SimpleNamespace(run_with_timeout=native_run)
 sys.exit(codex_launcher.main(sys.argv[1:]))
 """
