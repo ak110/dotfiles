@@ -98,15 +98,65 @@ def _history(repo: Path) -> list[tuple[str, str, datetime.datetime]]:
     return history
 
 
+@dataclasses.dataclass(frozen=True)
+class SavedReviewTable:
+    """保存済みの実行レビュー指摘管理表1件。`timestamp`は最初に追加したcommitの日時。"""
+
+    path: Path
+    timestamp: datetime.datetime
+    rows: list[list[str]]
+
+
+@dataclasses.dataclass(frozen=True)
+class SavedReviewTables:
+    """期間内の保存済み管理表と、期間の判定や読込ができなかった件数。"""
+
+    tables: list[SavedReviewTable]
+    all_paths: list[Path]
+    unreadable: int
+    without_history: int
+
+
+def saved_review_tables(
+    repo: Path, history: list[tuple[str, str, datetime.datetime]], since: datetime.datetime, until: datetime.datetime
+) -> SavedReviewTables:
+    """private-notesの`plans`配下から、最初の追加commitが期間内にある実行レビューの管理表を読む。
+
+    週次指標と振り返りの採否集計が同じ読込・正規化と期間の割当を使うよう、両者から呼ぶ。
+    行は`track`が`exec-review`のものだけを残す。
+    """
+    first_additions: dict[str, datetime.datetime] = {}
+    for path, _commit, timestamp in history:
+        first_additions.setdefault(path, timestamp)
+    paths = sorted((repo / "plans").rglob("*.exec-review.tsv"))
+    tables: list[SavedReviewTable] = []
+    unreadable = 0
+    without_history = 0
+    for path in paths:
+        timestamp = first_additions.get(path.relative_to(repo).as_posix())
+        if timestamp is None:
+            without_history += 1
+            continue
+        if not since <= timestamp <= until:
+            continue
+        try:
+            rows = [row for row in review_table.read_rows(path) if row[1] == "exec-review"]
+            for row in rows:
+                int(row[0])
+        except OSError, UnicodeError, ValueError:
+            unreadable += 1
+            continue
+        tables.append(SavedReviewTable(path, timestamp, rows))
+    return SavedReviewTables(tables, paths, unreadable, without_history)
+
+
 def _queue_metrics(
     repo: Path, weeks: dict[str, dict[str, Any]], since: datetime.datetime, until: datetime.datetime
 ) -> dict[str, Any]:
     history = _history(repo)
     adopted: dict[str, set[str]] = collections.defaultdict(set)
-    first_additions: dict[str, datetime.datetime] = {}
     states: dict[str, str] = {}
     for path, commit, timestamp in history:
-        first_additions.setdefault(path, timestamp)
         location = Path(path)
         # WI共通の列挙契約と同じ年月配置・旧状態配置だけを解析する。
         # 期間前の状態も必要なため、候補の履歴は全期間を解析する。
@@ -136,23 +186,11 @@ def _queue_metrics(
     for week, names in adopted.items():
         weeks[week]["adopted_awi_count"] = len(names)
 
-    tables = sorted((repo / "plans").rglob("*.exec-review.tsv"))
-    unreadable = 0
-    without_history = 0
-    for path in tables:
-        timestamp = first_additions.get(path.relative_to(repo).as_posix())
-        if timestamp is None:
-            without_history += 1
-            continue
-        if not since <= timestamp <= until:
-            continue
-        try:
-            rows = [row for row in review_table.read_rows(path) if row[1] == "exec-review"]
-            rounds = max((int(row[0]) for row in rows), default=0)
-        except OSError, UnicodeError, ValueError:
-            unreadable += 1
-            continue
-        review = weeks[_week(timestamp)]["review"]
+    saved = saved_review_tables(repo, history, since, until)
+    for table in saved.tables:
+        rows = table.rows
+        rounds = max((int(row[0]) for row in rows), default=0)
+        review = weeks[_week(table.timestamp)]["review"]
         review["table_count"] += 1
         review["rounds"][str(rounds) if rounds < 6 else "6+"] += 1
         review["finding_count"] += len(rows)
@@ -160,11 +198,11 @@ def _queue_metrics(
             level = row[4] or "未記録"
             review["levels"][level] = review["levels"].get(level, 0) + 1
             review["without_modification_count"] += bool(row[6].strip()) and not row[5].strip()
-    saved_names = {path.name for path in tables}
+    saved_names = {path.name for path in saved.all_paths}
     unsaved = sum(path.name not in saved_names for path in (Path.home() / ".claude" / "plans").glob("*.exec-review.tsv"))
     return {
-        "unreadable_table_count": unreadable,
-        "tables_without_history_count": without_history,
+        "unreadable_table_count": saved.unreadable,
+        "tables_without_history_count": saved.without_history,
         "unsaved_table_count": unsaved,
     }
 

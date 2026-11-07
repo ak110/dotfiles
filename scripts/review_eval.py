@@ -97,7 +97,9 @@ def _commit_range(commits_path: pathlib.Path) -> tuple[str, str]:
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8", check=False)
+    result = subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
+    )
     if result.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}が失敗した（終了コード{result.returncode}）: {result.stderr.strip()}")
     return result.stdout.strip()

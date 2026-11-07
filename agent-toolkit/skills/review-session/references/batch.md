@@ -46,6 +46,9 @@ batch自身のセッションも振り返り対象に含める。
    各対象の `reference_document` があれば読む。
    同じ原因をセッション横断で整理し、対象IDと候補IDの組で出典を保持する。
    未確認の対象を成功とせず、既存の失敗対応に沿って原因と未完了範囲を報告する。
+   実行レビューの採否は、`atk run-script review-adoption -- --since <manifestのstarted_atの7日前>`で直近7日間と前の7日間を集計する。
+   不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析候補にし、`review-adoption-rejection`の行の管理表を読んで不採用の理由を判断する。
+   原因を確定した候補は手順3でAWIへ送る。モデル不明の表は件数に含めたまま、帰属できない理由を集計の限界として報告する。
 3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
    所要時間目標、計測の起点と終点、超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
