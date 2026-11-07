@@ -217,7 +217,12 @@ class SlimRecordStore:
         except FileNotFoundError:
             return
         except OSError as error:
-            logger.warning("推定費用の縮約記録の保存先を確認できません: %s: %s", self._directory, error)
+            logger.warning(
+                "推定費用の縮約記録の保存先を読めないため、件数の上限を超えた古い縮約記録を消さずに続けます: %s: %s。"
+                "保存先ディレクトリの読取権限を確認してください",
+                self._directory,
+                error,
+            )
             return
         files.sort()
         for _, file in files[: max(0, len(files) - _MAX_FILES)]:
