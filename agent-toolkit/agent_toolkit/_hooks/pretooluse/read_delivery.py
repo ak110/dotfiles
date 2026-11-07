@@ -18,6 +18,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 import tempfile
 import tomllib
 import uuid
@@ -59,6 +60,7 @@ from agent_toolkit._hooks.pretooluse.large_reads import (
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 lazy from agent_toolkit._common import task_documents
+lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
 _INPUT_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.ContextVar(
@@ -586,6 +588,27 @@ def _user_texts(entry: dict):
             yield "\n".join(texts)
 
 
+_DELIVERY_OPENING = '<atk-auto source="agents-server" kind="delivery">\n'
+_LEADING_AUTO_ELEMENT = re.compile(r"<atk-auto\s[^>]*>\n.*?\n</atk-auto>\s*", re.DOTALL)
+
+
+def _delivered_launch_text(text: str) -> str:
+    """配送要素の中身を返す。配送要素が無ければ本文全体を返す。
+
+    agents_serverは資料案内などの要素を配送要素より前に置くため、先頭に並ぶ他の`atk-auto`要素を順に除いてから配送要素を探す。
+    配送要素の後の本文は起動見出しではないため、先頭に並ぶ要素の間だけを探す。
+    """
+    rest = text
+    while not rest.startswith(_DELIVERY_OPENING):
+        leading = _LEADING_AUTO_ELEMENT.match(rest)
+        if leading is None:
+            return text
+        rest = rest[leading.end() :]
+    if not rest.rstrip().endswith("</atk-auto>"):
+        return text
+    return rest[len(_DELIVERY_OPENING) : rest.rfind("</atk-auto>")]
+
+
 def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> set[pathlib.Path]:
     """正式な起動入力と役割を解決し、圧縮をまたぐ実体指定を保持する。"""
     prefix = "read-trigger-role:"
@@ -614,10 +637,7 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
         for text in _user_texts(entry):
             context_seen = False
             startup_methods = ()
-            launch_text = text
-            opening = '<atk-auto source="agents-server" kind="delivery">\n'
-            if text.startswith(opening) and text.rstrip().endswith("</atk-auto>"):
-                launch_text = text[len(opening) : text.rfind("</atk-auto>")]
+            launch_text = _delivered_launch_text(text)
             for line in launch_text.splitlines()[:1]:
                 # 正式な役割見出しの候補だけでfrontmatterの処理を読み込む。
                 if ".subagent.md" not in line:
@@ -1261,12 +1281,79 @@ def _literal_task_documents(command: str, share: pathlib.Path) -> list[pathlib.P
     return [path for path in documents if path.is_file()]
 
 
+def _git_worktree_location(directory: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
+    """ディレクトリが属するGit作業ツリーの最上位と、Gitの共通ディレクトリを返す。Git管理外では`None`を返す。"""
+    try:
+        result = git_command.run(
+            ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+            cwd=str(directory),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+    lines = result.stdout.splitlines()
+    if result.returncode or len(lines) != 2:
+        return None
+    return pathlib.Path(lines[0]).resolve(), pathlib.Path(lines[1]).resolve()
+
+
+def _plugin_task_document(path: pathlib.Path, root: pathlib.Path) -> pathlib.Path | None:
+    """読取対象がplugin rootの手順書と同じものなら、plugin root側の手順書のパスを返す。
+
+    process-wiのレーン担当は、plugin rootを含むリポジトリの別worktreeから手順書を読む。
+    同じGit共通ディレクトリを持つworktreeで、リポジトリ最上位からの相対位置が一致するファイルを同じ手順書として扱う。
+    plugin rootがGit管理外の環境では、plugin root配下の手順書だけが対象になる。
+    手順書の候補に当たらない読取でGitを起動しないよう、ファイル名と親ディレクトリ名で先に限定する。
+    """
+    if path.parent.name != "share" or not path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX) or not path.is_file():
+        return None
+    share = root / "share"
+    if path.parent == share:
+        return path
+    read_location = _git_worktree_location(path.parent)
+    plugin_location = _git_worktree_location(root) if read_location is not None else None
+    if read_location is None or plugin_location is None or read_location[1] != plugin_location[1]:
+        return None
+    try:
+        counterpart = plugin_location[0] / path.relative_to(read_location[0])
+    except ValueError:
+        return None
+    return counterpart if counterpart.parent == share and counterpart.is_file() else None
+
+
+def _owned_task_documents(roles: set[pathlib.Path], root: pathlib.Path, payload: dict) -> set[pathlib.Path]:
+    """担当の役割文書と、その役割文書が読込表・名指し参照の表で読むよう指示する手順書を返す。
+
+    execの統合工程が`lane-integration.subagent.md`を読むように、役割文書は自分の工程として別の手順書を読ませることがある。
+    宣言から導くことで、役割文書の読込表を改めたときも除外の範囲が追随する。
+    """
+    owned = set(roles)
+    host = "codex" if is_codex_payload(payload) else "claude"
+    for role in roles:
+        try:
+            targets = [
+                *(target for row in read_triggers.parse_tables(role, root, host=host) for target in row.targets),
+                *read_triggers.reference_method_targets(role, root, host),
+            ]
+        except OSError, UnicodeError, ValueError:
+            continue
+        owned.update(
+            target.path.resolve() for target in targets if target.path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX)
+        )
+    return owned
+
+
 def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
-    """Plugin root配下の他の担当の手順書（`share/<役割名>.subagent.md`）を取得する操作に、非遮断の警告を返す。
+    """他の担当の手順書（`share/<役割名>.subagent.md`）を取得する操作に、非遮断の警告を返す。
 
     `agent-toolkit:delegation`の`SKILL.md`「送信」は委譲元が起動準備のために手順書の本文を読むことを禁じるが、
     事後の振り返りだけでは読んだ時点に作用しないため、読取の直前に起動契約へ誘導する。
-    読む主体の担当がその役割である場合は警告しない。plugin root外の同名ファイルは対象外とする。
+    対象はplugin root配下の手順書と、plugin rootと同じリポジトリの別worktreeにある同じ位置の手順書である。
+    別のリポジトリと`share`以外の位置にある同名ファイルは対象外とする。
+    読む主体の担当がその役割である場合と、その役割文書が読むよう指示する手順書は警告しない。
     編集と返却後の検収を目的の判定なしには区別できないため、遮断せずに続行の条件を示す。
     """
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
@@ -1284,29 +1371,32 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         if tool_name == "Bash" and isinstance(command, str)
         else _read_paths(tool_name, tool_input, cwd)
     )
-    paths = [
-        path
+    # 読んだパスと、自身の担当の判定・起動契約の解決に使うplugin root側の手順書を組にする。
+    documents = {
+        path: counterpart
         for path in dict.fromkeys(candidates)
-        if path.parent == share and path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX) and path.is_file()
-    ]
+        if (counterpart := _plugin_task_document(path, root)) is not None
+    }
     dynamic = False
-    if not paths and tool_name == "Bash" and isinstance(command, str) and has_dynamic_display_operand(command, cwd):
+    if not documents and tool_name == "Bash" and isinstance(command, str) and has_dynamic_display_operand(command, cwd):
         # 変数展開などで表示対象を確定できない操作は、シェルを再実行して解決しない。
         # 同じコマンドが手順書を指すリテラルを含む場合だけ、読む可能性として案内する。
-        paths = _literal_task_documents(command, share)
-        dynamic = bool(paths)
-    if not paths:
+        documents = {path: path for path in _literal_task_documents(command, share)}
+        dynamic = bool(documents)
+    if not documents:
         return None
     agent = agent_id.resolve_hook_agent_id(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
-    own = active_roles(payload, session_id, records, agent) if agent == agent_id.MAIN_AGENT_ID else set()
-    own |= _subagent_task_documents(payload) if agent != agent_id.MAIN_AGENT_ID else set()
-    foreign = [path for path in paths if path not in own]
-    if not foreign:
+    roles = active_roles(payload, session_id, records, agent) if agent == agent_id.MAIN_AGENT_ID else set()
+    roles |= _subagent_task_documents(payload) if agent != agent_id.MAIN_AGENT_ID else set()
+    own = _owned_task_documents(roles, root, payload)
+    foreign_documents = {path: counterpart for path, counterpart in documents.items() if counterpart not in own}
+    if not foreign_documents:
         return None
+    foreign = list(foreign_documents)
     contracts: list[str] = []
-    for path in foreign:
+    for path in foreign_documents.values():
         try:
             targets = read_triggers.parent_contract_targets(path, root)
         except OSError, ValueError:
