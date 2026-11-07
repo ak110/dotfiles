@@ -42,7 +42,7 @@
 - 起動手段は、その手段が提供する終了観測手段とセットで選定する。機能と権限が同等であれば、`atk agents wait`によって機械的に終了を観測できる`agents_server`を選択する。ホスト組み込みの委譲機能を選んだ場合は、そのホストの委譲一覧におけるステータスや指定した成果物の状態によって終了を観測する
 - Claude Codeからの委譲では、工程別モデル設定のeffortを指定できるため`agents_server`を標準とする。組み込みの`Agent`ツールを使用するのは次のケースに限る
   - `agents_server`のMCPツールを呼び出せない場合。このときは切り替えた工程、本来の設定値（engine、モデル、effort）、および切り替え理由を報告に記録する
-  - `agents_server`のexplore・delegate・taskに同等の手段がない専用agent定義を使う作業（プロジェクト固有の定義など）。Explore・general-purpose・Planなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外に含めない
+  - `agents_server`のexplore・delegate・taskに同等の手段がない専用agent定義を使う作業（プロジェクト固有の定義など）。Explore・general-purpose・Plan・web-fetchなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外の対象外とする。同等の手段の有無は`agents_server`の各modeが公開する機能と到達性から判定し、直接のWebFetchなどあるツールを使えないという診断や、ホストが特定の組み込みAgentを案内したことは判定の根拠から外す
   - ユーザーから明示的な指示がある場合
   - `routing.md`「会話を引き継ぐ委譲」によりforkを選択する場合。このときは`subagent_type: "fork"`で起動し、親と同一のモデルおよびeffortを使用する
 - Codexから別のエージェントへ委譲する場合も`agents_server`を標準とし、`spawn_agent`の選択にも前述の共通の例外条件を適用する。専用定義の例外は実際にその定義を使用できる場合に限る。forkでは`fork_turns`を省略するか`"all"`を指定し、モデルやeffortを上書きしない
@@ -89,7 +89,7 @@ fork機能に関する監査記録は、`docs/development/audit-records.md`の�
 
 1. `agents_server`の`start`を使い、役割文書を指定する場合は`subagent_md_path`と`extra_params`、自由本文の委譲では`mode: delegate`と`prompt`と`model_type`を渡す。役割のmode、model_type、入力項目、書き込み権限はfrontmatterで管理し、`usage`フィールドは使用しない。共通モジュール`agent_toolkit/_common/task_documents.py`で読み込みを行い、サーバー側で適切な候補を選択する
 2. `Agent`ツールを使用する場合は、起動直前に`atk config get <工程>_model`を1回実行して設定を取得し、先頭の候補をengine、model、effortへ分解する。Claude以外のengineについて実行手段を確保できない場合は、未完了として返すか続行できない理由を報告する。分解した値は表に記載された工程を実行する委譲先のみに渡し、定義側でモデルが固定されている委譲先に対してmodelを上書きすることは避ける
-3. 起動レスポンスとして返されたsession_idとstatusを受け取り、候補の切り替えが発生した場合は除外理由と採用候補も確認する。終了時に`wait`を実行してmodel_type、engine、model、effortを確認する。なお、保持期限が切れた後に`show`を実行できることを検収の前提条件とはしない
+3. 起動レスポンスとして返されたsession_idとstatusを受け取り、候補の切り替えが発生した場合は除外理由と採用候補も確認する。終了時に`wait`を実行してmodel_type、engine、model、effortを確認する。なお、保持期限を過ぎた後に`show`を実行できることを検収の前提条件とはしない
 4. すべての候補を試しても実行できなかった場合は、未完了または続行できない理由を委譲元へ返却する
 
 WIの`担当モデル`において担当者、モデル、effortが明記されている工程では、委譲元がその指定値を`model_type`へ渡す。1回の起動に対して異なる指定が混在する場合は、WIと指定値を明示して委譲単位を分割する。終了時に確認したengine、model、effortを指定値と比較し、WI名、指定内容、実際値を進捗ログまたは引き継ぎ記録へ記載する。各工程は自身の担当名（`担当モデル.実装担当`など）と本段落の参照先を保持する。

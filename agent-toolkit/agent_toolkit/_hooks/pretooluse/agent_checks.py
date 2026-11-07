@@ -1,8 +1,9 @@
-r"""PreToolUse統合フックのうち、TaskStop、agents_serverおよびwrite-plan起動の可否を判定する。"""
+r"""PreToolUse統合フックのうち、TaskStop、agents_server、組み込みの汎用Agentおよびwrite-plan起動の可否を判定する。"""
 
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -14,6 +15,7 @@ lazy import time
 from agent_toolkit._agents_server import (
     tool_names as _agents_server_tool_names,
 )
+lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.file_lock import (
     locked_rotate_and_append as _locked_rotate_and_append,
 )
@@ -26,8 +28,9 @@ lazy from agent_toolkit._hooks import agents_server_observations as _agents_serv
 lazy from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,
 )
+lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
-lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
+lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
 # Claude CodeとCodexが生成するagents_serverの完全修飾MCP tool名。
 _AGENTS_SERVER_NAMESPACES = _agents_server_tool_names.MCP_NAMESPACES
@@ -51,6 +54,44 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 # `Skill`の`skill`引数として許容するwrite-planスキル名。
 # posttooluse.pyの`_PLAN_MODE_SKILL_NAMES`と対応させる。
 _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:write-plan", "write-plan"})
+
+# --- Agent・Task: 組み込みの汎用定義の起動 ---
+
+# Claude Codeの組み込みの汎用定義。agents_serverのmodeで同等の作業を行えるため、
+# `runtime-routing.md`「実行手段」は専用定義の例外に含めない。`subagent_type`を省いた起動は`general-purpose`で動く。
+# `fork`と、これ以外の名前（プロジェクト固有の専用定義など）は同節の例外に当たり得るため警告しない。
+_GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "web-fetch", "claude"})
+
+
+def _check_generic_agent_launch(tool_input: dict) -> str | None:
+    """組み込みの汎用定義によるAgent・Taskの起動へ、実行手段の判定を促す非遮断の警告を返す。
+
+    WebFetchが直接使えないという診断の後にホストがweb-fetch型のAgentを案内した場面などで、
+    案内だけを根拠に組み込みAgentを選ぶ判断を防ぐ。agents_serverを呼べない場合とユーザーの明示指示は正当な例外のため遮断しない。
+    軽量起動の委譲先は再委譲が禁止され、委譲のスキルも配送されないため対象外とする。
+    """
+    if _delegated_session.is_lightweight_delegated(os.environ):
+        return None
+    agent_type = tool_input.get("subagent_type")
+    if agent_type is None or agent_type == "":
+        agent_type = "general-purpose"
+    if not isinstance(agent_type, str) or agent_type not in _GENERIC_AGENT_TYPES:
+        return None
+    routing = _plugin_resources.skill_reference("delegation", "references/runtime-routing.md")
+    return _llm_notice(
+        f"組み込みの汎用定義`{agent_type}`で`Agent`を起動しようとしている。"
+        "`Claude Code`からの委譲は`agents_server`が標準であり、"
+        f"{routing}「実行手段」は汎用定義を組み込みの`Agent`の例外に含めない。"
+        "あるツールを直接使えないという診断や、ホストが特定の`Agent`を案内したことは、`agents_server`に同等の手段が無いことの確認に当たらない。",
+        tag=_WARN_TAG,
+        subject=agent_type,
+        removable_cause=False,
+        fix=(
+            "`agents_server`の`start`の各`mode`が公開する機能と到達性を確かめ、同等の手段があれば`agents_server`で起動せよ。"
+            "`agents_server`の`MCP`ツールを呼べない場合、ユーザーの明示指示がある場合は、"
+            "同節の例外としてこのまま起動してよい（`agents_server`を呼べない場合は切り替えた工程、本来の設定値と理由を報告に記録する）。"
+        ),
+    )
 
 
 # --- TaskStop: 初回遮断と再実行窓 ---
