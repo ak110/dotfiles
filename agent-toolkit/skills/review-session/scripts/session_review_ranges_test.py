@@ -51,7 +51,7 @@ def test_prepare_conversation_summarizes_main_and_delegate_records(
     assert prepare.main(["--transcript", str(parent), "--work-dir", str(work)]) == 0
     result = json.loads(capsys.readouterr().out)
     document = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
-    assert "## メインの流れ" in document and "## 委譲先の流れ" in document
+    assert "## 時系列" in document
     assert "最初の要求" in document and "次の要求" in document
     assert "調査を始める" in document and "調査を終えた" in document
     assert "agent-child" in document and "子への依頼" in document and "子の返却" in document

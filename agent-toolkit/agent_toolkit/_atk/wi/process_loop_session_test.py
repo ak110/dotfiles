@@ -510,7 +510,10 @@ class TestProcessLoopPromptAndEnv:
         """新規セッションの目的文がスキルの完遂だけを伝え、機械生成を示す`atk-auto`要素を持つこと。"""
         prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
         assert prompt.startswith("/goal ")
-        assert "agent-toolkit:process-wi all-reposを完遂する" in prompt
+        assert (
+            "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
+            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）" in prompt
+        )
         assert _automated_prompt.contains(prompt)
         assert "agent-toolkit:exit-session" not in prompt
 
@@ -550,7 +553,11 @@ class TestProcessLoopPromptAndEnv:
             resume_pending=resume is not None,
             cwd=tmp_path,
         )
-        expected = '<atk-auto source="process-loop" kind="goal">\nagent-toolkit:process-wi all-reposを完遂する\n</atk-auto>'
+        expected = (
+            '<atk-auto source="process-loop" kind="goal">\n'
+            "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
+            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
+        )
         assert argv[-1] == ("/goal " if orchestrator == "claude" else "") + expected
 
     def test_prompt_does_not_inject_publish_destination(self) -> None:

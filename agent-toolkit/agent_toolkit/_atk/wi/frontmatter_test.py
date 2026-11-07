@@ -316,3 +316,27 @@ source: awi
         for key, value in reparsed_data.items():
             original_value = data[key]
             assert value == original_value
+
+
+def test_parse_frontmatter_runs_typed_loader_only_for_typed_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """型付きの値を使うキーが無い項目は1回だけ解析し、`important`を持つ項目はbool型を保つ。
+
+    純Python実装のPyYAMLでは解析1回が一覧・同期の全件走査の所要の大半を占めるためである。
+    """
+    loaders: list[str] = []
+    original = yaml.load
+
+    def counting_load(stream: str, Loader: typing.Any) -> typing.Any:  # noqa: N803  # pylint: disable=invalid-name
+        loaders.append(Loader.__name__)
+        return original(stream, Loader=Loader)
+
+    monkeypatch.setattr(frontmatter.yaml, "load", counting_load)
+
+    plain = frontmatter.parse_frontmatter("---\ntype: awi\nflag: true\n---\n\n本文\n")
+    plain_loads = len(loaders)
+    typed = frontmatter.parse_frontmatter("---\ntype: awi\nimportant: true\n---\n\n本文\n")
+
+    assert plain == ({"type": "awi", "flag": "true"}, "\n本文\n")
+    assert plain_loads == 1
+    assert typed == ({"type": "awi", "important": True}, "\n本文\n")
+    assert len(loaders) == 3

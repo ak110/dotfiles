@@ -1395,6 +1395,22 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 ],
             )
             _save(path, record)
+        if args.resolved_conflict is not None and state["phase"] in {"rebased", "awaiting-validation"}:
+            # 競合解消の指定はhistory-compareへ渡す入力で、同じ統合入力の再開に付けるためinput_digestへ含めない。
+            # 指定を省いた再開（検収待ちの受理など）は保存済みの集合を使い、集合が変わった場合だけhistory-compareをやり直す。
+            resolved = sorted(
+                {
+                    _git(worktree, "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}")
+                    for value in args.resolved_conflict
+                }
+            )
+            if state.get("resolved_conflicts", []) != resolved:
+                state.update(
+                    phase="rebased",
+                    resolved_conflicts=resolved,
+                    completed=[key for key in state["completed"] if key != "history-compare"],
+                )
+                _save(path, record)
         if state["phase"] == "rebased":
             mapping = _integration_directory(record) / "rewrite-map.json"
             if state.get("rewrite_map") != str(mapping):
@@ -1424,6 +1440,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     state["new_head"],
                     "--output",
                     str(mapping),
+                    *(argument for oid in state.get("resolved_conflicts", []) for argument in ("--resolved-conflict", oid)),
                 ),
                 worktree,
                 timeout=record["procedure_timeout"],
@@ -1555,6 +1572,16 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         help="Git統合前の入力是正から再開し、最新統合先へ追随する。同条件成功を再利用し、必要な検証後に検収待ちへ戻る。",
     )
     integrate_parser.add_argument("--session-id", help="所有登録のsession（atk lane createの所有session）。")
+    integrate_parser.add_argument(
+        "--resolved-conflict",
+        action="append",
+        default=None,
+        metavar="OID",
+        help=(
+            "rebaseの競合を解消してrebase --continueで完了した後の再開で、競合解消で内容が変わった旧commit。"
+            "rebase後のhistory-compareへ渡し、件名・相対順と旧commitの変更パスのうち統合先に残るものを含むことを検収する。複数指定可能。"
+        ),
+    )
     integrate_parser.add_argument(
         "--amend-finalization", action="store_true", help="全計画・WIの集合を変えずに、未完了の最終化操作のargvを補完する。"
     )

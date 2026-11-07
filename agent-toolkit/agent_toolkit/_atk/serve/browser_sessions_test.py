@@ -900,6 +900,52 @@ async def test_session_list_updates_when_records_are_added(screen_harness: _Scre
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_session_operations_record_open_and_notified_reload(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
+    """記録の選択から詳細の描画まで、`refresh`通知から一覧と詳細の再描画までを、それぞれ1件の操作として記録する。"""
+    page = screen_harness.page
+    await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
+    # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
+    sent: list[dict] = []
+    page.on(
+        "request",
+        lambda request: (
+            sent.extend(json.loads(request.post_data or "{}").get("records", []))
+            if request.url.endswith("/api/timings")
+            else None
+        ),
+    )
+    await page.goto(screen_harness.base_url + "/sessions")
+    items = page.locator("#sessions .session-item")
+    await playwright.async_api.expect(items).to_have_count(2)
+    _append_jsonl(
+        tmp_path / "claude" / "projects" / "-home-aki-timed" / "timed.jsonl",
+        [{"type": "user", "timestamp": "2026-09-04T00:00:00Z", "cwd": "/home/aki/timed", "message": {"content": "a"}}],
+    )
+    await playwright.async_api.expect(items).to_have_count(3, timeout=5000)
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/timings") and '"external-reload"' in (request.post_data or ""),
+        timeout=30000,
+    ):
+        await page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+    records = [record for record in sent if record.get("screen") == "sessions"]
+
+    def linked_routes(operation: dict) -> set[str]:
+        return {
+            record.get("route", "")
+            for record in records
+            if record.get("operation_id") == operation["operation_id"] and record is not operation
+        }
+
+    opened = next(record for record in records if record.get("operation") == "open-session")
+    assert (opened["kind"], opened["outcome"]) == ("operation", "ok")
+    assert "/api/sessions/detail" in linked_routes(opened)
+    reloaded = next(
+        record for record in records if record.get("operation") == "external-reload" and record.get("trigger") == "sse"
+    )
+    assert "/api/sessions/list" in linked_routes(reloaded)
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
     """一覧の取得中に`refresh`通知が続いても、一覧の要求を同時に2件以上発行せず、完了後に1回だけ取り直す。
 

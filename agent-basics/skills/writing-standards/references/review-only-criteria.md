@@ -10,6 +10,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「日本語の書き方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「日本語の書き方」` |
+| エージェント向け文書の定義の置き場所と読込条件をレビューする時 | `agent-documents-basics.md`の「定義の所有者」「読込表」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」「読込表」` |
 | スライドの構成や配置をレビューする時 | `writing-slides.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-slides.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md#「コメントの記述粒度」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/implementation-time.md#「コメントの記述粒度」` |
 
@@ -29,6 +30,11 @@
 ## 名前の到達性
 
 既存の対象を指す名詞句について、適用される規範または対象の成果物内にその定義元が実在すること、および読み手がその記述から迷わず定義元へ到達できることを確認する。別文書のセクション名、専門用語、あるいは事例の略称を用いる場合は、同一の文中、あるいは同一の段落や箇条書きブロックであらかじめ明示した文書名から、参照先を確実に特定できるかを確認する。作成側の原則は`writing.md`「文章の共通規定」の「名前」の項を参照。
+
+## 定義の置き場所と読込条件
+
+エージェント向け文書をレビューするときは、初動や毎回の判断で使う定義と判定基準が、判断より前に読み手へ届く本文にあるかを、`agent-documents-basics.md`「定義の所有者」と「読込表」に照らして確かめる。
+条件付きで読む資料にしか定義が無い、必要性を判断する時点より後にしか定義を読まない、読込表の条件が参照先の語を知っていることを前提にする、適用場面から資料への入口が無い、名指しした参照先に定義が無い、のいずれかに当たれば指摘する。
 
 ## 専門用語の語義
 

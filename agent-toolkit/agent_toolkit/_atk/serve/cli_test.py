@@ -141,7 +141,7 @@ process.stdout.write(JSON.stringify({
   metadata: elements['detail-metadata'].children.map(child => child.children.map(item => item.textContent).join(':')),
   readonly: !elements['readonly-notice'].hidden,
   editHidden: elements['edit-button'].hidden,
-  answerHidden: elements['answer-button'].hidden,
+  answerHidden: elements['answer-panel'].hidden,
   deleteHidden: elements['delete-button'].hidden,
   decisionHidden: elements['decision-panel'].hidden
 }));
@@ -385,7 +385,6 @@ await saveEntry();
 const editFailure = focused;
 
 displayEntry({...awi, kind: 'uwi', filename: 'question.md', answered: false});
-enterAnswer();
 elements['answer-input'].value = '回答';
 await saveAnswer();
 const answerFailure = focused;

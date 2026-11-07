@@ -257,8 +257,13 @@ globalThis.setTimeout = () => 1;
 globalThis.clearTimeout = () => undefined;
 globalThis.setInterval = () => 1;
 globalThis.clearInterval = () => undefined;
+// 実サーバーは購読を登録した直後に`subscribed`を送る。画面の初期取得はこの合図を待つため、同じ順序で送る。
 globalThis.EventSource = class {{
-  constructor(url) {{ this.url = url; this.listeners = {{}}; }}
+  constructor(url) {{
+    this.url = url;
+    this.listeners = {{}};
+    Promise.resolve().then(() => this.listeners.subscribed?.({{data: '{{}}'}}));
+  }}
   addEventListener(name, handler) {{ this.listeners[name] = handler; }}
 }};
 const fetchCalls = [];

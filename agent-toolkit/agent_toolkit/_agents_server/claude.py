@@ -654,6 +654,10 @@ class ClaudeServerManager:
         self._channels: dict[str, _CommandChannel] = {}
         self._disconnects: set[asyncio.Task[None]] = set()
         self._residual_processes: dict[str, list[psutil.Process]] = {}
+        # 生成の停止を確認できなかった理由。`_residual_processes`に同じキーを置き、再開を止める。
+        self._unresolved_runtime: dict[str, list[str]] = {}
+        # 導入一覧の取得などから引き取った停止結果。`_residual_processes`に同じキーを置き、`retry`で回収し直す。
+        self._reclaim_failures: dict[str, list[process_tree.ReclaimError]] = {}
 
     def _expire_local_session(self, session_id: str) -> None:
         self.sessions.pop(session_id, None)
@@ -814,18 +818,61 @@ class ClaudeServerManager:
                 raise outcome
 
     async def _reclaim_runtime(self, session_id: str, *, pins: process_tree.ProcessIdentityPins | None = None) -> None:
-        """未回収の所有資源を再試行し、終了できないhandleを次の停止要求へ保持する。"""
+        """未回収の所有資源を再試行し、終了できないhandleと生成停止の未確認理由を次の停止要求へ保持する。
+
+        生成の停止を確認できなかった理由は再試行で解消しない。一時停止や列挙をすり抜けた子孫は親の終了後に
+        所有対象から辿れないため、既知対象の回収だけでは停止を確かめられず、この会話の再開を止め続ける。
+        """
         targets = self._residual_processes.get(session_id, [])
-        if not targets:
+        unresolved = self._unresolved_runtime.get(session_id, [])
+        failures = self._reclaim_failures.get(session_id, [])
+        if not targets and not unresolved and not failures:
             return
         result = await run_file_operation(process_tree.stop_tree, None, known=targets, pins=pins)
-        process_tree.log_residual(result.descriptions(), context=f"claude runtime {session_id}")
-        if result.residual or result.unresolved:
-            self._residual_processes[session_id] = result.targets if result.unresolved else result.residual
+        unresolved = [*unresolved, *(reason for reason in result.unresolved if reason not in unresolved)]
+        # 引き取った停止結果は、直接の子の回収待ちを含む所有状態ごと`retry`で回収し直す。
+        remaining: list[process_tree.ReclaimError] = []
+        failure_residual: list[str] = []
+        for failure in failures:
+            if left := await run_file_operation(failure.retry):
+                remaining.append(failure)
+                failure_residual.extend(left)
+        process_tree.log_residual(
+            [result.describe_residual(process) for process in result.residual]
+            + [f"生成の停止を確認できない: {reason}" for reason in unresolved]
+            + failure_residual,
+            context=f"claude runtime {session_id}",
+        )
+        if remaining:
+            self._reclaim_failures[session_id] = remaining
+        else:
+            self._reclaim_failures.pop(session_id, None)
+        reasons = [*unresolved]
+        reasons.extend(reason for failure in remaining for reason in failure.unresolved if reason not in reasons)
+        if reasons:
+            if unresolved:
+                self._unresolved_runtime[session_id] = unresolved
+            # 未確認の間は、残存一覧に無い子孫も次の再試行で辿れるよう所有対象全体を保持する。
+            self._residual_processes[session_id] = result.targets
+            raise session_errors.DelegateBackendError(
+                f"Claude CLIの所有資源について生成の停止を確認できない: {reasons}。"
+                "起点から辿れない子孫が残り得るため、停止の再試行では解消しない。"
+                "この会話が起動した不要なプロセスを探して終了させた後、agents_serverを再起動すると再開できる。"
+            )
+        if result.residual or remaining:
+            self._residual_processes[session_id] = result.residual
             raise session_errors.DelegateBackendError(
                 "Claude CLIの所有資源を終了できなかった。所有状態を確認して停止を再試行する。"
             )
         self._residual_processes.pop(session_id, None)
+
+    def _adopt_unreclaimed(self, runtime_key: str, reloader: ClaudePluginReloader) -> None:
+        """入力準備が回収できなかった停止結果を、接続の所有資源として引き取る。"""
+        if reloader.unreclaimed:
+            held = self._reclaim_failures.setdefault(runtime_key, [])
+            held.extend(failure for failure in reloader.unreclaimed if failure not in held)
+            # 回収待ちの判定は`_residual_processes`のキーで行うため、所有対象が無くてもキーを置く。
+            self._residual_processes.setdefault(runtime_key, [])
 
     async def release_session(self, session: SessionState) -> None:
         """sessionを所有するタスクを終了し、SDKクライアントの接続を閉じる。"""
@@ -1503,7 +1550,15 @@ class ClaudeServerManager:
                                     )
                                     if descendants:
                                         self._residual_processes[runtime_key] = descendants
+                                    # 導入一覧の取得で回収できなかった子孫もCLIの子孫と同じ所有対象として保持する。
+                                    self._adopt_unreclaimed(runtime_key, reloader)
                                     await self._reclaim_runtime(runtime_key, pins=pins)
+                elif reloader.unreclaimed:
+                    # 接続前の入力準備で回収できなかった子孫は、クライアントが無く接続の後始末を実行しないため、
+                    # ここで所有対象へ移す。
+                    runtime_key = session.session_id if session is not None else f"initialization:{diagnostic.debug_file}"
+                    self._adopt_unreclaimed(runtime_key, reloader)
+                    await self._reclaim_runtime(runtime_key, pins=pins)
 
             async def cleanup() -> None:
                 async def close_plugin_input() -> None:
@@ -1793,8 +1848,15 @@ class ClaudeServerManager:
         disconnects = tuple(self._disconnects)
         if disconnects:
             await lifetime.wait_for_shutdown(disconnects, timeout=_DISCONNECT_TIMEOUT)
+        # 生成停止の未確認は再試行で解消しないため、1件の回収不能で他の会話の回収と登録の確定を止めず、最後に伝える。
+        failures: list[session_errors.DelegateBackendError] = []
         for session_id in tuple(self._residual_processes):
-            await self._reclaim_runtime(session_id)
+            try:
+                await self._reclaim_runtime(session_id)
+            except session_errors.DelegateBackendError as error:
+                failures.append(error)
         for session in tuple(self.sessions.values()):
             if session.engine == "claude":
                 await session.drain_registration()
+        if failures:
+            raise failures[0]

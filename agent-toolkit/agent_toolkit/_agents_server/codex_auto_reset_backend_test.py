@@ -42,6 +42,8 @@ class _MemoryAppServer(codex.JsonRpcProcess):
         self.account_release: asyncio.Event | None = None
         self.request_error = False
         self.refresh_failures = 0
+        self.primary_usage: Any = 10
+        self.other_buckets: dict[str, Any] = {}
 
     async def start(self) -> None:
         self.process = cast(Process, SimpleNamespace(stdin=object(), stdout=self.stream, pid=None))
@@ -71,14 +73,17 @@ class _MemoryAppServer(codex.JsonRpcProcess):
             if self.weekly_usage == 0 and self.refresh_failures:
                 self.refresh_failures -= 1
                 raise codex.AppServerError("reset後の利用枠取得失敗")
+            bucket = {
+                "limitId": "codex",
+                "primary": {"usedPercent": self.primary_usage, "windowDurationMins": 300, "resetsAt": 1900000000},
+                "secondary": {"usedPercent": self.weekly_usage, "windowDurationMins": 10080, "resetsAt": 1900000000},
+            }
             result = {
-                "rateLimits": {
-                    "limitId": "codex",
-                    "primary": {"usedPercent": 10, "windowDurationMins": 300, "resetsAt": 1900000000},
-                    "secondary": {"usedPercent": self.weekly_usage, "windowDurationMins": 10080, "resetsAt": 1900000000},
-                },
+                "rateLimits": bucket,
                 "rateLimitResetCredits": {"availableCount": self.available, "credits": None},
             }
+            if self.other_buckets:
+                result["rateLimitsByLimitId"] = {"codex": bucket, **self.other_buckets}
         elif method == "account/rateLimitResetCredit/consume":
             self.consume_started.set()
             if self.consume_release is not None:
@@ -197,6 +202,34 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
         await backend.release_session(session)
         assert not backend._auto_reset_monitors and not backend._auto_reset_checks
         assert client.closed
+
+
+@pytest.mark.parametrize("primary_usage", [10, "unknown"])
+@pytest.mark.asyncio
+async def test_unused_bucket_format_does_not_block_reset_and_unverified_window_blocks_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, primary_usage: Any
+) -> None:
+    """未利用bucketの形式差は消費を止めず、使用率を確認できないwindowだけからは会話を再開しない。"""
+    async with _environment(tmp_path, monkeypatch) as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        client = clients[0]
+        client.primary_usage = primary_usage
+        client.other_buckets = {
+            "other": {"limitId": "other", "secondary": {"usedPercent": "n/a", "windowDurationMins": "week", "resetsAt": None}}
+        }
+        _fail(client, session, tmp_path)
+        await _until(
+            backend, lambda: not session.codex_auto_reset_pending and (session.result_available or session.awaiting_auto_resume)
+        )
+        assert [method for method, _ in client.requests].count("account/rateLimitResetCredit/consume") == 1
+        assert client.reader_failure is None
+        await owner._advance_child_session_wait(session)
+        if primary_usage == 10:
+            assert client.turn_count == 2
+        else:
+            assert client.turn_count == 1
+            assert session.result_available
+            assert session.error["codexErrorInfo"] == "usageLimitExceeded"
 
 
 @pytest.mark.parametrize(

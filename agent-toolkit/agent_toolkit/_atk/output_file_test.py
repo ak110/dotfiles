@@ -259,6 +259,51 @@ def test_evidence_saved_matches_list_positions_and_heads(
     assert [event["text"] for event in matches] == [command + ("\n末尾" if mode == "--tool-calls" else "")] * 6
 
 
+@pytest.mark.parametrize("mode", ["--grep", "--tool-calls"])
+def test_evidence_saved_many_matches_show_bounded_summary(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
+) -> None:
+    """多数の一致を保存した後は件数の内訳と先頭20件だけを返し、全一致を保存ファイルへ残す。"""
+    monkeypatch.setenv("AI_AGENT", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    trace = tmp_path / "trace.jsonl"
+    entries = [
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": f"call-{index}",
+                        "name": "Bash",
+                        "input": {"command": f"echo 検索語{index} " + "長" * 300},
+                    }
+                ],
+            },
+        }
+        for index in range(500)
+    ]
+    trace.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
+    query = [mode, "検索語"] if mode == "--grep" else [mode]
+    code, output, error = run_atk(["run-script", "session-review-evidence", "--", str(trace), *query], capsys)
+    assert code == 0, error
+    assert len(output.encode("utf-8")) <= output_file.AUTO_SAVE_THRESHOLD_BYTES
+    lines = output.splitlines()
+    saved = pathlib.Path(lines[0].removeprefix("保存先: "))
+    kind = "match" if mode == "--grep" else "tool-call"
+    events = [json.loads(line) for line in saved.read_text(encoding="utf-8").splitlines()]
+    matches = [event for event in events if event["kind"] == kind]
+    assert len(matches) == 500
+    assert lines[2] == "一致: 全500件（保存順の先頭20件を表示）"
+    assert lines[3].startswith("内訳: kind=" + kind)
+    assert lines[4].startswith("記録別: ")
+    listed = [line for line in lines if line.startswith("一致: record=")]
+    assert len(listed) == 20
+    assert listed[0].startswith(f"一致: record={matches[0]['record']} line={matches[0]['line']} kind={kind}")
+    assert lines[-1].startswith("残り480件は保存先のJSONL（1行1イベント）にある。") and str(saved) in lines[-1]
+
+
 @pytest.mark.parametrize(
     ("query", "expected"),
     [

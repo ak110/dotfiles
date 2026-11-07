@@ -1,6 +1,6 @@
 # Svelte／SvelteKit記述スタイル
 
-対象バージョン: Svelte 5系・SvelteKit 2系（参考実利用バージョン: Svelte 5.56・SvelteKit 2.65）。本書は、公式ドキュメント（<https://svelte.dev/docs>）のうち、runesモードにおいて判断を誤りやすい重要事項を抜粋してまとめたものである。
+対象バージョン: Svelte 5系・SvelteKit 2〜3系。本書は、公式ドキュメント（<https://svelte.dev/docs>）のうち、runesモードにおいて判断を誤りやすい重要事項を抜粋してまとめたものである。
 
 ## runesの使い分け
 
@@ -19,7 +19,7 @@
 
 - データベースアクセスやファイル操作などの処理は、server load（`+page.server.ts`や`+layout.server.ts`）に配置する。universal load（`+page.ts`や`+layout.ts`）はブラウザ環境でも実行されるため、外部に公開可能な情報のみを扱う。
 - 同一ルートにserver loadとuniversal loadの両方が存在する場合、server loadの戻り値がuniversal loadの引数`data`として渡される。
-- フォームの送信やデータの変更処理には、form actions（`+page.server.ts`の`actions`）を優先して使用する（プログレッシブエンハンスメントやCSRF対策に標準で対応しているため）。
+- フォームの送信やデータの変更処理には、プログレッシブエンハンスメントに対応するform actions（`+page.server.ts`の`actions`）を優先して使用する。CSRF対策は組み込みのOrigin検査が有効な場合に働き、`kit.csrf.trustedOrigins`へ`"*"`を含める（SvelteKit 3。2系では`csrf.checkOrigin: false`）と全面的に無効になる。無効にする場合は代わりの防御を置く。プロキシ経由のOrigin不一致は、アダプターの`ORIGIN`設定や`Sec-Fetch-Site`による判定で解決する。
 - APIキーなどの機密情報は、サーバー専用モジュール（`+page.server.ts`、`+layout.server.ts`、`+server.ts`、サーバーフック、および`$lib/server`配下）でのみ取り扱う。
 
 ## SSR前提の実装

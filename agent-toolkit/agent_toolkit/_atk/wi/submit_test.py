@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
+import types
 from typing import Any
 
 import filelock
@@ -841,3 +842,30 @@ def test_incomplete_submission_waits_for_confirmation_answer(notes, monkeypatch,
     assert code == 1
     assert "未回答" in error
     assert submit.show("request-1")["run"]["result"]["results"][0]["files"] == [filename]
+
+
+@pytest.mark.usefixtures("notes")
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_worker_launch_uses_hidden_console_on_windows(monkeypatch, platform: str) -> None:
+    """独立workerのWindows起動は非表示コンソールを使い、子孫に可視ウィンドウを作らせない。"""
+    observed: list[dict[str, Any]] = []
+
+    def capture(argv: list[str], **kwargs: Any) -> object:
+        del argv
+        observed.append(kwargs)
+        return object()
+
+    monkeypatch.setattr(submit, "sys", types.SimpleNamespace(platform=platform))
+    monkeypatch.setattr(submit.plugin_environment, "prepared_python", lambda *_args, **_kwargs: pathlib.Path(sys.executable))
+    monkeypatch.setattr(submit.subprocess, "Popen", capture)
+    submit._launch_worker("target")  # pylint: disable=protected-access
+    flags = observed[0]["creationflags"]
+    if platform == "win32":
+        # Win32のDETACHED_PROCESS=0x8、CREATE_NO_WINDOW=0x08000000、CREATE_NEW_PROCESS_GROUP=0x200。
+        assert flags & 0x00000008 == 0
+        assert flags & 0x08000000
+        assert flags & 0x00000200
+        assert observed[0]["start_new_session"] is False
+    else:
+        assert flags == 0
+        assert observed[0]["start_new_session"] is True

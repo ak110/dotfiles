@@ -55,3 +55,4 @@ agent-toolkitはこれらの運用を提供し、品質判断でagent-basicsを�
 ## ライセンス
 
 [MIT License](LICENSE)。
+取り込んだ第三者素材の許諾条件と改変表示は[第三者表示](THIRD-PARTY-NOTICES.md)を参照。

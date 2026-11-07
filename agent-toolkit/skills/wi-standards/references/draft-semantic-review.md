@@ -13,6 +13,7 @@
 | add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
 | 資料起点の採否を検収する前 | `../../add-awi-by-user/SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/add-awi-by-user/SKILL.md#冒頭` |
 | 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
+| 規範・手順による既存充足を検収する前 | `agent-basics:writing-standards/references/agent-documents-basics.md`の「既存規範による被覆の判定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「既存規範による被覆の判定」` |
 | 再発の経過を問う要求を検収する前 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 複数バグの現象・期待する契約・原因の対応を検収する前 | `analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats.md`の「報告用UWIの確認と保存」 | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「報告用UWIの確認と保存」` |
@@ -36,6 +37,7 @@
 
 検収の開始には、`atk wi add --dry-run`または`atk wi edit --dry-run`が検証済み原稿ごとに返すユーザー向け部分の保存ファイルを使う。AWIはH1タイトル行から最初のフェンス外H2直前まで、UWIは問い・理由・推奨する回答を含む冒頭から同じ境界までが、末尾空行も含め原文のまま抽出される。作成主体から渡された抽出結果を再利用し、要求識別子、入力原稿、抽出保存先、比較資料の対応を保つ。原稿全体の検収時に現行本文と抽出の一致を確認し、原稿が変わった場合はdry-runを再実行して新しい抽出へ更新する。検証・抽出保存に失敗した結果は使わず、原稿を修正して再実行する。
 現行原稿と受領済み抽出の一致は、新規・編集それぞれのdry-runへ`--compare-opening-file <受領済み抽出の絶対パス>`を指定して確認する。複数原稿では`--body-file`と同じ順に比較ファイルを反復指定する。改行・前後空白・末尾空行を含む完全一致だけを受理する。失敗時は原稿と抽出の対応を確かめ、変更した原稿を再検証して抽出を更新する。
+検収済みの原稿をそのまま保存する場合は、本保存（`--dry-run`なしの`atk wi add`、本文を置き換える`atk wi edit --body-file`）へ同じ`--compare-opening-file`を付けてよい。CLIは保存の前に同じ基準で比較し、不一致・読取不能・件数違いでは保存しない。比較の指定を全ての保存へ求めるものではなく、検収済み原稿との一致を保存時にも確かめる場合に使う。
 付随型の委譲元と専念型の投入前レビュー担当は、原稿全体を通読する前に、まず抽出部分のみを用いてwi-standards冒頭の合格基準を判定する。直接起草するメインエージェントの自己判定においても同一の基準を用いる。AWIについては`awi-body.md`「節の構成と分担」に定めるH1直下の内容を判定し、UWIについては`uwi-format.md`「構成」の内容を判定する。
 
 読者別探索担当を起動するのは、同一の要求または同一の項目に関して、ユーザーが読む部分の分かりにくさをユーザー自身が指摘・是正している場合（逐語引用本文、UWIの`## 回答`、AWIの`## ユーザーコメント`など）、または検収者が基準に照らして合否を自力で判定できない名詞句を挙げた場合に限定する。
@@ -61,7 +63,7 @@ add-awi-by-userまたはgrillingによるWI作成では、原文・原稿・調�
 完成条件の網羅性・観測可能性を確認する前に、`drafting-completion.md`「投入前の読み直し」の必要性判定を適用し、起草者が加えた条件も独立して判定する。
 原因と被覆の判定では、同節に従い、探索範囲の各限定を根本原因の成立条件から導けるか確認する。
 資料起点の採用案は、`agent-toolkit:add-awi-by-user`冒頭の資料比較に従い、資料の具体的な手法と対象の利用結果を結ぶ根拠を確かめる。
-規定の存在や対象外のテスト例だけで既存充足や必要性を確定していないかも比較する。
+規定の存在や対象外のテスト例だけで既存充足や必要性を確定していないかも比較する。規範・手順による既存充足は、`agent-basics:writing-standards/references/agent-documents-basics.md`「既存規範による被覆の判定」の読込経路で確かめたかを確認する。
 元の問いの分析単位を原文から独立に確定し、原因候補を選んだ前提と対応するか判定する。
 起草者が選んだ個別事象だけで検収範囲を決めず、再発の経過を問う要求には`agent-basics:bugfix/references/root-cause-scenarios.md`「反復した指摘の原因判定」を適用する。
 複数バグでは、`analysis-records.md`「原因分析の記録先」に従い、各バグの現象・期待する契約・原因の対応が一意かを確認する。

@@ -12,7 +12,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pytools._internal import post_apply_outcome, prune_codex_packages, setup_codex_cli
+from pytools._internal import codex_runtime, post_apply_outcome, prune_codex_packages, setup_codex_cli
 from pytools._internal._test_helpers import FakeEnvironmentRegistry
 from pytools.prune_codex_packages_test import _release
 
@@ -27,6 +27,7 @@ def _isolate(monkeypatch, tmp_path: Path, platform: str) -> None:
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     # 配置の模擬OSだけを差し替え、実際の排他APIにはホストOSを使う。
     monkeypatch.setattr(setup_codex_cli, "sys", types.SimpleNamespace(platform=platform))
+    monkeypatch.setattr(codex_runtime, "sys", types.SimpleNamespace(platform=platform))
     monkeypatch.setenv("PATH", str(tmp_path / "path"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "localappdata"))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -239,7 +240,10 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
             "@openai/codex",
             launcher,
             tmp_path / ".codex" / "packages" / "standalone",
-            {"extra_search_directories": ()},
+            {
+                "extra_search_directories": (),
+                "excluded_launchers": {tmp_path / "dotfiles" / "bin" / "codex", tmp_path / "dotfiles" / "bin" / "codex.cmd"},
+            },
         )
     ]
 
@@ -454,7 +458,10 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
             "@openai/codex",
             launcher,
             codex_home / "packages" / "standalone",
-            {"extra_search_directories": ()},
+            {
+                "extra_search_directories": (),
+                "excluded_launchers": {tmp_path / "dotfiles" / "bin" / "codex", tmp_path / "dotfiles" / "bin" / "codex.cmd"},
+            },
         )
     ]
 
@@ -893,8 +900,8 @@ def test_public_install_keeps_native_package_and_selects_recovery_launcher(
         # Windowsのreadlinkは同じ参照先へ\\?\接頭辞を付けるため、ファイルの同一性を検証する。
         assert (visible / ".dotfiles-codex-native").readlink().samefile(native)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-runtime-home"))
-    assert setup_codex_cli.find_standalone_launcher() is None
-    runtime = setup_codex_cli.find_runtime_launcher(windows=windows)
+    assert codex_runtime.find_standalone_launcher() is None
+    runtime = codex_runtime.find_runtime_launcher(windows=windows)
     assert runtime is not None and runtime.samefile(native)
     assert os.environ["CODEX_HOME"] == str(tmp_path / "empty-runtime-home")
     if windows:
@@ -915,7 +922,7 @@ def test_native_reference_is_replaced_and_tracks_current(monkeypatch: pytest.Mon
         native = current / "bin/codex"
         setup_codex_cli.install_recovery_launcher(native, windows=False)
         assert reference.readlink().samefile(native)
-        runtime = setup_codex_cli.find_runtime_launcher(windows=False)
+        runtime = codex_runtime.find_runtime_launcher(windows=False)
         assert runtime is not None
         assert runtime == reference
         assert runtime.samefile(native)
@@ -958,6 +965,6 @@ def test_runtime_uses_path_native_and_excludes_wrapper(monkeypatch: pytest.Monke
     native.parent.mkdir()
     native.write_bytes(b"native")
     monkeypatch.setenv("PATH", (";" if windows else os.pathsep).join(map(str, (root / "bin", alias, native.parent))))
-    assert setup_codex_cli.find_runtime_launcher(windows=windows) == native
+    assert codex_runtime.find_runtime_launcher(windows=windows) == native
     native.unlink()
-    assert setup_codex_cli.find_runtime_launcher(windows=windows) is None
+    assert codex_runtime.find_runtime_launcher(windows=windows) is None

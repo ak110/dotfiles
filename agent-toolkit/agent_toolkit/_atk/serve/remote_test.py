@@ -162,3 +162,27 @@ async def test_run_ssh_terminates_child_on_timeout(tmp_path: pathlib.Path, monke
 
     assert pids
     assert not _process_exists(pids[0])
+
+
+@pytest.mark.asyncio
+async def test_stop_resident_helper_reports_unconfirmed_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """最終killの後も終了を確認できなければ偽を返し、呼び出し側が再接続を止められるようにする。"""
+
+    class Stuck:
+        returncode = None
+        stdin = None
+        pid = 4321
+
+        def terminate(self) -> None:
+            pass
+
+        def kill(self) -> None:
+            pass
+
+    async def never(_proc: object, _timeout: float) -> bool:
+        return False
+
+    monkeypatch.setattr(serve_remote, "_wait_with_timeout", never)
+    stuck = typing.cast("asyncio.subprocess.Process", Stuck())
+    assert await serve_remote.stop_resident_helper(stuck, None, grace_timeout=0) is False
+    assert await serve_remote.stop_resident_helper(None, None) is True

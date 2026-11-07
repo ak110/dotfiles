@@ -2,7 +2,11 @@
 
 本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
 rebaseは変更内容の一意な対応を検収する。統合先に既にある同一変更はその既存commitへ対応付け、
-明示した競合解消commitは件名・相対順・変更パスで対応付ける。
+明示した競合解消commitは件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことで対応付ける。
+同一変更が系列内で繰り返す場合（導入・復元・再導入など）は内容で対応先を決められないため、
+旧新が同数のときに限り位置で対応付ける。rebaseは相対順を保つため、同数の系列で相対順を保つ全単射は
+位置対応だけである。件数が異なる（統合先で一部が省略された）場合は、どの重複が省略されたかを決められず拒否する。
+`git range-diff`の表示は差分の類似度による割当であり、同一内容の組の入替えを区別しないため、完全OID対応の根拠にしない。
 autosquashはtree・件数・制御件名・fixup対象以外の変更内容の不変を検収する。
 amendは内容の変更を前提とし、旧新が同じbaseの直上の異なる1commitどうしであることだけを検収する。
 """
@@ -195,17 +199,81 @@ def _upstream_mapping(
     return mapping
 
 
-def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], conflicts: set[str]) -> dict[str, str]:
+def _changed_paths(work_dir: pathlib.Path, oid: str) -> set[str]:
+    listed = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", oid)
+    return {path for path in listed.split("\0") if path}
+
+
+def _check_pair(
+    work_dir: pathlib.Path,
+    oid: str,
+    target: str,
+    conflicts: set[str],
+    added_paths: dict[tuple[str, str], list[str]],
+    removed_paths: dict[tuple[str, str], list[str]],
+) -> None:
+    """旧commitと対応先の1組を検収する。
+
+    競合解消の組で増えた変更パスは`added_paths`へ、統合先に無いため外れた旧パスは`removed_paths`へ記録する。
+    """
+    if oid not in conflicts:
+        if not _same_content(work_dir, oid, target):
+            raise ValueError(f"変更内容が対応しない旧commit: {oid} -> {target}。変更内容の全1対1対応ではありません")
+        return
+    if _same_content(work_dir, oid, target):
+        raise ValueError(f"--resolved-conflictに指定した旧commitの内容が変わっていません: {oid}")
+    paths, target_paths = _changed_paths(work_dir, oid), _changed_paths(work_dir, target)
+    # 統合先で新しく入ったファイルへの追随は旧commitに無いパスを増やし、統合先の改名・削除への追随は旧パスを外す。
+    # 外れてよい旧パスは、旧commitの親にあった既存ファイルで、対応先の親（統合先側）から消えたものだけとする。
+    # 旧commitが新設したパスや統合先に残るパスを変更しない解消は、追随ではなく変更の欠落として拒否する。
+    # 増えたパスと外れた旧パスは検収の入力として成功出力へ示す。
+    missing = sorted(
+        path
+        for path in paths - target_paths
+        if not _exists_in_parent(work_dir, oid, path) or _exists_in_parent(work_dir, target, path)
+    )
+    if _git(work_dir, "show", "-s", "--format=%s", oid) != _git(work_dir, "show", "-s", "--format=%s", target) or missing:
+        raise ValueError(f"競合解消commitの件名または変更パスが対応しません: {oid} -> {target}")
+    if target_paths - paths:
+        added_paths[oid, target] = sorted(target_paths - paths)
+    if paths - target_paths:
+        removed_paths[oid, target] = sorted(paths - target_paths)
+
+
+def _exists_in_parent(work_dir: pathlib.Path, target: str, path: str) -> bool:
+    """`target`の親commitのtreeに`path`があるかを返す。"""
+    result = git_command.run(
+        ["--no-pager", "-C", str(work_dir), "cat-file", "-e", f"{target}^:{path}"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _rebase(
+    work_dir: pathlib.Path,
+    old: list[str],
+    new: list[str],
+    conflicts: set[str],
+    added_paths: dict[tuple[str, str], list[str]],
+    removed_paths: dict[tuple[str, str], list[str]],
+) -> dict[str, str]:
+    if len(old) != len(new) or not conflicts <= set(old):
+        raise ValueError(f"旧新の件数または--resolved-conflictの旧commitが不正です: old={old}, new={new}")
     old_ids = [_content_id(work_dir, oid) for oid in old]
     new_ids = [_content_id(work_dir, oid) for oid in new]
     if len(set(old_ids)) != len(old) or len(set(new_ids)) != len(new):
-        # 同一変更の繰り返し（導入・復元・再導入など）は、競合解消が無く旧新の変更内容の並びが
-        # 完全に一致する場合だけ、位置で一意に対応付ける。並びが変わる場合は対応を決められない。
-        if conflicts or old_ids != new_ids:
-            raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
-        return dict(zip(old, new, strict=True))
-    if len(old) != len(new) or not conflicts <= set(old):
-        raise ValueError(f"旧新の件数または--resolved-conflictの旧commitが不正です: old={old}, new={new}")
+        # 同一変更の繰り返しは内容で対応先を決められない。同数の系列では位置対応が相対順を保つ唯一の全単射のため、
+        # 各組を通常と同じ基準で検収できる場合だけ受理する。並びの崩れは組の内容不一致として拒否する。
+        mapping = dict(zip(old, new, strict=True))
+        try:
+            for oid, target in mapping.items():
+                _check_pair(work_dir, oid, target, conflicts, added_paths, removed_paths)
+        except ValueError as error:
+            raise ValueError(f"変更内容が重複し、commitの対応が一意ではありません（位置対応の検収: {error}）") from error
+        return mapping
     destinations = dict(zip(new_ids, new, strict=True))
     mapping = {}
     for oid, patch in zip(old, old_ids, strict=True):
@@ -217,18 +285,7 @@ def _rebase(work_dir: pathlib.Path, old: list[str], new: list[str], conflicts: s
     if len(remaining_old) != len(remaining_new):
         raise ValueError("変更内容の全1対1対応ではありません")
     for oid, target in zip(remaining_old, remaining_new, strict=True):
-        if oid in conflicts and _same_content(work_dir, oid, target):
-            raise ValueError(f"--resolved-conflictに指定した旧commitの内容が変わっていません: {oid}")
-        if oid not in conflicts and not _same_content(work_dir, oid, target):
-            raise ValueError(f"変更内容が対応しない旧commit: {oid} -> {target}。変更内容の全1対1対応ではありません")
-        subject = _git(work_dir, "show", "-s", "--format=%s", oid)
-        paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", oid)
-        target_paths = _git(work_dir, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", target)
-        if oid in conflicts and (
-            subject != _git(work_dir, "show", "-s", "--format=%s", target)
-            or set(paths.split("\0")) != set(target_paths.split("\0"))
-        ):
-            raise ValueError(f"競合解消commitの件名または変更パスが対応しません: {oid} -> {target}")
+        _check_pair(work_dir, oid, target, conflicts, added_paths, removed_paths)
         mapping[oid] = target
     for oid in conflicts:
         if any(
@@ -308,9 +365,11 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=None,
         metavar="OID",
-        help="rebaseの競合解消で内容が変わった旧commit。件名・相対順・変更パスを検収する。反復指定",
+        help="rebaseの競合解消で内容が変わった旧commit。件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことを検収する。反復指定",
     )
     args = parser.parse_args(argv)
+    added_paths: dict[tuple[str, str], list[str]] = {}
+    removed_paths: dict[tuple[str, str], list[str]] = {}
     try:
         if not args.work_dir.is_absolute() or not args.work_dir.is_dir() or not args.output.is_absolute():
             raise ValueError("--work-dirは実在する絶対ディレクトリ、--outputは絶対パスを指定してください")
@@ -328,7 +387,9 @@ def main(argv: list[str] | None = None) -> int:
                 for value in args.resolved_conflict or []
             }
             upstream = _upstream_mapping(args.work_dir, old, new, old_base, new_base, conflicts)
-            mapping = _rebase(args.work_dir, [oid for oid in old if oid not in upstream], new, conflicts)
+            mapping = _rebase(
+                args.work_dir, [oid for oid in old if oid not in upstream], new, conflicts, added_paths, removed_paths
+            )
             mapping.update(upstream)
         elif args.operation == "autosquash":
             mapping = _autosquash(args.work_dir, old, new)
@@ -338,7 +399,15 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, ValueError, subprocess.TimeoutExpired) as error:
         outcome.report_failure(str(error), next_action=_AMEND_ACTION if args.operation == "amend" else _ACTION)
         return 1
-    outcome.report_success(f"{args.operation}の履歴を検収し、{len(mapping)}件の完全OID対応を保存した: {args.output}")
+    added = "".join(
+        f"。競合解消で変更パスが増えた対応: {oid} -> {target}: {', '.join(paths)}"
+        for (oid, target), paths in added_paths.items()
+    )
+    added += "".join(
+        f"。競合解消で統合先に無い旧パスを外した対応: {oid} -> {target}: {', '.join(paths)}"
+        for (oid, target), paths in removed_paths.items()
+    )
+    outcome.report_success(f"{args.operation}の履歴を検収し、{len(mapping)}件の完全OID対応を保存した: {args.output}{added}")
     return 0
 
 

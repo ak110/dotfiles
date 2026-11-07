@@ -2075,7 +2075,10 @@ class AppServerManager:
         bucket = by_id.get("codex") if isinstance(by_id, dict) else raw.get("rateLimits") if raw is not None else None
         windows = [bucket.get(name) for name in ("primary", "secondary")] if isinstance(bucket, dict) else []
         windows = [window for window in windows if isinstance(window, dict)]
-        if windows and all(window["usedPercent"] < 100 for window in windows):
+        # 自動resetは消費判断に使う週次windowだけを検証するため、他のwindowの使用率は未検証の生値である。
+        # 使用率を確認できないwindowが1つでもあれば、空きを確認できたとせず既存の上限待機へ進む。
+        used = [codex_usage_limit.used_percent(window) for window in windows]
+        if used and all(value is not None and value < 100 for value in used):
             session.hold_result(turn_state.UsageLimitWait(pending, asyncio.get_running_loop().time()))
             session.touch()
             return
@@ -2088,7 +2091,9 @@ class AppServerManager:
             result is not None
             and result.outcome == "nothingToReset"
             and isinstance(reset_credits, dict)
-            and reset_credits.get("availableCount", 0) > 0
+            and isinstance(count := reset_credits.get("availableCount"), int)
+            and not isinstance(count, bool)
+            and count > 0
             and limit.limit_type == "seven_day"
         ):
             return

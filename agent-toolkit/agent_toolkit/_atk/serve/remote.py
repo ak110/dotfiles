@@ -11,6 +11,8 @@ import logging
 import subprocess
 import threading
 
+_LOG = logging.getLogger(__name__)
+
 # 警告本文へ引き継ぐリモートヘルパーの標準エラー出力の最大文字数。
 # 原因の判別に足りる長さを残しつつ、画面の警告欄と記録を占有させない。
 STDERR_EXCERPT_MAX_CHARS = 500
@@ -176,12 +178,25 @@ async def run_remote_helper(
     return await run_helper(["ssh", *ssh_options, host, *remote_command_argv(bootstrap, op, args)], timeout=timeout)
 
 
-async def wait_rpc_response[T](future: asyncio.Future[T], *, op: str, timeout: float) -> T:
-    """常駐接続へ送ったRPC要求の応答を上限まで待つ。
+async def send_rpc_request[T](
+    proc: asyncio.subprocess.Process,
+    send_lock: asyncio.Lock,
+    line: str,
+    future: asyncio.Future[T],
+    *,
+    op: str,
+    timeout: float,
+) -> T:
+    """常駐接続へRPC要求の1行を送り、応答を上限まで待つ。
 
+    並行する要求の書込が別の要求の行の途中へ割り込まないよう、書込と`drain`は`send_lock`の内側で行う。
     上限を超えた場合は、操作名と上限秒数を含む`TimeoutError`を送出する。
     `asyncio.wait_for`が送出する`TimeoutError`は文字列を持たず、それを書く警告が理由を欠くためである。
     """
+    assert proc.stdin is not None
+    async with send_lock:
+        proc.stdin.write(line.encode("utf-8"))
+        await proc.stdin.drain()
     try:
         return await asyncio.wait_for(future, timeout=timeout)
     except TimeoutError:
@@ -251,32 +266,62 @@ async def stop_resident_helper(
     stderr_task: asyncio.Task[None] | None,
     *,
     grace_timeout: float = TERMINATE_GRACE_TIMEOUT_SEC,
-) -> None:
-    """常駐接続の標準エラー出力の転写タスクを終え、子プロセスを段階的に終了させる。
+) -> bool:
+    """常駐接続の標準エラー出力の転写タスクを終え、子プロセスを段階的に終了させ、終了を確認できたかを返す。
 
     常駐ヘルパーは標準入力のEOFを受け取ると停止するため、まず標準入力を閉じて穏当な終了を試み、
     応答がなければ`terminate`、それでも応答がなければ`kill`で終了させる。
     切断とキャンセルの後始末で呼ぶため、待機中のキャンセルは吸収して段階的な終了を完了させる。
     吸収した後に再接続の反復へ戻る呼び出し側は、`raise_if_cancelling`でキャンセル要求を確かめる。
+    偽を返した場合、呼び出し側は新しい接続を起動せず、同じプロセスの停止を再試行する（`stop_resident_helper_until_confirmed`）。
+    停止を確認できないまま再接続すると、残ったヘルパーと新しいヘルパーが同じ遠隔資源を使い、旧プロセスの参照も失う。
     """
     if stderr_task is not None:
         stderr_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await stderr_task
     if proc is None or proc.returncode is not None:
-        return
+        return True
     if proc.stdin is not None and not proc.stdin.is_closing():
         with contextlib.suppress(BrokenPipeError, ConnectionResetError, OSError):
             proc.stdin.close()
     if await _wait_with_timeout(proc, grace_timeout):
-        return
+        return True
     with contextlib.suppress(ProcessLookupError):
         proc.terminate()
     if await _wait_with_timeout(proc, grace_timeout):
-        return
+        return True
     with contextlib.suppress(ProcessLookupError):
         proc.kill()
-    await _wait_with_timeout(proc, grace_timeout)
+    if await _wait_with_timeout(proc, grace_timeout):
+        return True
+    _LOG.warning(
+        "常駐ヘルパーの終了を確認できないため再接続を止める pid=%s。次の再接続の前に同じプロセスの停止を再試行する。"
+        "残り続ける場合はPIDのプロセスを確認して終了させる",
+        proc.pid,
+    )
+    return False
+
+
+async def stop_resident_helper_until_confirmed(
+    proc: asyncio.subprocess.Process | None,
+    stderr_task: asyncio.Task[None] | None,
+    *,
+    backoff: float,
+) -> None:
+    """常駐ヘルパーの終了を確認するまで、`backoff`秒ごとに同じプロセスの停止を再試行する。
+
+    再接続の反復は本関数が戻るまで新しい接続を起動しない。停止を確認できないまま再接続すると、
+    残ったヘルパーと新しいヘルパーが同じ遠隔資源を使うためである。
+    再試行の待機前にキャンセル要求を確かめ、要求があれば送出してタスクを終える。
+    """
+    if await stop_resident_helper(proc, stderr_task):
+        return
+    while True:
+        raise_if_cancelling()
+        await asyncio.sleep(backoff)
+        if await stop_resident_helper(proc, None):
+            return
 
 
 async def _wait_with_timeout(proc: asyncio.subprocess.Process, timeout: float) -> bool:

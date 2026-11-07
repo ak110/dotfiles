@@ -177,10 +177,23 @@ def _ttl_wait_timeout(request_bucket: str) -> float:
     return timeout
 
 
+BACKGROUND_TASKS_DISABLED_ENV = "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"
+"""Claude CodeのBash背景実行を無効にする環境変数。`atk run-skill`がClaudeの子環境へ`1`を渡す。"""
+
+
+def background_tasks_disabled() -> bool:
+    """Bashの背景実行を無効にする設定が有効かを返す。Claude Codeで動いているかの判定は呼出側が行う。
+
+    CLIの待機期限、出力接続の警告、SessionStartの待機案内は同じ条件で切り替える。
+    条件を別々に書くと、期限だけが前景向けに縮み案内が背景待機を示すような組合せが生じるためである。
+    """
+    return os.environ.get(BACKGROUND_TASKS_DISABLED_ENV) == "1"
+
+
 def get_cli_wait_timeout(request_bucket: str) -> float:
     """CLIの結果待機を、実行可能な背景・前景の上限へ収める。"""
     timeout = _ttl_wait_timeout(request_bucket)
-    if "CLAUDECODE" in os.environ and os.environ.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS") == "1":
+    if "CLAUDECODE" in os.environ and background_tasks_disabled():
         timeout = min(timeout, _WAIT_TIMEOUT_FOR_FOREGROUND)
     return timeout
 

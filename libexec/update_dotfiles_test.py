@@ -17,6 +17,7 @@ import signal
 import subprocess
 import sys
 import time
+import types
 from collections.abc import Callable
 from typing import Any, Self, cast
 
@@ -47,6 +48,29 @@ def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pa
             step_no, total, timeout=timeout
         ),
     )
+
+
+_REAL_PROCESS_ITER = psutil.process_iter
+
+
+def _own_process_iter(*args: Any, **kwargs: Any) -> Any:
+    """試験プロセスの子孫だけを走査結果に残す。"""
+    try:
+        own = {child.pid for child in psutil.Process().children(recursive=True)}
+    except psutil.Error:
+        own = set()
+    return (process for process in _REAL_PROCESS_ITER(*args, **kwargs) if process.pid in own)
+
+
+@pytest.fixture(autouse=True)
+def _own_git_process_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """進行中Git操作の走査を、試験自身が起動したプロセスへ限定する。
+
+    OSのプロセス表は試験間・実行環境と共有され、無関係なgitプロセスや照会を拒否するプロセスで
+    実ガードが更新を見送ると、回復処理を検証する試験の合否が環境で変わる。
+    照合と走査例外の扱い自体は製品の判定を通し、専用試験が走査結果を個別に差し替えて確かめる。
+    """
+    monkeypatch.setattr(update_dotfiles.psutil, "process_iter", _own_process_iter)
 
 
 @pytest.fixture(autouse=True)
@@ -444,11 +468,12 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     parent = Process(process.pid, descendants)
     monkeypatch.setattr(psutil, "Process", lambda pid: parent if pid == process.pid else pytest.fail(str(pid)))
     waited: list[tuple[list[int], int]] = []
-    monkeypatch.setattr(
-        psutil,
-        "wait_procs",
-        lambda processes, timeout: waited.append(([item.pid for item in processes], timeout)),
-    )
+
+    def wait_procs(processes: list[Process], timeout: int) -> tuple[list[Process], list[Process]]:
+        waited.append(([item.pid for item in processes], timeout))
+        return processes, []
+
+    monkeypatch.setattr(psutil, "wait_procs", wait_procs)
 
     assert update_dotfiles._run_git_pull(1, 4, timeout=7) == 1  # pylint: disable=protected-access
 
@@ -463,6 +488,31 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     assert "7秒" in captured.err
     assert "UPDATE_DOTFILES_GIT_TIMEOUT_SEC" in captured.err
     assert "子孫プロセスを終了" in captured.err
+
+
+@pytest.mark.parametrize("target", ["dotfiles", "plugin"])
+def test_unreclaimed_git_child_stops_update_before_chezmoi(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], target: str
+) -> None:
+    """時間上限のGit子プロセスを回収できなければ、任意プラグイン更新でも続行せずchezmoiを起動しない。"""
+    calls: list[list[str]] = []
+    process = _TimeoutPopen(["chezmoi", "git"], calls, output_text="", error_text="", communicate_timeouts=[])
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
+    if target == "plugin":
+        (tmp_path / "plugins" / "extra" / ".git").mkdir(parents=True)
+        monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+    survivor = types.SimpleNamespace(pid=4242, kill=lambda: None, children=lambda *, recursive: [])
+    monkeypatch.setattr(psutil, "Process", lambda pid: survivor)
+    monkeypatch.setattr(psutil, "wait_procs", lambda processes, timeout: ([], [survivor]))
+
+    assert update_dotfiles.main() == 1
+
+    # 偽のPopenは起動したGit段を`chezmoi git`として記録する。chezmoiの再展開・適用の段は起動しない。
+    assert not [call for call in calls if call[:2] != ["chezmoi", "git"]]
+    assert "回収できないため更新を中止" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("platform_name", ["posix", "nt"])
@@ -1703,6 +1753,53 @@ class TestGitConflictRecovery:
         assert _git(local, "rev-parse", "HEAD") == _git(local, "rev-parse", "@{upstream}")
         assert {"tracked.txt", "staged.txt", untracked_name} <= set(saved_paths)
         _assert_saved_changes_survive_gc(local, tmp_path, untracked_name=untracked_name)
+
+    def test_foreign_unreadable_git_process_does_not_block_recovery(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """試験外の照会不能なgitプロセスがあっても、回復処理へ到達して退避と上流追従を終える。"""
+        foreign = _UnreadableGitProcess(pid=-1)
+        original = _REAL_PROCESS_ITER
+        monkeypatch.setattr(
+            sys.modules[__name__], "_REAL_PROCESS_ITER", lambda *args, **kwargs: iter([foreign, *original(*args, **kwargs)])
+        )
+        self.test_dirty_restore_conflict_keeps_recoverable_ref_and_clean_upstream(monkeypatch, tmp_path, "日本語 space.txt")
+
+
+class _UnreadableGitProcess:
+    """環境変数とcwdの照会を拒否するgitプロセスの走査結果。"""
+
+    info = {"name": "git", "cmdline": ["git", "status"]}
+
+    def __init__(self, *, pid: int) -> None:
+        self.pid = pid
+
+    def environ(self) -> dict[str, str]:
+        raise psutil.AccessDenied(self.pid)
+
+    def cwd(self) -> str:
+        raise psutil.AccessDenied(self.pid)
+
+
+def test_update_skips_when_git_process_scan_is_denied(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """対象の走査で照会を拒否されたgitプロセスがあれば、内容を変えずに更新を見送る。"""
+    local, seed, _remote = _create_git_pair(tmp_path)
+    (local / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+    (seed / "tracked.txt").write_text("upstream\n", encoding="utf-8")
+    _git(seed, "add", "tracked.txt")
+    _git(seed, "commit", "-m", "upstream")
+    _git(seed, "push")
+    head = _git(local, "rev-parse", "HEAD")
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
+    monkeypatch.setattr(update_dotfiles, "_run_git_pull", lambda *_args, **_kwargs: pytest.fail("pull開始"))
+    monkeypatch.setattr(
+        update_dotfiles.psutil, "process_iter", lambda *_args, **_kwargs: iter([_UnreadableGitProcess(pid=os.getpid())])
+    )
+
+    assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 5, timeout=30) == 1
+    assert _git(local, "rev-parse", "HEAD") == head
+    assert (local / "tracked.txt").read_text(encoding="utf-8") == "dirty\n"
+    assert not _git(local, "for-each-ref", "--format=%(refname)", "refs/worktree")
 
 
 def _assert_saved_changes_survive_gc(

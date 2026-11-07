@@ -12,6 +12,7 @@ import pathlib
 import re
 import shlex
 import subprocess
+import threading
 import typing
 
 import filelock
@@ -34,7 +35,7 @@ from agent_toolkit._atk.wi import user_comment as user_comment_mutations
 from agent_toolkit._atk.wi import uwi as uwi_mutations
 from agent_toolkit._atk.wi import uwi_scan as wi_uwi_scan
 from agent_toolkit._atk.wi import web_input as wi_web_input
-from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._common.markdown_headings import normalize_newlines, top_level_atx_headings
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
@@ -518,7 +519,7 @@ class Operations:
         if state not in _ENTRY_STATES:
             raise WebApiInputError("stateが不正です")
         normalized = wi_web_input.validate_filename(filename, self.private_notes).name
-        path = next((candidate for candidate in iter_entry_paths(self.private_notes) if candidate.name == normalized), None)
+        path = self._entry_file(normalized)
         if path is None:
             raise FileNotFoundError(filename)
         try:
@@ -565,6 +566,22 @@ class Operations:
             }
         except FileNotFoundError as error:
             raise FileNotFoundError(filename) from error
+
+    def _entry_file(self, filename: str) -> pathlib.Path | None:
+        """WIファイル名から保存先を返す。存在しなければ`None`を返す。"""
+        dated = unique_dated_entry_path(self.private_notes, filename)
+        if dated is not None:
+            return dated
+        return next((candidate for candidate in iter_entry_paths(self.private_notes) if candidate.name == filename), None)
+
+    def track_index_changes(self) -> collections.abc.Callable[[], None]:
+        """一覧の索引を変更通知で無効化する方式へ切り替え、通知先として呼ぶ関数を返す。"""
+        self._entry_index.enable_change_tracking()
+        return self._entry_index.mark_changed
+
+    def warm_index(self, stop: threading.Event | None = None) -> None:
+        """一覧の索引へ全状態の解析結果を読み込む。起動直後の最初の一覧が全件の解析を待たないようにする。"""
+        self._entry_index.scan(wi_constants.WI_STATES, stop=stop)
 
     def sync(self) -> bool:
         """未送信commitをpushし、リポジトリを明示的に同期する。

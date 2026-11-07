@@ -20,7 +20,7 @@ from typing import Any
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._plan import locations as _plan_locations
 
-ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。`session-review-evidence`の`--grep`・`--tool-calls`は長い結果を保存した場合だけ、記録位置・kind・存在するrole/tool・改行を空白にした本文の先頭160文字を1件1行で続けて書く（短縮時は`…`、該当なしは`一致: 0件`）。`--summary-only`と`--fixed-string`はこの一覧の対象外とする。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断も標準エラーへ書き、同じ量の判定で保存する。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
+ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。`session-review-evidence`の`--grep`・`--tool-calls`は長い結果を保存した場合だけ、記録位置・kind・存在するrole/tool・改行を空白にした本文の先頭160文字を1件1行で続けて書く（短縮時は`…`、該当なしは`一致: 0件`）。一致が20件を超える場合は、全件数・kindとrole/tool別の件数・記録別の件数に続けて保存順の先頭20件だけを書き、残り件数と保存先から読む方法を示す。`--summary-only`と`--fixed-string`はこの一覧の対象外とする。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。WI本文の表記診断も標準エラーへ書き、同じ量の判定で保存する。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 ROOT_EPILOG += "\n\n保存したファイルは、ハーネスの読取（Read）か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で、示した行数を範囲に分けて読む。"
 ROOT_EPILOG += "\n全文を保存したatk wi showは、各項目のユーザー専用の記入欄（ユーザーコメント・回答）の有無と、保存先での開始行を全件示す。"
@@ -65,7 +65,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk run-script": {
         "summary": "登録済みplugin内Pythonスクリプトを実行する",
-        "description": "登録済みplugin内Pythonスクリプトを実行する。\n\n目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skillまたは規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、scriptの終了コードをそのまま返す。エージェント環境では、標準出力と標準エラーのそれぞれが`atk --help`の示す長さを超える場合に全量を保存し、標準出力は`保存先:`・`行数:`、標準エラーは`標準エラー保存先:`・`標準エラー行数:`だけを書く。`session-review-evidence`の`--user-events`は逐語引用の出所ファイルとして渡すため、短い標準出力も保存し、続けて`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭（改行を空白へ置き換えた先頭60文字。切り詰めた場合は末尾に`…`）>`を保存ファイルと同じ順で1行ずつ書く（該当が無ければ`発話: 0件`）。`--grep`・`--tool-calls`は長い標準出力を保存した場合だけ、`一致: record=<record> line=<line> kind=<kind> [role=<role>] [tool=<tool>] <本文の冒頭>`を保存順で全件書く。冒頭は改行を空白へ置き換えた先頭160文字で、短縮時は末尾に`…`を付け、該当なしは`一致: 0件`を返す。`--summary-only`と`--fixed-string`は一覧を追加しない。エージェント環境でない場合は両出力をそのまま表示する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",
+        "description": "登録済みplugin内Pythonスクリプトを実行する。\n\n目的: agent向け補助スクリプトを現在のagent-toolkit環境で実行する。\n利用場面: skillまたは規範が登録名で補助処理を起動するとき。\n対象と出力: 閉じた登録表のscriptだけを実行し、scriptの終了コードをそのまま返す。エージェント環境では、標準出力と標準エラーのそれぞれが`atk --help`の示す長さを超える場合に全量を保存し、標準出力は`保存先:`・`行数:`、標準エラーは`標準エラー保存先:`・`標準エラー行数:`だけを書く。`session-review-evidence`の`--user-events`は逐語引用の出所ファイルとして渡すため、短い標準出力も保存し、続けて`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭（改行を空白へ置き換えた先頭60文字。切り詰めた場合は末尾に`…`）>`を保存ファイルと同じ順で1行ずつ書く（該当が無ければ`発話: 0件`）。`--grep`・`--tool-calls`は長い標準出力を保存した場合だけ、`一致: record=<record> line=<line> kind=<kind> [role=<role>] [tool=<tool>] <本文の冒頭>`を保存順で書く。一致が20件を超える場合は、`一致: 全<N>件`、`内訳:`（kindとrole/tool別の件数）、`記録別:`（件数の多い記録から10記録）の行に続けて先頭20件だけを書き、最後に残り件数と保存先から読む方法を示す。冒頭は改行を空白へ置き換えた先頭160文字で、短縮時は末尾に`…`を付け、該当なしは`一致: 0件`を返す。`--summary-only`と`--fixed-string`は一覧を追加しない。エージェント環境でない場合は両出力をそのまま表示する。\n前提: SCRIPTは公開済みの登録名であること。scriptへ渡す引数は`--`の後へ置く。\n復元・後始末: 対象scriptが定める契約に従う。run-script自身は状態を残さない。",
         "epilog": "実行例:\n\n  atk run-script plan-check -- /absolute/path/to/plan.md",
     },
     "atk run-skill": {
@@ -191,18 +191,18 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi submission": {
         "summary": "add-awi-by-userの投入先と作業期間を記録する",
-        "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のagent-toolkit:add-awi-by-userの会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
-        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo\n  atk wi submission end",
+        "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のagent-toolkit:add-awi-by-userの会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。投入を終える時は、作業期間に受けた指摘が指摘対応記録に対応付いているかを検査する。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
+        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo\n  atk wi submission end --findings-file /absolute/path/findings.json\n  atk wi submission end --abort",
     },
     "atk wi submission begin": {
         "summary": "add-awi-by-userの投入先を記録する",
-        "description": "add-awi-by-userの投入先を記録する。\n\n目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了・中止時に`atk wi submission end`を実行する。",
+        "description": "add-awi-by-userの投入先を記録する。\n\n目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。最初の作成時に作業開始時刻を記録し、置き換えでは保つ。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了時は`atk wi submission end --findings-file`、中止時は`atk wi submission end --abort`を実行する。",
         "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo --target-repo github.com/example/other",
     },
     "atk wi submission end": {
-        "summary": "add-awi-by-userの投入作業の記録を削除する",
-        "description": "add-awi-by-userの投入作業の記録を削除する。\n\n目的: 現在の会話のWI投入作業の属性を削除し、後続の別作業がprocess-loopの開始前の活動猶予を生じないようにする。\n利用場面: add-awi-by-userの投入を完了した時点と、投入作業を中止した時点。\n対象と出力: 会話別の投入作業の属性を削除し、成功行へ結果を書く。記録が無い場合も成功する。\n前提: `atk wi submission begin`と同じ会話IDを使う。\n復元・後始末: 投入作業を再び始める場合は`atk wi submission begin`を実行する。",
-        "epilog": "実行例:\n\n  atk wi submission end",
+        "summary": "add-awi-by-userの投入作業を終えて記録を削除する",
+        "description": "add-awi-by-userの投入作業を終えて記録を削除する。\n\n目的: 投入作業中に受けた実ユーザー発話と投入前レビューの指摘が、分類・処置とともに指摘対応記録へ対応付いていることを確かめてから、会話のWI投入作業の属性を削除する。後続の別作業がprocess-loopの開始前の活動猶予を生じないようにもする。\n利用場面: add-awi-by-userの投入を完了した時点（--findings-file）と、ユーザーが投入作業を中止した時点（--abort）。\n対象と出力: --findings-fileでは、`begin`の作業開始時刻より後の実ユーザー発話（機械注入・子会話・提示した選択肢をそのまま選んだ確認回答を除く）と、--review-resultの返却の`指摘:`の箇条（`なし`を除く）ごとに、対応する指摘対応記録の項目と必須欄があるかを検査する。成立すれば報告用要約を標準出力へ書いて記録を削除し、最終応答に要約があるかをStop hookが検査できるよう要約を保存する。不足があれば不足ごとの行を標準エラーへ書き、記録を保持して終了コード1で終わる。--abortは検査せずに記録を削除する。検査は対応と必須欄の欠落だけを判定し、分類の意味と処置の十分性は判定しない。\n前提: `atk wi submission begin`と同じ会話IDを使い、その会話の記録をホストの保存先から解決できること。\n復元・後始末: 検査が不足を示したら指摘対応記録を補って同じコマンドを再実行する。投入作業を再び始める場合は`atk wi submission begin`を実行する。",
+        "epilog": "指摘対応記録の形式: UTF-8のJSONで、`confirmation_rounds`（確認の往復回数、0以上の整数）と`entries`（配列）を持つ。各項目は`source`（`user`か`review`）、`user`なら`position`（`<record>:<line>`。`session-review-evidence --user-events`の`record`と`line`）、`review`なら`text`（返却の`指摘:`の箇条の本文）、`finding`（真偽）を持つ。指摘でなければ`reason`、指摘なら`classification`（考慮漏れ・ユーザーだけが持つ新しい情報・前提の誤り・採用しない提案）、`summary`（報告の要旨）、`basis`、`adoption`、`result`を持つ。考慮漏れは`cause_analysis`と`prevention`（`decision`と`handoff`）も持つ。\n\n実行例:\n\n  atk wi submission end --findings-file /absolute/path/findings.json --review-result /absolute/path/review.txt\n  atk wi submission end --abort",
     },
     "atk wi process-loop": {
         "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
@@ -309,12 +309,12 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents list": {
         "summary": "保持中の委譲sessionを識別・活動情報とともに一覧表示する",
-        "description": "保持中の委譲sessionを識別・活動情報とともに一覧表示する。\n\n目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootと、活動記録のPID・作成時刻が生存を示すrootを見出しにしたツリーを表示し、各session IDの右側へラベルと`engine:model/effort`、直近の行動または進捗（利用上限の解除待ちとAPI再試行はその状態）、経過時間、文脈使用量と状態を並べる。文脈使用量は委譲先の直近のモデル文脈のトークン数（累計課金量ではない）で、`53.5k/5%`のように小数1桁の`k`と、上限が分かる場合は整数の使用率で示す。上限が不明なら使用量だけ、使用量が不明なら使用量を省く。端末幅が狭い場合はsession IDを省略せず右側の説明を短くする。`--watch`は人の端末で約2秒ごとに一覧を描き替え、Ctrl-Cで終了する。エージェント環境と端末以外への出力では`--watch`を拒否する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返し、観測済みの文脈使用量を`context_tokens`、上限を`context_window`の数値で返す（不明な値の項目は省く）。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終了済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "保持中の委譲sessionを識別・活動情報とともに一覧表示する。\n\n目的: 委譲sessionの識別子、名前、モデル、状態と親子関係を一覧表示する。\n利用場面: 識別子を失ったsessionの回復または残作業の調査をするとき。\n対象と出力: 共有状態ファイルを読む。人の端末では、表示するsessionを持つrootと、活動記録のPID・作成時刻が生存を示すrootを見出しにしたツリーを表示し、各session IDの右側へラベルと`engine:model/effort`、直近の行動または進捗（利用上限の解除待ちとAPI再試行はその状態）、経過時間、文脈使用量と状態を並べる。文脈使用量は委譲先の直近のモデル文脈のトークン数（累計課金量ではない）で、`53.5k/5%`のように小数1桁の`k`と、上限が分かる場合は整数の使用率で示す。上限が不明なら使用量だけ、使用量が不明なら使用量を省く。端末幅が狭い場合はsession IDを省略せず右側の説明を短くする。`--watch`は人の端末で約2秒ごとに一覧を描き替え、Ctrl-Cで終了する。エージェント環境と端末以外への出力では`--watch`を拒否する。エージェント環境では同じroot配下のsessionを1行のJSONで返す。エージェント向け一覧は識別子、状態、ラベル、直近操作、結果保留、初回とturnの開始時刻、活動の経過とAPI失敗の診断を返す。文脈使用量は人の端末の表示だけに含め、エージェント環境の出力には含めない。実行条件と委譲プロンプトは`atk agents show`が返す。\n前提: オプション省略時は未回収結果を持たない終了済みsessionを除く。エージェント環境でルートsessionとの対応を確認できず一覧が空の場合は、MCPの`list`を1回呼び出してから再実行する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents list\n  atk agents list --include-terminated\n  atk agents list --watch",
     },
     "atk agents show": {
         "summary": "指定した委譲sessionの詳しい状態を表示する",
-        "description": "指定した委譲sessionの詳しい状態を表示する。\n\n目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデルまたは停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。いずれの環境でも値は同じである。活動は`seconds_since_activity`、API失敗は種別、HTTP状態、経過時間を返す。観測済みの文脈使用量と上限は`context_tokens`と`context_window`で返し、不明な値の項目は省く。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "指定した委譲sessionの詳しい状態を表示する。\n\n目的: 1件の委譲sessionの起動条件と現在状態を診断できる形で表示する。\n利用場面: 起動本文、作業場所、モデルまたは停滞状況を調査するとき。\n対象と出力: 共有状態ファイルから指定sessionを読み、単一のJSON文書として標準出力へ書く。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では空白を含めない1行で書き、それ以外の環境では字下げして書く。文脈使用量を除き、いずれの環境でも値は同じである。活動は`seconds_since_activity`、API失敗は種別、HTTP状態、経過時間を返す。エージェント環境でない場合だけ、観測済みの文脈使用量と上限を`context_tokens`と`context_window`で返し、不明な値の項目は省く。\n前提: 対象と同じルートセッションで実行し、完全なsession識別子を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk agents show <session_id>",
     },
     "atk agents logs": {
@@ -471,6 +471,9 @@ HELP["atk lane integrate"]["description"] += (
     "\n検証の再利用: manifestの任意のverification_recordsへ保存済み実行記録JSONの絶対パス配列を渡す。"
     "同じcleanなHEAD・argv・cwd・Pythonと環境の実行条件で終了0となり、両出力が保存されている成功だけ再利用する。"
     "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検収待ちへ戻る。"
+    "\n競合の解消: rebaseが競合で止まったら競合を解消してrebase --continueで完了し、同じ入力に"
+    "--resolved-conflict <内容が変わった旧commit>を反復指定して再開する。指定はrebase後のhistory-compareへ渡し、"
+    "所有登録に保存する。指定を省いた後続の再開（--accept-rebased-headなど）は保存済みの指定を使う。"
     "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
     "--writer-sessionへ1件ずつ反復指定する。--session-idは資源の所有sessionとして別に保持する。"
     "担当の追加・交代後は合意済み一覧を更新し、再開にも更新後の全要素を渡す。"

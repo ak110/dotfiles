@@ -106,14 +106,19 @@ class RecoveryBridge:
         self._generation_error_since = None
         value = json.loads(content)
         # 停止対象の指定には使わず、native自身が公開した世代の変化だけを観測する。
+        # nativeのPidRecordはprocessIdentityを省略可能とし、Linux・macOS以外（Windows）では書かない。
+        # 全OSで書くprocessStartTimeを、その場合の同じ世代の識別に使う。
+        identity = value.get("processIdentity") if isinstance(value, dict) else None
+        if identity is None and isinstance(value, dict) and isinstance(value.get("processStartTime"), str):
+            identity = value["processStartTime"]
         if (
             not isinstance(value, dict)
             or not isinstance(value.get("pid"), int)
             or isinstance(value.get("pid"), bool)
-            or "processIdentity" not in value
+            or identity is None
         ):
             raise ValueError("Codexのdaemon世代を読み取れない。codex doctorで管理daemonを確認する")
-        return value["pid"], json.dumps(value["processIdentity"], sort_keys=True)
+        return value["pid"], json.dumps(identity, sort_keys=True)
 
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         task = asyncio.current_task()

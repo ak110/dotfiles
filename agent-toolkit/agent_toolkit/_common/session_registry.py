@@ -27,7 +27,7 @@ from typing import Any, Literal
 
 import psutil
 
-from agent_toolkit._common import file_lock, session_layout
+from agent_toolkit._common import file_lock, reclaim_records, session_layout
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
@@ -681,7 +681,9 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
                 owner_root_session_id=owner_root,
             ),
         )
-    alive = [process for process in processes if process.exists()]
+    # 起点が終了しても回収待ちの子孫が残る委譲先CLIは、停止の再試行で回収するまで生存中として扱い、
+    # 終了の推定と公開を止める（停止側は`recorded_process.stop_recorded_executor`）。
+    alive = [process for process in processes if process.exists() or reclaim_records.pending(process.pid, process.create_time)]
     if processes and not alive:
         return SessionResolution(
             Resolution.TERMINAL,

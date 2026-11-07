@@ -53,6 +53,10 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.shutdown_requested = asyncio.Event()
         # 同じ停止要求をスレッドで動く読み取り専用の走査から参照するための写し。
         self.stop_requested = threading.Event()
+        # 配信を所要の記録へ渡す観測先。`atk serve`のアプリが設定し、未設定なら記録しない。
+        self.publish_listener: collections.abc.Callable[[str], None] | None = None
+        # Markdownの変更を受けた時点で呼ぶ観測先。一覧の索引が全件走査を省けるかの判定に使う。
+        self.change_listener: collections.abc.Callable[[], None] | None = None
 
     async def __aenter__(self) -> ServeState:
         """監視を開始し、開始途中の失敗でも資源を回収する。"""
@@ -87,6 +91,10 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.root.mkdir(parents=True, exist_ok=True)
         self.observer.schedule(self, str(self.root), recursive=True)
         self.observer.start()
+
+    def is_watching(self) -> bool:
+        """ファイルの変更を監視しているかを返す。"""
+        return self.observer.is_alive()
 
     async def start_async(self, loop: asyncio.AbstractEventLoop) -> None:
         """loopの参照を保持し、監視の登録・準備完了をworkerで待つ。"""
@@ -148,6 +156,9 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         paths = (event.src_path, getattr(event, "dest_path", ""))
         if event.is_directory or not any(str(path).endswith(".md") for path in paths):
             return
+        # 一覧の索引は通知の間引きを待たずに無効化し、通知を受けた画面の再取得が変更を必ず読むようにする。
+        if self.change_listener is not None:
+            self.change_listener()
         if self.debounce_seconds <= 0:
             with self._lock:
                 if self._stopped:
@@ -202,6 +213,8 @@ class ServeState(watchdog.events.FileSystemEventHandler):
 
     def publish(self, event: str = "changed") -> None:
         """WIの変更または同期結果を全購読者へ配信する。"""
+        if self.publish_listener is not None:
+            self.publish_listener(event)
         for queue in tuple(self._queues):
             if queue.full():
                 with contextlib.suppress(asyncio.QueueEmpty):
@@ -213,10 +226,13 @@ class ServeState(watchdog.events.FileSystemEventHandler):
 
         heartbeatは名前付きイベントで送る。ブラウザーの`EventSource`はコメント行を
         スクリプトへ渡さないため、名前付きイベントにしないとクライアントが無通信を判定できない。
+        購読の登録直後に`event: subscribed`を1回送る。`EventSource`の`open`は応答ヘッダーの受信時点で
+        登録より先に届き得るため、画面はこの合図の後に初期取得して、最初の接続での全件の読み直しを省く。
         """
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)
         self._queues.add(queue)
         try:
+            yield "event: subscribed\ndata: {}\n\n"
             while True:
                 received = await next_subscription_item(queue, self.shutdown_requested, heartbeat)
                 if received is SHUTDOWN:
@@ -224,7 +240,8 @@ class ServeState(watchdog.events.FileSystemEventHandler):
                 if received is HEARTBEAT:
                     yield "event: heartbeat\ndata: {}\n\n"
                 else:
-                    yield f"event: {received}\ndata: {{}}\n\n"
+                    # 画面が通知の配信から再取得の完了までを計るため、配信を取り出した時刻を載せる。
+                    yield f'event: {received}\ndata: {{"published_at_ms": {time.time() * 1000:.0f}}}\n\n'
         finally:
             self._queues.discard(queue)
 

@@ -13,7 +13,7 @@ from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPES, normalized_wi_t
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import parse_source, parse_target_repo
 from agent_toolkit._atk.wi.frontmatter import write_entry_text
-from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths
+from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _git_remote
 
@@ -218,8 +218,13 @@ def read_named_entries(
     missing: list[str] = []
     texts = EntryTexts()
     candidates: dict[str, pathlib.Path] = {}
-    for path in iter_entry_paths(private_notes):
-        candidates.setdefault(path.name, path)
+    # 指定名がすべて年月保存先へ一意に決まる場合は、数千件の列挙を省く。
+    dated = {normalized: unique_dated_entry_path(private_notes, normalized) for _, normalized in filenames}
+    if all(path is not None for path in dated.values()):
+        candidates = {name: path for name, path in dated.items() if path is not None}
+    else:
+        for path in iter_entry_paths(private_notes):
+            candidates.setdefault(path.name, path)
     for requested, normalized in filenames:
         path = candidates.get(normalized)
         if path is not None:

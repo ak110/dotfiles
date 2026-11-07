@@ -23,7 +23,6 @@ from session_evidence_extract import (
     _CANDIDATE_VARIABLE_PLACEHOLDER,
     _ENV_ASSIGNMENT,
     _HOOK_FAILURE_PREFIX,
-    _IMPROVEMENT_MARKER,
     _OMISSION_MARK,
     _SHELL_NAMES,
     _basename,
@@ -54,9 +53,11 @@ from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
+from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY as _PROCESS_LOOP_GOAL_BODY
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_GOAL_BODY
 from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_frontmatter
 from agent_toolkit._common import response_language_check as _response_language_check
+from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_read_predicate
 from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
 from agent_toolkit._common.shell_segments import resolve_execution_segment as _resolve_execution_segment
@@ -64,6 +65,7 @@ from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
 # 過去の単一対象と現在の登録全体の起動を、後続の人間の介入を探すための初期要求として扱う。
 _PROCESS_WI_GOAL_BODIES = (
+    _PROCESS_LOOP_GOAL_BODY,
     _PROCESS_WI_GOAL_BODY,
     "agent-toolkit:process-wi all-reposを完遂する",
     "agent-toolkit:process-wi-all-reposを完遂する",
@@ -697,9 +699,7 @@ def _delegate_notice_events(collected: list[_CollectedRecord]) -> list[dict[str,
                 continue
             bodies, resumed = _wait_response_parts(event["text"])
             handles.update(resumed)
-            lines = [
-                line.lstrip() for body in bodies for line in body.splitlines() if line.lstrip().startswith(_IMPROVEMENT_MARKER)
-            ]
+            lines = [line for body in bodies for line in _runtime_inserted.reported_improvement_lines(body)]
             if lines:
                 events.append({**event, "record": item.record_id, "text": "\n".join(dict.fromkeys(lines))})
     return events
@@ -1645,9 +1645,9 @@ def _is_normal_delegate_return(event: dict[str, Any], *, shell: bool = False, re
     text = event.get("text")
     if not isinstance(text, str):
         return False
-    lines = [line.strip() for line in text.splitlines()]
-    if any(line.startswith(_IMPROVEMENT_MARKER) for line in lines):
+    if _runtime_inserted.reported_improvement_lines(text):
         return False
+    lines = [line.strip() for line in text.splitlines()]
     if any(line.startswith(_UNEXPECTED_EVENT_PREFIXES) for line in lines):
         return False
     body = [line for line in lines if line and not line.startswith("```")]

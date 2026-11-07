@@ -83,11 +83,16 @@ test("他機能への保護door・無条件・広域イベント登録の持込�
 
 const TOOL = "mcp__agent-toolkit__compact_conversation";
 
-async function waitingEngine($: Engine, on: On, options: { percent?: number; window?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure" } = {}) {
-  mock.env(on, options.delegated ? { AGENT_TOOLKIT_DELEGATED_SESSION: "1" } : {});
+async function waitingEngine($: Engine, on: On, options: { percent?: number; window?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure"; writeFails?: boolean; bashResult?: unknown } = {}) {
+  mock.env(on, { HOME: "/home/tester", ...(options.delegated ? { AGENT_TOOLKIT_DELEGATED_SESSION: "1" } : {}) });
   mock.session(on);
   const clock = mock.clock(on, { now: 10_000 });
-  const calls = { queries: [] as (readonly string[])[], compactions: 0, notices: [] as string[], diagnostics: [] as string[] };
+  const calls = { queries: [] as (readonly string[])[], compactions: 0, notices: [] as string[], diagnostics: [] as string[], records: new Map<string, string>() };
+  on("fs.write", (_$, e) => {
+    if (options.writeFails) throw new Error("書込不可");
+    calls.records.set(e.path, e.text);
+    return { value: undefined };
+  });
   const usage = { percent: options.percent ?? 60 };
   const task = { id: "wait-task" };
   on("session.id", () => ({ value: "wait-main" }));
@@ -99,7 +104,7 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; win
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
-  on("tool.call", { tool: "Bash" }, () => ({ result: { backgroundTaskId: task.id } }));
+  on("tool.call", { tool: "Bash" }, () => ({ result: "bashResult" in options ? options.bashResult : { backgroundTaskId: task.id } }));
   on("process.run", (_$, e) => {
     calls.queries.push(e.argv);
     return { value: { exitCode: 0, stdout: JSON.stringify({ eligible: options.eligible ?? true }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } };
@@ -366,3 +371,90 @@ for (const env of DELEGATED_ENVS) {
     expect(calls).toBe(0);
   });
 }
+
+const DECISIONS_PATH = "/home/tester/.claude/agent-toolkit-function-hooks/compaction-wait-main.txt";
+
+function decisions(records: Map<string, string>): { task: string; reason: string; tokens?: number; window?: number; pending: boolean }[] {
+  const text = records.get(DECISIONS_PATH);
+  return text === undefined ? [] : (JSON.parse(text) as { decisions: { task: string; reason: string; tokens?: number; window?: number; pending: boolean }[] }).decisions;
+}
+
+for (const scenario of [
+  { mode: "ratio-below", percent: 79, window: 2_000_000, reason: "below_threshold", compactions: 0 },
+  { mode: "absolute-below", percent: 39, window: 1_000_000, reason: "below_threshold", compactions: 0 },
+  { mode: "eligible", percent: 61, window: 1_000_000, reason: "scheduled", compactions: 1 },
+  { mode: "ineligible", percent: 61, window: 1_000_000, reason: "ownership_unconfirmed", compactions: 0 },
+  { mode: "pending", percent: 61, window: 1_000_000, reason: "pending", compactions: 1 },
+  { mode: "finished", percent: 61, window: 1_000_000, reason: "wait_finished", compactions: 0 },
+  { mode: "delegated", percent: 61, window: 1_000_000, reason: "delegated_session", compactions: 0 },
+] as const) {
+  test(`待機圧縮の判定理由を入力と状態つきで状態ファイルへ残す: ${scenario.mode}`, async ($, on) => {
+    const { clock, calls } = await waitingEngine($, on, {
+      percent: scenario.percent,
+      window: scenario.window,
+      eligible: scenario.mode !== "ineligible",
+      delegated: scenario.mode === "delegated",
+    });
+    if (scenario.mode === "pending") {
+      // 明示予約がturn中に残る状態で待機を始め、二重に予約しないことと理由を確かめる。
+      await $.turn.start({ text: "予約して待機", turnId: MAIN_TURN.turnId });
+      await $.tool.call({ tool: TOOL });
+    }
+    await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+    if (scenario.mode === "finished") {
+      await $.session.append({ door: "delivery", origin: { kind: "engine" }, uuid: "done", message: { type: "user", role: "user", content: [{ type: "text", text: "<task-notification><task-id>wait-task</task-id><status>completed</status></task-notification>" }] } });
+    }
+    await clock.advance(0);
+    if (scenario.mode === "pending") await $.turn.complete(MAIN_TURN);
+    await clock.advance(0);
+    expect(calls.compactions).toBe(scenario.compactions);
+    const recorded = decisions(calls.records);
+    const last = recorded.at(-1);
+    expect(last?.task).toBe("wait-task");
+    expect(last?.reason).toBe(scenario.reason);
+    if (["ratio-below", "absolute-below", "eligible", "ineligible"].includes(scenario.mode)) {
+      expect(last?.tokens).toBe(scenario.percent * 10_000);
+      expect(last?.window).toBe(scenario.window);
+    }
+    if (scenario.mode === "pending") expect(last?.pending).toBe(true);
+  });
+}
+
+for (const scenario of [
+  { mode: "missing", background: true, bashResult: { stdout: "" }, reason: "background_id_missing" },
+  { mode: "invalid", background: true, bashResult: { backgroundTaskId: 42 }, reason: "background_id_invalid" },
+  { mode: "empty", background: true, bashResult: { backgroundTaskId: "" }, reason: "background_id_invalid" },
+  { mode: "foreground", background: false, bashResult: { stdout: "" }, reason: undefined },
+] as const) {
+  test(`背景待機IDを検出できない戻り値を記録する: ${scenario.mode}`, async ($, on) => {
+    const { clock, calls } = await waitingEngine($, on, { percent: 61, bashResult: scenario.bashResult });
+    await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: scenario.background });
+    await clock.advance(0);
+    expect(calls.compactions).toBe(0);
+    expect(calls.queries.length).toBe(0);
+    const recorded = decisions(calls.records);
+    expect(recorded.at(-1)?.reason).toBe(scenario.reason);
+    if (scenario.reason !== undefined) expect(recorded.at(-1)?.task).toBe("unknown");
+  });
+}
+
+test("判定記録は直近20件に限る", async ($, on) => {
+  const { clock, calls, task } = await waitingEngine($, on, { percent: 10 });
+  for (let index = 0; index < 25; index++) {
+    task.id = `wait-${index}`;
+    await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+    await clock.advance(0);
+  }
+  const recorded = decisions(calls.records);
+  expect(recorded.length).toBe(20);
+  expect(recorded[0]?.task).toBe("wait-5");
+});
+
+test("状態ファイルを書けない場合も待機時圧縮を続ける", async ($, on) => {
+  const { clock, calls } = await waitingEngine($, on, { percent: 61, writeFails: true });
+  await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+  await clock.advance(0);
+  await clock.advance(0);
+  expect(calls.compactions).toBe(1);
+  expect(calls.diagnostics.join(" ")).toMatch("scheduled");
+});

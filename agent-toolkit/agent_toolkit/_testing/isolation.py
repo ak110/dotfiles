@@ -87,6 +87,9 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # 継承されるとCodex上で実行したテストだけが別の会話として解決する。解決を検証するテストは自身で設定する。
     "CODEX_THREAD_ID",
     "CLAUDE_CODE_SESSION_ID",
+    # `atk run-skill`がClaudeの子へ渡す背景実行の無効化。継承されると、SessionStartの待機案内とCLIの待機期限が
+    # 非対話起動の値へ変わる。値ごとの分岐を検証するテストは自身で設定する。
+    "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
     # process-loop起動セッションの標識。UserPromptSubmitの固定sessionTitleを決める入力であり、
     # 標識の有無で分岐する動作を検証するテストは自身で設定する。
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",

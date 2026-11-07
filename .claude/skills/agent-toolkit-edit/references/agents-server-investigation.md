@@ -10,7 +10,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agents-server-shared-state.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
+| 共有状態の保存場所や読み書きの担当を調べる前 | `agents-server-shared-state.md`の「状態資料の節の選択」「共有状態資料の選択」。選んだ主題節と共通節を続けて読む | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「状態資料の節の選択」「共有状態資料の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
 

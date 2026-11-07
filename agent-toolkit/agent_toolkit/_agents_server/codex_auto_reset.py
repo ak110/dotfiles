@@ -38,25 +38,45 @@ class _Boundary(BaseModel):
     model_config = ConfigDict(strict=True, allow_inf_nan=False)
 
 
-class _Account(_Boundary):
+# 外部応答は、対象の選別に必要な構造・判別項目を先に検証し、消費に使う値だけへ利用時の制約を課す。
+# 未利用の別bucket・非週次window・対象外のaccountやcreditは表示形式が変わり得るため、
+# 応答全体へ消費用の制約を課すと、使わない値の形式差で自動resetが止まる。
+
+
+class _AccountKind(_Boundary):
     type: str
-    email: str | None = None
 
 
 class _AccountResponse(_Boundary):
-    account: _Account | None
+    account: dict[str, Any] | None
+
+
+class _AccountIdentity(_Boundary):
+    """ChatGPTアカウントだけで検証する、アカウント別の冪等記録に使う識別値。"""
+
+    email: str | None = None
+
+
+class _LimitsEnvelope(_Boundary):
+    rateLimits: dict[str, Any] | None = None
+    rateLimitsByLimitId: dict[str, Any] | None = None
+    rateLimitResetCredits: dict[str, Any] | None = None
+
+
+class _BucketShape(_Boundary):
+    limitId: str | None = None
+    primary: dict[str, Any] | None = None
+    secondary: dict[str, Any] | None = None
+
+
+class _WindowDuration(_Boundary):
+    windowDurationMins: int = Field(gt=0)
 
 
 class _Window(_Boundary):
     usedPercent: float = Field(ge=0, le=100)
     windowDurationMins: int = Field(gt=0)
     resetsAt: int = Field(gt=0)
-
-
-class _Bucket(_Boundary):
-    limitId: str | None = None
-    primary: _Window | None = None
-    secondary: _Window | None = None
 
 
 class _Credit(_Boundary):
@@ -67,13 +87,40 @@ class _Credit(_Boundary):
 
 class _Credits(_Boundary):
     availableCount: int = Field(ge=0)
-    credits: list[_Credit] | None = None
+    credits: list[Any] | None = None
 
 
-class _Limits(_Boundary):
-    rateLimits: _Bucket | None = None
-    rateLimitsByLimitId: dict[str, _Bucket] | None = None
-    rateLimitResetCredits: _Credits | None = None
+@dataclass(frozen=True)
+class _Weekly:
+    """選別したcodex枠の週次windowと、消費時にだけ検証するcredit在庫の生データ。"""
+
+    window: _Window | None
+    reset_credits: dict[str, Any] | None
+    diagnostic: str = ""
+
+
+def _select_weekly(raw: dict[str, Any]) -> _Weekly:
+    """codex枠の週次windowを選び、選別と消費判断に使う値だけを検証する。"""
+    limits = _LimitsEnvelope.model_validate(raw)
+    by_id = limits.rateLimitsByLimitId
+    candidate = by_id.get("codex") if by_id is not None else limits.rateLimits
+    if candidate is None:
+        return _Weekly(None, limits.rateLimitResetCredits, "codex利用枠を識別できない")
+    bucket = _BucketShape.model_validate(candidate)
+    if bucket.limitId not in (None, "codex") or (by_id is None and bucket.limitId != "codex"):
+        return _Weekly(None, limits.rateLimitResetCredits, "codex利用枠を識別できない")
+    for window in (bucket.primary, bucket.secondary):
+        if window is not None and _WindowDuration.model_validate(window).windowDurationMins == 10080:
+            return _Weekly(_Window.model_validate(window), limits.rateLimitResetCredits)
+    return _Weekly(None, limits.rateLimitResetCredits, "weekly利用枠がない")
+
+
+def _available_credit(reset_credits: dict[str, Any]) -> _Credit | None:
+    """消費対象の種類・状態のcreditだけを検証し、対象外creditの詳細は使わない。"""
+    for item in _Credits.model_validate(reset_credits).credits or []:
+        if isinstance(item, dict) and item.get("status") == "available" and item.get("resetType") == "codexRateLimits":
+            return _Credit.model_validate(item)
+    return None
 
 
 class _Consume(_Boundary):
@@ -105,32 +152,19 @@ async def check_auto_reset(request: Request, *, state_dir: Path, rpc_timeout: fl
         account = _AccountResponse.model_validate(
             await _rpc(request, "account/read", {"refreshToken": False}, rpc_timeout)
         ).account
-        if account is None or account.type != "chatgpt":
+        if account is None or _AccountKind.model_validate(account).type != "chatgpt":
             return AutoResetResult(diagnostic="ChatGPTアカウントではないため自動resetを見送った")
+        email = _AccountIdentity.model_validate(account).email
         raw = await _rpc(request, "account/rateLimits/read", {}, rpc_timeout)
-        limits = _Limits.model_validate(raw)
-        bucket = limits.rateLimitsByLimitId.get("codex") if limits.rateLimitsByLimitId is not None else limits.rateLimits
-        if (
-            bucket is None
-            or bucket.limitId not in (None, "codex")
-            or (limits.rateLimitsByLimitId is None and bucket.limitId != "codex")
-        ):
-            return AutoResetResult(rate_limits=raw, diagnostic="codex利用枠を識別できない")
-        weekly = next(
-            (
-                window
-                for window in (bucket.primary, bucket.secondary)
-                if window is not None and window.windowDurationMins == 10080
-            ),
-            None,
-        )
+        selected = _select_weekly(raw)
+        weekly = selected.window
         if weekly is None:
-            return AutoResetResult(rate_limits=raw, diagnostic="weekly利用枠がない")
-        if not account.email or not account.email.strip():
+            return AutoResetResult(rate_limits=raw, diagnostic=selected.diagnostic)
+        if not email or not email.strip():
             return AutoResetResult(
                 rate_limits=raw, diagnostic="安定したアカウント識別用emailを取得できないため自動resetを見送った"
             )
-        identity = hashlib.sha256(account.email.encode("utf-8")).hexdigest()
+        identity = hashlib.sha256(email.encode("utf-8")).hexdigest()
         path = root / f"{identity}.json"
         previous = await run_file_operation(_read_attempt, path)
         same_window = previous is not None and previous.resets_at == weekly.resetsAt
@@ -142,17 +176,10 @@ async def check_auto_reset(request: Request, *, state_dir: Path, rpc_timeout: fl
         else:
             if weekly.usedPercent < 99:
                 return AutoResetResult(rate_limits=raw)
-            reset_credits = limits.rateLimitResetCredits
-            if reset_credits is None or reset_credits.availableCount == 0:
+            reset_credits = selected.reset_credits
+            if reset_credits is None or _Credits.model_validate(reset_credits).availableCount == 0:
                 return AutoResetResult(rate_limits=raw, diagnostic="利用可能なreset creditがない")
-            credit = next(
-                (
-                    item
-                    for item in reset_credits.credits or []
-                    if item.status == "available" and item.resetType == "codexRateLimits"
-                ),
-                None,
-            )
+            credit = _available_credit(reset_credits)
             attempt = _Attempt(
                 resets_at=weekly.resetsAt,
                 idempotency_key=str(uuid.uuid4()),
@@ -173,7 +200,7 @@ async def check_auto_reset(request: Request, *, state_dir: Path, rpc_timeout: fl
         if confirmed:
             try:
                 raw = await _rpc(request, "account/rateLimits/read", {}, rpc_timeout)
-                _Limits.model_validate(raw)
+                _select_weekly(raw)
             except (session_errors.DelegateBackendError, OSError, TimeoutError, ValueError) as error:
                 # 消費は確定済みなので、利用枠の再取得だけを所有monitorへ引き継ぐ。
                 return AutoResetResult(

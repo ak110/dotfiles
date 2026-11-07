@@ -6,8 +6,8 @@
 
 画面設計に関する基準は、本書（共通方針）と`ui-ux-patterns.md`（主題別の設計）で定め、`ui-ux-web-rules.md`はHTML、CSS、JavaScriptによる実装手段やコードから機械的に判定できる条件を扱う。この役割分担を「画面基準の3層」と呼ぶ。
 
-参考資料: [frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill)、[ux-designer-skill](https://github.com/szilu/ux-designer-skill)、[Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines)。これらの要点を日本語の判断基準として再構成した。具体的な数値基準は末尾の一次資料を典拠としている。
-参考資料: [Impeccableの画面設計基準](https://github.com/pbakaus/impeccable/blob/5e745ace7e151feb2a93d360d0281fe39448b857/skill/reference/craft-floor.md)。
+参考資料: [frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill)、[ux-designer-skill](https://github.com/szilu/ux-designer-skill)、[Web Interface Guidelines](https://github.com/vercel-labs/web-interface-guidelines)。これらの要点を日本語の判断基準として再構成した。具体的な数値基準は末尾の一次資料を典拠としている。 MIT Licenseの著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
+参考資料: [Impeccableの画面設計基準](https://github.com/pbakaus/impeccable/blob/5e745ace7e151feb2a93d360d0281fe39448b857/skill/reference/craft-floor.md)を日本語へ翻訳・再構成した。Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
 
 ## 名指し参照の読込方法
 

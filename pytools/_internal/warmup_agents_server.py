@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_toolkit._common import dotfiles_mode
+from agent_toolkit._common import dotfiles_mode, process_tree
 
 from pytools._internal import claude_common, common, log_format, plugin_warmup, post_apply_cache, post_apply_outcome
 
@@ -52,6 +52,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     outcomes = asyncio.run(checks)
     failures: list[str] = []
     dependencies_ready = True
+    reclaim_errors = [outcome for outcome in outcomes if isinstance(outcome, process_tree.ReclaimError)]
     for command, outcome in zip(commands, outcomes, strict=True):
         if isinstance(outcome, BaseException):
             logger.warning(log_format.format_status(_TAG, f"対象の確認に失敗: {command[-1]} / {outcome}"))
@@ -65,6 +66,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             (logger.info if startup.ok else logger.warning)(log_format.format_status(_TAG, startup.message))
             if not startup.ok:
                 failures.append(command[-1])
+    if reclaim_errors:
+        # 回収不能は他の確認失敗と分け、post-applyが後続工程を開始しないよう例外で伝える。
+        raise reclaim_errors[0]
     if failures:
         return post_apply_outcome.PostApplyOutcome(
             failure="準備後の起動確認に失敗: " + ", ".join(failures),

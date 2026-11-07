@@ -246,12 +246,15 @@ def _dispatch_once(args: argparse.Namespace) -> int:
 
 
 def build_goal(skill: str, skill_args: str | None) -> str:
-    """スキルと認識したモードの完遂だけを目的にする。
+    """起動したセッション自身が担当するスキルとモードの工程の完遂を目的にする。
 
     工程・終了条件を目的文へ加えるとスキルと定義が二重化し、各ターンの目標評価へ
     再掲される。起動データと終了契約の参照先はSessionStartで渡す。
+    目標の評価は目的文の字義で達成を判定するため、主語をセッション自身に限り、
+    子の終了後に起動元が行う検収と確定を達成範囲から外すことを短く示す。
     """
-    return f"スキル`{skill_modes.invocation_scope(skill, skill_args)}`を完遂する"
+    scope = skill_modes.invocation_scope(skill, skill_args)
+    return f"このセッションが担当するスキル`{scope}`の工程を完遂する（起動元が終了後に行う検収と確定は含まない）"
 
 
 def _run_locked(
@@ -489,6 +492,7 @@ def _run_locked(
                 codex_home=codex_home,
                 run_id=run_id,
                 skill=skill_modes.invocation_scope(args.skill, args.args),
+                executor=executor,
                 allow_connection_switch=orchestrator == "claude"
                 and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1,
             )
@@ -607,6 +611,7 @@ def _session_readers(
     log: typing.TextIO,
     progress: Progress,
     output: _SessionOutput,
+    executor: _registry.ProcessIdentity | None,
 ) -> typing.Generator[tuple[threading.Lock, list[threading.Thread]]]:
     """読取スレッドを起動し、準備失敗と中断でも子とパイプを回収する。"""
     lock = threading.Lock()
@@ -626,7 +631,7 @@ def _session_readers(
     except BaseException:
         try:
             if process.poll() is None:
-                _process_tree.log_residual(_process_tree.stop_process_tree(process), context="run-skill")
+                _process_tree.log_residual(_stop_executor(process, executor), context="run-skill")
         finally:
             _drain_output([reader for reader in readers if reader.ident is not None], log, lock)
         raise
@@ -636,6 +641,20 @@ def _session_readers(
             for index, stream in enumerate(streams):
                 if stream is not None and (index >= len(readers) or readers[index].ident is None):
                     cleanup.callback(stream.close)
+
+
+def _stop_executor(process: subprocess.Popen[bytes], executor: _registry.ProcessIdentity | None) -> list[str]:
+    """子セッションを子孫ごと停止し、回収できなかった所有対象を同じ実行の再開時の停止へ引き継ぐ。
+
+    子が終了すると残った子孫は子から辿れず、再開時の`stop_recorded_executor`は記録が無ければ停止済みと判定する。
+    回収待ちとして記録し、再開前に同じ対象の回収を再試行させる。
+    """
+    failure = _process_tree.stop_owned_process(process, context="run-skill")
+    if failure is None:
+        return []
+    if executor is not None:
+        recorded_process.retain_unreclaimed(executor, failure)
+    return failure.residual
 
 
 def _wait_session(
@@ -650,10 +669,14 @@ def _wait_session(
     codex_home: pathlib.Path,
     run_id: str,
     skill: str,
+    executor: _registry.ProcessIdentity | None,
     allow_connection_switch: bool = False,
 ) -> int:
     """子セッションの終了か時間上限を待ち、結果行を出力して終了コードを返す。"""
-    with _session_readers(process, orchestrator=orchestrator, log=log, progress=progress, output=output) as (lock, readers):
+    with _session_readers(process, orchestrator=orchestrator, log=log, progress=progress, output=output, executor=executor) as (
+        lock,
+        readers,
+    ):
         deadline = time.monotonic() + timeout
         try:
             while True:
@@ -672,7 +695,7 @@ def _wait_session(
                             and (allow_connection_switch or usage_limit_policy.should_wait(orchestrator, limit.limit_type))
                         )
                     if limited:
-                        residual = _process_tree.stop_process_tree(process)
+                        residual = _stop_executor(process, executor)
                         if residual:
                             raise ActionableError(
                                 f"接続切替前に旧CLIの終了を確認できない: {residual}",
@@ -681,12 +704,23 @@ def _wait_session(
                         returncode = process.returncode or 1
                         break
         except subprocess.TimeoutExpired:
-            residual = _process_tree.stop_process_tree(process)
+            residual = _stop_executor(process, executor)
             _drain_output(readers, log, lock)
             with lock:
                 _log_line(log, f"終了状態: 時間上限（{timeout:g}秒）を超えたため終了させた")
                 if residual:
                     _log_line(log, f"終了させられなかったプロセス: {residual}")
+            if residual:
+                # 停止を確認できない時間上限は、次回の実行が同じ資源を奪い合わないよう通常の時間上限と分けて伝える。
+                _outcome.report_failure(
+                    f"セッションが時間上限（{timeout:g}秒）を超え、子プロセスの停止を確認できない: {residual}"
+                    f"（ログ: {log_path}）",
+                    next_action=(
+                        "表示されたPIDと起動コマンドを確かめ、不要なら終了させる。"
+                        f"`atk run-skill --resume {run_id}`は再開前に同じ対象の回収を再試行し、回収を確認できるまで再開しない"
+                    ),
+                )
+                return 1
             _outcome.report_failure(
                 f"セッションが時間上限（{timeout:g}秒）を超えたため終了させた（ログ: {log_path}）",
                 next_action="ログで進行状況を確かめ、必要なら`--timeout`を延ばして次回の定期実行を待つ",

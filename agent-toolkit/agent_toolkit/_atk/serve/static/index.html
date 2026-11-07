@@ -163,13 +163,6 @@
           <textarea id="edit-content" aria-describedby="edit-content-error" required></textarea>
           <p id="edit-content-error" class="inline-error" hidden></p>
         </section>
-        <section id="answer-panel" class="answer-panel" hidden>
-          <h3>回答</h3>
-          <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
-          <label for="answer-input">UWIへの回答（必須）</label>
-          <textarea id="answer-input" aria-describedby="answer-input-error" required></textarea>
-          <p id="answer-input-error" class="inline-error" hidden></p>
-        </section>
         <section id="user-comment-panel" class="user-comment-panel" hidden>
           <h3>ユーザーコメント</h3>
           <label for="user-comment-input">コメント</label>
@@ -184,6 +177,15 @@
         </section>
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer">
+        <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="UWIへの回答" hidden>
+          <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
+          <div class="answer-row">
+            <label for="answer-input" class="visually-hidden">UWIへの回答（必須）</label>
+            <textarea id="answer-input" rows="1" placeholder="回答を入力（選択肢を押すと入力される）" aria-describedby="answer-input-error" required></textarea>
+            <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
+          </div>
+          <p id="answer-input-error" class="inline-error" hidden></p>
+        </section>
         <div class="detail-footer-delete">
           <button id="delete-button" class="button-danger" type="button">削除</button>
         </div>
@@ -196,11 +198,9 @@
         </div>
         <div class="detail-footer-right">
           <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
-          <button id="answer-button" class="button-primary" type="button" hidden>回答</button>
           <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>
           <button id="edit-button" class="button-primary" type="button">編集</button>
           <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
-          <button id="save-answer-button" class="button-primary" type="button" hidden>回答を保存</button>
           <button id="save-user-comment-button" class="button-primary" type="button" hidden>コメントを保存</button>
           <button id="confirm-adopt-button" class="button-primary" type="button" hidden>採用を確定</button>
           <button id="confirm-reject-button" class="button-danger" type="button" hidden>却下を確定</button>
@@ -209,7 +209,7 @@
     </article>
   </dialog>
 
-  <dialog id="create-dialog" class="dialog-shell" aria-labelledby="create-dialog-heading">
+  <dialog id="create-dialog" class="dialog-shell create-dialog" aria-labelledby="create-dialog-heading">
     <form id="create-form" class="dialog-frame" novalidate>
       <header class="dialog-header">
         <h2 id="create-dialog-heading">新規追加</h2>

@@ -4,6 +4,7 @@
 
 import datetime
 import pathlib
+import re
 import shutil
 import sys
 from collections.abc import Callable, Iterable
@@ -171,6 +172,24 @@ def migrate_legacy_layout(
 
 _LEGACY_RESERVATION_INTERNAL_REPO = "internal/agent-toolkit/reservations"
 
+_LEGACY_RESERVATION_KEY = re.compile(r"""^["']?reservation(?:_companion)?["']?[ \t]*:""", re.MULTILINE)
+"""2.34.0形式の予約と付随項目を示すfrontmatterの最上位キー（`reservation`・`reservation_companion`）の行。
+
+2.34.0は`yaml.safe_dump`のブロック形式で保存し、最上位キーは行頭に置かれる。値に同じ語を含む項目は該当させない。
+"""
+
+
+def _frontmatter_source(text: str) -> str:
+    """先頭のfrontmatterの区切りの内側を返す。区切りが無ければ空文字列を返す。
+
+    区切りの判定は`frontmatter.parse_frontmatter`と同じ規則とし、YAMLは解析しない。
+    """
+    text = text.removeprefix("\ufeff")
+    if not text.startswith("---\n"):
+        return ""
+    end = text.find("\n---\n", 3)
+    return text[4:end] if end >= 0 else ""
+
 
 def _is_legacy_token_hash(value: object) -> bool:
     """2.34.0の予約が記録したSHA-256値かを返す。"""
@@ -251,9 +270,15 @@ def migrate_legacy_reservations(
     companion_names: set[str] = set()
     reservation_paths: set[pathlib.Path] = set()
 
-    for path in iter_entry_paths(private_notes):
+    texts = [(path, path.read_text(encoding="utf-8")) for path in iter_entry_paths(private_notes) if path.is_file()]
+    # 移行済みの保存先では該当が無く、`pull`ごとに全件のYAMLを解析するとロック保持中の処理が件数に比例して伸びるため、
+    # 予約・付随項目のキーを持つ項目が無ければ解析せずに終える。該当がある場合は依存の付け替えも含め全件を従来どおり解析する。
+    if not any(_LEGACY_RESERVATION_KEY.search(_frontmatter_source(text)) for _, text in texts):
+        return 0
+
+    for path, text in texts:
         if path.is_file():
-            parsed = parse_frontmatter(path.read_text(encoding="utf-8"))
+            parsed = parse_frontmatter(text)
             if parsed is None:
                 continue
             data, body = parsed

@@ -254,7 +254,6 @@ async function exercise(kind, status, code, withExternalUpdate) {
   detailOriginKey = entryKey(serverEntry);
   openDialog(elements['detail-dialog'], new Element(`${kind}-origin`, 'BUTTON'), elements['detail-dialog-body']);
   if (answering) {
-    enterAnswer();
     elements['answer-input'].value = 'ユーザーの回答';
   } else {
     enterEdit();
@@ -312,7 +311,7 @@ process.stdout.write(JSON.stringify({
     for name in ("saveGeneral", "answerGeneral", "saveConflict", "answerConflict"):
         assert "詳細を閉じて開き直してから保存してください" in result[name]["alert"]
         assert result[name]["disabled"] is True
-        assert result[name]["mode"] == ("answer" if name.startswith("answer") else "edit")
+        assert result[name]["mode"] == ("view" if name.startswith("answer") else "edit")
     assert "保存できませんでした。 ［WI / node-test / /notes / entry.md］一般失敗" in result["saveGeneral"]["alert"]
     assert "回答できませんでした。 ［WI / node-test / /notes / 回答保存］一般失敗" in result["answerGeneral"]["alert"]
     assert result["saveGeneral"]["input"] == "ユーザーの保存本文"
@@ -327,7 +326,7 @@ process.stdout.write(JSON.stringify({
         "alert": "question.mdへ回答できませんでした。 ［WI / node-test / /notes / 回答保存］権限がありません",
         "disabled": False,
         "input": "ユーザーの回答",
-        "mode": "answer",
+        "mode": "view",
     }
 
 
@@ -413,6 +412,22 @@ async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Pat
     assert (await client.get("/api/sessions/detail")).status_code == 400
     assert (await client.get("/api/sessions/detail?engine=claude&path=../etc/passwd.jsonl")).status_code == 404
     assert (await client.get("/api/sessions/detail?engine=unknown&path=a.jsonl")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_session_cost_api_errors_tell_the_next_step(tmp_path: pathlib.Path) -> None:
+    """推定費用APIの入力不正と対象外の記録は、要求を直す手掛かりを応答に含める。"""
+    app = _three_screen_app(tmp_path)
+    client = app.test_client()
+    unknown = await client.get("/api/sessions/cost?engine=claude&path=a.jsonl&extra=1")
+    assert unknown.status_code == 400
+    assert "host・engine・path" in (await unknown.get_json())["error"]
+    missing = await client.get("/api/sessions/cost?engine=claude")
+    assert missing.status_code == 400
+    assert "/api/sessions/list" in (await missing.get_json())["error"]
+    remote = await client.get("/api/sessions/cost?host=other-host&engine=claude&path=a.jsonl")
+    assert remote.status_code == 404
+    assert "/api/sessions/detail" in (await remote.get_json())["error"]
 
 
 @pytest.mark.asyncio

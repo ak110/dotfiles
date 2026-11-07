@@ -39,7 +39,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import process_tree, recorded_process, session_registry, state_paths
+from agent_toolkit._common import process_tree, reclaim_records, recorded_process, session_registry, state_paths
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -281,6 +281,38 @@ async def test_kill_stops_only_matching_executor_then_send_message_resumes(
             response = await mcp_tools.send_message(_SESSION_ID, "続行")
             assert response["delivery"] == "reply_started"
             assert backend.resume_calls == [_SESSION_ID]
+
+
+@pytest.mark.asyncio
+async def test_kill_keeps_running_until_descendant_of_exited_executor_is_reclaimed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """委譲先CLIが終了しても回収待ちの子孫が残る間は、`kill`が停止を再試行し、回収までは`interrupted`を公開しない。"""
+    with _live_process() as (owner_process, owner), _live_process() as (descendant_process, descendant):
+        executor = exited_process_identity()
+        record = _publish_running(monkeypatch, tmp_path, "codex", (owner, executor))
+        reclaim_records.save(executor.pid, executor.create_time, [psutil.Process(descendant.pid)], [], [])
+        assert session_registry.resolve(_SESSION_ID).state is session_registry.Resolution.RUNNING
+        real_stop_tree = process_tree.stop_tree
+
+        def leave_descendant(_root: object, *, known: list[psutil.Process], **_kwargs: object) -> process_tree.TreeStopResult:
+            return process_tree.TreeStopResult(list(known), list(known), [])
+
+        async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
+            manager.activate()
+            _backend(monkeypatch, manager, "codex", [("turn-1", "inProgress")])
+            monkeypatch.setattr(process_tree, "stop_tree", leave_descendant)
+            with pytest.raises(ValueError, match="回収を確認できない"):
+                await mcp_tools.kill(_SESSION_ID)
+            assert json.loads(record.read_text(encoding="utf-8"))["terminal"] is False
+
+            monkeypatch.setattr(process_tree, "stop_tree", real_stop_tree)
+            killed = await mcp_tools.kill(_SESSION_ID)
+
+            assert killed["status"] == "interrupted"
+            assert descendant_process.wait(timeout=10) is not None
+            assert owner_process.poll() is None
+            assert not reclaim_records.path(executor.pid, executor.create_time).exists()
 
 
 @pytest.mark.asyncio

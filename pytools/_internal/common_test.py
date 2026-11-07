@@ -26,20 +26,19 @@ def _holds_resources(process: psutil.Process) -> bool:
         return False
 
 
-def test_process_scope_reports_residual_identifier_and_recovery(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """停止不能な子の識別子と、受信側が実行できる次操作・報告先を同じ警告へ残す。"""
+def test_process_scope_reports_residual_identifier_and_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """停止不能な子は警告だけで戻らず、識別子と次操作・報告先を持つ回収不能として送出する。"""
     process = types.SimpleNamespace(stdin=None, stdout=io.BytesIO(), stderr=io.BytesIO(), poll=lambda: None)
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
-    monkeypatch.setattr(common, "stop_process_tree", lambda _process: ["12345: fixture-command --child"])
-    with common.process_scope(["fixture-command"]):
+    monkeypatch.setattr(common, "stop_owned_process", lambda _process: (["12345: fixture-command --child"], []))
+    with pytest.raises(common.ProcessReclaimError) as raised, common.process_scope(["fixture-command"]):
         pass
     assert process.stdout.closed and process.stderr.closed
-    assert "12345: fixture-command --child" in caplog.text
-    assert "表示されたPIDと起動コマンドを確認" in caplog.text
-    assert "終了してから呼出元を再実行" in caplog.text
-    assert "dotfilesの管理者へ報告" in caplog.text
+    message = str(raised.value)
+    assert "12345: fixture-command --child" in message
+    assert "表示されたPIDと起動コマンドを確認" in message
+    assert "終了してから呼出元を再実行" in message
+    assert "dotfilesの管理者へ報告" in message
 
 
 class TestResolveUvPath:
@@ -433,3 +432,57 @@ class TestWriteSettingsHybrid:
         # フォールバック経路のため、コメントは失われるが値は書き込まれる
         assert "// コメント" not in text
         assert json.loads(text) == {"a": 2}
+
+
+def test_process_scope_reclaim_failure_is_not_absorbed_by_run_subprocess(monkeypatch):
+    """子を回収できない結果は、run_subprocessの任意失敗（None）へ変換されず呼出元へ届く。"""
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as survivor:
+        try:
+            owned = psutil.Process(survivor.pid)
+
+            def stop_root_only(process: subprocess.Popen[str], **_kwargs: object) -> tuple[list[str], list[object]]:
+                # 実際の停止と同じく所有する子は終了させ、子孫だけが残った結果を返す。
+                process.kill()
+                process.wait()
+                return [f"{owned.pid}: survivor"], [owned]
+
+            monkeypatch.setattr(common, "stop_owned_process", stop_root_only)
+            with pytest.raises(common.ProcessReclaimError) as raised:
+                common.run_subprocess([sys.executable, "-c", "import time; time.sleep(120)"], timeout=0.1)
+            assert raised.value.retry() == []
+            assert survivor.wait(timeout=10) is not None
+        finally:
+            if survivor.poll() is None:
+                survivor.kill()
+
+
+def test_reclaim_retry_keeps_unreaped_direct_child(monkeypatch: pytest.MonkeyPatch) -> None:
+    """zombie表示で生存判定から外れた直接の子は、回収を待てるまで再試行の残存に残る。"""
+
+    class _StuckChild:
+        """回収の待機が時間切れになり続ける直接の子。``reaped``を立てると回収できる。"""
+
+        pid = 4321
+        args = ["fixture-child"]
+
+        def __init__(self) -> None:
+            self.reaped = False
+
+        def wait(self, timeout: float | None = None) -> int:
+            if not self.reaped:
+                raise subprocess.TimeoutExpired(self.args, timeout or 0)
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+        def poll(self) -> int | None:
+            return 0 if self.reaped else None
+
+    child = _StuckChild()
+    monkeypatch.setattr(common, "_REAP_TIMEOUT_SECONDS", 0)
+    error = common.ProcessReclaimError(["4321: fixture-child"], [], child=typing.cast(subprocess.Popen[typing.Any], child))
+    assert error.retry() == ["4321: fixture-child"]
+    child.reaped = True
+    assert error.retry() == []
+    assert error.child is None

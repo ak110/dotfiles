@@ -329,6 +329,8 @@ def _subscription_stream(
 
     通知はクライアントの`onmessage`が受け取るよう、event名を付けずdataのみで配信する。
     heartbeatは`event: heartbeat`とし、`onmessage`へ届かないため再取得を起こさない。
+    購読の登録直後に`event: subscribed`を1回送る。`EventSource`の`open`は応答ヘッダーの受信時点で登録より先に
+    届き得るため、画面はこの合図の後に初期取得して、最初の接続での一覧の取り直しを省ける。
     `pytilpack.sse.generator`のコメント行のkeep-aliveは、内側の生成処理が間隔内にheartbeatを送るため発生しない。
     """
     # 停止要求は生成処理の外で取得する。生成処理はリクエストの文脈の外で実行されるため`current_app`を参照できない。
@@ -339,6 +341,7 @@ def _subscription_stream(
     async def generate() -> typing.AsyncGenerator[pytilpack.sse.SSE]:
         queue = await subscribe()
         try:
+            yield pytilpack.sse.SSE(event="subscribed", data="{}")
             while True:
                 received = await serve_state.next_subscription_item(queue, shutdown, _runtime.SSE_HEARTBEAT_SEC)
                 if received is serve_state.SHUTDOWN:
@@ -397,21 +400,39 @@ def register_session_routes(
         roots = [str(context.claude_home / "projects"), str(context.codex_home / "sessions")]
         return json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings, "roots": roots})
 
-    @app.get("/api/sessions/detail")
-    async def sessions_detail() -> quart.Response:
+    def session_target() -> tuple[str, str, str]:
+        """詳細と推定費用の要求から、対象の記録を示すhost・engine・pathを取り出す。"""
         unknown = set(quart.request.args) - {"host", "engine", "path"}
         if unknown:
-            raise _wi_operations.WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
+            raise _wi_operations.WebApiInputError(
+                f"未知のqueryです: {', '.join(sorted(unknown))}。"
+                "指定できるのはhost・engine・pathだけなので、他のqueryを除いてください"
+            )
         engine = quart.request.args.get("engine", "")
         path = quart.request.args.get("path", "")
-        host = quart.request.args.get("host") or context.hostname
         if not engine or not path:
-            raise _wi_operations.WebApiInputError("engineとpathを指定してください")
+            raise _wi_operations.WebApiInputError(
+                "engineとpathを指定してください。値は/api/sessions/listの各記録のengineとpathを使います"
+            )
+        return quart.request.args.get("host") or context.hostname, engine, path
+
+    @app.get("/api/sessions/detail")
+    async def sessions_detail() -> quart.Response:
+        host, engine, path = session_target()
         try:
             detail = await serve_sessions.session_detail(context, engine, host, path)
         except serve_sessions.SessionNotFoundError as error:
             raise FileNotFoundError(str(error)) from error
         return json_no_store(_with_assistant_html(detail))
+
+    @app.get("/api/sessions/cost")
+    async def sessions_cost() -> quart.Response:
+        host, engine, path = session_target()
+        try:
+            cost = await serve_sessions.session_cost(context, engine, host, path)
+        except serve_sessions.SessionNotFoundError as error:
+            raise FileNotFoundError(str(error)) from error
+        return json_no_store({"cost": cost})
 
     @app.get("/api/sessions/host-status")
     async def sessions_host_status() -> quart.Response:

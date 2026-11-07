@@ -20,6 +20,6 @@ def test_stop_leaves_question_meaning_to_agent(tmp_path, monkeypatch, text):
     assert "pending_question_advisor" not in stop.CHECK_MODULE_NAMES
 
 
-def test_codex_stop_keeps_only_language_protection():
-    """非遮断通知を配送できないCodexのStopは言語保護だけを実行する。"""
-    assert stop.CODEX_CHECK_MODULE_NAMES == ("response_language_advisor",)
+def test_codex_stop_keeps_only_blocking_checks():
+    """非遮断通知を配送できないCodexのStopは、遮断で扱う言語保護と投入作業の報告確認だけを実行する。"""
+    assert stop.CODEX_CHECK_MODULE_NAMES == ("response_language_advisor", "submission_report_advisor")

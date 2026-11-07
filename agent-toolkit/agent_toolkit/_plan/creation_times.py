@@ -193,12 +193,15 @@ def update_creation_time_index(
             resolved[rel] = creation
             updated[key] = {"host": host, "root": root_key, "path": rel, "ctime_epoch": creation}
         # インデックスの更新時は必ず同じロックを保持するため、冒頭で読み込んだ内容へ直接反映できる。
+        changed = bool(migrated) or any(index.get(key) != entry for key, entry in updated.items())
         if prune:
             for key, entry in list(index.items()):
                 if key not in updated and entry.get("host") == host and entry.get("root") == root_key:
                     del index[key]
+                    changed = True
         index.update(updated)
-        if _write_index(index):
+        # 一覧の取得ごとに走査するため、変化の無い走査では全件の書き直しを省く（数千件で走査時間の約3割）。
+        if changed and _write_index(index):
             for legacy_path in migrated:
                 with contextlib.suppress(OSError):
                     legacy_path.unlink()

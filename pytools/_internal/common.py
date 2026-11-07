@@ -35,12 +35,67 @@ _REAP_TIMEOUT_SECONDS = 5
 _ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
 
 
+class ProcessReclaimError(RuntimeError):
+    """起動した子プロセスの停止を確認できない。
+
+    `run_subprocess`などが任意機能の失敗として吸収する`OSError`・`SubprocessError`に含めず、
+    呼出元が後続の工程を始めないよう`RuntimeError`の派生にする。
+    `retry`は保持した同じ所有対象だけを回収し直す（PIDの再利用先は`psutil.Process`が起動時刻で除く）。
+    `child`は所有する直接の子で、zombie表示のまま回収を待つ場合も`retry`が回収を待ち直す。
+    """
+
+    def __init__(
+        self, residual: list[str], processes: list[typing.Any], *, child: subprocess.Popen[typing.Any] | None = None
+    ) -> None:
+        super().__init__(
+            f"子プロセスを回収できない: {residual}。表示されたPIDと起動コマンドを確認し、"
+            "この実行が起動したプロセスなら終了してから呼出元を再実行する。"
+            "終了できない場合は、この診断をdotfilesの管理者へ報告する"
+        )
+        self.residual = residual
+        self.processes = processes
+        self.child = child
+
+    def retry(self) -> list[str]:
+        """保持した所有対象を回収し直し、なお残る対象の記述を返す（空なら回収済み）。"""
+        alive = _reclaim_targets(self.processes)
+        remaining = {item.pid for item in alive}
+        # zombie表示の直接の子は`_reclaim_targets`の生存判定から外れるため、回収の完了を直接の待機で確かめる。
+        if self.child is not None:
+            if _reap_owned_child(self.child):
+                self.child = None
+            else:
+                remaining.add(self.child.pid)
+        self.residual = [entry for entry in self.residual if int(entry.split(":", 1)[0]) in remaining]
+        self.processes = alive
+        return self.residual
+
+
+def _reclaim_targets(targets: list[typing.Any]) -> list[typing.Any]:
+    """終了要求と強制終了を順に送り、資源を保持したまま残った対象を返す。"""
+    for target in targets:
+        with contextlib.suppress(psutil.Error, OSError):
+            target.terminate()
+    alive = _wait_process_resources(targets)
+    for target in alive:
+        with contextlib.suppress(psutil.Error, OSError):
+            target.kill()
+    return _wait_process_resources(alive)
+
+
 def stop_process_tree(process: subprocess.Popen[typing.Any], *, stdin_grace_seconds: float = 0) -> list[str]:
     """所有する子と停止前に列挙した子孫を回収し、残存のPIDとコマンドを返す。
 
     stdin_grace_secondsを指定した呼出元は、標準入力のEOFによる正常終了を先に待つ。
     その場合もEOFより前に子孫を列挙し、子の終了後に残る子孫まで回収する。
     """
+    return stop_owned_process(process, stdin_grace_seconds=stdin_grace_seconds)[0]
+
+
+def stop_owned_process(
+    process: subprocess.Popen[typing.Any], *, stdin_grace_seconds: float = 0
+) -> tuple[list[str], list[typing.Any]]:
+    """所有する子を回収し、残存の記述と再試行に使う所有対象を返す。"""
     try:
         parent = psutil.Process(process.pid)
         targets = [*parent.children(recursive=True), parent]
@@ -56,28 +111,31 @@ def stop_process_tree(process: subprocess.Popen[typing.Any], *, stdin_grace_seco
                 process.stdin.close()
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=stdin_grace_seconds)
-    for target in targets:
-        with contextlib.suppress(psutil.Error, OSError):
-            target.terminate()
-    alive = _wait_process_resources(targets)
-    for target in alive:
-        with contextlib.suppress(psutil.Error, OSError):
-            target.kill()
-    alive = _wait_process_resources(alive)
-    # 所有する子はzombie表示でも回収済みとは限らない。スレッドグループのリーダーだけが先に終了し、
-    # 他のスレッドが生存する多スレッドの子はzombieと表示され、`_wait_process_resources`の対象から外れる。
-    # そのためzombie判定に頼らず回収を上限付きで待ち、終わらなければ強制終了を重ねる。
-    try:
-        process.wait(timeout=_REAP_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        with contextlib.suppress(OSError):
-            process.kill()
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(timeout=_REAP_TIMEOUT_SECONDS)
-    residual = [descriptions.get(target.pid, str(target.pid)) for target in alive if target.pid != process.pid]
+    alive = _reclaim_targets(targets)
+    # 所有する子はzombie表示でも回収済みとは限らないため、`alive`とは別に直接の待機で回収を確かめる。
+    _reap_owned_child(process)
+    owned = [target for target in alive if target.pid != process.pid]
+    residual = [descriptions.get(target.pid, str(target.pid)) for target in owned]
     if process.poll() is None:
         residual.append(descriptions.get(process.pid, f"{process.pid}: {process.args!r}"))
-    return residual
+        owned.extend(target for target in alive if target.pid == process.pid)
+    return residual, owned
+
+
+def _reap_owned_child(process: subprocess.Popen[typing.Any]) -> bool:
+    """所有する直接の子の回収を上限付きで待ち、終わらなければ強制終了を重ねて、回収できたかを返す。
+
+    スレッドグループのリーダーだけが先に終了した多スレッドの子はzombieと表示されるため、zombie判定に頼らない。
+    """
+    # 待機の失敗（時間切れ・OSError）は回収を確認できない結果として返し、通常の例外へ置き換えない。
+    try:
+        process.wait(timeout=_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired, OSError:
+        with contextlib.suppress(OSError):
+            process.kill()
+        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+            process.wait(timeout=_REAP_TIMEOUT_SECONDS)
+    return process.poll() is not None
 
 
 def _wait_process_resources(targets: list[psutil.Process]) -> list[psutil.Process]:
@@ -108,7 +166,11 @@ def safe_resolve(path: Path) -> Path:
 def process_scope(
     *popenargs: typing.Any, close_streams: bool = True, **kwargs: typing.Any
 ) -> Generator[subprocess.Popen[typing.Any]]:
-    """PEP 723スクリプトでも使える、上限付き回収を伴う子プロセスの所有境界。"""
+    """PEP 723スクリプトでも使える、上限付き回収を伴う子プロセスの所有境界。
+
+    子を回収できない場合は`ProcessReclaimError`を送出する。警告だけで戻ると、呼出元は所有する資源の
+    停止を確認できないまま後続の工程へ進むためである。
+    """
     # Popen.__exit__の無期限waitを避け、既存の子孫回収と残存診断を保つ。
     process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
     try:
@@ -116,13 +178,9 @@ def process_scope(
     finally:
         try:
             if process.poll() is None:
-                for residual in stop_process_tree(process):
-                    logger.warning(
-                        "子プロセスが残存: %s。表示されたPIDと起動コマンドを確認し、"
-                        "この実行が起動したプロセスなら終了してから呼出元を再実行する。"
-                        "終了できない場合は、この診断をdotfilesの管理者へ報告する",
-                        residual,
-                    )
+                residual, owned = stop_owned_process(process)
+                if residual:
+                    raise ProcessReclaimError(residual, owned, child=process)
         finally:
             if close_streams:
                 with contextlib.ExitStack() as cleanup:
@@ -230,7 +288,8 @@ def run_subprocess(
 ) -> subprocess.CompletedProcess[str] | None:
     """サブプロセスを指定エンコーディング + `errors="replace"` で実行する共通ラッパー。
 
-    タイムアウト・OSError・SubprocessError を吸収して None を返す。非ゼロ終了は
+    タイムアウト・OSError・SubprocessError を吸収して None を返す。子を回収できない
+    `ProcessReclaimError`は吸収せず送出する（呼出元が後続の工程を止めるため）。非ゼロ終了は
     そのまま呼び出し元に返す。`tag` を指定すると失敗時のログラベルに使用する。
     タイムアウトは起動の失敗と原因も次の操作も異なるため、別の診断を出す。
 

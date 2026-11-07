@@ -46,6 +46,28 @@ export const SEND_TO_USER_DELEGATED_DENY =
   "委譲先・サブエージェントからの呼び出しではユーザーの画面へ表示していない。結果本文は委譲元へ返す必要があるため、" +
   "このツールを使わず、報告する本文を全て最終応答（終了の返却）へ書け。";
 
+// `AWI化ステータス: 不要`の理由が始まるべき区分名。区分の定義は`agent-basics:bugfix`の
+// `references/root-cause-prevention.md`「再発防止策の必須性」、値と記入方法の定義元は`share/rules-main.md`「作業中の改善点の報告」にある。
+// 判定は区分名との文字列照合だけとし、理由の意味は推定しない。送達は止めない。
+const UNNEEDED_CATEGORIES = ["非欠陥", "処置済み", "被覆", "見送り"] as const;
+const UNNEEDED_MARKER = /AWI化ステータス:\s*不要[ \t]*/g;
+const UNNEEDED_WARNING = automatedMessage(
+  "send-to-user",
+  "warn",
+  "`AWI化ステータス: 不要`の直後が区分名（" + UNNEEDED_CATEGORIES.join("・") + "）で始まらない箇所がある。" +
+    "本文は表示済みである。`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」で区分を判定し、" +
+    "どの区分にも入らなければ再発防止策を検討して、以後の報告で区分名から理由を書け。",
+);
+
+// 区分名で始まらない`不要`が1つでもあれば警告本文を返す。
+export function unneededStatusWarning(message: string): string | undefined {
+  for (const matched of message.matchAll(UNNEEDED_MARKER)) {
+    const rest = message.slice((matched.index ?? 0) + matched[0].length);
+    if (!UNNEEDED_CATEGORIES.some((category) => rest.startsWith(category))) return UNNEEDED_WARNING;
+  }
+  return undefined;
+}
+
 const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
 const INVALID_MESSAGE = automatedMessage("send-to-user", "block", "文字列のmessageが無いため、画面へ本文を表示していない。本文をmessageへ入れて呼び直せ。");
 
@@ -71,14 +93,17 @@ export function register(on: On): void {
     // 英語主体の検出でも判定は成功しているため、判定不能の既往を破棄してから拒否する。
     const note = deliverOnce(delivered, sessionId, check);
     if (check.kind === "violation") return { deny: check.deny };
-    return withNotice({ result: DISPLAYED }, note);
+    return withNotice(withNotice({ result: DISPLAYED }, note), unneededStatusWarning(message));
   }).catch(($, e, next) => {
     if (e.tool !== fullName($.plugin.name)) return next(e);
-    if (messageOf(e) === undefined) return { deny: INVALID_MESSAGE };
-    return withNotice({ result: DISPLAYED }, deliverOnce(delivered, undefined, languageCheckUnavailable(`send_to_userのtool.callで${next.error.kind}が発生`)));
+    const message = messageOf(e);
+    if (message === undefined) return { deny: INVALID_MESSAGE };
+    const note = deliverOnce(delivered, undefined, languageCheckUnavailable(`send_to_userのtool.callで${next.error.kind}が発生`));
+    return withNotice(withNotice({ result: DISPLAYED }, note), unneededStatusWarning(message));
   });
 
   // 呼び出しの行を`message`の全文の`Markdown`で描く。他のツールの行は描き替えない。
+  // 直前の表示と続いて読みにくくならないよう、本文の前に空行1行分の余白を置く。
   on("ui.render", { component: "ToolUse" }, ($, e, next) => {
     if (e.props.tool !== fullName($.plugin.name)) return next(e);
     const message = messageOf(e.props.input);
@@ -88,7 +113,11 @@ export function register(on: On): void {
     if (message === undefined || e.props.isRunning || e.props.isErrored || e.props.isInterrupted || e.props.output !== DISPLAYED) {
       return <Box />;
     }
-    return <Markdown text={message} />;
+    return (
+      <Box marginTop={1}>
+        <Markdown text={message} />
+      </Box>
+    );
   });
 
   // 成功結果はモデルへ返し、画面には本文の行だけを残す。エラーは後続の描画で示す。

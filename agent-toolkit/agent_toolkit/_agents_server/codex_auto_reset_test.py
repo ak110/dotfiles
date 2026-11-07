@@ -236,6 +236,62 @@ async def test_multi_bucket_selects_codex_and_passes_available_credit(tmp_path: 
     assert rpc.consumptions[0]["creditId"] == "credit-1"
 
 
+@pytest.mark.asyncio
+async def test_unused_formats_do_not_block_selection_or_refresh(tmp_path: Path) -> None:
+    """未利用bucket・非週次window・対象外creditの形式差では、初回確認と成功後の再取得を止めない。"""
+    rpc = _RPC()
+    codex = copy.deepcopy(rpc.limits["rateLimits"])
+    codex["primary"] = {"usedPercent": "unknown", "windowDurationMins": 300, "resetsAt": None}
+    other = {"limitId": "other", "secondary": {"usedPercent": "n/a", "windowDurationMins": True}}
+    rpc.limits = {
+        "rateLimitsByLimitId": {"codex": codex, "other": other},
+        "rateLimitResetCredits": {
+            "availableCount": 1,
+            "credits": [
+                {"id": "", "resetType": "otherRateLimits", "status": "available"},
+                {"id": None, "resetType": "codexRateLimits", "status": "redeemed"},
+                "not a credit",
+                {"id": "credit-1", "resetType": "codexRateLimits", "status": "available"},
+            ],
+        },
+    }
+    refreshed = copy.deepcopy(rpc.limits)
+    refreshed["rateLimitsByLimitId"]["codex"]["secondary"]["usedPercent"] = 0
+    rpc.refreshed = refreshed
+    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    assert result.reset_confirmed
+    assert result.rate_limits == refreshed
+    assert [params.get("creditId") for params in rpc.consumptions] == ["credit-1"]
+
+
+@pytest.mark.asyncio
+async def test_non_chatgpt_account_details_are_not_validated(tmp_path: Path) -> None:
+    rpc = _RPC()
+    rpc.account = {"account": {"type": "apiKey", "email": 123}}
+    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    assert not result.reset_confirmed and result.diagnostic
+    assert not rpc.consumptions
+
+
+@pytest.mark.parametrize("change", ["chatgpt_email", "selected_credit_id", "codex_window_duration", "bucket_shape", "limit_id"])
+@pytest.mark.asyncio
+async def test_values_used_for_selection_or_consumption_are_still_validated(tmp_path: Path, change: str) -> None:
+    rpc = _RPC()
+    if change == "chatgpt_email":
+        rpc.account = {"account": {"type": "chatgpt", "email": 123}}
+    elif change == "selected_credit_id":
+        rpc.limits["rateLimitResetCredits"]["credits"] = [{"id": "", "resetType": "codexRateLimits", "status": "available"}]
+    elif change == "codex_window_duration":
+        rpc.limits["rateLimits"]["primary"] = {"usedPercent": 0, "windowDurationMins": "300", "resetsAt": 1}
+    elif change == "bucket_shape":
+        rpc.limits["rateLimitsByLimitId"] = {"codex": "not a bucket"}
+    else:
+        rpc.limits["rateLimits"]["limitId"] = 1
+    with pytest.raises(ValidationError):
+        await check_auto_reset(rpc, state_dir=tmp_path)
+    assert not rpc.consumptions
+
+
 @pytest.mark.parametrize("change", ["other_bucket", "no_weekly", "missing_bucket", "missing_inventory"])
 @pytest.mark.asyncio
 async def test_ineligible_limits_do_not_consume(tmp_path: Path, change: str) -> None:

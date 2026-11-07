@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import functools
+import json
 import os
 import urllib.parse
 from collections.abc import AsyncGenerator
@@ -522,6 +523,62 @@ async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenH
     assert current_blob_url != first_blob_url
     assert not await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", first_blob_url)
     assert await harness.page.evaluate("(url) => fetch(url).then(() => true, () => false)", current_blob_url)
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_plan_operations_record_open_and_notified_reload(screen_harness: _ScreenHarness) -> None:
+    """選択から図の描画まで、変更通知から一覧とプレビューの再描画までを、それぞれ1件の操作として取得と対応付けて記録する。
+
+    取得単位の記録は本文の受信直後で終わり、図の非同期描画や通知後の再取得全体の所要を追跡できない。
+    """
+    harness = screen_harness
+    page = harness.page
+    await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
+    # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
+    sent: list[dict] = []
+    page.on(
+        "request",
+        lambda request: (
+            sent.extend(json.loads(request.post_data or "{}").get("records", []))
+            if request.url.endswith("/api/timings")
+            else None
+        ),
+    )
+    await page.goto(harness.base_url + "/plans")
+    await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    # 初期表示の選択は接続確立時の再同期に置き換わることがあるため、表示の確定後に別の計画を選び直して測る。
+    second = harness.plan_path.with_name("second-plan.md")
+    second.write_text(_valid_diagram_markdown("二件目"), encoding="utf-8")
+    await serve_plans.schedule_broadcast(harness.plans_state)
+    await page.locator("#files .file", has_text="second-plan.md").click()
+    await page.locator("#preview .diagram-mermaid svg", has_text="二件目").wait_for(state="visible")
+    second.write_text(_valid_diagram_markdown("通知後"), encoding="utf-8")
+    await serve_plans.schedule_broadcast(harness.plans_state)
+    await page.locator("#preview h1", has_text="通知後").wait_for()
+    await page.locator("#preview .diagram-mermaid svg", has_text="通知後").wait_for(state="visible")
+    async with page.expect_request(
+        lambda request: request.url.endswith("/api/timings") and '"external-reload"' in (request.post_data or ""),
+        timeout=30000,
+    ):
+        await page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+    records = list(sent)
+
+    def linked_routes(operation: dict) -> set[str]:
+        return {
+            record.get("route", "")
+            for record in records
+            if record.get("operation_id") == operation["operation_id"] and record is not operation
+        }
+
+    plan_records = [record for record in records if record.get("screen") == "plans"]
+    opened = next(record for record in plan_records if record.get("operation") == "open-file" and record.get("outcome") == "ok")
+    assert opened["kind"] == "operation"
+    assert "/api/plans/file" in linked_routes(opened)
+    reloaded = next(
+        record for record in plan_records if record.get("operation") == "external-reload" and record.get("trigger") == "sse"
+    )
+    assert {"/api/plans/files", "/api/plans/file"} <= linked_routes(reloaded)
+    assert reloaded["total_ms"] >= 0
 
 
 @pytest.mark.asyncio(loop_scope="session")

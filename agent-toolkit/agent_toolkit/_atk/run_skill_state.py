@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 
 import pydantic
 
-from agent_toolkit._common import claude_connection, session_registry, state_paths
+from agent_toolkit._common import claude_connection, reclaim_records, session_registry, state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _RUN_ID_PATTERN = r"^[0-9a-f]{32}$"
@@ -144,8 +144,10 @@ class RecordWriter:
     def finish(self, remaining: float, *, completed: bool) -> None:
         """CLIの生存を確かめ、終了状態と残時間を保存する。"""
         with self._lock:
-            if self.record.executor is not None and self.record.executor.exists():
-                # 終了処理が失敗して旧CLIが生存する場合は、次のresumeにもPID世代と元deadlineを渡す。
+            executor = self.record.executor
+            if executor is not None and (executor.exists() or reclaim_records.pending(executor.pid, executor.create_time)):
+                # 終了処理が失敗して旧CLIか回収待ちの子孫が残る場合は、次のresumeにもPID世代と元deadlineを渡す。
+                # resumeは記録したPID世代から回収待ちを引き当てて回収を再試行する。
                 self.record = self.record.model_copy(update={"remaining": remaining, "status": "running"})
                 save(self.record)
                 return

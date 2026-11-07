@@ -77,11 +77,13 @@ def test_codex_hook_messages_keep_occurrences_and_exclude_quotes(
 
 
 @pytest.mark.parametrize("summary", [False, True])
+@pytest.mark.parametrize("prefix", ["", "- ", "1. "])
 def test_wait_notifications_are_delegate_candidates(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], summary: bool
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], summary: bool, prefix: str
 ) -> None:
-    """CLIのJSONとエージェント向け要約の受信通知を原記録へ対応付ける。"""
-    body = "気付いた改善点: 解析が入力を欠落させる\n気付いた改善点: 別の入力も欠落する"
+    """CLIのJSONとエージェント向け要約の受信通知を、箇条書きの項目記号を除いて原記録へ対応付ける。"""
+    expected = "気付いた改善点: 解析が入力を欠落させる\n気付いた改善点: 別の入力も欠落する"
+    body = "\n".join(prefix + line for line in expected.splitlines())
     output = (
         f"通知: 1件（session_id: child）\n本文開始: session_id=child\n{body}\n本文終了: session_id=child\n"
         if summary
@@ -120,7 +122,7 @@ def test_wait_notifications_are_delegate_candidates(
     capsys.readouterr()
     candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text().splitlines()]
     notice = next(row for row in candidates if row.get("candidate_kind") == "delegate-return")
-    assert notice["text"] == body
+    assert notice["text"] == expected
     assert [locator["line"] for locator in notice["locators"]] == [2]
 
 

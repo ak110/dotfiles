@@ -142,7 +142,12 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
                         assert targets, "残存の判定前に子PIDの登録へ到達していない"
                         assert targets[0].is_running()
                         fail_reclaim = False
-                        await backend.release_session(session)
+                        if outcome == "unresolved":
+                            # 生成停止の未確認は再試行で解消しない。既知の子は回収しても、再開の停止を伝え続ける。
+                            with pytest.raises(RuntimeError, match="生成の停止を確認できない"):
+                                await backend.release_session(session)
+                        else:
+                            await backend.release_session(session)
                     else:
                         await asyncio.gather(release, return_exceptions=outcome == "cancel")
                         if outcome == "cancel":
@@ -151,7 +156,11 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
                     if not release.done():
                         release.cancel()
                     await asyncio.gather(release, return_exceptions=True)
-            await backend.close()
+            if outcome == "unresolved":
+                with pytest.raises(RuntimeError, match="生成の停止を確認できない"):
+                    await backend.close()
+            else:
+                await backend.close()
             assert finished.read_text(encoding="utf-8") == "finished"
             assert client.disconnected
             assert targets and all(
@@ -161,5 +170,6 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
             assert foreign.poll() is None
         finally:
             fail_reclaim = False
-            await backend.close()
+            with contextlib.suppress(RuntimeError):
+                await backend.close()
             await asyncio.to_thread(process_tree.reclaim_processes, targets, timeout=0.5)

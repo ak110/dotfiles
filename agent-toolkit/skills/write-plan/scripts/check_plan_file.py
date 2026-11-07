@@ -842,7 +842,7 @@ def check_plan_set(
 
 
 def _wi_comparison_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
-    """由来や移管先をWI本文と比べられなかった場合に、原因ごとの解消手段を一度ずつ案内する。"""
+    """由来や移管先をWI本文と比べられなかった場合と、削除済みの移管先を履歴で受理した場合の後続操作を一度ずつ案内する。"""
     skips = [
         message
         for kind, message in warnings
@@ -851,9 +851,23 @@ def _wi_comparison_skip_next_action(warnings: list[_ClassifiedWarning]) -> str |
             ("`## 実施内容`の由来をWI本文と比べられなかった。", "`## 実施内容`の移管先をWI本文と比べられなかった。")
         )
     ]
-    if not skips:
+    deleted_transfers = [
+        message
+        for kind, message in warnings
+        if kind == "advisory"
+        and message.startswith("`## 実施内容`の移管先WIは現在の配置に無いが、private-notesの履歴で登録済み:")
+    ]
+    if not skips and not deleted_transfers:
         return None
     actions = []
+    if deleted_transfers:
+        # 受理は登録の記録だけに基づく。削除が移管先の引受（別環境への移動など）によるものかは履歴の本文で確かめる。
+        actions.append(
+            '削除commitの内容を`git -C "$(atk config get private_notes)" show --stat <削除commit>`で確かめ、'
+            "移管先の引受による削除なら計画の確認を続ける。誤った削除ならWIを復元してから再実行する"
+        )
+    if not skips:
+        return "。".join(actions)
     if any("private-notesが実在しない:" in message for message in skips):
         actions.append(
             "`atk config get private_notes`でprivate-notesの場所を確認し、"

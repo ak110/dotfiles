@@ -45,7 +45,10 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` | 操作 | `existing-file-edit` | |
-| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` | |
+| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `references/investigation.md`の冒頭と「情報源と裏付けの手段」から「根拠と主張の一致」まで | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#冒頭`、`section:agent-basics:*/skills/writing-standards/references/investigation.md#「情報源と裏付けの手段」から「根拠と主張の一致」まで` | |
+| 観測で前提が崩れ、次の確認や方針を選ぶ時 | `references/investigation.md`の「仮説から次の確認を選ぶ」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「仮説から次の確認を選ぶ」` | |
+| 現物の観測に基づいてエージェント向け文書の技術的な条文を新設・改訂する時 | `references/investigation.md`の「エージェント向け文書の技術的条文」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「エージェント向け文書の技術的条文」` | |
+| 実行・測定・検証の結果を報告または判定する時（エージェントCLIや共有状態を扱うツールを検証のために実行する時を含む） | `references/investigation.md`の「実行結果の検証」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「実行結果の検証」` | |
 | X投稿などの外部資料の本文・日時・添付画像を取得・確認する前 | `../fetch-sources/SKILL.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/SKILL.md` | |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
 | 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質や累積したファイル構成を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |
@@ -112,7 +115,7 @@ description: >
 | 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples-llm-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md` | |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/document-types.md` | |
 | 設計の記録（ADRを含む）を作成・変更・レビューする時 | `references/document-types.md`の「設計の記録」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/document-types.md#「設計の記録」` | |
-| 新しい概念名または識別子を導入する時 | `references/referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` | |
+| 新しい概念名または識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `references/referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` | |
 | 文章を書く時と表記を修正する時（他の行より先に読む） | `references/notation-rules.md` | 操作 | `body-writing` | |
 | 表記チェックの対象・実行方法を選ぶ前、実行する前と診断へ対応する前 | `references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` | |
@@ -138,7 +141,7 @@ description: >
 | `@playwright/test`・`playwright`（Playwright Test v1系とPythonバインディング） | `references/playwright.md` | 操作 | `dependency:playwright`（実コードまたは依存定義の操作） | |
 | `sqlalchemy`（2.0系） | `references/sqlalchemy.md` | 操作 | `dependency:sqlalchemy`（実コードまたは依存定義の操作） | |
 | `drizzle-orm`・`drizzle-kit`（0.x系） | `references/drizzle.md` | 操作 | `dependency:drizzle`（実コードまたは依存定義の操作） | |
-| `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2） | `references/svelte.md` | 操作 | `dependency:svelte`（実コードまたは依存定義の操作） | |
+| `svelte`・`@sveltejs/kit`（Svelte 5・SvelteKit 2〜3） | `references/svelte.md` | 操作 | `dependency:svelte`（実コードまたは依存定義の操作） | |
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
@@ -163,6 +166,7 @@ description: >
 | スキル編集 | `references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` | |
 | スキル編集 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
 | エージェント向け文書の置き場所を選ぶ時 | `references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` | |
+| 既存の規範・基準・手順で対応済み（被覆済み）かを判定する時（作業項目の起草・計画・レビュー・再発防止策の採否を含む） | `references/agent-documents-basics.md`の「既存規範による被覆の判定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「既存規範による被覆の判定」` | |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents.md` | |
 | hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` | |
 | hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |

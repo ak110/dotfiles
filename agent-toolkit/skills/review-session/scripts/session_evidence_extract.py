@@ -19,7 +19,6 @@ from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common import shell_tokens as _shell_tokens_module
 from agent_toolkit._common import transcript as _transcript
-from agent_toolkit._common.runtime_inserted import IMPROVEMENT_MARKER as _IMPROVEMENT_MARKER
 from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
 from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
 from agent_toolkit._common.session_family import (
@@ -206,12 +205,14 @@ def _clip(text: str, limit: int | None = None) -> str:
     return normalized[:effective] + _OMISSION_MARK
 
 
-_PRESERVED_MARKERS = (_IMPROVEMENT_MARKER, "続行できない区分:", "続行できない理由:", "想定外事象:")
+_PRESERVED_MARKERS = ("続行できない区分:", "続行できない理由:", "想定外事象:")
 """短縮の外でも全文を保持する返却の標識行。
 
 候補の抽出は短縮後の本文を入力にするため、返却末尾の標識行が省略区間に入ると、
 続行不能の返却（`session_evidence_candidates.py`の`_is_escalation_return`）や想定外事象が候補から消える。
 2,000文字を超える正常形式の返却の末尾に置かれた`続行できない理由:`を見落とした実例がある。
+改善点は箇条書きの項目記号付きでも報告され、コード例・引用の中にも同じ標識が現れるため、
+`runtime_inserted.reported_improvement_lines`が実報告と判定した行だけを保持する。
 """
 
 
@@ -224,10 +225,14 @@ def _clip_assistant_text(text: str) -> str:
     boundary = len(clipped) - len(_OMISSION_MARK)
     prefix = normalized[:boundary]
     kept: list[str] = []
+    reported = set(_runtime_inserted.reported_improvement_lines(normalized))
     start = 0
     for line in normalized.splitlines(keepends=True):
         end = start + len(line)
-        if line.lstrip().startswith(_PRESERVED_MARKERS) and end > boundary:
+        preserved = line.lstrip().startswith(_PRESERVED_MARKERS) or (
+            _runtime_inserted.improvement_line(line.rstrip("\r\n")) in reported
+        )
+        if preserved and end > boundary:
             if start < boundary:
                 prefix = normalized[:start]
             kept.append(line.rstrip("\r\n"))

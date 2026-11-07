@@ -55,7 +55,11 @@ def _targets(
 
 
 def _manifest(prompt: str, environment: dict[str, str]) -> pathlib.Path:
-    expected = '<atk-auto source="process-loop" kind="goal">\nagent-toolkit:process-wi all-reposを完遂する\n</atk-auto>'
+    expected = (
+        '<atk-auto source="process-loop" kind="goal">\n'
+        "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
+        "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
+    )
     assert prompt.removeprefix("/goal ") == expected
     data = json.loads(environment["AGENT_TOOLKIT_SESSION_START_INPUT"])
     assert data["source"] == "process-loop" and data["mode"] == "all-repos"
@@ -595,7 +599,11 @@ def test_public_host_delivers_current_manifest(tmp_path, monkeypatch, capsys, en
         if resume:
             assert "saved-agy-conversation" in argv or "--resume=saved-agy-conversation" in argv
         prompt = argv[-1]
-        expected = '<atk-auto source="process-loop" kind="goal">\nagent-toolkit:process-wi all-reposを完遂する\n</atk-auto>'
+        expected = (
+            '<atk-auto source="process-loop" kind="goal">\n'
+            "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
+            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
+        )
         assert prompt == ("/goal " if engine == "claude" else "") + expected
         manifest = _manifest(prompt, child_env)
         capsys.readouterr()

@@ -398,7 +398,7 @@ def test_daemons_reclaims_every_acquired_process_on_failure(monkeypatch: pytest.
     """2件目の獲得・利用・前段の解放で失敗しても、獲得済み全件の終了を確認する。"""
     acquired: list[subprocess.Popen[Any]] = []
     real_scope = process_tree.process_scope
-    real_stop = process_tree.stop_process_tree
+    real_stop = process_tree.stop_owned_process
 
     @contextlib.contextmanager
     def scope(*args: Any, **kwargs: Any) -> Generator[subprocess.Popen[Any]]:
@@ -408,14 +408,14 @@ def test_daemons_reclaims_every_acquired_process_on_failure(monkeypatch: pytest.
             acquired.append(process)
             yield process
 
-    def stop(process: subprocess.Popen[Any]) -> list[str]:
-        result = real_stop(process)
+    def stop(process: subprocess.Popen[Any], **kwargs: Any) -> process_tree.ReclaimError | None:
+        result = real_stop(process, **kwargs)
         if stage == "release-one" and process is acquired[-1]:
             raise RuntimeError("前段の解放失敗")
         return result
 
     monkeypatch.setattr(process_tree, "process_scope", scope)
-    monkeypatch.setattr(process_tree, "stop_process_tree", stop)
+    monkeypatch.setattr(process_tree, "stop_owned_process", stop)
     lifetime = inspect.unwrap(_daemons)()
     if stage == "acquire-second":
         with pytest.raises(RuntimeError, match="2件目の生成失敗"):
@@ -440,7 +440,7 @@ def _begin(*arguments: str) -> None:
 
 def _end(session_id: str) -> None:
     with pytest.raises(SystemExit) as exc:
-        atk.main(["wi", "submission", "end", "--session-id", session_id])
+        atk.main(["wi", "submission", "end", "--session-id", session_id, "--abort"])
     assert exc.value.code == 0
 
 

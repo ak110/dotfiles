@@ -244,18 +244,21 @@ def _request_hook_exit(target: Target, session_id: str | None) -> bool:
 
 
 def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool = False) -> None:
-    """期限切れの読込目印・終了要求・定期再確認の判定を回収する。clearでは現行IDも削除する。"""
+    """期限切れの読込目印・終了要求・定期再確認・利用上限・待機圧縮の判定記録を回収する。clearでは現行IDも削除する。"""
     directory = _function_hook_dir()
     if directory is None or not directory.is_dir():
         return
     exit_paths = function_hook_paths(keep_session_id) if keep_session_id else None
     own_paths = (
-        {*exit_paths, directory / f"recheck-{keep_session_id}.txt", directory / f"rate-limit-{keep_session_id}.txt"}
+        {
+            *exit_paths,
+            *(directory / f"{kind}-{keep_session_id}.txt" for kind in ("recheck", "rate-limit", "compaction")),
+        }
         if exit_paths
         else set()
     )
     threshold = time.time() - _STATE_MAX_AGE_SECONDS
-    for pattern in ("marker-*.txt", "request-*.txt", "recheck-*.txt", "rate-limit-*.txt"):
+    for pattern in ("marker-*.txt", "request-*.txt", "recheck-*.txt", "rate-limit-*.txt", "compaction-*.txt"):
         for path in directory.glob(pattern):
             if own_paths and path in own_paths:
                 if clear:

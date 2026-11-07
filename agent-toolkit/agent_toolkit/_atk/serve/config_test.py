@@ -497,6 +497,9 @@ async def test_sse_multiple_subscribers_and_cleanup(tmp_path: pathlib.Path) -> N
     current = state.ServeState(tmp_path)
     first = current.events(heartbeat=1)
     second = current.events(heartbeat=1)
+    # 購読の登録直後に送る合図を受け取ってから、変更を通知する。
+    assert "event: subscribed" in await anext(first)
+    assert "event: subscribed" in await anext(second)
     first_next = asyncio.create_task(anext(first))
     second_next = asyncio.create_task(anext(second))
     await asyncio.sleep(0)

@@ -20,9 +20,19 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("agent-toolkit/agent_toolkit/_common/process_tree.py", "process_scope"): "停止処理の例外時にも所有Popenを回収する共通実装",
     (
         "agent-toolkit/agent_toolkit/_common/process_tree.py",
-        "stop_process_tree",
+        "stop_owned_process",
     ): "zombie表示の所有Popenも強制終了して回収する共通実装",
-    ("pytools/_internal/common.py", "stop_process_tree"): "pytoolsの子孫回収の共通実装",
+    (
+        "agent-toolkit/agent_toolkit/_common/process_tree.py",
+        "_reap_owned_child",
+    ): "zombie表示の所有Popenも強制終了して回収する共通実装",
+    (
+        "agent-toolkit/agent_toolkit/_common/process_tree.py",
+        "reclaim_unreaped",
+    ): "回収待ちの直接の子をzombie表示でも強制終了し、PID世代の消滅を待つ共通実装",
+    ("pytools/_internal/common.py", "stop_owned_process"): "pytoolsの子孫回収の共通実装",
+    ("pytools/_internal/common.py", "_reclaim_targets"): "pytoolsの子孫回収の共通実装",
+    ("pytools/_internal/common.py", "_reap_owned_child"): "zombie表示の所有Popenも強制終了して回収するpytoolsの共通実装",
     ("agent-toolkit/agent_toolkit/_agents_server/mcp_tools.py", "kill"): "要求の会話を所有するManagerの公開停止APIへの委譲",
     (
         "agent-toolkit/agent_toolkit/_agents_server/cli_turn.py",

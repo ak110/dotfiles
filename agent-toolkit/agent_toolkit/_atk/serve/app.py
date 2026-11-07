@@ -12,6 +12,7 @@ from agent_toolkit._atk.serve import runtime as _runtime
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import shell_routes as _shell_routes
 from agent_toolkit._atk.serve import state as serve_state
+from agent_toolkit._atk.serve import timings as _timings
 from agent_toolkit._atk.serve import wi_operations as _wi_operations
 from agent_toolkit._atk.serve import wi_routes as _wi_routes
 
@@ -56,19 +57,33 @@ def create_app(
     *,
     operations: _wi_operations.Operations | None = None,
     worker_limit: int = 4,
+    read_worker_limit: int = 4,
     plans_context: serve_plans.PlansContext | None = None,
     sessions_context: serve_sessions.SessionsContext | None = None,
+    timing_log_path: pathlib.Path | None = None,
 ) -> quart.Quart:
     """Quartアプリを生成する。
 
     `plans_context`・`sessions_context`を渡さない場合は`config`から生成する。
+    `timing_log_path`を渡さない場合は状態ディレクトリ配下の`serve/timings.jsonl`へ所要を記録する。
     """
     app = quart.Quart(__name__)
     app.config["SERVE_CONFIG"] = config
     app.config["SERVE_STATE"] = state
+    timing_log = _timings.TimingLog(timing_log_path if timing_log_path is not None else _timings.default_log_path())
     runtime = _runtime.ServeRuntime(
-        operations or _wi_operations.Operations(private_notes), _runtime.BoundedWorkers(worker_limit), state
+        operations or _wi_operations.Operations(private_notes),
+        _runtime.BoundedWorkers(worker_limit),
+        state,
+        read_workers=_runtime.BoundedWorkers(read_worker_limit),
+        timing_log=timing_log,
     )
+    state.publish_listener = lambda event: _timings.record_event(timing_log, "sse-publish", event=event)
+    # ファイル監視が動いている場合だけ、変更通知の無い間の一覧の全件走査を省く。
+    # 監視の無い構成で省くと、外部の変更が次の全件確認まで一覧へ現れない。
+    if state.is_watching():
+        state.change_listener = runtime.operations.track_index_changes()
+    _timings.register(app, timing_log)
     plans = plans_context if plans_context is not None else _plans_context(config)
     sessions = sessions_context if sessions_context is not None else _sessions_context(config)
     app.config["PLANS_CONTEXT"] = plans

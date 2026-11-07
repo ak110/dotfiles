@@ -1,7 +1,7 @@
 // セッション画面。左ペインで保存済み記録を選び、右ペインへ発話を時系列に表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -207,20 +207,33 @@ function openRelativeSession(delta) {
 // `refresh`通知は新しい記録の作成ごとに届き、一覧の取得より短い間隔で続くことがある。
 // 要求を重ねるとサーバーで同じ走査が重なり、他の画面の応答も待たされる。
 // 呼び出し元へは取り直しまで含めた完了を返す。
-function coalesced(run) {
+// `operation`を渡すと、1回の実行を契機の受信から表示完了までの1件の操作として記録する。まとめた要求は
+// 最初の受信時刻から測り、実行待ちの時間を含める。`run`へは操作の`timing`（無ければ呼出し側の値）を渡す。
+function coalesced(run, operation = null) {
   let inFlight = null;
-  let rerun = false;
-  return () => {
-    if (inFlight) {
-      rerun = true;
-      return inFlight;
-    }
+  let pending = null;
+  return ({trigger = "resync", notify_delay_ms: notifyDelay, timing = {}} = {}) => {
+    if (!pending) pending = {receivedAt: performance.now(), trigger, notifyDelay, timing};
+    if (inFlight) return inFlight;
     inFlight = (async () => {
       try {
-        do {
-          rerun = false;
-          await run();
-        } while (rerun);
+        while (pending) {
+          const current = pending;
+          pending = null;
+          const measured = operation ? beginOperation("sessions", operation, {
+            startedAt: current.receivedAt, trigger: current.trigger,
+            ...(Number.isFinite(current.notifyDelay) ? {notify_delay_ms: current.notifyDelay} : {}),
+          }) : null;
+          let outcome = "ok";
+          try {
+            await run(measured ? measured.timing : current.timing);
+          } catch (error) {
+            outcome = "error";
+            throw error;
+          } finally {
+            measured?.end(outcome);
+          }
+        }
       } finally {
         inFlight = null;
       }
@@ -229,11 +242,16 @@ function coalesced(run) {
   };
 }
 
+// 通知本文の配信時刻から受信までの経過ミリ秒を返す。読めなければ`undefined`。
+function payloadNotifyDelay(payload) {
+  return Number.isFinite(payload?.published_at_ms) ? Date.now() - payload.published_at_ms : undefined;
+}
+
 const loadList = coalesced(fetchList);
 
-async function fetchList() {
+async function fetchList(timing = {}) {
   try {
-    const response = await (fetch(BASE_PATH + "/api/sessions/list"));
+    const response = await (timedFetch("sessions", BASE_PATH + "/api/sessions/list", {}, timing));
     if (!response.ok) throw new Error(`一覧を取得できません (${response.status})`);
     const payload = await (response.json());
     const previousKeys = new Set(sessions.map(sessionKey));
@@ -287,8 +305,8 @@ function detailCost(detail) {
   return amount && Number.isFinite(amount.known_usd) ? {amount, own, pricing: family.pricing} : null;
 }
 
-function costText(cost) {
-  if (!cost) return "推定費用: 取得不能";
+function costText(cost, pending = false) {
+  if (!cost) return pending ? "推定費用: 算出中" : "推定費用: 取得不能";
   const amount = cost.amount;
   const unknown = amount.unknown_responses || 0;
   if (!amount.known_usd && (unknown || amount.incomplete)) {
@@ -441,13 +459,74 @@ function captureDetailState() {
   return {openStates, renderedCount, scrollTop: detailEl.parentElement.scrollTop};
 }
 
+// 見出しの推定費用と本文先頭の料金表の基準日を、詳細の`cost`から描き直す。
+// ローカルの記録は本文の後に費用を別に取得するため、取得中は前回の値か「算出中」を表示する。
+function renderCost(detail) {
+  const cost = detailCost(detail);
+  detailUsageEl.textContent = costText(cost, Boolean(detail.cost_pending));
+  const pricing = detailEl.querySelector(".detail-pricing");
+  if (!pricing) return;
+  pricing.hidden = !cost;
+  pricing.textContent = cost
+    ? `推定費用（API料金換算）: ${cost.own ? "この記録" : "子孫を含む"} / 料金表基準日: ${cost.pricing?.as_of || "取得不能"}`
+    : "";
+}
+
+// 推定費用は子孫の全記録を読むため、本文の表示を待たせないよう別の要求で取得する。
+// 子孫の多い記録では算出に十数秒かかり、追記のたびに詳細を取り直す記録では、取り直しごとに結果を捨てると
+// 金額が表示されないまま算出だけが重なる。そのため算出中の要求は記録ごとに1件へまとめ、届いた結果は
+// その時点で表示している同じ記録の詳細へ反映する。算出中に記録が追記された場合は、届いた後にもう1回だけ取り直す。
+// 別の記録を開いた時点で前の記録の要求は中止する。ブラウザーの同じホストへの同時接続数は限られ（HTTP/1.1で6本、
+// うち3本はSSEが使う）、算出の長い要求が残ると次の詳細の取得が接続の空きを待つためである。
+let costRequest = null;
+
+function costKey(detail) {
+  return `${detail.host}\n${detail.engine}\n${detail.path}`;
+}
+
+// 開こうとする記録と異なる記録の推定費用の要求を中止し、詳細の取得に接続を空ける。
+function cancelOtherCost(host, engine, path) {
+  if (!costRequest || costRequest.key === costKey({host, engine, path})) return;
+  costRequest.controller.abort();
+  costRequest = null;
+}
+
+async function loadDeferredCost(detail) {
+  if (!detail.cost_pending) return;
+  const key = costKey(detail);
+  if (costRequest?.key === key) {
+    costRequest.stale = true;
+    return;
+  }
+  costRequest?.controller.abort();
+  const request = {key, stale: false, controller: new AbortController()};
+  costRequest = request;
+  const {host, engine, path} = detail;
+  let cost = null;
+  try {
+    const response = await timedFetch(
+      "sessions", `${BASE_PATH}/api/sessions/cost?${new URLSearchParams({host, engine, path}).toString()}`,
+      {signal: request.controller.signal}
+    );
+    if (response.ok) cost = (await response.json()).cost;
+  } catch (_) {
+    // 取得できない場合は前回の値か「取得不能」を表示し、次の詳細の取り直しで再び取得する。
+  }
+  if (costRequest !== request) return;
+  costRequest = null;
+  const shown = currentDetail;
+  if (!shown || costKey(shown) !== key) return;
+  if (cost) shown.cost = cost;
+  shown.cost_pending = request.stale;
+  renderCost(shown);
+  if (request.stale) void loadDeferredCost(shown);
+}
+
 function renderDetail(detail, preserved = null) {
   currentDetail = detail;
   // ホスト名と作業ディレクトリは左ペインの一覧項目が示すため、見出しはエンジン名と取得できたセッション名に限る。
   const engineLabel = ENGINE_LABELS[detail.engine] || detail.engine;
   detailTitleEl.textContent = detail.session_name ? `${engineLabel} / ${detail.session_name}` : engineLabel;
-  const cost = detailCost(detail);
-  detailUsageEl.textContent = costText(cost);
   // 子要素だけを差し替えるため、本文装飾を担う`#detail`自身のmarkdown-bodyクラスは保持される。
   detailEl.replaceChildren();
 
@@ -459,12 +538,10 @@ function renderDetail(detail, preserved = null) {
   meta.className = "secondary-text";
   meta.textContent = `識別子: ${detail.session_id} / 開始: ${detail.started_at ? formatTime(detail.started_at) : "取得不能"} / ${usageText(detail.usage)}`;
   detailEl.append(meta);
-  if (cost) {
-    const pricing = document.createElement("div");
-    pricing.className = "secondary-text";
-    pricing.textContent = `推定費用（API料金換算）: ${cost.own ? "この記録" : "子孫を含む"} / 料金表基準日: ${cost.pricing?.as_of || "取得不能"}`;
-    detailEl.append(pricing);
-  }
+  const pricing = document.createElement("div");
+  pricing.className = "secondary-text detail-pricing";
+  detailEl.append(pricing);
+  renderCost(detail);
 
   if (Array.isArray(detail.subagents) && detail.subagents.length > 0) {
     detailEl.append(renderSubagents(detail));
@@ -526,18 +603,25 @@ function isReadingTail() {
 // 選択中の記録を取り直し、表示状態を保ったまま描き直す。取得に失敗した場合は現在の表示を残す。
 // 末尾を読んでいた場合は追記の末尾へ追従し、それ以外は位置を保つ。末尾より上を読んでいる間に届いた追記は、
 // エンドユーザーが末尾まで読み進めた時点で`renderEventsNearEnd`が描画する。
-async function refreshSelectedDetail() {
+async function refreshSelectedDetail(timing = {}) {
   if (!selected) return;
   const {host, engine, path} = selected;
   const generation = ++detailGeneration;
   try {
-    const response = await fetch(`${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`);
+    const response = await timedFetch(
+      "sessions", `${BASE_PATH}/api/sessions/detail?${new URLSearchParams({host, engine, path}).toString()}`, {}, timing
+    );
     if (!response.ok) return;
     const detail = await response.json();
     if (generation !== detailGeneration || !isSelected(selected, {host, engine, path})) return;
     const previousCount = currentDetail ? currentDetail.events.length : detail.events.length;
     const readingTail = isReadingTail();
+    // 追記のたびに見出しが「算出中」へ戻らないよう、新しい費用が届くまで前回の値を表示する。
+    if (detail.cost_pending && currentDetail?.cost && currentDetail.path === detail.path && currentDetail.host === detail.host) {
+      detail.cost = currentDetail.cost;
+    }
     renderDetail(detail, {...captureDetailState(), renderedCount: readingTail ? detail.events.length : renderedCount});
+    void loadDeferredCost(detail);
     if (readingTail && detail.events.length > previousCount) {
       const scroller = detailScroller();
       scroller.scrollTop = scroller.scrollHeight;
@@ -550,6 +634,7 @@ async function refreshSelectedDetail() {
 // `trail`は開こうとする記録の委譲元を古い順に並べる。左ペインから選んだ記録には委譲元が無いため、省略した場合は空とする。
 async function openSession(host, engine, path, trail = [], updateUrl = true, closeDrawer = true) {
   if (closeDrawer) setDrawerOpen("sessions", false);
+  cancelOtherCost(host, engine, path);
   selected = { host, engine, path };
   if (updateUrl && location.pathname.endsWith("/sessions")) {
     const url = new URL(location.href);
@@ -563,14 +648,25 @@ async function openSession(host, engine, path, trail = [], updateUrl = true, clo
   detailTitleEl.textContent = "読み込み中...";
   const query = new URLSearchParams({ host, engine, path });
   const generation = ++detailGeneration;
+  // 所要は選択から詳細の描画（失敗時は失敗の表示）までを1件の操作として残す。
+  const operation = beginOperation("sessions", "open-session", {trigger: "click"});
+  let outcome = "ok";
   try {
-    const response = await (fetch(`${BASE_PATH}/api/sessions/detail?${query.toString()}`));
+    const response = await (timedFetch("sessions", `${BASE_PATH}/api/sessions/detail?${query.toString()}`, {}, operation.timing));
     if (!response.ok) throw new Error(`記録を取得できません (${response.status})`);
     const detail = await (response.json());
-    if (generation !== detailGeneration) return;
+    if (generation !== detailGeneration) {
+      outcome = "superseded";
+      return;
+    }
     renderDetail(detail);
+    void loadDeferredCost(detail);
   } catch (error) {
-    if (generation !== detailGeneration) return;
+    outcome = "error";
+    if (generation !== detailGeneration) {
+      outcome = "superseded";
+      return;
+    }
     detailTitleEl.textContent = "";
     detailEl.replaceChildren();
     const alert = document.createElement("div");
@@ -582,6 +678,8 @@ async function openSession(host, engine, path, trail = [], updateUrl = true, clo
     retry.addEventListener("click", () => openSession(host, engine, path, trail, false));
     alert.append(retry);
     detailEl.append(alert);
+  } finally {
+    operation.end(outcome);
   }
 }
 
@@ -602,11 +700,13 @@ function changesSelectedFamily(message) {
   return false;
 }
 
-const refreshFromRecord = coalesced(refreshSelectedDetail);
+const refreshFromRecord = coalesced(refreshSelectedDetail, "record-reload");
 const SSE_MESSAGE_HANDLERS = {
-  refresh: () => { void resyncFromServer(); },
+  refresh: (payload) => { void resyncFromServer({trigger: "sse", notify_delay_ms: payloadNotifyDelay(payload)}); },
   record: (message) => {
-    if (isSelected(selected, message) || changesSelectedFamily(message)) void refreshFromRecord();
+    if (isSelected(selected, message) || changesSelectedFamily(message)) {
+      void refreshFromRecord({trigger: "sse", notify_delay_ms: payloadNotifyDelay(message)});
+    }
   },
 };
 
@@ -626,10 +726,10 @@ function subscribeEvents() {
   });
 }
 
-const resyncFromServer = coalesced(async () => {
-  await loadList();
-  await refreshSelectedDetail();
-});
+const resyncFromServer = coalesced(async (timing) => {
+  await loadList({timing});
+  await refreshSelectedDetail(timing);
+}, "external-reload");
 
 async function init() {
   setDrawerOpen("sessions", false);

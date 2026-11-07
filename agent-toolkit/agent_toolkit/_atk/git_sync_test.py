@@ -9,6 +9,7 @@ import subprocess
 import threading
 from typing import Any
 
+import filelock
 import pytest
 
 from agent_toolkit import atk
@@ -88,6 +89,33 @@ def test_uncontended_lock_does_not_report_waiting(monkeypatch, tmp_path, capsys)
     with _atk_git_sync.repo_lock(tmp_path):
         pass
     assert "ロック" not in capsys.readouterr().err
+
+
+def test_lock_timeout_records_wait_to_observer(tmp_path: pathlib.Path) -> None:
+    """取得できずに時間切れとなった待ちも、観測先へロック待ちとして加算する。"""
+
+    class Observer:
+        def __init__(self) -> None:
+            self.waits: list[float] = []
+            self.holds: list[float] = []
+
+        def add_lock_wait(self, seconds: float) -> None:
+            self.waits.append(seconds)
+
+        def add_lock_hold(self, seconds: float) -> None:
+            self.holds.append(seconds)
+
+    observer = Observer()
+    with _atk_git_sync.repo_lock(tmp_path):
+        token = _atk_git_sync.LOCK_OBSERVER.set(observer)
+        try:
+            with pytest.raises(filelock.Timeout), _atk_git_sync.repo_lock(tmp_path, timeout=0.2):
+                pass
+        finally:
+            _atk_git_sync.LOCK_OBSERVER.reset(token)
+    assert len(observer.waits) == 1
+    assert observer.waits[0] >= 0.2
+    assert not observer.holds
 
 
 @pytest.fixture(name="remote_sync")

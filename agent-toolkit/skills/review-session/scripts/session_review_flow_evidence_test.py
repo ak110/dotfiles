@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -132,7 +133,7 @@ def test_prepare_shows_initial_delegate_request_and_user_query_keeps_human_origi
     work.mkdir()
     assert _run("session-review-prepare", ["--transcript", str(parent), "--work-dir", str(work), "--conversation-only"]) == 0
     document = pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"]).read_text(encoding="utf-8")
-    assert "依頼=最初の委譲依頼を実装する" in document
+    assert re.search(r"^- 委譲先への依頼 \S+ \S+: 最初の委譲依頼を実装する$", document, flags=re.MULTILINE)
     assert "機械資料の先頭" not in document and "入れ子の資料" not in document
     assert "追送だけの指示" not in document
     child = parent.with_suffix("") / "subagents" / "agent-child.jsonl"
@@ -295,6 +296,33 @@ def test_reported_improvements_keep_duplicate_sources_lines_and_full_bodies(
         for event in timeline
         if event.get("record") == "claude:parent" and event.get("line") == 1
     ) == [repeated, long, repeated]
+
+
+def test_reported_improvements_accept_list_items_and_keep_clipped_tail(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """箇条書きの改善点を項目記号なしで抽出し、長文の短縮後も本文を残し、例・引用は抽出しない。"""
+    bullet = "- 気付いた改善点: 箇条書きの報告"
+    numbered = "1. 気付いた改善点: 番号付きの報告"
+    examples = "```text\n- 気付いた改善点: コード例\n```\n> - 気付いた改善点: 引用\n    気付いた改善点: 字下げしたコード例"
+    parent = tmp_path / "parent.jsonl"
+    support.write_jsonl(parent, [support.assistant_text("委譲した")])
+    entry = support.assistant_text("状態: completed\n" + "結果の本文" * 2000 + f"\n{examples}\n{bullet}\n{numbered}")
+    support.write_subagent(parent.with_suffix("") / "subagents", "agent-child", [entry])
+    assert _run("session-review-evidence", [str(parent), "--reported-improvements"]) == 0
+    events = support.read_jsonl(capsys, raw=True)
+    texts = [event["text"] for event in events if event["kind"] == "reported-improvement"]
+    assert texts == ["気付いた改善点: 箇条書きの報告", "気付いた改善点: 番号付きの報告"]
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert _run("session-review-evidence", [str(parent), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    timeline = [json.loads(line) for line in (bundle / "timeline.jsonl").read_text(encoding="utf-8").splitlines()]
+    event = next(item for item in timeline if item.get("record") == "claude:parent/agent-child" and item.get("line") == 1)
+    assert bullet in event["text"] and numbered in event["text"]
+    assert "コード例" not in event["text"].split("…")[-1]
+    candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert any(bullet in str(candidate.get("text", "")) for candidate in candidates)
 
 
 def test_reported_improvements_distinguish_zero_and_unreadable_records(

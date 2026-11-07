@@ -52,6 +52,45 @@ async def test_session_stream_restores_long_rpc_response_and_notifications(tmp_p
     assert future.result() == response
 
 
+@pytest.mark.asyncio
+async def test_unconfirmed_helper_stop_blocks_reconnect_until_same_process_stops(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """常駐ヘルパーの停止を確認できない間は参照を保持し、同じプロセスの停止を確認するまで再接続しない。"""
+    context = _context(tmp_path, remote_hosts=["remote-host"])
+    client = sessions.RemoteSessionClient("remote-host", context.state)
+    client._backoff = 0
+    helper = types.SimpleNamespace(stdout=asyncio.StreamReader(), stdin=None, returncode=None, pid=99)
+    helper.stdout.feed_eof()
+    events: list[tuple[str, object]] = []
+    results = iter([False, False, True])
+
+    async def connect() -> object:
+        events.append(("connect", None))
+        if len([event for event in events if event[0] == "connect"]) > 1:
+            raise asyncio.CancelledError
+        return helper
+
+    async def stop(proc: object, _stderr_task: object) -> bool:
+        events.append(("stop", proc))
+        return next(results, True)
+
+    monkeypatch.setattr(client, "_connect", connect)
+    monkeypatch.setattr(_atk_serve_remote, "stop_resident_helper", stop)
+    with pytest.raises(asyncio.CancelledError):
+        await client.run()
+
+    # 最後の停止は、取消された接続試行の後始末（起動前のためプロセスは無い）である。
+    assert events == [
+        ("connect", None),
+        ("stop", helper),
+        ("stop", helper),
+        ("stop", helper),
+        ("connect", None),
+        ("stop", None),
+    ]
+
+
 def _write(path: pathlib.Path, records: typing.Iterable[typing.Any]) -> pathlib.Path:
     """JSON Linesの記録を出力する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1024,14 +1063,19 @@ async def test_local_and_remote_detail_use_same_family_cost(
         remote_hosts=["remote"],
         ssh_runner=runner,
     )
-    local = sessions.read_local_detail(context, "claude", str(parent))
+    local_detail = sessions.read_local_detail(context, "claude", str(parent))
+    assert local_detail["cost"] is None
+    assert local_detail["cost_pending"] is True
+    local = await sessions.session_cost(context, "claude", "local", str(parent))
     remote = await sessions.session_detail(context, "claude", "remote", str(parent))
-    assert remote["cost"] == local["cost"]
-    assert local["cost"]["known_usd"] == pytest.approx(5.0007)
-    assert not local["cost"]["incomplete"]
-    assert local["cost"]["estimated_usd"] == (None if unknown else pytest.approx(5.0007))
-    assert local["cost"]["unknown_responses"] == int(unknown)
-    assert local["cost"]["breakdown"]["claude_subagents"]["known_usd"] == 0
+    assert remote["cost"] == local
+    assert local["known_usd"] == pytest.approx(5.0007)
+    assert not local["incomplete"]
+    assert local["estimated_usd"] == (None if unknown else pytest.approx(5.0007))
+    assert local["unknown_responses"] == int(unknown)
+    assert local["breakdown"]["claude_subagents"]["known_usd"] == 0
+    with pytest.raises(sessions.SessionNotFoundError):
+        await sessions.session_cost(context, "claude", "remote", str(parent))
 
 
 def test_local_and_remote_listing_link_children_from_every_launch_source(
@@ -1977,3 +2021,101 @@ async def test_remote_detail_session_name_follows_local_rules(
     assert codex_detail["session_name"] == "リモートのthread"
     assert unnamed_detail["session_name"] is None
     assert "project" not in codex_detail
+
+
+def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """変更監視が一覧の集合の変化を観測するまで前回の一覧を再利用し、追記した記録の大きさだけを取り直す。
+
+    全件の走査は記録数千件で1秒前後かかり、一覧の要求ごとに走査すると表示が遅れる。
+    監視の取りこぼしに備え、再利用の上限時間を過ぎると全件を背景で走査し直し、要求には前回の一覧を返す。
+    """
+    context = _context(tmp_path)
+    record = _claude_record(tmp_path)
+    tracker = sessions.session_watch.RecordChangeTracker(
+        [(tmp_path / "claude" / "projects", "claude"), (tmp_path / "codex" / "sessions", "codex")],
+        lambda _refresh, _records: None,
+        debounce_sec=60.0,
+    )
+    context.state.record_watch = sessions.session_watch.RecordWatch(tracker)
+    scans: list[int] = []
+    original = sessions.session_record_format.claude_session_records
+
+    def counting(claude_home: pathlib.Path) -> typing.Any:
+        scans.append(1)
+        return original(claude_home)
+
+    monkeypatch.setattr(sessions.session_record_format, "claude_session_records", counting)
+    try:
+        first = sessions.list_local_sessions(context)
+        assert [entry.path for entry in first] == [str(record)]
+        assert len(scans) == 1
+
+        with record.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"type": "user", "message": {"content": "続き"}}, ensure_ascii=False) + "\n")
+        tracker.record_changed(record)
+        appended = sessions.list_local_sessions(context)
+        assert len(scans) == 1
+        assert appended[0].size == record.stat().st_size != first[0].size
+        assert appended[0].first_user_message == first[0].first_user_message
+
+        tracker.structure_changed()
+        sessions.list_local_sessions(context)
+        assert len(scans) == 2
+
+        monkeypatch.setattr(sessions, "LOCAL_LIST_REUSE_SEC", 0.0)
+        rescan_started = threading.Event()
+        rescan_release = threading.Event()
+
+        def held(claude_home: pathlib.Path) -> typing.Any:
+            # 背景の走査を止めたまま、要求が走査を待たずに前回の一覧を返すことを確かめる。
+            rescan_started.set()
+            assert rescan_release.wait(10)
+            return counting(claude_home)
+
+        monkeypatch.setattr(sessions.session_record_format, "claude_session_records", held)
+        expired = sessions.list_local_sessions(context)
+        assert [entry.path for entry in expired] == [str(record)]
+        assert rescan_started.wait(10)
+        assert len(scans) == 2
+        # 背景の走査中に届いた要求は、2つ目の走査を始めずに前回の一覧を返す。
+        sessions.list_local_sessions(context)
+        rescan_release.set()
+        for thread in threading.enumerate():
+            if thread.name == "atk-serve-session-rescan":
+                thread.join(10)
+        assert len(scans) == 3
+        assert not context.state.local_rescan_running
+    finally:
+        tracker.stop()
+
+
+@pytest.mark.asyncio
+async def test_listed_set_change_returns_previous_list_and_refreshes_after_background_scan(
+    tmp_path: pathlib.Path,
+) -> None:
+    """他プロセスが新しい記録を作っても要求の中で全件を走査せず、背景の走査の後に`refresh`で取り直させる。"""
+    context = _context(tmp_path)
+    record = _claude_record(tmp_path)
+    tracker = sessions.session_watch.RecordChangeTracker(
+        [(tmp_path / "claude" / "projects", "claude"), (tmp_path / "codex" / "sessions", "codex")],
+        lambda _refresh, _records: None,
+        debounce_sec=60.0,
+    )
+    context.state.record_watch = sessions.session_watch.RecordWatch(tracker)
+    context.state.watch_loop = asyncio.get_running_loop()
+    queue = await sessions.subscribe(context.state)
+    try:
+        first = await asyncio.to_thread(sessions.list_local_sessions, context)
+        assert [entry.path for entry in first] == [str(record)]
+        added = _claude_record(tmp_path, project="-home-aki-other")
+        tracker.structure_changed()
+        previous = await asyncio.to_thread(sessions.list_local_sessions, context)
+        assert [entry.path for entry in previous] == [str(record)]
+        assert json.loads(await asyncio.wait_for(queue.get(), timeout=10)) == {"type": "refresh"}
+        refreshed = await asyncio.to_thread(sessions.list_local_sessions, context)
+        assert sorted(entry.path for entry in refreshed) == sorted([str(record), str(added)])
+    finally:
+        await sessions.unsubscribe(context.state, queue)
+        tracker.stop()

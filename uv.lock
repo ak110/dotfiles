@@ -42,7 +42,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil", specifier = ">=6" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pyfltr", specifier = ">=3.25.0" },
+    { name = "pyfltr", specifier = ">=3.26.0" },
     { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
     { name = "pyyaml" },
@@ -54,7 +54,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.25.0" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.26.0" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
@@ -1291,7 +1291,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.25.0"
+version = "3.26.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1323,9 +1323,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/c4/b1bc83cbd82114bf245063d7c7b7eb912bcc39f076104c670051e127023d/pyfltr-3.25.0.tar.gz", hash = "sha256:b26003ee0008cdcd788762514bb320cb54fa050d5d297c408dcf63172e92446f", size = 1139117, upload-time = "2026-11-05T12:58:53.859Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/58/8c/3228a9ffde99a78b1165f039e2230fa59667fa30b3bd1ec59b7253775090/pyfltr-3.26.0.tar.gz", hash = "sha256:c874e93b6011e4cb55febf333b776648c4ff3567c37e6c550d746707bd03c476", size = 1151654, upload-time = "2026-11-06T00:18:35.662Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/36/d1f4617ce13711374d1ba229c32b68dee2e578f45c27c51e20bbbfe657a5/pyfltr-3.25.0-py3-none-any.whl", hash = "sha256:d8ad195650f5ae5d668a1e9a34d6098bc1d9efb9a23408d751b6fe423f526ab2", size = 461899, upload-time = "2026-11-05T12:58:52.48Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/90/812f8f212da8ac424c124c6a1d9a49a474ea4136a88a9eee85690cd33c11/pyfltr-3.26.0-py3-none-any.whl", hash = "sha256:80406679e0b029092d74994312fb7b84523419aa80c92fa9c6971b0a9fb53733", size = 465992, upload-time = "2026-11-06T00:18:34.249Z" },
 ]
 
 [[package]]
@@ -1615,7 +1615,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.25.0" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.26.0" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },

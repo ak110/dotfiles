@@ -32,6 +32,7 @@ from agent_toolkit._common import (
     session_registry,
     session_review,
     state_paths,
+    windows_job,
 )
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as git_command
@@ -219,7 +220,7 @@ def _launch_worker(target: str) -> subprocess.Popen[bytes]:
     env["PYTHONPATH"] = str(source)
     creationflags = 0
     if sys.platform == "win32":
-        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        creationflags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS
     with (cwd / "supervisor.stdout.log").open("ab") as stdout, (cwd / "supervisor.stderr.log").open("ab") as stderr:
         return subprocess.Popen(  # noqa: SIM115 -- 所有権は永続受付と独立監督へ移す
             [str(executable), "-m", "agent_toolkit._agents_server.plugin_root", "--wi-submit-worker", target],
@@ -654,7 +655,12 @@ def _supervise(path: pathlib.Path) -> None:
                 try:
                     code = child.wait(timeout=TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired:
-                    process_tree.log_residual(process_tree.stop_process_tree(child), context="wi submit timeout")
+                    failure = recorded_process.stop_recorded_executor(identity) if identity is not None else None
+                    if failure is not None:
+                        # 子孫が残る間は実行を確定しない。監督の消失を検出する処理が、
+                        # 記録した同じ実行者へ停止を再試行してから確定する。
+                        _LOG.error("時間上限の子を回収できない: %s。実行 %s の確定を保留する", failure, run["run_id"])
+                        return
                     child.wait(timeout=10)
                     _finalize(path, failure="timeout")
                     return

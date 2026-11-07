@@ -25,7 +25,7 @@ from pathlib import Path
 
 import platformdirs
 from agent_toolkit._atk.environment import is_human_terminal
-from agent_toolkit._common import dotfiles_mode
+from agent_toolkit._common import dotfiles_mode, process_tree
 
 from pytools import update_ssh_config
 from pytools._internal import (
@@ -202,10 +202,6 @@ _REMOVED_PATHS: dict[Path, list[cleanup_paths.RemovedPath]] = {
         cleanup_paths.RemovedPath(Path("rules/agent-toolkit/06-monitoring.md"), datetime.date(2026, 7, 26)),
     ],
     Path.home() / ".codex": [
-        # Codexの rules/ は prefix_rule 形式の承認ルール用ディレクトリであり、
-        # Claude Code向けMarkdownルールとは互換性がない。
-        # 共有ルールは .codex/agent-toolkit/rules 配下に置く。
-        cleanup_paths.RemovedPath(Path("rules/agent-toolkit"), datetime.date(2026, 5, 6)),
         # agent定義（feedbacks-planner・plan-executor・plan-review-executor）を廃止し、
         # agent-toolkit/agents ディレクトリごと除去したため、旧配布先リンクを除去する。
         cleanup_paths.RemovedPath(Path("agent-toolkit/agents"), datetime.date(2026, 9, 3)),
@@ -314,6 +310,8 @@ class _StepResult:
     reason: str | None = None
     detail: str | None = None
     deferred: bool = False
+    # 工程が起動した子プロセスを回収できなかったこと。残った子と後続工程が同じ資源を奪い合わないよう、新しい工程を開始しない。
+    reclaim_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -692,6 +690,12 @@ def _post_apply_recovery_action() -> str:
     return f"{action} 永続ログを開始できなかった場合は、この標準エラーの失敗理由を確認してください。"
 
 
+_RECLAIM_BLOCKED = (
+    "先行工程が起動した子プロセスを回収できないため開始しない。"
+    "失敗した工程の診断にあるPIDと起動コマンドを確認して終了させ、update-dotfilesを再実行する"
+)
+
+
 def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
     """1ステップを実行し、例外、戻り値、所要時間を共通形式へ変換する。
 
@@ -710,6 +714,7 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
             changed=False,
             reason=f"{type(error).__name__}: {error}",
             detail=sync_report.truncate_tail(traceback.format_exc()),
+            reclaim_failed=isinstance(error, (common.ProcessReclaimError, process_tree.ReclaimError)),
         )
         return failure, [], time.monotonic() - started_at
     if not isinstance(ret, post_apply_outcome.PostApplyOutcome):
@@ -904,6 +909,11 @@ def run(
                         if index in started or not predecessors[index].issubset(outcomes):
                             continue
                         started.add(index)
+                        if any(outcome.result.reclaim_failed for outcome in outcomes.values()):
+                            result = _StepResult(name=step.name, ok=False, changed=False, reason=_RECLAIM_BLOCKED)
+                            outcomes[index] = _StepOutcome(result, [], 0.0, [], skip_reason=_RECLAIM_BLOCKED)
+                            progressed = True
+                            continue
                         reason = _skip_reason(step, home_substituted=home_substituted)
                         if reason is None:
                             running[executor.submit(_execute_captured_step, labels[index], step)] = index

@@ -20,7 +20,7 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import WI_EDITABLE_STATES, WI_STATE_HOLD, WI_STATE_INBOX, WI_STATE_PROCESSING
 from agent_toolkit._atk.wi.constants import unrepairable_entry_next_action as _unrepairable_entry_next_action
 from agent_toolkit._atk.wi.entries import CommitMetadata
-from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
+from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._atk.wi.repo import (
     resolve_repo_id,
 )
@@ -36,8 +36,13 @@ def _resolve_state_targets(
     filenames: list[str], private_notes: pathlib.Path, states: tuple[str, ...], *, missing_is_conflict: bool
 ) -> list[pathlib.Path]:
     """共通の探索境界から指定状態の名前を解決する。"""
-    candidates = {path.name: path for path in iter_entry_paths(private_notes) if entry_state_of(path) in states}
     names = [_wi_filenames.validate_filename(name, private_notes).name for name in filenames]
+    # 全件の状態を読む列挙は数千件で数秒かかるため、名前から保存先が一意に決まる場合はその1件だけを読む。
+    dated = {name: unique_dated_entry_path(private_notes, name) for name in names}
+    if all(path is not None for path in dated.values()):
+        candidates = {name: path for name, path in dated.items() if path is not None and entry_state_of(path) in states}
+    else:
+        candidates = {path.name: path for path in iter_entry_paths(private_notes) if entry_state_of(path) in states}
     missing = [name for name in names if name not in candidates]
     if missing:
         if missing_is_conflict:

@@ -173,3 +173,134 @@ export function resyncWhenVisible(resync, {focus = true} = {}) {
   });
   if (focus) globalThis.addEventListener?.("focus", () => { void resync(); });
 }
+
+// 操作の所要を区間別にサーバーの記録（`serve/timings.jsonl`）へ送る。遅い操作の区間を後から判別するためである。
+// 取得から本文の受信まで（fetch_ms）と、受信後に画面へ反映されるまで（render_ms）を分け、要求IDでサーバーの記録と対応付ける。
+// 本文・検索語・入力値は送らない（URLはqueryを除いたパスだけを使う）。
+const TIMING_FLUSH_MS = 5000;
+const TIMING_BUFFER_LIMIT = 50;
+const pendingTimings = [];
+let timingTimer = null;
+
+export function newRequestId() {
+  const random = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  return random.replace(/-/g, "").slice(0, 16);
+}
+
+function flushTimings({beacon = false} = {}) {
+  if (timingTimer !== null) {
+    clearTimeout(timingTimer);
+    timingTimer = null;
+  }
+  if (pendingTimings.length === 0) return;
+  const body = JSON.stringify({records: pendingTimings.splice(0, pendingTimings.length)});
+  const url = BASE_PATH + "/api/timings";
+  // 画面を閉じる時も送れる`sendBeacon`を優先し、使えない環境では通常の送信へ切り替える。記録の失敗は画面へ出さない。
+  if ((beacon || typeof fetch !== "function") && navigator.sendBeacon?.(url, new Blob([body], {type: "application/json"}))) return;
+  if (typeof fetch === "function") {
+    void fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body, keepalive: true}).catch(() => {});
+  }
+}
+
+export function recordTiming(record) {
+  pendingTimings.push(record);
+  if (pendingTimings.length >= TIMING_BUFFER_LIMIT) flushTimings();
+  else if (timingTimer === null) timingTimer = setTimeout(() => flushTimings(), TIMING_FLUSH_MS);
+}
+
+globalThis.addEventListener?.("pagehide", () => flushTimings({beacon: true}));
+
+// 本文の受信後、呼出し側の同期的な描画を終えた次の描画フレームの時刻で`done`を呼ぶ。
+function afterRender(done) {
+  setTimeout(() => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => done(performance.now()));
+    else done(performance.now());
+  }, 0);
+}
+
+// 操作の開始から結果の表示までを1件で記録する。呼出し側は結果の表示（ダイアログの開閉、一覧の再描画、
+// 非同期の図の描画など）を終えてから`end`を呼び、次の描画フレームで所要を確定する。操作内の取得へ`timing`を
+// 渡すと取得単位の記録に`operation_id`が付き、操作全体とサーバーの要求記録（`request_id`）を対応付けられる。
+// 変更通知のように実行待ちを経た操作は、`startedAt`へ受信時刻を渡して待ち時間を含め、`queued_ms`にも分けて残す。
+export function beginOperation(screen, operation, {startedAt, ...fields} = {}) {
+  const operationId = newRequestId();
+  const now = performance.now();
+  const started = Number.isFinite(startedAt) ? startedAt : now;
+  let ended = false;
+  return {
+    timing: {operation_id: operationId, ...(fields.trigger ? {trigger: fields.trigger} : {})},
+    end(outcome = "ok") {
+      if (ended) return;
+      ended = true;
+      afterRender((renderedAt) => recordTiming({
+        screen, operation, kind: "operation", operation_id: operationId, outcome, ...fields,
+        ...(now > started ? {queued_ms: now - started} : {}), total_ms: renderedAt - started,
+      }));
+    },
+  };
+}
+
+// 所要を記録する`fetch`。`timing.operation`を省くとqueryを除いたパスを操作名にする。
+// `timing.trigger`は契機（`click`・`sse`など）、`timing.notify_delay_ms`は変更通知の配信から受信まで、
+// `timing.operation_id`は`beginOperation`が返す操作の識別子を渡す。
+export async function timedFetch(screen, url, options = {}, timing = {}) {
+  const requestId = newRequestId();
+  const headers = {...(options.headers || {}), "X-Atk-Request-Id": requestId};
+  const started = performance.now();
+  const path = String(url).replace(BASE_PATH, "").split("?")[0];
+  const base = {
+    screen,
+    operation: timing.operation || `${options.method || "GET"} ${path}`,
+    route: path,
+    request_id: requestId,
+    ...(timing.trigger ? {trigger: timing.trigger} : {}),
+    ...(timing.operation_id ? {operation_id: timing.operation_id} : {}),
+    ...(Number.isFinite(timing.notify_delay_ms) ? {notify_delay_ms: timing.notify_delay_ms} : {}),
+  };
+  let response;
+  try {
+    response = await fetch(url, {...options, headers});
+  } catch (error) {
+    // 画面が不要になった要求を中止した場合は、通信の失敗と区別して記録する。
+    const outcome = error?.name === "AbortError" ? "aborted" : "network-error";
+    recordTiming({...base, outcome, total_ms: performance.now() - started});
+    throw error;
+  }
+  let recorded = false;
+  const finish = (bodyAt) => {
+    if (recorded) return;
+    recorded = true;
+    afterRender((renderedAt) => recordTiming({
+      ...base, status: response.status, fetch_ms: bodyAt - started, render_ms: renderedAt - bodyAt, total_ms: renderedAt - started,
+    }));
+  };
+  let wrapped = false;
+  for (const method of ["json", "text", "blob"]) {
+    if (typeof response[method] !== "function") continue;
+    const original = response[method].bind(response);
+    try {
+      response[method] = async () => {
+        try {
+          return await original();
+        } finally {
+          finish(performance.now());
+        }
+      };
+      wrapped = true;
+    } catch (_) {
+      // 書き換えられない応答は本文の受信時刻を測れないため、ヘッダー受信の時点で記録する。
+    }
+  }
+  if (!wrapped) finish(performance.now());
+  return response;
+}
+
+// 変更通知の本文から配信時刻を読み、受信までの経過ミリ秒を返す。読めなければ`undefined`。
+export function notifyDelayMs(event) {
+  try {
+    const published = JSON.parse(event?.data ?? "{}").published_at_ms;
+    return Number.isFinite(published) ? Date.now() - published : undefined;
+  } catch (_) {
+    return undefined;
+  }
+}

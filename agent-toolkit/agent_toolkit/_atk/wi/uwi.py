@@ -26,7 +26,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_STATE_PROCESSING,
     WI_TYPE_UWI,
 )
-from agent_toolkit._atk.wi.layout import iter_entry_paths
+from agent_toolkit._atk.wi.layout import iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._atk.wi.web_input import WebInputError
 
@@ -181,10 +181,11 @@ def _resolve_active_entry(
     if state is not None and state not in (*WI_PROCESSABLE_STATES, WI_STATE_HOLD):
         raise WebInputError(f"stateが不正です: {state}", next_action="stateはinbox、processingまたはholdで指定してください")
     normalized = _wi_filenames.validate_filename(filename, private_notes).name
-    for candidate in iter_entry_paths(private_notes):
-        if candidate.name == normalized and _wi_entries.entry_state_of(candidate) in (
-            (state,) if state else _ANSWER_TARGET_STATES
-        ):
+    states = (state,) if state else _ANSWER_TARGET_STATES
+    dated = unique_dated_entry_path(private_notes, normalized)
+    candidates = (dated,) if dated is not None else iter_entry_paths(private_notes)
+    for candidate in candidates:
+        if candidate.name == normalized and _wi_entries.entry_state_of(candidate) in states:
             return candidate
     raise FileNotFoundError(filename)
 

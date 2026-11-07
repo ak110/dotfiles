@@ -10,7 +10,7 @@ import datetime
 import json
 import re
 from collections import deque
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
 from typing import Any, Literal, NamedTuple, cast
 
@@ -545,19 +545,27 @@ def _delegation_output_call_id(record: _Record, agents_server_call_ids: set[str]
 
 
 def _native_agent_thread_ids(value: Any) -> list[str]:
-    """Codexの`SubAgentActivity.agent_thread_id`を構造化フィールドから再帰取得する。"""
-    found: list[str] = []
-    if isinstance(value, dict):
-        if value.get("type") == "SubAgentActivity":
-            thread_id = value.get("agent_thread_id")
-            if isinstance(thread_id, str) and thread_id:
-                found.append(thread_id)
-        for item in value.values():
-            found.extend(_native_agent_thread_ids(item))
-    elif isinstance(value, list):
-        for item in value:
-            found.extend(_native_agent_thread_ids(item))
-    return list(dict.fromkeys(found))
+    """Codexの`SubAgentActivity.agent_thread_id`を構造化フィールドから再帰取得する。
+
+    全記録行の全要素を辿るため、要素ごとの再帰呼び出しとリストの生成を避けて明示的なスタックで走査する。
+    数MBの記録の詳細表示で、この走査が所要の大半を占めていた。並びは再帰と同じく、親の要素を子の要素より先に深さ優先で並べる。
+    """
+    found: dict[str, None] = {}
+    stack: list[Any] = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            if item.get("type") == "SubAgentActivity":
+                thread_id = item.get("agent_thread_id")
+                if isinstance(thread_id, str) and thread_id:
+                    found[thread_id] = None
+            children: Iterable[Any] = item.values()
+        elif isinstance(item, list):
+            children = item
+        else:
+            continue
+        stack.extend(reversed([child for child in children if isinstance(child, (dict, list))]))
+    return list(found)
 
 
 def _resolve_claude_transcript(session_id: str) -> Path:

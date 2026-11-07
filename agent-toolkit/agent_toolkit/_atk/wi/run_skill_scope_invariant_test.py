@@ -43,7 +43,8 @@ def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
         assert code == 0, error
         record = _records(engine_env, "session")[0]
         assert record["argv"][-1] == (
-            f'/goal <atk-auto source="run-skill" kind="goal">\nスキル`{expected_scope}`を完遂する\n</atk-auto>'
+            f'/goal <atk-auto source="run-skill" kind="goal">\nこのセッションが担当するスキル`{expected_scope}`の工程を完遂する'
+            "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
         )
         return _startup_input(record, monkeypatch, capsys)
 

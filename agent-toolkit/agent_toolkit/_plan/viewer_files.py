@@ -14,7 +14,7 @@ import logging
 import os
 import pathlib
 import typing
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
@@ -139,7 +139,9 @@ def default_root_specs() -> tuple[RootSpec, ...]:
     return normalize_root_specs(specs)
 
 
-def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
+def is_target_path(
+    path: pathlib.Path, root: pathlib.Path, source_id: str = "", *, resolved_root: pathlib.Path | None = None
+) -> bool:
     """`path`が表示する種別・`root`配下・非dotdirの全条件を満たすか判定する。
 
     読取・検索・変更監視の3つの処理が同一の対象集合を返すよう、この判定を1箇所へ集約する。
@@ -147,24 +149,33 @@ def is_target_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") 
     旧形式の付属ファイルも対象に含める。
     `root`自身がドット配下（`~/.claude/plans`など）でも対象に含めるよう、判定は`root`からの相対パスに対して行う。
     シンボリックリンクを解決してから相対化するため、`root`外を指すリンクは対象外となる。
+    走査のように同じ`root`で繰り返し判定する呼び出し元は、解決済みの`root`を`resolved_root`へ渡して
+    ファイルごとの`root`の解決を省く。
     """
     if not _bundle_kinds.is_viewable_name(path.name, current_only=source_id == LEGACY_SOURCE_ID):
         return False
     try:
-        rel = path.resolve().relative_to(root.resolve())
+        rel = path.resolve().relative_to(resolved_root if resolved_root is not None else root.resolve())
     except ValueError:
         return False
     return not any(part.startswith(".") for part in rel.parts)
 
 
-def is_listed_path(path: pathlib.Path, root: pathlib.Path, source_id: str = "") -> bool:
+def is_listed_path(
+    path: pathlib.Path, root: pathlib.Path, source_id: str = "", *, resolved_root: pathlib.Path | None = None
+) -> bool:
     """`path`が計画一覧で独立項目として表示する対象かを判定する。
 
     一覧に載せる種別は`bundle_kinds.is_listed_name`が定め、レビュー指摘管理表だけは同じstemの
     メイン計画の実在を確かめて判定する。
     """
-    if not is_target_path(path, root, source_id):
+    if not is_target_path(path, root, source_id, resolved_root=resolved_root):
         return False
+    return _is_listed_name(path)
+
+
+def _is_listed_name(path: pathlib.Path) -> bool:
+    """`is_target_path`を満たす`path`について、一覧に独立項目として載せる種別かを判定する。"""
     main_exists = False
     if _bundle_kinds.is_review_table_name(path.name):
         main_name = _bundle_kinds.main_name_of(path.name)
@@ -241,12 +252,18 @@ def scan_root(
 
     scanned: list[dict[str, typing.Any]] = []
     observed: dict[str, float] = {}
+    resolved_root = root.resolve()
+    current_only = source_id == LEGACY_SOURCE_ID
     try:
-        for path in root.rglob("*"):
+        for path, is_symlink in _iter_files(root):
             if check_stop is not None:
                 check_stop()
             try:
-                if not path.is_file() or not is_listed_path(path, root, source_id):
+                if is_symlink:
+                    # リンク先が`root`外やドット配下を指す場合を除くため、解決してから判定する。
+                    if not path.is_file() or not is_listed_path(path, root, source_id, resolved_root=resolved_root):
+                        continue
+                elif not _bundle_kinds.is_viewable_name(path.name, current_only=current_only) or not _is_listed_name(path):
                     continue
                 st = path.stat()
             except OSError as error:
@@ -268,6 +285,37 @@ def scan_root(
     return [{**item, "ctime_epoch": resolved[item["path"]]} for item in scanned], warning
 
 
+def _iter_files(root: pathlib.Path) -> Iterator[tuple[pathlib.Path, bool]]:
+    """`root`配下のファイルを、シンボリックリンクかどうかとともに返す。
+
+    ドットで始まるディレクトリ・ファイルは`is_target_path`が対象外とするため降りない。
+    ディレクトリへのシンボリックリンクは、引数を指定しない`Path.rglob`と同じくたどらない。
+    リンクでないファイルはリンクでないディレクトリだけを経て到達するため、解決後の`root`からの相対パスが
+    元の相対パスと一致し、ファイルごとの`resolve`を省ける。数千件のrootでは`resolve`と相対化が走査時間の大半を占める。
+    """
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        try:
+            iterator = os.scandir(directory)
+        except OSError:
+            # `root`自身を読めない失敗は呼出し側の警告へ渡す。
+            # 配下の読めないディレクトリは`Path.rglob`と同じく走査から除き、結果に含めない。
+            if directory == root:
+                raise
+            continue
+        with iterator as entries:
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    pending.append(pathlib.Path(entry.path))
+                elif entry.is_symlink():
+                    yield pathlib.Path(entry.path), True
+                elif entry.is_file(follow_symlinks=False):
+                    yield pathlib.Path(entry.path), False
+
+
 def search_root(
     root: pathlib.Path,
     query: str,
@@ -283,11 +331,12 @@ def search_root(
     if not root.is_dir():
         return set()
     matched: set[str] = set()
+    resolved_root = root.resolve()
     try:
         for path in root.rglob("*"):
             if check_stop is not None:
                 check_stop()
-            if not path.is_file() or not is_target_path(path, root, source_id):
+            if not path.is_file() or not is_target_path(path, root, source_id, resolved_root=resolved_root):
                 continue
             if not needle:
                 matched.add(path.relative_to(root).as_posix())

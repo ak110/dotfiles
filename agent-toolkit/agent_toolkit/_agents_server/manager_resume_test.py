@@ -5,13 +5,14 @@ from __future__ import annotations
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import asyncio
+import contextlib
 import dataclasses
 import datetime
 import json
 import logging
 import pathlib
 import time
-from collections.abc import Callable
+from collections.abc import AsyncGenerator, Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -961,15 +962,11 @@ async def test_auto_resume_delivery_failure_terminates_as_failed(
         await manager.close()
 
 
-@pytest.mark.asyncio
-async def test_wait_delivers_child_session_result_without_kill(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    """別プロセスが起動した子sessionの終了後、killを用いないwaitが委譲先の結果を配送する。
-
-    子sessionの登録簿レコードが残らない場合も、共有の終了時の結果ファイルから終了を判定する。
-    """
+@contextlib.asynccontextmanager
+async def _delegate_with_child_writer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, FakeBackend, state.SessionState, status_file.StatusFileWriter]]:
+    """委譲先1件と、その委譲先が別プロセスのMCPサーバーで子sessionを起動する書込主体を用意する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("claude", "model", "high")]
@@ -985,9 +982,6 @@ async def test_wait_delivers_child_session_result_without_kill(
         _install_backend(manager, "claude", backend)
         writer.activate()
         started = await manager.start("execute", "委譲する", str(tmp_path))
-        delegate = manager.sessions[started["session_id"]]
-
-        # 委譲先が別プロセスのMCPサーバーへstart_exploreを発行した状態を模す。
         child_writer = status_file.StatusFileWriter(
             {},
             shared_roots.StatusFileIdentity("root-session", "delegate-host.json", "delegate-host"),
@@ -995,6 +989,19 @@ async def test_wait_delivers_child_session_result_without_kill(
             aggregate_seconds=0,
         )
         child_writer.activate()
+        yield manager, backend, manager.sessions[started["session_id"]], child_writer
+
+
+@pytest.mark.asyncio
+async def test_wait_delivers_child_session_result_without_kill(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """別プロセスが起動した子sessionの終了後、killを用いないwaitが委譲先の結果を配送する。
+
+    子sessionの登録簿レコードが残らない場合も、共有の終了時の結果ファイルから終了を判定する。
+    """
+    async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
         child = state.SessionState("grandchild", str(tmp_path), engine="claude", launch_kind="explore")
         child_writer.sessions[child.session_id] = child
         wait_output_tracking.consume_agents_server_tool_result(
@@ -1026,6 +1033,50 @@ async def test_wait_delivers_child_session_result_without_kill(
         assert response["status"] == "completed"
         assert response["agent_message"] == "子sessionを確認した最終結果"
         assert "error" not in response
+        child_writer.deactivate()
+        await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_child_collected_early_is_not_redelivered_and_remaining_child_resumes_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    """先に終了した子を同じturnの待機で回収した後、残る子の終了で1回だけ再開し、回収済みの子を再び示さない。"""
+    async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
+        children = {}
+        for name in ("child-early", "child-late"):
+            child = state.SessionState(name, str(tmp_path), engine="claude", launch_kind="explore")
+            child_writer.sessions[name] = child
+            children[name] = child
+            wait_output_tracking.consume_agents_server_tool_result(
+                delegate, "mcp__agents_server__start_explore", {}, {"session_id": name, "status": "running"}
+            )
+        child_writer.flush()
+
+        # 先に終わった子は、委譲先が同じturnの`atk agents wait`で回収して次の工程へ使う。
+        _complete(children["child-early"], message="早い結果")
+        child_writer.flush()
+        wait_output_tracking.consume_agents_wait_output(
+            delegate, json.dumps({"session_id": "child-early", "status": "completed"}) + "\n"
+        )
+        resume_waits.begin_auto_resume_wait(
+            delegate, {"status": "completed", "agent_message": "待機中: child-late", "error": None}
+        )
+
+        await manager._advance_child_session_wait(delegate)  # pylint: disable=protected-access
+        assert backend.send_calls == 0
+        assert delegate.live_child_session_ids == {"child-late"}
+
+        _complete(children["child-late"], message="遅い結果")
+        child_writer.flush()
+        await manager._advance_child_session_wait(delegate)  # pylint: disable=protected-access
+        await manager._advance_child_session_wait(delegate)  # pylint: disable=protected-access
+
+        assert backend.send_calls == 1
+        assert "child-late" in backend.prompts[-1]
+        assert "child-early" not in backend.prompts[-1]
+        assert not delegate.live_child_session_ids
         child_writer.deactivate()
         await manager.close()
 

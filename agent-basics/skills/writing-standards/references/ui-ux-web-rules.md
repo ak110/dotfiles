@@ -3,8 +3,8 @@
 本書は、HTML、CSS、JavaScriptを用いてエンドユーザー向け画面を実装またはレビューするエージェントに向けて、ソースコードから判定できる確認項目をまとめたものである。
 エンドユーザーの操作によって生じる動作結果の正しさは`testing.md`「検証単位の選定」で選んだ層の自動テストで確認し、操作の分かりやすさは`ui-ux.md`の「完了前の実描画確認」およびユーザビリティレビューを通じて確認する。
 
-主な参考資料: [Vercel Web Interface Guidelinesの取得時点の原文](https://github.com/vercel-labs/web-interface-guidelines/blob/e3d624baaf29dc1fc645aff3e38f03e564d2d6b1/command.md)（commit `e3d624baaf29dc1fc645aff3e38f03e564d2d6b1`）。作業時に原文を毎回再取得するのではなく、本書にまとめた規則に基づいて判断する。英語の文章表記に固有の規則は、日本語画面の判定対象から除外する。
-参考資料: [Impeccableの操作と部品の基準](https://github.com/pbakaus/impeccable/blob/5e745ace7e151feb2a93d360d0281fe39448b857/skill/reference/operate.md)。
+主な参考資料: [Vercel Web Interface Guidelinesの取得時点の原文](https://github.com/vercel-labs/web-interface-guidelines/blob/e3d624baaf29dc1fc645aff3e38f03e564d2d6b1/command.md)（commit `e3d624baaf29dc1fc645aff3e38f03e564d2d6b1`）。作業時に原文を毎回再取得するのではなく、本書にまとめた規則に基づいて判断する。英語の文章表記に固有の規則は、日本語画面の判定対象から除外する。 MIT Licenseの著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
+参考資料: [Impeccableの操作と部品の基準](https://github.com/pbakaus/impeccable/blob/5e745ace7e151feb2a93d360d0281fe39448b857/skill/reference/operate.md)を日本語へ翻訳・再構成した。Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
 
 ## 名指し参照の読込方法
 

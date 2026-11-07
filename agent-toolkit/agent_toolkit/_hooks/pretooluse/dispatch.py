@@ -5,7 +5,7 @@ block系checkは1プロセスで直列実行し、最初の違反を終了0の�
 warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を載せつつ処理を継続する
 （exit 0で終了したフックのstderrはコーディングエージェントへ届かないため）。
 通常の遮断は不可逆な操作とデータ破損を生む入力に限定し、後続の編集で復元できる結果は警告する。
-記述言語の書き直しは`claude-hooks-block-warn.md`「遮断と警告の選択」の例外として遮断する。
+記述言語の書き直しは`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」の例外として遮断する。
 
 統合しているチェック:
 

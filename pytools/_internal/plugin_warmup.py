@@ -362,9 +362,17 @@ async def check_command(command: Sequence[str]) -> CommandOutcome:
                     descendants.insert(0, psutil.Process(process.pid))
                 # 回収の待機だけを退避し、ログはthread-local捕捉のある親workerで出力する。
                 residual = await asyncio.to_thread(process_tree.reclaim_processes, descendants)
-                await asyncio.wait_for(process.communicate(), timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
                 if residual:
-                    raise RuntimeError("依存確認の子孫プロセスが残存: " + " / ".join(map(process_tree.describe, residual)))
+                    raise process_tree.ReclaimError(
+                        [process_tree.describe(item) for item in residual], residual, context="依存確認"
+                    )
+                try:
+                    await asyncio.wait_for(process.communicate(), timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
+                except TimeoutError as reap_error:
+                    # 子を止めた後もパイプが閉じないのは、列挙外の子孫が出力を保持しているためである。
+                    raise process_tree.ReclaimError(
+                        [f"{process.pid}: 終了後も出力のパイプが閉じない"], descendants, context="依存確認"
+                    ) from reap_error
     except (OSError, TimeoutError) as exc:
         error = f"{type(exc).__name__}: {exc}"
     return CommandOutcome(list(command), result, time.monotonic() - started, error)

@@ -159,6 +159,7 @@ JSON Linesファイル群に対して汎用の検索コマンドを用いて無�
 
 復元、進捗点検、状況照会、引き継ぎ、操作の調査では、`session-review-prepare --conversation-only`の抽出を共用する。
 全体概要が必要な復元では通常表示を読み、前回以降の点検では少量表示を選ぶ。
+通常表示は予算を超える会話でも全期間から行を選んで省略区間を示すため、全体の把握に少量表示の継続取得を重ねない。
 対象記録の指定は、同じコマンドの`--transcript`、`--codex-thread-id`、`--opencode-session-id`から選ぶ。
 
 ```sh
@@ -173,7 +174,7 @@ atk run-script session-review-prepare -- --transcript <記録の絶対パス> --
 - `--conversation-after <非負整数>`: 表示が返した位置より後を取得する。既存の`--after <scope JSON>`が定める振り返り対象の差分とは区別する。
 - `--conversation-max-bytes <正整数>`: 少量文書全体のUTF-8予算を指定する。省略時の16000バイトは、日常点検で読む量を全体概要より小さくするための値である。
 
-生成された`conversation_path`と実バイト数、条件、対象・表示件数、省略と未確認範囲、継続案内を確認する。
+生成された`conversation_path`と、`conversation_window`が示す実バイト数、条件、対象・表示件数、省略と未確認範囲、継続案内を確認する。
 継続位置は同じ抽出範囲で使い、対象記録を切り替える際はその記録の位置から取得する。
 対象記録へ追記された次回の点検では、`--after <前回のbundle/scope.json>`を付けて新しく抽出する。
 `--conversation-after`は同じ保存bundleのページ継続に使い、追記の再抽出とは分ける。

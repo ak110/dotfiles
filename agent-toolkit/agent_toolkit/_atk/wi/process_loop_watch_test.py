@@ -369,7 +369,7 @@ def test_start_gate_waits_only_for_add_awi_by_user_to_target(
 
     def wait(_notes: pathlib.Path, _repo: str | None, *, timeout: float, **_kwargs: Any) -> bool:
         waits.append(timeout)
-        _submission_cli("end", "--session-id", "submitter")
+        _submission_cli("end", "--session-id", "submitter", "--abort")
         return True
 
     monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)

@@ -219,7 +219,7 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
             ),
         )
         return 2
-    public = _public_session(selected, detailed=True)
+    public = _public_session(selected, detailed=True, human=not is_agent_environment(env))
     interrupted_turns = _registry_interrupted_turns(args.session_id)
     if interrupted_turns:
         public["interrupted_turns"] = interrupted_turns
@@ -227,8 +227,15 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
     return 0
 
 
-def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> dict[str, Any]:
-    """一覧向けの稼働状況の項目と`detailed`で加える復旧用の項目を分け、内部で追加した項目が公開の出力へ混入しないよう、列挙した項目だけを取り出す。"""
+def _public_session(session: Mapping[str, Any], *, detailed: bool = False, human: bool = False) -> dict[str, Any]:
+    """一覧向けの稼働状況の項目と`detailed`で加える復旧用の項目を分け、内部で追加した項目が公開の出力へ混入しないよう、列挙した項目だけを取り出す。
+
+    項目は受信主体ごとに選ぶ。エージェントへは次の判断に使う状態・診断・復旧の項目だけを返し、
+    文脈の長さ・上限（`context_tokens`・`context_window`）は人間の端末（`human`）だけへ返す。
+    自動圧縮を前提とするエージェントは文脈量で判断を変えず、値を渡すと使用量を理由にした
+    引き継ぎや停止の判断を誘うためである（ユーザー指示）。項目を加えるときも、受信主体と
+    その項目で行う判断を確かめてから、どちらの集合へ置くかを決める。
+    """
     fields = (
         "session_id",
         "status",
@@ -243,7 +250,8 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False) -> di
     if detailed:
         fields += ("cwd", "engine", "model", "effort", "model_type", "launch_kind", "prompt", "progress", "agent_message")
     result = {key: session[key] for key in fields if key in session}
-    result.update(context_usage.fields(session.get("context_tokens"), session.get("context_window")))
+    if human:
+        result.update(context_usage.fields(session.get("context_tokens"), session.get("context_window")))
     if detailed:
         result.update(state.fast_mode_fields(session.get("engine"), session.get("fast_mode")))
     if isinstance(result.get("api_error"), dict):

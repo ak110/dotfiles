@@ -152,6 +152,12 @@ xdist 3.8の失敗上限では、controllerの停止理由を`_testing/xdist_sto
 上流[pytest-xdist #1395](https://github.com/pytest-dev/pytest-xdist/pull/1395)と同じ境界へ限定し、強制終了や実行中の試験の中断は行わない。
 共通pytest pluginから登録するため、両プロジェクトの直接pytestとpyfltrで同じ適応が働き、worker回収後の既存の実行枠解放へ接続する。
 修正を含む安定版へ更新し、`xdist_stop_test.py`の早期停止・正常完了と実行枠の回収を確認した時点で局所適応を撤去する。
+pytestが最外側で実行枠を取得した場合は、試験の区切りで待機中の別の検証へ枠を譲り、取り直してから残りの試験を続ける（`_testing/slot_yield.py`）。
+xdistではcontrollerの所有スレッドがpyfltrの`cooperative_hold`を保持し、`pytest_configure_node`でworkerへ参加券を渡す。全workerが子孫を残さない区切りで止まった時点だけ譲るため、worker稼働中の排他を保つ。
+pyfltrの協調所有者は終了した参加者も停止として数えないため、割り当てられた試験を先に終えたworkerの参加区間はcleanupまで残さず、そのworkerが`hold`を抜けた後に書く完了印を`pytest_testnodedown`の後に確かめてから閉じる。cleanupまで残すと、区切りで止まった残りのworkerが再開されず、pytestが全試験の後も終了しなかった（観測は2026年11月）。
+各プロセスの最後の試験の後には譲らない。取り直しが先に並んだ待機者の終了まで待ち、全試験を終えたpytestの終了だけが遅れるためである。
+pyfltr・`atk lane integrate`の検証から所有を継承した場合は譲らない。継承した子が祖先の所有を解除すると祖先の別の子と待機者が重なるうえ、pyfltr 3.26.0は参加者がさらに子を参加させる多段の協調を持たないためである。
+各worktreeへ別キャッシュを割り当てて枠を分ける案と、dotfiles側で独自のロックや待機台帳を持つ案は、ホスト共有資源の保護を失うか所有管理を二重にするため採らない。
 終了時に回収する子孫からは、同じプロセスのmultiprocessingのresource_trackerを除く。trackerはpytestの終了で自ら終わり、先に停止すると終了時の資源解放がtrackerを再起動し、未解放の資源を報告する警告を出力するためである。
 明示basetempとJUnit・traceなどの保存証拠、serveとwatcherはそれぞれの所有主体が必要な寿命まで保持する。
 資源所有クラスは文脈マネージャーで獲得直後から解放を保証し、再入可能なcloseと起動途中の所有移譲を扱う。
@@ -176,6 +182,14 @@ conftest.pyを置けるのはリポジトリ直下と`agent-toolkit/`直下だ�
 
 PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以外の項目へのシンボリックリンクだけを持つ一時ディレクトリへ置き換える。ディレクトリごと外すと同じ場所の`uv`などテストが使うツールまで失われる。置き換えたPATHはセッションで1回だけ組み立てる。
 実際のCLIやホームを意図して使うテストは、`host_environ`で子プロセスへ渡す環境変数を組み立てるか、`restore_host_environment`で同じプロセスの値を戻す。
+
+pnpm 12以降の導入・版管理は`agent-basics/skills/writing-standards/references/dependency-management.md`「pnpm」に従う。
+初回導入はnpmまたはstandaloneで行い、版固定と検証にはlockfile先頭のboot文書のintegrityとレジストリ署名、公開待機には`minimumReleaseAge`を使う。
+更新には`pnpm self-update <版>`を使い、pnpm自身が検証しない`packageManager`のCorepack用ハッシュへ依存しない。
+Node.js TSCの[投票](https://github.com/nodejs/TSC/pull/1697)は25系以降のCorepack同梱終了を決めたもので、非推奨化の決定ではない。
+[議論](https://github.com/nodejs/TSC/pull/1527)ではNode.jsのリリースを要する保守負担と修正の配布遅延が指摘された。
+Corepackを別途導入して残す案は、pnpm 12自身で版固定・検証・公開待機を満たせるため採らない。
+pnpm 10以前のCorepack手順と、Corepackを実行し得る試験の環境変数・キャッシュの隔離は維持する。
 
 実際のuv、pnpm、corepackを使い、取得物の冷えた状態自体はチェックしない試験は、`share_package_caches`を明示して取得物だけを再利用する。
 uvの保存先は隔離前の環境から`uv cache dir`で解決し、`UV_CACHE_DIR`で子プロセスへ渡す。解決は利用時にプロセスで1回だけ行う。

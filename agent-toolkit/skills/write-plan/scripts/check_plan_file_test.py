@@ -2259,6 +2259,46 @@ def test_cli_transfer_skip_reports_recovery(
     assert "解消できない" in actions[0] and "報告" in actions[0]
 
 
+@pytest.mark.parametrize("history", ["deleted", "never"])
+def test_cli_transfer_accepts_wi_deleted_after_registration(
+    repo: tuple[pathlib.Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path_factory: pytest.TempPathFactory,
+    history: str,
+) -> None:
+    """配置から消えた移管先は公開plan-checkが履歴の登録記録で受理し、削除commitと後続操作を示す。未登録の名前は拒否する。"""
+    work_dir, _base = repo
+    name = "20261027-162634-999.md"
+    files = {f"2026/10/{name}": "# 後続要求\n"} if history == "deleted" else {"2026/10/20261027-162634-998.md": "# 別\n"}
+    notes = git_repository.init_repository(tmp_path_factory.mktemp("notes"), files=files, commit_message="登録")
+    if history == "deleted":
+        git_repository.run_git(notes, "rm", "-q", "--", f"2026/10/{name}")
+        git_repository.run_git(notes, "commit", "-q", "--no-verify", "-m", "別環境へ移す")
+    deleted = git_repository.git_output(notes, "rev-parse", "--short", "HEAD")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    content = _plan_fixture.current_plan(repo=work_dir.resolve()).replace(
+        _plan_fixture.USER_ACTION_ROW, f"| 公開契約に必要な変更を実装する | ユーザー指示 | 移管 | {name}へ移管する。 |", 1
+    )
+    start = content.index("### 受入シナリオ")
+    end = content.index("\n## ", start)
+    path = work_dir / "transfer.md"
+    path.write_text(content[:start] + "### 受入シナリオ\n\nなし\n" + content[end:], encoding="utf-8")
+    code = check_plan_file.main(["--work-dir", str(work_dir), str(path)])
+    lines = capsys.readouterr().err.splitlines()
+    if history == "deleted":
+        assert code == 0, lines
+        assert any(
+            line.startswith("[warn]") and f"履歴で登録済み: {name}（削除commit {deleted}、削除前のパス 2026/10/{name}）" in line
+            for line in lines
+        ), lines
+        actions = [line for line in lines if line.startswith("次の操作: ")]
+        assert len(actions) == 1 and "show --stat <削除commit>" in actions[0] and "計画の確認を続ける" in actions[0]
+    else:
+        assert code == 1, lines
+        assert any(f"移管先WIが実在しない: {name}" in line for line in lines), lines
+
+
 def test_cli_origin_read_failure_reports_recovery(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

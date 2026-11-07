@@ -30,6 +30,40 @@ _EXIT_TIMEOUT = 124
 _EXIT_WRAPPER_FAILURE = 125
 # 子プロセスの起動前に作業ツリーの状態を取る`git`の時間上限。観測の前処理で実行を止めないよう短く保つ。
 _GIT_STATE_TIMEOUT_SECONDS = 30.0
+# 成功記録の再利用判定で値を比べない環境変数。エージェントの会話・委譲・巡回の識別子と引き継ぎ記録の場所、
+# ホストとのメッセージング、端末・SSH・D-Busのセッション、シェルの作業ディレクトリと階層、miseのセッション差分は、
+# 実行や再開のたびに値が変わり、同じ版・argv・cwdの検証結果を変えない。値まで比較すると再開ごとに同じ全体検証を
+# 繰り返すため、有無だけを比較する。有無は通知先の解決など動作を切り替えうるので比較に残す。
+# 委譲の種別や`1`で有効化するフラグ（`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`、`AGENT_TOOLKIT_DELEGATED_SESSION`、
+# `AGENT_TOOLKIT_PROCESS_LOOP_SESSION`など）は値が動作を変えるため、ここへ入れず値を比較する。
+# cwdは記録の`cwd`で別に比較する。名前で扱うのはここに挙げた既知の変数だけとし、未知の変数は値を比較する。
+_VOLATILE_ENVIRONMENT_NAMES = frozenset(
+    {
+        "_",
+        "OLDPWD",
+        "PWD",
+        "SHLVL",
+        "AGENT_TOOLKIT_HANDOFF_PATH",
+        "AGENT_TOOLKIT_OWNER_SESSION",
+        "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_MESSAGING_TOKEN",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_PID",
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "SSH_CLIENT",
+        "SSH_CONNECTION",
+        "SSH_TTY",
+        "TERM_SESSION_ID",
+        "TMUX_PANE",
+        "WINDOWID",
+        "XDG_SESSION_ID",
+        "__MISE_DIFF",
+        "__MISE_SESSION",
+    }
+)
 
 
 def _file_metrics(path: pathlib.Path) -> tuple[int, int]:
@@ -220,9 +254,12 @@ def execution_conditions(environment: dict[str, str] | None = None) -> dict[str,
     """子へ渡す正規化後の条件を、値を記録せず項目別に比較する。"""
     environment = dict(os.environ if environment is None else environment)
     strip_inherited_venv(environment)
-    # 起動層の復元情報とvenvは子にも渡らない。未知のキーを名前だけで除外しない。
+    # 起動層の復元情報とvenvは子にも渡らない。値を比べないのは`_VOLATILE_ENVIRONMENT_NAMES`だけとする。
+    # 比較方法を変えた版では旧版の記録と項目の意味が異なるため、versionを上げて旧記録を形式違いとして扱う。
+    for name in _VOLATILE_ENVIRONMENT_NAMES & environment.keys():
+        environment[name] = ""
     return {
-        "version": 1,
+        "version": 3,
         "python": {
             key: hashlib.sha256(value.encode("utf-8")).hexdigest()
             for key, value in {

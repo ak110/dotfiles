@@ -17,6 +17,7 @@ from agent_toolkit._agents_server import (
     claude,
     codex,
     commands,
+    context_usage,
     manager,
     mcp_tools,
     shared_layout,
@@ -61,10 +62,13 @@ def _retry(status: int, attempt: int = 2):
 
 
 async def _assert_public_error(owner, session, tmp_path, monkeypatch, capsys):
-    """同じ状態をMCPのlist/showと公開CLIのlist/waitへ通す。"""
+    """同じ状態をMCPのlist/showと公開CLIのlist/waitへ通し、文脈量をエージェント向けの応答へ出さない。"""
     monkeypatch.setattr(mcp_tools, "_MANAGER", owner)
+    context_usage.record_context_usage(session, 53500, 1000000)
     shown = await mcp_tools.show_session(session.session_id)
     listed = (await mcp_tools.list_sessions())["sessions"][0]
+    for payload in (shown, listed):
+        assert "context_tokens" not in json.dumps(payload) and "context_window" not in json.dumps(payload)
     expected = shown["api_error"]
     assert listed["api_error"] == expected
     directory = shared_layout.status_directory("root-session", tmp_path)
@@ -84,12 +88,14 @@ async def _assert_public_error(owner, session, tmp_path, monkeypatch, capsys):
     assert commands.dispatch(parser.parse_args(["list"]), environment=environment) == 0
     cli_list = json.loads(capsys.readouterr().out)["sessions"][0]
     assert cli_list["api_error"] == expected
+    assert "context_tokens" not in cli_list and "context_window" not in cli_list
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 3
     rows = [json.loads(row) for row in capsys.readouterr().out.splitlines()]
     running = next(row for row in rows if row.get("status") == "running")
     assert running["api_error"] == expected
+    assert all("context_tokens" not in json.dumps(row) and "context_window" not in json.dumps(row) for row in rows)
     return expected
 
 

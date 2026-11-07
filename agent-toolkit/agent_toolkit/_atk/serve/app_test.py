@@ -18,7 +18,7 @@ import filelock
 import pytest
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import assets, config, state, wi_operations, wi_routes
+from agent_toolkit._atk.serve import assets, config, state, timings, wi_operations, wi_routes
 from agent_toolkit._atk.serve import plans as serve_plans
 from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import remote as serve_plan_remote
@@ -133,7 +133,7 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_prefill_answer_change_and_keep_question_visible() -> None:
-    """回答変更時は既存回答と質問本文を残し、候補を入力補助にする。"""
+    """回答できるUWIは開いた時点で既存回答入りの回答欄と他の操作を同時に表示し、候補を入力補助にする。"""
     result = _run_node_ui(
         """
 const origin = new Element('origin', 'BUTTON');
@@ -144,24 +144,28 @@ const entry = {
   frontmatter_entries: []
 };
 displayEntry(entry);
-const answerLabel = elements['answer-button'].textContent;
 openDialog(elements['detail-dialog'], origin, elements['detail-dialog-body']);
-enterAnswer();
+const answerVisible = !elements['answer-panel'].hidden;
+const saveVisible = !elements['save-answer-button'].hidden;
+const otherActionsVisible = ['adopt-button', 'hold-button', 'edit-button', 'delete-button']
+  .every(id => !elements[id].hidden);
 const prefilled = elements['answer-input'].value;
 const candidates = elements['answer-choices'].children.map(button => button.textContent);
 elements['answer-choices'].children[0].listeners.click();
 const afterCandidate = elements['answer-input'].value;
 elements['answer-input'].value += 'を補足';
-const answerVisible = !elements['answer-panel'].hidden;
+displayEntry({...entry, content: 'raw2'});
+const keptAfterRefresh = elements['answer-input'].value;
 closeDetailDialog();
 process.stdout.write(JSON.stringify({
   detailVisible: !elements['detail-view'].hidden,
   answerVisible,
-  answerLabel,
+  saveVisible,
+  otherActionsVisible,
   prefilled,
   candidates,
   afterCandidate,
-  edited: elements['answer-input'].value,
+  keptAfterRefresh,
   focused
 }));
 """
@@ -169,13 +173,41 @@ process.stdout.write(JSON.stringify({
     assert result == {
         "detailVisible": True,
         "answerVisible": True,
-        "answerLabel": "回答を変更",
+        "saveVisible": True,
+        "otherActionsVisible": True,
         "prefilled": "既存回答",
         "candidates": ["A", "B"],
         "afterCandidate": "A",
-        "edited": "Aを補足",
+        "keptAfterRefresh": "Aを補足",
         "focused": "origin",
     }
+
+
+def test_assets_keep_unsaved_answer_protected_after_switching_mode() -> None:
+    """回答欄を隠す編集モードへ切り替えても、入力途中の回答は保持され、閉じる前に破棄を確認する。"""
+    result = _run_node_ui(
+        """
+const entry = {
+  kind: 'uwi', state: 'inbox', filename: 'question.md', answered: false, answer: '',
+  content: 'question', choices: [], frontmatter_entries: []
+};
+displayEntry(entry);
+openDialog(elements['detail-dialog'], new Element('origin', 'BUTTON'), elements['detail-dialog-body']);
+elements['answer-input'].value = '保持する未保存回答';
+enterEdit();
+const answerHidden = elements['answer-panel'].hidden;
+let confirmations = 0;
+window.confirm = () => { confirmations += 1; return false; };
+closeDetailDialog();
+process.stdout.write(JSON.stringify({
+  answerHidden,
+  confirmations,
+  open: elements['detail-dialog'].open,
+  kept: elements['answer-input'].value
+}));
+"""
+    )
+    assert result == {"answerHidden": True, "confirmations": 1, "open": True, "kept": "保持する未保存回答"}
 
 
 def test_open_detail_dialog_resets_scroll_position() -> None:
@@ -332,7 +364,6 @@ async function runAnswer() {
   displayEntry(serverEntry);
   detailOriginKey = entryKey(serverEntry);
   openDialog(elements['detail-dialog'], new Element('answer-origin', 'BUTTON'), elements['detail-dialog-body']);
-  enterAnswer();
   elements['answer-input'].value = '回答';
   let resolveMutation;
   let markStarted;
@@ -445,6 +476,7 @@ process.stdout.write(JSON.stringify({
 async def test_sse_heartbeat(tmp_path: pathlib.Path) -> None:
     """変更が無い期間はheartbeatを送信する。"""
     events = state.ServeState(tmp_path).events(heartbeat=0.001)
+    assert await anext(events) == "event: subscribed\ndata: {}\n\n"
     assert await anext(events) == "event: heartbeat\ndata: {}\n\n"
     await events.aclose()
 
@@ -2108,3 +2140,145 @@ async def test_shutdown_request_stops_remote_connections_without_reconnecting(
         await asyncio.sleep(0.2)
 
         assert len(started) == count
+
+
+@pytest.mark.asyncio
+async def test_reads_respond_while_updates_wait_for_lock(
+    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]
+) -> None:
+    """更新が共通ロックを待って更新用の実行枠を全て占める間も、一覧・詳細・検索・候補はローカル内容で応答する。
+
+    参照が更新と同じ枠を共有すると、ロックの解放（最大30秒）まで参照が待つ。所要記録には更新のロック待機と
+    参照の各区間が要求IDで残り、本文と検索語は含まれない。
+    """
+    notes = _rebasing_notes(tmp_path, make_clean_repo)
+    rebase_dir = subprocess.run(
+        ["git", "-C", str(notes), "rev-parse", "--git-path", "rebase-merge"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    (notes / rebase_dir).rmdir()
+    timing_log = tmp_path / "timings.jsonl"
+    app = serve_app.create_app(
+        notes, config.ServeConfig("127.0.0.1", 28766), state.ServeState(notes), worker_limit=2, timing_log_path=timing_log
+    )
+    client = app.test_client()
+    locked = threading.Event()
+    release = threading.Event()
+
+    def hold_lock() -> None:
+        with _wi_sync.repo_lock(notes):
+            locked.set()
+            release.wait(timeout=10)
+
+    holder = threading.Thread(target=hold_lock)
+    holder.start()
+    assert await asyncio.to_thread(locked.wait, 10)
+    updates = [
+        asyncio.ensure_future(
+            client.put(
+                "/api/entries/inbox/entry.md",
+                json={"content": _REBASE_AWI.replace("本文", f"変更{index}"), "expected_content": _REBASE_AWI},
+                headers={"X-Atk-Request-Id": f"update-{index}"},
+            )
+        )
+        for index in range(3)
+    ]
+    await asyncio.sleep(0.3)
+    try:
+        assert not any(update.done() for update in updates)
+        started = asyncio.get_running_loop().time()
+        listed, detail, searched, repos = await asyncio.wait_for(
+            asyncio.gather(
+                client.get("/api/entries?status=active"),
+                client.get("/api/entries/inbox/entry.md", headers={"X-Atk-Request-Id": "read-detail"}),
+                client.get("/api/entries?status=all&q=%E7%A7%98%E5%8C%BF%E8%AA%9E"),
+                client.get("/api/repos"),
+            ),
+            timeout=5,
+        )
+        elapsed = asyncio.get_running_loop().time() - started
+    finally:
+        release.set()
+    responses = await asyncio.gather(*updates)
+    await asyncio.to_thread(holder.join, 10)
+
+    assert [response.status_code for response in (listed, detail, searched, repos)] == [200, 200, 200, 200]
+    assert elapsed < 1.0
+    assert (await detail.get_json())["entry"]["content"] == _REBASE_AWI
+    assert sorted(response.status_code for response in responses)[0] == 200
+    records = [json.loads(line) for line in timing_log.read_text(encoding="utf-8").splitlines()]
+    detail_record = next(record for record in records if record.get("request_id") == "read-detail")
+    assert detail_record["route"] == "/api/entries/<state_name>/<filename>"
+    assert detail_record["filename"] == "entry.md"
+    assert detail_record["lock_wait_ms"] == 0
+    update_records = [record for record in records if str(record.get("request_id", "")).startswith("update-")]
+    assert len(update_records) == 3
+    assert max(record["lock_wait_ms"] for record in update_records) >= 200
+    assert all({"total_ms", "queue_ms", "work_ms", "lock_hold_ms", "status"} <= record.keys() for record in update_records)
+    raw = timing_log.read_text(encoding="utf-8")
+    assert "変更0" not in raw
+    assert "秘匿語" not in raw
+
+
+@pytest.mark.asyncio
+async def test_timing_api_records_only_allowed_browser_fields(tmp_path: pathlib.Path) -> None:
+    """画面の所要記録は許可した項目と型だけを残し、本文などの項目を捨てる。"""
+    timing_log = tmp_path / "timings.jsonl"
+    app = serve_app.create_app(
+        tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path), timing_log_path=timing_log
+    )
+    client = app.test_client()
+    response = await client.post(
+        "/api/timings",
+        json={
+            "records": [
+                {"screen": "wi", "operation": "GET /api/entries", "fetch_ms": 12.34, "render_ms": 5, "content": "本文"},
+                {
+                    "screen": "wi",
+                    "operation": "save",
+                    "kind": "operation",
+                    "operation_id": "abc123",
+                    "queued_ms": 40,
+                    "total_ms": 812.04,
+                    "query": "検索語",
+                },
+                {"screen": "wi", "fetch_ms": 1},
+                "不正",
+            ]
+        },
+    )
+    invalid = await client.post("/api/timings", json={"records": "x"})
+
+    assert (response.status_code, invalid.status_code) == (204, 400)
+    records = [json.loads(line) for line in timing_log.read_text(encoding="utf-8").splitlines()]
+    assert [{key: value for key, value in record.items() if key != "at"} for record in records] == [
+        {
+            "source": "browser",
+            "screen": "wi",
+            "operation": "GET /api/entries",
+            "fetch_ms": 12.3,
+            "render_ms": 5.0,
+        },
+        {
+            "source": "browser",
+            "screen": "wi",
+            "operation": "save",
+            "kind": "operation",
+            "operation_id": "abc123",
+            "queued_ms": 40.0,
+            "total_ms": 812.0,
+        },
+    ]
+
+
+def test_timing_log_rotates_to_one_generation(tmp_path: pathlib.Path) -> None:
+    """上限を超える追記は1世代へ回し、記録の合計量を2世代に保つ。"""
+    path = tmp_path / "serve" / "timings.jsonl"
+    log = timings.TimingLog(path, max_bytes=200)
+    for index in range(20):
+        log.write({"index": index, "padding": "x" * 30})
+
+    rotated = path.with_name("timings.jsonl.1")
+    assert path.stat().st_size <= 200
+    assert rotated.stat().st_size <= 200
+    assert sorted(path.parent.iterdir()) == sorted([path, rotated])
+    assert json.loads(path.read_text(encoding="utf-8").splitlines()[-1])["index"] == 19

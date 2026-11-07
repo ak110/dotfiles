@@ -159,7 +159,7 @@ def _validate_entry_filters(filters: dict[str, str]) -> None:
 
 def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> None:
     """同期・一覧・詳細・イベント購読ルートを登録する。"""
-    ops, workers = runtime.operations, runtime.workers
+    ops, workers = runtime.operations, runtime.read_workers
 
     @app.post("/api/sync")
     async def sync() -> quart.Response:
@@ -320,7 +320,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
 
     @app.put("/api/entries/<filename>")
     async def stable_edit_entry(filename: str) -> quart.Response:
-        current = await workers.run(ops.detail, wi_constants.WI_STATE_INBOX, filename)
+        current = await runtime.read_workers.run(ops.detail, wi_constants.WI_STATE_INBOX, filename)
         return await edit_entry(str(current["state"]), filename)
 
     @app.post("/api/entries/important")
@@ -435,7 +435,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
                 expected_content,
                 state_name,
             )
-        saved = await workers.run(ops.detail, state_name or wi_constants.WI_STATE_INBOX, data["filename"])
+        saved = await runtime.read_workers.run(ops.detail, state_name or wi_constants.WI_STATE_INBOX, data["filename"])
         return quart.jsonify(changed=changed, state=saved["state"])
 
     transition_specs = {

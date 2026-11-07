@@ -12,6 +12,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import typing
 from collections.abc import Generator
 from unittest import mock
 
@@ -221,7 +222,7 @@ def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
     process = mock.Mock()
     process.poll.return_value = None
     monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
-    monkeypatch.setattr(process_tree, "stop_process_tree", mock.Mock(side_effect=RuntimeError("停止失敗")))
+    monkeypatch.setattr(process_tree, "stop_owned_process", mock.Mock(side_effect=RuntimeError("停止失敗")))
     with pytest.raises(RuntimeError, match="停止失敗"), process_tree.process_scope([]):
         pass
     process.kill.assert_called_once_with()
@@ -624,6 +625,132 @@ def test_run_with_timeout_stops_descendants(monkeypatch, tmp_path):
         assert started and not _still_holding_resources(started)
     finally:
         process_tree.reclaim_descendants(started, timeout=0.1)
+
+
+def test_run_with_timeout_raises_reclaim_error_and_retry_reclaims_same_target(monkeypatch):
+    """時間上限で子孫が残れば通常の時間上限と区別して送出し、保持した同じ対象を再試行で回収する。"""
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as survivor:
+        try:
+            owned = psutil.Process(survivor.pid)
+
+            def leave_survivor(process: subprocess.Popen, **kwargs) -> process_tree.ReclaimError:
+                # 起動した子だけを止め、所有対象（survivor）が残る停止結果を返す。
+                process.kill()
+                process.wait()
+                return process_tree.ReclaimError([f"{owned.pid}: survivor"], [owned], context=kwargs["context"])
+
+            monkeypatch.setattr(process_tree, "stop_owned_process", leave_survivor)
+            with pytest.raises(process_tree.ReclaimError) as raised:
+                process_tree.run_with_timeout([sys.executable, "-c", "import time; time.sleep(120)"], timeout=0.05)
+            error = raised.value
+            assert not isinstance(error, (subprocess.SubprocessError, OSError))
+            assert isinstance(error.__cause__, subprocess.TimeoutExpired)
+            assert error.processes == [owned]
+            assert error.retry() == []
+            assert survivor.wait(timeout=10) is not None
+        finally:
+            if survivor.poll() is None:
+                survivor.kill()
+
+
+def test_process_scope_raises_reclaim_error_when_child_remains(monkeypatch):
+    """終了処理で子を回収できなければ、警告だけで戻らず回収不能を送出する。"""
+
+    def leave_residual(process: subprocess.Popen, **kwargs) -> process_tree.ReclaimError:
+        process.kill()
+        process.wait()
+        return process_tree.ReclaimError(["1: residual"], [], context=kwargs["context"])
+
+    monkeypatch.setattr(process_tree, "stop_owned_process", leave_residual)
+    with (
+        pytest.raises(process_tree.ReclaimError),
+        process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(120)"]),
+    ):
+        pass
+
+
+@pytest.mark.parametrize(
+    ("failing_call", "final_wait_error"),
+    [
+        ("wait", subprocess.TimeoutExpired("child", 5)),
+        ("wait", OSError("wait failed")),
+        ("kill", OSError("kill failed")),
+    ],
+    ids=["wait-timeout", "wait-oserror", "kill-oserror"],
+)
+def test_unconfirmed_final_wait_keeps_reclaim_error(monkeypatch, failing_call, final_wait_error):
+    """停止しない直接の子の最終待機・終了要求の失敗が、回収不能を通常の時間上限やOSErrorへ置き換えない。"""
+    process = mock.Mock(pid=1234, args=["child"], stdin=None, stdout=None, stderr=None)
+    process.poll.return_value = None
+    process.communicate.side_effect = subprocess.TimeoutExpired("child", 1)
+    getattr(process, failing_call).side_effect = final_wait_error
+    owned = mock.Mock(pid=1234)
+
+    def leave_child(_process: subprocess.Popen, **kwargs) -> process_tree.ReclaimError:
+        return process_tree.ReclaimError(["1234: child"], [owned], context=kwargs["context"])
+
+    monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
+    monkeypatch.setattr(process_tree, "stop_owned_process", leave_child)
+    with pytest.raises(process_tree.ReclaimError) as raised:
+        process_tree.run_with_timeout(["child"], timeout=1)
+    # 時間上限の境界と終了処理の両方の停止結果を同じ例外へ合流させ、再試行に使う所有対象を保持する。
+    assert raised.value.processes == [owned]
+    assert raised.value.residual == ["1234: child"]
+
+
+def test_retry_keeps_unconfirmed_generation_stop(monkeypatch):
+    """生成の停止を確認できなかった回収不能は、所有対象の再停止が成功しても回収済みへ変えない。"""
+    target = mock.Mock(pid=1234)
+    error = process_tree.ReclaimError(["1234: child"], [target], context="fixture")
+    calls: list[list[object]] = []
+
+    def stop_tree(root, **kwargs) -> process_tree.TreeStopResult:
+        assert root is None
+        calls.append(list(kwargs["known"]))
+        unresolved = ["一時停止できない"] if len(calls) == 1 else []
+        return process_tree.TreeStopResult([target], [], unresolved)
+
+    monkeypatch.setattr(process_tree, "stop_tree", stop_tree)
+    assert error.retry() == ["生成の停止を確認できない: 一時停止できない"]
+    assert error.retry() == ["生成の停止を確認できない: 一時停止できない"]
+    # 未確認の間は残存一覧に無い子孫も辿れるよう、所有対象全体を次の再試行へ渡す。
+    assert calls == [[target], [target]]
+
+
+def test_retry_keeps_unreaped_direct_child(monkeypatch):
+    """zombie表示で生存判定から外れた直接の子は、回収を待てるまで再試行の残存に残る。"""
+
+    class StuckChild:
+        """回収の待機が時間切れになり続ける直接の子。``reaped``を立てると回収できる。"""
+
+        pid = 4321
+        args = ["fixture-child"]
+
+        def __init__(self) -> None:
+            self.reaped = False
+
+        def wait(self, timeout=None):
+            if not self.reaped:
+                raise subprocess.TimeoutExpired(self.args, timeout or 0)
+            return 0
+
+        def kill(self) -> None:
+            pass
+
+        def poll(self):
+            return 0 if self.reaped else None
+
+    child = StuckChild()
+    monkeypatch.setattr(process_tree, "RECLAIM_TIMEOUT_SECONDS", 0)
+    # zombie表示の子は`stop_tree`の残存に含まれない。
+    monkeypatch.setattr(process_tree, "stop_tree", lambda *_args, **_kwargs: process_tree.TreeStopResult([], [], []))
+    error = process_tree.ReclaimError(
+        ["4321: ['fixture-child']"], [], context="fixture", child=typing.cast(subprocess.Popen[typing.Any], child)
+    )
+    assert error.retry() == ["4321: ['fixture-child']"]
+    child.reaped = True
+    assert not error.retry()
+    assert error.child is None
 
 
 def test_stop_process_tree_reports_residual(monkeypatch, spawn_parent):

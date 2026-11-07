@@ -50,8 +50,8 @@ def _collect_edit_operation_warnings(
 ) -> list[str]:
     """1操作分の警告本文を順に集める。
 
-    いずれも後続の編集で復元できる結果を対象とするため、`agent-basics:writing-standards`の
-    `references/claude-hooks-block-warn.md`「遮断と警告の選択」により警告で返す。
+    いずれも後続の編集で復元できる結果を対象とするため、
+    `agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`「遮断と警告の選択」により警告で返す。
     """
     fields = [(fragment.label, fragment.after) for fragment in operation.fragments]
     display_path = operation.display_path

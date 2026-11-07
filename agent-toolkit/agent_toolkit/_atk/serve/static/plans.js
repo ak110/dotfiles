@@ -1,7 +1,7 @@
 // 計画ファイル画面。左ペインで計画ファイルを選び、右ペインへMarkdownを表示する。
 import {
   BASE_PATH, SERVE_HOST, diagnostic, connectEvents, handleSseMessage, isSelected, navigateRelative, renderList, renderWarnings,
-  resyncWhenVisible, setDrawerOpen, updateNavButtons
+  resyncWhenVisible, setDrawerOpen, updateNavButtons, timedFetch, beginOperation, notifyDelayMs
 } from "./common.js";
 import {registerScreen} from "./shell.js";
 
@@ -295,10 +295,10 @@ function setupSentinelObserver() {
   sentinelObserver.observe(sentinel);
 }
 
-async function refreshFiles() {
+async function refreshFiles(timing = {}) {
   const errorBox = document.getElementById("plans-list-error");
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/files");
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/files", {}, timing);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     files = await res.json();
     errorBox.hidden = true;
@@ -310,7 +310,7 @@ async function refreshFiles() {
     const retry = document.createElement("button");
     retry.type = "button";
     retry.textContent = "再読み込み";
-    retry.addEventListener("click", refreshFiles);
+    retry.addEventListener("click", () => { void refreshFiles(); });
     errorBox.append(message, retry);
     errorBox.hidden = false;
   }
@@ -322,7 +322,7 @@ async function searchFullText(query, generation) {
   try {
     let res = null;
     for (let attempt = 0; ; attempt++) {
-      res = await (fetch(BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
+      res = await (timedFetch("plans", BASE_PATH + "/api/plans/search?q=" + encodeURIComponent(query)));
       if (generation !== searchGeneration) return;
       if (res.status !== 409 || attempt >= SEARCH_SUPERSEDED_RETRIES) break;
       await (new Promise((resolve) => setTimeout(resolve, SEARCH_SUPERSEDED_RETRY_MS)));
@@ -359,7 +359,7 @@ function scheduleFullTextSearch() {
 
 async function refreshHostStatus() {
   // SSE取りこぼし対策。接続時／再接続時に必ず一度ずつ呼ぶ。
-  const res = await (fetch(BASE_PATH + "/api/plans/host-status"));
+  const res = await (timedFetch("plans", BASE_PATH + "/api/plans/host-status"));
   if (res.ok) {
     hostStatus = await (res.json());
   }
@@ -377,8 +377,8 @@ async function refreshHostInfo() {
   // 適用を見送る。ROOT_DIRSはSSE側の処理で既に正しく更新済みであり、次回呼び出し時に整合を取る。
   for (let attempt = 0; attempt < HOST_INFO_REFRESH_MAX_ATTEMPTS; attempt++) {
     const counterBefore = hostInfoEventCounter;
-    let res = await (fetch(BASE_PATH + "/api/plans/root-info"));
-    if (!res.ok) res = await (fetch(BASE_PATH + "/api/plans/host-info"));
+    let res = await (timedFetch("plans", BASE_PATH + "/api/plans/root-info"));
+    if (!res.ok) res = await (timedFetch("plans", BASE_PATH + "/api/plans/host-info"));
     if (!res.ok) return;
     const info = await (res.json());
     if (hostInfoEventCounter !== counterBefore) continue;
@@ -392,7 +392,7 @@ async function refreshHostInfo() {
 }
 
 async function refreshRootStatus() {
-  const res = await (fetch(BASE_PATH + "/api/plans/root-status"));
+  const res = await (timedFetch("plans", BASE_PATH + "/api/plans/root-status"));
   if (res.ok) {
     rootStatus = await (res.json());
     renderRootWarnings();
@@ -578,14 +578,16 @@ function showMissingSelection() {
   void refreshFiles();
 }
 
-async function updatePreview() {
+async function updatePreview(timing = {}) {
   if (!selectedPath || !selectedHost) return;
   const main = document.querySelector("#screen-plans main");
   const scrollTop = main ? main.scrollTop : 0;
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    const res = await timedFetch(
+      "plans", BASE_PATH + "/api/plans/file?" + fileQuery(selectedHost, selectedPath, selectedSource), {}, timing
+    );
     if (generation !== previewGeneration) return;
     if (!res.ok) {
       showPreviewError(`HTTP ${res.status}`, () => { void updatePreview(); });
@@ -627,9 +629,15 @@ async function openFile(host, path, source, closeDrawer = true) {
   const main = document.querySelector("#screen-plans main");
   const generation = ++previewGeneration;
   beginPreviewLoading(generation);
+  // 所要は選択からプレビューの表示（Mermaidなどの非同期の図の描画を含む）までを1件の操作として残す。
+  const operation = beginOperation("plans", "open-file", {trigger: "click"});
+  let outcome = "ok";
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource));
-    if (generation !== previewGeneration) return;
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/file?" + fileQuery(host, path, selectedSource), {}, operation.timing);
+    if (generation !== previewGeneration) {
+      outcome = "superseded";
+      return;
+    }
     if (res.status === 404) {
       showMissingSelection();
       if (main) main.scrollTop = 0;
@@ -641,21 +649,35 @@ async function openFile(host, path, source, closeDrawer = true) {
       return;
     }
     const html = await (res.text());
-    if (generation !== previewGeneration) return;
+    if (generation !== previewGeneration) {
+      outcome = "superseded";
+      return;
+    }
     await (applyPreviewHtml(html, 0, generation));
+    if (generation !== previewGeneration) outcome = "superseded";
   } catch (error) {
+    outcome = "error";
     if (generation === previewGeneration) showPreviewError(error.message, () => { void openFile(host, path, source); });
   } finally {
     endPreviewLoading(generation);
+    operation.end(outcome);
   }
 }
 
-async function resyncFromServer() {
-  await (refreshFiles());
-  if (!selectedPath || !selectedHost) return;
-  // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
-  // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
-  if (files.some(isSelectedFile)) await (updatePreview());
+// 所要は契機（変更通知・再接続・表示復帰）の受信から、一覧とプレビューの再描画までを1件の操作として残す。
+async function resyncFromServer({trigger = "resync", event = null, receivedAt} = {}) {
+  const operation = beginOperation("plans", "external-reload", {
+    startedAt: receivedAt, trigger, ...(event ? {notify_delay_ms: notifyDelayMs(event)} : {}),
+  });
+  try {
+    await (refreshFiles(operation.timing));
+    if (!selectedPath || !selectedHost) return;
+    // 更新時刻は同じ時刻刻み内の連続した書き換えで変わらないため、本文の変化の判定には使わない。
+    // 本文を毎回取り直し、変化の有無は`updatePreview`が適用済みHTMLとの比較で判定する。
+    if (files.some(isSelectedFile)) await (updatePreview(operation.timing));
+  } finally {
+    operation.end();
+  }
 }
 
 async function copySelectedRaw() {
@@ -671,7 +693,7 @@ async function copySelectedRaw() {
   btn.dataset.wideLabel = originalWide;
   btn.dataset.shortLabel = originalShort;
   try {
-    const res = await fetch(BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
+    const res = await timedFetch("plans", BASE_PATH + "/api/plans/raw?" + fileQuery(selectedHost, selectedPath, selectedSource));
     if (!res.ok) throw new Error("status " + res.status);
     const text = await (res.text());
     copying = true;
@@ -755,12 +777,28 @@ const SSE_MESSAGE_HANDLERS = {
   },
 };
 
+// 初期取得はサーバーが購読を登録した合図（`subscribed`）の後に始める。登録後の変更は通知で届くため、
+// 最初の接続では一覧を取り直さない。合図が届かない場合も初期表示を遅らせすぎないよう、待つのは短い上限までとする。
+const INITIAL_SUBSCRIBE_WAIT_MS = 300;
+let initialLoadStarted = false;
+let resolveFirstSubscription = () => {};
+const firstSubscription = new Promise(resolve => { resolveFirstSubscription = resolve; });
+
 function subscribeEvents() {
   // 接続断後の自動再接続と無通信時の再接続の間に発生したSSEイベントは取り逃される。
-  // 初回・自動再接続・無通信後の再接続のいずれでも確立時にホスト状態とファイル一覧を強制再同期する。
+  // 初期取得を始めた後の購読の登録（自動再接続・無通信後の再接続を含む）では、ホスト状態とファイル一覧を強制再同期する。
   connectEvents("/api/plans/events", {
-    open: forceResync,
-    message: (event) => { void handleSseMessage(event, SSE_MESSAGE_HANDLERS, resyncFromServer); },
+    subscribed: () => {
+      if (!initialLoadStarted) {
+        resolveFirstSubscription();
+        return;
+      }
+      void forceResync();
+    },
+    message: (event) => {
+      const receivedAt = performance.now();
+      void handleSseMessage(event, SSE_MESSAGE_HANDLERS, () => resyncFromServer({trigger: "sse", event, receivedAt}));
+    },
   });
 }
 
@@ -830,11 +868,13 @@ async function init() {
   globalThis.addEventListener?.("popstate", () => { void restoreFileFromUrl(); });
   setDrawerOpen("plans", false);
 
+  subscribeEvents();
+  await Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
+  initialLoadStarted = true;
   await (refreshHostStatus());
   await (refreshHostInfo());
   await (refreshRootStatus());
   await (refreshFiles());
-  subscribeEvents();
   if (location.pathname === `${BASE_PATH}/plans`) {
     await restoreFileFromUrl(false);
   } else if (files.length > 0 && !isMobileViewport()) {
