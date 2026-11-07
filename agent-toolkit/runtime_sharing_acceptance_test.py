@@ -202,6 +202,17 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     )
     assert missing.returncode == 1
     assert "update-dotfiles" in missing.stderr
+    # dotfilesの更新直後と同じく依存の固定内容だけが進んだ未準備のrootでも、CLIの起動部分は準備してから実CLIを返す。
+    # hookなどの起動対象は直前の`missing`のとおり待たずに終了する。uv.lockの再生成はfixtureの作成に限って許可する。
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    _run([uv, "lock", "--offline", "--project", str(second)], {**environment, "UV_FROZEN": "0"}, tmp_path)
+    assert plugin_environment.prepared_python(second, environment) is None
+    cli = [str(second / "scripts/atk.cmd")] if os.name == "nt" else [str(second / "scripts/atk")]
+    prepared_cli = _run([*cli, "--help"], environment, tmp_path)
+    assert "config" in prepared_cli.stdout
+    assert "共有依存環境を準備してから起動します" in prepared_cli.stderr
+    assert plugin_environment.prepared_python(second, environment) is not None
     # 更新版のキーが変わっても、旧版の環境とコードは残る。
     assert plugin_environment.prepared_python(first, environment) is not None
     assert (

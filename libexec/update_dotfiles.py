@@ -1164,6 +1164,9 @@ def main(argv: list[str] | None = None) -> int:
                     if returncode != 0:
                         return _finish(returncode)
 
+                    # 主checkoutの版が進んだ直後に準備し、plugin更新の待ちの間も未準備の区間を残さない。
+                    _prepare_agent_toolkit_environment(total)
+
                     plugins_root = _DOTFILES_ROOT / "plugins"
                     plugins = sorted(plugins_root.iterdir(), key=lambda path: path.name) if plugins_root.exists() else []
                     for plugin in plugins:
@@ -1175,8 +1178,6 @@ def main(argv: list[str] | None = None) -> int:
                                     f"{plugin}で git status と git pull --rebase を実行して原因を確かめてください。",
                                     _last_stderr_tail,
                                 )
-
-                    _prepare_agent_toolkit_environment(total)
 
                     returncode, _ = _run_step(
                         2,

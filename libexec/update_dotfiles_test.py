@@ -238,13 +238,17 @@ def test_public_mode_argument_persists_and_reaches_every_update_stage(
 def test_agent_toolkit_environment_is_prepared_right_after_git_update(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], prepare_code: int
 ) -> None:
-    """Git更新の直後、`chezmoi init`より前に主checkoutのlaunch.pyで共有依存環境を準備し、失敗しても後続の段を続ける。
+    """主checkoutのGit更新の直後、plugin更新と`chezmoi init`より前に共有依存環境を準備し、失敗しても後続の段を続ける。
+
+    準備には主checkoutのlaunch.pyを使う。
 
     依存の固定内容が変わる更新で、準備までの間に起動した主checkoutの`atk`が未準備で終了する区間を縮めるためである。
     """
     monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", _REAL_PREPARE_AGENT_TOOLKIT_ENVIRONMENT)
     monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
     monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    plugin = tmp_path / "plugins" / "extra"
+    (plugin / ".git").mkdir(parents=True)
     calls: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
     monkeypatch.setattr(subprocess, "run", _fake_run({"uv": prepare_code}, calls, stderr_by_command={"uv": "準備失敗の診断"}))
@@ -254,7 +258,10 @@ def test_agent_toolkit_environment_is_prepared_right_after_git_update(
     assert len(prepare) == 1
     assert calls[prepare[0]][-2:] == ["--prepare", "agent_toolkit/atk.py"]
     stage_index = {tuple(call[:2]): index for index, call in enumerate(calls) if call[0] == "chezmoi"}
-    assert stage_index["chezmoi", "git"] < prepare[0] < stage_index["chezmoi", "init"] < stage_index["chezmoi", "apply"]
+    plugin_pull = [index for index, call in enumerate(calls) if call[:3] == ["git", "-C", str(plugin)]]
+    assert len(plugin_pull) == 1
+    assert stage_index["chezmoi", "git"] < prepare[0] < plugin_pull[0] < stage_index["chezmoi", "init"]
+    assert stage_index["chezmoi", "init"] < stage_index["chezmoi", "apply"]
     if prepare_code:
         assert "agent-toolkitの共有依存環境の準備" in capsys.readouterr().err
 
