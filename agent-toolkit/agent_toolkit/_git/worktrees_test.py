@@ -13,6 +13,9 @@ import pytest
 from agent_toolkit._git import worktrees
 from agent_toolkit._testing import git_repository
 
+# Windows CIの「Windows境界テスト」（`pytest -m windows`）で、主作業ツリーの判定を実Gitに対して確かめる。
+pytestmark = pytest.mark.windows
+
 
 def _porcelain_z(repo: pathlib.Path) -> dict[pathlib.Path, dict[str, str]] | None:
     """`-z`を受理するGitでは、Git自身の列挙をパスごとの属性へ変換して返す。受理しない版では`None`を返す。"""
@@ -129,3 +132,31 @@ def test_owning_worktree(tmp_path: pathlib.Path) -> None:
     for path, expected in ((repo / "file", repo), (nested / "sub/../file", nested), (tmp_path / "outside", None)):
         owner = worktrees.owning_worktree(path, reversed(entries))
         assert (owner.path.resolve() if owner else None) == expected
+
+
+@pytest.mark.parametrize(
+    ("common_dir", "expected"),
+    [
+        ("C:/DATA/LOCAL_VC/スライド作成/.git", "C:/DATA/LOCAL_VC/スライド作成"),
+        ("/home/user/repo/.git", "/home/user/repo"),
+        ("/srv/bare.git", "/srv/bare.git"),
+    ],
+)
+def test_main_worktree_path_strips_git_suffix_in_git_format(common_dir: str, expected: str) -> None:
+    """Gitが返す`/`区切りの共通ディレクトリから`.git`を除く。WindowsのPath表現へ変換する前に除くため区切り文字に依存しない。"""
+    assert worktrees.main_worktree_path(common_dir) == pathlib.Path(expected)
+
+
+def test_main_worktree_is_listed_without_git_suffix_from_both_starting_points(tmp_path: pathlib.Path) -> None:
+    """主・linkedどちらの作業ツリーを起点にしても、列挙した主作業ツリーに`.git`が残らず、主ルート直下のファイルが主作業ツリーに属する。"""
+    repository = git_repository.init_repository(
+        tmp_path / "主 repo", initial_branch="main", files={"CLAUDE.md": "完了報告を省く。\n"}, commit_message="規範を保存"
+    )
+    nested = repository / ".claude/worktrees/nested"
+    git_repository.run_git(repository, "worktree", "add", "-b", "nested", str(nested))
+    for start in (repository, nested):
+        listed = worktrees.list_worktrees(start)
+        assert listed[0].path.resolve() == repository.resolve()
+        assert listed[0].path.name != ".git"
+        owner = worktrees.owning_worktree((repository / "CLAUDE.md").resolve(), listed)
+        assert owner is not None and owner.path.resolve() == repository.resolve()
