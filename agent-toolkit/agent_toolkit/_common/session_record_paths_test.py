@@ -35,3 +35,23 @@ def test_locator_matches_find_session_record(tmp_path: pathlib.Path, session_id:
     assert locator.find(_CLAUDE_ID) is not None
     _touch(claude_home / "projects/a-project/late-created.jsonl")
     assert locator.find(session_id) == session_record_paths.find_session_record(session_id, **homes)
+
+
+def test_locator_finds_antigravity_record_without_rescanning_claude_and_codex(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一覧に無いAntigravityの委譲先は、Claude CodeとCodexの保存先を走査し直さずに同じ結果を返す。"""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    agy_id = "33333333-2222-3333-4444-555555555555"
+    _touch(tmp_path / f"home/.gemini/antigravity-cli/brain/{agy_id}/.system_generated/logs/transcript_full.jsonl")
+    homes = {"claude_home": tmp_path / "claude", "codex_home": tmp_path / "codex", "state_root": tmp_path / "state"}
+    _touch(homes["claude_home"] / f"projects/a-project/{_CLAUDE_ID}.jsonl")
+    expected = session_record_paths.find_session_record(agy_id, **homes)
+    assert expected is not None and expected.engine == "agy"
+    locator = session_record_paths.RecordLocator(**homes)
+
+    def unexpected(*args: object, **kwargs: object) -> None:
+        raise AssertionError("一覧に無い識別子でClaude CodeとCodexの保存先を走査し直した")
+
+    monkeypatch.setattr(session_record_paths, "find_session_record", unexpected)
+    assert locator.find(agy_id) == expected

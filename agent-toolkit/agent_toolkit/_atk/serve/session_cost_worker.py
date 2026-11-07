@@ -12,6 +12,7 @@ import sys
 import psutil
 
 from agent_toolkit._atk.serve import session_costs, sessions
+from agent_toolkit._common import session_cost_slim
 
 
 def _lower_priority() -> None:
@@ -23,10 +24,13 @@ def _lower_priority() -> None:
 
 
 def main() -> int:
-    """標準入力が閉じるまで1件ずつ算出する。"""
+    """標準入力が閉じるまで1件ずつ算出する。縮約記録はserveと同じ保存先を使い、プロセス内にも保持する。"""
     _lower_priority()
+    stores: dict[str | None, session_cost_slim.SlimRecordStore] = {}
     for line in sys.stdin:
         job = json.loads(line)
+        directory = job["slim_directory"]
+        slim = stores.setdefault(directory, session_cost_slim.SlimRecordStore(pathlib.Path(directory) if directory else None))
         started_ns = session_costs.now_ns()
         try:
             estimated = sessions.estimate_local_family(
@@ -35,6 +39,7 @@ def main() -> int:
                 claude_home=pathlib.Path(job["claude_home"]),
                 codex_home=pathlib.Path(job["codex_home"]),
                 state_dir=pathlib.Path(job["state_dir"]) if job["state_dir"] else None,
+                slim=slim,
             )
         except sessions.SessionNotFoundError as error:
             result = {"path": job["path"], "error": str(error)}

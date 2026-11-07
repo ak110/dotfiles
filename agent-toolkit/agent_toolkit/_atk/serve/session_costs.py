@@ -7,10 +7,11 @@
 更新時刻の精度が1秒のファイルシステムでは同じ秒の同じサイズの書き換えを区別できないため、
 算出を始めた時点が全記録の更新時刻より2秒以上後の結果だけを保持する（`RecordSummaryIndex`と同じ条件）。
 
-一度も算出していない家族の最初の算出は、家族76件（88記録・294MB）で全行のJSON解析だけに負荷下で1.7秒かかり、
-要求を受けてから解析する方式では1秒以内に返せない。このためserveは一覧の記録の家族を背景で先に算出する
-（`FamilyCostWarmer`）。解析はCPUを長く占有するため、優先度を下げた別プロセス（`session_cost_worker`）で行い、
-serveの要求処理とGILを奪い合わない。
+家族の記録が変わった場合は、記録ごとの縮約記録（`session_cost_slim`）から求め、変わった記録の追記分だけを解析する。
+縮約記録が無い記録の最初の解析は、家族76件（88記録・294MB）で全行のJSON解析だけに負荷下で1.7秒かかり、
+要求を受けてから解析する方式では1秒以内に返せない。このためserveは一覧の記録の家族を背景で先に算出し、
+縮約記録と推定費用を作っておく（`FamilyCostWarmer`）。解析はCPUを長く占有するため、優先度を下げた別プロセス
+（`session_cost_worker`）で行い、serveの要求処理とGILを奪い合わない。
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ import time
 import typing
 
 from agent_toolkit._common import process_tree as _process_tree
+from agent_toolkit._common import windows_job
 from agent_toolkit._common.atomic_file import atomic_write
 
 logger = logging.getLogger(__name__)
@@ -174,13 +176,20 @@ class FamilyCostWarmer:
     """
 
     def __init__(
-        self, cache: FamilyCostCache, *, claude_home: pathlib.Path, codex_home: pathlib.Path, state_dir: pathlib.Path | None
+        self,
+        cache: FamilyCostCache,
+        *,
+        claude_home: pathlib.Path,
+        codex_home: pathlib.Path,
+        state_dir: pathlib.Path | None,
+        slim_directory: pathlib.Path | None,
     ) -> None:
         self._cache = cache
         self._homes = {
             "claude_home": str(claude_home),
             "codex_home": str(codex_home),
             "state_dir": str(state_dir) if state_dir else None,
+            "slim_directory": str(slim_directory) if slim_directory else None,
         }
         self._condition = threading.Condition()
         self._pending: list[tuple[str, str]] = []
@@ -306,7 +315,7 @@ def _start_worker() -> subprocess.Popen[str]:
         encoding="utf-8",
         errors="replace",
         env=env,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+        creationflags=windows_job.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
     )
 
 

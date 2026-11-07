@@ -29,7 +29,7 @@ from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import session_costs as _session_costs
 from agent_toolkit._atk.serve import session_parents, session_watch
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import session_cost_records, session_launchers, stream_lines
+from agent_toolkit._common import session_cost_records, session_cost_slim, session_launchers, stream_lines
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.async_operations import run_sync_operation
 from agent_toolkit._common.atomic_file import atomic_write
@@ -217,6 +217,10 @@ class SessionsState:
     family_costs: _session_costs.FamilyCostCache = dataclasses.field(
         default_factory=lambda: _session_costs.FamilyCostCache(None)
     )
+    # 記録ごとの縮約記録。家族の記録が変わった時に、変わった記録の追記分だけを解析する（`session_cost_slim`）。
+    slim_records: session_cost_slim.SlimRecordStore = dataclasses.field(
+        default_factory=lambda: session_cost_slim.SlimRecordStore(None)
+    )
     # 一覧の記録の家族の推定費用を背景で先に求める。serveの変更監視とともに`start_local_watch`が生成する。
     cost_warmer: _session_costs.FamilyCostWarmer | None = None
     # 前回のローカル一覧。変更監視が一覧を変え得る変更を観測していない間だけ再利用する。
@@ -258,9 +262,11 @@ def create_context(
     state = SessionsState(
         record_index=session_watch.RecordSummaryIndex(cache_path=resolved_state_dir / "serve" / "session-summaries.json"),
         family_costs=_session_costs.FamilyCostCache(resolved_state_dir / "serve" / "session-costs.json"),
+        slim_records=session_cost_slim.SlimRecordStore(resolved_state_dir / "serve" / "cost-records"),
         local_list_path=resolved_state_dir / "serve" / "session-list.json",
     )
     state.saved_local_list = _load_local_list(state.local_list_path)
+    state.slim_records.prune()
     state.host_status[resolved_hostname] = "connected"
     for host in hosts:
         state.host_status[host] = "connecting"
@@ -574,7 +580,12 @@ def read_local_cost(context: SessionsContext, engine: str, raw_path: str) -> dic
         return cached
     started_ns = _session_costs.now_ns()
     estimated = estimate_local_family(
-        engine, raw_path, claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+        engine,
+        raw_path,
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim=context.state.slim_records,
     )
     if estimated.complete:
         context.state.family_costs.put(pathlib.Path(raw_path), estimated.members, estimated.cost, started_ns)
@@ -582,10 +593,32 @@ def read_local_cost(context: SessionsContext, engine: str, raw_path: str) -> dic
 
 
 def estimate_local_family(
-    engine: str, raw_path: str, *, claude_home: pathlib.Path, codex_home: pathlib.Path, state_dir: pathlib.Path | None
+    engine: str,
+    raw_path: str,
+    *,
+    claude_home: pathlib.Path,
+    codex_home: pathlib.Path,
+    state_dir: pathlib.Path | None,
+    slim: session_cost_slim.SlimRecordStore,
 ) -> session_cost_records.DetailCost:
-    """ローカルの記録1件を起点に、子孫を含む家族の推定費用を求める。背景の算出の別プロセスも同じ処理を使う。"""
-    path, records, broken = _read_record_file(raw_path)
+    """ローカルの記録1件を起点に、子孫を含む家族の推定費用を求める。背景の算出の別プロセスも同じ処理を使う。
+
+    家族の各記録は縮約記録（`slim`）から読み、変わった記録の追記分だけを解析する。
+    起点の記録を縮約できない場合（解析できない行や書き込み途中の末尾を含む）は、従来どおり全行を読み、
+    解析できない行数を不完全の判定へ渡す。
+    """
+    path = pathlib.Path(raw_path)
+    try:
+        size = path.stat().st_size
+    except OSError as error:
+        raise SessionNotFoundError(raw_path) from error
+    if size > MAX_RECORD_BYTES:
+        raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")
+    slim_records = slim.records(raw_path)
+    if slim_records is not None:
+        records, broken = [record.entry for record in slim_records], 0
+    else:
+        path, records, broken = _read_record_file(raw_path)
     return session_cost_records.estimate_detail_family(
         engine,
         path,
@@ -595,6 +628,7 @@ def estimate_local_family(
         codex_home=codex_home,
         state_root=state_dir,
         broken_lines=broken,
+        record_loader=slim.loader,
     )
 
 
@@ -1062,7 +1096,11 @@ def _start_local_record_watch(context: SessionsContext, loop: asyncio.AbstractEv
         return None
     context.state.watch_loop = loop
     context.state.cost_warmer = _session_costs.FamilyCostWarmer(
-        context.state.family_costs, claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+        context.state.family_costs,
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim_directory=context.state.slim_records.directory,
     )
     return watch
 

@@ -2191,7 +2191,11 @@ def _wait_until(condition: typing.Callable[[], bool], timeout: float = 60.0) -> 
 
 def _start_warmer(context: sessions.SessionsContext) -> sessions._session_costs.FamilyCostWarmer:
     warmer = sessions._session_costs.FamilyCostWarmer(
-        context.state.family_costs, claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+        context.state.family_costs,
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim_directory=context.state.slim_records.directory,
     )
     context.state.cost_warmer = warmer
     return warmer
@@ -2209,7 +2213,12 @@ def test_cost_warmer_precomputes_listed_family_in_worker_process(
     os.utime(record, ns=(old_ns, old_ns))
     context = _context(tmp_path, state_dir=tmp_path / "state")
     expected = sessions.estimate_local_family(
-        "claude", str(record), claude_home=context.claude_home, codex_home=context.codex_home, state_dir=context.state_dir
+        "claude",
+        str(record),
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim=context.state.slim_records,
     ).cost
     warmer = _start_warmer(context)
     try:

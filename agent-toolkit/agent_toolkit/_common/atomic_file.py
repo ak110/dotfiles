@@ -33,19 +33,21 @@ def _replace(source: str, destination: Path) -> None:
             time.sleep(_REPLACE_RETRY_DELAYS[attempt])
 
 
-def atomic_write(path: Path, content: str, *, fsync: bool = False) -> None:
+def atomic_write(path: Path, content: str | bytes, *, fsync: bool = False) -> None:
     """同一ディレクトリの一時ファイル経由で`content`を原子的に書き込む。
 
     一時ファイル作成→書き込み→（`fsync=True`時はディスクへの同期→）`os.replace`の順で実行し、
     書き込み中断時は旧ファイル内容が残るよう保証する。
     `fsync`は呼び出し元の耐障害性要件に応じて指定する（指定しなければ無効）。
+    `content`が文字列ならUTF-8で、バイト列ならそのまま書く。
     """
     parent = path.parent
     parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write(content)
+        data = content if isinstance(content, bytes) else content.encode("utf-8")
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
             if fsync:
                 handle.flush()
                 os.fsync(handle.fileno())

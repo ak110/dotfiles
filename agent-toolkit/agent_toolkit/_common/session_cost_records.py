@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
 from agent_toolkit._common import session_cost
 from agent_toolkit._common import session_record_paths as record_paths
-from agent_toolkit._common.session_family import _collect_records, _Record, _Runtime
+from agent_toolkit._common.session_family import _collect_records, _load_records_checked, _Record, _RecordLoad, _Runtime
 
 
 def estimate_detail_cost(
@@ -55,8 +56,12 @@ def estimate_detail_family(
     codex_home: Path | None = None,
     state_root: Path | None = None,
     broken_lines: int = 0,
+    record_loader: Callable[[str], _RecordLoad] = _load_records_checked,
 ) -> DetailCost:
-    """`estimate_detail_cost`と同じ推定費用を、家族の記録と解決の完全性とともに返す。"""
+    """`estimate_detail_cost`と同じ推定費用を、家族の記録と解決の完全性とともに返す。
+
+    `record_loader`は子孫の記録の読込を差し替える（`session_family._collect_records`）。
+    """
     # 子孫の多い記録は数十件の委譲先を解決するため、保存先の一覧を1回だけ読む。
     locator = record_paths.RecordLocator(claude_home=claude_home, codex_home=codex_home, state_root=state_root)
 
@@ -71,6 +76,7 @@ def estimate_detail_family(
         [_Record(line, "", entry) for line, entry in enumerate(entries, 1)],
         main_only=not include_descendants,
         session_resolver=resolve,
+        record_loader=record_loader,
     )
     records = [
         session_cost.CostRecord(

@@ -103,6 +103,11 @@ def find_session_record(
     codex_paths = find_codex_records(session_id, codex_home=codex_home)
     if codex_paths:
         return SessionRecord("codex", codex_paths)
+    return _find_agy_or_opencode_record(session_id, state_root)
+
+
+def _find_agy_or_opencode_record(session_id: str, state_root: pathlib.Path | None) -> SessionRecord | None:
+    """AntigravityとOpenCodeの記録を`find_session_record`と同じ順で探す。識別子の検査は呼出側が済ませている。"""
     logs = pathlib.Path.home() / ".gemini" / "antigravity-cli" / "brain" / session_id / ".system_generated" / "logs"
     for name in ("transcript_full.jsonl", "transcript.jsonl"):
         if (logs / name).is_file():
@@ -123,7 +128,9 @@ class RecordLocator:
 
     子孫の多い記録の推定費用は数十件の委譲先を解決する。1件ごとにClaude Codeの全projectとCodexの全ロールアウトを
     列挙すると、解決だけで数秒かかる。一覧は最初の解決時に読み、同じ探索の間だけ使う。
-    一覧に無い識別子（一覧の後に作られた記録、サブエージェント、Antigravity、OpenCode）は`find_session_record`へ委ねる。
+    一覧に無い識別子は、先にAntigravityとOpenCodeの記録を探し、無ければ`find_session_record`へ委ねる
+    （一覧の後に作られた記録とサブエージェント）。識別子は実行系をまたいで一意であるため、探す順を変えても結果は同じである。
+    Antigravityの委譲先を数十件持つ家族で、1件ごとにClaude CodeとCodexの保存先を走査し直さないためである。
     """
 
     def __init__(
@@ -151,6 +158,8 @@ class RecordLocator:
             self._codex = self._codex_records()
         if paths := self._codex.get(session_id):
             return SessionRecord("codex", tuple(paths))
+        if (other := _find_agy_or_opencode_record(session_id, self._state_root)) is not None:
+            return other
         return find_session_record(
             session_id, codex_home=self._codex_home, claude_home=self._claude_home, state_root=self._state_root
         )

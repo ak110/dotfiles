@@ -609,6 +609,7 @@ def _subagent_records(
     source: _CollectedRecord,
     unresolved: list[_UnresolvedRecord],
     modified_since: datetime.datetime | None = None,
+    record_loader: Callable[[str], _RecordLoad] = _load_records_checked,
 ) -> list[_CollectedRecord]:
     """Claude記録に付随するサブエージェント記録をファイル名順で返す。"""
     if source.runtime != "claude":
@@ -622,7 +623,7 @@ def _subagent_records(
     for path in paths:
         if modified_since is not None and path.stat().st_mtime < modified_since.timestamp():
             continue
-        loaded = _load_records_checked(str(path))
+        loaded = record_loader(str(path))
         records = loaded.records
         if records is None:
             unresolved.append(
@@ -666,8 +667,13 @@ def _collect_records(
     session_resolver: Callable[[str], tuple[Path, _Runtime] | None] | None = None,
     modified_since: datetime.datetime | None = None,
     main_recoveries: tuple[_RecordRecovery, ...] = (),
+    record_loader: Callable[[str], _RecordLoad] = _load_records_checked,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
-    """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。"""
+    """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。
+
+    `record_loader`はメイン以外の記録の読込を差し替える。推定費用は、費用と家族の収集に使う行だけを
+    保持した記録（`session_cost_slim`）を渡し、記録の全行を読み直さない。
+    """
     main_records = [
         record if (normalized := _analysis_entry(record.entry)) is record.entry else record._replace(entry=normalized)
         for record in main_records
@@ -704,7 +710,7 @@ def _collect_records(
         index += 1
         agents_server_call_ids = _agents_server_call_ids(source.records)
         unresolved_delegation_calls: set[str] = set()
-        for subagent in _subagent_records(source, unresolved, modified_since):
+        for subagent in _subagent_records(source, unresolved, modified_since, record_loader):
             if boundary is not None and _started_after_boundary(subagent.records, boundary):
                 continue
             resolved = subagent.path.resolve()
@@ -738,7 +744,7 @@ def _collect_records(
                     continue
                 if modified_since is not None and path.stat().st_mtime < modified_since.timestamp():
                     continue
-                loaded = _load_records_checked(str(path))
+                loaded = record_loader(str(path))
                 records = loaded.records
                 if records is None:
                     unresolved.append(
