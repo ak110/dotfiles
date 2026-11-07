@@ -140,7 +140,7 @@ def _period_events(
 
 def main(argv: list[str] | None = None) -> int:
     """公開CLIから期間を受け取り、今回と直前の同じ長さの期間の採否集計をJSON Linesで返す。"""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--since", required=True, metavar="DATE", help="今回の期間の開始日時（必須）。時差なしはローカル時刻。")
     parser.add_argument("--until", metavar="DATE", help="今回の期間の終了日時。省略時は実行時刻。")
     parser.add_argument(

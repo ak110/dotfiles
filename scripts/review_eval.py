@@ -185,7 +185,7 @@ def _select(cases: list[_Case], ids: list[str]) -> list[_Case]:
 
 def main(argv: list[str] | None = None) -> int:
     """準備または採点を実行し、結果をJSON Linesで標準出力へ書く。失敗時は理由を標準エラーへ書いて1を返す。"""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     prep = sub.add_parser("prepare", help="事例の作業ツリーと計画を再構成し、レビュー担当の起動値をJSON Linesで出す")
     prep.add_argument("--out", required=True, type=pathlib.Path, help="準備物を置くディレクトリの絶対パス")
