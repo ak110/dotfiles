@@ -140,7 +140,8 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
         with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
             acquired.append(process)
             deadline = time.monotonic() + 5
-            while not marker.exists():
+            # `write_text`はファイルの作成と書込が分かれるため、作成直後の空の印を読まないよう内容まで待つ。
+            while not (marker.exists() and marker.read_text(encoding="utf-8")):
                 assert time.monotonic() < deadline, "子のsignal設定が完了しませんでした"
                 time.sleep(0.01)
             child = psutil.Process(int(marker.read_text(encoding="utf-8")))
