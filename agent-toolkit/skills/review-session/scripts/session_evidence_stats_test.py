@@ -1912,6 +1912,22 @@ def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Pat
                 "timestamp": "2026-09-02T00:00:04Z",
                 "payload": {"type": "custom_tool_call_output", "call_id": "c2", "output": "t" * 36},
             },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:05Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "c3",
+                    "input": 'text(await tools.exec_command({cmd:"cat -- /repo/agent-toolkit/share/exec.subagent.md",'
+                    "max_output_tokens:20000}));",
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:06Z",
+                "payload": {"type": "custom_tool_call_output", "call_id": "c3", "output": "x" * 10},
+            },
             {"type": "compacted", "timestamp": "2026-09-02T00:01:00Z", "payload": {"message": "", "window_number": 1}},
         ],
     )
@@ -1922,11 +1938,12 @@ def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Pat
         {
             "kind": "stats-compaction-usage",
             "record": "codex:transcript",
-            "line": 6,
-            "tool_output_bytes": 100,
-            "norm_doc_display_bytes": 64,
+            "line": 8,
+            "tool_output_bytes": 110,
+            "norm_doc_display_bytes": 74,
             "norm_doc_display_top": [
-                {"path": "agent-basics/skills/bugfix/references/root-cause-severity.md", "count": 1, "bytes": 64}
+                {"path": "agent-basics/skills/bugfix/references/root-cause-severity.md", "count": 1, "bytes": 64},
+                {"path": "agent-toolkit/share/exec.subagent.md", "count": 1, "bytes": 10},
             ],
         }
     ]

@@ -104,7 +104,7 @@ description: >
 見逃しと誤指摘の件数を実例で比べ、改訂が良くなったかを印象ではなく結果で判断するためである。
 モデルの費用がかかるため、CIや定期工程には組み込まない。
 
-1. `uv run --frozen python scripts/review_eval.py prepare --out <managed-tempの絶対パス>`で事例ごとの作業ツリーと計画の複製を作る。出力の`start`をそのままagents_serverの`start`へ渡し、比べるモデルは`model_type`で指定する
+1. `uv run --frozen python scripts/review_eval.py prepare --out <managed-tempの絶対パス>`で事例ごとの作業ツリーと計画の複製を作る。計画が新形式AWIを含む事例では、AWIの完成条件とH1・冒頭から写した条件表（`review_contract`）も作る。出力の`start`をそのままagents_serverの`start`へ渡し、比べるモデルは`model_type`で指定する
 2. 変更前は稼働中のplugin rootの役割名（`exec-review`）、変更後は作業ツリーの`agent-toolkit/share/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映された後の実行と、反映前に保存した結果を比べる
 3. 各担当の終了後、`uv run --frozen python scripts/review_eval.py score --result <事例ID>=<出力のtableのパス>`で事例別の検出・見逃し・誤指摘・未分類と合計を出す。未分類の行は本文を読み、正しい指摘か誤指摘かを手で分類する
 4. 変更後に悪化した事例があれば理由を確かめ、改訂の採否を決める。比較結果の保存先を計画の検証結果へ残し、出力の`cleanup`で作業ツリーを回収する
@@ -112,4 +112,4 @@ description: >
 障害事例や振り返りで、レビューの見逃し（レビュー後に判明した欠陥）か誤指摘（レビュー担当の前提の誤り・撤回で不採用になった指摘）が確定したら、`scripts/review_eval_cases.json`へ事例を追加する。
 入力はprivate-notesの`plans`配下の計画と`.wi-commits.jsonl`から再構成できるものを選び、期待には検出すべき問題か出すべきでない指摘を、同じ指摘行に揃って現れる照合語句（正規表現）で書く。
 メインやレーン担当の技術判断による見送りは誤指摘に数えない。
-実行レビュー以外のレビュー担当の事例も、`role`に役割名を書いて同じ形式で追加できる。
+実行レビュー以外のレビュー担当の事例は、`role`に役割名を、`extra_params`にその役割の起動入力を書いて追加する。値の`{plan}`・`{base}`・`{case_dir}`は準備時に計画の複製・開始時のHEAD・事例の出力先へ置き換わる。

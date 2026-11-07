@@ -8,7 +8,9 @@ import subprocess
 
 import pytest
 import review_eval
+from agent_toolkit._agents_server import launch_requests
 from agent_toolkit._atk import review_table
+from agent_toolkit._common.next_action import ActionableError
 
 
 def _write_cases(path: pathlib.Path) -> pathlib.Path:
@@ -90,16 +92,27 @@ def test_score_rejects_unknown_case(tmp_path, monkeypatch, capsys) -> None:
     table = _prepared_table(tmp_path / "case.exec-review.tsv", [], capsys)
 
     assert review_eval.main(["score", "--result", f"other={table}"]) == 1
-    assert "評価セットに無い事例ID: other" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "評価セットに無い事例ID: other" in err
+    assert "有効なIDはmissed" in err
+
+
+def test_score_reports_unreadable_table_with_next_action(tmp_path, monkeypatch, capsys) -> None:
+    """読めない管理表は失敗として終了し、確かめる指定を標準エラーへ示す。"""
+    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+
+    assert review_eval.main(["score", "--result", f"missed={tmp_path / 'none.tsv'}"]) == 1
+    err = capsys.readouterr().err
+    assert "none.tsv" in err
+    assert "--result" in err
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True).stdout.strip()
 
 
-def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, capsys) -> None:
-    """対応記録の書換え後のOIDから範囲を求め、レビュー対象の作業ツリーと計画の複製、起動値を用意する。"""
-    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+def _case_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str, str]:
+    """3つのcommitを持つリポジトリを作り、base・書換え前・書換え後のOIDを返す。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -109,10 +122,17 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
     old = _git(repo, "rev-parse", "HEAD")
     _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "new")
     new = _git(repo, "rev-parse", "HEAD")
+    return repo, base, old, new
+
+
+def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, capsys) -> None:
+    """対応記録の書換え後のOIDから範囲を求め、レビュー対象の作業ツリーと計画の複製、起動値を用意する。"""
+    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+    repo, base, old, new = _case_repository(tmp_path)
     notes = tmp_path / "notes"
     plan_dir = notes / "plans/2026/10"
     plan_dir.mkdir(parents=True)
-    (plan_dir / "01-0000_case.md").write_text("# 計画\n", encoding="utf-8")
+    (plan_dir / "01-0000_case.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
     (plan_dir / "01-0000_case.wi-commits.jsonl").write_text(
         f'{{"commits":["{old}"],"awi":["x.md"]}}\n{{"rewrite":{{"{old}":"{new}"}}}}\n', encoding="utf-8"
     )
@@ -124,12 +144,80 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
     assert _git(worktree, "rev-parse", "HEAD") == new
     assert prepared["start"]["extra_params"]["開始時のHEAD"] == _git(repo, "rev-parse", f"{new}^")
     assert prepared["start"]["extra_params"]["開始時のHEAD"] == old
-    assert pathlib.Path(prepared["start"]["extra_params"]["計画"]).read_text(encoding="utf-8") == "# 計画\n"
+    assert pathlib.Path(prepared["start"]["extra_params"]["計画"]).read_text(encoding="utf-8").startswith("# 計画\n")
+    assert "review_contract" not in prepared["start"]["extra_params"]
     assert prepared["table"].endswith("01-0000_case.exec-review.tsv")
     assert prepared["start"]["subagent_md_path"] == "exec-review"
     assert base != old
     subprocess.run(prepared["cleanup"], check=True)
     assert not worktree.exists()
+
+
+def test_prepare_builds_condition_table_accepted_by_launch_preflight(tmp_path, monkeypatch, capsys) -> None:
+    """計画の新形式AWIへ条件表を生成し、agents_serverの起動前検査が受理する起動値を返す。旧形式AWIは表に含めない。"""
+    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+    repo, _base, old, new = _case_repository(tmp_path)
+    notes = tmp_path / "notes"
+    entries = notes / "2026" / "10"
+    entries.mkdir(parents=True)
+    head = "---\ntype: awi\nsource: fix\nstate: done\ntarget_repo: github.com/ak110/dotfiles\n---\n"
+    (entries / "20261001-000000-001.md").write_text(
+        head + "# 新形式の要求\n\n目的の段落。\n続きの行。\n\n## 完成条件\n\n- 条件A\n- 条件B | 縦線\n", encoding="utf-8"
+    )
+    (entries / "20261001-000000-002.md").write_text(head + "# 旧形式\n## 実現性\n可能\n## 完成条件\n- 条件\n", encoding="utf-8")
+    plan_dir = notes / "plans/2026/10"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "01-0000_case.md").write_text(
+        "# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n"
+        "  - 20261001-000000-001.md: 新形式\n  - 20261001-000000-002.md: 旧形式\n",
+        encoding="utf-8",
+    )
+    (plan_dir / "01-0000_case.wi-commits.jsonl").write_text(
+        f'{{"commits":["{old}","{new}"],"awi":["x.md"]}}\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    params = {"レビュー基準": "計画", "計画": str(plan_dir / "01-0000_case.md"), "引き継ぎ記録先": "/x/handoff.md（新規）"}
+    with pytest.raises(ActionableError, match="review_contract"):
+        launch_requests._check_exec_review_materials(params)
+
+    out = tmp_path / "out"
+    assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
+    (prepared,) = _results(capsys)
+    extra_params = prepared["start"]["extra_params"]
+    contract = pathlib.Path(extra_params["review_contract"]).read_text(encoding="utf-8")
+    assert "| 20261001-000000-001.md | 1 | 補足条件 | 条件A | 完成条件 1 |" in contract
+    assert "| 20261001-000000-001.md | 2 | 補足条件 | 条件B \\| 縦線 | 完成条件 2 |" in contract
+    assert "| 20261001-000000-001.md | 3 | 主要完成状態 | 新形式の要求 目的の段落。 続きの行。 | H1と冒頭 |" in contract
+    assert "20261001-000000-002.md" not in contract
+    launch_requests._check_exec_review_materials(extra_params)
+    subprocess.run(prepared["cleanup"], check=True)
+
+
+def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, capsys) -> None:
+    """事例が役割の起動入力を持つ場合は、置換した値をそのまま起動値にし、実行レビュー用の入力を足さない。"""
+    cases = tmp_path / "cases.json"
+    data = json.loads(_write_cases(cases).read_text(encoding="utf-8"))
+    data["cases"][0]["role"] = "wi-draft-review"
+    data["cases"][0]["extra_params"] = {"計画": "{plan}", "起点": "{base}", "記録": "{case_dir}/handoff.md"}
+    cases.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(review_eval, "CASES_PATH", cases)
+    repo, _base, old, new = _case_repository(tmp_path)
+    notes = tmp_path / "notes"
+    plan_dir = notes / "plans/2026/10"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "01-0000_case.md").write_text("# 計画\n", encoding="utf-8")
+    (plan_dir / "01-0000_case.wi-commits.jsonl").write_text(f'{{"commits":["{new}"],"awi":["x.md"]}}\n', encoding="utf-8")
+
+    out = tmp_path / "out"
+    assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
+    (prepared,) = _results(capsys)
+    assert prepared["start"]["subagent_md_path"] == "wi-draft-review"
+    assert prepared["start"]["extra_params"] == {
+        "計画": str(out / "missed" / "01-0000_case.md"),
+        "起点": old,
+        "記録": f"{out / 'missed'}/handoff.md",
+    }
+    subprocess.run(prepared["cleanup"], check=True)
 
 
 def test_bundled_cases_load_and_compile() -> None:

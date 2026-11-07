@@ -22,7 +22,11 @@ import sys
 from typing import Any
 
 from agent_toolkit._atk import review_table
+from agent_toolkit._atk.wi import entries as wi_entries
+from agent_toolkit._atk.wi import frontmatter, headings
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._plan import commit_mapping
+from markdown_it import MarkdownIt
 
 CASES_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_cases.json")
 _ISSUE_COLUMN = 3
@@ -51,6 +55,9 @@ class _Case:
     description: str
     detect: tuple[_Expectation, ...]
     absent: tuple[_Expectation, ...]
+    # 実行レビュー以外の役割の起動入力。値の`{plan}`・`{base}`・`{case_dir}`は準備時に置き換える。
+    # 省略時は実行レビュー（exec-review）の入力を組み立てる。
+    extra_params: dict[str, str] | None = None
 
 
 def _expectations(items: list[dict[str, Any]]) -> tuple[_Expectation, ...]:
@@ -73,12 +80,14 @@ def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
             description=item["description"],
             detect=_expectations(item["expect"]["detect"]),
             absent=_expectations(item["expect"]["absent"]),
+            extra_params=item.get("extra_params"),
         )
         for item in data["cases"]
     ]
     ids = [case.id for case in cases]
-    if len(ids) != len(set(ids)):
-        raise ValueError(f"事例IDが重複している: {path}")
+    duplicated = sorted({value for value in ids if ids.count(value) > 1})
+    if duplicated:
+        raise ValueError(f"事例IDが重複している: {', '.join(duplicated)}（{path}）。重複したIDの片方を別のIDへ変える")
     return cases
 
 
@@ -92,7 +101,9 @@ def _commit_range(commits_path: pathlib.Path) -> tuple[str, str]:
         for old, new in record.get("rewrite", {}).items():
             order = [new if value == old else value for value in order]
     if not order:
-        raise ValueError(f"commitの記録が無い: {commits_path}")
+        raise ValueError(
+            f"commitの記録が無い: {commits_path}。計画の実装commitが記録された事例か、評価セットの`plan`の値を確かめる"
+        )
     return f"{order[0]}^", order[-1]
 
 
@@ -101,14 +112,75 @@ def _git(repo: pathlib.Path, *args: str) -> str:
         ["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)}が失敗した（終了コード{result.returncode}）: {result.stderr.strip()}")
+        raise RuntimeError(
+            f"git {' '.join(args)}が失敗した（終了コード{result.returncode}）: {result.stderr.strip()}。"
+            f"`--repo <名前>=<絶対パス>`の作業ツリーが事例のcommitを含むか（必要ならfetch）を確かめて再実行する"
+        )
     return result.stdout.strip()
+
+
+def _contract_rows(plan: pathlib.Path, private_notes: pathlib.Path) -> list[str]:
+    """計画のAWIのうち、実行レビューの起動前検査が条件表を求める新形式AWIの表の行を返す。
+
+    対象と補足条件の件数はagents_serverの`start`の起動前検査（`launch_requests._check_exec_review_materials`）と
+    同じ判定で選ぶ。補足条件はAWIの`## 完成条件`の各項目、主要完成状態はH1と冒頭の段落を写す。
+    当時のレビューが受け取った契約は保存されていないため、本文から機械的に写した再構成であり、
+    内容の妥当性はレビュー担当が検収する。比較の前後で同じ入力を使うことで、指示・モデルの差だけを比べる。
+    """
+    names = commit_mapping.plan_allowed_wis(plan.read_text(encoding="utf-8"), plan)
+    if not names:
+        return []
+    selected, missing = wi_entries.read_named_entries(private_notes, [(name, name) for name in sorted(names)], target_repo=None)
+    if missing:
+        raise ValueError(
+            f"計画のAWI本文を取得できない: {', '.join(missing)}。--private-notesが計画と同じprivate-notesを指すか確かめる"
+        )
+    rows: list[str] = []
+    for path, _repo, text, _state, kind in selected:
+        parsed = frontmatter.parse_frontmatter(text)
+        sections = {name for name, _body in headings.h2_sections(text)}
+        if kind != "awi" or parsed is None or not parsed[0].get("source") or sections & {"適用範囲", "実現性"}:
+            continue
+        body = "\n".join(headings.last_h2_section_lines(text, "完成条件") or [])
+        tokens = MarkdownIt().parse(body)
+        items = [
+            tokens[index + 2].content
+            for index, token in enumerate(tokens)
+            if token.type == "list_item_open" and token.level == 1 and index + 2 < len(tokens)
+        ]
+        for number, item in enumerate(items, start=1):
+            rows.append(f"| {path.name} | {number} | 補足条件 | {_cell(item)} | 完成条件 {number} |")
+        rows.append(f"| {path.name} | {len(items) + 1} | 主要完成状態 | {_cell(_opening(text))} | H1と冒頭 |")
+    return rows
+
+
+def _opening(text: str) -> str:
+    """AWI本文のH1と、その直後の最初の段落を返す。"""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("# "):
+            paragraph: list[str] = []
+            for following in lines[index + 1 :]:
+                if following.startswith("#"):
+                    break
+                if not following.strip():
+                    if paragraph:
+                        break
+                    continue
+                paragraph.append(following.strip())
+            return " ".join([line[2:].strip(), *paragraph])
+    return ""
+
+
+def _cell(value: str) -> str:
+    """表の1セルへ収めるため、改行を空白へ、縦線をエスケープへ置き換える。"""
+    return " ".join(value.split()).replace("|", "\\|")
 
 
 def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> dict[str, Any]:
     """事例の入力を`out/<事例ID>/`へ再構成し、レビュー担当の起動に渡す値を返す。"""
     if case.repo not in repos:
-        raise ValueError(f"対象リポジトリの所在が無い: {case.repo}。--repo {case.repo}=<絶対パス>を指定する")
+        raise ValueError(f"対象リポジトリの所在が無い: {case.repo}。--repo {case.repo}=<絶対パス>を指定して再実行する")
     repo = repos[case.repo]
     plan_source = private_notes / f"{case.plan}.md"
     base, head = _commit_range(private_notes / f"{case.plan}.wi-commits.jsonl")
@@ -122,27 +194,46 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
     _git(repo, "worktree", "add", "--detach", str(worktree), head_oid)
     plan = case_dir / plan_source.name
     shutil.copyfile(plan_source, plan)
+    if case.extra_params is not None:
+        values = {"plan": str(plan), "base": base_oid, "case_dir": str(case_dir)}
+        extra_params = {key: value.format(**values) for key, value in case.extra_params.items()}
+    else:
+        extra_params = {
+            "レビュー基準": "計画",
+            "計画": str(plan),
+            "開始時のHEAD": base_oid,
+            "引き継ぎ記録先": f"{case_dir / 'handoff.md'}（新規）",
+        }
+        rows = _contract_rows(plan, private_notes)
+        if rows:
+            contract = case_dir / "review-contract.md"
+            header = [
+                "## 新形式のエージェント由来AWIの条件表",
+                "",
+                "| WI | 条件番号 | 区分 | 内容 | 出典 |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+            contract.write_text("\n".join([*header, *rows, ""]), encoding="utf-8")
+            extra_params["review_contract"] = str(contract)
     return {
         "case": case.id,
         "kind": case.kind,
         "table": str(plan.with_suffix(".exec-review.tsv")),
-        "start": {
-            "cwd": str(worktree),
-            "subagent_md_path": case.role,
-            "extra_params": {
-                "レビュー基準": "計画",
-                "計画": str(plan),
-                "開始時のHEAD": base_oid,
-                "引き継ぎ記録先": f"{case_dir / 'handoff.md'}（新規）",
-            },
-        },
+        "start": {"cwd": str(worktree), "subagent_md_path": case.role, "extra_params": extra_params},
         "cleanup": ["git", "-C", str(repo), "worktree", "remove", "--force", str(worktree)],
     }
 
 
 def score(case: _Case, table: pathlib.Path) -> dict[str, Any]:
     """返却された管理表の指摘行を期待と照合し、検出・見逃し・誤指摘・未分類を返す。"""
-    rows = review_table.read_rows(table)
+    try:
+        rows = review_table.read_rows(table)
+    except ActionableError as error:
+        # 管理表側の案内はatkの入力形式を示すため、本CLIの引数での指定方法へ置き換える。
+        raise ActionableError(
+            error.reason,
+            next_action=f"--result {case.id}=<管理表の絶対パス>で、当該事例のレビューが返した`.exec-review.tsv`を指定する",
+        ) from error
     texts = [f"{row[_LOCATION_COLUMN]}\n{row[_ISSUE_COLUMN]}" for row in rows]
     detected = [item.id for item in case.detect if any(item.matches(text) for text in texts)]
     missed = [item.id for item in case.detect if item.id not in detected]
@@ -168,7 +259,9 @@ def _parse_repos(values: list[str]) -> dict[str, pathlib.Path]:
     for value in values:
         name, separator, path = value.partition("=")
         if not separator or not name or not path:
-            raise ValueError(f"--repoは<名前>=<絶対パス>で指定する: {value}")
+            raise ValueError(
+                f"--repoの形式が違う: {value}。--repo <名前>=<絶対パス>（例: --repo glatasks=/home/u/glatasks）で指定する"
+            )
         repos[name] = pathlib.Path(path)
     return repos
 
@@ -179,7 +272,9 @@ def _select(cases: list[_Case], ids: list[str]) -> list[_Case]:
     known = {case.id: case for case in cases}
     unknown = [value for value in ids if value not in known]
     if unknown:
-        raise ValueError(f"評価セットに無い事例ID: {', '.join(unknown)}")
+        raise ValueError(
+            f"評価セットに無い事例ID: {', '.join(unknown)}。有効なIDは{', '.join(known)}（{CASES_PATH}の`id`）から選ぶ"
+        )
     return [known[value] for value in ids]
 
 
@@ -208,14 +303,26 @@ def main(argv: list[str] | None = None) -> int:
         for value in args.result:
             case_id, separator, path = value.partition("=")
             if not separator:
-                raise ValueError(f"--resultは<事例ID>=<管理表の絶対パス>で指定する: {value}")
+                raise ValueError(f"--resultの形式が違う: {value}。--result <事例ID>=<管理表の絶対パス>で指定する")
             result = score(_select(cases, [case_id])[0], pathlib.Path(path))
             for key in totals:
                 totals[key] += len(result[key])
             print(json.dumps(result, ensure_ascii=False))
         print(json.dumps({"total": totals}, ensure_ascii=False))
         return 0
-    except (ValueError, OSError, RuntimeError, ActionableError) as error:
+    except FileExistsError as error:
+        print(f"失敗: {error}", file=sys.stderr)
+        return 1
+    except OSError as error:
+        # 計画・commit記録・管理表の読取失敗。読めなかったパスを示し、指定の確認へ導く。
+        print(
+            f"失敗: {error}。--private-notes・--result・評価セットの`plan`が実在するファイルを指すか確かめる", file=sys.stderr
+        )
+        return 1
+    except ActionableError as error:
+        print(f"失敗: {error.message}", file=sys.stderr)
+        return 1
+    except (ValueError, RuntimeError) as error:
         print(f"失敗: {error}", file=sys.stderr)
         return 1
 

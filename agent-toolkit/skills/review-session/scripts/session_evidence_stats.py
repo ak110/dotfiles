@@ -512,7 +512,9 @@ _NORM_DOC_PATTERN = re.compile(
     r"|(?P<project>\.claude/skills))/(?P<rest>[^\s'\"`|;&()<>]+?\.md)\b"
 )
 # 表示とみなすコマンド。検索（rg・grep）や一覧は本文の表示ではないため数えない。
-_DISPLAY_COMMAND_PATTERN = re.compile(r"(?:^|[\s;&|(])(?:cat|sed|head|tail|nl)\s")
+# Codexの`exec`はコマンドをJavaScriptの文字列（`tools.exec_command({cmd:"cat ..."})`）へ埋め込むため、
+# 直前が引用符の場合もコマンドの先頭として扱う。
+_DISPLAY_COMMAND_PATTERN = re.compile(r"(?:^|[\s;&|(\"'`])(?:cat|sed|head|tail|nl)\s")
 _DISPLAY_TOOLS = frozenset({"Read", "View", "read_file"})
 _COMPACTION_TOP_DOCUMENTS = 5
 
