@@ -104,7 +104,34 @@ def test_score_reports_unreadable_table_with_next_action(tmp_path, monkeypatch, 
     assert review_eval.main(["score", "--result", f"missed={tmp_path / 'none.tsv'}"]) == 1
     err = capsys.readouterr().err
     assert "none.tsv" in err
-    assert "--result" in err
+    assert "次の操作: --result missed=" in err
+
+
+def test_score_reports_malformed_table_with_next_action(tmp_path, monkeypatch, capsys) -> None:
+    """形式が不正な管理表は失敗として終了し、検証コマンドと指定方法を標準エラーへ示す。"""
+    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+    table = tmp_path / "bad.exec-review.tsv"
+    # 1列目が数値で、JSON文字列のセルという管理表の形式を満たさない。
+    table.write_text('1\t"exec-review"\t"a"\t"b"\t"詳細"\t""\t""\n', encoding="utf-8")
+
+    assert review_eval.main(["score", "--result", f"missed={table}"]) == 1
+    err = capsys.readouterr().err
+    assert "形式が不正" in err
+    assert "次の操作: --result missed=" in err
+    assert "atk review-table validate" in err
+
+
+def test_load_cases_reports_malformed_set_with_next_action(tmp_path, monkeypatch, capsys) -> None:
+    """必須項目を欠く評価セットは失敗として終了し、直す形式の所在を標準エラーへ示す。"""
+    cases = tmp_path / "cases.json"
+    cases.write_text('{"cases": [{"id": "x"}]}', encoding="utf-8")
+    monkeypatch.setattr(review_eval, "CASES_PATH", cases)
+
+    assert review_eval.main(["score", "--result", f"x={tmp_path / 'none.tsv'}"]) == 1
+    err = capsys.readouterr().err
+    assert "評価セットを読み込めない" in err
+    assert "次の操作: " in err
+    assert "レビュー評価セット" in err
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:

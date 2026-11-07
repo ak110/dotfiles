@@ -69,8 +69,23 @@ def _expectations(items: list[dict[str, Any]]) -> tuple[_Expectation, ...]:
 def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
     """評価セットを読み、照合語句を正規表現として検証した事例の一覧を返す。"""
     path = path or CASES_PATH
-    data = json.loads(path.read_text(encoding="utf-8"))
-    cases = [
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        cases = _parse_cases(data)
+    except (ValueError, KeyError, TypeError, re.error) as error:
+        raise ActionableError(
+            f"評価セットを読み込めない: {path}: {error!r}",
+            next_action=f"{path}を`.claude/skills/agent-toolkit-edit/SKILL.md`「レビュー評価セット」の事例の形式へ直す",
+        ) from error
+    ids = [case.id for case in cases]
+    duplicated = sorted({value for value in ids if ids.count(value) > 1})
+    if duplicated:
+        raise ValueError(f"事例IDが重複している: {', '.join(duplicated)}（{path}）。重複したIDの片方を別のIDへ変える")
+    return cases
+
+
+def _parse_cases(data: dict[str, Any]) -> list[_Case]:
+    return [
         _Case(
             id=item["id"],
             kind=item["kind"],
@@ -84,18 +99,19 @@ def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
         )
         for item in data["cases"]
     ]
-    ids = [case.id for case in cases]
-    duplicated = sorted({value for value in ids if ids.count(value) > 1})
-    if duplicated:
-        raise ValueError(f"事例IDが重複している: {', '.join(duplicated)}（{path}）。重複したIDの片方を別のIDへ変える")
-    return cases
 
 
 def _commit_range(commits_path: pathlib.Path) -> tuple[str, str]:
     """WI実装commitの対応記録から、履歴書換え後のOIDで最初の変更の親と最後のcommitを返す。"""
     order: list[str] = []
     for line in commits_path.read_text(encoding="utf-8").splitlines():
-        record = json.loads(line)
+        try:
+            record = json.loads(line)
+        except ValueError as error:
+            raise ActionableError(
+                f"commitの対応記録を読み込めない: {commits_path}: {error}",
+                next_action=f"`atk plans checkout`で{commits_path.name}の保存版を取り直すか、評価セットの`plan`の値を確かめる",
+            ) from error
         if "commits" in record:
             order.extend(record["commits"])
         for old, new in record.get("rewrite", {}).items():
@@ -127,10 +143,18 @@ def _contract_rows(plan: pathlib.Path, private_notes: pathlib.Path) -> list[str]
     当時のレビューが受け取った契約は保存されていないため、本文から機械的に写した再構成であり、
     内容の妥当性はレビュー担当が検収する。比較の前後で同じ入力を使うことで、指示・モデルの差だけを比べる。
     """
-    names = commit_mapping.plan_allowed_wis(plan.read_text(encoding="utf-8"), plan)
-    if not names:
-        return []
-    selected, missing = wi_entries.read_named_entries(private_notes, [(name, name) for name in sorted(names)], target_repo=None)
+    try:
+        names = commit_mapping.plan_allowed_wis(plan.read_text(encoding="utf-8"), plan)
+        if not names:
+            return []
+        selected, missing = wi_entries.read_named_entries(
+            private_notes, [(name, name) for name in sorted(names)], target_repo=None
+        )
+    except ValueError as error:
+        raise ActionableError(
+            f"計画の関連WIを読み込めない: {plan}: {error}",
+            next_action="計画の「関連WI」の書式と、--private-notesが計画と同じprivate-notesを指すかを確かめる",
+        ) from error
     if missing:
         raise ValueError(
             f"計画のAWI本文を取得できない: {', '.join(missing)}。--private-notesが計画と同じprivate-notesを指すか確かめる"
@@ -228,11 +252,16 @@ def score(case: _Case, table: pathlib.Path) -> dict[str, Any]:
     """返却された管理表の指摘行を期待と照合し、検出・見逃し・誤指摘・未分類を返す。"""
     try:
         rows = review_table.read_rows(table)
-    except ActionableError as error:
-        # 管理表側の案内はatkの入力形式を示すため、本CLIの引数での指定方法へ置き換える。
+    except ValueError as error:
+        # 管理表の不存在（ActionableError）と形式不正（ValueError）のどちらも、atk側の案内ではなく
+        # 本CLIの引数と管理表の検証手段を示す。
+        reason = error.reason if isinstance(error, ActionableError) else f"レビュー指摘管理表の形式が不正: {table}: {error}"
         raise ActionableError(
-            error.reason,
-            next_action=f"--result {case.id}=<管理表の絶対パス>で、当該事例のレビューが返した`.exec-review.tsv`を指定する",
+            reason,
+            next_action=(
+                f"--result {case.id}=<管理表の絶対パス>で当該事例のレビューが返した`.exec-review.tsv`を指定する。"
+                "形式不正は`atk review-table validate <管理表の絶対パス>`で該当行を確かめ、表を直すか取り直す"
+            ),
         ) from error
     texts = [f"{row[_LOCATION_COLUMN]}\n{row[_ISSUE_COLUMN]}" for row in rows]
     detected = [item.id for item in case.detect if any(item.matches(text) for text in texts)]
