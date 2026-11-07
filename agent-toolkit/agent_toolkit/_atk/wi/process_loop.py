@@ -30,7 +30,7 @@ from agent_toolkit._atk.wi import process_loop_watch as _watch
 from agent_toolkit._atk.wi import process_loop_worktree as _worktree
 from agent_toolkit._atk.wi import submit as _submit
 from agent_toolkit._common import console_title as _console_title
-from agent_toolkit._common import mcp_environment
+from agent_toolkit._common import mcp_environment, process_tree
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common.atomic_file import atomic_write
@@ -188,8 +188,8 @@ def _writers_stopped(
     writers: list[str] | None = None,
     other_writers: set[str] | None = None,
 ) -> bool:
-    """レーン登録に結び付く実行主体が停止済みの場合だけ回収へ進む。"""
-    if _ownership.executor_running(owner):
+    """レーン登録に結び付く実行主体と、統括の停止で回収できなかった子孫が停止済みの場合だけ回収へ進む。"""
+    if _ownership.executor_running(owner) or _ownership.residual_running(owner):
         _ownership.hold(owner, writers=writers)
         return False
     descendants = _ownership.descendant_sessions({owner.session_id} if owner.session_id else set())
@@ -353,6 +353,10 @@ def _run_coordinator(
             for owner in owners.values():
                 _ownership.update_process(owner, process)
 
+        def residual_found(failure: process_tree.ReclaimError) -> None:
+            for owner in owners.values():
+                _ownership.record_residual(owner, failure.processes)
+
         execution = _session.run_process_session(
             session_args,
             cwd,
@@ -364,6 +368,7 @@ def _run_coordinator(
             resume_pending=resume is not None,
             on_session_started=started,
             on_process_started=process_started,
+            on_residual=residual_found,
             codex_provider=codex_provider,
             claude_connection=claude_connection,
         )

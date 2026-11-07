@@ -13,6 +13,7 @@ import threading
 import time
 from typing import Any
 
+import psutil
 import pytest
 
 from agent_toolkit import atk, hook
@@ -25,7 +26,7 @@ from agent_toolkit._atk.wi import process_loop_launch_gate as gate
 from agent_toolkit._atk.wi import process_loop_log as log
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as session
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import process_tree, session_registry
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing import wi_entry_files
 
@@ -954,3 +955,51 @@ def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, m
         assert ended.value.code == 1
         assert len(targets) == count
     assert artifact.read_text(encoding="utf-8") == "再開後の成果"
+
+
+def test_unreclaimed_descendant_holds_ownership_until_it_disappears(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """統括の停止で回収できなかった子孫が生存する間は、所有記録が識別を保持して次の統括を起動しない。"""
+    _notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    repository = snapshots[0].repository
+    survivor = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])  # pylint: disable=consider-using-with
+
+    def reap() -> None:
+        survivor.kill()
+        survivor.wait()
+
+    request.addfinalizer(reap)
+    launches: list[int] = []
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, _prompt: str, _env: dict[str, str], **kwargs: Any) -> bool:
+        launches.append(len(launches))
+        if len(launches) == 1:
+            # 統括CLIの停止結果に、回収できなかった子孫が残った状態を注入する。
+            kwargs["on_residual"](
+                process_tree.ReclaimError([f"{survivor.pid}: sleep"], [psutil.Process(survivor.pid)], context="test")
+            )
+        return False
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    # 子孫が回収を拒む状態を、再回収の操作を無効にして表す。
+    monkeypatch.setattr(ownership._process_tree, "reclaim_processes", lambda _targets: [])
+    arguments = argparse.Namespace(resume=None, auto_resume=False, worktree=None)
+    results = loop.run_coordinator(arguments, snapshots)
+    assert results[repository.repo_id]["status"] == "owner_wait"
+    saved = json.loads(next(ownership.ownership_directory().glob("*.json")).read_text(encoding="utf-8"))
+    assert [(entry["pid"], entry["create_time"]) for entry in saved["residual_processes"]] == [
+        (survivor.pid, psutil.Process(survivor.pid).create_time())
+    ]
+    # 自己再起動後の巡回と同じく、保存した記録だけを読み直して判定する。
+    assert ownership.try_acquire(repository.repo_id, worktree=repository.worktree) is None
+    results = loop.run_coordinator(arguments, snapshots)
+    assert results[repository.repo_id]["status"] == "owner_wait"
+    assert launches == [0]
+    assert str(survivor.pid) in capsys.readouterr().err
+    reap()
+    results = loop.run_coordinator(arguments, snapshots)
+    assert launches == [0, 1]
+    assert results[repository.repo_id]["status"] != "owner_wait"
+    saved = json.loads(next(ownership.ownership_directory().glob("*.json")).read_text(encoding="utf-8"))
+    assert not saved.get("residual_processes")

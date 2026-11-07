@@ -1,6 +1,7 @@
 """`atk wi process-loop`のプロンプトとオーケストレーターの選択、セッションの起動と終了の扱いのテスト。"""
 
 import argparse
+import contextlib
 import io
 import json
 import os
@@ -13,6 +14,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+import psutil
 import pytest
 
 from agent_toolkit._atk import codex_connection as _codex_connection
@@ -24,7 +26,7 @@ from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import inherited_venv as _inherited_venv
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import process_tree, session_registry
 from agent_toolkit._testing.process_loop_support import (
     isolate_process_loop_commands,
 )
@@ -909,3 +911,68 @@ def test_codex_usage_limit_child_continues_next_iteration(
     assert finished == [True]
     assert marker.exists() is new_turn
     assert time.monotonic() - started < 15
+
+
+@pytest.mark.parametrize("site", ["stalled", "codex-usage-limit", "exception", "claude-usage-limit"])
+def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, site: str
+) -> None:
+    """統括CLIを止める4箇所のいずれでも、回収できなかった子孫を診断ログだけで済ませず呼び出し元へ渡す。"""
+    survivor = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])  # pylint: disable=consider-using-with
+
+    def reap() -> None:
+        survivor.kill()
+        survivor.wait()
+
+    request.addfinalizer(reap)
+    stopped: list[str] = []
+
+    def stop_owned_process(process: subprocess.Popen[Any], *, context: str) -> Any:
+        # 停止の結果に、統括CLIの子孫が残った状態を注入する。統括CLI自身は実際に止める。
+        process.kill()
+        process.wait()
+        stopped.append(context)
+        return process_tree.ReclaimError([f"{survivor.pid}: sleep"], [psutil.Process(survivor.pid)], context=context)
+
+    monkeypatch.setattr(_pl_session.process_tree, "stop_owned_process", stop_owned_process)
+    env = {**os.environ, "CODEX_HOME": str(tmp_path / "codex"), "CLAUDE_CONFIG_DIR": str(tmp_path / "claude")}
+    env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
+    orchestrator = "codex" if site == "codex-usage-limit" else "claude"
+    if site == "stalled":
+        started = time.time()
+        clock = iter([started, started + 9601])
+        monkeypatch.setattr(_pl_session.time, "time", lambda: next(clock, started + 9601))
+    elif site == "codex-usage-limit":
+        rollout = tmp_path / "x.jsonl"
+        monkeypatch.setattr(_pl_session._codex_usage_limit, "find_session_rollout", lambda *_args, **_kwargs: rollout)
+        monkeypatch.setattr(_pl_session._codex_usage_limit, "from_rollout", lambda _path: object())
+        monkeypatch.setattr(_pl_session._record_paths, "codex_session_id", lambda _path: "codex-session")
+    elif site == "claude-usage-limit":
+        env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = "limited-session"
+        request_file = tmp_path / "claude/agent-toolkit-function-hooks/rate-limit-limited-session.txt"
+        request_file.parent.mkdir(parents=True)
+        request_file.write_text("requested", encoding="utf-8")
+        monkeypatch.setattr(_pl_session, "_attach_orchestrator_child", lambda *_args: None)
+
+    def started_process(_identity: Any) -> None:
+        if site == "exception":
+            raise RuntimeError("統括の起動処理の失敗")
+
+    received: list[process_tree.ReclaimError] = []
+    expected: type[BaseException] | None = {
+        "exception": RuntimeError,
+        "claude-usage-limit": _pl_session._next_action.ActionableError,
+    }.get(site)
+    with contextlib.ExitStack() as stack:
+        if expected is not None:
+            stack.enter_context(pytest.raises(expected))
+        _ORIGINAL_CODEX_SESSION(
+            [sys.executable, "-c", "import time; time.sleep(60)"],
+            env,
+            tmp_path,
+            orchestrator=orchestrator,
+            on_process_started=started_process,
+            on_residual=received.append,
+        )
+    assert len(stopped) == 1
+    assert [process.pid for failure in received for process in failure.processes] == [survivor.pid]
