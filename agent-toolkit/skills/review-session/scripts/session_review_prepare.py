@@ -1044,7 +1044,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
             else:
                 row["by_record"] = dict(sorted(item.get("by_record", {}).items(), key=lambda pair: -pair[1])[:10])
             selected.append(row)
-    for kind in ("stats-compaction", "stats-slow-call", "stats-token-peak"):
+    for kind in ("stats-compaction", "stats-compaction-usage", "stats-slow-call", "stats-token-peak"):
         selected.extend(by_kind[kind][:_SUMMARY_TOP_COUNT])
     for kind in ("stats-thread-tool", "stats-thread-gap", "stats-thread-repeat", "stats-thread-slow-call"):
         threads: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
@@ -1192,10 +1192,21 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         f"（所要時間不明{compaction.get('duration_unknown_count', 0)}回）"
     )
     lines.extend(f"  - 記録{record}: {count}回" for record, count in compaction.get("by_record", {}).items())
-    lines.extend(
-        f"  - {item['record']}:{item['line']}: {item.get('timestamp') or '時刻なし'}"
-        for item in by_kind.get("stats-compaction", [])
-    )
+    usage = {(item["record"], item["line"]): item for item in by_kind.get("stats-compaction-usage", [])}
+    for item in by_kind.get("stats-compaction", []):
+        line = f"  - {item['record']}:{item['line']}: {item.get('timestamp') or '時刻なし'}"
+        interval = usage.get((item["record"], item["line"]))
+        if interval is not None:
+            top = "、".join(
+                f"{document['path']}（{document['count']}回、{document['bytes']}バイト）"
+                for document in interval.get("norm_doc_display_top", [])
+            )
+            line += (
+                f"、区間のツール出力{interval.get('tool_output_bytes', 0)}バイト、"
+                f"うちエージェント向け文書の表示{interval.get('norm_doc_display_bytes', 0)}バイト（上限寄り）"
+                + (f"、表示の多いエージェント向け文書: {top}" if top else "")
+            )
+        lines.append(line)
     threads = by_kind.get("stats-agent-thread", [])
     if threads:
         lines.extend(["", "| thread | 実行系 | 観測identity | 経過秒 | 応答回数 |", "| --- | --- | --- | --- | --- |"])

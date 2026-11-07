@@ -38,7 +38,7 @@ RETURN_TARGETS = (
     ("exec-review", "share/exec-review.parent.md", "実行レビューの返却契約", 2),
     ("reader-fit-review", "share/reader-fit-review.parent.md", "読者別探索の返却契約", 2),
     ("wi-draft-review", "share/wi-draft-review.parent.md", "投入前レビューの返却契約", 2),
-    ("recurrence-self-check", "share/exec-review.subagent.md", "セルフチェックの返却契約", 3),
+    ("recurrence-self-check", "share/recurrence-self-check.parent.md", "セルフチェックの返却契約", 2),
     ("add-wi", "share/add-wi.parent.md", "WI投入担当の返却契約", 2),
     ("lane-integration", "share/exec.parent.md", "統合の返却契約", 2),
     ("copilot-review-audit", "skills/process-wi/references/review-audit-launch.md", "監査担当の返却契約", 3),

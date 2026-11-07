@@ -9,14 +9,14 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
-| 再発防止セルフチェック担当を起動する前 | `exec-review.subagent.md`の「再発防止セルフチェックの起動と受領」 | 判断 | `section:agent-toolkit:*/share/exec-review.subagent.md#「再発防止セルフチェックの起動と受領」` |
+| 再発防止セルフチェック担当を起動する前 | `recurrence-self-check.parent.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check.parent.md` |
 
 ## 操作区分
 
 確認専用の検証は、保存済みの検証証拠を先に読み、対象リポジトリの定義と計画の検証節からコマンドを選ぶ。公開された確認専用の引数または変更を伴わない手段が無い場合は実行せず、必要な操作と不足する証拠を委譲元へ返す。
 
 本担当が実行できる操作は、ファイルの読み取りと検索、Git状態の取得、判定に必要な検証の実行、レビュー指摘管理表の更新（初回に存在しない場合の初期化を含む）、引き継ぎ記録の更新、走査結果・前回確認版・入力記録の保存、本文の複製、および後続担当の起動に限定される。
-文章成果物の直接確認と読者別探索担当の起動は`reader-fit-review.parent.md`、再発防止セルフチェック担当は`exec-review.subagent.md`「再発防止セルフチェックの起動と受領」の手順に従って起動する。
+文章成果物の直接確認と読者別探索担当の起動は`reader-fit-review.parent.md`、再発防止セルフチェック担当は`recurrence-self-check.parent.md`の手順に従って起動する。
 各種記録は、自身のセッションのmanaged-temp配下に保存する。
 完成条件証拠の判定結果と根拠を記述するのは実行レビュー担当のみであり、レビュー対象者（レビューイー）に根拠の補完を求めた場合でも、最終的な反映は本担当が行う。
 

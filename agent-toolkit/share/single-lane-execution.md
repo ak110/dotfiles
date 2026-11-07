@@ -12,7 +12,10 @@
 | --- | --- | --- | --- |
 | 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing.md#「検証単位の選定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「検証単位の選定」` |
-| 実装に着手する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 実装に着手する前 | `exec-review.parent.md`の冒頭 | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#冒頭` |
+| 実行レビュー担当を起動する前 | `exec-review.parent.md`の「起動方法別のレビュー基準」から「起動」まで | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」から「起動」まで` |
+| 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md`の「完成条件証拠の受領確認」「返却に含まれる既存不良の受領」「実行レビューの返却契約」 | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「完成条件証拠の受領確認」「返却に含まれる既存不良の受領」「実行レビューの返却契約」` |
+| レビュー指摘の修正と管理表の保存に着手する前 | `exec-review.parent.md`の「レビュー修正」「レビュー指摘管理表の保存」 | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「レビュー修正」「レビュー指摘管理表の保存」` |
 | 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence.md` |
 | 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
 | 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |

@@ -1123,7 +1123,7 @@ def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> No
         ("share/exec-review.parent.md", "exec-review"),
         ("share/reader-fit-review.parent.md", "reader-fit-review"),
         ("share/wi-draft-review.parent.md", "wi-draft-review"),
-        ("share/exec-review.subagent.md", "recurrence-self-check"),
+        ("share/recurrence-self-check.parent.md", "recurrence-self-check"),
         ("share/add-wi.parent.md", "add-wi"),
         ("skills/process-wi/references/review-audit-launch.md", "copilot-review-audit"),
         ("skills/refine-prompt/SKILL.md", "refine-prompt"),

@@ -2149,7 +2149,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         ("計画", root / "skills/write-plan/SKILL.md", ""),
         ("共通工程", root / "share/single-lane-execution.md", ""),
         ("確認", root / "skills/user-confirmation-and-report/SKILL.md", ""),
-        ("実装と実行レビュー", root / "share/exec-review.parent.md", ""),
+        ("実装と実行レビュー", root / "share/exec-review.parent.md", "冒頭"),
         ("要件検収", root / "share/verification-evidence.md", ""),
         ("レビュー収束", root / "share/review-loop-coordination.md", "冒頭「ラウンドの遷移」から「応答済みの判定」まで"),
         ("公開前検証", root / "skills/commit/references/publish.md", ""),
@@ -2174,7 +2174,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
             "計画": ("計画ファイルの作成要否",),
             "共通工程": ("実行レビュー", "採否"),
             "確認": ("確認要否の判定",),
-            "実装と実行レビュー": ("起動", "返却に含まれる既存不良の受領"),
+            "実装と実行レビュー": ("検証結果",),
             "要件検収": ("完成条件証拠の検証記録",),
             "レビュー収束": ("ラウンドの遷移", "応答済みの判定"),
             "公開前検証": ("公開工程", "CI"),
@@ -2193,6 +2193,14 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         if phase == "要件検収":
             assert read_delivery.target_ready(records, ReadTarget(path, "完成条件証拠の検証記録"), "main")
             assert not read_delivery.target_ready(records, target, "independent")
+    # 実行レビューの起動・受領・修正は、全文ではなく各工程で使う節を読む行で到達する。
+    parent = root / "share/exec-review.parent.md"
+    for heading in (
+        "「起動方法別のレビュー基準」から「起動」まで",
+        "「完成条件証拠の受領確認」「返却に含まれる既存不良の受領」「実行レビューの返却契約」",
+        "「レビュー修正」「レビュー指摘管理表の保存」",
+    ):
+        assert any(ReadTarget(parent, heading) in row.targets for row in rows), heading
 
 
 @pytest.mark.parametrize("context", [{}, {"agent_id": "child"}, {"turn_id": "turn"}])

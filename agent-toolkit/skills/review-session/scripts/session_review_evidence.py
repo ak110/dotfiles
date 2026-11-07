@@ -335,7 +335,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--stats",
         action="store_true",
         help="経過時間、トークン消費、ツール別・呼び出し別・サブエージェント別・Codexスレッド別の集計を照会する。"
-        "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返す。"
+        "コンパクションの発生位置と回数は`stats-compaction`と`stats-compaction-total`が返し、"
+        "圧縮で終わる区間ごとのツール出力とエージェント向け文書の表示のバイト数、表示の多いエージェント向け文書は`stats-compaction-usage`が返す。"
         "`elapsed_seconds`は記録の最初と最後の差であり、turnの完了を持つ記録では最初のturnの開始から"
         "最後のturnの完了までの`turn_elapsed_seconds`、完了時刻の`last_turn_completed_at`、"
         "完了後に続く記録の`after_last_turn_seconds`を併せて返す。",

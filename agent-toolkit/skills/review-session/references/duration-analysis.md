@@ -23,6 +23,21 @@
 
 セッション統計から時間消費への寄与が大きい工程や反復を特定し、品質を保ったまま単位時間あたりに処理できるユーザー由来のWI件数を最大化する改善策を確定する（エージェント由来のWIは別に数える。所要時間やトークンコストの削減は、この生産性指標を上げる手段である）。律速条件を特定したら`analysis.md`「原因と対策」の過去対策との比較へ進み、その知見を今回の短縮案に反映する。律速情報を費用分析に使い、改善候補は作業全体から広く選ぶ。実行時間が短い処理も、成功した操作の適用頻度、入力の再構築コスト、トークンや保守の費用を`analysis.md`「コストの無駄の確認」で比べ、その採否を再利用する。
 振り返り自体の所要時間目標は通常300秒、batchは対象1件あたり300秒とし、スキルの起動から最終報告までを計測する。予告通知は終了点に数えず、対象セッション全体の`elapsed_seconds`と区別する。
+終点は最終報告の直前に取得した現在時刻（`date -u +%FT%TZ`など）とし、起点は次の値を使う。
+自身のセッション記録ファイルを`head`や`grep`などの汎用ツールで読んで時刻を得る操作は不要である。
+自身のセッションIDは、Claude CodeではSessionStartの通知値か`CLAUDE_CODE_SESSION_ID`、CodexではthreadのIDを使う。
+
+- batch: manifest（`AGENT_TOOLKIT_SESSION_REVIEW_BATCH`が指す実行情報JSON）の`started_at`。準備時間も計測区間に入り、通常の振り返りと定義がそろう
+- batchの内訳: 準備区間と分析区間の内訳が律速区間の判定に要る場合は、batchセッション自身の開始時刻を使う。
+  この時刻は`atk run-script session-review-evidence -- --claude-session-id <自身のセッションID> --elapsed-until <終点の時刻>`が返す`start`である。
+  Codexでは`--claude-session-id`の代わりに`--codex-thread-id <自身のthread ID>`を渡す
+- batchの再開: 中断後に再開した実行では`started_at`以後の中断時間も経過時間に含まれるため、そのことを報告に注記する
+- 通常の振り返り（Claude Code）: 次のコマンドが返す`tool-call`の`timestamp`を使う。
+  `atk run-script session-review-evidence -- --claude-session-id <自身のセッションID> --tool-calls --tool Skill --input-regex 'review-session'`
+- 通常の振り返り（Codex）: `Skill`の呼び出し記録が無いため、起動依頼の発話の時刻を使う。
+  `atk run-script session-review-evidence -- --codex-thread-id <自身のthread ID> --user-events --user-match-fixed review-session`が返す発話の時刻である。
+  該当する発話が無い場合は`--elapsed-until`の`start`を起点にし、その旨を報告に注記する
+
 この目標は超過した場合に所要時間の改善案を必須とする判断だけに使う。一般のQCD原則による目標時間の使い方より、本用途限定を優先する。必要な調査の範囲・順序・省略・先送り・停止には使わず、目標の前後で同じ必要な調査を完遂する。
 この基準は、メインエージェントの実行区間、レーン内部、公開・検証区間、振り返り処理自体のいずれにも適用する。
 改善前後は同じ要求・品質・観測区間の受入済み成果で比較し、分割件数や再試行は作業量として数える。

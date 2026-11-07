@@ -48,7 +48,7 @@ batch自身のセッションも振り返り対象に含める。
    未確認の対象を成功とせず、既存の失敗対応に沿って原因と未完了範囲を報告する。
 3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
-   所要時間目標と超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
+   所要時間目標、計測の起点と終点、超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
 4. batchを実行するメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って今回の結果を事後承認型UWIへ1件保存する。
    Claude Codeでは`Skill`で起動し、Codexでは同スキルの`SKILL.md`を絶対パスで取得する。
    対象一覧、登録AWI・見送り・費用確認を対象IDと対応付ける。

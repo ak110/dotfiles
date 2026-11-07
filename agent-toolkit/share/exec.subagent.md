@@ -79,7 +79,7 @@ continuations:
 | 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation.md`の「仮説から次の確認を選ぶ」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「仮説から次の確認を選ぶ」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md#「計画ファイルの構成」「実施内容」「要件・外部仕様」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「計画ファイルの構成」「実施内容」「要件・外部仕様」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「起動方法別のレビュー基準」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「検証と公開工程」` |
@@ -94,8 +94,7 @@ continuations:
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/check-execution-operations.md#「統合実行ツール経由の起動」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「統合実行ツール経由の起動」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「安全な修正」「公開可能性の検証」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「安全な修正」「公開可能性の検証」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「修正要否の立証」「安全な修正」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「修正要否の立証」「安全な修正」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「修正要否の立証」「安全な修正」「公開可能性の検証」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「修正要否の立証」「安全な修正」「公開可能性の検証」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/check-execution-operations.md#「保存した実行出力の取得」` | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「保存した実行出力の取得」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/history-rewrite.md#「修正方法の選択」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「修正方法の選択」` |
