@@ -166,8 +166,10 @@ def pytest_configure(config: pytest.Config) -> None:
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
     # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。区切りでの譲渡は`slot_yield`の説明を参照する。
+    budget = float(config.getini("execution_slot_yield_budget"))
+    exhausted_marker = None
     if not worker and config.getoption("numprocesses", None) and not config.getoption("collectonly"):
-        owner = slot_yield.CooperativeOwner(_notify_slot_wait)
+        owner = slot_yield.CooperativeOwner(_notify_slot_wait, budget)
         owner.start()
         stack.callback(owner.close)
         if owner.inherited:
@@ -178,6 +180,8 @@ def pytest_configure(config: pytest.Config) -> None:
         ticket = config.workerinput.get(slot_yield.TICKET_KEY) if worker else None  # type: ignore[attr-defined]
         if worker:
             slot_yield.signal_done_after_hold(stack, config.workerinput)  # type: ignore[attr-defined]
+            marker = config.workerinput.get(slot_yield.EXHAUSTED_KEY)  # type: ignore[attr-defined]
+            exhausted_marker = pathlib.Path(marker) if marker is not None else None
         stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait, participant=ticket))
     previous_children = set(process_tree.collect_descendants(os.getpid()))
     baseline = {child.pid for child in previous_children}
@@ -187,7 +191,9 @@ def pytest_configure(config: pytest.Config) -> None:
         tracker = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
         return baseline | ({tracker} if isinstance(tracker, int) else set())
 
-    config.pluginmanager.register(slot_yield.BoundaryYield(ignored_children), "dotfiles-execution-slot-yield")
+    config.pluginmanager.register(
+        slot_yield.BoundaryYield(ignored_children, budget, exhausted_marker), "dotfiles-execution-slot-yield"
+    )
     resource_environment = {
         name: os.environ.get(name)
         for name in ("HOME", "USERPROFILE", "XDG_STATE_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA", "APPDATA")
@@ -254,7 +260,12 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """CIで1つの試験集合を複数runnerへ分ける`--test-shard`を登録する。"""
+    """CIで1つの試験集合を複数runnerへ分ける`--test-shard`と、実行枠の譲渡の上限を登録する。"""
+    parser.addini(
+        "execution_slot_yield_budget",
+        help="試験の区切りで待機中の検証へ実行枠を譲る累計時間の上限（秒）。達した後は譲らない",
+        default=str(slot_yield.DEFAULT_YIELD_BUDGET),
+    )
     parser.addoption(
         "--test-shard",
         metavar="INDEX/COUNT",

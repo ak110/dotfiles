@@ -19,6 +19,14 @@ pyfltrの協調所有者は、登録中の全参加者が区切りで停止し�
 
 各プロセスの最後の試験の後には譲らない。残りの試験が無い区切りで譲ると、取り直しが先に並んだ待機者の終了まで待ち、
 全試験を終えたpytestの終了だけが遅れるためである。
+
+1回のpytest実行が譲渡に費やす累計時間には上限（ini項目`execution_slot_yield_budget`、秒）を設け、達した後は譲らない。
+取り直しは先に並んだ待機者の後になるため、長い検証が次々に並ぶと譲る側が際限なく進めなくなる。
+譲る相手の種類や長さはpyfltrの公開APIで判別できないため、相手を選ばずに累計時間で打ち切る。
+短い検証への譲渡は累計をほとんど消費しないため、元の目的（短い検証を区切りで先に通す）は保たれる。
+上限の判定は譲渡が終わった時点で行い、進行中の1回は中断しない。
+xdistでは協調所有者が上限到達を完了印と同じ一時ディレクトリの印でworkerへ伝え、workerは印があれば停止を通知しない。
+印の書込前に停止を通知したworkerがあれば、協調所有者は最大1回の追加の譲渡でそのworkerを再開させる。
 """
 
 import collections.abc
@@ -29,6 +37,7 @@ import queue
 import shutil
 import tempfile
 import threading
+import time
 from typing import Any
 
 import pytest
@@ -40,6 +49,11 @@ from agent_toolkit._common import process_tree
 TICKET_KEY = "agent_toolkit_execution_slot_participant"
 # workerinputで完了印のパスを渡すキー。
 DONE_KEY = "agent_toolkit_execution_slot_done"
+# workerinputで譲渡の上限到達の印のパスを渡すキー。
+EXHAUSTED_KEY = "agent_toolkit_execution_slot_exhausted"
+# 譲渡に費やす累計時間の上限（秒）。ini設定`execution_slot_yield_budget`が無いときに使う。commit hookや限定検証の数回分を通し、
+# 他レーンの全体検証のような長い検証へは高々1回で打ち切る長さにする。
+DEFAULT_YIELD_BUDGET = 300.0
 # 所有スレッドが参加者の停止を確かめる間隔（秒）。pyfltrの待機の再試行間隔と同程度にする。
 _CHECK_INTERVAL = 0.2
 
@@ -50,8 +64,14 @@ class CooperativeOwner:
     `cooperative_hold`と`checkpoint`・`participant`は保持したスレッドから呼ぶ契約のため、専用のスレッドへ集約する。
     """
 
-    def __init__(self, on_wait: collections.abc.Callable[[execution_slot.SlotOwner | None], None]) -> None:
+    def __init__(
+        self,
+        on_wait: collections.abc.Callable[[execution_slot.SlotOwner | None], None],
+        budget: float = DEFAULT_YIELD_BUDGET,
+    ) -> None:
         self._on_wait = on_wait
+        self._budget = budget
+        self._spent = 0.0
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._requests: queue.Queue[queue.Queue[str]] = queue.Queue()
@@ -59,6 +79,8 @@ class CooperativeOwner:
         self._error: BaseException | None = None
         self.inherited = False
         self.done_directory = pathlib.Path(tempfile.mkdtemp(prefix="pytest-execution-slot-"))
+        # 上限到達をworkerへ伝える印。完了印と同じ一時ディレクトリに置き、`close`でまとめて消す。
+        self.exhausted_marker = self.done_directory / "yield-exhausted"
         self._thread = threading.Thread(target=self._run, name="pytest-execution-slot", daemon=True)
 
     def start(self) -> None:
@@ -130,7 +152,11 @@ class CooperativeOwner:
                                 entry = entries.pop(ticket, None)
                                 if entry is not None:
                                     entry.close()
-                        coordinator.checkpoint()
+                        started = time.monotonic()
+                        if coordinator.checkpoint():
+                            self._spent += time.monotonic() - started
+                            if self._spent >= self._budget and not self.exhausted_marker.exists():
+                                self.exhausted_marker.write_text("", encoding="utf-8")
                         self._stop.wait(_CHECK_INTERVAL)
         except ValueError:
             if entered:
@@ -158,6 +184,7 @@ class TicketDistribution:
             done = self._owner.done_directory / f"{node.gateway.id}.done"
             node.workerinput[TICKET_KEY] = ticket
             node.workerinput[DONE_KEY] = str(done)
+            node.workerinput[EXHAUSTED_KEY] = str(self._owner.exhausted_marker)
             self._tickets[node.gateway.id] = (ticket, done)
 
     def pytest_testnodedown(self, node: Any, error: object) -> None:
@@ -179,19 +206,35 @@ def signal_done_after_hold(stack: contextlib.ExitStack, workerinput: dict[str, A
 
 
 class BoundaryYield:
-    """試験の区切りで、子孫が残っていなければ待機中の検証へ実行枠を譲る。"""
+    """試験の区切りで、子孫が残っていなければ待機中の検証へ実行枠を譲る。
 
-    def __init__(self, baseline: collections.abc.Callable[[], set[int]]) -> None:
+    譲渡に費やした累計時間が`budget`秒に達した後と、協調所有者の上限到達の印（`exhausted_marker`）がある時は譲らない。
+    """
+
+    def __init__(
+        self,
+        baseline: collections.abc.Callable[[], set[int]],
+        budget: float = DEFAULT_YIELD_BUDGET,
+        exhausted_marker: pathlib.Path | None = None,
+    ) -> None:
         self._baseline = baseline
+        self._budget = budget
+        self._exhausted_marker = exhausted_marker
+        self._spent = 0.0
+
+    def _exhausted(self) -> bool:
+        return self._spent >= self._budget or (self._exhausted_marker is not None and self._exhausted_marker.exists())
 
     @pytest.hookimpl(wrapper=True, tryfirst=True)
     def pytest_runtest_protocol(self, item: pytest.Item, nextitem: pytest.Item | None) -> Any:
         """試験の後始末とtimeoutの解除を終えた後に、残りの試験がある場合だけ譲る。"""
         del item  # noqa
         result = yield
-        if nextitem is not None and execution_slot.yield_requested():
+        if nextitem is not None and not self._exhausted() and execution_slot.yield_requested():
             ignored = self._baseline()
             # 試験が起動した子が残る間は譲らない。子の稼働中に待機者の検証が重なるためである。
             if not [child for child in process_tree.collect_descendants(os.getpid()) if child.pid not in ignored]:
-                execution_slot.yield_to_waiters()
+                started = time.monotonic()
+                if execution_slot.yield_to_waiters():
+                    self._spent += time.monotonic() - started
         return result

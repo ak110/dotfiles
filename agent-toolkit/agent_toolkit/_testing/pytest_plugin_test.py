@@ -672,8 +672,16 @@ _SLOT_PROBE = """\
 import json, os, pathlib, time
 import pytest
 
-@pytest.mark.parametrize("index", range(6))
+@pytest.mark.parametrize("index", range(int(os.environ.get("SLOT_TESTS", "6"))))
 def test_slow(index):
+    evidence = pathlib.Path(os.environ["SLOT_EVIDENCE"])
+    queued = pathlib.Path(os.environ["SLOT_QUEUED"])
+    # 最初の試験の完了後に始まる試験は、待機者が実行枠の待ち列へ並んだ印を見てから進む。
+    # 待機者の起動の速さに左右されず、残りの試験の区切りで待機者が並んでいる状態を作る。
+    deadline = time.monotonic() + 60
+    while list(evidence.glob("test-*.json")) and not queued.exists():
+        assert time.monotonic() < deadline, "待機者が待ち列へ並ばない"
+        time.sleep(0.02)
     started = time.time()
     time.sleep(0.4)
     pathlib.Path(os.environ["SLOT_EVIDENCE"], f"test-{index}.json").write_text(
@@ -682,12 +690,20 @@ def test_slow(index):
 """
 
 _SLOT_WAITER = """\
-import json, pathlib, sys, time
+import json, os, pathlib, sys, time
 from pyfltr.command import execution_slot
 
-with execution_slot.hold(label="waiter-probe"):
+# `on_wait`は待ち列への登録後に呼ばれるため、印は登録の完了を示す。印の保存先を渡さない試験では書かない。
+queued = os.environ.get("SLOT_QUEUED")
+
+def mark(_owner=None):
+    if queued:
+        pathlib.Path(queued).write_text("", encoding="utf-8")
+
+with execution_slot.hold(label="waiter-probe", on_wait=mark):
+    mark()
     started = time.time()
-    time.sleep(0.3)
+    time.sleep(float(os.environ.get("SLOT_HOLD", "0.3")))
     pathlib.Path(sys.argv[1]).write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
 """
 
@@ -705,6 +721,7 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
     """最外側の所有では試験の区切りで待機者へ譲って残りを再開し、継承時は外側の解放まで譲らない。
 
     待機者の保持区間がどの試験の実行区間とも重ならないこと（workerの稼働中の排他）と、全試験の結果を確かめる。
+    残りの試験は待機者が待ち列へ並んだ印を待ってから進むため、待機者の起動が遅れても判定は変わらない。
     """
     evidence = tmp_path / "evidence"
     evidence.mkdir()
@@ -714,7 +731,10 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment.update(
-        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"), SLOT_EVIDENCE=str(evidence)
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+        PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"),
+        SLOT_EVIDENCE=str(evidence),
+        SLOT_QUEUED=str(tmp_path / "queued"),
     )
     argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
     argv += ["-p", "xdist.plugin", "-n", str(workers), str(tmp_path / "probe_test.py")]
@@ -725,7 +745,7 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
         argv, cwd=tmp_path, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
     ) as child:
         deadline = time.monotonic() + 60
-        # 最初の試験の完了後に待機を始め、残りの試験の途中で待機者が並ぶようにする。
+        # 最初の試験の完了後に待機者を起動する。残りの試験は待機者が並んだ印を待ってから進む。
         while not list(evidence.glob("test-*.json")):
             assert child.poll() is None and time.monotonic() < deadline
             time.sleep(0.05)
@@ -743,6 +763,96 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
     last = max(test["ended"] for test in tests)
     # 最外側の所有では残りの試験より先に待機者が実行され、継承時はpytestの終了後まで待つ。
     assert (window["ended"] < last) is not outer, (window, tests)
+
+
+_SLOT_FLOOD = """\
+import os, pathlib, subprocess, sys
+
+# 停止の印が置かれるまで、長く保持する待機者を次々に起動し、待ち列が空にならない状態を作る。
+stop = pathlib.Path(sys.argv[1])
+waiter, log_directory = sys.argv[2], pathlib.Path(sys.argv[3])
+index = 0
+while not stop.exists():
+    subprocess.run([sys.executable, waiter, str(log_directory / f"{os.getpid()}-{index}.json")], check=True, timeout=60)
+    index += 1
+"""
+
+
+@pytest.mark.parametrize("workers", [2, 0])
+def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(tmp_path: pathlib.Path, workers: int) -> None:
+    """長い検証が待ち列へ次々に並んでも、譲渡の累計時間の上限の後は譲らずに残りの試験を完了する。
+
+    短い待機者は従来どおり区切りで先に通り、長い待機者が並び続けてもpytestは有限の譲渡の後に終わることを、
+    同じ実行の試験と待機者の実行区間の記録から確かめる。
+    """
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    windows = tmp_path / "windows"
+    windows.mkdir()
+    stop = tmp_path / "stop"
+    (tmp_path / "probe_test.py").write_text(_SLOT_PROBE, encoding="utf-8")
+    (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
+    (tmp_path / "flood.py").write_text(_SLOT_FLOOD, encoding="utf-8")
+    environment = dict(os.environ)
+    environment.pop("PYTEST_ADDOPTS", None)
+    environment.update(
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+        PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"),
+        SLOT_EVIDENCE=str(evidence),
+        SLOT_QUEUED=str(tmp_path / "queued"),
+        SLOT_TESTS="8",
+    )
+    argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
+    argv += ["-o", "execution_slot_yield_budget=1", "-p", "xdist.plugin", "-n", str(workers), str(tmp_path / "probe_test.py")]
+    with contextlib.ExitStack() as stack:
+        child = stack.enter_context(
+            subprocess.Popen(
+                argv,
+                cwd=tmp_path,
+                env=environment,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+            )
+        )
+        deadline = time.monotonic() + 60
+        while not list(evidence.glob("test-*.json")):
+            assert child.poll() is None and time.monotonic() < deadline
+            time.sleep(0.05)
+        short = subprocess.run(
+            [sys.executable, str(tmp_path / "waiter.py"), str(windows / "short.json")],
+            env=environment,
+            timeout=60,
+            check=False,
+        )
+        assert short.returncode == 0
+        long_environment = {**environment, "SLOT_HOLD": "1.5"}
+        floods = [
+            stack.enter_context(
+                subprocess.Popen(
+                    [sys.executable, str(tmp_path / "flood.py"), str(stop), str(tmp_path / "waiter.py"), str(windows)],
+                    env=long_environment,
+                )
+            )
+            for _ in range(2)
+        ]
+        try:
+            output, _ = child.communicate(timeout=90)
+        finally:
+            stop.write_text("", encoding="utf-8")
+            for flood in floods:
+                flood.wait(timeout=60)
+    assert child.returncode == 0, output
+    assert "8 passed" in output
+    tests = [json.loads(path.read_text(encoding="utf-8")) for path in evidence.glob("test-*.json")]
+    last = max(test["ended"] for test in tests)
+    short_window = json.loads((windows / "short.json").read_text(encoding="utf-8"))
+    # 短い待機者は、残りの試験の区切りで実行枠を譲られて先に終わる。
+    assert short_window["ended"] < last, (short_window, tests)
+    long_windows = [json.loads(path.read_text(encoding="utf-8")) for path in windows.glob("*-*.json")]
+    # 長い待機者が並び続けても、試験の途中で通したのは上限（1秒）を超えるまでの高々2件に限られる。
+    assert len([window for window in long_windows if window["started"] < last]) <= 2, (long_windows, tests)
 
 
 _SLOT_PARTICIPANT = """\
