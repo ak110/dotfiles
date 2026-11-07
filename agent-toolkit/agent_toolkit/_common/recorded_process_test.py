@@ -142,13 +142,16 @@ def test_unreaped_direct_child_blocks_stop_until_reaped() -> None:
     """回収を確認できなかった直接の子は、zombie表示でも同じPID世代が消えるまで停止済みにしない。
 
     run-skillの停止結果の保存から再開前の停止までを通す。別の親が回収しないzombieは、
-    親でない側からは強制終了でも消せず、親の終了で回収されるまで残る。
+    親でない側からは強制終了でも消せず、親が回収するまで残る。
     """
+    # 親の終了による孤児の回収はPID 1に依存し、--init無しのコンテナー（PID 1がtail）では回収されない。
+    # 回収の時機を実行環境から切り離すため、親自身が標準入力の合図で子を待機して回収する。
     script = (
         "import subprocess, sys, time; "
-        "child = subprocess.Popen([sys.executable, '-c', 'pass']); print(child.pid, flush=True); time.sleep(120)"
+        "child = subprocess.Popen([sys.executable, '-c', 'pass']); print(child.pid, flush=True); "
+        "sys.stdin.readline(); child.wait(); time.sleep(120)"
     )
-    with subprocess.Popen([sys.executable, "-c", script], stdout=subprocess.PIPE) as parent:
+    with subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE) as parent:
         try:
             assert parent.stdout is not None
             zombie = psutil.Process(int(parent.stdout.readline()))
@@ -168,9 +171,10 @@ def test_unreaped_direct_child_blocks_stop_until_reaped() -> None:
             assert reason is not None and f"{zombie.pid}: 回収を確認できない直接の子" in reason
             assert reclaim_records.pending(identity.pid, identity.create_time)
 
-            # 親が終了してzombieが回収されると、同じ識別の停止は記録を消して成功する。
-            parent.kill()
-            parent.wait()
+            # 親がzombieを回収すると、同じ識別の停止は記録を消して成功する。
+            assert parent.stdin is not None
+            parent.stdin.write(b"reap\n")
+            parent.stdin.flush()
             deadline = time.monotonic() + 10
             while psutil.pid_exists(zombie.pid) and time.monotonic() < deadline:
                 time.sleep(0.05)
