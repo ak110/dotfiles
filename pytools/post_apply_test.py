@@ -252,6 +252,42 @@ def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, cap
     assert "first-detail" in log and "second-detail" in log and "post-apply終了: exit=1" in log
 
 
+def test_run_records_unfinished_steps_periodically_without_terminal(monkeypatch, tmp_path, capsys):
+    """端末でない出力でも、終わらない工程の名前を一定間隔で記録し、止まった工程を判別できる。"""
+    monkeypatch.setattr(post_apply, "is_human_terminal", lambda: False)
+    monkeypatch.setattr(post_apply, "_RUNNING_NOTICE_SECONDS", 0.05)
+    release = threading.Event()
+
+    def stuck():
+        assert release.wait(30)
+        return post_apply_outcome.PostApplyOutcome(changed=False)
+
+    def quick():
+        return post_apply_outcome.PostApplyOutcome(changed=False)
+
+    real_wait = post_apply.wait
+    waits = []
+
+    def wait_until_noticed(*args, **kwargs):
+        waits.append(kwargs.get("timeout"))
+        # 未完了の工程の記録を観測した後（観測できない場合も待機の4回目以降）に、止まった工程を終わらせる。
+        if capsys.readouterr().out.count("未完了の工程: 止まる工程") or len(waits) > 3:
+            release.set()
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(post_apply, "wait", wait_until_noticed)
+    steps = [post_apply._StepSpec("止まる工程", stuck), post_apply._StepSpec("すぐ終わる工程", quick)]
+    try:
+        with pytest.raises(SystemExit) as ended:
+            post_apply.main(runner=lambda: post_apply.run(steps))
+    finally:
+        release.set()
+    assert ended.value.code == 0
+    log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
+    assert "未完了の工程: 止まる工程（" in log
+    assert all(timeout is not None for timeout in waits)
+
+
 @pytest.fixture(autouse=True, name="sync_report_path")
 def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """同期結果の記録先を一時領域へ向け、実行環境の状態ディレクトリを書き換えないようにする。"""

@@ -80,6 +80,8 @@ _UPDATE_LOG_PATH = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=F
 _UPDATE_RUN_ID_ENV = "UPDATE_DOTFILES_RUN_ID"
 _UPDATE_LOG_MAX_BYTES = 2 * 1024 * 1024
 _UPDATE_LOG_BACKUP_COUNT = 3
+# 端末でない出力で、実行中の工程を記録する間隔（秒）。CIの時間上限（数分）の中で数回記録される長さにする。
+_RUNNING_NOTICE_SECONDS = 60.0
 
 
 def _run_id() -> str:
@@ -894,6 +896,7 @@ def run(
     started_at: dict[int, float] = {}
     progress = _ProgressLine()
     emitted = 0
+    last_notice = time.monotonic()
     try:
         with ThreadPoolExecutor(max_workers=max(total, 1)) as executor:
             while True:
@@ -924,13 +927,27 @@ def run(
                     emitted += 1
                 if not running:
                     break
-                if is_human_terminal():
+                human = is_human_terminal()
+                if human:
                     longest = min(running.values(), key=lambda index: started_at[index])
                     progress.show(
                         f"  post-apply実行中: 完了 {len(outcomes)}/{total}、"
                         f"実行中 {len(running)}件（最長: {effective_steps[longest].name}）"
                     )
-                done, _ = wait(running, return_when=FIRST_COMPLETED)
+                elif time.monotonic() - last_notice >= _RUNNING_NOTICE_SECONDS:
+                    # 端末でない出力（CI・ログ）は結果を列挙順にしか出さず、止まった工程を判別できないため、
+                    # 実行中の工程を一定間隔で記録する。
+                    last_notice = time.monotonic()
+                    names = "、".join(
+                        f"{effective_steps[index].name}（{last_notice - started_at[index]:.0f}秒）"
+                        for index in sorted(running.values())
+                    )
+                    logger.info("  post-apply実行中: 完了 %d/%d、未完了の工程: %s", len(outcomes), total, names)
+                done, _ = wait(
+                    running,
+                    timeout=None if human else max(_RUNNING_NOTICE_SECONDS - (time.monotonic() - last_notice), 0),
+                    return_when=FIRST_COMPLETED,
+                )
                 for future in done:
                     outcomes[running.pop(future)] = future.result()
     finally:

@@ -28,9 +28,49 @@ import threading
 import typing
 
 import pytest
+from agent_toolkit._common import process_tree
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
 INSTALL_SH = REPO_ROOT / "install.sh"
+# 導入処理の内側の時間上限（秒）。pytest-timeout（300秒）より先に打ち切り、
+# 止まった工程を特定できる出力と残存プロセスを記録してから失敗させる。通常の所要は十数秒である。
+_INSTALL_TIMEOUT_SECONDS = 240
+
+
+def _run_install_sh(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """install.shを実行し、内側の時間上限に達したら止まった工程の手掛かりを含めて試験を失敗させる。
+
+    pytest-timeoutの打ち切りでは導入処理の出力と配下のプロセスが失われ、どの工程で止まったかを特定できない。
+    そこで上限に達した時点の配下のプロセス（コマンドライン付き）と出力を、共通の停止処理で回収する前に取得する。
+    """
+    with process_tree.process_scope(
+        ["bash", str(INSTALL_SH)],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+        errors="replace",
+    ) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=_INSTALL_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            remaining = [process_tree.describe(child) for child in process_tree.collect_descendants(process.pid)]
+            failure = process_tree.stop_owned_process(process, context="install_sh_test")
+            try:
+                # 回収できない子孫がパイプを保持していると読み終わらないため、待ちを有限にする。
+                stdout, stderr = process.communicate(timeout=5 if failure is not None else None)
+            except subprocess.TimeoutExpired:
+                stdout, stderr = "", ""
+            pytest.fail(
+                f"install.shが{_INSTALL_TIMEOUT_SECONDS}秒で終わらなかった。"
+                "標準出力の最後の行が完了した工程、残っていたプロセスが止まった工程の手掛かりである。"
+                "\n残っていたプロセス:\n"
+                + ("\n".join(remaining) or "（なし）")
+                + f"\n標準出力末尾: {stdout[-2500:]}\n標準エラー末尾: {stderr[-2500:]}"
+                + ("" if failure is None else f"\n回収できなかったプロセス: {failure.residual}")
+            )
+    assert process.returncode is not None
+    return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
 
 @pytest.mark.skipif(shutil.which("chezmoi") is None, reason="chezmoi未インストール")
@@ -94,14 +134,7 @@ def test_install_sh_deploys_rules(tmp_path: pathlib.Path):
                 "DOTFILES_STATUSLINE_DOWNLOAD_URL": f"http://127.0.0.1:{port}/binary",
                 **_external_reachability_env(),
             }
-            completed = subprocess.run(
-                ["bash", str(INSTALL_SH)],
-                env=env,
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-            )
+            completed = _run_install_sh(env)
         finally:
             httpd.shutdown()
             thread.join()
