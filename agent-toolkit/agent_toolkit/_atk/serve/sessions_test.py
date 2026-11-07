@@ -5,6 +5,7 @@
 import asyncio
 import base64
 import dataclasses
+import errno
 import importlib.util
 import io
 import json
@@ -2261,6 +2262,41 @@ def test_cost_warmer_stops_after_worker_exit_and_restarts_on_next_request(
     finally:
         warmer.stop()
     assert started == ["worker", "worker"]
+
+
+def test_cost_warmer_survives_worker_start_failure_and_restarts_on_next_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """別プロセスを起動できなければ警告して背景の算出を止め、次の走査で起動し直して算出する。
+
+    起動の失敗（プロセス数やファイル記述子の上限）で背景のスレッドが終わると、次の`request`でも再開しないためである。
+    """
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    original = sessions._session_costs._start_worker
+    started: list[str] = []
+
+    def failing_then_real() -> subprocess.Popen[str]:
+        started.append("worker")
+        if len(started) == 1:
+            raise OSError(errno.EMFILE, "Too many open files")
+        return original()
+
+    monkeypatch.setattr(sessions._session_costs, "_start_worker", failing_then_real)
+    warmer = _start_warmer(context)
+    try:
+        with caplog.at_level("WARNING", logger=sessions._session_costs.logger.name):
+            sessions.list_local_sessions(context)
+            _wait_until(lambda: "起動できない" in caplog.text)
+        assert context.state.family_costs.get(record) is None
+        sessions.list_local_sessions(context)
+        _wait_until(lambda: context.state.family_costs.get(record) is not None)
+    finally:
+        warmer.stop()
+    assert started == ["worker", "worker"]
+    assert "Too many open files" in caplog.text
 
 
 @pytest.mark.asyncio

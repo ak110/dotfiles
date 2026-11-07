@@ -169,7 +169,7 @@ class FamilyCostWarmer:
     """一覧の記録の家族の推定費用を、画面で開かれる前に背景で算出して`FamilyCostCache`へ保持する。
 
     算出は1件ずつ別プロセス（`session_cost_worker`）へ渡す。`request`は算出する記録の並びを置き換え、
-    保持済みで家族の記録が変わっていない記録は算出しない。補助機能のため、別プロセスが異常終了した場合は
+    保持済みで家族の記録が変わっていない記録は算出しない。補助機能のため、別プロセスを起動できない場合と異常終了した場合は
     警告して背景の算出を止め、画面の要求は従来どおり要求の中で算出する。次の`request`で再び起動する。
     """
 
@@ -247,7 +247,18 @@ class FamilyCostWarmer:
             if self._stopping:
                 return None
             if self._process is None:
-                self._process = _start_worker()
+                try:
+                    self._process = _start_worker()
+                except OSError as error:
+                    # 起動の失敗（プロセス数やファイル記述子の上限など）でもスレッドは終えず、次の`request`で起動し直す。
+                    self._pending = []
+                    logger.warning(
+                        "推定費用を背景で算出する別プロセスを起動できないため、背景の算出を止めます: %s。"
+                        "画面で開いた記録の推定費用は要求の中で算出し、次にセッション一覧を走査し直した時に起動し直します。"
+                        "繰り返す場合は、プロセス数とファイル記述子の上限（`ulimit -u`・`ulimit -n`）を確認してください",
+                        error,
+                    )
+                    return None
             process = self._process
         assert process.stdin is not None and process.stdout is not None
         try:
