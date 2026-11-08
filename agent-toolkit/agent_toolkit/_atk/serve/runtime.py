@@ -175,9 +175,12 @@ class ServeRuntime:
             await self.read_workers.run(self.operations.warm_index, self.state.stop_requested)
         except Exception as error:  # pylint: disable=broad-exception-caught
             logger.warning(
-                "WI一覧の索引の先行読込に失敗しました。最初の一覧表示で走査をやり直します"
-                "（一覧も失敗する場合はこの原因を解消してください）: %s",
+                "WI一覧の索引の先行読込に失敗しました。最初の一覧表示で走査をやり直します: %s。"
+                "一覧も失敗する場合は、この警告に続くトレースバックで失敗した処理を特定し、"
+                "WIの保存先（%s）の読取権限を確認してください",
                 error,
+                self.operations.private_notes,
+                exc_info=True,
             )
             return
         _timings.record_event(self.timing_log, "index-warmup", total_ms=round((time.perf_counter() - started) * 1000, 1))
@@ -187,9 +190,12 @@ class ServeRuntime:
             await asyncio.to_thread(self.operations.preload_entry_texts, self.state.stop_requested)
         except Exception as error:  # pylint: disable=broad-exception-caught
             logger.warning(
-                "WIの本文の先読みに失敗しました。最初の検索で本文を読み込みます"
-                "（検索も失敗する場合はこの原因を解消してください）: %s",
+                "WIの本文の先読みに失敗しました。最初の検索で本文を読み込みます: %s。"
+                "検索も失敗する場合は、この警告に続くトレースバックで失敗した処理を特定し、"
+                "WIの保存先（%s）の読取権限を確認してください",
                 error,
+                self.operations.private_notes,
+                exc_info=True,
             )
             return
         _timings.record_event(self.timing_log, "index-text-preload", total_ms=round((time.perf_counter() - started) * 1000, 1))

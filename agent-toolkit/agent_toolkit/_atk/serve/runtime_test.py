@@ -142,3 +142,24 @@ async def test_warm_index_preloads_entry_texts_outside_read_workers(
         release.set()
         await asyncio.wait_for(task, timeout=10)
     assert calls == [current_state.stop_requested]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("step", ["warm_index", "preload_entry_texts"])
+async def test_warm_index_failure_warning_names_check_targets(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, step: str
+) -> None:
+    """先行読込の失敗の警告は、失敗した処理を特定するトレースバックと確認するWIの保存先を示す。"""
+    operations = wi_operations.Operations(tmp_path)
+
+    def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("想定外の失敗")
+
+    monkeypatch.setattr(operations, step, fail)
+    current = runtime.ServeRuntime(operations, runtime.BoundedWorkers(1), state.ServeState(tmp_path))
+    with caplog.at_level("WARNING", logger=runtime.logger.name):
+        await asyncio.wait_for(current.warm_index(), timeout=10)
+    [record] = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert "想定外の失敗" in record.getMessage()
+    assert f"WIの保存先（{tmp_path}）の読取権限" in record.getMessage()
+    assert record.exc_info is not None
