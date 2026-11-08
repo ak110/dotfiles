@@ -1,9 +1,9 @@
 name: prepare-python-check
 description: prepare-python-checkの実処理
 inputs:
-  cache-key:
-    description: 検査と分割を識別するキャッシュキー
-    required: true
+  cache-mise:
+    description: ツールを追加導入する検査でmiseのキャッシュを保存する
+    default: 'false'
   native:
     description: ネイティブ依存を導入する
     default: 'true'
@@ -15,11 +15,11 @@ runs:
       run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       shell: bash
     - name: ネイティブ依存インストール
-      # PDF・アーカイブの試験とactions/cacheの圧縮に必要なため、キャッシュ復元前に導入する。
+      # PDF・アーカイブの試験に必要なライブラリを導入する。zstdは公式イメージの同梱分を使う。
       run: |
         set -euo pipefail
         apt-get update
-        apt-get install -y --no-install-recommends poppler-utils libarchive13 zstd
+        apt-get install -y --no-install-recommends poppler-utils libarchive13
       if: inputs.native == 'true'
       shell: bash
     - name: chezmoi インストール
@@ -27,12 +27,22 @@ runs:
       with:
         bin-dir: /usr/local/bin
       if: inputs.native == 'true'
+    - name: イメージ同梱のpyfltrの版
+      id: image
+      if: inputs.cache-mise == 'true'
+      run: |
+        set -euo pipefail
+        version="$(pyfltr --version 2>&1 | sed -n 's/^pyfltr //p')"
+        test -n "$version"
+        echo "pyfltr-version=$version" >> "$GITHUB_OUTPUT"
+      shell: bash
     - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      if: inputs.cache-mise == 'true'
       with:
-        path: /cache
-        # 検査と分割のキーを分け、再実行でも更新されたキャッシュを保存する。
-        key: pyfltr-cache-${{ runner.os }}-py${{ env.UV_PYTHON }}-${{ inputs.cache-key }}-${{ github.run_id }}-${{ github.run_attempt }}
-        restore-keys: pyfltr-cache-${{ runner.os }}-py${{ env.UV_PYTHON }}-${{ inputs.cache-key }}-
+        path: /cache/mise
+        # 同梱版と依存入力が変わったときだけ作り直す。uv・pnpmの大きな同梱キャッシュは保存しない。
+        # 保存を静的検査の1ジョブに限り、試験分割数による同じ内容の重複保存を避ける。
+        key: pyfltr-mise-${{ runner.os }}-${{ steps.image.outputs.pyfltr-version }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'agent-toolkit/pyproject.toml', 'agent-toolkit/uv.lock', 'mise.toml', 'mise.lock') }}
     - name: Install dependencies
       run: uv sync --all-groups --all-extras
       shell: bash

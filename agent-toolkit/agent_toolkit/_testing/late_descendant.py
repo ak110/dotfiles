@@ -11,6 +11,7 @@ POSIXでは親を失った子がinitへ付け替わり、どの列挙方式で�
 このためPOSIXのspawnerはholderの親のまま残る。
 """
 
+import json
 import pathlib
 import shutil
 import sys
@@ -110,6 +111,16 @@ def arm(
         result = original(*args, **kwargs)
         if not fired.is_set() and (thread_name is None or threading.current_thread().name == thread_name):
             fired.set()
+            spawner = int((directory / "spawner.pid").read_text(encoding="utf-8"))
+            roots = [parent.pid for parent in args[0]] if name == "_scan_descendants" else [args[0]]
+            observation = {
+                "thread": threading.current_thread().name,
+                "roots": roots,
+                "spawner_pid": spawner,
+                "spawner_alive": psutil.pid_exists(spawner),
+                "found": [process.pid for process in result],
+            }
+            (directory / "trigger-observation.json").write_text(json.dumps(observation), encoding="utf-8")
             trigger(directory)
         return result
 
@@ -135,6 +146,9 @@ def assert_released(directory: pathlib.Path) -> None:
     解放の観測は上限付きで待つ（POSIXの強制終了後、親を失った子の後始末は非同期に進むため）。
     """
     holder_file = directory / "holder.pid"
+    observation = directory / "trigger-observation.json"
+    detail = observation.read_text(encoding="utf-8") if observation.exists() else "同期点の観測なし"
+    print(f"late_descendant: trigger={detail}")
     assert holder_file.exists(), "終了処理の最初の列挙の後にholderが起動しませんでした"
     pid_text, created_text = holder_file.read_text(encoding="utf-8").split()
     holder, created = int(pid_text), float(created_text)
@@ -145,7 +159,7 @@ def assert_released(directory: pathlib.Path) -> None:
     # 観測記録として、生成したholderのPID・起動時刻と最終結果を残す（pytestの`-s`や`-rP`で表示される）。
     print(f"late_descendant: holder pid={holder} created_at={created} released={released}")
     try:
-        assert released, f"列挙の後に起動したholder（pid {holder}、起動時刻 {created}）が残っています"
+        assert released, f"列挙の後に起動したholder（pid {holder}、起動時刻 {created}）が残っています: {detail}"
         shutil.rmtree(directory / "held")
     finally:
         if _holds(holder, created):

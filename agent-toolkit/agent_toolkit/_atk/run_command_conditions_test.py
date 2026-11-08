@@ -6,6 +6,7 @@ import pathlib
 import sys
 
 import pytest
+from pyfltr.command import execution_slot
 
 from agent_toolkit._atk import run_command
 from agent_toolkit._common import inherited_venv
@@ -107,3 +108,12 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
         assert "environment: 変更 PATH" in diagnostic and "path-entry-value" not in diagnostic
     if change == "legacy":
         assert "内訳" in diagnostic
+
+
+@pytest.mark.parametrize("ticket", ["first-participant", "next-participant"])
+def test_participant_ticket_is_not_a_verification_input(ticket: str) -> None:
+    """起動ごとの参加券の有無・値だけでは、同じ検証条件を変えない。"""
+    environment = {"UNKNOWN_VERIFICATION_INPUT": "same"}
+    expected = run_command.execution_conditions(environment)
+    environment[execution_slot.TICKET_ENV] = ticket
+    assert run_command.execution_conditions(environment) == expected

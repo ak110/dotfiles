@@ -189,11 +189,12 @@ def pytest_configure(config: pytest.Config) -> None:
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
+    parent_ticket = None if worker else execution_slot.receive_ticket()
     # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。区切りでの譲渡は`slot_yield`の説明を参照する。
     budget = float(config.getini("execution_slot_yield_budget"))
     exhausted_marker = None
     if not worker and config.getoption("numprocesses", None) and not config.getoption("collectonly"):
-        owner = slot_yield.CooperativeOwner(_notify_slot_wait, budget)
+        owner = slot_yield.CooperativeOwner(_notify_slot_wait, budget, participant=parent_ticket)
         owner.start()
         stack.callback(owner.close)
         if owner.inherited:
@@ -201,7 +202,7 @@ def pytest_configure(config: pytest.Config) -> None:
         else:
             config.pluginmanager.register(slot_yield.TicketDistribution(owner), "dotfiles-execution-slot-tickets")
     else:
-        ticket = config.workerinput.get(slot_yield.TICKET_KEY) if worker else None  # type: ignore[attr-defined]
+        ticket = config.workerinput.get(slot_yield.TICKET_KEY) if worker else parent_ticket  # type: ignore[attr-defined]
         if worker:
             slot_yield.signal_done_after_hold(stack, config.workerinput)  # type: ignore[attr-defined]
             marker = config.workerinput.get(slot_yield.EXHAUSTED_KEY)  # type: ignore[attr-defined]

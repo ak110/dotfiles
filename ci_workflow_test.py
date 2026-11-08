@@ -332,8 +332,16 @@ def test_python_jobs_separate_responsibilities(workflow_data: dict[str, object])
     test = next(step for step in expanded_workflow_steps(toolkit) if step.get("name") == "Python 3.15 pytest toolkit")
     assert "--test-shard=$TEST_SHARD" in str(test["run"])
     assert workflow_mapping(test["env"])["TEST_SHARD"] == "${{ matrix.shard }}"
-    prepare = next(step for step in workflow_steps(toolkit) if str(step.get("uses", "")).endswith("prepare-python-check"))
-    assert "${{ strategy.job-index }}" in str(workflow_mapping(prepare["with"])["cache-key"])
+    cached = []
+    for name in ("python-lint", "pylint", "pytest-root", "pytest-toolkit"):
+        prepare = next(
+            step
+            for step in workflow_steps(workflow_mapping(jobs[name]))
+            if str(step.get("uses", "")).endswith("prepare-python-check")
+        )
+        if workflow_mapping(prepare["with"]).get("cache-mise") == "true":
+            cached.append(name)
+    assert cached == ["python-lint"]
 
 
 @pytest.mark.parametrize(

@@ -15,6 +15,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | テストとCIの所要基準を使う前 | `agent-basics:writing-standards/references/testing.md`の「速度」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「速度」` |
 | テストとCIの所要基準を使う前 | `agent-basics:check-execution/references/diagnostics.md`の「読む出力」 | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
+| 共有実行枠のコマンドをシェルから起動する前 | `agent-toolkit:/share/check-execution-operations.md`の「統合実行ツール経由の起動」 | 判断 | `section:agent-toolkit:*/share/check-execution-operations.md#「統合実行ツール経由の起動」` |
 
 ## 変更範囲の検証の値
 
@@ -22,7 +23,7 @@
 個別の値を選ぶ前に、変更したパス・ファイル名・モジュール名・契約の識別子（定数、文書の節名、公開項目など）を固定文字列で検索して参照するコードを抽出する。
 抽出したコードを利用するテストまで、中間の参照を順にたどる。
 文書を定数経由で読み込む処理、間接import、共有ヘルパーを含め、変更ファイル名やテストへの直接一致だけで選定を終えない。
-消費側を列挙できない場合は、検証単位全体（下記のserveモジュール全体や`agent_toolkit`パッケージ全体など）を選ぶ。
+消費側を列挙できない場合は、検証単位全体（下記のserveモジュール全体やagent-toolkit全体など）を選ぶ。
 変更した契約、消費側テスト、採否理由、実行結果の対応は、既存の計画ファイルや検証記録へ残す。
 列挙と全体実行の判断は`agent-basics:check-execution`の`references/verification-scope.md`「範囲の決め方」に従い、下記の各項はその選定の具体例である。
 本リポジトリで指定する具体的な値は次のとおりである。
@@ -40,16 +41,17 @@
 - 別の構文で定義を読み込むテスト（「横断テスト」の項と異なり、`pyfltr fast`の対象に含まれないため個別に指定する）: `.github/workflows/`内のジョブ名・ステップ名やpytestの対象指定を変更した場合は、リポジトリ直下の`ci_workflow_test.py`を含める。
   `agent-toolkit/hooks/hooks.json`や`hooks.codex.json`の登録内容を変更した場合、および`agent-toolkit/agent_toolkit/hook.py`や各イベント処理が読み込むモジュールを変更した場合は、`agent-toolkit/agent_toolkit/hook_test.py`を含める。
   いずれも変更されたファイル名からは自動選定されないため注意する。
-- 共有契約を変更した場合: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit/agent_toolkit`を実行する。対象となるのは、`_common/`配下、`_hooks/`の通知生成元で使われる`source`や`kind`、`atk.py`のサブコマンド登録、および2つ以上の`atk`サブコマンドから呼ばれる共通処理や出力契約の変更である。また、`agents_server`のMCPツールや`atk agents wait`における公開レスポンスの項目（内容、形式、条件、項目の有無）を変更した場合も含まれる。同一レスポンスの各項目を、MCP層・CLI待機処理・自動再開後処理の各テストが別ファイルで検証しているためである。なお、コメントや空白のみの変更は対象外とする。
+- 共有契約を変更した場合: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit`を実行する。対象となるのは、`_common/`配下、`_hooks/`の通知生成元で使われる`source`や`kind`、`atk.py`のサブコマンド登録、および2つ以上の`atk`サブコマンドから呼ばれる共通処理や出力契約の変更である。また、`agents_server`のMCPツールや`atk agents wait`における公開レスポンスの項目（内容、形式、条件、項目の有無）を変更した場合も含まれる。同一レスポンスの各項目を、MCP層・CLI待機処理・自動再開後処理の各テストが別ファイルで検証しているためである。スキル用スクリプトとagent-toolkit直下のスクリプトも`agent_toolkit`を直接importするため、CIと同じagent-toolkit全体を対象にする。なお、コメントや空白のみの変更は対象外とする。
 - 配布パッケージのバージョン指定: 次のいずれかを変更した場合は、`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。このテストは隔離されたHOME環境で実際のuvを動作させ、post-apply処理における`uv tool install`とpyfltr MCPのウォームアップ処理を検証する。`pytools/_internal/warmup_pyfltr_mcp_test.py`は`uvx`をモックで置き換えるため、実際のバージョン解決までは確認できない。
   - `agent-toolkit/.mcp.json`のバージョン指定（自動生成される`agent-toolkit/mcp.json`および`agent-toolkit/.mcp.codex.json`を含む）
   - リポジトリ直下および`agent-toolkit/`の`pyproject.toml`にある`dependencies`
   - `.chezmoi-source/`のインストール・更新処理がパッケージマネージャーへ渡すバージョン指定
 - パッケージ外からの呼び出し元: 変更した共有契約の消費側を配置にかかわらず、本節冒頭の参照追跡で選定する。
-  既存の配置には`pytools/`、`scripts/`、`libexec/`とリポジトリ直下の結合テストがある。
+  既存の配置には`agent-toolkit/skills/*/scripts/`、`agent-toolkit/`直下のスクリプト・テスト、`pytools/`、`scripts/`、`libexec/`とリポジトリ直下の結合テストがある。
+  agent-toolkit内の利用側は前項のagent-toolkit全体の実行で覆う。
   生成資料の読取契約では`agent_toolkit_read_trigger_agy_integration_test.py`、共有Git処理では`libexec/update_dotfiles.py`・`update_dotfiles_stash.py`とその関連テストも追跡する。
   これらの配置と実行例だけで探索を終了せず、将来追加される別配置の消費側も同じ基準で含める。
-  既存のパッケージ外試験をまとめて実行する例は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts libexec agent_toolkit_read_trigger_agy_integration_test.py`とする。
+  agent-toolkit外の試験の実行例は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts libexec agent_toolkit_read_trigger_agy_integration_test.py`とする。
 - Function hooksモジュール: `agent-toolkit/hooks/`配下の`*.ts`および`*.tsx`（テストを含む）の変更は、既存の`make test`とコミットフックの`pyfltr fast`から`function-hooks-types`を起動し、全モジュールを一括型検査する。
   - 型チェック: TypeScript 5.9.3を使用する。Claude Codeの`plugin-authoring`で生成した`claude-code.d.ts`を環境変数`FUNCTION_HOOKS_TYPES`へ絶対パスで指定する。未指定時はworktree直下または`agent-toolkit/`の`.claude-plugin/types/`と`types/claude-code.d.ts`を参照する。型定義不足は非0終了する。一時設定と生成型定義はコミットしない。CIはClaude Code生成型を用意しないため、このコマンドを明示無効化する。
   - 未指定かつworktree内に生成型がない場合は、OS一時領域（`TMPDIR`などを反映）の直下および`claude-*`ディレクトリ内の`bundled-skills/<版>/*/plugin-authoring/types/claude-code.d.ts`を探索する。PATH上の`claude --version`とディレクトリ版・先頭行の`// Written by Claude Code <版>.`が一致する型を1件使う。不足時は対象版を含む診断と終了2を返す。`--types`は環境変数より優先し、両者の明示指定時は自動探索しない。チェックはモデルを呼び出さない。
@@ -159,18 +161,28 @@ CIを変更した担当は、同条件の保存結果から実時間とrunner実
 
 ## 検証コマンドの実行
 
-- pyfltrのフォーマッター段（`ruff-format`、`uv-sort`、`shfmt`、`prek`、`sync-generated-files`）は、`--no-fix`を指定した場合でもファイルを整形して終了コード0を返す。そのため、コミット対象を確定する前に`git status`を実行して意図しない差分が生じていないか確認する。コードの自動修正を明示的に行う場合は`make format`（`uv run --frozen pyfltr fast`）を使用する。
-
-pyfltrを調査や計測の目的で実行する場合は、`--no-fix`を付けて自動修正を抑止する。ただしフォーマッター段は`--no-fix`でもファイルを書き換えるため、読み取り専用で実行したい場合はファイルを変更する段を除外して実行する。
-
-- 特定のファイルに限定して検証する対象は、本書「変更範囲の検証の値」で消費側の特定を終えたものとする。
-- 特定を終えたファイルに限定して検証する場合は、MCPの`run`ツールにパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を実行する。初回は`commands`（CLI引数では`--commands`）を指定せずに実行し、修正後の再実行時のみ失敗したチェックに対象を絞る。
-  - pytestを含む検証を実行する際は、指定したファイルにかかわらず、リポジトリルートと`agent-toolkit/`の両方で`pytest-always-targets`に定義された横断テストが常に追加される。詳細は本書の横断テストの項を参照のこと。同一内容に対して2回目以降の静的チェックを行う場合は、`commands`でpytestを除外し、失敗したテストのみを再確認する際は`--only-failed`を指定する。単一テストをピンポイントで確認したい場合は、対象ファイル（必要に応じて`-k`）を指定して`pytest`を直接実行し、収集されたテスト件数が想定と一致していることを確認する。
-- デバッガーの使用、最小限の再現コード実行、環境の切り分け時には、`pytest`を直接実行してよい。`-o`や`-p`は`pytest`固有のオプションであり、`pyfltr run`に渡すと引数エラー（終了コード2）となる。`-o addopts=''`で既存の`addopts`を無効化する場合は、合わせて`-p no:cacheprovider`を指定する。
-  - 並列化だけを止める場合は、プラグインを有効にしたまま`-n 0`を指定する。`addopts`は`-n 4 --dist=worksteal`を持つため、`-p no:xdist`でプラグインを外すと未認識の引数となり、収集前に終了コード4で止まる。`-o addopts=''`は`addopts`全体を外す別の目的に使う。
-- 分岐条件の効果を確かめるために差分を保存して戻す場合は、`git diff --no-ext-diff --src-prefix=a/ --dst-prefix=b/`で保存し、通常の`git apply`（戻すときは`git apply -R`）で適用する。配布するGit設定の`diff.noprefix=true`の下では接頭辞の無い差分になり、既定の`git apply`がパスを解決できないためである。既存の差分とindexは退避先を分けて保護する。
-- pyfltrの実行枠として扱われるのは、`make test`、`uv run --frozen pyfltr run`、`git commit`（コミットフック内の`pyfltr fast`）、および`agent_toolkit._testing.pytest_plugin`を読み込むpytestの実行である。ルートと`agent-toolkit/`の`addopts`には、このプラグインを読み込む`-p`オプションが設定されている。`-o addopts=''`でプラグインを解除する`make test-browser`などは実行枠の対象外となる。
-  - 実行枠に含まれる検証をシェルから実行する際は、`agent-basics:check-execution`「統合実行ツール経由の起動」に記載の起動形式と3分類に従う。
-  - 直接起動したpytest（`uv run --frozen pytest`）は、試験の区切りで待機中の別の検証へ実行枠を譲り、取り直してから残りの試験を続ける。長い全体pytestの実行中でも、別worktreeの限定検証やcommit hookは区切りで実行される。`make test`・`uv run --frozen pyfltr run`経由のpytestと`atk lane integrate`の検証は外側が枠を所有するため、内側のpytestは譲らない（多段の協調はpyfltrの拡張待ち）。
-- `.venv`を再作成する可能性がある自動チェック（`uv run --python`によるPythonバージョンの切り替えや依存関係の更新など）は、同一の仮想環境パスに対して直列で実行する。並行して進める場合は、チェックごとに異なる仮想環境パスを明示的に割り当てる。
-- pyfltrの実行時間を比較・確認する際は、`uv run --frozen pyfltr list-runs`で取得した実行ID（run_id）を使い、`uv run --frozen pyfltr show-run <run_id>`を実行する。
+1. 消費側を漏らさず検証するため、「変更範囲の検証の値」で対象を確定する。
+   `.venv`を再作成し得るチェック（`uv run --python`や依存更新など）は同じ仮想環境パスで直列に実行し、並行する場合は別の仮想環境パスを指定する。
+2. 差分を保護するため、実行目的に合う修正条件を選ぶ。
+   自動修正には`make format`（`uv run --frozen pyfltr fast`）、調査・計測には`--no-fix`を使う。
+   フォーマッター段（`ruff-format`、`uv-sort`、`shfmt`、`prek`、`sync-generated-files`）は`--no-fix`でも書き換えて終了0となるため、読取専用ではこれらの段を除く。
+   分岐の効果を確かめる差分は`git diff --no-ext-diff --src-prefix=a/ --dst-prefix=b/`で保存し、`git apply`・`git apply -R`で適用・復元する。
+   `diff.noprefix=true`では既定の`git apply`が接頭辞なしのパスを解決できないため、この起動形を使い、既存差分とindexは別々に保護する。
+3. 起動条件を保つため、直接pytestと共有実行枠の条件を確認する。
+   - デバッガー・最小再現・環境切り分けでは直接pytestを使える。
+     `-o`・`-p`はpytest固有で、`pyfltr run`へ渡すと終了2となる。
+     `-o addopts=''`で設定全体を外す場合は`-p no:cacheprovider`も指定する。
+     並列化だけを止める場合は`-n 0`を使う。
+     `-p no:xdist`では既存の`-n 4 --dist=worksteal`が未認識となり収集前に終了4となる。
+   - 共有実行枠の対象は`make test`、`uv run --frozen pyfltr run`、`git commit`内の`pyfltr fast`、共通pytestプラグインを読むpytestである。
+     両プロジェクトの`addopts`は同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で解除するものは枠の対象外となる。
+     シェルからの起動は`agent-toolkit:/share/check-execution-operations.md`「統合実行ツール経由の起動」の形式と3分類に従う。
+   - pytestは子処理を回収した試験の区切りで待機者へ譲り、再取得後に残りを続ける。
+     `pytest-slot-ticket`を設定したpyfltr経由と`atk lane integrate`の検証でも、参加券を受け渡して最上位の所有者だけが解放する。
+     参加しないツールやworkerが稼働する間は譲らず、長い全体pytestの区切りでも別worktreeの限定検証やcommit hookを実行できる。
+4. 確定した対象へ全チェックを適用するため、初回はMCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`commands`指定なしで実行する。
+   修正後の再実行だけ失敗したチェックへ限定し、同じ内容の2回目以降の静的チェックでは`commands`（CLIは`--commands`）からpytestを除く。
+   失敗テストだけの再確認は`--only-failed`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。
+   pytestを含む実行には両プロジェクトの`pytest-always-targets`が加わるため、本書の横断テストの項で重複実行を避ける。
+5. 意図した版と結果を確かめてからコミット対象を確定するため、`git status`で整形による差分を確認する。
+   実行時間は`uv run --frozen pyfltr list-runs`で得た実行IDを使い、`uv run --frozen pyfltr show-run <run_id>`で確認する。

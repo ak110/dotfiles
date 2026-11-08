@@ -3,11 +3,12 @@
 pytestはホスト共有の実行枠（pyfltrの`execution_slot`）を全寿命で保持する。長い試験群の間に別の作業の短い検証や
 commit hookが待ち続けないよう、子の処理を回収した試験の区切りで待機者へ譲り、取り直してから残りの試験を続ける。
 
-- xdistのcontrollerが最外側で枠を取得した場合: 所有スレッドが`cooperative_hold`を保持し、workerへ参加券を渡す。
+- xdistのcontrollerが最外側で枠を取得した場合と、祖先から参加券を受け取った場合:
+  所有スレッドが`cooperative_hold`を保持し、workerへ参加券を渡す。
   workerは試験の後に自分の子孫が残っていなければ区切りを通知し、全workerが区切りで止まった時点で所有スレッドが譲る。
   参加券は`pytest_configure_node`で`workerinput`へ渡す（参加券は環境変数から自動採用されないため）。
 - xdistを使わない実行: 試験を実行する主スレッドが`hold`を保持し、試験の区切りで`yield_to_waiters`を呼ぶ。
-- 祖先（pyfltr・`atk run-command`など）から所有を継承した場合: 参加券を発行せず、従来の`hold`で排他を保つ。
+- 参加券なしで祖先から所有を継承した場合: 参加券を発行せず、従来の`hold`で排他を保つ。
   継承した子から祖先の所有を単独で解除すると、祖先が起動した別の子と待機者の実行が重なるためである。
 
 pyfltrの協調所有者は、登録中の全参加者が区切りで停止した時点だけ譲る。終了した参加者の登録も停止として数えないため、
@@ -68,8 +69,11 @@ class CooperativeOwner:
         self,
         on_wait: collections.abc.Callable[[execution_slot.SlotOwner | None], None],
         budget: float = DEFAULT_YIELD_BUDGET,
+        *,
+        participant: str | None = None,
     ) -> None:
         self._on_wait = on_wait
+        self._participant = participant
         self._budget = budget
         self._spent = 0.0
         self._stop = threading.Event()
@@ -123,7 +127,7 @@ class CooperativeOwner:
         entered = False
         try:
             with execution_slot.cooperative_hold(
-                label="pytest", should_abort=self._stop.is_set, on_wait=self._on_wait
+                label="pytest", should_abort=self._stop.is_set, on_wait=self._on_wait, participant=self._participant
             ) as coordinator:
                 entered = True
                 self._ready.set()

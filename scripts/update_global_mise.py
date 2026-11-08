@@ -25,7 +25,8 @@ def update(root: Path) -> None:
     ).stdout
     with tempfile.TemporaryDirectory(prefix="dotfiles-mise-") as directory:
         temporary = Path(directory)
-        configuration = temporary / "config.toml"
+        # `--global`はaubeを`locks/`へ置くため、配布元と同じ`.mise/locks/`を使うローカル設定として生成する。
+        configuration = temporary / "mise.toml"
         configuration.write_text(rendered, encoding="utf-8")
         shutil.copy2(source / "mise.lock", temporary / "mise.lock")
         existing_locks = source / "dot_mise/locks"
@@ -34,10 +35,14 @@ def update(root: Path) -> None:
             for entry in existing_locks.iterdir():
                 if entry.is_dir():
                     shutil.copytree(entry, temporary / ".mise/locks" / entry.name.removeprefix("exact_"))
-        environment["MISE_CONFIG_DIR"] = str(temporary)
+        # 設定をglobal配置と判定させず、実ホームの設定も読ませない。
+        isolated_config = temporary / "user-config"
+        isolated_config.mkdir()
+        environment["MISE_CONFIG_DIR"] = str(isolated_config)
+        process_tree.run_with_timeout(["mise", "trust", str(configuration)], env=environment, check=True, timeout=60)
         for arguments in (
             ["upgrade", "--bump", "dotnet"],
-            ["lock", "--global", "--bump", "--platform", "linux-x64,windows-x64"],
+            ["lock", "--bump", "--platform", "linux-x64,windows-x64"],
         ):
             process_tree.run_with_timeout(["mise", *arguments], cwd=temporary, env=environment, check=True, timeout=1200)
         version = tomllib.loads(configuration.read_text(encoding="utf-8"))["tools"]["dotnet"]

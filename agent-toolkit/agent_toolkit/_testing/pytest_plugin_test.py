@@ -11,6 +11,7 @@ import subprocess
 import sys
 import textwrap
 import time
+import xml.etree.ElementTree as ET
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -19,7 +20,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import backends
-from agent_toolkit._testing import pytest_plugin, slot_yield
+from agent_toolkit._testing import pytest_plugin, slot_yield, xdist_stop
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
 # pylint: disable=protected-access
@@ -420,15 +421,17 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
     assert "8 passed" in result.stdout
 
 
-def _run_child_pytest(tmp_path: pathlib.Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+def _run_child_pytest(
+    tmp_path: pathlib.Path, *arguments: str, plugin: str = pytest_plugin.__name__
+) -> subprocess.CompletedProcess[str]:
     """起動時プラグインだけを読む子pytestを`tmp_path`で実行し、両出力と終了コードを返す。"""
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     environment["PYFLTR_CACHE_DIR"] = str(tmp_path / "pyfltr")
-    argv = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
+    argv = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts="]
     return subprocess.run(
-        [*argv, *arguments],
+        [*argv, *arguments, "-p", plugin],
         cwd=tmp_path,
         env=environment,
         capture_output=True,
@@ -644,6 +647,32 @@ def test_invalid_test_shard_stops_before_collection(tmp_path: pathlib.Path) -> N
 
 
 @pytest.mark.parametrize(
+    "targets",
+    [
+        ["missing_test.py"],
+        ["missing-directory"],
+        ["valid_test.py::test_missing"],
+        ["valid_test.py[x]"],
+        ["valid_test.py", "missing_test.py"],
+    ],
+    ids=["file", "directory", "node-id", "parametrized-path", "mixed"],
+)
+def test_parallel_collection_preserves_usage_error(tmp_path: pathlib.Path, targets: list[str]) -> None:
+    """workerのUsageErrorを引数形式によらず本来の文面と終了コードで報告する。"""
+    (tmp_path / "valid_test.py").write_text("def test_valid():\n    pass\n", encoding="utf-8")
+    serial = _run_child_pytest(tmp_path, *targets, plugin=xdist_stop.__name__)
+    assert serial.returncode == pytest.ExitCode.USAGE_ERROR, serial.stdout + serial.stderr
+    expected = [line for line in serial.stderr.splitlines() if line.startswith("ERROR:")]
+    assert expected, serial.stderr
+    # 入力形式の網羅は軽いxdist適応だけで行い、混在の代表例では共通プラグインからの登録も通す。
+    plugin = pytest_plugin.__name__ if len(targets) > 1 else xdist_stop.__name__
+    parallel = _run_child_pytest(tmp_path, "-p", "xdist.plugin", "-n", "2", *targets, plugin=plugin)
+    assert parallel.returncode == serial.returncode, parallel.stdout + parallel.stderr
+    assert all(message in parallel.stderr for message in expected), (expected, parallel.stderr)
+    assert "引数のパス・node IDを確認して修正し、pytestを再実行してください。" in parallel.stderr
+
+
+@pytest.mark.parametrize(
     ("markexpr", "name", "body", "expected"),
     [
         ("windows", "posix_only_test.py", "import os\n_UID = os.getuid()\n", True),
@@ -721,8 +750,23 @@ with execution_slot.hold(label="outer-probe"):
 """
 
 
-@pytest.mark.parametrize(("workers", "outer"), [(2, False), (0, False), (2, True)])
-def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathlib.Path, workers: int, outer: bool) -> None:
+_SLOT_RUN_COMMAND = """\
+import json, os, pathlib, sys
+from agent_toolkit._atk import run_command
+
+record, code, failure = run_command.execute(sys.argv[1:], pathlib.Path.cwd(), 90, verification=True)
+pathlib.Path(os.environ["SLOT_RECORD"]).write_text(json.dumps(record), encoding="utf-8")
+sys.stdout.write(pathlib.Path(record["stdout_path"]).read_text(encoding="utf-8"))
+sys.stderr.write(pathlib.Path(record["stderr_path"]).read_text(encoding="utf-8"))
+raise SystemExit(code)
+"""
+
+
+@pytest.mark.parametrize(
+    ("workers", "route"), [(2, "direct"), (0, "direct"), (2, "inherited"), (2, "pyfltr"), (2, "run-command")]
+)
+@pytest.mark.timeout(120)
+def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathlib.Path, workers: int, route: str) -> None:
     """最外側の所有では試験の区切りで待機者へ譲って残りを再開し、継承時は外側の解放まで譲らない。
 
     待機者の保持区間がどの試験の実行区間とも重ならないこと（workerの稼働中の排他）と、全試験の結果を確かめる。
@@ -733,6 +777,7 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
     (tmp_path / "probe_test.py").write_text(_SLOT_PROBE, encoding="utf-8")
     (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
     (tmp_path / "outer.py").write_text(_SLOT_OUTER, encoding="utf-8")
+    (tmp_path / "run_command.py").write_text(_SLOT_RUN_COMMAND, encoding="utf-8")
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment.update(
@@ -740,11 +785,32 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
         PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"),
         SLOT_EVIDENCE=str(evidence),
         SLOT_QUEUED=str(tmp_path / "queued"),
+        SLOT_RECORD=str(tmp_path / "run-command.json"),
     )
     argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
-    argv += ["-p", "xdist.plugin", "-n", str(workers), str(tmp_path / "probe_test.py")]
-    if outer:
+    argv += [
+        "-p",
+        "xdist.plugin",
+        "-n",
+        str(workers),
+        "--junitxml",
+        str(tmp_path / "pytest.xml"),
+        str(tmp_path / "probe_test.py"),
+    ]
+    if route == "inherited":
         argv = [sys.executable, str(tmp_path / "outer.py"), *argv]
+    elif route in ("pyfltr", "run-command"):
+        pytest_bin = pathlib.Path(sys.executable).with_name("pytest.exe" if os.name == "nt" else "pytest")
+        assert pytest_bin.is_file()
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.pyfltr]\npytest = true\npytest-runner = "direct"\nrespect-gitignore = false\n'
+            f"pytest-path = {json.dumps(str(pytest_bin))}\npytest-args = {json.dumps(argv[3:-1])}\n"
+            "pytest-slot-ticket = true\n",
+            encoding="utf-8",
+        )
+        argv = [sys.executable, "-m", "pyfltr", "run", "--verbose", "--commands=pytest", "probe_test.py"]
+        if route == "run-command":
+            argv = [sys.executable, str(tmp_path / "run_command.py"), *argv]
     waited = tmp_path / "waiter.json"
     with subprocess.Popen(
         argv, cwd=tmp_path, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
@@ -757,17 +823,22 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
         waiter = subprocess.run(
             [sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=environment, timeout=60, check=False
         )
-        output, _ = child.communicate(timeout=60)
+        output, _ = child.communicate(timeout=90)
     assert waiter.returncode == 0
     assert child.returncode == 0, output
-    assert "6 passed" in output
+    assert len(ET.parse(tmp_path / "pytest.xml").findall(".//testcase")) == 6
     tests = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(evidence.glob("test-*.json"))]
     assert len(tests) == 6
     window = json.loads(waited.read_text(encoding="utf-8"))
     assert all(test["ended"] <= window["started"] or window["ended"] <= test["started"] for test in tests), (window, tests)
     last = max(test["ended"] for test in tests)
     # 最外側の所有では残りの試験より先に待機者が実行され、継承時はpytestの終了後まで待つ。
-    assert (window["ended"] < last) is not outer, (window, tests)
+    assert (window["ended"] < last) is (route != "inherited"), (window, tests)
+    if route == "run-command":
+        record = json.loads((tmp_path / "run-command.json").read_text(encoding="utf-8"))
+        assert record["child_exit_code"] == record["wrapper_exit_code"] == 0
+        assert not record["timed_out"] and record["failure"] is None
+        assert any(wait["kind"] == "reacquire" for wait in record["timing"]["slot_waits"])
 
 
 _SLOT_FLOOD = """\
@@ -800,7 +871,14 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
     windows.mkdir()
     stop = tmp_path / "stop"
     (tmp_path / "probe_test.py").write_text(_SLOT_PROBE, encoding="utf-8")
-    (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
+    # 予算は譲渡が完了してから判定する。模擬待機者の追越し窓だけを無効にし、上流の新規要求優先と予算を分ける。
+    # 通常設定の呼び出し経路は、上の協調5経路で別に確認する。
+    waiter_source = _SLOT_WAITER.replace(
+        "with execution_slot.hold(",
+        "execution_slot._REACQUIRE_BYPASS_SECONDS = 0\n\nwith execution_slot.hold(",
+        1,
+    )
+    (tmp_path / "waiter.py").write_text(waiter_source, encoding="utf-8")
     (tmp_path / "flood.py").write_text(_SLOT_FLOOD, encoding="utf-8")
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
@@ -839,22 +917,31 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
             check=False,
         )
         assert short.returncode == 0
-        long_environment = {**environment, "SLOT_HOLD": "1.5", "SLOT_QUEUED": str(tmp_path / "long-queued")}
+        long_environment = {**environment, "SLOT_HOLD": "1.5"}
+        queued_markers = [tmp_path / f"long-queued-{index}" for index in range(2)]
         floods = [
             stack.enter_context(
                 subprocess.Popen(
                     [sys.executable, str(tmp_path / "flood.py"), str(stop), str(tmp_path / "waiter.py"), str(windows)],
-                    env=long_environment,
+                    env={**long_environment, "SLOT_QUEUED": str(queued)},
                 )
             )
-            for _ in range(2)
+            for queued in queued_markers
         ]
         try:
+            # 再取得1回で待つ初回の2件を固定し、待機者の起動速度で予算の件数比較を変えない。
+            deadline = time.monotonic() + 30
+            while not all(marker.exists() for marker in queued_markers):
+                assert child.poll() is None and all(flood.poll() is None for flood in floods)
+                assert time.monotonic() < deadline, "長い待機者2件が待ち列へ並ばない"
+                time.sleep(0.02)
+            (tmp_path / "long-queued").touch()
             output, _ = child.communicate(timeout=90)
         finally:
             stop.write_text("", encoding="utf-8")
             for flood in floods:
                 flood.wait(timeout=60)
+                assert flood.returncode == 0
     assert child.returncode == 0, output
     assert "12 passed" in output
     tests = [json.loads(path.read_text(encoding="utf-8")) for path in evidence.glob("test-*.json")]

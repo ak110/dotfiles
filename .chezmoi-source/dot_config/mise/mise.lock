@@ -70,19 +70,19 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
 provenance = "github-attestations"
 
 [[tools.glab]]
-version = "1.125.0"
+version = "1.126.0"
 backend = "gitlab:gitlab-org/cli"
 specifiers = ["latest"]
 
 [tools.glab."platforms.linux-x64"]
-checksum = "sha256:c7325f14e408be26fcc1ba5f7a7f71f02c1a20aa3ac6018a57fb04901ea5549a"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.125.0/downloads/glab_1.125.0_linux_amd64.tar.gz"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E125%2E0/glab_1%2E125%2E0_linux_amd64%2Etar%2Egz"
+checksum = "sha256:f386519ba83e9482979992ee7f60eeebee4d95b950f95f4fe7289e0a1b1ea74c"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.126.0/downloads/glab_1.126.0_linux_amd64.tar.gz"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E126%2E0/glab_1%2E126%2E0_linux_amd64%2Etar%2Egz"
 
 [tools.glab."platforms.windows-x64"]
-checksum = "sha256:7bad237bfcb15168b796830e3e01314481d915f7150db1dfa2c18cd89d9ee840"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.125.0/downloads/glab_1.125.0_windows_amd64.zip"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E125%2E0/glab_1%2E125%2E0_windows_amd64%2Ezip"
+checksum = "sha256:44640759caed89c5fd2278bbf5ad43e5da30fdd2030242e4bef81c32ef9984bf"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.126.0/downloads/glab_1.126.0_windows_amd64.zip"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E126%2E0/glab_1%2E126%2E0_windows_amd64%2Ezip"
 
 [[tools.glow]]
 version = "3.0.0"
@@ -119,17 +119,17 @@ url_api = "https://api.github.com/repos/jqlang/jq/releases/assets/453012788"
 provenance = "github-attestations"
 
 [[tools.node]]
-version = "24.22.2"
+version = "26.13.0"
 backend = "core:node"
 specifiers = ["lts"]
 
 [tools.node."platforms.linux-x64"]
-checksum = "sha256:361718c444e49af2ca5a110c83ba6a8901143f23ab285ebbef0341f391f482a9"
-url = "https://nodejs.org/dist/v24.22.2/node-v24.22.2-linux-x64.tar.gz"
+checksum = "sha256:5848553868b402d3fabb5b09270649977780a390f832155721025a08b5104455"
+url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-x64.tar.gz"
 
 [tools.node."platforms.windows-x64"]
-checksum = "sha256:ca1bff5d8ead13c9f2ea404a176db46bd430704d5b5113734049fa365e7799e2"
-url = "https://nodejs.org/dist/v24.22.2/node-v24.22.2-win-x64.zip"
+checksum = "sha256:dcc60d59a0746999f99064a01c020445d54d84228c691cdbf25b49ac3b59150a"
+url = "https://nodejs.org/dist/v26.13.0/node-v26.13.0-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
 version = "0.66.0"
@@ -138,8 +138,8 @@ backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 
 [[tools."npm:aws-cdk"]]
-version = "2.1146.1"
-aube = { path = ".mise/locks/npm-aws-cdk/2.1146.1", digest = "sha256:efa04e24aa95df71fc6507b7546ab544cf5a4dc024c7c0c3599c43523ba895b8" }
+version = "2.1147.0"
+aube = { path = ".mise/locks/npm-aws-cdk/2.1147.0", digest = "sha256:ecd5d5714cb808e65980bf059fcb099456268bd72d8e58e65a1f04f33878a071" }
 backend = "npm:aws-cdk"
 specifiers = ["latest"]
 

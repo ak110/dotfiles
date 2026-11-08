@@ -180,7 +180,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: '0'
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
       - name: statuslineの版数とタグを検査
         working-directory: ${{ github.workspace }}
         env:
@@ -235,7 +235,7 @@ jobs:
           env --unset=UV_FROZEN XDG_CONFIG_HOME="$config_dir" uv lock --check
       - uses: ./.github/actions/prepare-python-check
         with:
-          cache-key: python-lint
+          cache-mise: 'true'
           native: 'true'
         if: needs.common-ci-owner.outputs.owns == 'true'
       - name: Python 3.15 pytest以外の検査
@@ -273,7 +273,6 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
       - uses: ./.github/actions/prepare-python-check
         with:
-          cache-key: pylint
           native: 'false'
         if: needs.common-ci-owner.outputs.owns == 'true'
       - name: Python 3.15 Pylint
@@ -309,7 +308,6 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
       - uses: ./.github/actions/prepare-python-check
         with:
-          cache-key: pytest-root
           native: 'true'
         if: needs.common-ci-owner.outputs.owns == 'true'
       - uses: ./.github/actions/minimum-git
@@ -357,7 +355,6 @@ jobs:
         if: needs.common-ci-owner.outputs.owns == 'true'
       - uses: ./.github/actions/prepare-python-check
         with:
-          cache-key: pytest-toolkit-${{ strategy.job-index }}
           native: 'true'
         if: needs.common-ci-owner.outputs.owns == 'true'
       - uses: ./.github/actions/minimum-git

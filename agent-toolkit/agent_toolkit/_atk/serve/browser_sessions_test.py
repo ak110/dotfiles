@@ -950,8 +950,21 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
     """一覧の取得中に`refresh`通知が続いても、一覧の要求を同時に2件以上発行せず、完了後に1回だけ取り直す。
 
     通知ごとに要求を重ねると、サーバーで同じ走査が重なって他の画面の応答まで遅れる。
+    背景の再走査が完了後に送る通知も取得中に受信させ、走査の所要時間による追加取得を混ぜない。
     """
     page = screen_harness.page
+    await page.add_init_script("""
+        window.testSessionRefreshCount = 0;
+        const OriginalEventSource = window.EventSource;
+        window.EventSource = class extends OriginalEventSource {
+          constructor(...args) {
+            super(...args);
+            this.addEventListener("message", event => {
+              if (JSON.parse(event.data).type === "refresh") window.testSessionRefreshCount++;
+            });
+          }
+        };
+    """)
     await page.goto(screen_harness.base_url + "/sessions")
     items = page.locator("#sessions .session-item")
     await playwright.async_api.expect(items).to_have_count(2)
@@ -973,15 +986,23 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
     await page.route("**/api/sessions/list", hold_list)
     try:
         for index in range(3):
+            received = await page.evaluate("window.testSessionRefreshCount")
             _append_jsonl(
                 tmp_path / "claude" / "projects" / "-home-aki-burst" / f"burst-{index}.jsonl",
                 [{"type": "user", "timestamp": f"2026-09-05T00:00:0{index}Z", "message": {"content": f"通知{index}"}}],
             )
+            # 各作成の通知をブラウザーで受信してから次を作り、変更監視の時間窓によるまとめを避ける。
+            await page.wait_for_function("count => window.testSessionRefreshCount > count", arg=received)
             if index == 0:
                 await asyncio.wait_for(entered.wait(), timeout=5)
-            else:
-                # 記録の変更監視は0.5秒の時間窓で通知をまとめるため、窓を越えて別々の`refresh`を届ける。
-                await asyncio.sleep(1.0)
+        received = await page.evaluate("window.testSessionRefreshCount")
+        # 画面の取得要求を保留したまま一覧APIを直接呼び、再走査の完了と通知の受信を両方待つ。
+        response = await page.request.get(screen_harness.base_url + "/api/sessions/list")
+        assert response.ok
+        async with asyncio.timeout(10):
+            while screen_harness.sessions_context.state.local_rescan_running:
+                await asyncio.sleep(0.01)
+        await page.wait_for_function("count => window.testSessionRefreshCount > count", arg=received)
         assert concurrency["total"] == 1
         release.set()
         await playwright.async_api.expect(items).to_have_count(5, timeout=5000)
@@ -989,12 +1010,8 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
         release.set()
         await page.unroute("**/api/sessions/list", hold_list)
     assert concurrency["max"] == 1
-    # 取得中に届いた通知は完了後の1回の取り直しへまとまる。保留した最初の要求は、一覧の集合が変わった後の要求のため
-    # 前回の一覧を返して背景で走査し直し、走査を終えると`refresh`をもう1回配信する。この通知による取り直しを含め、
-    # 保留した要求・まとめた取り直し・走査の完了による取り直しの3件を上限とする。通知ごとに取り直す画面は4件以上になる。
-    # 負荷で変更監視が3件の作成を1回の通知へまとめた場合や、走査の完了がまとめた取り直しの前に届いた場合は件数が減るため、
-    # 上限だけを判定する。
-    assert concurrency["total"] <= 3
+    # 作成と走査完了の通知は全て保留中に届いており、取り直し1回へまとまる。
+    assert concurrency["total"] <= 2
 
 
 @pytest.mark.asyncio(loop_scope="session")

@@ -54,7 +54,7 @@ def test_journal_keeps_each_reacquisition_once(monkeypatch: pytest.MonkeyPatch, 
             on_wait_interval(dataclasses.replace(wait, finished_at="end", elapsed=0.1, outcome="acquired"))
         yield
 
-    monkeypatch.setattr(run_command.execution_slot, "hold", hold)
+    monkeypatch.setattr(run_command.execution_slot, "coordinated_hold", hold)
     monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
     observed, code, failure = run_command.execute([sys.executable, "-c", "pass"], tmp_path, 10, verification=True)
     assert code == 0 and failure is None
@@ -88,7 +88,7 @@ def test_slot_wait_journal_survives_completion_and_interruption(tmp_path: pathli
         "    run_command.managed_temp.create_output_temp=lambda prefix: root\n"
         "    if sys.argv[1]=='interrupt':\n"
         "        def abort(owner): raise KeyboardInterrupt\n"
-        "        execution_slot.hold=functools.partial(execution_slot.hold,on_wait=abort)\n"
+        "        execution_slot.coordinated_hold=functools.partial(execution_slot.coordinated_hold,on_wait=abort)\n"
         "    try:\n"
         "        result=run_command.execute([sys.executable,'-c','print(42)'],root,10,verification=True)\n"
         "    except KeyboardInterrupt:\n"

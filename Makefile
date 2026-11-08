@@ -10,7 +10,7 @@ PYTEST_RUN = uv run pytest -v -o addopts='' -p no:cacheprovider
 # CIのpython-lint jobが使うcontainer image、`ネイティブ依存インストール`stepの導入パッケージとmatrixのPython版。
 # `ci-deps-check`がこの値でCIの依存導入を再現し、ci_workflow_test.pyがci.yamlとの一致を確かめる。
 CI_CONTAINER_IMAGE := ghcr.io/ak110/pyfltr:latest
-CI_NATIVE_PACKAGES := poppler-utils libarchive13 zstd
+CI_NATIVE_PACKAGES := poppler-utils libarchive13
 CI_PYTHON_VERSIONS := 3.15
 
 help:
