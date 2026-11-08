@@ -236,7 +236,8 @@ def _output_child(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
     )
     (root / "libexec/update_dotfiles.py").write_text(
         "import os, pathlib, subprocess, sys\n"
-        f"subprocess.Popen([sys.executable, {str(child)!r}], start_new_session=os.environ.get('CHILD_SESSION') == '1')\n"
+        f"child_process = subprocess.Popen([sys.executable, {str(child)!r}], "
+        "start_new_session=os.environ.get('CHILD_SESSION') == '1')\n"
         "ready = pathlib.Path(os.environ['READY'])\n"
         "temporary = ready.with_suffix('.tmp')\n"
         "temporary.write_text(str(os.getpid()), encoding='utf-8')\n"
