@@ -103,7 +103,7 @@ atk serve
 ## 構成と機能
 
 - [skills/](skills/): WI起草・処理、委譲、commit、振り返り、会話の出力など、作業に応じて起動する手順
-- [rules/](rules/): 行動原則と実行運用の常時規範。部分的な変更はユーザー・プロジェクトの規範やプロンプトで指定できる
+- [share/rules/common/](share/rules/common/): 行動原則と実行運用の常時規範。部分的な変更はユーザー・プロジェクトの規範やプロンプトで指定できる
 - [フックの構成](https://github.com/ak110/dotfiles/tree/master/agent-toolkit/hooks): 操作前の警告・遮断、セッション開始時と圧縮後の規範案内、日本語での応答・完了報告の確認など。対応範囲はホストごとに異なる
   - Claude Codeではツールの確認ダイアログを自動で許可し、許可した要求をログへ残す
 - `agents_server` MCP: 調査・実装・レビューを別のエージェントへ委譲する
