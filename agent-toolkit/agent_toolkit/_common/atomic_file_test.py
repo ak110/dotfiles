@@ -89,3 +89,26 @@ def test_retry_preserves_fsync_and_previous_content(
         assert len(attempts) == 1
         assert not sleeps
     assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_encode_failure_keeps_previous_content_without_opening_temp_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """符号化できない文字列は一時ファイルを確保する前に失敗し、記述子と一時ファイルを残さず旧本文を保つ。"""
+    destination = tmp_path / "state.json"
+    destination.write_text("旧本文", encoding="utf-8")
+    opened: list[str] = []
+    original_mkstemp = atomic_file.tempfile.mkstemp
+
+    def record_mkstemp(*args: Any, **kwargs: Any) -> tuple[int, str]:
+        result = original_mkstemp(*args, **kwargs)
+        opened.append(result[1])
+        return result
+
+    monkeypatch.setattr(atomic_file.tempfile, "mkstemp", record_mkstemp)
+    with pytest.raises(UnicodeEncodeError):
+        atomic_file.atomic_write(destination, "単独サロゲート\ud800")
+
+    assert not opened
+    assert destination.read_text(encoding="utf-8") == "旧本文"
+    assert list(tmp_path.iterdir()) == [destination]
