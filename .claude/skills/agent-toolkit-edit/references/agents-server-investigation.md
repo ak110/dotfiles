@@ -44,18 +44,27 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 
 ## 切り分けの順序
 
-Claude接続に関する候補の試行・選択・失敗を追うには、ログイベントの`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`を確認し、APIの切り替えは`claude_api_switch`を確認する。MCPサーバーの再接続成否は`claude_mcp_recovered`と`claude_mcp_recovery_failed`で確認できる。
-MCP再接続に関する監査記録は、`docs/development/audit-records.md`内の「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」に記載されている。
+1. 原因分析の基準を揃えるため、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」を適用する。
+2. 発生箇所を絞るため、「観測できる記録の所在」から診断を取得する。
+   通常の応答では`seconds_since_activity`で最後の活動からの経過時間を確認し、絶対時刻や実行パラメーターの比較には`show(verbose=True)`を使う。
+   API失敗の公開診断にはエラー種別、HTTPステータスコード、経過時間、初期化診断には受信メッセージの種別と失敗箇所の詳細がある。
+   Claude接続候補の試行・選択・失敗は`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`を確認する。
+   API切替は`claude_api_switch`、MCP再接続成否は`claude_mcp_recovered`・`claude_mcp_recovery_failed`を確認する。
+   MCP再接続の監査記録は`docs/development/audit-records.md`「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」にある。
 
-中断（`interrupted`）の原因を調査する際は、API応答の`diagnostics.next_action`に示された行範囲（`sed -n '<開始行>,<終了行>p' -- <絶対パス>`）で終了診断ログを読み出す。受信シグナル、標準入力の切断、終了ステータスの有無からサーバーがどの契機で停止したかを特定する。親プロセス側が終了を開始した直接的な理由は親プロセス側の記録にのみ残る。そのため、`parent_connection_log.path`が示す親CLIの接続ログから、終了イベント（`exited`・`signal_received`・`process_exited`）の発生時刻（`at`）と同時刻の記録を突き合わせて調査する。
+3. 停止契機を特定するため、中断（`interrupted`）では`diagnostics.next_action`の行範囲（`sed -n '<開始行>,<終了行>p' -- <絶対パス>`）で終了診断を読む。
+   受信シグナル、標準入力の切断、終了ステータスの有無を確認する。
+   親側が終了を開始した直接の理由は親側の記録にのみ残るため、`parent_connection_log.path`の親CLI接続ログと終了イベント（`exited`・`signal_received`・`process_exited`）の時刻（`at`）を突き合わせる。
 
-`parent_connection_log`が`path`を返さず`reason`を返している場合、親プロセスの接続ログの所在は特定できない。理由コードが`unsupported_parent`の場合は、環境変数`CLAUDECODE`が`1`以外の環境（親プロセスがClaude Code以外）で起動されたことを示す。`not_found`の場合は、Claude CLIのキャッシュディレクトリが解決できないか、該当する作業ディレクトリのスラッグ配下に起動時刻以前の`mcp-logs-*agents*server*`ログが存在しないことを示す。どちらの場合も、親プロセス側の記録を別の方法で確認する必要がある。
+   `parent_connection_log`が`path`でなく`reason`を返す場合は、親接続ログの所在を特定できないため別の方法で親側の記録を確認する。
+   `unsupported_parent`は`CLAUDECODE`が`1`以外（親がClaude Code以外）、`not_found`はClaude CLIのキャッシュを解決できないか、該当スラッグ配下に起動時刻以前の`mcp-logs-*agents*server*`ログが無いことを示す。
 
-サーバーが診断ファイルの保存場所を報告する前にクラッシュした場合（依存パッケージの解決失敗や起動直後のエラーなど）は、診断ファイルもセッション登録簿の`server_instance`も作成されない。この場合の手がかりは、子プロセスの異常終了時にランチャーが標準エラーへ出力する1行のメッセージ（診断ファイルが未作成である旨と推奨操作を含む）のみであり、親CLIの接続ログに記録される。なお、終了コード0で正常終了した場合（`--check-dependencies`などの単発実行）にはこのメッセージは出力されない。
+   保存場所の報告前にクラッシュした場合（依存解決失敗や起動直後のエラーなど）は、診断ファイルも登録簿の`server_instance`も作られない。
+   ランチャーが標準エラーへ出す1行（診断ファイル未作成と推奨操作を含む）が親CLI接続ログに残る唯一の手掛かりとなる。
+   終了コード0の正常終了（`--check-dependencies`など）ではこの行は出ない。
 
-通常運用の応答では、`seconds_since_activity`によって最後の活動からの経過時間を確認できる。詳細な絶対時刻や実行パラメーターを突き合わせる調査には、MCPツールの`show(verbose=True)`を使用する。API呼び出しの失敗に関する公開診断情報にはエラー種別、HTTPステータスコード、経過時間が含まれ、初期化診断には受信したメッセージの種別や失敗箇所の詳細が示される。
-
-原因調査に着手する前には`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」に従って、実際の起動パラメーターと成否を比較しながら問題の発生箇所を特定・再現する。その際のインプットとして、本書で解説した診断ログの`engine`や`launch_kind`、委譲先CLIの診断ログを利用する。また、SDKや実行環境の条件を統一して不具合を再現する際は、後述の「外部プロセスでの再現」に示す起動手順を用いる。
+4. 因果を裏付けるため、診断ログの`engine`・`launch_kind`と委譲先CLIの診断を使い、実際の起動パラメーターと成否を比較して発生箇所を特定・再現する。
+   SDKや実行環境を統一する再現は「外部プロセスでの再現」へ進む。
 
 ## 資源記録の読み方
 
@@ -70,8 +79,10 @@ MCP再接続に関する監査記録は、`docs/development/audit-records.md`内
 
 ## 外部プロセスでの再現
 
-外部プロセスから再現テストを行う場合は、`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`が生成する`ClaudeAgentOptions`を用いて`ClaudeSDKClient`を構成する。その後、`connect()`、`query()`、`receive_messages()`の順に呼び出す。`query()`の呼び出しを省略すると初期化処理まで到達しないため、初期化処理を進めるために必ずこの順序で呼び出す。
-委譲先CLIの診断ログを採取するには、`ClaudeAgentOptions.extra_args`に`--debug-file`と出力先の絶対パスを指定する。
+1. 起動条件を揃えるため、`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`が生成する`ClaudeAgentOptions`で`ClaudeSDKClient`を構成する。
+   診断ログの採取には`ClaudeAgentOptions.extra_args`へ`--debug-file`と出力先の絶対パスを指定する。
+2. 初期化へ到達させるため、`connect()`、`query()`、`receive_messages()`の順で必ず呼び出す。
+   `query()`を省くと初期化に到達しない。
 
 ## 調査で誤りやすい前提
 

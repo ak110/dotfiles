@@ -32,13 +32,15 @@
 
 ## 競合解決と統合後の確認
 
-公開担当は統合差分の配布対象ごとに採番要否を確定し、レーンの引渡しと比較する。
-`rust/claude-statusline/`の変更には`release-dotfiles`の採番規定を適用し、`develop-dotfiles`の`references/publishing.md`「公開前の検証」の`--enable=statusline-version`による最終検証へ接続する。
-プラグインとstatuslineの採番は各定義元で判定する。
+「バージョン更新」手順2の統合時は、次の順に確認する。
 
-rebaseやmergeの際に`version`の競合が発生した場合は、`(major, minor, patch)`の数値タプルを比較して値が大きい方を採用する。採用した値は、競合したプラグインの定義元の2ファイルへ反映する。続けて`scripts/sync_codex_plugin_manifests.py`を実行し、派生マニフェストを同期する。バージョンの整合性は`scripts/sync_codex_plugin_manifests.py --check`（最新なら終了コード0、不整合なら1、引数の誤用なら2）を実行して確認し、同スクリプトによる判定結果を採用する。
-
-rebaseやmergeを完了した後は、競合の有無にかかわらず、公開済みの統合先と定義元の`version`を比較する。未公開のコミットが「判定基準」で更新を要する差分を含み、そのプラグインのバージョン番号が同じであれば、統合後のバージョンを基準として再度更新する（別の作業が先に同一バージョンへ更新し、競合せずに統合された場合に更新が配信されなくなる事態を防ぐためである）。
+1. 配布対象の採番漏れを防ぐため、公開担当は統合差分ごとの採番要否を各定義元で確定し、レーンの引渡しと比較する。
+   `rust/claude-statusline/`には`release-dotfiles`の採番規定を適用し、`develop-dotfiles`の`references/publishing.md`「公開前の検証」の`--enable=statusline-version`による最終検証へ接続する。
+2. 競合後の整合性を保つため、rebaseやmergeで`version`が競合したら`(major, minor, patch)`の数値タプルで大きい方を定義元の2ファイルへ反映する。
+   `scripts/sync_codex_plugin_manifests.py`で派生マニフェストを同期し、`--check`の判定を採用する（最新0、不整合1、引数誤用2）。
+3. 更新が配信されることを保証するため、rebaseやmerge後は競合の有無によらず公開済み統合先と定義元の`version`を比較する。
+   未公開コミットが「判定基準」の更新対象を含み、版数が同じなら統合後の版数を基準に再度更新する。
+   別作業が先に同じ版数へ更新し、競合せず統合された場合も対象となる。
 
 ## 未プッシュ範囲での統合
 
@@ -46,14 +48,14 @@ rebaseやmergeを完了した後は、競合の有無にかかわらず、公開
 
 ## Codex導入後のrootの再確認
 
-Codexプラグインの導入バージョンが変更された場合は、保持しているplugin rootの情報を破棄して再解決する。
-`agent-toolkit/share/rules/rules-common.codex.md`「Codexのplugin root解決」のmarketplace限定照会と抽出を用いる。
-このプロジェクトのmarketplaceは`ak110-dotfiles`であり、`installed`から`pluginId == "agent-toolkit@ak110-dotfiles"`のエントリを一意に特定する。
-識別子、marketplace、version、有効状態、rootの解決結果と診断のみをモデルへ返却する。
-取得の失敗、対象エントリの不在、対象が一意に定まらない状態、無効化状態、実体パスの欠落をそれぞれ区別して診断し、全一覧をそのまま返すことは避ける。
-plugin cache directory配下にある新バージョンのrootパスを解決し、そのroot内の`skills/`ディレクトリの存在、plugin manifestに記載された`version`と導入バージョンの一致、および実行対象スクリプトの実在を確認した上で使用する。
-これらを確認できない場合は処理を未完了として扱い、古いrootへ戻す操作は行わない（`source.path`は配布元を示す値であり、cache rootの解決には新バージョンのrootを使用する）。
-なお、起動時の通知に示された変更前のplugin rootは、導入バージョンを変更する前の処理に用いる。
+1. 導入版の混在を防ぐため、Codexプラグインの導入版変更後は保持したroot情報を破棄し、`agent-toolkit/share/rules/rules-common.codex.md`「Codexのplugin root解決」のmarketplace限定照会と抽出で再解決する。
+   marketplaceは`ak110-dotfiles`とし、`installed`から`pluginId == "agent-toolkit@ak110-dotfiles"`を一意に特定する。
+   起動通知の変更前rootは導入版変更前の処理に用いる。
+2. 実行資源の一致を保証するため、新版のplugin cache directory内のroot、`skills/`、実行対象スクリプトの実在と、manifestの`version`と導入版の一致を確認して使用する。
+   確認できなければ未完了とし、古いrootへ戻さない。
+   `source.path`は配布元を示し、cache rootには新版のrootを用いる。
+3. 解決結果を判断できるよう、識別子、marketplace、version、有効状態、解決結果と診断のみをモデルへ返す。
+   取得失敗、エントリ不在、一意に定まらない状態、無効化、実体パス欠落を区別し、全一覧は返さない。
 
 ## plan modeでの取り扱い
 
@@ -76,10 +78,19 @@ plugin cache directory配下にある新バージョンのrootパスを解決し
 
 ## バージョン更新
 
-本節は`.claude-plugin/marketplace.json`の`plugins[]`に載る配布プラグイン（`agent-toolkit/`と`agent-basics/`）を対象とし、各プラグインの版数を同じ判定基準と同じスクリプトで更新する。詳細は本書の各節を参照する。
-バージョン番号を更新しないままでは、`claude plugin update`を実行しても「最新です」と応答されて更新が配信されない。そのため、エンドユーザーに届く変更はプッシュ前に、変更のあるプラグインごとに必ずバージョンを更新する。
+変更のあるプラグインごとに、プッシュ前に次の順で進める。
+版数を据え置くと、`claude plugin update`は更新を配信せず「最新です」と応答する。
 
-- バージョン番号は`scripts/agent_toolkit_bump.py --plugin <プラグイン名> {patch|minor|major}`で更新する。`--plugin`を省略するとagent-toolkitを対象とする。更新区分の判断は本書「判定基準」を、実行主体とタイミングは同文書「plan modeでの取り扱い」に従う。`agent-toolkit:process-wi`の各レーンでは計画にプラグインごとの区分を記録するのみとし、公開担当が全レーンのマージ後に変更のあるプラグインごとに1回ずつ実行する。rebaseやmergeの競合は同文書「競合解決と統合後の確認」に従って解決する。
-- `version`と`description`は、プラグインごとに2箇所の定義元で常に一致させる（`description`は手動で同期する）。定義元は、`<プラグインのディレクトリ>/.claude-plugin/plugin.json`と、`.claude-plugin/marketplace.json`の`plugins[]`内にある同名のエントリである。agent-toolkitなら`agent-toolkit/.claude-plugin/plugin.json`と`name == "agent-toolkit"`のエントリを指す。この整合性は`manifest_ssot_invariant_test.py`によって検証される。
-- Agent Plugins向けの`plugin.json`・`mcp.json`やCodex向けマニフェストは、上記2ファイルと`agent-toolkit/.mcp.json`をもとに`scripts/sync_codex_plugin_manifests.py`が生成する。Antigravity向けの`agent-toolkit-agy/`および`agent-basics-agy/`は`scripts/sync_antigravity_plugin.py`が生成し、`post_apply`が`~/.gemini/config/plugins.json`へ登録する。`--plugin agent-basics`を指定すると品質プラグインのみを生成できる。元の名前空間と品質本文を保持したまま、両配布物の長文スキルを同一の短いSKILL.md・全文資料生成処理へ渡す。これらの生成ファイルは手動で編集せず、生成元ファイルを編集した上で再生成する。
-- 動作検証は、`develop-dotfiles`の`references/verification-values.md`「検証コマンドの実行」に示された特定ファイル限定の実行形式を用い、SSOTテストを含めて実施する。
+1. 採番の主体・種別を揃えるため、「判定基準」「plan modeでの取り扱い」で対象ごとの種別と認可、実行主体・時機を確定する。
+   各レーンは計画への記録にとどめ、公開担当が全レーンのマージ後に実行する。
+2. 更新を配信するため、`scripts/agent_toolkit_bump.py --plugin <プラグイン名> {patch|minor|major}`を実行する。
+   `--plugin`省略時はagent-toolkitを対象とし、既存更新との統合は「未プッシュ範囲での統合」、rebaseやmergeは「競合解決と統合後の確認」に従う。
+3. 定義元の一致を保つため、2ファイルの`version`と`description`を常に揃える（`description`は手動同期）。
+   agent-toolkitなら`agent-toolkit/.claude-plugin/plugin.json`とmarketplaceの`name == "agent-toolkit"`が対応し、`manifest_ssot_invariant_test.py`が検証する。
+4. 配布形式を揃えるため、生成元を編集して再生成する。生成ファイルは手動編集しない。
+   Agent Pluginsの`plugin.json`・`mcp.json`とCodexマニフェストは、定義元の2ファイルと`agent-toolkit/.mcp.json`から`scripts/sync_codex_plugin_manifests.py`が生成する。
+   Antigravityの`agent-toolkit-agy/`・`agent-basics-agy/`は`scripts/sync_antigravity_plugin.py`が生成し、`post_apply`が`~/.gemini/config/plugins.json`へ登録する。
+   `--plugin agent-basics`なら品質プラグインのみを生成できる。
+   元の名前空間と品質本文を保ち、両配布物の長文スキルを同じ短いSKILL.md・全文資料生成処理へ渡す。
+5. 公開前の整合性を保証するため、「plan modeでの取り扱い」の生成結果一致・完了条件を確認し、`develop-dotfiles`の`references/verification-values.md`「検証コマンドの実行」の特定ファイル限定形式でSSOTテストを含む動作検証を行う。
+   Codex導入版を変更した場合は、次の処理で使う資源を「Codex導入後のrootの再確認」の順で確定する。
