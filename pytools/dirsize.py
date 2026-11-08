@@ -6,11 +6,13 @@
 """
 
 import argparse
+import io
 import logging
 import pathlib
 import sys
 
 from pytools._internal.cli import enable_completion
+from pytools._internal.dirsize_report import write_report
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +21,43 @@ _MIB = 1024 * 1024
 
 def main() -> None:
     """ディレクトリサイズを集計表示するエントリポイント。"""
-    parser = argparse.ArgumentParser(description="ディレクトリサイズを集計する")
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    parser = argparse.ArgumentParser(
+        description="ディレクトリサイズを集計する",
+        epilog=(
+            "レポートは本文を開かず、リンク・junction・reparse point・別ファイルシステムを追跡しません。"
+            "ホーム直下のPictures・Photos・OneDrive・Dropbox・iCloudDrive、OneDrive系環境変数の対象と出力先を除外します。"
+            "任意配置の写真・同期領域は--excludeで指定してください。未指定の通常ディレクトリは走査されます。"
+            "除外・取得不能・消失はHTMLへ表示し、部分取得は終了1で前回比を計算しません。"
+        ),
+    )
     parser.add_argument("-r", "--recursive", nargs="?", const=1, type=int, default=0, help="再帰深度 (省略時 0: 直下のみ)")
     parser.add_argument("-e", "--progress", action="store_true", help="進捗を stderr に表示する")
     parser.add_argument("-a", "--all", action="store_true", help="1 MiB 未満も表示する")
+    parser.add_argument("--report-dir", type=pathlib.Path, help="メタデータだけでローカルHTML・CSV履歴を保存する出力先")
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        type=pathlib.Path,
+        help="レポート用除外パス (反復可、相対パスはtarget基準)。任意配置の写真・同期領域は明示指定が必要",
+    )
     parser.add_argument("target", nargs="?", type=pathlib.Path, default=pathlib.Path.cwd())
     enable_completion(parser)
     args = parser.parse_args()
+    if args.exclude and args.report_dir is None:
+        parser.error("--exclude は --report-dir と併せて指定してください")
+    if args.report_dir is not None:
+        try:
+            status = write_report(args.target, args.report_dir, args.exclude or [])
+        except (OSError, ValueError) as exc:
+            print(f"容量レポートを保存できません: {exc}。パス・除外指定・履歴・空き容量を確認してください。", file=sys.stderr)
+            sys.exit(1)
+        print(f"容量レポート: {args.report_dir / 'report.html'}")
+        if status:
+            print("部分取得です。HTMLの取得状態を確認し、アクセス可能な対象で再実行してください。", file=sys.stderr)
+        sys.exit(status)
     total = _dir_size(args.target, depth=args.recursive, progress=args.progress, show_all=args.all, ply=0)
     print()
     print(f"{total // _MIB:8d}MiB\t.")

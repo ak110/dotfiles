@@ -43,18 +43,20 @@ forkを選択しない組み込み代替では、`fork_turns: "none"`を明示�
 ## agents_serverの起動
 
 `agents_server`の`start`（全`mode`）はCodexネイティブ委譲とは異なる仕組みであり、指定された`model_type`からengine、model、effortを解決して起動する。通常起動（`task`の通常起動および`delegate`）に対しては、`_agents_server/launch_prompts.py`が`rules-subagent.md`をシステムプロンプトへ追加する。軽量な探索・書込・shell実行に適用される規範は、`agent-toolkit:delegation/references/delivery-scope.md`にある配送範囲表に記載されている。この表で配送されない制約事項は、委譲プロンプト側で記述する。
-Codex環境における役割指定`task`と`delegate`では、初回起動時も含めて、呼び出し側が保持している全体作業契約の絶対パスを`whole_contract_path`へ渡す。
-サーバーが役割の起動設定を解決し、通常起動の場合だけ参照を検証・配送する。
-軽量役割の`task`では指定値を参照せず、契約本文・専用記録を追加しないため、呼び出し側による内部設定の判別は不要である。
-自由本文の`explore`・`write`・`shell`や`handoff_from`による引き継ぎ起動には、この引数を混在させない。
-既存の通常起動での引数省略は、受領済みの参照を継承できる場合に限り互換性維持として許容される。
-起動時に可用性の問題で失敗した場合の候補切り替えはサーバー側に任せ、委譲元は1回の起動応答を受け取る。
-起動後のターンにおいて可用性エラーにより終了した場合は、前任エージェントの終了と書込権限の解放を確認した上で、返却結果の`next_action`に従い、`start`に`handoff_from`のみを指定して引き継ぎ起動する。
-サーバー側が前任の起動条件と記録を後任へ引き渡し、応答として返された後任の`session_id`を以後の待機対象とする。
-引き継ぎ起動の定義は`runtime-routing.md`「実行手段」、可用性障害時の引き継ぎと記録内容は`fallback-launch.md`「代替起動」で定める。
-継続には`send_message`、中断には`kill`、破棄には`stop`、結果の受領には`atk agents wait`を使用する。出力量が大きいコマンドは`start`の`shell`モード、読み取り専用の探索は`explore`モードを、agents_serverのserver instructionsに記載されている採算の目安に従って使い分ける。
-
 工程別モデル設定のキーが定義されている工程については、`process-model-settings.md`「工程別モデル設定」に従ってengineを解決する。`engine=claude`の指定をCodexの`spawn_agent`へ勝手に置き換えることは行わず、Claude向けには対応する`model_type`を指定して`agents_server`を使用する。指定されたengineを実行する手段が存在しない場合は、未完了として返すか、続行不能の理由を報告する。
+
+1. 全体要求を届けるため、Codex環境における役割指定`task`と`delegate`では、初回起動時も含めて、呼び出し側が保持している全体作業契約の絶対パスを`whole_contract_path`へ渡す。
+   サーバーが役割の起動設定を解決し、通常起動の場合だけ参照を検証・配送する。
+   軽量役割の`task`では指定値を参照せず、契約本文・専用記録を追加しないため、呼び出し側による内部設定の判別は不要である。
+   自由本文の`explore`・`write`・`shell`や`handoff_from`による引き継ぎ起動には、この引数を混在させない。
+   既存の通常起動での引数省略は、受領済みの参照を継承できる場合に限り互換性維持として許容される。
+
+2. 起動結果を確定するため、起動時に可用性の問題で失敗した場合の候補切り替えはサーバー側に任せ、委譲元は1回の起動応答を受け取る。
+   起動後のターンにおいて可用性エラーにより終了した場合は、前任エージェントの終了と書込権限の解放を確認した上で、返却結果の`next_action`に従い、`start`に`handoff_from`のみを指定して引き継ぎ起動する。
+   サーバー側が前任の起動条件と記録を後任へ引き渡し、応答として返された後任の`session_id`を以後の待機対象とする。
+   引き継ぎ起動の定義は`runtime-routing.md`「実行手段」、可用性障害時の引き継ぎと記録内容は`fallback-launch.md`「代替起動」で定める。
+
+3. 起動後は、継続には`send_message`、中断には`kill`、破棄には`stop`、結果の受領には`atk agents wait`を使用する。出力量が大きいコマンドは`start`の`shell`モード、読み取り専用の探索は`explore`モードを、agents_serverのserver instructionsに記載されている採算の目安に従って使い分ける。
 
 ## 後続操作の共通先行条件
 
@@ -68,14 +70,14 @@ Codex環境における役割指定`task`と`delegate`では、初回起動時�
 
 ## agents_serverの二層待機
 
-外側セルの`cell_id`または内側コマンドの`session_id`のいずれかが未回収である場合は、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定める手段を用いて同一の実行結果を回収する。
-独立作業と受信済み通知の処理が尽きた長い終了待ちでは、同節の120,000msの回収時間を目安とする。外側のpragma・`functions.wait`と、session ID受領後の空入力`write_stdin`に適用し、`exec_command`起動時の上限30,000ms、待機CLI自身のtimeoutと区別する。制御が戻るたびに追加入力と通知を処理し、短い処理や対話へ一律に適用しない。
-外側セルや`exec_command`におけるyieldは同一実行の継続区間として扱い、代替起動、中断、巻き取りは「後続操作の共通先行条件」を満たした場合に限り実行する。
-`functions.exec`の内部で`agents_server`を起動し、`PostToolUse`フックがMCPの応答を直接観測できない環境では、起動応答に含まれる`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。CLIは状態ディレクトリの実在性と、確認済みのルートセッションとの一致を検証する。
+1. `functions.exec`の内部で`agents_server`を起動し、`PostToolUse`フックがMCPの応答を直接観測できない環境では、起動応答に含まれる`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。CLIは状態ディレクトリの実在性と、確認済みのルートセッションとの一致を検証する。
+   外側セルの`cell_id`または内側コマンドの`session_id`のいずれかが未回収である場合は、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定める手段を用いて同一の実行結果を回収する。
+   独立作業と受信済み通知の処理が尽きた長い終了待ちでは、同節の120,000msの回収時間を目安とする。外側のpragma・`functions.wait`と、session ID受領後の空入力`write_stdin`に適用し、`exec_command`起動時の上限30,000ms、待機CLI自身のtimeoutと区別する。制御が戻るたびに追加入力と通知を処理し、短い処理や対話へ一律に適用しない。
+   外側セルや`exec_command`におけるyieldは同一実行の継続区間として扱い、代替起動、中断、巻き取りは「後続操作の共通先行条件」を満たした場合に限り実行する。
 
-`functions.exec`から`atk agents wait`を起動する場合も、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定めるコマンド回収契約に従い、外側セルの`cell_id`を`functions.wait`へ渡す。
-待機CLIへタスク固有timeoutを渡さず、CLI自身が待機上限に達したときに対象が未終了なら、その結果を確かめてから新しい待機コマンドを実行する。
-逐次待機やロック競合によって遅れて開始された後発待機の回収手順は、`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。
+2. 同一実行を回収するため、`functions.exec`から`atk agents wait`を起動する場合も、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定めるコマンド回収契約に従い、外側セルの`cell_id`を`functions.wait`へ渡す。
+   待機CLIへタスク固有timeoutを渡さず、CLI自身が待機上限に達したときに対象が未終了なら、その結果を確かめてから新しい待機コマンドを実行する。
+   逐次待機やロック競合によって遅れて開始された後発待機の回収手順は、`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
+   監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。
 
-委譲先の成果物側のみを補助観測する場合は、作業ツリーの状態を`git -C <絶対パス> status --porcelain=v1`と`git -C <絶対パス> rev-parse --short HEAD`で観測する。成果物ファイルは`wc -l -- <絶対パス>`および`stat -L -c %Y -- <絶対パス>`（macOSでは`stat -L -f %m -- <絶対パス>`）で観測する。セッション自体の稼働確認には、起動手段が提供する状態確認機能を使用する。
+   委譲先の成果物側のみを補助観測する場合は、作業ツリーの状態を`git -C <絶対パス> status --porcelain=v1`と`git -C <絶対パス> rev-parse --short HEAD`で観測する。成果物ファイルは`wc -l -- <絶対パス>`および`stat -L -c %Y -- <絶対パス>`（macOSでは`stat -L -f %m -- <絶対パス>`）で観測する。セッション自体の稼働確認には、起動手段が提供する状態確認機能を使用する。

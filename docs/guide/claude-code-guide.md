@@ -121,6 +121,15 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 `atk config show`は現在値を一覧し、`atk config get <キー>`は指定キーの値を返す。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先する。
 
+モデルと推論強度（effort）は、同程度の作業が完成するまでの再試行・修正・委譲も含めて比較する。
+1回のトークン量や時間当たりの利用枠消費だけでは、完成までの費用は分からない。
+まず既存の工程別設定で役割に合うモデルを選び、低いeffortと高いeffortのどちらも無条件に省費用とは考えない。
+
+Claude Codeの[advisor](https://code.claude.com/docs/en/advisor)は、全会話を読む別モデルへの追加相談で、呼び出すたびにそのモデルの使用量が加わる。
+[Ultracode](https://code.claude.com/docs/en/model-config#adjust-effort-level)は動的なワークフローを構成する設定で、effortとは別の機能である。
+追加する場合は、既存の委譲・独立文脈レビューと役割が重ならないか、相談や作業構成にかかる費用を含めて比較する。
+独立した文脈で成果物を確かめるレビューは維持し、advisorやUltracodeの常時有効化を前提にしない。
+
 `atk config apply-preset <名前>`は`write_model`を除く6工程を一括で設定する。
 引数を省くか`show`を指定すると、各プリセットの内容を保存せずに表示する。
 
