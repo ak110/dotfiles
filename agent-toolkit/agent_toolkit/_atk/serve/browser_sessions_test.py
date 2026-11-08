@@ -989,9 +989,12 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
         release.set()
         await page.unroute("**/api/sessions/list", hold_list)
     assert concurrency["max"] == 1
-    # 取得中に届いた通知は完了後の1回の取り直しへまとまる。負荷で変更監視が3件の作成を1回の通知へ
-    # まとめた場合は取り直しが生じないため、上限だけを判定する。
-    assert concurrency["total"] <= 2
+    # 取得中に届いた通知は完了後の1回の取り直しへまとまる。保留した最初の要求は、一覧の集合が変わった後の要求のため
+    # 前回の一覧を返して背景で走査し直し、走査を終えると`refresh`をもう1回配信する。この通知による取り直しを含め、
+    # 保留した要求・まとめた取り直し・走査の完了による取り直しの3件を上限とする。通知ごとに取り直す画面は4件以上になる。
+    # 負荷で変更監視が3件の作成を1回の通知へまとめた場合や、走査の完了がまとめた取り直しの前に届いた場合は件数が減るため、
+    # 上限だけを判定する。
+    assert concurrency["total"] <= 3
 
 
 @pytest.mark.asyncio(loop_scope="session")
