@@ -23,9 +23,9 @@
 
 ## 置き場所と配送
 
-- 役割別の規範は、想定する読み手と読み込む契機に応じて配置する。全エージェント共通の規定は`rules/`、メインエージェント限定の規定は`share/rules/rules-main.md`、委譲先限定の規定は`share/rules/rules-subagent.md`に配置し、ホスト固有の差分は同じ接頭辞を持つホスト別ファイルへ置く。Claude CodeやCodexのhook、agents_serverの通常委譲、ならびに生成manifestがこれらを配送するため、常時ロードと同等の拘束力を持つ。委譲元と委譲先の双方が守るべき受け渡し規定は全エージェント共通とし、片側のみに適用する規定は読み手別のファイルへ分ける。軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約に必要な制約を記述する。agent-toolkitが読み手へ常に配送する規範（`rules/`配下、および読み手に応じて配送する`share/rules/rules-main*.md`、`rules-common.codex.md`、`rules-subagent*.md`）を常時規範と呼ぶ。
+- 役割別の規範は、想定する読み手と読み込む契機に応じて配置する。全エージェント共通の規定は`share/rules/common/`、メインエージェント限定の規定は`share/rules/rules-main.md`、委譲先限定の規定は`share/rules/rules-subagent.md`に配置し、ホスト固有の差分は同じ接頭辞を持つホスト別ファイルへ置く。Claude CodeやCodexのhook、agents_serverの通常委譲、ならびに生成manifestがこれらを配送するため、常時ロードと同等の拘束力を持つ。委譲元と委譲先の双方が守るべき受け渡し規定は全エージェント共通とし、片側のみに適用する規定は読み手別のファイルへ分ける。軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約に必要な制約を記述する。agent-toolkitが読み手へ常に配送する規範（`share/rules/common/`配下、および読み手に応じて配送する`share/rules/rules-main*.md`、`rules-common.codex.md`、`rules-subagent*.md`）を常時規範と呼ぶ。
 
-- 読込の階層: 常時ロードは`rules/`とfrontmatterの`description`、役割別の注入は`share/`配下の`rules-`で始まるファイル、配送文は`share/agents-server-*.md`である。スキル起動時は`SKILL.md`本体、役割起動時は委譲元の`share/<役割名>.parent.md`と委譲先の`share/<役割名>.subagent.md`、明示読取は`references/`、サブエージェント注入はagent定義とfrontmatterの`skills`が該当する。起動時に読む対象はその起動契約と起動時行が定める。条件付き資料は現在の役割・工程で条件が成立したとき、必要節と前提・例外を判断前に読む。
+- 読込の階層: 常時ロードは`share/rules/common/`とfrontmatterの`description`、役割別の注入は`share/rules/`配下の`rules-`で始まるファイル、配送文は`share/agents-server-*.md`である。スキル起動時は`SKILL.md`本体、役割起動時は委譲元の`share/<役割名>.parent.md`と委譲先の`share/<役割名>.subagent.md`、明示読取は`references/`、サブエージェント注入はagent定義とfrontmatterの`skills`が該当する。起動時に読む対象はその起動契約と起動時行が定める。条件付き資料は現在の役割・工程で条件が成立したとき、必要節と前提・例外を判断前に読む。
 
 - 各起動区分のエージェントへどの文書が届くかは、`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表で確認する。
 

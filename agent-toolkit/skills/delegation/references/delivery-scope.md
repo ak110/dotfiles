@@ -8,7 +8,7 @@ Codexの生成本文については`scripts/sync_codex_agents.py`も参照する
 
 | 文書 | Claude Codeのメイン | Codexのメイン | `Agent`ツールのサブエージェント | `agents_server`の`task`・`delegate`（Claude） | `agents_server`の`task`・`delegate`（Codex） | `agents_server`の`task`・`delegate`（Antigravity） | `explore`・`write`・`shell`（Claude） | `explore`・`write`・`shell`（Codex） | `explore`・`write`・`shell`（Antigravity） | Codexの組み込み委譲先 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `rules/`配下 | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（有効なプラグインの常時規範） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（有効なプラグインの常時規範） | 届く（`~/.codex/AGENTS.md`） |
+| `share/rules/common/`配下 | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（有効なプラグインの常時規範） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（有効なプラグインの常時規範） | 届く（`~/.codex/AGENTS.md`） |
 | ユーザーが`~/.claude/rules/`に置いた規範ファイル（`~/.codex/AGENTS.md`が埋め込まないもの） | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`の読込指示） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届く（起動・再開指示） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届く（起動・再開指示） | 届く（`~/.codex/AGENTS.md`の読込指示） |
 | `share/rules/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
@@ -30,7 +30,7 @@ OpenCodeの配送範囲は以下の表のとおりである。通常起動と軽
 
 | 文書 | OpenCodeの通常起動 | OpenCodeの軽量起動 |
 | --- | --- | --- |
-| `rules/`配下・ユーザーが`~/.claude/rules/`に置いた規範・`share/rules/rules-subagent.md` | 届く（指示の先頭） | 届く（指示の先頭） |
+| `share/rules/common/`配下・ユーザーが`~/.claude/rules/`に置いた規範・`share/rules/rules-subagent.md` | 届く（指示の先頭） | 届く（指示の先頭） |
 | `share/rules/rules-main.md`とホスト別の`rules-main.*.md`・`rules-common.codex.md`・`rules-subagent.claude-code.md` | 届かない | 届かない |
 | `share/agents-server-delegate-notice.md` | 届く | 届く |
 | `share/agents-server-delegate.md` | 届く | 届かない |
@@ -39,7 +39,7 @@ OpenCodeの配送範囲は以下の表のとおりである。通常起動と軽
 | 作業ディレクトリのプロジェクト規範 | CLI自身の読込は未確認。必要な本文は委譲入力へ含める | 同左 |
 | agent-toolkitのスキル | 自動登録しない。必要なスキルは配送されたplugin rootの`skills/`から明示的に読む | 同左 |
 
-Codexの列における`rules/`配下および`share/rules/rules-common.codex.md`の値は、`~/.codex/AGENTS.md`が配置されている環境に限定される（このファイルはCodex単体のインストーラーによる配置対象外である）。
+Codexの列における`share/rules/common/`配下および`share/rules/rules-common.codex.md`の値は、`~/.codex/AGENTS.md`が配置されている環境に限定される（このファイルはCodex単体のインストーラーによる配置対象外である）。
 Antigravityの委譲先は、対応する起動区分において`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読み込む。
 表中のAntigravityの軽量起動列は、`explore`、`write`、`shell`に適用する。
 `atk wi process-loop`が対話CLIで起動する`agent-toolkit:process-wi all-repos`の統括担当は、対応するホストのメインの列の配送を受ける。

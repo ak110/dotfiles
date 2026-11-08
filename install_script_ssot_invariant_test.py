@@ -59,5 +59,7 @@ class TestInstallScriptSsot:
         rules = _read_rules_dir()
         script_files = reader()
         assert script_files == rules, (
-            f"{name} のファイル一覧が agent-toolkit/share/rules/common/ と不一致: script={script_files} rules={rules}"
+            f"{name} のファイル一覧が agent-toolkit/share/rules/common/ と不一致: script={script_files} rules={rules}。"
+            "生成物を直接編集せず、原本の配置を確認してから"
+            "`uv run --frozen python scripts/sync_generated_files.py`で再生成すること"
         )

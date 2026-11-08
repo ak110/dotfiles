@@ -59,7 +59,7 @@ frontmatterに記載した条件に加えて、利用頻度の高いスキルや
 `/agent-toolkit:refine-prompt audit`は、モデル更新などを契機に文書を見直すための、読み取り専用の点検である。
 点検観点と削減の判断基準は`agent-basics:writing-standards/references/agent-documents-additions.md`「文書記述量の管理」に従う。
 
-1. 常時配送される規範（`rules/`と`share/rules/rules-main*.md`などの起動時本文）、agent-basics・agent-toolkitのスキル本体とreferences、hookがエージェントへ返す通知文を列挙する。配送元の定義を使い、点検済みと未点検を区別する。
+1. 常時配送される規範（`share/rules/common/`と`share/rules/rules-main*.md`などの起動時本文）、agent-basics・agent-toolkitのスキル本体とreferences、hookがエージェントへ返す通知文を列挙する。配送元の定義を使い、点検済みと未点検を区別する。
 2. 処理するセッションのモデル・ホストに対応する公式プロンプトガイドを、`agent-basics:writing-standards/references/host-official-references.md`から確認する。対象の版と適用条件を確かめ、点検対象の一覧と取得した一次資料の保存先を点検資料へまとめる。
 3. 「プロンプト評価担当の起動と受領」から、前提知識のない担当へ対象本文を渡す。`シナリオ`は`なし`とし、`点検資料`へ前項の資料の絶対パスを指定する。対象が多い場合は、既存の委譲基準に従い点検範囲を分け、全範囲の結果を回収する。
 4. 指摘を観点ごとの提案一覧へまとめ、提案ごとに対象ファイル・該当箇所・観点・根拠・推奨する処置を残す。未点検範囲と未試行の比較も明示する。採否判断と文書の編集には進まない。

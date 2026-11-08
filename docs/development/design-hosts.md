@@ -179,7 +179,7 @@ daemon自動再起動と旧versionの保持は独立している。
 `SessionStart`フックは`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の場合と`AGENT_TOOLKIT_OWNER_SESSION`が設定されている場合を`agents_server`の子と判定し、メイン向け条文を追加しない。
 後者を併用するのは、Codex backendがstatusline表示の判定のために子のApp Serverから前者を除くためである。
 知識境界として、条文の本文は`share/rules/`配下の各ファイルが持ち、フックと`agents_server`は本文を読んで渡すだけで内容を判定しない。
-Codex向けAGENTS.mdの生成器は`share/rules/common/`配下の共通条文だけを埋め込み、役割別の`rules-main*.md`・`rules-subagent*.md`を埋め込まない。
+Codex向けAGENTS.mdの生成器は`share/rules/rules-common.codex.md`と`share/rules/common/`配下の共通条文を埋め込み、役割別の`rules-main*.md`・`rules-subagent*.md`を埋め込まない。
 Claude Codeの`additionalContext`文字列は10,000文字の上限へ合わせ、メイン向け条文の合計を同上限内に保つテストを`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`へ置く。
 ファイル保存と2,000文字のプレビューは別の出力契約として扱い、それぞれの観測条件と保証範囲を監査記録へ残す。
 却下した代替案は3つある。
