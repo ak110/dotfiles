@@ -983,7 +983,7 @@ def test_unreclaimed_descendant_holds_ownership_until_it_disappears(
 
     monkeypatch.setattr(session, "run_process_session", execute)
     # 子孫が回収を拒む状態を、再回収の操作を無効にして表す。
-    monkeypatch.setattr(ownership._process_tree, "reclaim_processes", lambda _targets: [])
+    monkeypatch.setattr(process_tree, "reclaim_processes", lambda _targets: [])
     arguments = argparse.Namespace(resume=None, auto_resume=False, worktree=None)
     results = loop.run_coordinator(arguments, snapshots)
     assert results[repository.repo_id]["status"] == "owner_wait"

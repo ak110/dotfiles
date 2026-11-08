@@ -25,8 +25,8 @@ from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
+from agent_toolkit._common import codex_usage_limit, next_action, process_tree, session_record_paths, session_registry
 from agent_toolkit._common import inherited_venv as _inherited_venv
-from agent_toolkit._common import process_tree, session_registry
 from agent_toolkit._testing.process_loop_support import (
     isolate_process_loop_commands,
 )
@@ -944,9 +944,9 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
         monkeypatch.setattr(_pl_session.time, "time", lambda: next(clock, started + 9601))
     elif site == "codex-usage-limit":
         rollout = tmp_path / "x.jsonl"
-        monkeypatch.setattr(_pl_session._codex_usage_limit, "find_session_rollout", lambda *_args, **_kwargs: rollout)
-        monkeypatch.setattr(_pl_session._codex_usage_limit, "from_rollout", lambda _path: object())
-        monkeypatch.setattr(_pl_session._record_paths, "codex_session_id", lambda _path: "codex-session")
+        monkeypatch.setattr(codex_usage_limit, "find_session_rollout", lambda *_args, **_kwargs: rollout)
+        monkeypatch.setattr(codex_usage_limit, "from_rollout", lambda _path: object())
+        monkeypatch.setattr(session_record_paths, "codex_session_id", lambda _path: "codex-session")
     elif site == "claude-usage-limit":
         env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = "limited-session"
         request_file = tmp_path / "claude/agent-toolkit-function-hooks/rate-limit-limited-session.txt"
@@ -961,7 +961,7 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
     received: list[process_tree.ReclaimError] = []
     expected: type[BaseException] | None = {
         "exception": RuntimeError,
-        "claude-usage-limit": _pl_session._next_action.ActionableError,
+        "claude-usage-limit": next_action.ActionableError,
     }.get(site)
     with contextlib.ExitStack() as stack:
         if expected is not None:
