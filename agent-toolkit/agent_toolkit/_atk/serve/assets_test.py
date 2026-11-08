@@ -385,8 +385,6 @@ async def test_state_discards_pending_notification_when_stopped(
     current._loop = asyncio.get_running_loop()
     published: list[str] = []
     monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
-    monkeypatch.setattr(current.observer, "stop", lambda: None)
-    monkeypatch.setattr(current.observer, "join", lambda: None)
 
     current.on_modified(watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md")))
     current.stop()

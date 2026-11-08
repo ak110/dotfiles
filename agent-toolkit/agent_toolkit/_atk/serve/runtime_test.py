@@ -108,7 +108,7 @@ async def test_observer_lifecycle_waits_do_not_stall_event_loop(
         await task
         await stop()
     if owner == "wi":
-        assert not wi.observer.is_alive()
+        assert not wi.is_watching()
     elif owner == "plans":
         assert plan_context.state.local_observer is None
     else:

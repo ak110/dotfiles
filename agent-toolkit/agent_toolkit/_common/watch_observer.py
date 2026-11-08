@@ -41,13 +41,14 @@ def start_observer(
     `observer`を渡すと最初の試行にそれを使い、省略時は`watchdog.observers.Observer`を作る。
     戻り値のObserverは開始済みで、停止・joinは呼び出し元が所有する。
     """
-    if observer is None:
-        observer = watchdog.observers.Observer()
     try:
+        if observer is None:
+            observer = watchdog.observers.Observer()
         schedule(observer)
         observer.start()
     except OSError as error:
-        _discard(observer)
+        if observer is not None:
+            _discard(observer)
         polling = watchdog.observers.polling.PollingObserver(timeout=POLLING_INTERVAL_SECONDS)
         try:
             schedule(polling)
@@ -58,7 +59,8 @@ def start_observer(
         on_fallback(error)
         return polling
     except BaseException:
-        _discard(observer)
+        if observer is not None:
+            _discard(observer)
         raise
     return observer
 

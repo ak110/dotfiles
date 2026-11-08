@@ -242,7 +242,8 @@ def _output_child(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
         "temporary = ready.with_suffix('.tmp')\n"
         "temporary.write_text(str(os.getpid()), encoding='utf-8')\n"
         "temporary.replace(ready)\n"
-        "raise SystemExit(int(os.environ.get('RUN_EXIT', '0')))\n",
+        # 子の回収はworkerとこの試験が所有する。親だけを終了させ、Popenの終了時破棄で子を扱わせない。
+        "os._exit(int(os.environ.get('RUN_EXIT', '0')))\n",
         encoding="utf-8",
     )
     return pathlib.Path(environment["CHILD_READY"])

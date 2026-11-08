@@ -729,12 +729,14 @@ def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatc
     """状態監視は年月配置を含むキューrootを再帰監視する。"""
     current = state.ServeState(tmp_path)
     scheduled: list[tuple[str, bool]] = []
+    observer = state.watchdog.observers.Observer()
+    monkeypatch.setattr(state.watchdog.observers, "Observer", lambda: observer)
     monkeypatch.setattr(
-        current.observer,
+        observer,
         "schedule",
         lambda _handler, path, recursive=False: scheduled.append((path, recursive)),
     )
-    monkeypatch.setattr(current.observer, "start", lambda: None)
+    monkeypatch.setattr(observer, "start", lambda: None)
     loop = asyncio.new_event_loop()
     try:
         current.start(loop)
@@ -742,6 +744,7 @@ def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatc
         assert not (tmp_path / "awi").exists()
         assert not (tmp_path / "uwi").exists()
     finally:
+        current.stop()
         loop.close()
 
 

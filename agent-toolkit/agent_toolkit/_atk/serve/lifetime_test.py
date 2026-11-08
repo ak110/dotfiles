@@ -39,6 +39,53 @@ class _Observer:
 
 
 @pytest.mark.asyncio
+async def test_serve_state_acquires_observer_only_when_started(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """監視を使わない状態の構築と停止は、ObserverのOS資源を確保しない。"""
+    created: list[_Observer] = []
+
+    def factory() -> _Observer:
+        observer = _Observer()
+        created.append(observer)
+        return observer
+
+    monkeypatch.setattr(state.watchdog.observers, "Observer", factory)
+    watched = state.ServeState(tmp_path)
+    try:
+        assert not created
+        watched.stop()
+        assert not created
+        assert not watched.is_watching()
+        await watched.start_async(asyncio.get_running_loop())
+        assert len(created) == 1
+    finally:
+        await watched.stop_async()
+    assert created[0].stopped == created[0].joined == 1
+
+
+def test_observer_constructor_exhaustion_uses_existing_polling_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Observerの構築時に通知資源が不足しても、同じ監視登録をポーリングへ渡す。"""
+    polling: Any = _Observer()
+    scheduled: list[Any] = []
+    errors: list[OSError] = []
+
+    def exhausted() -> None:
+        raise OSError(errno.EMFILE, "inotify instance limit reached")
+
+    monkeypatch.setattr(watch_observer.watchdog.observers, "Observer", exhausted)
+    monkeypatch.setattr(watch_observer.watchdog.observers.polling, "PollingObserver", lambda **_kwargs: polling)
+    observer = watch_observer.start_observer(scheduled.append, on_fallback=errors.append)
+    try:
+        assert observer is polling and scheduled == [polling]
+        assert len(errors) == 1 and errors[0].errno == errno.EMFILE
+    finally:
+        observer.stop()
+        observer.join()
+    assert scheduled[0].stopped == scheduled[0].joined == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("fail_start", [False, True])
 async def test_serve_state_context_cleans_acquisition_and_body_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fail_start: bool

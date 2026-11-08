@@ -11,6 +11,7 @@ import typing
 
 import watchdog.events
 import watchdog.observers
+import watchdog.observers.api
 
 from agent_toolkit._common import watch_observer as _watch_observer
 from agent_toolkit._common.async_operations import run_sync_operation
@@ -45,7 +46,8 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.debounce_seconds = debounce_seconds
         self._monotonic = monotonic
         self._timer_factory = timer_factory
-        self.observer = watchdog.observers.Observer()
+        # Observerの構築だけでOS通知資源を確保する版があるため、監視開始時に所有する。
+        self.observer: watchdog.observers.api.BaseObserver | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queues: set[asyncio.Queue[str]] = set()
         self._lock = threading.Lock()
@@ -101,7 +103,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
 
     def is_watching(self) -> bool:
         """ファイルの変更を監視しているかを返す。"""
-        return self.observer.is_alive()
+        return self.observer is not None and self.observer.is_alive()
 
     async def start_async(self, loop: asyncio.AbstractEventLoop) -> None:
         """loopの参照を保持し、監視の登録・準備完了をworkerで待つ。"""
@@ -135,9 +137,10 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             ):
                 pending.join()
         finally:
-            self.observer.stop()
-            if self.observer.ident is not None:
-                self.observer.join()
+            if self.observer is not None:
+                self.observer.stop()
+                if self.observer.ident is not None:
+                    self.observer.join()
 
     def _publish_pending(self, generation: int) -> None:
         """静穏期間の経過後または最大待機時間の到達後に保留通知を1回だけ発行する。"""
