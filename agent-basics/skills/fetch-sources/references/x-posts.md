@@ -13,26 +13,26 @@
 
 ## 投稿の同定と本文の取得
 
-- 投稿URLの`x.com/<ユーザー名>/status/<投稿ID>`（`twitter.com`も同様）からユーザー名と投稿IDを抽出する。URL末尾の`/photo/1`などは同一投稿の写真表示画面である。`t.co`などの短縮URLは、Web取得ツールを用いてリダイレクト先を実際に確認した上で投稿を同定し、転送先を取得できない場合はURLを推測せず「未取得」として記録する
-- `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へリクエストを送信する（リダイレクトが発生した場合は転送先まで追跡する）。応答をファイルへ保存し、最終HTTPステータスが200かつJSONの`code`が数値の200であることを確かめてから、必要な属性だけを`jq`などで会話へ抽出する
-- `tweet.article`が無い、または`null`の通常投稿は`tweet.text`を本文とする。`tweet.article`がオブジェクトの投稿は記事形式として、`tweet.article.title`を表題、`tweet.article.content.blocks[].text`を配列の順序通りに改行で連結したものを本文とする。記事本文の取得にはこの配列を使い、`tweet.text`や`tweet.article.preview_text`と区別する
-- `tweet.created_at`を投稿日時、記事の`tweet.article.created_at`を記事作成日時として区別する。添付写真のURLは`tweet.media.photos[].url`から取得する。引用投稿の本文が必要な場合は、その投稿を別の投稿として取得する
-- HTTPまたは`code`の条件を満たさない応答と、成功応答でも必要な属性が欠ける場合は「未取得」とする。取得手段、HTTPステータス、診断メッセージ、取得できなかった範囲を報告する。写真の配列が空か写真メディアが無い場合は「写真なし」とし、通信の失敗と区別する
-- 本文の取得状況と、写真の取得・確認状況は、それぞれ独立して記録する
-- 記事の`blocks[].text`を連結しても、記事内の画像や埋込を取得したとは扱わない。画像は「添付写真の保存と確認」に従って保存・表示し、実際に確認した範囲を記録する
+1. 対象を同定する。投稿URLの`x.com/<ユーザー名>/status/<投稿ID>`（`twitter.com`も同様）からユーザー名と投稿IDを抽出する。末尾の`/photo/1`などは同一投稿の写真表示画面である。`t.co`などの短縮URLはWeb取得ツールでリダイレクト先を確認し、転送先を取得できなければURLを推測せず「未取得」と記録する。
+2. 「ホスト環境別の留意点」を踏まえて応答を保存・検査する。`https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へリクエストし、リダイレクト先まで追跡して応答をファイルへ保存する。最終HTTPステータスが200かつJSONの`code`が数値の200であることを確かめてから、必要な属性だけを`jq`などで会話へ抽出する。条件を満たさない応答と、成功応答でも必要な属性が欠ける場合は「未取得」とし、取得手段、HTTPステータス、診断メッセージ、取得できなかった範囲を報告する。
+3. 本文と日時を区別して抽出する。`tweet.article`が無い、または`null`の通常投稿は`tweet.text`を本文とする。`tweet.article`がオブジェクトなら記事形式として、`tweet.article.title`を表題、`tweet.article.content.blocks[].text`を配列順に改行で連結したものを本文とする。記事本文にはこの配列を使い、`tweet.text`や`tweet.article.preview_text`と区別する。`tweet.created_at`は投稿日時、`tweet.article.created_at`は記事作成日時とする。必要な引用投稿は別の投稿として取得する。
+4. 写真を確認する。`tweet.media.photos[].url`から写真URLを取得し、「添付写真の保存と確認」へ進む。配列が空か写真メディアが無い場合は「写真なし」とし、通信の失敗と区別する。記事の`blocks[].text`の連結だけでは記事内の画像や埋込を取得したとは扱わない。
+5. 根拠に使う範囲を記録する。本文の取得状況と写真の取得・確認状況を独立して記録し、画像は実際に確認した範囲を残す。
 
-上記のURLはFxTwitterのv1形式であるため、`/2/`を含むv2形式とは区別し、v1の仕様に沿った属性名で取得する。
-詳細な仕様は[FxEmbedのAPIドキュメント](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)および[レスポンスの実装コード](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)を参照する。
+上記はFxTwitterのv1形式であり、`/2/`を含むv2形式と区別してv1の属性名を使う。
+仕様は[FxEmbedのAPIドキュメント](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)と[レスポンスの実装コード](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)を参照する。
 
 ## 添付写真の保存と確認
 
-取得した写真URLごとに、実行環境が提供する一時ディレクトリへ画像をダウンロードして保存する。
+**1.** 写真URLごとに、実行環境の一時ディレクトリへダウンロードする。
 
 ```sh
 curl -sS --max-time 60 -o <画像保存先の絶対パス> "<画像URL>"
 ```
 
-ダウンロードしたファイルが正常な画像データであることを確認し（HTTPエラーページのHTML等を画像として誤認しない）、ホスト環境の画像表示手段（Claude Codeの`Read`やCodexの`view_image`など）を用いて実際に表示して確認する。調査の根拠として利用できるのは、実際に画像から読み取れた情報の範囲に限定する。
+**2.** HTTPエラーページのHTML等を画像と誤認しないよう、正常な画像データであることを確認する。
+
+**3.** ホストの画像表示手段（Claude Codeの`Read`やCodexの`view_image`など）で実際に表示する。調査の根拠には、画像から読み取れた情報だけを使い、「投稿の同定と本文の取得」の手順5へ戻る。
 
 ## ホスト環境別の留意点
 

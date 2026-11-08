@@ -756,7 +756,7 @@ def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
     assert "--output <元の選定結果の出力先ファイル>" in addition
     assert "--body-wi <追加WI名>" in addition
     assert "そのレーンへの割り当てを最優先の分割不能条件として確定し、費用比較よりも先行させる" in lanes
-    assert "該当計画を別レーンへ割り振ることはせず" in lanes
+    assert "該当計画を別レーンへ割り当てず" in lanes
 
 
 def test_write_files_contract_reaches_selection_output_and_receipt() -> None:

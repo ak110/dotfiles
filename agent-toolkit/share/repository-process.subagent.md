@@ -58,15 +58,18 @@ writes_worktree: true
 
 ## 処理
 
-対象worktreeの`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。
-各対象の`lane_limit`が2以上なら通常のレーン処理、1以下なら単一レーン処理に接続する。
-共通規範の読込は再利用し、プロジェクト固有の規範、計画・検証・レビュー・公開、候補・所有・lane_session_id・writer_sessionsは対象ごとに分離する。
-1対象がユーザー判断待ち・続行不能になっても、その理由と再開先を記録して独立した他対象の処理を継続する。
-配下へ委譲する場合も、`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」が許す工程だけを使う。
+1. 対象worktreeの`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。
 
-- 改善点は`rules/rules-subagent.md`「返却形式の受け渡し」に従って統括担当へ送る。確認事項、担当外の発見と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
-- 祖先の対話CLIの終了（`atk agents-exit-session`）は統括担当に任せる。
-- 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返却する。
+2. 各対象の`lane_limit`が2以上なら通常のレーン処理、1以下なら単一レーン処理に接続する。
+   共通規範の読込は再利用し、プロジェクト固有の規範、計画・検証・レビュー・公開、候補・所有・lane_session_id・writer_sessionsは対象ごとに分離する。
+   1対象がユーザー判断待ち・続行不能になっても、その理由と再開先を記録して独立した他対象の処理を継続する。
+   配下へ委譲する場合も、`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」が許す工程だけを使う。
+
+3. 改善点は`rules/rules-subagent.md`「返却形式の受け渡し」に従って統括担当へ送る。確認事項、担当外の発見と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
+
+4. 祖先の対話CLIの終了（`atk agents-exit-session`）は統括担当に任せる。
+
+5. 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返却する。
 
 ## 出力
 

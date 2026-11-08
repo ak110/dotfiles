@@ -10,20 +10,21 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
+| 基準資料を選択・取得する時 | `../../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
+| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
+| 基準資料を選択・取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
+| 基準資料を選択・取得する時 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
+| 基準資料を選択・取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 基準資料を選択・取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
 | 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 | 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
 
 ## 担当の役割
 
-統括担当が最上位のメインとして、全対象の判断・確認・完了報告を所有する。
+**1.** 統括担当が最上位のメインとして、全対象の判断・確認・完了報告を所有する。
+
 要求内の追加ファイルの編集はレーン担当の判断に委ね、重なりを理由とする事前通知や選定記録の更新を求めない。競合は対象リポジトリの直列統合で扱う（`exec.subagent.md`「実装」）。
 常駐から起動した対話CLIには通常の最上位セッションの契約を適用する。
 担当の選定は`all-repos.md`「開始と振り分け」に従い、最も重い対象を統括が直接担当する。
@@ -36,7 +37,8 @@
 配下担当は祖先の対話CLIを終了する`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
 統括自身は対象別結果を保存した後、最上位の終了手順で統括CLIを終了する。
 
-統括は自身が観測した不良・是正要求・改善点と配下担当からの報告へ、`immediate-fix.md`「即時対応」の対処時機判定を適用する。
+**2.** 統括は自身が観測した不良・是正要求・改善点と配下担当からの報告へ、`immediate-fix.md`「即時対応」の対処時機判定を適用する。
+
 受領時に処置の根拠と残る前提を検収し、独立した別要求はその時点から起草を進める。
 投入準備の前倒しと独立受付は`finish-session.md`「公開担当の起動と並行工程」に従う。
 委譲先が不要・担当外とした事象も、統括が根拠と保持すべき成果を確かめて処置を決める。
@@ -58,17 +60,22 @@
 
 ## 取得済み候補の受領
 
-集合JSONの`repositories`は対象別のオブジェクトの配列である。
+**3.** 集合JSONの`repositories`は対象別のオブジェクトの配列である。
+
 各要素は`target_repo`、登録元`registered_worktree`、準備済み`worktree`、`common_dir`を持つ。
 候補・選定用の項目は`candidate_file`、`readiness`、`lane_limit`である。
 所有・再開用の項目は`ownership_record`、`ownership_token`、`lane_session_id`、`previous`である。
-開始時候補は本文・鮮度を含む`candidate_file`の原本をそのまま使う。
+
+**4.** 開始時候補は本文・鮮度を含む`candidate_file`の原本をそのまま使う。
+
 `pick-wi-check --candidate-file`にはその絶対パスを渡し、着手可否は受領したreadinessの診断も含めて適用する。
 不足する本文と依存先だけを通常キューCLIで補う。
 回答済みUWI、候補の分類・開始時CI点検は[selection-procedure.md](selection-procedure.md)を使う。
 選定YAMLとNを対象ごとに分け、レーン上限も対象別のNから計算する。
 詳細な生成・合流の契約は[selection-format.md](selection-format.md)を使う。
-統括自身が直接処理する場合も、受領候補・readiness・対象別の選定・`lane_session_id`の対応を保つ。
+
+**5.** 統括自身が直接処理する場合も、受領候補・readiness・対象別の選定・`lane_session_id`の対応を保つ。
+
 候補が1件であることと、その候補に着手できることは別に確認する。
 直接処理は`lane_limit`が2以上ならlanes、1以下ならsingle-laneへ接続し、どちらも本節の受領確認と所定選定を適用する。
 直接起動したレーン担当とwriterも対象別の`writer_sessions`へ記録し、常駐による終了確認・所有解放・回収と、`previous`を用いた再開へ引き渡す。
@@ -76,7 +83,8 @@
 
 ## worktreeと資源
 
-常駐は統括の起動前に対象worktreeを準備する。
+**6.** 常駐は統括の起動前に対象worktreeを準備する。
+
 明示の`--worktree`、無指定のdotfiles自動隔離、対象のWorktreeCreate/Removeを既存atk処理へ接続する。
 作成hookの返却実体とGit登録・branch・common_dirの対応を確認する。
 hook失敗時は途中資源と診断を保持して、その対象の準備を停止する。
@@ -86,13 +94,15 @@ resumeは既存の準備済み実体と未完了成果をそのまま再利用�
 
 ## 所有・継続・回収
 
-短時間の排他とPID・起動時刻・担当sessionの生存照会でorigin単位の所有を維持する。
+**7.** 短時間の排他とPID・起動時刻・担当sessionの生存照会でorigin単位の所有を維持する。
+
 所有待ちや準備失敗の対象を除いて、独立した対象の処理を継続する。
 異常終了では成果とlane_session_idをpreviousとして保持する。
 明示resumeは台帳に元の対象集合があれば再利用し、無ければ現在の登録集合で指定会話を再開する。
 会話の再開条件は既存の会話解決へ委ね、実行中writerの所有は対象別の生存判定で保護する。
 
-統括が結果を保存してCLIを終了した後、常駐は開始側と同じ現行の着手可否を使い、当初候補の今回進められる作業、対象全体のprocessing、対処を要する不正metadata、未統合laneを確認する。
+**8.** 統括が結果を保存してCLIを終了した後、常駐は開始側と同じ現行の着手可否を使い、当初候補の今回進められる作業、対象全体のprocessing、対処を要する不正metadata、未統合laneを確認する。
+
 必要な判断が済んだ有効な未来のcooldown、未回答UWIへの依存、外部の先行項目への依存で進められない項目は、今回の再実行が必要な残件から除く。
 同じ実行内で解消できる内部依存は残件に含め、再開記録の文章だけで作業を残件から除かない。
 処理済み部分の公開・CI検収が終わり、残りが正当に先送りされていれば、WI自体は未完了でも今回の処理結果としてcompletedを受理する。
@@ -103,13 +113,15 @@ resumeは既存の準備済み実体と未完了成果をそのまま再利用�
 同じ入力では起動を見送り、新WI・本文/状態/依存/冷却期限/回答の変化・新アラート・明示resumeを再開の契機とする。
 無進捗記録の対象は起動時点の候補と実行ホストに限定する。
 
-統括と配下writerの終了を確認した対象だけ所有を解放し、既存のlaneを回収する。
+**9.** 統括と配下writerの終了を確認した対象だけ所有を解放し、既存のlaneを回収する。
+
 停止未確認は所有をholdし、未統合・dirty・使用中・回収失敗の資源を保持する。
 回収結果と理由をログへ残し、理由を解消して`atk lane delete --session-id <lane_session_id>`で再判定する。
 候補原本と再開情報は検収まで保持する。
 
-`abort`、`abort-cancel`、`status`、`instruct`、`instruct-cancel`はOSアカウント単位で維持する。
-abort後は現在のセッション終了時に常駐を終了する。
-instructは次の統括起動へ1回渡し、統括が対象に関係する部分を適用する。
-対象別の正常完了、続行不能、未完了工程、再開位置は集合JSONのresult_fileへ保存する。
-返却形式は`agent-toolkit:process-wi all-repos`の「結果と終了」に従う。
+**10.** `abort`、`abort-cancel`、`status`、`instruct`、`instruct-cancel`はOSアカウント単位で維持する。
+
+ abort後は現在のセッション終了時に常駐を終了する。
+ instructは次の統括起動へ1回渡し、統括が対象に関係する部分を適用する。
+ 対象別の正常完了、続行不能、未完了工程、再開位置は集合JSONのresult_fileへ保存する。
+ 返却形式は`agent-toolkit:process-wi all-repos`の「結果と終了」に従う。

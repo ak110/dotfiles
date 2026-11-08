@@ -84,8 +84,8 @@ def _lane_plan_creation_step() -> str:
     """レーン担当が読む計画作成手順の本文を返す。"""
     task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
     content = task_path.read_text(encoding="utf-8")
-    steps = re.split(r"\n(?=\d+\. )", content)
-    matches = [step for step in steps if re.match(r"\d+\. ", step) and "plan-create" in step]
+    steps = re.split(r"\n(?=\*\*\d+\.\*\* )", content)
+    matches = [step for step in steps if re.match(r"\*\*\d+\.\*\* ", step) and "plan-create" in step]
     assert len(matches) == 1
     return matches[0]
 
