@@ -12,7 +12,6 @@ import collections
 import datetime
 import json
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -36,18 +35,21 @@ def _reason_class(text: str) -> str:
     return "判断による見送り" if _JUDGMENT_REASON.search(text) else "レビュー担当の前提の誤り・撤回"
 
 
-def _record_identity(path: Path) -> str | None:
-    """実行レビュー担当の記録なら観測したモデルを`engine:model/effort`で返し、他の記録はNoneを返す。"""
+def _is_review_record(path: Path) -> bool:
+    """記録の先頭に実行レビュー担当の役割文書の配送があるかを返す。"""
     try:
         with path.open("rb") as stream:
             head = stream.read(_ROLE_SCAN_BYTES).decode("utf-8", errors="replace")
     except OSError:
-        return None
-    if not _ROLE_MARKER.search(head):
-        return None
+        return False
+    return _ROLE_MARKER.search(head) is not None
+
+
+def _record_identity(path: Path, text: str) -> str:
+    """実行レビュー担当の記録の本文から、観測したモデルを`engine:model/effort`で返す。"""
     runtime = "codex" if "/.codex/" in path.as_posix() or path.name.startswith("rollout-") else "claude"
     entries = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in text.splitlines():
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
@@ -59,28 +61,29 @@ def _record_identity(path: Path) -> str | None:
 
 
 def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
-    """管理表のファイル名ごとに、その名前を本文に含む実行レビュー担当の記録から求めたモデルを返す。"""
-    existing = [str(root) for root in roots if root.is_dir()]
-    if not names or not existing:
+    """管理表のファイル名ごとに、その名前を本文に含む実行レビュー担当の記録から求めたモデルを返す。
+
+    配布先にripgrepがあるとは限らないため、外部コマンドを使わずに走査する。
+    全記録の本文を読むと重いため、先頭の役割標識で対象を実行レビュー担当の記録に限定してから本文を読む。
+    """
+    if not names:
         return {}
-    result = subprocess.run(
-        ["rg", "-l", "-F", "--glob", "*.jsonl", *[part for name in names for part in ("-e", name)], "--", *existing],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if result.returncode not in (0, 1):
-        raise OSError(f"セッション記録の検索が失敗した（終了コード{result.returncode}）: {result.stderr.strip()}")
     models: dict[str, set[str]] = collections.defaultdict(set)
-    for record in result.stdout.splitlines():
-        identity = _record_identity(Path(record))
-        if identity is None:
+    for root in roots:
+        if not root.is_dir():
             continue
-        text = Path(record).read_text(encoding="utf-8", errors="replace")
-        for name in names:
-            if name in text:
+        for record in sorted(root.rglob("*.jsonl")):
+            if not record.is_file() or not _is_review_record(record):
+                continue
+            try:
+                text = record.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            matched = [name for name in names if name in text]
+            if not matched:
+                continue
+            identity = _record_identity(record, text)
+            for name in matched:
                 models[name].add(identity)
     return {name: ",".join(sorted(values)) for name, values in models.items()}
 
@@ -169,7 +172,7 @@ def main(argv: list[str] | None = None) -> int:
             (args.codex_sessions_dir or Path.home() / ".codex" / "sessions").expanduser(),
         ]
         models = _table_models([table.path.name for table in (*current.tables, *previous.tables)], roots)
-    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, OSError) as error:
         print(
             json.dumps(
                 {
