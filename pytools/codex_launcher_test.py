@@ -273,6 +273,20 @@ async def test_windows_daemon_record_without_process_identity_keeps_recovery(pee
 
 
 @pytest.mark.asyncio
+async def test_public_launcher_passes_launch_directory_without_cd(peer: _Peer) -> None:
+    """--cdを省いた起動でも、管理daemonのcwdではなく起動したディレクトリで会話を始める。"""
+    code, stdout, stderr = await peer.run(
+        ["--config", 'model_reasoning_effort="medium"', "owned work"],
+        mode="completed",
+    )
+    assert code == 0, (stdout, stderr)
+    assert [record["cwd"] for record in peer.records()] == [str(peer.work)]
+    actors = [json.loads(path.read_text(encoding="utf-8")) for path in (peer.root / "actors").glob("*.json")]
+    assert len(actors) == 1
+    assert actors[0][actors[0].index("--cd") + 1] == str(peer.work)
+
+
+@pytest.mark.asyncio
 async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> None:
     """同じcwdの2会話を同時に再開しても、IDと起動条件を互いへ転用しない。"""
     results = await asyncio.gather(

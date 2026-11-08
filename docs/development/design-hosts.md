@@ -56,6 +56,8 @@ Linuxは可視コマンドの接続先をwrapperへ変更する前に、公式�
 更新時はこの参照を原子的に交換し、Windowsは可視binに残した公式実行体を直接使用する。
 元の標準入出力とTTYはnativeへ継承し、公開`--remote`のloopback WebSocketと`app-server proxy`の間だけを中継する。
 待受は起動ごとの認証トークンを必須とし、RPC本文は中継の寿命内のメモリーにだけ保持する。
+`--remote`で接続したTUIは自身のcwdを送らず、管理daemonのcwdで会話を始める。
+このため起動管理は、`-C`・`--cd`の無い対話起動へ起動したディレクトリを`--cd`として補い、通常起動と同じ作業ルートを保つ。
 別の常駐サービスとTTY代理は設けない。
 
 `plugin`・`mcp`・`exec`・`--version`・`completion`などの非対話コマンドは、hookからも繰り返し起動される。
