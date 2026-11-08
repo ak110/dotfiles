@@ -8,6 +8,7 @@
 呼び出し側が行を切り出す場合も、同じ正規化を経た本文へ`token.map`を適用する。
 """
 
+from markdown_it import MarkdownIt
 from markdown_it.token import Token
 
 from agent_toolkit._atk.wi import frontmatter
@@ -63,4 +64,18 @@ def last_h2_section_lines(text: str, name: str) -> list[str] | None:
     return bodies[-1] if bodies else None
 
 
-__all__ = ["contains_h2", "h2_sections", "last_h2_section_lines", "parse_h2_headings"]
+def last_h2_section_items(text: str, name: str) -> list[str]:
+    """指定した最後のH2節の最上位リスト項目を全文で返し、リストが無ければ最上位段落を返す。
+
+    起動時の被覆検査と条件表の生成が同じ項目番号を使うため、本文の区切りをここで共有する。
+    項目内の複数段落や入れ子も、行範囲でまとめて保持する。
+    """
+    lines = last_h2_section_lines(text, name) or []
+    tokens = MarkdownIt().parse("\n".join(lines))
+    items = [token for token in tokens if token.type == "list_item_open" and token.level == 1]
+    if not items:
+        items = [token for token in tokens if token.type == "paragraph_open" and token.level == 0]
+    return ["\n".join(lines[token.map[0] : token.map[1]]).strip() for token in items if token.map is not None]
+
+
+__all__ = ["contains_h2", "h2_sections", "last_h2_section_items", "last_h2_section_lines", "parse_h2_headings"]

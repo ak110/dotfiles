@@ -130,7 +130,7 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 マニフェストはJSONオブジェクトであり、以下のフィールドを持つ。
 
 - `plans`: 全計画を保持する順序付き配列。各項目は`name`（計画ファイル名）と`commands`（「計画最終化」で実行するplan-checkや保存用のargv配列）を持つ。すでに保存済みで進捗を追記していない計画は`commands: []`とし、`saved`に同名の保存済み計画の絶対パスを指定する。実装しなかった計画には`no_merge: true`を付与する。計画を作成していない場合は`[]`とする。
-- `wis`: 選定された今回のレーンに属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（「AWI行の終了」で実行する確定済みの終了用argv配列）を持つ。延期する項目、終了しない項目、およびすでに終了済みの項目は`commands: []`とし、その区分と理由を引き継ぎ記録に残す。実装しなかった項目には`no_merge: true`を付与する。
+- `wis`: 選定された今回のレーンに属する全WIの順序付き配列。各項目は`name`（WIファイル名）と`commands`（「AWI行の終了」で実行する確定済みの終了用argv配列）を持つ。`adopt`する項目は、対応記録の元となる計画または引き継ぎ記録Markdownの絶対パスを`commit_record`へ指定する。実装なしでも同じ所在を指定し、commitの無指定を対応記録の空集合と比較する。延期する項目、終了しない項目、およびすでに終了済みの項目は`commands: []`とし、その区分と理由を引き継ぎ記録に残す。実装しなかった項目には`no_merge: true`を付与する。
 - `verification`: 統合前・rebase後の検証argvの順序付き配列。計画の`## 検証`（訂正済み検証表があれば同表）、計画なしは引き継ぎ記録のコマンドを文字列配列へ変換し、CLIがレーンworktreeで直接実行する。重複コマンドは1回だけ登録し、省略計画と代表コマンドの対応を引き継ぎ記録へ残す。同一の成功済み検証はfast-forward前に再実行しない。CLIに独自の時間制限はないため、コマンド自身のタイムアウト（pyfltrのcommand-timeoutなど）を使い、なければ`timeout <秒数>`で囲む。秒数は記録された同一検証の所要を基に通常完了を十分上回る有限値とする。訂正表の保持・引継ぎは`agent-toolkit:write-plan`の`references/plan-file-standards.md`「検証と公開工程」、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。統合後だけ実行可能な全体検証も含め、rebase後は新HEADを検証する。依存版指定・lock更新では`agent-basics:check-execution/references/verification-scope.md`「直接影響範囲の類型」に従って検証単位全体を含める。CIを関門とする場合も後続レーンの基点となるため統合前の全体検証を省かず、全体・限定の判断と根拠を引き継ぎ記録へ残す。
 - `handoff`: 計画を作成していない場合に使用する、既存の引き継ぎ記録の絶対パス。計画が存在する場合は省略可能であり、省略時に引き継ぎ記録を追加で入力する必要はない。
 - `verification_records`: 任意の保存済み実行記録JSONの絶対パス配列。省略時は空配列として扱う。`integration.results`の`verification-<番号>.record_path`を渡せる。
@@ -166,7 +166,7 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 
 公開統合操作の実行時には、作業ツリーがcleanであること、Git共通ディレクトリとブランチの登録状態、レビュー対象HEADの一致、および所有セッションの正当性を検収する。「公開統合操作」の稼働判定で対象となる担当プロセスが動作中である場合や、Gitの処理が中断状態にある場合は、作業成果をそのまま保持する。
 
-統合先ブランチのHEADの子孫になっている場合は、rebaseを行わずにfast-forwardマージへ進む。分岐している場合は、書き換え対象となる全コミットがリモート追跡ブランチへ未到達であることを確認し、旧ベースとHEADを保存したうえでrebaseを実行する。親コミットのみを操作するrebase、およびその続行や中断の処理では、呼び出しごとに`git -c submodule.recurse=false`を適用し、初期化済みのサブモジュールのHEAD、ブランチ、作業内容を保護する。すでにpush済みである場合、競合が発生した場合、内容に不一致がある場合、または検証に失敗した場合は、続行できない理由と所有記録を返す。競合が発生した場合は`lane-integration-failure.md`に従って処置し、内容を変更した旧commitを`--resolved-conflict`で指定して同一のCLI操作に戻る。
+統合先ブランチのHEADの子孫になっている場合は、rebaseを行わずにfast-forwardマージへ進む。分岐している場合は、書き換え対象となる全コミットがリモート追跡ブランチへ未到達であることを確認し、旧ベースとHEADを保存したうえでrebaseを実行する。親コミットのみを操作するrebase、およびその続行や中断の処理では、呼び出しごとに`git -c submodule.recurse=false`を適用し、初期化済みのサブモジュールのHEAD、ブランチ、作業内容を保護する。すでにpush済みである場合、競合が発生した場合、内容に不一致がある場合、または検証に失敗した場合は、続行できない理由と所有記録を返す。競合は`lane-integration-failure.md`に従って解消し、まず`--resolved-conflict`なしで同じCLI操作へ戻る。比較が示した旧commitだけを同指定へ渡し、3-way適用で同じになる文脈行の変化は指定しない。検査に成功した集合だけが保存され、誤指定は外すか直して再開できる。
 
 rebaseの完了後は、history-compareによる旧commit全件の一意な対応表と、変更範囲の再検証結果を保存し、`phase: awaiting-validation`とともに終了コード1を返す。
 部分省略・全件省略された変更の保持とWI継承は、`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」に従って検収する。
@@ -174,18 +174,26 @@ rebaseの完了後は、history-compareによる旧commit全件の一意な対�
 受理するまでの間は、統合先を作業前の状態のまま保つ。
 比較処理自体が失敗した場合も、保存された旧新の端点を保持して同一のCLI操作から再開し、完了済みのrebaseを繰り返さない。
 
-Git統合前に検証argv・最終化argv・handoffを直しmanifestだけが変わったら、レビュー済みHEADと更新manifestで`--restart-review`する。現在HEADが保存`new_head`と同じrebase結果では、保存`old_head`または`new_head`を`--reviewed-head`へ渡す。独立文脈レビューは不要で、継承した対応表と再検証の`awaiting-validation`を検収後、`--restart-review`を外して`--accept-rebased-head`で再開する。受理後の`verified`からでも検収待ちへ戻る。HEAD自体が変わったら独立文脈レビューを受理した現在HEADと更新manifestで`--restart-review`する。直前の進捗・結果は`previous_integration`に保持される。Git統合済みならレビューHEADと対象集合を保持し、残る最終化だけを再開する。
+Git統合前に検証argv・最終化argv・handoffを直しmanifestだけが変わったら、レビュー済みHEADと更新manifestで`--restart-review`する。現在HEADが保存`new_head`と同じrebase結果では、保存`old_head`または`new_head`を`--reviewed-head`へ渡す。独立文脈レビューは不要で、継承した対応表と再検証の`awaiting-validation`を検収後、`--restart-review`を外して`--accept-rebased-head`で再開する。受理後の`verified`からでも検収待ちへ戻る。rebase後の修正commitでHEADが進んだ場合も、独立文脈レビューを受理した現在HEADと更新manifestで`--restart-review`し、最初の旧系列の対応と追加commit一覧、現在HEADの検証結果を検収してから受理する。保存`new_head`の子孫でないHEADは拒否される。直前の進捗・結果は`previous_integration`に保持される。Git統合済みならレビューHEADと対象集合を保持し、残る最終化だけを再開する。
 
 `--restart-review`では統合先の最新HEADを取り直し、前進していれば未公開のレーン成果をその先端へ再rebaseする。
 最初の旧系列から最新の新系列への対応表とWI対応を検収し、変更後HEADの検証結果を受理する。
 同じHEADで入力条件だけを訂正した場合も、条件が一致する成功だけを再利用して検収待ちへ戻る。
+
+追加commitを含む再rebaseでは、返却された`additional_rewrites`をJSONへ保存し、各計画または引き継ぎ記録の`plan-progress --rewrite-map`で追加分の対応を先に更新する。
+続いて、最初の旧系列だけを含む`rewrite_map`を`plan-rewrite`へ渡す。
+旧系列と追加分は異なる履歴上にあるため、単一の`previous-head`を要求する`plan-rewrite`へ一表として混ぜない。
+
+受理前にWI対応を更新し、`plan-commits`の現在の出力からmanifestの`wis`の`--commit`を作り直す。
+CLIはfast-forwardの直前に、各adoptのcommitが統合HEADの祖先であり、`commit_record`の対象AWIのcommit集合と一致することを検査する。
+実装なしはcommitの無指定を検査し、不一致はWI・指定値・期待集合と次の操作を示して終了2で止まり、Git統合もWI終了も実行しない。
 
 rebaseの対応表によって確定したWIのcommitや、保存失敗の原因を修正した未完了の最終化argvは、更新したマニフェストと`--amend-finalization`を用いて補完する。CLIはレビューHEAD、統合先、検証内容、引き継ぎ記録、全計画およびWIの集合と順序、ならびに成功済みのargvを保持する。検収待ちを受理する際は同時に`--accept-rebased-head`を指定し、Git統合がすでに完了している場合はGit操作を再実行しない。
 
 CLIはfast-forward後に`phase: git-integrated`を保存し、plans・wisのargvを順次実行して成功を記録する。計画保存・採否確定が途中で失敗しても、同じmanifestとレビューHEADで再実行すればGit統合と成功済み操作を省いて最終化を再開できる。全操作成功後にpick-wi-checkで選定全体を検査して統合状態を更新し、`phase: finalized`と終了0を返す。追加WIの統合には現在のレビューHEADと累積全計画・WIの新manifestを使い、処理中の入力は変えない。
 Git統合後の再開では、所有登録に保持されている成功済み操作と残りの最終化処理に基づき、同一の入力から継続する。rebase後であっても、完成条件証拠の`レビューHEAD`は実際にレビューを実施した最終バージョンとして保持し、統合入力HEADとは区別して扱う。
 
-rebaseを実行した場合は、`history-compare`の対応表を`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に定める履歴変更手順の`--rewrite-map`へそのまま渡す。この際、rebase前のHEADと統合対象のすべての計画または引き継ぎ記録も、同一の呼び出しで一度に渡す。
+rebaseを実行した場合は、`history-compare`の対応表を`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に定める履歴変更手順の`--rewrite-map`へそのまま渡す。追加commitを伴う再rebaseでは、前述の追加分の更新後に旧系列の対応表を渡す。この際、対応表の旧系列のHEADと統合対象のすべての計画または引き継ぎ記録も、同一の呼び出しで一度に渡す。
 rebaseによってOIDのみが変化した計画の完成条件証拠については、再判定する必要はない（`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`「起動方法別のレビュー基準」を参照）。統合先との組み合わせによって内容が変化し、結果に影響を与える差分が生じた条件に限り、新しいHEADで取得し直した検証結果を添えて同一の実行レビュー担当に再判定を依頼する。
 
 ### 検証結果の警告の判定

@@ -882,14 +882,16 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
     )
     if missing:
         raise _material_error("WI記録", f"AWI本文を取得できません: {', '.join(missing)}")
-    required: dict[str, int] = {}
+    required: dict[str, tuple[int, int]] = {}
     for path, _repo, text, _state, kind in selected:
         parsed = frontmatter.parse_frontmatter(text)
         sections = {name for name, _body in headings.h2_sections(text)}
         if kind != "awi" or parsed is None or not parsed[0].get("source") or sections & {"適用範囲", "実現性"}:
             continue
-        body = "\n".join(headings.last_h2_section_lines(text, "完成条件") or [])
-        required[path.name] = sum(token.type == "list_item_open" and token.level == 1 for token in MarkdownIt().parse(body))
+        required[path.name] = (
+            len(headings.last_h2_section_items(text, "完成条件")),
+            len(headings.last_h2_section_items(text, "反映内容と反映先")),
+        )
     if not required:
         return
     reference = "share/exec-review-recording.md「記録する行と要求単位」"
@@ -923,7 +925,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
                 current_row = list(row)
                 rows.append([current_row[header.index(column)] for column in columns])
             row = None
-    for name, count in required.items():
+    for name, (count, reflection_count) in required.items():
         own = [row for row in rows if len(row) == 5 and row[0] == name]
         major = sum(row[2] == "主要完成状態" for row in own)
         supplements = sum(row[2] == "補足条件" for row in own)
@@ -932,6 +934,13 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
         numbers = [row[1] for row in own]
         if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
             reject(f"{name}: 条件番号が不正または重複")
+        covered = {int(number) for row in own for number in re.findall(r"反映内容([1-9][0-9]*)(?![0-9])", row[4])}
+        uncovered = [f"反映内容{number}" for number in range(1, reflection_count + 1) if number not in covered]
+        if uncovered:
+            reject(
+                f"{name}: 出典に対応する行が無い項目: {'、'.join(uncovered)}。"
+                "各項目の主要完成状態または除外理由を記した行を追加し、出典へ`反映内容N`を記す"
+            )
 
 
 def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib.Path]) -> None:

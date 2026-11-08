@@ -120,7 +120,8 @@ WIは保存ファイル名で、OIDはGit上で一意に解決できる値で指
 
 **1.** AWIとの対応を保持するため、対応表には、`atk run-script history-compare`による検証が成功した際に保存された完全OIDの新旧対応表を使用する。rebaseの検証には`--operation rebase`、autosquashには`--operation autosquash`、amendには`--operation amend`を用い、それぞれの分岐元（base）を除いたheadまでの範囲を指定する。autosquashとamendの起動コマンドは「操作前後の確認」を参照する。WIの対応付けを持たないコミットであっても、fixupとその統合元コミットが同一の新しいコミットへ統合される場合は、両方の古いOIDを対応表に含める。amendの場合は、新旧HEADの1対1の対応が1件だけ記録される。
 
-rebase時の競合解消によって変更内容自体が変化した古いコミットについては、`history-compare`の実行時に`--resolved-conflict <旧OID>`を繰り返し指定する。
+rebase後はまず指定なしで比較し、history-compareが「変更内容が対応しない旧commit」として示したOIDだけを`--resolved-conflict <旧OID>`で反復指定する。
+対象は旧commitの変更を新しい親へ3-way適用した結果が新commitと一致しないもので、周辺の文脈行だけの変化は含めない。
 rebaseで部分省略・全件省略された旧commitは、空白を含む同一変更が統合先の履歴に一意に存在し、旧commitの変更そのものが新baseに残っている場合に、その既存commitへ対応付ける。
 全件省略時は新baseと新HEADに同じOIDを指定する。
 変更が残っているかは、旧commitの差分を新baseへ逆適用でき、順適用できないことで判定する。

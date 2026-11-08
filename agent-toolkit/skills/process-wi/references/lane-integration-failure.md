@@ -23,7 +23,10 @@
 2. 解消指示の伝達では開始前の旧系列と統合先のbase・headの各OIDを引き継ぐ。メインから解消指示を受領した場合: 競合を解消し、解消したパスのみをステージングする。`agent-toolkit:commit`の`references/history-rewrite.md`「履歴確認の起動形」に記載された`git log`を単独で実行する。続いて`git -c submodule.recurse=false rebase --continue`を実行してrebaseを完了させる。競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表に1行追加し、同じ行に対して`atk review-table respond`で解消内容を記録する。その上で、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`「レビュー修正の履歴統合」に定められた返却値を返す。
 
 3. 統合指示を再受領したら、`${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md`「マージありの統合」の冒頭（専用worktreeのクリーン確認）から再開する。
-   rebase完了後、同じ入力の`atk lane integrate`に、内容を変更した旧コミットを`--resolved-conflict <旧OID>`で繰り返し指定して再開する。CLIはその指定をrebase後の`history-compare`へ渡し、所有登録の旧新の端点で対応表を生成する。
+   rebase完了後、まず`--resolved-conflict`を付けずに同じ入力の`atk lane integrate`を再実行する。
+   history-compareが「変更内容が対応しない旧commit」として示したOIDだけを`--resolved-conflict <旧OID>`で反復指定する。
+   指定するのは、旧commitの変更を新しい親へ3-way適用した結果が新commitと一致しないものとし、周辺の文脈行だけの変化は含めない。
+   CLIは指定をhistory-compareへ渡し、検査に成功した集合だけを所有登録へ保存する。拒否された指定は保存されないため、指定を外すか直して同じ操作から再開する。
    競合解消で統合先の新しいファイルへ追随した場合など、旧コミットに無い変更パスが新コミットに増えた対応は、所有登録の`integration.results`に保存された`history-compare`の出力に列挙されるため、その追随が解消方針の範囲内かを対応表とともに検収する。
    対応表の検収と引き継ぎは、`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」に従う。
 

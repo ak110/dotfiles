@@ -111,6 +111,7 @@ atk run-script plan-commits -- <引き継ぎ記録Markdownの絶対パス> --wor
 ```
 
 対象を絞る場合は`--awi <AWIファイル名>`を反復指定する。省略時は計画の関連WI全件（引き継ぎ記録は`--allowed-awi`の全件）を取得する。同stemのJSONLは保存先であり位置引数に渡さない。保存で計画のパスが移動しても、同名の保存済み計画が一意ならそのまま指定できる。同名が複数あれば保存先の実在パスを指定する。取得した短縮OIDは`atk wi adopt --commit`に渡し、複数のコミットがある場合は`--commit <OID>`を繰り返し指定する。コミットの説明などのメモは`--note-file`に記録する。実装差分を伴わない項目に対応記録がない場合は、その項目を除外した対象を`--awi`で指定する。実装コミットを持つはずの項目で記録が欠落している場合、対象外のAWIが含まれる場合、あるいはOIDを解決できない場合は、記録の生成側で内容を補正してから再取得する。
+`atk lane integrate`へ渡すadoptの`--commit`も現在の取得結果から作り直し、manifestのWI行の`commit_record`へ元の計画または引き継ぎ記録Markdownの絶対パスを指定する。CLIは統合直前に祖先関係と対象AWIのcommit集合の一致を確認する。
 記録済みのコミットへAWIを追加するには、旧OIDを同じOIDへ写す対応表`{"<旧OID>": [{"commit": "<同じOID>", "awi": [<記録後の全AWI>]}]}`を`atk run-script plan-progress`の`--rewrite-map`へ渡す。
 `awi`には記録後に対応付けるAWIを全件書き、計画の関連WI（`--handoff`では`--allowed-awi`）に無いAWIは記録を変えずに拒否される。メッセージの説明文や件名から対応を推測しない。
 

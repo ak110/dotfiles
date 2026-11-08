@@ -30,7 +30,9 @@ from agent_toolkit._common.wait_schedule import get_wait_timeout
 from agent_toolkit._git import command as git_command
 from agent_toolkit._git import worktree_exclude
 from agent_toolkit._git import worktrees as git_worktrees
-from agent_toolkit._plan import selection
+from agent_toolkit._plan import commit_mapping, selection
+lazy from agent_toolkit._atk.wi import cli as wi_cli
+lazy from agent_toolkit._atk.wi import filenames as wi_filenames
 lazy from agent_toolkit._common import session_registry, task_documents
 
 SESSION_ENV = "AGENT_TOOLKIT_LANE_SESSION_ID"
@@ -1014,7 +1016,7 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
             if (
                 not isinstance(row, dict)
                 or not {"name", "commands"} <= set(row)
-                or set(row) - {"name", "commands", "saved", "no_merge"}
+                or set(row) - {"name", "commands", "saved", "no_merge", "commit_record"}
                 or not isinstance(row["name"], str)
                 or ("no_merge" in row and not isinstance(row["no_merge"], bool))
             ):
@@ -1022,6 +1024,16 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
             if row["name"] in seen:
                 raise ValueError(f"{name}の名前が重複している: {row['name']}")
             seen.add(row["name"])
+            if "commit_record" in row:
+                source = row["commit_record"]
+                # 最終化の計画保存で移動するため、実在の確認はGit統合直前に行う。
+                if (
+                    name != "wis"
+                    or not isinstance(source, str)
+                    or not pathlib.Path(source).is_absolute()
+                    or pathlib.Path(source).suffix != ".md"
+                ):
+                    raise ValueError(f"commit_recordは計画か引き継ぎ記録Markdownの絶対パスで指定する: {row['name']}")
             if name == "plans" and not row["commands"]:
                 saved = pathlib.Path(row.get("saved", ""))
                 if not saved.is_absolute() or not saved.is_file() or saved.name != row["name"]:
@@ -1257,6 +1269,136 @@ def _assert_integration_tree(record: dict[str, typing.Any], target: pathlib.Path
     return worktree
 
 
+def _compare_integration_history(
+    record: dict[str, typing.Any], state: dict[str, typing.Any], worktree: pathlib.Path, resolved: list[str]
+) -> None:
+    directory = _integration_directory(record)
+    directory.mkdir(parents=True, exist_ok=True)
+    mapping = directory / "rewrite-map.json"
+    comparison = state.get("comparison", state)
+    output = directory / "comparison-map.json" if state.get("rewrite_prefix") else mapping
+    if state.get("rewrite_map") != str(mapping) or not output.is_file():
+        state["completed"] = [key for key in state["completed"] if key != "history-compare"]
+    _integration_command(
+        record,
+        state,
+        "history-compare",
+        _atk_script(
+            "run-script",
+            "history-compare",
+            "--",
+            "--operation",
+            "rebase",
+            "--work-dir",
+            str(worktree),
+            "--old-base",
+            comparison["old_base"],
+            "--old-head",
+            comparison["old_head"],
+            "--new-base",
+            comparison["new_base"],
+            "--new-head",
+            comparison.get("new_head", state["new_head"]),
+            "--output",
+            str(output),
+            *(argument for oid in resolved for argument in ("--resolved-conflict", oid)),
+        ),
+        worktree,
+        timeout=record["procedure_timeout"],
+    )
+    # 省略時に再利用する入力は、消費する工程の成功後に保存する。
+    # 拒否された指定を先に保存すると、次回に指定を外しても公開入力だけでは復帰できなくなる。
+    state["resolved_conflicts"] = resolved
+    state["comparison"] = {
+        **{key: comparison.get(key, state[key]) for key in ("old_base", "old_head", "new_base", "new_head")},
+        "resolved_conflicts": resolved,
+    }
+    if prefix := state.get("rewrite_prefix"):
+        current = commit_mapping.load_rewrite_map(output)
+        prefix_path, continuation = directory / "rewrite-prefix.json", directory / "rewrite-continuation.json"
+        _save(prefix_path, prefix)
+        # 最初の旧系列の対応表へ、後から追加したcommitを混ぜずに合成する。
+        endpoints = {oid for value in prefix.values() for oid, _names in commit_mapping.rewrite_destinations(value)}
+        following = {old: new for old, new in current.items() if old in endpoints}
+        _save(continuation, following)
+        composed = commit_mapping.load_range_rewrite(
+            worktree, [prefix_path, *([continuation] if following else [])], state["old_head"]
+        )
+        _save(mapping, composed)
+        state["additional_rewrites"] = {old: current.get(new, new) for old, new in state.get("additional_rewrites", {}).items()}
+    state["additional_commits"] = list(dict.fromkeys(state.get("additional_rewrites", {}).values()))
+    state["rewrite_map"] = str(mapping)
+    _save(pathlib.Path(record["record_path"]), record)
+
+
+def _validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Path) -> None:
+    parser = None
+    for row in manifest["wis"]:
+        for argv in row["commands"]:
+            position = next((index for index in range(len(argv) - 1) if argv[index : index + 2] == ["wi", "adopt"]), None)
+            if position is None:
+                continue
+            if parser is None:
+                parser = argparse.ArgumentParser(prog="atk wi", allow_abbrev=False)
+                wi_cli.build_parser(parser)
+            # パスの型検査にはテンプレート元を使い、複製と本文展開はGit統合後の_expandで行う。
+            validation_argv = [
+                _REFERENCE.sub(
+                    lambda match: (
+                        match.group(1).removeprefix("expand-file:")
+                        if match.group(1).startswith("expand-file:")
+                        else match.group(0)
+                    ),
+                    value,
+                )
+                for value in argv[position + 1 :]
+            ]
+            try:
+                adopted = parser.parse_args(validation_argv)
+            except SystemExit as error:
+                raise ValueError(f"adoptのargvが不正: {row['name']}。atk wi adoptの公開入力へ直す") from error
+            specified = adopted.commit or []
+            source = pathlib.Path(row.get("commit_record", ""))
+            action = (
+                f"commit_recordのMarkdownを対象に、atk run-script plan-commitsの--worktreeへ{worktree}を指定して"
+                "現在の一覧を取得しmanifestを作り直す。引き継ぎ記録には--handoffと対象AWI全件の--allowed-awiも指定する"
+            )
+            if not source.is_absolute() or not source.is_file():
+                raise ValueError(f"{row['name']}: commit_recordへ計画か引き継ぎ記録Markdownの絶対パスを指定し、{action}")
+            try:
+                content = source.read_text(encoding="utf-8")
+                events = commit_mapping.read_events(source, content)
+                allowed = {row["name"]}
+                if source.name in {plan["name"] for plan in manifest["plans"]}:
+                    allowed = commit_mapping.plan_allowed_wis(content, source)
+                else:
+                    for event in events:
+                        names = event.get("awi")
+                        if isinstance(names, list):
+                            allowed.update(name for name in names if isinstance(name, str))
+                commit_mapping.validate_targets([row["name"]], allowed)
+                mapping = commit_mapping.read_mapping(worktree, events, allowed)
+            except (OSError, ValueError) as error:
+                raise ValueError(
+                    f"{row['name']}: 指定値={specified}、期待集合を取得できない: {source}。{error}。{action}"
+                ) from error
+            expected = {oid for oid, names in mapping.items() if row["name"] in names}
+            effective_commits = specified
+            if any("{{integrated_head_short}}" in value for value in specified):
+                # fast-forwardするHEADの短縮OIDは、最終化の_expandへ渡す値と同じになる。
+                short = _git(worktree, "rev-parse", "--short=7", "HEAD")
+                effective_commits = [value.replace("{{integrated_head_short}}", short) for value in specified]
+            try:
+                commits = {commit_mapping.resolve_commit(worktree, value) for value in effective_commits}
+            except commit_mapping.CommitMappingError as error:
+                raise ValueError(
+                    f"{row['name']}: 指定値={specified}、期待集合={sorted(expected)}。{error}。{action}"
+                ) from error
+            names = {wi_filenames.normalize_md_filename(name) for name in adopted.filenames}
+            if names != {row["name"]} or commits != expected or (row.get("no_merge") and commits):
+                raise ValueError(f"{row['name']}: 指定値={specified}、期待集合={sorted(expected)}。{action}")
+
+
 def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
     """所有登録からGit統合と最終化を再開し、全操作の成功後に選定を統合済みにする。"""
     for path in (args.record, args.manifest, args.target_worktree):
@@ -1309,13 +1451,24 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 raise ValueError("Git統合後は--restart-reviewで再開せず、同じ入力で残る最終化を実行する")
             current = _git(worktree, "rev-parse", "HEAD")
             record["previous_integration"] = state
-            if (
-                state["phase"] in {"rebased", "awaiting-validation", "verified"}
-                and all(state.get(name) for name in ("old_base", "old_head", "new_base", "new_head"))
-                and current == state["new_head"]
+            if state["phase"] in {"rebased", "awaiting-validation", "verified"} and all(
+                state.get(name) for name in ("old_base", "old_head", "new_base", "new_head")
             ):
-                if reviewed not in {state["old_head"], state["new_head"]}:
-                    raise ValueError("再開のレビュー対象HEADは記録のold_headかnew_headを指定する")
+                ancestor = git_command.run(
+                    ["merge-base", "--is-ancestor", state["new_head"], current], worktree, check=False
+                ).returncode
+                if ancestor not in {0, 1}:
+                    raise ValueError("保存したnew_headと現在HEADの祖先判定が失敗した。Git実体と所有記録を確認して再実行する")
+                if ancestor == 1:
+                    raise ValueError(
+                        f"現在HEAD {current}は記録のnew_head {state['new_head']}の子孫ではない。"
+                        "保存したrebase系列を復元して再レビューし、--restart-reviewで再開する"
+                    )
+                if reviewed not in ({state["old_head"], current} if current == state["new_head"] else {current}):
+                    raise ValueError(
+                        "再開のレビュー対象HEADは、HEADが変わった場合は現在HEAD、同じ場合はold_headかnew_headを指定する"
+                    )
+                previous_head = state["new_head"]
                 state = {
                     **state,
                     "input_digest": digest,
@@ -1323,12 +1476,36 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     "phase": "rebased",
                     "completed": [key for key in state["completed"] if not key.startswith("verification-")],
                     "results": dict(state.get("results", {})),
+                    "additional_rewrites": dict(state.get("additional_rewrites", {})),
                 }
+                record["integration"] = state
+                if current != previous_head:
+                    state.setdefault(
+                        "comparison", {key: state[key] for key in ("old_base", "old_head", "new_base", "new_head")}
+                    )
+                    additions = _git(worktree, "rev-list", "--reverse", f"{previous_head}..{current}").splitlines()
+                    state["additional_rewrites"].update({oid: oid for oid in additions})
+                    state["new_head"] = current
                 base = _git(target, "rev-parse", "HEAD")
                 if base != state["new_base"]:
-                    # 最初の旧系列を保ち、元のWI対応を最新のrebase結果まで直接継承する。
+                    if state["additional_rewrites"]:
+                        _compare_integration_history(
+                            record,
+                            state,
+                            worktree,
+                            state.get("comparison", {}).get("resolved_conflicts", state.get("resolved_conflicts", [])),
+                        )
+                        state["rewrite_prefix"] = json.loads(pathlib.Path(state["rewrite_map"]).read_text(encoding="utf-8"))
+                        # 再rebaseの旧系列には前回の競合解消が織り込まれている。指定の再利用も比較する系列ごとに保つ。
+                        state["comparison"] = {
+                            "old_base": state["new_base"],
+                            "old_head": current,
+                            "new_base": base,
+                            "resolved_conflicts": [],
+                        }
+                    else:
+                        state.pop("comparison", None)
                     state["completed"] = [key for key in state["completed"] if key != "history-compare"]
-                    state.pop("rewrite_map", None)
                     _rebase_unpublished(worktree, base, record, state)
                     state.update(phase="rebased", new_head=_git(worktree, "rev-parse", "HEAD"))
                 record["integration"] = state
@@ -1395,6 +1572,8 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 ],
             )
             _save(path, record)
+        saved_resolved = state.get("comparison", {}).get("resolved_conflicts", state.get("resolved_conflicts", []))
+        resolved = saved_resolved
         if args.resolved_conflict is not None and state["phase"] in {"rebased", "awaiting-validation"}:
             # 競合解消の指定はhistory-compareへ渡す入力で、同じ統合入力の再開に付けるためinput_digestへ含めない。
             # 指定を省いた再開（検収待ちの受理など）は保存済みの集合を使い、集合が変わった場合だけhistory-compareをやり直す。
@@ -1404,48 +1583,14 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                     for value in args.resolved_conflict
                 }
             )
-            if state.get("resolved_conflicts", []) != resolved:
+            if saved_resolved != resolved:
                 state.update(
                     phase="rebased",
-                    resolved_conflicts=resolved,
                     completed=[key for key in state["completed"] if key != "history-compare"],
                 )
                 _save(path, record)
         if state["phase"] == "rebased":
-            mapping = _integration_directory(record) / "rewrite-map.json"
-            if state.get("rewrite_map") != str(mapping):
-                state["completed"] = [key for key in state["completed"] if key != "history-compare"]
-                state["rewrite_map"] = str(mapping)
-                _save(path, record)
-            mapping.parent.mkdir(parents=True, exist_ok=True)
-            _integration_command(
-                record,
-                state,
-                "history-compare",
-                _atk_script(
-                    "run-script",
-                    "history-compare",
-                    "--",
-                    "--operation",
-                    "rebase",
-                    "--work-dir",
-                    str(worktree),
-                    "--old-base",
-                    state["old_base"],
-                    "--old-head",
-                    state["old_head"],
-                    "--new-base",
-                    state["new_base"],
-                    "--new-head",
-                    state["new_head"],
-                    "--output",
-                    str(mapping),
-                    *(argument for oid in state.get("resolved_conflicts", []) for argument in ("--resolved-conflict", oid)),
-                ),
-                worktree,
-                timeout=record["procedure_timeout"],
-            )
-            state["rewrite_map"] = str(mapping)
+            _compare_integration_history(record, state, worktree, resolved)
             _verify(record, state, manifest["verification"], worktree)
             state["phase"] = "awaiting-validation"
             _save(path, record)
@@ -1464,6 +1609,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         if state["phase"] == "verified" or (state["phase"] == "prepared" and args.no_merge):
             _verify(record, state, manifest.get("verification", []), worktree)
             _assert_integration_tree(record, target, args.target_branch)
+            _validate_adopt_commits(manifest, worktree)
             if not args.no_merge:
                 if _git(worktree, "rev-parse", "HEAD") != state["new_head"]:
                     raise ValueError("検証済みHEADが変わっている")
@@ -1562,6 +1708,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
             "lane_started_atは最初のレーン開始時刻（時差付きISO 8601）。plans/wisのargvの"
             "{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}と{{expand-file:ABS}}を確定値で展開する。"
             "実装なしのplans/wisにはno_merge:trueを指定する。"
+            "adoptを含むwisの行にはcommit_record:ABSで計画か引き継ぎ記録Markdownを指定する。"
         ),
     )
     integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終了だけ行う。")
@@ -1578,8 +1725,8 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         default=None,
         metavar="OID",
         help=(
-            "rebaseの競合を解消してrebase --continueで完了した後の再開で、競合解消で内容が変わった旧commit。"
-            "rebase後のhistory-compareへ渡し、件名・相対順と旧commitの変更パスのうち統合先に残るものを含むことを検収する。複数指定可能。"
+            "rebase --continueの後にまず指定なしで再開し、history-compareが変更内容の不一致を示した旧commitだけを指定する。"
+            "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。複数指定可能。"
         ),
     )
     integrate_parser.add_argument(

@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 import review_eval
-from agent_toolkit._agents_server import launch_requests
+from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._atk import review_table
 from agent_toolkit._common.next_action import ActionableError
 
@@ -180,7 +182,13 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
     assert not worktree.exists()
 
 
-def test_prepare_builds_condition_table_accepted_by_launch_preflight(tmp_path, monkeypatch, capsys) -> None:
+@pytest.mark.parametrize("form", ["list", "paragraph"])
+@pytest.mark.parametrize("supplement_form", ["list", "paragraph"])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
+    tmp_path, monkeypatch, capsys, form, supplement_form
+) -> None:
     """計画の新形式AWIへ条件表を生成し、agents_serverの起動前検査が受理する起動値を返す。旧形式AWIは表に含めない。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     repo, _base, old, new = _case_repository(tmp_path)
@@ -188,8 +196,20 @@ def test_prepare_builds_condition_table_accepted_by_launch_preflight(tmp_path, m
     entries = notes / "2026" / "10"
     entries.mkdir(parents=True)
     head = "---\ntype: awi\nsource: fix\nstate: done\ntarget_repo: github.com/ak110/dotfiles\n---\n"
+    reflection = (
+        "背景の説明。\n\n1. ファイルAを変更する。\n\n   続く段落も保持する。\n\n"
+        "   - 入れ子の具体成果。\n\n2. ファイルB | 文書を更新する。\n"
+        if form == "list"
+        else "ファイルAを変更する。\n続きの行も保持する。\n\nファイルB | 文書を更新する。\n"
+    )
+    supplements = "- 条件A\n- 条件B | 縦線\n" if supplement_form == "list" else "条件A\n\n条件B | 縦線\n"
     (entries / "20261001-000000-001.md").write_text(
-        head + "# 新形式の要求\n\n目的の段落。\n続きの行。\n\n## 完成条件\n\n- 条件A\n- 条件B | 縦線\n", encoding="utf-8"
+        head
+        + "# 新形式の要求\n\n目的の段落。\n続きの行。\n\n## 反映内容と反映先\n"
+        + reflection
+        + "\n## 完成条件\n\n"
+        + supplements,
+        encoding="utf-8",
     )
     (entries / "20261001-000000-002.md").write_text(head + "# 旧形式\n## 実現性\n可能\n## 完成条件\n- 条件\n", encoding="utf-8")
     plan_dir = notes / "plans/2026/10"
@@ -203,23 +223,52 @@ def test_prepare_builds_condition_table_accepted_by_launch_preflight(tmp_path, m
         f'{{"commits":["{old}","{new}"],"awi":["x.md"]}}\n', encoding="utf-8"
     )
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
-    # 実行レビューの起動前検査は公開の単独入口を持たないため、agents_serverの`start`と同じ判定関数を直接使う。
-    check_materials = launch_requests._check_exec_review_materials  # pylint: disable=protected-access
+    sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
+    manager = SimpleNamespace(
+        start=sender, launcher_record_context=lambda: {"status": "unresolved"}, launcher_session_id=lambda: None
+    )
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    whole = tmp_path / "work-contract.md"
+    whole.write_text("目的: 評価用生成から公開startへの入力を検証する。\n", encoding="utf-8")
     params = {"レビュー基準": "計画", "計画": str(plan_dir / "01-0000_case.md"), "引き継ぎ記録先": "/x/handoff.md（新規）"}
     with pytest.raises(ActionableError, match="review_contract"):
-        check_materials(params)
+        await mcp_tools.start(
+            str(tmp_path), subagent_md_path="exec-review", extra_params=params, whole_contract_path=str(whole)
+        )
+    sender.assert_not_awaited()
 
     out = tmp_path / "out"
     assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
     (prepared,) = _results(capsys)
     extra_params = prepared["start"]["extra_params"]
     contract = pathlib.Path(extra_params["review_contract"]).read_text(encoding="utf-8")
-    assert "| 20261001-000000-001.md | 1 | 補足条件 | 条件A | 完成条件 1 |" in contract
-    assert "| 20261001-000000-001.md | 2 | 補足条件 | 条件B \\| 縦線 | 完成条件 2 |" in contract
-    assert "| 20261001-000000-001.md | 3 | 主要完成状態 | 新形式の要求 目的の段落。 続きの行。 | H1と冒頭 |" in contract
+    marker = "- " if supplement_form == "list" else ""
+    assert f"| 20261001-000000-001.md | 1 | 補足条件 | {marker}条件A | 完成条件 1 |" in contract
+    assert f"| 20261001-000000-001.md | 2 | 補足条件 | {marker}条件B \\| 縦線 | 完成条件 2 |" in contract
+    assert "| 20261001-000000-001.md | 3 | 主要完成状態 |" in contract
+    assert "ファイルAを変更する。" in contract
+    assert "続く段落も保持する。" in contract if form == "list" else "続きの行も保持する。" in contract
+    if form == "list":
+        assert "入れ子の具体成果。" in contract
+        assert "背景の説明。" not in contract
+    assert "| 20261001-000000-001.md 反映内容1 |" in contract
+    assert "| 20261001-000000-001.md | 4 | 主要完成状態 |" in contract
+    assert "ファイルB \\| 文書を更新する。" in contract
+    assert "| 20261001-000000-001.md 反映内容2 |" in contract
     assert "20261001-000000-002.md" not in contract
-    check_materials(extra_params)
-    subprocess.run(prepared["cleanup"], check=True)
+    try:
+        response = await mcp_tools.start(**prepared["start"], whole_contract_path=str(whole))
+        assert response["session_id"] == "review"
+        sender.assert_awaited_once()
+        sender.reset_mock()
+        pathlib.Path(extra_params["review_contract"]).write_text(
+            "\n".join(line for line in contract.splitlines() if "| 2 | 補足条件 |" not in line), encoding="utf-8"
+        )
+        with pytest.raises(ActionableError, match="補足条件 1/2件"):
+            await mcp_tools.start(**prepared["start"], whole_contract_path=str(whole))
+        sender.assert_not_awaited()
+    finally:
+        subprocess.run(prepared["cleanup"], check=True)
 
 
 def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, capsys) -> None:

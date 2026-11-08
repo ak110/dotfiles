@@ -135,6 +135,71 @@ async def test_exec_review_condition_table_preflight(
         sender.assert_not_awaited()
 
 
+@pytest.mark.parametrize("form", ["ordered", "bullet", "paragraph"])
+@pytest.mark.parametrize("coverage", ["whole-section", "partial", "wrong-wi", "number-prefix", "complete", "reason"])
+@pytest.mark.asyncio
+async def test_exec_review_reflection_item_coverage_preflight(tmp_path, monkeypatch, form, coverage) -> None:
+    """公開startで反映内容7項目の各番号が条件表の出典にあるかを確かめ、背景の理由行も受理する。"""
+    name = "20261028-130047-001.md"
+    notes = tmp_path / "notes"
+    directory = notes / "2026/10"
+    directory.mkdir(parents=True)
+    items = [f"成果{number}を反映する。" for number in range(1, 8)]
+    if form == "paragraph":
+        reflection = "\n\n".join(items)
+    else:
+        reflection = "背景の説明。\n\n" + "\n".join(
+            f"{str(number) + '.' if form == 'ordered' else '-'} {item}" for number, item in enumerate(items, start=1)
+        )
+    body = (
+        "---\ntype: awi\nsource: fix\nstate: inbox\ntarget_repo: github.com/ak110/dotfiles\n---\n"
+        f"# 要求\n## 反映内容と反映先\n{reflection}\n\n## 完成条件\n- 条件\n"
+    )
+    (directory / name).write_text(body, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    rows = ["| WI | 条件番号 | 区分 | 内容 | 出典 |", "| --- | --- | --- | --- | --- |"]
+    if coverage == "whole-section":
+        rows.extend(f"| {name} | {n} | 主要完成状態 | 完了 | 目的・反映内容と反映先・原因分析 |" for n in range(1, 4))
+    else:
+        for number in range(1, 8):
+            source = f"反映内容{number}"
+            row_name = name
+            kind, content = "主要完成状態", "完了"
+            if number == 4:
+                if coverage == "partial":
+                    source = "反映内容と反映先"
+                elif coverage == "number-prefix":
+                    source = "反映内容40"
+                elif coverage == "wrong-wi":
+                    row_name = "20261028-130047-002.md"
+                elif coverage == "reason":
+                    content = "背景であり完成判定に使わない。"
+            rows.append(f"| {row_name} | {number} | {kind} | {content} | {source} |")
+    rows.append(f"| {name} | 8 | 補足条件 | 条件 | 完成条件1 |")
+    contract = tmp_path / "contract.md"
+    contract.write_text("\n".join(rows), encoding="utf-8")
+    params = {
+        "レビュー基準": "WI",
+        "WI記録": name,
+        "開始時のHEAD": "abc1234",
+        "引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）",
+        "review_contract": str(contract),
+    }
+    sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
+    if coverage in {"complete", "reason"}:
+        response = await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
+        assert response["session_id"] == "review"
+        sender.assert_awaited_once()
+    else:
+        with pytest.raises(ActionableError, match="反映内容4") as rejected:
+            await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
+        assert "行を追加" in str(rejected.value)
+        if coverage == "whole-section":
+            assert all(f"反映内容{number}" in str(rejected.value) for number in range(1, 8))
+        sender.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
     "case,expected",
     [

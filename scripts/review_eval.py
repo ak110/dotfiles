@@ -26,7 +26,6 @@ from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter, headings
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import commit_mapping
-from markdown_it import MarkdownIt
 
 CASES_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_cases.json")
 _ISSUE_COLUMN = 3
@@ -139,7 +138,7 @@ def _contract_rows(plan: pathlib.Path, private_notes: pathlib.Path) -> list[str]
     """計画のAWIのうち、実行レビューの起動前検査が条件表を求める新形式AWIの表の行を返す。
 
     対象と補足条件の件数はagents_serverの`start`の起動前検査（`launch_requests._check_exec_review_materials`）と
-    同じ判定で選ぶ。補足条件はAWIの`## 完成条件`の各項目、主要完成状態はH1と冒頭の段落を写す。
+    同じ判定で選ぶ。補足条件はAWIの`## 完成条件`の各項目、主要完成状態は反映内容の各項目を全文で写す。
     当時のレビューが受け取った契約は保存されていないため、本文から機械的に写した再構成であり、
     内容の妥当性はレビュー担当が検収する。比較の前後で同じ入力を使うことで、指示・モデルの差だけを比べる。
     """
@@ -165,35 +164,14 @@ def _contract_rows(plan: pathlib.Path, private_notes: pathlib.Path) -> list[str]
         sections = {name for name, _body in headings.h2_sections(text)}
         if kind != "awi" or parsed is None or not parsed[0].get("source") or sections & {"適用範囲", "実現性"}:
             continue
-        body = "\n".join(headings.last_h2_section_lines(text, "完成条件") or [])
-        tokens = MarkdownIt().parse(body)
-        items = [
-            tokens[index + 2].content
-            for index, token in enumerate(tokens)
-            if token.type == "list_item_open" and token.level == 1 and index + 2 < len(tokens)
-        ]
+        items = headings.last_h2_section_items(text, "完成条件")
         for number, item in enumerate(items, start=1):
             rows.append(f"| {path.name} | {number} | 補足条件 | {_cell(item)} | 完成条件 {number} |")
-        rows.append(f"| {path.name} | {len(items) + 1} | 主要完成状態 | {_cell(_opening(text))} | H1と冒頭 |")
+        for number, item in enumerate(headings.last_h2_section_items(text, "反映内容と反映先"), start=1):
+            rows.append(
+                f"| {path.name} | {len(items) + number} | 主要完成状態 | {_cell(item)} | {path.name} 反映内容{number} |"
+            )
     return rows
-
-
-def _opening(text: str) -> str:
-    """AWI本文のH1と、その直後の最初の段落を返す。"""
-    lines = text.splitlines()
-    for index, line in enumerate(lines):
-        if line.startswith("# "):
-            paragraph: list[str] = []
-            for following in lines[index + 1 :]:
-                if following.startswith("#"):
-                    break
-                if not following.strip():
-                    if paragraph:
-                        break
-                    continue
-                paragraph.append(following.strip())
-            return " ".join([line[2:].strip(), *paragraph])
-    return ""
 
 
 def _cell(value: str) -> str:
