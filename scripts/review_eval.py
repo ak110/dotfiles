@@ -139,6 +139,7 @@ def _contract_rows(plan: pathlib.Path, private_notes: pathlib.Path) -> list[str]
 
     対象と補足条件の件数はagents_serverの`start`の起動前検査（`launch_requests._check_exec_review_materials`）と
     同じ判定で選ぶ。補足条件はAWIの`## 完成条件`の各項目、主要完成状態は反映内容の各項目を全文で写す。
+    反映内容の節を持たないAWIでは、H1と冒頭の段落を主要完成状態として写す。
     当時のレビューが受け取った契約は保存されていないため、本文から機械的に写した再構成であり、
     内容の妥当性はレビュー担当が検収する。比較の前後で同じ入力を使うことで、指示・モデルの差だけを比べる。
     """
@@ -171,7 +172,27 @@ def _contract_rows(plan: pathlib.Path, private_notes: pathlib.Path) -> list[str]
             rows.append(
                 f"| {path.name} | {len(items) + number} | 主要完成状態 | {_cell(item)} | {path.name} 反映内容{number} |"
             )
+        if "反映内容と反映先" not in sections:
+            rows.append(f"| {path.name} | {len(items) + 1} | 主要完成状態 | {_cell(_opening(text))} | H1と冒頭 |")
     return rows
+
+
+def _opening(text: str) -> str:
+    """AWI本文のH1と、その直後の最初の段落を返す。"""
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith("# "):
+            paragraph: list[str] = []
+            for following in lines[index + 1 :]:
+                if following.startswith("#"):
+                    break
+                if not following.strip():
+                    if paragraph:
+                        break
+                    continue
+                paragraph.append(following.strip())
+            return " ".join([line[2:].strip(), *paragraph])
+    return ""
 
 
 def _cell(value: str) -> str:

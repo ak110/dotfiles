@@ -182,7 +182,7 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
     assert not worktree.exists()
 
 
-@pytest.mark.parametrize("form", ["list", "paragraph"])
+@pytest.mark.parametrize("form", ["list", "paragraph", "legacy"])
 @pytest.mark.parametrize("supplement_form", ["list", "paragraph"])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -205,8 +205,8 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
     supplements = "- 条件A\n- 条件B | 縦線\n" if supplement_form == "list" else "条件A\n\n条件B | 縦線\n"
     (entries / "20261001-000000-001.md").write_text(
         head
-        + "# 新形式の要求\n\n目的の段落。\n続きの行。\n\n## 反映内容と反映先\n"
-        + reflection
+        + "# 新形式の要求\n\n目的の段落。\n続きの行。\n\n"
+        + ("## 反映内容と反映先\n" + reflection if form != "legacy" else "")
         + "\n## 完成条件\n\n"
         + supplements,
         encoding="utf-8",
@@ -246,15 +246,19 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
     assert f"| 20261001-000000-001.md | 1 | 補足条件 | {marker}条件A | 完成条件 1 |" in contract
     assert f"| 20261001-000000-001.md | 2 | 補足条件 | {marker}条件B \\| 縦線 | 完成条件 2 |" in contract
     assert "| 20261001-000000-001.md | 3 | 主要完成状態 |" in contract
-    assert "ファイルAを変更する。" in contract
-    assert "続く段落も保持する。" in contract if form == "list" else "続きの行も保持する。" in contract
-    if form == "list":
-        assert "入れ子の具体成果。" in contract
-        assert "背景の説明。" not in contract
-    assert "| 20261001-000000-001.md 反映内容1 |" in contract
-    assert "| 20261001-000000-001.md | 4 | 主要完成状態 |" in contract
-    assert "ファイルB \\| 文書を更新する。" in contract
-    assert "| 20261001-000000-001.md 反映内容2 |" in contract
+    if form == "legacy":
+        assert "| 3 | 主要完成状態 | 新形式の要求 目的の段落。 続きの行。 | H1と冒頭 |" in contract
+        assert contract.count("| 主要完成状態 |") == 1
+    else:
+        assert "ファイルAを変更する。" in contract
+        assert "続く段落も保持する。" in contract if form == "list" else "続きの行も保持する。" in contract
+        if form == "list":
+            assert "入れ子の具体成果。" in contract
+            assert "背景の説明。" not in contract
+        assert "| 20261001-000000-001.md 反映内容1 |" in contract
+        assert "| 20261001-000000-001.md | 4 | 主要完成状態 |" in contract
+        assert "ファイルB \\| 文書を更新する。" in contract
+        assert "| 20261001-000000-001.md 反映内容2 |" in contract
     assert "20261001-000000-002.md" not in contract
     try:
         response = await mcp_tools.start(**prepared["start"], whole_contract_path=str(whole))
