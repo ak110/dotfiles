@@ -150,7 +150,7 @@ description: >
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` | |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/mcp-server-design.md` | |
-| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` | |
+| テスト設計・検証手法を選ぶ時、テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` | |
 | Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python.md`の「静的解析の誤検出と抑制」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/python.md#「静的解析の誤検出と抑制」` | |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` | |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/independent-html.md` | |
