@@ -1,6 +1,6 @@
 # 01-agent.md: エージェントの振る舞い
 
-本書はメインエージェント、サブエージェント、委譲先に共通して適用する。役割ごとの入出力は`agent-toolkit/share/rules-main.md`と`rules-subagent.md`に置く。
+本書はメインエージェント、サブエージェント、委譲先に共通して適用する。役割ごとの入出力は`agent-toolkit/share/rules/rules-main.md`と`rules-subagent.md`に置く。
 
 ## 役割分担
 
@@ -154,7 +154,7 @@ hook通知（目標の評価を含む）は、結果を使う前に各項目を�
 
 ### 手順どおりに進められない場合
 
-規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:user-confirmation-and-report`の`references/procedure-conflict.md`を適用する。委譲先の返却は`agent-toolkit/share/rules-subagent.md`に従う。
+規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:user-confirmation-and-report`の`references/procedure-conflict.md`を適用する。
 
 ### ユーザー発話の解釈
 
@@ -175,7 +175,7 @@ hook通知（目標の評価を含む）は、結果を使う前に各項目を�
 ユーザーへ送らない内部連絡・委譲入力・返却・ターン末尾は、言語だけを理由とする判定・再出力の対象外とする。送達する主体が必要な説明を日本語で作成する。
 
 発話は常体とする。ハーネスやhookの英文を言語指定として引き継がない。
-メインの発話は`agent-toolkit/share/rules-main.md`、委譲先の返却は`agent-toolkit:delegation`の`references/base-contract.md`に従う。
+委譲先の返却は`agent-toolkit:delegation`の`references/base-contract.md`に従う。
 言語は次のユーザー向け応答から是正し、是正の宣言は省く（努力目標。応答を短く保つ）。
 
 成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章で、主張を際立たせるためだけに否定する側を並べる書き方（対比フレーミング）は避け、伝える内容を直接書く。読み手が取り違えやすい実在の選択肢や誤解を除くときは、「`== None`ではなく`.is_(None)`を使う」のように1文で対比してよい。肯定文から自明に分かる否定は重ねない。肯定文の対象の一部を除く場合は、同じ文で限定する（努力目標）。肯定文の対象とは別の実在する制約、選択肢、または誤解は、独立した事実の文で示す。

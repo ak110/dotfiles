@@ -1,6 +1,6 @@
 # 確定済みの方針・意向: レーンと工程
 
-本書は`docs/development/concepts.md`から主題別に分割した記録である。実行時に適用する規範は`agent-toolkit/rules/`配下と各スキルが定める。
+本書は`docs/development/concepts.md`から主題別に分割した記録である。実行時に適用する規範は`agent-toolkit/share/rules/common/`配下と各スキルが定める。
 
 ## process-wiとレーン
 
@@ -113,7 +113,7 @@ WI作成、計画、実行、実行レビューは、それぞれ要求と完成
 
 - 簡単な反復作業は、一括置換と変更箇所の軽量レビューを使えるかを先に比べる（2026年10月1日のユーザー指示）。
 - 単純作業を多数の対象へ行うときは、作業量に合わせてうまく並列化する。分担を粗くし過ぎず、担当の中でさらに並列に分業する手も比べる。難しい作業の並列化は規範の読み込みの重複でコスト効率が悪化するため、単純作業と区別して判断する（同日のユーザー指示）。
-- モデルの工程指定では、作業を極力細分化して`chores`・`chores_fast`を使う（2026年10月24日のユーザー指示）。2026年11月1日の指示では、自律的な切出しをreview・review_fast・chores・chores_fast・writeに限定し、計画・設計判断・原因分析は役割担当が所有する。executeとorchestrateは役割文書や最上位・統括の所定の起動に使い、WIのユーザー明示指定を保持する。実行時の規範は`runtime-routing.md`「工程別モデル設定」と`agents_server`の`start`の説明に置く。
+- モデルの工程指定では、作業を極力細分化して`chores`・`chores_fast`を使う（2026年10月24日のユーザー指示）。2026年11月1日の指示では、自律的な切出しをreview・review_fast・chores・chores_fast・writeに限定し、計画・設計判断・原因分析は役割担当が所有する。executeとorchestrateは役割文書や最上位・統括の所定の起動に使い、WIのユーザー明示指定を保持する。実行時の規範は`process-model-settings.md`「工程別モデル設定」と`agents_server`の`start`の説明に置く。
 
 ## 計画ファイルの体裁の扱い
 

@@ -114,7 +114,7 @@ def test_process_loop_launched_delegate_takes_main_role() -> None:
 def test_lightweight_launches_receive_shared_result_contract_only() -> None:
     """共通規範を省く全区分へ同じ返却条件が届き、ベース実務規律の全文は追加しない。"""
     base = _shared_document_body("agents-server-base.md")
-    rules = (launch_prompts.SHARE_DIR / "rules-subagent.md").read_text(encoding="utf-8")
+    rules = (launch_prompts.SHARE_DIR / "rules" / "rules-subagent.md").read_text(encoding="utf-8")
     result_body = (
         rules.split("<!-- subagent-result-contract:start -->", maxsplit=1)[1]
         .split("<!-- subagent-result-contract:end -->", maxsplit=1)[0]

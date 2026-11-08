@@ -16,7 +16,7 @@
 | --- | --- | --- | --- |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md`の冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md#「起動方法別のレビュー基準」` | 判断 | `section:agent-toolkit:*/share/exec-review.parent.md#「起動方法別のレビュー基準」` |
@@ -60,7 +60,7 @@
 | `extra_params` | 後述の各設定項目 |
 | `model_type` | 選定結果における該当レーンの`担当モデル.実装担当`。指定がない場合は省略する |
 
-指定値と実際の実行値の比較および記録は、`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの節に従って行い、レーンの引き継ぎ記録へ保存する。
+指定値と実際の実行値の比較および記録は、`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」の担当モデルの節に従って行い、レーンの引き継ぎ記録へ保存する。
 
 - `担当種別`: 通常は`レーン担当`とする。公開工程でのCI失敗修正では`CI修正担当`とする。同一threadを継続できずに統合を担当するエージェントを新規起動する場合も`レーン担当`を指定する（統合手順は委譲先が読込表に従って`lane-integration.subagent.md`を参照する。所在参照）
 - `選定結果の出力先ファイル`: メインエージェントが選定結果を書き込んだファイルの絶対パス
@@ -113,7 +113,7 @@
 ## レーン担当が確定した質問への回答
 
 レーン担当者から、ユーザーがWIへ直接記入した質問（AWIの`## ユーザーコメント`またはUWIの`## 回答`）に対する回答下書きの絶対パスと根拠を受け取る。下書きは実行レビューおよび読者別探索の入力とし、レビューが収束した後、統合を指示する前に、`agent-toolkit:user-confirmation-and-report`「手段の選択」および`agent-toolkit:wi-standards`に従って回答ごとのUWIへ最新の下書きを保存する。保存対象はレビュー済みの最新本文とする。
-`実装なし`と`マージなし`のレーンでは、`rules-main.md`における事実主張の基準に沿って、下書き内の断定的な主張を根拠ならびに現物と突き合わせて確認したうえで保存し、確認が取れない主張はレーン担当者へ差し戻す。
+`実装なし`と`マージなし`のレーンでは、`agent-toolkit/share/rules/common/01-agent.md`「事実と推論」の基準に沿って、下書き内の断定的な主張を根拠ならびに現物と突き合わせて確認したうえで保存し、確認が取れない主張はレーン担当者へ差し戻す。
 保存したUWIのファイル名を同一のレーン担当者へ返し、計画が存在する場合は進捗ログへ、計画がない場合は引き継ぎ記録へ記録させる。保存に失敗した場合は原因を解消したうえで、実在するファイル名を通知する。
 
 ## 実装完了の受領
@@ -222,7 +222,7 @@
 
 タスクの終了結果では、担当モデル、起動候補、および物理記録から観測された`engine`、`model`、`effort`を区別して報告する。不一致がある場合は各値とその由来を引き継ぎ情報に残し、観測できなかった場合は未確認として扱う。
 
-工程の区切りでは、本書が定める役割固有の行と、`rules-subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行および一行返却を使用する。
+工程の区切りでは、本書が定める役割固有の行と、`rules/rules-subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行および一行返却を使用する。
 <!-- return-contract:exec:end -->
 
 <!-- return-contract:lane-integration:start -->
@@ -244,5 +244,5 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 変更したエージェント向け文書: <["リポジトリ相対パス"]形式のJSON配列。無い場合は[]>
 ```
 
-続行不能と追加報告行は、共通契約`rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:lane-integration:end -->

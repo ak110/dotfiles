@@ -112,7 +112,8 @@ agent-toolkit配下のファイルを編集する際は、`pytools/claude_hook/p
 
 ## marketplace管理
 
-- `update-dotfiles`（`chezmoi apply`の事後処理）は、`pytools/_internal/install_claude_plugins.py`を実行してClaude Code向けのagent-toolkitを自動的にインストールおよび更新する。`agent-toolkit/rules/`配下のルールは`post_apply`の`sync_agent_toolkit_rules`によって配布先へ同期され、Codex向けのdotfiles固有スキルや`docs`ディレクトリは`setup_codex_links`によって原本へのシンボリックリンクが作成される。
+- `update-dotfiles`（`chezmoi apply`の事後処理）は、`pytools/_internal/install_claude_plugins.py`を実行してClaude Code向けのagent-toolkitを自動的にインストールおよび更新する。`agent-toolkit/share/rules/common/`配下のルールは`post_apply`の`sync_agent_toolkit_rules`によって配布先へ同期される。
+  Codex向けのdotfiles固有スキルや`docs`ディレクトリは、`setup_codex_links`によって原本へのシンボリックリンクが作成される。
 - 生成ファイルの一括同期は、`uv run python scripts/sync_generated_files.py`を実行して行う（サブコマンドとして`python`を明示する必要がある。詳細は`docs/development/operations.md`を参照する）。
 - マーケットプレイスの登録形式について、初期セットアップ（bootstrap）時には`install-claude.sh`や`install-claude.ps1`がGitHub参照型として登録する。その後の`chezmoi apply`の事後処理によってローカルディレクトリ参照型（絶対パス参照）へと維持管理される（GitHub型の設定が残っている場合も自動で移行される）。ローカル環境での編集内容は、`chezmoi apply`（または`update-dotfiles`）を実行した上でClaude Codeを再起動するか、`/reload-plugins`コマンドを実行することで即座に反映される（この際、バージョン番号の更新は不要である）。
 - Codex向けの生成ファイルである`agent-toolkit/.codex-plugin/plugin.json`および`.agents/plugins/marketplace.json`は、prek経由で実行されるpyfltrの`sync-generated-files`によって毎回自動で再生成される。また、Codex用のフック定義は、`pytools/_internal/codex_plugin_manifests.py`がイベント名、マッチャー、入力契約を検証した許可リストに基づいて生成する（手動実行は`scripts/sync_codex_plugin_manifests.py`で行う）。`chezmoi apply`の事後処理がCodexのマーケットプレイスを登録し、プラグインの導入と更新を完了させる。

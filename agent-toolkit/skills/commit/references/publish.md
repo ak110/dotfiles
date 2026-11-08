@@ -57,7 +57,8 @@ CI定義の有無が未判定である場合も、「ローカルでの全体検
 CI環境特有のOS、言語バージョン、実機環境など、ローカルでは再現できない条件に変更が及ぶ場合は、CI完了までの待機を必ず作業工程に含める。
 push前のチェックを実行する前には、ロックファイルの変更有無にかかわらず、対象リポジトリの開発手順で定められた環境同期処理を毎回実行し、仮想環境をロックファイルの依存関係およびCI環境のPythonバージョンと完全に一致させる。なお、uvの`uv run`による自動同期は不要なパッケージが環境内に残留する可能性があるため、同期手段から除外する。`.python-version`ファイルが存在しないプロジェクトや、`UV_PYTHON`などで特定のバージョンが指定されている環境では、既存の仮想環境のPythonバージョンも正確に維持する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日」にある。`.python-version`の有無と版の指定による条件別の観測は、同じ文書の「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月19日」にある。
 
-push前のチェックやローカルの全体検証はログ出力が膨大になりやすいため、`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に定める分離実行（`agents_server`の`start`による`shell`実行など）を用いて行う。
+push前のチェックやローカルの全体検証はログ出力が膨大になりやすい。
+そのため、`agent-toolkit/share/rules/common/02-agent-operations.md`「ツール・コマンド運用」に定める分離実行（`agents_server`の`start`による`shell`実行など）を用いて行う。
 `shell`実行時には、対象リポジトリを`cwd`に、実行コマンドをそのまま`command`に、managed-temp内の一時出力先を`summary_policy`に渡す。
 公開を担当するエージェントは、保存された出力ファイルの実在とその内容、および終了コードが0であることを確認して検収する。警告メッセージについてはその内容と影響を精査し（`agent-basics:bugfix`の`SKILL.md`「問題を見つけたときの対処」を参照）、設定の未適用や処理の未完了を示す警告は作業を続けられない原因として対処する。
 チェックや検証が失敗した場合は、公開担当エージェントが`agent-basics:bugfix`を用いて原因を特定し、認可された範囲内で修正する。`agent-toolkit:process-wi`の完了担当者によるCI修正の手順は、同スキルの`references/termination-ci-failure.md`「検証またはCIの失敗」の定めに従う。

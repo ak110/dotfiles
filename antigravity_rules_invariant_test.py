@@ -19,13 +19,15 @@ def test_current_rules_fit_budget_without_losing_text() -> None:
     assert estimated <= antigravity_plugin.RULE_BUDGET_TOKENS
     assert all(len(data) <= antigravity_plugin.RULE_FILE_BYTES for _, data in ordered)
     actual = "".join(data.decode().removeprefix("---\ntrigger: always_on\n---\n\n") for _, data in ordered)
-    expected = "".join(path.read_text().rstrip("\n") + "\n" for path in sorted((_TOOLKIT / "rules").glob("*.md")))
+    expected = "".join(
+        path.read_text().rstrip("\n") + "\n" for path in sorted((_TOOLKIT / "share" / "rules" / "common").glob("*.md"))
+    )
     assert actual == expected
 
 
 def test_operation_rules_reach_quality_and_verification_materials() -> None:
     """計画の有無によらず、操作前の入口から品質と検証運用の全文へ到達する。"""
-    rules = (_TOOLKIT / "rules/02-agent-operations.md").read_text()
+    rules = (_TOOLKIT / "share/rules/common/02-agent-operations.md").read_text()
     assert "`agent-toolkit:/share/read-trigger-bootstrap.md`の条件表" in rules
     assert "該当する判断や操作の前に行う" in rules
     rows = read_triggers.parse_tables(_TOOLKIT / "share/read-trigger-bootstrap.md", _TOOLKIT, strict=True)

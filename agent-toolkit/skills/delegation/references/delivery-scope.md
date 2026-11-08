@@ -10,12 +10,12 @@ Codexの生成本文については`scripts/sync_codex_agents.py`も参照する
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `rules/`配下 | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（有効なプラグインの常時規範） | 届く（ユーザー設定の読込元） | 届く（`~/.codex/AGENTS.md`） | 届く（有効なプラグインの常時規範） | 届く（`~/.codex/AGENTS.md`） |
 | ユーザーが`~/.claude/rules/`に置いた規範ファイル（`~/.codex/AGENTS.md`が埋め込まないもの） | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`の読込指示） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届く（起動・再開指示） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届く（起動・再開指示） | 届く（`~/.codex/AGENTS.md`の読込指示） |
-| `share/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
-| `share/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
-| `share/rules-main.codex.md` | 届かない | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
-| `share/rules-common.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
-| `share/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届く（指示の先頭） | 返却契約短節のみ届く | 返却契約短節のみ届く | 返却契約短節のみ届く | 届く（SubagentStart） |
-| `share/rules-subagent.claude-code.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules/rules-main.codex.md` | 届かない | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules/rules-common.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
+| `share/rules/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届く（指示の先頭） | 返却契約短節のみ届く | 返却契約短節のみ届く | 返却契約短節のみ届く | 届く（SubagentStart） |
+| `share/rules/rules-subagent.claude-code.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/agents-server-delegate-notice.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届く | 届く | 届く | 届かない |
 | `share/agents-server-base.md` | 届かない | 届かない | 届かない | 届く（`system_prompt`のベース） | 届く（`baseInstructions`） | 届かない | 届かない | 届く（`baseInstructions`） | 届かない | 届かない |
 | `share/agents-server-delegate.md` | 届かない | 届かない | 届かない | 届く | 届く | 届く | 届かない | 届かない | 届かない | 届かない |
@@ -30,8 +30,8 @@ OpenCodeの配送範囲は以下の表のとおりである。通常起動と軽
 
 | 文書 | OpenCodeの通常起動 | OpenCodeの軽量起動 |
 | --- | --- | --- |
-| `rules/`配下・ユーザーが`~/.claude/rules/`に置いた規範・`share/rules-subagent.md` | 届く（指示の先頭） | 届く（指示の先頭） |
-| `share/rules-main.md`とホスト別の`rules-main.*.md`・`rules-common.codex.md`・`rules-subagent.claude-code.md` | 届かない | 届かない |
+| `rules/`配下・ユーザーが`~/.claude/rules/`に置いた規範・`share/rules/rules-subagent.md` | 届く（指示の先頭） | 届く（指示の先頭） |
+| `share/rules/rules-main.md`とホスト別の`rules-main.*.md`・`rules-common.codex.md`・`rules-subagent.claude-code.md` | 届かない | 届かない |
 | `share/agents-server-delegate-notice.md` | 届く | 届く |
 | `share/agents-server-delegate.md` | 届く | 届かない |
 | `share/agents-server-explore.md`・`agents-server-write.md`・`agents-server-shell.md` | 届かない | 届く（同名のmodeだけ） |
@@ -39,12 +39,12 @@ OpenCodeの配送範囲は以下の表のとおりである。通常起動と軽
 | 作業ディレクトリのプロジェクト規範 | CLI自身の読込は未確認。必要な本文は委譲入力へ含める | 同左 |
 | agent-toolkitのスキル | 自動登録しない。必要なスキルは配送されたplugin rootの`skills/`から明示的に読む | 同左 |
 
-Codexの列における`rules/`配下および`share/rules-common.codex.md`の値は、`~/.codex/AGENTS.md`が配置されている環境に限定される（このファイルはCodex単体のインストーラーによる配置対象外である）。
+Codexの列における`rules/`配下および`share/rules/rules-common.codex.md`の値は、`~/.codex/AGENTS.md`が配置されている環境に限定される（このファイルはCodex単体のインストーラーによる配置対象外である）。
 Antigravityの委譲先は、対応する起動区分において`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`を読み込む。
 表中のAntigravityの軽量起動列は、`explore`、`write`、`shell`に適用する。
 `atk wi process-loop`が対話CLIで起動する`agent-toolkit:process-wi all-repos`の統括担当は、対応するホストのメインの列の配送を受ける。
 統括担当が`agents_server`で起動するリポジトリ担当は、`task`と`delegate`の列の配送を受ける。
-リポジトリ担当は着手時に`share/rules-main.md`とホスト別の`rules-main.*.md`を明示的に読む。
+リポジトリ担当は着手時に`share/rules/rules-main.md`とホスト別の`rules-main.*.md`を明示的に読む。
 対象リポジトリのメインとしての責務は、`agent-toolkit:process-wi`の`references/all-repos-orchestration.md`「担当の役割」が定める。
 全backendのexploreは通常の読取コマンドと読取MCPを使用し、変更禁止の責務を共通プロンプトで伝達する。
 Codexはプラグイン由来のスキルを非配送とし、pyfltr MCPを配布定義から直接MCP設定へ渡す。
@@ -62,14 +62,14 @@ Antigravityのプラグイン配送は`antigravity_plugin.py`、起動指示はA
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md#「置き場所と配送」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md#「置き場所と配送」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/references/all-repos-orchestration.md#「担当の役割」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」` |
 
 ## Antigravityの通常起動
 
 Antigravityのメインエージェントは、有効化した`agent-toolkit-agy`プラグインから共通の`rules/`、スキル、ならびにagentsを読み込む。
 生成器は常時規範を`rules/AGENTS.md`と追加のalways-onファイルへ分割する。
-`share/rules-main.md`は6イベントのhookアダプターが起動時に読み込み、`PreInvocation`の動的コンテキストとして配送する。
+`share/rules/rules-main.md`は6イベントのhookアダプターが起動時に読み込み、`PreInvocation`の動的コンテキストとして配送する。
 ホスト別のClaude CodeとCodex規範は通常起動へは配送しない。
 `agents_server`の委譲先へ配送する本文は、上表と各backendの委譲プロンプトで定義する。
 

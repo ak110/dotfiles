@@ -157,7 +157,7 @@ HELP: dict[str, dict[str, str]] = {
             "機会なしや日時・commit不明は全体のpendingと理由を保存できる。同じ引数での再実行は判定行を重複させない。\n"
             "復元・後始末: 変更前の内容はprivate-notesのGit履歴に残る。途中保存やcommit・pushの失敗を解消して同じ引数で再実行する。"
         ),
-        "epilog": "実行例:\n\n  atk wi effect-check 20260901-072734-001.md --worktree /home/user/repo --file agent-toolkit/rules/01-agent.md --verdict confirmed --checked-on 2026-10-31 --review-record session:42",
+        "epilog": "実行例:\n\n  atk wi effect-check 20260901-072734-001.md --worktree /home/user/repo --file agent-toolkit/share/rules/common/01-agent.md --verdict confirmed --checked-on 2026-10-31 --review-record session:42",
     },
     "atk wi set-dependencies": {
         "summary": "AWIの明示依存だけを更新する",

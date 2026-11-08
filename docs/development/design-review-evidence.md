@@ -34,7 +34,7 @@
 
 指摘受領側の各文書は`agent-basics:review-standards`の`references/reviewee.md`の読込指示と場面固有の返却規定だけを持つ。
 メインは指摘の採否を常に確定するため、同スキルを起動する。
-単純案の比較は、一般判断向けの局所運用案を`rules/01-agent.md`と`judgment-details.md`で扱い、
+単純案の比較は、一般判断向けの局所運用案を`share/rules/common/01-agent.md`と`judgment-details.md`で扱い、
 指摘修正向けの局所修正案を`agent-basics:review-standards`の`references/reviewee.md`で扱う。
 
 共通手順は`agent-basics:review-standards`の`references/judgment-details.md`と同スキル本体へ集約する。

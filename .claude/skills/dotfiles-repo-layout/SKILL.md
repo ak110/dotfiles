@@ -55,9 +55,10 @@ Claude CodeやCodexの設定ディレクトリは複数存在し、取り違え�
 - `.chezmoi-source/dot_claude/`: chezmoiによって`~/.claude/`へ展開される配布元のディレクトリ。`~/.claude/`配下のファイルは`chezmoi apply`によって上書きされるため、直接編集しない（「`~/.claude`の設定を変更して」という指示は、`.chezmoi-source/dot_claude/`の編集を意味する）。
 - `.claude/`（リポジトリ直下）: 本リポジトリ自身のClaude Code用プロジェクト設定であり、外部への配布対象外である。Codexにも同じスキルを検出させる場合は、`.agents/skills`から`.claude/skills`へのシンボリックリンクを作成して対応する。
 - `.chezmoi-source/dot_codex/`: `~/.codex/`への配布元ディレクトリ。
-  - ここにある`AGENTS.md`はCodex用のアダプターファイルであり、`scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`から起動される）によって自動生成されるため、変更は生成元に対して行う。生成元のファイルは、`agent-toolkit/share/rules-common.codex.md`、`.chezmoi-source/dot_claude/rules/myprojects-common.md`、および`agent-toolkit/rules/`配下の常時規範である。なお、この生成ファイルは`.claude/settings.json`の`claudeMdExcludes`に設定されており、Claude Codeが入れ子で読み込まないように除外されている。
+  - ここにある`AGENTS.md`はCodex用のアダプターファイルであり、`scripts/sync_codex_agents.py`（`scripts/sync_generated_files.py`から起動される）によって自動生成されるため、変更は生成元に対して行う。生成元のファイルは、`agent-toolkit/share/rules/rules-common.codex.md`と`.chezmoi-source/dot_claude/rules/myprojects-common.md`である。
+    `agent-toolkit/share/rules/common/`配下の常時規範も生成元に含む。なお、この生成ファイルは`.claude/settings.json`の`claudeMdExcludes`に設定されており、Claude Codeが入れ子で読み込まないように除外されている。
   - `setup_codex_links.py`は、`~/.codex/`から`.chezmoi-source/dot_claude/`配下にある共有スキルや`docs`の原本へのリンクを作成する。このリンクは、LinuxやmacOSではシンボリックリンク、Windowsではディレクトリジャンクションとして作成する（chezmoiの`symlink_`はWindows上で特権不足により失敗するためである）。
-  - `agent-toolkit/rules/`配下のファイルは、配布先で`atk-auto`タグが付いた本文へと変換される。そのため、リンクではなく`sync_agent_toolkit_rules.py`を用いて`~/.claude/rules/agent-toolkit/`および`~/.codex/agent-toolkit/rules/`へ同期する。
+  - `agent-toolkit/share/rules/common/`配下のファイルは、配布先で`atk-auto`タグが付いた本文へと変換される。そのため、リンクではなく`sync_agent_toolkit_rules.py`を用いて`~/.claude/rules/agent-toolkit/`および`~/.codex/agent-toolkit/rules/`へ同期する。
   - `~/.codex/skills`には、グローバルに利用するスキルのみを配置する。
 - `.chezmoi-source/dot_gemini/`: 汎用コーディングエージェントとして利用するAntigravity CLI向けに、`~/.gemini/`へ配布するファイル群（`GEMINI.md`や`antigravity-cli/skills/`など）。共有プラグインは、`agent-toolkit/`から`agent-toolkit-agy/`へ、`agent-basics/`から`agent-basics-agy/`へと独立して生成され、`post_apply`によって`~/.gemini/config/plugins.json`の登録情報へ追加される。toolkitの生成ルートにはスキル、agents、常時規範、6つのイベントフック、共有MCP、実行リソースが含まれる。basicsの生成ルートは品質管理スキルのみで構成され単独で利用可能であり、元の名前空間と品質基準の本文を維持している。
 - `.chezmoi-source/dot_config/`: XDG仕様に準拠した各種ツール設定（`git`、`uv`、`pyfltr`など）の配布元ディレクトリ。「`~/.config/<tool>`の設定を変更して」という指示は、`.chezmoi-source/dot_config/<tool>/`の編集を意味する。

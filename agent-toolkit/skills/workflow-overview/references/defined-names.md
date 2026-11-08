@@ -19,9 +19,9 @@
 
 | 名前 | 指示対象 | 定義元 |
 | --- | --- | --- |
-| ユーザー | エージェントへ要求・指示・判断を与える人 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
-| エージェント | ユーザーの要求に応じて調査・判断・作業をするコーディングエージェント（メインエージェント・サブエージェント・委譲先） | `agent-toolkit/rules/01-agent.md`「役割分担」 |
-| エンドユーザー | 成果物を使う人 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| ユーザー | エージェントへ要求・指示・判断を与える人 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
+| エージェント | ユーザーの要求に応じて調査・判断・作業をするコーディングエージェント（メインエージェント・サブエージェント・委譲先） | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
+| エンドユーザー | 成果物を使う人 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
 | 選定工程 | process-wiの工程 | `agent-toolkit:process-wi/references/lanes.md`「用語」 |
 | レーン工程 | process-wiの工程 | `agent-toolkit:process-wi/references/lanes.md`「用語」 |
 | 公開工程 | process-wiの工程 | `agent-toolkit:commit/references/publish.md`冒頭 |
@@ -61,10 +61,10 @@
 | 再発防止セルフチェック担当 | 再発防止観点の判定の委譲先 | `agent-toolkit:/share/recurrence-self-check.subagent.md`冒頭 |
 | 再発防止セルフチェック観点 | レビュー時に差分へ当てはめる項目 | `agent-toolkit:/share/recurrence-self-check-items.md`冒頭 |
 | プロンプト評価担当 | refine-promptの委譲先 | `agent-toolkit:/share/refine-prompt.subagent.md`冒頭 |
-| ユーザー確認 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
-| ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| ユーザー確認 | ユーザーへの行為 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
+| ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
 | 要件・意図の曖昧さ | 確認を要する事項 | `agent-toolkit:user-confirmation-and-report/SKILL.md`「確認要否の判定」 |
-| 3段判定 | 判断の順序 | `agent-toolkit/rules/01-agent.md`「QCDと3段判定」 |
+| 3段判定 | 判断の順序 | `agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」 |
 | 委譲の要否判定 | 委譲の判定 | `agent-toolkit:delegation/references/routing.md` |
 | 元担当 | 既存の委譲先 | `agent-toolkit:delegation/references/codex-runtime.md`「後続操作の共通先行条件」 |
 | 独立文脈レビュー | レビューの形態 | `agent-toolkit:delegation/references/routing.md`「会話を引き継ぐ委譲」 |

@@ -2,7 +2,7 @@
 
 # rules-common.codex.md: Codexの全エージェントに適用する規範
 
-本文書はCodex環境における`AGENTS.md`として、Codexの全エージェント（メインエージェント、サブエージェント、委譲先）へ配送され、`agent-toolkit/rules/`配下の常時規範と同等の拘束力を持つ。
+本文書はCodex環境における`AGENTS.md`として、Codexの全エージェント（メインエージェント、サブエージェント、委譲先）へ配送され、`agent-toolkit/share/rules/common/`配下の常時規範と同等の拘束力を持つ。
 Codex固有の公開機能と、常時規範との差分事項を規定する。Codexのメインエージェントにのみ適用する差分事項は、`rules-main.codex.md`で扱う。
 
 ## Codex固有の入出力
@@ -148,10 +148,10 @@ Codexの組み込み委譲機能（`spawn_agent`で起動したスレッド）�
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
 </atk-auto>
 
-<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">
+<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/01-agent.md">
 # 01-agent.md: エージェントの振る舞い
 
-本書はメインエージェント、サブエージェント、委譲先に共通して適用する。役割ごとの入出力は`agent-toolkit/share/rules-main.md`と`rules-subagent.md`に置く。
+本書はメインエージェント、サブエージェント、委譲先に共通して適用する。役割ごとの入出力は`agent-toolkit/share/rules/rules-main.md`と`rules-subagent.md`に置く。
 
 ## 役割分担
 
@@ -305,7 +305,7 @@ hook通知（目標の評価を含む）は、結果を使う前に各項目を�
 
 ### 手順どおりに進められない場合
 
-規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:user-confirmation-and-report`の`references/procedure-conflict.md`を適用する。委譲先の返却は`agent-toolkit/share/rules-subagent.md`に従う。
+規範どうしが両立しない場合、手順の前提が成り立たない場合、取得した値が目的を満たさない場合は`agent-toolkit:user-confirmation-and-report`の`references/procedure-conflict.md`を適用する。
 
 ### ユーザー発話の解釈
 
@@ -326,13 +326,13 @@ hook通知（目標の評価を含む）は、結果を使う前に各項目を�
 ユーザーへ送らない内部連絡・委譲入力・返却・ターン末尾は、言語だけを理由とする判定・再出力の対象外とする。送達する主体が必要な説明を日本語で作成する。
 
 発話は常体とする。ハーネスやhookの英文を言語指定として引き継がない。
-メインの発話は`agent-toolkit/share/rules-main.md`、委譲先の返却は`agent-toolkit:delegation`の`references/base-contract.md`に従う。
+委譲先の返却は`agent-toolkit:delegation`の`references/base-contract.md`に従う。
 言語は次のユーザー向け応答から是正し、是正の宣言は省く（努力目標。応答を短く保つ）。
 
 成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章で、主張を際立たせるためだけに否定する側を並べる書き方（対比フレーミング）は避け、伝える内容を直接書く。読み手が取り違えやすい実在の選択肢や誤解を除くときは、「`== None`ではなく`.is_(None)`を使う」のように1文で対比してよい。肯定文から自明に分かる否定は重ねない。肯定文の対象の一部を除く場合は、同じ文で限定する（努力目標）。肯定文の対象とは別の実在する制約、選択肢、または誤解は、独立した事実の文で示す。
 </atk-auto>
 
-<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/02-agent-operations.md">
+<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/02-agent-operations.md">
 # 02-agent-operations.md: エージェントの実行運用
 
 ツール、コマンド、リポジトリの状態、プロセスの扱いを定める。自分で実行するコマンドにも委譲するコマンドにも適用し、連結したコマンドも1つずつ判定する。
@@ -352,7 +352,10 @@ hook通知（目標の評価を含む）は、結果を使う前に各項目を�
 
 ### 標準の読取・実行・一時領域
 
-- 読取にはホストのReadを使い、無ければ`cat`か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`、JSONには`jq`を使う。取得条件が成立した規範・読込表・宣言は、指定節と必要な前提・例外を読む。全体が必要なら全文を読む。hookの扱いは`01-agent.md`「方針が衝突する場合の優先順位」に従う。
+- 読取にはホストのReadを使い、無ければ`cat`か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`、JSONには`jq`を使う。
+  SKILL.md・references・`share/`などのエージェント向け文書は、読込条件が成立したら`section:`や節の指定があっても原則全文を読む。
+  無関係な節まで読む構成は節単位の取得へ改めず、読む契機ごとのファイル分割で解消する（担当外は`気付いた改善点:`で報告）。
+  hookの扱いは`01-agent.md`「方針が衝突する場合の優先順位」に従う。
 - コマンドはハーネスの標準の実行・背景実行・待機機能で実行する。
 - 作業用の一時ディレクトリは、通知されたセッションのmanaged-tempの中に`mktemp -d '<親>/<用途>-XXXXXXXX'`で作り、参照を終えた作成者が`rm -r -- <作成した絶対パス>`で回収する。置き場所の例外と回収の時点は`agent-toolkit:managed-temp`に従う。
 

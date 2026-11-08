@@ -31,7 +31,7 @@ def _effect_repository(
     worktree = git_repository.init_repository(
         tmp_path / "repo",
         origin="https://github.com/example/repo.git",
-        files={"agent-toolkit/rules/a.md": "規範A", "agent-toolkit/skills/b/SKILL.md": "規範B", "app.py": "pass"},
+        files={"agent-toolkit/share/rules/common/a.md": "規範A", "agent-toolkit/skills/b/SKILL.md": "規範B", "app.py": "pass"},
         commit_message="試験用の規範変更",
     )
     oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
@@ -85,13 +85,13 @@ def test_public_effect_check_partial_then_complete_preserves_original(
     """公開保存操作の部分確認・全確認とshow・一覧JSON、remoteへの反映を確認する。"""
     notes, worktree, path = effect_repository
     original = path.read_text(encoding="utf-8")
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "confirmed") == 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed") == 0
     result = capsys.readouterr().out.splitlines()
     assert result[0].startswith("成功: ")
     assert result[1:] == [str(path)]
     partial = path.read_text(encoding="utf-8")
     assert "effect_check: pending" in partial
-    assert list(effect_check.checked_files(partial)) == ["agent-toolkit/rules/a.md"]
+    assert list(effect_check.checked_files(partial)) == ["agent-toolkit/share/rules/common/a.md"]
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/b/SKILL.md", "confirmed") == 0
     assert "effect_check: pending" in path.read_text(encoding="utf-8")
     assert _invoke(notes, worktree, path.name, "app.py", "confirmed") == 0
@@ -121,14 +121,31 @@ def test_public_effect_insufficient_requires_saved_corrective_awi(
     """不足判定は是正先保存を要し、成功時にinsufficientを記録する。"""
     notes, worktree, path = effect_repository
     original = path.read_bytes()
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "insufficient") != 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "insufficient") != 0
     assert path.read_bytes() == original
     assert (
-        _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "insufficient", "--corrective-awi", "missing.md") != 0
+        _invoke(
+            notes,
+            worktree,
+            path.name,
+            "agent-toolkit/share/rules/common/a.md",
+            "insufficient",
+            "--corrective-awi",
+            "missing.md",
+        )
+        != 0
     )
     assert path.read_bytes() == original
     assert (
-        _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "insufficient", "--corrective-awi", "corrective.md")
+        _invoke(
+            notes,
+            worktree,
+            path.name,
+            "agent-toolkit/share/rules/common/a.md",
+            "insufficient",
+            "--corrective-awi",
+            "corrective.md",
+        )
         == 0
     )
     parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -137,7 +154,7 @@ def test_public_effect_insufficient_requires_saved_corrective_awi(
 
 
 @pytest.mark.parametrize(
-    "file", ["../rules/a.md", "/etc/passwd", "agent-toolkit/rules/missing.md", "agent-toolkit//rules/a.md"]
+    "file", ["../rules/a.md", "/etc/passwd", "agent-toolkit/share/rules/common/missing.md", "agent-toolkit//rules/a.md"]
 )
 def test_public_effect_rejects_invalid_file_without_writing(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], file: str
@@ -165,17 +182,25 @@ def test_public_effect_rejects_invalid_values(
     """不正な日付・判定・記録位置を保存前に拒否する。"""
     notes, worktree, path = effect_repository
     original = path.read_bytes()
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "confirmed", *extra) != 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed", *extra) != 0
     assert path.read_bytes() == original
 
 
 def test_public_effect_rejects_duplicate_file(effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path]) -> None:
     """部分確認済みのファイルを上書きしない。"""
     notes, worktree, path = effect_repository
-    assert _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "confirmed") == 0
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed") == 0
     original = path.read_bytes()
     assert (
-        _invoke(notes, worktree, path.name, "agent-toolkit/rules/a.md", "insufficient", "--corrective-awi", "corrective.md")
+        _invoke(
+            notes,
+            worktree,
+            path.name,
+            "agent-toolkit/share/rules/common/a.md",
+            "insufficient",
+            "--corrective-awi",
+            "corrective.md",
+        )
         != 0
     )
     assert path.read_bytes() == original
@@ -192,7 +217,7 @@ def test_public_effect_rejects_unadopted_and_ordinary_edit(
 ) -> None:
     """未採用の効果記録と通常editによる採用済み本文の変更を拒否する。"""
     notes, worktree, path = effect_repository
-    assert _invoke(notes, worktree, "corrective.md", "agent-toolkit/rules/a.md", "confirmed") != 0
+    assert _invoke(notes, worktree, "corrective.md", "agent-toolkit/share/rules/common/a.md", "confirmed") != 0
     body = tmp_path / "body.md"
     body.write_text("上書き", encoding="utf-8")
     original = path.read_bytes()

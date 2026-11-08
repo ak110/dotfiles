@@ -2,7 +2,7 @@
 name: edit-dotfiles-norms
 user-invocable: false
 description: >
-  dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、
+  dotfilesリポジトリで`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、
   `agent-basics/skills/`、`.claude/skills/`などのエージェント向け文書を変更・削除・縮小するとき、
   変更した規範を同じセッションへ適用するとき、規範を変更したセッションで会話圧縮後に作業を続けるとき、
   変更または新設したスキルを起動するとき、`agent-toolkit:process-wi`のメインがAWIごとに
@@ -42,7 +42,7 @@ description: >
 
 依頼やAWIに引用されている文面は、作業に着手する前に作業ツリーの現行本文から固定文字列で検索し、反映先の位置を特定する。一致する箇所が見つからない場合は、同じ目的を持つ現行の条文を反映先とする（古い引用文をそのまま置換対象にすると、すでに更新された条文と競合する規定が別の場所に増えてしまうためである）。編集対象の特定には作業ツリーを用い、配布先である`~/.claude/`や`~/.codex/`は対象としない。
 
-対象となる規範は、`AGENTS.md`、`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
+対象となる規範は、`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
 これらを変更したエージェントは、変更が確定した時点から作業ツリーの最新内容を自身のその後の判断に適用する。影響を受ける委譲先には原本の絶対パス、適用する節、版（commitハッシュ。未commitの場合はその旨と変更確定時刻）を伝え、委譲先自身が判断前に読み込む。セッション開始時の版と作業ツリーの版を明確に区別し、各担当者が同じ原本を参照できるようにする。
 
 - `Skill`ツールや`${CLAUDE_PLUGIN_ROOT}`配下の文書は、セッション開始時に読み込まれた版を返す（変更したスキルは古い内容のまま返り、新設したスキルは`Unknown skill`となる）。以降の判断に適用すると選んだ文書は、作業ツリー版を絶対パスで直接読み込む。

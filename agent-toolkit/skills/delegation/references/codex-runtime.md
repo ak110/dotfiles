@@ -7,10 +7,11 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` |
-| 委譲先と起動手段を選ぶ前 | `runtime-routing.md`の「実行手段」「工程別モデル設定」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」「工程別モデル設定」` |
-| 同一担当の継続・交代を判断する前 | `runtime-routing.md`の「継続と新規起動」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」` |
-| 可用性の障害を確認して回復する前 | `runtime-routing.md`の「代替起動」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「代替起動」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 委譲先と起動手段を選ぶ前 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 委譲先と起動手段を選ぶ前 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
+| 同一担当の継続・交代を判断する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| 可用性の障害を確認して回復する前 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` |
 
 ## ツール名の読み替え
@@ -50,29 +51,29 @@ Codex環境における役割指定`task`と`delegate`では、初回起動時�
 起動時に可用性の問題で失敗した場合の候補切り替えはサーバー側に任せ、委譲元は1回の起動応答を受け取る。
 起動後のターンにおいて可用性エラーにより終了した場合は、前任エージェントの終了と書込権限の解放を確認した上で、返却結果の`next_action`に従い、`start`に`handoff_from`のみを指定して引き継ぎ起動する。
 サーバー側が前任の起動条件と記録を後任へ引き渡し、応答として返された後任の`session_id`を以後の待機対象とする。
-引き継ぎ起動の定義は`runtime-routing.md`「実行手段」、可用性障害時の引き継ぎと記録内容は同書「代替起動」で定める。
+引き継ぎ起動の定義は`runtime-routing.md`「実行手段」、可用性障害時の引き継ぎと記録内容は`fallback-launch.md`「代替起動」で定める。
 継続には`send_message`、中断には`kill`、破棄には`stop`、結果の受領には`atk agents wait`を使用する。出力量が大きいコマンドは`start`の`shell`モード、読み取り専用の探索は`explore`モードを、agents_serverのserver instructionsに記載されている採算の目安に従って使い分ける。
 
-工程別モデル設定のキーが定義されている工程については、`runtime-routing.md`「工程別モデル設定」に従ってengineを解決する。`engine=claude`の指定をCodexの`spawn_agent`へ勝手に置き換えることは行わず、Claude向けには対応する`model_type`を指定して`agents_server`を使用する。指定されたengineを実行する手段が存在しない場合は、未完了として返すか、続行不能の理由を報告する。
+工程別モデル設定のキーが定義されている工程については、`process-model-settings.md`「工程別モデル設定」に従ってengineを解決する。`engine=claude`の指定をCodexの`spawn_agent`へ勝手に置き換えることは行わず、Claude向けには対応する`model_type`を指定して`agents_server`を使用する。指定されたengineを実行する手段が存在しない場合は、未完了として返すか、続行不能の理由を報告する。
 
 ## 後続操作の共通先行条件
 
 「元担当」とは、同一の作業のためにすでに起動された委譲先エージェントを指す。
-元担当が存在しない初回起動は、`references/runtime-routing.md`「工程別モデル設定」に従って実行する。クライアント接続の確立中や`thread/start`の実行前に可用性エラーが発生し、状態照会によってセッションが未生成であり元担当も不在であることが実際に確認できた場合（初回生成前失敗）の代替起動についても、初回起動と同様に扱う。これらを確認できない場合、またはセッションや元担当がすでに生成された後の代替起動は、次の条件に従う。
+元担当が存在しない初回起動は、`references/process-model-settings.md`「工程別モデル設定」に従って実行する。クライアント接続の確立中や`thread/start`の実行前に可用性エラーが発生し、状態照会によってセッションが未生成であり元担当も不在であることが実際に確認できた場合（初回生成前失敗）の代替起動についても、初回起動と同様に扱う。これらを確認できない場合、またはセッションや元担当がすでに生成された後の代替起動は、次の条件に従う。
 
 元担当の回復、置換、再起動、代替起動、および`interrupt_agent`による中断は、ユーザーからの明示的な要求、終了または失敗への状態遷移、タスク契約上のキャンセル指示のいずれかを確認できた場合に限り実行する。回復・置換・再起動・代替起動する際は、元担当の終了と書込権限の解放が完了していることもあわせて確認する。
 `list_agents`が元担当のステータスとして`running`を返している間はその状態を受け入れ、これらの後続操作を保留する。ファイルの差分、HEADコミット、更新時刻、無応答、経過時間などから停滞を推測することや、補助観測や催促の結果だけを根拠として後続操作を開始しない。
 
-元担当を持たないレーン担当エージェント、独立したレビュー担当、CI修正担当の起動は、`references/runtime-routing.md`「工程別モデル設定」に従う。
+元担当を持たないレーン担当エージェント、独立したレビュー担当、CI修正担当の起動は、`references/process-model-settings.md`「工程別モデル設定」に従う。
 
 ## agents_serverの二層待機
 
-外側セルの`cell_id`または内側コマンドの`session_id`のいずれかが未回収である場合は、`share/rules-common.codex.md`「Codex固有の入出力」に定める手段を用いて同一の実行結果を回収する。
+外側セルの`cell_id`または内側コマンドの`session_id`のいずれかが未回収である場合は、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定める手段を用いて同一の実行結果を回収する。
 独立作業と受信済み通知の処理が尽きた長い終了待ちでは、同節の120,000msの回収時間を目安とする。外側のpragma・`functions.wait`と、session ID受領後の空入力`write_stdin`に適用し、`exec_command`起動時の上限30,000ms、待機CLI自身のtimeoutと区別する。制御が戻るたびに追加入力と通知を処理し、短い処理や対話へ一律に適用しない。
 外側セルや`exec_command`におけるyieldは同一実行の継続区間として扱い、代替起動、中断、巻き取りは「後続操作の共通先行条件」を満たした場合に限り実行する。
 `functions.exec`の内部で`agents_server`を起動し、`PostToolUse`フックがMCPの応答を直接観測できない環境では、起動応答に含まれる`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。CLIは状態ディレクトリの実在性と、確認済みのルートセッションとの一致を検証する。
 
-`functions.exec`から`atk agents wait`を起動する場合も、`share/rules-common.codex.md`「Codex固有の入出力」に定めるコマンド回収契約に従い、外側セルの`cell_id`を`functions.wait`へ渡す。
+`functions.exec`から`atk agents wait`を起動する場合も、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定めるコマンド回収契約に従い、外側セルの`cell_id`を`functions.wait`へ渡す。
 待機CLIへタスク固有timeoutを渡さず、CLI自身が待機上限に達したときに対象が未終了なら、その結果を確かめてから新しい待機コマンドを実行する。
 逐次待機やロック競合によって遅れて開始された後発待機の回収手順は、`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」に従う。
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。

@@ -47,7 +47,7 @@ export const SEND_TO_USER_DELEGATED_DENY =
   "このツールを使わず、報告する本文を全て最終応答（終了の返却）へ書け。";
 
 // `AWI化ステータス`の値ごとに、理由の先頭に置く区分名と、区分名で始まらない場合の警告を対応付ける。
-// 値と記入方法の定義元は`share/rules-main.md`「作業中の改善点の報告」、`不要`の区分は`agent-basics:bugfix`の
+// 値と記入方法の定義元は`share/rules/rules-main.md`「作業中の改善点の報告」、`不要`の区分は`agent-basics:bugfix`の
 // `references/root-cause-prevention.md`「再発防止策の必須性」、`予定`の区分は`agent-toolkit:delegation`の
 // `references/waiting-and-monitoring.md`「待機中の先行実施」にある。`済`・`即時対応`は理由を持たないため検査しない。
 // 判定は区分名と冒頭の語句との文字列照合だけとし、理由の意味は推定しない。送達は止めない。

@@ -94,7 +94,7 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 `agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」も適用する。`拡張原因分析`の要否にかかわらず、すべての欄を同一の基準で記載する。
 類似見直しの該当件数が0件の場合や、採用すべき再発防止策がないと判断した場合も、同書が求める記録内容を該当欄に記載する。
 
-続行不能と追加報告行は、共通契約`../../../share/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:defect-investigation:end -->
 
 ## 類似見直しの分担
@@ -114,4 +114,4 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |

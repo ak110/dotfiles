@@ -608,7 +608,10 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     軽量種別の`<役割名>.subagent.md`の委譲先はファイルを書けない1工程の担当であり、引き継ぎ記録を持たないため集合から除く。
     """
     share = pathlib.Path(__file__).resolve().parent / "share"
-    markdown = {path.name: path.read_text(encoding="utf-8") for path in sorted(share.glob("*.md"))}
+    # 役割別の規範は`share/rules/`へ置くため、共有文書と同じ集合で引き継ぎ記録の参照を比べる。
+    markdown = {
+        path.name: path.read_text(encoding="utf-8") for path in sorted([*share.glob("*.md"), *(share / "rules").glob("*.md")])
+    }
     lightweight = {
         path.name for path in share.glob("*.subagent.md") if _declaration(path).launch_kind in ("explore", "write", "shell")
     }

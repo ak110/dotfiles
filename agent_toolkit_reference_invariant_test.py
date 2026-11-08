@@ -865,8 +865,14 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
 # 監査記録の見出しを、索引元の条文またはコードが同じ文字列で指すことを検査する。
 # 索引元は、テスト（`*_test.py`）と`docs/`配下を除く追跡ファイルと、見出しのファイル部分が指すファイル自身とする。
 # テスト、設計記録と判定台帳は見出しを索引元として持たずに引用するため、そこにだけ現れる見出しは参照元を持たない。
-# 常時規範（`agent-toolkit/rules/`配下と`agent-toolkit/share/rules-*.md`）は全主体が毎回読むため条文へ索引の文を置かず、
-# 見出しそのものを索引とする。ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
+# 常時規範（`agent-toolkit/share/rules/common/`配下と`agent-toolkit/share/rules/rules-*.md`）は全主体が毎回読む。
+# そのため条文へ索引の文を置かず、見出しそのものを索引とする。
+# ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
+# 規範原本を`share/rules/`へ集める前の見出しは旧パスのまま当時の記録として残すため、現在の所在へ読み替えて照合する。
+_RULE_DOCUMENT_RELOCATIONS = (
+    ("agent-toolkit/rules/", "agent-toolkit/share/rules/common/"),
+    ("agent-toolkit/share/rules-", "agent-toolkit/share/rules/rules-"),
+)
 _AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
 _AUDIT_INDEX_EXCLUDED_PREFIX = "docs/"
 # 監査記録の本文が他の記録を「<対象>：<節>：<年月日>」の見出しで指す参照。
@@ -889,12 +895,24 @@ def _reference_text(root: pathlib.Path, source: pathlib.Path) -> str:
     return f"{content}\n{_comment_joined(content)}"
 
 
+def _current_rule_path(path: pathlib.Path) -> pathlib.Path:
+    """旧配置の規範パスを現在の所在へ読み替える。"""
+    value = path.as_posix()
+    for old, new in _RULE_DOCUMENT_RELOCATIONS:
+        if value.startswith(old):
+            return pathlib.Path(new + value.removeprefix(old))
+    return path
+
+
 def _is_rule_document(path: pathlib.Path) -> bool:
-    """常時規範（`agent-toolkit/rules/`直下と`agent-toolkit/share/rules-*.md`）のパスかを返す。"""
+    """常時規範（`agent-toolkit/share/rules/common/`直下と`agent-toolkit/share/rules/rules-*.md`）のパスかを返す。旧配置も読み替えて判定する。"""
+    path = _current_rule_path(path)
     if path.suffix != ".md":
         return False
     parent = path.parent.as_posix()
-    return parent == "agent-toolkit/rules" or (parent == "agent-toolkit/share" and path.name.startswith("rules-"))
+    return parent == "agent-toolkit/share/rules/common" or (
+        parent == "agent-toolkit/share/rules" and path.name.startswith("rules-")
+    )
 
 
 def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str) -> bool:
@@ -902,7 +920,7 @@ def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading
     parts = heading.split("：")
     if len(parts) < 3:
         return False
-    rule_file = pathlib.Path(parts[0])
+    rule_file = _current_rule_path(pathlib.Path(parts[0]))
     section = "：".join(parts[1:-1])
     if rule_file not in tracked:
         return False
@@ -1026,8 +1044,8 @@ def test_rule_audit_heading_requires_existing_section(tmp_path: pathlib.Path) ->
         encoding="utf-8",
     )
     files = {
-        pathlib.Path("agent-toolkit/rules/01-a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
-        pathlib.Path("agent-toolkit/share/rules-main.md"): "# 規範\n\n## 節B\n\n本文。\n",
+        pathlib.Path("agent-toolkit/share/rules/common/01-a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
+        pathlib.Path("agent-toolkit/share/rules/rules-main.md"): "# 規範\n\n## 節B\n\n本文。\n",
         pathlib.Path("tool.py"): f"# 監査記録は「{renamed}」と「{missing_file}」にある。\n",
     }
     for path, content in files.items():
@@ -1052,7 +1070,7 @@ def test_audit_body_reference_to_missing_heading_is_reported() -> None:
 
 def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:
     """参照先の見出しを削除すると、その見出しを名前で指す全ての参照を未解決として報告する。"""
-    rules = tmp_path / _PLUGIN_PREFIX / "rules" / "01-agent.md"
+    rules = tmp_path / _PLUGIN_PREFIX / "share" / "rules" / "common" / "01-agent.md"
     rules.parent.mkdir(parents=True)
     rules.write_text("# 規範\n\n### 調査と検証\n\n観測で主張を支える。\n", encoding="utf-8")
     skill = pathlib.Path(_PLUGIN_PREFIX, "skills", "sample", "SKILL.md")
@@ -1060,15 +1078,15 @@ def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -
     (tmp_path / skill).write_text(
         "\n".join(
             [
-                f"`{_PLUGIN_PREFIX}/rules/01-agent.md`「調査と検証」に従う。",
-                f"`{_PLUGIN_PREFIX}/rules/01-agent.md`の「調査と検証」を読む。",
-                "`${CLAUDE_PLUGIN_ROOT}/rules/01-agent.md`「調査と検証」を参照する。",
+                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`「調査と検証」に従う。",
+                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`の「調査と検証」を読む。",
+                "`${CLAUDE_PLUGIN_ROOT}/share/rules/common/01-agent.md`「調査と検証」を参照する。",
             ]
         ),
         encoding="utf-8",
     )
     sources = [skill]
-    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "rules", "01-agent.md"), skill]
+    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "share", "rules", "common", "01-agent.md"), skill]
     assert not _unresolved_heading_references(tmp_path, sources, markdown_paths)
 
     rules.write_text("# 規範\n\n観測で主張を支える。\n", encoding="utf-8")

@@ -14,7 +14,7 @@
 | 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 本文で基準を使う資料の選択・取得時 | `lane-planning.md#「計画の起草」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lane-planning.md#「計画の起草」` |
 | 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md#「長時間待機前の会話圧縮」` |
 | 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/references/origin-and-approval.md#「承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「承認」` |
@@ -46,7 +46,7 @@
 
 稼働中のレーンが1つのみとなった場合でも、そのレーンに含まれる未着手のAWIは同一レーン内で処理を継続する。未着手のAWIを別レーンへ移管すると計画ファイルの分割や書き込み所有権の移譲が必要となり、計画凍結（`agent-toolkit:write-plan`の`references/plan-file-standards.md`）の原則に反するためである。単独稼働となる期間は、選定工程における段階設計を工夫することで短縮を図る。
 
-レーン担当を起動する際は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に定められた入力を渡す。初回起動時における各AWIの再開位置は選定結果から読み取り、担当エージェント全体に対する`再開位置`は中断した同一担当を再開する場合にのみ渡す。該当レーンに属する各WIの`担当モデル.実装担当`は、`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」に従って`model_type`へ指定し、比較検討の結果を引き継ぎ記録へ残す。異なる指定が含まれている場合はWI名と設定値を明示し、いずれかの指定を独断で破棄して起動することは避ける。
+レーン担当を起動する際は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に定められた入力を渡す。初回起動時における各AWIの再開位置は選定結果から読み取り、担当エージェント全体に対する`再開位置`は中断した同一担当を再開する場合にのみ渡す。該当レーンに属する各WIの`担当モデル.実装担当`は、`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」に従って`model_type`へ指定し、比較検討の結果を引き継ぎ記録へ残す。異なる指定が含まれている場合はWI名と設定値を明示し、いずれかの指定を独断で破棄して起動することは避ける。
 初回の`書込担当一覧`は合意済みのセッションIDと担当範囲に基づいて確定し、担当の交代、再開、および単一レーンへの追送時に更新する。
 一覧と対象worktreeの対応関係は引き継ぎ記録へ保持し、統合を担当するレーン担当が同一の認可セットを利用できるようにする。
 

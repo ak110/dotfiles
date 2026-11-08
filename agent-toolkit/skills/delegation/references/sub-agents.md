@@ -16,7 +16,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/sending.md#「委譲プロンプトの構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sending.md#「委譲プロンプトの構成」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 
 ## `<役割名>.parent.md`と`<役割名>.subagent.md`の構成
 
@@ -59,7 +60,7 @@ continuations:
 | `continuations` | 後述の継続指示の配列 |
 
 必須入力と任意入力の名前は宣言全体で重複を避け、空白文字、バッククォート、読点、全角カンマ、先頭・末尾のコロンを含めないようにする。
-モデルの上書きと候補列の直接指定にも、`runtime-routing.md`「工程別モデル設定」の自律選択制限とユーザー明示指定の境界を適用する。
+モデルの上書きと候補列の直接指定にも、`process-model-settings.md`「工程別モデル設定」の自律選択制限とユーザー明示指定の境界を適用する。
 サーバーは、必須入力の不足や未宣言の入力が存在する場合、起動前に処理を拒否する。入力項目の追加・削除・名称変更する際は、宣言、本文、ならびに呼び出し元の契約を同一の変更で整合させる。
 新しい定型チェックは、役割文書の宣言と本文、および呼び出し元の入力・検収契約を追加するだけで起動可能になる。
 共通の読み取り処理は`agent_toolkit/_common/task_documents.py`に集約し、サーバー、hook、プロンプト生成、レーンの書き込み判定が同一の宣言定義を共有する。
@@ -89,7 +90,7 @@ continuations:
 呼出側の既存の起動・受領契約へ必要な部分だけを生成配置し、委譲元の起動準備と形式の検収はその配置先で完結させる。
 生成部分は手動で編集せず、定義元から同期する。内部手順と起動設定は生成対象に含めない。
 
-- 行を省略可能な項目の定義方法は、`agent-toolkit:/share/rules-subagent.md`「返却形式の受け渡し」におけるデフォルト値の規定に従い、同一の要素は単一のデータ構造にのみ列挙させる。
+- 行を省略可能な項目の定義方法は、`agent-toolkit:/share/rules/rules-subagent.md`「返却形式の受け渡し」におけるデフォルト値の規定に従い、同一の要素は単一のデータ構造にのみ列挙させる。
 
 - 完了・続行不能・通知・追加報告は、同書「返却形式の受け渡し」へ集約し、役割文書には固有の成功値・結果欄・工程境界と共通契約との差分だけを置く。同節は軽量起動にも自動配送される。調査によって確定できる結論は、結果としての具体的な値を持たせる。
 

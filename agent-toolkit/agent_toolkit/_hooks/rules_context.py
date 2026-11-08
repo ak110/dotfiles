@@ -60,11 +60,13 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 """
 
 SHARE_DIR = plugin_resources.plugin_root() / "share"
-MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
-MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
-MAIN_RULES_CODEX_PATH = SHARE_DIR / "rules-main.codex.md"
-SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
-SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
+# SHARE_DIRはplugin rootの算出にも使うため基点を保ち、役割別の規範だけ`share/rules/`から読む。
+RULES_DIR = SHARE_DIR / "rules"
+MAIN_RULES_PATH = RULES_DIR / "rules-main.md"
+MAIN_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-main.claude-code.md"
+MAIN_RULES_CODEX_PATH = RULES_DIR / "rules-main.codex.md"
+SUBAGENT_RULES_PATH = RULES_DIR / "rules-subagent.md"
+SUBAGENT_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 # 圧縮後に作業契約の後へ続く通知（原文の抽出先、資料の再取得案内）へ残す文字数。
 _COMPACTION_RESERVE = 1_500

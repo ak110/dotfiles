@@ -45,7 +45,7 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
 
 def test_shared_classification_table_matches_runtime() -> None:
     """人が読む閉集合の各値を公開前検査が受理し、別の値を拒否する。"""
-    rules = (rules_context.SHARE_DIR / "rules-subagent.md").read_text(encoding="utf-8")
+    rules = (rules_context.RULES_DIR / "rules-subagent.md").read_text(encoding="utf-8")
     values = re.findall(r"^\| `([a-z_]+)` \|", rules, flags=re.MULTILINE)
     assert values and len(values) == len(set(values))
     document = rules_context.SHARE_DIR / "exec.subagent.md"

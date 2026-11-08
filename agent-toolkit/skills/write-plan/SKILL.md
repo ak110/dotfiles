@@ -59,7 +59,7 @@ description: >
 ## 確認と起動経路
 
 確認する基準や手順、UWIへの退避方法は`agent-toolkit:user-confirmation-and-report`に従う。協調モードでメインエージェントが起動した場合は、同スキルの`references/grilling.md`に沿ってユーザーと認識を合わせてから起草する。入力となるWIで確定済みの事項は、改めて確認し直す必要はない。
-`agent-toolkit:process-wi`のレーン担当は、確認事項が生じた際に`agent-toolkit/share/rules-subagent.md`の「確認事項の即時通知」に従って委譲元へ通知し、回答を得てから作業を再開する（UWIの登録は委譲元が担当する）。起草と待機の区切りは、`agent-toolkit:process-wi`の`references/lane-planning.md`で定める。
+`agent-toolkit:process-wi`のレーン担当は、確認事項が生じた際に`agent-toolkit/share/rules/rules-subagent.md`の「確認事項の即時通知」に従って委譲元へ通知し、回答を得てから作業を再開する（UWIの登録は委譲元が担当する）。起草と待機の区切りは、`agent-toolkit:process-wi`の`references/lane-planning.md`で定める。
 
 ## 計画ファイルの作成要否
 

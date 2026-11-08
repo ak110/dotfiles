@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 
 ## 状態資料の節の選択
 
@@ -337,7 +337,7 @@ Codexバックエンドは、接続切り替え時および過去ログからの
 検証を通過した同一プロバイダーへの通常再開には`codex_state_provider`を使用する。
 生成元を示す識別子が存在しない古い移行ログにおいて、選択された接続先と初期`session_meta`のプロバイダーが異なり、かつ不透明なデータが存在する場合は、現在の選択先への再開は行わず、引き継ぎ手順を案内する。
 
-モデル候補の設定は、`atk config get config_dir`が返すディレクトリ内の`config.json`に保存されており、MCPサーバーは起動するたびにこれを読み込む。古い9段階キーや用途別・エンジン優先順の5キーが保存されている場合は、候補解決または`atk config show` / `get`を最初に実行した主体（MCPサーバーまたは`atk` CLI）が、これらを6工程の候補リストへと合成し、廃止された旧キーを除去して単一のファイルを一括で更新する。移行結果は保存されている値のみから一意に決定されるため、複数のプロセスが同時に移行処理を実行しても同一の内容となる。移行の詳しい仕様は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」を参照のこと。
+モデル候補の設定は、`atk config get config_dir`が返すディレクトリ内の`config.json`に保存されており、MCPサーバーは起動するたびにこれを読み込む。古い9段階キーや用途別・エンジン優先順の5キーが保存されている場合は、候補解決または`atk config show` / `get`を最初に実行した主体（MCPサーバーまたは`atk` CLI）が、これらを6工程の候補リストへと合成し、廃止された旧キーを除去して単一のファイルを一括で更新する。移行結果は保存されている値のみから一意に決定されるため、複数のプロセスが同時に移行処理を実行しても同一の内容となる。移行の詳しい仕様は`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」を参照のこと。
 
 明示的なモデル候補リストから選択されたAPI会話は、API直接接続およびサブスクリプションからの移行のいずれであっても、`stop`の実行や保持期限切れに伴うリソース解放が行われた後、解放済みレコードに保存されている内部再開情報を基に復元される。
 

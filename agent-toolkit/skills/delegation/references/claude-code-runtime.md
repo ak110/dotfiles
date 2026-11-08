@@ -1,6 +1,7 @@
 # Claude Codeでの委譲の実装
 
-本書はClaude Codeから委譲する際の実装上の取り決めを定める。共通の送信・受領契約は`agent-toolkit:delegation`のSKILL.md、委譲先の選定とworktreeの扱いは同スキルの`references/runtime-routing.md`「実行手段」および「実装担当とworktree」に従う。
+本書はClaude Codeから委譲する際の実装上の取り決めを定める。共通の送信・受領契約は`agent-toolkit:delegation`のSKILL.mdに従う。
+委譲先の選定は同スキルの`references/runtime-routing.md`「実行手段」、worktreeの扱いは`references/implementation-worktree.md`「実装担当とworktree」に従う。
 
 ## 名指し参照の読込方法
 
@@ -8,8 +9,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「実行手段」「実装担当とworktree」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」「実装担当とworktree」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-worktree.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/implementation-worktree.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「送信」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「送信」` |
 | 委譲入力の言語指定を確定する前 | `base-contract.md#「操作の制限と応答言語」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「操作の制限と応答言語」` |
@@ -17,7 +18,8 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `receiving.md#「受領手段と報告様式の選択」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「受領手段と報告様式の選択」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#%E3%80%8C%60atk%20agents%20wait%60%E3%81%AE%E5%BF%9C%E7%AD%94%E3%81%AE%E6%89%B1%E3%81%84%E3%80%8D` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies.md#「ホストによる背景待機の停止後」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` |
-| `Agent`ツールで起動した担当を継続する前 | `runtime-routing.md`の「継続と新規起動」「Agentツールの継続」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」「Agentツールの継続」` |
+| `Agent`ツールで起動した担当を継続する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「完了通知を待ってターンを終える場合」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「完了通知を待ってターンを終える場合」` |
 
 ## 起動パラメーター
@@ -42,7 +44,7 @@
 
 - `SendMessage`および`ListAgents`の利用可否は、現在のエージェントに実際にツールが公開されており、かつ呼び出しが成功するかどうかで判断する。環境変数、プロバイダー、agent定義での許可設定から推測せず、拒否されたツールは利用不能として扱う。agent定義の`tools`記述は利用可能な権限の上限を示すにすぎない。
 - `ListAgents`が利用できない場合は、保持しているエージェントID、完了通知、成果物の状況、自身が起動してプロセスIDを保持しているプロセスの生存確認（停止を伴う場合は停止成否を含む）を組み合わせて判断する（以下「代替稼働観測」）。プロセス名の一致のみから生存や対象プロセスを推測しない。
-- 通常起動されるClaude委譲先に対しては、`agents_server`が`agent-toolkit/share/rules-subagent.md`および`agent-toolkit/share/rules-subagent.claude-code.md`をシステムプロンプトに連結する。`Agent`ツールのサブエージェントに対しては、`SubagentStart`フックが同一の2ファイルをコンテキストに追加する。通常起動と軽量起動の違いは`references/runtime-routing.md`「実行手段」で定める。
+- 通常起動されるClaude委譲先に対しては、`agents_server`が`share/rules/`の`rules-subagent.md`と`rules-subagent.claude-code.md`をシステムプロンプトに連結する。`Agent`ツールのサブエージェントに対しては、`SubagentStart`フックが同一の2ファイルをコンテキストに追加する。通常起動と軽量起動の違いは`references/runtime-routing.md`「実行手段」で定める。
 - `agents_server`の委譲先は独立したClaude Agent SDKセッションであり、ターンの終了時に`Stop`イベントが発生する。一方、`Agent`ツールのサブエージェントでは`SubagentStop`イベントが発生し、フックの入力に`agent_id`が渡される。規範上の役割とフックの種別は別個のものとして扱い、最上位セッション限定の工程では`起動経路`の記録に基づいて最上位かどうかを判定する。
 
 | 通信scope | 宛先候補 | 成立条件 | 成立しない場合 |
@@ -58,8 +60,8 @@
 
 以下の`Agent`・`Explore`・`Plan`の操作説明は、`runtime-routing.md`「実行手段」の使用条件を満たす場合に適用する。
 
-- 専用の`<役割名>.subagent.md`またはagent定義が存在する起動では、委譲プロンプトは`agent-toolkit:delegation`「送信」に従って構成する。完了報告をツールの戻り値として1回だけ返し、`SendMessage`では送信しないという契約は該当の定義側に記述する。即時通知の扱いは、`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」および`agent-toolkit/share/rules-subagent.claude-code.md`「即時通知の宛先」に従う。
-- 名前付き定義には、前景での完了報告の返却方法、`SendMessage`を使用しないこと、待機対象の結果を含める要件を規定する。記述言語は`agent-toolkit/rules/01-agent.md`「使用言語」の読者基準に従い、フォーマットを固定する機械可読ブロックや固定文字列はそのまま保持する。
+- 専用の`<役割名>.subagent.md`またはagent定義が存在する起動では、委譲プロンプトは`agent-toolkit:delegation`「送信」に従って構成する。完了報告をツールの戻り値として1回だけ返し、`SendMessage`では送信しないという契約は該当の定義側に記述する。即時通知の扱いは、`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」および`agent-toolkit/share/rules/rules-subagent.claude-code.md`「即時通知の宛先」に従う。
+- 名前付き定義には、前景での完了報告の返却方法、`SendMessage`を使用しないこと、待機対象の結果を含める要件を規定する。記述言語は`agent-toolkit/share/rules/common/01-agent.md`「使用言語」の読者基準に従い、フォーマットを固定する機械可読ブロックや固定文字列はそのまま保持する。
 - 専用の定義を持たない`claude`・`Explore`・forkの委譲プロンプトには、待機対象の結果も含めてツールの戻り値で1回だけ返却する（`SendMessage`は使用しない）旨の指示を含める。ユーザーが読む本文・成果物の言語指定は`base-contract.md`「操作の制限と応答言語」に従う。なお、forkでは親エージェントが保持している背景情報の再掲は省略する。
 - `rules-subagent.md`および`rules-subagent.claude-code.md`は`SubagentStart`フックによって自動的に追加されるため、プロンプト内で明示的に読み込みを指示する必要はない。
 - 組み込みの`Explore`および`Plan`は、親エージェントのCLAUDE.md、メモリー階層、親のgitステータスを引き継がない（同名のユーザー定義やプロジェクト定義で上書きした場合は引き継ぐ。これはfrontmatterでは変更できない固定の挙動である）。そのため、委譲プロンプトに`01-agent.md`の絶対パスを渡して作業着手前に全文読み込ませ、判定に使用する実行系コマンド、検証コマンド、除外範囲、報告様式を明記する。
@@ -67,7 +69,8 @@
 
 ## 検証コマンドの実行形態
 
-待機の起動と結果回収は`references/waiting-and-monitoring.md`「待機区間の構成」に従い、待機以外の検証・ビルドやリモートホストでの長時間コマンドは同書「背景ジョブの起動形（Claude Code）」に従う。バックグラウンド移行したコマンドの終了状態を確認して終了報告を返す規定は、`agent-toolkit/share/agents-server-delegate-notice.md`と`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」で定める。
+待機の起動と結果回収は`references/waiting-and-monitoring.md`「待機区間の構成」に従い、待機以外の検証・ビルドやリモートホストでの長時間コマンドは同書「背景ジョブの起動形（Claude Code）」に従う。バックグラウンド移行したコマンドの終了状態を確認して終了報告を返す規定は、`agent-toolkit/share/agents-server-delegate-notice.md`で定める。
+同じ規定の共通部分は`agent-toolkit/share/rules/common/02-agent-operations.md`「ツール・コマンド運用」にある。
 バックグラウンドで実行中のBashコマンド（`run_in_background=true`の指定、または実行環境の判断で移行したもの）を停止する場合は、起動結果や移行通知で返されたタスクIDのみを`TaskStop`へ渡す。遅延して提示される環境では、ツールのスキーマを取得してから呼び出す。
 
 ## 一時領域と成果物の観測
@@ -94,7 +97,7 @@
 監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：2026年8月」に記載されている。
 
 1. 委譲元は`Agent`ツールの戻り値から直接の子エージェントのagent IDを保持し、通信先にはそのIDのみを使用する。
-2. 委譲先は通常の完了報告をツールの戻り値として1回だけ返却する。即時通知は、`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」の判定に基づいて`SendMessage`が選択された場合に送信する。
+2. 委譲先は通常の完了報告をツールの戻り値として1回だけ返却する。即時通知は、`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」の判定に基づいて`SendMessage`が選択された場合に送信する。
 3. 直接の委譲元ではない祖先エージェントが子孫エージェントの完了通知を受信した場合は、`status`と`result`を保持し、`SendMessage`が公開されていて保持している直接の子のIDへの呼び出しが成功する場合に限り、同一IDへ逐語で中継する。
 4. `SendMessage`の`success: true`やqueuedという応答は、送信側での受理を示しているにすぎない。中継先のIDと、送信後に返却される完了通知または戻り値を突き合わせて、確実な受信を確認する。
 5. `SendMessage`が未公開または拒否された場合、あるいは送信後の結果が観測できない場合は、再送信を控える。未完了の工程が自身の担当範囲と権限に収まる場合に限り自身で巻き取りを行い、それ以外の場合は保持している通知内容、送信先ID、送信結果、未観測の状況を続行不能の理由として報告する。
@@ -107,7 +110,7 @@
 - `ListAgents`および`TaskStop`は、自身のツール一覧に公開されており、呼び出しが成功する場合にのみ使用する。
 - バックグラウンドで実行中の委譲タスクの稼働状態は`ListAgents`で観測する。単に進捗のみを確認するタイミングでは、成果物ファイルのパスが確定していれば前節の補助観測で確認して`ListAgents`の呼び出しを控え、停滞の判定、催促や巻き取りの要否と宛先の確定、終了を検知するタイミングで呼び出す。成果物パスも管理下のプロセスも存在しない場合は、進捗報告を省略して完了通知の到着を待つ。完了直後の委譲先は一覧に現れない場合があるため、一覧に存在しないことは終了を支持する参考材料にとどめる。
 - `ListAgents`や`TaskStop`が利用できない場合は、起動結果の識別子を保持した上で、出力ファイルの末尾標識（試行回数上限を設定）、前述の補助観測、保持しているプロセスの生存照会を組み合わせて判定する。更新が継続している間は安易に完了とみなさず、催促にとどめる。
-- 待機の解除手段、およびMCPツール呼び出しがバックグラウンドへ移行した場合の扱いについては、`references/waiting-and-monitoring.md`「待機区間の構成」に従う。また、`Agent`ツールによる担当エージェントの継続条件と配送不能の判定は、`references/runtime-routing.md`「継続と新規起動」「Agentツールの継続」に従う。
+- 待機の解除手段、およびMCPツール呼び出しがバックグラウンドへ移行した場合の扱いについては、`references/waiting-and-monitoring.md`「待機区間の構成」に従う。また、`Agent`ツールによる担当エージェントの継続条件と配送不能の判定は、`references/continuation.md`「継続と新規起動」と`references/agent-tool-continuation.md`「Agentツールの継続」に従う。
 
 ## 待機中の定期再確認と背景転換
 

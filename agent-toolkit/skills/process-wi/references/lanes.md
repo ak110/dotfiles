@@ -66,7 +66,7 @@ AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と
 
 WIの作成、計画、実行、実行レビューの責務と引き渡し手順は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
-- **メイン**: `agent-toolkit/rules/01-agent.md`に定めるメインエージェントの略称
+- **メイン**: メインエージェントの略称
 - **選定工程、レーン工程、公開工程**: 本スキルにおける3つの主要工程。詳細な規定はそれぞれ`selection-procedure.md`、`run-lanes.md`、`finish-session.md`にある。公開工程の定義は`agent-toolkit:commit`の`references/publish.md`冒頭にあり、本スキルでは公開担当が受け持つ
 - **処理対象WI**: メインが選定時に確定した、1回の実行で処理するAWIの集合。ユーザーの明示追加、「明示された目標からの実行」で具体化した必要作業、`immediate-fix.md`「即時対応」で今回追加と判定した正式改善AWIも含む
 - **レーン**: 処理対象を割り当てる作業単位。それぞれ1つの専用ブランチと専用worktree（git worktree）を持つ

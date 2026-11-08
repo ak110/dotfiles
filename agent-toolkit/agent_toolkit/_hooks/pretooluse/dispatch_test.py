@@ -1104,7 +1104,7 @@ class TestUserFacingTextChecks:
 class TestAtkContractBeforeQuestion:
     """`atk`サブコマンドを主題とする確認を遮断しない。
 
-    受理形式の事前確認は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」が定め、
+    受理形式の事前確認は`agent-toolkit/share/rules/common/02-agent-operations.md`「ツール・コマンド運用」が定め、
     hookの遮断では強制しない。
     """
 

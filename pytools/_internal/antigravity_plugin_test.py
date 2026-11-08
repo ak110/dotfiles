@@ -31,10 +31,10 @@ def _source(tmp_path: Path) -> Path:
                 }
             }
         ),
-        "rules/01-agent.md": "共通規範を守る。\n" * 1100,
+        "share/rules/common/01-agent.md": "共通規範を守る。\n" * 1100,
         _CHECK_SKILL.as_posix(): "---\nname: check\ndescription: 検査する\n---\n${CLAUDE_PLUGIN_ROOT}/scripts/check.py\n",
         "agents/worker.md": "---\nname: worker\ndescription: 作業を行う\n---\n作業する。\n",
-        "share/rules-main.md": "メインの指針。\n",
+        "share/rules/rules-main.md": "メインの指針。\n",
         "share/execute.subagent.md": "---\nrequired_inputs: [対象]\n---\n担当の入力を受け取って実装する。\n",
         "skills/long/SKILL.md": "---\r\nname: long\r\ndescription: 長い工程を実行する\r\n---\r\n" + "全文を読む。\r\n" * 2000,
         "agent_toolkit/hook.py": "print('{}')\n",
@@ -100,7 +100,7 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert str(target / "share/execute.subagent.md") in (target / "agents/execute.md").read_text()
     assert (target / "skills/long/SKILL.md").stat().st_size < 24_000
     assert (target / "skills/long/references/antigravity-full-instructions.md").read_text() == "全文を読む。\n" * 2000
-    assert (target / "share/rules-main.md").is_file()
+    assert (target / "share/rules/rules-main.md").is_file()
     assert (target / "uv.lock").is_file()
     assert not (target / "agent_toolkit/hook_test.py").exists()
     rules = sorted((target / "rules").glob("*.md"), key=lambda path: path.name != "AGENTS.md")
@@ -108,7 +108,7 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert all(path.stat().st_size <= 24_000 for path in rules)
     assert (
         "".join(path.read_text().removeprefix("---\ntrigger: always_on\n---\n\n") for path in rules)
-        == (source / "agent-toolkit/rules/01-agent.md").read_text()
+        == (source / "agent-toolkit/share/rules/common/01-agent.md").read_text()
     )
     assert not subject.check_diagnostics(source)
     assert not subject.sync(source)
@@ -132,7 +132,7 @@ def _boundary_rules(source: Path, tail: str, follow: str) -> str:
     text = filler * count + "a" * remainder + "\n" + tail + follow + "続く本文。\n"
     assert len((filler * count + "a" * remainder + "\n" + tail).encode()) <= body_limit
     assert len((filler * count + "a" * remainder + "\n" + tail + follow).encode()) > body_limit
-    (source / "agent-toolkit/rules/01-agent.md").write_text(text, encoding="utf-8")
+    (source / "agent-toolkit/share/rules/common/01-agent.md").write_text(text, encoding="utf-8")
     return text
 
 
@@ -180,7 +180,7 @@ def test_size_failure_keeps_previous_distribution(source: Path, body: str) -> No
     subject.sync(source)
     manifest = source / "agent-toolkit-agy/plugin.json"
     before = manifest.read_bytes()
-    (source / "agent-toolkit/rules/01-agent.md").write_text(body)
+    (source / "agent-toolkit/share/rules/common/01-agent.md").write_text(body)
     with pytest.raises(ValueError):
         subject.sync(source)
     assert manifest.read_bytes() == before
@@ -205,9 +205,9 @@ def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_
         "include_only": ["agent-toolkit-agy", "agent-basics-agy"],
     }
     assert not subject.run().changed
-    (source / "agent-toolkit/share/rules-main.md").write_text("更新後のメイン指針")
+    (source / "agent-toolkit/share/rules/rules-main.md").write_text("更新後のメイン指針")
     assert subject.run().changed
-    assert (source / "agent-toolkit-agy/share/rules-main.md").read_text() == "更新後のメイン指針"
+    assert (source / "agent-toolkit-agy/share/rules/rules-main.md").read_text() == "更新後のメイン指針"
     assert len(json.loads(registry.read_text())["entries"]) == 2
 
 

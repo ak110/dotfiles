@@ -1,6 +1,6 @@
 # rules-main.md: メインエージェント向け規範
 
-本書はメインエージェントの対話・接点運用を定める。共通の判断は`agent-toolkit/rules/01-agent.md`に従う。
+本書はメインエージェントの対話・接点運用を定める。
 
 ## 協調と自律
 
@@ -38,7 +38,7 @@
 次: <対応>
 ```
 
-`../skills/user-confirmation-and-report/references/communication-methods.md`「起動案内と進捗通知」に従う。
+`../../skills/user-confirmation-and-report/references/communication-methods.md`「起動案内と進捗通知」に従う。
 進捗率は点検だけに表示し、通常の途中報告・末尾・回答では日本語で結果と判断を伝える。
 
 ## 作業中の改善点の報告
@@ -91,7 +91,7 @@ all-repos統括を含む全メインは、待機中に判定できる改善を�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 待機中の改善点報告前 | `../skills/delegation/references/waiting-and-monitoring.md#待機中の先行実施` | 判断 | `section:*/skills/delegation/references/waiting-and-monitoring.md#「待機中の先行実施」` |
-| 会話で継続的な方針を受け取った時 | `../skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` |
-| process-wi中に方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 待機中の改善点報告前 | `../../skills/delegation/references/waiting-and-monitoring.md#待機中の先行実施` | 判断 | `section:*/skills/delegation/references/waiting-and-monitoring.md#「待機中の先行実施」` |
+| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` |
+| process-wi中に方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |

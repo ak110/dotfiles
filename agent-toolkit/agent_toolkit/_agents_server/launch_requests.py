@@ -257,7 +257,7 @@ def wrap_delivery_body(body: str) -> str:
     """委譲先へ配送する本文を、生成された配送境界で囲む。
 
     配送境界は最初の開始タグと最後の同名終了タグで確定する。
-    委譲先の解釈は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」が定める。
+    委譲先の解釈は`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」が定める。
     """
     return auto_message(body, source="agents-server", kind="delivery")
 

@@ -58,7 +58,7 @@ continuations:
 | 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` | 判断 | `read:agent-basics:*/skills/secret-files/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
 | 本文でこの資料の基準を参照・取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
 | 本文でこの資料の基準を参照・取得する時 | `recurrence-self-check-items.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check-items.md` |
 
@@ -181,7 +181,7 @@ Git履歴が書き換えられた後の開始時点には、書き換え後の�
 Codexの組み込み委譲は`agents_server`が利用できない場合の代替手段として位置づけられ、`fork_turns: "none"`を指定して起動する。
 
 「出力」節で定める延期用の記録によって許容された未達成事項は、管理表への登録や別台帳への転記をしない。記録が存在することだけでなく、判断の妥当性が十分に確認されているかを確かめる。
-返却可否と不足の分類は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従い、残っている処理の担当主体と、不足している判断・入力・権限の内容に基づいて決定する。
+返却可否と不足の分類は`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」に従い、残っている処理の担当主体と、不足している判断・入力・権限の内容に基づいて決定する。
 判定行の記入、検証の実行、読者別探索の起動・リカバリ・受領、申告内容の補正、新しいHEADでの全条件の再判定など、本担当の権限範囲で完結できる処理は、すべて返却前に完了させる。
 委譲元による最終判断や認可、取得不可能な入力、権限や外部状態の不足など、本担当の作業範囲では解消できない問題が残っている場合に限り、その不足内容と再開すべき位置を「続行できない理由」に記載して返す。
 
@@ -202,7 +202,7 @@ Codexの組み込み委譲は`agents_server`が利用できない場合の代替
 - `終了区分: 延期adopt`または`終了区分: 終了しない`（`exec.parent.md`「統合の指示と受領」の`AWI終了区分`のうち、統合時に`adopt`しない値）、および実際の結論を記載した`後続工程:`、`検収時機:`
 - 公開工程で判定する条件は`判定工程: 公開工程`、並行して実施中の画面レビューで判定する条件は`判定工程: ユーザビリティレビュー`かつ`進行状態: 並行中`
 
-返却の状態行、続行不能の区分と理由、標識行および一行返却は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従う。完成条件証拠の提出が要求されている場合は末尾に`exec-review-recording.md`「条件別判定行の形式」に従った判定行を全条件の数だけ記載し、証拠要求がない場合は判定行を配置しない。一般的な要約などの地の文は加えずに、役割固有の規定行だけを返す。
+返却の状態行、続行不能の区分と理由、標識行および一行返却は`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。完成条件証拠の提出が要求されている場合は末尾に`exec-review-recording.md`「条件別判定行の形式」に従った判定行を全条件の数だけ記載し、証拠要求がない場合は判定行を配置しない。一般的な要約などの地の文は加えずに、役割固有の規定行だけを返す。
 
 ```text
 状態: completed

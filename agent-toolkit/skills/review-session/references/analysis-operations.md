@@ -12,7 +12,7 @@
 共有する規範・書式・通知・工程の変更も過去対策と比較し、結論を`analysis.md`「原因と対策」の報告へ引き継ぐ。
 以下で実際のモデル階層を規定と比較するのは、その情報が対策の選定を左右する場合に限る。
 規範本文と必要な変更履歴で欠陥と修正方針を判断できる場合は、記録位置やモデル階層を追加で調べずに調査を終える。
-問題発生前のコンテキストにおいて規範の存在判定が`present`であった未適用事象では、記録から確認した実際のモデル階層（上位・中位・軽量）を、`agent-toolkit:delegation`の`references/runtime-routing.md`「代替時の組合せの目安」に照らし合わせる。上位階層あるいはそれと同等以上と確認できるモデルの場合は、モデルの性能不足を原因とみなさず、新たな条文の追記よりも先に、既存条文の削除、緩和、集約、単純化、または一般化を検討する。中位や軽量モデルの場合は、条文が明確であり、権限・手段・入力が適切に揃っていたにもかかわらず失敗したときに限り、工程に割り当てるモデルの変更やモデル自体の改善待ちを対策の候補とする。モデル階層に基づく評価は記録から確実に特定できたモデルのみを対象とし、モデルが不明または記録から欠落している工程については推測で補わない。
+問題発生前のコンテキストにおいて規範の存在判定が`present`であった未適用事象では、記録から確認した実際のモデル階層（上位・中位・軽量）を、`agent-toolkit:delegation`の`references/fallback-launch.md`「代替時の組合せの目安」に照らし合わせる。上位階層あるいはそれと同等以上と確認できるモデルの場合は、モデルの性能不足を原因とみなさず、新たな条文の追記よりも先に、既存条文の削除、緩和、集約、単純化、または一般化を検討する。中位や軽量モデルの場合は、条文が明確であり、権限・手段・入力が適切に揃っていたにもかかわらず失敗したときに限り、工程に割り当てるモデルの変更やモデル自体の改善待ちを対策の候補とする。モデル階層に基づく評価は記録から確実に特定できたモデルのみを対象とし、モデルが不明または記録から欠落している工程については推測で補わない。
 
 規範の問題の有無を問われた場合は、まず規範本文を確認する。本文の確認や必要な変更履歴との比較で欠陥が確定した場合は、セッション記録の照会を省いて規範の是正へ進む。
 規範本文に欠陥が見当たらず、未適用の区分によって対策が変わる場合に限り、以下の手順で記録を照会する。
@@ -93,7 +93,7 @@
 | --- | --- | --- | --- |
 | 再発・悪化を問う入力の分析単位を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md#「前提の再検討」`、`agent-basics:bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「前提の再検討」`、`section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
 | 分析結果を報告へ引き継ぐ前 | `analysis.md#「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「原因と対策」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md`の「再発防止策の必須性」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details.md` |

@@ -62,7 +62,7 @@ def test_quality_source_updates_normal_and_lightweight_delivery(tmp_path: Path) 
         "## 要件と認可\n\n配送対象外。\n",
         encoding="utf-8",
     )
-    normal = tmp_path / "agent-toolkit/rules/01-agent.md"
+    normal = tmp_path / "agent-toolkit/share/rules/common/01-agent.md"
     lightweight = tmp_path / "agent-toolkit/share/agents-server-base.md"
     for path in (normal, lightweight):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,7 +194,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
         files.add(f"agent-toolkit/share/{role}.subagent.md")
         files.add("agent-toolkit/" + relative)
     files |= {
-        "agent-toolkit/share/rules-subagent.md",
+        "agent-toolkit/share/rules/rules-subagent.md",
         "agent-toolkit/share/exec-review-recording.md",
     }
     for relative in files:
@@ -255,4 +255,4 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     subject.sync_return_contracts(tmp_path)
     assert target.read_bytes() == after_wording_change
     refined = (tmp_path / "agent-toolkit/skills/refine-prompt/SKILL.md").read_text(encoding="utf-8")
-    assert "`../../share/rules-subagent.md`" in refined
+    assert "`../../share/rules/rules-subagent.md`" in refined

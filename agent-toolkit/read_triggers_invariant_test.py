@@ -35,7 +35,10 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     basics = _PLUGIN_ROOT.parent / "agent-basics/skills"
     if basics.is_dir():
         roots.append(basics)
-    sources = sorted({path for root in roots for path in root.rglob("*.md")})
+    # 全主体へ常時配る規範（`share/rules/common/`）は読込表を持たず、名指しするスキルへは各スキルの起動条件で到達する。
+    # 予算の限られた常時規範へ読込表を足さないため、`agent-toolkit/rules/`にあった移動前と同じく到達経路の検査から外す。
+    common_rules = _PLUGIN_ROOT / "share" / "rules" / "common"
+    sources = sorted({path for root in roots for path in root.rglob("*.md") if not path.is_relative_to(common_rules)})
     assert sources
     errors: list[str] = []
     for source in sources:

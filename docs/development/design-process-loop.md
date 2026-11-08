@@ -25,7 +25,7 @@ review・choresの初期値ではCodex候補に`sol/medium`を使う。`luna/xhi
 2026年10月27日に`gpt-6.1-terra`（Computer use向け）を避けるため`sol/low`へ置き換えた。
 しかし2026年10月22〜29日のCodexの記録では、`sol/low`の実行レビュー担当は最初の応答10件のすべてで点検を残したまま返り、`sol/medium`は4件すべてが完了した。
 役割文書を持たない作業の途中終了は、`sol/low`が58件中26件、`sol/medium`が381件中21件だった。途中終了は出力や文脈の上限によるものではなく、差分9ファイルの小さなレーンでも起きたため、レーンの規模で選び分ける案は採らない。ユーザーは2026年10月29日の確認で`sol/medium`への変更を承認した。
-候補を変える前の確認（`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」）をこの変更へ適用した。2026年10月29日、保存済みの設定を`codex:sol/medium,claude:sonnet[1m]/medium`へ更新したうえで、この変更自身の実行レビュー担当を`model_type`を省略して起動した。起動候補は`gpt-6.1-sol`のeffort `medium`で、最初の応答は返却形式どおりの完了（状態`completed`、未解決の指摘0件、全条件の判定行あり）だった。
+候補を変える前の確認（`agent-toolkit/skills/delegation/references/process-model-settings.md`「工程別モデル設定」）をこの変更へ適用した。2026年10月29日、保存済みの設定を`codex:sol/medium,claude:sonnet[1m]/medium`へ更新したうえで、この変更自身の実行レビュー担当を`model_type`を省略して起動した。起動候補は`gpt-6.1-sol`のeffort `medium`で、最初の応答は返却形式どおりの完了（状態`completed`、未解決の指摘0件、全条件の判定行あり）だった。
 2026年10月29日、ユーザーはreviewのCodex候補を`terra/medium`へ戻すよう指示した。同日、保存済みの設定を`codex:terra/medium,claude:sonnet[1m]/medium`へ変えて実行レビュー担当を起動したところ、起動候補`terra/medium`の最初の応答と1回目の継続の応答はどちらも未完了で返り、2回目の継続で完了した。この観測を受けたユーザーの同日の指示で、reviewの初期値は`sol/medium`のまま据え置いた。
 
 Codexの可用性判定で利用上限を観測した場合は、次の候補を先に試す。
@@ -272,7 +272,7 @@ process-loopはセッションを実際に起動する直前に状態ファイ�
 AWIが0件で変更検知を待つ反復は起動へ到達しないため、本文は保持したまま次の起動へ残る。
 `rules_context`のSessionStartは、`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`に値がある場合に前置きを添えて`additionalContext`へ加え、
 委譲先のセッションへは加えない。この本文がユーザーの入力であり、人間由来の明示的な指示であると前置きに明記する。
-本文は`forwarded-user-input`要素で囲み、`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」がこの要素の内側だけを機械が生成した本文の中のユーザー発話の証拠として扱う。
+本文は`forwarded-user-input`要素で囲み、`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」がこの要素の内側だけを機械が生成した本文の中のユーザー発話の証拠として扱う。
 
 本文の上限を2,000文字とするのは、SessionStartの`additionalContext`がClaude Codeで10,000文字に切り詰められ、
 超過すると同じ出力に含まれる規範条文が欠落するためである。

@@ -392,7 +392,7 @@ _RETIRED_TERMS = (
             ("執筆規範", "作成規範"),
             ("違反契約", "「違反した規定」"),
             ("計画契約", "「対応する計画」"),
-            ("一般継続契約", "「runtime-routing.mdが定める継続の規定」"),
+            ("一般継続契約", "「continuation.mdが定める継続の規定」"),
             ("変更契約", "「変更した契約」"),
             ("実行時固有契約", "「実行ホスト別の参照資料の規定」"),
             ("失敗契約", "「失敗した検証が確かめる契約」"),
@@ -406,7 +406,7 @@ _RETIRED_TERMS = (
             ("延期`adopt`契約", "「lane-integration.subagent.mdの延期adoptの条件」"),
             ("本文契約", "「agent-toolkit:wi-standards「通常AWIの本文」の要件」"),
             ("process-wi契約", "「agent-toolkit:process-wiの規定の読み替え」"),
-            ("分割規範", "「share/rules-common.codex.md「Codex固有の入出力」の分割取得の規定」"),
+            ("分割規範", "「share/rules/rules-common.codex.md「Codex固有の入出力」の分割取得の規定」"),
             ("公開契約基準", "説明へ"),
             ("導入目的の記録", "導入目的の調査記録"),
             # 表・記録・報告の名前
@@ -527,7 +527,7 @@ _RETIRED_TERMS = (
             ("境界標識", "`atk-auto`"),
             ("AWI処理スキル", "`agent-toolkit:process-wi`"),
             ("認識合わせスキル", "`agent-toolkit:user-confirmation-and-report`「認識合わせ」"),
-            ("即時報告", "即時通知（`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」）"),
+            ("即時報告", "即時通知（`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」）"),
             ("編集スキル", "スキル名"),
             ("担当スキル", "個別のスキル名"),
             ("外部依存未達", "`dependency-unmet-external`"),
@@ -544,7 +544,7 @@ _RETIRED_TERMS = (
         )
     ),
     # 委譲先の返却形式の状態値（2026年10月6日に廃止）。続行不能は`続行できない理由:`の行だけで表す。
-    # 定義は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」を正とする。
+    # 定義は`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」を正とする。
     _RetiredTerm(
         term="needs_escalation",
         replacement="`続行できない理由:`の行（地の文では「続行できない理由を返す」）",
@@ -566,13 +566,14 @@ _RETIRED_TERMS = (
     ),
     # 報告の向きを示さない呼称。「ユーザー」と「報告」を直結した語はユーザーへ届ける報告と
     # ユーザーから寄せられた報告のどちらにも読めるため使わない。
-    # 定義は`agent-toolkit/rules/01-agent.md`「役割分担」を正とし、同文書とその生成物だけが禁止する語そのものを持つ。
+    # 定義は`agent-toolkit/share/rules/common/01-agent.md`「役割分担」を正とする。
+    # 同文書とその生成物だけが禁止する語そのものを持つ。
     _RetiredTerm(
         term=_REPORT_DIRECTION_TERM,
         replacement="ユーザーへの報告、またはユーザーからの報告",
         allowed=(
             # 語の使用停止を定める規定と、それを写した生成物
-            _AllowedLocation("agent-toolkit/rules/01-agent.md"),
+            _AllowedLocation("agent-toolkit/share/rules/common/01-agent.md"),
             _AllowedLocation(".chezmoi-source/dot_codex/AGENTS.md"),
             # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
@@ -675,7 +676,7 @@ def test_report_direction_term_outside_allowed_paths_is_reported(tmp_path: pathl
         {
             "docs/note.md": f"前置き\n2026年の{_REPORT_DIRECTION_TERM}に由来する\n",
             "docs/clean.md": "ユーザーへの報告とユーザーからの報告\n",
-            "agent-toolkit/rules/01-agent.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
+            "agent-toolkit/share/rules/common/01-agent.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
             ".chezmoi-source/dot_codex/AGENTS.md": f"「{_REPORT_DIRECTION_TERM}」の語は使わない\n",
         },
     )
@@ -754,7 +755,7 @@ def test_verbatim_ledger_data_keeps_current_document_checks(tmp_path: pathlib.Pa
     current = [
         "docs/development/norm-restructure-20261022/README.md",
         "docs/development/norm-restructure-20261022/current-notes.tsv",
-        "agent-toolkit/rules/current.md",
+        "agent-toolkit/share/rules/common/current.md",
     ]
     term = next(item for item in _RETIRED_TERMS if item.term == "近接検証")
     _init_repo(tmp_path, dict.fromkeys([relative, *current], term.term + "\n"))
@@ -806,7 +807,7 @@ def test_formal_saved_quote_allows_only_exact_path_value_and_term(
     moved = "moved/" + relative
     current = "docs/development/norm-restructure-20261022/README.md"
     note = "docs/development/norm-restructure-20261022/current-notes.json"
-    rule = "agent-toolkit/rules/current.md"
+    rule = "agent-toolkit/share/rules/common/current.md"
     _init_repo(
         tmp_path,
         {

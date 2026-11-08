@@ -13,7 +13,7 @@ Codexのコマンド回収は、外側の`functions.exec`のcellと内側の`exe
 契約の定義元は`rules-common.codex.md`へ集約し、Codex向けAGENTSの正式生成で全主体へ届ける。
 
 hook・MCP定義などホスト別に明確に分離された資源を除き、Claude CodeとCodexに共通するルール・スキルは`agent-toolkit/`の共有原本で定義する。
-Codexだけの公開能力との差分は上書きとして置き、常時規範へCodex固有の条件を持ち込まない。Codexの全主体へ適用する差分は`agent-toolkit/share/rules-common.codex.md`へ置き、`scripts/sync_codex_agents.py`が`~/.codex/AGENTS.md`へ埋め込む。Codexのメインだけへ適用する差分は`agent-toolkit/share/rules-main.codex.md`へ置き、`SessionStart` hookがCodexのメインへ`rules-main.md`の後に加える。`~/.codex/AGENTS.md`はCodexのサブエージェントと委譲先にも届くため、メイン向けの差分を同じファイルへ置くとメイン専用の条文が全主体へ届く。
+Codexだけの公開能力との差分は上書きとして置き、常時規範へCodex固有の条件を持ち込まない。Codexの全主体へ適用する差分は`agent-toolkit/share/rules/rules-common.codex.md`へ置き、`scripts/sync_codex_agents.py`が`~/.codex/AGENTS.md`へ埋め込む。Codexのメインだけへ適用する差分は`agent-toolkit/share/rules/rules-main.codex.md`へ置き、`SessionStart` hookがCodexのメインへ`rules-main.md`の後に加える。`~/.codex/AGENTS.md`はCodexのサブエージェントと委譲先にも届くため、メイン向けの差分を同じファイルへ置くとメイン専用の条文が全主体へ届く。
 Codex基礎指示の上書きは、確認・待機・並列化・ツール利用前説明のホスト契約をCodex側へ閉じ込め、Claude Codeの共通契約を変更しない。
 Codexの委譲は、`spawn_agent`・`send_message`・`followup_task`・`wait_agent`・`interrupt_agent`を使うネイティブ方式とagents_server方式を分ける。ネイティブ方式では`fork_turns`が選ぶ会話履歴、worktreeの`AGENTS.md`、`SubagentStart` hookが配送する`rules-subagent.md`を独立した入力とする。agents_serverの通常委譲は`_agents_server/launch_prompts.py`から同じ共通委譲先規範を配送する。各起動区分の委譲先へ届く規範は`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表が示す。Claude Code固有の委譲先規範はCodexへ配送しない。この境界をhookの実起動、agents_serverのprompt構成、Codex manifestの生成テストで確認し、規範本文を方式ごとに複製しない。
 `scripts/sync_codex_agents.py`はCodex基礎指示と共有ルールから生成物を作成し、`scripts/sync_generated_files.py`が正式な一括生成の窓口となる。
@@ -171,15 +171,15 @@ daemon自動再起動と旧versionの保持は独立している。
 
 ### ルールの配置と配送
 
-`agent-toolkit/rules/`配下にはメインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く。
-メインエージェントだけに適用する条文は`agent-toolkit/share/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules-main.claude-code.md`へ置く。
-サブエージェントと委譲先だけに適用する条文は`agent-toolkit/share/rules-subagent.md`へ置く。
+`agent-toolkit/share/rules/common/`配下にはメインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く。
+メインエージェントだけに適用する条文は`agent-toolkit/share/rules/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules/rules-main.claude-code.md`へ置く。
+サブエージェントと委譲先だけに適用する条文は`agent-toolkit/share/rules/rules-subagent.md`へ置く。
 メイン向け条文は`SessionStart`フック（`agent-toolkit/agent_toolkit/_hooks/rules_context.py`）が全ての`source`で文脈へ追加し、会話圧縮の後も再度追加する。
 サブエージェント向け条文は`SubagentStart`フックが全てのagent種別へ追加する。`agents_server`の通常起動の委譲先には、`agent-toolkit/agent_toolkit/_agents_server/launch_prompts.py`の`DELEGATE_SYSTEM_PROMPT`が同じ条文を連結し、両backendのシステム指示として渡す。
 `SessionStart`フックは`AGENT_TOOLKIT_DELEGATED_SESSION`が`1`の場合と`AGENT_TOOLKIT_OWNER_SESSION`が設定されている場合を`agents_server`の子と判定し、メイン向け条文を追加しない。
 後者を併用するのは、Codex backendがstatusline表示の判定のために子のApp Serverから前者を除くためである。
-知識境界として、条文の本文は`share/`配下の各ファイルが持ち、フックと`agents_server`は本文を読んで渡すだけで内容を判定しない。
-Codex向けAGENTS.mdの生成器は`rules/`配下の共通条文だけを埋め込み、`share/`配下の条文を埋め込まない。
+知識境界として、条文の本文は`share/rules/`配下の各ファイルが持ち、フックと`agents_server`は本文を読んで渡すだけで内容を判定しない。
+Codex向けAGENTS.mdの生成器は`share/rules/common/`配下の共通条文だけを埋め込み、役割別の`rules-main*.md`・`rules-subagent*.md`を埋め込まない。
 Claude Codeの`additionalContext`文字列は10,000文字の上限へ合わせ、メイン向け条文の合計を同上限内に保つテストを`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`へ置く。
 ファイル保存と2,000文字のプレビューは別の出力契約として扱い、それぞれの観測条件と保証範囲を監査記録へ残す。
 却下した代替案は3つある。
@@ -189,11 +189,11 @@ Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案
 
 Claude Codeが自動で読み込む規範は、Codexでは次のいずれかの手段で届けるか、対象外とする理由を記録する。
 Codexへの配送手段を追加・変更する主体は、この対応で届かない規範が無いかを確かめる。
-読込指示は`agent-toolkit/share/rules-common.codex.md`「Claude Code向けに配置された規範の読込」が定める。
+読込指示は`agent-toolkit/share/rules/rules-common.codex.md`「Claude Code向けに配置された規範の読込」が定める。
 
 | Claude Codeの自動読込対象 | Codexでの届け方 |
 | --- | --- |
-| `~/.claude/rules/agent-toolkit/`配下（`agent-toolkit/rules/`の共通条文） | `~/.codex/AGENTS.md`への埋め込み（`scripts/sync_codex_agents.py`） |
+| `~/.claude/rules/agent-toolkit/`配下（`agent-toolkit/share/rules/common/`の共通条文） | `~/.codex/AGENTS.md`への埋め込み（`scripts/sync_codex_agents.py`） |
 | `share/`の主体別条文（`rules-main.md`・`rules-subagent.md`） | `SessionStart`・`SubagentStart` hookと、`agents_server`の委譲先では`developerInstructions` |
 | `~/.claude/rules/myprojects-common.md` | `~/.codex/AGENTS.md`への埋め込み（同スクリプトの`PERSONAL_SOURCE`） |
 | `~/.claude/rules/myprojects.md` | Codexのメインと組み込み委譲先には届けない。ホスト別のプロジェクト一覧と同期方針であり、`myprojects-common.md`冒頭がClaude Codeへの配布と定めるためである |
@@ -207,11 +207,11 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 `agents_server`の`developerInstructions`へ本文を連結する手段だけで届ける案は、Codexのメインとネイティブのサブエージェントに届かず不足する。この連結は`agents_server`の委譲先へ届ける手段として併用する（`design-agents-server.md`「委譲先への指示と起動時の規範」）。起動時の指示に同じファイルの本文が境界付きで含まれる場合は、読込指示の側で読み直さない。
 
 `agents_server`の`start`で起動したClaude backendの委譲先は、`~/.claude/rules/agent-toolkit/`配下の3ファイルの全文をユーザー規範として保持し、起動時のシステム指示と区別する。
-また、`agent-toolkit/share/rules-subagent.md`を起動時のシステム指示として保持する。
-`agent-toolkit/share/rules-main.md`は保持しない。
+また、`agent-toolkit/share/rules/rules-subagent.md`を起動時のシステム指示として保持する。
+`agent-toolkit/share/rules/rules-main.md`は保持しない。
 2026年9月7日に`agents_server`の`start`で委譲先を1件起動し、受領したエージェント向け文書の一覧と個別条文の有無を返させて確認した。
 再検証は同じ起動を1件行い、`02-agent-operations.md`の見出しと`02-agent-operations.md`の任意の条文の有無を返させる。
-委譲先へ届く条文の範囲は実際に動かして確定し、届いている条文を`agent-toolkit/share/rules-subagent.md`へ重複して置かない。
+委譲先へ届く条文の範囲は実際に動かして確定し、届いている条文を`agent-toolkit/share/rules/rules-subagent.md`へ重複して置かない。
 
 ## 認証情報の扱いとauto mode検証
 
@@ -246,7 +246,7 @@ WI処理の運用形態、登録と回答、振り返りからの投入の流れ
 
 委譲の名前付き入力は、`agents_server`の`start`、委譲先での取得結果、`<役割名>.subagent.md`が定める権限と入力および他の受領値から導出できない状態だけを持つ。省略時の値と行が無い場合の解釈は`<役割名>.subagent.md`が定め、`<役割名>.parent.md`はその省略時の値と異なる場合だけ送信する。この分離は値の二重所有を避けるための契約であり、`start`の`cwd`や委譲先がGitから得る値を送信一覧へ再掲しない。
 
-委譲の継続可否条件は`agent-toolkit/skills/delegation/references/runtime-routing.md`「継続と新規起動」だけで定め、他の文書へ再掲しない。
+委譲の継続可否条件は`agent-toolkit/skills/delegation/references/continuation.md`「継続と新規起動」だけで定め、他の文書へ再掲しない。
 `agent-toolkit/share/exec.parent.md`は工程順と渡す入力だけを定め、判定条件は同節を参照する。
 同じ判定条件を複数の文書へ複製した結果、暫定修正で1文書だけが旧規定のまま残り、実装担当が矛盾を報告する事象が発生したためである。
 

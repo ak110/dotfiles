@@ -1,6 +1,6 @@
 # 確定済みの方針・意向: WIの投入と確認
 
-本書は`docs/development/concepts.md`から主題別に分割した記録である。実行時に適用する規範は`agent-toolkit/rules/`配下と各スキルが定める。
+本書は`docs/development/concepts.md`から主題別に分割した記録である。実行時に適用する規範は`agent-toolkit/share/rules/common/`配下と各スキルが定める。
 
 ## WIの状態と遷移
 

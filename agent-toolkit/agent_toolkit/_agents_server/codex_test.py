@@ -2054,7 +2054,7 @@ def test_developer_instructions_include_user_rules_except_embedded(
     nested.write_text("# review.md\n\nレビューは日本語で書く。\n", encoding="utf-8")
     embedded = rules / "agent-toolkit" / "01-agent.md"
     embedded.write_text(
-        '<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">\n'
+        '<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/01-agent.md">\n'
         "埋め込み済みの本文\n</atk-auto>\n",
         encoding="utf-8",
     )
@@ -2067,7 +2067,8 @@ def test_developer_instructions_include_user_rules_except_embedded(
     codex_home.mkdir()
     (codex_home / "AGENTS.md").write_text(
         "# 全体指示\n\n"
-        '<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/01-agent.md">\n本文\n</atk-auto>\n',
+        '<atk-auto source="agent-toolkit" kind="rules" '
+        'path="agent-toolkit/share/rules/common/01-agent.md">\n本文\n</atk-auto>\n',
         encoding="utf-8",
     )
 

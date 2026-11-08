@@ -150,7 +150,7 @@ MODE_DESCRIPTION = parameter_description(
     "委譲元は呼び元の起動・受領契約から入力名と実行時の値を確定して`extra_params`へ渡す。"
     "起動設定・必須入力・宣言外入力の機械検査はサーバーが行う。定義本文の読取は委譲先自身の手順、編集・調査と返却後の検収で行う。"
     "explore・write・shellにも共通返却契約の短節を自動配送するため、呼出元での再掲は不要。"
-    "委譲先向けの規範（`share/rules-subagent.md`）の全文は配送せず、"
+    "委譲先向けの規範（`share/rules/rules-subagent.md`）の全文は配送せず、"
     "ClaudeとCodexの委譲先では作業ディレクトリのプロジェクト規範（`AGENTS.md`など）も読み込まれず、"
     "スキルを使える保証も無い（Claude Codeの委譲先ではスキルを起動できない）。作業に必要な固有指示を`prompt`へ書く。"
     "読み取り専用、応答言語、担当の範囲は各modeの`share/agents-server-*.md`が既に定めるため書かない。"
@@ -193,7 +193,7 @@ PROMPT_DESCRIPTION = parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
     "delegateでは本文を保ち、サーバーが専用の引き継ぎ記録先を加え、同じパスをhandoff_record_pathで返す。"
     "explore・writeにも共通返却契約の短節を自動配送するため、呼出元での再掲は不要。"
-    "委譲先向けの規範（`share/rules-subagent.md`）の全文は受け取らず、"
+    "委譲先向けの規範（`share/rules/rules-subagent.md`）の全文は受け取らず、"
     "ClaudeとCodexでは作業ディレクトリのプロジェクト規範も読まないため、作業に必要な固有指示を書く。"
     "応答言語と各modeの権限も配送済みのため再掲しない。"
     "`<役割名>.subagent.md`を指す本文は渡さず、taskで起動する。" + DELEGATION_INPUT_GUIDANCE

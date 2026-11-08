@@ -2515,7 +2515,7 @@ def _track(repo: pathlib.Path, *relatives: str) -> None:
     git_repository.run_git(repo, "add", "-A")
 
 
-_PLUGIN_SHARE_FILES = ("agent-toolkit/share/exec.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")
+_PLUGIN_SHARE_FILES = ("agent-toolkit/share/exec.parent.md", "agent-toolkit/share/rules/rules-main.md", "share/README.md")
 
 
 @pytest.mark.parametrize("wi_type", ["awi", "uwi"])
@@ -2628,7 +2628,7 @@ def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short
     _awi(
         notes,
         "glob.md",
-        "`agent-toolkit/`配下のうち`share/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
+        "`agent-toolkit/`配下のうち`share/rules/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
         "略記の`rules/`と`share/exec.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
     )
     body = (notes / "processing/glob.md").read_text(encoding="utf-8")
@@ -2652,7 +2652,7 @@ def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.P
     body = (
         "---\ntype: awi\nsource: test\n---\n\n# 題\n\n## 反映内容と反映先\n\n"
         "変更対象はsrc/model.pyとdocs/development/design.mdである。"
-        "`share/rules-*.md`、`agent-toolkit/share/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
+        "`share/rules/rules-*.md`、`agent-toolkit/share/rules/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
         "略記の`rules/`・`UCR/`・`share/exec.parent.md`、範囲`src/`と`missing/`、"
         "src/のmodel.py・new_module.py・draft、`docs/development/new.md`と`docs/development/new.`も扱う。"
         "src/model.pyのWorker.runと`src/model.py:42`の`Service.start`も直す。\n"

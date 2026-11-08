@@ -1,4 +1,4 @@
-"""Codexの読取案内（`share/rules-common.codex.md`・`share/agents-server-explore.md`）の行範囲読取がWindowsで成立することを確かめる。
+"""Codexの読取案内（`share/rules/rules-common.codex.md`・`share/agents-server-explore.md`）の行範囲読取がWindowsで成立することを確かめる。
 
 案内は、シェルを指定しないコマンドがPowerShellで動く環境で、
 実在を確かめたbashの`sed -n`か、bashが無い場合の`Get-Content`を示す。

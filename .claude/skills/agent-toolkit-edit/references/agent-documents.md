@@ -25,8 +25,8 @@
 
 ## 付帯作業の扱い
 
-`agent-toolkit/rules/`、`agent-toolkit/skills/`、`agent-toolkit/share/`配下のエージェント向け文書は、エンドユーザーへ配布する成果物そのものである。対象にはルールファイル、`SKILL.md`、`references/`配下の文書、`<役割名>.parent.md`、`<役割名>.subagent.md`が含まれる。
-これらの改訂自体を目的とするタスクは主作業として扱い、変更の目的ごとにコミットとWIを分ける。他の機能開発に伴って必要となった文書の改訂や整理は、`agent-toolkit/rules/01-agent.md`で定める付帯作業に該当するため、関連する開発と同一の計画、WI、コミットで完了させる。開発完了後の振り返りによって独立して見つかった作業のみ、別作業として切り出す。
+`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）配下のエージェント向け文書は、エンドユーザーへ配布する成果物そのものである。対象にはルールファイル、`SKILL.md`、`references/`配下の文書、`<役割名>.parent.md`、`<役割名>.subagent.md`が含まれる。
+これらの改訂自体を目的とするタスクは主作業として扱い、変更の目的ごとにコミットとWIを分ける。他の機能開発に伴って必要となった文書の改訂や整理は付帯作業に該当するため、関連する開発と同一の計画、WI、コミットで完了させる。開発完了後の振り返りによって独立して見つかった作業のみ、別作業として切り出す。
 
 ## スキルとサブエージェントの編集
 
@@ -47,10 +47,11 @@ process-wiのモード固有資料は、共通契約を参照して読み替え�
 - 複数ファイルにまたがる機構や委譲構造を新設・変更する場合は、`docs/development/design.md`の索引から該当する主題の本文を選び、目的、構造を採用した理由、知識境界、却下した代替案を追記または更新する（努力目標）。新たな主題は主題別ファイルを作成して索引テーブルに行を追加し、索引ファイル自体には詳細な見出しや機構の解説を書かない。
 - `agent-toolkit/skills/workflow-overview/SKILL.md`はエージェントの作業工程に関する契約を定義している。ユーザーの運用形態、WIの登録方法、または回答操作が変わる場合は、`docs/guide/claude-code-guide.md`「推奨ワークフロー」も同一の変更単位で揃える。
 - `docs/guide/claude-code-guide.md`「設定確認」は、ユーザーが実行する確認コマンド、期待される結果、または復旧手順が変わる場合に更新する。
-- `install-claude.sh`の`FILES`、`install-claude.ps1`の`$files`、および`agent-toolkit/rules/`配下のMarkdownファイル一覧は完全一致を保つ。この整合性は`install_script_ssot_invariant_test.py`で検証し、`uv run python scripts/sync_generated_files.py`で同期する。
+- `install-claude.sh`の`FILES`、`install-claude.ps1`の`$files`、および`agent-toolkit/share/rules/common/`配下のMarkdownファイル一覧は完全一致を保つ。この整合性は`install_script_ssot_invariant_test.py`で検証し、`uv run python scripts/sync_generated_files.py`で同期する。
 - 配布物スキルの外部インターフェース（判定区分、出力フォーマット、後始末コマンドの分岐、サマリー表現など）を追加・削除・変更する場合は、呼び出し元を検索し、連携先の記述も同一の計画内で更新する。
-- `agent-toolkit/rules/01-agent.md`・`02-agent-operations.md`および`agent-toolkit/share/rules-common.codex.md`は、`.chezmoi-source/dot_codex/AGENTS.md`の生成元ファイルである。同期は`uv run python scripts/sync_generated_files.py`で行い、計画への記載は`version-bump.md`「plan modeでの取り扱い」の派生物の規則に従う。
-- `agent-toolkit/share/rules-main*.md`や`rules-subagent*.md`の編集はファイルの自動生成や配布一覧の変更を伴わないが、プラグインのバージョン更新は必要である。各起動区分へどの規範が届くかは、`agent-toolkit:delegation/references/delivery-scope.md`にある配送範囲表を参照する。軽量なagents_server委譲先には`rules-subagent.md`の共通返却契約短節を自動配送し、全文を省く境界と各modeの権限を配送テストで保持する。
+- `.chezmoi-source/dot_codex/AGENTS.md`の生成元は、`agent-toolkit/share/rules/`の`common/01-agent.md`・`common/02-agent-operations.md`・`rules-common.codex.md`である。
+  同期は`uv run python scripts/sync_generated_files.py`で行い、計画への記載は`version-bump.md`「plan modeでの取り扱い」の派生物の規則に従う。
+- `agent-toolkit/share/rules/rules-main*.md`や`rules-subagent*.md`の編集はファイルの自動生成や配布一覧の変更を伴わないが、プラグインのバージョン更新は必要である。各起動区分へどの規範が届くかは、`agent-toolkit:delegation/references/delivery-scope.md`にある配送範囲表を参照する。軽量なagents_server委譲先には`rules-subagent.md`の共通返却契約短節を自動配送し、全文を省く境界と各modeの権限を配送テストで保持する。
 - 読込表の宣言は各文書の本文の表に置く。宣言と参照先への読込行は`agent-toolkit/read_triggers_invariant_test.py`で確かめる。読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`で確かめる。書き方は`agent-basics:writing-standards`の`references/agent-documents-basics.md`「読込表」に従う。agent-toolkitの文書では、`agent-toolkit:delegation/references/agent-documents-basics.md`「読込表の宣言」にも従う。
 - 計画ファイルの見出し、固定H3、表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数で定義されている。これらを改訂する場合は構造定数を変更し、同一名称を使用している以下の文書も同一の変更単位で揃える。
   - `agent-toolkit/skills/write-plan/references/plan-file-standards.md`

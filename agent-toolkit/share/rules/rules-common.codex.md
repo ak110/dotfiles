@@ -1,6 +1,6 @@
 # rules-common.codex.md: Codexの全エージェントに適用する規範
 
-本文書はCodex環境における`AGENTS.md`として、Codexの全エージェント（メインエージェント、サブエージェント、委譲先）へ配送され、`agent-toolkit/rules/`配下の常時規範と同等の拘束力を持つ。
+本文書はCodex環境における`AGENTS.md`として、Codexの全エージェント（メインエージェント、サブエージェント、委譲先）へ配送され、`agent-toolkit/share/rules/common/`配下の常時規範と同等の拘束力を持つ。
 Codex固有の公開機能と、常時規範との差分事項を規定する。Codexのメインエージェントにのみ適用する差分事項は、`rules-main.codex.md`で扱う。
 
 ## Codex固有の入出力

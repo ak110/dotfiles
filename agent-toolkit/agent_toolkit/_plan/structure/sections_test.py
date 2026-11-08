@@ -473,7 +473,7 @@ def test_agent_document_target_paths() -> None:
     """配布規範とagent定義をエージェント向け文書として判定する。"""
     assert _plan_format.is_agent_doc_target_file(f"{_TOOLKIT_PREFIX}/skills/example/SKILL.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
-    assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/rules-main.md")
+    assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/rules/rules-main.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/plan-review.parent.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/share/exec.subagent.md")
     assert not _plan_format.is_agent_doc_target_file("pytools/example.py")
@@ -488,7 +488,10 @@ def test_agent_document_target_covers_every_layer_and_kind(layer: str, kind_path
     """ルール・SKILL.md・references・サブエージェント定義を、配布物と任意プロジェクトの両層で判定する。
 
     ある種類を片方の層へだけ加えると、レーン統合の`agent_rule_changes`に他方の層の同じ種類が含まれなくなる。
+    配布物のルールは`share/rules/`へ置くため、配布物の層ではその所在で判定する。
     """
+    if layer == _TOOLKIT_PREFIX and kind_path.startswith("rules/"):
+        kind_path = f"share/rules/common/{kind_path.removeprefix('rules/')}"
     assert _plan_format.is_agent_doc_target_file(f"{layer}/{kind_path}")
 
 

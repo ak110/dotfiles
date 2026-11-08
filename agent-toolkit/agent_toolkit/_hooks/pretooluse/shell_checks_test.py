@@ -1270,7 +1270,7 @@ class TestBashOptionAfterTerminator:
         "command",
         [
             "rg -n -- '-foo' path",
-            "rg -l -F --glob '*.md' -- 'オプション終端' agent-toolkit/rules",
+            "rg -l -F --glob '*.md' -- 'オプション終端' agent-toolkit/share/rules/common",
             "grep -rn -- '--all' docs",
             "git log --oneline -- path",
             "git diff --stat -- a.py b.py",

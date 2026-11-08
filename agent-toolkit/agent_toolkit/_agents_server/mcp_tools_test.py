@@ -130,9 +130,9 @@ def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> 
     source_dir = pathlib.Path(__file__).resolve().parents[1]
     script_dir = tmp_path / "plugin" / "scripts"
     script_dir.mkdir(parents=True)
-    share_dir = tmp_path / "plugin" / "share"
-    share_dir.mkdir()
-    shutil.copyfile(source_dir.parent / "share" / "rules-subagent.md", share_dir / "rules-subagent.md")
+    rules_dir = tmp_path / "plugin" / "share" / "rules"
+    rules_dir.mkdir(parents=True)
+    shutil.copyfile(source_dir.parent / "share" / "rules" / "rules-subagent.md", rules_dir / "rules-subagent.md")
     paths = (
         "agents_server_mcp.py",
         "_agents_server/mcp_tools.py",

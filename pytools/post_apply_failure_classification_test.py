@@ -242,7 +242,7 @@ def _codex_claude_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 
 def _rules_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    rules = tmp_path / "dotfiles" / "agent-toolkit" / "rules"
+    rules = tmp_path / "dotfiles" / "agent-toolkit" / "share" / "rules" / "common"
     rules.mkdir(parents=True)
     (rules / "01.md").write_text("rule\n", encoding="utf-8")
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")

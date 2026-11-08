@@ -84,7 +84,7 @@ _MCP_BACKGROUND_NOTICE_RE = re.compile(
 )
 """MCP呼び出しが実行時間の上限で背景へ移ったときにホストが返す移行通知の形。
 
-自身の呼び出しが返した識別子であり、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」が
+自身の呼び出しが返した識別子であり、`agent-toolkit/share/rules/common/02-agent-operations.md`「プロセス終了の安全規定」が
 停止を許容する所有の根拠に当たる。
 
 ホストの通知はテキストの先頭から始まる単独の本文として届く（Claude Codeのtranscriptで観測した形）。

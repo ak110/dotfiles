@@ -47,7 +47,7 @@
 <!-- 生成元: share/similar-review.subagent.md「出力」。手動編集しない。 -->
 ## 類似見直し担当の返却契約
 
-次の形式のみを返す。状態行、続行不能の区分と理由は`rules-subagent.md`「返却形式の受け渡し」に従う。
+次の形式のみを返す。状態行、続行不能の区分と理由は`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 
 ```text
 状態: completed

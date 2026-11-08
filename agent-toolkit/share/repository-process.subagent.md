@@ -39,7 +39,7 @@ writes_worktree: true
 | 処理に着手する前 | `../skills/process-wi/references/all-repos-orchestration.md#「担当の役割」「取得済み候補の受領」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md#「担当の役割」「取得済み候補の受領」` |
 | 対象のlane_limitが2以上の時 | `../skills/process-wi/references/lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
 | 対象のlane_limitが1以下の時 | `../skills/process-wi/references/single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
-| 配下へ委譲する前 | `../skills/delegation/references/runtime-routing.md#「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「工程別モデル設定」` |
+| 配下へ委譲する前 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 | 引き継ぎ記録へ最初に書く前 | `../skills/delegation/references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
 
 ## 入力
@@ -62,9 +62,9 @@ writes_worktree: true
 各対象の`lane_limit`が2以上なら通常のレーン処理、1以下なら単一レーン処理に接続する。
 共通規範の読込は再利用し、プロジェクト固有の規範、計画・検証・レビュー・公開、候補・所有・lane_session_id・writer_sessionsは対象ごとに分離する。
 1対象がユーザー判断待ち・続行不能になっても、その理由と再開先を記録して独立した他対象の処理を継続する。
-配下へ委譲する場合も、`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」が許す工程だけを使う。
+配下へ委譲する場合も、`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」が許す工程だけを使う。
 
-- 改善点は`rules-subagent.md`「返却形式の受け渡し」に従って統括担当へ送る。確認事項、担当外の発見と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
+- 改善点は`rules/rules-subagent.md`「返却形式の受け渡し」に従って統括担当へ送る。確認事項、担当外の発見と報告用UWIの材料は統括担当へ返却し、報告用UWIの作成は統括担当に任せる。
 - 祖先の対話CLIの終了（`atk agents-exit-session`）は統括担当に任せる。
 - 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返却する。
 
@@ -85,4 +85,4 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 結果: <公開結果、CI、処理したAWIと採否の要約>
 ```
 
-続行不能の場合は`状態:`行の代わりに`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。統括担当はこの返却を`result_file`の`blocked`として記録する。
+続行不能の場合は`状態:`行の代わりに`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。統括担当はこの返却を`result_file`の`blocked`として記録する。

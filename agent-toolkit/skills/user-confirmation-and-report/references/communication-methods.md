@@ -20,7 +20,7 @@
 
 ## 手段の選択
 
-工程の定義は`agent-toolkit/rules/01-agent.md`「役割分担」に従い、後述の個別UWIの条件と、権限拒否の偽陽性に対する`permission-denial.md`の手順は下表より優先する。表の「発話本文」はユーザーへのメッセージである。Claude Codeでは`agent-toolkit/share/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__agent-toolkit__send_to_user`で届ける。Codexでは途中経過を`commentary`、通常の最終応答を必要なツール処理後の`final`で届ける。成果作業ではreport-completionで確定した作業完了報告の本文をそのまま用いる。ホスト本体を停止する場合、必要な可視報告は停止前の`commentary`で届ける。自律モードの伝達は報告用UWIの保存検収によって完了する。報告の送達を終えてからホストを停止する。Codexの命令や公開機能は`agent-toolkit/share/rules-common.codex.md`「Codexホスト契約の適用」に従う。
+工程の定義は`agent-toolkit/share/rules/common/01-agent.md`「役割分担」に従い、後述の個別UWIの条件と、権限拒否の偽陽性に対する`permission-denial.md`の手順は下表より優先する。表の「発話本文」はユーザーへのメッセージである。Claude Codeでは`agent-toolkit/share/rules/rules-main.claude-code.md`「ツールの入出力」に従って`mcp__agent-toolkit__send_to_user`で届ける。Codexでは途中経過を`commentary`、通常の最終応答を必要なツール処理後の`final`で届ける。成果作業ではreport-completionで確定した作業完了報告の本文をそのまま用いる。ホスト本体を停止する場合、必要な可視報告は停止前の`commentary`で届ける。自律モードの伝達は報告用UWIの保存検収によって完了する。報告の送達を終えてからホストを停止する。Codexの命令や公開機能は`agent-toolkit/share/rules/rules-common.codex.md`「Codexホスト契約の適用」に従う。
 
 | 工程 | 協調モード | 自律モード |
 | --- | --- | --- |
@@ -33,7 +33,7 @@
 表の`rules-main.claude-code.md`と`rules-main.codex.md`は`agent-toolkit/share/`配下を指す。
 自律モードの「有効な回答期限」は、起動時に与えられ、回答が無ければ確実に満了する有限の期限を指す。無期限の設定、`askUserQuestionTimeout`などの期限機能が無い環境、期限が無効になる条件が成立している環境、Codex Default modeは「期限なし」とする。認識合わせを期限によらずその場で問うのは、割り込みや是正の直後に理解を確かめるためである。
 `atk wi process-loop`が起動したClaudeのメイン会話は「期限なし」として扱い、認識合わせを含めてその場で質問せず、自分の理解と質問を事前承認型UWIへ記録して回答を要する元項目だけを保留する。Claude Codeは端末フォーカスがある間は`askUserQuestionTimeout`の待機を延長し続けるためである。端末がペインのfocus-inを報告する環境では、常駐実行のペインをアクティブにしているだけで期限が満了しない（根拠は`docs/development/operations.md`「質問・ダイアログのタイムアウトの配布」）。この会話の`AskUserQuestion`はPreToolUseが拒否する。
-回答が無いまま終わった確認と、事前承認を要する元項目の回答待ちは`pending-decisions.md`に従う。ユーザーとの窓口を持たない委譲先は確認通知で委譲元へ返す（`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」）。
+回答が無いまま終わった確認と、事前承認を要する元項目の回答待ちは`pending-decisions.md`に従う。ユーザーとの窓口を持たない委譲先は確認通知で委譲元へ返す（`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」）。
 
 個別UWIの要否は`../SKILL.md`「確認要否の判定」に従う。
 未達条件の見送り、追加認可を要する代替案、解決の見込みが立たない外部変更待ちの選択もこの判定へ含める。
@@ -45,7 +45,9 @@
 
 - AWIの`## ユーザーコメント`やUWIの`## 回答`へ直接書かれた質問への回答: 個別UWIで報告する。自律モードの報告用UWIへの記載（`report-completion`に従う）で代えない。
 - ユーザーの判断・資料・操作が次の作業に要る未完了事項: 必要と確定した時点で個別UWIへ保存し、成功を確かめてから所在を案内する（同じ依頼の既存UWIは再利用する）。回答を待たずに確定できる作業は続け、関連作業の完了後に要る事項はその完了工程でのUWI登録を記録する。会話中の確認で回答を得た事項はUWIの対象外とする。
-- 作業中に見つけた認証情報: `agent-toolkit/rules/01-agent.md`「完遂と先送り」が報告対象とする値（Git管理外で見つけた、第三者が使うと実害が生じうる値。本番・配備済み環境の資格情報、外部サービスの有効なトークンなど）に限り、所在ごとに報告用UWIを1件登録する。報告対象外の値（Git管理しているファイルの値、ローカル開発環境・テスト環境だけで使う値）は、重複検索も登録もしない。報告対象かは値の用途と利用環境を既存の文脈・設定から判定し、ファイル名や値の書式だけで決めず、有効性を確かめる認証試行はしない。報告対象の値は、ユーザーが問題ないと判断して置いたものとして報告だけで扱う。所在は`agent-toolkit:wi-standards`の`references/uwi-format.md`の形式に揃え、同じファイルの値は1件にまとめる。投入前に所在を固定文字列として`atk wi grep --summary-only -F --type=uwi --state=all --target-repo=all -- '<所在>'`で探し、同じ所在の報告があれば発見手法・作業リポジトリ・採否・回答状況が違っても重ねない。無ければ発見時の作業リポジトリに`--question-type=post-approval`でUWIを登録し、報告だけで扱った対応の是非を問う。
+- 作業中に見つけた認証情報: 報告用UWIは、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」が報告対象とする値に限り、所在ごとに1件登録する。
+  報告対象は、Git管理外で見つけた、第三者が使うと実害が生じうる値（本番・配備済み環境の資格情報、外部サービスの有効なトークンなど）である。
+  報告対象外の値（Git管理しているファイルの値、ローカル開発環境・テスト環境だけで使う値）は、重複検索も登録もしない。報告対象かは値の用途と利用環境を既存の文脈・設定から判定し、ファイル名や値の書式だけで決めず、有効性を確かめる認証試行はしない。報告対象の値は、ユーザーが問題ないと判断して置いたものとして報告だけで扱う。所在は`agent-toolkit:wi-standards`の`references/uwi-format.md`の形式に揃え、同じファイルの値は1件にまとめる。投入前に所在を固定文字列として`atk wi grep --summary-only -F --type=uwi --state=all --target-repo=all -- '<所在>'`で探し、同じ所在の報告があれば発見手法・作業リポジトリ・採否・回答状況が違っても重ねない。無ければ発見時の作業リポジトリに`--question-type=post-approval`でUWIを登録し、報告だけで扱った対応の是非を問う。
 
 報告にはUWIの所在だけを書き、判断や行動を求める依頼見出しは省く。
 
@@ -66,9 +68,9 @@
 
 1. ユーザーが達成したい目標と解決したい課題を自分の言葉で示し、発話から得た理解と自分が補った前提を区別する。
 2. 発話・記録・現物から確定できる訂正はその場で直して報告する。残る相違だけを`../SKILL.md`「確認要否の判定」と`../SKILL.md`「確認の選択肢を組む手順」で問いにし、「手段の選択」の認識合わせの手段で実際の回答を得る。理解の確認と解決案の承認は別の問いにする。
-3. 回答を元の依頼の目的・要件と照らして次の対応（採用済み案の縮小・撤回・差し替えを含む）を決める。判断は`agent-toolkit/share/rules-main.md`「目的との一致の確認」と`agent-basics:review-standards/references/reviewee.md`「ユーザー指摘の受領」に従う。
+3. 回答を元の依頼の目的・要件と照らして次の対応（採用済み案の縮小・撤回・差し替えを含む）を決める。判断は`agent-toolkit/share/rules/rules-main.md`「目的との一致の確認」と`agent-basics:review-standards/references/reviewee.md`「ユーザー指摘の受領」に従う。
 
-関係しない工程の実行モードは保つ（`agent-toolkit/share/rules-main.md`「協調と自律」）。委譲先で認識合わせが要る場合は、確認すべき論点を委譲元へ返す。
+関係しない工程の実行モードは保つ（`agent-toolkit/share/rules/rules-main.md`「協調と自律」）。委譲先で認識合わせが要る場合は、確認すべき論点を委譲元へ返す。
 
 ## 参照資料の取得
 

@@ -14,7 +14,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 説明の追加の要否を判定する前 | `agent-toolkit:delegation/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/writing.md#「文章の共通規定」` |
 
@@ -44,7 +44,7 @@
 | `cwd` | 検証対象とする作業ツリーの絶対パス（保存された本文であっても参照先を判定する対象の版） |
 | `subagent_md_path` | `reader-fit-review` |
 | `extra_params` | 次に示す名前付きパラメーターのみ |
-| `model_type` | 実行レビュー担当が対象WIから`担当モデル.実行レビュー担当`を受け取っている場合はその値（比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」の担当モデルの段落に従う）。受け取っていない場合は省略する |
+| `model_type` | 実行レビュー担当が対象WIから`担当モデル.実行レビュー担当`を受け取っている場合はその値（比較と記録は`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」の担当モデルの段落に従う）。受け取っていない場合は省略する |
 
 ## 入力
 
@@ -106,7 +106,7 @@ agents_serverは既存の返却形式回復で対象集合と機械可読な個�
 <!-- 生成元: share/reader-fit-review.subagent.md「出力」。手動編集しない。 -->
 ## 読者別探索の返却契約
 
-状態行・続行不能の区分と理由・標識行・一行返却は`rules-subagent.md`「返却形式の受け渡し」に従う。以下の形式のみを返す。「未解決の指摘数」は再レビュー時の分類付き指摘と初回の確認不足を含む総件数とする。新たな要件（WIの反映範囲を超える新仕様の提案や網羅性の要求、範囲判定への異論など）は「新しい要件」として分離し、「未解決の指摘数」には計上しない。
+状態行・続行不能の区分と理由・標識行・一行返却は`rules/rules-subagent.md`「返却形式の受け渡し」に従う。以下の形式のみを返す。「未解決の指摘数」は再レビュー時の分類付き指摘と初回の確認不足を含む総件数とする。新たな要件（WIの反映範囲を超える新仕様の提案や網羅性の要求、範囲判定への異論など）は「新しい要件」として分離し、「未解決の指摘数」には計上しない。
 
 ```text
 状態: completed

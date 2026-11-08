@@ -739,7 +739,9 @@ def reference_method_targets(
         ),
         None,
     )
-    owner = entry or (source.parent / "read-trigger-contract.md" if source.parent == plugin_root.resolve() / "share" else None)
+    share = plugin_root.resolve() / "share"
+    # `share/rules/`の規範も共有文書と同じ読込方法の定義元を使う。
+    owner = entry or (share / "read-trigger-contract.md" if share in source.parents else None)
     if owner is None:
         return ()
     canonical = resolve_read_source(source, plugin_root, host, project=project)
@@ -875,6 +877,11 @@ def startup_documents(
     return "\n\n".join(rendered)
 
 
+def _is_rule_document(path: pathlib.Path, plugin_root: pathlib.Path) -> bool:
+    """常時規範と役割別の規範の原本（`share/rules/`配下）かを返す。配送はhookと同期処理が保証する。"""
+    return path.resolve().is_relative_to(plugin_root.resolve() / "share" / "rules")
+
+
 def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, rows: list[ReadTrigger]) -> None:
     """他資料を使わせる参照に、同じ文書の到達経路があることを確かめる。
 
@@ -885,7 +892,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
     routed = {path for row in rows for path in row.documents} | {source.resolve()}
     methods = reference_method_targets(source, plugin_root)
     bootstrap = plugin_root / "share/read-trigger-bootstrap.md"
-    if source.name.startswith("rules-") and bootstrap.is_file():
+    if _is_rule_document(source, plugin_root) and bootstrap.is_file():
         routed.update(path for row in parse_tables(bootstrap, plugin_root, strict=True) for path in row.documents)
     context = ""
     for number, line, visible in document_lines(source.read_text(encoding="utf-8")):
@@ -900,7 +907,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
                     f"{source}:{number}: 参照先が存在しない: {path}。"
                     "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"
                 )
-            if path.name.startswith("rules-") or path.parent.name == "rules":
+            if _is_rule_document(path, plugin_root):
                 continue
             method_route = (
                 urllib.parse.unquote(target.heading).strip("「」") == _REFERENCE_METHOD_HEADING

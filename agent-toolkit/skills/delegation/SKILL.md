@@ -35,11 +35,13 @@ user-invocable: false
 | 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
 | 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` | |
 | 作業の分担・委譲単位を決める前（計画起草前、独立した複数単位や長い工程の着手前を含む）、起動契約に手順と必須入力がない委譲を開始する前（explore・shellを除く）、確定した委譲構成を変更する前 | `references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
-| 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/runtime-routing.md`の「実行手段」「工程別モデル設定」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」「工程別モデル設定」` | |
-| 元担当の継続・回復・置換・再起動または役割引継ぎを選ぶ前 | `references/runtime-routing.md`の「継続と新規起動」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」` | |
-| Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `references/runtime-routing.md`の「継続と新規起動」「Agentツールの継続」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「継続と新規起動」「Agentツールの継続」` | |
-| 可用性の障害を確認して代替起動を判断する前 | `references/runtime-routing.md`の「代替起動」。候補を選ぶ場合は「代替時の組合せの目安」も読む | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「代替起動」` | |
-| 工程別設定の対象外でモデル・effortを選ぶ前 | `references/runtime-routing.md`の「modelとreasoning effort」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「modelとreasoning effort」` | |
+| 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` | |
+| 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` | |
+| 元担当の継続・回復・置換・再起動または役割引継ぎを選ぶ前 | `references/continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` | |
+| Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `references/continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` | |
+| Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `references/agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` | |
+| 可用性の障害を確認して代替起動を判断する前 | `references/fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` | |
+| 工程別設定の対象外でモデル・effortを選ぶ前 | `references/model-and-effort.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/model-and-effort.md` | |
 | Claude Codeで`Agent`ツールの委譲先やバックグラウンドタスクを初回起動する前、定期再確認タスクを自身で設定する前、設定や回収の失敗通知に対処する時、Claude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md` | |
 | 完了通知の処理、ならびに待機や停滞の判定を行う時 | `references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` | |
 | 判定不能や拒否で待機を開始できない時、`atk agents wait`が終了コード4・8・10、または待機対象0件の非ゼロで終了した時、待機呼び出しがホストの上限により失敗した時、ホストからバックグラウンド待機の停止通知を受信した時、委譲先や自身のツール呼び出しが終了ステータスを返さずに終わった時、`agents_server`のMCPサーバーが再起動した時 | `references/wait-anomalies.md`の該当節 | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies.md` | |
@@ -60,7 +62,7 @@ user-invocable: false
 
 ## 送信
 
-全起動経路の共通返却・エスカレーション契約は`share/rules-subagent.md`「返却形式の受け渡し」が所有し、agents_serverが通常起動へ全文、軽量起動へ自己完結した短節を届ける。呼出元は役割固有の入力と結果だけを補い、形式未指定時は同節の正常結果の形式を用いる。taskの不正な続行不能に対する1回の自動回復と、その後の受領は`references/receiving.md`「返却形式の適合確認」に従う。
+全起動経路の共通返却・エスカレーション契約は`share/rules/rules-subagent.md`「返却形式の受け渡し」が所有し、agents_serverが通常起動へ全文、軽量起動へ自己完結した短節を届ける。呼出元は役割固有の入力と結果だけを補い、形式未指定時は同節の正常結果の形式を用いる。taskの不正な続行不能に対する1回の自動回復と、その後の受領は`references/receiving.md`「返却形式の適合確認」に従う。
 
 定型の委譲内容は、呼び出し元の起動・受領契約と`<役割名>.subagent.md`で定義する。単一の呼び出し元だけで使う契約はその規範内へ統合し、複数の呼び出し元で共有する契約は`<役割名>.parent.md`として配置できる。
 評価の観点、判定基準、具体的な手順、返却形式は役割文書に記載する。委譲元は呼び出し元の契約に基づき、対象と実行時の値のみを渡す。自由記述のプロンプトによる起動は、役割文書が存在しない単発の作業に限定して用いる。
@@ -83,7 +85,7 @@ Codex環境で`agents_server`が使えず組み込みの委譲で代用する場
 - 起動前に対象、読取・書込の権限、完了条件、返却すべき観測値を確定する。委譲先が読み込む既存ファイルの絶対パスの実在、比較基準、実行する版を確認する。分量の多い調査では読取ツールの範囲指定を渡し、出力の切り詰めや上限到達を網羅性の根拠として扱わない（base-contract.md「起動前の確認」「分離実行の受領物」）。
 - 入力は命令1文と必要な値（元の要求、対象、完了条件、返却形式、基準記録）にとどめ、すでに配布済みの制約、経緯、推測、既存記録の転記は含めない。自身で裏付けをとっていない値は未検証情報として明示する。exploreは読取専用として結果を返し、後続の入力には`atk agents wait`が保存した`agent_message_path`を直接指定する（base-contract.md「入力の適格性と追送」、sending.md「委譲プロンプトの構成」「未検証情報の取り扱い」）。
 - 各モードの入力項目や機能は、公開されている`start`の説明とスキーマで確認し、`cwd`に作業ディレクトリの絶対パスを渡す。exploreでは`prompt`を、shellでは`command`と`summary_policy`を使用する。スキルの手順を必要とする作業は`task`または`delegate`に委ねる（sending.md「起動と観測」）。
-- 作業を分割する場合は`references/routing.md`「要否判定」を用い、モデルを選択する場合は`references/runtime-routing.md`「工程別モデル設定」に従う。明示的な指定がない場合は工程別の設定値を使用し、WIにモデル指定がある場合はそれを優先する。受領時には、指定値、起動候補、観測された実際の値を区別して扱う。
+- 作業を分割する場合は`references/routing.md`「要否判定」を用い、モデルを選択する場合は`references/process-model-settings.md`「工程別モデル設定」に従う。明示的な指定がない場合は工程別の設定値を使用し、WIにモデル指定がある場合はそれを優先する。受領時には、指定値、起動候補、観測された実際の値を区別して扱う。
 - exploreは読取専用とする。shellの書込先は、生成物も含めて他の担当と重複しない範囲に限定し、同一担当の交代は先行する担当の終了後に実施する。同一worktreeでの書込の分担、作業ツリー全体へ影響する操作の直列化、別worktreeへ分離する条件は`references/mandatory-rules.md`「作業ツリーの保護」に従う。軽量起動では自動配送されないプロジェクト固有の指示や、コマンドの入力境界、終了状態、標準出力・標準エラー出力の保持を確実に引き渡す（base-contract.md「起動前の確認」、sending.md「権限と成果物の取り決め」）。
 - 返却された`session_id`を保持し、`atk agents wait`を用いて終了状態と結果本文を受け取る。待機の実行形式、終了コード、バックグラウンド化、通知後の受領手順は、読込表にある`references/waiting-and-monitoring.md`に従い、ホスト別の待機手順は後述の「軽量起動のホスト別待機」に従う。
 - 終了後に対象ファイルの差分、実行結果、診断情報を確認し、返却形式ならびに対象・権限・完了条件との整合性を検収する。件数、不在、網羅性は、省略のない取得結果に基づいて判定し、事実の主張は実物の根拠で裏付ける。受領前の段階で得られた情報のみで完了とみなさず、不足がある場合は同一担当へ差し戻す（receiving.md「返却形式の適合確認」「終了と報告内容の確認」、sending.md「権限と成果物の取り決め」）。
@@ -120,7 +122,7 @@ Claude Codeが会話イベントを処理するために読み込むプラグイ
 
 ## 継続と新規起動
 
-元の担当者の回復、置換、再起動、代替起動、役割の引き継ぎを行う際は、事前に`references/codex-runtime.md`「後続操作の共通先行条件」を適用する。識別子の再利用か新規起動かの選択は、`references/runtime-routing.md`「継続と新規起動」に従う。
+元の担当者の回復、置換、再起動、代替起動、役割の引き継ぎを行う際は、事前に`references/codex-runtime.md`「後続操作の共通先行条件」を適用する。識別子の再利用か新規起動かの選択は、`references/continuation.md`「継続と新規起動」に従う。
 
 - 同一の作業を継続し、計画、進捗ログ、保存済みのレビュー指摘管理表のいずれかに状態が記録されている場合は、同じroute、`model_type`、識別子に対して該当ファイルの絶対パス、対象ID、未記録の差分のみを送信する。状態の記録が存在しない場合は、未完了の事項と検収済みの状態を委譲プロンプト内にまとめて記述する（レビュー指摘管理表が必要な場合は委譲元がmanaged-temp配下に作成し、絶対パスで渡す）。
 - すでに委譲した要求について自ら本文を精読したり、追加調査したり、回答を作成したりする前に、詳細な文脈を保持している元の担当者を確認する。その担当者に対してユーザーの原文、未確定の論点、参照記録を引き渡し、技術的な調査と判断を委ねる。担当者が稼働中であれば追加指示を送り、終了していれば前述の継続・回復・置換の条件に従って処理する。委譲元は認可、全体調整、検収の責任を担い、判断に必要な根拠を確認する。独立した文脈でのレビュー責任や元担当者の終了確認を維持し、書込権限の移動は`references/mandatory-rules.md`「作業ツリーの保護」に従う。
@@ -147,12 +149,12 @@ exploreおよびshellの受領と検収は「explore・shellの起動」の最�
 
 観測の優先順位は`references/waiting-and-monitoring.md`「待機区間の構成」に従い、Codex環境で元の担当者が稼働している間の処理保留は`references/codex-runtime.md`「後続操作の共通先行条件」に従う。
 
-- Codex以外の環境で、同一種別・同一用途のエージェント起動を繰り返しても収束しない場合は、`references/runtime-routing.md`「継続と新規起動」に従って担当者、作業単位、モデル、実行手段を見直す。
+- Codex以外の環境で、同一種別・同一用途のエージェント起動を繰り返しても収束しない場合は、`references/continuation.md`「継続と新規起動」に従って担当者、作業単位、モデル、実行手段を見直す。
 - 委譲先の役割を自身で巻き取る場合は、その役割の`<役割名>.subagent.md`に定められた義務（判断の責任主体、加工せずに伝達すべき対象、収束条件）を自身に適用して遂行する。
 
 ## 再委譲する場合に守る事項
 
-上位のエージェントから委譲を受けたエージェントがさらに別のエージェントへ委譲する場合は、本スキルが委譲元に対して定めている規定を自身に適用する。委譲先全般に関する共通規定は`agent-toolkit/share/rules-subagent.md`に従う。
+上位のエージェントから委譲を受けたエージェントがさらに別のエージェントへ委譲する場合は、本スキルが委譲元に対して定めている規定を自身に適用する。
 
 - 上位から受け取った取り決め（作業場所、書込を行う主体、出力言語、プロセスの所有権、不可逆操作の権限と許可範囲）を同一の意味で引き継がせ、子孫エージェントの完了本文を自身で受け取って自身の完了報告に含める。
 

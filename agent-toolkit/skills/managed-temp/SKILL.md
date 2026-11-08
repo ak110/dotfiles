@@ -45,7 +45,7 @@ SessionStartは、セッションごとに一時root直下へ専用の作業デ�
 元資料から再生成できる抽出・比較用の複製や検証用の環境は、永続的に保存する成果物と生存期間を分ける。
 用途ごとに、通知されたセッションのmanaged-temp内へ`mktemp -d '<セッションのmanaged-tempの絶対パス>/<用途>-XXXXXXXX'`を実行して作業用ディレクトリを作成する。参照を終えた作成者は、すべての消費工程と起動プロセスが終了した後に`rm -r -- <作成した絶対パス>`で回収する。Windows PowerShellでは`New-Item -ItemType Directory -Path <絶対パス>`で作成し、`Remove-Item -LiteralPath <作成した絶対パス> -Recurse -Force`で回収する。
 TMPDIRなどを作業用ディレクトリに向けたテスト用の一時ディレクトリも、同様に回収の対象とする。
-過去のエージェントが残した作業用領域は、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」の共通判断で調査し、現在の利用と必要な成果を保護して不要な範囲を回収する。セッションのmanaged-tempの7日保持と証拠の寿命、使用中の配布物の保護は維持する。
+過去のエージェントが残した作業用領域は、`agent-toolkit/share/rules/common/02-agent-operations.md`「プロセス終了の安全規定」の共通判断で調査し、現在の利用と必要な成果を保護して不要な範囲を回収する。セッションのmanaged-tempの7日保持と証拠の寿命、使用中の配布物の保護は維持する。
 Git管理下の作業ツリーを検証用に複製する場合は`git worktree add`やcloneで作成し、仮想環境などの依存環境はパッケージマネージャーの同期機能で作成する。worktreeは`rm`を実行する前に`git worktree remove`で登録を解除する。
 作業ツリーのファイルを複製する際は、入れ子のworktreeやgitignore対象の仮想環境について、キャッシュとのハードリンクを解除した実容量で複製する。
 後続ターンへの入力や、後から参照される証拠・検証結果は、回収対象の作業用ディレクトリの外側（セッションのmanaged-temp直下など）へ残す。

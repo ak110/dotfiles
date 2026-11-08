@@ -18,7 +18,7 @@ Stop hookが同スキルの起動不足を理由に処理を遮断した場合�
 
 ## プロジェクト規範による省略
 
-メインエージェントは、`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」に基づき、対象の作業において本スキルの起動を省略するかどうかを判断する。
+メインエージェントは、`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」に基づき、対象の作業において本スキルの起動を省略するかどうかを判断する。
 省略する場合は、次のJSONを一時領域に保存したうえで、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`を実行して判断を記録し、通常の報告をする。
 
 ```json

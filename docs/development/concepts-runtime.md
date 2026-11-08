@@ -1,6 +1,6 @@
 # 確定済みの方針・意向: 実行基盤と委譲
 
-本書は`docs/development/concepts.md`から主題別に分割した記録である。実行時に適用する規範は`agent-toolkit/rules/`配下と各スキルが定める。
+本書は`docs/development/concepts.md`から主題別に分割した記録である。実行時に適用する規範は`agent-toolkit/share/rules/common/`配下と各スキルが定める。
 
 ## フックのホスト間共通化
 
@@ -67,9 +67,10 @@ AGYの保留通知は実inject時に記録し、未判定の条件は保持し�
 
 現行の規定は[design-hosts.md](design-hosts.md#claude-codeとcodexの規範配置)の「Claude CodeとCodexの規範配置」にある。
 
-共通のルール・スキルは`agent-toolkit/`の共有原本へ置き、Codex固有の公開能力との差分は2つのファイルへ集約する。Codexの全主体へ適用する差分は`agent-toolkit/share/rules-common.codex.md`、Codexのメインだけへ適用する差分は`agent-toolkit/share/rules-main.codex.md`へ置く。
+共通のルール・スキルは`agent-toolkit/`の共有原本へ置き、Codex固有の公開能力との差分は2つのファイルへ集約する。Codexの全主体へ適用する差分は`agent-toolkit/share/rules/rules-common.codex.md`、Codexのメインだけへ適用する差分は`agent-toolkit/share/rules/rules-main.codex.md`へ置く。
 hook・MCP定義などホスト別に明確に分離された資源は、各ホストの定義へ置く。
-共有原本の`rules/`配下には全ての実行主体へ適用する条文だけを置き、メインエージェントだけに適用する条文とサブエージェント・委譲先だけに適用する条文は`agent-toolkit/share/`配下へ置いて、フックと`agents_server`が起動時に文脈へ追加する（2026年9月、ユーザー指示）。
+全ての実行主体へ適用する条文だけを常時配る規範とし、メインエージェントだけに適用する条文とサブエージェント・委譲先だけに適用する条文は別のファイルへ置いて、フックと`agents_server`が起動時に文脈へ追加する（2026年9月、ユーザー指示）。
+規範の原本は`agent-toolkit/share/rules/`の1か所へまとめ、常時配る規範を`common/`、役割・ホスト別の規範を直下の`rules-*.md`へ置く。`agent-toolkit/rules/`という名前はプラグインの仕様上の意味を持たず、原本が2か所に分かれて全体像を見渡せなかったため廃止した（2026年11月7日、ユーザー指示）。本文を1つのファイルへ混ぜるとメイン専用の条文が委譲先へ届くため、ファイル単位の区別は保つ。
 共有原本をCodex固有条件で分岐せず、Codex側の基礎指示で上書きして、Claude CodeとCodexの共通契約を維持する。
 この配置はCodexの確認・待機・並列化・ツール利用前説明の差分をCodex基礎指示へ閉じ込める。
 共有文書をCodex用に複製する案は、原本・生成物・自動チェックの同期対象を増やすため採用しない。
@@ -79,7 +80,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 観測したのは、範囲外のOSSへの悪意ある貢献、偽の身元と内容の隠蔽、汎用の自動継続文を許可と読む行動であり、明示した範囲によって減少しても消滅しなかった。
 ユーザーは他のモデル系統で起きないと確定した結果ではないという前提を受け取ったうえで、追記をCodexだけ、取り込みを規範の追記だけへ限定した。
 この判断を必要とする読み手は後続の規範編集者であり、Claude Code側の常時規範へ移す案やCodexのsandbox・承認設定を強める案より、この明示された範囲を優先する。
-現行の規定は`agent-toolkit/share/rules-common.codex.md`「第三者への作用と認可」にある。
+現行の規定は`agent-toolkit/share/rules/rules-common.codex.md`「第三者への作用と認可」にある。
 
 ## 委譲全般と利用上限
 
@@ -94,7 +95,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 工程別モデル設定の指定が一時的に利用できない場合、設定値は書き換えずセッション内の起動時指定だけで代替する。
 設定はユーザー単位の単一値を全セッションが共有し、書き換えが並行セッションへ波及するためである。
 代替の組合せの目安と、effortを指定できない環境でGPT系または上位モデルを選ぶ方針は
-`agent-toolkit/skills/delegation/references/runtime-routing.md`へ集約する。
+`agent-toolkit/skills/delegation/references/fallback-launch.md`へ集約する。
 
 - Claude CodeのWeekly limitと5時間の利用上限で拒否された場合は、解除まで待って同じClaudeで作業を続け、Codexなど別の候補へ切り替えない
   （2026年10月4日、ユーザー指示。待てば確実に解除されるため、切替で作業の文脈を失う方が損失が大きい）。
@@ -189,7 +190,7 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
 - fork型スキルが引数の展開結果から実行対象を特定できない場合は、対象を推測して実行せず、引数未受領を呼び出し元が識別できる固定結果で返す
 - 実装委譲は計画のコミット単位で区切る（1対話へ積み続けた結果、
   累積入力1億トークン超・利用上限94%消費に達した記録に由来）
-- サブエージェントが作業の途中で出力する文章は、ユーザーも呼び出し元も読まないため、記述言語を規範でもフックでも拘束しない（2026年9月4日、ユーザー指示）。委譲先へ求める日本語は、呼び出し元へ返す完了報告と委譲先が作成する成果物に限る。`agents_server`経由の起動では各起動種別の固定指示（`agent-toolkit/share/agents-server-*.md`）が担保し、起動文へは書かない。`Agent`ツールなど`agents_server`を経由しない起動では起動文の言語指定で担保する（2026年9月29日、ユーザー指示。自由本文の起動文でも受信者へ既に届く指示を書かない方針に由来する）。規定の保持先は`agent-toolkit:delegation`の`references/base-contract.md`と`agent-toolkit/share/`配下の各タスク文書とする。`agent-toolkit/share/rules-main.md`「ユーザー向け発話ルール」はメインエージェントの発話だけを対象とし、サブエージェントの出力へ適用しない
+- サブエージェントが作業の途中で出力する文章は、ユーザーも呼び出し元も読まないため、記述言語を規範でもフックでも拘束しない（2026年9月4日、ユーザー指示）。委譲先へ求める日本語は、呼び出し元へ返す完了報告と委譲先が作成する成果物に限る。`agents_server`経由の起動では各起動種別の固定指示（`agent-toolkit/share/agents-server-*.md`）が担保し、起動文へは書かない。`Agent`ツールなど`agents_server`を経由しない起動では起動文の言語指定で担保する（2026年9月29日、ユーザー指示。自由本文の起動文でも受信者へ既に届く指示を書かない方針に由来する）。規定の保持先は`agent-toolkit:delegation`の`references/base-contract.md`と`agent-toolkit/share/`配下の各タスク文書とする。`agent-toolkit/share/rules/rules-main.md`「ユーザー向け発話ルール」はメインエージェントの発話だけを対象とし、サブエージェントの出力へ適用しない
 - 委譲すると判定した作業が複数ある場合は、同じ実行時機、同じ作業ディレクトリ、同じ権限区分で実行できる作業を1件の委譲へまとめる。手順を書く時点でも同じ判定をし、分けて起動する手順には理由を条文へ残す（2026年9月、ユーザー指示。`agent-toolkit:process-wi`の終了処理、即時対応および自動コードレビュー監査を別々の委譲先で実行した観測に由来）。原因分析でユーザー介入を扱う場合、または独立した事象が2件以上ある場合は、事象ごとに独立した文脈で事実を収集するため委譲をまとめない（2026年9月28日、ユーザー回答）。
   この例外は、独立した文脈を利益として選んだ委譲全般へ広げる。作業文脈の少ない担当による起草も含む（2026年9月30日、ユーザー指示）。
   この委譲では、起動後に生じた別の対象を稼働中の担当にも終了済みの担当にも追送しない。現在は`agent-toolkit/skills/delegation/references/routing.md`「委譲単位の確定」が定める
@@ -289,7 +290,7 @@ Codexの公開回収機能による同一ターン回収と、通知再開を持
 - メインはfast担当のエスカレーション時に実効設定を比較し、新規fix担当を起動する場合だけfast担当の終了を確認してからdirtyな同一worktreeを渡す。書込所有権は同時に1主体だけとする
 - fast担当からfix担当への移行は実効`engine`・`model`・`effort`がすべて一致する場合だけ同じthreadを継続する。継続接続は同じ担当へ同じタスクの後続作業を返す場合と、fast担当からfix担当へ移る場合に使い、
   実際の起動routeと保持識別子に対応する接続手段を使う。`agents_server`で起動したthreadは実行ホストとengineによらず`send_message(session_id, ...)`、Claude CodeのAgentツールで起動したthreadだけは`SendMessage`を使う。継続条件は
-  `agent-toolkit/skills/delegation/references/runtime-routing.md`が定める。UWIへの回答後も同じpickerまたはレーンを一般継続契約で再開する
+  `agent-toolkit/skills/delegation/references/continuation.md`が定める。UWIへの回答後も同じpickerまたはレーンを一般継続契約で再開する
 - 1つのレビュー収束ループは1つのレビュー表へ集約し、計画レビューは`plan-review`、実行レビューは`exec-review`の`track`で帰属を表す。
   実行レビュー担当は計画との比較と成果物評価を順番に行い、実在指摘を表へ記録して指摘件数だけを返す。再レビューは表の修正記録と直接影響範囲へ限定する。保存済み表の`implementation-review`・`plan-conformance`・`independent`は読み取り互換として扱うが、新規作成時は生成しない。
   モデル解決と共通checkpointの受領は`review-loop-coordination.md`へ集約し、表の操作、レビュー担当およびレビューイーの固有契約はそれぞれのSSOTへ残す（2026年8月、ユーザー指示。表の分散と共通手順の重複を解消するため）

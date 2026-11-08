@@ -35,7 +35,7 @@
 | 基準の参照時 | `workflow-phases.md#「用語」` | 判断 | `section:agent-toolkit:*/share/workflow-phases.md#「用語」` |
 | 基準の参照時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
 | 基準の参照時 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
-| 初回起動前 | `../skills/delegation/references/runtime-routing.md#「実行手段」「工程別モデル設定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」「工程別モデル設定」` |
+| 初回起動前 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 | 基準の参照時 | `../skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「レーンの変更範囲へ加える修正の認可」` |
 | process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `../skills/process-wi/references/immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
 | 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
@@ -79,7 +79,7 @@
 
 レビュー基準には、その実装を認可した手元の資料に応じて`計画`、`CI記録`、`WI`を組み合わせて指定する（対応する計画があれば`計画`、対象WIがあれば`WI`、計画がなくCI失敗に対応した実装なら`CI記録`）。1回の実行レビューは`cwd`から解決する単一のリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
 
-対象WIに`担当モデル.実行レビュー担当`の指定があれば、そのモデル名を起動時の`model_type`と委譲入力の`担当モデル`へ渡す（読者別探索担当にも引き継がれる）。モデルの比較と記録は`agent-toolkit:delegation`の`references/runtime-routing.md`「工程別モデル設定」に従い、対象WIごとにモデル指定が異なればレビューの実行単位を分ける。
+対象WIに`担当モデル.実行レビュー担当`の指定があれば、そのモデル名を起動時の`model_type`と委譲入力の`担当モデル`へ渡す（読者別探索担当にも引き継がれる）。モデルの比較と記録は`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」に従い、対象WIごとにモデル指定が異なればレビューの実行単位を分ける。
 
 同じレーンに複数の計画（初回分割時の複数計画、または凍結済みの先行計画と追加計画）がある場合は、計画ごとに同じ最終実装HEADでレビューを起動し、計画の識別名（stem）ごとにレビュー指摘管理表と返却を受け取る。各レビューには、その計画に対応するAWIだけを割り当てる。
 計画ごとの成果物は、レビュー指摘管理表、完成条件証拠を含む返却メッセージ、`review_contract`である。レーン全体を管理する担当には全計画分を計画との対応を保って1回で渡し、計画ごとのレビューthreadにはその計画の分を渡す。複数計画がある場合の契約ファイルは、初回・再レビューを問わず`exec-review-contract-generation.md`「`review_contract`の生成」に従って計画ごとに作る。
@@ -181,7 +181,7 @@ Git管理外ファイルの変更前後の複製のペアがあれば、レー�
 - 保存済みAWIの正式名を受領したら、process-wi中は読込表の`immediate-fix.md`「即時対応」で今回追加を判定し、選定と担当への受渡しを確認する。正式名は`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 投入したWI`でも報告する
 - 担当から続行できない理由が返ったら、ユーザーの判断が要る事項を`agent-toolkit:user-confirmation-and-report`に従って確認する（自律モードではUWIへ退避する）。投入先リポジトリ外のファイルが対象として返った場合は、`add-wi.parent.md`「続行できない理由の扱い」に従って投入先と要求の組を確定し直す
 
-通常の次回送りは`agent-toolkit/rules/01-agent.md`「完遂と先送り」の一般原則の例外とし、事象・根本原因・対応案を投入担当がAWIへ保存する。
+通常の次回送りは`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の一般原則の例外とし、事象・根本原因・対応案を投入担当がAWIへ保存する。
 process-wi中は読込表の`immediate-fix.md`「即時対応」で正式改善の今回追加を判定し、最小修正後の正式対応は次回へ渡す。
 残工程や次のセッションを停止・遮断する不具合は、観測根拠から「進行を妨げる欠陥」と判定し、詳細な原因分析に先行して直接修正する。
 修正は`agent-basics:bugfix`と`01-agent.md`「完遂と先送り」、process-wi中の最小修正は前述の「即時対応」に従う。
@@ -251,7 +251,7 @@ process-wiとwrite-planの双方に適用する。
 - `終了区分: 延期adopt`または`終了区分: 終了しない`（`exec.parent.md`「統合の指示と受領」の`AWI終了区分`のうち、統合時に`adopt`しない値）、および実際の結論を記載した`後続工程:`、`検収時機:`
 - 公開工程で判定する条件は`判定工程: 公開工程`、並行して実施中の画面レビューで判定する条件は`判定工程: ユーザビリティレビュー`かつ`進行状態: 並行中`
 
-返却の状態行、続行不能の区分と理由、標識行および一行返却は`rules-subagent.md`「返却形式の受け渡し」に従う。完成条件証拠の提出が要求されている場合は末尾に`exec-review-recording.md`「条件別判定行の形式」に従った判定行を全条件の数だけ記載し、証拠要求がない場合は判定行を配置しない。一般的な要約などの地の文は加えずに、役割固有の規定行だけを返す。
+返却の状態行、続行不能の区分と理由、標識行および一行返却は`rules/rules-subagent.md`「返却形式の受け渡し」に従う。完成条件証拠の提出が要求されている場合は末尾に`exec-review-recording.md`「条件別判定行の形式」に従った判定行を全条件の数だけ記載し、証拠要求がない場合は判定行を配置しない。一般的な要約などの地の文は加えずに、役割固有の規定行だけを返す。
 
 ```text
 状態: completed

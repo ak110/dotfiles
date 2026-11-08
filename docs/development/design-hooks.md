@@ -323,7 +323,7 @@ Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_i
 同じプロジェクトの記録を更新時刻順に選んでも、現在の会話の記録とは限らない。
 更新時刻順の正しさと会話の同一性は独立であるため、ホストが入力で渡す識別子と記録パスを消費側へ届ける。
 `startup`・`resume`・`clear`・`compact`・`fork`の各入力で現行の値を通知し、managed-tempの作成の成否と独立に結合する。入力に無い値は推測で補わず、既存の取得手段として`CLAUDE_CODE_SESSION_ID`と`session-review-evidence --claude-session-id`を案内する。委譲先とCodexは対象外とし、委譲先自身の会話と委譲元から受け取る証拠の識別子を混同させない。
-取得元の規範は`agent-toolkit/share/rules-main.claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
+取得元の規範は`agent-toolkit/share/rules/rules-main.claude-code.md`「自身の会話の記録」に集約し、記録を使う消費文書は同節を参照する。
 入力の記録パスが実在しない場合は、同じsession IDのメイン記録を既存の解決処理で1件へ定める。開始時と別のディレクトリでの再開により入力が実在しないパスを示した観測へ対応する。解決件数ごとの扱いは後掲「出力の配送とセッション記録の解決」に従う。
 入力項目とmatcherの典拠は[audit-records.md](audit-records.md)「docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日」にある。
 環境変数だけを案内する案はtranscriptの所在を消費側ごとの探索に残し、`UserPromptSubmit`で毎ターン配送する案は`SessionStart`が会話の切替境界を既に扱うため採らない。新しい状態ファイルや取得器は設けない。
@@ -386,7 +386,7 @@ Claude Codeだけで有効化する。
 記述言語の警告は、応答が日本語文字を含まず英単語を2語以上含む記述であるとき、
 応答の冒頭が英語の談話標識であるとき、日本語文字の比率が閾値未満のときに返す。
 英単語が1語だけの記述は、識別子やコマンド名の単独提示と区別できないため警告しない。
-日本語で書く目的は、ユーザーが読めることと、識別子や名前の取り違えを防いで成果物の品質を守ることである。読者基準の定義元は`agent-toolkit/rules/01-agent.md`「使用言語」とし、ユーザーが読む報告・質問・計画・直接送達される最終応答を判定対象とする。2026年10月26日のユーザー指示により、途中説明の言語を理由に通常操作を拒否するFunction hooksの`tool.call`登録を撤去した。通常操作では直前本文の取得、言語判定、診断通知を行わない。
+日本語で書く目的は、ユーザーが読めることと、識別子や名前の取り違えを防いで成果物の品質を守ることである。読者基準の定義元は`agent-toolkit/share/rules/common/01-agent.md`「使用言語」とし、ユーザーが読む報告・質問・計画・直接送達される最終応答を判定対象とする。2026年10月26日のユーザー指示により、途中説明の言語を理由に通常操作を拒否するFunction hooksの`tool.call`登録を撤去した。通常操作では直前本文の取得、言語判定、診断通知を行わない。
 質問・計画本文とsend_to_userのmessageはcheck_textで表示前に判定する。`response_language.ts`はsend_to_userが使うPythonのCLI起動・結果解釈・診断抑止を所有する。直接送達される最上位メインのStopはlast_assistant_messageを判定し、再帰防止により1回だけ終了を止める。SubagentStopでは空返却の保護を保ち、内部返却の言語判定を省く。
 send_to_userでは判定基盤の障害を言語違反と分け、成功結果を返して本文を表示し、結果の後に読む文脈へ`response-language`の`warn`を加える。診断は判定段階とエラーの種類・終了状態を示し、入力本文とプロセスの出力を載せず、元の操作の再発行を求めない。同じ会話に同じ診断が続く間は1回だけ届け、判定の成功や診断の変化で再び届ける。英語主体の報告は日本語への書き直しを求める。途中説明の判定を警告として残す案は、ユーザーが求める報告の日本語化に寄与しない検査と通知を残すため採らない。全ての言語判定を撤去する案は、報告と最終応答の日本語化を求める範囲を満たさないため採らない。
 表示だけの差し替えは、モデルの文脈と記録へ英語の本文が残り、識別子の取り違えへ作用しないため採らない。ツール呼び出しの間隔ごとの日本語指示の再注入は、直前の注入からの距離による改善が観測されなかったため撤去する。SessionStartの言語指示は維持する。
@@ -528,7 +528,7 @@ managed settingsの`attribution.sessionUrl`と`attribution.pr`は設定せず、
 Claude Codeのメインが調査を`Agent`ツールで委譲し、待機の定期再確認を委譲先の起動後に装着した事象をユーザーが何度も指摘した。
 条文はセッション開始時の文脈にあったが、ツールを選ぶ時点と起動の直前に読まれる文面に手掛かりが無かった。
 そこで、選択の時点の語彙と起動直前の文面へ手掛かりを置き、hookは使わない。
-常時規範`agent-toolkit/rules/01-agent.md`「委譲の要否判定」は比べる相手として`Agent`ツールの名前を含める。
+常時規範`agent-toolkit/share/rules/common/01-agent.md`「委譲の要否判定」は比べる相手として`Agent`ツールの名前を含める。
 `agents_server`のサーバー`instructions`は本サーバーを標準とすることを示す。
 `start`の公開説明は、`CronCreate`を使える実行主体が最初の呼び出しの前に定期再確認を装着することを示す。
 Claude Codeはツールを遅延読み込みし、スキーマを取得する最初の呼び出しの直前に`start`の説明を読む。
@@ -537,7 +537,7 @@ Claude Codeはツールを遅延読み込みし、スキーマを取得する最
 却下した代替案は3つある。
 PreToolUseで通知する案は、当時の、規範の想起を目的とするチェックをhookに置かない方針に反するため採らなかった。現行の判定基準は`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`「遮断・警告フックの成立条件」にあり、旧基準からの変更の経緯は「全件確認の経緯（2026年9月26日）」にある。本節の判断そのものは見直していない。
 `agent-toolkit:delegation`のdescriptionへ起動の語を加える案は、descriptionを対象作業と発火条件に限る規定に反し、単発の委譲のたびにスキル本体と参照資料を読む費用を生む。
-`agent-toolkit/share/rules-main.claude-code.md`へ追記する案は、常時規範への新しい規定の追記に当たり、メインだけへ配られるため委譲先が委譲する場合を覆わない。
+`agent-toolkit/share/rules/rules-main.claude-code.md`へ追記する案は、常時規範への新しい規定の追記に当たり、メインだけへ配られるため委譲先が委譲する場合を覆わない。
 観測した事象では条文がセッション開始時の文脈にあったため、同じ層へ文を移しても想起の条件は変わらない。
 
 ### atkの出力受領の案内
@@ -832,8 +832,8 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | --- | --- | --- | --- |
 | plugin `PreToolUse/pretooluse` | 所有を確認できない終了・追送、能動heredoc置換、pattern kill、公開commitの形式・帰属、定型委譲の必須入力を保護する。本文・改行・生成物、shellのオプション・出力接続・rev-parse、背景出力は警告で支援する。資料不足は初回だけ案内し、再書込を許可する。通常読取・診断・結果回収・質問・既存復旧は保つ | 対応 | 部分対応。共通の保護と資料選択を使う。Codexの大量読取は予算確認を警告して標準読取を継続する。PowerShell改行・AskUserQuestionなどホスト固有入力の判定は除く |
 | plugin `PostToolUse/posttooluse` | 成功したツール実行の観測結果を記録する。TaskStopは登録から成功対象の完了記録だけを消費し、別対象と失敗・拒否の記録を保持する。計画ファイル・スキル起動・バックグラウンドタスク・`agents_server` sessionの状態を記録し、計画ファイルの書き込み後に計画構造の自動チェックを案内し、そのセッションが投入したUWIへの回答を通知する。`AskUserQuestion`への回答が選択肢と一致しない自由記述を含む場合は、UserPromptSubmitと同じ、発話の内容を現物で確かめる手順を示す注記を返す。ホストの上限を超えて退避したBashとPowerShellの結果は、抜粋を保存先・元の出力のバイト数・保存先を読む次の操作を示す本文へ置き換える | 対応 | 部分対応。成功した編集による計画ファイルの記録と計画構造の自動チェックの案内、`agents_server` sessionの状態記録、Bashで実行した振り返りの準備結果の記録に対応する。Codexはシェル出力を退避せず切り詰めて返すため、退避した結果の置き換えは対象外 |
-| plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules-main.md`とClaude Code向けの`share/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は`QUALITY_CHECKPOINT_NOTICE`も併せて追加する。Claude Codeのメインへは入力の会話IDとtranscriptの絶対パスも通知する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
-| plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
+| plugin `SessionStart/rules_context` | セッションの開始、再開、`/clear`および圧縮の後に、メインエージェントだけに適用する条文（`share/rules/rules-main.md`とClaude Code向けの`share/rules/rules-main.claude-code.md`）を文脈へ追加する。`agents_server`が起動した委譲先では追加しない。圧縮の後は`QUALITY_CHECKPOINT_NOTICE`も併せて追加する。Claude Codeのメインへは入力の会話IDとtranscriptの絶対パスも通知する | 対応 | 対応。`rules_context_codex`として射影し、Claude Code固有の条文を除いて追加する。handlerの`additionalContextLimit`は0とし、切り詰めない |
+| plugin `SubagentStart/rules_context` | サブエージェントの起動時に、サブエージェントと委譲先だけに適用する条文（`share/rules/rules-subagent.md`）を文脈へ追加する。親の一時領域がある場合は、agent_idごとの専用領域を通知する | 対応 | 対応。handlerの`additionalContextLimit`は0とし、切り詰めない |
 | plugin `SubagentStop/subagent_stop_advisor` | 空の完了報告での終了をブロックする | 対応 | 対応。空の完了報告をブロックし、内部返却の言語は判定しない |
 | plugin `SessionEnd/session_end_cleanup` | 期限を過ぎたセッション状態を回収する。会話を破棄する時だけ、そのセッションの状態を削除する | 対応 | 対応。終了理由が`other`固定のため、期限切れ状態の回収だけを実行する |
 | plugin `Stop/stop` | 言語保護、常駐ループの終了保証、所有計画・未観測委譲先・可視本文・report-completion起動不足の非遮断通知、未配送通知のホスト配送を集約する。送達・残工程・質問の意味は文書へ委ねる。実在する待機を除き、同じ原因・対象・対処の反復を共通noticeで抑止する | 対応 | 部分対応。`response_language_advisor`で説明言語を、`submission_report_advisor`で投入作業の報告用要約の有無を判定し、`decision`と`reason`だけを返す。非遮断の終了支援は関連操作と文書で扱う |

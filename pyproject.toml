@@ -108,7 +108,7 @@ dev = [
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
 name = "規範変更の対象ファイル"
-paths = ["AGENTS.md", "agent-toolkit/rules/", "agent-toolkit/skills/", "agent-toolkit/share/", "agent-basics/skills/", ".claude/skills/"]
+paths = ["AGENTS.md", "agent-toolkit/skills/", "agent-toolkit/share/", "agent-basics/skills/", ".claude/skills/"]
 suffixes = [".md"]
 require-paths = true
 
@@ -263,15 +263,16 @@ targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "agent-toolkit/*.py",
     "agent-toolkit/skills/*.py",
-    "agent-toolkit/rules/*.py",
+    "agent-toolkit/share/rules/common/*.py",
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/skills/*/*",
     "agent-toolkit/skills/*/*/*",
     "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/*/*",
     "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/__init__.py",
     "agent-toolkit/share/*",
+    "agent-toolkit/share/rules/*",
     "agent-toolkit/hooks/*.json",
-    "agent-toolkit/rules/*.md",
+    "agent-toolkit/share/rules/common/*.md",
     "agent-toolkit/scripts/**/*.py",
     "agent-toolkit/agent_toolkit/**/*.py",
     "agent-toolkit/scripts/*",
@@ -280,8 +281,8 @@ targets = [
     "install-claude.sh",
     "install-claude.ps1",
     "pytools/**/*.py",
-    "agent-toolkit/share/rules-common.codex.md",
-    "agent-toolkit/share/rules-main.codex.md",
+    "agent-toolkit/share/rules/rules-common.codex.md",
+    "agent-toolkit/share/rules/rules-main.codex.md",
     "scripts/codex_shared_rules.py",
     "scripts/gen_completions.py",
     "scripts/gen_install_files.py",
@@ -354,8 +355,9 @@ error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<severity>error|warning): (?P<
 targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "AGENTS.md",
-    "agent-toolkit/rules/*.md",
     "agent-toolkit/share/*.md",
+    "agent-toolkit/share/rules/*.md",
+    "agent-toolkit/share/rules/common/*.md",
     "agent-toolkit/skills/*/*.md",
     "agent-toolkit/skills/*/*/*.md",
     "agent-basics/skills/*/*.md",
@@ -366,7 +368,7 @@ targets = [
     "agent-toolkit/skills/*/*.py",
     "agent-toolkit/skills/*/references/*.py",
     "agent-toolkit/share/*.py",
-    "agent-toolkit/rules/*.py",
+    "agent-toolkit/share/rules/common/*.py",
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/agent_toolkit/*.py",
     "agent-toolkit/agent_toolkit/*/*.py",

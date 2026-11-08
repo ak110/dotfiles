@@ -107,7 +107,7 @@ OpenCodeの対話ホストには、同じ原本からスキルと常時規範を
 | `.claude-plugin/plugin.json`・`.mcp.json` | Claude Code向け設定であり、metadataとClaude専用を含むMCP server定義の大元 |
 | `plugin.json`・`.mcp.codex.json`・`mcp.json` | Agent Plugins v1向け生成物。大元の設定から共有許可済みserverだけを固定schemaへ写像する |
 | `.codex-plugin/plugin.json`・`hooks/hooks.codex.json` | Codex向け生成物。大元の設定から許可済みの要素だけを写像する |
-| `rules/`・`agents/`・`hooks/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
+| `agents/`・`hooks/`・`scripts/`・`share/` | Claude Code・Codex・配布処理が使う固有資源。Agent Pluginsの可搬要素としては扱わない |
 | OpenCodeの`skills/`と`agent-toolkit.md` | post-applyが共有スキルと常時規範をグローバル検出先へ同期する |
 
 新規engineの追加時にホスト導入の要否と理由を判断・記録する手順は、`.claude/skills/agent-toolkit-edit/SKILL.md`が定める。
@@ -145,7 +145,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 
 - agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを元にして`scripts/sync_generated_files.py`で生成する
-- `setup_codex_links.py`はdotfiles固有スキルと`docs`だけをリンクする。`agent-toolkit/rules/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
+- `setup_codex_links.py`はdotfiles固有スキルと`docs`だけをリンクする。`agent-toolkit/share/rules/common/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
 ### OpenCodeの対話ホストへの導入
@@ -239,7 +239,7 @@ dotfiles導入はCodex向けに次を配置する。
 - `~/.codex/agent-toolkit/rules`: agent-toolkitのルール原本を`atk-auto`の境界付き本文としてコピーで同期する
 - `~/.codex/skills/operate-ak110-projects`と`~/.codex/docs`: dotfiles固有スキルと`.chezmoi-source/dot_claude/docs`へのリンク
 
-`agent-toolkit/rules`は配布先で境界を付けた本文へ書き換えるためコピーで同期し、書き換えを要さない共有対象はリンクで配布する。
+`agent-toolkit/share/rules/common`は配布先で境界を付けた本文へ書き換えるためコピーで同期し、書き換えを要さない共有対象はリンクで配布する。
 chezmoiの`symlink_`はWindowsで特権不足により失敗するため、`chezmoi apply`後処理（`pytools.post_apply`）の専用ステップがリンクを生成する（Linux/macOSはシンボリックリンク、Windowsはディレクトリジャンクション）。
 `~/.codex/rules`はCodexの承認ルール用ディレクトリでありMarkdownルールと互換性がないため、Markdownルールは`~/.codex/agent-toolkit/rules`へ置く。
 

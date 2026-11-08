@@ -38,7 +38,7 @@
 対象worktreeの作業に入る前に、その対象の`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。
 ホームなどのプロジェクト外cwdでは、対象のプロジェクトスキルを明示的に読み込み、通常のプロジェクトhookが担う確認を実施する。
 対象の規範と既存チェックを適用してhookの目的を満たす。
-担当の振分け前に、`agent-toolkit/rules/01-agent.md`「行動と手順の目的」に従い、今回の対象集合で委譲が得る成果と直接処理との差を点検する。
+担当の振分け前に、`agent-toolkit/share/rules/common/01-agent.md`「行動と手順の目的」に従い、今回の対象集合で委譲が得る成果と直接処理との差を点検する。
 WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し、常駐が準備したworktreeを利用する。
 
 初回の担当起動前に、取得済みの候補本文・件数・readiness・previousの残工程から、今回進められる処理負荷が最大と見込まれる1対象を選び、統括自身が直接担当する。
@@ -102,7 +102,7 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 結果: <公開結果、CI、処理したAWIと採否の要約>
 ```
 
-続行不能の場合は`状態:`行の代わりに`../../../share/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。統括担当はこの返却を`result_file`の`blocked`として記録する。
+続行不能の場合は`状態:`行の代わりに`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。統括担当はこの返却を`result_file`の`blocked`として記録する。
 <!-- return-contract:repository-process:end -->
 
 ## 結果と終了

@@ -3,7 +3,7 @@ name: agent-toolkit-edit
 user-invocable: false
 description: >
   `agent-toolkit/`・`agent-basics/`配下のプラグイン（スキル・サブエージェント・フックスクリプト・marketplace記述）、
-  `agent-toolkit/rules/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
+  `agent-toolkit/share/rules/common/`配下のルールファイル（配布先`~/.claude/rules/agent-toolkit/`）、
   `.claude-plugin/marketplace.json`を編集するときに使う。
   版数更新・marketplace管理・セッション状態フラグの扱い、レビュー担当の指示・モデル変更時の評価セットの比較を含む。
 ---
@@ -53,10 +53,12 @@ description: >
 
 - `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するプラグインルート。
 - `agent-basics/`: 成果物の品質スキルを独立して配布するプラグインルート。toolkitからbasicsへの一方向依存とする。
-- `agent-toolkit/rules/`: ルールファイルの配置場所（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用ルール）。メイン、サブエージェント、委譲先のすべてに適用する条文のみを置き、サブディレクトリは作成しない（`scripts/gen_install_files.py`は直下の`*.md`のみを配布一覧へ列挙する）。配布先や同期手順は`dotfiles-repo-layout`「ディレクトリ構造に関する注意点」が扱う。
-- `agent-toolkit/share/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範および各ホスト固有の規範。
-- `agent-toolkit/share/rules-common.codex.md`: Codexの全エージェント向けの規範。
-- `agent-toolkit/share/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範およびClaude Code固有の規範（Codex固有の差分が必要な場合は`rules-subagent.codex.md`を追加する）。振り分け基準は`agent-basics:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う。
+- `agent-toolkit/share/rules/`: エージェントへ配る規範の原本を1か所に置く。全主体へ常時配る規範は`common/`、役割・ホスト別に注入する規範は直下の`rules-*.md`とし、配る相手をディレクトリとファイル名で区別する。
+- `agent-toolkit/share/rules/common/`: 全主体へ常時配るルールファイルの配置場所（`01-agent.md`は基本原則、`02-agent-operations.md`は製品横断の実行運用ルール）。メイン、サブエージェント、委譲先のすべてに適用する条文のみを置き、サブディレクトリは作成しない（`scripts/gen_install_files.py`とインストーラーは直下の`*.md`のみを名前で配布一覧へ列挙・取得する）。配布先や同期手順は`dotfiles-repo-layout`「ディレクトリ構造に関する注意点」が扱う。
+- `agent-toolkit/share/rules/rules-main.md`・`rules-main.claude-code.md`・`rules-main.codex.md`: メイン向けの共通規範および各ホスト固有の規範。
+- `agent-toolkit/share/rules/rules-common.codex.md`: Codexの全エージェント向けの規範。
+- `agent-toolkit/share/rules/rules-subagent.md`・`rules-subagent.claude-code.md`: 委譲先向けの共通規範およびClaude Code固有の規範。
+  Codex固有の差分が必要な場合は`rules-subagent.codex.md`を追加する。振り分け基準は`agent-basics:writing-standards`の`references/agent-documents-additions.md`「規範追記時の判定」に従う。
 - 環境変数の命名規則として、配布物内で完結するものは`AGENT_TOOLKIT_<PURPOSE>`、個人環境で完結するものは`DOTFILES_`を接頭辞とする。一覧は`references/claude-hooks.md`にある。
 
 参照方向は「dotfilesリポジトリ → プラグイン」および「プラグイン ↔ ルールファイル」を許容する。

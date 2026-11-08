@@ -4,7 +4,7 @@ from _scripts_test_helpers import REPO_ROOT, expected_ps1_block, expected_sh_blo
 
 
 def test_current_repo_files_are_synced() -> None:
-    names = sorted(path.name for path in (REPO_ROOT / "agent-toolkit" / "rules").glob("*.md"))
+    names = sorted(path.name for path in (REPO_ROOT / "agent-toolkit" / "share" / "rules" / "common").glob("*.md"))
     sh_block = extract_install_files_block((REPO_ROOT / "install-claude.sh").read_text(encoding="utf-8"))
     ps1_block = extract_install_files_block((REPO_ROOT / "install-claude.ps1").read_text(encoding="utf-8-sig"))
 

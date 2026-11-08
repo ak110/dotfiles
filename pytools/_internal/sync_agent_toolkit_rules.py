@@ -1,6 +1,6 @@
 """agent-toolkitプラグインの配布ルールをClaude CodeとCodexの配布先へ同期する。
 
-`agent-toolkit/rules/`配下のMarkdownを、配布先の`~/.claude/rules/agent-toolkit/`と
+`agent-toolkit/share/rules/common/`配下のMarkdownを、配布先の`~/.claude/rules/agent-toolkit/`と
 `~/.codex/agent-toolkit/rules/`へ反映する。chezmoiは`agent-toolkit/`配下を配布対象にしないため、
 `chezmoi apply`後処理で別経路の同期を行う。
 
@@ -18,14 +18,17 @@ from pytools._internal import claude_common, common, log_format, post_apply_outc
 logger = logging.getLogger(__name__)
 
 CODEX_HOME = Path.home() / ".codex"
-RULES_RELATIVE = Path("agent-toolkit") / "rules"
+# 原本は役割別の規範と同じ`share/rules/`へ置き、全主体へ常時配る規範だけを`common/`へ分ける。
+# Codexの配布先は旧配置と同じ相対パスを保つため、原本の相対パスとは別の定数で持つ。
+SOURCE_RELATIVE = Path("agent-toolkit") / "share" / "rules" / "common"
+CODEX_DESTINATION_RELATIVE = Path("agent-toolkit") / "rules"
 NORMATIVE_ELEMENT = "atk-auto"
 NORMATIVE_SOURCE = "agent-toolkit"
 NORMATIVE_KIND = "rules"
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """`agent-toolkit/rules/`をClaude CodeとCodexの配布先へ同期する。配布先の書き込みの失敗は失敗と数える。"""
+    """`agent-toolkit/share/rules/common/`をClaude CodeとCodexの配布先へ同期する。配布先の書き込みの失敗は失敗と数える。"""
     dotfiles_root = common.find_dotfiles_root()
     if dotfiles_root is None:
         logger.info(
@@ -36,7 +39,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         )
         return post_apply_outcome.PostApplyOutcome()
 
-    src = dotfiles_root / RULES_RELATIVE
+    src = dotfiles_root / SOURCE_RELATIVE
     if not src.is_dir():
         return post_apply_outcome.PostApplyOutcome(
             failure=f"コピー元が存在しません: {src}",
@@ -45,7 +48,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     destinations = (
         claude_common.CLAUDE_HOME / "rules" / "agent-toolkit",
-        CODEX_HOME / RULES_RELATIVE,
+        CODEX_HOME / CODEX_DESTINATION_RELATIVE,
     )
     changed = False
     for destination in destinations:
@@ -56,7 +59,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 def wrapped_body(rule: Path) -> str:
     """配布先へ書く本文を、`atk-auto`要素で囲んだ形で返す。"""
-    marker = (RULES_RELATIVE / rule.name).as_posix()
+    marker = (SOURCE_RELATIVE / rule.name).as_posix()
     body = rule.read_text(encoding="utf-8").rstrip("\n")
     opening = f'<{NORMATIVE_ELEMENT} source="{NORMATIVE_SOURCE}" kind="{NORMATIVE_KIND}" path="{marker}">'
     return f"{opening}\n{body}\n</{NORMATIVE_ELEMENT}>\n"

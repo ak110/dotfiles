@@ -20,7 +20,7 @@ def env_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
 
 
 def _src_dir(dotfiles_root: Path) -> Path:
-    return dotfiles_root / "agent-toolkit" / "rules"
+    return dotfiles_root / "agent-toolkit" / "share" / "rules" / "common"
 
 
 def _dst_dirs(claude_home: Path, codex_home: Path) -> tuple[Path, Path]:
@@ -28,7 +28,7 @@ def _dst_dirs(claude_home: Path, codex_home: Path) -> tuple[Path, Path]:
 
 
 def _expected(name: str, body: str) -> str:
-    opening = f'<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/rules/{name}">'
+    opening = f'<atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/{name}">'
     return f"{opening}\n{body}\n</atk-auto>\n"
 
 

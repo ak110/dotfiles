@@ -17,7 +17,7 @@
 
 ## 文章の共通規定
 
-メインエージェントのユーザー向け発話には、`agent-toolkit:/share/rules-main.md`「ユーザー向け発話ルール」も適用する。
+メインエージェントのユーザー向け発話には、`agent-toolkit:/share/rules/rules-main.md`「ユーザー向け発話ルール」も適用する。
 
 - コミットの提示方法は、読み手の属性に合わせて適切に選択する。人間向けには日付、件名、PR/MR番号、タグを用いて提示し、再取得の用途に必要な場合のみ一意な短縮OIDを添える。エージェント向けには一意な短縮OIDを用い、完全なOIDは`agent-toolkit:commit`の`references/git-identifier.md`に従ってGit操作の直前に解決する。
 

@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | 動作検証を実行する前 | `../../develop-dotfiles/references/verification-values.md`の「検証コマンドの実行」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「検証コマンドの実行」` |
 | 全レーンの完了後にバージョンを更新する時点、および本書の更新手順へ入る前 | `agent-toolkit:process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
-| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules-common.codex.md#「Codexのplugin root解決」` | 判断 | `section:agent-toolkit:*/share/rules-common.codex.md#「Codexのplugin root解決」` |
+| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules/rules-common.codex.md#「Codexのplugin root解決」` | 判断 | `section:agent-toolkit:*/share/rules/rules-common.codex.md#「Codexのplugin root解決」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md#「版数と生成物」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「版数と生成物」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 公開前の統合差分に`rust/claude-statusline/`の変更がある時 | `../../release-dotfiles/SKILL.md`の「developとmasterのリリース運用」内のstatusline採番規定 | 判断 | `section:*/skills/release-dotfiles/SKILL.md#「developとmasterのリリース運用」` |
@@ -47,7 +47,7 @@ rebaseやmergeを完了した後は、競合の有無にかかわらず、公開
 ## Codex導入後のrootの再確認
 
 Codexプラグインの導入バージョンが変更された場合は、保持しているplugin rootの情報を破棄して再解決する。
-`agent-toolkit/share/rules-common.codex.md`「Codexのplugin root解決」のmarketplace限定照会と抽出を用いる。
+`agent-toolkit/share/rules/rules-common.codex.md`「Codexのplugin root解決」のmarketplace限定照会と抽出を用いる。
 このプロジェクトのmarketplaceは`ak110-dotfiles`であり、`installed`から`pluginId == "agent-toolkit@ak110-dotfiles"`のエントリを一意に特定する。
 識別子、marketplace、version、有効状態、rootの解決結果と診断のみをモデルへ返却する。
 取得の失敗、対象エントリの不在、対象が一意に定まらない状態、無効化状態、実体パスの欠落をそれぞれ区別して診断し、全一覧をそのまま返すことは避ける。
@@ -58,7 +58,8 @@ plugin cache directory配下にある新バージョンのrootパスを解決し
 ## plan modeでの取り扱い
 
 - 計画ファイルの`## 要件・外部仕様`に、変更のあるプラグインごとの更新種別（PATCH／MINOR／MAJORまたは`bump不要`）と、「判定基準」に基づく判断根拠を記述する。具体的なバージョン番号の決定や既存の更新コミットとの統合処理は、`scripts/agent_toolkit_bump.py`に委ねる。バージョン更新する実装では、検証を実行する前に`scripts/agent_toolkit_bump.py --plugin <プラグイン名> {種別}`をプラグインごとに実行する。
-- バージョン更新を伴う計画では、差分の有無にかかわらず定義元の2ファイルを変更対象の説明に含める。ジェネレーターが整合性を保証する派生ファイル（派生マニフェストや、`agent-toolkit/rules/`から生成される`.chezmoi-source/dot_codex/AGENTS.md`など）は変更対象の説明に列挙せず、正式な生成コマンドの実行と生成結果の一致確認手順を`## 検証`に記述する。派生マニフェストは、定義元の更新後に`scripts/sync_codex_plugin_manifests.py`を実行して反映し、`--check`オプションで整合性を確認する。
+- バージョン更新を伴う計画では、差分の有無にかかわらず定義元の2ファイルを変更対象の説明に含める。ジェネレーターが整合性を保証する派生ファイル（派生マニフェストや、`agent-toolkit/share/rules/common/`から生成される`.chezmoi-source/dot_codex/AGENTS.md`など）は、変更対象の説明に列挙しない。
+  これらは、正式な生成コマンドの実行と生成結果の一致確認手順を`## 検証`に記述する。派生マニフェストは、定義元の更新後に`scripts/sync_codex_plugin_manifests.py`を実行して反映し、`--check`オプションで整合性を確認する。
 - バージョン更新の完了条件は、対象プラグインごとに、公開済みの基準（`git push`済みの最新のplugin manifest）に対して要求された種別以上の更新が含まれており、定義元の2ファイルと派生マニフェストの`version`が一致していることとする。既存の未プッシュの更新内容で条件を満たしており、`scripts/agent_toolkit_bump.py`がファイル変更なし・終了コード0で終了した場合も完了とみなす。
 
 `agent-toolkit:process-wi`における特則:
