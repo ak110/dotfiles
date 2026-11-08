@@ -1,0 +1,108 @@
+name: 公開時Windows書込対照
+on:
+  push:
+    branches:
+      - develop
+permissions:
+  contents: read
+jobs:
+  publication-probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: 対照用の依存を同期
+        shell: pwsh
+        run: uv sync --frozen --all-groups --all-extras --python 3.15
+      - name: 書込途中の旧失敗と完成後公開の成功を比較
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $probe = Join-Path $env:RUNNER_TEMP 'publication-probe'
+          New-Item -ItemType Directory -Path $probe -Force | Out-Null
+          @'
+          """Windows CIで元のJob試験へ書込途中の遅延を注入する一時pytestプラグイン。"""
+
+          import os
+          from pathlib import Path
+          import time
+
+          import pytest
+
+
+          @pytest.fixture(autouse=True)
+          def publication_delay(monkeypatch, request, tmp_path):
+              if request.node.name != "test_job_reclaims_orphan_and_preserves_explicit_breakaway":
+                  yield
+                  return
+              mode = os.environ.get("PUBLICATION_MODE")
+              if mode not in {"legacy", "atomic"}:
+                  pytest.fail("PUBLICATION_MODEはlegacyまたはatomicで指定する")
+              original = Path.write_text
+              injected = False
+
+              def write_text(path, data, *args, **kwargs):
+                  nonlocal injected
+                  if path.name == "inner.py":
+                      if mode == "legacy":
+                          current = (
+                              'path = pathlib.Path(sys.argv[1]); pending = path.with_suffix(".tmp"); '
+                              'pending.write_text("outside", encoding="utf-8"); pending.replace(path)'
+                          )
+                          assert data.count(current) == 1
+                          data = data.replace(current, 'pathlib.Path(sys.argv[1]).write_text("outside", encoding="utf-8")')
+                      ending = "', sys.argv[1]], "
+                      assert data.count(ending) == 1
+                      data = data.replace(ending, '; pathlib.Path(sys.argv[1] + ".done").touch()' + ending)
+                      prefix = (
+                          "import pathlib, sys, time; original_open = pathlib.Path.open; "
+                          "pathlib.Path.open = lambda path, *args, **kwargs: "
+                          "(lambda stream: (time.sleep(1), stream)[1])(original_open(path, *args, **kwargs)); "
+                      )
+                      assert data.count("import pathlib, sys; ") == 1
+                      data = data.replace("import pathlib, sys; ", prefix)
+                      injected = True
+                  return original(path, data, *args, **kwargs)
+
+              monkeypatch.setattr(Path, "write_text", write_text)
+              try:
+                  yield
+              finally:
+                  assert injected, "対象のinner.pyへ遅延を注入できなかった"
+                  outside = tmp_path / "outside.txt"
+                  done = tmp_path / "outside.txt.done"
+                  if outside.exists():
+                      deadline = time.monotonic() + 10
+                      while not done.exists():
+                          if time.monotonic() >= deadline:
+                              pytest.fail("breakaway書き手の完了印を10秒以内に確認できなかった")
+                          time.sleep(0.01)
+          '@ | Set-Content -LiteralPath (Join-Path $probe 'windows_publication_probe.py') -Encoding utf8
+          $env:PYTHONPATH = $probe
+          git rev-parse HEAD | Set-Content (Join-Path $probe 'head.txt')
+          foreach ($mode in @('legacy', 'atomic')) {
+            $env:PUBLICATION_MODE = $mode
+            $out = Join-Path $probe "$mode.stdout"
+            $err = Join-Path $probe "$mode.stderr"
+            uv run --frozen pytest -v -n 0 -p no:cacheprovider -p windows_publication_probe --timeout=45 --durations=0 agent-toolkit/agent_toolkit/_common/windows_job_test.py::test_job_reclaims_orphan_and_preserves_explicit_breakaway 1> $out 2> $err
+            $code = $LASTEXITCODE
+            "$mode exit=$code" | Tee-Object -FilePath (Join-Path $probe "$mode.exit")
+            Get-Content -LiteralPath $out
+            Get-Content -LiteralPath $err
+            $content = Get-Content -LiteralPath $out -Raw
+            if ($mode -eq 'legacy') {
+              if ($code -ne 1 -or $content -notmatch "assert '' == 'outside'" -or $content -notmatch '1 failed' -or $content -match 'ERROR at teardown') {
+                throw '旧版の空読取による1件失敗を確認できませんでした'
+              }
+            } elseif ($code -ne 0 -or $content -notmatch '1 passed' -or $content -match 'skipped') {
+              throw '新版の非skip成功を確認できませんでした'
+            }
+          }
+      - name: 対照の両出力を保存
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-publication-probe
+          path: ${{ runner.temp }}/publication-probe
