@@ -294,7 +294,8 @@ async def test_local_watch_acquisition_and_release_are_owned(
     root = tmp_path / "plans"
     root.mkdir()
     context = _context(root)
-    observer = types.SimpleNamespace(ident=None, stopped=0, joined=0)
+    # 属性を差し替えた代替オブジェクトを監視として渡すため、型検査の対象から外す。
+    observer: typing.Any = types.SimpleNamespace(ident=None, stopped=0, joined=0)
 
     def schedule(*_args: typing.Any, **_kwargs: typing.Any) -> None:
         if failure == "schedule":
