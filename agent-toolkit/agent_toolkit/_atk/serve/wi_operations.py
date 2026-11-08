@@ -583,6 +583,18 @@ class Operations:
         """一覧の索引へ全状態の解析結果を読み込む。起動直後の最初の一覧が全件の解析を待たないようにする。"""
         self._entry_index.scan(wi_constants.WI_STATES, stop=stop)
 
+    def preload_entry_texts(self, stop: threading.Event | None = None) -> None:
+        """索引の全項目の本文と検索用の本文を読み込む。
+
+        保存した解析結果から作った項目は本文を必要時に読むため、先に読まないと再起動後の最初の検索が
+        全項目の本文の読込を待つ。
+        """
+        entries, _warnings = self._entry_index.scan(wi_constants.WI_STATES, stop=stop)
+        for entry in entries:
+            if stop is not None and stop.is_set():
+                return
+            _ = entry.text_folded
+
     def sync(self) -> bool:
         """未送信commitをpushし、リポジトリを明示的に同期する。
 

@@ -516,3 +516,34 @@ def test_body_read_after_rewrite_follows_new_frontmatter(tmp_path: pathlib.Path)
     restarted, _ = entry_index.EntryIndex(notes, cache_path=cache).scan(("inbox",))
     path.write_text("---\nstate: inbox\ntype: awi\nextra: frontmatterを長くした\n---\n\n書き換えた本文\n", encoding="utf-8")
     assert restarted[0].body == "\n書き換えた本文\n"
+
+
+def test_preloaded_texts_let_first_search_after_restart_skip_reading_bodies(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """再起動後に本文を先読みしておくと、最初の検索は本文のファイルを読まずに一致を判定する。
+
+    保存した解析結果から作った項目は本文を必要時に読むため、先読みしないと最初の検索が全項目の本文の読込を待つ。
+    """
+    notes = tmp_path / "notes"
+    cache = tmp_path / "state" / "wi-entry-index.json"
+    for index in range(3):
+        _age(_write_entry(notes, "inbox", f"entry-{index}.md", f"本文{index} 検索語{index}"))
+    wi_operations.Operations(notes, index_cache_path=cache).warm_index()
+    assert cache.is_file()
+    restarted = wi_operations.Operations(notes, index_cache_path=cache)
+    restarted.warm_index()
+    restarted.preload_entry_texts()
+    read: list[pathlib.Path] = []
+    original_read = pathlib.Path.read_text
+
+    def recording_read(self: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str:
+        if self.suffix == ".md":
+            read.append(self)
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", recording_read)
+    found, _warnings = restarted.entries_with_warnings({"q": "検索語1"})
+    assert [item["filename"] for item in found] == ["entry-1.md"]
+    assert not read

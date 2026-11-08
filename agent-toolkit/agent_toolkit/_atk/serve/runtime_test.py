@@ -113,3 +113,32 @@ async def test_observer_lifecycle_waits_do_not_stall_event_loop(
         assert plan_context.state.local_observer is None
     else:
         assert session_context.state.record_watch is None
+
+
+@pytest.mark.asyncio
+async def test_warm_index_preloads_entry_texts_outside_read_workers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """索引の先行読込の後に本文を先読みし、先読みの間も読取用の実行枠を空けておく。"""
+    operations = wi_operations.Operations(tmp_path)
+    read_workers = runtime.BoundedWorkers(1)
+    current_state = state.ServeState(tmp_path)
+    preloading = threading.Event()
+    release = threading.Event()
+    calls: list[threading.Event | None] = []
+
+    def preload(stop: threading.Event | None = None, **_kwargs: Any) -> None:
+        calls.append(stop)
+        preloading.set()
+        release.wait(timeout=10)
+
+    monkeypatch.setattr(operations, "preload_entry_texts", preload)
+    current = runtime.ServeRuntime(operations, runtime.BoundedWorkers(1), current_state, read_workers=read_workers)
+    task = asyncio.create_task(current.warm_index())
+    try:
+        assert await asyncio.to_thread(preloading.wait, 10)
+        assert await asyncio.wait_for(read_workers.run(lambda: "空いている"), timeout=5) == "空いている"
+    finally:
+        release.set()
+        await asyncio.wait_for(task, timeout=10)
+    assert calls == [current_state.stop_requested]

@@ -181,6 +181,18 @@ class ServeRuntime:
             )
             return
         _timings.record_event(self.timing_log, "index-warmup", total_ms=round((time.perf_counter() - started) * 1000, 1))
+        # 本文の先読みは数千件のファイルを読むため、一覧・詳細の要求が使う読取用の実行枠を占有しない別スレッドで行う。
+        started = time.perf_counter()
+        try:
+            await asyncio.to_thread(self.operations.preload_entry_texts, self.state.stop_requested)
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            logger.warning(
+                "WIの本文の先読みに失敗しました。最初の検索で本文を読み込みます"
+                "（検索も失敗する場合はこの原因を解消してください）: %s",
+                error,
+            )
+            return
+        _timings.record_event(self.timing_log, "index-text-preload", total_ms=round((time.perf_counter() - started) * 1000, 1))
 
     async def synchronize(self) -> bool:
         """同時に届いた同期要求へ同じ実行結果を返す。"""
