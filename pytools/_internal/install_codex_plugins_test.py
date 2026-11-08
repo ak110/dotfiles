@@ -18,7 +18,6 @@ from pytools import post_apply
 from pytools._internal import (
     codex_processes,
     common,
-    deferred_updates,
     host_roles,
     install_codex_plugins,
     plugin_warmup,
@@ -425,9 +424,6 @@ def test_running_codex_session_updates_without_removing_old_cache(
     steps: list[tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
         ("Codex plugin のインストール", install_codex_plugins.run)
     ]
-    dotfiles_root = common.find_dotfiles_root()
-    assert dotfiles_root is not None
-    record = deferred_updates.record_path(dotfiles_root)
 
     with ResidentProcesses(tmp_path, monkeypatch) as residents:
         residents.start("codex")
@@ -439,7 +435,6 @@ def test_running_codex_session_updates_without_removing_old_cache(
         assert (previous / "skills/coding/SKILL.md").read_text(encoding="utf-8") == "old skill"
         assert current == {"version": "1.2.3", "enabled": True}
         assert (cache / "1.2.3/agent_toolkit/hook.py").read_text(encoding="utf-8") == "new hook"
-    assert not record.exists()
 
 
 def test_plugin_update_does_not_query_running_codex(

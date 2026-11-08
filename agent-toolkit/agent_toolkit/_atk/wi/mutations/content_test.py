@@ -1521,7 +1521,7 @@ class TestEditBodyFile:
             filename: str,
             content: str,
             target_repo: str | None = None,
-            lock_timeout: float = -1,
+            storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
             expected_content: str | None = None,
             finalized_content: dict[str, str] | None = None,
         ) -> bool:
@@ -1532,7 +1532,7 @@ class TestEditBodyFile:
                 filename=filename,
                 content=content,
                 target_repo=target_repo,
-                lock_timeout=lock_timeout,
+                storage=storage,
                 expected_content=expected_content,
                 finalized_content=finalized_content,
             )
@@ -1633,7 +1633,7 @@ class TestEditBodyFile:
             state="inbox",
             filename="fb-001.md",
             content=updated,
-            lock_timeout=2.0,
+            storage=_wi_sync.Storage(lock_timeout=2.0),
         )
 
         saved = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -1661,7 +1661,7 @@ class TestEditBodyFile:
             state="inbox",
             filename="fb-001.md",
             content=updated,
-            lock_timeout=2.0,
+            storage=_wi_sync.Storage(lock_timeout=2.0),
         )
 
         parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))

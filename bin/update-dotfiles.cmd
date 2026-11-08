@@ -16,7 +16,7 @@ for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" set "PRUNE_REQUEST
 rem 引数とパス内の!を保つため、uv実行と引数走査の後で遅延展開を有効にする。
 setlocal EnableDelayedExpansion
 if "!UPDATE_DOTFILES_EXIT!"=="0" if "%DOTFILES_PRUNE_OUTSIDE_UV%"=="1" if "!PRUNE_REQUESTED!"=="1" (
-    "!USERPROFILE!\.local\bin\dotfiles-post-apply.exe" --prune-only
+    "!USERPROFILE!\.local\bin\dotfiles-post-apply.exe" --prune-only-if-minimal %*
     set "UPDATE_DOTFILES_EXIT=!ERRORLEVEL!"
 )
 rem 上のコメント末尾は旧legacy・logs版の再開位置。byte位置はランチャーテストで検証する。
@@ -33,7 +33,8 @@ exit /b !UPDATE_DOTFILES_EXIT!
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" exit /b 0
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_uv.ps1" "%UV%"
 if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"
-exit /b 0
+"%UV%" python install --upgrade 3.15
+exit /b %ERRORLEVEL%
 
 :start
 if defined CODEX_THREAD_ID goto job_route
@@ -41,8 +42,13 @@ if "%~1"=="job" goto job_route
 :normal
 set "UV_SELF_UPDATE_FAILED=0"
 if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" call :update_uv %*
+if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" if errorlevel 1 (
+    echo 管理Pythonの更新に失敗したため中断しました。上の診断を確認し、update-dotfilesを再実行してください。 1>&2
+    exit /b %ERRORLEVEL%
+)
 set "DOTFILES_PRUNE_OUTSIDE_UV=1"
-set "PRUNE_REQUESTED=0"
+set "PRUNE_REQUESTED=1"
+if "%~1"=="logs" set "PRUNE_REQUESTED=0"
 goto run
 
 :job_route

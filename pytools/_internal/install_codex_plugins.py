@@ -21,7 +21,6 @@ from agent_toolkit._common import dotfiles_mode
 from pytools._internal import (
     codex_processes,
     common,
-    deferred_updates,
     log_format,
     post_apply_outcome,
     setup_codex_links,
@@ -575,15 +574,14 @@ def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
                 log_format.format_status(
                     plugin_id,
                     f"Codexが稼働中のため使用しないpluginの除去を延期: {running_text}。導入済みの実体を保持しました。"
-                    + deferred_updates.retry_guidance(_MANUAL_RETRY),
+                    + _MANUAL_RETRY,
                 )
             )
             notices.append(
                 post_apply_outcome.PostApplyNotice(
                     message=(
                         f"Codexが稼働中のため、使用しない{plugin_id}の除去を延期しました（稼働中: {running_text}）。"
-                        "利用中のセッションを守るため導入済みの実体を保持しています。"
-                        + deferred_updates.retry_guidance(_MANUAL_RETRY)
+                        "利用中のセッションを守るため導入済みの実体を保持しています。" + _MANUAL_RETRY
                     ),
                 )
             )

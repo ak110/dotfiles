@@ -20,8 +20,12 @@
   "attribution": {
     "commit": "Co-Authored-By: {model} / {effort} <noreply@anthropic.com>"
   },
+  "awaySummaryEnabled": false,
   "bashOutputMaxChars": 62000,
   "dialogExpiry": "never",
+  "disableClaudeAiConnectors": true,
+  "enableArtifact": false,
+  "enableWorkflows": false,
   "enabledPlugins": {
     "hookify@claude-plugins-official": false,
     "pr-review-toolkit@claude-plugins-official": false,
@@ -34,6 +38,7 @@
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
     "CLAUDE_CODE_ENABLE_AUTO_MODE": "1",
     "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "1",
+    "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "0",
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "5",
     "CLAUDE_CODE_NO_FLICKER": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "3",
@@ -66,6 +71,26 @@
   "promptCacheTtl": "1h",
   "showClearContextOnPlanAccept": false,
   "showThinkingSummaries": false,
+  "skillOverrides": {
+    "batch": "user-invocable-only",
+    "claude-api": "user-invocable-only",
+    "claude-in-chrome": "user-invocable-only",
+    "code-review": "user-invocable-only",
+    "dataviz": "user-invocable-only",
+    "debug": "user-invocable-only",
+    "doctor": "user-invocable-only",
+    "fewer-permission-prompts": "user-invocable-only",
+    "init": "user-invocable-only",
+    "keybindings-help": "user-invocable-only",
+    "loop": "user-invocable-only",
+    "run": "user-invocable-only",
+    "run-skill-generator": "user-invocable-only",
+    "schedule": "user-invocable-only",
+    "security-review": "user-invocable-only",
+    "simplify": "user-invocable-only",
+    "update-config": "user-invocable-only",
+    "verify": "user-invocable-only"
+  },
   "subagentPromptCacheTtl": "1h",
   "verbose": false,
   "viewMode": "default"

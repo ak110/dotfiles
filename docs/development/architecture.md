@@ -198,7 +198,7 @@ pyfltr MCPも`_common/pyfltr_entry.py`からlockfileで準備したconsole entry
 未準備時の診断は`update-dotfiles`または公開インストーラーでの再準備を案内する。
 更新後は新規起動が新しい依存キーへ切り替わり、稼働中の旧版が使う既存環境を保持する。
 共有化の更新には旧環境の自動回収を加えない。
-minimalの明示的な`--prune`は使用中保護の判定後にAI用環境を削除する。
+minimalの通常更新と明示的な`--prune`は、使用中保護の判定後にAI用環境を削除する。
 
 ### agents_server MCPの配置と寿命
 

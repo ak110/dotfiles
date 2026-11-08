@@ -126,7 +126,7 @@ def test_concurrent_terminal_commits_compare_fixed_path_state_and_result(tmp_pat
         filenames=names,
         now=datetime.datetime(2026, 10, 20, 14, tzinfo=datetime.UTC),
         note="同じ成果" if same_result else "別の成果",
-        skip_remote_sync=True,
+        storage=sync.Storage(local_only=True),
     )
     if same_result:
         sync.synchronize(second)

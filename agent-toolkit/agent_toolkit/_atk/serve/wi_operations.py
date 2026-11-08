@@ -23,9 +23,8 @@ from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._atk.wi import entries as wi_entries
-from agent_toolkit._atk.wi import entry_text, frontmatter
 from agent_toolkit._atk.wi import filters as wi_filters
+from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import headings as wi_headings
 from agent_toolkit._atk.wi import mutations as awi_mutations
 from agent_toolkit._atk.wi import readiness as wi_readiness
@@ -418,6 +417,7 @@ class Operations:
 
     def __init__(self, private_notes: pathlib.Path, *, index_cache_path: pathlib.Path | None = None) -> None:
         self.private_notes = private_notes
+        self._storage = wi_sync.Storage(local_only=True, lock_timeout=_WEB_LOCK_TIMEOUT)
         self._entry_index = entry_index.EntryIndex(private_notes, cache_path=index_cache_path)
 
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
@@ -659,9 +659,8 @@ class Operations:
                 state=state,
                 filename=filename,
                 content=content,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
+                storage=self._storage,
                 expected_content=expected_content,
-                skip_remote_sync=True,
                 allow_terminal=True,
             )
         except SystemExit as error:
@@ -669,34 +668,13 @@ class Operations:
 
     def important(self, filename: str, important: bool, expected_content: str | None = None) -> bool:
         """保存状態を保って重要フラグだけを設定または解除する。"""
-        with wi_sync.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
-            wi_sync.ensure_mutation_allowed(self.private_notes)
-            records, missing = wi_entries.read_named_entries(
-                self.private_notes, wi_entries.validate_named_filenames(self.private_notes, [filename]), target_repo=None
-            )
-            if missing:
-                raise FileNotFoundError(filename)
-            path, _, text, _, _ = records[0]
-            if expected_content is not None and text != expected_content:
-                raise RuntimeError(EDIT_CONFLICT_MESSAGE)
-            parsed = entry_text.parse_frontmatter(text)
-            if parsed is None:
-                raise WebApiInputError("frontmatterを解析できません")
-            metadata, body = parsed
-            if (important and metadata.get("important") is True) or (not important and "important" not in metadata):
-                return False
-            if important:
-                metadata["important"] = True
-            else:
-                metadata.pop("important", None)
-            updated = frontmatter.serialize_frontmatter(metadata, body)
-            if updated == text:
-                return False
-            frontmatter.write_entry_text(path, updated)
-            wi_sync.commit_and_push(
-                self.private_notes, "chore: update wi importance", [str(path.relative_to(self.private_notes))], skip_push=True
-            )
-            return True
+        return awi_mutations.set_entry_importance(
+            self.private_notes,
+            filename=filename,
+            important=important,
+            expected_content=expected_content,
+            storage=self._storage,
+        )
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """エージェント由来のinboxまたはhold項目へユーザーコメントを追記、置換または削除する。
@@ -730,9 +708,8 @@ class Operations:
                 state=state,
                 filename=filename,
                 content=updated,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
+                storage=self._storage,
                 expected_content=expected_content,
-                skip_remote_sync=True,
             )
         except SystemExit as error:
             raise WebApiInputError("指定したエントリを操作できません") from error
@@ -780,8 +757,7 @@ class Operations:
             scope=scope,
             question_type=question_type,
             choices=",".join(choices) if choices else None,
-            lock_timeout=_WEB_LOCK_TIMEOUT,
-            skip_remote_sync=True,
+            storage=self._storage,
         )
 
     def add_batch(self, text: str) -> dict[str, object]:
@@ -794,8 +770,7 @@ class Operations:
             self.private_notes,
             texts=[text],
             now=datetime.datetime.now(),
-            lock_timeout=_WEB_LOCK_TIMEOUT,
-            skip_remote_sync=True,
+            storage=self._storage,
         )
         return {
             "filenames": [saved for _original, saved in mapping],
@@ -817,9 +792,8 @@ class Operations:
             filename=filename,
             answer=answer,
             state=state,
-            lock_timeout=_WEB_LOCK_TIMEOUT,
+            storage=self._storage,
             expected_content=expected_content,
-            skip_remote_sync=True,
         )
 
     def transition(
@@ -848,11 +822,10 @@ class Operations:
                 note=note,
                 commit=commit,
                 target_repo=target_repo,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
+                storage=self._storage,
                 force=force,
                 state=state,
                 expected_content=expected_content,
-                skip_remote_sync=True,
             )
         except SystemExit as error:
             raise WebApiInputError("指定したエントリを操作できません") from error

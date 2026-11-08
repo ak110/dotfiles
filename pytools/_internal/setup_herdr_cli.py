@@ -13,7 +13,7 @@ from agent_toolkit._common import dotfiles_mode
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
-from pytools._internal import common, deferred_updates, log_format, post_apply_outcome, setup_cli_common
+from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
 
     取得・導入・更新の失敗は警告を出力してスキップと数える。
     セッション内の自己更新拒否と、稼働中のサーバーの再起動を要するため導入しなかった更新は延期として返し、
-    自動更新タイマーを持つホストでは延期記録から再試行する。
+    セッション終了後の手動更新を案内する。
     """
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
@@ -120,15 +120,11 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
 
 
 def _deferred_notice(*, inside_session: bool) -> post_apply_outcome.PostApplyNotice:
-    """保留した更新の理由と、自動更新タイマーによる反映か手動の操作かを案内する。"""
+    """保留した更新の理由と手動の操作を案内する。"""
     if inside_session:
         reason = "Herdrセッション内では自己更新できないため、更新を保留しました。"
         manual = "セッションから離脱した後、Herdr外の端末で次のコマンドを実行する。"
-        automatic = "自動更新タイマーがHerdr外で再試行して反映するため、操作は不要です。"
     else:
         reason = "稼働中のHerdrサーバーの再起動を要する更新のため、稼働中のセッションを保って更新を保留しました。"
         manual = "Herdrのセッションを全て終了してから、次のコマンドを実行する。"
-        automatic = "Herdrのセッションを全て終了した後、自動更新タイマーの再試行で反映するため、操作は不要です。"
-    if deferred_updates.has_retry_timer():
-        return post_apply_outcome.PostApplyNotice(message=reason + automatic)
     return post_apply_outcome.PostApplyNotice(message=reason + manual, command="herdr update")

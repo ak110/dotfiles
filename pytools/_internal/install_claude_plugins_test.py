@@ -17,7 +17,6 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import claude_plugin_references as _claude_plugin_references
 from pytools._internal import common as _common
-from pytools._internal import deferred_updates as _deferred_updates
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from ._test_helpers import (
@@ -599,25 +598,19 @@ class TestEnsurePluginCacheComplete:
         assert _install_claude_plugins._missing_plugin_cache_files(self._NAME, cache_dir) == []
 
     @pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
-    @pytest.mark.parametrize(
-        ("holder", "retry_timer"),
-        [("mcp-cwd", False), ("claude-session", True)],
-        ids=["mcp-cwd-manual", "claude-session-retry-timer"],
-    )
-    def test_referenced_cache_defers_repair_until_reference_ends(  # noqa: PLR0913 -- 参照の種類とホスト条件を組で与える
+    @pytest.mark.parametrize("holder", ["mcp-cwd", "claude-session"])
+    def test_referenced_cache_defers_repair_until_reference_ends(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         caplog: pytest.LogCaptureFixture,
         holder: str,
-        retry_timer: bool,
     ) -> None:
         """欠落した導入先を参照するプロセスか稼働中のClaude Codeがある間は削除せず延期し、終了後の再実行で修復する。
 
         修復は導入先を削除してから再導入するため、参照中に進むと残っているhook・MCPの実体まで消える。
         """
         monkeypatch.setattr(_claude_plugin_references, "scan", _REAL_SCAN)
-        monkeypatch.setattr(_deferred_updates, "has_retry_timer", lambda: retry_timer)
         cache_dir = self._cache_dir(tmp_path)
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
         self._write_cache(cache_dir, missing=("pyproject.toml",))
@@ -643,8 +636,7 @@ class TestEnsurePluginCacheComplete:
             assert (cache_dir / "agent_toolkit" / "hook.py").read_text(encoding="utf-8") == "in use"
             assert "pyproject.toml" in caplog.text
             assert str(cache_dir.relative_to(tmp_path)) in caplog.text
-            expected = "操作は不要です" if retry_timer else "`update-dotfiles`を再実行してください"
-            assert expected in caplog.text
+            assert "`update-dotfiles`を再実行してください" in caplog.text
 
         assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
         assert calls == [self._NAME]

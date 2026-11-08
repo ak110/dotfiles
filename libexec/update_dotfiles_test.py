@@ -1527,7 +1527,10 @@ else:
         sys.executable, "-c",
         "import signal, time; signal.signal(signal.SIGHUP, signal.SIG_IGN); time.sleep(60)",
     ])
-    pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"]).write_text(str(child.pid), encoding="utf-8")
+    pid_path = pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"])
+    pending = pid_path.with_suffix(".tmp")
+    pending.write_text(str(child.pid), encoding="utf-8")
+    pending.replace(pid_path)
     time.sleep(6)
 """
 
@@ -2495,55 +2498,6 @@ def test_update_restore_overwrite_refusal_records_recovery(
     else:
         assert "競合から回復" in log
         assert "git switch update-dotfiles-recovery-" in log
-
-
-def test_skipped_update_keeps_pending_for_next_timer(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    sync_report_path: pathlib.Path,
-) -> None:
-    """自動更新スクリプトが見送りを未完了として保持し、次の周期で再試行する。"""
-    import update_dotfiles_if_upstream_changed as timer  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-    local, _seed, _remote = _create_git_pair(tmp_path)
-    launcher = local / "bin" / "update-dotfiles"
-    launcher.parent.mkdir()
-    launcher.touch()
-    monkeypatch.setattr(timer, "_DOTFILES_ROOT", local)
-    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
-    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
-    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
-    monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: True)
-    attempts: list[int] = []
-    head = _git(local, "rev-parse", "HEAD")
-    git_outputs = {
-        ("symbolic-ref", "HEAD"): "refs/heads/develop",
-        ("rev-parse", "--symbolic-full-name", "@{upstream}"): "refs/remotes/origin/develop",
-        ("--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"): "",
-        ("ls-remote", "--exit-code", "--refs", "origin", "refs/heads/develop"): f"{head}\trefs/heads/develop",
-        ("rev-parse", "HEAD"): head,
-    }
-
-    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command == [str(launcher)]:
-            code = update_dotfiles.main()
-            attempts.append(code)
-            return subprocess.CompletedProcess(command, code, "", "")
-        assert command[:3] == ["git", "-C", str(local)]
-        return subprocess.CompletedProcess(command, 0, git_outputs[tuple(command[3:])], "")
-
-    monkeypatch.setattr(timer, "_run", run)
-    pending = tmp_path / "test.pending"
-    for _ in range(2):
-        assert timer._update_if_needed(pending) == 1
-        assert pending.exists()
-        assert not pending.with_suffix(".applied").exists()
-    assert attempts == [1, 1]
-    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
-    assert report["status"] == "failed"
-    assert report["exit_code"] == 1
-    assert "タイマー" in report["stderr_tail"]
-    assert "Git操作が進行中" in update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
 
 
 class TestCodexDaemonPause:

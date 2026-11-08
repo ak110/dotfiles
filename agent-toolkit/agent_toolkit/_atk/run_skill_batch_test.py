@@ -16,7 +16,7 @@ import filelock
 import pytest
 
 from agent_toolkit._atk import config, run_script, run_skill_batch
-from agent_toolkit._atk.wi import add, frontmatter, layout, uwi
+from agent_toolkit._atk.wi import add, frontmatter, layout, sync, uwi
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository
 
@@ -82,7 +82,7 @@ def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatc
         scope=scope,
         question_type="post-approval",
     )
-    assert uwi.answer_uwi(notes, filename=names[0], answer=uwi.POST_APPROVAL_CHOICES[0], skip_remote_sync=True)
+    assert uwi.answer_uwi(notes, filename=names[0], answer=uwi.POST_APPROVAL_CHOICES[0], storage=sync.Storage(local_only=True))
     path = session_review.directory() / "runs" / f"{run_id}.json"
     value = {
         "run_id": run_id,

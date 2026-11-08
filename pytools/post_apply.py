@@ -35,7 +35,6 @@ from pytools._internal import (
     cleanup_user_path,
     codex_plugin_manifests,
     common,
-    deferred_updates,
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
@@ -53,7 +52,6 @@ from pytools._internal import (
     setup_claude_cli,
     setup_codex_cli,
     setup_codex_links,
-    setup_dotfiles_autoupdate,
     setup_herdr_cli,
     setup_media_remote,
     setup_mise,
@@ -62,6 +60,7 @@ from pytools._internal import (
     setup_registry,
     setup_sendto_shortcuts,
     setup_statusline_binary,
+    setup_tmpfiles_clean,
     setup_tmux_plugins,
     setup_user_env,
     sync_agent_toolkit_rules,
@@ -457,10 +456,10 @@ _DEFAULT_STEPS: list[_StepSpec] = [
         host_resources=True,
         full_only=True,
     ),
-    # 両ステップが`systemctl --user daemon-reload`と`restart`を実行する。
+    # 両ステップがsystemdのユーザーマネージャーを操作する。
     _StepSpec(
-        "dotfiles自動更新タイマー セットアップ (Linux)",
-        setup_dotfiles_autoupdate.run,
+        "一時ファイルの経過削除タイマー セットアップ (Linux)",
+        setup_tmpfiles_clean.run,
         after=(_ATK_SERVE,),
         platforms=_LINUX,
         host_resources=True,
@@ -489,12 +488,19 @@ def main(
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
     parser.add_argument("--prune", action="store_true", help="現在のモードで不要な導入済みツールとキャッシュを削除する")
     parser.add_argument("--prune-only", action="store_true", help="更新後に不要な導入済みツールとキャッシュだけを削除する")
+    parser.add_argument(
+        "--prune-only-if-minimal", action="store_true", help="minimalまたは明示--pruneの場合だけ更新後の整理を実行する"
+    )
     args = parser.parse_args([] if runner is not None and argv is None else argv)
     if args.prune_only and (args.prune or args.mode is not None):
         parser.error("--prune-onlyは--pruneおよび--modeと同時に指定できません")
+    if args.prune_only and args.prune_only_if_minimal:
+        parser.error("--prune-onlyと--prune-only-if-minimalは同時に指定できません")
     dotfiles_mode.select(args.mode)
     if args.prune:
         os.environ["DOTFILES_PRUNE"] = "1"
+    if args.prune_only_if_minimal and not (dotfiles_mode.is_minimal() or args.prune):
+        return
     if runner is None:
         root = common.find_dotfiles_root()
         if root is None:
@@ -521,7 +527,7 @@ def main(
                 file=sys.stderr,
             )
             sys.exit(2)
-    if args.prune_only:
+    if args.prune_only or args.prune_only_if_minimal:
         result = prune_installation.run()
         if result.failure is not None:
             print(f"{result.failure}。次の操作: {result.next_action}", file=sys.stderr)
@@ -531,7 +537,6 @@ def main(
     with _configure_logging() as persistent_log_ready:
         logger.info("post-apply開始")
         results, recommendations = (runner or run)()
-        results = [*results, *_record_deferred_updates(results)]
         failed = [r for r in results if not r.ok]
         updated = [r for r in results if r.ok and r.changed]
         skipped = [r for r in results if r.ok and not r.changed]
@@ -551,23 +556,6 @@ def main(
         _print_post_apply_notices(notices)
         logger.info("post-apply終了: exit=%d", 1 if failed else 0)
         sys.exit(1 if failed else 0)
-
-
-def _record_deferred_updates(results: list[_StepResult]) -> list[_StepResult]:
-    """延期を返した工程を延期記録へ残し（無ければ記録を削除し）、保存できなければ失敗の結果を返す。
-
-    自動更新タイマーはこの記録を確認して上流変更の有無によらず再試行する。記録を残せないと延期した更新が
-    手動の再実行まで反映されないため、失敗として終了コードで伝える。
-    """
-    steps = [result.name for result in results if result.deferred]
-    try:
-        path = deferred_updates.write(steps)
-    except OSError as error:
-        logger.error("    延期記録: 失敗: %s", error)
-        return [_StepResult(name="延期記録", ok=False, changed=False, reason=f"{type(error).__name__}: {error}")]
-    if steps and path is not None:
-        logger.info("    延期した更新を記録した: %s（%s）", ", ".join(steps), path)
-    return []
 
 
 def _record_sync_report(

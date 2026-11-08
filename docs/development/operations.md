@@ -43,7 +43,7 @@ Windowsは一時ディレクトリがディスク上にあるため対象外で�
 削除するのは、最終更新・最終アクセス・状態変更（ディレクトリは最終更新と最終アクセス）の全てが7日より古い項目である（`man 5 tmpfiles.d`）。
 読み取るだけの項目が最終アクセスによって残るのは、最終アクセスの時刻を更新するマウントの場合に限る（`noatime`のマウントでは最終更新と状態変更だけで判定される）。
 7日はmanaged-tempの自動削除の期限に合わせた値である。対象は`agent-toolkit/tmp`配下だけで、兄弟のmanaged-tempは自身の自動削除が扱う。
-削除はユーザーの`systemd-tmpfiles-clean.timer`が実行する。`setup_dotfiles_autoupdate.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
+削除はユーザーの`systemd-tmpfiles-clean.timer`が実行する。`setup_tmpfiles_clean.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
 `systemctl`が無い環境、またはユーザーのsystemdマネージャーへ接続できない環境では理由と次の操作を示して見送り、systemdのユーザーセッションがある環境で`update-dotfiles`を再実行する。
 
 HOMEを差し替えて子プロセスを起動する隔離は、2か所に独立して実装している。
@@ -267,7 +267,7 @@ Git管理されていないプラグインはそのまま適用する。
 pullの失敗とタイムアウトでは以後の更新を停止し、プラグイン名と出力を更新ログへ残す。
 待ち時間の上限は本体と同じ`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`を使う。
 
-## 導入モードと明示的なprune
+## 導入モードと不要ツール・キャッシュの整理
 
 `agent_toolkit._common.dotfiles_mode`が初回導入前から使える標準ライブラリだけの設定取得機能を提供する。
 保存先は`atk config`と同じ`config.json`、キーは`dotfiles_mode`、値は`full`と`minimal`、既定値は`full`である。
@@ -285,15 +285,19 @@ actionlint・editorconfig-checker・git-cliff・pinact・shellcheck・shfmt・ty
 mise・シェル基本ツール・tmux・pytools・dotfilesプラグインの反映は維持する。
 minimalのmise操作はホームを実行位置とし、作業ツリーの開発ツールとglobal nodeの追加を省く。
 
-`update-dotfiles --prune`は`DOTFILES_PRUNE=1`を後処理へ渡す。
+`update-dotfiles`の成功後は実効モードがminimalの場合と明示的に`--prune`を指定した場合に、不要ツールとキャッシュを整理する。
+通常のfull更新では導入済み実体を保持する。
+更新ランチャーはuvの外から`dotfiles-post-apply --prune-only-if-minimal`へ元の`--mode`・`--prune`引数を渡し、post-applyが実効モードを解決して整理の要否を決める。
+`update-dotfiles --prune`は`DOTFILES_PRUNE=1`も後処理へ渡す。
 `dotfiles-post-apply --prune`も同じ削除工程を、他の全工程が完了した後に実行する。
 対象は現行のmise定義とモードから求める。
 fullでは作業ツリーが引き続き参照する開発ツールを保持する。
-minimalでは大型ランタイム・SDK・AI関連と作業ツリーの全ツールを除去し、`mise prune -y`・`mise reshim --force`・`mise cache clear`・`uv cache prune`を実行する。
-rustup・cargo・dotnet-root・`.dotnet`の共有実体も削除する。
+minimalでは大型ランタイム・SDK・AI関連と作業ツリーの全ツールを除去し、`mise prune -y`・`mise reshim --force`・`mise cache clear`・`uv cache clean`を実行する。
+rustup・cargo・`.dotnet`は設定とユーザー導入物を残し、ランタイムとキャッシュの子ディレクトリを整理する。
+mise専用のdotnet-rootも削除する。
 Claude CodeとCodexの設定・会話履歴は削除対象に含めない。
 Codexの管理daemonは公開CLIで停止し、通常セッションや対象実体を使うプロセスがあれば削除を開始せず、理由と再実行方法を返す。
-モード変更だけでは導入済み実体を削除しない。
+`atk config set dotfiles_mode minimal`による設定保存だけでは削除せず、次の`update-dotfiles`成功後に整理する。
 
 ## miseの導入と再評価
 
@@ -398,7 +402,8 @@ Windowsでの実行中と通常の更新排他競合は正常な延期として0
 選択先の不良、必要な使用中情報の取得失敗、配置の権限エラーでは対象を保持し、理由と次の操作を示して非0で終了する。削除失敗も非0で終了する。
 案内された原因を解消した後、同じコマンドを再実行する。
 
-整理はCodex本体の導入成功後と、既存の自動更新タイマーの周期に実行する。
+整理はCodex本体の導入成功後に実行する。
+手動で整理する場合は`prune-codex-packages`を実行する。
 手動操作と保持・延期の説明は[Codex利用ガイド](../guide/codex-guide.md#完成済みパッケージの整理)を参照する。
 
 `chezmoi apply`後の処理はCodexの公式インストーラーを非対話で実行した後、mise npmバックエンドとPATHから解決される非正規npm版のCodexを除去する（エンドユーザー向けの説明は`docs/guide/codex-guide.md`「Codex CLI本体」）。
@@ -504,45 +509,6 @@ Codex組み込みの委譲（`spawn_agent`）の子threadへの継承はホス�
 再起動や稼働確認に失敗した場合は、`systemctl --user status atk-serve.service --no-pager`と`journalctl --user -u atk-serve.service -n 50 --no-pager`で診断を取得する。
 反映HEAD、各終了コード、状態とHTTP応答、失敗時の診断を記録して公開担当へ返す。
 
-## euryaleでの上流更新の自動反映
-
-対象は役割`linux_server`のホストであり、`.chezmoi-source/.chezmoidata.toml`が定める（現在は`euryale`）。
-このホストでのみ、`chezmoi apply`後処理がsystemdユーザータイマー`dotfiles-autoupdate.timer`と、
-タイマーが起動するoneshot service`dotfiles-autoupdate.service`を配置して有効化する。
-
-- タイマーはsystemdユーザーマネージャーの起動から1分後に初回確認し、以後はserviceが終了してから10分ごとに再実行する
-- serviceは`libexec/update_dotfiles_if_upstream_changed.py`を実行する。
-  このスクリプトは現在branchが`develop`で、upstreamが`origin/develop`であることを検証する。
-  そのうえで`git ls-remote`から得た`origin/develop`のcommit IDをローカル`HEAD`と比較し、自動更新専用の未完了状態も確認する
-  - 未コミット変更（stage済み・未stage・未追跡）がある周期は、上流照会前と更新起動直前の読取確認で自動更新を次周期へ延期する。未完了・反映済み・延期の状態記録は維持し、cleanになった周期で既存の再試行を続ける。確認後に編集が始まる競合まで原子的に排除する仕組みではない
-  - commit IDが一致し未完了状態も延期記録も無ければ、Codexの完成済み旧パッケージを整理し、`update-dotfiles`を起動せず終了する
-  - post-applyは稼働中のCodexやHerdrセッションを理由に延期した工程を、同じ状態ディレクトリの延期記録（`<キー>.deferred`）へ残す。記録がある間は上流に変更が無くても`update-dotfiles`を起動して延期した更新を再試行する。post-applyだけが記録を更新し、延期が解消した実行で記録を削除する。serviceはHerdrセッションの外で動くため、Herdrの自己更新もこの再試行で反映される
-  - 上流に変更がある場合と前回の自動更新が未完了の場合は、未完了状態を保存してから`bin/update-dotfiles`を絶対パスかつ引数なしで起動する。終了コード0を観測した場合だけ未完了状態を解除し、それ以外では次回のタイマー起動まで保持する
-    - euryaleではユーザーが配布先を直接編集しないため、差分を表示したうえで確認入力を待たずに反映する。`--force`は内部の`libexec/update_dotfiles.py`が`chezmoi apply`へ渡す
-  - 自動更新の判定から未完了状態の解除までを専用ロックで直列化する。作業ツリーのstash、resetおよびcleanは行わない。手動実行との重複は`update-dotfiles`の既存ロックへ委ねる
-- systemdユーザーマネージャーのPATHには`~/.local/bin`とmiseのshimsが含まれないため、unitの`ExecStart`には
-  導入時に解決した`uv`の絶対パスとスクリプトの絶対パスを埋め込む。あわせて`Environment=PATH`を指定する
-  - `update-dotfiles`が実行ファイル名で起動する`chezmoi`は`~/.local/bin`にあり、PATH指定が無いと1段目で失敗する
-  - 指定順は`~/.local/bin`、miseのshims、systemdが設定するPATHとし、実体を持つコマンドをshimより優先する
-- Codexパッケージの整理にも導入時の実効`CODEX_HOME`を渡す。上流変更が無い周期にも整理し、選択先や必要情報の不良と削除失敗はserviceの失敗としてjournalへ残す。延期した旧版は使用終了後の周期か`prune-codex-packages`の再実行で整理する
-- GitHubへの接続失敗、対象refの欠落、branchまたはupstreamの不一致、`update-dotfiles`の失敗は非ゼロ終了となり、
-  systemdのjournalへ残る。次回のタイマー起動で再試行する
-- dotfilesの作業ツリーの未コミット差分は、`update-dotfiles`がpullの前に退避して後に復元する。ルート`mise.lock`の差分は保持せず破棄する。
-  pullまたは復元が競合した場合は、元のcommitと未コミット内容を復旧用の参照へ保存して上流へ合わせる
-  - 対象worktreeでGit操作が進行中の場合は、最初の変更前に更新を見送り、終了コード1と同期結果へ未完了を記録する。
-    通常commitのpre-commit実行中・commitメッセージ編集中もプロセスから検出する。
-    merge・rebase・cherry-pick・revertの状態が残る場合は、`git status`で操作を確認し、
-    対応する操作の`--continue`で完了するか`--abort`で中止してから再実行する。
-    理由と再試行の契機は標準エラーと永続ログへ残し、自動更新の未完了状態を保持して次回のタイマー起動で再試行する
-  - Git更新区間は対象worktreeの標準`index.lock`を排他的に取得し、取得後にも既存Gitプロセスを確認する。
-    `mise.lock`の差分破棄、旧退避の整理、退避、pull、復元と競合回復まで同じロックで保護する。
-    更新のGit子プロセスには`GIT_INDEX_FILE`で代替indexを渡し、区間終了時に完了済み操作のindexを反映する。
-    SIGTERMと、対応するOSのSIGHUPによる中断時も、子プロセスを回収してindexを反映し、自身のロックと一時indexを回収する。
-    後続のプラグイン更新とchezmoi処理は通常の環境で実行する
-  - Git状態変更のコマンド、終了コード、標準出力と標準エラーは永続ログへ保存する。
-    復元失敗の理由、退避refと復旧手順、競合回復の結果も保存し、失敗終了時は同期結果の診断末尾にも残す。
-    診断は`update-dotfiles logs`で確認できる
-
 ## Windowsの電源設定の最適化（optimize-power-settings）
 
 `optimize-power-settings`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。
@@ -594,7 +560,7 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
     - プロセスの作業ディレクトリ、実行ファイル、command line、環境変数`CLAUDE_PLUGIN_ROOT`がその版の配下を指す（その版から起動したMCPとhookを含む）
     - その版が現行だった期間（その版の導入から後継版の導入まで）に起動したClaude Codeセッションが稼働中である
     - Claude Codeのプロセスの参照先を取得できない
-- 現行版の必須ファイルの欠落を修復する「Claude Code pluginのインストール」工程（`install_claude_plugins.py`の`_ensure_plugin_cache_complete`）も、導入先を削除して再導入するため同じ判定を使う。導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば修復を延期し、欠落ファイル、保持した導入先、再開の操作を警告する。自動更新タイマーを持つホストはタイマーの再試行で、持たないホストはClaude Codeのセッションを全て終了してから`update-dotfiles`を再実行して修復する
+- 現行版の必須ファイルの欠落を修復する「Claude Code pluginのインストール」工程（`install_claude_plugins.py`の`_ensure_plugin_cache_complete`）も、導入先を削除して再導入するため同じ判定を使う。導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば修復を延期し、欠落ファイル、保持した導入先、再開の操作を警告する。Claude Codeのセッションと導入先を参照するプロセスを全て終了してから`update-dotfiles`を再実行して修復する
 - 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる
   - 版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。`plugin.json`のmtimeは版の順序と一致する
   - `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、導入時刻で後継を決める

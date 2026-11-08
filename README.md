@@ -234,11 +234,12 @@ update-dotfiles --prune
 update-dotfiles --mode full
 ```
 
-`--prune`は現在のモードで対象外の導入済みツールとキャッシュを削除する。
+minimalでは通常の`update-dotfiles`で、対象外の導入済みツールと整理可能なキャッシュを削除する。
+fullで同じ整理を明示的に行う場合は`--prune`を指定する。
 minimalでは共有ランタイム領域とAIエージェントの実体も対象となる。
 Claude CodeとCodexの設定・会話履歴は保持する。
 使用中のエージェントや旧Python環境を検出した場合は保持し、終了後の`update-dotfiles --prune`の再実行を案内する。
-通常の更新では、共有Python依存環境と使用中の旧環境を削除しない。
+fullの通常更新では共有Python依存環境を保持し、どちらのモードでも使用中の旧環境は削除しない。
 
 ## 使い方
 

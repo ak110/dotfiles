@@ -100,7 +100,7 @@ class TestUpdateClaudeSettings:
         platform: str,
         existing: bool,
     ) -> None:
-        """通常の更新でホストの追加指示を無効にし、既存値の保持と再適用を両OSで確認する。"""
+        """通常の更新で補助生成を止めて手動スキルを残し、既存値の保持と再適用を両OSで確認する。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         managed_config = json.loads(_PROD_MANAGED_CONFIG.read_text(encoding="utf-8"))
         settings_path = _setup_run_paths(tmp_path, monkeypatch, managed, managed_config)
@@ -111,10 +111,42 @@ class TestUpdateClaudeSettings:
             )
         monkeypatch.setattr(mod.sys, "platform", platform)
         unmanaged = {"model": "custom-model", "mcpServers": {"custom": {"command": "custom-mcp"}}}
+        manual_skills = (
+            "batch",
+            "claude-api",
+            "claude-in-chrome",
+            "code-review",
+            "dataviz",
+            "debug",
+            "doctor",
+            "fewer-permission-prompts",
+            "init",
+            "keybindings-help",
+            "loop",
+            "run",
+            "run-skill-generator",
+            "schedule",
+            "security-review",
+            "simplify",
+            "update-config",
+            "verify",
+        )
         config_path = tmp_path / "claude.json"
         if existing:
             settings_path.write_text(
-                json.dumps({"outputStyle": "Explanatory", "includeGitInstructions": True, **unmanaged}),
+                json.dumps(
+                    {
+                        "outputStyle": "Explanatory",
+                        "includeGitInstructions": True,
+                        "enableArtifact": True,
+                        "disableClaudeAiConnectors": False,
+                        "enableWorkflows": True,
+                        "awaySummaryEnabled": True,
+                        "env": {"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "1", "CUSTOM_ENV": "preserved"},
+                        "skillOverrides": {"batch": "disabled", "custom-skill": "user-invocable-only"},
+                        **unmanaged,
+                    }
+                ),
                 encoding="utf-8",
             )
             config_path.write_text(json.dumps({"customAuthentication": "preserved"}), encoding="utf-8")
@@ -125,8 +157,20 @@ class TestUpdateClaudeSettings:
         assert first.failure is None
         assert settings["outputStyle"] == "default"
         assert settings["includeGitInstructions"] is False
+        assert settings["enableArtifact"] is False
+        assert settings["disableClaudeAiConnectors"] is True
+        assert settings["enableWorkflows"] is False
+        assert settings["awaySummaryEnabled"] is False
+        assert settings["env"]["CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION"] == "0"
+        assert {name: settings["skillOverrides"][name] for name in manual_skills} == dict.fromkeys(
+            manual_skills, "user-invocable-only"
+        )
+        assert "disableArtifact" not in settings
+        assert "disableBundledSkills" not in settings
         if existing:
             assert all(settings[key] == value for key, value in unmanaged.items())
+            assert settings["env"]["CUSTOM_ENV"] == "preserved"
+            assert settings["skillOverrides"]["custom-skill"] == "user-invocable-only"
             assert config["customAuthentication"] == "preserved"
 
         second = mod.run()

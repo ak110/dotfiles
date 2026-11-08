@@ -331,14 +331,13 @@ def transition_entries(
     target_repo: str | typing.Iterable[str] | None = None,
     note: str | None = None,
     commit: str | list[str] | None = None,
-    lock_timeout: float = -1,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     force: bool = False,
     state: str | None = None,
     expected_content: str | None = None,
     cooldown_days: int | None = None,
     local_worktree: pathlib.Path | None = None,
     skip_push: bool = False,
-    skip_remote_sync: bool = False,
     actor_is_agent: bool = False,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移または削除を実行する。
@@ -358,12 +357,7 @@ def transition_entries(
     )
     inbox_dir = private_notes / WI_STATE_INBOX
     _wi_filenames.validate_filenames_only(filenames, inbox_dir)
-    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
-        _wi_sync.ensure_mutation_allowed(private_notes)
-        if not skip_remote_sync:
-            if not skip_push:
-                _wi_sync.push_pending_commits(private_notes)
-            _wi_sync.pull(private_notes)
+    with storage.mutation(private_notes, push_pending=True, skip_push=skip_push) as mutation:
         missing_is_conflict = action == "remove" and expected_content is not None
         paths = _resolve_transition_paths(
             private_notes,
@@ -395,11 +389,9 @@ def transition_entries(
             commit_values=commit_values,
             cooldown_days=cooldown_days,
         )
-        _wi_sync.commit_and_push(
-            private_notes,
+        mutation.commit(
             _transition_commit_message(action, len(paths), note),
             [str(path.relative_to(private_notes)) for path in paths],
-            skip_push=skip_push or skip_remote_sync,
         )
     return [path.name for path in paths]
 

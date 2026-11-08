@@ -57,6 +57,42 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
 """`atk wi edit`が変更を受け付けない予約キーと、代わりに行う操作の対応。"""
 
 
+def set_entry_importance(
+    private_notes: pathlib.Path,
+    *,
+    filename: str,
+    important: bool,
+    expected_content: str | None = None,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
+) -> bool:
+    """保存状態を保って重要フラグだけを設定または解除する。"""
+    with storage.mutation(private_notes) as mutation:
+        records, missing = _wi_entries.read_named_entries(
+            private_notes, _wi_entries.validate_named_filenames(private_notes, [filename]), target_repo=None
+        )
+        if missing:
+            raise FileNotFoundError(filename)
+        path, _, text, _, _ = records[0]
+        if expected_content is not None and text != expected_content:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError("frontmatterを解析できません", next_action="保存済み本文のfrontmatterを確認する")
+        metadata, body = parsed
+        if (important and metadata.get("important") is True) or (not important and "important" not in metadata):
+            return False
+        if important:
+            metadata["important"] = True
+        else:
+            metadata.pop("important", None)
+        updated = _frontmatter.serialize_frontmatter(metadata, body)
+        if updated == text:
+            return False
+        _frontmatter.write_entry_text(path, updated)
+        mutation.commit("chore: update wi importance", [str(path.relative_to(private_notes))])
+    return True
+
+
 def _outside_fence_heading_offset(content: str, heading: str) -> int | None:
     """コードフェンス外にある最初の厳密な見出しのバイト位置を返す。"""
     offset = 0
@@ -151,10 +187,9 @@ def edit_entry_content(
     filename: str,
     content: str,
     target_repo: str | None = None,
-    lock_timeout: float = -1,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     expected_content: str | None = None,
     finalized_content: dict[str, str] | None = None,
-    skip_remote_sync: bool = False,
     allow_terminal: bool = False,
 ) -> bool:
     """平引数でAWI本文を更新する。
@@ -176,12 +211,11 @@ def edit_entry_content(
         filename=filename,
         content=content,
         target_repo=target_repo,
-        lock_timeout=lock_timeout,
+        storage=storage,
         expected_content=expected_content,
         commit_message="chore: edit wi item",
         content_transformer=invalidate_repo_bound_metadata,
         finalized_content=finalized_content,
-        skip_remote_sync=skip_remote_sync,
     )
 
 
@@ -192,7 +226,7 @@ def append_entry_content(
     filename: str,
     content: bytes,
     target_repo: str | None = None,
-    lock_timeout: float = -1,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     expected_content: bytes | None = None,
     finalized_content: dict[str, str] | None = None,
 ) -> bool:
@@ -220,7 +254,7 @@ def append_entry_content(
         filename=filename,
         content=content,
         target_repo=target_repo,
-        lock_timeout=lock_timeout,
+        storage=storage,
         expected_content=expected_content,
         commit_message="chore: append wi item",
         content_validator=validate,

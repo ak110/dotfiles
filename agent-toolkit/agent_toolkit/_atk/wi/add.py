@@ -765,9 +765,8 @@ def add_entries(
     target_commit: str | None = None,
     depends_on: tuple[str, ...] = (),
     cooldown_until: str | None = None,
-    lock_timeout: float = -1,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     saved_details: dict[str, dict[str, object | None]] | None = None,
-    skip_remote_sync: bool = False,
     submitter_session: str | None = None,
 ) -> list[str]:
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
@@ -789,10 +788,7 @@ def add_entries(
         source=source,
         cooldown_until=cooldown_until,
     )
-    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
-        _wi_sync.ensure_mutation_allowed(private_notes)
-        if not skip_remote_sync:
-            _wi_sync.pull(private_notes)
+    with storage.mutation(private_notes) as mutation:
         written = _add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
@@ -810,11 +806,9 @@ def add_entries(
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
-        _wi_sync.commit_and_push(
-            private_notes,
+        mutation.commit(
             f"chore: add {count} {entry_type} {'item' if count == 1 else 'items'}",
             [str(_wi_entries.entry_path(private_notes, filename).relative_to(private_notes)) for filename in generated],
-            skip_push=skip_remote_sync,
         )
         if saved_details is not None:
             saved_details.update(

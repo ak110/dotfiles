@@ -596,7 +596,7 @@ def _skip_git_update(reason: str, operation: str | bool = False) -> int:
         )
     else:
         action = "進行中のGit操作が終了してからupdate-dotfilesを再実行してください。"
-    message = f"{reason}のためGit更新は未完了です。{action}自動更新は次回のタイマー起動で再試行します。"
+    message = f"{reason}のためGit更新は未完了です。{action}"
     _last_stderr_tail = sync_report.truncate_tail(message)
     logger.warning(message)
     print(message, file=sys.stderr)

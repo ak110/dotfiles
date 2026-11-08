@@ -20,7 +20,8 @@ def test_job_reclaims_orphan_and_preserves_explicit_breakaway(tmp_path, host_env
     script.write_text(
         "import pathlib, subprocess, sys, time\n"
         "subprocess.run([sys.executable, '-c', "
-        "'import pathlib, sys; pathlib.Path(sys.argv[1]).write_text(\"outside\")', sys.argv[1]], "
+        '\'import pathlib, sys; path = pathlib.Path(sys.argv[1]); pending = path.with_suffix(".tmp"); '
+        'pending.write_text("outside", encoding="utf-8"); pending.replace(path)\', sys.argv[1]], '
         "creationflags=0x01000208, check=True, timeout=5)\n"
         "time.sleep(60)\n",
         encoding="utf-8",

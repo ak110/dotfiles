@@ -89,7 +89,9 @@ daemon 0.166.0は世代ファイルを空の予約ファイルとして直接作
 
 `CODEX_THREAD_ID`を持つ起動では、`bin/update-dotfiles`とWindows版ランチャーが、uvの外側のnative Pythonで`libexec/update_dotfiles_job.py`へ処理を渡す。
 通常端末の更新は既存のTTYとSSH入力を保持する。
-独立workerがuv自己更新、更新本体、成功後の必要なpruneを順に所有し、起動元のdaemon再起動でcontrollerが終了しても処理と終了結果の保存を継続する。
+独立workerがuv自己更新、管理Python 3.15の最新patch準備、更新本体、成功後の必要なpruneを順に所有し、起動元のdaemon再起動でcontrollerが終了しても処理と終了結果の保存を継続する。
+process-loopでは稼働中ランタイムの自己更新を避け、uv自己更新と管理Pythonの更新を省く。
+成功後の整理には元の引数を渡し、実効minimalまたは明示`--prune`の場合だけuvの外側で実行する。
 POSIXは新しいsession、Windowsは独立したprocess groupとjobからの分離を使い、分離失敗を成功扱いにしない。
 
 jobはUUIDで識別し、既存の状態領域の`update-jobs/<UUID>/`へ入力引数・開始終了・終了コードと分離した標準出力・標準エラーを保存する。
@@ -97,6 +99,12 @@ jobはUUIDで識別し、既存の状態領域の`update-jobs/<UUID>/`へ入力�
 公開`update-dotfiles job`は同じ`CODEX_THREAD_ID`の最新job、`update-dotfiles job <UUID>`は明示jobの保存結果を取得する。
 再取得では更新を再実行せず、未完了を完了と区別する。
 workerは有限の実行上限と子孫の回収を持ち、通常のCtrl+Cは所有workerへの停止要求と終了回収へ接続する。
+各コマンドの標準出力・標準エラーを2本のpipeから継続転送し、直接の子の終了と両pipeのEOFを確認してから結果を公開する。
+出力待ちにも同じ上限と停止要求を適用し、読取失敗はjobの失敗へ伝播する。
+Linuxはsubreaper、Windowsは停止状態で開始した子を再開前に登録するJob Objectにより、短命な親の終了後も停止対象を所有する。
+Linuxの停止ではworkerがまだ回収していない直系の子だけを操作し、親の終了で引き取った孫も列挙し直して回収する。
+親の回収後は、数値PGIDが別のプロセス群へ再利用され得るためである。
+両pipeを閉じたサービスの存続は完了を妨げず、正常時のWindows Job解放でもそのサービスを停止しない。
 完了済みjobは7日で回収し、未完了jobと出力は保持する。
 
 uv内で更新jobを待つ構成は、起動元の停止に更新処理が巻き込まれるため採用しない。

@@ -10,9 +10,10 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from unittest.mock import Mock
 
+import psutil
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -30,6 +31,9 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
     (root / "libexec").mkdir(parents=True)
     (root / "bin").mkdir()
     shutil.copy2(_ROOT / "libexec/update_dotfiles_job.py", root / "libexec/update_dotfiles_job.py")
+    common = root / "agent-toolkit/agent_toolkit/_common"
+    common.mkdir(parents=True)
+    shutil.copy2(_ROOT / "agent-toolkit/agent_toolkit/_common/windows_job.py", common / "windows_job.py")
     shutil.copy2(_ROOT / "bin/update-dotfiles", root / "bin/update-dotfiles")
     (root / "libexec/update_uv.sh").write_text('"$1" self update\n', encoding="utf-8")
     (root / "libexec/update_dotfiles.py").write_text(
@@ -86,7 +90,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
         'if [[ "$1 $2" == "python find" ]]; then\n'
         '  if [[ "${INSTALL_REQUIRED:-0}" == 1 && ! -f "$HOME/installed" ]]; then exit 2; fi\n'
         '  printf "%s\\n" "$NATIVE_PYTHON"; exit 0\nfi\n'
-        'if [[ "$1 $2" == "python install" ]]; then touch "$HOME/installed"; exit 0; fi\n'
+        'if [[ "$1 $2" == "python install" ]]; then touch "$HOME/installed"; exit "${PYTHON_EXIT:-0}"; fi\n'
         'if [[ "$1 $2" == "self update" ]]; then exit "${SELF_EXIT:-0}"; fi\n'
         'if [[ "$1" == run ]]; then shift 3; exec "$NATIVE_PYTHON" "$@"; fi\n'
         "exit 33\n",
@@ -149,8 +153,9 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     assert metadata["arguments"] == ["--prune"] and metadata["thread_id"] == "own-thread"
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
     assert calls[:4] == ["python find 3.15", "python install 3.15", "python find 3.15", "self update"]
-    assert calls[4].startswith("run --no-project --script ")
-    assert calls[5:] == ([] if run_exit else ["prune --prune-only"])
+    assert calls[4] == "python install --upgrade 3.15"
+    assert calls[5].startswith("run --no-project --script ")
+    assert calls[6:] == ([] if run_exit else ["prune --prune-only-if-minimal --prune"])
     explicit = _invoke(project, "job", job.name)
     own = _invoke(project, "job")
     assert explicit.returncode == own.returncode == result.returncode
@@ -183,8 +188,292 @@ def test_process_loop_job_skips_uv_self_update(project: tuple[pathlib.Path, dict
     result = _invoke(project)
     assert result.returncode == 0, result.stdout + result.stderr
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
-    assert len(calls) == 2
+    assert len(calls) == 3
     assert calls[0] == "python find 3.15" and calls[1].startswith("run --no-project --script ")
+    assert calls[2] == "prune --prune-only-if-minimal"
+
+
+@_POSIX
+def test_python_upgrade_failure_stops_before_update(project: tuple[pathlib.Path, dict[str, str]]) -> None:
+    """管理Pythonの更新失敗を伝え、更新本体と整理を開始しない。"""
+    _root, environment = project
+    environment["PYTHON_EXIT"] = "17"
+    result = _invoke(project)
+    assert result.returncode == 17, result.stdout + result.stderr
+    calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
+    assert calls == ["python find 3.15", "self update", "python install --upgrade 3.15"]
+    assert not pathlib.Path(environment["READY"]).exists()
+
+
+@pytest.mark.parametrize("arguments", [[], ["--mode", "minimal"], ["--mode", "full", "--prune"]])
+@_POSIX
+def test_success_passes_mode_and_prune_to_outside_cleanup(
+    project: tuple[pathlib.Path, dict[str, str]], arguments: list[str]
+) -> None:
+    """通常成功も整理の入口へ渡し、実効modeの判定に必要な元引数を保持する。"""
+    result = _invoke(project, *arguments)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = pathlib.Path(project[1]["CALLS"]).read_text(encoding="utf-8").splitlines()
+    assert calls[-1] == " ".join(["prune", "--prune-only-if-minimal", *arguments])
+
+
+@pytest.fixture(name="output_child")
+def _output_child(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
+    """親の終了後もpipeを持つ子を、外部から解放できる入力にする。"""
+    root, environment = project
+    child = root / "libexec/child.py"
+    child.write_text(
+        "import os, pathlib, sys, time\n"
+        "ready = pathlib.Path(os.environ['CHILD_READY'])\n"
+        "temporary = ready.with_suffix('.tmp')\n"
+        "temporary.write_text(str(os.getpid()), encoding='utf-8')\n"
+        "temporary.replace(ready)\n"
+        "while not pathlib.Path(os.environ['RELEASE']).exists():\n"
+        "    time.sleep(0.01)\n"
+        "sys.stdout.write('後続出力' * 20000); sys.stdout.flush()\n"
+        "sys.stderr.write('後続診断' * 20000); sys.stderr.flush()\n",
+        encoding="utf-8",
+    )
+    (root / "libexec/update_dotfiles.py").write_text(
+        "import os, pathlib, subprocess, sys\n"
+        f"subprocess.Popen([sys.executable, {str(child)!r}], start_new_session=os.environ.get('CHILD_SESSION') == '1')\n"
+        "ready = pathlib.Path(os.environ['READY'])\n"
+        "temporary = ready.with_suffix('.tmp')\n"
+        "temporary.write_text(str(os.getpid()), encoding='utf-8')\n"
+        "temporary.replace(ready)\n"
+        "raise SystemExit(int(os.environ.get('RUN_EXIT', '0')))\n",
+        encoding="utf-8",
+    )
+    return pathlib.Path(environment["CHILD_READY"])
+
+
+@contextlib.contextmanager
+def _pending_output_job(
+    project: tuple[pathlib.Path, dict[str, str]], output_child: pathlib.Path
+) -> Generator[tuple[subprocess.Popen[str], pathlib.Path]]:
+    """親終了と子の準備を確認し、終了時には出力の解放と結果保存を待つ。"""
+    root, environment = project
+    with subprocess.Popen(
+        [str(root / "bin/update-dotfiles")],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+    ) as controller:
+        try:
+            _wait_file(output_child)
+            _wait_file(pathlib.Path(environment["READY"]))
+            with contextlib.suppress(psutil.NoSuchProcess):
+                psutil.Process(int(pathlib.Path(environment["READY"]).read_text(encoding="utf-8"))).wait(timeout=15)
+            yield controller, _job(project)
+        finally:
+            pathlib.Path(environment["RELEASE"]).touch()
+            controller.communicate(timeout=20)
+            _wait_file(_job(project) / "result.json")
+
+
+@pytest.mark.parametrize("run_exit", [0, 23])
+@_POSIX
+def test_public_job_collects_output_after_parent_exit(
+    project: tuple[pathlib.Path, dict[str, str]], output_child: pathlib.Path, run_exit: int
+) -> None:
+    """親終了後の両pipe出力を初回から全量回収し、同じjobの再取得と一致させる。"""
+    project[1]["RUN_EXIT"] = str(run_exit)
+    with _pending_output_job(project, output_child) as (controller, job):
+        pending = _invoke(project, "job", job.name)
+        assert pending.returncode == 1 and "未完了" in pending.stdout
+        pathlib.Path(project[1]["RELEASE"]).touch()
+        stdout, stderr = controller.communicate(timeout=20)
+        assert controller.returncode == run_exit, stdout + stderr
+        assert "後続出力" * 20000 in stdout
+        assert stderr == "後続診断" * 20000
+        retrieved = _invoke(project, "job", job.name)
+        assert retrieved.returncode == run_exit
+        assert retrieved.stdout == (job / "stdout.log").read_text(encoding="utf-8") + f"job {job.name}: 終了 exit={run_exit}\n"
+        assert retrieved.stderr == stderr == (job / "stderr.log").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("cancel", [False, True], ids=["deadline", "stop"])
+@pytest.mark.skipif(sys.platform != "linux", reason="親終了後の子孫はLinux subreaperで所有する")
+def test_public_job_limits_output_wait_after_parent_exit(
+    project: tuple[pathlib.Path, dict[str, str]], output_child: pathlib.Path, cancel: bool
+) -> None:
+    """直接の親が終了しても、未閉鎖pipeの待機へ上限と停止要求を適用する。"""
+    script = project[0] / "libexec/update_dotfiles_job.py"
+    source = script.read_text(encoding="utf-8")
+    script.write_text(source.replace("_TIMEOUT = 7200", "_TIMEOUT = 2"), encoding="utf-8")
+    if cancel:
+        environment = project[1]
+        environment["CHILD_SESSION"] = "1"
+        probe = project[0] / "pgid-probe"
+        probe.mkdir()
+        # 別sessionへ移った子だけが残る状態で、回収済みrootの数値PGIDを外部の群とみなす。
+        # OS境界で拒否するため、実際の無関係なプロセス群へ信号を送らない。
+        (probe / "sitecustomize.py").write_text(
+            "import os, pathlib\n"
+            "original_killpg = os.killpg\n"
+            "def guarded_killpg(pid, sig):\n"
+            "    ready = pathlib.Path(os.environ['READY'])\n"
+            "    if ready.with_suffix('.reaped').exists() and pid == int(ready.read_text()):\n"
+            "        raise RuntimeError('終了済み親のPGIDを操作した')\n"
+            "    return original_killpg(pid, sig)\n"
+            "os.killpg = guarded_killpg\n",
+            encoding="utf-8",
+        )
+        environment["PYTHONPATH"] = os.pathsep.join(filter(None, (str(probe), environment.get("PYTHONPATH", ""))))
+    with _pending_output_job(project, output_child) as (controller, job):
+        if cancel:
+            pathlib.Path(project[1]["READY"]).with_suffix(".reaped").touch()
+            (job / "stop").touch()
+        stdout, stderr = controller.communicate(timeout=20)
+        assert controller.returncode == (130 if cancel else 124), stdout + stderr
+        assert str(job / "stdout.log") in stderr
+        assert str(job / "stderr.log") in stderr
+        assert "update-dotfilesを再実行" in stderr
+        assert not psutil.pid_exists(int(output_child.read_text(encoding="utf-8")))
+        retrieved = _invoke(project, "job", job.name)
+        assert retrieved.returncode == controller.returncode
+        assert retrieved.stderr == stderr
+
+
+@_POSIX
+def test_public_job_preserves_service_with_closed_output(project: tuple[pathlib.Path, dict[str, str]]) -> None:
+    """両出力を分離したサービスが存続したまま、公開jobが正常完了する。"""
+    root, environment = project
+    (root / "libexec/update_dotfiles.py").write_text(
+        "import os, pathlib, subprocess, sys\n"
+        "subprocess.Popen([sys.executable, '-c', \"import os,pathlib,time; "
+        "p=pathlib.Path(os.environ['CHILD_READY']); t=p.with_suffix('.tmp'); "
+        't.write_text(str(os.getpid())); t.replace(p); time.sleep(60)"], '
+        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)\n",
+        encoding="utf-8",
+    )
+    service: psutil.Process | None = None
+    try:
+        result = _invoke(project)
+        assert result.returncode == 0, result.stdout + result.stderr
+        _wait_file(pathlib.Path(environment["CHILD_READY"]))
+        service = psutil.Process(int(pathlib.Path(environment["CHILD_READY"]).read_text(encoding="utf-8")))
+        assert service.is_running() and service.status() != psutil.STATUS_ZOMBIE
+    finally:
+        if service is not None:
+            service.kill()
+            try:
+                service.wait(timeout=1)
+            except psutil.TimeoutExpired:
+                # worker終了後のサービスはテストプロセスの子ではない。PID 1による回収前も区別する。
+                assert service.status() == psutil.STATUS_ZOMBIE
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        *[
+            pytest.param(
+                scenario,
+                marks=[pytest.mark.windows, pytest.mark.skipif(sys.platform != "win32", reason="実Win32 APIの検証")],
+            )
+            for scenario in ("late", "deadline", "stop", "detached")
+        ],
+        "read-error",
+    ],
+)
+def test_native_worker_output_contract(
+    project: tuple[pathlib.Path, dict[str, str]], output_child: pathlib.Path, scenario: str
+) -> None:
+    """native workerの結果保存まで、実Win32所有とpipe回収、読取失敗を検証する。
+
+    外部ツールの呼出だけを標準Pythonへ写し、uvの導入や実HOMEの更新を避ける。
+    Linuxでの公開ランチャー試験と分け、WindowsではJob APIと生存サービスも実行する。
+    """
+    root, environment = project
+    environment["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = "1"
+    state = pathlib.Path(environment["LOCALAPPDATA"] if sys.platform == "win32" else environment["XDG_STATE_HOME"])
+    job = state / "agent-toolkit/update-jobs" / str(uuid.uuid4())
+    job.mkdir(parents=True)
+    (job / "input.json").write_text(json.dumps({"arguments": []}), encoding="utf-8")
+    if scenario == "detached":
+        parent = root / "libexec/update_dotfiles.py"
+        source = parent.read_text(encoding="utf-8")
+        original = (
+            f"subprocess.Popen([sys.executable, {str(root / 'libexec/child.py')!r}], "
+            "start_new_session=os.environ.get('CHILD_SESSION') == '1')"
+        )
+        assert source.count(original) == 1
+        parent.write_text(
+            source.replace(
+                original,
+                f"subprocess.Popen([sys.executable, {str(root / 'libexec/child.py')!r}], "
+                "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)",
+            ),
+            encoding="utf-8",
+        )
+    driver = root / "libexec/native_worker_test_driver.py"
+    driver.write_text(
+        "import pathlib, subprocess, sys, unittest.mock\n"
+        "import update_dotfiles_job as job\n"
+        f"scenario = {scenario!r}\n"
+        "job._TIMEOUT = 2 if scenario == 'deadline' else 20\n"
+        "run = job._run_command\n"
+        "def mapped(command, directory, deadline, env):\n"
+        "    native = [sys.executable, str(pathlib.Path(__file__).with_name('update_dotfiles.py'))] "
+        "if command[1:2] == ['run'] else [sys.executable, '-c', 'pass']\n"
+        "    return run(native, directory, deadline, env)\n"
+        "job._run_command = mapped\n"
+        "if scenario == 'read-error':\n"
+        "    popen = subprocess.Popen\n"
+        "    def broken_read(*args, **kwargs):\n"
+        "        process = popen(*args, **kwargs)\n"
+        "        process.stdout = unittest.mock.Mock(wraps=process.stdout)\n"
+        "        process.stdout.read.side_effect = OSError('injected pipe read failure')\n"
+        "        return process\n"
+        "    subprocess.Popen = broken_read\n"
+        f"raise SystemExit(job.main(['--worker', {job.name!r}]))\n",
+        encoding="utf-8",
+    )
+    child: psutil.Process | None = None
+    with (
+        (job / "stdout.log").open("wb") as stdout,
+        (job / "stderr.log").open("wb") as stderr,
+        subprocess.Popen(
+            [sys.executable, str(driver)],
+            env=environment,
+            stdout=stdout,
+            stderr=stderr,
+        ) as worker,
+    ):
+        try:
+            if scenario != "read-error":
+                _wait_file(output_child)
+                child = psutil.Process(int(output_child.read_text(encoding="utf-8")))
+                _wait_file(pathlib.Path(environment["READY"]))
+                with contextlib.suppress(psutil.NoSuchProcess):
+                    psutil.Process(int(pathlib.Path(environment["READY"]).read_text(encoding="utf-8"))).wait(timeout=15)
+                if scenario == "late":
+                    pathlib.Path(environment["RELEASE"]).touch()
+                if scenario == "stop":
+                    (job / "stop").touch()
+            code = worker.wait(timeout=25)
+            expected = {"deadline": 124, "stop": 130, "read-error": 1}.get(scenario, 0)
+            assert code == expected, (job / "stderr.log").read_text(encoding="utf-8")
+            assert json.loads((job / "result.json").read_text(encoding="utf-8"))["exit_code"] == code
+            if scenario == "late":
+                assert (job / "stdout.log").read_text(encoding="utf-8") == "後続出力" * 20000
+                assert (job / "stderr.log").read_text(encoding="utf-8") == "後続診断" * 20000
+            if scenario == "detached":
+                assert child is not None and child.is_running()
+            if scenario in ("deadline", "stop"):
+                assert child is not None and not child.is_running()
+            if scenario == "read-error":
+                assert "injected pipe read failure" in (job / "stderr.log").read_text(encoding="utf-8")
+        finally:
+            pathlib.Path(environment["RELEASE"]).touch()
+            if worker.poll() is None:
+                (job / "stop").touch()
+            worker.wait(timeout=25)
+            if child is not None:
+                with contextlib.suppress(psutil.NoSuchProcess):
+                    child.wait(timeout=15)
 
 
 @pytest.mark.parametrize("cancel", [False, True], ids=["controller-killed", "ctrl-c"])

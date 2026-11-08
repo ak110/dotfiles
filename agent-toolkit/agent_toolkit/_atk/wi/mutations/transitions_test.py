@@ -832,7 +832,7 @@ class TestAppendEdit:
             filename: str,
             content: bytes,
             target_repo: str | None = None,
-            lock_timeout: float = -1,
+            storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
             expected_content: bytes | None = None,
             finalized_content: dict[str, str] | None = None,
         ) -> bool:
@@ -843,7 +843,7 @@ class TestAppendEdit:
                 filename=filename,
                 content=content,
                 target_repo=target_repo,
-                lock_timeout=lock_timeout,
+                storage=storage,
                 expected_content=expected_content,
                 finalized_content=finalized_content,
             )
