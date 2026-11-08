@@ -31,7 +31,7 @@ from agent_toolkit._git import command as git_command
 from agent_toolkit._git import worktree_exclude
 from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._plan import commit_mapping, selection
-lazy from agent_toolkit._atk.wi import cli as wi_cli
+lazy from agent_toolkit._atk.wi import arguments as wi_arguments
 lazy from agent_toolkit._atk.wi import filenames as wi_filenames
 lazy from agent_toolkit._common import session_registry, task_documents
 
@@ -1340,7 +1340,8 @@ def _validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.P
                 continue
             if parser is None:
                 parser = argparse.ArgumentParser(prog="atk wi", allow_abbrev=False)
-                wi_cli.build_parser(parser)
+                sub = help_text.add_subcommands(parser, dest="wi_subcommand", required=False, show_help_when_missing=True)
+                wi_arguments.add_adopt_parser(sub)
             # パスの型検査にはテンプレート元を使い、複製と本文展開はGit統合後の_expandで行う。
             validation_argv = [
                 _REFERENCE.sub(
