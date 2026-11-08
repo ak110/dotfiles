@@ -20,6 +20,59 @@ from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_l
 _THRESHOLD = 48 * 1024
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("search", "warned"),
+    [
+        ("rg -l -F -- needle", False),
+        ("rg -lF needle", False),
+        ("grep -rl needle", False),
+        ("grep -L needle", False),
+        ("rg -c needle", False),
+        ("rg --count needle", False),
+        ("rg --count-matches needle", False),
+        ("rg --files-with-matches needle", False),
+        ("rg --files-without-match needle", False),
+        ("rg --files", False),
+        ("rg -F -- needle", True),
+        ("rg -n needle", True),
+        ("rg -L needle", True),
+        ("rg -e '-lc'", True),
+        ("rg -Fe-lc", True),
+        ("rg --regexp --count", True),
+        ("rg --glob --count needle", True),
+        ("rg -g-l needle", True),
+        ("rg -r-l needle", True),
+        ("rg -- '-lc'", True),
+        ("grep -e '-l'", True),
+        ("grep --include --count needle", True),
+        ("grep -Hlc needle", False),
+    ],
+)
+def test_original_record_search_output_mode(tmp_path, monkeypatch, capsys, codex, search, warned):
+    """公開hookで所在・件数検索を通し、本文表示とフラグに似た値には照会を案内する。"""
+    home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    directory = home / "sessions"
+    directory.mkdir(parents=True)
+    (directory / "record.jsonl").write_text("{}\n", encoding="utf-8")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": f"{search} {shlex.quote(str(directory))}"},
+        "cwd": str(tmp_path),
+        **({"turn_id": "t"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    assert not captured.err
+    assert ("session-review-evidence" in captured.out) is warned
+    assert "permissionDecision" not in captured.out
+    if warned:
+        context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+        assert "rg -l -F --" in context
+        assert "単一の`--transcript`" in context
+
+
 @pytest.fixture(autouse=True)
 def _existing_work_contract(tmp_path, monkeypatch):
     """読取固有の通知を、作業契約を作成済みの状態で検証する。"""

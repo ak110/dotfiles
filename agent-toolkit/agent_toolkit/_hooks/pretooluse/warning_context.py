@@ -8,6 +8,7 @@ lazy import hashlib
 lazy import shlex
 
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common.persisted_output_reference import CODEX_NOTICE_REFERENCE_PREFIX
 lazy from agent_toolkit._atk import managed_temp
 lazy from agent_toolkit._common.atomic_file import atomic_write
 lazy from agent_toolkit._hooks import notice, rules_context
@@ -60,8 +61,7 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 fix="managed-tempの配置と書込権限を確認し、必要な資料を取得してから元の作業を続けよ。",
             )
         reference = format_notice(
-            f"PreToolUse通知の詳細を保存した。保存先: {path}\n"
-            "詳細は通知と取得手順であり、参照先の資料本文を取得済みとは扱うな。",
+            f"{CODEX_NOTICE_REFERENCE_PREFIX}{path}\n詳細は通知と取得手順であり、参照先の資料本文を取得済みとは扱うな。",
             tag="warn",
             removable_cause=False,
             fix=f"cat -- {shlex.quote(str(path))} を実行し、必要な案内を読め。",

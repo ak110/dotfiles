@@ -470,6 +470,10 @@ def _run_locked(
                     f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION
                 )
                 return 1
+            unread_streams = resources.enter_context(contextlib.ExitStack())
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    unread_streams.callback(stream.close)
             executor = _registry.ProcessIdentity.of(process.pid)
             if executor is None and process.poll() is None:
                 raise ActionableError(
@@ -481,6 +485,12 @@ def _run_locked(
                 from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
                 run_skill_batch.record_executor(args, process.pid)
+            scope = skill_modes.invocation_scope(args.skill, args.args)
+            allow_connection_switch = (
+                orchestrator == "claude" and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1
+            )
+            # ここからは_session_readersが所有する。読取中のcloseはEOF待ちの上限を壊すため解除する。
+            unread_streams.pop_all()
             output.exit_code = _wait_session(
                 process,
                 orchestrator=orchestrator,
@@ -491,10 +501,9 @@ def _run_locked(
                 output=output,
                 codex_home=codex_home,
                 run_id=run_id,
-                skill=skill_modes.invocation_scope(args.skill, args.args),
+                skill=scope,
                 executor=executor,
-                allow_connection_switch=orchestrator == "claude"
-                and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1,
+                allow_connection_switch=allow_connection_switch,
             )
         remaining = writer.record.remaining
         code = output.exit_code

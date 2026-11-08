@@ -33,6 +33,7 @@
 | 本文で基準を使う資料の選択・取得時 | `duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
 | 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
 | 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation.md`の「経験の保存と適用」、`agent-basics:writing-standards/references/agent-documents-basics.md`の「置き場所と配送」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「経験の保存と適用」`、`section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「置き場所と配送」` |
 
 ## 入力と照会
 
@@ -142,7 +143,8 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 | 使われなかった取得・返却 | 通読、読込集計と後続の消費 |
 
 この確認の結論は、報告の`費用確認`欄に1行で書く。
-大出力の点検では、集めた各ツールの実行結果のうち記録本文が8,192バイト以上のものから、明示的な単独のファイル本文取得を除き、大きい順に最大10件を見直す。
+大出力の点検では、各ツールの実行結果のうちエージェントが受け取った本文が8,192バイト以上のものから、明示的な単独のファイル本文取得を除き、大きい順に最大10件を見直す。
+退避された結果は案内とPreviewの量で数え、退避前8,192バイト以上の結果は両方の量を別表示し、生成後に読み直す操作の費用を点検する。
 `Read`、`read_file`、`Skill`と、単独で実行した`cat`や`atk read-file`は本文取得として除く。複数の操作の組み合わせや解釈が定まらない入力は残して詳細から用途を確かめ、閾値未満や上位10件外も全量集計の照会対象に残す。
 特にatk、pyfltr、agents_serverなどの自作ツールは、判断に要る材料、保存先ファイルへの参照、実際の返却を比べ、不要な引数（argv）、Git状態、全量の詳細を繰り返していないかを確かめる。出力が大きいことだけで品質上の欠陥とせず、採る簡素化案は品質を確実に保てる手段から選ぶ。
 
@@ -171,6 +173,8 @@ Codexの記録では、`functions.exec`に渡したJavaScriptの1回の実行を
 同じ機構への局所修正が続く場合は、入力や症状の違いを越えて、最初の警告、受領後の行動、必要な対応、元作業の結果、対策変更が加えた負担を1つの連鎖として比較する。
 ユーザーの再発指摘やファイル名の一致を待たず、通読と変更履歴から共有する前提を評価する。
 比較した改善は、観測した事象、次の同種作業を改善する変更、反映先、確認できる結果へ対応付ける。学んだ判断は既存の索引と主題別記録へ観測日・対象版・出所付きで保存し、対策の登録・実装・配布と実利用効果を区別する。
+有用な成功知見、誤った記録の訂正と重複・参照の整理も読込表の経験基準で選ぶ。
+同じ条件に有効な保存済み知見は再利用し、新しい教訓や重複するAWIを作ること自体を目標にしない。
 
 通常・batchの両方で、`effect_candidates_path`の変更と元セッションの実際の操作・結果を比較する。規範以外の仕組みも対応commitと通常操作から判断し、読込や起動だけで効果を確認済みとしない。
 判定は「効果を確認」「効果不足（同原因の再発・未適用・範囲不足）」「適用機会なし・観測不能（確認待ち）」「後日の確認不要」とし、適用機会、観測位置、未確認または不要の理由を残す。

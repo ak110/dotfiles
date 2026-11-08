@@ -11,7 +11,6 @@ import io
 import json
 import os
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
@@ -20,7 +19,7 @@ import pytest
 
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import message_format as _message_format
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import persisted_output_reference, state_paths
 from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import git_repository
 lazy from agent_toolkit._common.session_state import read_state
@@ -103,10 +102,10 @@ def run_hook_with_notice_details(
     response = json.loads(result.stdout)
     specific = response.get("hookSpecificOutput", {})
     context = specific.get("additionalContext", "")
-    match = re.search(r"(?m)^PreToolUse通知の詳細を保存した。保存先: (.+)$", context)
-    if match is None:
+    path = persisted_output_reference.reference_path(context)
+    if path is None:
         return result
-    specific["additionalContext"] = pathlib.Path(match[1]).read_text(encoding="utf-8")
+    specific["additionalContext"] = path.read_text(encoding="utf-8")
     return subprocess.CompletedProcess(
         result.args, result.returncode, json.dumps(response, ensure_ascii=False) + "\n", result.stderr
     )

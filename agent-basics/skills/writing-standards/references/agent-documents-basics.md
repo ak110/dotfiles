@@ -27,6 +27,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「規定の区分と標示」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「規定の区分と標示」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「読込表の読み方」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
+| 実作業の知見を保存・整理する前 | `investigation.md`の「経験の保存と適用」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「経験の保存と適用」` |
 
 ## 責務と構成
 
@@ -55,6 +56,7 @@
 - スキルとエージェントの責務の配置は、`agent-skills.md`および`sub-agents.md`に従う。委譲元側の文書はタスクの受け渡しと検収に専念させ、委譲先固有の手順は委譲先側の文書に持たせる（`sub-agents.md`「`<役割名>.parent.md`と`<役割名>.subagent.md`の構成」を参照）。両者への指示を同一の文書に併記すると、委譲元が委譲先向けの制約を自身に適用しやすくなる。
 - 各記述は、その情報を必要とする工程で確実に読まれる文書へ配置する。読む契機がない記述は参照されず、特定工程でのみ必要な記述を常時ロードに置くと、無関係な全工程でその分のコンテキストが消費される。常時ロードには優先順位、不変条件、禁止事項、完了条件、プロジェクト固有の概念を置き、言語・技術領域・作業種別ごとの規範はスキルやpaths指定ルールへ、工程の途中で必要となる詳細な手順は`references/`や工程内の読み込み指示へ配置する。
 - 同時に必要となる情報は1箇所にまとめ、主題が異なる項目は見出しを分けて整理する（努力目標。情報が散在していると読み飛ばされやすく、無関係な内容が混在していると重要な項目への注意が削がれるため）。
+- 実作業から得た知見は既存の主題別資料へ統合し、索引には所在と、読む知見を選ぶための情報を置く（努力目標。重複保存と探索の負担を抑えるため）。保存内容の出所・確度・適用範囲と利用時の判断は`investigation.md`「経験の保存と適用」に従い、重複や矛盾の整理でも原記録へ戻れる参照を保つ。
 
 ### 読込表
 

@@ -316,8 +316,13 @@ def _content_operands(tokens: Sequence[str], *, pattern: bool) -> tuple[str, ...
             if "=" not in token:
                 index += 1
         elif token.startswith("-"):
-            if token[:2] in {"-e", "-f"} and len(token) > 2:
-                has_pattern = True
+            if not token.startswith("--"):
+                for position, flag in enumerate(token[1:], 1):
+                    if f"-{flag}" in values:
+                        has_pattern = has_pattern or flag in "ef"
+                        if position == len(token) - 1:
+                            index += 1
+                        break
         else:
             operands.append(token)
     return tuple(operands if has_pattern else operands[1:])
@@ -467,6 +472,76 @@ def has_dynamic_display_operand(command: str, cwd: str) -> bool:
     return any(is_unknown_word(operand) for operand, _current in _terminal_display_operands(command, cwd))
 
 
+def _search_metadata_only(tokens: Sequence[str]) -> bool:
+    """検索語とオプション値を除き、本文を出さない検索の指定を判定する。"""
+    name = pathlib.PurePath(tokens[0]).name
+    # rgの-Lは--followであり本文を返す。grep系列の-Lだけがファイル名を返す。
+    metadata_flags = "lc" if name == "rg" else "lLc"
+    valued_flags = "efgtrTABCMmj" if name == "rg" else "efABCmdD"
+    long_values = {
+        "--regexp",
+        "--file",
+        "--glob",
+        "--iglob",
+        "--type",
+        "--type-not",
+        "--include",
+        "--exclude",
+        "--exclude-dir",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--max-count",
+        "--encoding",
+        "--threads",
+        "--replace",
+        "--color",
+        "--colors",
+        "--max-columns",
+        "--max-depth",
+        "--max-filesize",
+        "--sort",
+        "--sortr",
+        "--pre",
+        "--pre-glob",
+        "--ignore-file",
+        "--type-add",
+        "--type-clear",
+        "--label",
+        "--binary-files",
+        "--devices",
+        "--directories",
+    }
+    skip_value = False
+    for token in tokens[1:]:
+        if skip_value:
+            skip_value = False
+            continue
+        if token == "--":
+            break
+        if token in {
+            "--files",
+            "--files-with-matches",
+            "--files-without-match",
+            "--count",
+            "--count-matches",
+            "--help",
+            "--version",
+        }:
+            return True
+        if token.startswith("--"):
+            skip_value = "=" not in token and token in long_values
+            continue
+        if token.startswith("-"):
+            for index, flag in enumerate(token[1:], 1):
+                if flag in metadata_flags:
+                    return True
+                if flag in valued_flags:
+                    skip_value = index == len(token) - 1
+                    break
+    return False
+
+
 def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
     """実行位置と静的引数だけから、原記録の読取・本文検索・解析入力を得る。"""
     found: list[pathlib.Path] = []
@@ -479,7 +554,7 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
         search = name in _SEARCH_COMMANDS
         operands = list(_display_read_operands(tokens))
         if search:
-            if "--files" in tokens or "--help" in tokens or "--version" in tokens:
+            if _search_metadata_only(tokens):
                 continue
             operands = list(_content_operands(tokens, pattern=True))
             if not operands and current.resolved and invocation.arguments_known:
@@ -527,9 +602,12 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         fix=(
             "`atk run-script session-review-evidence --`へ、"
             "ファイルは`--transcript <原記録の絶対パス>`、"
-            "本文の検索は`--grep <正規表現>`か`--fixed-string <文字列>`、指定位置は`--detail <record:line>`、"
+            "本文の検索は`--grep <正規表現>`、単一の`--transcript`では`--fixed-string <文字列>`も使える。"
+            "指定位置は`--detail <record:line>`、"
             "ツール入力は`--tool-calls --tool <名前> --input-regex <正規表現>`を渡せ。"
-            "期間探索は`--catalog-claude-project <ディレクトリ>`か`--catalog-codex-history <ディレクトリ>`へ"
+            "記録をまたぐ文字列の所在は`rg -l -F -- '<文字列>' <記録のディレクトリ>`で列挙し、"
+            "各パスを`--transcript`へ渡して本文を照会せよ。"
+            "期間と親セッションの一覧には`--catalog-claude-project <ディレクトリ>`か`--catalog-codex-history <ディレクトリ>`へ"
             "`--since <時刻> --observation-boundary <時刻>`を加えよ。"
             "発話後の呼出順は`--user-events`とツール一覧、または`--bundle`の抽出済み`conversation.jsonl`から集計せよ。"
             f"入力の選択は{reference}に従い、抽出済みの結果を後処理せよ。"

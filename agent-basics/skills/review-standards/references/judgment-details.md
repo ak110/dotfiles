@@ -22,6 +22,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「対策の選定」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「対策の選定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/SKILL.md#「直接的原因と事象時点の確定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity.md#「前提の再検討」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「前提の再検討」` |
+| 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation.md`の「経験の保存と適用」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「経験の保存と適用」` |
 
 ## 既存記述との重複と方針との整合
 
@@ -57,6 +58,7 @@
 
 ## 判断の点検
 
+- 経験を保存・再利用する案は、`agent-basics:writing-standards/references/investigation.md`「経験の保存と適用」に従い、原記録から保存するときの範囲と、保存内容を今回の判断へ適用するときの範囲を別々に点検する。出所・確度・適用条件の保持と今回の条件の成立を確認し、有効な成功知見の再利用、仮説・変動状態の区別、認可・公開契約の維持を検収する
 - 判定条件、例外条件、許容条件は観測可能な事実だけで記述し、判定する主体がその事実を実際に観測できるかを確認する。判定の入力が別の主体や工程による生成物である場合は、その入力を生成する処理をすべて洗い出し、生成しない処理があれば事実の定義元を判定入力に設定する
 - 暫定規範を削除するときは、削除条件の文面に加え、対象の節や警告の種類、実際に観測された値が、削除後にも必要な状態を満たしているかを確認する。同じ粒度で比較できない場合は、暫定規範を残したまま条件の記述を修正する
 - ある挙動を一般則として記述する前に、その挙動が発生しない条件を探して実物で確認し、記述する適用範囲を観測で確認できた条件だけに限定する

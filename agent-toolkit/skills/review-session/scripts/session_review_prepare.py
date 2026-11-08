@@ -1087,7 +1087,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     large_total = sum(item.get("large_output_review_count", 0) for item in resources)
     text += (
         "\n## 大出力の点検上位\n\n"
-        f"記録の返却本文8192バイト以上を、単独の明示本文取得を除き大きい順に最大10件表示する。対象{large_total}件、"
+        f"エージェントが受け取った本文8192バイト以上を、単独の明示本文取得を除き大きい順に最大10件表示する。対象{large_total}件、"
         f"上位外{max(0, large_total - len(large_results))}件。想定内本文取得の除外は"
         f"{sum(item.get('expected_large_read_count', 0) for item in resources)}件。"
         "複合コマンドや解釈できない入力は点検対象へ残す。バイト数は記録された本文だけを数える。\n"
@@ -1095,6 +1095,21 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     for row in large_results:
         text += (
             f"- {row['utf8_bytes']}バイト {row['tool']} 入力={row['location']} 結果={row['result_location']}: "
+            + _clip_utf8(str(row.get("input_summary", "")), 240)
+            + "\n"
+        )
+    persisted = sorted(
+        [row for item in resources for row in item.get("persisted_results", [])],
+        key=lambda row: (-int(row["original_utf8_bytes"]), row["location"]),
+    )[:10]
+    persisted_count = sum(item.get("persisted_result_count", 0) for item in resources)
+    text += (
+        f"\n## 退避された大出力\n\n退避前8192バイト以上の結果は{persisted_count}件。退避前の量が大きい順に最大10件を示す。\n"
+    )
+    for row in persisted:
+        text += (
+            f"- 退避前{row['original_utf8_bytes']}バイト、受領{row['utf8_bytes']}バイト {row['tool']} "
+            f"入力={row['location']} 結果={row['result_location']}: "
             + _clip_utf8(str(row.get("input_summary", "")), 240)
             + "\n"
         )
@@ -1259,7 +1274,7 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
                 f"{json.dumps(item.get('observed_identities', []), ensure_ascii=False)}",
                 f"- 生成入力: {item.get('generated_input_utf8_bytes', 0)}バイト、成分別: "
                 f"{json.dumps(item.get('input_components', {}), ensure_ascii=False)}",
-                "- 入力量は記録されたツール入力、結果量は返却本文を数える。API履歴の再送量・"
+                "- 入力量は記録されたツール入力、結果量はエージェントが受け取った本文を数える。API履歴の再送量・"
                 "未記録の注入資料・実際の読了量・料金はこの集計から推定しない。",
             ]
         )
@@ -1658,11 +1673,13 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
         result = f"{event['record']}:{event['result_line']}" if event.get("result_line") is not None else "未確認"
         body_count = event.get("observed_body_characters")
         result_count = event.get("recorded_result_characters")
+        persisted = f"退避あり、退避前={event.get('original_utf8_bytes', '未確認')}バイト、" if event.get("persisted") else ""
         lines.append(
             f"- {event['category']} {event['tool']}、担当={event['record']}（{event['role']}）、"
             f"時点={event.get('timestamp') or '未確認'}、形式={event['input_form']}、"
             f"直接本文={body_count if body_count is not None else '未確認'}字、"
             f"記録の結果本文={result_count if result_count is not None else '未確認'}字、"
+            f"{persisted}"
             f"対象={json.dumps(event['target'], ensure_ascii=False)}、入力={locator}、結果={result}、"
             f"代表入力={_one_line(str(event.get('summary', '')))}"
         )

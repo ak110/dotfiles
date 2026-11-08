@@ -1047,6 +1047,34 @@ class TestManifestCheck:
 class TestUserFacingTextChecks:
     """ユーザーが直接読む質問・計画本文に文字化けがあるか確かめ、警告で返す。"""
 
+    @pytest.mark.parametrize(
+        ("field", "text", "denied"),
+        [
+            ("label", "24KiB (Recommended)", False),
+            ("label", "pnpm (Recommended)", False),
+            ("label", "v2 (Recommended)", False),
+            ("label", "Use defaults (Recommended)", True),
+            ("label", "(Recommended) pnpm", True),
+            ("question", "pnpm (Recommended)", True),
+            ("header", "pnpm (Recommended)", True),
+            ("description", "pnpm (Recommended)", True),
+            ("plan", "pnpm (Recommended)", True),
+        ],
+    )
+    def test_recommended_suffix_is_excluded_only_from_label(self, field, text, denied):
+        """規範の固定推奨印をlabel末尾だけから除き、英語本文の拒否を維持する。"""
+        result = _run(_user_facing_payload(field, text))
+        assert result.returncode == 0
+        assert not result.stderr
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert (specific.get("permissionDecision") == "deny") is denied
+
+    def test_recommended_label_keeps_mojibake_warning(self):
+        """末尾の推奨印を除いてもlabelの文字化けを通知する。"""
+        result = _run(_user_facing_payload("label", "日本語の�本文 (Recommended)"))
+        assert result.returncode == 0
+        assert "U+FFFD" in _additional_context(result)
+
     @pytest.mark.parametrize("tool_name", ["AskUserQuestion", "ExitPlanMode"])
     def test_user_facing_tools_are_never_blocked(self, tool_name: str) -> None:
         """ユーザーへ提示する本文を入力とする判定は、そのツールの実行を遮断しない。

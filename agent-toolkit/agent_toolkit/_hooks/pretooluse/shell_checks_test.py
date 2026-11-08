@@ -68,6 +68,63 @@ def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
 
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize(
+    ("command", "warned"),
+    [
+        ("docker create --user root --mount type=bind,source=/work,target=/w image", True),
+        ('podman run -u 0 -v "$PWD":/work image', True),
+        ("docker container run -u0:1000 -v./src:/w image", True),
+        ("podman container create --user=0 --volume=~/src:/w:rw image", True),
+        ("docker --context local run --mount=type=bind,src=/work,dst=/w image", True),
+        ("env LANG=C docker run -v /work:/w image", True),
+        ("docker run -itv /work:/w image", True),
+        ("podman create -itv/work:/w image", True),
+        ("docker run -itv=/work:/w image", True),
+        ("docker run --health-start-period 5s -v /work:/w image", True),
+        ("podman run --health-retries 3 -v /work:/w image", True),
+        ("docker run --dns 1.1.1.1 -v /work:/w image", True),
+        ("docker run -ita stdout -v /work:/w image", True),
+        ("docker run -itu app -v /work:/w image", False),
+        ("docker run -ituapp -v /work:/w image", False),
+        ("docker run -itv /work:/w:ro image", False),
+        ("docker run -ite '-v /work:/w' image", False),
+        ("docker run --health-start-period 5s image -itv /work:/w", False),
+        ("docker run -v /work:/w:ro image", False),
+        ("docker run -v /work:/w:readonly image", False),
+        ('docker run --mount "type=bind,src=$PWD,dst=/source,readonly" image', False),
+        ("docker run --mount type=bind,src=/work,dst=/w,ro image", False),
+        ("docker run --user 1000:1000 -v /work:/w image", False),
+        ("docker run --user app -v /work:/w image", False),
+        ("docker run -v cache:/w image", False),
+        ("docker run --mount type=volume,dst=/w image", False),
+        ("docker compose run -u root -v /work:/w image", False),
+        ("printf '%s' 'docker run -u 0 -v /work:/w image'", False),
+        ("rg -F 'docker run -u 0 -v /work:/w' note.md", False),
+        ("docker run image echo --user root -v /work:/w", False),
+        ("docker run -e '-v /work:/w' image", False),
+        ("docker run --label=--user=root image", False),
+        ("docker run --user app -v /work:/w:ro -v /other:/o image", False),
+        ("docker run -v /work:/w:ro -v /other:/o image", True),
+        ("docker run --mount type=bind,src=/work,dst=/w,readonly=false image", True),
+    ],
+)
+def test_container_root_bind_mount_warning(tmp_path, codex, command, warned):
+    """公開hookで起動位置・ユーザー・bind mountの組み合わせを判定し、遮断しない。"""
+    result = _run(
+        {"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})},
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0
+    assert not result.stderr
+    context = _additional_context(result)
+    assert ("`root`所有でホストに残り" in context) is warned
+    assert "permissionDecision" not in result.stdout
+    if warned:
+        assert "readonly" in context
+        assert '--user "$(id -u):$(id -g)"' in context
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
     "predicate",
     [
         "rg x",

@@ -48,23 +48,25 @@ batch自身のセッションも振り返り対象に含める。
    未確認の対象を成功とせず、既存の失敗対応に沿って原因と未完了範囲を報告する。
    実行レビューの採否は、`atk run-script review-adoption -- --since <manifestのstarted_atの7日前>`で直近7日間と前の7日間を集計する。
    不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析候補にし、`review-adoption-rejection`の行の管理表を読んで不採用の理由を判断する。
-   原因を確定した候補は手順3でAWIへ送る。モデル不明の表は件数に含めたまま、帰属できない理由を集計の限界として報告する。
+   原因・対策・既存AWIの被覆を確定した要求から、分析中に手順3の起草へ渡す（`session-analysis.md`「工程5」）。
+   モデル不明の表は件数に含めたまま、帰属できない理由を集計の限界として報告する。
 3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
+   起草は手順2と並行し、全対象の分析と横断整理後に全要求を予告してから`保存開始`を送る（`session-analysis.md`「工程5」）。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
    所要時間目標、計測の起点と終点、超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
-4. batchを実行するメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って今回の結果を事後承認型UWIへ1件保存する。
+4. 終了前の保存漏れを防ぐため、AWIの保存を検収し、対象一覧、登録AWI・見送り・費用確認を対象IDと対応付けて報告本文を確定する。
+5. batchのメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って結果を事後承認型UWIへ1件保存する。
    Claude Codeでは`Skill`で起動し、Codexでは同スキルの`SKILL.md`を絶対パスで取得する。
-   対象一覧、登録AWI・見送り・費用確認を対象IDと対応付ける。
    sourceは `run-skill`、scopeは `agent-toolkit:review-session batch`、本文frontmatterは `run_skill_report: true` とし、manifestの `target_repo` を `--target-repo` へ明示する。
    同一実行の報告があれば同じUWIを更新して1件に保つ。
    再度report-completionを実行する場合もこの報告を再利用する。
-5. AWIと報告の保存を検収し、次の操作で分析の完了を記録する。
+   同スキルの終了処理へ進む前に報告の保存を検収し、次の操作で分析の完了を記録する。
 
    ```sh
    atk run-script session-review-state -- finish
    ```
 
-   分析完了の記録を保存した後、batchセッションを終了する。
+   分析完了の記録を保存してからbatchセッションを終了する。
 
 `finish` は分析完了の記録だけを行う。
 起動元run-skillがbatchセッションの終了後に報告の同期を検収し、今回準備した範囲を処理済みにする。

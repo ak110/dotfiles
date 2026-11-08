@@ -11,6 +11,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `procedure-conflict.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/procedure-conflict.md` |
+| 経験の記録から承認の適用範囲を判断する前 | `agent-basics:writing-standards/references/investigation.md`の「経験の保存と適用」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「経験の保存と適用」` |
 
 ## 承認源と適用範囲
 
@@ -20,6 +21,11 @@
 ユーザーが提案として指定した操作は、その提案内容の範囲内であれば合意済みとみなし、追加の確認なしでそのまま実行する。
 承認の根拠（承認源）となるのは、ユーザーからの明示的な指示、プロジェクト規範、作業手順、および人間が作成したWIである。人間由来のWIから承認が成立する条件は`agent-toolkit:wi-standards`が定める。それ以外の承認源では、指示・規範・手順が明示している範囲を承認範囲とする。また、計画ファイルに記録されたユーザー確認への回答も承認源として扱う。
 一度成立した承認は、承認源の種類を問わず、操作内容・対象・影響範囲・成立条件が合致する範囲へそのまま適用する。特定の範囲に限定して受け取った指示は、その限定条件が有効な間、かつ同一の対象に対する操作にのみ適用する。
+
+過去の会話や作業記録、メモ、自動読み込みされた記憶などに含まれる承認も、元の承認源と成立条件へ戻って今回の操作と比較する。
+記録に限定条件が保存されているかと、今回その条件が成立するかを分けて確かめ、合致する範囲では成立済みの承認を再確認せず利用する。
+低リスク作業で確認を省略した経験や速度優先の手順だけを根拠に、別の対象・操作・影響範囲へ認可を広げない。
+経験全般の適用判断は`agent-basics:writing-standards/references/investigation.md`「経験の保存と適用」に従う。
 
 `SKILL.md`「認可を要する操作」で定めているCI関連の外部サービス設定に関する包括認可には、外部サービスの状態変更、第三者への影響、既存設定の置換や無効化、およびCI用シークレットの作成・変更が含まれる。破壊的操作する際は、安全に対象を特定し、影響範囲と復元方法を実行前に説明する義務を維持したうえで、操作結果をユーザーへ報告する。一方、CIと関係のない独立した副作用や、目的・要件の変更、実行環境による権限拒否については、従来どおり個別の確認基準を適用する。
 

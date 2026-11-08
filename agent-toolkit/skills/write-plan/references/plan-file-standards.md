@@ -58,6 +58,7 @@
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md#「原因分析の記録先」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/analysis-records.md#「原因分析の記録先」` |
 | 本文で基準を使う資料を選択・取得する時 | `../../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
+| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation.md`の「経験の保存と適用」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「経験の保存と適用」` |
 
 ## 計画ファイルの構成
 
@@ -205,6 +206,8 @@ WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認
 `## 恒久化・リファクタリング`の直下には`### 恒久化`と`### リファクタリング`だけをこの順に置く。どちらにも後続の担当が実装や検収で使う結論を書き、検討の経緯や詳細は証拠資料に残す。
 
 恒久化は、将来の方針、選定基準、却下理由、制約、前提などを、判断時に読む場所へ保存する作業である。関連WI本文・ユーザーコメント、確認回答、変更履歴に渡された発話から候補を抽出し、表現の範囲・確度を保って一時指示と一般方針を分ける。局所実装の重複計上を避け、一般方針の保存は別に判定する。計画内の記録だけでは恒久化を満たさない。
+
+実作業の結果から再利用価値のある成功手順や教訓も候補にし、採否は次に利用する場面と原記録から判断する。
 
 - `### 恒久化`には`知見`、`出所`、`反映先`、`根拠`の4列の表を置き、知見1件を1行で書く。反映する知見がなければ表を置かず、対象がない旨を1文で書く
 - `出所`に由来、`反映先`にファイルと節、`根拠`に反映・配置の理由を書く。既存規範で充足する候補は該当箇所、計画内に保つ候補は`計画限り`と理由を書く。一時指示など候補から外す理由は既存の証拠記録に残す

@@ -30,6 +30,8 @@
 | 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
 | 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` | |
 | 工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
+| batchの保存開始を送る前 | `batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` | |
+| 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation.md`の「経験の保存と適用」、`agent-basics:writing-standards/references/agent-documents-basics.md`の「置き場所と配送」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「経験の保存と適用」`、`section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「置き場所と配送」` | |
 
 ## 分析と投入
 
@@ -74,6 +76,8 @@ prepareの`effect_candidates_path`を取得し、採用済みAWIごとの変更�
    未完了AWIによる被覆、起票、実装配布、今回条件での解消を区別し、残る原因条件、処置担当、適用機会と観測結果を工程5へ渡す。
    適用機会が無い処置は効果未確認とする。
 3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。その見送り理由が、`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`analysis.md`の基準に照らして確認する。
+   再利用価値のある成功手順、誤記の訂正、重複整理と参照の補修も既存の原記録と比較して選ぶ。
+   知見の保存・適用は読込表の共通基準を使い、恒久変更が必要なものを工程5へ渡す。
 
 ### 工程5
 
@@ -81,8 +85,12 @@ prepareの`effect_candidates_path`を取得し、採用済みAWIごとの変更�
 既存未完了AWIで覆う場合も、残る原因条件、処置担当、適用機会と観測結果を同じ報告行に残す。
 見送りの根拠は工程2〜4の成果と費用の比較から記し、正常終了・規範どおり・回復済みという分類だけで代替しない。
 
-確定した原因と対策を要求事項として整理し、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」に定める単位でWI投入担当エージェントへ渡す。
-登録対象となるAWIが1件以上ある場合は、WI投入担当を起動する前にユーザーへ`## 振り返り結果の予告`（登録予定のAWIを`AWI登録予定`行として記載）を通知し、同じターンでWI投入担当を起動する。
+確定した原因・対策と既存AWIによる被覆を要求として整理し、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」の単位でWI投入担当へ渡す。
+通常の振り返りでは、登録対象が1件以上あれば、起動前にユーザーへ`## 振り返り結果の予告`（全登録予定を`AWI登録予定`行で記載）を通知し、同じターンで担当を起動する。
+batchでは、対象ごとの工程4で要求が確定した時点で起草へ渡し、メインは残りの対象の工程2〜4を続ける。
+新規起動・追加送信は同じ起動契約で選び、後の対象で同じ根本原因を見つけた場合は保存前の要求へ要件更新として送る。
+原稿は返却時に検収してよいが、`保存開始`は全対象の工程4と`batch.md`のセッション横断整理を終えてから送る。
+その直前に、確定した全要求を上記の予告として通知する。
 予告のフォーマットは、`agent-toolkit:report-completion`の`references/report-formats.md`「振り返り結果報告のフォーマット」に従う。
 メッセージの送達は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に規定された手段（Claude Code環境では`mcp__agent-toolkit__send_to_user`）を用いて行う。
 要求の`source`には`session-review`を指定する。

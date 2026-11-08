@@ -268,13 +268,15 @@ WIの由来、承認、状態、取得と投入は`agent-toolkit:wi-standards`�
 報告対象の選別と事前記録は、`agent-basics:writing-standards/references/quality-principles.md`「報告の選別と判断記録」に従う。
 <!-- quality-principles:facts:end -->
 
-調査、検証、成功判定、配布と反映の流れは`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
+経験の保存・利用は認可・公開契約を保ち`agent-basics:writing-standards/references/investigation.md`に従う。
+
+調査・検証・成功判定・配布・反映は`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
 
 ## 協調と自律
 
-`agent-toolkit:process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。確認の要否、手段、UWI、回答後の遷移は`agent-toolkit:user-confirmation-and-report`が定め、確認の前に「QCDと3段判定」を適用する。
+`agent-toolkit:process-wi`の起動中と、`atk run-skill`が起動したセッション（最初の入力の`atk-auto`要素の`source`が`run-skill`）を自律モード、それ以外を協調モードとする。確認要否・手段・UWI・回答後の遷移は`agent-toolkit:user-confirmation-and-report`に従い、確認前に「QCDと3段判定」を適用する。
 
-ユーザーが確定した継続的な方針・要件は、次に判断するエージェントが読む成果物へ、読み手、適用範囲、優先する判断、一般則との順位とともに保存する。保存先を同じセッションで変えられない場合は、内容をまとめたAWIへ渡す。
+ユーザーが確定した継続的な方針・要件は、次の判断で読む成果物へ、読み手・適用範囲・優先する判断・一般則との順位とともに保存する。同じセッションで保存先を変更できなければ、AWIへまとめる。
 
 ユーザーが確定した判断のうち、目的・要件・ユーザーが観測する結果に関する判断を変えるには、新しいユーザーの判断が必要である。手段に関する方針は規範と同じく「QCDと3段判定」に従う。見分け方は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「認可を要する操作」にある。実装や公開仕様と衝突しても、目的と結果を保てる技術的な解決は自分で確定し、目的側の変更と不足する認可だけを確認する。
 

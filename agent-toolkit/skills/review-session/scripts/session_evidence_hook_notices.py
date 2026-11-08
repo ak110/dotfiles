@@ -20,6 +20,7 @@ from session_evidence_extract import (
 )
 
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common import persisted_output_reference
 
 _HOOK_XML_END_MARKER = re.compile(rf"</(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})>")
 
@@ -77,7 +78,10 @@ def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
         }
         for key, count in sorted(counts.items(), key=lambda item: (-item[1], tuple(str(part) for part in item[0])))
     ]
-    events.append({"kind": "summary", "count": sum(counts.values())})
+    unexpanded = sum(count for key, count in counts.items() if key.kind_text.startswith("通知詳細未展開: "))
+    events.append(
+        {"kind": "summary", "count": sum(counts.values()), **({"unexpanded_count": unexpanded} if unexpanded else {})}
+    )
     return events
 
 
@@ -243,6 +247,21 @@ def _collect_hook_records(value: Any, found: list[dict[str, Any]]) -> None:
 
 
 def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
+    """通知の保存案内を実体へ展開し、取得できない案内は未展開と明示する。"""
+    bodies = []
+    for body in _raw_hook_notice_bodies(hook_record):
+        path = persisted_output_reference.reference_path(body)
+        if path is None:
+            bodies.append(body)
+            continue
+        try:
+            bodies.append(path.read_text(encoding="utf-8"))
+        except OSError, UnicodeError:
+            bodies.append(f"通知詳細未展開: {path}")
+    return bodies
+
+
+def _raw_hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
     """hook実行の記録から通知本文を、記録の種別に応じた格納先から取り出す。
 
     実行成功記録は標準出力の追加コンテキストと標準エラー出力の双方を通知の格納先とする。

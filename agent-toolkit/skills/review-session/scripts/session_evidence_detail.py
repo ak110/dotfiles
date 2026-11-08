@@ -27,11 +27,9 @@ from session_evidence_extract import (
 )
 
 from agent_toolkit._common import transcript as _transcript
+from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PREFIX
 
 _MAX_DETAIL_LENGTH = 8000
-
-
-_PERSISTED_OUTPUT_PREFIX = "<persisted-output>"
 
 
 def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[str, Any]]:
@@ -257,7 +255,7 @@ def _tool_result_body(block: dict[str, Any], entry: dict[str, Any]) -> str:
     同エントリのツール実行結果が持つ標準出力・標準エラー（保存先が実在すればその内容）を本文とする。
     """
     body = "\n".join(_text_blocks(block.get("content")))
-    if body.strip() and not body.lstrip().startswith(_PERSISTED_OUTPUT_PREFIX):
+    if body.strip() and not body.lstrip().startswith(PERSISTED_OUTPUT_PREFIX):
         return body
     result = _persisted_result(entry.get("toolUseResult"))
     if isinstance(result, str):

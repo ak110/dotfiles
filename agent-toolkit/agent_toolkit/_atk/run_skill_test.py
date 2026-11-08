@@ -125,10 +125,9 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
             subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
             subprocess.run(["git", "-C", str(notes), "commit", "-qm", "other report"], check=True)
 if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_BATCH"):
+    from agent_toolkit._common import session_review
     manifest_path = pathlib.Path(os.environ["AGENT_TOOLKIT_SESSION_REVIEW_BATCH"])
-    manifest = json.loads(manifest_path.read_text())
-    manifest["analysis_succeeded"] = True
-    manifest_path.write_text(json.dumps(manifest))
+    session_review.BatchWriter(manifest_path).analyze()
 if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
     counter = record_dir / "session-count"
     count = int(counter.read_text()) if counter.exists() else 0
@@ -381,7 +380,15 @@ def test_tty_progress_arrives_before_child_exits(
 
 @pytest.mark.parametrize(
     ("mode", "expected"),
-    [("normal", 0), ("failed", 7), ("timeout", 124), ("first-reader", None), ("second-reader", None), ("interrupt", None)],
+    [
+        ("normal", 0),
+        ("failed", 7),
+        ("timeout", 124),
+        ("first-reader", None),
+        ("second-reader", None),
+        ("interrupt", None),
+        ("attach", None),
+    ],
 )
 def test_session_readers_close_both_pipes(
     engine_env: _Env,
@@ -425,6 +432,12 @@ def test_session_readers_close_both_pipes(
             original_start(reader, *args, **kwargs)
 
         monkeypatch.setattr(threading.Thread, "start", start)
+    elif mode == "attach":
+
+        def attach(*_args: typing.Any, **_kwargs: typing.Any) -> None:
+            raise RuntimeError("executor attach failed")
+
+        monkeypatch.setattr(run_skill._run_state.RecordWriter, "attach", attach)  # noqa: SLF001  # pylint: disable=protected-access
     elif mode == "interrupt":
         original_wait = real_popen.wait
         interrupted = False

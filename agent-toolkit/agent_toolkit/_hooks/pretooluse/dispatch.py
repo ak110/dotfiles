@@ -127,6 +127,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _git_commit_attribution_error,
     _git_commit_message_format_error,
     _git_commit_messages,
+    _warn_container_root_bind_mount,
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
@@ -338,6 +339,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         _check_bash_atk_output_loss,
         _check_read_predicate_stderr_discard,
         _warn_git_rev_parse_short_multiple,
+        _warn_container_root_bind_mount,
     ):
         if message := check(command):
             warnings.append(message)
@@ -513,6 +515,10 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
     repeated = _language_retry(_payload, tool_name, tool_input, remember=recoverable)
     for name, text in fields:
+        # rules-main.claude-code.md「ユーザー確認（AskUserQuestion）」がlabel末尾へ求める固定表記。
+        # 本文・説明の英語判定と文字化け判定には、この除外を適用しない。
+        if tool_name == "AskUserQuestion" and name.endswith(".label"):
+            text = text.removesuffix("(Recommended)").rstrip()
         outcome, body = _response_language_check.check_text(text)
         if outcome is _response_language_check.CheckOutcome.WARN:
             if recoverable and repeated:
