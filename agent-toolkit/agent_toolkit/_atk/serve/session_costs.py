@@ -264,8 +264,9 @@ class FamilyCostWarmer:
                     logger.warning(
                         "推定費用を背景で算出する別プロセスを起動できないため、背景の算出を止めます: %s。"
                         "画面で開いた記録の推定費用は要求の中で算出し、次にセッション一覧を走査し直した時に起動し直します。"
-                        "繰り返す場合は、プロセス数とファイル記述子の上限（`ulimit -u`・`ulimit -n`）を確認してください",
+                        "繰り返す場合は、%s",
                         error,
+                        _WORKER_START_CHECK,
                     )
                     return None
             process = self._process
@@ -296,6 +297,14 @@ class FamilyCostWarmer:
                 process.returncode,
             )
         return None
+
+
+_WORKER_START_CHECK = (
+    "タスクマネージャーの「詳細」タブでserveのユーザーのプロセス数・ハンドル数と空きメモリーを確認してください"
+    if sys.platform == "win32"
+    else "プロセス数とファイル記述子の上限（`ulimit -u`・`ulimit -n`）と現在の使用数を確認してください"
+)
+"""背景の算出の別プロセスを起動できない場合に確かめる対象。原因になりやすい資源の確認手段はOSごとに異なる。"""
 
 
 def _start_worker() -> subprocess.Popen[str]:
