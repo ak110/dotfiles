@@ -208,8 +208,8 @@ def _warn_container_root_bind_mount(command: str) -> str | None:
                     and not (len(parts) >= 3 and {"ro", "readonly"}.intersection(parts[-1].split(",")))
                 )
             else:
-                fields = dict(part.partition("=")[::2] for part in value.split(","))
-                readonly = any(key in fields and fields[key] not in {"false", "0"} for key in {"readonly", "ro"})
+                fields = {key: item for key, _, item in (part.partition("=") for part in value.split(","))}
+                readonly = any(key in fields and fields[key] not in {"false", "0"} for key in ("readonly", "ro"))
                 writable |= fields.get("type") == "bind" and not readonly
         if not writable or user is not None and user.split(":", 1)[0] not in {"root", "0"}:
             continue

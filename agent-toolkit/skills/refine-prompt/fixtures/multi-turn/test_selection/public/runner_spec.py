@@ -1,6 +1,6 @@
 """プラグインの別プロセス実行を確かめる。"""
 
-import runner  # ty: ignore[unresolved-import]  # 模擬リポジトリは同じディレクトリのモジュールを実行時のsys.pathで解決する
+import runner  # ty: ignore[import-not-found]  # 模擬リポジトリは同じディレクトリのモジュールを実行時のsys.pathで解決する
 
 
 def test_runner_invokes_plugin() -> None:

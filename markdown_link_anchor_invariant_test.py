@@ -64,10 +64,14 @@ def _lines_outside_fences(content: str) -> list[tuple[int, str]]:
                 open_fence = match.group("fence")
                 continue
             lines.append((number, line))
-        elif match and match.group("fence")[0] == open_fence[0] and len(match.group("fence")) >= len(open_fence):
+        elif (
+            match
+            and match.group("fence")[0] == open_fence[0]
+            and len(match.group("fence")) >= len(open_fence)
+            and not line.strip().strip(open_fence[0])
+        ):
             # 閉じるフェンスは開いたフェンスと同じ記号で同じ長さ以上を持ち、情報文字列を持たない
-            if not line.strip().strip(open_fence[0]):
-                open_fence = None
+            open_fence = None
     return lines
 
 
