@@ -453,10 +453,14 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
     子の起動時刻が親より前の場合と、親PIDを別のプロセスが再利用している場合のその新しいプロセスの子は含めない。
     """
     entries: list[tuple[psutil.Process, int]] = []
-    for process in psutil.process_iter(["ppid"]):
-        ppid = process.info.get("ppid")
-        if isinstance(ppid, int):
-            entries.append((process, ppid))
+    # process_iterはPID単位でProcessを再利用し、Windowsの親PIDと起動時刻もキャッシュする。
+    # PID再利用前の親子関係を所有の根拠にしないよう、今回の一覧から新しい観測を作る。
+    for pid in psutil.pids():
+        try:
+            process = psutil.Process(pid)
+            entries.append((process, process.ppid()))
+        except psutil.NoSuchProcess, psutil.AccessDenied:
+            continue
     holders = {process.pid: process for process, _ in entries}
 
     def retain_parent(process: psutil.Process, stage: str) -> bool:

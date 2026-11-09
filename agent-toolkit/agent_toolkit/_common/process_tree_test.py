@@ -40,7 +40,7 @@ def test_stop_tree_keeps_unretained_generation_unresolved(monkeypatch, has_desce
     pins = mock.Mock()
     pins.retain.side_effect = lambda process: process is root
     entries = [leaf, descendant] if has_descendant else [leaf]
-    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter(entries))
+    _mock_process_snapshot(monkeypatch, entries)
     monkeypatch.setattr(sys, "platform", "win32")
     result = process_tree.stop_tree(root, pins=pins, timeout=0)
     assert {process.pid for process in result.targets} == {root.pid, leaf.pid}
@@ -87,7 +87,7 @@ def test_stop_tree_retains_leaf_before_it_spawns_and_exits(monkeypatch):
         return found
 
     monkeypatch.setattr(process_tree, "_scan_descendants", scan)
-    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter(entries))
+    _mock_process_snapshot(monkeypatch, entries)
     monkeypatch.setattr(sys, "platform", "win32")
     result = process_tree.stop_tree(root, pins=pins, timeout=0)
     assert before_spawn == [root.pid, spawner.pid]
@@ -108,7 +108,7 @@ def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypat
     foreign.status.return_value = psutil.STATUS_RUNNING
     foreign.is_running.return_value = True
     foreign.cmdline.return_value = ["unrelated"]
-    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([foreign]))
+    _mock_process_snapshot(monkeypatch, [foreign])
     result = process_tree.stop_tree(parent, timeout=0)
     assert {process.pid for process in result.targets} == {parent.pid}
     foreign.suspend.assert_not_called()
@@ -168,7 +168,7 @@ def test_windows_retention_diagnostic_keeps_snapshot_children(monkeypatch, caplo
     unrelated = mock.Mock(pid=900003, info={"ppid": 0})
     pins = mock.Mock()
     pins.retain.return_value = False
-    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([child, unrelated]))
+    _mock_process_snapshot(monkeypatch, [child, unrelated])
     monkeypatch.setattr(process_tree, "identity", lambda pid, **_kwargs: {"pid": pid, "status": "observed"})
     monkeypatch.setattr(sys, "platform", "win32")
     result = process_tree.stop_tree(parent, pins=pins, timeout=0)
@@ -184,6 +184,19 @@ def test_windows_retention_diagnostic_keeps_snapshot_children(monkeypatch, caplo
         process.suspend.assert_not_called()
         process.terminate.assert_not_called()
         process.kill.assert_not_called()
+
+
+def _mock_process_snapshot(monkeypatch, entries):
+    def pids(**_kwargs):
+        return [process.pid for process in entries]
+
+    def process(pid, **_kwargs):
+        result = next(item for item in entries if item.pid == pid)
+        result.ppid.return_value = result.info["ppid"]
+        return result
+
+    monkeypatch.setattr(psutil, "pids", pids)
+    monkeypatch.setattr(psutil, "Process", process)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="終了済み親のWindows kernel handleを検証する")
@@ -213,6 +226,27 @@ def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp
             assert process_tree.stop_process_tree(owned) == []
         late_descendant.assert_released(tmp_path)
         assert unrelated.poll() is None
+
+
+def test_stop_tree_reclaims_child_despite_cached_pid_generation(tmp_path, monkeypatch):
+    """PID再利用前の列挙キャッシュがあっても、現在の子を回収する。"""
+    with _reporting_root(tmp_path) as root:
+        descendants = root.children(recursive=True)
+        # psutil 7.2のprocess_iterはPIDごとにProcessを再利用し、Windowsではppidもキャッシュする。
+        # PIDの自然な再利用を待たず、旧世代のキャッシュだけを持ち込む。
+        for child in descendants:
+            stale = psutil.Process(child.pid)
+            monkeypatch.setattr(stale, "_create_time", 0.0)
+            monkeypatch.setattr(stale, "_ident", (child.pid, 0.0))
+            monkeypatch.setattr(stale, "_ppid", 99999999)
+            monkeypatch.setitem(vars(psutil)["_pmap"], child.pid, stale)
+        try:
+            result = process_tree.stop_tree(root, timeout=1.0)
+            assert {child.pid for child in descendants} <= {target.pid for target in result.targets}
+            assert not result.residual and not result.unresolved
+            assert not _still_holding_resources(descendants)
+        finally:
+            process_tree.stop_tree(None, known=descendants, timeout=1.0)
 
 
 def test_process_scope_reaps_child_after_stop_failure(monkeypatch):

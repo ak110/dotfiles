@@ -38,8 +38,9 @@ def test_collected_windows_parent_is_pinned_before_it_exits(monkeypatch):
         process.cmdline.return_value = ["owned"]
     monitor._process = root  # pylint: disable=protected-access
     monkeypatch.setattr(root, "children", mock.Mock(return_value=[parent]))
-    monkeypatch.setattr(psutil, "Process", mock.Mock(return_value=root))
-    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([child]))
+    child.ppid.return_value = parent.pid
+    monkeypatch.setattr(psutil, "Process", lambda pid, **_kwargs: child if pid == child.pid else root)
+    monkeypatch.setattr(psutil, "pids", lambda: [child.pid])
     monkeypatch.setattr(process_tree, "sys", types.SimpleNamespace(platform="win32"))
     monkeypatch.setattr(lifetime, "sys", types.SimpleNamespace(platform="win32"))
     kernel = mock.Mock()
