@@ -859,10 +859,7 @@ def record_decision(document: dict[str, Any]) -> str:
                     )
                 active = agents_server_observations.actively_waited_session_ids([target])
                 if child.get("pending_observation") is not True and target not in active:
-                    raise _InactiveWaitError(
-                        f"対象sessionの有効なCLI待機がありません: {target}。"
-                        "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ"
-                    )
+                    raise _InactiveWaitError(f"対象sessionの有効なCLI待機がありません: {target}")
                 evidence["target_session_id"] = target
             else:
                 evidence["uwi_file"] = str(_waiting_uwi(document, session_id))

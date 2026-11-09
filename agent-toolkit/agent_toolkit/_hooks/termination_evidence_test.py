@@ -1241,6 +1241,21 @@ def test_explicit_child_wait_rejection_is_not_uwi_guidance(tmp_path: pathlib.Pat
             }
         )
     assert "child-x" in str(error.value) and "UWI" not in str(error.value)
+    if kind == "finished":
+        status, output = public_decision(
+            tmp_path,
+            {
+                "session_id": "evidence-test",
+                "action": "wait",
+                "work_id": "work-1",
+                "target_session_id": "child-x",
+                "reason": "対象の結果を待つ",
+            },
+        )
+        assert status == 2
+        assert "child-x" in output
+        assert output.count("atk agents wait") == 1
+        assert "次の操作:" in output
 
 
 @pytest.mark.parametrize(
