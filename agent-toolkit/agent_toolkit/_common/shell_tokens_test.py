@@ -12,7 +12,7 @@ from agent_toolkit._common.shell_tokens import strip_redirections
 @pytest.mark.parametrize("windows", [False, True])
 def test_atk_launcher_names_are_one_definition(windows: bool) -> None:
     instructions = plugin_environment.cli_instructions(pathlib.Path("/plugin root"), windows=windows)
-    launcher = instructions.splitlines()[1].removeprefix("起動部分: ")
+    (launcher,) = [line.removeprefix("起動部分: ") for line in instructions.splitlines() if line.startswith("起動部分: ")]
     for suffix, predicate in (
         ("agents wait", shell_tokens.is_agents_wait_command),
         ("agents-exit-session", shell_tokens.is_agents_exit_session_command),
