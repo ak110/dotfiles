@@ -868,7 +868,14 @@ stop = pathlib.Path(sys.argv[1])
 waiter, log_directory = sys.argv[2], pathlib.Path(sys.argv[3])
 index = 0
 while not stop.exists():
-    subprocess.run([sys.executable, waiter, str(log_directory / f"{os.getpid()}-{index}.json")], check=True, timeout=60)
+    prefix = os.environ["SLOT_FLOOD_INDEX"]
+    output = log_directory / f"{prefix}-{index}.json"
+    subprocess.run(
+        [sys.executable, waiter, str(output)],
+        env={**os.environ, "SLOT_QUEUED": str(output.with_suffix(".queued"))},
+        check=True,
+        timeout=60,
+    )
     index += 1
 """
 
@@ -897,7 +904,21 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
     windows = tmp_path / "windows"
     windows.mkdir()
     stop = tmp_path / "stop"
-    (tmp_path / "probe_test.py").write_text(_SLOT_PROBE, encoding="utf-8")
+    # 各世代の完了後も次の登録を待ち、待機者の起動中に残りの試験が完了する競合を除く。
+    probe_source = _SLOT_PROBE.replace(
+        "    started = time.time()",
+        """    if long_queued and pathlib.Path(long_queued).exists():
+        windows = pathlib.Path(os.environ["SLOT_WINDOWS"])
+        for prefix in range(2):
+            completed = len(list(windows.glob(f"{prefix}-*.json")))
+            queued = windows / f"{prefix}-{completed}.queued"
+            while not queued.exists():
+                assert time.monotonic() < deadline, f"次の長い待機者が登録されない: {queued}"
+                time.sleep(0.02)
+    started = time.time()""",
+        1,
+    )
+    (tmp_path / "probe_test.py").write_text(probe_source, encoding="utf-8")
     # 予算は譲渡が完了してから判定する。模擬待機者の追越し窓だけを無効にし、上流の新規要求優先と予算を分ける。
     # 通常設定の呼び出し経路は、上の協調5経路で別に確認する。
     waiter_source = _SLOT_WAITER.replace(
@@ -946,15 +967,15 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
         )
         assert short.returncode == 0
         long_environment = environment
-        queued_markers = [tmp_path / f"long-queued-{index}" for index in range(2)]
+        queued_markers = [windows / f"{index}-0.queued" for index in range(2)]
         floods = [
             stack.enter_context(
                 subprocess.Popen(
                     [sys.executable, str(tmp_path / "flood.py"), str(stop), str(tmp_path / "waiter.py"), str(windows)],
-                    env={**long_environment, "SLOT_QUEUED": str(queued)},
+                    env={**long_environment, "SLOT_FLOOD_INDEX": str(index)},
                 )
             )
-            for queued in queued_markers
+            for index in range(2)
         ]
         try:
             # 再取得1回で待つ初回の2件を固定し、待機者の起動速度で予算の件数比較を変えない。
