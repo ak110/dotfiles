@@ -9,22 +9,22 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/finish-session.md#「公開工程の続行不能の回復と再開」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/finish-session.md#「公開工程の続行不能の回復と再開」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開先に対応するCI定義の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/push-and-ci.md#「公開状態の4項目」` | 判断 | `section:agent-toolkit:*/skills/commit/references/push-and-ci.md#「公開状態の4項目」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/finish-session-recovery.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 公開工程を直接実行する前 | `session-termination.subagent.md`の「入力」から「延期adoptの終了」まで | 判断 | `section:agent-toolkit:*/share/session-termination.subagent.md#「入力」から「延期adoptの終了」まで` |
+| 公開工程を直接実行する前 | `agent-toolkit:/share/session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
 | 直接実行中に全体検証またはCIが失敗したとき | `../skills/process-wi/references/termination-ci-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md` |
 
 ## 起動前の前提
 
-**1.** 書込の競合を防ぐため、全レーンの終了を確認し、対象リポジトリの主作業ツリーへ書き込む主体が自身のみであることを確定する。`cwd`を主作業ツリー、ブランチを公開対象のベースブランチに合わせ、「渡す入力」へ進む。
+**1.** 書込の競合を防ぐため、全レーンの終了を確認し、対象リポジトリの主作業ツリーへ書き込む主体が自身のみであることを確定する。
+`cwd`を主作業ツリー、ブランチを公開対象のベースブランチに合わせ、「渡す入力」へ進む。
 
 ## 渡す入力
 
@@ -32,13 +32,19 @@
 
 **2.** 既決の公開判断を継承するため、必須入力と該当する任意入力を確定する。
 
-- `bump種別`: 未公開差分全体で確定した最上位種別と選定根拠の要約（AWI起草時より上位の変更があれば上位区分）。記録がなければ`bump不要`とし、計画パスは渡さない。
-- `プロジェクト固有の公開後の操作`: ある場合に、対象と依存順を指定する。公開担当が完了を待つ長時間工程と、親が別担当へ委ね並行開始する工程を区別する。後者は情報共有とし、公開担当の実行対象から除く。
-- `延期adopt`: ある場合に、対象のAWIファイル名、先行する公開工程、`adoptを延期したAWIとcommit`で検収した実装commitのOID（実装差分がない項目は空文字列）を指定する。反映後の新しいプロセスでしか観測できない条件が含まれる場合は、残る完成条件とその観測手段も記載する。
-- `公開対象のadopt済みAWI`: 今回の公開に含まれるcommitによって終了したAWIファイル名の集合。ある場合に渡し、WIの状態変更処理の入力からは除外する。
-- `引き継ぎ記録先`: 省略時や継続時の扱いは、`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。
+- `bump種別`: 未公開差分全体で確定した最上位種別と選定根拠の要約（AWI起草時より上位の変更があれば上位区分）。
+  記録がなければ`bump不要`とし、計画パスは渡さない。
+- `プロジェクト固有の公開後の操作`: ある場合に、対象と依存順を指定する。
+  公開担当が完了を待つ長時間工程と、親が別担当へ委ね並行開始する工程を区別する。
+  後者は情報共有とし、公開担当の実行対象から除く。
+- `延期adopt`: ある場合に、対象のAWIファイル名、先行する公開工程、`adoptを延期したAWIとcommit`で検収した実装commitのOID（実装差分がない項目は空文字列）を指定する。
+  反映後の新しいプロセスでしか観測できない条件が含まれる場合は、残る完成条件とその観測手段も記載する。
+- `公開対象のadopt済みAWI`: 今回の公開に含まれるcommitによって終了したAWIファイル名の集合。
+  ある場合に渡し、WIの状態変更処理の入力からは除外する。
+- `引き継ぎ記録先`: 省略時や継続時の扱いは、`../skills/delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
 
-任意の3入力の省略値は`なし`とし、該当行を省略する。確定後は「直接実行」へ進む。
+任意の3入力の省略値は`なし`とし、該当行を省略する。
+確定後は「直接実行」へ進む。
 
 ## 直接実行
 
@@ -50,7 +56,8 @@
 **4.** 直接実行では`session-termination.subagent.md`「入力」〜「延期adoptの終了」の手順・読込条件を自身へ適用する。
 
 同本文の公開担当は自身、委譲元への返却は自身の既存の進捗記録への保存として扱い、「出力」の公開結果項目を残して本書「受領と検収」の手順6へ進む。
-役割の起動、返却待ち、自身へのメッセージ送信は不要である。実行する操作は現在の依頼・認可の範囲に限る。
+役割の起動、返却待ち、自身へのメッセージ送信は不要である。
+実行する操作は現在の依頼・認可の範囲に限る。
 全体検証またはCIの失敗は`../skills/process-wi/references/termination-ci-failure.md`へ進み、CI修正担当の起動中は自身の書込を止める。
 実行レビュー、公開後操作、延期adopt、未完了工程の保存と再開、および公開状態の検収を維持する。
 
@@ -65,9 +72,10 @@
 | `extra_params` | `## 渡す入力`の名前付き入力 |
 
 同一セッションで前回の公開後に新commitを統合した場合は、追加差分の項目を入力に再起動する。
-新commitがなく、CI未判定か公開後操作が未完了なら、`agent-toolkit:process-wi`の`references/finish-session.md`「公開工程の続行不能の回復と再開」に従って対応する。
+新commitがなく、CI未判定か公開後操作が未完了なら、`../skills/process-wi/references/finish-session-recovery.md`「公開工程の続行不能の回復と再開」に従って対応する。
 公開担当sessionがあれば回答を渡し、なければ同じ公開先・commitの未完了工程を入力に新規起動する。
-再開時は`bump種別`を`bump不要`に設定し、既存の`引き継ぎ記録先`を渡す。記録から対象commit、確認済み工程、CI結果、未完了の公開後操作、再開位置を引き継ぎ、成功済みの版数更新やpushを繰り返さない。
+再開時は`bump種別`を`bump不要`に設定し、既存の`引き継ぎ記録先`を渡す。
+記録から対象commit、確認済み工程、CI結果、未完了の公開後操作、再開位置を引き継ぎ、成功済みの版数更新やpushを繰り返さない。
 CI検収と公開後操作が完了し、新commitがなければ再起動せず、手順6へ進む。
 
 <!-- return-contract:session-termination:start -->
@@ -90,7 +98,8 @@ CIの結果: <CI成功|CI定義なし|CI実行対象外。後二者は共通判�
 
 続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 `CI実行対象外`では`実行した公開工程`に終了8の出力、project・commit・ref・errorsの保存先とローカル全体検証の成功を記す。
-CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や公開後操作の前提不足に起因する場合は、`agent-toolkit:commit`の`references/push-and-ci.md`「公開工程の続行不能の受渡し」に従う。対象、失敗した操作とその対象、診断結果、確認済みの工程、成功済みの公開後操作、残りの工程、再開位置を記載する。
+CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や公開後操作の前提不足に起因する場合は、`agent-toolkit:commit`の`references/push-and-ci.md`「公開工程の続行不能の受渡し」に従う。
+対象、失敗した操作とその対象、診断結果、確認済みの工程、成功済みの公開後操作、残りの工程、再開位置を記載する。
 1行に収まらない証拠資料は引き継ぎ記録へ保存し、その絶対パスを同じ行内に明記する。
 <!-- return-contract:session-termination:end -->
 
@@ -100,28 +109,43 @@ CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）や
 
 CI照会不能（CI定義判定、baseline作成、CI監視の前提不足）または確認済みpush後の公開後操作の前提不足による返却では、対象のforge・repository・commit、失敗した操作とその対象、診断結果、確認済みの工程、成功済みの公開後操作、残りの工程、引き継ぎ記録を受け取る。
 確認済みのpush結果および公開状態の4項目を、現在の対象refとGit状態に基づいて検収し、CI未判定の状態は別途保持する。
-正常完了形式へ差し戻さず、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/finish-session.md`「公開工程の続行不能の回復と再開」へ処理を引き渡す。
+正常完了形式へ差し戻さず、`../skills/process-wi/references/finish-session-recovery.md`「公開工程の続行不能の回復と再開」へ処理を引き渡す。
 対象や記録が不足すれば、不足分だけを同一担当へ求める。
 push前の工程（バージョン更新、生成物同期、push前チェック、push）で失敗した場合は、失敗した工程の既存手順に沿って回復を図り、確認済みの工程は保持する。
 
-**7.** 返却された`公開完了`に続く8行を現在のGit状態と比べ、次を確認する（成果物・実装差分の再読は不要）。一致しない項目がある場合は、同一の公開担当へ差し戻す。
+**7.** 返却された`公開完了`に続く8行を現在のGit状態と比べ、次を確認する（成果物・実装差分の再読は不要）。
+一致しない項目がある場合は、同一の公開担当へ差し戻す。
 
 - ベースブランチとそのリモート追跡refを1件ずつ`git -C <対象リポジトリ> rev-parse --verify --short=7 '<対象ref>^{commit}'`へ渡して取得した値が、いずれも`ベースbranchのHEAD`と一致すること。
-- `全体検証`が`CI判定`または`ローカル成功`であること。`ローカル成功`の場合は、`実行した公開工程`に全体検証の実行コマンド、終了コード、警告の有無が記載されていること。`CI判定`の場合は、push前に実行したチェックコマンド、終了コード0、警告の扱い、およびその実行集合を導出した根拠が記載されていること。除外したチェックがある場合は、除外理由と実行済み結果の所在が示されていること。
-- `CIの結果`が次のいずれかであること。該当しない場合は差し戻す。
+- `全体検証`が`CI判定`または`ローカル成功`であること。
+  `ローカル成功`の場合は、`実行した公開工程`に全体検証の実行コマンド、終了コード、警告の有無が記載されていること。
+  `CI判定`の場合は、push前に実行したチェックコマンド、終了コード0、警告の扱い、およびその実行集合を導出した根拠が記載されていること。
+  除外したチェックがある場合は、除外理由と実行済み結果の所在が示されていること。
+- `CIの結果`が次のいずれかであること。
+  該当しない場合は差し戻す。
   - `CI成功`: 対象リポジトリのCI照会手段によって、`CIで検証したcommit`について成功の結論が得られること。
-  - `CI実行対象外`: 全体検証がローカル成功であり、終了8の出力にあるproject・commit・ref・errorsから、同一公開先とベースbranchのHEADでの非生成を検収できること。実行した公開工程に証拠の保存先が記されていること。
-  - `CI定義なし`: `全体検証`が`ローカル成功`であり、`agent-toolkit:commit`の`references/push-and-ci.md`「公開先に対応するCI定義の判定」に基づいて、同一公開先および`ベースbranchのHEAD`におけるCI定義の不在を検収できること。このとき`実行した公開工程`には、対象forge・repository・commitと、不在を確認した取得内容、コマンド、終了状態、実行結果が記載されていること。
-- `CIで検証したcommit`と`ベースbranchのHEAD`が異なり、後者自身のCI成功を前項で検収していない場合は、その間に存在するcommitの集合が、`実行した公開工程`に挙げられた生成commit（操作直前に解決したOID）と過不足なく一致することを確認する。この集合は`git -C <対象リポジトリ> rev-list <CIで検証したcommit>..<ベースbranchのHEAD>`で取得する。`ベースbranchのHEAD`がマージcommitである場合は`--not <ベースbranchのHEAD>^1`を追加してベース側の履歴を除外する（マージcommit自体は含める）。この確認は、HEAD自体のCI成功判定を代替するものではない。
-- `ベースbranchの状態`が`公開済み`であることを、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。差し戻しても`公開済み`にならない場合は、`agent-toolkit/skills/process-wi/references/finish-session.md`「公開状態の検収と再起動」に従いUWI登録へ回す。
+  - `CI実行対象外`: 全体検証がローカル成功であり、終了8の出力にあるproject・commit・ref・errorsから、同一公開先とベースbranchのHEADでの非生成を検収できること。
+    実行した公開工程に証拠の保存先が記されていること。
+  - `CI定義なし`: `全体検証`が`ローカル成功`であり、`agent-toolkit:commit`の`references/push-and-ci.md`「公開先に対応するCI定義の判定」に基づいて、同一公開先および`ベースbranchのHEAD`におけるCI定義の不在を検収できること。
+    このとき`実行した公開工程`には、対象forge・repository・commitと、不在を確認した取得内容、コマンド、終了状態、実行結果が記載されていること。
+- `CIで検証したcommit`と`ベースbranchのHEAD`が異なり、後者自身のCI成功を前項で検収していない場合は、その間に存在するcommitの集合が、`実行した公開工程`に挙げられた生成commit（操作直前に解決したOID）と過不足なく一致することを確認する。
+  この集合は`git -C <対象リポジトリ> rev-list <CIで検証したcommit>..<ベースbranchのHEAD>`で取得する。
+  `ベースbranchのHEAD`がマージcommitである場合は`--not <ベースbranchのHEAD>^1`を追加してベース側の履歴を除外する（マージcommit自体は含める）。
+  この確認は、HEAD自体のCI成功判定を代替するものではない。
+- `ベースbranchの状態`が`公開済み`であることを、`agent-toolkit:commit`の`references/push-and-ci.md`「公開状態の4項目」を現在のGit状態から再取得して判定する。
+  差し戻しても`公開済み`にならない場合は、`../skills/process-wi/references/finish-session-recovery.md`「公開状態の検収と再起動」に従いUWI登録へ回す。
 - `版数`が`bump不要`でない場合は、対象リポジトリの版数規約が定める定義ファイルの記載バージョンと一致すること。
-- `実行した公開工程`に、公開担当自身の実行対象として定められたプロジェクト固有の公開後操作が過不足なく列挙されていること。並行して開始した工程については、担当エージェントの返却値から個別に検収する。
+- `実行した公開工程`に、公開担当自身の実行対象として定められたプロジェクト固有の公開後操作が過不足なく列挙されていること。
+  並行して開始した工程については、担当エージェントの返却値から個別に検収する。
 - `延期後にadoptしたAWI`をJSONパーサーで文字列配列として検証し（構文エラー、配列以外の型、文字列以外の要素が含まれる場合は返却契約違反とする）、起動時に渡した延期`adopt`対象の部分集合であることを確認する。
-  この対象から除外される差集合は、反映後の新しいプロセスでしか観測できない条件を持つ項目（`実行した公開工程`に残る条件と観測手段が明記されていること）、または観測結果が完成条件を満たさなかった項目（満たさなかった条件と実際の観測結果が明記されていること）に限る。この扱いは`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/run-lanes.md`「採否の確定と終了区分」が定める。
+  この対象から除外される差集合は、反映後の新しいプロセスでしか観測できない条件を持つ項目（`実行した公開工程`に残る条件と観測手段が明記されていること）、または観測結果が完成条件を満たさなかった項目（満たさなかった条件と実際の観測結果が明記されていること）に限る。
+  この扱いは`../skills/process-wi/references/run-lanes-completion.md`「採否の確定と終了区分」が定める。
 - 延期`adopt`の対象が存在する場合は、全対象を指定して`atk wi show <ファイル名>... --summary-only --target-repo=<対象リポジトリの絶対パス> --skip-pull`を1回実行する。
   その結果、見出し`### <ファイル名> [<状態>]`の状態表示が、`延期後にadoptしたAWI`に含まれる項目では`adopted`、差集合の項目では`processing`となっていることを確認する。
 
-**8.** 未終了項目を取りこぼさないため、すべての確認後、延期対象から`延期後にadoptしたAWI`を除いた集合を`agent-toolkit/skills/process-wi/references/finish-session.md`「延期adoptと反映後の観測」へ引き渡す。あわせて検収した公開状態の4項目を同書の「公開状態の検収と再起動」へ引き渡す。途中で主作業ツリーや対象refの変更、外部からの更新を観測した場合は、同節の指示に従って現在の状態を再取得する。
+**8.** 未終了項目を取りこぼさないため、すべての確認後、延期対象から`延期後にadoptしたAWI`を除いた集合を`../skills/process-wi/references/finish-session-observation.md`「延期adoptと反映後の観測」へ引き渡す。
+あわせて検収した公開状態の4項目を同書の「公開状態の検収と再起動」へ引き渡す。
+途中で主作業ツリーや対象refの変更、外部からの更新を観測した場合は、同節の指示に従って現在の状態を再取得する。
 
 未終了集合の処置後、同書の「完了報告と終了」に従って`agent-toolkit:report-completion`によって報告し、`atk agents-exit-session`を実行する。
 なお、all-reposのリポジトリ担当エージェントは同節に従い、`atk agents-exit-session`を呼び出さず、常駐プログラムへの最終返却で終了する。

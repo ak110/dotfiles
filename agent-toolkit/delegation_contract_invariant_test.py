@@ -14,6 +14,7 @@ from agent_toolkit._common import read_triggers, task_documents
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._plan import selection
 from agent_toolkit._testing.agents_server_support import _start_tool
+from agent_toolkit._testing.normative_contract import read_contract
 
 _LAUNCH_TARGET_PREFIX = "起動対象:"
 _REQUIRED_INPUT_PREFIX = "必須入力名:"
@@ -42,13 +43,20 @@ def test_wi_draft_review_stage_and_continuation_contract() -> None:
         "skills/add-awi-by-user/SKILL.md",
         "skills/wi-standards/references/drafting-workflow.md",
     ):
-        assert "本文確認" in (root / name).read_text(encoding="utf-8")
+        content = (root / name).read_text(encoding="utf-8")
+        if name.endswith("drafting-workflow.md"):
+            content = read_contract(
+                root / "skills/wi-standards/references/drafting-workflow.md",
+                root,
+                ("drafting-workflow-review-route.md", "直接起草と独立した検収の選択"),
+            )
+        assert "本文確認" in content
 
 
 def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
     """公開schemaと独立した委譲規範が、入力の確定と起動検査を同じ主体へ割り当てる。"""
     root = pathlib.Path(__file__).resolve().parent
-    delegation = (root / "skills/delegation/SKILL.md").read_text(encoding="utf-8")
+    delegation = read_contract(root / "skills/delegation/SKILL.md", root, ("references/delegation-sending.md", "送信"))
     sending = _h2_section(delegation, "送信")
     assert "委譲元は呼び出し元の契約に基づき、対象と実行時の値のみを渡す" in sending
     assert "起動設定や必須入力の形式チェックはサーバーに任せる" in sending
@@ -561,8 +569,12 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
     """検証結果の記録と、条件別判定行を返す実行レビュー担当の単一所有を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
     review = (root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
-    parent = (root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
-    recording = (root / "share" / "exec-review-recording.md").read_text(encoding="utf-8")
+    parent = read_contract(
+        root / "share/exec-review.parent.md", root, ("exec-review-parent-acceptance.md", "完成条件証拠の受領確認")
+    )
+    recording = read_contract(
+        root / "share/exec-review-recording.md", root, ("exec-review-recording-evidence.md", "完成条件証拠の作成")
+    )
     operations = (root / "share" / "exec-review-operations.md").read_text(encoding="utf-8")
     launchers = [
         root / "share" / "exec.parent.md",
@@ -627,6 +639,15 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     # Codexの文脈切替は既存の引き継ぎ記録へ保存・復元を接続する。
     contract_names.add("rules-common.codex.md")
     expected_names = parent_names | recipient_names | contract_names
+    # 入力・起動・統合の各判断で読む規範資料も、同じ役割の引き継ぎ契約を所有する。
+    for owner, materials in (
+        ("add-wi.parent.md", (("add-wi-parent-inputs.md", "入力"), ("add-wi-parent-launch.md", "起動方法"))),
+        ("exec.parent.md", (("exec-parent-launch.md", "入力"), ("exec-parent-integration.md", "統合"))),
+        ("exec-review.parent.md", (("exec-review-parent-launch.md", "入力"),)),
+        ("lane-integration.subagent.md", (("lane-integration-subagent-inputs.md", "入力"),)),
+    ):
+        read_contract(share / owner, share.parent, *materials)
+        expected_names.update(name for name, _condition in materials)
     actual_names = {name for name, content in markdown.items() if "引き継ぎ記録先" in content}
 
     assert actual_names == expected_names
@@ -637,8 +658,12 @@ def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> 
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     lane = _lane_planning_contract(plugin_root)
-    review = (plugin_root / "share" / "exec-review.subagent.md").read_text(encoding="utf-8")
-    criteria = (plugin_root / "share" / "exec-review-criteria.md").read_text(encoding="utf-8")
+    review = read_contract(
+        plugin_root / "share/exec-review.subagent.md", plugin_root, ("exec-review-subagent-inputs.md", "入力")
+    )
+    criteria = read_contract(
+        plugin_root / "share/exec-review-criteria.md", plugin_root, ("exec-review-criteria-execution.md", "計画と表の優先")
+    )
 
     assert all("鮮度" in content for content in (selection_text, lane))
     assert all("staleness" in content for content in (selection_text, review))
@@ -729,7 +754,9 @@ def test_same_lane_dependency_contract_reaches_parent_and_run_lanes() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    lanes = read_contract(
+        plugin_root / "skills/process-wi/references/run-lanes.md", plugin_root, ("run-lanes-launch.md", "レーンと資源")
+    )
     for document in (selection_text, parent):
         assert "同じレーン" in document
     assert "同一レーン内のAWIは選定結果に示された依存順序を守り" in lanes
@@ -746,7 +773,11 @@ def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    lanes = read_contract(
+        plugin_root / "skills/process-wi/references/run-lanes.md",
+        plugin_root,
+        ("run-lanes-addition.md", "処理中に確定した必須是正レーン"),
+    )
     addition = _h2_section(parent, "処理対象WIの追加")
 
     assert "後段の分割不能条件と同じ規則に従って`再開位置`の計画識別情報を比較" in selection_text
@@ -839,10 +870,19 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     テンプレートへ区分値を加えたときに採否の確定と終了区分がその値の扱いを持たないと、送った記録の扱いが定まらない。
     """
     plugin_root = pathlib.Path(__file__).resolve().parent
-    finish = (plugin_root / "skills" / "process-wi" / "references" / "finish-session.md").read_text(encoding="utf-8")
+    finish = read_contract(
+        plugin_root / "skills/process-wi/references/finish-session.md",
+        plugin_root,
+        ("finish-session-observation.md", "延期adoptと反映後の観測"),
+    )
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    lanes = read_contract(
+        plugin_root / "skills/process-wi/references/run-lanes.md",
+        plugin_root,
+        ("run-lanes-completion.md", "採否の確定と終了区分"),
+        ("run-lanes-integration.md", "統合とAWI終了"),
+    )
 
     templates = [block.split("```", maxsplit=1)[0] for block in finish.split("```markdown\n")[1:]]
     heading = templates[0].splitlines()[0]
@@ -895,7 +935,9 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     explanation = (plugin_root / "skills" / "process-wi" / "references" / "selection-explanation.md").read_text(
         encoding="utf-8"
     )
-    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
+    lanes = read_contract(
+        plugin_root / "skills/process-wi/references/run-lanes.md", plugin_root, ("run-lanes-launch.md", "レーンと資源")
+    )
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
     assert (
@@ -915,7 +957,9 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
-    lanes = (plugin_root / "skills/process-wi/references/run-lanes.md").read_text(encoding="utf-8")
+    lanes = read_contract(
+        plugin_root / "skills/process-wi/references/run-lanes.md", plugin_root, ("run-lanes-upstream.md", "上流投入")
+    )
     output = _selection_format(plugin_root)
     rows = [[cell.strip() for cell in line.strip("|").split("|")] for line in output.splitlines() if line.startswith("| `")]
     contract = {row[0].split("`")[1]: row[1] for row in rows[1:] if len(row) == 3}
@@ -976,15 +1020,30 @@ def _lane_planning_contract(plugin_root: pathlib.Path) -> str:
     """exec.subagent.mdの読込表で計画の起草の時点に読む行と、その参照文書をひとつの契約として返す。"""
     executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
     entry = next(line for line in _h2_section(executor, "読込表").splitlines() if "references/lane-planning.md" in line)
-    reference = plugin_root / "skills" / "process-wi" / "references" / "lane-planning.md"
-    return entry + "\n" + reference.read_text(encoding="utf-8")
+    return (
+        entry
+        + "\n"
+        + read_contract(
+            plugin_root / "skills/process-wi/references/lane-planning.md",
+            plugin_root,
+            ("lane-planning-no-plan.md", "作成要否と計画なしの準備"),
+            ("lane-planning-drafting.md", "計画の起草"),
+            ("lane-planning-resume.md", "再開"),
+        )
+    )
 
 
 def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
     """history-rewrite.mdの規定が参照するphase名は、レーン担当の契約がphase表で定義する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    rewrite = (plugin_root / "skills" / "commit" / "references" / "history-rewrite.md").read_text(encoding="utf-8")
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    rewrite = read_contract(
+        plugin_root / "skills/commit/references/history-rewrite.md",
+        plugin_root,
+        ("history-rewrite-recovery.md", "失敗時の扱い"),
+    )
+    executor = read_contract(
+        plugin_root / "share/exec.subagent.md", plugin_root, ("exec-subagent-history.md", "レビュー修正の履歴統合")
+    )
     failure = _h2_section(rewrite, "失敗時の扱い")
     referenced = re.findall(r"`([a-z_]+)`", failure.split("の各phase名", maxsplit=1)[0])
     defined = re.findall(r"^\| `([a-z_]+)` \|", _h2_section(executor, "レビュー修正の履歴統合"), flags=re.MULTILINE)
@@ -996,8 +1055,12 @@ def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
 def test_review_fix_completion_values_match_receiver() -> None:
     """実行レビューの委譲元が分岐に使う返却値を、レビュー修正の担当が返却値として定める。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    review_parent = (plugin_root / "share" / "exec-review.parent.md").read_text(encoding="utf-8")
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    review_parent = read_contract(
+        plugin_root / "share/exec-review.parent.md", plugin_root, ("exec-review-parent-correction.md", "レビュー修正")
+    )
+    executor = read_contract(
+        plugin_root / "share/exec.subagent.md", plugin_root, ("exec-subagent-history.md", "レビュー修正の履歴統合")
+    )
     expected = set(re.findall(r"`(対応完了[^`]*)`", review_parent))
     returned = set(re.findall(r"`(対応完了[^`]*)`", _h2_section(executor, "レビュー修正の履歴統合")))
 
@@ -1008,21 +1071,30 @@ def test_review_fix_completion_values_match_receiver() -> None:
 def test_lane_contract_section_references_exist() -> None:
     """レーン担当の契約の節を指す参照は、実在するH2見出しを指す。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
-    headings = set(re.findall(r"^## (.+)$", executor, flags=re.MULTILINE))
-    referenced: set[str] = set()
+    materials = (
+        ("exec-subagent-inputs.md", "入力"),
+        ("exec-subagent-implementation.md", "実装"),
+        ("exec-subagent-history.md", "レビュー修正の履歴統合"),
+    )
+    read_contract(plugin_root / "share/exec.subagent.md", plugin_root, *materials)
+    documents = [plugin_root / "share" / name for name in ("exec.subagent.md", *(name for name, _ in materials))]
+    references: dict[str, set[str]] = {path.name: set() for path in documents}
     for path in plugin_root.rglob("*.md"):
-        referenced.update(re.findall(r"exec\.subagent\.md`?「([^」]+)」", path.read_text(encoding="utf-8")))
-
-    assert referenced
-    assert referenced <= headings
+        text = path.read_text(encoding="utf-8")
+        for target in documents:
+            references[target.name].update(re.findall(rf"{re.escape(target.name)}`?「([^」]+)」", text))
+    assert any(references.values())
+    for target in documents:
+        headings = set(re.findall(r"^## (.+)$", target.read_text(encoding="utf-8"), flags=re.MULTILINE))
+        assert references[target.name] <= headings, target
 
 
 def test_lane_launch_inputs_reach_lane_owner() -> None:
     """レーン担当の起動で渡す名前付き入力は、全てレーン担当の契約が扱う。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
-    parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
+    read_contract(plugin_root / "share/exec.parent.md", plugin_root, ("exec-parent-launch.md", "入力"))
+    parent = (plugin_root / "share/exec-parent-launch.md").read_text(encoding="utf-8")
+    executor = read_contract(plugin_root / "share/exec.subagent.md", plugin_root, ("exec-subagent-inputs.md", "入力"))
     inputs = re.findall(r"^- `([^`]+)`: ", _h2_section(parent, "入力"), flags=re.MULTILINE)
 
     assert "上流投入結果" in inputs
@@ -1429,12 +1501,24 @@ def test_delegated_launch_parent_must_be_in_read_table(tmp_path: pathlib.Path) -
 
 def _selection_procedure(plugin_root: pathlib.Path) -> str:
     """選定と検収の同じ所有者が読む手順を取得する。"""
-    return (plugin_root / "skills/process-wi/references/selection-procedure.md").read_text(encoding="utf-8")
+    return read_contract(
+        plugin_root / "skills/process-wi/references/selection-procedure.md",
+        plugin_root,
+        ("selection-procedure-candidates.md", "処理対象の決定"),
+        ("selection-procedure-allocation.md", "調査とレーン分け"),
+        ("selection-procedure-validation.md", "保存後のチェック"),
+        ("selection-procedure-addition.md", "処理対象WIの追加"),
+    )
 
 
 def _selection_format(plugin_root: pathlib.Path) -> str:
     """生成・消費が共有する書式の定義を取得する。"""
-    return (plugin_root / "skills/process-wi/references/selection-format.md").read_text(encoding="utf-8")
+    return read_contract(
+        plugin_root / "skills/process-wi/references/selection-format.md",
+        plugin_root,
+        ("selection-format-generation.md", "選定の生成入力"),
+        ("selection-format-schema.md", "選定結果の書式"),
+    )
 
 
 def _selection_documents(plugin_root: pathlib.Path) -> str:
@@ -1445,9 +1529,11 @@ def _selection_documents(plugin_root: pathlib.Path) -> str:
 def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
     """実施内容を確定する承認はレビュー収束後、事前承認は受領時に届ける。"""
     root = pathlib.Path(__file__).resolve().parent
-    lanes = (root / "skills/process-wi/references/run-lanes.md").read_text(encoding="utf-8")
+    lanes = read_contract(
+        root / "skills/process-wi/references/run-lanes.md", root, ("run-lanes-completion.md", "採否の確定と終了区分")
+    )
     approval = (root / "skills/user-confirmation-and-report/references/approval-scope.md").read_text(encoding="utf-8")
-    executor = (root / "share/exec.subagent.md").read_text(encoding="utf-8")
+    executor = read_contract(root / "share/exec.subagent.md", root, ("exec-subagent-implementation.md", "実装"))
     timing = _h2_section(lanes, "実装とレビュー")
     assert "事後承認型のUWIは受領時には発行せず" in timing
     assert "事前承認が必要な確認事項は受け取り次第速やかに発行する" in timing
@@ -1456,9 +1542,7 @@ def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
     assert "終了返却を受け取った時点で発行する" in timing
     assert "実装なし" in timing and "マージなし" in timing
     assert "発行対象だけを直ちに発行する" not in timing
-    post_approval = next(
-        line for line in _h2_section(approval, "事前承認と事後承認").splitlines() if line.startswith("- 事後承認:")
-    )
+    post_approval = _h2_section(approval, "事前承認と事後承認").split("- 事後承認:", 1)[1].split("\n- ", 1)[0]
     assert "実行レビューを伴う作業では" in post_approval
     assert "実行レビューが完了して内容が確定した時点の変更" in post_approval
     assert "確認手段にかかわらず適用する" in post_approval
@@ -1469,7 +1553,11 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
     """公開後操作の前提不足を受領し、同じcommitの未完了操作へ戻す。"""
     root = pathlib.Path(__file__).resolve().parent
     parent = (root / "share/session-termination.parent.md").read_text(encoding="utf-8")
-    finish = (root / "skills/process-wi/references/finish-session.md").read_text(encoding="utf-8")
+    finish = read_contract(
+        root / "skills/process-wi/references/finish-session.md",
+        root,
+        ("finish-session-recovery.md", "公開工程の続行不能の回復と再開"),
+    )
     publish = (root / "skills/commit/references/publish.md").read_text(encoding="utf-8")
     receipt = _h2_section(parent, "受領と検収")
     assert "公開後操作の前提不足" in receipt
@@ -1492,7 +1580,12 @@ def test_publication_recovery_references_resolve_to_shared_sections() -> None:
     root = pathlib.Path(__file__).resolve().parent
     publish = "skills/commit/references/publish.md"
     push = "skills/commit/references/push-and-ci.md"
-    finish = "skills/process-wi/references/finish-session.md"
+    finish = "skills/process-wi/references/finish-session-recovery.md"
+    read_contract(
+        root / "skills/process-wi/references/finish-session.md",
+        root,
+        ("finish-session-recovery.md", "公開工程の続行不能の回復と再開"),
+    )
     routes = [
         (publish, push, "公開工程の続行不能の受渡し"),
         (push, publish, "公開工程の続行不能からの再開"),

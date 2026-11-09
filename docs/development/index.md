@@ -12,10 +12,12 @@
 
 ## 記録の索引
 
-- [docs/development/design.md](design.md): 機構の設計記録の索引。主題別の本文から目的・構造の理由・知識境界・却下案を読む
+- [docs/development/design.md](design.md): 機構の設計記録の索引。
+  主題別の本文から目的・構造の理由・知識境界・却下案を読む
 - [docs/development/concepts.md](concepts.md): 過去のAWIから確定した方針・意向
 - [docs/development/incidents.md](incidents.md): 再発防止の判断材料となる障害・欠陥
-- [docs/development/removed-mechanisms.md](removed-mechanisms.md): 導入後に撤去した仕組みを働きで引く台帳。新しい仕組みを加える前に照合する
+- [docs/development/removed-mechanisms.md](removed-mechanisms.md): 導入後に撤去した仕組みを働きで引く台帳。
+  新しい仕組みを加える前に照合する
 
 ## 検証と判定の記録
 

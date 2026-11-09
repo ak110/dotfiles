@@ -102,8 +102,7 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
         "if not leaf:\n"
         "    subprocess.Popen([sys.executable, __file__, str(directory), 'leaf'],\n"
         "        stdout=subprocess.DEVNULL, start_new_session=True)\n"
-        f"    print({json.dumps(json.dumps(event))}, flush=True)\n"
-        "time.sleep(60)\n",
+        f"    print({json.dumps(json.dumps(event))}, flush=True)\n" + late_descendant.held_source(tmp_path / "runtime.release"),
         encoding="utf-8",
     )
     monkeypatch.setattr(
@@ -151,7 +150,8 @@ async def test_close_reclaims_descendant_started_after_first_listing(
     """終了処理の最初の列挙の後に委譲先CLIの子孫が起動しても、終了させてファイルを解放する。"""
     runtime = tmp_path / "runtime.py"
     runtime.write_text(
-        f"import time\nprint({json.dumps({'type': 'step_start', 'sessionID': 'late'})!r}, flush=True)\ntime.sleep(120)\n",
+        f"print({json.dumps({'type': 'step_start', 'sessionID': 'late'})!r}, flush=True)\n"
+        + late_descendant.held_source(tmp_path / "runtime.release"),
         encoding="utf-8",
     )
     command = late_descendant.cli_command(tmp_path, str(runtime))

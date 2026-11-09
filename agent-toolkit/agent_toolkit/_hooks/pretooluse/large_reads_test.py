@@ -1,6 +1,6 @@
 """大量の全文読取をPreToolUseで警告する条件を検証する。
 
-警告はCodexのBash実行だけへ適用し、Claude Codeの`Read`と`Bash`は補正も警告もしない。
+容量警告はCodexのBash実行だけへ適用し、見出し抽出の警告は両ホストへ適用する。
 """
 
 import json
@@ -555,3 +555,38 @@ def test_static_session_record_with_unknown_search_term_keeps_the_reference_guid
     assert notice is not None and str(record) in notice
     # 入力先そのものが未知なら、cwdを入力先と推定しない。
     assert large_reads.session_record_reference_warning("Bash", {"command": 'rg needle "$DIR"'}, str(root)) is None
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("normative", [False, True])
+@pytest.mark.parametrize(
+    "command,warned",
+    [
+        ("sed -n '/^## 対象/,/^## /p' -- {path}", True),
+        ("sed -n -e '/^## 対象/,/^## /p' -- {path}", True),
+        ("awk '/^## 対象/,/^## /' {path}", True),
+        ("awk '/^## 対象/ {{found=1}} found {{print}} /^## 後段/ {{exit}}' {path}", True),
+        ("sed -n '2,4p' -- {path}", False),
+        ("sed -n '/本文/p' -- {path}", False),
+        ("printf '%s' 'sed -n /###/p' {path}", False),
+    ],
+)
+def test_heading_extraction_warns_only_for_normative_files(tmp_path, capsys, codex, normative, command, warned):
+    """公開PreToolUseは両hostで見出し抽出だけを警告し、操作は許可する。"""
+    path = tmp_path / ("AGENTS.md" if normative else "record.md")
+    path.write_text("# 資料\n## 対象\n本文\n## 後段\n例外\n", encoding="utf-8")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": command.format(path=shlex.quote(str(path)))},
+        "cwd": str(tmp_path),
+        **({"turn_id": "turn"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    output = capsys.readouterr()
+    assert not output.err
+    specific = json.loads(output.out).get("hookSpecificOutput", {}) if output.out else {}
+    assert specific.get("permissionDecision") != "deny"
+    context = specific.get("additionalContext", "")
+    assert ("見出しの正規表現" in context) is (normative and warned)
+    if normative and warned:
+        assert str(path) in context and "全文" in context and "cat --" in context

@@ -18,7 +18,7 @@ import pytest
 from agent_toolkit._atk import config, run_script, run_skill_batch
 from agent_toolkit._atk.wi import add, frontmatter, layout, sync, uwi
 from agent_toolkit._common import session_activity, session_review
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, late_descendant
 
 
 @pytest.fixture(autouse=True)
@@ -454,12 +454,12 @@ def test_batch_uses_most_common_repo_and_unknown_repo_fallback(tmp_path) -> None
     assert len(list(layout.iter_entry_paths(notes))) == 2
 
 
-def test_orphan_executor_prevents_new_model_before_pid_publish() -> None:
+def test_orphan_executor_prevents_new_model_before_pid_publish(tmp_path: pathlib.Path) -> None:
     """PID保存前の親中断でも固有manifestを持つ子が残れば再起動しない。"""
     path = session_review.directory() / "runs" / "orphan.json"
     manifest = {"run_id": "orphan", "manifest_path": str(path), "status": "running", "targets": [], "prepared": []}
     session_review.write(path, manifest)
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", f"batch manifest: {path}"]) as child:
+    with late_descendant.held_process(tmp_path, f"batch manifest: {path}") as child:
         try:
 
             def unexpected(args):

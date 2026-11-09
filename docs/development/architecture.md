@@ -5,14 +5,20 @@
 
 - `.chezmoiroot`でソースステート（`.chezmoi-source/`）とプロジェクトインフラを分離する
 - `.chezmoi-source/`内がchezmoiのソースディレクトリ（`dot_`プレフィックス→`~/.*`にデプロイ）
-- `.chezmoi-source/dot_claude/`: Claude Code用のユーザー設定。`~/.claude/`へデプロイする
-- `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。`~/.codex/`へデプロイする
-- `.chezmoi-source/dot_gemini/`: Antigravity CLI用のユーザー設定（`GEMINI.md`と`antigravity-cli/skills/`）。`~/.gemini/`へデプロイする
+- `.chezmoi-source/dot_claude/`: Claude Code用のユーザー設定。
+  `~/.claude/`へデプロイする
+- `.chezmoi-source/dot_codex/`: Codex用のユーザー設定。
+  `~/.codex/`へデプロイする
+- `.chezmoi-source/dot_gemini/`: Antigravity CLI用のユーザー設定（`GEMINI.md`と`antigravity-cli/skills/`）。
+  `~/.gemini/`へデプロイする
 - `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するプラグインルートであり、OpenCode向けスキルと規範の原本（「agent-toolkitのホスト別配布」を参照）
-- `agent-toolkit-codex/`: `agent-toolkit/`から生成するCodex向けプラグインルート。Gitで追跡せず、`update-dotfiles`のpost-applyが生成する
-- `plugins/`: dotfilesユーザーが置く拡張ディレクトリ（Git追跡対象外）。直下の各プラグインの`.chezmoi-source/`と`post_apply.py`を本体反映後に名前順で適用する
+- `agent-toolkit-codex/`: `agent-toolkit/`から生成するCodex向けプラグインルート。
+  Gitで追跡せず、`update-dotfiles`のpost-applyが生成する
+- `plugins/`: dotfilesユーザーが置く拡張ディレクトリ（Git追跡対象外）。
+  直下の各プラグインの`.chezmoi-source/`と`post_apply.py`を本体反映後に名前順で適用する
 - `bin/`: ユーザーのPATHへ追加して使うコマンド（「対象環境とスクリプトの配置」を参照）
-- `completions/`: 事前生成したbash補完スクリプト（「bash補完（`completions/`）」を参照）
+- `completions/`: 事前生成したbash補完スクリプト。
+  「bash補完（`completions/`）」を参照
 - `docs/`: エンドユーザー向けガイド（`docs/guide/`）と開発者向け文書（`docs/development/`）
 - `.claude/`: 本リポジトリの開発で使うClaude Codeのプロジェクト設定とプロジェクトスキル（配布対象外）
 - `.claude-plugin/`: agent-toolkitを配布するマーケットプレイスの定義（`marketplace.json`）
@@ -27,7 +33,8 @@
 
 ## 対象環境とスクリプトの配置
 
-本dotfilesは以下の二者を想定している。配布対象と開発対象でサポート範囲が異なるため、ファイル追加時にどちら用かを確認。
+本dotfilesは以下の二者を想定している。
+配布対象と開発対象でサポート範囲が異なるため、ファイル追加時にどちら用かを確認。
 
 - エンドユーザー: Linux+Windows（配布対象。`install.sh`/`install.ps1`/`install-claude.sh`/`install-claude.ps1`/
   chezmoi管理ファイルはすべて両OS対応とする）
@@ -36,19 +43,23 @@
 この区別に基づき、スクリプトの配置先を以下のように分ける。
 
 - `scripts/`: prek・Makefile・pyfltr・CIなど開発とCIの工程から呼ばれるスクリプトの置き場
-  - chezmoiで配布せず、エンドユーザー環境では実行しない。Linux前提で書いてよいが、CIのWindows jobで動くもの（`scripts/check_update_dotfiles_upgrade.py`）はWindowsでも動く書き方とする
+  - chezmoiで配布せず、エンドユーザー環境では実行しない。
+    Linux前提で書いてよいが、CIのWindows jobで動くもの（`scripts/check_update_dotfiles_upgrade.py`）はWindowsでも動く書き方とする
   - 例: `scripts/check-templates.sh`・`scripts/check-cmd-encoding.sh`・
     `scripts/check-ps1-bom.sh`・`scripts/run-psscriptanalyzer.sh`
 - `libexec/`: `bin/`のランチャー、chezmoiの後処理、systemd unit、Claude Codeのhook定義など他のプログラムから起動され、
   `pytools`パッケージの外でエンドユーザー環境（LinuxとWindows）で動く実行ファイルの置き場
-  - chezmoiで配布せず、`~/dotfiles`の作業ツリーから直接実行する。両OSで動く書き方とする
+  - chezmoiで配布せず、`~/dotfiles`の作業ツリーから直接実行する。
+    両OSで動く書き方とする
   - 例: `libexec/update_dotfiles.py`・`libexec/claude-hook-pretooluse.ps1`・`libexec/keep-awake.ps1`
-- `bin/`: ユーザーのPATHに追加して使うコマンド。リポジトリ直下でgit管理し、
+- `bin/`: ユーザーのPATHに追加して使うコマンド。
+  リポジトリ直下でgit管理し、
   `~/dotfiles/bin`（Linux）/`%USERPROFILE%\dotfiles\bin`（Windows）にPATHを通す
   - 両OS対応のコマンドはLinux版とWindows版（`.cmd`／`.ps1`）を併置する
   - 例: `bin/update-dotfiles`↔`bin/update-dotfiles.cmd`
 
-判断に迷ったら「エンドユーザー環境で実行されるか」を基準に決める。開発とCIの工程からしか動かないなら`scripts/`、
+判断に迷ったら「エンドユーザー環境で実行されるか」を基準に決める。
+開発とCIの工程からしか動かないなら`scripts/`、
 エンドユーザー環境で他のプログラムから起動されるなら`libexec/`、PATHから直接起動するなら`bin/`が適切。
 
 ### `bin/`を変えるときの確認
@@ -66,10 +77,12 @@
 
 ## bash補完（`completions/`）
 
-対象はLinux/bashのみ。Windowsではbash補完を提供しない。
+対象はLinux/bashのみ。
+Windowsではbash補完を提供しない。
 
 補完スクリプトはログイン時の`register-python-argcomplete`実行コストを避けるため事前生成してリポジトリにチェックインする。
-`completions/*.bash`を`.bashrc`がすべて`source`する。コマンド追加時に`.bashrc`を編集する必要はない。
+`completions/*.bash`を`.bashrc`がすべて`source`する。
+コマンド追加時に`.bashrc`を編集する必要はない。
 `scripts/gen_completions.py`は生成先を2箇所へ分岐して書き込む。
 通常はpyfltrのcustom formatterから統合生成ランナー経由で実行する。
 `pyproject.toml`の`[project.scripts]`由来のコマンドは`completions/_pytools.bash`へ書き込む。
@@ -88,7 +101,8 @@ uv run --frozen pyfltr fast                             # 高速ツールと生�
 ```
 
 手書き補完が必要な場合（`bin/`配下コマンドのうち`gen_completions.py`の収集対象外のものなど）は
-`completions/<name>.bash`を新規追加する。`_`プレフィックスのファイルは自動生成物の慣習として予約する。
+`completions/<name>.bash`を新規追加する。
+`_`プレフィックスのファイルは自動生成物の慣習として予約する。
 `agent-toolkit/completions/atk.bash`は`gen_completions.py`の自動生成対象のため、この手順は当てはまらない。
 
 ## Windows PowerShellスクリプトの注意事項
@@ -135,7 +149,8 @@ dotfilesが生成する`agent-toolkit-codex/`のhook定義は、個人binの`atk
 現行versionの導入と有効状態の管理はCodex公式CLIへ委ね、旧版保存台帳は設けない。
 
 agent-toolkitには、公開互換インストーラーである`install-claude.sh`・`install-claude.ps1`を使う単体導入と、
-chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照を維持するため、インストーラーと
+chezmoiの`post_apply`を使うdotfiles導入がある。
+既存の外部参照を維持するため、インストーラーと
 `docs/guide/claude-code-guide.md`の名前はClaude Code・Codex統合後も変更しない。
 
 | 導入方法 | マーケットプレイス | 設定対象 |
@@ -143,9 +158,11 @@ chezmoiの`post_apply`を使うdotfiles導入がある。既存の外部参照�
 | 単体インストーラー | Gitマーケットプレイス`ak110/dotfiles` | Claude Codeルール、双方のプラグイン、共有`agents_server` MCP、`atk` |
 | dotfiles `post_apply` | ローカル生成物 | 単体導入の対象に加え、Codex向け`AGENTS.md`と共有リンク、OpenCode向けスキルと常時規範 |
 
-- agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。Agent Plugins・Codex向けmanifestは
+- agent-toolkitのCodex向けskillsはplugin marketplace経由で配布する。
+  Agent Plugins・Codex向けmanifestは
   Claude Code向けmanifestを元にして`scripts/sync_generated_files.py`で生成する
-- `setup_codex_links.py`はdotfiles固有スキルと`docs`だけをリンクする。`agent-toolkit/share/rules/common/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
+- `setup_codex_links.py`はdotfiles固有スキルと`docs`だけをリンクする。
+  `agent-toolkit/share/rules/common/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
 ### OpenCodeの対話ホストへの導入
@@ -167,18 +184,28 @@ Linux・Windowsとも`XDG_CONFIG_HOME`、未設定なら`~/.config`配下の`ope
 
 ### `post_apply.py`の工程間の順序
 
-- dotfilesプラグインの適用は`pytools/_internal/apply_dotfiles_plugins.py`が担い、本体の後処理が終わってから実行する。プラグインごとのchezmoi永続状態を本体から分離し、本体と配布先が重なる場合は警告してプラグインの内容を上書きする。配置と失敗時の扱いは[operations.md](operations.md)の「dotfilesプラグインの適用と更新」を参照
-- `post_apply.py`は互いの成果を使わない工程を同時に実行し、工程間の順序を`_StepSpec`の先行工程の宣言で保つ。リンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順序もこの宣言で保つ。先行工程を宣言する対象は、同じ資源を扱う工程の組と、先行工程が導入する実行ファイルを使う工程とする。
+- dotfilesプラグインの適用は`pytools/_internal/apply_dotfiles_plugins.py`が担い、本体の後処理が終わってから実行する。
+  プラグインごとのchezmoi永続状態を本体から分離し、本体と配布先が重なる場合は警告してプラグインの内容を上書きする。
+  配置と失敗時の扱いは[operations.md](operations.md)の「dotfilesプラグインの適用と更新」を参照
+- `post_apply.py`は互いの成果を使わない工程を同時に実行し、工程間の順序を`_StepSpec`の先行工程の宣言で保つ。
+  リンク同期、Claude Code plugin、Codex plugin、旧User scope MCPの移行の順序もこの宣言で保つ。
+  先行工程を宣言する対象は、同じ資源を扱う工程の組と、先行工程が導入する実行ファイルを使う工程とする。
   資源は設定ファイルの読み書き、プロセスとユーザーのPATH、npmとmiseの管理領域、plugin cache、Claude Code pluginの複製元である`agent-toolkit/`、依存環境を保存するデータ領域、systemd、codexプロセスの稼働判定を指す。
-  子プロセスやサービスの再起動を経由して間接的に書き換える資源も含める。例えば`atk serve`工程が再起動したサービスは`scripts/launch.py`を経てデータ領域の依存環境を同期する。工程を追加する場合も同じ基準で宣言する
+  子プロセスやサービスの再起動を経由して間接的に書き換える資源も含める。
+  例えば`atk serve`工程が再起動したサービスは`scripts/launch.py`を経てデータ領域の依存環境を同期する。
+  工程を追加する場合も同じ基準で宣言する
 - `post_apply.py`の工程のうち、HOMEで解決されない実機の共有資源（systemdのユーザーマネージャー、`/dev/shm`）を操作する工程には`_StepSpec`の`host_resources`を付ける。
   HOMEが実行ユーザーのパスワードデータベース上のホームと異なる実行（手動観測やテスト）では、この工程を実行せず成功かつ変更なしとし、理由を画面へ出力する。
   `systemctl --user`は`XDG_RUNTIME_DIR`とD-Busで実機のユーザーマネージャーへ接続するため、HOMEの差し替えでは隔離できない。
   工程を追加する場合も同じ基準で付ける
 - `post_apply.py`は工程ごとの出力を列挙順にまとめて画面へ表示する
-- 進捗の表示は、標準エラーが端末でエージェント環境でない場合（`is_human_terminal()`が真）に限り、標準エラーの1行を書き換える形で出す。パイプへの出力とエージェント環境では進捗を出さない
-- 工程の例外は「工程名: 失敗: 例外の型: メッセージ」の1行だけを画面へ出力し、Tracebackは永続ログに残す。工程が`PostApplyOutcome`の`next_action`を返した失敗は、その工程の行に工程固有の次の操作を出す
-- 実行全体の失敗後の次の操作と永続ログの所在は1回だけ出力する。環境変数`UPDATE_DOTFILES_RUN_ID`がある`update-dotfiles`経由の実行では、`update-dotfiles`の終了時に出す。この環境変数が無い`dotfiles-post-apply`の単独実行では、post-applyの集計の行（`完了: 更新 N 件 / スキップ N 件 / 失敗 N 件`）の後に出す
+- 進捗の表示は、標準エラーが端末でエージェント環境でない場合（`is_human_terminal()`が真）に限り、標準エラーの1行を書き換える形で出す。
+  パイプへの出力とエージェント環境では進捗を出さない
+- 工程の例外は「工程名: 失敗: 例外の型: メッセージ」の1行だけを画面へ出力し、Tracebackは永続ログに残す。
+  工程が`PostApplyOutcome`の`next_action`を返した失敗は、その工程の行に工程固有の次の操作を出す
+- 実行全体の失敗後の次の操作と永続ログの所在は1回だけ出力する。
+  環境変数`UPDATE_DOTFILES_RUN_ID`がある`update-dotfiles`経由の実行では、`update-dotfiles`の終了時に出す。
+  この環境変数が無い`dotfiles-post-apply`の単独実行では、post-applyの集計の行（`完了: 更新 N 件 / スキップ N 件 / 失敗 N 件`）の後に出す
 - 開始行、ロガー`httpx`のINFO、`claude` CLIの実行記録、実行中のOSを対象外とする工程の行は永続ログ（`update-dotfiles.log`）にだけ残す
 
 ### Python依存環境の共有
@@ -191,7 +218,10 @@ pyfltr MCPも`_common/pyfltr_entry.py`からlockfileで準備したconsole entry
 
 準備には`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
 
-`--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。上記の組み合わせが未準備の場合に実行し、同じ組み合わせなら別の配布rootやworktreeでも準備済み環境を共有する。別worktreeを指定する場合の`<plugin root>`は、そのworktree内の`agent-toolkit`の絶対パスに置き換える。rootは`launch.py`の配置または`--project`から解決され、cwdの変更だけでは切り替わらない。
+`--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。
+上記の組み合わせが未準備の場合に実行し、同じ組み合わせなら別の配布rootやworktreeでも準備済み環境を共有する。
+別worktreeを指定する場合の`<plugin root>`は、そのworktree内の`agent-toolkit`の絶対パスに置き換える。
+rootは`launch.py`の配置または`--project`から解決され、cwdの変更だけでは切り替わらない。
 
 `update-dotfiles`の後処理は両ホストの実際の有効版と作業ツリー版を列挙し、公開インストーラーも同じ準備処理を使う。
 通常のCLI・hook・MCPは準備済み環境のPythonを直接起動するため、起動のたびに依存を照会しない。
@@ -218,7 +248,8 @@ MCP moduleの初期化時にCodex backendとClaude backendのローカルmodule�
 プラグイン配置の存続を前提とするローカルmoduleの遅延importは行わず、共有状態型はbackendとMCP層の共通moduleへ分離する。
 Claude Agent SDKはCodex実行時の依存と起動コストを増やさないため、Claude engineでoptionsを構築する時点まで遅延する。
 プラグイン導入後のウォームアップは、導入済み版のlaunch.pyへ`--check-dependencies`を渡し、
-PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。外部Claude/Codex sessionは開始しない。
+PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。
+外部Claude/Codex sessionは開始しない。
 
 ### `atk`の解決とセッションへの受け渡し
 
@@ -263,7 +294,8 @@ Claude Codeは`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれ�
 `pytools/_internal/antigravity_plugin.py`が`agent-toolkit-agy/`と`agent-basics-agy/`を生成し、
 `scripts/sync_antigravity_plugin.py`とpost-applyが同じ同期処理を使う。
 toolkit側には`plugin.json`、`skills/`、`agents/`、`rules/AGENTS.md`と追加の常時規範ファイル、
-直下の`hooks.json`・`mcp_config.json`、Python実装とlockfileを含む。basics側は独立した品質スキル集で、
+直下の`hooks.json`・`mcp_config.json`、Python実装とlockfileを含む。
+basics側は独立した品質スキル集で、
 実行基盤のhook・MCP・Python環境を含めずに利用できる。
 各manifestの名前は元の`agent-toolkit`・`agent-basics`を保持し、品質スキルの所有と名前空間を保つ。
 生成rootはGit追跡対象外で、`scripts/sync_generated_files.py`の最後に同期する。
@@ -273,7 +305,8 @@ Claude Code・Codex・Agent Plugins向けの既存3形式と原本の品質本�
 
 共通常時規範は行境界で分割し、各ファイルを24,000バイト以内に保つ。
 生成器は合計20,000トークンの予算をUTF-8の2 bytes/token換算でチェックし、
-超過時は配布前に失敗させる。追加の分割ファイルは`trigger: always_on`でロードする。
+超過時は配布前に失敗させる。
+追加の分割ファイルは`trigger: always_on`でロードする。
 プロジェクト独自の規範もホストの同じ予算を使うため、その総量は対象プロジェクトで確認する。
 
 6イベントのhookは同じ生成rootの`scripts/atk-hook antigravity <イベント名>`を呼ぶ。
@@ -290,7 +323,8 @@ post-applyはAntigravity CLI導入、Codex snapshotの生成とGemini設定反�
 
 Antigravityのスキル本文にも24,000バイトの読込上限があるため、両プラグインで共通の生成処理が上限を超える
 `SKILL.md`のfrontmatterを短いSKILL.mdに保持し、本文を
-`references/antigravity-full-instructions.md`へ保存する。短いSKILL.mdは起動時に全文資料を読む。
+`references/antigravity-full-instructions.md`へ保存する。
+短いSKILL.mdは起動時に全文資料を読む。
 全文資料の相対参照は元のスキルディレクトリを起点に解決し、原本の必要本文と参照先を保持する。
 `share/*.subagent.md`は入力契約を保持した原本として配送し、`agents/`に
 対応する名前と原本の読込指示を持つnative agent定義を生成する。

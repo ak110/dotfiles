@@ -35,16 +35,16 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     basics = _PLUGIN_ROOT.parent / "agent-basics/skills"
     if basics.is_dir():
         roots.append(basics)
-    # 全主体へ常時配る規範（`share/rules/common/`）は読込表を持たず、名指しするスキルへは各スキルの起動条件で到達する。
-    # 予算の限られた常時規範へ読込表を足さないため、`agent-toolkit/rules/`にあった移動前と同じく到達経路の検査から外す。
+    # 常時規範の到達経路は各スキルの起動条件で保証し、宣言自体は他の規範と同じく検査する。
     common_rules = _PLUGIN_ROOT / "share" / "rules" / "common"
-    sources = sorted({path for root in roots for path in root.rglob("*.md") if not path.is_relative_to(common_rules)})
+    sources = sorted({path for root in roots for path in root.rglob("*.md")})
     assert sources
     errors: list[str] = []
     for source in sources:
         try:
             rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-            read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+            if not source.is_relative_to(common_rules):
+                read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
             read_triggers.validate_plugin_relative_references(source)
         except ValueError as error:
             errors.append(f"{source}: {error}")
@@ -68,11 +68,9 @@ def test_user_input_classification_reaches_common_intervention_assessment(relati
     routes = [row for row in rows if "受領" in row.condition and "分類" in row.condition and target in row.documents]
     assert routes, relative
     assert all(row.kind == "判断" for row in routes)
-    assert any(
-        item.path == target and item.heading == "「ユーザー介入と確認の判定」" and item.body().strip()
-        for row in routes
-        for item in row.targets
-    ), relative
+    assert any(item.path == target and not item.heading and item.body().strip() for row in routes for item in row.targets), (
+        relative
+    )
 
 
 def test_every_role_has_explicit_parent_read_source():

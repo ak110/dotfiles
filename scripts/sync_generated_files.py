@@ -17,7 +17,7 @@ from pathlib import Path
 from pytools._internal.common import atomic_write_text
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-QUALITY_SOURCE = "agent-basics/skills/writing-standards/references/quality-principles.md"
+QUALITY_SOURCE = "agent-basics/skills/writing-standards/references/quality-principles-{key}.md"
 QUALITY_TARGETS = (
     ("agent-toolkit/share/rules/common/01-agent.md", "roles", "役割分担", 2),
     ("agent-toolkit/share/rules/common/01-agent.md", "qcd", "QCDと3段判定", 3),
@@ -150,15 +150,16 @@ def sync_quality_principles(root: Path = REPO_ROOT) -> None:
     同梱した本文で判断できるよう生成時に取り込み、配布先ではtoolkit内の本文だけで品質判断を完結させる。
     後続のCodex・Antigravity生成は更新後の本文を使う。
     """
-    source = (root / QUALITY_SOURCE).read_text(encoding="utf-8")
-    sections: dict[str, tuple[int, str]] = {}
-    headings = list(re.finditer(r"^(#{2,}) (.+)$", source, re.MULTILINE))
-    for index, heading in enumerate(headings):
-        level = len(heading[1])
-        end = next((item.start() for item in headings[index + 1 :] if len(item[1]) <= level), len(source))
-        sections[heading[2]] = (level, source[heading.end() : end].strip())
     updated: dict[Path, str] = {}
     for relative, key, title, target_level in QUALITY_TARGETS:
+        source_path = QUALITY_SOURCE.format(key="facts" if key == "result" else key)
+        source = (root / source_path).read_text(encoding="utf-8")
+        sections: dict[str, tuple[int, str]] = {}
+        headings = list(re.finditer(r"^(#{2,}) (.+)$", source, re.MULTILINE))
+        for index, heading in enumerate(headings):
+            level = len(heading[1])
+            end = next((item.start() for item in headings[index + 1 :] if len(item[1]) <= level), len(source))
+            sections[heading[2]] = (level, source[heading.end() : end].strip())
         path = root / relative
         text = updated[path] if path in updated else path.read_text(encoding="utf-8")
         level, body = sections[title]
@@ -179,7 +180,7 @@ def sync_quality_principles(root: Path = REPO_ROOT) -> None:
             raise ValueError(f"{relative}: {key}の生成境界が一意でない")
         before, rest = text.split(start)
         _, after = rest.split(end)
-        updated[path] = f"{before}{start}\n<!-- 生成元: {QUALITY_SOURCE}「{title}」。手動編集しない。 -->\n{body}\n{end}{after}"
+        updated[path] = f"{before}{start}\n<!-- 生成元: {source_path}「{title}」。手動編集しない。 -->\n{body}\n{end}{after}"
     for path, text in updated.items():
         if path.read_text(encoding="utf-8") != text:
             atomic_write_text(path, text)

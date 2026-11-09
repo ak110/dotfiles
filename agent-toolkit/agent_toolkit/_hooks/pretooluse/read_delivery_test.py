@@ -255,6 +255,18 @@ def _assert_acquired(payload, path, expected, *, invocation=False):
     assert ready is expected
 
 
+def _canonical_method(root: pathlib.Path) -> pathlib.Path:
+    """試験用の同居プラグインから、共通方法の正規の全文参照先を用意する。"""
+    for directory, name in ((root, "agent-toolkit"), (root.parent / "agent-basics", "agent-basics")):
+        manifest = directory / ".claude-plugin/plugin.json"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(json.dumps({"name": name}), encoding="utf-8")
+    method = root.parent / "agent-basics/skills/writing-standards/references/read-method.md"
+    method.parent.mkdir(parents=True, exist_ok=True)
+    method.write_text("# 共通取得方法\n共通取得順\n## 後段\n後段の必須基準\n", encoding="utf-8")
+    return method
+
+
 @pytest.mark.parametrize("codex", [False, True])
 def test_common_method_is_delivered_for_direct_and_pending_reads_without_starting_the_skill(
     tmp_path, monkeypatch, memory, codex
@@ -263,9 +275,10 @@ def test_common_method_is_delivered_for_direct_and_pending_reads_without_startin
     skill = root / "skills/example/SKILL.md"
     rule = skill.parent / "references/rule.md"
     rule.parent.mkdir(parents=True)
-    skill.write_text("# 技能\n## 名指し参照の読込方法\n共通取得順\n## 別用途\n無関係な技能本文\n", encoding="utf-8")
+    method = _canonical_method(root)
+    skill.write_text("# 技能\n## 別用途\n無関係な技能本文\n", encoding="utf-8")
     rule.write_text(
-        "# 個別資料\n## 名指し参照の読込方法\n名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。\n",
+        "# 個別資料\n## 名指し参照の読込方法\n名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。\n",
         encoding="utf-8",
     )
     extra = skill.parent / "startup.md"
@@ -279,17 +292,19 @@ def test_common_method_is_delivered_for_direct_and_pending_reads_without_startin
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     assert not _guidance(read_delivery.deliver(payload, "Read", {"file_path": str(rule)}, "test"))
     first = _notice_body(read_delivery.deliver(payload, "Judge", {}, "test"))
-    assert str(skill) in first
+    assert str(method) in first
+    assert str(skill) not in first
     assert str(extra) not in first
     assert "無関係な技能本文" not in first
     assert "共通取得順" not in first
-    _mark("test", skill, "main")
+    _mark("test", method, "main")
     assert not _guidance(read_delivery.deliver(payload, "Read", {"file_path": str(rule)}, "test"))
-    method_read = {"command": f"sed -n '2,3p' -- {skill}"}
+    method_read = {"command": f"cat -- {method}"}
     assert not _guidance(read_delivery.deliver(payload, "Bash", method_read, "test"))
     memory.clear()
     pending = _notice_body(read_delivery.deliver(payload, "Judge", {}, "test"))
-    assert str(skill) in pending
+    assert str(method) in pending
+    assert str(skill) not in pending
     assert str(extra) not in pending
     assert "無関係な技能本文" not in pending
 
@@ -1016,12 +1031,11 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
     root = tmp_path / "plugin"
     share = root / "share"
     share.mkdir(parents=True)
-    method = share / "read-trigger-contract.md"
-    method.write_text("# 共通契約\n## 名指し参照の読込方法\n起動共通取得順\n", encoding="utf-8")
+    method = _canonical_method(root)
     source = share / "example.subagent.md"
     source.write_text(
         "# 役割\n## 名指し参照の読込方法\n"
-        "名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。\n\n"
+        "名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。\n\n"
         "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
         "| --- | --- | --- | --- | --- |\n"
         "| 起動時 | 入力ファイル | 起動時 | `role:example` | `input:原本` |\n",
@@ -1036,7 +1050,8 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
         inputs["補足原本"] = str(original)
     context = read_delivery.read_triggers.startup_context(source, root, inputs)
     assert context.count("起動入力の本文") == 1
-    assert context.count("起動共通取得順") == 1
+    assert context.count("共通取得順") == 1
+    assert context.count("後段の必須基準") == 1
     log = tmp_path / "transcript.jsonl"
     text = launch_requests.wrap_delivery_body(read_delivery.task_documents.task_prompt_header(source) + "\n" + context)
     entry = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
@@ -2149,9 +2164,9 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         ("計画", root / "skills/write-plan/SKILL.md", ""),
         ("共通工程", root / "share/single-lane-execution.md", ""),
         ("確認", root / "skills/user-confirmation-and-report/SKILL.md", ""),
-        ("実装と実行レビュー", root / "share/exec-review.parent.md", "冒頭"),
+        ("実装と実行レビュー", root / "share/exec-review.parent.md", ""),
         ("要件検収", root / "share/verification-evidence.md", ""),
-        ("レビュー収束", root / "share/review-loop-coordination.md", "冒頭「ラウンドの遷移」から「応答済みの判定」まで"),
+        ("レビュー収束", root / "share/review-loop-coordination-rounds.md", ""),
         ("公開前検証", root / "skills/commit/references/publish.md", ""),
         ("終了", root / "skills/report-completion/SKILL.md", ""),
     )
@@ -2191,16 +2206,16 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         assert read_delivery.target_ready(records, target, "main"), phase
         assert str(path) not in (_guidance(read_delivery.deliver(payload, "Read", inputs, "test")) or ""), phase
         if phase == "要件検収":
-            assert read_delivery.target_ready(records, ReadTarget(path, "完成条件証拠の検証記録"), "main")
             assert not read_delivery.target_ready(records, target, "independent")
-    # 実行レビューの起動・受領・修正は、全文ではなく各工程で使う節を読む行で到達する。
-    parent = root / "share/exec-review.parent.md"
-    for heading in (
-        "「起動方法別のレビュー基準」から「起動」まで",
-        "「完成条件証拠の受領確認」「返却に含まれる既存不良の受領」「実行レビューの返却契約」",
-        "「レビュー修正」「レビュー指摘管理表の保存」",
+    # 起動・受領・修正で使う規範資料の全文へ、対応する条件から到達する。
+    for name, condition in (
+        ("exec-review-parent-launch.md", "起動する前"),
+        ("exec-review-parent-acceptance.md", "返却を受領する前"),
+        ("exec-review-parent-existing-defects.md", "既存不良を受領する前"),
+        ("exec-review-parent-correction.md", "修正と管理表の保存"),
     ):
-        assert any(ReadTarget(parent, heading) in row.targets for row in rows), heading
+        target = ReadTarget(root / "share" / name)
+        assert any(target in row.targets and condition in row.condition for row in rows), name
 
 
 @pytest.mark.parametrize("context", [{}, {"agent_id": "child"}, {"turn_id": "turn"}])

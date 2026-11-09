@@ -12,6 +12,7 @@ import pytest
 
 from agent_toolkit._agents_server import launch_prompts, state, tool_descriptions
 from agent_toolkit._common import automated_prompt, plugin_roots
+from agent_toolkit._testing.normative_contract import read_contract
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shellによる実行の受入例")
@@ -100,14 +101,18 @@ def test_process_loop_launched_delegate_takes_main_role() -> None:
     参照先の節は見出しの実在で確かめる。軽量委譲は担当を起動しないため条件を持たない。
     """
     marker = f'source="{automated_prompt.SOURCE_PROCESS_LOOP}"'
-    reference = "references/all-repos-orchestration.md`「担当の役割」"
+    reference = "references/all-repos-orchestration-roles.md`「担当の役割」"
     for prompt in (launch_prompts.DELEGATE_SYSTEM_PROMPT, launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT):
         assert marker in prompt
         assert reference in prompt
     for kind in ("explore", "shell", "write"):
         assert marker not in launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind], kind
-    orchestration = launch_prompts.SHARE_DIR.parent / "skills" / "process-wi" / "references" / "all-repos-orchestration.md"
-    assert "## 担当の役割" in orchestration.read_text(encoding="utf-8").splitlines()
+    orchestration = read_contract(
+        launch_prompts.SHARE_DIR / "agents-server-delegate.md",
+        launch_prompts.SHARE_DIR.parent,
+        ("../skills/process-wi/references/all-repos-orchestration-roles.md", "本文がこの資料の基準を使う場面"),
+    )
+    assert "## 担当の役割" in orchestration.splitlines()
     assert marker in automated_prompt.wrap("本文", source=automated_prompt.SOURCE_PROCESS_LOOP, kind="repository-delegate")
 
 

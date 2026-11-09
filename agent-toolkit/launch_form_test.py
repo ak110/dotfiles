@@ -23,6 +23,7 @@ import psutil
 import pytest
 
 from agent_toolkit._common import plugin_environment, process_tree
+from agent_toolkit._testing import late_descendant
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -65,6 +66,7 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
     request.addfinalizer(rescue.close)
     processes: list[subprocess.Popen] = []
     readers: list[threading.Thread] = []
+    release = tmp_path / "bootstrap.release"
     original_start = threading.Thread.start
     original_signal = launcher.signal.signal
     original_stop = launcher._stop_server_process
@@ -81,6 +83,11 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
             assert self.stderr is not None
             rescue.callback(self.stderr.close)
             rescue.callback(process_tree.stop_process_tree, self)
+            if stage != "stop":
+                deadline = time.monotonic() + 30
+                while not release.with_suffix(".ready").exists():
+                    assert self.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.01)
 
         def wait(self, timeout: float | None = None) -> int:
             if stage == "wait" and timeout == 0.1:
@@ -108,7 +115,7 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
     monkeypatch.setattr(launcher.signal, "signal", set_signal)
     monkeypatch.setattr(launcher, "_stop_server_process", stop)
     monkeypatch.setattr(launcher.tempfile, "tempdir", str(tmp_path))
-    command = [sys.executable, "-c", "import time; time.sleep(120)"]
+    command = [sys.executable, "-c", late_descendant.held_source(release)]
     if stage == "stop":
         command = [sys.executable, "-c", "pass"]
     with pytest.raises(RuntimeError, match=stage):
@@ -129,7 +136,8 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
     marker = tmp_path / "ready"
     source = (
         "import os,pathlib,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(120)"
+        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); "
+        + late_descendant.held_source(tmp_path / "stubborn.release")
     )
     if orphaned:
         source = f"import subprocess,sys; subprocess.Popen([sys.executable, '-c', {source!r}])"
@@ -176,7 +184,7 @@ def test_launcher_signal_reaches_bounded_reclaim(
         "if len(sys.argv) > 1:\n"
         "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
         f"    pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
-        "    time.sleep(60)\n"
+        f"    exec({late_descendant.held_source(tmp_path / 'signal.release')!r})\n"
         "else:\n"
         f"    spec = importlib.util.spec_from_file_location('probe_launch', {str(_PROJECT_ROOT / 'scripts/launch.py')!r})\n"
         "    module = importlib.util.module_from_spec(spec)\n"
@@ -380,7 +388,7 @@ def test_prepare_timeout_reclaims_its_descendants(
     probe = tmp_path / "sync_probe.py"
     probe.write_text(
         "import pathlib, subprocess, sys\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'prepare.release')!r}])\n"
         "ready = pathlib.Path(sys.argv[1])\n"
         "temporary = ready.with_suffix('.tmp')\n"
         "temporary.write_text(str(child.pid))\n"

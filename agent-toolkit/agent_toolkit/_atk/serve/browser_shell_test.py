@@ -581,25 +581,31 @@ async def test_slow_work_item_filter_and_plan_preview_show_loading(
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await _open_filters(page)
 
+    entries_release = asyncio.Event()
+
     async def delay_entries(route: playwright.async_api.Route) -> None:
         if "status=adopted" in route.request.url:
-            await asyncio.sleep(0.65)
+            await asyncio.wait_for(entries_release.wait(), timeout=5)
         await route.continue_()
 
     await page.route("**/api/entries**", delay_entries)
     await page.locator("#state-filter").select_option("adopted")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_visible()
+    entries_release.set()
     await page.locator('.entry-select[data-key="adopted.md"]').wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
     await page.unroute("**/api/entries**", delay_entries)
 
+    plan_release = asyncio.Event()
+
     async def delay_plan(route: playwright.async_api.Route) -> None:
-        await asyncio.sleep(0.65)
+        await asyncio.wait_for(plan_release.wait(), timeout=5)
         await route.continue_()
 
     await page.route("**/api/plans/file?*", delay_plan)
     await page.goto(harness.base_url + "/plans")
     await page.locator("#plans-loading-indicator").wait_for(state="visible")
+    plan_release.set()
     await page.get_by_role("heading", name="初回").wait_for(state="visible")
     await playwright.async_api.expect(page.locator("#plans-loading-indicator")).to_be_hidden()
 

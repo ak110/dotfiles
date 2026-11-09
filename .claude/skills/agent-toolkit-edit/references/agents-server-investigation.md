@@ -1,34 +1,47 @@
 # agents_serverの委譲不具合の調査手順
 
 本書は、`agents_server`が起動した委譲先が動作しない場合に、どの記録を確認して事実関係を特定すべきかをまとめた文書である。
-委譲先は別プロセスのCLIとして起動するため、委譲元が内部状態を知る手段は記録と診断に限られる。そのため、観測手段は実装コードや実行環境の複数箇所に分散している。
+委譲先は別プロセスのCLIとして起動するため、委譲元が内部状態を知る手段は記録と診断に限られる。
+そのため、観測手段は実装コードや実行環境の複数箇所に分散している。
 共有状態ごとの保存場所や読み書きの担当モジュールについては、`references/agents-server-shared-state.md`を参照する。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 共有状態の保存場所や読み書きの担当を調べる前 | `agents-server-shared-state.md`の「状態資料の節の選択」「共有状態資料の選択」。選んだ主題節と共通節を続けて読む | 判断 | `section:*/skills/agent-toolkit-edit/references/agents-server-shared-state.md#「状態資料の節の選択」「共有状態資料の選択」` |
+| 共有状態の保存場所や読み書きの担当を調べる前 | `agents-server-shared-state.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |
+| 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
 
 ## 観測できる記録の所在
 
 診断ログが保存されるディレクトリは、`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir`によって解決され、`atk config get state_dir`の出力と一致する。
-Linux環境では`platformdirs`の`user_state_dir("agent-toolkit", appauthor=False)`を使用し、相対パスの`XDG_STATE_HOME`は`HOME/.local/state`へ退避する。Windows環境では`LOCALAPPDATA`配下の`agent-toolkit`を使用する。
+Linux環境では`platformdirs`の`user_state_dir("agent-toolkit", appauthor=False)`を使用し、相対パスの`XDG_STATE_HOME`は`HOME/.local/state`へ退避する。
+Windows環境では`LOCALAPPDATA`配下の`agent-toolkit`を使用する。
 Claude Codeにおける作業ディレクトリのスラッグは、絶対パスの区切り文字や記号をハイフンへ置換した文字列である。
 
 `agents_server`の診断ログを出力する各モジュールは以下のとおり。
 
 - MCPサーバーの起動・終了や初期化（initialize）の節目: `_agents_server/mcp_tools.py`および`mcp_transport.py`
-- 起動単位ごとの終了診断: サーバー自身のイベントは`_agents_server/logging_config.py`（呼び出し元は`mcp_tools.py`・`mcp_transport.py`・`manager_registry.py`）。子プロセスの終了状態や標準エラー末尾のログは`scripts/launch.py`
-- 候補ごとの初期化と候補の切り替え: `manager.py`。全バックエンドの探索（explore）には通常のコマンド実行を用いる。起動応答の`excluded_candidates`や警告ログから、CLIのインストール状況、認証、モデルの可用性に関する失敗原因を調べる。Codexの開始・再開時には、スキルを配信しないためのplugins設定と、配布定義から直接配信するpyfltr MCP設定を確認する。専用サンドボックスのprobeは使用しない
-- 起動後の保存失敗（agents_serverのセッション登録簿`<状態ディレクトリ>/agents-server/sessions/<session_id>.json`、待機対象、状態ファイルなど）: `manager.py`と`state.py`。予約保存やheartbeatの失敗は、書き込み主体の状態ファイルやセッション識別子の一覧とともに`status_file.py`および`manager_base.py`が記録する。いずれもスタックトレースを含み、置換元・置換先のパスは例外オブジェクトの`add_note`による注記に記載される。共通のアトミック置換処理（`_common/atomic_file.py`）では、Windows環境特有のWinError 5や32に対して1秒未満の有限回数でリトライし、上限到達後や対象外のエラーでは既存の内容を保ったままエラーを返す
+- 起動単位ごとの終了診断: サーバー自身のイベントは`_agents_server/logging_config.py`（呼び出し元は`mcp_tools.py`・`mcp_transport.py`・`manager_registry.py`）。
+  子プロセスの終了状態や標準エラー末尾のログは`scripts/launch.py`
+- 候補ごとの初期化と候補の切り替え: `manager.py`。
+  全バックエンドの探索（explore）には通常のコマンド実行を用いる。
+  起動応答の`excluded_candidates`や警告ログから、CLIのインストール状況、認証、モデルの可用性に関する失敗原因を調べる。
+  Codexの開始・再開時には、スキルを配信しないためのplugins設定と、配布定義から直接配信するpyfltr MCP設定を確認する。
+  専用サンドボックスのprobeは使用しない
+- 起動後の保存失敗（agents_serverのセッション登録簿`<状態ディレクトリ>/agents-server/sessions/<session_id>.json`、待機対象、状態ファイルなど）: `manager.py`と`state.py`。
+  予約保存やheartbeatの失敗は、書き込み主体の状態ファイルやセッション識別子の一覧とともに`status_file.py`および`manager_base.py`が記録する。
+  いずれもスタックトレースを含み、置換元・置換先のパスは例外オブジェクトの`add_note`による注記に記載される。
+  共通のアトミック置換処理（`_common/atomic_file.py`）では、Windows環境特有のWinError 5や32に対して1秒未満の有限回数でリトライし、上限到達後や対象外のエラーでは既存の内容を保ったままエラーを返す
 - セッションの状態遷移（`session_transition`）: `manager.py`・`manager_registry.py`・`manager_resume.py`・`state.py`
 - 開始時および終了時のリソース記録（`resource_snapshot`）: `resource_snapshot.py`
-- AntigravityおよびOpenCodeの子プロセス管理・イベント保存・終了処理: `cli_turn.py`。通信フォーマット（wire形式）の解釈は`antigravity.py`と`opencode.py`が担当する。OpenCodeの起動には`opencode run --format json --auto --model <provider/model> --variant <effort>`を用い、セッション継続時には`--session`を渡す。起動候補として指定したモデルと、イベントログから実際に観測されたモデル識別子は区別して扱う
+- AntigravityおよびOpenCodeの子プロセス管理・イベント保存・終了処理: `cli_turn.py`。
+  通信フォーマット（wire形式）の解釈は`antigravity.py`と`opencode.py`が担当する。
+  OpenCodeの起動には`opencode run --format json --auto --model <provider/model> --variant <effort>`を用い、セッション継続時には`--session`を渡す。
+  起動候補として指定したモデルと、イベントログから実際に観測されたモデル識別子は区別して扱う
 
 | 記録 | 所在 | 読み取れる事実 |
 | --- | --- | --- |
@@ -44,7 +57,7 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 
 ## 切り分けの順序
 
-1. 原因分析の基準を揃えるため、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis.md`「直接的原因と事象時点の確定」を適用する。
+1. 原因分析の基準を揃えるため、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」を適用する。
 2. 発生箇所を絞るため、「観測できる記録の所在」から診断を取得する。
    通常の応答では`seconds_since_activity`で最後の活動からの経過時間を確認し、絶対時刻や実行パラメーターの比較には`show(verbose=True)`を使う。
    API失敗の公開診断にはエラー種別、HTTPステータスコード、経過時間、初期化診断には受信メッセージの種別と失敗箇所の詳細がある。
@@ -69,12 +82,21 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 ## 資源記録の読み方
 
 - リソーススナップショット（`resource_snapshot`）は、記録時刻、ルートセッションID・セッションID、ターン番号をもとに、各セッションの状態遷移ログと突き合わせて確認する。
-- `running_total`および`running_by_root`は、同一の状態ディレクトリ内で観測された実行中（running）のセッション数を示し、待機中プロセスや孫セッションもカウントに含まれる。自身が含まれるのはセッション開始時のスナップショットだけである。稼働中のセッションへの追加入力（追送）は、既存の開始記録の続きとして扱われる。
-- `counts_complete`が`false`の場合は集計が不完全であることを示し、確定値は`null`となって読み取れた範囲の数値が`observed_running_*`に格納される。情報の欠落理由は`state_read_failures`や`unavailable_fields`に記録される。
-- `load_average_1_5_15`および`available_memory_bytes`はホストマシン全体のリソース値である（Windows環境ではロードアベレージは未取得となり、その旨の理由が残される）。これらは非アトミックに取得された値であるため、個々のセッションが与えた影響や因果関係の特定には同一条件下での比較を要する。
-- `resource_snapshot_failed`はリソース計測処理そのものが失敗したことを示すイベントであり、セッション本体の処理失敗とは区別して扱う。ログファイルはサイズ2 MiB、バックアップ3世代で自動ローテーションされる。
-- WindowsのCodex境界試験では、試験開始・終了のpytest PIDとUTC時刻、App Serverの終了要求前・終了確認後の所有PID集合を対応付ける。各PIDの`created_at`と`ppid`で起動時刻と親子関係を確認し、終了後の`unavailable: NoSuchProcess`を保持PID不在の照会結果と区別する。
-- pytestの回収失敗時は、標準エラーの`resource-diagnostics:`にある失敗パス・Windowsエラー番号・`before`・`after`を読む。`ownership.state`の`success`だけが保持PID照会の成功を示し、`unavailable`は採取不能、`unsupported`は対象外OSを表す。診断handleの自己PIDは外部保持者と分けて記録され、同じPIDの別handleの有無は判別できない。CIの開始・終了行と試験開始記録から、Python完全版・実行ファイル、runner image、Codex・pytest・xdistの版、並列度と最終終了コードも突き合わせる。
+- `running_total`および`running_by_root`は、同一の状態ディレクトリ内で観測された実行中（running）のセッション数を示し、待機中プロセスや孫セッションもカウントに含まれる。
+  自身が含まれるのはセッション開始時のスナップショットだけである。
+  稼働中のセッションへの追加入力（追送）は、既存の開始記録の続きとして扱われる。
+- `counts_complete`が`false`の場合は集計が不完全であることを示し、確定値は`null`となって読み取れた範囲の数値が`observed_running_*`に格納される。
+  情報の欠落理由は`state_read_failures`や`unavailable_fields`に記録される。
+- `load_average_1_5_15`および`available_memory_bytes`はホストマシン全体のリソース値である（Windows環境ではロードアベレージは未取得となり、その旨の理由が残される）。
+  これらは非アトミックに取得された値であるため、個々のセッションが与えた影響や因果関係の特定には同一条件下での比較を要する。
+- `resource_snapshot_failed`はリソース計測処理そのものが失敗したことを示すイベントであり、セッション本体の処理失敗とは区別して扱う。
+  ログファイルはサイズ2 MiB、バックアップ3世代で自動ローテーションされる。
+- WindowsのCodex境界試験では、試験開始・終了のpytest PIDとUTC時刻、App Serverの終了要求前・終了確認後の所有PID集合を対応付ける。
+  各PIDの`created_at`と`ppid`で起動時刻と親子関係を確認し、終了後の`unavailable: NoSuchProcess`を保持PID不在の照会結果と区別する。
+- pytestの回収失敗時は、標準エラーの`resource-diagnostics:`にある失敗パス・Windowsエラー番号・`before`・`after`を読む。
+  `ownership.state`の`success`だけが保持PID照会の成功を示し、`unavailable`は採取不能、`unsupported`は対象外OSを表す。
+  診断handleの自己PIDは外部保持者と分けて記録され、同じPIDの別handleの有無は判別できない。
+  CIの開始・終了行と試験開始記録から、Python完全版・実行ファイル、runner image、Codex・pytest・xdistの版、並列度と最終終了コードも突き合わせる。
 - 診断を採取できなかった場合も`next_action`に従い、元の回収例外のtracebackから失敗パス・winerrorを保存し、同じ実行の終了前後PID記録・CI環境・最終コードを原因分析担当へ渡す。
 
 ## 外部プロセスでの再現
@@ -86,8 +108,17 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 
 ## 調査で誤りやすい前提
 
-- MCPサーバーのコードを変更した場合、その変更はMCPサーバーを再接続したタイミングで初めて反映される。再接続せずに動作パラメーターを変更したい場合は、起動ごとに外部ファイルから設定値を読み込む設計とする。
-- `start`ツールの応答に含まれる`persistence_warnings`は、セッション情報の永続化に失敗したことを示している。セッション開始の成否は`status`および`excluded_candidates`も併せて確認し、すべての候補が除外されていた場合は返されたセッションを利用不能と判断する。正常に開始できたセッションであれば、同じ`session_id`を用いて`show`、`send_message`、`atk agents wait`を継続して実行し、保存失敗の原因は診断ログ側で確認する。保存失敗のみを理由として新しい委譲先を起動することは避け、同一セッションで処理を継続する。
-- Claudeの委譲先が実際に動作しているかの根拠は、診断ログ内の`engine`で確認する。工程別のモデル設定によってCodexが選ばれる場合があるため、`start`実行時の`explore`（事前探索）の成功ログは別のバックエンドの動作可能性を含む。
-- 委譲先CLIは、`--debug`オプションを指定しても標準エラー出力にはログを出力しない。詳細な診断情報を採取するには、必ず`--debug-file`オプションを使用してファイルに出力させる。
-- プロセス起動が「委譲先の作業ディレクトリでプラグインの起動コマンドが失敗した」というエラーで拒否された場合、主な原因は委譲先の作業ディレクトリ上で`uv`や`uvx`が実行できないことにある。例外情報に記録された`cwd`や標準エラー出力を確認する。miseの設定が未信頼（untrusted）になっている場合は、委譲元の手順（`agent-toolkit/skills/process-wi/references/selection-procedure.md`など）に従って`mise trust`を実行するなどの準備をする。それより前に起動された委譲先で発生した接続エラーについては、前述の接続失敗記録の一覧から該当ログを確認する。
+- MCPサーバーのコードを変更した場合、その変更はMCPサーバーを再接続したタイミングで初めて反映される。
+  再接続せずに動作パラメーターを変更したい場合は、起動ごとに外部ファイルから設定値を読み込む設計とする。
+- `start`ツールの応答に含まれる`persistence_warnings`は、セッション情報の永続化に失敗したことを示している。
+  セッション開始の成否は`status`および`excluded_candidates`も併せて確認し、すべての候補が除外されていた場合は返されたセッションを利用不能と判断する。
+  正常に開始できたセッションであれば、同じ`session_id`を用いて`show`、`send_message`、`atk agents wait`を継続して実行し、保存失敗の原因は診断ログ側で確認する。
+  保存失敗のみを理由として新しい委譲先を起動することは避け、同一セッションで処理を継続する。
+- Claudeの委譲先が実際に動作しているかの根拠は、診断ログ内の`engine`で確認する。
+  工程別のモデル設定によってCodexが選ばれる場合があるため、`start`実行時の`explore`（事前探索）の成功ログは別のバックエンドの動作可能性を含む。
+- 委譲先CLIは、`--debug`オプションを指定しても標準エラー出力にはログを出力しない。
+  詳細な診断情報を採取するには、必ず`--debug-file`オプションを使用してファイルに出力させる。
+- プロセス起動が「委譲先の作業ディレクトリでプラグインの起動コマンドが失敗した」というエラーで拒否された場合、主な原因は委譲先の作業ディレクトリ上で`uv`や`uvx`が実行できないことにある。
+  例外情報に記録された`cwd`や標準エラー出力を確認する。
+  miseの設定が未信頼（untrusted）になっている場合は、委譲元の手順（`agent-toolkit/skills/process-wi/references/selection-procedure.md`など）に従って`mise trust`を実行するなどの準備をする。
+  それより前に起動された委譲先で発生した接続エラーについては、前述の接続失敗記録の一覧から該当ログを確認する。

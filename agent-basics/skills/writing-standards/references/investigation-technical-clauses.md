@@ -1,0 +1,21 @@
+# 成果物へ書く事実の調査：エージェント向け文書の技術的条文
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+
+## エージェント向け文書の技術的条文
+
+現物の挙動観測に基づいて技術的な規範の条文を新設または改訂する場合は、観測された事象と適用範囲を条文に明記し、観測日時、確認したバージョン、および再検証の手順を後続の担当者が参照できる記録に残す。
+対象とする実装のバージョンと、観測した実行環境やモデルのバージョンは明確に区別する。
+再検証の結果が条文の記述と食い違った場合は、再現条件を揃えて再測定し、揃えられない環境差がある場合はその差異を記録する。
+条文の失効は、条件を揃えた再検証に基づいて判断する。
+エンドユーザー向けドキュメント、README、設定ファイル、コードコメント、およびユーザーの直接の指示に基づく規範・運用手順・選択肢の説明は、この観測記録形式の対象外とする。
+既存の記述は現状のまま維持する（努力目標）。
+既存の条文の誤りが品質（Quality）に悪影響を及ぼす場合の修正は、この例外規定に関わらず`agent-basics:bugfix`に従って対処する。

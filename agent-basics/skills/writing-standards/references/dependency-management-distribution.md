@@ -1,0 +1,32 @@
+# 依存管理：配布物の版指定の検証
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 外部部品の共通の版方針を判断へ用いる前 | `quality-principles-dependencies.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-dependencies.md` |
+
+## 配布物の版指定の検証
+
+- 配布物がエンドユーザー環境のパッケージマネージャーに渡すバージョン指定を変更する場合は、リポジトリへの統合前に、エンドユーザーと同じ解決手段および配布予定の公開待機設定を用いて変更後のバージョン指定を解決し、終了コードが正常であることを確認する。
+  たとえばuvの場合は、プロジェクト外のディレクトリで`uvx --exclude-newer "<配布する待機期間>" --from '<変更後の版指定>' <コマンド> --version`を実行して検証する。
+  `uvx`、`uv tool install`、`uv run --script`、`uv run --no-project --with`などのコマンドはプロジェクト固有の`[tool.uv]`やロックファイルを参照せず、実行環境のユーザー設定に基づいて依存を解決する。
+  そのため、プロジェクト内での`uv lock`、`uv sync`、`uv run`の成功や、ロックファイルへの反映、インデックスへの公開、テスト用リゾルバーでのテスト通過だけでは十分な根拠とならない。
+  解決に失敗する場合は、`dependency-management.md`「公開待機設定」における依存下限引き上げ時の対処手順を適用してから統合を進める。
+
+## Python対応版の追加
+
+Pythonの対応バージョンを新しく追加する場合は、対象となるPythonバージョンやCIのOS・CPUアーキテクチャで導入される依存パッケージを特定し、採用されるwheelの互換性や、ソース配布（sdist）からビルドされる依存のビルド要件を確認する。
+ローカル環境のwheelキャッシュによって同期が成功したとしても、キャッシュが存在しないクリーンなCI環境でのビルド成功を保証する根拠にはならない（観測した同一環境下でのみ成立した記録として扱う）。
+互換性のある事前ビルド済みwheelが提供されているバージョンへ更新する案と、CI環境に必要なツールを整えてビルドを成立させる案を比較検討する。
+コンパイラーやC言語ヘッダーの追加は対象パッケージのビルドに真に必要な範囲に限定し、対象環境で導入されない依存パッケージはマーカーやextrasの指定に基づいて判断対象から除外する。
+採用したパッケージバージョン、Pythonバージョン、CIイメージとアーキテクチャ、配布形式、検証実施日、および再検証手順を記録に残す。
+観測記録の例は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日」にある。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 依存管理の基準を適用する前 | `dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` |

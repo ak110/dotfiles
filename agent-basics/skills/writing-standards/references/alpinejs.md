@@ -1,7 +1,8 @@
 # Alpine.js記述スタイル
 
 本書は、Alpine.jsを使用する実装における記述スタイルの基準を定める。
-対象バージョン: Alpine.js v3系。公式ドキュメントは <https://alpinejs.dev/start-here> を参照する。
+対象バージョン: Alpine.js v3系。
+公式ドキュメントは <https://alpinejs.dev/start-here> を参照する。
 
 ## 適用範囲の判断
 
@@ -24,15 +25,19 @@
 
 ## CSP対応とセキュリティ
 
-- Content Security Policy（CSP）で`unsafe-eval`を許可できない環境では、`@alpinejs/csp`ビルドを採用する。標準ビルドはテンプレート式の評価に`eval`相当の仕組みを使用するため、`script-src`に`nonce`ベースの`strict-dynamic`のみを許可する厳格なCSP構成では実行に失敗する。
+- Content Security Policy（CSP）で`unsafe-eval`を許可できない環境では、`@alpinejs/csp`ビルドを採用する。
+  標準ビルドはテンプレート式の評価に`eval`相当の仕組みを使用するため、`script-src`に`nonce`ベースの`strict-dynamic`のみを許可する厳格なCSP構成では実行に失敗する。
 - CSPビルドを使用する場合は、テンプレート内の複雑なインライン式を避け、ロジックを`Alpine.data()`内の関数やgetterへ抽出する（CSPビルドの評価機能は、JavaScript式の安全なサブセットのみを解釈するため）。
-- 信頼できない外部データを`x-html`や`$el.insertAdjacentHTML()`などのHTML挿入処理へ直接渡すことは避ける（XSSの原因となる。なお`$el.insertAdjacentHTML()`はCSPビルドでもサポート対象外である）。テキストデータは`x-text`やテキスト補間（Mustache構文）で安全に描画し、HTMLを挿入する場合はサニタイズ済みの安全な文字列に限定する。
+- 信頼できない外部データを`x-html`や`$el.insertAdjacentHTML()`などのHTML挿入処理へ直接渡すことは避ける（XSSの原因となる。なお`$el.insertAdjacentHTML()`はCSPビルドでもサポート対象外である）。
+  テキストデータは`x-text`やテキスト補間（Mustache構文）で安全に描画し、HTMLを挿入する場合はサニタイズ済みの安全な文字列に限定する。
 
 ## 初期化のタイミングとFOUC対策
 
 - スクリプトに`defer`属性を付与してDOM解析完了後に初期化を実行し、プラグイン、コンポーネントデータ、ストアの登録は、初期化前に発火する`alpine:init`イベント内で行う。
-- 初期化完了前の未処理DOMが一瞬表示される現象（FOUC）は、`x-cloak`ディレクティブを用いて防ぐ。あわせてCSS側で`[x-cloak] { display: none !important; }`を定義しておく必要がある。
+- 初期化完了前の未処理DOMが一瞬表示される現象（FOUC）は、`x-cloak`ディレクティブを用いて防ぐ。
+  あわせてCSS側で`[x-cloak] { display: none !important; }`を定義しておく必要がある。
 
 ## ストア（Alpine.store）とコンポーネント間通信
 
-- 複数コンポーネント間で共有する状態は`Alpine.store`に集約し、状態データとその更新メソッドを一元的に管理する。単一の値のみで完結するシンプルな状態であれば、単一値としての登録で足りる。
+- 複数コンポーネント間で共有する状態は`Alpine.store`に集約し、状態データとその更新メソッドを一元的に管理する。
+  単一の値のみで完結するシンプルな状態であれば、単一値としての登録で足りる。

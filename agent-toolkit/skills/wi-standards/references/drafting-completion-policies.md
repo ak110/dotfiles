@@ -1,0 +1,58 @@
+# 起草完了の条件：方針と判断の記録との比較
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 一連の処理全体の成立を判定する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-placement.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-placement.md` |
+| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:search/SKILL.md` | 判断 | `read:agent-basics:*/skills/search/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-comments.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-comments.md` |
+
+## 方針と判断の記録との比較
+
+記録と比較する目的は、過去の判断でユーザーが重視した結果とトレードオフ（例: C・Dの悪化を嫌って一律必須をやめた）を、今回の案の評価へ引き継ぐことである。
+認可が成立するかの確認はその一部であり、認可が成立した後も比較を続ける。
+案を提示するときは、その案が過去に重視された結果へ与える影響を案の説明に含める。
+
+本節は、`awi-body-placement.md`「配置規約と導入目的の調査」、ユーザー確認やUWIの選択肢を設計する場面、および振り返りにおいて手順や規範の削除・置換を検討する場面から参照される。
+既存の仕組みの導入目的や由来は、変更履歴や、`AGENTS.md`などで案内されている「ユーザーの方針・判断の記録」から調査する。
+記録がインデックスと個別ファイルに分割されている場合は、該当する個別ファイルの節と照らし合わせる。
+検索キーワードには、対象の名称に加えて、提案方式が導入または維持しようとしている仕組みや概念（フォールバック、API、状態管理など）も含める。
+変更対象となる値、設定キー、配布元・配布先のパスを具体的に名指ししている規範（配布元の原本を含む）についても、それらの文字列を固定文字列として、対象リポジトリの全追跡ファイル（隠しディレクトリ配下を含む）から検索する（`agent-basics:search`）。
+この比較調査は変更対象ごとに行う。
+過去の目的や要件に関する記録と衝突する変更は、`../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」で定める「ユーザーが確定した判断の変更」として扱う。
+過去の判断において比較検討された目的やメリット・デメリット、採用された結果、および却下された案を、現在の逐語的な要求が示す変更意向と突き合わせる。
+単に対象範囲が含まれていることや改善目的が合致していることだけでは、判断変更に対する認可が成立したとはみなさない。
+過去に比較検討済みの目的が再度提示されたにすぎない場合は、過去の採用結果と却下案を維持し、変更を要する論点を同スキルの「確認要否の判定」へ回す。
+一方で、現在の要求が判断を変更する意向を明確に示している場合は、過去の記録を名指ししていなくとも、その要求および成立済みの認可に従って進める。
+なお、目的や得られる結果を損なわずに技術的な実現手段を選択することは、通常の技術判断として自律的に行う。
+既存の目的を別の手段で保てると判断して値や機構を置き換える場合は、その目的が保たれることを観測できる完成条件を置くか、観測結果を本文に示す。
+置き換えた手段の設定値やテストの一致だけを用いる判定は、目的の保持の判定から除く。
+ユーザーが条件付きで示した変更（「〜が改善されるなら減らす余地は無いか」など）では、条件の成立を観測できるまで変更を確定しない。
+これらを適用した上でなお残る事項（変更の意向が示されていない依頼において目的側の判断変更が必要となる場合、未合意の選好や認可、または硬い制約やホスト環境の規約と両立しない場合など）のみを、未確定事項として扱う。
+単に過去の記録が名指しされていないことだけを用いる判断は、確認の理由から除く。
+既存の保護機能（エラー検出、確認プロンプト、制限、フォールバックなど）を維持するか、あるいは撤廃して代替機構を追加するかは、現在の要件と実際の観測に基づく必要性を比較して判断する。
+比較にあたっては、保護対象となる事象の観測頻度や最大の影響度を考慮する。
+エージェントが自発的に選定した保護機能は受入条件とは区別し、代替の補償機構は必要性が十分に示された場合にのみ対案のコストとして計上する。
+ユーザーが明示した保護要件、目的側の判断、および硬い制約は維持する。
+現在の明示的な要求が仕組みの変更を求めており、ユーザー固有の判断事項が残らない場合は、その要求通りに変更を進める。
+由来が不明であることや、既存の保護機能が失われることそれ自体は、再確認する理由から除く。
+過去のWI（ステータスは問わない）を比較対象の記録として参照する場合は、`origin-and-approval-comments.md`「ユーザー専用の記入欄と是正要求」で定める参照規則に基づき、ユーザーコメントや回答を含めて確定した有効な要求と比較する。
+確認質問やUWIの選択肢を設計する際は、過去の記録や規範に反したままの案は除外するか、あるいは過去の判断を変更する案である旨とその記録の所在を説明文に明記する。
+後続で処理を担当するエージェントが既存の判断との整合性を判断できるよう、比較の結論と再取得先を本文の適切な箇所に記載する。
+検索範囲、検索キーワード、および記録ごとの比較結果は成立性の証拠に残す。
+確認質問やUWIでは、ユーザーの選択を左右する結論と関連記録の所在を記載する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |

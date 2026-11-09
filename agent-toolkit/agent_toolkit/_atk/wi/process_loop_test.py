@@ -1,6 +1,7 @@
 """隔離したGit・キューで、登録全体の統括と対象別の所有・継続を検証する。"""
 
 import argparse
+import contextlib
 import datetime
 import html
 import io
@@ -28,7 +29,7 @@ from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._common import process_tree, session_registry
 from agent_toolkit._testing import git_repository as git
-from agent_toolkit._testing import wi_entry_files
+from agent_toolkit._testing import late_descendant, wi_entry_files
 
 
 def _targets(
@@ -963,7 +964,9 @@ def test_unreclaimed_descendant_holds_ownership_until_it_disappears(
     """統括の停止で回収できなかった子孫が生存する間は、所有記録が識別を保持して次の統括を起動しない。"""
     _notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
     repository = snapshots[0].repository
-    survivor = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])  # pylint: disable=consider-using-with
+    owned = contextlib.ExitStack()
+    request.addfinalizer(owned.close)
+    survivor = owned.enter_context(late_descendant.held_process(tmp_path))
 
     def reap() -> None:
         survivor.kill()

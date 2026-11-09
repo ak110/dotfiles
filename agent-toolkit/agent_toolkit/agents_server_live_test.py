@@ -25,7 +25,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import session_record_format
-from agent_toolkit._testing import isolation
+from agent_toolkit._testing import isolation, late_descendant
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
 pytestmark = pytest.mark.live_agents
@@ -60,7 +60,7 @@ BACKGROUND_RESUME_INPUTS: dict[str, LiveInput] = {
     "delegate": LiveInput(
         "delegate",
         (
-            """Bashツールで`sleep 2`を背景実行し、待たずにturnを終えよ。
+            """Bashツールで`{command}`を背景実行し、待たずにturnを終えよ。
 バックグラウンドタスクの完了通知で自動的に再開したturnでは、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
         ),
         frozenset({"Bash"}),
@@ -297,6 +297,7 @@ async def _wait_terminal(manager: server_manager.AgentsServerManager) -> dict[st
 @pytest.mark.parametrize("mode", list(BACKGROUND_RESUME_INPUTS))
 async def test_live_launch_waits_for_automatic_resume(
     mode: str,
+    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bashを公開する起動ツール`start`のmodeが、再開指示なしでバックグラウンドタスク完了後の結果を返す。"""
@@ -311,12 +312,25 @@ async def test_live_launch_waits_for_automatic_resume(
             lambda _model_type, **_kwargs: [("claude", "sonnet[1m]", "medium")],
         )
         live_input = BACKGROUND_RESUME_INPUTS[mode]
-        if mode == "delegate":
-            await mcp_tools.start(cwd, mode="delegate", prompt=live_input.texts[0], model_type="chores_fast")
-        else:
-            await mcp_tools.start(cwd, mode="shell", command="sleep 2", summary_policy=live_input.texts[0])
-
-        result = await manager.wait()
+        release = tmp_path / "background.release"
+        script = tmp_path / "background.py"
+        script.write_text(late_descendant.held_source(release), encoding="utf-8")
+        command = shlex.join([sys.executable, str(script)])
+        try:
+            if mode == "delegate":
+                started = await mcp_tools.start(
+                    cwd, mode="delegate", prompt=live_input.texts[0].format(command=command), model_type="chores_fast"
+                )
+            else:
+                started = await mcp_tools.start(cwd, mode="shell", command=command, summary_policy=live_input.texts[0])
+            session = manager.sessions[started["session_id"]]
+            async with asyncio.timeout(120):
+                while not (release.with_suffix(".ready").exists() and session.awaiting_auto_resume):
+                    await asyncio.sleep(0.01)
+            release.touch()
+            result = await manager.wait()
+        finally:
+            release.touch()
 
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED"
@@ -365,7 +379,7 @@ async def test_live_explore_reads_file_and_continues_same_session(
 GRANDCHILD_INPUT = LiveInput(
     "delegate",
     (
-        """`agents_server`の起動ツールで、コマンド`sleep 5`を実行して終了状態を要約させる委譲を1件起動せよ。
+        """`agents_server`の起動ツールで、コマンド`{command}`を実行して終了状態を要約させる委譲を1件起動せよ。
 起動ツールが`mode`を受け取る場合は`start`へ`mode`の`shell`を渡し、受け取らない場合は`start_shell`を使う。
 起動の直後は`atk agents wait`を実行せず、`待機中: <起動したsession_id>`の1行だけを出力してターンを終えよ。
 自動的に再開したターンでは`atk agents wait`でその委譲の結果を回収し、最終応答を`AUTO_RESUME_COMPLETED`だけにせよ。""",
@@ -377,6 +391,7 @@ GRANDCHILD_INPUT = LiveInput(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("candidate", [("codex", "sol", "medium"), ("claude", "sonnet[1m]", "medium")])
 async def test_live_grandchild_wait_resumes_same_session(
+    tmp_path: pathlib.Path,
     candidate: tuple[str, str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -390,10 +405,22 @@ async def test_live_grandchild_wait_resumes_same_session(
         # 委譲先CLIが認証と設定を読み、PATHから起動できるよう、ホームと設定ディレクトリとPATHを戻す。
         isolation.restore_host_environment(monkeypatch)
         monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [candidate])
-        started = await mcp_tools.start(cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0], model_type="chores")
-        session = manager.sessions[started["session_id"]]
-
-        result = await _wait_terminal(manager)
+        release = tmp_path / "grandchild.release"
+        script = tmp_path / "grandchild.py"
+        script.write_text(late_descendant.held_source(release), encoding="utf-8")
+        command = shlex.join([sys.executable, str(script)])
+        try:
+            started = await mcp_tools.start(
+                cwd, mode="delegate", prompt=GRANDCHILD_INPUT.texts[0].format(command=command), model_type="chores"
+            )
+            session = manager.sessions[started["session_id"]]
+            async with asyncio.timeout(120):
+                while not (release.with_suffix(".ready").exists() and session.awaiting_auto_resume):
+                    await asyncio.sleep(0.01)
+            release.touch()
+            result = await _wait_terminal(manager)
+        finally:
+            release.touch()
 
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "AUTO_RESUME_COMPLETED", result

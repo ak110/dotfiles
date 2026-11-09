@@ -11,9 +11,11 @@ import pathlib
 import pty  # pylint: disable=import-error  # POSIX端末の専用ランナーでありWindowsには存在しない。
 import select
 import signal
+import subprocess
 import sys
 import time
 import traceback
+from unittest import mock
 
 import psutil
 import update_dotfiles
@@ -32,13 +34,30 @@ def main() -> int:
     return 0
 
 
-def _run_in_terminal(timeout: int | None, input_text: str | None) -> tuple[int, str, bool]:
+def _run_in_terminal(timeout: float | None, input_text: str | None) -> tuple[int, str, bool]:
     # xdistワーカーには受信スレッドがあるため、新しい単一スレッドプロセスだけがforkする。
     pid, terminal_fd = pty.fork()
     if pid == 0:
         returncode = 1
         try:
-            returncode = update_dotfiles._run_git_pull(1, 4, timeout=timeout)  # noqa: SLF001  # pylint: disable=protected-access
+            with contextlib.ExitStack() as overrides:
+                if os.environ["UPDATE_DOTFILES_TEST_MODE"] == "hang":
+                    ready = pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"])
+
+                    class ReadyPopen(subprocess.Popen):
+                        _test_ready = False
+
+                        def communicate(self, input=None, timeout=None):
+                            if timeout is not None and not self._test_ready:
+                                deadline = time.monotonic() + 10
+                                while not ready.exists():
+                                    assert self.poll() is None and time.monotonic() < deadline, "孫の準備へ到達しない"
+                                    time.sleep(0.01)
+                                self._test_ready = True
+                            return super().communicate(input, timeout=timeout)
+
+                    overrides.enter_context(mock.patch.object(update_dotfiles.subprocess, "Popen", ReadyPopen))
+                returncode = update_dotfiles._run_git_pull(1, 4, timeout=timeout)  # noqa: SLF001  # pylint: disable=protected-access
         except Exception:  # pylint: disable=broad-exception-caught
             # 子の例外を端末出力へ残し、親のJSON出力へ混ぜない。
             traceback.print_exc()

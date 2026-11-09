@@ -1,0 +1,79 @@
+# 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+| 返却形式を確認する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` |
+
+## 完成条件証拠の作成
+
+対象となるWIの集合（`exec-review-subagent-inputs.md`「差分とWIの取得」）が空でない実行、または計画ファイルの`## 実施内容`に`ユーザー指示`に由来する行が含まれる実行を「証拠要求あり」と呼ぶ。
+証拠要求がある場合は、各ラウンドで次の順序に従って証拠を作成する。
+それ以外の実行では、返却メッセージへの判定行の記載を省略する。
+
+1. 計画ファイルの進捗ログや引き継ぎ記録にある実装担当の`検証結果`、および受け取ったCI記録やWI記録（`exec-review-subagent-inputs.md`「入力」で保存した入力記録）を確認し、各記録の出所と、保存されている出力や実際の観測結果を個別に突き合わせる。
+   記録と現物に食い違いや不足がある場合は、該当する条件を`根拠不足`と判定し、必要に応じて指摘を登録する
+2. 判定に必要な検証を、レビュー対象のHEADを指している対象worktree上で自ら実行する（実行範囲は`exec-review-operations.md`「操作区分」に従う）。
+   計画の`## 検証`に記載された行や、条件で明示された公開呼び出し手段を優先し、実行したコマンド、終了コード、および判定に使用した出力の要点を記録する。
+   実装担当が記録した検証結果を同じHEADで再現できた場合でも、自ら観測した結果を判定の根拠とする
+3. AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
+   新形式のエージェント由来AWIでは`review_contract`の条件表、旧形式のエージェント由来AWIと完成条件節を持つ人間由来AWIでは`## 完成条件`の各項目を洗い出す。
+   さらに`exec-review-recording-contract.md`「記録する行と要求単位」に従って元の要求文から要求単位を切り出して番号を付ける
+4. 洗い出したすべての条件について合否を判定し、「条件別判定行の形式」に従って1つの条件につき1行で記述する。
+   行の無断削除や集約は禁止する。
+   単独では要求として読み取りにくい単位であっても、それが属する発言全体の意図に照らして判定し、その解釈を根拠欄に明記する
+5. 再レビューの際は、レビュー対象の最新HEADですべての条件を改めて判定し直す。
+   前のラウンドの判定結果をそのまま維持する場合も、「受理済み判定への参照」に定める条件と理由を根拠欄に記述する
+
+要求単位の切り出し方に疑問がある場合でも、すべての単位について判定結果を記述して返し、判断を左右する疑問点は判定根拠へ書き添える。
+
+## 条件別判定行の形式
+
+完成条件証拠の各行は次の形式で記述し、`exec-review.parent.md`「実行レビューの返却契約」の返却メッセージ内に条件の数だけ並べる。
+
+```text
+<WI> 完成条件<N>: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
+<WI> 原文要求<N>「<要求単位の逐語>」: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
+```
+
+- `<WI>`にはWIのファイル名を記述する。
+  計画ファイルの`ユーザー指示`行から取得した単位については、計画ファイル名を記述する
+- `完成条件<N>`の`N`は、既存の番号付き完成条件ではその番号を維持する。
+  新形式のエージェント由来AWIではレビュー開始時の`review_contract`に記載された導出済みの主要な完成状態と補足条件に、WIごとに両区分を通じて重複しない番号を使う。
+  原文要求の`N`は、WIごとに出現順に1から番号を振り、対象となる要求単位の原文を「」で囲んで一字一句違わずに記載する
+- 判定結果は`exec-review-recording-verdicts.md`「判定の値」で定義する3種類のいずれかとし、根拠欄には`exec-review-recording-grounds.md`「根拠の書き方」に従って、その行の条件を直接満たしていることを示す観測結果を記述する
+- 1行に収まらない共通の根拠がある場合は、自身のセッション用のmanaged-temp内のファイルへ一度だけ書き出し、各判定行には行固有の判断とともに、そのファイルの`<絶対パス>:<行>`または`<絶対パス>#<見出し>`の参照を記述する。
+  参照先のファイルを後から変更する場合は、別のファイルとして作成する
+
+返却する前に、対象WIの完成条件の各項目と完成条件行を突き合わせ、また元のユーザー発言の各要求単位と原文要求行を突き合わせる。
+それぞれの単位に対して過不足なく1行ずつ対応し、番号の欠落や重複がないこと、判定と根拠が正しく揃っていること、および各`達成`行が`exec-review-recording-grounds.md`「根拠の書き方」で定める「所在と観測内容のペア」を含んでいることを確認する。
+一文の中に複数の要求が含まれる場合や、例示と要件の区別については、単純な行数チェックなどに頼らず、自ら文章を読んで確認する。
+なお、原文要求行は、WIまたは計画ファイルに元のユーザー発言が存在する場合に記述する。
+
+## 受理済み判定への参照
+
+後続のレビューで`受理済みの完成条件証拠`を受け取った場合や、同じレビューの一連の流れの中で前のラウンドの返却内容が委譲元に受理されている場合は、その返却内の判定行を参照できる。
+参照できるのは、その条件の結果に影響を与える成果物、テスト、入力、および実行環境が、今回の差分の前後で完全に一致していると確認できた行に限る。
+差分によって影響を受ける行や、参照可能な判定行が存在しない条件については、現在の現物を実際に観測して判定する。
+
+判定行を参照する場合は、今回の判定結果を明記した上で、根拠欄に`前回受理: <返却ファイルの絶対パス>:<行> — <今回も適用できる理由>`と記述する。
+参照先と同じWI、同じ条件番号（原文要求の場合は同じ逐語テキスト）であり、参照先の判定結果が今回の判定と一致していることを確かめる。
+参照先のファイルが読み取れない場合は、今回の現物観測による判定に戻す。
+適用条件の確認と今回の判定は、実行レビュー担当自身が行う。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビュータスク：入力の基準を適用する前 | `exec-review-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-inputs.md` |
+| 実行レビューの指摘と完成条件証拠の記録：review_contractの書式の基準を適用する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` |
+| 実行レビューの指摘と完成条件証拠の記録：根拠の書き方の基準を適用する前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
+| 実行レビューの指摘と完成条件証拠の記録：判定の値の基準を適用する前 | `exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |

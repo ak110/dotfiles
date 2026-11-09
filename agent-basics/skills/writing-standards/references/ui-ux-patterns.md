@@ -3,11 +3,14 @@
 本書は、フォーム、一覧、検索、通知、自動で切り替わる表示、パネル表示、AI連携、同意・解約フロー、多言語対応などを含む画面の設計、実装、レビューをする際に参照する指針である。
 設計にあたっては、まずエンドユーザーの作業の流れと中断可能な範囲を明確にし、各機能における操作から最終結果に至る動線を一貫して確認する。
 
-参考資料: [ux-designer-skill](https://github.com/szilu/ux-designer-skill)、[frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill)。これらの資料をもとに主題別の判断基準を再構成した。アクセシビリティや表示性能に関する基準値は[W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/)および[web.dev Core Web Vitals](https://web.dev/articles/vitals/)に準拠し、共通の指標値は`ui-ux.md`にまとめている。 MIT Licenseの著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
+参考資料: [ux-designer-skill](https://github.com/szilu/ux-designer-skill)、[frontend-ui-ux-skill](https://github.com/overseek944/frontend-ui-ux-skill)。
+これらの資料をもとに主題別の判断基準を再構成した。
+アクセシビリティや表示性能に関する基準値は[W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/)および[web.dev Core Web Vitals](https://web.dev/articles/vitals/)に準拠し、共通の指標値は`ui-ux.md`にまとめている。
+ MIT Licenseの著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |

@@ -6,6 +6,8 @@ import re
 
 import pytest
 
+from agent_toolkit._testing.normative_contract import read_contract
+
 _ROOT = pathlib.Path(__file__).parent
 
 
@@ -14,8 +16,9 @@ def _bullet_categories(text: str) -> set[str]:
 
 
 def _status_categories(text: str, status: str) -> set[str]:
-    line = next(line for line in text.splitlines() if line.startswith(f"- `{status}`:"))
-    return set(re.findall(r"`([^`]+)`", line.split("区分は", 1)[1].split("とし", 1)[0]))
+    bullet = re.search(rf"^- `{re.escape(status)}`:(.*?)(?=^- |\Z)", text, re.MULTILINE | re.DOTALL)
+    assert bullet is not None
+    return set(re.findall(r"`([^`]+)`", bullet[1].split("区分は", 1)[1].split("とし", 1)[0]))
 
 
 def _sender_categories(text: str) -> dict[str, set[str]]:
@@ -41,11 +44,19 @@ def _assert_categories_match(sender: str, rules: str, prevention: str, waiting: 
 @pytest.fixture(name="definitions", scope="module")
 def _definitions() -> tuple[str, str, str, str]:
     sender = (_ROOT / "hooks/send_to_user.tsx").read_text(encoding="utf-8")
-    rules = (_ROOT / "share/rules/rules-main.md").read_text(encoding="utf-8")
-    prevention = (_ROOT.parent / "agent-basics/skills/bugfix/references/root-cause-prevention.md").read_text(encoding="utf-8")
+    rules = read_contract(_ROOT / "share/rules/rules-main.md", _ROOT, ("../main-improvements.md", "改善点を発見"))
+    prevention = read_contract(
+        _ROOT.parent / "agent-basics/skills/bugfix/references/root-cause-prevention.md",
+        _ROOT,
+        ("root-cause-prevention-requirements.md", "再発防止策の必須性"),
+    )
     # 他節の箇条書きを区分の定義へ混ぜない。
     prevention = prevention.split("理由を次の区分名で始める。", 1)[1].split("過去に採用して", 1)[0]
-    waiting = (_ROOT / "skills/delegation/references/waiting-and-monitoring.md").read_text(encoding="utf-8")
+    waiting = read_contract(
+        _ROOT / "skills/delegation/references/waiting-and-monitoring.md",
+        _ROOT,
+        ("waiting-and-monitoring-independent-work.md", "待機中の先行実施"),
+    )
     waiting = waiting.split("## 待機中の先行実施", 1)[1]
     return sender, rules, prevention, waiting
 

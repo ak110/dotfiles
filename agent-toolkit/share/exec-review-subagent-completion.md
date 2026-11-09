@@ -1,0 +1,61 @@
+# 実行レビュータスク：返却前の処理
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` | |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 条件表を検収する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` | |
+| 初回レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
+| 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
+| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md`、`read:agent-toolkit:*/skills/commit/references/testing.md` | |
+| `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-structure.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-scope.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-requirements.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
+| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check.parent.md` | |
+| 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/share/exec-review-recording-issues.md`、`read:agent-toolkit:*/share/exec-review-recording-evidence.md`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
+| 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
+| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` | |
+| 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` | |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` | |
+| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md`、`exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md`、`read:agent-toolkit:*/share/exec-review-recording-verdicts.md` | |
+
+## 返却前の処理
+
+**6.** 全条件と探索結果を点検・記録し、以下を終えてから`exec-review.subagent.md`「出力」の形式で返す。
+
+- 完成条件証拠の提出が求められている場合は、`exec-review-recording-evidence.md`「完成条件証拠の作成」に従ってすべての条件を判定し、同書「条件別判定行の形式」に基づく返却前チェックを完了する
+- 実装差分に対して十分な裏付けが取れた指摘のみを管理表へ登録し、`atk review-table validate <表の絶対パス> --allow-unanswered`を実行して表の構造に不備がないことを確認する（レビュー対象者の応答記入を待つ必要はない）。
+  `未解決の指摘数`には、`atk review-table show <表の絶対パス> --format=summary --round <round>`が返す`unanswered_count`の値を使用する
+- 未解決の指摘数が0件であっても、区分名が付与されていない`未達`や`根拠不足`の条件が残っている場合は、その条件を満たしていない点を指摘として管理表へ登録したうえで返却する（未達の条件には、修正作業へ引き継ぐための具体的な指摘が必要となる）
+- 探索結果として得られたすべての指摘について、管理表に対応する行が存在するか、または根拠を明記した不採用理由が記録されていることを確認し、漏れがあれば補完する
+- 再発防止セルフチェックの全項目の結果について、管理表への登録先または不採用の理由を正しく対応付ける。
+  観点が存在しない場合や、今回の差分がなく未解決指摘が0件であるといった省略条件に該当する場合は、その根拠を走査記録に残す
+- 差分外やレビュー範囲外として管理表から除外する指摘候補は、`exec-review-recording-issues.md`「走査記録と差分外の不良」に従って分類と受け渡しを完了させる。
+  再レビュー時は、走査記録や引き継ぎ記録から未解決の報告事項を回収して委譲元の対応記録と突き合わせ、未処置の不具合を`気付いた改善点:`として報告する。
+  差分外の不具合の存在だけを理由とする、正常に進められるレビューの「続行不能」への変更は対象外とする
+- 各ラウンドにおける開始時点とレビューしたHEAD、判定に用いた契約、ならびにGit管理外の文章成果物ごとの識別子（回答下書きの場合は元の絶対パス）と読み込んだ本文の複製パスを、自身のセッションのmanaged-temp配下の記録ファイルへ保存し、その絶対パスを引き継ぎ記録へ`前回確認版`として記録する。
+  セルフチェックに起因する未解決指摘や今回の差分比較元も同一の記録に対応付ける。
+  前回本文や契約の保存ファイルは上書きせず、現在のレビュー工程が完了した段階で次の比較元へ切り替える
+
+起動・終了観測は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。
+Codexの組み込み委譲は`agents_server`が利用できない場合の代替手段として位置づけられ、`fork_turns: "none"`を指定して起動する。
+
+`exec-review.subagent.md`の「出力」節で定める延期用の記録によって許容された未達成事項は、管理表への登録や別台帳への転記の対象から除く。
+記録が存在することだけでなく、判断の妥当性が十分に確認されているかを確かめる。
+返却可否と不足の分類は`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」に従い、残っている処理の担当主体と、不足している判断・入力・権限の内容に基づいて決定する。
+判定行、検証、読者別探索の起動・回復・受領、申告補正、新HEADでの全条件再判定など、担当内の処理は返却前に完遂する。
+委譲元による最終判断や認可、取得不可能な入力、権限や外部状態の不足など、本担当の作業範囲では解消できない問題が残っている場合に限り、その不足内容と再開すべき位置を「続行できない理由」に記載して返す。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビュータスクの基準を適用する前 | `exec-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.subagent.md` |

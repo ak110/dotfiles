@@ -27,6 +27,7 @@ from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import codex_usage_limit, next_action, process_tree, session_record_paths, session_registry
 from agent_toolkit._common import inherited_venv as _inherited_venv
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.process_loop_support import (
     isolate_process_loop_commands,
 )
@@ -283,14 +284,20 @@ def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
 def test_codex_orchestrator_session_record_keeps_provider(tmp_path: pathlib.Path) -> None:
     """統括担当の起動中に公開するセッション記録へ、選んだproviderを保存する。"""
     env = {**os.environ, _pl_env.PROCESS_LOOP_SESSION_ID_ENV: "orchestrator-thread", "CODEX_HOME": str(tmp_path)}
+    release = tmp_path / "provider.release"
+
+    def published(_identifier: str) -> None:
+        release.touch()
+
     result = _ORIGINAL_CODEX_SESSION(
-        [sys.executable, "-c", "import time; time.sleep(1.5)"],
+        [sys.executable, "-c", late_descendant.held_source(release)],
         env,
         tmp_path,
         orchestrator="codex",
         model="gpt-5.6-sol",
         effort="medium",
         codex_provider="my-credits",
+        on_session_started=published,
     )
     assert result.returncode == 0
     info = session_registry.resolve("orchestrator-thread").resume_info
@@ -456,7 +463,11 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
         "if subscription:\n"
         "    (root / 'limited').write_text('limited')\n"
         "    stopfailure_notifier.main(json.dumps({'session_id':identifier,'error':'rate_limit'}))\n"
-        "    if os.environ['HOLD_LIMIT'] == '1': time.sleep(20)\n"
+        "    if os.environ['HOLD_LIMIT'] == '1':\n"
+        "        deadline = time.monotonic() + 120\n"
+        "        while not (root / 'limited.release').exists():\n"
+        "            assert time.monotonic() < deadline\n"
+        "            time.sleep(0.01)\n"
         "    sys.exit(1)\n"
         "(root / 'continued').write_text(identifier)\n",
         encoding="utf-8",
@@ -859,6 +870,7 @@ def test_codex_usage_limit_child_continues_next_iteration(
     tmp_path: pathlib.Path,
     new_turn: bool,
     resume: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """実子の上限停止だけを親が終了し、新turn開始後の子は自身の正常終了まで保持する。"""
     binary = tmp_path / "codex"
@@ -879,7 +891,12 @@ def test_codex_usage_limit_child_continues_next_iteration(
         "if os.environ['NEW_TURN'] == '1': events.append({'type': 'event_msg', 'payload': {'type': 'task_started'}})\n"
         "record = directory / 'rollout-2026-10-16-00000000-0000-0000-0000-000000000001.jsonl'\n"
         "record.write_text('\\n'.join(json.dumps(e) for e in events))\n"
-        "time.sleep(2.5 if os.environ['NEW_TURN'] == '1' else 20)\n"
+        "release = pathlib.Path(os.environ['COMPLETED'] + '.release')\n"
+        "release.with_suffix('.ready').touch()\n"
+        "deadline = time.monotonic() + 120\n"
+        "while not release.exists():\n"
+        "    assert time.monotonic() < deadline\n"
+        "    time.sleep(0.01)\n"
         "pathlib.Path(os.environ['COMPLETED']).write_text('completed')\n",
         encoding="utf-8",
     )
@@ -892,6 +909,28 @@ def test_codex_usage_limit_child_continues_next_iteration(
         "RESUME": "1" if resume else "0",
         "COMPLETED": str(marker),
     }
+    from_rollout = _pl_session._codex_usage_limit.from_rollout  # pylint: disable=protected-access
+    release = marker.with_name(marker.name + ".release")
+
+    def observed_rollout(*args: Any, **kwargs: Any) -> Any:
+        result = from_rollout(*args, **kwargs)
+        if new_turn:
+            assert result is None
+            release.touch()
+        return result
+
+    class ReadyPopen(subprocess.Popen):
+        def wait(self, timeout=None):
+            if timeout == 1:
+                deadline = time.monotonic() + 30
+                while not release.with_suffix(".ready").exists():
+                    assert self.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.01)
+                timeout = 0.05
+            return super().wait(timeout=timeout)
+
+    monkeypatch.setattr(_pl_session._codex_usage_limit, "from_rollout", observed_rollout)  # pylint: disable=protected-access
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
     finished: list[bool] = []
     started = time.monotonic()
     assert (
@@ -918,7 +957,9 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, site: str
 ) -> None:
     """統括CLIを止める4箇所のいずれでも、回収できなかった子孫を診断ログだけで済ませず呼び出し元へ渡す。"""
-    survivor = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])  # pylint: disable=consider-using-with
+    owned = contextlib.ExitStack()
+    request.addfinalizer(owned.close)
+    survivor = owned.enter_context(late_descendant.held_process(tmp_path))
 
     def reap() -> None:
         survivor.kill()
@@ -967,7 +1008,7 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
         if expected is not None:
             stack.enter_context(pytest.raises(expected))
         _ORIGINAL_CODEX_SESSION(
-            [sys.executable, "-c", "import time; time.sleep(60)"],
+            [sys.executable, "-c", late_descendant.held_source(tmp_path / "residual.release")],
             env,
             tmp_path,
             orchestrator=orchestrator,

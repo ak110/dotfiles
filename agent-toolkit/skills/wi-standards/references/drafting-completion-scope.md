@@ -1,0 +1,36 @@
+# 起草完了の条件：対象集合の仕分け
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 一連の処理全体の成立を判定する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+
+## 対象集合の仕分け
+
+対象集合の見直し、存廃、要否の判定、または仕分けを求める依頼では、判定するべき時点を元の要求から特定する。
+投入前の仕分けを求める要求では、各対象の採否と根拠を本文中で確定させる（1件1行の表形式を推奨する）。
+先行する成果物や委譲先による判定結果から登録項目を選ぶ場合も、登録対象外とした項目と連動する一対の対象（規範とテスト、設定と状態など）を含めて現物で確認し、個々の採否を本文で確定する。
+処理の実行時点で対象集合を処理担当側が判定する形式にするのは、元の要求自体が処理時点での判定を求めている場合に限る（処理の実行時点で内容が変動する集合に対する恒常的なルールなど）。
+起草の段階で調査可能な集合の採否は、投入前に本文で確定させる。
+手動作成では、`wi-standards-body.md`「起票目的別の調査出口」を適用する。
+処理時点で集合を判定する要求では、起草時に分類の軸、判定主体、判定時点、保持条件、および外部から確認可能な完成条件を確定する。
+個々の採否は指定された処理時点で判定し、起草時に把握した対象一覧は該当例として扱う。
+また、起草時には対象を列挙する手段と、全対象へ確実にアクセスできることを確かめておく。
+処理側は各対象を変更する前に採否と根拠を確定し、元の対象集合と変更結果を全件対応付けて検収する。
+仕分け、要約、統合をした後も、個別の採否、変更箇所、保持条件、根拠が元の調査結果と対応付けられる記述にする。
+根拠が真に共通している対象は、対応関係が明確に分かる形であればまとめて記載してよい。
+なお、単一の対象のみを変更する依頼は本節の対象外である。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| AWIとUWIの共通規範：通常AWIの本文の基準を適用する前 | `wi-standards-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-body.md` |

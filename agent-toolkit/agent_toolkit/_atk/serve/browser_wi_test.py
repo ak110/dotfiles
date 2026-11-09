@@ -42,7 +42,6 @@ from agent_toolkit._testing.serve_support import _disable_wi_git
 pytestmark = [
     pytest.mark.browser,
 ]
-_SAVE_RELEASE_DELAY_SEC = 1.0
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -531,15 +530,15 @@ async def _assert_detail_notice_and_controls_reachable(page: playwright.async_ap
     assert visited == required
 
 
-async def _release_save_after_delay(release: threading.Event) -> None:
-    """一定時間の経過後に保存処理を解放する。
-
-    保存が即座に完了する場合、前段の通知が残存したまま待機が成立する欠陥があっても、
-    本文の読み取りは保存の完了後に到達し、テストは通過する。解放を遅延させると、
-    保存の完了を待たない待機条件は実行速度によらず失敗として現れる。
-    """
-    await asyncio.sleep(_SAVE_RELEASE_DELAY_SEC)
-    release.set()
+async def _release_save_when_waiting(page: playwright.async_api.Page, release: threading.Event) -> None:
+    """保存中の表示と前回通知の消去を観測してから保存を解放する。"""
+    try:
+        await playwright.async_api.expect(page.locator("#save-user-comment-button")).to_be_disabled()
+        await playwright.async_api.expect(
+            page.get_by_role("status").filter(has_text="ユーザーコメントを保存しました")
+        ).to_be_hidden()
+    finally:
+        release.set()
 
 
 async def _wait_and_close_operation_notice(page: playwright.async_api.Page, text: str) -> None:
@@ -2738,9 +2737,8 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     await playwright.async_api.expect(comment_input).to_be_disabled()
     await playwright.async_api.expect(detail.locator("#save-user-comment-button")).to_be_disabled()
     assert harness.operations.user_comment_calls == 2
-    release_task = asyncio.create_task(_release_save_after_delay(harness.operations.user_comment_release))
+    await _release_save_when_waiting(page, harness.operations.user_comment_release)
     await _wait_and_close_operation_notice(page, "ユーザーコメントを保存しました")
-    await release_task
     await playwright.async_api.expect(detail).to_be_hidden()
     saved = path.read_text(encoding="utf-8")
     assert "置換後のコメント" in saved
@@ -2772,9 +2770,8 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
     assert isinstance(retry_payload, dict)
     assert retry_payload["expected_content"] == latest
     assert await asyncio.to_thread(harness.operations.user_comment_started.wait, 5)
-    release_task = asyncio.create_task(_release_save_after_delay(harness.operations.user_comment_release))
+    await _release_save_when_waiting(page, harness.operations.user_comment_release)
     await _wait_and_close_operation_notice(page, "ユーザーコメントを保存しました")
-    await release_task
     await playwright.async_api.expect(detail).to_be_hidden()
     assert "競合後も保持する入力" in path.read_text(encoding="utf-8")
     assert harness.operations.user_comment_calls == 4

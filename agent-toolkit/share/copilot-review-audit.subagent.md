@@ -13,30 +13,35 @@ writes_worktree: false
 <!-- parent-read-source: agent-toolkit:/skills/process-wi/references/review-audit-launch.md#自動コードレビュー監査担当の起動と受領 -->
 
 対象となるGitHubリポジトリにおいて、Copilot由来のレビュー指摘と未判定のDependabotアラートを1回取得して監査し、分類、GitHubへの記録、ならびに判定済みとしての記録までを完結させる。
-対象リポジトリの追跡対象ファイルやコミット履歴は変更しない。要修正と判定された項目の是正作業やAWIへの起票・記録は委譲元が担当する。
+対象リポジトリの追跡対象ファイルやコミット履歴は変更しない。
+要修正と判定された項目の是正作業やAWIへの起票・記録は委譲元が担当する。
 
 ## 名指し参照の読込方法
 
-名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 着手時 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の冒頭、「対象」「取得」「判定」「判定済みの記録」 | 起動時 | `role:copilot-review-audit` | |
-| 判定結果をGitHubへ記録する前 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の「判定結果のGitHubへの記録」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md#「判定結果のGitHubへの記録」` | |
-| Dependabotアラートを扱う前 | `${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/github-copilot-review-audit.md`の「Dependabotアラート」 | 判断 | `section:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md#「Dependabotアラート」` | |
+| 着手時 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | 起動時 | `role:copilot-review-audit` | |
+| 判定結果をGitHubへ記録する前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
+| Dependabotアラートを扱う前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
 
 ## 入力
 
-- `pending取得結果`: `atk review-audit pending --repo <OWNER>/<REPO>`の標準出力を保存したJSONファイルの絶対パス。`なし`の場合は、同書に定める代替取得の手順に従って監査対象を取得する
-- `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規作成か継続かの区分。GitHubへの返信、スレッドの解決、コメント投稿、および判定済みの記録を完了した対象を書き残し、処理再開時に重複して書き込まないようにする。記録する内容は`${CLAUDE_PLUGIN_ROOT}/share/rules/rules-subagent.md`「多段工程の引き継ぎ記録」に従う
+- `pending取得結果`: `atk review-audit pending --repo <OWNER>/<REPO>`の標準出力を保存したJSONファイルの絶対パス。
+  `なし`の場合は、同書に定める代替取得の手順に従って監査対象を取得する
+- `引き継ぎ記録先`: 到達点を記録するファイルの絶対パスと、新規作成か継続かの区分。
+  GitHubへの返信、スレッドの解決、コメント投稿、および判定済みの記録を完了した対象を書き残し、処理再開時に重複して書き込まないようにする。
+  記録する内容は`${CLAUDE_PLUGIN_ROOT}/share/rules/rules-subagent.md`「多段工程の引き継ぎ記録」に従う
 
 対象リポジトリは起動時の作業ディレクトリ（`cwd`）が属するGit作業ツリーのルートとし、`<OWNER>/<REPO>`はそのリポジトリのGitHub上のリポジトリ識別子とする。
 
 ## 手順
 
-**1.** 監査の入力を確定するため、読込表の資料と`pending取得結果`を読む。`なし`なら同資料の代替取得を使う。
+**1.** 監査の入力を確定するため、読込表の資料と`pending取得結果`を読む。
+`なし`なら同資料の代替取得を使う。
 
 **2.** Copilotは同資料の取得・分類・GitHubへの記録・判定済み記録を進める。
 
@@ -69,4 +74,5 @@ Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 
-続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
+続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。

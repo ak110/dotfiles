@@ -11,13 +11,16 @@ POSIXでは親を失った子がinitへ付け替わり、どの列挙方式で�
 このためPOSIXのspawnerはholderの親のまま残る。
 """
 
+import contextlib
 import json
 import pathlib
 import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
 
 import psutil
@@ -28,6 +31,12 @@ _SCRIPT = r"""
 import os, pathlib, runpy, subprocess, sys, time
 
 role, directory = sys.argv[1], pathlib.Path(sys.argv[2])
+
+def hold():
+    deadline = time.monotonic() + 120
+    while not (directory / (role + ".release")).exists():
+        assert time.monotonic() < deadline, "解放指示が届かない"
+        time.sleep(0.01)
 
 def launch(child_role):
     # 起動元の標準入出力（App Serverのpipeなど）を引き継がせず、起動の失敗は診断ファイルへ残す。
@@ -44,7 +53,7 @@ if role == "holder":
         record = directory / "holder.pid.tmp"
         record.write_text(f"{os.getpid()} {psutil.Process().create_time()}", encoding="utf-8")
         os.replace(record, directory / "holder.pid")
-        time.sleep(120)
+        hold()
     sys.exit(0)
 if role == "spawner":
     # holderと同じく、一時ファイルへ書いてから置き換えて書きかけを読ませない。
@@ -60,7 +69,7 @@ if role == "spawner":
         while (directory / "retain-spawner").exists() and not (directory / "exit-spawner").exists():
             time.sleep(0.01)
         sys.exit(0)
-    time.sleep(120)
+    hold()
     sys.exit(0)
 # role == "cli": spawnerを起動し、残りの引数があればそのスクリプトを本来の処理として実行する。
 launch("spawner")
@@ -68,11 +77,37 @@ if len(sys.argv) > 3:
     sys.argv = sys.argv[3:]
     runpy.run_path(sys.argv[0], run_name="__main__")
 else:
-    time.sleep(120)
+    hold()
 """
 
 READY_TIMEOUT_SECONDS = 30.0
 """spawnerとholderの起動を待つ上限（秒）。CIの高負荷時でもPythonの起動が収まる値とする。"""
+
+
+def held_source(release: pathlib.Path) -> str:
+    """準備を通知し、親の解放ファイルまで生存する子のソースを返す。"""
+    return (
+        "import pathlib,time; "
+        f"release=pathlib.Path({str(release)!r}); "
+        "release.with_suffix('.ready').touch(); deadline=time.monotonic()+120; "
+        "exec('while not release.exists():\\n assert time.monotonic()<deadline\\n time.sleep(0.01)')"
+    )
+
+
+@contextlib.contextmanager
+def held_process(directory: pathlib.Path, *extra: str, **kwargs: Any) -> Generator[subprocess.Popen]:
+    """準備済みの実子を所有し、正常終了・失敗の両方で解放と子孫回収を終える。"""
+    with tempfile.TemporaryDirectory(dir=directory, prefix="held-") as temporary:
+        release = pathlib.Path(temporary) / "child.release"
+        with process_tree.process_scope([sys.executable, "-c", held_source(release), *extra], **kwargs) as process:
+            try:
+                deadline = time.monotonic() + READY_TIMEOUT_SECONDS
+                while not release.with_suffix(".ready").exists():
+                    assert process.poll() is None and time.monotonic() < deadline, "子が準備へ到達しない"
+                    time.sleep(0.01)
+                yield process
+            finally:
+                release.touch()
 
 
 def prepare(directory: pathlib.Path) -> pathlib.Path:

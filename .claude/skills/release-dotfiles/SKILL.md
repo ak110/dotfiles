@@ -15,7 +15,7 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -23,9 +23,8 @@ description: >
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/references/publishing.md` | 判断 | `read:*/skills/develop-dotfiles/references/publishing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-external-writes/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-external-writes/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../merge-pr/SKILL.md` | 判断 | `read:*/skills/merge-pr/SKILL.md` |
-| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
@@ -42,9 +41,13 @@ description: >
 
 ## developとmasterのリリース運用
 
-日常の開発作業は`develop`ブランチ上で行い、リリースは`master`に向けたPRを通じて実施する。`master`ブランチは、必須CIをすべて通過したマージコミットのみによって更新する。auto-mergeの有効化や、失敗時の自動再試行、自動ロールバックの導入は行わない。
+日常の開発作業は`develop`ブランチ上で行い、リリースは`master`に向けたPRを通じて実施する。
+`master`ブランチは、必須CIをすべて通過したマージコミットのみによって更新する。
+auto-mergeの有効化や、失敗時の自動再試行、自動ロールバックの導入は行わない。
 
-`agent-toolkit:process-wi`による作業、および`operate-ak110-projects`「リリース運用」の恒常的な認可や明示的な指定によって公開まで担当する協調モードの作業を対象とする。メインエージェントが以下の手順で日次リリースの要否を判定し、実施する（背景や経緯は[日次リリースの自動実施](../../../docs/development/operations.md#日次リリースの自動実施)を参照）。なお、公開範囲について明示的な指示がある場合は、それを最優先とする。
+`agent-toolkit:process-wi`による作業、および`operate-ak110-projects`「リリース運用」の恒常的な認可や明示的な指定によって公開まで担当する協調モードの作業を対象とする。
+メインエージェントが以下の手順で日次リリースの要否を判定し、実施する（背景や経緯は[日次リリースの自動実施](../../../docs/development/operations.md#日次リリースの自動実施)を参照）。
+なお、公開範囲について明示的な指示がある場合は、それを最優先とする。
 
 1. 公開工程でのpushとCIの成功後、公開する差分を判定する。
    `agent-toolkit:commit`のGit識別子規定で解決した`origin/develop`と`origin/master`が同じcommitなら、その旨を報告してPR作成を見送る。
@@ -53,7 +56,7 @@ description: >
    ただし、マージ済みの`master`の不具合修正を`develop`へ公開した場合は、不具合を残さないため同じセッションでも追加のリリースPRを作成してマージする（ユーザー指示、2026年10月28日）。
 3. 重複PRを防ぐため、同じheadとbaseを持つopenなPRを確認する。
    1件なら再利用し、複数なら候補の番号とURLを報告して停止する。
-   0件なら、タイトルに今回の変更の主題を1文で記し、本文を`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に沿ってmanaged-tempへ保存する。
+   0件なら、タイトルに今回の変更の主題を1文で記し、本文を`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に沿ってmanaged-tempへ保存する。
    作成直前に`agent-toolkit:review-external-writes`を起動し、PRを作成する。
 4. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチ同期、CI確認、および必要なリリースの検収まで完了させる。
 5. PRの作成やマージに失敗した時点で停止し、外部状態、失敗工程、runのURLと再開に必要な情報を報告する。

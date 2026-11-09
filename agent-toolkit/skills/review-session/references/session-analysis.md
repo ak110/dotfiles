@@ -4,78 +4,113 @@
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「投入と取得」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「投入と取得」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「原因分析の品質確認」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「原因分析の品質確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「振り返り結果報告のフォーマット」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-quality.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-retrospective.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-retrospective.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 工程2で`atk run-script session-review-prepare`の出力に含まれる`reference_document`に値が設定されている場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 | 判断 | `tool:Read`、`tool:Bash` | `review-reference` |
-| 工程2で`conversation.md`の全体を通読する前（工程2の判定および工程3の選別の基準として使用する） | `analysis.md`の冒頭と「入力と照会」から「比較して探す観点」まで | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#冒頭`、`section:agent-toolkit:*/skills/review-session/references/analysis.md#「入力と照会」から「比較して探す観点」まで` | |
-| 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis.md`の「原因と対策」「既存キュー項目との重複確認」「規範適用による目的逸脱」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「原因と対策」「既存キュー項目との重複確認」「規範適用による目的逸脱」` | |
+| 工程2で`conversation.md`の全体を通読する前（工程2の判定および工程3の選別の基準として使用する） | `analysis.md`、`analysis-inputs.md`、`analysis-definition-reads.md`、`analysis-triage.md`、`analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-inputs.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-definition-reads.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` | |
+| 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis-cost.md`、`analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` | |
 | コスト削減案の採否および所要時間300秒超過時の対応を確定する前 | `duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` | |
 | 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
 | 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` | |
 | 工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
 | batchの保存開始を送る前 | `batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` | |
-| 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation.md`の「経験の保存と適用」、`agent-basics:writing-standards/references/agent-documents-basics.md`の「置き場所と配送」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「経験の保存と適用」`、`section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「置き場所と配送」` | |
+| 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` | |
 
 ## 分析と投入
 
 ### 工程2
 
-`candidates.md`を読む前に、メインエージェントが`conversation.md`の全体を一連の流れとして通読し、特定の観点にとらわれずに問題点や改善の機会を洗い出す。全体像の把握と最終的な判断は、メインエージェント単独で行う。
+`candidates.md`を読む前に、メインエージェントが`conversation.md`の全体を一連の流れとして通読し、特定の観点にとらわれずに問題点や改善の機会を洗い出す。
+全体像の把握と最終的な判断は、メインエージェント単独で行う。
 
-- 毎回の振り返りにおいて、`stats.md`に記録された起動モード、実際に使用されたモデル、プロンプト入力の内訳、ファイルの読込量、出力結果のデータ量、hookの発生元と反復回数、テキストの部分一致、トークン消費上位の項目を確認し、作業全体を効率化するための具体的な改善案を比較検討する。欠陥の有無に関する判断と、コスト比較に基づく採否の判断は明確に区別し、比較結果を工程3・工程4と振り返り結果報告の`費用確認`項目へ引き継ぐ。評価観点の一覧は参照資料に記載されているものを用い、比較結果には対象となった作業と具体的な改善策を明記する。
-- 評価対象の項目は、`analysis.md`「コストの無駄の確認」に挙げる17の観点とする。まずメインエージェントとサブエージェントの間で作業の重複がなかったかを検証する。通読結果、統計情報、取得済みの証拠をもとに、親子エージェントが同一の調査や判断を二重に行っていた区間を特定し、作業を分担することによって得られたメリット（独立した文脈でのレビュー、並列処理、探索結果のコンテキスト隔離、モデルの使い分けなど）と照らし合わせて評価する。続いて、ファイル等に保存済みのテキストをモデルが機械的に転記した箇所がないかを確認し、生成側でのファイル保存と参照の受け渡しによって転記を省略できるかを検討する。独立した文脈でのレビューや、文脈理解・編集のために必要な読込作業は削減対象から除外し、その結論と判断根拠を`費用確認`へ記録する。初回に得られた集計結果や上位データ、各観点に応じた追加照会先を活用する。全担当者や全対象の詳細記録を毎回すべて読み通す必要はなく、判断に不足している範囲に絞って追加取得する。大出力点検の上位項目についても、実行の目的、必要な情報、取得後の利用状況の観点から見直しを行い、無駄と判断したものは工程3での原因と対策、または見送り理由に対応付ける。
+- 毎回の振り返りにおいて、`stats.md`に記録された起動モード、実際に使用されたモデル、プロンプト入力の内訳、ファイルの読込量、出力結果のデータ量、hookの発生元と反復回数、テキストの部分一致、トークン消費上位の項目を確認し、作業全体を効率化するための具体的な改善案を比較検討する。
+  欠陥の有無に関する判断と、コスト比較に基づく採否の判断は明確に区別し、比較結果を工程3・工程4と振り返り結果報告の`費用確認`項目へ引き継ぐ。
+  評価観点の一覧は参照資料に記載されているものを用い、比較結果には対象となった作業と具体的な改善策を明記する。
+- 評価対象の項目は、`analysis-cost.md`「コストの無駄の確認」に挙げる17の観点とする。
+  まずメインエージェントとサブエージェントの間で作業の重複がなかったかを検証する。
+  通読結果、統計情報、取得済みの証拠をもとに、親子エージェントが同一の調査や判断を二重に行っていた区間を特定し、作業を分担することによって得られたメリット（独立した文脈でのレビュー、並列処理、探索結果のコンテキスト隔離、モデルの使い分けなど）と照らし合わせて評価する。
+  続いて、ファイル等に保存済みのテキストをモデルが機械的に転記した箇所がないかを確認し、生成側でのファイル保存と参照の受け渡しによって転記を省略できるかを検討する。
+  独立した文脈でのレビューや、文脈理解・編集のために必要な読込作業は削減対象から除外し、その結論と判断根拠を`費用確認`へ記録する。
+  初回に得られた集計結果や上位データ、各観点に応じた追加照会先を活用する。
+  全担当者や全対象の詳細記録を毎回すべて読み通す必要はなく、判断に不足している範囲に絞って追加取得する。
+  大出力点検の上位項目についても、実行の目的、必要な情報、取得後の利用状況の観点から見直しを行い、無駄と判断したものは工程3での原因と対策、または見送り理由に対応付ける。
 - 準備処理の完了後にコンテキスト圧縮が発生し、会話の流れに関する判断材料が失われた場合は、同じ生成物の全体をメインエージェントが改めて再読する。
-- 機械的なエラーとしては現れない遠回り、手戻り、不必要な反復、ユーザーによる軌道修正、時間の浪費などを、ツール呼び出しと前後の発話から見つけ出す。具体的には、コマンドの試行錯誤、同じ資料の再読や陳腐化、設計のやり直し、規範の解釈に迷った形跡、委譲時の指示不足、定義元を探すための手探り、出力の後加工を目的としたコマンドの繰り返しなどが該当する。
-- 手順書やスキルに定められた作業を、managed-temp内に一時作成したスクリプトで代行した箇所がないかも探す。委譲先が実行した分については、`atk run-script session-review-evidence --`の`--grep`オプションを用いてmanaged-temp配下のスクリプトパスを検索する。妥当性の判定は、`analysis.md`「一次選別」の基準に従って行う。
-- 規範そのものの妥当性についてもQCDの観点から懐疑的に見直す。問題が起きなかった区間も含め、セッションで従った規範や手順のうち、費用や時間に対して守った成果が小さかったもの、往復や待機を増やしたもの、制定時の前提（ホスト機能の制約など）が失われて目的を失ったものを探し、縮小・撤去・簡素化を提案する。本来の目的となる操作を実行する前にドキュメントの読み込みや準備作業が過剰に積み重なっていた区間も対象とし、`analysis.md`「規範適用による目的逸脱」に照らして判定する。
+- 機械的なエラーとしては現れない遠回り、手戻り、不必要な反復、ユーザーによる軌道修正、時間の浪費などを、ツール呼び出しと前後の発話から見つけ出す。
+  具体的には、コマンドの試行錯誤、同じ資料の再読や陳腐化、設計のやり直し、規範の解釈に迷った形跡、委譲時の指示不足、定義元を探すための手探り、出力の後加工を目的としたコマンドの繰り返しなどが該当する。
+- 手順書やスキルに定められた作業を、managed-temp内に一時作成したスクリプトで代行した箇所がないかも探す。
+  委譲先が実行した分については、`atk run-script session-review-evidence --`の`--grep`オプションを用いてmanaged-temp配下のスクリプトパスを検索する。
+  妥当性の判定は、`analysis-triage.md`「一次選別」の基準に従って行う。
+- 規範そのものの妥当性についてもQCDの観点から懐疑的に見直す。
+  問題が起きなかった区間も含め、セッションで従った規範や手順のうち、費用や時間に対して守った成果が小さかったもの、往復や待機を増やしたもの、制定時の前提（ホスト機能の制約など）が失われて目的を失ったものを探し、縮小・撤去・簡素化を提案する。
+  本来の目的となる操作を実行する前にドキュメントの読み込みや準備作業が過剰に積み重なっていた区間も対象とし、`analysis-cost.md`「規範適用による目的逸脱」に照らして判定する。
 - `気付いた改善点:`から始まる行を見つけた場合は、例外なくすべて問題の列挙対象に含める。
-- 正常に成功した操作、問題なく返却された結果、訂正を要さなかった成果物、さらには振り返り処理自体の作業についても、`analysis.md`「コストの無駄の確認」に基づく共通の比較検討にかける。通読結果と統計情報から必要な材料を取得し、得られた比較結果を再利用する。比較材料の全文は、判断に不足が生じる箇所のみ追加照会する。
-- 全体を通読する中で、問題候補を発見するために操作の順序や入力内容、前後関係の詳細確認が必要となった場合は、メインエージェント自らが記録位置を`--detail`オプションに渡して全文を取得する。会話の流れの通読作業は、必ずメインエージェント1者で完結させる。
+- 正常に成功した操作、問題なく返却された結果、訂正を要さなかった成果物、さらには振り返り処理自体の作業についても、`analysis-cost.md`「コストの無駄の確認」に基づく共通の比較検討にかける。
+  通読結果と統計情報から必要な材料を取得し、得られた比較結果を再利用する。
+  比較材料の全文は、判断に不足が生じる箇所のみ追加照会する。
+- 全体を通読する中で、問題候補を発見するために操作の順序や入力内容、前後関係の詳細確認が必要となった場合は、メインエージェント自らが記録位置を`--detail`オプションに渡して全文を取得する。
+  会話の流れの通読作業は、必ずメインエージェント1者で完結させる。
 
 ### 工程3
 
 対象化と検出を分け、検出機会がある対象だけを未検出の評価に含める。
-個別候補の採否に先立つ分析単位の判定と、再発経過の比較は`analysis.md`「原因と対策」に従う。
+個別候補の採否に先立つ分析単位の判定と、再発経過の比較は`analysis-actions.md`「原因と対策」に従う。
 
 prepareの`effect_candidates_path`を取得し、採用済みAWIごとの変更ファイルを通読で得た適用機会と対応付ける。
-通常・batchとも、`analysis.md`「原因と対策」で確認済み・効果不足・確認待ち・確認不要を区別する。実装済みの`pending`は期間を過ぎても保持し、機会なしや対応付け不能の理由を残す。
+通常・batchとも、`analysis-actions.md`「原因と対策」で確認済み・効果不足・確認待ち・確認不要を区別する。
+実装済みの`pending`は期間を過ぎても保持し、機会なしや対応付け不能の理由を残す。
 効果不足の是正先AWIの保存後、および効果を確認したファイルについて限定保存操作を実行する。
 `effect_unconfirmed_path`は効果専用の未確認として件数と理由を保持し、記録収集の`unconfirmed_scope`と区別する。
 
-通読で得られた結果や取得済みの証拠に、すべての問題候補を突き合わせて対応付ける。同一の事象について十分な根拠がすでに揃っている場合はその結果を再利用し、新たに見つかった事象、変更点、未確認事項、および判定が一致しない点のみを追加で補う。候補ごとの原記録に対する個別の網羅的調査は一律には求めない。メインエージェントは、既存AWIによる被覆状況、問題の境界、判定の不一致、ならびに原因と採否を確定させる。あらかじめ基準を設けて走査し該当しないと判定された全件を、同じ目的で再走査することは避ける。確定済みの判断を変更するのは、追加された候補が既存の結論を覆す証拠を含んでいる場合に限る。
-`candidates.md`は通読を補佐する資料として参照し、通読で把握した問題と対応付ける。通読だけでは気付きにくい事象も補う。対象には直近30日間の複数セッションで繰り返し発生している失敗署名、hook通知の発生元と件数、除外件数、その場限りのコード実行によるデータ加工である`adhoc-processing`、委譲先の内部処理などを含める。
-候補リストに該当しない通読上の問題や、成功した作業から見出された改善機会も、それぞれ独立した課題として扱う。問題の選別および工程4での確定処理は、`analysis.md`の基準に従って進める。正常な処理、必須の処理、あるいは自動回復済みとして詳細な欠陥調査を完了した作業についても、コスト比較に基づく採否の判定に対応付ける。
+通読で得られた結果や取得済みの証拠に、すべての問題候補を突き合わせて対応付ける。
+同一の事象について十分な根拠がすでに揃っている場合はその結果を再利用し、新たに見つかった事象、変更点、未確認事項、および判定が一致しない点のみを追加で補う。
+候補ごとの原記録に対する個別の網羅的調査は一律には求めない。
+メインエージェントは、既存AWIによる被覆状況、問題の境界、判定の不一致、ならびに原因と採否を確定させる。
+あらかじめ基準を設けて走査し該当しないと判定された全件を、同じ目的で再走査することは避ける。
+確定済みの判断を変更するのは、追加された候補が既存の結論を覆す証拠を含んでいる場合に限る。
+`candidates.md`は通読を補佐する資料として参照し、通読で把握した問題と対応付ける。
+通読だけでは気付きにくい事象も補う。
+対象には直近30日間の複数セッションで繰り返し発生している失敗署名、hook通知の発生元と件数、除外件数、その場限りのコード実行によるデータ加工である`adhoc-processing`、委譲先の内部処理などを含める。
+候補リストに該当しない通読上の問題や、成功した作業から見出された改善機会も、それぞれ独立した課題として扱う。
+問題の選別および工程4での確定処理は、`analysis.md`の基準に従って進める。
+正常な処理、必須の処理、あるいは自動回復済みとして詳細な欠陥調査を完了した作業についても、コスト比較に基づく採否の判定に対応付ける。
 認証情報の発見やその報告に関する発話については、同書「一次選別」の除外区分`credential-report`に定められた条件と例外（過剰反応自体の是正を求めた発話は分析へ回す）に照らして判定する。
-原因の確定やコスト比較に必要な情報が概要データに不足している場合は、候補の有無にかかわらず`atk run-script session-review-evidence`の`--detail`、`--tool-calls`、`--grep`オプションを用いて詳細を照会する。所要時間や全担当者のコスト算出には`stats.md`を利用する。
-公開待機中に先行して進めていた調査やAWIの原稿は、正式な選別結果および公開後の実態に照らし合わせて採否を確定する。公開結果の成否を確認しなければ判断できない問題については、結果が確定した後に調査する。
+原因の確定やコスト比較に必要な情報が概要データに不足している場合は、候補の有無にかかわらず`atk run-script session-review-evidence`の`--detail`、`--tool-calls`、`--grep`オプションを用いて詳細を照会する。
+所要時間や全担当者のコスト算出には`stats.md`を利用する。
+公開待機中に先行して進めていた調査やAWIの原稿は、正式な選別結果および公開後の実態に照らし合わせて採否を確定する。
+公開結果の成否を確認しなければ判断できない問題については、結果が確定した後に調査する。
 
 ### 工程4
 
-選別した問題ごとに、メインエージェント自身が`agent-basics:bugfix`を起動し、発生した事象、期待されていた本来の契約、実際の結果、発生条件を入力情報として適用する。同一セッション内で過去に起動していた場合でも、振り返りごとに改めて適用する。WI投入担当による分析を、メインエージェント自身が行うべき原因分析の代替にしない。
+選別した問題ごとに、メインエージェント自身が`agent-basics:bugfix`を起動し、発生した事象、期待されていた本来の契約、実際の結果、発生条件を入力情報として適用する。
+同一セッション内で過去に起動していた場合でも、振り返りごとに改めて適用する。
+WI投入担当による分析を、メインエージェント自身が行うべき原因分析の代替にしない。
 
-1. 当該事項が、既存の上位規範（`agent-toolkit/share/rules/common/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的、技術的な常識から自ずと導き出せるものであるかを検討する。詳細は`agent-basics:bugfix/references/root-cause-severity.md`「原因分析の品質確認」を参照する。ルールや条文を追加する前に、既存ルールの削除、緩和、または一般化によって目的を達成できるかを検証する。
+1. 当該事項が、既存の上位規範（`agent-toolkit/share/rules/common/01-agent.md`のQCDや「完遂と先送り」など）や対象の目的、技術的な常識から自ずと導き出せるものであるかを検討する。
+   詳細は`agent-basics:bugfix/references/root-cause-severity-quality.md`「原因分析の品質確認」を参照する。
+   ルールや条文を追加する前に、既存ルールの削除、緩和、または一般化によって目的を達成できるかを検証する。
 2. 初動対応、拡張原因分析の要否判定、根本原因、類似事例の調査結果、具体的な対策、横展開の処置、および再発防止策を実際の証拠と突き合わせ、原因と対策を1つの明確な案として確定する。
-   過去AWIと今回の比較は`analysis.md`「原因と対策」に従い、終了済み項目の実装・配布と適用機会を確認する。
+   過去AWIと今回の比較は`analysis-actions.md`「原因と対策」に従い、終了済み項目の実装・配布と適用機会を確認する。
    未完了AWIによる被覆、起票、実装配布、今回条件での解消を区別し、残る原因条件、処置担当、適用機会と観測結果を工程5へ渡す。
    適用機会が無い処置は効果未確認とする。
-3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。その見送り理由が、`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`analysis.md`の基準に照らして確認する。
+3. 工程2と工程3で実施したコスト比較の検討結果を活用し、欠陥の有無に関する判定と、具体的な実施方法についての判断をそれぞれ確定させる。
+   対応を見送ると判断した問題についても原因と比較検討の内容を明確に記録し、見送りの根拠を要求の不成立、判明した原因、コスト比較の結果と整合させる。
+   その見送り理由が、`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」で禁止されている不当な根拠に該当しないことを、`analysis.md`の基準に照らして確認する。
    再利用価値のある成功手順、誤記の訂正、重複整理と参照の補修も既存の原記録と比較して選ぶ。
    知見の保存・適用は読込表の共通基準を使い、恒久変更が必要なものを工程5へ渡す。
 
@@ -85,32 +120,54 @@ prepareの`effect_candidates_path`を取得し、採用済みAWIごとの変更�
 既存未完了AWIで覆う場合も、残る原因条件、処置担当、適用機会と観測結果を同じ報告行に残す。
 見送りの根拠は工程2〜4の成果と費用の比較から記し、正常終了・規範どおり・回復済みという分類だけで代替しない。
 
-確定した原因・対策と既存AWIによる被覆を要求として整理し、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」の単位でWI投入担当へ渡す。
+確定した原因・対策と既存AWIによる被覆を要求として整理し、`../../../share/add-wi-parent-launch.md`「起動方法」の単位でWI投入担当へ渡す。
 通常の振り返りでは、登録対象が1件以上あれば、起動前にユーザーへ`## 振り返り結果の予告`（全登録予定を`AWI登録予定`行で記載）を通知し、同じターンで担当を起動する。
 batchでは、対象ごとの工程4で要求が確定した時点で起草へ渡し、メインは残りの対象の工程2〜4を続ける。
 新規起動・追加送信は同じ起動契約で選び、後の対象で同じ根本原因を見つけた場合は保存前の要求へ要件更新として送る。
 原稿は返却時に検収してよいが、`保存開始`は全対象の工程4と`batch.md`のセッション横断整理を終えてから送る。
 その直前に、確定した全要求を上記の予告として通知する。
-予告のフォーマットは、`agent-toolkit:report-completion`の`references/report-formats.md`「振り返り結果報告のフォーマット」に従う。
+予告のフォーマットは、`../../report-completion/references/report-formats-retrospective.md`「振り返り結果報告のフォーマット」に従う。
 メッセージの送達は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に規定された手段（Claude Code環境では`mcp__agent-toolkit__send_to_user`）を用いて行う。
 要求の`source`には`session-review`を指定する。
 batchが登録するAWIは、ユーザーによる内容確認を待たず、エージェント由来の要求として採否を検討する。
-要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。作成されたAWIの検収は、同書「受領と検収」に従って行う。
+要求間に依存関係がある場合は先行する成果物が必要となる理由を趣旨欄に明記する（同書「渡す入力」を参照）。
+ユーザーの発話を逐語引用して作成する要求には、原文が記録されているファイル（`conversation.md`や`atk run-script session-review-evidence`の出力ファイルなど）の絶対パスを出所として記載する。
+作成されたAWIの検収は、同書「受領と検収」に従って行う。
 
 ## 候補の抽出
 
-問題候補のデータは`atk run-script session-review-evidence`によって生成され、`atk run-script session-review-prepare`が1件につき1行の要約と記録位置を付与して`candidates.md`へ出力する。各候補区分の判定基準は、`scripts/session_review_evidence.py`および`scripts/session_review_prepare.py`のdocstringに定義されている。
-Codexの`functions.exec`による定義本文の読取では、`atk run-script session-review-evidence`が外側セルと内側実行を対応付け、両方の入力・結果位置を候補の`calls`へ残す。対応付けられない内側実行も独立した要素として残す。用語、未確定理由、位置の項目は`analysis.md`「定義本文の読込の判定」で定義する。メインエージェントがその記録から取得の有無・目的・成否を判定する。
-各記録位置には、同一の証拠bundleに含まれる`record-provenance`から取得した記録の由来情報（役割文書、起動モード、起動元となった上位の記録とその役割文書）が付記される。取得できなかった記録については、取得不能である旨が明示される。候補となった操作の実行主体は、要約の表現から推測するのではなく、必ずこの由来情報に基づいて特定する。
+問題候補のデータは`atk run-script session-review-evidence`によって生成され、`atk run-script session-review-prepare`が1件につき1行の要約と記録位置を付与して`candidates.md`へ出力する。
+各候補区分の判定基準は、`scripts/session_review_evidence.py`および`scripts/session_review_prepare.py`のdocstringに定義されている。
+Codexの`functions.exec`による定義本文の読取では、`atk run-script session-review-evidence`が外側セルと内側実行を対応付け、両方の入力・結果位置を候補の`calls`へ残す。
+対応付けられない内側実行も独立した要素として残す。
+用語、未確定理由、位置の項目は`analysis-definition-reads.md`「定義本文の読込の判定」で定義する。
+メインエージェントがその記録から取得の有無・目的・成否を判定する。
+各記録位置には、同一の証拠bundleに含まれる`record-provenance`から取得した記録の由来情報（役割文書、起動モード、起動元となった上位の記録とその役割文書）が付記される。
+取得できなかった記録については、取得不能である旨が明示される。
+候補となった操作の実行主体は、要約の表現から推測するのではなく、必ずこの由来情報に基づいて特定する。
 
-- ユーザー介入、WIの記入欄に対するユーザーからの修正（`wi-user-response`）、エスカレーションの全文、およびhook通知の前後に交わされた応答は、保存された証拠データから全文を取得する。索引に書かれた短い概要だけで趣旨や原因を判断しない。
-- ユーザー確認（`confirmation-request`）の対象は、エージェントが提示した選択肢をユーザーがそのまま選んだ回答と、対象セッション内で起草・登録されたUWI（報告専用のものを除く）とする。質問内容、提示した全選択肢、実際の回答はそれぞれの由来を区別して保存し、非同期で得られた回答についても元の質問と実際の回答の記録位置を正しく対応付ける。なお、受付通知、初期選択肢の提示、未回答の状態は、実際の回答としては扱わない。
-- `wi-user-response`の抽出対象は、対象セッションが起草したUWI、ならびに`atk wi start-processing`、`adopt`、`reject`、`unhold`によって処理されたWIとする（`atk wi show`で内容を閲覧しただけのWIは対象外とする）。UWIの`## 回答`欄に用意された選択肢と一致しない自由記入や、AWIの`## ユーザーコメント`欄への記入を問題候補として抽出する。
-- ユーザー介入、ユーザー確認、WI記入欄の修正については、必須の評価対象として扱う。分析の深度や再発防止策を策定すべきかどうかの判断は、bugfixスキルの重大度判定基準へ委ねる。ユーザー介入とWI記入欄の修正に対しては、private-notesに保存されている全WIの中から、`## ユーザー指摘の逐語引用`、`## 回答`、`## ユーザーコメント`にその発話の大部分を含むものを検索し、過去の類似事例として紐付ける。
-- 実行に失敗したコマンドやツールは失敗署名ごとに集約し、直近30日間に複数の最上位セッションで繰り返し確認されたものを抽出する。単一のセッションでしか発生していない失敗は、件数表および`single-session-failure`へ計上する。
-- メインエージェントおよび全委譲先の記録において、インタープリタへその場で記述したコードを渡して実行したケースや、保存した出力結果をスクリプト等で後加工した処理を調査する。これらは実行の成否にかかわらず、1つの記録につき1件の`adhoc-processing`候補としてまとめる（失敗署名による絞り込みは適用しない）。
-- メインエージェントと全委譲先による`.subagent.md`の明示的な読み込みや、静的解析によって読み込み操作と特定された処理については、正常終了したものも含めて記録ごとに`definition-body-read`候補としてまとめる。動的に生成された入力や解析できなかった区間のうち、手順書を読み得るものは`definition-read-unresolved`候補に分類する。`definition-read-unresolved`は全発生箇所の分類を必須とし、`definition-body-read`は準備が起動準備の疑いあり（`launch_check`が`suspected`）と判定した読取の分類を必須とする（判定済みの読取だけの候補は評価必須から外れる）。実行主体、対象ファイル、元の入力内容、操作ごとの未確定理由、結果の位置、前後の起動・編集状況は、保存された候補データの`calls`と個別証拠の`definition_reads`から確認する。取得の有無、取得の目的、結果の成否をそれぞれ独立して判定し、証拠が不足している観点がある場合はその旨を記録に残す。分類方法と違反に対する再発防止策の策定基準は、`analysis.md`「定義本文の読込の判定」に従う。
-- `気付いた改善点:`で始まる行を含む委譲先からの返却結果と、実行中に届いた通知は、完了通知の形式やテキストの長短にかかわらず、必ず`delegate-return`候補として記録に残す。表示用にテキストを短縮する場合であっても、省略区間を示す目印となる行は全文を保持する。
+- ユーザー介入、WIの記入欄に対するユーザーからの修正（`wi-user-response`）、エスカレーションの全文、およびhook通知の前後に交わされた応答は、保存された証拠データから全文を取得する。
+  索引に書かれた短い概要だけで趣旨や原因を判断しない。
+- ユーザー確認（`confirmation-request`）の対象は、エージェントが提示した選択肢をユーザーがそのまま選んだ回答と、対象セッション内で起草・登録されたUWI（報告専用のものを除く）とする。
+  質問内容、提示した全選択肢、実際の回答はそれぞれの由来を区別して保存し、非同期で得られた回答についても元の質問と実際の回答の記録位置を正しく対応付ける。
+  なお、受付通知、初期選択肢の提示、未回答の状態は、実際の回答としては扱わない。
+- `wi-user-response`の抽出対象は、対象セッションが起草したUWI、ならびに`atk wi start-processing`、`adopt`、`reject`、`unhold`によって処理されたWIとする（`atk wi show`で内容を閲覧しただけのWIは対象外とする）。
+  UWIの`## 回答`欄に用意された選択肢と一致しない自由記入や、AWIの`## ユーザーコメント`欄への記入を問題候補として抽出する。
+- ユーザー介入、ユーザー確認、WI記入欄の修正については、必須の評価対象として扱う。
+  分析の深度や再発防止策を策定すべきかどうかの判断は、bugfixスキルの重大度判定基準へ委ねる。
+  ユーザー介入とWI記入欄の修正に対しては、private-notesに保存されている全WIの中から、`## ユーザー指摘の逐語引用`、`## 回答`、`## ユーザーコメント`にその発話の大部分を含むものを検索し、過去の類似事例として紐付ける。
+- 実行に失敗したコマンドやツールは失敗署名ごとに集約し、直近30日間に複数の最上位セッションで繰り返し確認されたものを抽出する。
+  単一のセッションでしか発生していない失敗は、件数表および`single-session-failure`へ計上する。
+- メインエージェントおよび全委譲先の記録において、インタープリタへその場で記述したコードを渡して実行したケースや、保存した出力結果をスクリプト等で後加工した処理を調査する。
+  これらは実行の成否にかかわらず、1つの記録につき1件の`adhoc-processing`候補としてまとめる（失敗署名による絞り込みは適用しない）。
+- メインエージェントと全委譲先による`.subagent.md`の明示的な読み込みや、静的解析によって読み込み操作と特定された処理については、正常終了したものも含めて記録ごとに`definition-body-read`候補としてまとめる。
+  動的に生成された入力や解析できなかった区間のうち、手順書を読み得るものは`definition-read-unresolved`候補に分類する。
+  `definition-read-unresolved`は全発生箇所の分類を必須とし、`definition-body-read`は準備が起動準備の疑いあり（`launch_check`が`suspected`）と判定した読取の分類を必須とする（判定済みの読取だけの候補は評価必須から外れる）。
+  実行主体、対象ファイル、元の入力内容、操作ごとの未確定理由、結果の位置、前後の起動・編集状況は、保存された候補データの`calls`と個別証拠の`definition_reads`から確認する。
+  取得の有無、取得の目的、結果の成否をそれぞれ独立して判定し、証拠が不足している観点がある場合はその旨を記録に残す。
+  分類方法と違反に対する再発防止策の策定基準は、`analysis-definition-reads.md`「定義本文の読込の判定」に従う。
+- `気付いた改善点:`で始まる行を含む委譲先からの返却結果と、実行中に届いた通知は、完了通知の形式やテキストの長短にかかわらず、必ず`delegate-return`候補として記録に残す。
+  表示用にテキストを短縮する場合であっても、省略区間を示す目印となる行は全文を保持する。
 
 次の事象は問題候補から除外し、区分ごとの発生件数のみを集計する。
 
@@ -122,7 +179,10 @@ Codexの`functions.exec`による定義本文の読取では、`atk run-script s
 - auto mode classifierによる一時的な判定不能や、`atk wi add`および`edit`の実行時に出力される本文表記診断の警告
 - 応答言語をチェックするhookの警告や、blockおよびwarn以外の区分に分類されるhookの出力
 
-ただし、検証コマンドの引数指定ミスや、実行すべきコマンド自体が存在しなかった場合は問題候補として残す。単独の`atk`コマンドや`atk agents wait`コマンドの除外条件は、エラー行（`失敗:`や`警告:`など）が含まれる場合や想定外の終了コードが返った場合には適用しない。また、`&&`やパイプで他のコマンドと連結して実行された場合にも適用しない（連結実行されたコマンド全体の終了コードからは、個々の成否を正しく判別できないためである）。なお、コマンド先頭に付与された`cd <パス>;`または`cd <パス> &&`の指定は判定対象から除外して評価するが、実行結果に`cd:`のエラー診断行が含まれている場合は問題候補として抽出する。
+ただし、検証コマンドの引数指定ミスや、実行すべきコマンド自体が存在しなかった場合は問題候補として残す。
+単独の`atk`コマンドや`atk agents wait`コマンドの除外条件は、エラー行（`失敗:`や`警告:`など）が含まれる場合や想定外の終了コードが返った場合には適用しない。
+また、`&&`やパイプで他のコマンドと連結して実行された場合にも適用しない（連結実行されたコマンド全体の終了コードからは、個々の成否を正しく判別できないためである）。
+なお、コマンド先頭に付与された`cd <パス>;`または`cd <パス> &&`の指定は判定対象から除外して評価するが、実行結果に`cd:`のエラー診断行が含まれている場合は問題候補として抽出する。
 
 ## 工程で参照する運用資料
 

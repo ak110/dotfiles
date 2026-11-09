@@ -737,7 +737,7 @@ async def test_start_input_rejection_points_to_owning_contract(
             assert "入力を説明するH2節" in message
     else:
         contract = root / contract_relative
-        heading = {"exec": "入力", "repository-process": "リポジトリ担当の起動と受領", "add-wi": "渡す入力"}[role]
+        heading = {"exec": "入力", "repository-process": "リポジトリ担当の起動と受領", "add-wi": "入力"}[role]
         assert f"`{contract}`「{heading}」" in message
         assert missing_name in contract.read_text(encoding="utf-8")
     backend.start.assert_not_awaited()

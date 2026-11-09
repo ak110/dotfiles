@@ -8,7 +8,6 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 import threading
 from collections.abc import Generator, Iterator
 from typing import Any
@@ -17,6 +16,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._common import process_tree, session_activity, session_registry, state_paths
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
 _TARGET = "github.com/example/target"
@@ -378,13 +378,10 @@ def test_open_codex_record_without_hook(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.fixture(name="daemons")
-def _daemons() -> Iterator[list[session_activity.HostProcess]]:
+def _daemons(tmp_path: pathlib.Path) -> Iterator[list[session_activity.HostProcess]]:
     """会話を開かずに生存する2つの実プロセスを、ホストと同じ実行系名で渡す。"""
     with contextlib.ExitStack() as stack:
-        processes = [
-            stack.enter_context(process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(120)"]))
-            for _ in range(2)
-        ]
+        processes = [stack.enter_context(late_descendant.held_process(tmp_path)) for _ in range(2)]
         hosts = []
         for process in processes:
             identity = session_registry.ProcessIdentity.of(process.pid)
@@ -394,7 +391,9 @@ def _daemons() -> Iterator[list[session_activity.HostProcess]]:
 
 
 @pytest.mark.parametrize("stage", ["acquire-second", "body", "release-one"])
-def test_daemons_reclaims_every_acquired_process_on_failure(monkeypatch: pytest.MonkeyPatch, stage: str) -> None:
+def test_daemons_reclaims_every_acquired_process_on_failure(
+    monkeypatch: pytest.MonkeyPatch, stage: str, tmp_path: pathlib.Path
+) -> None:
     """2件目の獲得・利用・前段の解放で失敗しても、獲得済み全件の終了を確認する。"""
     acquired: list[subprocess.Popen[Any]] = []
     real_scope = process_tree.process_scope
@@ -416,7 +415,7 @@ def test_daemons_reclaims_every_acquired_process_on_failure(monkeypatch: pytest.
 
     monkeypatch.setattr(process_tree, "process_scope", scope)
     monkeypatch.setattr(process_tree, "stop_owned_process", stop)
-    lifetime = inspect.unwrap(_daemons)()
+    lifetime = inspect.unwrap(_daemons)(tmp_path)
     if stage == "acquire-second":
         with pytest.raises(RuntimeError, match="2件目の生成失敗"):
             next(lifetime)
@@ -521,7 +520,7 @@ def test_submission_target_follows_actual_destination(tmp_path: pathlib.Path, mo
     assert not _submitting(_TARGET)
 
 
-def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """終了・中止・対象変更・再開に追随し、後続の別作業と属性のない旧記録で待機を生じない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     _emit("legacy", "UserPromptSubmit")
@@ -543,7 +542,7 @@ def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatc
     _begin("--session-id", "submitter", "--target-repo", _TARGET)
     _emit("submitter", "SessionEnd")
     assert not _submitting(_TARGET)
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as resumed:
+    with late_descendant.held_process(tmp_path) as resumed:
         try:
             identity = session_registry.ProcessIdentity.of(resumed.pid)
             assert identity is not None

@@ -5,72 +5,20 @@ Claude Code固有の挙動については、該当する節に「Claude Code固�
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-additions.md#「文書記述量の管理」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「文書記述量の管理」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md#「読込表」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「読込表」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-read-tables.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics.md#「定義の所有者」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「定義の所有者」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
 
-## YAML frontmatter
+## 条件別資料
 
-- 手順を書いたスキル（本文が順序だった作業を中心とするスキル）の名前は動詞で始める。判断基準・契約・規約集を提供するスキルの名前は、対象を表す語にする。
-- `name`（ディレクトリ名と一致させる値）には、そのスキルが担当する工程や起動のきっかけを表す言葉を選ぶ。特定の実現手段（作業項目の記録形式、ツール名、コマンド名など）や実装内部の専門用語は避ける（努力目標）。エージェントはスキル名を起動判断の重要な手がかりにするため、手段名を中心にしてしまうと、別の手段で同じ工程を行う際に起動されなかったり、手段名が単に出現しただけの文脈で誤って起動されたりする。起動条件の全体像は`description`に記述する
-- `description`には対象とする作業と起動条件のみを記載し、目的、背景、手順は本文に記載する（努力目標。`description`は常時読み込まれるため）。複数行にわたる場合はYAMLの折り畳みスカラー（`>`）を用いる
-- 他のスキルやエージェントから明示的に呼び出される前提のスキルや、ユーザーが`/name`で明示起動する前提のスキルでは、`description`には呼び出し元と起動条件のみを簡潔に記載する。渡された引数のみを入力として受け取るスキル（`context: fork`を持つものなど）は、受け付ける引数と返却する結果の仕様を`description`に明記する
-- 起動方法に合わせて以下のように設定する
-  - ユーザーが`/name`で手動起動することを想定しない場合: `user-invocable: false`
-  - ユーザーの手動起動専用とする場合（副作用の大きいワークフローなど。Claude Code固有）: `disable-model-invocation: true`
-  - エージェントとユーザーの双方が起動する場合: どちらも設定しない
-- Codex向けの`agents/openai.yaml`を配置するスキルでは、`interface.display_name`をディレクトリ名と一致させる。Codexの入力補完機能はその値を候補名として表示するため、異なっているとスキル名を入力しても候補から選択できなくなる
-- frontmatterで設定済みの仕様を、`description`や本文に重複して再掲することは避ける（努力目標）
-
-## SKILL.md本体とreferences/の役割分担
-
-- 付属資料は`skills/<skill-name>/references/`配下に配置し、特定のスキルに属さない参照文書は別名のディレクトリに配置する（努力目標。どのスキルに属する資料かを判別しやすくするため）
-- `SKILL.md`本体には、すべての対象に共通する原則を記載する。プログラミング言語やトピック固有の細則は`references/`配下に配置し、条件別資料の分割は`agent-documents-basics.md`「読込表」の方針に従う
-- トリガー条件、中心となる手順、停止条件などの必須指示は、記述量の削減が求められた場合でも本体冒頭に残す（本体の後半部分は起動判定の時点で読み飛ばされやすいため）。それ以外の補足的な記述は、`agent-documents-additions.md`「文書記述量の管理」に従って`references/`への退避を優先して検討する
-- 規範の記述場所を探す際は、本体と`references/`の双方を確認する
-
-## 知識を提供する文書と手順を担う文書
-
-スキル単位で型を1つに決めず、文書（または節）ごとに、判断基準を提供する知識か、特定の役割が作業順に従う手順かを区別する。
-1つのスキルが両方を持ってよい（例: レビューの心得を定める本体はレビュー担当とレビューイーの双方へ向けた知識とし、`references/`に役割ごとのレビュー手順を置く）。
-手順を担う文書は、エージェントが規範の条文に合うかではなく目的から必要性と深さを判断できるよう、次の構成にする。
-
-- その役割に求める行動は、作業の時系列に並んだ番号付きステップのいずれかに置き、知識文書の基準は該当ステップから参照する
-- 点検や確認は、点検対象の出力（推奨案、確認の選択肢、原稿、返却など）を出すステップより前に置く
-- ユーザーの追加発話やレビュー指摘などの割り込みは、受領時の処理と戻り先のステップを持つ手順として書く
-- 各ステップには、何を保証するためのステップか（誰のどの結果を守るか）を短く書く
-- 読込表の条件行は、対応するステップから参照できる時点と語で書く
-
-手順化は規則の追加ではなく、既存規定の並べ替え・統合・削減で行い、手順化した文書の規範量を増やさない。
-手順化が新しい点検項目を増やすだけになると、規範に従うこと自体が作業の目的になり、目的から判断する余地が失われるためである。
-
-## スキル間操作
-
-- 別のスキルを起動する主体は現在実行中のエージェントであるため、起動を指示する場合は、起動するエージェント、スキル名、引数、期待する戻り値や効果を具体的に記載する。参照文書の読み込みはスキル起動とは区別し、`agent-documents-basics.md`「読込表」の資料分割と読込単位の基準に従って、読む資料を指定する
-- 他のスキルの参照資料を読む際は、`<plugin-name>:<skill-name>`の形式でスキルを識別し、その`SKILL.md`があるディレクトリを基準にして`references/<file>`のパスを解決して読み込む。常時読み込まれる文書には参照先の識別子のみを記載する
-- スキル間で処理を引き継ぐ際は、提供側が必要な情報をすべて揃えた入力を返し、利用側は受け取った入力のみに基づいて処理を進める。提供側が利用側固有の参照文書に依存する構成は避ける
-- 配布物に含まれる参照文書は、起点となる文書（`SKILL.md`、agent定義、委譲先の手順書など）からたどれる構成とし、過去の変更履歴などの保管は配布物の外に分離する（努力目標）
-- 重複する記述を1箇所に統一する場合の配置先と採否基準は、`agent-documents-basics.md`「定義の所有者」に従う
-
-## スキルのパス解決とfork実行（Claude Code固有）
-
-- `${CLAUDE_SKILL_DIR}`は、`SKILL.md`本文の処理時にのみ、その`SKILL.md`が配置されているディレクトリの絶対パスへ展開される。自身のスキルに同梱されているファイルはこの変数で参照し、プラグイン全体や他のスキルのファイルは`${CLAUDE_PLUGIN_ROOT}`を起点として参照する
-- frontmatterに`context: fork`を指定すると、スキルを独立したサブエージェントのコンテキストで実行できる。`agent`フィールドで種別（`Explore`、`Plan`、`claude`など）を指定する。`agent: Explore`や`agent: Plan`によるfork配下の実行では、親の`CLAUDE.md`やルール群が引き継がれないため、必要な規範は実行時に明示的に読み込む
-- fork配下の環境では`AskUserQuestion`を利用できず、ネストは最大5階層までに制限され、親エージェントへは最終報告のテキストのみが返却される。`agent:`に`agents/`配下の定義を指定すると、その定義に設定されているツール制限やモデル指定が適用される
-
-## ユーザーが起動するスキルの着手手順
-
-`user-invocable: false`が設定されていないスキルは、起動から作業開始までの間にユーザーの追加操作を求めない構成で記述し、確認、選択肢の提示、追加入力の要求などは作業に着手した後に配置する。ユーザーはそのスキルを作業の起点として起動するため、着手前に追加操作を求める手順にすると作業のスムーズな開始を妨げてしまう。
-
-## 呼び出し側プロンプトの責務分離
-
-スキルの詳細な動作、条件分岐、引数を省略した際の動作や対象の選定、引数の仕様は`SKILL.md`本体に集約する。呼び出し側のプロンプトには、起動指示とその呼び出し固有の値を渡す引数のみを記述する。呼び出し側に動作の詳細を記述すると、呼び出し元ごとに挙動の不一致が生じる原因となる。
-
-## 失敗事例の反映
-
-繰り返し発生した失敗事例への対策は、上位の共通原則を抽出した上で、既存の節の箇条書きに統合する。満たすべき性質と判断条件を明記し、禁止事項の羅列や対比表を単に追加する構成は避ける（努力目標。読み込み量が増大する上、列挙されていない事項は許可されていると誤解される恐れがあるため）。
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| YAML frontmatter・ユーザーが起動するスキルの着手手順に関する判断・作業の前 | `agent-skills-metadata.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills-metadata.md` |
+| SKILL.md本体とreferences/の役割分担・呼び出し側プロンプトの責務分離・失敗事例の反映に関する判断・作業の前 | `agent-skills-structure.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills-structure.md` |
+| 知識を提供する文書と手順を担う文書に関する判断・作業の前 | `agent-skills-procedures.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills-procedures.md` |
+| スキル間操作・スキルのパス解決とfork実行（Claude Code固有）に関する判断・作業の前 | `agent-skills-integration.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills-integration.md` |

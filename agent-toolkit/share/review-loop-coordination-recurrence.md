@@ -1,0 +1,22 @@
+# 実行レビュー反復の調整：反復原因の判定
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-recurrence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-recurrence.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+
+## 反復原因の判定
+
+再レビューの指摘を受け取って修正指示を確定する前に、`atk review-table show <表の絶対パス> --track <対象track> --format=jsonl`を実行して過去の指摘・応答内容と今回の指摘内容を確認する。
+現行ラウンドのサマリーに示されている過去ラウンド番号と行番号は、詳細な情報を取得するための参照先として活用する。
+`exec-review-responses-recurrence.md`「同じ指摘の反復」に従い、違反規定および発生条件の一致、修正不足、新たな要件の発生、レビュー契約自体の不備を判定したうえで追送する。
+完成条件の一致や指摘件数のみを根拠として同一の指摘であると判定することは避ける。
+同一性が確認された場合は、局所的に修正する前に`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`「反復した指摘の原因判定」に従って原因を特定する。
+既存設計の維持と置換を比較検討した根拠、ならびに採否の理由を、指摘管理表の応答欄へ記録させる。
+新たな要件や認可範囲の変更に該当する結果が得られた場合は、エスカレーションへ回送する。

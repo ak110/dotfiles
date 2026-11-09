@@ -19,6 +19,7 @@ from agent_toolkit._atk.serve.plans import rendering as plans_rendering
 from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
 from agent_toolkit._plan import viewer_files as plan_viewer_files
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
 
 
@@ -161,9 +162,9 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     real_exec = asyncio.create_subprocess_exec
 
     async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        # 標準出力を閉じて接続断を起こし、標準入力の終端を受けてから少し遅れて終了する子プロセスで代替する。
+        # 標準出力を閉じて接続断を起こし、標準入力の終端を通知してから解放まで保持する子プロセスで代替する。
         started.append(cmd)
-        script = "import os, sys, time; os.close(1); sys.stdin.read(); time.sleep(0.3)"
+        script = "import os,sys; os.close(1); sys.stdin.read(); " + late_descendant.held_source(tmp_path / "cleanup.release")
         return await real_exec(sys.executable, "-c", script, **kwargs)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
@@ -174,6 +175,10 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
             break
         await asyncio.sleep(0.01)
     assert context.state.host_status.get("remote-host") == "disconnected"
+
+    async with asyncio.timeout(5):
+        while not (tmp_path / "cleanup.ready").exists():
+            await asyncio.sleep(0.01)
 
     await asyncio.wait_for(plans.stop_remote_watchers(context), timeout=5)
 

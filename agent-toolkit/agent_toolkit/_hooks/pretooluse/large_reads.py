@@ -1,7 +1,8 @@
-"""CodexのBashによる大量の全文取得を、行範囲を分割した標準読取へ誘導する。
+"""規範の見出し抽出とCodexの大量読取に、全文を受信できる取得方法を案内する。
 
 Codexでは出力予算を超えた取得が本文の省略を招くため、容量と行範囲の分割取得の手段を警告する。
-Claude Codeはホストが上限超過を`PARTIAL view`または退避ファイルとして返し、残りを続けて取得できるため対象外とする。
+容量警告は、残りを継続取得できるClaude Codeを対象外とする。
+規範の見出し正規表現による範囲抽出は、両ホストで全文取得を案内する。
 
 内側コマンドと外側セルの予算をhookから確定できないため、通常の読取を継続する。
 全文と終了状態を保持できる予算なら標準読取を使え、省略時は`sed -n '<開始行>,<終了行>p'`の分割取得へ移れる。
@@ -16,11 +17,12 @@ from dataclasses import dataclass
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
+lazy import shlex
 lazy import stat
 lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
-lazy from agent_toolkit._common import host_homes, shell_cwd
+lazy from agent_toolkit._common import host_homes, read_triggers, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import is_unknown_word
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
@@ -652,7 +654,38 @@ def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan
 
 
 def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
-    """Codexの単純なBash全文取得で、通知の閾値を超える容量を警告する。"""
+    """規範の見出し抽出と、Codexの閾値を超える全文取得を警告する。"""
+    extracted = []
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
+        tokens = invocation.segment.tokens
+        if (
+            not invocation.arguments_known
+            or not tokens
+            or invocation.captured
+            or invocation.output_redirected
+            and not invocation.output_pipe
+        ):
+            continue
+        name = pathlib.PurePath(tokens[0]).name
+        if name not in {"sed", "awk"} or any(value.startswith(("--in-place", "-i")) for value in tokens[1:]):
+            continue
+        if not any(re.search(r"(?<![\w\\])/\^\s*#{1,6}", value) for value in tokens[1:]):
+            continue
+        for operand in _content_operands(tokens, pattern=True):
+            if is_dynamic_read_operand(operand) or not pathlib.Path(operand).is_absolute() and not current.resolved:
+                continue
+            path = _resolve_path(operand, current.path)
+            if path.is_file() and read_triggers.is_normative_document(path):
+                extracted.append(path.resolve())
+    if extracted:
+        paths = list(dict.fromkeys(extracted))
+        return _large_warning(
+            "エージェント向け文書を見出しの正規表現で範囲抽出しようとしている: " + "、".join(map(str, paths)),
+            fix="エージェント向け文書は全文を取得せよ。大きい文書は行番号のsedで末尾まで分割取得できる。\n"
+            + "\n".join(
+                codex_acquisition(path) if is_codex else f"`cat -- {shlex.quote(str(path))}`で全文読め" for path in paths
+            ),
+        )
     if not is_codex:
         return None
     byte_threshold = _byte_threshold()

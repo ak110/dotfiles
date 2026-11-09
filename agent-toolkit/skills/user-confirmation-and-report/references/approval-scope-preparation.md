@@ -1,0 +1,24 @@
+# 承認範囲の判定：新しい挙動と準備の提示
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 経験の記録から承認の適用範囲を判断する前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+
+## 新しい挙動と準備の提示
+
+依頼内容に含まれていない新しい挙動の追加（`user-confirmation-and-report-authorization.md`「認可を要する操作」で定義する「範囲外の不足」の区分）は、変更が可逆で外部への影響がない場合であっても事前承認の対象とし、合意が得られるまではリリースの対象に含めない。
+この規定は、事後承認に関するいかなる条件よりも優先して適用する。
+事後承認として進めると、ユーザーが把握していない機能が回答前に公開されてしまうためである。
+ユーザーが直接目にする出力の変更のうち、承認対象として残すのは、依頼に含まれていないエンドユーザー向けの画面・ドキュメント・通知の変更に限る。
+依頼で求められた表示変更の具体的な実現方法や、表示の粒度・情報量の調整は、それ単独では確認する理由としない。
+
+事前承認を求めるにあたっては、すでに認められている範囲内で実行でき、回答で内容が変わらない準備作業をあらかじめ完了させておく。
+回答で内容が変わる作業（本文の起草など）は、方向を確認してから行う。
+承認を求める文面には、その準備成果と、承認が得られた後に実行する予定の操作内容を具体的に提示する。
+承認されていない操作へ進む根拠はユーザーからの承認の成立に限られる。
+準備作業そのものが確認を必要とする場合は、その確認を先に実施する。

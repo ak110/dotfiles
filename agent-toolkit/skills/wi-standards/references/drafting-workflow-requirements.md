@@ -1,0 +1,69 @@
+# WIの調査・起草・保存の共通手順：確定した要件と委譲元の判断
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-scenarios.md`を全文読む | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
+| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
+| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-launch.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-origin.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
+| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` |
+
+## 確定した要件と委譲元の判断
+
+1. `確定した要件`と`委譲元の判断`を分類する際は、逐語本文と実際の回答出所を入力とし、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」「原文の保持と取り込み」を適用する。
+   判定の根拠は成立性の証拠に記録し、確認を要する事項は「未確定事項」へ渡す。
+   確認の受渡しでは、同スキルの確認提示項目にある「ユーザー固有の判断である根拠」を保持する。
+   起草者も原要求・現物・既存認可と突き合わせ、技術判断だけで決まる事項をユーザー要件へ変更しない。
+   `確定した要件`については記述ごとに、ユーザー自身の直接指定であるか、エージェントが提示した案を採択したものであるかという由来と、それを支持する発話・回答の出所を保持して扱う。
+   由来の解釈は`origin-and-approval-origin.md`「由来と`source`」に従い、選択回答によって確定するのはその質問が直接問うた判断事項のみとする。
+   質問文、選択肢の説明、`共通前提:`行などから補われた内容が`確定した要件`に含まれている場合は、それを`委譲元の判断`として扱い、その判定と出所を成立性の証拠に残す。
+   採択されたエージェント案とユーザー自身の明示的な指定が両立しないことが判明した場合は、`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」における採択案の扱いに従う。
+   原稿は作成せず、衝突内容と代替案を`続行できない理由`に記載して報告する。
+
+2. `確定した要件`は、起草者が任意に変更できない制約である。
+   要件を満たせないことが判明した要求については、その要件を前提とする要求単位の原稿作成を中止し、該当する要件と根拠を`続行できない理由`に記載する。
+   通知や回答を待たずに確定できる成果物の完成は、`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+   以下の要件については各項目の定めに従う。
+
+   - `agent-toolkit:wi-standards`冒頭に定めるAWIの粒度に照らして別の要求に該当すると判定した要件は、要求単位、原文、出所、判定理由を委譲元へ即時通知し、別要求の原稿・根拠へ分ける。
+     調査の過程で独立した別の要求を発見した場合も同様とする。
+     要求の分割と担当の割当は区別し、委譲元が`../../../share/add-wi-parent-launch.md`「起動方法」に従って割当を決定する。
+     同じ担当が複数要求を順に処理してよく、確認待ちの間も確定できる原稿は完成させる。
+     専念型メインは`agent-toolkit:add-awi-by-user`の担当選択プロセスに戻る
+   - 後続工程（計画、実行、実行レビュー）に対してモデル、ツール、担当エージェント、操作方法を指定しているものの、逐語本文またはその工程への適用を個別に尋ねた確認回答による支持が得られていないもの（矛盾する入力の該当箇所を明記する）。
+     起草した完成条件が同様の指定を含む場合も同じ確認をする
+     後続工程への適用を支持するユーザー発話や独立した確認回答が存在しない指定が渡された`確定した要件`に含まれていた場合は、委譲元がその指定を解除し、同一の作成主体へ再送する
+
+3. `委譲元の判断`は、調査を進める上での前提として扱う。
+   ただし、原文の集合に含まれる対象が単に字面で名指しされていないことだけを理由に除外されている判断は前提とせず、逐語本文と突き合わせる。
+   原文よりも狭められている場合は、原文の集合へ戻す案を対案として検討する。
+   前提を墨守することによって品質の退行、機能の一律無効化、安易な回避策の追加といった不利益が生じる場合は、前提を守る案と対案の得失を比較する。
+   観測された問題への対策の方向性は、直接的原因を特定した観測結果との対応を十分に確認した上で候補として扱う。
+   原因が未確認の入力に対策案や修正箇所が含まれていた場合は、それらを選定の前提とせず、観測された事象、期待される契約、本来の問いから調査を進める。
+   `agent-basics:bugfix`の原因分析に基づいて独立に対策を導き出した上で候補を比較し、技術的に最も優れた案を採用する。
+   受け取った判断とは異なる案を採用する場合は、以下のように対応する。
+
+   - 対案が`確定した要件`の対象、範囲、外部から観測される結果の内側で成立し、かつ技術的に優れている場合は、その案で起草し、覆した判断、採用した案およびその理由を`判断の変更`に記録する
+   - 対案がそれらを`確定した要件`の外へ拡張または変更する場合、あるいは前提を守る案が品質退行などの外部から見える結果の変化を伴う場合は、原稿を作成せず、両案の内容と各案の不利益を`続行できない理由`に記載して報告する
+
+## 未確定事項
+
+1. 「確定した要件と委譲元の判断」での確認要否判定の結果、ユーザー固有の判断が必要な事項が残る要求については、専念型メインは`agent-toolkit:user-confirmation-and-report`に従ってユーザーへ確認し、委譲先は確認を発行できる委譲元へ「続行できない理由」として報告する。
+   質問の送信と実際の回答取得とを明確に区別し、回答を得て分類を確定させてから原稿の確定・保存を再開する。
+   本書の各節で続行できない理由を返す場面においても、この主体別の確認ルートを用いる。
+   適用した原文と回答の出所は、残存するユーザー判断事項とは明確に分けて記載する。
+   観測された事象を契機とする要求では、確定した直接的原因とその観測結果の所在、根拠とする値ごとの生成元と比較の所在、および原因に作用する対策案も含めて提示し、委譲元が原因を再調査することなく確認質問を構成できるようにする。
+   他の要求の調査と起草は、中断せずに継続する。

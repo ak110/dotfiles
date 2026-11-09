@@ -24,8 +24,6 @@ from agent_toolkit._testing import late_descendant
 
 pytestmark = pytest.mark.windows
 
-_CHILD_SOURCE = "import time; time.sleep(120)"
-
 
 @pytest.mark.parametrize("has_descendant", [False, True], ids=["exited-leaf", "unretained-parent"])
 def test_stop_tree_keeps_unretained_generation_unresolved(monkeypatch, has_descendant):
@@ -208,7 +206,7 @@ def test_stop_tree_reclaims_children_of_exited_parent_with_retained_handle(tmp_p
 
 def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp_path, monkeypatch):
     """列挙後に生じた子孫を回収し、無関係な実プロセスを生存させる。"""
-    with process_tree.process_scope([sys.executable, "-c", _CHILD_SOURCE]) as unrelated:
+    with late_descendant.held_process(tmp_path) as unrelated:
         with process_tree.process_scope(late_descendant.cli_command(tmp_path)) as owned:
             late_descendant.wait_spawner(tmp_path)
             late_descendant.arm(tmp_path, monkeypatch.setattr)
@@ -245,7 +243,12 @@ def test_stop_process_tree_waits_for_owned_exit_status(monkeypatch):
 _LEADER_EXITED_CHILD = """
 import ctypes, pathlib, signal, sys, threading, time
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
-threading.Thread(target=time.sleep, args=(120,)).start()
+def hold():
+    deadline = time.monotonic() + 120
+    while not pathlib.Path(sys.argv[1] + '.release').exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+threading.Thread(target=hold).start()
 pathlib.Path(sys.argv[1]).touch()
 ctypes.CDLL(None).pthread_exit(None)
 """
@@ -280,19 +283,21 @@ def _stubborn_child_source(ready_marker: pathlib.Path) -> str:
     """
     return (
         "import pathlib, signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-        f"pathlib.Path({str(ready_marker)!r}).touch(); time.sleep(120)"
+        f"pathlib.Path({str(ready_marker)!r}).touch(); " + late_descendant.held_source(ready_marker.with_suffix(".release"))
     )
 
 
-def _parent_source(child_source: str) -> str:
+def _parent_source(child_source: str, release: pathlib.Path) -> str:
     """子プロセスを1つ起動してから待機するプロセスのソースを返す。"""
-    return f"import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', {child_source!r}]); time.sleep(120)"
+    return f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child_source!r}]); " + late_descendant.held_source(
+        release
+    )
 
 
 @contextlib.contextmanager
-def _spawn_parent(child_source: str) -> Generator[subprocess.Popen]:
+def _spawn_parent(child_source: str, release: pathlib.Path) -> Generator[subprocess.Popen]:
     """子プロセスの起動を確認できたところで起点プロセスを返す。"""
-    with process_tree.process_scope([sys.executable, "-c", _parent_source(child_source)]) as process:
+    with process_tree.process_scope([sys.executable, "-c", _parent_source(child_source, release)]) as process:
         deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
             ready = False
@@ -306,11 +311,17 @@ def _spawn_parent(child_source: str) -> Generator[subprocess.Popen]:
 
 
 @pytest.fixture(name="spawn_parent")
-def _spawn_parent_fixture():
+def _spawn_parent_fixture(tmp_path):
     with contextlib.ExitStack() as owned:
+        number = 0
 
-        def factory(child_source: str = _CHILD_SOURCE) -> subprocess.Popen:
-            return owned.enter_context(_spawn_parent(child_source))
+        def factory(child_source: str | None = None) -> subprocess.Popen:
+            nonlocal number
+            number += 1
+            source = (
+                child_source if child_source is not None else late_descendant.held_source(tmp_path / f"child-{number}.release")
+            )
+            return owned.enter_context(_spawn_parent(source, tmp_path / f"parent-{number}.release"))
 
         yield factory
 
@@ -487,10 +498,11 @@ def _reporting_root(tmp_path: pathlib.Path) -> Generator[psutil.Process]:
     marker = tmp_path / "root.pid"
     source = (
         "import os, pathlib, subprocess, sys, time; "
-        f"subprocess.Popen([sys.executable, '-c', {_CHILD_SOURCE!r}]); "
+        f"child=subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'reported.release')!r}]); "
         # 書きかけを読まないよう、一時ファイルへ書いてから置き換える。
         f"pathlib.Path({str(marker)!r} + '.tmp').write_text(str(os.getpid())); "
-        f"os.replace({str(marker)!r} + '.tmp', {str(marker)!r}); time.sleep(120)"
+        f"os.replace({str(marker)!r} + '.tmp', {str(marker)!r}); "
+        + late_descendant.held_source(tmp_path / "reported-root.release")
     )
     with process_tree.process_scope([sys.executable, "-c", source]):
         _wait_for_ready_marker(marker)
@@ -535,11 +547,17 @@ def handle(_signum, _frame):
         deadline = time.monotonic() + 10
         while not (directory / "holder.pid").exists() and time.monotonic() < deadline:
             time.sleep(0.01)
-        time.sleep(1.0)
+        deadline = time.monotonic() + 10
+        while child.poll() is None and not (directory / "graceful.release").exists():
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
     sys.exit(0)
 signal.signal(signal.SIGTERM, handle)
 (directory / "ready").touch()
-time.sleep(120)
+deadline = time.monotonic() + 30
+while not (directory / "parent.release").exists():
+    assert time.monotonic() < deadline
+    time.sleep(0.01)
 """
 
 
@@ -607,7 +625,7 @@ def _still_holding_resources(descendants: list[psutil.Process]) -> list[int]:
 
 def test_run_with_timeout_stops_descendants(monkeypatch, tmp_path):
     """孫の準備後に計時し、時間切れの報告より先に子と孫が解放される。"""
-    marker = tmp_path / "ready"
+    marker = tmp_path / "child.ready"
     started: list[psutil.Process] = []
 
     class ReadyPopen(subprocess.Popen):
@@ -617,19 +635,33 @@ def test_run_with_timeout_stops_descendants(monkeypatch, tmp_path):
                 started.extend([psutil.Process(self.pid), *process_tree.collect_descendants(self.pid)])
             return super().communicate(input, timeout=timeout)
 
-    child = f"import pathlib, time; pathlib.Path({str(marker)!r}).touch(); time.sleep(120)"
+    child = late_descendant.held_source(marker.with_suffix(".release"))
     monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
     try:
         with pytest.raises(subprocess.TimeoutExpired):
-            process_tree.run_with_timeout([sys.executable, "-c", _parent_source(child)], timeout=0.05, capture_output=True)
+            process_tree.run_with_timeout(
+                [sys.executable, "-c", _parent_source(child, tmp_path / "parent.release")],
+                timeout=0.05,
+                capture_output=True,
+            )
         assert started and not _still_holding_resources(started)
     finally:
         process_tree.reclaim_descendants(started, timeout=0.1)
 
 
-def test_run_with_timeout_raises_reclaim_error_and_retry_reclaims_same_target(monkeypatch):
+def test_run_with_timeout_raises_reclaim_error_and_retry_reclaims_same_target(monkeypatch, tmp_path):
     """時間上限で子孫が残れば通常の時間上限と区別して送出し、保持した同じ対象を再試行で回収する。"""
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as survivor:
+    release = tmp_path / "timed.release"
+    argv = [sys.executable, "-c", late_descendant.held_source(release)]
+    communicate = subprocess.Popen.communicate
+
+    def ready_communicate(self, input_data=None, timeout=None):
+        if self.args == argv and timeout is not None:
+            _wait_for_ready_marker(release.with_suffix(".ready"))
+        return communicate(self, input_data, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", ready_communicate)
+    with late_descendant.held_process(tmp_path) as survivor:
         try:
             owned = psutil.Process(survivor.pid)
 
@@ -641,7 +673,7 @@ def test_run_with_timeout_raises_reclaim_error_and_retry_reclaims_same_target(mo
 
             monkeypatch.setattr(process_tree, "stop_owned_process", leave_survivor)
             with pytest.raises(process_tree.ReclaimError) as raised:
-                process_tree.run_with_timeout([sys.executable, "-c", "import time; time.sleep(120)"], timeout=0.05)
+                process_tree.run_with_timeout(argv, timeout=0.05)
             error = raised.value
             assert not isinstance(error, (subprocess.SubprocessError, OSError))
             assert isinstance(error.__cause__, subprocess.TimeoutExpired)
@@ -653,7 +685,7 @@ def test_run_with_timeout_raises_reclaim_error_and_retry_reclaims_same_target(mo
                 survivor.kill()
 
 
-def test_process_scope_raises_reclaim_error_when_child_remains(monkeypatch):
+def test_process_scope_raises_reclaim_error_when_child_remains(monkeypatch, tmp_path):
     """終了処理で子を回収できなければ、警告だけで戻らず回収不能を送出する。"""
 
     def leave_residual(process: subprocess.Popen, **kwargs) -> process_tree.ReclaimError:
@@ -664,7 +696,7 @@ def test_process_scope_raises_reclaim_error_when_child_remains(monkeypatch):
     monkeypatch.setattr(process_tree, "stop_owned_process", leave_residual)
     with (
         pytest.raises(process_tree.ReclaimError),
-        process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(120)"]),
+        late_descendant.held_process(tmp_path),
     ):
         pass
 

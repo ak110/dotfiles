@@ -1,0 +1,93 @@
+# メインによるWI選定とレーン分け：処理対象WIの追加
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 追加WIへ初期選定と同じ分類・割当・検収の基準を適用する前 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` | |
+| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` | |
+| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
+| 参照基準の適用前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` | |
+| 参照基準の適用前 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+
+## 処理対象WIの追加
+
+**1.** 追加操作の前に`immediate-fix.md`「即時対応」を読み、発話と発生条件から是正要求、今回混入した不良、同じ実行への明示追加を分類する。
+
+混入した不良は元の要求で是正し、独立した既存不良は即時対応の要否を判定する。
+本節の追加操作は、`immediate-fix.md`「即時対応」で今回の正式改善と確定したAWI、明示追加と、`lanes-goals.md`「明示された目標からの実行」で必要と確定した作業に適用する。
+
+**2.** ユーザーが実行中にキュー操作（UWIへの回答、AWIの投入）を伝達したら、同じ実行への追加指示とし、可否を問い直さない。
+
+追加を明示した項目と伝達した項目を候補差分とし、UWIは投入元のセッションを問わない。
+正式改善を今回へ加えるか次回へ渡すかは、`immediate-fix.md`「即時対応」の比較に従う。
+UWIの指定がなければ、次のコマンドで処理対象外の回答済みかつ未終了のUWIをすべて取得する。
+
+```text
+atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --pull
+```
+
+**3.** 同じ実行へ追加するために起草・投入したAWIは、投入を他担当へ委譲した場合も、保存完了後の正式なファイル名を受け取った直後に候補差分へ含める。
+
+ユーザーから伝達された個別のUWIおよびAWIは、`atk wi show <WIファイル名> --pull`を実行して取得する。
+強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`../../wi-standards/references/wi-standards-operations.md`「投入と取得」に定める再取得条件を適用する。
+回答を確認したUWIは、`agent-toolkit:user-confirmation-and-report`の`references/answer-transitions.md`へ引き渡す。
+ユーザーが名指しで指定したWIは、追加指示と対象が確定した直後に候補差分へ含める。
+いずれの場合も、他の要求の起草、検収、保存の完了を待たずに、後述の「初期選定中」または「選定完了後」の手順へ進む。
+目標から具体化した必要作業と`immediate-fix.md`「開始後に追加されたWIの確認」で今回追加と判定した項目を除き、伝達されていない新規項目や次回向けの振り返りAWIは次回へ残す。
+`ready`一覧は初期選定のまま保持し、新着確認には`immediate-fix.md`「開始後に追加されたWIの確認」の処理可能WI一覧を使う。
+この発話解釈のルールは本節が定め、他の文書は本節を参照する。
+候補差分に対しても、`selection-procedure-candidates.md`「処理対象の決定」における回答済みUWIおよび元項目の取り扱いルールを適用する。
+
+**4.** 初期選定中に受け取った場合は、開始時の候補との集合和（同一名称は1回のみ）を同じ出力先へ保存し、選定、競合確認、未遷移分のみの処理開始、および最新の保存後チェックをやり直す。
+初回の集合情報も合流先において保持する。
+
+**5.** 選定完了後に受け取った場合は、managed-temp直下に追加分の意味判断YAMLを作成し、明示された差分と既存レーンのみを読み込んで、`selection-procedure.md`「条件別資料」で選ぶ初期選定と同じ基準を適用する。
+分類、規範指定、再開位置、書込対象の重複、処理開始、ならびに集合の一致を確定する。
+既存レーンのAWIと追加候補については、書込対象の比較に加えて、後段の分割不能条件と同じ規則に従って`再開位置`の計画識別情報を比較する。
+同一の再開計画を持つ既存レーンへの合流を費用比較よりも優先し、各追加AWIについて、同一計画を持つ既存レーンの識別子と計画識別情報（存在しない場合はその結果）、および書込対象が重複する既存レーンと節・定義を`根拠`欄に記録する。
+追加側のレーン識別子には追加分の中で一意な仮名を使用し、既存の最終レーンとの対応関係をJSONファイルに保存してから、[run-lanes.md](run-lanes.md)「処理中に確定した必須是正レーン」に従って割り当てる。
+
+追加処理に先立ち、検収済みレーンの統合状態が[run-lanes.md](run-lanes.md)「統合とAWI終了」の公開操作によって保存されていることを確認する。
+
+**6.** 既存の完成済み追加YAMLを受け取った場合は、`--candidate-file`を省略して同一のmergeコマンドへ渡す。
+追加側のYAMLでは初回配分を省略してよく、すべてのWIが`追加WI`に分類される。
+全体チェックでは保持されている初回配分が使用され、追加件数にかかわらず上限違反は拒否される。
+合流先のレーンは未統合状態に戻り、追加のない既存レーンの状態、所属WI、初回情報はそのまま保持される。
+割り当ての意味検収は生成入力と元の本文に基づいて行い、検証に成功した試行の保存だけを目的とする再実行は対象外とする。
+
+**7.** 合流後の所要時間と根拠を再見積もりした場合は、今回の合流先のみの最終レーン識別子をキーとするマップをJSONファイルとして保存する。
+
+各値には`実装秒数`、`統合秒数`、`補正前の実装秒数`、`補正前の統合秒数`、`根拠`を記録し、コマンド引数に`--lane-cost-updates <費用更新JSON>`を追加する。
+省略した場合は、補正前の数値を加算して対応する工程の係数を掛け、根拠テキストを結合する。
+段階や先行レーンの参照関係は既存の値を維持する。
+追加YAMLの`見込みの補正`には既存と同一の形式・工程別係数を指定する。
+新形式では共有待ち秒数を全体配分で再確定し、追加側の値を1回採用する。
+旧保存形式の単一係数は両工程へ適用したまま維持し、新形式と混合しない。
+全体が段階2以上となる場合は単一段階案の比較値を、単一段階で6000秒を超える場合は段階案の比較値を、共有待ちを1回含む全体配分で確定し直して追加YAMLに記録する。
+統合結果には、追加YAMLで再確定された比較値のみを使用する。
+
+**8.** 保存には次のコマンドを単独で実行し、すべての追加WIに対して`--body-wi`を繰り返して指定する。
+
+```text
+atk run-script pick-wi-check -- <既存選定YAML> --merge <追加の意味判断YAML> --candidate-file <追加候補JSONLの絶対パス> --lane-map <対応JSON> --output <元の選定結果の出力先ファイル> --work-dir <対象リポジトリの絶対パス> --body-wi <追加WI名>...
+```
+
+**9.** 統合操作は、全体チェックが成功したときに限り元の選定YAMLを更新する。
+項目の書き換えはこの統合操作を通じて行う。
+終了コードが0以外の場合は分類または割り当てを修正して再実行し、保存の成功、意味検収、集合および依存順の検収を完了した追加分のみをレーン担当へ引き渡す。
+既存および追加の原本ファイル、対応JSON、保存先パスは選定YAMLと対応する保存先から取得する。
+
+**10.** 確定した集合と準備済みの作業ツリーは、通常レーンの数にかかわらず[run-lanes.md](run-lanes.md)の単一担当の実行契約へ引き渡す。
+追加WIについても同じ担当スレッドと資源へ引き渡し、初期選定で確定した工程調整の担当体制を維持する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| メインによるWI選定とレーン分け：処理対象の決定の基準を適用する前 | `selection-procedure-candidates.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-candidates.md` |

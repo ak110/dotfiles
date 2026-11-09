@@ -17,18 +17,17 @@ description: >
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 不具合の原因が過去の対策と同じかを分類する前 | `agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
-| 撤去した仕組みと一致する案の扱いを決める前 | `agent-toolkit:wi-standards/references/awi-body.md#「配置規約と導入目的の調査」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「配置規約と導入目的の調査」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 不具合の原因が過去の対策と同じかを分類する前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
+| 撤去した仕組みと一致する案の扱いを決める前 | `agent-toolkit:wi-standards/references/awi-body-placement.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-placement.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
 
 ## 読込表
 
@@ -36,48 +35,79 @@ description: >
 | --- | --- | --- | --- | --- |
 | エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集するエージェント自身が全文を読む（要約、見出し一覧、部分読取、他のエージェントの読取結果では代えない） | 操作 | `agent-document-writing` | |
 
-編集を始める前に、読込表の1行目にある方針や障害対策の記録と、今回の変更内容に矛盾がないことを確認する。規範の節の内容を変えるときは、ファイル名と節名を個別の固定文字列で`docs/development/`から検索し、その節を現行規定の所在として挙げる記録も同じ変更で現行に合わせる。
+編集を始める前に、読込表の1行目にある方針や障害対策の記録と、今回の変更内容に矛盾がないことを確認する。
+規範の節の内容を変えるときは、ファイル名と節名を個別の固定文字列で`docs/development/`から検索し、その節を現行規定の所在として挙げる記録も同じ変更で現行に合わせる。
 編集の過程で新たな障害が発生したり方針が確定したりした場合は、対応する記録文書を更新する。
 
 ## 変更した規範の自セッション適用
 
-1. 更新済み条文との競合を防ぐため、着手前に依頼やAWIの引用を作業ツリーの現行本文から固定文字列で検索し、反映先を特定する。一致しなければ同じ目的の現行条文を選ぶ。配布先の`~/.claude/`や`~/.codex/`は編集対象としない。
+1. 更新済み条文との競合を防ぐため、着手前に依頼やAWIの引用を作業ツリーの現行本文から固定文字列で検索し、反映先を特定する。
+   一致しなければ同じ目的の現行条文を選ぶ。
+   配布先の`~/.claude/`や`~/.codex/`は編集対象としない。
 
 2. 対象となる規範は、`AGENTS.md`、`agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）、`agent-basics/skills/`配下、および`.claude/skills/`配下の各ファイルである。
-   これらを変更したエージェントは、変更が確定した時点から作業ツリーの最新内容を自身のその後の判断に適用する。影響を受ける委譲先には原本の絶対パス、適用する節、版（commitハッシュ。未commitの場合はその旨と変更確定時刻）を伝え、委譲先自身が判断前に読み込む。セッション開始時の版と作業ツリーの版を明確に区別し、各担当者が同じ原本を参照できるようにする。
+   これらを変更したエージェントは、変更が確定した時点から作業ツリーの最新内容を自身のその後の判断に適用する。
+   影響を受ける委譲先には原本の絶対パス、適用する節、版（commitハッシュ。未commitの場合はその旨と変更確定時刻）を伝え、委譲先自身が判断前に読み込む。
+   セッション開始時の版と作業ツリーの版を明確に区別し、各担当者が同じ原本を参照できるようにする。
 
-   - `Skill`ツールや`${CLAUDE_PLUGIN_ROOT}`配下の文書は、セッション開始時に読み込まれた版を返す（変更したスキルは古い内容のまま返り、新設したスキルは`Unknown skill`となる）。以降の判断に適用すると選んだ文書は、作業ツリー版を絶対パスで直接読み込む。
-     読込支援hookは、作業ツリー版の文書が名指す資料と役割契約を同じ作業ツリーから案内する。案内が稼働版の資料の欠落を示す場合は、案内の宣言元と解決先がどちらの版かを確かめ、作業ツリー版の資料を取得済みなら作業を続ける。
+   - `Skill`ツールや`${CLAUDE_PLUGIN_ROOT}`配下の文書は、セッション開始時に読み込まれた版を返す（変更したスキルは古い内容のまま返り、新設したスキルは`Unknown skill`となる）。
+     以降の判断に適用すると選んだ文書は、作業ツリー版を絶対パスで直接読み込む。
+     読込支援hookは、作業ツリー版の文書が名指す資料と役割契約を同じ作業ツリーから案内する。
+     案内が稼働版の資料の欠落を示す場合は、案内の宣言元と解決先がどちらの版かを確かめ、作業ツリー版の資料を取得済みなら作業を続ける。
    - 会話圧縮後は、以降の工程を定める変更済み文書を選び、作業ツリー版を直接読み込む。
-   - 呼び出し元の起動・受領契約と、その`起動対象:`に指定された`<役割名>.subagent.md`は、同一のplugin rootからペアとして適用する。契約は共有の`<役割名>.parent.md`、または単一の呼び出し元へ統合した節に記述する。入力宣言や起動設定と、呼び出し元での値の確定・検収が整合している版だけを後続の処理に使い、整合性を確認できない場合はセッション開始時の版を使い続ける（入力名や起動設定が異なる版の混在を防ぐためである）。
-   - フック、MCPサーバー、スクリプト、権限設定の変更は、配布と再起動が行われるまで反映されないため、自セッションへの適用対象外とする。委譲先が現行のplugin rootから自律的に解決して実行するリソースの不具合を修正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`にある`是正済み資源:`の行で作業ツリー側の絶対パスを渡す。
+   - 呼び出し元の起動・受領契約と、その`起動対象:`に指定された`<役割名>.subagent.md`は、同一のplugin rootからペアとして適用する。
+     契約は共有の`<役割名>.parent.md`、または単一の呼び出し元へ統合した節に記述する。
+     入力宣言や起動設定と、呼び出し元での値の確定・検収が整合している版だけを後続の処理に使い、整合性を確認できない場合はセッション開始時の版を使い続ける（入力名や起動設定が異なる版の混在を防ぐためである）。
+   - フック、MCPサーバー、スクリプト、権限設定の変更は、配布と再起動が行われるまで反映されないため、自セッションへの適用対象外とする。
+     委譲先が現行のplugin rootから自律的に解決して実行するリソースの不具合を修正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`にある`是正済み資源:`の行で作業ツリー側の絶対パスを渡す。
    - 変更後の規範に従うと作業を完遂できないと判明した場合は、その変更自体の設計見直しを優先して進める。
 
 ## メインが書くプロジェクト規範の指定
 
-`agent-toolkit:process-wi`の選定工程において、メインエージェントはAWIごとに`プロジェクト規範の指定`を記述する。受け渡しの形式は`agent-toolkit/skills/process-wi/references/selection-format.md`に従う。
-記載内容は、`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`にある`norm-spec`の条件に基づいて組み立てる。各条件では`paths`と`suffixes`、または`agent-doc`によって対象を判定し、`require-paths`は該当したファイルのパス、`require-text`は指定された文字列の記載を求める。`atk run-script pick-wi-check`を実行すると、同じ設定を用いて指定の漏れを検出できる。
-適用する規範は作業ツリー原本の絶対パス、適用する節、版を指定し、担当者自身が判断前に読み込む。指定した資料の本文についても、同様に同じ原本を参照させる。
+`agent-toolkit:process-wi`の選定工程において、メインエージェントはAWIごとに`プロジェクト規範の指定`を記述する。
+受け渡しの形式は`agent-toolkit/skills/process-wi/references/selection-format.md`に従う。
+記載内容は、`pyproject.toml`の`[tool.agent-toolkit.pick-wi-check]`にある`norm-spec`の条件に基づいて組み立てる。
+各条件では`paths`と`suffixes`、または`agent-doc`によって対象を判定し、`require-paths`は該当したファイルのパス、`require-text`は指定された文字列の記載を求める。
+`atk run-script pick-wi-check`を実行すると、同じ設定を用いて指定の漏れを検出できる。
+適用する規範は作業ツリー原本の絶対パス、適用する節、版を指定し、担当者自身が判断前に読み込む。
+指定した資料の本文についても、同様に同じ原本を参照させる。
 
-- 前節で挙げた対象規範を変更するAWIには、変更対象ファイルのリポジトリ相対パスを記述する。どの条件にも当てはまらないAWIについては`なし`と記載する。
-- 反映先に本リポジトリのエージェント向け文書を含むAWI（`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真となるもの）には、変更を確定するエージェントが計画の採否を判断する前に読むべき資料を明記する。`docs/development/concepts.md`と`docs/development/incidents.md`は索引であるため全文を読み、さらにその索引から変更対象のファイル名・工程名・機能名に関連する分割ファイルの節を選択して読み込む。ユーザーが確定した方針の本文は分割ファイル側に書かれており、索引だけでは確認できないためである。
-- レーン担当者は選定結果から自レーンの指定を確認するため、委譲プロンプトで同じ要求を再掲することは省く（努力目標）。指定が`なし`以外の項目を担当するレーンには、その項目のファイル名と対象ファイルのパスを渡す。
-- レーン内で規範の変更を確定したエージェントは、同じレーンの以降の委譲先に対して、前節で述べた原本の絶対パス、適用する節、版を引き継ぐ。並行して動いている他のレーンへの伝播は範囲外とする。
+- 前節で挙げた対象規範を変更するAWIには、変更対象ファイルのリポジトリ相対パスを記述する。
+  どの条件にも当てはまらないAWIについては`なし`と記載する。
+- 反映先に本リポジトリのエージェント向け文書を含むAWI（`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真となるもの）には、変更を確定するエージェントが計画の採否を判断する前に読むべき資料を明記する。
+  `docs/development/concepts.md`と`docs/development/incidents.md`は索引であるため全文を読み、さらにその索引から変更対象のファイル名・工程名・機能名に関連する分割ファイルの節を選択して読み込む。
+  ユーザーが確定した方針の本文は分割ファイル側に書かれており、索引だけでは確認できないためである。
+- レーン担当者は選定結果から自レーンの指定を確認するため、委譲プロンプトで同じ要求を再掲することは省く（努力目標）。
+  指定が`なし`以外の項目を担当するレーンには、その項目のファイル名と対象ファイルのパスを渡す。
+- レーン内で規範の変更を確定したエージェントは、同じレーンの以降の委譲先に対して、前節で述べた原本の絶対パス、適用する節、版を引き継ぐ。
+  並行して動いている他のレーンへの伝播は範囲外とする。
 
 ## 規範を削除・縮小するときの消失確認
 
-エージェント向け文書の削除・縮小では、編集目的によらず以下を実施する。経緯は`docs/development/incidents-validation.md`「規範の消失と陳腐化」にある。
+エージェント向け文書の削除・縮小では、編集目的によらず以下を実施する。
+経緯は`docs/development/incidents-validation.md`「規範の消失と陳腐化」にある。
 
 1. 規範の価値を守るため、ベースcommitとの差分から、失われる価値、適用範囲、条件、例外、拘束力を確認し、削除・縮小の理由をcommit本文に記録する。
-   - 統合や移設を理由とする場合は、統合先（パスと該当節）の適用範囲が元の範囲を完全に含んでいることを確認し、commit本文に対応関係を明記する。もし含まれていない場合は、統合先を適切に整えるか、削除を取りやめる。
+   - 統合や移設を理由とする場合は、統合先（パスと該当節）の適用範囲が元の範囲を完全に含んでいることを確認し、commit本文に対応関係を明記する。
+     もし含まれていない場合は、統合先を適切に整えるか、削除を取りやめる。
    - 失効（記述や規定の対象となる実装、機能、工程、ファイルが現行リポジトリに存在しないこと）を理由とする場合は、識別子の固定文字列検索で実在しないことを確認し、対象とそれを撤去したcommitをcommit本文に記録する。
    - 上記のいずれかによって目的と結果を保てる削除・縮小や、現行の明示的な要求によって認可されている削除・縮小は、記述の由来にかかわらずエージェント自身で判断して確定する。
-   - エージェント由来であると特定できない記述（人間が記述したもの、由来が不明なもの、由来を明確に切り分けられないもの）を削除・縮小する場合を定める。価値、適用範囲、条件、例外が失われ、それをカバーする認可もない場合は、編集前に`agent-toolkit:user-confirmation-and-report`の「確認要否の判定」に従ってユーザーの事前承認を得る。判断に必要な資料や基準をユーザーだけが持っている場合も同様とする。単に由来が不明であるという理由だけで確認を求めない。
+   - エージェント由来であると特定できない記述（人間が記述したもの、由来が不明なもの、由来を明確に切り分けられないもの）を削除・縮小する場合を定める。
+     価値、適用範囲、条件、例外が失われ、それをカバーする認可もない場合は、編集前にユーザーの事前承認を得る。
+     その判断は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+     判断に必要な資料や基準をユーザーだけが持っている場合も同様とする。
+     単に由来が不明であるという理由だけで確認を求めない。
 
 2. 由来の判定が必要な箇所は、次の順に調べて手順1の採否へ戻る。
 
-   - 初出の確認には、`git log --follow -S '<部分文字列>' -- <ファイル>`や、パスを限定しない`git log -S`を用いる。`git blame`（最後に変更したcommitしかわからない）や、パスを限定した`git log -S`（改名前の履歴を追えない）だけで判断しない。
-   - 導入commitや復元commitに`Co-Authored-By`や`Claude-Session`といったtrailerが存在しない場合は、`atk wi grep --summary-only --state all -F`を使い、完了済みのキュー項目から特徴的な語句や反映先パスの固定文字列で検索する。候補が見つかったら`atk wi show`で本文を確認する。候補の`adopt`記録、または計画ファイルの`<計画のstem>.wi-commits.jsonl`（旧形式では進捗ログ）に記録されたOIDが、導入commitの完全OIDの先頭部分と一致するかを確かめる。計画を根拠とする場合は、`関連WI`にその候補が含まれていることも確認する。`agent-toolkit:wi-standards`「由来と承認」に基づいてエージェント由来であると確定できた場合は、その根拠を進捗ログ（なければ引き継ぎ記録やユーザーへの報告）に記録する。キュー項目の内部識別子はcommit本文から除く。
+   - 初出の確認には、`git log --follow -S '<部分文字列>' -- <ファイル>`や、パスを限定しない`git log -S`を用いる。
+     `git blame`（最後に変更したcommitしかわからない）や、パスを限定した`git log -S`（改名前の履歴を追えない）だけで判断しない。
+   - 導入commitや復元commitに`Co-Authored-By`や`Claude-Session`といったtrailerが存在しない場合は、`atk wi grep --summary-only --state all -F`を使い、完了済みのキュー項目から特徴的な語句や反映先パスの固定文字列で検索する。
+     候補が見つかったら`atk wi show`で本文を確認する。
+     候補の`adopt`記録、または計画ファイルの`<計画のstem>.wi-commits.jsonl`（旧形式では進捗ログ）に記録されたOIDが、導入commitの完全OIDの先頭部分と一致するかを確かめる。
+     計画を根拠とする場合は、`関連WI`にその候補が含まれていることも確認する。
+     `agent-toolkit:wi-standards/references/wi-standards-origin.md`「由来と承認」に基づいてエージェント由来であると確定できた場合は、その根拠を進捗ログ（なければ引き継ぎ記録やユーザーへの報告）に記録する。
+     キュー項目の内部識別子はcommit本文から除く。
    - trailerが存在しないことだけを理由に作者を確定できないため、trailerのないcommitを安易にユーザーによるcommitだと決めつけない。
 
 ## 撤去した仕組みの照合
@@ -86,19 +116,27 @@ description: >
 名前や名目は導入のたびに変わるため、仕組みの働き（何を補う・何を代替するか）を表す語で検索する。
 導入前に検討して却下しただけの案は台帳に載らないため、同じ時点で`docs/development/design*.md`の却下案の記述も働きの語で検索する。
 
-- 一致する項目があれば、`agent-toolkit:wi-standards`の`references/awi-body.md`「配置規約と導入目的の調査」と同じく過去の状態へ戻す提案として扱い、台帳の方針の所在の本文と比べて撤去理由を新しい案で満たせるかを確定してから進める
+- 一致する項目があれば、`agent-toolkit:wi-standards/references/awi-body-placement.md`「配置規約と導入目的の調査」と同じく過去の状態へ戻す提案として扱い、台帳の方針の所在の本文と比べて撤去理由を新しい案で満たせるかを確定してから進める
 - 照合に使った語、一致した項目、判断を計画の記録（実行レビューでは走査記録）へ残す
 - 仕組みを撤去する変更では、同じcommitで台帳へ項目（働き、撤去日とcommit、理由の要約、方針の所在、再導入の条件）を追加する
 
 ## 再発の記録
 
 本節は、dotfilesの不具合を原因分析した担当（process-wiのレーン、add-awi-by-user、review-sessionなど）に適用する。
-`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」の分類で過去の対策と同じ原因（範囲不足・未適用・効果不足）と判定したら、その分析の中で次の2つを記録する。
+`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」の分類で過去の対策と同じ原因（範囲不足・未適用・効果不足）と判定したら、その分析の中で次の2つを記録する。
 記録は振り返りが原因ごとに再発を数え、同じ対策を繰り返す前に条文や仕組みを見直す材料になる。
 
-- `docs/development/incidents*.md`の該当事例へ`再発（YYYY年M月D日）:`行を加え、分類、事象、是正するAWI、元の対策のAWIを書く。元のAWIが無ければ事例への行だけを書き、事例も無ければ元の事象を事例として`incidents.md`「区分」の所在ファイルへ置いてから行を加える
+- `docs/development/incidents*.md`の該当事例へ`再発（YYYY年M月D日）:`行を加え、分類、事象、是正するAWI、元の対策のAWIを書く。
+  元のAWIが無ければ事例への行だけを書き、事例も無ければ元の事象を事例として`incidents.md`「区分」の所在ファイルへ置いてから行を加える
 - 元の対策が採用済みAWIにあれば、次の操作で効果確認を`insufficient`にし、是正するAWIと対応付ける
 
   ```sh
   atk wi effect-check <元のAWI> --worktree <対象worktree> --file <元の対策で変更したファイル> --verdict insufficient --checked-on <判定日> --review-record <判定の記録位置> --corrective-awi <是正するAWI>
   ```
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |

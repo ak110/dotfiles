@@ -42,6 +42,7 @@ from agent_toolkit._common import (
 )
 from agent_toolkit._common import plugin_roots as resource_roots
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._common.persisted_output_reference import CODEX_NOTICE_REFERENCE_PREFIX
 from agent_toolkit._common.plugin_roots import _inventories, _plugin_inventory, _reusable
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks.pretooluse import read_delivery
@@ -997,7 +998,20 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
         pytest.fail("成功した全文取得後も未取得資料が残った")
     assert not pretooluse("repeat-session", "ls")
     assert not pretooluse("repeat-session", "grep -rn needle .")
-    assert pretooluse("other-session", "grep -rn needle .") == context
+
+    def response_context(output: str, identifier: str) -> dict:
+        result = json.loads(output)
+        body = result["hookSpecificOutput"]["additionalContext"]
+        if codex and CODEX_NOTICE_REFERENCE_PREFIX in body:
+            path = pathlib.Path(body.split(CODEX_NOTICE_REFERENCE_PREFIX, 1)[1].splitlines()[0])
+            assert path.resolve().is_relative_to(managed_temp.resolve_session_temp(identifier).resolve())
+            result["hookSpecificOutput"]["additionalContext"] = path.read_text(encoding="utf-8")
+        return result
+
+    # 保存先はsessionごとに異なるため、保存した通知本文と他の応答項目を比較する。
+    assert response_context(pretooluse("other-session", "grep -rn needle ."), "other-session") == response_context(
+        context, "repeat-session"
+    )
 
     # 未配送の完了通知が残るtranscriptでは配送のためにターンを終え、残らないtranscriptでは何も返さない。
     # キューの記録の形は`_hooks/queued_notification_advisor_test.py`の生成と同じとする。

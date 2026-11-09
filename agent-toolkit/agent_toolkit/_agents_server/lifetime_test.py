@@ -90,6 +90,11 @@ import asyncio, contextlib, importlib.util, json, os, pathlib, signal, subproces
 
 mode, directory, root, failure = sys.argv[1:]
 directory = pathlib.Path(directory)
+def hold(name):
+    deadline = time.monotonic() + 120
+    while not (directory / (name + '.release')).exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
 def mark(name, value):
     (directory / name).write_text(json.dumps(value), encoding="utf-8")
 def launch(role, *, inner=False):
@@ -107,7 +112,7 @@ if mode == "leaf":
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), signal.SIG_IGN)
     mark("leaf-" + str(os.getpid()) + ".json", os.getpid())
-    time.sleep(60)
+    hold("leaf")
     sys.exit(0)
 if mode == "launcher":
     spec = importlib.util.spec_from_file_location("probe_launch", pathlib.Path(root) / "scripts/launch.py")
@@ -123,7 +128,7 @@ if failure.endswith("-io"):
     original_record = logging_config.record_instance_event
     def record(event, **kwargs):
         if event == "signal_received":
-            time.sleep(60)
+            hold("signal-io")
         return original_record(event, **kwargs)
     logging_config.record_instance_event = record
 lifetime.SHUTDOWN_TIMEOUT = .5
@@ -151,7 +156,7 @@ async def activate():
     if "blocked" in failure and mode == "server":
         def block_loop():
             mark("blocked-active.json", True)
-            time.sleep(60)
+            hold("event-loop")
         asyncio.get_running_loop().call_soon(block_loop)
     mark(mode + "-ready.json", True)
 mcp_tools._MANAGER.activate_async = activate
@@ -354,7 +359,7 @@ if mode == "finish":
 collect()
 late_descendant.trigger(directory)
 monitor.request_stop()
-time.sleep(60)
+exec(late_descendant.held_source(directory / "deadline.release"))
 sys.exit(3)
 """
 
@@ -370,7 +375,7 @@ def test_lifetime_reclaims_descendant_started_after_first_listing(
     with process_tree.process_scope(
         [sys.executable, str(script), mode, str(tmp_path)], env=host_environ(), stdin=subprocess.PIPE
     ) as process:
-        # 期限到達では監視スレッドが回収後に終了コード0で即時終了し、sleep後の3へ到達しない。
+        # 期限到達では監視スレッドが回収後に終了コード0で即時終了し、保持後の3へ到達しない。
         assert process.wait(timeout=60) == 0
     late_descendant.assert_released(tmp_path)
 

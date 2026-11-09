@@ -16,7 +16,9 @@
 
 ## AGENTS.mdの標準章構成
 
-Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する。観測記録はdotfilesリポジトリの`docs/development/audit-records.md`の「プロジェクト指示のAGENTS.md対応：2026年9月20日」にある。手元に`CLAUDE.local.md`を置くとClaude Codeが`AGENTS.md`を読まなくなる。
+Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する。
+観測記録はdotfilesリポジトリの`docs/development/audit-records.md`の「プロジェクト指示のAGENTS.md対応：2026年9月20日」にある。
+手元に`CLAUDE.local.md`を置くとClaude Codeが`AGENTS.md`を読まなくなる。
 その場合は`# CLAUDE.md`と`@AGENTS.md`の2行の`CLAUDE.md`アダプターを置き、`.git/info/exclude`へ`/CLAUDE.md`を加えて追跡対象から外す（`atk setup-project`と同じ扱い）。
 観測記録は同文書の「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」にある。
 
@@ -42,12 +44,15 @@ Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する�
 「開発コマンド」章にチェック実行コマンド（`make test`・`uvx --exclude-newer-package pyfltr=false pyfltr run <path>`等）を内包する。
 
 「サプライチェーン攻撃対策」章ではロック尊重・公開待機・ピン留め運用の3点を要約として書き、
-脆弱性検知を設ける場合はこれを加えた4点を要約として書く。以下の必須事項を共通文面で揃える。
+脆弱性検知を設ける場合はこれを加えた4点を要約として書く。
+以下の必須事項を共通文面で揃える。
 
 - Pythonパッケージ配布プロジェクト（dotfiles・pyfltr・pytilpack・smpr）はUV_FROZEN=1常時有効化を採用する
 - glatasksはPython依存を持たないためUV_FROZEN常時有効化を行わず、`exclude-newer`のみ採用する
-- 依存パッケージの脆弱性検知（Dependabot alerts等）の要否は配布形態で決める。ライブラリとして配布する
-  プロジェクトはロックファイルが開発専用でエンドユーザーの実行環境へ波及しないため設けない。実行可能な
+- 依存パッケージの脆弱性検知（Dependabot alerts等）の要否は配布形態で決める。
+  ライブラリとして配布する
+  プロジェクトはロックファイルが開発専用でエンドユーザーの実行環境へ波及しないため設けない。
+  実行可能な
   ツール・アプリケーションとして配布するプロジェクトは依存がエンドユーザーの実行環境へ波及するため設ける。
   設ける場合はDependabot alertsを有効化し、自動修正PRの作成を無効化し、定期監査ワークフローを配置する。
   採用した方針と根拠は各プロジェクトの開発者向け文書のサプライチェーン攻撃対策節へ記載する
@@ -56,8 +61,10 @@ Claude CodeとCodexが共通で読む`AGENTS.md`に本章構成を適用する�
 
 development.md・architecture.md・concept.md等、docs/development/配下の全ファイルに共通する基準。
 
-- 設定ファイルや他文書が定義する内容と、公式資料で説明される一般知識（CLI・技術スタック・公開パターンなど）は再掲しない。設定の詳細は設定ファイル側のコメントへ委ねる
-- プロジェクト固有の判断・運用・設計理由と、エンドユーザー・開発者が実行するコマンドを残す。コマンドはコピペ可能にする
+- 設定ファイルや他文書が定義する内容と、公式資料で説明される一般知識（CLI・技術スタック・公開パターンなど）は再掲しない。
+  設定の詳細は設定ファイル側のコメントへ委ねる
+- プロジェクト固有の判断・運用・設計理由と、エンドユーザー・開発者が実行するコマンドを残す。
+  コマンドはコピペ可能にする
 - 設定ファイルの現在の値を前提とする判定結果（その設定が変われば無効になる結論）は、
   その設定ファイルの該当箇所のコメントへ書く。
   開発者向け文書へ書くのは、設定値が変わっても成立する判定手順そのものに限る
@@ -65,7 +72,8 @@ development.md・architecture.md・concept.md等、docs/development/配下の全
 ## docs/guide/index.mdの扱い
 
 ドキュメント生成ツールの自動生成ナビ（nav・sidebar）でガイド一覧を提示できる場合、guide/index.mdは任意配置とする。
-配置する場合は見出しを「利用者向けガイド」で揃える。docs/development/index.mdの見出しは「開発者向けガイド」で揃える。
+配置する場合は見出しを「利用者向けガイド」で揃える。
+docs/development/index.mdの見出しは「開発者向けガイド」で揃える。
 
 ## バッジ記法
 

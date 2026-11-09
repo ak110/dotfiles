@@ -1,0 +1,109 @@
+# 公開工程とセッション終了：延期adoptと反映後の観測
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 合流した公開対象を判断する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
+| 目標起点の公開対象を判断する前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
+| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 基準資料を選択・取得する時 | `run-lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-completion.md` |
+| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` |
+| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+
+## 延期adoptと反映後の観測
+
+**12.** 本節では、要件そのものとして実環境での観測が必要とされている未終了項目を扱う。
+
+未達条件の延期を選ぶ前に、次の基準を適用する。
+
+- `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」
+- `../../wi-standards/references/wi-standards-origin.md`「由来と承認」
+後日の対策効果が完成条件である場合も、適用条件・観測機会と、待てば解決する見込みの根拠を特定して再開記録へ残す。
+cooldownを使える境界は`../../wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
+残りの見送り・追加認可・見込みの立たない外部変更待ちの判断は、レーン担当が必要と確定した時点で委譲元へ通知する。
+リポジトリ担当は判断事項を保持して統括へ返し、窓口を持つ統括がUWIの保存と元項目の依存設定を確認して待機へ移す。
+実装・検証の成功と後日の効果を区別し、適用機会が無い項目は効果未確認として保持する。
+通常の効率改善への長期観測の一律追加は対象外とする。
+環境的な制約という事情だけを理由に、人手による実機確認を完成条件へ追加したり個別UWIを登録したりしない。
+残りの扱いがユーザー判断を必要とする場合は、前述の確認手順を適用する。
+実施可能な範囲での検証を完了させた上で、その結果と確認できなかった範囲や限界を完了報告へ明記する。
+既知の不具合や明示された要件の未達については、未達事項として後述の再開手順に沿って処理する。
+
+**13.** 反映後の観測のみが残る項目について、観測の前提をユーザー操作へ限定する前に、エージェント自身で観測可能か判定する。
+対象は延期`adopt`の未終了集合と、観測のみの再開として統合時に`終了しない`と判定した項目である。
+
+**14.** 自己観測の判定では、必要な入力、トリガー、対象ブランチ、実行順序を現物の実装、設定、公開されている起動手段から調査し、同一セッション内でこれらを準備できるかを確かめた上で、既存の指示や権限がその操作を許可しているかを確認する。
+追加の認可が必要な場合に限ってユーザーへ確認する。
+コマンドが起動可能であることのみをもって到達可能と判断しない（PRの作成によって発火するワークフローや、特定の入力をトリガーとするhookなどがあるため）。
+人間を観測主体とする完成条件や、通常は人間が操作する入力・環境であっても、エージェント側で入力を生成して結果を観測できる手段がないか探す（`agent-toolkit:wi-standards`の`references/awi-body.md`に定められた観測主体の規定を参照）。
+自身が起動した対話セッションへの入力送信と画面・ログの取得（tmuxやホストの端末操作など）や、同一セッションからアクセスできる配布後のCLIやauto modeの応答確認も、この手段に含まれる。
+入力手段が存在することと、実際に結果を受け取れたことは区別して扱い、バージョン、入力、権限、結果、および終了ステータスを記録し、未観測のまま成功とみなさない。
+
+実行記録などからユーザー自身が起動したと確認できるセッション、ユーザーしかアクセスできない本番稼働環境、新たな認可を必要とする操作は、自己操作の範囲には含めない。
+自身が作成したセッションを操作できる場合であっても、ユーザーの既存セッションを操作する権限はない。
+手段が成立しない項目については、不足している前提条件と不成立の根拠を添えて観測不能項目として`run-lanes-completion.md`「採否の確定と終了区分」へ引き渡し、後述の記録を残す。
+
+**15.** 公開担当の処理完了後、`session-termination.parent.md`から受け取った延期`adopt`の未終了集合について、稼働環境への反映結果の終了ステータスと対象HEADを確認して観測する。
+新たなプロセスで残りの完成条件を直接観測し、条件充足を確認できた項目は、検収済みの実装コミットを関連付けた`atk wi adopt`（`--target-repo`に主作業ツリーの絶対パスを指定。実装差分がない場合は`--commit`を省略し、観測の根拠をnoteに記載）を実行して採用を確定する。
+条件を満たさなかった項目や観測できなかった項目は、`run-lanes-completion.md`「採否の確定と終了区分」に従って以下のように処理する。
+
+**16.** 続いて、統合結果の`保存した計画ファイル`にある各計画の`関連WI`を、`atk wi show <ファイル名>... --summary-only --target-repo=<対象リポジトリの絶対パス> --skip-pull`で確認する。
+公開担当の起動を省略した場合も確認する。
+見出し行`### <ファイル名> [<状態>]`が`processing`となっている項目の計画を、`atk plans checkout`で`~/.claude/plans`へ復帰させる（同名ファイルがすでに存在する場合は除外する）。
+観測の結果として完成条件を満たせなかった項目の計画は、保存済みの状態のまま残す。
+復帰させた計画には、`atk run-script plan-progress --`を用いて実装コミット、残存する完成条件、観測の前提と手段、「反映後の観測だけが残る」旨の再開位置を`## 進捗ログ`へ記録し、後述の再開記録を追記した後に`atk plans commit`で保存する。
+
+**17.** 明示された要件を満たすためにユーザーの操作や追加の認可が必要となる項目については、計画を復帰させた後にUWIを保存する。
+保存条件は`agent-toolkit:user-confirmation-and-report`「手段の選択」に、書式および投入手順は`agent-toolkit:wi-standards`に従う。
+操作の主体と選択肢は同スキルの`references/uwi-format.md`「ユーザーへ操作を依頼する場合」に沿って振り分け、アクセス手段はあるものの認可のみが不足している工程については、エージェントが実行してよいかの認可を求める。
+本文には、元AWIのファイル名、不足している前提条件と自己操作が成立しない根拠、振り分けられた操作内容または認可要求、返信してほしい観測結果を記載する。
+観測できない場合に完成条件の扱いを変更するにはユーザーの明示的な判断が必要となる旨も記載する。
+保存の成功を確認した上で、`../../wi-standards/references/wi-standards-states.md`「状態と依存」の承認型UWIと元項目の規定に従って元AWIの`depends_on`へUWIを加えて`inbox`へ戻す。
+進捗ログの再開位置にUWIのファイル名と、回答による観測結果に基づいて判定する旨を追記する。
+UWIの保存に失敗した項目は`processing`のまま残す（待つUWIが無いまま依存を設定すると、再開の契機が失われるためである）。
+
+**18.** 観測のみが残っている未終了の項目（観測により完成条件を満たせなかった項目を除く）については、計画の有無にかかわらず、次の再開記録をmanaged-temp内のファイルへ書き出した上でAWI本文へ追記する。
+追記は`atk wi edit <ファイル名> --append --body-file <その絶対パス> --target-repo=<対象リポジトリの絶対パス>`で行う。
+計画ファイルを持たない項目の場合、これが次期セッションへ引き継ぐ唯一の再開の手掛かりとなる。
+
+```markdown
+## 反映後の観測の再開記録
+
+- 再開区分: 反映後の観測だけが残る
+- 実装commit: <検収済みの実装commitの一意な短縮OID。実装差分の無い項目は「なし」と充足の根拠>
+- 残る完成条件: <観測で確かめる完成条件>
+- 観測手段: <新しいプロセスでの観測の操作と確かめる結果、起動条件（トリガー・branch・入力など）と確認した実装・設定の所在>
+- 観測できる最も早い時刻: <タイムゾーン付きISO 8601日時|不明>
+- 計画: <`private-notes/plans/`からの相対パス|計画なし>
+```
+
+**19.** 観測可能となる最も早い時刻が現在時刻よりも後である項目は、待機することなく、追記の成功を確認した後に`atk wi return-to-inbox <ファイル名> --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
+続けて`atk wi edit <ファイル名> --cooldown-until <その時刻> --target-repo=<対象リポジトリの絶対パス>`を実行して再処理抑制期限を設定する。
+それ以外の項目の状態遷移は`run-lanes-completion.md`「採否の確定と終了区分」に従う。
+
+**20.** 観測の結果として完成条件を満たせなかった項目については、代わりに次の再開記録を同様の`--append`手順で追記する。
+追記の成功を確認した後に、`--cooldown-until`を付与せずに`atk wi return-to-inbox <ファイル名> --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
+追記に失敗した項目は`processing`のまま維持する。
+
+```markdown
+## 反映後の観測の再開記録
+
+- 再開区分: 再実装へ戻す
+- 観測した実装commit: <観測した実装commitの一意な短縮OID。実装差分の無い項目は「なし」>
+- 満たさなかった完成条件: <観測で満たさなかった完成条件>
+- 観測の操作と実際の結果: <観測の操作と、完成条件と異なった実際の結果>
+- 観測の記録: <観測を保存したファイルの絶対パス>
+- 計画: <`private-notes/plans/`からの相対パス|計画なし>
+```
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| UWI本文の書式の基準を適用する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |

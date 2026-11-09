@@ -15,6 +15,7 @@ from unittest.mock import Mock
 
 import psutil
 import pytest
+from agent_toolkit._testing import late_descendant
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
@@ -36,6 +37,10 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
     shutil.copy2(_ROOT / "agent-toolkit/agent_toolkit/_common/windows_job.py", common / "windows_job.py")
     shutil.copy2(_ROOT / "bin/update-dotfiles", root / "bin/update-dotfiles")
     (root / "libexec/update_uv.sh").write_text('"$1" self update\n', encoding="utf-8")
+    child_source = (
+        "import os,pathlib; pathlib.Path(os.environ['CHILD_READY']).write_text(str(os.getpid())); "
+        + late_descendant.held_source(tmp_path / "output.release")
+    )
     (root / "libexec/update_dotfiles.py").write_text(
         "import os, pathlib, subprocess, sys, time\n"
         "if set(sys.argv[1:]) & {'logs', '-h', '--help'}:\n"
@@ -45,8 +50,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
         "print('更新診断', file=sys.stderr, flush=True)\n"
         "assert os.environ['DOTFILES_PRUNE_OUTSIDE_UV'] == '1'\n"
         "if os.environ.get('SPAWN_CHILD') == '1':\n"
-        "    child = subprocess.Popen([sys.executable, '-c', \"import os,pathlib,time; "
-        "pathlib.Path(os.environ['CHILD_READY']).write_text(str(os.getpid())); time.sleep(60)\"])\n"
+        f"    child = subprocess.Popen([sys.executable, '-c', {child_source!r}])\n"
         "    while not pathlib.Path(os.environ['CHILD_READY']).exists():\n"
         "        time.sleep(0.01)\n"
         "pathlib.Path(os.environ['READY']).write_text(str(os.getpid()), encoding='utf-8')\n"
@@ -342,11 +346,14 @@ def test_public_job_limits_output_wait_after_parent_exit(
 def test_public_job_preserves_service_with_closed_output(project: tuple[pathlib.Path, dict[str, str]]) -> None:
     """両出力を分離したサービスが存続したまま、公開jobが正常完了する。"""
     root, environment = project
+    release = pathlib.Path(environment["CHILD_READY"]).with_suffix(".release")
+    child_source = (
+        "import os,pathlib; p=pathlib.Path(os.environ['CHILD_READY']); t=p.with_suffix('.tmp'); "
+        "t.write_text(str(os.getpid())); t.replace(p); " + late_descendant.held_source(release)
+    )
     (root / "libexec/update_dotfiles.py").write_text(
         "import os, pathlib, subprocess, sys\n"
-        "subprocess.Popen([sys.executable, '-c', \"import os,pathlib,time; "
-        "p=pathlib.Path(os.environ['CHILD_READY']); t=p.with_suffix('.tmp'); "
-        't.write_text(str(os.getpid())); t.replace(p); time.sleep(60)"], '
+        f"subprocess.Popen([sys.executable, '-c', {child_source!r}], "
         "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)\n",
         encoding="utf-8",
     )

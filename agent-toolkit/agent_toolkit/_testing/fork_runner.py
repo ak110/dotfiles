@@ -44,6 +44,7 @@ def run_script(
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
     timeout: float | None = None,
+    ready_path: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """スクリプトを実行しsubprocess.CompletedProcess互換の結果を返す。
 
@@ -53,9 +54,31 @@ def run_script(
     """
     if _HAS_FORK:
         try:
-            return _run_via_server(script_path, argv=argv, input=input, env=env, cwd=cwd, timeout=timeout)
+            return _run_via_server(
+                script_path, argv=argv, input=input, env=env, cwd=cwd, timeout=timeout, ready_path=ready_path
+            )
         except _ServerStartFailed:
             pass
+    if ready_path is not None:
+        with subprocess.Popen(
+            [sys.executable, str(script_path), *argv],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            cwd=cwd,
+        ) as process:
+            try:
+                _wait_ready(ready_path)
+                stdout, stderr = process.communicate(input, timeout=timeout)
+                return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+            except BaseException:
+                process.kill()
+                process.communicate()
+                raise
     return subprocess.run(
         [sys.executable, str(script_path), *argv],
         input=input,
@@ -78,6 +101,7 @@ def _run_via_server(
     env: dict[str, str] | None,
     cwd: Path | None,
     timeout: float | None,
+    ready_path: Path | None,
 ) -> subprocess.CompletedProcess[str]:
     with _LOCK:
         server = _ensure_server()
@@ -97,6 +121,7 @@ def _run_via_server(
                 "env": env if env is not None else os.environ.copy(),
                 "cwd": str(cwd) if cwd is not None else os.getcwd(),
                 "timeout": timeout,
+                "ready_path": str(ready_path) if ready_path is not None else None,
             }
             assert server.stdin is not None  # noqa: S101 -- _ensure_server()が保証する不変条件の表明
             assert server.stdout is not None  # noqa: S101
@@ -271,8 +296,24 @@ def _handle_request(request: dict) -> dict:
     pid = os.fork()  # type: ignore[attr-defined]  # Windows型スタブにはPOSIX専用APIが無いため
     if pid == 0:
         _run_child(request)
+    if ready := request.get("ready_path"):
+        try:
+            _wait_ready(Path(ready))
+        except BaseException:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+            raise
     returncode, timed_out = _wait_with_timeout(pid, request.get("timeout"))
     return {"returncode": returncode, "timeout": timed_out}
+
+
+def _wait_ready(path: Path) -> None:
+    """準備の時間予算を、検証する実行期限から分ける。"""
+    deadline = time.monotonic() + 30
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"子の準備通知が届かない: {path}")
+        time.sleep(0.01)
 
 
 def _wait_with_timeout(pid: int, timeout: float | None) -> tuple[int, bool]:

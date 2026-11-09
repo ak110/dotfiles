@@ -16,7 +16,7 @@ import pytest
 
 from agent_toolkit._atk import run_command
 from agent_toolkit._common import process_tree
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, late_descendant
 
 
 def _holds_resources(process: psutil.Process) -> bool:
@@ -93,6 +93,7 @@ def test_execute_reports_running_state_to_human_terminal(monkeypatch, tmp_path, 
 def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_path):
     """停止確認後に記録を確定し、遅れて孫が出力を書かない。"""
     ready = tmp_path / "ready"
+    release = tmp_path / "release"
     started: list[psutil.Process] = []
 
     class ReadyPopen(subprocess.Popen):
@@ -105,8 +106,13 @@ def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_p
                 started.extend([psutil.Process(self.pid), *process_tree.collect_descendants(self.pid)])
             return super().wait(timeout=timeout)
 
-    child = f"import pathlib,time; pathlib.Path({str(ready)!r}).touch(); time.sleep(3); print('late', flush=True)"
-    parent = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r}]); time.sleep(120)"
+    child = (
+        f"import pathlib,time; release=pathlib.Path({str(release)!r}); pathlib.Path({str(ready)!r}).touch(); "
+        "deadline=time.monotonic()+30; "
+        "exec('while not release.exists():\\n assert time.monotonic()<deadline\\n time.sleep(0.01)'); "
+        "print('late', flush=True)"
+    )
+    parent = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child!r}]).wait(timeout=30)"
     argv = (
         [sys.executable, "-c", parent]
         if os.name == "nt"
@@ -116,13 +122,13 @@ def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_p
     monkeypatch.setattr(run_command, "_git_state", lambda _cwd: (None, None))
     monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
     try:
-        metadata, code, failure = run_command.execute(argv, tmp_path, 1)
+        metadata, code, failure = run_command.execute(argv, tmp_path, 0.05)
         assert code == 124 and failure is None
         assert started
         assert not [p for p in started if _holds_resources(p)]
         output = pathlib.Path(metadata["stdout_path"])
         before = output.read_bytes()
-        time.sleep(5)
+        release.touch()
         assert output.read_bytes() == before
         assert metadata["stdout_bytes"] == len(before)
     finally:
@@ -131,6 +137,19 @@ def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_p
 
 def test_execute_reports_residual_descendants_in_failure(monkeypatch, tmp_path):
     """回収できない子孫の診断を公開記録のfailureへ残す。"""
+    release = tmp_path / "residual.release"
+    argv = [sys.executable, "-c", late_descendant.held_source(release)]
+    wait = subprocess.Popen.wait
+
+    def ready_wait(self, timeout=None):
+        if self.args == argv and timeout is not None:
+            deadline = time.monotonic() + 30
+            while not release.with_suffix(".ready").exists():
+                assert self.poll() is None and time.monotonic() < deadline
+                time.sleep(0.01)
+        return wait(self, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "wait", ready_wait)
     real_stop = process_tree.stop_process_tree
 
     def stop_with_residual(process):
@@ -139,7 +158,7 @@ def test_execute_reports_residual_descendants_in_failure(monkeypatch, tmp_path):
 
     monkeypatch.setattr(process_tree, "stop_process_tree", stop_with_residual)
     monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
-    metadata, code, failure = run_command.execute([sys.executable, "-c", "import time; time.sleep(120)"], tmp_path, 0.05)
+    metadata, code, failure = run_command.execute(argv, tmp_path, 0.05)
     assert code == 124 and failure is not None and "12345: residual-command" in failure
     assert metadata["failure"] == failure
 

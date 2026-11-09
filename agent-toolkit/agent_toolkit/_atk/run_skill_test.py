@@ -41,6 +41,16 @@ import json, os, pathlib, subprocess, sys, time, uuid
 import datetime, re
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
+def hold(release):
+    release = pathlib.Path(release)
+    release.with_suffix('.ready').touch()
+    deadline = time.monotonic() + 120
+    while not release.exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+if len(sys.argv) > 2 and sys.argv[1] == '--hold-child':
+    hold(sys.argv[2])
+    sys.exit(0)
 record_dir = pathlib.Path(os.environ["FAKE_RECORD_DIR"])
 probe = "availability-probe" in args[-1]
 kind = "probe" if probe else "session"
@@ -92,7 +102,7 @@ if os.environ.get("FAKE_CONNECTION_LIMIT") and record["connection"] == "subscrip
     print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
         "status": "rejected", "rateLimitType": "five_hour", "resetsAt": int(time.time()) + 3600
     }}}}), flush=True)
-    time.sleep(30)
+    hold(record_dir / "limit.release")
     sys.exit(1)
 if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
@@ -166,12 +176,22 @@ if os.environ.get("FAKE_PROGRESS_DIR"):
 if os.environ.get("FAKE_SESSION_STARTED_FILE"):
     pathlib.Path(os.environ["FAKE_SESSION_STARTED_FILE"]).write_text("started")
 if os.environ.get("FAKE_SESSION_SPAWN_PID_FILE"):
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    release = pathlib.Path(os.environ["FAKE_SESSION_SPAWN_PID_FILE"] + '.release')
+    child = subprocess.Popen([sys.executable, __file__, '--hold-child', str(release)])
+    deadline = time.monotonic() + 30
+    while not release.with_suffix('.ready').exists():
+        assert child.poll() is None and time.monotonic() < deadline
+        time.sleep(0.01)
     pathlib.Path(os.environ["FAKE_SESSION_SPAWN_PID_FILE"]).write_text(str(child.pid))
-    time.sleep(120)
+    child.wait(timeout=120)
 if os.environ.get("FAKE_SESSION_DETACH_PID_FILE"):
     # 出力のパイプを継承したまま残る子孫を起動し、自身は直ちに終わる。
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    release = pathlib.Path(os.environ["FAKE_SESSION_DETACH_PID_FILE"] + '.release')
+    child = subprocess.Popen([sys.executable, __file__, '--hold-child', str(release)])
+    deadline = time.monotonic() + 30
+    while not release.with_suffix('.ready').exists():
+        assert child.poll() is None and time.monotonic() < deadline
+        time.sleep(0.01)
     pathlib.Path(os.environ["FAKE_SESSION_DETACH_PID_FILE"]).write_text(str(child.pid))
 if os.environ.get("FAKE_SESSION_HOLD_FILE"):
     while not pathlib.Path(os.environ["FAKE_SESSION_HOLD_FILE"]).exists():

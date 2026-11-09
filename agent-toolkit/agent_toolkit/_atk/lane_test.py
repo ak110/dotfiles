@@ -14,6 +14,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 import types
 from collections.abc import Callable, Generator, Iterator
 from typing import Any, Literal
@@ -22,7 +23,7 @@ import pytest
 import yaml
 
 from agent_toolkit import atk
-from agent_toolkit._atk import agents_exit_session, lane, managed_temp
+from agent_toolkit._atk import agents_exit_session, lane, managed_temp, run_command
 from agent_toolkit._atk.wi import process_loop_session
 from agent_toolkit._common import session_registry, task_documents, wait_schedule
 from agent_toolkit._plan import commit_mapping
@@ -2631,9 +2632,8 @@ def test_integrate_rejects_changed_input_with_restart_guidance(
 
 def _timed_integration(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, rebased: bool
-) -> tuple[pathlib.Path, dict[str, Any], pathlib.Path, str]:
-    # 統合の操作より短い固有手順の上限で所有登録を作成する。
-    # history-compareは同じ上限で動くため、負荷の揺れを吸収する余裕を残す。
+) -> tuple[pathlib.Path, dict[str, Any], pathlib.Path, str, list[str]]:
+    # 実Gitの準備の余裕は保ち、対象argvだけ準備通知後に短い期限を開始する。
     repo, selected, record = _create(tmp_path, monkeypatch, capsys, "--timeout", "5")
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -2644,10 +2644,35 @@ def _timed_integration(
         git_repository.commit_all(repo, "先行統合")
     handoff = tmp_path / "handoff.md"
     handoff.touch()
-    return repo, record, handoff, head
+    ready, release = tmp_path / "ready", tmp_path / "release"
+    script = (
+        "import pathlib,sys,time; ready,release=map(pathlib.Path,sys.argv[1:]); ready.touch(); "
+        "deadline=time.monotonic()+30; "
+        "exec('while not release.exists():\\n assert time.monotonic()<deadline\\n time.sleep(0.01)')"
+    )
+    argv = [sys.executable, "-c", script, str(ready), str(release)]
+    execute = run_command.execute
 
+    class ReadyPopen(subprocess.Popen):
+        def wait(self, timeout=None):
+            if self.args == argv and not ready.exists():
+                deadline = time.monotonic() + 30
+                while not ready.exists():
+                    assert self.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.01)
+            if self.args == argv and timeout is None:
+                release.touch()
+            return super().wait(timeout=timeout)
 
-_SLOW_ARGV = [sys.executable, "-c", "import time;time.sleep(6)"]
+    def timed_execute(command, cwd, timeout, **kwargs):
+        if command == argv and timeout is not None:
+            assert timeout == 5
+            timeout = 0.05
+        return execute(command, cwd, timeout, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
+    monkeypatch.setattr(run_command, "execute", timed_execute)
+    return repo, record, handoff, head, argv
 
 
 @pytest.mark.parametrize("rebased", [False, True])
@@ -2655,7 +2680,7 @@ def test_integrate_verification_is_not_limited_by_procedure_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], rebased: bool
 ) -> None:
     """検証argvは自身の上限で終わり、固有手順向けのprocedure_timeoutで打ち切られずに統合が進む。"""
-    repo, record, handoff, head = _timed_integration(tmp_path, monkeypatch, capsys, rebased=rebased)
+    repo, record, handoff, head, argv = _timed_integration(tmp_path, monkeypatch, capsys, rebased=rebased)
     manifest = tmp_path / "integration.json"
     manifest.write_text(
         json.dumps(
@@ -2663,7 +2688,7 @@ def test_integrate_verification_is_not_limited_by_procedure_timeout(
                 "plans": [],
                 "wis": [{"name": "20261023-000000-001.md", "commands": []}],
                 "handoff": str(handoff),
-                "verification": [_SLOW_ARGV],
+                "verification": [argv],
             }
         ),
         encoding="utf-8",
@@ -2680,13 +2705,13 @@ def test_integrate_finalization_keeps_procedure_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """自身の上限を持たない最終化argvは、従来どおりprocedure_timeoutで打ち切られる。"""
-    repo, record, handoff, head = _timed_integration(tmp_path, monkeypatch, capsys, rebased=False)
+    repo, record, handoff, head, argv = _timed_integration(tmp_path, monkeypatch, capsys, rebased=False)
     manifest = tmp_path / "integration.json"
     manifest.write_text(
         json.dumps(
             {
                 "plans": [],
-                "wis": [{"name": "20261023-000000-001.md", "commands": [_SLOW_ARGV]}],
+                "wis": [{"name": "20261023-000000-001.md", "commands": [argv]}],
                 "handoff": str(handoff),
                 "verification": [],
             }

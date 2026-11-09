@@ -1,158 +1,30 @@
 # 状態と依存
 
-本書は、WIにおける状態の定義、状態遷移、依存関係、冷却時間（cooldown）、保留、および終了に関する取り決めを定める。各状態遷移を実行する具体的な操作手順は、それぞれの工程を規定する文書に従う。
+本書は、WIにおける状態の定義、状態遷移、依存関係、冷却時間（cooldown）、保留、および終了に関する取り決めを定める。
+各状態遷移を実行する具体的な操作手順は、それぞれの工程を規定する文書に従う。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/SKILL.md#「WI実装commitの対応」` | 判断 | `section:agent-toolkit:*/skills/commit/SKILL.md#「WI実装commitの対応」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md#「節の構成と分担」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#「節の構成と分担」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-content.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-content.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md#「ユーザー専用の記入欄と是正要求」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md#「ユーザー専用の記入欄と是正要求」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-comments.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-comments.md` |
 
-## 状態と一覧集合
+## 条件別資料
 
-| 分類 | 値 | 意味 |
-| --- | --- | --- |
-| 保存状態 | `inbox` | 次の処理主体による取得を待っている状態。依存が未解決の場合は`blocked`と判定される |
-| 保存状態 | `processing` | `agent-toolkit:process-wi`が取得し、現在処理を進めている状態 |
-| 保存状態 | `hold` | ユーザーまたはエージェントが編集中のため、自動処理の対象から外れている状態 |
-| 保存状態 | `adopted` | 採用した要求の実施が完了した状態 |
-| 保存状態 | `rejected` | すべての要求を採用しないことが確定した状態 |
-| 導出判定 | `ready` | すべての依存先が終了し、UWIの回答、metadata、および計画が有効で着手可能な状態 |
-| 導出判定 | `blocked` | 依存関係の未完了、cooldownの未到来、またはmetadataの不備によって着手できない状態。回答が未保存のUWI自身も`blocked`とみなす |
-| 一覧集合 | `active` | `inbox`、`processing`、`hold`の総称。未終了の項目を一覧して確認する範囲を表す |
-| 一覧集合 | `processable` | `inbox`と`processing`の総称。実際に着手可能（`ready`）かどうかは個別に判定する |
-
-現在処理すべき項目が重複していないかは、`active`な項目の本文同士を比較して確認する。過去に同様の要求が存在したかどうかは、`--state=all`を指定して終了済みの項目も含めて取得し判定する。
-`agent-toolkit:process-wi`は`processable`に含まれる項目のみを処理の対象とし、候補の選定、優先度の評価、依存関係の判定、および個別指示の読み取りもこの集合から行う。
-
-## 状態遷移
-
-エージェントが実行できる状態遷移を次に示す。なお、ユーザーはブラウザーUIから任意の状態へ遷移させることができる。
-
-| 遷移 | 操作 | 実行する主体と契機 |
-| --- | --- | --- |
-| `inbox`→`hold` | `atk wi hold` | 項目の修正が必要と判断した主体が実行する。ユーザーの回答待ちには使わず、「承認型UWIと元項目」の依存で表す |
-| `processing`→`hold` | `atk wi hold --state=processing <ファイル名>` | 項目を処理しているセッションが、本文の修正が必要と判断した時点で実行する。エージェント環境では`--state=processing`を付けずに`atk wi hold`を実行すると失敗する |
-| `hold`→`inbox` | `atk wi unhold` | 項目を修正した主体が、保存された本文の一致確認を完了した時点で実行する。回答済みUWIを待つ元項目は保留せずに依存で表すため、この遷移の対象にならない |
-| `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のメインエージェントが、処理対象とする項目を確定した直後に実行する。是正を求める回答が保存された事後承認型UWIや、元項目での追加作業を求める回答済み事前承認型UWIも、作業を担当するレーンの対象としてこの状態へ遷移させる。`agent-toolkit:process-wi`の外部で回答済みUWIの回答を反映する主体も、反映の作業を始める時点でそのUWIをこの状態へ遷移させる |
-| `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のメインエージェントが、回答済みで未終了のUWI（是正要求を含まない事後承認型を含む）を、AWIの処理を開始する前に終了させる際に実行する |
-| `processing`→`adopted` | `atk wi adopt` | メインエージェントが回答済みUWIを終了するとき、または作業レーンにおいてマージの完了時やコード変更を伴わない要求充足の確定後にAWIを終了するときに実行する。commitの対応付けでは、実装commitの短縮OID（完全なOIDも指定可能）を`--commit`に渡すと、`## 処理結果`に短縮OIDと件名が記録される。commitが複数ある場合は`--commit <OID>`を繰り返し指定することで、各commitの短縮OIDと件名をペアで残せる。要求単位やcommitに関する補足説明などのメモは`--note`または`--note-file`に記述する。コード差分を伴わずに要求を満たした場合は`--commit`を省略し、充足の根拠を処理結果に記載する |
-| `processing`→`rejected` | `atk wi reject` | 計画工程において確定した「全要求の不採用」を、メインエージェントが確認した後にレーンが実行する |
-| `hold`→`adopted`または`rejected` | `atk wi adopt`・`atk wi reject` | 保留中の項目について採否が確定し、残作業がない場合に、採否を確定した主体が`unhold`を挟まず直接終了する（一度`unhold`すると、終了する前に`atk wi process-loop`がその項目を取得してしまう可能性があるため） |
-| `processing`→`inbox` | `atk wi return-to-inbox` | 上流リポジトリへ投入したAWIの終了を待つ項目を、いったんキューへ戻す際に実行する（[cross-repository-submission.md](cross-repository-submission.md)を参照） |
-| `adopted`または`rejected`→`inbox` | `atk wi return-to-inbox --state=<adoptedまたはrejected>` | 誤って採否を確定した項目から過去の処理結果を除去し、再処理のためにキューへ戻す際に実行する |
-| `adopted`または`rejected`→`hold` | `atk wi hold --state=<adoptedまたはrejected>` | 誤って採否を確定した項目から過去の処理結果を除去し、確認や修正を行う間保留にする際に実行する |
-
-実装commitの対応記録の保存や取得、複数commitの指定、および欠落している情報の補完については、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に従う。終了後に履歴を書き換える場合は、同様の契約を持つ`plan-rewrite`を用いて対応commitと件名を付け替える。その際も、採否の結果と処理日時はそのまま保持される。
-
-## 保留と本文修正
-
-1. エージェントは、`inbox`および`hold`の状態にある項目を`atk wi rm`で削除できる。ユーザーはブラウザーUIを使うことで、終了済みの項目も含めて削除できる。本文の編集自体は、`inbox`、`processing`、`hold`のいずれの状態でも実行可能である。
-   本文の修正が必要であると判断した時点、または対象と根拠が明確な懸念が寄せられた時点では、採否の確定や詳細な調査を待たずに、直ちに`atk wi hold <ファイル名>`を実行して項目を保留にする。保留にしないまま時間を置くと、別の処理主体が古い要求内容をもとに作業を始めてしまう可能性があるためである。保留の期間は、調査、認識合わせ、修正案の起草から、保存した本文の一致確認を終えて`atk wi unhold`を実行するまでの全工程に及ぶ。誤って投入したことが確認できた項目は、`atk wi rm`で削除する。
-   エージェントが編集のために保留した項目は、修正、保存した本文の検収、`atk wi unhold`を、独立した他の作業より先に進め、保留の時間を最小限にする。修正の採否や内容を決めるために必要な他項目の調査は先に行ってよく、その修正に関係しない全件調査や別の要求の作業は解除の後に行う。修正にユーザーの判断や外部の入力が必要な間は、保留と再開の条件を保ったまま、回答に依存しない作業へ進む。
-   対象項目がすでに`processing`になっている場合は、保留や本文の置き換えは行わず、後述する「処理中の項目の扱い」に従う。対象の状態を確認した後に別の処理主体が`processing`へ遷移させてしまい、`atk wi hold`が失敗した場合も同様に対処する。すでに`hold`になっている項目は、保留状態を維持したまま修正と検収を進める。
-
-2. 処理中の項目の扱い: エージェント環境から実行する`atk wi edit`は、`processing`状態にある項目の本文全体を置き換える操作を受け付けない。現在処理が進んでいる要求内容を途中で書き換えてしまうと、実行中のセッションで処理される内容が意図せず変化してしまうためである。エージェントが内容を変更したい場合は、変更後の要求を新しい項目として改めて投入し、既存の処理中項目に対しては`--append`による追記のみを行う。エージェント環境からの公開追記は`## 処理結果`の後ろに追記され、元の要求内容と分離して保存される。なお、ユーザー自身による操作はこの制限の対象外である。
-
-## 終了
-
-AWIを終了する主体は、`adopt`のメモの冒頭に、`awi-body.md`「節の構成と分担」のH1直下に記載された変更要求を実施した結果として、具体的に何をどのように変更したかを1文で簡潔に記述する。回答済みUWIを終了する場合は、ユーザーの回答を踏まえて実際に実施した対応内容を1文で記述する。元AWI側にまだ残作業があるときは、その未完了の作業ときちんと区別して記録する。一方、`reject`のメモの冒頭には、要求を採用しなかった理由を1文で記述する。コミット情報やレビュー記録などの詳細は、その1文の後ろに配置する。メモで使用する語彙は、`SKILL.md`冒頭に定められた用語基準に合わせる。
-
-`adopt`または`reject`を実行して項目を終了する主体は、実行直前に`--note`や`--note-file`へ指定する処理結果の事実関係を十分に確認する。事実として記載する内容は、対象のプラットフォーム、ランタイム、および呼び出し手段において自ら観測したものに限る。別環境での観測結果を用いる場合は、動作の同等性が確認できている範囲に限定する。処理結果の記述から参照するcommit、PR、CI run、外部サービスへの操作などは、正常に完了したことを実際に確認したうえで、後続の担当者が確実に解決できる形式の識別子を記載する。未完了の処理や未観測の事項がある場合は、本文の記述を見直してから完了形として記録する。
-`--commit`を伴う採否操作では、リビジョンを正しく解決でき、かつoriginが対象リポジトリと一致しているworktreeの絶対パスを`--target-repo`に指定する（単に識別することだけが目的の操作であれば、保存済みの正規化URLも利用できる）。リビジョンを解決できない場合は、終了コード2を返して状態を変更せずに停止する。
-
-`rejected`は、エージェントのみが起票した要求のすべてを技術的な根拠に基づいて不採用とする場合、または人間由来の要求のすべてについてユーザーが不採用を明示的に承認した場合に限って適用する。技術的な失敗、必要な情報の不足、外部条件の成立待ち、計画の不備といった要因によるものは`active`のまま維持する。不採用確認の回答がまだ得られていない項目は、すでに採用可能な範囲が含まれていたとしても項目を分割せず、全体を確認のUWIへの依存で待たせる（「承認型UWIと元項目」）。その他の要因については、後述の「着手不能要因の分類」に従って整理する。
-技術的に解消できない問題や作業を継続できない理由は未達事項として記録し、状態は「着手不能要因の分類」に沿って適切に保つ。
-
-すでに採用された内容を同じリポジトリ内の別の項目へ統合した場合、元の項目を`rejected`に変更することはせず、統合先の項目を`note`に記録する。元の項目が`rm`の対象となる`inbox`または`hold`であり、かつ操作主体の担当範囲および書き込み権限の範囲内にある場合に限り、`rm`を使って削除する。現在`processing`の項目や、すでに`adopted`となっている項目を、本規定のみを理由として状態変更したり削除したりすることは行わない。検収を終えた別リポジトリへの移管については、既存の「複数リポジトリへの投入」に定められた元項目の移管手順に従う。
-
-エージェント自身が誤って投入した項目は、`atk wi rm`で削除するか、`atk wi edit`で本来の正しい要求内容に書き直して再利用する。`rejected`は、成立する要求を正当な理由で不採用とする場合に限って用いる。削除した項目はprivate-notesのGit履歴から復元できるため、削除にあたってユーザーへの事前確認は不要である。
-上流リポジトリに対する改訂が必要となる要求については、[cross-repository-submission.md](cross-repository-submission.md)に従って対処する。
-
-## 採用済みAWIの効果記録
-
-`effect_check`は採用済みAWIの実装後の確認を採用状態と別に表すfrontmatterである。
-実装commit付きの新しい採用では`pending`を保存し、実利用での適用機会と結果を確認するまで保持する。
-`pending`は確認待ち、`confirmed`は全変更ファイルで効果確認済み、`insufficient`は1ファイル以上で効果不足と判定して是正AWIを保存済み、`not_required`は後日確認が不要と判断して理由を保存済みを表す。
-部分確認は判定済みのファイルを保持して全体を`pending`とし、残りを再候補化する。
-適用機会なし、日時や対応commitの解決不能は理由付きの確認待ちとし、確認不要や効果不足と区別する。
-キーが無い既存項目は未確認であり、日時と変更内容から対象化する。差分なしの要求充足、回答のみのUWI、却下項目は自動の確認待ちの対象外とする。
-確認待ちは14日の候補窓を過ぎても残し、依存解決やprocess-loopの未着手対象へ戻さない。
-
-保存には次の操作を使う。
-
-```text
-atk wi effect-check <ファイル名> --worktree <対象worktreeの絶対パス> --file <変更ファイルのリポジトリ相対パス> --verdict confirmed --checked-on <YYYY-MM-DD> --review-record <振り返りの記録位置>
-```
-
-`insufficient`では`--corrective-awi <保存済み是正AWIファイル名>`が必須となる。
-全体の確認待ち・確認不要は`--file`を省略し、`--verdict pending`または`--verdict not_required`と`--reason <空でない1行の理由>`を指定する。`--worktree`、`--checked-on`、`--review-record`は同様に指定し、対応commitが不明でも対象リポジトリの一致を検証する。
-同じ判定と理由を保存する対象は、`atk wi effect-check <ファイル名> [<ファイル名> ...]`でまとめて指定できる。
-全対象を検証してから保存し、commitとpushを1回にまとめる。
-途中の保存やcommitに失敗した場合は、同じ引数で再実行する。
-処理結果節のない旧項目では、確認待ち・確認不要の記録用に末尾へ節を追加し、既存本文を保持する。
-`confirmed`と`insufficient`は引き続き`--file`を必須とし、既存のファイル別結果を保持する。同じ引数の再実行では既存の判定行を再利用する。
-`--file`が実際の対応commitの変更パスに含まれることを確かめ、逸脱するパスと不正値を拒否する。
-状態、要求本文、ユーザーコメントおよび既存処理結果行を保ち、次の構造の行を最後の`## 処理結果`節へ追記してcommitとpushを行う。
-
-```text
-- 効果確認: {"file":"agent-toolkit/rules/01-agent.md","verdict":"confirmed","checked_on":"2026-10-31","review_record":"claude:session:42"}
-```
-
-不足判定のJSONには`corrective_awi`も保存する。
-`atk wi show`と一覧JSONの`effect_check`・`effect_check_reason`、WI詳細の汎用frontmatter表示で確認できる。
-`atk wi list --state=adopted --effect-check=pending`で確認待ちを絞り込める。ほかの判定値も同じ引数で指定でき、既存の一覧条件との積集合を返す。
-新しい採用日時はタイムゾーン付きで保存する。過去のタイムゾーンなしの値は既存の採用操作が保存したローカル時刻として解釈し、適用したタイムゾーンを確認材料へ残す。日時が解釈できない項目は理由付きで未確認に残す。
-通常の`atk wi edit`は引き続きinbox・processing・holdだけを編集対象とする。
-
-## 依存と冷却時間
-
-`depends_on`は、先に終了させておくべきキュー項目のファイル名を保持する。これは、先行する項目の成果物が存在しないと、後続のWIを安全に実施できない場合や完成の判定が成り立たない場合に限って設定する。依存先を設定する際は、待っている成果物の内容、先行成果物がないと成り立たない工程や完了条件、および現行の成果物では代替できない理由を、依存先ごとに後続項目の本文中へ明記する。同一ファイルを変更すること、変更範囲が重複すること、作業順序の好みの問題、あるいは共通方針を反映することなどは、依存関係を設定する理由には含めない。書き込みの競合や実装の順序については、レーンの割り当てによって調整する。
-依存先には、`target_repo`が異なるリポジトリの項目を指定できる。同一のファイル名を持つ項目が複数の`target_repo`に存在する場合は、依存元と同じ`target_repo`の項目を優先して依存先とし、該当するものがない場合はそのファイル名を持つすべての項目を依存先として扱う。
-依存関係は、`atk wi set-dependencies <filename> --depends-on <filename>`を実行することで、`inbox`、`processing`、`hold`の状態にある項目へ登録する。このコマンドは項目の保存状態を変更しないため、保留期間中に本文の修正と依存関係の確定をまとめて行うことができる。項目が`ready`か`blocked`かの判定は、メタデータに記録された依存関係のみに基づいて導き出される。
-
-`cooldown_until`は、AWIのみに設定できる属性である。初回投入時には`atk wi add --cooldown-until <タイムゾーン付きISO 8601日時>`で指定し、複数の`--body-file`を同時に渡した場合はすべての項目に同一の期限が保存される。空文字列や不正な形式の日時、タイムゾーンの指定がない日時、UWIやbatchとの併用、および通常本文のfrontmatterでの直接指定は受け付けられない。既存の`inbox`または`hold`の状態にあるAWIに対しては、`atk wi edit <filename> --cooldown-until <日時>`で設定でき、この編集操作に空文字列を渡すことで設定を解除できる。UWIに対して日時を設定する操作は拒否される。もしUWIに期限が保存されていると、着手可否判定において不正な期限として扱われてしまうため、同様の編集操作で空文字列を渡して解除しておく。なお、`processing`の項目に対しては設定も解除も受け付けられない。設定された期限が到来した後は、他に続行できない理由がなければ状態が自動的に`ready`へ移行する。先送りを選ぶ前に`agent-toolkit:user-confirmation-and-report`「確認要否の判定」と「由来と承認」を適用する。
-待てば解決する見込みは、既知の解除時刻、提供予定、同条件の一次情報や実際の観測など、具体的な根拠で判断する。
-解決の保証までは要求せず、任意に決めた再確認日や将来APIが追加される可能性だけを根拠にしない。
-
-## 着手不能要因の分類
-
-| 解除される契機 | 該当する要因 | 設定方法 |
-| --- | --- | --- |
-| 時間の経過のみ | レート制限に伴うバックオフ、再試行間隔の待機、指定期日の到来待ち、および解決する見込みの根拠がある外部公開の再確認までの待機 | `cooldown_until`を設定する |
-| 実在する先行キュー項目の終了 | 先行するキュー項目の作業成果待ち。別リポジトリの成果物を待つ場合であっても、待機対象がキュー項目として実在していればここに該当する | 該当項目のファイル名を`depends_on`に直接追加する |
-| ユーザーからの回答 | ユーザーの回答が得られないと作業を進められない要因 | [uwi-format.md](uwi-format.md)の事前承認型書式に従ったUWIを作成・保存し、元の項目の`depends_on`へそのUWIを加える（「承認型UWIと元項目」） |
-
-UWIとして起票するのは、対応方針の選択や実施可否の判断が必要であり、その問いを1文で端的に表現できる事項に限る。外部環境の制約や別環境での作業実施といった事情は単なる発生場所に過ぎないため、UWIを起票する直接の根拠にはせず、ユーザーによる判断が不可欠であるという点を行動の根拠とする。すでにユーザーから認可を得ている操作の実施については、`agent-toolkit:process-wi`に定められた外部操作の手順に沿って進める。
-一連の関連作業が完了した後に必要となるユーザー側の対応については、`agent-toolkit:user-confirmation-and-report`「手段の選択」に基づいてUWIを登録すべきかどうかを判定する。登録が必要と判断した場合は、関連するAWIの完了工程に登録予定を記録し、そのAWIを担当するエージェントがUWIの正常な保存を確認する。先行作業の完了を待つだけの事項は、依存関係（`depends_on`）として整理する。
-外部公開待ちの`cooldown_until`は再確認までの待機を解除する。
-外部の解除条件と解除後の作業をAWI本文へ残し、期限到来時に条件を確かめる。
-公開日が不定でも、解決する見込みの根拠があり必要な判断が済んでいれば、次の再確認時点を設定できる。
-見込みを確認できない場合はcooldownを設定せず、残りの見送り・別案・外部変更待ちの扱いを事前承認型UWIで確認する。
-UWIの保存・元項目の依存設定・inboxへの差戻し・回答後の再開は、後述の「承認型UWIと元項目」「回答済みUWIの取り込み」に従う。
-
-## 承認型UWIと元項目
-
-1. 事後承認型UWIは、元の作業の進行を妨げないため`depends_on`には追加しない。元の項目は、ユーザーからの回答を待たずに終了させる。
-   `question_type: post-approval`が指定された事後承認型UWIに対して`その対応で問題無い`という選択肢のみが回答された場合、`atk wi answer`と`atk serve`は回答の保存と同時に項目を`adopted`へ遷移させる。保存済みの標準的な2択`choice`で同様の回答があった場合も同様である。一方、一般的な`yes-no`形式の回答、否定的な回答、または追加の記述が含まれる回答については、回答済みの状態のまま保持され、通常の手順で取り込まれる。
-   是正を求める回答が届いた場合は、`origin-and-approval.md`「ユーザー専用の記入欄と是正要求」の手順を適用し、そのUWI自身を作業要求として処理する。新しいAWIの起票は不要である。
-
-2. 事前承認型UWIを保存したら、元の項目の`depends_on`へそのUWIを加え、回答待ちを編集目的の`hold`と区別する。
-   `atk wi set-dependencies <元項目のファイル名> --depends-on <UWIのファイル名>`を実行する。このコマンドは依存を指定した集合で置き換えるため、元項目が既に持つ依存先も`--depends-on`へ並べる。
-   元項目が`processing`の場合は、依存を保存した後に`atk wi return-to-inbox <元項目のファイル名>`で`inbox`へ戻す（依存の保存より先に戻すと、依存の無い`inbox`の項目を別の処理主体が取得し得るため）。
-   未回答のUWIを待つ元項目は着手可否判定で`blocked`となり、処理候補に入らない。`atk serve`のWI画面は、この項目へ`blocked`のバッジを表示する。
-
-## 回答済みUWIの取り込み
-
-1. 回答が保存されたUWIは処理候補に入り、そのUWIを`depends_on`に持つ元項目も同じキュー内の依存待ちとして処理候補に入る。次回そのキューを処理する`agent-toolkit:process-wi`のメインエージェントは、両方を同じ実行の処理対象へ加える。進行中の`agent-toolkit:process-wi`の実行中にユーザーから回答が伝えられた場合は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-procedure.md`「処理対象WIの追加」に沿って取り込む。メインエージェントは、UWIとその元項目を同一の作業レーンへ割り当てる（具体的な操作順序は同文書を参照）。割り当てられたレーンが回答内容を反映したうえでUWIを終了し、依存が解消した元項目を処理して終了させる。もし回答内容によって元項目側の追加作業が不要となった場合は、メインエージェントがUWIを終了させたうえで、元項目のみを処理対象として追加する。
-   同一の元項目が依存している未回答のUWIが他に残っている間は、元項目は`blocked`のまま処理候補に入らない（1件のUWIには1つの問いだけを持たせる運用のため、1つの元項目に対して複数のUWIが紐づく場合があるためである）。回答済みのUWIは先に終了してよい。
-   UWIには元項目のファイル名と回答の判断に必要な情報のみを保持させ、作業再開時の手順については、担当レーンが元項目の計画ファイルにある進捗ログから読み取る。計画ファイルが存在しない場合は、依存の保存時に`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`で元AWI本文へ追記した再開手順を、`## 処理結果`の後ろから読み取って確認する。公開追記として保存された内容は、元の要求内容と分離して管理されるためである。
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 状態と一覧集合・状態遷移に関する判断・作業の前 | `states-and-dependencies-states.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-states.md` |
+| 保留と本文修正に関する判断・作業の前 | `states-and-dependencies-editing.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-editing.md` |
+| 終了に関する判断・作業の前 | `states-and-dependencies-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md` |
+| 採用済みAWIの効果記録に関する判断・作業の前 | `states-and-dependencies-effect.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-effect.md` |
+| 依存と冷却時間・着手不能要因の分類に関する判断・作業の前 | `states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
+| 承認型UWIと元項目・回答済みUWIの取り込みに関する判断・作業の前 | `states-and-dependencies-approvals.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-approvals.md` |

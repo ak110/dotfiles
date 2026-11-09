@@ -1,0 +1,43 @@
+# 待機と観測：外部サービスの状態変化を待つ場合
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
+| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+
+## 外部サービスの状態変化を待つ場合
+
+1. 不要な待機を省くため、待機を開始する前に、待機によって得られる結果がすでに収集した証拠や次の必須工程の判定に対して不足しているかどうかを比較する。
+   既存の情報で十分に判断できる場合は待機せず、`agent-toolkit/share/rules/common/01-agent.md`の「行動と手順の目的」に従って工程を省略し、その旨を報告する。
+
+   CIの完了やデプロイの反映などを待つ際は、終了条件が満たされた時点で終了し、その際に一度だけ結果を返す起動形態で待機する。
+   固定時間で待機するのは、所要時間が確定しているごく短い待ち時間（数秒程度のレート制限など）に限るものとし、`sleep`コマンドに状態確認を連結して繰り返すような待機方法は用いない（待ち時間を浪費するうえ、適切な中断契機を失ってしまうためである）
+
+2. CIやReleaseワークフローの完了待機は、`agent-toolkit:commit`の`references/push-and-ci.md`の「pushと監視」に定める手順に従って実施する。
+   ベースラインが存在しない公開後のRelease確認などでは、同節で説明されている完全長SHAによる`--wait-sha`オプションを使用する
+
+3. 対象サービスのCLIに終了条件付きの待機機能が用意されている場合は、その機能を優先して使用する
+
+4. いずれの機能も提供されていない場合は、`agent-toolkit/share/rules/common/02-agent-operations.md`「待機と背景実行」の終了条件ループを用いる。
+   照会成功による未完了、照会失敗、時間上限到達を区別し、同節の時間上限を設け、`waiting-and-monitoring-intervals.md`「待機区間の構成」に従って起動・回収する。
+   時間上限に達して終了し、かつ状態照会には成功して処理が未完了であることが示されている場合に限ってループを再起動する。
+   照会自体が失敗して終了した場合は、保持されている診断情報から原因を確認したうえで、待機手段を選び直す
+
+5. 待機の解除条件がユーザーからの入力や外部インフラの復旧である場合は、定期起動のタイミングごとに条件の成立を確認する。
+   保存済みUWIへの回答が得られたかどうかは`atk wi list --type=uwi --answered=yes`の出力に対象のファイル名が含まれているかで判断し、インフラの復旧については公開されている状態照会機能や対象ジョブの再確認によって判定する
+
+6. 状態照会の間隔は、残っている解除条件の種類（ユーザーが応答可能な時間帯や頻度、公開された復旧見込みと照会に伴う負荷、通常の完了までの所要時間とAPIのレート制限など）を考慮して設定し、条件の種類が変化した場合は設定を見直す
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 待機と観測：待機区間の構成の基準を適用する前 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |

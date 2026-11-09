@@ -4,11 +4,11 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-code-runtime.md#「完了通知と中継の実行順」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md#「完了通知と中継の実行順」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-code-runtime-receiving.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime-receiving.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
 
 ## Agentツールの継続
@@ -19,7 +19,7 @@ Claude Codeの`Agent`ツールで起動した担当に限り、`continuation.md`
   継続時の指示本文には、継続前に作成・読み取りしたファイルであっても書き込みの直前に現行の内容を再取得する旨の条件を含める
 - 完了通知の配送先はプロバイダーやシステム構成によって異なり、3階層以上の構成における配送先は未検証である。
   最上位や直接の親が配送先であると決めつけず、起動結果として得られたIDへの`SendMessage`の成功と、送信後に対応する完了通知の受信をもって継続の成立を判定する。
-  その上で`references/claude-code-runtime.md`「完了通知と中継の実行順」へ対応付ける。
+  その上で`claude-code-runtime-receiving.md`「完了通知と中継の実行順」へ対応付ける。
   関連する監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」に記載されている
 - 担当者とタスクの組み合わせが異なる場合や、実効の3設定値（engine・model・effort）の不一致、完了報告の配送不能、前提条件の無効化、処理中断のいずれかが起きた場合は、停止済みの識別子を再利用しない。
   必要な前提条件を明示的に再構成した上で新規セッションを起動する。

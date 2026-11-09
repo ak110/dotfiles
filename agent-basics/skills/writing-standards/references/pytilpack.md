@@ -2,16 +2,18 @@
 
 pytilpackはPythonのユーティリティ集であり、各種ライブラリ向けの拡張機能や、フレームワークに依存しない汎用モジュールを`import pytilpack.<対象ライブラリ名または汎用モジュール名>`（`pytilpack.httpx`、`pytilpack.cache`など）の形式で提供する。
 
-APIを確認するには公式ドキュメントの取得手段が必要であり、導入や動作確認には対象のPython環境を操作できるCLIが必要となる。ドキュメントの閲覧のみが可能な環境では、その資料に基づく使用方法を説明し、実際の導入やテストはPythonとCLIを利用できるClaude CodeまたはCodexで行う。資料を取得できない場合は、バージョンと必要なAPIを明記した上で未確認事項として残す。説明にあたっては[文章の品質基準](writing.md)に従う。
+APIを確認するには公式ドキュメントの取得手段が必要であり、導入や動作確認には対象のPython環境を操作できるCLIが必要となる。
+ドキュメントの閲覧のみが可能な環境では、その資料に基づく使用方法を説明し、実際の導入やテストはPythonとCLIを利用できるClaude CodeまたはCodexで行う。
+資料を取得できない場合は、バージョンと必要なAPIを明記した上で未確認事項として残す。
+説明にあたっては[文章の品質基準](writing.md)に従う。
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 

@@ -7,7 +7,10 @@ description: >
 
 # セッション記録のmarkdown出力
 
-セッション記録を取得して保存するには、対象の記録ファイルにアクセスできるファイル操作機能と`atk`コマンドが必要である。これらが利用できない環境では、ユーザーから提示された会話テキストのみをMarkdown形式に整形し、情報の出所をその提示範囲に限定して扱う。ホスト環境の記録ファイル自体の取得やファイル保存は、CLIツールを実行可能なClaude CodeまたはCodex環境で実施する。見出しや説明文を記述する際は、[文章の品質基準](references/quality-standards.md)に準拠する。
+セッション記録を取得して保存するには、対象の記録ファイルにアクセスできるファイル操作機能と`atk`コマンドが必要である。
+これらが利用できない環境では、ユーザーから提示された会話テキストのみをMarkdown形式に整形し、情報の出所をその提示範囲に限定して扱う。
+ホスト環境の記録ファイル自体の取得やファイル保存は、CLIツールを実行可能なClaude CodeまたはCodex環境で実施する。
+見出しや説明文を記述する際は、[文章の品質基準](references/quality-standards.md)に準拠する。
 
 `atk agents logs <対象> --format markdown`コマンドを実行して、Claude CodeおよびCodexのセッション記録をMarkdown形式へ変換する。
 出力対象は、セッション識別子、`--project-dir`、または`--all`のいずれかのオプションで指定する。
@@ -17,9 +20,8 @@ Claude Codeのメイン以外のエージェントでは環境変数`CLAUDE_CODE
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/export-session/references/quality-standards.md` |
-| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |

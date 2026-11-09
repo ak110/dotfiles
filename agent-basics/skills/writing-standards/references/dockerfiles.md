@@ -4,17 +4,19 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| ベースイメージの版を選ぶ・変える前 | `dependency-management.md#「最新版への追従」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「最新版への追従」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `dependency-management.md#「公開待機設定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「公開待機設定」` |
+| ベースイメージの版を選ぶ・変える前 | `dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` |
 
 ## 基本
 
 - 先頭の`# syntax`ディレクティブでBuildKitの安定版フロントエンドを明示的に指定する。
-- ベースイメージのtagには最新の安定版を示すものを選ぶ。`image:tag@sha256:...`でdigestを固定する場合は、依存更新ツールでdigestとtagの両方をメジャー版も含めて更新する。更新ツールを使えない場合は、`dependency-management.md`「最新版への追従」の浮動参照の規定に従う。
+- ベースイメージのtagには最新の安定版を示すものを選ぶ。
+  `image:tag@sha256:...`でdigestを固定する場合は、依存更新ツールでdigestとtagの両方をメジャー版も含めて更新する。
+  更新ツールを使えない場合は、`dependency-management.md`「最新版への追従」の浮動参照の規定に従う。
 - マルチステージビルドを活用し、ビルド環境の基盤と最終成果物の責務や変更頻度を適切に分離する。
 - コンテナー実行時のセキュリティを確保するため、非rootユーザーで実行するように構成する。
 
@@ -26,11 +28,13 @@
 ## サプライチェーン保護
 
 - `apt-get install`コマンドを実行する際は、不要な推奨パッケージの混入を防ぐために`--no-install-recommends`オプションを付与する。
-- `dependency-management.md`「公開待機設定」に記載された設定をコンテナーイメージ内のパッケージマネージャーでも有効化する。自リポジトリのパッケージをコンテナービルド内で`uv tool install`などを用いてインストールする場合は、同節に示された対処手順に従う。
+- `dependency-management.md`「公開待機設定」に記載された設定をコンテナーイメージ内のパッケージマネージャーでも有効化する。
+  自リポジトリのパッケージをコンテナービルド内で`uv tool install`などを用いてインストールする場合は、同節に示された対処手順に従う。
 
 ## hadolint
 
-- hadolintを用いた静的コード解析を実施し、Dockerfileの品質を検証する。ルールの警告抑制（インラインコメントや設定ファイルによる無視）は、真に必要な最小限の範囲に限定する。
+- hadolintを用いた静的コード解析を実施し、Dockerfileの品質を検証する。
+  ルールの警告抑制（インラインコメントや設定ファイルによる無視）は、真に必要な最小限の範囲に限定する。
 
 ## 実行時設定
 

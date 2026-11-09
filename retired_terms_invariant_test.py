@@ -148,6 +148,13 @@ _ENDING_TERM_ALLOWED = (
     _AllowedLocation("agent-toolkit/skills/write-plan/references/legacy-plan-file-standards.md"),
     # 保存済み記録の旧名を現行の役割・工程へ対応付ける説明だけを許容する。
     _AllowedLocation("docs/development/concepts-principles.md", "旧記録の読み替え:"),
+    _AllowedLocation(
+        "docs/development/concepts-principles.md",
+        line_exact="  「終端工程」は内容に応じて「公開工程」「公開後の操作」「終了工程」を指す。",
+    ),
+    _AllowedLocation(
+        "docs/development/concepts-principles.md", line_exact="  「終端完了」という公開担当の成功返却値は「公開完了」を指す。"
+    ),
 )
 
 _RETIRED_TERMS = (
@@ -202,6 +209,20 @@ _RETIRED_TERMS = (
                 "成果物を使う人自身が読むガイドの見出しや案内では「利用者向け」も使える。",
             ),
             _AllowedLocation("docs/development/concepts-principles.md", "新しい説明文に使わず"),
+            _AllowedLocation(
+                "docs/development/concepts-principles.md",
+                line_exact=(
+                    "  この呼称の整理は、単独の「利用者」の禁止と製品別の呼称の改称という"
+                    "ユーザーの提案を比べて選んだ技術判断である。"
+                ),
+            ),
+            _AllowedLocation(
+                "agent-basics/skills/writing-standards/references/notation-rules.md",
+                line_exact=(
+                    "  成果物を利用する人間は「エンドユーザー」（ユーザー自身も含まれる）と呼び、"
+                    "特定の成果物を使う人を指すときは「dotfilesユーザー」「プラグイン利用者」のように表記する。"
+                ),
+            ),
             # 過去のcommitの正式件名だけを引用する行。説明への書き戻しは許容しない。
             _AllowedLocation(
                 "docs/development/concepts-workflows-wi.md",
@@ -221,10 +242,7 @@ _RETIRED_TERMS = (
             _AllowedLocation("docs/guide/index.md", line_exact="# 利用者向けガイド"),
             _AllowedLocation(
                 ".chezmoi-source/dot_claude/skills/operate-ak110-projects/references/doc-structure.md",
-                line_exact=(
-                    "配置する場合は見出しを「利用者向けガイド」で揃える。"
-                    "docs/development/index.mdの見出しは「開発者向けガイド」で揃える。"
-                ),
+                line_exact=("配置する場合は見出しを「利用者向けガイド」で揃える。"),
             ),
             _AllowedLocation(
                 "docs/development/concepts-principles.md",
@@ -707,6 +725,12 @@ def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -
 @pytest.mark.parametrize(
     ("relative", "body", "rejected"),
     [
+        (
+            "docs/development/concepts-principles.md",
+            "  「終端工程」は内容に応じて「公開工程」「公開後の操作」「終了工程」を指す。\n",
+            False,
+        ),
+        ("docs/development/concepts-principles.md", "終端工程を開始する。\n", True),
         ("docs/development/design-review-evidence.md", "過去の標識「証拠行」を読む。\n", False),
         ("docs/development/design-review-evidence.md", "証拠行を新たに記す。\n", True),
         ("docs/development/design-review-evidence.md", "振り返り担当を起動する。\n", True),

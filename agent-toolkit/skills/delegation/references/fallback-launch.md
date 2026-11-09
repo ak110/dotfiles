@@ -4,11 +4,11 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「agents_serverの二層待機」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「agents_serverの二層待機」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime-waiting.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-waiting.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 
 ## 代替起動
@@ -52,7 +52,7 @@ Claudeの`api_error.type`が`usage_limit`である場合は、後述の利用上
 
 9. 委譲先の判断によって、設定と異なるengineやモデルへ勝手に切り替えることは認められず、`process-model-settings.md`「工程別モデル設定」の手順4の定めに従って結果を返却する
 
-10. Codexにおける外側セルと内側コマンドの待機中の取り扱いについては、`references/codex-runtime.md`「agents_serverの二層待機」に従う
+10. Codexにおける外側セルと内側コマンドの待機中の取り扱いについては、`codex-runtime-waiting.md`「agents_serverの二層待機」に従う
 
 ## 代替時の組合せの目安
 

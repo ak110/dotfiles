@@ -4,143 +4,35 @@
 <!-- markdownlint-disable MD029 -->
 
 本書は、レビュー指摘、改善提案、ユーザーからの割り込みや是正要求、作業中の想定外の発見（以下、是正要求等）を受け取ったエージェントと、外部の記事や資料から自分で改善案を構成するエージェントに向けて、採否の判断、修正の必要性の立証、安全な修正と検証、恒久ルールへの反映判定を進めるための基準を定める。
-作業は「ユーザー指摘の受領」の手順1から進める。
+作業は`reviewee-acceptance.md`「ユーザー指摘の受領」の手順1から進める。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 指摘前の判断記録と比較する前 | `exec-review-recording.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/exec-review-recording.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「問題を見つけたときの対処」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics.md#「問題と手段の比例性」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「問題と手段の比例性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「文章成果物の実害」` | 判断 | `section:agent-basics:*/skills/review-standards/SKILL.md#「文章成果物の実害」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `judgment-details.md#「検収手段の到達可能性」` | 判断 | `section:agent-basics:*/skills/review-standards/references/judgment-details.md#「検収手段の到達可能性」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `judgment-details-feasibility.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-feasibility.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 調査の停滞や修正による症状・回避処理の増加に対処する前 | `../../bugfix/references/root-cause-scenarios.md`の「同一症状の修正反復」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「同一症状の修正反復」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`../../bugfix/references/root-cause-remediation.md#「類似見直し」`、`../../bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」`、`section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
+| 調査の停滞や修正による症状・回避処理の増加に対処する前 | `../../bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-recurrence.md`、`../../bugfix/references/root-cause-remediation.md`、`../../bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/review-only-criteria.md#「指摘と採否」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「指摘と採否」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
 
-## レビュー指摘の位置付け
+## 条件別資料
 
-原文の解釈が分かれて結果が左右される指摘は、本スキルの`SKILL.md`「読込表」にある原要求の比較へ立ち返って解消する。
-判断材料としてユーザー固有の情報が必要な間は、その解釈を前提とする採否と修正を保留し、メインエージェントへの確認事項として返す。
-レビュー指摘は成果物を再評価するための検討材料である。追加要件の導入、仕様変更の認可、修正手段の指定は、あくまで元のユーザー要求やプロジェクト規範に基づいて決定する。レビュー担当の提案をそのまま要件や認可へ昇格させると、合意のない変更がレビューのやり取りだけで確定してしまうためである。
-後の改善判断に使えるよう、採用・不採用の理由を元要求と証拠へ対応付け、観測不足、誤った前提、重複・矛盾する指示を既存の応答記録へ残す。
-採否件数だけで品質を判定せず、対象プロジェクト固有の検証手順と共通品質基準の改善先を分ける。
-
-- 指摘が示す事象と修正方針を切り離して考える。事象については、対象の実装や契約本文の確認、公式の一次情報、または実機での再現によって、通常運用での再現手順と利用側への影響を個別に確かめる
-- 修正の必要性と手段は、元のユーザー要求、公開契約、規範の制約、通常運用で再現した欠陥のいずれかに基づいて導き、それらに対応する修正だけを採用する。個人の好み、将来の仮定、本来の目的から外れた改善、対象外の入力前提、前提の異なる脅威モデルだけに頼る提案は採用しない
-- 問題の有無と修正手段の採否を分けて考える。許容性→必要性→実装品質の順序と、問題と手段の比例性を評価して根拠を記録する。対応が必要という判断は問題を是正する判断であり、提示された修正方針を採用するかどうかは別途検討する
-- 依頼された範囲の外側でエンドユーザー向けの新しい挙動を追加する修正は、事前に変更の認可を得てから実装する
-- 裏付けを確認できない是正要求等は修正対象から外し、「修正要否の立証」に沿って応答を記録する
-
-## ユーザー指摘の受領
-
-1. 元の要求と残作業を守るため、是正要求等の原文、適用条件、現在の成果物と合意を確認し、維持する仕様と全体への影響、未完了作業を確かめる。
-
-   成果物の欠陥を伴うユーザー指摘・割り込み・是正要求は、`agent-basics:bugfix`を起動し、同スキルの`references/root-cause-analysis.md`「問題を見つけたときの対処」で原因分析の要否を判定する。
-
-   - ユーザーの発言のうち、変更の判断を左右する事実（修正対象の欠陥や採否の根拠など）は、作業に着手する前に現物（原文、実装、規範、実行結果、対象の目的を定めた仕様や設計記録）と突き合わせて確認する。真偽によって次の行動が変わらない事実（過去の経緯や説明した回数など）は、深追いせずにそのまま受け取る
-   - 是正要求は、ユーザーの目的、事実の認識、変更要求に切り分けて読み取る。事実の認識を述べた発言を、そのまま変更要求へ拡大解釈しない。要求の原文と突き合わせ、既存要件の復元を追加要件として扱ったり、優先度の低い既存規範を理由に対象範囲を狭めたりしない
-   - 解釈の候補を現物と比べ、修正対象と内容を確定する。候補が2つ以上残る事項、ユーザーの判断で内容が変わる事項、追加認可が必要な操作は、解釈と認可の確定後に修正する
-   - 稼働中の委譲先への追加指示は、是正内容が確定してから送る
-   - コード修正の指示を受け入れたら、修正に着手する前に現在のコードから変更箇所を特定し、呼び出し側や公開インターフェースとの整合、直接影響範囲の検証へとつなげる
-   - 指摘は判断の誤りを正すためのものであり、残っている作業の実行義務を取り消すものではない
-
-## 指摘発生時の扱い
-
-2. 確認済みの成果を保って採否を決めるため、報告・引渡し前の主張と根拠を`exec-review-recording.md`の事前記録と比べる。具体的な失敗条件や新しい根拠がない反論では成果を保持し、反例はその条件を再評価、未確認部分は調査、要件変更は新しい認可と元要求を区別する。事前記録が無ければ未記録として現在の根拠で判断し、事前確認の説明を後付けしない。
-
-   判断を左右する事実や技術判断を前提として受け入れること、変更を加えること、委譲先へ転送することは、現物確認と採否確定を済ませてから行う。判断に影響しない事実の確認は、この順序にとらわれずに進めてよい。同じ論点で修正が繰り返される場合は、「同じ指摘の反復」に従う。
-
-## 改善効果を指定する要求の扱い
-
-3. 指定された改善効果を守るため、時間、費用、工程数、失敗率などの指定があれば受入条件として確定し、`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」で維持案と変更案を比べる。維持で満たせるなら維持案を採用し、採否を分ける設計判断に関わる調査を優先する。受入条件、各案の判定、対応する調査を指定の成果物へ記録する。
-
-## 同じ指摘の反復
-
-4. 反復の原因に対処するため、再レビューの指摘なら修正方針の決定前に全ラウンドの指摘と応答を読み返し、今回の違反規定・発生条件と比べる。
-   完了条件の一致や指摘件数だけで安易に同一性を判断せず、修正の不足、新しい要件の発生、レビュー契約自体の不足を切り分けて整理する。
-
-   同じ論点で修正が繰り返されている場合は、指摘内容と現物を突き合わせて、ユーザーの意図と要件への影響を確認する。ユーザー自身の判断によって意図や変更範囲が分かれる場合は、その判断が確定してから変更する。
-
-   違反した規定と発生条件の組み合わせが同一である指摘（文言、対象ファイル、個別箇所の違いは問わない）を再度受け取ったときは、その場しのぎの局所修正を止め、`agent-basics:bugfix`を起動する。同スキルの初動手順と`references/root-cause-scenarios.md`「反復した指摘の原因判定」へ引き渡す。
-   調査が停滞した場合や、修正によって別の症状・回避処理が増えた場合も、同資料「同一症状の修正反復」に従って調べ方を見直す。
-   取得済みの診断・失敗記録と棄却した前提を再利用し、難航時の報告後も認可内の技術調査を続ける。
-   共通判定には`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」も適用する。
-   `agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」を併用する。
-   比較の根拠と処置の採否を応答に記録する。一般的な設計案の比較は`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」に従い、現在の設計を維持する場合はその理由を明記する。欠陥を解消し、かつ新たな問題を引き起こさない案を立証できないときは、検討した案と理由を委譲元へ報告する。
-
-## 修正要否の立証
-
-5. 必要な修正を選ぶため、次の基準で採否を確定する。
-
-   - 観測された事実、違反している目的や契約、対象への適用条件、通常運用で発生する実害と裏付けがそろっている指摘に限り、採否を確定する。根拠が不足している指摘は判断を保留し、証拠が不足している範囲と必要な検証結果を得る手段を応答に記載する。その範囲の再検証は、次ラウンドのレビュー担当が引き継ぐ
-   - ユーザー介入、セルフレビューと他者のレビュー指摘についても`agent-basics:bugfix`を起動し、原因分析と絞り込み型の類似見直しを行う。観測された欠陥の修正と追加の類似箇所の探索を区別し、再発防止策の初回検出の例外と反復・ユーザー介入時の検討は同スキルに従う。`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」に従い、重大度、探索の深さ、処置の要否と作業の終了条件を決める
-   - 何も変更を加えない案も含め、そのまま残した場合の実害や認知・保守コストと、変更によって増える複雑さを、同じライフサイクルの視点で比較する。比例性の判定は、`agent-basics:writing-standards`の`references/design-heuristics.md`「問題と手段の比例性」に従う。この比較は、bugfixの重大度判定を踏まえて指摘の採否や修正方針を選ぶ際に用いる。計画ファイルの形式や記述間の矛盾に関する指摘も、この区別と比較に沿って判断する
-   - 文章成果物の実害や、エンドユーザー向け文書の誤記・適用対象のスタイル違反の修正は、本スキルの`SKILL.md`「文章成果物の実害」に従う
-   - 実害も意味の変化もなく、エンドユーザー向け文書の誤記やスタイル違反にも該当しない軽微な単独の誤記は、それだけのために独立した修正や再レビューをせず、重大な修正に伴う再レビューがある場合にまとめて修正する
-   - ロック、書き込み所有権、排他制御、復旧手順、データ移行などを根拠とする指摘は、要件の出所、対象となる操作、操作の主体、競合する主体、および両方の操作が同時に発生する条件を、原文、実装、通常運用の状況から個別に確認する
-   - 元のユーザー要求に帰属させるのは原文に明記された要求にとどめ、別の操作に必要な要件やレビューの過程で追加された機構は、別の出所として区別して記録する
-   - ユーザーによる修正や実機の確認によって指摘の前提が成り立たなくなった場合は、次回のレビュー前に、その前提だけに依存していた指摘、修正方針、追加機構を取り下げる。その前提に依存しない是正要求等は、個別に改めて判定する
-   - 一度不採用とした案を再度採用するのは、不採用時の原文と根拠を読み直し、当時の理由がすでに当てはまらないことを現物で確認できた場合に限る。確認できない場合は、判断を委譲元へ戻す
-
-## 安全な修正
-
-6. 合意と安全性を保つため、次の基準で修正する。
-
-   - 指摘の中で挙げられている操作、状態、入力、成果物の列挙が、原文における網羅的な定義なのか、それとも具体例の例示なのかを変更前に見極める。例示である場合は、定義元の上位概念から修正範囲を導き出し、その判定と採用範囲を応答に記録してから変更作業を行う。網羅的な定義である場合は、その定義を維持する
-   - 対策による変更対象、操作、副作用が元の依頼や承認、および`agent-basics:writing-standards`の`references/quality-principles.md`「QCDと3段判定」の許容範囲に収まるかを事前に判定し、範囲内の対策を採用する。追加の認可やユーザー自身の判断が必要な部分は依頼元へ戻す。許容範囲に収まらない場合は範囲内の代替案を選び、代替案も見つからないときは続行できない理由と探索した代替案を委譲元へ報告する
-   - 修正範囲は、元の目的、公開契約、直接の原因に対して必要十分な範囲にとどめる。現在の採用案を維持するためだけに複雑な処置を重ねるくらいであれば、採用案の縮小、撤回、置換も選択肢として比較する
-   - 同じ規定違反の母集団から段階検索で候補を絞り、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」に沿って洗い出す。実装コード、テスト、エージェント向け文書、計画本文の検索結果と照らし合わせ、該当と判定した対象を同じ修正サイクルで修正する。実行環境が類似見直し専用の担当を定める場合は、その起動・受領契約を利用する。母集団と修正対象の結論、再取得先は、応答本文または指定の成果物に記録する。母集団の導出、検索、対象の選定や除外の判断過程は証拠として残す。
-     条件の追加や削除、方式の置き換えを行うときは、変更後の契約からすべての状態、組み合わせ、参照元を洗い出し、同じ修正サイクルで確認する。指摘された箇所は対象全体を導く手がかりとし、それ自体を修正範囲の閉じた定義とみなさない
-   - 指摘が原本文書（原文、規範、公式資料、確定済みの入力など）を根拠としている場合は、修正後の変更対象をその文書が定める母集団と照らし合わせる。是正要求で挙げられた先例、公開API、既存実装とは異なる手段を採用する場合は、先例の手段がその用途で成り立たない理由を実装や一次資料で確認する（努力目標）
-   - 修正に着手する前に、同じ対象に関する過去の指摘、採否、ユーザーとの合意、設計理由、障害対策を確認し、現在も有効な不採用理由、維持すべき対象、除外範囲、実績のある成功手順を維持する
-   - 元の要求とユーザーが確定した回答は文面と条件をそのまま保ち、是正案はその由来を添えて別個に記録する。元の目的や外部から見える結果を変更する場合は、その変更の認可を得てから反映する
-   - 修正のために永続状態、所有権、期限、復旧手順、互換手順などを新設する必要がある場合は、元の目的や非目標に立ち返って見直す。計画や上位設計で指定された方式では契約を満たせない場合、成立しない理由と検証結果を委譲元へ返し、条件を重ねて無理に成立させる案はその後で検討する
-   - 待機、同期、状態、完了条件、対象ファイルを新設または変更する場合は、それが違反を解消できる理由を対応内容に明記する。修正方針として新しい実機検証、待機、同期、復旧・完了条件が求められている場合は、適用する前にその手順が実際に機能することをあらかじめ一度確かめる。機能しない場合は、実現可能な検収手段で同じ問題を解決できる別の手段を確定する（要求された検収を文面の比較などで安易に置き換えない）。別の手段も確定できない場合のみ採否を保留する。試した手段とそれぞれが成立しなかった観測結果を応答に記載する（判定は`judgment-details.md`「検収手段の到達可能性」に従う）
-
-## 恒久ルールへの反映判定
-
-7. 得られた観点の扱いを確定するため、修正と並行して恒久ルールへの反映を検討し、反映先の確定か不採用の明示的な報告まで同じセッションで行う。既存規範があれば、`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」の未適用規範の是正原則に従う。
-
-## 公開可能性の検証
-
-8. 解消と公開可能性を確かめるため、次の項目を検証する。
-
-   - 採用した各是正要求等について、問題の再現条件と違反規定を修正後の成果物へ適用し、解消を確認する。あわせて、変更全体が元の目的、明示要件、公開契約、維持・除外対象、実績のある成功手順を維持していることを確かめる
-   - 是正を確定する前に、修正によって新しく記述した内容に対しても、対象の作成規範と該当するレビュー限定基準を適用して点検する（再レビューを省略する修正でも同様に行う）。点検では、確度、因果関係、情報の出所、例示の開放性などを確認する。推測を事実として書いた記述、未検証のまま一律に帰属させた記述、エージェント自身の判断をユーザー由来に見せかけた記述、ユーザーの発話範囲を勝手に限定したり確度を外したりした記述は除外する
-   - レビュー限定基準に基づく指摘は、作成時に必読とされていなかったことだけを理由に却下せず、`review-only-criteria.md`「指摘と採否」に沿って原文、適用条件、現物から適切に採否を判断する。基準の名前を挙げるだけでは修正の認可にはならない
-   - 対象の選択条件や解決条件を変更した場合は、判定に使われるすべての入力とすべての分岐を確認し、対象集合に過不足がないこと、および変更しない入力に対する結果が変わらないことを確かめる。
-     追加または削除した条件を方式全体に当てはめ、局所の修正によって前提が変わる利用側、コメント、状態についても、再提出前の確認対象に含める
-   - 直近の関連テスト、lint、format、型チェック、生成物の同期、および呼び出し文脈で定められた全体検証のうち該当するものを実行する。失敗、警告、検証不足、新たな問題が残っておらず、直ちに公開しても障害を起こさないと説明できない場合は確定を避け、不足している点を委譲元へ報告する
-
-## 方式見直しと再レビュー
-
-9. 修正を収束させるため、次の基準で方式と再レビューの要否を決める。第3ラウンド以降も未解決なら全ラウンドの指摘と応答を読み、局所修正の前に`agent-basics:bugfix`の「反復した指摘の原因判定」と`agent-basics:writing-standards`の「問題と手段の比例性」で方式の維持・縮小・置換を比べる。維持なら方式に起因しない独立した欠陥の根拠、縮小・置換なら認可内の根拠を残す。方式の置換直後は開始時点からの全差分を再レビューする。
-   停滞や症状の転化を認めた場合は、第3ラウンドを待たず`agent-basics:bugfix/references/root-cause-scenarios.md`「同一症状の修正反復」を適用する。
-   次のいずれかに該当する修正は、再レビューを実施する。
-
-   - 根拠の取得を待っている状態
-   - 修正に関連する要求が未達成、または根拠不足であることの再判定
-   - 修正との関係性を確定できない箇所
-   - 会話履歴が失われた状態からの再開
-   - 通常の要件や仕様に影響する修正、および判断に迷う修正
-
-   これらに該当しない場合は、以下のいずれかを満たし、公開可能性の検証と採否・根拠の記録を完了していれば、再レビューを省略できる。
-
-   - 意味、動作、契約を変更しない機械的な修正のみである
-   - 詳細や実装に関する指摘への対応にとどまり、公開契約、外部から見える挙動、実装方針を変更しない
-   - プロジェクトが定めている低リスク段階に該当する
-
-   低リスク段階においては、作業開始時点からの全差分を確認する。
-
-10. 次の担当が判定できるよう、採否・根拠と修正・検証結果を応答に記録し、必要な再レビューへ提出する。追加発話や新たな指摘は手順1へ戻って受領し、根拠と採否を再確認する。応答後も元の未完了作業を続ける
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| レビュー指摘の位置付け・ユーザー指摘の受領・指摘発生時の扱い・改善効果を指定する要求の扱いに関する判断・作業の前 | `reviewee-acceptance.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-acceptance.md` |
+| 同じ指摘の反復に関する判断・作業の前 | `reviewee-recurrence.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-recurrence.md` |
+| 修正要否の立証・安全な修正・恒久ルールへの反映判定に関する判断・作業の前 | `reviewee-correction.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-correction.md` |
+| 公開可能性の検証・方式見直しと再レビューに関する判断・作業の前 | `reviewee-verification.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-verification.md` |

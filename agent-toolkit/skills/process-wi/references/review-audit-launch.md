@@ -1,20 +1,27 @@
 # 自動コードレビュー監査
 
-自動コードレビュー監査とは、WI選定と並行してGitHub CopilotのレビューおよびDependabotアラートを取得し、必要な対応内容を確定させる工程を指す。監査担当は、対象リポジトリの成果物を読み取り専用で扱う。
+自動コードレビュー監査とは、WI選定と並行してGitHub CopilotのレビューおよびDependabotアラートを取得し、必要な対応内容を確定させる工程を指す。
+監査担当は、対象リポジトリの成果物を読み取り専用で扱う。
 
-**1.** WI選定前に、対象リポジトリがGitHub上にあれば`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。終了コード0で`counts.reviews`、`counts.threads`、`counts.dependabot`がいずれも0である場合は、監査担当を起動せず、これら3つの件数を監査省略の根拠として完了報告へ引き継ぐ。それ以外の場合（1件以上存在する、終了コードが非0、あるいはJSONや件数を正常に解釈できない場合）は、本書「自動コードレビュー監査担当の起動と受領」に従って監査担当を起動し、選定処理と並行して実行する。`dependabot.status`が`disabled`または`unauthorized`の場合は、その状態を完了報告へ引き継ぐ。監査で判明した処置と公開工程開始との関係は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/finish-session.md`冒頭に定められており、新たに到着したレビューは次回実行時の監査で取り扱う。
+**1.** WI選定前に、対象リポジトリがGitHub上にあれば`atk review-audit pending --repo <OWNER>/<REPO>`を実行する。
+終了コード0で`counts.reviews`、`counts.threads`、`counts.dependabot`がいずれも0である場合は、監査担当を起動せず、これら3つの件数を監査省略の根拠として完了報告へ引き継ぐ。
+それ以外の場合（1件以上存在する、終了コードが非0、あるいはJSONや件数を正常に解釈できない場合）は、本書「自動コードレビュー監査担当の起動と受領」に従って監査担当を起動し、選定処理と並行して実行する。
+`dependabot.status`が`disabled`または`unauthorized`の場合は、その状態を完了報告へ引き継ぐ。
+監査で判明した処置と公開工程開始との関係は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/finish-session.md`冒頭に定められており、新たに到着したレビューは次回実行時の監査で取り扱う。
 
-**2.** `atk wi process-loop`は、キューが空であっても未判定のDependabotアラートが存在する場合は、AWIを起票せずに`process-wi`を起動する。この場合に候補が0件となる選定結果は正常な状態として保存し、レーンを起動せずに監査の対応内容を確定させ、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/finish-session.md`「公開対象が無い場合の短絡」を経由して終了する。修正が必要な項目を同一セッション内で修正する場合は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/immediate-fix.md`「即時対応の手順」に従う。
+**2.** `atk wi process-loop`は、キューが空であっても未判定のDependabotアラートが存在する場合は、AWIを起票せずに`process-wi`を起動する。
+この場合に候補が0件となる選定結果は正常な状態として保存し、レーンを起動せずに監査の対応内容を確定させ、`finish-session-publishing.md`「公開対象が無い場合の短絡」を経由して終了する。
+修正が必要な項目を同一セッション内で修正する場合は、`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/immediate-fix.md`「即時対応の手順」に従う。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 基準資料を選択・取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 基準資料を選択・取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../delegation/references/base-contract.md#「引き継ぎ記録先」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/base-contract.md#「引き継ぎ記録先」` |
+| 基準資料を選択・取得する時 | `../../delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
 
 ## 自動コードレビュー監査担当の起動と受領
 
@@ -23,7 +30,8 @@
 ```
 
 `agent-toolkit:process-wi`のメインエージェントが自動コードレビュー監査を委譲する際は、本書に従って監査担当を起動し、結果を受け取る。
-監査の具体的な手順は、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`に定められている（所在参照）。返却項目は本書「監査担当の返却契約」に従う。
+監査の具体的な手順は、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`に定められている（所在参照）。
+返却項目は本書「監査担当の返却契約」に従う。
 
 ### 起動
 
@@ -35,8 +43,11 @@
 | `subagent_md_path` | `copilot-review-audit` |
 | `extra_params` | 次の名前付き入力だけ |
 
-- `pending取得結果`: `atk review-audit pending`の出力内の`保存先:`に示された、生成元JSONファイルの絶対パス。エージェント環境ではデータ量にかかわらずファイルへ保存し、件数とDependabotの取得状態を併記する。保存先のパスをそのまま渡すことで、モデルによるJSONの再保存処理を省く。コマンドが非0で終了した場合、あるいはJSONや件数を解釈できない場合は`なし`を指定する。
-- `引き継ぎ記録先`: 指定の省略や継続時の取り扱いについては、`agent-toolkit:delegation`の`references/base-contract.md`「引き継ぎ記録先」に従う。
+- `pending取得結果`: `atk review-audit pending`の出力内の`保存先:`に示された、生成元JSONファイルの絶対パス。
+  エージェント環境ではデータ量にかかわらずファイルへ保存し、件数とDependabotの取得状態を併記する。
+  保存先のパスをそのまま渡すことで、モデルによるJSONの再保存処理を省く。
+  コマンドが非0で終了した場合、あるいはJSONや件数を解釈できない場合は`なし`を指定する。
+- `引き継ぎ記録先`: 指定の省略や継続時の取り扱いについては、`../../delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
 
 ### 受領
 
@@ -52,7 +63,8 @@
 同版の判定済み除外はreview-auditが担い、GitHub APIの`default_branch`が指すブランチの更新後は同番号も再監査する。
 WI部分の無進捗抑止は維持し、未観測Noneを取得成功0件と解釈しない。
 
-**6.** 修正を要する指摘事項やDependabotアラートについては、同一セッション内で修正するか、AWIに記録して後続へ回すかを確定する。機能の無効化や権限不足などによってDependabotアラートを取得できなかった状態は、完了報告へ引き継ぐ。
+**6.** 修正を要する指摘事項やDependabotアラートについては、同一セッション内で修正するか、AWIに記録して後続へ回すかを確定する。
+機能の無効化や権限不足などによってDependabotアラートを取得できなかった状態は、完了報告へ引き継ぐ。
 
 <!-- return-contract:copilot-review-audit:start -->
 <!-- 生成元: share/copilot-review-audit.subagent.md「出力」。手動編集しない。 -->
@@ -74,5 +86,12 @@ Dependabotアラートの判定: <番号、default_branch、確認SHA、manifest
 Dependabotアラートの取得状態: <取得できた場合は「取得済み」。機能無効または権限不足で取得できなかった場合はその状態と理由>
 ```
 
-続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
+続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+取得不能の理由には、失敗したコマンド、終了コードと取得できなかった範囲を記す。
 <!-- return-contract:copilot-review-audit:end -->
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 公開工程とセッション終了：公開対象が無い場合の短絡の基準を適用する前 | `finish-session-publishing.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-publishing.md` |

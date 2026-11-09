@@ -15,7 +15,6 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 import time
 from collections.abc import Generator
 from typing import Any
@@ -59,9 +58,9 @@ _OWNER_FILE = f"{_LAUNCHER}.json"
 
 
 @contextlib.contextmanager
-def _live_process() -> Generator[tuple[subprocess.Popen[bytes], session_registry.ProcessIdentity]]:
+def _live_process(tmp_path: pathlib.Path) -> Generator[tuple[subprocess.Popen[bytes], session_registry.ProcessIdentity]]:
     """テストの間だけ生存する実プロセスと、その識別を返す。"""
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as process:
+    with late_descendant.held_process(tmp_path) as process:
         try:
             identity = session_registry.ProcessIdentity.of(process.pid)
             assert identity is not None
@@ -190,8 +189,8 @@ async def test_owner_lost_session_stays_running_on_every_entry(
     `thread/read`が元turnを終了と返しても引き継がず、追送は`thread/resume`を呼ばずに案内付きのエラーを返す。
     旧ルートに残った上り通知は、新しいサーバーの`show`・`send_message`と`atk agents wait`が回収して返す。
     """
-    with _live_process() as (_executor_process, executor), contextlib.ExitStack() as stack:
-        owner = stack.enter_context(_live_process())[1] if owner_alive else exited_process_identity()
+    with _live_process(tmp_path) as (_executor_process, executor), contextlib.ExitStack() as stack:
+        owner = stack.enter_context(_live_process(tmp_path))[1] if owner_alive else exited_process_identity()
         record = _publish_running(monkeypatch, tmp_path, engine, (owner, executor))
         _write_old_root(tmp_path, "公開担当の途中経過")
         original = record.read_bytes()
@@ -259,7 +258,7 @@ async def test_kill_stops_only_matching_executor_then_send_message_resumes(
 
     所有サーバーのプロセスは止めない。続く`send_message`は同じ`session_id`の会話を再開する。
     """
-    with _live_process() as (owner_process, owner), _live_process() as (executor_process, executor):
+    with _live_process(tmp_path) as (owner_process, owner), _live_process(tmp_path) as (executor_process, executor):
         record = _publish_running(monkeypatch, tmp_path, engine, (owner, executor))
         _write_old_root(tmp_path, "停止直前の通知")
         async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
@@ -288,7 +287,7 @@ async def test_kill_keeps_running_until_descendant_of_exited_executor_is_reclaim
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """委譲先CLIが終了しても回収待ちの子孫が残る間は、`kill`が停止を再試行し、回収までは`interrupted`を公開しない。"""
-    with _live_process() as (owner_process, owner), _live_process() as (descendant_process, descendant):
+    with _live_process(tmp_path) as (owner_process, owner), _live_process(tmp_path) as (descendant_process, descendant):
         executor = exited_process_identity()
         record = _publish_running(monkeypatch, tmp_path, "codex", (owner, executor))
         reclaim_records.save(executor.pid, executor.create_time, [psutil.Process(descendant.pid)], [], [])
@@ -320,7 +319,7 @@ async def test_kill_does_not_stop_process_whose_start_time_differs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """起動時刻が記録と一致しないプロセスは、同じpidでも停止しない（完成条件2）。"""
-    with _live_process() as (owner_process, owner), _live_process() as (reused_process, reused):
+    with _live_process(tmp_path) as (owner_process, owner), _live_process(tmp_path) as (reused_process, reused):
         stale = session_registry.ProcessIdentity(reused.pid, reused.create_time - 1000)
         _publish_running(monkeypatch, tmp_path, "codex", (owner, stale))
         async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
@@ -339,7 +338,7 @@ async def test_record_whose_executor_exited_under_hung_owner_is_taken_over(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """委譲先CLIが終了し所有サーバーだけが応答せずに残る記録は、`thread/read`の終了を公開して再開できる（完成条件3）。"""
-    with _live_process() as (owner_process, owner):
+    with _live_process(tmp_path) as (owner_process, owner):
         record = _publish_running(monkeypatch, tmp_path, "codex", (owner, exited_process_identity()))
         async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
             manager.activate()
@@ -421,7 +420,7 @@ async def test_closing_server_keeps_record_running_while_executor_survives(
     後続のサーバーは同じ記録を所有サーバーを失った実行中として扱う。
     """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    with _live_process() as (_process, executor):
+    with _live_process(tmp_path) as (_process, executor):
         async with server_manager.AgentsServerManager(None) as owner:
             _backend(monkeypatch, owner, "claude", [])
             session = state.SessionState(_SESSION_ID, str(tmp_path), engine="claude", turn_seq=1)
@@ -447,7 +446,7 @@ async def test_stop_of_record_owned_by_live_process_keeps_record_and_result(
 ) -> None:
     """自プロセスが所有しない記録で記録プロセスが実在する場合、`stop`は解放済みへ置き換えず結果も削除しない（完成条件7）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    with _live_process() as (_owner_process, owner), _live_process() as (_executor_process, executor):
+    with _live_process(tmp_path) as (_owner_process, owner), _live_process(tmp_path) as (_executor_process, executor):
         session_registry.publish(
             _SESSION_ID,
             state=session_registry.PublicationState.RESULT_COMPLETED,
@@ -476,7 +475,7 @@ async def test_activation_keeps_same_named_status_file_of_live_writer(
 ) -> None:
     """起動時に同名の状態ファイルを生存中の別プロセスが書いていれば削除せず、自身は別名へ書く（完成条件7）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    with _live_process() as (_process, previous):
+    with _live_process(tmp_path) as (_process, previous):
         directory = shared_layout.status_directory("conversation-root", tmp_path)
         directory.mkdir(parents=True)
         now = datetime.datetime.now(datetime.UTC).isoformat()
@@ -524,7 +523,7 @@ def test_registry_sweep_keeps_unfinished_records_until_completion(
 ) -> None:
     """未完了の記録はプロセスの有無によらず保持し、完了・回収後は通常の期限で掃引する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
-    with _live_process() as (_process, executor):
+    with _live_process(tmp_path) as (_process, executor):
         live = "019a2c41-5b6e-7d10-8f21-000000000001"
         exited = "019a2c41-5b6e-7d10-8f21-000000000002"
         legacy = "019a2c41-5b6e-7d10-8f21-000000000003"
@@ -580,7 +579,7 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
     )
     record = session_registry.registry_directory() / f"{identifier}.json"
     environment = {**os.environ, _pl_env.PROCESS_LOOP_SESSION_ID_ENV: identifier}
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"], env=environment) as child:
+    with late_descendant.held_process(tmp_path, env=environment) as child:
         try:
             identity = session_registry.ProcessIdentity.of(child.pid)
             assert identity is not None

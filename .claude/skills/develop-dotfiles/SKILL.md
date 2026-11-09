@@ -17,11 +17,11 @@ description: >
 リリース運用は`release-dotfiles`、配布元と配布先の対応関係は`dotfiles-repo-layout`で扱う。
 
 本リポジトリで`agent-toolkit:process-wi`を実行するセッションでは、振り返りと完了報告を含む全工程を3時間以内で終えることを目標とする。
-計測範囲は[セッションの所要時間目標](../../../.chezmoi-source/dot_claude/docs/session-review-dotfiles.md#セッションの所要時間目標)に従い、作業の進行中に進め方を見直す際は`agent-basics:writing-standards`の`references/quality-principles.md`「QCDと3段判定」を適用する。
+計測範囲は[セッションの所要時間目標](../../../.chezmoi-source/dot_claude/docs/session-review-dotfiles.md#セッションの所要時間目標)に従い、作業の進行中に進め方を見直す際は`agent-basics:writing-standards/references/quality-principles-qcd.md`「QCDと3段判定」を適用する。
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 ## 読込表
 
@@ -31,15 +31,15 @@ description: >
 | 配布元と配布先の対応関係を判断する前 | `../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
 | リリース運用を判断する前 | `../release-dotfiles/SKILL.md` | 判断 | `read:*/skills/release-dotfiles/SKILL.md` |
 | 振り返りの参照文書の位置を確認する前 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 進捗と時間目標を見直す前 | `agent-basics:writing-standards/references/quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
+| 進捗と時間目標を見直す前 | `agent-basics:writing-standards/references/quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
 | 専用worktree・回収予定の検証用複製・miseの状態ディレクトリを準備する前、専用worktreeの変更を`atk`で確認する前 | `references/worktree.md` | 判断 | `read:*/skills/develop-dotfiles/references/worktree.md` |
 | `make update`・`make update-actions`を実行候補にする前 | `references/dependency-update.md` | 判断 | `read:*/skills/develop-dotfiles/references/dependency-update.md` |
 | 公開前の検証を選定・実行する前 | `references/publishing.md` | 判断 | `read:*/skills/develop-dotfiles/references/publishing.md` |
-| 変更範囲の検証対象を選ぶ前 | `references/verification-values.md`の「変更範囲の検証の値」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「変更範囲の検証の値」` |
-| pyfltr・MCPの`run`・pytestを実行する前、コード整形や検証時間の比較を行う前 | `references/verification-values.md`の「検証コマンドの実行」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「検証コマンドの実行」` |
-| テストを追加・変更・レビューする前と、テストやCIの結果を成功時も含めて判定する前 | `references/verification-values.md`の「テストとCIの所要基準」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「テストとCIの所要基準」` |
-| ローカルの`make test`が実行しないチェックを確かめる時、push前の全体検証を行う前 | `references/verification-values.md`の「push前のチェックとCIだけが実行するチェック」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「push前のチェックとCIだけが実行するチェック」` |
-| `agent-doc-tone`の報告へ対処する前 | `references/verification-values.md`の「agent-doc-tone」 | 判断 | `section:*/skills/develop-dotfiles/references/verification-values.md#「agent-doc-tone」` |
+| 変更範囲の検証対象を選ぶ前 | `references/verification-values-scope.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-scope.md` |
+| pyfltr・MCPの`run`・pytestを実行する前、コード整形や検証時間の比較を行う前 | `references/verification-values-execution.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-execution.md` |
+| テストを追加・変更・レビューする前と、テストやCIの結果を成功時も含めて判定する前 | `references/verification-values-speed.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-speed.md` |
+| ローカルの`make test`が実行しないチェックを確かめる時、push前の全体検証を行う前 | `references/verification-values-publishing.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-publishing.md` |
+| `agent-doc-tone`の報告へ対処する前 | `references/verification-values-tone.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-tone.md` |
 | テストの配置を決める前と、テストを新規作成・編集・レビューする前 | `references/testing.md` | 判断 | `read:*/skills/develop-dotfiles/references/testing.md` |
 | 画面を実描画で確認する前、ブラウザーUI・ブラウザー経由のサーバー処理・静的ファイル・実ブラウザーテストを変更する前、ブラウザー・PowerShellの初期環境を準備する前 | `references/browser.md` | 判断 | `read:*/skills/develop-dotfiles/references/browser.md` |
 | Claude Code・Codex本体のバイナリを検索する前 | `references/host-binaries.md` | 判断 | `read:*/skills/develop-dotfiles/references/host-binaries.md` |
@@ -49,4 +49,6 @@ description: >
 
 ## 振り返りの参照文書
 
-`agent-toolkit:review-session`の実行時にメインエージェントが参照する本リポジトリ固有の文書には、所要時間の目標やリポジトリ固有の振り返り観点が記載されている。ファイル配置は、Claude Code環境では`~/.claude/docs/session-review-dotfiles.md`、Codex環境では`~/.codex/docs/session-review-dotfiles.md`である。配布元の原本ファイルは`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`に置かれている。
+`agent-toolkit:review-session`の実行時にメインエージェントが参照する本リポジトリ固有の文書には、所要時間の目標やリポジトリ固有の振り返り観点が記載されている。
+ファイル配置は、Claude Code環境では`~/.claude/docs/session-review-dotfiles.md`、Codex環境では`~/.codex/docs/session-review-dotfiles.md`である。
+配布元の原本ファイルは`.chezmoi-source/dot_claude/docs/session-review-dotfiles.md`に置かれている。

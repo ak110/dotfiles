@@ -34,6 +34,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import claude_connection as claude_settings
 from agent_toolkit._common import plugin_environment, process_tree, session_registry, state_paths
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     BlockingContinuationClaudeClient,
@@ -526,10 +527,10 @@ def test_initialization_diagnostic_identifies_received_messages() -> None:
     assert not public["child_processes"]
 
 
-def test_initialization_diagnostic_lists_child_processes() -> None:
+def test_initialization_diagnostic_lists_child_processes(tmp_path: pathlib.Path) -> None:
     """初期化診断は委譲先プロセスが起動した子プロセスを列挙する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"]) as child:
+    with late_descendant.held_process(tmp_path) as child:
         try:
             diagnostic.child_pid = os.getpid()
             children = diagnostic.public()["child_processes"]
@@ -935,7 +936,7 @@ async def test_claude_start_records_owner_and_cli_processes(
     owner = session_registry.owner_process()
     assert owner is not None
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
-    with process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(60)"], env=host_environ()) as process:
+    with late_descendant.held_process(tmp_path, env=host_environ()) as process:
         child = session_registry.ProcessIdentity.of(process.pid)
         assert child is not None
         client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=process.pid)
@@ -1050,11 +1051,25 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_message_gap_does_not_cancel_stream(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """通常のメッセージ間隔が旧poll間隔を超えてもstreamを失敗扱いにしない。"""
+    """旧poll期限を過ぎてもstreamを維持し、解放後の結果を返す。"""
     client = DelayedClaudeClient([[SystemMessage("claude-delayed"), AssistantMessage("途中"), ResultMessage("完了")]])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-        session = await manager.start("調査", str(tmp_path))
+        starting = asyncio.create_task(manager.start("調査", str(tmp_path)))
+        assert await asyncio.wait_for(client.requested.get(), timeout=5) == 1
+        loop = asyncio.get_running_loop()
+        after_poll_deadline = loop.time() + 0.1
+        with monkeypatch.context() as clock_patch:
+            clock_patch.setattr(loop, "time", lambda: after_poll_deadline)
+            advanced = asyncio.Event()
+            loop.call_later(0, advanced.set)
+            await advanced.wait()
+            assert not client.cancelled.is_set()
+        client.release.put_nowait(None)
+        session = await starting
+        assert await asyncio.wait_for(client.requested.get(), timeout=5) == 2
+        assert not session.result_available and session.progress == "途中"
+        client.release.put_nowait(None)
         for _ in range(40):
             if session.result_available:
                 break
@@ -1261,9 +1276,9 @@ async def test_close_reclaims_cli_when_sdk_disconnect_never_returns(
     script = tmp_path / "runtime.py"
     script.write_text(
         "import pathlib, subprocess, sys, time\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'nested.release')!r}])\n"
         "pathlib.Path(sys.argv[1]).write_text(str(child.pid))\n"
-        "time.sleep(60)\n",
+        "child.wait(timeout=120)\n",
         encoding="utf-8",
     )
     disconnect_started = asyncio.Event()

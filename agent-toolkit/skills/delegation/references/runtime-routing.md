@@ -5,12 +5,12 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-fork.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
 
 ## 実行手段
@@ -36,7 +36,7 @@
        Explore・general-purpose・Plan・web-fetchなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外の対象外とする。
        同等の手段の有無は`agents_server`の各modeが公開する機能と到達性から判定し、直接のWebFetchなどあるツールを使えないという診断や、ホストが特定の組み込みAgentを案内したことは判定の根拠から外す
      - ユーザーから明示的な指示がある場合
-     - `routing.md`「会話を引き継ぐ委譲」によりforkを選択する場合。
+     - `routing-fork.md`「会話を引き継ぐ委譲」によりforkを選択する場合。
        このときは`subagent_type: "fork"`で起動し、親と同一のモデルおよびeffortを使用する
 
 3. Codexから別のエージェントへ委譲する場合も`agents_server`を標準とし、`spawn_agent`の選択にも前述の共通の例外条件を適用する。
@@ -53,7 +53,7 @@
      起動後に可用性障害を確認した場合は`fallback-launch.md`「代替起動」を読む。
      実行中の担当者は、経過時間や無応答の長さだけを理由に置き換えず、終了まで観測を続ける
 
-7. 委譲先からの即時通知の手段は`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」が定め、通知を受領した後の待機手順は`references/waiting-and-monitoring.md`「待機区間の構成」に従う
+7. 委譲先からの即時通知の手段は`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」が定め、通知を受領した後の待機手順は`waiting-and-monitoring-intervals.md`「待機区間の構成」に従う
 
 8. 実績として記録する情報は、起動結果として返されたrouteと識別子とする
 

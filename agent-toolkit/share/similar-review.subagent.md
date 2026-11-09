@@ -19,7 +19,7 @@ writes_worktree: false
 
 ## 名指し参照の読込方法
 
-名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -57,7 +57,8 @@ writes_worktree: false
 
 ## 出力
 
-次の形式のみを返す。状態行、続行不能の区分と理由は`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+次の形式のみを返す。
+状態行、続行不能の区分と理由は`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 
 ```text
 状態: completed

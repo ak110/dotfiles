@@ -114,10 +114,12 @@ async def _owned_async_child(*args: Any, **kwargs: Any) -> AsyncGenerator[asynci
 
 @pytest.mark.parametrize("failure", ["body", "graceful-close"])
 @pytest.mark.asyncio
-async def test_owned_async_child_reclaims_process_on_failure(monkeypatch: pytest.MonkeyPatch, failure: str) -> None:
+async def test_owned_async_child_reclaims_process_on_failure(
+    monkeypatch: pytest.MonkeyPatch, failure: str, tmp_path: pathlib.Path
+) -> None:
     """利用失敗と正常終了待ちの失敗で、所有済みasyncio子とpipeを残さない。"""
     error_type = RuntimeError if failure == "body" else TimeoutError
-    script = "import sys; sys.stdin.read()" if failure == "body" else "import time; time.sleep(120)"
+    script = "import sys; sys.stdin.read()" if failure == "body" else late_descendant.held_source(tmp_path / "async.release")
     acquired: list[asyncio.subprocess.Process] = []
     with pytest.raises(error_type, match="検証中の失敗"):
         async with _owned_async_child(
@@ -2529,6 +2531,7 @@ async def _fake_app_server_manager(
     tuple[server_manager.AgentsServerManager, subject.AppServerManager, codex_app_server_support.FakeAppServer]
 ]:
     """模擬App Serverを実プロセスで起動する実Codex backendと、登録簿を公開する所有managerを用意する。"""
+    monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.05)
     fake = codex_app_server_support.install(monkeypatch, tmp_path)
     monkeypatch.setattr(
         _atk_config,
@@ -2558,8 +2561,12 @@ async def _fake_app_server_manager(
                 fake.terminate_recorded()
 
 
-async def _wait_terminal(manager: server_manager.AgentsServerManager, session_id: str) -> state.SessionState:
-    """模擬App Serverが通知したturnの終了を待つ。"""
+async def _wait_terminal(
+    manager: server_manager.AgentsServerManager, session_id: str, fake: codex_app_server_support.FakeAppServer
+) -> state.SessionState:
+    """開始を観測したturnだけを解放し、最終結果を待つ。"""
+    assert session_id in manager.sessions and not manager.sessions[session_id].terminal
+    await fake.complete_turn(session_id)
     async with asyncio.timeout(10):
         while not ((session := manager.sessions.get(session_id)) is not None and session.terminal):
             await asyncio.sleep(0.02)
@@ -2579,7 +2586,7 @@ async def test_stop_terminates_owned_app_server_and_mcp(
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
         started = await manager.start("plan", "担当", str(worktree))
         session_id = started["session_id"]
-        await _wait_terminal(manager, session_id)
+        await _wait_terminal(manager, session_id, fake)
         server_pid = fake.server_pid(session_id)
         mcp_pids = fake.mcp_pids(session_id)
         assert mcp_pids and [record["cwd"] for record in fake.events("mcp")] == [str(worktree)]
@@ -2603,8 +2610,8 @@ async def test_release_keeps_other_session_and_resumes(tmp_path: pathlib.Path, m
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
         stopped_id = (await manager.start("plan", "破棄する担当", str(tmp_path)))["session_id"]
         other_id = (await manager.start("plan", "継続する担当", str(tmp_path)))["session_id"]
-        await _wait_terminal(manager, stopped_id)
-        await _wait_terminal(manager, other_id)
+        await _wait_terminal(manager, stopped_id, fake)
+        await _wait_terminal(manager, other_id, fake)
         stopped_server, other_server = fake.server_pid(stopped_id), fake.server_pid(other_id)
         assert stopped_server != other_server
 
@@ -2613,13 +2620,13 @@ async def test_release_keeps_other_session_and_resumes(tmp_path: pathlib.Path, m
         assert not fake.alive(stopped_server) and not any(fake.alive(pid) for pid in fake.mcp_pids(stopped_id))
         assert fake.alive(other_server) and all(fake.alive(pid) for pid in fake.mcp_pids(other_id))
         assert (await manager.send_message(other_id, "追加指示"))["delivery"] == "reply_started"
-        other = await _wait_terminal(manager, other_id)
+        other = await _wait_terminal(manager, other_id, fake)
         assert other.agent_message.startswith("完了: ") and "追加指示" in other.agent_message
         assert fake.events("turn/start")[-1]["server"] == other_server
 
         resumed_response = await manager.send_message(stopped_id, "再開指示")
         assert resumed_response["delivery"] == "reply_started", (resumed_response, manager.sessions[stopped_id].error)
-        resumed = await _wait_terminal(manager, stopped_id)
+        resumed = await _wait_terminal(manager, stopped_id, fake)
         assert resumed.agent_message.startswith("完了: ") and "再開指示" in resumed.agent_message
         resume_events = [record for record in fake.events("thread/resume") if record["thread"] == stopped_id]
         assert len(resume_events) == 1
@@ -2640,7 +2647,7 @@ async def test_other_release_paths_terminate_owned_resources(
     async with _fake_app_server_manager(tmp_path, monkeypatch, candidates) as (manager, _backend, fake):
         started = await manager.start("plan", "担当", str(tmp_path))
         session_id = started["session_id"]
-        await _wait_terminal(manager, session_id)
+        await _wait_terminal(manager, session_id, fake)
         threads = [record["thread"] for record in fake.events("thread/start")]
         if path == "candidate":
             # 可用性の失敗で断念した候補の資源は、次の候補の開始より前に解放済みである。
@@ -2691,7 +2698,7 @@ async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
             ),
         )
         session_id = (await manager.start("plan", "停止試験", str(tmp_path)))["session_id"]
-        await _wait_terminal(manager, session_id)
+        await _wait_terminal(manager, session_id, fake)
         server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
         assert fake.alive(server_pid) and mcp_pids
         client = backend._clients[session_id]
@@ -2740,7 +2747,7 @@ async def test_stop_reclaims_late_descendant_with_short_lived_parent(
             tuple(late_descendant.cli_command(work, str(codex_app_server_support.FAKE_APP_SERVER), str(fake.log_path))),
         )
         session_id = (await manager.start("plan", "停止試験", str(tmp_path)))["session_id"]
-        await _wait_terminal(manager, session_id)
+        await _wait_terminal(manager, session_id, fake)
         await asyncio.to_thread(late_descendant.wait_spawner, work)
         if sys.platform == "win32":
             # 実snapshotへ親子を含めた後、handle保持より先に親を終了させる。
@@ -2805,7 +2812,7 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
     """
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
         session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
-        await _wait_terminal(manager, session_id)
+        await _wait_terminal(manager, session_id, fake)
         server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
         original_suspend, original_terminate, original_kill = (
             psutil.Process.suspend,
@@ -2870,7 +2877,7 @@ async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch:
     """子孫を回収できないstopは再試行の方法とともに失敗し、解放済みと記録せず、再発行で回収を完了する。"""
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
         session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
-        session = await _wait_terminal(manager, session_id)
+        session = await _wait_terminal(manager, session_id, fake)
         server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
         # 1回目は子孫が終了要求にも強制終了にも応じない状態を作る。
         unkillable = set(mcp_pids)

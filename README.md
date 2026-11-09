@@ -32,7 +32,8 @@ Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参�
 Windows PowerShellでは、環境によって公式インストーラーが使用する`Get-FileHash`を解決できず、Codex CLIの導入に失敗する。
 
 agent-toolkitのGit呼び出しはGit 2.34.1以上に対応する。
-Git 2.34.1が受理しない引数（`git worktree list -z`など）を使わない。worktree登録の列挙は共通実装`agent-toolkit/agent_toolkit/_git/worktrees.py`がGitの保存形式から読む。
+Git 2.34.1が受理しない引数（`git worktree list -z`など）を使わない。
+worktree登録の列挙は共通実装`agent-toolkit/agent_toolkit/_git/worktrees.py`がGitの保存形式から読む。
 CIの`pytest (3.15)`はUbuntu公式パッケージのGit 2.34.1を使い、通常のテストを実行する。
 ローカルでは環境変数`AGENT_TOOLKIT_TEST_GIT`へGitの実行ファイルの絶対パスを指定して同じテストを実行できる。
 
@@ -124,7 +125,8 @@ aquaがGitHub artifact attestations検証のために`api.github.com`へアク�
 `update-dotfiles`はAntigravity CLI（`agy`）も導入する。
 日本語の技術文書の推敲に使い、`agents_server`からはモデルを明示指定したときだけ選べる。
 
-初回はブラウザでの認証を要する。`agy`を対話で起動して認証を済ませるまで、`agents_server`からは使えない。
+初回はブラウザでの認証を要する。
+`agy`を対話で起動して認証を済ませるまで、`agents_server`からは使えない。
 
 ```bash
 agy

@@ -25,8 +25,8 @@ export const COMPACT_CONVERSATION_TOOL = {
 export const COMPACT_CONVERSATION_DELEGATED_DENY = "メイン専用のツールであり、圧縮は予約していない。委譲元へ必要な作業状態を最終応答で返せ。";
 
 type BackgroundWait = { id: string; command: string; used: boolean };
-type Decision = { at: string; task: string; reason: string; tokens?: number; window?: number; pending: boolean; paused: boolean; turnRunning: boolean };
-type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; automaticPaused: boolean; waits: Map<string, BackgroundWait>; decisions: Decision[] };
+type Decision = { at: string; task: string; reason: string; tokens?: number; window?: number; pending: boolean; turnRunning: boolean };
+type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; waits: Map<string, BackgroundWait>; decisions: Decision[] };
 
 // 判定の記録は直近だけを保持する。調査で見送り理由を後から確かめる用途に足り、会話中に増え続けない。
 const DECISION_LIMIT = 20;
@@ -42,7 +42,6 @@ async function diagnose($: EngineInterface, state: CompactState, task: string, r
     reason,
     ...(context ? { tokens: context.tokens, window: context.window } : {}),
     pending: state.pending,
-    paused: state.automaticPaused,
     turnRunning: state.turnRunning,
   });
   state.decisions.splice(0, Math.max(0, state.decisions.length - DECISION_LIMIT));
@@ -69,8 +68,7 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
     const contextUsage = (await $.session.usage()).context;
     const high = usageThreshold(contextUsage);
     if (high === undefined) { await diagnose($, state, wait.id, "usage_unknown", contextUsage); return; }
-    if (!high) { state.automaticPaused = false; await diagnose($, state, wait.id, "below_threshold", contextUsage); return; }
-    if (state.automaticPaused) { await diagnose($, state, wait.id, "paused", contextUsage); return; }
+    if (!high) { await diagnose($, state, wait.id, "below_threshold", contextUsage); return; }
     wait.used = true;
     const root = $.plugin.root;
     const checked = await $.process.run(pluginLaunchCommand(root, "agent_toolkit/atk.py", [
@@ -82,7 +80,6 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
     const context: unknown = JSON.parse(checked.stdout);
     if (typeof context !== "object" || context === null || (context as { eligible?: unknown }).eligible !== true) { await diagnose($, state, wait.id, "ownership_unconfirmed", contextUsage); return; }
     state.pending = true;
-    state.automaticPaused = true;
     await diagnose($, state, wait.id, "scheduled", contextUsage);
     schedule($, state);
   } catch (error) {
@@ -112,7 +109,6 @@ function schedule($: EngineInterface, state: CompactState): void {
           }
         }
         state.pending = false;
-        state.automaticPaused = true;
       } catch (error) {
         state.pending = false;
         $.ui.toast(automatedMessage("compact-conversation", "warn", `会話圧縮の予約実行に失敗した。予約状態は解除済み。通常の作業を続け、圧縮が必要ならcompact_conversationを引数なしで再予約せよ。原因: ${String(error)}`));
@@ -122,7 +118,7 @@ function schedule($: EngineInterface, state: CompactState): void {
 
 export function register(on: On, session: { delegated: boolean }): void {
   // modはセッションごとに読み込まれる。予約中だけ状態を保持する。
-  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, automaticPaused: false, waits: new Map(), decisions: [] };
+  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, waits: new Map(), decisions: [] };
   on("session.compact", { trigger: /^(manual|auto|plugin|precompute)$/ }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e);
     const sessionId = await $.session.id();
@@ -147,13 +143,6 @@ export function register(on: On, session: { delegated: boolean }): void {
   on("turn.start", { turnId: /^/ }, async ($, e, next) => {
     if (e.agentId === undefined) {
       state.turnRunning = true;
-      if (state.automaticPaused) {
-        try {
-          if (usageThreshold((await $.session.usage()).context) === false) state.automaticPaused = false;
-        } catch {
-          // 利用率が取得できるまでは再圧縮の抑止を保つ。
-        }
-      }
     }
     return next(e);
   });

@@ -1,13 +1,15 @@
 # 操作を契機とする共有資料
 
-操作に伴って共通で起動するスキルの宣言を本表にまとめる。各スキル固有の追加資料は、それぞれのスキル内の読込表で宣言する。
-操作の対象と副作用から必要なスキルを判断し、まだ起動していなければ操作の前に起動する（努力目標。契約の確認不足と独自手順の重複を避ける）。資料の範囲は`read-trigger-contract.md`「名指し参照の読込方法」に従って選び、hookの案内の有無によらず判断前に取得する。
-配送操作の語彙と記法は、`read-trigger-contract.md`「表と取得方法」の定義に従う。
+操作に伴って共通で起動するスキルの宣言を本表にまとめる。
+各スキル固有の追加資料は、それぞれのスキル内の読込表で宣言する。
+操作の対象と副作用から必要なスキルを判断し、まだ起動していなければ操作の前に起動する（努力目標。契約の確認不足と独自手順の重複を避ける）。
+資料の範囲は`agent-basics:writing-standards/references/read-method.md`に従って選び、hookの案内の有無によらず判断前に取得する。
+配送操作の語彙と記法は、`read-trigger-contract-declarations.md`「表と取得方法」の定義に従う。
 フックの案内は、現在の役割・選択資料に関係する条件を確かめる補助とし、資料取得中の依存候補は次の関連操作まで保留する。
 
 ## 名指し参照の読込方法
 
-名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 ## 操作で起動する共有スキル
 
@@ -23,7 +25,7 @@
 | 確認本文と選択肢を起草する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `confirmation` |
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
 | レビュー指摘管理表を作成・更新する前 | `review-table-operations.md` | 判断 | `skill:agent-basics:review-standards` |
-| エージェント向け文書の編集前 | `agent-toolkit:delegation/references/writing.md`の「文章の共通規定」、`agent-toolkit:delegation/references/agent-documents-basics.md`の「運用条件」「置き場所と配送」「読込表の宣言」 | 操作 | `agent-document-writing` |
+| エージェント向け文書の編集前 | `agent-toolkit:delegation/references/writing.md`、`agent-toolkit:delegation/references/agent-documents-basics.md` | 操作 | `agent-document-writing` |
 
 ## 常時規範が名指しする資料
 
@@ -31,28 +33,28 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 配送操作の語彙と記法を選ぶ前 | `read-trigger-contract.md#「表と取得方法」` | 判断 | `section:agent-toolkit:*/share/read-trigger-contract.md#「表と取得方法」` |
+| 配送操作の語彙と記法を選ぶ前 | `read-trigger-contract-declarations.md` | 判断 | `read:agent-toolkit:*/share/read-trigger-contract-declarations.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「認可を要する操作」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/codex-format.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/codex-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「成果物の制限」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md#「継続と新規起動」` | 判断 | `section:agent-toolkit:*/skills/delegation/SKILL.md#「継続と新規起動」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-utterance-correction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-correction.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving.md#「受領後の扱い」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「受領後の扱い」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md#「レーン担当が確定した質問への回答」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「レーン担当が確定した質問への回答」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving.md#「返却形式の適合確認」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/receiving.md#「返却形式の適合確認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/routing.md#「要否判定」「委譲単位の確定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「要否判定」「委譲単位の確定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving-followup.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-parent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-implementation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/receiving-format.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-format.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/routing-decisions.md`、`../skills/delegation/references/routing-units.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-decisions.md`、`read:agent-toolkit:*/skills/delegation/references/routing-units.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/subagent-queue-ops.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/subagent-queue-ops.md` |
@@ -61,7 +63,9 @@
 
 ## 品質判断に伴う工程資料
 
-品質判断に入るとき、現在の役割・工程に次の条件が成立する行の必要節と前提・例外を読む。hookの確認候補を受けたら条件を自分で確かめ、該当する資料を判断前に取得する。品質の定義元はagent-basics、運用本文の定義元は各工程の資料とする。
+品質判断に入るとき、現在の役割・工程に次の条件が成立する行の全文を読む。
+hookの確認候補を受けたら条件を自分で確かめ、該当する資料を判断前に取得する。
+品質の定義元はagent-basics、運用本文の定義元は各工程の資料とする。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -95,4 +99,4 @@
 | 計画・WIの要件と証拠を判定する前 | `agent-toolkit:/share/exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
 | レビューイーとして採否と修正を確定する前 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
 | 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `agent-toolkit:/share/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
-| 実機確認だけを目的としてエージェントCLIや検証用委譲を起動する前 | `agent-toolkit:delegation/references/routing.md#「実行結果の検証」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「実行結果の検証」` |
+| 実機確認だけを目的としてエージェントCLIや検証用委譲を起動する前 | `../skills/delegation/references/routing-experiments.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-experiments.md` |

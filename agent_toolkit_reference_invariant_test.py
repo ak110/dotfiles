@@ -21,6 +21,7 @@ import pytest
 from agent_toolkit._common import read_triggers
 from agent_toolkit._plan.structure import is_agent_doc_target_file
 from agent_toolkit._testing.git_repository import commit_all, init_repository, run_git
+from agent_toolkit._testing.normative_contract import read_contract
 
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
@@ -1269,7 +1270,8 @@ def test_session_state_design_reference_reaches_local_development_rule() -> None
     assert reference is not None
     target = root / reference[1]
     assert target == root / ".claude/skills/agent-toolkit-edit/references/session-state-and-flags.md"
-    assert read_triggers.ReadTarget(target, "状態ファイルの設計").body()
+    text = read_contract(target, root / "agent-toolkit", ("session-state-and-flags-common.md", "状態ファイルの設計"))
+    assert "## 状態ファイルの設計" in text
 
 
 def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
@@ -1303,4 +1305,9 @@ def test_quality_definition_forwarders_reach_distinct_basics_documents() -> None
             assert target.is_relative_to(root / "agent-basics")
             assert read_triggers.ReadTarget(target, reference[2]).body()
             found.append((source.name, reference[2]))
-    assert {name for name, _heading in found} == {"exec-review-responses.md", "exec-review-criteria.md"}
+    read_contract(plugin / "share/exec-review-criteria.md", plugin, ("exec-review-criteria-execution.md", "実行レビューの判定"))
+    assert {name for name, _heading in found} == {
+        "exec-review-responses.md",
+        "exec-review-criteria.md",
+        "exec-review-criteria-execution.md",
+    }

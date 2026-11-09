@@ -1,0 +1,27 @@
+# 由来と承認：逐語転記
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md`、`read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
+| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
+| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-completion.md` |
+
+## 逐語転記
+
+`## ユーザー指摘の逐語引用`に転記された発話は、そのAWIを投入したセッション（投入元セッション）へ向けられた発話であり、質問形式であるか否か、解決済みと明記されているか否か、あるいは`source`の値にかかわらず、投入元セッションにおいて解決済みのものとして扱う。
+後続の処理側（実行レビュー担当、統合時の完成条件判定など）は、逐語引用そのものを達成すべき要求や回答すべき質問としては扱わず、`## 反映内容と反映先`と`## 完成条件`を正しく解釈するための背景根拠として読み込む。
+処理側が達成を確認すべきユーザー発話は、処理側宛てに書かれた`## ユーザーコメント`、回答済みUWIの`## 回答`、計画書の`ユーザー指示`行、ならびに完成条件節を持たない人間由来のAWI本文である。
+
+ユーザーからの要求を起点とするWIには、会話内の採否や実装方針の根拠となった原文を逐語的に転記する。
+`agent-toolkit:delegation/references/writing.md`「ユーザー入力素材の取扱い」に従い、ユーザー発話とエージェントの質問・説明・判断を区別する。
+認可や解釈の判断に再取得が必要な場合は必要な所在情報を残す。
+転記はユーザー専用の2つの記入欄とは区別する。
+転記する発話の中に質問が含まれている場合は投入元エージェントが回答を作成し、実際にユーザーへ送達済みの質問に限り、引用箇所の近傍に「回答済み」と明記する。
+回答内容を確定させただけでは送達完了とはみなさない。
+WI投入担当による調査結果を必要とする回答の送達時期、および返却後の訂正手順は、`../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md`に従う。

@@ -4,48 +4,18 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 遮断と警告を選ぶ前 | `claude-hooks-block-warn.md#「遮断と警告の選択」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn.md#「遮断と警告の選択」` |
+| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-behavior.md` |
 
-## 遮断の条件と再帰呼び出し対策
+## 条件別資料
 
-遮断と警告の使い分けは`claude-hooks-block-warn.md`「遮断と警告の選択」に従う。Stopフックであっても、エージェント自身で回復可能な手順の支援は遮断しない通常の通知で提供し、作業の完遂度合いや質問の意図などエージェントの判断を要する条件は文書の記述で誘導する。常駐運用の完了保証など、セッション自身がその場で機械的に解決できる条件に限定して遮断する。
-
-フックがターンの終了を阻止すると、エージェントは新たな応答を生成するため、同じフックが再度発火する。判定条件が解消されないままだと、Claude Codeの連続block上限（環境変数`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`で変更可能）に達するまで処理が繰り返され、上限到達後は判定が無視されてターンが終了する。
-
-- Stopフックを集約するエントリーポイントでは連続blockの回数を管理し、上限に達した場合は遮断を打ち切る。その際、上限に達した事実と対象の判定名をStop判定ログに記録する。個々の判定処理は、直前の呼び出しが同じターンで一度終了を阻止したかを示す`stop_hook_active`の値と独自の条件に基づいて、継続可能かどうかを判断する。
-- `decision: "block"`と`additionalContext`のいずれを用いる場合も、対象エージェントが同一ターン内の行動によって自力で解決できる条件に限定する。外部イベントの完了待ち、他のエージェントの稼働状態、直前のターンで確定済みの内容などは遮断条件に含めない。終了を拒否された待機状態のエージェントは、何もしないツール呼び出しを繰り返してしまうためである。1回限りの遮断であっても同様の条件を適用する。
-- `additionalContext`は想定内の助言としてトランスクリプトに表示され、フックのエラー通知としては扱われない。
-- 判定条件は観測できる事実（ツール呼び出しの有無など）に限り、意味（伝える内容の有無など）の判断はエージェント向け文書へ残す。正常なターン終了の規範と、他のフックが案内する内部作業（記録の更新、資料の取得など）を組み合わせた入力で、正常な終了を違反と判定しないことを確かめる。
-- 記述言語のように本文そのものから機械的に判断できる判定では、通知内に該当箇所の指摘、判定基準、および誤検出時に本文を変更せずに終了させる操作方法を明記する。委譲元へ最終応答を返す主体では、成果、判断、未達事項を指定形式で維持したまま全文を返せることを前提とする。判定処理を修正する際は、除外語を追加する前に、この解除操作で正しく回復できるかを確認する。
-
-## 入力
-
-`Stop`と`SubagentStop`の共通入力は、`session_id`、`prompt_id`、`transcript_path`、`cwd`、`permission_mode`、`effort`、`hook_event_name`である。
-さらに両イベントとも、`stop_hook_active`、`last_assistant_message`、`background_tasks`、`session_crons`を受け取る。
-`SubagentStop`では追加で`agent_id`、`agent_type`、`agent_transcript_path`を受け取り、その際の`background_tasks`と`session_crons`は親セッション全体の範囲を表す。
-`background_tasks`には実行中のタスクごとに`id`、`type`、`status`、`description`が含まれ、`type`はタスクを生成した機能（`shell`、`subagent`、`monitor`、`workflow`、`teammate`、`cloud session`、`MCP task`）を示す。これはセッション全体の完了と、バックグラウンド処理の完了待ちによる一時停止とを識別するために用いる。
-`PostToolUse`はバックグラウンド実行へ移行した時点で発火し、そのジョブが完了した時点での再発火については公式ドキュメントに記載がない。
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日」にある。現行バージョンの入力に`background_tasks`が含まれていない場合は本項を失効とし、そのバージョンでの観測結果として改訂する。
-
-可視テキストを対象とする判定処理では、`last_assistant_message`および現行形式のトランスクリプトからアシスタントの可視テキストのみを抽出して判定する。
-Claude Codeではアシスタントの`text`要素から可視テキストを取り出す。別の送信ツールを併用している場合は、そのツールが送信した本文も同一の判定対象に含める。
-読み取れない記録や取得できない記録が存在する場合も、未発話として処理することは避け、判定不能のログをStop判定ログに残した上で実行を許可する。作業工程の完了判定はトランスクリプトの内容から推測せず、実際の工程実行と結果の確実な証拠に基づいて判定する。
-
-## Codexの差分
-
-CodexのStopフックでは、`decision: "block"`と`reason`を返すことで同一ターンを継続させる。許可する場合は空のJSONオブジェクトを返す（Codexでは`hookSpecificOutput`が受理されないためである）。
-非遮断の通知を送れない環境では、手順の支援案内を関連する操作の通知やドキュメント側に配置する。通知を届けたいという理由だけで遮断（block）へ切り替えることは避ける。
-Codex固有の入力には`model`がある。Codex rolloutにおけるトランスクリプト形式は安定した仕様ではないため、完了判定やバックグラウンドタスクの判定入力には直接使わず、状態が欠落した際の復旧判定などで識別子の有無を確認する用途に限ってランタイム別に変換して扱う。
-
-## 委譲先での発火
-
-`Stop`と`SubagentStop`の判定は、どちらも委譲先セッションで発火する可能性がある。判定が要求する処置を委譲先が実際に実行できるかどうかを個別に確認し、その結果と根拠を各判定モジュールのdocstringに記録する。委譲先で実行不可能な処置を求める判定は、委譲先を実行対象から除外する。
-
-- `Stop`はそのセッション自体のターン終了時に発火する。委譲先であるかどうかの識別には、実行環境が提供する識別情報を利用する。
-- `SubagentStop`は`Agent`ツールのサブエージェントのターン終了時にのみ発火し、入力の`agent_id`で判別する。サブエージェントが実行できる処置のみを登録対象とする。
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 遮断の条件と再帰呼び出し対策・入力に関する判断・作業の前 | `claude-hooks-stop-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-common.md` |
+| Codexの差分に関する判断・作業の前 | `claude-hooks-stop-codex.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-codex.md` |
+| 委譲先での発火に関する判断・作業の前 | `claude-hooks-stop-delegates.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-delegates.md` |

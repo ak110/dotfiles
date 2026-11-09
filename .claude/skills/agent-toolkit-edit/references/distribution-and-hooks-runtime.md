@@ -1,0 +1,28 @@
+# agent-toolkitの実装と配布の規約：常駐CLIと自動起動の判定入力
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 機構や外部インターフェースの変更に伴う文書の追随先を確定する前 | `agent-documents.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agent-documents.md` |
+| Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state-retention.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-retention.md` |
+| hookの実装や登録を新設・変更する前 | `claude-hooks.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md` |
+| hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md` |
+| hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-output.md` |
+| hook通知の本文（`fix`・次の操作を含む）またはformatterを新設・変更する前 | `claude-hooks-messages.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-messages.md` |
+
+## 常駐CLIと自動起動の判定入力
+
+常駐CLI（`atk wi process-loop`など）の待機・期限、hookからの自動起動、外部の返却の受理を実装・変更するときは、局所の処理が成立することと、呼出元の目的が成立することを分けて判定する。
+個々の関数名を禁止する一覧や、別の監視プロセス、起動履歴の台帳は設けず、次の観点を設計時に比べる。
+
+- 待機と期限: 処理を起こすイベント、期限を延ばして起動を許す業務上の事実（対象への投入など）、待機全体の上限を分ける。
+  対象外の入力と途切れない入力列を与えたとき、期限が対象の事実だけで動き、呼出元へ戻って開始条件・中断・周期処理を再判定できるかを比べる。
+- 自動起動の集約: イベントの受付と高コスト処理の開始、処理すべき記録と今回起動する条件を分ける。
+  単独・連続・同時のイベント列で、目的の集約単位と実際の起動回数を比べる。
+  起動を抑止する条件には、保持すべき記録と後続の処理機会を対応付ける。
+- 外部の返却の受理: エージェントや別プロセスの返却は、今回の対象に関わる欠落・不正だけを失敗にし、対象外の記載は記録して除く。
+  局所の検証失敗で常駐全体を止めるかは、その入力が影響してよい範囲から決める。
+  同じ会話や状態を再利用する継続の回も入力列に含めて比べる。

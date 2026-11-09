@@ -15,6 +15,7 @@ import pytest
 
 from agent_toolkit._agents_server import claude
 from agent_toolkit._common import process_tree
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import QueueClaudeClient, ResultMessage, SystemMessage
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -36,7 +37,7 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
         "import pathlib, subprocess, sys\n"
         "pathlib.Path(sys.argv[3]).write_text('ready')\n"
         "assert sys.stdin.readline().strip() == 'spawn'\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'nested.release')!r}])\n"
         "pending_pid = pathlib.Path(sys.argv[1]).with_suffix('.tmp')\n"
         "pending_pid.write_text(str(child.pid))\n"
         "pending_pid.replace(sys.argv[1])\n"
@@ -67,7 +68,7 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
             stdin=subprocess.PIPE,
             env=host_environ(),
         ) as process,
-        process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(60)"], env=host_environ()) as foreign,
+        late_descendant.held_process(tmp_path, env=host_environ()) as foreign,
     ):
         # Pythonの起動準備をSDK切断の猶予に含めず、負荷による準備の遅れと切断timeoutを分ける。
         async with asyncio.timeout(5):

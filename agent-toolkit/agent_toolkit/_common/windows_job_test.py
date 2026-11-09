@@ -22,8 +22,7 @@ def test_job_reclaims_orphan_and_preserves_explicit_breakaway(tmp_path, host_env
         "subprocess.run([sys.executable, '-c', "
         '\'import pathlib, sys; path = pathlib.Path(sys.argv[1]); pending = path.with_suffix(".tmp"); '
         'pending.write_text("outside", encoding="utf-8"); pending.replace(path)\', sys.argv[1]], '
-        "creationflags=0x01000208, check=True, timeout=5)\n"
-        "time.sleep(60)\n",
+        "creationflags=0x01000208, check=True, timeout=5)\n" + late_descendant.held_source(tmp_path / "job.release"),
         encoding="utf-8",
     )
     with (
@@ -69,9 +68,9 @@ def test_job_reclaims_orphan_and_preserves_explicit_breakaway(tmp_path, host_env
 
 @pytest.mark.windows
 @pytest.mark.skipif(sys.platform != "win32", reason="元世代のWindows handleと別の所有プロセスを実物で照合する")
-def test_job_rejects_mismatched_handle_and_leaves_unrelated_process_alive(host_environ):
+def test_job_rejects_mismatched_handle_and_leaves_unrelated_process_alive(tmp_path, host_environ):
     """異なる世代のhandleを所属へ変換せず、無関係な同時起動プロセスを終了しない。"""
-    command = [sys.executable, "-c", "import time; time.sleep(60)"]
+    command = [sys.executable, "-c", late_descendant.held_source(tmp_path / "suspended.release")]
     with WindowsJob() as job, subprocess.Popen(command, creationflags=CREATE_SUSPENDED, env=host_environ()) as root:
         try:
             with subprocess.Popen(command, creationflags=CREATE_SUSPENDED, env=host_environ()) as unrelated:

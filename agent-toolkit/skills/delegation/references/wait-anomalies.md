@@ -1,68 +1,24 @@
 # 待機の異常時の扱い
 
-本書は待機を開始できない場合、`atk agents wait`や待機中のツール呼び出しが異常終了した場合、ホストから背景待機の停止通知を受けた場合、および`agents_server`のMCPサーバーが再起動した場合の対処手順を定める。平常時の待機手順については`references/waiting-and-monitoring.md`を参照する。
+本書は待機を開始できない場合、`atk agents wait`や待機中のツール呼び出しが異常終了した場合、ホストから背景待機の停止通知を受けた場合、および`agents_server`のMCPサーバーが再起動した場合の対処手順を定める。
+平常時の待機手順については`references/waiting-and-monitoring.md`を参照する。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md`の「共通判断」と、診断に対応する詳細節 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md#「共通判断」` |
+| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
 | 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 
-## 待機を開始できない場合
+## 条件別資料
 
-1. 起動失敗と拒否を区別するため、待機が未起動の場合は`agent-toolkit:user-confirmation-and-report/references/permission-denial.md`「共通判断」で通知本文の再試行指示を確認する。判定は通知本文の再試行指示に基づく。
-   - `gave no verdict (error)`で「transient failure」「You may try the action again once」と示す通知は、許された1回の再試行と指定の遅延に従う。
-   - `gave no verdict (it skipped this action)`で「hard failure」「Don't retry it」と示す通知は、同じ待機の起動を再試行しない。同じ変更を別ツールで改めて判定させることや権限設定の変更も行わない。読み取りや独立作業と、許容された別の観測手段による終了観測を続ける。その操作が必須なら、対象・操作と通知本文を、委譲先は`rules-subagent.md`「確認事項の即時通知」で委譲元へ、メインは`agent-toolkit:user-confirmation-and-report`「手段の選択」でユーザーへ伝える。
-   実際の拒否は同書の拒否主体別の節に従う。
-
-2. 観測を引き継げるよう、失敗した待機の起動状態、既存の待機の実行識別子、未回収の子や背景処理の識別子を保持する。元のエラーが許す同じ操作の再試行と指定の遅延を適用し、ホストの回数・turn停止制約を守る。再試行までの間は独立作業を進める。classifierへの再試行間隔を、子の完了を固定sleepで繰り返し照会する方式へ変えない。
-3. 待機が未起動の間も、未回収対象の終了観測の責任は残る。既存の許容された待機・回収手段を使える間は、同じ対象の終了観測を継続する。自動再開の能力だけを根拠に終了せず、今回の対象の追跡・結果保留・継続が成立しているかを`waiting-and-monitoring.md`「待機区間の構成」「完了通知を待ってターンを終える場合」で確認する。
-4. 観測主体を確保するため、ホスト上限や停止制約により観測を継続できない場合は、未回収対象、待機の起動状態、診断と再開条件を委譲元へ渡し、観測を引き継ぐ主体を明確にする。未回収の対象は未完了として返す。
-
-## 終了コードと呼び出しの失敗
-
-- 終了コード4: `agents_server`の状態ディレクトリを解決できない実行環境で発生する。発生した事象と実行環境の情報を委譲元へ報告する。
-- 終了コード8: run記録を持たない旧形式の待機との競合、先行runへの合流中に待機期限へ達したこと、先行run記録の読み取り失敗、または記録が未公開・配信済み・回収済みであることを示す。配信済みrunへの合流では本文を再出力せず、`run_path`を含む回復情報を返す。これは待機対象自体の異常とは異なる。競合によって期限に達した場合は、書き込み主体、固定run識別子、待機対象、および`run_path`の絶対パスを返す。先行するバックグラウンドタスクの保存出力を確認し、先行待機が終了した後に改めて待機する。保存出力を取得できない場合は、`jq -r .output -- <run_path>`でrun記録の終了行を確認し、記載されている`agent_message_path`から本文を読み取る。取得に失敗した場合でも原本、退避ファイル、先行runを保持し、診断情報を委譲元へ報告する。
-- 終了コード10: 委譲元の状態管理に待機対象が登録されていないことを示す。これは委譲先自体の失敗とは異なる。起動時の応答や`atk agents list`でセッションが存在するか確認する。ホストの組み込み機能で起動した委譲対象については、そのホストの委譲一覧や指定された成果物から終了を観測する。監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」を参照する。
-- 待機対象の登録と`starting`状態の保持中セッションがいずれも0件の状態で非0終了した場合は、回収すべき対象が存在しないため再実行せず、起動時の応答を確認する。保持中のセッションが残っている場合は、通常の待機上限まで待機を継続する。
-- ホストのリソース上限やメモリー不足によって背景待機の停止通知を受け取った場合は、次節の手順に従って元の待機状態と実行結果を回収する。委譲先が停滞・中断・再起動しているかどうかは、`atk agents list`で確認できる各セッションの`status`で判定する。
-- 委譲先または自分自身のツール呼び出しが終了ステータスを返さずに終了した場合（アイドル上限によるアボート、待機上限の超過、無応答による中断など）は、実行基盤側の欠陥として扱う。`agent-basics:bugfix`を起動し、`agent-basics:bugfix/SKILL.md`の「問題を見つけたときの対処」に従って対処する。あわせて、待機を継続するかどうかも個別に判定する（単に続行するだけでは、同じ欠陥が別のセッションでも再発するためである）。
-
-## ホストによる背景待機の停止後
-
-停止通知に含まれる`killed`は、外側のバックグラウンドタスクが終了したことを示す。
-
-1. 停止範囲を確定するため、起動結果と停止通知に記録された実行識別子や元の出力ファイルを保持したうえで、外側のシェルと、そのシェルから起動された待機子プロセスの終了をそれぞれ個別に確認する。
-   子プロセスの同定には、起動時刻、プロセス親子関係、実行コマンドを組み合わせて突き合わせ、同一の実行であることを確かめる。
-
-2. 元の結果を回収するため、同じ待機の子プロセスが生存している間は、既存の完了通知や定期的な再確認を通じてプロセスの終了を観測し、元の出力ファイルから結果本文の全量と終了状態を回収する。
-   先行する待機がロックを保持している最中に後発の待機が失敗した場合でも、先行待機が停止したことや結果が失われたことを意味するわけではない。
-
-3. 不足する観測を再開するため、元の待機が終了しており、元の出力ファイルにも必要な終了時の結果が残っていない場合は、既存の担当情報と得られた結果を保持したまま、同じ対象の観測を再開する。
-   結果の観測だけを再開する処理は、ユーザーからの再依頼や確認を待たずに自律的に実施する。
-   すでに結果を回収できている場合は、その結果を用いて後続の工程へ進む。
-
-   CIの監視でも同様の判断基準を適用し、既存のコミットSHAやベースライン、あるいは待機専用の記録を用いて`wait_ci.py`による観測を継続する。
-   この観測操作によってCIジョブや委譲先の実処理自体が再起動されることはない。
-   ホスト注記による行動指示は既存の優先順位に沿って解釈し、実際の権限拒否や技術的な不成立とは区別して扱う。
-   権限が拒否された場合は`agent-toolkit:user-confirmation-and-report`の`references/permission-denial.md`「共通判断」から拒否主体別の詳細を選び、実処理自体の再起動が必要な場合は既存の認可範囲や副作用の有無に基づいて判断する。
-   Codexのcell IDやコマンドsession IDについては、公式に提供されている同一実行の継続機能を使って回収する。
-
-## MCPサーバーの再起動後
-
-1. 元担当の状態を確かめる。MCPサーバーが再起動した後も、セッション登録簿を通じて同じ`session_id`が遅延解決される。ただし、結果の観測や会話の再開に使用できるのは、終了が確定した記録に限られる。正常に停止したサーバーは、実行中だったターンを`interrupted`として公開する。強制終了によって`running`のまま残されたCodexの記録は、`show`、`send_message`、`kill`の各操作で照会した際に終了状態として引き継がれることがある。この引き継ぎが行われる条件は、いずれのサーバーもそのセッションを保持しておらず、ターンを実行していた委譲先CLIのプロセスがすでに終了しており、Codexのスレッド記録がターンの終了を示していることである。
-
-   交代前の旧サーバーが応答しないまま残存している場合や、旧サーバーの管理下で委譲先CLIが作業を継続している場合は、所有サーバーを失った実行中セッションとなる。この状態は、`show`または`atk agents show`の出力において`status`が`running`かつ`ownership`が`owner_lost`となっていることで識別できる。あわせて`recorded_processes`（所有サーバーおよび委譲先CLIのPIDと生存状態）、`owner_root_session_id`、`stranded_notice_count`も確認する。この状態のセッションに対して`send_message`を実行すると、`error.recovery=owner_lost`で拒否される。
-
-2. 作業を継続させる場合は、`atk agents wait`で処理の終了を待つ。旧ルートに残っていた委譲先からの通知は、新サーバーの`atk agents wait`や`show`、`send_message`、`kill`の応答を通じて回収され、返却される。
-
-3. 続行のための追加指示が必要な場合は、まず同じセッションに対して`kill`を発行して委譲先CLIを停止させてから、同じ`session_id`宛てに`send_message`を送信する。`kill`は実行中のターンを中断する。このとき、新たな`start`で後任セッションを起動しない（旧委譲先CLIが作業ツリーへ書き込みを続け、書き込み主体が重複してしまうためである）。
-
-4. `error.recovery=turn_unobserved`: ターンの終了が未確定な状態を示す。同じ作業を新しい`start`でやり直すことは避け、まだ実行中である可能性を添えて委譲元へ報告する。
-
-5. `missing`、`unreadable`、`no_resume_info`: 委譲先CLIのプロセスが残存していないことを確認したうえで、そのセッションが失われたものとして処理する。起動時の応答や記録からPIDを取得できる場合はプロセスの生存を確認し、生存しているなら終了を待つ。
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 待機を開始できない場合に関する判断・作業の前 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 終了コードと呼び出しの失敗に関する判断・作業の前 | `wait-anomalies-failures.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-failures.md` |
+| ホストによる背景待機の停止後に関する判断・作業の前 | `wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
+| MCPサーバーの再起動後に関する判断・作業の前 | `wait-anomalies-server-restart.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-server-restart.md` |

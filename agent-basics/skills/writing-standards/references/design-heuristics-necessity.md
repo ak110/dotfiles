@@ -1,0 +1,50 @@
+# 設計判断の手順と領域別の設計観点：存在意義の点検
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+
+## 存在意義の点検
+
+発火条件: テスト・CI・lintの失敗の分類と対処の選定、観測した問題への対策の選定（作業項目の起草を含む）、設計・リファクタリングの案の選定、実装完了前のセルフチェックと実行レビュー。
+
+修正・設計の対象になっているテスト、処理、仕組み、規範条文が、プロジェクトの目的に照らして今も必要か、より単純な構成で足りるかを問う。
+目の前の失敗をどう直すかに視野を固定すると、不要になった対象を修正し続け、作り込みを重ねるためである。
+
+兆候が無ければ、分類や案の選定のときに対象の必要性を1行で確かめるだけにし、報告からは省く。
+次のような兆候があるときは、通常の修正案と並べて、対象の撤去・縮小、一段上の仕組み全体の簡素化や置換、既存ツールやエージェントが実行する手順への置換を比べる。
+比較の基準は`design-heuristics-screening.md`「設計案の予備選別」と`design-heuristics-decisions.md`「案の採否と実施順の判定」に従う。
+
+<例>
+作り込みが複雑になり続ける、同じ仕組みへ例外や特例の追加が続く。
+同じ箇所の修正が2回目以降になる。
+修正の手間が対象の価値を上回る。
+テストが公開契約ではなく内部実装を固定している（`testing-selection.md`「削除・統合の類型」）。
+対象を使う主体や呼び出し元が不明である。
+今回の差分が計画や要求に無い新しい概念・構造（ファイル、状態、フラグ、設定キー、抽象化層など）を持ち込んでいる: 必要なら設計の比較へ戻り、不要なら削除する。
+</例>
+
+撤去の認可:
+
+- 不要と判定したテストコードと、外部から観測されない内部処理は、エージェントが撤去して報告する
+- ユーザーやエンドユーザーが観測する機能・公開インターフェースの撤去と、CI検査やlint規則の無効化は、撤去前にユーザーへ確認する
+
+詳しい観点は、対象に応じて次の資料を使う。
+
+- 同じ規範条文の修正の反復: `../../bugfix/references/root-cause-severity-quality.md`「前提の再検討」
+- 安全対策や例外処理の新設: `design-heuristics-mechanisms.md`「自作機構の兆候と自問」
+- ファイル構成の蓄積: `design-heuristics-quality.md`「設計品質の劣化確認」
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| テスト方針（全言語共通）：検証単位の選定の基準を適用する前 | `testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
+| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
+| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `design-heuristics-mechanisms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md` |
+| 設計判断の手順と領域別の設計観点：設計品質の劣化確認の基準を適用する前 | `design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
+| 設計判断の手順と領域別の設計観点：設計案の予備選別の基準を適用する前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |

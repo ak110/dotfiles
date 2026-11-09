@@ -1,0 +1,40 @@
+# 起草完了の条件：未確定事項と確認
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 通常AWIの独立別件の記録条件を確認する前 | `drafting-completion-causes.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-causes.md` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 一連の処理全体の成立を判定する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow-requirements.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-evidence.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-evidence.md` |
+| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+
+## 未確定事項と確認
+
+対象、反映先、完成条件を変更し得る調査（完成条件で具体的に指定する並列度、閾値、上限値などの調査を含む）は、投入前に完了させる。
+未確定事項の分類、確認の要否、および確認先は、`drafting-workflow-requirements.md`「確定した要件と委譲元の判断」「未確定事項」の共通契約に従う。
+ユーザーのみが判断できる事項をUWIに切り出す場合は、その回答を必要とするAWIの処理を回答が得られるまで保留する。
+協調モードであっても、作成主体は`## 反映内容と反映先`と`## 完成条件`に残る要件や意図の曖昧さを洗い出して列挙し、`drafting-workflow-requirements.md`「未確定事項」で定められた主体別の確認先へ提示する。
+そして、回答を得て要件を確定させるまで、原稿の確定と保存を保留する。
+本書の適用を必要とする要求を委譲元として受け取ったエージェントは、何を洗い出し何を確認するかを、受領した同一ターン内でユーザーに宣言する（ユーザーによる訂正の機会を早期に確保するため）。
+
+bugfixスキルの重大度判定に基づいて終了した類似見直しの未走査部分を除き、原稿、証拠、返却内容において未確認の範囲がある場合は、作成主体が確認手段を持つ限り徹底して確認する。
+成果物の受理には、要求された結果に到達したことの観測と成立条件の確認を必須とし、失敗時のログ出力などを設計したことのみをもって成立とはみなさない。
+自力で確認する手段が存在しない範囲については、`awi-body-evidence.md`「原因分析・調査結果と判断根拠」の条件を満たす根拠を本文の適切な箇所に記載する。
+
+## 確定の判定
+
+ここでいう「確定」とは、具体的な結論が本文中に明記されている状態を指し、調査を別の要求単位や後続の計画工程へ先送りすることは確定とはみなさない。
+投入前に完了すべき調査（対象ごとの採否、根拠、変更先、変更内容を特定する調査）と、後続の計画や実装に委ねられる具体化作業（確定した変更に対する内部設計、実装単位の分割、実装後の検証手順など）を明確に区別する。
+判断基準のみを記載して個別の対象に対する判断を後続工程に残した本文や、調査・棚卸しそのものを作業要求とした本文は、未確定なものとして扱う。
+調査によって確認可能な事項を確認しないまま投入しないという条件は、AWI全般に適用する（UWIについては`uwi-format.md`に従う）。
+エージェント環境から実行された`atk wi add`および`atk wi edit`は、UWIの表の`直接的原因`行に未確定を示す語句が含まれる本文を保存しない。
+通常AWIは`drafting-completion-causes.md`「原因と定義の所有者」の独立別件の記録条件に従う。

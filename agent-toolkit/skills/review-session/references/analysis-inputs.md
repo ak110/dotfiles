@@ -1,0 +1,54 @@
+# 振り返りの判断基準：入力と照会
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-operations.md` |
+| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
+| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+
+## 入力と照会
+
+入力は`atk run-script session-review-prepare`が出力した会話の流れ、`candidates.md`、セッション統計と、メインエージェント自身のコンテキストである。
+会話の流れは観点を絞らずに問題を探す起点、`candidates.md`は通読で見つけた問題との対応付けと、通読で捉えにくい事象の追加に使う。
+OpenCodeでは`--opencode-session-id`と任意の`--opencode-db`で元の記録を選ぶ。
+データベースが無いか未対応の形式で終了コード2になったときは、記録があるホストで作業を再開し、対象セッションの振り返りは未完了のまま残す。
+初回は会話の流れ（原則100,000バイト以下）、候補文書（70,000バイト以下）、統計文書（30,000バイト以下）の3文書を読む。
+全候補の対応関係と必須性は`bundle/review-index.jsonl`が持ち、索引に表示されない候補も含めて全件を対応付ける。
+候補の全項目、発生位置、操作入力、質問文と全選択肢、実際の回答は`bundle/candidates.jsonl`や個別証拠から、詳しい由来は`bundle/timeline.jsonl`の`record-provenance`から取る。
+判断に要る原文と文脈は個別の候補の詳細から取り、全候補・全担当・全対象の一律通読は対象外とする。
+確認した証拠は同じ記録位置や内容の判断に再利用し、準備処理をやり直したときは既存の判断が変わる箇所だけ読み直す。
+
+メインエージェントは`conversation.md`全体を1つの時系列として確認する。
+長い会話の`conversation.md`も全期間を対象とし、省略行の記録位置から必要な本文だけを`--detail`で取得する。
+委譲の入力と規範の読込概要は`comparison-materials.md`、メインエージェントと全担当の費用はセッション統計から取る。
+比較材料から対象、時点、全文の位置を選び、必要な記録位置だけを照会する。
+比較材料では、直接渡された本文とファイル参照、明示的な読取とコマンド文字列だけの観測、返却本文の量と現在のファイルサイズをそれぞれ分ける。
+参照ファイルの内容量、自動配送、読了の有無は、受領記録などの確かな証拠が無ければ未確認とする。
+トークン数とキャッシュ量は実行環境の計数定義に従い、Codexの総入力（total input）へのキャッシュ済み入力（cached input）の二重加算を除く。
+候補文書や統計文書の未確認範囲は、未解決の記録や識別子を取れなかった呼び出しを示し、正常に処理された件数だけで全範囲を確認済みとしない。
+
+直接の原因を特定できない候補や、比較に要る操作・成果の材料が概要に無いときは、事前の異常候補の有無にかかわらず次の手段で全文と契約を取る。
+会話圧縮でコンテキストから消えた会話も、ログには圧縮前のイベントが残る（Claude Codeの`compact_boundary`、Codexの`compacted`など）。
+圧縮区間の事象も分析し、コンテキスト上で見えないことだけで原因未確定としない。
+
+- 記録位置を`atk run-script session-review-evidence --`の`--detail`へ渡して本文・入力・実行結果を取る。
+  構造の確認は`--record-schema`、検索語で限定するときは`--grep`、固定文字列の検索は`--fixed-string`を使う。
+  委譲先を含むツール呼び出しの列挙には`--tool-calls`、出所付きの改善点全行には`--reported-improvements`を使う。
+  このコマンドは委譲先（Claude Codeのサブエージェント記録や`agents_server`の子セッション記録）も再帰的に集める。
+- 候補の個別証拠は索引の`candidate_id`と`evidence_path`から取得する。
+  元の`reported_improvements`はイベント直下の文字列配列であり、本文と出所をまとめて読む場合は上記の公開照会を使う。
+- 記録に理由となる本文が無い事象は、同じ呼び出しを再実行して再現するか、実装コードを読んで確定する。
+
+照会や再現でも確定できない場合（記録ファイルの削除、`unresolved-delegation`と報告された委譲先など）に限り、原因を未確定とする。
+その理由の結論と再取得先を振り返り結果報告の「対策を見送った問題」へ書き、照会と再現の経過を証拠に残す。
+未確定の原因が対策の採否を左右する場合は、同じ行へ検証AWIのファイル名を書き、左右しない場合はその理由を書く。
+介入の意図などユーザーの判断が要る要素が残る候補は、推測で確定せず`agent-toolkit:user-confirmation-and-report`の手順で確認する。
+
+全候補を通読で見つけた問題と取得済みの証拠へ対応付け、追加、変更、未確認、不一致の箇所だけを補う。
+メインエージェントは全体像、原因、対策の採否を確定し、走査で該当しなかった結果も再利用する。

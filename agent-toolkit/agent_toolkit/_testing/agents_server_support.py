@@ -336,13 +336,11 @@ class DelayedUnavailableBackend(FakeBackend):
         sessions: dict[str, state.SessionState],
         engine: str,
         condition: asyncio.Condition,
-        delay: float = 0.0,
         error: Any = None,
         failure_release: asyncio.Event | None = None,
     ) -> None:
         super().__init__(sessions, engine)
         self._condition = condition
-        self._delay = delay
         self._failure_release = failure_release
         self.error = error if error is not None else {"message": "usage limit", "codexErrorInfo": "usageLimitExceeded"}
         self.pending: list[asyncio.Task[None]] = []
@@ -354,7 +352,7 @@ class DelayedUnavailableBackend(FakeBackend):
 
     async def _fail_after_response(self, session: state.SessionState) -> None:
         if self._failure_release is None:
-            await asyncio.sleep(self._delay)
+            await asyncio.sleep(0)
         else:
             await self._failure_release.wait()
         _complete(session, message="", error=self.error)
@@ -376,7 +374,7 @@ class OutputObservedBackend(FakeBackend):
         return session
 
     async def _observe_output(self, session: state.SessionState) -> None:
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0)
         session.model_output_observed = True
         async with self._condition:
             self._condition.notify_all()
@@ -1152,16 +1150,27 @@ class QueueClaudeClient(FakeClaudeClient):
 
 
 class DelayedClaudeClient(FakeClaudeClient):
-    """init後の通常メッセージ間隔を遅延できる偽クライアント。"""
+    """init後の各メッセージを、試験側の観測と解放に合わせて供給する。"""
+
+    def __init__(self, streams):
+        super().__init__(streams)
+        self.requested: asyncio.Queue[int] = asyncio.Queue()
+        self.release: asyncio.Queue[None] = asyncio.Queue()
+        self.cancelled = asyncio.Event()
 
     def receive_messages(self):
         messages = self.streams.pop(0)
 
         async def stream():
-            for index, message in enumerate(messages):
-                if index:
-                    await asyncio.sleep(0.08)
-                yield message
+            try:
+                for index, message in enumerate(messages):
+                    if index:
+                        self.requested.put_nowait(index)
+                        await asyncio.wait_for(self.release.get(), timeout=5)
+                    yield message
+            except asyncio.CancelledError:
+                self.cancelled.set()
+                raise
 
         return stream()
 
@@ -1517,21 +1526,25 @@ class OverloadingBackend(FakeBackend):
         self._remaining = overloads
         self._final_message = final_message
         self.pending: list[asyncio.Task[None]] = []
+        self.finish_release = asyncio.Event()
 
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
         session.model = session.model or "gpt-6.1-sol"
         session.effort = session.effort or "high"
-        self.pending.append(asyncio.create_task(self._finish_turn(session, delay=0.05)))
+        self.pending.append(asyncio.create_task(self._finish_turn(session, initial=True)))
         return session
 
     async def send_message(self, session: state.SessionState, prompt: str) -> dict[str, Any]:
         result = await super().send_message(session, prompt)
-        self.pending.append(asyncio.create_task(self._finish_turn(session, delay=0.0)))
+        self.pending.append(asyncio.create_task(self._finish_turn(session, initial=False)))
         return result
 
-    async def _finish_turn(self, session: state.SessionState, *, delay: float) -> None:
-        await asyncio.sleep(delay)
+    async def _finish_turn(self, session: state.SessionState, *, initial: bool) -> None:
+        if initial:
+            await asyncio.wait_for(self.finish_release.wait(), timeout=5)
+        else:
+            await asyncio.sleep(0)
         if self._remaining > 0:
             self._remaining -= 1
             session.status = "failed"

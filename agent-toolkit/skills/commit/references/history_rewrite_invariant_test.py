@@ -10,13 +10,15 @@ import re
 import shlex
 
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.normative_contract import read_contract
 
 _HISTORY_REWRITE = pathlib.Path(__file__).with_name("history-rewrite.md")
 
 
 def _autosquash_command(base: str) -> list[str]:
     """手順書が指示するautosquashのコマンドを、`<base>`を置き換えた引数列で返す。"""
-    found = re.findall(r"`GIT_SEQUENCE_EDITOR=: (git [^`]*<base>)`", _HISTORY_REWRITE.read_text(encoding="utf-8"))
+    text = read_contract(_HISTORY_REWRITE, _HISTORY_REWRITE.parents[3], ("history-rewrite-fixup.md", "fixupの実行上の制約"))
+    found = re.findall(r"`GIT_SEQUENCE_EDITOR=: (git [^`]*<base>)`", text)
     assert len(found) == 1, found
     return [base if token == "<base>" else token for token in shlex.split(found[0])]
 

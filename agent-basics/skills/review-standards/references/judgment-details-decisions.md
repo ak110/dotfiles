@@ -1,0 +1,72 @@
+# 判断の妥当性を評価する詳細：問題と手段の比例性
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-severity-quality.md`、`../../bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-evidence.md`、`../../bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+
+## 問題と手段の比例性
+
+指摘が示す問題に対して処置が必要かどうかは、`../../bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に沿って判断する。
+指摘の採否や求める処置の決定、修正方針の確定では、同資料の重大度別の判断基準を踏まえた上で、`../../writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」にある比較を適用する。
+検討した各案（何もしない案や既存の操作だけで済ませる案を含む）、それぞれの案が目的を満たせるか、および採用した根拠を、指摘文や採否の応答へ記録する。
+
+## 解決案の比較
+
+- 同じ問題を解決できる案が複数ある場合は、各案で失われる観測情報、対象となる入力や状態の範囲、将来的に仕様上許容される入力が追加された後も維持できる性質を比較する
+- 数値の閾値を含む判断基準を提案または改訂するときは、境界値の前後2例以上（目安）に具体的な値を当てはめ、閾値を上下させた際に判定結果がどちらへ変化するかを確かめた上で推奨理由を記載する
+- 各候補が暗黙に共有している前提を言葉にして整理し、その前提に代わるものがあれば前提自体も見直しの選択肢に含める（努力目標）
+- 概念を新設または変更するときは、主体、出来事、状態、およびそれらの対応関係を表せる境界を先に確定し、その境界の中で単純かつ直接的な実装を選ぶ。
+  既存概念の特殊ケースとして扱う案と、新しい概念として独立させる案を、下流への影響や継続的な保守コストも含めて比較する。
+  新しい要件を既存の語彙で表現できない場合は、要件の設計や概念の切り分け方を見直す。
+  命名は`agent-basics:writing-standards`の`references/writing.md`にある指示対象の確定手順に従う
+- 概念や機構の分離・新設は、実際に観測された要件と現実を表現するために必要な範囲にとどめ、将来への仮定だけに基づく抽象化、汎用化、拡張ポイントの設置は避ける。
+  概念、機構、工程を追加すること自体を品質向上と評価しない
+
+## 判断の点検
+
+- 経験を保存・再利用する案は、`../../writing-standards/references/investigation-experience.md`「経験の保存と適用」に従い、原記録から保存するときの範囲と、保存内容を今回の判断へ適用するときの範囲を別々に点検する。
+  出所・確度・適用条件の保持と今回の条件の成立を確認し、有効な成功知見の再利用、仮説・変動状態の区別、認可・公開契約の維持を検収する
+- 判定条件、例外条件、許容条件は観測可能な事実だけで記述し、判定する主体がその事実を実際に観測できるかを確認する。
+  判定の入力が別の主体や工程による生成物である場合は、その入力を生成する処理をすべて洗い出し、生成しない処理があれば事実の定義元を判定入力に設定する
+- 暫定規範を削除するときは、削除条件の文面に加え、対象の節や警告の種類、実際に観測された値が、削除後にも必要な状態を満たしているかを確認する。
+  同じ粒度で比較できない場合は、暫定規範を残したまま条件の記述を修正する
+- ある挙動を一般則として記述する前に、その挙動が発生しない条件を探して実物で確認し、記述する適用範囲を観測で確認できた条件だけに限定する
+- 問題への対策が及ぼす効果の向きは、`agent-basics:bugfix`を起動し、`../../bugfix/references/root-cause-actions-selection.md`「対策の選定」に沿って判定し、その結果に基づいて選択肢の推奨順を決める
+- 最初に思い浮かんだ仮説や過去の作業パターンに引っ張られていないかを点検し、前提を1つ以上問い直した上で判断を確定する（努力目標）
+- 欠陥の候補を見つけたときは、`agent-basics:bugfix`を起動し、`../../bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従って誤認の可能性を反証してから判定する。
+  一般的な事実の主張についても前述の反例を確認して判定し、レビューの指摘として採用するかどうかは独立して確定する
+
+## 規定の適用可否
+
+ある規定を適用するかどうかは、その規定が守ろうとしている価値を特定した上で判断する。
+その価値が別の手段ですでに満たされている場合や、前提条件が成り立たない場合など、規定の手順を実行しても成果につながらないと判断したときは適用を省く。
+その際は、省略した工程と根拠を同じターンで報告し、規定側の改訂を提案する。
+レビュー担当は、到達不能と確定した完了条件について、本節を根拠とする成果物への指摘を1回にとどめる。
+
+再発防止の条文と改善要求が衝突した場合は、`../../bugfix/references/root-cause-severity-quality.md`「前提の再検討」に従って原因と保護機構の成立状況を判定し、その結果を踏まえて改善要求の採否と、同じ変更に含める条文改訂を確定する。
+判断や入力にユーザー自身の選択が必要な場合は、その確認事項を依頼元へ返す。
+
+## 前提の再検討
+
+指摘が示す問題や規範を改訂する原因は、指摘の反復や未収束の有無にかかわらず、`agent-basics:bugfix`を起動して分析する。
+分析にあたっては、同スキルの`../../bugfix/references/root-cause-severity-quality.md`「前提の再検討」に従い、問題の成立に必要な前提（既存の仕組み、制約、分類、条文など）も原因の候補に含めて検討する。
+レビューの場では、`judgment-details-feasibility.md`「検収手段の到達可能性」で得られた結果と共通分析を踏まえて採否を確定する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 判断の妥当性を評価する詳細：検収手段の到達可能性の基準を適用する前 | `judgment-details-feasibility.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-feasibility.md` |

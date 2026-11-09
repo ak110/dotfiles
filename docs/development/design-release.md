@@ -7,8 +7,11 @@
 
 `develop`を開発用branch、`master`をリリース用branchおよびGitHubのdefault branchとする。
 `master`への更新はPRのマージコミットだけに限定し、直接pushを許可しない。
-PRの作成は、条件が成立する`agent-toolkit:process-wi`と、恒常的な認可または明示指定により公開まで扱う協調モードではエージェントが実施する。公開範囲の明示指定を優先し、それ以外では手動で行う。
-同じ最上位セッションでのリリースPR作成・マージは1件までとする。マージ後に生じた差分は`develop`へのpushとCI成功まで検収し、次のセッションで累積差分を1件のPRとして扱う。PR作成、必須check、レビュー、マージ後同期の固定費を同じセッションで重ねないためである。
+PRの作成は、条件が成立する`agent-toolkit:process-wi`と、恒常的な認可または明示指定により公開まで扱う協調モードではエージェントが実施する。
+公開範囲の明示指定を優先し、それ以外では手動で行う。
+同じ最上位セッションでのリリースPR作成・マージは1件までとする。
+マージ後に生じた差分は`develop`へのpushとCI成功まで検収し、次のセッションで累積差分を1件のPRとして扱う。
+PR作成、必須check、レビュー、マージ後同期の固定費を同じセッションで重ねないためである。
 実施可否と条件の判定は`release-dotfiles`スキルが定める。
 head branchの機械的な限定は設けない。
 
@@ -38,8 +41,10 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 `test-linux`と`update-dotfiles-upgrade (windows)`は全履歴を取得し、現行HEADの時刻から約72時間前の祖先を選ぶ。
 管理一時ディレクトリ内へローカルbare remote、旧版checkoutおよび隔離HOMEを構成し、旧版をchezmoiで適用する。
 その後、同じbranchのremote refだけを現行HEADへ進め、旧版checkout内の`bin/update-dotfiles`または
-`bin/update-dotfiles.cmd`を起動する。公開ランチャーの終了コードが0で、更新後checkoutの`git rev-parse --short=7 HEAD`が
-検証開始時の現行HEADと一致した場合だけ成功とする。実行中のOSアカウントのHOMEと外部remoteは変更対象にしない。
+`bin/update-dotfiles.cmd`を起動する。
+公開ランチャーの終了コードが0で、更新後checkoutの`git rev-parse --short=7 HEAD`が
+検証開始時の現行HEADと一致した場合だけ成功とする。
+実行中のOSアカウントのHOMEと外部remoteは変更対象にしない。
 
 | イベント | head repository | head branch | base branch | 共通8 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
@@ -53,13 +58,20 @@ rulesetのbypass主体は空にし、PR経由の更新、会話threadの解決�
 先行job`common-ci-owner`が所有判定を1回だけ行い、全共通jobの表示名、非所有marker、後続stepの条件へ同じ出力を渡す。
 同一repositoryのheadが`develop`、baseが`master`のrelease pull requestは、`develop`のpushを所有者とする。
 `develop`へのpushでは、`actions: read`を持つ先行jobが同一repository・同一workflowのmaster push runを完全SHAで照会する。
-実行待ち・実行中または成功済みのrunがあれば、そのmaster runを所有者とする。該当runがない場合、失敗・取消済みのrunだけの場合、API照会が失敗した場合は、このdevelop runが共通検証を実行する。
-`master`へのpushは常に所有し、Release起点を維持する。その他のbranchのpush、release PR以外の同一repository PR、fork PRも所有する。
-非所有時はmarkerで理由を表示し、依存導入と実検査を省く。所有判定・領域判定・結果集約に使う標準Pythonとshellのスクリプトは、checkoutで取得してから実行する。markerはrelease PRではdevelop branch、同期pushでは所有master runのURLを確認先として示す。
+実行待ち・実行中または成功済みのrunがあれば、そのmaster runを所有者とする。
+該当runがない場合、失敗・取消済みのrunだけの場合、API照会が失敗した場合は、このdevelop runが共通検証を実行する。
+`master`へのpushは常に所有し、Release起点を維持する。
+その他のbranchのpush、release PR以外の同一repository PR、fork PRも所有する。
+非所有時はmarkerで理由を表示し、依存導入と実検査を省く。
+所有判定・領域判定・結果集約に使う標準Pythonとshellのスクリプトは、checkoutで取得してから実行する。
+markerはrelease PRではdevelop branch、同期pushでは所有master runのURLを確認先として示す。
 非所有markerはcheckout前から存在する`${{ github.workspace }}`を作業場所とし、Windowsの共通jobは`pwsh`、その他の共通jobは`bash`を明示する。
 `rust-lint`の作業場所は実検査のcomposite action内で指定し、判定とmarkerはworkspace rootで動く。
-共通jobは短い先行判定だけを待つ。Windowsの2ジョブは互いを待たず、`statusline-version`は所有判定から独立する。concurrencyはeventとrefを分け、master runとdevelop runを相互取消しの対象にしない。
-実行中のmaster runが後に失敗した場合は、その失敗結果が残る。非所有側の別名checkはrequired checkの成功を代替しない。
+共通jobは短い先行判定だけを待つ。
+Windowsの2ジョブは互いを待たず、`statusline-version`は所有判定から独立する。
+concurrencyはeventとrefを分け、master runとdevelop runを相互取消しの対象にしない。
+実行中のmaster runが後に失敗した場合は、その失敗結果が残る。
+非所有側の別名checkはrequired checkの成功を代替しない。
 
 job-level条件を使うと条件が偽のjobがmatrix展開前にskipされ、job名式が評価されないため、非所有時の8件の表示名を保証できない。
 共通jobを開始して非所有markerを成功させる構成により、required check名と異なる表示名を生成し、同名のskip-successで所有runを代替しない。
@@ -71,7 +83,8 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 分離により、`python-lint (3.15)`からChromiumの導入とE2Eの実行時間を外したうえで、最新のPythonでのE2E実行を維持する。
 `browser-e2e`は他の共通jobと同じ非所有markerの構成を採用し、required checkへ加えることでE2Eの失敗がマージを遮断する状態を保つ。
 
-Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
+Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有し、`test-windows`はWindows固有pytest、公開ランチャー、通常profileへのchezmoi適用とpost-applyの確認を所有する。
+両job間に依存関係を置かず、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
 
 検査の実行順と表示名はworkflowが所有し、実処理は`.github/actions/ci-*`、共通準備は`prepare-install-test`・`prepare-python-check`が所有する。
 所有判定は`scripts/ci_owner.py`、変更領域の分類は`scripts/ci_scope.py`、領域出力の検証は`scripts/ci_check_scope.sh`に集約する。
@@ -100,24 +113,36 @@ statuslineのCargo versionとbase・head versionおよびtagの確認は、共�
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
 比較基点はpull request起点では`github.event.pull_request.base.sha`、push起点では`git fetch --no-tags origin master`の後の`git merge-base`が返す`master`との共通祖先とする。
 push起点を加えるのは、版数更新の抜けをrelease pull requestの必須check一式が実行される前に検出するためである。
-判定は`scripts/check_statusline_version.py`へ集約し、CIの同jobとpyfltrのcustom-command`statusline-version`の双方から呼ぶ。レーン担当は版数更新の根拠を渡し、公開担当が版数を更新する。pyfltr側は`pyproject.toml`で無効にしておき、公開担当が公開前のローカル検証で明示的に有効化する。比較先は作業ツリーとしてcommit前の変更も判定し、push前に版数の更新忘れを見つける。pre-commitの`pyfltr fast`で版数更新前の途中commitを遮断しないよう非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
+判定は`scripts/check_statusline_version.py`へ集約し、CIの同jobとpyfltrのcustom-command`statusline-version`の双方から呼ぶ。
+レーン担当は版数更新の根拠を渡し、公開担当が版数を更新する。
+pyfltr側は`pyproject.toml`で無効にしておき、公開担当が公開前のローカル検証で明示的に有効化する。
+比較先は作業ツリーとしてcommit前の変更も判定し、push前に版数の更新忘れを見つける。
+pre-commitの`pyfltr fast`で版数更新前の途中commitを遮断しないよう非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
 同一repositoryのreleaseおよびnon-release pull requestとfork pull requestが同じ検証対象となり、`rust-lint`というrequired名の重複を生成しない。
 
 agent-toolkitとagent-basicsの版数据置きは`plugin-version` jobが検出し、判定は`scripts/check_plugin_version.py`へ集約してpyfltrのcustom-command`plugin-version`からも呼ぶ。
 両プラグインは`develop`へのpushごとに稼働環境へ導入され、Codexの導入処理は版数の不一致だけで再導入するため、比較基点はpush起点の`github.event.before`（ローカルではupstreamの最新の公開済みcommit）とし、`master`との合流点を使わない。
-`*_test.py`だけの差分を除き、コメント・文書を含むプラグインroot配下の差分を版数更新の対象とする。差分の意味（挙動の変化の有無）で対象を絞る案は、文書だけの変更も配布物として稼働環境へ届ける必要があり、機械判定で区別できないため採らない。
-全0のOID、解決できないOID、upstreamの不在は成功扱いにせず終了2とする。2026年10月31日にhookの不具合修正が版数を据え置いたまま公開され、稼働中のCodexへ届かなかったため加えた。
-pyfltr側は`statusline-version`と同じく既定で無効、非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。required checkへは加えず、`develop`へのpushで失敗を可視化する。
+`*_test.py`だけの差分を除き、コメント・文書を含むプラグインroot配下の差分を版数更新の対象とする。
+差分の意味（挙動の変化の有無）で対象を絞る案は、文書だけの変更も配布物として稼働環境へ届ける必要があり、機械判定で区別できないため採らない。
+全0のOID、解決できないOID、upstreamの不在は成功扱いにせず終了2とする。
+2026年10月31日にhookの不具合修正が版数を据え置いたまま公開され、稼働中のCodexへ届かなかったため加えた。
+pyfltr側は`statusline-version`と同じく既定で無効、非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
+required checkへは加えず、`develop`へのpushで失敗を可視化する。
 
 ### rulesetの更新手順
 
 ruleset `21524717`のrequired checkは共通8名と`statusline-version`の9件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
-ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを確認する。確認した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。
-ruleset更新の本文はmanaged-tempの中のJSONファイルへ保存し、送信前に保存したJSONファイルを読み戻す。トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、9件のrequired check名を検証する。
-検証に成功した同じファイルを`gh api --method PUT --input <検証したJSONファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。擬似端末の標準入力を更新本文の搬送に使わない。
-更新要求が失敗した場合は、追加のPUTを実行する前に対象rulesetを個別GETで再取得する。再取得した現行状態が更新前状態と完全に一致し、送信するJSONファイルの内容が検証時から変化しておらず、失敗の原因が本文の搬送であって送信方法をファイル入力へ是正できることを確認できる場合だけ、同じ本文の再送を1回だけ許可する。
+ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを確認する。
+確認した完全IDは、送信前後の個別GETとPUTのURLパス`repos/ak110/dotfiles/rulesets/21524717`へ固定する。
+ruleset更新の本文はmanaged-tempの中のJSONファイルへ保存し、送信前に保存したJSONファイルを読み戻す。
+トップレベルキーが`name`、`target`、`enforcement`、`bypass_actors`、`conditions`、`rules`のいずれかであり、`id`を含まないこと、`refs/heads/master`条件、9件のrequired check名を検証する。
+検証に成功した同じファイルを`gh api --method PUT --input <検証したJSONファイルの絶対パス> repos/ak110/dotfiles/rulesets/21524717`へ渡す。
+擬似端末の標準入力を更新本文の搬送に使わない。
+更新要求が失敗した場合は、追加のPUTを実行する前に対象rulesetを個別GETで再取得する。
+再取得した現行状態が更新前状態と完全に一致し、送信するJSONファイルの内容が検証時から変化しておらず、失敗の原因が本文の搬送であって送信方法をファイル入力へ是正できることを確認できる場合だけ、同じ本文の再送を1回だけ許可する。
 現行状態を取得できない場合、現行状態が更新前状態と一致しない場合、更新後の確認が期待値と一致しない場合は再送せず、更新前状態と現行状態を保持して続行できない理由を返して終了する。
-更新本文を擬似端末の標準入力へ渡す案は、本文が欠落した場合に更新未成立と適用結果不確定を区別できないため採用しない。全ての更新失敗を状態不明として一律に再送禁止とする案も、更新が成立していないことを再取得で確定できる場合まで工程を停止させるため採用しない。
+更新本文を擬似端末の標準入力へ渡す案は、本文が欠落した場合に更新未成立と適用結果不確定を区別できないため採用しない。
+全ての更新失敗を状態不明として一律に再送禁止とする案も、更新が成立していないことを再取得で確定できる場合まで工程を停止させるため採用しない。
 
 ruleset一覧には個別ref条件が含まれないため、同名候補の完全なIDを取得した後に個別GETで対象repository、branch rulesetおよび`refs/heads/master`を確認する。
 候補が0件の場合は作成し、1件の場合は完全IDへPUTする。
@@ -130,13 +155,26 @@ workflowの`workflow_run`入力境界は同日時点の[workflow_runイベント
 ### マージ後の同期と検収
 
 PRマージ後は、`origin/master`をマージコミットの基準として保持し、`git rev-parse --short=7 origin/master`で人間可読の識別子を取得する。
-その後に`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。ローカルbranchを`origin/develop`更新の操作元にしない。
-マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前に必須checkの成功を確認したPR headのツリーと同じになり、developへ載るのも同じマージコミットである。両pushのCIは同じ中身の再実行であり、待機してもリリースの完了時刻が後ろへずれる以外の効果が無い。以前は「commitが同一」「ツリーが同一」などの省略条件を個別に判定していたが、マージコミットをdevelopへ同期した直後にdevelop側の条件が成立せず、同じ中身のCIを待つ事象が起きたため撤去した。必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commitが一致することの確認は省略しない。Release runはmaster CIの成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論はRelease runの検収で確かめる。
-同期push後に`git fetch origin develop master`する。`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。
+その後に`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。
+ローカルbranchを`origin/develop`更新の操作元にしない。
+マージ後のmaster pushと同期後のdevelop pushに対するCIは待機しない。
+`master`へは`develop`からのリリースPRだけをマージし、マージ後は`develop`を`master`へ同期するため、マージコミットのツリーはマージ前に必須checkの成功を確認したPR headのツリーと同じになり、developへ載るのも同じマージコミットである。
+両pushのCIは同じ中身の再実行であり、待機してもリリースの完了時刻が後ろへずれる以外の効果が無い。
+以前は「commitが同一」「ツリーが同一」などの省略条件を個別に判定していたが、マージコミットをdevelopへ同期した直後にdevelop側の条件が成立せず、同じ中身のCIを待つ事象が起きたため撤去した。
+必要なRelease statuslineのrun・タグ・GitHub Release・2成果物、origin/developとorigin/masterの最終commitが一致することの確認は省略しない。
+Release runはmaster CIの成功を契機に起動するため、statuslineの変更を含む場合のmaster CIの結論はRelease runの検収で確かめる。
+同期push後に`git fetch origin develop master`する。
+`git rev-parse --short=7 origin/develop`と`git rev-parse --short=7 origin/master`を個別に実行し、各出力の一意な短縮OIDを比較して、マージコミットとdevelopへ同期したコミットの一致を確認する。
+ローカル`develop`を同期した場合は、`git rev-parse --short=7 develop`も同じ一意な短縮OIDであることを確認する。
 
-`origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub ReleaseおよびLinux・Windows assetを検収する。`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。
+`origin/master`の第一親との差分にstatuslineが含まれる場合は、同じcommitの`Release statusLine` run、タグ、GitHub ReleaseおよびLinux・Windows assetを検収する。
+`gh run list --commit`が完全なSHAを要求するため、この呼び出しの直前に限って`origin/master`を完全OIDへ解決し、永続化しない。
 statuslineの差分がない場合はRelease成果物を検収しない。
-成功時は`origin/develop`と`origin/master`がマージコミットと同じcommitであることを7文字以上の一意な短縮OIDで確認する。ローカル`develop`の同期は同期を実行する直前に作業ツリーのclean、現在branchが`develop`であること、マージコミットへのfast-forward可能性を再取得し、すべて成立した場合だけ実施して、リリースの成立条件から分離する。現在branchを更新するコマンドを事前判定の結果だけで実行しない。同期を実施した場合はローカル`develop`の参照を更新し、条件が成立せず同期を省略した場合は本手順がローカルの作業ツリーとローカルbranchへ書き込まない。いずれの場合も、待機中に生じた変更を含めてローカルの状態をリリースの成否判定に用いない。
+成功時は`origin/develop`と`origin/master`がマージコミットと同じcommitであることを7文字以上の一意な短縮OIDで確認する。
+ローカル`develop`の同期は同期を実行する直前に作業ツリーのclean、現在branchが`develop`であること、マージコミットへのfast-forward可能性を再取得し、すべて成立した場合だけ実施して、リリースの成立条件から分離する。
+現在branchを更新するコマンドを事前判定の結果だけで実行しない。
+同期を実施した場合はローカル`develop`の参照を更新し、条件が成立せず同期を省略した場合は本手順がローカルの作業ツリーとローカルbranchへ書き込まない。
+いずれの場合も、待機中に生じた変更を含めてローカルの状態をリリースの成否判定に用いない。
 ローカルの同期状態をリリースの成立条件へ含める案は、公開対象がrefで固定された後も無関係な作業中の差分でリリースを停止させるため採用しない。
 
 PRマージ、branch同期およびRelease検収の詳細は、プロジェクトスキル[merge-pr](../../.claude/skills/merge-pr/SKILL.md)を実行時の手順とする。
@@ -151,25 +189,46 @@ PRマージ、branch同期およびRelease検収の詳細は、プロジェク�
 
 ## 公開工程
 
-起動形態によらず共通の版数更新、全体検証、push、CI確認、公開状態とプロジェクト固有の公開後の操作の手順は`agent-toolkit:commit`の`references/publish.md`を基準とする。公開担当と単一レーンはその文書を読み、CI修正の委譲など固有の受渡しだけを保持する。個人7プロジェクトの協調モードは`operate-ak110-projects`の恒常的な公開認可を適用し、明示指定があればその範囲まで同じ手順で進める。dotfilesはリリースPRのマージ・検収まで、smprはpushとCIまで、リリース対象5プロジェクトは必要時だけ既存基準でリリースする。2026年10月10日の判断は、協調モードで指定がなければ確認する旧判断を置き換える。一般の公開規範へ個人認可を複製する案は適用範囲が広がるため採らない。
+起動形態によらず共通の版数更新、全体検証、push、CI確認、公開状態とプロジェクト固有の公開後の操作の手順は`agent-toolkit:commit`の`references/publish.md`を基準とする。
+公開担当と単一レーンはその文書を読み、CI修正の委譲など固有の受渡しだけを保持する。
+個人7プロジェクトの協調モードは`operate-ak110-projects`の恒常的な公開認可を適用し、明示指定があればその範囲まで同じ手順で進める。
+dotfilesはリリースPRのマージ・検収まで、smprはpushとCIまで、リリース対象5プロジェクトは必要時だけ既存基準でリリースする。
+2026年10月10日の判断は、協調モードで指定がなければ確認する旧判断を置き換える。
+一般の公開規範へ個人認可を複製する案は適用範囲が広がるため採らない。
 
 ### 公開の分離と並行工程
 
 commit以降のリリース、PR/MRまたは公開操作は、実装のレーンと分離する。
-自動コードレビュー監査の処置は、選定工程の開始時からレーン工程と並行して進め、公開工程の開始より前に完了する。メインが保存した選定結果の検収とレーン起動は、監査の終了を待たずに進める。全レーンのffマージとレーンごとの`adopt`・計画保存・統合状態の記録後に、専用資源を保持したまま1件の公開担当へ委譲し、版数・生成物同期、全体検証、push、CIおよび公開後の操作を未公開の差分ごとに実行させる。資源は追加に備えて終了まで保持し、全工程・外部プロセスの終了後に通常終了の`atk agents-exit-session`とprocess-loopの子セッション終了後の処理が、同じ所有登録とGit状態から回収する。
+自動コードレビュー監査の処置は、選定工程の開始時からレーン工程と並行して進め、公開工程の開始より前に完了する。
+メインが保存した選定結果の検収とレーン起動は、監査の終了を待たずに進める。
+全レーンのffマージとレーンごとの`adopt`・計画保存・統合状態の記録後に、専用資源を保持したまま1件の公開担当へ委譲し、版数・生成物同期、全体検証、push、CIおよび公開後の操作を未公開の差分ごとに実行させる。
+資源は追加に備えて終了まで保持し、全工程・外部プロセスの終了後に通常終了の`atk agents-exit-session`とprocess-loopの子セッション終了後の処理が、同じ所有登録とGit状態から回収する。
 
-メインは長時間の公開待機と追加工程の入力commit、成果物、配備先、排他資源および先行工程の成功結果を起動前に比較し、先行成果が必要となる順序を記録する。独立工程は別の実行主体へ渡して待機中に進め、同じDB migrationの成功を要する工程はその結果を確認してから始める。公開担当は主作業ツリーへの唯一の書込主体であり、別主体へ渡す工程の書込先は分ける。全工程を公開担当の返却後へ直列化する案では、独立した公開操作も長時間待機の終了まで開始できないため採用しない。
-公開結果を待たずに調べられる既知の警告は、公開担当のCI待機と並行して読み取り調査とAWI（未完了の作業要求）原稿を準備する。正式な候補選別と原稿の採否は公開後の同じメインが確定し、WI投入担当への委譲で投入する。先行調査の結果を現行状態と比べずに投入する案は、公開結果で消えた問題までprocess-wiの次の実行へ渡すため採用しない。
+メインは長時間の公開待機と追加工程の入力commit、成果物、配備先、排他資源および先行工程の成功結果を起動前に比較し、先行成果が必要となる順序を記録する。
+独立工程は別の実行主体へ渡して待機中に進め、同じDB migrationの成功を要する工程はその結果を確認してから始める。
+公開担当は主作業ツリーへの唯一の書込主体であり、別主体へ渡す工程の書込先は分ける。
+全工程を公開担当の返却後へ直列化する案では、独立した公開操作も長時間待機の終了まで開始できないため採用しない。
+公開結果を待たずに調べられる既知の警告は、公開担当のCI待機と並行して読み取り調査とAWI（未完了の作業要求）原稿を準備する。
+正式な候補選別と原稿の採否は公開後の同じメインが確定し、WI投入担当への委譲で投入する。
+先行調査の結果を現行状態と比べずに投入する案は、公開結果で消えた問題までprocess-wiの次の実行へ渡すため採用しない。
 
-開発機の常時稼働サーバーへの反映は、全レーンの統合を検収し専用資源を保持した状態で、対象リポジトリへ書き込まず公開工程の入力や排他資源と競合しない場合に、公開担当の公開・CI待機と並行して始める。開始をCIの終了後まで延ばすと、反映の開始が公開の待機時間だけ遅れる。開始時機と反映したHEAD・稼働確認結果の保持は`agent-toolkit:process-wi`の`references/finish-session.md`が担い、単一レーンの同等の時機は`agent-toolkit:process-wi single-lane`の実行順が担う。`agent-toolkit:report-completion`は先行結果と報告時点のHEADを比べ、同じHEADへの成功済み反映を再実行せず、追加commitや先行失敗があれば現行HEADを反映して稼働を確認する。反映を完了報告だけへ置く案は開始が公開待機後となり、反映を完了報告から完全に外す案は追加commitと先行失敗を反映できないため採らない。
+開発機の常時稼働サーバーへの反映は、全レーンの統合を検収し専用資源を保持した状態で、対象リポジトリへ書き込まず公開工程の入力や排他資源と競合しない場合に、公開担当の公開・CI待機と並行して始める。
+開始をCIの終了後まで延ばすと、反映の開始が公開の待機時間だけ遅れる。
+開始時機と反映したHEAD・稼働確認結果の保持は`agent-toolkit:process-wi`の`references/finish-session.md`が担い、単一レーンの同等の時機は`agent-toolkit:process-wi single-lane`の実行順が担う。
+`agent-toolkit:report-completion`は先行結果と報告時点のHEADを比べ、同じHEADへの成功済み反映を再実行せず、追加commitや先行失敗があれば現行HEADを反映して稼働を確認する。
+反映を完了報告だけへ置く案は開始が公開待機後となり、反映を完了報告から完全に外す案は追加commitと先行失敗を反映できないため採らない。
 
-Claude Codeのメインは、独立した投入・読取調査・追加公開工程とサーバー反映を公開担当の起動直後に開始し、既存の担当別記録と保存出力へ入力commit・所有資源・担当とタスク・保存出力・公開結果後の工程を保存してから、共通の引数なし圧縮予約へ進む。公開対象なしの短絡では公開担当の起動もこの境界の予約も省く。まとめ処理のpush後CI待機は、同じ監視入力とbaselineを保存して同じ手順を使う。予約・背景待機・通知後の復元の所有者はdelegationのwaiting-and-monitoring.mdであり、公開の意味判断はメインが担い、Function hooks moduleへ移さない。
+Claude Codeのメインは、独立した投入・読取調査・追加公開工程とサーバー反映を公開担当の起動直後に開始し、既存の担当別記録と保存出力へ入力commit・所有資源・担当とタスク・保存出力・公開結果後の工程を保存してから、共通の引数なし圧縮予約へ進む。
+公開対象なしの短絡では公開担当の起動もこの境界の予約も省く。
+まとめ処理のpush後CI待機は、同じ監視入力とbaselineを保存して同じ手順を使う。
+予約・背景待機・通知後の復元の所有者はdelegationのwaiting-and-monitoring.mdであり、公開の意味判断はメインが担い、Function hooks moduleへ移さない。
 
 ### 検証
 
 レーンは計画の`## 検証`の`変更範囲の検証`行が挙げる検証だけを実行し、対象リポジトリ全体の検証はレーンで実行しない。
 公開担当は対象リポジトリの全体検証をpushの後のCIの結論で判定し、pushの前にはCIが実行しないチェックと、統合後にだけ結果が確定する全体走査のチェックだけを実行する。
-CIが実行しないチェックの集合は、プロジェクト規範の定めか、CI定義の起動形・有効なチェックの集合・各チェックが読む設定・実行環境の比較で求める。集合を確定できない場合だけ、全体検証をpushの前に1回実行する。
+CIが実行しないチェックの集合は、プロジェクト規範の定めか、CI定義の起動形・有効なチェックの集合・各チェックが読む設定・実行環境の比較で求める。
+集合を確定できない場合だけ、全体検証をpushの前に1回実行する。
 CI定義の判定は、承認済み公開先のforge・repositoryと対象commitに対応する定義を使う。
 共通の判断は`agent-toolkit:commit`の`references/push-and-ci.md`「公開先に対応するCI定義の判定」が持ち、publishと公開担当の生成側・メインの受理側が参照する。
 GitHubではworkflow直下のYAML blobを候補とし、READMEや入れ子のYAMLは数えない。
@@ -182,8 +241,11 @@ GitLabの標準ファイルだけで不在を決める案も、別projectや外�
 定義不在、トリガーによるrun未登録、権限や到達性による未判定を分ける。
 ローカル全体検証の成功は照会不能なCIの成功を代替せず、全体検証が失敗した場合は別の未完了として是正する。
 `wait_ci.py`の非成功終了は保持し、監視の終了を公開工程の正常完了へ読み替えない。
-CIと同じチェックをpushの前に重ねると、重複する検証の所要時間だけCIの開始が遅くなる。一方、CIが実行しないチェックまでCIへ委ねると、その種類の失敗が公開後まで残る。
-レーンの変更範囲の検証は、変更を読む側のテストを機構の類型で集める一般則（`agent-basics:check-execution`の`references/verification-scope.md`）で選ぶ。確定的な回帰をpush前に止める役割はこの対象選定が担い、プロジェクト側は類型ごとの値（マーカー名、コマンド、パス）だけを持つ。対象選定をプロジェクト固有の規定へ事象ごとに追加する運用では、表面構造が異なる次の事象を毎回被覆できなかった。
+CIと同じチェックをpushの前に重ねると、重複する検証の所要時間だけCIの開始が遅くなる。
+一方、CIが実行しないチェックまでCIへ委ねると、その種類の失敗が公開後まで残る。
+レーンの変更範囲の検証は、変更を読む側のテストを機構の類型で集める一般則（`agent-basics:check-execution`の`references/verification-scope.md`）で選ぶ。
+確定的な回帰をpush前に止める役割はこの対象選定が担い、プロジェクト側は類型ごとの値（マーカー名、コマンド、パス）だけを持つ。
+対象選定をプロジェクト固有の規定へ事象ごとに追加する運用では、表面構造が異なる次の事象を毎回被覆できなかった。
 pushの前に実行したチェックが失敗した場合はCI修正と同じ手順へ進み、pushとCIの往復を経ずに修正する。
 
 ### 自動コードレビュー監査
@@ -192,7 +254,9 @@ pushの前に実行したチェックが失敗した場合はCI修正と同じ�
 
 ### 公開状態の観測
 
-確認済みpush後の公開工程の続行不能（CI照会不能と、公開後の操作の前提不足）の返却は、正常完了の検収より前に受領する。認証不足のrelease作成と配布先への到達不能も、同じ回復・確認・個別UWI・保留・再開へ接続する。CI専用の接続では、公開後の操作が未完了でも報告へ進み得るため、成功済み工程を保持する共通の接続へ集約する。
+確認済みpush後の公開工程の続行不能（CI照会不能と、公開後の操作の前提不足）の返却は、正常完了の検収より前に受領する。
+認証不足のrelease作成と配布先への到達不能も、同じ回復・確認・個別UWI・保留・再開へ接続する。
+CI専用の接続では、公開後の操作が未完了でも報告へ進み得るため、成功済み工程を保持する共通の接続へ集約する。
 公開担当はforge・repository・commit、失敗操作と診断、確認済みpush・公開状態・全体検証、残工程と引き継ぎ記録を既存の続行不能形式で渡す。
 メインは同じ失敗を正常形式へ差し戻さず、認可内で回復できる前提を整え、同じcommitの未完了工程を再開する。
 ユーザーだけに残る操作は既存の確認・個別UWIへ渡し、保存成功後に回答を必要とする未終了項目だけを保留する。
@@ -204,17 +268,30 @@ all-reposの公開・CI・確認・再開は対象リポジトリの担当が所
 ホームの常駐プログラムは担当別の返却と再開記録を保持し、対象へのGit操作は担当に任せる。
 1担当の回答待ちは他担当の成功を取り消す条件にせず、各担当の公開状態と未判定を別々に保持する。
 
-公開担当の完了後に`agent-toolkit:report-completion`を起動する。同スキルは元作業の完了報告を送り、続けて`atk agents-exit-session`を単独で実行する。振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動のセッションを非同期にまとめて分析する（`design-session-review.md`「完了報告と振り返りの関係」）。その結果は作業完了報告とは独立して届ける。各工程は同じ完了本文を再生成しない。
+公開担当の完了後に`agent-toolkit:report-completion`を起動する。
+同スキルは元作業の完了報告を送り、続けて`atk agents-exit-session`を単独で実行する。
+振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動のセッションを非同期にまとめて分析する（`design-session-review.md`「完了報告と振り返りの関係」）。
+その結果は作業完了報告とは独立して届ける。
+各工程は同じ完了本文を再生成しない。
 
-公開担当の返却後に、メインはベースbranch、追跡ref、最新HEADのCIと作業ツリーを確認する。前回push後に是正レーンまたは主作業ツリーのcommitが統合された場合は、全レーンの終了と書込主体の解放を確認してから追加差分だけを公開担当へ再び渡す。前回公開済み成果の版数更新、プロジェクト固有の公開後の操作、延期adoptを重ねず、最新HEADのpushとCI成功を同じセッションで検収する。
+公開担当の返却後に、メインはベースbranch、追跡ref、最新HEADのCIと作業ツリーを確認する。
+前回push後に是正レーンまたは主作業ツリーのcommitが統合された場合は、全レーンの終了と書込主体の解放を確認してから追加差分だけを公開担当へ再び渡す。
+前回公開済み成果の版数更新、プロジェクト固有の公開後の操作、延期adoptを重ねず、最新HEADのpushとCI成功を同じセッションで検収する。
 新しいcommitが無くCIの検収と公開後の操作が完了していれば再起動を省き、CI未判定か公開後の操作が未完了なら同じcommitの未完了工程だけを再開する。
 起動回数で重複公開を防ぐ案は追加成果を未pushのまま残すため採用しない。
 
-公開担当はpushの完了後にベースbranchの公開状態を観測し、`ベースbranchの状態`として返す。メインは`agent-toolkit:report-completion`の完了報告の前に同じ項目を1回観測する。公開担当が返却した時点のOID一致だけを判定に用いると、作業ツリーの未コミット差分と中断状態が観測されず、以降の工程を経た後の状態も対象に入らないためである。公開担当後の是正commit以外の理由で解消できない場合はUWI（ユーザーの判断を要する確認事項）へ引き継ぎ、観測を経ないまま完了報告へ到達させない。
+公開担当はpushの完了後にベースbranchの公開状態を観測し、`ベースbranchの状態`として返す。
+メインは`agent-toolkit:report-completion`の完了報告の前に同じ項目を1回観測する。
+公開担当が返却した時点のOID一致だけを判定に用いると、作業ツリーの未コミット差分と中断状態が観測されず、以降の工程を経た後の状態も対象に入らないためである。
+公開担当後の是正commit以外の理由で解消できない場合はUWI（ユーザーの判断を要する確認事項）へ引き継ぎ、観測を経ないまま完了報告へ到達させない。
 
-公開状態の4項目は、Gitのporcelain v2のbranch情報と通常の`status`表示から取得する。前者でbranch、未コミット差分および追跡先からのaheadを判定し、後者でrebase・merge・cherry-pickの進行を判定する。親と公開担当は同じ取得形を使う。`.git`内部ファイルの探索を組み合わせる案は、linked worktreeのGitディレクトリ（`--git-dir`）の配置を呼び出し側へ漏らすため採用しない。
+公開状態の4項目は、Gitのporcelain v2のbranch情報と通常の`status`表示から取得する。
+前者でbranch、未コミット差分および追跡先からのaheadを判定し、後者でrebase・merge・cherry-pickの進行を判定する。
+親と公開担当は同じ取得形を使う。
+`.git`内部ファイルの探索を組み合わせる案は、linked worktreeのGitディレクトリ（`--git-dir`）の配置を呼び出し側へ漏らすため採用しない。
 
-公開担当はCIが検証した入力commitを`CIで検証したcommit`、プロジェクト固有の公開後の操作が公開した最終commitを`ベースbranchのHEAD`として分けて返す。プロジェクト固有の公開後の操作がcommitを生成する場合は両OIDが一致しないため、メインはCIの成功を`CIで検証したcommit`だけに適用し、ベースbranchと追跡refの一致を`ベースbranchのHEAD`で検収する。
+公開担当はCIが検証した入力commitを`CIで検証したcommit`、プロジェクト固有の公開後の操作が公開した最終commitを`ベースbranchのHEAD`として分けて返す。
+プロジェクト固有の公開後の操作がcommitを生成する場合は両OIDが一致しないため、メインはCIの成功を`CIで検証したcommit`だけに適用し、ベースbranchと追跡refの一致を`ベースbranchのHEAD`で検収する。
 
 ### 認可とCIの実行
 
@@ -233,16 +310,20 @@ CI Lintの対象commit・refで確定的なpipeline非生成だけを終了8へ�
 診断目的でCIを再実行した場合も同一baselineを監視し、許容回数の上限後に失敗が残れば、
 CI未通過と帰属判定を終了記録へ残す。
 
-GitHubのpush後CIは、baselineにない同一SHAのrunを監視対象とする。ただし`event`が`dynamic`かつworkflow名が
-`Dependabot Updates`であるrunは、対象pushへ帰属しない自動更新として除外する。同名workflowの手動実行と、
-他workflowの`dynamic`実行は除外しない。SHA一致だけで除外すると手動診断の失敗を見逃し、workflow名だけで
+GitHubのpush後CIは、baselineにない同一SHAのrunを監視対象とする。
+ただし`event`が`dynamic`かつworkflow名が
+`Dependabot Updates`であるrunは、対象pushへ帰属しない自動更新として除外する。
+同名workflowの手動実行と、
+他workflowの`dynamic`実行は除外しない。
+SHA一致だけで除外すると手動診断の失敗を見逃し、workflow名だけで
 除外すると起動契機の異なるrunを同一視するため、両fieldの積を境界とする。
 
 ### 公開工程の知識境界
 
 メインは全レーンの統合結果、公開先、ユーザーの認可およびCI結果を知る。
 レーンは担当commitと変更範囲の検証を知るが、他のレーンの完了状況や公開操作の認可を知らない。
-固有指示で`adopt`を延期した項目は、指定されたベース反映後に完成条件を観測した担当が採否を確定する。反映後の新プロセスでしか観測できない条件が残る項目は、観測を終えるまで`processing`を保つ。
+固有指示で`adopt`を延期した項目は、指定されたベース反映後に完成条件を観測した担当が採否を確定する。
+反映後の新プロセスでしか観測できない条件が残る項目は、観測を終えるまで`processing`を保つ。
 
 この順序により、実装は公開操作と分離して進められ、公開対象を統合後の1つの変更集合へ固定できる。
 レーンへ公開を委譲する案は、公開の重複と認可の分散を生むため採用しない。
@@ -251,6 +332,14 @@ GitHubのpush後CIは、baselineにない同一SHAのrunを監視対象とする
 
 ### 公開の短絡と承認範囲
 
-公開対象が1つも無いprocess-wiの実行では、公開担当を起動せずに公開工程を短絡する。選定結果の項目は、レーン外操作、`上流投入`またはプロジェクト固有の公開後の操作の順序を持つものだけを数える。レーンの統合による未公開のcommitは、記録した処理開始時のHEADと統合結果を比べず、公開状態の4項目のうち追跡refとのahead値（`# branch.ab`が`+0`でないこと）で検出する。回答済みUWI、プロジェクト固有の公開後の操作および延期`adopt`も無い場合、公開担当が実行する版数更新、生成物同期、push、CI確認およびプロジェクト固有の公開後の操作は対象を持たない。短絡の可否は、公開担当がpush後に観測するのと同じ4項目をメインが取得して判定する。選定された通常レーンの件数を操作量とみなす案は、実装commitを持たないprocess-wiの実行まで公開工程へ送るため採用しない。
+公開対象が1つも無いprocess-wiの実行では、公開担当を起動せずに公開工程を短絡する。
+選定結果の項目は、レーン外操作、`上流投入`またはプロジェクト固有の公開後の操作の順序を持つものだけを数える。
+レーンの統合による未公開のcommitは、記録した処理開始時のHEADと統合結果を比べず、公開状態の4項目のうち追跡refとのahead値（`# branch.ab`が`+0`でないこと）で検出する。
+回答済みUWI、プロジェクト固有の公開後の操作および延期`adopt`も無い場合、公開担当が実行する版数更新、生成物同期、push、CI確認およびプロジェクト固有の公開後の操作は対象を持たない。
+短絡の可否は、公開担当がpush後に観測するのと同じ4項目をメインが取得して判定する。
+選定された通常レーンの件数を操作量とみなす案は、実装commitを持たないprocess-wiの実行まで公開工程へ送るため採用しない。
 
-手動で起動した`agent-toolkit:process-wi`では、メインが固定したAWIの完成条件に操作、対象および外部可視の結果が明示された公開工程を、起動したセッションの承認範囲として選定工程で保持する。レーン担当と公開担当が同じ範囲を要求する場合は再承認を求めず、範囲が広がる差分だけをユーザー確認する。手動起動の指示はメインが固定したAWI集合の完遂を委任する指示であり、同じ範囲の承認を工程ごとに繰り返す運用はユーザーの操作を増やすだけで認可の範囲を変えないためである。自動常駐起動を同じ扱いにする案は、起動時点でユーザーが対象集合を確認していないため採用しない。
+手動で起動した`agent-toolkit:process-wi`では、メインが固定したAWIの完成条件に操作、対象および外部可視の結果が明示された公開工程を、起動したセッションの承認範囲として選定工程で保持する。
+レーン担当と公開担当が同じ範囲を要求する場合は再承認を求めず、範囲が広がる差分だけをユーザー確認する。
+手動起動の指示はメインが固定したAWI集合の完遂を委任する指示であり、同じ範囲の承認を工程ごとに繰り返す運用はユーザーの操作を増やすだけで認可の範囲を変えないためである。
+自動常駐起動を同じ扱いにする案は、起動時点でユーザーが対象集合を確認していないため採用しない。

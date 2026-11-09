@@ -1,0 +1,79 @@
+# WIの調査・起草・保存の共通手順：保存前の確認
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-scenarios.md`を全文読む | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
+| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
+| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-completion.md` |
+| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
+| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+
+## 保存前の確認
+
+1. 根拠は原稿自身、既存の作業記録、CLIの保存出力を直接参照する。
+   出所、採否理由、チェック結果、入力原稿と冒頭抽出の対応が既存資料に揃っていれば、その所在だけを渡す。
+   不足する情報だけを既存記録へ補い、原稿の要約や調査過程を別の証拠ファイルへ書き直す作業は加えない。
+
+2. 原稿と根拠資料をmanaged-tempに保存する。
+   既存項目の更新では現行本文と保留状態を確認する。
+   受領済み抽出がある場合は、dry-runへ`--compare-opening-file <抽出の絶対パス>`を指定する。
+   本保存へ同じ指定を付けると、一致した場合だけ保存する。
+   複数原稿では`--body-file`と同じ順に比較ファイルを反復指定する。
+   比較の境界と不一致時の更新は`draft-semantic-review.md`「ユーザーが読む部分」に従う。
+   新規作成は`atk wi add --dry-run`、更新は`atk wi edit <ファイル名> --dry-run --body-file <原稿>`で保存せずに検証し、コマンド、終了コード、出力を証拠に記録する。
+   並行して準備する複数の原稿も個別に検証する。
+   検証済み原稿ごとに返されたユーザー向け部分の保存先を、入力原稿と要求識別子へ対応付けて証拠に記録する。
+   現行原稿と抽出の一致を確認し、変更時はdry-runを再実行する。
+   複雑な引用の取り込みには`wi-quote-check`を任意に利用できる。
+
+3. 各要求の本文を他の要求から独立させ、`drafting-completion-validation.md`「投入前の読み直し」に沿って読み直し、併せて以下の項目を確認する。
+   不備が見つかった本文は修正した上で再チェックする。
+
+   - 原文と転記、反映内容を読み比べ、要求の脱落・追加・意味の変化、ユーザーの回答とエージェントの説明の混同がないことを確認する。
+     送達済みの質問だけに回答済み注記を付ける。
+
+   - 完成条件ごとに同一セッション内で自己観測可能な手段を確認し、例外に該当する場合は`awi-body-completion.md`「完成条件」に従ってその根拠を本文の適切な箇所に記載していること。
+   - 本文が`agent-toolkit:delegation/references/writing.md`の人間向け文書共通規定を満たし、managed-tempの一時ファイルを参照せずとも、結論、判断条件、原文、ならびに再取得に必要な実装・設定・版管理文書の根拠が本文単体から復元できること。
+   - 仕分け、要約、統合をした本文と元の調査結果との対応関係を証拠に記録していること。
+   - UWIの各情報が`uwi-format.md`の選定基準に照らして必要十分であり、重複がないこと。
+
+4. 類似見直しの限定探索については、bugfixスキルの重大度判定に基づいて終了を決定し、探索範囲、限界、許容する残存リスクを原稿と証拠に記録する。
+   是正範囲は、同スキル「QとC・Dの区別」が定める保持対象全体に従う。
+   上記限定探索で許容された未走査部分を除き、未確認の範囲（「投入前に確定すべき事項」、範囲語や開放列挙の集合のうち未判定の対象、検索語にヒットせず未読の対象、権限や到達可能性の確認漏れなど）は、証拠や報告へ記載したとしても返却の正当な理由とはならず、確認手段がある限り調査を継続する。
+   確認手段が存在しない範囲については、次の定めに従う。
+
+   - `awi-body-evidence.md`の`### 調査結果と判断根拠の記述`にある確認対象外の条件。
+   - `origin-and-approval.md`の範囲語や開放列挙の未走査部分に関する定め。
+
+   いずれによっても扱えない場合に限り「続行できない理由」として報告する。
+   なお、詳細な内部設計、実装単位の分割、実装後の検証手順などは後続の計画・実行工程へ委ねる。
+   修正指示を受けた場合は、単語レベルの指示を除き、指摘された不一致点を同一原稿に反映して再提出する。
+   ユーザーが読む箇所の語句に関する指示を受けた場合は、修正箇所全体にwi-standards冒頭の合否基準を適用してから再提出する。
+   各指示が「投入前に解消すべき成立性の不足」なのか、「計画工程へ委ねる具体化」なのか、あるいは「説明から補足された要件」なのかを、`draft-semantic-review.md`の基準に照らして判別する。
+   後者2つに該当する場合は投入条件に追加せず、判定根拠を成立性の証拠に記録して報告する。
+   指摘が要件とみなした値を支持する出所（逐語要求、実際の回答、エージェントが作成した質問文や選択肢の説明など）の確認結果も根拠に含める。
+   計画担当者の判断に必要な具体化情報は、計画段階で決定する事項として原稿の本文の適切な箇所に記載する。
+   実現方式を変更する修正をする場合は、開始から終了、および途中で失敗した際の再開まで一連の処理がつながることを確認してから再提出する。
+
+5. 原稿、抽出保存先、要求内容、必要な根拠を投入前レビューへ渡し、冒頭だけの先行判定に用いる。
+   付随型エージェントは原稿と証拠を委譲元へ返却して意味の検収を待ち、専念型エージェントは`drafting-workflow-review-route.md`「直接起草と独立した検収の選択」で確定した検収プロセスへ進む。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 通常AWIの本文の基準を適用する前 | `awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 確認手段が存在しない範囲の扱いを判断する前 | `awi-body-evidence.md`、`origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-evidence.md`、`read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| WIの調査・起草・保存の共通手順：直接起草と独立した検収の選択の基準を適用する前 | `drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md` |

@@ -1,0 +1,64 @@
+# 実行レビューの指摘と完成条件証拠の記録：統合時の完成条件判定
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+| 返却形式を確認する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-integration-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-inputs.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
+| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` |
+
+## 統合時の完成条件判定
+
+計画ごとの実行レビューの返却に含まれる完成条件証拠に対して行う以下の確認を、「統合時の完成条件判定」と呼ぶ。
+委譲元は`exec.parent.md`、`exec-parent-integration.md`のタイミングでこの点を確認する。
+また、統合を担当するレーン担当は`lane-integration-subagent-inputs.md`「入力」のタイミングで行う。
+受理できない行が1行でも存在する場合、委譲元は統合指示を保留し、レーン担当はマージやAWIの完了処理を停止する。
+
+1. 計画ごとに受理した最新の返却ファイルをすべて読み込み、各返却の計画名と対応するAWIの集合を確認する
+2. 返却メッセージ内の`レビューHEAD`が、統合対象の入力HEAD、または`exec-review-parent-correction.md`「レビュー修正」で保持された修正前のHEADと一致していることを確認する。
+   HEADが変更されており再レビューを省略できない計画については、新しいHEADですべての条件を判定し直した返却を求める
+3. 各WIの`review_contract`が`exec-review-recording-contract.md`「記録する行と要求単位」の反映項目ごとの対応を保持することを確認する。
+   主要完成状態と補足条件の番号集合、または旧形式のエージェント由来AWIと人間由来AWIの番号付き完成条件集合と、完成条件行の番号の集合が過不足なく一致し、重複がないことも確認する。
+   また、元のユーザー発言から抽出した要求単位と原文要求行が過不足なく対応していることを確認する。
+   元のユーザー発言は、`## ユーザーコメント`、UWIの`## 回答`、完成条件節のない人間由来AWIの本文、および計画の`ユーザー指示`行から取得し、`## ユーザー指摘の逐語引用`は除外する
+4. 返却メッセージに記載された`未解決の指摘数`と、各レビュー指摘管理表で`atk review-table show <表の絶対パス> --format=summary --round <そのレビューのround>`を実行して得られる`unanswered_count`が、ともに0件であることを確認する
+5. 統合時に採用（`adopt`）するWIの行は、後述の表で例外として受理される行を除き、すべて`達成`と判定されている必要がある。
+   `未達`や`根拠不足`となっている各行については、区分名と所在情報から記録内容を読み取り、受理条件を満たしているかを判定する。
+   単に件数だけでなく、各行に書かれた記録内容自体を確認する
+6. 各`達成`行に、「所在」（完全なテスト名、実行ログのパス、CI実行の識別子、ファイル名と行番号・見出し、コミット識別子、検証記録の該当箇所など）と、その場所で観測された条件固有の内容（値、名前、件数、終了コード、成否など）のペアが記載されていることを確認する。
+   定義は`exec-review-recording-grounds.md`「根拠の書き方」に従う。
+   このペアを欠いている行や、条件文をそのまま繰り返しただけで「突き合わせた」「確認した」「達成と判定した」といった定型句だけが異なっている行は、件数やHEADが一致していても受理せず、同じ実行レビュー担当へ差し戻して統合指示を保留する。
+   ペアが記載されている行の根拠については、条件が指定した入力、操作、および観測結果と突き合わせる。
+   隔離環境での実行や部分的な実行を指定している条件であれば、その指定通りの観測結果を直接の根拠として利用できる。
+   一方、後続工程（バージョン更新、配布、push後のCI、実ホストへの反映など）の実施予定を根拠にしている場合や、指定された観測を別の隔離環境や部分実行で代用した記録だけで`達成`としている行は受理せず、同じ実行レビュー担当に再判定を求めて統合指示を保留する。
+   再判定の結果、`公開後`の`根拠不足`となった行については、保留付き採用（延期`adopt`）の条件として後続工程と検収タイミングを保持し、公開工程での検収後に完了処理する
+7. 全体検証およびCIの成功については、`agent-toolkit:/share/workflow-phases.md`の公開工程判定に従う。
+   既存の実装によって条件が満たされている場合も、同様の条件で確認する
+8. 受理可能な条件を満たす行以外に、欠落、重複、未達、根拠不足、あるいは参照不能な行が残っている場合、委譲元はそのWIと不足している内容を実行レビュー担当に差し戻して統合指示を保留する。
+   また、レーン担当は不足しているAWI、条件、または要求単位を`続行できない理由:`に明記して報告する
+
+| 行 | 受理する条件と扱い | 受理できない行 |
+| --- | --- | --- |
+| `失効`の完成条件行 | 否定したユーザー判断と不採用の根拠、または「失効の根拠」に示すメインかレーン担当の技術判断の記録を確認して受理する。判断記録が`agent-toolkit:/share/review-loop-coordination.md`「技術判断で外せる完成条件」の境界を満たすことを確かめる。条件文を変更した場合は変更後の条件に対する観測結果を判定し、旧条件を無断で達成扱いにしない | 手順8のとおり差し戻す |
+| `割当外`の原文要求行 | WI本文の`## 反映内容と反映先`、計画ファイルの`## 実施内容`の`根拠`欄、割当先AWIの引受記録のいずれかに割当の記録が実在し、かつ「判定の値」の`割当外`の割当先条件を満たしていれば受理する | 記録を特定できない行、計画の`移管`先を登録済みWIのファイル名で特定できない行は差し戻す |
+| `背景`の原文要求行 | 分類の記録がその単位と対応しており、その単位が要求、制約、採否、選好、回答を求める問いを含まないことを原文の文脈で確認して受理する | 記録を特定できない行、範囲が対応しない行、要求を含む行は差し戻す |
+| 統合時に`reject`で終了するWIの行 | 初回から`reject`による`未達`とし、不採用根拠の所在から、同じ入力記録内で全体不採用を特定できれば受理する。部分的な失効、延期adopt、割当外、背景と混同しない | 手順8のとおり差し戻す |
+| 延期`adopt`のWIの行 | 終了区分として後続工程と検収タイミングを明示している条件に限り`延期`または`公開後`の`根拠不足`を許容し、残りの条件には`達成`を求める。統合時点では完了とせず、後続工程の成功を検収した後に完了とする | 手順8のとおり差し戻す |
+| `adopt`するWIの任意の判断材料の行 | 原文において行全体が`agent-toolkit:wi-standards`「通常AWIの本文」に定める任意の判断材料であると明記されている行（冒頭が「任意の判断材料」などで始まる行）は、`任意の判断材料`の`根拠不足`のまま受理する（得られた場合のみ使用する観測結果であり、統合や完了を妨げないため）。行の一部のみが任意の判断材料である場合は、残りの条件に`達成`を求める | 観測結果が得られたにもかかわらず条件を満たしていない`未達`行は受理しない |
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビューの指摘と完成条件証拠の記録：review_contractの書式の基準を適用する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` |
+| 実行レビューの指摘と完成条件証拠の記録：根拠の書き方の基準を適用する前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` |

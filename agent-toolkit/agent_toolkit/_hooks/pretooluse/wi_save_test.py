@@ -69,7 +69,19 @@ def test_public_save_guidance_uses_declared_body_kind(tmp_path, monkeypatch, rep
         },
     )
     assert result.returncode == 0 and not result.stderr
-    for name in ("report-formats.md", "uwi-format.md"):
+    for name in ("report-formats-uwi.md", "uwi-format.md"):
         assert (name in result.stdout) is report
-    assert ("drafting-workflow.md" in result.stdout) is not report
-    assert "wi-standards/SKILL.md" in result.stdout or "`agent-toolkit:wi-standards`" in result.stdout
+    for name in (
+        "draft-semantic-review.md",
+        "drafting-workflow-writing.md",
+        "drafting-workflow-validation.md",
+        "drafting-completion-validation.md",
+        "drafting-workflow-review-route.md",
+        "drafting-workflow-saving.md",
+        "drafting-completion-duplicates.md",
+    ):
+        assert (name in result.stdout) is not report
+    for row in rows:
+        if ("wi-report-save" if report else "wi-standard-save") in row.operations:
+            assert all(not target.heading and target.body().strip() for target in row.targets)
+    assert ("wi-standards/SKILL.md" in result.stdout) is report

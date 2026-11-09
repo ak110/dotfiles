@@ -931,6 +931,8 @@ def accumulate_fragments(records: dict, packet: dict, blocks: Sequence[dict], ag
 
 def acquisition_state(records: dict, target: read_triggers.ReadTarget, agent: str) -> str:
     """現在範囲の取得・旧版取得後の更新・未取得を共通の意味で返す。"""
+    if read_triggers.is_normative_document(target.path):
+        target = read_triggers.ReadTarget(target.path)
     raw = target.path.read_bytes()
     if target.heading:
         try:

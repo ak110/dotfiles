@@ -5,13 +5,13 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md#「lintと機械チェック」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/implementation-time.md#「lintと機械チェック」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「要件と認可」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「要件と認可」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-checks.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
 
 ## 根本目的（緩和判断の基準）
 
@@ -23,15 +23,18 @@ lint設定全体は、主に次の2つの目的を支えるために導入され
 
 ## 緩和判断のフレーム
 
-- 緩和対象の警告が現在のバージョンで実際に再現するかどうかを、対象ツールの個別ルール実行（`textlint --rule <name>`や`markdownlint --rules <name>`など）で確認する。再現しない警告に対して緩和すると、不要な除外設定だけが残ってしまう。
+- 緩和対象の警告が現在のバージョンで実際に再現するかどうかを、対象ツールの個別ルール実行（`textlint --rule <name>`や`markdownlint --rules <name>`など）で確認する。
+  再現しない警告に対して緩和すると、不要な除外設定だけが残ってしまう。
 - 対象ルールが何を防ぐためのものかを公式ドキュメントや`textlint-violations.md`で確認し、上記の根本目的のいずれかを支えているルールであれば、設定での緩和や行単位の無視コメント（ignoreコメント）に頼らず、文章表現自体の修正で対処する。
 - ルールが文を硬くする方向（平易な和語の漢語への置き換え、中黒による名詞の連結、条件の1文への詰め込みなど）へ書き手を誘導している場合は、読みやすさという根本目的に反するため、閾値の変更や対象の除外による緩和を検討する。
 - ルールの完全な無効化は、特定の構文においてツールの仕様上どうしても避けられない誤作動・誤変換が起きる場合（例えば、コード識別子に含まれるドット`.`を日本語の句点と誤認して自動置換してしまうなど）に限定する。
-- 緩和の手法や適用範囲は、`implementation-time.md`の「lintと機械チェック」に従う。
+- 緩和の手法や適用範囲は、`implementation-time-checks.md`「lintと機械チェック」に従う。
 - ルールの緩和、無効化、または閾値の変更を確定したときは、そのルールに言及している運用ガイドの記述も同じ改訂の中で更新し、実際の設定内容と整合させる。
 
-ユーザーから明示的に緩和の指示が与えられた場合の扱いは、`quality-principles.md`の「要件と認可」に従う。手元の観測事実が指示文に書かれた理由と一致しない場合でも、指示自体の採否を覆すことはせず、観測した事実を計画ファイルに記録しておく。
+ユーザーから明示的に緩和の指示が与えられた場合の扱いは、`quality-principles-authorization.md`「要件と認可」に従う。
+手元の観測事実が指示文に書かれた理由と一致しない場合でも、指示自体の採否を覆すことはせず、観測した事実を計画ファイルに記録しておく。
 
 ## pyfltr推奨設定例への反映
 
-`pyfltr`の推奨設定ガイドへ反映する場合も、上記と同様の判断基準に基づいて既存の推奨設定を見直す。設定を緩和する箇所には、その根拠（根本目的のいずれにも寄与していない、仕様上不可避であるなど）を設定ファイル内のコメントとして明記しておく。
+`pyfltr`の推奨設定ガイドへ反映する場合も、上記と同様の判断基準に基づいて既存の推奨設定を見直す。
+設定を緩和する箇所には、その根拠（根本目的のいずれにも寄与していない、仕様上不可避であるなど）を設定ファイル内のコメントとして明記しておく。

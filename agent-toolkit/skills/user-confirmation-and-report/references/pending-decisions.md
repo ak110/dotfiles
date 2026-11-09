@@ -1,35 +1,51 @@
 # 未確定判断の保留と回答の受領
 
-メインエージェント向けに、無回答時の確認事項の保留と記録、事前承認の合意判定、対話中のUWI回答の受領を定める。確認要否と手段は`SKILL.md`に従う。
+メインエージェント向けに、無回答時の確認事項の保留と記録、事前承認の合意判定、対話中のUWI回答の受領を定める。
+確認要否と手段は`SKILL.md`に従う。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認を要する事項」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認を要する事項」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-confirmation-and-report-questions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-questions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 
 ## 未確定判断の保留と暫定判断
 
-1. `SKILL.md`「確認を要する事項」に該当する論点は、実行モードにかかわらずユーザー確認へ送る。自律モードで回答が得られない場合は、`agent-toolkit:wi-standards`を起動してUWIへ記録する。無回答と判定するタイミングや、最初からUWIを利用する環境は、`references/communication-methods.md`「手段の選択」の対応表に従う。
-   `SKILL.md`「確認要否の判定」項目4で定める曖昧さは、自律モードであっても事前承認型UWIへ記録し、回答を必要とする元の作業項目は`agent-toolkit:wi-standards`「状態と依存」の規定に従い、そのUWIへの依存を保存して回答まで着手しない状態にする。エージェント側の暫定判断で勝手に埋めることは避け、その回答を待たずに進められる成果物や工程のみを継続する（無回答のまま確定させて進めると、意図と異なる成果物の作成や手戻りの原因となるためである）。
-   回答を得られないまま確認処理が終了した場合（協調モードのセッション終了を含む）は、モードを問わず未解決の判断事項をUWIへ移管する。同じセッションで無回答による終了を観測した自律モードのエージェントは、以降の確認事項をUWIへ記録する。回答が必要な元の作業項目のみ、`agent-toolkit:wi-standards`「状態と依存」の承認型UWIと元項目の規定に従って元項目の`depends_on`へUWIを加える。
+1. `user-confirmation-and-report-questions.md`「確認を要する事項」に該当する論点は、実行モードにかかわらずユーザー確認へ送る。
+   自律モードで回答が得られない場合は、`agent-toolkit:wi-standards`を起動してUWIへ記録する。
+   無回答と判定するタイミングや、最初からUWIを利用する環境は、`communication-methods-delivery.md`「手段の選択」の対応表に従う。
+   `user-confirmation-and-report-decisions.md`「確認要否の判定」項目4で定める曖昧さは、自律モードであっても事前承認型UWIへ記録し、回答を必要とする元の作業項目は`../../wi-standards/references/wi-standards-states.md`「状態と依存」の規定に従い、そのUWIへの依存を保存して回答まで着手しない状態にする。
+   エージェント側の暫定判断で勝手に埋めることは避け、その回答を待たずに進められる成果物や工程のみを継続する（無回答のまま確定させて進めると、意図と異なる成果物の作成や手戻りの原因となるためである）。
+   回答を得られないまま確認処理が終了した場合（協調モードのセッション終了を含む）は、モードを問わず未解決の判断事項をUWIへ移管する。
+   同じセッションで無回答による終了を観測した自律モードのエージェントは、以降の確認事項をUWIへ記録する。
+   回答が必要な元の作業項目のみ、`../../wi-standards/references/wi-standards-states.md`「状態と依存」の承認型UWIと元項目の規定に従って元項目の`depends_on`へUWIを加える。
    工程を停止する前に、確認事項を必ず記録する。
-2. 作業に必須となる外部資料が得られない場合は、資料の提供を依頼し、その資料を必要とする成果物の作成のみを保留とする。暫定判断の適用は、要求範囲を保った成果物の確定にのみ限定する。資料がない状態で作業を続行する行為は要求範囲の縮小にあたるため、他の論点と明確に分けてユーザーへ確認する。協調モードでは、資料の提供か要求範囲の変更に関する明示的な回答を待つ。自律モードでは、元項目のファイル名、説明、保留理由、必要な資料、および回答によって変化する結果をUWIへ記録した上で元項目の`depends_on`へそのUWIを加え、該当の資料を必要としない他の工程を継続する。
-   回答後の再開手順はユーザー向けの判断材料ではないため、元項目の計画書にある進捗ログへ記載する。計画書が無ければ、`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`を用いて元AWIの本文へ追記し、UWIの元項目からたどれる状態にしておく。
+2. 作業に必須となる外部資料が得られない場合は、資料の提供を依頼し、その資料を必要とする成果物の作成のみを保留とする。
+   暫定判断の適用は、要求範囲を保った成果物の確定にのみ限定する。
+   資料がない状態で作業を続行する行為は要求範囲の縮小にあたるため、他の論点と明確に分けてユーザーへ確認する。
+   協調モードでは、資料の提供か要求範囲の変更に関する明示的な回答を待つ。
+   自律モードでは、元項目のファイル名、説明、保留理由、必要な資料、および回答によって変化する結果をUWIへ記録した上で元項目の`depends_on`へそのUWIを加え、該当の資料を必要としない他の工程を継続する。
+   回答後の再開手順はユーザー向けの判断材料ではないため、元項目の計画書にある進捗ログへ記載する。
+   計画書が無ければ、`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`を用いて元AWIの本文へ追記し、UWIの元項目からたどれる状態にしておく。
 
 ## 事前承認の合意判定
 
-1. `references/approval-scope.md`において事前承認を要すると定められている操作は、協調モードでの無回答時や自律モードでのUWI記録後であっても、合意が得られるまでは暫定判断の対象外とする。可逆な代替手段をとるか保留を選択し、その回答を待たずに進められる工程のみを継続する。事後承認の対象となる操作や、すでに成立した承認の範囲内にある操作は、通常通り進めてよい。
+1. `references/approval-scope.md`において事前承認を要すると定められている操作は、協調モードでの無回答時や自律モードでのUWI記録後であっても、合意が得られるまでは暫定判断の対象外とする。
+   可逆な代替手段をとるか保留を選択し、その回答を待たずに進められる工程のみを継続する。
+   事後承認の対象となる操作や、すでに成立した承認の範囲内にある操作は、通常通り進めてよい。
 
 ## 回答の受領
 
-1. 対話中に得られたUWIへの判断（保留中の確認事項に対する回答を含む）は、回答として記録する。その後に実際の変更へ着手するのは、`agent-toolkit:process-wi`などの専用手順を起動した場合や、明示的な作業指示がある場合に限る。
-   専用手順の実行中に、現在の作業対象を待たせていたUWIの回答が得られた場合は、記録した後、保存されている計画や工程を同一セッション内で再開する。元の要求および計画に含まれる未完了の作業範囲は、追加のAWI登録や採否確認に分割することなく同一作業内で完遂する。要求範囲外の新しい要望のみを別項目として切り出す。
+1. 対話中に得られたUWIへの判断（保留中の確認事項に対する回答を含む）は、回答として記録する。
+   その後に実際の変更へ着手するのは、`agent-toolkit:process-wi`などの専用手順を起動した場合や、明示的な作業指示がある場合に限る。
+   専用手順の実行中に、現在の作業対象を待たせていたUWIの回答が得られた場合は、記録した後、保存されている計画や工程を同一セッション内で再開する。
+   元の要求および計画に含まれる未完了の作業範囲は、追加のAWI登録や採否確認に分割することなく同一作業内で完遂する。
+   要求範囲外の新しい要望のみを別項目として切り出す。

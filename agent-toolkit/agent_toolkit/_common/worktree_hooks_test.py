@@ -10,11 +10,12 @@ import shlex
 import subprocess
 import sys
 import threading
+import time
 
 import pytest
 
 from agent_toolkit._common import worktree_hooks
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, late_descendant
 
 
 def test_project_hook_lifecycle(tmp_path: pathlib.Path) -> None:
@@ -85,15 +86,34 @@ def test_hook_failure_preserves_diagnostic_and_partial_resource(tmp_path: pathli
 
 
 @pytest.mark.parametrize("hook_timeout", [3, None])
-def test_hook_timeout_takes_precedence_over_caller_timeout(tmp_path: pathlib.Path, hook_timeout: int | None) -> None:
+def test_hook_timeout_takes_precedence_over_caller_timeout(
+    tmp_path: pathlib.Path, hook_timeout: int | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """hook定義の`timeout`はhook自身の上限として呼出側の値より優先し、定義が無いhookだけを呼出側の値で打ち切る。"""
     repo, destination = tmp_path / "repo", tmp_path / "created"
     settings = repo / ".claude/settings.local.json"
     settings.parent.mkdir(parents=True)
+    release = tmp_path / "hook.release"
+
+    class ReadyPopen(subprocess.Popen):
+        def communicate(self, input=None, timeout=None):
+            if timeout is not None:
+                deadline = time.monotonic() + 30
+                while not release.with_suffix(".ready").exists():
+                    assert self.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.01)
+                if timeout == 3:
+                    release.touch()
+                else:
+                    assert timeout == 1
+                    timeout = 0.05
+            return super().communicate(input, timeout=timeout)
+
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
     argv = [
         sys.executable,
         "-c",
-        "import pathlib,sys,time;time.sleep(2);pathlib.Path(sys.argv[1]).mkdir();print(sys.argv[1])",
+        late_descendant.held_source(release) + "; import sys; pathlib.Path(sys.argv[1]).mkdir(); print(sys.argv[1])",
         str(destination),
     ]
     hook: dict[str, object] = {

@@ -1,0 +1,27 @@
+# Codexでの委譲方法：後続操作の共通先行条件
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲先と起動手段を選ぶ前 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 委譲先と起動手段を選ぶ前 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
+| 同一担当の継続・交代を判断する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| 可用性の障害を確認して回復する前 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
+
+## 後続操作の共通先行条件
+
+「元担当」とは、同一の作業のためにすでに起動された委譲先エージェントを指す。
+元担当が存在しない初回起動は、`references/process-model-settings.md`「工程別モデル設定」に従って実行する。
+クライアント接続の確立中や`thread/start`の実行前に可用性エラーが発生し、状態照会によってセッションが未生成であり元担当も不在であることが実際に確認できた場合（初回生成前失敗）の代替起動についても、初回起動と同様に扱う。
+これらを確認できない場合、またはセッションや元担当がすでに生成された後の代替起動は、次の条件に従う。
+
+元担当の回復、置換、再起動、代替起動、および`interrupt_agent`による中断は、ユーザーからの明示的な要求、終了または失敗への状態遷移、タスク契約上のキャンセル指示のいずれかを確認できた場合に限り実行する。
+回復・置換・再起動・代替起動する際は、元担当の終了と書込権限の解放が完了していることもあわせて確認する。
+`list_agents`が元担当のステータスとして`running`を返している間はその状態を受け入れ、これらの後続操作を保留する。
+ファイルの差分、HEADコミット、更新時刻、無応答、経過時間などから停滞を推測することや、補助観測や催促の結果だけを根拠として後続操作を開始しない。
+
+元担当を持たないレーン担当エージェント、独立したレビュー担当、CI修正担当の起動は、`references/process-model-settings.md`「工程別モデル設定」に従う。

@@ -24,6 +24,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _browser_fixture,
     _hold_route,
     _isolate_creation_time_index,
+    _observe_screen_requests,
     _screen_harness_fixture,
     _ScreenHarness,
     _serve,
@@ -1014,6 +1015,17 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
     assert concurrency["total"] <= 2
 
 
+async def _wait_record_notification(harness: _ScreenHarness, queue: asyncio.Queue[str], path: Path) -> None:
+    try:
+        async with asyncio.timeout(5):
+            while True:
+                event = json.loads(await queue.get())
+                if event.get("type") == "record" and event.get("path") == str(path):
+                    return
+    finally:
+        await serve_sessions.unsubscribe(harness.sessions_context.state, queue)
+
+
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("opened_from", ["list", "subagent"])
 async def test_session_detail_follows_appended_events_and_keeps_view_state(
@@ -1027,7 +1039,9 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     その後に末尾まで読み進めると追記したイベントへ到達する。サブエージェントの記録も同じ右ペインの描画で開く。
     続きの描画に操作が要ると、記録の後半と追記へ到達するたびにボタンを探す手間が生じる。
     """
+    queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
+    await _observe_screen_requests(page)
     await page.set_viewport_size({"width": 1280, "height": 600})
     parent = tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl"
     records: list[dict[str, Any]] = [
@@ -1055,7 +1069,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         path = subagents / "agent-long.jsonl"
         _append_jsonl(path, records)
     # 記録の作成による一覧の再取得の通知は、画面を開く前に配信を終えさせ、追記の検証へ混ぜない。
-    await asyncio.sleep(1.5)
+    await _wait_record_notification(screen_harness, queue, path)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
     if opened_from == "subagent":
@@ -1092,7 +1106,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     assert not await events.nth(120).evaluate("element => element.open")
     assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
     await playwright.async_api.expect(page.get_by_role("button", name=re.compile("新しいイベント"))).to_have_count(0)
-    await asyncio.sleep(1.0)
+    await page.wait_for_function("window.__screenRequests.pending === 0")
     assert _session_list_requests(screen_harness) == list_requests
 
     await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
@@ -1105,6 +1119,7 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
     tmp_path: Path,
 ) -> None:
     """末尾を読んでいる間の追記では通知を表示せず、追記した末尾へ追従する。"""
+    queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
     await page.set_viewport_size({"width": 1280, "height": 600})
     path = tmp_path / "claude" / "projects" / "-home-aki-tail" / "tail.jsonl"
@@ -1116,7 +1131,7 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
         for index in range(40)
     ]
     _append_jsonl(path, records)
-    await asyncio.sleep(1.5)
+    await _wait_record_notification(screen_harness, queue, path)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/tail").click()
     events = page.locator("#detail details.event")

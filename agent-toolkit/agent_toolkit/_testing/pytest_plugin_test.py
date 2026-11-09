@@ -20,7 +20,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import backends
-from agent_toolkit._testing import pytest_plugin, slot_yield, xdist_stop
+from agent_toolkit._testing import late_descendant, pytest_plugin, slot_yield, xdist_stop
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
 # pylint: disable=protected-access
@@ -155,7 +155,7 @@ def test_pytest_owns_fixture_directory_and_reclaims_children(tmp_path: pathlib.P
             def test_probe(tmp_path, pytestconfig):
                 owner = execution_slot.read_owner()
                 assert owner is not None
-                child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
+                child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / "probe.release")!r}])
                 pathlib.Path({str(evidence)!r}).write_text(json.dumps({{
                     'basetemp': str(pytestconfig.option.basetemp),
                     'fixture': str(tmp_path), 'pid': child.pid,
@@ -458,7 +458,7 @@ def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> N
 
             def test_probe():
                 KEPT.append(multiprocessing.get_context("spawn").Semaphore())
-                child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+                child = subprocess.Popen([sys.executable, "-c", {late_descendant.held_source(tmp_path / "tracker.release")!r}])
                 pathlib.Path({str(evidence)!r}).write_text(json.dumps({{
                     "tracker": resource_tracker._resource_tracker._pid, "child": child.pid,
                 }}), encoding="utf-8")
@@ -717,7 +717,6 @@ def test_slow(index):
         assert time.monotonic() < deadline, "長い待機者が待ち列へ並ばない"
         time.sleep(0.02)
     started = time.time()
-    time.sleep(0.4)
     pathlib.Path(os.environ["SLOT_EVIDENCE"], f"test-{index}.json").write_text(
         json.dumps({"started": started, "ended": time.time()}), encoding="utf-8"
     )
@@ -737,8 +736,16 @@ def mark(_owner=None):
 with execution_slot.hold(label="waiter-probe", on_wait=mark):
     mark()
     started = time.time()
-    time.sleep(float(os.environ.get("SLOT_HOLD", "0.3")))
-    pathlib.Path(sys.argv[1]).write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
+    release = os.environ.get("SLOT_RELEASE")
+    pathlib.Path(sys.argv[1]).with_suffix(".ready").touch()
+    deadline = time.monotonic() + 30
+    while release and not pathlib.Path(release).exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    output = pathlib.Path(sys.argv[1])
+    temporary = output.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
+    temporary.replace(output)
 """
 
 _SLOT_OUTER = """\
@@ -820,9 +827,21 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
         while not list(evidence.glob("test-*.json")):
             assert child.poll() is None and time.monotonic() < deadline
             time.sleep(0.05)
-        waiter = subprocess.run(
-            [sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=environment, timeout=60, check=False
-        )
+        release = tmp_path / "waiter.release"
+        waiter_environment = environment if route == "inherited" else {**environment, "SLOT_RELEASE": str(release)}
+        with subprocess.Popen([sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=waiter_environment) as waiter:
+            try:
+                if route != "inherited":
+                    while not waited.with_suffix(".ready").exists():
+                        assert waiter.poll() is None and time.monotonic() < deadline
+                        time.sleep(0.01)
+                    release.touch()
+                waiter.wait(timeout=60)
+            finally:
+                release.touch()
+                if waiter.poll() is None:
+                    waiter.kill()
+                    waiter.wait(timeout=5)
         output, _ = child.communicate(timeout=90)
     assert waiter.returncode == 0
     assert child.returncode == 0, output
@@ -863,8 +882,16 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
     短い待機者は従来どおり区切りで実行枠を譲られて先に終わり、長い待機者が並び続けてもpytestは有限の譲渡の後に終わることを、
     同じ実行の試験と待機者の実行区間の記録から確かめる。短い待機者の後に始まる試験は長い待機者が並んだ印を待つため、
     上限に達する前に、長い待機者が待ち列に並んだ状態が必ず生じる。上限6秒の対照では、同じ数え方で上限2.5秒の許容件数を超える。
-    上限2.5秒は、xdistで短い待機者へ譲る所要（作業者の区切り待ちを含め1秒前後）の後にも長い待機者へ1回は譲れる長さにする。
+    譲渡に費やした時間は長い待機者の完了通知ごとに制御時計で進める。
     """
+    # 所有者の譲渡予算だけを制御時計で進め、実プロセスの排他・待ち列は実際に通す。
+    (tmp_path / "conftest.py").write_text(
+        "import os, pathlib\nfrom types import SimpleNamespace\n"
+        "from agent_toolkit._testing import slot_yield\n"
+        "windows = pathlib.Path(os.environ['SLOT_WINDOWS'])\n"
+        "slot_yield.time = SimpleNamespace(monotonic=lambda: len(list(windows.glob('*-*.json'))) * 1.5)\n",
+        encoding="utf-8",
+    )
     evidence = tmp_path / "evidence"
     evidence.mkdir()
     windows = tmp_path / "windows"
@@ -888,6 +915,7 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
         SLOT_EVIDENCE=str(evidence),
         SLOT_QUEUED=str(tmp_path / "queued"),
         SLOT_TESTS="12",
+        SLOT_WINDOWS=str(windows),
         SLOT_AFTER=str(windows / "short.json"),
         SLOT_LONG_QUEUED=str(tmp_path / "long-queued"),
     )
@@ -917,7 +945,7 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
             check=False,
         )
         assert short.returncode == 0
-        long_environment = {**environment, "SLOT_HOLD": "1.5"}
+        long_environment = environment
         queued_markers = [tmp_path / f"long-queued-{index}" for index in range(2)]
         floods = [
             stack.enter_context(

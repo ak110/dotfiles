@@ -1,0 +1,41 @@
+# 履歴書換え：失敗時の扱い
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
+
+## 失敗時の扱い
+
+本節における`pre_fixup`、`fixup`、`autosquash`、`amend`の各フェーズ名、および続行できない理由を通知する返却フォーマットは、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`に定める実装担当エージェントの契約に準拠する。
+この契約を受け取っていないエージェントは、観測した事実をそのまま委譲元へ報告する。
+
+1. 失敗した担当は、操作前後の履歴・index・作業ツリーを比較し、変更済み範囲、差分の成果帰属、公開済みかどうかを確かめる。
+   認可済みの担当範囲で原因を解消でき、成果と公開済み履歴を保てる場合は、同じ担当が復旧・再試行を続ける。
+
+2. 履歴を変更していないamend・fixupの失敗では、formatter等の追加差分を検収し、当該commitに帰属する差分だけをステージングして再試行できる。
+   履歴変更の途中で失敗した場合は、変更済み範囲を確定し、保存済みの操作前記録との差を確認して成果を保ったまま継続または復旧する。
+   帰属不明差分の破棄、公開済み履歴の書換え、認可範囲の拡張、ユーザー固有の値が必要な場合は、その不足判断だけを委譲元へ返す。
+
+3. もし`rebase.updateRefs=false`を指定せずにrebaseを実行したことが判明した場合は、事前に保持しておいたローカルブランチ参照のOID一覧と現状を比較する。
+   作業ブランチ以外の参照が移動していたときは、該当する参照名、変更前後のOID、および復旧に必要な認可の申請を委譲元へ返し、復旧方針の判断を委ねる。
+
+4. autosquashがコンフリクト（競合）によって停止した場合は、競合箇所が「採用済み指摘への修正」と「統合先コミットの変更」のみで構成され、競合解消後も中間コミットの公開契約を維持できる場合に限り、同じ実装担当者が競合を解消してよい。
+   解消したファイルパスのみをステージングする。
+   直後に`history-rewrite-verification.md`「履歴確認の起動形」に示す`git log`を単独実行したうえで、`git -c submodule.recurse=false rebase --continue`を実行してrebaseを続行する。
+   再度停止した場合も、その都度同じ条件を満たしているかを判定する。
+   担当外の変更を含む競合や、帰属を特定できない修正、あるいは中間コミットの公開契約を保てない場合は、競合状態のまま作業を中断して委譲元へ報告する。
+
+5. 委譲元へ状況を返す際は、失敗した操作名、終了コード、標準エラー出力に加えて、失敗時点の`git status --short`および`git log --oneline -5`の出力を添付する。
+
+6. 成功後は`history-rewrite-verification.md`「操作前後の確認」と`history-rewrite-wi-records.md`「WI実装commitの対応の継承」を完了し、復旧した事実と根拠を既存記録へ残す。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
+| 履歴書換え：WI実装commitの対応の継承の基準を適用する前 | `history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |

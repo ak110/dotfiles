@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from agent_toolkit._common import read_triggers
+from agent_toolkit._testing.normative_contract import read_contract
 
 from pytools._internal import antigravity_plugin
 
@@ -42,7 +43,13 @@ def test_shared_verification_references_resolve_after_migration() -> None:
     source = _TOOLKIT / "share/verification-operations.md"
     text = source.read_text()
     assert "本スキルの`SKILL.md`" not in text
-    assert "`agent-toolkit:write-plan/references/plan-file-standards.md`「計画した検証の実行」" in text
-    assert "`check-execution-operations.md`「保存した実行出力の取得」" in text
+    assert "`../skills/write-plan/references/plan-file-standards-verification.md`「計画した検証の実行」" in text
+    assert "`check-execution-operations-output.md`「保存した実行出力の取得」" in text
+    plan = read_contract(
+        source, _TOOLKIT, ("../skills/write-plan/references/plan-file-standards-verification.md", "計画の検証表")
+    )
+    output = read_contract(source, _TOOLKIT, ("check-execution-operations-output.md", "保存した実行出力の取得"))
+    assert "## 計画した検証の実行" in plan
+    assert "## 保存した実行出力の取得" in output
     rows = read_triggers.parse_tables(source, _TOOLKIT, strict=True)
     read_triggers.validate_reference_routes(source, _TOOLKIT, rows)

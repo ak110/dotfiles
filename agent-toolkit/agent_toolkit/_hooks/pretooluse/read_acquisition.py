@@ -7,6 +7,8 @@ import pathlib
 import shlex
 from collections.abc import Sequence
 
+from agent_toolkit._common import read_triggers
+
 # 配布設定のtool_output_token_limit内で、終了情報とJSON包絡の余裕を確保する。
 _TOKEN_LIMIT = 20_000
 _RESULT_MARGIN = 1024
@@ -18,6 +20,8 @@ def codex_acquisition(path: pathlib.Path, ranges: Sequence[tuple[int, int]] = ()
     rangesの省略は全文。指定節の最後が資料末尾でない場合は終了行を保持する。
     本文はUTF-8バイト数÷3の切上げを基準にし、JSONのエスケープ増分も含める。
     """
+    if read_triggers.is_normative_document(path):
+        ranges = ()
     with path.open("rb") as source:
         lines = list(source)
     selected: list[tuple[int, int]] = []

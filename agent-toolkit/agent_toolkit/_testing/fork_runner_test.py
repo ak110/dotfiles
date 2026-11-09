@@ -15,6 +15,7 @@ import typing
 import pytest
 
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import late_descendant
 
 
 def _write_script(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
@@ -141,11 +142,17 @@ def test_child_signal_death_returns_negative_returncode(tmp_path: pathlib.Path) 
     assert result.returncode == -signal.SIGKILL
 
 
-def test_timeout_raises_and_server_survives(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    "use_fork", [False, pytest.param(True, marks=pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応"))]
+)
+def test_timeout_raises_and_server_survives(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, use_fork: bool) -> None:
     # (d) timeout超過でsubprocess.TimeoutExpiredが送出され、後続リクエストが正常処理される。
-    slow_script = _write_script(tmp_path, "import time\ntime.sleep(5)\n")
+    monkeypatch.setattr(_fork_runner, "_HAS_FORK", use_fork)
+    release = tmp_path / "fork.release"
+    slow_script = _write_script(tmp_path, late_descendant.held_source(release))
     with pytest.raises(subprocess.TimeoutExpired):
-        _fork_runner.run_script(slow_script, timeout=0.1)
+        _fork_runner.run_script(slow_script, timeout=0.05, ready_path=release.with_suffix(".ready"))
+    assert release.with_suffix(".ready").exists()
     fast_script = tmp_path / "fast.py"
     fast_script.write_text("import sys\nsys.stdout.write('alive')\n", encoding="utf-8")
     result = _fork_runner.run_script(fast_script)

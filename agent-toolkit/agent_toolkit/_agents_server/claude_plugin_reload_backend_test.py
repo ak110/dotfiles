@@ -1,10 +1,10 @@
 """更新の検知からidle・次query・終了回収までの所有順序を検証する。"""
 
 import asyncio
+import contextlib
 import json
 import pathlib
 import subprocess
-import sys
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
@@ -14,6 +14,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import claude, claude_plugins, launch_prompts, launch_requests
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import AssistantMessage, ManualObserver, QueueClaudeClient, ResultMessage
 
 # 所有loopと実helperの接続、およびSDK制御要求の故障境界を直接検証する。
@@ -291,7 +292,9 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
     closed = asyncio.Event()
     stops: list[bool] = []
     # 一覧取得が回収できなかった子孫。所有タスクの後始末が同じ対象を引き取って回収することを確かめる。
-    survivor = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])  # pylint: disable=consider-using-with
+    owned = contextlib.ExitStack()
+    request.addfinalizer(owned.close)
+    survivor = owned.enter_context(late_descendant.held_process(tmp_path))
 
     def reap_survivor() -> None:
         survivor.kill()

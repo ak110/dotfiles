@@ -24,7 +24,7 @@ from typing import Any, Self, cast
 import platformdirs
 import psutil
 import pytest
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, late_descendant
 from agent_toolkit._testing.isolation import restore_host_environment
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -595,9 +595,10 @@ def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
     previous = ctypes.c_int(0)
     assert libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0  # PR_GET_CHILD_SUBREAPER
     pid_path = tmp_path / "holder.pid"
+    holder_source = late_descendant.held_source(tmp_path / "pipe.release")
     child_code = (
         "import pathlib, subprocess, sys; "
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True); "
+        f"child = subprocess.Popen([sys.executable, '-c', {holder_source!r}], start_new_session=True); "
         "pathlib.Path(sys.argv[1]).write_text(str(child.pid))"
     )
     holder_pid: int | None = None
@@ -1525,13 +1526,20 @@ else:
     # 端末終了のSIGHUPや自然終了で、製品の子孫回収漏れを隠さない。
     child = subprocess.Popen([
         sys.executable, "-c",
-        "import signal, time; signal.signal(signal.SIGHUP, signal.SIG_IGN); time.sleep(60)",
+        "import os,pathlib,signal,time; signal.signal(signal.SIGHUP, signal.SIG_IGN); "
+        "release=pathlib.Path(os.environ['UPDATE_DOTFILES_TEST_PID_PATH']+'.release'); "
+        "release.with_suffix('.ready').touch(); deadline=time.monotonic()+120; "
+        "exec('while not release.exists():\\n assert time.monotonic()<deadline\\n time.sleep(0.01)')",
     ])
     pid_path = pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"])
+    deadline = time.monotonic() + 30
+    while not pid_path.with_suffix('.pid.ready').exists():
+        assert child.poll() is None and time.monotonic() < deadline
+        time.sleep(0.01)
     pending = pid_path.with_suffix(".tmp")
     pending.write_text(str(child.pid), encoding="utf-8")
     pending.replace(pid_path)
-    time.sleep(6)
+    child.wait(timeout=120)
 """
 
 
@@ -1540,7 +1548,7 @@ def _run_git_pull_in_pty(
     monkeypatch: pytest.MonkeyPatch,
     *,
     mode: str,
-    timeout: int | None,
+    timeout: float | None,
     input_text: str | None = None,
 ) -> tuple[int, str, pathlib.Path, float]:
     """疑似端末内で実物の`_run_git_pull`を実行し、終了コードと出力を返す。"""
@@ -1612,7 +1620,7 @@ def test_git_pull_timeout_terminates_stream_holding_descendant(
         tmp_path,
         monkeypatch,
         mode="hang",
-        timeout=5,
+        timeout=0.05,
     )
     assert returncode == 1
     assert elapsed < 12
@@ -2400,7 +2408,7 @@ def test_update_recovers_index_after_sigterm(tmp_path: pathlib.Path, host_enviro
         "def change(*args, **kwargs):\n"
         "    assert module._run_git_change('add', 'tracked.txt')\n"
         f"    pathlib.Path({str(ready)!r}).touch()\n"
-        "    time.sleep(30)\n"
+        f"    exec({late_descendant.held_source(tmp_path / 'interrupt.release')!r})\n"
         "module._update_owned_git = change\n"
         "module._update_git_with_recovery(1, 4, timeout=5)\n",
         encoding="utf-8",

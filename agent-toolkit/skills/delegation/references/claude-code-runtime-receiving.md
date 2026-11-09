@@ -1,0 +1,84 @@
+# Claude Codeでの委譲の実装：成果物の観測と結果・完了通知の受領
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-operations.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `receiving-format.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-format.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-responses.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-responses.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
+| `Agent`ツールで起動した担当を継続する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
+
+## 一時領域と成果物の観測
+
+- `Agent`ツールの`output_file`はセッションのJSONLへのシンボリックリンクとなる場合があり、リンク自体の`stat`や`ls -l`の結果に変化がなくても、リンク先のファイルには追記されている可能性がある。
+  補助的な観測には`stat -L -c %Y -- <output_file>`（macOSでは`stat -L -f %m -- <output_file>`）および`wc -l -- <output_file>`を用い、ファイル本文の読み取りは進捗確認以外の目的には限定する。
+  監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日」に記載されている。
+- 成果物側の状態確認は補助的な観測として扱う。
+  作業ツリーの状態は`git -C <worktree> status --porcelain=v1`と`git -C <worktree> rev-parse --short HEAD`で観測する。
+  成果物ファイルは`wc -l -- <file>`および`stat -L -c %Y -- <file>`（macOSでは`stat -L -f %m -- <file>`。最終更新のUNIXエポック秒）で観測する。
+  エージェント自体の稼働状態は`ListAgents`または代替稼働観測によって判定する。
+
+## 結果の受け取り方
+
+1. 結果の配送方式には、ツールの戻り値と完了通知（task-notification）の2種類がある。
+   バックグラウンドで起動した直接の子エージェントからは完了通知によって結果を受け取り、同期起動ではツールの戻り値を受け取る。
+   検収は受領した本文に基づいて実施する。
+   `idle_notification(available)`は待機可能状態を示すにすぎず、完了の判定根拠としては使用しない。
+
+2. 成果物ファイルを指定して自身が起動した調査・レビューについては、`receiving-format.md`「受領手段と報告様式の選択」の例外規定に従う。
+   エージェント稼働中に観測されたファイル内容は途中経過として扱い、エージェントの終了を確認した後に同一の絶対パスから再読み込みを行い、必須項目をすべて含む最終完了報告であることを確認した上で受理する。
+   終了を確認できない場合や、再読み込み時にファイルが未作成、読取不能、部分的な書き込み、必須項目の欠落が判明した場合は、絶対パス、終了の観測結果、異常の内容を続行不能の理由として返す。
+
+3. 同一のworktreeにおいて実装担当を引き継ぐ場合は、前任者が所有するすべてのプロセスが終了したことを、完了報告のツール終了結果または実行識別子によって確認した上で後任を起動する。
+   前景の担当者が終了した後にプロセスの残存が判明した場合は引き継ぎを中止し、未完了として報告する。
+   保持している識別子によって終了が確認できた場合に限り再判定する。
+
+4. バックグラウンドの実装担当を交代する場合は、全プロセスの終了を確認した上で、残存するバックグラウンドタスクやバックグラウンドエージェントを`TaskStop`で停止し、その系統で稼働中のプロセスが存在しないことを`ListAgents`（利用できない場合は停止結果を含む代替稼働観測）で確認してから交代する。
+   未知の子孫エージェントが存在しないことを確定できない場合や、停止後の終了を確認できない場合は、書込権限を移行させず、保持しているIDと観測結果を続行不能の理由として返す。
+
+### 背景ジョブ完了通知と実プロセスの終了順
+
+バックグラウンドタスクの完了通知を受信した後でも、同一の`atk agents wait`の実プロセスが残存している場合がある。
+後続の待機処理の扱いは`waiting-and-monitoring-responses.md`「`atk agents wait`の応答の扱い」で定める。
+ホストからの停止通知についても、外側のタスクと子プロセスの終了を区別して扱い、`wait-anomalies-stopped.md`「ホストによる背景待機の停止後」に従って元の出力の回収と監視の再開を判断する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日」に記載されている。
+
+### 完了通知と中継の実行順
+
+`Agent`ツールによって新規起動された子エージェントの完了通知は直接の委譲元へ届くが、`SendMessage`によって継続された相手の完了通知は送信元ではなく最上位セッションへ配送される。
+そのため、`SendMessage`で継続された工程は、最上位セッションが適切に中継することで再開する。
+監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：2026年8月」に記載されている。
+
+1. 委譲元は`Agent`ツールの戻り値から直接の子エージェントのagent IDを保持し、通信先にはそのIDのみを使用する。
+2. 委譲先は通常の完了報告をツールの戻り値として1回だけ返却する。
+   即時通知は、`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」の判定に基づいて`SendMessage`が選択された場合に送信する。
+3. 直接の委譲元ではない祖先エージェントが子孫エージェントの完了通知を受信した場合は、`status`と`result`を保持し、`SendMessage`が公開されていて保持している直接の子のIDへの呼び出しが成功する場合に限り、同一IDへ逐語で中継する。
+4. `SendMessage`の`success: true`やqueuedという応答は、送信側での受理を示しているにすぎない。
+   中継先のIDと、送信後に返却される完了通知または戻り値を突き合わせて、確実な受信を確認する。
+5. `SendMessage`が未公開または拒否された場合、あるいは送信後の結果が観測できない場合は、再送信を控える。
+   未完了の工程が自身の担当範囲と権限に収まる場合に限り自身で巻き取りを行い、それ以外の場合は保持している通知内容、送信先ID、送信結果、未観測の状況を続行不能の理由として報告する。
+6. 子孫エージェントの工程を中止・変更・再開させる指示も、同様の手順で直接の子エージェントへ送信する。
+   直接の子エージェントが停止している場合でも、まずは同一IDへの継続を試み、それが成立しない場合に限り孫以下のエージェントへ直接1回だけ送信する。
+   その際、送信元のエージェント名、役割、指示の理由を本文に明記する。
+
+   最上位セッションのメインエージェントが委譲ツリー全体を取り下げる場合は、`ListAgents`が利用可能な場合に限り、まず委譲元を停止し、列挙されたすべての子孫IDも停止させて、その系統に稼働中のエージェントが存在しないことを確認する。
+   `ListAgents`が利用できない場合は未知の子孫エージェントの不在を確認できないため取り下げを開始せず、保持しているIDと観測結果を続行不能の理由として報告する。
+   なお、取り下げ処理中に受信した子孫エージェントの完了通知は記録にとどめ、取り下げ手順をそのまま継続する。
+
+## 稼働状態の観測と継続依頼
+
+- `ListAgents`および`TaskStop`は、自身のツール一覧に公開されており、呼び出しが成功する場合にのみ使用する。
+- バックグラウンドで実行中の委譲タスクの稼働状態は`ListAgents`で観測する。
+  単に進捗のみを確認するタイミングでは、成果物ファイルのパスが確定していれば前節の補助観測で確認して`ListAgents`の呼び出しを控え、停滞の判定、催促や巻き取りの要否と宛先の確定、終了を検知するタイミングで呼び出す。
+  成果物パスも管理下のプロセスも存在しない場合は、進捗報告を省略して完了通知の到着を待つ。
+  完了直後の委譲先は一覧に現れない場合があるため、一覧に存在しないことは終了を支持する参考材料にとどめる。
+- `ListAgents`や`TaskStop`が利用できない場合は、起動結果の識別子を保持した上で、出力ファイルの末尾標識（試行回数上限を設定）、前述の補助観測、保持しているプロセスの生存照会を組み合わせて判定する。
+  更新が継続している間は安易に完了とみなさず、催促にとどめる。
+- 待機の解除手段、およびMCPツール呼び出しがバックグラウンドへ移行した場合の扱いについては、`waiting-and-monitoring-intervals.md`「待機区間の構成」に従う。
+  また、`Agent`ツールによる担当エージェントの継続条件と配送不能の判定は、`references/continuation.md`「継続と新規起動」と`references/agent-tool-continuation.md`「Agentツールの継続」に従う。

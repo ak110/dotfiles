@@ -1,0 +1,42 @@
+# 判断の妥当性を評価する詳細：検収手段の到達可能性
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-evidence.md`、`../../bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+
+## 検収手段の到達可能性
+
+成果物、計画、または規範が実機での検証、完了条件、待機手順を求めている場合は、要求されている行為、必要な入力や通知、許可されている機能、禁止されている行為を整理し、それらを満たす実行方法を探す。
+同じ対象ですでに成功している方法、認可された隔離環境へ複製した同等再現、対象が公開している別の起動方法も幅広く探索する。
+検証方法が1つでも成立すれば到達可能と判断する。
+到達不能と判断できるのは、探索した具体的な方法と、各方法が成立しなかった観測事実を網羅して提示できる場合に限る。
+探索を十分に行わずに手段が存在しないと主張して作業を止めることは避ける。
+成立するはずの検収機会が失われてしまうためである。
+
+到達不能と確定した要求は、成果物自体の未達成として扱うのではなく、その要求を定めた計画や規範そのものを維持、修正、置換、撤去するかの比較を同じ抽象度で行う。
+実装担当は有効な規定を適用し、レビュー担当は規定同士の矛盾や規定と完了条件の矛盾を、計画や規範側の問題として扱う。
+未達成が繰り返される場合や、同じ根本原因が再発する場合、工程が収束しない場合は、要求の到達可能性と、その要求を導入した規範の前提を`judgment-details-decisions.md`「前提の再検討」に従って先に見直す。
+
+## 矛盾の原因調査
+
+矛盾の原因を調べるときは、`agent-basics:bugfix`を起動する。
+契約、生成機構、必要な処置の確定には、`../../bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」を適用する。
+`../../bugfix/references/root-cause-actions-selection.md`「対策の選定」も併用する。
+レビューにおける指摘の採否には、その調査結果と指摘の裏付けを活用する。
+一般的な解決案の比較は、`judgment-details-decisions.md`「解決案の比較」に従う。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 判断の妥当性を評価する詳細：問題と手段の比例性の基準を適用する前 | `judgment-details-decisions.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-decisions.md` |

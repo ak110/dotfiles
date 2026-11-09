@@ -1,0 +1,35 @@
+# 実装時のコーディング品質：データと計算
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
+| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md`、`read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
+| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-jobs.md`、`read:agent-basics:*/skills/writing-standards/references/design-runtime-services.md` |
+
+## データと計算
+
+実装時は次の観点を意識する。
+文字エンコーディングの扱いは`encoding.md`を参照する。
+
+- 状態の表現と所有者: 時間とともに遷移する対象に、型で表現できる不正な組合せや所有者の外の複数箇所からの書換えがある場合は、判別可能な1つの型（列挙型、判別共用体、状態ごとのデータを持つ型）で表し、遷移を所有者の遷移関数へ集約する。
+  単純なboolが関数・クラス内で完結する場合や、遷移が既に1箇所へ集約されている場合は対象外とする。
+  独立した軸は別の状態として保ち、OS・ファイル・外部サービス・フレームワークなど別の主体が一次の状態を持つ場合は独自の値へ複製しない。
+  型の明示化と並行更新・複数資源の原子性を区別し、遷移条件の検査と更新は同じ排他境界で行う。
+- 計算量: 想定される入力データの規模に適したアルゴリズムを選ぶ。
+- 浮動小数点数: 正確な計算が求められる処理には整数型や十進型（Decimal）を使い、等値比較する場合は許容誤差（イプシロン）を考慮する。
+- 乱数: 言語標準のAPIを用い、予測不可能なシードを設定し、範囲変換には専用APIを使用する。
+  セキュリティ用途には暗号論的擬似乱数生成器（CSPRNG）を用いる。
+- 整数オーバーフロー: オーバーフロー検知付きの演算、より広いビット幅の整数型、または事前の範囲チェックを取り入れる。
+  意図的にラップアラウンドを利用する場合は、言語仕様で動作が保証された演算や専用のwrapping関数を用いる。
+- 日時処理: 概念ごとの意味を明確に区別し、プロジェクト全体の方針が特にない場合は、タイムスタンプをUTCで統一し、市民時刻（実生活の時刻）はタイムゾーン情報を保持する。
+  CLI引数など外部からタイムゾーン指定なしで受け取った時刻の扱い（エラーとして拒否するか、特定のタイムゾーンとみなすか）は、その入力の役割から判断してヘルプに明記する。
+  内部データ用のパース処理をそのまま流用しない（手入力された値を安易にUTCとみなすと、日付の境界がずれて検索結果が0件になる不具合の原因となる）。
+- ハッシュや識別子の生成: 複数の可変長データを連結してハッシュやIDの入力とする場合は、長さプレフィックスを付けるか一意な正規化形式を用いて境界を確定させ、分割位置の違いによって同じ入力列が生成されないことをテストで検証する。
+- ファイルの同一性判定: 更新時刻とファイルサイズの一致をもって内容が不変であるとみなす場合、更新時刻の精度はファイルシステムごとに異なる（1秒単位や2秒単位の環境があり、ナノ秒単位の項目があっても実際の更新精度が粗い場合がある）。
+  精度の範囲内で同じファイルサイズのまま書き換えられた変更は検知できないため、更新時刻からその精度以上の時間が経過した後に取得した判定結果のみを再利用する。

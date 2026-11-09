@@ -41,6 +41,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._common import process_tree, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -521,7 +522,9 @@ def test_launched_server_reclaims_resources_on_failure(
 
     @contextlib.contextmanager
     def sleeping_process(_command: list[str], **kwargs: Any) -> Generator[subprocess.Popen]:
-        with original_scope([sys.executable, "-c", "import time; time.sleep(120)"], **kwargs) as process:
+        with original_scope(
+            [sys.executable, "-c", late_descendant.held_source(tmp_path / "transport.release")], **kwargs
+        ) as process:
             processes.append(process)
             yield process
 

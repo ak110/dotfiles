@@ -77,8 +77,10 @@ setupの制限時間とネットワーク設定は[クラウド環境の設定](
 
 委譲先（エージェントが作業を任せた別のエージェント）の状態は次のコマンドで確認する。
 
-- `atk agents list`: 実行中と保持中の委譲先を一覧する。`--watch`で約2秒ごとに更新する
-- `atk agents logs <session-id>`: 委譲先の会話を要約して表示する。`--follow`で追記分を表示し続け、`--verbose`で全イベントを表示する
+- `atk agents list`: 実行中と保持中の委譲先を一覧する。
+  `--watch`で約2秒ごとに更新する
+- `atk agents logs <session-id>`: 委譲先の会話を要約して表示する。
+  `--follow`で追記分を表示し続け、`--verbose`で全イベントを表示する
 
 ### 費用とレビュー指標の集計
 
@@ -183,8 +185,11 @@ Claude Codeの[advisor](https://code.claude.com/docs/en/advisor)は、全会話�
 - エンジンごとに4キーのどれも設定しない場合は、親の環境変数と通常の認証（ClaudeはAPIキー・Bedrock・Vertexなど、Codexは`config.toml`の通常設定）をそのまま使い、別の接続へ切り替えない。
 - いずれかのキーを設定し、ある役割で使える接続が1つも無い場合は、原因と設定方法を表示して起動を止める。
 - envファイルが空・不在・不正な場合は、その種別を除いて対象パスと修正方法を表示する。
-- [APIクレジット](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとAgent SDKを対象とし、Claude Codeを対象外とする。そのため`claude` CLIで起動するClaudeの統括担当（`atk wi process-loop`・`atk run-skill`）は`credits`を候補から除く。Agent SDKで起動する`agents_server`のClaudeは`credits`を使う。
-- Codexの`subscription`はprovider `openai`をChatGPTログインで使う場合だけを指す。APIキーでログインしている場合は`subscription`を候補から除いて診断を表示するため、`codex_payg_provider`（クレジットなら`codex_credits_provider`）へ`openai`を設定する。
+- [APIクレジット](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとAgent SDKを対象とし、Claude Codeを対象外とする。
+  そのため`claude` CLIで起動するClaudeの統括担当（`atk wi process-loop`・`atk run-skill`）は`credits`を候補から除く。
+  Agent SDKで起動する`agents_server`のClaudeは`credits`を使う。
+- Codexの`subscription`はprovider `openai`をChatGPTログインで使う場合だけを指す。
+  APIキーでログインしている場合は`subscription`を候補から除いて診断を表示するため、`codex_payg_provider`（クレジットなら`codex_credits_provider`）へ`openai`を設定する。
 
 委譲先は`subscription`の利用上限、`credits`の残高不足、`payg`の不受理で、同じ会話のまま使用順の次の接続へ移る。
 解除を待つ設定（`claude_usage_limit_wait`・`codex_usage_limit_wait`）の対象の利用上限では、移らずに解除を待つ。
@@ -312,7 +317,8 @@ atk config set codex_worker_connections payg
 保存済みの値は、次に`atk config`を実行するか委譲先を起動した時に新しいキーへ自動で移し、旧キーを削除する。
 
 - Claudeのenvファイルは、委譲先をAPI優先にしていた（旧`api-credits`）場合は`claude_credits_env_file`へ、それ以外は`claude_payg_env_file`へ移り、旧設定の役割別の方針を使用順へ書き換える。
-- Codexの`openai`は`subscription`、それ以外のprovider IDは`codex_payg_provider`へ移り、元の順序を両役割の使用順へ書く。`openai`以外のprovider IDが2つ以上ある場合は自動で移さず、新しいキーの設定を求めるエラーを表示する。
+- Codexの`openai`は`subscription`、それ以外のprovider IDは`codex_payg_provider`へ移り、元の順序を両役割の使用順へ書く。
+  `openai`以外のprovider IDが2つ以上ある場合は自動で移さず、新しいキーの設定を求めるエラーを表示する。
 - Codexの移行はアカウント種別を見ないため、APIキーでログインして`openai`を並べていた環境は、移行後の診断に従って`codex_payg_provider`か`codex_credits_provider`へ`openai`を設定し直す。
 
 旧キーの環境変数を設定している場合と、`atk config set`・`get`へ旧キーを渡した場合は、移行先のキー名を示すエラーで終わる。
@@ -519,11 +525,13 @@ atk wi answer <UWIファイル名> '<回答本文>'
 
 - WI: AWI・UWIの登録、編集、回答、状態の変更
 - 計画ファイル: ローカルと設定済みリモートホストの計画ファイルの一覧・全文検索・表示
-- セッション: Claude CodeとCodexの保存済みセッションの一覧と会話の表示。右ペインの見出しにAPI料金換算の推定費用を表示する
+- セッション: Claude CodeとCodexの保存済みセッションの一覧と会話の表示。
+  右ペインの見出しにAPI料金換算の推定費用を表示する
 
 WI画面の状態表示のうち、`answered`は回答済みで次の処理を待つUWI、`cooldown`は期限まで処理を始めないAWI、`needs-verify`は反映後の観測待ちで再処理を待つAWIを示す。
 振り返りのbatchが登録したAWIも、エージェントが採否を検討して自動処理する。
-未回答のUWIの回答を待つAWIには`blocked`バッジが付き、UWIへ回答すると外れて次の処理で回答とともに処理される。処理中のUWIは`processing`と表示される。
+未回答のUWIの回答を待つAWIには`blocked`バッジが付き、UWIへ回答すると外れて次の処理で回答とともに処理される。
+処理中のUWIは`processing`と表示される。
 
 通常表示・条件検索で回答できるUWIを開くと、下部に選択肢と回答欄が表示される。
 選択肢を押すと回答欄へ入り、「回答を保存」で保存する。
@@ -533,14 +541,21 @@ WI画面の状態表示のうち、`answered`は回答済みで次の処理を�
 inbox・processing・holdの未回答UWIを全期間から集め、重要な項目を先に、同じ重要度では作成日時の古い順に表示する。
 
 1. 「判断待ちのtarget-repo」をallにすると全リポジトリ、対象を選ぶとそのリポジトリに限定する
-2. 一覧から項目を開き、本文を読んで回答を入力する。選択肢を押しただけでは保存されない
-3. 「保存して次へ」で今の1件を保存して次を開く。「保存せず次へ」は未回答のまま見送り、入力済みなら破棄を確認する
-4. 詳細の現在位置と未回答の残件数を確認しながら、ページをまたいで進める。最後の候補を終えると詳細が閉じ、見送った分を含む残件数が表示される
-5. 一覧へ戻って「通常表示」または「条件検索」を選ぶ。検索の入力値は保持される。編集や状態の変更もこちらから行える
+2. 一覧から項目を開き、本文を読んで回答を入力する。
+   選択肢を押しただけでは保存されない
+3. 「保存して次へ」で今の1件を保存して次を開く。
+   「保存せず次へ」は未回答のまま見送り、入力済みなら破棄を確認する
+4. 詳細の現在位置と未回答の残件数を確認しながら、ページをまたいで進める。
+   最後の候補を終えると詳細が閉じ、見送った分を含む残件数が表示される
+5. 一覧へ戻って「通常表示」または「条件検索」を選ぶ。
+   検索の入力値は保持される。
+   編集や状態の変更もこちらから行える
 
 保存に失敗した場合は今の項目と入力が残るため、案内に従って原因を解消してから再試行する。
-外部更新による競合では開き直して内容を確認する。保存済みで次の取得だけが失敗した場合は、「保存せず次へ」で次の取得を再試行する。
-キーボードではTabで一覧のリンクやボタンへ移動し、Enterで実行できる。回答欄のEnterや日本語入力の確定では保存されない。
+外部更新による競合では開き直して内容を確認する。
+保存済みで次の取得だけが失敗した場合は、「保存せず次へ」で次の取得を再試行する。
+キーボードではTabで一覧のリンクやボタンへ移動し、Enterで実行できる。
+回答欄のEnterや日本語入力の確定では保存されない。
 
 回答の保存後、エージェントが既存の処理で元の作業へ反映する。
 今後も同じ判断を使ってほしい場合は、適用する範囲と継続して使うことを回答に明記する。
@@ -596,8 +611,10 @@ dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPA
 最初に使う登録・処理の操作は[READMEの最初の操作](../../agent-toolkit/README.md#最初の操作)、運用ごとの例は[推奨ワークフロー](#推奨ワークフロー)を参照。
 Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
-- `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。引数で着眼点を追加できる
-- `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
+- `agent-toolkit:review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
+  引数で着眼点を追加できる
+- `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。
+  既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
 - `agent-toolkit:export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 - `agent-toolkit:refine-prompt`: プロンプトやスキルの改善点を独立した実行者から集めて反映する
 

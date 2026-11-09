@@ -1521,9 +1521,8 @@ class TestSignalHandling:
     def test_sigterm_exits_with_interrupted_code(self, tmp_path: pathlib.Path, git_repository: tuple[pathlib.Path, str]):
         """SIGTERM受信時に`EXIT_INTERRUPTED`を返すことを実プロセスで確認する。
 
-        ハンドラ登録は`main`冒頭で行われるため、送信までの待機が起動所要時間を下回ると
-        通常のシグナル処理で終了し`-SIGTERM`が返る。待機時間を延ばしながら最大3回試行し、
-        起動が遅い実行環境でも登録後の挙動を判定できるようにする。
+        CI照会へ到達した通知を受けてからシグナルを送る。
+        ハンドラ登録前の中断と照会中の中断を分けて検証する。
 
         併せてstderrへ`reentrant call`が出ないことを確認する。ハンドラが`print`で
         書くと`sys.stderr`の`BufferedWriter`へ再入し得るため、その回帰を検出する。
@@ -1548,36 +1547,38 @@ class TestSignalHandling:
             "--timeout=60",
             "--subprocess-timeout=2",
         ]
+        ready = tmp_path / "query.ready"
         child_code = (
-            "import time, wait_ci\n"
-            "wait_ci._gh_run_list = lambda *_args, **_kwargs: time.sleep(60) or []\n"
+            "import pathlib, threading, wait_ci\n"
+            "def query(*_args, **_kwargs):\n"
+            f"    pathlib.Path({str(ready)!r}).touch()\n"
+            "    assert threading.Event().wait(30), '照会の保持上限'\n"
+            "    return []\n"
+            "wait_ci._gh_run_list = query\n"
             f"raise SystemExit(wait_ci.main({arguments!r}))\n"
         )
-        returncode = None
-        for warmup_sec in (1.0, 3.0, 6.0):
-            with subprocess.Popen(
-                [sys.executable, "-c", child_code],
-                cwd=repository,
-                env={**os.environ, "PYTHONPATH": str(pathlib.Path(__file__).parent)},
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            ) as proc:
-                stderr_text = ""
-                try:
-                    time.sleep(warmup_sec)
-                    proc.send_signal(signal.SIGTERM)
-                    _, stderr_text = proc.communicate(timeout=15)
-                    returncode = proc.returncode
-                finally:
-                    if proc.poll() is None:
-                        proc.kill()
-                        proc.wait(timeout=5)
-            assert "reentrant call" not in stderr_text, f"シグナルハンドラが再入した: {stderr_text}"
-            if returncode == wait_ci.EXIT_INTERRUPTED:
-                break
-            assert returncode == -signal.SIGTERM, f"想定外の終了コード: {returncode}"
-        assert returncode == wait_ci.EXIT_INTERRUPTED
+        with subprocess.Popen(
+            [sys.executable, "-c", child_code],
+            cwd=repository,
+            env={**os.environ, "PYTHONPATH": str(pathlib.Path(__file__).parent)},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        ) as proc:
+            try:
+                deadline = time.monotonic() + 30
+                while not ready.exists():
+                    assert proc.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.01)
+                proc.send_signal(signal.SIGTERM)
+                _, stderr_text = proc.communicate(timeout=15)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        assert "reentrant call" not in stderr_text, stderr_text
+        assert proc.returncode == wait_ci.EXIT_INTERRUPTED
         assert "次の操作: 同じ引数で再実行すると待機を再開できる" in stderr_text
 
 

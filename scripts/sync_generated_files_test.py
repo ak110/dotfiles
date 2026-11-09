@@ -1,5 +1,6 @@
 """sync_generated_filesのテスト。"""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -53,15 +54,16 @@ def test_input_is_handled_before_generation(monkeypatch, capsys, arguments, code
 
 def test_quality_source_updates_normal_and_lightweight_delivery(tmp_path: Path) -> None:
     """原則の正本改訂が全同梱先へ届き、品質外の認可本文と軽量配送範囲を保つ。"""
-    source = tmp_path / subject.QUALITY_SOURCE
-    source.parent.mkdir(parents=True)
-    source.write_text(
-        "# 品質\n\n## 役割分担\n\n役割本文。\n\n## QCDと3段判定\n\n品質本文。\n\n"
-        "### 設計の判定順\n\n順序本文。\n\n## 規定の区分と標示\n\n制約本文。\n\n"
-        "## 事実と推論\n\n帰属本文。\n\n### 結果の返却\n\n返却の条件。\n\n"
-        "## 要件と認可\n\n配送対象外。\n",
-        encoding="utf-8",
-    )
+    for key, body in {
+        "roles": "## 役割分担\n\n役割本文。\n",
+        "qcd": "## QCDと3段判定\n\n品質本文。\n\n### 設計の判定順\n\n順序本文。\n",
+        "constraints": "## 規定の区分と標示\n\n制約本文。\n",
+        "facts": ("## 事実と推論\n\n帰属本文。\n\n### 結果の返却\n\n返却の条件。\n\n## 報告の選別と判断記録\n\n配送対象外。\n"),
+    }.items():
+        source = tmp_path / subject.QUALITY_SOURCE.format(key=key)
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("# 品質\n\n" + body, encoding="utf-8")
+    source = tmp_path / subject.QUALITY_SOURCE.format(key="facts")
     normal = tmp_path / "agent-toolkit/share/rules/common/01-agent.md"
     lightweight = tmp_path / "agent-toolkit/share/agents-server-base.md"
     for path in (normal, lightweight):
@@ -103,6 +105,42 @@ def test_quality_sync_failure_stops_downstream_generation(monkeypatch, capsys) -
     assert subject.main([]) == 1
     assert not calls
     assert "factsの生成境界が一意でない" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("relative,key,title,level", subject.QUALITY_TARGETS)
+def test_real_split_quality_sources_preserve_generated_body(tmp_path, monkeypatch, relative, key, title, level) -> None:
+    """移動した実正本から、既存5区画の本文・階層を変えず生成元だけを更新する。"""
+    monkeypatch.setattr(subject, "QUALITY_TARGETS", ((relative, key, title, level),))
+    source_relative = (
+        "agent-basics/skills/writing-standards/references/quality-principles-" + ("facts" if key == "result" else key) + ".md"
+    )
+    source = tmp_path / source_relative
+    source.parent.mkdir(parents=True)
+    source.write_bytes((subject.REPO_ROOT / source_relative).read_bytes())
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    before = (subject.REPO_ROOT / relative).read_text(encoding="utf-8")
+    target.write_text(before, encoding="utf-8")
+    subject.sync_quality_principles(tmp_path)
+    after = target.read_text(encoding="utf-8")
+    start = f"<!-- quality-principles:{key}:start -->"
+    end = f"<!-- quality-principles:{key}:end -->"
+    before_prefix, before_block = before.split(start)
+    before_body, before_suffix = before_block.split(end)
+    after_prefix, after_block = after.split(start)
+    after_body, after_suffix = after_block.split(end)
+    assert (after_prefix, after_suffix) == (before_prefix, before_suffix)
+    # チェックイン済みの写しは1文1行整形前のため、改行と参照移設を分けて比較する。
+    expected = before_body.replace(
+        "agent-basics:writing-standards/references/quality-principles.md`「報告の選別と判断記録」",
+        "agent-basics:writing-standards/references/quality-principles-facts.md`「報告の選別と判断記録」",
+    )
+    expected = re.sub(r"<!-- 生成元: [^\n]+ -->", "", expected)
+    actual = re.sub(r"<!-- 生成元: [^\n]+ -->", "", after_body)
+    assert re.sub(r"\n[ \t]*", "", actual) == re.sub(r"\n[ \t]*", "", expected)
+    assert f"<!-- 生成元: {source_relative}「{title}」。手動編集しない。 -->" in after
+    subject.sync_quality_principles(tmp_path)
+    assert target.read_text(encoding="utf-8") == after
 
 
 def test_return_targets_cover_all_roles_and_declared_callers() -> None:

@@ -8,7 +8,6 @@ import asyncio
 import datetime
 import json
 import pathlib
-import sys
 from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
@@ -18,7 +17,8 @@ from claude_agent_sdk._internal.message_parser import parse_message
 
 from agent_toolkit._agents_server import claude, manager, state
 from agent_toolkit._atk import claude_connection
-from agent_toolkit._common import host_homes, process_tree
+from agent_toolkit._common import host_homes
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     ResultMessage,
@@ -312,7 +312,7 @@ async def test_retry_kill_verifies_cli_process_exit(
     """SDKが切断後もCLIを残した場合も、公開killが所有CLIの終了を確認して停止結果を返す。"""
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
-    with process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(60)"], env=host_environ()) as process:
+    with late_descendant.held_process(tmp_path, env=host_environ()) as process:
         cli = _RetryCLI("retry-flow")
         # ClaudeSDKClientのtransportが所有する、起動済みのCLI processと同じ境界を渡す。
         cli._transport = SimpleNamespace(_process=process)  # pylint: disable=protected-access

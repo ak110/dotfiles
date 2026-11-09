@@ -1,0 +1,48 @@
+# 登録全体のAWI処理：開始と振り分け
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| リポジトリ担当の処理規範を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 統括がlane_limit 2以上の対象を直接処理する時 | `lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
+| 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
+| リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
+| 先行工程を次の巡回へ回す前 | `agent-toolkit:process-wi/references/lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
+
+## 開始と振り分け
+
+**1.** 集合JSONを伴わない手動起動では、`atk wi process-loop --once`を実行する。
+
+この公開操作が対象別の所有・候補ファイル・worktreeを準備し、登録全体を1回処理する統括会話を起動する。
+起動元はCLIの終了まで観測し、返却結果をユーザーへ伝える。
+対象の作業・完了報告・報告用UWIは起動された統括に任せる。
+対象0件では待機せず終了し、未完了・所有待ち・準備失敗は非0で終了する。
+以降は集合JSONを受領した統括担当へ適用する。
+集合JSONの`repositories`を対象集合とする。
+各対象の準備済み`worktree`を処理の起点とする。
+`ownership_record`と`ownership_token`は常駐が取得済みの所有であり、配下の担当へそのまま渡す。
+`lane_session_id`はリポジトリ単位で保持し、レーン操作の`--session-id`へ明示する。
+
+**2.** 対象worktreeの作業に入る前に、その対象の`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。
+
+ホームなどのプロジェクト外cwdでは、対象のプロジェクトスキルを明示的に読み込み、通常のプロジェクトhookが担う確認を実施する。
+対象の規範と既存チェックを適用してhookの目的を満たす。
+担当の振分け前に、`agent-toolkit/share/rules/common/01-agent.md`「行動と手順の目的」に従い、今回の対象集合で委譲が得る成果と直接処理との差を点検する。
+WorktreeCreate/WorktreeRemoveは対象設定を読む既存atk操作で実行し、常駐が準備したworktreeを利用する。
+
+**3.** 初回の担当起動前に、取得済みの候補本文・件数・readiness・previousの残工程から、今回進められる処理負荷が最大と見込まれる1対象を選び、統括自身が直接担当する。
+
+変更規模、検証・公開、再開時の残作業を比べ、差を判断できなければ候補数、それも同じなら受領集合の順で選ぶ。
+選定理由は既存の引き継ぎ記録へ短く残し、詳細な実装調査や専用の負荷スコアは作らない。
+対象が1件なら上限によらず直接処理し、全対象の`lane_limit`が1以下なら従来の集約を保って統括が全件を処理する。
+上限2以上の対象がある複数対象では、直接担当を除く1以下の対象群を全件まとめて1つのリポジトリ担当へ渡し、残る2以上の対象は対象ごとに並行委譲する。
+軽い残対象がある場合だけまとめ担当を起動し、1件の場合もその担当へ渡す。
+`lane_limit`は対象内の並列度と軽い対象の区分に限定して使い、負荷最大の対象は上限によらず直接担当に選べる。
+統括の直接担当、軽い群のまとめ担当、重い対象の個別担当を並行して進める。
+直接処理では`lane_limit`が2以上なら[通常のレーン処理](lanes.md)、1以下なら[単一レーン処理](single-lane.md)へ接続する。
+両経路とも受領済み候補・readiness・対象worktree・対象別`lane_session_id`を使い、起動したレーン担当とwriterを対象別の`writer_sessions`へ記録する。
+対象worktreeごとに計画・実行レビュー・公開を分ける。
+対象別の開始時CI点検、監査、UWI、公開とCI検収を実施する。

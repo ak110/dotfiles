@@ -25,7 +25,7 @@ from agent_toolkit import atk, hook
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add, layout, submit
 from agent_toolkit._common import process_tree, recorded_process, session_registry, state_paths
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, late_descendant
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
 _REQUEST: dict[str, Any] = {
@@ -93,7 +93,10 @@ print("executor stdout", flush=True)
 print("executor stderr", file=sys.stderr, flush=True)
 (path.parent / "ready").write_text("ready")
 if mode == "timeout":
-    time.sleep(30)
+    deadline = time.monotonic() + 120
+    while not (path.parent / "executor.release").exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
 concurrent = mode == "concurrent-always" or mode == "concurrent-once" and count == 1
 code = 1 if concurrent else 9 if mode == "abnormal" else 0
 if not concurrent and mode in {"normal", "concurrent-once"}:
@@ -649,13 +652,13 @@ def test_retention_keeps_incomplete_unreported_and_removes_only_old_completed(mo
 
 
 @pytest.mark.usefixtures("notes")
-def test_popen_success_without_handoff_is_rejected_and_child_reaped(monkeypatch):
+def test_popen_success_without_handoff_is_rejected_and_child_reaped(monkeypatch, tmp_path):
     children = []
 
     def launch(_target, **_kwargs):
         # acceptへ所有権を渡し、所有移管失敗時の停止・回収を検証する。
         child = subprocess.Popen(  # noqa: SIM115  # pylint: disable=consider-using-with
-            [sys.executable, "-c", "import time; time.sleep(30)"],
+            [sys.executable, "-c", late_descendant.held_source(tmp_path / "handoff.release")],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

@@ -1,0 +1,60 @@
+# 初動と直接的原因の確認：直接的原因と事象時点の確定
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 本文の条件に従い「QとC・Dの区別」「前提の再検討」を判断する前 | `root-cause-severity-quality.md`、`root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文の条件に従い「処置の階層」を判断する前 | `root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
+| 本文の条件に従い「類似見直し」を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文の条件に従い「再発防止策の必須性」「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention-requirements.md`、`root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 本文の条件に従い「反復した指摘の原因判定」を判断する前 | `root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
+| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/quality-principles-source-consistency.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-source-consistency.md` |
+| 文書・規範・出力メッセージを変える対策を提案する前 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+
+## 直接的原因と事象時点の確定
+
+1. 修正の基準を揃えるため、期待結果・症状・発生条件と取得済み証拠を整理する。
+   事象と実際の結果・条件は再現、ログ、実装から特定し、期待契約は目的を定める仕様書、設計記録、規範から導く。
+   現行実装の前提やコード内の文言も検証対象とする。
+2. 入力の同一性を保証するため、生成主体、途中の変換・省略・退避、観測点、最終消費主体を対応付ける。
+   ホストや呼出方式で実形が変わる部分は対象版の実記録または一次仕様と比較する。
+   `../../writing-standards/references/investigation-sources.md`「根拠と主張の一致」で十分性と生成側から消費側までの条件一致を判断し、コード・合成入力による再現と実入力での確認範囲を区別する。
+3. 候補を絞る不足情報を得るため、明確な診断や保存済みの失敗を先に精読し、コード・差分・正常系の比較、公式仕様、公開操作による再現、追加計測から症状に合う操作を選ぶ。
+   挙動や発生条件が不明なら再現・計測を優先し、確認済み失敗の全件重複実行を前提にしない。
+   本番障害は発生時刻前後のデプロイ、設定・依存・インフラ変更の履歴とログ・メトリクスを比較する。
+   利用できるログ・監視・デプロイ系MCPやCLIで取得し、取得不能範囲は必要情報と取得手段を依頼元へ示す。
+4. 誤った候補確定を防ぐため、意図通りの実装、計測誤り（サンプル数、単位、計算順序、測定量）、ノイズ・相関の誤認、狭い範囲での判断を検証する。
+   対象データを生成・更新する全書き込み処理について、呼出元を含む入出力と正常例を少なくとも1件確認・再現する（努力目標）。
+   方針と実態が違えば適用範囲・時点・成立経緯を確認し、実在は実装・設定で確かめる。
+   明文化された方針は`../../writing-standards/references/quality-principles-source-consistency.md`「文書と既存コードの不一致」で現行と確認できた場合にコードより優先する。
+   複合条件は分解し、作者は原因特定に不可欠な場合だけ調べる。
+   設定値、依存版、外部状態、規範・スキル・手順の条文などを原因とする場合（未遵守・不足の指摘を含む）は、事象時点の適用を履歴・当時の記録で確認し、未確認なら推定とする。
+   排他・競合・同時更新が候補なら、共有状態を変更し得る別プロセス、ロックなしの手動操作、別作業ディレクトリ・マシンなど全主体とロック範囲を比較し、同じロックを共有しない主体を候補に残す。
+   上流の挙動・変更や外部の依存・実行環境・提供元の変化が候補なら、公式文書、ソース差分、Issueなど一次情報を確認し、コード読解・手元再現は補足とする。
+   削除・廃止、デフォルト値・挙動・形式、非推奨化、推奨手順・主流の方法などの変化について、事実・適用版、理由・背景、提供元とエコシステムの現在の推奨・よりモダンな代替を、公式変更記録・PR・議事録・移行案内・各候補の公式資料などで確かめる。
+   事実・推奨と自環境への適用判断を分けて記録し、検索は内部識別子に加えて機能の説明・公式用語も用いる。
+5. 直接的原因を裏付けるため、試行ごとの仮説・根拠・期待観測・実結果を対応付け、候補を見分ける最小の検証で裏付け・反証する。
+   未完走の処理は制御の未到達と到達後の失敗を区別し、診断文だけで推測せず実起動条件と成否を比較して差の発生箇所を同条件で再現する。
+   実行挙動は候補の仕組みだけを変える対照実験で確定し、lint・実行を伴わない文書指摘は規則・期待契約と対象の比較で裏付ける。
+   後掲の推定を原因確定に使わず、確実な観測事実を用いる。
+   再現できなければ条件の絞込みや診断を続け、到達不能部分と必要情報を示す。
+6. 対策の適用漏れを防ぐため、直接原因の仕組みが動く条件から、呼出箇所（呼出元・生成側・消費側など）と扱う対象（値・入力・項目種類など）の双方を定め、観測箇所や入力種類を超えて仕組みを共有する全体へ適用する。
+   類似見直しの母集団は根本原因から導く（`root-cause-remediation.md`「類似見直し」）。
+7. 解消を保証するため、元の期待結果と症状を観測できる手段で修正後を確認する。
+   実行挙動は元の公開操作か原因と結果を確認できる限定操作、lintは対応規則、文書は期待契約との比較を用い、無関係な実機実行を追加しない。
+   未確認の解消を完了とせず、既に解消済みでも症状を観測できる確認結果を示す。
+8. 再試行の重複を防ぐため、証拠と棄却した前提を既存作業記録へ簡潔に残す。
+   失敗から成功への変化を示す出力・画面記録・比較を修正前後の入力・版と対応付け、既存検証記録へ保存する。
+   効果のない調査用変更は自身の変更だけを整理して効果を切り分け、利用中の成果と他担当の差分を保護する。
+
+次のような値や仮説は、手順5で直接的原因と区別する推定に当たる。
+
+- 単なる相関関係しか確認できていない候補
+- 条件を揃えた比較対象が存在しない集計結果
+- 生成元の処理、公式ドキュメント、データ構造の定義などで測定対象との対応関係が確認されていない値
+- 実行時刻、負荷、事前準備の状態など、前提条件が揃っていない環境での比較結果
+- 単独実行での成功や高負荷状態であることだけを根拠にした競合・排他制御の候補

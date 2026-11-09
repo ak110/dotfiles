@@ -6,7 +6,8 @@
 ## agent-toolkit/agent_toolkit/のパッケージ構成
 
 `agent-toolkit/agent_toolkit/`直下には配布物の外部から絶対パスで解決される公開スクリプトだけを置く。
-該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`とする。リモートホスト上で読み込んで実行するヘルパー2件（`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`）は`agent-toolkit/scripts/`に置く。
+該当するファイルはフック共通の`hook.py`、CLI`atk.py`、MCPサーバー`agents_server_mcp.py`、CI待機`wait_ci.py`とする。
+リモートホスト上で読み込んで実行するヘルパー2件（`atk_serve_plans_remote_helper.py`・`atk_serve_sessions_remote_helper.py`）は`agent-toolkit/scripts/`に置く。
 それ以外の実装モジュールは、責務ごとのサブパッケージ`_common`・`_git`・`_plan`・`_atk`・`_agents_server`・`_hooks`へ収める。
 この6つを依存の層とし、この並び順を層の順序とする。
 後ろの層は前の層をimportしてよく、前の層は後ろの層をimportしない。
@@ -72,7 +73,8 @@ ruffには特定の規則のファイル単位の抑止だけを禁じる設定�
 `_hooks`の実装モジュールは、関数の実行時までだけ使う依存を`lazy import`・`lazy from`で読み込む。
 hookはイベントごとに別プロセスで起動し、入力に応じて処理分岐の大半を実行せずに終わる。
 それでもトップレベルのimportは初期化時に全て実行されるため、例えばPreToolUseは対象外の入力でも委譲の観測や報告の解析の依存まで読み込んでいた。
-Python 3.15はPEP 810に従い、`lazy`を付けたimportを初回の使用時に読み込む。dotfilesとagent-toolkitのPython下限は3.15とする。
+Python 3.15はPEP 810に従い、`lazy`を付けたimportを初回の使用時に読み込む。
+dotfilesとagent-toolkitのPython下限は3.15とする。
 CLIと`pytools/`の各コマンドも、ヘルプや補完など一部の処理でだけ使う依存に同じ書き方を使う。
 モジュールの定数、デコレーター、データクラス、正規表現と表の構築に使う依存は定義時に実体化するため`lazy`を付けない。
 公開`hook.py`が常に読み込む標準ライブラリ（`json`・`os`・`pathlib`・`sys`など）も、`lazy`を付けても読み込みが減らないため対象から外す。
@@ -82,7 +84,8 @@ CLIと`pytools/`の各コマンドも、ヘルプや補完など一部の処理�
 構文を解釈できない旧Pythonでも同じファイルを通常のimportとして実行できることが、列挙方式を採用した理由である。
 Python 3.15以降だけを前提にするユーザーの要求を受けて、この判断を改めた。
 下限が3.15になったため旧版向けの互換は不要となり、列挙とimport文が離れた書き方は、importの追加・削除・改名の際に列挙だけが古いまま残る原因になる。
-例えば`from <パッケージ> import <サブモジュール>`の形で読むサブモジュールを列挙しても遅延されない。列挙と比べる名前は文のモジュール名だからである。
+例えば`from <パッケージ> import <サブモジュール>`の形で読むサブモジュールを列挙しても遅延されない。
+列挙と比べる名前は文のモジュール名だからである。
 Python 3.15.0で`from xml import dom`に`xml.dom`を列挙すると通常のmoduleとなり、`xml`の列挙と`lazy from`では遅延される。
 宣言と実際の読み込みのこの不一致は、列挙の文面からは見分けにくい。
 各import文へ`lazy`を付ける書き方は、遅延の対象を文そのものが示すため、この不一致が生じない。
@@ -110,7 +113,8 @@ pytestは対象側のパッケージ構造と取得した`agent_toolkit`の実�
 dotfilesとagent-toolkitのmcp依存はSDK 2系を要求し、各lockは上書きなしの通常解決で生成する。
 以前のmcp上書きはsemgrepによる脆弱版の固定を避けるために導入したが、pyfltrの2系要求まで1系へ置き換え、lock成功後にMCP起動のimportを失敗させた。
 SDK移行後は通常解決で脆弱版の固定を避けられるため、両プロジェクトと配布先導入の上書きを撤去する。
-宣言依存の両立判定をuvへ戻し、将来の要求の衝突を解決時に検出する。別環境のuvx起動の成功を、プロジェクト環境や配布先導入の依存充足の代わりにはしない。
+宣言依存の両立判定をuvへ戻し、将来の要求の衝突を解決時に検出する。
+別環境のuvx起動の成功を、プロジェクト環境や配布先導入の依存充足の代わりにはしない。
 
 `agent-toolkit/`は独自の`pyproject.toml`と`uv.lock`を持つため、pyfltrはこれをsubprojectとして分割する。
 分割したチェックは`agent-toolkit/pyproject.toml`とそのcwdの設定ファイルだけを読み、分割しないチェックはリポジトリ直下の設定だけを読む。
@@ -119,9 +123,12 @@ lycheeの`.lycheeignore`が届かずCIが外部サイトの応答待ちで失敗
 
 設定の置き場所は次のように決める。
 
-- pytest、mypy、pyright、ty、pylintなどのPython系のチェックは、agent-toolkitの環境で動く必要があるため分割を維持する。これらが読む`[tool.pyfltr]`のキーと`[tool.ruff]`・`[tool.pylint]`・`[tool.mypy]`・`[tool.pyright]`・`[tool.pytest.ini_options]`・`[tool.arid]`には両側へ同じ値を置く
-- markdownlint、textlint、lychee、直下で定義した全カスタムコマンドなど、agent-toolkitの環境に依存しないチェックは`<名前>-subproject-aware = false`で分割を無効にし、直下の設定と設定ファイルでリポジトリ全体を1回で調べる。shellcheck、shfmt、colloquial-check、typosはpyfltrが元から分割しない
-- 分割しないチェックのキーと設定ファイル（`.lycheeignore`、`.markdownlint-cli2.*`、`.textlintrc*`、`.textlintignore`）は`agent-toolkit/`側に置かない。置いても読まれず、直下と値が一致しなくても気付けない
+- pytest、mypy、pyright、ty、pylintなどのPython系のチェックは、agent-toolkitの環境で動く必要があるため分割を維持する。
+  これらが読む`[tool.pyfltr]`のキーと`[tool.ruff]`・`[tool.pylint]`・`[tool.mypy]`・`[tool.pyright]`・`[tool.pytest.ini_options]`・`[tool.arid]`には両側へ同じ値を置く
+- markdownlint、textlint、lychee、直下で定義した全カスタムコマンドなど、agent-toolkitの環境に依存しないチェックは`<名前>-subproject-aware = false`で分割を無効にし、直下の設定と設定ファイルでリポジトリ全体を1回で調べる。
+  shellcheck、shfmt、colloquial-check、typosはpyfltrが元から分割しない
+- 分割しないチェックのキーと設定ファイル（`.lycheeignore`、`.markdownlint-cli2.*`、`.textlintrc*`、`.textlintignore`）は`agent-toolkit/`側に置かない。
+  置いても読まれず、直下と値が一致しなくても気付けない
 
 `pyfltr_subproject_config_invariant_test.py`がこの対応を保証する。
 分割しないチェックの値と設定ファイルがsubproject側に無いこと、直下のカスタムコマンドが分割を無効にしていること、分割するチェックと全体に作用するキーが両側で一致することを確かめる。
@@ -136,7 +143,9 @@ aridの検出条件は両側で共有するが、既存負債の受容データ�
 `subproject-exclude`で分割そのものを外す案は、Python系のチェックがリポジトリ直下の環境で動いてagent-toolkitの依存と設定を使えなくなるため採らない。
 個別のキーを見つけるたびに両側へ値を追随させ、そのキーだけを比べるテストを追加する案は、テストの無いキーで同じ事象が続くため採らない。
 
-レビュー限定基準の定義と索引は`agent-basics`の`writing-standards/references/review-only-criteria.md`に置く。品質基準を所有する`agent-basics`へ定義を集約し、工程を扱う`agent-toolkit`の文書はその定義を参照する。toolkitからbasicsへの一方向の依存を保つことで、品質基準の改訂が工程文書との循環参照を生まず、作成とレビューの両方が同じ定義を適用できる。
+レビュー限定基準の定義と索引は`agent-basics`の`writing-standards/references/review-only-criteria.md`に置く。
+品質基準を所有する`agent-basics`へ定義を集約し、工程を扱う`agent-toolkit`の文書はその定義を参照する。
+toolkitからbasicsへの一方向の依存を保つことで、品質基準の改訂が工程文書との循環参照を生まず、作成とレビューの両方が同じ定義を適用できる。
 
 ## テストの実行環境の隔離
 
@@ -153,35 +162,49 @@ xdist 3.8の失敗上限では、controllerの停止理由を`_testing/xdist_sto
 共通pytest pluginから登録するため、両プロジェクトの直接pytestとpyfltrで同じ適応が働き、worker回収後の既存の実行枠解放へ接続する。
 修正を含む安定版へ更新し、`xdist_stop_test.py`の早期停止・正常完了と実行枠の回収を確認した時点で局所適応を撤去する。
 pytestが最外側で実行枠を取得した場合は、試験の区切りで待機中の別の検証へ枠を譲り、取り直してから残りの試験を続ける（`_testing/slot_yield.py`）。
-xdistではcontrollerの所有スレッドがpyfltrの`cooperative_hold`を保持し、`pytest_configure_node`でworkerへ参加券を渡す。全workerが子孫を残さない区切りで止まった時点だけ譲るため、worker稼働中の排他を保つ。
-pyfltrの協調所有者は終了した参加者も停止として数えないため、割り当てられた試験を先に終えたworkerの参加区間はcleanupまで残さず、そのworkerが`hold`を抜けた後に書く完了印を`pytest_testnodedown`の後に確かめてから閉じる。cleanupまで残すと、区切りで止まった残りのworkerが再開されず、pytestが全試験の後も終了しなかった（観測は2026年11月）。
-各プロセスの最後の試験の後には譲らない。取り直しが先に並んだ待機者の終了まで待ち、全試験を終えたpytestの終了だけが遅れるためである。
+xdistではcontrollerの所有スレッドがpyfltrの`cooperative_hold`を保持し、`pytest_configure_node`でworkerへ参加券を渡す。
+全workerが子孫を残さない区切りで止まった時点だけ譲るため、worker稼働中の排他を保つ。
+pyfltrの協調所有者は終了した参加者も停止として数えないため、割り当てられた試験を先に終えたworkerの参加区間はcleanupまで残さず、そのworkerが`hold`を抜けた後に書く完了印を`pytest_testnodedown`の後に確かめてから閉じる。
+cleanupまで残すと、区切りで止まった残りのworkerが再開されず、pytestが全試験の後も終了しなかった（観測は2026年11月）。
+各プロセスの最後の試験の後には譲らない。
+取り直しが先に並んだ待機者の終了まで待ち、全試験を終えたpytestの終了だけが遅れるためである。
 pyfltr 3.27.0以降では、`pytest-slot-ticket`を設定したpyfltr・`atk lane integrate`の検証も参加券を子単位で受け渡し、安全な区切りで最上位の所有者だけが枠を解放する。
-参加券なしで所有を継承した子は譲らない。子が祖先の所有を直接解除すると、祖先の別の子と待機者が重なるためである。
+参加券なしで所有を継承した子は譲らない。
+子が祖先の所有を直接解除すると、祖先の別の子と待機者が重なるためである。
 各worktreeへ別キャッシュを割り当てて枠を分ける案と、dotfiles側で独自のロックや待機台帳を持つ案は、ホスト共有資源の保護を失うか所有管理を二重にするため採らない。
-終了時に回収する子孫からは、同じプロセスのmultiprocessingのresource_trackerを除く。trackerはpytestの終了で自ら終わり、先に停止すると終了時の資源解放がtrackerを再起動し、未解放の資源を報告する警告を出力するためである。
+終了時に回収する子孫からは、同じプロセスのmultiprocessingのresource_trackerを除く。
+trackerはpytestの終了で自ら終わり、先に停止すると終了時の資源解放がtrackerを再起動し、未解放の資源を報告する警告を出力するためである。
 明示basetempとJUnit・traceなどの保存証拠、serveとwatcherはそれぞれの所有主体が必要な寿命まで保持する。
 資源所有クラスは文脈マネージャーで獲得直後から解放を保証し、再入可能なcloseと起動途中の所有移譲を扱う。
 呼び出し元へ手動closeを分散する案は、例外が発生した場合と複数の後始末が失敗した場合に資源が残るため採用しない。
 
 テストを開発機だけにある状態から切り離す隔離は、`agent-toolkit/agent_toolkit/_testing/isolation.py`の1箇所に定義する。
 対象の次元は、ホームと設定ディレクトリ、private-notes、一時ディレクトリ、Gitのglobal・system設定、開発セッションの環境変数、PATH上の開発機専用のエージェントCLI（`codex`・`claude`・`agy`）の6つである。
-開発セッションの環境変数には、`update-dotfiles`が子へ渡す実行状態（`UPDATE_DOTFILES_RUN_ID`など）と`AGENT_TOOLKIT_CONFIG_`で始まる設定の上書きを含める。Codex daemonの再起動を経てエージェントのシェルとpytestへ継承され、単独の公開操作を試すテストを更新処理配下の分岐へ入れていた。
-ホームと設定ディレクトリは、試験関数ごとの差し替えに加えて、`pytest_plugin`が収集区間だけbasetemp配下へ向ける。収集時にimportされる製品モジュールは`Path.home()`などを定数へ確定し、試験関数ごとの差し替えでは実ホームを指したまま残るためである。セッション全体で差し替える案は、xdistのworkerが祖先から継承するpyfltrの検証枠のロック位置まで変わり、worker同士が互いの解放を待つため採用しない。
+開発セッションの環境変数には、`update-dotfiles`が子へ渡す実行状態（`UPDATE_DOTFILES_RUN_ID`など）と`AGENT_TOOLKIT_CONFIG_`で始まる設定の上書きを含める。
+Codex daemonの再起動を経てエージェントのシェルとpytestへ継承され、単独の公開操作を試すテストを更新処理配下の分岐へ入れていた。
+ホームと設定ディレクトリは、試験関数ごとの差し替えに加えて、`pytest_plugin`が収集区間だけbasetemp配下へ向ける。
+収集時にimportされる製品モジュールは`Path.home()`などを定数へ確定し、試験関数ごとの差し替えでは実ホームを指したまま残るためである。
+セッション全体で差し替える案は、xdistのworkerが祖先から継承するpyfltrの検証枠のロック位置まで変わり、worker同士が互いの解放を待つため採用しない。
 リポジトリ直下の`conftest.py`（`pytools/`・`scripts/`）と`agent-toolkit/conftest.py`（`agent_toolkit/`・`skills/`）が同じ定義をautouseで適用する。
-pytestは祖先ディレクトリのconftestだけを読むため、起動範囲ごとにconftestを置くと隔離の集合が範囲ごとに異なり、範囲を横断する定義を持たないまま事象ごとに次元を追加する運用になっていた。その結果、開発機で成功しCIだけで失敗する事象が、Git設定、private-notes、PATH上のCLIと次元を変えて繰り返された。
+pytestは祖先ディレクトリのconftestだけを読むため、起動範囲ごとにconftestを置くと隔離の集合が範囲ごとに異なり、範囲を横断する定義を持たないまま事象ごとに次元を追加する運用になっていた。
+その結果、開発機で成功しCIだけで失敗する事象が、Git設定、private-notes、PATH上のCLIと次元を変えて繰り返された。
 リポジトリ直下から`agent-toolkit/`配下を指定して起動すると2つのconftestが読まれるが、fixture名が同じため近い側の定義だけが適用され、二重に適用されない。
 
 パッケージ内の共通fixtureは自動・明示要求型とも`agent_toolkit._testing.pytest_plugin`が登録し、両`pyproject.toml`のpytest `addopts`から`-p`で読み込む。
-pytest 9.1.1では、パッケージ内・親ディレクトリ・パッケージ内の順にファイルを指定するとcollectorが再生成され、conftestに結び付いたfixtureが後半で失われる（[pytest #14997](https://github.com/pytest-dev/pytest/issues/14997)、[修正 #14645](https://github.com/pytest-dev/pytest/pull/14645)）。fixtureの種別によらず配置で結果が変わるため、明示要求型も起動時に登録する。
+pytest 9.1.1では、パッケージ内・親ディレクトリ・パッケージ内の順にファイルを指定するとcollectorが再生成され、conftestに結び付いたfixtureが後半で失われる（[pytest #14997](https://github.com/pytest-dev/pytest/issues/14997)、[修正 #14645](https://github.com/pytest-dev/pytest/pull/14645)）。
+fixtureの種別によらず配置で結果が変わるため、明示要求型も起動時に登録する。
 起動時登録はcollectorの同一性から切り離し、自動fixture本体はテストのファイル位置で従来の適用範囲を守る。
 環境変数・警告状態・Codexモデル一覧・終了待機・端末幅・agents_serverの診断ログhandlerの回収の6件は`agent_toolkit/`配下、外部真正性状態の隔離は`_atk/managed_temp/`配下、編集環境の隔離は`_atk/wi/mutations/`配下に限る。
 診断ログhandlerの回収は、`configure_logging`の標準エラー向けhandlerが構築時の`sys.stderr`（試験中の取り込み用stream）を保持し、試験ごとに回収を書く方式では回収を持たない呼出し元の試験が残ったため、全ての試験で行う。
-自動fixtureを実物へ戻す`real_end_turn_wait`、agents_serverの隔離、計画インデックス、口語検出の入力、Gitリポジトリのfactory、JST固定も同じプラグインへ置く。テスト内の個別差し替えはそのまま使う。
-conftest.pyを置けるのはリポジトリ直下と`agent-toolkit/`直下だけとし、後者の登録名は前者にもそろえる。`pytest_fixture_registration_invariant_test.py`が配置と登録の不変条件を確かめる。
+自動fixtureを実物へ戻す`real_end_turn_wait`、agents_serverの隔離、計画インデックス、口語検出の入力、Gitリポジトリのfactory、JST固定も同じプラグインへ置く。
+テスト内の個別差し替えはそのまま使う。
+conftest.pyを置けるのはリポジトリ直下と`agent-toolkit/`直下だけとし、後者の登録名は前者にもそろえる。
+`pytest_fixture_registration_invariant_test.py`が配置と登録の不変条件を確かめる。
 修正を含むpytest安定版を採用し、自動・明示要求型ともプラグインの回避を外して同じ収集順と適用範囲・個別差し替えの契約が成立すれば、この登録方式と配置制約の回避を撤去できる。
 
-PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以外の項目へのシンボリックリンクだけを持つ一時ディレクトリへ置き換える。ディレクトリごと外すと同じ場所の`uv`などテストが使うツールまで失われる。置き換えたPATHはセッションで1回だけ組み立てる。
+PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以外の項目へのシンボリックリンクだけを持つ一時ディレクトリへ置き換える。
+ディレクトリごと外すと同じ場所の`uv`などテストが使うツールまで失われる。
+置き換えたPATHはセッションで1回だけ組み立てる。
 実際のCLIやホームを意図して使うテストは、`host_environ`で子プロセスへ渡す環境変数を組み立てるか、`restore_host_environment`で同じプロセスの値を戻す。
 
 pnpm 12以降の導入・版管理は`agent-basics/skills/writing-standards/references/dependency-management.md`「pnpm」に従う。
@@ -193,17 +216,21 @@ Corepackを別途導入して残す案は、pnpm 12自身で版固定・検証�
 pnpm 10以前のCorepack手順と、Corepackを実行し得る試験の環境変数・キャッシュの隔離は維持する。
 
 実際のuv、pnpm、corepackを使い、取得物の冷えた状態自体はチェックしない試験は、`share_package_caches`を明示して取得物だけを再利用する。
-uvの保存先は隔離前の環境から`uv cache dir`で解決し、`UV_CACHE_DIR`で子プロセスへ渡す。解決は利用時にプロセスで1回だけ行う。
+uvの保存先は隔離前の環境から`uv cache dir`で解決し、`UV_CACHE_DIR`で子プロセスへ渡す。
+解決は利用時にプロセスで1回だけ行う。
 HOME、設定、一時出力、private-notes、managed-tempの状態と仮想環境は試験ごとに隔離し、複数worktreeの仮想環境を共有しない。
 公開された起動コマンド、起動形式、導入試験が個別にキャッシュを解決すると、隔離後の空の保存先を選ぶ試験が残るため、解決を共通fixtureへ集約する。
 空キャッシュからの導入自体を確かめる試験には共有を強制せず、初回取得と取得済みキャッシュ・新規仮想環境の双方で公開結果を確かめる。
 
-`log_level = "DEBUG"`の取り込みからは、依存ライブラリのロガーを外す。定義は`agent-toolkit/agent_toolkit/_testing/dependency_logging.py`が持ち、2つのconftestが隔離と同じ形で適用する。
+`log_level = "DEBUG"`の取り込みからは、依存ライブラリのロガーを外す。
+定義は`agent-toolkit/agent_toolkit/_testing/dependency_logging.py`が持ち、2つのconftestが隔離と同じ形で適用する。
 `log_level`は本リポジトリのコードのDEBUGログを失敗報告へ残すために置いているが、pytestは全ロガーへ一律に閾値を下げるため、markdown-it-pyのDEBUGレコード（1200行の計画の確認1件で約40万件）の記録にテストの所要の大半を使っていた。
 インストール済みの配布物が提供する上位パッケージ名のロガーの閾値をINFOへ上げ、配布物として登録されない本リポジトリのコードはDEBUGの取り込みを残す。
-`log_level`を下げる案は本リポジトリのDEBUGログを失い、姉妹プロジェクトとそろえた設定の目的に反するため採らない。ライブラリを名指しで外す案は、今後加わる依存へ働かないため採らない。
+`log_level`を下げる案は本リポジトリのDEBUGログを失い、姉妹プロジェクトとそろえた設定の目的に反するため採らない。
+ライブラリを名指しで外す案は、今後加わる依存へ働かないため採らない。
 
-`asyncio.create_subprocess_exec`全体を遮断するファイル単位の仕組みを全範囲へ広げる案は、正当に子プロセスを起動する他のテストまで止めるため採らない。CIと同じ条件の環境で追加実行する案は、テスト自身が開発機でも失敗する本方式が成立するため採らない。
+`asyncio.create_subprocess_exec`全体を遮断するファイル単位の仕組みを全範囲へ広げる案は、正当に子プロセスを起動する他のテストまで止めるため採らない。
+CIと同じ条件の環境で追加実行する案は、テスト自身が開発機でも失敗する本方式が成立するため採らない。
 
 ## 確かめる対象の近くへのテスト配置
 
@@ -222,7 +249,8 @@ pytestのマーカーでも識別する案は、fastがマーカーを選択に�
 
 隠しディレクトリのchezmoi配布原本はpytestの通常の収集では対象に入らないため、その契約を読むrootのテストを維持する。
 近接のためだけにpytestの再帰設定やconftestを増やす案は、収集と隔離の別系統を生むため採らない。
-Codex投影は既存の通常ファイルの同期を維持し、移動したテストも含める。wheelは既存のPythonパッケージだけを含み、テストを除外する。
+Codex投影は既存の通常ファイルの同期を維持し、移動したテストも含める。
+wheelは既存のPythonパッケージだけを含み、テストを除外する。
 生成同期と説明文の自動チェックのglobは新配置に追随させる。
 fastへの集約はテストの対象選択を自動化する変更であり、commit後にrebaseでできた組合せを確かめる役割も保持する。
 統合時も同じfastのpytestを実行して組合せを確かめる。

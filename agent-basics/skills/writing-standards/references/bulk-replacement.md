@@ -2,19 +2,24 @@
 
 多数の箇所で同一機能の語句へ置き換える場合（1対1の表記統一や、文脈に応じた決まった候補からの置き換えなど）は、一括置換と変更箇所のレビューをセットで行う。
 
-1. 意味を保つため、代表例で候補が指示対象、動作の主体、条件、否定や例外を維持できるか検証する。修正箇所が少なく手動の方が低コストかつ高品質なら、QCDに従って担当者が直接修正する。
-2. 既存差分を保護するため、置換前に`git status --porcelain=v1 -- <対象パス>`で未コミット変更がないことを確認する。元に戻す際も、着手前に未コミット差分がなかったファイルに限る。
+1. 意味を保つため、代表例で候補が指示対象、動作の主体、条件、否定や例外を維持できるか検証する。
+   修正箇所が少なく手動の方が低コストかつ高品質なら、QCDに従って担当者が直接修正する。
+2. 既存差分を保護するため、置換前に`git status --porcelain=v1 -- <対象パス>`で未コミット変更がないことを確認する。
+   元に戻す際も、着手前に未コミット差分がなかったファイルに限る。
 3. 現在内容へ安全に適用するため、直前に`file-editing.md`「ファイル更新時の編集ツールの前提」でファイルごとの読み取り状態を確認し、意味を保てる部分を一括置換する。
-4. 誤置換を検出するため、`git diff --word-diff=plain --word-diff-regex=.`で文字単位の差分を出力し、変更箇所を全件レビューする。誤置換時は対象条件を絞り、手順3から再実行する。
+4. 誤置換を検出するため、`git diff --word-diff=plain --word-diff-regex=.`で文字単位の差分を出力し、変更箇所を全件レビューする。
+   誤置換時は対象条件を絞り、手順3から再実行する。
 5. 文脈ごとの意味を保つため、候補に合わない文、意味が変わりやすい文、指摘を受けた文を個別に書き直し、`textlint-violations.md`「文の書き直しの委譲と検収」の品質条件で検収する。
-6. 完了を確認するため、通常のtextlintチェックと対象の自動テストを実行する。指摘・エラーの受領時は`agent-basics:bugfix`を起動して原因分析と絞り込み型の類似見直しを行う。再発防止策の要否、初回検出の例外、記録の比例性も同スキルに従う。
+6. 完了を確認するため、通常のtextlintチェックと対象の自動テストを実行する。
+   指摘・エラーの受領時は`agent-basics:bugfix`を起動して原因分析と絞り込み型の類似見直しを行う。
+   再発防止策の要否、初回検出の例外、記録の比例性も同スキルに従う。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 手順3の置換を適用する前 | `file-editing.md#「ファイル更新時の編集ツールの前提」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/file-editing.md#「ファイル更新時の編集ツールの前提」` |
-| 手順5の個別の書き直しを検収する前 | `textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/textlint-violations.md#「文の書き直しの委譲と検収」` |
+| 手順3の置換を適用する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
+| 手順5の個別の書き直しを検収する前 | `agent-basics:writing-standards/references/textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |

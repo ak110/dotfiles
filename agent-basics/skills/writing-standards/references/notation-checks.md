@@ -4,7 +4,7 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -17,7 +17,9 @@
 ## チェックの対象範囲
 
 - 計画ファイルは、文章lint、口語表現チェック、ダッシュ記号チェックの必須対象から除外する（読み手がその計画を実行するエージェントに限られており、表記の統一がタスクの特定や完了条件の判定に影響しないため）。
-- エージェント向け文書に掲載する用例は、正しい表現と、その表現が成立する条件を説明する文章で構成し、通常の文章チェックの対象とする。用例と解説の書き方は`tone-examples.md`および`tone-examples-llm-tone.md`を参照する。なお、検出用テストデータ、内部保存形式の識別子、および他者の逐語引用は、自身が作成した用例と明確に区別して原文のまま保持する。
+- エージェント向け文書に掲載する用例は、正しい表現と、その表現が成立する条件を説明する文章で構成し、通常の文章チェックの対象とする。
+  用例と解説の書き方は`tone-examples.md`および`tone-examples-llm-tone.md`を参照する。
+  なお、検出用テストデータ、内部保存形式の識別子、および他者の逐語引用は、自身が作成した用例と明確に区別して原文のまま保持する。
 
 | 規則 | 検出を担当する既存ツール | 検出対象外の扱いと意味確認の担当 |
 | --- | --- | --- |
@@ -47,20 +49,31 @@
 
 ## 文章チェックの一括実行
 
-1. 対象漏れを防ぐため、「チェックの対象範囲」と「逐語引用の検出範囲」で対象を選ぶ。対象拡張子は`.md`、`.py`、`.txt`、`.yaml`、`.yml`、`.toml`で、ソースコード内のコメント行も含む。チェッカー未導入なら同表の各規則を手動で自己点検する。以降のpyfltr手順は、プロジェクトがpyfltrと表記チェッカーを導入している場合に適用する。
+1. 対象漏れを防ぐため、「チェックの対象範囲」と「逐語引用の検出範囲」で対象を選ぶ。
+   対象拡張子は`.md`、`.py`、`.txt`、`.yaml`、`.yml`、`.toml`で、ソースコード内のコメント行も含む。
+   チェッカー未導入なら同表の各規則を手動で自己点検する。
+   以降のpyfltr手順は、プロジェクトがpyfltrと表記チェッカーを導入している場合に適用する。
 2. 全対象へ到達するため、恒久的な成果物には現在のホストが公開するserver key `pyfltr`の`run`を選び、引数をそろえる（完全修飾名はClaude CodeとCodexで異なる）。
    - `paths`: 対象全ファイルの絶対パス（重複を除く）
    - `work_dir`: チェック設定を持つプロジェクトの絶対パス
-   - `commands`: 対象拡張子に対応するコマンドの和集合。Markdownを含む場合は`["textlint", "colloquial-check"]`、それ以外の対応拡張子のみなら`["colloquial-check"]`とし、登録されたダッシュチェック等も含める
+   - `commands`: 対象拡張子に対応するコマンドの和集合。
+     Markdownを含む場合は`["textlint", "colloquial-check"]`、それ以外の対応拡張子のみなら`["colloquial-check"]`とし、登録されたダッシュチェック等も含める
    - `enable`: `["colloquial-check"]`
    - `no_exclude`と`no_fix`: ともに`true`
    - `allow_external_paths`: `work_dir`のプロジェクト外のファイルを含む場合のみ`true`
-3. 同じ設定の検査をまとめるため、複数ファイルを1回の`run`で一括チェックする。MCPの`run`が使えなければ、導入済みpyfltrの公開ヘルプ（`--help`）でCLIの起動形を確認し、同様の対象とオプションで実行する。外部ファイルには`--allow-external-paths`を付ける。
+3. 同じ設定の検査をまとめるため、複数ファイルを1回の`run`で一括チェックする。
+   MCPの`run`が使えなければ、導入済みpyfltrの公開ヘルプ（`--help`）でCLIの起動形を確認し、同様の対象とオプションで実行する。
+   外部ファイルには`--allow-external-paths`を付ける。
 
    ```sh
    <pyfltrの起動形> run --commands=<全対象へ到達するコマンドの和集合> --enable=colloquial-check --no-exclude --no-fix --output-format=jsonl --work-dir <チェック設定を持つプロジェクトの絶対パス> <対象ファイルの絶対パス...>
    ```
 
-4. 未到達を完了と誤認しないため、レスポンスの`completion`が`completed`、`files_reached`が指定ファイル数と一致し、全指定コマンドが`completed_commands`に含まれることを確認する。`incomplete_commands`、`missing_targets`、`fully_excluded_files`もすべて空であることを確かめる。CLIはJSONL最終行の`summary`で同じ条件を確認する。`incomplete`や`not_reached`は未完了とし、上記3項目と`skipped_reason`、`warnings`から原因を特定して対処する
-5. 完了した検査の診断を把握するため、完了確定後に警告・エラー件数を確認する。詳細が必要なら`run_id`をMCPの`show_run_diagnostics`へ渡す
-6. 意味と原文を保つため、`textlint-violations.md`に従って診断へ対応し、警告解消だけを目的に情報量を減らす書き換えを避ける。他者の原文（記事や発表のタイトル、引用した発言、固有名詞など）の警告語句は保持し、残した箇所と理由を完了報告に明記する
+4. 未到達を完了と誤認しないため、レスポンスの`completion`が`completed`、`files_reached`が指定ファイル数と一致し、全指定コマンドが`completed_commands`に含まれることを確認する。
+   `incomplete_commands`、`missing_targets`、`fully_excluded_files`もすべて空であることを確かめる。
+   CLIはJSONL最終行の`summary`で同じ条件を確認する。
+   `incomplete`や`not_reached`は未完了とし、上記3項目と`skipped_reason`、`warnings`から原因を特定して対処する
+5. 完了した検査の診断を把握するため、完了確定後に警告・エラー件数を確認する。
+   詳細が必要なら`run_id`をMCPの`show_run_diagnostics`へ渡す
+6. 意味と原文を保つため、`textlint-violations.md`に従って診断へ対応し、警告解消だけを目的に情報量を減らす書き換えを避ける。
+   他者の原文（記事や発表のタイトル、引用した発言、固有名詞など）の警告語句は保持し、残した箇所と理由を完了報告に明記する

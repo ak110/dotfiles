@@ -1,23 +1,24 @@
 # WIから受入までの工程
 
-WI作成から実行レビューに至る一連の成果物を連携させ、消費主体が利用する公開インターフェース（コマンド、画面、APIなど）を通じて要求が確実に満たされるようにする。後続の工程は前工程の出口条件を入力として扱い、前工程で確定した判断を改めて起草し直すことはしない。
+WI作成から実行レビューに至る一連の成果物を連携させ、消費主体が利用する公開インターフェース（コマンド、画面、APIなど）を通じて要求が確実に満たされるようにする。
+後続の工程は前工程の出口条件を入力として扱い、前工程で確定した判断を改めて起草し直すことはしない。
 
 ## 名指し参照の読込方法
 
-名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 目標起点の責務を判断する前 | `work-contract.md#「作成と所有」` | 判断 | `section:agent-toolkit:*/share/work-contract.md#「作成と所有」` |
-| 目標起点の処理対象を判断する前 | `../skills/process-wi/references/lanes.md#「明示された目標からの実行」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/lanes.md#「明示された目標からの実行」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi.parent.md#「起動方法」` | 判断 | `section:agent-toolkit:*/share/add-wi.parent.md#「起動方法」` |
+| 目標起点の責務を判断する前 | `work-contract.md` | 判断 | `read:agent-toolkit:*/share/work-contract.md` |
+| 目標起点の処理対象を判断する前 | `../skills/process-wi/references/lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-launch.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文が起票目的別の登録条件を判定する時 | `../skills/wi-standards/SKILL.md#「起票目的別の調査出口」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「起票目的別の調査出口」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion.md#「重複判定」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「重複判定」` |
+| 本文が起票目的別の登録条件を判定する時 | `../skills/wi-standards/references/wi-standards-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/publish.md#冒頭` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#冒頭` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
 
 ## 工程表
 
@@ -30,26 +31,44 @@ WI作成から実行レビューに至る一連の成果物を連携させ、消
 | 実行レビュー | 総合テスト・受入テスト | 実装差分、受入シナリオ、テスト、提出された検証結果 | 実装後に要件や外部仕様の観点からテストの網羅性、人間由来の要求の意図、リグレッションの有無、過剰設計の有無を確認する | 裏付けのある指摘と収束結果 |
 
 明示された目標から始める場合も、既存の作業契約と計画で目的・達成の観測を具体化し、調査と検証で必要作業を更新する。
-全体判断と局所判断の分担は`work-contract.md`「作成と所有」、process-wiでの同一実行への追加は`../skills/process-wi/references/lanes.md`「明示された目標からの実行」に従う。
+全体判断と局所判断の分担は`work-contract.md`「作成と所有」、process-wiでの同一実行への追加は`../skills/process-wi/references/lanes-goals.md`「明示された目標からの実行」に従う。
 実行レビューの独立性は保持する。
 
 実行レビューでは提出されたテストおよび検証結果を確認し、実際に対象を動作させる再検証は実装担当が担う。
 
-専念型では作成主体が調査から保存までを一貫して完結させる。一方、付随型（他の作業中に投入する場合）では、独立したWI投入担当による原稿の返却、親エージェントによる意味の検収、および同じ担当への保存指示という2段階の手順を維持する。専念型を適用する場面は、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`「起動方法」に定める。調査、引用、原因分析、重複確認、成立性の確認、起草、および保存の手順はwi-standardsの共通手順に集約されており、作成主体の種類を問わず適用する。
-重複確認の要否は`agent-toolkit:wi-standards`の`references/drafting-completion.md`「重複判定」で起点ごとに決める。調査済み事項、独立別件の引き渡し先、再発防止の選定方針と未実施の実装・検証を後続工程へ渡す。
+専念型では作成主体が調査から保存までを一貫して完結させる。
+一方、付随型（他の作業中に投入する場合）では、独立したWI投入担当による原稿の返却、親エージェントによる意味の検収、および同じ担当への保存指示という2段階の手順を維持する。
+専念型を適用する場面は、`add-wi-parent-launch.md`「起動方法」に定める。
+調査、引用、原因分析、重複確認、成立性の確認、起草、および保存の手順はwi-standardsの共通手順に集約されており、作成主体の種類を問わず適用する。
+重複確認の要否は`../skills/wi-standards/references/drafting-completion-duplicates.md`「重複判定」で起点ごとに決める。
+調査済み事項、独立別件の引き渡し先、再発防止の選定方針と未実施の実装・検証を後続工程へ渡す。
 WI作成専用セッションの担当は、要求の件数にかかわらず原則としてメインエージェントが務め、検収の構成はwi-standardsの共通手順に従う。
 現在の問いに対する回答と、後続工程へ登録する成果物を提供するタイミングは、`agent-toolkit:user-confirmation-and-report`のSKILL.md「成果物の制限」に従って判定する。
 
 ## 用語
 
-工程表の各行は「<工程名>工程」（計画工程、実行工程など）とも呼ぶ。計画担当は計画工程を担うエージェント（`agent-toolkit:process-wi`ではレーン担当、対話型セッションではメインエージェント）を指す。実装担当は実行工程を担うエージェント（`agent-toolkit:process-wi`ではレーン担当、レビュー修正担当、CI修正担当、対話型セッションではメインエージェント）を指す。全体検証はリポジトリ全体を対象とする自動チェックやテストの実行を指し、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の`全体検証`欄にその判定結果を記録する（所在参照）。
+工程表の各行は「<工程名>工程」（計画工程、実行工程など）とも呼ぶ。
+計画担当は計画工程を担うエージェント（`agent-toolkit:process-wi`ではレーン担当、対話型セッションではメインエージェント）を指す。
+実装担当は実行工程を担うエージェント（`agent-toolkit:process-wi`ではレーン担当、レビュー修正担当、CI修正担当、対話型セッションではメインエージェント）を指す。
+全体検証はリポジトリ全体を対象とする自動チェックやテストの実行を指し、`${CLAUDE_PLUGIN_ROOT}/share/session-termination.subagent.md`の`全体検証`欄にその判定結果を記録する（所在参照）。
 
 実行工程における「受入シナリオ検証」とは、計画内の`### 受入シナリオ`の各行に対応し、公開された呼び出し手段（コマンド、画面、API、hookなど）を経由する結合テストやE2Eテストを実装単位に含め、変更範囲の検証として実行することを指す。
 検証用リソースの分離、エージェント向け文書の改訂試行による検証、および本番の起動単位から呼び出す対象の公開前における動作確認については、`agent-toolkit:delegation/references/acceptance-scenarios.md`に従う。
 自動化できない項目については、実装担当が入力内容、観測結果、期待される結果との比較、合否判定をmanaged-temp内に保存する。
 
-「画面差分」とは、エンドユーザーが操作する画面の追加や変更を指す。対象にはHTML、CSS、UIコンポーネント、単独のHTML成果物が含まれる。「並列画面レビュー」とは、画面差分が存在する場合に同一の対象HEADに対してユーザビリティレビュー担当と実行レビュー担当を並行して起動し、修正後も並行して再判定する運用を指す。統合する前には、双方のレビューが収束していること（ユーザビリティレビューが`合格`または`未確定`であり、実行レビューの未解決指摘が0件であること）を確認する。ユーザビリティレビューは実装担当から独立したthreadで自動テストでは判定できないUXを評価し、機能面での正確性はE2Eテストと実行レビューで確認する。起動および検収の手順は、`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従う。
+「画面差分」とは、エンドユーザーが操作する画面の追加や変更を指す。
+対象にはHTML、CSS、UIコンポーネント、単独のHTML成果物が含まれる。
+「並列画面レビュー」とは、画面差分が存在する場合に同一の対象HEADに対してユーザビリティレビュー担当と実行レビュー担当を並行して起動し、修正後も並行して再判定する運用を指す。
+統合する前には、双方のレビューが収束していること（ユーザビリティレビューが`合格`または`未確定`であり、実行レビューの未解決指摘が0件であること）を確認する。
+ユーザビリティレビューは実装担当から独立したthreadで自動テストでは判定できないUXを評価し、機能面での正確性はE2Eテストと実行レビューで確認する。
+起動および検収の手順は、`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従う。
 
 実行レビューおよび統合における「公開工程判定」とは、全体検証やCIの成功を条件とする完成条件を、個別のWIの完成条件判定行には含めず、公開工程（`agent-toolkit:commit`の`references/publish.md`冒頭）で判定することを指す。
 
-WI起草工程の登録条件は、`agent-toolkit:wi-standards`「起票目的別の調査出口」に従う。
+WI起草工程の登録条件は、`../skills/wi-standards/references/wi-standards-body.md`「起票目的別の調査出口」に従う。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |

@@ -1,0 +1,17 @@
+# 実行と状態変更の設計：状態を変える多段手順の工程順
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
+| 処理自体の失敗を異常終了で表すかを判断する前 | `../../bugfix/references/root-cause-prevention-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-selection.md` |
+
+## 状態を変える多段手順の工程順
+
+発火条件: パッケージの削除、ディスクパーティションの縮小、設定ファイルの削除など、後続の工程が必要とする前提条件を変更する処理を含むスクリプトや手順書を作成する場面。
+
+システムの前提条件を変更する工程は、その前提を実行時に参照するすべての工程（参照するコマンド、パッケージ、デバイス、ディスク上のメタデータなどに基づいて判断する）よりも後ろに配置する。
+たとえば、`grub-probe`や`grub-install`は`mdadm`コマンドやディスク上のパーティション情報を参照するため、GRUBを更新する前に`mdadm`を削除したりパーティションを縮小したりすると、更新処理が失敗する。

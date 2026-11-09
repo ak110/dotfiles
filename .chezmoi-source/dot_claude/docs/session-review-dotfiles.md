@@ -6,11 +6,12 @@
 ## セッションの所要時間目標
 
 起動方法と目標超過の有無によらず、毎セッションの内訳から品質を維持した高速化を検討する。
-目標内なら記録の照会結果で提案の要否を判断し、超過時は律速区間へ作用する再発防止策の採否と必要な処置を確定する。必要なAWIの登録と最終報告は`agent-toolkit:review-session`の手順に従って完了する。
-所要時間の超過はC・Dの問題であり、この判断は`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」に従う。
+目標内なら記録の照会結果で提案の要否を判断し、超過時は律速区間へ作用する再発防止策の採否と必要な処置を確定する。
+必要なAWIの登録と最終報告は`agent-toolkit:review-session`の手順に従って完了する。
+所要時間の超過はC・Dの問題であり、この判断は`agent-basics:bugfix`の`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に従う。
 超過の区間に品質を下げた手戻りなどQに影響する問題が含まれる場合も、その問題を同節に従って扱う。
 適切に並列化されていれば全体の処理件数が所要時間へ与える影響は小さいという前提で、並列化の成立条件と律速区間を調べる。
-件数増加自体を超過の原因や許容理由にせず、過去対策との比較は`agent-toolkit:review-session`の`references/analysis.md`「原因と対策」に従う。
+件数増加自体を超過の原因や許容理由にせず、過去対策との比較は`agent-toolkit:review-session`の`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」に従う。
 
 次の目標値と計測範囲は、対象リポジトリ`github.com/ak110/dotfiles`で`agent-toolkit:process-wi`を起動したセッションだけへ適用する。
 他のリポジトリでの作業や、本リポジトリで別の方法により起動した作業は目標値の適用対象から除く。
@@ -27,7 +28,7 @@
 
 batchでは、対象にdotfilesの作業が含まれる場合に、障害事例集の`再発`行を事例ごとに数える。
 `git -C <dotfilesの作業ツリー> grep -n -F '再発（' -- 'docs/development/incidents*.md'`で行を列挙し、各行が属する事例（事例の書式の先頭行）を原因の単位とする。
-2回以上再発した事例を分析候補にし、`agent-basics:bugfix`の`references/root-cause-severity.md`「前提の再検討」に従って、同じ条文や仕組みを維持・修正・撤去する案を比べる。
+2回以上再発した事例を分析候補にし、`agent-basics:bugfix`の`agent-basics:bugfix/references/root-cause-severity-quality.md`「前提の再検討」に従って、同じ条文や仕組みを維持・修正・撤去する案を比べる。
 効果確認が`insufficient`の採用済みAWIは件数に加えず、各`再発`行が指す是正AWIと元のAWIの対応を確かめる材料にだけ使う（同じ再発を二重に数えないため）。
 今回の分析で新たに再発と判定した不具合は、`.claude/skills/edit-dotfiles-norms/SKILL.md`「再発の記録」に従って記録する。
 

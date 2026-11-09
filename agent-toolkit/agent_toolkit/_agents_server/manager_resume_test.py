@@ -863,10 +863,9 @@ async def test_claude_pending_resume_retains_previous_result_after_retention_dea
 
             pending.prompt.cancel(initial_ticket)
             await asyncio.wait_for(client.query_cancelled.wait(), timeout=0.1)
-            await asyncio.sleep(max(0.0, original_deadline - asyncio.get_running_loop().time()) + 0.01)
-            response = await manager.send_message(session_id, "期限後指示", timeout=1)
-
-            assert asyncio.get_running_loop().time() >= original_deadline
+            with monkeypatch.context() as clock_patch:
+                clock_patch.setattr(asyncio.get_running_loop(), "time", lambda: original_deadline + 0.01)
+                response = await manager.send_message(session_id, "期限後指示", timeout=1)
             assert response["previous_result"]["agent_message"] == "期限付き結果"
             assert client.connect_calls == 1
             assert [delivery_payload(value) for value in client.queries] == ["期限後指示"]
@@ -1255,6 +1254,7 @@ async def test_overloaded_turn_resumes_same_session_and_publishes_resumed_result
         _install_backend(manager, "codex", backend)
 
         started = await manager.start("execute", "作業する", str(tmp_path))
+        backend.finish_release.set()
         response = await _wait_until_terminal(manager)
 
         assert started["status"] == "running"
@@ -1286,6 +1286,7 @@ async def test_overload_wait_is_visible_as_running_with_api_error(
         _install_backend(manager, "codex", backend)
 
         started = await manager.start("execute", "作業する", str(tmp_path))
+        backend.finish_release.set()
         await asyncio.gather(*backend.pending)
         shown = await manager.show_session(started["session_id"])
         listed = await manager.list_sessions()
@@ -1317,6 +1318,7 @@ async def test_overload_limit_publishes_last_failure_and_excludes_candidate(
         _install_backend(manager, "codex", backend)
 
         started = await manager.start("execute", "作業する", str(tmp_path))
+        backend.finish_release.set()
         response = await _wait_until_terminal(manager)
 
         assert response["status"] == "failed"

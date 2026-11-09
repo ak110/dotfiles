@@ -8,12 +8,12 @@ Stop hookが同スキルの起動不足を理由に処理を遮断した場合�
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「工程」` | 判断 | `section:agent-toolkit:*/skills/report-completion/SKILL.md#「工程」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
 
 ## プロジェクト規範による省略
@@ -44,11 +44,13 @@ Claude Code環境では、`atk run-script termination-evidence -- --context`を�
 規範の内容が変更された場合、新たな判断をする場合、あるいは新しい人間入力の後に成果作業が発生した場合は、過去の省略記録を流用せず、改めて判断する。
 省略の記録は指定した作業の起動不足に対してのみ有効であり、別の作業における起動不足や、process-loopにおける`atk agents-exit-session`の実行義務はそのまま残る。
 process-wi all-reposのリポジトリ担当は成果と残工程を統括へ返し、統括が報告を集約し、必要な手順でホストを終了する。
-振り返りは別担当の非同期処理であり、本書の省略判断と通常の終了条件の対象外とする。手動の振り返りを依頼された場合は、その独立した要求を保持する。
+振り返りは別担当の非同期処理であり、本書の省略判断と通常の終了条件の対象外とする。
+手動の振り返りを依頼された場合は、その独立した要求を保持する。
 
 ## 中止・置換・待機・技術的不成立
 
-ホストからの猶予通知によって続行が許可されている間は、残りの工程を進める。ホストによって再開が禁止された場合は、現在の状況と再開に必要な操作を`agent-toolkit:user-confirmation-and-report`に沿ってユーザーに伝える。
+ホストからの猶予通知によって続行が許可されている間は、残りの工程を進める。
+ホストによって再開が禁止された場合は、現在の状況と再開に必要な操作を`agent-toolkit:user-confirmation-and-report`に沿ってユーザーに伝える。
 `wait`は実際に継続中の待機処理がある場合に記録し、`blocked`は観測された失敗によって技術的に続行できない場合に記録する。
 
 作業の中止や別作業への置換が指示された場合、確認への回答や起動した委譲先の結果を待つ場合、あるいは技術的に続行できない場合は、`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`を実行してその判断を記録する。
@@ -58,7 +60,8 @@ process-wi all-reposのリポジトリ担当は成果と残工程を統括へ返
 `quote`は省略可能であり、指定した場合は取得された実体の全文と一致しているかを確認する。
 `session_id`、`work_id`、直近のユーザー入力の`input_id`は、遮断通知から取得する。
 Claude Code環境では、`atk run-script termination-evidence -- --context`を実行して取得できる。
-取得結果には、人間入力の有無にかかわらず`session_id`と現在の`work_id`が含まれる。`input_id`と原文の`quote`は、人間入力を観測した場合にのみ値が設定され、観測されていない場合は`null`となる。
+取得結果には、人間入力の有無にかかわらず`session_id`と現在の`work_id`が含まれる。
+`input_id`と原文の`quote`は、人間入力を観測した場合にのみ値が設定され、観測されていない場合は`null`となる。
 委譲先の待機や技術的不成立は実行結果を根拠とするため、人間入力が存在しない自動起動の会話であっても、取得した`session_id`と`work_id`を用いて記録できる。
 中止・置換・開始・再開は人間の元の入力を根拠とするため、`input_id`に値が存在する場合にのみ記録できる。
 判断の記録は指定した作業にのみ作用し、ユーザーの割り込みと直接関係しない他の作業に関する起動不足は解消されない。

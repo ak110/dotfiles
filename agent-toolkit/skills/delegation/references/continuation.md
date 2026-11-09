@@ -4,16 +4,16 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「後続操作の共通先行条件」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
-| process-wi中の停止や反復の原因が既存不良である時 | `../../process-wi/references/immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
-| 書込権限を移す前 | `mandatory-rules.md`「作業ツリーの保護」 | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-rounds.md` |
+| process-wi中の停止や反復の原因が既存不良である時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` |
 | 介入を扱う前 | `../../../share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
 | 残工程の担当を選ぶ前 | `routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
@@ -21,7 +21,10 @@
 
 ## 継続と新規起動
 
-1. 文脈を再利用するため、委譲済み要求の精読・調査・回答の前に、元担当へユーザー原文、未確定の論点、参照記録を渡して調査・技術判断を委ねる。稼働中なら追送し、終了後は以下の継続・回復・置換条件に従う。委譲元は認可・全体調整・検収を担い、根拠を確かめる。独立文脈レビューと元担当の終了確認を保ち、書込権限の移動は`mandatory-rules.md`「作業ツリーの保護」に従う。
+1. 文脈を再利用するため、委譲済み要求の精読・調査・回答の前に、元担当へユーザー原文、未確定の論点、参照記録を渡して調査・技術判断を委ねる。
+   稼働中なら追送し、終了後は以下の継続・回復・置換条件に従う。
+   委譲元は認可・全体調整・検収を担い、根拠を確かめる。
+   独立文脈レビューと元担当の終了確認を保ち、書込権限の移動は`mandatory-rules.md`「作業ツリーの保護」に従う。
    担当の交代やモデル・実行手段の変更は、担当の回復として扱う。
    停止や失敗反復の原因が既存不良なら、欠陥の処置は回復と別に判定する。
    process-wiの実行中は`../../process-wi/references/immediate-fix.md`「即時対応」、それ以外は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」に従う。
@@ -33,20 +36,25 @@
    これは通信エラーによる継続不能とは区別して判断する。
    同一計画の起草から実装、および変更範囲の検証までは、同一のレーン担当者が同一のworktreeにおいて一貫して実施する。
    継続が不可能な場合に限って新たな担当者を起動し、検収済みの状態と残りの工程を1つの担当者へまとめて引き渡す。
-   交代時の会話確認は`../../review-session/references/session-records.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録の判断・残工程と比較する
+   交代時の会話確認は`../../review-session/references/session-records-conversation.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録の判断・残工程と比較する
 
-2. ユーザー介入時は、`agent-toolkit:/share/exec-review-responses.md`「指摘発生時の扱い」で採否を確定した差分だけを追送する。停止は、対象や前提が無効となり、続行すると誤った成果物ができる恐れがあり、稼働中の作業の完了まで対応を待てない場合に限る
+2. ユーザー介入時は、`../../../share/exec-review-responses.md`「指摘発生時の扱い」で採否を確定した差分だけを追送する。
+   停止は、対象や前提が無効となり、続行すると誤った成果物ができる恐れがあり、稼働中の作業の完了まで対応を待てない場合に限る
 
 3. 継続先を確定するため、レーン担当者およびCI修正担当者を交代させる場合は、前任の識別子を再利用せず新規に起動する。
-   Codexにおいて元の担当者を置き換える新規threadを立ち上げる際は、`codex-runtime.md`「後続操作の共通先行条件」を適用してから起動する
+   Codexにおいて元の担当者を置き換える新規threadを立ち上げる際は、`codex-runtime-continuation.md`「後続操作の共通先行条件」を適用してから起動する。
    既存セッションの継続接続は、同一の担当者に対して同一タスクの未完了作業、指摘への対応、再レビューなどを依頼する場合に限り使用する。
    継続直前に、起動時と今回工程の`model_type`の一致を確認し、同じ`session_id`へ`send_message`を送る。
    サーバーは起動時のengine・model・effortを保持するため、可用性による候補切替後や候補列の設定変更後も同担当を継続できる
    `model_type`が一致しない場合、異なる担当者やタスクへ切り替える場合、処理が中断された場合、完了通知を配送できない場合、あるいは前提条件が無効化した場合は、検収済みの状態を引き渡した上で新規にセッションを起動する。
    レビュー指摘への対応では基本的にレーン担当者のセッションを継続し、継続が不可能な場合に限って検収済み状態とレビュー指摘の所在を引き渡してレビュー修正担当者を新規起動する
-   独立したレビュー系統、異なる観点からの評価、先行履歴を前提としない検証は、新しい識別子を用いて起動する。この新規起動は、手順1で避ける同一目的の調査の重複には当たらない
+   独立したレビュー系統、異なる観点からの評価、先行履歴を前提としない検証は、新しい識別子を用いて起動する。
+   この新規起動は、手順1で避ける同一目的の調査の重複には当たらない
 
-4. 同一作業の継続では、同じroute・`model_type`・識別子へ追送する。計画・進捗ログ・保存済みレビュー指摘管理表に状態があれば、絶対パス・対象ID・未記録差分だけを渡す。記録がなければ未完了事項と検収済み状態を本文へまとめる。必要なレビュー表は委譲元がmanaged-tempへ作成し、絶対パスで渡す。
+4. 同一作業の継続では、同じroute・`model_type`・識別子へ追送する。
+   計画・進捗ログ・保存済みレビュー指摘管理表に状態があれば、絶対パス・対象ID・未記録差分だけを渡す。
+   記録がなければ未完了事項と検収済み状態を本文へまとめる。
+   必要なレビュー表は委譲元がmanaged-tempへ作成し、絶対パスで渡す。
    同一の応答内で複数の継続指示を発行する場合は、送信前に各呼び出しの宛先識別子と本文の組み合わせが正しいことを確認する。
    実際に起動されたルートが`agents_server`である場合は、利用しているengineや実行ホストにかかわらず`send_message(session_id, prompt, timeout)`を使用する。
    サーバー側が実行中ターンのsteer、終了後のreply、保持期限切れ後の暗黙的な再開を適切に選択するため、管理元のプロセスが終了していても再開処理が行われる。
@@ -65,11 +73,21 @@
    識別子体系の差異を示すエラーや、`wait`で返される`session retention expired: <session_id>`は継続不能とはみなさない。
    保持していた識別子を見失った場合は、公開の一覧照会や個別照会を用いて復旧を図り、安易に終了や失敗と推測しない
 
-6. 再起動前に既存成果を保つため、委譲先を停止した場合は、再起動する前に停止時点の成果物を検収する。完了条件を満たしていれば委譲元が成果を引き取る。未完了の場合は、委譲元が残りを引き取るか、完了済みの工程、試行済みのアプローチ、確認された失敗内容を渡して続きから再起動するかを`routing.md`「要否判定」で選ぶ（書込所有権の引き取りは`mandatory-rules.md`「作業ツリーの保護」に従う）。
+6. 再起動前に既存成果を保つため、委譲先を停止した場合は、再起動する前に停止時点の成果物を検収する。
+   完了条件を満たしていれば委譲元が成果を引き取る。
+   未完了の場合は、委譲元が残りを引き取るか、完了済みの工程、試行済みのアプローチ、確認された失敗内容を渡して続きから再起動するかを`routing-decisions.md`「要否判定」で選ぶ（書込所有権の引き取りは`mandatory-rules.md`「作業ツリーの保護」に従う）。
    レーン担当者を新たなセッションへ移行させる場合は、検収が完了している直前のcommitの7文字以上の短縮OID（一意に定まるもの）、完了した工程、残りの工程を引き渡す。
-   状態の記録がある場合は手順4に従う。記録がなければ委譲元がmanaged-tempへレビュー指摘管理表を作成し、絶対パスで渡す。
+   状態の記録がある場合は手順4に従う。
+   記録がなければ委譲元がmanaged-tempへレビュー指摘管理表を作成し、絶対パスで渡す。
    レビュー担当者のセッションが継続できない場合は、同一の`model_type`で新たなレビュー担当者を起動する。
    その際、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前の修正作業による直接影響範囲、読み取り専用の対象範囲を引き渡す。
    実行レビューの場合は、レビュー対象となるHEADの7文字以上の短縮OID（一意なもの）も併せて渡し、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の生成規則に従って`review_contract`を再生成する。
    ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の保持先`に従い、管理表に記載された最大値から継続する。
    新たな担当者は、すでに解消済みの指摘を再調査せず、未解消の行と、そのラウンドで指定された確認範囲のみを対象とする
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビュー反復の調整の基準を適用する前 | `../../../share/review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
+| 委譲の要否判定と委譲単位の確定：要否判定の基準を適用する前 | `routing-decisions.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-decisions.md` |

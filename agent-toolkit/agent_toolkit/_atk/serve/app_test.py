@@ -612,7 +612,7 @@ async def test_mutations_reject_rebase_in_progress_with_409(
 
 @pytest.mark.asyncio
 async def test_mutation_waits_for_sync_lock(
-    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]
+    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """共通ロックを保持する同期の間に届いた更新は、同期の終了を待ってから保存する。
 
@@ -635,13 +635,22 @@ async def test_mutation_waits_for_sync_lock(
     holder = threading.Thread(target=hold_lock)
     holder.start()
     assert await asyncio.to_thread(locked.wait, 10)
+    attempting = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    repo_lock = _wi_sync.repo_lock
+
+    def observed_lock(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        loop.call_soon_threadsafe(attempting.set)
+        return repo_lock(*args, **kwargs)
+
+    monkeypatch.setattr(_wi_sync, "repo_lock", observed_lock)
     request = asyncio.ensure_future(
         client.put(
             "/api/entries/inbox/entry.md",
             json={"content": _REBASE_AWI.replace("本文", "変更後の本文"), "expected_content": _REBASE_AWI},
         )
     )
-    await asyncio.sleep(0.3)
+    await asyncio.wait_for(attempting.wait(), timeout=5)
     assert not request.done()
     assert _fixed_path(notes, "entry.md").read_text(encoding="utf-8") == _REBASE_AWI
     release.set()
@@ -956,9 +965,18 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
     低速な環境では定期同期のfetch・pushが数秒に及ぶため、その間の保存を409で失敗させない。
     """
     lock_path = tmp_path / "repo.lock"
+    attempting: asyncio.Queue[float] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(wi_operations, "_BACKGROUND_SYNC_LOCK_TIMEOUT", 0.02)
+
+    class ObservedLock(filelock.FileLock):
+        def _acquire(self) -> None:
+            super()._acquire()
+            if not self.is_locked:
+                loop.call_soon_threadsafe(attempting.put_nowait, loop.time())
 
     def lock(_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
-        return filelock.FileLock(str(lock_path), timeout=timeout)
+        return ObservedLock(str(lock_path), timeout=timeout)
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -986,16 +1004,31 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
 
     holder = threading.Thread(target=hold_lock)
     holder.start()
+    request: asyncio.Task[typing.Any] | None = None
     try:
-        assert acquired.wait(timeout=5)
-        threading.Timer(wi_operations._BACKGROUND_SYNC_LOCK_TIMEOUT + 0.5, release.set).start()
-        response = await client.post(
-            "/api/entries/answer",
-            json={"filename": inbox.name, "state": "inbox", "answer": "はい", "expected_content": content},
+        assert await asyncio.to_thread(acquired.wait, 5)
+        request = asyncio.create_task(
+            client.post(
+                "/api/entries/answer",
+                json={"filename": inbox.name, "state": "inbox", "answer": "はい", "expected_content": content},
+            )
         )
+        async with asyncio.timeout(5):
+            first_attempt = await attempting.get()
+            # 定期同期の短い期限を越えても取得失敗が続くことを観測してから解放する。
+            while await attempting.get() - first_attempt < wi_operations._BACKGROUND_SYNC_LOCK_TIMEOUT:
+                pass
+        assert not request.done()
+        release.set()
+        response = await asyncio.wait_for(request, timeout=5)
     finally:
         release.set()
-        holder.join()
+        if request is not None:
+            if not request.done():
+                request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
+        await asyncio.to_thread(holder.join, 5)
+        assert not holder.is_alive()
 
     assert response.status_code == 200
     assert "はい" in inbox.read_text(encoding="utf-8")
@@ -2129,6 +2162,7 @@ async def test_shutdown_request_stops_remote_connections_without_reconnecting(
             await asyncio.sleep(0.01)
         assert len(started) >= 4
 
+        tasks = [*sessions_context.state.tasks, *plans_context.state.remote_tasks]
         current_state.request_shutdown()
         for _ in range(500):
             if not sessions_context.state.tasks and not plans_context.state.remote_tasks:
@@ -2137,14 +2171,14 @@ async def test_shutdown_request_stops_remote_connections_without_reconnecting(
         assert not sessions_context.state.tasks
         assert not plans_context.state.remote_tasks
         count = len(started)
-        await asyncio.sleep(0.2)
+        assert all(task.done() for task in tasks)
 
         assert len(started) == count
 
 
 @pytest.mark.asyncio
 async def test_reads_respond_while_updates_wait_for_lock(
-    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]
+    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """更新が共通ロックを待って更新用の実行枠を全て占める間も、一覧・詳細・検索・候補はローカル内容で応答する。
 
@@ -2172,6 +2206,15 @@ async def test_reads_respond_while_updates_wait_for_lock(
     holder = threading.Thread(target=hold_lock)
     holder.start()
     assert await asyncio.to_thread(locked.wait, 10)
+    attempting: asyncio.Queue[None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    repo_lock = _wi_sync.repo_lock
+
+    def observed_lock(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        loop.call_soon_threadsafe(attempting.put_nowait, None)
+        return repo_lock(*args, **kwargs)
+
+    monkeypatch.setattr(_wi_sync, "repo_lock", observed_lock)
     updates = [
         asyncio.ensure_future(
             client.put(
@@ -2182,7 +2225,8 @@ async def test_reads_respond_while_updates_wait_for_lock(
         )
         for index in range(3)
     ]
-    await asyncio.sleep(0.3)
+    for _ in range(2):
+        await asyncio.wait_for(attempting.get(), timeout=5)
     try:
         assert not any(update.done() for update in updates)
         started = asyncio.get_running_loop().time()
@@ -2212,7 +2256,7 @@ async def test_reads_respond_while_updates_wait_for_lock(
     assert detail_record["lock_wait_ms"] == 0
     update_records = [record for record in records if str(record.get("request_id", "")).startswith("update-")]
     assert len(update_records) == 3
-    assert max(record["lock_wait_ms"] for record in update_records) >= 200
+    assert max(record["lock_wait_ms"] for record in update_records) > 0
     assert all({"total_ms", "queue_ms", "work_ms", "lock_hold_ms", "status"} <= record.keys() for record in update_records)
     raw = timing_log.read_text(encoding="utf-8")
     assert "変更0" not in raw

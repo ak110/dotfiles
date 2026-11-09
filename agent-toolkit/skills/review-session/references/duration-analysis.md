@@ -1,33 +1,39 @@
 # 振り返りの所要時間分析
 
-`agent-toolkit:review-session`の振り返りで、所要時間とコストの改善策を確定するときの判断基準を定める。問題の選別、原因と対策の確定は`analysis.md`が定める。
+`agent-toolkit:review-session`の振り返りで、所要時間とコストの改善策を確定するときの判断基準を定める。
+問題の選別、原因と対策の確定は`analysis.md`が定める。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis.md#「一次選別」「コストの無駄の確認」「原因と対策」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/analysis.md#「一次選別」「コストの無駄の確認」「原因と対策」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/references/session-records.md#「集計値の典拠」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「集計値の典拠」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-triage.md`、`analysis-cost.md`、`analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-cost.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `session-records-metrics.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-metrics.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「原文からの具体化を要する軸」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復する加工の問題」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md` |
 
 ## 所要時間の分析と改善
 
-セッション統計から時間消費への寄与が大きい工程や反復を特定し、品質を保ったまま単位時間あたりに処理できるユーザー由来のWI件数を最大化する改善策を確定する（エージェント由来のWIは別に数える。所要時間やトークンコストの削減は、この生産性指標を上げる手段である）。律速条件を特定したら`analysis.md`「原因と対策」の過去対策との比較へ進み、その知見を今回の短縮案に反映する。律速情報を費用分析に使い、改善候補は作業全体から広く選ぶ。実行時間が短い処理も、成功した操作の適用頻度、入力の再構築コスト、トークンや保守の費用を`analysis.md`「コストの無駄の確認」で比べ、その採否を再利用する。
-振り返り自体の所要時間目標は通常300秒、batchは対象1件あたり300秒とし、スキルの起動から最終報告までを計測する。予告通知は終了点に数えず、対象セッション全体の`elapsed_seconds`と区別する。
+セッション統計から時間消費への寄与が大きい工程や反復を特定し、品質を保ったまま単位時間あたりに処理できるユーザー由来のWI件数を最大化する改善策を確定する（エージェント由来のWIは別に数える。所要時間やトークンコストの削減は、この生産性指標を上げる手段である）。
+律速条件を特定したら`analysis-actions.md`「原因と対策」の過去対策との比較へ進み、その知見を今回の短縮案に反映する。
+律速情報を費用分析に使い、改善候補は作業全体から広く選ぶ。
+実行時間が短い処理も、成功した操作の適用頻度、入力の再構築コスト、トークンや保守の費用を`analysis-cost.md`「コストの無駄の確認」で比べ、その採否を再利用する。
+振り返り自体の所要時間目標は通常300秒、batchは対象1件あたり300秒とし、スキルの起動から最終報告までを計測する。
+予告通知は終了点に数えず、対象セッション全体の`elapsed_seconds`と区別する。
 終点は最終報告の直前に取得した現在時刻（`date -u +%FT%TZ`など）とし、起点は次の値を使う。
 自身のセッション記録ファイルを`head`や`grep`などの汎用ツールで読んで時刻を得る操作は不要である。
 自身のセッションIDは、Claude CodeではSessionStartの通知値か`CLAUDE_CODE_SESSION_ID`、CodexではthreadのIDを使う。
 
-- batch: manifest（`AGENT_TOOLKIT_SESSION_REVIEW_BATCH`が指す実行情報JSON）の`started_at`。準備時間も計測区間に入り、通常の振り返りと定義がそろう
+- batch: manifest（`AGENT_TOOLKIT_SESSION_REVIEW_BATCH`が指す実行情報JSON）の`started_at`。
+  準備時間も計測区間に入り、通常の振り返りと定義がそろう
 - batchの内訳: 準備区間と分析区間の内訳が律速区間の判定に要る場合は、batchセッション自身の開始時刻を使う。
   この時刻は`atk run-script session-review-evidence -- --claude-session-id <自身のセッションID> --elapsed-until <終点の時刻>`が返す`start`である。
   Codexでは`--claude-session-id`の代わりに`--codex-thread-id <自身のthread ID>`を渡す
@@ -38,7 +44,9 @@
   `atk run-script session-review-evidence -- --codex-thread-id <自身のthread ID> --user-events --user-match-fixed review-session`が返す発話の時刻である。
   該当する発話が無い場合は`--elapsed-until`の`start`を起点にし、その旨を報告に注記する
 
-この目標は超過した場合に所要時間の改善案を必須とする判断だけに使う。一般のQCD原則による目標時間の使い方より、本用途限定を優先する。必要な調査の範囲・順序・省略・先送り・停止には使わず、目標の前後で同じ必要な調査を完遂する。
+この目標は超過した場合に所要時間の改善案を必須とする判断だけに使う。
+一般のQCD原則による目標時間の使い方より、本用途限定を優先する。
+必要な調査の範囲・順序・省略・先送り・停止には使わず、目標の前後で同じ必要な調査を完遂する。
 この基準は、メインエージェントの実行区間、レーン内部、公開・検証区間、振り返り処理自体のいずれにも適用する。
 改善前後は同じ要求・品質・観測区間の受入済み成果で比較し、分割件数や再試行は作業量として数える。
 ユーザー由来のWI件数を単位時間で比べる指標も維持し、成果の内訳と人間の確認・修正負担を併記する。
@@ -47,25 +55,57 @@
 要件や選好の追加と、エージェントの誤りを是正する介入を原文から区別する。
 エージェントの実行量だけが減り人間の負担が増えた場合は負担の移転として評価し、同品質で双方を減らす案と比べる。
 
-振り返り処理自体の所要時間が300秒を超えたときは、`current-session.md`の工程6（batchでは`batch.md`の所要時間目標）に従い本節に沿って分析する。起動から最終報告までの超過を1件の事象とし、原因、必要な全処置、報告内容が確定した時点で処置済みとする。既存の統計と追加照会を使い、材料が足りない場合に限って再準備する。追加のWI投入で経過秒数が増えただけでは同じ事象を分析し直さず、別の原因が分かった場合に限りその原因を`analysis.md`「原因と対策」と通常のWI投入へ足す。準備完了後に届いたユーザー発話や気付いた改善点の追加分析は、処置済みでも`current-session.md`の工程6（batchでは`batch.md`の所要時間目標）に従って行う。
+振り返り処理自体の所要時間が300秒を超えたときは、`current-session.md`の工程6（batchでは`batch.md`の所要時間目標）に従い本節に沿って分析する。
+起動から最終報告までの超過を1件の事象とし、原因、必要な全処置、報告内容が確定した時点で処置済みとする。
+既存の統計と追加照会を使い、材料が足りない場合に限って再準備する。
+追加のWI投入で経過秒数が増えただけでは同じ事象を分析し直さず、別の原因が分かった場合に限りその原因を`analysis-actions.md`「原因と対策」と通常のWI投入へ足す。
+準備完了後に届いたユーザー発話や気付いた改善点の追加分析は、処置済みでも`current-session.md`の工程6（batchでは`batch.md`の所要時間目標）に従って行う。
 
-- 短縮の主対象は、統計が示す律速区間（メインエージェント単独の区間と、エージェントスレッドごとの排他区間）とする。スレッドの排他区間が律速なら、工程、反復、待機の内訳を`stats.md`の`律速threadの内訳:`で把握し、全文が要る箇所だけを`--detail`や`--grep`で照会する。委譲先の所要時間と反復回数の比較は、`agent-toolkit:review-session/references/session-records.md`「集計値の典拠」の3つの確認手順に従う。未計測として除くスレッドは、記録ファイルが無いか`unresolved-delegation`と報告された対象に限り、その対象を明記する。
-- 委譲先の返却本文にある時間の使い道や、所要時間目標の適用対象外であることを、見送りの根拠にしない。候補ごとに原因への効果と品質・費用の釣り合いを比べ、内訳が分解されていない区間は内訳未確定とする。計測できない見込み短縮秒数と、記録から実現性を判断できる工程の改訂とは分けて採否を決める。
-- 改善対象は、必須工程や検収範囲を含む全工程とする（`agent-toolkit:process-wi`や`atk wi process-loop`の手順、準拠する規範、本スキルの工程、`atk run-script session-review-prepare`を含む）。不要な工程の撤去、順序の変更、並行化を候補にする。手順や規範の撤去・置換では、条文が守る対象と成果、導入時の変更記録や計画ファイルから当初の目的を調べて採否を決める。その目的と保護の必要性は現行の要件と認可の下で`agent-toolkit:wi-standards`の`references/drafting-completion.md`「方針と判断の記録との比較」に沿って評価し、今も必要な目的は、より低コストな手段で確実に達成できる場合に限り置き換える。
-- 重複した検証の排除と待ち時間の活用を観点に含める。CIが同じ検証を担うなら、公開前のローカルでの全体検証は重複とする。ただしCIの実行時間が長く失敗の可能性が高い場合に限り、変更箇所と直接影響範囲の部分検証を先に行う。
-- 外部サービスの利用上限、レート制限、課金枠による待機の扱いを変える対策は、AWIとして確定する前に`agent-toolkit:wi-standards`「由来と承認」の裁量と変更程度の判定を適用する。
-  待機やモデル・実行環境の切り替えは、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「確認要否の判定」を適用し、指定された費用、サービス、待機条件を保つ技術判断は自ら確定する。比較では、停止、実行先の切り替え、打ち切り、上限到達の事前回避に加え、現行の待機を続ける案も残す。
-- 短時間に反復したコマンドも、呼び出しごとの所要時間と律速区間への寄与を踏まえて見直す（努力目標。無駄な呼び出しの削減）。入力形式の誤りによる反復は最下層のヘルプや仕様の取得を先にし、成功した同種操作の反復は複数対象の指定でまとめられるかを比べる。
-- 複雑なシェル実行を専用ツールへ置き換える候補は、`analysis.md`「一次選別」のその場のコードによる加工の反復判定で決め、比較する代替案、評価順、採用条件は`agent-basics:bugfix`の`references/root-cause-scenarios.md`「反復する加工の問題」に従う。手順書の作業を一時スクリプトで代替した箇所は、「一次選別」の同じ項目で将来の再実行性を判定する。Claude CodeとCodexに同じ基準を適用する。
-- コンテキストの圧縮（コンパクション）は発生回数と合計所要時間を記録し、取得範囲の限定や調査の分離など、コンテキスト消費自体を抑える案を比べる。発生閾値を上げるだけの案は候補から外す。
+- 短縮の主対象は、統計が示す律速区間（メインエージェント単独の区間と、エージェントスレッドごとの排他区間）とする。
+  スレッドの排他区間が律速なら、工程、反復、待機の内訳を`stats.md`の`律速threadの内訳:`で把握し、全文が要る箇所だけを`--detail`や`--grep`で照会する。
+  委譲先の所要時間と反復回数の比較は、`session-records-metrics.md`「集計値の典拠」の3つの確認手順に従う。
+  未計測として除くスレッドは、記録ファイルが無いか`unresolved-delegation`と報告された対象に限り、その対象を明記する。
+- 委譲先の返却本文にある時間の使い道や、所要時間目標の適用対象外であることを、見送りの根拠にしない。
+  候補ごとに原因への効果と品質・費用の釣り合いを比べ、内訳が分解されていない区間は内訳未確定とする。
+  計測できない見込み短縮秒数と、記録から実現性を判断できる工程の改訂とは分けて採否を決める。
+- 改善対象は、必須工程や検収範囲を含む全工程とする（`agent-toolkit:process-wi`や`atk wi process-loop`の手順、準拠する規範、本スキルの工程、`atk run-script session-review-prepare`を含む）。
+  不要な工程の撤去、順序の変更、並行化を候補にする。
+  手順や規範の撤去・置換では、条文が守る対象と成果、導入時の変更記録や計画ファイルから当初の目的を調べて採否を決める。
+  その目的と保護の必要性は現行の要件と認可の下で`../../wi-standards/references/drafting-completion-policies.md`「方針と判断の記録との比較」に沿って評価し、今も必要な目的は、より低コストな手段で確実に達成できる場合に限り置き換える。
+- 重複した検証の排除と待ち時間の活用を観点に含める。
+  CIが同じ検証を担うなら、公開前のローカルでの全体検証は重複とする。
+  ただしCIの実行時間が長く失敗の可能性が高い場合に限り、変更箇所と直接影響範囲の部分検証を先に行う。
+- 外部サービスの利用上限、レート制限、課金枠による待機の扱いを変える対策は、AWIとして確定する前に`../../wi-standards/references/wi-standards-origin.md`「由来と承認」の裁量と変更程度の判定を適用する。
+  待機やモデル・実行環境の切り替えは、確認要否を判定する。
+  判定は`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
+  指定された費用、サービス、待機条件を保つ技術判断は自ら確定する。
+  比較では、停止、実行先の切り替え、打ち切り、上限到達の事前回避に加え、現行の待機を続ける案も残す。
+- 短時間に反復したコマンドも、呼び出しごとの所要時間と律速区間への寄与を踏まえて見直す（努力目標。無駄な呼び出しの削減）。
+  入力形式の誤りによる反復は最下層のヘルプや仕様の取得を先にし、成功した同種操作の反復は複数対象の指定でまとめられるかを比べる。
+- 複雑なシェル実行を専用ツールへ置き換える候補は、`analysis-triage.md`「一次選別」のその場のコードによる加工の反復判定で決める。
+  比較する代替案、評価順、採用条件は`agent-basics:bugfix/references/root-cause-scenarios-investigation.md`「反復する加工の問題」に従う。
+  手順書の作業を一時スクリプトで代替した箇所は、「一次選別」の同じ項目で将来の再実行性を判定する。
+  Claude CodeとCodexに同じ基準を適用する。
+- コンテキストの圧縮（コンパクション）は発生回数と合計所要時間を記録し、取得範囲の限定や調査の分離など、コンテキスト消費自体を抑える案を比べる。
+  発生閾値を上げるだけの案は候補から外す。
 - 改善につながった事例が少ない候補区分は、抽出条件を絞る対象として検討する。
 - 各改善案の採否は、品質への影響の有無と、トークンコストや保守コストを大きく増やさないかで判定する。
 
-改善効果の数値化は、既存の統計や証拠で確かに裏付けられる範囲に限る。短縮秒数を数値化できるAWIには、1セッションあたりの見込み削減時間と根拠の統計値を実測・推定の別とともに書き、推定値には計算式と前提条件を添える。根拠が足りなければ削減対象の工程名と「未計測」を書き、数値を出すためだけの再計測やデータ収集はしない。複数案の合計削減時間、改善後のセッション全体時間、目標との差、超過した律速区間は、振り返り結果報告に1回だけまとめて書く。前後の比較は同じ観測対象区間の集合に限る。
+改善効果の数値化は、既存の統計や証拠で確かに裏付けられる範囲に限る。
+短縮秒数を数値化できるAWIには、1セッションあたりの見込み削減時間と根拠の統計値を実測・推定の別とともに書き、推定値には計算式と前提条件を添える。
+根拠が足りなければ削減対象の工程名と「未計測」を書き、数値を出すためだけの再計測やデータ収集はしない。
+複数案の合計削減時間、改善後のセッション全体時間、目標との差、超過した律速区間は、振り返り結果報告に1回だけまとめて書く。
+前後の比較は同じ観測対象区間の集合に限る。
 
-所要時間目標は振り返り作業自体の完了条件にせず、超過の有無にかかわらず既存の統計や証拠を使い、根拠が足りない律速区間だけを追加照会・再現する。超過しなかった場合は証拠から改善提案の要否を判断し、有効な対策を特定できなければ、理由の結論と再取得先を「対策を見送った問題」に書き、照会と候補比較の経過を証拠に残す。超過した場合は再発防止策を必須とし、律速区間に直接作用する対策を確定する（所要時間だけの問題はコスト・納期の課題として扱い、適切な改善案が無ければ`再発防止策なし`の行に書く）。今回の律速区間への処置は、AWI化基準など別の対象への先行回答と分けて確定し、先行回答はその質問が対象とした要求にだけ適用する（`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文からの具体化を要する軸」）。新しい律速原因は、過去の不採用判断や既存AWIの有無によらず、原因を解消する効果で採否を決める。見送る理由は証拠で示し、目標値を目標達成の判定、必要な工程の省略、作業の停止や先送りの根拠にしない。
+所要時間目標は振り返り作業自体の完了条件にせず、超過の有無にかかわらず既存の統計や証拠を使い、根拠が足りない律速区間だけを追加照会・再現する。
+超過しなかった場合は証拠から改善提案の要否を判断し、有効な対策を特定できなければ、理由の結論と再取得先を「対策を見送った問題」に書き、照会と候補比較の経過を証拠に残す。
+超過した場合は再発防止策を必須とし、律速区間に直接作用する対策を確定する（所要時間だけの問題はコスト・納期の課題として扱い、適切な改善案が無ければ`再発防止策なし`の行に書く）。
+今回の律速区間への処置は、AWI化基準など別の対象への先行回答と分けて確定し、先行回答はその質問が対象とした要求にだけ適用する。
+基準は`../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「原文からの具体化を要する軸」に従う。
+新しい律速原因は、過去の不採用判断や既存AWIの有無によらず、原因を解消する効果で採否を決める。
+見送る理由は証拠で示し、目標値を目標達成の判定、必要な工程の省略、作業の停止や先送りの根拠にしない。
 
-所要時間、トークン量、リクエスト数をユーザー向けの文面に書くときは、セッション統計の数値だけを典拠とし、比率を示すときは`agent-toolkit:review-session/references/session-records.md`「集計値の典拠」に従って基準値との差分を併記する。
+所要時間、トークン量、リクエスト数をユーザー向けの文面に書くときは、セッション統計の数値だけを典拠とし、比率を示すときは`session-records-metrics.md`「集計値の典拠」に従って基準値との差分を併記する。
 
 モデル別にトークン量から所要時間を見積もるときは、モデル、推論設定、実行環境（runtime）、接続条件をそろえた応答単位の所要時間と使用量（usage）を使い、入力、キャッシュ済み入力（cached input）、出力の重複を除いてモデル式を校正する。
 例えば`応答秒数 = 固定費 + 未キャッシュ入力の係数 × 未キャッシュ入力 + キャッシュ入力の係数 × キャッシュ入力 + 出力の係数 × 出力`のような線形モデルを候補とし、別の応答で誤差を検証して、標本数と誤差範囲を書く。
@@ -76,7 +116,8 @@
 ## hookの所要時間
 
 対象セッションのmanaged-tempにある`hook-timings.jsonl`で、イベント、処理名、区間、所要秒数、成否を確かめる。
-`total`の計測範囲はPythonエントリーポイントからの所要である。プロセス起動前の待ち時間は別に評価する。
+`total`の計測範囲はPythonエントリーポイントからの所要である。
+プロセス起動前の待ち時間は別に評価する。
 SessionStartは規範構成、振り返り起動要求、圧縮復元の区間も比較し、数秒を超える処理を改善対象として調べる。
 3秒は調査の目安に限り、元の操作の成否は通常の判定に従う。
 計測は直近の有限な記録であり、欠けた過去区間は未観測として扱う。
@@ -112,3 +153,10 @@ SessionStartは規範構成、振り返り起動要求、圧縮復元の区間�
 | --- | --- | --- | --- |
 | 通常モードで所要時間の超過処置を選ぶ前 | `current-session.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/current-session.md` |
 | batchモードで所要時間の超過処置を選ぶ前 | `batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 振り返りの判断基準の基準を適用する前 | `analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |

@@ -1,0 +1,94 @@
+# 振り返りの判断基準：比較して探す観点
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-operations.md` |
+| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
+| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+
+## 比較して探す観点
+
+### コストの無駄の確認
+
+振り返りのたびに、準備済みの総量、担当別の上位、読込回数、反復処理、出力量の要約を使い、次の17観点を確認する。
+各観点の初回の比較材料と追加の照会先は`stats.md`「費用確認17観点の照会先」にある。
+判断に要る全量は`bundle/stats.jsonl`と`bundle/resource-usage.jsonl`から取り、上位外や律速でない担当も必要な範囲で確認する。
+
+通読、統計、取得済みの証拠から作業単位を特定し、成果と要求元、作業量と発生源、同じ品質を保てる代替案（操作の除去、ホスト標準機能の利用、既存のexploreやshellへの移管、入力コンテキストの保持期間の短縮、現状維持）、採否と根拠を対応付ける。
+17観点は無駄を探す補助であり、報告には具体的な作業単位と代替案を書く。
+入力の生成、引用、検証、受け渡し、振り返りの起草も、受け取る側が使い終えるまでを1つの作業単位として比べる。
+
+生成された入力、managed-tempの参照、hookの生成元と同じ本文、テキストの部分一致などは、`resource-usage.jsonl`の記録位置から調べる。
+指示、専用のRead操作、返却本文、外部から注入された資料を分け、記録に無い読取量や料金は未確認とする。
+再掲の疑いがある箇所は前後の文脈から、必要な差分の提示、独立した配送、圧縮後の文脈復元、不要な再読込を見分け、API履歴の再送と会話コンテキストへの新たな追加も分ける。
+
+編集、外部更新、会話圧縮に伴う再読込、分割取得、独立した検収、別の文脈での判断に要る読込は、維持すべき成果を確かめてから代替案と比べる。
+正常完了、エラーからの回復、工程が必須であることだけで費用比較の採否を決めない。
+改善が要る消費側があり実質的な効果が見込める案は`analysis-actions.md`「原因と対策」へ送り、現状維持なら代替案より妥当とした根拠を「対策を見送った問題」に残す。
+全操作台帳、候補抽出機構、常時監視や専任担当といった過大な仕組みは足さず、判断に足りない証拠だけを補う。
+
+| 観点 | 比較する材料 |
+| --- | --- |
+| 同じファイルの重複読込 | 対象別の合計・担当別回数、範囲、結果量と位置 |
+| 同じ記録内の再取得・再実行 | 同じツールと入力の反復 |
+| 大量結果の直接取込み | 結果本文量の上位と委譲・対象限定の代替 |
+| スキルと規範の累積読込 | Skill名別集計、参照資料と目的 |
+| 委譲入力の過剰・冗長 | 比較材料の直接本文量と参照可能な本文 |
+| 複数担当の重複調査 | 対象別の担当回数と独立検収の必要性 |
+| モデル選択の不適合 | 担当別の実モデル・トークンと判断の難度 |
+| 委譲の総費用 | 担当別トークン・応答回数・返却量と成果 |
+| キャッシュ効率 | cache_creationの反復、応答間隔と再開 |
+| 会話圧縮と読み直し | 圧縮回数と圧縮後の読込 |
+| 照会・待機の反復 | 反復集計と終了を返す待機手段 |
+| 振り返り自身の費用 | 再準備と証拠照会の反復 |
+| レビューの往復・後出し | 通読と担当別トークン、再読・再検証 |
+| 重複した検証 | 通読、遅い呼出しとCIの検証範囲 |
+| 入力形式の誤りによる再試行 | 通読と反復集計 |
+| 出力トークンの過大 | 応答別トークン上位、報告と再掲 |
+| 使われなかった取得・返却 | 通読、読込集計と後続の消費 |
+
+この確認の結論は、報告の`費用確認`欄に1行で書く。
+大出力の点検では、各ツールの実行結果のうちエージェントが受け取った本文が8,192バイト以上のものから、明示的な単独のファイル本文取得を除き、大きい順に最大10件を見直す。
+退避された結果は案内とPreviewの量で数え、退避前8,192バイト以上の結果は両方の量を別表示し、生成後に読み直す操作の費用を点検する。
+`Read`、`read_file`、`Skill`と、単独で実行した`cat`や`atk read-file`は本文取得として除く。
+複数の操作の組み合わせや解釈が定まらない入力は残して詳細から用途を確かめ、閾値未満や上位10件外も全量集計の照会対象に残す。
+特にatk、pyfltr、agents_serverなどの自作ツールは、判断に要る材料、保存先ファイルへの参照、実際の返却を比べ、不要な引数（argv）、Git状態、全量の詳細を繰り返していないかを確かめる。
+出力が大きいことだけで品質上の欠陥とせず、採る簡素化案は品質を確実に保てる手段から選ぶ。
+
+以下は通読で判断材料を得るための補助である。
+同じ作業の比較と採否は本節の結果を再利用する。
+
+<例>
+未読補完や未走査0件への再依頼: 必要な本文の取得と全処理の確認を満たしたまま、初回の分割取得や完了できる作業割当で済む場合と、追送を要した場合の作業量を比べる。
+累積読込: 判断前に必要な規範が確実に届く状態を保ったまま、定義元への集約、既読結果の再利用、読込時機の整理の効果を比べる。
+ユーザー向け文面と原稿全体の独立確認: 表現の明瞭さと内容の整合を保ちつつ、役割ごとに必要な入力と起動を統合できる範囲を比べる。
+起動と保存: 正しい担当の起動、原稿の保存、検収の確実さを保ったまま、準備、入力生成、保存を集約できるかを比べる。
+振り返り自身の再整理と起草: 全候補の対応付けと採否判定の質を保ったまま、確認済みの事実や比較結果の再利用で減らせる再照会と起草を比べる。
+</例>
+
+### 通読で使う比較
+
+記録全体の比較観点は`analysis-operations.md`「通読で使う比較」に従う。
+
+## 規範適用による目的逸脱
+
+事象、原因、対策は、`analysis-operations.md`「規範の未適用と目的逸脱」で判定する。
+前提の評価には`agent-basics:bugfix/references/root-cause-severity-quality.md`「前提の再検討」を適用する。
+対象条文の所在（ファイル名と節）、観測された処理停止、採用する改善案と根拠を記録する。
+正常に完了した作業でも、読込、準備、検収、後始末の作業量と成果を比べ、規範が求める工程を簡略化できないかを検討する。
+条文を改訂せず現状維持とするなら、再現条件と許容する理由を「対策を見送った問題」に書く。
+改訂を採るなら、対象条文を改訂するAWIへ渡す。
+`agent-basics:review-standards/references/judgment-details-decisions.md`「規定の適用可否」が求める規範改訂の提案は、このAWI投入で行う。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 判断の妥当性を評価する詳細：問題と手段の比例性の基準を適用する前 | `agent-basics:review-standards/references/judgment-details-decisions.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-decisions.md` |
+| 振り返りの判断基準：原因と対策の基準を適用する前 | `analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |

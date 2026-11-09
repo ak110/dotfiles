@@ -39,6 +39,20 @@ class FakeAppServer:
         records = [json.loads(line) for line in self.log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
         return [record for record in records if event is None or record["event"] == event]
 
+    async def complete_turn(self, thread_id: str) -> None:
+        """開始応答を受けた試験側から、まだ解放していないturnの終了通知を許可する。"""
+        async with asyncio.timeout(10):
+            while True:
+                ready = [
+                    row
+                    for row in self.events("turn/ready")
+                    if row["thread"] == thread_id and not pathlib.Path(row["release"]).exists()
+                ]
+                if ready:
+                    pathlib.Path(ready[-1]["release"]).touch()
+                    return
+                await asyncio.sleep(0.01)
+
     def server_pid(self, thread_id: str) -> int:
         """`thread_id`を最後に読み込んだApp ServerのPIDを返す。"""
         return [record["server"] for record in self.events() if record.get("thread") == thread_id][-1]

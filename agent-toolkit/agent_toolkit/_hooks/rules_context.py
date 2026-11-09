@@ -326,6 +326,8 @@ def _compact_recovery_context(
     """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
     steps = []
     for path, heading, _fingerprint, reference in recovery_targets:
+        if read_triggers.is_normative_document(path):
+            heading = ""
         target = read_triggers.ReadTarget(path, heading)
         try:
             if not path.is_file():

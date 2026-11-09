@@ -985,3 +985,23 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert rules_context.main(payload, host=host) == 0
     assert "実行受付前に終了" not in capsys.readouterr().out
     assert session_review.pending()
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "agy"])
+@pytest.mark.parametrize("heading", ["対象", "移動した旧見出し"])
+def test_compact_normative_guidance_always_reads_full_file(tmp_path, monkeypatch, capsys, host, heading):
+    """圧縮前の見出し指定が残っていても、規範の復旧案内は全文を指定する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    path = tmp_path / "AGENTS.md"
+    path.write_text("# 基準\n## 対象\n本文\n## 例外\n必須例外\n", encoding="utf-8")
+    monkeypatch.setattr(
+        rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(path, heading, "old", True)]
+    )
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
+    payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": "normative-recovery"}
+    assert rules_context.main(json.dumps(payload), host=host) == 0
+    output = _output(capsys)
+    assert str(path) in output and "全文" in output
+    assert "必要節" not in output and "sed -n" not in output and "見出しの解決に失敗" not in output
+    assert ("cat --" in output) is (host != "claude")

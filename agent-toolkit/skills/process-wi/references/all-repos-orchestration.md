@@ -6,7 +6,7 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -18,114 +18,13 @@
 | 基準資料を選択・取得する時 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
 | 基準資料を選択・取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
 | 基準資料を選択・取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
-| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
-| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring.md#「成果物側の観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「成果物側の観測」` |
+| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
 
-## 担当の役割
+## 条件別資料
 
-**1.** 統括担当が最上位のメインとして、全対象の判断・確認・完了報告を所有する。
-
-要求内の追加ファイルの編集はレーン担当の判断に委ね、重なりを理由とする事前通知や選定記録の更新を求めない。競合は対象リポジトリの直列統合で扱う（`exec.subagent.md`「実装」）。
-常駐から起動した対話CLIには通常の最上位セッションの契約を適用する。
-担当の選定は`all-repos.md`「開始と振り分け」に従い、最も重い対象を統括が直接担当する。
-全対象が上限1以下なら統括が集約し、上限2以上が混在する場合の軽い残対象群は1担当へまとめ、重い残対象は個別に並行委譲する。
-各担当は自身の対象でprocess-wiを完遂し、対象別の結果と残工程を統括へ返す。
-統括は直接担当の処理中も、他対象からの確認・結果の受領と全体統括を継続する。
-統括は巡回開始時刻とタイムゾーンを全体作業契約へ記録し、リポジトリ担当の起動時に既存の`whole_contract_path`で渡す。
-通常の継続は同じ担当を保ち、負荷の変動や軽い対象の終了だけを理由に交代しない。
-終了済み担当から回復する場合だけ、既存の終了観測・所有移譲の後、今回の未完了集合から直接担当を選ぶ。
-配下担当の確認事項・担当外の発見・改善点は統括へ届け、報告用UWIは統括がprocess-wiの実行全体で1回作成する。
-配下担当は祖先の対話CLIを終了する`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
-統括自身は対象別結果を保存した後、最上位の終了手順で統括CLIを終了する。
-
-**2.** 統括は自身が観測した不良・是正要求・改善点と配下担当からの報告へ、`immediate-fix.md`「即時対応」の対処時機判定を適用する。
-
-受領時に処置の根拠と残る前提を検収し、独立した別要求はその時点から起草を進める。
-投入準備の前倒しと独立受付は`finish-session.md`「公開担当の起動と並行工程」に従う。
-委譲先が不要・担当外とした事象も、統括が根拠と保持すべき成果を確かめて処置を決める。
-今回追加とした正式改善AWIは対象リポジトリ担当へ渡し、保存済みの正式名、選定への追加、担当への追送を確認する。
-最小の直接修正の担当・基点・時機は同書「レーンの変更範囲へ加える修正の認可」で決め、統合済みの対象の独立修正をレーンへ反復追加しない。
-回避と正式対応AWIだけの報告では、次のセッションで同じ停止が起きない根拠を確かめる。
-根拠が無ければ、書き込みを担う配下担当へ直接修正を指示し、その検証結果を受領する。
-配下担当を待つ間の進捗点検では、`../../delegation/references/waiting-and-monitoring.md`「成果物側の観測」に従い、活動の有無と工程の所要・反復の妥当性を分けて判断する。
-
-## 登録集合
-
-登録集合は`process_loop_repositories`のローカルworktreeの絶対パスのJSON配列で定める。
-空集合は通常起動で待機し、`--once`では終了する。
-不正な登録は診断の対象を修正してから再開する。
-同じoriginは登録順の先頭へまとめ、Git共通ディレクトリと処理worktreeの対応を維持する。
-登録変更は次回取得から反映し、現在処理している集合は取得時点のまま保持する。
-候補・診断・監査条件を満たす対象に対し、開始猶予と未回答UWIの開始抑止を一括判定する。
-開始前の共有更新は全体で1回行い、監査・CI・worktree・所有・失敗・再開の状態は対象別に保持する。
-
-## 取得済み候補の受領
-
-**3.** 集合JSONの`repositories`は対象別のオブジェクトの配列である。
-
-各要素は`target_repo`、登録元`registered_worktree`、準備済み`worktree`、`common_dir`を持つ。
-候補・選定用の項目は`candidate_file`、`readiness`、`lane_limit`である。
-所有・再開用の項目は`ownership_record`、`ownership_token`、`lane_session_id`、`previous`である。
-
-**4.** 開始時候補は本文・鮮度を含む`candidate_file`の原本をそのまま使う。
-
-リポジトリ担当は受領した全体作業契約から巡回開始時刻とタイムゾーンを取得し、自身の作業記録へ残す。
-`immediate-fix.md`「開始後に追加されたWIの確認」にはこの時刻を使う。
-
-`pick-wi-check --candidate-file`にはその絶対パスを渡し、着手可否は受領したreadinessの診断も含めて適用する。
-不足する本文と依存先だけを通常キューCLIで補う。
-回答済みUWI、候補の分類・開始時CI点検は[selection-procedure.md](selection-procedure.md)を使う。
-選定YAMLとNを対象ごとに分け、レーン上限も対象別のNから計算する。
-詳細な生成・合流の契約は[selection-format.md](selection-format.md)を使う。
-
-**5.** 統括自身が直接処理する場合も、受領候補・readiness・対象別の選定・`lane_session_id`の対応を保つ。
-
-候補が1件であることと、その候補に着手できることは別に確認する。
-直接処理は`lane_limit`が2以上ならlanes、1以下ならsingle-laneへ接続し、どちらも本節の受領確認と所定選定を適用する。
-直接起動したレーン担当とwriterも対象別の`writer_sessions`へ記録し、常駐による終了確認・所有解放・回収と、`previous`を用いた再開へ引き渡す。
-省略を選ぶ場合は、元工程が保護する結果を保てる根拠を比較し、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」と既存の逸脱契約に従って判断・報告する。
-
-## worktreeと資源
-
-**6.** 常駐は統括の起動前に対象worktreeを準備する。
-
-明示の`--worktree`、無指定のdotfiles自動隔離、対象のWorktreeCreate/Removeを既存atk処理へ接続する。
-作成hookの返却実体とGit登録・branch・common_dirの対応を確認する。
-hook失敗時は途中資源と診断を保持して、その対象の準備を停止する。
-resumeは既存の準備済み実体と未完了成果をそのまま再利用する。
-配下担当のレーンは[run-lanes.md](run-lanes.md)の公開atk操作で作成し、対象別lane_session_idを維持する。
-準備・統合・実行レビューは[run-lanes.md](run-lanes.md)と`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`へ、公開とCI検収は[finish-session.md](finish-session.md)へ接続する。
-
-## 所有・継続・回収
-
-**7.** 短時間の排他とPID・起動時刻・担当sessionの生存照会でorigin単位の所有を維持する。
-
-所有待ちや準備失敗の対象を除いて、独立した対象の処理を継続する。
-異常終了では成果とlane_session_idをpreviousとして保持する。
-明示resumeは台帳に元の対象集合があれば再利用し、無ければ現在の登録集合で指定会話を再開する。
-会話の再開条件は既存の会話解決へ委ね、実行中writerの所有は対象別の生存判定で保護する。
-
-**8.** 統括が結果を保存してCLIを終了した後、常駐は開始側と同じ現行の着手可否を使い、当初候補の今回進められる作業、対象全体のprocessing、対処を要する不正metadata、未統合laneを確認する。
-
-必要な判断が済んだ有効な未来のcooldown、未回答UWIへの依存、外部の先行項目への依存で進められない項目は、今回の再実行が必要な残件から除く。
-同じ実行内で解消できる内部依存は残件に含め、再開記録の文章だけで作業を残件から除かない。
-処理済み部分の公開・CI検収が終わり、残りが正当に先送りされていれば、WI自体は未完了でも今回の処理結果としてcompletedを受理する。
-先送りする前の判断と解決の見込みは、既存の確認・依存・冷却の契約で確定し、常駐は意味判定や追加の申告フラグを持たない。
-統括の結果statusにかかわらず、その巡回の起動は1回で終える。
-残った候補・processing・未統合レーンは次の巡回の新しい統括へ渡し、previousと準備済みworktree・lane_session_idを再利用する。
-続行不能を返した対象は、起動時と終了時に共通する候補・診断・未判定アラートをホストの無進捗記録へ保存する。
-同じ入力では起動を見送り、新WI・本文/状態/依存/冷却期限/回答の変化・新アラート・明示resumeを再開の契機とする。
-無進捗記録の対象は起動時点の候補と実行ホストに限定する。
-
-**9.** 統括と配下writerの終了を確認した対象だけ所有を解放し、既存のlaneを回収する。
-
-停止未確認は所有をholdし、未統合・dirty・使用中・回収失敗の資源を保持する。
-回収結果と理由をログへ残し、理由を解消して`atk lane delete --session-id <lane_session_id>`で再判定する。
-候補原本と再開情報は検収まで保持する。
-
-**10.** `abort`、`abort-cancel`、`status`、`instruct`、`instruct-cancel`はOSアカウント単位で維持する。
-
- abort後は現在のセッション終了時に常駐を終了する。
- instructは次の統括起動へ1回渡し、統括が対象に関係する部分を適用する。
- 対象別の正常完了、続行不能、未完了工程、再開位置は集合JSONのresult_fileへ保存する。
- 返却形式は`agent-toolkit:process-wi all-repos`の「結果と終了」に従う。
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 担当の役割に関する判断・作業の前 | `all-repos-orchestration-roles.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-roles.md` |
+| 取得済み候補の受領に関する判断・作業の前 | `all-repos-orchestration-inputs.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-inputs.md` |
+| 登録集合・worktreeと資源・所有・継続・回収に関する判断・作業の前 | `all-repos-orchestration-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-resources.md` |

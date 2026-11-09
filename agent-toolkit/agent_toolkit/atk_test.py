@@ -706,12 +706,16 @@ from agent_toolkit._atk import git_sync
 
 notes = pathlib.Path(sys.argv[1])
 ready = pathlib.Path(sys.argv[2])
+release = pathlib.Path(sys.argv[3])
 with git_sync.repo_lock(notes):
     (notes / "concurrent.txt").write_text("concurrent\\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(notes), "add", "concurrent.txt"], check=True)
     subprocess.run(["git", "-C", str(notes), "commit", "-q", "-m", "concurrent"], check=True)
     ready.write_text("committed", encoding="utf-8")
-    time.sleep(2)
+    deadline = time.monotonic() + 30
+    while not release.exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
     subprocess.run(["git", "-C", str(notes), "push", "-q"], check=True)
 """
 
@@ -733,9 +737,18 @@ def test_main_does_not_report_commit_pushed_by_concurrent_process(
     script = tmp_path / "concurrent_push.py"
     script.write_text(_CONCURRENT_PUSH_SCRIPT, encoding="utf-8")
     ready = tmp_path / "ready"
+    release = tmp_path / "push.release"
+    repo_lock = _git_sync.repo_lock
+
+    def release_on_lock(*args: Any, **kwargs: Any) -> Any:
+        assert ready.exists()
+        release.touch()
+        return repo_lock(*args, **kwargs)
+
+    monkeypatch.setattr(_git_sync, "repo_lock", release_on_lock)
     environ = os.environ.copy()
     environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(_PROJECT_ROOT), environ.get("PYTHONPATH")]))
-    with subprocess.Popen([sys.executable, str(script), str(notes), str(ready)], env=environ) as writer:
+    with subprocess.Popen([sys.executable, str(script), str(notes), str(ready), str(release)], env=environ) as writer:
         deadline = time.monotonic() + 30
         while not ready.exists():
             assert writer.poll() is None, "別プロセスがcommit前に終了した"

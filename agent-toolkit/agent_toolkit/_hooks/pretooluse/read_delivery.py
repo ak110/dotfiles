@@ -281,6 +281,8 @@ def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None
 
 def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, reference: bool = False, cwd: str = "") -> str:
     """主体に合う取得手段と、必要な範囲の容量を示す。"""
+    if read_triggers.is_normative_document(target.path):
+        target = read_triggers.ReadTarget(target.path)
     path = target.path
     target.body()
     focus = f"。指定節`{target.heading}`と、その成立に必要な前提・例外を読め" if target.heading else ""
@@ -779,6 +781,8 @@ def document_key(path: pathlib.Path, fingerprint: str = "") -> str:
 
 def read_guidance_key(target: read_triggers.ReadTarget, *, invocation: bool) -> str:
     """取得案内を送った記録のキー。保存・重複判定・未解消判定の全てがこの関数を使う。"""
+    if read_triggers.is_normative_document(target.path):
+        target = read_triggers.ReadTarget(target.path)
     key = (
         document_reads.skill_invocation_key(target.path, document_reads.content_fingerprint(target.path))
         if invocation
@@ -1007,7 +1011,7 @@ def selected_targets(
             path = pathlib.Path(raw["path"])
             if not path.is_file():
                 continue
-            target = read_triggers.ReadTarget(path, raw["heading"])
+            target = read_triggers.ReadTarget(path, "" if read_triggers.is_normative_document(path) else raw["heading"])
             if target.heading:
                 try:
                     target.body()
@@ -1054,13 +1058,15 @@ def _select_targets(
             if path in current:
                 update_state(session_id, _unmark(key, agent))
     for target in targets:
+        origins = [_declaration_identity(row) for row in rows or () if target in row.targets]
+        if read_triggers.is_normative_document(target.path):
+            target = read_triggers.ReadTarget(target.path)
         if target.heading:
             try:
                 target.body()
             except ValueError:
                 # 不正な宣言を保持すると、宣言を復旧した後にも旧見出しが残る。
                 continue
-        origins = [_declaration_identity(row) for row in rows or () if target in row.targets]
         key = document_reads.selected_target_key(target, declarations=origins)
         update_state(session_id, operation_skills.mark_ready(key, agent))
 
@@ -1237,7 +1243,7 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
     return _llm_notice(
         "現在の操作に関連する読込条件の候補。条件の成立は未確定である。\n" + shown,
         tag=_WARN_TAG,
-        fix="自身の役割と現工程で各条件が成立するか確認し、成立する資料の必要節と前提・例外を判断・操作の前に読め。",
+        fix="自身の役割と現工程で各条件が成立するか確認し、成立する規範資料の全文を判断・操作の前に読め。",
         removable_cause=True,
         escalate_on_repeat=False,
     )

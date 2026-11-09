@@ -6,7 +6,8 @@
 ## mypyの共有キャッシュと内部エラー時の再解析
 
 `.bashrc`は`MYPY_CACHE_DIR=$HOME/.cache/mypy`を指定し、worktreeやプロジェクト間で
-mypyの保存済み型情報を再利用する。通常の実行ではこの共有保存先を維持する。
+mypyの保存済み型情報を再利用する。
+通常の実行ではこの共有保存先を維持する。
 
 [mypyの上流説明](https://github.com/python/mypy/issues/21136#issuecomment-4170319426)では、同じキャッシュを使う複数プロセスの並行実行は非対応である。
 SQLiteを無効にしても並行実行がサポートされるわけではない。
@@ -36,14 +37,18 @@ mypyがキャッシュの型情報を復元する途中で内部エラーを返�
 `.bashrc`は非対話シェルでも、Linuxに限り`TMPDIR`を`${XDG_CACHE_HOME:-$HOME/.cache}/agent-toolkit/tmp`へ設定する。
 XDGのキャッシュディレクトリはアプリケーションごとに分けるため、managed-temp（`agent-toolkit/managed-temp`）と同じ`agent-toolkit`配下に置く。
 Pythonの`tempfile`、pytest、Node、Rust、Claude Code本体とhookは`TMPDIR`を一時ディレクトリの置き場所として使うため、プログラムごとの設定なしにディスク上へ移る。
-ディレクトリは権限0700で作成する。作成できない場合は`TMPDIR`を設定しない。指すディレクトリが無いとPythonの`tempfile`は警告なしに`/tmp`へ戻るためである。
+ディレクトリは権限0700で作成する。
+作成できない場合は`TMPDIR`を設定しない。
+指すディレクトリが無いとPythonの`tempfile`は警告なしに`/tmp`へ戻るためである。
 Windowsは一時ディレクトリがディスク上にあるため対象外であり、`.bashrc`はWindowsへ配布しない。
 
 ディスク上の一時領域はtmpfsと違って再起動で空にならないため、`~/.config/user-tmpfiles.d/dotfiles-tmp.conf`の`d %C/agent-toolkit/tmp 0700 - - 7d`が古い項目を削除する。
 削除するのは、最終更新・最終アクセス・状態変更（ディレクトリは最終更新と最終アクセス）の全てが7日より古い項目である（`man 5 tmpfiles.d`）。
 読み取るだけの項目が最終アクセスによって残るのは、最終アクセスの時刻を更新するマウントの場合に限る（`noatime`のマウントでは最終更新と状態変更だけで判定される）。
-7日はmanaged-tempの自動削除の期限に合わせた値である。対象は`agent-toolkit/tmp`配下だけで、兄弟のmanaged-tempは自身の自動削除が扱う。
-削除はユーザーの`systemd-tmpfiles-clean.timer`が実行する。`setup_tmpfiles_clean.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
+7日はmanaged-tempの自動削除の期限に合わせた値である。
+対象は`agent-toolkit/tmp`配下だけで、兄弟のmanaged-tempは自身の自動削除が扱う。
+削除はユーザーの`systemd-tmpfiles-clean.timer`が実行する。
+`setup_tmpfiles_clean.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
 `systemctl`が無い環境、またはユーザーのsystemdマネージャーへ接続できない環境では理由と次の操作を示して見送り、systemdのユーザーセッションがある環境で`update-dotfiles`を再実行する。
 
 HOMEを差し替えて子プロセスを起動する隔離は、2か所に独立して実装している。
@@ -51,9 +56,18 @@ HOMEを差し替えて子プロセスを起動する隔離は、2か所に独立
 後者はPEP 723スクリプトで前者を読み込めないため、隔離を変える場合は両方を確かめる。
 どちらも、一時領域が実ホーム配下にあっても実ホームの設定とツール配置を読み書きしないよう、実ホームを探索起点・参照先とする経路を遮断する。
 
-- 祖先探索: miseは作業ディレクトリの祖先から設定を探す。一時領域が実ホーム配下にあると、HOMEを差し替えた子のmiseが祖先の`~/.config/mise/config.toml`を未信頼のプロジェクト設定として読んで終了コード1になる。テストは`MISE_CEILING_PATHS`を各テストの`tmp_path`へ、旧版更新検証は検証rootへ設定して探索を止める。この失敗のため、エージェントは一時領域を実ホーム配下へ置いたテストの失敗を避けようとして`/tmp`を選んでいた
-- 親から引き継ぐ`PATH`: 旧版更新検証は子の`PATH`から実ホーム配下の要素を除き、検証と更新処理が名前で起動する`uv`、`uvx`、`chezmoi`を検証homeの`~/.local/bin`へ複製する。実ホームの`~/.local/bin`や`~/.nvm/...`が残ると、更新処理のランチャー整理が実ホームのツール配置を走査する。Windowsの`%LOCALAPPDATA%\Microsoft\WindowsApps`は残す。更新処理がmise本体の導入に使うwingetのapp execution aliasがあり、OSが管理する起動口でユーザーのツール配置ではないためである
-- 配置先を示す環境変数: `NVM_DIR`、`HERDR_INSTALL_DIR`、npmの全体導入先（`NPM_CONFIG_PREFIX`）のように実ホームの配置先を指す値は子へ引き継がない。旧版更新検証はnpmの全体導入先を、Linuxでは検証homeの`~/.local`、Windowsでは検証homeの`%APPDATA%\npm`へ向ける。Linuxでは実ホームのNodeを外すとシステムのNodeの書き込めない導入先が選ばれるためである。Windowsのnpmは導入先の直下へランチャーを置くため、導入先を`PATH`へ加えて通常のユーザー環境を再現する
+- 祖先探索: miseは作業ディレクトリの祖先から設定を探す。
+  一時領域が実ホーム配下にあると、HOMEを差し替えた子のmiseが祖先の`~/.config/mise/config.toml`を未信頼のプロジェクト設定として読んで終了コード1になる。
+  テストは`MISE_CEILING_PATHS`を各テストの`tmp_path`へ、旧版更新検証は検証rootへ設定して探索を止める。
+  この失敗のため、エージェントは一時領域を実ホーム配下へ置いたテストの失敗を避けようとして`/tmp`を選んでいた
+- 親から引き継ぐ`PATH`: 旧版更新検証は子の`PATH`から実ホーム配下の要素を除き、検証と更新処理が名前で起動する`uv`、`uvx`、`chezmoi`を検証homeの`~/.local/bin`へ複製する。
+  実ホームの`~/.local/bin`や`~/.nvm/...`が残ると、更新処理のランチャー整理が実ホームのツール配置を走査する。
+  Windowsの`%LOCALAPPDATA%\Microsoft\WindowsApps`は残す。
+  更新処理がmise本体の導入に使うwingetのapp execution aliasがあり、OSが管理する起動口でユーザーのツール配置ではないためである
+- 配置先を示す環境変数: `NVM_DIR`、`HERDR_INSTALL_DIR`、npmの全体導入先（`NPM_CONFIG_PREFIX`）のように実ホームの配置先を指す値は子へ引き継がない。
+  旧版更新検証はnpmの全体導入先を、Linuxでは検証homeの`~/.local`、Windowsでは検証homeの`%APPDATA%\npm`へ向ける。
+  Linuxでは実ホームのNodeを外すとシステムのNodeの書き込めない導入先が選ばれるためである。
+  Windowsのnpmは導入先の直下へランチャーを置くため、導入先を`PATH`へ加えて通常のユーザー環境を再現する
 
 ホストの設定を使うテストは`host_environ`と`restore_host_environment`で、`MISE_CEILING_PATHS`もホストの値へ戻す。
 
@@ -91,7 +105,8 @@ HOMEを差し替えて子プロセスを起動する隔離は、2か所に独立
 - `tmux`コマンド存在
 - フラグファイル存在
 
-tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終了する。フラグファイルはchezmoi管理対象外でホスト固有運用とする。
+tmuxセッション名は`main`に固定し、デタッチ時にSSH接続も終了する。
+フラグファイルはchezmoi管理対象外でホスト固有運用とする。
 
 ## Claude Code入力待ちの通知ベル
 
@@ -107,7 +122,8 @@ catppuccinの`@catppuccin_window_flags "icon"`設定によりwindow名へベル�
   許可待ち等は`Notification`の入力待ち系4種別（`permission_prompt`・`elicitation_dialog`・
   `elicitation_url_dialog`・`agent_needs_input`）で鳴らす（許可待ちは約6秒後に発火する）。
   AskUserQuestionがNotificationを発生させるかは公式資料に記載が無いため、Notificationを前提としない
-- アイドル（`idle_prompt`）はベルの対象に含めない。応答終了の約60秒後に発火するため、
+- アイドル（`idle_prompt`）はベルの対象に含めない。
+  応答終了の約60秒後に発火するため、
   背景のサブエージェント・コマンドの完了を待ってターンを終えた場合も入力待ちと同じ扱いで発火し、
   ユーザーの入力を要さない待機でベルが鳴るためである
 - 応答終了そのものは`Stop`のフック（`pytools/claude_hook/stop_bell.py`）で鳴らす。
@@ -150,7 +166,8 @@ Windowsはtmux運用外のため対象外とする。
 ## 質問・ダイアログのタイムアウトの配布
 
 Claude Codeの`askUserQuestionTimeout`と`dialogExpiry`は`share/claude_settings_json_managed.json`でいずれも`never`を配布する。
-`askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけである。権限確認や計画承認は自動継続しない。
+`askUserQuestionTimeout`の対象は`AskUserQuestion`の選択質問だけである。
+権限確認や計画承認は自動継続しない。
 `askUserQuestionTimeout`による自動継続は、Remote Controlのbridgeが接続したセッションではarmedされない。
 bridgeが接続すると、ダイアログの内部表現が持つ`hasExternalRacer`は真になる。
 自動継続のarmed条件には、この値が偽であることが含まれるためである。
@@ -188,13 +205,16 @@ armedされた場合も、端末フォーカスが`focused`の間は自動継続
 `atk wi process-loop`のClaude起動だけが`--settings`で両設定の値と`remoteControlAtStartup`を明示する。
 自律モードでは無期限の駐留が工程の停止を招くため、配布値の`never`を常駐実行だけ有限値へ上書きする。
 値は実行環境のプロンプトキャッシュTTLに合わせ、TTLが5分の環境（Amazon Bedrock、Claude Platform on AWSなど）では`60s`、
-TTLが1時間の環境では`5m`とする。判定は委譲待機のcron間隔と同じ`agent-toolkit/agent_toolkit/_common/wait_schedule.py`の
+TTLが1時間の環境では`5m`とする。
+判定は委譲待機のcron間隔と同じ`agent-toolkit/agent_toolkit/_common/wait_schedule.py`の
 プロンプトキャッシュTTL判定を用いる。
 ユーザーが`~/.claude/settings.json`の`promptCacheTtl`でTTLを明示した環境では、明示されたTTLを判定に用いる。
 CLI設定はユーザー設定より優先されるため、常駐実行ではこの値が適用される。
-Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。`API_TIMEOUT_MS`、
+Claude起動分岐では`CLAUDE_CODE_RETRY_WATCHDOG=1`だけを子プロセス環境へ設定する。
+`API_TIMEOUT_MS`、
 `CLAUDE_STREAM_IDLE_TIMEOUT_MS`および`CLAUDE_CODE_MAX_RETRIES`はprocess-loopが子プロセス環境へ常に設定する値に含めない。
-該当する障害を確認した環境でだけ、原因に対応する変数を個別に設定する。Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
+該当する障害を確認した環境でだけ、原因に対応する変数を個別に設定する。
+Codex起動と`update-dotfiles`実行の環境へはClaude専用の値を渡さない。
 
 ## Claude CodeのBash出力の上限
 
@@ -213,12 +233,15 @@ How many characters of a successful Bash or PowerShell command's output Claude r
 ```
 
 指定しない場合は50,000バイト（19,774文字）のファイルも退避されるため、比較はバイト数で行われる。
-観測は2026年10月7日にClaude Code 2.1.291で行った。`claude -p --settings share/claude_settings_json_managed.json --model haiku --output-format stream-json --verbose`へファイルを`cat`させた。
-61,500バイトのファイルは`persistedOutputPath`を持たず全文で返った。63,000バイトのファイルは`<persisted-output>`で返り、`persistedOutputSize`は63000だった。
+観測は2026年10月7日にClaude Code 2.1.291で行った。
+`claude -p --settings share/claude_settings_json_managed.json --model haiku --output-format stream-json --verbose`へファイルを`cat`させた。
+61,500バイトのファイルは`persistedOutputPath`を持たず全文で返った。
+63,000バイトのファイルは`<persisted-output>`で返り、`persistedOutputSize`は63000だった。
 
 同じ形で上限の前後の大きさのファイルを`cat`させ、ストリームの`tool_use_result`の`persistedOutputPath`の有無で再検証する。
 上限値の解釈が変わった疑いがある場合は、本体のバイナリから`bashOutputMaxChars`の説明を確かめる。
-BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。検索の手順は`.claude/skills/develop-dotfiles/references/host-binaries.md`「ホスト本体のバイナリの検索」に従う。
+BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000から128,000へ収める関数も確かめる。
+検索の手順は`.claude/skills/develop-dotfiles/references/host-binaries.md`「ホスト本体のバイナリの検索」に従う。
 
 ## `update-dotfiles`のuv自己更新と実行環境
 
@@ -226,14 +249,17 @@ BashツールとPowerShellツールの`maxResultSizeChars`が指定値を4,000�
 WindowsでMCPなどが`uvx`を使用中の場合、実行ファイルを置換できずに自己更新が失敗することがある。
 この場合も`update-dotfiles`はインストール済みのuvで更新を続行し、処理の最後に失敗と次回の再試行を案内する。
 `atk wi process-loop`からの起動では、常駐中の`uvx`による実行ファイル競合を避けるため自己更新を省略し、
-次回の手動起動まで延期する。補助的なuv自己更新を理由として、dotfiles更新を停止させないためである。
+次回の手動起動まで延期する。
+補助的なuv自己更新を理由として、dotfiles更新を停止させないためである。
 
 `update-dotfiles`の各工程は`MISE_AUTO_INSTALL=0`を与えたサブプロセスとして実行する。
 実行ファイル名で起動したコマンドがmiseのshimへ解決されると、
 呼び出したコマンドと無関係なツールの自動導入が実行され、その失敗が更新処理全体を止めるためである。
 ツール自体はpost-apply工程で`mise install`を明示的に実行して導入するため、`MISE_AUTO_INSTALL=0`の影響を受けない。
 
-`update-dotfiles`のgit pull工程には待ち時間の上限を設ける。環境変数を設定しない場合は600秒とし、環境変数`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`へ秒数を与えて調整する。`0`を与えると上限を無効化する。
+`update-dotfiles`のgit pull工程には待ち時間の上限を設ける。
+環境変数を設定しない場合は600秒とし、環境変数`UPDATE_DOTFILES_GIT_TIMEOUT_SEC`へ秒数を与えて調整する。
+`0`を与えると上限を無効化する。
 GitHub向けSSHのupload-pack通信が応答しない環境で、更新処理が無期限に滞留するためである。
 上限を超えた場合は、git pull工程から起動した子孫プロセスを終了させる。
 そのうえで、工程名と処理が未完了であることを標準エラーへ出力し、終了コード1で終わる。
@@ -324,7 +350,8 @@ miseはglab CLIの設定ファイルから取得したトークンを公開API�
 `chezmoi apply`の後処理も`mise install`を実行する。
 fullでは次の作業ツリーを選択し、minimalではホームからグローバル設定の軽量ツールだけを対象とする。
 miseは実行位置から設定ファイルを探索するため、後処理は`CHEZMOI_WORKING_TREE`に`mise.toml`がある場合だけ
-そこを実行位置として呼び出す。実行位置を指定しないとglobal設定だけが対象となり、
+そこを実行位置として呼び出す。
+実行位置を指定しないとglobal設定だけが対象となり、
 working treeにだけ定義したツールが更新を繰り返しても未導入のまま残る。
 
 成功した導入・整理の後は、miseが列挙した設定ファイル・lock・導入状態とshimの内容を記録する。
@@ -342,7 +369,8 @@ miseの後処理はプロセスを強制終了せず、OSの権限設定も変�
 実在しない配置先は、`mise ls --current --installed --json`の`install_path`を親に持つツールと版へ対応付け、同じ実行位置で`mise install --force <ツール>@<版>`により再導入する。
 `symlink_bins`など配置先を変えるツールオプションはmiseが導入時にだけ配置を生成し、`mise install`は導入済みの版を再導入せず、`mise install --dry-run-code`と`mise doctor`も欠落を示さないためである。
 どの`install_path`の配下にも無い配置先（共有ランタイムへのリンクで導入されるツール）は再導入しない。
-再導入にはlockedモードの環境変数を与えない。mise 2026.9.17では、lockにURLがあってもlockedモードの`mise install --force <ツール>@<版>`は失敗し、版を明示した再導入はlockfileを書き戻さないためである。
+再導入にはlockedモードの環境変数を与えない。
+mise 2026.9.17では、lockにURLがあってもlockedモードの`mise install --force <ツール>@<版>`は失敗し、版を明示した再導入はlockfileを書き戻さないためである。
 検出と再導入の失敗、および再導入後も残る欠落は警告を出力して後処理を続け、残る欠落の警告には手動の復旧コマンドを含める。
 
 ### lockedモードの環境変数
@@ -372,7 +400,8 @@ Codex管理daemonの一時停止と再起動、永続ログの開始である。
 保存先は`${XDG_CACHE_HOME:-~/.cache}/dotfiles/bash-completion/<コマンド名>.bash`とする。
 
 キャッシュは、存在しない場合と、生成元の実行ファイルがキャッシュより新しい場合に再生成する。
-生成に失敗した場合はキャッシュを保存しない。そのコマンドの補完も読み込まずに続行する。
+生成に失敗した場合はキャッシュを保存しない。
+そのコマンドの補完も読み込まずに続行する。
 生成コマンドを変更した場合はキャッシュへ反映されないため、`~/.cache/dotfiles/bash-completion`を削除して再生成する。
 
 ## claude-statuslineの開発版導入
@@ -388,8 +417,10 @@ Gitの状態だけで開発ツリーと判定すると、ビルド手段を持�
 `develop`で`origin/master`を解決できない場合は取得へ切り替えず、後処理を失敗させる。
 ビルド、成果物の読込、既存バイナリの原子的な置換に失敗した場合も、既存バイナリを保持したまま後処理を失敗させる。
 
-開発版へ置き換える前に、リリース取得用のETagを無効化する。次回のリリース取得が`304 Not Modified`になっても、開発版を
-リリース版として保持し続けないためである。開発版の導入失敗後も後続の後処理は継続し、最終終了コードは1とする。
+開発版へ置き換える前に、リリース取得用のETagを無効化する。
+次回のリリース取得が`304 Not Modified`になっても、開発版を
+リリース版として保持し続けないためである。
+開発版の導入失敗後も後続の後処理は継続し、最終終了コードは1とする。
 リリース取得のネットワーク失敗は従来どおり非致命として扱う。
 
 ## Codex CLI本体の旧版整理
@@ -399,7 +430,8 @@ Gitの状態だけで開発ツリーと判定すると、ビルド手段を持�
 選択中の版と使用中の実行体に対応する版を保持し、使用が終わった旧版は次の実行で回収する。
 公式インストーラーと同じ`install.lock`で排他し、WindowsでCodexが実行中の場合は停止せず整理を延期する。
 Windowsでの実行中と通常の更新排他競合は正常な延期として0で終了する。
-選択先の不良、必要な使用中情報の取得失敗、配置の権限エラーでは対象を保持し、理由と次の操作を示して非0で終了する。削除失敗も非0で終了する。
+選択先の不良、必要な使用中情報の取得失敗、配置の権限エラーでは対象を保持し、理由と次の操作を示して非0で終了する。
+削除失敗も非0で終了する。
 案内された原因を解消した後、同じコマンドを再実行する。
 
 整理はCodex本体の導入成功後に実行する。
@@ -456,13 +488,16 @@ Codex組み込みの委譲（`spawn_agent`）の子threadへの継承はホス�
     （`/etc/apache2/sites-enabled/mysettings-443.conf`、本リポジトリの管理対象外）を使用する。
     Basic Auth付きで`https://tqzh.tk/atk/`へ公開する
   - サブパス公開時は`X-Forwarded-Prefix`ヘッダー付与かつプレフィクスを保持したまま
-    転送する構成を前提とする。Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
+    転送する構成を前提とする。
+    Web UI側は`pytilpack.quart.ProxyFix`でこれを解釈する
   - ホスト固有の待受設定と、計画ファイル・セッションの参照元はunitへ書かず
     `atk config`の`serve_*`キーで与える
     - 同じ後処理が`pytools/_internal/setup_atk_serve.py`の`_SERVE_SETTINGS`（`serve_host`と両画面の`remote_hosts`）を統一設定へ保存し、
-      値を変えた場合はサービスを再起動する。この3キーは`update-dotfiles`ごとに宣言値へ戻り、他のキーと他用途の設定は保持する
+      値を変えた場合はサービスを再起動する。
+      この3キーは`update-dotfiles`ごとに宣言値へ戻り、他のキーと他用途の設定は保持する
     - 以前chezmoiが配布した`~/.config/agent-toolkit/serve.toml`は配布を止めた後も残り、`atk serve`の起動時の自動移行が
-      `serve.toml.migrated`へ改名する。移行前の値を失わないよう、`post_apply.py`の`_REMOVED_PATHS`による一括削除の対象にしない
+      `serve.toml.migrated`へ改名する。
+      移行前の値を失わないよう、`post_apply.py`の`_REMOVED_PATHS`による一括削除の対象にしない
 - unitは`Environment=PATH`で`%h/.local/bin`、miseのshims、systemdが設定するPATHをこの順に指定する
   - `ExecStart`を絶対パスで書いても、起動されたプログラムが実行ファイル名で解決する外部コマンドには及ばない
   - `~/.local/bin`を先頭へ置き、実体を持つコマンドをmiseのshimより優先する
@@ -513,7 +548,8 @@ Codex組み込みの委譲（`spawn_agent`）の子threadへの継承はホス�
 
 `optimize-power-settings`コマンドはWindows専用で、高速スタートアップとUSB selective suspendをまとめて無効化する。
 
-引数なしで設定処理を開始する。自昇格した子は`-AutoElevated`を受け取る。
+引数なしで設定処理を開始する。
+自昇格した子は`-AutoElevated`を受け取る。
 `--help`は使用方法を表示して終了コード0で終わり、未知引数は標準エラーへ診断を出力して非0で終わる。
 どちらも管理者確認、自昇格、レジストリ・電源設定の操作へ進まない。
 Windowsのスリープ抑制用`keep-awake`も、引数なしで本体を開始し、
@@ -528,11 +564,14 @@ Windowsのスリープ抑制用`keep-awake`も、引数なしで本体を開始�
 ## post-applyテンプレートのキャッシュ
 
 `.chezmoi-source/`配下のpost-applyテンプレートはハッシュキャッシュで再実行を抑制し、外部CLIを呼び出す構成をとる。
-`dotfiles-post-apply`は主作業ツリーから実行する。linked worktreeから起動すると、OSアカウント全体の設定が複製を指さないよう、どの後処理も始めず終了コード2で停止する。
-複製からの実行が必要な場合は`dotfiles-post-apply --allow-non-canonical-root`で明示的に解除する。この指定ではOSアカウント全体の設定が実行した複製を参照する。
+`dotfiles-post-apply`は主作業ツリーから実行する。
+linked worktreeから起動すると、OSアカウント全体の設定が複製を指さないよう、どの後処理も始めず終了コード2で停止する。
+複製からの実行が必要な場合は`dotfiles-post-apply --allow-non-canonical-root`で明示的に解除する。
+この指定ではOSアカウント全体の設定が実行した複製を参照する。
 
 - 「入力ハッシュ一致」と「期待シム実在」の両方が満たされた場合のみキャッシュを有効と判定する
-- 期待シムは`pyproject.toml`の`[project.scripts]`から両テンプレートが展開時に導出する。定数の手動更新は不要とする
+- 期待シムは`pyproject.toml`の`[project.scripts]`から両テンプレートが展開時に導出する。
+  定数の手動更新は不要とする
 - 再インストールを延期した場合や失敗した場合は、テンプレートがその結果を環境変数で`dotfiles-post-apply`へ渡し、
   `update-dotfiles`の最終出力へ案内として表示する
 - Windowsで実行ファイル、DLL、仮想環境などを更新する場合は、対象を保持するプロセスの所有者と再起動可否を更新前に分類する
@@ -554,19 +593,27 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 `post_apply`の「Claude Code plugin cacheの旧版削除」工程（`pytools/_internal/prune_claude_plugin_cache.py`）がこれを整理する。
 
 - 対象は`~/.claude/plugins/installed_plugins.json`に載っているmarketplaceとpluginの組だけとし、`installPath`が指す現行版は削除しない
-- 現行でない版は、導入時刻の順で次に新しい版（後継）の導入から7日が経過し、かつ稼働中の参照が無い場合に削除する。後継の無い版は残す
-  - 起動中のClaude Codeセッションは起動時に解決した版ディレクトリを`hooks.json`と`.mcp.json`から参照し続けるため、参照中に削除するとそのセッションのhookとMCPが失敗する。経過日数は参照の終了を表さないため、削除の候補を選ぶ条件として使う
-  - 稼働中の参照は`pytools/_internal/claude_plugin_references.py`が自ユーザーのプロセスから判定する。次のいずれかに当たる版は保持し、参照が終わった後の`update-dotfiles`で削除する。保持した版と理由は`update-dotfiles logs`に残る
+- 現行でない版は、導入時刻の順で次に新しい版（後継）の導入から7日が経過し、かつ稼働中の参照が無い場合に削除する。
+  後継の無い版は残す
+  - 起動中のClaude Codeセッションは起動時に解決した版ディレクトリを`hooks.json`と`.mcp.json`から参照し続けるため、参照中に削除するとそのセッションのhookとMCPが失敗する。
+    経過日数は参照の終了を表さないため、削除の候補を選ぶ条件として使う
+  - 稼働中の参照は`pytools/_internal/claude_plugin_references.py`が自ユーザーのプロセスから判定する。
+    次のいずれかに当たる版は保持し、参照が終わった後の`update-dotfiles`で削除する。
+    保持した版と理由は`update-dotfiles logs`に残る
     - プロセスの作業ディレクトリ、実行ファイル、command line、環境変数`CLAUDE_PLUGIN_ROOT`がその版の配下を指す（その版から起動したMCPとhookを含む）
     - その版が現行だった期間（その版の導入から後継版の導入まで）に起動したClaude Codeセッションが稼働中である
     - Claude Codeのプロセスの参照先を取得できない
-- 現行版の必須ファイルの欠落を修復する「Claude Code pluginのインストール」工程（`install_claude_plugins.py`の`_ensure_plugin_cache_complete`）も、導入先を削除して再導入するため同じ判定を使う。導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば修復を延期し、欠落ファイル、保持した導入先、再開の操作を警告する。Claude Codeのセッションと導入先を参照するプロセスを全て終了してから`update-dotfiles`を再実行して修復する
+- 現行版の必須ファイルの欠落を修復する「Claude Code pluginのインストール」工程（`install_claude_plugins.py`の`_ensure_plugin_cache_complete`）も、導入先を削除して再導入するため同じ判定を使う。
+  導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば修復を延期し、欠落ファイル、保持した導入先、再開の操作を警告する。
+  Claude Codeのセッションと導入先を参照するプロセスを全て終了してから`update-dotfiles`を再実行して修復する
 - 導入時刻には各版の`.claude-plugin/plugin.json`のmtimeを用いる
-  - 版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。`plugin.json`のmtimeは版の順序と一致する
+  - 版ディレクトリ自体のmtimeは`uv run`が`.venv`などを作成するたびに更新され、版の順序と一致しない（74版中74件が不一致）。
+    `plugin.json`のmtimeは版の順序と一致する
   - `claude-plugins-official`配下はcommit hashなど自然順に並ばない版名を持つため、導入時刻で後継を決める
   - `plugin.json`を欠く不完全な版は版ディレクトリのmtimeで代替する
 - `installPath`の更新後に判定するため、工程は「Claude Code pluginのインストール」の直後に置く
-- `~/.codex/plugins/cache`は導入処理が1版だけを保持するため対象外とする。シンボリックリンクとディレクトリジャンクションは辿らず削除しない
+- `~/.codex/plugins/cache`は導入処理が1版だけを保持するため対象外とする。
+  シンボリックリンクとディレクトリジャンクションは辿らず削除しない
 
 ## 週次の費用指標（cost-metrics）の出力
 
@@ -592,8 +639,13 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 
 その他の行は次のとおりである。
 
-- `cost-metrics-session`: 期間内に開始したルートごとのengine・session_id・開始時刻・cwdと、子孫を含む推定費用（USD）。`estimated_usd`は単価不明や記録不足があるとnullになり、`known_usd`が算出できた部分、`unknown_responses`と`unknown_tokens`が単価不明の応答数と使用量を示す。`breakdown.self`はその記録のClaude累積額、`claude_subagents`はそれに含まれない追加分、`delegates`は別プロセスの委譲先の追加分である。Claudeの最新の算出額を優先し、残りはモデルごとのトークン単価で補う。料金表のURL・基準日・算出式とTTL不明時の仮定は末尾の`pricing`に含まれる
-- `cost-metrics-hook-notice`: ルートの開始週・runtime・規則（`hook`、`hook_name`、`tag`、`kind_text`）ごとのhook通知の`count`。ツール結果だけにある遮断も数え、同一呼び出しの重複と通常の標準出力・会話中の引用を除く
+- `cost-metrics-session`: 期間内に開始したルートごとのengine・session_id・開始時刻・cwdと、子孫を含む推定費用（USD）。
+  `estimated_usd`は単価不明や記録不足があるとnullになり、`known_usd`が算出できた部分、`unknown_responses`と`unknown_tokens`が単価不明の応答数と使用量を示す。
+  `breakdown.self`はその記録のClaude累積額、`claude_subagents`はそれに含まれない追加分、`delegates`は別プロセスの委譲先の追加分である。
+  Claudeの最新の算出額を優先し、残りはモデルごとのトークン単価で補う。
+  料金表のURL・基準日・算出式とTTL不明時の仮定は末尾の`pricing`に含まれる
+- `cost-metrics-hook-notice`: ルートの開始週・runtime・規則（`hook`、`hook_name`、`tag`、`kind_text`）ごとのhook通知の`count`。
+  ツール結果だけにある遮断も数え、同一呼び出しの重複と通常の標準出力・会話中の引用を除く
 - `cost-metrics-coverage`: runtimeごとの読めた最古の記録時刻、読めなかった記録・表、特定できなかった委譲先の件数
 
 `--claude-projects-dir`・`--codex-sessions-dir`・`--private-notes`で入力のディレクトリを上書きできる。
@@ -607,7 +659,8 @@ Claude Codeは`plugin install`と`plugin update`で`~/.claude/plugins/cache/<mar
 - `dot_<name>` → `~/.<name>`
 - `private_<name>` → パーミッション`600`／ディレクトリは`700`
 - `executable_<name>` → 実行権限付きで配置
-- `exact_<name>`（ディレクトリ） → 配布元に無い項目を`chezmoi apply`時に配布先から削除する。`make update-mise-locks`はmiseのロック用ディレクトリ（`dot_config/mise/dot_mise/locks/exact_<ツール>`）へこの属性を付け、版を更新しても旧版が配布先に残らないようにする
+- `exact_<name>`（ディレクトリ） → 配布元に無い項目を`chezmoi apply`時に配布先から削除する。
+  `make update-mise-locks`はmiseのロック用ディレクトリ（`dot_config/mise/dot_mise/locks/exact_<ツール>`）へこの属性を付け、版を更新しても旧版が配布先に残らないようにする
 - `<name>.tmpl` → Goテンプレートとして評価
 - `run_onchange_after_<name>.sh.tmpl` → `chezmoi apply`時の変更検知実行
 - よく使うコマンド: `chezmoi apply`（反映）・`chezmoi diff`（差分確認）・`chezmoi managed`（配布対象確認）

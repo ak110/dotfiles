@@ -503,8 +503,8 @@ async def test_wait_returns_last_result_after_chained_auto_resumes(
 
         client.emit(TaskNotificationMessage("task-2", "completed"))
         await _await_state(lambda: not session.live_tasks)
-        # 自動再開の監視と待機は0.1秒刻みで保留中の結果を判定するため、刻みを複数回経過させる。
-        await asyncio.sleep(0.35)
+        await manager._advance_child_session_wait(session)
+        await asyncio.sleep(0)
         assert wait_task.done() is False
         assert session.awaiting_auto_resume is True
 
@@ -796,7 +796,8 @@ async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_ses
             assert session_registry.resolve(child).state is session_registry.Resolution.RUNNING
             assert session.awaiting_auto_resume and not session.result_available
             assert not writer.result_exists(session.session_id)
-            await asyncio.sleep(0.15)
+            await manager._advance_child_session_wait(session)
+            await asyncio.sleep(0)
             assert process.returncode is None, "子の未終了中はCLIが待機を続ける"
             assert not resumed
 
@@ -1442,7 +1443,8 @@ async def test_idle_with_live_shell_task_keeps_result_pending(
         client.emit(TaskStartedMessage("shell-1"))
         client.finish_turn(ResultMessage("待機中: shell-1"))
         await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
-        await asyncio.sleep(0.05)
+        await manager._advance_child_session_wait(session)
+        await asyncio.sleep(0)
         assert wait_task.done() is False
         assert session.pending_result is not None
 
@@ -1501,8 +1503,12 @@ async def test_resumed_turn_is_not_finalized_by_previous_held_deadline(
         client.emit(_session_state("running"))
         client.emit(AssistantMessage([SimpleNamespace(id="impl-tool", name="Bash", input={"command": "make test"})]))
         await _await_state(lambda: session.cli_turn_state == "running" and session.last_action != "")
-        await asyncio.sleep(0.3)
-        await manager._advance_child_session_wait(session)
+        loop = asyncio.get_running_loop()
+        after_deadline = loop.time() + 0.3
+        with monkeypatch.context() as clock_patch:
+            clock_patch.setattr(loop, "time", lambda: after_deadline)
+            await manager._advance_child_session_wait(session)
+            await asyncio.sleep(0)
 
         assert wait_task.done() is False
         assert session.pending_result is None
@@ -1545,8 +1551,12 @@ async def test_previous_held_result_is_released_on_resumed_turn_start(
             client.emit(_session_state("running"))
         client.emit(AssistantMessage([SimpleNamespace(type="text", text="再開した作業を続ける")]))
         await _await_state(lambda: not session.awaiting_auto_resume)
-        await asyncio.sleep(0.3)
-        await manager._advance_child_session_wait(session)
+        loop = asyncio.get_running_loop()
+        after_deadline = loop.time() + 0.3
+        with monkeypatch.context() as clock_patch:
+            clock_patch.setattr(loop, "time", lambda: after_deadline)
+            await manager._advance_child_session_wait(session)
+            await asyncio.sleep(0)
         assert wait_task.done() is False
 
         client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))

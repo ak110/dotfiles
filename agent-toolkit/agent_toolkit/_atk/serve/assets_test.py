@@ -381,14 +381,25 @@ async def test_state_discards_pending_notification_when_stopped(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """監視停止時は保留中の通知を破棄する。"""
-    current = state.ServeState(tmp_path, debounce_seconds=0.02)
+    clock = [1_000.0]
+    timers: list[_FakeTimer] = []
+
+    def make_timer(interval, function, args=()):
+        timer = _FakeTimer(interval, function, args)
+        timers.append(timer)
+        return timer
+
+    current = state.ServeState(tmp_path, debounce_seconds=0.02, monotonic=lambda: clock[0], timer_factory=make_timer)
     current._loop = asyncio.get_running_loop()
     published: list[str] = []
     monkeypatch.setattr(current, "publish", lambda: published.append("changed"))
 
     current.on_modified(watchdog.events.FileModifiedEvent(str(tmp_path / "entry.md")))
     current.stop()
-    await asyncio.sleep(0.04)
+    assert len(timers) == 1 and timers[0].cancelled
+    clock[0] += 0.04
+    timers[0].function(*timers[0].args)
+    await asyncio.sleep(0)
 
     assert not published
 

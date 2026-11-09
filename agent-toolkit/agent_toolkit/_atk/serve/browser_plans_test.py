@@ -156,11 +156,11 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
     # 更新通知の購読を止め、削除後も一覧が古いままの状態で項目を選ぶ。
     await page.route("**/api/plans/events", lambda route: route.abort())
     body_delivered = asyncio.Event()
+    release_body = asyncio.Event()
     if delay_auto_opened_body:
 
         async def delay_body(route: playwright.async_api.Route) -> None:
-            # 負荷の高い環境での到着の遅れを模すため、自動で開く本文の要求をサーバーへ送る前に待つ。
-            await asyncio.sleep(0.3)
+            await asyncio.wait_for(release_body.wait(), timeout=5)
             response = await route.fetch()
             await route.fulfill(response=response)
             body_delivered.set()
@@ -169,6 +169,7 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
     await page.goto(harness.base_url + "/plans")
     item = page.locator("#files .file", has_text="plan.md")
     await item.wait_for(state="visible")
+    release_body.set()
     # 自動で開いた先頭の計画の本文表示を待ち、本文の取得と削除を競合させない。
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
 

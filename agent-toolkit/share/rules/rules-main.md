@@ -4,7 +4,7 @@
 
 ## 協調と自律
 
-起動したスキルが許可する成果物の種類の扱いは、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「成果物の制限」に従う。
+起動したスキルが許可する成果物の種類の扱いは、`../../skills/user-confirmation-and-report/references/user-utterance-correction.md`「成果物の制限」に従う。
 
 ユーザーの割り込みにはその話題について会話で応答し、割り込みと無関係な工程は自律モードのまま進める。
 
@@ -12,7 +12,9 @@
 エラー本文の可視性や原因調査は再開条件から外す。
 同じ発言の変更・訂正・中止・回答だけを統合し、継続の合図は既存の目的・要件・方針・認可を維持する。
 
-委譲先の返却をユーザー確認へ回す前に、`agent-toolkit:user-confirmation-and-report`「確認要否の判定」を適用する。「ユーザー固有の判断である根拠」を原要求・現物・既存認可で確かめ、無ければ同じ担当へ差し戻す。技術判断は自身か同じ担当が確定し、本人が決める結果や許容する影響をユーザーに尋ねる。
+委譲先の返却をユーザー確認へ回す前に、`../../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」を適用する。
+「ユーザー固有の判断である根拠」を原要求・現物・既存認可で確かめ、無ければ同じ担当へ差し戻す。
+技術判断は自身か同じ担当が確定し、本人が決める結果や許容する影響をユーザーに尋ねる。
 
 取り消しが難しい操作の前に、受領指示と現在の対象の整合を確認する。
 
@@ -38,7 +40,7 @@
 次: <対応>
 ```
 
-`../../skills/user-confirmation-and-report/references/communication-methods.md`「起動案内と進捗通知」に従う。
+`../../skills/user-confirmation-and-report/references/communication-methods-progress.md`「起動案内と進捗通知」に従う。
 報告基準を満たす改善案が無ければ`改善案: なし`の1行にする。
 進捗率は完成条件と残工程から見積もる全工程の概算とし、測定値と区別して点検だけに表示する。
 点検した対象と結果を同じ行に書く。
@@ -46,29 +48,13 @@
 
 ## 作業中の改善点の報告
 
-改善点は`01-agent.md`「事実と推論」で選び、発見時に処置・AWI化を決め、次の書式で報告する。
-`気付いた改善点: <事象と対象のツール・手順・条文>（AWI化ステータス: 済 <WI名> | 予定 <区分> <再開条件> | 即時対応 | 不要 <区分> <理由>）`
-
-- `済`: 保存したWI名を添える
-- `予定`: 登録の前提待ち。区分は`判断待ち`・`認可待ち`・`入力待ち`・`書込競合`とし、再開条件を添える
-- `即時対応`: 今回是正する
-- `不要`: 独立した再発防止策の登録なし。区分は`非欠陥`・`処置済み`・`被覆`・`見送り`とし、理由を添える
-
-process-wiの対応時機は読込表の`immediate-fix.md`で判定する。
-登録と修正を区別し、転記も同書式を使う。`不要`の定義は`agent-basics:bugfix`「再発防止策の必須性」を参照する。
-all-repos統括を含む全メインは、待機中に判定できる改善を発見時に既存項目と比較してAWIを保存する。
-登録時機と`予定`の定義は読込表の「待機中の先行実施」で判定し、前提・再開条件・時点を作業記録へ残す。
-最小調査をその場で行い、当座の訂正・再発防止は`agent-basics:bugfix`、Q影響・続行/規範不良は`01-agent.md`「完遂と先送り」で判断する。
-本題外はagents_serverへ渡し、担当外は根拠と未確認事項を引き継ぐ。
-証拠は非同期振り返りで再利用し、既調査の再調査・同期振り返りは終了条件から除く。
-規範読込と委譲結果は`agent-toolkit:delegation/references/receiving.md`「受領後の扱い」で報告・集約する。
-全モードで受領時に処置し、次の発話でユーザーへ転記する。
+改善点を発見した時は、`../main-improvements.md`「作業中の改善点の報告」の処置・AWI化・報告の手順に従う。
 
 ## ユーザー向け発話ルール
 
 送達手段によらず、ユーザー向け本文は`01-agent.md`「使用言語」に従う。
 
-説明・報告・確認には`agent-basics:writing-standards/references/writing.md`「文章の共通規定」「日本語の書き方」を適用し、結論と必要な補足の順で述べる。
+説明・報告・確認には`agent-basics:writing-standards/references/writing.md`、`agent-basics:writing-standards/references/writing-common.md`を適用し、結論と必要な補足の順で述べる。
 ユーザーの理解・判断・次の操作に必要な情報を選び、依頼やスキルから既知の工程・前提は、結果を誤解させない範囲で省く。
 送達前に反復を削り、未達・失敗・予想との差・判断理由・制約・必要な証拠は保持する。
 報告・レビュー前の記録と指摘時の比較は、`share/work-contract.md`「記録する内容」に従う。
@@ -85,23 +71,36 @@ all-repos統括を含む全メインは、待機中に判定できる改善を�
 案の再提示は、前回からの追加・変更・削除、変更箇所に印を付けた最新版全体の順とする。
 長ければ最新版を1ファイルに保ち、絶対パスを示す。
 
-発話は自然な日本語で、主題・結果・問い・現在の判断を冒頭に置き、1段落1主題とする。省略しても意味を一意に復元でき、主語と述語が対応する文にする。ユーザー対応が要る未完了事項は`agent-toolkit:user-confirmation-and-report`「手段の選択」でUWI登録要否を判定し、保存先を記す。ユーザー操作は結果の利用に必要な場合に添える。
+発話は自然な日本語で、主題・結果・問い・現在の判断を冒頭に置き、1段落1主題とする。
+省略しても意味を一意に復元でき、主語と述語が対応する文にする。
+ユーザー対応が要る未完了事項は`agent-toolkit:user-confirmation-and-report`「手段の選択」でUWI登録要否を判定し、保存先を記す。
+ユーザー操作は結果の利用に必要な場合に添える。
 
 - 質問や話題が求めていない否定、除外、現状維持の表明は記載しない。
-- 内部の略称は初出時に説明し、規範・成果物に実在する正式名称を使う。未定義の工程名・画面名・コマンド名などは説明文で記す。
-- 複数案が未決定なら、確認の有無にかかわらず同じ発話で推奨案と根拠を示す。推奨案が未確定なら必要な調査と、調査後に推奨案を示す旨を伝える。
-- 報告・回答・報告用UWI・`AskUserQuestion`の質問本文・`共通前提:`行を含む全ユーザー向け文面は、保存・送達前に`01-agent.md`「事実と推論」で評価する。指摘・割り込み・是正要求への応答には、確認した原文と実装またはコマンド実行結果を示す。
-  WIの質問への直接回答も保存前に評価する。下書きのレーン担当レビュー、実行レビューを省く場合のメイン確認、UWI保存時期は`exec.parent.md`「レーン担当が確定した質問への回答」に従う。
+- 内部の略称は初出時に説明し、規範・成果物に実在する正式名称を使う。
+  未定義の工程名・画面名・コマンド名などは説明文で記す。
+- 複数案が未決定なら、確認の有無にかかわらず同じ発話で推奨案と根拠を示す。
+  推奨案が未確定なら必要な調査と、調査後に推奨案を示す旨を伝える。
+- 報告・回答・報告用UWI・`AskUserQuestion`の質問本文・`共通前提:`行を含む全ユーザー向け文面は、保存・送達前に`01-agent.md`「事実と推論」で評価する。
+  指摘・割り込み・是正要求への応答には、確認した原文と実装またはコマンド実行結果を示す。
+  WIの質問への直接回答も保存前に評価する。
+  下書きのレーン担当レビュー、実行レビューを省く場合のメイン確認、UWI保存時期は`exec.parent.md`「レーン担当が確定した質問への回答」に従う。
 - 稼働状況への回答は、メイン自身を含む各エージェントの稼働中・完了済み、最終応答時刻、その後の通知・ユーザー入力への応答済み・未応答を冒頭に示す。
-- 委譲先・バックグラウンドタスクの通知後に同一セッションの再開を実行環境が保証する場合だけ、待機でターンを終え、ホストが許せば本文を空にする。保証の無い非対話起動などでは、公開待機手段で同じターン内に結果を回収し、報告の同期など残る工程へ進む。
+- 委譲先・バックグラウンドタスクの通知後に同一セッションの再開を実行環境が保証する場合だけ、待機でターンを終え、ホストが許せば本文を空にする。
+  保証の無い非対話起動などでは、公開待機手段で同じターン内に結果を回収し、報告の同期など残る工程へ進む。
 - Markdownの本文は地の文で書き、逐語引用・コード・コマンド・設定の断片だけをコードブロックで囲む。
 
 ## 参照資料の取得
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| `気付いた改善点:`の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| `気付いた改善点:`の処置とAWI化ステータスを決める前 | `../../skills/delegation/references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
-| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` |
+| 改善点を発見し、処置・AWI化・報告を行う前 | `../main-improvements.md` | 判断 | `read:agent-toolkit:*/share/main-improvements.md` |
+| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards-design.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md` |
 | process-wi中に`気付いた改善点:`の処置とAWI化ステータスを決める前、方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ドキュメント品質：文章の共通規定の基準を適用する前 | `agent-basics:writing-standards/references/writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |

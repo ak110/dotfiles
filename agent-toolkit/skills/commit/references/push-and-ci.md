@@ -1,26 +1,29 @@
 # pushとCI通過確認
 
-pushを実行するエージェントが、push先、更新する参照（ref）、基準情報、CI監視、および証拠データ用の一時領域の管理を担当する。通常コミットの作成、ステージング、コミットメッセージの作成は親スキルに従い、CI失敗の帰属判定と原因分析は`agent-basics:bugfix`に従って進める。
+pushを実行するエージェントが、push先、更新する参照（ref）、基準情報、CI監視、および証拠データ用の一時領域の管理を担当する。
+通常コミットの作成、ステージング、コミットメッセージの作成は親スキルに従い、CI失敗の帰属判定と原因分析は`agent-basics:bugfix`に従って進める。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/wait-anomalies.md#「ホストによる背景待機の停止後」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` | 判断 | `section:agent-toolkit:*/skills/commit/references/ci-failure-handling.md#「修正commitが必要なCI失敗を修正するエージェント」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `history-rewrite-verification.md`、`history-rewrite-fixup.md`、`history-rewrite-recovery.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md`、`read:agent-toolkit:*/skills/commit/references/history-rewrite-fixup.md`、`read:agent-toolkit:*/skills/commit/references/history-rewrite-recovery.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish.md#「公開工程の続行不能からの再開」` | 判断 | `section:agent-toolkit:*/skills/commit/references/publish.md#「公開工程の続行不能からの再開」` |
-| CIの結果を成功時も含めて判定する前 | `agent-basics:check-execution/references/diagnostics.md`の「読む出力」 | 判断 | `section:agent-basics:*/skills/check-execution/references/diagnostics.md#「読む出力」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
+| CIの結果を成功時も含めて判定する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
 
 ## 公開状態の4項目
 
-ベースブランチへの変更が正しく公開されたことを確認するための以下の4項目を「公開状態の4項目」と呼ぶ。判定する時点で現在のGit状態から値を取得し、4項目すべてが満たされた場合にのみ「公開済み」と判定する。値の取得には各項目に指定されたコマンドを用い、`.git`ディレクトリ内部のファイルを直接探索したり、複数のrefを1回の`git rev-parse --short`にまとめて渡したりすることは避ける。
+ベースブランチへの変更が正しく公開されたことを確認するための以下の4項目を「公開状態の4項目」と呼ぶ。
+判定する時点で現在のGit状態から値を取得し、4項目すべてが満たされた場合にのみ「公開済み」と判定する。
+値の取得には各項目に指定されたコマンドを用い、`.git`ディレクトリ内部のファイルを直接探索したり、複数のrefを1回の`git rev-parse --short`にまとめて渡したりすることは避ける。
 
 1. `git -C <対象リポジトリの絶対パス> status --porcelain=v2 --branch`の出力に含まれる`# branch.head`が、ベースブランチ名と一致していること
 2. 上記と同じ出力において、`#`で始まらない行が0件であること（作業ツリーが完全にクリーンであること）
@@ -56,14 +59,19 @@ CI定義の不在を確定できた場合はベースライン作成と監視を
 
 ## push前
 
-**1.** 誤った公開先への更新を防ぐため、pushの認可（計画に記録された元の要求、ユーザー確認に対する回答、委譲プロンプト、ユーザーからの直接指示など）に対象リポジトリと対象ブランチが含まれていることを確認する。amendやfixupを実行した直後は、作業ツリーに未コミットの差分が残っていないこともあわせて確認する。
+**1.** 誤った公開先への更新を防ぐため、pushの認可（計画に記録された元の要求、ユーザー確認に対する回答、委譲プロンプト、ユーザーからの直接指示など）に対象リポジトリと対象ブランチが含まれていることを確認する。
+amendやfixupを実行した直後は、作業ツリーに未コミットの差分が残っていないこともあわせて確認する。
 
-**2.** 上流の変更を保持するため、`git fetch`を実行したあと、上流ブランチとの差分を双方向で確認する。上流が進んでいる場合はその変更を取り込み、検証を最初からやり直す。
+**2.** 上流の変更を保持するため、`git fetch`を実行したあと、上流ブランチとの差分を双方向で確認する。
+上流が進んでいる場合はその変更を取り込み、検証を最初からやり直す。
 
-**3.** 更新先を検査するため、pushの実行方法は、dry-runを実行して確定させる。`git remote -v`、現在のブランチ、追跡ブランチ、Git設定の`push.default`、および承認済みのプッシュ先（destination）から、引数なしのpushがどこへ到達するかを判定する。
+**3.** 更新先を検査するため、pushの実行方法は、dry-runを実行して確定させる。
+`git remote -v`、現在のブランチ、追跡ブランチ、Git設定の`push.default`、および承認済みのプッシュ先（destination）から、引数なしのpushがどこへ到達するかを判定する。
 
-承認済みのdestinationへ確実に到達すると判断できる場合は、引数なしの`git push --dry-run --porcelain`を用いる。到達先が確実でない場合や判定が難しい場合は、`<remote> <source>:refs/heads/<destination>`を明示したdry-runを実行する（設定上、引数なしのpushが確実に失敗すると分かっている場合は引数なしのdry-runを省略してよい）。
-dry-runが成功し、出力された全status lineが承認済みのremoteとdestinationへのrefspecを示している場合に限り、その方法で実際にpushを実行する。拒否や失敗が予定されるrefが含まれている場合や、未承認のremote・destination宛てが含まれている場合は、直ちにpushを中止する
+承認済みのdestinationへ確実に到達すると判断できる場合は、引数なしの`git push --dry-run --porcelain`を用いる。
+到達先が確実でない場合や判定が難しい場合は、`<remote> <source>:refs/heads/<destination>`を明示したdry-runを実行する（設定上、引数なしのpushが確実に失敗すると分かっている場合は引数なしのdry-runを省略してよい）。
+dry-runが成功し、出力された全status lineが承認済みのremoteとdestinationへのrefspecを示している場合に限り、その方法で実際にpushを実行する。
+拒否や失敗が予定されるrefが含まれている場合や、未承認のremote・destination宛てが含まれている場合は、直ちにpushを中止する
 
 **4.** CIの判定可否を確かめるため、CI定義の有無は、前節「公開先に対応するCI定義の判定」に従って確定する。
 
@@ -73,9 +81,12 @@ dry-runが成功し、出力された全status lineが承認済みのremoteとde
 
 **1.** セッション用のmanaged-temp（`agent-toolkit:managed-temp`）内に、pushごとに独立したディレクトリを作成する。
 
-**2.** 削除対象の参照を除き、更新対象となる参照ごとに、確定したrefspecの左辺`<source>`をそのまま`--source-ref`へ渡す（右辺のdestination refやリモート追跡ブランチの値とは異なるため注意する）。補助スクリプトはsource refをコミットまで再帰的にpeelし（注釈付きタグ・軽量タグのいずれも対応）、完全長のコミットSHAを保存する。コミットへpeelできない参照が指定された場合、ベースライン作成は失敗する。
+**2.** 削除対象の参照を除き、更新対象となる参照ごとに、確定したrefspecの左辺`<source>`をそのまま`--source-ref`へ渡す（右辺のdestination refやリモート追跡ブランチの値とは異なるため注意する）。
+補助スクリプトはsource refをコミットまで再帰的にpeelし（注釈付きタグ・軽量タグのいずれも対応）、完全長のコミットSHAを保存する。
+コミットへpeelできない参照が指定された場合、ベースライン作成は失敗する。
 
-**3.** `(destination ref, source ref)`の組み合わせごとに以下のコマンドを実行する。以降のCI監視処理も、同様に`atk run-script wait-ci --`を用いて起動する。
+**3.** `(destination ref, source ref)`の組み合わせごとに以下のコマンドを実行する。
+以降のCI監視処理も、同様に`atk run-script wait-ci --`を用いて起動する。
 
 ```text
 atk run-script wait-ci -- --repo <owner/repo> --forge github --ref <destination-ref> --source-ref <source-ref> \
@@ -98,44 +109,78 @@ API接続先を明示的に指定する場合は、ポート番号を含むHTTP(
 
 ## pushと監視
 
-**6.** CI修正の先行検証は`ci-failure-handling.md`「修正系列」で選び、先行CIと正式公開のSHA・ref・baseline・対象ジョブを区別して正式公開のcheck集合も検収する。引数なしの方式では`git push`を単独で実行し、引数明示の方式では成功したdry-runのコマンドラインから`--dry-run --porcelain`を除いた同一の引数でpushを実行する。
+**6.** CI修正の先行検証は`ci-failure-handling.md`「修正系列」で選び、先行CIと正式公開のSHA・ref・baseline・対象ジョブを区別して正式公開のcheck集合も検収する。
+引数なしの方式では`git push`を単独で実行し、引数明示の方式では成功したdry-runのコマンドラインから`--dry-run --porcelain`を除いた同一の引数でpushを実行する。
 
-**7.** `--baseline`による判定が完了するまでは、同じコミットに対して`gh workflow run`などを用いてワークフローを手動起動しない。`wait_ci.py`はベースラインに含まれていない同一コミットの実行も監視対象に含めるため、手動起動した実行が失敗するとCI全体の失敗として扱われてしまうためである。リリースやデプロイ用のワークフローは、CIの通過が確定したあとに起動する。
+**7.** `--baseline`による判定が完了するまでは、同じコミットに対して`gh workflow run`などを用いてワークフローを手動起動しない。
+`wait_ci.py`はベースラインに含まれていない同一コミットの実行も監視対象に含めるため、手動起動した実行が失敗するとCI全体の失敗として扱われてしまうためである。
+リリースやデプロイ用のワークフローは、CIの通過が確定したあとに起動する。
 
 pushが成功したあとは、各ベースラインに対して`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を実行する（本セッションでCI通過を判定しない場合は実行せず、後始末の工程へ進む）
 
-- コマンドの起動と結果の回収は、`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機区間の構成」に従う。完了通知によって同一セッションが自動再開される監視処理はバックグラウンドで起動し、他の独立待機処理よりも先に通知が届いたものから順次処理する。同一ベースラインに対する監視処理がすでに起動している場合はそのプロセスを回収し、二重に起動しない
-- ホスト環境からバックグラウンド監視プロセスの停止通知を受け取った場合は、同スキルの`references/wait-anomalies.md`「ホストによる背景待機の停止後」に従う。停止した監視プロセスとその出力を回収したうえで、同一SHAとベースライン（または待機専用記録）を用いて監視を再開する。この際、実際のCIジョブ自体の再実行は行わない
-- 総待機時間（タイムアウト値）は、判定対象runと同一のジョブ構成（実行ジョブ、パス変更条件によるスキップ、マトリックス、軽量実行有無等）を持つ過去の成功run所要時間（GitHub Actionsでは`updatedAt - startedAt`）を基準とする。これにジョブ登録の猶予時間と変動マージンを加算し、有限値の`--timeout`として渡す。直近の成功runが軽量実行や一部ジョブのみの実行である場合は、通常実行の作業量を網羅している過去の成功runまで遡って時間を算出する。所要時間は`gh run view <run ID> --json startedAt,updatedAt,jobs`などを用いてジョブ構成とともに確認し、取得や算出ができない場合はデフォルト値として270秒を指定する。なお、`gh`コマンドの入出力形式は実行直前のヘルプで確認する
-- 終了コード6を受け取った場合は、同一の引数で再度コマンドを呼び出す。終了コード2（タイムアウト）の場合は、同一SHAとベースライン（または待機専用記録）を保持したまま、ジョブの進行状況と経過時間から残りの必要時間を見積もり、`--timeout`の値を増やして再度呼び出す。終了コード7（引数の誤り）の場合は、`atk run-script wait-ci -- --help`で正しい指定形式を確認して引数を修正し、起動し直す。それ以外で待機を終了し、私設GitLabの終了3は「私設GitLabのCLI失敗からの回復」へ進む
-- バックグラウンド実行する際は、ホスト側がコマンドを強制停止する時間上限を、スクリプトに渡す総待機時間よりも長く設定する。ホスト側によって先に停止されると、スクリプトが判定結果を返せなくなるためである。実行ハンドルのyieldや再開をする場合は、60秒未満の間隔で同一プロセスに再接続し、プロセスを短い`--timeout`ごとに分割したり、プラグインルートの更新を契機に別プロセスへ置き換えたりしない
-- push前のベースラインが無い場合や、他の主体がpushしたコミットを待機する場合は、40桁の完全長SHAを`--wait-sha`に渡す。managed-temp内に作成した待機専用JSONを`--failure-record`に渡す。この形式では対象SHAの全実行が判定対象となる（ベースライン方式は自身のpushによって新たに登録された実行のみを判定する）。実行例:
+- コマンドの起動と結果の回収は、`../../delegation/references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従う。
+  完了通知によって同一セッションが自動再開される監視処理はバックグラウンドで起動し、他の独立待機処理よりも先に通知が届いたものから順次処理する。
+  同一ベースラインに対する監視処理がすでに起動している場合はそのプロセスを回収し、二重に起動しない
+- ホスト環境からバックグラウンド監視プロセスの停止通知を受け取った場合は、同スキルの`../../delegation/references/wait-anomalies-stopped.md`「ホストによる背景待機の停止後」に従う。
+  停止した監視プロセスとその出力を回収したうえで、同一SHAとベースライン（または待機専用記録）を用いて監視を再開する。
+  この際、実際のCIジョブ自体の再実行は行わない
+- 総待機時間（タイムアウト値）は、判定対象runと同一のジョブ構成（実行ジョブ、パス変更条件によるスキップ、マトリックス、軽量実行有無等）を持つ過去の成功run所要時間（GitHub Actionsでは`updatedAt - startedAt`）を基準とする。
+  これにジョブ登録の猶予時間と変動マージンを加算し、有限値の`--timeout`として渡す。
+  直近の成功runが軽量実行や一部ジョブのみの実行である場合は、通常実行の作業量を網羅している過去の成功runまで遡って時間を算出する。
+  所要時間は`gh run view <run ID> --json startedAt,updatedAt,jobs`などを用いてジョブ構成とともに確認し、取得や算出ができない場合はデフォルト値として270秒を指定する。
+  なお、`gh`コマンドの入出力形式は実行直前のヘルプで確認する
+- 終了コード6を受け取った場合は、同一の引数で再度コマンドを呼び出す。
+  終了コード2（タイムアウト）の場合は、同一SHAとベースライン（または待機専用記録）を保持したまま、ジョブの進行状況と経過時間から残りの必要時間を見積もり、`--timeout`の値を増やして再度呼び出す。
+  終了コード7（引数の誤り）の場合は、`atk run-script wait-ci -- --help`で正しい指定形式を確認して引数を修正し、起動し直す。
+  それ以外で待機を終了し、私設GitLabの終了3は「私設GitLabのCLI失敗からの回復」へ進む
+- バックグラウンド実行する際は、ホスト側がコマンドを強制停止する時間上限を、スクリプトに渡す総待機時間よりも長く設定する。
+  ホスト側によって先に停止されると、スクリプトが判定結果を返せなくなるためである。
+  実行ハンドルのyieldや再開をする場合は、60秒未満の間隔で同一プロセスに再接続し、プロセスを短い`--timeout`ごとに分割したり、プラグインルートの更新を契機に別プロセスへ置き換えたりしない
+- push前のベースラインが無い場合や、他の主体がpushしたコミットを待機する場合は、40桁の完全長SHAを`--wait-sha`に渡す。
+  managed-temp内に作成した待機専用JSONを`--failure-record`に渡す。
+  この形式では対象SHAの全実行が判定対象となる（ベースライン方式は自身のpushによって新たに登録された実行のみを判定する）。
+  実行例:
 
   ```sh
   atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専用JSONの絶対パス> --repo <owner/repo> --forge github --ref <destination-ref> --source-ref <source-ref>
   ```
 
-- GitLabでは、同一プロジェクト内のbridgeが再帰的に参照する下流（downstream）パイプラインやジョブも判定対象に含まれる。別プロジェクトの下流パイプラインは対象外とする
+- GitLabでは、同一プロジェクト内のbridgeが再帰的に参照する下流（downstream）パイプラインやジョブも判定対象に含まれる。
+  別プロジェクトの下流パイプラインは対象外とする
 
-**8.** すべての監視対象が終了コード0で完了した場合に限り「CI通過」と判定する。出力が空である場合や成功完了を示すマーカーがない場合は、未判定として扱い直接状況を確認する。判定対象はベースラインに保存されたコミットSHAの実行であり、push後に送信元ブランチが進んだ場合でも同じSHAを対象として判定する。また、ジョブ登録の猶予時間内に新しく登録された実行も判定に含める（この猶予時間は実行が1件も登録されていない状態を識別するための待機であり、判定自体の制限時間とは異なる）。なお、GitHub Actionsにおいて監視対象から除外するのは、`event`が`dynamic`かつワークフロー名が`Dependabot Updates`である実行のみとする。
+**8.** すべての監視対象が終了コード0で完了した場合に限り「CI通過」と判定する。
+出力が空である場合や成功完了を示すマーカーがない場合は、未判定として扱い直接状況を確認する。
+判定対象はベースラインに保存されたコミットSHAの実行であり、push後に送信元ブランチが進んだ場合でも同じSHAを対象として判定する。
+また、ジョブ登録の猶予時間内に新しく登録された実行も判定に含める（この猶予時間は実行が1件も登録されていない状態を識別するための待機であり、判定自体の制限時間とは異なる）。
+なお、GitHub Actionsにおいて監視対象から除外するのは、`event`が`dynamic`かつワークフロー名が`Dependabot Updates`である実行のみとする。
 
-**9.** 終了コード6が返った場合は`agent-basics:bugfix`を起動し、並行して同じベースラインと引数でコマンドを再度呼び出す。終了コード1が返った場合も同スキルを用いて対処する。
+**9.** 終了コード6が返った場合は`agent-basics:bugfix`を起動し、並行して同じベースラインと引数でコマンドを再度呼び出す。
+終了コード1が返った場合も同スキルを用いて対処する。
 
 **10.** 修正作業する際は、元のベースライン待機が終了した時点の出力に含まれるすべての失敗ジョブの集合を修正範囲に含め、そのうえで再度pushする（失敗の全体集合を取得できない場合は、まずその原因を解消する）。
 
  再pushを行うごとに新しいベースラインを作成して再監視し、前回失敗したジョブが新しいpushの監視対象に正しく含まれていることを確認する。
- もし含まれていない場合は、`agent-toolkit:commit/references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」に定める修正系列の定義に従う。修正のコミット方法は、以下の2つの区分から選択する。
+ もし含まれていない場合は、`agent-toolkit:commit/references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」に定める修正系列の定義に従う。
+修正のコミット方法は、以下の2つの区分から選択する。
 
 - 原因コミットへ取り込む区分: 以下の3条件がすべて成立する場合に限り、修正を原因コミットへ統合する（amend、またはfixupとautosquash）。
-   リモートの更新は、`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待するOIDを明示して実行する。期待値を省略すると、バックグラウンドの`git fetch`等でリモート追跡ブランチが進んだ際に保護が無効化されるためである。
-   具体的な実行手順は、`references/history-rewrite.md`の「fixupの実行上の制約」「操作前後の確認」「失敗時の扱い」に従う。
+   リモートの更新は、`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように期待するOIDを明示して実行する。
+  期待値を省略すると、バックグラウンドの`git fetch`等でリモート追跡ブランチが進んだ際に保護が無効化されるためである。
+   具体的な実行手順は、`history-rewrite-verification.md`、`history-rewrite-fixup.md`、`history-rewrite-recovery.md`に従う。
   - push先ブランチが、リモートのHEADが指しているブランチ（`git ls-remote --symref <remote> HEAD`で確認）とは異なること
   - push先ブランチが、対象リポジトリの規範（`AGENTS.md`など）において直接pushやforce pushを禁止しているブランチではないこと
   - 操作直前に`git fetch --all --prune`を実行後、書き換え対象の最古コミットに対する`git for-each-ref --contains=<そのcommit> refs/heads/ refs/remotes/`の出力が、push先ローカルブランチとその追跡ブランチのみであること
-- 通常コミットを追加する区分: 前述の3条件のいずれか1つでも満たされない場合（ベースブランチへ直接pushする運用を含む）は、同一ブランチへ通常のコミットを追加し、force pushは行わない。また、forge側のブランチ保護設定によってforce pushが拒否された場合も、通常コミットによる修正へ切り替える
-- 取り込む区分を採用する場合でも、「push前」節に示すdry-runを同一の明示形式で実行し、強制更新を示すstatus lineが上記3条件を満たす承認済みdestinationへの更新である場合のみ承認済みとして扱う。CIの記録には、書き換え前後のOID、ツリー・親コミット・件名の対応関係、`git range-diff`の結果、および解消した原因との対応関係を残す
+- 通常コミットを追加する区分: 前述の3条件のいずれか1つでも満たされない場合（ベースブランチへ直接pushする運用を含む）は、同一ブランチへ通常のコミットを追加し、force pushは行わない。
+  また、forge側のブランチ保護設定によってforce pushが拒否された場合も、通常コミットによる修正へ切り替える
+- 取り込む区分を採用する場合でも、「push前」節に示すdry-runを同一の明示形式で実行し、強制更新を示すstatus lineが上記3条件を満たす承認済みdestinationへの更新である場合のみ承認済みとして扱う。
+  CIの記録には、書き換え前後のOID、ツリー・親コミット・件名の対応関係、`git range-diff`の結果、および解消した原因との対応関係を残す
 
-**11.** 原因調査のためにCIジョブを手動で再実行した場合も、同じベースラインを指定して`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を再実行し、監視をスクリプトに任せる。独自の待機ループを作成すると、ベースラインに基づく正確な判定を再現できないため避ける。許容された再実行をしても失敗が解消されない場合は、最終状態を「CI未通過」とする。このCI未通過の事実と帰属の判定結果は、完了報告、採否記録、および`atk run-script plan-progress --`による計画ファイルの「進捗ログ」に記録する。対象ワークフローが同一のconcurrency groupで`cancel-in-progress: true`に設定されている場合、再実行の完了前に新しくpushすると先行runが自動的にキャンセル（`cancelled`）され判定証拠を失う。先行実行の完了を確実に確認してから次のpushを実行する。
+**11.** 原因調査のためにCIジョブを手動で再実行した場合も、同じベースラインを指定して`atk run-script wait-ci -- --baseline <baselineの絶対パス>`を再実行し、監視をスクリプトに任せる。
+独自の待機ループを作成すると、ベースラインに基づく正確な判定を再現できないため避ける。
+許容された再実行をしても失敗が解消されない場合は、最終状態を「CI未通過」とする。
+このCI未通過の事実と帰属の判定結果は、完了報告、採否記録、および`atk run-script plan-progress --`による計画ファイルの「進捗ログ」に記録する。
+対象ワークフローが同一のconcurrency groupで`cancel-in-progress: true`に設定されている場合、再実行の完了前に新しくpushすると先行runが自動的にキャンセル（`cancelled`）され判定証拠を失う。
+先行実行の完了を確実に確認してから次のpushを実行する。
 
 `wait_ci.py`の終了コードの定義は以下のとおりである。
 
@@ -154,7 +199,7 @@ pushが成功したあとは、各ベースラインに対して`atk run-script 
 
 **12.** CIの結果確認担当は、成功時も対象プロジェクトが定める段階別・全体の所要基準を読み、実測と比較する。
 
- 比較と超過時の改善判断は`agent-basics:check-execution/references/diagnostics.md`「読む出力」に従い、既存のCI検証記録へ残す。
+ 比較と超過時の改善判断は`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」に従い、既存のCI検証記録へ残す。
  所要基準と監視コマンドのタイムアウトは区別し、所要超過だけを理由とする公開停止や検証省略は行わない。
 
 ## 後始末
@@ -176,7 +221,8 @@ pushが成功したあとは、各ベースラインに対して`atk run-script 
    「公開状態の4項目」が満たされていることや、ローカルでの全体検証が成功していることのみをもって、安易にCI成功と判断しない。
 
 2. 回復処理およびユーザー確認の手順は、`references/publish.md`「公開工程の続行不能からの再開」に従う。
-   CI判定が回復したあとは、保存済みのベースライン、または「pushと監視」節に記載の`--wait-sha`を用いて監視を再開する。公開後操作については、記録された対象と再開位置をもとに同一コミットに対する未完了の工程のみを再開し、すでに成功しているバージョン更新、push、および公開後操作を重複して実行しないようにする。
+   CI判定が回復したあとは、保存済みのベースライン、または「pushと監視」節に記載の`--wait-sha`を用いて監視を再開する。
+   公開後操作については、記録された対象と再開位置をもとに同一コミットに対する未完了の工程のみを再開し、すでに成功しているバージョン更新、push、および公開後操作を重複して実行しないようにする。
 
 ## 私設GitLabのCLI失敗からの回復
 

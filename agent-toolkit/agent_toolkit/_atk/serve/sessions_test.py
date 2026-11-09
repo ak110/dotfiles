@@ -23,7 +23,7 @@ import pytest
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import sessions
 from agent_toolkit._common import process_tree
-from agent_toolkit._testing import session_tree
+from agent_toolkit._testing import late_descendant, session_tree
 
 
 @pytest.mark.asyncio
@@ -1320,7 +1320,6 @@ async def test_remote_list_accepts_response_slower_than_read_timeout(
     async def respond_late() -> None:
         while not stdin.requests:
             await asyncio.sleep(0.01)
-        await asyncio.sleep(0.2)
         stream = asyncio.StreamReader()
         response = {
             "type": "response",
@@ -1330,7 +1329,14 @@ async def test_remote_list_accepts_response_slower_than_read_timeout(
         }
         stream.feed_data(json.dumps(response).encode("utf-8") + b"\n")
         stream.feed_eof()
-        await client._process_stream(stream)
+        loop = asyncio.get_running_loop()
+        after_read_deadline = loop.time() + 0.2
+        with monkeypatch.context() as clock_patch:
+            clock_patch.setattr(loop, "time", lambda: after_read_deadline)
+            advanced = asyncio.Event()
+            loop.call_later(0, advanced.set)
+            await advanced.wait()
+            await client._process_stream(stream)
 
     responder = asyncio.ensure_future(respond_late())
     entries, warnings = await sessions.list_sessions(context)
@@ -1606,9 +1612,9 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     real_exec = asyncio.create_subprocess_exec
 
     async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        # 標準出力を閉じて接続断を起こし、標準入力の終端を受けてから少し遅れて終了する子プロセスで代替する。
+        # 標準出力を閉じて接続断を起こし、標準入力の終端を通知してから解放まで保持する子プロセスで代替する。
         started.append(cmd)
-        script = "import os, sys, time; os.close(1); sys.stdin.read(); time.sleep(0.3)"
+        script = "import os,sys; os.close(1); sys.stdin.read(); " + late_descendant.held_source(tmp_path / "cleanup.release")
         return await real_exec(sys.executable, "-c", script, **kwargs)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
@@ -1619,6 +1625,10 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
             break
         await asyncio.sleep(0.01)
     assert context.state.host_status.get("remote-host") == "disconnected"
+
+    async with asyncio.timeout(5):
+        while not (tmp_path / "cleanup.ready").exists():
+            await asyncio.sleep(0.01)
 
     await asyncio.wait_for(sessions.stop_remote_clients(context), timeout=5)
 

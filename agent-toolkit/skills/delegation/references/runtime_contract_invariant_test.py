@@ -5,6 +5,7 @@ import re
 
 from agent_toolkit._common import periodic_recheck
 from agent_toolkit._hooks import user_prompt_submit
+from agent_toolkit._testing.normative_contract import read_contract
 
 _MOD_DEFINITION = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "periodic_recheck.ts"
 
@@ -15,7 +16,8 @@ def test_periodic_recheck_marker_matches_the_runtime_document() -> None:
     標識を2箇所が保持するため、片方だけの改訂で機械注入判定が成立しなくなる状態を検出する。
     """
     document = pathlib.Path(__file__).resolve().with_name("claude-code-runtime.md")
-    assert f"`{user_prompt_submit.PERIODIC_RECHECK_MARKER}`" in document.read_text(encoding="utf-8")
+    text = read_contract(document, document.parents[3], ("claude-code-runtime-waiting.md", "待機中の定期再確認"))
+    assert f"`{user_prompt_submit.PERIODIC_RECHECK_MARKER}`" in text
 
 
 def test_periodic_prompt_definition_starts_with_the_hook_marker() -> None:

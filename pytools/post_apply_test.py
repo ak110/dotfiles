@@ -17,7 +17,6 @@ import os
 import re
 import subprocess
 import threading
-import time
 import types
 import typing
 from pathlib import Path
@@ -979,11 +978,16 @@ class TestRun:
         ok_flags = [r.ok for r in results]
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
-    def test_foreground_completion_reports_step_duration(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_foreground_completion_reports_step_duration(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """前景ステップの完了行へステップ本体の所要時間を表示する。"""
 
+        clock = [0.0]
+        monkeypatch.setattr(post_apply, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+
         def foreground() -> post_apply_outcome.PostApplyOutcome:
-            time.sleep(0.3)
+            clock[0] += 0.3
             return post_apply_outcome.PostApplyOutcome()
 
         caplog.set_level(logging.INFO)
@@ -1010,7 +1014,6 @@ class TestRun:
             first_started.set()
             # 2番目のステップが同時に動いていなければ、待機が上限に達して失敗する。
             assert second_started.wait(timeout=5)
-            time.sleep(0.1)
             record("first-end")
             return post_apply_outcome.PostApplyOutcome()
 
@@ -1074,10 +1077,16 @@ class TestRun:
         """列挙順で前にある全ステップの完了後に開始する。"""
         finished: list[str] = []
         observed: list[list[str]] = []
+        fast_done = threading.Event()
 
         def slow() -> post_apply_outcome.PostApplyOutcome:
-            time.sleep(0.2)
+            assert fast_done.wait(timeout=5)
             finished.append("slow")
+            return post_apply_outcome.PostApplyOutcome()
+
+        def fast() -> post_apply_outcome.PostApplyOutcome:
+            finished.append("fast")
+            fast_done.set()
             return post_apply_outcome.PostApplyOutcome()
 
         def last() -> post_apply_outcome.PostApplyOutcome:
@@ -1087,7 +1096,7 @@ class TestRun:
         post_apply.run(
             [
                 post_apply._StepSpec("slow", slow),  # noqa: SLF001
-                post_apply._StepSpec("fast", _make_step("fast", finished)),  # noqa: SLF001
+                post_apply._StepSpec("fast", fast),  # noqa: SLF001
                 post_apply._StepSpec("last", last, after_all_preceding=True),  # noqa: SLF001
             ]
         )

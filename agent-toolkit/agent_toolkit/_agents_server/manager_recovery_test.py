@@ -34,6 +34,7 @@ from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import creation
 from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import FakeBackend, _complete, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -308,7 +309,12 @@ async def test_owner_lost_executor_stops_before_same_id_resume(
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     with subprocess.Popen(
-        [sys.executable, "-u", "-c", "import time; print('ready', flush=True); time.sleep(60)"],
+        [
+            sys.executable,
+            "-u",
+            "-c",
+            "print('ready', flush=True); " + late_descendant.held_source(tmp_path / "executor.release"),
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

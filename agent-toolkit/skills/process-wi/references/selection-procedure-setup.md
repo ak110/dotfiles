@@ -1,0 +1,40 @@
+# メインによるWI選定とレーン分け：対象と保存先
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` | |
+| 参照基準の適用前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` | |
+| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+
+## 対象と保存先
+
+**1.** 対象リポジトリと規範はメインの作業ディレクトリから解決し、選定結果はmanaged-temp直下の`pick-wi.yaml`へ保存する。
+ユーザーの指定があっても、選定はメインエージェント自身が行う。
+
+**2.** 開始時には`atk lane delete --list`を実行して前回の残存登録と回収結果を確認し、所有権と稼働状態に応じた再判定や再開処理を[lane-resources.md](lane-resources.md)「レーン資源の作成・再利用・回収」に引き渡す。
+
+**3.** レーン識別子は、この処置を済ませてから決める。
+
+統合済みで未commitの差分・統合先に無いcommit・稼働中の担当を持たない不要な登録は、元の所有sessionを指定した`atk lane delete --session-id <所有session>`で回収する。
+未commitの差分、未統合commit、再開する計画を持つ登録と稼働中の資源は保持し、再利用するレーンは識別子を保つ。
+新しいレーンには`lane-01`から空いている最小の番号を使い、回収できない登録が固定作成先を占有している番号は避ける。
+同じprocess-wiの1回の実行への追加選定では、既に使っている番号とWIの対応を保ち、新規採番のために過去の識別子を付け替えない。
+回収・再利用・保持の判定は開始時の現物で行い、番号を空ける目的で再開する成果や稼働中のプロセスを破棄・停止しない。
+
+**4.** 対象リポジトリにmiseの設定があり、`mise trust --show`が`untrusted`を示す場合は、`mise trust <対象リポジトリの絶対パス>`を実行する。
+
+**5.** `WIファイル名一覧`の明示的な指定があればそれを候補集合とし、なければ本書の初期集合を使う。
+
+選定結果の項目、省略時の規定、項目の組み合わせは[selection-format.md](selection-format.md)に従う。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |

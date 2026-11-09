@@ -4,12 +4,12 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 外部actionの版を選ぶ・変える前 | `dependency-management.md#「最新版への追従」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「最新版への追従」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `dependency-management.md#「公開待機設定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/dependency-management.md#「公開待機設定」` |
+| 外部actionの版を選ぶ・変える前 | `dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` |
 
 ## 基本
 
@@ -24,14 +24,15 @@
 
 ## 並行制御と冪等性
 
-- 同じリソースを操作するワークフローには`concurrency:`を設定する。リリース関連のワークフローでは途中でキャンセルされないよう`cancel-in-progress: false`を指定し、通常のPR向けCIなどでは古い実行を打ち切るため`cancel-in-progress: true`とする。
+- 同じリソースを操作するワークフローには`concurrency:`を設定する。
+  リリース関連のワークフローでは途中でキャンセルされないよう`cancel-in-progress: false`を指定し、通常のPR向けCIなどでは古い実行を打ち切るため`cancel-in-progress: true`とする。
 - リリースやパッケージの公開処理では、既存のGitタグやGitHub Release、公開済みパッケージの存在を確認し、再実行された場合でも二重作成が発生しない冪等な作りにする。
 
 ## 破壊的ステップと事前検証
 
 - 破壊的な変更や公開を伴うステップ（タグ作成やpush、PyPIへの公開、コンテナーレジストリへのpush、GitHub Releaseの作成など）を実行する前には、必ず事前検証ステップを配置し、検証が失敗した場合は後続処理を実行させないようにする。
 - 破壊的なステップが複数ある場合は、失敗時の復旧コストが高い処理を後ろに配置する（例えば、一度公開すると取り消せないPyPI公開は、Dockerイメージのビルドよりも後に実行する）。
-- リリース直後に自身のパッケージを参照できずに依存解決が失敗する場合は、`dependency-management.md`の「公開待機設定」に記載された対処手順に従う。
+- リリース直後に自身のパッケージを参照できずに依存解決が失敗する場合は、`dependency-management.md`「公開待機設定」に記載された対処手順に従う。
 
 ## トリガーと出力
 

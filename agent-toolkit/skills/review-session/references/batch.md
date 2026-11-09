@@ -5,16 +5,15 @@
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 所要時間の基準を適用する前 | `duration-analysis.md#「所要時間の分析と改善」` | 判断 | `section:agent-toolkit:*/skills/review-session/references/duration-analysis.md#「所要時間の分析と改善」` |
+| 所要時間の基準を適用する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
 | 対象の分析を始める前 | `session-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-analysis.md` |
 | AWIを投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
 | 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
-| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 起動
 
@@ -24,7 +23,8 @@
 atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
 ```
 
-追加の着眼点が無い場合は`--args batch`とする。先頭のbatchと残りの着眼点を1つの文字列引数で渡す。
+追加の着眼点が無い場合は`--args batch`とする。
+先頭のbatchと残りの着眼点を1つの文字列引数で渡す。
 実際の分析はrun-skillが起動する別セッションで行う。
 進行中の担当がある場合は、分析をその実行へ引き続き委ねる。
 自動起動は前回batch開始から6時間以上経過した場合に限る。
@@ -53,7 +53,8 @@ batch自身のセッションも振り返り対象に含める。
 3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
    起草は手順2と並行し、全対象の分析と横断整理後に全要求を予告してから`保存開始`を送る（`session-analysis.md`「工程5」）。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
-   所要時間目標、計測の起点と終点、超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
+   所要時間目標、計測の起点と終点、超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。
+   目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。
 4. 終了前の保存漏れを防ぐため、AWIの保存を検収し、対象一覧、登録AWI・見送り・費用確認を対象IDと対応付けて報告本文を確定する。
 5. batchのメインが`agent-toolkit:report-completion`を起動し、その工程で振り返り結果報告書式を使って結果を事後承認型UWIへ1件保存する。
    Claude Codeでは`Skill`で起動し、Codexでは同スキルの`SKILL.md`を絶対パスで取得する。
@@ -80,12 +81,22 @@ run-skillの短い目的文はbatchセッション自身が担当する工程の
 
 `_common/session_review.py`はhook・活動状態の削除から独立したOSアカウント共通の`{state_dir}/session-review/`を管理する。
 
-- `pending/<host>-<session_id>.json`: 最上位SessionStartがhost・会話ID・記録パス・cwd・リポジトリ・開始更新時刻・登録世代・batch由来を保存し、処理済み会話のUserPromptSubmitも再登録する。委譲先・サブエージェントを除外し、成功確定か取消しまで保持する。batch由来のセッションのhookでは再帰的に自動起動しない
-- `reviewed/<host>-<session_id>.json`: prepareが増分を選ぶ記録別の最終完全行と同一性を保持し、旧結果が返っても確定範囲を維持する。元記録がすべて無く、pending・未解決失敗・未確定manifestから参照されない場合だけ回収する
-- `runs/`: 実行ID別manifestに開始日時・固定対象・報告先・準備範囲・分析結果・プロセス・失敗を保持し、中断後の報告同期と未確定範囲を検収する。開始日時のない旧manifestはmtimeを自動起動間隔の基準にする。成功確定済み、または報告同期済み失敗の全対象がpendingから除かれたmanifestとログはrun-skillと同じ30日保持とし、未確定・報告未達は確定まで保持する
+- `pending/<host>-<session_id>.json`: 最上位SessionStartがhost・会話ID・記録パス・cwd・リポジトリ・開始更新時刻・登録世代・batch由来を保存し、処理済み会話のUserPromptSubmitも再登録する。
+  委譲先・サブエージェントを除外し、成功確定か取消しまで保持する。
+  batch由来のセッションのhookでは再帰的に自動起動しない
+- `reviewed/<host>-<session_id>.json`: prepareが増分を選ぶ記録別の最終完全行と同一性を保持し、旧結果が返っても確定範囲を維持する。
+  元記録がすべて無く、pending・未解決失敗・未確定manifestから参照されない場合だけ回収する
+- `runs/`: 実行ID別manifestに開始日時・固定対象・報告先・準備範囲・分析結果・プロセス・失敗を保持し、中断後の報告同期と未確定範囲を検収する。
+  開始日時のない旧manifestはmtimeを自動起動間隔の基準にする。
+  成功確定済み、または報告同期済み失敗の全対象がpendingから除かれたmanifestとログはrun-skillと同じ30日保持とし、未確定・報告未達は確定まで保持する
 - `state.lock`: モデル起動・利用上限待機・WI保存を除く、登録・状態更新・成功確定を短時間排他する
-- `batch.lock`: 自動・手動の全リポジトリで対象選定から報告同期検収・成功確定まで共有する。親中断時もプロセス識別と子の起動引数に含めた固有manifestパスで生存を確認し、二重起動を防ぐ
-- 失敗は配布元リポジトリへの是正AWI（`source: session-review`）として報告し、処理担当が是正する。UWIでの回答は待たない。pendingとmanifestの失敗キーにより、同原因のAWIが未完了（inbox・processing・hold）の対象を自動選定から外し、AWIの終了後の次回起動で再試行する。手動再試行時も未完了の既存AWIを再利用する。準備に失敗した対象だけを切り離し、残りの対象はモデル起動へ進める
+- `batch.lock`: 自動・手動の全リポジトリで対象選定から報告同期検収・成功確定まで共有する。
+  親中断時もプロセス識別と子の起動引数に含めた固有manifestパスで生存を確認し、二重起動を防ぐ
+- 失敗は配布元リポジトリへの是正AWI（`source: session-review`）として報告し、処理担当が是正する。
+  UWIでの回答は待たない。
+  pendingとmanifestの失敗キーにより、同原因のAWIが未完了（inbox・processing・hold）の対象を自動選定から外し、AWIの終了後の次回起動で再試行する。
+  手動再試行時も未完了の既存AWIを再利用する。
+  準備に失敗した対象だけを切り離し、残りの対象はモデル起動へ進める
 
 batchはrun-skillの報告同期検収後、手動振り返りは全体分析後の`atk run-script session-review-state -- complete --prepared <準備結果JSON>`で準備済み範囲を確定し、新世代・準備後の追記はpendingに残す。
 `AGENT_TOOLKIT_SESSION_REVIEW_BATCH`はmanifest、`AGENT_TOOLKIT_RUN_SKILL_TARGET_REPO`は報告先を子へ渡す。

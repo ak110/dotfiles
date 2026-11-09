@@ -363,7 +363,7 @@ def _kill_process_tree(process: subprocess.Popen[str]) -> None:
 
 
 def _run_git_pull(
-    step_no: int, total: int, *, timeout: int | None = _GIT_TIMEOUT_DEFAULT_SEC, plugin: pathlib.Path | None = None
+    step_no: int, total: int, *, timeout: float | None = _GIT_TIMEOUT_DEFAULT_SEC, plugin: pathlib.Path | None = None
 ) -> int:
     """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。
 

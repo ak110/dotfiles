@@ -1,0 +1,31 @@
+# ドキュメント品質：改訂・保守
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| エージェント向け文書の条件、禁止、理由を整理する時 | `agent-documents-basics-content.md`、`agent-documents-basics-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-content.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-tone.md` |
+| 新しい概念名や内部識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` |
+| 会話の要約から文章の要求・事実・認可を復元する前 | `investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+
+## 改訂・保守
+
+- READMEとエージェント向け文書の間で内容が重複する場合はREADME側の記述を基本とし、エージェント向け文書からはREADMEを参照するか、必要最小限の要点のみを再掲する
+- ドキュメントへ追記する際は、既存の表記スタイル、見出し構成、記号の使い方との整合性を保つ
+- 順序性を持つ既存のリストや表（ドキュメントの各節、一覧、表の行、Enum列挙型、設定項目の並び、メニュー項目など）に新しい要素を追加する場合は、その集合が採用している既存の並び順ルール（アルファベット順、重要度順、時系列順など）に合致する位置へ挿入する。
+  明確な並び順の基準が存在しない場合は、自ら合理的な並び順の原則を定めてその根拠を記録に残す（努力目標）
+- 複数の箇所で相互参照されている項目名、表の列名、および本文と連動するコード例・目次・件数の記述は、改訂時にすべての箇所を漏れなく更新して統一する。
+  節の移動に伴って参照が切れた他文書も含め、現状の実態と乖離した記述は適切に更新または削除する。
+  文章を別の場所へ移動したり新規に挿入したりした場合は、移動した文章と変更しない前後の文章との間で、節名、略語、省略された主語、指示語のつながりに矛盾が生じていないかを編集後の状態で改めて通読して確認する
+- 文章の要約や統合をする際は、元の文章が持っていた前提条件、適用範囲、例外条件を損なわずに維持する
+- ユーザーが文章について「意味不明」「何を言いたいのか分からない」「直訳っぽい」などと指摘した場合は、指摘された語句の言い換えで済ませず、`writing-common.md`「文章の共通規定」の書く順序で該当箇所を組み立て直す。
+  意味が複数に取れて前後を読んでも決まらない場合は、プロジェクトの確認手順に従ってユーザーへ確かめる
+- 推敲前の原稿と比べて改善を説明できない言い換えは戻し、具体的な問題と改善の余地が残らなければ推敲を終える（努力目標。役割のない変更の反復を避けるため）
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ドキュメント品質：文章の共通規定の基準を適用する前 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |

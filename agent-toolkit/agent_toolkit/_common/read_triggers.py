@@ -101,6 +101,33 @@ def _scope_selector(text: str) -> str:
     return result
 
 
+@_scope_cached
+def is_normative_document(path: pathlib.Path) -> bool:
+    """規範原本とホスト向けの写しを、記録類のMarkdownから区別する。"""
+    path = path.resolve()
+    if path.name in {"AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "GEMINI.md"}:
+        return True
+    # ホスト側のリンクをresolveするとchezmoiの原本へ戻るため、配布元も同じ範囲で識別する。
+    if path.name.endswith((".md", ".md.tmpl")):
+        for parent in path.parents:
+            if parent.name not in {"skills", "rules"}:
+                continue
+            host = parent.parent
+            if host.name == "antigravity-cli" and host.parent.name == "dot_gemini":
+                host = host.parent
+            if host.name in {"dot_claude", "dot_codex", "dot_agents", "dot_gemini"} and host.parent.name == ".chezmoi-source":
+                return True
+    if path.suffix != ".md":
+        return False
+    if any(
+        parent.name in {"skills", "rules"} and parent.parent.name in {".claude", ".codex", ".agents", ".gemini"}
+        for parent in path.parents
+    ):
+        return True
+    owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+    return owner is not None and path.relative_to(owner).parts[0] in {"skills", "share", "rules"}
+
+
 def document_lines(text: str) -> Iterator[tuple[int, str, bool]]:
     """物理行と、長さの異なる内側フェンスを除いた本文の可視性を返す。"""
     fence: tuple[str, int] | None = None
@@ -356,7 +383,11 @@ def _direct_document(
         plugin_root,
     )
     value = value.replace("${CLAUDE_PLUGIN_ROOT}", str(owner_root)).replace("<plugin root>", str(plugin_root))
-    if not value.endswith(".md") and value != "Makefile":
+    if (
+        not value.endswith(".md")
+        and value != "Makefile"
+        and not (value.endswith(".md.tmpl") and is_normative_document(source.parent / pathlib.Path(value).expanduser()))
+    ):
         return None
     path = pathlib.Path(value).expanduser()
     if value == "SKILL.md" and source.parent.name == "references":
@@ -704,7 +735,29 @@ def _parse_tables(
             raise ValueError(f"{source}:{number}: 資料が存在しない: {documents}")
         if strict:
             for target in targets:
+                if target.heading and is_normative_document(target.path):
+                    raise ValueError(
+                        f"{source}:{number}: エージェント向け文書の節指定は使えない: {target}。"
+                        "読込条件別にファイルを分割し、資料列をファイル全体、配送操作を`read:`に変更せよ。"
+                    )
                 target.body()
+            for operation in operations:
+                if not operation.startswith("section:"):
+                    continue
+                value = operation.removeprefix("section:").partition("#")[0]
+                plugin, separator, relative = value.partition(":*/")
+                if separator:
+                    value = f"{plugin}:/{relative}"
+                elif value.startswith(("*/skills/", "*/share/", "*/rules/")):
+                    value = str(plugin_root / value[2:])
+                elif value.startswith("*/"):
+                    value = str(pathlib.Path(project) / value[2:]) if project else str(plugin_root.parent / value[2:])
+                path = resolve_document(value, source, plugin_root, host, project=project)
+                if path is not None and is_normative_document(path):
+                    raise ValueError(
+                        f"{source}:{number}: エージェント向け文書への`section:`は使えない: {operation}。"
+                        "読込条件別にファイルを分割し、配送操作を`read:`に変更せよ。"
+                    )
         result.append(
             ReadTrigger(
                 source,
@@ -725,31 +778,16 @@ def reference_method_targets(
     source: pathlib.Path,
     plugin_root: pathlib.Path,
     host: str = "claude",
-    _parents: frozenset[pathlib.Path] = frozenset(),
     *,
     project: pathlib.Path | str | None = None,
 ) -> tuple[ReadTarget, ...]:
-    """共通読込方法の明示参照を、同梱定義元の指定節へ解決する。"""
+    """共通読込方法の明示参照を、独立した資料全体へ解決する。"""
     source = source.resolve()
-    entry = next(
-        (
-            parent / "SKILL.md"
-            for parent in source.parents
-            if parent.parent.name == "skills" and (parent / "SKILL.md").is_file()
-        ),
-        None,
-    )
-    share = plugin_root.resolve() / "share"
-    # `share/rules/`の規範も共有文書と同じ読込方法の定義元を使う。
-    owner = entry or (share / "read-trigger-contract.md" if share in source.parents else None)
-    if owner is None:
+    if not is_normative_document(source):
         return ()
     canonical = resolve_read_source(source, plugin_root, host, project=project)
     if canonical != source:
-        return reference_method_targets(canonical, plugin_root, host, _parents, project=project)
-    if source in _parents:
-        raise ValueError(f"{source}: 名指し参照の読込方法の循環を検出した")
-    owner = resolve_read_source(owner, plugin_root, host, project=project)
+        return reference_method_targets(canonical, plugin_root, host, project=project)
     text = source.read_text(encoding="utf-8")
     _lines, headings = _headings(text)
     method = (
@@ -762,15 +800,18 @@ def reference_method_targets(
         if not visible or not line.startswith("名指し参照は"):
             continue
         targets = material_targets(line, source, plugin_root, host, project=project)
-        if len(targets) != 1 or urllib.parse.unquote(targets[0].heading).strip("「」") != _REFERENCE_METHOD_HEADING:
-            raise ValueError(f"{source}: 名指し参照の読込方法の短節を明示する")
+        if len(targets) != 1 or targets[0].heading:
+            raise ValueError(f"{source}: 名指し参照の読込方法はファイル全体で指定する")
         target = targets[0]
+        owner = resolve_document(
+            "agent-basics:writing-standards/references/read-method.md", source, plugin_root, host, project=project
+        )
         if target.path != owner:
-            raise ValueError(f"{source}: 名指し参照の読込方法は同梱の定義元を指定する: {target}")
-        target = ReadTarget(target.path, _REFERENCE_METHOD_HEADING)
+            raise ValueError(f"{source}: 名指し参照の読込方法は共通の定義元を指定する: {target}")
+        if not target.path.is_file():
+            raise ValueError(f"{source}: 名指し参照の読込方法の定義元が存在しない: {target}")
         target.body()
         result.append(target)
-        result.extend(reference_method_targets(target.path, plugin_root, host, _parents | {source}, project=project))
     return tuple(dict.fromkeys(result))
 
 
@@ -792,7 +833,7 @@ def startup_targets(
         targets.extend(row.targets)
     for target in tuple(targets):
         targets.extend(reference_method_targets(target.path, plugin_root, host, project=project))
-    return tuple(dict.fromkeys(targets))
+    return tuple(dict.fromkeys(ReadTarget(target.path) if is_normative_document(target.path) else target for target in targets))
 
 
 @plugin_resolution_scope()
@@ -852,7 +893,13 @@ def startup_documents(
     targets: list[ReadTarget], plugin_root: pathlib.Path, input_selectors: dict[ReadTarget, set[str]] | None = None
 ) -> str:
     """解決済みの実在資料を起動本文と再配送用の入力識別にまとめる。"""
-    input_selectors = input_selectors or {}
+    selectors: dict[ReadTarget, set[str]] = {}
+    for target, values in (input_selectors or {}).items():
+        normalized = ReadTarget(target.path) if is_normative_document(target.path) else target
+        selectors.setdefault(normalized, set()).update(values)
+    targets = list(
+        dict.fromkeys(ReadTarget(target.path) if is_normative_document(target.path) else target for target in targets)
+    )
     rendered = []
     for target in dict.fromkeys(targets):
         owner = next((parent.parent for parent in target.path.parents if parent.name == "skills"), plugin_root)
@@ -863,7 +910,7 @@ def startup_documents(
             {
                 "path": str(target.path),
                 "heading": target.heading,
-                "selectors": sorted(input_selectors.get(target, set())),
+                "selectors": sorted(selectors.get(target, set())),
                 "sha256": digest,
                 "body_sha256": hashlib.sha256(body.encode("utf-8")).hexdigest(),
             },
@@ -909,10 +956,7 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
                 )
             if _is_rule_document(path, plugin_root):
                 continue
-            method_route = (
-                urllib.parse.unquote(target.heading).strip("「」") == _REFERENCE_METHOD_HEADING
-                and ReadTarget(path, _REFERENCE_METHOD_HEADING) in methods
-            )
+            method_route = any(method.path == path for method in methods)
             if path not in routed and not method_route:
                 raise ValueError(
                     f"{source}:{number}: 参照先へ届く経路が無い: {path}。"

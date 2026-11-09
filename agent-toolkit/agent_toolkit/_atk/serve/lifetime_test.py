@@ -187,14 +187,30 @@ def test_process_loop_wait_falls_back_to_polling_and_warns_once(
 ) -> None:
     """inotifyの上限到達でもprocess-loopの待機は変更を検知して戻り、切替の警告は待機を繰り返しても1回だけ出る。"""
     monkeypatch.setattr(process_loop_watch, "_polling_fallback_reported", False)
+    monkeypatch.setattr(process_loop_watch, "_DEBOUNCE_SEC", 0.01)
+    started = threading.Event()
+
+    class ReadyPollingObserver(watch_observer.watchdog.observers.polling.PollingObserver):
+        def start(self) -> None:
+            super().start()
+            started.set()
+
+    monkeypatch.setattr(watch_observer.watchdog.observers.polling, "PollingObserver", ReadyPollingObserver)
     private_notes = tmp_path / "private-notes"
+
+    def publish(path: pathlib.Path) -> None:
+        assert started.wait(timeout=5)
+        path.write_text("本文", encoding="utf-8")
+
     for index in range(2):
-        timer = threading.Timer(0.5, (private_notes / f"entry-{index}.md").write_text, ("本文",))
-        timer.start()
+        started.clear()
+        writer = threading.Thread(target=publish, args=(private_notes / f"entry-{index}.md",), daemon=True)
+        writer.start()
         try:
             assert process_loop_watch.wait_for_changes(private_notes, None, timeout=10)
         finally:
-            timer.cancel()
+            writer.join(timeout=5)
+            assert not writer.is_alive()
     assert len(exhausted) == 2 and all(observer.stopped == 1 for observer in exhausted)
     assert capsys.readouterr().err.count("ポーリング監視へ切り替えた") == 1
 
