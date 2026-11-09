@@ -3,6 +3,7 @@
 import pytest
 
 from agent_toolkit._hooks.message_format import llm_notice
+from agent_toolkit._hooks.pretooluse import warning_context
 from agent_toolkit._hooks.pretooluse.warning_context import format_warning_context
 
 
@@ -27,3 +28,25 @@ def test_preformatted_context_is_recounted_without_nested_header() -> None:
     combined = format_warning_context([first, second])
 
     assert format_warning_context([third, combined]) == f"警告: 3件\n\n{third}\n\n{first}\n\n{second}"
+
+
+@pytest.mark.parametrize("failure", ["session", "write", "length"])
+def test_unavailable_saved_notice_names_read_operation_and_missing_input(tmp_path, monkeypatch, failure):
+    """通知原本を配送できない各分岐で、実在する手順の取得と問い合わせ先を示す。"""
+    monkeypatch.setattr(warning_context.managed_temp, "resolve_session_temp", lambda _session: tmp_path)
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("試験用の書込失敗")
+
+    if failure == "write":
+        monkeypatch.setattr(warning_context, "atomic_write", fail_write)
+    result = warning_context.bounded_codex_context(
+        "未配送の通知本文" * 1000,
+        session_id="" if failure == "session" else "notice-failure",
+        reserved_bytes=1900 if failure == "length" else 0,
+    )
+    assert str(warning_context.plugin_resources.plugin_root() / "skills/managed-temp/SKILL.md") in result
+    assert "cat --" in result or "Get-Content -LiteralPath" in result
+    assert "委譲元（無ければユーザー）" in result
+    assert "再試行せよ" in result
+    assert "未配送の通知本文" not in result

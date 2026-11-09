@@ -111,7 +111,9 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     session = "original-resume"
     for prompt in instructions:
         notified = run_hook("user_prompt_submit", {"session_id": session, "prompt": prompt})
-        assert notified.returncode == 0 and "現在の指示として作業契約へ統合" in notified.stdout
+        assert notified.returncode == 0 and "追加入力の統合" in notified.stdout
+        context = json.loads(notified.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert str(work_contract.plugin_resources.plugin_root() / "share/work-contract.md") in context
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text(
         "\n".join(
@@ -148,7 +150,7 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     # 自然文の採否はエージェントの責務であり、この試験では判定済みの契約を消費側へ渡す。
     contract.write_text(f"目的: 作業を完了する\n現在の指示: {retained}\n", encoding="utf-8")
     restart = run_hook("user_prompt_submit", {"session_id": session, "prompt": "続きを進めて"})
-    assert restart.returncode == 0 and retained in restart.stdout and "元の未完了工程へ戻れ" in restart.stdout
+    assert restart.returncode == 0 and retained in restart.stdout and "追加入力の統合" in restart.stdout
 
 
 @pytest.mark.parametrize("cleanup_fails", [False, True])

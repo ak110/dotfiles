@@ -32,7 +32,9 @@ def test_each_user_prompt_delivers_the_contract_body(
         )
         assert result.returncode == 0
         assert "目的: A全体の完了" in result.stdout
-        assert "元の未完了工程へ戻れ" in result.stdout
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "追加入力の統合" in context
+        assert str(work_contract.plugin_resources.plugin_root() / "share/work-contract.md") in context
     machine = run_hook(
         "user_prompt_submit",
         {
@@ -56,7 +58,9 @@ def test_compaction_delivers_the_contract_body(
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "s"})) == 0
     output = capsys.readouterr().out
     assert "目的: A全体" in output
-    assert "元の未完了工程へ戻れ" in output
+    context = json.loads(output)["hookSpecificOutput"]["additionalContext"]
+    assert "追加入力の統合" in context
+    assert str(work_contract.plugin_resources.plugin_root() / "share/work-contract.md") in context
 
 
 @pytest.mark.parametrize("initial_prompt", [None, "調査を進めて", '<atk-auto source="process-loop">/goal 作業</atk-auto>'])

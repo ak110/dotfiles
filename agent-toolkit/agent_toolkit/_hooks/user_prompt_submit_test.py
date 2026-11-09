@@ -186,7 +186,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return f"次の操作: 応答と作業の着手より前に`{cls._SKILL}`をスキル機能で起動" in context
+        return f'Skill(skill="{cls._SKILL}")' in context and "次の操作:" in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -730,7 +730,7 @@ class TestExampleScopeNotice:
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 3
-        assert "agent-toolkit:user-confirmation-and-report`をスキル機能で起動" in bodies[0]
+        assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in bodies[0]
         assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
         assert str(self._UTTERANCE_PATH) in bodies[2]
 

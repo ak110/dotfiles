@@ -43,7 +43,7 @@ lazy from agent_toolkit._hooks.message_format import xml_message
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-RESPONSE_LANGUAGE_NOTICE = "ユーザー向け本文・成果物は日本語で書け。`01-agent.md`「使用言語」に従え。"
+RESPONSE_LANGUAGE_NOTICE = "言語の基準は、同時配送された`01-agent.md`「使用言語」を参照せよ。"
 QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
 BACKGROUND_TASKS_DISABLED_NOTICE = (
     "この`Claude Code`では`Bash`の背景実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）で、`run_in_background`は使えない。"
@@ -81,9 +81,9 @@ NORMATIVE_KIND_SUBAGENT = "rules-subagent"
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
     """SessionStartへ追加する本文を構成する。
 
-    使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、この条文は本文の末尾寄りに
-    位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を本文の冒頭の1文にも
-    置き、最初の応答を生成する前に読まれるようにする。委譲先はこの規定の対象外のため追加しない。
+    冒頭には常時規範の使用言語への参照を置き、メインの最初の応答前にも定義元を示す。
+    圧縮時の復元基準への参照も同じ通知へまとめ、文字数上限内で必要な参照を届けるために本文や標識を重ねない。
+    委譲先にはメイン向けの言語通知を追加しない。
 
     process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
@@ -130,10 +130,13 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                 )
             )
     normative_parts: list[str] = []
+    rule_notices: list[str] = []
     if not delegated:
-        parts.append(_llm_notice(RESPONSE_LANGUAGE_NOTICE))
+        rule_notices.append(RESPONSE_LANGUAGE_NOTICE)
     if source == "compact":
-        parts.append(_llm_notice(QUALITY_CHECKPOINT_NOTICE))
+        rule_notices.append(QUALITY_CHECKPOINT_NOTICE)
+    if rule_notices:
+        parts.append(_llm_notice("\n".join(rule_notices)))
     if host == "claude" and wait_schedule.background_tasks_disabled():
         parts.append(_llm_notice(BACKGROUND_TASKS_DISABLED_NOTICE))
     if not delegated:
@@ -404,18 +407,22 @@ def _normative_context(body: str, *, kind: str) -> str:
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
-def session_temp_notice(session_temp: pathlib.Path | str) -> str:
+def session_temp_notice(session_temp: pathlib.Path | str, *, contract: pathlib.Path | None = None) -> str:
     """セッションのmanaged-tempの所在と、一時ファイルの置き場所を選ぶ時点で従う行動を対にした通知本文を返す。
 
     所在だけを示す通知では、一時ファイルを作成する時点で`/tmp`が選ばれ、後始末の削除が権限判定に拒否された。
     置き場所の選択と結び付く語（`/tmp`）と、委譲先へ所在を渡す行動を同じ本文へ置く。
     """
-    return (
-        f"このセッションのmanaged-temp: {session_temp}\n"
-        "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
-        "委譲時は、委譲先が受信した自身のmanaged-tempか専用一時領域の通知を優先し、"
-        "通知が無い場合だけこの絶対パスの直下へ置くよう伝えよ。"
-        "入力や出力の個別ファイルを指定した場合は、そのファイルの読み書きを行ってよい。"
+    if contract is not None and contract.parent == pathlib.Path(session_temp):
+        location = "このセッションのmanaged-tempは、次の原本の親ディレクトリである。\n"
+    else:
+        location = f"このセッションのmanaged-temp: {session_temp}\n"
+    if contract is not None:
+        location += work_contract.short_notice(contract) + "\n"
+    return location + (
+        "一時ファイルは直下へ置け。`/tmp`は使うな。"
+        "委譲先自身のmanaged-temp・専用一時領域の通知を優先せよ。"
+        "未通知時だけ、この領域を使うよう引き継げ。指定された入出力ファイルは読み書きしてよい。"
     )
 
 
@@ -673,7 +680,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     if contract_notice is not None and len(contract_notice) + _CONTRACT_NOTICE_OVERHEAD <= budget:
                         contract_context = _llm_notice(contract_notice)
                     else:
-                        temp_text += "\n" + work_contract.SHORT_NOTICE
+                        temp_text = session_temp_notice(session_temp, contract=work_contract.record_path(session_id))
                 temp_context = _llm_notice(temp_text)
                 content = f"{content}\n\n{temp_context}" if content else temp_context
                 if contract_context:

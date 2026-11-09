@@ -11,7 +11,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.session_state import update_state
-from agent_toolkit._hooks import document_reads
+from agent_toolkit._hooks import document_reads, plugin_resources
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
 
@@ -26,16 +26,23 @@ Claude Codeは`additionalContext`を10,000文字で保存先とプレビュー�
 """
 
 RETURN_CRITERION = (
-    "文章・行動への訂正も原入力と比較し、既存規範と同じ内容でも現在の指示として作業契約へ統合せよ。"
-    "質問や状況照会への回答、部分修正を終えたら、取り下げ・置換・正当な待機が無い限り、"
-    "この契約と工程記録が示す元の未完了工程へ戻れ（`share/work-contract.md`「追加入力の統合」）。"
-    "ターンを終える前に原要求全体と実行可能な残工程を突き合わせ、部分的な回答・調査・説明・計画・途中報告だけで依頼全体を完了扱いにするな。"
-    "今回の原入力との統合と意味上の完了はエージェントが判断する。"
+    "要求の統合・回答後の再開・完了判断は、`{read_command}`で取得する「追加入力の統合」「工程境界での要求と成果の確認」に従え。"
 )
 
 
-SHORT_NOTICE = "現行の作業契約: 同じ領域の`work-contract.md`を全文読み、回答後は元の未完了工程へ戻れ。"
+SHORT_NOTICE = "現行の作業契約を取得せよ: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
+
+
+def _read_command(path: pathlib.Path) -> str:
+    if os.name == "nt":
+        return "Get-Content -LiteralPath '" + str(path).replace("'", "''") + "' -Encoding utf8"
+    return "cat -- " + shlex.quote(str(path))
+
+
+def short_notice(path: pathlib.Path) -> str:
+    """本文の代わりに、既知の契約原本を読む操作を示す。"""
+    return SHORT_NOTICE + f"`{_read_command(path)}`"
 
 
 def exists(session_id: str) -> bool:
@@ -92,9 +99,9 @@ def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str 
         if status == "current" or fingerprint in seen:
             continue
         text = (
-            (f"取得済み資料の更新あり: {path}。" if status == "updated" else f"全体作業契約の現行版を再読せよ: {path}。")
+            ("取得済み資料の更新あり。" if status == "updated" else "全体作業契約の現行版を再読せよ。")
             + "「即時対応で確定した暫定規則」を含む要求を確かめ、配布前の暫定規則に従え。"
-            f"Readまたは`cat -- {shlex.quote(str(path))}`で全文を取得してから判断・操作へ進め。"
+            f"`{_read_command(path)}`で全文を取得してから判断・操作へ進め。"
         )
         notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, fingerprint)
         return text
@@ -124,9 +131,11 @@ def missing_notice(session_id: str, *, agent_id: object = None) -> str | None:
     if not claimed:
         return None
     return (
-        f"現行の作業契約が未作成: `{path}`\n"
-        "`share/work-contract.md`「作成と所有」に従い、成果物の作成・変更・操作または複数工程の調査に着手するなら、"
-        "この絶対パスへ作業契約を作成せよ。同じ応答で完結し未完了の工程を残さない事実回答では作成しない。"
+        "現行の作業契約が未作成。\n"
+        f"`{_read_command(plugin_resources.plugin_root() / 'share/work-contract.md')}`で「作成と所有」を読め。"
+        "成果物の作成・変更・操作または複数工程の調査に着手するなら、"
+        f"編集ツール（`Write`の`file_path`や`apply_patch`の`Add File`など）へ`{path}`を指定し、作業契約の本文を保存せよ。"
+        "同じ応答で完結し未完了の工程を残さない事実回答では作成しない。"
     )
 
 
@@ -139,22 +148,22 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     path = record_path(session_id)
     if path is None or not path.is_file():
         return None
+    criterion = RETURN_CRITERION.format(read_command=_read_command(plugin_resources.plugin_root() / "share/work-contract.md"))
     try:
         body = path.read_bytes().decode("utf-8").rstrip("\n")
     except (OSError, UnicodeDecodeError) as error:
         return (
-            f"現行の作業契約を読めない（{type(error).__name__}: {error}）: {path}\n"
-            "権限や文字コードの原因を解消できればこの絶対パスを読み、share/work-contract.mdに従って現在の目的・要件を確かめよ。"
+            f"現行の作業契約を読めない（{type(error).__name__}: {error}）。\n"
+            f"権限や文字コードの原因を解消した後、`{_read_command(path)}`で現在の目的・要件を確かめよ。"
             "解消できなければ、会話の原文と計画・WIから現在の目的・要件を確かめて作業を続け、"
             "所在と診断を委譲元（委譲元が無ければユーザー）へ報告せよ。"
-            f"{RETURN_CRITERION}"
+            f"{criterion}"
         )
     if len(body) > budget:
         return (
-            f"現行の作業契約: {path}\n"
-            f"本文が通知の上限{budget}文字を超えるため所在だけを示す。全文を読み、現在の目的・要件を確かめよ。{RETURN_CRITERION}"
+            f"現行の作業契約は通知の上限{budget}文字を超える。`{_read_command(path)}`で現在の目的・要件を確かめよ。{criterion}"
         )
-    text = f"現行の作業契約（機械生成の参照資料。原本: {path}）:\n{body}\n\n{RETURN_CRITERION}"
+    text = f"現行の作業契約（機械生成の参照資料。原本: {path}）:\n{body}\n\n{criterion}"
     for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
         notice_module.stage_delivery(
             text, session_id, "operation_skill_delivered_agents", document_reads.receipt_key(metadata), "main"

@@ -40,6 +40,7 @@ import json
 import re
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy import os
 lazy import shlex
 
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
@@ -113,7 +114,8 @@ importするため、循環importを避けて本モジュールに置く。
 
 _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめよ。"
+    "次の操作: `{read_command}`で本文を取得し、"
+    "`agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめよ。"
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
@@ -131,18 +133,30 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     text = _QUOTED_MATERIAL_RE.sub("", prompt)
     if not any(word in text for word in _EXAMPLE_WORDS):
         return None
-    utterance = _plugin_resources.skill_reference("user-confirmation-and-report", "references/user-utterance.md")
+    path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "references/user-utterance.md"))
+    read_command = (
+        "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
+        if os.name == "nt"
+        else "cat -- " + shlex.quote(path)
+    )
     body = (
         "この発話は例示の語を含む。"
-        f"応答や具体化の前に{utterance}「原文の保持と取り込み」で、原文が示す上位の対象と例示の関係を判断し、"
+        f"応答や具体化の前に`{read_command}`で本文を取得せよ。"
+        "「原文の保持と取り込み」で、原文が示す上位の対象と例示の関係を判断し、"
         "対応範囲を例示だけに狭めるな。"
         "例示が対象そのものを指す通常の指示であれば、そのまま元の依頼を続けよ。"
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
-        routing = _plugin_resources.skill_reference("delegation", "references/routing.md")
+        path = str(_plugin_resources.skill_document_path("delegation", "references/routing.md"))
+        read_command = (
+            "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
+            if os.name == "nt"
+            else "cat -- " + shlex.quote(path)
+        )
         body += (
             "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に同節の該当項を適用し、"
-            f"例示を除いた独立した調査を委ねる手段は{routing}「コンテキスト消費が大きい調査の切り出し」に従え。"
+            f"例示を除いた独立した調査を委ねる手段は`{read_command}`で本文を取得し、"
+            "「コンテキスト消費が大きい調査の切り出し」に従え。"
         )
     return _notice_formatter(source)(body, tag="notice", subject=subject)
 
@@ -152,7 +166,14 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
     notices: list[str] = []
     subject = subject or prompt
     if "！！" in prompt:
-        notices.append(_notice_formatter(source)(_REALIGN_NOTICE_BODY, tag="notice", subject=subject))
+        path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "SKILL.md"))
+        read_command = (
+            "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
+            if os.name == "nt"
+            else "cat -- " + shlex.quote(path)
+        )
+        body = _REALIGN_NOTICE_BODY.format(read_command=read_command)
+        notices.append(_notice_formatter(source)(body, tag="notice", subject=subject))
     if (example := _example_scope_notice(prompt, source, subject=subject)) is not None:
         notices.append(example)
     return notices
