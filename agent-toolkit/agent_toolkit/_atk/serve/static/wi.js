@@ -2100,7 +2100,8 @@ async function init() {
   document.addEventListener('focusin', handleFocusIn);
   initializeApp();
   await initialization;
-  await restoreEntryFromUrl();
+  // 初期取得中のユーザー操作で変わったURLを復元すると、回答保存中の詳細を再選択してしまう。
+  if (detailSessionGeneration === 0) await restoreEntryFromUrl();
 }
 
 registerScreen('wi', {init});
