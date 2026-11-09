@@ -421,8 +421,8 @@ def session_temp_notice(session_temp: pathlib.Path | str, *, contract: pathlib.P
         location += work_contract.short_notice(contract) + "\n"
     return location + (
         "一時ファイルは直下へ置け。`/tmp`は使うな。"
-        "委譲先自身のmanaged-temp・専用一時領域の通知を優先せよ。"
-        "未通知時だけ、この領域を使うよう引き継げ。指定された入出力ファイルは読み書きしてよい。"
+        "委譲先のmanaged-temp・専用一時領域の通知を優先せよ。"
+        "未通知ならこの領域を指定せよ。指定の入出力ファイルは読み書きしてよい。"
     )
 
 
