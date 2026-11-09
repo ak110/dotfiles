@@ -7,6 +7,7 @@
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import uuid
 from collections.abc import Mapping
@@ -162,7 +163,14 @@ def test_notice_requests_stage_comparison_and_missing_information(monkeypatch, r
     for topic in ("工程", "経過時間", "再試行", "全要求", "成果", "証拠", "未達", "残工程", "進捗率", "完成条件"):
         assert topic in notice
     assert ("Get-Content -LiteralPath" if os.name == "nt" else "cat -- ") in notice
-    assert "/share/rules/common/01-agent.md" in notice
+    guidance = pathlib.Path(__file__).resolve().parents[2] / "share/rules/common/01-agent.md"
+    assert guidance.is_file()
+    read_command = (
+        "Get-Content -LiteralPath '" + str(guidance).replace("'", "''") + "' -Encoding utf8"
+        if os.name == "nt"
+        else "cat -- " + shlex.quote(str(guidance))
+    )
+    assert read_command in notice
     assert "読め" in notice and "保存せよ" in notice
     assert "rules-main.md" in notice and "進捗報告" in notice
     assert "改善案: なし" not in notice
