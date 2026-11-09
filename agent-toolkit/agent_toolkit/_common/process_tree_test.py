@@ -96,8 +96,14 @@ def test_stop_tree_retains_leaf_before_it_spawns_and_exits(monkeypatch):
     assert not holder.is_running()
 
 
-def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypatch):
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypatch, platform):
     """再利用した親も終了して一覧に無い場合、その子を古い所有対象の子と誤認しない。"""
+    kernel = mock.Mock()
+    kernel.OpenProcess.return_value = 0
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: 87, raising=False)
+    monkeypatch.setattr(sys, "platform", platform)
     parent = mock.Mock(pid=900001)
     parent.create_time.return_value = 1.0
     parent.is_running.return_value = False
@@ -191,7 +197,9 @@ def _mock_process_snapshot(monkeypatch, entries):
         return [process.pid for process in entries]
 
     def process(pid, **_kwargs):
-        result = next(item for item in entries if item.pid == pid)
+        result = next((item for item in entries if item.pid == pid), None)
+        if result is None:
+            raise psutil.NoSuchProcess(pid)
         result.ppid.return_value = result.info["ppid"]
         return result
 
