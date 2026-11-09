@@ -1774,11 +1774,11 @@ def dispatch(args: argparse.Namespace) -> int:
         if result.get("retained"):
             if args.lane_subcommand == "recover":
                 outcome.report_warning(
-                    "回復できない登録を保持した", next_action="retainedの理由を解消し同じlane recoverを再実行する"
+                    "回復できない登録を保持した", next_action="retainedの理由を解消し同じlane recoverを再実行せよ"
                 )
             else:
                 outcome.report_warning(
-                    "未回収のレーン資源を保持した", next_action="result_pathの理由を解消し同じlane deleteを再実行する"
+                    "未回収のレーン資源を保持した", next_action="result_pathの理由を解消し同じlane deleteを再実行せよ"
                 )
             return 1
         for missing in result.get("missing", []):

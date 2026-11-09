@@ -36,7 +36,12 @@
         <legend>表示モード</legend>
         <label><input id="wi-mode-normal" type="radio" name="wi-display-mode" value="normal" checked>通常表示</label>
         <label><input id="wi-mode-search" type="radio" name="wi-display-mode" value="search">条件検索</label>
+        <label><input id="wi-mode-waiting" type="radio" name="wi-display-mode" value="waiting">判断待ち</label>
       </fieldset>
+      <div id="waiting-filters" class="filter-grid" hidden>
+        <label for="waiting-target-filter">判断待ちのtarget-repo</label>
+        <select id="waiting-target-filter"><option value="">all</option></select>
+      </div>
       <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
       <details open>
         <summary>条件検索の入力</summary>
@@ -178,11 +183,16 @@
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer">
         <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="UWIへの回答" hidden>
+          <p id="waiting-progress" class="secondary-text" role="status" hidden></p>
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
           <div class="answer-row">
             <label for="answer-input" class="visually-hidden">UWIへの回答（必須）</label>
             <textarea id="answer-input" rows="1" placeholder="回答を入力（選択肢を押すと入力される）" aria-describedby="answer-input-error" required></textarea>
             <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
+          </div>
+          <div class="answer-choices">
+            <button id="save-next-answer-button" class="button-primary" type="button" hidden>保存して次へ</button>
+            <button id="skip-answer-button" class="button-secondary" type="button" hidden>保存せず次へ</button>
           </div>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>

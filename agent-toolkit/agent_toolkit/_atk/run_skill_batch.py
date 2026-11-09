@@ -71,7 +71,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart":
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                "まとめて振り返るには /agent-toolkit:review-session batch を実行する。"
+                "まとめて振り返る場合は`/agent-toolkit:review-session batch`を実行せよ。"
             )
             return "\n".join(part for part in (notice, waiting) if part)
         return notice

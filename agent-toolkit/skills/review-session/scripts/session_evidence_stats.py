@@ -26,6 +26,7 @@ from session_evidence_records import (
 )
 
 from agent_toolkit._common.agy_records import normalize_entries, usage_tokens
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
 
 _CLAUDE_TOKEN_KEYS = (
@@ -487,7 +488,7 @@ def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
 def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
     """threadの有効な計測記録から所要秒数を記録順で返す。"""
     try:
-        lines = (directory / f"{thread_id}.jsonl").read_text(encoding="utf-8").splitlines()
+        lines = split_lines((directory / f"{thread_id}.jsonl").read_text(encoding="utf-8"))
     except OSError, UnicodeError:
         return []
     durations: list[float] = []

@@ -38,6 +38,7 @@ import pydantic
 
 from agent_toolkit._common import atomic_file, requirement_units
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.json_lines import split_lines
 
 QUOTE_HEADING = "## ユーザー指摘の逐語引用"
 ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
@@ -187,7 +188,7 @@ def import_selections(
         if not path.is_absolute():
             raise InputError(f"選択のsourceには絶対パスを指定してください: {path}")
         if path not in sources:
-            events = [json.loads(raw) for raw in path.read_text(encoding="utf-8-sig").splitlines() if raw.strip()]
+            events = [json.loads(raw) for raw in split_lines(path.read_text(encoding="utf-8-sig")) if raw.strip()]
             if not all(isinstance(event, dict) for event in events):
                 raise InputError(f"保存済みuser-eventsのJSONLオブジェクトを指定してください: {path}")
             sources[path] = [_UserEvent.model_validate(event) for event in events if event.get("kind") == "user"]
@@ -276,7 +277,7 @@ def _originals(path: pathlib.Path) -> list[Original]:
     except (OSError, UnicodeError) as error:
         raise InputError(f"出所を読めません: {path}: {error}") from error
     events: list[object] = []
-    for raw in text.splitlines():
+    for raw in split_lines(text):
         if not raw.strip():
             continue
         try:

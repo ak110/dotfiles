@@ -3,6 +3,8 @@
 import argparse
 import json
 import pathlib
+import re
+import shlex
 import subprocess
 from typing import Any
 
@@ -46,7 +48,7 @@ def test_session_start_resolves_exact_record(
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     if candidates < 2:
-        assert f"この会話のtranscript: {found[0] if found else missing}" in output
+        assert f"--transcript {shlex.quote(str(found[0] if found else missing))}" in output
     else:
         assert "--claude-session-id" in output
         assert str(missing) not in output
@@ -249,11 +251,13 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
         )
     )
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    notified = next(
-        line.removeprefix("この会話のtranscript: ")
-        for line in context.splitlines()
-        if line.startswith("この会話のtranscript: ")
+    command = next(
+        match
+        for match in re.findall(r"`([^`\n]*run-script session-review-evidence[^`\n]*)`", context)
+        if "--transcript" in shlex.split(match)
     )
+    arguments = shlex.split(command)
+    notified = arguments[arguments.index("--transcript") + 1]
     destination = tmp_path / "conversation"
     destination.mkdir()
     assert (
@@ -270,3 +274,39 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
     assert prepared["conversation_utf8_bytes"] == len(conversation.encode("utf-8"))
     assert prepared["conversation_limit_bytes"] == 100_000
     assert "この会話の原文を保持する" in conversation
+
+
+@pytest.mark.parametrize("delegated", [False, True])
+def test_compact_recovery_command_is_delivered_once(tmp_path, monkeypatch, capsys, delegated):
+    """圧縮時の置換本文が参照する通知は、両主体へ具体的な取得コマンドを1回届ける。"""
+    path = tmp_path / "record.jsonl"
+    path.write_text(json.dumps({"type": "user", "message": {"content": "継続する要求"}}) + "\n", encoding="utf-8")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    else:
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+    rules_context.main(
+        json.dumps(
+            {"hook_event_name": "SessionStart", "source": "compact", "session_id": "recover", "transcript_path": str(path)}
+        )
+    )
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    commands = re.findall(r"`([^`\n]*run-script session-review-prepare[^`\n]*)`", output)
+    assert len(commands) == 1
+    arguments = shlex.split(commands[0])
+    assert arguments[arguments.index("--transcript") + 1] == str(path)
+    assert "--conversation-only" in arguments
+    assert not any(line.startswith(("会話ID:", "原本ログ:", "この会話のtranscript:")) for line in output.splitlines())
+    assert "--conversation-window --conversation-recent 30`を追加せよ" in output
+
+
+def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkeypatch, capsys):
+    """パスを取得できない場合も、同じ圧縮後通知で実IDを渡す照会を案内する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+    rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "unresolved"}))
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "run-script session-review-evidence -- --claude-session-id unresolved --user-events`" in output

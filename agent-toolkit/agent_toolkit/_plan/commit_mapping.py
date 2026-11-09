@@ -14,6 +14,7 @@ import subprocess
 
 from agent_toolkit._common import next_action
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import command
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import structure as _plan_structure
@@ -159,7 +160,7 @@ def encode_event(event: dict[str, object]) -> str:
 def body_events(content: str) -> list[dict[str, object]]:
     """計画または引き継ぎ記録の本文に残る旧形式の`wi-commits`コメントを記録順に返す。"""
     events: list[dict[str, object]] = []
-    for line in content.splitlines():
+    for line in split_lines(content):
         if PREFIX not in line:
             continue
         payload = line.split(PREFIX, 1)[1].split(SUFFIX, 1)[0]
@@ -171,7 +172,7 @@ def file_events(path: pathlib.Path) -> list[dict[str, object]]:
     """対応記録ファイルの記録を記録順に返す。ファイルが無ければ空とする。"""
     if not path.is_file():
         return []
-    return [_decode(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [_decode(line) for line in split_lines(path.read_text(encoding="utf-8")) if line.strip()]
 
 
 def read_events(record: pathlib.Path, content: str) -> list[dict[str, object]]:

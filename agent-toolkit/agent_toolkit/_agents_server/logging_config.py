@@ -25,6 +25,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.next_action import next_action_line
 
 LOG_MAX_BYTES = 2 * 1024 * 1024
@@ -447,7 +448,7 @@ def refresh_diagnostics_reference(value: Mapping[str, Any]) -> dict[str, Any]:
 def _evaluated_reference(result: dict[str, Any], path: pathlib.Path) -> dict[str, Any]:
     result = {**result, "path": str(path)}
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        lines = split_lines(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {
             **result,

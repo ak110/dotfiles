@@ -136,7 +136,7 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
         _outcome.report_warning(
             f"省略時の保存先へ自動生成したローカル管理用のprivate-notesを使っている（WIと計画は0件）: {root}",
             next_action="既存のprivate-notesを使う場合は、環境変数AGENT_TOOLKIT_PRIVATE_NOTESへそのパスを設定するか"
-            "~/private-notesへ配置して再実行する。この保存先を使い続ける場合は対応不要で、処理は継続した。"
+            "~/private-notesへ配置して再実行せよ。この保存先を使い続ける場合は対応不要で、処理は継続した。"
             f"AGENT_TOOLKIT_PRIVATE_NOTES={root}を設定すると、この警告は出力されなくなる",
         )
     return root

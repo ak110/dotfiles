@@ -24,6 +24,7 @@ from typing import Any
 from agent_toolkit._atk import review_table
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter, headings
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._plan import commit_mapping
 
@@ -103,7 +104,7 @@ def _parse_cases(data: dict[str, Any]) -> list[_Case]:
 def _commit_range(commits_path: pathlib.Path) -> tuple[str, str]:
     """WI実装commitの対応記録から、履歴書換え後のOIDで最初の変更の親と最後のcommitを返す。"""
     order: list[str] = []
-    for line in commits_path.read_text(encoding="utf-8").splitlines():
+    for line in split_lines(commits_path.read_text(encoding="utf-8")):
         try:
             record = json.loads(line)
         except ValueError as error:

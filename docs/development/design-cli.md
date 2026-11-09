@@ -148,7 +148,7 @@ pyfltrとpytestが子処理を回収した区切りだけ上位へ停止を通�
 人が直接使う長時間・常駐CLIの実行中表示は、その時点で処理状態を判断するための情報として扱う。
 開始、工程の移行、待機理由などを実行中に届け、表示量は人の判断に必要な情報で決める。
 LLMが読む出力のトークン削減は、人向け表示を減らす理由にしない。
-実装・改訂時は`agent-basics/skills/writing-standards/references/writing.md`「読み手別の追加注意点」からこの観点へ到達する。
+実装・改訂時は`agent-basics/skills/writing-standards/references/program-messages.md`「出力の基準」からこの観点へ到達する。
 
 `agents_wait`のCLI待機、`git_sync`のremote同期・共有ロック取得、`run_command.execute`の子の終了待ち、`post_apply.run`の工程完了待ちは、人向けに対象と状態を標準エラーへ表示する。
 判定は`_atk.environment.is_human_terminal`を使い、エージェント環境の外で標準エラーが端末の呼び出しだけへ表示する。
@@ -192,7 +192,7 @@ WI本文の各診断は入力元、frontmatterを除いた論理本文の行・�
 失敗行と警告行には、続く行に`次の操作:`で始まる次の操作を必ず置く。
 結果行だけで成否は確定しても、事実だけを受け取ったエージェントは次の行動を推測で選び、実行できない操作や同じ失敗を繰り返した（`atk`の引数エラー、agents_serverの`unknown session`、hookの警告などで観測した）。
 `report_failure`と`report_warning`は理由と次の操作を別々の必須の引数として受け取り、次の操作を欠いた呼び出しを失敗させる。
-警告の出力条件は「atkの出力に含める情報」と`writing-standards/references/writing.md`のエージェントが読む出力の規定に従う。
+警告の出力条件は「atkの出力に含める情報」と`agent-basics/skills/writing-standards/references/program-messages.md`のエージェントが読む出力の規定に従う。
 
 共通起動の持続状態の警告は`outcome.report_persistent_warning`を通し、同じ会話で同じ内容を1回だけ出力する。
 会話識別子は`AGENT_TOOLKIT_OWNER_SESSION`、`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順に解決し、識別子の無い端末では毎回出力する。

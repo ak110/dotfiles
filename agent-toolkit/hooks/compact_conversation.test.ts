@@ -46,8 +46,11 @@ for (const trigger of ["manual", "auto", "plugin", "precompute"] as const) {
       expect(result.skip).toMatch("先行生成");
     } else {
       expect(result.messages?.length).toBe(1);
-      expect(result.messages?.[0]?.text).toMatch("/records/current-session.jsonl");
-      expect(result.messages?.[0]?.text).toMatch("最新の訂正");
+      const text = result.messages?.[0]?.text ?? "";
+      expect(text).toMatch(/生成していない/);
+      expect(text).toMatch(/SessionStart.*圧縮後通知.*コマンド.*実行/);
+      expect(text).toMatch(/復元せよ/);
+      expect(text).not.toMatch(/会話の要約生成を省き|会話ID:|原本ログ:|\/records\/current-session.jsonl/);
       expect("usage" in result).toBe(false);
     }
   });

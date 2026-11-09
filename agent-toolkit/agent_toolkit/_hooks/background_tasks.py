@@ -47,6 +47,7 @@ SubagentStop判定ではsidechainを含める。
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import contextlib
+import io
 import json
 import os
 import pathlib
@@ -369,7 +370,9 @@ def async_launch_offsets(transcript_path: str) -> dict[str, int]:
     data = _transcript.read_transcript_bytes(transcript_path)
     if data is None:
         return {}
-    raw_lines = data.splitlines(keepends=True)
+    # 開始バイト位置は改行コード込みの長さで進めるため、LF行の末尾をそのまま保持する。
+    with io.BytesIO(data) as stream:
+        raw_lines = stream.readlines()
     parsed: list[dict] = []
     for raw in raw_lines:
         try:

@@ -3,11 +3,31 @@
 import json
 import pathlib
 
+import pytest
+
 from agent_toolkit._common.transcript import (
     iter_latest_assistant_messages,
     iter_latest_assistant_text_messages,
+    read_transcript_lines,
 )
 from agent_toolkit._testing.helpers import _write_transcript
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
+@pytest.mark.parametrize("ending", ["\n", "\r\n"])
+def test_read_transcript_lines_preserves_json_strings(tmp_path: pathlib.Path, separator: str, ending: str) -> None:
+    """JSON文字列内のUnicode区切りを保持し、空行と破損行の物理位置を変えない。"""
+    entries = [_user_entry(f"前{separator}後"), _assistant_entry([_text_block("回答")])]
+    rows = [json.dumps(entries[0], ensure_ascii=False), "", "broken", json.dumps(entries[1], ensure_ascii=False)]
+    path = tmp_path / "unicode.jsonl"
+    path.write_bytes((ending.join(rows) + ending).encode("utf-8"))
+
+    lines = read_transcript_lines(str(path))
+
+    assert lines is not None
+    assert lines == rows
+    assert json.loads(lines[0]) == entries[0]
+    assert list(iter_latest_assistant_messages(str(path))) == [entries[1]["message"]]
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_a", stop_reason: str = "end_turn") -> dict:

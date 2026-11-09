@@ -31,6 +31,11 @@
 会話・委譲の環境変数入力を追加するときは、`_testing/isolation.py`の共通隔離との対応を`agent-toolkit/session_environment_invariant_test.py`で確認する。
 
 - 横断テスト: `testing.md`「テスト配置」に記載された`*_invariant_test.py`を指す。変更範囲の検証には`uv run --frozen pyfltr fast --commands=pytest`（個別ファイルを渡さず、リポジトリルートで1回実行）を含める。この1回の実行により、ルートリポジトリとサブプロジェクト`agent-toolkit/`の両方がまとめてテストされる。保存した出力結果から`# subproject: .`と`# subproject: agent-toolkit`それぞれのpytestの終了状態を確認し、双方のプロジェクトにまたがる横断検証の結果として採用する。ルートと`agent-toolkit/`の`pytest-always-targets`設定により、pytestを実行する他のpyfltr操作（対象ファイルを指定した`run`やMCP経由の`run`、`commands`未指定の実行など）でも、同じ横断テストが自動的に追加されて実行される。変更範囲の検証にそうした実行が含まれている場合は、その実行結果からサブプロジェクトごとの終了状態を確認して横断検証の結果に充てることができ、同じ内容に対してfastを重ねて実行する必要はない。コミット時にprekが実行するfastも、対象集合・入力・依存条件と保存出力を確認でき、フック後の最終内容へ適用できる場合は同じ横断検証の結果に充てる。フックで不足する検証や、結果に影響する更新があった範囲だけを追加し、コミットフックの実行自体は省略しない。前提条件と再検証の手順は`docs/development/audit-records.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日」に記載されている。
+- コミットフックの実行範囲: `pyfltr fast`は`<ツール名>-fast`がtrueのツールだけを実行する。
+  本リポジトリではpylint・mypy・pyrightなどを含まないため、計画のlint（`uv run --frozen pyfltr run --disable=pytest <変更パス>`）全体をフックの成功で置き換えられない。
+  実効値は`uv run --frozen pyfltr config list --all`の`*-fast`、実行済みツールは`uv run --frozen pyfltr list-runs`の`commands`で確かめる。
+  確認記録と再検証は`docs/development/audit-records.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年11月9日」にある。
+  前項の横断テストの再利用は、pytestの対象集合と実行条件を確かめる別の条件付きの扱いである。
 - WI画面のアセットと擬似DOM: `agent-toolkit/agent_toolkit/_testing/serve_support.py`内の`_run_node_ui`が擬似DOMの構築と実行時に読み込むアセットが対象となる。
   具体的には、`agent-toolkit/agent_toolkit/_atk/serve/static/`にある`common.js`、`wi.js`、`index.html`、および`serve_support.py`自身の変更が該当する。
   `static/`配下にあるその他のアセットの変更には本項を適用せず、他の検証項目や`agent-basics:check-execution`の類型に沿って対象を選ぶ。

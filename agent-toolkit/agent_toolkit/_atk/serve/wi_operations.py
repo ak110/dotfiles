@@ -426,6 +426,10 @@ class Operations:
         種別と回答状況を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
+        waiting = filters.get("view") == "waiting"
+        if waiting:
+            filters = {key: value for key, value in filters.items() if key in {"view", "page", "target_repo"}}
+            filters.update(type="uwi", status="active", answered="no", period="all")
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
@@ -506,6 +510,8 @@ class Operations:
                 indexed.derived[_LIST_ENTRY_KEY] = cached_entry
             # 依存先の回答で変わる導出値は、項目自身のキーで保持する表示キャッシュへ入れない。
             result.append({**cached_entry[1], "blocked": indexed.path in blocked_paths})
+        if waiting:
+            return sorted(result, key=lambda item: (item["important"] is not True, str(item["filename"]))), warnings
         return sorted(result, key=lambda item: str(item["filename"]), reverse=True), warnings
 
     def entries_with_warnings(

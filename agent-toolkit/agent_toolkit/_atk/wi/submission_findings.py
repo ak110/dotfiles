@@ -19,6 +19,7 @@ from typing import Any
 from agent_toolkit._atk import run_script as _run_script
 from agent_toolkit._atk import session_records as _session_records
 from agent_toolkit._common import plugin_environment, process_tree
+from agent_toolkit._common.json_lines import split_lines
 
 CLASSIFICATIONS = ("考慮漏れ", "ユーザーだけが持つ新しい情報", "前提の誤り", "採用しない提案")
 """add-awi-by-user「指摘の分類と処置」の4分類。追加要求などの要求管理上の扱いは分類の代わりにならない。"""
@@ -116,7 +117,7 @@ def user_events(session_id: str, started_at: str) -> list[dict[str, Any]]:
     if completed.returncode != 0:
         raise ValueError(f"実ユーザー発話を抽出できない（終了コード{completed.returncode}）: {completed.stderr.strip()[-500:]}")
     events = []
-    for line in completed.stdout.splitlines():
+    for line in split_lines(completed.stdout):
         event = json.loads(line)
         if event.get("kind") != "user":
             continue

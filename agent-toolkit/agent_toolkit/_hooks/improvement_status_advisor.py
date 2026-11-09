@@ -1,4 +1,4 @@
-"""直接応答の`気付いた改善点:`行で、原因の未調査を理由に`AWI化ステータス: 不要`とした報告へ再確認を促す。
+"""改善点の報告前に判定資料の取得を案内し、未調査を理由にした`不要`へ再確認を促す。
 
 `share/rules/rules-main.md`「作業中の改善点の報告」は、処置とAWI化を決める前に担当・処置を決める最小調査を求める。
 原因を調べていないことを見送りの理由にした報告は、その調査を省いたまま処置不要と判断している。
@@ -10,9 +10,14 @@
 """
 
 import json
+import os
 import re
+import shlex
 
-from agent_toolkit._common import runtime_inserted
+from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted
+from agent_toolkit._common.plugin_roots import resolve_plugin_root
+from agent_toolkit._common.session_state import read_state
+from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
 from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -48,6 +53,57 @@ def uninvestigated_unneeded_reasons(text: str) -> list[str]:
     return found
 
 
+def read_guidance_notice(payload: object) -> str:
+    """最上位メインの改善点報告で、未取得の判定資料を既存の取得記録から案内する。"""
+    if not isinstance(payload, dict) or not is_main_agent_context(payload):
+        return ""
+    text = payload.get("last_assistant_message")
+    session_id = payload.get("session_id")
+    if not isinstance(text, str) or not runtime_inserted.reported_improvement_lines(text):
+        return ""
+    if not isinstance(session_id, str) or not session_id:
+        return ""
+    state = read_state(session_id)
+    root = plugin_resources.plugin_root()
+    cwd = payload.get("cwd")
+    basics = resolve_plugin_root("agent-basics", root, project=cwd if isinstance(cwd, str) else None)
+    paths = [
+        basics / "skills/bugfix/references/root-cause-prevention.md",
+        root / "skills/delegation/references/waiting-and-monitoring.md",
+    ]
+    startup = os.environ.get(mcp_environment.SESSION_START_INPUT_ENV, "{}")
+    try:
+        source = json.loads(startup)
+    except ValueError:
+        source = {}
+    process_wi = state.get("session_title_kind") in {"process-wi", "single-lane"} or (
+        isinstance(source, dict)
+        and (source.get("source") == "process-loop" or source.get("skill") == "agent-toolkit:process-wi")
+    )
+    if process_wi:
+        paths.append(root / "skills/process-wi/references/immediate-fix.md")
+    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    records = records if isinstance(records, dict) else {}
+    missing = [
+        path for path in paths if document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") != "current"
+    ]
+    if not missing:
+        return ""
+    set_warning_session_id(session_id)
+    commands = "\n".join(
+        "Get-Content -LiteralPath '" + str(path).replace("'", "''") + "' -Encoding utf8"
+        if os.name == "nt"
+        else f"cat -- {shlex.quote(str(path))}"
+        for path in missing
+    )
+    return _notice(
+        "改善点の処置とAWI化ステータスの判定資料を、現在の文脈で取得していない。",
+        removable_cause=True,
+        subject="\n".join(map(str, missing)),
+        fix=f"次の各コマンドで資料を全文読め。\n{commands}\n読んだ基準で処置とAWI化ステータスを見直し、必要なら報告を訂正せよ。",
+    )
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     """Claude Codeメインの直接応答に該当する報告行があれば、非遮断の通知を返す。"""
     try:
@@ -60,11 +116,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not isinstance(text, str):
         return "", ""
     lines = uninvestigated_unneeded_reasons(text)
+    guidance = read_guidance_notice(payload)
     if not lines:
-        return "", ""
+        return ("notify", guidance) if guidance else ("", "")
     session_id = payload.get("session_id")
     set_warning_session_id(session_id if isinstance(session_id, str) else "")
-    return "notify", _notice(
+    reason_notice = _notice(
         "`AWI化ステータス: 不要`の理由が、原因を調べていないことを見送りの根拠にしている報告がある。"
         "未調査は処置不要の根拠にならない。該当行: " + " / ".join(lines),
         removable_cause=True,
@@ -74,3 +131,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             "担当範囲外なら、観測と残る問いを`agents_server`の委譲先かAWIへ引き継げ。"
         ),
     )
+    return "notify", "\n\n".join(filter(None, (guidance, reason_notice)))
+
+
+def main(payload_text: str) -> int:
+    """Function hooksからの送達前照会へ、既存hookと同じ取得案内を返す。"""
+    payload = json.loads(payload_text)
+    notice = read_guidance_notice(payload)
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}}, ensure_ascii=False))
+    return 0

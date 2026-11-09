@@ -1,10 +1,43 @@
 """`improvement_status_advisor`が、原因の未調査を理由にした`不要`の報告行だけへ非遮断の通知を返すことを確かめる。"""
 
 import json
+import os
+import pathlib
+import re
+import shlex
+import types
 
 import pytest
 
-from agent_toolkit._hooks import improvement_status_advisor, stop
+from agent_toolkit._common import mcp_environment, read_triggers, session_state
+from agent_toolkit._common.plugin_roots import resolve_plugin_root
+from agent_toolkit._hooks import document_reads, improvement_status_advisor, plugin_resources, rules_context, stop
+from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+
+
+@pytest.fixture
+def _guidance_documents() -> list[pathlib.Path]:
+    root = plugin_resources.plugin_root()
+    basics = resolve_plugin_root("agent-basics", root)
+    return [
+        basics / "skills/bugfix/references/root-cause-prevention.md",
+        root / "skills/delegation/references/waiting-and-monitoring.md",
+        root / "skills/process-wi/references/immediate-fix.md",
+    ]
+
+
+@pytest.fixture(autouse=True)
+def _guidance_already_read(_guidance_documents: list[pathlib.Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """元の理由判定の試験は、判定資料を取得済みの状態から行う。"""
+    monkeypatch.setenv(mcp_environment.SESSION_START_INPUT_ENV, "{}")
+    recorded = {
+        document_reads.receipt_key(item): ["main"]
+        for item in document_reads.receipt_candidates([read_triggers.ReadTarget(path) for path in _guidance_documents])
+    }
+    session_state.update_state(
+        "improvement-status",
+        lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: recorded, "session_title_kind": "process-wi"},
+    )
 
 
 def _payload(text: str, **extra: object) -> str:
@@ -68,3 +101,65 @@ def test_stop_aggregates_notice_without_blocking(monkeypatch: pytest.MonkeyPatch
     assert isinstance(output, dict)
     context = output["additionalContext"]
     assert "原因を調べていない" in context
+
+
+def _assert_guidance_commands(body: str, paths: list[pathlib.Path], *, windows: bool) -> None:
+    if windows:
+        decoded = re.findall(r"(?m)^Get-Content -LiteralPath '((?:''|[^'])*)' -Encoding utf8$", body)
+        assert [value.replace("''", "'") for value in decoded] == list(map(str, paths))
+    else:
+        commands = [shlex.split(line) for line in body.splitlines() if line.startswith("cat -- ")]
+        assert commands == [["cat", "--", str(path)] for path in paths]
+    assert all(path.is_file() for path in paths)
+
+
+@pytest.mark.parametrize("windows", [False, True])
+@pytest.mark.parametrize("kind", ["process-wi", "single-lane", "add-awi"])
+def test_missing_guidance_is_notified_before_report(
+    kind: str, monkeypatch: pytest.MonkeyPatch, _guidance_documents: list[pathlib.Path], windows: bool
+) -> None:
+    """未取得の通常報告は判定資料を案内し、process-wiだけ対処時機の基準も加える。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(
+        improvement_status_advisor, "os", types.SimpleNamespace(name="nt" if windows else "posix", environ=os.environ)
+    )
+    session_state.update_state(
+        "improvement-status", lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {}, "session_title_kind": kind}
+    )
+    decision, body = improvement_status_advisor.evaluate(_payload("気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"))
+    assert decision == "notify"
+    paths = _guidance_documents if kind != "add-awi" else _guidance_documents[:2]
+    _assert_guidance_commands(body, paths, windows=windows)
+    assert "root-cause-prevention.md" in body
+    assert "waiting-and-monitoring.md" in body
+    assert ("immediate-fix.md" in body) == (kind != "add-awi")
+    assert "見直し" in body
+
+
+def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既存の圧縮時リセット後に、取得済みだった資料を再び案内する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    text = "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"
+    assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
+    rules_context.reset_main_operation_skill_ready("improvement-status", retain_for_compact=True)
+    decision, body = improvement_status_advisor.evaluate(_payload(text))
+    assert decision == "notify"
+    assert "root-cause-prevention.md" in body
+
+
+@pytest.mark.parametrize("windows", [False, True])
+def test_guidance_hook_entry_returns_nonblocking_context(
+    monkeypatch: pytest.MonkeyPatch, _guidance_documents: list[pathlib.Path], windows: bool
+) -> None:
+    """送達前照会の公開hookは未取得案内を通知欄へ渡し、拒否へ変換しない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setattr(
+        improvement_status_advisor, "os", types.SimpleNamespace(name="nt" if windows else "posix", environ=os.environ)
+    )
+    session_state.update_state("improvement-status", lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {}})
+    result = _run_hook_in_process("improvement_status_advisor", _payload("気付いた改善点: A（AWI化ステータス: 即時対応）"))
+    assert result.returncode == 0
+    assert not result.stderr
+    output = json.loads(result.stdout)
+    assert "decision" not in output
+    _assert_guidance_commands(output["hookSpecificOutput"]["additionalContext"], _guidance_documents, windows=windows)

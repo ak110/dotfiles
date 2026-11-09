@@ -75,7 +75,7 @@ def select_session(target_repo_id: str, target_repo_path: pathlib.Path) -> str:
         except EOFError:
             _next_action.report(
                 "error: 標準入力が終了したため候補を選択できない。",
-                next_action=f"`--auto-resume`を外し、`--resume {session_id}`を指定して再実行する",
+                next_action=f"`--auto-resume`を外し、`--resume {session_id}`を指定して再実行せよ",
             )
             sys.exit(1)
         if answer.strip().lower() == "y":

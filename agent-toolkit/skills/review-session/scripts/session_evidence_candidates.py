@@ -59,6 +59,7 @@ from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_fro
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_read_predicate
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
 from agent_toolkit._common.shell_segments import resolve_execution_segment as _resolve_execution_segment
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
@@ -735,7 +736,7 @@ def _wait_response_parts(value: Any) -> tuple[list[str], set[tuple[str, int | st
                 handles.add(("cell_id", cell_match[1]))
             active: list[str] | None = None
             session_text = ""
-            for line in value.splitlines():
+            for line in split_lines(value):
                 if line.startswith(WAIT_BODY_START_PREFIX):
                     active, session_text = [], line.removeprefix(WAIT_BODY_START_PREFIX)
                 elif active is not None and line == f"{WAIT_BODY_END_PREFIX}{session_text}":
@@ -1355,7 +1356,7 @@ def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
     if len(args) < 4 or not _is_atk_command(args) or args[1] != "run-command" or "--" not in args[2:]:
         return event
     text = str(event.get("diagnostic") or event.get("text") or "")
-    results = [_json_object(line) for line in text.splitlines() if line.startswith("{")]
+    results = [_json_object(line) for line in split_lines(text) if line.startswith("{")]
     if len(results) != 1 or results[0] is None:
         return event
     result = results[0]

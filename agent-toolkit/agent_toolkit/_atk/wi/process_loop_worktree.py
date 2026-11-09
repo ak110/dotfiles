@@ -229,11 +229,11 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
     upstream = _git_refs.resolve_branch(local_path, git_fn=_capture_ref, upstream=True)
     if upstream is None:
         _next_action.report(
-            f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}",
+            f"上流ブランチを解決できないため実装セッションを起動しません: {worktree_path}。"
+            "解消後はprocess-loopが次の反復で再試行する。",
             next_action=(
                 f"`git -C {local_path} branch -u <remote>/<branch>`で上流を設定するか、"
-                f"`git -C {local_path} remote set-head origin -a`でorigin/HEADを設定する。"
-                "解消後はprocess-loopが次の反復で再試行する"
+                f"`git -C {local_path} remote set-head origin -a`でorigin/HEADを設定せよ。"
             ),
         )
         return None
@@ -324,10 +324,10 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
             created = _run_worktree_git(command, local_path)
         if created.returncode != 0:
             _next_action.report(
-                f"worktreeの作成に失敗しました: {created.stderr.strip()}",
+                f"worktreeの作成に失敗しました: {created.stderr.strip()}。解消後はprocess-loopが次の反復で再試行する。",
                 next_action=(
                     f"`git -C {local_path} worktree list`で登録状況を確認し、実体の無い登録は"
-                    f"`git -C {local_path} worktree prune`で除く。解消後はprocess-loopが次の反復で再試行する"
+                    f"`git -C {local_path} worktree prune`で除け。"
                 ),
             )
             return None
@@ -364,11 +364,10 @@ def _sync_worktree_with_upstream(local_path: pathlib.Path, worktree_name: str) -
         return None
     _run_worktree_git(["-c", "submodule.recurse=false", "rebase", "--abort"], worktree_path)
     _next_action.report(
-        f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。",
+        f"worktreeの{upstream_branch}への追随に失敗したため実装セッションを起動しません（{rebase.stderr.strip()}）。"
+        "rebaseは中止した。解消後はprocess-loopが次の反復で再試行する。",
         next_action=(
-            f"rebaseは中止した。`git -C {worktree_path} -c submodule.recurse=false rebase {upstream_branch}`を"
-            "手作業で実行して競合を解消する。"
-            "解消後はprocess-loopが次の反復で再試行する"
+            f"`git -C {worktree_path} -c submodule.recurse=false rebase {upstream_branch}`を手作業で実行して競合を解消せよ。"
         ),
     )
     return None

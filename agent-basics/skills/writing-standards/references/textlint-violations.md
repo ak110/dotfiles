@@ -13,7 +13,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「日本語の表記ルール」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「日本語の表記ルール」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lint-relax-criteria.md#「緩和判断のフレーム」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md#「緩和判断のフレーム」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「要件と認可」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「要件と認可」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `input-material.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/input-material.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples.md#「冗長表現」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/tone-examples.md#「冗長表現」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「Markdown記述スタイル」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「Markdown記述スタイル」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples.md#「ら抜き言葉と可能表現」「カタカナ動詞比喩」「比喩動詞」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/tone-examples.md#「ら抜き言葉と可能表現」「カタカナ動詞比喩」「比喩動詞」` |
@@ -82,7 +82,7 @@
 ## 文の書き直しの委譲と検収
 
 成果物の種類、読者、事実関係、根拠、反映先が確定した文章の作成を委譲する場合も、次の品質基準に基づいて検収する。
-原文との意味の比較には`writing.md`「ユーザー入力素材の取扱い」を適用する。主体を補う際は原文、依頼、資料に根拠がある担当、通知先、責任を保ち、既存人物への作業の再割当も確認する。
+原文との意味の比較には`input-material.md`「ユーザー入力素材の取扱い」を適用する。主体を補う際は原文、依頼、資料に根拠がある担当、通知先、責任を保ち、既存人物への作業の再割当も確認する。
 
 - 依頼文には、読者の種別（人間向けかエージェント向けか）、対象ファイルと該当段落、指摘されたルール名と対象の語句、維持すべき事実や契約、前節で示した禁止事項を明記する。読者が異なる文書は依頼を分けて作成する
 - 返ってきた文は原文と比較して事実や契約が保たれているか確認し、textlintと、プロジェクトが導入している表記チェック（口語表現、ダッシュなど）を実行する。チェッカーが無い環境では`notation-checks.md`「チェックの対象範囲」に従って手動の自己点検をする。変更箇所の比較には`git diff --word-diff=plain --word-diff-regex=.`を使い、空白で区切られない日本語の差分を文字単位で把握する。語句の置換だけでは意味や自然さを保てない場合は、述語や文構造まで含めて見直す

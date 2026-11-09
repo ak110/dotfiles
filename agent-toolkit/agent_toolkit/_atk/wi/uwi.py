@@ -385,7 +385,7 @@ def cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if ANSWER_MARKER not in edited_text:
             _outcome.report_warning(
                 f"回答欄マーカーが無いため反映しない: {path.name}",
-                next_action="残りの回答は続行する。回答欄マーカーを残したまま回答を書き直す場合は再実行する",
+                next_action="残りの回答は続行する。回答欄マーカーを残したまま回答を書き直す場合は再実行せよ",
             )
             tmp_path.unlink(missing_ok=True)
             continue
@@ -399,7 +399,7 @@ def cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except RuntimeError:
             _outcome.report_warning(
                 f"編集中に他プロセスが対象を変更したため反映しない: {path.name}。編集内容は{tmp_path}に残した。",
-                next_action=f"`atk wi show {path.name}`で最新の内容を確認し、{tmp_path}の回答を移して再実行する",
+                next_action=f"`atk wi show {path.name}`で最新の内容を確認し、{tmp_path}の回答を移して再実行せよ",
             )
             had_conflict = True
             continue

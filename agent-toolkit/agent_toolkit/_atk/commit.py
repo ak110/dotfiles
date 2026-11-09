@@ -15,6 +15,7 @@ from pathlib import Path
 from agent_toolkit._atk import config, outcome, usage_limit_policy
 from agent_toolkit._common import automated_prompt, claude_usage_limit, message_format
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import command as _git_command
 
 _PROMPT_SOURCE = "atk-commit"
@@ -224,7 +225,7 @@ def _run_candidate(
     session_id = str(uuid.uuid4())
     result = _invoke(_command(engine, executable, model, effort, root, temporary, prompt, session_id=session_id), temporary)
     while result.returncode != 0:
-        usage_limit = claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
+        usage_limit = claude_usage_limit.from_stream_lines(split_lines(result.stdout or ""))
         if (
             usage_limit is None
             or not usage_limit.is_wait_target
@@ -246,7 +247,7 @@ def _agent_output(engine: str, stdout: str | None) -> str:
     """ユーザーへ示すエージェントの最終応答を返す。Claudeは構造化出力の`result`イベントから取り出す。"""
     if engine != "claude" or not stdout:
         return stdout or ""
-    final = claude_usage_limit.result_from_stream_lines(stdout.splitlines())
+    final = claude_usage_limit.result_from_stream_lines(split_lines(stdout))
     text = final.get("result") if final is not None else None
     return text if isinstance(text, str) else stdout
 

@@ -29,7 +29,7 @@ def send_notification(
     if not body.strip():
         report(
             "通知本文は空文字列または空白だけにできません",
-            next_action="空でない本文を`--body`か`--body-file`で渡して再実行する",
+            next_action="空でない本文を`--body`か`--body-file`で渡して再実行せよ",
         )
         return 5
 

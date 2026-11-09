@@ -34,6 +34,7 @@ from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import document_reads, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
@@ -42,13 +43,8 @@ lazy from agent_toolkit._hooks.message_format import xml_message
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-RESPONSE_LANGUAGE_NOTICE = (
-    "ユーザーが読む報告・回答・質問・計画と成果物は日本語で書け。"
-    "ユーザーへ送らない内部文面は、言語だけで書き直させるな。"
-    "送達主体が説明を日本語化し、識別子・コマンド・逐語引用は原表記を保て。"
-    "詳細は`01-agent.md`「使用言語」に従え。"
-)
-QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
+RESPONSE_LANGUAGE_NOTICE = "ユーザー向け本文・成果物は日本語で書け。`01-agent.md`「使用言語」に従え。"
+QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
 BACKGROUND_TASKS_DISABLED_NOTICE = (
     "この`Claude Code`では`Bash`の背景実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）で、`run_in_background`は使えない。"
     "`atk agents wait`は単独の前景実行とし、`Bash`へ`timeout=600000`を指定して、"
@@ -446,21 +442,19 @@ def _resolve_transcript(session_id: object, transcript_path: object) -> str | No
 
 
 def _conversation_identity_notice(session_id: object, transcript_path: object) -> str:
-    """Claudeメイン自身の会話の所在を、SessionStartの入力値から通知する。"""
-    lines = [
-        f"この会話のセッションID: {session_id}"
-        if isinstance(session_id, str) and session_id
-        else "この会話のセッションID: 入力から取得できません。シェルのCLAUDE_CODE_SESSION_IDを使える場合はその値を使え。"
-    ]
+    """Claudeメイン自身の原文を取得する操作へ、入力から解決した所在を束縛する。"""
+    arguments = [str(SHARE_DIR.parent / "scripts/atk"), "run-script", "session-review-evidence", "--"]
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is not None:
-        lines.append(f"この会話のtranscript: {resolved}")
+        arguments.extend(["--transcript", resolved])
+    elif isinstance(session_id, str) and session_id:
+        arguments.extend(["--claude-session-id", session_id])
     else:
-        lines.append(
-            "この会話のtranscript: 絶対パスを入力から取得できません。特定済みIDをsession-review-evidenceの"
-            "--claude-session-idへ渡して記録を取得せよ。"
+        return (
+            "会話の原文の所在を入力から取得できない。CLAUDE_CODE_SESSION_IDを確認し、"
+            "`atk run-script session-review-evidence -- --claude-session-id <確認したID> --user-events`で取得せよ。"
         )
-    return "\n".join(lines)
+    return f"この会話の原文が必要な場合は`{shlex.join([*arguments, '--user-events'])}`で取得せよ。"
 
 
 def _existing_session_temp(session_id: object) -> str | None:
@@ -484,10 +478,8 @@ def _compaction_notice(
     """既存の証拠抽出CLIで全人間入力を保存し、会話の流れの取得先も通知する。"""
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
-        if not delegated:
-            # 同じSessionStartの会話識別の通知が記録の解決手順を示すため、同じ案内を重ねずに上限内の余白を残す。
-            return None
-        return "圧縮後の原文を抽出できない。特定済みIDをsession-review-evidenceの--claude-session-idへ渡して記録を解決せよ。"
+        arguments = ["run-script", "session-review-evidence", "--", "--claude-session-id", session_id, "--user-events"]
+        return f"原文は起動部分へ`{shlex.join(arguments)}`を続けて取得せよ。"
     command = [
         str(SHARE_DIR.parent / "scripts" / "atk"),
         "run-script",
@@ -510,7 +502,7 @@ def _compaction_notice(
     )
     lines = [
         f"会話全体の流れは`{conversation}`でconversation.mdを取得せよ。"
-        "前回以降の点検には同じコマンドへ`--conversation-window --conversation-recent 30`を追加する。"
+        "前回以降の点検には同じコマンドへ`--conversation-window --conversation-recent 30`を追加せよ。"
         "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
     ]
     if delegated:
@@ -538,7 +530,7 @@ def _compaction_notice(
         )
         users = [
             event
-            for line in result.stdout.splitlines()
+            for line in split_lines(result.stdout)
             if isinstance(event := json.loads(line), dict) and event.get("kind") == "user"
         ]
         data = "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in users)
@@ -554,7 +546,7 @@ def _compaction_notice(
 
         update_state(session_id, select_original)
         lines.append(
-            f"ユーザー発話の原文{len(users)}件: {output}。圧縮の要約で文言や範囲が変わり得るため、"
+            f"ユーザー発話の原文{len(users)}件をReadのfile_pathに`{output}`を指定して読め。"
             "ユーザーの要求・判断・行動の訂正を原文と作業契約で比較し、有効な指示を統合して元の未完了工程へ戻れ。"
         )
     except process_tree.ReclaimError as error:
@@ -637,7 +629,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         timing.record(payload, "rules_context", started, "ok", stage="review-session-request")
         if review_notice is not None:
             content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
-        if not delegated and host == "claude":
+        if not delegated and host == "claude" and source != "compact":
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:

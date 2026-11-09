@@ -46,6 +46,7 @@ from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk import run_script as _run_script
 lazy from agent_toolkit._common import plugin_environment
+lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command, is_atk_command
@@ -229,7 +230,7 @@ def _response_has_exit_invocation(value: object) -> bool:
     if isinstance(value, dict) and value.get("exit_session_invoked") is True:
         return True
     for text in _response_texts(value):
-        for line in text.splitlines():
+        for line in split_lines(text):
             try:
                 record = json.loads(line)
             except json.JSONDecodeError:

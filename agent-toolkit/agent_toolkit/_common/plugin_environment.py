@@ -241,8 +241,4 @@ def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
     is_windows = os.name == "nt" if windows is None else windows
     entry = root / "scripts" / atk_launcher_name(windows=is_windows)
     command = "& '" + str(entry).replace("'", "''") + "'" if is_windows else shlex.quote(str(entry))
-    return (
-        f"agent-toolkitのCLI: {entry}\n"
-        f"起動部分: {command}\n"
-        "この起動部分へサブコマンドと引数を続けよ。CLIはこの配布物と、その版の依存環境を使う。"
-    )
+    return f"起動部分: {command}\nこの起動部分へサブコマンドと引数を続けよ。CLIはこの配布物と、その版の依存環境を使う。"

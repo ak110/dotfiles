@@ -702,6 +702,34 @@ def test_broken_record_is_reported_per_entry(tmp_path: pathlib.Path) -> None:
     assert [entry.session_id for entry in sessions.list_local_sessions(_context(tmp_path))] == ["abc"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+async def test_detail_preserves_json_string_separators(tmp_path: pathlib.Path, engine: str) -> None:
+    """ローカル・リモートの会話詳細取得で正常な本文を失わず解析不可0件を返す。"""
+    texts = [f"前{separator}後" for separator in ("\u2028", "\u2029", "\u0085")]
+    records = [
+        {"type": "user", "message": {"content": text}}
+        if engine == "claude"
+        else {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": text}]}}
+        for text in texts
+    ]
+    path = (
+        tmp_path / "claude/projects/proj/unicode.jsonl"
+        if engine == "claude"
+        else (tmp_path / "codex/sessions/2026/11/09/rollout-unicode.jsonl")
+    )
+    _write(path, records)
+    runner, _calls = _runner_returning({"ok": True, "data": base64.b64encode(path.read_bytes()).decode("ascii")})
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+
+    local = await sessions.session_detail(context, engine, "local-host", str(path))
+    remote = await sessions.session_detail(context, engine, "remote-host", str(path))
+
+    for detail in (local, remote):
+        assert [event["text"] for event in detail["events"]] == texts
+        assert detail["broken_lines"] == 0
+
+
 def test_local_record_path_outside_the_roots_is_rejected(tmp_path: pathlib.Path) -> None:
     """保存先の外を指す読み取り要求を拒否する。"""
     context = _context(tmp_path)

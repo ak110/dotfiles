@@ -56,6 +56,7 @@ from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
@@ -957,7 +958,7 @@ def _candidate_records(path: pathlib.Path) -> list[dict[str, typing.Any]]:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            data = [json.loads(line) for line in text.splitlines() if line.strip()]
+            data = [json.loads(line) for line in split_lines(text) if line.strip()]
         if isinstance(data, dict):
             data = [data]
         if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):

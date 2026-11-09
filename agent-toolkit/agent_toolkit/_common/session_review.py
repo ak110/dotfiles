@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shlex
 import uuid
 from collections.abc import Generator, Mapping
 from typing import Any, Literal, Self
@@ -394,15 +395,21 @@ def launch_notice() -> str | None:
             if attempt.process is None and not attempt.exited and (attempt.owner is None or attempt.owner.exists()):
                 continue
             # PID保存前に親も終了した試行は、受付記録の無い起動中断である。
-            failures.append(f"{value['host']} {value['event']}: {value['log_path']}")
+            log_path = str(value["log_path"])
+            read_command = (
+                "Get-Content -LiteralPath '" + log_path.replace("'", "''") + "' -Encoding utf8"
+                if os.name == "nt"
+                else "cat -- " + shlex.quote(log_path)
+            )
+            failures.append(f"{value['host']} {value['event']}: `{read_command}`")
             attempt.notify().save(path)
     if not failures:
         return None
     return (
-        "振り返りの自動起動が実行受付前に終了し、振り返りを実行できなかった。診断ログ: "
+        "振り返りの自動起動が実行受付前に終了した。pendingは保持している。次のコマンドで診断ログを取得せよ: "
         + "、".join(failures)
-        + "。ログの原因を確認・是正して /agent-toolkit:review-session batch を実行する。"
-        "pendingは保持している。この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝える。"
+        + "。原因を確認・是正して`/agent-toolkit:review-session batch`を実行せよ。"
+        "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
     )
 
 

@@ -11,6 +11,7 @@ import pathlib
 import typing
 
 from agent_toolkit._common.agy_records import normalize_entries
+from agent_toolkit._common.json_lines import split_lines
 
 _MAX_ENTRIES = 3
 SEND_TO_USER_TOOL_SUFFIX = "__send_to_user"
@@ -154,7 +155,7 @@ def read_transcript_lines(transcript_path: str) -> list[str] | None:
     if data is None:
         return None
     try:
-        lines = data.decode("utf-8").splitlines()
+        lines = split_lines(data.decode("utf-8"))
         entries: list[dict] = []
         positions: list[int] = []
         for position, line in enumerate(lines):

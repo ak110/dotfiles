@@ -66,7 +66,7 @@ def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
         _next_action.report(
             f"mise install --quietが{_MISE_INSTALL_TIMEOUT_SEC}秒でタイムアウトし、子プロセスは再試行で回収しました。"
             "process-loopを継続します。",
-            next_action=f"対応不要（process-loopは継続した）。原因は`mise install`を{dotfiles_root}で手作業で実行して確認する",
+            next_action=f"対応不要（process-loopは継続した）。原因は`mise install`を{dotfiles_root}で手作業で実行して確認せよ",
         )
         return False
     except subprocess.TimeoutExpired as exc:
@@ -76,7 +76,7 @@ def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
             f"（{detail}）。process-loopを継続します。",
             next_action=(
                 f"対応不要（process-loopは継続した）。ツールの不足で子セッションが失敗する場合は`mise install`を"
-                f"{dotfiles_root}で手作業で実行して原因を確認する"
+                f"{dotfiles_root}で手作業で実行して原因を確認せよ"
             ),
         )
         return False
@@ -88,7 +88,7 @@ def refresh_mise_tools(dotfiles_root: pathlib.Path) -> bool:
             f"mise install --quietに失敗しました（exit code {result.returncode}: {detail}）。process-loopを継続します。",
             next_action=(
                 f"対応不要（process-loopは継続した）。ツールの不足で子セッションが失敗する場合は`mise install`を"
-                f"{dotfiles_root}で手作業で実行して原因を確認する"
+                f"{dotfiles_root}で手作業で実行して原因を確認せよ"
             ),
         )
         return False
@@ -110,6 +110,6 @@ def _report_unreclaimed(error: process_tree.ReclaimError, dotfiles_root: pathlib
         f"mise install --quietの子プロセスを回収できないため、次の導入を止めています: {error.residual}。",
         next_action=(
             f"表示されたPIDと起動コマンドを確認し、不要なら終了させる（POSIXは`kill -KILL <PID>`）。{resume}"
-            f"原因は`mise install`を{dotfiles_root}で手作業で実行して確認する"
+            f"原因は`mise install`を{dotfiles_root}で手作業で実行して確認せよ"
         ),
     )

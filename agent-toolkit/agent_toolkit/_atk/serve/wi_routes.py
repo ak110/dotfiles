@@ -131,6 +131,8 @@ def _entry_page(filters: dict[str, str]) -> int | None:
 
 def _validate_entry_filters(filters: dict[str, str]) -> None:
     """一覧APIのquery組合せを検証する。"""
+    if "view" in filters and filters["view"] != "waiting":
+        raise _wi_operations.WebApiInputError("viewはwaitingで指定してください")
     if filters.get("type", "all") not in {"all", *wi_constants.WI_TYPES}:
         raise _wi_operations.WebApiInputError("typeが不正です")
     if filters.get("status", "all") not in _STATUS_FILTERS:
@@ -178,6 +180,7 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
     @app.get("/api/entries")
     async def entries() -> quart.Response:
         allowed = {
+            "view",
             "type",
             "status",
             "answered",

@@ -31,24 +31,33 @@
 
 ```text
 進捗: <整数>%（<工程>）
-<全体進捗の根拠と主な残工程>
-<状態変化>
+<根拠・主な残工程・継続または変更する対応>
+<前回以降の変化・想定外の事象（無ければ行を省く）>
 改善案:
-- <候補>（AWI化ステータス: 次節の値）
+- <報告済み分も含む候補>（AWI化ステータス: 次節の値）
 次: <対応>
 ```
 
 `../../skills/user-confirmation-and-report/references/communication-methods.md`「起動案内と進捗通知」に従う。
-進捗率は点検だけに表示し、通常の途中報告・末尾・回答では日本語で結果と判断を伝える。
+報告基準を満たす改善案が無ければ`改善案: なし`の1行にする。
+進捗率は完成条件と残工程から見積もる全工程の概算とし、測定値と区別して点検だけに表示する。
+点検した対象と結果を同じ行に書く。
+点検以外は日本語で結果と判断を伝える。
 
 ## 作業中の改善点の報告
 
 改善点は`01-agent.md`「事実と推論」で選び、発見時に処置・AWI化を決め、次の書式で報告する。
 `気付いた改善点: <事象と対象のツール・手順・条文>（AWI化ステータス: 済 <WI名> | 予定 <区分> <再開条件> | 即時対応 | 不要 <区分> <理由>）`
-process-wi中の今回追加・次回は読込表の`immediate-fix.md`で決め、今回是正は`即時対応`とする。
-登録と修正を区別し、`不要`は`agent-basics:bugfix`の「再発防止策の必須性」が定める区分名で始める。転記も同書式を使う。
+
+- `済`: 保存したWI名を添える
+- `予定`: 登録の前提待ち。区分は`判断待ち`・`認可待ち`・`入力待ち`・`書込競合`とし、再開条件を添える
+- `即時対応`: 今回是正する
+- `不要`: 独立した再発防止策の登録なし。区分は`非欠陥`・`処置済み`・`被覆`・`見送り`とし、理由を添える
+
+process-wiの対応時機は読込表の`immediate-fix.md`で判定する。
+登録と修正を区別し、転記も同書式を使う。`不要`の定義は`agent-basics:bugfix`「再発防止策の必須性」を参照する。
 all-repos統括を含む全メインは、待機中に判定できる改善を発見時に既存項目と比較してAWIを保存する。
-登録時機は読込表の「待機中の先行実施」で判断する。`予定`は同節が定める区分名で始めて再開条件を続け、残る前提・再開条件・時点を作業記録へ残す。
+登録時機と`予定`の定義は読込表の「待機中の先行実施」で判定し、前提・再開条件・時点を作業記録へ残す。
 最小調査をその場で行い、当座の訂正・再発防止は`agent-basics:bugfix`、Q影響・続行/規範不良は`01-agent.md`「完遂と先送り」で判断する。
 本題外はagents_serverへ渡し、担当外は根拠と未確認事項を引き継ぐ。
 証拠は非同期振り返りで再利用し、既調査の再調査・同期振り返りは終了条件から除く。
@@ -91,7 +100,8 @@ all-repos統括を含む全メインは、待機中に判定できる改善を�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 待機中の改善点報告前 | `../../skills/delegation/references/waiting-and-monitoring.md#待機中の先行実施` | 判断 | `section:*/skills/delegation/references/waiting-and-monitoring.md#「待機中の先行実施」` |
+| `気付いた改善点:`の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
+| `気付いた改善点:`の処置とAWI化ステータスを決める前 | `../../skills/delegation/references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
 | 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「恒久化・リファクタリング」` |
-| process-wi中に方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| process-wi中に`気付いた改善点:`の処置とAWI化ステータスを決める前、方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |

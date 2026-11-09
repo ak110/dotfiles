@@ -20,6 +20,7 @@ from collections.abc import Iterator
 
 from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common.agy_records import normalize_entries
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runtime_inserted_text
 
 RECORD_SUFFIX = _record_paths.RECORD_SUFFIX
@@ -425,7 +426,7 @@ def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
     """
     records: list[dict[str, typing.Any]] = []
     broken = 0
-    for line in text.splitlines():
+    for line in split_lines(text):
         stripped = line.strip()
         if not stripped:
             continue

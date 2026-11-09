@@ -458,7 +458,7 @@ def wait_for_changes(
         except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
             _next_action.report(
                 f"remote同期に失敗（待機ループ続行）: {exc}",
-                next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認する",
+                next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認せよ",
             )
         return False
 
@@ -485,11 +485,8 @@ def pull_private_notes(private_notes: pathlib.Path) -> bool:
             _wi_sync.pull(private_notes)
     except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
         _next_action.report(
-            f"remote同期に失敗（子セッションを起動せず待機します）: {exc}",
-            next_action=(
-                f"`git -C {private_notes} status`で同期状態を確認し、競合やrebase中の状態を解消する。"
-                "解消後はprocess-loopが次の反復で再試行する"
-            ),
+            f"remote同期に失敗（子セッションを起動せず待機します）: {exc}。解消後はprocess-loopが次の反復で再試行する。",
+            next_action=(f"`git -C {private_notes} status`で同期状態を確認し、競合やrebase中の状態を解消せよ。"),
         )
         return False
     return True

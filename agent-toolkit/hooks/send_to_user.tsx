@@ -1,5 +1,6 @@
-import type { On } from "claude-code";
+import type { EngineInterface, On } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
+import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { deliverOnce, type LanguageCheck, languageCheckCommand, languageCheckResult, languageCheckUnavailable, withNotice } from "./response_language.ts";
 
 // Claude Codeは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIが返す要約（progress update）へ置き換えて表示する。
@@ -89,19 +90,33 @@ const UNINVESTIGATED_WARNING = automatedMessage(
 );
 const STATUS_MARKER = /AWI化ステータス:\s*(不要|予定)[ \t]*/g;
 
-// コードフェンスの中と引用行を除いた本文の行。例示と過去の文面の引用を報告として扱わない。
+// 気付いた改善点の抽出はPythonのruntime_inserted.reported_improvement_linesと同じ境界にする。
+// 送達ツールでは、30分点検の「改善案:」に続く項目も報告として受け取る。
 function reportedLines(message: string): string[] {
   const lines: string[] = [];
   let fence: string | undefined;
-  for (const line of message.split("\n")) {
+  let improvementList = false;
+  const text = message.replace(/<(atk-auto|agent-toolkit-auto-inserted|agent-toolkit-hook-message)(?:\s[^>]*)?>[\s\S]*?<\/\1>/g, "");
+  for (const line of text.split("\n")) {
     const marker = /^\s*(`{3,}|~{3,})/.exec(line);
     if (marker) {
       const run = marker[1]!;
       if (fence === undefined) fence = run;
       else if (run[0] === fence[0] && run.length >= fence.length) fence = undefined;
+      improvementList = false;
       continue;
     }
-    if (fence === undefined && !line.trimStart().startsWith(">")) lines.push(line);
+    if (fence !== undefined) continue;
+    if (/^ {0,3}改善案:[ \t]*$/.test(line)) {
+      improvementList = true;
+      continue;
+    }
+    if (/^ {0,3}(?:(?:[-*+]|\d+[.)])[ \t]+)?気付いた改善点:/.test(line)) {
+      lines.push(line);
+      continue;
+    }
+    if (improvementList && /^ {0,3}(?:[-*+]|\d+[.)])[ \t]+/.test(line)) lines.push(line);
+    else if (line.trim()) improvementList = false;
   }
   return lines;
 }
@@ -122,12 +137,42 @@ export function awiStatusWarnings(message: string): string[] {
   return [...warnings];
 }
 
+async function readGuidanceNotice($: EngineInterface, message: string, sessionId: string | undefined, failures: Map<string, string>): Promise<string | undefined> {
+  const lines = reportedLines(message);
+  if (!lines.length || sessionId === undefined) return undefined;
+  // Python側の共通抽出へ渡すため、点検の項目も通常の報告行へ正規化する。
+  const text = lines.map((line) => /^ {0,3}(?:(?:[-*+]|\d+[.)])[ \t]+)?気付いた改善点:/.test(line) ? line : `気付いた改善点: ${line}`).join("\n");
+  let diagnostic = "取得状態のprocess.runで例外が発生";
+  try {
+    const checked = await $.process.run(pluginLaunchCommand($.plugin.root, "agent_toolkit/hook.py", ["improvement_status_advisor"]), {
+      stdin: JSON.stringify({ session_id: sessionId, last_assistant_message: text }), timeoutMs: 30_000,
+    });
+    diagnostic = `終了コード ${checked.exitCode}、出力の切り詰め ${checked.isStdoutTruncated || checked.isStderrTruncated}`;
+    if (checked.exitCode !== 0 || checked.isStdoutTruncated || checked.isStderrTruncated) throw new Error(diagnostic);
+    diagnostic = "取得案内の出力をJSONとして解析できない";
+    const parsed: unknown = JSON.parse(checked.stdout);
+    diagnostic = "取得案内の出力が契約外";
+    if (parsed === null || typeof parsed !== "object") throw new Error("判定結果がobjectでない");
+    const specific = (parsed as { hookSpecificOutput?: { additionalContext?: unknown } }).hookSpecificOutput;
+    if (typeof specific?.additionalContext !== "string") throw new Error("取得案内の結果が契約外");
+    failures.delete(sessionId);
+    return specific.additionalContext || undefined;
+  } catch {
+    if (failures.get(sessionId) === diagnostic) return undefined;
+    failures.set(sessionId, diagnostic);
+    return automatedMessage("improvement-read", "warn", `改善点の判定資料の取得状態を確認できなかった。${diagnostic}。` +
+      `次の操作: Readのfile_pathに${JSON.stringify(`${$.plugin.root}/share/rules/rules-main.md`)}を指定し、「作業中の改善点の報告」の読込表から判定資料を読め。` +
+      "処置とAWI化ステータスを見直し、同じ障害が続く場合はこの診断を委譲元またはユーザーへ報告せよ。");
+  }
+}
+
 const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
 const INVALID_MESSAGE = automatedMessage("send-to-user", "block", "文字列のmessageが無いため、画面へ本文を表示していない。本文をmessageへ入れて呼び直せ。");
 
 export function register(on: On): void {
   // 判定に失敗した場合も、他のツールの呼び出しと本文の表示を止めない。判定不能の診断は会話ごとに1回だけ届ける。
   const delivered = new Map<string, string>();
+  const guidanceFailures = new Map<string, string>();
   on("tool.call", async ($, e, next) => {
     if (e.tool !== fullName($.plugin.name)) return next(e);
     const message = messageOf(e);
@@ -147,7 +192,8 @@ export function register(on: On): void {
     // 英語主体の検出でも判定は成功しているため、判定不能の既往を破棄してから拒否する。
     const note = deliverOnce(delivered, sessionId, check);
     if (check.kind === "violation") return { deny: check.deny };
-    return awiStatusWarnings(message).reduce(withNotice, withNotice({ result: DISPLAYED }, note));
+    const guidance = await readGuidanceNotice($, message, sessionId, guidanceFailures);
+    return awiStatusWarnings(message).reduce(withNotice, withNotice(withNotice({ result: DISPLAYED }, note), guidance));
   }).catch(($, e, next) => {
     if (e.tool !== fullName($.plugin.name)) return next(e);
     const message = messageOf(e);

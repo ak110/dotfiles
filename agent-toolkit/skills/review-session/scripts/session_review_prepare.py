@@ -40,6 +40,7 @@ from agent_toolkit._common import atomic_file, file_lock, session_review
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
@@ -237,7 +238,7 @@ def _read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
 def _parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
     """ensure_ascii=FalseとLFで生成したJSONLを、物理行の位置を保って読む。"""
     events = []
-    for number, line in enumerate(text.split("\n"), 1):
+    for number, line in enumerate(split_lines(text), 1):
         if not line.strip():
             continue
         try:
@@ -906,7 +907,7 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
             file_lock.acquire_lock(lock)
             try:
                 try:
-                    lines = path.read_text(encoding="utf-8").splitlines()
+                    lines = split_lines(path.read_text(encoding="utf-8"))
                 except FileNotFoundError:
                     lines = []
                 except OSError, UnicodeError:

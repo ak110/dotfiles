@@ -166,7 +166,7 @@ def _read_results(path: pathlib.Path, owners: dict[str, _ownership.Ownership]) -
         _log.append("result_foreign_repositories", detail=detail, result_path=str(path))
         _next_action.report(
             f"統括結果に今回の対象外のリポジトリがある: {path}: {detail}",
-            next_action="対応不要（今回の対象の結果だけを検収した）。繰り返す場合は統括の結果保存の手順を確認する",
+            next_action="対応不要（今回の対象の結果だけを検収した）。繰り返す場合は統括の結果保存の手順を確認せよ",
             stream=sys.stdout,
         )
     records: dict[str, RepositoryResult] = {}
@@ -533,22 +533,18 @@ def _run_loop(
                         print(f"アラート監視により{repository.repo_id}へ{submitted}件のAWIを投入しました。", flush=True)
                         submitted_any = True
                 except (OSError, ValueError) as error:
-                    retry = (
-                        "`atk wi process-loop --once`でDependabotを含む確認を再試行する"
-                        if once
-                        else "Dependabotを含む自動確認は常駐の次の取得時に再試行する"
-                    )
+                    retry = "`atk wi process-loop --once`でDependabotを含む確認を再試行せよ" if once else ""
                     next_action = (
                         f"{_log.log_path()}のrepository_alert_failedを確認し、原因の解消後に"
                         f"`atk wi check-alerts --target-repo {shlex.quote(str(repository.worktree))} "
-                        f"--forge {args.alert_forge}`でCI失敗を再確認する。"
-                        f"{retry}"
+                        f"--forge {args.alert_forge}`でCI失敗を再確認せよ。" + (retry if once else "")
                     )
                     _log.append(
                         "repository_alert_failed", target_repo=repository.repo_id, detail=str(error), next_action=next_action
                     )
                     _next_action.report(
-                        f"{repository.repo_id}のアラート確認に失敗しました: {error}",
+                        f"{repository.repo_id}のアラート確認に失敗しました: {error}。"
+                        + ("Dependabotを含む自動確認は常駐の次の取得時に再試行する。" if not once else ""),
                         next_action=next_action,
                         stream=sys.stdout,
                     )

@@ -193,6 +193,25 @@ def _stream(*events: dict[str, Any]) -> str:
     return "".join(json.dumps(event) + "\n" for event in events)
 
 
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
+def test_public_commit_preserves_unicode_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], separator: str
+) -> None:
+    """stream-jsonの結果本文をUnicode区切りで分断せず、公開出力へそのまま渡す。"""
+    repository = _repo(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(commit.config, "resolve_model_candidates", lambda *_args, **_kwargs: [("claude", "sonnet", "high")])
+    monkeypatch.setattr(commit, "_executable", lambda _engine: "/fake/claude")
+    text = f"前{separator}後"
+    stream = json.dumps({"type": "result", "result": text}, ensure_ascii=False) + "\n"
+    monkeypatch.setattr(commit, "_run_candidate", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout=stream))
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["commit", "--dry-run"])
+    captured = capsys.readouterr()
+    assert captured.out.partition("\n")[2] == text + "\n"
+    assert not captured.err
+
+
 def _claude_then_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, list[float]]:
     """Claude、Codexの順の候補で`atk commit`を起動する準備をし、リポジトリと待機秒数の記録先を返す。"""
     repository = _repo(tmp_path)

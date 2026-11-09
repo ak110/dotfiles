@@ -32,6 +32,7 @@ from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import mcp_environment as _mcp_environment
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.json_lines import split_lines
 
 PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 """process-loopが起動した会話を識別する環境印。"""
@@ -336,11 +337,11 @@ def _probe_usage_limit(
 ) -> UsageLimitState | None:
     """失敗した可用性判定が各engineの解除待ち対象の上限なら、その状態を返す。"""
     if orchestrator == "codex":
-        thread_id = _codex_usage_limit.thread_id_from_stream_lines((result.stdout or "").splitlines())
+        thread_id = _codex_usage_limit.thread_id_from_stream_lines(split_lines(result.stdout or ""))
         return _codex_usage_limit.from_thread(thread_id, codex_home=_host_homes.codex_home(env))
     if orchestrator != "claude":
         return None
-    usage_limit = _claude_usage_limit.from_stream_lines((result.stdout or "").splitlines())
+    usage_limit = _claude_usage_limit.from_stream_lines(split_lines(result.stdout or ""))
     return usage_limit if usage_limit is not None and usage_limit.is_wait_target else None
 
 

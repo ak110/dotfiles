@@ -15,7 +15,7 @@
 検査対象は「新規に書き込まれる側」（`content`/`new_string`）のみとする。
 本フックはPreToolUse登録matcherが`Write|Edit|MultiEdit`のみのため、`Bash`ツール呼び出し時は起動しない。
 予期せぬ例外の処理は共通エントリポイント（`pytools/claude_hook/__init__.py`）が担う。
-メッセージは英語で記述する（ユーザーの日本語思考コンテキストへのノイズ混入を避けるため）。
+エージェント宛てのメッセージは日本語の事実と命令形の次の操作で記述する。
 
 LLM宛て出力は`agent_toolkit._hooks.notice`の整形関数経由で整形する。
 プレフィックス／サフィックス規約と出力先フィールド（`reason`・`additionalContext`）の詳細は
@@ -121,9 +121,8 @@ _PS1_REQUIRED_DIRECTIVES: tuple[tuple[re.Pattern[str], str], ...] = (
 _PS1_DIRECTIVES_HEAD_LINES = 50
 
 _PS1_DIRECTIVES_FIX = (
-    "For Windows PowerShell 5.1 compatibility, add `Set-StrictMode -Version Latest`"
-    " and `$ErrorActionPreference = 'Stop'` near the top"
-    f" (within first {_PS1_DIRECTIVES_HEAD_LINES} lines, at line start), then write the file again."
+    "Windows PowerShell 5.1対応のため、`Set-StrictMode -Version Latest`と"
+    f"`$ErrorActionPreference = 'Stop'`を先頭{_PS1_DIRECTIVES_HEAD_LINES}行以内の行頭へ加え、再度書き込め。"
 )
 
 
@@ -147,7 +146,7 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
         head = "\n".join(normalized.splitlines()[:_PS1_DIRECTIVES_HEAD_LINES])
         missing = [label for pattern, label in _PS1_REQUIRED_DIRECTIVES if pattern.search(head) is None]
         if missing:
-            return f"{tool_name}.{field}: missing required PowerShell directives: {', '.join(missing)}. Target: {file_path}"
+            return f"{tool_name}.{field}のPowerShell必須ディレクティブが欠けている: {', '.join(missing)}。対象: {file_path}"
     return None
 
 
@@ -166,9 +165,9 @@ _PERSONAL_PROJECTS_OSS: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
 # 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_PRIVATE` との非衝突など) を確認する。
 _EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"atk"})
 
-_DOTFILES_SPECIFIC_NAMES_FIX = "Replace the identifiers with generalized wording, then edit the distribution file again."
+_DOTFILES_SPECIFIC_NAMES_FIX = "検出した固有名を一般化した表現へ置き換え、同じ編集ツールで配布物を再編集せよ。"
 _POSSIBLY_DOTFILES_NAMES_FIX = (
-    "Verify each reference is an intentional and accurate OSS reference; otherwise replace it with generalized wording."
+    "検出した各参照が意図した正確なOSS参照か確かめよ。該当しなければ一般化した表現へ置き換えて再編集せよ。"
 )
 
 
@@ -193,20 +192,13 @@ def _check_dotfiles_specific_names(
     oss_hits = _collect_word_hits(tool_name, fields, oss_names)
     specific_msg: str | None = None
     if specific_hits:
-        specific_msg = (
-            "agent-toolkit distribution must not contain dotfiles-specific identifiers."
-            f" Hits: {'; '.join(specific_hits)}."
-            " Personal skill names, pytools commands, scripts, and personal project names"
-            " like glatasks/gv/lc/smpr leak repository internals."
-            f" Target: {file_path}"
-        )
+        specific_msg = f"agent-toolkit配布物にdotfiles固有名を検出した: {'; '.join(specific_hits)}。対象: {file_path}"
     oss_msg: str | None = None
     if oss_hits:
         oss_msg = (
-            "agent-toolkit distribution references possibly dotfiles-related projects: "
+            "agent-toolkit配布物にOSSとして参照される個人プロジェクト名を検出した: "
             + "; ".join(oss_hits)
-            + ". These names are personal projects but commonly referenced as OSS."
-            f" Target: {file_path}"
+            + f"。対象: {file_path}"
         )
     return specific_msg, oss_msg
 

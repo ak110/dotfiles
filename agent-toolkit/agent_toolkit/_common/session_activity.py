@@ -31,6 +31,7 @@ from agent_toolkit._common import (
 )
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.json_lines import split_lines
 
 
 @dataclasses.dataclass(frozen=True)
@@ -513,7 +514,7 @@ def _turn_state(record: Mapping[str, Any], *, since: float | None = None) -> str
             size = stream.tell()
             stream.seek(max(0, size - 65536))
             tail = stream.read()
-        lines = tail.splitlines()
+        lines = split_lines(tail)
         if size > 65536:
             lines = lines[1:]
         for line in reversed(lines):

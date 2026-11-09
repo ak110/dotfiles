@@ -1,6 +1,6 @@
 # ドキュメント品質
 
-品質基準の正式な提供元は、`agent-basics:writing-standards/references/writing.md`である。呼び出し元の条件と節指定を引き継ぎ、本書の運用条件と正式な資料の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`../SKILL.md`「名指し参照の読込方法」に従う。
+文章全般の品質基準は`agent-basics:writing-standards/references/writing.md`、入力素材の基準は同referencesの`input-material.md`で定義する。呼び出し元の条件と節指定に合う資料から、本書の運用条件と品質基準の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`../SKILL.md`「名指し参照の読込方法」に従う。
 
 以下はagent-toolkitが所有する運用条件である。
 
@@ -11,6 +11,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
+| ユーザーの入力素材を整理して取り込む前 | `agent-basics:writing-standards/references/input-material.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/input-material.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/textlint-violations.md#「textlint指摘への修正方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/textlint-violations.md#「textlint指摘への修正方針」` |

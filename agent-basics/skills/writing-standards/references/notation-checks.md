@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples-llm-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `input-material.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/input-material.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
 | 手順6で診断へ対応する前 | `textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |
 
@@ -34,7 +34,7 @@
 
 ### 逐語引用の検出範囲
 
-原文の改変が許されない逐語引用の書式ルールは、`writing.md`の「ユーザー入力素材の取扱い」に規定されている。
+原文の改変が許されない逐語引用の書式ルールは、`input-material.md`の「ユーザー入力素材の取扱い」に規定されている。
 各チェックツールにおける逐語引用箇所の検出対象範囲は次のとおりである。
 
 | チェック項目 | 引用ブロック（`>`）の内側 | フェンス付きコードブロック（````）の内側 |

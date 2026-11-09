@@ -108,7 +108,7 @@ test("CronListの必要項目を検査し、不明なtaskを回収判断へ渡�
   }
 });
 
-test("main start creates one task from json: taskを持たないメインのstartはJSONのcronとpromptで1件作成し、task IDを文脈へ届ける", async ($, on) => {
+test("taskを持たないメインのstartはJSONのcronとpromptで1件作成し、確認手順を届ける", async ($, on) => {
   const recorded = engine(on, { createdId: "cron-main" });
   const result = await $.tool.call(START_INPUT);
   expect(result.deny).toBeUndefined();
@@ -120,7 +120,8 @@ test("main start creates one task from json: taskを持たないメインのstar
   expect(argv[8]).toBe(argv[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
   expect(argv.slice(9)).toEqual(["wait-schedule"]);
   expect(result.context?.length).toBe(1);
-  expect(result.context?.[0]).toContain("task ID: cron-main");
+  expect(result.context?.[0]).toMatch(/作成した.*references\/claude-code-runtime.md.*従え/);
+  expect(result.context?.[0]).not.toMatch(/task ID:|request bucket:|cron-main/);
   expect(result.context?.[0]).toContain('kind="notice"');
   expect(result.context?.[0]?.endsWith("\n</atk-auto>")).toBe(true);
 });
@@ -168,7 +169,7 @@ test("CronCreateが拒否されたら理由と案内を届ける", async ($, on)
   const result = await $.tool.call(START_INPUT);
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(result.context?.[0]).toContain("classifier denied");
-  expect(result.context?.[0]).toContain("必要な許可と公開状態");
+  expect(result.context?.[0]).toMatch(/許可と公開状態を確認せよ/);
 });
 
 test("cron式を得られなければCronCreateを呼ばずに案内を届ける", async ($, on) => {
@@ -360,7 +361,7 @@ test("許可の回復後は自動作成し、既存taskを再利用し、正常�
   options.decisions = {};
   const mounted = await $.tool.call(START_INPUT);
   expect(mounted.context?.length).toBe(1);
-  expect(mounted.context?.[0]).toContain("task ID: cron-1");
+  expect(mounted.context?.[0]).toMatch(/作成した/);
   expect((await $.tool.call(START_INPUT)).context ?? []).toEqual([]);
   expect(recorded.created.length).toBe(1);
   // taskを失った後に作成の許可を再び失うと、正常化の後に生じた失敗として届ける。

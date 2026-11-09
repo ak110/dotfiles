@@ -4,13 +4,15 @@ import { exitStatePath } from "./session_exit.ts";
 
 // Python側のclaude_usage_limit.RECHECK_SECONDSと同じ再確認間隔を使う。
 const RECHECK_MS = 300_000;
-export const USAGE_LIMIT_RESUME_PROMPT = automatedMessage(
-  "usage-limit-resume",
-  "notice",
-  "利用上限で中断した作業を解除後に再開する発火である。" +
-    "agent-toolkit:user-confirmation-and-reportのreferences/usage-limit.mdに従って再開情報を読み、最初の未完了工程から続けよ。" +
-    "未完了の作業が無い場合、既に続行済みの場合、ユーザーが中止を指示している場合は、何もせず終えよ。",
-);
+export function usageLimitResumePrompt(root: string): string {
+  return automatedMessage(
+    "usage-limit-resume",
+    "notice",
+    `Readのfile_pathに${JSON.stringify(`${root}/skills/user-confirmation-and-report/references/usage-limit.md`)}を指定し、` +
+      "同書に従って再開情報を取得し、最初の未完了工程から続けよ。" +
+      "未完了の作業が無い場合、既に続行済みの場合、ユーザーが中止を指示している場合は、何もせず終えよ。",
+  );
+}
 
 function maximumWindow(windows: SessionRateLimit[]): SessionRateLimit | undefined {
   return windows.filter((window) => window.kind === "five_hour" || window.kind === "seven_day")
@@ -79,6 +81,6 @@ async function schedule($: EngineInterface, state: Reservation): Promise<void> {
       return;
     }
     $.ui.status(undefined);
-    await $.prompt.submit({ text: USAGE_LIMIT_RESUME_PROMPT });
+    await $.prompt.submit({ text: usageLimitResumePrompt($.plugin.root) });
   });
 }

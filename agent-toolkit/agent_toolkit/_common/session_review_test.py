@@ -8,6 +8,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import types
 
 import pytest
 
@@ -41,7 +42,8 @@ def test_launch_receipt_transfers_failure_ownership(tmp_path: pathlib.Path, monk
     assert session_review.launch_notice() is None
 
 
-def test_launch_owner_interruption_is_reported_once(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("windows", [False, True])
+def test_launch_owner_interruption_is_reported_once(monkeypatch: pytest.MonkeyPatch, windows: bool) -> None:
     path = session_review.directory() / "launches" / ("a" * 32 + ".json")
     session_review.write(
         path,
@@ -54,7 +56,12 @@ def test_launch_owner_interruption_is_reported_once(monkeypatch: pytest.MonkeyPa
         },
     )
     monkeypatch.setattr(session_review.session_registry.ProcessIdentity, "exists", lambda _self: False)
-    assert "受付前に終了" in (session_review.launch_notice() or "")
+    monkeypatch.setattr(session_review, "os", types.SimpleNamespace(name="nt" if windows else "posix"))
+    notice = session_review.launch_notice() or ""
+    assert "受付前に終了" in notice
+    assert "診断.log" in notice
+    assert ("Get-Content -LiteralPath" if windows else "cat --") in notice
+    assert "`/agent-toolkit:review-session batch`を実行せよ" in notice
     assert session_review.launch_notice() is None
 
 

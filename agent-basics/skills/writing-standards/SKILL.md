@@ -60,10 +60,11 @@ description: >
 | メール・チャットを書く時 | `references/writing-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-messages.md` | |
 | 論文・調査報告を書く時 | `references/writing-research.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-research.md` | |
 | 脚本・台本を書く時 | `references/writing-scripts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-scripts.md` | |
-| ユーザーの入力素材を整理して取り込む時 | `references/writing.md`の「ユーザー入力素材の取扱い」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` | |
+| ユーザーの入力素材を整理して取り込む時 | `references/input-material.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/input-material.md` | |
 | 依存パッケージ、コンテナーイメージ、言語処理系、CI・自動ビルドのツールやactionの版指定を選ぶ・変える作業の起草、計画、実装、レビューの時。配布物が渡す`uvx --from`、`dependencies`、`uv run --with`、PEP 723の版指定やPython対応版の追加も含む | `references/dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` | |
 | ロゴ、ワードマーク、ブランドマークとそのアイコン展開を制作・改訂する時（その計画・作業項目の起草を含む） | `references/logo-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/logo-quality.md` | |
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューの時 | `references/ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` | |
+| Web性能の改善・設計・レビューを行う時 | `references/ui-ux.md`の「アクセシビリティと性能」と`references/ui-ux-web-rules.md`の「アニメーション、画像、パフォーマンス」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/ui-ux.md#「アクセシビリティと性能」`、`section:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md#「アニメーション、画像、パフォーマンス」` | |
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、自動で切り替わる表示、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
 | ユーザーが法令上の義務やプライバシーの確認を依頼した時と、不特定のエンドユーザーへ公開・提供するWebサービスやアプリで、第三者サーバーからのリソース読み込みや解析・広告タグ、操作や入力の記録、宣伝メールの一斉送信、定期課金、エンドユーザーの投稿の公開または会員登録を新設・変更する時（その計画・作業項目の起草またはレビューを含む）。自分用ツール、社内システム、ユーザーが自分で開く単体HTML成果物は、確認の依頼と社外の不特定のエンドユーザーへ公開範囲を広げる変更の場合だけ該当する | `references/public-service-obligations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/public-service-obligations.md` | |
 | 起動時 | `references/quality-principles.md` | 起動時 | `skill:writing-standards` | |
@@ -122,7 +123,8 @@ description: >
 
 ## コードの編集時に読む資料
 
-コードの編集やコードレビュー（変更差分の確認）に着手する前に、`references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」「文書種別ごとの注意点」と、以降の技術別・工程別の表で該当する資料を読む。
+コードの編集やコードレビュー（変更差分の確認）に着手する前に、`references/writing.md`の「文章の共通規定」「読み手別の追加注意点」「構成・構造」「日本語の書き方」「改訂・保守」「文書種別ごとの注意点」を読む。
+同じ時点で`references/program-messages.md`と、以降の技術別・工程別の表で該当する資料を読む。
 成果物として残さない使い捨ての一時コードは、言語別の必須読込の対象外とする。安全性、認可、データ保全の制約は維持し、成果物へ取り込む段階で該当する品質基準を適用する。
 
 | 時点または条件（対象の拡張子・ファイル名・パス・依存名） | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
@@ -147,6 +149,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `references/design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` | |
+| コードの編集やコードレビューを行う時 | `references/program-messages.md` | 判断 | `skill:writing-standards` | |
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` | |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics.md`の「設計案の予備選別」から「設計品質の劣化確認」まで（各節の適用条件を保つ） | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」から「設計品質の劣化確認」まで` | |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/mcp-server-design.md` | |
@@ -174,7 +177,7 @@ description: >
 | 遮断・警告を返すhookの判定を新設・変更する時と、hookを置くか、遮断と警告のどちらにするかを判定する時 | `references/claude-hooks-block-warn.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn.md` | |
 | hookの出力フィールドを選ぶ時と、`PermissionRequest`・`UserPromptSubmit`のhookを新設・変更する時 | `references/claude-hooks-output.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output.md` | |
 | `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop.md` | |
-| 遮断・警告・定型の通知を出力するhookを新設・変更する時と、hookなどの生成元がエージェントへ直接渡す本文（記述言語と出所を示す標識）を新設・改訂する時 | `references/claude-hooks-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md` | |
+| hookなどの生成元がエージェントへ直接渡す通知本文・`fix`・次の操作・圧縮時に会話へ入れる本文を新設・変更する時（受信側、命令形、具体的な操作、言語と標識の書き方を含む） | `references/claude-hooks-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md` | |
 | auto modeのカスタムルール編集 | `references/auto-mode.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/auto-mode.md` | |
 | auto modeのカスタムルール編集 | `references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` | |
 | 機械チェックスクリプトの新設・改修 | `references/check-script-design.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/check-script-design.md` | |

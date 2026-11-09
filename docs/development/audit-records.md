@@ -79,6 +79,14 @@ marker保持側は終了0、除去側はzstandard 0.25.0のビルドに到達し
 `update`から`$(MAKE) ci-deps-check`を除いたMakefileでは、同じ試験が失敗することを確かめる。
 `make -n update`では両lockの更新後に`ci-deps-check`の`docker run`が出力された。
 
+## .claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年11月9日
+
+pyfltr 3.27.0の`uv run --frozen pyfltr config list --all --output-format json`で、`mypy-fast`・`pylint-fast`・`pyright-fast`がfalse、`ruff-check-fast`がtrueであることを確認した。
+実効値の取得は設定だけを照会し、各ツールを実行した観測とは区別する。
+再検証では同じコマンドの`values`にある各キーの`value`を読み、計画のツール集合と比較する。
+実行済みの集合・対象・終了状態は`pyfltr list-runs`と`pyfltr show-run <run_id>`から個別に確認する。
+fastから不足するツールがあれば、その成功だけで計画のlint全体を置き換えない。
+
 ## .claude/skills/merge-pr/SKILL.md：マージ前の確認事項：2026年10月5日
 
 2026年10月5日、GitHub CLI 2.101.0でPR #138のcheck登録順を確認した。run `37327087407`は同じPR headの`push`起点CIであり、run `37329129743`は`pull_request`起点CIであった。後者の`statusline-version`は先行するcheckの観測後に非同期で登録された。同じheadとcheck名だけでは起点を識別できず、PR起点checkの登録前に必須checkの集合を完全と判定できない。

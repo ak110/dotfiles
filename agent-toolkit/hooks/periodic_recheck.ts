@@ -38,7 +38,7 @@ function notMounted(reason: string): MountOutcome {
     note: notice(
       "warn",
       `agent-toolkitのmodは定期再確認を装着できなかった（理由: ${reason}）。` +
-        `taskの自動回収に必要な許可と公開状態を確認せよ。待機は${RUNTIME_REFERENCE}の完了通知と終了観測で続けよ。`,
+        `理由に示したツールの許可と公開状態を確認せよ。待機は${RUNTIME_REFERENCE}の完了通知と終了観測で続けよ。`,
     ),
     failed: true,
   };
@@ -140,9 +140,7 @@ async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
   return {
     note: notice(
       "notice",
-      `agent-toolkitのmodが定期再確認のtaskを作成した（task ID: ${createdTask.id}、cron: ${cron}、` +
-        `request bucket: main）。全待機対象の終了と結果回収後にmodが共通promptのtaskを自動回収する。` +
-        `追加義務付きのtaskはセッション終了時に回収する。再利用とresume・compaction後の確認は${RUNTIME_REFERENCE}に従え。`,
+      `定期再確認のtaskを作成した。再利用とresume・compaction後の確認は${RUNTIME_REFERENCE}に従え。`,
     ),
     failed: false,
   };

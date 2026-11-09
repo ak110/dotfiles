@@ -715,3 +715,53 @@ def test_share_variable_and_absolute_role_keep_their_own_version(tmp_path):
     # 役割名だけの指定は従来どおり渡されたrootで解決し、稼働版に無い役割は欠落として報告する。
     with pytest.raises(ValueError, match="役割文書が存在しない"):
         read_triggers.parent_contract_targets("new-review", running / "agent-toolkit")
+
+
+@pytest.mark.parametrize(
+    "operation,expected,excluded",
+    [
+        ("body-writing", "writing.md", {"program-messages.md", "input-material.md"}),
+        ("skill:writing-standards", "program-messages.md", {"input-material.md"}),
+        (
+            "read:agent-basics:*/skills/writing-standards/references/input-material.md",
+            "input-material.md",
+            {"program-messages.md"},
+        ),
+    ],
+    ids=["ordinary-prose", "code-edit", "input-material"],
+)
+def test_writing_entry_routes_select_purpose_specific_material(operation, expected, excluded):
+    """現物の読込表を解析し、文章・コード・素材の各操作が必要な専用資料を選ぶ。"""
+    root = pathlib.Path(__file__).resolve().parents[2]
+    source = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
+    rows = read_triggers.parse_tables(source, root, strict=True)
+    selected = [row for row in rows if operation in row.operations]
+    targets = [target for row in selected for target in row.targets]
+    assert any(target.path.name == expected and target.body().strip() for target in targets)
+    assert not excluded.intersection(target.path.name for target in targets)
+    if operation == "body-writing":
+        prose = "\n".join(target.body() for target in targets if target.path.name == "writing.md")
+        assert "## ユーザー入力素材の取扱い" not in prose
+        assert "プログラムが出力するメッセージ" not in prose
+
+
+@pytest.mark.parametrize(
+    "condition_terms",
+    [("通知本文", "新設"), ("次の操作", "変更")],
+    ids=["typescript-notice-creation", "python-next-action-change"],
+)
+def test_hook_message_judgment_route_reaches_message_and_program_material(condition_terms):
+    """通知の新設・次操作の変更で選ぶ条件から、通知基準と出力基準の実本文へ辿れる。"""
+    root = pathlib.Path(__file__).resolve().parents[2]
+    source = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
+    rows = read_triggers.parse_tables(source, root, strict=True)
+    selected = [row for row in rows if all(term in row.condition for term in condition_terms)]
+    hook_material = source.parent / "references/claude-hooks-messages.md"
+    routes = [row for row in selected if hook_material in row.documents]
+    assert routes and all(row.kind == "判断" for row in routes)
+    targets = [target for row in routes for target in row.targets if target.path == hook_material]
+    assert all(target.body().strip() for target in targets)
+    followups = read_triggers.parse_tables(hook_material, root, strict=True)
+    program_material = source.parent / "references/program-messages.md"
+    assert any(program_material in row.documents for row in followups)
+    assert any(target.path == program_material and target.body().strip() for row in followups for target in row.targets)

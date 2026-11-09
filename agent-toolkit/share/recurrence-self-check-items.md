@@ -6,7 +6,7 @@
 
 - 対象条件: プログラムが出力するエラー、警告、スキップ通知、待機の中断、または状態値の文面を差分で新設または変更していること。例外メッセージ、ログ出力、標準エラー出力、終了時のメッセージ表示、シェルスクリプト・CI・Makefileの出力メッセージなどを含む。
 - 確認内容: 各文面に観測された事実が明記され、メッセージの受信側が実行できる具体的な後続操作が示されていること。提示する操作を実行できないことが事前に判明している場合は、代替手段または問い合わせ先が案内されていること。型定義や共通出力関数によって後続操作の指定が必須化されている出力は対象外とする。
-- 根拠規範: `agent-basics:writing-standards/references/writing.md`「読み手別の追加注意点」におけるプログラムが出力するメッセージの項。
+- 根拠規範: `agent-basics:writing-standards/references/program-messages.md`「出力の基準」。
 
 ## 共通機構の是正が作用する全種類に届く
 
@@ -22,5 +22,5 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 項目「失敗・警告の文面に次の操作がある」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:writing-standards/references/writing.md#「読み手別の追加注意点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「読み手別の追加注意点」` |
+| 項目「失敗・警告の文面に次の操作がある」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:writing-standards/references/program-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/program-messages.md` |
 | 項目「共通機構の是正が作用する全種類に届く」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-analysis.md#「直接的原因と事象時点の確定」` |

@@ -34,6 +34,7 @@ from agent_toolkit._atk.environment import is_agent_environment, is_human_termin
 from agent_toolkit._common import delegated_session, session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.next_action import ActionableError, report, with_next_action
 from agent_toolkit._common.wait_schedule import get_cli_wait_timeout
 
@@ -158,7 +159,7 @@ def _saved_wait_recovery(run_path: pathlib.Path | None) -> dict[str, Any]:
     if value.stream != "stdout":
         return {**base, "status": "no-results"}
     try:
-        rows = [json.loads(line) for line in output.splitlines() if line.strip()]
+        rows = [json.loads(line) for line in split_lines(output) if line.strip()]
     except json.JSONDecodeError as exc:
         return {**base, "status": "unreadable", "reason": str(exc)}
     results = [
@@ -851,7 +852,7 @@ def _public_wait_output(output: str, stream: str | None) -> str:
         return output
     return "\n".join(
         json.dumps(_public_wait_response(json.loads(line)), ensure_ascii=False, separators=(",", ":"))
-        for line in output.splitlines()
+        for line in split_lines(output)
     )
 
 
@@ -859,7 +860,7 @@ def _without_bodies(output: str, stream: str) -> str:
     """run記録へ残す出力から、本文ファイルが持つ`agent_message`を除く。"""
     if stream == "stderr":
         return output
-    rows = [json.loads(line) for line in output.splitlines() if line.strip()]
+    rows = [json.loads(line) for line in split_lines(output) if line.strip()]
     for row in rows:
         if isinstance(row.get("agent_message_path"), str):
             row.pop("agent_message", None)
@@ -888,7 +889,7 @@ def _print_public(output: str, stream: str | None) -> None:
     if stream == "stderr":
         print(output, file=sys.stderr, flush=True)
         return
-    rows = [_with_body(json.loads(line)) for line in output.splitlines() if line.strip()]
+    rows = [_with_body(json.loads(line)) for line in split_lines(output) if line.strip()]
     if not is_agent_environment():
         print("\n".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in rows), flush=True)
         return

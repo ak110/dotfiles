@@ -253,12 +253,12 @@ class TestUserConfirmationSkillPrompt:
         module = _SCRIPTS_DIR.parent / "hooks" / "usage_limit_resume.ts"
         script = tmp_path / "usage-limit-prompt.mjs"
         script.write_text(
-            "const {USAGE_LIMIT_RESUME_PROMPT} = await import(process.argv[2]);\n"
-            "process.stdout.write(USAGE_LIMIT_RESUME_PROMPT);\n",
+            "const {usageLimitResumePrompt} = await import(process.argv[2]);\n"
+            "process.stdout.write(usageLimitResumePrompt(process.argv[3]));\n",
             encoding="utf-8",
         )
         generated = subprocess.run(
-            ["node", str(script), module.as_uri()],
+            ["node", str(script), module.as_uri(), str(_SCRIPTS_DIR.parent)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -268,6 +268,9 @@ class TestUserConfirmationSkillPrompt:
         )
         assert generated.returncode == 0, generated.stderr
         assert generated.stdout.startswith('<atk-auto source="usage-limit-resume" kind="notice">\n')
+        document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/references/usage-limit.md"
+        assert document.is_file()
+        assert f"Readのfile_pathに{json.dumps(str(document), ensure_ascii=False)}を指定" in generated.stdout
         self._session_start("startup", tmp_path)
         before = _read_state(tmp_path, "confirm")
         assert not self._has_notice(self._prompt(generated.stdout, tmp_path))

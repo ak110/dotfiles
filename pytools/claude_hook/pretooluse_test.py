@@ -192,7 +192,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.returncode == 0
         message = _get_additional_context(result)
         assert name in message
-        assert "generalized wording" in message
+        assert "せよ" in message
         assert '<atk-auto source="dotfiles/claude_hook_pretooluse"' in message
 
     def test_warn_in_agent_toolkit_rules(self):

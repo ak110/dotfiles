@@ -201,7 +201,7 @@ class TestWaitForChanges:
         # 待機を続ける旨と、繰り返す場合の確認コマンドを次の操作として続ける。
         next_action = stderr.split("\n次の操作: ", 1)[1]
         assert next_action.startswith("対応不要（待機は継続した）")
-        assert "status`で同期状態を確認する" in next_action
+        assert f"git -C {private_notes} status" in next_action and "確認せよ" in next_action
 
     def test_change_event_skips_pull(
         self,

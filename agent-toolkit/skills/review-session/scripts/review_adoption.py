@@ -19,6 +19,7 @@ from cost_metrics import _history, saved_review_tables
 from session_evidence_stats import _parse_cli_timestamp
 
 from agent_toolkit._common import private_notes
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_identity import distinct_identities
 
 # 実行レビュー担当の記録だけを選ぶ標識。agents_serverは役割文書の所在を`出所:`の行で最初の入力へ配送する。
@@ -49,7 +50,7 @@ def _record_identity(path: Path, text: str) -> str:
     """実行レビュー担当の記録の本文から、観測したモデルを`engine:model/effort`で返す。"""
     runtime = "codex" if "/.codex/" in path.as_posix() or path.name.startswith("rollout-") else "claude"
     entries = []
-    for line in text.splitlines():
+    for line in split_lines(text):
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:

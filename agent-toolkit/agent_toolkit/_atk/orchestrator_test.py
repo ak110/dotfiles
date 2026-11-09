@@ -4,13 +4,43 @@ import json
 import os
 import pathlib
 import stat
+import subprocess
 import sys
 import types
 
 import pytest
 
 from agent_toolkit._atk import orchestrator
-from agent_toolkit._common import mcp_environment
+from agent_toolkit._common import claude_usage_limit, codex_usage_limit, mcp_environment
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+def test_probe_usage_limit_preserves_unicode_json(monkeypatch: pytest.MonkeyPatch, engine: str) -> None:
+    """実際の間接decoderへ、Unicode区切りを含むJSONイベントを物理行のまま渡す。"""
+    thread_id = "01234567-89ab-cdef-0123-456789abcdef"
+    event = (
+        {"type": "thread.started", "thread_id": thread_id}
+        if engine == "codex"
+        else {"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "rateLimitType": "five_hour"}}
+    )
+    event["note"] = "前\u2028中\u2029後\u0085末"
+
+    def from_thread(
+        selected: str | None, *, codex_home: pathlib.Path | None = None, **_kwargs: object
+    ) -> codex_usage_limit.UsageLimitState:
+        assert selected == thread_id
+        assert codex_home is not None
+        return codex_usage_limit.UsageLimitState(1234, "five_hour")
+
+    monkeypatch.setattr(codex_usage_limit, "from_thread", from_thread)
+    result = subprocess.CompletedProcess([], 1, stdout=json.dumps(event, ensure_ascii=False) + "\n")
+    actual = orchestrator._probe_usage_limit(engine, result, {})  # pylint: disable=protected-access
+    expected = (
+        codex_usage_limit.UsageLimitState(1234, "five_hour")
+        if engine == "codex"
+        else claude_usage_limit.UsageLimitState("rejected", "five_hour", None)
+    )
+    assert actual == expected
 
 
 def test_child_env_strips_conversation_context_and_preserves_explicit_session_values(monkeypatch: pytest.MonkeyPatch) -> None:

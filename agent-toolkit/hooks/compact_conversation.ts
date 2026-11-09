@@ -22,7 +22,7 @@ export const COMPACT_CONVERSATION_TOOL = {
 };
 
 // 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。委譲先への登録と呼び出しの除外は`register.ts`が行う。
-export const COMPACT_CONVERSATION_DELEGATED_DENY = "メインの会話で使うツール。";
+export const COMPACT_CONVERSATION_DELEGATED_DENY = "メイン専用のツールであり、圧縮は予約していない。委譲元へ必要な作業状態を最終応答で返せ。";
 
 type BackgroundWait = { id: string; command: string; used: boolean };
 type Decision = { at: string; task: string; reason: string; tokens?: number; window?: number; pending: boolean; paused: boolean; turnRunning: boolean };
@@ -88,7 +88,7 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
   } catch (error) {
     // 同じ背景待機を自動再試行せず、通常の結果回収を続ける。
     wait.used = true;
-    $.ui.toast(automatedMessage("compact-conversation", "warn", `待機時の会話圧縮を見送った。結果回収を続ける。原因: ${String(error)}`));
+    $.ui.toast(automatedMessage("compact-conversation", "warn", `待機時の会話圧縮を見送った。原因: ${String(error)}。保持した待機識別子で結果回収を続けよ。`));
   }
 }
 
@@ -138,9 +138,8 @@ export function register(on: On, session: { delegated: boolean }): void {
       messages: [{
         role: "user" as const,
         text: automatedMessage("compact-conversation", "notice",
-          `会話の要約生成を省き、保存済みの原本から作業を復元する。\n会話ID: ${sessionId}\n原本ログ: ${JSON.stringify(path)}\n` +
-          "現行の作業契約、計画・進捗、引き継ぎ記録と、原本の当初の依頼・最新の訂正・認可・未完了の操作を確認し、同じ工程から続けよ。" +
-          "原本は発話順・主体・参照位置を保ち、必要な本文を範囲指定で取得する。要約や固定長で省略した断片だけで要求と認可を確定しない。"),
+          "会話の要約は生成していない。SessionStartの圧縮後通知にある原本取得コマンドを実行し、" +
+          "現行の作業契約、計画・進捗、引き継ぎ記録と原文から、同じ未完了工程を復元せよ。"),
         toolUses: [],
       }],
     };

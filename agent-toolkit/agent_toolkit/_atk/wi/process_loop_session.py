@@ -314,7 +314,7 @@ def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None
     再回収する操作を示す。回収の失敗は戻り値へ記録して送出せず、呼び出し側の残りの終了処理
     （他担当の終了と回収、再起動判断）を続けさせる。
     """
-    next_action = f"残存理由を解消し、atk lane delete --session-id {lane_session_id}を実行する"
+    next_action = f"残存理由を解消し、atk lane delete --session-id {lane_session_id}を実行せよ"
     scope = "" if target_repo is None else f"{target_repo}: "
     fields: dict[str, Any] = {} if target_repo is None else {"target_repo": target_repo}
     try:

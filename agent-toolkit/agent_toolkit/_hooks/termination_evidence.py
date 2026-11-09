@@ -48,8 +48,8 @@ TARGET_SKILLS = ("process-wi", "add-awi-by-user")
 """開始した時点で成果作業となるスキルの短縮名。適用条件は`report-completion/SKILL.md`「工程」の工程9に従う。"""
 
 _UNRESOLVED_REPOSITORY_FIX = (
-    "この作業では省略を記録できないため、`agent-toolkit:report-completion`を起動して終了工程を進める。"
-    "規範がその起動を禁じる場合は、その旨をユーザーへ報告する。"
+    "この作業では省略を記録できない。`agent-toolkit:report-completion`を起動して終了工程を進めよ。"
+    "規範がその起動を禁じる場合は、その旨をユーザーへ報告せよ。"
 )
 
 
@@ -67,9 +67,9 @@ class _InactiveWaitError(ValueError):
 
 _HOST_STOP_FIX = (
     "利用上限の猶予通知とホストによる背景コマンドの停止は技術的不成立に当たらない。"
-    "猶予通知は`agent-toolkit:user-confirmation-and-report`の`references/usage-limit.md`に従い同じ工程を続ける。"
-    "ホストが再開を禁じた処理は再開の可否をユーザーへ確認する。"
-    "協調モードは`AskUserQuestion`、自律モードはUWIを投入し`wait`の`uwi_file`で記録する。"
+    "猶予通知は`agent-toolkit:user-confirmation-and-report`の`references/usage-limit.md`に従い同じ工程を続けよ。"
+    "ホストが再開を禁じた処理は再開の可否をユーザーへ確認せよ。"
+    "協調モードは`AskUserQuestion`を使え。自律モードはUWIを投入し`wait`の`uwi_file`で記録せよ。"
 )
 
 
@@ -860,7 +860,8 @@ def record_decision(document: dict[str, Any]) -> str:
                 active = agents_server_observations.actively_waited_session_ids([target])
                 if child.get("pending_observation") is not True and target not in active:
                     raise _InactiveWaitError(
-                        f"対象sessionの有効なCLI待機がありません: {target}。実際の待機を開始するか回収後の残工程へ戻る"
+                        f"対象sessionの有効なCLI待機がありません: {target}。"
+                        "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ"
                     )
                 evidence["target_session_id"] = target
             else:
@@ -1094,7 +1095,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("判断記録はJSONオブジェクトで渡す")
         work_id = record_decision(document)
     except (OSError, UnicodeError, ValueError) as error:
-        recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行する"
+        recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行せよ"
         if isinstance(error, _UnresolvedRepositoryError):
             recovery = _UNRESOLVED_REPOSITORY_FIX
         elif isinstance(error, _FailureEvidenceError):
@@ -1103,10 +1104,7 @@ def main(argv: list[str] | None = None) -> int:
                 + _HOST_STOP_FIX
             )
         elif isinstance(error, _InactiveWaitError):
-            recovery = (
-                "実際の待機を開始するか回収後の残工程へ戻る。ホストが待機を停止して再開にユーザーの指示を要する場合は、"
-                + _HOST_STOP_FIX
-            )
+            recovery = "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ。" + _HOST_STOP_FIX
         next_action.report(
             str(error),
             next_action=recovery,
