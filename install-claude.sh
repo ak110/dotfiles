@@ -106,25 +106,43 @@ _require_command() {
     fi
 }
 
+# 失敗すると導入を続けられない Claude CLI の更新を実行する。
+# 成功時は標準出力を抑える。CLI が失敗診断を標準出力へ書く場合があるため、失敗時は捕捉した標準出力も表示する。
+# 標準エラーは捕捉せずそのまま流し、成功時の警告表示を従来どおり保つ。
+_run_required_claude() {
+    local output=""
+    local status=0
+    output=$(claude "$@") || status=$?
+    if [ "$status" -eq 0 ]; then
+        return 0
+    fi
+    if [ -n "$output" ]; then
+        printf '%s\n' "$output" >&2
+    fi
+    echo "失敗したコマンド: claude $*（終了コード: $status）" >&2
+    echo "次の操作: 上の診断から原因を解消し、失敗したコマンドを再実行して成功を確認してから、install-claude.shを再実行してください。解消できない場合は、表示された診断と失敗したコマンドをdotfilesの作者へ報告してください。" >&2
+    return "$status"
+}
+
 # agent-toolkit プラグインを user scope でインストール・更新する。
 # 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 _install_agent_toolkit() {
     echo ""
     echo "agent-toolkit プラグインを user scope にインストール・更新します..."
     claude plugin marketplace add ak110/dotfiles --scope=user >/dev/null 2>&1 || true
-    claude plugin marketplace update ak110-dotfiles >/dev/null
+    _run_required_claude plugin marketplace update ak110-dotfiles
     claude plugin uninstall edit-guardrails@ak110-dotfiles >/dev/null 2>&1 || true
     claude plugin install agent-toolkit@ak110-dotfiles --scope=user >/dev/null 2>&1 || true
-    claude plugin update agent-toolkit@ak110-dotfiles --scope=user >/dev/null
+    _run_required_claude plugin update agent-toolkit@ak110-dotfiles --scope=user
     echo "Claude Code側のagent-toolkitプラグインを設定しました。"
 }
 
 _install_agent_basics() {
     echo "agent-basics プラグインを user scope にインストール・更新します..."
     claude plugin marketplace add ak110/dotfiles --scope=user >/dev/null 2>&1 || true
-    claude plugin marketplace update ak110-dotfiles >/dev/null
+    _run_required_claude plugin marketplace update ak110-dotfiles
     claude plugin install "$BASICS_PLUGIN_ID" --scope=user >/dev/null 2>&1 || true
-    claude plugin update "$BASICS_PLUGIN_ID" --scope=user >/dev/null
+    _run_required_claude plugin update "$BASICS_PLUGIN_ID" --scope=user
 }
 
 _codex_plugin_state() {

@@ -68,29 +68,42 @@ function Invoke-RequiredNativeCommand {
     }
 }
 
+# 失敗すると導入を続けられない Claude CLI の更新を実行する。
+# 成功時は出力を抑え、失敗時は捕捉した標準出力・標準エラーの元診断、失敗したコマンド、終了コード、次の操作を例外へ含める。
+function Invoke-RequiredClaudeCommand {
+    param([string]$failureMessage, [string[]]$arguments)
+    # Windows PowerShell 5.1では、Stopのまま標準エラーを`2>&1`で受けると最初の1行が終了エラーになり、
+    # 残りの診断と終了コードを取得できない。この関数の中だけContinueへ下げて全出力を受け取る。
+    $ErrorActionPreference = 'Continue'
+    $output = & claude @arguments 2>&1
+    $nativeExitCode = $LASTEXITCODE
+    if ($nativeExitCode -eq 0) { return }
+    $lines = @($output | ForEach-Object { "$_" })
+    $lines += $failureMessage
+    $lines += "失敗したコマンド: claude $($arguments -join ' ')（終了コード: $nativeExitCode）"
+    $lines += '次の操作: 上の診断から原因を解消し、失敗したコマンドを再実行して成功を確認してから、install-claude.ps1を再実行してください。解消できない場合は、表示された診断と失敗したコマンドをdotfilesの作者へ報告してください。'
+    throw ($lines -join [Environment]::NewLine)
+}
+
 # agent-toolkit プラグインを user scope でインストール・更新する。
 # 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 function Install-AgentToolkitPlugin {
     Write-Output ''
     Write-Output 'agent-toolkit プラグインを user scope にインストール・更新します...'
     & claude plugin marketplace add ak110/dotfiles --scope=user 2>&1 | Out-Null
-    & claude plugin marketplace update ak110-dotfiles 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeマーケットプレイスの更新に失敗しました。' }
+    Invoke-RequiredClaudeCommand 'Claude Codeマーケットプレイスの更新に失敗しました。' @('plugin', 'marketplace', 'update', 'ak110-dotfiles')
     & claude plugin uninstall 'edit-guardrails@ak110-dotfiles' 2>&1 | Out-Null
     & claude plugin install 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null
-    & claude plugin update 'agent-toolkit@ak110-dotfiles' --scope=user 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeプラグインの更新に失敗しました。' }
+    Invoke-RequiredClaudeCommand 'Claude Codeプラグインの更新に失敗しました。' @('plugin', 'update', 'agent-toolkit@ak110-dotfiles', '--scope=user')
     Write-Output 'Claude Code側のagent-toolkitプラグインを設定しました。'
 }
 
 function Install-AgentBasicsPlugin {
     Write-Output 'agent-basics プラグインを user scope にインストール・更新します...'
     & claude plugin marketplace add ak110/dotfiles --scope=user 2>&1 | Out-Null
-    & claude plugin marketplace update ak110-dotfiles 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeマーケットプレイスの更新に失敗しました。' }
+    Invoke-RequiredClaudeCommand 'Claude Codeマーケットプレイスの更新に失敗しました。' @('plugin', 'marketplace', 'update', 'ak110-dotfiles')
     & claude plugin install $basicsPluginId --scope=user 2>&1 | Out-Null
-    & claude plugin update $basicsPluginId --scope=user 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Claude Codeのagent-basicsプラグイン更新に失敗しました。' }
+    Invoke-RequiredClaudeCommand 'Claude Codeのagent-basicsプラグイン更新に失敗しました。' @('plugin', 'update', $basicsPluginId, '--scope=user')
 }
 
 function Get-CodexPluginState {
