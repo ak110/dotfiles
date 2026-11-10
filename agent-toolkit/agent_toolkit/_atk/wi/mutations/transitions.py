@@ -9,6 +9,7 @@ import argparse
 import datetime
 import pathlib
 import re
+import shlex
 import sys
 import typing
 
@@ -18,6 +19,7 @@ from agent_toolkit._atk.wi import bulk as _bulk
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import show as _wi_show
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.constants import (
     BULK_SOURCE_STATES,
@@ -30,6 +32,7 @@ from agent_toolkit._atk.wi.constants import (
     WI_STATE_REJECTED,
     WI_TYPE_AWI,
     WI_USER_REMOVABLE_STATES,
+    normalized_wi_type,
 )
 from agent_toolkit._atk.wi.entries import CommitMetadata
 from agent_toolkit._atk.wi.mutations.targets import (
@@ -468,6 +471,22 @@ def _bulk_transition(
     )
 
 
+def _report_user_fields(private_notes: pathlib.Path, filenames: list[str]) -> None:
+    """成功したCLI操作の対象にある記入欄を、保存後の位置で案内する。"""
+    if not is_agent_environment():
+        return
+    for filename in filenames:
+        path = _wi_entries.entry_path(private_notes, filename)
+        text = path.read_text(encoding="utf-8")
+        parsed = _frontmatter.parse_frontmatter(text)
+        kind = normalized_wi_type(parsed[0].get("type")) if parsed is not None else None
+        field = _wi_show.user_field_location(text, kind)
+        if field is not None:
+            section, line = field
+            command = shlex.join(["atk", "wi", "show", filename, "--section", section])
+            print(f"記入欄: {filename} ## {section} あり 開始行: {line}（保存本文上の1始まり） 読取: {command}")
+
+
 def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
     """adoptサブコマンド: 採用としてinbox・processing・holdのいずれかからadopted/へ移動しcommit・push。
 
@@ -482,6 +501,7 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
             _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")
             for filename in filenames:
                 print(_wi_entries.entry_path(private_notes, filename))
+            _report_user_fields(private_notes, filenames)
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "adopt")
     local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
@@ -499,6 +519,7 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
     _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")
     for filename in filenames:
         print(_wi_entries.entry_path(private_notes, filename))
+    _report_user_fields(private_notes, filenames)
 
 
 def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -515,6 +536,7 @@ def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
             _outcome.report_success(f"{len(filenames)}件をrejectedへ移した")
             for filename in filenames:
                 print(_wi_entries.entry_path(private_notes, filename))
+            _report_user_fields(private_notes, filenames)
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "reject")
     local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
@@ -533,6 +555,7 @@ def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
     _outcome.report_success(f"{len(filenames)}件をrejectedへ移した")
     for filename in filenames:
         print(_wi_entries.entry_path(private_notes, filename))
+    _report_user_fields(private_notes, filenames)
 
 
 def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -548,6 +571,7 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
         filenames = _bulk_transition(args, private_notes, now, action="start-processing")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
+            _report_user_fields(private_notes, filenames)
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "start-processing")
     filenames = transition_entries(
@@ -558,6 +582,7 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
         target_repo=args.target_repo,
     )
     _outcome.report_success(f"{len(filenames)}件をprocessingへ移した: {', '.join(filenames)}")
+    _report_user_fields(private_notes, filenames)
 
 
 def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -566,6 +591,7 @@ def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetim
         filenames = _bulk_transition(args, private_notes, now, action="hold")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
+            _report_user_fields(private_notes, filenames)
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "hold")
     filenames = transition_entries(
@@ -578,6 +604,7 @@ def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetim
         actor_is_agent=is_agent_environment(),
     )
     _outcome.report_success(f"{len(filenames)}件をholdへ移した: {', '.join(filenames)}")
+    _report_user_fields(private_notes, filenames)
 
 
 def cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -586,6 +613,7 @@ def cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         filenames = _bulk_transition(args, private_notes, now, action="unhold")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をholdからinboxへ戻した: {', '.join(filenames)}")
+            _report_user_fields(private_notes, filenames)
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "unhold")
     filenames = transition_entries(
@@ -596,6 +624,7 @@ def cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
         target_repo=args.target_repo,
     )
     _outcome.report_success(f"{len(filenames)}件をholdからinboxへ戻した: {', '.join(filenames)}")
+    _report_user_fields(private_notes, filenames)
 
 
 def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
@@ -609,6 +638,7 @@ def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, n
         filenames = _bulk_transition(args, private_notes, now, action="return-to-inbox")
         if filenames:
             _outcome.report_success(f"{len(filenames)}件をinboxへ差し戻した: {', '.join(filenames)}")
+            _report_user_fields(private_notes, filenames)
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "return-to-inbox")
     filenames = transition_entries(
@@ -621,6 +651,7 @@ def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, n
         cooldown_days=args.cooldown_days,
     )
     _outcome.report_success(f"{len(filenames)}件をinboxへ差し戻した: {', '.join(filenames)}")
+    _report_user_fields(private_notes, filenames)
 
 
 def cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
