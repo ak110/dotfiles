@@ -12,7 +12,7 @@ AWIやUWIの作成・更新にあたって成立性調査や起草をWI投入担
 | --- | --- | --- | --- | --- |
 | 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md` | |
 | 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md` | |
-| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md`、`read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` | |
+| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/draft-semantic-review.md`と、同資料が指定する工程別の共通基準 | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` | |
 
 ## 入力
 

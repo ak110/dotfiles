@@ -65,7 +65,7 @@ WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認
 ## 概要と計画メタ情報
 
 全体像・目的・対象範囲の順に簡潔に書き、変更時は全体を書き直す。
-`wi-standards/references/drafting-completion.md`「既存証拠の再利用」に従う。
+`../../wi-standards/references/drafting-completion-evidence.md`「既存証拠の再利用」に従う。
 
 直下のH3見出しは`### 計画メタ情報`だけとし、項目と順序は`plan-file-standards-template.md`「初回起草の雛形」に従う。
 コロンはASCIIの`:`とし、後に半角スペースを1つ置く。
