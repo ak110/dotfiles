@@ -163,7 +163,9 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     root = tmp_path / "norms/agent-toolkit"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
-    (root / "skills").mkdir()
+    completion_skill = root / "skills/report-completion/SKILL.md"
+    completion_skill.parent.mkdir(parents=True)
+    completion_skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", str(root))
 
 
