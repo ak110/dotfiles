@@ -713,7 +713,7 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
 
 
 def test_update_checks_container_dependencies_after_lock_updates() -> None:
-    """依存更新は両lockの更新後、全体検証の前にcontainerの依存導入を確かめる。"""
+    """依存更新は両lockの更新後にcontainerの依存導入を確かめ、全体試験を呼ばない。"""
     text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     match = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
     assert match is not None
@@ -723,7 +723,7 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
     assert (
         next(index for index, command in enumerate(commands) if "uv lock --upgrade --project agent-toolkit" in command) < check
     )
-    assert check < commands.index("\t$(MAKE) test")
+    assert "\t$(MAKE) test" not in commands
 
 
 @pytest.mark.parametrize("scope", ["直下", "toolkit"])
@@ -994,7 +994,8 @@ def test_update_includes_locked_rust_validation() -> None:
     assert f"cargo fmt {manifest} --check" in commands
     assert f"cargo clippy {manifest} --locked --all-targets --all-features -- -D warnings" in commands
     assert f"cargo test {manifest} --locked" in commands
-    assert commands.index("cargo update") < commands.index("cargo test") < commands.index("$(MAKE) test")
+    assert commands.index("cargo update") < commands.index("cargo test")
+    assert "$(MAKE) test" not in commands
 
 
 def test_removal_registry_expiry_runs_only_in_scheduled_audit() -> None:
