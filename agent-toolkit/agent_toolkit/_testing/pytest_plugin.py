@@ -14,6 +14,7 @@ import sys
 import tempfile
 import zlib
 from collections.abc import Callable, Generator, Iterator
+from multiprocessing import resource_tracker
 from typing import Any
 
 import pytest
