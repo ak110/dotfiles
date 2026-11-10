@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 品質改善の投資先を比較する前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-scope.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-scope.md` |
@@ -17,6 +18,9 @@
 レビュー指摘の採否手順は`agent-basics:review-standards`に従い、本節ではコスト比較の基準を提供する。
 
 各案の採否は、得られる便益と、初回の実装・検証・再レビュー費用、および継続的な保守コスト（構造の複雑化、状態管理、互換処理、運用工数）を含む総費用で比較する。
+品質改善の投資順は`design-heuristics-screening.md`「設計案の予備選別」に従う。
+新しい自動検出も、精度、誤検出、保守、実行ごとの費用を、既存ツールへの設定・統合や不要処理の除去と比べる。
+決定論的という性質に加え、必要性と便益・総費用の比較を導入根拠にする。
 同じ要件と必要な品質を満たす手段から選び、明示要件、安全性、認可、データ保全、公開契約の未達を費用で正当化しない。
 委譲、待機、再試行、監視など繰り返し実行される機構については、実行ごとの運用コスト（モデル呼び出し回数、待機の分割回数、追加のターン数など）も保守コストと同等の重要な評価軸とする。
 入出力形式、変換規則、比較キーが確定した処理は、モデルを選ぶ前に、既存CLI・API・標準コマンドで同じ結果を得る案と比較する。

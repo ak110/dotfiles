@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 再発防止策の品質投資先を比較する前 | `../../writing-standards/references/design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
 | 再発防止セルフチェック観点の追加・保守を判断する前 | `recurrence-self-check.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/recurrence-self-check.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` |
 | 本文の条件に従い「直接的原因と事象時点の確定」を判断する前 | `root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
@@ -28,6 +29,7 @@
 判断工程に不備があった場合は、その誤った判断を事前に検出するか、あるいは誤った判断自体が成立しないようにする仕組みと、その仕組みが正しく機能しているかを検証する手段を対応付ける（成果物の回帰テストは検証手段の一部にすぎない）。
 ユーザーの介入に起因して発生した問題については、介入が必要になった発生条件を整理し、再発防止策によってその条件自体が発生しなくなるような対応を記述する。
 以下の優先順位は、同じ根本原因に作用する複数の案を比較検討する際の順序であり、上位の段を無条件に採用する規則ではない。
+品質改善の投資先は`../../writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」と対応付け、必要な結果を得る段で完結させる。
 段4は「自動検出の選定」の成立条件を満たす案だけを候補とし、採否は同節の費用と便益の比較で決める。
 新たな仕組みやコンポーネントを新設する案は、既存の箇所を修正するだけの案や、外部仕様・制約を文書化する「段6」の案のうち原因解消に役立つものと比較する。
 それぞれの要素が必要かどうかは、`root-cause-severity-impact.md`「QとC・Dの区別」の費用対効果と問題と手段の比例性に基づいて判定する。

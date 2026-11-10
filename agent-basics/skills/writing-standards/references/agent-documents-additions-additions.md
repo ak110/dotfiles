@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 規範以外の品質改善案と投資先を比較する前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
@@ -23,6 +24,7 @@
 規範の不足や誤適用に対処するときは、まず誤解を招いた既存の書き方を直して目的を達成できるか検討する。
 同じ目的を持つ既存の記述の統合・削除も検討し、追記は既存記述の書き換え・統合で目的を達成できない場合に限る。
 同じ内容の定義を1箇所に保ち、原則として単純な構成にする。
+改善の投資先は`design-heuristics-screening.md`「設計案の予備選別」の順に比較し、構造・標準ツール・検証で保証する範囲と、意図・認可・外部契約など文章で保持する条件を分ける。
 追記・改訂する記述がQCD（`quality-principles-qcd.md`「QCDと3段判定」）の向上につながるかを判断し、貢献しない内容は書かず、既存の記述にあれば削除する。
 改訂案が将来増やす作業量と継続的な保守費用は、採用前に`design-heuristics-decisions.md`「案の採否と実施順の判定」で比較・評価する。
 規範・警告・hookなどがエージェントの行動を起こす条件を新設・変更するときは、読む主体と実際の利用場面から、次の2つの場面を挙げる。
