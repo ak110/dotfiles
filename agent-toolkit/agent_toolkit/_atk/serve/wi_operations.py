@@ -120,12 +120,25 @@ def saved_commit_failure_message(root: pathlib.Path, operation: str) -> str:
     )
 
 
+def git_failure_next_action(root: pathlib.Path) -> str:
+    """原因を一意に判別できないGitコマンドの失敗に対して、画面のユーザーが行う確認と再試行の操作を返す。
+
+    CLI向けの原因分類（`git_sync`）は受信側をエージェントとする案内のため転用せず、
+    保存先で実行できる確認と、画面から行える再試行を示す。
+    """
+    return (
+        f"WIを保存しているホストで`{_git_status_command(root.resolve())}`を実行して保存リポジトリの状態を確認し、"
+        "原因を解消してからWI画面の「今すぐ同期」で再試行する。"
+        "解決できない場合は、表示内容・対象・確認結果をdotfilesの作者へ報告する"
+    )
+
+
 class WebApiInputError(ValueError):
     """`atk serve`のWeb APIだけが送出する入力エラー。
 
     受信側はブラウザー画面であり、HTTP 400の応答本文は理由の文字列だけとする。
-    CLIとWeb APIが共有する処理の入力エラー（`common.WebInputError`）は次の操作を持つが、
-    Web APIの応答本文へは同じく`str()`の理由だけを使う。
+    CLIとWeb APIが共有する処理の入力エラー（`web_input.WebInputError`）は次の操作を持ち、
+    Web APIの応答本文は`error`へ`str()`の理由、`next_action`へ次の操作を分けて返す。
     """
 
 

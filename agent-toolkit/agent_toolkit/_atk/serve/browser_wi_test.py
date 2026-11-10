@@ -8,6 +8,7 @@ import json
 import pathlib
 import re
 import socket
+import subprocess
 import threading
 import urllib.parse
 from typing import Any
@@ -643,6 +644,22 @@ async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: 
     assert row_box["y"] >= 0
     assert row_box["y"] + row_box["height"] <= 844
 
+    # 除外警告は折り畳んだ見出しだけで一覧の前に収まり、開くと保存先・理由・次の操作の全文を読める。
+    summary = page.get_by_role("alert").locator("summary")
+    await playwright.async_api.expect(summary).to_be_visible()
+    await playwright.async_api.expect(summary).to_contain_text("一覧から除外したファイルの警告: 1件")
+    full_text = page.locator("#list-warning")
+    await playwright.async_api.expect(full_text).to_be_hidden()
+    await summary.click()
+    await playwright.async_api.expect(full_text).to_be_visible()
+    for expected in (
+        str(_entry_path(browser_harness.root, "invalid.md")),
+        "UTF-8として読み取れません",
+        "UTF-8として保存し直す",
+    ):
+        await playwright.async_api.expect(full_text).to_contain_text(expected, use_inner_text=True)
+    assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
@@ -808,6 +825,94 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_manual_sync_git_failure_shows_check_and_retry_actions(
+    browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """「今すぐ同期」が一般的なGitコマンドの失敗で終わっても、ローカルの一覧を保ち、確認と再試行の操作を表示する。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator('.entry-select[data-key="awi.md"]').wait_for(state="visible")
+
+    def fail_sync() -> bool:
+        raise subprocess.CalledProcessError(1, ["git", "pull"])
+
+    monkeypatch.setattr(harness.operations, "sync", fail_sync)
+    await page.get_by_role("button", name="今すぐ同期", exact=True).click()
+
+    message = page.get_by_role("alert").filter(has_text="ローカル内容を表示中です")
+    await playwright.async_api.expect(message).to_be_visible()
+    await playwright.async_api.expect(message).to_contain_text("Git同期に失敗しました。ローカル内容を表示中です。")
+    await playwright.async_api.expect(message).to_contain_text("次の操作: ")
+    await playwright.async_api.expect(message).to_contain_text(str(harness.root.resolve()))
+    await playwright.async_api.expect(message).to_contain_text("status`を実行して保存リポジトリの状態を確認し")
+    await playwright.async_api.expect(message).to_contain_text("「今すぐ同期」で再試行する")
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="awi.md"]')).to_be_visible()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_batch_input_error_shows_reason_and_fix_action(browser_harness: _BrowserHarness) -> None:
+    """一括登録の形式エラーは、理由と入力を直す操作を登録ダイアログへ表示し、入力を保持する。"""
+    harness = browser_harness
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+    await page.get_by_role("button", name="新規追加").click()
+    create_dialog = page.get_by_role("dialog", name="新規追加")
+    await create_dialog.wait_for(state="visible")
+    await create_dialog.locator("#create-kind").select_option("batch")
+    invalid = "### broken.md [inbox]\n---\ntype: awi\n---\n\n対象リポジトリの無い本文\n"
+    await create_dialog.locator("#create-content").fill(invalid)
+
+    await create_dialog.get_by_role("button", name="追加").click()
+
+    alert = create_dialog.get_by_role("alert").filter(has_text="項目を追加できませんでした")
+    await playwright.async_api.expect(alert).to_be_visible()
+    await playwright.async_api.expect(alert).to_contain_text("項目を追加できませんでした。")
+    await playwright.async_api.expect(alert).to_contain_text("broken.md")
+    await playwright.async_api.expect(alert).to_contain_text("次の操作: ")
+    await playwright.async_api.expect(alert).to_contain_text("再投入する")
+    await playwright.async_api.expect(create_dialog.locator("#create-content")).to_have_value(invalid)
+    assert not _entry_path(harness.root, "broken.md").exists()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_invalid_state_warning_shows_saved_path_and_fix_action(browser_harness: _BrowserHarness) -> None:
+    """不正なstateで一覧から除外した項目の警告は、年月の保存先とstateの修正操作を表示する。"""
+    harness = browser_harness
+    path = _entry_path(harness.root, "bad-state.md")
+    path.write_text("---\nstate: bogus\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
+    page = harness.page
+    await page.goto(harness.base_url + "/")
+    await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
+
+    # 既存fixtureの`invalid.md`と合わせて2件を、折り畳んだ見出しの件数で示す。
+    summary = page.get_by_role("alert").locator("summary")
+    await playwright.async_api.expect(summary).to_contain_text("一覧から除外したファイルの警告: 2件")
+    warning = page.locator("#list-warning > div").filter(has_text="bad-state.md")
+    await playwright.async_api.expect(warning).to_be_hidden()
+    await summary.click()
+    await playwright.async_api.expect(warning).to_be_visible()
+    await playwright.async_api.expect(warning).to_contain_text(str(path), use_inner_text=True)
+    await playwright.async_api.expect(warning).to_contain_text("stateが不正", use_inner_text=True)
+    await playwright.async_api.expect(warning).to_contain_text("次の操作: ", use_inner_text=True)
+    await playwright.async_api.expect(warning).to_contain_text("のいずれかへ修正する", use_inner_text=True)
+    await playwright.async_api.expect(page.locator('.entry-select[data-key="bad-state.md"]')).to_have_count(0)
+
+    # 更新通知による一覧の再描画でも、開いた状態と全文の表示を保つ。
+    async with page.expect_response(lambda response: "/api/entries?" in response.url):
+        harness.current_state.publish()
+    await playwright.async_api.expect(page.locator("#list-warning-details")).to_have_attribute("open", "")
+    await playwright.async_api.expect(warning).to_be_visible()
+    await summary.click()
+    await playwright.async_api.expect(warning).to_be_hidden()
+    async with page.expect_response(lambda response: "/api/entries?" in response.url):
+        harness.current_state.publish()
+    await playwright.async_api.expect(page.locator("#list-warning-details")).not_to_have_attribute("open", "")
+    await playwright.async_api.expect(summary).to_contain_text("2件")
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harness: _BrowserHarness) -> None:
     """回答・削除の操作のフォーカス、条件に応じた表示、警告と、エンドユーザーの操作による更新だけに出す件数通知を検証する。"""
     harness = browser_harness
@@ -817,9 +922,18 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator(".filters details").evaluate("element => element.open")
     await _open_filters(page)
 
-    warning = page.get_by_role("alert").filter(has_text="invalid.md")
+    # 警告は件数を示す見出しだけを常に表示し、全文は開いて読む。
+    warning = page.get_by_role("alert").filter(has_text="一覧から除外したファイルの警告")
     await warning.wait_for(state="visible")
-    assert "UTF-8として読み取れません" in await warning.inner_text()
+    await playwright.async_api.expect(warning.locator("summary")).to_contain_text("一覧から除外したファイルの警告: 1件")
+    await warning.locator("summary").click()
+    await playwright.async_api.expect(page.locator("#list-warning")).to_be_visible()
+    warning_text = await warning.inner_text()
+    assert "UTF-8として読み取れません" in warning_text
+    # 状態を読めない項目も、年月の保存先と修正操作を警告から特定できる。
+    assert str(_entry_path(harness.root, "invalid.md")) in warning_text
+    assert "次の操作: " in warning_text
+    assert "UTF-8として保存し直す" in warning_text
     assert await page.locator('#entry-list .entry-select[data-kind="unknown"]').count() == 1
 
     awi_row = page.locator('#entry-list .entry-select[data-kind="awi"]').filter(has_text="awi.md")

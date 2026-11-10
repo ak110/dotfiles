@@ -13,7 +13,8 @@ from agent_toolkit._common import next_action as _next_action
 class WebInputError(_next_action.ActionableError):
     """`atk`のCLIとWeb APIが共有する入力エラー。
 
-    CLIは理由と次の操作の2行を出力し、Web APIは`str()`が返す理由だけを応答本文へ使う。
+    CLIは理由と次の操作の2行を出力する。Web APIは応答本文の`error`へ`str()`が返す理由、
+    `next_action`へ次の操作を分けて返す。
     """
 
 

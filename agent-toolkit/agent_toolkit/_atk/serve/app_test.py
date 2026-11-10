@@ -24,6 +24,7 @@ from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import remote as serve_plan_remote
 from agent_toolkit._atk.wi import repo as awi_repo
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.serve_support import (
@@ -1321,7 +1322,78 @@ async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(t
     assert response.status_code == 200
     payload = await response.get_json()
     assert [item["filename"] for item in payload["entries"]] == ["readable.md"]
-    assert payload["warnings"] == [{"state": "unknown", "filename": "invalid.md", "reason": "UTF-8として読み取れません"}]
+    invalid = inbox / "invalid.md"
+    assert payload["warnings"] == [
+        {
+            "state": "unknown",
+            "filename": "invalid.md",
+            "path": str(invalid),
+            "reason": "UTF-8として読み取れません",
+            "next_action": f"{invalid}を別名で複製して元の内容を保全し、内容をUTF-8として保存し直す",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_api_git_failure_returns_check_and_retry_action(tmp_path: pathlib.Path) -> None:
+    """原因を判別できないGitコマンドの失敗は、理由を保ち、保存先の確認と再試行の操作を別項目で返す。
+
+    保存先は空白を含むパスとし、案内するコマンドが保存先を引数1個として渡せる引用を持つことも確かめる。
+    """
+    root = tmp_path / "notes with space"
+    root.mkdir()
+
+    class _FailingSyncOperations(wi_operations.Operations):
+        def sync(self) -> bool:
+            raise subprocess.CalledProcessError(1, ["git", "pull"])
+
+    response = await _sync_app(root, _FailingSyncOperations(root)).test_client().post("/api/sync", json={})
+
+    assert response.status_code == 500
+    body = await response.get_json()
+    assert set(body) == {"error", "next_action"}
+    assert body["error"] == "Git同期に失敗しました"
+    assert body["next_action"] == wi_operations.git_failure_next_action(root)
+    quoted_root = subprocess.list2cmdline([str(root.resolve())]) if os.name == "nt" else f"'{root.resolve()}'"
+    assert f"`git -C {quoted_root} status`" in body["next_action"]
+    assert "「今すぐ同期」で再試行する" in body["next_action"]
+    assert "dotfilesの作者へ報告する" in body["next_action"]
+
+
+@pytest.mark.asyncio
+async def test_batch_api_input_error_returns_reason_and_next_action(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """一括登録の形式エラーは、`error`へ理由だけを保ち、入力を直す操作を`next_action`で返す。"""
+    _patch_single_add_operations(monkeypatch)
+    invalid = "### broken.md [inbox]\n---\ntype: awi\n---\n\n対象リポジトリの無い本文\n"
+
+    response = await _serve_app(tmp_path).test_client().post("/api/entries/batch", json={"text": invalid})
+
+    assert response.status_code == 400
+    body = await response.get_json()
+    assert set(body) == {"error", "next_action"}
+    assert "broken.md" in body["error"]
+    assert "次の操作" not in body["error"]
+    assert "target_repo" in body["next_action"]
+    assert body["next_action"].endswith("再投入する")
+    assert _saved_files(tmp_path) == {}
+
+
+@pytest.mark.asyncio
+async def test_web_input_error_response_keeps_next_action_from_any_validation(tmp_path: pathlib.Path) -> None:
+    """共通の例外応答は、どの入力検証が送出した`WebInputError`でも理由と次の操作の組を保つ。"""
+    app = _serve_app(tmp_path)
+
+    @app.get("/test-only/web-input-error")
+    async def raise_web_input_error() -> str:
+        raise wi_web_input.WebInputError("別の入力検証の理由", next_action="別の入力を直して再実行する")
+
+    response = await app.test_client().get("/test-only/web-input-error")
+
+    assert response.status_code == 400
+    assert await response.get_json() == {"error": "別の入力検証の理由", "next_action": "別の入力を直して再実行する"}
 
 
 @pytest.mark.asyncio

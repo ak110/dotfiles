@@ -73,6 +73,12 @@ const deleteEntrySnapshot = entry => entry ? JSON.stringify([
   entryKey(entry), entry.state, entry.content, entry.target_repo || '', entry.summary || ''
 ]) : '';
 
+// 理由の後へ次の操作を続ける。APIの応答と一覧の警告は理由と次の操作を別項目で持つため、表示の直前に合わせる。
+function withNextAction(reason, nextAction) {
+  if (typeof nextAction !== 'string' || !nextAction.trim()) return reason;
+  return `${reason.replace(/[。.]$/, '')}。次の操作: ${nextAction}`;
+}
+
 async function api(path, {timing = {}, ...options} = {}) {
   const route = path.split('?')[0];
   const entryMatch = route.match(/^\/api\/entries\/([^/]+\.md)$/);
@@ -100,7 +106,10 @@ async function api(path, {timing = {}, ...options} = {}) {
     const response = await timedFetch('wi', BASE_PATH + path, request, timing);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(payload.error || response.statusText || '通信に失敗しました。');
+      // 次の操作をmessageへ含め、同期・一括登録など各操作の失敗通知がそのまま表示できるようにする。
+      const error = new Error(
+        withNextAction(payload.error || response.statusText || '通信に失敗しました。', payload.next_action)
+      );
       error.status = response.status;
       error.payload = payload;
       throw error;
@@ -504,6 +513,18 @@ function renderEmptyState() {
   }
 }
 
+// 一覧から除外したファイルの警告を表示する。実際の保存先と次の操作を含む全文は長く、狭い幅では一覧を画面の外へ
+// 押し下げるため、警告があることと件数だけを常に示し、全文は折り畳む。
+// detailsは作り直さずに中の行だけを差し替え、更新通知による再描画でも開閉状態を保つ。
+function renderListWarnings(lines) {
+  renderWarnings(byId('list-warning'), lines);
+  const summary = byId('list-warning-summary');
+  const text = `一覧から除外したファイルの警告: ${lines.length}件（開くと理由と次の操作を表示）`;
+  // 外枠は通知領域（role="alert"）のため、同じ件数での再描画で読み上げを繰り返さないよう、変わった時だけ書き換える。
+  if (summary.textContent !== text) summary.textContent = text;
+  byId('list-warning-box').hidden = lines.length === 0;
+}
+
 // 行は項目のクロージャーを持つため、再利用せずに毎回作り直す。
 function renderEntries(warnings = [], announce = false) {
   const list = byId('entry-list');
@@ -523,9 +544,11 @@ function renderEntries(warnings = [], announce = false) {
   byId('entry-period').hidden = !periodLabel;
   renderPagination();
   renderEffectiveConditions();
-  renderWarnings(byId('list-warning'), warnings.length
-    ? warnings.map(item => diagnostic('WI', SERVE_HOST, `${WI_ROOT} / ${item.state}/${item.filename}`, `一覧から除外したファイル: ${item.reason}`))
-    : []);
+  // 除外したファイルは状態を読めず、状態とファイル名では年月の保存先を特定できないため、応答が持つ実際のパスを対象に示す。
+  renderListWarnings(warnings.map(item => diagnostic(
+    'WI', SERVE_HOST, item.path || `${WI_ROOT} / ${item.state}/${item.filename}`,
+    withNextAction(`一覧から除外したファイル: ${item.reason}`, item.next_action)
+  )));
   renderEmptyState();
   if (announce) {
     byId('result-status').textContent = entries.length ? `${entries.length}件を表示` : '一致する項目はありません';

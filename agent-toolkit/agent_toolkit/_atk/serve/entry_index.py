@@ -189,6 +189,26 @@ class _CacheEntry:
     """更新時刻のISO 8601表記。無効化キーが一致する間は同じ値になるため、解析結果とともに保持する。"""
 
 
+def _warning(path: pathlib.Path, state: str, reason: str, next_action: str) -> dict[str, str]:
+    """一覧から除外したファイルの警告を作る。
+
+    `state`と`filename`だけでは年月固定配置の保存先を特定できないため、実際のパスを`path`へ持つ。
+    `reason`は理由だけを保ち、一覧へ戻すための修正・確認の操作を`next_action`へ分ける。
+    """
+    return {
+        "state": state,
+        "filename": path.name,
+        "path": os.fspath(path),
+        "reason": reason,
+        "next_action": next_action,
+    }
+
+
+def _unreadable_next_action(path: pathlib.Path) -> str:
+    """ファイル情報または本文の読取に失敗したファイルに対する確認の操作を返す。"""
+    return f"{path}が実在し、atk serveを実行するOSアカウントから読み取れる権限になっているかを確認する"
+
+
 def _json_round_trips(metadata: dict[str, typing.Any]) -> bool:
     """frontmatterの値をJSONで保存して読み戻しても同じ値になるかを返す（日時や非文字列のキーを含む項目は保存しない）。"""
     try:
@@ -391,7 +411,7 @@ class EntryIndex:
         except FileNotFoundError:
             return None
         except OSError:
-            warnings.append({"state": state, "filename": path.name, "reason": "ファイル情報を読み取れません"})
+            warnings.append(_warning(path, state, "ファイル情報を読み取れません", _unreadable_next_action(path)))
             return None
         cached = previous_cache.get(real_path)
         reused = (
@@ -422,10 +442,17 @@ class EntryIndex:
             except FileNotFoundError:
                 return None
             except UnicodeDecodeError:
-                warnings.append({"state": state, "filename": path.name, "reason": "UTF-8として読み取れません"})
+                warnings.append(
+                    _warning(
+                        path,
+                        state,
+                        "UTF-8として読み取れません",
+                        f"{path}を別名で複製して元の内容を保全し、内容をUTF-8として保存し直す",
+                    )
+                )
                 return None
             except OSError:
-                warnings.append({"state": state, "filename": path.name, "reason": "ファイルを読み取れません"})
+                warnings.append(_warning(path, state, "ファイルを読み取れません", _unreadable_next_action(path)))
                 return None
             parsed_frontmatter = frontmatter.parse_frontmatter(text)
             metadata = parsed_frontmatter[0] if parsed_frontmatter is not None else {}
@@ -454,7 +481,7 @@ class EntryIndex:
             except FileNotFoundError:
                 return None
             except OSError:
-                warnings.append({"state": state, "filename": path.name, "reason": "ファイル情報を読み取れません"})
+                warnings.append(_warning(path, state, "ファイル情報を読み取れません", _unreadable_next_action(path)))
                 return None
             if (current_stat.st_mtime_ns, current_stat.st_size) != (file_stat.st_mtime_ns, file_stat.st_size):
                 return None
@@ -472,7 +499,8 @@ class EntryIndex:
         try:
             state = "inbox" if cached.parsed.frontmatter_broken else entry_state_from_metadata(path, cached.parsed.metadata)
         except ActionableError as error:
-            warnings.append({"state": state, "filename": path.name, "reason": str(error)})
+            # 不正なstateの修正先は発生源（`wi/layout.py`）が持つ案内を引き継ぐ。
+            warnings.append(_warning(path, state, str(error), error.next_action))
             return real_path, cached, None
         return (
             real_path,

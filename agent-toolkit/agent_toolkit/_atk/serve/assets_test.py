@@ -122,6 +122,66 @@ process.stdout.write(JSON.stringify({
     }
 
 
+def test_assets_show_next_action_for_list_warnings_and_api_errors() -> None:
+    """一覧警告は実際の保存先と次の操作を表示し、APIの失敗は理由の後へ次の操作を続けて各操作へ渡す。"""
+    result = _run_node_ui(
+        """
+renderEntries([{
+  state: 'unknown', filename: 'bad.md', path: '/notes/2026/10/bad.md',
+  reason: 'UTF-8として読み取れません', next_action: '/notes/2026/10/bad.mdをUTF-8として保存し直す'
+}], false);
+const warning = elements['list-warning'].textContent;
+// 全文は折り畳みの中に置き、見出しで警告があることと件数を示す。開閉状態は再描画で変えない。
+elements['list-warning-details'].open = true;
+renderEntries([
+  {state: 'unknown', filename: 'a.md', reason: '理由'},
+  {state: 'unknown', filename: 'b.md', reason: '理由'}
+], false);
+const folded = {
+  summary: elements['list-warning-summary'].textContent,
+  boxHidden: elements['list-warning-box'].hidden,
+  open: elements['list-warning-details'].open,
+  inside: elements['list-warning-details'].children.includes(elements['list-warning'])
+};
+renderEntries([], false);
+const cleared = {boxHidden: elements['list-warning-box'].hidden, rows: elements['list-warning'].children.length};
+const failures = [
+  {error: 'frontmatterを解析できません: a.md', next_action: '形式を直して再投入する'},
+  {error: '理由だけの応答'},
+  {error: '句点で終わる理由。', next_action: '入力を直す'}
+];
+const messages = [];
+for (const payload of failures) {
+  fetchHandler = async () => ({ok: false, status: 400, statusText: 'Bad Request', json: async () => payload});
+  try {
+    await api('/api/entries/batch', {method: 'POST', body: '{}'});
+  } catch (error) {
+    messages.push(error.message);
+  }
+}
+process.stdout.write(JSON.stringify({warning, folded, cleared, messages}));
+"""
+    )
+    assert result == {
+        "folded": {
+            "summary": "一覧から除外したファイルの警告: 2件（開くと理由と次の操作を表示）",
+            "boxHidden": False,
+            "open": True,
+            "inside": True,
+        },
+        "cleared": {"boxHidden": True, "rows": 0},
+        "warning": (
+            "［WI / node-test / /notes/2026/10/bad.md］一覧から除外したファイル: UTF-8として読み取れません。"
+            "次の操作: /notes/2026/10/bad.mdをUTF-8として保存し直す"
+        ),
+        "messages": [
+            "［WI / node-test / /notes / 一括登録］frontmatterを解析できません: a.md。次の操作: 形式を直して再投入する",
+            "［WI / node-test / /notes / 一括登録］理由だけの応答",
+            "［WI / node-test / /notes / 一括登録］句点で終わる理由。次の操作: 入力を直す",
+        ],
+    }
+
+
 def test_assets_render_all_frontmatter_without_repeating_detail_badges() -> None:
     """詳細メタデータは種別・状態を除き、任意の入れ子値を構造付きで表示する。"""
     result = _run_node_ui(

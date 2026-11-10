@@ -368,10 +368,65 @@ def test_warnings_report_unknown_state_for_unreadable_fixed_entry(tmp_path: path
     """本文を読めない固定配置の項目は状態をunknownとして返す。"""
     directory = tmp_path / "2026" / "10"
     directory.mkdir(parents=True)
-    (directory / "broken.md").write_bytes(b"\xff")
+    broken = directory / "broken.md"
+    broken.write_bytes(b"\xff")
     result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
     assert not result
-    assert warnings == [{"state": "unknown", "filename": "broken.md", "reason": "UTF-8として読み取れません"}]
+    assert warnings == [
+        {
+            "state": "unknown",
+            "filename": "broken.md",
+            "path": str(broken),
+            "reason": "UTF-8として読み取れません",
+            "next_action": f"{broken}を別名で複製して元の内容を保全し、内容をUTF-8として保存し直す",
+        }
+    ]
+
+
+def test_warnings_carry_path_and_fix_action_for_invalid_state(tmp_path: pathlib.Path) -> None:
+    """不正なstateで一覧から除外した項目の警告は、年月の保存先と、発生源が持つstateの修正操作を持つ。"""
+    path = _write_entry(tmp_path, "bogus", "bad-state.md", "本文")
+
+    result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
+
+    assert not result
+    assert len(warnings) == 1
+    warning = warnings[0]
+    assert (warning["state"], warning["filename"], warning["path"]) == ("unknown", "bad-state.md", str(path))
+    assert "stateが不正" in warning["reason"]
+    # 理由は理由だけを保ち、次の操作を別項目へ分ける。
+    assert "修正する" not in warning["reason"]
+    assert str(path) in warning["next_action"]
+    assert warning["next_action"].endswith("のいずれかへ修正する")
+
+
+def test_warnings_carry_path_and_permission_check_for_stat_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ファイル情報を読めない項目の警告は、実際の保存先と、実在・読取権限を確認する操作を持つ。"""
+    path = _write_entry(tmp_path, "inbox", "denied.md", "本文")
+    original_lstat = os.lstat
+
+    def lstat(candidate: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        if os.fspath(candidate) == os.fspath(path):
+            raise PermissionError("読取り拒否")
+        return original_lstat(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+
+    result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox",))
+
+    assert not result
+    assert warnings == [
+        {
+            "state": "unknown",
+            "filename": "denied.md",
+            "path": str(path),
+            "reason": "ファイル情報を読み取れません",
+            "next_action": f"{path}が実在し、atk serveを実行するOSアカウントから読み取れる権限になっているかを確認する",
+        }
+    ]
 
 
 def test_tracked_index_skips_walk_until_change_or_rescan_interval(

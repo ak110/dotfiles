@@ -114,7 +114,8 @@
       <div id="wi-effective-conditions" class="secondary-text" role="status">通常表示: state=active、直近2週間</div>
       <div id="copy-all-status" class="secondary-text" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
-      <div id="list-warning" class="list-warning" role="alert" hidden></div>
+      <!-- 外枠は改行を保持する表示（pre-wrap）のため、タグの間へ空白を入れると余分な行になる。 -->
+      <div id="list-warning-box" class="list-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
       <div class="entry-columns">
         <span class="entry-metadata-label" aria-hidden="true">ファイル名</span>
         <span class="entry-metadata-label" aria-hidden="true">target-repo</span>

@@ -30,8 +30,9 @@ def with_next_action(reason: str, next_action: str) -> str:
 class ActionableError(ValueError):
     """理由と次の操作を持つ入力・状態のエラー。
 
-    `str()`は理由だけを返し、理由の文字列を使う既存の応答（Web APIの応答本文など）を変えない。
+    `str()`は理由だけを返し、理由の文字列を使う既存の応答（Web APIの応答本文の`error`など）を変えない。
     受信側へ通知する処理は`message`から理由と次の操作の2行を得る。
+    理由を別項目で返す出力（Web APIの応答本文など）は、`next_action`を理由と並ぶ項目として渡す。
     """
 
     def __init__(self, reason: str, *, next_action: str) -> None:
