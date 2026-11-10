@@ -6,6 +6,7 @@
 付随型の委譲元、専念型の投入前レビュー担当、および直接起草するメインエージェントは、原稿、元の要求、実際の回答の出所、現物の状態、そして取得済みの証拠を独立して突き合わせる。
 採否、成立性、完成判定の定義基準は`drafting-completion.md`にあり、wi-standardsの読込表において「調査に入る前」や「原稿を確定する前」に指定された共通基準を適用する。
 確認側も、起草時に取得済みの証拠と保存結果を再利用する。
+検収の品質水準は`agent-basics:review-standards`「文章成果物の実害」の作業項目の基準とし、意味を変えない表現だけの推敲は求めない。
 元の要求がその場での回答や案の確定を求めている場合は、`agent-toolkit:user-confirmation-and-report`「成果物の制限」に照らし合わせ、その場で返答すべき回答内容と後続作業の完成条件とを明確に区別する。
 
 ## 名指し参照の読込方法
@@ -14,6 +15,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
 | 資料起点の採否を検収する前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
 | 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |

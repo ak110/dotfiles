@@ -167,70 +167,48 @@ def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, appe
     return [*args, "--body-file", str(body_path)]
 
 
-def test_edit_reports_style_warning_with_new_section_error(
+def test_edit_keeps_section_error_without_style_warning(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """整った通常AWIを不完全な本文へ変更するとき警告と構造エラーを返す。"""
+    """必須節の欠落を拒否し、表記診断は出さず保存済み本文を保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "entry.md", body=AGENT_AWI_BODY, source="test")
-    original = path.read_text(encoding="utf-8")
+    original = path.read_bytes()
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-    with pytest.raises(SystemExit) as exc_info:
+    with pytest.raises(SystemExit) as result:
         atk.main(_edit_body_args(tmp_path, "entry.md", "本文\u2014補足"), home=tmp_path)
-
-    assert exc_info.value.code == 1
+    assert result.value.code == 1
     error = capsys.readouterr().err
-    lines = error.splitlines()
-    warning_index = next(index for index, line in enumerate(lines) if '入力元="entry.md" 論理本文:2:3: ダッシュ' in line)
-    assert "文脈: 本文【—】補足" in lines[warning_index]
-    # 表記の警告の直後に、直し方（本文を置き換えるコマンド）を示す次の操作の行が続くこと。
-    assert lines[warning_index + 1].startswith("次の操作: ")
-    assert "atk wi edit entry.md --body-file" in lines[warning_index + 1]
     assert "必須節" in error
-    assert path.read_text(encoding="utf-8") == original
+    assert "表記診断" not in error
+    assert path.read_bytes() == original
 
 
-@pytest.mark.parametrize("diagnostic_count", [0, 2])
-def test_public_edit_reports_style_actions_once(
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_edit_accepts_colloquial_and_dash_without_warnings(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    diagnostic_count: int,
+    dry_run: bool,
 ) -> None:
-    """編集は全診断を出力して案内を一度だけ置き、診断なしの編集では案内を省く。"""
+    """frontmatter付き置換の口語・ダッシュを、保存とdry-runで警告せず保持する。"""
     notes = _setup_notes(tmp_path)
-    _write_awi_file(notes, "entry.md")
-    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    body = "\n".join(["説明\u2014補足"] * diagnostic_count) or "説明。"
-    with pytest.raises(SystemExit) as result:
-        atk.main(_edit_body_args(tmp_path, "entry.md", body), home=tmp_path)
-    assert result.value.code == 0
-    lines = capsys.readouterr().err.splitlines()
-    assert len([line for line in lines if "論理本文:" in line and "ダッシュ" in line]) == diagnostic_count
-    assert len([line for line in lines if line.startswith("次の操作: ")]) == bool(diagnostic_count)
-
-
-def test_edit_frontmatter_diagnostics_identify_target_and_occurrences(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """frontmatter付きの置換入力でも編集対象と論理本文の各出現箇所を表示する。"""
-    notes = _setup_notes(tmp_path)
-    path = _write_awi_file(notes, "entry.md")
+    path = _write_awi_file(notes, "entry.md", body=AGENT_AWI_BODY, source="test")
     original = path.read_bytes()
+    monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    args = _edit_body_args(tmp_path, "entry.md", "---\ntitle: 原稿\n---\n\n開始—中間—終了")
+    body = AGENT_AWI_BODY + "\n説明\u2014補足。すぐ\u6765\u3044。\n"
+    args = _edit_body_args(tmp_path, "entry.md", "---\ntitle: 原稿\n---\n" + body)
     with pytest.raises(SystemExit) as result:
-        atk.main([*args, "--dry-run"], home=tmp_path)
+        atk.main([*args, "--dry-run"] if dry_run else args, home=tmp_path)
     assert result.value.code == 0
-    error = capsys.readouterr().err
-    assert '入力元="entry.md" 論理本文:2:3: ダッシュ' in error
-    assert '入力元="entry.md" 論理本文:2:6: ダッシュ' in error
-    assert "文脈: 開始【—】中間—終了" in error
-    assert "文脈: 開始—中間【—】終了" in error
-    assert path.read_bytes() == original
+    assert not capsys.readouterr().err
+    if dry_run:
+        assert path.read_bytes() == original
+    else:
+        assert body in path.read_text(encoding="utf-8")
 
 
 def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2174,7 +2152,7 @@ def _prepare_legacy_body(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -
     return "fb-001.md", "旧書式のまま直した本文"
 
 
-def _prepare_style_warning(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
+def _prepare_colloquial_body(notes: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[str, str]:
     del monkeypatch
     _write_awi_file(notes, "fb-001.md")
     return "fb-001.md", "説明—補足\n口語っぽいけど直す"
@@ -2199,7 +2177,7 @@ def _run_edit(
         (_prepare_undetermined_cause, 1),
         (_prepare_processing, 2),
         (_prepare_legacy_body, 0),
-        (_prepare_style_warning, 0),
+        (_prepare_colloquial_body, 0),
     ],
 )
 def test_edit_dry_run_matches_save_judgement(
@@ -2209,9 +2187,9 @@ def test_edit_dry_run_matches_save_judgement(
     prepare: Callable[[pathlib.Path, pytest.MonkeyPatch], tuple[str, str]],
     expected_code: int,
 ) -> None:
-    """拒否の種類ごとに`--dry-run`と保存へ同じ入力を渡し、終了コード、理由、次の操作、表記の警告が一致する。
+    """拒否の種類ごとに`--dry-run`と保存へ同じ入力を渡し、終了コード、理由、次の操作が一致する。
 
-    受理される旧書式の本文と表記の警告を持つ本文では、保存が本文を書き換え、`--dry-run`は書き換えない。
+    受理される旧書式の本文と口語を含む本文では、保存が本文を書き換え、`--dry-run`は書き換えない。
     `--dry-run`のための検証を別に書き起こすと、保存側だけに加えた検証との差がここで現れる。
     """
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

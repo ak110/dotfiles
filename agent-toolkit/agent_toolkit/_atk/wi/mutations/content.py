@@ -16,7 +16,6 @@ from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -565,14 +564,6 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         parsed = _frontmatter.parse_frontmatter(edited)
         if parsed is not None:
             frontmatter, body = parsed
-            style_warnings = _style_diagnostics.warnings_for_body(body, source=path.name)
-            if style_warnings:
-                _style_diagnostics.report_warnings(
-                    style_warnings,
-                    next_action=(
-                        f"編集は続行する。直す場合は反映後にatk wi edit {path.name} --body-file <PATH>で本文を置き換える"
-                    ),
-                )
             original_parsed = _frontmatter.parse_frontmatter(original)
             if original_parsed is not None and isinstance(original_parsed[0].get("source"), str):
                 original_frontmatter, original_body = original_parsed
@@ -584,7 +575,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         source=None,
                     )
                 except WebInputError:
-                    pass  # 既存の旧書式の編集では本文の表記診断だけを行う。
+                    pass  # 既存の旧書式には必須節の新規追加を求めない。
                 else:
                     try:
                         _add.require_agent_awi_sections(

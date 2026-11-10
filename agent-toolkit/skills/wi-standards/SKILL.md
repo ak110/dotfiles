@@ -28,6 +28,8 @@ UWIでは問い・理由・推奨する回答を、処理後であれば実際�
 報告用は同スキルが定義するものに限り、`--question-type=post-approval`だけでは区別しない。
 
 AWIの投入は、後続の`process-wi`で処理するエージェントへの作業依頼である。
+WIの起草・検収は、`agent-basics:review-standards`「文章成果物の実害」の作業項目の品質水準を適用し、意味と必要事項に集中する。
+最終成果物へ転記するときの要件・逐語文言の保持と品質基準の適用は、`references/notation-rules.md`「チェックの対象範囲」に従う。
 UWIの投入は、ユーザーへの判断・資料提供・操作・報告内容の確認の依頼であり、報告用UWIもユーザーに内容の確認を依頼する項目である。
 次の作業を進めるにあたってユーザーの判断・資料・操作が必要な場面などでの登録要否は、`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。
 UWIには、回答が得られるまで元の作業を再開・確定できない事前承認型と、最善と判断した対応を実施したうえで可否を尋ねる事後承認型がある。
@@ -54,6 +56,8 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| WIから最終成果物へ転記する前 | `references/notation-rules.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/notation-rules.md` |
+| WIの起草・投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
 | 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-save` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |

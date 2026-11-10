@@ -22,7 +22,6 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
-from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -968,8 +967,7 @@ def cmd_add(
             sys.exit(1)
         messages = [message]
     validation_errors: list[WebInputError] = []
-    style_warnings: list[str] = []
-    for index, message in enumerate(messages):
+    for message in messages:
         try:
             if is_agent_environment() and _user_comment.has_reserved_heading(message):
                 raise WebInputError(
@@ -978,8 +976,6 @@ def cmd_add(
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             _require_agent_source(frontmatter, args.source)
-            source = body_files[index] if body_files else "エディター入力"
-            style_warnings.extend(_style_diagnostics.warnings_for_body(body, source=source))
             try:
                 require_agent_awi_sections(
                     body,
@@ -1007,14 +1003,6 @@ def cmd_add(
                 )
             else:
                 validation_errors.append(error)
-    if style_warnings:
-        _style_diagnostics.report_warnings(
-            style_warnings,
-            next_action=(
-                "行番号付きの診断を確かめ、直す場合は投入前に本文を書き直すか、"
-                "投入後に`atk wi edit <ファイル名> --body-file <本文ファイル>`で置き換える"
-            ),
-        )
     if validation_errors:
         # 全メッセージの違反を1回で返し、次の操作は重複を除いて同じ順に並べる。
         next_actions = dict.fromkeys(error.next_action for error in validation_errors)

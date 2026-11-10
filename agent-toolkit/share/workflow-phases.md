@@ -2,6 +2,7 @@
 
 WI作成から実行レビューに至る一連の成果物を連携させ、消費主体が利用する公開インターフェース（コマンド、画面、APIなど）を通じて要求が確実に満たされるようにする。
 後続の工程は前工程の出口条件を入力として扱い、前工程で確定した判断を改めて起草し直すことはしない。
+WIの説明・例示を最終成果物へ転記する工程では、`../skills/wi-standards/references/notation-rules.md`「チェックの対象範囲」に従い、要件と逐語指定を保持して転記先の品質基準・lintへ合わせる。
 
 ## 名指し参照の読込方法
 
@@ -9,6 +10,7 @@ WI作成から実行レビューに至る一連の成果物を連携させ、消
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| WIの説明・例示を最終成果物へ転記する前 | `../skills/wi-standards/references/notation-rules.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/notation-rules.md` |
 | 目標起点の責務を判断する前 | `work-contract.md` | 判断 | `read:agent-toolkit:*/share/work-contract.md` |
 | 目標起点の処理対象を判断する前 | `../skills/process-wi/references/lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-launch.md` |

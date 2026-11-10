@@ -149,6 +149,7 @@ dotfilesで導入した後に撤去した仕組みを、何を補う・何を代
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
+| WI保存前に口語・ダッシュを走査し、警告と表現だけの推敲を求める | 2026-11-10 | 中間成果物の意味・要求達成を変えない表現の確認が往復を生むため撤去する。 | 意味・認可・必要事項を検収し、転記先で成果物の品質基準へ従う。docs/development/concepts-workflows-wi.md「AWI・UWIの本文と投入」 | 撤去理由を解消できることを示した場合 |
 | 完了報告の「要対応」などの見出しへ、ユーザーの判断・行動依頼を集める | 2026-10-10、commit: eb7c66244 | 判断・行動の依頼を報告見出しへ集める運用をユーザーが廃止した。 | 判断が必要な事項は個別UWIへ置く。docs/development/concepts-governance.md「確認の提示形式」 | 撤去理由を解消できることを示した場合 |
 | 自由記述だけの回答形式で新規UWIへの回答を求める | 2026-10-06、commit: 7d49b7fad | 独立した問いを束ねた自由記述の確認が回答負担と未合意を生んだ。 | 独立した問いごとに選択肢形式のUWIを作る。docs/development/concepts-governance.md「確認の提示形式」、docs/development/concepts-workflows-wi.md「AWI・UWIの本文と投入」 | 撤去理由を解消できることを示した場合 |
 | AWIの種類と専用変換操作でWIを計画へ変える | 2026-09-13、commit: 5c6e77a69 | 計画を1ファイル書式にまとめ、計画型AWIと変換を廃止する判断による。 | 新規の計画変換を行わず、保存済みplan_fileは読取互換とする。docs/development/concepts-principles.md「計画レビュー廃止前の運用（2026年9月13日まで）」、docs/development/concepts-workflows-wi.md「経緯（WIの状態と遷移）」 | 撤去理由を解消できることを示した場合 |
