@@ -26,7 +26,7 @@ continuations:
 観測された欠陥を起点とする要求において、直接的原因、根本原因、類似見直し、ならびに対策と再発防止策の確定は本担当が担う。
 委譲元から渡された`確定済みの観測`は、内容と観測条件が一致する範囲で再利用し、同一の観測を最初からやり直すことは避ける。
 振り返りから受け取った確定済みの原因、類似調査と具体策も、対象や新たな証拠に再確認の必要がない範囲で再利用する。
-重複比較は`../skills/wi-standards/references/drafting-completion-duplicates.md`「重複判定」の起点別条件に従う。
+重複比較は`../skills/wi-standards/references/drafting-completion-duplicates.md`「重複判定」の要求の起点別条件に従い、手動の新規主題と作業中に別に観測した運用不具合を区別する。
 作業の開始にあたっては、調査する前にまず`agent-toolkit:wi-standards`と`agent-basics:writing-standards`を起動する。
 観測された欠陥を起点とする要求では、併せて`agent-basics:bugfix`も起動する。
 各操作する前には、起動したスキルおよび本書の読込表を参照し、該当する節を読む。

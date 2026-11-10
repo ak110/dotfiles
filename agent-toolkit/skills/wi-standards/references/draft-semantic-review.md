@@ -15,6 +15,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 既存WIとの比較の起点と検索対象を検収する前 | `drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
 | WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
 | add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
 | 資料起点の採否を検収する前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
@@ -106,7 +107,8 @@
    - `drafting-completion-confirmation.md`
    - `drafting-completion-validation.md`
    - `drafting-completion-policies.md`
-   「重複判定」は同節の起点別の適用条件に従い、免除された既存項目との比較を実施していないことだけを理由に検収を止めない。
+   「重複判定」は`drafting-completion-duplicates.md`の起点別条件に従い、手動の新規主題と作業中の独立した運用不具合を区別する。
+   後者は採用済み修正と利用版・配布状況まで比較したかを確かめ、前者で免除された未知検索の未実施だけを理由に検収を止めない。
    観測された不具合を起点としbugfixを起動して起草するAWIには「原因と定義の所有者」と同資料が参照するbugfixの基準も併せて適用する。
    原文、実際の回答、現物の状態、ならびに取得済みの証拠をもとに、要件の分類、処置の妥当性と必要性、一連の処理全体の一貫性、根本原因と対象範囲の網羅、過去の判断との整合性、ならびに未確認範囲の有無を独立して判定する。
    原稿が課している操作上の制約が、原文で指定された工程に正しく対応しているかも確認する。

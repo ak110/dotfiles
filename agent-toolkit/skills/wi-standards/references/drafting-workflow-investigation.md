@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 観測した不具合・ユーザーの指摘・エラー・hookの誤動作を起点とする調査に入る前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
 | 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-scenarios.md`を全文読む | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
 | 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
@@ -34,6 +35,11 @@
    判定が不可能な場合や投入先の現状を確認できない場合は、「続行できない理由」を返す。
 
 ## 前提と観測の確認
+
+観測した不具合・ユーザーの指摘・エラー・hookの誤動作が起点の場合は、調査に入る前に`agent-basics:bugfix`を起動する。
+反映内容と反映先を確定する前に、同スキルの「類似見直し」で破られた不変条件を1文で定め、他のフック・コマンド・条文、既存WIや暫定規範が扱う事象も、同じ条件を破るかで対象集合へ対応付ける。
+同じ仕組みの箇所は同一WIの対象か登録した独立WIへ対応付け、観測した1件だけに範囲を固定しない。
+独立別件の区分、調査の深さ・母集団・終了条件はbugfixの基準にそろえる。
 
 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から反復・頻度・悪化・守られなくなった時期への言及と判断した場合は、原因確定前に読込表の2資料を全文読む。
 `root-cause-severity.md`「前提の再検討」と`root-cause-scenarios.md`「反復した指摘の原因判定」を適用する。
