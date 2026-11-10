@@ -1094,7 +1094,7 @@ class TestServeParser:
             "import sys; "
             f"sys.path.insert(0, {str(script_dir)!r}); "
             "import atk; "
-            "raise SystemExit(1 if '_atk.serve.cli' in sys.modules else 0)"
+            "raise SystemExit(1 if 'agent_toolkit._atk.serve.cli' in sys.modules else 0)"
         )
 
         result = subprocess.run([sys.executable, "-c", code], check=False)
