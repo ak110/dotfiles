@@ -28,13 +28,17 @@
    - 共有実行枠の対象は`make test`、`uv run --frozen pyfltr run`、`git commit`内の`pyfltr fast`、共通pytestプラグインを読むpytestである。
      両プロジェクトの`addopts`は同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で解除するものは枠の対象外となる。
      シェルからの起動は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の形式と3分類に従う。
-   - pytestは子処理を回収した試験の区切りで待機者へ譲り、再取得後に残りを続ける。
-     `pytest-slot-ticket`を設定したpyfltr経由と`atk lane integrate`の検証でも、参加券を受け渡して最上位の所有者だけが解放する。
-     参加しないツールやworkerが稼働する間は譲らず、長い全体pytestの区切りでも別worktreeの限定検証やcommit hookを実行できる。
+   - pytestと統合検証は、開始からworker・子孫の回収まで共有実行枠を保持する。
+     入れ子の実行は祖先の所有を継承し、別の検証は解放後に開始する。
 4. 確定した対象へ全チェックを適用するため、初回はMCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`commands`指定なしで実行する。
    修正後の再実行だけ失敗したチェックへ限定し、同じ内容の2回目以降の静的チェックでは`commands`（CLIは`--commands`）からpytestを除く。
    失敗テストだけの再確認は`--only-failed`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。
    pytestを含む実行には両プロジェクトの`pytest-always-targets`が加わるため、本書の横断テストの項で重複実行を避ける。
+   - 統合前・rebase後、レーン内、公開前のローカル全体pytestは`--maxfail=10`を指定し、計画の検証コマンドから統合用manifestの`verification`まで同じ値を保つ。
+     直接pytestでは`--maxfail=10`、pyfltr経由では`--pytest-args='--maxfail=10'`を使い、他のpytest追加引数は同じ値へ併記する。
+     少数の独立した失敗を1回で集めつつ、共通の準備処理が壊れて全試験が失敗した場合の出力を有限に抑えるためである。
+     10件を超える失敗では未実行の試験が残り、xdistの実行中の試験により最終の失敗数は10を超えうる。
+     `addopts`の既定値5、限定検証と失敗箇所の再確認、`make test`の通常起動、CIの`--maxfail=0`、時間上限は変えない。
 5. 意図した版と結果を確かめてからコミット対象を確定するため、`git status`で整形による差分を確認する。
    実行時間は`uv run --frozen pyfltr list-runs`で得た実行IDを使い、`uv run --frozen pyfltr show-run <run_id>`で確認する。
 

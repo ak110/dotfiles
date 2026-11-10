@@ -37,32 +37,24 @@ def test_timing_save_failure_returns_wrapper_failure(monkeypatch, tmp_path, fail
     assert observed["record_path"] is None
 
 
-def test_journal_keeps_each_reacquisition_once(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """通知境界を差し替え、各譲渡の開始・完了を重複計上せず保存する。"""
+def test_journal_keeps_initial_wait_once(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """通知境界を差し替え、開始前の待機の開始・完了を重複計上せず1区間として保存する。"""
 
     @contextlib.contextmanager
     def hold(*, label: str, on_wait_interval, **kwargs) -> collections.abc.Generator[None]:
         del kwargs
         assert label
-        for wait in (
-            run_command.execution_slot.SlotWait("initial", 0, "start"),
-            run_command.execution_slot.SlotWait("reacquire", 1, "start"),
-            run_command.execution_slot.SlotWait("reacquire", 2, "start"),
-        ):
-            on_wait_interval(wait)
-            on_wait_interval(dataclasses.replace(wait, finished_at="end", elapsed=0.1, outcome="acquired"))
+        wait = run_command.execution_slot.SlotWait("initial", 0, "start")
+        on_wait_interval(wait)
+        on_wait_interval(dataclasses.replace(wait, finished_at="end", elapsed=0.1, outcome="acquired"))
         yield
 
-    monkeypatch.setattr(run_command.execution_slot, "coordinated_hold", hold)
+    monkeypatch.setattr(run_command.execution_slot, "hold", hold)
     monkeypatch.setattr(run_command.managed_temp, "create_output_temp", lambda _prefix: tmp_path)
     observed, code, failure = run_command.execute([sys.executable, "-c", "pass"], tmp_path, 10, verification=True)
     assert code == 0 and failure is None
     waits = observed["timing"]["slot_waits"]
-    assert [(wait["kind"], wait["sequence"]) for wait in waits] == [
-        ("initial", 0),
-        ("reacquire", 1),
-        ("reacquire", 2),
-    ]
+    assert [(wait["kind"], wait["sequence"]) for wait in waits] == [("initial", 0)]
     assert all(wait["elapsed"] == 0.1 and wait["finished_at"] == "end" for wait in waits)
     assert json.loads((tmp_path / "timing.json").read_text(encoding="utf-8")) == observed["timing"]
 
@@ -90,7 +82,7 @@ def test_slot_wait_journal_survives_completion_and_interruption(
         "    def competing(owner):\n"
         "        (root/'competing').touch()\n"
         "        if sys.argv[1]=='interrupt': raise KeyboardInterrupt\n"
-        "    execution_slot.coordinated_hold=functools.partial(execution_slot.coordinated_hold,on_wait=competing)\n"
+        "    execution_slot.hold=functools.partial(execution_slot.hold,on_wait=competing)\n"
         "    try:\n"
         "        result=run_command.execute([sys.executable,'-c','print(42)'],root,10,verification=True)\n"
         "    except KeyboardInterrupt:\n"

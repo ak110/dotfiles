@@ -314,6 +314,7 @@ jobs:
         id: minimum-git
         if: needs.common-ci-owner.outputs.owns == 'true'
       - name: Python 3.15 pytest 直下
+        id: pytest
         if: needs.common-ci-owner.outputs.owns == 'true'
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
@@ -324,7 +325,20 @@ jobs:
             > "$RUNNER_TEMP/pytest-root-targets"
           mapfile -d '' -t targets < "$RUNNER_TEMP/pytest-root-targets"
           test "${#targets[@]}" -gt 0
-          uv run --frozen pytest -v --maxfail=0 "${targets[@]}"
+          # 全ケースの合否と個別所要をJUnit XMLへ保存する。timeは各試験のsetup・call・teardownの合計であり、
+          # jobの準備と終了処理はActionsのstep時刻で別に観測する。
+          # container jobではrunner.tempがコンテナー内のパスと異なるため、保存先をstep出力で後続へ渡す。
+          junit="$RUNNER_TEMP/pytest-root-junit.xml"
+          echo "junit=$junit" >> "$GITHUB_OUTPUT"
+          uv run --frozen pytest -v --junitxml="$junit" --maxfail=0 "${targets[@]}"
+      - name: pytest 直下のJUnit XMLを保存
+        # 失敗した試験の所要も取得するため、pytestが失敗しても保存する。保存先が決まる前の失敗では実行しない。
+        if: ${{ !cancelled() && needs.common-ci-owner.outputs.owns == 'true' && steps.pytest.outputs.junit != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pytest-root-junit
+          path: ${{ steps.pytest.outputs.junit }}
+          if-no-files-found: error
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv cache prune --ci
@@ -361,11 +375,31 @@ jobs:
         id: minimum-git
         if: needs.common-ci-owner.outputs.owns == 'true'
       - name: Python 3.15 pytest toolkit
+        id: pytest
         if: needs.common-ci-owner.outputs.owns == 'true'
         env:
           AGENT_TOOLKIT_TEST_GIT: ${{ steps.minimum-git.outputs.git }}
           TEST_SHARD: ${{ matrix.shard }}
-        run: pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args="-v --maxfail=0 --test-shard=$TEST_SHARD" agent-toolkit
+        run: |
+          set -euo pipefail
+          # pyfltrは遅い試験の一覧を上位5件へ切り詰めるため、全ケースの合否と個別所要をJUnit XMLへ保存する。
+          # timeは各試験のsetup・call・teardownの合計であり、jobの準備と終了処理はActionsのstep時刻で別に観測する。
+          # container jobではrunner.tempがコンテナー内のパスと異なるため、保存先をstep出力で後続へ渡す。
+          shard="${TEST_SHARD%%/*}-of-${TEST_SHARD##*/}"
+          junit="$RUNNER_TEMP/pytest-toolkit-junit-$shard.xml"
+          {
+            echo "junit=$junit"
+            echo "artifact=pytest-toolkit-junit-$shard"
+          } >> "$GITHUB_OUTPUT"
+          pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args="-v --maxfail=0 --junitxml=$junit --test-shard=$TEST_SHARD" agent-toolkit
+      - name: pytest toolkitのJUnit XMLを保存
+        # 失敗した試験の所要も取得するため、pytestが失敗しても保存する。保存先が決まる前の失敗では実行しない。
+        if: ${{ !cancelled() && needs.common-ci-owner.outputs.owns == 'true' && steps.pytest.outputs.junit != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.pytest.outputs.artifact }}
+          path: ${{ steps.pytest.outputs.junit }}
+          if-no-files-found: error
       - name: Prune uv cache for CI
         if: needs.common-ci-owner.outputs.owns == 'true'
         run: uv cache prune --ci

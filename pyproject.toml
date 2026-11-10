@@ -119,7 +119,6 @@ agent-doc = true
 require-text = ["docs/development/concepts.md", "docs/development/incidents.md", "分割ファイル"]
 
 [tool.pyfltr]
-pytest-slot-ticket = true
 preset = "latest"
 python = true
 command-timeout = 900

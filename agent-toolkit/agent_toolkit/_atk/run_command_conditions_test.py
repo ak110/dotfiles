@@ -6,7 +6,6 @@ import pathlib
 import sys
 
 import pytest
-from pyfltr.command import execution_slot
 
 from agent_toolkit._atk import run_command
 from agent_toolkit._common import inherited_venv
@@ -25,6 +24,8 @@ from agent_toolkit._testing import git_repository
         "output",
         "session",
         "session-removed",
+        "tool-call",
+        "tool-call-removed",
         "mise",
         "mise-removed",
         "launch-kind",
@@ -43,6 +44,7 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "before-session")
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "before-owner")
     monkeypatch.setenv("CODEX_THREAD_ID", "before-thread")
+    monkeypatch.setenv("CODEX_TOOL_CALL_ID", "before-tool-call")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND", "delegate")
     monkeypatch.setenv("__MISE_SESSION", "before-mise-session")
     monkeypatch.setenv("__MISE_SHIM_FALLBACK_CHAIN", '{"pid":1,"handoffs":[]}')
@@ -75,6 +77,12 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
     elif change == "session-removed":
         # 委譲元の識別子の有無は通知先の解決を切り替えるため、再利用しない。
         monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION")
+    elif change == "tool-call":
+        # 同じ会話の別のツール呼び出しからの再開。呼び出しごとに変わる識別子の値だけが違う。
+        monkeypatch.setenv("CODEX_TOOL_CALL_ID", "after-tool-call")
+    elif change == "tool-call-removed":
+        # 呼び出し識別子も、有無の変化は起動元の違いを示しうるため再利用しない。
+        monkeypatch.delenv("CODEX_TOOL_CALL_ID")
     elif change == "mise":
         # miseがシェルごとに付けるセッション差分とshimの起動経路（プロセス番号を含む）の値だけが違う再開。
         monkeypatch.setenv("__MISE_SESSION", "after-mise-session")
@@ -93,9 +101,11 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
     else:
         pathlib.Path(observed["stdout_path"]).unlink()
     reused = run_command.reusable_success(path, argv, repo)
-    assert (reused is not None) == (change in {"launch", "python-alias", "session", "mise"})
+    assert (reused is not None) == (change in {"launch", "python-alias", "session", "tool-call", "mise"})
     diagnostic = capsys.readouterr().err
     assert "before-value" not in diagnostic and "after-value" not in diagnostic and "launch-value" not in diagnostic
+    if change == "tool-call-removed":
+        assert "environment: 削除 CODEX_TOOL_CALL_ID" in diagnostic and "before-tool-call" not in diagnostic
     if change in {"added", "removed", "changed"}:
         assert "VERIFICATION_INPUT" in diagnostic
     if change == "session-removed":
@@ -108,12 +118,3 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
         assert "environment: 変更 PATH" in diagnostic and "path-entry-value" not in diagnostic
     if change == "legacy":
         assert "内訳" in diagnostic
-
-
-@pytest.mark.parametrize("ticket", ["first-participant", "next-participant"])
-def test_participant_ticket_is_not_a_verification_input(ticket: str) -> None:
-    """起動ごとの参加券の有無・値だけでは、同じ検証条件を変えない。"""
-    environment = {"UNKNOWN_VERIFICATION_INPUT": "same"}
-    expected = run_command.execution_conditions(environment)
-    environment[execution_slot.TICKET_ENV] = ticket
-    assert run_command.execution_conditions(environment) == expected

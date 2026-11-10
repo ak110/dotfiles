@@ -14,7 +14,6 @@ import sys
 import tempfile
 import zlib
 from collections.abc import Callable, Generator, Iterator
-from multiprocessing import resource_tracker
 from typing import Any
 
 import pytest
@@ -32,15 +31,8 @@ from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
-from agent_toolkit._testing import (
-    fork_runner,
-    isolation,
-    resource_diagnostics,
-    session_evidence_support,
-    slot_yield,
-    xdist_stop,
-)
 from agent_toolkit._testing import git_repository as _git_repository
+from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support, xdist_stop
 from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
@@ -196,38 +188,10 @@ def pytest_configure(config: pytest.Config) -> None:
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
-    parent_ticket = None if worker else execution_slot.receive_ticket()
-    # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。区切りでの譲渡は`slot_yield`の説明を参照する。
-    budget = float(config.getini("execution_slot_yield_budget"))
-    exhausted_marker = None
-    if not worker and config.getoption("numprocesses", None) and not config.getoption("collectonly"):
-        owner = slot_yield.CooperativeOwner(_notify_slot_wait, budget, participant=parent_ticket)
-        owner.start()
-        stack.callback(owner.close)
-        if owner.inherited:
-            stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
-        else:
-            config.pluginmanager.register(slot_yield.TicketDistribution(owner), "dotfiles-execution-slot-tickets")
-    else:
-        ticket = config.workerinput.get(slot_yield.TICKET_KEY) if worker else parent_ticket  # type: ignore[attr-defined]
-        if worker:
-            slot_yield.signal_done_after_hold(stack, config.workerinput)  # type: ignore[attr-defined]
-            marker = config.workerinput.get(slot_yield.EXHAUSTED_KEY)  # type: ignore[attr-defined]
-            exhausted_marker = pathlib.Path(marker) if marker is not None else None
-        stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait, participant=ticket))
+    # 最外側のpytestは開始から子孫の回収まで実行枠を保持し、試験の途中では待機者へ譲らない。
+    # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
+    stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
     previous_children = set(process_tree.collect_descendants(os.getpid()))
-    baseline = {child.pid for child in previous_children}
-
-    def ignored_children() -> set[int]:
-        # resource_trackerは同じインタープリターが終了まで使う補助プロセスで、試験の子ではない。
-        tracker = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
-        idle_server = fork_runner.idle_server_pid()
-        # 待機中の常駐補助だけを除く。fork子を含む残りの子孫は譲渡を止める。
-        return baseline | {pid for pid in (tracker, idle_server) if isinstance(pid, int)}
-
-    config.pluginmanager.register(
-        slot_yield.BoundaryYield(ignored_children, budget, exhausted_marker), "dotfiles-execution-slot-yield"
-    )
     resource_environment = {
         name: os.environ.get(name)
         for name in ("HOME", "USERPROFILE", "XDG_STATE_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA", "APPDATA")
@@ -294,12 +258,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """CIで1つの試験集合を複数runnerへ分ける`--test-shard`と、実行枠の譲渡の上限を登録する。"""
-    parser.addini(
-        "execution_slot_yield_budget",
-        help="試験の区切りで待機中の検証へ実行枠を譲る累計時間の上限（秒）。達した後は譲らない",
-        default=str(slot_yield.DEFAULT_YIELD_BUDGET),
-    )
+    """CIで1つの試験集合を複数runnerへ分ける`--test-shard`を登録する。"""
     parser.addoption(
         "--test-shard",
         metavar="INDEX/COUNT",

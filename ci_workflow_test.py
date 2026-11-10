@@ -383,6 +383,7 @@ _RELEASE_PULL_REQUEST_CONDITIONS = (
     "github.base_ref == 'master'",
 )
 _OWNS = "needs.common-ci-owner.outputs.owns == 'true'"
+_JUNIT_UPLOAD = "${{ !cancelled() && " + _OWNS + " && steps.pytest.outputs.junit != '' }}"
 
 
 def _common_job_names(workflow: dict[str, object]) -> list[str]:
@@ -430,7 +431,10 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
             assert real[-1]["if"] == "steps.selection.outputs.selected == 'true'"
         else:
             assert "if" not in job
-            assert all(step.get("if") == _OWNS for step in real)
+            # JUnit XMLの保存だけは、pytestの失敗後も実行するため所有条件へ継続条件を加える。
+            for step in real:
+                uploads = "upload-artifact@" in str(step.get("uses", ""))
+                assert step.get("if") == (_JUNIT_UPLOAD if uploads else _OWNS), step
 
     version = _statusline_job(workflow_data)
     assert "needs" not in version
@@ -749,6 +753,30 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
     assert "--maxfail=0" in str(pytest_step["run"])
+
+    # 全ケースの合否と個別所要を、pytestの成否によらず各jobの同じ結果としてartifactへ保存する。
+    command = str(pytest_step["run"])
+    assert command.startswith("set -euo pipefail\n")
+    assert 'echo "junit=$junit"' in command and '>> "$GITHUB_OUTPUT"' in command
+    assert command.index('echo "junit=$junit"') < command.index("--junitxml=")
+    assert ('--junitxml="$junit"' if scope == "直下" else "--junitxml=$junit ") in command
+    assert pytest_step["id"] == "pytest"
+    upload = steps[pytest_index + 1]
+    assert str(upload["uses"]).startswith("actions/upload-artifact@")
+    assert upload["if"] == _JUNIT_UPLOAD
+    assert "continue-on-error" not in pytest_step and "continue-on-error" not in upload
+    settings = workflow_mapping(upload["with"])
+    assert settings["path"] == "${{ steps.pytest.outputs.junit }}"
+    assert settings["if-no-files-found"] == "error"
+    if scope == "直下":
+        assert 'junit="$RUNNER_TEMP/pytest-root-junit.xml"' in command
+        assert settings["name"] == "pytest-root-junit"
+    else:
+        # artifact名は分割ごとに一意にし、名前に使えない`/`を分割指定から除く。
+        assert 'shard="${TEST_SHARD%%/*}-of-${TEST_SHARD##*/}"' in command
+        assert 'junit="$RUNNER_TEMP/pytest-toolkit-junit-$shard.xml"' in command
+        assert 'echo "artifact=pytest-toolkit-junit-$shard"' in command
+        assert settings["name"] == "${{ steps.pytest.outputs.artifact }}"
 
 
 def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str, object]) -> None:

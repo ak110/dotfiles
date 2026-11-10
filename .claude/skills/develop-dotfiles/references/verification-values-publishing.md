@@ -26,6 +26,8 @@
 - 複数レーンにまたがる重複実装を検査する: `uv run --frozen pyfltr run --commands=arid`
 - 型定義と静的参照の整合性を検証する: `uv run --frozen pyfltr run --commands=ty`
 - 複数ファイル間にまたがる循環importを検査する: `uv run --frozen pyfltr run --no-fix --commands=pylint --pylint-args='--disable=all --enable=cyclic-import'`
+- pytestを含む全体検証には、`verification-values-execution.md`「検証コマンドの実行」が定めるローカル全体pytestの`--maxfail=10`を指定する。
+  実行例: `uv run --frozen pyfltr run --no-fix --pytest-args='--maxfail=10'`
 
 CIの`python-lint (3.15)`は、Pylintとその他のlintの両jobの成功を集約する。
 Pylintは`pyfltr ci --commands=pylint`で実行する。
@@ -64,3 +66,4 @@ CIを変更した担当は、同条件の保存結果から実時間とrunner実
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | dotfilesの検証で使う値：変更範囲の検証の値の基準を適用する前 | `verification-values-scope.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-scope.md` |
+| dotfilesの検証で使う値：検証コマンドの実行の基準を適用する前 | `verification-values-execution.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-execution.md` |

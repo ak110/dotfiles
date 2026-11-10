@@ -12,7 +12,6 @@ import sys
 import textwrap
 import time
 import xml.etree.ElementTree as ET
-from types import SimpleNamespace
 from typing import Any, cast
 
 import claude_agent_sdk
@@ -20,7 +19,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import backends
-from agent_toolkit._testing import late_descendant, pytest_plugin, slot_yield, xdist_stop
+from agent_toolkit._testing import late_descendant, pytest_plugin, xdist_stop
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
 # pylint: disable=protected-access
@@ -701,47 +700,36 @@ _SLOT_PROBE = """\
 import json, os, pathlib, time
 import pytest
 
-@pytest.mark.parametrize("index", range(int(os.environ.get("SLOT_TESTS", "6"))))
+@pytest.mark.parametrize("index", range(6))
 def test_slow(index):
     evidence = pathlib.Path(os.environ["SLOT_EVIDENCE"])
     queued = pathlib.Path(os.environ["SLOT_QUEUED"])
     # 最初の試験の完了後に始まる試験は、待機者が実行枠の待ち列へ並んだ印を見てから進む。
-    # 待機者の起動の速さに左右されず、残りの試験の区切りで待機者が並んでいる状態を作る。
+    # 待機者の起動の速さに左右されず、残りの試験の実行中に待機者が並んでいる状態を作る。
     deadline = time.monotonic() + 60
     while list(evidence.glob("test-*.json")) and not queued.exists():
         assert time.monotonic() < deadline, "待機者が待ち列へ並ばない"
         time.sleep(0.02)
-    # 印`SLOT_AFTER`の後に始まる試験は、長い待機者が待ち列へ並んだ印`SLOT_LONG_QUEUED`も待つ（指定した試験だけ）。
-    after, long_queued = os.environ.get("SLOT_AFTER"), os.environ.get("SLOT_LONG_QUEUED")
-    while after and long_queued and pathlib.Path(after).exists() and not pathlib.Path(long_queued).exists():
-        assert time.monotonic() < deadline, "長い待機者が待ち列へ並ばない"
-        time.sleep(0.02)
     started = time.time()
-    pathlib.Path(os.environ["SLOT_EVIDENCE"], f"test-{index}.json").write_text(
-        json.dumps({"started": started, "ended": time.time()}), encoding="utf-8"
-    )
+    (evidence / f"test-{index}.json").write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
+    assert os.environ.get("SLOT_FAIL") != str(index)
+    if os.environ.get("SLOT_INTERRUPT") == str(index):
+        raise KeyboardInterrupt
 """
 
 _SLOT_WAITER = """\
 import json, os, pathlib, sys, time
 from pyfltr.command import execution_slot
 
-# `on_wait`は待ち列への登録後に呼ばれるため、印は登録の完了を示す。印の保存先を渡さない試験では書かない。
-queued = os.environ.get("SLOT_QUEUED")
+# `on_wait`は待ち列への登録後に呼ばれるため、印は登録の完了を示す。
+queued = pathlib.Path(os.environ["SLOT_QUEUED"])
 
 def mark(_owner=None):
-    if queued:
-        pathlib.Path(queued).write_text("", encoding="utf-8")
+    queued.write_text("", encoding="utf-8")
 
 with execution_slot.hold(label="waiter-probe", on_wait=mark):
     mark()
     started = time.time()
-    release = os.environ.get("SLOT_RELEASE")
-    pathlib.Path(sys.argv[1]).with_suffix(".ready").touch()
-    deadline = time.monotonic() + 30
-    while release and not pathlib.Path(release).exists():
-        assert time.monotonic() < deadline
-        time.sleep(0.01)
     output = pathlib.Path(sys.argv[1])
     temporary = output.with_suffix(".tmp")
     temporary.write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
@@ -770,21 +758,24 @@ raise SystemExit(code)
 
 
 @pytest.mark.parametrize(
-    ("workers", "route"),
+    ("workers", "route", "mode"),
     [
-        (2, "direct"),
-        (0, "direct"),
-        (2, "inherited"),
-        (2, "pyfltr"),
-        (2, "run-command"),
-        pytest.param(2, "idle-fork", marks=pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応")),
+        (2, "direct", "pass"),
+        (0, "direct", "pass"),
+        (2, "direct", "fail"),
+        (0, "direct", "interrupt"),
+        (2, "inherited", "pass"),
+        (2, "pyfltr", "pass"),
+        (2, "run-command", "pass"),
+        pytest.param(2, "idle-fork", "pass", marks=pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応")),
     ],
 )
 @pytest.mark.timeout(120)
-def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathlib.Path, workers: int, route: str) -> None:
-    """最外側の所有では試験の区切りで待機者へ譲って残りを再開し、継承時は外側の解放まで譲らない。
+def test_pytest_holds_slot_until_all_tests_finish(tmp_path: pathlib.Path, workers: int, route: str, mode: str) -> None:
+    """試験の途中で並んだ別の検証は、pytestの全試験が終わるまで待ってから実行枠を取得する。
 
-    待機者の保持区間がどの試験の実行区間とも重ならないこと（workerの稼働中の排他）と、全試験の結果を確かめる。
+    直接起動、xdistのworker、祖先の所有を継承する入れ子（外側の保持、pyfltr経由、統合検証経由）と、
+    失敗・中断する試験を含む実行で、待機者の保持区間がどの試験の実行区間よりも後に始まることを確かめる。
     残りの試験は待機者が待ち列へ並んだ印を待ってから進むため、待機者の起動が遅れても判定は変わらない。
     """
     evidence = tmp_path / "evidence"
@@ -813,6 +804,10 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
         SLOT_QUEUED=str(tmp_path / "queued"),
         SLOT_RECORD=str(tmp_path / "run-command.json"),
     )
+    if mode == "fail":
+        environment["SLOT_FAIL"] = "5"
+    elif mode == "interrupt":
+        environment["SLOT_INTERRUPT"] = "5"
     argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
     argv += [
         "-p",
@@ -830,8 +825,7 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
         assert pytest_bin.is_file()
         (tmp_path / "pyproject.toml").write_text(
             '[tool.pyfltr]\npytest = true\npytest-runner = "direct"\nrespect-gitignore = false\n'
-            f"pytest-path = {json.dumps(str(pytest_bin))}\npytest-args = {json.dumps(argv[3:-1])}\n"
-            "pytest-slot-ticket = true\n",
+            f"pytest-path = {json.dumps(str(pytest_bin))}\npytest-args = {json.dumps(argv[3:-1])}\n",
             encoding="utf-8",
         )
         argv = [sys.executable, "-m", "pyfltr", "run", "--verbose", "--commands=pytest", "probe_test.py"]
@@ -846,254 +840,26 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
         while not list(evidence.glob("test-*.json")):
             assert child.poll() is None and time.monotonic() < deadline
             time.sleep(0.05)
-        release = tmp_path / "waiter.release"
-        waiter_environment = environment if route == "inherited" else {**environment, "SLOT_RELEASE": str(release)}
-        with subprocess.Popen([sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=waiter_environment) as waiter:
+        with subprocess.Popen([sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=environment) as waiter:
             try:
-                if route != "inherited":
-                    while not waited.with_suffix(".ready").exists():
-                        assert waiter.poll() is None and time.monotonic() < deadline
-                        time.sleep(0.01)
-                    release.touch()
+                output, _ = child.communicate(timeout=90)
                 waiter.wait(timeout=60)
             finally:
-                release.touch()
                 if waiter.poll() is None:
                     waiter.kill()
                     waiter.wait(timeout=5)
-        output, _ = child.communicate(timeout=90)
     assert waiter.returncode == 0
-    assert child.returncode == 0, output
-    assert len(ET.parse(tmp_path / "pytest.xml").findall(".//testcase")) == 6
+    assert child.returncode == {"pass": 0, "fail": 1, "interrupt": 2}[mode], output
+    if mode != "interrupt":
+        assert len(ET.parse(tmp_path / "pytest.xml").findall(".//testcase")) == 6
     tests = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(evidence.glob("test-*.json"))]
     assert len(tests) == 6
     window = json.loads(waited.read_text(encoding="utf-8"))
-    assert all(test["ended"] <= window["started"] or window["ended"] <= test["started"] for test in tests), (window, tests)
-    last = max(test["ended"] for test in tests)
-    # 最外側の所有では残りの試験より先に待機者が実行され、継承時はpytestの終了後まで待つ。
-    assert (window["ended"] < last) is (route != "inherited"), (window, tests)
+    # 待機者は試験の区切りでは進まず、最後の試験が終わった後に保持を始める。
+    assert max(test["ended"] for test in tests) <= window["started"], (window, tests)
     if route == "run-command":
         record = json.loads((tmp_path / "run-command.json").read_text(encoding="utf-8"))
         assert record["child_exit_code"] == record["wrapper_exit_code"] == 0
         assert not record["timed_out"] and record["failure"] is None
-        assert any(wait["kind"] == "reacquire" for wait in record["timing"]["slot_waits"])
-
-
-_SLOT_FLOOD = """\
-import os, pathlib, subprocess, sys
-
-# 停止の印が置かれるまで、長く保持する待機者を次々に起動し、待ち列が空にならない状態を作る。
-stop = pathlib.Path(sys.argv[1])
-waiter, log_directory = sys.argv[2], pathlib.Path(sys.argv[3])
-index = 0
-while not stop.exists():
-    prefix = os.environ["SLOT_FLOOD_INDEX"]
-    output = log_directory / f"{prefix}-{index}.json"
-    subprocess.run(
-        [sys.executable, waiter, str(output)],
-        env={**os.environ, "SLOT_QUEUED": str(output.with_suffix(".queued"))},
-        check=True,
-        timeout=60,
-    )
-    index += 1
-"""
-
-
-@pytest.mark.parametrize(("workers", "budget"), [(2, 2.5), (0, 2.5), (2, 6.0)])
-def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
-    tmp_path: pathlib.Path, workers: int, budget: float
-) -> None:
-    """長い検証が待ち列へ次々に並んでも、譲渡の累計時間の上限の後は譲らずに残りの試験を完了する。
-
-    短い待機者は従来どおり区切りで実行枠を譲られて先に終わり、長い待機者が並び続けてもpytestは有限の譲渡の後に終わることを、
-    同じ実行の試験と待機者の実行区間の記録から確かめる。短い待機者の後に始まる試験は長い待機者が並んだ印を待つため、
-    上限に達する前に、長い待機者が待ち列に並んだ状態が必ず生じる。上限6秒の対照では、同じ数え方で上限2.5秒の許容件数を超える。
-    譲渡に費やした時間は長い待機者の完了通知ごとに制御時計で進める。
-    """
-    # 所有者の譲渡予算だけを制御時計で進め、実プロセスの排他・待ち列は実際に通す。
-    (tmp_path / "conftest.py").write_text(
-        "import os, pathlib\nfrom types import SimpleNamespace\n"
-        "from agent_toolkit._testing import slot_yield\n"
-        "windows = pathlib.Path(os.environ['SLOT_WINDOWS'])\n"
-        "slot_yield.time = SimpleNamespace(monotonic=lambda: len(list(windows.glob('*-*.json'))) * 1.5)\n",
-        encoding="utf-8",
-    )
-    evidence = tmp_path / "evidence"
-    evidence.mkdir()
-    windows = tmp_path / "windows"
-    windows.mkdir()
-    stop = tmp_path / "stop"
-    # 各世代の完了後も次の登録を待ち、待機者の起動中に残りの試験が完了する競合を除く。
-    probe_source = _SLOT_PROBE.replace(
-        "    started = time.time()",
-        """    if long_queued and pathlib.Path(long_queued).exists():
-        windows = pathlib.Path(os.environ["SLOT_WINDOWS"])
-        for prefix in range(2):
-            completed = len(list(windows.glob(f"{prefix}-*.json")))
-            queued = windows / f"{prefix}-{completed}.queued"
-            while not queued.exists():
-                assert time.monotonic() < deadline, f"次の長い待機者が登録されない: {queued}"
-                time.sleep(0.02)
-    started = time.time()""",
-        1,
-    )
-    (tmp_path / "probe_test.py").write_text(probe_source, encoding="utf-8")
-    # 予算は譲渡が完了してから判定する。模擬待機者の追越し窓だけを無効にし、上流の新規要求優先と予算を分ける。
-    # 通常設定の各起動形式は、上の譲渡・復帰試験で別に確認する。
-    waiter_source = _SLOT_WAITER.replace(
-        "with execution_slot.hold(",
-        "execution_slot._REACQUIRE_BYPASS_SECONDS = 0\n\nwith execution_slot.hold(",
-        1,
-    )
-    (tmp_path / "waiter.py").write_text(waiter_source, encoding="utf-8")
-    (tmp_path / "flood.py").write_text(_SLOT_FLOOD, encoding="utf-8")
-    environment = dict(os.environ)
-    environment.pop("PYTEST_ADDOPTS", None)
-    environment.update(
-        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
-        PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"),
-        SLOT_EVIDENCE=str(evidence),
-        SLOT_QUEUED=str(tmp_path / "queued"),
-        SLOT_TESTS="12",
-        SLOT_WINDOWS=str(windows),
-        SLOT_AFTER=str(windows / "short.json"),
-        SLOT_LONG_QUEUED=str(tmp_path / "long-queued"),
-    )
-    argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
-    argv += ["-o", f"execution_slot_yield_budget={budget}", "-p", "xdist.plugin", "-n", str(workers)]
-    argv += [str(tmp_path / "probe_test.py")]
-    with contextlib.ExitStack() as stack:
-        child = stack.enter_context(
-            subprocess.Popen(
-                argv,
-                cwd=tmp_path,
-                env=environment,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-            )
-        )
-        deadline = time.monotonic() + 60
-        while not list(evidence.glob("test-*.json")):
-            assert child.poll() is None and time.monotonic() < deadline
-            time.sleep(0.05)
-        short = subprocess.run(
-            [sys.executable, str(tmp_path / "waiter.py"), str(windows / "short.json")],
-            env=environment,
-            timeout=60,
-            check=False,
-        )
-        assert short.returncode == 0
-        long_environment = environment
-        queued_markers = [windows / f"{index}-0.queued" for index in range(2)]
-        floods = [
-            stack.enter_context(
-                subprocess.Popen(
-                    [sys.executable, str(tmp_path / "flood.py"), str(stop), str(tmp_path / "waiter.py"), str(windows)],
-                    env={**long_environment, "SLOT_FLOOD_INDEX": str(index)},
-                )
-            )
-            for index in range(2)
-        ]
-        try:
-            # 再取得1回で待つ初回の2件を固定し、待機者の起動速度で予算の件数比較を変えない。
-            deadline = time.monotonic() + 30
-            while not all(marker.exists() for marker in queued_markers):
-                assert child.poll() is None and all(flood.poll() is None for flood in floods)
-                assert time.monotonic() < deadline, "長い待機者2件が待ち列へ並ばない"
-                time.sleep(0.02)
-            (tmp_path / "long-queued").touch()
-            output, _ = child.communicate(timeout=90)
-        finally:
-            stop.write_text("", encoding="utf-8")
-            for flood in floods:
-                flood.wait(timeout=60)
-                assert flood.returncode == 0
-    assert child.returncode == 0, output
-    assert "12 passed" in output
-    tests = [json.loads(path.read_text(encoding="utf-8")) for path in evidence.glob("test-*.json")]
-    last = max(test["ended"] for test in tests)
-    short_window = json.loads((windows / "short.json").read_text(encoding="utf-8"))
-    # 短い待機者は、残りの試験の区切りで実行枠を譲られて先に終わる。
-    assert short_window["ended"] < last, (short_window, tests)
-    long_windows = [json.loads(path.read_text(encoding="utf-8")) for path in windows.glob("*-*.json")]
-    yielded = len([window for window in long_windows if window["started"] < last])
-    if budget < 6:
-        # 長い待機者（1件1.5秒）へ1回は譲り、並び続けても上限（2.5秒）を超えるまでの高々2件で譲るのをやめる。
-        assert 1 <= yielded <= 2, (long_windows, tests)
-    else:
-        # 上限を広げると同じ条件で3件以上へ譲る。上限2.5秒の件数の制限が上限の効果であることの対照である。
-        assert yielded >= 3, (long_windows, tests)
-
-
-_SLOT_PARTICIPANT = """\
-import pathlib, sys, time
-from pyfltr.command import execution_slot
-
-ticket, mode, done = sys.argv[1:4]
-with execution_slot.hold(participant=ticket):
-    if mode == "boundary":
-        while not execution_slot.yield_requested():
-            time.sleep(0.05)
-        print("yielded", execution_slot.yield_to_waiters(), flush=True)
-pathlib.Path(done).write_text("", encoding="utf-8")
-"""
-
-_SLOT_DETACHED_WAITER = """\
-import subprocess, sys
-
-# 孫を起動して親だけ終了し、待機者を協調所有者の子孫から外す（子孫は所有を継承して待たないため）。
-subprocess.Popen([sys.executable, *sys.argv[1:]], start_new_session=True)
-"""
-
-
-def test_cooperative_owner_yields_after_finished_worker_released(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """先に終了したworkerの参加区間を完了印の後に閉じ、区切りで止まった残りのworkerの間に待機者へ譲る。
-
-    終了した参加者の登録を残すと協調所有者は譲らず、止まったworkerが再開されないままpytestが終了しない。
-    """
-    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "pyfltr"))
-    (tmp_path / "participant.py").write_text(_SLOT_PARTICIPANT, encoding="utf-8")
-    (tmp_path / "detach.py").write_text(_SLOT_DETACHED_WAITER, encoding="utf-8")
-    (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
-    owner = slot_yield.CooperativeOwner(lambda _owner: None)
-    owner.start()
-    try:
-        assert not owner.inherited
-        distribution = slot_yield.TicketDistribution(owner)
-        nodes = [SimpleNamespace(gateway=SimpleNamespace(id=f"gw{index}"), workerinput={}) for index in range(2)]
-        for node in nodes:
-            distribution.pytest_configure_node(node)
-        tickets = [node.workerinput[slot_yield.TICKET_KEY] for node in nodes]
-        dones = [pathlib.Path(node.workerinput[slot_yield.DONE_KEY]) for node in nodes]
-        finished = subprocess.run(
-            [sys.executable, str(tmp_path / "participant.py"), tickets[0], "finish", str(dones[0])], timeout=30, check=False
-        )
-        assert finished.returncode == 0
-        distribution.pytest_testnodedown(nodes[0], None)
-        with subprocess.Popen(
-            [sys.executable, str(tmp_path / "participant.py"), tickets[1], "boundary", str(dones[1])],
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-        ) as boundary:
-            waited = tmp_path / "waiter.json"
-            subprocess.run(
-                [sys.executable, str(tmp_path / "detach.py"), str(tmp_path / "waiter.py"), str(waited)],
-                timeout=30,
-                check=True,
-            )
-            try:
-                output, _ = boundary.communicate(timeout=30)
-            finally:
-                if boundary.poll() is None:
-                    boundary.kill()
-        assert boundary.returncode == 0
-        assert "yielded True" in output
-        assert waited.exists()
-    finally:
-        owner.close()
-    assert not owner.done_directory.exists()
+        # 統合検証は開始前の待機だけを記録し、実行中に実行枠を取り直さない。
+        assert all(wait["kind"] == "initial" for wait in record["timing"]["slot_waits"])

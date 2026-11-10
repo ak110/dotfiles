@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
@@ -35,6 +36,7 @@ from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._common import (
     inherited_venv,
     plugin_environment,
+    read_triggers,
     session_activity,
     session_registry,
     session_state,
@@ -913,11 +915,25 @@ def test_public_hook_does_not_attach_persistent_inventory_to_invalid_or_start_pa
     assert _inventories.get() is None and _reusable.get() is None
 
 
+@pytest.fixture(name="unchanged_documents_resolution")
+def _unchanged_documents_resolution() -> Iterator[None]:
+    """資料・導入情報・解決環境を変えない試験の間だけ、読込表と資料の静的な参照解決を共有する。
+
+    製品のhookは要求ごとに解決し直す。この共有は試験の終了時に破棄し、資料を変える試験には使わない。
+    """
+    with read_triggers.resolution_scope():
+        yield
+
+
 @pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.usefixtures("unchanged_documents_resolution")
 def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, codex: bool
 ) -> None:
-    """依存を読み込んだ後の反復呼び出しでも、スキルの取得の判定と未配送通知の判定が入力と状態に従う。"""
+    """依存を読み込んだ後の反復呼び出しでも、スキルの取得の判定と未配送通知の判定が入力と状態に従う。
+
+    公開hookの起動、入力、資料の取得、配送記録、session間の分離、Stopの判定は呼び出しごとに実行する。
+    """
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)

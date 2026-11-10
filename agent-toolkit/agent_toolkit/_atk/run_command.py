@@ -30,7 +30,7 @@ _EXIT_TIMEOUT = 124
 _EXIT_WRAPPER_FAILURE = 125
 # 子プロセスの起動前に作業ツリーの状態を取る`git`の時間上限。観測の前処理で実行を止めないよう短く保つ。
 _GIT_STATE_TIMEOUT_SECONDS = 30.0
-# 成功記録の再利用判定で値を比べない環境変数。エージェントの会話・委譲・巡回の識別子と引き継ぎ記録の場所、
+# 成功記録の再利用判定で値を比べない環境変数。エージェントの会話・ツール呼び出し・委譲・巡回の識別子と引き継ぎ記録の場所、
 # ホストとのメッセージング、端末・SSH・D-Busのセッション、シェルの作業ディレクトリと階層、
 # miseのセッション差分とshimの起動経路（プロセス番号を含む）は、
 # 実行や再開のたびに値が変わり、同じ版・argv・cwdの検証結果を変えない。値まで比較すると再開ごとに同じ全体検証を
@@ -53,6 +53,7 @@ _VOLATILE_ENVIRONMENT_NAMES = frozenset(
         "CLAUDE_PID",
         "CODEX_SESSION_ID",
         "CODEX_THREAD_ID",
+        "CODEX_TOOL_CALL_ID",
         "DBUS_SESSION_BUS_ADDRESS",
         "SSH_CLIENT",
         "SSH_CONNECTION",
@@ -200,23 +201,18 @@ def execute(
         timing["slot_waits"] = list(waits.values())
         atomic_write(journal, json.dumps(timing, ensure_ascii=False) + "\n")
 
+    # 検証は開始から子孫の回収まで実行枠を保持する。子のpyfltrとpytestは祖先の所有を継承する。
     ownership = (
-        execution_slot.coordinated_hold(
-            label=shlex.join(argv), on_wait_interval=record_wait, participant=execution_slot.receive_ticket()
-        )
-        if verification
-        else contextlib.nullcontext(None)
+        execution_slot.hold(label=shlex.join(argv), on_wait_interval=record_wait) if verification else contextlib.nullcontext()
     )
     observed: dict[str, Any] | None = None
     try:
         atomic_write(journal, json.dumps(timing, ensure_ascii=False) + "\n")
         try:
-            with ownership as coordinator:
+            with ownership:
                 command_started = time.monotonic()
                 timing["command_started_at"] = datetime.datetime.now(datetime.UTC).isoformat()
-                participant = coordinator.participant() if coordinator is not None else contextlib.nullcontext(None)
-                with participant as ticket, execution_slot.bind_tool_ticket(ticket):
-                    observed, code, failure = _execute(argv, cwd, timeout, directory, coordinator=coordinator)
+                observed, code, failure = _execute(argv, cwd, timeout, directory)
                 timing["command_finished_at"] = datetime.datetime.now(datetime.UTC).isoformat()
                 timing["command_elapsed"] = time.monotonic() - command_started
         finally:
@@ -262,14 +258,12 @@ def execution_conditions(environment: dict[str, str] | None = None) -> dict[str,
     """子へ渡す正規化後の条件を、値を記録せず項目別に比較する。"""
     environment = dict(os.environ if environment is None else environment)
     strip_inherited_venv(environment)
-    # 参加券は起動ごとに発行する協調用の値で、検証対象の入力ではない。
-    environment.pop(execution_slot.TICKET_ENV, None)
     # 起動層の復元情報とvenvは子にも渡らない。値を比べないのは`_VOLATILE_ENVIRONMENT_NAMES`だけとする。
     # 比較方法を変えた版では旧版の記録と項目の意味が異なるため、versionを上げて旧記録を形式違いとして扱う。
     for name in _VOLATILE_ENVIRONMENT_NAMES & environment.keys():
         environment[name] = ""
     return {
-        "version": 5,
+        "version": 6,
         "python": {
             key: hashlib.sha256(value.encode("utf-8")).hexdigest()
             for key, value in {
@@ -355,11 +349,9 @@ def _execute(
     cwd: pathlib.Path,
     timeout: float | None,
     directory: pathlib.Path,
-    *,
-    coordinator: execution_slot.SlotCoordinator | None = None,
 ) -> tuple[dict[str, Any], int, str | None]:
     """終了する子プロセスを実行して記録を保存し、表示とは別に結果・終了コード・保存の失敗を返す。"""
-    child_env = execution_slot.tool_environ(dict(os.environ))
+    child_env = dict(os.environ)
     strip_inherited_venv(child_env)
     conditions = execution_conditions(child_env)
     git_head, git_status = _git_state(cwd)
@@ -387,23 +379,7 @@ def _execute(
                 try:
                     if is_human_terminal():
                         print(f"実行中（両出力を保存中）: {shlex.join(argv)}", file=sys.stderr, flush=True)
-                    if coordinator is None:
-                        process.wait(timeout=timeout)
-                    else:
-                        deadline = None if timeout is None else time.monotonic() + timeout
-                        while True:
-                            remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
-                            try:
-                                process.wait(timeout=0.2 if remaining is None else min(0.2, remaining))
-                                break
-                            except subprocess.TimeoutExpired:
-                                if deadline is not None and time.monotonic() >= deadline:
-                                    raise
-                                paused = time.monotonic()
-                                coordinator.checkpoint()
-                                # 子の安全な区切りで譲った時間は、子の実処理の時間上限から除く。
-                                if deadline is not None:
-                                    deadline += time.monotonic() - paused
+                    process.wait(timeout=timeout)
                 except subprocess.TimeoutExpired:
                     timed_out = True
                     if is_human_terminal():

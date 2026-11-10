@@ -8,6 +8,7 @@ import venv
 from collections.abc import Callable
 
 import pytest
+import yaml
 
 _REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
 _STUB_COMMANDS = ("uv", "sudo", "apt-get", "dpkg", "wget", "pwsh", "rm")
@@ -127,42 +128,46 @@ def test_check_entries_override_parent_project_environment(tmp_path: pathlib.Pat
         assert expected_toolkit in call if "--project agent-toolkit" in call else expected_root in call
 
 
-def test_precommit_pyfltr_entry_overrides_parent_project_environment(tmp_path: pathlib.Path) -> None:
-    """prekのsystem hookがuv起動前に作業ツリーのvenvを指定する。"""
-    config = (_REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-    assert "entry: uv run --project . --frozen pyfltr fast" in config
-    assert "UV_PROJECT_ENVIRONMENT: .venv" in config
+@pytest.mark.parametrize("staged", ((), ("staged.txt",)))
+def test_precommit_pyfltr_hook_follows_staged_files(tmp_path: pathlib.Path, staged: tuple[str, ...]) -> None:
+    """本番のpyfltr hook定義が、空のstaged集合では起動せず、非空ではファイルと作業ツリーのvenvを渡す。
+
+    引数なしのpyfltrはリポジトリ全体を検査するため、空集合での起動は対象集合を全体へ変えてしまう。
+    """
+    config = yaml.safe_load((_REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+    hooks = [hook for repository in config["repos"] if repository["repo"] == "local" for hook in repository["hooks"]]
+    (pyfltr_hook,) = (hook for hook in hooks if hook["id"] == "pyfltr")
+    assert pyfltr_hook["entry"] == "uv run --project . --frozen pyfltr fast"
+    # 設定と一時リポジトリを分け、staged集合を試験が追加したファイルだけにする。
+    hook_config = tmp_path / "hook-config.yaml"
+    hook_config.write_text(
+        yaml.safe_dump({"repos": [{"repo": "local", "hooks": [pyfltr_hook]}]}, allow_unicode=True), encoding="utf-8"
+    )
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     log_path = tmp_path / "called.txt"
     uv = bin_dir / "uv"
-    uv.write_text('#!/bin/sh\nprintf "%s\\n" "${UV_PROJECT_ENVIRONMENT-<unset>}" > "$STUB_LOG"\n', encoding="utf-8")
-    uv.chmod(0o755)
-    hook_config = tmp_path / ".pre-commit-config.yaml"
-    hook_config.write_text(
-        """repos:
-  - repo: local
-    hooks:
-      - id: pyfltr
-        name: pyfltr
-        entry: uv run --project . --frozen pyfltr fast
-        env:
-          UV_PROJECT_ENVIRONMENT: .venv
-        language: system
-        pass_filenames: false
-        always_run: true
-""",
+    uv.write_text(
+        '#!/bin/sh\nprintf "%s UV_PROJECT_ENVIRONMENT=%s\\n" "$*" "${UV_PROJECT_ENVIRONMENT-<unset>}" >> "$STUB_LOG"\n',
         encoding="utf-8",
     )
+    uv.chmod(0o755)
     git = shutil.which("git")
     prek = _venv_executable(_REPOSITORY_ROOT / ".venv", "prek")
     assert git is not None
     assert prek.exists()
-    initialized = subprocess.run([git, "init", "--quiet"], cwd=tmp_path, capture_output=True, text=True, check=False)
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    initialized = subprocess.run([git, "init", "--quiet"], cwd=repository, capture_output=True, text=True, check=False)
     assert initialized.returncode == 0, initialized.stderr
+    for name in staged:
+        (repository / name).write_text("内容\n", encoding="utf-8")
+        added = subprocess.run([git, "add", "--", name], cwd=repository, capture_output=True, text=True, check=False)
+        assert added.returncode == 0, added.stderr
+    # ファイル指定を省いたprekは、コミット前検査と同じくstaged集合を対象にする。
     result = subprocess.run(
-        [str(prek), "run", "--config", str(hook_config), "pyfltr", "--all-files"],
-        cwd=tmp_path,
+        [str(prek), "run", "--config", str(hook_config), "pyfltr"],
+        cwd=repository,
         env={
             **os.environ,
             "PATH": os.pathsep.join((str(bin_dir), os.environ["PATH"])),
@@ -173,8 +178,10 @@ def test_precommit_pyfltr_entry_overrides_parent_project_environment(tmp_path: p
         text=True,
         check=False,
     )
-    assert result.returncode == 0, result.stderr
-    assert log_path.read_text(encoding="utf-8").strip() == ".venv"
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = log_path.read_text(encoding="utf-8").splitlines() if log_path.exists() else []
+    expected = [f"run --project . --frozen pyfltr fast {' '.join(staged)} UV_PROJECT_ENVIRONMENT=.venv"] if staged else []
+    assert calls == expected, result.stdout + result.stderr
 
 
 def _external_venv_with_sentinel(path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:

@@ -56,7 +56,6 @@ dev = [
 [tool.pyfltr]
 preset = "latest"
 python = true
-pytest-slot-ticket = true
 command-timeout = 900
 # 全通常pytestはCIの900秒時点で84%だったため、直下と同じpytest専用の有限枠を使う。
 pytest-timeout = 1500
