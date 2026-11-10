@@ -19,9 +19,10 @@
 個別の値を選ぶ前に、変更したパス・ファイル名・モジュール名・契約の識別子（定数、文書の節名、公開項目など）を固定文字列で検索して参照するコードを抽出する。
 抽出したコードを利用するテストまで、中間の参照を順にたどる。
 文書を定数経由で読み込む処理、間接import、共有ヘルパーを含め、変更ファイル名やテストへの直接一致だけで選定を終えない。
-消費側を列挙できない場合は、検証単位全体（下記のserveモジュール全体やagent-toolkit全体など）を選ぶ。
+ファイル単位で消費側を特定しにくい場合は、関連する機能のモジュール（下記のserveなど）までを選ぶ。
 変更した契約、消費側テスト、採否理由、実行結果の対応は、既存の計画ファイルや検証記録へ残す。
-列挙と全体実行の判断は`agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」に従い、下記の各項はその選定の具体例である。
+CIが全体を担う本リポジトリでは、列挙しきれなかった利用側を記録してCIへ委ねる。
+ローカルの上限は`agent-basics:check-execution/references/verification-scope.md`、参照追跡は同じディレクトリの`verification-scope-selection.md`に従い、下記は具体例である。
 本リポジトリで指定する具体的な値は次のとおりである。
 役割の新設では役割一覧を走査する`scripts/sync_generated_files_test.py`、`start`の公開入力の受理条件変更では`agent-toolkit/agent_toolkit/_agents_server`全体も対象にする。
 会話・委譲の環境変数入力を追加するときは、`_testing/isolation.py`の共通隔離との対応を`agent-toolkit/session_environment_invariant_test.py`で確認する。
@@ -52,11 +53,12 @@
 - 別の構文で定義を読み込むテスト（「横断テスト」の項と異なり、`pyfltr fast`の対象に含まれないため個別に指定する）: `.github/workflows/`内のジョブ名・ステップ名やpytestの対象指定を変更した場合は、リポジトリ直下の`ci_workflow_test.py`を含める。
   `agent-toolkit/hooks/hooks.json`や`hooks.codex.json`の登録内容を変更した場合、および`agent-toolkit/agent_toolkit/hook.py`や各イベント処理が読み込むモジュールを変更した場合は、`agent-toolkit/agent_toolkit/hook_test.py`を含める。
   いずれも変更されたファイル名からは自動選定されないため注意する。
-- 共有契約を変更した場合: `uv run --frozen pytest -v -p no:cacheprovider agent-toolkit`を実行する。
+- 共有契約を変更した場合は、その契約の参照元から特定した利用側の試験を実行する。
   対象となるのは、`_common/`配下、`_hooks/`の通知生成元で使われる`source`や`kind`、`atk.py`のサブコマンド登録、および2つ以上の`atk`サブコマンドから呼ばれる共通処理や出力契約の変更である。
   また、`agents_server`のMCPツールや`atk agents wait`における公開レスポンスの項目（内容、形式、条件、項目の有無）を変更した場合も含まれる。
-  同一レスポンスの各項目を、MCP層・CLI待機処理・自動再開後処理の各テストが別ファイルで検証しているためである。
-  スキル用スクリプトとagent-toolkit直下のスクリプトも`agent_toolkit`を直接importするため、CIと同じagent-toolkit全体を対象にする。
+  同一レスポンスの各項目を読むMCP層・CLI待機処理・自動再開後処理の各テストを、配置にかかわらず追跡する。
+  スキル用スクリプトとagent-toolkit直下のスクリプトも直接のimportと呼出元をたどる。
+  列挙が難しい場合は関連モジュールまでを選び、パッケージ全体の試験はCIへ委ねる。
   なお、コメントや空白のみの変更は対象外とする。
 - 配布パッケージのバージョン指定: 次のいずれかを変更した場合は、`uv run --frozen pytest -v -p no:cacheprovider install_sh_test.py`を含める。
   このテストは隔離されたHOME環境で実際のuvを動作させ、post-apply処理における`uv tool install`とpyfltr MCPのウォームアップ処理を検証する。
@@ -66,11 +68,11 @@
   - `.chezmoi-source/`のインストール・更新処理がパッケージマネージャーへ渡すバージョン指定
 - パッケージ外からの呼び出し元: 変更した共有契約の消費側を配置にかかわらず、本節冒頭の参照追跡で選定する。
   既存の配置には`agent-toolkit/skills/*/scripts/`、`agent-toolkit/`直下のスクリプト・テスト、`pytools/`、`scripts/`、`libexec/`とリポジトリ直下の結合テストがある。
-  agent-toolkit内の利用側は前項のagent-toolkit全体の実行で覆う。
+  agent-toolkit内の利用側も前項の参照追跡で選定する。
   生成資料の読取契約では`agent_toolkit_read_trigger_agy_integration_test.py`、共有Git処理では`libexec/update_dotfiles.py`・`update_dotfiles_stash.py`とその関連テストも追跡する。
   これらの配置と実行例だけで探索を終了せず、将来追加される別配置の消費側も同じ基準で含める。
-  agent-toolkit外の試験の実行例は`uv run --frozen pytest -v -p no:cacheprovider pytools scripts libexec agent_toolkit_read_trigger_agy_integration_test.py`とする。
-- Function hooksモジュール: `agent-toolkit/hooks/`配下の`*.ts`および`*.tsx`（テストを含む）の変更は、既存の`make test`とコミットフックの`pyfltr fast`から`function-hooks-types`を起動し、全モジュールを一括型検査する。
+  特定したテストファイルを引数へ明記してpytestを実行する。
+- Function hooksモジュール: `agent-toolkit/hooks/`配下の`*.ts`および`*.tsx`（テストを含む）の変更では、変更パス指定のpyfltrとコミットフックから`function-hooks-types`を起動し、CIが実行しない生成型を検査する。
   - 型チェック: TypeScript 5.9.3を使用する。
     Claude Codeの`plugin-authoring`で生成した`claude-code.d.ts`を環境変数`FUNCTION_HOOKS_TYPES`へ絶対パスで指定する。
     未指定時はworktree直下または`agent-toolkit/`の`.claude-plugin/types/`と`types/claude-code.d.ts`を参照する。
@@ -85,8 +87,8 @@
   - モジュールテスト: 型の自動探索時と同じPATH上の実行ファイルで`claude plugin test <worktree>/agent-toolkit`を実行する。
     引数にはプラグインのルートパスを渡す。
     `agent-toolkit/hooks`を渡すと`hooks/hooks.json`が見つからずエラーとなる。
-- 名前の削除や改名に伴う全体静的チェック: `uv run --frozen pyfltr run --commands=ty`を実行する。
-  対象ファイルを絞らずリポジトリ全体を対象として実行し、Pythonファイルを変更するレーンでは計画書の「変更範囲の検証」欄に必ず含める。
+- 名前の削除や改名に伴う静的チェック: 旧名の固定文字列検索で参照元を特定し、変更したPythonファイルと参照元をパス指定して型検査する。
+  全体のty・aridとpylintの循環import検査はCIへ委ねる。
 - CIのコンテナージョブにおいて`uv sync`が読み込む入力設定を変更した場合: `make ci-deps-check`を実行する。
   対象となるのは、Pythonバージョンの指定（`.python-version`、`.github/workflows/ci.yaml`のmatrixにおけるPythonバージョン）や、同ファイル内の「ネイティブ依存インストール」ステップである。
   また、リポジトリ直下の`uv.lock`や、同じ場所の`pyproject.toml`内の依存関係宣言・`[tool.uv]`設定の変更も含む。
@@ -97,10 +99,9 @@
   なお、このチェックにはDockerが必要であり、1バージョンあたり約1分を要する。
   再検証の記録は`docs/development/audit-records.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月18日」にある。
 - 統合後の検証: rebase後のブランチの組み合わせはコミット時には検証できないため、fast-forwardマージを行う前に専用worktree上で`make sync`を実行し、続けて以下を一括で1回実行する。
-  - 共有契約およびパッケージ外の呼び出し元に関するpytest
+  - 変更箇所と特定した利用側に関するpytest
+    列挙が難しい場合も関連モジュールまでとし、未確認範囲を記録する
   - `uv run --frozen pyfltr fast --commands=pytest`
-  - `ty`
-  - `uv run --frozen pyfltr run --commands=arid`
   - 統合後・公開前に追加した是正（統合時の検証失敗の是正、CI失敗の修正、案内文や構成の追随など）では、変更した文言・ジョブ名・設定キーの変更前の値を固定文字列で探す。
     それを期待する試験（構成を読む`ci_workflow_test.py`、hookの期待値を持つ`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。
     実Windowsの導入・API変換などCIだけで観測する条件はLinuxの成功で代替せず、公開CIで確かめる

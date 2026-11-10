@@ -10,6 +10,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` | |
 | manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` | |
+| manifestの`verification`へ渡すローカル検証の上限を決める前 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` | |
 | 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` | |
 | 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md` | |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
@@ -71,9 +72,10 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
   親コマンドの終了だけで回収済みと判定せず、残存の診断があれば同じ実行記録から処置する。
   秒数は記録された同一検証の所要を基に通常完了を十分上回る有限値とする。
   訂正表の保持・引継ぎは`../skills/write-plan/references/plan-file-standards-verification.md`「検証と公開工程」、結果の検収は`agent-basics:check-execution`「統合実行ツール経由の起動」に従う。
-  統合後だけ実行可能な全体検証も含め、rebase後は新HEADを検証する。
-  依存版指定・lock更新では`agent-basics:check-execution/references/verification-scope-selection.md`「直接影響範囲の類型」に従って検証単位全体を含める。
-  CIを関門とする場合も後続レーンの基点となるため統合前の全体検証を省かず、全体・限定の判断と根拠を引き継ぎ記録へ残す。
+  rebase後は新HEADの変更箇所と関連する利用側を検証する。
+  依存版指定・lock更新を含め、ローカルの範囲は`agent-basics:check-execution/references/verification-scope.md`の上限に従う。
+  CIが全体を担う場合は全体の試験・静的検査をCIへ委ね、列挙した利用側と関連モジュールまでをmanifestへ渡す。
+  CIが無い、または公開先でCIが実行されない場合の全体検証を含め、選んだ範囲と根拠を引き継ぎ記録へ残す。
 - `handoff`: 計画を作成していない場合に使用する、既存の引き継ぎ記録の絶対パス。
   計画が存在する場合は省略可能であり、省略時に引き継ぎ記録を追加で入力する必要はない。
 - `verification_records`: 任意の保存済み実行記録JSONの絶対パス配列。

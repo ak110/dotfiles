@@ -16,7 +16,7 @@ CI_PYTHON_VERSIONS := 3.15
 help:
 	@cat Makefile
 
-# 依存パッケージをアップグレードし全テスト実行
+# 依存パッケージをアップグレードし導入とRustを検証
 update:
 	env --unset=UV_FROZEN uv sync --upgrade --all-groups --all-extras
 	env --unset=UV_FROZEN uv lock --upgrade --project agent-toolkit
@@ -28,7 +28,6 @@ update:
 	mise exec -- cargo fmt --manifest-path rust/claude-statusline/Cargo.toml --check
 	mise exec -- cargo clippy --manifest-path rust/claude-statusline/Cargo.toml --locked --all-targets --all-features -- -D warnings
 	mise exec -- cargo test --manifest-path rust/claude-statusline/Cargo.toml --locked
-	$(MAKE) test
 
 # リポジトリ用と配布用のmise lockfileを更新
 # rustとdotnetは版を明示指定しており、明示指定した版は`mise lock --bump`が自分自身へ解決して

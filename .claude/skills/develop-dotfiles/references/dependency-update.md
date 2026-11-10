@@ -12,6 +12,7 @@
 
 - `make update`は、読込表にあるターゲットの実際の処理対象に変更対象が含まれている場合のみ実行候補とする。
   現在の主な更新対象は`uv.lock`と`agent-toolkit/uv.lock`の依存関係更新である。
-  lockファイルの更新後はコンテナーでの依存関係インストールを検証し（`ci-deps-check`）、さらに`prek autoupdate`、`mise lock`、`pinact`によるアクション更新、および全テストを実行する。
+  lockファイルの更新後はコンテナーでの依存関係インストールを検証し（`ci-deps-check`）、さらに`prek autoupdate`、`mise lock`、`pinact`で更新する。
+  更新後は参照をたどって特定した利用側の試験・lintを実行し、列挙しきれなかった範囲を記録して残りをCIへ委ねる。
   `rust/claude-statusline/Cargo.lock`もCargo.tomlの制約内で更新し、fmt・clippy・testを実行する。
   GitHub Actionsのハッシュピンのみを更新する場合は`make update-actions`を実行する。
