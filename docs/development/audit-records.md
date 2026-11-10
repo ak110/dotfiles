@@ -1689,6 +1689,17 @@ HTTPだけの成功、codeの不一致・欠落・型の違い、通信とJSON�
 再検証は同じ2投稿の応答とHTTPヘッダーを保存し、数値`code`を確認した後、`jq`で表題・日時・本文を抽出する。
 記事本文には`.tweet.article.content.blocks | map(.text) | join("\n")`、通常投稿には`.tweet.text`を使い、画像・埋込の取得状況を本文の取得状況と区別する。
 
+## agent-basics/skills/fetch-sources/references/x-posts.md：添付写真の保存と確認：2026年11月10日
+
+2026年11月10日、Bash 5.2.37、jq 1.8.2、curl 8.14.1で、保存済みJSONから写真URLを変数へ取得し、引用付きの変数展開で渡す例を確認した。
+curlの公開ヘルプで`--url`、`--output`、`--proto`、`--max-time`の受理形式を確認した。
+通常URL、ドル記号のコマンド置換記法、バッククォート、単一・二重引用符を含む合成URLを文書の例へ与え、curlを引数の記録だけを行う代用にした比較で、各URLが元の文字列のまま1引数になり、保存先、60秒上限、HTTPSの指定も保持された。
+写真配列が空の入力ではjqが終了4となり、curlは呼ばれなかった。
+外部通信、画像のダウンロード・実体確認・表示はこの引数境界の試験では行っていない。
+再検証では同じ合成JSON群を用意し、文書中のシェル例をファイルへ保存してBashから実行する。
+PATHの先頭にcurlの引数記録用の代用だけを配置し、`--url`の次の引数と元URLの完全一致、1引数であること、保存先と上限を確認する。
+写真なしの場合の取得未実施と、写真がある場合の取得失敗を区別し、実通信の写真を根拠に使う場合は従来の実体確認・表示も行う。
+
 ## agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年10月31日
 
 2026年10月31日、[Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)をHTTP 200で取得した。

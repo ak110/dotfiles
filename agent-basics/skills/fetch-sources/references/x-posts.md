@@ -39,11 +39,22 @@
 
 ## 添付写真の保存と確認
 
-**1.** 写真URLごとに、実行環境の一時ディレクトリへダウンロードする。
+**1.** 保存・検査済みの応答JSONから写真URLをデータとして取り出し、実行環境の一時ディレクトリへダウンロードする。
+保存先の絶対パスと写真の0始まりの配列位置を指定し、写真ごとに実行する。
+URLはシェルのコードへ直接置換せず、取得した変数を引用してcurlの引数へ渡す。
 
 ```sh
-curl -sS --max-time 60 -o <画像保存先の絶対パス> "<画像URL>"
+response_file='<保存済み応答JSONの絶対パス>'
+image_file='<画像保存先の絶対パス>'
+photo_index=0
+photo_url=$(jq -er --argjson index "$photo_index" \
+  '.tweet.media.photos[$index].url | select(type == "string" and length > 0)' \
+  -- "$response_file") &&
+  curl -fsS --max-time 60 --proto '=https' --output "$image_file" --url "$photo_url"
 ```
+
+URLの欠落・不正や取得コマンドの失敗は「未取得」と記録し、保存・実体確認を終えた写真だけを表示する。
+引数の受け渡しの観測条件と再検証手順は、`docs/development/audit-records.md`の「agent-basics/skills/fetch-sources/references/x-posts.md：添付写真の保存と確認：2026年11月10日」にある。
 
 **2.** HTTPエラーページのHTML等を画像と誤認しないよう、正常な画像データであることを確認する。
 
