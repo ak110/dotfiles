@@ -232,10 +232,9 @@ async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harnes
         menu = page.locator("#sessions-menu-btn")
         await menu.click()
         await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-        # SSEの購読開始は一覧・詳細の復元と初期化末尾の後に行われる。
-        async with page.expect_request("**/api/sessions/events"):
-            release.set()
-            await page.locator("#detail .event").first.wait_for(state="visible")
+        # 購読は一覧より先に始まるため、初期化の完了は復元した詳細で観測する。
+        release.set()
+        await page.locator("#detail .event").first.wait_for(state="visible")
         await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
         assert not await page.locator("#sessions-app > aside").evaluate("element => element.inert")
     finally:

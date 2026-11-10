@@ -162,6 +162,10 @@ def _unexpected_error_next_action(error: Exception) -> str:
         )
     # Claude Agent SDKの例外（CLIの未導入、接続失敗、プロセス異常）はbackendが包まずに届くため、型の所属で同じ分類にする。
     if isinstance(error, DelegateBackendError) or type(error).__module__.startswith("claude_agent_sdk"):
+        # 利用上限などCLIの導入と認証では解消しない原因は、backendが原因に応じた次の操作を例外へ持たせる。
+        specific = getattr(error, "next_action", None)
+        if isinstance(specific, str) and specific:
+            return specific
         return "委譲先CLIの導入と認証を確かめ、`model_type`へ別のengineの候補を指定して起動し直す"
     if isinstance(error, ValueError):
         return (

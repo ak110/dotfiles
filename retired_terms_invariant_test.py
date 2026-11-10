@@ -616,9 +616,31 @@ _VERBATIM_RECORD_LOCATIONS = (
 def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = _RETIRED_TERMS) -> list[str]:
     """許容箇所の外に現れた撤去語を`<パス>:<行番号>`付きのメッセージで返す。"""
     violations: list[str] = []
+    # 全語・全行で許容する固定引用はGit側で除き、巨大な台帳の一致本文を語ごとに転送し直さない。
+    excluded_paths = [
+        f":(glob,exclude){location.path_pattern}"
+        for location in _VERBATIM_RECORD_LOCATIONS
+        if location.line_substring is None and location.line_exact is None and location.line_sha256 is None
+    ]
     for retired in terms:
         proc = subprocess.run(
-            ["git", "-C", str(repo_root), "grep", "-n", "-I", "-F", "-z", "--no-color", "--full-name", "-e", retired.term],
+            [
+                "git",
+                "-C",
+                str(repo_root),
+                "grep",
+                "-n",
+                "-I",
+                "-F",
+                "-z",
+                "--no-color",
+                "--full-name",
+                "-e",
+                retired.term,
+                "--",
+                ".",
+                *excluded_paths,
+            ],
             capture_output=True,
             text=True,
             encoding="utf-8",

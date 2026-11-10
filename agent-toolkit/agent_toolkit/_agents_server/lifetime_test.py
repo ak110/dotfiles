@@ -115,14 +115,16 @@ if mode == "leaf":
     mark("leaf-" + str(os.getpid()) + ".json", os.getpid())
     hold("leaf")
     sys.exit(0)
-if mode == "launcher":
+# launcher自身はサーバーを実行しないため、子でも必要な重いMCP初期化を繰り返さない。
+if mode in ("launcher", "inner-launcher"):
     spec = importlib.util.spec_from_file_location("probe_launch", pathlib.Path(root) / "scripts/launch.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module._SERVER_SHUTDOWN_TIMEOUT = 8
-    module._STOP_TIMEOUT = .2
+    if mode == "launcher":
+        module._SERVER_SHUTDOWN_TIMEOUT = 8
+        module._STOP_TIMEOUT = .2
     sys.exit(module._run_agents_server(
-        [sys.executable, __file__, "server", str(directory), root, failure],
+        [sys.executable, __file__, "server" if mode == "launcher" else "inner", str(directory), root, failure],
         dict(os.environ), record_diagnostics=False))
 from agent_toolkit._agents_server import lifetime, logging_config, mcp_tools
 if failure.endswith("-io"):
@@ -161,13 +163,6 @@ async def activate():
         asyncio.get_running_loop().call_soon(block_loop)
     mark(mode + "-ready.json", True)
 mcp_tools._MANAGER.activate_async = activate
-if mode == "inner-launcher":
-    spec = importlib.util.spec_from_file_location("probe_launch", pathlib.Path(root) / "scripts/launch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    sys.exit(module._run_agents_server(
-        [sys.executable, __file__, "inner", str(directory), root, failure],
-        dict(os.environ), record_diagnostics=False))
 sys.exit(mcp_tools.serve())
 """
 

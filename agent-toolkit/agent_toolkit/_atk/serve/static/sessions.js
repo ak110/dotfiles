@@ -710,14 +710,18 @@ const SSE_MESSAGE_HANDLERS = {
   },
 };
 
-// 確立時（初回・自動再接続・無通信後の再接続）は、接続していない間の変更を取り込むため一覧と選択中の記録を取り直す。
-// 初回の確立は`init`の初期取得の直後に起きるため取り直しを省く。
+const INITIAL_SUBSCRIBE_WAIT_MS = 300;
+let initialLoadStarted = false;
+let resolveFirstSubscription = () => {};
+const firstSubscription = new Promise(resolve => { resolveFirstSubscription = resolve; });
+
 function subscribeEvents() {
-  let firstOpen = true;
+  // HTTPのopenより後に購読キューが登録されるため、登録の合図を初期取得の同期点にする。
+  // 上限後の遅い登録と再接続では、購読していない間の変更を取り直す。
   connectEvents("/api/sessions/events", {
-    open: () => {
-      if (firstOpen) {
-        firstOpen = false;
+    subscribed: () => {
+      if (!initialLoadStarted) {
+        resolveFirstSubscription();
         return;
       }
       void resyncFromServer();
@@ -779,16 +783,18 @@ async function init() {
   detailScroller().addEventListener("scroll", renderEventsNearEnd, {passive: true});
   document.getElementById("sessions-prev-btn").addEventListener("click", () => openRelativeSession(-1));
   document.getElementById("sessions-next-btn").addEventListener("click", () => openRelativeSession(1));
+  subscribeEvents();
+  await Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
+  initialLoadStarted = true;
   await loadList();
   const params = new URLSearchParams(location.search);
   const fromUrl = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
   const mobile = window.matchMedia("(max-width: 768px)").matches;
-  if (fromUrl) {
+  if (fromUrl && !selected) {
     await openSession(fromUrl.host, fromUrl.engine, fromUrl.path, [], false, false);
   } else if (!selected && sessions.length > 0 && !mobile) {
     await openSession(sessions[0].host, sessions[0].engine, sessions[0].path, [], false, false);
   }
-  subscribeEvents();
   resyncWhenVisible(resyncFromServer, {focus: false});
 }
 

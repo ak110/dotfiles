@@ -68,11 +68,19 @@ class ManagerWait(manager_recovery.ManagerRecovery):
             return None
         turn = session.turn_seq, session.finalized_at
         response = await self._result_response_async(session, consume=False)
-        if turn != (session.turn_seq, session.finalized_at) or not session.result_available or session.result_delivered:
+        if (
+            self.sessions.get(session.session_id) is not session
+            or turn != (session.turn_seq, session.finalized_at)
+            or not session.result_available
+            or session.result_delivered
+        ):
             return None
         if self._status_writer is not None:
             # 存在確認と消費の間に別の親が回収できるため、本文の返却可否は排他回収の結果だけで決める。
             await self._status_writer.retain_result_async(session)
+            if self.sessions.get(session.session_id) is not session:
+                # 期限解放の保存を待つのはconditionの外側とし、退避結果の経路へ回収を引き継ぐ。
+                return None
             claimed, error = await self._status_writer.take_result_async(
                 session.session_id, collector="mcp-wait", expected_turn_seq=turn[0]
             )

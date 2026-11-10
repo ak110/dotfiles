@@ -7,6 +7,7 @@ import contextlib
 import pathlib
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 from typing import Any
 
@@ -22,11 +23,19 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @pytest.mark.parametrize(
-    "outcome", ["normal", "connect_failure", "initialization_failure", "timeout", "cancel", "residual", "unresolved"]
+    ("outcome", "delay_collection"),
+    [
+        *(
+            pytest.param(name, False, id=name)
+            for name in ("normal", "connect_failure", "initialization_failure", "timeout", "cancel", "residual", "unresolved")
+        ),
+        pytest.param("timeout", True, id="timeout-delayed-collection"),
+        pytest.param("residual", True, id="residual-delayed-collection"),
+    ],
 )
 @pytest.mark.asyncio
 async def test_disconnect_tracks_new_descendant_until_parent_exits(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ, outcome: str
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ, outcome: str, delay_collection: bool
 ) -> None:
     """一覧取得後に子を生成して親を終了させ、観測済みの子と無関係なプロセスを区別する。"""
     script = tmp_path / "runtime.py"
@@ -48,10 +57,18 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
     first_snapshot = asyncio.Event()
     child_observed = asyncio.Event()
     disconnect_entered = asyncio.Event()
+    disconnect_prepared = asyncio.Event()
+    disconnect_cancelled = asyncio.Event()
     loop = asyncio.get_running_loop()
     collect = claude._owned_runtime_processes  # pylint: disable=protected-access
+    collection_delayed = False
 
     def observed_collect(root, known=(), **_kwargs):
+        nonlocal collection_delayed
+        if delay_collection and first_snapshot.is_set() and not collection_delayed:
+            collection_delayed = True
+            # 短い切断期限を超える列挙遅延をworker側で作り、準備と切断待ちの境界を検証する。
+            time.sleep(1)
         targets = collect(root, known, **_kwargs)
         loop.call_soon_threadsafe(first_snapshot.set)
         if child_pid.exists() and int(child_pid.read_text(encoding="utf-8")) in {target.pid for target in targets}:
@@ -61,6 +78,15 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
     monkeypatch.setattr(claude, "_owned_runtime_processes", observed_collect)
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(claude, "_DISCONNECT_TIMEOUT", 0.8)
+    wait = asyncio.wait
+
+    async def wait_after_preparation(tasks, *, timeout=None, **kwargs):
+        if timeout == 0.8:
+            await asyncio.wait_for(disconnect_prepared.wait(), 15)
+        return await wait(tasks, timeout=timeout, **kwargs)
+
+    # 本物のasyncio.waitによる切断timeoutは維持し、fixtureの生成・観測・親終了だけを予算から分離する。
+    monkeypatch.setattr(claude.asyncio, "wait", wait_after_preparation)
     targets: list[psutil.Process] = []
     with (
         process_tree.process_scope(
@@ -99,15 +125,19 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
                     while not child_pid.exists():
                         await asyncio.sleep(0.005)
                 targets.append(psutil.Process(int(child_pid.read_text(encoding="utf-8"))))
-                # 修正前の単発列挙でも親終了まで進め、残留そのものを後段で検出する。
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(child_observed.wait(), 0.3)
+                # POSIXでは観測前に親が終了した子を辿れないため、観測済みという試験の前提を確定する。
+                await asyncio.wait_for(child_observed.wait(), 15)
                 process.stdin.write(b"exit\n")
                 process.stdin.flush()
                 await asyncio.to_thread(process.wait, timeout=2)
                 self.disconnected = True
+                disconnect_prepared.set()
                 if outcome == "timeout":
-                    await asyncio.Event().wait()
+                    try:
+                        await asyncio.Event().wait()
+                    except asyncio.CancelledError:
+                        disconnect_cancelled.set()
+                        raise
 
         client = DisconnectClient([[SystemMessage("cleanup-session"), ResultMessage("完了")]])
         client._transport = SimpleNamespace(_process=process)  # pylint: disable=protected-access
@@ -168,6 +198,8 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
                 not target.is_running() or target.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD) for target in targets
             )
             assert child_observed.is_set()
+            if outcome == "timeout":
+                assert disconnect_cancelled.is_set()
             assert foreign.poll() is None
         finally:
             fail_reclaim = False

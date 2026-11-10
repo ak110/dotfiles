@@ -249,12 +249,15 @@ class ManagerBase:
         try:
             await session.drain_registration()
             if self._status_writer is not None:
-                await self._status_writer.retain_result_async(resume_state)
+                # 回収が解放開始と交錯するため、開始時点の退避コピーから結果を再公開しない。
+                await self._status_writer.retain_result_async(session)
             await self._backend(session.engine).release_session(session)
             if session.publish_registry:
                 await run_file_operation(
                     session_registry.release, session.session_id, reason="retention_expired", expected_owner=expected_owner
                 )
+            if self.expired_sessions.get(session.session_id) is resume_state:
+                self.expired_sessions[session.session_id] = SessionResumeState.from_session(session)
         except BaseException:
             # 解放に失敗したbackendを、公開stopが再試行できる所有状態へ戻す。
             # 期限の自動再発火は抑え、保存済みの結果と資源の登録を維持する。

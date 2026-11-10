@@ -58,7 +58,9 @@ async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
     await page.add_init_script(
         """(() => {
           // completedByUrlは、同じパスへ並行する別条件の取得と区別して特定の要求の本文消費を待つ試験が使う。
-          const probe = window.__screenRequests = {pending: 0, completed: {}, completedByUrl: {}, opened: {}, heartbeats: {}};
+          const probe = window.__screenRequests = {
+            pending: 0, completed: {}, completedByUrl: {}, opened: {}, subscribed: {}, heartbeats: {}
+          };
           const observed = new Set(['/api/entries', '/api/repos', '/api/sessions/list', '/api/plans/files']);
           const originalFetch = window.fetch.bind(window);
           window.fetch = async (...args) => {
@@ -90,6 +92,7 @@ async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
               super(url, options);
               const path = new URL(url, location.href).pathname;
               this.addEventListener('open', () => { probe.opened[path] = (probe.opened[path] || 0) + 1; });
+              this.addEventListener('subscribed', () => { probe.subscribed[path] = (probe.subscribed[path] || 0) + 1; });
               this.addEventListener('heartbeat', () => {
                 probe.heartbeats[path] = (probe.heartbeats[path] || 0) + 1;
               });
@@ -100,11 +103,13 @@ async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
 
 
 async def _wait_screen_requests_consumed(page: playwright.async_api.Page, streams: tuple[str, ...]) -> None:
-    """初期SSE接続と、それに伴う取得の本文消費が終わってから観測区間を始める。"""
+    """初期SSE購読と、それに伴う取得の本文消費が終わってから観測区間を始める。"""
     await page.wait_for_function(
         """paths => {
           const probe = window.__screenRequests;
-          return probe && paths.every(path => probe.opened[path] > 0) && probe.pending === 0;
+          // 計画・セッションはヘッダーのopen後に購読を登録する。WIの独立したSSE経路はopenで同期する。
+          return probe && paths.every(path => (path === '/api/events' ? probe.opened : probe.subscribed)[path] > 0)
+            && probe.pending === 0;
         }""",
         arg=list(streams),
     )

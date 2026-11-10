@@ -234,6 +234,15 @@ async def test_tool_error_body_carries_next_action(
     assert operation in next_action
 
 
+def test_candidate_unavailable_next_action_follows_its_cause() -> None:
+    """候補の不成立が原因に応じた次の操作を持つ場合はその操作を返し、利用上限で認証の確認へ誘導しない。"""
+    waiting = "解除予定まで待つか、`model_type`へ別のengineの候補を指定して起動し直す"
+    limited = codex_backend.StartCandidateUnavailable("利用上限で通常利用できない", next_action=waiting)
+    assert mcp_transport._unexpected_error_next_action(limited) == waiting  # pylint: disable=protected-access
+    plain = codex_backend.StartCandidateUnavailable("candidateDependencyUnavailable")
+    assert "導入と認証" in mcp_transport._unexpected_error_next_action(plain)  # pylint: disable=protected-access
+
+
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _LAUNCH_TIMEOUT = 60.0
 

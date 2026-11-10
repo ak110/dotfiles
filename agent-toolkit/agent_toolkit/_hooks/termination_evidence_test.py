@@ -159,6 +159,12 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     monkeypatch.setenv("TEMP", str(tmp_path))
     monkeypatch.setenv("TMP", str(tmp_path))
     (tmp_path / "transcript.jsonl").touch()
+    # 終了証拠は各試験の文書・操作で検証する。配布規範全件の解析はread_deliveryの結合試験が担う。
+    root = tmp_path / "norms/agent-toolkit"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    (root / "skills").mkdir()
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", str(root))
 
 
 def _tool(

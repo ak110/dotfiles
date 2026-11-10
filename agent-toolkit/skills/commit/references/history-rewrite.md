@@ -30,7 +30,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 修正方法の選択に関する判断・作業の前 | `history-rewrite-selection.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-selection.md` |
-| 操作前後の確認・履歴確認の起動形に関する判断・作業の前 | `history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
+| 操作前後の確認・一部の変更パスを外した対応の確認・履歴確認の起動形に関する判断・作業の前 | `history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
 | fixupの実行上の制約に関する判断・作業の前 | `history-rewrite-fixup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-fixup.md` |
 | 失敗時の扱いに関する判断・作業の前 | `history-rewrite-recovery.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-recovery.md` |
 | WI実装commitの対応の継承に関する判断・作業の前 | `history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |

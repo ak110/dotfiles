@@ -250,7 +250,17 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
         for statement in tree.body:
             if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
                 module_values[statement.targets[0].id] = _path_values(statement.value, module_values, source)
-        for function in (node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        pending: list[ast.AST] = [tree]
+        while pending:
+            function = pending.pop()
+            # 関数定義は文の配下にある。巨大なfixture文字列や式は関数探索で走査し直さない。
+            pending.extend(
+                child
+                for child in ast.iter_child_nodes(function)
+                if isinstance(child, (ast.stmt, ast.ExceptHandler, ast.match_case))
+            )
+            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
             for path in _function_reads(function, module_values, source):
                 try:
                     relative = path.resolve().relative_to(repository)
@@ -777,7 +787,8 @@ def test_normative_heading_references_resolve() -> None:
     markdown_paths = [path for path in tracked if path.suffix == ".md"]
     sources = _normative_markdown_paths(tracked)
     assert any(path.as_posix().startswith(".claude/skills/") for path in sources)
-    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    with read_triggers.resolution_scope():
+        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
     assert not unresolved, _format_unresolved(unresolved)
 
 
@@ -789,7 +800,8 @@ def test_code_and_design_heading_references_resolve() -> None:
     sources = _extended_heading_reference_sources(tracked)
     assert any(path.suffix == ".py" for path in sources)
     assert any(path.as_posix().startswith("docs/development/design") for path in sources)
-    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    with read_triggers.resolution_scope():
+        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
     assert not unresolved, _format_unresolved(unresolved)
 
 
@@ -1214,6 +1226,32 @@ def test_agent_doc_reader_detector_ignores_fixture_paths_and_reports_repository_
     assert _agent_doc_reader_violations(repository, [source.relative_to(repository)]) == [
         "sample_test.py::test_glob -> AGENTS.md",
         "sample_test.py::test_reads -> AGENTS.md",
+    ]
+
+
+@pytest.mark.parametrize("method", ["read_text", "ｒｅａｄ＿ｔｅｘｔ"])
+@pytest.mark.parametrize(
+    ("container", "names"),
+    [
+        ("class Example:\n{function}", ["read"]),
+        ("if True:\n{function}", ["read"]),
+        ("try:\n    pass\nexcept ValueError:\n{function}", ["read"]),
+        ("match 1:\n    case 1:\n{nested_function}", ["read"]),
+        ("def outer():\n{function}", ["outer", "read"]),
+    ],
+)
+def test_agent_doc_reader_detector_keeps_nested_definitions(tmp_path, container, names, method):
+    """文に入れ子になった関数とUnicode正規化される属性も、式の走査を省いた探索で検出する。"""
+    (tmp_path / "AGENTS.md").write_text("# 規範\n", encoding="utf-8")
+    function = f"    def read():\n        pathlib.Path(__file__).with_name('AGENTS.md').{method}()\n"
+    source = tmp_path / "example_test.py"
+    source.write_text(
+        "import pathlib\n" + container.format(function=function, nested_function="    " + function.replace("\n", "\n    ")),
+        encoding="utf-8",
+    )
+
+    assert _agent_doc_reader_violations(tmp_path, [source.relative_to(tmp_path)]) == [
+        f"example_test.py::{name} -> AGENTS.md" for name in names
     ]
 
 

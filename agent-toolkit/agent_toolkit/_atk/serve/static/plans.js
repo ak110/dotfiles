@@ -859,6 +859,7 @@ async function restoreFileFromUrl(closeDrawer = true) {
 }
 
 async function init() {
+  const initialPreviewGeneration = previewGeneration;
   const bootstrap = JSON.parse(document.getElementById("plans-bootstrap").textContent);
   ROOT_DIRS = bootstrap.root_dirs;
   bindScreenEvents();
@@ -875,6 +876,11 @@ async function init() {
   await (refreshHostInfo());
   await (refreshRootStatus());
   await (refreshFiles());
+  // 初期取得より先に始まった閲覧を、自動選択で開き直さない。
+  if (previewGeneration !== initialPreviewGeneration) {
+    setupSentinelObserver();
+    return;
+  }
   if (location.pathname === `${BASE_PATH}/plans`) {
     await restoreFileFromUrl(false);
   } else if (files.length > 0 && !isMobileViewport()) {

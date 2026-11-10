@@ -1,8 +1,11 @@
 # rules-common.codex.md: Codexの全エージェントに適用する規範
 
 本文書はCodex環境における`AGENTS.md`として、Codexの全エージェント（メインエージェント、サブエージェント、委譲先）へ配送され、`agent-toolkit/share/rules/common/`配下の常時規範と同等の拘束力を持つ。
-Codex固有の公開機能と、常時規範との差分事項を規定する。
-Codexのメインエージェントにのみ適用する差分事項は、`rules-main.codex.md`で扱う。
+Codex固有の公開機能と常時規範との差分を規定し、メインエージェントだけの差分は`rules-main.codex.md`で扱う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 長い終了待ちの二層回収を選ぶ前 | `agent-toolkit:delegation/references/codex-runtime-waiting.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-waiting.md` | |
 
 ## Codex固有の入出力
 
@@ -38,10 +41,7 @@ Codexのメインエージェントにのみ適用する差分事項は、`rules
   外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`を用いて同一ターン内に終了まで回収する。
   `exit_code`が存在せず`session_id`が存在する結果は実行中として扱い、同一実行のコマンドを重複して再発行することは避ける。
   独立作業と受信済み通知の処理が尽きた長い終了待ちでは、外側の先頭pragma（`// @exec: {"yield_time_ms": 120000}`）、`functions.wait`、空入力の`write_stdin`の`yield_time_ms`に120,000msを指定することを目安とする。
-  実行が先に終わればその結果を回収し、制御が戻るたびに追加入力と通知を処理する。
-  これは受理を確認した回収時間の目安であり、最大値、固定sleep、コマンドの実行期限を表さない。
-  内側の`exec_command`起動時は公開上限30,000ms以内とし、session IDが返った後は同じ識別子を空入力の`write_stdin`で回収する。
-  短いコマンド、追加入力を送る対話、独立作業のために早く制御を返す場面へ一律に適用せず、`atk agents wait`などのCLI自身のtimeout引数へ転記しない。
+  起動時の上限30,000msとCLI自身の期限を保ち、独立作業・受信済み通知・対話・短い操作では早く制御を返し、待機状況の報告だけなら長めに回収する。
   観測条件と再検証手順は、`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
 - 明示的な指示がない限り、Officeファイルは原本を直接変更せずに取り扱う。
   CSVファイルは利用側の要求仕様に従って処理し、仕様が不明な場合はUTF-8（BOM付き）で保存する。

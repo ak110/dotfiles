@@ -275,11 +275,23 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
 
 
 @pytest.mark.parametrize(
-    "failure", ["monitor-stop", "inventory-unreclaimed", "inventory-unresolved", "inventory-unreaped-child"]
+    ("failure", "disconnect_timeout"),
+    [
+        pytest.param("monitor-stop", False, id="monitor-stop"),
+        *[
+            pytest.param(failure, delayed, id=failure + ("-disconnect-timeout" if delayed else ""))
+            for failure in ("inventory-unreclaimed", "inventory-unresolved", "inventory-unreaped-child")
+            for delayed in (False, True)
+        ],
+    ],
 )
 @pytest.mark.asyncio
 async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
-    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, tmp_path: pathlib.Path, failure: str
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    tmp_path: pathlib.Path,
+    failure: str,
+    disconnect_timeout: bool,
 ) -> None:
     """停止未確認の監視・一覧処理は次queryを止め、所有タスクの回収へ渡す。"""
     source = tmp_path / "checkout/agent-toolkit"
@@ -290,6 +302,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
         (root / "skills").mkdir()
     reloaders: list[claude_plugins.ClaudePluginReloader] = []
     closed = asyncio.Event()
+    disconnect_cancelled = asyncio.Event()
     stops: list[bool] = []
     # 一覧取得が回収できなかった子孫。所有タスクの後始末が同じ対象を引き取って回収することを確かめる。
     owned = contextlib.ExitStack()
@@ -372,6 +385,15 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
     class Client(QueueClaudeClient):
         _query = SimpleNamespace(_send_control_request=control)
 
+        async def disconnect(self) -> None:
+            await super().disconnect()
+            if disconnect_timeout:
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    disconnect_cancelled.set()
+                    raise
+
     client = Client([[claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}), ResultMessage("初回完了")]])
     monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", Observer)
     monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
@@ -379,10 +401,14 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
         session = await backend.start("初回", str(tmp_path))
         async with backend._condition:
             await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
+        owner = next(task for task in backend._tasks if backend._task_sessions.get(task) == session.session_id)
         reloaders[0].request_reload()
         with pytest.raises(claude.SessionOwnerGoneError):
             await backend.send_message(session, "後続")
-        await asyncio.wait_for(closed.wait(), timeout=5)
+        # queryの拒否は所有タスクの回収より先に返る。SDKの実際の5秒期限と子孫回収を待って検証する。
+        await asyncio.wait_for(asyncio.gather(owner, return_exceptions=True), timeout=15)
+        assert closed.is_set()
+        assert disconnect_cancelled.is_set() == disconnect_timeout
         assert session.status == "failed" and len(client.queries) == 1
         assert stops == ([True, True] if failure == "monitor-stop" else [True])
         if failure == "inventory-unreclaimed":
@@ -390,7 +416,6 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
             assert session.session_id not in backend._residual_processes
         if failure == "inventory-unresolved":
             # 未確認の理由は既知対象の回収では解消せず、同じ会話の再開前の停止で失敗し続ける。
-            await asyncio.wait_for(asyncio.gather(*backend._tasks, return_exceptions=True), timeout=5)
             assert backend._reclaim_failures[session.session_id][0].unresolved == ["scan failure"]
             with pytest.raises(claude.session_errors.DelegateBackendError, match="scan failure"):
                 await backend._stop_owned_task(session.session_id)
@@ -398,7 +423,6 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
             backend._residual_processes.clear()
         if failure == "inventory-unreaped-child":
             # 直接の子の回収を確認できるまで再開前の停止は失敗し、回収できた後に所有状態を解く。
-            await asyncio.wait_for(asyncio.gather(*backend._tasks, return_exceptions=True), timeout=5)
             with pytest.raises(claude.session_errors.DelegateBackendError, match="終了できなかった"):
                 await backend._stop_owned_task(session.session_id)
             assert session.session_id in backend._residual_processes

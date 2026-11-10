@@ -1382,7 +1382,7 @@ def _real_mcp_environment(
 
 
 def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3) -> None:
-    """所有プロセスの終了を待ち、PID待機が失敗した場合は同じidentityの生存を再確認する。"""
+    """所有プロセスの終了を待ち、待機の結果と失敗の両方で同じidentityの生存を再確認する。"""
     try:
         _, alive = psutil.wait_procs(list(owned.values()), timeout=timeout)
     except OSError as error:
@@ -1398,7 +1398,59 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
         if alive:
             raise
         print(f"MCP終了の再確認: wait_error={error}; 全所有identityの生存なし")
-    assert not alive, [process.pid for process in alive]
+    # wait_procsの最終pollから返却までに終了したidentityを残存と扱わない。
+    # is_runningはPIDと生成時刻の組で比べるため、再利用されたPIDを同じプロセスとみなさない。
+    # zombieはis_runningが真を返すため、ここでは残存として失敗を保つ。
+    remaining = []
+    for process in alive:
+        try:
+            if process.is_running():
+                remaining.append(f"pid={process.pid} status={process.status()}")
+        except psutil.NoSuchProcess:
+            continue
+    assert not remaining, (
+        f"MCP終了確認: timeout={timeout}秒の待機後も所有identityが生存: {remaining}。"
+        "スタックトレースで_wait_mcp_processesの呼び出し元を確認し、"
+        "そのテストのClientSessionとstdio_clientの終了処理を調べ、"
+        "上記PIDの生成時刻・状態を確認して停止未達の処理を特定する。"
+    )
+
+
+def test_wait_mcp_processes_ignores_stale_alive(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """待機がaliveとして返したidentityも、判定時に終了済みなら残存として扱わない。"""
+    with late_descendant.held_process(tmp_path, env=host_environ()) as held:
+        process = psutil.Process(held.pid)
+
+        def _stale_wait(processes: list[psutil.Process], timeout: float) -> tuple[list[psutil.Process], list[psutil.Process]]:
+            # 最終pollの後、返却より前に終了した状態を、所有する実プロセスの終了とreapで作る。
+            assert timeout == 3
+            held.kill()
+            held.wait(timeout=10)
+            return [], list(processes)
+
+        monkeypatch.setattr(psutil, "wait_procs", _stale_wait)
+        _wait_mcp_processes({process.pid: process})
+        assert not process.is_running()
+
+
+def test_wait_mcp_processes_fails_for_living_process(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """生存を続ける所有identityは失敗とし、上限値・PID・状態を診断へ残す。"""
+    with late_descendant.held_process(tmp_path, env=host_environ()) as held:
+        process = psutil.Process(held.pid)
+        with pytest.raises(AssertionError) as raised:
+            _wait_mcp_processes({process.pid: process}, timeout=0.2)
+        assert process.is_running()
+    message = str(raised.value)
+    assert "timeout=0.2" in message
+    assert f"pid={process.pid}" in message
+    assert "status=" in message
+    assert "スタックトレースで_wait_mcp_processesの呼び出し元を確認" in message
+    assert "そのテストのClientSessionとstdio_clientの終了処理" in message
+    assert "stdio_client" in message
 
 
 # Windowsのcold依存導入、配布コピーと終了後の回収までを含む上限。
