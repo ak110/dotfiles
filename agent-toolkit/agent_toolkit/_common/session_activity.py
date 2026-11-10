@@ -216,7 +216,13 @@ def host_processes() -> tuple[HostProcess, ...]:
     """現在のOSアカウントが動かす対応ホストを、名前の完全一致で列挙する。"""
     found: list[HostProcess] = []
     username = psutil.Process().username()
-    for process in psutil.process_iter():
+    # process_iterはPID単位でProcessを再利用し、実行ファイルと起動時刻を以前の世代のまま保持する。
+    # 列挙は現在のPIDの取得だけに使い、分類と識別は新しく構築したProcessから読む。
+    for listed in psutil.process_iter():
+        try:
+            process = psutil.Process(listed.pid)
+        except psutil.NoSuchProcess:
+            continue
         try:
             if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 continue

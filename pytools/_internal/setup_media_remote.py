@@ -97,7 +97,17 @@ def _restart(vbs: pathlib.Path, exe: pathlib.Path) -> None:
 
 def _stop_running(exe: pathlib.Path) -> None:
     """実行ファイルのパスかコマンドラインからmedia-remoteと判定したプロセスを停止する。"""
-    targets = [process for process in psutil.process_iter(["pid", "exe", "cmdline"]) if _is_media_remote(process.info, exe)]
+    targets: list[psutil.Process] = []
+    # process_iterはPID単位でProcessを再利用し、実行ファイルを以前の世代のまま保持する。
+    # 以前の世代のProcessは停止を拒否するため、現在のPIDから新しく構築したProcessで対象を選び、同じProcessで停止する。
+    for listed in psutil.process_iter():
+        try:
+            process = psutil.Process(listed.pid)
+            info = process.as_dict(["exe", "cmdline"])
+        except psutil.NoSuchProcess:
+            continue
+        if _is_media_remote(info, exe):
+            targets.append(process)
     logger.info(log_format.format_status("media-remote", f"対症療法の停止対象プロセス: {len(targets)}件"))
     for process in targets:
         logger.info(log_format.format_status("media-remote", f"PID={process.pid} を停止"))

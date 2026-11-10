@@ -12,6 +12,7 @@ import threading
 from collections.abc import Generator, Iterator
 from typing import Any
 
+import psutil
 import pytest
 
 from agent_toolkit import atk
@@ -572,3 +573,30 @@ def test_review_activity_limits_to_target_and_descendants(tmp_path, monkeypatch)
     )
     assert session_activity.review_activity({"root"}, state_root=tmp_path).has_activity
     assert not session_activity.review_activity({"other"}, state_root=tmp_path).has_activity
+
+
+def test_host_processes_reads_current_generation_despite_cached_previous_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """列挙キャッシュに以前の世代の実行ファイルと起動時刻が残っていても、現在の実行体で分類し現在の起動時刻を返す。"""
+    pid = os.getpid()
+    current = session_registry.ProcessIdentity.of(pid)
+    assert current is not None
+    # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
+    stale = psutil.Process(pid)
+    monkeypatch.setattr(stale, "_create_time", current.create_time - 10000)
+    monkeypatch.setattr(stale, "_ident", (pid, current.create_time - 10000))
+    monkeypatch.setattr(stale, "_exe", "/previous-generation/codex")
+    monkeypatch.setitem(vars(psutil)["_pmap"], pid, stale)
+    real_process_iter = psutil.process_iter
+
+    def own_process(*args: Any, **kwargs: Any) -> list[psutil.Process]:
+        return [item for item in real_process_iter(*args, **kwargs) if item.pid == pid]
+
+    monkeypatch.setattr(psutil, "process_iter", own_process)
+
+    # 試験を実行する現在の実行体はPythonであり、以前の世代の実行ファイル名ではホストに分類しない。
+    assert not session_activity.host_processes()
+
+    monkeypatch.setattr(psutil.Process, "name", lambda self: "claude")
+    hosts = session_activity.host_processes()
+    assert hosts == (session_activity.HostProcess("claude", current),)
+    assert hosts[0].identity.exists()

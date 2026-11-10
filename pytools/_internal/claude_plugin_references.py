@@ -45,15 +45,17 @@ def scan() -> tuple[ReferencingProcess, ...]:
     owner_attribute = "username" if windows else "uids"
     attributes = ["name", "exe", "cmdline", "cwd", "environ", "create_time", "status", owner_attribute]
     result: list[ReferencingProcess] = []
-    for process in psutil.process_iter(attributes, ad_value=_ACCESS_DENIED):
+    # process_iterはPID単位でProcessを再利用し、実行ファイルと起動時刻を以前の世代のまま保持する。
+    # 列挙は現在のPIDの取得だけに使い、属性は新しく構築したProcessから読む。
+    for listed in psutil.process_iter():
         try:
-            info = process.info
-        except psutil.NoSuchProcess, psutil.ZombieProcess:
+            info = psutil.Process(listed.pid).as_dict(attributes, ad_value=_ACCESS_DENIED)
+        except psutil.NoSuchProcess:
             continue
         process_owner = info.get("username") if windows else getattr(info.get("uids"), "real", None)
         if process_owner != owner or info.get("status") in _TERMINATED_STATUSES:
             continue
-        result.append(_referencing_process(process.pid, info))
+        result.append(_referencing_process(listed.pid, info))
     return tuple(result)
 
 

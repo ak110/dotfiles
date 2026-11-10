@@ -1,7 +1,12 @@
 """pytools._internal.setup_media_remote のテスト。"""
 
+import os
 import pathlib
+import subprocess
+import sys
+import typing
 
+import psutil
 import pytest
 
 from pytools._internal import setup_media_remote
@@ -218,11 +223,28 @@ class _FakeProcess:
 
     def __init__(self, pid: int, exe: str | None, cmdline: list[str], killed: list[int]) -> None:
         self.pid = pid
-        self.info = {"pid": pid, "exe": exe, "cmdline": cmdline}
+        self._info: dict[str, object] = {"exe": exe, "cmdline": cmdline}
         self._killed = killed
+
+    def as_dict(self, attrs: list[str]) -> dict[str, object]:
+        return {name: self._info[name] for name in attrs}
 
     def kill(self) -> None:
         self._killed.append(self.pid)
+
+
+def _patch_processes(monkeypatch: pytest.MonkeyPatch, processes: list[_FakeProcess]) -> None:
+    """列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
+    by_pid = {process.pid: process for process in processes}
+
+    def listed(*_args: object, **_kwargs: object) -> list[_FakeProcess]:
+        return processes
+
+    def current(pid: int, **_kwargs: object) -> _FakeProcess:
+        return by_pid[pid]
+
+    monkeypatch.setattr(setup_media_remote.psutil, "process_iter", listed)
+    monkeypatch.setattr(setup_media_remote.psutil, "Process", current)
 
 
 @pytest.mark.parametrize(
@@ -261,7 +283,7 @@ def test_restart_after_reinstall_and_symptomatic_restart(
         _FakeProcess(2, r"C:\Python\python.exe", ["python", "-m", "pytools.media_remote", "serve"], killed),
         _FakeProcess(3, r"C:\other.exe", ["other"], killed),
     ]
-    monkeypatch.setattr(setup_media_remote.psutil, "process_iter", lambda _attrs: processes)
+    _patch_processes(monkeypatch, processes)
     monkeypatch.setattr(setup_media_remote.psutil, "wait_procs", lambda procs, timeout: (procs, []))
     launched: list[list[str]] = []
 
@@ -284,7 +306,60 @@ def test_restart_does_nothing_on_other_hosts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
     monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "euryale")
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "1")
-    monkeypatch.setattr(setup_media_remote.psutil, "process_iter", lambda _attrs: pytest.fail("停止しない"))
+    monkeypatch.setattr(setup_media_remote.psutil, "process_iter", lambda *_args, **_kwargs: pytest.fail("停止しない"))
     monkeypatch.setattr(setup_media_remote.subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("起動しない"))
 
     assert setup_media_remote.run().failure is None
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="仮想環境のpython.exeは本体を子として起動するため、起動したPIDだけに走査を限定できない"
+)
+@pytest.mark.parametrize("current_target", [True, False], ids=["current-target", "previous-generation-target"])
+@pytest.mark.usefixtures("startup_dir")
+def test_symptomatic_restart_selects_and_stops_current_generation(
+    monkeypatch: pytest.MonkeyPatch, exe_path: pathlib.Path, current_target: bool
+) -> None:
+    """列挙キャッシュに以前の世代の実行ファイルが残っていても、現在の属性で対象を選び、その世代を停止する。
+
+    現在のコマンドラインがmedia-remoteを指す実プロセスは停止し、
+    以前の世代の実行ファイルだけがmedia-remoteを指す実プロセスは停止しない。
+    """
+    monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
+    monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "")
+    monkeypatch.setenv(setup_media_remote.REINSTALL_ENV, "")
+    monkeypatch.setattr(setup_media_remote.common, "run_subprocess", _make_static_fake([]))
+    monkeypatch.setattr(setup_media_remote, "_is_up_to_date", lambda _lnk, _vbs: True)
+    monkeypatch.setattr(setup_media_remote, "_ensure_vbs", lambda _vbs, _exe: False)
+    child_command = [sys.executable, "-c", "import time; time.sleep(60)"] + ([str(exe_path)] if current_target else [])
+    with subprocess.Popen(child_command) as child:
+        try:
+            # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
+            stale = psutil.Process(child.pid)
+            monkeypatch.setattr(stale, "_create_time", 0.0)
+            monkeypatch.setattr(stale, "_ident", (child.pid, 0.0))
+            monkeypatch.setattr(stale, "_exe", "/previous-generation/other" if current_target else str(exe_path))
+            monkeypatch.setitem(vars(psutil)["_pmap"], child.pid, stale)
+            real_process_iter = psutil.process_iter
+
+            def own_process(*args: typing.Any, **kwargs: typing.Any) -> list[psutil.Process]:
+                return [item for item in real_process_iter(*args, **kwargs) if item.pid == child.pid]
+
+            monkeypatch.setattr(psutil, "process_iter", own_process)
+            launched: list[list[str]] = []
+
+            def fake_popen(command: list[str], **_kwargs: object) -> None:
+                launched.append(command)
+
+            monkeypatch.setattr(setup_media_remote.subprocess, "Popen", fake_popen)
+
+            outcome = setup_media_remote.run()
+
+            assert outcome.failure is None
+            assert launched == [[str(exe_path), "serve"]]
+            if current_target:
+                child.wait(timeout=10)
+            else:
+                assert child.poll() is None
+        finally:
+            child.kill()

@@ -1813,8 +1813,23 @@ def test_copy_failure_is_not_reused(
         log = state_paths.state_dir() / "agents-server.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         log.touch()
-        monkeypatch.setattr(process, "cmdline", lambda: ["python", "/old/agent_toolkit/agents_server_mcp.py"])
-        monkeypatch.setattr(process, "open_files", lambda: [SimpleNamespace(path=str(log))])
+        real_cmdline = psutil.Process.cmdline
+        real_open_files = psutil.Process.open_files
+
+        # 回収判定は列挙したPIDからProcessを新しく構築するため、インスタンスではなくクラスを差し替える。
+        # 他のPIDの観測を変えないよう、旧MCPとして扱う自プロセスのPIDだけに限定する。
+        def legacy_cmdline(self: psutil.Process) -> list[str]:
+            if self.pid == process.pid:
+                return ["python", "/old/agent_toolkit/agents_server_mcp.py"]
+            return real_cmdline(self)
+
+        def legacy_open_files(self: psutil.Process) -> list[Any]:
+            if self.pid == process.pid:
+                return [SimpleNamespace(path=str(log))]
+            return real_open_files(self)
+
+        monkeypatch.setattr(psutil.Process, "cmdline", legacy_cmdline)
+        monkeypatch.setattr(psutil.Process, "open_files", legacy_open_files)
         monkeypatch.setattr(psutil, "process_iter", lambda: [process])
 
     def fail_copy(_src: pathlib.Path, dst: pathlib.Path, **_kwargs: object) -> None:

@@ -139,7 +139,12 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(
     def processes(**_kwargs: Any) -> list[LegacyServer]:
         return [LegacyServer()]
 
+    def current_process(pid: int | None = None, **_kwargs: Any) -> Any:
+        """走査は列挙したPIDからProcessを構築するため、同じ境界の観測を返す。"""
+        return LegacyServer() if pid == LegacyServer.pid else real_process
+
     monkeypatch.setattr(subject.psutil, "process_iter", processes)
+    monkeypatch.setattr(subject.psutil, "Process", current_process)
     protected = (
         observation in {"denied", "starting-wrapper", "account-and-cmdline-denied", "same-account-cmdline-oserror"}
         or not shared
@@ -174,6 +179,43 @@ def test_legacy_area_not_attributed_to_lease_aware_mcp(
     assert not subject.plugin_root_in_use(area)
     monkeypatch.setattr(type(process), "cmdline", lambda self: ["python", str(area / "agent_toolkit/agents_server_mcp.py")])
     assert subject.plugin_root_in_use(area)
+
+
+def test_legacy_area_judgement_reads_current_generation_despite_cached_previous_generation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """列挙キャッシュに以前の世代の起動時刻が残っていても、保持根拠と能力記録を現在の起動時刻で比べる。"""
+    area = tmp_path / "agents-server-plugin-root-legacy"
+    area.mkdir()
+    process = subject.psutil.Process()
+    created_at = process.create_time()
+    # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
+    stale = subject.psutil.Process(process.pid)
+    monkeypatch.setattr(stale, "_create_time", created_at - 10000)
+    monkeypatch.setattr(stale, "_ident", (process.pid, created_at - 10000))
+    monkeypatch.setitem(vars(subject.psutil)["_pmap"], process.pid, stale)
+    real_process_iter = subject.psutil.process_iter
+
+    def own_process(*args: Any, **kwargs: Any) -> list[Any]:
+        return [item for item in real_process_iter(*args, **kwargs) if item.pid == process.pid]
+
+    monkeypatch.setattr(subject.psutil, "process_iter", own_process)
+    monkeypatch.setattr(type(process), "cmdline", lambda self: ["python", "/source/agent_toolkit/agents_server_mcp.py"])
+    monkeypatch.setattr(subject, "_server_namespace_may_match", lambda _process: True)
+
+    assert subject.plugin_root_in_use(area)
+    basis = subject.usage_basis()
+    assert basis is not None
+    assert basis["created_at"] == created_at
+    assert subject.usage_basis_is_current(basis)
+
+    subject.register_lease_capability()
+    assert not subject.plugin_root_in_use(area)
+    # 1回の掃引で共有する列挙も、現在の世代のProcessを保持する。
+    with subject.reuse_process_observation():
+        assert not subject.plugin_root_in_use(area)
+        assert not subject.plugin_root_in_use(area)
 
 
 @pytest.mark.parametrize(
