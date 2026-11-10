@@ -301,7 +301,7 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
 
 @pytest.mark.parametrize("has_identifier", [False, True])
 def test_prepare_unresolved_scope(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, has_identifier: bool) -> None:
-    """抽出から準備まで両未解決種別を通し、文書と1行JSONへ同じ対象を届ける。"""
+    """両未解決種別の全量を保存し、有限な文書概要から同じ対象へ到達する。"""
     result = {"session_id": "22222222-3333-4444-8555-666666666666"} if has_identifier else {"status": "completed"}
     entries = [
         {"type": "user", "message": {"role": "user", "content": "依頼"}},
@@ -365,9 +365,19 @@ def test_prepare_unresolved_scope(tmp_path: pathlib.Path, capsys: pytest.Capture
     assert len(record["unconfirmed_scope"]) == 1
     event = record["unconfirmed_scope"][0]
     assert event["kind"] == kind and event["line"] == 3 and event["record"]
+    assert event["next_action"] and "記録保持者" in event["next_action"]
+    saved = (work / "bundle" / "unconfirmed.jsonl").read_text(encoding="utf-8")
+    assert [json.loads(line) for line in saved.splitlines()] == [event]
+    serialized = json.dumps(event, ensure_ascii=False)
+    assert len(serialized.encode("utf-8")) > 200
     for key in ("candidates_path", "stats_path"):
         document = pathlib.Path(record[key]).read_text(encoding="utf-8")
-        assert json.dumps(event, ensure_ascii=False) in document
+        assert "全件はbundle/unconfirmed.jsonlへ保持する" in document
+        prefix = f"- {kind}: "
+        preview = next(line.removeprefix(prefix) for line in document.splitlines() if line.startswith(prefix))
+        assert '"record": ' in preview
+        assert preview.endswith("…") and serialized.startswith(preview[:-1])
+        assert len(preview.encode("utf-8")) <= 200
     assert record["candidate_total"] == 0 and not record["mandatory_candidates"]
 
 
