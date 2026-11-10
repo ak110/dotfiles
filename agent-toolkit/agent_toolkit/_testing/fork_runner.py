@@ -22,6 +22,8 @@ import time
 import traceback
 from pathlib import Path
 
+from agent_toolkit._common import process_tree
+
 _HAS_FORK = hasattr(os, "fork")
 _LOCK = threading.Lock()
 _SERVER: subprocess.Popen[bytes] | None = None
@@ -140,9 +142,16 @@ def _run_via_server(
                 server.stdin.write((json.dumps(request) + "\n").encode())
                 server.stdin.flush()
                 response_line = server.stdout.readline()
-            except OSError as exc:
-                _terminate_server()
-                raise ForkServerCommunicationError(f"fork-serverとの通信に失敗した: {exc}") from exc
+            except BaseException as exc:
+                # 未回収の応答を次の要求へ渡さず、一時ファイルの削除前に実行中の子孫も回収する。
+                try:
+                    if failure := process_tree.stop_owned_process(server, context="fork-server response interrupted"):
+                        exc.add_note(str(failure))
+                finally:
+                    _terminate_server()
+                if isinstance(exc, OSError):
+                    raise ForkServerCommunicationError(f"fork-serverとの通信に失敗した: {exc}") from exc
+                raise
             if not response_line:
                 _terminate_server()
                 raise ForkServerCommunicationError("fork-serverが応答を返さなかった")
