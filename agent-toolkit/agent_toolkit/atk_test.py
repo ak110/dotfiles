@@ -997,7 +997,7 @@ def test_removed_public_paths_are_rejected(argv: list[str]) -> None:
 
 
 def test_retained_run_scripts_are_exactly_the_kept_registrations() -> None:
-    """残す21登録だけを公開し、撤去した9登録を含めない。"""
+    """残す22登録だけを公開し、撤去した9登録を含めない。"""
     from agent_toolkit._atk import run_script  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     assert sorted(run_script.SCRIPT_PATHS) == sorted(
@@ -1007,6 +1007,7 @@ def test_retained_run_scripts_are_exactly_the_kept_registrations() -> None:
             "review-adoption",
             "delegation-prompt",
             "history-compare",
+            "commit-with-timeout",
             "agent-doc-changes",
             "plan-create",
             "plan-check",
