@@ -29,6 +29,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter, headings
 from agent_toolkit._common import private_notes, read_triggers, session_registry, task_documents
+from agent_toolkit._common.markdown_headings import parse_headings
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
@@ -265,18 +266,21 @@ def wrap_delivery_body(body: str) -> str:
 def with_launcher_record(body: str, context: Mapping[str, Any]) -> str:
     """taskの起動本文へ、サーバーが解決した直接の委譲元情報を添える。"""
     notice = auto_message(json.dumps(dict(context), ensure_ascii=False), source="agents-server", kind="launcher-record")
-    source_line, separator, remainder = body.partition("\n")
-    return source_line + "\n\n" + notice + separator + remainder
+    return _with_task_reference(body, notice)
 
 
 def with_startup_documents(body: str, documents: str) -> str:
-    """役割の識別行を先頭に保ち、配送資料を名前付き入力欄より前へ挿入する。"""
+    """役割の作業指示と入力を先頭に保ち、配送資料を参照資料の冒頭へ挿入する。"""
     if not documents:
         return body
-    # 入力値も自由な本文を含むため、入力欄の文字列を探索して境界を推測しない。
-    # 起動元の記録と同様に、生成元が保証する先頭の役割識別行の直後へ挿入する。
-    source_line, separator, remainder = body.partition("\n")
-    return source_line + "\n\n" + documents + separator + remainder
+    return _with_task_reference(body, documents)
+
+
+def _with_task_reference(body: str, reference: str) -> str:
+    """生成側が確定した区切りへ挿入し、入力値の本文から境界を推測しない。"""
+    instructions, boundary, remainder = body.partition(task_documents.TASK_PROMPT_REFERENCES)
+    assert boundary
+    return instructions + boundary + reference + "\n\n" + remainder
 
 
 def _validate_required_prompt_inputs(
@@ -1290,9 +1294,6 @@ def task_document_request(
         if launch_kind == "delegate" and include_startup
         else ""
     )
-    prompt_lines = [task_documents.task_prompt_header(task_document), document_text]
-    if initial_documents:
-        prompt_lines.append(initial_documents)
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
@@ -1302,12 +1303,27 @@ def task_document_request(
                 "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
                 next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
             )
+    inputs = dict(extra_params)
+    if handoff_path is not None and _HANDOFF_INPUT_NAME not in inputs:
+        inputs[_HANDOFF_INPUT_NAME] = f"{handoff_path}（新規）"
+    role = task_document.name.removesuffix(_TASK_DOCUMENT_SUFFIX)
+    # 入力宣言内のYAMLコメントを役割の主題として扱わない。
+    heading_body = document_text.partition("\n---\n")[2] if document_text.startswith("---\n") else document_text
+    title = next((title for token, title in parse_headings(heading_body, 1) if token.level == 0), "")
+    role_name = f"{' '.join(title.splitlines())}（{role}）" if title else role
+    prompt_lines = [
+        task_documents.task_prompt_header(task_document),
+        f"役割: {role_name}",
+        "入力:",
+        *named_input_lines(inputs),
+        task_documents.TASK_PROMPT_REFERENCES.strip("\n"),
+    ]
+    if initial_documents:
+        prompt_lines.append(initial_documents)
+    prompt_lines.append(document_text)
     if launch_kind == "delegate":
         notice_path = handoff_path if _HANDOFF_INPUT_NAME not in extra_params else None
         prompt_lines.append(handoff_notice(notice_path, task_document.parent.parent))
         assert whole_contract is not None
         prompt_lines.append(whole_contract)
-    if extra_params:
-        prompt_lines.append("入力:")
-        prompt_lines.extend(named_input_lines(extra_params))
     return model_type, "\n".join(prompt_lines), launch_kind, handoff_path

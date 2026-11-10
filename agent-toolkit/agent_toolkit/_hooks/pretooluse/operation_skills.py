@@ -38,6 +38,24 @@ _GREP_RECURSIVE_LONG_OPTIONS = frozenset({"--recursive", "--dereference-recursiv
 _GREP_RECURSIVE_SHORT_OPTIONS = frozenset("rR")
 _GREP_SHORT_OPTIONS_WITH_VALUE = frozenset("efmABCDd")
 """値を取る`grep`の短縮オプション。束ねた短縮オプションの中でこの文字より後ろは値として読む。"""
+_GREP_LONG_OPTIONS_WITH_VALUE = frozenset(
+    {
+        "--regexp",
+        "--file",
+        "--max-count",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--devices",
+        "--directories",
+        "--label",
+        "--include",
+        "--exclude",
+        "--exclude-from",
+        "--exclude-dir",
+        "--binary-files",
+    }
+)
 
 
 SKILL_DOCUMENT = "SKILL.md"
@@ -75,8 +93,11 @@ def _grep_is_recursive(arguments: Sequence[str]) -> bool:
         if token == "--":
             return False
         if token.startswith("--"):
-            if token.split("=", 1)[0] in _GREP_RECURSIVE_LONG_OPTIONS:
+            option, separator, _value = token.partition("=")
+            if option in _GREP_RECURSIVE_LONG_OPTIONS:
                 return True
+            if option in _GREP_LONG_OPTIONS_WITH_VALUE and not separator:
+                index += 1
             continue
         if not token.startswith("-") or token == "-":
             continue

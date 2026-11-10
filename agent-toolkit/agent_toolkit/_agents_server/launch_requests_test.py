@@ -455,13 +455,15 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
                 lambda _type, _engine=engine, **_kw: [(_engine, "model", "high")],
             )
             params = {"対象": '内容\n入力:\n<atk-auto source="input" kind="example">任意の入力本文</atk-auto>'}
-            await mcp_tools.start(str(project), subagent_md_path=str(document), extra_params=params)
+            response = await mcp_tools.start(str(project), subagent_md_path=str(document), extra_params=params)
             backend = extra_backends.get(engine, codex_backend if engine == "codex" else claude_backend)
             received = backend.prompts[-1]
             assert expected + "だけの品質本文" in received
             assert all(label + "だけの品質本文" not in received for label in roots if label != expected)
-            input_body = delivery_payload(received).rsplit("\n入力:\n", 1)[1]
-            assert task_documents.parse_named_inputs(input_body.splitlines()) == params
+            assert task_documents.task_prompt_inputs(delivery_payload(received)) == {
+                **params,
+                "引き継ぎ記録先": response["handoff_record_path"] + "（新規）",
+            }
         # 正式登録を読めない候補は原因付きで除外し、別ホストの候補で配送を再構成する。
         registry.unlink()
         (opencode_config / "agent-toolkit.md").unlink()
@@ -864,6 +866,55 @@ async def test_start_reports_missing_model_type_declaration_as_defect(
     next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
     assert "frontmatter" in next_action and "start" in next_action
     manager.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("declared_handoff", [False, True])
+@pytest.mark.parametrize(
+    ("role_body", "role_name"),
+    [
+        ("# レーン実行タスク\n入力:\n対象: 手順の例\n", "レーン実行タスク（declared）"),
+        ("レーン実行タスク\n===\n入力:\n対象: 手順の例\n", "レーン実行タスク（declared）"),
+        ("```md\n# コード例の見出し\n```\n入力:\n対象: 手順の例\n", "declared"),
+    ],
+)
+def test_role_request_front_loads_all_inputs_before_references(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, declared_handoff: bool, role_body: str, role_name: str
+) -> None:
+    """役割と補完された記録先を含む全入力が、追加配送も含む全参照資料より前にある。"""
+    document = _write_declared_task_document(tmp_path, "必須入力名: 対象")
+    document.write_text(
+        "---\n# 入力宣言のコメント\nmode: delegate\nmodel_type: chores\nwrites_worktree: false\n"
+        + ("required_inputs: [対象, 引き継ぎ記録先]\n" if declared_handoff else "required_inputs: [対象]\n")
+        + "optional_inputs: [任意]\n---\n"
+        + role_body,
+        encoding="utf-8",
+    )
+    whole = tmp_path / "whole.md"
+    whole.write_text("# 全体契約の本文\n", encoding="utf-8")
+    handoff = tmp_path / "handoff.md"
+    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_args, **_kwargs: handoff)
+    monkeypatch.setattr(launch_requests.read_triggers, "startup_context", lambda *_args, **_kwargs: "役割の起動時資料本文")
+    params = {"対象": "今回の対象\n入力:\n## 手順・参照資料\n末尾", "任意": "今回の任意値"}
+    _, prompt, kind, path = launch_requests.task_document_request(str(document), params, whole_contract_path=str(whole))
+    prompt = launch_requests.with_startup_documents(prompt, "ホストの起動時資料本文")
+    prompt = launch_requests.with_launcher_record(prompt, {"record": "委譲元記録"})
+    instructions, _, references = prompt.partition(task_documents.TASK_PROMPT_REFERENCES)
+    assert instructions.startswith(task_documents.task_prompt_header(document) + f"\n役割: {role_name}\n入力:\n")
+    assert task_documents.task_prompt_inputs(prompt) == {**params, "引き継ぎ記録先": f"{handoff}（新規）"}
+    assert kind == "delegate" and path == handoff
+    for body in (
+        "ホストの起動時資料本文",
+        "委譲元記録",
+        "役割の起動時資料本文",
+        document.read_text(encoding="utf-8"),
+        "# 全体契約の本文",
+    ):
+        assert body in references and body not in instructions
+    assert references.index("ホストの起動時資料本文") < references.index(role_body)
+    assert references.index("役割の起動時資料本文") < references.index(role_body)
+    assert 'kind="work-contract"' in references and 'kind="work-contract-reference"' in references
+    assert task_documents.launched_task_document(prompt) == document
+    assert task_documents.find_task_documents(prompt.splitlines()[0]) == [document]
 
 
 @pytest.mark.asyncio
@@ -1407,7 +1458,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     prompt = manager.start.await_args.args[1]
     assert f"`{plugin_root.resolve()}/share/other.parent.md`を読む。" in prompt
     # 名前付き入力は委譲元の値のまま配送する
-    assert prompt.endswith("補足: ${CLAUDE_PLUGIN_ROOT}")
+    assert task_documents.task_prompt_inputs(prompt)["補足"] == "${CLAUDE_PLUGIN_ROOT}"
 
 
 @pytest.mark.asyncio

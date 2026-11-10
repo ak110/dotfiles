@@ -1232,7 +1232,7 @@ def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, e
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
 @pytest.mark.parametrize(
     "command_kind",
-    ["message", "file", "heredoc"],
+    ["message", "file", "heredoc", "am", "am-attached", "aF"],
 )
 def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
@@ -1240,12 +1240,14 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     """引数・ファイル・heredocから最終メッセージを確定し、WI名を持つcommitを公開hookが遮断する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
     message = "変更理由\n\n対応AWI: 20261020-151224-001.md"
-    if command_kind == "message":
+    if command_kind in {"am", "am-attached"}:
+        command = "git commit -am" + (" " if command_kind == "am" else "") + shlex.quote(message)
+    elif command_kind == "message":
         command = "git commit -m '変更理由' -m '対応AWI: 20261020-151224-001.md'"
-    elif command_kind == "file":
+    elif command_kind in {"file", "aF"}:
         message_file = repo / "message.txt"
         message_file.write_text(message, encoding="utf-8")
-        command = f"git commit -F '{message_file}'"
+        command = f"git commit {'-aF' if command_kind == 'aF' else '-F'} '{message_file}'"
     else:
         command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
 
@@ -1260,7 +1262,7 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
 @pytest.mark.parametrize(
     "command_kind",
-    ["message", "file", "heredoc"],
+    ["message", "file", "heredoc", "am", "am-attached", "aF"],
 )
 def test_git_commit_without_work_item_filename_passes_public_hook(
     tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
@@ -1268,12 +1270,14 @@ def test_git_commit_without_work_item_filename_passes_public_hook(
     """WI名のない同形メッセージは公開hookを通過する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
     message = "変更理由\n\n対象の動作を更新した。"
-    if command_kind == "message":
+    if command_kind in {"am", "am-attached"}:
+        command = "git commit -am" + (" " if command_kind == "am" else "") + shlex.quote(message)
+    elif command_kind == "message":
         command = "git commit -m '変更理由' -m '対象の動作を更新した。'"
-    elif command_kind == "file":
+    elif command_kind in {"file", "aF"}:
         message_file = repo / "message.txt"
         message_file.write_text(message, encoding="utf-8")
-        command = f"git commit -F '{message_file}'"
+        command = f"git commit {'-aF' if command_kind == 'aF' else '-F'} '{message_file}'"
     else:
         command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
 
@@ -1304,8 +1308,19 @@ class TestBashOptionAfterTerminator:
             ("git grep -c -F -- 'X' -- --glob", "--glob"),
             ("git diff --stat a b -- $(printf path.py) --stat", "--stat"),
             ("git grep -c -F -e 'X' -- --glob", "--glob"),
+            ("git grep -i -e foo -- --glob", "--glob"),
+            ("git grep -iefoo -- --glob", "--glob"),
+            ("git grep -ie foo -- --glob", "--glob"),
+            ("git grep -if patterns.txt -- --glob", "--glob"),
+            ("git grep -ie -- -- --glob", "--glob"),
             # `-e`・`-f`を`--`より前に置くと`--`の後ろは全てパスになる（ripgrep 15.2.0、GNU grep）。
             ("rg -c -F -e 'X' -- --glob", "--glob"),
+            ("rg -n -e foo -- --glob", "--glob"),
+            ("rg -nefoo -- --glob", "--glob"),
+            ("rg -ne foo -- --glob", "--glob"),
+            ("grep -inefoo -- --include", "--include"),
+            ("rg -nfpatterns.txt -- --glob", "--glob"),
+            ("rg -ne -- -- --glob", "--glob"),
             ("grep -rc -F -e 'X' -- --include", "--include"),
             ("rg -c -F --regexp=X -- --glob", "--glob"),
             ("grep -rc -F -f patterns.txt -- --include", "--include"),
@@ -1342,6 +1357,10 @@ class TestBashOptionAfterTerminator:
             "git grep -c -F -- -n -- agent-toolkit/share",
             "git grep -c -F -e 'X' -- agent-toolkit/share",
             "git grep -c -F 'X' -- agent-toolkit/share",
+            "git grep -ie -- agent-toolkit/share",
+            "git grep -iA 2 -- -n -- agent-toolkit/share",
+            "rg -ne -- agent-toolkit/share",
+            "grep --regexp -- /dev/null",
             "git diff --stat a b -- $(git diff --name-only c d) | tail -3",
             "git show --stat HEAD -- `git diff --name-only HEAD~1 HEAD`",
             "git diff --stat a b -- <(git diff --name-only c d)",
@@ -1546,6 +1565,61 @@ def _run_git_commit_message_hook(
     assert observed["head_after"] == head_before
     assert observed["status_after"] == status_before
     return result
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("form", ["-a -m {message}", "-am {message}", "-am{message}", "-aF {file}"])
+@pytest.mark.parametrize("correct", [False, True])
+def test_bundled_commit_attribution_reaches_public_hook(tmp_path, codex, form, correct):
+    """束ねた短形式も同じ本文を帰属検査へ渡し、正しいtrailerだけを受理する。"""
+    author = "GPT-6.1 Sol / Medium <noreply@openai.com>" if codex else "Claude Opus 5.5 / Medium <noreply@anthropic.com>"
+    message = "変更\n\n" + (f"Co-Authored-By: {author}" if correct else "帰属なし")
+    path = tmp_path / "message.txt"
+    path.write_text(message, encoding="utf-8")
+    command = "git commit " + form.format(message=shlex.quote(message), file=shlex.quote(str(path)))
+    result = _run(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "cwd": str(tmp_path),
+            "model": "gpt-6.1-sol" if codex else "claude-opus-5-5",
+            "effort": {"level": "medium"},
+            **({"turn_id": "codex-turn"} if codex else {}),
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0 and not result.stderr
+    if correct:
+        assert "permissionDecision" not in result.stdout
+    else:
+        assert f"Co-Authored-By: {author}" in _denial_reason(result)
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("command", "blocked"),
+    [
+        ("git grep -i -e pkill -- docs", False),
+        ("git grep -iepkill -- docs", False),
+        ("git grep -ie pkill -- docs", False),
+        ("git grep -if pkill -- docs", True),
+        ("git grep -iefoo -- pkill", True),
+        ("git grep -iA1e pkill", False),
+        ("git grep -O'pkill worker' -iefoo", True),
+        ("git grep -xe pkill -- docs", True),
+        ("git grep -iefoo -- docs; pkill worker", True),
+        ('git grep -ie"$(pkill worker)" -- docs', True),
+    ],
+)
+def test_bundled_search_patterns_preserve_public_process_protection(command, blocked, codex):
+    """検索語と確定した引数だけを免除し、ファイル・pager・実行位置の保護を保つ。"""
+    result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})})
+    assert result.returncode == 0 and not result.stderr
+    if blocked:
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
+    else:
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
 
 def test_commit_message_file_is_read_with_unknown_pathspec(tmp_path):

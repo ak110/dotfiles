@@ -278,10 +278,16 @@ class ReadTrigger:
     headings: tuple[str, ...] = ()
     selector: str = ""
     condition: str = ""
+    material: str = ""
+    plugin_root: pathlib.Path | None = None
+    host: str = "claude"
+    project: pathlib.Path | str | None = None
 
     @functools.cached_property
     def targets(self) -> tuple[ReadTarget, ...]:
         """不変な宣言行の寿命内で、解決済みの資料と指定範囲を共有する。"""
+        if self.plugin_root is not None:
+            return _row_targets(self.material, self.source, self.line, self.plugin_root, self.host, self.project, self.selector)
         headings = self.headings or ("",) * len(self.documents)
         return tuple(ReadTarget(path, heading) for path, heading in zip(self.documents, headings, strict=True))
 
@@ -636,12 +642,17 @@ def parse_tables(
     strict: bool = False,
     host: str = "claude",
     project: pathlib.Path | str | None = None,
+    defer_material: bool = False,
 ) -> list[ReadTrigger]:
     """資料列を持つ表から宣言を読む。strictでは未分類の表も拒否する。
 
     要求内（`resolution_scope`）では同じ資料の解析結果を共有する。呼出側が結果を変更しても共有へ及ばないよう複製を返す。
+    `defer_material`では資料列の解決を`targets`参照まで遅らせ、`documents`・`headings`は空のまま保持する。
+    strict検査はこの指定によらず全資料を解決する。
     """
-    return list(_parse_tables(source.resolve(), plugin_root, strict=strict, host=host, project=project))
+    return list(
+        _parse_tables(source.resolve(), plugin_root, strict=strict, host=host, project=project, defer_material=defer_material)
+    )
 
 
 @_scope_cached
@@ -652,6 +663,7 @@ def _parse_tables(
     strict: bool,
     host: str,
     project: pathlib.Path | str | None,
+    defer_material: bool,
 ) -> tuple[ReadTrigger, ...]:
     text = source.read_text(encoding="utf-8")
     result: list[ReadTrigger] = []
@@ -725,14 +737,10 @@ def _parse_tables(
             owners = [value for value in _CODE.findall(cells[0]) if value.startswith(("agent-toolkit:", "agent-basics:"))]
             if len(owners) == 1:
                 material = f"`{owners[0]}`の" + material
-        targets = material_targets(material, source, plugin_root, host, project=project)
-        if selector:
-            targets = tuple(target for target in targets if "<" not in str(target.path))
+        # 資料実体は対象行のtargets参照時に解決し、非該当行のplugin・ファイル解決を省く。
+        deferred = defer_material and not strict
+        targets = () if deferred else _row_targets(material, source, number, plugin_root, host, project, selector)
         documents = tuple(target.path for target in targets)
-        if not documents and not selector:
-            raise ValueError(f"{source}:{number}: 実ファイルの資料を宣言する")
-        if any(not path.is_file() for path in documents):
-            raise ValueError(f"{source}:{number}: 資料が存在しない: {documents}")
         if strict:
             for target in targets:
                 if target.heading and is_normative_document(target.path):
@@ -768,9 +776,34 @@ def _parse_tables(
                 tuple(target.heading for target in targets),
                 selector,
                 row.get("時点または条件", row.get("条件", "")),
+                material if deferred else "",
+                plugin_root if deferred else None,
+                host if deferred else "claude",
+                project if deferred else None,
             )
         )
     return tuple(dict.fromkeys(result))
+
+
+@_scope_cached
+def _row_targets(
+    material: str,
+    source: pathlib.Path,
+    line: int,
+    plugin_root: pathlib.Path,
+    host: str,
+    project: pathlib.Path | str | None,
+    selector: str,
+) -> tuple[ReadTarget, ...]:
+    """選択された宣言の参照を解決し、従来と同じ実在条件で診断する。"""
+    targets = material_targets(material, source, plugin_root, host, project=project)
+    if selector:
+        targets = tuple(target for target in targets if "<" not in str(target.path))
+    if not targets and not selector:
+        raise ValueError(f"{source}:{line}: 実ファイルの資料を宣言する")
+    if any(not target.path.is_file() for target in targets):
+        raise ValueError(f"{source}:{line}: 資料が存在しない: {tuple(target.path for target in targets)}")
+    return targets
 
 
 @plugin_resolution_scope()
@@ -824,7 +857,7 @@ def startup_targets(
     project: pathlib.Path | str | None = None,
 ) -> tuple[ReadTarget, ...]:
     """起動時の配送と読了観測が共有する、入力に依存しない資料集合を返す。"""
-    rows = parse_tables(source, plugin_root, host=host, project=project)
+    rows = parse_tables(source, plugin_root, host=host, project=project, defer_material=True)
     targets = list(reference_method_targets(source, plugin_root, host, project=project))
     role = source.name.removesuffix(".subagent.md")
     for row in rows:
@@ -849,7 +882,7 @@ def startup_context(
     targets = list(startup_targets(source, plugin_root, host=host, project=project))
     input_selectors: dict[ReadTarget, set[str]] = {}
     role = source.name.removesuffix(".subagent.md")
-    for row in parse_tables(source, plugin_root, host=host, project=project):
+    for row in parse_tables(source, plugin_root, host=host, project=project, defer_material=True):
         if row.kind != "起動時" and f"role:{role}" not in row.operations:
             continue
         if row.selector.startswith("input:"):

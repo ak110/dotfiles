@@ -20,8 +20,11 @@ from agent_toolkit._common import atomic_file, automated_prompt, session_state, 
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
     agents_server_observations,
+    document_reads,
+    plugin_resources,
     posttooluse,
     pretooluse,
+    rules_context,
     termination_evidence,
     termination_order_advisor,
     user_prompt_submit,
@@ -355,6 +358,39 @@ def test_quoted_operators_do_not_create_deliverables(
     assert (label in _missing_completion(tmp_path)) is recorded
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("command", "recorded"),
+    [
+        ("git commit -a -m --dry-run", True),
+        ("git commit -am --dry-run", True),
+        ("git commit -am--dry-run", True),
+        ("git commit -am --help", True),
+        ("git commit -am--help", True),
+        ("git commit -aF --help", True),
+        ("git commit -aF--dry-run", True),
+        ("git commit -am --", True),
+        ("git commit -am 変更 --dry-run", False),
+        ("git commit --help -am 変更", False),
+        ("git commit -ahm 変更", False),
+        ("git commit -am 変更 &", False),
+    ],
+)
+def test_bundled_commit_values_reach_public_completion_evidence(tmp_path, codex, command, recorded):
+    """成功応答後の成果記録で、値の抑止語・本当の抑止指定・背景実行を区別する。"""
+    response = "出力" if codex else {"stdout": "出力", "exit_code": 0}
+    _tool(
+        tmp_path,
+        "commit-boundary",
+        "Bash",
+        {"command": command},
+        response,
+        codex=codex,
+        native_exit_code=0 if codex else None,
+    )
+    assert ("commit" in _missing_completion(tmp_path)) is recorded
+
+
 def test_codex_target_skill_read_is_deliverable(tmp_path: pathlib.Path) -> None:
     """Codexが対象スキルの`SKILL.md`を実際に読んだ記録を、対象スキルの開始として扱う。"""
     text = "---\nname: process-wi\n---\n\n# WI処理\n"
@@ -387,16 +423,17 @@ def test_answer_only_or_failed_work_is_not_deliverable(
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答した。")) == ("approve", "")
 
 
-def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> None:
-    """起動証拠を得た作業の後の新しい依頼による成果作業へ、前の起動証拠を流用しない。"""
+def test_new_input_keeps_work_identity_and_reuses_context_completion(tmp_path: pathlib.Path) -> None:
+    """新しい依頼は別作業にし、本文が残る同じ文脈の起動証拠をStopが再利用する。"""
     supply_commit(tmp_path, "commit-1")
     supply_completion(tmp_path, "completion-1")
     human_input(tmp_path, "next", "次の作業を頼む")
     supply_commit(tmp_path, "commit-2")
     works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
     assert len(works) == 2
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
-    assert decision == "notify" and f"作業 {works[1][0]}:" in reason and "work-1:" not in reason
+    assert not works[1][1].get("completion_report")
+    assert _missing_completion(tmp_path) == ["commit"]
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE)) == ("approve", "")
 
 
 def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathlib.Path) -> None:
@@ -410,9 +447,9 @@ def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathli
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
 
 
-@pytest.mark.parametrize("invoked,new_input,missing", [(False, False, True), (True, False, False), (True, True, True)])
-def test_batch_report_save_requires_invocation_in_same_work(tmp_path, invoked, new_input, missing):
-    """batchの参照読取・起動・報告保存を、同じ作業の終了証拠として区別する。"""
+@pytest.mark.parametrize("invoked,new_input,missing", [(False, False, True), (True, False, False), (True, True, False)])
+def test_batch_report_save_reuses_invocation_in_same_context(tmp_path, invoked, new_input, missing):
+    """batchの参照読取と起動を分け、次の作業も同じ文脈の起動証拠を再利用する。"""
 
     def observe(call_id, tool, inputs, response):
         payload = {
@@ -1465,6 +1502,37 @@ def test_legacy_stop_review_notice_is_not_completion_evidence():
     """旧版の未参照キーが残っていても成果作業の起動証拠へ使わない。"""
     work = {"deliverables": ["commit"], "stop_review_notice": {"input_id": "request"}}
     assert termination_evidence.missing_completion(work) == ["commit"]
+
+
+@pytest.mark.parametrize("recorded", [False, True])
+@pytest.mark.parametrize("context_loaded", [None, False, True])
+def test_completion_context_overrides_legacy_work_evidence(recorded, context_loaded):
+    """明示した文脈状態は作業別証拠より優先し、未指定の直接呼出しは従来の結果を保つ。"""
+    work = {"deliverables": ["commit"], "completion_report": recorded}
+    missing = termination_evidence.missing_completion(work, context_loaded=context_loaded)
+    assert missing == ([] if context_loaded is True or context_loaded is None and recorded else ["commit"])
+
+
+@pytest.mark.parametrize("succeeded", [False, True])
+def test_public_completion_skill_records_versioned_context_evidence(tmp_path, succeeded):
+    """成功したSkill起動の本文版付き共通記録を、次の人間入力と別作業からも照会できる。"""
+    response = "起動" if succeeded else {"exit_code": 1, "error": "起動失敗"}
+    _tool(tmp_path, "completion-context", "Skill", {"skill": "agent-toolkit:report-completion"}, response, codex=False)
+    path = plugin_resources.skill_document_path("report-completion", "SKILL.md")
+    key = document_reads.skill_invocation_key(path, document_reads.content_fingerprint(path))
+    records = session_state.read_state("evidence-test").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert ("main" in records.get(key, [])) is succeeded
+    human_input(tmp_path, "next-context-work", "次の成果を作成する")
+    supply_commit(tmp_path)
+    records = session_state.read_state("evidence-test").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert ("main" in records.get(key, [])) is succeeded
+    works = termination_evidence.session_works({"session_id": "evidence-test"})
+    current = works[-1][1]
+    missing = termination_evidence.missing_completion(current, context_loaded="main" in records.get(key, []))
+    assert ("commit" in missing) is not succeeded
+    if succeeded:
+        assert len(works) == 2
+        assert not current.get("completion_report")
 
 
 @pytest.mark.parametrize(

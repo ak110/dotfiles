@@ -51,6 +51,21 @@ def _launcher(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
+def test_launcher_help_does_not_import_server_logging(host_environ: Callable[[], dict[str, str]]) -> None:
+    """依存導入前の公開launcherは、通常のhelpでサーバー専用の診断依存を読み込まない。"""
+    result = subprocess.run(
+        [sys.executable, "-X", "importtime", str(_PROJECT_ROOT / "scripts" / "launch.py"), "--help"],
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "agent_toolkit._agents_server.logging_config" not in result.stderr
+
+
 @pytest.mark.parametrize("stage", ["signal", "reader", "wait", "stop"])
 def test_agents_server_launcher_reclaims_resources_on_failure(
     stage: str,
@@ -328,6 +343,55 @@ def test_launcher_restores_callers_project_environment_for_children(
     assert observed == {"project": expected, "cwd": str(tmp_path), "argv": ["空 白"]}
     assert "子の診断" in result.stderr
     assert {path.relative_to(other): path.read_bytes() for path in other.rglob("*") if path.is_file()} == before
+
+
+@pytest.mark.parametrize("option", ["--prepare", "--prepare-if-missing"])
+@pytest.mark.parametrize("failure", ["exit", "exception"])
+def test_prepare_failure_reports_recovery_once_without_publication(
+    launcher: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+    failure: str,
+) -> None:
+    """公開prepareの通常失敗と例外は診断・終了値を保ち、復旧操作を1回だけ示す。"""
+    root = tmp_path / "plugin"
+    root.mkdir()
+    target = root / "target.py"
+    target.write_text("", encoding="utf-8")
+    (root / "pyproject.toml").write_text('[project]\nname="probe"\ndependencies=[]\n', encoding="utf-8")
+    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path / "runtime"))
+    monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(root), option, str(target)])
+    monkeypatch.setattr(launcher.shutil, "which", lambda *_args, **_kwargs: "uv")
+
+    class FailedProcess:
+        def wait(self, timeout: float) -> int:
+            assert timeout > 0
+            if failure == "exception":
+                raise OSError("同期の例外診断")
+            print("同期コマンドの診断", file=sys.stderr)
+            return 23
+
+    @contextlib.contextmanager
+    def lifetime(_arguments: list[str], **_kwargs: Any) -> Generator[FailedProcess]:
+        yield FailedProcess()
+
+    def unexpected_launch(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("失敗した準備の後に対象を起動した")
+
+    monkeypatch.setattr(launcher, "_server_lifetime", lifetime)
+    monkeypatch.setattr(launcher.os, "execve", unexpected_launch)
+    assert launcher.main() == (23 if failure == "exit" else 1)
+    output = capsys.readouterr()
+    assert not output.out
+    assert ("同期コマンドの診断" if failure == "exit" else "同期の例外診断") in output.err
+    assert ("依存同期が失敗" if failure == "exit" else "共有依存環境を準備できません") in output.err
+    assert output.err.count("次の操作:") == 1
+    assert output.err.count("公開インストーラーを再実行") == 1
+    assert "共有依存環境が未準備" not in output.err
+    assert plugin_environment.prepared_python(root, dict(os.environ)) is None
 
 
 def test_prepare_syncs_dependencies_only_and_publishes_after_success(

@@ -418,6 +418,41 @@ def python_file_paths(code: str, *, writing: bool = False) -> list[str]:
     return paths
 
 
+def _script_display_operands(tokens: Sequence[str]) -> tuple[str, ...]:
+    """既知の表示スクリプトだけから入力を得る。実行せず、範囲の被覆も証明しない。
+
+    sedはアドレス付きprint、awkは条件・代入・print・exitなどの表示式を対象にする。
+    オプション付きの未知構文、ファイル出力、外部実行は候補から除く。
+    """
+    name = pathlib.PurePath(tokens[0]).name
+    start = 2 if name == "sed" else 1
+    if len(tokens) <= start + 1 or name == "sed" and tokens[1] != "-n":
+        return ()
+    program = tokens[start]
+    if is_unknown_word(program) or program.startswith("-"):
+        return ()
+    if name == "sed":
+        address = r"(?:\d+|\$|/(?:\\.|[^/\\\n])*/)"
+        if re.fullmatch(rf"(?:{address}(?:,{address})?)?p", program) is None:
+            return ()
+    else:
+        # awk全体の実行解析は行わない。出力先変更・getline・関数呼出しを含む式は対象外とする。
+        if re.search(r"[<>|@`]|\bgetline\b|\b[A-Za-z_]\w*\s*\(", program):
+            return ()
+        expression = re.sub(r'/(?:\\.|[^/\\\n])*/|"(?:\\.|[^"\\\n])*"', "0", program)
+        if not expression.strip() or re.fullmatch(r"[\w\s${}();=!&+*/%.,?:\[\]-]+", expression) is None:
+            return ()
+    operands = tokens[start + 1 :]
+    if operands[0] == "--":
+        operands = operands[1:]
+    elif any(operand.startswith("-") for operand in operands):
+        return ()
+    # awkのname=valueはファイル引数ではない。代入による入力先の変更も推測しない。
+    if any(operand == "-" or name == "awk" and re.match(r"[A-Za-z_]\w*=", operand) for operand in operands):
+        return ()
+    return tuple(operands)
+
+
 def _display_read_operands(tokens: Sequence[str]) -> tuple[str, ...]:
     if not tokens or is_unknown_word(tokens[0]):
         return ()
@@ -428,6 +463,8 @@ def _display_read_operands(tokens: Sequence[str]) -> tuple[str, ...]:
         return _content_operands(tokens, pattern=True)
     if name in {"head", "tail"}:
         return _content_operands(tokens, pattern=False)
+    if name in {"sed", "awk"}:
+        return _script_display_operands(tokens)
     return _read_operands(tokens, include_partial=True)
 
 
@@ -563,8 +600,6 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
                 operands = [current.path]
         elif name in {*_FULL_READ_COMMANDS, "head", "tail"} and not operands:
             operands = list(_content_operands(tokens, pattern=False))
-        elif name in {"sed", "awk"} and not operands:
-            operands = list(_content_operands(tokens, pattern=True))
         elif is_python_token(name):
             if "-c" in tokens:
                 position = tokens.index("-c")

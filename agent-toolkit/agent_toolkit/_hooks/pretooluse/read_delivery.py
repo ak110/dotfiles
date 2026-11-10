@@ -116,7 +116,7 @@ def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> lis
     # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
     with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
         entries = [
-            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd))
+            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd, defer_material=True))
             for source in dict.fromkeys(sources)
         ]
     # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
@@ -769,7 +769,9 @@ def _project_skill_rows(
             # 未読の宣言元は選択済みの行だけを復元し、別工程の行を有効にしない。
             rows.extend(
                 row
-                for row in read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host, project=project)
+                for row in read_triggers.parse_tables(
+                    path, plugin_resources.plugin_root(), host=host, project=project, defer_material=True
+                )
                 if path in selected or _declaration_identity(row) in origins.get(path, [])
             )
     return rows
@@ -819,6 +821,7 @@ def dynamic_targets(
                 plugin_resources.plugin_root(),
                 host="codex" if is_codex_payload(payload) else "claude",
                 project=payload.get("cwd"),
+                defer_material=True,
             )
             if session_id:
                 update_state(session_id, operation_skills.mark_ready("resolved-project-skill:" + str(source), agent))
@@ -1641,10 +1644,23 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     and target_identity[1] == "SKILL.md"
                     and not target.heading
                 ):
+                    selection_rows.append(row)
                     pending.extend(item for item in row.targets if item not in pending and not ready(item))
         # 選択資料の解析で追加した宣言にも、同じ役割境界を適用する。
         rows = [row for row in rows if not row.source.name.endswith(".subagent.md") or row.source in roles]
     except (OSError, ValueError) as error:
+        if isinstance(error, PluginRootError):
+            return Decision(
+                notices=(
+                    _llm_notice(
+                        f"読込宣言を取得できない: {error}",
+                        tag=_WARN_TAG,
+                        fix="読取・導入診断と正規の依存追加で宣言を復旧し、取得結果を確かめてから判断・その他の変更へ進め。",
+                        removable_cause=True,
+                        escalate_on_repeat=False,
+                    ),
+                )
+            )
         if isinstance(error, FileNotFoundError) and isinstance(error.filename, str):
             missing = read_triggers.ReadTarget(pathlib.Path(error.filename))
             return Decision(
@@ -1736,7 +1752,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         try:
             acquisition_step(target, subject, reference=target.path not in invocation_paths, cwd=cwd)
         except (OSError, UnicodeError, ValueError) as error:
-            repairs = {row.source.resolve() for row in rows if target in row.targets} | {target.path}
+            repairs = {row.source.resolve() for row in selection_rows if target in row.targets} | {target.path}
             writes = operation_skills.written_paths(tool_name, tool_input, cwd)
             if not warning_only and writes and all(pathlib.Path(path).resolve() in repairs for path in writes):
                 return Decision(
@@ -1760,7 +1776,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
             if not target.path.is_file():
                 # 欠けているのが宣言元と同じ版の資料か、別版を解決した結果かを区別できるよう宣言元を示す。
-                origins = sorted({str(row.source) for row in rows if target in row.targets})
+                origins = sorted({str(row.source) for row in selection_rows if target in row.targets})
                 if origins:
                     failures[target] += f"。宣言元: {'、'.join(f'`{origin}`' for origin in origins)}"
     acquisition = "。\n".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd)) + "。"
@@ -2418,7 +2434,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         )
     )
     chosen_targets = selected_targets(records if isinstance(records, dict) else {}, agent)
-    targets = {path for row in rows for path in row.documents} | {target.path for target in chosen_targets}
+    targets = {target.path for target in chosen_targets}
     targets.update(path for path in paths if path.suffix == ".md" and _document_owner(path) is not None)
     if tool_name == "Skill":
         qualified = tool_input.get("skill")

@@ -96,8 +96,7 @@ def _current_named_input(session: SessionState, document: pathlib.Path, name: st
             params = task_documents.parse_named_inputs(lines[1:])
             if name in params:
                 return params[name]
-    # 起動本文には役割全文が先行する。生成側が末尾へ置く入力節だけを解析する。
-    return task_documents.parse_named_inputs(session.prompt.rpartition("\n入力:\n")[2].splitlines())[name]
+    return task_documents.task_prompt_inputs(session.prompt)[name]
 
 
 def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: str) -> str | None:

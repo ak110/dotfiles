@@ -274,31 +274,31 @@ _GIT_GREP_VALUED_OPTIONS = frozenset(
 """`git grep -h`の必須値付きオプション（git 2.43.0の確認。パターン用は別集合）。"""
 
 
-def _attached_short_value_option(token: str, valued: Iterable[str]) -> str | None:
-    """値を密着させた短縮オプションの形であれば、そのオプション名を返す。
-
-    `-A14`のように値を空白なしで連結した形は対象コマンドが受理する1つのトークンである。
-    短縮オプションの連結として1文字ずつ受理集合に含まれるか判定すると、値の各文字が受理集合に無いという判定になる。
-    """
-    if not token.startswith("-") or token.startswith("--"):
-        return None
-    return next(
-        (
-            option
-            for option in valued
-            if option.startswith("-") and not option.startswith("--") and token.startswith(option) and len(token) > len(option)
-        ),
-        None,
-    )
-
-
 _PROCESS_KILL_BY_PATTERN_RE = re.compile(r"(?<![\w-])(pkill|killall)(?![\w-])")
 _PROCESS_KILL_UNSAFE_MARKERS = frozenset("$`(){}")
 _PROCESS_KILL_LITERAL_SEARCH_COMMANDS = frozenset({"egrep", "fgrep", "grep", "rg"})
+_GIT_GREP_SHORT_FLAGS = frozenset("EFGPivwahnHIlLczonqrsuVpWN")
 
 
-def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int | None]:
-    """`git grep`の引数列から、検索パターンの位置の集合と、revision・パスの区切り`--`の位置を返す。
+def _bundled_search_value_option(token: str, *, command: str) -> tuple[str, str] | None:
+    """既知の短形式だけの束から最初の値付きオプションと密着値を返す。
+
+    未知の文字やpager指定の後ろを検索語と認定すると、プロセス終了保護の免除を広げるため走査を止める。
+    """
+    if not token.startswith("-") or token.startswith("--"):
+        return None
+    valued = "efABCm" if command == "git" else "efmABCdgtMTrjE" if command == "rg" else "efmABCDd"
+    flags = _GIT_GREP_SHORT_FLAGS if command == "git" else frozenset("EFGPivwxabhnHIlLczonqrsRsuUZV")
+    for position, char in enumerate(token[1:], 1):
+        if char in valued:
+            return "-" + char, token[position + 1 :]
+        if char not in flags:
+            return None
+    return None
+
+
+def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int | None, int | None]:
+    """検索パターンの位置、revision・パスの区切り、実際のオプション終端の位置を返す。
 
     gitの受理形式（git 2.47.3の実行で確認）は、最初の`--`より前に`-e`・`-f`か位置引数の検索パターンがあるかで分かれる。
 
@@ -307,7 +307,7 @@ def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int |
       その後ろに現れる最初の`--`がrevision・パスの区切りになる
 
     パターンの位置には`-e`の値と位置引数の検索パターンを含め、`-f`が読むファイル名は含めない。
-    `-ie`のように`-e`を他の短縮オプションと束ねた形は`-e`として扱わない。
+    束ねた短形式は最初の値付きオプションで値の消費を止める。
     """
     indices: set[int] = set()
     pattern_seen = False
@@ -316,6 +316,18 @@ def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int |
         token = arguments[index]
         if token == "--":
             break
+        short = _bundled_search_value_option(token, command="git")
+        if short is not None:
+            option, attached = short
+            pattern_seen |= option in {"-e", "-f"}
+            if not attached:
+                index += 1
+            if option == "-e" and index < len(arguments):
+                indices.add(index)
+            index += 1
+            continue
+        if token.startswith("-") and not token.startswith("--") and not set(token[1:]) <= _GIT_GREP_SHORT_FLAGS:
+            return indices, None, None
         option_name = token.split("=", 1)[0]
         if option_name in _GIT_GREP_PATTERN_OPTIONS:
             pattern_seen = True
@@ -324,15 +336,10 @@ def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int |
             elif index + 1 < len(arguments):
                 index += 1
                 indices.add(index)
-        elif _attached_short_value_option(token, _GIT_GREP_PATTERN_OPTIONS) is not None:
-            pattern_seen = True
-            indices.add(index)
         elif option_name in _GIT_GREP_PATTERN_FILE_OPTIONS:
             pattern_seen = True
             if "=" not in token:
                 index += 1
-        elif _attached_short_value_option(token, _GIT_GREP_PATTERN_FILE_OPTIONS) is not None:
-            pattern_seen = True
         elif option_name in _GIT_GREP_VALUED_OPTIONS:
             if "=" not in token:
                 index += 1
@@ -341,15 +348,15 @@ def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int |
             indices.add(index)
         index += 1
     if index >= len(arguments):
-        return indices, None
+        return indices, None, None
     if pattern_seen:
-        return indices, index
+        return indices, index, index
     pattern_index = index + 1
     if pattern_index >= len(arguments):
-        return indices, None
+        return indices, None, index
     indices.add(pattern_index)
     separator = next((i for i in range(pattern_index + 1, len(arguments)) if arguments[i] == "--"), None)
-    return indices, separator
+    return indices, separator, index
 
 
 def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
@@ -597,6 +604,56 @@ def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ..
 _git_subcommand_tokens = git_subcommand_tokens
 
 
+_GIT_COMMIT_VALUE_OPTIONS = frozenset(
+    {
+        "-m",
+        "--message",
+        "-F",
+        "--file",
+        "-C",
+        "--reuse-message",
+        "-c",
+        "--reedit-message",
+        "--author",
+        "--date",
+        "--cleanup",
+        "-t",
+        "--template",
+        "--trailer",
+        "--fixup",
+        "--squash",
+        "--pathspec-from-file",
+    }
+)
+
+
+def git_commit_options(arguments: Sequence[str]) -> Iterable[tuple[str, str | None]]:
+    """commitの値とオプションを分け、結合短形式を分離形と同じ順序で返す。
+
+    値として消費した`--`や`--help`を再解釈しない。実際の`--`以後のpathspecは返さない。
+    """
+    tokens = iter(arguments)
+    for token in tokens:
+        if token == "--":
+            break
+        if token.startswith("--"):
+            option, separator, value = token.partition("=")
+            yield option, value if separator else next(tokens, None) if option in _GIT_COMMIT_VALUE_OPTIONS else None
+        elif token.startswith("-") and len(token) > 1:
+            for position, char in enumerate(token[1:], 1):
+                option = "-" + char
+                if option in _GIT_COMMIT_VALUE_OPTIONS:
+                    yield option, token[position + 1 :] or next(tokens, None)
+                    break
+                if char in "Su":
+                    # 省略可能な値は同じ語の残りだけを消費する。
+                    yield option, token[position + 1 :] or None
+                    break
+                yield option, None
+        else:
+            yield token, None
+
+
 def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
     """指定内容を確定できる通常commitのメッセージを返す。
 
@@ -614,47 +671,28 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
         arguments = parsed[1]
         # `--`より後ろはpathspecであり、未知でもメッセージの指定に作用しない。それより前の未知の語は
         # メッセージやその入力ファイルを変える可能性があるため、検証済みと推定しない。
-        options = arguments[: arguments.index("--")] if "--" in arguments else arguments
-        if any(is_unknown_word(token) for token in options) or any(
+        options = list(git_commit_options(arguments))
+        if any(is_unknown_word(option) or value is not None and is_unknown_word(value) for option, value in options) or any(
             is_unknown_word(token) for token in invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
         ):
             continue
-        arguments = options
-        if (
-            "--fixup" in arguments
-            or "--squash" in arguments
-            or any(token.startswith(("--fixup=", "--squash=")) for token in arguments)
-        ):
+        names = {option for option, _value in options}
+        if names & {"--fixup", "--squash"}:
             continue
-        if "--amend" in arguments and "--no-edit" in arguments:
+        if {"--amend", "--no-edit"} <= names:
             continue
         messages: list[str] = []
         message_files: list[str] = []
-        index = 0
         unknown = False
-        while index < len(arguments):
-            token = arguments[index]
+        for token, value in options:
             if token in {"-m", "--message", "-F", "--file"}:
-                if index + 1 >= len(arguments):
+                if value is None:
                     unknown = True
                     break
-                (messages if token in {"-m", "--message"} else message_files).append(arguments[index + 1])
-                index += 2
-                continue
-            if token.startswith("--message="):
-                messages.append(token.split("=", 1)[1])
-            elif token.startswith("--file="):
-                message_files.append(token.split("=", 1)[1])
-            elif token.startswith("-m") and len(token) > 2:
-                messages.append(token[2:])
-            elif token.startswith("-F") and len(token) > 2:
-                message_files.append(token[2:])
-            elif token in {"-C", "--reuse-message", "-c", "--reedit-message"} or token.startswith(
-                ("--reuse-message=", "--reedit-message=")
-            ):
+                (messages if token in {"-m", "--message"} else message_files).append(value)
+            elif token in {"-C", "--reuse-message", "-c", "--reedit-message"}:
                 unknown = True
                 break
-            index += 1
         if unknown:
             continue
         for message_file in message_files:
@@ -869,21 +907,32 @@ def _options_after_terminator(arguments: Sequence[str], *, excluded: Iterable[in
     ]
 
 
-def _pattern_command_slot(arguments: Sequence[str]) -> set[int]:
-    """`rg`・`grep`系で、`--`の直後を検索パターンとして読む場合にその位置を返す。
+def _pattern_command_slot(arguments: Sequence[str], *, command: str) -> set[int]:
+    """`rg`・`grep`系で、終端後のパスとして警告しない引数位置を返す。
 
     `-e`・`--regexp`・`-f`・`--file`（`=`や`-eX`の連結形を含む）を`--`より前に置く場合は、
-    `--`の後ろが全てパスとして読まれるため空集合を返す（ripgrep 15.2.0とGNU grepの実行で確認）。
+    `--`の後ろが全てパスとして読まれる（ripgrep 15.2.0とGNU grepの実行で確認）。
+    実際の終端以前を除外し、明示パターンの無い入力では終端直後の検索語も除外する。
     """
-    if "--" not in arguments:
-        return set()
-    terminator = list(arguments).index("--")
-    for token in arguments[:terminator]:
-        if token.split("=", 1)[0] in _OPTION_TERMINATOR_PATTERN_OPTIONS:
-            return set()
-        if _attached_short_value_option(token, ("-e", "-f")) is not None:
-            return set()
-    return {terminator + 1}
+    pattern_seen = False
+    index = 0
+    while index < len(arguments):
+        token = arguments[index]
+        if token == "--":
+            # 値として消費した`--`を、後段の単純な終端検索で再分類しない。
+            return set(range(index + 1 if pattern_seen else index + 2))
+        option, separator, _value = token.partition("=")
+        short = _bundled_search_value_option(token, command=command)
+        if short is not None:
+            pattern_seen |= short[0] in {"-e", "-f"}
+            if not short[1]:
+                index += 1
+        elif option in _OPTION_TERMINATOR_PATTERN_OPTIONS:
+            pattern_seen = True
+            if not separator:
+                index += 1
+        index += 1
+    return set(range(len(arguments)))
 
 
 def _check_bash_option_after_terminator(command: str) -> str | None:
@@ -905,7 +954,7 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
         name = pathlib.PurePath(segment.tokens[0]).name
         if name in _OPTION_TERMINATOR_PATTERN_COMMANDS:
             arguments = list(strip_redirections(segment.tokens[1:]))
-            found = _options_after_terminator(arguments, excluded=_pattern_command_slot(arguments))
+            found = _options_after_terminator(arguments, excluded=_pattern_command_slot(arguments, command=name))
             label = name
         else:
             subcommand = git_subcommand_tokens(segment)
@@ -914,8 +963,9 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             arguments = list(strip_redirections(subcommand[1]))
             excluded: set[int] = set()
             if subcommand[0] == "grep":
-                pattern_indices, separator = _git_grep_argument_layout(arguments)
+                pattern_indices, separator, terminator = _git_grep_argument_layout(arguments)
                 excluded = pattern_indices | ({separator} if separator is not None else set())
+                excluded.update(range(terminator + 1 if terminator is not None else len(arguments)))
             found = _options_after_terminator(arguments, excluded=excluded)
             label = f"git {subcommand[0]}"
         if not found:

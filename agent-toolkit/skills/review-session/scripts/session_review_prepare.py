@@ -20,9 +20,11 @@ import contextlib
 import datetime
 import io
 import json
+import math
 import pathlib
 import re
 import shlex
+import statistics
 import sys
 import unicodedata
 from typing import Any, NamedTuple
@@ -1034,6 +1036,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     ]
     selected: list[dict[str, Any]] = [*by_kind["stats-total"], *by_kind["stats-summary"], *owners]
     selected.extend(by_kind["stats-mode"])
+    selected.extend(by_kind["stats-hook-timings"])
     for kind in ("stats-critical-path", "stats-compaction-total"):
         for item in by_kind[kind]:
             row = dict(item)
@@ -1167,6 +1170,31 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
+    for item in by_kind.get("stats-hook-timings", []):
+        lines.extend(
+            [
+                "",
+                "## hookの所要時間",
+                "",
+                f"- 対象セッション: {item['session_id']}、取得状態: {item['status']}、観測{item['count']}件、"
+                f"不正・書込途中の行{item['invalid_rows']}件。保存先: bundle/hook-timings.jsonl",
+                "- 保持されている計測だけを対象とする。保持上限で古い計測が除かれるため、セッション全体の網羅は保証しない。"
+                "計測に時刻が無いため、batchの差分期間へ限定できない。",
+                "- totalとhandlerは区間別に示し、重ねて合算しない。並行hookの累積秒数を経過時間の占有率へ変換しない。",
+            ]
+        )
+        if item["status"] == "unreadable":
+            lines.extend(
+                [
+                    f"- hook計測を取得できなかった: {item['source']}。診断: {item['diagnostic']}",
+                    "- " + _next_action.next_action_line(item["next_action"]),
+                ]
+            )
+        for row in item["groups"]:
+            lines.append(
+                f"- {row['event'] or 'イベント不明'} / {row['operation']} / {row['stage']}: {row['count']}件、"
+                f"中央値{row['median_seconds']:.6f}秒、合計{row['total_seconds']:.6f}秒"
+            )
     for mode in by_kind.get("stats-mode", []):
         lines.append(f"- mode別費用: {json.dumps(mode, ensure_ascii=False)}")
     lines.extend(
@@ -1305,6 +1333,86 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
     for item in by_kind.get("stats-token-peak", []):
         lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     return "\n".join(lines) + "\n"
+
+
+def _hook_timing_stats(session_id: str) -> dict[str, Any]:
+    """有限な診断記録のスナップショットを区間別に集計し、未記録と不正行を区別する。"""
+    result: dict[str, Any] = {
+        "kind": "stats-hook-timings",
+        "session_id": session_id,
+        "status": "missing",
+        "count": 0,
+        "invalid_rows": 0,
+        "groups": [],
+    }
+    directory = managed_temp.find_session_temp(session_id)
+    if directory is None:
+        return result
+    path = directory / "hook-timings.jsonl"
+    try:
+        path.stat()
+        with (directory / "hook-timings.lock").open("a+b") as lock:
+            file_lock.acquire_lock(lock)
+            try:
+                raw = path.read_bytes()
+            finally:
+                file_lock.release_lock(lock)
+    except FileNotFoundError:
+        return result
+    except OSError as error:
+        return {
+            **result,
+            "status": "unreadable",
+            "source": str(path),
+            "diagnostic": str(error),
+            "next_action": (
+                f"`{path}`と親ディレクトリの読取権限、および同じ場所のhook-timings.lockの作成・書込権限を確認せよ。"
+                "復旧できる場合は同じ入力引数で`atk run-script session-review-prepare --`を再実行せよ。"
+                "復旧できない場合はhookの統計を除いて振り返りを続け、取得できなかった範囲を報告せよ。"
+            ),
+        }
+    grouped: dict[tuple[str, str, str], list[float]] = collections.defaultdict(list)
+    lines = split_lines(raw)
+    if lines and not raw.endswith(b"\n"):
+        result["invalid_rows"] += 1
+        lines.pop()
+    for line in lines:
+        try:
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError("計測がobjectでない")
+            seconds = row["seconds"]
+            fields = (row["event"], row["operation"], row["stage"])
+            if (
+                not all(isinstance(field, str) for field in fields)
+                or isinstance(seconds, bool)
+                or not isinstance(seconds, (int, float))
+                or not math.isfinite(seconds)
+                or seconds < 0
+            ):
+                raise ValueError("計測欄が不正")
+        except ValueError, KeyError, TypeError:
+            result["invalid_rows"] += 1
+            continue
+        grouped[fields].append(float(seconds))
+    result.update(
+        status="available",
+        source=str(path),
+        retained_bytes=len(raw),
+        count=sum(len(values) for values in grouped.values()),
+        groups=[
+            {
+                "event": event,
+                "operation": operation,
+                "stage": stage,
+                "count": len(values),
+                "median_seconds": statistics.median(values),
+                "total_seconds": sum(values),
+            }
+            for (event, operation, stage), values in sorted(grouped.items())
+        ],
+    )
+    return result
 
 
 def _resource_summary_lines(summary: dict[str, Any]) -> list[str]:
@@ -1600,6 +1708,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         + unconfirmed_text
         + improvement_text
     )
+    hook_timings = _hook_timing_stats(session_id)
+    hook_timings_path = bundle_dir / "hook-timings.jsonl"
+    hook_timings_path.write_text(json.dumps(hook_timings, ensure_ascii=False) + "\n", encoding="utf-8")
+    stats.append(hook_timings)
     stats_text = _stats_document(stats) + unconfirmed_text
     if len(candidate_text.encode("utf-8")) > _CANDIDATES_MAX_BYTES or len(stats_text.encode("utf-8")) > _STATS_MAX_BYTES:
         return _missing("bundle", "候補または統計の初回表示が表示予算を超えた。全量の証拠はbundleへ保持した。")
@@ -1630,6 +1742,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),
+        "hook_timings_path": str(hook_timings_path),
         "candidates_utf8_bytes": len(candidate_text.encode("utf-8")),
         "stats_utf8_bytes": len(stats_text.encode("utf-8")),
         "review_index_path": str(bundle_dir / "review-index.jsonl"),

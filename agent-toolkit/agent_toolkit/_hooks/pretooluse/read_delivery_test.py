@@ -206,7 +206,12 @@ def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkey
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: sources)
     assert plugin_roots.sibling_plugin_root("agent-basics", toolkit) is None
     for count in (1, 2):
-        assert len(read_delivery.declarations(str(tmp_path), host=host)) == 2
+        with read_delivery.read_triggers.resolution_scope():
+            rows = read_delivery.declarations(str(tmp_path), host=host)
+            assert len(rows) == 2
+            assert calls == [(host, str(tmp_path))] * (count - 1)
+            root = basics if host == "claude" else codex_basics
+            assert {target.path for row in rows for target in row.targets} == {root / "skills/writing-standards/SKILL.md"}
         assert calls == [(host, str(tmp_path))] * count
 
 
@@ -227,7 +232,7 @@ def test_body_tables_keep_document_order(tmp_path, monkeypatch):
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", tmp_path)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [owner])
     rows = read_delivery.declarations(str(tmp_path))
-    assert [row.documents[0].name for row in rows] == ["before.md", "after.md"]
+    assert [row.targets[0].path.name for row in rows] == ["before.md", "after.md"]
 
 
 def _guidance(decision: Decision) -> str | None:
@@ -1711,7 +1716,7 @@ def test_reference_to_another_root_does_not_activate_its_whole_skill_tree(tmp_pa
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [project])
     rows = read_delivery.declarations(str(tmp_path), host="codex")
     assert [row.source for row in rows] == [project]
-    assert rows[0].documents == (selected,)
+    assert tuple(target.path for target in rows[0].targets) == (selected,)
     assert all(not row.source.is_relative_to(foreign) for row in rows)
     assert active != foreign
 
@@ -2391,6 +2396,17 @@ def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host,
         ("sed -n '1p' -- {path} | cat", "# 読者別探索\n"),
         ("sed -n 1,60p {path} | grep -n -E '入力|^\\\\|' | head -30", "1:# 読者別探索\n"),
         ("awk '{print}' {path} | head -n 1", "# 読者別探索\n"),
+        ("sed -n '/^## 入力/,/^## /p' {path} | head -60", "## 入力\n"),
+        ("sed -n '/返却/p' -- {path}", "返却形式\n"),
+        ("awk '/返却/' {path}", "返却形式\n"),
+        (
+            "awk '/^## 入力/{f=1} f&&/^## /&&!/^## 入力/{exit} f' {path} | head -60",
+            "## 入力\n",
+        ),
+        (
+            "cd {parent} && sed -n '/^## 入力/,/^## /p' {name} | head -60",
+            "## 入力\n",
+        ),
         ("head -n 1 -- {path}", "# 読者別探索\n"),
         ("tail -n 1 -- {path}", "返却形式\n"),
         ("grep -n -- '返却' {path}", "3:返却形式\n"),
@@ -2411,7 +2427,11 @@ def test_public_foreign_role_partial_display_warns_without_acquiring(tmp_path, m
         "transcript_path": str(log),
         **({"turn_id": "turn"} if codex else {}),
     }
-    inputs = {"command": template.replace("{path}", shlex.quote(str(other)))}
+    inputs = {
+        "command": template.replace("{path}", shlex.quote(str(other)))
+        .replace("{parent}", shlex.quote(str(other.parent)))
+        .replace("{name}", shlex.quote(other.name))
+    }
     first = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
     assert first.returncode == 0 and not first.stderr
     output = json.loads(first.stdout)["hookSpecificOutput"]
@@ -2440,6 +2460,10 @@ def test_public_foreign_role_partial_display_warns_without_acquiring(tmp_path, m
     "case",
     [
         "sed-inplace",
+        "sed-write",
+        "awk-write",
+        "awk-system",
+        "conditional-pipe-redirect",
         "edit",
         "write",
         "redirect",
@@ -2483,6 +2507,10 @@ def test_public_foreign_role_display_excludes_writes_directories_and_owned_docum
     destination = shlex.quote(str(tmp_path / "saved.md"))
     commands = {
         "sed-inplace": f"sed -i 's/返却/応答/' {path}",
+        "sed-write": f"sed -n '/返却/w {destination}' {path}",
+        "awk-write": f"awk '{{print > \"saved.md\"}}' {path}",
+        "awk-system": f"awk '{{system(\"cat\")}}' {path}",
+        "conditional-pipe-redirect": f"sed -n '/返却/p' {path} | head -1 > {destination}",
         "redirect": f"cat -- {path} > {destination}",
         "pipe-redirect": f"cat -- {path} | head -n 1 > {destination}",
         "rg-directory": f"rg -n -- '返却' {shlex.quote(str(root))}",

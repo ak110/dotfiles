@@ -144,8 +144,7 @@ async def test_task_record_reaches_public_evidence(
         assert context["status"] == "resolved"
         assert context["record_engine"] == engine
         assert context["record_path"] == str(records["direct-parent"])
-        input_body = delivery_payload(backend.prompts[0]).rsplit("\n入力:\n", 1)[1]
-        delivered_inputs = task_documents.parse_named_inputs(input_body.splitlines())
+        delivered_inputs = task_documents.task_prompt_inputs(delivery_payload(backend.prompts[0]))
         assert delivered_inputs["投入する要求"] == request
         (tmp_path / "delivered-inputs.json").write_text(json.dumps(delivered_inputs, ensure_ascii=False), encoding="utf-8")
         if source == "delivered":

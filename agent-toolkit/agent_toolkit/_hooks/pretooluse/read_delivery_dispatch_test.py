@@ -56,6 +56,7 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
 
 
+@pretooluse_support.read_delivery_preparation_scope()
 def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     payload = _payload(tmp_path, False)
     assert dispatch.main(json.dumps(payload)) == 0
@@ -103,6 +104,7 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     assert not _context(capsys.readouterr())
 
 
+@pretooluse_support.read_delivery_preparation_scope()
 def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_path, capsys):
     payload = _payload(tmp_path, True)
     payload["transcript_path"] = str(tmp_path / "outer.jsonl")

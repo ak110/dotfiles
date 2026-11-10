@@ -1,6 +1,7 @@
 """成果作業と`agent-toolkit:report-completion`の起動証拠を作業単位で保持する。
 
-各イベントはこの所有モジュールへ観測を渡す。成果作業は成功した対象スキルの開始、リポジトリへの自編集、
+各イベントはこの所有モジュールへ観測を渡す。成功したSkill起動は本文版付きの共通取得記録にも接続する。
+成果作業は成功した対象スキルの開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功したSkill呼び出しと、
 Codexの実際の入力と結果が示す`SKILL.md`の読取から取得する。完了の自己申告と報告本文は受理しない。
 意味上の中止・開始はメインが原入力と対象を結び付け、ここでは識別子から実体を読み、由来と対象を確かめる。
@@ -29,13 +30,13 @@ lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command, join_words
 lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._git import worktrees as git_worktrees
-lazy from agent_toolkit._hooks import agent_id, agents_server_observations
+lazy from agent_toolkit._hooks import agent_id, agents_server_observations, plugin_resources
 lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
-lazy from agent_toolkit._hooks.pretooluse.read_delivery import host_truncated
-lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
+lazy from agent_toolkit._hooks.pretooluse.operation_skills import mark_ready, written_paths
+lazy from agent_toolkit._hooks.pretooluse.read_delivery import host_truncated, resolve_skill_document
+lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens, git_commit_options
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -73,25 +74,8 @@ _HOST_STOP_FIX = (
 )
 
 
-_GIT_VALUE_OPTIONS = frozenset(
+_GIT_PUSH_VALUE_OPTIONS = frozenset(
     {
-        "-m",
-        "--message",
-        "-F",
-        "--file",
-        "-C",
-        "--reuse-message",
-        "-c",
-        "--reedit-message",
-        "--author",
-        "--date",
-        "--cleanup",
-        "-t",
-        "--template",
-        "--trailer",
-        "--fixup",
-        "--squash",
-        "--pathspec-from-file",
         "--repo",
         "--receive-pack",
         "--exec",
@@ -99,7 +83,7 @@ _GIT_VALUE_OPTIONS = frozenset(
         "--push-option",
     }
 )
-"""`git commit`・`git push`の値を伴うオプション。値を除外語の判定へ混ぜないため、値のトークンを判定の対象から除く。"""
+"""`git push`の値を伴うオプション。値のトークンを実行抑止の判定から除く。"""
 
 
 def _parse(payload_text: str) -> dict[str, Any] | None:
@@ -216,16 +200,19 @@ def published_git_operations(command: str) -> list[str]:
         arguments = parsed[1]
         if any("\x00" in argument for argument in arguments):
             continue
-        options = iter(arguments)
         excluded = False
-        for option in options:
-            if option == "--":
-                break
-            if option in _GIT_VALUE_OPTIONS:
-                next(options, None)
-            elif option in {"--dry-run", "--help", "-h"} or parsed[0] == "push" and option == "-n":
-                excluded = True
-                break
+        if parsed[0] == "commit":
+            excluded = any(option in {"--dry-run", "--help", "-h"} for option, _value in git_commit_options(arguments))
+        else:
+            options = iter(arguments)
+            for option in options:
+                if option == "--":
+                    break
+                if option in _GIT_PUSH_VALUE_OPTIONS:
+                    next(options, None)
+                elif option in {"--dry-run", "--help", "-h", "-n"}:
+                    excluded = True
+                    break
         prefix = invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
         if not excluded and "--help" not in prefix:
             operations.append(parsed[0])
@@ -289,7 +276,19 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     if tool_name == "Skill" and not codex:
         skill = _skill_name(tool_input.get("skill"))
         if skill == COMPLETION_REPORT:
-            return [{"kind": "completion"}]
+            completion: dict[str, Any] = {"kind": "completion"}
+            response = payload.get("tool_response")
+            if response and not (
+                isinstance(response, dict) and any(response.get(key) for key in ("isError", "is_error", "interrupted", "error"))
+            ):
+                path = resolve_skill_document(
+                    f"agent-toolkit:{skill}", [plugin_resources.skill_document_path(skill, "SKILL.md")]
+                )
+                if path is not None:
+                    completion["skill_invocation"] = _document_reads.skill_invocation_key(
+                        path, _document_reads.content_fingerprint(path)
+                    )
+            return [completion]
         if skill in TARGET_SKILLS:
             record: dict[str, Any] = {"kind": "deliverable", "labels": [f"agent-toolkit:{skill}の開始"]}
             if isinstance(payload.get("cwd"), str) and (repository := _git_root(payload["cwd"])) is not None:
@@ -690,6 +689,8 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
             record["observed"] = True
             if record["kind"] == "completion":
                 work["completion_report"] = True
+                if "skill_invocation" in record:
+                    mark_ready(record["skill_invocation"], agent_id.resolve_hook_agent_id(payload))(state)
             elif record["kind"] == "deliverable":
                 known_labels = work.setdefault("deliverables", [])
                 known_labels.extend(label for label in record["labels"] if label not in known_labels)
@@ -728,9 +729,12 @@ def evidence_available(payload: dict[str, Any]) -> bool:
     return False
 
 
-def missing_completion(work: dict[str, Any]) -> list[str]:
-    """起動証拠と有効な省略の双方を欠く成果作業の種類を返す。"""
-    if work.get("completion_report"):
+def missing_completion(work: dict[str, Any], *, context_loaded: bool | None = None) -> list[str]:
+    """文脈の読込証拠と有効な省略を欠く成果作業を返す。
+
+    `None`は従来の直接呼出側として作業別の証拠を使う。明示した偽では圧縮前の作業別証拠を再利用しない。
+    """
+    if context_loaded is True or (context_loaded is None and work.get("completion_report")):
         return []
     omission = work.get("omit_completion")
     if isinstance(omission, dict) and omission.get("input_id") == work.get("input_at_last_call"):

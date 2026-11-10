@@ -1,10 +1,10 @@
 r"""成果作業で`agent-toolkit:report-completion`の起動を忘れた終了をStopフックで検出する。
 
 成果作業（成功した`agent-toolkit:process-wi`・`agent-toolkit:add-awi-by-user`の開始、リポジトリへの自編集、
-計画の保存、WIの保存、commit・pushの実行）を行った作業で、同じ作業の開始以後の起動証拠が無く、
+計画の保存、WIの保存、commit・pushの実行）を行った作業で、最後の会話圧縮以降の読込証拠が無く、
 有効なプロジェクト規範による省略も無い場合は、起動と残工程への続行を一度通知する。
 起動証拠はClaude Codeでは成功したSkill呼び出し、Codexでは実際の入力と結果が示す`SKILL.md`の読取とし、
-`termination_evidence`が観測した記録だけを使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
+主体別の共通取得記録を使う。報告本文の見出し・区切り・区分・候補IDは判定に使わない。
 工程の完遂と報告の送達・内容は、report-completionの文書に従ってメインが元要求と実際の結果から判断する。
 CodexのStopは非遮断通知を配送できないため対象外とし、起動の要否も同じ文書で判断する。
 
@@ -27,10 +27,10 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import run_script as _run_script
-lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common import read_triggers, session_state, transcript
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
-lazy from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._hooks import document_reads, plugin_resources, rules_context, termination_evidence
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import async_launch_offsets, pending_async_task_ids
 lazy from agent_toolkit._hooks.host import is_codex_payload
@@ -160,7 +160,17 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     pending = dict(termination_evidence.pending_work(payload))
-    missing = {work_id: kinds for work_id, work in pending.items() if (kinds := termination_evidence.missing_completion(work))}
+    records = session_state.read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    records = records if isinstance(records, dict) else {}
+    skill = plugin_resources.plugin_root() / "skills/report-completion/SKILL.md"
+    loaded = document_reads.acquisition_state(records, read_triggers.ReadTarget(skill), "main") != "missing" or (
+        "main" in records.get(document_reads.skill_invocation_key(skill, document_reads.content_fingerprint(skill)), [])
+    )
+    missing = {
+        work_id: kinds
+        for work_id, work in pending.items()
+        if (kinds := termination_evidence.missing_completion(work, context_loaded=loaded))
+    }
     if not missing:
         resolve_notice(session_id, _HOOK_ID, "evaluate", subject="main")
         append_stop_log(session_id, "approve_completion_report_satisfied", {})
@@ -184,7 +194,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             lines.append(f"作業 {work_id}の公開範囲が未確定の未コミットの編集: {', '.join(edits)}")
     append_stop_log(session_id, "notify_completion_report_missing", {"count": len(remaining)})
     body = _notice(
-        "成果作業を行ったが、同じ作業で`agent-toolkit:report-completion`の起動を確認できない。\n"
+        "成果作業を行ったが、最後の会話圧縮以降に`agent-toolkit:report-completion`を読み込んだ証拠を確認できない。\n"
         + "\n".join(lines)
         + "\n"
         + termination_evidence.decision_hint(payload),

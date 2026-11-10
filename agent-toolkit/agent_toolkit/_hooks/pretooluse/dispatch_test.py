@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import hook
+from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks import work_contract
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
@@ -77,6 +78,28 @@ def test_preparation_reuses_declarations_only_within_one_invocation(monkeypatch)
     pretooluse_support.prepare_read_delivery(payload)
     assert calls == [("/project", "claude", "cache-test")] * 2
     assert pretooluse_support.read_delivery.declarations is declarations
+
+
+def test_preparation_scope_refreshes_changed_read_table(tmp_path) -> None:
+    """反復準備の共有を終了した後は、資料の参照先変更を新しく解析する。"""
+    source = tmp_path / "SKILL.md"
+    first, second = tmp_path / "first.md", tmp_path / "second.md"
+    for target in (first, second):
+        target.write_text("# 判断基準\n本文\n", encoding="utf-8")
+    table = (
+        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n"
+        "| --- | --- | --- | --- |\n"
+        "| 判断する前 | `{name}` | 判断 | `body-writing` |\n"
+    )
+    source.write_text(table.format(name=first.name), encoding="utf-8")
+    with pretooluse_support.read_delivery_preparation_scope():
+        for _ in range(2):
+            rows = read_triggers.parse_tables(source, tmp_path, strict=True)
+            assert rows[0].documents == (first,)
+    source.write_text(table.format(name=second.name), encoding="utf-8")
+    with pretooluse_support.read_delivery_preparation_scope():
+        rows = read_triggers.parse_tables(source, tmp_path, strict=True)
+        assert rows[0].documents == (second,)
 
 
 @pytest.mark.parametrize("host", ["claude-code", "codex"])
@@ -1457,31 +1480,34 @@ class TestRemovedChecksAreSilent:
                 },
             },
         ]
-        for index, payload in enumerate(payloads):
-            _write_session_state(
-                tmp_path,
-                f"removed-tool-{index}",
-                {},
-            )
-            result = _run(
-                {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},
-                env_overrides=_plan_file_state_env(tmp_path, home_dir=home),
-            )
+        with pretooluse_support.read_delivery_preparation_scope():
+            for index, payload in enumerate(payloads):
+                _write_session_state(
+                    tmp_path,
+                    f"removed-tool-{index}",
+                    {},
+                )
+                result = _run(
+                    {**payload, "session_id": f"removed-tool-{index}", "cwd": str(tmp_path)},
+                    env_overrides=_plan_file_state_env(tmp_path, home_dir=home),
+                )
 
-            assert result.returncode == 0, (payload, result.stderr, result.stdout)
-            assert result.stdout == "", payload
-            assert result.stderr == "", payload
+                assert result.returncode == 0, (payload, result.stderr, result.stdout)
+                assert result.stdout == "", payload
+                assert result.stderr == "", payload
 
 
 def test_repeated_pretooluse_does_not_reinject_language(tmp_path: pathlib.Path) -> None:
     """11回以上の呼び出しでも定期の言語指示を返さない。"""
-    for _ in range(12):
-        result = _run(
-            {"session_id": "no-language-reinjection", "tool_name": "Read", "tool_input": {}},
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-        assert "ツール呼び出し前の短いステータス行も含めて日本語" not in result.stdout
+    with pretooluse_support.read_delivery_preparation_scope():
+        for _ in range(12):
+            result = _run(
+                {"session_id": "no-language-reinjection", "tool_name": "Read", "tool_input": {}},
+                env_overrides=_plan_file_state_env(tmp_path),
+            )
+            assert result.returncode == 0
+            assert not result.stderr
+            assert "ツール呼び出し前の短いステータス行も含めて日本語" not in result.stdout
 
 
 @pytest.mark.parametrize(

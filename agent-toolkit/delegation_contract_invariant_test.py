@@ -56,8 +56,8 @@ def test_wi_draft_review_stage_and_continuation_contract() -> None:
 def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
     """公開schemaと独立した委譲規範が、入力の確定と起動検査を同じ主体へ割り当てる。"""
     root = pathlib.Path(__file__).resolve().parent
-    delegation = read_contract(root / "skills/delegation/SKILL.md", root, ("references/delegation-sending.md", "送信"))
-    sending = _h2_section(delegation, "送信")
+    read_contract(root / "skills/delegation/SKILL.md", root, ("references/delegation-sending.md", "送信"))
+    sending = _h2_section((root / "skills/delegation/references/delegation-sending.md").read_text(encoding="utf-8"), "送信")
     assert "委譲元は呼び出し元の契約に基づき、対象と実行時の値のみを渡す" in sending
     assert "起動設定や必須入力の形式チェックはサーバーに任せる" in sending
     assert "編集のための読取、委譲先自身による読取、完了後の形式確認" in sending

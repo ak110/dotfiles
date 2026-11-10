@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._common import dotfiles_mode, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
 _STDERR_TAIL_BYTES = 16 * 1024
@@ -94,8 +94,10 @@ def main() -> int:
             file=sys.stderr,
             flush=True,
         )
-        if _prepare(root, uv, environment) == 0:
-            python = plugin_environment.prepared_python(root, caller_environment)
+        prepared = _prepare(root, uv, environment)
+        if prepared != 0:
+            return prepared
+        python = plugin_environment.prepared_python(root, caller_environment)
     if python is None:
         next_action.report(
             "共有依存環境が未準備のため、agent-toolkitを起動できません。",
@@ -147,6 +149,10 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
             ) as process:
                 returncode = process.wait(timeout=remaining)
             if returncode != 0:
+                next_action.report(
+                    f"共有依存環境の依存同期が失敗しました（終了コード: {returncode}）。",
+                    next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行してください。",
+                )
                 return returncode
             plugin_environment.publish_prepared_environment(root, environment)
             return 0

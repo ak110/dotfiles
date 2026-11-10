@@ -102,7 +102,8 @@ async def test_public_start_delivers_whole_contract_reference(
     assert 'kind="startup-document"' in prompt
     explicit = handoff_input in {"新規", "継続"}
     designation = handoff_input if explicit else "新規"
-    assert prompt.count(f"引き継ぎ記録先: {own}（{designation}）") == 1
+    expected_count = 2 if mode == "task" and handoff_input is None else 1
+    assert prompt.count(f"引き継ぎ記録先: {own}（{designation}）") == expected_count
     if explicit:
         assert "handoff_record_path" not in response
         allocate.assert_not_called()
@@ -186,7 +187,7 @@ async def test_explicit_whole_contract_path_is_delivered(
     prompt = manager.start.await_args.args[1]
     assert prompt.count(f"全体作業契約: {explicit}") == 1
     assert str(other / "work-contract.md") not in prompt
-    assert prompt.count(f"引き継ぎ記録先: {own}（新規）") == 1
+    assert prompt.count(f"引き継ぎ記録先: {own}（新規）") == (2 if mode == "task" else 1)
     assert pathlib.Path(response["handoff_record_path"]) == own != explicit
 
 

@@ -112,6 +112,83 @@ def test_sed_range_read_paths_share_operand_contract(tmp_path, separator):
     assert not list(bash_read_paths(command, str(tmp_path)))
 
 
+@pytest.mark.parametrize(
+    "template",
+    [
+        "sed -n '/開始/,/終了/p' {path}",
+        "sed -n '/条件/p' -- {path}",
+        "awk '/条件/' {path}",
+        "awk '/^## 入力/{f=1} f&&/^## /&&!/^## 入力/{exit} f' {path} | head -60",
+        "cd {parent} && sed -n '/^## 入力/,/^## /p' {name} | head -60",
+    ],
+)
+def test_conditional_display_candidates_do_not_prove_acquisition(tmp_path, template):
+    """表示案内の候補は条件付き抽出を含み、取得の被覆判定には流用しない。"""
+    target = tmp_path / "note.md"
+    target.write_text("# 表示対象\n## 入力\n本文\n", encoding="utf-8")
+    command = (
+        template.replace("{path}", shlex.quote(str(target)))
+        .replace("{parent}", shlex.quote(str(target.parent)))
+        .replace("{name}", shlex.quote(target.name))
+    )
+    assert large_reads.display_read_paths(command, str(tmp_path)) == [target]
+    assert not list(bash_read_paths(command, str(tmp_path), include_partial=True, include_piped=True))
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        "sed -i -n '/条件/p' {path}",
+        "sed -n '/条件/w out' {path}",
+        "sed -n '/条件/e' {path}",
+        "sed -n -f {path}",
+        "sed -n -e {path}",
+        "awk -f {path}",
+        "awk -v value={path} '{{print}}'",
+        "awk '{{print > \"out\"}}' {path}",
+        "awk '{{print >> \"out\"}}' {path}",
+        "awk '{{print | \"cat\"}}' {path}",
+        "awk '{{system(\"cat\")}}' {path}",
+        "awk '{{getline}}' {path}",
+        "awk '/条件/' {path} > out",
+        "awk '/条件/' {path} | head -1 > out",
+        "sed -n '/条件/p' {path} | cat > out",
+    ],
+)
+def test_script_display_excludes_program_options_writes_and_execution(tmp_path, script):
+    """存在する式・オプション値を入力と誤認せず、書込と外部実行を除く。"""
+    target = tmp_path / "note.md"
+    target.write_text("本文\n", encoding="utf-8")
+    command = script.format(path=shlex.quote(str(target)))
+    assert not large_reads.display_read_paths(command, str(tmp_path))
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    "template",
+    ["sed -n '/条件/p' {path}", "awk '/条件/{{print}}' {path}"],
+)
+def test_conditional_session_record_display_keeps_reference_guidance(tmp_path, monkeypatch, capsys, codex, template):
+    """同じ表示候補を使う原記録参照の案内も、両ホストの公開hookへ通す。"""
+    home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    target = home / "sessions/record.jsonl"
+    target.parent.mkdir(parents=True)
+    target.write_text("{}\n", encoding="utf-8")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": template.format(path=shlex.quote(str(target)))},
+        "cwd": str(tmp_path),
+        **({"turn_id": "t"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    assert not captured.err
+    context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+    assert "session-review-evidence" in context and str(target) in context
+    assert "permissionDecision" not in captured.out
+
+
 @pytest.mark.parametrize("separator", [[], ["--"]])
 def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: list[str]) -> None:
     """同じ行範囲の読取入力を大量読取とcommit資料の消費側が認識する。"""

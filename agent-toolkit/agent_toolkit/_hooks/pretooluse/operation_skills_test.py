@@ -90,6 +90,32 @@ def test_non_search_commands_do_not_warn(command: str) -> None:
     assert not operation_skills.operation_matches("search", "Bash", {"command": command})
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("arguments", "recursive"),
+    [
+        ("-R -e -- /dev/null", True),
+        ("--regexp -- -R /dev/null", True),
+        ("--regexp=-- -R /dev/null", True),
+        ("--file -- -R /dev/null", True),
+        ("--file=-- -R /dev/null", True),
+        ("--regexp -R /dev/null", False),
+        ("--regexp=-R /dev/null", False),
+        ("--file -R /dev/null", False),
+        ("--include -R needle /dev/null", False),
+        ("--regexp needle -- -R", False),
+        ("-ne-R /dev/null", False),
+    ],
+)
+def test_grep_long_values_preserve_public_search_guidance(tmp_path, codex, arguments, recursive):
+    """長形式の値が終端や再帰指定と同形でも、実際の再帰指定だけで検索基準を案内する。"""
+    payload = _bash("grep " + arguments, "grep-value-boundary", **({"turn_id": "t"} if codex else {}))
+    result = _run(payload, _plan_file_state_env(tmp_path))
+    assert result.returncode == 0 and not result.stderr
+    context = _additional_context(result)
+    assert (_SEARCH_SKILL in context or "/skills/search/SKILL.md" in context) is recursive
+
+
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
