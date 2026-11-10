@@ -40,14 +40,16 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     sources = sorted({path for root in roots for path in root.rglob("*.md")})
     assert sources
     errors: list[str] = []
-    for source in sources:
-        try:
-            rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-            if not source.is_relative_to(common_rules):
-                read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
-            read_triggers.validate_plugin_relative_references(source)
-        except ValueError as error:
-            errors.append(f"{source}: {error}")
+    # 検査中の原本は不変なので、共通する参照先の解決をこの検査の範囲で再利用する。
+    with read_triggers.resolution_scope():
+        for source in sources:
+            try:
+                rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+                if not source.is_relative_to(common_rules):
+                    read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+                read_triggers.validate_plugin_relative_references(source)
+            except ValueError as error:
+                errors.append(f"{source}: {error}")
     assert not errors, "\n".join(errors)
 
 
