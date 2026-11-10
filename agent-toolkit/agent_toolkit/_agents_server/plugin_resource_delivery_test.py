@@ -115,12 +115,18 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
     """保持toolkitと導入basicsを分離し、解決処理の外部一覧だけを差し替える。"""
     source = plugin_root.SERVER_PLUGIN_ROOT
     toolkit = tmp_path / "held/toolkit-2.248.0"
-    for directory in ("skills", "share", "rules", "scripts", ".claude-plugin"):
+    for directory in ("skills", "share/rules/common", "scripts", ".claude-plugin"):
         (toolkit / directory).mkdir(parents=True, exist_ok=True)
-    for relative in (".claude-plugin/plugin.json", ".mcp.json", "share/rules-subagent.md", "scripts/atk", "scripts/atk.cmd"):
+    for relative in (
+        ".claude-plugin/plugin.json",
+        ".mcp.json",
+        "share/rules/rules-subagent.md",
+        "scripts/atk",
+        "scripts/atk.cmd",
+    ):
         shutil.copyfile(source / relative, toolkit / relative)
-    for path in (source / "rules").glob("*.md"):
-        shutil.copyfile(path, toolkit / "rules" / path.name)
+    for path in (source / "share/rules/common").glob("*.md"):
+        shutil.copyfile(path, toolkit / "share/rules/common" / path.name)
     task = toolkit / "share/resource-probe.subagent.md"
     task.write_text(
         "---\nmode: delegate\nmodel_type: chores\nrequired_inputs: []\noptional_inputs: []\nwrites_worktree: true\n---\n"

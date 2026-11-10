@@ -1,0 +1,36 @@
+# 委譲先の完了報告の受領と検収：委譲元への返却
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles.md` |
+| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
+| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+
+## 委譲元への返却
+
+1. 検収と処置を終えた結果を返すため、実行識別子、`<役割名>.subagent.md`の必須項目、対象リソース、付与された権限、および完了条件との整合性を確認した上で、次の書式のみを用いて結果を返却する。
+
+```text
+委譲手段: <実際に使った委譲手段>
+委譲先の識別子: <session_id、thread識別子またはagent識別子>
+状態: completed
+委譲先の完了報告: <委譲先の最小完了報告>
+```
+
+確認事項、認可の要求、または前提条件の修正を委譲元へ返す場合は、`rules-subagent.md`「返却形式の受け渡し」の区分と理由で返す。
+委譲元から回答を得た後は、同一の担当者へ同じタスクを返送して作業を継続する。
+完了の判定には、委譲先が終了したことの確認と、内容を正しく読み取れる完全な必須結果の両方が揃っている必要がある。
+待機表明によってターンが終了した場合は、再開可能な正常状態として受理し、その扱いは`waiting-and-monitoring-intervals.md`「待機区間の構成」に従う。
+ファイルへ記録するのは、通常の通信による配送が不可能であることを直接確認した場合、`receiving-format.md`「受領手段と報告様式の選択」で指定された成果ファイルを用いる場合、および同節に従って原本を一次返却として受理する際に手作業の報告文との差異や代用原本を明記する場合に限る。
+なお、成果ファイルは個別に回収しない。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲先の完了報告の受領と検収：受領手段と報告様式の選択の基準を適用する前 | `receiving-format.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-format.md` |

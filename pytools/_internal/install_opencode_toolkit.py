@@ -72,7 +72,9 @@ def _rules_body(root: Path) -> str:
         "必要な操作と未完了の成果をユーザーまたは委譲元へ返す。",
         "",
     ]
-    lines.extend(sync_agent_toolkit_rules.wrapped_body(rule) for rule in sorted((toolkit / "rules").glob("*.md")))
+    lines.extend(
+        sync_agent_toolkit_rules.wrapped_body(rule) for rule in sorted((toolkit / "share" / "rules" / "common").glob("*.md"))
+    )
     lines.append(_END)
     return "\n".join(lines) + "\n"
 
@@ -114,7 +116,7 @@ def sync(root: Path, destination: Path) -> bool:
                 data = _skill_body(source, plugin).encode("utf-8") if relative == Path("SKILL.md") else source.read_bytes()
                 expected[target / relative] = data
             expected[marker] = plugin.encode("utf-8")
-    if not (root / "agent-toolkit" / "rules" / "01-agent.md").is_file():
+    if not (root / "agent-toolkit" / "share" / "rules" / "common" / "01-agent.md").is_file():
         raise ValueError("agent-toolkitの配布元規範が見つからない")
     rules = destination / "agent-toolkit.md"
     if rules.is_file() and not rules.read_text(encoding="utf-8").startswith(_BEGIN + "\n"):

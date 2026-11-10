@@ -25,8 +25,8 @@ def _source(root: Path) -> None:
         "---\nname: manual-task\ndescription: 手動起動\ndisable-model-invocation: true\n---\n明示起動の本文\n",
         encoding="utf-8",
     )
-    rules = root / "agent-toolkit" / "rules"
-    rules.mkdir()
+    rules = root / "agent-toolkit" / "share" / "rules" / "common"
+    rules.mkdir(parents=True)
     (rules / "01-agent.md").write_text("# 共通常時規範\n\n原文を保持する。\n", encoding="utf-8")
 
 

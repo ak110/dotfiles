@@ -1,0 +1,33 @@
+# agents_serverの共有状態と読み書きの担当：配布物保持と掃引
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 共有状態の共通設計・実行主体・保存と回収の条件を判断する前 | `agents-server-shared-state.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
+| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
+
+## 配布物保持と掃引
+
+| 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
+| --- | --- | --- | --- |
+| 子Claudeがreloadする固定plugin入力 | セッションのmanaged-tempの`claude-plugin-input-<一意な値>/agent-toolkit` | 当該SDK接続のClaude CLI | `claude_plugins.py`が版付きcache由来の明示toolkitだけを複製し、idle時に完成版を固定pathへ切り替える。失敗時は旧完成版へ復旧する。agents_serverのMCP起動定義は所有serverの保持版へ固定し、Python実行基盤とskill/mods入力の寿命を分ける。開発checkoutは元pathを使う。CLIの終了確認後に専用複製を回収し、終了未確認なら監視だけを止めて入力を保持する |
+| 保持した配布物を使用するプロセス | `plugin-root-leases/<保持領域の識別子>-<pid>.json`および領域ごとの`.lock` | 配布物の起動側、ならびにmanaged-tempの回収・掃引処理 | `_common/plugin_root_leases.py`。起動側プロセスが領域パス、PID、プロセス作成時刻を登録し、読み取り側は同一領域のファイルロック下でプロセスの生存を確認する。終了済みプロセスの使用記録を除外し、情報取得不能な記録や使用中の実体ディレクトリを保護する。使用登録と回収処理でロックを共有するのは、生存確認と新規登録の合間に実体ディレクトリが削除されるのを防ぐためである。なお、`atk`の自動掃引処理だけはロック取得を待たず、競合した領域の処理をスキップして次回に回す |
+| 同じ配布元・版から共有する完成済み配布物 | managed-tempの保持領域直下の`.agent-toolkit-plugin-root.json` | `_agents_server/plugin_root.py`による起動・再利用処理 | 配布物をコピーして配置する起動側プロセスが、配布元・バージョン・ルートディレクトリ名を保存する。内部MCPもこの完成済みの実体を共有し、回収側は前述の使用中リース記録を確認して安全に回収する |
+| 独立WI投入が保持する配布物 | 上記の完成マーカーと`wi-submit/runs/<run_id>/run.json`の`runtime_root` | 独立投入のbootstrap・監督・execute、`plugin_root_leases.py`による掃引判定 | 独立投入では開発checkoutも新規に保持し、同じ保持rootの子は完成マーカーと自身のleaseを使う。元rootへの復帰はせず、保持失敗は受付未成立にする。プロセスが終了していても、未完了・未報告のrunから参照される実体を保護する |
+| MCPのlease対応能力 | `plugin-root-leases/capability-<pid>.json` | 配布物ルートディレクトリの解決処理、および旧形式領域の回収可否判定 | 保持領域を使用しない起動プロセスも含め、自身のPIDとプロセス作成時刻を公開する。既存の領域別リース記録が存在する場合も、対応能力を持つ証拠として扱う |
+| 旧版が会話へ割り当てた保存領域の参照 | `managed-temp/.sessions/<session_idのSHA-256>`および会話別の`.lock` | `_atk/managed_temp/creation.py`によるセッションのmanaged-temp解決処理。参照先が一時ルート直下に実在する（シンボリックリンクではない）ディレクトリである場合のみ、その旧パスを再利用する | 新しいバージョンでは作成や更新を行わない。`_atk/managed_temp/sweep.py`が、参照先ディレクトリが存在せず、かつ会話別ロックを非ブロッキングで取得できた参照ファイルのみを個別に回収・削除する |
+| 旧版の登録簿とcleanupロック | `managed-temp/`直下の登録簿JSON、`.consuming-`が付いた消費中の一時ファイル、および`.json.cleanup.lock` | 旧バージョンのプロセス、および掃引処理 | 新しいバージョンでは作成しない。掃引処理において、対象データおよび消費中ファイルが存在せず対応ロックを取得できた登録簿と、登録簿および消費中ファイルが存在せずロックを取得できたcleanupロックのみを個別に回収・削除する |
+| 掃引の次回確認時刻 | `managed-temp/.sweep/schedule`（一時ルート直下のディレクトリ名をキーとする単一のテーブル） | managed-tempの掃引処理 | `_atk/managed_temp/sweep.py`。一時ルートディレクトリの更新時刻に変更がなく、かつ次回の確認予定時刻に達していない場合は、一覧取得せずに処理を終了する |
+
+| 対象 | モジュール |
+| --- | --- |
+| 保持期限切れ状態のクリーンアップ（掃引） | `shared_sweep.py` |
+
+使用記録（リース情報）が存在しない保持領域を回収する際、`_common/plugin_root_leases.py`はOS上のプロセスの起動引数や、現在開かれている既存の診断ログファイルへの参照も確認する。
+旧形式の領域については、同一のOSアカウントおよび状態名前空間に属する「リース機能に非対応のMCPサーバー」や所属不明の候補プロセスを保護対象として維持し、それらの候補プロセスが存在しないことを確認した上で回収する。
+能力記録（capabilityファイル）または有効な領域別リースによってリース対応が確認できるMCPサーバーは、この所属不明候補から除外する。
+また、旧形式・新形式のいずれであっても、リース登録が完了する前に保持先ディレクトリを直接参照する公開MCPランチャーを保護する。
+新規に保持領域を作成する際は`agents-server-plugin-root-shared`というプレフィックスを使用し、旧形式との一覧互換性や完了マーカーの仕様を維持する。

@@ -1,0 +1,70 @@
+# レーンの実行：レーンと資源
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
+| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-drafting.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:delegation/references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
+| 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
+
+## レーンと資源
+
+**4.** 目標起点の判断は`lanes-goals.md`「明示された目標からの実行」に従う。
+
+**5.** 選定結果の`段階`を昇順に処理し、同一の段階に属する独立したレーンを並行して起動する。
+`先行レーン`が指定されている後続段階は、列挙されたすべての先行レーンの統合完了後か、`lane-resources.md`「後段レーンの先行調査」で先行を次の巡回へ回し後段を今回進めると判定した時に、統合先の最新HEADからworktreeを作成する。
+段階が1つのみの場合は、すべてのレーンを同時に作成して起動する。
+
+**6.** レーンの専用worktree・branch・所有登録の作成と再利用・回収、`レーン開始時刻`の記録、後段レーンの先行調査は`lane-resources.md`に従う。
+
+**7.** 同一レーン内のAWIは選定結果に示された依存順序を守り、依存先から順に処理する。
+計画の作成が必要なレーンでは原則として1つの計画にまとめ、単一の計画では行数制限の警告を回避できない初回の起草時に限り、`lane-planning-drafting.md`「計画の起草」の手順4に従って複数の計画へと分割する。
+
+依存先タスクの失敗や保留、あるいは上流投入の完了待ちによって必要な成果物が得られない場合は、後続タスクを依存待ちの状態にし、必要な成果物を取得した後に作業を再開する。
+ユーザーからの明示的な指示によって追加された依存先が既存レーンに存在する場合は、`run-lanes-addition.md`「処理中に確定した必須是正レーン」に基づいて受け入れ可能かどうかを確認し、同一レーンで受け入れられない項目については待機する。
+
+**8.** 稼働中が1レーンになっても未着手AWIは同じレーンで続ける。
+移管は計画分割と書込所有権の移譲を要し、`agent-toolkit:write-plan/references/plan-file-standards.md`の計画凍結に反するためである。
+単独稼働の短縮は選定時の段階設計で図る。
+
+**9.** レーン担当を起動する際は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に定められた入力を渡す。
+初回起動時における各AWIの再開位置は選定結果から読み取り、担当エージェント全体に対する`再開位置`は中断した同一担当を再開する場合にのみ渡す。
+該当レーンに属する各WIの`担当モデル.実装担当`は、`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」に従って`model_type`へ指定し、比較検討の結果を引き継ぎ記録へ残す。
+異なる指定が含まれている場合はWI名と設定値を明示し、いずれかの指定を独断で破棄して起動することは避ける。
+
+ 初回の`書込担当一覧`は合意済みのセッションIDと担当範囲に基づいて確定し、担当の交代、再開、および単一レーンへの追送時に更新する。
+ 一覧と対象worktreeの対応関係は引き継ぎ記録へ保持し、統合を担当するレーン担当が同一の認可セットを利用できるようにする。
+
+**10.** 準備した専用worktreeと処理対象WIを各1名のレーン担当へ渡し、レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。
+工程境界も同契約で継続し、複数レーンではメインが`../../../share/exec-parent-integration.md`「統合の許可」に従い統合許可だけを直列に送る。
+
+## 各段階の全初期通常レーン起動後の会話圧縮
+
+**11.** Claude Code環境では、各段階（複数段階の場合は中間の段階も含む）において、すべての初期通常レーンの初回起動が完了した直後、その時点で並行開始できる独立工程を先行して開始した上で、待機状態に入る前に会話圧縮を予約する。
+通常レーンが0件の場合や処理中に追加されたレーンでは予約せず、実行レビュー待機時にも修正作業に必要な文脈を保持する。
+Codex環境では予約処理を省略して通常の待機へ進む。
+圧縮の予約および通知後の文脈復元手順は、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従う。
+
+**12.** 予約後の復元では、注入された要約を起点に、必要に応じて次の既存記録と状態照会から情報を取得する。
+
+- 選定YAMLから各レーンの段階、統合状態、後続段階の先行統合条件を確認し、担当の`session_id`と稼働状態は起動結果と`atk agents list --include-terminated`の照会結果を対応付ける
+- 資源登録から専用worktreeおよびbranchの所有主体、回収対象、最初のレーン開始時刻を取得する
+- 担当起動入力が示す引き継ぎ記録と保存出力から、各レーンの計画集合と保存状態、次に受領すべき工程境界を確認する
+
+**13.** 通知を受け取った後は、確認した段階と担当の`session_id`を用いて、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`の該当する受領工程へ復帰する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| レーンの実行：処理中に確定した必須是正レーンの基準を適用する前 | `run-lanes-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-addition.md` |

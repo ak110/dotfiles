@@ -155,7 +155,7 @@ def _apply_confirmed_candidates(
         if changed:
             _outcome.report_warning(
                 f"確認後に変更されたため{label}しない: {', '.join(changed)}",
-                next_action=f"変更された項目を`atk wi show <ファイル名>`で確認し、{label}する場合は同じコマンドを再実行する",
+                next_action=f"変更された項目を`atk wi show <ファイル名>`で確認し、{label}する場合は同じコマンドを再実行せよ",
                 to_stderr=False,
             )
         if not applicable:

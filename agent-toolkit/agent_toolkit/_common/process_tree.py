@@ -197,11 +197,11 @@ def _stop_owned_tree(tree: _OwnedTree, timeout: float) -> TreeStopResult:
             tree.suspended.clear()
             tree.freeze()
             tree.kill_all()
-        residual = _wait_until_released(tree.targets(), timeout=timeout)
+        residual = wait_until_released(tree.targets(), timeout=timeout)
         # 一時停止できなかった対象が終了までに子を起動していないかを確かめ、見つかれば同じく終了させる。
         if late := tree.scan():
             tree.kill_all()
-            residual = _wait_until_released(tree.targets(), timeout=timeout)
+            residual = wait_until_released(tree.targets(), timeout=timeout)
             tree.unresolve_late(late)
         tree.resolve_suspend_failures()
         finished = True
@@ -453,10 +453,14 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
     子の起動時刻が親より前の場合と、親PIDを別のプロセスが再利用している場合のその新しいプロセスの子は含めない。
     """
     entries: list[tuple[psutil.Process, int]] = []
-    for process in psutil.process_iter(["ppid"]):
-        ppid = process.info.get("ppid")
-        if isinstance(ppid, int):
-            entries.append((process, ppid))
+    # process_iterはPID単位でProcessを再利用し、Windowsの親PIDと起動時刻もキャッシュする。
+    # PID再利用前の親子関係を所有の根拠にしないよう、今回の一覧から新しい観測を作る。
+    for pid in psutil.pids():
+        try:
+            process = psutil.Process(pid)
+            entries.append((process, process.ppid()))
+        except psutil.NoSuchProcess, psutil.AccessDenied:
+            continue
     holders = {process.pid: process for process, _ in entries}
 
     def retain_parent(process: psutil.Process, stage: str) -> bool:
@@ -677,11 +681,11 @@ def reclaim_processes(targets: list[psutil.Process], *, timeout: float = RECLAIM
     for process in targets:
         with contextlib.suppress(psutil.Error, OSError):
             process.terminate()
-    alive = _wait_until_released(targets, timeout=timeout)
+    alive = wait_until_released(targets, timeout=timeout)
     for process in alive:
         with contextlib.suppress(psutil.Error, OSError):
             process.kill()
-    return _wait_until_released(alive, timeout=timeout)
+    return wait_until_released(alive, timeout=timeout)
 
 
 def reclaim_unreaped(targets: list[psutil.Process], *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[psutil.Process]:
@@ -704,7 +708,7 @@ def reclaim_unreaped(targets: list[psutil.Process], *, timeout: float = RECLAIM_
     return remaining
 
 
-def _wait_until_released(targets: list[psutil.Process], *, timeout: float) -> list[psutil.Process]:
+def wait_until_released(targets: list[psutil.Process], *, timeout: float) -> list[psutil.Process]:
     """対象が資源を解放するまで待ち、上限までに解放しなかった対象を返す。"""
     remaining = list(targets)
     deadline = time.monotonic() + timeout

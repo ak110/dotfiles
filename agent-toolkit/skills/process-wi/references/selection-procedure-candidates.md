@@ -1,0 +1,90 @@
+# メインによるWI選定とレーン分け：処理対象の決定
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` | |
+| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
+| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` | |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+
+## 処理対象の決定
+
+**6.** 実行時に同じ要求の重複が判明した場合は、要求と充足状況を比較し、既存項目・計画・成果を統合または再利用して必要な残差だけを実装する。
+各AWIの処置と根拠を記録し、他の担当が処理中なら並行して二重着手せず既存の担当と状態管理へ接続する。
+同じファイルの編集競合は要求の重複と区別する。
+
+**7.** 選定の開始時には、公開対象のリポジトリとベースブランチを明示し、対象forgeの実際のCI状況と最新状態を確認する。
+GitHubでは公開時の検収対象となるワークフローごとの直近の実行（run）を、GitLabではベースブランチにおける直近パイプラインの識別子、対象SHA、実行状態、URLを取得する。
+失敗している実行があればジョブ情報とログまで取得し、失敗原因と残りの工程への影響を評価して`process-wi`の「即時対応」へ引き渡す。
+失敗したジョブが今回の差分と無関係でも、既存の不具合として同じく引き渡す。
+
+認証エラー、ネットワーク到達不能、CLIツールの不備、対象解決の失敗などは技術的に回復できるものを回復し、資格情報の準備などユーザーだけが対応できる事項は`agent-toolkit:user-confirmation-and-report`へ引き渡す。
+回答を待たずに進められる作業は同スキルに従って並行して続ける。
+CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI定義なし」「CI実行対象外」「照会不能」を区別し、失敗ログの取得権限があるかは実際にログを取得して確認する。
+未終了と実行未登録は、失敗を示す明確な証拠を得てから既存不具合かを判断する。
+選定開始時の点検に加えて、公開時には従来どおりベースラインを作成し、push後のCI結果を検収する。
+
+**8.** 通常起動では、`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>`を実行する。
+同じ初回取得の全状態・全種別の識別子集合を保存し、新着確認と再開へ同じパスを引き継ぐ。
+
+`all-repos`のリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う。
+明示した一覧の項目が作業ツリー指定の初回取得結果に含まれない場合は、`atk wi show <WIファイル名> --target-repo=all`を実行して保存済みの`target_repo`を取得し、originとの不一致がリポジトリの移転やパス改名によるものか、別リポジトリであるかを判定する。
+同一性と変更先の確定には、ユーザーの明示的な指定、または移転・別名の対応記録を根拠とする。
+`ls-remote`のOID一致だけでは移転の根拠にならない。
+移転が確定した項目については、`start-processing`を実行する前に`atk wi edit <WIファイル名> --target-repo=<保存済みtarget_repo> --body-file <原稿>`を実行し、`target_repo`と本文中の操作先を変更先リポジトリに合わせる。
+旧リポジトリに紐づくメタデータの更新は同コマンドに委ねる。
+同じ作業ツリー指定の一覧および`atk wi show <WIファイル名> --skip-pull`から対象と完成条件を取得できることを確かめてから候補に加える。
+移転の根拠が得られない場合は、両方の識別子と不足している根拠を`続行できない理由`に記録する。
+明示的な指定がない場合は、`processing`状態の全項目と、`ready`が偽かつ`blocked_reason`が`dependency-unmet-internal`以外であるものを除外した`inbox`状態の項目を候補とする。
+`staleness`の値は、選定結果の`鮮度`欄へそのまま保存する。
+選定時間を短く保つため、`notice`が付いただけでは履歴を調べず、内容の不一致、充足済み、巻き戻しの危険を観測した項目だけ履歴を確認する。
+
+**9.** `depends_on`の各依存先を`atk wi show <依存ファイル名> --skip-pull`で全状態・全リポジトリから解決する。
+対象リポジトリ内にあればそれを使い、無ければ照会した1候補の`target_repo`と状態を使う。
+複数リポジトリに同名があれば自動選択せず`続行できない理由`を記す。
+別リポジトリの依存先は終了処理済みなら充足、未終了なら`dependency-unmet-external`とする。
+
+**10.** 候補内の先行項目にのみ依存するAWIは、書込対象に包含関係がある場合でも候補に残し、推移的な依存先も含めて同じレーン内で依存順に従って処理する。
+依存先が開始時の候補外にあるか、`hold`や別セッションで処理中などで着手できない場合は、後続項目のみを着手せず、依存待ちの状態を維持する。
+開始時候補は`process-wi`の実行開始時点の集合を指す。
+
+**11.** 日付境界による順序要求において、先行項目の終了または指定された公開先へのマージ完了が境界後の項目の開始条件となっている場合は、その後続項目に対して「候補内依存による同一レーン・同時処理開始」の扱いを適用しない。
+先行条件の成立を確認してから後続項目を候補に含める。
+依存の全辺の設定や日付帰属・公開先マージ条件に関して、ユーザーのみが決定できる未確定事項が残る場合は、保留やUWIの扱いを次の基準で決める。
+基準は`../../wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
+
+**12.** 回答済みUWIは、通常起動では`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --skip-pull`を実行して取得する。
+
+ `all-repos`の担当は、同じ条件に該当する受け取り済みの候補を使用する。
+ `source: run-skill`のUWIは次回の`atk run-skill`が処理する。
+作業を伴わない回答のUWIは`selection-procedure-starting.md`「集合確定直後の処理開始」で終了処理し、作業を伴う回答のUWIは`選定`に含める。
+ UWIの本文が元の項目を参照している場合は、その項目の保存状態と`ready`フラグを確認する。
+元項目が依存している未回答のUWIが残っている場合は、`../../wi-standards/references/states-and-dependencies-approvals.md`「回答済みUWIの取り込み」に従い、元項目を処理対象外のまま維持する。
+元項目が`inbox`で処理候補（`ready`またはキュー内の依存待ち）にある場合と、旧運用で`hold`に置かれ`ready=true`である場合は、処理対象に1回だけ含める。
+UWIを`選定`に含める場合は、元項目と同じレーンへ割り当てる。
+それ以外の状態の場合は、不足している状態条件を明記して`続行できない理由`に記録する。
+
+**13.** 再開位置は次の基準で決め、選定結果の出力先に記録する（キュー項目は受け取り時の状態のまま保つ）。
+
+- AWI本文に`## 反映後の観測の再開記録`の節が存在する候補（`hold`から戻す元項目を含む）は、最後の同名節を確認し、その`再開区分`が`反映後の観測だけが残る`である場合に限り再開記録として扱う。
+  この場合は`atk plans list`の結果にかかわらず、[selection-format.md](selection-format.md)で定める観測のみの書式を用い、該当節の`計画`の値を記録する。
+  それ以外の値（`再実装へ戻す`など）が指定された節は、再開位置の根拠としては扱わない。
+- 再開記録を持たない`processing`状態の項目、および`hold`から戻す元項目については、`atk plans list`を実行して`~/.claude/plans`配下の計画ファイルの`関連WI`に候補が含まれているかを確認する。
+  一意に対応する計画の絶対パスと、`## 進捗ログ`の最終行から残っている最初の工程を記録する。
+  対応する計画が複数存在する場合は推測で選択せず`続行できない理由`とする。
+  対応する計画が存在しない場合、`processing`状態の項目は`続行できない理由`とし、`hold`から戻す元項目は再開位置なしとする。
+- 進捗ログの最終行に「反映後の観測だけが残る」と記載されている場合も、計画ファイルの絶対パスと残る工程の書式を用いて`再開位置`に記録する。
+  観測のみの書式は、AWI本文に記載された再開記録を読み取った項目に対してのみ使用する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 登録全体の統括と対象別担当への受渡しの基準を適用する前 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` |
+| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
+| メインによるWI選定とレーン分け：集合確定直後の処理開始の基準を適用する前 | `selection-procedure-starting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-starting.md` |

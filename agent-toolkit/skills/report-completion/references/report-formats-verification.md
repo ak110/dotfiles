@@ -1,0 +1,37 @@
+# 報告のフォーマット：検証結果と実行記録
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
+| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
+
+## 検証結果と実行記録
+
+環境上の制約などで十分に確認できなかった範囲がある場合は、実施済みの検証結果と区別し、未実施・未確認の内容とその理由を明記する。
+実施可能な検証を完了させたうえで、残る制約や限界を報告に記載する。
+未確認の範囲があることだけを理由として、個別のUWIを追加したり、ユーザーに実機確認を依頼したりすることは控える。
+手順に定める報告用UWIにもこの限界を記載し、ユーザーが報告内容を確認できるようにする。
+
+検証結果を記載する行には、対象と合否に加えて、実際に返されたpyfltrのrun_id、外部コマンドの終了ステータスと保存された標準出力・標準エラー出力の所在、または保存済みの手動観測記録の所在を添える。
+作業完了報告と報告用UWIに同じ結果と参照先を記載し、振り返り結果報告やAWI投入結果報告の中で検証結果に言及する場合にも同様に適用する。
+記録の取得と保存済み出力の読み取りは、`agent-basics:check-execution`の「統合実行ツール経由の起動」「保存した実行出力の取得」に従う。
+
+メインエージェントは送達前に保存された記録を実際に確認し、具体的な対象、入力、操作、観測結果、終了ステータス、または合否に基づいて結果を記載する。
+記録ファイルが存在していることだけでは内容の正しさは保証されないため、検証結果や完成条件の判定行を参照する場合でも、元の実行・観測記録まで辿れることを確認する。
+実際の識別子の代わりに前方一致やlatestなどの指定を使用することは避け、保存された手動観測記録については入力、観測内容、期待される結果との比較、合否の判定箇所を明示する。
+記録が存在しない検証は未実行として扱う。
+実行開始後の失敗、タイムアウト、および観測対象へ到達できなかった事象については、保存記録に基づいて失敗・タイムアウト・判定不能をそれぞれ区別して記載する。
+保存されていない観測結果を記憶に頼って判断の根拠とすることは控える。
+
+## 検証記録の引き渡し
+
+- 実際に取得したrun_id、保存したログ出力、および手動観測の記録は、完了報告の送信前確認へ引き渡す。
+  報告する検証結果と保存ログの対応関係は、`report-formats-verification.md`「検証結果と実行記録」の規定に従う。

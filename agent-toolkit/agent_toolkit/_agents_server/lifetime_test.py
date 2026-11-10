@@ -38,8 +38,9 @@ def test_collected_windows_parent_is_pinned_before_it_exits(monkeypatch):
         process.cmdline.return_value = ["owned"]
     monitor._process = root  # pylint: disable=protected-access
     monkeypatch.setattr(root, "children", mock.Mock(return_value=[parent]))
-    monkeypatch.setattr(psutil, "Process", mock.Mock(return_value=root))
-    monkeypatch.setattr(psutil, "process_iter", lambda *_args, **_kwargs: iter([child]))
+    child.ppid.return_value = parent.pid
+    monkeypatch.setattr(psutil, "Process", lambda pid, **_kwargs: child if pid == child.pid else root)
+    monkeypatch.setattr(psutil, "pids", lambda: [child.pid])
     monkeypatch.setattr(process_tree, "sys", types.SimpleNamespace(platform="win32"))
     monkeypatch.setattr(lifetime, "sys", types.SimpleNamespace(platform="win32"))
     kernel = mock.Mock()
@@ -90,6 +91,11 @@ import asyncio, contextlib, importlib.util, json, os, pathlib, signal, subproces
 
 mode, directory, root, failure = sys.argv[1:]
 directory = pathlib.Path(directory)
+def hold(name):
+    deadline = time.monotonic() + 120
+    while not (directory / (name + '.release')).exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
 def mark(name, value):
     (directory / name).write_text(json.dumps(value), encoding="utf-8")
 def launch(role, *, inner=False):
@@ -107,23 +113,25 @@ if mode == "leaf":
             if hasattr(signal, name):
                 signal.signal(getattr(signal, name), signal.SIG_IGN)
     mark("leaf-" + str(os.getpid()) + ".json", os.getpid())
-    time.sleep(60)
+    hold("leaf")
     sys.exit(0)
-if mode == "launcher":
+# launcher自身はサーバーを実行しないため、子でも必要な重いMCP初期化を繰り返さない。
+if mode in ("launcher", "inner-launcher"):
     spec = importlib.util.spec_from_file_location("probe_launch", pathlib.Path(root) / "scripts/launch.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module._SERVER_SHUTDOWN_TIMEOUT = 8
-    module._STOP_TIMEOUT = .2
+    if mode == "launcher":
+        module._SERVER_SHUTDOWN_TIMEOUT = 8
+        module._STOP_TIMEOUT = .2
     sys.exit(module._run_agents_server(
-        [sys.executable, __file__, "server", str(directory), root, failure],
+        [sys.executable, __file__, "server" if mode == "launcher" else "inner", str(directory), root, failure],
         dict(os.environ), record_diagnostics=False))
 from agent_toolkit._agents_server import lifetime, logging_config, mcp_tools
 if failure.endswith("-io"):
     original_record = logging_config.record_instance_event
     def record(event, **kwargs):
         if event == "signal_received":
-            time.sleep(60)
+            hold("signal-io")
         return original_record(event, **kwargs)
     logging_config.record_instance_event = record
 lifetime.SHUTDOWN_TIMEOUT = .5
@@ -151,17 +159,10 @@ async def activate():
     if "blocked" in failure and mode == "server":
         def block_loop():
             mark("blocked-active.json", True)
-            time.sleep(60)
+            hold("event-loop")
         asyncio.get_running_loop().call_soon(block_loop)
     mark(mode + "-ready.json", True)
 mcp_tools._MANAGER.activate_async = activate
-if mode == "inner-launcher":
-    spec = importlib.util.spec_from_file_location("probe_launch", pathlib.Path(root) / "scripts/launch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    sys.exit(module._run_agents_server(
-        [sys.executable, __file__, "inner", str(directory), root, failure],
-        dict(os.environ), record_diagnostics=False))
 sys.exit(mcp_tools.serve())
 """
 
@@ -354,7 +355,7 @@ if mode == "finish":
 collect()
 late_descendant.trigger(directory)
 monitor.request_stop()
-time.sleep(60)
+exec(late_descendant.held_source(directory / "deadline.release"))
 sys.exit(3)
 """
 
@@ -370,7 +371,7 @@ def test_lifetime_reclaims_descendant_started_after_first_listing(
     with process_tree.process_scope(
         [sys.executable, str(script), mode, str(tmp_path)], env=host_environ(), stdin=subprocess.PIPE
     ) as process:
-        # 期限到達では監視スレッドが回収後に終了コード0で即時終了し、sleep後の3へ到達しない。
+        # 期限到達では監視スレッドが回収後に終了コード0で即時終了し、保持後の3へ到達しない。
         assert process.wait(timeout=60) == 0
     late_descendant.assert_released(tmp_path)
 

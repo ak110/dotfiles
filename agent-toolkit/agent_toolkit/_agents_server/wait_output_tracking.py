@@ -13,6 +13,7 @@ from agent_toolkit._agents_server import tool_names, wait_summary
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState
 from agent_toolkit._common import background_output
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_wait_command
 
@@ -159,7 +160,7 @@ def _tool_result_text(value: Any) -> str:
 def _collected_session_ids(text: str) -> set[str]:
     """`atk agents wait`のJSON Lines出力とエージェント環境の要約の`終了行:`から、終了時の結果を回収したsession識別子を返す。"""
     collected = wait_summary.terminal_session_ids(text)
-    for line in text.splitlines():
+    for line in split_lines(text):
         try:
             payload: Any = json.loads(line)
         except json.JSONDecodeError:
@@ -229,7 +230,7 @@ def _lines_outside_wait_bodies(text: str) -> list[str]:
     """
     lines: list[str] = []
     end_line: str | None = None
-    for line in text.splitlines():
+    for line in split_lines(text):
         if end_line is not None:
             if line == end_line:
                 end_line = None

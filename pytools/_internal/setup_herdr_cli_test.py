@@ -69,7 +69,6 @@ def test_run_installs_posix_direct_install(monkeypatch, tmp_path: Path) -> None:
     assert commands[-1] == [str(launcher), "--version"]
 
 
-@pytest.mark.parametrize("retry_timer", [True, False], ids=["timer", "no-timer"])
 @pytest.mark.parametrize(
     ("returncode", "stderr", "inside_session"),
     [
@@ -88,16 +87,14 @@ def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
     returncode: int,
     stderr: str,
     inside_session: bool,
-    retry_timer: bool,
 ) -> None:
     """セッション内の拒否と、稼働サーバーの再起動を要するため導入しなかった更新は、既存版を確認して延期を返す。
 
-    自動更新タイマーを持つホストでは延期記録からHerdr外で再試行するため操作を求めず、持たないホストでは手動の更新を案内する。
-    非対話の`herdr update`は導入しなかった場合も終了0で返すため、診断を見ずに更新済みと数えると延期記録に残らない。
+    手動でHerdr外から更新するよう案内する。
+    非対話の`herdr update`は導入しなかった場合も終了0で返すため、診断を確認して延期を判定する。
     """
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
-    monkeypatch.setattr(setup_herdr_cli.deferred_updates, "has_retry_timer", lambda: retry_timer)
     launcher = tmp_path / ".local" / "bin" / "herdr"
     launcher.parent.mkdir(parents=True)
     launcher.write_text("", encoding="utf-8")
@@ -126,13 +123,8 @@ def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
         else "稼働中のHerdrサーバーの再起動を要する更新のため、稼働中のセッションを保って更新を保留しました。"
     )
     assert notice.message.startswith(reason)
-    if retry_timer:
-        assert "自動更新タイマー" in notice.message
-        assert "操作は不要です" in notice.message
-        assert notice.command is None
-    else:
-        assert "次のコマンドを実行する" in notice.message
-        assert notice.command == "herdr update"
+    assert "次のコマンドを実行する" in notice.message
+    assert notice.command == "herdr update"
     assert commands == [[str(launcher), "update"], [str(launcher), "--version"]]
     assert prepended == [launcher.parent]
 

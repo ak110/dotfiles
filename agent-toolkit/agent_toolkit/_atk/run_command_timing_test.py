@@ -4,7 +4,6 @@ import collections.abc
 import contextlib
 import dataclasses
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -38,20 +37,16 @@ def test_timing_save_failure_returns_wrapper_failure(monkeypatch, tmp_path, fail
     assert observed["record_path"] is None
 
 
-def test_journal_keeps_each_reacquisition_once(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """通知境界を差し替え、各譲渡の開始・完了を重複計上せず保存する。"""
+def test_journal_keeps_initial_wait_once(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """通知境界を差し替え、開始前の待機の開始・完了を重複計上せず1区間として保存する。"""
 
     @contextlib.contextmanager
     def hold(*, label: str, on_wait_interval, **kwargs) -> collections.abc.Generator[None]:
         del kwargs
         assert label
-        for wait in (
-            run_command.execution_slot.SlotWait("initial", 0, "start"),
-            run_command.execution_slot.SlotWait("reacquire", 1, "start"),
-            run_command.execution_slot.SlotWait("reacquire", 2, "start"),
-        ):
-            on_wait_interval(wait)
-            on_wait_interval(dataclasses.replace(wait, finished_at="end", elapsed=0.1, outcome="acquired"))
+        wait = run_command.execution_slot.SlotWait("initial", 0, "start")
+        on_wait_interval(wait)
+        on_wait_interval(dataclasses.replace(wait, finished_at="end", elapsed=0.1, outcome="acquired"))
         yield
 
     monkeypatch.setattr(run_command.execution_slot, "hold", hold)
@@ -59,17 +54,15 @@ def test_journal_keeps_each_reacquisition_once(monkeypatch: pytest.MonkeyPatch, 
     observed, code, failure = run_command.execute([sys.executable, "-c", "pass"], tmp_path, 10, verification=True)
     assert code == 0 and failure is None
     waits = observed["timing"]["slot_waits"]
-    assert [(wait["kind"], wait["sequence"]) for wait in waits] == [
-        ("initial", 0),
-        ("reacquire", 1),
-        ("reacquire", 2),
-    ]
+    assert [(wait["kind"], wait["sequence"]) for wait in waits] == [("initial", 0)]
     assert all(wait["elapsed"] == 0.1 and wait["finished_at"] == "end" for wait in waits)
     assert json.loads((tmp_path / "timing.json").read_text(encoding="utf-8")) == observed["timing"]
 
 
 @pytest.mark.parametrize("interrupt", [False, True])
-def test_slot_wait_journal_survives_completion_and_interruption(tmp_path: pathlib.Path, interrupt: bool) -> None:
+def test_slot_wait_journal_survives_completion_and_interruption(
+    tmp_path: pathlib.Path, interrupt: bool, host_environ: collections.abc.Callable[[], dict[str, str]]
+) -> None:
     """開始・終了通知を同じ区間へまとめ、起動前の中断を本体0秒へ読み替えない。"""
     driver = tmp_path / "driver.py"
     driver.write_text(
@@ -86,9 +79,10 @@ def test_slot_wait_journal_survives_completion_and_interruption(tmp_path: pathli
         "            time.sleep(0.01)\n"
         "else:\n"
         "    run_command.managed_temp.create_output_temp=lambda prefix: root\n"
-        "    if sys.argv[1]=='interrupt':\n"
-        "        def abort(owner): raise KeyboardInterrupt\n"
-        "        execution_slot.hold=functools.partial(execution_slot.hold,on_wait=abort)\n"
+        "    def competing(owner):\n"
+        "        (root/'competing').touch()\n"
+        "        if sys.argv[1]=='interrupt': raise KeyboardInterrupt\n"
+        "    execution_slot.hold=functools.partial(execution_slot.hold,on_wait=competing)\n"
         "    try:\n"
         "        result=run_command.execute([sys.executable,'-c','print(42)'],root,10,verification=True)\n"
         "    except KeyboardInterrupt:\n"
@@ -97,7 +91,7 @@ def test_slot_wait_journal_survives_completion_and_interruption(tmp_path: pathli
         encoding="utf-8",
     )
     environment = {
-        **os.environ,
+        **host_environ(),
         "PYFLTR_CACHE_DIR": str(tmp_path / "cache"),
         "PYTHONPATH": str(pathlib.Path(run_command.__file__).resolve().parents[2]),
     }
@@ -120,11 +114,12 @@ def test_slot_wait_journal_survives_completion_and_interruption(tmp_path: pathli
                     journal = tmp_path / "timing.json"
                     deadline = time.monotonic() + 15
                     while time.monotonic() < deadline:
-                        if journal.exists() and json.loads(journal.read_text(encoding="utf-8"))["slot_waits"]:
+                        # journalの開始通知は取得試行より先に出る。保持者の解放は実際の競合到達後に行う。
+                        if (tmp_path / "competing").exists():
                             break
                         assert contender.poll() is None
                         time.sleep(0.01)
-                    assert journal.exists()
+                    assert (tmp_path / "competing").exists() and journal.exists()
                     (tmp_path / "release").touch()
                     stdout, stderr = contender.communicate(timeout=20)
                     assert contender.returncode == (130 if interrupt else 0), stderr

@@ -1,0 +1,44 @@
+# 通常AWIの本文：配置規約と導入目的の調査
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
+| プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
+
+## 配置規約と導入目的の調査
+
+`## 反映内容と反映先`の対象に配置規約や編集手順を定めるスキルがある場合は、実現方式を確定する前に起動し、条件が成立する関連資料の全文を読む。
+実現方式に課される変更順序、移行条件、完了判定などの制約との整合を確認する。
+同期先、記録先、追随すべきテストを反映先に含めるか、含めない理由も確定する。
+配置規約を持つ対象とは、配置場所によって読込契機や適用範囲が変わる文書群やコード群であり、`agent-basics:writing-standards`とプロジェクト固有の規約で判定する。
+対象リポジトリのプロジェクトスキルをツール経由で起動できない環境では、対象リポジトリの`AGENTS.md`などに記載された所在と実際のファイルから絶対パスを特定する。
+`.claude/skills/`配下のスキルは`<対象リポジトリのroot>/.claude/skills/<スキル名>/SKILL.md`に配置されており、ホームディレクトリ配下の同名スキルとは区別して扱う。
+Codexの`.agents/skills`がシンボリックリンクである場合は、リンク先のパスも確認する。
+特定した`SKILL.md`の実在する絶対パスをReadツールや静的な全文読込機能に渡すことで、スキルの起動に代える。
+起動時の必読資料と、現在の操作で条件が成立する資料は、`agent-basics:writing-standards/references/read-method.md`に従い、指定資料の全文を判断前に読む。
+hookによる配送は、この選択と取得を補助する。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
+
+既存の実装、設計、規範を過去の状態へ戻す提案、過去に取り決めた契約を撤回する提案、あるいは既存の値を変更する提案（上書き設定の解除や値の削除を含む）を行う場合は、その箇所を現在の形へと変更した当初の導入目的を調査し、今回の提案がその目的を損なわずに満たせるかを確定する。
+新しく追加しようとしている設定値、記述、規定が、反映先ファイルの変更履歴において過去に削除されていた場合も、過去の状態へ戻す提案と同様に扱う。
+調査手順は、`agent-toolkit:write-plan`の`references/plan-restoration-contracts.md`「復元・巻き戻し型の変更」に従う。
+導入目的の妥当性は、現在の要件と承認の範囲内で評価し、維持すべき結果と変更する手段を[drafting-completion.md](drafting-completion.md)「方針と判断の記録との比較」における必要性の比較によって判定する。
+後続の処理担当エージェントが導入目的との整合性を判断できるように、判定結果と再取得先を本文の適切な箇所に記録する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 起草完了の条件の基準を適用する前 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |

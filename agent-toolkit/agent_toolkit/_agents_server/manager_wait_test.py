@@ -340,6 +340,83 @@ async def test_wait_returns_uncollected_result_from_expired_state(tmp_path: path
         assert (await manager.show_session(session.session_id))["result_available"] is False
 
 
+@pytest.mark.parametrize("expiry_at", ["response", "retention", "claim"])
+@pytest.mark.asyncio
+async def test_expiry_during_collection_does_not_republish_the_result(tmp_path, monkeypatch, expiry_at):
+    """回収中に保持期限へ達しても、遅い解放保存から同じturnを再公開しない。"""
+    async with _writer_backed_manager(tmp_path) as (manager, writer):
+        session = state.SessionState("expiry-race", str(tmp_path), engine="codex", announced=True)
+        manager.sessions[session.session_id] = session
+        _complete(session, message="一度だけの本文")
+        await writer.flush_async()
+        collected = asyncio.Event()
+        release = asyncio.Event()
+        release_expired = manager._release_expired_session
+        prepare_response = manager._result_response_async
+        retain = writer.retain_result_async
+        claim = writer.take_result_async
+        collect = manager._collect_wait_result
+        collecting = False
+        expired = False
+
+        def expire_once():
+            nonlocal expired
+            if not expired:
+                expired = True
+                manager._expire_session(session.session_id)
+
+        async def delay_release(value, snapshot, **kwargs):
+            await release.wait()
+            await release_expired(value, snapshot, **kwargs)
+
+        async def expire_after_response(value, **kwargs):
+            response = await prepare_response(value, **kwargs)
+            if collecting and expiry_at == "response":
+                expire_once()
+            return response
+
+        async def expire_during_retention(value, **kwargs):
+            if collecting and expiry_at == "retention":
+                expire_once()
+            await retain(value, **kwargs)
+
+        async def expire_during_claim(identifier, **kwargs):
+            if collecting and expiry_at == "claim":
+                expire_once()
+            return await claim(identifier, **kwargs)
+
+        async def observe_collection(value, **kwargs):
+            nonlocal collecting
+            collecting = True
+            try:
+                return await collect(value, **kwargs)
+            finally:
+                collecting = False
+                collected.set()
+
+        monkeypatch.setattr(manager, "_release_expired_session", delay_release)
+        monkeypatch.setattr(manager, "_result_response_async", expire_after_response)
+        monkeypatch.setattr(manager, "_collect_wait_result", observe_collection)
+        monkeypatch.setattr(writer, "retain_result_async", expire_during_retention)
+        monkeypatch.setattr(writer, "take_result_async", expire_during_claim)
+        waiting = asyncio.create_task(manager.wait())
+        try:
+            await asyncio.wait_for(collected.wait(), timeout=5)
+            release.set()
+            first = await asyncio.wait_for(waiting, timeout=5)
+            await manager._wait_for_resource_release(session.session_id)
+            second = await manager.wait()
+            assert first["agent_message"] == "一度だけの本文"
+            assert second["status"] == "expired"
+            assert "agent_message" not in second
+            assert manager.expired_sessions[session.session_id].result_delivered
+        finally:
+            release.set()
+            if not waiting.done():
+                waiting.cancel()
+            await asyncio.gather(waiting, return_exceptions=True)
+
+
 @pytest.mark.asyncio
 async def test_mcp_wait_skips_result_already_collected_by_cli(tmp_path: pathlib.Path) -> None:
     """共有結果ファイルをCLI待機が回収済みの場合、MCP待機は同じ結果を再配送しない。"""

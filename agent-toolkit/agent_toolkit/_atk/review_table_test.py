@@ -10,12 +10,14 @@ import shlex
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor
 
+import markdown_it
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
 from agent_toolkit._common import body_match, next_action
 from agent_toolkit._testing import review_bodies
+from agent_toolkit._testing.normative_contract import read_contract
 
 _TRACK = "exec-review"
 _COMPAT_TRACK = "implementation-review"
@@ -1365,8 +1367,21 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
 ) -> None:
     """スキル本文のオプション集合を受理ケースの仕様集合へ固定する。"""
     skill_path = pathlib.Path(__file__).parents[2] / relative_path
-    paragraph = next(line for line in skill_path.read_text(encoding="utf-8").splitlines() if marker in line)
-    documented = set(re.findall(r"--[a-z-]+", paragraph))
+    text = skill_path.read_text(encoding="utf-8")
+    if subcommand == "respond":
+        text = read_contract(
+            skill_path, skill_path.parent.parent, ("exec-review-responses-records.md", "レビュー指摘管理表への応答")
+        )
+        text = text.split("\n## レビュー指摘管理表への応答\n", 1)[1].split("\n## ", 1)[0]
+    assert marker in text
+    # インラインコードの引数を読み取り、同じ節のshow例とフェンスの区切り記号を分ける。
+    spans = [
+        child.content
+        for token in markdown_it.MarkdownIt().parse(text)
+        for child in token.children or ()
+        if child.type == "code_inline" and child.content.startswith(("--", f"atk review-table {subcommand} "))
+    ]
+    documented = {option for span in spans for option in re.findall(r"--[a-z-]+", span)}
     accepted = {
         token.split("=", maxsplit=1)[0]
         for argv, _expected in _CLI_ACCEPTED_CASES

@@ -8,13 +8,13 @@ if not "%~1"=="wi" goto :run_once
 if not "%~2"=="process-loop" goto :run_once
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ^
-  "& { param([string]$InitialScript) $script = $InitialScript; $arguments = @($args); $spec = [IO.Path]::GetTempFileName(); $env:AGENT_TOOLKIT_RESTART_SPEC = $spec; $exitCode = 0; try { while ($true) { [IO.File]::WriteAllText($spec, ''); $project = Split-Path (Split-Path $script -Parent) -Parent; & uv run --no-config --no-project --python 3.15 python (Join-Path $project 'scripts/launch.py') $script @arguments; $status = $LASTEXITCODE; if ($status -ne 75) { $exitCode = $status; break }; $next = @(Get-Content -LiteralPath $spec -Encoding UTF8); if ($next.Count -lt 1 -or [string]::IsNullOrEmpty($next[0])) { $exitCode = $status; break }; $script = $next[0]; if ($next.Count -gt 1) { $arguments = @($next[1..($next.Count - 1)]) } else { $arguments = @() } } } finally { Remove-Item -LiteralPath $spec -Force -ErrorAction SilentlyContinue }; exit $exitCode }" ^
+  "& { param([string]$InitialScript) $script = $InitialScript; $arguments = @($args); $spec = [IO.Path]::GetTempFileName(); $env:AGENT_TOOLKIT_RESTART_SPEC = $spec; $exitCode = 0; try { while ($true) { [IO.File]::WriteAllText($spec, ''); $project = Split-Path (Split-Path $script -Parent) -Parent; & uv run --no-config --no-project --python 3.15 python (Join-Path $project 'scripts/launch.py') --prepare-if-missing $script @arguments; $status = $LASTEXITCODE; if ($status -ne 75) { $exitCode = $status; break }; $next = @(Get-Content -LiteralPath $spec -Encoding UTF8); if ($next.Count -lt 1 -or [string]::IsNullOrEmpty($next[0])) { $exitCode = $status; break }; $script = $next[0]; if ($next.Count -gt 1) { $arguments = @($next[1..($next.Count - 1)]) } else { $arguments = @() } } } finally { Remove-Item -LiteralPath $spec -Force -ErrorAction SilentlyContinue }; exit $exitCode }" ^
   "%SCRIPT%" %*
 set "STATUS=%ERRORLEVEL%"
 goto :finish
 
 :run_once
-uv run --no-config --no-project --python 3.15 python "%SCRIPT_DIR%\scripts\launch.py" "%SCRIPT%" %*
+uv run --no-config --no-project --python 3.15 python "%SCRIPT_DIR%\scripts\launch.py" --prepare-if-missing "%SCRIPT%" %*
 set "STATUS=%ERRORLEVEL%"
 
 :finish

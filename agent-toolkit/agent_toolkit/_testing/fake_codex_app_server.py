@@ -8,7 +8,7 @@
 - `thread/unsubscribe`は購読解除の応答と`thread/closed`の通知を返すが、MCPサーバー役の子プロセスを終了させない
 - MCPサーバー役の子プロセスは標準入力を読まず、親のApp Serverが終了しても自ら終了しない
 
-`turn/start`は応答の直後に`turn/started`を、短い間隔の後に`turn/completed`を通知し、モデルを呼ばずにturnを終える。
+`turn/start`は応答と`turn/started`を送信し、試験側の解放通知の後に`turn/completed`を送る。
 `model`が`fake-unavailable`のturnは、間隔を置かずに接続先の可用性を理由とする失敗として終わる。
 起動したプロセスのPIDと起動時刻、受けた要求をイベント記録へJSON Linesで追記する。
 試験はこの記録のPIDと起動時刻の組から、自身が起動させたプロセスだけを特定して生存を確かめる。
@@ -20,16 +20,22 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 
 import psutil
 
 UNAVAILABLE_MODEL = "fake-unavailable"
 """このモデルを指定したturnを、接続先の可用性を理由とする失敗として終える。"""
 
-_MCP_SCRIPT = "import time\nwhile True:\n    time.sleep(60)\n"
-
-TURN_DURATION_SECONDS = 0.3
-"""`turn/started`から`turn/completed`までの間隔。委譲元が開始の応答を受けてから終了を観測する順序を再現する。"""
+_MCP_SCRIPT = """
+import pathlib, sys, time
+release = pathlib.Path(sys.argv[1])
+release.with_suffix('.ready').touch()
+deadline = time.monotonic() + 120
+while not release.exists():
+    assert time.monotonic() < deadline, 'MCP子の解放上限'
+    time.sleep(0.01)
+"""
 
 _WRITE_LOCK = threading.Lock()
 
@@ -41,6 +47,9 @@ class _Server:
         self.models: dict[str, str | None] = {}
         self.thread_count = 0
         self.turn_count = 0
+        self._pending: list[threading.Thread] = []
+        self._workers: list[threading.Thread] = []
+        self._stopped = threading.Event()
 
     def record(self, event: dict[str, object]) -> None:
         with self.log_path.open("a", encoding="utf-8") as stream:
@@ -56,13 +65,18 @@ class _Server:
         if thread_id in self.loaded:
             return
         # MCPサーバー役はApp Serverより長く生存し得る実MCPを模すため、withで寿命を閉じない。
+        release = self.log_path.with_name(f"{thread_id}.release")
         child = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with  # 試験用の固定した引数だけで起動する
-            [sys.executable, "-c", _MCP_SCRIPT],
+            [sys.executable, "-c", _MCP_SCRIPT, str(release)],
             cwd=cwd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        deadline = time.monotonic() + 30
+        while not release.with_suffix(".ready").exists():
+            assert child.poll() is None and time.monotonic() < deadline, "MCP子が準備へ到達しない"
+            time.sleep(0.01)
         self.loaded[thread_id] = child.pid
         self.record({"event": "mcp", "thread": thread_id, "pid": child.pid, "created": _created(child.pid), "cwd": cwd})
 
@@ -134,14 +148,37 @@ class _Server:
             "error": None,
             "items": [{"type": "agentMessage", "id": f"message-{turn_id}", "text": f"完了: {text}"}],
         }
-        completion = threading.Timer(
-            TURN_DURATION_SECONDS,
-            self.send,
-            args=({"method": "turn/completed", "params": {"threadId": thread_id, "turn": turn}},),
-        )
-        completion.daemon = True
-        completion.start()
+        completion = threading.Thread(target=self._complete_turn, args=(thread_id, turn), daemon=True)
+        self._pending.append(completion)
         return [started]
+
+    def start_completions(self) -> None:
+        """応答と開始通知を書き終えた後だけ、終了通知の解放待ちを開始する。"""
+        for worker in self._pending:
+            worker.start()
+            self._workers.append(worker)
+        self._pending.clear()
+
+    def _complete_turn(self, thread_id: str, turn: dict[str, object]) -> None:
+        release = self.log_path.with_name(f"{turn['id']}.release")
+        self.record({"event": "turn/ready", "thread": thread_id, "turn": turn["id"], "release": str(release)})
+        deadline = time.monotonic() + 30
+        while not release.exists():
+            if self._stopped.wait(0.01):
+                return
+            assert time.monotonic() < deadline, (
+                f"turnの解放通知が届かない: thread={thread_id}, turn={turn['id']}, release={release}。"
+                f"試験側でFakeAppServer.complete_turn({thread_id!r})を呼び出し、"
+                "turn/ready記録のreleaseと解放ファイルの作成先が一致するか確認する。"
+            )
+        self.send({"method": "turn/completed", "params": {"threadId": thread_id, "turn": turn}})
+
+    def close(self) -> None:
+        self._stopped.set()
+        deadline = time.monotonic() + 5
+        for worker in self._workers:
+            worker.join(timeout=max(0, deadline - time.monotonic()))
+        assert not any(worker.is_alive() for worker in self._workers)
 
 
 def _text(value: object) -> str | None:
@@ -155,16 +192,20 @@ def _created(pid: int) -> float:
 def main() -> None:
     server = _Server(pathlib.Path(sys.argv[1]))
     server.record({"event": "server", "pid": os.getpid(), "created": _created(os.getpid())})
-    for line in sys.stdin:
-        if not line.strip():
-            continue
-        message = json.loads(line)
-        method = message.get("method")
-        if "id" not in message or not isinstance(method, str):
-            continue
-        params = message.get("params")
-        for notification in server.handle(message["id"], method, params if isinstance(params, dict) else {}):
-            server.send(notification)
+    try:
+        for line in sys.stdin:
+            if not line.strip():
+                continue
+            message = json.loads(line)
+            method = message.get("method")
+            if "id" not in message or not isinstance(method, str):
+                continue
+            params = message.get("params")
+            for notification in server.handle(message["id"], method, params if isinstance(params, dict) else {}):
+                server.send(notification)
+            server.start_completions()
+    finally:
+        server.close()
 
 
 if __name__ == "__main__":

@@ -241,9 +241,8 @@ def answer_uwi(
     filename: str,
     answer: str,
     state: str | None = None,
-    lock_timeout: float = -1,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     expected_content: str | None = None,
-    skip_remote_sync: bool = False,
 ) -> bool:
     """平引数でUWI回答欄を更新する。対象はinbox・processing・holdのUWIに限る。
 
@@ -251,10 +250,7 @@ def answer_uwi(
     """
     if not answer.strip():
         raise WebInputError("回答本文が空です", next_action="回答を記入して再実行する")
-    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
-        _wi_sync.ensure_mutation_allowed(private_notes)
-        if not skip_remote_sync:
-            _wi_sync.pull(private_notes)
+    with storage.mutation(private_notes) as mutation:
         try:
             path = _resolve_active_entry(private_notes, filename, state)
             text = _frontmatter.decode_entry_text(path.read_bytes())
@@ -285,16 +281,12 @@ def answer_uwi(
             metadata, body = parsed
             metadata["state"] = WI_STATE_ADOPTED
             _frontmatter.write_entry_text(path, _frontmatter.serialize_frontmatter(metadata, body))
-            _wi_sync.commit_and_push(
-                private_notes,
+            mutation.commit(
                 "chore: answer and adopt uwi item",
                 [str(path.relative_to(private_notes))],
-                skip_push=skip_remote_sync,
             )
         else:
-            _wi_sync.commit_and_push(
-                private_notes, "chore: answer uwi item", [str(path.relative_to(private_notes))], skip_push=skip_remote_sync
-            )
+            mutation.commit("chore: answer uwi item", [str(path.relative_to(private_notes))])
     return True
 
 
@@ -393,7 +385,7 @@ def cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         if ANSWER_MARKER not in edited_text:
             _outcome.report_warning(
                 f"回答欄マーカーが無いため反映しない: {path.name}",
-                next_action="残りの回答は続行する。回答欄マーカーを残したまま回答を書き直す場合は再実行する",
+                next_action="残りの回答は続行する。回答欄マーカーを残したまま回答を書き直す場合は再実行せよ",
             )
             tmp_path.unlink(missing_ok=True)
             continue
@@ -407,7 +399,7 @@ def cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except RuntimeError:
             _outcome.report_warning(
                 f"編集中に他プロセスが対象を変更したため反映しない: {path.name}。編集内容は{tmp_path}に残した。",
-                next_action=f"`atk wi show {path.name}`で最新の内容を確認し、{tmp_path}の回答を移して再実行する",
+                next_action=f"`atk wi show {path.name}`で最新の内容を確認し、{tmp_path}の回答を移して再実行せよ",
             )
             had_conflict = True
             continue

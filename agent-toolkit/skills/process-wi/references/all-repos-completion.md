@@ -1,0 +1,82 @@
+# 登録全体のAWI処理：結果と終了
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| リポジトリ担当の処理規範を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 統括がlane_limit 2以上の対象を直接処理する時 | `lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
+| 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
+| リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
+| 先行工程を次の巡回へ回す前 | `agent-toolkit:process-wi/references/lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
+| 同じ巡回で既存WIを元レーンへ戻して再開する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
+
+## 結果と終了
+
+**6.** 初回・再開とも短い起動目的は、統括セッション自身が担当する本スキルの工程の完遂を示す。
+正当な先送りを結果へ記録した終了もこの完遂に含む。
+統括の終了後に常駐が行う検収は常駐の工程である。
+
+今回の集合JSON、追加指示、結果保存先はSessionStartの起動入力から取得する。
+目標の達成は本節の最終結果と既存工程の証拠で判断し、回復可能な残工程があれば続行する。
+外部前提不足による正当な未完了終了では理由と再開条件を保存し、成功と区別して制御を返す。
+
+**7.** 処理を開始した担当とwriterの実行識別子を対象別に記録し、終了を観測してから所有の解放と回収へ進む。
+
+`share/wi-submission.md`で永続受付と独立監督への所有移管が成立した投入は、本回の製品writerと区別する。
+本回の製品writer・リポジトリ担当、公開CI、結果JSONと報告は本節どおり完了させ、独立投入の終了観測・報告・受付資源の回収は受付先の監督が所有する。
+受付票を結果の`independent_submissions`へ保存し、投入が未完了であることを明記する。
+単なるPopen成功、委譲session IDの発行、未確認の受付はこの区分の対象から除く。
+続行できない対象はその対象の理由と再開位置を残し、独立した他の対象は処理する。
+次の巡回へ残す工程は、対象・条件・再開先を結果へ保存する。
+process-wiの実行全体の完了報告と報告用UWIは統括が1回だけ作成する。
+配下のリポジトリ担当は報告用UWIを独立に作らず、公開結果・CI・残工程を統括へ返す。
+
+**8.** 常駐起動では、会話を終了する前に集合JSONの`result_file`へ次のJSONをUTF-8で保存する。
+
+`repositories`のキーは今回の集合JSONが渡した対象の`target_repo`に限る。
+明示resumeでも今回の集合だけを書く。
+値の`status`は`completed`、`incomplete`、`blocked`、`pending`のいずれかとする。
+`completed`は今回進められる作業と処理済み部分の公開・CI検収の完了を意味する。
+必要な判断を終えて、未来の有効な冷却期限、未回答UWIや外部先行項目への依存で正当に先送りした項目だけが残る場合も含める。
+WI自体の完成と区別し、残す項目・未達条件・解除条件・再開先を`remaining`へ記録する。
+今回進められる作業、対象全体のprocessing、対処を要する不正metadata、未統合レーン、未完了の公開工程があれば`incomplete`、続行不能なら`blocked`、未着手なら`pending`とする。
+`incomplete`は残る未完了工程を表し、終了した統括を同じ会話で自動再起動する要求ではない。
+次回へ回す判断をした場合も、実態に合う状態と残工程を保存して今回の統括を終了する。
+次の巡回は新しい統括が選定するため、同一会話の再起動を避ける目的だけで冷却期限を追加する必要はない。
+内部依存待ち、欠落・失敗の返却、未停止writerを正当な先送りに含めず、writerの終了観測を維持する。
+各対象に残工程・再開先・続行不能の理由と、起動した`writer_sessions`の配列を記録する。
+リポジトリ担当を開始した直後にもその識別子を保存し、統括の中断後に生存writerを確認できるようにする。
+同じ対象を複数の担当が書き込まないよう、配下担当の終了を確かめてから統括自身の作業へ切り替える。
+
+```json
+{"repositories":{"example.test/team/repository":{"status":"incomplete","remaining":"CIの検収","writer_sessions":[]}}}
+```
+
+**9.** 報告用UWIの保存と、起動した担当・writerの終了観測を済ませ、最終の`status`・`remaining`・`writer_sessions`を保存する。
+
+選定YAMLを持つ各対象では、結果の確定と終了前に`atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated`を実行し、選定全体の統合状態を読み取り専用で検収する。
+後段を含む未統合レーンが返った場合は、その工程を続行するか、対象・具体的理由・解除条件・再開先を`remaining`へ保存し、`completed`へ短絡しない。
+入力不正や読取失敗は統合完了と見なさず、原本を回復して再検収する。
+
+`completed`でも正当な延期があれば、対象・未達条件・解除条件・再開先を`remaining`へ列挙する。
+保存したJSONを読み戻し、既存の公開・CI・レーンの検収記録と対応することを確認してから、最上位セッションの終了手順へ進み、統括CLIの終了を常駐へ返す。
+
+**10.** goalの判定は訂正後の最終保存内容と既存工程の証拠に基づく。
+
+既存WIを同じ巡回で再開するときは、`selection-procedure-addition.md`「処理対象WIの追加」の既存WI再開の公開操作へ接続し、元レーンと初回配分を保って未統合へ戻す。
+保持した資源の再利用または回収後の再準備から、現在のレビューHEADで再統合する。
+今回の最終化と選定原本の更新が完了したことを確認する。
+
+ 訂正前の記載や正当に延期した項目の存在だけを、当回の到達点の未達としない。
+ 目標の評価が終了を拒否したら、評価が挙げた残工程と結果の`remaining`を1件ずつ、今回進められる工程と正当な先送り（未来の有効な冷却期限、未回答のUWI、外部の先行項目への依存、ユーザーが許容した後回し）に分ける。
+ 今回進められる工程は再開し、正当な先送りだけが残る場合は、項目ごとに保存内容と解除条件への対応を示して先送りの判断そのものも拒否の理由と照らして見直す。
+ 先行工程を次の巡回へ回すときは、それを先行条件にしていた後続の全工程の先行条件を`lane-resources.md`「後段レーンの先行調査」の区別で再判定する。
+書込競合だけで後段にした工程など先行成果を要さない工程は、先行の統合を待たずに統合先の最新HEADから専用worktreeを作成し、今回の巡回で実装・検証まで進める。
+次の巡回へ回す後続工程は、`remaining`へ工程ごとに先送りの理由を書く。
+ goalのためだけの追加レビューや同じ検証の反復は行わず、不足・不一致がある範囲を補う。
+ 続行不能時も、実態に合う状態、理由と残工程の保存・読戻しを終えて制御を返す。
+ 常駐は結果の申告と実際のキュー・レーン登録が一致することを確認する。
+ 起動済み担当やwriterが未終了の場合は、資源を保持して終了を待機する。

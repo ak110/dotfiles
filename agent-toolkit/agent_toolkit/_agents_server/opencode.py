@@ -33,12 +33,12 @@ def build_command(prompt: str, model: str | None, effort: str | None, conversati
 def system_prompt(launch_kind: LaunchKind) -> str:
     """pluginの共通規範・委譲先規範・ユーザー規範を本文先頭へ連結する。"""
     root = plugin_roots.SERVER_PLUGIN_ROOT
-    files = sorted((root / "rules").glob("*.md"))
+    files = sorted((root / "share" / "rules" / "common").glob("*.md"))
     role_prompt = launch_prompts.LAUNCH_SYSTEM_PROMPTS[launch_kind]
     if launch_kind != "delegate":
         # OpenCodeは全文も配送するため、軽量指示に含まれる同じ返却契約を除く。
         role_prompt = role_prompt.replace(launch_prompts.RESULT_REPORT_INSTRUCTIONS, "")
-        files.append(root / "share" / "rules-subagent.md")
+        files.append(root / "share" / "rules" / "rules-subagent.md")
     user_rules = host_homes.claude_config_dir() / "rules"
     if user_rules.is_dir():
         files.extend(sorted(path for path in user_rules.rglob("*.md") if path.is_file()))

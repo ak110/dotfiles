@@ -8,15 +8,16 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
 import threading
 from collections.abc import Generator, Iterator
 from typing import Any
 
+import psutil
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._common import process_tree, session_activity, session_registry, state_paths
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.git_repository import init_repository, run_git
 
 _TARGET = "github.com/example/target"
@@ -378,13 +379,10 @@ def test_open_codex_record_without_hook(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.fixture(name="daemons")
-def _daemons() -> Iterator[list[session_activity.HostProcess]]:
+def _daemons(tmp_path: pathlib.Path) -> Iterator[list[session_activity.HostProcess]]:
     """会話を開かずに生存する2つの実プロセスを、ホストと同じ実行系名で渡す。"""
     with contextlib.ExitStack() as stack:
-        processes = [
-            stack.enter_context(process_tree.process_scope([sys.executable, "-c", "import time; time.sleep(120)"]))
-            for _ in range(2)
-        ]
+        processes = [stack.enter_context(late_descendant.held_process(tmp_path)) for _ in range(2)]
         hosts = []
         for process in processes:
             identity = session_registry.ProcessIdentity.of(process.pid)
@@ -394,7 +392,9 @@ def _daemons() -> Iterator[list[session_activity.HostProcess]]:
 
 
 @pytest.mark.parametrize("stage", ["acquire-second", "body", "release-one"])
-def test_daemons_reclaims_every_acquired_process_on_failure(monkeypatch: pytest.MonkeyPatch, stage: str) -> None:
+def test_daemons_reclaims_every_acquired_process_on_failure(
+    monkeypatch: pytest.MonkeyPatch, stage: str, tmp_path: pathlib.Path
+) -> None:
     """2件目の獲得・利用・前段の解放で失敗しても、獲得済み全件の終了を確認する。"""
     acquired: list[subprocess.Popen[Any]] = []
     real_scope = process_tree.process_scope
@@ -416,7 +416,7 @@ def test_daemons_reclaims_every_acquired_process_on_failure(monkeypatch: pytest.
 
     monkeypatch.setattr(process_tree, "process_scope", scope)
     monkeypatch.setattr(process_tree, "stop_owned_process", stop)
-    lifetime = inspect.unwrap(_daemons)()
+    lifetime = inspect.unwrap(_daemons)(tmp_path)
     if stage == "acquire-second":
         with pytest.raises(RuntimeError, match="2件目の生成失敗"):
             next(lifetime)
@@ -521,7 +521,7 @@ def test_submission_target_follows_actual_destination(tmp_path: pathlib.Path, mo
     assert not _submitting(_TARGET)
 
 
-def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """終了・中止・対象変更・再開に追随し、後続の別作業と属性のない旧記録で待機を生じない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     _emit("legacy", "UserPromptSubmit")
@@ -543,7 +543,7 @@ def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatc
     _begin("--session-id", "submitter", "--target-repo", _TARGET)
     _emit("submitter", "SessionEnd")
     assert not _submitting(_TARGET)
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as resumed:
+    with late_descendant.held_process(tmp_path) as resumed:
         try:
             identity = session_registry.ProcessIdentity.of(resumed.pid)
             assert identity is not None
@@ -573,3 +573,30 @@ def test_review_activity_limits_to_target_and_descendants(tmp_path, monkeypatch)
     )
     assert session_activity.review_activity({"root"}, state_root=tmp_path).has_activity
     assert not session_activity.review_activity({"other"}, state_root=tmp_path).has_activity
+
+
+def test_host_processes_reads_current_generation_despite_cached_previous_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """列挙キャッシュに以前の世代の実行ファイルと起動時刻が残っていても、現在の実行体で分類し現在の起動時刻を返す。"""
+    pid = os.getpid()
+    current = session_registry.ProcessIdentity.of(pid)
+    assert current is not None
+    # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
+    stale = psutil.Process(pid)
+    monkeypatch.setattr(stale, "_create_time", current.create_time - 10000)
+    monkeypatch.setattr(stale, "_ident", (pid, current.create_time - 10000))
+    monkeypatch.setattr(stale, "_exe", "/previous-generation/codex")
+    monkeypatch.setitem(vars(psutil)["_pmap"], pid, stale)
+    real_process_iter = psutil.process_iter
+
+    def own_process(*args: Any, **kwargs: Any) -> list[psutil.Process]:
+        return [item for item in real_process_iter(*args, **kwargs) if item.pid == pid]
+
+    monkeypatch.setattr(psutil, "process_iter", own_process)
+
+    # 試験を実行する現在の実行体はPythonであり、以前の世代の実行ファイル名ではホストに分類しない。
+    assert not session_activity.host_processes()
+
+    monkeypatch.setattr(psutil.Process, "name", lambda self: "claude")
+    hosts = session_activity.host_processes()
+    assert hosts == (session_activity.HostProcess("claude", current),)
+    assert hosts[0].identity.exists()

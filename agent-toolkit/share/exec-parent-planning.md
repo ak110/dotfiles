@@ -1,0 +1,83 @@
+# レーン担当の起動と受領：計画準備の受領
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 実装完了の受領と実行レビューの起動へ進む前 | `exec-parent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-implementation.md` | |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` | |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` | |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+
+## 計画準備の受領
+
+**2.** 計画・採否と対象集合を検収し、実装の有無を確定する。
+
+レーンの観測が前提を反証した場合は、既存の計画変更・管理表の結論と根拠から、維持する成果、変更する方針、未達、次の判断に残る条件を検収する。
+局所調査のやり直し用の全文転送を求めず、既存記録の所在を受け取り、要求・認可と他レーンへの影響を調整する。
+
+定型的な継続指示は、`send_message`の`instruction`および名前付きの`extra_params`から生成する。
+`実装開始`、`実装なし`、`レビュー指摘の対応をせよ`、`統合開始`の各宣言に必要な値のみを渡し、すでに保持されている初回入力はそのまま継続して利用する。
+レビュー指摘の対応時は、`レビュー指摘管理表`に単一の絶対パス、または全計画の管理表の絶対パスを格納したJSON配列を1回で渡す。
+参考意見がある場合は同じ指示の`レビュー参考意見`へ渡す。
+ラウンド数は各管理表から取得する。
+計画ごとの成果物の受け渡し方法は、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+組み込み委譲におけるメッセージ本文の生成は、`../skills/delegation/references/sending-prompt.md`「委譲プロンプトの構成」に従う。
+
+レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。
+起動の`固有指示`に資源記録・統合先worktree・branchを渡し、直後にレーン開始時刻を追送する。
+メインは定型の準備・実装・レビュー・統合開始の往復を省き、ユーザー判断の通知、レーン間の競合・依存調停、後述の統合許可、最終結果の受領を担う。
+統合前検収はレーンが行い、メインは返却結果を検収する。
+レーン担当が作業を進める工程では、計画準備の受領を本節、実装完了の受領と実行レビューの起動を`exec-parent-implementation.md`「実装完了の受領」に従い、レーン担当者自身が自律的に行う。
+`CI修正担当`や新規起動された`レビュー修正担当`から結果を受け取る委譲元も、同じ受領手順を適用する。
+
+レーン担当は`計画検査完了`後に待たず実装するため、`実装開始`の返送は不要。
+通知の`計画ファイル:`・`統合区分:`・`AWI:`を計画数分累積し、計画名・AWIの重複がなく、和集合が選定レーンと一致することを確認する。
+追加AWIでも先行凍結計画と統合区分を引き継ぐ。
+`plan-check`による集合一致と人間由来行の根拠欄充足を受領の必須条件とする。
+
+`計画なし準備完了`を受け取った場合は、AWI集合が対象レーンと合致していることを確かめて統合区分を記録し、引き継ぎ記録にある明示的な禁止条件と採用された手段を突き合わせる。
+採用手段が禁止条件に抵触していなければ同一threadへ`実装開始`を返し、`マージなし`の場合は`実装なし`を返す。
+抵触している場合は相違点を添えて差し戻す。
+計画を作成しない実装では、WIに記載された要求と完成条件を実行レビューの判定基準とする。
+
+`計画作成完了`を受け取った場合は、作成された計画ファイルの絶対パス（計画の数だけ並ぶ`計画ファイル:`行）が返される。
+各計画のAWI集合を計画のメタ情報である`関連WI`から取得し、計画の絶対パス、AWI集合、および保存状態を引き継ぎ記録へ累積する。
+メインエージェントは各計画の`## 概要`と`## 実施内容`を読み込み、以下の項目を確認する。
+条件を満たさない行がある場合は相違点を添えて同一のレーン担当者へ差し戻し、該当する計画に対しては`実装開始`を返さない。
+
+- 要求単位の由来と確認要否について、`../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に基づいて根拠と既存の認可状況を検収し、必要な確認を実施する。
+  受領後の由来の取り扱いは、`exec-subagent-inputs.md`「入力」の由来確定時点の定めに従う
+- `由来`が`人間由来のWI`や`ユーザー指示`である行では、`根拠`欄に原文の要求単位ごとの分解が記載されていること。
+  その行の`採否`が`部分採用`または`不採用`である場合、`agent-toolkit:wi-standards`の`## 由来と承認`が求めるユーザーの明示的な承認が得られていることが`根拠`から確認できること。
+  確認が必要な規模縮小については、ユーザーへの確認を経て確定する
+- ユーザーがAWIの`## ユーザーコメント`やUWIの`## 回答`へ担当者宛てに直接記入した質問がある場合、`## 実施内容`にその回答をUWIへ記録する工程が含まれていること（AWI本文へ転記された質問は対象外）
+- ユーザーの指示やWIで明示された禁止操作、除外された機構、許容されない副作用を`## 実施内容`から抽出し、採用手段がそれらに該当しないこと。
+  同節の記述のみから両者を特定できない場合も不合格とする
+- 長時間の比較調査を含む行については、調査の開始条件と通常の修正作業との関係（並行して進めるのか、直列化する明確な理由があるか）が明記されていること
+- レーンの統合区分を、`exec-parent-integration.md`「統合の指示と受領」に定める規則に従って確定すること
+
+メインエージェントは、エージェント向け文書を含む個別の編集先を名指しで指定しない。
+書き込みの認可境界はWIの要求とし、要求内の計画外編集は重なりにかかわらずレーン担当が進め、実行レビューがcommit差分から妥当性を判定する（`exec-subagent-implementation.md`「実装」）。
+追加一覧の受渡しや選定記録への反映は求めず、競合は統合時の追随・解消で扱う。
+WIの要求を超える変更の可否はメインが判断する。
+生成物は原本の改訂後に再生成する。
+
+確認を終えた後、同一threadに対して`実装開始`または`実装なし`を返す。
+`実装なし`となったレーンは実装および実行レビューを行わず、そのまま統合指示の段階へ進む。
+`計画検査完了`において`マージなし`と示された計画には応答を返さず、同一レーン内の他の計画について実装の有無が確定した後に統合を指示する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| レーン担当の起動と受領：統合の許可の基準を適用する前 | `exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-integration.md` |

@@ -100,7 +100,7 @@ def test_public_prepare_effect_candidates_cover_period_and_application_sources(
         f"{plugin}/skills/root/SKILL.md": "root",
         f"{plugin}/skills/main/scripts/action.py": "pass",
         "agent-basics/skills/hook/SKILL.md": "hook",
-        "agent-toolkit/rules/always.md": "rules",
+        "agent-toolkit/share/rules/common/always.md": "rules",
         "agent-toolkit/share/unused.md": "unused",
     }
     worktree = git_repository.init_repository(

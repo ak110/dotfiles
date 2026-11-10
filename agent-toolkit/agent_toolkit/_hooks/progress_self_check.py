@@ -23,10 +23,13 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の�
 
 from __future__ import annotations
 
+import os
+import shlex
 import time
 
 from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
+from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
@@ -54,37 +57,17 @@ _RESERVED_AT_KEY = "reserved_at"
 _reservations: list[tuple[str, str, float]] = []
 
 _SELF_CHECK_NOTICE_BODY = (
-    "進捗の定期セルフチェックの時刻になった。作業を続ける前に次を点検せよ。\n"
-    "1. 現在の工程と開始時点を手元の記録で確かめ、経過時間を目標や同種処理の実績と比較せよ。"
-    "工程開始時点や比較基準が不足するなら、記録や担当者への照会で取得せよ。\n"
-    "2. 前回以降の工程の変化と再試行（レビューのラウンド、修正や検証のやり直し）を確かめ、"
-    "収束しているか比較せよ。`HEAD`や最終活動時刻の変化だけで妥当と判断するな。\n"
-    "3. 現行の作業契約と、それが参照する要求原本・計画・進捗記録の必要範囲を読み、現在の作業と比べよ。"
-    "委譲先は自身の作業記録と受領した全体作業契約から担当範囲を確認せよ。"
-    "当初目的、追加・変更後も有効な全要求、保持対象、完成条件を確認し、割り込み対応後も元の未完了工程を保持せよ。"
-    "完成条件別の成果と証拠、未達・未確認、残工程を比較し、全工程を100%とする進捗率の概算と根拠を見直せ。"
-    "いま取り組んでいる作業がどの完成条件に必要かを1行で示せ。"
-    "どれにも必要でない対処は記録して本筋へ戻れ。より費用の小さい方式は無いか。\n"
-    "完成条件の前提が成立するか、実データ・実装・実行結果の証拠で確かめよ。"
-    "前提が未成立なら未達の条件と証拠を既存記録へ保持せよ。\n"
-    "4. 警告、中断、接続失敗、再実行などの記録を、成果物の品質・結果やユーザーの判断への影響と、"
-    "観測した無視できない費用で選別せよ。必要な残りを回収した切り詰めなど正常な回収を問題化せず、"
-    "影響があるものを既存証拠から調査・処置へ接続せよ。反復だけを調査開始の根拠にするな。\n"
-    "5. 会話圧縮の後に読むべき資料を読み残していないか。\n"
-    "6. 配下に委譲先がいれば、活動の有無と工程の所要・反復の妥当性を分けて点検せよ。"
-    "待機中の詳細な比較は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「成果物側の観測」に従え。\n"
-    "改善策があれば、その場で進め方を変えよ。時間を理由に作業を止めたり品質の確認を省いたりするな。"
-    "各完成条件の前提が満たされていない状態で完了を返すな。"
-    "報告基準を満たす改善点は、対処とAWI化ステータスを`rules-main.md`「作業中の改善点の報告」の定義で決め、"
-    "`気付いた改善点:`の行で報告せよ。"
-    "点検の具体的な比較を、`agent-toolkit:user-confirmation-and-report`の"
-    "`references/communication-methods.md`「起動案内と進捗通知」に従って既存記録へ残せ。"
-    "経過時間と目標に対する進み具合、余計な作業の有無、当初目的との一致を、比べた記録と具体的な結果へ対応付けよ。"
-    "記録が無い項目は未観測と書き、適用されない項目を埋める調査を増やすな。"
-    "最上位メインは`rules-main.md`「進捗報告」の形式で、点検した対象・結果を含めて報告せよ。"
-    "委譲先の正常な前進のみの点検は、要旨と記録先を次の規定された工程返却へまとめよ。"
-    "判断・認可・入力・レーン調整を要する変化、無視できない改善、停滞の新根拠と工程境界は既存契約どおり通知せよ。"
-    "点検通知の配送だけを点検実施の証拠にするな。"
+    "進捗点検を行え。既存の作業記録と要求原本・計画を読取ツールで確認し、"
+    "工程・開始時点・経過時間を目標と前回の成果・再試行に比較せよ。"
+    "追加・変更後も有効な全要求に対する成果・証拠・未達・残工程と、全工程を100%とする進捗率の概算と根拠を記録せよ。"
+    "今の作業が必要な完成条件を1行で示せ。前提は実データ・実装・実行結果で確かめ、不成立の条件も保持せよ。\n"
+    "比較・取得・報告の基準は、`{read_command}`で取得し、"
+    "「判断指針」「行動と手順の目的」「結果の返却」を読め。"
+    "配下がある場合は活動と成果・所要を分け、取得済みの`waiting-and-monitoring.md`「成果物側の観測」に従って点検せよ。\n"
+    "具体的な比較結果を既存の進捗記録へ保存せよ。最上位メインの出力形式は`rules-main.md`「進捗報告」の定義に従え。"
+    "改善点を報告する場合は同書「作業中の改善点の報告」の読込表から判定資料を全文読み、"
+    "対処とAWI化ステータスを見直せ。委譲先の正常な前進は要旨と記録先を次の工程返却へ含め、"
+    "判断・認可・入力・調整が必要な変化や無視できない改善・停滞の新根拠は委譲元へ直ちに通知せよ。"
 )
 
 
@@ -169,7 +152,13 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         return None
     # 整形や後続の出力が例外で終わっても終了時に予約を外せるよう、整形より先に解除の対象へ登録する。
     _reservations.append((session_id, agent_id, current_time))
-    body = f"セッション開始から{_format_elapsed(elapsed)}たった。{_SELF_CHECK_NOTICE_BODY}"
+    path = str(plugin_resources.plugin_root() / "share/rules/common/01-agent.md")
+    read_command = (
+        "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
+        if os.name == "nt"
+        else "cat -- " + shlex.quote(path)
+    )
+    body = f"セッション開始から{_format_elapsed(elapsed)}たった。" + _SELF_CHECK_NOTICE_BODY.format(read_command=read_command)
     text = _llm_notice(body, tag="notice")
     if not text:
         return None

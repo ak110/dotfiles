@@ -1,193 +1,60 @@
 # 実行手段の選択
 
-本書は、委譲先やモデルを選定するにあたり、実際に利用可能な実行手段に関する取り決めを定める。なお、委譲先固有の具体的な作業手順は`<役割名>.subagent.md`側に記載する。
-通常の委譲では「実行手段」「工程別モデル設定」、同一担当の継続や交代では「継続と新規起動」を読む。Claude CodeのAgent継続、可用性障害、工程別設定外のモデル選択は、次の表から必要な詳細だけを選ぶ。
+本書は、委譲先を起動する実行手段（`agents_server`とホスト組み込みの委譲機能）の選択と、起動区分の取り決めを定める。
+委譲先固有の具体的な作業手順は`<役割名>.subagent.md`側に記載する。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `agent-toolkit:review-session/references/session-records.md`の「会話の少量取得」 | 判断 | `section:agent-toolkit:*/skills/review-session/references/session-records.md#「会話の少量取得」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「会話を引き継ぐ委譲」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「会話を引き継ぐ委譲」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md#「待機区間の構成」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md#「待機区間の構成」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「後続操作の共通先行条件」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「後続操作の共通先行条件」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination.md#「ラウンド番号の保持先」` | 判断 | `section:agent-toolkit:*/share/review-loop-coordination.md#「ラウンド番号の保持先」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-code-runtime.md#「完了通知と中継の実行順」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md#「完了通知と中継の実行順」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime.md#「agents_serverの二層待機」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/codex-runtime.md#「agents_serverの二層待機」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `mandatory-rules.md#「作業ツリーの保護」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/mandatory-rules.md#「作業ツリーの保護」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing.md#「委譲単位の確定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「委譲単位の確定」` |
-| 作業を分担するかと総費用を比較する時 | `routing.md#「要否判定」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/routing.md#「要否判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sending.md#「起動と観測」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/sending.md#「起動と観測」` |
-
-| 利用場面 | 本書で追加して読む節 |
-| --- | --- |
-| Claude Codeの`Agent`ツールで起動した担当を継続する | 「Agentツールの継続」 |
-| 可用性障害を確認して回復する | 「代替起動」。代替候補を選ぶ場合は「代替時の組合せの目安」も読む |
-| 工程別設定の対象外でモデル・effortを選ぶ | 「modelとreasoning effort」 |
-| 実装担当のworktree・書込所有権を割り当てる | 「実装担当とworktree」 |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-fork.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
 
 ## 実行手段
 
-`agents_server`の`start`のうち、`mode`に`delegate`を指定する起動、および`mode:`を宣言しないか`delegate`を宣言している`<役割名>.subagent.md`による`task`の起動を「通常起動」と呼ぶ。一方、`mode`に`explore`、`shell`、`write`を指定する起動、およびこれらを宣言している`<役割名>.subagent.md`による`task`の起動を「軽量起動」と呼ぶ。この区分は、`agent_toolkit/_agents_server/launch_prompts.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。両者は読み込まれる設定や利用可能なツールが異なるため、委譲先の判断に必要なプロジェクト規範が自動で届かない起動形態では、委譲プロンプト側で明示的に渡す。
+`agents_server`の`start`のうち、`mode`に`delegate`を指定する起動、および`mode:`を宣言しないか`delegate`を宣言している`<役割名>.subagent.md`による`task`の起動を「通常起動」と呼ぶ。
+一方、`mode`に`explore`、`shell`、`write`を指定する起動、およびこれらを宣言している`<役割名>.subagent.md`による`task`の起動を「軽量起動」と呼ぶ。
+この区分は、`agent_toolkit/_agents_server/launch_prompts.py`の`LIGHTWEIGHT_LAUNCH_KINDS`と一致させる。
+両者は読み込まれる設定や利用可能なツールが異なるため、委譲先の判断に必要なプロジェクト規範が自動で届かない起動形態では、委譲プロンプト側で明示的に渡す。
 
 処理を終了した担当者を「前任」、その作業を引き継ぐ新たな担当者を「後任」と呼ぶ。
 `start`に`handoff_from`のみを指定し、前任の起動条件や記録を引き継いで後任を開始する操作を「引き継ぎ起動」と呼ぶ。
 引き継ぎ起動では、通常起動と軽量起動の区分や用途を前任からそのまま引き継ぐ。
 
-- 起動手段は、その手段が提供する終了観測手段とセットで選定する。機能と権限が同等であれば、`atk agents wait`によって機械的に終了を観測できる`agents_server`を選択する。ホスト組み込みの委譲機能を選んだ場合は、そのホストの委譲一覧におけるステータスや指定した成果物の状態によって終了を観測する
-- Claude Codeからの委譲では、工程別モデル設定のeffortを指定できるため`agents_server`を標準とする。組み込みの`Agent`ツールを使用するのは次のケースに限る
-  - `agents_server`のMCPツールを呼び出せない場合。このときは切り替えた工程、本来の設定値（engine、モデル、effort）、および切り替え理由を報告に記録する
-  - `agents_server`のexplore・delegate・taskに同等の手段がない専用agent定義を使う作業（プロジェクト固有の定義など）。Explore・general-purpose・Planなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外に含めない
-  - ユーザーから明示的な指示がある場合
-  - `routing.md`「会話を引き継ぐ委譲」によりforkを選択する場合。このときは`subagent_type: "fork"`で起動し、親と同一のモデルおよびeffortを使用する
-- Codexから別のエージェントへ委譲する場合も`agents_server`を標準とし、`spawn_agent`の選択にも前述の共通の例外条件を適用する。専用定義の例外は実際にその定義を使用できる場合に限る。forkでは`fork_turns`を省略するか`"all"`を指定し、モデルやeffortを上書きしない
-- 汎用のAgent機能にも、前述のClaude Codeの`Agent`ツールを使用する条件を適用する
-- 役割文書が用意されている工程にはその文書を渡す。読み取りのみの調査、参照実装に準拠した定型的な書き込み、出力行数が多いコマンド実行などは、それぞれの専用ツールの公開説明を確認した上で適切に割り当てる。なお、切り詰めや上限到達が報告された調査結果を、網羅性、件数、または不在の根拠としては扱わない
-- 起動時の可用性トラブル（一時的な障害など）に伴う候補の切り替えはサーバー側に任せる。起動後に可用性障害を確認した場合は「代替起動」を読む。実行中の担当者を経過時間や無応答の長さだけで途中で置き換えない
-- 委譲先からの即時通知の手段は`agent-toolkit/share/rules-subagent.md`「確認事項の即時通知」が定め、通知を受領した後の待機手順は`references/waiting-and-monitoring.md`「待機区間の構成」に従う
-- 実績として記録する情報は、起動結果として返されたrouteと識別子とする
+1. 起動手段は、その手段が提供する終了観測手段とセットで選定する。
+     機能と権限が同等であれば、`atk agents wait`によって機械的に終了を観測できる`agents_server`を選択する。
+     ホスト組み込みの委譲機能を選んだ場合は、そのホストの委譲一覧におけるステータスや指定した成果物の状態によって終了を観測する
 
-fork機能に関する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：実行手段：2026年9月27日」に記載されている。
+2. Claude Codeからの委譲では、工程別モデル設定のeffortを指定できるため`agents_server`を標準とする。
+     組み込みの`Agent`ツールを使用するのは次のケースに限る
+     - `agents_server`のMCPツールを呼び出せない場合。
+       このときは切り替えた工程、本来の設定値（engine、モデル、effort）、および切り替え理由を報告に記録する
+     - `agents_server`のexplore・delegate・taskに同等の手段がない専用agent定義を使う作業（プロジェクト固有の定義など）。
+       Explore・general-purpose・Plan・web-fetchなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外の対象外とする。
+       同等の手段の有無は`agents_server`の各modeが公開する機能と到達性から判定し、直接のWebFetchなどあるツールを使えないという診断や、ホストが特定の組み込みAgentを案内したことは判定の根拠から外す
+     - ユーザーから明示的な指示がある場合
+     - `routing-fork.md`「会話を引き継ぐ委譲」によりforkを選択する場合。
+       このときは`subagent_type: "fork"`で起動し、親と同一のモデルおよびeffortを使用する
 
-## 工程別モデル設定
+3. Codexから別のエージェントへ委譲する場合も`agents_server`を標準とし、`spawn_agent`の選択にも前述の共通の例外条件を適用する。
+     専用定義の例外は実際にその定義を使用できる場合に限る。
+     forkでは`fork_turns`を省略するか`"all"`を指定し、モデルやeffortを上書きしない
 
-定型処理はモデルを割り当てる前に`routing.md`「要否判定」で既存CLI・API・標準コマンドによる実行と直接処理を比較する。
-その比較でモデルへ委譲する部分を選んだ後に、以下の工程別設定を適用する。
+4. 汎用のAgent機能にも、前述のClaude Codeの`Agent`ツールを使用する条件を適用する
 
-各工程の`model_type`は、対応する`<工程>_model`の設定に定義された候補列を直接参照する。下表における「メイン」は、`agent-toolkit:process-wi`のメインエージェント、または`agent-toolkit:write-plan`を起動したエージェントを指す。
+5. 役割文書が用意されている工程にはその文書を渡す。
+     読み取りのみの調査、参照実装に準拠した定型的な書き込み、出力行数が多いコマンド実行などは、それぞれの専用ツールの公開説明を確認した上で適切に割り当てる。
+     なお、切り詰めや上限到達が報告された調査結果を、網羅性、件数、または不在の根拠としては扱わない
 
-| 対応工程・役割 | model_type | 起動直前に解決する主体 | 起動手段 |
-| --- | --- | --- | --- |
-| WI選定・レーン分け・計画・設計判断を伴う実装と修正・原因分析・観点選定・候補判定・結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination` | `execute` | 各担当を委譲するメインか工程担当 | `agents_server` |
-| 内容と完成判定が確定した単発コーディング・修正・追随、中規模走査。`refine-prompt` | `chores` | 分担を所有する担当 | `agents_server` |
-| 定型走査・軽微な作業・コマンド実行。自由本文の`explore`・`shell`の省略時 | `chores_fast` | 委譲する担当 | `agents_server` |
-| 実行レビュー・ユーザビリティレビュー・投入前レビュー・再発防止セルフチェック。`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check` | `review` | 各レビューを委譲する担当 | `agents_server` |
-| 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` | `review_fast` | 各レビューを委譲する担当 | `agents_server` |
-| 最上位オーケストレーター、process-loopの新規セッション、run-skill。`repository-process` | `orchestrate` | process-loop・run-skill・all-reposの統括担当 | `atk`か`agents_server` |
-| 文章起草、`write`の省略時 | `write` | 委譲する担当 | `agents_server` |
-| `atk commit`の省略時 | `chores` | `atk` | `atk` |
+6. 起動時の可用性トラブル（一時的な障害など）に伴う候補の切り替えはサーバー側に任せる。
+     起動後に可用性障害を確認した場合は`fallback-launch.md`「代替起動」を読む。
+     実行中の担当者は、経過時間や無応答の長さだけを理由に置き換えず、終了まで観測を続ける
 
-設定値は`execute_model`、`review_model`、`review_fast_model`、`chores_model`、`chores_fast_model`、`orchestrate_model`、`write_model`の7つのキーで管理され、それぞれ個別に変更できる。
+7. 委譲先からの即時通知の手段は`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」が定め、通知を受領した後の待機手順は`waiting-and-monitoring-intervals.md`「待機区間の構成」に従う
 
-- 候補列は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`の形式をASCIIカンマで区切って記述し、先頭から順に試行する。effortを省略した場合は`medium`が適用される。OpenCodeのmodel指定に含まれる`/`は維持し、末尾の`@`以降をvariantとして扱う。なお、`orchestrate_model`にはOpenCodeを指定できない
-- 可用性の問題による障害が発生した場合は、次の候補へ進む。OpenCodeのCLIが存在しない場合や、接続・認証に失敗した場合も可用性の障害として処理する。Claudeの利用上限に伴う待機手順は、後述の「代替起動」に従う
-- 初期設定として、executeとorchestrateはClaude Opusを最優先、Codex solを予備とする。reviewとchoresはCodex sol/mediumを最優先、Claude Sonnetを予備とし、review_fastとchores_fastはCodex lunaを最優先、Claude Haikuを予備とする。writeはAntigravity Gemini Flash、Claude Opusの順とする
-- 初期設定やプリセットの候補を変える前に、変更後の候補でその工程の役割文書を持つ担当（`review`なら実行レビュー担当）を実際の作業で1回以上起動し、最初の応答が返却形式どおりの完了になることを確かめる。候補の適否はモデルの挙動で決まり、候補列の保存と実行時解決の配線を確かめる既存の試験では検出できないためである。確かめた候補、工程、作業と結果は、候補を変える理由とともにプロジェクトの設計記録か変更のcommit本文へ残す
-- `atk config apply-preset <名前>`を実行すると、writeの設定を維持したまま他の6つのキーを一括で更新できる。用意されている5種類のプリセットは次の通りである。`codex-balanced`は初期設定、`codex-near-primary`はexecuteの先頭をCodexに変更、`codex-primary`はexecuteとorchestrateの先頭をCodexに変更する。`claude-balanced`はchoresとchores_fastの先頭もClaudeに変更し、`claude-primary`は全6工程の先頭をClaudeへ変更する。OpenCodeを使用する場合は各キーに直接指定する
-- Codexの`astra`、`sol`、`terra`、`luna`という指定は、起動時にApp Serverの`model/list`を参照して同一系列の最新の完全IDへ解決する。指定されたeffortが利用できない場合、該当系列が存在しない場合、あるいは一覧取得に失敗した場合は、理由を提示して処理を停止する。完全IDは固定指定として扱い、Claudeやagyの候補を受理できるかどうかは各engineの処理に委ねる
-- 環境変数`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`に空でない値が設定されている間は、保存された設定値よりも環境変数を優先し、その値を設定ファイルへ保存することはない。`set`コマンドは設定ファイルの保存先を更新し、参考一覧に含まれないモデルやeffortであっても警告を表示した上で受理する。`show`や`get`コマンドは参考一覧外の値もそのまま表示する
-- `model_type`には7種類の工程名または候補列を直接指定できる。delegateでは指定が必須であり、exploreやshellで省略した場合はchores_fast、writeで省略した場合はwriteが適用される。taskで省略した場合は役割文書のfrontmatterに定義された工程を適用し、明示的に指定した場合はその工程や候補列を使用する。候補列を直接指定した場合は保存された設定ファイルを読み込まない。起動区分はmode（taskの場合は役割文書のmode）を維持する。恒久的な設定変更は`atk config set`を用いて行う
-- OpenCodeの各ターンは`opencode run --format json --auto`で実行し、モデルを`--model`、effortを`--variant`、継続セッションIDを`--session`へ渡す。共通規範、委譲先規範、ユーザー規範、およびplugin rootをプロンプト本文へ渡し、必要なスキルは同rootから読み込む。実行中のターンへの追加メッセージ送信は、現在のターンの終了を待ってから同一ID宛てに送る
-- 過去の段位制9キーや用途別engine順5キーが保存されている場合は、初回の`show`、`get`、または設定候補解決のタイミングで6工程の設定へ合成し、廃止された旧キーを一括して削除する。古い工程キーが共存している場合も、旧段位制やengine順から合成された値を優先して採用し、write設定および非モデル設定を維持する。なお、それ以前の旧旧4キーから段位制への移行処理は廃止済みである。廃止されたキーに対応する環境変数が存在する場合は、新しい工程別の環境変数へ移行する案内を表示して処理を停止する
+8. 実績として記録する情報は、起動結果として返されたrouteと識別子とする
 
-起動と設定確認の手順は次の通りである。
-
-1. `agents_server`の`start`を使い、役割文書を指定する場合は`subagent_md_path`と`extra_params`、自由本文の委譲では`mode: delegate`と`prompt`と`model_type`を渡す。役割のmode、model_type、入力項目、書き込み権限はfrontmatterで管理し、`usage`フィールドは使用しない。共通モジュール`agent_toolkit/_common/task_documents.py`で読み込みを行い、サーバー側で適切な候補を選択する
-2. `Agent`ツールを使用する場合は、起動直前に`atk config get <工程>_model`を1回実行して設定を取得し、先頭の候補をengine、model、effortへ分解する。Claude以外のengineについて実行手段を確保できない場合は、未完了として返すか続行できない理由を報告する。分解した値は表に記載された工程を実行する委譲先のみに渡し、定義側でモデルが固定されている委譲先に対してmodelを上書きすることは避ける
-3. 起動レスポンスとして返されたsession_idとstatusを受け取り、候補の切り替えが発生した場合は除外理由と採用候補も確認する。終了時に`wait`を実行してmodel_type、engine、model、effortを確認する。なお、保持期限が切れた後に`show`を実行できることを検収の前提条件とはしない
-4. すべての候補を試しても実行できなかった場合は、未完了または続行できない理由を委譲元へ返却する
-
-WIの`担当モデル`において担当者、モデル、effortが明記されている工程では、委譲元がその指定値を`model_type`へ渡す。1回の起動に対して異なる指定が混在する場合は、WIと指定値を明示して委譲単位を分割する。終了時に確認したengine、model、effortを指定値と比較し、WI名、指定内容、実際値を進捗ログまたは引き継ぎ記録へ記載する。各工程は自身の担当名（`担当モデル.実装担当`など）と本段落の参照先を保持する。
-
-作業の分担と総費用の比較は`routing.md`「要否判定」に従い、表にある役割全体の工程指定を維持する。
-計画、設計判断、原因分析、観点の選定、アイデア出し、候補の判定、結論の統合は役割担当自身が行う。
-内部では判断と確定済みの作業を極力細分化し、同じ背景と実行条件の作業は1件の起動へ集約する。
-定型走査・事実収集・コマンド実行は`chores_fast`、中規模の読取・要約・走査と確定済みの書込は`chores`へ渡す。
-自律的に切り出せるのは`review`・`review_fast`・`chores`・`chores_fast`・`write`で済み、起動と資料の読込を含めても費用が下がる部分だけとする。
-`execute_model`は高価であり、`execute`は役割文書がその工程を定める担当のtask、`orchestrate`はprocess-loop・run-skillなど規範が起動形を定める最上位・統括だけに使う。
-`start`は自由本文のdelegate・explore・write・shellにおけるexecuteとorchestrateの工程名指定を起動前に拒否する。切り出せない判断は、文脈を持つ元の担当が続ける。
-
-自由本文の全mode、候補列の直接指定、taskの上書き、forkにも自律的な切出しの5工程制限を適用する。候補列と上書きの受理形式、自律選択の認可は別に判定する。
-ユーザーがWIの担当モデルへ明示したengine・model・effortの継承と、役割文書が定める工程は維持する。
-工程別設定の対象外でもこの境界を保ち、後述の「modelとreasoning effort」で選ぶ。独自の名前付きagentについては各文書のfrontmatterの定義に従う。
-
-## 継続と新規起動
-
-担当の交代やモデル・実行手段の変更は、担当の回復として扱う。停止や失敗反復の原因が既存不良なら、欠陥の処置は回復と別に判定する。
-process-wiの実行中は`../../process-wi/references/immediate-fix.md`「即時対応」、それ以外は`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従う。
-可用性の障害と同型のツール入力失敗への切替条件は「代替起動」に従う。
-
-自身で実行可能な処理を残したままの返却が繰り返される場合は、同一の担当者へ再送を重ねる前に、担当者の交代、作業単位の再編、モデルや実行手段の変更を総コストの観点から比較検討する。担当者を交代させる際は前任の終了を確認し、検証済みの成果物と未完了の作業内容を後任へ引き継ぐ。共有されているモデル設定は変更せず、必要な調整は今回の起動時における個別指定にとどめる。これは通信エラーによる継続不能とは区別して判断する。
-
-- レーン担当者およびCI修正担当者を交代させる場合は、前任の識別子を再利用せず新規に起動する。Codexにおいて元の担当者を置き換える新規threadを立ち上げる際は、`references/codex-runtime.md`「後続操作の共通先行条件」を適用してから起動する
-- 既存セッションの継続接続は、同一の担当者に対して同一タスクの未完了作業、指摘への対応、再レビューなどを依頼する場合に限り使用する。継続する直前に、現在のセッション起動に用いられた`model_type`と、今回委譲する工程の`model_type`が一致していることを確認した上で、同一の`session_id`宛てに`send_message`を送信する。engine、model、effortの情報はサーバー側で起動時の値が保持されるため、可用性の都合で候補が切り替わった担当者や、起動後に候補列の設定が変更された担当者に対しても安全に継続できる
-- 実際に起動されたルートが`agents_server`である場合は、利用しているengineや実行ホストにかかわらず`send_message(session_id, prompt, timeout)`を使用する。サーバー側が実行中ターンのsteer、終了後のreply、保持期限切れ後の暗黙的な再開を適切に選択するため、管理元のプロセスが終了していても再開処理が行われる。なお、Claude Codeの`Agent`ツールで起動した担当者に限っては`SendMessage`ツールを使用する（詳細は「Agentツールの継続」を参照）
-- Codexの組み込み委譲において`spawn_agent`から起動した担当者へ追加作業を依頼する場合、終了済みや待機中の担当者には`followup_task`を使用し、現在実行中の担当者へメッセージを追加する場合に限り`send_message`を使用する。Codexの`send_message`は担当者のターンを新たに開始する機能を持たず、終了済みの担当者へ送信した内容はキューに滞留する。終了済みセッションに対して新規ターンを開始できる`agents_server`の`send_message`とは仕様が異なる点に留意する。待機処理は、`followup_task`が正常に受理され、担当者の新規ターン開始または結果返却を観測できて初めて成立する。`wait_agent`でタイムアウトが続く場合は、再送する前に`list_agents`で対象の状態を確認する
-- `model_type`が一致しない場合、異なる担当者やタスクへ切り替える場合、処理が中断された場合、完了通知を配送できない場合、あるいは前提条件が無効化した場合は、検収済みの状態を引き渡した上で新規にセッションを起動する。レビュー指摘への対応では基本的にレーン担当者のセッションを継続し、継続が不可能な場合に限って検収済み状態とレビュー指摘の所在を引き渡してレビュー修正担当者を新規起動する
-- 起動後に発生した可用性の障害は「代替起動」における引き継ぎ起動の手順に従って対処する。それ以外の継続不能事象は、実際に継続手段を呼び出した結果に基づいて判定し、`agents_server`では`send_message`が`unknown session: <session_id>`を返した場合のみを継続不能として扱う。識別子体系の差異を示すエラーや、`wait`で返される`session retention expired: <session_id>`は継続不能とはみなさない。保持していた識別子を見失った場合は、公開の一覧照会や個別照会を用いて復旧を図り、安易に終了や失敗と推測しない
-- `send_message`のタイムアウトは、メッセージ配送の成否が未確定であることを示すに過ぎない。その継続要求の受理結果、またはその要求によって開始された新規ターンの実行開始を確認できた場合に限って、配送完了と判断して待機を継続する（`wait`の`status=completed`や`agent_message`の文字列一致のみを根拠とすることは避ける）。確認が取れない場合は、安易な再送や継続不能の判断をせず、作業を続行できない理由を委譲元へ報告する
-- レーン担当者を新たなセッションへ移行させる場合は、検収が完了している直前のcommitの7文字以上の短縮OID（一意に定まるもの）、完了した工程、残りの工程を引き渡す。計画ファイル、進捗ログ、保存済みのレビュー指摘管理表などから状態を確認できる場合は、ファイルの絶対パス、対象ID、および未記録の差分のみを渡す。記録が存在しない場合は、委譲元がmanaged-temp内にレビュー指摘管理表を作成し、その絶対パスを渡す
-- レビュー担当者のセッションが継続できない場合は、同一の`model_type`で新たなレビュー担当者を起動する。その際、`レビュー種別: 引き継ぎ再レビュー`、レビュー指摘管理表の絶対パスと`track`、`round: <ラウンド番号>`の行、直前の修正作業による直接影響範囲、読み取り専用の対象範囲を引き渡す。実行レビューの場合は、レビュー対象となるHEADの7文字以上の短縮OID（一意なもの）も併せて渡し、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の生成規則に従って`review_contract`を再生成する。ラウンド番号は`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## ラウンド番号の保持先`に従い、管理表に記載された最大値から継続する。新たな担当者は、すでに解消済みの指摘を再調査せず、未解消の行およびそのラウンドで指定された確認範囲のみを対象とする
-
-同一計画の起草から実装、および変更範囲の検証までは、同一のレーン担当者が同一のworktreeにおいて一貫して実施する。継続が不可能な場合に限って新たな担当者を起動し、検収済みの状態と残りの工程を1つの担当者へまとめて引き渡す。
-交代時の会話確認は`../../review-session/references/session-records.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録の判断・残工程と比較する。
-
-## Agentツールの継続
-
-Claude Codeの`Agent`ツールで起動した担当に限り、「継続と新規起動」の共通条件に加えて本節を適用する。
-
-- すでに完了報告を返して停止している識別子であっても、同一の担当者へ同一タスクの未完了作業、指摘への対応、または再レビューを依頼する場合で、かつ継続直前に再確認した実効の`engine`、`model`、`effort`が起動時と完全に一致している場合に限り、`SendMessage`を用いて再開させてよい。継続時の指示本文には、継続前に作成・読み取りしたファイルであっても書き込みの直前に現行の内容を再取得する旨の条件を含める
-- 完了通知の配送先はプロバイダーやシステム構成によって異なり、3階層以上の構成における配送先は未検証である。最上位や直接の親が配送先であると決めつけず、起動結果として得られたIDへの`SendMessage`の成功と、送信後に対応する完了通知の受信をもって継続の成立を判定する。その上で`references/claude-code-runtime.md`「完了通知と中継の実行順」へ対応付ける。関連する監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」に記載されている
-- 担当者とタスクの組み合わせが異なる場合や、実効の3設定値（engine・model・effort）の不一致、完了報告の配送不能、前提条件の無効化、処理中断のいずれかが起きた場合は、停止済みの識別子を再利用しない。必要な前提条件を明示的に再構成した上で新規セッションを起動する。参照可能な記録が存在する場合は、絶対パス、対象ID、および未記録の差分のみを引き渡す
-- `SendMessage`が`No transcript found for agent ID: <識別子>`というエラーで失敗した場合は配送不能と判断し、同一の識別子に対する再開を中止して新規セッションを起動する。セッション識別子に変更が生じた場合は、タスクの出力先ディレクトリの識別子を`ls`等で突き合わせ、旧識別子の配下に存在する委譲先への失敗エラーと照らし合わせて確認する
-
-## 代替起動
-
-本節で述べる代替起動のルールは、主に`Agent`ツールを用いる場合に適用する。
-`agents_server`の起動時の候補切り替えはサーバー側に任せる。Claudeの`api_error.type`が`usage_limit`である場合は、後述の利用上限の条件に従い同一セッションでの継続を優先する。起動後のターンでそれ以外の可用性トラブルが確定したときは、前任が終了し書込所有権が解放されたことを確認した上で、終了結果の`next_action`に従って`start`に`handoff_from`のみを渡して1回起動する。この後任の`session_id`を追加入力の送信先および待機対象とする。同様の障害が続く場合は自身で実施可能な範囲を進め、委譲が不可欠な工程については未完了として委譲元へ返す。
-
-- 指定した組み合わせが一時的に利用できない事象（過負荷、レートリミット、サーバー障害、モデルや実行手段の利用不能など、実行環境の可用性に起因する障害）を実際に確認した場合、設定を解決して委譲を起動したエージェントが、セッション内の起動時指定のみを用いて代替の組み合わせへ切り替えて再起動してよい。委譲した作業内容自体の失敗は、次項のツール入力失敗を除き代替起動の対象外とする
-- 委譲先が同型のツール入力失敗を具体的な是正の追送後も繰り返し、全工程を実行できないまま返した場合は、前任の終了と書込所有権の解放を確認し、同じ工程の候補列の次の候補を`model_type`へ指定して1回起動し直せる。観測した入力の型、追送した是正、切替先と結果を進捗ログか引き継ぎ記録へ残す。工程別に設定された候補列は維持し、失敗回数による自動切替は行わない
-- 後任のエージェントには、前任の起動時の指示本文と、`引き継ぎ記録先`が存在する場合はそれを`（継続）`として渡す。`atk run-script session-review-prepare`が生成した`conversation.md`と引き継ぎ記録の両方を読み込んで現時点の確定事項と残りの工程を復元し、追加入力および各ターンの最終応答については全文を引き渡す。詳細な記録を照会する場合は、`atk run-script session-review-evidence -- --codex-thread-id <id>`または`--claude-session-id <id>`に`--detail <記録位置>`を付与して実行する。コマンドを実行できない後任へは記録ファイルの絶対パスを渡す。Antigravity環境の前任を引き継ぐ場合は、`atk agents logs <session_id> --format markdown`の出力を渡す。後任に対しては、完了済みの操作や成果物を実物で確認した上で、最新の指示と残された認可の範囲内で作業を進めるよう指示する
-- 設定ファイルの内容を直接書き換えることや、`atk config set`を実行することは禁止する。設定値はユーザー単位の単一の値として全セッションで共有されているため、不用意に変更すると並行して動作している他のセッションへ意図せぬ影響を及ぼすためである
-- Claude CodeのWeekly limitおよび5時間の利用上限による拒否は代替起動の対象とはせず、制限の解除を待って同一のClaudeで作業を継続する（待機すれば確実に制限が解除され、モデルの切り替えによって思考文脈を失う不利益の方が大きいため）。`agents_server`は候補を切り替えずに同一セッションで待機し、委譲元へは`api_error`の種別として`usage_limit`を返す
-- Codexにおける外側セルと内側コマンドの待機中の取り扱いについては、`references/codex-runtime.md`「agents_serverの二層待機」に従う
-- 代替候補は、後述の「代替時の組合せの目安」の表を参照し、障害を確認した時点の状況に基づいて選定する。上位の行から軽量の行へ向かい、各行の中では`codex`列、`claude`列の順を目安としつつ、最終的には観測された障害内容と各組み合わせの可用性を考慮して判断する。どの組み合わせに該当するかは`engine`と`model`の一致によって判定する。失敗した組み合わせが表に含まれている場合は、同一行のもう一方の候補から試行する。engineの実行機能そのものを呼び出せない組み合わせは試行対象から外し、利用不能として処理する。残るすべての候補で失敗するか利用不能となった場合は処理を打ち切り、「工程別モデル設定」の手順4へ戻る
-- 代替起動を試みた場合は、観測された障害内容、`atk config get`で確認した設定値、実際に使用した組み合わせ、対象工程、および試行を見送った組み合わせとその理由を報告に記録する（努力目標）
-- 委譲先の判断によって、設定と異なるengineやモデルへ勝手に切り替えることは認められず、「工程別モデル設定」の手順4の定めに従って結果を返却する
-
-## modelとreasoning effort
-
-工程別設定の対象外となる委譲でも、「工程別モデル設定」の判断所有と自律選択の境界に従う。内容が確定した書込は標準モデル、判定基準を明記できる定型走査は軽量モデルを候補とし、総費用で分担を決める（努力目標）。
-reasoning effortの省略時は`medium`を適用する。高いeffortは、推論の深さが結果を左右すると確かめた工程に限って選ぶ（努力目標）。モデルを明示するときはeffortも指定し、可用性による切替は「代替起動」に従う。
-関連する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」に記載されている。
-
-エージェント自身がeffortを選ぶ場合は、次の方針を適用する。工程別設定の初期値・プリセット、ユーザーの設定値は保持する。
-
-- `xhigh`・`max`は、同種の作業で品質の向上を測って確かめた場合に限って選ぶ（努力目標。高いeffortは思考と出力トークンを増やし、前記の監査記録には軽量モデルの`max`で自動コンパクションが10回発生したというユーザーからの報告がある）。
-- effortを指定できる起動では、思考を増減させる指示文を委譲プロンプトへ追加する前にeffortで調整する（努力目標。指示文より設定で調整する方針である）。effortを指定できない起動には適用しない。
-
-公式ガイドの対象モデルと推奨内容の確認記録は、`docs/development/audit-records.md`にある。
-項目名は「agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年10月31日」である。
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| process-wi中の停止や反復の原因が既存不良である時 | `../../process-wi/references/immediate-fix.md#「即時対応」` | 判断 | `section:agent-toolkit:*/skills/process-wi/references/immediate-fix.md#「即時対応」` |
-
-## 代替時の組合せの目安
-
-本節の目安表は、「代替起動」における候補選定の目的に限って適用する。記載されている対応関係や得手不得手は運用上の実用的な目安として定めたものであり、厳密なモデル能力比較の検証結果とは異なる。
-
-| レベル | `codex` | `claude` |
-| --- | --- | --- |
-| 上位 | `gpt-6-sol/medium` | `opus/medium` |
-| 中位 | `sol/medium` | 用途に応じて`opus/medium`または`sonnet/medium` |
-| 軽量 | `gpt-6-luna/medium` | `haiku/medium` |
-
-- 同一行に記載された`codex`と`claude`を相互の代替候補とみなし、effortは表内の値を使用する。なお、各行の間で世代を統一することは前提としない
-- 通常は上位の行を選択し、中位や軽量の行を選択するのは、工程別モデル設定の値がその行に該当する場合、または作業内容がすでに確定しておりリスクの低い機械的な作業に限る
-- 表に記載されていないモデルは、表内の組み合わせと同等以上の能力を持つことが確認できる場合に限って代替として使用してよい
-- effortを指定できない実行環境で表の組み合わせを満たせない場合は、`codex`列へ切り替えるか上位の行を選択する。なお、Claudeのeffortはエージェント定義のfrontmatterで確定するため、frontmatterを持たない起動方法では指定できない
-- 差分の逐条確認や欠陥の列挙を主な成果とする工程では`codex`列を選び、複数の代替案の比較検討や設計の確定を主な成果とする工程では`claude`列を選択する
-
-## 実装担当とworktree
-
-- 同一worktreeにおける書き込み作業の分担と交代の手順は`references/mandatory-rules.md`「作業ツリーの保護」が定める。レーン内における一時的な内部群の運用は`references/routing.md`「委譲単位の確定」、作業ディレクトリの伝達方法は`references/sending.md`「起動と観測」がそれぞれ定める
-- レーン担当者を起動する前に、上流ブランチへの追随が完了しており、staged、unstaged、およびnon-ignored untrackedの変更がすべて空であることを確認する。新たなレビュー修正担当者を起動する場合は、レーン担当者の終了を確認した後に、修正内容に関する引き継ぎ記録と現行の未コミット差分（dirty差分）を突き合わせて引き渡す
-- 実行レビュー担当者は実装担当者の終了後に起動し、同一の最終HEADに対して1ラウンドにつき1回のみ割り当てる
-- 作業用の作業ツリー（複製）で起動する委譲先に対しては、作業に着手する前に`git fetch`を実行し、分岐元のブランチとの差分を双方向で確認して、もし分岐元が進んでいれば先に追随するよう指示する（努力目標）
+   fork機能に関する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：実行手段：2026年9月27日」に記載されている

@@ -111,7 +111,7 @@ def _warn_non_origin_remote(repo_id: str, cwd: pathlib.Path | None) -> None:
         if repo_id == remote_id:
             _outcome.report_warning(
                 f"target_repoがorigin以外のリモート{name}に一致する: {repo_id}（origin: {origin_id}）",
-                next_action="指定先を受理して続行する。意図した投入先かを確認する",
+                next_action="指定先を受理して続行する。意図した投入先かを確認せよ",
             )
             return
 
@@ -257,13 +257,12 @@ def edit_entry(
     filename: str,
     content: str,
     target_repo: str | None,
-    lock_timeout: float,
+    storage: _wi_sync.Storage,
     expected_content: str | None,
     commit_message: str,
     content_validator: typing.Callable[[str, str], None] | None = None,
     content_transformer: typing.Callable[[str, str], str] | None = None,
     finalized_content: dict[str, str] | None = None,
-    skip_remote_sync: bool = False,
 ) -> bool:
     """AWI・UWI共通の平引数編集操作。ロック内でpull・検証・書込み・commitまでを完結する。
 
@@ -274,11 +273,7 @@ def edit_entry(
     `finalized_content`を渡した場合は、変換後の確定本文を`content`キーへ格納する。
     呼び出し元が保存本文との一致判定へ用いる。
     """
-    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
-        _wi_sync.ensure_mutation_allowed(private_notes)
-        if not skip_remote_sync:
-            _wi_sync.push_pending_commits(private_notes)
-            _wi_sync.pull(private_notes)
+    with storage.mutation(private_notes, push_pending=True) as mutation:
         path = _entry_in_directory(private_notes, directory, filename)
         if not path.is_file():
             raise FileNotFoundError(filename)
@@ -309,9 +304,7 @@ def edit_entry(
         if path.parent.name not in WI_STATES:
             entry_state_of(path, content)
         _frontmatter.write_entry_text(path, content)
-        _wi_sync.commit_and_push(
-            private_notes, commit_message, [str(path.relative_to(private_notes))], skip_push=skip_remote_sync
-        )
+        mutation.commit(commit_message, [str(path.relative_to(private_notes))])
     return True
 
 
@@ -322,7 +315,7 @@ def append_entry(
     filename: str,
     content: bytes,
     target_repo: str | None,
-    lock_timeout: float,
+    storage: _wi_sync.Storage,
     expected_content: bytes | None,
     commit_message: str,
     content_validator: typing.Callable[[str, str], None] | None = None,
@@ -332,8 +325,7 @@ def append_entry(
 
     `finalized_content`を渡した場合は、追記後の確定本文を`content`キーへ格納する。
     """
-    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
-        _wi_sync.pull(private_notes)
+    with storage.mutation(private_notes) as mutation:
         path = _entry_in_directory(private_notes, directory, filename)
         if not path.is_file():
             raise FileNotFoundError(filename)
@@ -359,5 +351,5 @@ def append_entry(
             )
             sys.exit(2)
         path.write_bytes(content)
-        _wi_sync.commit_and_push(private_notes, commit_message, [str(path.relative_to(private_notes))])
+        mutation.commit(commit_message, [str(path.relative_to(private_notes))])
     return True

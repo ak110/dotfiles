@@ -16,7 +16,6 @@ from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import style_diagnostics as _style_diagnostics
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -55,6 +54,42 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
     "run_skill_run_id": "frontmatterからrun_skill_run_idを除いて再実行する（実行識別子はatkが記録する）",
 }
 """`atk wi edit`が変更を受け付けない予約キーと、代わりに行う操作の対応。"""
+
+
+def set_entry_importance(
+    private_notes: pathlib.Path,
+    *,
+    filename: str,
+    important: bool,
+    expected_content: str | None = None,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
+) -> bool:
+    """保存状態を保って重要フラグだけを設定または解除する。"""
+    with storage.mutation(private_notes) as mutation:
+        records, missing = _wi_entries.read_named_entries(
+            private_notes, _wi_entries.validate_named_filenames(private_notes, [filename]), target_repo=None
+        )
+        if missing:
+            raise FileNotFoundError(filename)
+        path, _, text, _, _ = records[0]
+        if expected_content is not None and text != expected_content:
+            raise RuntimeError("編集中に他プロセスが対象を変更しました")
+        parsed = _frontmatter.parse_frontmatter(text)
+        if parsed is None:
+            raise WebInputError("frontmatterを解析できません", next_action="保存済み本文のfrontmatterを確認する")
+        metadata, body = parsed
+        if (important and metadata.get("important") is True) or (not important and "important" not in metadata):
+            return False
+        if important:
+            metadata["important"] = True
+        else:
+            metadata.pop("important", None)
+        updated = _frontmatter.serialize_frontmatter(metadata, body)
+        if updated == text:
+            return False
+        _frontmatter.write_entry_text(path, updated)
+        mutation.commit("chore: update wi importance", [str(path.relative_to(private_notes))])
+    return True
 
 
 def _outside_fence_heading_offset(content: str, heading: str) -> int | None:
@@ -151,10 +186,9 @@ def edit_entry_content(
     filename: str,
     content: str,
     target_repo: str | None = None,
-    lock_timeout: float = -1,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     expected_content: str | None = None,
     finalized_content: dict[str, str] | None = None,
-    skip_remote_sync: bool = False,
     allow_terminal: bool = False,
 ) -> bool:
     """平引数でAWI本文を更新する。
@@ -176,12 +210,11 @@ def edit_entry_content(
         filename=filename,
         content=content,
         target_repo=target_repo,
-        lock_timeout=lock_timeout,
+        storage=storage,
         expected_content=expected_content,
         commit_message="chore: edit wi item",
         content_transformer=invalidate_repo_bound_metadata,
         finalized_content=finalized_content,
-        skip_remote_sync=skip_remote_sync,
     )
 
 
@@ -192,7 +225,7 @@ def append_entry_content(
     filename: str,
     content: bytes,
     target_repo: str | None = None,
-    lock_timeout: float = -1,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     expected_content: bytes | None = None,
     finalized_content: dict[str, str] | None = None,
 ) -> bool:
@@ -220,7 +253,7 @@ def append_entry_content(
         filename=filename,
         content=content,
         target_repo=target_repo,
-        lock_timeout=lock_timeout,
+        storage=storage,
         expected_content=expected_content,
         commit_message="chore: append wi item",
         content_validator=validate,
@@ -531,14 +564,6 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         parsed = _frontmatter.parse_frontmatter(edited)
         if parsed is not None:
             frontmatter, body = parsed
-            style_warnings = _style_diagnostics.warnings_for_body(body, source=path.name)
-            if style_warnings:
-                _style_diagnostics.report_warnings(
-                    style_warnings,
-                    next_action=(
-                        f"編集は続行する。直す場合は反映後にatk wi edit {path.name} --body-file <PATH>で本文を置き換える"
-                    ),
-                )
             original_parsed = _frontmatter.parse_frontmatter(original)
             if original_parsed is not None and isinstance(original_parsed[0].get("source"), str):
                 original_frontmatter, original_body = original_parsed
@@ -550,7 +575,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         source=None,
                     )
                 except WebInputError:
-                    pass  # 既存の旧書式の編集では本文の表記診断だけを行う。
+                    pass  # 既存の旧書式には必須節の新規追加を求めない。
                 else:
                     try:
                         _add.require_agent_awi_sections(

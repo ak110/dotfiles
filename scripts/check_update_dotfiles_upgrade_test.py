@@ -433,20 +433,51 @@ def test_initial_apply_failure_preserves_child_output_and_stops_update(
         calls.append(arguments)
         if arguments[0] == "chezmoi":
             return subprocess.CompletedProcess(arguments, 23, stdout="child-out\n", stderr="child-error\n")
+        if "--format=%cI" in arguments:
+            return subprocess.CompletedProcess(arguments, 0, stdout="1970-01-09T02:26:40+00:00\n", stderr="")
         values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
         output = next((value for option, value in values.items() if option in arguments), "")
         return subprocess.CompletedProcess(arguments, 0, stdout=output, stderr="")
 
-    with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23"):
+    with pytest.raises(upgrade.UpgradeCheckError, match="終了コード23") as caught:
         upgrade.run_upgrade_check(
             tmp_path, "windows", runner=runner, registry=_FakeRegistry(), profile_env=_profile_env(tmp_path)
         )
+    message = str(caught.value)
+    assert "旧版の初期適用" in message
+    assert "現行版への更新は未実行" in message
+    assert "old-oid" in message and "1970-01-09T02:26:40+00:00" in message
+    assert "current-oid" in message and "1970-01-09T13:46:40+00:00" in message
+    assert "同じ旧版が選ばれる" in message
+    assert "修正commit" in message and "72時間" in message
     stdout, stderr = capsys.readouterr()
     assert "child-out\n" in stdout
-    assert stderr.endswith("child-error\n")
+    assert "child-error\n" in stderr
     assert "終了状態=23" in stderr
-    assert calls[-1][0] == "chezmoi"
+    assert not any(arguments[0] in {"bash", "cmd.exe"} for arguments in calls)
     assert sum("update-ref" in arguments for arguments in calls) == 1
+
+
+@pytest.mark.parametrize("phase", ["clone", "update"])
+def test_other_upgrade_failures_keep_general_diagnostic(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    """cloneと現行版への更新の失敗には、従来の次操作を示す。"""
+    uv = tmp_path / "uv"
+    uv.write_bytes(b"test-uv")
+    monkeypatch.setenv("UV", str(uv))
+
+    def runner(arguments: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if (phase == "clone" and "clone" in arguments) or (phase == "update" and arguments[0] in {"bash", "cmd.exe"}):
+            return subprocess.CompletedProcess(arguments, 17, stdout="", stderr="")
+        return _git_answers(arguments)
+
+    with pytest.raises(upgrade.UpgradeCheckError) as caught:
+        upgrade.run_upgrade_check(tmp_path, "linux", runner=runner, profile_env=_profile_env(tmp_path))
+    message = str(caught.value)
+    assert "終了コード17" in message
+    assert "Git・依存導入・chezmoi適用の問題を解消して検証を再実行する。" in message
+    assert "旧版の初期適用に失敗" not in message
 
 
 @pytest.mark.parametrize(("old_pin", "expected"), [("3.13\n", "3.13"), (None, None)])

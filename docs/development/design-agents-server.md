@@ -14,7 +14,8 @@ SDKのprivateサーバー属性へ依存する案と、ツール定義やスキ�
 
 `agents_server`はClaude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
 `start`の`model_type`と起動の用途に対応する工程別モデル設定でCodex backendまたはClaude backendを選択し、各backendの実行主体を
-共有のsession状態機械、待機通知および結果配送境界へ接続する。Codex backendは公式stdio App Serverを
+共有のsession状態機械、待機通知および結果配送境界へ接続する。
+Codex backendは公式stdio App Serverを
 セッション単位で所有し、Claude backendはClaude Agent SDKのclientをセッション単位で所有する。
 共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
 LinuxとWindowsで寿命契約を揃えられる。
@@ -36,18 +37,25 @@ checkoutは元の実体を使う。
 委譲先はagent-toolkit skillとplugin内部資源をそのrootから読み、`<役割名>.subagent.md`や別hostのcache版数から別rootを組み立てない。
 直接起動したCodexメインはこの受け渡しの対象外であり、そのplugin root解決は`rules-common.codex.md`「Codexのplugin root解決」が所有する。
 
-知識境界として、`<役割名>.subagent.md`内の`${CLAUDE_PLUGIN_ROOT}`を文書自身のrootへ展開する処理は`_agents_server/launch_requests.py::task_document_request`が所有する。委譲先が実行時にskillや内部資源を探す起点は、Codex backendのdeveloper instructionが所有する。
-内側MCPだけにstable rootを渡すと、委譲先自身のファイル参照は安定しないため、この案は採用しない。開始時だけにstable rootを渡す案も、保存済みthreadを別processで再開した後の起点を失うため採用しない。
+知識境界として、`<役割名>.subagent.md`内の`${CLAUDE_PLUGIN_ROOT}`を文書自身のrootへ展開する処理は`_agents_server/launch_requests.py::task_document_request`が所有する。
+委譲先が実行時にskillや内部資源を探す起点は、Codex backendのdeveloper instructionが所有する。
+内側MCPだけにstable rootを渡すと、委譲先自身のファイル参照は安定しないため、この案は採用しない。
+開始時だけにstable rootを渡す案も、保存済みthreadを別processで再開した後の起点を失うため採用しない。
 
 ローカルbackendのclassはMCP module初期化時に読込み、共有の`SessionState`と状態更新関数は独立した共通moduleが所有する。
 この境界により、プラグイン配置が初回engine選択まで利用できない場合も、既に読込済みのclassからbackendを生成できる。
 Claude Agent SDKのimportはClaude backend内でoptions/clientを使う時点まで遅延し、Codex専用の処理へSDK依存を持ち込まない。
 `--check-dependencies`はPEP 723環境でClaudeAgentOptionsを構築するだけの確認であり、外部sessionもMCP公開statusも生成しない。
-Claude CodeとCodexのplugin導入後は、対象の実MCP定義と共通ランチャーを使い、環境準備と依存検査に続いてstdio MCPのinitialize・tools/list・closeを確認してからupdate-dotfilesを終える。有効な対象だけを選び、無効なプラグインを有効化しない。
-agents_serverのウォームアップは初回MCP起動の成立条件であるため、実プロトコルの確認に30秒の上限を持たせ、起動不能、空のツール一覧、timeoutおよび非0終了を段階・対象・終了コード・所要時間・標準エラーとともに更新処理へ伝播する。依存取得失敗は既存の取得工程の分類を保つ。依存検査だけではMCP初期化の成立を観測できず、クライアントの起動上限を延ばす案も失敗箇所を特定できないため、この確認を選んだ。
+Claude CodeとCodexのplugin導入後は、対象の実MCP定義と共通ランチャーを使い、環境準備と依存検査に続いてstdio MCPのinitialize・tools/list・closeを確認してからupdate-dotfilesを終える。
+有効な対象だけを選び、無効なプラグインを有効化しない。
+agents_serverのウォームアップは初回MCP起動の成立条件であるため、実プロトコルの確認に30秒の上限を持たせ、起動不能、空のツール一覧、timeoutおよび非0終了を段階・対象・終了コード・所要時間・標準エラーとともに更新処理へ伝播する。
+依存取得失敗は既存の取得工程の分類を保つ。
+依存検査だけではMCP初期化の成立を観測できず、クライアントの起動上限を延ばす案も失敗箇所を特定できないため、この確認を選んだ。
 hookスクリプトのウォームアップは更新後の実行を高速化するだけであり、個別失敗を段階失敗へ変えない既存契約を維持する。
-pyfltr MCPのウォームアップも初回MCP起動の成立条件として扱い、失敗を、ウォームアップを呼び出した更新処理へ伝播する。Claude CodeとCodexは`uvx`でpyfltr MCPを起動し、ツール環境が未構築なら取得と構築の時間がMCPクライアントの起動上限（Codexの`startup_timeout_sec`は未設定時10秒）を超え得るためである。
-起動形は両ホストが実際に読むMCP定義（Claude Codeの`.mcp.json`、Codexの`.mcp.codex.json`）の`pyfltr`の`command`と`args`から導出し、末尾の`mcp`を`--version`へ置き換えて1回起動する。要求指定をウォームアップ側へ書き写すと、配布元の要求指定の更新に追随しない二重管理になるためである。
+pyfltr MCPのウォームアップも初回MCP起動の成立条件として扱い、失敗を、ウォームアップを呼び出した更新処理へ伝播する。
+Claude CodeとCodexは`uvx`でpyfltr MCPを起動し、ツール環境が未構築なら取得と構築の時間がMCPクライアントの起動上限（Codexの`startup_timeout_sec`は未設定時10秒）を超え得るためである。
+起動形は両ホストが実際に読むMCP定義（Claude Codeの`.mcp.json`、Codexの`.mcp.codex.json`）の`pyfltr`の`command`と`args`から導出し、末尾の`mcp`を`--version`へ置き換えて1回起動する。
+要求指定をウォームアップ側へ書き写すと、配布元の要求指定の更新に追随しない二重管理になるためである。
 
 MCPの処理開始前と`atk agents wait`の待機開始前に、状態ディレクトリ（`agent_toolkit/_common/state_paths.py`の`state_dir`）配下の`agents-server.log`を初期化する。
 MCPの処理と`atk agents wait`は同じlogger階層、UTF-8およびサイズrotationの設定を共有する。
@@ -60,28 +68,53 @@ MCPの処理と`atk agents wait`は同じlogger階層、UTF-8およびサイズr
 開始・終了と終了後の次turn開始では、全engine共通の状態遷移からresource_snapshotを同じログへ記録する。
 復元したsessionも同じ状態遷移で記録し、稼働中の追送では開始記録を増やさない。
 記録は時刻、root/session識別子、turn番号、同じ状態ディレクトリの稼働総数とroot別内訳、ホストの1・5・15分loadと利用可能メモリーのbyte値を持つ。
-稼働数は待機中と孫を含む公開statusがrunningのsessionを数える。一覧と共有するstatus_readerで重複・失効を除き、発生元の最新状態を重ねて開始は自身を含め、終了は自身を除く。
-非原子的な観測のため、全ホストの瞬間的な真値やsession別の寄与は保証しない。読取失敗はcounts_completeをfalseにして確定数をnullとし、観測範囲と欠損理由を区別する。
-OS値の取得失敗とWindowsのload非対応も理由付きの未取得とし、ゼロで代用しない。診断の失敗はsession処理から隔離する。
-既存の2 MiB・バックアップ3世代のrotationを使う。監視プロセスや別台帳は、遷移時の記録だけで目的を満たせるため設けない。
+稼働数は待機中と孫を含む公開statusがrunningのsessionを数える。
+一覧と共有するstatus_readerで重複・失効を除き、発生元の最新状態を重ねて開始は自身を含め、終了は自身を除く。
+非原子的な観測のため、全ホストの瞬間的な真値やsession別の寄与は保証しない。
+読取失敗はcounts_completeをfalseにして確定数をnullとし、観測範囲と欠損理由を区別する。
+OS値の取得失敗とWindowsのload非対応も理由付きの未取得とし、ゼロで代用しない。
+診断の失敗はsession処理から隔離する。
+既存の2 MiB・バックアップ3世代のrotationを使う。
+監視プロセスや別台帳は、遷移時の記録だけで目的を満たせるため設けない。
 標準エラーだけを診断の出力先とする案ではプロセス終了後に初回起動失敗を調査できないため採用しない。
 
 MCPサーバーの終了の経過は、サーバー起動単位ごとの終了診断（`<state_dir>/agents-server-instances/<server_instance>.jsonl`）へ分けて保持する。
-この保持の目的は所有サーバーの終了で中断したsessionの記録から、その終了を調べる記録へ同じ起動単位で到達できるようにすることである。共通ログは容量で回転し、登録簿の7日の保持と寿命が対応しないため、中断から数分で事象の記録が失われていた（2026年10月18日に、親CLIがSIGINTとSIGTERMを送って終えたサーバーの記録が共通ログに残っていなかった）。
-サーバー自身は開始、Managerの所属ルート、受信シグナル、標準入力の終端、停止で中断したturn、正常・例外終了を書く。SIGKILLなどサーバーが記録できない終了は、起動ランチャー（`scripts/launch.py`）が観測する。ランチャーはagents_serverの対象に限り`execve`による置換をやめ、子として起動して終了を待つ。サーバーの寿命中はランチャーが親プロセスとして残り、プロセスが1つ増える。ランチャーは終了状態、自身が受けて転送したシグナル、標準エラー末尾を同じファイルへ追記する。標準入力と標準出力は継承し、呼出元へは子と同じ終了状態を返す。ランチャーは依存導入前の環境で状態ディレクトリを解決できないため、環境変数`AGENT_TOOLKIT_AGENTS_SERVER_LAUNCH_RECORD`で渡した一時ファイルからサーバーが報告した所在を読む。
-以前は別のラッパープロセスを置く案を、同じライフサイクルを二重管理するとして採らなかった。停止後の終了状態はサーバー自身では得られないため、ライフサイクルを管理する新しい層は設けず、既存の起動処理であるランチャーが`execve`せずに子の終了を待つだけの方式へ改めた。この方式でもサーバーの寿命中はランチャーが親プロセスとして残る。ランチャーは終了状態と標準エラーを記録して終わる点で別ラッパー案と異なり、起動・停止・再起動の判断は持たない。常駐の監視サービスは設けない。
-session登録簿は記録を書いた所有サーバーの`server_instance`と、中断で終わったturnの履歴`interrupted_turns`を持つ。中断を返す`show`・`atk agents show`・`atk agents wait`はこの対応から`error.diagnostics`（`status`は表示時点で判定する）と`interrupted_turns`を返し、読み取りには既存の`atk read-file`を使う。保持は参照元の存続に従い、登録簿と終了時の結果が参照する診断は7日を超えても残し、全参照元の回収後の掃引で回収する。参照元を持たない診断だけを古い順に容量上限（64MiB）で削除する。
+この保持の目的は所有サーバーの終了で中断したsessionの記録から、その終了を調べる記録へ同じ起動単位で到達できるようにすることである。
+共通ログは容量で回転し、登録簿の7日の保持と寿命が対応しないため、中断から数分で事象の記録が失われていた（2026年10月18日に、親CLIがSIGINTとSIGTERMを送って終えたサーバーの記録が共通ログに残っていなかった）。
+サーバー自身は開始、Managerの所属ルート、受信シグナル、標準入力の終端、停止で中断したturn、正常・例外終了を書く。
+SIGKILLなどサーバーが記録できない終了は、起動ランチャー（`scripts/launch.py`）が観測する。
+ランチャーはagents_serverの対象に限り`execve`による置換をやめ、子として起動して終了を待つ。
+サーバーの寿命中はランチャーが親プロセスとして残り、プロセスが1つ増える。
+ランチャーは終了状態、自身が受けて転送したシグナル、標準エラー末尾を同じファイルへ追記する。
+標準入力と標準出力は継承し、呼出元へは子と同じ終了状態を返す。
+ランチャーは依存導入前の環境で状態ディレクトリを解決できないため、環境変数`AGENT_TOOLKIT_AGENTS_SERVER_LAUNCH_RECORD`で渡した一時ファイルからサーバーが報告した所在を読む。
+以前は別のラッパープロセスを置く案を、同じライフサイクルを二重管理するとして採らなかった。
+停止後の終了状態はサーバー自身では得られないため、ライフサイクルを管理する新しい層は設けず、既存の起動処理であるランチャーが`execve`せずに子の終了を待つだけの方式へ改めた。
+この方式でもサーバーの寿命中はランチャーが親プロセスとして残る。
+ランチャーは終了状態と標準エラーを記録して終わる点で別ラッパー案と異なり、起動・停止・再起動の判断は持たない。
+常駐の監視サービスは設けない。
+session登録簿は記録を書いた所有サーバーの`server_instance`と、中断で終わったturnの履歴`interrupted_turns`を持つ。
+中断を返す`show`・`atk agents show`・`atk agents wait`はこの対応から`error.diagnostics`（`status`は表示時点で判定する）と`interrupted_turns`を返し、読み取りには既存の`atk read-file`を使う。
+保持は参照元の存続に従い、登録簿と終了時の結果が参照する診断は7日を超えても残し、全参照元の回収後の掃引で回収する。
+参照元を持たない診断だけを古い順に容量上限（64MiB）で削除する。
 
-Codex App Serverのstdoutは、正の固定byte長で`read(n)`したchunkをbufferへ蓄積し、改行ごとにJSON-RPC recordへ復元して既存の応答・server request・通知dispatcherへ渡す。`APP_SERVER_STREAM_LIMIT_BYTES`はsubprocess pipeのbufferと1回の読取長を有界にする値である。1つのprotocol recordがこの値を超えても、chunkの蓄積で復元できる。EOF時の残余も1 recordとして処理し、不正UTF-8、不正JSON、取消し、接続終了に対する既存の失敗処理を保つ。
+Codex App Serverのstdoutは、正の固定byte長で`read(n)`したchunkをbufferへ蓄積し、改行ごとにJSON-RPC recordへ復元して既存の応答・server request・通知dispatcherへ渡す。
+`APP_SERVER_STREAM_LIMIT_BYTES`はsubprocess pipeのbufferと1回の読取長を有界にする値である。
+1つのprotocol recordがこの値を超えても、chunkの蓄積で復元できる。
+EOF時の残余も1 recordとして処理し、不正UTF-8、不正JSON、取消し、接続終了に対する既存の失敗処理を保つ。
 
-`StreamReader.readline()`のlimitを大きくするだけの案は、その固定値を有効なJSON-RPC recordの上限にしてしまい、planやdiffを含む応答が超えた時点でreaderを停止させるため採用しない。無制限に一度で読む案も、transportのbackpressureとメモリー使用量を有界にできないため採用しない。
+`StreamReader.readline()`のlimitを大きくするだけの案は、その固定値を有効なJSON-RPC recordの上限にしてしまい、planやdiffを含む応答が超えた時点でreaderを停止させるため採用しない。
+無制限に一度で読む案も、transportのbackpressureとメモリー使用量を有界にできないため採用しない。
 
 backend固有のserver requestは共有公開toolを増やさず、非対話の非対応エラーとして応答する。
 承認、ユーザー入力、認証token更新、attestationおよび未知methodを待機させず、対応turnをfailedへ遷移してwaiterを解放する。
-通知のdeltaは進捗表示にだけ用い、終了応答で結果本文を返す。この境界により、呼び出し側は実行中の状態を照会し、
-終了後に結果を取得できる。結果を回収し忘れたときにStopで機械的に遮断する仕組みは持たない。
+通知のdeltaは進捗表示にだけ用い、終了応答で結果本文を返す。
+この境界により、呼び出し側は実行中の状態を照会し、
+終了後に結果を取得できる。
+結果を回収し忘れたときにStopで機械的に遮断する仕組みは持たない。
 
-却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。公開tool、session状態、
+却下した代替案は、Codex専用とClaude専用の2サーバーを併存させる案である。
+公開tool、session状態、
 hookの配送境界および継続条件がbackendごとに分断され、同じ委譲契約を二重に維持する必要が生じるため採用しない。
 
 委譲先へ渡す実行環境は、委譲サーバープロセスの環境を起動時に1回整えることで全backendへ同時に適用する。
@@ -94,7 +127,8 @@ process-loop・run-skillと可用性判定の最上位会話も、`_atk/orchestr
 起動元ツールのエフェメラル仮想環境は`VIRTUAL_ENV`と`PATH`のコマンド格納ディレクトリの両方を取り除く。
 `VIRTUAL_ENV`だけでは委譲先の`python`・コンソールスクリプトが起動元ツールの環境へ解決されるためである。
 判断理由はClaude Agent SDKの`ClaudeAgentOptions.env`が継承環境へ重なる仕様でキーの削除を表現できず、
-backend側で個別に取り除く案が成立しないことにある。同じ契約を`atk`のprocess-loopも必要とするため、
+backend側で個別に取り除く案が成立しないことにある。
+同じ契約を`atk`のprocess-loopも必要とするため、
 契約本文は共有モジュール`agent-toolkit/agent_toolkit/_common/inherited_venv.py`だけに置く。
 却下した代替案は、backendごとに除去処理を複製する案と、委譲先の各コマンド呼び出しで回避する案である。
 前者は同じ契約が複数箇所へ分かれ、後者は回避策を規範や委譲プロンプトへ書き足す恒常費が残る。
@@ -122,7 +156,8 @@ Claude向けとAgent Plugins向けのMCP定義へはCodex専用の`env_vars`を�
 agents_serverが起動するCodex App Server・Claude CLI・Antigravity CLIは会話contextを除いた環境を継承し、各backendは明示した起動別の値を加える。
 Claude Codeのstdio環境の配送とremote変数による識別子の重複は、[audit-records.md](audit-records.md)の次の節にある。
 参照先は「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」で、実MCPでの除去前後の観測も記録する。
-却下した代替案は、chezmoiのCodexプラグイン方針へ置く案と、子プロセスがshell設定などから値を回復する案である。前者の設定型は通信設定を受理せず、後者はCodexの公開機能で同じ結果を得られる。
+却下した代替案は、chezmoiのCodexプラグイン方針へ置く案と、子プロセスがshell設定などから値を回復する案である。
+前者の設定型は通信設定を受理せず、後者はCodexの公開機能で同じ結果を得られる。
 
 atk自身のuv同期先は呼出元の`UV_PROJECT_ENVIRONMENT`から分離し、子へ渡す元の値と未設定の別を起動処理で保持する。
 CLI・hook・MCP・warmup・process-loop再起動・生成定義はこの起動境界を共有する。
@@ -134,22 +169,32 @@ CLI・hook・MCP・warmup・process-loop再起動・生成定義はこの起動�
 
 Codexの接続先は工程別モデル候補と別に扱う。
 役割別の使用順（`codex_orchestrator_connections`・`codex_worker_connections`）と種別ごとのprovider IDが、主接続先と後続の順を持つ。
-provider IDは`codex_credits_provider`・`codex_payg_provider`が持ち、`subscription`は`openai`とする。種別とprovider IDの対応は`_atk/codex_connection.py`が設定から解決し、クレジットと従量課金へ同じIDを設定することは拒否する。保持したproviderから種別を一意に判定するためである。
+provider IDは`codex_credits_provider`・`codex_payg_provider`が持ち、`subscription`は`openai`とする。
+種別とprovider IDの対応は`_atk/codex_connection.py`が設定から解決し、クレジットと従量課金へ同じIDを設定することは拒否する。
+保持したproviderから種別を一意に判定するためである。
 4キーのどれも設定しない場合はCodexの通常設定へ従い、冷再開の前に`config/read`から実効providerを解決する。
 設定がある場合は`codex_providers.py`がcwdを含む`config/read`の定義と`account/read`の認証種別を評価し、
-使用順の先頭の利用可能な候補を明示する。`subscription`はChatGPTログインの場合だけ使い、APIキーのアカウントでは除いて`openai`をAPI種別へ設定する方法を診断へ出す。未定義・認証不備のAPIは後続候補へ進める。
+使用順の先頭の利用可能な候補を明示する。
+`subscription`はChatGPTログインの場合だけ使い、APIキーのアカウントでは除いて`openai`をAPI種別へ設定する方法を診断へ出す。
+未定義・認証不備のAPIは後続候補へ進める。
 全候補が使えなければ指定外の通常接続へ戻さず失敗する。
 現在アカウントの`ordinaryUsageAllowed`と終了した`usageLimitExceeded`だけがサブスクからの移行を発火する。
-疎な通知、使用率、解除予定時刻は回復の代用にしない。APIの認証・モデル不受理等は後続APIへ有限に進む。
+疎な通知、使用率、解除予定時刻は回復の代用にしない。
+APIの認証・モデル不受理等は後続APIへ有限に進む。
 サブスクの一般的な失敗はAPI課金への移行にしない。
 
-接続先の入力は前記の4キーと対応する環境変数だけが持つ。旧`codex_model_providers`の保存値は設定読込時に1回だけ新キーへ移し（`openai`は`subscription`、それ以外のIDは1つに限り`codex_payg_provider`）、旧キーを削除する（2026年10月29日、ユーザー回答）。`openai`以外のIDが2つ以上ある場合は移行先を一意に決められないため、新キーの設定を求めて止める。
+接続先の入力は前記の4キーと対応する環境変数だけが持つ。
+旧`codex_model_providers`の保存値は設定読込時に1回だけ新キーへ移し（`openai`は`subscription`、それ以外のIDは1つに限り`codex_payg_provider`）、旧キーを削除する（2026年10月29日、ユーザー回答）。
+`openai`以外のIDが2つ以上ある場合は移行先を一意に決められないため、新キーの設定を求めて止める。
 定義・認証をatkへ複製する案は秘密の保持先と同期費用を増やし、Codex設定だけへ順序も移す案は
-atkの1キーで選ぶ操作を成立させないため採らない。選択順と接続先定義をそれぞれの所有者へ分ける。
+atkの1キーで選ぶ操作を成立させないため採らない。
+選択順と接続先定義をそれぞれの所有者へ分ける。
 
 失敗turnの終了後に購読を解除し、同じthread IDへ`modelProvider`を指定してcold resumeする。
-応答のthread IDとproviderが一致し、会話状態の互換性を確認するまで次のturnを送らない。closingは既存の有限待機を使い、
-上書き無視・接続終了・応答喪失から新turnを推定して重複起動しない。RPCとturnの排他は`codex.py`が持つ。
+応答のthread IDとproviderが一致し、会話状態の互換性を確認するまで次のturnを送らない。
+closingは既存の有限待機を使い、
+上書き無視・接続終了・応答喪失から新turnを推定して重複起動しない。
+RPCとturnの排他は`codex.py`が持つ。
 共有configやauthの差し替えは並行sessionと直接起動へ波及するため採らない。
 新sessionへ元の要求を再送する案も履歴を失うため採らない。
 
@@ -165,23 +210,32 @@ atkの1キーで選ぶ操作を成立させないため採らない。選択順�
 登録簿の`completed`だけでは状態生成先を確定できない。
 元の記録と進捗を保持し、引き継ぎ起動を案内する。
 生成元は解放済み再開情報にも保持し、既存の7日掃引へ委ね、公開射影には加えない。
-利用枠の回復と主接続先の指定は新規起動だけへ作用し、API会話の接続先を戻さない。後続候補は次の代替試行で現行列から選ぶ。
+利用枠の回復と主接続先の指定は新規起動だけへ作用し、API会話の接続先を戻さない。
+後続候補は次の代替試行で現行列から選ぶ。
 登録簿の解放済み記録にもCodexの内部再開情報を残し、stopと保持期限の経過のどちらによる解放後も復元する。
 公開の解放判定・結果回収と7日掃引は維持する。
 RPC失敗の追加dataは切替判定にだけ使い、公開するerrorへ取り込まない。
 providerや切替情報は公開応答・状態・通知・結果・継続プロンプトへ加えず、資格情報なしの診断を
-既存の`agents-server.log`だけへ残す。認証token・APIキーは登録簿へ保存しない。
+既存の`agents-server.log`だけへ残す。
+認証token・APIキーは登録簿へ保存しない。
 
-起動要求・解決候補と、物理記録から観測した実行identityは別フィールドで返す。開始時の観測値は未確定とし、終了時に観測値を返す。既存の`engine`、`model`、`effort`を互換上の起動値として残す場合も意味を変えない。
+起動要求・解決候補と、物理記録から観測した実行identityは別フィールドで返す。
+開始時の観測値は未確定とし、終了時に観測値を返す。
+既存の`engine`、`model`、`effort`を互換上の起動値として残す場合も意味を変えない。
 
-Codex backendの観測identityは`turn_context`を観測元とし、表示名はモデルカタログを優先し、無い完全IDだけを決定論的に変換する。取得不能値を推測しない。
+Codex backendの観測identityは`turn_context`を観測元とし、表示名はモデルカタログを優先し、無い完全IDだけを決定論的に変換する。
+取得不能値を推測しない。
 
-選定結果の担当モデル、起動候補および終了後の観測identityを別の値として扱う。観測値を候補や設定から補わない。
+選定結果の担当モデル、起動候補および終了後の観測identityを別の値として扱う。
+観測値を候補や設定から補わない。
 
-Claudeの接続先は共通の役割判定で選ぶ。`claude_credits_env_file`・`claude_payg_env_file`はenvファイルの所在、`claude_orchestrator_connections`・`claude_worker_connections`は役割別の使用順を持つ。
+Claudeの接続先は共通の役割判定で選ぶ。
+`claude_credits_env_file`・`claude_payg_env_file`はenvファイルの所在、`claude_orchestrator_connections`・`claude_worker_connections`は役割別の使用順を持つ。
 4キーのどれも設定しない新規会話は`inherit`を登録し、親の環境変数とClaude Codeの通常の認証解決を使う。
 SDKの環境継承と親settingsの認証設定を保ち、認証検出で起動を拒否せず、接続を切り替えない。
-接続を管理しない間は再開時も`inherit`を保持する。接続情報もAPIパスも持たない旧形式の登録は同じ通常の認証解決で読む。接続を管理し始めた後は、これらの会話も使用順の種別ではないため次の継続で使用順の先頭の利用可能な候補へ移す。
+接続を管理しない間は再開時も`inherit`を保持する。
+接続情報もAPIパスも持たない旧形式の登録は同じ通常の認証解決で読む。
+接続を管理し始めた後は、これらの会話も使用順の種別ではないため次の継続で使用順の先頭の利用可能な候補へ移す。
 以下の役割別接続管理はいずれかのキーを設定した環境に適用する。
 委譲先は`claude_worker_connections`（既定`credits,subscription`）、`orchestrate`用途はオーケストレーターとして`claude_orchestrator_connections`（既定`subscription,credits`）の順に、認証のある種別を使う。
 使える候補が無い場合は起動を止める。
@@ -191,7 +245,8 @@ SDKの環境継承と親settingsの認証設定を保ち、認証検出で起動
 待機対象外の上限で全候補が尽きた場合と認証手段が無い場合は、候補ごとの理由と復旧操作を返して終了する。
 新規sessionは毎回先頭から評価する。
 利用上限によりサブスクリプションからAPIへ移した委譲先は、使用順でサブスクリプションが現在の種別より前にあれば、上限の解除予定時刻の後の最初の追送か自動再開で同じ会話をサブスクリプションへ戻す（理由は[design-agents-runtime.md](design-agents-runtime.md)）。
-役割と選択済みの接続（`credits`・`payg`・`subscription`・`inherit`）、APIの絶対パスを登録簿の再開情報へ保持し、設定変更・解除、stop・保持期限、サーバー再起動後も同じ接続を使う。保持した種別を使用順から外した場合だけ、次の継続で使用順の先頭の利用可能な候補へ移す。
+役割と選択済みの接続（`credits`・`payg`・`subscription`・`inherit`）、APIの絶対パスを登録簿の再開情報へ保持し、設定変更・解除、stop・保持期限、サーバー再起動後も同じ接続を使う。
+保持した種別を使用順から外した場合だけ、次の継続で使用順の先頭の利用可能な候補へ移す。
 旧形式のAPIパスだけを持つ登録と種別`api`の登録は、保存済みのenvファイルがクレジットのものと一致すれば`credits`、それ以外は`payg`の会話として読む。
 値は切替と再開の起動ごとに読み、登録簿へ複製しない。
 起動環境と合成settingsの`env`の両方へ渡すのは、通常のClaude Codeではsettingsの同名変数が起動環境より優先されるためである。
@@ -203,19 +258,35 @@ SDKの環境継承と親settingsの認証設定を保ち、認証検出で起動
 ### プロンプトキャッシュの保持期間
 
 Claude Codeが起動する委譲先のプロンプトキャッシュ保持期間を未設定のままにせず、`share/claude_settings_json_managed.json`の`promptCacheTtl`と`subagentPromptCacheTtl`でメイン会話側とサブエージェント側の双方へ明示する。
-Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならない。このため`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`がenvとsettings.envへ同じ辞書から`mode`ごとの値を渡す。user・project設定のenvは子の環境変数を上書きするため、CLIの最優先settings層にも値を置く。SDK自身が読むイベント通知の印にはenvも必要である。
-軽量起動はユーザー設定を読み、SDKのターンがmain conversationのrequest bucketとして扱われるため、main conversationのrequest bucketに対する未設定時の保持期間が適用される。連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
-通常起動は設定読込元を指定していても配下のサブエージェントへ`subagentPromptCacheTtl`が届かず5分で書き込むため、1時間を指定する。届かない原因は公開資料から特定できておらず未確定とする。
+Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならない。
+このため`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`がenvとsettings.envへ同じ辞書から`mode`ごとの値を渡す。
+user・project設定のenvは子の環境変数を上書きするため、CLIの最優先settings層にも値を置く。
+SDK自身が読むイベント通知の印にはenvも必要である。
+軽量起動はユーザー設定を読み、SDKのターンがmain conversationのrequest bucketとして扱われるため、main conversationのrequest bucketに対する未設定時の保持期間が適用される。
+連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
+通常起動は設定読込元を指定していても配下のサブエージェントへ`subagentPromptCacheTtl`が届かず5分で書き込むため、1時間を指定する。
+届かない原因は公開資料から特定できておらず未確定とする。
 このため、サブエージェント側の未設定時の保持期間が短いことを理由に委譲を減らす設計判断は採らない。
 キャッシュ効率を根拠として委譲構造を見直す場合は、実際の計測値を根拠とする。
 Claude Codeでの計測値は`~/.claude/projects`配下のセッション記録から`message.usage.cache_creation`の`ephemeral_1h_input_tokens`と`ephemeral_5m_input_tokens`を担当ごとに集計して得る。
 集計に用いるフィールド名はClaude Code v2.1.258で確認した。
-2026年8月20日以降に開始し、サブエージェント側へ1時間を設定する前の649スレッドを対象とした集計では、Agentツール経由のサブエージェント全体は連続する要求の間隔が300秒を超える場合が3.26パーセントあり、その直後の要求が1件あたり約15万トークンを再度書き込む。保持期間を5分へ短縮するとこの再書き込みが復活する。1時間のトークン量に対する相対費用は5分の場合より4.45パーセント低いため、サブエージェント側の設定は1時間を維持する。
+2026年8月20日以降に開始し、サブエージェント側へ1時間を設定する前の649スレッドを対象とした集計では、Agentツール経由のサブエージェント全体は連続する要求の間隔が300秒を超える場合が3.26パーセントあり、その直後の要求が1件あたり約15万トークンを再度書き込む。
+保持期間を5分へ短縮するとこの再書き込みが復活する。
+1時間のトークン量に対する相対費用は5分の場合より4.45パーセント低いため、サブエージェント側の設定は1時間を維持する。
 
 ### Claudeの起動設定と受信上限
 
-親の`--settings`がJSONなら他キーとenvの他キーを保ち、起動元の全envキーを上書きする。ファイルの場合は内容をargvへ展開せず、所有者だけが読める起動別の合成ファイルを渡す。不読・不正JSON・非objectの親は継承せずenvだけを使う。合成処理と回収は`_agents_server/claude_settings.py`が担当する。成功・失敗の接続終了と依存確認の終了で自身のファイルを回収し、異常終了後の残存物は既存のrootの7日掃引が回収する。
-CLIのstdoutのNDJSONの1行には、モデルへ渡らないtool_use_resultも含まれる。EditのoriginalFileがファイル全体を持つため、SDKの既定1MiBでは通常の編集だけで受信に失敗する。共通optionsは全起動区分・resumeへ4GiBのmax_buffer_sizeを渡す。CLIの最大編集可能サイズ1GiBと差分を収めるための上限値である。この指定で4GiBを事前に確保することはない。モデルへの出力量の指示ではこの受信失敗を防げない。
+親の`--settings`がJSONなら他キーとenvの他キーを保ち、起動元の全envキーを上書きする。
+ファイルの場合は内容をargvへ展開せず、所有者だけが読める起動別の合成ファイルを渡す。
+不読・不正JSON・非objectの親は継承せずenvだけを使う。
+合成処理と回収は`_agents_server/claude_settings.py`が担当する。
+成功・失敗の接続終了と依存確認の終了で自身のファイルを回収し、異常終了後の残存物は既存のrootの7日掃引が回収する。
+CLIのstdoutのNDJSONの1行には、モデルへ渡らないtool_use_resultも含まれる。
+EditのoriginalFileがファイル全体を持つため、SDKの既定1MiBでは通常の編集だけで受信に失敗する。
+共通optionsは全起動区分・resumeへ4GiBのmax_buffer_sizeを渡す。
+CLIの最大編集可能サイズ1GiBと差分を収めるための上限値である。
+この指定で4GiBを事前に確保することはない。
+モデルへの出力量の指示ではこの受信失敗を防げない。
 
 ### Claude委譲先のプラグイン再読込
 
@@ -276,36 +347,99 @@ reset・既消費の確認後は利用枠を再取得し、同じ窓への重複
 
 ### `start`
 
-公開ツールは`start`、`send_message`、`kill`、`list`、`show`、`stop`の6つとする。`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。終了の観測と結果本文の配送を`atk agents wait`が担うため、一覧の役割は、保持していた`session_id`の回復と、並行する委譲先の残作業の把握に限る。`start`は`mode`ごとの入力（`<役割名>.subagent.md`と名前付き入力、自由本文、コマンドと要約方針のいずれか）、絶対`cwd`および任意の`model_type`を受け取り、工程別モデル設定の候補列から候補を解決し、委譲した作業の完了を待たず`session_id`を返す。応答は`session_id`と`status`を含み、候補を切り替えた場合だけ除外した候補と採用した`engine`・`model`・`effort`を加える。両backendともsession生成前にモデル可用性を確定できないため、`start`はbackendの起動応答の後も上限15秒まで終了を確認し、engineの可用性で終了した候補を除外集合へ加えて次候補で起動する。この確認は委譲先の最初のモデル出力（テキスト、思考、ツール呼び出し）を観測した時点で打ち切る。Claudeでは、完成したassistantメッセージが思考と最初の内容ブロックの生成を終えるまで届かず、長い`<役割名>.subagent.md`を指定する起動では上限に達するため、部分出力を有効にしてAPIの応答開始（`message_start`）を最初のモデル出力として扱う。失敗した要求は応答を始めないため、可用性失敗の検出は保たれる。応答開始後に生じた失敗は起動成功として扱い、`atk agents wait`が終了として受け取る。ただしCodexのturnが可用性確認を終えた後（委譲元の`send_message`で始めたturnを含む）にサーバー側過負荷（`serverOverloaded`）で終了した場合は、結果を保留して同じsessionの自動継続で扱う。待機の構造は`design-agents-runtime.md`「API失敗・過負荷・利用上限の待機」にある。可用性の失敗はモデルの最初の出力より前に生じ、正常に起動した委譲先は上限内に終了しないため、終了だけを条件にすると正常な起動が毎回上限まで待つためである。失敗より前に届く受信はモデル出力に数えない。API失敗を表すClaudeの合成メッセージ、Codexの`userMessage`などの入力の記録、agyの`user_input`・`system_message`・`error_message`がこれに当たる。全候補が起動不能な場合だけ失敗を返す。上限15秒は、利用枠上限に達したCodexのturnが起動応答から3.84〜4.27秒で終了した計測結果（2026-09-02、Codex CLI 0.152.0で3回）に対する余裕として定める。切替の対象を終了済みの可用性失敗へ限るのは、進行中の作業を残したまま別候補を起動して同一作業を重複実行することを防ぐためである。全backendのexploreは通常のコマンド能力を使い、対象成果物・委譲入力・ユーザーデータの変更禁止を共通プロンプトで伝える。実際のモデル・CLI可用性による候補切替は共通の起動方法へ残す。
-可用性の判定には、Codexの`codexErrorInfo`のうち利用枠超過、流量制限とサーバー側過負荷の区分を用いる。Codexの失敗の`message`がJSONの`error`オブジェクトを持ち、その`param`が`model`である場合もモデルの不受理（除外理由`modelRejected`）として含める。`CodexErrorInfo`の列挙にモデルの不受理を表す値が無く、接続先がモデルIDを拒否した失敗は`other`で届くためである。モデルIDの拒否は同じ候補で再試行しても解消せず、別候補なら結果が変わる。Claudeのモデル不受理は400と自由文の本文で届き、他の不正な要求と区別できないため含めない。Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。待機方針に該当するClaudeの利用上限はこの判定の例外とし、同じsessionの解除待ちで扱う（`design-agents-runtime.md`「API失敗・過負荷・利用上限の待機」）。候補を変えても結果が変わらない失敗では候補を進めない。Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。サーバーは可用性を理由として終了したsessionの採用候補を`model_type`と起動区分の組ごとに1件保持し、次の起動で除外集合の初期値へ充てる。保持は同じ組の起動が可用性の失敗なく成立した時点で解除し、除外により候補が残らない場合も破棄する。このため呼び出し側へ除外対象のsession識別子を要求しない。`atk agents wait`は同じルートで自身の書込主体が所有するsessionを対象として、1回の巡回で回収できた終了時の結果と通知を全件、1件1行のJSON Linesで返す。1件だけを返して残りを保持する形は、未回収の終了時の結果がある間、委譲元が未回収の結果を1件ずつ消化するたびに起動し直さないと稼働中のsessionへ到達できないため採らない。待機対象を指定する引数を加える案と、残り件数を応答へ加える案は、いずれも委譲元へ対象の転記や件数の判定を課すため採用しない。全件返却では、待機対象の`session_id`を持つ終了行が応答に含まれるかだけで待機の成立が定まる。待機上限は後述のとおり、`atk agents wait`が待機開始時に保持期間と実行環境の条件から導出する。
+公開ツールは`start`、`send_message`、`kill`、`list`、`show`、`stop`の6つとする。
+`list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。
+終了の観測と結果本文の配送を`atk agents wait`が担うため、一覧の役割は、保持していた`session_id`の回復と、並行する委譲先の残作業の把握に限る。
+`start`は`mode`ごとの入力（`<役割名>.subagent.md`と名前付き入力、自由本文、コマンドと要約方針のいずれか）、絶対`cwd`および任意の`model_type`を受け取り、工程別モデル設定の候補列から候補を解決し、委譲した作業の完了を待たず`session_id`を返す。
+応答は`session_id`と`status`を含み、候補を切り替えた場合だけ除外した候補と採用した`engine`・`model`・`effort`を加える。
+両backendともsession生成前にモデル可用性を確定できないため、`start`はbackendの起動応答の後も上限15秒まで終了を確認し、engineの可用性で終了した候補を除外集合へ加えて次候補で起動する。
+この確認は委譲先の最初のモデル出力（テキスト、思考、ツール呼び出し）を観測した時点で打ち切る。
+Claudeでは、完成したassistantメッセージが思考と最初の内容ブロックの生成を終えるまで届かず、長い`<役割名>.subagent.md`を指定する起動では上限に達するため、部分出力を有効にしてAPIの応答開始（`message_start`）を最初のモデル出力として扱う。
+失敗した要求は応答を始めないため、可用性失敗の検出は保たれる。
+応答開始後に生じた失敗は起動成功として扱い、`atk agents wait`が終了として受け取る。
+ただしCodexのturnが可用性確認を終えた後（委譲元の`send_message`で始めたturnを含む）にサーバー側過負荷（`serverOverloaded`）で終了した場合は、結果を保留して同じsessionの自動継続で扱う。
+待機の構造は`design-agents-runtime.md`「API失敗・過負荷・利用上限の待機」にある。
+可用性の失敗はモデルの最初の出力より前に生じ、正常に起動した委譲先は上限内に終了しないため、終了だけを条件にすると正常な起動が毎回上限まで待つためである。
+失敗より前に届く受信はモデル出力に数えない。
+API失敗を表すClaudeの合成メッセージ、Codexの`userMessage`などの入力の記録、agyの`user_input`・`system_message`・`error_message`がこれに当たる。
+全候補が起動不能な場合だけ失敗を返す。
+上限15秒は、利用枠上限に達したCodexのturnが起動応答から3.84〜4.27秒で終了した計測結果（2026-09-02、Codex CLI 0.152.0で3回）に対する余裕として定める。
+切替の対象を終了済みの可用性失敗へ限るのは、進行中の作業を残したまま別候補を起動して同一作業を重複実行することを防ぐためである。
+全backendのexploreは通常のコマンド能力を使い、対象成果物・委譲入力・ユーザーデータの変更禁止を共通プロンプトで伝える。
+実際のモデル・CLI可用性による候補切替は共通の起動方法へ残す。
+可用性の判定には、Codexの`codexErrorInfo`のうち利用枠超過、流量制限とサーバー側過負荷の区分を用いる。
+Codexの失敗の`message`がJSONの`error`オブジェクトを持ち、その`param`が`model`である場合もモデルの不受理（除外理由`modelRejected`）として含める。
+`CodexErrorInfo`の列挙にモデルの不受理を表す値が無く、接続先がモデルIDを拒否した失敗は`other`で届くためである。
+モデルIDの拒否は同じ候補で再試行しても解消せず、別候補なら結果が変わる。
+Claudeのモデル不受理は400と自由文の本文で届き、他の不正な要求と区別できないため含めない。
+Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。
+待機方針に該当するClaudeの利用上限はこの判定の例外とし、同じsessionの解除待ちで扱う（`design-agents-runtime.md`「API失敗・過負荷・利用上限の待機」）。
+候補を変えても結果が変わらない失敗では候補を進めない。
+Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。
+上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。
+サーバーは可用性を理由として終了したsessionの採用候補を`model_type`と起動区分の組ごとに1件保持し、次の起動で除外集合の初期値へ充てる。
+保持は同じ組の起動が可用性の失敗なく成立した時点で解除し、除外により候補が残らない場合も破棄する。
+このため呼び出し側へ除外対象のsession識別子を要求しない。
+`atk agents wait`は同じルートで自身の書込主体が所有するsessionを対象として、1回の巡回で回収できた終了時の結果と通知を全件、1件1行のJSON Linesで返す。
+1件だけを返して残りを保持する形は、未回収の終了時の結果がある間、委譲元が未回収の結果を1件ずつ消化するたびに起動し直さないと稼働中のsessionへ到達できないため採らない。
+待機対象を指定する引数を加える案と、残り件数を応答へ加える案は、いずれも委譲元へ対象の転記や件数の判定を課すため採用しない。
+全件返却では、待機対象の`session_id`を持つ終了行が応答に含まれるかだけで待機の成立が定まる。
+待機上限は後述のとおり、`atk agents wait`が待機開始時に保持期間と実行環境の条件から導出する。
 `start`はこの可用性の確認より前に、backendがsessionの初期化を完了するまでの待機へ上限を課す。
 Claude backendはSDKが`init`のシステムメッセージを届けるまで、Codex backendは`initialize`と`thread/start`の応答が返るまでを初期化区間とする。
 子プロセスが生存したまま応答を返さない場合、初期化の待機はbackendの失敗時の処理では解消せず、MCPツールの呼び出しがホストのアイドル上限まで返らない。
 上限へ達した起動では、起動中のsessionの資源を解放してから同じ候補で再試行し、全ての試行が上限へ達した場合だけ対象と原因を示す例外で終わる。
 次候補へ進めないのは、初期化へ到達しない事象が候補のmodelを変えても起こり、候補の入れ替えでは同じ待機を反復するためである。
 上限の秒数と試行回数は`agent-toolkit/agent_toolkit/_agents_server/state.py`が定め、値の根拠となる計測結果も同ファイルが示す。
-Claude backendは、起動区分によらずbypass系以外の権限モードでセッションを起動する。Claude Codeのセッション間メッセージの受信方針は、受信側の権限モードがbypass系であり送信側が権限モードを申告していない場合に、権限モードを申告していない送信側のメッセージを保留として扱う。委譲元は起動直後に権限モードを申告せずにメッセージを送るため、bypass系で起動したセッションは保留のまま`init`へ到達せず、上記の上限まで必ず待つ。2026-09-15の計測では、`bypassPermissions`の起動が6回中6回とも初期化タイムアウトで終わり、権限モードだけを変えた起動は初期化を完了した。失敗した起動の記録には保留を示す行があり、成功した起動には無かった。この保留は受信側の権限モードだけで決まり、起動区分によらず同じである。軽量起動（`explore`、`shell`、`write`）で同じ失敗を観測していないのは、調査対象のセッションでは工程別モデル設定が軽量起動をCodexへ解決し、Claudeでの起動が1件も無かったためである。Claudeで起動した場合は同じ条件が成立する。
-同じ事象の原因を事後に区別できるよう、Claude backendは委譲先CLI自身の診断ログを起動ごとに`agents-server.log`と同じ状態ディレクトリの`delegate-debug/`配下へ保存し、保持世代を超えた古い記録を起動時に削除する。初期化の上限へ達した場合の診断には、受信したメッセージを識別できる要約と、委譲先プロセスが起動した子プロセスの一覧を含める。型別の件数だけではどのメッセージで停止したかを区別できず、入れ子起動したサーバープロセスの残留も観測できないためである。却下した代替案は、`crossSessionInbound`設定で受信を拒否する案である。追加設定ファイルとユーザー設定のいずれで与えても初期化タイムアウトは解消しなかった。
-知識境界として、セッション間メッセージの受信方針はClaude Code本体が持つ。本節は委譲先のメッセージが保留されない起動条件だけを扱う。
+Claude backendは、起動区分によらずbypass系以外の権限モードでセッションを起動する。
+Claude Codeのセッション間メッセージの受信方針は、受信側の権限モードがbypass系であり送信側が権限モードを申告していない場合に、権限モードを申告していない送信側のメッセージを保留として扱う。
+委譲元は起動直後に権限モードを申告せずにメッセージを送るため、bypass系で起動したセッションは保留のまま`init`へ到達せず、上記の上限まで必ず待つ。
+2026-09-15の計測では、`bypassPermissions`の起動が6回中6回とも初期化タイムアウトで終わり、権限モードだけを変えた起動は初期化を完了した。
+失敗した起動の記録には保留を示す行があり、成功した起動には無かった。
+この保留は受信側の権限モードだけで決まり、起動区分によらず同じである。
+軽量起動（`explore`、`shell`、`write`）で同じ失敗を観測していないのは、調査対象のセッションでは工程別モデル設定が軽量起動をCodexへ解決し、Claudeでの起動が1件も無かったためである。
+Claudeで起動した場合は同じ条件が成立する。
+同じ事象の原因を事後に区別できるよう、Claude backendは委譲先CLI自身の診断ログを起動ごとに`agents-server.log`と同じ状態ディレクトリの`delegate-debug/`配下へ保存し、保持世代を超えた古い記録を起動時に削除する。
+初期化の上限へ達した場合の診断には、受信したメッセージを識別できる要約と、委譲先プロセスが起動した子プロセスの一覧を含める。
+型別の件数だけではどのメッセージで停止したかを区別できず、入れ子起動したサーバープロセスの残留も観測できないためである。
+却下した代替案は、`crossSessionInbound`設定で受信を拒否する案である。
+追加設定ファイルとユーザー設定のいずれで与えても初期化タイムアウトは解消しなかった。
+知識境界として、セッション間メッセージの受信方針はClaude Code本体が持つ。
+本節は委譲先のメッセージが保留されない起動条件だけを扱う。
 Claude backendの資源解放では、SDKクライアントの切断を所有タスクの取り消しから切り離した別taskで実行する。
 取り消された実行では、SDKの切断処理が内部のcheckpointで例外を送出し、CLIの子プロセスへ終了を送る処理へ到達しないまま接続だけを閉じるためである。
 この切り離しは、`stop`と再開が用いる資源解放の処理にも同じ切断処理を通じて適用される。
 SDKの正常切断中はCLIを実行可能に保ち、子孫を継続して列挙し、観測済みのプロセスハンドルからも子孫を追加する。
 切断の終了・時間上限到達後に監視を回収し、保持した集合を共通の`stop_tree`へ渡して生成停止と強制回収を行う。
 初期化前の失敗にも同じ処理を使い、残存や生成停止を確認できない対象はバックエンドに保持して停止操作で再試行する。
-親終了前に一度でも観測できた子孫は親子関係が失われても回収する。POSIXで列挙間隔内に生成と親終了が完結した未観測の子孫は保証範囲外であり、残存する可能性がある。
-SDKの公開起動引数に隔離指定がない構成では、独自のプロセス隔離は導入しない。SDK切断前からCLIを停止する案は正常終了を妨げ、切断後だけ再列挙する案は親を失った子孫を追跡できないため採用しない。
+親終了前に一度でも観測できた子孫は親子関係が失われても回収する。
+POSIXで列挙間隔内に生成と親終了が完結した未観測の子孫は保証範囲外であり、残存する可能性がある。
+SDKの公開起動引数に隔離指定がない構成では、独自のプロセス隔離は導入しない。
+SDK切断前からCLIを停止する案は正常終了を妨げ、切断後だけ再列挙する案は親を失った子孫を追跡できないため採用しない。
 知識境界として、上限超過を受領した委譲元の扱いは`agent-toolkit:delegation`が持ち、本節は起動の待機を有限にする手段だけを扱う。
 却下した代替案は、上限超過で次候補へ進める案と、再試行を設けず1回の上限超過で例外を返す案である。
 前者は候補を消費しても同じ待機を反復し、後者は一時的な遅延で成立する起動を委譲元の再発行へ委ねるため採用しない。
 
-`delegate`は5工程名（review・review_fast・chores・chores_fast・write）か候補列の必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。自由本文の全modeはexecuteとorchestrateの工程名を起動前に拒否し、役割taskの既定値は保つ。候補列の受理と自律選択の認可は区別し、WIのユーザー明示指定を継承する。サーバーは`model_type`に対応する工程別設定の直接候補列からengine、modelおよびeffortを解決し、
-候補を切り替えた場合は採用した値を応答へ含める。可用性に起因する失敗を観測した委譲元は、同じ`model_type`で`start`を呼び直す。次の候補への切替は、直近に可用性で終了した候補をサーバーが保持して除外することで成立する。
-`delegate`以外の`mode`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。恒常的な変更は`atk config set`で行う。
+`delegate`は5工程名（review・review_fast・chores・chores_fast・write）か候補列の必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。
+自由本文の全modeはexecuteとorchestrateの工程名を起動前に拒否し、役割taskの既定値は保つ。
+候補列の受理と自律選択の認可は区別し、WIのユーザー明示指定を継承する。
+サーバーは`model_type`に対応する工程別設定の直接候補列からengine、modelおよびeffortを解決し、
+候補を切り替えた場合は採用した値を応答へ含める。
+可用性に起因する失敗を観測した委譲元は、同じ`model_type`で`start`を呼び直す。
+次の候補への切替は、直近に可用性で終了した候補をサーバーが保持して除外することで成立する。
+`delegate`以外の`mode`は省略可能な`model_type`を受け取り、指定時は工程別設定の代わりにその値（設定種別または候補列）を一時的に使う。
+恒常的な変更は`atk config set`で行う。
 
 ### 識別子の解決
 
-`show`・`send_message`・`kill`および`stop`は受け取った識別子を先に保持中の状態へ解決する。いずれの状態にも解決できなかった値だけを対象に、UUID形式でなければ体系の相違を示すエラーを返す。登録済みの識別子は形式によらず解決するため、backendが発行済みの識別子の解決規則は変わらない。両backendのsession識別子はUUIDであり、他の委譲手段が返す識別子との取り違えを`unknown session`と区別できるようにする。保持しないUUIDへ返す`unknown session`の診断は登録簿の状態で分ける。登録簿が解放済みを示す場合は所有側による解放の理由と時刻を添え、レコードが無い場合はこのホストのどのagents_serverにも記録が無いこと（別のホストで起動したか、7日を超えて記録が回収された）を添える。登録簿のレコードは再起動では削除されないため、不在の原因として再起動を案内しない。2026年9月30日に、所有側が保持期限で解放した孫sessionへの照会が再起動の案内を返し、振り返りが原因を誤推定したことによる。
+`show`・`send_message`・`kill`および`stop`は受け取った識別子を先に保持中の状態へ解決する。
+いずれの状態にも解決できなかった値だけを対象に、UUID形式でなければ体系の相違を示すエラーを返す。
+登録済みの識別子は形式によらず解決するため、backendが発行済みの識別子の解決規則は変わらない。
+両backendのsession識別子はUUIDであり、他の委譲手段が返す識別子との取り違えを`unknown session`と区別できるようにする。
+保持しないUUIDへ返す`unknown session`の診断は登録簿の状態で分ける。
+登録簿が解放済みを示す場合は所有側による解放の理由と時刻を添え、レコードが無い場合はこのホストのどのagents_serverにも記録が無いこと（別のホストで起動したか、7日を超えて記録が回収された）を添える。
+登録簿のレコードは再起動では削除されないため、不在の原因として再起動を案内しない。
+2026年9月30日に、所有側が保持期限で解放した孫sessionへの照会が再起動の案内を返し、振り返りが原因を誤推定したことによる。
 
 新規sessionの識別子は`session_identity.identity_validator`が全backendの登録前に重複を確かめる。
 ルート、稼働中・保持中の別sessionと、共有登録簿で実行中・終了に解決されるsessionとの識別子の重複を拒否する。
@@ -360,15 +494,31 @@ backendの開始成功は`reply_started`とし、開始不能と開始不確定�
 再開前の未回収結果は`previous_result`で配送し、新turnの結果は既存の待機で別に回収する。
 追送履歴、観測待ち登録と子session追跡は同じ公開の`delivery`を消費し、既存の`steered`も含めた値の集合を保つ。
 
-`send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終了済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。`0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。上限到達時は配送の成否が確定せず、`atk agents wait`で状態を確認する。
-`codex_fast_mode`の実効値はCodexの新しいturnを開始するたびに読み、`thread/start`・`thread/resume`・`turn/start`へ`serviceTier`を明示する。`true`は`priority`、`false`は`default`とし、Codex側の`config.toml`のfast設定を`false`でも継承しない。値を省略すると設定と動作が一致しないためである。送信完了時に最新turnの値を`fast_mode`へ保持し、状態ファイル・登録簿・再開状態と詳細表示へ同じ値を渡す。実行中のturnは変更せず、次のturnから設定変更を反映する。
+`send_message(session_id, prompt, timeout=270)`は実行中turnへ追加指示を送り、終了済みturnでは結果回収を前提にせず同じsessionでreplyを開始する。
+`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。
+timeoutは継続要求の配送結果が確定するまでの待機上限であり、`turn_control_lock`の取得を含む操作全体を覆う一方、委譲先の応答生成の完了は待たない。
+`0`以下を受理しないのは、この操作の戻り値が配送結果の確定だけで構成され、待たない場合に返せる情報が無いためである。
+上限到達時は配送の成否が確定せず、`atk agents wait`で状態を確認する。
+`codex_fast_mode`の実効値はCodexの新しいturnを開始するたびに読み、`thread/start`・`thread/resume`・`turn/start`へ`serviceTier`を明示する。
+`true`は`priority`、`false`は`default`とし、Codex側の`config.toml`のfast設定を`false`でも継承しない。
+値を省略すると設定と動作が一致しないためである。
+送信完了時に最新turnの値を`fast_mode`へ保持し、状態ファイル・登録簿・再開状態と詳細表示へ同じ値を渡す。
+実行中のturnは変更せず、次のturnから設定変更を反映する。
 
-steer拒否時は`willRetry: true`の`error`通知だけでは待機を終えず、結果の確定・turn変更・client failure・timeoutを待つ。結果が確定した場合に限り、同じsessionでreplyを開始する。
+steer拒否時は`willRetry: true`の`error`通知だけでは待機を終えず、結果の確定・turn変更・client failure・timeoutを待つ。
+結果が確定した場合に限り、同じsessionでreplyを開始する。
 reply開始の確定失敗は`reply_failed`、turn/start応答喪失は`reply_ambiguous`として配送する。
 
-`send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。保持済みのsessionを失った場合だけ`unknown session`を返し、委譲元は検収済み状態を渡して新規起動する。
+`send_message`は起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
+保持済みのsessionを失った場合だけ`unknown session`を返し、委譲元は検収済み状態を渡して新規起動する。
 
-継続要求と中断要求の応答は、対象sessionを所有する実行主体だけが解決する。Claude backendは要求の受理と応答の解決を1つの継続要求チャネルへ集約し、所有主体が保持期限の到達、message streamの例外、明示的な取り消しのいずれで終了する場合も、チャネルの閉鎖で受理済みの要求を所有主体の終了として解決する。閉鎖後の受理は待機させず直ちに拒否する。Codex backendは同じ責務をJSON-RPCの応答待ちへ適用し、接続の終了とstdout readerの失敗で未解決の要求を解決する。この終了処理と呼び出し側のtimeoutを併用し、既知の終了の仕方では配送結果を即座に確定し、未知の停止では有限時間で制御を戻す。却下した代替案は、所有主体終了時の解決を設けず、呼び出し側のtimeoutだけで応答なしを打ち切る案である。要求が配送されたかを呼び出し側が判別できず、再開の可否も決められないため採用しない。
+継続要求と中断要求の応答は、対象sessionを所有する実行主体だけが解決する。
+Claude backendは要求の受理と応答の解決を1つの継続要求チャネルへ集約し、所有主体が保持期限の到達、message streamの例外、明示的な取り消しのいずれで終了する場合も、チャネルの閉鎖で受理済みの要求を所有主体の終了として解決する。
+閉鎖後の受理は待機させず直ちに拒否する。
+Codex backendは同じ責務をJSON-RPCの応答待ちへ適用し、接続の終了とstdout readerの失敗で未解決の要求を解決する。
+この終了処理と呼び出し側のtimeoutを併用し、既知の終了の仕方では配送結果を即座に確定し、未知の停止では有限時間で制御を戻す。
+却下した代替案は、所有主体終了時の解決を設けず、呼び出し側のtimeoutだけで応答なしを打ち切る案である。
+要求が配送されたかを呼び出し側が判別できず、再開の可否も決められないため採用しない。
 
 継続不能の判定は、実際に継続手段を呼び出した結果だけを入力とする。
 `send_message`のtimeoutは配送の成否が未確定であることだけを示すため、継続不能の根拠にしない。
@@ -384,19 +534,61 @@ timeout後は、送った継続要求の受理結果、またはその要求に�
 
 ### `kill`と`stop`
 
-`stop`は保持中で終了済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。目的は再開する予定の無いsessionが保持期限まで表示と一覧に残り、並行する委譲先の残作業の把握を妨げる状態を、委譲元の明示的な操作で解消することである。破棄時には対象sessionのengineに対応するbackendの資源を解放する。Claude backendでは破棄するsessionを所有するタスクを終了させ、SDKクライアントの接続を閉じる。Codex backendはsessionごとに`codex app-server`を起動して所有し、破棄ではそのApp Serverと子孫（threadごとのMCPサーバーと子孫threadの資源）の生成を止めて対象を確定し、終了させる。App Serverと全ての子孫の終了をOS上で確認してから解放成功とし、確認できない対象が残れば再試行できる失敗を返して所有を保つ（確認の保証境界は後述の`stop_tree`の段落を参照）。他のsessionのApp Serverは変更しない。実行中turnを持つsessionを拒否するのは、中断と破棄を1つの操作へ束ねると、中断の失敗と破棄の成否を委譲元が区別できないためである。中断が必要な場合は`kill`を先に発行する。結果本文の受領と破棄を1回の呼び出しで済ませる手段として、`kill`へ省略時に`false`となる`stop`引数を設け、終了時の結果を返した応答に限って破棄する。個別sessionの破棄は`stop`ツールで行う。この引数による破棄では終了時の結果を保持期限まで残し、同じ`session_id`への`atk agents wait`が期限内は保持した終了時の結果を返す。応答が委譲元へ届いたことをMCPの応答からは判定できず、届かなかった場合に成果を回収する手段が他に無いためである。`stop`ツールからの破棄は、委譲元が先行する`atk agents wait`で結果を回収済みであることが前提となるため、現行どおり終了時の結果も破棄する。破棄後も`send_message`が暗黙再開するのは、保持期限の経過時と同じく再開用の最小状態を別の保持先へ残すためである。却下した代替案は、経過時間その他の契機で自動的に破棄する案と、`stop`を呼び出していないことを検出して警告する案である。前者は委譲元が再開を予定するsessionを意図と無関係に破棄し、後者は努力目標である破棄を恒常的な義務へ変えるため、いずれも採用しない。
+`stop`は保持中で終了済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。
+目的は再開する予定の無いsessionが保持期限まで表示と一覧に残り、並行する委譲先の残作業の把握を妨げる状態を、委譲元の明示的な操作で解消することである。
+破棄時には対象sessionのengineに対応するbackendの資源を解放する。
+Claude backendでは破棄するsessionを所有するタスクを終了させ、SDKクライアントの接続を閉じる。
+Codex backendはsessionごとに`codex app-server`を起動して所有し、破棄ではそのApp Serverと子孫（threadごとのMCPサーバーと子孫threadの資源）の生成を止めて対象を確定し、終了させる。
+App Serverと全ての子孫の終了をOS上で確認してから解放成功とし、確認できない対象が残れば再試行できる失敗を返して所有を保つ（確認の保証境界は後述の`stop_tree`の段落を参照）。
+他のsessionのApp Serverは変更しない。
+実行中turnを持つsessionを拒否するのは、中断と破棄を1つの操作へ束ねると、中断の失敗と破棄の成否を委譲元が区別できないためである。
+中断が必要な場合は`kill`を先に発行する。
+結果本文の受領と破棄を1回の呼び出しで済ませる手段として、`kill`へ省略時に`false`となる`stop`引数を設け、終了時の結果を返した応答に限って破棄する。
+個別sessionの破棄は`stop`ツールで行う。
+この引数による破棄では終了時の結果を保持期限まで残し、同じ`session_id`への`atk agents wait`が期限内は保持した終了時の結果を返す。
+応答が委譲元へ届いたことをMCPの応答からは判定できず、届かなかった場合に成果を回収する手段が他に無いためである。
+`stop`ツールからの破棄は、委譲元が先行する`atk agents wait`で結果を回収済みであることが前提となるため、現行どおり終了時の結果も破棄する。
+破棄後も`send_message`が暗黙再開するのは、保持期限の経過時と同じく再開用の最小状態を別の保持先へ残すためである。
+却下した代替案は、経過時間その他の契機で自動的に破棄する案と、`stop`を呼び出していないことを検出して警告する案である。
+前者は委譲元が再開を予定するsessionを意図と無関係に破棄し、後者は努力目標である破棄を恒常的な義務へ変えるため、いずれも採用しない。
 
-`kill(session_id, timeout=270)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。`timeout=0`は要求配送後の現状態を返し、
-正のtimeoutは中断後の終了と結果を待つ。timeout超過時もsessionとbackend processは保持する。後続では`atk agents wait`で結果を受け取れる。終了後は`send_message`で再開できる。保持期限（30分）を過ぎた場合はmanagerの共通処理がbackendの`release_session`を呼び、backend資源とsession本体を解放し、未回収の結果本文は配送か`stop`による破棄まで保持する。managerは終了時に期限通知を登録し、ツール照会の有無によらず解放する。期限到達と会話再開が重なった場合は解放の完了を待ってから再開する。保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。`previous_result`は`atk agents wait`または`kill`が直前の結果本文を委譲元へ返していない場合だけ付ける。返し済みの結果本文を継続入力の応答で再送しないためである。`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終了は待たない。上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+`kill(session_id, timeout=270)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。
+`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。
+`timeout=0`は要求配送後の現状態を返し、
+正のtimeoutは中断後の終了と結果を待つ。
+timeout超過時もsessionとbackend processは保持する。
+後続では`atk agents wait`で結果を受け取れる。
+終了後は`send_message`で再開できる。
+保持期限（30分）を過ぎた場合はmanagerの共通処理がbackendの`release_session`を呼び、backend資源とsession本体を解放し、未回収の結果本文は配送か`stop`による破棄まで保持する。
+managerは終了時に期限通知を登録し、ツール照会の有無によらず解放する。
+期限到達と会話再開が重なった場合は解放の完了を待ってから再開する。
+保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。
+結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。
+`previous_result`は`atk agents wait`または`kill`が直前の結果本文を委譲元へ返していない場合だけ付ける。
+返し済みの結果本文を継続入力の応答で再送しないためである。
+`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終了は待たない。
+上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
 成功応答は`status`・`kill_requested`を含み、`kill_requested`は要求の受理事実を示し、自然終了を`interrupted`へ置き換えない。
-終了時の結果の保持期限を過ぎたsessionへの`kill`は`status`を`expired`、`kill_requested`を偽とする成功応答を返す。`kill`の他の応答と項目をそろえず、この応答で消費される項目だけを返す。
+終了時の結果の保持期限を過ぎたsessionへの`kill`は`status`を`expired`、`kill_requested`を偽とする成功応答を返す。
+`kill`の他の応答と項目をそろえず、この応答で消費される項目だけを返す。
 この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
 
-2026年10月8日にcodex-cli 0.161.0で行われた調査では、親threadだけの解放ではsubagentのMCPサーバーが残り、子孫にもunsubscribeを送ると60秒以内に終了した。親と子孫の会話は`thread/resume`とsubagentへの再操作で復元できた。当時の実装はbackendで共有するApp Serverへ親と子孫の購読解除を送り、`thread/closed`の受領で解放成功としていた。同日の同版による公開MCP操作の検証では、stopした委譲のMCPプロセス4件が約60.1秒で共有App Serverの子孫から消え、直後の同じsessionへのsend_messageは先の会話にだけ含めた合言葉を返した。
+2026年10月8日にcodex-cli 0.161.0で行われた調査では、親threadだけの解放ではsubagentのMCPサーバーが残り、子孫にもunsubscribeを送ると60秒以内に終了した。
+親と子孫の会話は`thread/resume`とsubagentへの再操作で復元できた。
+当時の実装はbackendで共有するApp Serverへ親と子孫の購読解除を送り、`thread/closed`の受領で解放成功としていた。
+同日の同版による公開MCP操作の検証では、stopした委譲のMCPプロセス4件が約60.1秒で共有App Serverの子孫から消え、直後の同じsessionへのsend_messageは先の会話にだけ含めた合言葉を返した。
 
-2026年10月16日に別リポジトリで行ったprocess-wiの1回の実行では、`stop`の成功後もレーンをcwdとするMCPサーバーが残り、`atk lane delete`と`atk agents-exit-session`がレーンを保持した。同日にCodex CLI 0.163.0で、モデルのturnを開始せず専用のstdio MCPを設定したthreadを購読解除すると、threadは`thread/loaded/list`に残りMCPも生存した。起動元のApp Serverを終了するとMCPも終了した。購読解除は猶予の後に資源を解放する非同期の要求であり（[Codex App Server](https://developers.openai.com/codex/app-server)の「Unsubscribe from a loaded thread」）、前段の約60秒は猶予の経過であって、破棄の成功時点の解放ではない。
+2026年10月16日に別リポジトリで行ったprocess-wiの1回の実行では、`stop`の成功後もレーンをcwdとするMCPサーバーが残り、`atk lane delete`と`atk agents-exit-session`がレーンを保持した。
+同日にCodex CLI 0.163.0で、モデルのturnを開始せず専用のstdio MCPを設定したthreadを購読解除すると、threadは`thread/loaded/list`に残りMCPも生存した。
+起動元のApp Serverを終了するとMCPも終了した。
+購読解除は猶予の後に資源を解放する非同期の要求であり（[Codex App Server](https://developers.openai.com/codex/app-server)の「Unsubscribe from a loaded thread」）、前段の約60秒は猶予の経過であって、破棄の成功時点の解放ではない。
 
-このため、App Serverの所有単位を委譲sessionへ分け、解放の完了をApp Serverと子孫の終了確認に置く。公開stop、保持期限経過、起動候補不成立とmanagerの停止は同じbackendの解放境界を使い、解放後の`send_message`は新しいApp Serverで`thread/resume`して会話を再開する。子孫threadは通知の`subAgentActivity.agentThreadId`とthreadの親子関係からSessionStateのメモリーに保持して所有sessionを特定し、親と同じApp Serverに載るため、その終了で併せて解放される。モデル一覧とturn履歴の照会も専用のApp Serverを起動し、応答後に終了させる。委譲ごとのApp Server起動は起動数が増える費用を持つが、起動時の所有をそのまま終了へ使え、既存の`JsonRpcProcess.close`と`_common/process_tree.py`の終了処理を再利用できる。却下した代替案は次のとおりである。
+このため、App Serverの所有単位を委譲sessionへ分け、解放の完了をApp Serverと子孫の終了確認に置く。
+公開stop、保持期限経過、起動候補不成立とmanagerの停止は同じbackendの解放境界を使い、解放後の`send_message`は新しいApp Serverで`thread/resume`して会話を再開する。
+子孫threadは通知の`subAgentActivity.agentThreadId`とthreadの親子関係からSessionStateのメモリーに保持して所有sessionを特定し、親と同じApp Serverに載るため、その終了で併せて解放される。
+モデル一覧とturn履歴の照会も専用のApp Serverを起動し、応答後に終了させる。
+委譲ごとのApp Server起動は起動数が増える費用を持つが、起動時の所有をそのまま終了へ使え、既存の`JsonRpcProcess.close`と`_common/process_tree.py`の終了処理を再利用できる。
+却下した代替案は次のとおりである。
 
 - 共有App Serverを維持してOS上の子孫をthreadへ推定帰属させ、該当分だけ終了する案は、子孫とthreadの対応を管理する機構を新たに要する
 - 共有App Serverを会話の末尾だけで停止する案は、別の委譲が実行中の間は解放を先送りする
@@ -426,11 +618,16 @@ POSIXはSIGTERMを送ってから再開して正常終了の機会を保ち、�
 stdio起動単位の寿命監視は監視主体自身を一時停止できないため、自身を除いた子孫だけを対象にする。
 解放の成功は終了対象の資源解放の確認で判定し、一時停止できない対象・列挙の失敗・反復上限への到達は「生成の停止を確認できない」として残存診断と同じ失敗へ渡す。
 完全な回収を保証しない範囲は、一時停止できない対象が起動した子孫と、POSIXの猶予中に子を起動した親がポーリング間隔より早く終了した場合の子である（親を失った子はinitへ付け替わる）。
-POSIXで一時停止できなかった対象は終了しても未確定として再試行可能な失敗を返し、再試行（Codexの再close）で所有対象を回収した後は、子孫を確認できないまま解放へ進んで残存診断へ記録する。未確定を保持し続けると、解放とagents_serverの停止が完了しなくなるためである。
+POSIXで一時停止できなかった対象は終了しても未確定として再試行可能な失敗を返し、再試行（Codexの再close）で所有対象を回収した後は、子孫を確認できないまま解放へ進んで残存診断へ記録する。
+未確定を保持し続けると、解放とagents_serverの停止が完了しなくなるためである。
 列挙の回数や待機時間だけを増やす案は、生成を続ける主体を止めないため採らない。
 POSIXのprocess groupだけで終了対象を決める案は、別groupへ移った子孫の回収と両立しないため採らない。
 
-接続先の切替（cold resume）は同じApp Server上で親threadの購読を外し、閉鎖を待ってから再開する。解除応答の`notLoaded`は既解放として扱い、`unsubscribed`と`notSubscribed`は`thread/closed`を待って閉鎖を確定する。接続喪失・未知の応答・閉鎖期限の到来は失敗として扱う。閉鎖処理中のthreadは再開を拒否するため、その応答に限り`thread/closed`通知を既存の初期化時間上限内で待ち、thread/resumeを再送する。通知の先着も保持し、固定秒数の待機へ置き換えない。
+接続先の切替（cold resume）は同じApp Server上で親threadの購読を外し、閉鎖を待ってから再開する。
+解除応答の`notLoaded`は既解放として扱い、`unsubscribed`と`notSubscribed`は`thread/closed`を待って閉鎖を確定する。
+接続喪失・未知の応答・閉鎖期限の到来は失敗として扱う。
+閉鎖処理中のthreadは再開を拒否するため、その応答に限り`thread/closed`通知を既存の初期化時間上限内で待ち、thread/resumeを再送する。
+通知の先着も保持し、固定秒数の待機へ置き換えない。
 
 ### レーン回収と資源解放
 
@@ -451,9 +648,39 @@ POSIXのprocess groupだけで終了対象を決める案は、別groupへ移っ
 
 ### 待機上限
 
-`atk agents wait`の待機上限は固定値を持たない。`_agents_server/agents_wait.py`の`wait_for_result`が待機開始時に、`_common/wait_schedule.py`の`get_cli_wait_timeout("main")`から上限を導出する。同関数は委譲待機のcron間隔と同じ保持期間判定を用いるため、待機間隔と待機上限が別々の値へ分岐しない。背景実行が有効なClaude Codeでの導出値は保持期間`5m`で270秒、`1h`で1740秒とする。いずれも保持期間より短く、キャッシュが満了する前に委譲元のターンが再開する。1740秒は、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分より60秒短い値とする。保持期間`1h`の3600秒をそのまま使うとアイドル上限で中断するためである。同関数は環境変数`CLAUDECODE`が無くClaude Codeを確認できないホストでは上限を270秒以下へ縮める。Codexが1回のツール呼び出しへ課す300秒の上限の内側へ収めるためである。CLIが固定値を持つと、保持期間`5m`とClaude Codeを確認できないホストで、キャッシュの満了や実行ホストの上限より後まで待機が続く。委譲先であることだけを理由に、CLIの上限は縮めない。CLIはMCPのツール呼び出しを経由せず、委譲先のMCPクライアントのツール呼び出し上限300秒が及ばないためである。2026年10月19日までは同じ算出関数が委譲先で240秒へ縮めており、長時間の背景待機が約4分ごとの終了コード3と再発行を反復した。背景機能が有効ならCLIは外側の`timeout`を付けずにBashツールの背景実行で待つため、1740秒はBashツールの背景実行が`timeout`未指定時に適用する上限1800秒も下回る。上回るとホストが先に待機を打ち切り、委譲元は終了コード3を受け取れず同じコマンドを再発行して待機を続けられない。背景実行の`timeout`未指定時の上限だけを変える環境変数は無いため、ホスト側の上限を延ばす案は採らない。`atk agents wait`は対象と待機上限を指定する引数を受け取らず、同じルートで自身の書込主体が所有する起動中sessionと未回収の結果を待つ。委譲元がメイン会話とサブエージェントのいずれであるかを示す入力も受け取らないため、導出にはmainのbucketを用い、委譲先セッションの判定は同モジュールが環境変数から行う。MCPサーバー内部の待機処理（公開ツールではない）と明示的な`atk lane delete`の資源解放の待機は、用途を分けた`get_wait_timeout("main")`から上限を導出する。同関数は保持期間とホストの共通導出を使い、背景無効によるCLI固有の短縮を参照しない。さらに、委譲先として起動されたセッションでは240秒以下へ縮める。MCPの待機は委譲先のMCPクライアントのツール呼び出し上限300秒の内側へ収める。明示的な資源解放の待機も同じ期限を使い、自動回収は解放を待たない。MCPのツール呼び出しに固有の制限を、その呼び出しを使う用途の関数だけに置くことで、CLIの上限の改訂が他の用途の保護条件を変えない。MCPの待機は`claude auth status`の実行を伴う導出の結果をbucketごとにプロセス内へ保持し、別スレッドで解決してイベントループを止めない。待機の発行形と応答の扱いは`agent-toolkit/skills/delegation/references/waiting-and-monitoring.md`「待機区間の構成」が定める。公開MCPツールの`wait`は2026年9月14日「`feat!: agents_serverの待機と軽量委譲を単純化する`」、`7a17eaaf5`で登録から外し、結果の待機をこのCLIへ一本化した。
+`atk agents wait`の待機上限は固定値を持たない。
+`_agents_server/agents_wait.py`の`wait_for_result`が待機開始時に、`_common/wait_schedule.py`の`get_cli_wait_timeout("main")`から上限を導出する。
+同関数は委譲待機のcron間隔と同じ保持期間判定を用いるため、待機間隔と待機上限が別々の値へ分岐しない。
+背景実行が有効なClaude Codeでの導出値は保持期間`5m`で270秒、`1h`で1740秒とする。
+いずれも保持期間より短く、キャッシュが満了する前に委譲元のターンが再開する。
+1740秒は、Claude Codeがstdio MCPサーバーへ課すアイドル上限30分より60秒短い値とする。
+保持期間`1h`の3600秒をそのまま使うとアイドル上限で中断するためである。
+同関数は環境変数`CLAUDECODE`が無くClaude Codeを確認できないホストでは上限を270秒以下へ縮める。
+Codexが1回のツール呼び出しへ課す300秒の上限の内側へ収めるためである。
+CLIが固定値を持つと、保持期間`5m`とClaude Codeを確認できないホストで、キャッシュの満了や実行ホストの上限より後まで待機が続く。
+委譲先であることだけを理由に、CLIの上限は縮めない。
+CLIはMCPのツール呼び出しを経由せず、委譲先のMCPクライアントのツール呼び出し上限300秒が及ばないためである。
+2026年10月19日までは同じ算出関数が委譲先で240秒へ縮めており、長時間の背景待機が約4分ごとの終了コード3と再発行を反復した。
+背景機能が有効ならCLIは外側の`timeout`を付けずにBashツールの背景実行で待つため、1740秒はBashツールの背景実行が`timeout`未指定時に適用する上限1800秒も下回る。
+上回るとホストが先に待機を打ち切り、委譲元は終了コード3を受け取れず同じコマンドを再発行して待機を続けられない。
+背景実行の`timeout`未指定時の上限だけを変える環境変数は無いため、ホスト側の上限を延ばす案は採らない。
+`atk agents wait`は対象と待機上限を指定する引数を受け取らず、同じルートで自身の書込主体が所有する起動中sessionと未回収の結果を待つ。
+委譲元がメイン会話とサブエージェントのいずれであるかを示す入力も受け取らないため、導出にはmainのbucketを用い、委譲先セッションの判定は同モジュールが環境変数から行う。
+MCPサーバー内部の待機処理（公開ツールではない）と明示的な`atk lane delete`の資源解放の待機は、用途を分けた`get_wait_timeout("main")`から上限を導出する。
+同関数は保持期間とホストの共通導出を使い、背景無効によるCLI固有の短縮を参照しない。
+さらに、委譲先として起動されたセッションでは240秒以下へ縮める。
+MCPの待機は委譲先のMCPクライアントのツール呼び出し上限300秒の内側へ収める。
+明示的な資源解放の待機も同じ期限を使い、自動回収は解放を待たない。
+MCPのツール呼び出しに固有の制限を、その呼び出しを使う用途の関数だけに置くことで、CLIの上限の改訂が他の用途の保護条件を変えない。
+MCPの待機は`claude auth status`の実行を伴う導出の結果をbucketごとにプロセス内へ保持し、別スレッドで解決してイベントループを止めない。
+待機の発行形と応答の扱いは`agent-toolkit:delegation/references/waiting-and-monitoring-intervals.md`「待機区間の構成」が定める。
+公開MCPツールの`wait`は2026年9月14日「`feat!: agents_serverの待機と軽量委譲を単純化する`」、`7a17eaaf5`で登録から外し、結果の待機をこのCLIへ一本化した。
 
-却下した代替案は、固定値を実効上限に近い値へ引き上げる案と、両bucketのうち短い保持期間を常に採る案である。前者は保持期間が`5m`の環境でキャッシュが満了した後も待ち続ける。後者はサブエージェントの保持期間が設定の無い場合`5m`であるため、待機のたびに常に270秒となり、要求した改善が成立しない。委譲元の区分を入力として受け取る案も、待機の手段を1つにする要求と両立しないため採用しない。`send_message`と`kill`でtimeoutを省略した場合の値は配送結果と中断要求の確定を待つ上限で、委譲先の終了の待機を含まないため、270秒の固定値を維持する。
+却下した代替案は、固定値を実効上限に近い値へ引き上げる案と、両bucketのうち短い保持期間を常に採る案である。
+前者は保持期間が`5m`の環境でキャッシュが満了した後も待ち続ける。
+後者はサブエージェントの保持期間が設定の無い場合`5m`であるため、待機のたびに常に270秒となり、要求した改善が成立しない。
+委譲元の区分を入力として受け取る案も、待機の手段を1つにする要求と両立しないため採用しない。
+`send_message`と`kill`でtimeoutを省略した場合の値は配送結果と中断要求の確定を待つ上限で、委譲先の終了の待機を含まないため、270秒の固定値を維持する。
 
 `CLAUDECODE`を確認でき、`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`の場合はCLIの期限だけをTTL由来の上限と540秒の小さい方にする。
 540秒は観測したBash前景上限600秒から、結果の返却に60秒の余裕を確保した値である。
@@ -465,8 +692,11 @@ MCP内部とlaneの回収は従来の期限を使う。
 ### `explore`と`shell`
 
 探索とコマンド分離を選ぶ量の目安は、tool_descriptions.pyのLIGHTWEIGHT_MODE_SELECTIONが1つの定義として持ち、server instructionsとstartのmodeの引数説明が同じ文を使う。
-ツール検索の前に届くserver instructionsへ基準を置き、自ら読むか委譲するかの判断に先行させる。常時規範を増やす案は読込費用が増えるため、遅延して取得するstartの説明だけへ基準を置く案はこの判断時点に届かないため採らない。
-委譲元の起動から受領までの義務はdelegation/SKILL.md「explore・shellの起動」へまとめ、共有資料は節名で参照する。起動のたびに共有資料の全文を読む案は、探索や出力分離が節約する量と同程度以上の文脈を先に消費するため採らない。作業全体の分割を判定する時点は、1件の探索・コマンドの起動とは分けてrouting.mdへ到達させる。
+ツール検索の前に届くserver instructionsへ基準を置き、自ら読むか委譲するかの判断に先行させる。
+常時規範を増やす案は読込費用が増えるため、遅延して取得するstartの説明だけへ基準を置く案はこの判断時点に届かないため採らない。
+委譲元の起動から受領までの義務はdelegation/SKILL.md「explore・shellの起動」へまとめ、共有資料は節名で参照する。
+起動のたびに共有資料の全文を読む案は、探索や出力分離が節約する量と同程度以上の文脈を先に消費するため採らない。
+作業全体の分割を判定する時点は、1件の探索・コマンドの起動とは分けてrouting.mdへ到達させる。
 
 `explore`は対象リポジトリの成果物、委譲入力およびユーザーデータを読み取り専用で調査し、結論と根拠を返す。
 読取ツールが管理するキャッシュ・状態・保存出力は対象成果物と区別し、担当自身の成果ファイルは作成しない。
@@ -486,20 +716,59 @@ Antigravityも共通の起動候補・プロンプトとCLIの処理を使う。
 
 保存資料は同じ版や観測時点を比較する目的で使い、取得可能な対象は担当自身がCLI・MCPで調査する。
 読者別探索は保存資料とGitの対象版指定の双方を受理し、同じ版の本文・差分・未解決事項を比較する契約を保つ。
-`launch_prompts.py`が全backendへ探索指示と`EXPLORE_COMMON_CAPABILITIES`・`EXPLORE_BACKEND_CAPABILITIES`を組み立て、公開説明も同じ能力定義を使う。完成条件から全文読取と所在探索を分け、全文が必要な長文・保存結果は`atk read-file`の`next`を使って`eof`まで担当内で取得する。取得量は返却全体のUTF-8予算へ合わせ、Codexでは内側コマンドと外側セルの両方へ収める。権限・到達不能・入力不足は担当内で補える省略と区別して返す。
-全体の対象集合は委譲元が保持し、公開操作・共通定義・呼出元から独立処理群を欠落なく割り当てる。文書群の単一応答上限と全体読取量は別に評価する。各群は割当範囲を完了して返し、探索の意味上の完了は委譲元が検収する。読了台帳・常設監視と本文の意味からの自動追送は追加しない。
+`launch_prompts.py`が全backendへ探索指示と`EXPLORE_COMMON_CAPABILITIES`・`EXPLORE_BACKEND_CAPABILITIES`を組み立て、公開説明も同じ能力定義を使う。
+完成条件から全文読取と所在探索を分け、全文が必要な長文・保存結果は`atk read-file`の`next`を使って`eof`まで担当内で取得する。
+取得量は返却全体のUTF-8予算へ合わせ、Codexでは内側コマンドと外側セルの両方へ収める。
+権限・到達不能・入力不足は担当内で補える省略と区別して返す。
+全体の対象集合は委譲元が保持し、公開操作・共通定義・呼出元から独立処理群を欠落なく割り当てる。
+文書群の単一応答上限と全体読取量は別に評価する。
+各群は割当範囲を完了して返し、探索の意味上の完了は委譲元が検収する。
+読了台帳・常設監視と本文の意味からの自動追送は追加しない。
 探索結果は返却本文へ保持し、server自身のセッション記録保存と区別する。
 各起動区分へ届く規範は`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表が示す。
 1件の探索を選ぶ条件はserver instructionsの採算の目安、作業全体の分割は`agent-toolkit/skills/delegation/references/routing.md`、起動から受領は同スキルのSKILL.mdを知識境界とする。
 検索時に読む`agent-basics:search`は切り出し条件への参照を持つ。
 確定コマンドの実行はshell、自由な判断を伴う書込はdelegateへ渡し、対象と操作を委譲元が定める。
 
-`start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。共有するのはchores_fast_modelの候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。通常起動にはこの除外を設けない。Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。`explore`は`model_type`を省略すると`chores_fast`を使う。段位は作業の部分ごとに選ぶ。判定基準を言語化して渡せる多数の対象の走査は軽量段位の`explore`へ分ける。観点・評価軸・判定基準の選定と新しい候補の案出し、走査が返した候補の判定と結論の統合は委譲元の`execute`担当自身が行い、そのための調査を`execute`の`explore`へ渡さない。走査と案出しが混在する依頼も全体を`execute`にせず、読取・走査を分けて軽量段位へ渡す。軽量側の候補では判断材料が不足する中規模の読取・要約・走査は`chores`を指定する。`execute`を指定してよいのは、レーン担当の起動と、役割文書が`execute`の工程を定める担当に限る。それ以外にエージェントが自分の判断で起動する委譲は、`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかにする。2026年11月1日のユーザー指示による規定で、計画起草や調査の目的でexecuteの下位担当を起動し、上位段位の費用が膨らんだ観測が契機である。2026年10月24日のユーザー指示により、それまでの「判定を含む調査は`explore`でも`execute`を明示する」規定を改めた。同日のprocess-wiのレーンで、内部の担当が現状調査と要約を主とする`explore`5件を全て`execute`で起動し、上位段位で読取を行った観測が契機である。判定を委譲元に残せば、判定の品質を保ったまま読取の費用を軽量段位へ移せる。実行レビューなどの工程別割当は維持し、調査の段位を起動方法だけで選ぶ案は採らない。走査を軽量段位へ分けるのは、案出しを含む調査の全体を上位段位で行うと、基準を渡せば軽量段位でも判定できる多数の対象の読取まで上位段位の料金で行い、範囲の広い見直しの費用が大きくなるためである。以前の規定は案出しと機械的な事実確認を区別して段位を選ぶ目的で、混在する依頼の全体を`execute`にしていた。案出しと判定を上位段位に残せばこの目的は保たれる。類似見直しでも走査を軽量段位へ委ね、非該当と返った対象を上位段位で全件再検証しない。現に動いている成果物には致命的な問題が少ないとみなし、母集団は縮めずに上位段位の読取を該当・判定保留の対象へ集める。これは`agent-basics:bugfix`の`references/root-cause-severity.md`「QとC・Dの区別」が許すQを満たす手段どうしの費用比較に当たる。
-この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。`CODEX_HOME`側のグローバル指示は残る。Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
+`start`の`shell`は`explore`と軽量な文書読込条件を共有し、コマンド実行専用の指示を渡す。
+共有するのはchores_fast_modelの候補列、Codex backendの`project_doc_max_bytes=0`、Claude backendのユーザー設定に限った設定読込元とスキルの省略であり、exploreの書込制限は共有しない。
+Claudeの軽量起動explore・write・shellは全て`disallowed_tools=["Skill"]`を指定し、新規とresumeでSkillを明示除外する。
+通常起動にはこの除外を設けない。
+Skillが無い主体は警告に記載されたSKILL.mdをReadで全文読む。
+`explore`は`model_type`を省略すると`chores_fast`を使う。
+段位は作業の部分ごとに選ぶ。
+判定基準を言語化して渡せる多数の対象の走査は軽量段位の`explore`へ分ける。
+観点・評価軸・判定基準の選定と新しい候補の案出し、走査が返した候補の判定と結論の統合は委譲元の`execute`担当自身が行い、そのための調査を`execute`の`explore`へ渡さない。
+走査と案出しが混在する依頼も全体を`execute`にせず、読取・走査を分けて軽量段位へ渡す。
+軽量側の候補では判断材料が不足する中規模の読取・要約・走査は`chores`を指定する。
+`execute`を指定してよいのは、レーン担当の起動と、役割文書が`execute`の工程を定める担当に限る。
+それ以外にエージェントが自分の判断で起動する委譲は、`review`・`review_fast`・`chores`・`chores_fast`・`write`のいずれかにする。
+2026年11月1日のユーザー指示による規定で、計画起草や調査の目的でexecuteの下位担当を起動し、上位段位の費用が膨らんだ観測が契機である。
+2026年10月24日のユーザー指示により、それまでの「判定を含む調査は`explore`でも`execute`を明示する」規定を改めた。
+同日のprocess-wiのレーンで、内部の担当が現状調査と要約を主とする`explore`5件を全て`execute`で起動し、上位段位で読取を行った観測が契機である。
+判定を委譲元に残せば、判定の品質を保ったまま読取の費用を軽量段位へ移せる。
+実行レビューなどの工程別割当は維持し、調査の段位を起動方法だけで選ぶ案は採らない。
+走査を軽量段位へ分けるのは、案出しを含む調査の全体を上位段位で行うと、基準を渡せば軽量段位でも判定できる多数の対象の読取まで上位段位の料金で行い、範囲の広い見直しの費用が大きくなるためである。
+以前の規定は案出しと機械的な事実確認を区別して段位を選ぶ目的で、混在する依頼の全体を`execute`にしていた。
+案出しと判定を上位段位に残せばこの目的は保たれる。
+類似見直しでも走査を軽量段位へ委ね、非該当と返った対象を上位段位で全件再検証しない。
+現に動いている成果物には致命的な問題が少ないとみなし、母集団は縮めずに上位段位の読取を該当・判定保留の対象へ集める。
+これは`agent-basics:bugfix`の`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」が許すQを満たす手段どうしの費用比較に当たる。
+この起動条件は2026-09-01にCodex 0.151.0とClaude Agent SDK 0.2.148で実際に動かして確かめた。
+Codexの`thread/start`は`config={"project_doc_max_bytes": 0}`を受理し、作業ディレクトリ側の`AGENTS.md`だけを`instructionSources`から外す。
+`CODEX_HOME`側のグローバル指示は残る。
+Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`および`env`を受理し、空の設定読込元とスキル、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`および組込tool presetを併用できる。
+その後、軽量起動の設定読込元は`0d7ffbbe6`（2026-09-23）でユーザー設定（`setting_sources=["user"]`）へ変えたため、この確認の空の設定読込元は現行の起動条件と異なる。
+この起動方式はClaude Code組込Exploreとの完全一致を要件にせず、同一認証・設定ディレクトリを維持した軽量化として扱う。
+再検証ではCodexの`thread/start`応答の`instructionSources`と、SDKの`ClaudeAgentOptions`の公開フィールドを同じ版条件で確認する。
+`CODEX_HOME`側のグローバル指示だけを読み込ませない設定は無い。
+2026-09-03にcodex-cli 0.153.0の`codex app-server generate-json-schema`が出力する`ThreadStartParams`と、Codexの設定リファレンスが列挙する全設定キーを確認した。
+`project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。
+再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
 
 ### 継続不能
 
-継続不能の詳細な判定条件は`runtime-routing.md`「継続と新規起動」が定める。
+継続不能の詳細な判定条件は`continuation.md`「継続と新規起動」が定める。
 `atk agents wait`は保持期限を過ぎて結果を回収済みのsessionへ`status`が`expired`の応答を返すが、同じsessionの会話再開用の最小状態は保持され、
 `send_message`は保持された会話再開用の最小状態から暗黙再開するため、保持期限の超過だけを継続不能の根拠にしない。
 呼び出し側が`atk agents wait`の`expired`の応答を継続不能と扱う運用は、再開できるthreadを破棄して規範・計画・対象コードの再読込を発生させるため採用しない。
@@ -522,36 +791,191 @@ session全体の一度限りフラグと子ごとの観測を併用する案は�
 追加の所有台帳や事後監視を設けず、既存の追跡集合と結果公開境界で完結させる。
 
 背景待機中の圧縮は、所有backendの`WaitCompaction`が待機識別子・60秒・使用量（400,000トークンと文脈上限の40%の大きい方以上）を確認して単発予約する。
-上限の小さいモデルでも400,000トークン未満では圧縮しない（2026年11月3日のユーザー回答「最低400kは無いと作業が円滑にできない」による）。Claude・Codexとも全起動区分を対象とし、子session待機とバックグラウンドBashタスクの完了待ちに適用する。
-Claudeは既存の入力キューの`compact`操作へ、Codexは公開`thread/compact/start`へ接続する。圧縮の受付を担当の終了や結果として公開しない。
-ClaudeのSDK結果は既存の保留・追送処理を使い、Codexの別圧縮turnは元turn IDと完了イベントを持つ一時操作として観測する。通常の追送は圧縮が終わってから配送し、完了待ち中は停止用のturnロックを保持しない。
-取消し・時間上限だけでCodexの圧縮終了とせず、後着の完了または接続終了で操作を解く。接続解放時には予約タスクを回収する。
-新しい公開状態・永続予約・圧縮専用のモデルturnは追加しない。CLIやmodから所有backendの状態を書き換える案は、結果を保持する主体との寿命を分けるため採らない。
+上限の小さいモデルでも400,000トークン未満では圧縮しない（2026年11月3日のユーザー回答「最低400kは無いと作業が円滑にできない」による）。
+Claude・Codexとも全起動区分を対象とし、子session待機とバックグラウンドBashタスクの完了待ちに適用する。
+Claudeは既存の入力キューの`compact`操作へ、Codexは公開`thread/compact/start`へ接続する。
+圧縮の受付を担当の終了や結果として公開しない。
+ClaudeのSDK結果は既存の保留・追送処理を使い、Codexの別圧縮turnは元turn IDと完了イベントを持つ一時操作として観測する。
+通常の追送は圧縮が終わってから配送し、完了待ち中は停止用のturnロックを保持しない。
+取消し・時間上限だけでCodexの圧縮終了とせず、後着の完了または接続終了で操作を解く。
+接続解放時には予約タスクを回収する。
+新しい公開状態・永続予約・圧縮専用のモデルturnは追加しない。
+CLIやmodから所有backendの状態を書き換える案は、結果を保持する主体との寿命を分けるため採らない。
 公開APIの観測と再検証は[audit-records.md](audit-records.md)「agent-toolkit/agent_toolkit/_agents_server/codex.py：待機中の独立圧縮turn：2026年11月2日」にある。
 
-Claude SDKの受信列は接続全体で1つを共有し、全ての外部queryが同じ列から受信する。通常の結果確定後も所有taskが受信を続け、公開済みturnのassistant・Resultを再公開しない。外部継続を配送する前には既に読取り可能な旧イベントを先に処理し、その後に新しいturnを開始する。結果確定で受信を止め、次のqueryで別のiteratorを作成する方式は、旧Resultを新queryの完了として確定させるため採らない。背景通知とCLIのturn状態は同じreaderで処理し、バックグラウンドタスクによる自動再開を除去する案や、委譲元の再送で回避する案は採らない。
+Claude SDKの受信列は接続全体で1つを共有し、全ての外部queryが同じ列から受信する。
+通常の結果確定後も所有taskが受信を続け、公開済みturnのassistant・Resultを再公開しない。
+外部継続を配送する前には既に読取り可能な旧イベントを先に処理し、その後に新しいturnを開始する。
+結果確定で受信を止め、次のqueryで別のiteratorを作成する方式は、旧Resultを新queryの完了として確定させるため採らない。
+背景通知とCLIのturn状態は同じreaderで処理し、バックグラウンドタスクによる自動再開を除去する案や、委譲元の再送で回避する案は採らない。
 
 子sessionとClaudeの背景taskを待つ保留へ追加指示を受けた場合は、旧結果の確定と追送の受理を分離する。
 begin_replyの初期化は保留結果とturn情報を更新する一方、子の稼働・終了集合、背景task、保存された待機出力の対応を保持する。
-配送が確定失敗した場合は古い保留へ戻し、通知で変化した追跡対象は巻き戻さない。Claudeの通知readerも追送のためには取り消さず、配送中の完了を受け取る。
-自動再開は消費済みの完了を重ねて通知せず、新たに起動した子は新しい待機対象として扱う。通常の終了済みreplyは従来どおり未回収結果を返す。
-この寿命の分離により、呼び出し側に追送の回避や識別子の再登録を要求しない。期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送は、従来どおり保留結果を確定してから新しいturnを開始する。確定の時点で待機対象が残れば`heldResultFinalized`が付き、MCP層が送る継続は従来どおり`keep_resume_chain`で連鎖を引き継ぐ。
+配送が確定失敗した場合は古い保留へ戻し、通知で変化した追跡対象は巻き戻さない。
+Claudeの通知readerも追送のためには取り消さず、配送中の完了を受け取る。
+自動再開は消費済みの完了を重ねて通知せず、新たに起動した子は新しい待機対象として扱う。
+通常の終了済みreplyは従来どおり未回収結果を返す。
+この寿命の分離により、呼び出し側に追送の回避や識別子の再登録を要求しない。
+期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送は、従来どおり保留結果を確定してから新しいturnを開始する。
+確定の時点で待機対象が残れば`heldResultFinalized`が付き、MCP層が送る継続は従来どおり`keep_resume_chain`で連鎖を引き継ぐ。
 
-Claude backendは、委譲先がClaude Codeのバックグラウンドタスクを残してturnを終えた場合、その完了通知による同じsessionの再開を一度だけ待ち、再開したturnの結果を共有の終了時の結果ファイルへ公開する。待機中は最初の結果を内部へ保留し、`status`と`turn_completed`を終了へ進めない。バックグラウンドタスクの完了通知が届かない場合は、Claude Codeが背景実行のBashへ許す上限（環境変数を設定しない場合は7,200,000ミリ秒）に余裕を加えた期限で保留した最初の結果を確定する。上限に達したバックグラウンドタスクはClaude Codeが止めて完了通知を送るため、上限より短い期限は稼働中のバックグラウンドタスクを待つ保留を打ち切る（2026年10月6日に1800秒の期限で待機表明が完了結果として返った）。保留の打ち切り期限は待機対象自身の終了上限から導き、根拠の無い値を置かない。期限到来、ストリーム終端、保留中の`kill`、期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送で確定した場合も、共通処理（`resume_waits.finalize_pending_result`）が確定の時点で残るバックグラウンドタスクと孫sessionの識別子を記録する。記録先は`error`の`unfinishedBackgroundTasks`と`unobservedSessions`であり、待機対象が残ったまま確定したことを`heldResultFinalized`で示し、`atk agents wait`の`終了行:`へ`unfinished_waits`を加える。`unfinished_waits`は待機対象を残した確定を示す`heldResultFinalized`を持つ結果へ付ける。保留した結果は待機表明であり、委譲元が終了行と結果本文だけから再開したturnの結果と区別できるようにするためである。Claude Code CLIはturnを終えた後に受けた中断要求へ`ResultMessage`を返さないため、保留中の`kill`は中断要求を配送したうえで保留した結果をそのまま確定して返す。保留中は活動時刻が進まず停滞と区別できないため、`show`は`result_held`と追跡中のバックグラウンドタスク（`live_background_tasks`）を公開する。結果を公開してよいのは、そのsessionで次のturnが発生しないと確定した後に限る。この確定はClaude Code CLIが`session_state_changed`で報告するturn状態に基づく。CLIは保留した結果の送出と背景エージェントの待機を終えて次のturnが無いと確定した時点で`idle`を報告する。Claude backendは`CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS`で報告を受け取り、`ResultMessage`の受信時点の最新の報告が`idle`でなければ結果を保留して、`idle`の受信で確定する。CLIはコマンドループの先頭で最初のturnの`running`を発行するため、この報告は初期化メッセージより先に届き得る。session作成前に届いた報告も作成時に引き継ぎ、最初のturnを従来の判定へ戻さない。追跡集合（バックグラウンドタスクと孫session）だけでは、Stop hookの実行中などturnの最終応答から`ResultMessage`までの間に終わったバックグラウンドタスクの再開turnを判別できない。その完了通知が`ResultMessage`より先に届いて追跡集合が空になっても、CLIは`ResultMessage`の後に通知の再開turnを開始するためである（2026年10月4日に待機表明が終了時の結果として公開された）。一方、シェルのバックグラウンドタスクが動いている間もCLIは`idle`を報告するため、追跡集合も判定に残す。CLIが状態を一度も報告しないsessionは追跡集合だけの判定へ戻り、そのことを警告ログへsessionごとに1回記録して、判定の弱まりを検出できるようにする。却下した代替案は、追跡集合へ完了通知の受信時刻などの条件を加える案、Stop hookを短くする案、委譲先に待機表明の前の確認を求める案である。完了通知が同じturnで処理されたか次のturnを起こすかはCLIのキューの状態で決まり、agents_serverからは観測できない（Claude Agent SDK自身も同じ結論で`session_state_changed`を使う）。Stop hookの短縮は競合の窓を狭めるだけである。委譲先への指示の変更は委譲先の振る舞いを変えたうえで同じ競合を残す。このため、いずれも採用しない。保留した結果と保留の期限は、完了通知を待つ間だけに作用させる。完了通知で次のturnが始まった後は、Claude backendが前のturnの保留した結果と期限を解除し（`resume_waits.release_auto_resume_hold`）、次のturnの`ResultMessage`で改めて保留か確定へ進む。次のturnの開始は、CLIの`running`の報告か、保留後のモデルの出力（応答開始か完成したassistantメッセージ）で観測する。Stopの処理中に完了通知が先に届いた場合は、`running`が保留の前に報告済みで、次のturnの開始を出力でしか観測できないためである。解除しない版では、再開したturnが利用上限の解除を待つ間に前のturnの期限が到来し、backendの待機ループとMCP層の常駐監視が古い待機表明を`completed`として公開した（2026年10月6日）。バックグラウンドタスクと孫sessionの追跡、自動再開の消費の記録は解除せず、それぞれの寿命に従う。利用上限の解除待ちと過負荷の継続待ちは期限を持たず、MCP層が送る継続で解除するため対象から外す。却下した代替案は、期限をさらに延ばす案と、委譲元が`send_message`で続行を送る案である。前者は再開後の待機が期限より長い場合に同じ公開を残し、後者は追加の継続要求なしに結果を届ける自動再開の目的を満たさない。観測した版と順序、再取得の手順は[audit-records.md](audit-records.md)「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日」にある。
-両backendは、委譲先が`agents_server`の`start`（全`mode`）で起動した孫sessionと、`send_message`で稼働させた孫sessionを追跡する。`reply_failed`は追加せず、`reply_ambiguous`は終了を観測するまで追跡する。再開した孫は終了済み集合から外す。親の成功・失敗・killのいずれでも同じ集合で結果保留と未観測の記録を決める。統合前の旧名で記録された起動も同じく追跡する。`_agents_server/claude.py`はツール利用識別子でClaude SDKの利用ブロックと結果ブロックを対応付け、`_agents_server/codex.py`は`item/completed`の`mcpToolCall`を消費する。委譲先が`atk agents wait`で回収した孫sessionは追跡から外し、回収の根拠は、待機の結果本文、保存先の行、ホストが待機を背景実行へ移した場合の出力ファイルの3つとする。出力ファイルは結果本文が後から書かれるため、終了判定と未観測の記録の直前に読む。ClaudeとCodexは結果保留の開始前にも同じ回収処理を適用する。2026年10月4日に、Claudeが回収済みの子だけを理由に保留し、後続の回収で追跡集合が空となって再開も結果配送も進まなかったためである。実在する未完了の背景taskと未回収の子は待機対象として保持する。終了状態は`_common/session_registry.py`が状態ディレクトリ配下の`agents-server/sessions/<session_id>.json`へ公開する。自動再開の開始、解除、再開の判断は`_agents_server/resume_waits.py`の共通述語へ集約し、Claudeの背景taskと孫sessionのどちらも追跡対象として扱う。Managerの常駐監視taskは追跡集合が空になるまで最初の結果を保留し、全ての終了後に識別子を示す継続指示で同じsessionを1ターンにつき一度だけ再開する。孫sessionの終了は、session登録簿の記録と共有の終了時の結果ファイルの双方を確かめて判定する。登録簿の記録が不在、解放済み、読取不能のいずれかである場合も、同じ識別子の終了時の結果ファイルが終了を示すときは終了として扱う。いずれの媒体からも終了を確定できない識別子は、同じ稼働集合へ保持して次の監視で再解決する。中断などで保留結果を確定する場合は、既存の`error.unobservedSessions`へ未回収対象を示す。
-session登録簿は全sessionについて、終了時の結果を返せるかどうか、公開status、engine、作業ディレクトリ、model、effort、model_type、起動区分（`launch_kind`）およびturn通番を原子的に記録する。再起動後の解決は、終了、実行中、解放済み、不在、読取不能を区別する。終了が確定しない記録は前プロセスがturnを実行している可能性を排除できないため再開せず、`turn_unobserved`として返す。この保護のもとで記録を`running`のまま残さないよう、MCPサーバーは停止時に、backendの停止で終わった未終了のturnを`interrupted`へ遷移させて登録簿と結果ファイルへ公開する。停止では所有側が自らturnを終了するため、遷移をbackendごとに書かずマネージャーの停止処理へ集約する。2026年10月2日に、実行中の委譲sessionを抱えたまま正常終了したMCPサーバーが登録簿を`running`のまま残し、再起動後の`show`・`send_message`と委譲元の`atk agents wait`が回収できなくなったためである。強制終了などで既に`running`のまま残ったCodexの記録は、再起動後のMCPサーバーが`show`・`send_message`・`kill`の照会時に引き継ぐ。条件の1つ目は、生存の印が有効な状態ファイルがそのsessionを載せていないことである。2つ目は、記録プロセスを持たない旧形式の記録か、記録プロセスのうち委譲先CLIが実在しない記録であることである。3つ目は、自身のCodex App Serverへ送った`thread/read`が登録簿の記録した元turn（turn識別子を持たない旧形式の記録では全turn）の終了を示し、後続に進行中のturnが無いことである。委譲先CLIが実在する記録を`thread/read`だけで引き継がないのは、別プロセスのApp Serverで実行中のturnを専用App Serverの`thread/read`が終了と返すためである。2026年10月25日には、旧サーバーの下で作業中のCodexの委譲先を新しいサーバーが`interrupted`と公開した。続く`thread/resume`は書込主体の競合で`failed`を公開した。全条件を満たす場合だけ`thread/read`の終了状態で登録簿へ終了を公開し、通常の復元へ進む。照会の失敗と条件の不成立ではこの引き継ぎを行わない。engineを問わない判定のため、実行中の記録は所有するagents_serverプロセスと、turnを実行する委譲先CLIのプロセスの識別（pidと起動時刻）を持つ。委譲先CLIのプロセスは、ClaudeではSDKの転送が起動したCLI、CodexではApp Server、Antigravityではturnごとに起動するCLIであり、起動し直した時点で記録を更新する。識別を持つ`running`の記録で記録された全プロセスが存在しない（pidが無いか、同じpidの起動時刻が異なる）場合、`session_registry.resolve`は`interrupted`の終了と中断の理由（`owner_processes_exited`）を返す。この判定は登録簿を書き換えず解決の結果として返す。MCPの`show`・`send_message`、`atk agents show`・`atk agents wait`、自動再開の子sessionの解決、`atk lane`の担当の終了判定は同じ解決を使う。中断を返す応答は、記録の`server_instance`と`interrupted_turns`から中断turnを所有した起動単位の終了診断への参照を添え、所有者の交代・再開・解放の後も同じturnの参照を保つ。登録簿へ終了を公開するのは従来どおり所有側と照会時の引き継ぎだけで、引き継ぎはこの終了をengineを問わず理由とともに公開する。記録されたプロセスが1つでも存在する記録と、識別を持たない記録（識別の導入前に書かれた記録で、7日の掃引で回収される）は従来どおり実行中とする。記録された全プロセスが存在しなければ、そのturnの書込もツールの実行も起こらない。pidの再利用は起動時刻で区別するため、二重起動の保護は損なわない。所有プロセスが応答しなくなっただけの場合は、プロセスが存在するため実行中として扱う。ただし所有プロセスだけが残り委譲先CLIが終了した記録は、turnを進める主体がいないため前述の`thread/read`による引き継ぎの対象とする。2026年10月11日に、委譲元のClaude Codeの終了後に所有するagents_serverが停止処理を経ずに終了し、Claudeの委譲先の記録が`running`のまま残った。`show`が別プロセスの実行中と返し続けたため、この判定を加えた。引き継ぎは所有者のいない記録へ終了を公開するだけで、解放済みへの置き換えと待機側による変更は行わない。却下した代替案は、経過時間で終了を推定する案、待機側の`atk agents wait`が登録簿を書き換える案、停止処理の順序を変えて強制終了の前に終了を公開する案である。1つ目は長時間のturnを実行中の所有者と区別できず、二重起動の保護を失う。2つ目は待機側が所有しない記録を変更しないという前述の規定に反する。3つ目はSIGKILLや異常終了では働かず、backendの停止前に公開するとturnの実行中に終了を示し得る。起動時の候補切替は可用性確認中にengine可用性のため終了した場合と、資源を回収済みの起動前不成立（engine共通の依存判定）を型で返した場合だけ行い、他の起動例外では作成済み資源を残す可能性があるため例外を返す。`stop`はbackend資源の解放を先に完了し、成功後に保持集合と状態ファイルを同期する。登録簿のレコードを解放済みへ置き換えられるのは対象のsessionを所有するMCPサーバーだけとし、契機は`stop`による明示的な破棄と保持期限の経過に限る。解放済みレコードは理由と時刻を保持する。APIへ移行した会話は内部の再開情報を残し、Codexは同じprovider、Claudeは保持したenvファイルの絶対パスで復元する。公開の解放判定は維持する。レコードを削除せず解放済みへ置き換えるのは、照会した別プロセスが「所有側が正常に解放した」と「記録が無い」を区別できるようにするためである。終了を観測した待機側は、自身が所有しないsessionのレコードを変更しない。別プロセスの待機処理も同じレコードを観測するため、最初の観測者が変更すると残りの待機処理が終了を見失う。上り通知は送信時刻と乱数を含む一意な最終名へ原子的に公開し、破損した通知と終了時の結果は待機側が可視の診断として扱う。
-この自動再開の目的は、委譲先が子の完了を待つ場合に、委譲元が追加の継続要求なしに`<役割名>.subagent.md`所定の返却値を受け取れるようにすることである。判定入力は`_agents_server/launch_prompts.py`の`AUTO_RESUME_NOTICE`とし、自動再開を実際に行う`_agents_server/claude.py`と`_agents_server/codex.py`だけが起動時の指示へ加える。Antigravity backendはイベントから子の起動結果を追跡集合へ登録しないため、この通知を加えず能力を約束しない。代わりに`PUBLIC_WAIT_NOTICE`を全起動区分の開始・再開へ配送し、`atk agents wait`で同じ実行中に結果を回収させる。2026年10月31日まで`_agents_server/antigravity.py`が`AUTO_RESUME_NOTICE`を配送しており、本節の記述と実装が食い違っていた。追跡の接続を新設する案は、自動再開を実機で確かめられないまま保証の範囲を広げるため採らない。Claude Code自身のバックグラウンドタスクの完了通知を消費する仕組みはClaude backendだけが持つ。Codex backendは、孫sessionが残るturnの終了で追跡集合を消去して結果を即時公開していたため、待機表明の行が完了報告として配送された（2026年9月4日と2026年10月1日の観測）。現在は孫sessionが残るturnの結果を`begin_auto_resume_wait`で保留し、MCP層の常駐監視が孫の終了後に同じsessionを再開する。保留中の`kill`は中断要求を送らずに保留した結果を未観測の孫とともに確定し、子sessionの完了待ちの保留中への`send_message`は待機対象を保持して新しいturnを開始し、古い保留結果を`previous_result`として返さない。再検証は両backendの委譲先から`agents_server`で孫sessionを起動し、孫の終了後に同じsessionが再開することを確認する。
-終了と所有の判定は記録プロセスの実在を一次の根拠とし、`session_registry.resolve`と`session_registry.running_ownership`へ集約する。生存の印が有効な状態ファイルがsessionを載せている`running`の記録は所有下（`owned`）とする。載せておらず委譲先CLIが実在する記録は所有サーバーを失った実行中（`owner_lost`）、どちらでもない記録は所有者のいない記録（`orphaned`）とする。登録簿の`processes`は先頭を所有サーバー、以降を委譲先CLIとし、所有サーバーのルート（`owner_root_session_id`）も記録する。所有サーバーの起動単位が替わっても、応答しない旧起動単位や委譲先CLIが生存し続ける場合があり、状態ファイルの生存の印や外部照会だけで終了・所有不在を決めると作業中の委譲先を中断と公開するためである。
-所有サーバーを失った実行中のsessionは終了を公開せず実行中として扱う。MCPの`show`と`atk agents show`は`status`を`running`とし、`ownership`と記録プロセス（`recorded_processes`）、記録時のルートを返す。旧ルートに残る同じsessionの上り通知の件数（`stranded_notice_count`）と、終了を待つか`kill`の後に`send_message`する`next_action`も返す。`send_message`は新しいbackendで再開せず、同じ案内のエラーを返す。旧委譲先CLIが会話の書込主体を保持しており、Codexの`thread/resume`は`already has an active writer`で拒否されるためである。`atk agents wait`はそのsessionを実行中として待ち続ける。MCPの`kill`は登録簿のpidと起動時刻が一致する委譲先CLIだけを子孫ごと停止し、停止を確かめてから`interrupted`を公開する。所有サーバーのプロセスは他のsessionの資源を持ち得るため止めない。停止後の`send_message`は通常の復元で同じ会話を再開する。新しい公開状態は追加せず、既存の`running`へ診断項目を加える。
-同じ根本原因を持つ処理も記録プロセスの実在と矛盾する終了・解放・削除を公開しない。停止時の中断公開は、backendの停止後も委譲先CLIが残るturnへ`interrupted`を公開せず実行中のまま残す。自プロセスが所有しない記録で記録プロセスが実在する場合、`stop`は解放済みへ置き換えず結果ファイルも削除しない。起動時の状態ファイルの削除は、同名のファイルの生存の印が有効で、書いたプロセス（`writer_process`）が別プロセスとして実在する場合に行わない。このとき自身は`<書込主体>-p<pid>.json`へ書く。登録簿の7日掃引は、終了していない記録で記録プロセスが実在するものを残す。process-loopのオーケストレーターの記録は、環境へ渡したsession識別子が一致する`claude`の子プロセスを委譲先CLIとして加える。
-委譲先の上り通知と終了時の結果は委譲先の起動時のルートへ届くため、Codexを親とするMCPサーバーのように起動単位ごとにルートが替わると、新しいサーバーは届いた先を読まない。登録簿から解決したsession（自プロセスが起動していないsession）の通知と終了時の結果は、`atk agents wait`とMCPの`show`・`send_message`・`kill`が自身のルートに加えて他のルートからも回収する。対象は生存の印が有効な書込主体のいないルートである（`_agents_server/owner_lost.py`）。却下した代替案は、引き継ぎそのものを除く案と、通知の宛先を委譲元の現在のルートへ書き換える案である。前者は強制終了で全プロセスが消えた記録を回収できなくなり、後者は委譲先の環境を起動後に変更できず、孫の通知にも作用しない。旧サーバーが交代後に終了しなかった理由は記録プロセスの生存を判定の入力にすることで結果に影響しないため、扱わない。
-知識境界として、委譲先が返す文面と待機表明の可否の規定は`agent-toolkit/share/rules-subagent.md`と`agent-toolkit/share/agents-server-auto-resume.md`が持ち、本節は待機表明の判定入力を委譲手段ごとに生成する方法だけを扱う。待機表明を許すかは、能力を実行するサーバーが`share/agents-server-*.md`の指示で伝える。委譲元の起動入力で指定する方式は採らない。委譲元は起動の時点で採用されるbackendを確定できず、指定させると実際の能力と一致しない場合が生じるためである（2026年10月1日、ユーザーの指摘「起動時に余計な指示」）。却下した代替案は、全委譲手段へ共通の無条件の待機終了規範を置く案と、待機表明の文面を委譲元が判別して継続要求を送る案である。前者は自動再開を持たない委譲手段で返却値を回収できない終了をそのまま残し、後者は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が禁じる文面判別に当たるため採用しない。委譲プロンプトへ委譲手段の能力を書かせる案も、`agents_server`はengineを起動時に解決するため委譲元が委譲プロンプトの作成時点で確定できず採用しない。
+Claude backendは、委譲先がClaude Codeのバックグラウンドタスクを残してturnを終えた場合、その完了通知による同じsessionの再開を一度だけ待ち、再開したturnの結果を共有の終了時の結果ファイルへ公開する。
+待機中は最初の結果を内部へ保留し、`status`と`turn_completed`を終了へ進めない。
+バックグラウンドタスクの完了通知が届かない場合は、Claude Codeが背景実行のBashへ許す上限（環境変数を設定しない場合は7,200,000ミリ秒）に余裕を加えた期限で保留した最初の結果を確定する。
+上限に達したバックグラウンドタスクはClaude Codeが止めて完了通知を送るため、上限より短い期限は稼働中のバックグラウンドタスクを待つ保留を打ち切る（2026年10月6日に1800秒の期限で待機表明が完了結果として返った）。
+保留の打ち切り期限は待機対象自身の終了上限から導き、根拠の無い値を置かない。
+期限到来、ストリーム終端、保留中の`kill`、期限を持たない利用上限の解除待ち・過負荷の継続待ちの保留への追送で確定した場合も、共通処理（`resume_waits.finalize_pending_result`）が確定の時点で残るバックグラウンドタスクと孫sessionの識別子を記録する。
+記録先は`error`の`unfinishedBackgroundTasks`と`unobservedSessions`であり、待機対象が残ったまま確定したことを`heldResultFinalized`で示し、`atk agents wait`の`終了行:`へ`unfinished_waits`を加える。
+`unfinished_waits`は待機対象を残した確定を示す`heldResultFinalized`を持つ結果へ付ける。
+保留した結果は待機表明であり、委譲元が終了行と結果本文だけから再開したturnの結果と区別できるようにするためである。
+Claude Code CLIはturnを終えた後に受けた中断要求へ`ResultMessage`を返さないため、保留中の`kill`は中断要求を配送したうえで保留した結果をそのまま確定して返す。
+保留中は活動時刻が進まず停滞と区別できないため、`show`は`result_held`と追跡中のバックグラウンドタスク（`live_background_tasks`）を公開する。
+結果を公開してよいのは、そのsessionで次のturnが発生しないと確定した後に限る。
+この確定はClaude Code CLIが`session_state_changed`で報告するturn状態に基づく。
+CLIは保留した結果の送出と背景エージェントの待機を終えて次のturnが無いと確定した時点で`idle`を報告する。
+Claude backendは`CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS`で報告を受け取り、`ResultMessage`の受信時点の最新の報告が`idle`でなければ結果を保留して、`idle`の受信で確定する。
+CLIはコマンドループの先頭で最初のturnの`running`を発行するため、この報告は初期化メッセージより先に届き得る。
+session作成前に届いた報告も作成時に引き継ぎ、最初のturnを従来の判定へ戻さない。
+追跡集合（バックグラウンドタスクと孫session）だけでは、Stop hookの実行中などturnの最終応答から`ResultMessage`までの間に終わったバックグラウンドタスクの再開turnを判別できない。
+その完了通知が`ResultMessage`より先に届いて追跡集合が空になっても、CLIは`ResultMessage`の後に通知の再開turnを開始するためである（2026年10月4日に待機表明が終了時の結果として公開された）。
+一方、シェルのバックグラウンドタスクが動いている間もCLIは`idle`を報告するため、追跡集合も判定に残す。
+CLIが状態を一度も報告しないsessionは追跡集合だけの判定へ戻り、そのことを警告ログへsessionごとに1回記録して、判定の弱まりを検出できるようにする。
+却下した代替案は、追跡集合へ完了通知の受信時刻などの条件を加える案、Stop hookを短くする案、委譲先に待機表明の前の確認を求める案である。
+完了通知が同じturnで処理されたか次のturnを起こすかはCLIのキューの状態で決まり、agents_serverからは観測できない（Claude Agent SDK自身も同じ結論で`session_state_changed`を使う）。
+Stop hookの短縮は競合の窓を狭めるだけである。
+委譲先への指示の変更は委譲先の振る舞いを変えたうえで同じ競合を残す。
+このため、いずれも採用しない。
+保留した結果と保留の期限は、完了通知を待つ間だけに作用させる。
+完了通知で次のturnが始まった後は、Claude backendが前のturnの保留した結果と期限を解除し（`resume_waits.release_auto_resume_hold`）、次のturnの`ResultMessage`で改めて保留か確定へ進む。
+次のturnの開始は、CLIの`running`の報告か、保留後のモデルの出力（応答開始か完成したassistantメッセージ）で観測する。
+Stopの処理中に完了通知が先に届いた場合は、`running`が保留の前に報告済みで、次のturnの開始を出力でしか観測できないためである。
+解除しない版では、再開したturnが利用上限の解除を待つ間に前のturnの期限が到来し、backendの待機ループとMCP層の常駐監視が古い待機表明を`completed`として公開した（2026年10月6日）。
+バックグラウンドタスクと孫sessionの追跡、自動再開の消費の記録は解除せず、それぞれの寿命に従う。
+利用上限の解除待ちと過負荷の継続待ちは期限を持たず、MCP層が送る継続で解除するため対象から外す。
+却下した代替案は、期限をさらに延ばす案と、委譲元が`send_message`で続行を送る案である。
+前者は再開後の待機が期限より長い場合に同じ公開を残し、後者は追加の継続要求なしに結果を届ける自動再開の目的を満たさない。
+観測した版と順序、再取得の手順は[audit-records.md](audit-records.md)「agent-toolkit/agent_toolkit/_agents_server/claude.py：結果の保留とturn状態の報告：2026年10月4日」にある。
+両backendは、委譲先が`agents_server`の`start`（全`mode`）で起動した孫sessionと、`send_message`で稼働させた孫sessionを追跡する。
+`reply_failed`は追加せず、`reply_ambiguous`は終了を観測するまで追跡する。
+再開した孫は終了済み集合から外す。
+親の成功・失敗・killのいずれでも同じ集合で結果保留と未観測の記録を決める。
+統合前の旧名で記録された起動も同じく追跡する。
+`_agents_server/claude.py`はツール利用識別子でClaude SDKの利用ブロックと結果ブロックを対応付け、`_agents_server/codex.py`は`item/completed`の`mcpToolCall`を消費する。
+委譲先が`atk agents wait`で回収した孫sessionは追跡から外し、回収の根拠は、待機の結果本文、保存先の行、ホストが待機を背景実行へ移した場合の出力ファイルの3つとする。
+出力ファイルは結果本文が後から書かれるため、終了判定と未観測の記録の直前に読む。
+ClaudeとCodexは結果保留の開始前にも同じ回収処理を適用する。
+2026年10月4日に、Claudeが回収済みの子だけを理由に保留し、後続の回収で追跡集合が空となって再開も結果配送も進まなかったためである。
+実在する未完了の背景taskと未回収の子は待機対象として保持する。
+終了状態は`_common/session_registry.py`が状態ディレクトリ配下の`agents-server/sessions/<session_id>.json`へ公開する。
+自動再開の開始、解除、再開の判断は`_agents_server/resume_waits.py`の共通述語へ集約し、Claudeの背景taskと孫sessionのどちらも追跡対象として扱う。
+Managerの常駐監視taskは追跡集合が空になるまで最初の結果を保留し、全ての終了後に識別子を示す継続指示で同じsessionを1ターンにつき一度だけ再開する。
+孫sessionの終了は、session登録簿の記録と共有の終了時の結果ファイルの双方を確かめて判定する。
+登録簿の記録が不在、解放済み、読取不能のいずれかである場合も、同じ識別子の終了時の結果ファイルが終了を示すときは終了として扱う。
+いずれの媒体からも終了を確定できない識別子は、同じ稼働集合へ保持して次の監視で再解決する。
+中断などで保留結果を確定する場合は、既存の`error.unobservedSessions`へ未回収対象を示す。
+session登録簿は全sessionについて、終了時の結果を返せるかどうか、公開status、engine、作業ディレクトリ、model、effort、model_type、起動区分（`launch_kind`）およびturn通番を原子的に記録する。
+再起動後の解決は、終了、実行中、解放済み、不在、読取不能を区別する。
+終了が確定しない記録は前プロセスがturnを実行している可能性を排除できないため再開せず、`turn_unobserved`として返す。
+この保護のもとで記録を`running`のまま残さないよう、MCPサーバーは停止時に、backendの停止で終わった未終了のturnを`interrupted`へ遷移させて登録簿と結果ファイルへ公開する。
+停止では所有側が自らturnを終了するため、遷移をbackendごとに書かずマネージャーの停止処理へ集約する。
+2026年10月2日に、実行中の委譲sessionを抱えたまま正常終了したMCPサーバーが登録簿を`running`のまま残し、再起動後の`show`・`send_message`と委譲元の`atk agents wait`が回収できなくなったためである。
+強制終了などで既に`running`のまま残ったCodexの記録は、再起動後のMCPサーバーが`show`・`send_message`・`kill`の照会時に引き継ぐ。
+条件の1つ目は、生存の印が有効な状態ファイルがそのsessionを載せていないことである。
+2つ目は、記録プロセスを持たない旧形式の記録か、記録プロセスのうち委譲先CLIが実在しない記録であることである。
+3つ目は、自身のCodex App Serverへ送った`thread/read`が登録簿の記録した元turn（turn識別子を持たない旧形式の記録では全turn）の終了を示し、後続に進行中のturnが無いことである。
+委譲先CLIが実在する記録を`thread/read`だけで引き継がないのは、別プロセスのApp Serverで実行中のturnを専用App Serverの`thread/read`が終了と返すためである。
+2026年10月25日には、旧サーバーの下で作業中のCodexの委譲先を新しいサーバーが`interrupted`と公開した。
+続く`thread/resume`は書込主体の競合で`failed`を公開した。
+全条件を満たす場合だけ`thread/read`の終了状態で登録簿へ終了を公開し、通常の復元へ進む。
+照会の失敗と条件の不成立ではこの引き継ぎを行わない。
+engineを問わない判定のため、実行中の記録は所有するagents_serverプロセスと、turnを実行する委譲先CLIのプロセスの識別（pidと起動時刻）を持つ。
+委譲先CLIのプロセスは、ClaudeではSDKの転送が起動したCLI、CodexではApp Server、Antigravityではturnごとに起動するCLIであり、起動し直した時点で記録を更新する。
+識別を持つ`running`の記録で記録された全プロセスが存在しない（pidが無いか、同じpidの起動時刻が異なる）場合、`session_registry.resolve`は`interrupted`の終了と中断の理由（`owner_processes_exited`）を返す。
+この判定は登録簿を書き換えず解決の結果として返す。
+MCPの`show`・`send_message`、`atk agents show`・`atk agents wait`、自動再開の子sessionの解決、`atk lane`の担当の終了判定は同じ解決を使う。
+中断を返す応答は、記録の`server_instance`と`interrupted_turns`から中断turnを所有した起動単位の終了診断への参照を添え、所有者の交代・再開・解放の後も同じturnの参照を保つ。
+登録簿へ終了を公開するのは従来どおり所有側と照会時の引き継ぎだけで、引き継ぎはこの終了をengineを問わず理由とともに公開する。
+記録されたプロセスが1つでも存在する記録と、識別を持たない記録（識別の導入前に書かれた記録で、7日の掃引で回収される）は従来どおり実行中とする。
+記録された全プロセスが存在しなければ、そのturnの書込もツールの実行も起こらない。
+pidの再利用は起動時刻で区別するため、二重起動の保護は損なわない。
+所有プロセスが応答しなくなっただけの場合は、プロセスが存在するため実行中として扱う。
+ただし所有プロセスだけが残り委譲先CLIが終了した記録は、turnを進める主体がいないため前述の`thread/read`による引き継ぎの対象とする。
+2026年10月11日に、委譲元のClaude Codeの終了後に所有するagents_serverが停止処理を経ずに終了し、Claudeの委譲先の記録が`running`のまま残った。
+`show`が別プロセスの実行中と返し続けたため、この判定を加えた。
+引き継ぎは所有者のいない記録へ終了を公開するだけで、解放済みへの置き換えと待機側による変更は行わない。
+却下した代替案は、経過時間で終了を推定する案、待機側の`atk agents wait`が登録簿を書き換える案、停止処理の順序を変えて強制終了の前に終了を公開する案である。
+1つ目は長時間のturnを実行中の所有者と区別できず、二重起動の保護を失う。
+2つ目は待機側が所有しない記録を変更しないという前述の規定に反する。
+3つ目はSIGKILLや異常終了では働かず、backendの停止前に公開するとturnの実行中に終了を示し得る。
+起動時の候補切替は可用性確認中にengine可用性のため終了した場合と、資源を回収済みの起動前不成立（engine共通の依存判定）を型で返した場合だけ行い、他の起動例外では作成済み資源を残す可能性があるため例外を返す。
+`stop`はbackend資源の解放を先に完了し、成功後に保持集合と状態ファイルを同期する。
+登録簿のレコードを解放済みへ置き換えられるのは対象のsessionを所有するMCPサーバーだけとし、契機は`stop`による明示的な破棄と保持期限の経過に限る。
+解放済みレコードは理由と時刻を保持する。
+APIへ移行した会話は内部の再開情報を残し、Codexは同じprovider、Claudeは保持したenvファイルの絶対パスで復元する。
+公開の解放判定は維持する。
+レコードを削除せず解放済みへ置き換えるのは、照会した別プロセスが「所有側が正常に解放した」と「記録が無い」を区別できるようにするためである。
+終了を観測した待機側は、自身が所有しないsessionのレコードを変更しない。
+別プロセスの待機処理も同じレコードを観測するため、最初の観測者が変更すると残りの待機処理が終了を見失う。
+上り通知は送信時刻と乱数を含む一意な最終名へ原子的に公開し、破損した通知と終了時の結果は待機側が可視の診断として扱う。
+この自動再開の目的は、委譲先が子の完了を待つ場合に、委譲元が追加の継続要求なしに`<役割名>.subagent.md`所定の返却値を受け取れるようにすることである。
+判定入力は`_agents_server/launch_prompts.py`の`AUTO_RESUME_NOTICE`とし、自動再開を実際に行う`_agents_server/claude.py`と`_agents_server/codex.py`だけが起動時の指示へ加える。
+Antigravity backendはイベントから子の起動結果を追跡集合へ登録しないため、この通知を加えず能力を約束しない。
+代わりに`PUBLIC_WAIT_NOTICE`を全起動区分の開始・再開へ配送し、`atk agents wait`で同じ実行中に結果を回収させる。
+2026年10月31日まで`_agents_server/antigravity.py`が`AUTO_RESUME_NOTICE`を配送しており、本節の記述と実装が食い違っていた。
+追跡の接続を新設する案は、自動再開を実機で確かめられないまま保証の範囲を広げるため採らない。
+Claude Code自身のバックグラウンドタスクの完了通知を消費する仕組みはClaude backendだけが持つ。
+Codex backendは、孫sessionが残るturnの終了で追跡集合を消去して結果を即時公開していたため、待機表明の行が完了報告として配送された（2026年9月4日と2026年10月1日の観測）。
+現在は孫sessionが残るturnの結果を`begin_auto_resume_wait`で保留し、MCP層の常駐監視が孫の終了後に同じsessionを再開する。
+保留中の`kill`は中断要求を送らずに保留した結果を未観測の孫とともに確定し、子sessionの完了待ちの保留中への`send_message`は待機対象を保持して新しいturnを開始し、古い保留結果を`previous_result`として返さない。
+再検証は両backendの委譲先から`agents_server`で孫sessionを起動し、孫の終了後に同じsessionが再開することを確認する。
+終了と所有の判定は記録プロセスの実在を一次の根拠とし、`session_registry.resolve`と`session_registry.running_ownership`へ集約する。
+生存の印が有効な状態ファイルがsessionを載せている`running`の記録は所有下（`owned`）とする。
+載せておらず委譲先CLIが実在する記録は所有サーバーを失った実行中（`owner_lost`）、どちらでもない記録は所有者のいない記録（`orphaned`）とする。
+登録簿の`processes`は先頭を所有サーバー、以降を委譲先CLIとし、所有サーバーのルート（`owner_root_session_id`）も記録する。
+所有サーバーの起動単位が替わっても、応答しない旧起動単位や委譲先CLIが生存し続ける場合があり、状態ファイルの生存の印や外部照会だけで終了・所有不在を決めると作業中の委譲先を中断と公開するためである。
+所有サーバーを失った実行中のsessionは終了を公開せず実行中として扱う。
+MCPの`show`と`atk agents show`は`status`を`running`とし、`ownership`と記録プロセス（`recorded_processes`）、記録時のルートを返す。
+旧ルートに残る同じsessionの上り通知の件数（`stranded_notice_count`）と、終了を待つか`kill`の後に`send_message`する`next_action`も返す。
+`send_message`は新しいbackendで再開せず、同じ案内のエラーを返す。
+旧委譲先CLIが会話の書込主体を保持しており、Codexの`thread/resume`は`already has an active writer`で拒否されるためである。
+`atk agents wait`はそのsessionを実行中として待ち続ける。
+MCPの`kill`は登録簿のpidと起動時刻が一致する委譲先CLIだけを子孫ごと停止し、停止を確かめてから`interrupted`を公開する。
+所有サーバーのプロセスは他のsessionの資源を持ち得るため止めない。
+停止後の`send_message`は通常の復元で同じ会話を再開する。
+新しい公開状態は追加せず、既存の`running`へ診断項目を加える。
+同じ根本原因を持つ処理も記録プロセスの実在と矛盾する終了・解放・削除を公開しない。
+停止時の中断公開は、backendの停止後も委譲先CLIが残るturnへ`interrupted`を公開せず実行中のまま残す。
+自プロセスが所有しない記録で記録プロセスが実在する場合、`stop`は解放済みへ置き換えず結果ファイルも削除しない。
+起動時の状態ファイルの削除は、同名のファイルの生存の印が有効で、書いたプロセス（`writer_process`）が別プロセスとして実在する場合に行わない。
+このとき自身は`<書込主体>-p<pid>.json`へ書く。
+登録簿の7日掃引は、終了していない記録で記録プロセスが実在するものを残す。
+process-loopのオーケストレーターの記録は、環境へ渡したsession識別子が一致する`claude`の子プロセスを委譲先CLIとして加える。
+委譲先の上り通知と終了時の結果は委譲先の起動時のルートへ届くため、Codexを親とするMCPサーバーのように起動単位ごとにルートが替わると、新しいサーバーは届いた先を読まない。
+登録簿から解決したsession（自プロセスが起動していないsession）の通知と終了時の結果は、`atk agents wait`とMCPの`show`・`send_message`・`kill`が自身のルートに加えて他のルートからも回収する。
+対象は生存の印が有効な書込主体のいないルートである（`_agents_server/owner_lost.py`）。
+却下した代替案は、引き継ぎそのものを除く案と、通知の宛先を委譲元の現在のルートへ書き換える案である。
+前者は強制終了で全プロセスが消えた記録を回収できなくなり、後者は委譲先の環境を起動後に変更できず、孫の通知にも作用しない。
+旧サーバーが交代後に終了しなかった理由は記録プロセスの生存を判定の入力にすることで結果に影響しないため、扱わない。
+知識境界として、委譲先が返す文面と待機表明の可否の規定は`agent-toolkit/share/rules/rules-subagent.md`と`agent-toolkit/share/agents-server-auto-resume.md`が持つ。
+本節は待機表明の判定入力を委譲手段ごとに生成する方法だけを扱う。
+待機表明を許すかは、能力を実行するサーバーが`share/agents-server-*.md`の指示で伝える。
+委譲元の起動入力で指定する方式は採らない。
+委譲元は起動の時点で採用されるbackendを確定できず、指定させると実際の能力と一致しない場合が生じるためである（2026年10月1日、ユーザーの指摘「起動時に余計な指示」）。
+却下した代替案は、全委譲手段へ共通の無条件の待機終了規範を置く案と、待機表明の文面を委譲元が判別して継続要求を送る案である。
+前者は自動再開を持たない委譲手段で返却値を回収できない終了をそのまま残し、後者は`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`が禁じる文面判別に当たるため採用しない。
+委譲プロンプトへ委譲手段の能力を書かせる案も、`agents_server`はengineを起動時に解決するため委譲元が委譲プロンプトの作成時点で確定できず採用しない。
 
-Stopフックによる継続の強制は採用しない。バックグラウンドタスクの完了は委譲先が同じturn内の追加行動で解消できず、backendが終了とCLIのturn状態を観測して自動再開後の結果を公開するためである。Claudeの軽量起動へもユーザー設定と明示ロードするプラグインを渡す。停止と継続の判定は、フックの不在を条件とせず、担当区分と自動再開の契約に合わせる。委譲元へバックグラウンドタスクの判別値を返す方式も採用しない。再開の要否と時機を委譲元へ委ねると、`send_message`を送る追加の分岐が必要になり、同じsessionが自動的に進める処理を公開契約へ露出させるためである。
+Stopフックによる継続の強制は採用しない。
+バックグラウンドタスクの完了は委譲先が同じturn内の追加行動で解消できず、backendが終了とCLIのturn状態を観測して自動再開後の結果を公開するためである。
+Claudeの軽量起動へもユーザー設定と明示ロードするプラグインを渡す。
+停止と継続の判定は、フックの不在を条件とせず、担当区分と自動再開の契約に合わせる。
+委譲元へバックグラウンドタスクの判別値を返す方式も採用しない。
+再開の要否と時機を委譲元へ委ねると、`send_message`を送る追加の分岐が必要になり、同じsessionが自動的に進める処理を公開契約へ露出させるためである。
 
 Codex backendは組み込みの委譲による子threadも保留の対象とする。
 App Serverの`subAgentActivity`の`started`で稼働集合へ加え、同じ`agentThreadId`の`completed`・`interrupted`で終了集合へ移す。
-購読した子threadの`turn/completed`も終了として観測する。子threadの通知は親のstatusや返却本文へ混ぜない。
+購読した子threadの`turn/completed`も終了として観測する。
+子threadの通知は親のstatusや返却本文へ混ぜない。
 同じitemは開始・完了・turnの完了で再掲されるため、送信元thread・turn、item IDと活動種別で一度だけ反映する。
 保留対象の有無は`resume_waits.has_pending_auto_resume_targets`へ集約し、全対象の終了後に既存の監視が同じsessionへ一度だけ継続を送る。
 再開後に新しい子を起動した場合は新しい完了待ちとして数える。
@@ -562,7 +986,8 @@ Codexの自分宛て送信は`subAgentActivity`の`interacted`と、委譲先自
 この送信を含むturnの結果は保留し、同じsessionへ「送った本文は委譲元へ届いていない。全文を最終応答へ書いて返す」と一度だけ継続を送る。
 子が稼働中なら全対象の終了まで待ち、子の結果回収と本文の修復を一度の継続へまとめる。
 修復の消費済み印はsessionの寿命で保持し、修復後のturnで同じ送信を検出してもその結果を返す。
-起動時の`mode`の値にかかわらず同じ項目処理を使う。子threadへの`interacted`は通常の指示として扱う。
+起動時の`mode`の値にかかわらず同じ項目処理を使う。
+子threadへの`interacted`は通常の指示として扱う。
 Codexが委譲先へ`/root`の役割と`send_message`を案内する一方、agents_serverの返却方法は最終応答本文であることが、この修復を置く理由である。
 `subAgentActivity`は送信本文を持たないため、検出した項目から本文を合成する案は採用しない。
 根拠となる公開契約はCodex App Serverの`ThreadItem`・`SubAgentActivityKind`・`ItemCompletedNotification`・`TurnCompletedNotification`である。
@@ -574,7 +999,8 @@ labelが`-review`で終わるsessionの`completed`結果には`agent-basics:revi
 labelが`reader-fit-review`で終わる結果は受領者であるレビュー担当向けの`reader-fit-review.parent.md`「受領」へ案内し、他の`-review`の結果はレビューイー向けの`references/reviewee.md`へ案内する。
 `atk agents wait`の回収と、`send_message`が未回収の結果を返す`previous_result`の双方が、`_agents_server/result_projection.py`の同じ判定と文面を使う。
 2026年10月1日に、レビュー結果を受け取った主体が同スキルを起動しないまま採否を確定し、合意の無い指摘を「承認済み」として見送った事象による。
-レビュー目的の判定にはlabelを使う。`start`のlabelの凡例と`<役割名>.subagent.md`から生成するlabelが、レビューを目的とするsessionへ`-review`の末尾を与えるためである。
+レビュー目的の判定にはlabelを使う。
+`start`のlabelの凡例と`<役割名>.subagent.md`から生成するlabelが、レビューを目的とするsessionへ`-review`の末尾を与えるためである。
 凡例から外れたlabelでは案内が出ないが、新しい状態や入力を加えずに、観測した事象の起動と受領を覆える。
 `reviewee.md`へ合意の扱いの条文を加える案は、同書が既に合意の確認を求めており、読まれなかったことが原因であるため採らない。
 
@@ -585,50 +1011,97 @@ labelが`reader-fit-review`で終わる結果は受領者であるレビュー�
 2026年10月3日には、WI投入担当の返却にあった`気付いた改善点:`の行がユーザーへの発話へ転記されなかった。
 転記の条文は常時規範にあったが、受領時の結果には案内が無かった。
 行頭の空白を除いてこの標識で始まる行があれば、statusとlabelによらず上流へ渡す案内を加える。
-結果はメインと委譲先の双方が`atk agents wait`やMCPから受け取るため、案内はメインがユーザーへの発話へ転記し、委譲先が受領時点で上流へ逐語中継して完了返却の末尾にも残す操作を併記する。案内は受領時の細則を持つ`agent-toolkit:delegation`の`references/receiving.md`「受領後の扱い」へ導く。
+結果はメインと委譲先の双方が`atk agents wait`やMCPから受け取るため、案内はメインがユーザーへの発話へ転記し、委譲先が受領時点で上流へ逐語中継して完了返却の末尾にも残す操作を併記する。
+案内は受領時の細則を持つ`agent-toolkit:delegation`の`agent-toolkit:delegation/references/receiving-followup.md`「受領後の扱い」へ導く。
 メインだけを宛先とする案内は、委譲先が実行できない操作を示していた。
-2026年10月6日には、メインが報告元を標識とコロンの間へ入れて中継し、行頭が`気付いた改善点:`でない行を発話へ書いた。案内は転記の書式を参照先に委ね、メインは受領時に`receiving.md`を読んでいなかった。このため案内自身に、標識を行頭へ原文のまま置き、報告元と確かめた範囲を標識行の後ろか別の行へ添える書式を含める。受領した主体は案内だけを読んで転記を書けるようにし、`agent-toolkit:review-session`の抽出に必要な行頭の書式を参照資料を読了しなくても分かるようにするためである。未確認の主張の扱いなど判断の細則は引き続き`receiving.md`へ導く。
+2026年10月6日には、メインが報告元を標識とコロンの間へ入れて中継し、行頭が`気付いた改善点:`でない行を発話へ書いた。
+案内は転記の書式を参照先に委ね、メインは受領時に`receiving.md`を読んでいなかった。
+このため案内自身に、標識を行頭へ原文のまま置き、報告元と確かめた範囲を標識行の後ろか別の行へ添える書式を含める。
+受領した主体は案内だけを読んで転記を書けるようにし、`agent-toolkit:review-session`の抽出に必要な行頭の書式を参照資料を読了しなくても分かるようにするためである。
+未確認の主張の扱いなど判断の細則は引き続き`receiving.md`へ導く。
 既存のレビュー・失敗・中断の案内は併記して保持する。
 4つの結果返却処理は`_agents_server/result_projection.py`の同じ判定を通し、新しい状態やホスト別の判定は加えない。
 常時規範への条文の追加は既存の条文を読まない原因を解消せず、WI投入担当だけの手順への追加は他の委譲を覆わないため採らない。
 
 ## 委譲先への指示と起動時の規範
 
-返却とエスカレーションは`share/rules-subagent.md`「返却形式の受け渡し」を共通原本とする。通常起動は全文、軽量起動は同節をマーカーから抽出した自己完結する短節を受け取り、開始・再開で同じ契約を使う。役割文書は固有の成功値・結果欄・工程境界だけを持つ。将来の役割にもmodeの解決を通じて同じ短節が適用されるため、呼出元が共通規則をプロンプトへ書き直す必要がない。OpenCodeは全文に含まれる短節を重複して注入しない。
-短節は成果と不足の区別、部分成果、通知と終了返却、追加行を定め、exploreの書込・再委譲禁止、writeの確定済み書込、shellの指定コマンドという権限境界を保持する。全文を軽量起動へ戻す案は無関係な工程とスキル参照を増やし、短節を別の文書に写す案は同じ契約の保守箇所を増やすため採らない。役割固有形式と共通標識は合成して受領し、輸送上の終了と成果の達成を別に判定する。
+返却とエスカレーションは`share/rules/rules-subagent.md`「返却形式の受け渡し」を共通原本とする。
+通常起動は全文、軽量起動は同節をマーカーから抽出した自己完結する短節を受け取り、開始・再開で同じ契約を使う。
+役割文書は固有の成功値・結果欄・工程境界だけを持つ。
+将来の役割にもmodeの解決を通じて同じ短節が適用されるため、呼出元が共通規則をプロンプトへ書き直す必要がない。
+OpenCodeは全文に含まれる短節を重複して注入しない。
+短節は成果と不足の区別、部分成果、通知と終了返却、追加行を定め、exploreの書込・再委譲禁止、writeの確定済み書込、shellの指定コマンドという権限境界を保持する。
+全文を軽量起動へ戻す案は無関係な工程とスキル参照を増やし、短節を別の文書に写す案は同じ契約の保守箇所を増やすため採らない。
+役割固有形式と共通標識は合成して受領し、輸送上の終了と成果の達成を別に判定する。
 
-公開startとsend_messageの説明は、delegationの基本契約が所有する入力の適格性を要約する。要件・制約・完了条件と確認済み事実、実行時の値を渡し、参照できる記録は絶対パスと対象IDで示す。必須入力、ユーザー指定の手段と、軽量起動・Antigravityへ配送されない必要な規範は保持する。exec・add-wiはexecute、wi-draft-reviewはreviewを使い、最上位のorchestrateと分ける。
+公開startとsend_messageの説明は、delegationの基本契約が所有する入力の適格性を要約する。
+要件・制約・完了条件と確認済み事実、実行時の値を渡し、参照できる記録は絶対パスと対象IDで示す。
+必須入力、ユーザー指定の手段と、軽量起動・Antigravityへ配送されない必要な規範は保持する。
+exec・add-wiはexecute、wi-draft-reviewはreviewを使い、最上位のorchestrateと分ける。
 
-起動費用には自動配送と明示読取の両方を含める。軽量起動にも共通の配布規範が残るため、本文のバイト数を課金トークン数へ換算せず、delivery-scopeの配送範囲と実行記録から比較する。必要な規範の配送と独立した意味の確認を保ち、同じ要求の取得済み証拠を再利用する。
+起動費用には自動配送と明示読取の両方を含める。
+軽量起動にも共通の配布規範が残るため、本文のバイト数を課金トークン数へ換算せず、delivery-scopeの配送範囲と実行記録から比較する。
+必要な規範の配送と独立した意味の確認を保ち、同じ要求の取得済み証拠を再利用する。
 
-動的に生成する通知・委譲本文と静的な配布文書は、最初のXML開始タグと最後の同名終了タグで配送境界を確定する。出所と用途は開始タグの属性で示す。常時読む説明には、その判断時に必要な契約だけを置き、計測値と変更経緯は監査記録へ置く。
+動的に生成する通知・委譲本文と静的な配布文書は、最初のXML開始タグと最後の同名終了タグで配送境界を確定する。
+出所と用途は開始タグの属性で示す。
+常時読む説明には、その判断時に必要な契約だけを置き、計測値と変更経緯は監査記録へ置く。
 
-プロジェクト文書を省くCodex・Claudeの軽量起動（explore・shell・write）は、開始と再開の指示へ標準ライブラリの短い照会用のPython情報を添える。`launch_prompts.py`がserver自身の`sys.executable`から実在する絶対パスとホストのシェルに合わせた起動部分を生成する。固定の`python`やLinuxの名前を前提にせず、プロジェクト依存を使う処理と固有の実行指定はプロジェクト規範・依頼を優先する。情報は実行権限を追加しない。文書全文を戻す案は軽量化の目的を失い、alias・パッケージ・wrapperの新設はホストの永続状態や管理対象を増やすため採らない。Antigravityはプロジェクト規範を読むため配送対象外とする。
+プロジェクト文書を省くCodex・Claudeの軽量起動（explore・shell・write）は、開始と再開の指示へ標準ライブラリの短い照会用のPython情報を添える。
+`launch_prompts.py`がserver自身の`sys.executable`から実在する絶対パスとホストのシェルに合わせた起動部分を生成する。
+固定の`python`やLinuxの名前を前提にせず、プロジェクト依存を使う処理と固有の実行指定はプロジェクト規範・依頼を優先する。
+情報は実行権限を追加しない。
+文書全文を戻す案は軽量化の目的を失い、alias・パッケージ・wrapperの新設はホストの永続状態や管理対象を増やすため採らない。
+Antigravityはプロジェクト規範を読むため配送対象外とする。
 
-新しい配送境界は`atk-auto`とし、agent-toolkit自身の`source`から重複する所有者接頭辞を除く。委譲先への配送から`from`と`composed-by`を除き、送信元の識別が必要な上り通知だけ`from`を残す。委譲先がユーザー入力と生成本文を分ける根拠は内側の`forwarded-user-input`であるため、配送の作成主体を示す属性を重ねる必要がない。旧形式のセッション記録と登録済みの定期起動は残るので、読取側は旧境界を受け付け続ける。
+新しい配送境界は`atk-auto`とし、agent-toolkit自身の`source`から重複する所有者接頭辞を除く。
+委譲先への配送から`from`と`composed-by`を除き、送信元の識別が必要な上り通知だけ`from`を残す。
+委譲先がユーザー入力と生成本文を分ける根拠は内側の`forwarded-user-input`であるため、配送の作成主体を示す属性を重ねる必要がない。
+旧形式のセッション記録と登録済みの定期起動は残るので、読取側は旧境界を受け付け続ける。
 
 `start`が受け取る`<役割名>.subagent.md`は起動処理で実在する`.subagent.md`として解決した`Path`を必須入力検証へ直接渡す。
 表示用プロンプトへ直列化したパスを再解析しないため、Windowsドライブパス、区切り文字、空白の差は検証契約へ影響しない。
-pluginの安全境界と読めた必須入力宣言に対する実際の値欠落は拒否する。旧形式の宣言の不在または読取不能は警告として委譲を継続する。新形式のfrontmatterを読めない場合は診断して終了する。
-読めた宣言に対しては、必須入力名と任意入力名のいずれにも無い項目名も拒否する。待機と再開の方針は採用したbackendの能力に従ってサーバーが`share/agents-server-*.md`で伝えるため、委譲元が渡す共通入力は持たない。
-例外として、必須入力の`引き継ぎ記録先`を省略した場合は拒否しない。サーバーが委譲元のセッションのmanaged-tempの直下に`（新規）`の記録先を用意し、委譲プロンプトへ加えて応答の`handoff_record_path`で返す。セッションのmanaged-tempは`AGENT_TOOLKIT_OWNER_SESSION`か`CLAUDE_CODE_SESSION_ID`が示すsessionのものとする。その値がプロセス専用ルートか不在の場合はManagerが解決した委譲元会話のものとし（全体作業契約と同じ所有会話。[design-work-contract.md](design-work-contract.md)）、どちらも解決できなければ新しいmanaged-tempを作成する。値は委譲元の判断を含まず一意に決まる一方、固有の入力の組み立てに埋もれて渡し忘れられ、拒否と`start`の再発行の往復が繰り返されたためである。委譲先が記録先を受け取らずに起動する状態は生じないため、記録先を委譲先へ確実に届ける拒否の導入目的は保たれる。他の必須入力は内容に委譲元の判断を含むため、従来どおり欠落を拒否する。Claude Codeの`Agent`ツールによる起動はサーバーを経由せず値を用意する主体が無いため、委譲元が値を渡す義務とPreToolUseの確認を残す。
+pluginの安全境界と読めた必須入力宣言に対する実際の値欠落は拒否する。
+旧形式の宣言の不在または読取不能は警告として委譲を継続する。
+新形式のfrontmatterを読めない場合は診断して終了する。
+読めた宣言に対しては、必須入力名と任意入力名のいずれにも無い項目名も拒否する。
+待機と再開の方針は採用したbackendの能力に従ってサーバーが`share/agents-server-*.md`で伝えるため、委譲元が渡す共通入力は持たない。
+例外として、必須入力の`引き継ぎ記録先`を省略した場合は拒否しない。
+サーバーが委譲元のセッションのmanaged-tempの直下に`（新規）`の記録先を用意し、委譲プロンプトへ加えて応答の`handoff_record_path`で返す。
+セッションのmanaged-tempは`AGENT_TOOLKIT_OWNER_SESSION`か`CLAUDE_CODE_SESSION_ID`が示すsessionのものとする。
+その値がプロセス専用ルートか不在の場合はManagerが解決した委譲元会話のものとし（全体作業契約と同じ所有会話。[design-work-contract.md](design-work-contract.md)）、どちらも解決できなければ新しいmanaged-tempを作成する。
+値は委譲元の判断を含まず一意に決まる一方、固有の入力の組み立てに埋もれて渡し忘れられ、拒否と`start`の再発行の往復が繰り返されたためである。
+委譲先が記録先を受け取らずに起動する状態は生じないため、記録先を委譲先へ確実に届ける拒否の導入目的は保たれる。
+他の必須入力は内容に委譲元の判断を含むため、従来どおり欠落を拒否する。
+Claude Codeの`Agent`ツールによる起動はサーバーを経由せず値を用意する主体が無いため、委譲元が値を渡す義務とPreToolUseの確認を残す。
 目的は専用の`<役割名>.subagent.md`を持つ委譲で委譲元が手順、権限、検証方法や背景を委譲プロンプトへ書き足す余地をなくし、委譲の費用、指示の重複および委譲元の先入観の混入を防ぐことである。
-名前付き入力は委譲プロンプトの`入力:`見出しの下へ並べ、今回限りの補足を渡す自由記述の欄は置かない。補足を要する役割は、その役割の`<役割名>.subagent.md`が入力欄として宣言する。
-起動条件・工程別model_type・入力・書込・継続は、`<役割名>.subagent.md`のYAML frontmatterが所有する。新しい役割の追加にPythonの対応表への登録を要しない。`TASK_MODEL_TYPES`は旧形式の役割文書の読取互換だけに残す。
-定義のキー・値・名前・継続の静的整合性は、配布対象の全役割文書を列挙するテストで保証する。実行時は設定の読込と呼出し入力の確認、起動方法・書込主体の判定に必要な値の確認に限定する。静的チェックを毎起動へ重ねる案は、配布前に同じ品質を保証でき、起動処理と保守の負担が増えるため採らない。
+名前付き入力は委譲プロンプトの`入力:`見出しの下へ並べ、今回限りの補足を渡す自由記述の欄は置かない。
+補足を要する役割は、その役割の`<役割名>.subagent.md`が入力欄として宣言する。
+起動条件・工程別model_type・入力・書込・継続は、`<役割名>.subagent.md`のYAML frontmatterが所有する。
+新しい役割の追加にPythonの対応表への登録を要しない。
+`TASK_MODEL_TYPES`は旧形式の役割文書の読取互換だけに残す。
+定義のキー・値・名前・継続の静的整合性は、配布対象の全役割文書を列挙するテストで保証する。
+実行時は設定の読込と呼出し入力の確認、起動方法・書込主体の判定に必要な値の確認に限定する。
+静的チェックを毎起動へ重ねる案は、配布前に同じ品質を保証でき、起動処理と保守の負担が増えるため採らない。
 役割文書の入力宣言が初回と定型継続の契約を所有し、生成CLI、初回hook、公開MCPの構造化・自由本文の処理で共有する。
 `send_message`は配送前に今回の入力と受信sessionの役割宣言を比べて受理条件を満たすかを確かめ、拒否ではbackend受信記録と配送履歴を増やさない。
 既存の`prompt`・`followup_prompts`を使うため、独立した履歴台帳と毎送信のモデル審査を増やさない。
 機械判定は宣言・定型指示・既存履歴から一意に確定できる範囲へ限り、新要求の意味上の必要性は送信側が判断する。
 制御値と更新参照を保ち、同じパスの内容更新を文字列の一致から除かない。
 組み込み委譲は`atk run-script delegation-prompt`で同じ宣言から最小本文を生成する。
-宣言の解析は`agent_toolkit/_common/task_documents.py`へ置き、`start`の`task`と、`delegate`・`explore`・`write`の本文と`Agent`ツールの本文を判定するPreToolUseフック、`atk lane integrate`の稼働判定が共有する。`_atk`から読むため共通層へ置く。
+宣言の解析は`agent_toolkit/_common/task_documents.py`へ置き、`start`の`task`と、`delegate`・`explore`・`write`の本文と`Agent`ツールの本文を判定するPreToolUseフック、`atk lane integrate`の稼働判定が共有する。
+`_atk`から読むため共通層へ置く。
 自由本文のhookは、文書パスの参照と、その文書の手順を実行する命令を分ける。
 パス抽出は参照先の実在と所属を確かめ、hookが引用の外の定型命令を確認した場合だけ起動形式の判定へ進む。
 文書の読解・比較と命令例の引用は、役割の手順を実行する依頼ではないため通す。
 Markdownのコードと引用の構造は既存のmarkdown-itで読み、会話の意味を推定する判定を加えない。
 用途の判断をサーバーのタスク起動へ移す案は、同処理が文書を明示入力として受け取る境界へ自由本文の解釈を持ち込むため採らない。
-却下した代替案は次の3つである。`mode:`行の値を委譲元の引数にする案は、委譲元の入力が増え、タスクの性質と起動条件の対応が起動のたびに揺れる。当時は全起動ツールを1つの関数へ統合する案も、自由本文の起動と入力の一致確認の契約が同じ関数へ同居するとして採らなかった。後に採用した起動ツールの統合（「[agents_serverの起動ツールの統合](#agents_serverの起動ツールの統合)」）では`mode`ごとに入力を検証し、宣言の検証と`mode:`行による起動条件の決定を`task`の処理だけが行う。このため、一致確認の契約は自由本文の処理へ入らない。宣言外の項目を警告だけで受理する案と規範の改訂だけで扱う案は、書き足しの余地を残す（ユーザーの確認への回答「宣言欄だけ受理」）。
+却下した代替案は次の3つである。
+`mode:`行の値を委譲元の引数にする案は、委譲元の入力が増え、タスクの性質と起動条件の対応が起動のたびに揺れる。
+当時は全起動ツールを1つの関数へ統合する案も、自由本文の起動と入力の一致確認の契約が同じ関数へ同居するとして採らなかった。
+後に採用した起動ツールの統合（「[agents_serverの起動ツールの統合](#agents_serverの起動ツールの統合)」）では`mode`ごとに入力を検証し、宣言の検証と`mode:`行による起動条件の決定を`task`の処理だけが行う。
+このため、一致確認の契約は自由本文の処理へ入らない。
+宣言外の項目を警告だけで受理する案と規範の改訂だけで扱う案は、書き足しの余地を残す（ユーザーの確認への回答「宣言欄だけ受理」）。
 
 両backendは委譲先の実行主体へ、自身が委譲先であることを示す指示を起動時に渡す。
 2026年10月23日から、Claudeの通常委譲は`ClaudeAgentOptions.system_prompt`へ独自の文字列を渡し、
@@ -640,11 +1113,27 @@ Codexの全区分は`thread/start`と全ての`thread/resume`へ同じ`baseInstr
 ベース指示は委譲元への返却、担当範囲、実装と調査の品質、安全な入力処理を持つ。
 人間との対話やworktree・PR作成を既定動作にする組み込みのメイン用指示は、委譲先の役割に適合しないため置き換える。
 規範の内容と優先順位は既存の配送と各規範が所有する。
-Codex backendは、ユーザーが`~/.claude/rules/`配下（サブディレクトリを含む）に置いた`*.md`の本文も、全launch kindの`developerInstructions`へ連結する。目的はClaude backendの委譲先がSDKの`setting_sources`の`user`で受け取るファイル群と同じ集合をCodexの委譲先へ渡し、engineの選択で委譲先が従う規範が変わらないようにすることである。2026年10月7日に、Codexで起動した公開担当が`~/.claude/rules/`直下のホスト固有の規範を知らずに続行できない理由を返し、委譲元がその節の所在を追送して初めて工程が進んだ。重複を除く規則は、ファイル先頭の`atk-auto`要素の`path`属性と同じ値の`atk-auto`要素をCodexが読む全体指示ファイル（`CODEX_HOME`が設定済みなら`$CODEX_HOME/AGENTS.md`、未設定なら`~/.codex/AGENTS.md`）が持つファイルを除くことである。ファイル名を列挙しないため、ホストごとに置くファイルが増えても追随を要さない。全体指示ファイルが無い環境では除外が0件になる。各ファイルは絶対パスを`path`属性に持つ`atk-auto`要素（`kind`は`user-rules`）で囲み、ユーザーの編集を次の起動と再開から反映するため`thread/start`と`thread/resume`のたびに読み直す。対象が無い場合は従来と同じ本文を返す。Codexのメインとネイティブのサブエージェントへは同じ集合を`~/.codex/AGENTS.md`の読込指示で届け、この連結は`agents_server`の委譲先へ届ける手段として併用する（`design-hosts.md`「Claude CodeとCodexの規範配置」）。却下した代替案は、委譲元が委譲プロンプトで規範の所在を渡す契約と、ファイルのパスだけを列挙して委譲先に読ませる案である。前者は委譲元が必要とする規定を事前に列挙できる場合にだけ成立し、観測事象では追送するまで欠落に気付けなかった。後者は規範の取得と読了の確認を各委譲先へ委ねるため採らない。Codexの大容量読取は出力予算と継続取得を警告し、通常の読取は継続する。予算を超える本文の継続取得を委譲先が終えたかは、パスの列挙だけでは委譲元から確認できない。Antigravityの委譲先は`rules/`配下も受け取らず、読込元（`~/.gemini/GEMINI.md`）へ本規則が当てはまらないため対象外とし、常時規範全体の配送とあわせて設計する。
+Codex backendは、ユーザーが`~/.claude/rules/`配下（サブディレクトリを含む）に置いた`*.md`の本文も、全launch kindの`developerInstructions`へ連結する。
+目的はClaude backendの委譲先がSDKの`setting_sources`の`user`で受け取るファイル群と同じ集合をCodexの委譲先へ渡し、engineの選択で委譲先が従う規範が変わらないようにすることである。
+2026年10月7日に、Codexで起動した公開担当が`~/.claude/rules/`直下のホスト固有の規範を知らずに続行できない理由を返し、委譲元がその節の所在を追送して初めて工程が進んだ。
+重複を除く規則は、ファイル先頭の`atk-auto`要素の`path`属性と同じ値の`atk-auto`要素をCodexが読む全体指示ファイル（`CODEX_HOME`が設定済みなら`$CODEX_HOME/AGENTS.md`、未設定なら`~/.codex/AGENTS.md`）が持つファイルを除くことである。
+ファイル名を列挙しないため、ホストごとに置くファイルが増えても追随を要さない。
+全体指示ファイルが無い環境では除外が0件になる。
+各ファイルは絶対パスを`path`属性に持つ`atk-auto`要素（`kind`は`user-rules`）で囲み、ユーザーの編集を次の起動と再開から反映するため`thread/start`と`thread/resume`のたびに読み直す。
+対象が無い場合は従来と同じ本文を返す。
+Codexのメインとネイティブのサブエージェントへは同じ集合を`~/.codex/AGENTS.md`の読込指示で届け、この連結は`agents_server`の委譲先へ届ける手段として併用する（`design-hosts.md`「Claude CodeとCodexの規範配置」）。
+却下した代替案は、委譲元が委譲プロンプトで規範の所在を渡す契約と、ファイルのパスだけを列挙して委譲先に読ませる案である。
+前者は委譲元が必要とする規定を事前に列挙できる場合にだけ成立し、観測事象では追送するまで欠落に気付けなかった。
+後者は規範の取得と読了の確認を各委譲先へ委ねるため採らない。
+Codexの大容量読取は出力予算と継続取得を警告し、通常の読取は継続する。
+予算を超える本文の継続取得を委譲先が終えたかは、パスの列挙だけでは委譲元から確認できない。
+Antigravityの委譲先は`rules/`配下も受け取らず、読込元（`~/.gemini/GEMINI.md`）へ本規則が当てはまらないため対象外とし、常時規範全体の配送とあわせて設計する。
 
-知識境界として、実行主体が委譲先として従う規範は`agent-toolkit/rules/01-agent.md`と`02-agent-operations.md`が持ち、本節は委譲先がこれらの規範を適用できる状態を起動時に成立させる手段だけを扱う。
+知識境界として、実行主体が委譲先として従う規範は`agent-toolkit/share/rules/common/01-agent.md`と`02-agent-operations.md`が持ち、本節は委譲先がこれらの規範を適用できる状態を起動時に成立させる手段だけを扱う。
 
-却下した代替案は、委譲プロンプトへ役割の明示を義務付ける規範だけを置く案と、委譲先セッションの環境変数の印を実行主体へ読ませる案である。前者は委譲元が記述を欠くと成立せず、役割を明示しない単発の委譲で自己申告の誤りを観測した。後者は実行主体が環境変数を観測する工程を新たに要し、指示本文で同じ結果を得られるため採用しない。
+却下した代替案は、委譲プロンプトへ役割の明示を義務付ける規範だけを置く案と、委譲先セッションの環境変数の印を実行主体へ読ませる案である。
+前者は委譲元が記述を欠くと成立せず、役割を明示しない単発の委譲で自己申告の誤りを観測した。
+後者は実行主体が環境変数を観測する工程を新たに要し、指示本文で同じ結果を得られるため採用しない。
 
 ## `write`と読者別の探索
 
@@ -652,31 +1141,54 @@ Codex backendは、ユーザーが`~/.claude/rules/`配下（サブディレク�
 `result_contract.py`は起動本文末尾の名前付き入力を共通parserで復元し、集合の一致と重複、対象別の完了欄と全体成功の整合を既存の形式回復へ接続する。
 検査に使う元の起動本文と形式回復の消費履歴は、backendの状態生成時に設定する。
 実行本文へ付ける資源案内と元の要求を分け、backendの開始応答より先に結果が到着しても、終了通知と登録簿の公開より前に検査する。
-形式回復の保留はManagerの再提出で解消する。Claudeのidleとストリーム終了で確定する対象は、背景完了待ちの保留だけにする。
+形式回復の保留はManagerの再提出で解消する。
+Claudeのidleとストリーム終了で確定する対象は、背景完了待ちの保留だけにする。
 形式の受理は実際の全文・比較資料・判定範囲の確認を保証しないため、その意味上の検収はレビュー担当が保持する。
 独自の読了台帳と継続管理を加える案は、既存の1回の形式回復と親の対象別検収で必要結果を維持できるため採らない。
 
-確定済みの文章を読者別に起草する軽量委譲は`start`の`write`を使い、`write_model`の候補列を適用する。文章の採否や規範の判断は委譲元が保持する。設定を保存していない場合の候補列は`agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium`とし、Claude候補は完全なモデルIDで指定する。モデルが担うのは確定済みの文章化であり、判断まで委ねると読者像と認可範囲が委譲プロンプトから逸れる（2026年9月24日、ユーザー指示）。
+確定済みの文章を読者別に起草する軽量委譲は`start`の`write`を使い、`write_model`の候補列を適用する。
+文章の採否や規範の判断は委譲元が保持する。
+設定を保存していない場合の候補列は`agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium`とし、Claude候補は完全なモデルIDで指定する。
+モデルが担うのは確定済みの文章化であり、判断まで委ねると読者像と認可範囲が委譲プロンプトから逸れる（2026年9月24日、ユーザー指示）。
 
-読み取って比べる独立した作業が多数ある担当は、読者と契約ごとに子探索を分け、対象集合と最終統合を担当自身が保持する。読者の違う文書を同じ探索にまとめると、前提知識と説明粒度の混同を見逃す（2026年9月24日、ユーザー指示）。
+読み取って比べる独立した作業が多数ある担当は、読者と契約ごとに子探索を分け、対象集合と最終統合を担当自身が保持する。
+読者の違う文書を同じ探索にまとめると、前提知識と説明粒度の混同を見逃す（2026年9月24日、ユーザー指示）。
 
 ## 委譲手段の選択
 
-Claude Codeからの委譲手段は`agent-toolkit/rules/01-agent.md`「委譲の要否判定」と`agent-toolkit/skills/delegation/references/runtime-routing.md`「実行手段」が定める。通常は`agents_server`を使う。専用agent定義、ユーザーまたは上位主体の明示指示、fork、およびMCPツールを呼び出せない場合にAgentツールへ切り替える。Agentツールは工程別モデル設定のeffortを渡せず、engineとモデルも異なり得るため、切り替えた工程、本来の設定値と理由を報告に残す。Codexからの委譲も同じ参照先の条件に従う。
+Claude Codeからの委譲手段は`agent-toolkit/share/rules/common/01-agent.md`「委譲の要否判定」と`agent-toolkit/skills/delegation/references/runtime-routing.md`「実行手段」が定める。
+通常は`agents_server`を使う。
+専用agent定義、ユーザーまたは上位主体の明示指示、fork、およびMCPツールを呼び出せない場合にAgentツールへ切り替える。
+Agentツールは工程別モデル設定のeffortを渡せず、engineとモデルも異なり得るため、切り替えた工程、本来の設定値と理由を報告に残す。
+Codexからの委譲も同じ参照先の条件に従う。
 
-委譲手段を一律に固定する案は、専用agent定義やforkの起動条件、MCPツールを呼び出せない場合の切替条件を表せない。Agentツールへの一律統一は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。
+委譲手段を一律に固定する案は、専用agent定義やforkの起動条件、MCPツールを呼び出せない場合の切替条件を表せない。
+Agentツールへの一律統一は、工程別モデル設定のeffortを委譲先へ渡せなくなるため採用しない。
 
 ## 人向けの`atk agents list`
 
 人が端末で`atk agents list`を使う目的は、session IDを選ぶことと、各委譲先の進行を読むことである。
 人向けの一覧はrootごとのツリーの各session IDの右側へ、statusLineと同じ構成（ラベルと`engine:model/effort`、直近の行動または進捗、経過時間と状態）の状況を並べる。
-実行中sessionの利用上限の解除待ちとAPI再試行は、statusLineと同じく通常の進捗より優先して区別する。端末が狭い場合もsession IDは省略せず、右側の説明から短くする。
-親子の接続は、statusLineと同じく状態ファイルの`host_session_id`を親IDとして使う。状態ファイル名は書込主体の識別子であり、親session IDと一致しない入れ子の委譲があるため親子付けへ転用しない（2026年10月11日に、Codex担当が起動した探索担当が枝線なしで表示された）。親が一覧に無い子も子孫とともに一度だけ表示する。
-経過時間と状態の間には、statusLineのAgent行と同じ書式で委譲sessionの文脈使用量（`53.5k/5%`）を置く。値は直近のモデル文脈を表し、上限が未知なら使用量だけ、使用量が未知なら省略する。API再試行と利用上限の解除待ちの行でも併記する。人向けの詳細表示（`atk agents show`）は同じ観測値を`context_tokens`・`context_window`の数値で返す。
-エージェント環境の一覧と詳細表示は文脈使用量を返さない。自動圧縮を前提とするエージェントは文脈量で判断を変えず、値を渡すと使用量を理由にした引き継ぎや停止の判断を誘うためである（2026年11月6日、ユーザー指示）。状態ファイルの値は人向けのstatuslineと待機中の自動圧縮が読むため保持する。
-行は状態ファイルの同じ値からPythonで組み立てる。PythonとRustは描画処理を共有できないため、PythonとRustのテストが`rust/claude-statusline/testdata/agents_server_state.json`の同じ親IDと数値例を読み、同じ意味と書式を保つ。statusLineの描画は`rust/claude-statusline`にあるが、IDと描画行を対応付けて返すCLIを持たず、agent-toolkitの配布物にRustのバイナリが含まれないためである。
-`--watch`は人が一覧の変化を追跡するため、約2秒ごとに同じ一覧処理を実行して画面を描き替え、Ctrl-Cで終了する。単発の一覧では画面の再描画と継続の終了を提供できない。外部の`watch`コマンドで包む案は、配布先へ追加のコマンドを求め、同じ一覧処理を子プロセスで反復するため採用しない。
-エージェント環境の一覧は機械向けの1行のJSONを保ち、`--watch`はエージェント環境と端末以外への出力で継続表示を始めずに拒否する。継続表示は終了しないため、エージェントの1回の呼び出しで結果を得られないからである。
+実行中sessionの利用上限の解除待ちとAPI再試行は、statusLineと同じく通常の進捗より優先して区別する。
+端末が狭い場合もsession IDは省略せず、右側の説明から短くする。
+親子の接続は、statusLineと同じく状態ファイルの`host_session_id`を親IDとして使う。
+状態ファイル名は書込主体の識別子であり、親session IDと一致しない入れ子の委譲があるため親子付けへ転用しない（2026年10月11日に、Codex担当が起動した探索担当が枝線なしで表示された）。
+親が一覧に無い子も子孫とともに一度だけ表示する。
+経過時間と状態の間には、statusLineのAgent行と同じ書式で委譲sessionの文脈使用量（`53.5k/5%`）を置く。
+値は直近のモデル文脈を表し、上限が未知なら使用量だけ、使用量が未知なら省略する。
+API再試行と利用上限の解除待ちの行でも併記する。
+人向けの詳細表示（`atk agents show`）は同じ観測値を`context_tokens`・`context_window`の数値で返す。
+エージェント環境の一覧と詳細表示は文脈使用量を返さない。
+自動圧縮を前提とするエージェントは文脈量で判断を変えず、値を渡すと使用量を理由にした引き継ぎや停止の判断を誘うためである（2026年11月6日、ユーザー指示）。
+状態ファイルの値は人向けのstatuslineと待機中の自動圧縮が読むため保持する。
+行は状態ファイルの同じ値からPythonで組み立てる。
+PythonとRustは描画処理を共有できないため、PythonとRustのテストが`rust/claude-statusline/testdata/agents_server_state.json`の同じ親IDと数値例を読み、同じ意味と書式を保つ。
+statusLineの描画は`rust/claude-statusline`にあるが、IDと描画行を対応付けて返すCLIを持たず、agent-toolkitの配布物にRustのバイナリが含まれないためである。
+`--watch`は人が一覧の変化を追跡するため、約2秒ごとに同じ一覧処理を実行して画面を描き替え、Ctrl-Cで終了する。
+単発の一覧では画面の再描画と継続の終了を提供できない。
+外部の`watch`コマンドで包む案は、配布先へ追加のコマンドを求め、同じ一覧処理を子プロセスで反復するため採用しない。
+エージェント環境の一覧は機械向けの1行のJSONを保ち、`--watch`はエージェント環境と端末以外への出力で継続表示を始めずに拒否する。
+継続表示は終了しないため、エージェントの1回の呼び出しで結果を得られないからである。
 
 ## Antigravity CLI backendの用途限定の追加
 
@@ -691,19 +1203,23 @@ session識別子は`--output-format stream-json`が返す`init`イベントの�
 `_atk/config.py`の`_STAGE_MODEL_PATTERN`と`_KNOWN_MODELS`だけを広げ、
 モデル設定は工程別候補列が持つ。
 Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
-Antigravity CLIも工程別候補列へ直接指定できる。委譲先が失敗で終了した場合は、共通の`cli_turn.py`から継承する`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
+Antigravity CLIも工程別候補列へ直接指定できる。
+委譲先が失敗で終了した場合は、共通の`cli_turn.py`から継承する`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。
 
-Antigravityのexploreも通常の候補選択と開始・再開処理を使う。読取責務は他backendと同じ共通プロンプトへ置き、実際の可用性失敗だけを候補切替へ使う。
+Antigravityのexploreも通常の候補選択と開始・再開処理を使う。
+読取責務は他backendと同じ共通プロンプトへ置き、実際の可用性失敗だけを候補切替へ使う。
 
 委譲先には`--dangerously-skip-permissions`を付ける。
 原稿ファイルの書き換えまでを任せる用途であり、Antigravity CLIの非対話モードは対話確認を持たず、
 agent-toolkitのhookによる遮断もAntigravity CLIへ及ばないためである。
-この判断はユーザーが確定した。Antigravity CLIの権限を見直す作業は、この記録を根拠として扱う。
+この判断はユーザーが確定した。
+Antigravity CLIの権限を見直す作業は、この記録を根拠として扱う。
 
 導入のステップ（`pytools/_internal/setup_agy_cli.py`）は取得・導入の失敗を警告に留め、失敗を持たない`PostApplyOutcome`を返す。
 公式インストーラーはバイナリ本体を`*.run.app`のエンドポイントから取得するため、バイナリの取得先ホストを遮断するネットワークでは導入できない。
 他のステップと同じく例外で終えると、取得先ホストへ接続できない環境では`update-dotfiles`が毎回終了コード1になり、他のステップの失敗が埋もれる。
-この判断もユーザーが確定した。導入のステップを見直す作業は、この記録を根拠として扱う。
+この判断もユーザーが確定した。
+導入のステップを見直す作業は、この記録を根拠として扱う。
 更新はAntigravity CLI自身が実行中に自動で行うため、導入ステップはランチャーが無い場合だけインストーラーを実行する。
 
 statuslineは`claude-statusline`の`agy-statusline`モードが担う。
@@ -725,7 +1241,9 @@ engine別のJSONを共通実行処理へ埋め込む案も、イベント仕様�
 Antigravityの既存試験を共通化の回帰試験として使う。
 
 `opencode run`へ`--model provider/model`・`--format json`・`--auto`を渡し、effortを`--variant`、継続IDを`--session`へ渡す。
-設定の`provider/model[@effort]`はモデル内の`/`を保持し、末尾の`@`でvariantを分ける。既知のeffortを末尾の`/`へ書く形も受理する。担当モデルのチェックは共通のモデル候補パーサーへ委ね、個別の正規表現は持たない。
+設定の`provider/model[@effort]`はモデル内の`/`を保持し、末尾の`@`でvariantを分ける。
+既知のeffortを末尾の`/`へ書く形も受理する。
+担当モデルのチェックは共通のモデル候補パーサーへ委ね、個別の正規表現は持たない。
 OpenCode 1.19.3の[公開ソース](https://github.com/anomalyco/opencode/blob/v1.19.3/packages/opencode/src/cli/cmd/run.ts)で、各イベントの`sessionID`、本文・ツール・step使用量の`part`と、idleでCLIが終わる契約を確認した。
 終了コード0とアシスタント本文で完了を確定し、errorイベント・非0終了・本文なしは失敗とする。
 OpenCodeには実行時間上限の指定が無いため共通実行処理で3600秒を持ち、独自の上限を持つAntigravityには重ねない。
@@ -749,8 +1267,14 @@ CLI自身によるプロジェクト規範の読込は未確認として扱う�
 人が`atk agents list`から選んだsessionの進行を読むため、backendは解析済みの公開JSONイベントを
 ルートsessionの状態ディレクトリ内にある`logs/<session-id>.jsonl`へ順に追記する。
 `atk agents logs`はClaude Code・Codexの既存記録と同じ表示処理で読み、`--follow`では追記分を表示する。
-text表示は`--verbose`を付けない場合に会話の流れを要約し、振り返りの通常表示と同じ基準でツール呼び出し・成功したツール結果・思考を除き、各本文を同じ上限で切り詰める。上限と省略の標識は`session_record_format`の定義を両者が参照する（2026年10月18日、ユーザー指示）。`--verbose`は全イベントを全文で表示し、どちらも項目の間に空行を1行置く。markdownはAntigravityの前任の引き継ぎが使う詳細表示のため変えない。
-保存済みの記録をmarkdownへ変換する場合も同じコマンドを使う。単一識別子に加え、作業ディレクトリまたは全件を選び、開始日時の新しい順で件数を限定する。1件1ファイルの保存では日時名の衝突を識別子で解消し、既存ファイルを上書きしない。Claude Codeのメイン記録にサブエージェントの会話を含めるか、思考とツール詳細を出力するかは呼び出し時に指定する。
+text表示は`--verbose`を付けない場合に会話の流れを要約し、振り返りの通常表示と同じ基準でツール呼び出し・成功したツール結果・思考を除き、各本文を同じ上限で切り詰める。
+上限と省略の標識は`session_record_format`の定義を両者が参照する（2026年10月18日、ユーザー指示）。
+`--verbose`は全イベントを全文で表示し、どちらも項目の間に空行を1行置く。
+markdownはAntigravityの前任の引き継ぎが使う詳細表示のため変えない。
+保存済みの記録をmarkdownへ変換する場合も同じコマンドを使う。
+単一識別子に加え、作業ディレクトリまたは全件を選び、開始日時の新しい順で件数を限定する。
+1件1ファイルの保存では日時名の衝突を識別子で解消し、既存ファイルを上書きしない。
+Claude Codeのメイン記録にサブエージェントの会話を含めるか、思考とツール詳細を出力するかは呼び出し時に指定する。
 識別子から記録を探す処理は`agent-toolkit/agent_toolkit/_agents_server/record_paths.py`へ置き、`atk agents logs`と振り返りの`atk run-script session-review-evidence`が共有する。
 保持と期限回収は状態ディレクトリの7日契約に従う。
 Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力には使わない。
@@ -762,7 +1286,8 @@ Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力�
 統合前の`start`・`start_custom`・`start_explore`・`start_write`・`start_shell`はいずれも同じ非同期のsession開始だった。
 違いは入力の組み立て、起動区分、モデルとlabelだけだったため、公開する起動ツールを`start`の1つへまとめる。
 入力の形は`mode`（`task`・`delegate`・`explore`・`write`・`shell`、省略時は`task`）で選ぶ。
-継続・中断・破棄・一覧・詳細は開始と異なる操作であり、統合しない。統合後の公開ツールと各ツールの契約は「公開ツールの契約」にある。
+継続・中断・破棄・一覧・詳細は開始と異なる操作であり、統合しない。
+統合後の公開ツールと各ツールの契約は「公開ツールの契約」にある。
 
 構造の理由は、`mode`固有の入力を平坦な引数として持ち、`mode`が必要とする入力の欠落と受理しない入力の混在を委譲先の起動前に拒否する点にある。
 `<役割名>.subagent.md`の宣言の検証、`mode:`行による起動条件と工程別モデル設定の決定は`task`の処理だけが行い、自由本文の処理は`<役割名>.subagent.md`との一致確認を経ない。
@@ -778,57 +1303,105 @@ Antigravity CLI内部の会話DBは未公開protobufのため、記録の入力�
 全量コマンド出力の保存は`shell`、調査と成果ファイルの作成は`delegate`、受領した返却本文の保存は委譲元が担う。
 引数説明との結合だけで確認する案は、説明本文しか読まない起動側へ制約が届かないため採らない。
 新しい保存モードや探索側の書込許可は加えず、既存のmodeを選ぶ説明で誤った保存依頼を防ぐ。
-説明本文はClaude Codeが初期送信で切り詰める4,096文字以内に保ち、必須入力を持つ例を残したまま省略可能なlabelの例示を減らす。ツール検索で後から読む説明の上限16,384文字も同時に満たすため、検索の有無で説明を変えない。上限の版と典拠は[audit-records.md](audit-records.md)「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」にある。
+説明本文はClaude Codeが初期送信で切り詰める4,096文字以内に保ち、必須入力を持つ例を残したまま省略可能なlabelの例示を減らす。
+ツール検索で後から読む説明の上限16,384文字も同時に満たすため、検索の有無で説明を変えない。
+上限の版と典拠は[audit-records.md](audit-records.md)「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」にある。
 `mode`ごとの必須・禁止は引数を選ぶ時点にも必要なため、`start`の説明の表と引数の説明の双方に同じ条件を示す。
-引数の意味と書式を`instructions`へ委ねる参照は置かない。ホストが`instructions`を切り詰めた場合や、ツールの遅延読み込みでスキーマだけを取得した場合に、委譲元が引数を判断できなくなるためである。
+引数の意味と書式を`instructions`へ委ねる参照は置かない。
+ホストが`instructions`を切り詰めた場合や、ツールの遅延読み込みでスキーマだけを取得した場合に、委譲元が引数を判断できなくなるためである。
 `label`の凡例（`<レーン識別子>-<役割名>`、`explore-<対象>`など）と省略時の生成規則も`label`の説明が持ち、`atk agents list`とstatuslineで委譲先を名前で見分けられる状態を保つ。
-実際に開始したsessionと配送先のsessionが保持する`label`を、`start`と`send_message`の応答へ返す。起動時は省略時と空白指定時の生成規則で確定した値、再開後は登録簿か退避した再開情報から引き継いだ値であり、担当名を記録していない旧形式の記録から再開した場合は空文字列を返す。
+実際に開始したsessionと配送先のsessionが保持する`label`を、`start`と`send_message`の応答へ返す。
+起動時は省略時と空白指定時の生成規則で確定した値、再開後は登録簿か退避した再開情報から引き継いだ値であり、担当名を記録していない旧形式の記録から再開した場合は空文字列を返す。
 複数の委譲先を起動した委譲元が、起動応答から`session_id`と担当を対応付け、追送応答で実際の宛先を確かめられるようにするためである。
 2026年10月7日に、ある要求の情報が別の要求の担当へ追送され、配送応答が`delivery`と`root_session_id`だけを返したため送信側が誤送を検出できなかった。
-公開応答を後続操作の最小項目へ限定した方針は保ち、起動条件の詳細は引き続き`show`が返す。担当名は宛先の確認に毎回使うため通常の応答へ含める。
+公開応答を後続操作の最小項目へ限定した方針は保ち、起動条件の詳細は引き続き`show`が返す。
+担当名は宛先の確認に毎回使うため通常の応答へ含める。
 送信前に`show`か`atk agents list`で担当を照会する案は、照会を毎回要し、配送後の宛先を確かめられないため採らない。
 期待する担当名を`send_message`の必須入力にして不一致を拒否する案は、呼び出し側の入力と誤りの発生箇所を増やすため採らない。
-応答の`label`は誤送を遮断しない。送信側が送信前後に比較できる情報を返す。`list`の最小状態と、例外で返る操作（未知のsession、配送のtimeout）には加えない。
+応答の`label`は誤送を遮断しない。
+送信側が送信前後に比較できる情報を返す。
+`list`の最小状態と、例外で返る操作（未知のsession、配送のtimeout）には加えない。
 
-旧公開名の別名ツールは登録しない。委譲元はエージェントに限られ、新しい説明から`start`の呼び方を判断できるためである。
-一方、統合前の旧名で保存されたセッション記録は残る。孫sessionの追跡、PostToolUseの記録、振り返りの`atk run-script session-review-evidence`とセッション表示は旧名も読み、対応する`mode`として扱う。
+旧公開名の別名ツールは登録しない。
+委譲元はエージェントに限られ、新しい説明から`start`の呼び方を判断できるためである。
+一方、統合前の旧名で保存されたセッション記録は残る。
+孫sessionの追跡、PostToolUseの記録、振り返りの`atk run-script session-review-evidence`とセッション表示は旧名も読み、対応する`mode`として扱う。
 旧名と`mode`の対応は`agent-toolkit/agent_toolkit/_agents_server/tool_names.py`が持ち、判定する各処理は同じ値を参照する。
 
 ## agents_serverの実装の配置
 
-目的はMCPツールの公開面、sessionの管理、engine別のbackendおよび共有状態の読み書きを責務ごとのモジュールへ分けることである。変更が1つの責務の範囲で完結するようにする。
-`agent-toolkit/agent_toolkit/agents_server_mcp.py`はMCPホストの設定が起動するパスである。同ファイルは引数の解釈と`_agents_server/mcp_tools.py`の`serve`の呼び出しだけを持つ。
-MCPツールの定義とlifespanは`mcp_tools.py`が持つ。initializeの節目の診断ログと、例外のエラー本文への変換は`mcp_transport.py`が持つ。
+目的はMCPツールの公開面、sessionの管理、engine別のbackendおよび共有状態の読み書きを責務ごとのモジュールへ分けることである。
+変更が1つの責務の範囲で完結するようにする。
+`agent-toolkit/agent_toolkit/agents_server_mcp.py`はMCPホストの設定が起動するパスである。
+同ファイルは引数の解釈と`_agents_server/mcp_tools.py`の`serve`の呼び出しだけを持つ。
+MCPツールの定義とlifespanは`mcp_tools.py`が持つ。
+initializeの節目の診断ログと、例外のエラー本文への変換は`mcp_transport.py`が持つ。
 ツールと引数の説明文は`tool_descriptions.py`、`start`の入力の検証と`<役割名>.subagent.md`の解決は`launch_requests.py`が持つ。
 
 `AgentsServerManager`（`manager.py`）は責務ごとのクラスを順に継承し、起動・追送・中断・終了を加える。
 継承する順は、共有の状態とbackendの保持（`manager_base.py`）、応答の整形（`responses.py`）、session登録簿からの解決と一覧・表示・停止（`manager_registry.py`）である。
 その後に自動再開（`manager_resume.py`）と待機（`manager_wait.py`）が続く。
 各責務が同じsession集合と条件変数を共有するため、状態を持つ1つのインスタンスの中でモジュールだけを分ける。
-責務ごとに別のオブジェクトへ分け、状態を引数で渡し合う案は採らない。session集合・待機中の再開・条件変数を全てのオブジェクトが参照するため、受け渡しの箇所が増えるだけで依存は減らない。
+責務ごとに別のオブジェクトへ分け、状態を引数で渡し合う案は採らない。
+session集合・待機中の再開・条件変数を全てのオブジェクトが参照するため、受け渡しの箇所が増えるだけで依存は減らない。
 
 engine別のbackendは`backends.py`の`Backend`（`typing.Protocol`）を満たす。
 engineごとの性質は各backendのクラスが属性と静的メソッドで持ち、manager系のモジュールはengine名を比べずに問い合わせる。
 対象の性質は、起動の例外で次の候補へ進むか、可用性の失敗の判定、中断にturnの識別子を要するか、所有者のいない記録を引き継げるかである。
 engine名とbackendのクラスの対応と、engineごとに異なる生成時の引数を持つのは`backends.py`だけである。
 
-共有状態ディレクトリの読み書きは、対象ごとのモジュールへ分ける。配置は`shared_layout.py`、ルートと書込主体の識別は`shared_roots.py`、statusline向けの状態ファイルは`status_file.py`が持つ。
+共有状態ディレクトリの読み書きは、対象ごとのモジュールへ分ける。
+配置は`shared_layout.py`、ルートと書込主体の識別は`shared_roots.py`、statusline向けの状態ファイルは`status_file.py`が持つ。
 終了時の結果は`retained_results.py`、待機対象は`wait_targets.py`、上り通知は`notice_inbox.py`、除外した候補は`unavailable_candidates.py`、掃引は`shared_sweep.py`が持つ。
 session状態は`state.py`、公開応答への射影は`result_projection.py`、自動再開の状態遷移は`resume_waits.py`が持つ。
 委譲先の待機の観測は`wait_output_tracking.py`、委譲先へ渡す指示の組み立ては`launch_prompts.py`が持つ。
 
 ### 共有状態の非同期境界
 
-イベントループのスレッドで同期のロック取得・Event待機・join・I/Oの完了を待つと、同じloopの独立した要求、通知、heartbeatと停止要求を処理できない。このため、同期操作をworkerへ分離し、loop側はawaitで完了を待つ。
-保存と監視の完了を待つのは、登録・保存の順序と終了時の結果の一度だけの回収を保ち、停止時に全threadの終了と出力の完了を確認するためである。待機を打ち切る案と、保存や監視を背景化したまま返る案ではこれらの完了を保証できないため採らない。
+イベントループのスレッドで同期のロック取得・Event待機・join・I/Oの完了を待つと、同じloopの独立した要求、通知、heartbeatと停止要求を処理できない。
+このため、同期操作をworkerへ分離し、loop側はawaitで完了を待つ。
+保存と監視の完了を待つのは、登録・保存の順序と終了時の結果の一度だけの回収を保ち、停止時に全threadの終了と出力の完了を確認するためである。
+待機を打ち切る案と、保存や監視を背景化したまま返る案ではこれらの完了を保証できないため採らない。
 
-同期操作の共通実装は`_common/async_operations.py`が持つ。agents_serverは`file_operations.py`の既存名から利用し、serveの監視とmedia_remoteの監視も同じ実装で準備・終了を回収する。
+同期操作の共通実装は`_common/async_operations.py`が持つ。
+agents_serverは`file_operations.py`の既存名から利用し、serveの監視とmedia_remoteの監視も同じ実装で準備・終了を回収する。
 
-Managerの照会・復元・回収は非同期APIで提供する。登録簿、候補除外、終了時の結果と通知の排他回収、起動資料、設定合成、診断と資源照会は`file_operations.run_file_operation`でworkerの完了を待つ。同期CLI向けのファイル操作APIも保持する。
-SessionStateの更新、射影の組み立て、公開済み結果の台帳と保持タイマーはイベントループが所有する。workerへは操作に必要なパス・本文と、資源計測用の状態snapshotを渡す。終了では予約を取り消し、開始済みの保存・診断とbackendの後始末を回収する。Claudeの接続終了と設定の回収は1つの保護されたtaskで完走する。
+Managerの照会・復元・回収は非同期APIで提供する。
+登録簿、候補除外、終了時の結果と通知の排他回収、起動資料、設定合成、診断と資源照会は`file_operations.run_file_operation`でworkerの完了を待つ。
+同期CLI向けのファイル操作APIも保持する。
+SessionStateの更新、射影の組み立て、公開済み結果の台帳と保持タイマーはイベントループが所有する。
+workerへは操作に必要なパス・本文と、資源計測用の状態snapshotを渡す。
+終了では予約を取り消し、開始済みの保存・診断とbackendの後始末を回収する。
+Claudeの接続終了と設定の回収は1つの保護されたtaskで完走する。
 
-永続ログは専用workerが受理順に出力し、サーバーの返却前に全記録とworkerの終了を回収する。受信側handlerとファイルhandlerのロックを分け、Pythonのlogging終了処理がhandlerのロックを保持していてもworkerを回収できるようにする。
+永続ログは専用workerが受理順に出力し、サーバーの返却前に全記録とworkerの終了を回収する。
+受信側handlerとファイルhandlerのロックを分け、Pythonのlogging終了処理がhandlerのロックを保持していてもworkerを回収できるようにする。
 
 ### atkの起動形と観測
 
-`_common/shell_tokens.py`がランチャー名と起動の事実を記録するシェルツールの集合を所有する。案内側の`cli_instructions`と起動の判定側は同じ定義を使う。WindowsのPowerShellで実行した`atk agents wait`もPostToolUseが観測の試みとして記録し、`pending_observation`を解消する。待機の出力追跡は分解済みの実行トークンから起動を判定し、引数へ引用されたコマンドの文字列を実行の根拠へ含めない。
+`_common/shell_tokens.py`がランチャー名と起動の事実を記録するシェルツールの集合を所有する。
+案内側の`cli_instructions`と起動の判定側は同じ定義を使う。
+WindowsのPowerShellで実行した`atk agents wait`もPostToolUseが観測の試みとして記録し、`pending_observation`を解消する。
+待機の出力追跡は分解済みの実行トークンから起動を判定し、引数へ引用されたコマンドの文字列を実行の根拠へ含めない。
+
+## 効率化の仕組みの棚卸し（2026年11月）
+
+横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
+判定の「単純化」には、以前に独自の方式を撤去して標準の手段へまとめた変更の維持も含む。
+
+| 仕組み・目的・導入や拡張の時期 | 不具合の件数と所要 | 実測した効果 | 壊れたときの既存手段 | 判定・実施結果または引継ぎ先 |
+| --- | --- | --- | --- | --- |
+| プロンプトキャッシュ保持期間の経路別明示（通常起動1h・軽量起動5m）。再書込みを減らす。時期: 2026年の9月3日、根拠記録 9月2日 由来: 2026年9月の確認回答でユーザーがexplore 5mとSDK配下1hの両方を選択した。独自検出の細部まで指定したものではない。 | 設定値の伝達に関する未確定の記録がある。停止・修正所要は不明。 | 649スレッドの間隔分布と価格倍率による試算で、1時間の相対費用は5分の0.9555倍。実費や全体所要の前後対照ではない。 | ホストの標準設定を確認する。独自の連動を外す際も、明示した保持期間の意味は保つ。 | 測定で決める。選択済みの経路別TTLを保ち、変更は同じ入力の費用・待ちの比較後に決める。 引継ぎ先: 20261110-131620-001.md。 |
+| 待機上限を保持期間・ホスト・背景機能から導出（270秒／1740秒／540秒）。キャッシュ満了前に委譲元を再開する。時期: 2026年の9月2日、9月30日、10月19日 由来: 2026年9月2日の対話でユーザーがTTLから待機上限を導出する案を指定したと原本に記録されている。ホスト別の変換と数値はエージェントの具体化。 | 期限の縮めすぎを直した履歴があり、旧方式では約4分ごとの再発行を反復した。独立障害の総数・修正所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 公開のatk agents waitで再待機し、保存した結果を読む。専用の無効化引数は未確認。 | 測定で決める。ユーザー指定のTTL連動を測らずに外さない。期限の単純化は同じ入力で費用・再開所要を比較して決める。 引継ぎ先: 20261110-131620-001.md。 |
+| 待機の一本化（`wait_any`→引数なし`wait`→CLI `atk agents wait`）と全件1回返却。時期: 2026年の9月10日、9月14日、9月16日 由来: ユーザーは9月10日に「waitの引数なしに統一して」、9月15日に未回収の終了結果を複数まとめて返す方式を指定した。CLI移行の個別由来は未確定。 | 待機機構群の障害報告14件には旧公開操作や保留状態の事象も含む。CLIへの一本化だけの不具合数は確定していない。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 同じ公開待機と個別状態の照会を使い、結果が無ければ診断から次の操作を選ぶ。 | 維持。引数なしの一括返却というユーザー指定を保つ。旧待機操作は戻さず、再開状態の内部整理とは分ける。 |
+| `atk agents wait`の出力へ結果本文を直接表示。待機後の本文ファイル読取を省く。時期: 2026年の10月2日、10月7日、重複保存の解消 10月25日 由来: ユーザーは結果受領の手順の簡潔化を求めた。label・本文ファイル・直接表示と閾値はエージェントの具体化。 | 二重保存を解消した2026年10月25日の記録がある。対応の所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 長い本文は応答が返す保存先をcat・sed・Readで読む。結果本文を別のファイルへ書き直さない。 | 単純化。既存の結果の直接表示と長い本文の保存先を使い、別の本文転記と重複保存を増やさない。 |
+| `start`が最初のモデル出力で応答（可用性確認の上限15秒を早期に打ち切る）。時期: 2026年の9月26日 由来: 9月26日の原本は毎回15秒待つ観測からエージェントが早期応答を起草したもの。確認した原本に方式のユーザー指定は無い。 | 起動・可用性機構群で少なくとも9件の報告。旧方式の3回各180秒、6回各90秒の打切りなどを含む。修正所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 公開状態と起動診断を確認し、同じsessionへの既存の継続または失敗後の回復を使う。 | 単純化。起動・保留・再開の所有をそろえる独立要求へ引き継ぐ。単なる起動待機の延長で対処しない。引継ぎ先: 20261110-131657-001.md。 |
+| 結果の保留と自動再開（背景完了、過負荷、利用上限、接続切替、daemon再起動）。時期: 2026年の9月4日、10月4日、10月10日、10月16日、11月5日 由来: ユーザーが9月に自動再開、10月に自動リトライ、11月に子・孫の自動復旧を要求した。予約・保留状態と回数は個別の具体化。 | 結果保留・再開の機構群で少なくとも10件と帰属不明2件。3回各10〜40分、32分停止などの報告。修正所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 同じsessionへの公開send_messageと、保存した出力・引継ぎ原本から再開する。配送成立とturn開始を分けて確認する。 | 測定で決める。要求された自動再開・復旧機能は保つ。状態の削減は同じ障害入力で再開成功と全体所要を比較して決める。 引継ぎ先: 20261110-131657-001.md。 |
+| 軽量起動`explore`・`shell`・`write`（大出力の分離、規範配送の縮小）と`start`への統合。時期: 2026年の9月3日、9月14日、10月1日、10月14日、10月7日 由来: ユーザーが軽量モデル既定、start_shell追加、start系の統合を指定した。write自体の初期要求は未特定。 | 2026年10月19日の工程別モデル割当不一致は15起動の報告であり、軽量mode固有の障害件数とはしない。所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 定型コマンドは標準実行と分割読取へ戻せる。独立文脈レビューや所有権の保護には代用しない。 | 維持。軽量既定とstart統合の選択を保ち、独立評価と書込所有権を維持する。 |
+| 起動時の規範注入と軽量起動向け短節（呼出元がプロンプトへ共通規則を書き直さない）。時期: 2026年の9月6日、9月22日、9月29日、10月7日、11月5日 由来: 主体別規範をhookで起動時に注入する方式と、自動注入を全てタグで囲む方式はユーザー指定。Codexへの追加配送は観測起点の是正。 | 起動本文の容量に対する複数の修正履歴がある。独立した障害の総数と所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 原本から必要な契約を読む。必須契約が欠落したままの起動を成功扱いしない。 | 維持。要求された起動時注入と境界タグを保つ。重複配送・記録先二重付与は別の欠陥として扱う。 |
+| 定期再確認の`start`内自動装着（起動前手順の削減）。時期: 2026年の10月7日 由来: 10月6日にユーザーが起動後hookでの自動注入とmodによる定期再確認を提案した。Cronの内部操作はエージェントの選定。 | 定期再確認の機構群で3件の報告。装着されない警告、残ったtaskで終了確認に止まる例など。所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 公開の待機と完了通知が成立する環境ではそれを使い、再開保証がなければ状態を保存して明示再開する。 | 測定で決める。自動装着の要求を保つ。期限や予約状態の変更は、再開保証と同じ入力の所要を比較して決める。 引継ぎ先: 20261110-131620-001.md。 |
+| API残高不足の観測をプロセス内で1時間共有（失敗と切替の往復を防ぐ）。時期: 2026年の10月27日の共有記録、10月29日の現ファイル追加。両履歴の関係は未確定 由来: 10月の実会話でユーザーが非永続化と定期再確認を要求した。1時間の保持時間はエージェント判断。専用の初期WIは未特定。 | 独立した障害件数と修正所要は、今回参照した記録から確定していない。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 設定済みの接続の選択と既存の再試行を使う。認証の失敗を隠したり認証情報を複製したりしない。 | 維持。失敗が確認された接続の再試行を抑えるプロセス内の最小記録であり、永続台帳を増やさない。接続と認証の選択権は設定側に保つ。 |
+| 配布物の保持実体の共有（MCP数に比例する複製を抑える）、共有実行環境、ウォームアップ。時期: 2026年の10月23日、10月30日、11月7日、10月24日、11月8日 由来: 容量・venv重複の削減はユーザー要求で、保持実体と環境の共有は具体化。独立工程の並列ウォームアップはユーザーの並列化要求に由来する。 | 共有実体・再読込を含む機構群で少なくとも4件。約85秒の起動不能、30秒上限、inotify94件と上限128の例があり、lease単体の件数ではない。 | 3rootの並列ウォームアップは交互各3回で中央値11.594→4.553秒。別の同依存key・2targetの準備共有対照は各1回で0.470917→0.345644秒、prepare起動2→1回。後者の負荷固定は未記載。共有実体そのものや更新全体の対照とは分ける。出所: 10月26日の準備共有と10月30日の並列化の記録。 | 既存の明示データ領域・再起動・原本からの再解決がある。共有だけを無効化する公開操作は未確認。 | 測定で決める。独立工程の並列ウォームアップは維持する。共有実体・監視・環境方式の整理は、容量と同条件の全体所要を比較して決める。 引継ぎ先: 20261110-131732-001.md。 |
+| agents_serverの上り通知（`atk agents notify`）。委譲先がturnを終えずに委譲元へ届け、待機が通知時点で復帰する。時期: 2026年の9月6日 由来: 委譲先から呼出元へ通知する機能はユーザー要求。CLIと共有ディレクトリという媒体は具体化。 | 独立した障害件数と修正所要は、今回参照した記録から確定していない。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 通知が送れなければ、通常の終了返却へ必要な事実を保持する。 | 維持。途中の重要な事実を委譲元へ届ける機能要件であり、終了返却とは別に保つ。同じ完了報告の二重送信には使わない。 |
+| 起動失敗を待機側が短時間で観測（対象0件の継続上限で非0終了）。時期: 2026年の9月15日 由来: 起動失敗後の空待ち防止と短い初期化上限はユーザー要求。最終の50秒・150秒は実測に基づくエージェントの補正。 | 独立した障害件数と修正所要は、今回参照した記録から確定していない。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 公開の一覧・個別状態と保存された結果から起動状態を確認する。 | 維持。対象が存在しないまま待ち続けないための終了観測であり、正常な起動中と不在を区別して非0と次操作を返す。 |
+| 引き継ぎ記録先の自動付与と明示指定の共有。時期: 2026年10月18日 fae7c9a6d。自由本文への付与とtaskの明示指定が別経路。 由来: 10月17日にユーザーが引き継ぎ記録の自動生成と軽量起動の除外を提案した。既存の明示パスと別のパスを二重付与する欠陥は要求に含まれない。 | 同じ不具合を4起動で報告。明示の記録先と自動の記録先が併存し、複製または所在案内で回避した。所要は未測定。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 明示値を唯一の保存先として使う既存のtask経路、記録先への所在案内。二重書込を標準にはしない。 | 維持。要求された自動生成は保つ。明示指定があるのに二重付与する欠陥だけを20261110-095657-002.mdへ引き継ぐ。 引継ぎ先: 20261110-095657-002.md。 |

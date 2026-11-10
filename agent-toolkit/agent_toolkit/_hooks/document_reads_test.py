@@ -1,13 +1,15 @@
 """同名の品質スキルと運用スキルの資料識別を分離する。"""
 
 import json
+import pathlib
+import shlex
 import subprocess
 
 import pytest
 
 from agent_toolkit._common import plugin_roots, read_triggers
-from agent_toolkit._hooks import document_reads
-from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._hooks import document_reads, rules_context
+from agent_toolkit._hooks.pretooluse import large_reads, read_acquisition, read_delivery
 
 
 def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_path, monkeypatch):
@@ -123,3 +125,84 @@ def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path,
             host="claude",
             project=project,
         )
+
+
+@pytest.mark.parametrize("linked", [False, True])
+@pytest.mark.parametrize(
+    "relative,distribution",
+    [
+        ("dot_claude/skills/operate-ak110-projects/SKILL.md", ".codex/skills/operate-ak110-projects/SKILL.md"),
+        (
+            "dot_claude/skills/operate-ak110-projects/references/ci-and-tooling.md",
+            ".codex/skills/operate-ak110-projects/references/ci-and-tooling.md",
+        ),
+        ("dot_claude/rules/myprojects.md.tmpl", ".claude/rules/myprojects.md"),
+        (
+            "dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
+            ".gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md",
+        ),
+    ],
+)
+def test_chezmoi_source_and_distribution_link_require_full_body(tmp_path, monkeypatch, capsys, linked, relative, distribution):
+    """実在原本と配布形のリンクを通し、全文案内・起動配送・受信の共通契約を確かめる。"""
+    root = pathlib.Path(__file__).resolve().parents[2]
+    source = root.parent / ".chezmoi-source" / relative
+    path = source
+    if linked:
+        link = tmp_path / distribution
+        link.parent.mkdir(parents=True)
+        link.symlink_to(source)
+        path = link
+        assert path.resolve() == source
+    text = path.read_text(encoding="utf-8")
+    heading = next(line.removeprefix("## ") for line in text.splitlines() if line.startswith("## "))
+    target = read_triggers.ReadTarget(path, heading)
+    assert read_triggers.is_normative_document(path)
+    section = target.body()
+    assert section != text
+    candidates = document_reads.receipt_candidates([target])
+    received = document_reads.received_candidates(candidates, [section])
+    records = {document_reads.receipt_key(item): ["main"] for item in received}
+    assert document_reads.acquisition_state(records, target, "main") == "missing"
+    assert not read_delivery.target_ready(records, target, "main")
+    received = document_reads.received_candidates(candidates, [text])
+    records = {document_reads.receipt_key(item): ["main"] for item in received}
+    assert document_reads.acquisition_state(records, target, "main") == "current"
+    assert read_delivery.target_ready(records, target, "main")
+
+    guidance = read_delivery.acquisition_step(target, "codex")
+    assert "cat --" in guidance and "sed -n" not in guidance and "指定節" not in guidance
+    guidance = read_acquisition.codex_acquisition(path, target.line_ranges())
+    assert "cat --" in guidance and "sed -n" not in guidance
+    assert read_delivery.read_guidance_key(target, invocation=False) == read_delivery.read_guidance_key(
+        read_triggers.ReadTarget(path), invocation=False
+    )
+    packet = read_triggers.startup_documents([target], root)
+    assert text in packet
+    metadata = next(line for line in packet.splitlines() if line.startswith("資料JSON: "))
+    assert json.loads(metadata.removeprefix("資料JSON: "))["heading"] == ""
+
+    command = "sed -n '/^## /,/^## /p' -- " + shlex.quote(str(path))
+    warning = large_reads.check_large_bash_read(command, str(tmp_path))
+    assert warning and "見出しの正規表現" in warning and "全文" in warning
+    assert large_reads.check_large_bash_read("sed -n '1,3p' -- " + shlex.quote(str(path)), str(tmp_path)) is None
+
+    declaration = tmp_path / "source.md"
+    declaration.write_text(
+        "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 判断前 | `{path}` | 判断 | `section:{path}#{heading}` |\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="エージェント向け文書"):
+        read_triggers.parse_tables(declaration, root, strict=True)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setattr(
+        rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(path, heading, "old", True)]
+    )
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
+    payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": "chezmoi-recovery"}
+    assert rules_context.main(json.dumps(payload), host="codex") == 0
+    output = capsys.readouterr()
+    assert not output.err
+    assert "cat --" in output.out and "sed -n" not in output.out

@@ -1,0 +1,41 @@
+# エージェント向け文書品質（基本）：語調と現行規則の表現
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `read-method.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/read-method.md` |
+| 実作業の知見を保存・整理する前 | `investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+
+## 語調と現行規則の表現
+
+- 思考量を指示する文を置かず、確かめる観点や判断条件を直接書く。
+  推論量は、実行環境がeffortを指定できる場合はeffortで調整する（努力目標。思考量の指示は時間と出力トークンを増やし、判断条件を書く方が読み手の行動が定まる）。
+  根拠と適用範囲は、`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年10月31日」を参照する。
+- 内部の推論過程を応答本文へ書き写させる指示は置かない。
+  内部推論の再現要求が拒否の対象になりうるためであり、結論の短い根拠や実施内容の要約は求めてよい。
+  根拠と再検証手順は、前項と同じ監査記録にある。
+- 主体・対象・動作が分かる直接の指示を先に書き、判定基準を自然な日本語と平易な動詞で示す。
+  役割は具体的な名称で呼ぶ。
+  意味、適用範囲、拘束力、条件、例外を保って書き換える。
+  同じ許容範囲を表せる禁止・二重否定は、実行すべき行動へ直す。
+  権限境界や安全性を定める禁止は拘束力を明示して残す。
+  選択や例外の判定に使う理由は指示の近くに簡潔に残す。
+  導入経緯、比較した代替案、長い裏付けは背景資料へ保存して参照し、単独導入でも必要な判断材料へ到達できるようにする。
+  読み手が文体を出力へ反映する傾向を踏まえた方針である。
+  法令調・否定形による文体の再生産や過剰な設計の観測は、次の監査記録を参照する。
+  `docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年9月16日」。
+  研究結果は対象モデル・課題・評価方法の範囲で扱い、日本語や全モデルの遵守率を保証するものとしない。
+- 現在適用されている最新の規則をそのまま記述し、過去のバージョンとの差異を述べるような表現は避ける（努力目標）。
+- 語調の強さは、理由が明確な重要規定において必要な範囲にとどめる。
+  必要な明確さや拘束力を伝える語は残し、語の種類や追加された経緯だけを根拠とする削除は対象外とする。
+  表現の厳しさを強調するよりも、行動すべき条件を明確にした指示の方が安定して遵守される。
+  判断は`writing.md`「日本語の書き方」に従う。
+- 規範における例示は、正しい表現と、それが満たす性質や成立条件の説明によって示す。
+  仕組みを説明する文章だけで十分に意図が伝わる場合は、その説明を活用する。
+  API名、オプション名、戻り値の形式などは同一の対象を指す識別子として維持し、逐語的な引用、過去の観測結果、検出用データなどは、一般的な例示とは役割を明確に区別する。
+- 拘束力のレベルや努力目標の表記ルールは、`quality-principles-constraints.md`「規定の区分と標示」に従う。

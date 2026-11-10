@@ -236,7 +236,7 @@ def _dispatch_once(args: argparse.Namespace) -> int:
                 _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
                 _outcome.report_failure(
                     f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
-                    next_action="進行中の実行の終了を待つ。次回の定期実行で改めて起動されるため、操作は不要",
+                    next_action="進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する",
                 )
                 return CONCURRENT_EXIT_CODE
             with _console_title.console_title(_TITLE):
@@ -470,6 +470,10 @@ def _run_locked(
                     f"{orchestrator}を起動できなかった: {error}（ログ: {log_path}）", next_action=_PATH_ACTION
                 )
                 return 1
+            unread_streams = resources.enter_context(contextlib.ExitStack())
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    unread_streams.callback(stream.close)
             executor = _registry.ProcessIdentity.of(process.pid)
             if executor is None and process.poll() is None:
                 raise ActionableError(
@@ -481,6 +485,12 @@ def _run_locked(
                 from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
                 run_skill_batch.record_executor(args, process.pid)
+            scope = skill_modes.invocation_scope(args.skill, args.args)
+            allow_connection_switch = (
+                orchestrator == "claude" and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1
+            )
+            # ここからは_session_readersが所有する。読取中のcloseはEOF待ちの上限を壊すため解除する。
+            unread_streams.pop_all()
             output.exit_code = _wait_session(
                 process,
                 orchestrator=orchestrator,
@@ -491,10 +501,9 @@ def _run_locked(
                 output=output,
                 codex_home=codex_home,
                 run_id=run_id,
-                skill=skill_modes.invocation_scope(args.skill, args.args),
+                skill=scope,
                 executor=executor,
-                allow_connection_switch=orchestrator == "claude"
-                and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1,
+                allow_connection_switch=allow_connection_switch,
             )
         remaining = writer.record.remaining
         code = output.exit_code
@@ -723,7 +732,10 @@ def _wait_session(
                 return 1
             _outcome.report_failure(
                 f"セッションが時間上限（{timeout:g}秒）を超えたため終了させた（ログ: {log_path}）",
-                next_action="ログで進行状況を確かめ、必要なら`--timeout`を延ばして次回の定期実行を待つ",
+                next_action=(
+                    "ログで進行状況を確かめ、必要なら`--timeout`を延ばして、"
+                    "`atk run-skill`を元の対象・スキル・スキル引数で再実行する"
+                ),
             )
             return TIMEOUT_EXIT_CODE
         _drain_output(readers, log, lock)
@@ -761,7 +773,7 @@ def _wait_session(
             f"{orchestrator}のセッションがexit code {returncode}で異常終了した（ログ: {log_path}）",
             next_action=(
                 "ログとセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）で原因を確かめ、"
-                "解消してから次回の定期実行を待つ"
+                "解消してから`atk run-skill`を元の引数で再実行する"
             ),
         )
         return exit_code

@@ -18,6 +18,7 @@ from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY, PROCESS_WI_G
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._common import host_homes, session_state
 from agent_toolkit._common.agy_records import normalize_entries
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_exit_session_command
 
@@ -157,7 +158,7 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
             return any(_has_invocation_record(nested) for nested in value)
         if not isinstance(value, str):
             return False
-        for line in value.splitlines():
+        for line in split_lines(value):
             try:
                 parsed = json.loads(line)
             except json.JSONDecodeError:

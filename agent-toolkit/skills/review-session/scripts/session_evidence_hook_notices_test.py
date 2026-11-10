@@ -729,7 +729,10 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
         f"claude:{claude_b}/agent-child",
         f"codex:{codex_c}",
     }
-    assert default_events[-1] == {"kind": "unresolved-record", "record": missing, "line": 3}
+    unresolved = dict(default_events[-1])
+    next_action = unresolved.pop("next_action")
+    assert missing in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": missing, "line": 3}
     assert unrelated not in {event["record"] for event in default_events}
 
     assert evidence.main([str(transcript), "--warn"]) == 0

@@ -21,9 +21,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from pytools._internal import common  # pylint: disable=wrong-import-position  # noqa: E402
 
-BASE_SOURCE = Path("agent-toolkit/share/rules-common.codex.md")
+BASE_SOURCE = Path("agent-toolkit/share/rules/rules-common.codex.md")
 PERSONAL_SOURCE = Path(".chezmoi-source/dot_claude/rules/myprojects-common.md")
-RULES_SOURCE = Path("agent-toolkit/rules")
+RULES_SOURCE = Path("agent-toolkit/share/rules/common")
 TARGET = Path(".chezmoi-source/dot_codex/AGENTS.md")
 PROJECT_AGENTS = Path("AGENTS.md")
 CODEX_CONFIG = Path("share/codex_config.toml")

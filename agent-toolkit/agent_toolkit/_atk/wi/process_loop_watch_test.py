@@ -201,7 +201,7 @@ class TestWaitForChanges:
         # 待機を続ける旨と、繰り返す場合の確認コマンドを次の操作として続ける。
         next_action = stderr.split("\n次の操作: ", 1)[1]
         assert next_action.startswith("対応不要（待機は継続した）")
-        assert "status`で同期状態を確認する" in next_action
+        assert f"git -C {private_notes} status" in next_action and "確認せよ" in next_action
 
     def test_change_event_skips_pull(
         self,
@@ -674,7 +674,10 @@ watch._submission_active = lambda _targets: True
 if mode == "ctty-early":
     # 開始前待機の外で端末へ届いたEnterを、次の開始前待機の解除に使わないことを確かめる。
     print("ready", flush=True)
-    time.sleep(2)
+    deadline = time.monotonic() + 30
+    while not pathlib.Path(os.environ["EARLY_RELEASE"]).exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
 rounds = 2 if mode == "ctty-twice" else 1
 for _ in range(rounds):
     started = time.monotonic()
@@ -696,6 +699,7 @@ def _start_wait_process(tmp_path: pathlib.Path, mode: str, grace: float, stdin: 
     script.write_text(_START_WAIT_SCRIPT, encoding="utf-8")
     notes = _setup_notes(tmp_path)
     env = {**os.environ, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "PYTHONPATH": str(pathlib.Path(atk.__file__).parents[1])}
+    env["EARLY_RELEASE"] = str(tmp_path / "early.release")
     with process_tree.process_scope(
         [sys.executable, str(script), mode, str(notes), str(grace)],
         stdin=stdin,
@@ -768,6 +772,7 @@ def test_enter_does_not_carry_over_to_next_start_wait(tmp_path: pathlib.Path, mo
         if mode == "early":
             _read_until(master, "ready", buffer)
             os.write(master, b"\n")
+            (tmp_path / "early.release").touch()
         else:
             _read_until(master, "Enterで今回の待機を解除", buffer)
             os.write(master, b"\n\n")
@@ -829,6 +834,9 @@ def test_observer_scope_releases_after_preparation_or_stop_failure(
         def schedule(self, *_args: Any, **_kwargs: Any) -> None:
             raise RuntimeError("監視準備の失敗")
 
+        def start(self) -> None:
+            pass
+
         def stop(self) -> None:
             calls.append("stop")
             if stage == "stop":
@@ -842,7 +850,7 @@ def test_observer_scope_releases_after_preparation_or_stop_failure(
         if stage == "prepare":
             _pl_watch.wait_for_changes(tmp_path, "example/repo")
         else:
-            with _pl_watch._watch_observer():  # pylint: disable=protected-access
+            with _pl_watch._watch_observer(lambda _observer: None):  # pylint: disable=protected-access
                 pass
     assert calls == ["stop", "join"]
 
@@ -879,11 +887,20 @@ def test_start_gate_extends_only_for_target_arrivals(tmp_path: pathlib.Path) -> 
 class _ContinuousChanges:
     """監視開始後のすべての監視に、`.md`の変更イベントを一定間隔で上限回数まで届ける。"""
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, path: pathlib.Path, *, interval: float, count: int) -> None:
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        path: pathlib.Path,
+        *,
+        interval: float,
+        count: int,
+        on_change: Callable[[], None] | None = None,
+    ) -> None:
         self._handlers: list[watchdog.events.FileSystemEventHandler] = []
         self._path = path
         self._interval = interval
         self._count = count
+        self._on_change = on_change
         self._started = threading.Event()
         self._stopped = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -914,7 +931,11 @@ class _ContinuousChanges:
                 return
             for handler in list(self._handlers):
                 handler.on_any_event(watchdog.events.FileModifiedEvent(str(self._path)))
-            time.sleep(self._interval)
+            if self._on_change is not None:
+                self._on_change()
+                self._on_change = None
+            if self._stopped.wait(self._interval):
+                return
 
     def start(self) -> None:
         self._thread.start()
@@ -988,19 +1009,18 @@ def test_abort_precedes_enter_during_continuous_changes(
     _use_windows_console(monkeypatch, console)
     aborted = [False]
     monkeypatch.setattr(_pl_control, "consume_process_loop_abort", lambda: aborted[0])
-    changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200)
 
     def release() -> None:
         console.keys.append("\r")
         aborted[0] = True
 
-    released = threading.Timer(0.3, release)
+    changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200, on_change=release)
     changes.start()
-    released.start()
     started = time.monotonic()
-    assert not _pl_watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, _pl_watch.StartGate(notes))
-    assert changes.running
-    assert time.monotonic() - started < 5.0
-    assert "Enterの入力により" not in capsys.readouterr().out
-    released.join()
-    changes.join()
+    try:
+        assert not _pl_watch.wait_for_start_permission(notes, {"github.com/example/myrepo"}, _pl_watch.StartGate(notes))
+        assert changes.running
+        assert time.monotonic() - started < 5.0
+        assert "Enterの入力により" not in capsys.readouterr().out
+    finally:
+        changes.join()

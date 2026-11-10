@@ -1,0 +1,20 @@
+# Stop/SubagentStopフック：委譲先での発火
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-behavior.md` |
+
+## 委譲先での発火
+
+`Stop`と`SubagentStop`の判定は、どちらも委譲先セッションで発火する可能性がある。
+判定が要求する処置を委譲先が実際に実行できるかどうかを個別に確認し、その結果と根拠を各判定モジュールのdocstringに記録する。
+委譲先で実行不可能な処置を求める判定は、委譲先を実行対象から除外する。
+
+- `Stop`はそのセッション自体のターン終了時に発火する。
+  委譲先であるかどうかの識別には、実行環境が提供する識別情報を利用する。
+- `SubagentStop`は`Agent`ツールのサブエージェントのターン終了時にのみ発火し、入力の`agent_id`で判別する。
+  サブエージェントが実行できる処置のみを登録対象とする。

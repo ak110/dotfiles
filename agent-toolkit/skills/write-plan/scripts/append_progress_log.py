@@ -8,6 +8,9 @@
 進捗だけの追記は計画Markdownと`--completed-step`・`--result`を渡す。
 commit対応の記録は、これらに`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を加える。
 `--handoff`はcommit対応の記録・履歴更新に使い、対象集合を`--allowed-awi`で渡す。対応の取得は`plan-commits`が行う。
+記録済みcommitへAWIを追加するには、旧OIDを同じOIDへ写す分割指定
+（`{"<旧OID>": [{"commit": "<同じOID>", "awi": [<記録後の全AWI>]}]}`）を`--rewrite-map`へ渡す。
+計画の関連WI（`--handoff`では`--allowed-awi`）に無いAWIは記録を変えずに拒否する。
 引き継ぎ記録へ進捗だけを残す場合は、通常のファイル編集で更新する。
 """
 
@@ -208,7 +211,7 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         )
     elif args.rewrite_map:
         mapping = commit_mapping.read_mapping(args.worktree, events, allowed)
-        event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping)
+        event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping, allowed)
     else:
         parser.error("--handoffには--commitか--rewrite-mapが必要です。対応の取得は`atk run-script plan-commits`で行う")
         return False

@@ -19,7 +19,7 @@ import watchdog.observers
 
 from agent_toolkit._atk.lane_test import prepare_lane_verification
 from agent_toolkit._common import atomic_file, process_tree
-from agent_toolkit._testing import verification_acceptance_support
+from agent_toolkit._testing import late_descendant, verification_acceptance_support
 
 _DRIVER = pathlib.Path(verification_acceptance_support.__file__)
 _PLUGIN = _DRIVER.parents[2]
@@ -63,7 +63,11 @@ for event in ('start', 'end'):
     with pathlib.Path(output).open('a', encoding='utf-8') as stream:
         stream.write(json.dumps(record) + '\\n')
     if event == 'start':
-        time.sleep(0.2)
+        release = pathlib.Path(output).parent / (label + '.release')
+        deadline = time.monotonic() + 30
+        while not release.exists():
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
 print('記録用検証の出力')
 print('記録用検証の診断', file=sys.stderr)
 """
@@ -76,6 +80,19 @@ def _wait(path: pathlib.Path, process: subprocess.Popen[str]) -> None:
             raise RuntimeError(f"同期点より前に終了した: {process.communicate()}")
         if time.monotonic() >= deadline:
             raise TimeoutError(f"同期点へ到達しない: {path}")
+        time.sleep(0.01)
+
+
+def _release_probe(events: pathlib.Path) -> None:
+    deadline = time.monotonic() + 30
+    while True:
+        rows = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()] if events.exists() else []
+        for row in rows:
+            release = events.parent / (row["label"] + ".release")
+            if row["event"] == "start" and not release.exists():
+                release.touch()
+                return
+        assert time.monotonic() < deadline, "実行枠取得後の開始通知が届かない"
         time.sleep(0.01)
 
 
@@ -134,8 +151,7 @@ def test_process_reclaims_real_child_and_pipes_on_failure(tmp_path: pathlib.Path
         "print('child-stderr', file=sys.stderr, flush=True)\n"
         "if sys.argv[1] == 'exit-before-ready':\n"
         "    sys.exit(7)\n"
-        "pathlib.Path(sys.argv[2]).touch()\n"
-        "time.sleep(60)\n",
+        "pathlib.Path(sys.argv[2]).touch()\n" + late_descendant.held_source(tmp_path / "failure.release"),
         encoding="utf-8",
     )
     ready = tmp_path / "child.ready"
@@ -200,6 +216,8 @@ def test_public_verification_entries_share_one_execution_interval(
         assert not events.exists()
         (tmp_path / "holder.release").touch()
         assert holder.wait(timeout=10) == 0
+        for _ in commands:
+            _release_probe(events)
         for label, process in running.items():
             stdout, stderr = process.communicate(timeout=40)
             # タプルのreprでは子pytestのtraceback中央が省略されるため、診断は文字列で渡す。
@@ -219,6 +237,8 @@ def test_public_verification_entries_share_one_execution_interval(
 
 
 @pytest.mark.parametrize("failure", [False, True])
+# 実serveのObserverが停止・joinを終えてOSの監視資源を解放してから、次の独立検証へ進むことを確かめる。
+@pytest.mark.real_observer
 def test_real_serve_releases_observer_before_next_verification(
     tmp_path: pathlib.Path, failure: bool, record_property: Callable[[str, object], None]
 ) -> None:
@@ -269,6 +289,7 @@ def test_real_serve_releases_observer_before_next_verification(
         (tmp_path / "serve.release").touch()
         stdout, stderr = server.communicate(timeout=20)
         assert server.returncode == (1 if failure else 0), (stdout, stderr)
+        _release_probe(events)
         next_stdout, next_stderr = following.communicate(timeout=20)
         assert following.returncode == 0, (next_stdout, next_stderr)
     stopped = json.loads((tmp_path / "serve.stopped").read_text(encoding="utf-8"))

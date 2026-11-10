@@ -21,7 +21,7 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
 _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
-_AT_RULES_DIR = _AT_DIR / "rules"
+_AT_RULES_DIR = _AT_DIR / "share" / "rules" / "common"
 
 # 文字列リテラルで直接書くと本ファイル自身が警告を発する原因になるため、
 # テスト対象の「言及される名前」はプログラム的に組み立てる。
@@ -174,7 +174,6 @@ class TestAgentToolkitDotfilesNamesCheck:
             "psgrep",  # pytools コマンド名
             "agent_toolkit_bump",  # scripts 名
             "update_dotfiles",  # libexec 名
-            "update_dotfiles_if_upstream_changed",  # libexec 名
             "sync_report",  # scripts/ から pytools/_internal/ へ移したモジュール名
             "glatasks",  # 固定プロジェクト名
             "gv",
@@ -193,7 +192,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.returncode == 0
         message = _get_additional_context(result)
         assert name in message
-        assert "generalized wording" in message
+        assert "せよ" in message
         assert '<atk-auto source="dotfiles/claude_hook_pretooluse"' in message
 
     def test_warn_in_agent_toolkit_rules(self):

@@ -1,28 +1,29 @@
 # WI保存前の考慮漏れ点検
 
 WI起草者と投入前レビュー担当が、原文・原稿・調査根拠から考慮漏れを探すための資料である。
-質問ラウンドを終える前、原稿確定前、登録0件で終える前、候補を不採用にする前に、次の全類型を点検する。
+推奨案や確認の選択肢を提示する前（過去の判断との関係(c)と継続費用を含む過剰さ(d)は推奨案に適用する）、質問ラウンドを終える前、原稿確定前、登録0件で終える前、候補を不採用にする前に、次の全類型を点検する。
 再発した考慮漏れの予防は、該当する類型をこの資料へ統合して次の点検へ戻す。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/SKILL.md`の「確認要否の判定」 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
-| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics.md`の「既存規範による被覆の判定」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「既存規範による被覆の判定」` |
+| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
+| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md` |
 
 ## 点検類型
 
 | 類型 | 比べる内容 |
 | --- | --- |
-| (a) 範囲の限定 | 対象・調査母集団・完成条件を原文の範囲表現と比較し、例示・理由・観測した症状・現行の仕組みで扱える範囲への縮小がないか |
-| (b) 関連して必要な変更 | 共通化・リファクタリング、同じ機構を使う他の箇所、追随修正、同時に直すべき既存不良が含まれるか |
+| (a) 範囲の限定 | 対象・調査母集団・完成条件を原文の範囲表現と比較し、例示・理由・観測した症状・現行の仕組みで扱える範囲への縮小がないか。対象外・不採用とした判断の前提（利用主体、環境、利用場面）が観測した事実か、確かめていない想定か |
+| (b) 関連して必要な変更 | 共通化・リファクタリング、同じ機構を使う他の箇所、追随修正、同時に直すべき既存不良が含まれるか。エージェント向け文書の変更は`agent-toolkit:wi-standards/references/drafting-workflow.md`「エージェント向け文書の構成」に従い、行数と分割・統合・削除を検討したか |
 | (c) 既存の仕組み・過去の判断との関係 | 同じ目的の既存機構、対象プロジェクトの方針記録・過去のユーザー指示、回答済みUWI、他AWIとの重複・衝突がないか |
 | (d) 過剰さ | 読み手が常識で判断できる細則、過剰な制限・仕組みがないか、より単純な構成案と比較したか |
 | (e) 後続工程の模擬 | process-wiの計画・実装・完成条件の検証・公開・終了までをたどり、検証の認可・費用・第三者が観測する操作・実環境の対象、目標値未達時の扱い、実装詳細で分かれる外部挙動、公開範囲にユーザー判断が残らないか |
-| (f) 既存充足の過大判定 | 目的や名前が似た規定・機構があるだけで既存充足としていないか。同じ利用条件で同じ結果を得られる根拠と、判断の時点で本文が届く経路（`agent-basics:writing-standards/references/agent-documents-basics.md`「既存規範による被覆の判定」）を確かめたか |
+| (f) 既存充足の過大判定 | 目的や名前が似た規定・機構があるだけで既存充足としていないか。同じ利用条件で同じ結果を得られる根拠と、判断の時点で本文が届く経路（`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「既存規範による被覆の判定」）を確かめたか。実効性は送り手の入力や設定だけで代替せず、受け手（委譲先、エンドユーザー、後続工程など）が実際に受け取る、自動付加を含む入力・画面・出力で確かめたか |
 | (g) 選好を要する不採用の未確認 | 不採用の理由がユーザーの選好で決まるトレードオフを含むのに、確認せずに確定していないか |
 | (h) 技術判断の過剰な確認 | 既存の方針や技術とQCDで決まる事項を確認に回していないか |
 | (i) 対象リポジトリの選定 | 起動したリポジトリを対象として資料と突き合わせたか、関係を成果物での主題の扱いで判定したか、他リポジトリの見直しを派生として行い起動したリポジトリの採否と理由を記録したか |

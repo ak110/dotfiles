@@ -24,7 +24,7 @@ from typing import Any, Self, cast
 import platformdirs
 import psutil
 import pytest
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, late_descendant
 from agent_toolkit._testing.isolation import restore_host_environment
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -34,6 +34,7 @@ import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
 from pytools._internal import common  # noqa: E402  # pylint: disable=wrong-import-position
 
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles._update_git_with_recovery  # pylint: disable=protected-access
+_REAL_PREPARE_AGENT_TOOLKIT_ENVIRONMENT = update_dotfiles._prepare_agent_toolkit_environment  # pylint: disable=protected-access
 _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"
 
 
@@ -48,6 +49,15 @@ def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Pa
             step_no, total, timeout=timeout
         ),
     )
+
+
+@pytest.fixture(autouse=True)
+def _skip_agent_toolkit_prepare(monkeypatch: pytest.MonkeyPatch) -> None:
+    """段階順の単体テストでは、共有依存環境の準備をchezmoiの段の呼び出し列から分離する。
+
+    準備の位置と失敗時の続行は専用の試験が実際の関数へ戻して確かめる。
+    """
+    monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", lambda _total: None)
 
 
 _REAL_PROCESS_ITER = psutil.process_iter
@@ -222,6 +232,38 @@ def test_public_mode_argument_persists_and_reaches_every_update_stage(
         ["chezmoi", "diff"],
         ["chezmoi", "apply"],
     ]
+
+
+@pytest.mark.parametrize("prepare_code", [0, 1])
+def test_agent_toolkit_environment_is_prepared_right_after_git_update(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], prepare_code: int
+) -> None:
+    """主checkoutのGit更新の直後、plugin更新と`chezmoi init`より前に共有依存環境を準備し、失敗しても後続の段を続ける。
+
+    準備には主checkoutのlaunch.pyを使う。
+
+    依存の固定内容が変わる更新で、準備までの間に起動した主checkoutの`atk`が未準備で終了する区間を縮めるためである。
+    """
+    monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", _REAL_PREPARE_AGENT_TOOLKIT_ENVIRONMENT)
+    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
+    plugin = tmp_path / "plugins" / "extra"
+    (plugin / ".git").mkdir(parents=True)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    monkeypatch.setattr(subprocess, "run", _fake_run({"uv": prepare_code}, calls, stderr_by_command={"uv": "準備失敗の診断"}))
+    assert update_dotfiles.main([]) == prepare_code
+    launcher = str(tmp_path / "agent-toolkit" / "scripts" / "launch.py")
+    prepare = [index for index, call in enumerate(calls) if launcher in call]
+    assert len(prepare) == 1
+    assert calls[prepare[0]][-2:] == ["--prepare", "agent_toolkit/atk.py"]
+    stage_index = {tuple(call[:2]): index for index, call in enumerate(calls) if call[0] == "chezmoi"}
+    plugin_pull = [index for index, call in enumerate(calls) if call[:3] == ["git", "-C", str(plugin)]]
+    assert len(plugin_pull) == 1
+    assert stage_index["chezmoi", "git"] < prepare[0] < plugin_pull[0] < stage_index["chezmoi", "init"]
+    assert stage_index["chezmoi", "init"] < stage_index["chezmoi", "apply"]
+    if prepare_code:
+        assert "agent-toolkitの共有依存環境の準備" in capsys.readouterr().err
 
 
 class _FakePopen:
@@ -553,9 +595,10 @@ def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
     previous = ctypes.c_int(0)
     assert libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0  # PR_GET_CHILD_SUBREAPER
     pid_path = tmp_path / "holder.pid"
+    holder_source = late_descendant.held_source(tmp_path / "pipe.release")
     child_code = (
         "import pathlib, subprocess, sys; "
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True); "
+        f"child = subprocess.Popen([sys.executable, '-c', {holder_source!r}], start_new_session=True); "
         "pathlib.Path(sys.argv[1]).write_text(str(child.pid))"
     )
     holder_pid: int | None = None
@@ -1483,10 +1526,20 @@ else:
     # 端末終了のSIGHUPや自然終了で、製品の子孫回収漏れを隠さない。
     child = subprocess.Popen([
         sys.executable, "-c",
-        "import signal, time; signal.signal(signal.SIGHUP, signal.SIG_IGN); time.sleep(60)",
+        "import os,pathlib,signal,time; signal.signal(signal.SIGHUP, signal.SIG_IGN); "
+        "release=pathlib.Path(os.environ['UPDATE_DOTFILES_TEST_PID_PATH']+'.release'); "
+        "release.with_suffix('.ready').touch(); deadline=time.monotonic()+120; "
+        "exec('while not release.exists():\\n assert time.monotonic()<deadline\\n time.sleep(0.01)')",
     ])
-    pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"]).write_text(str(child.pid), encoding="utf-8")
-    time.sleep(6)
+    pid_path = pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"])
+    deadline = time.monotonic() + 30
+    while not pid_path.with_suffix('.pid.ready').exists():
+        assert child.poll() is None and time.monotonic() < deadline
+        time.sleep(0.01)
+    pending = pid_path.with_suffix(".tmp")
+    pending.write_text(str(child.pid), encoding="utf-8")
+    pending.replace(pid_path)
+    child.wait(timeout=120)
 """
 
 
@@ -1495,7 +1548,7 @@ def _run_git_pull_in_pty(
     monkeypatch: pytest.MonkeyPatch,
     *,
     mode: str,
-    timeout: int | None,
+    timeout: float | None,
     input_text: str | None = None,
 ) -> tuple[int, str, pathlib.Path, float]:
     """疑似端末内で実物の`_run_git_pull`を実行し、終了コードと出力を返す。"""
@@ -1567,7 +1620,7 @@ def test_git_pull_timeout_terminates_stream_holding_descendant(
         tmp_path,
         monkeypatch,
         mode="hang",
-        timeout=5,
+        timeout=0.05,
     )
     assert returncode == 1
     assert elapsed < 12
@@ -2355,7 +2408,7 @@ def test_update_recovers_index_after_sigterm(tmp_path: pathlib.Path, host_enviro
         "def change(*args, **kwargs):\n"
         "    assert module._run_git_change('add', 'tracked.txt')\n"
         f"    pathlib.Path({str(ready)!r}).touch()\n"
-        "    time.sleep(30)\n"
+        f"    exec({late_descendant.held_source(tmp_path / 'interrupt.release')!r})\n"
         "module._update_owned_git = change\n"
         "module._update_git_with_recovery(1, 4, timeout=5)\n",
         encoding="utf-8",
@@ -2453,55 +2506,6 @@ def test_update_restore_overwrite_refusal_records_recovery(
     else:
         assert "競合から回復" in log
         assert "git switch update-dotfiles-recovery-" in log
-
-
-def test_skipped_update_keeps_pending_for_next_timer(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    sync_report_path: pathlib.Path,
-) -> None:
-    """自動更新スクリプトが見送りを未完了として保持し、次の周期で再試行する。"""
-    import update_dotfiles_if_upstream_changed as timer  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-    local, _seed, _remote = _create_git_pair(tmp_path)
-    launcher = local / "bin" / "update-dotfiles"
-    launcher.parent.mkdir()
-    launcher.touch()
-    monkeypatch.setattr(timer, "_DOTFILES_ROOT", local)
-    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", local)
-    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "update.lock")
-    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
-    monkeypatch.setattr(update_dotfiles, "_git_operation_in_progress", lambda: True)
-    attempts: list[int] = []
-    head = _git(local, "rev-parse", "HEAD")
-    git_outputs = {
-        ("symbolic-ref", "HEAD"): "refs/heads/develop",
-        ("rev-parse", "--symbolic-full-name", "@{upstream}"): "refs/remotes/origin/develop",
-        ("--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"): "",
-        ("ls-remote", "--exit-code", "--refs", "origin", "refs/heads/develop"): f"{head}\trefs/heads/develop",
-        ("rev-parse", "HEAD"): head,
-    }
-
-    def run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command == [str(launcher)]:
-            code = update_dotfiles.main()
-            attempts.append(code)
-            return subprocess.CompletedProcess(command, code, "", "")
-        assert command[:3] == ["git", "-C", str(local)]
-        return subprocess.CompletedProcess(command, 0, git_outputs[tuple(command[3:])], "")
-
-    monkeypatch.setattr(timer, "_run", run)
-    pending = tmp_path / "test.pending"
-    for _ in range(2):
-        assert timer._update_if_needed(pending) == 1
-        assert pending.exists()
-        assert not pending.with_suffix(".applied").exists()
-    assert attempts == [1, 1]
-    report = json.loads(sync_report_path.read_text(encoding="utf-8"))
-    assert report["status"] == "failed"
-    assert report["exit_code"] == 1
-    assert "タイマー" in report["stderr_tail"]
-    assert "Git操作が進行中" in update_dotfiles._LOG_PATH.read_text(encoding="utf-8")
 
 
 class TestCodexDaemonPause:

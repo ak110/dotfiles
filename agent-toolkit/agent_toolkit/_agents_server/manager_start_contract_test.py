@@ -13,6 +13,7 @@ import pytest
 from agent_toolkit._agents_server import (
     agents_wait,
     backends,
+    codex,
     manager,
     mcp_tools,
     record_paths,
@@ -22,6 +23,7 @@ from agent_toolkit._agents_server import (
     status_file,
     unavailable_candidates,
 )
+from agent_toolkit._atk import config as atk_config
 from agent_toolkit._common import atomic_file, session_registry, state_paths
 from agent_toolkit._testing import agents_server_support
 
@@ -209,6 +211,59 @@ async def test_prelaunch_candidate_exhaustion(tmp_path: pathlib.Path, monkeypatc
         )
         assert set(recorded.values()) == {"candidateDependencyUnavailable"}
         assert {candidate[0] for candidate in recorded} == {"codex", "claude"}
+
+
+class _UsageLimitedCodexClient(agents_server_support.FakeCodexClient):
+    """ChatGPT認証のサブスクリプションが週次の利用上限で通常利用できない状態を返す。"""
+
+    async def request(self, method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+        if method == "account/read":
+            self.requests.append((method, params or {}))
+            return {"account": {"type": "chatgpt"}}
+        if method == "account/rateLimits/read":
+            self.requests.append((method, params or {}))
+            return {
+                "ordinaryUsageAllowed": False,
+                "rateLimits": {"primary": {"usedPercent": 100, "resetsAt": 2000000000, "windowDurationMins": 10080}},
+            }
+        return await super().request(method, params, **kwargs)
+
+
+@pytest.mark.asyncio
+async def test_codex_usage_limit_without_connection_advances_to_next_engine(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codexが利用上限で試す接続先を持たない起動は、次のengineの候補で起動し、除外の理由と解除予定を応答へ載せる。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    monkeypatch.setenv(atk_config._config_env_name("codex_worker_connections"), "subscription")  # pylint: disable=protected-access
+    monkeypatch.setenv(atk_config._config_env_name("codex_usage_limit_wait"), "five-hour")  # pylint: disable=protected-access
+    candidates = "codex:gpt-6-sol/medium,claude:test/medium"
+    clients: list[_UsageLimitedCodexClient] = []
+    for _ in range(2):
+        async with manager.AgentsServerManager(None) as current, codex.AppServerManager(current.sessions) as limited:
+            client = _UsageLimitedCodexClient()
+            clients.append(client)
+
+            async def ensure_client(*_args: Any, _client: _UsageLimitedCodexClient = client, **_kwargs: Any) -> Any:
+                return _client
+
+            monkeypatch.setattr(limited, "_ensure_client", ensure_client)
+            selected = ObservedBackend(current.sessions, "claude")
+            agents_server_support.install_backend(current, "codex", limited)
+            agents_server_support.install_backend(current, "claude", selected)
+            monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+            response = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type=candidates)
+            assert response["session_id"] == "claude-session" and response["engine"] == "claude"
+            excluded = response["excluded_candidates"]
+            assert [item["engine"] for item in excluded] == ["codex"]
+            reason = excluded[0]["reason"]
+            assert "利用上限" in reason and "上限種別=seven_day" in reason
+            assert "解除予定=2033-05-18T03:33:20+00:00" in reason
+            assert "`codex_worker_connections`に他の利用可能な接続先が無い" in reason
+            assert len(selected.start_calls) == 1
+    # 接続先は1件も試さない。保持期間内の2回目は記録済みの理由で除外し、Codexの確認も省く。
+    assert [method for method, _ in clients[0].requests] == ["config/read", "account/read", "account/rateLimits/read"]
+    assert not clients[1].requests
 
 
 @pytest.mark.asyncio

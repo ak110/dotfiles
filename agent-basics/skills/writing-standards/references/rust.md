@@ -4,27 +4,34 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md#「セキュリティ・ロギング・エラー処理」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/implementation-time.md#「セキュリティ・ロギング・エラー処理」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `testing.md#「安定性: flakyテスト防止」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/testing.md#「安定性: flakyテスト防止」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time-errors.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-errors.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `testing-stability.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-stability.md` |
 
 ## 言語スタイル
 
 - エラーハンドリング
   - ライブラリコードでは`thiserror`を用いて独自のエラー型を定義し、アプリケーションコードでは`anyhow`を用いてエラーを伝播・処理する。
-  - `unwrap()`や`expect()`の使用は、テストコード内、または絶対に失敗しないことが自明な場面に限定する。コードレビュー時は、テストビルドでのみコンパイルされるコード（`#[cfg(test)]`配下や`[dev-dependencies]`経由でのみ参照されるコード）を除外して評価する。
+  - `unwrap()`や`expect()`の使用は、テストコード内、または絶対に失敗しないことが自明な場面に限定する。
+    コードレビュー時は、テストビルドでのみコンパイルされるコード（`#[cfg(test)]`配下や`[dev-dependencies]`経由でのみ参照されるコード）を除外して評価する。
   - `panic!`はプログラマ側の実装不良（バグ）の検知のみに用い、ユーザーの入力ミスやI/Oエラーなどの実行時エラーに対して使用することは避ける。
 - `unsafe`ブロック
-  - `unsafe`の使用は極力避け、安全な代替手段を優先する。使用する場合はブロックの範囲を最小限に抑え、安全性が成立する根拠を`// SAFETY:`コメントとして明記する。
-  - ただし、Win32やCOMの単純なAPI呼び出し（`SendMessageW`、`SetWindowPos`、`OpenClipboard`、COMオブジェクトの通常メソッド呼び出しなど）において、所有権の移動や生ポインタの受け渡しを伴わない場合は、コメントの記述を省略してよい。公式ドキュメントに従った正しい引数を渡すことが安全性の根拠そのものであるためである。
-  - 一方で、次の操作には必ず`// SAFETY:`コメントを付記する。生ポインタの読み書き、`ptr::read_unaligned`、`from_raw_parts`や`transmute`などのキャスト、`memmap2::Mmap::map`のようにRustのライフタイム管理外の前提条件を要する操作。また、`libloading`を経由した動的関数呼び出し、手動で実装した`Send`や`Sync`、およびCOMオブジェクトの非自明な所有権移動もこれに含まれる。
+  - `unsafe`の使用は極力避け、安全な代替手段を優先する。
+    使用する場合はブロックの範囲を最小限に抑え、安全性が成立する根拠を`// SAFETY:`コメントとして明記する。
+  - ただし、Win32やCOMの単純なAPI呼び出し（`SendMessageW`、`SetWindowPos`、`OpenClipboard`、COMオブジェクトの通常メソッド呼び出しなど）において、所有権の移動や生ポインタの受け渡しを伴わない場合は、コメントの記述を省略してよい。
+    公式ドキュメントに従った正しい引数を渡すことが安全性の根拠そのものであるためである。
+  - 一方で、次の操作には必ず`// SAFETY:`コメントを付記する。
+    生ポインタの読み書き、`ptr::read_unaligned`、`from_raw_parts`や`transmute`などのキャスト、`memmap2::Mmap::map`のようにRustのライフタイム管理外の前提条件を要する操作。
+    また、`libloading`を経由した動的関数呼び出し、手動で実装した`Send`や`Sync`、およびCOMオブジェクトの非自明な所有権移動もこれに含まれる。
 - 非同期処理
   - 非同期ランタイムには`tokio`を標準として使用し、同期的なブロックを行う`block_on`は`main`関数などの実行境界でのみ使用する。
-- セキュリティ（全般的な作法は`implementation-time.md`「セキュリティ・ロギング・エラー処理」参照）
-  - 外部コマンドを実行する`std::process::Command`には引数を配列として渡し、ファイルパスは文字列ではなく`Path`や`PathBuf`型で扱う。信頼できない外部入力は`serde`を用いて明示的な構造体にデシリアライズし、`serde_json::Value`のまま後続の処理へ渡すことは避ける。乱数を生成する際は、セキュリティ用途であれば`rand::rngs::OsRng`を、それ以外の用途であれば`rand::thread_rng`を使用する。
+- セキュリティ（全般的な作法は`implementation-time-errors.md`「セキュリティ・ロギング・エラー処理」参照）
+  - 外部コマンドを実行する`std::process::Command`には引数を配列として渡し、ファイルパスは文字列ではなく`Path`や`PathBuf`型で扱う。
+    信頼できない外部入力は`serde`を用いて明示的な構造体にデシリアライズし、`serde_json::Value`のまま後続の処理へ渡すことは避ける。
+    乱数を生成する際は、セキュリティ用途であれば`rand::rngs::OsRng`を、それ以外の用途であれば`rand::thread_rng`を使用する。
 - MSRV（最小サポートRustバージョン）
   - プロジェクトがサポートする最小バージョンは、`Cargo.toml`の`rust-version`フィールドに明記する。
 
@@ -33,9 +40,10 @@
 ### 単体テスト
 
 - 単体テストは、対象モジュールの末尾に配置した`#[cfg(test)]`属性付きの`tests`モジュール内に記述し、テスト対象モジュールに不可欠な最小限の検証に留める。
-- 非同期処理などの同期完了を確認する際は、完了を決定論的に観測できる待機手段を用い、`thread::sleep`を用いたポーリング待機は避ける（`testing.md`「安定性: flakyテスト防止」参照）。
+- 非同期処理などの同期完了を確認する際は、完了を決定論的に観測できる待機手段を用い、`thread::sleep`を用いたポーリング待機は避ける（`testing-stability.md`「安定性: flakyテスト防止」参照）。
 - `#[repr(C)]`を付与した構造体のABI契約（メモリー上のサイズやフィールドのオフセット）は、コンパイル時に検証する（努力目標。`inline const`はRust 1.79以降で利用可能）。
 
 ### 統合テスト
 
-統合テストはクレートルート直下の`tests/`ディレクトリに配置する。テーブル駆動テストには`rstest`、プロパティベーステスト（性質の検証）には`proptest`、ベンチマーク測定には`criterion`を選択する（標準の`#[bench]`はnightlyコンパイラ限定のため）。
+統合テストはクレートルート直下の`tests/`ディレクトリに配置する。
+テーブル駆動テストには`rstest`、プロパティベーステスト（性質の検証）には`proptest`、ベンチマーク測定には`criterion`を選択する（標準の`#[bench]`はnightlyコンパイラ限定のため）。

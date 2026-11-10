@@ -1,0 +1,26 @@
+# 通常AWIの本文：逐語引用の対応付け
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
+
+## 逐語引用の対応付け
+
+会話内にあるユーザーの要求原文を末尾へそのまま転記し、反映内容と読み比べて脱落、追加、意味の変化を確かめる。
+ユーザーの発話とエージェントが作成した質問・説明・判断を区別する。
+ユーザー発話を起点としないAWIには引用節を設けない。
+複数項目へ分割する場合は、`## 反映内容と反映先`に記録する要求内容と割当先の短い説明によって担当範囲を特定する。
+投入元で解決済みの質問に後続の回答義務を生じさせない。
+分割元の依頼全体や背景に属する単位は、同節にその内容と役割を短く説明し、担当範囲と区別する。
+認可や解釈の判断に出所の再取得が必要な場合は、判断に必要な所在情報を残す。
+通常の転記のためのログ探索、位置の計数、および専用ツールによる一致確認は必須としない。
+複雑な取り込みでは`atk run-script wi-quote-check`を任意に使える。
+原文が開放集合を示す場合は、調査で確認した具体対象、根拠を伴う追加、承認された除外を`## 反映内容と反映先`の該当項目へ対応付ける。
+原文は引用節に一度残す。

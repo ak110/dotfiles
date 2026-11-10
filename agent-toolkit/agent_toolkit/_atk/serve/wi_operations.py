@@ -23,9 +23,8 @@ from agent_toolkit._atk.serve import entry_index
 from agent_toolkit._atk.wi import add as awi_add
 from agent_toolkit._atk.wi import batch as awi_batch
 from agent_toolkit._atk.wi import constants as wi_constants
-from agent_toolkit._atk.wi import entries as wi_entries
-from agent_toolkit._atk.wi import entry_text, frontmatter
 from agent_toolkit._atk.wi import filters as wi_filters
+from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import headings as wi_headings
 from agent_toolkit._atk.wi import mutations as awi_mutations
 from agent_toolkit._atk.wi import readiness as wi_readiness
@@ -121,12 +120,25 @@ def saved_commit_failure_message(root: pathlib.Path, operation: str) -> str:
     )
 
 
+def git_failure_next_action(root: pathlib.Path) -> str:
+    """原因を一意に判別できないGitコマンドの失敗に対して、画面のユーザーが行う確認と再試行の操作を返す。
+
+    CLI向けの原因分類（`git_sync`）は受信側をエージェントとする案内のため転用せず、
+    保存先で実行できる確認と、画面から行える再試行を示す。
+    """
+    return (
+        f"WIを保存しているホストで`{_git_status_command(root.resolve())}`を実行して保存リポジトリの状態を確認し、"
+        "原因を解消してからWI画面の「今すぐ同期」で再試行する。"
+        "解決できない場合は、表示内容・対象・確認結果をdotfilesの作者へ報告する"
+    )
+
+
 class WebApiInputError(ValueError):
     """`atk serve`のWeb APIだけが送出する入力エラー。
 
     受信側はブラウザー画面であり、HTTP 400の応答本文は理由の文字列だけとする。
-    CLIとWeb APIが共有する処理の入力エラー（`common.WebInputError`）は次の操作を持つが、
-    Web APIの応答本文へは同じく`str()`の理由だけを使う。
+    CLIとWeb APIが共有する処理の入力エラー（`web_input.WebInputError`）は次の操作を持ち、
+    Web APIの応答本文は`error`へ`str()`の理由、`next_action`へ次の操作を分けて返す。
     """
 
 
@@ -416,9 +428,10 @@ def _uwi_answer(text: str, kind: str) -> str | None:
 class Operations:
     """同期ファイル操作をWeb API向けに提供する。"""
 
-    def __init__(self, private_notes: pathlib.Path) -> None:
+    def __init__(self, private_notes: pathlib.Path, *, index_cache_path: pathlib.Path | None = None) -> None:
         self.private_notes = private_notes
-        self._entry_index = entry_index.EntryIndex(private_notes)
+        self._storage = wi_sync.Storage(local_only=True, lock_timeout=_WEB_LOCK_TIMEOUT)
+        self._entry_index = entry_index.EntryIndex(private_notes, cache_path=index_cache_path)
 
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
         """条件に一致する一覧と、走査中に発生した読取り警告を返す。
@@ -426,6 +439,10 @@ class Operations:
         種別と回答状況を混在させてファイル名の降順とする。
         """
         result: list[dict[str, object]] = []
+        waiting = filters.get("view") == "waiting"
+        if waiting:
+            filters = {key: value for key, value in filters.items() if key in {"view", "page", "target_repo"}}
+            filters.update(type="uwi", status="active", answered="no", period="all")
         kind_filter = filters.get("type", "all")
         status_filter = filters.get("status", "all")
         answered_filter = filters.get("answered", "all")
@@ -506,6 +523,8 @@ class Operations:
                 indexed.derived[_LIST_ENTRY_KEY] = cached_entry
             # 依存先の回答で変わる導出値は、項目自身のキーで保持する表示キャッシュへ入れない。
             result.append({**cached_entry[1], "blocked": indexed.path in blocked_paths})
+        if waiting:
+            return sorted(result, key=lambda item: (item["important"] is not True, str(item["filename"]))), warnings
         return sorted(result, key=lambda item: str(item["filename"]), reverse=True), warnings
 
     def entries_with_warnings(
@@ -583,6 +602,18 @@ class Operations:
         """一覧の索引へ全状態の解析結果を読み込む。起動直後の最初の一覧が全件の解析を待たないようにする。"""
         self._entry_index.scan(wi_constants.WI_STATES, stop=stop)
 
+    def preload_entry_texts(self, stop: threading.Event | None = None) -> None:
+        """索引の全項目の本文と検索用の本文を読み込む。
+
+        保存した解析結果から作った項目は本文を必要時に読むため、先に読まないと再起動後の最初の検索が
+        全項目の本文の読込を待つ。
+        """
+        entries, _warnings = self._entry_index.scan(wi_constants.WI_STATES, stop=stop)
+        for entry in entries:
+            if stop is not None and stop.is_set():
+                return
+            _ = entry.text_folded
+
     def sync(self) -> bool:
         """未送信commitをpushし、リポジトリを明示的に同期する。
 
@@ -647,9 +678,8 @@ class Operations:
                 state=state,
                 filename=filename,
                 content=content,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
+                storage=self._storage,
                 expected_content=expected_content,
-                skip_remote_sync=True,
                 allow_terminal=True,
             )
         except SystemExit as error:
@@ -657,34 +687,13 @@ class Operations:
 
     def important(self, filename: str, important: bool, expected_content: str | None = None) -> bool:
         """保存状態を保って重要フラグだけを設定または解除する。"""
-        with wi_sync.repo_lock(self.private_notes, timeout=_WEB_LOCK_TIMEOUT):
-            wi_sync.ensure_mutation_allowed(self.private_notes)
-            records, missing = wi_entries.read_named_entries(
-                self.private_notes, wi_entries.validate_named_filenames(self.private_notes, [filename]), target_repo=None
-            )
-            if missing:
-                raise FileNotFoundError(filename)
-            path, _, text, _, _ = records[0]
-            if expected_content is not None and text != expected_content:
-                raise RuntimeError(EDIT_CONFLICT_MESSAGE)
-            parsed = entry_text.parse_frontmatter(text)
-            if parsed is None:
-                raise WebApiInputError("frontmatterを解析できません")
-            metadata, body = parsed
-            if (important and metadata.get("important") is True) or (not important and "important" not in metadata):
-                return False
-            if important:
-                metadata["important"] = True
-            else:
-                metadata.pop("important", None)
-            updated = frontmatter.serialize_frontmatter(metadata, body)
-            if updated == text:
-                return False
-            frontmatter.write_entry_text(path, updated)
-            wi_sync.commit_and_push(
-                self.private_notes, "chore: update wi importance", [str(path.relative_to(self.private_notes))], skip_push=True
-            )
-            return True
+        return awi_mutations.set_entry_importance(
+            self.private_notes,
+            filename=filename,
+            important=important,
+            expected_content=expected_content,
+            storage=self._storage,
+        )
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
         """エージェント由来のinboxまたはhold項目へユーザーコメントを追記、置換または削除する。
@@ -718,9 +727,8 @@ class Operations:
                 state=state,
                 filename=filename,
                 content=updated,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
+                storage=self._storage,
                 expected_content=expected_content,
-                skip_remote_sync=True,
             )
         except SystemExit as error:
             raise WebApiInputError("指定したエントリを操作できません") from error
@@ -768,8 +776,7 @@ class Operations:
             scope=scope,
             question_type=question_type,
             choices=",".join(choices) if choices else None,
-            lock_timeout=_WEB_LOCK_TIMEOUT,
-            skip_remote_sync=True,
+            storage=self._storage,
         )
 
     def add_batch(self, text: str) -> dict[str, object]:
@@ -782,8 +789,7 @@ class Operations:
             self.private_notes,
             texts=[text],
             now=datetime.datetime.now(),
-            lock_timeout=_WEB_LOCK_TIMEOUT,
-            skip_remote_sync=True,
+            storage=self._storage,
         )
         return {
             "filenames": [saved for _original, saved in mapping],
@@ -805,9 +811,8 @@ class Operations:
             filename=filename,
             answer=answer,
             state=state,
-            lock_timeout=_WEB_LOCK_TIMEOUT,
+            storage=self._storage,
             expected_content=expected_content,
-            skip_remote_sync=True,
         )
 
     def transition(
@@ -836,11 +841,10 @@ class Operations:
                 note=note,
                 commit=commit,
                 target_repo=target_repo,
-                lock_timeout=_WEB_LOCK_TIMEOUT,
+                storage=self._storage,
                 force=force,
                 state=state,
                 expected_content=expected_content,
-                skip_remote_sync=True,
             )
         except SystemExit as error:
             raise WebApiInputError("指定したエントリを操作できません") from error

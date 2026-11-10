@@ -79,7 +79,7 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
                     action=action,
                     filenames=["entry.md"],
                     now=_NOW,
-                    skip_remote_sync=True,
+                    storage=_wi_sync.Storage(local_only=True),
                     state=state,
                     force=force,
                 )
@@ -91,7 +91,7 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
                         action=action,
                         filenames=["entry.md"],
                         now=_NOW,
-                        skip_remote_sync=True,
+                        storage=_wi_sync.Storage(local_only=True),
                         state=state,
                         force=force,
                     )
@@ -116,7 +116,7 @@ def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.Mon
         filenames=[source.name],
         state="adopted",
         now=_NOW,
-        skip_remote_sync=True,
+        storage=_wi_sync.Storage(local_only=True),
     )
     assert "## 処理結果" not in source.read_text(encoding="utf-8")
 
@@ -134,7 +134,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
         action="start-processing",
         filenames=[first.name, second.name],
         now=_NOW,
-        skip_remote_sync=True,
+        storage=_wi_sync.Storage(local_only=True),
     ) == [first.name, second.name]
 
     processing = first
@@ -145,7 +145,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
             filenames=[first.name],
             now=_NOW,
             actor_is_agent=True,
-            skip_remote_sync=True,
+            storage=_wi_sync.Storage(local_only=True),
         )
     assert processing.read_text(encoding="utf-8") == first_body.replace("state: inbox", "state: processing")
 
@@ -155,7 +155,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
         filenames=[first.name],
         now=_NOW,
         cooldown_days=3,
-        skip_remote_sync=True,
+        storage=_wi_sync.Storage(local_only=True),
     )
     returned = first
     assert "cooldown_until: '2026-10-08T00:00:00+00:00'" in returned.read_text(encoding="utf-8")
@@ -169,7 +169,7 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
             filenames=[first.name],
             now=_NOW,
             cooldown_days=3,
-            skip_remote_sync=True,
+            storage=_wi_sync.Storage(local_only=True),
         )
     assert returned.read_bytes() == snapshot
 

@@ -17,6 +17,8 @@ from agent_toolkit._atk import session_record_format as _session_record_format
 from agent_toolkit._common import agy_records as _agy_records
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
+from agent_toolkit._common import shell_quoting as _shell_quoting
+from agent_toolkit._common import shell_segments as _shell_segments
 from agent_toolkit._common import shell_tokens as _shell_tokens_module
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.runtime_inserted import is_runtime_generated as _is_runtime_generated
@@ -55,9 +57,6 @@ _SKILL_INVOCATION_PREFIX = "Base directory for this skill: "
 
 
 _SELF_SCRIPT_STEM = "session_review_evidence"
-
-
-_SEGMENT_SEPARATORS = re.compile(r"[;&|]+")
 
 
 _PATH_SEPARATORS = re.compile(r"[/\\]")
@@ -1166,7 +1165,25 @@ def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
 def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
     """解決できなかった委譲先を機械可読イベントへ変換する。"""
     return [
-        {"kind": item.kind, "record": item.record_id, "line": item.line, **({"reason": item.reason} if item.reason else {})}
+        {
+            "kind": item.kind,
+            "record": item.record_id,
+            "line": item.line,
+            **({"reason": item.reason} if item.reason else {}),
+            **({"failure_line": item.failure_line} if item.failure_line is not None else {}),
+            "next_action": (
+                (
+                    f"記録 {item.record_id}:{item.line} の委譲入力と結果を確認し、"
+                    "委譲先の識別子と記録の所在を記録保持者へ問い合わせる。取得できない場合は未確認範囲を報告する。"
+                )
+                if item.kind == "unresolved-delegation"
+                else (
+                    f"保持元ホストで記録 {item.record_id} の所在と読取権限を確認する。"
+                    "failure_lineがあればその行付近の形式も確認する。"
+                    "取得できなければ記録保持者へ参照位置と失敗理由を示して原記録を依頼し、未確認範囲を報告する。"
+                )
+            ),
+        }
         for item in unresolved
     ]
 
@@ -1331,40 +1348,50 @@ def _self_invocation_call_ids(entry: dict[str, Any]) -> set[str] | None:
                 continue
             block_input = block.get("input")
             command = block_input.get("command") if isinstance(block_input, dict) else None
-            if not isinstance(command, str) or not _runs_self_script(_shell_tokens(command)):
+            if not isinstance(command, str) or not _runs_self_script(command):
                 continue
             invoked = True
             if isinstance(block.get("id"), str):
                 call_ids.add(block["id"])
 
     payload = entry.get("payload")
-    if isinstance(payload, dict) and _runs_self_script(_payload_command_tokens(payload)):
+    if isinstance(payload, dict) and _runs_self_script(_payload_command_input(payload)):
         invoked = True
         if isinstance(payload.get("call_id"), str):
             call_ids.add(payload["call_id"])
     return call_ids if invoked else None
 
 
-def _runs_self_script(tokens: list[str]) -> bool:
-    """トークン列のいずれかのコマンドが本スクリプトを実行しているかを判定する。
+def _runs_self_script(command: str | list[str]) -> bool:
+    """コマンド列のいずれかの実行が本スクリプトを呼び出しているかを判定する。
 
     スクリプト名が現れるだけでは実行と扱わない。検索・閲覧・編集コマンドの引数として
     ファイル名を渡す操作を実行と誤認すると、その実行結果に含まれる実在の警告を照会できなくなる。
     """
+    tokens = _shell_tokens(command) if isinstance(command, str) else command
     if not any(_SELF_SCRIPT_STEM in token for token in tokens):
         return False
-    return any(_command_runs_self(segment) for segment in _command_segments(tokens))
+    source = command if isinstance(command, str) else _shell_tokens_module.join_words(command)
+    return any(_command_runs_self(segment) for segment in _command_segments(source))
 
 
-def _command_segments(tokens: list[str]) -> list[list[str]]:
-    """区切り記号（`;`・`&&`・`|`など）でトークン列を個々のコマンドへ分ける。"""
-    segments: list[list[str]] = [[]]
-    for token in tokens:
-        for index, part in enumerate(_SEGMENT_SEPARATORS.split(token)):
-            if index:
-                segments.append([])
-            if part:
-                segments[-1].append(part)
+def _command_segments(command: str) -> list[list[str]]:
+    """引用を外す前に演算子と改行で区切り、データ中の区切り文字を保持する。"""
+    segments: list[list[str]] = []
+    scanner = _shell_quoting.QuotingScanner(command)
+    start = 0
+    while scanner.index < len(command):
+        if scanner.consume_quoted():
+            continue
+        char = command[scanner.index]
+        if char in "\"'":
+            scanner.enter_quote(char)
+            continue
+        if char in ";&|\n":
+            segments.append(_shell_tokens(command[start : scanner.index]))
+            start = scanner.index + 1
+        scanner.index += 1
+    segments.append(_shell_tokens(command[start:]))
     return [segment for segment in segments if segment]
 
 
@@ -1384,7 +1411,12 @@ def _command_runs_self(tokens: list[str]) -> bool:
         return True
     name = _basename(words[0])
     if name in _SHELL_NAMES:
-        return any(_runs_self_script(_shell_tokens(word)) for word in words[1:] if not word.startswith("-"))
+        # 記録されたパスの区切りを既存の実行名判定とそろえてから、起動引数を解析する。
+        target = _shell_segments.shell_execution_target([name, *words[1:]])
+        if target is None:
+            return False
+        kind, value = target
+        return _runs_self_script(value) if kind == "command" else _is_self_script(value)
     if name in _SCRIPT_RUNNERS or name.startswith("python"):
         return any(_is_self_script(word) for word in words[1:])
     return False
@@ -1411,6 +1443,15 @@ def _shell_tokens(command: str) -> list[str]:
 def _payload_command_tokens(payload: dict[str, Any]) -> list[str]:
     """Codexの記録から、実行したコマンドのトークン列を取得する。
 
+    カタログの操作集計は語の列を使い、自己呼出しの判定は改行を失わない元の入力を使う。
+    """
+    command = _payload_command_input(payload)
+    return _shell_tokens(command) if isinstance(command, str) else command
+
+
+def _payload_command_input(payload: dict[str, Any]) -> str | list[str]:
+    """Codexの記録から、実行したコマンドの文字列またはargvを取得する。
+
     コマンドを保持するキー名は記録の種類で異なり、コマンド実行の呼び出し引数は`cmd`、
     完了項目は`command`を用いる。いずれの記録も同じ判定へ渡すため、両方のキーを探す。
     """
@@ -1423,7 +1464,7 @@ def _payload_command_tokens(payload: dict[str, Any]) -> list[str]:
             if isinstance(command, list):
                 return [part for part in command if isinstance(part, str)]
             if isinstance(command, str):
-                return _shell_tokens(command)
+                return command
     return []
 
 

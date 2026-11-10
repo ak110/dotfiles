@@ -46,8 +46,11 @@ for (const trigger of ["manual", "auto", "plugin", "precompute"] as const) {
       expect(result.skip).toMatch("先行生成");
     } else {
       expect(result.messages?.length).toBe(1);
-      expect(result.messages?.[0]?.text).toMatch("/records/current-session.jsonl");
-      expect(result.messages?.[0]?.text).toMatch("最新の訂正");
+      const text = result.messages?.[0]?.text ?? "";
+      expect(text).toMatch(/生成していない/);
+      expect(text).toMatch(/SessionStart.*圧縮後通知.*コマンド.*実行/);
+      expect(text).toMatch(/復元せよ/);
+      expect(text).not.toMatch(/会話の要約生成を省き|会話ID:|原本ログ:|\/records\/current-session.jsonl/);
       expect("usage" in result).toBe(false);
     }
   });
@@ -83,11 +86,11 @@ test("他機能への保護door・無条件・広域イベント登録の持込�
 
 const TOOL = "mcp__agent-toolkit__compact_conversation";
 
-async function waitingEngine($: Engine, on: On, options: { percent?: number; window?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure"; writeFails?: boolean; bashResult?: unknown } = {}) {
+async function waitingEngine($: Engine, on: On, options: { percent?: number; window?: number; eligible?: boolean; delegated?: boolean; compact?: "skip" | "failure"; headless?: boolean; writeFails?: boolean; bashResult?: unknown } = {}) {
   mock.env(on, { HOME: "/home/tester", ...(options.delegated ? { AGENT_TOOLKIT_DELEGATED_SESSION: "1" } : {}) });
   mock.session(on);
   const clock = mock.clock(on, { now: 10_000 });
-  const calls = { queries: [] as (readonly string[])[], compactions: 0, notices: [] as string[], diagnostics: [] as string[], records: new Map<string, string>() };
+  const calls = { queries: [] as (readonly string[])[], compactions: 0, commands: [] as string[], notices: [] as string[], diagnostics: [] as string[], records: new Map<string, string>() };
   on("fs.write", (_$, e) => {
     if (options.writeFails) throw new Error("書込不可");
     calls.records.set(e.path, e.text);
@@ -98,7 +101,7 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; win
   on("session.id", () => ({ value: "wait-main" }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("session.messages", () => ({ value: [] }));
-  on("session.surfaces", () => ({ value: ["terminal"] }));
+  on("session.surfaces", () => ({ value: options.headless ? [] : ["terminal"] }));
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: usage.percent * 10_000, window: options.window ?? 1_000_000, percent: usage.percent }, rateLimits: [] } }));
   on("ui.log", (_$, e) => { calls.diagnostics.push(e.text); return { value: undefined }; });
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
@@ -114,6 +117,12 @@ async function waitingEngine($: Engine, on: On, options: { percent?: number; win
     if (options.compact === "failure") throw new Error("圧縮失敗");
     if (options.compact === "skip") return { skip: "ホストが見送り" };
     return { messages: [{ role: "user", text: "保存した作業状態", toolUses: [] }] };
+  });
+  on("command.run", (_$, e) => {
+    calls.commands.push(e.command);
+    calls.compactions++;
+    if (options.compact === "failure") throw new Error("圧縮失敗");
+    return {};
   });
   on("ui.toast", (_$, e) => { calls.notices.push(e.text); return { value: undefined }; });
   await $.session.start({ cwd: "/work", surface: null, isInteractive: true });
@@ -201,28 +210,39 @@ for (const door of ["delivery", "queue"] as const) {
   }
 }
 
-test("高利用率の新しい待機でも反復せず、閾値未満を観測した後の新作業で再開する", async ($, on) => {
-  const { clock, calls, usage, task } = await waitingEngine($, on);
-  await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
-  await clock.advance(60_000);
-  await clock.advance(0);
-  expect(calls.compactions).toBe(1);
-  task.id = "second-wait";
-  await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
-  await clock.advance(60_000);
-  await clock.advance(0);
-  expect(calls.compactions).toBe(1);
-  expect(calls.queries.length).toBe(1);
-  usage.percent = 10;
-  await $.turn.start({ text: "圧縮後の作業", turnId: MAIN_TURN.turnId });
-  await $.turn.complete(MAIN_TURN);
-  usage.percent = 70;
-  await $.turn.start({ text: "新しい作業", turnId: MAIN_TURN.turnId });
-  await $.turn.complete(MAIN_TURN);
-  await clock.advance(0);
-  expect(calls.compactions).toBe(2);
-  expect(calls.queries.length).toBe(2);
-});
+for (const scenario of [
+  { headless: false, compact: undefined, manual: false },
+  { headless: false, compact: "skip", manual: false },
+  { headless: false, compact: "failure", manual: false },
+  { headless: true, compact: undefined, manual: false },
+  { headless: true, compact: "failure", manual: false },
+  { headless: false, compact: undefined, manual: true },
+  { headless: true, compact: undefined, manual: true },
+] as const) {
+  test(`閾値以上のまま新しい待機で再予約し、同じ待機は消費済みにする: ${JSON.stringify(scenario)}`, async ($, on) => {
+    const { clock, calls, task } = await waitingEngine($, on, scenario);
+    if (scenario.manual) await $.tool.call({ tool: TOOL });
+    else await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+    await clock.advance(0);
+    await clock.advance(0);
+    expect(calls.compactions).toBe(1);
+    const firstQueries = calls.queries.length;
+    if (!scenario.manual) {
+      await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+      await $.turn.complete(MAIN_TURN);
+      await clock.advance(0);
+      expect(calls.compactions).toBe(1);
+      expect(calls.queries.length).toBe(firstQueries);
+    }
+    task.id = "second-wait";
+    await $.tool.call({ tool: "Bash", command: "atk agents wait", run_in_background: true });
+    await clock.advance(0);
+    await clock.advance(0);
+    expect(calls.compactions).toBe(2);
+    expect(calls.queries.length).toBe(firstQueries + 1);
+    expect(calls.commands).toEqual(scenario.headless ? ["compact", "compact"] : []);
+  });
+}
 
 test("実行中turnの予約はturn完了後の単発タイマーで圧縮する", async ($, on) => {
   mock.env(on, {});

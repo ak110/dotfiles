@@ -9,6 +9,7 @@ optional_inputs:
 - CI記録
 - WI記録
 - review_contract
+- 評価用WI原本
 - 修正系列の開始時のHEAD
 - 原因commitOID
 - 開始時のHEAD
@@ -38,171 +39,94 @@ continuations:
 
 # 実行レビュータスク
 
-実装済みの差分を対象に、要件や外部仕様の水準で1段階レビューする。作業開始時にまず`agent-basics:review-standards`と`agent-basics:writing-standards`を起動し、読込表に示す資料を読んでから判定する。
-判定は`agent-toolkit:/share/exec-review-criteria.md`の「実行レビューの判定」に従う。
-`agent-basics:writing-standards`の資料は、同書における指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠として用いる。初回レビューでは、適用対象となる`agent-basics:writing-standards`の`references/review-only-criteria.md`の全基準を同一の実行レビュー内でまとめて点検し、基準ごとに個別の担当者を分けることはしない。本担当の役割はレビューおよび判定に必要な検証の実行にとどめ、実装や修正の作業は委譲元が別のエージェントへ割り当てる。
+実行レビュー担当は実装済みの差分を対象に、要件や外部仕様の水準で1段階レビューする。
+作業開始時にまず`agent-basics:review-standards`と`agent-basics:writing-standards`を起動し、読込表に示す資料を読んでから判定する。
+判定は`exec-review-criteria-execution.md`「実行レビューの判定」に従う。
+`agent-basics:writing-standards`の資料は、同書における指摘の種類7（適用中の作成規範またはプロジェクト規範への違反）の判定根拠として用いる。
+初回レビューでは、適用対象となる`agent-basics:writing-standards`の`references/review-only-criteria.md`の全基準を同一の実行レビュー内でまとめて点検し、基準ごとの担当者の分割は対象外とする。
+本担当の役割はレビューおよび判定に必要な検証の実行にとどめ、実装や修正の作業は委譲元が別のエージェントへ割り当てる。
 実行レビューの入力、責務、出口の各条件は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
 担当工程へ着手する前に、`share/work-contract.md`「工程境界での要求と成果の確認」に従って`全体作業契約`を読み、判定結果を自身の記録に残す。
 
 ## 名指し参照の読込方法
 
-名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 本文でこの資料の基準を参照・取得する時 | `exec.subagent.md#「実装」` | 判断 | `section:agent-toolkit:*/share/exec.subagent.md#「実装」` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` | 判断 | `section:agent-toolkit:*/skills/commit/references/history-rewrite.md#「WI実装commitの対応の継承」` |
+| 本文でこの資料の基準を参照・取得する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
 | 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` | 判断 | `read:agent-basics:*/skills/secret-files/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md#「実行手段」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/runtime-routing.md#「実行手段」` |
-| 本文でこの資料の基準を参照・取得する時 | `exec.parent.md#「統合の指示と受領」` | 判断 | `section:agent-toolkit:*/share/exec.parent.md#「統合の指示と受領」` |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 本文でこの資料の基準を参照・取得する時 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
 | 本文でこの資料の基準を参照・取得する時 | `recurrence-self-check-items.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check-items.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| AWIの形式を判断する前 | `agent-toolkit:wi-standards`の`references/awi-body.md`冒頭 | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/awi-body.md#冒頭` | |
-| 条件表を検収する前 | `agent-toolkit:/share/exec-review-recording.md`「記録する行と要求単位」 | 判断 | `section:agent-toolkit:*/share/exec-review-recording.md#「記録する行と要求単位」` | |
-| 初回レビューに入る前 | `agent-toolkit:/share/exec-review-criteria.md`の「初回レビュー」 | 判断 | `section:agent-toolkit:*/share/exec-review-criteria.md#「初回レビュー」` | |
-| 再レビュー・引き継ぎ再レビューに入る前 | `agent-toolkit:/share/exec-review-criteria.md`の「再レビューの場合」 | 判断 | `section:agent-toolkit:*/share/exec-review-criteria.md#「再レビューの場合」` | |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 条件表を検収する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` | |
+| 初回レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md`、`read:agent-toolkit:*/skills/commit/references/testing.md` | |
-| `計画`を受領し、条項を生成する前 | `agent-toolkit:write-plan`の`references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` | |
+| `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-structure.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-scope.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-requirements.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` | |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
-| 指摘を登録するか完成条件証拠を書く直前 | [exec-review-recording.md](exec-review-recording.md) | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/share/exec-review-recording.md` | |
-| 着手時 | `agent-toolkit:/share/exec-review-criteria.md`の「適用契約」「基本方針」「指摘内容」「実行レビューの判定」「完了報告」 | 起動時 | `role:exec-review` | |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check.parent.md` | |
+| 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/share/exec-review-recording-issues.md`、`read:agent-toolkit:*/share/exec-review-recording-evidence.md`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
+| 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
 | 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` | |
-| 操作や検証手段を選ぶ前 | `exec-review-operations.md`の「操作区分」 | 判断 | `section:agent-toolkit:*/share/exec-review-operations.md#「操作区分」` | |
-
-## 入力
-
-原要求・回答・公開契約から必要結果・品質・認可・制約を定め、派生計画・review_contract・差分・試験を評価する。
-不要な内部方式は削除・縮小・代替も比較し、明示方式・データ保全・必要な不変条件を保つ。
-
-- `レビュー基準`: `計画`、`CI記録`、`WI`の基準名1つ以上を読点区切りで受け取り、各基準に応じた追加入力もすべて別入力で受け取る
-- `計画`: 計画ファイルの絶対パス。各節の意味は読込表の`plan-file-standards.md`に基づいて解釈する。レビュー指摘管理表と検証結果は、同じファイル名幹（stem）を持つ成果物から特定する。検証結果は実装担当エージェントが`## 進捗ログ`に記録した行（レーン工程では`exec.subagent.md`「実装」）を指し、自身が作成する完成条件証拠とは別の検証資料として参照する
-- `CI記録`: 7項目のCI記録とともに、`修正系列の開始時のHEAD`（同一の修正系列で引き継ぐ短縮OID）および`原因commitOID`（今回の原因となったcommitの短縮OID。CIが再帰的に失敗した場合はCI記録と同時に更新される）を受け取る。使用する管理表のパスは`~/.claude/plans/ci-<修正系列の開始時のHEAD>.exec-review.tsv`となる
-- `WI`: 計画に記載されていないWIについて、ファイル名、要求、完成条件、由来、採否を含む`WI記録`を受け取る（計画に記載があるWIは自身で取得する）。`計画`が指定されていない場合は、1件以上のWI記録と`開始時のHEAD`を受け取り、管理表のパスは`~/.claude/plans/wi-<開始時のHEAD>.exec-review.tsv`とする。計画がない場合の検証結果は、受け取ったWI記録または引き継ぎ記録が示す場所から読み取る
-- `review_contract`: `CI記録`、計画外の`WI`、新形式AWIでは必須とする。単一条項の直接契約か、`条項`・`内容`・`出典`と判定対象外commitを記したMarkdownの絶対パスを受け取る。AWI形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭で判別する。新形式AWIでは`exec-review-recording.md`「記録する行と要求単位」の条件表を含むファイルを検収する。原要求から期待結果を確定後に契約全文を読み、必要性・整合性を評価する。再レビューでは前回契約を維持し、更新時は旧版を保存する
-- `担当モデル`: 指定された場合は、読者別探索担当および再発防止セルフチェック担当の起動時引数`model_type`へ渡し、終了時の結果で得られた実際のモデルとの一致を引き継ぎ記録へ記録する。指定がない場合は工程別の標準設定を用いる
-- `レビュー種別`と`round`: 省略時の値はそれぞれ`初回レビュー`および`1`となる。引き継ぎ再レビューでは両方の指定を必須とする
-- `rewrite_map`: 前回のレビュー後に履歴の書き換えやcommit分割によってOIDが変更された際、再レビューで受け取る旧OIDから新OIDへの対応表の絶対パス。形式は`agent-toolkit:commit`の`references/history-rewrite.md`「WI実装commitの対応の継承」、取り扱いは「再レビュー」に従う
-- `前回確認版`: 引き継ぎ再レビューで受け取る記録の絶対パス。前回の開始時点とレビュー対象HEADの組み合わせ（差分の比較に使用）、およびGit管理外の文章成果物ごとの識別子と前回本文の複製パスを保持する。同一thread内では「出力」で保存した記録をそのまま引き継ぐ。比較元を特定できない場合は、不足しているHEADや本文の取得元を「続行できない理由」として返す
-- `受理済みの完成条件証拠`: 後続のレビューが参照できる、委譲元が受理済みの実行レビュー返却ファイルの絶対パス。省略時や該当する返却がない場合は`なし`とする。`exec-review-recording.md`「受理済み判定への参照」の条件を満たす判定行のみを参照する
-- `対象ファイル限定`: 指定がある場合は、その範囲に含まれるファイルのみをレビューする
-- `Git管理外の変更`: 元ファイルと変更前複製の絶対パスの組み合わせごとに、複製と現行本文の差分をレビュー対象に加え、元の絶対パスを変更ファイル一覧へ登録する。作業ツリー内の`.env`などは通常の全文差分として扱う。元ファイルが作業ツリー外にあり`agent-basics:secret-files`の対象となる組み合わせでは、キー名の集合とキーごとの値の一致・不一致のみを比較し、具体的な値は出力対象から除外する
-
-委譲プロンプトの本文として受け取ったCI記録とWI記録は、受領後直ちに自身のセッションのmanaged-temp配下のMarkdownファイルへ原文のまま保存する（これを「入力記録」と呼ぶ）。判定行の根拠には入力記録のパスと行番号を引用し、再レビューで更新値を受け取った場合は同一ファイルへ追記する。委譲元から絶対パスで渡された記録は、そのパスをそのまま入力記録として扱う。
-計画を作成せずにWI全体を不採用とする場合、入力記録の`## 実施内容`の表形式は`exec-review-recording.md`「判定の値」に従う。
-
-対象worktreeは`cwd`、対象リポジトリはそのGit共通ディレクトリとし、レビュー対象のHEADと変更ファイル一覧は現在のGit状態から取得する。計画、WI、CI記録、開始時点、レビュー指摘管理表のいずれかが別の対象リポジトリに属している場合は、「続行できない理由」を返して中断する。プロジェクト規範および適用スキルは、対象worktreeと現在のplugin rootから解決する。
-
-レビュー指摘管理表は、最初に読み取る前に存在を確認する。初回レビューでファイルが存在しない場合に限り、`atk review-table init <表の絶対パス>`を単独で実行し、成功を確認してから読み込む。すでに存在する管理表は初期化せずにそのまま使用する。再レビューおよび引き継ぎ再レビューで管理表が見当たらない場合は、空の表を新規作成せず、欠損している表と再開に必要な記録を「続行できない理由」として返す。
-
-## 差分とWIの取得
-
-変更前の公開契約と比較するための開始時点は、`開始時のHEAD`が指定されていればその値を用いる。指定がない場合、`計画`を含むときは実装着手前のworktreeを、`CI記録`のみのときは`原因commitOID`の親commitを開始時点とする。差分を取得する直前に開始時点とレビュー対象HEADを具体的なcommitへ解決し、差分が計画から生成した条項、受け取った`review_contract`、および各基準の次の情報に個別に適合しているかを確認する。差分を読む際は、まず`git diff --stat`や`git diff --name-status`で変更規模を把握し、判定に必要な範囲から優先して読み進める（努力目標。必要な差分から読むため）。
-
-- `計画`: `## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`
-- `CI記録`: 受け取ったCI記録の各項目
-- `WI`: 要求、完成条件、由来、採否
-
-対象となるWIの集合は、受け取ったWI記録と、計画の`## 実施内容`で`由来`に`人間由来のWI`または`エージェント由来のWI`が指定されている行のWIを合わせたものとする（通常は計画の由来と採否を再利用し、原文との具体的反証がある単位は根拠を示して訂正する）。計画の有無にかかわらず、対象WIは対象worktree上で`atk wi show`を実行して取得し、frontmatterの`type`が`awi`や`uwi`である項目の要求および完成条件を差分と比較する。
-ユーザーコメントやUWIの回答は要求単位ごとに分割し、元の文面と出所を保持した状態で比較する。`## ユーザー指摘の逐語引用`は起草時点で解決済みの発話であるため（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`）、個別の要求単位には分割せず、`## 反映内容と反映先`や`## 完成条件`を解釈するための補足根拠として参照する。計画内の`ユーザー指示`に由来する行も要求単位に分割し、WI本文に含まれない追加要求として突き合わせる。
-WIの鮮度（staleness）は、`計画`がある場合は`## 変更履歴`に記録された設計時の`staleness`ならびに条件付き履歴確認の判断を参照する。`WI`のみの場合は、対象worktree上で`atk wi list --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を1回実行して対象WIの`staleness`を取得する。レビューの対象には、状態を問わずすべての対象WI（`processing`、`adopted`、`rejected`など）を含める。全状態の一覧に対象WIが1件も見当たらない場合に限り、「続行できない理由」を返して中断する。
-
-計画の条項を根拠として指摘を登録する前には、その条項が対象WIの明示的な条件（`## 反映内容と反映先`、`## 完成条件`、`## ユーザーコメント`、関連するUWIの`## 回答`）と整合しているかを確かめる。関連するUWIが存在することが分かった場合は、その回答を取得してから判定する。両者が衝突する場合は指摘を登録せず、計画の条項とWIの該当箇所を併記して「続行できない理由」として委譲元へ返す。実装がWIの条件を満たしており計画の条項のみから外れている場合は、計画側の不備としてその実装状態も併せて報告する。
-`exec-review-recording.md`「失効の根拠」に挙げるユーザー判断によって、`source`を持つエージェント由来AWIの提案内容（前提、対象、方針、採否）が否定される場合がある。計画の`## 実施内容`または採否の変更を記録したレビュー指摘管理表の行が、そのユーザー判断を根拠として提案を`不採用`としている場合、否定された完成条件は失効として扱い、計画との衝突とはみなさない。否定された範囲を超える完成条件や、人間由来のWIの完成条件については通常どおり判定する。メインエージェントの技術判断を根拠として扱える範囲も同節の規定に従い、計画確定前の判断は計画の実施内容にある根拠欄から、着手後の判断は管理表の行から読み取る。全体が不採用となった条件は部分的な失効としては扱わず、初回から`reject`による`未達`と判定し、根拠には計画や入力記録の`実施内容`に記された不採用理由の所在を明記する。
-
-## 条項の生成
-
-`計画`を受け取った場合は、計画の`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`、および開始時点の実態からレビュー条項を生成する。条項は、ユーザーの目的、現行の公開契約、ユーザーとの合意事項、認可の範囲、除外・保持事項、通常入力、対象外入力、ならびに誤許可・誤拒否がユーザーや消費側に及ぼす影響について、出典を明記した独立した単位として記述する。変更対象の成果物に適用される作成規範やプロジェクト規範も条項に追加する。対象集合は条件によって定義し、件数自体が合否判定の条件となっている場合に限り、実際に計測した値と計測時点を記録する。`agent-toolkit:/share/exec-review-criteria.md`に定める種類9（設計品質の劣化）については、計画の記述内容にかかわらず、差分と変更後のファイル全体に基づいて客観的に判定する。
-
-条項が参照するcommitは対象リポジトリ内で特定し、WIは`atk wi show`で取得したうえで、認可資料を直接読んで認可された範囲を確認する。未解決のcommit、取得できないWIや認可資料、認可範囲との不一致がある場合は、レビューのラウンドを問わず「認可不足」として「続行できない理由」を返す。事前に認可を確認できた範囲については重複した認可判定から除外するが、その変更が共通の公開契約や安全性、要求された統合結果に適合しているかは漏れなく評価する。
-
-## 判定の観点と並行する探索
-
-レビューの各ラウンドでは、本書「再発防止セルフチェックの起動と受領」に従ってチェック観点を収集する。
-`agent-toolkit:/share/exec-review-criteria.md`に基づく走査と並行して、`agents_server`の`task`により再発防止セルフチェック担当を1件起動する。
-観点が存在しない場合や、再レビューおよび引き継ぎ再レビューで今回の差分がなくセルフチェック由来の未解決指摘が0件である場合の起動省略、ならびに結果の裏付け確認、採否判定、種類7としての登録手続きについても、本書「再発防止セルフチェックの起動と受領」に従う。
-再レビュー全体の確認範囲は後述の「再レビュー」の規定を維持し、セルフチェックへ渡す今回の差分は「再発防止セルフチェックの起動と受領」で定める比較元から生成する。
-
-レビュー観点には`agent-toolkit:/share/exec-review-criteria.md`「実行レビューの判定」を適用する。種類8の走査では、同節の直接影響範囲に関する要点に沿って直接影響範囲を独自に算出し、提出された探索記録や検証結果と突き合わせて漏れがあれば管理表へ記録する。
-テストと観測範囲の判定にも、読込表のtesting.mdの基準を適用する。
-
-文章成果物の直接確認と別担当の選択、起動、準備、対象集合の分割は、`reader-fit-review.parent.md`「起動」に従う。通常のリスクを含め、共通の読者像で確認できる文書群を取りまとめ、ファイルごとの比較資料、検証結果、証拠、識別子を適切に対応付ける。実行レビューにおける他の段階判定は、各工程で定められた既存の契約を維持する。
-この検証は`agent-toolkit:/share/exec-review-criteria.md`「初回レビュー」の走査と並行して進める。
-起動を省略できる差分の条件についても同書の定めに従う。
-
-- Git管理下の比較資料は、`{"repository":"<対象worktreeの絶対パス>","base":"<比較元OID>","head":"<レビュー対象HEAD>","paths":["<リポジトリ相対パス>",...]}`の形式で渡す。初回の比較元は今回の開始時点とし、再レビュー時は前回確認版に記録されたレビューHEADとする。同一の`paths`を読者ごとの`成果物`（作業ツリーの絶対パス）と対応付け、`修正範囲`には比較元と現行版のOID、および直接影響範囲を明記する。新規作成の文書や回答は全文を差分として扱う。再レビューでは未走査の範囲や根拠不足の範囲も渡し、`レビュー種別`には`再レビュー`を指定する
-- 同一レーン内の複数計画において判定対象を自計画のcommitに限定する場合は、パスごとに自計画の判定対象commitから`git show --format= <commit> -- <パス>`を実行して順次差分ファイルへ保存し、そのパスと保存先ファイルの対応を`判定範囲差分`として同一の比較資料に加える
-- Git管理外のファイルは、保存済みの前回本文の複製と現行本文を使用する。`atk`経由でのみ取得できる本文については、`reader-fit-review.parent.md`「入力」に従って取得・保存する
-- 管理表の前回指摘および回答から該当読者の`未解決事項`を抽出し、自身のセッションのmanaged-temp配下のファイルへ保存してその絶対パスを渡す。該当項目がない場合は`なし`を指定する
-- 差分外で見つかった既存の不具合は`気付いた改善点:`として扱い、新たな要件の追加についてはその旨を委譲元へ報告して、未達の指摘や未解決件数の集計対象からは除外する
-- ユーザーがAWIの`## ユーザーコメント`やUWIの`## 回答`へ担当者宛てに直接記入した質問への回答下書きは、Gitの変更差分に含まれていなくても文章成果物として扱う（AWI本文へ転記された質問は対象外）。検証結果に示された下書きの絶対パスを成果物、種別を「質問への回答」、読者を「質問したユーザー」として渡す。本担当は事実を断定している記述について根拠と現物を確認し、根拠の欠落があれば種類1として指摘して、修正指示を下書きへ差し戻す。回答UWIの保存処理は、レビューが収束した後にメインエージェントが行う
-
-画面差分が存在する場合はユーザビリティレビューを並行実施するため、統合時点で適用される`agent-toolkit:/share/exec-review-criteria.md`の指摘の種類5（完了条件を満たしていない）の登録は、統合段階まで保留する。
-
-## 再レビュー
-
-再レビューでは、同一sessionの管理表、開始時点の短縮OID、レビュー基準、および`review_contract`を引き続き使用する。委譲元から追送される入力は、`再レビューせよ`という指示、`round`、ならびに任意指定の`review_contract`と`rewrite_map`である。
-確認の対象は、前回指摘に対する修正内容、前回レビューHEADから今回HEADまでの修正差分、および変更された識別子や契約に伴う直接影響範囲とする。初回の段階で判定可能だった軽微な論点が新たに見つかった場合は、全体走査を再開せず、初回レビューにおける確認不足として記録する。重大な見落としや修正によって新たに生じた欠陥については、適用される規定と発生条件の客観的な根拠を添えて指摘を登録する。
-修正差分が新たに変えた識別子・契約・出力も、初回と同じく「判定の観点と並行する探索」の種類8の走査に従って直接影響範囲を独自に算出し、提出された探索記録と検証結果に欠けている利用側テストを判定する。
-修正差分の比較元には前回レビュー時のHEADを用い、返却情報における`レビュー開始時点`には初回から引き継いでいる開始時点を記載する。
-Git履歴が書き換えられた後の開始時点には、書き換え後の対応するOIDを使用する。
-履歴書き換えが行われた後は、前回と今回の開始時点・HEAD、ならびに各時点の契約に基づいてファイルごとの差分を比較する。
-管理表の応答欄に設計・実装方式の全面的な置換が記録された直後の再レビューに限り、開始時点からの全差分を再確認の対象とする。
-既存の各指摘については、現在の成果物、管理表の応答、検証結果をもとに判定し、不備が解消した行のみを「解決済み」へ更新する。修正に伴って新たに発生した違反は、新規の指摘として登録する。HEADが前回と同一であっても、現在の入力内容に基づいて判定する。
-
-`rewrite_map`を受け取った場合は、判定作業に入る前に、前回確認版の開始時点・HEAD、ならびに前回の判定行や検証結果が参照しているcommitを対応表に従って新しいOIDへ読み替える。元の取得版と異なる版で判定をやり直す行については、`exec-review-recording.md`「根拠の書き方」に従って既存の観測結果を再利用できるかを判断する。
-完成条件証拠の提出が要求されている場合は、結果を返却する前にすべての条件を新しいHEADで改めて判定する。委譲元が前ラウンドの返却を受理した判定行については、修正差分や前提条件の変化による影響を受けていない条件に限り、`exec-review-recording.md`「受理済み判定への参照」に沿って参照し、判定を維持する理由を根拠欄に記述する。解消済みの指摘を理由に`未達`や`根拠不足`としていた条件や、今回の修正が影響を及ぼした条件は、新たな根拠に基づいて判定する。単にHEADの表記だけを書き換えた返却は、再判定に当たらない。`対応完了（再レビュー不要）`としてレビューが収束する場合は、直前に実際にレビューを実施した際の返却内容がそのまま完成条件証拠となる。
-
-## 返却前の処理
-
-返却する前に、以下の処理を完了させる。
-
-- 完成条件証拠の提出が求められている場合は、`exec-review-recording.md`「完成条件証拠の作成」に従ってすべての条件を判定し、同書「条件別判定行の形式」に基づく返却前チェックを完了する
-- 実装差分に対して十分な裏付けが取れた指摘のみを管理表へ登録し、`atk review-table validate <表の絶対パス> --allow-unanswered`を実行して表の構造に不備がないことを確認する（レビュー対象者の応答記入を待つ必要はない）。`未解決の指摘数`には、`atk review-table show <表の絶対パス> --format=summary --round <round>`が返す`unanswered_count`の値を使用する
-- 未解決の指摘数が0件であっても、区分名が付与されていない`未達`や`根拠不足`の条件が残っている場合は、その条件を満たしていない点を指摘として管理表へ登録したうえで返却する（未達の条件には、修正作業へ引き継ぐための具体的な指摘が必要となる）
-- 探索結果として得られたすべての指摘について、管理表に対応する行が存在するか、または根拠を明記した不採用理由が記録されていることを確認し、漏れがあれば補完する
-- 再発防止セルフチェックの全項目の結果について、管理表への登録先または不採用の理由を正しく対応付ける。観点が存在しない場合や、今回の差分がなく未解決指摘が0件であるといった省略条件に該当する場合は、その根拠を走査記録に残す
-- 差分外やレビュー範囲外として管理表から除外する指摘候補は、`exec-review-recording.md`「走査記録と差分外の不良」に従って分類と受け渡しを完了させる。再レビュー時は、走査記録や引き継ぎ記録から未解決の報告事項を回収して委譲元の対応記録と突き合わせ、未処置の不具合を`気付いた改善点:`として報告する。差分外の不具合が存在することのみを理由に、正常に進められるレビューを「続行不能」に変更しない
-- 各ラウンドにおける開始時点とレビューしたHEAD、判定に用いた契約、ならびにGit管理外の文章成果物ごとの識別子（回答下書きの場合は元の絶対パス）と読み込んだ本文の複製パスを、自身のセッションのmanaged-temp配下の記録ファイルへ保存し、その絶対パスを引き継ぎ記録へ`前回確認版`として記録する。セルフチェックに起因する未解決指摘や今回の差分比較元も同一の記録に対応付ける。前回本文や契約の保存ファイルは上書きせず、現在のレビュー工程が完了した段階で次の比較元へ切り替える
-
-起動と終了の観測手順は、`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」に従う。
-Codexの組み込み委譲は`agents_server`が利用できない場合の代替手段として位置づけられ、`fork_turns: "none"`を指定して起動する。
-
-「出力」節で定める延期用の記録によって許容された未達成事項は、管理表への登録や別台帳への転記をしない。記録が存在することだけでなく、判断の妥当性が十分に確認されているかを確かめる。
-返却可否と不足の分類は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従い、残っている処理の担当主体と、不足している判断・入力・権限の内容に基づいて決定する。
-判定行の記入、検証の実行、読者別探索の起動・リカバリ・受領、申告内容の補正、新しいHEADでの全条件の再判定など、本担当の権限範囲で完結できる処理は、すべて返却前に完了させる。
-委譲元による最終判断や認可、取得不可能な入力、権限や外部状態の不足など、本担当の作業範囲では解消できない問題が残っている場合に限り、その不足内容と再開すべき位置を「続行できない理由」に記載して返す。
+| 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` | |
 
 ## 出力
+
+以下の本文返却に加え、同じ担当が正式原本を保存して所在だけを返す方式を選べる。
+正式原本には必須7行と必要な全条件判定行を記載する。
+保存後に全文を読み戻し、HEAD・round・管理表・読者の全対象・条件番号と根拠が判定結果と一致することを確かめる。
+不足は返却前に同じ原本へ補う。
+検収済み原本を使う返却通知は次の2行だけとし、同じ原本をパスで引き渡す。
+
+```text
+状態: completed
+正式原本: <この担当が保存・読み戻しした正式原本の絶対パス>
+```
+
+委譲元は終了した担当と原本を対応付け、その本文へ共通の受領条件と従来の検収を適用する。
+短い本文返却と正式原本返却のどちらでも、以下の必須内容と判定基準を保つ。
 
 - 読者別探索は`{"files":{"<相対パス>":{"sessions":["<ID>"]}},"external":{"<絶対パス>":{"sessions":["<ID>"]}}}`の1行JSONで申告する。
   IDにはUUID、16進数、`agent-`付き16進数、Codexの`task_name`（`/root/<名前>`）を受け付け、起動結果を使う。
   全読者のIDを各ファイルへ対応付け、集約起動のIDも全対象へ記す。
   Git管理外の対象がなければ`external`は`{}`とする
-- 各パスの直接確認は`{"direct":[{"読者像":"...","判定":"...","根拠":"...","証拠":"/結果.md"}]}`とする。別読者を起動したら`sessions`も併記する。省略した`direct`・`sessions`は空配列として扱う。適用条件と証拠の保存は`reader-fit-review.parent.md`「起動」に従う。`external`は直接確認の対象外とする
-- Git管理下における申告対象は、削除されたものを除く変更対象の`.md`および`.md.tmpl`ファイルのうち、今回のレビュー判定対象commitによって変更された範囲とし、ファイル名が変更された場合は新しいパスを記載する。`review_contract`で判定対象外とされたcommitのみによる変更は除外し、どの計画にも属していないcommitによる変更は対象として残す。2回目以降のレビューで前回と今回のファイル別差分が完全に一致しているファイルに限り、値を`{"omission":"再点検対象なし"}`と指定できる
-- Git管理外における申告対象は、回答下書きの絶対パス、および`Git管理外の変更`として受け取った元ファイルのうち`.md`や`.md.tmpl`の絶対パスとする。roundが2以上で、前回の複製本文と現行本文のバイト列が完全に一致している場合に限り、`external`の値を`{"omission":"再点検対象なし","previous":"<前回本文の複製の絶対パス>"}`と指定できる
+- 各パスの直接確認は`{"direct":[{"読者像":"...","判定":"...","根拠":"...","証拠":"/結果.md"}]}`とする。
+  別読者を起動したら`sessions`も併記する。
+  省略した`direct`・`sessions`は空配列として扱う。
+  適用条件と証拠の保存は`reader-fit-review.parent.md`「起動」に従う。
+  `external`は直接確認の対象外とする
+- Git管理下における申告対象は、削除されたものを除く変更対象の`.md`および`.md.tmpl`ファイルのうち、今回のレビュー判定対象commitによって変更された範囲とし、ファイル名が変更された場合は新しいパスを記載する。
+  `review_contract`で判定対象外とされたcommitのみによる変更は除外し、どの計画にも属していないcommitによる変更は対象として残す。
+  2回目以降のレビューで前回と今回のファイル別差分が完全に一致しているファイルに限り、値を`{"omission":"再点検対象なし"}`と指定できる
+- Git管理外における申告対象は、回答下書きの絶対パス、および`Git管理外の変更`として受け取った元ファイルのうち`.md`や`.md.tmpl`の絶対パスとする。
+  roundが2以上で、前回の複製本文と現行本文のバイト列が完全に一致している場合に限り、`external`の値を`{"omission":"再点検対象なし","previous":"<前回本文の複製の絶対パス>"}`と指定できる
 - 初回レビューでは理由をつけて省略することはせず、Git管理下および管理外の対象ファイルがともに存在しない場合に限り、`文章成果物なし`と申告する
 
 延期対象となる項目や、本セッションの実行内で完了しない項目については、既存の引き継ぎ記録の段落に条件1件ごとに以下の情報を記述し、判定行の根拠からその記録を参照する（複数の条件をまとめた要約表現は記録として認められない）。
 
 - `AWI: <WIファイル名|計画由来>`、`判定対象: <完成条件か要求単位の原文を逐語>`
-- `終了区分: 延期adopt`または`終了区分: 終了しない`（`exec.parent.md`「統合の指示と受領」の`AWI終了区分`のうち、統合時に`adopt`しない値）、および実際の結論を記載した`後続工程:`、`検収時機:`
+- `終了区分: 延期adopt`または`終了区分: 終了しない`（`exec.parent.md`、`exec-parent-integration.md`の`AWI終了区分`のうち、統合時に`adopt`しない値）、および実際の結論を記載した`後続工程:`、`検収時機:`
 - 公開工程で判定する条件は`判定工程: 公開工程`、並行して実施中の画面レビューで判定する条件は`判定工程: ユーザビリティレビュー`かつ`進行状態: 並行中`
 
-返却の状態行、続行不能の区分と理由、標識行および一行返却は`agent-toolkit/share/rules-subagent.md`「返却形式の受け渡し」に従う。完成条件証拠の提出が要求されている場合は末尾に`exec-review-recording.md`「条件別判定行の形式」に従った判定行を全条件の数だけ記載し、証拠要求がない場合は判定行を配置しない。一般的な要約などの地の文は加えずに、役割固有の規定行だけを返す。
+返却の状態行、続行不能の区分と理由、標識行および一行返却は`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+完成条件証拠の提出が要求されている場合は末尾に`exec-review-recording-evidence.md`「条件別判定行の形式」に従った判定行を全条件の数だけ記載し、証拠要求がない場合は判定行を配置しない。
+一般的な要約などの地の文は加えずに、役割固有の規定行だけを返す。
 
 ```text
 状態: completed
@@ -216,100 +140,11 @@ Codexの組み込み委譲は`agents_server`が利用できない場合の代替
 <WI> 原文要求<N>「<要求単位の逐語>」: 達成|未達|根拠不足 — 根拠: <実行結果またはパス:行>
 ```
 
-`達成`行の`根拠:`には、`exec-review-recording.md`「根拠の書き方」で規定された確認場所と観測内容の組み合わせを記述し、この組み合わせを提示できない条件は`根拠不足`とする。
+`達成`行の`根拠:`には、`exec-review-recording-grounds.md`「根拠の書き方」で規定された確認場所と観測内容の組み合わせを記述し、この組み合わせを提示できない条件は`根拠不足`とする。
 
-現在のroundにおいて未回答の指摘が1件以上残っている返却は「指摘ありのcompleted」であり、回答の記入は後ほどレビュー対象者が行う。指摘が0件であればレビュー収束の候補となり、1件以上であれば修正作業へ引き渡す正常な完了状態となるため、いずれの場合も`状態`は`completed`となる。
+現在のroundにおいて未回答の指摘が1件以上残っている返却は「指摘ありのcompleted」であり、回答の記入は後ほどレビュー対象者が行う。
+指摘が0件であればレビュー収束の候補となり、1件以上であれば修正作業へ引き渡す正常な完了状態となるため、いずれの場合も`状態`は`completed`となる。
 複数のレビュー基準を受け取った場合、`未解決の指摘数`は全基準の合算値を記載する。
-
-## 再発防止セルフチェックの起動と受領
-
-```text
-起動対象: recurrence-self-check.subagent.md
-```
-
-`起動対象:`の値は起動する役割文書のファイル名であり、`agents_server`の`start`には、この値から`.subagent.md`を除いた役割名`recurrence-self-check`を`subagent_md_path`として渡す（後述の起動引数の表と同じ値）。起動の準備に使う入力、起動引数、返却契約は本節にまとめてあるため、起動前に起動対象の役割文書の本文を取得しない。定義ファイル自体を編集するための取得、委譲先自身の取得、完了後の検収のための取得はこの対象から外す。会話圧縮の後に本工程へ戻るときは、本節（起動対象、必要な入力、起動引数、生成済みの返却契約）を読み直して起動・受領の契約を復元する。
-
-再発防止セルフチェックとは、独立した担当者が具体的な再発防止観点を今回の差分に適用して確認する、実行レビュー内の工程である。
-実行レビュー担当は、初回レビュー、再レビュー、および引き継ぎ再レビューの各ラウンドにおいて本書の手順に従って実施する。
-
-### 観点の収集と入力の確定
-
-観点ファイルは、見出し1（H1）が`# 再発防止セルフチェック観点`で始まるMarkdownファイルである。次の2つの検索コマンドを実行し、実際に存在するファイルの和集合を観点ファイルとして特定する。
-
-```sh
-git -C <対象worktreeの絶対パス> grep -l -E '^# 再発防止セルフチェック観点' -- '*.md'
-rg -l -e '^# 再発防止セルフチェック観点' --glob '*.md' -- <配布rootの絶対パス>
-```
-
-配布rootには、現在のplugin root（`${CLAUDE_PLUGIN_ROOT}`）を指定する。両方の検索において、終了コード0は該当あり、1は該当なしを意味し、それ以外のコードは検索失敗とみなす。検索が失敗した場合は、原因を解消したうえで再実行する。`git grep`で取得したパスは、対象worktreeを基準とする絶対パスに変換する。
-対象worktreeが配布物の原本リポジトリであり、配布root内のファイルが対象worktreeで追跡されている原本と同一の実体を指している場合は、作業ツリー側のファイルのみを採用する。別個の観点ファイルであれば、項目名や記述内容が重複していても個別のファイルとして保持する。
-実行した検索コマンド、終了コード、採用したファイル、および重複として除外したファイルを走査記録に残す。観点ファイルが0件の場合は担当者の起動を省略し、その判断根拠と記録の保存先を走査記録に記録して通常のレビューを進める。対象条件、確認内容、根拠規範を備えた有効な単位であるかどうかの精査は、起動された担当者がファイル本文から判断する。
-差分や未解決指摘の状況に基づいて起動を省略する判断は、後述の規定に従う。
-
-入力パラメーターは以下の規則に基づいて決定する。
-
-- 観点ファイル: 上述の和集合で得られた絶対パスを格納したJSON配列
-- 今回差分: 自身のセッションのmanaged-temp配下に保存した差分ファイルの絶対パス、ならびに比較元と現行版の識別子。初回の比較元は開始時点からレビューHEADまでとし、再レビューおよび引き継ぎ再レビューでは前回確認版に保存された前回のレビューHEADから現行HEADまでとする。同一HEADの場合は空の差分ファイルを保存し、未解決指摘は別の入力として渡す。Git管理外の変更については、受け取った変更前複製（再レビューや引き継ぎ再レビューでは前回本文の複製）と現行本文から差分を生成して保存し、新規追加ファイルは全文を保存する
-- 変更ファイル一覧: 今回の差分に含まれるファイルパスの一覧。Git管理外の変更も含め、対象worktreeを基準として現行本文を参照できる形式で渡す
-- 対象worktree: レビュー対象の作業ツリーの絶対パス
-- 未解決指摘: 前回までのセルフチェックに起因する未解決指摘の該当箇所、根拠規範、管理表の識別子、回答内容、および検証結果。初回または該当項目がない場合は`なし`とする。コマンド実行によって得られた証拠は、保存先ファイルの絶対パスを渡す
-
-引き継ぎ再レビューでは、前回確認版および未解決指摘の情報を前任者の記録から復元して渡す。
-比較元を特定できない場合は委譲元へ問い合わせて入力を補完したうえで起動する。
-本担当はファイルの読み取りと検索のみで作業を完結させるため、担当側での差分再生成は求めず、保存済みの差分ファイルを渡す。
-
-再レビューおよび引き継ぎ再レビューにおいて、Git管理外のファイルや回答下書きを含めて今回の差分が空であり、セルフチェック由来の未解決指摘が0件である場合は、担当者の起動を省略する。空の今回差分、比較元と現行版の情報、ならびに未解決指摘が0件である旨を、観点なしの省略時と同様に走査記録へ記録する。差分または未解決指摘が存在するラウンドでは、通常どおり起動する。
-
-### 起動
-
-`agent-toolkit:/share/exec-review-criteria.md`に基づく走査と並行して、収集した観点全体を1つの担当者へ渡す。
-この担当者は、`agents_server`の`task`が役割文書のfrontmatterを参照して工程別の`model_type`を選択する。
-`agents_server`の`start`を呼び出す際の役割固有の引数は以下のとおりである。
-
-| 引数 | 値 |
-| --- | --- |
-| `cwd` | 対象worktreeの絶対パス |
-| `subagent_md_path` | `recurrence-self-check` |
-| `extra_params` | 前節で確定した各名前付き入力 |
-| `model_type` | 実行レビュー担当が`担当モデル`を受け取っている場合はその値。受け取っていない場合は指定しない |
-
-工程を明示的に指定した場合は、その工程向けに定義された候補モデル列が使用される。起動modeは役割文書での宣言に従う。
-
-### 受領と採否
-
-起動、終了の観測、および失敗時のリカバリ手順は、`agent-toolkit:delegation`の契約に従う。
-`atk agents wait`によって回収した担当者の終了結果から、`session_id`、`model_type`、`engine`、`model`、`effort`を走査記録に記録する。
-`model_type`を指定した場合は渡した値との一致を確認し、指定しなかった場合は実行時の値を記録する。デフォルト設定の検証は役割宣言と起動処理側が担保する。
-結果を実際に取得するまでは、未確認の項目を「適合」とみなさない。
-本書「セルフチェックの返却契約」の形式に従って得られた全項目の結果を、入力した観点集合と突き合わせる。
-
-実行レビュー担当は各違反内容を差分および根拠規範と照らし合わせて裏付けを取り、採用する指摘を`agent-toolkit:/share/exec-review-criteria.md`の種類7として既存のレビュー指摘管理表へ登録する。
-登録する指摘の本文には、該当する観点ファイルの絶対パスと項目名を記載する。
-不採用とした項目については項目ごとの理由を走査記録に残し、既存の指摘へ統合した項目については対応先を記録する。
-統合先の指摘本文にも、種類7の根拠となる観点ファイルのパスと項目名を追加する。
-前回指摘が解消されたかどうかも現行本文と検証結果をもとに確認し、管理表へ結果を反映する。
-すべての項目の結果を登録先または不採用理由と対応付け、未解決件数は既存の指摘と合算して集計する。
-実行レビューの収束条件および返却フォーマットは、既存の契約規定に従う。
-
-<!-- return-contract:recurrence-self-check:start -->
-<!-- 生成元: share/recurrence-self-check.subagent.md「出力」。手動編集しない。 -->
-### セルフチェックの返却契約
-
-全項目について、以下の固定形式のみを返却する。
-`前回指摘`には、未解決指摘の各識別子に対応する解消・未解消の状態と、その根拠を記述する。
-入力が`なし`の場合は、値に`なし`を設定する。
-
-```text
-状態: completed
-項目: <観点ファイルの絶対パスと項目名>
-判定: <対象外|適合|違反>
-根拠: <確認箇所、確認内容、違反では根拠規範の所在>
-<項目ごとに項目・判定・根拠を繰り返す>
-前回指摘: <識別子ごとの解消・未解消と根拠|なし>
-```
-
-続行不能と追加報告行は、共通契約`rules-subagent.md`「返却形式の受け渡し」に従う。資料不足の場合は、影響する項目、欠けた資料と補完に必要な値を記す。
-<!-- return-contract:recurrence-self-check:end -->
 
 ## レビュー工程の運用資料
 
@@ -317,10 +152,19 @@ rg -l -e '^# 再発防止セルフチェック観点' --glob '*.md' -- <配布ro
 | --- | --- | --- | --- |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` |
 | レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md`、`exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md`、`read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |
 
 ## 参照資料の取得
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
+
+## 条件別資料
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 入力・差分とWIの取得・条項の生成に関する判断・作業の前 | `exec-review-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-inputs.md` |
+| 再レビューに関する判断・作業の前 | `exec-review-subagent-followup.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-followup.md` |
+| 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `exec-review-subagent-exploration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-exploration.md` |
+| 返却前の処理に関する判断・作業の前 | `exec-review-subagent-completion.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-completion.md` |

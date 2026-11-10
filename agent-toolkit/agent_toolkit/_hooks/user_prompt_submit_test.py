@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 from collections.abc import Callable
 
@@ -186,7 +187,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return f"次の操作: 応答と作業の着手より前に`{cls._SKILL}`をスキル機能で起動" in context
+        return f'Skill(skill="{cls._SKILL}")' in context and "次の操作:" in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -253,12 +254,12 @@ class TestUserConfirmationSkillPrompt:
         module = _SCRIPTS_DIR.parent / "hooks" / "usage_limit_resume.ts"
         script = tmp_path / "usage-limit-prompt.mjs"
         script.write_text(
-            "const {USAGE_LIMIT_RESUME_PROMPT} = await import(process.argv[2]);\n"
-            "process.stdout.write(USAGE_LIMIT_RESUME_PROMPT);\n",
+            "const {usageLimitResumePrompt} = await import(process.argv[2]);\n"
+            "process.stdout.write(usageLimitResumePrompt(process.argv[3]));\n",
             encoding="utf-8",
         )
         generated = subprocess.run(
-            ["node", str(script), module.as_uri()],
+            ["node", str(script), module.as_uri(), str(_SCRIPTS_DIR.parent)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -268,6 +269,9 @@ class TestUserConfirmationSkillPrompt:
         )
         assert generated.returncode == 0, generated.stderr
         assert generated.stdout.startswith('<atk-auto source="usage-limit-resume" kind="notice">\n')
+        document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/references/usage-limit.md"
+        assert document.is_file()
+        assert f"Readのfile_pathに{json.dumps(str(document), ensure_ascii=False)}を指定" in generated.stdout
         self._session_start("startup", tmp_path)
         before = _read_state(tmp_path, "confirm")
         assert not self._has_notice(self._prompt(generated.stdout, tmp_path))
@@ -368,7 +372,15 @@ class TestMachineInjectedTurn:
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "スキル機能で起動" in context
+        assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in context
+        document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/SKILL.md"
+        assert document.is_file()
+        command = (
+            "Get-Content -LiteralPath '" + str(document).replace("'", "''") + "' -Encoding utf8"
+            if os.name == "nt"
+            else "cat -- " + shlex.quote(str(document))
+        )
+        assert f"それ以外では`{command}`で全文を取得して適用せよ" in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
 
@@ -727,7 +739,7 @@ class TestExampleScopeNotice:
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 3
-        assert "agent-toolkit:user-confirmation-and-report`をスキル機能で起動" in bodies[0]
+        assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in bodies[0]
         assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
         assert str(self._UTTERANCE_PATH) in bodies[2]
 
@@ -826,10 +838,10 @@ def test_progress_notice_keeps_thirty_minute_cycles_during_user_prompts(monkeypa
             assert notified == (expected and subcommand == "user_prompt_submit"), (minute, subcommand, output)
             if notified:
                 assert context.count(opening) == 1
-                assert "点検した対象・結果" in context
-                assert "`rules-main.md`「進捗報告」の形式" in context
-                assert "既存記録へ残せ" in context
-                assert "当初目的との一致" in context
+                assert "`rules-main.md`「進捗報告」の定義に従え" in context
+                assert "工程・開始時点・経過時間を目標と前回の成果・再試行に比較せよ" in context
+                assert "追加・変更後も有効な全要求に対する成果・証拠・未達・残工程" in context
+                assert "具体的な比較結果を既存の進捗記録へ保存せよ" in context
             observations.append({"経過分": minute, "入力": payload, "出力": output, "通知": notified, "終了": rc})
         entry = session_state.read_state(sid)[progress_self_check.STATE_KEY]["main"]
         assert entry["started_at"] == started_at

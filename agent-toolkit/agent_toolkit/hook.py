@@ -46,6 +46,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
         "pretooluse",
         "posttooluse",
         "stop",
+        "improvement_status_advisor",
         "subagent_stop_advisor",
         "session_end_cleanup",
         "stopfailure_notifier",
@@ -160,7 +161,7 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
             f"[{subcommand}] 想定外エラー: {type(error).__name__}: {error}",
             tag="warn",
             removable_cause=False,
-            fix="操作を継続せよ。再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+            fix="再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
         )
         specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
     if response is None and result:

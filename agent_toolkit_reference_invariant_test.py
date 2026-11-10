@@ -21,6 +21,7 @@ import pytest
 from agent_toolkit._common import read_triggers
 from agent_toolkit._plan.structure import is_agent_doc_target_file
 from agent_toolkit._testing.git_repository import commit_all, init_repository, run_git
+from agent_toolkit._testing.normative_contract import read_contract
 
 _PLUGIN_PREFIX = "agent-" + "toolkit"
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
@@ -249,7 +250,17 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
         for statement in tree.body:
             if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
                 module_values[statement.targets[0].id] = _path_values(statement.value, module_values, source)
-        for function in (node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        pending: list[ast.AST] = [tree]
+        while pending:
+            function = pending.pop()
+            # 関数定義は文の配下にある。巨大なfixture文字列や式は関数探索で走査し直さない。
+            pending.extend(
+                child
+                for child in ast.iter_child_nodes(function)
+                if isinstance(child, (ast.stmt, ast.ExceptHandler, ast.match_case))
+            )
+            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
             for path in _function_reads(function, module_values, source):
                 try:
                     relative = path.resolve().relative_to(repository)
@@ -776,7 +787,8 @@ def test_normative_heading_references_resolve() -> None:
     markdown_paths = [path for path in tracked if path.suffix == ".md"]
     sources = _normative_markdown_paths(tracked)
     assert any(path.as_posix().startswith(".claude/skills/") for path in sources)
-    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    with read_triggers.resolution_scope():
+        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
     assert not unresolved, _format_unresolved(unresolved)
 
 
@@ -788,7 +800,8 @@ def test_code_and_design_heading_references_resolve() -> None:
     sources = _extended_heading_reference_sources(tracked)
     assert any(path.suffix == ".py" for path in sources)
     assert any(path.as_posix().startswith("docs/development/design") for path in sources)
-    unresolved = _unresolved_heading_references(root, sources, markdown_paths)
+    with read_triggers.resolution_scope():
+        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
     assert not unresolved, _format_unresolved(unresolved)
 
 
@@ -865,8 +878,14 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
 # 監査記録の見出しを、索引元の条文またはコードが同じ文字列で指すことを検査する。
 # 索引元は、テスト（`*_test.py`）と`docs/`配下を除く追跡ファイルと、見出しのファイル部分が指すファイル自身とする。
 # テスト、設計記録と判定台帳は見出しを索引元として持たずに引用するため、そこにだけ現れる見出しは参照元を持たない。
-# 常時規範（`agent-toolkit/rules/`配下と`agent-toolkit/share/rules-*.md`）は全主体が毎回読むため条文へ索引の文を置かず、
-# 見出しそのものを索引とする。ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
+# 常時規範（`agent-toolkit/share/rules/common/`配下と`agent-toolkit/share/rules/rules-*.md`）は全主体が毎回読む。
+# そのため条文へ索引の文を置かず、見出しそのものを索引とする。
+# ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
+# 規範原本を`share/rules/`へ集める前の見出しは旧パスのまま当時の記録として残すため、現在の所在へ読み替えて照合する。
+_RULE_DOCUMENT_RELOCATIONS = (
+    ("agent-toolkit/rules/", "agent-toolkit/share/rules/common/"),
+    ("agent-toolkit/share/rules-", "agent-toolkit/share/rules/rules-"),
+)
 _AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
 _AUDIT_INDEX_EXCLUDED_PREFIX = "docs/"
 # 監査記録の本文が他の記録を「<対象>：<節>：<年月日>」の見出しで指す参照。
@@ -889,12 +908,24 @@ def _reference_text(root: pathlib.Path, source: pathlib.Path) -> str:
     return f"{content}\n{_comment_joined(content)}"
 
 
+def _current_rule_path(path: pathlib.Path) -> pathlib.Path:
+    """旧配置の規範パスを現在の所在へ読み替える。"""
+    value = path.as_posix()
+    for old, new in _RULE_DOCUMENT_RELOCATIONS:
+        if value.startswith(old):
+            return pathlib.Path(new + value.removeprefix(old))
+    return path
+
+
 def _is_rule_document(path: pathlib.Path) -> bool:
-    """常時規範（`agent-toolkit/rules/`直下と`agent-toolkit/share/rules-*.md`）のパスかを返す。"""
+    """常時規範（`agent-toolkit/share/rules/common/`直下と`agent-toolkit/share/rules/rules-*.md`）のパスかを返す。旧配置も読み替えて判定する。"""
+    path = _current_rule_path(path)
     if path.suffix != ".md":
         return False
     parent = path.parent.as_posix()
-    return parent == "agent-toolkit/rules" or (parent == "agent-toolkit/share" and path.name.startswith("rules-"))
+    return parent == "agent-toolkit/share/rules/common" or (
+        parent == "agent-toolkit/share/rules" and path.name.startswith("rules-")
+    )
 
 
 def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str) -> bool:
@@ -902,7 +933,7 @@ def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading
     parts = heading.split("：")
     if len(parts) < 3:
         return False
-    rule_file = pathlib.Path(parts[0])
+    rule_file = _current_rule_path(pathlib.Path(parts[0]))
     section = "：".join(parts[1:-1])
     if rule_file not in tracked:
         return False
@@ -1026,8 +1057,8 @@ def test_rule_audit_heading_requires_existing_section(tmp_path: pathlib.Path) ->
         encoding="utf-8",
     )
     files = {
-        pathlib.Path("agent-toolkit/rules/01-a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
-        pathlib.Path("agent-toolkit/share/rules-main.md"): "# 規範\n\n## 節B\n\n本文。\n",
+        pathlib.Path("agent-toolkit/share/rules/common/01-a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
+        pathlib.Path("agent-toolkit/share/rules/rules-main.md"): "# 規範\n\n## 節B\n\n本文。\n",
         pathlib.Path("tool.py"): f"# 監査記録は「{renamed}」と「{missing_file}」にある。\n",
     }
     for path, content in files.items():
@@ -1052,7 +1083,7 @@ def test_audit_body_reference_to_missing_heading_is_reported() -> None:
 
 def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:
     """参照先の見出しを削除すると、その見出しを名前で指す全ての参照を未解決として報告する。"""
-    rules = tmp_path / _PLUGIN_PREFIX / "rules" / "01-agent.md"
+    rules = tmp_path / _PLUGIN_PREFIX / "share" / "rules" / "common" / "01-agent.md"
     rules.parent.mkdir(parents=True)
     rules.write_text("# 規範\n\n### 調査と検証\n\n観測で主張を支える。\n", encoding="utf-8")
     skill = pathlib.Path(_PLUGIN_PREFIX, "skills", "sample", "SKILL.md")
@@ -1060,15 +1091,15 @@ def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -
     (tmp_path / skill).write_text(
         "\n".join(
             [
-                f"`{_PLUGIN_PREFIX}/rules/01-agent.md`「調査と検証」に従う。",
-                f"`{_PLUGIN_PREFIX}/rules/01-agent.md`の「調査と検証」を読む。",
-                "`${CLAUDE_PLUGIN_ROOT}/rules/01-agent.md`「調査と検証」を参照する。",
+                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`「調査と検証」に従う。",
+                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`の「調査と検証」を読む。",
+                "`${CLAUDE_PLUGIN_ROOT}/share/rules/common/01-agent.md`「調査と検証」を参照する。",
             ]
         ),
         encoding="utf-8",
     )
     sources = [skill]
-    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "rules", "01-agent.md"), skill]
+    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "share", "rules", "common", "01-agent.md"), skill]
     assert not _unresolved_heading_references(tmp_path, sources, markdown_paths)
 
     rules.write_text("# 規範\n\n観測で主張を支える。\n", encoding="utf-8")
@@ -1198,6 +1229,32 @@ def test_agent_doc_reader_detector_ignores_fixture_paths_and_reports_repository_
     ]
 
 
+@pytest.mark.parametrize("method", ["read_text", "ｒｅａｄ＿ｔｅｘｔ"])
+@pytest.mark.parametrize(
+    ("container", "names"),
+    [
+        ("class Example:\n{function}", ["read"]),
+        ("if True:\n{function}", ["read"]),
+        ("try:\n    pass\nexcept ValueError:\n{function}", ["read"]),
+        ("match 1:\n    case 1:\n{nested_function}", ["read"]),
+        ("def outer():\n{function}", ["outer", "read"]),
+    ],
+)
+def test_agent_doc_reader_detector_keeps_nested_definitions(tmp_path, container, names, method):
+    """文に入れ子になった関数とUnicode正規化される属性も、式の走査を省いた探索で検出する。"""
+    (tmp_path / "AGENTS.md").write_text("# 規範\n", encoding="utf-8")
+    function = f"    def read():\n        pathlib.Path(__file__).with_name('AGENTS.md').{method}()\n"
+    source = tmp_path / "example_test.py"
+    source.write_text(
+        "import pathlib\n" + container.format(function=function, nested_function="    " + function.replace("\n", "\n    ")),
+        encoding="utf-8",
+    )
+
+    assert _agent_doc_reader_violations(tmp_path, [source.relative_to(tmp_path)]) == [
+        f"example_test.py::{name} -> AGENTS.md" for name in names
+    ]
+
+
 def test_verbatim_ledger_references_preserve_current_document_checks(tmp_path: pathlib.Path) -> None:
     """正式データの固定引用を保持し、同階層のREADME・別JSON・現行文書の参照不良を全て検出する。"""
     historical = [
@@ -1251,7 +1308,8 @@ def test_session_state_design_reference_reaches_local_development_rule() -> None
     assert reference is not None
     target = root / reference[1]
     assert target == root / ".claude/skills/agent-toolkit-edit/references/session-state-and-flags.md"
-    assert read_triggers.ReadTarget(target, "状態ファイルの設計").body()
+    text = read_contract(target, root / "agent-toolkit", ("session-state-and-flags-common.md", "状態ファイルの設計"))
+    assert "## 状態ファイルの設計" in text
 
 
 def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
@@ -1285,4 +1343,9 @@ def test_quality_definition_forwarders_reach_distinct_basics_documents() -> None
             assert target.is_relative_to(root / "agent-basics")
             assert read_triggers.ReadTarget(target, reference[2]).body()
             found.append((source.name, reference[2]))
-    assert {name for name, _heading in found} == {"exec-review-responses.md", "exec-review-criteria.md"}
+    read_contract(plugin / "share/exec-review-criteria.md", plugin, ("exec-review-criteria-execution.md", "実行レビューの判定"))
+    assert {name for name, _heading in found} == {
+        "exec-review-responses.md",
+        "exec-review-criteria.md",
+        "exec-review-criteria-execution.md",
+    }

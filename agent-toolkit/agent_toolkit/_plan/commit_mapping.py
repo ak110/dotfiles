@@ -14,6 +14,7 @@ import subprocess
 
 from agent_toolkit._common import next_action
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import command
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import structure as _plan_structure
@@ -159,7 +160,7 @@ def encode_event(event: dict[str, object]) -> str:
 def body_events(content: str) -> list[dict[str, object]]:
     """計画または引き継ぎ記録の本文に残る旧形式の`wi-commits`コメントを記録順に返す。"""
     events: list[dict[str, object]] = []
-    for line in content.splitlines():
+    for line in split_lines(content):
         if PREFIX not in line:
             continue
         payload = line.split(PREFIX, 1)[1].split(SUFFIX, 1)[0]
@@ -171,7 +172,7 @@ def file_events(path: pathlib.Path) -> list[dict[str, object]]:
     """対応記録ファイルの記録を記録順に返す。ファイルが無ければ空とする。"""
     if not path.is_file():
         return []
-    return [_decode(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [_decode(line) for line in split_lines(path.read_text(encoding="utf-8")) if line.strip()]
 
 
 def read_events(record: pathlib.Path, content: str) -> list[dict[str, object]]:
@@ -234,8 +235,12 @@ def read_mapping(
                     raise _fail(f"履歴変更の対応を確定できません: {old} -> {new}")
                 olds.append(full_old)
                 for target, names in rewrite_destinations(new):
+                    # 明示した分割先のAWIは旧commitの集合外でも記録どおりに適用する（記録済みcommitへのAWIの追加）。
+                    # 範囲全体の対応表から作る記録は、書込時に記録ごとのAWIへ絞っている。
+                    if names is not None and (outside := names - allowed_wis):
+                        raise _fail(f"記録に対象外AWIがあります: {sorted(outside)}")
                     inherited.setdefault(_full_oid(worktree, target, allow_missing=allow_missing), set()).update(
-                        mapping[full_old] if names is None else names & mapping[full_old]
+                        mapping[full_old] if names is None else names
                     )
                 _check_assignment(full_old, new, mapping[full_old])
             for old in olds:
@@ -380,11 +385,15 @@ def load_rewrite_map(source: pathlib.Path) -> RewriteMap:
     return replacements
 
 
-def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]]) -> dict[str, object]:
+def rewrite_event(
+    worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]], allowed_wis: set[str]
+) -> dict[str, object]:
     """検収済みの旧OIDから新OIDへのJSON対応を保存したファイルを読み、現在のGit実体へ結び付ける。
 
     `source`は`plan-progress`の`--rewrite-map`が受け取るファイルのパスであり、形式は`load_rewrite_map`が確かめる。
     旧新OIDは短縮OIDと完全OIDのどちらも受理し、記録は短縮OIDで返す。
+    分割先へ明示したAWIは、旧commitの集合に無くても許可集合内なら記録する。旧OIDを同じOIDへ写す指定は、
+    記録済みcommitへAWIを追加する手段になる。許可集合外のAWIは記録を変えずに拒否する。
     """
     replacements = load_rewrite_map(source)
     resolved: RewriteMap = {}
@@ -398,9 +407,13 @@ def rewrite_event(worktree: pathlib.Path, source: pathlib.Path, mapping: dict[st
                 "--plan <計画>`へ渡す。複数の表は書換え順に--rewrite-mapへ反復指定する",
             )
         _check_assignment(full_old, new, mapping[full_old])
-        resolved[short_oid(worktree, full_old)] = _short_value(
-            worktree, _resolved_value(worktree, new, names=mapping[full_old])
-        )
+        if outside := {wi for _oid, wis in rewrite_destinations(new) for wi in wis or set()} - allowed_wis:
+            raise CommitMappingError(
+                f"分割先に計画の対象外のAWIがあります: 旧OID={old}, WI={sorted(outside)}",
+                next_action="分割先のawi配列を計画の関連WI（引き継ぎ記録では--allowed-awi）に含まれるAWIへ直し、"
+                "同じ--rewrite-mapで再実行する。記録は変更していない",
+            )
+        resolved[short_oid(worktree, full_old)] = _short_value(worktree, _resolved_value(worktree, new))
     return {"rewrite": resolved}
 
 

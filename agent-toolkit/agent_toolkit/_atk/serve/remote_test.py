@@ -14,6 +14,7 @@ import pytest
 
 from agent_toolkit._atk.serve import plans, sessions
 from agent_toolkit._atk.serve import remote as serve_remote
+from agent_toolkit._testing import late_descendant
 
 # 配送時に使うbootstrapと、それが読み込むヘルパー本体の対応。
 _HELPERS = (
@@ -121,7 +122,9 @@ async def test_run_ssh_terminates_child_when_cancelled(tmp_path: pathlib.Path) -
     子プロセスが残ると、停止処理がその終了（最長で単発SSHの時間上限）を待たされる。
     """
     pid_file = tmp_path / "pid"
-    script = f"import os, pathlib, time; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+    script = f"import os,pathlib; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); " + late_descendant.held_source(
+        tmp_path / "ssh.release"
+    )
     task = asyncio.create_task(serve_remote.run_ssh([sys.executable, "-c", script], timeout=30))
     pid = await _wait_for_pid(pid_file)
 
@@ -140,7 +143,9 @@ async def test_run_ssh_terminates_child_on_timeout(tmp_path: pathlib.Path, monke
     PIDを得られず終了を確かめられないため、PIDの書込を見届けてから生成を完了させる。
     """
     pid_file = tmp_path / "pid"
-    script = f"import os, pathlib, time; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(30)"
+    script = f"import os,pathlib; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); " + late_descendant.held_source(
+        tmp_path / "ssh.release"
+    )
     create_subprocess_exec = asyncio.create_subprocess_exec
     pids: list[int] = []
 

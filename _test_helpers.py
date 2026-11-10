@@ -22,7 +22,7 @@ import pytest
 import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
-RULES_SRC = REPO_ROOT / "agent-toolkit" / "rules"
+RULES_SRC = REPO_ROOT / "agent-toolkit" / "share" / "rules" / "common"
 INSTALL_SH = REPO_ROOT / "install-claude.sh"
 INSTALL_PS1 = REPO_ROOT / "install-claude.ps1"
 
@@ -129,7 +129,7 @@ def serve_rules() -> typing.Iterator[str]:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            yield f"http://127.0.0.1:{port}/agent-toolkit/rules"
+            yield f"http://127.0.0.1:{port}/agent-toolkit/share/rules/common"
         finally:
             server.shutdown()
             thread.join()

@@ -9,7 +9,8 @@
 個人プロジェクトの`agent-toolkit:process-wi`で選定を担当するメインは、選定開始より前に`operate-ak110-projects`スキルを起動する。
 判定済みの条件を受けて依存更新だけを実施するレーンは、この契機では起動しない。
 同期調査と依存更新の要否の判定結果は、そのセッションの後続の工程へ渡す。
-起動名はClaude Code・Codexとも`operate-ak110-projects`とする。Claude Codeでは`Skill`ツールから起動する。
+起動名はClaude Code・Codexとも`operate-ak110-projects`とする。
+Claude Codeでは`Skill`ツールから起動する。
 
 ## WI作成時の追従判定
 

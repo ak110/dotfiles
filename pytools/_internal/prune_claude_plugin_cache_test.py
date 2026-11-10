@@ -11,6 +11,7 @@ import sys
 import time
 from pathlib import Path
 
+import psutil
 import pytest
 
 from pytools._internal import claude_plugin_references, prune_claude_plugin_cache
@@ -195,8 +196,9 @@ def test_keeps_expired_version_while_a_process_refers_to_it(
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
+@pytest.mark.parametrize("stale_previous_generation", [False, True])
 def test_keeps_expired_version_used_by_session_started_while_it_was_current(
-    plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stale_previous_generation: bool
 ) -> None:
     """旧版が現行だった期間に起動したClaude Codeセッションが稼働中なら、作業ディレクトリが別でも旧版を残す。
 
@@ -211,7 +213,19 @@ def test_keeps_expired_version_used_by_session_started_while_it_was_current(
     older = _make_version(plugins_root, "mkt", "tool", "0.9.0", 3)
     _write_installed(plugins_root, {"tool@mkt": [current]})
     with ResidentProcesses(tmp_path, monkeypatch) as residents:
-        residents.start("claude", cwd=tmp_path)
+        resident = residents.start("claude", cwd=tmp_path)
+        started_at = psutil.Process(resident.pid).create_time()
+        if stale_previous_generation:
+            # 以前の世代は現行期間の外で起動し、別の旧版を参照した状態にする。
+            stale = psutil.Process(resident.pid)
+            monkeypatch.setattr(stale, "_create_time", started_at - 10 * _DAY)
+            monkeypatch.setattr(stale, "_ident", (resident.pid, started_at - 10 * _DAY))
+            monkeypatch.setattr(stale, "_exe", str(older / ".venv" / "claude"))
+            monkeypatch.setitem(vars(psutil)["_pmap"], resident.pid, stale)
+
+        scanned = claude_plugin_references.scan()
+        assert len(scanned) == 1
+        assert scanned[0].started_at == started_at
         assert prune_claude_plugin_cache.run().changed is True
         assert old.is_dir()
         assert not older.exists()

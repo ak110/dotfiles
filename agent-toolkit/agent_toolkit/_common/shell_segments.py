@@ -207,15 +207,58 @@ def shell_c_argument(tokens: Sequence[str]) -> str | None:
     該当しない場合はNoneを返す。判定対象は実行前置語を解決した後のトークン列であり、
     `sudo sh -c '...'`のように前置語と組み合わせた形も展開対象となる。
     """
-    if not tokens or tokens[0].rsplit("/", 1)[-1] not in _SHELL_TOKENS:
+    target = shell_execution_target(tokens)
+    return target[1] if target is not None and target[0] == "command" else None
+
+
+def shell_execution_target(tokens: Sequence[str]) -> tuple[str, str] | None:
+    """シェル起動の本文かスクリプトを返し、オプション値と位置引数を実行対象にしない。
+
+    未知の起動形式と標準入力の実行は確定しない。Bashの`-co`・`-cO`も値を消費してから
+    本文を選ぶ。本文以降は`$0`と位置引数であり、起動オプションとして再走査しない。
+    """
+    if not tokens or (name := tokens[0].rsplit("/", 1)[-1]) not in _SHELL_TOKENS:
         return None
-    for position in range(1, len(tokens)):
-        token = tokens[position]
-        if not token.startswith("-") or token.startswith("--"):
+    command = False
+    stdin = False
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            index += 1
+            break
+        if token == "-":
             return None
-        if "c" in token[1:]:
-            return tokens[position + 1] if position + 1 < len(tokens) else None
-    return None
+        if not token.startswith(("-", "+")):
+            break
+        if token.startswith("--"):
+            if name != "bash":
+                return None
+            if token in {"--rcfile", "--init-file"}:
+                if index + 1 >= len(tokens):
+                    return None
+                index += 2
+                continue
+            if token not in {"--noprofile", "--norc", "--posix", "--restricted", "--verbose", "--login", "--debugger"}:
+                return None
+        else:
+            for option in token[1:]:
+                if option == "c" and token[0] == "-":
+                    command = True
+                elif option == "s":
+                    stdin = token[0] == "-"
+                elif option in {"o", "O"}:
+                    if option == "O" and name != "bash":
+                        return None
+                    if index + 1 >= len(tokens):
+                        return None
+                    index += 1
+                elif option not in ("abefhkmnptuvxBCEHPTilrD" if name == "bash" else "abefhimnuvxl"):
+                    return None
+        index += 1
+    if index >= len(tokens) or stdin and not command:
+        return None
+    return ("command" if command else "script", tokens[index])
 
 
 def resolve_execution_segment(tokens: list[str], *, runtime_options: bool = False) -> ExecutionSegment:

@@ -27,6 +27,7 @@ from agent_toolkit._atk.wi.frontmatter import parse_frontmatter
 from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import session_activity as _session_activity
+from agent_toolkit._common import watch_observer as _watch_observer_module
 from agent_toolkit._git import remote as _git_remote
 
 # 読み取り由来の`FileOpenedEvent`・`FileClosedNoWriteEvent`を除外した監視対象イベント型。
@@ -368,10 +369,32 @@ class _StateChangeHandler(watchdog.events.FileSystemEventHandler):
             self._change_event.set()
 
 
+# 同じプロセスでポーリング監視へ切り替えた警告を出したか。`wait_for_changes`は待機のたびに監視を作り直すため、
+# 同じ原因の警告を待機ごとに繰り返さず、通常の監視へ戻った時点で1回報告する。
+_polling_fallback_reported = False
+
+
 @contextlib.contextmanager
-def _watch_observer() -> Generator[BaseObserver]:
-    """開始準備から停止・joinまでを所有し、停止失敗でもjoinへ進む。"""
-    observer = watchdog.observers.Observer()
+def _watch_observer(schedule: Callable[[BaseObserver], None]) -> Generator[BaseObserver]:
+    """監視先を登録して開始し、停止・joinまでを所有する。停止失敗でもjoinへ進む。
+
+    inotifyの資源を確保できない場合はポーリング監視で開始し直す（`watch_observer.start_observer`）。
+    """
+    global _polling_fallback_reported  # pylint: disable=global-statement
+    fallback: list[OSError] = []
+    observer = _watch_observer_module.start_observer(schedule, on_fallback=fallback.append)
+    if fallback and not _polling_fallback_reported:
+        _polling_fallback_reported = True
+        _next_action.report(
+            _watch_observer_module.fallback_message(fallback[0], restart="process-loop"),
+            next_action="対応不要（待機は継続した）。通常の監視へ戻すにはinotifyの使用を減らしてからprocess-loopを再起動する",
+        )
+    elif not fallback and _polling_fallback_reported:
+        _polling_fallback_reported = False
+        _next_action.report(
+            "ファイル変更の監視を通常の方式で開始できたため、ポーリング監視から戻した",
+            next_action="対応不要",
+        )
     try:
         yield observer
     finally:
@@ -406,15 +429,17 @@ def wait_for_changes(
     """
     del target_repo_id  # 現状の監視粒度ではrepo単位フィルタは行わない
     change_event = threading.Event()
-    with _watch_observer() as observer:
-        handler = _ChangeHandler(change_event)
-        _ensure_inbox_dirs(private_notes)
+    handler = _ChangeHandler(change_event)
+    state_handler = _StateChangeHandler(change_event)
+    _ensure_inbox_dirs(private_notes)
+
+    def schedule(observer: BaseObserver) -> None:
         observer.schedule(handler, str(private_notes), recursive=True)
-        state_handler = _StateChangeHandler(change_event)
         for directory in dict.fromkeys(state_directories):
             if directory.is_dir():
                 observer.schedule(state_handler, str(directory), recursive=False)
-        observer.start()
+
+    with _watch_observer(schedule):
         end = time.monotonic() + (_POLL_INTERVAL_SEC if timeout is None else max(0.0, timeout))
         if _wait_event(change_event, end - time.monotonic(), interrupt):
             while change_event.is_set():
@@ -433,7 +458,7 @@ def wait_for_changes(
         except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
             _next_action.report(
                 f"remote同期に失敗（待機ループ続行）: {exc}",
-                next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認する",
+                next_action=f"対応不要（待機は継続した）。繰り返す場合は`git -C {private_notes} status`で同期状態を確認せよ",
             )
         return False
 
@@ -460,11 +485,8 @@ def pull_private_notes(private_notes: pathlib.Path) -> bool:
             _wi_sync.pull(private_notes)
     except (subprocess.CalledProcessError, _atk_git_sync.RebaseInProgressError) as exc:
         _next_action.report(
-            f"remote同期に失敗（子セッションを起動せず待機します）: {exc}",
-            next_action=(
-                f"`git -C {private_notes} status`で同期状態を確認し、競合やrebase中の状態を解消する。"
-                "解消後はprocess-loopが次の反復で再試行する"
-            ),
+            f"remote同期に失敗（子セッションを起動せず待機します）: {exc}。解消後はprocess-loopが次の反復で再試行する。",
+            next_action=(f"`git -C {private_notes} status`で同期状態を確認し、競合やrebase中の状態を解消せよ。"),
         )
         return False
     return True

@@ -5,6 +5,7 @@
 import asyncio
 import base64
 import dataclasses
+import errno
 import importlib.util
 import io
 import json
@@ -13,6 +14,7 @@ import pathlib
 import subprocess
 import sys
 import threading
+import time
 import types
 import typing
 
@@ -21,7 +23,7 @@ import pytest
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve import sessions
 from agent_toolkit._common import process_tree
-from agent_toolkit._testing import session_tree
+from agent_toolkit._testing import late_descendant, session_tree
 
 
 @pytest.mark.asyncio
@@ -700,6 +702,34 @@ def test_broken_record_is_reported_per_entry(tmp_path: pathlib.Path) -> None:
     assert [entry.session_id for entry in sessions.list_local_sessions(_context(tmp_path))] == ["abc"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+async def test_detail_preserves_json_string_separators(tmp_path: pathlib.Path, engine: str) -> None:
+    """ローカル・リモートの会話詳細取得で正常な本文を失わず解析不可0件を返す。"""
+    texts = [f"前{separator}後" for separator in ("\u2028", "\u2029", "\u0085")]
+    records = [
+        {"type": "user", "message": {"content": text}}
+        if engine == "claude"
+        else {"type": "response_item", "payload": {"type": "message", "role": "user", "content": [{"text": text}]}}
+        for text in texts
+    ]
+    path = (
+        tmp_path / "claude/projects/proj/unicode.jsonl"
+        if engine == "claude"
+        else (tmp_path / "codex/sessions/2026/11/09/rollout-unicode.jsonl")
+    )
+    _write(path, records)
+    runner, _calls = _runner_returning({"ok": True, "data": base64.b64encode(path.read_bytes()).decode("ascii")})
+    context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
+
+    local = await sessions.session_detail(context, engine, "local-host", str(path))
+    remote = await sessions.session_detail(context, engine, "remote-host", str(path))
+
+    for detail in (local, remote):
+        assert [event["text"] for event in detail["events"]] == texts
+        assert detail["broken_lines"] == 0
+
+
 def test_local_record_path_outside_the_roots_is_rejected(tmp_path: pathlib.Path) -> None:
     """保存先の外を指す読み取り要求を拒否する。"""
     context = _context(tmp_path)
@@ -1290,7 +1320,6 @@ async def test_remote_list_accepts_response_slower_than_read_timeout(
     async def respond_late() -> None:
         while not stdin.requests:
             await asyncio.sleep(0.01)
-        await asyncio.sleep(0.2)
         stream = asyncio.StreamReader()
         response = {
             "type": "response",
@@ -1300,7 +1329,14 @@ async def test_remote_list_accepts_response_slower_than_read_timeout(
         }
         stream.feed_data(json.dumps(response).encode("utf-8") + b"\n")
         stream.feed_eof()
-        await client._process_stream(stream)
+        loop = asyncio.get_running_loop()
+        after_read_deadline = loop.time() + 0.2
+        with monkeypatch.context() as clock_patch:
+            clock_patch.setattr(loop, "time", lambda: after_read_deadline)
+            advanced = asyncio.Event()
+            loop.call_later(0, advanced.set)
+            await advanced.wait()
+            await client._process_stream(stream)
 
     responder = asyncio.ensure_future(respond_late())
     entries, warnings = await sessions.list_sessions(context)
@@ -1576,9 +1612,9 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     real_exec = asyncio.create_subprocess_exec
 
     async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
-        # 標準出力を閉じて接続断を起こし、標準入力の終端を受けてから少し遅れて終了する子プロセスで代替する。
+        # 標準出力を閉じて接続断を起こし、標準入力の終端を通知してから解放まで保持する子プロセスで代替する。
         started.append(cmd)
-        script = "import os, sys, time; os.close(1); sys.stdin.read(); time.sleep(0.3)"
+        script = "import os,sys; os.close(1); sys.stdin.read(); " + late_descendant.held_source(tmp_path / "cleanup.release")
         return await real_exec(sys.executable, "-c", script, **kwargs)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
@@ -1589,6 +1625,10 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
             break
         await asyncio.sleep(0.01)
     assert context.state.host_status.get("remote-host") == "disconnected"
+
+    async with asyncio.timeout(5):
+        while not (tmp_path / "cleanup.ready").exists():
+            await asyncio.sleep(0.01)
 
     await asyncio.wait_for(sessions.stop_remote_clients(context), timeout=5)
 
@@ -1606,7 +1646,10 @@ def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
 @pytest.mark.asyncio
 async def test_local_watch_notifies_new_records_and_appends(tmp_path: pathlib.Path) -> None:
     """ローカルの記録の追加で一覧の再取得を、一覧に載る記録への追記で記録1件の更新を通知する。"""
-    context = _context(tmp_path)
+    # 未作成の記録rootは最も近い祖先（tmp_path）の直下を監視するため、一覧を保存する状態ディレクトリを先に作り、
+    # 保存先の新設を記録の追加と区別できない通知にしない。
+    (tmp_path / "state").mkdir()
+    context = _context(tmp_path, state_dir=tmp_path / "state")
     (tmp_path / "claude" / "projects").mkdir(parents=True)
     sessions.start_local_watch(context)
     queue = await sessions.subscribe(context.state)
@@ -2118,4 +2161,231 @@ async def test_listed_set_change_returns_previous_list_and_refreshes_after_backg
         assert sorted(entry.path for entry in refreshed) == sorted([str(record), str(added)])
     finally:
         await sessions.unsubscribe(context.state, queue)
+        tracker.stop()
+
+
+def test_first_list_after_restart_reuses_saved_display_messages(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """最初の全件の走査で求めた表示用の本文まで保存し、再起動後の最初の一覧は本文を読み直さない。
+
+    表示用の本文を求める前に索引を保存すると、全件を読み直した直後にserveを止めた場合、次の起動の
+    最初の一覧が表示件数分の本文を読み直し、記録数千件で数十秒かかる。
+    """
+    monkeypatch.setattr(sessions.session_watch.RecordSummaryIndex, "_SAVE_INTERVAL_SEC", 0.0)
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    first = _context(tmp_path, state_dir=tmp_path / "state")
+    assert [entry.first_user_message for entry in sessions.list_local_sessions(first)] == ["やあ"]
+    read: list[pathlib.Path] = []
+    original = sessions.session_watch.first_user_message
+
+    def recording(path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str | None:
+        read.append(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(sessions.session_watch, "first_user_message", recording)
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    assert [entry.first_user_message for entry in sessions.list_local_sessions(restarted)] == ["やあ"]
+    assert not read
+
+
+def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """家族の記録が変わらない間は再起動後も推定費用を算出し直さず、記録へ追記すると算出し直す。"""
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    estimated: list[pathlib.Path] = []
+    original = sessions.session_cost_records.estimate_detail_family
+
+    def recording(engine: str, path: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        estimated.append(path)
+        return original(engine, path, *args, **kwargs)
+
+    monkeypatch.setattr(sessions.session_cost_records, "estimate_detail_family", recording)
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    first = sessions.read_local_cost(context, "claude", str(record))
+    assert sessions.read_local_cost(context, "claude", str(record)) == first
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    assert sessions.read_local_cost(restarted, "claude", str(record)) == first
+    assert len(estimated) == 1
+    with record.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps({"type": "assistant", "message": {"model": "claude-opus-5-5", "usage": {"input_tokens": 1000}}}) + "\n"
+        )
+    os.utime(record, ns=(old_ns + 5_000_000_000, old_ns + 5_000_000_000))
+    changed = sessions.read_local_cost(restarted, "claude", str(record))
+    assert len(estimated) == 2
+    assert changed["known_usd"] > first["known_usd"]
+
+
+def _wait_until(condition: typing.Callable[[], bool], timeout: float = 60.0) -> None:
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "条件が上限時間内に成立しなかった"
+        time.sleep(0.05)
+
+
+def _start_warmer(context: sessions.SessionsContext) -> sessions._session_costs.FamilyCostWarmer:
+    warmer = sessions._session_costs.FamilyCostWarmer(
+        context.state.family_costs,
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim_directory=context.state.slim_records.directory,
+    )
+    context.state.cost_warmer = warmer
+    return warmer
+
+
+def test_cost_warmer_precomputes_listed_family_in_worker_process(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """一覧を走査すると、画面で開く前に別プロセスが家族の推定費用を求め、再起動後の最初の要求も算出し直さない。
+
+    一度も算出していない家族の最初の算出は全記録の解析に数秒かかり、要求の中では1秒以内に返せないためである。
+    """
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    expected = sessions.estimate_local_family(
+        "claude",
+        str(record),
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim=context.state.slim_records,
+    ).cost
+    warmer = _start_warmer(context)
+    try:
+        assert [entry.path for entry in sessions.list_local_sessions(context)] == [str(record)]
+        _wait_until(lambda: context.state.family_costs.get(record) is not None)
+    finally:
+        warmer.stop()
+    assert context.state.family_costs.get(record) == expected
+
+    def unexpected(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        raise AssertionError("背景で求めた推定費用を使わずに算出し直した")
+
+    monkeypatch.setattr(sessions.session_cost_records, "estimate_detail_family", unexpected)
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    assert sessions.read_local_cost(restarted, "claude", str(record)) == expected
+
+
+def test_cost_warmer_stops_after_worker_exit_and_restarts_on_next_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """別プロセスが異常終了したら警告して背景の算出を止め、次の走査で別プロセスを起動し直して算出する。"""
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    original = sessions._session_costs._start_worker
+    started: list[str] = []
+
+    def failing_then_real() -> subprocess.Popen[str]:
+        started.append("worker")
+        if len(started) == 1:
+            return subprocess.Popen(  # pylint: disable=consider-using-with  # warmerが終了を待って閉じる
+                [sys.executable, "-c", "import sys; sys.exit(3)"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+            )
+        return original()
+
+    monkeypatch.setattr(sessions._session_costs, "_start_worker", failing_then_real)
+    warmer = _start_warmer(context)
+    try:
+        with caplog.at_level("WARNING", logger=sessions._session_costs.logger.name):
+            sessions.list_local_sessions(context)
+            _wait_until(lambda: "終了コード3" in caplog.text)
+        assert context.state.family_costs.get(record) is None
+        sessions.list_local_sessions(context)
+        _wait_until(lambda: context.state.family_costs.get(record) is not None)
+    finally:
+        warmer.stop()
+    assert started == ["worker", "worker"]
+
+
+def test_cost_warmer_survives_worker_start_failure_and_restarts_on_next_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """別プロセスを起動できなければ警告して背景の算出を止め、次の走査で起動し直して算出する。
+
+    起動の失敗（プロセス数やファイル記述子の上限）で背景のスレッドが終わると、次の`request`でも再開しないためである。
+    """
+    record = _claude_record(tmp_path)
+    old_ns = time.time_ns() - 10_000_000_000
+    os.utime(record, ns=(old_ns, old_ns))
+    context = _context(tmp_path, state_dir=tmp_path / "state")
+    original = sessions._session_costs._start_worker
+    started: list[str] = []
+
+    def failing_then_real() -> subprocess.Popen[str]:
+        started.append("worker")
+        if len(started) == 1:
+            raise OSError(errno.EMFILE, "Too many open files")
+        return original()
+
+    monkeypatch.setattr(sessions._session_costs, "_start_worker", failing_then_real)
+    warmer = _start_warmer(context)
+    try:
+        with caplog.at_level("WARNING", logger=sessions._session_costs.logger.name):
+            sessions.list_local_sessions(context)
+            _wait_until(lambda: "起動できない" in caplog.text)
+        assert context.state.family_costs.get(record) is None
+        sessions.list_local_sessions(context)
+        _wait_until(lambda: context.state.family_costs.get(record) is not None)
+    finally:
+        warmer.stop()
+    assert started == ["worker", "worker"]
+    assert "Too many open files" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_first_list_after_restart_returns_saved_list_and_refreshes_after_background_scan(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """再起動後の最初の一覧は前回の一覧を要求の中で走査せずに返し、背景の走査の後に`refresh`で取り直させる。
+
+    記録数千件の全件の走査は起動直後の負荷の下で数秒かかり、最初のセッション一覧の表示を待たせるためである。
+    """
+    record = _claude_record(tmp_path)
+    first = _context(tmp_path, state_dir=tmp_path / "state")
+    assert [entry.path for entry in sessions.list_local_sessions(first)] == [str(record)]
+    added = _claude_record(tmp_path, project="-home-aki-other")
+    restarted = _context(tmp_path, state_dir=tmp_path / "state")
+    tracker = sessions.session_watch.RecordChangeTracker(
+        [(tmp_path / "claude" / "projects", "claude"), (tmp_path / "codex" / "sessions", "codex")],
+        lambda _refresh, _records: None,
+        debounce_sec=60.0,
+    )
+    restarted.state.record_watch = sessions.session_watch.RecordWatch(tracker)
+    restarted.state.watch_loop = asyncio.get_running_loop()
+    scanned = threading.Event()
+    release = threading.Event()
+    original = sessions._scan_local_sessions  # pylint: disable=protected-access
+
+    def gated(*args: typing.Any, **kwargs: typing.Any) -> list[sessions.SessionSummary]:
+        scanned.set()
+        assert release.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sessions, "_scan_local_sessions", gated)
+    queue = await sessions.subscribe(restarted.state)
+    try:
+        saved = await asyncio.to_thread(sessions.list_local_sessions, restarted)
+        assert [entry.path for entry in saved] == [str(record)]
+        assert await asyncio.to_thread(scanned.wait, 10)
+        release.set()
+        assert json.loads(await asyncio.wait_for(queue.get(), timeout=10)) == {"type": "refresh"}
+        refreshed = await asyncio.to_thread(sessions.list_local_sessions, restarted)
+        assert sorted(entry.path for entry in refreshed) == sorted([str(record), str(added)])
+    finally:
+        release.set()
+        await sessions.unsubscribe(restarted.state, queue)
         tracker.stop()

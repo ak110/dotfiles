@@ -1,0 +1,55 @@
+# 設計判断の手順と領域別の設計観点：設計品質の劣化確認
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-purpose.md`、`agent-documents-basics-placement.md`、`agent-documents-basics-read-tables.md`、`agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-purpose.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+
+## 設計品質の劣化確認
+
+発火条件: 計画書の起草、作業項目の実現方式の確定、実装完了前、および実行レビューにおいて、成果物（コード、テスト、CIを含む設定、開発者向け文書、エージェント向け文書など）の新設、変更、分割、移設、統合をする変更を評価する場面。
+
+変更履歴や現行構成に、機能・節・例外・条件分岐や責務の増加、同一情報の反復などの蓄積を認めたファイルは、直近の差分に劣化がなくても全体構成の適否を見直す。
+SSOT（単一の情報源）、責務の混在、重複、読み取り・変更の負担などを手掛かりとする。
+規範の大きさの目安と整理を検討する契機は、`agent-documents-additions-volume.md`「記述量の水準」に従う。
+
+常に遵守すべき不変条件は、変更後の成果物全体の設計品質が変更前よりも劣化しないことである。
+局所的な観点のみで評価すると、ファイル全体の章構成や他の成果物との関係性が損なわれたまま確定してしまい、後からの手戻りコストが初期の評価コストを大きく上回る結果となる。
+評価対象は、変更を加える各成果物のファイル全体、および参照・呼び出し・読込表などで関連する他の成果物とする。
+生成ファイルに問題があれば、定義元と生成・利用の関係を確認して正規の情報源で処置を選ぶ。
+複数の作業項目を1つの計画で同時に扱う場合は、すべての作業項目を適用し終えた最終状態を評価対象とする。
+評価観点としては少なくとも以下の6点を網羅し、必要に応じて独自の観点も追加する。
+
+- (a)章構成: 各節の粒度、主題の混在の有無、節の配置順序、および章構成の再編が必要かどうか
+- (b)責務: 各成果物が担う責務の変更前後の差異と、呼出側の知識・操作・保守の総負担を比較する。
+  比較は`design-heuristics-responsibility.md`「責務帰属（SRP）分析の観点」に従う。
+  簡略化・統合・移設後も、配置や形式が担っていた同時比較、区別、実行契機、責務が消費側の利用場面で保たれるかを確認する。
+  別節に同じ情報があることだけで保持と判定しない
+- (c)所有者: 新設または移設する契約や定義ごとの所有者と、それらを利用するすべての消費側
+- (d)関連性: 他の成果物との参照関係、呼び出し関係、記述の重複
+- (e)到達性: 読み手や呼び出し元が起点（常時規範、`SKILL.md`の読込表、公開された呼び出し手段など）から目的の規定や機能へ辿り着くまでに経由する文書や手段の変化
+- (f)分割と統合の比較: 現状維持・統合・分割・新設・移設・削除などについて、必要な契約と参照関係を保ちながら読解・変更の負担を比較する。
+  構造上の問題がなければ長いファイルも維持でき、分割や短縮を必須の結果としない
+
+判定基準には、`design-heuristics-responsibility.md`「責務帰属（SRP）分析の観点」と次の資料を用いる。
+
+- `agent-documents-basics-purpose.md`
+- `agent-documents-basics-placement.md`
+- `agent-documents-basics-read-tables.md`
+- `agent-documents-basics-ownership.md`
+評価結果は各観点ごとの結論として記録し、劣化がないと判断した場合も観点ごとにその根拠を記載する。
+記録先および是正手順は各工程の規範に従う。
+後続の工程では、先行工程による「劣化なし」という結論を鵜呑みにせず、自ら独立して再評価する。
+変更対象に含まれず是正の必要性も生じない既存の不備は評価対象から除外し、`../../bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」に従う。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| エージェント向け文書への追記と記述量の管理：文書記述量の管理の基準を適用する前 | `agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
+| 設計判断の手順と領域別の設計観点：責務帰属（SRP）分析の観点の基準を適用する前 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |

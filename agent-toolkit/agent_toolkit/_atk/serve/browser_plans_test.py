@@ -25,6 +25,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _BrowserOperations,
     _hold_route,
     _isolate_creation_time_index,
+    _observe_screen_requests,
     _screen_harness_fixture,
     _ScreenHarness,
     _serve,
@@ -156,11 +157,11 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
     # 更新通知の購読を止め、削除後も一覧が古いままの状態で項目を選ぶ。
     await page.route("**/api/plans/events", lambda route: route.abort())
     body_delivered = asyncio.Event()
+    release_body = asyncio.Event()
     if delay_auto_opened_body:
 
         async def delay_body(route: playwright.async_api.Route) -> None:
-            # 負荷の高い環境での到着の遅れを模すため、自動で開く本文の要求をサーバーへ送る前に待つ。
-            await asyncio.sleep(0.3)
+            await asyncio.wait_for(release_body.wait(), timeout=5)
             response = await route.fetch()
             await route.fulfill(response=response)
             body_delivered.set()
@@ -169,6 +170,7 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
     await page.goto(harness.base_url + "/plans")
     item = page.locator("#files .file", has_text="plan.md")
     await item.wait_for(state="visible")
+    release_body.set()
     # 自動で開いた先頭の計画の本文表示を待ち、本文の取得と削除を競合させない。
     await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
 
@@ -536,14 +538,16 @@ async def test_plan_operations_record_open_and_notified_reload(screen_harness: _
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
     # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
     sent: list[dict] = []
-    page.on(
-        "request",
-        lambda request: (
-            sent.extend(json.loads(request.post_data or "{}").get("records", []))
-            if request.url.endswith("/api/timings")
-            else None
-        ),
-    )
+    reload_sent = asyncio.Event()
+
+    def record_timings(request: playwright.async_api.Request) -> None:
+        if request.url.endswith("/api/timings"):
+            records = json.loads(request.post_data or "{}").get("records", [])
+            sent.extend(records)
+            if any(record.get("operation") == "external-reload" for record in records):
+                reload_sent.set()
+
+    page.on("request", record_timings)
     await page.goto(harness.base_url + "/plans")
     await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
     # 初期表示の選択は接続確立時の再同期に置き換わることがあるため、表示の確定後に別の計画を選び直して測る。
@@ -556,11 +560,8 @@ async def test_plan_operations_record_open_and_notified_reload(screen_harness: _
     await serve_plans.schedule_broadcast(harness.plans_state)
     await page.locator("#preview h1", has_text="通知後").wait_for()
     await page.locator("#preview .diagram-mermaid svg", has_text="通知後").wait_for(state="visible")
-    async with page.expect_request(
-        lambda request: request.url.endswith("/api/timings") and '"external-reload"' in (request.post_data or ""),
-        timeout=30000,
-    ):
-        await page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+    await page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+    await asyncio.wait_for(reload_sent.wait(), timeout=30)
     records = list(sent)
 
     def linked_routes(operation: dict) -> set[str]:
@@ -665,6 +666,58 @@ async def test_mermaid_strict_security_blocks_active_content(screen_harness: _Sc
             "mermaid-script-ran",
         )
     )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("select_during_initial_fetch", [False, True])
+async def test_initial_plan_restore_preserves_earlier_selection(
+    screen_harness: _ScreenHarness, select_during_initial_fetch: bool
+) -> None:
+    """初期取得中に始めた閲覧を保持し、操作が無い場合はURLの計画を復元する。"""
+    harness = screen_harness
+    page = harness.page
+    await _observe_screen_requests(page)
+    (harness.root / "second.md").write_text("# 後の計画\n\n" + "本文\n\n" * 200, encoding="utf-8")
+    await page.route("**/api/plans/events", lambda route: route.abort())
+    started = asyncio.Event()
+    release = asyncio.Event()
+    fulfilled = asyncio.Event()
+
+    async def hold_initial_list(route: playwright.async_api.Route) -> None:
+        response = await route.fetch()
+        started.set()
+        await release.wait()
+        await route.fulfill(response=response)
+        fulfilled.set()
+
+    await page.route("**/api/plans/files", hold_initial_list, times=1)
+    initial_path = "plan.md" if select_during_initial_fetch else "second.md"
+    try:
+        await page.goto(
+            harness.base_url + "/plans?host=browser-test&path=" + initial_path,
+            wait_until="domcontentloaded",
+        )
+        await asyncio.wait_for(started.wait(), timeout=10)
+        if select_during_initial_fetch:
+            await page.evaluate("window.dispatchEvent(new Event('focus'))")
+            await page.locator("#files").get_by_text("second.md", exact=True).click()
+            await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("後の計画")
+            await playwright.async_api.expect(page.locator("#preview")).to_have_attribute("aria-busy", "false")
+            await page.locator("#screen-plans main").evaluate("element => { element.scrollTop = 240; }")
+            assert await page.locator("#screen-plans main").evaluate("element => element.scrollTop") == 240
+        release.set()
+        await asyncio.wait_for(fulfilled.wait(), timeout=10)
+        await page.wait_for_function("window.__screenRequests.pending === 0")
+        await page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("後の計画")
+        await playwright.async_api.expect(page.locator('#files .file[aria-current="true"]')).to_contain_text("second.md")
+        if select_during_initial_fetch:
+            assert await page.locator("#screen-plans main").evaluate("element => element.scrollTop") == 240
+            await page.go_back()
+            await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+            await playwright.async_api.expect(page.locator('#files .file[aria-current="true"]')).to_contain_text("plan.md")
+    finally:
+        release.set()
 
 
 @pytest.mark.asyncio(loop_scope="session")

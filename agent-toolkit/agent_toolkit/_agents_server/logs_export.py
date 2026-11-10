@@ -16,10 +16,10 @@ from agent_toolkit._common import host_homes
 from agent_toolkit._common.next_action import report
 
 # 記録を特定できない場合の次の操作。`atk agents logs`の各処理と`atk agents logs <id>`の表示で共有する。
-MISSING_RECORD_NEXT_ACTION = "`atk agents list --include-terminated`でsession_idを確かめてから再実行する"
-UNREADABLE_RECORD_NEXT_ACTION = "記録ファイルの権限を確かめてから再実行する"
-BROKEN_LINES_NEXT_ACTION = "解析できなかった行が必要な場合は、元ログの該当行を確認し、形式の不整合をユーザーへ報告する"
-_OUTPUT_DIR_NEXT_ACTION = "`--output-dir`を書込可能で同名のファイルが無いディレクトリへ変えて再実行する"
+MISSING_RECORD_NEXT_ACTION = "`atk agents list --include-terminated`でsession_idを確かめてから再実行せよ"
+UNREADABLE_RECORD_NEXT_ACTION = "記録ファイルの権限を確かめてから再実行せよ"
+BROKEN_LINES_NEXT_ACTION = "解析できなかった行が必要な場合は、元ログの該当行を確認し、形式の不整合をユーザーへ報告せよ"
+_OUTPUT_DIR_NEXT_ACTION = "`--output-dir`を書込可能で同名のファイルが無いディレクトリへ変えて再実行せよ"
 
 
 @dataclasses.dataclass(frozen=True)

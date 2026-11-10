@@ -1,0 +1,59 @@
+# 実行レビューの指摘と完成条件証拠の記録：レビュー指摘管理表への登録
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+| 返却形式を確認する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` |
+
+## レビュー指摘管理表への登録
+
+- 表の絶対パスを特定した直後、最初に読み取る前に`exec-review-subagent-inputs.md`「入力」の初回準備手順に従う。
+  初回実行で表が存在しない場合のみ本担当が作成する。
+  既存の表や、再レビュー・引き継ぎ再レビュー時の表はそのまま保持する。
+  過去の履歴を引き継ぐ際に表が存在しない場合は、空の表を新規作成して補うのではなく、表が存在しない状態として扱う
+- 指摘には、対象箇所、違反した規約・契約、観測された具体的な事象、本来得られるべき外部から観測可能な結果、および判定根拠を記載する。
+  原因が同じ指摘は可能な限り1行にまとめる（努力目標）。
+  既存行に記載されている応答や証拠はそのまま保持する
+- 同じラウンド・トラックで確定した複数の指摘は、`atk review-table add <表の絶対パス> --round <round> --track exec-review --items-file <JSONの絶対パス>`を用いて一括登録する。
+  渡すJSONファイルはUTF-8エンコードの空でない配列とし、各要素には文字列型の`location`、`issue`、`level`という3つのキーのみを含める。
+  `level`には`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。
+  単一の指摘であれば、従来の`--level`、`--location-file`、`--issue-file`を使っても登録できるが、これらと`--items-file`は排他的に指定する。
+  いずれの方法でも、コマンドが終了コード0で正常終了のメッセージを返せば、既存行を含めた全行の保存内容が送信元と一致していることが検証される
+- 新たな指摘がない場合は、表をそのまま変更せずに残す。
+  再レビュー時の指摘も現在のラウンド番号で登録する。
+  未解決の指摘件数は、`atk review-table show <表の絶対パス> --format=summary --round <round>`の出力に含まれる`unanswered_count`から取得する
+- 完成条件証拠の判定は返却メッセージ内の判定行に直接記述するため、判定行そのものを対象とした指摘はレビュー指摘管理表への登録対象から外す。
+  判定内容に修正が必要な場合は、実行レビュー担当自身が判定をやり直す
+
+## 走査記録と差分外の不良
+
+観点ごとの走査結果は、1つの観点の走査が完了するごとに、自身のセッション用のmanaged-temp内にあるファイルへ保存する。
+これにより、長時間稼働の末にプロセスが終了した場合でも、再起動時にそのファイルを参照して未走査の観点のみを再開できるようにする。
+
+- 探索によって得られた各指摘を走査結果に対応付け、採用したものは表の行番号を、不採用としたものは対象のコードや契約を確認して判断した不採用理由を記録する
+- 差分外または担当範囲外として表から除外した指摘候補は、「実在する不良」「裏付けが不十分な候補」「現物上成立しない候補」の3つに分類して走査記録に残す
+- 「実在する不良」には、対象箇所、発生条件、観測された事象、実害、裏付け、表から除外した理由、原因、および対策案を記録する。
+  裏付けとして報告対象の入力や呼び出し元、設定で使われる定義（対象を囲む関数やクラス、派生クラスによるオーバーライド、呼び出し元）を実際に確認し、対象箇所へ到達可能であることを確かめた具体的なファイルと場所を記載する。
+  判定基準は`agent-basics:writing-standards/references/investigation-sources.md`「根拠と主張の一致」に従う。
+  `気付いた改善点:`の行には、走査記録の絶対パスとその要点、ならびに到達を確認した定義や呼び出し元のファイル名とシンボル名を記載する。
+  担当自身が直接観測した差分外の不良についても、同様の情報を委譲元へ報告する
+- 「裏付けが不十分な候補」には、不足している根拠とそれを取得する手段を記録し、自身の担当操作の範囲内で補える情報は補ってから再分類する。
+  grep等の検索一致行や差分の断片情報だけを根拠にした候補はこの区分に分類し、定義や呼び出し元のコードを読んで到達可能性を確かめてから分類し直す。
+  担当の権限や手段では補えない不足がある場合は、対象と不足している内容を委譲元へ報告する
+- 「現物上成立しない候補」には、確認したコードや契約の内容と、該当しないと判断した根拠を記録する。
+  なお、差分範囲内の不良であれば表へ登録する
+- 初回レビューの不備として差し戻された項目は、通常の再レビュー指摘と区別して記録し、委譲元へエスカレーションする
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビュータスク：入力の基準を適用する前 | `exec-review-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-inputs.md` |

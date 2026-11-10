@@ -75,6 +75,7 @@ def repository_input(
         "lane_limit": previous_input.get("lane_limit", snapshot.lane_limit),
         "candidate_file": previous_input.get("candidate_file")
         or str(_ownership.save_candidates(ownership, snapshot.candidate_records())),
+        "snapshot_file": str(_ownership.save_snapshot(ownership, snapshot.entries)),
         "readiness": previous_input.get("readiness", dataclasses.asdict(snapshot.readiness)),
         "previous": ownership.previous,
     }
@@ -314,7 +315,7 @@ def cleanup_lane_session(lane_session_id: str, *, target_repo: str | None = None
     再回収する操作を示す。回収の失敗は戻り値へ記録して送出せず、呼び出し側の残りの終了処理
     （他担当の終了と回収、再起動判断）を続けさせる。
     """
-    next_action = f"残存理由を解消し、atk lane delete --session-id {lane_session_id}を実行する"
+    next_action = f"残存理由を解消し、atk lane delete --session-id {lane_session_id}を実行せよ"
     scope = "" if target_repo is None else f"{target_repo}: "
     fields: dict[str, Any] = {} if target_repo is None else {"target_repo": target_repo}
     try:
@@ -348,6 +349,7 @@ def _run_process_session(
     on_session_finished: Callable[[bool], None],
     on_session_started: Callable[[str], None] | None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None,
+    on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> bool:
@@ -367,6 +369,7 @@ def _run_process_session(
                 on_session_finished=on_session_finished,
                 on_session_started=on_session_started,
                 on_process_started=on_process_started,
+                on_residual=on_residual,
                 codex_provider=codex_provider,
                 claude_connection=claude_connection,
             )
@@ -403,6 +406,7 @@ def _run_selected_process_session(
     on_session_finished: Callable[[bool], None],
     on_session_started: Callable[[str], None] | None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None,
+    on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None,
     claude_connection: _connection.Connection | None,
 ) -> bool:
@@ -434,6 +438,7 @@ def _run_selected_process_session(
             on_session_finished=on_session_finished,
             on_session_started=on_session_started,
             on_process_started=on_process_started,
+            on_residual=on_residual,
             codex_provider=codex_provider,
         )
 
@@ -450,6 +455,7 @@ def _run_started_process_session(
     on_session_finished: Callable[[bool], None],
     on_session_started: Callable[[str], None] | None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None,
+    on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
 ) -> bool:
     """統括CLIを1回実行し、正常終了したかを返す。"""
@@ -473,6 +479,7 @@ def _run_started_process_session(
             effort=effort,
             on_session_started=on_session_started,
             on_process_started=on_process_started,
+            on_residual=on_residual,
             codex_provider=codex_provider,
         )
         if identifier := launch_env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
@@ -537,7 +544,32 @@ def _attach_orchestrator_child(identifier: str, child: _registry.ProcessIdentity
     )
 
 
-def _raise_claude_usage_limit(process: subprocess.Popen[bytes], env: dict[str, str], identifier: str | None) -> None:
+def _stop_orchestrator(
+    process: subprocess.Popen[bytes],
+    *,
+    context: str,
+    on_residual: Callable[[process_tree.ReclaimError], None] | None,
+) -> list[str]:
+    """統括CLIを子孫ごと停止し、回収できなかった対象を診断して呼び出し元へ渡し、その記述を返す。
+
+    回収できない子孫は所有資源の停止未完了であり、警告ログだけで次の処理へ進むと同じ対象の次の統括と資源を奪い合う。
+    呼び出し元（`process_loop.run_coordinator`）は識別を所有記録へ保存し、消滅を確かめるまで所有を保持する。
+    """
+    failure = process_tree.stop_owned_process(process, context=context)
+    if failure is None:
+        return []
+    process_tree.log_residual(failure.residual, context=context)
+    if on_residual is not None:
+        on_residual(failure)
+    return failure.residual
+
+
+def _raise_claude_usage_limit(
+    process: subprocess.Popen[bytes],
+    env: dict[str, str],
+    identifier: str | None,
+    on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
+) -> None:
     """StopFailureの要求を読み、旧CLIの終了を確認して接続選択へ戻す。"""
     if identifier is None:
         return
@@ -548,7 +580,7 @@ def _raise_claude_usage_limit(process: subprocess.Popen[bytes], env: dict[str, s
         return
     if not limited:
         return
-    residual = process_tree.stop_process_tree(process)
+    residual = _stop_orchestrator(process, context="process-loop usage-limit switch", on_residual=on_residual)
     if residual:
         raise _next_action.ActionableError(
             f"接続切替前に旧Claude CLIの終了を確認できない: {residual}",
@@ -568,6 +600,7 @@ def _run_cli_session(
     effort: str | None = None,
     on_session_started: Callable[[str], None] | None = None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None = None,
+    on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """既存のCLI待機で実行主体を保持し、上限停止と無出力停止を監視する。
@@ -620,11 +653,11 @@ def _run_cli_session(
                 try:
                     returncode = process.wait(timeout=1)
                     if orchestrator == "claude":
-                        _raise_claude_usage_limit(process, env, identifier)
+                        _raise_claude_usage_limit(process, env, identifier, on_residual)
                     return subprocess.CompletedProcess(argv, returncode)
                 except subprocess.TimeoutExpired:
                     if orchestrator == "claude":
-                        _raise_claude_usage_limit(process, env, identifier)
+                        _raise_claude_usage_limit(process, env, identifier, on_residual)
                     record = (
                         _record_paths.find_session_record(
                             identifier,
@@ -637,15 +670,15 @@ def _run_cli_session(
                     updated = max((path.stat().st_mtime for path in record.paths), default=started_at) if record else started_at
                     if time.time() - updated > 9600:
                         _process_loop_log.append("session_stalled", session_id=identifier or "")
-                        process_tree.log_residual(process_tree.stop_process_tree(process), context="process-loop stalled")
+                        _stop_orchestrator(process, context="process-loop stalled", on_residual=on_residual)
                         return subprocess.CompletedProcess(argv, 1)
                     if orchestrator == "codex" and rollout is not None and _codex_usage_limit.from_rollout(rollout) is not None:
                         _process_loop_log.append("session_usage_limit", rollout_path=str(rollout))
-                        process_tree.log_residual(process_tree.stop_process_tree(process), context="process-loop usage-limit")
+                        _stop_orchestrator(process, context="process-loop usage-limit", on_residual=on_residual)
                         return subprocess.CompletedProcess(argv, 0)
         except BaseException:
             if process.poll() is None:
-                process_tree.log_residual(process_tree.stop_process_tree(process), context="process-loop exception")
+                _stop_orchestrator(process, context="process-loop exception", on_residual=on_residual)
             raise
 
 
@@ -662,6 +695,7 @@ def run_process_session(
     on_session_finished: Callable[[bool], None] | None = None,
     on_session_started: Callable[[str], None] | None = None,
     on_process_started: Callable[[_registry.ProcessIdentity], None] | None = None,
+    on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> bool:
@@ -689,6 +723,7 @@ def run_process_session(
             on_session_finished=finished,
             on_session_started=on_session_started,
             on_process_started=on_process_started,
+            on_residual=on_residual,
             codex_provider=codex_provider,
             claude_connection=claude_connection,
         )

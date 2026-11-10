@@ -25,7 +25,6 @@ from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import (
     frontmatter,  # noqa: E402  # pylint: disable=wrong-import-position
     readiness,
-    style_diagnostics,  # noqa: E402  # pylint: disable=wrong-import-position
 )
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module  # noqa: E402  # pylint: disable=wrong-import-position
@@ -686,134 +685,52 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
     assert after_head == before_head
 
 
-def test_add_dry_run_reports_style_warnings_with_section_errors(
+def test_add_dry_run_keeps_section_errors_without_style_warnings(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """必須節の欠落と表記警告を1回の実行で確認して示す。"""
+    """表記診断を撤去しても、必須節の欠落は拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    body = "本文\u2014説明"
-
-    with pytest.raises(SystemExit) as exc_info:
-        _run_public_add(_cmd_add_args(tmp_path, body, source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
-
-    assert exc_info.value.code == 1
+    with pytest.raises(SystemExit) as result:
+        _run_public_add(_cmd_add_args(tmp_path, "本文\u2014説明", source="test", dry_run=True), notes, _FIXED_DT, tmp_path)
+    assert result.value.code == 1
     error = capsys.readouterr().err
-    assert f'入力元="{tmp_path / "body.md"}" 論理本文:1:3: ダッシュ' in error
-    assert "文脈: 本文【—】説明" in error
     assert "必須節" in error
+    assert "表記診断" not in error
 
 
-def test_add_multiple_body_files_preserves_source_and_occurrence(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.parametrize("editor", [False, True])
+def test_add_accepts_colloquial_and_dash_without_warnings(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    dry_run: bool,
+    editor: bool,
 ) -> None:
-    """複数原稿の表記診断から入力元と同じ行の各出現箇所を識別できる。"""
+    """ファイルとエディター入力の口語・ダッシュを、保存とdry-runで警告せず保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
-    args = _cmd_add_args(tmp_path, _AGENT_AWI_BODY + "\n開始—中間—終了\nすぐ\u6765\u3044。", source="test", dry_run=True)
-    second = tmp_path / "second.md"
-    second.write_text(_AGENT_AWI_BODY + "\n別の説明—補足", encoding="utf-8")
-    args.body_file.append(str(second))
-
-    _run_public_add(args, notes, _FIXED_DT, tmp_path)
-
-    # 短い診断は保存せず、標準エラーの全文から入力元と出現箇所を読む。
-    details = capsys.readouterr().err
-    assert "標準エラー保存先:" not in details
-    assert f'入力元="{tmp_path / "body.md"}"' in details
-    assert f'入力元="{second}"' in details
-    assert "文脈: 開始【—】中間—終了" in details
-    assert "文脈: 開始—中間【—】終了" in details
-    assert "文脈: 別の説明【—】補足" in details
-    assert "文脈: すぐ【\u6765\u3044】。" in details
-
-
-@pytest.mark.parametrize("editor", [False, True])
-def test_add_frontmatter_diagnostics_use_logical_body_coordinates(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], editor: bool
-) -> None:
-    """単件ファイルとエディターのfrontmatter付き入力で座標の基準を明示する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    message = "---\ntitle: 原稿\n---\n\n開始—終了"
-    args = _cmd_add_args(tmp_path, message, dry_run=True)
+    body = _AGENT_AWI_BODY + "\n説明\u2014補足。すぐ\u6765\u3044。\n"
+    args = _cmd_add_args(tmp_path, body, source="test", dry_run=dry_run)
     if editor:
         args.body_file = None
-        monkeypatch.setattr(_wi_cli_input, "collect_message_via_editor", lambda: message)
-    add_module.cmd_add(args, notes, _FIXED_DT, tmp_path)
-    error = capsys.readouterr().err
-    source = "エディター入力" if editor else str(tmp_path / "body.md")
-    assert f'入力元="{source}" 論理本文:2:3: ダッシュ' in error
-    assert "文脈: 開始【—】終了" in error
-
-
-def test_style_diagnostics_skips_fenced_code() -> None:
-    """WI本文のコードフェンスはダッシュ警告の対象外とする。"""
-    warnings = style_diagnostics.warnings_for_body("```text\n\u2014\n```\n説明\u2014追加")
-
-    assert warnings == ['WI本文の表記診断: 入力元="本文入力" 論理本文:4:3: ダッシュ — | 文脈: 説明【—】追加']
-
-
-@pytest.mark.parametrize("diagnostic_count", [0, 2])
-def test_public_add_reports_style_actions_once(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    diagnostic_count: int,
-) -> None:
-    """複数の診断でも案内は一度にまとめ、診断0件では案内も省く。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    body = "\n".join(["説明\u2014補足"] * diagnostic_count) or "説明。"
-    _run_public_add(_cmd_add_args(tmp_path, body, dry_run=True), notes, _FIXED_DT, tmp_path)
-    lines = capsys.readouterr().err.splitlines()
-    assert len([line for line in lines if "論理本文:" in line and "ダッシュ" in line]) == diagnostic_count
-    assert len([line for line in lines if line.startswith("次の操作: ")]) == bool(diagnostic_count)
-
-
-def test_style_diagnostics_reports_colloquial_location(monkeypatch: pytest.MonkeyPatch) -> None:
-    """口語辞書の検出結果を本文の行番号付き警告へ変換する。"""
-
-    def fake_patterns(path: pathlib.Path, **kwargs: object) -> list[tuple[re.Pattern[str], str | None]]:
-        del kwargs
-        if path == style_diagnostics.colloquial.DENY_PATH:
-            return [(re.compile("口語"), "書き言葉")]
-        return []
-
-    monkeypatch.setattr(style_diagnostics.colloquial, "load_patterns", fake_patterns)
-
-    assert style_diagnostics.warnings_for_body("説明\n口語") == [
-        'WI本文の表記診断: 入力元="本文入力" 論理本文:2:1: 口語表現 口語（候補: 書き言葉） | 文脈: 【口語】'
-    ]
-
-
-def test_add_dry_run_does_not_report_kanji_compound_as_colloquial(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """漢語複合語の末尾は口語表現として警告せず、単独の口語表現は警告する。"""
-    notes = _setup_notes(tmp_path)
-    _patch_cmd_add_operations(monkeypatch)
-    # 単独の口語表現はリポジトリの口語表現チェックも報告するため、テスト入力ではエスケープで書く。
-    colloquial = "\u6765\u3044"
-    body = f"設定を将来いずれかが持った場合に備える。\nすぐ{colloquial}。\n"
-
-    _run_public_add(_cmd_add_args(tmp_path, body, dry_run=True), notes, _FIXED_DT, tmp_path)
-
-    stderr_lines = capsys.readouterr().err.splitlines()
-    colloquial_warnings = [line for line in stderr_lines if "口語表現" in line]
-    assert colloquial_warnings == [
-        f'警告: WI本文の表記診断: 入力元="{tmp_path / "body.md"}" 論理本文:2:3: '
-        f"口語表現 {colloquial}（候補: 具体的な発生源と動作を記す） | 文脈: すぐ【{colloquial}】。"
-    ]
-    # 表記の警告の次行へ、投入後に直す手段を置く。
-    next_line = stderr_lines[stderr_lines.index(colloquial_warnings[0]) + 1]
-    assert next_line.startswith("次の操作: ")
-    assert "atk wi edit <ファイル名> --body-file" in next_line
+        monkeypatch.setattr(_wi_cli_input, "collect_message_via_editor", lambda: body)
+        add_module.cmd_add(args, notes, _FIXED_DT, tmp_path)
+    else:
+        _run_public_add(args, notes, _FIXED_DT, tmp_path)
+    captured = capsys.readouterr()
+    assert not captured.err
+    saved = list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+    if dry_run:
+        assert not saved
+        assert "保存していない" in captured.out
+    else:
+        assert len(saved) == 1
+        assert body in saved[0].read_text(encoding="utf-8")
 
 
 def test_add_dry_run_rejects_batch(

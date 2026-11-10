@@ -6,6 +6,7 @@
 """
 
 import pathlib
+import re
 import typing
 
 import yaml
@@ -46,6 +47,30 @@ for _tag in (
 
 _TYPED_KEYS = frozenset({"queue_schedule", "important"})
 """字面ではなく型付きの値を保持するキー。"""
+
+
+_SIMPLE_LINE = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*): ([^\s\-?:,\[\]{}#&*!|>'\"%@`][^\t]*)")
+"""値がプレーンスカラー1つだけの`キー: 値`の行。値の先頭にYAMLの指示子を置く行は対象外とする。"""
+
+
+def _simple_mapping(source: str) -> dict[str, str] | None:
+    """各行が単純な`キー: 値`だけのfrontmatterを、YAMLを解析せずに`_LiteralScalarLoader`と同じ辞書へ変換する。
+
+    純Python実装のPyYAMLは1件の解析に約1ミリ秒かかり、`atk serve`の起動直後の一覧が数千件の解析を待つ。
+    キュー項目のfrontmatterはほぼ全てがこの形であり、値はプレーンスカラーとして字面のまま`str`になる。
+    値の途中のコメント（` #`）・入れ子・引用符・空の値・型付きの値を使うキーなど、
+    この変換で結果が変わり得る行が1つでもあれば`None`を返し、呼び出し元はYAMLで解析する。
+    """
+    data: dict[str, str] = {}
+    for line in source.split("\n"):
+        match = _SIMPLE_LINE.fullmatch(line)
+        if match is None:
+            return None
+        key, value = match.groups()
+        if key in _TYPED_KEYS or value != value.rstrip() or ": " in value or " #" in value or value.endswith(":"):
+            return None
+        data[key] = value
+    return data
 
 
 def normalize_newlines(text: str) -> str:
@@ -97,6 +122,8 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     except ValueError:
         return None
     frontmatter_source = text[4:end]
+    if (simple := _simple_mapping(frontmatter_source)) is not None:
+        return simple, text[end + len("\n---\n") :]
     try:
         literal = yaml.load(frontmatter_source, Loader=_LiteralScalarLoader)
         # 型付きの値を使うキーが無い項目では2回目の解析を省く。純Python実装のPyYAMLでは1件の解析が

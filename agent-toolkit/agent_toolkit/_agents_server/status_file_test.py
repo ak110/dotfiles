@@ -288,7 +288,9 @@ async def test_writer_removes_session_at_retention_deadline(tmp_path: pathlib.Pa
 
 
 @pytest.mark.asyncio
-async def test_writer_retains_result_without_live_session_after_deadline(tmp_path: pathlib.Path) -> None:
+async def test_writer_retains_result_without_live_session_after_deadline(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """破棄済みsessionから保持した結果も期限到達後に維持する。"""
     session = _completed_with_retention_deadline("stopped", tmp_path)
     writer = _root_writer({}, tmp_path)
@@ -299,7 +301,11 @@ async def test_writer_retains_result_without_live_session_after_deadline(tmp_pat
     assert result_path.exists()
     assert writer._retention_handle is None
 
-    await asyncio.sleep(0.05)
+    deadline = session.retention_deadline
+    assert deadline is not None
+    with monkeypatch.context() as clock_patch:
+        clock_patch.setattr(asyncio.get_running_loop(), "time", lambda: deadline + 1)
+        writer.flush()
 
     assert result_path.exists()
     writer.deactivate()

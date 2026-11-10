@@ -92,7 +92,7 @@ dev = [
     "hypothesis>=6.168.3",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
-    "pyfltr[python]>=3.26.0",
+    "pyfltr[python]>=3.27.0",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
@@ -108,7 +108,7 @@ dev = [
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
 name = "規範変更の対象ファイル"
-paths = ["AGENTS.md", "agent-toolkit/rules/", "agent-toolkit/skills/", "agent-toolkit/share/", "agent-basics/skills/", ".claude/skills/"]
+paths = ["AGENTS.md", "agent-toolkit/skills/", "agent-toolkit/share/", "agent-basics/skills/", ".claude/skills/"]
 suffixes = [".md"]
 require-paths = true
 
@@ -170,6 +170,7 @@ claude-plugin-validate-subproject-aware = false
 function-hooks-types-subproject-aware = false
 agent-doc-tone-subproject-aware = false
 writing-check-dash-subproject-aware = false
+markdown-structure-subproject-aware = false
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
@@ -263,15 +264,16 @@ targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "agent-toolkit/*.py",
     "agent-toolkit/skills/*.py",
-    "agent-toolkit/rules/*.py",
+    "agent-toolkit/share/rules/common/*.py",
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/skills/*/*",
     "agent-toolkit/skills/*/*/*",
     "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/*/*",
     "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/*/__init__.py",
     "agent-toolkit/share/*",
+    "agent-toolkit/share/rules/*",
     "agent-toolkit/hooks/*.json",
-    "agent-toolkit/rules/*.md",
+    "agent-toolkit/share/rules/common/*.md",
     "agent-toolkit/scripts/**/*.py",
     "agent-toolkit/agent_toolkit/**/*.py",
     "agent-toolkit/scripts/*",
@@ -280,8 +282,8 @@ targets = [
     "install-claude.sh",
     "install-claude.ps1",
     "pytools/**/*.py",
-    "agent-toolkit/share/rules-common.codex.md",
-    "agent-toolkit/share/rules-main.codex.md",
+    "agent-toolkit/share/rules/rules-common.codex.md",
+    "agent-toolkit/share/rules/rules-main.codex.md",
     "scripts/codex_shared_rules.py",
     "scripts/gen_completions.py",
     "scripts/gen_install_files.py",
@@ -354,8 +356,9 @@ error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<severity>error|warning): (?P<
 targets = [
     # pyfltrのPath.matchは`**`を任意階層として扱わないため、実在する深さを明示する。
     "AGENTS.md",
-    "agent-toolkit/rules/*.md",
     "agent-toolkit/share/*.md",
+    "agent-toolkit/share/rules/*.md",
+    "agent-toolkit/share/rules/common/*.md",
     "agent-toolkit/skills/*/*.md",
     "agent-toolkit/skills/*/*/*.md",
     "agent-basics/skills/*/*.md",
@@ -366,7 +369,7 @@ targets = [
     "agent-toolkit/skills/*/*.py",
     "agent-toolkit/skills/*/references/*.py",
     "agent-toolkit/share/*.py",
-    "agent-toolkit/rules/*.py",
+    "agent-toolkit/share/rules/common/*.py",
     "agent-toolkit/hooks/*.py",
     "agent-toolkit/agent_toolkit/*.py",
     "agent-toolkit/agent_toolkit/*/*.py",
@@ -401,6 +404,14 @@ fast = true
 type = "linter"
 path = "uv"
 args = ["run", "--frozen", "python", "agent-toolkit/agent_toolkit/atk.py", "run-script", "writing-check-dash", "--"]
+targets = ["*.md", "*.md.tmpl"]
+error-pattern = '^(?P<file>.+?):(?P<line>\d+):(?P<column>\d+): (?P<severity>error): (?P<message>.+)$'
+fast = true
+
+[tool.pyfltr.custom-commands.markdown-structure]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_markdown_structure.py"]
 targets = ["*.md", "*.md.tmpl"]
 error-pattern = '^(?P<file>.+?):(?P<line>\d+):(?P<column>\d+): (?P<severity>error): (?P<message>.+)$'
 fast = true
@@ -532,6 +543,7 @@ markers = [
     "browser: 通常のpytest実行から除外するChromium統合テスト（make test-browserで実行）",
     "live_agents: 通常のpytest実行から除外する実backend統合テスト（make test-agents-liveで実行）",
     "windows: Windows CIの「Windows境界テスト」が選択して実行する、Windows実機で確かめる境界の試験",
+    "real_observer: OSの通知や監視資源の解放を確かめるため、試験で差し替えるポーリング監視ではなくwatchdogの実Observerを使う試験",
 ]
 # 読取を終えたpipeの未解放を、GC時の警告も含めてテスト失敗として検出する。
 filterwarnings = ["error::ResourceWarning", "error::pytest.PytestUnraisableExceptionWarning"]

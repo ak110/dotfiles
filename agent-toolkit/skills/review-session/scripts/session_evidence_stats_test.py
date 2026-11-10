@@ -648,16 +648,18 @@ def test_collect_includes_start_custom_and_start_write_delegates(
     assert evidence.main([str(transcript), "--stats"]) == 0
     stats_events = read_jsonl(capsys, raw=True)
     assert [event["session_id"] for event in events_by_kind(stats_events, "stats-agent-thread")] == [custom_session]
-    assert events_by_kind(stats_events, "unresolved-record") == [
-        {"kind": "unresolved-record", "record": write_session, "line": 4}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(stats_events, "unresolved-record")]
+    next_action = unresolved.pop("next_action")
+    assert write_session in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": write_session, "line": 4}
 
     assert evidence.main([str(transcript)]) == 0
     default_events = read_jsonl(capsys, raw=True)
     assert f"claude:{custom_session}" in {event.get("record") for event in default_events}
-    assert events_by_kind(default_events, "unresolved-record") == [
-        {"kind": "unresolved-record", "record": write_session, "line": 4}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(default_events, "unresolved-record")]
+    next_action = unresolved.pop("next_action")
+    assert write_session in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": write_session, "line": 4}
 
 
 def test_collect_resolves_codex_agents_server_delegations(
@@ -768,9 +770,10 @@ def test_collect_reports_unresolved_delegation(
     )
 
     assert evidence.main([str(transcript), "--stats"]) == 0
-    assert events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation") == [
-        {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 2}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation")]
+    next_action = unresolved.pop("next_action")
+    assert "codex:transcript:2" in next_action and "委譲先の識別子" in next_action
+    assert unresolved == {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 2}
 
 
 def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -795,9 +798,10 @@ def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path,
     )
 
     assert evidence.main([str(transcript), "--stats"]) == 0
-    assert events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation") == [
-        {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 1}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation")]
+    next_action = unresolved.pop("next_action")
+    assert "codex:transcript:1" in next_action and "委譲先の識別子" in next_action
+    assert unresolved == {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 1}
 
 
 def test_collect_ignores_existing_session_operations_as_delegation_sources(
@@ -1813,6 +1817,140 @@ def test_stats_assigns_codex_compaction_measurements_in_occurrence_order(
         "total_duration_seconds": 2.2,
         "duration_unknown_count": 1,
     }
+
+
+def _claude_call(timestamp: str, call_id: str, name: str, tool_input: dict) -> dict:
+    return {
+        "type": "assistant",
+        "timestamp": timestamp,
+        "message": {"role": "assistant", "content": [{"type": "tool_use", "id": call_id, "name": name, "input": tool_input}]},
+    }
+
+
+def _claude_result(timestamp: str, call_id: str, content) -> dict:
+    return {
+        "type": "user",
+        "timestamp": timestamp,
+        "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": content}]},
+    }
+
+
+def test_stats_reports_compaction_interval_usage_for_claude(tmp_path: pathlib.Path, capsys) -> None:
+    """圧縮で終わる区間ごとに、ツール出力の合計とエージェント向け文書の表示を分けて返し、区間ごとに数え直す。"""
+    norm = "x" * 300
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
+            _claude_call("2026-09-02T00:00:01Z", "t1", "Read", {"file_path": "/repo/agent-toolkit/share/exec.subagent.md"}),
+            _claude_result("2026-09-02T00:00:02Z", "t1", norm),
+            _claude_call("2026-09-02T00:00:03Z", "t2", "Bash", {"command": "uv run pytest -q"}),
+            _claude_result("2026-09-02T00:00:04Z", "t2", [{"type": "text", "text": "y" * 100}]),
+            _claude_call(
+                "2026-09-02T00:00:05Z",
+                "t3",
+                "Bash",
+                {"command": "sed -n 1,40p /home/u/.claude/plugins/cache/m/agent-toolkit/1.2.3/share/exec.subagent.md"},
+            ),
+            _claude_result("2026-09-02T00:00:06Z", "t3", "z" * 50),
+            _claude_call("2026-09-02T00:00:07Z", "t4", "Bash", {"command": "rg -n x agent-basics/skills/bugfix/SKILL.md"}),
+            _claude_result("2026-09-02T00:00:08Z", "t4", "w" * 20),
+            compaction_entry("2026-09-02T00:01:00Z", {"trigger": "auto"}),
+            _claude_call("2026-09-02T00:01:01Z", "t5", "Read", {"file_path": "/repo/.claude/skills/develop-dotfiles/SKILL.md"}),
+            _claude_result("2026-09-02T00:01:02Z", "t5", "あ" * 10),
+            compaction_entry("2026-09-02T00:02:00Z", {"trigger": "auto"}),
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = read_jsonl(capsys, raw=True)
+    assert events_by_kind(events, "stats-compaction-usage") == [
+        {
+            "kind": "stats-compaction-usage",
+            "record": "claude:transcript",
+            "line": 10,
+            "tool_output_bytes": 470,
+            "norm_doc_display_bytes": 350,
+            "norm_doc_display_top": [{"path": "agent-toolkit/share/exec.subagent.md", "count": 2, "bytes": 350}],
+        },
+        {
+            "kind": "stats-compaction-usage",
+            "record": "claude:transcript",
+            "line": 13,
+            "tool_output_bytes": 30,
+            "norm_doc_display_bytes": 30,
+            "norm_doc_display_top": [{"path": ".claude/skills/develop-dotfiles/SKILL.md", "count": 1, "bytes": 30}],
+        },
+    ]
+    assert len(events_by_kind(events, "stats-compaction")) == 2
+
+
+def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Path, capsys) -> None:
+    """Codexの関数呼び出しの出力を区間ごとに数え、表示コマンドで読んだエージェント向け文書を内訳へ計上する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            _codex_token_count_entry("2026-09-02T00:00:00Z", {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2}),
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:01Z",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "call_id": "c1",
+                    "arguments": json.dumps({"cmd": "cat agent-basics/skills/bugfix/references/root-cause-severity.md"}),
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:02Z",
+                "payload": {"type": "function_call_output", "call_id": "c1", "output": "s" * 64},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:03Z",
+                "payload": {"type": "custom_tool_call", "name": "exec", "call_id": "c2", "input": "make test"},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:04Z",
+                "payload": {"type": "custom_tool_call_output", "call_id": "c2", "output": "t" * 36},
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:05Z",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "c3",
+                    "input": 'text(await tools.exec_command({cmd:"cat -- /repo/agent-toolkit/share/exec.subagent.md",'
+                    "max_output_tokens:20000}));",
+                },
+            },
+            {
+                "type": "response_item",
+                "timestamp": "2026-09-02T00:00:06Z",
+                "payload": {"type": "custom_tool_call_output", "call_id": "c3", "output": "x" * 10},
+            },
+            {"type": "compacted", "timestamp": "2026-09-02T00:01:00Z", "payload": {"message": "", "window_number": 1}},
+        ],
+    )
+
+    assert evidence.main([str(transcript), "--stats"]) == 0
+    events = read_jsonl(capsys, raw=True)
+    assert events_by_kind(events, "stats-compaction-usage") == [
+        {
+            "kind": "stats-compaction-usage",
+            "record": "codex:transcript",
+            "line": 8,
+            "tool_output_bytes": 110,
+            "norm_doc_display_bytes": 74,
+            "norm_doc_display_top": [
+                {"path": "agent-basics/skills/bugfix/references/root-cause-severity.md", "count": 1, "bytes": 64},
+                {"path": "agent-toolkit/share/exec.subagent.md", "count": 1, "bytes": 10},
+            ],
+        }
+    ]
 
 
 def test_stats_reports_zero_compaction_total_without_records(tmp_path: pathlib.Path, capsys) -> None:

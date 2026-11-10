@@ -12,8 +12,6 @@ import time
 from ctypes import wintypes
 from typing import Any
 
-import psutil
-
 CREATE_SUSPENDED = 0x00000004
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
@@ -58,10 +56,22 @@ class _Accounting(ctypes.Structure):
     ]
 
 
+class _ThreadEntry(ctypes.Structure):
+    _fields_ = [
+        ("size", ctypes.c_uint32),
+        ("usage", ctypes.c_uint32),
+        ("thread_id", ctypes.c_uint32),
+        ("owner_pid", ctypes.c_uint32),
+        ("base_priority", ctypes.c_int32),
+        ("delta_priority", ctypes.c_int32),
+        ("flags", ctypes.c_uint32),
+    ]
+
+
 class WindowsJob:
     """1つの所有rootと、明示離脱を除く全子孫の寿命を所有するJob。"""
 
-    def __init__(self) -> None:
+    def __init__(self, *, kill_on_close: bool = True) -> None:
         # WinDLL等はWindows専用属性。DLLの公開関数signatureをここだけで定義する。
         self._ctypes: Any = ctypes
         self._kernel = self._ctypes.WinDLL("kernel32", use_last_error=True)
@@ -70,6 +80,12 @@ class WindowsJob:
             "SetInformationJobObject": ([wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32], wintypes.BOOL),
             "AssignProcessToJobObject": ([wintypes.HANDLE, wintypes.HANDLE], wintypes.BOOL),
             "GetProcessId": ([wintypes.HANDLE], ctypes.c_uint32),
+            "CreateToolhelp32Snapshot": ([ctypes.c_uint32, ctypes.c_uint32], wintypes.HANDLE),
+            "Thread32First": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
+            "Thread32Next": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
+            "OpenThread": ([ctypes.c_uint32, wintypes.BOOL, ctypes.c_uint32], wintypes.HANDLE),
+            "GetProcessIdOfThread": ([wintypes.HANDLE], ctypes.c_uint32),
+            "ResumeThread": ([wintypes.HANDLE], ctypes.c_uint32),
             "TerminateJobObject": ([wintypes.HANDLE, ctypes.c_uint32], wintypes.BOOL),
             "QueryInformationJobObject": (
                 [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p],
@@ -86,7 +102,7 @@ class WindowsJob:
         try:
             limits = _ExtendedLimits()
             # 最後の所有handleを閉じた場合の回収と、明示的な独立workerへの離脱を両立する。
-            limits.basic.flags = 0x00002000 | 0x00000800
+            limits.basic.flags = (0x00002000 if kill_on_close else 0) | 0x00000800
             if not self._kernel.SetInformationJobObject(self._handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
                 raise self._error()
         except BaseException:
@@ -105,9 +121,40 @@ class WindowsJob:
             raise OSError("開始したプロセスのhandleとPIDが一致しません")
         if not self._kernel.AssignProcessToJobObject(self._handle, process_handle):
             raise self._error()
-        # Popenが元世代のhandleを保持している間はPIDを再利用できない。
-        # psutil.resumeもPIDと作成時刻の一致を確認する。再開前の消滅は起動失敗として返す。
-        psutil.Process(pid).resume()
+        # Popenがprimary threadのhandleを閉じるため、停止中の元世代のthreadを列挙する。
+        # process handleを保持している間はPIDが再利用されず、再開前には子も生成されない。
+        snapshot = self._kernel.CreateToolhelp32Snapshot(0x00000004, 0)  # TH32CS_SNAPTHREAD
+        if snapshot == ctypes.c_void_p(-1).value:
+            raise self._error()
+        try:
+            entry = _ThreadEntry(ctypes.sizeof(_ThreadEntry))
+            found = self._kernel.Thread32First(snapshot, ctypes.byref(entry))
+            resumed = False
+            while found:
+                if entry.owner_pid == pid:
+                    # THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION。
+                    thread = self._kernel.OpenThread(0x0802, False, entry.thread_id)
+                    if not thread:
+                        raise self._error()
+                    try:
+                        # 外部からrootが終了されthread IDが再利用されても、別プロセスを再開しない。
+                        if self._kernel.GetProcessIdOfThread(thread) != pid:
+                            raise OSError("開始したプロセスとthreadの所属PIDが一致しません")
+                        if self._kernel.ResumeThread(thread) == 0xFFFFFFFF:
+                            raise self._error()
+                        resumed = True
+                    finally:
+                        if not self._kernel.CloseHandle(thread):
+                            raise self._error()
+                entry = _ThreadEntry(ctypes.sizeof(_ThreadEntry))
+                found = self._kernel.Thread32Next(snapshot, ctypes.byref(entry))
+            if self._ctypes.get_last_error() != 18:  # ERROR_NO_MORE_FILES
+                raise self._error()
+            if not resumed:
+                raise OSError("開始したプロセスの停止中threadが見つかりません")
+        finally:
+            if not self._kernel.CloseHandle(snapshot):
+                raise self._error()
 
     def terminate(self, *, timeout: float = 5.0) -> None:
         """Jobの全所属を終了させ、OSのActiveProcessesが0になるまで確認する。"""

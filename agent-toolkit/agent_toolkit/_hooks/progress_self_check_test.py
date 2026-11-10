@@ -7,6 +7,7 @@
 import json
 import os
 import pathlib
+import shlex
 import subprocess
 import uuid
 from collections.abc import Mapping
@@ -158,32 +159,22 @@ def test_notice_requests_stage_comparison_and_missing_information(monkeypatch, r
     notice = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, **host_fields, "session_id": sid})
     record_property("actual_notice", notice)
     assert notice.count(_OPENING) == 1
-    for instruction in (
-        "現在の工程と開始時点を手元の記録で確かめ",
-        "経過時間を目標や同種処理の実績と比較せよ",
-        "工程開始時点や比較基準が不足するなら、記録や担当者への照会で取得せよ",
-        "前回以降の工程の変化と再試行",
-        "`HEAD`や最終活動時刻の変化だけで妥当と判断するな",
-        "活動の有無と工程の所要・反復の妥当性を分けて点検せよ",
-        "時間を理由に作業を止めたり品質の確認を省いたりするな",
-        "比べた記録と具体的な結果へ対応付けよ",
-        "当初目的との一致",
-        "最上位メインは`rules-main.md`「進捗報告」の形式で、点検した対象・結果を含めて報告せよ",
-        "点検通知の配送だけを点検実施の証拠にするな",
-        "正常な回収を問題化せず",
-        "いま取り組んでいる作業がどの完成条件に必要かを1行で示せ",
-        "どれにも必要でない対処は記録して本筋へ戻れ",
-        "各完成条件の前提が満たされていない状態で完了を返すな",
-        "完成条件の前提が成立するか、実データ・実装・実行結果の証拠で確かめよ",
-        "前提が未成立なら未達の条件と証拠を既存記録へ保持せよ",
-        "現行の作業契約",
-        "要求原本・計画・進捗記録",
-        "追加・変更後も有効な全要求",
-        "割り込み対応後も元の未完了工程",
-        "全工程を100%とする進捗率の概算と根拠",
-        "次の規定された工程返却へまとめよ",
-    ):
-        assert instruction in notice
+    # 点検の契約上必要な観点と、規範をそのまま取得できる操作へ接続する。
+    for topic in ("工程", "経過時間", "再試行", "全要求", "成果", "証拠", "未達", "残工程", "進捗率", "完成条件"):
+        assert topic in notice
+    assert ("Get-Content -LiteralPath" if os.name == "nt" else "cat -- ") in notice
+    guidance = pathlib.Path(__file__).resolve().parents[2] / "share/rules/common/01-agent.md"
+    assert guidance.is_file()
+    read_command = (
+        "Get-Content -LiteralPath '" + str(guidance).replace("'", "''") + "' -Encoding utf8"
+        if os.name == "nt"
+        else "cat -- " + shlex.quote(str(guidance))
+    )
+    assert read_command in notice
+    assert "読め" in notice and "保存せよ" in notice
+    assert "rules-main.md" in notice and "進捗報告" in notice
+    assert "改善案: なし" not in notice
+    assert "最上位メイン" in notice and "委譲先" in notice
 
 
 @pytest.mark.parametrize("payload", [{}, {"session_id": ""}, {"session_id": 1}])

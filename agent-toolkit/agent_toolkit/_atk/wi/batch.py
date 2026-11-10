@@ -402,8 +402,7 @@ def add_batch_entries(
     *,
     texts: list[str],
     now: datetime.datetime,
-    lock_timeout: float = -1,
-    skip_remote_sync: bool = False,
+    storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
 ) -> tuple[list[tuple[str, str]], list[str], list[str]]:
     """`show`形式のテキスト群を解析し、全エントリをinboxへ原文保持で取り込む。
 
@@ -423,10 +422,7 @@ def add_batch_entries(
     inbox_dir = private_notes
     for entry in entries:
         _wi_web_input.validate_filename(entry.original_name, inbox_dir)
-    with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
-        _wi_sync.ensure_mutation_allowed(private_notes)
-        if not skip_remote_sync:
-            _wi_sync.pull(private_notes)
+    with storage.mutation(private_notes) as mutation:
         case_sensitive = _wi_filenames.is_case_sensitive(inbox_dir)
         counts = collections.Counter(
             _wi_filenames.comparison_key(entry.original_name, case_sensitive=case_sensitive) for entry in entries
@@ -471,11 +467,9 @@ def add_batch_entries(
         )
         count = len(imported)
         if count:
-            _wi_sync.commit_and_push(
-                private_notes,
+            mutation.commit(
                 f"chore: add {count} imported {'item' if count == 1 else 'items'}",
                 [str(_wi_entries.entry_path(private_notes, filename).relative_to(private_notes)) for filename, _ in contents],
-                skip_push=skip_remote_sync,
             )
     mapping = [(entry.original_name, assignments[entry.original_name]) for entry in imported]
     return mapping, [entry.original_name for entry in entries if entry.original_name in skipped], warnings

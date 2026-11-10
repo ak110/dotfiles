@@ -49,6 +49,8 @@ let deleteDialogEntrySnapshot = '';
 let searchTimer = null;
 let searchComposing = false;
 let displayMode = 'normal';
+let waitingAdvancePending = false;
+let waitingSavedFilename = '';
 let cooldownTimer = null;
 const entryStateDisplays = new Map();
 let currentPage = 1;
@@ -70,6 +72,12 @@ const isPlainPrimaryClick = event =>
 const deleteEntrySnapshot = entry => entry ? JSON.stringify([
   entryKey(entry), entry.state, entry.content, entry.target_repo || '', entry.summary || ''
 ]) : '';
+
+// 理由の後へ次の操作を続ける。APIの応答と一覧の警告は理由と次の操作を別項目で持つため、表示の直前に合わせる。
+function withNextAction(reason, nextAction) {
+  if (typeof nextAction !== 'string' || !nextAction.trim()) return reason;
+  return `${reason.replace(/[。.]$/, '')}。次の操作: ${nextAction}`;
+}
 
 async function api(path, {timing = {}, ...options} = {}) {
   const route = path.split('?')[0];
@@ -98,7 +106,10 @@ async function api(path, {timing = {}, ...options} = {}) {
     const response = await timedFetch('wi', BASE_PATH + path, request, timing);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(payload.error || response.statusText || '通信に失敗しました。');
+      // 次の操作をmessageへ含め、同期・一括登録など各操作の失敗通知がそのまま表示できるようにする。
+      const error = new Error(
+        withNextAction(payload.error || response.statusText || '通信に失敗しました。', payload.next_action)
+      );
       error.status = response.status;
       error.payload = payload;
       throw error;
@@ -481,6 +492,10 @@ function renderEmptyState() {
   allPeriods.hidden = true;
   create.hidden = true;
   if (entries.length) return;
+  if (displayMode === 'waiting') {
+    message.textContent = '判断待ちの未回答UWIはありません。';
+    return;
+  }
   const query = buildQuery();
   const periodLabel = PERIOD_LABELS[query.get('period')];
   allPeriods.hidden = !periodLabel;
@@ -496,6 +511,18 @@ function renderEmptyState() {
     message.textContent = '項目はまだありません。';
     create.hidden = false;
   }
+}
+
+// 一覧から除外したファイルの警告を表示する。実際の保存先と次の操作を含む全文は長く、狭い幅では一覧を画面の外へ
+// 押し下げるため、警告があることと件数だけを常に示し、全文は折り畳む。
+// detailsは作り直さずに中の行だけを差し替え、更新通知による再描画でも開閉状態を保つ。
+function renderListWarnings(lines) {
+  renderWarnings(byId('list-warning'), lines);
+  const summary = byId('list-warning-summary');
+  const text = `一覧から除外したファイルの警告: ${lines.length}件（開くと理由と次の操作を表示）`;
+  // 外枠は通知領域（role="alert"）のため、同じ件数での再描画で読み上げを繰り返さないよう、変わった時だけ書き換える。
+  if (summary.textContent !== text) summary.textContent = text;
+  byId('list-warning-box').hidden = lines.length === 0;
 }
 
 // 行は項目のクロージャーを持つため、再利用せずに毎回作り直す。
@@ -517,9 +544,11 @@ function renderEntries(warnings = [], announce = false) {
   byId('entry-period').hidden = !periodLabel;
   renderPagination();
   renderEffectiveConditions();
-  renderWarnings(byId('list-warning'), warnings.length
-    ? warnings.map(item => diagnostic('WI', SERVE_HOST, `${WI_ROOT} / ${item.state}/${item.filename}`, `一覧から除外したファイル: ${item.reason}`))
-    : []);
+  // 除外したファイルは状態を読めず、状態とファイル名では年月の保存先を特定できないため、応答が持つ実際のパスを対象に示す。
+  renderListWarnings(warnings.map(item => diagnostic(
+    'WI', SERVE_HOST, item.path || `${WI_ROOT} / ${item.state}/${item.filename}`,
+    withNextAction(`一覧から除外したファイル: ${item.reason}`, item.next_action)
+  )));
   renderEmptyState();
   if (announce) {
     byId('result-status').textContent = entries.length ? `${entries.length}件を表示` : '一致する項目はありません';
@@ -528,6 +557,12 @@ function renderEntries(warnings = [], announce = false) {
 
 function buildQuery(page = currentPage) {
   const parameters = new URLSearchParams();
+  if (displayMode === 'waiting') {
+    parameters.set('view', 'waiting');
+    parameters.set('page', String(page));
+    if (byId('waiting-target-filter').value) parameters.set('target_repo', byId('waiting-target-filter').value);
+    return parameters;
+  }
   if (displayMode === 'normal') {
     return new URLSearchParams({type: 'all', status: 'active', answered: 'all', period: DEFAULT_PERIOD, page: String(page)});
   }
@@ -572,6 +607,11 @@ async function copyAllEntries() {
 
 function renderEffectiveConditions() {
   const query = buildQuery();
+  if (displayMode === 'waiting') {
+    byId('wi-effective-conditions').textContent = '判断待ち: 未回答UWI、active、全期間、重要順・作成日時の古い順' +
+      (query.has('target_repo') ? `、target-repo=${query.get('target_repo')}` : '、全リポジトリ');
+    return;
+  }
   const labels = [`state=${query.get('status')}`, PERIOD_LABELS[query.get('period')] || '全期間'];
   for (const [key, label] of [['q', '検索'], ['type', 'type'], ['answered', 'answered'],
     ['important', '重要'], ['target_repo', 'target-repo'], ['source_kind', 'source kind']]) {
@@ -585,6 +625,8 @@ function setDisplayMode(mode) {
   displayMode = mode;
   byId('wi-mode-normal').checked = mode === 'normal';
   byId('wi-mode-search').checked = mode === 'search';
+  byId('wi-mode-waiting').checked = mode === 'waiting';
+  byId('waiting-filters').hidden = mode !== 'waiting';
   renderEffectiveConditions();
 }
 
@@ -714,6 +756,7 @@ async function loadEntries({announce = false, showLoading = true, timing = {}} =
         Array.isArray(payload.warnings) ? payload.warnings : [],
         shouldAnnounce
       );
+      renderWaitingProgress();
       return entries;
     } catch (error) {
       if (generation === listRequestGeneration) {
@@ -798,6 +841,12 @@ async function loadTargetRepos({timing = {}} = {}) {
         byId('state-filter').value !== requestedState) return false;
     const repos = Array.isArray(payload.repos) ? payload.repos : [];
     replaceOptions(byId('target-filter'), repos, 'all');
+    // 判断待ちは検索条件のstateに依存せず、activeのrepo候補を別途取得する。
+    if (displayMode === 'waiting') {
+      const waiting = await api('/api/repos?status=active', {timing});
+      if (generation !== targetRepoRequestGeneration || displayMode !== 'waiting') return false;
+      replaceOptions(byId('waiting-target-filter'), waiting.repos, 'all');
+    }
     const datalist = byId('repo-options');
     datalist.replaceChildren(...repos.map(value => {
       const option = document.createElement('option');
@@ -928,8 +977,15 @@ function setDetailMode(mode) {
   const terminal = currentEntry && TERMINAL_STATES.has(currentEntry.state);
   byId('edit-panel').hidden = !editing;
   // 回答できるUWIは閲覧中から回答欄を表示し、回答と他の操作を切り替えなしで行えるようにする。
-  const answering = !mutating && currentEntry?.kind === 'uwi' && Boolean(mutable);
+  const answering = !mutating && currentEntry?.kind === 'uwi' && (Boolean(mutable) || displayMode === 'waiting');
   byId('answer-panel').hidden = !answering;
+  const waiting = displayMode === 'waiting' && answering;
+  byId('save-answer-button').hidden = waiting;
+  byId('save-next-answer-button').hidden = !waiting;
+  byId('skip-answer-button').hidden = !waiting;
+  // 連続回答では本文の読取領域を確保する。編集・状態操作は詳細を閉じて通常/検索表示から行える。
+  for (const id of ['delete-button', 'adopt-button', 'edit-button']) byId(id).parentElement.hidden = waiting;
+  renderWaitingProgress();
   byId('user-comment-panel').hidden = !commenting;
   // 採否のメモは採用・却下の操作モードでだけ表示し、閲覧中の本文とユーザーコメントの欄から分ける。
   byId('decision-panel').hidden = decisionAction === '';
@@ -961,13 +1017,99 @@ function setDetailMode(mode) {
 function syncDetailMutationAvailability() {
   for (const id of [
     'edit-button', 'user-comment-button', 'delete-button', 'important-button',
-    'save-entry-button', 'save-answer-button', 'save-user-comment-button',
+    'save-entry-button', 'save-answer-button', 'save-next-answer-button', 'skip-answer-button', 'save-user-comment-button',
     'adopt-button', 'reject-button', 'hold-button', 'unhold-button', 'return-to-inbox-button',
     'confirm-adopt-button', 'confirm-reject-button'
   ]) {
     const button = byId(id);
     const userCommentUnavailable = id === 'save-user-comment-button' && currentEntry?.user_comment_editable !== true;
-    button.disabled = !button.hidden && (detailRefreshRequired || userCommentUnavailable);
+    button.disabled = !button.hidden && (waitingAdvancePending || detailRefreshRequired || userCommentUnavailable ||
+      id === 'save-next-answer-button' && (waitingSavedFilename === currentEntry?.filename ||
+        currentEntry?.answered !== false || !MUTABLE_STATES.has(currentEntry?.state)));
+  }
+  // 見送りは競合した入力を明示的に破棄して次へ進むため、保存を止めた後にも使える。
+  byId('skip-answer-button').disabled = waitingAdvancePending;
+}
+
+function renderWaitingProgress() {
+  const progress = byId('waiting-progress');
+  progress.hidden = displayMode !== 'waiting' || !currentEntry;
+  if (progress.hidden) return;
+  const index = entries.findIndex(entry => entry.filename === currentEntry.filename);
+  const position = index < 0 ? null : (currentPage - 1) * pagination.page_size + index + 1;
+  progress.textContent = position === null
+    ? `未回答 残り${pagination.total_count}件（現在の項目は一覧の対象外）`
+    : `現在 ${position} / ${pagination.total_count}件・未回答 残り${pagination.total_count}件`;
+}
+
+async function advanceWaiting(after, sessionGeneration, savedMessage = '') {
+  const listOperation = beginUserListOperation();
+  const stillCurrent = () => displayMode === 'waiting' && byId('detail-dialog').open &&
+    sessionGeneration === detailSessionGeneration && currentEntry?.filename === after.filename;
+  try {
+    // 順番の基準だけを保持し、候補集合はページごとに再取得する。保存で前の行が消えても飛ばさない。
+    for (let page = 1; ; page += 1) {
+      const payload = await api(`/api/entries?${buildQuery(page).toString()}`);
+      if (!stillCurrent()) return;
+      const candidates = payload.entries;
+      for (let index = 0; index < candidates.length; index += 1) {
+        const candidate = candidates[index];
+        const follows = candidate.important === true && after.important !== true ? false :
+          candidate.important !== true && after.important === true || candidate.filename > after.filename;
+        if (candidate.filename === after.filename || !follows) continue;
+        let detail;
+        try {
+          detail = (await api(`/api/entries/${encodeURIComponent(candidate.filename)}`)).entry;
+        } catch (error) {
+          if (error.status === 404) continue;
+          throw error;
+        }
+        if (!stillCurrent()) return;
+        if (detail.kind !== 'uwi' || detail.answered !== false || !MUTABLE_STATES.has(detail.state)) continue;
+        entries = candidates;
+        applyPagination(payload);
+        renderEntries(payload.warnings || []);
+        detailSessionGeneration += 1;
+        detailRequestGeneration += 1;
+        detailOriginKey = detail.filename;
+        waitingSavedFilename = '';
+        displayEntry(detail);
+        byId('detail-dialog-body').scrollTop = 0;
+        byId('detail-dialog-body').focus();
+        if (savedMessage) deliverOperationMessage(savedMessage);
+        return;
+      }
+      if (page >= (payload.pagination?.page_count || 1)) {
+        entries = candidates;
+        applyPagination(payload);
+        closeDetailDialog({force: true});
+        renderEntries(payload.warnings || []);
+        deliverOperationMessage(`${savedMessage}この順番での連続確認は終了しました。未回答は残り${pagination.total_count}件です。`);
+        return;
+      }
+    }
+  } catch (error) {
+    if (stillCurrent()) deliverOperationMessage(
+      `${savedMessage}次の項目を取得できませんでした。入力を保持しています。「保存せず次へ」で再試行してください。 ${error.message}`, true
+    );
+  } finally {
+    endUserListOperation(listOperation);
+  }
+}
+
+async function skipWaitingAnswer() {
+  if (!currentEntry || displayMode !== 'waiting' || waitingAdvancePending || detailMutationPending) return;
+  if (answerInputChanged() && !window.confirm('入力した回答を保存せずに次へ進みますか？')) return;
+  waitingAdvancePending = true;
+  detailMutationPending = true;
+  syncDetailMutationAvailability();
+  try {
+    await advanceWaiting({...currentEntry}, detailSessionGeneration);
+  } finally {
+    waitingAdvancePending = false;
+    detailMutationPending = false;
+    detailReloadDeferred = false;
+    syncDetailMutationAvailability();
   }
 }
 
@@ -993,6 +1135,7 @@ function displayEntry(entry) {
   // 同じ項目の再表示（外部変更の反映など）では、入力途中の回答を保持する。
   const keepTypedAnswer = entryKey(currentEntry) === entryKey(entry) && answerInputChanged();
   currentEntry = entry;
+  if (waitingSavedFilename !== entry.filename) waitingSavedFilename = '';
   if (!keepTypedAnswer) byId('answer-input').value = entry.answer || '';
   refreshCooldownDisplays();
   detailRefreshRequired = false;
@@ -1178,6 +1321,12 @@ async function reloadOpenDetailFromExternalChange({timing = {}} = {}) {
     deleteConfirmationInvalidated = invalidateDeleteConfirmation() || deleteConfirmationInvalidated;
   }
   if (!resolvedEntry) {
+    if (displayMode === 'waiting') {
+      detailRefreshRequired = true;
+      syncDetailMutationAvailability();
+      setTextMessage('detail-alert', '項目が削除されました。入力を保持しています。「保存せず次へ」で次の項目を確認できます。');
+      return;
+    }
     closeDetailDialog({force: true});
     reportDeletedEntry(filename, {reloadList: false});
     return;
@@ -1231,7 +1380,7 @@ function enterEdit() {
 
 // 編集・コメント・採否のモードでは回答欄を隠すが、入力途中の回答は保持しているため、表示状態ではなく回答できる項目かで判定する。
 function answerInputChanged() {
-  const answerable = currentEntry?.kind === 'uwi' && MUTABLE_STATES.has(currentEntry.state);
+  const answerable = currentEntry?.kind === 'uwi' && (MUTABLE_STATES.has(currentEntry.state) || displayMode === 'waiting');
   return answerable && byId('answer-input').value !== (currentEntry.answer || '');
 }
 
@@ -1298,7 +1447,7 @@ function finishDetailMutation(key, filename, sessionGeneration, message, timing 
 // 詳細を閉じ成功を通知する。失敗時は保留した再読込を実行してから例外を呼び出し元へ返し、
 // 呼び出し元が表示する失敗の文を再読込の警告で上書きしない。
 // 所要はボタン操作から結果の表示（詳細を閉じた後の一覧の再描画、失敗の表示）までを1件の操作として残す。
-async function runDetailMutation(pendingKey, pendingOptions, request, successMessage) {
+async function runDetailMutation(pendingKey, pendingOptions, request, successMessage, onSuccess = null) {
   if (pendingOperations.has(pendingKey)) return;
   const operation = beginOperation('wi', `mutation:${pendingKey}`, {trigger: 'click'});
   const key = entryKey(currentEntry);
@@ -1311,6 +1460,15 @@ async function runDetailMutation(pendingKey, pendingOptions, request, successMes
     result = await (runPending(pendingKey, pendingOptions, () => request(operation.timing)));
   } catch (error) {
     detailMutationPending = false;
+    if (pendingKey === 'answer' && waitingAdvancePending) {
+      detailReloadDeferred = false;
+      if (error.payload?.code === 'sync_incomplete') {
+        waitingSavedFilename = filename;
+        detailRefreshRequired = true;
+      }
+      operation.end('error');
+      throw error;
+    }
     if (error.payload?.code === 'sync_incomplete' &&
         sessionGeneration === detailSessionGeneration && currentEntry?.filename === filename) {
       const message = error.message;
@@ -1342,6 +1500,11 @@ async function runDetailMutation(pendingKey, pendingOptions, request, successMes
   }
   detailReloadDeferred = false;
   const message = typeof successMessage === 'function' ? successMessage(result) : successMessage;
+  if (onSuccess) {
+    await onSuccess(message);
+    operation.end('ok');
+    return;
+  }
   void finishDetailMutation(key, filename, sessionGeneration, message, operation.timing)
     .finally(() => operation.end('ok'));
 }
@@ -1382,8 +1545,11 @@ async function toggleImportant() {
   }
 }
 
-async function saveAnswer() {
-  if (!currentEntry || detailRefreshRequired) return;
+async function saveAnswer({next = false} = {}) {
+  if (!currentEntry || detailRefreshRequired || waitingAdvancePending || detailMutationPending) return;
+  const advance = next && displayMode === 'waiting';
+  if (advance && (waitingSavedFilename === currentEntry.filename || currentEntry.answered !== false ||
+      !MUTABLE_STATES.has(currentEntry.state))) return;
   const answer = byId('answer-input').value;
   setFieldError(byId('answer-input'), byId('answer-input-error'), answer.trim() ? '' : '回答を入力してください。');
   if (firstInvalid([byId('answer-input')])) return;
@@ -1396,11 +1562,23 @@ async function saveAnswer() {
     expected_content: currentEntry.content
   };
   clearDialogMessages('detail');
+  const answeredEntry = {...currentEntry};
+  if (advance) waitingAdvancePending = true;
   try {
     await (runDetailMutation('answer', {
-      container: byId('detail-shell'), button: byId('save-answer-button'), busyLabel: '保存中'
+      container: byId('detail-shell'), button: byId(advance ? 'save-next-answer-button' : 'save-answer-button'), busyLabel: '保存中'
     }, timing => api('/api/entries/answer', {method: 'POST', body: JSON.stringify(payload), timing}), result =>
-      result.state === 'adopted' ? `${key}の回答を保存し、採用済み（adopted）へ移しました。` : `${key}へ回答しました。`));
+      result.state === 'adopted' ? `${key}の回答を保存し、採用済み（adopted）へ移しました。` : `${key}へ回答しました。`,
+    advance ? async message => {
+      waitingSavedFilename = answeredEntry.filename;
+      detailMutationPending = true;
+      try {
+        await advanceWaiting(answeredEntry, sessionGeneration, message);
+      } finally {
+        detailMutationPending = false;
+        detailReloadDeferred = false;
+      }
+    } : null));
   } catch (error) {
     const failure = `${key}へ回答できませんでした。 ${error.message}`;
     if (sessionGeneration === detailSessionGeneration) {
@@ -1409,6 +1587,9 @@ async function saveAnswer() {
       showToast(mutationFailureMessage(key, failure, error), true);
     }
     if (byId('detail-dialog').open && entryKey(currentEntry) === key) byId('answer-input').focus();
+  } finally {
+    if (advance) waitingAdvancePending = false;
+    syncDetailMutationAvailability();
   }
 }
 
@@ -1803,6 +1984,10 @@ function bindEvents() {
     void handleFilterChange({mode: 'normal'});
   });
   byId('wi-mode-search').addEventListener('change', () => { void handleFilterChange(); });
+  byId('wi-mode-waiting').addEventListener('change', () => {
+    void handleFilterChange({mode: 'waiting', reloadRepos: true});
+  });
+  byId('waiting-target-filter').addEventListener('change', () => { void handleFilterChange({mode: 'waiting'}); });
   byId('empty-all-states-button').addEventListener('click', () => {
     byId('state-filter').value = 'all';
     handleFilterChange({reloadRepos: true});
@@ -1833,6 +2018,8 @@ function bindEvents() {
   byId('user-comment-button').addEventListener('click', enterUserComment);
   byId('save-entry-button').addEventListener('click', saveEntry);
   byId('save-answer-button').addEventListener('click', saveAnswer);
+  byId('save-next-answer-button').addEventListener('click', () => { void saveAnswer({next: true}); });
+  byId('skip-answer-button').addEventListener('click', () => { void skipWaitingAnswer(); });
   byId('save-user-comment-button').addEventListener('click', saveUserComment);
   byId('adopt-button').addEventListener('click', () => enterDecision('adopt'));
   byId('reject-button').addEventListener('click', () => enterDecision('reject'));
@@ -1936,7 +2123,8 @@ async function init() {
   document.addEventListener('focusin', handleFocusIn);
   initializeApp();
   await initialization;
-  await restoreEntryFromUrl();
+  // 初期取得中のユーザー操作で変わったURLを復元すると、回答保存中の詳細を再選択してしまう。
+  if (detailSessionGeneration === 0) await restoreEntryFromUrl();
 }
 
 registerScreen('wi', {init});

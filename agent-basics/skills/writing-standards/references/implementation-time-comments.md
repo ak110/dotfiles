@@ -1,0 +1,31 @@
+# 実装時のコーディング品質：コメントの記述粒度
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
+| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md`、`read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
+| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-jobs.md`、`read:agent-basics:*/skills/writing-standards/references/design-runtime-services.md` |
+
+## コメントの記述粒度
+
+コメントを書く前に「この情報は、後続の保守者（人間とエージェント）が対象コードだけからでは、他ファイル・履歴・外部資料の確認など複数回の調査をしないと得られないものか」を問う。
+明確にそうだと言えないコメントは書かない。
+他の規範が求める`// SAFETY:`、lint抑制の理由、依存の上書き設定の理由と解除条件などは、この問いによらず残す。
+
+- コメントには、実装の意図、前提となる成立条件、および自明でない判断理由を簡潔に残す。
+  前述の問いを満たす場合に、ファイルの冒頭には全体の役割や適用範囲を書き、局所的なコメントでは実装上の判断理由を説明する（努力目標。自明な処理内容をそのまま繰り返すコメントは避ける）。
+- 実装判断の根拠となった外部ツールの挙動や観測データは、観測した原文のまま残しておく（省略すると、後の改修時に分岐の成立条件を判断できなくなる）。
+  規範に言及する場合は恒久的なファイル名と見出しを示し、観測結果には再現条件を添え、ユーザーからの要望は一時的な対話ログではなく永続的な要件や期待される外部挙動として記述する。
+  セッション情報や個人のやり取りの経緯は手元の作業メモにとどめる。
+- コード中に現れる設定値や数値リテラルそのものをコメントに書き写すのではなく、その値を選んだ理由や制約の根拠を記述する。
+  コード上に現れない値や外部に由来する値で判断根拠に必要なものは、その出所も併記する。
+- 同一概念の説明は、呼び出し関係の起点となる場所に集約する。
+  完成したコードとコメントの重複や再掲をチェックする手順は、`review-only-criteria.md`の「コメントの再掲と重複」を参照する。
+- ドキュメントには現在の仕様や状態を直接記述し、変更履歴の詳細はGitのコミットメッセージに委ねる（努力目標）。
+  過去の挙動が現在の設計判断の根拠になっている場合は、その挙動自体の説明を現在の記述に含める。

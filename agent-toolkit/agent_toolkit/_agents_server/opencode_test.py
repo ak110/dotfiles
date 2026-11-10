@@ -165,7 +165,11 @@ async def test_cli_receives_all_plugin_and_user_rules(tmp_path: pathlib.Path, mo
         await _finished(manager, session)
     prompt = json.loads(capture.read_text(encoding="utf-8").splitlines()[0])[-1]
     root = opencode.plugin_roots.SERVER_PLUGIN_ROOT
-    expected = [*sorted((root / "rules").glob("*.md")), root / "share" / "rules-subagent.md", custom]
+    expected = [
+        *sorted((root / "share" / "rules" / "common").glob("*.md")),
+        root / "share" / "rules" / "rules-subagent.md",
+        custom,
+    ]
     assert expected
     for path in expected:
         assert path.read_text(encoding="utf-8") in prompt

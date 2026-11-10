@@ -206,7 +206,12 @@ def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkey
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: sources)
     assert plugin_roots.sibling_plugin_root("agent-basics", toolkit) is None
     for count in (1, 2):
-        assert len(read_delivery.declarations(str(tmp_path), host=host)) == 2
+        with read_delivery.read_triggers.resolution_scope():
+            rows = read_delivery.declarations(str(tmp_path), host=host)
+            assert len(rows) == 2
+            assert calls == [(host, str(tmp_path))] * (count - 1)
+            root = basics if host == "claude" else codex_basics
+            assert {target.path for row in rows for target in row.targets} == {root / "skills/writing-standards/SKILL.md"}
         assert calls == [(host, str(tmp_path))] * count
 
 
@@ -227,7 +232,7 @@ def test_body_tables_keep_document_order(tmp_path, monkeypatch):
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", tmp_path)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [owner])
     rows = read_delivery.declarations(str(tmp_path))
-    assert [row.documents[0].name for row in rows] == ["before.md", "after.md"]
+    assert [row.targets[0].path.name for row in rows] == ["before.md", "after.md"]
 
 
 def _guidance(decision: Decision) -> str | None:
@@ -255,6 +260,18 @@ def _assert_acquired(payload, path, expected, *, invocation=False):
     assert ready is expected
 
 
+def _canonical_method(root: pathlib.Path) -> pathlib.Path:
+    """試験用の同居プラグインから、共通方法の正規の全文参照先を用意する。"""
+    for directory, name in ((root, "agent-toolkit"), (root.parent / "agent-basics", "agent-basics")):
+        manifest = directory / ".claude-plugin/plugin.json"
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(json.dumps({"name": name}), encoding="utf-8")
+    method = root.parent / "agent-basics/skills/writing-standards/references/read-method.md"
+    method.parent.mkdir(parents=True, exist_ok=True)
+    method.write_text("# 共通取得方法\n共通取得順\n## 後段\n後段の必須基準\n", encoding="utf-8")
+    return method
+
+
 @pytest.mark.parametrize("codex", [False, True])
 def test_common_method_is_delivered_for_direct_and_pending_reads_without_starting_the_skill(
     tmp_path, monkeypatch, memory, codex
@@ -263,9 +280,10 @@ def test_common_method_is_delivered_for_direct_and_pending_reads_without_startin
     skill = root / "skills/example/SKILL.md"
     rule = skill.parent / "references/rule.md"
     rule.parent.mkdir(parents=True)
-    skill.write_text("# 技能\n## 名指し参照の読込方法\n共通取得順\n## 別用途\n無関係な技能本文\n", encoding="utf-8")
+    method = _canonical_method(root)
+    skill.write_text("# 技能\n## 別用途\n無関係な技能本文\n", encoding="utf-8")
     rule.write_text(
-        "# 個別資料\n## 名指し参照の読込方法\n名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。\n",
+        "# 個別資料\n## 名指し参照の読込方法\n名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。\n",
         encoding="utf-8",
     )
     extra = skill.parent / "startup.md"
@@ -279,17 +297,19 @@ def test_common_method_is_delivered_for_direct_and_pending_reads_without_startin
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     assert not _guidance(read_delivery.deliver(payload, "Read", {"file_path": str(rule)}, "test"))
     first = _notice_body(read_delivery.deliver(payload, "Judge", {}, "test"))
-    assert str(skill) in first
+    assert str(method) in first
+    assert str(skill) not in first
     assert str(extra) not in first
     assert "無関係な技能本文" not in first
     assert "共通取得順" not in first
-    _mark("test", skill, "main")
+    _mark("test", method, "main")
     assert not _guidance(read_delivery.deliver(payload, "Read", {"file_path": str(rule)}, "test"))
-    method_read = {"command": f"sed -n '2,3p' -- {skill}"}
+    method_read = {"command": f"cat -- {method}"}
     assert not _guidance(read_delivery.deliver(payload, "Bash", method_read, "test"))
     memory.clear()
     pending = _notice_body(read_delivery.deliver(payload, "Judge", {}, "test"))
-    assert str(skill) in pending
+    assert str(method) in pending
+    assert str(skill) not in pending
     assert str(extra) not in pending
     assert "無関係な技能本文" not in pending
 
@@ -501,6 +521,7 @@ def test_public_hook_keeps_delegated_work_contract_input_preferred(tmp_path, mon
         ("sqlalchemy", "module.py", "from sqlalchemy import select\n"),
         ("drizzle", "schema.ts", "import { pgTable } from 'drizzle-orm/pg-core';\n"),
         ("svelte", "Component.svelte", "<p>hello</p>\n"),
+        ("react", "Component.tsx", 'import { useEffect } from "react";\n'),
     ],
 )
 @pytest.mark.usefixtures("memory")
@@ -1015,12 +1036,11 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
     root = tmp_path / "plugin"
     share = root / "share"
     share.mkdir(parents=True)
-    method = share / "read-trigger-contract.md"
-    method.write_text("# 共通契約\n## 名指し参照の読込方法\n起動共通取得順\n", encoding="utf-8")
+    method = _canonical_method(root)
     source = share / "example.subagent.md"
     source.write_text(
         "# 役割\n## 名指し参照の読込方法\n"
-        "名指し参照は`read-trigger-contract.md`「名指し参照の読込方法」に従う。\n\n"
+        "名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。\n\n"
         "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n"
         "| --- | --- | --- | --- | --- |\n"
         "| 起動時 | 入力ファイル | 起動時 | `role:example` | `input:原本` |\n",
@@ -1035,7 +1055,8 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
         inputs["補足原本"] = str(original)
     context = read_delivery.read_triggers.startup_context(source, root, inputs)
     assert context.count("起動入力の本文") == 1
-    assert context.count("起動共通取得順") == 1
+    assert context.count("共通取得順") == 1
+    assert context.count("後段の必須基準") == 1
     log = tmp_path / "transcript.jsonl"
     text = launch_requests.wrap_delivery_body(read_delivery.task_documents.task_prompt_header(source) + "\n" + context)
     entry = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
@@ -1695,7 +1716,7 @@ def test_reference_to_another_root_does_not_activate_its_whole_skill_tree(tmp_pa
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [project])
     rows = read_delivery.declarations(str(tmp_path), host="codex")
     assert [row.source for row in rows] == [project]
-    assert rows[0].documents == (selected,)
+    assert tuple(target.path for target in rows[0].targets) == (selected,)
     assert all(not row.source.is_relative_to(foreign) for row in rows)
     assert active != foreign
 
@@ -2150,7 +2171,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         ("確認", root / "skills/user-confirmation-and-report/SKILL.md", ""),
         ("実装と実行レビュー", root / "share/exec-review.parent.md", ""),
         ("要件検収", root / "share/verification-evidence.md", ""),
-        ("レビュー収束", root / "share/review-loop-coordination.md", "冒頭「ラウンドの遷移」から「応答済みの判定」まで"),
+        ("レビュー収束", root / "share/review-loop-coordination-rounds.md", ""),
         ("公開前検証", root / "skills/commit/references/publish.md", ""),
         ("終了", root / "skills/report-completion/SKILL.md", ""),
     )
@@ -2173,7 +2194,7 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
             "計画": ("計画ファイルの作成要否",),
             "共通工程": ("実行レビュー", "採否"),
             "確認": ("確認要否の判定",),
-            "実装と実行レビュー": ("起動", "返却に含まれる既存不良の受領"),
+            "実装と実行レビュー": ("検証結果",),
             "要件検収": ("完成条件証拠の検証記録",),
             "レビュー収束": ("ラウンドの遷移", "応答済みの判定"),
             "公開前検証": ("公開工程", "CI"),
@@ -2190,8 +2211,16 @@ def test_single_lane_real_declarations_reach_each_phase_and_preserve_actor_bound
         assert read_delivery.target_ready(records, target, "main"), phase
         assert str(path) not in (_guidance(read_delivery.deliver(payload, "Read", inputs, "test")) or ""), phase
         if phase == "要件検収":
-            assert read_delivery.target_ready(records, ReadTarget(path, "完成条件証拠の検証記録"), "main")
             assert not read_delivery.target_ready(records, target, "independent")
+    # 起動・受領・修正で使う規範資料の全文へ、対応する条件から到達する。
+    for name, condition in (
+        ("exec-review-parent-launch.md", "起動する前"),
+        ("exec-review-parent-acceptance.md", "返却を受領する前"),
+        ("exec-review-parent-existing-defects.md", "既存不良を受領する前"),
+        ("exec-review-parent-correction.md", "修正と管理表の保存"),
+    ):
+        target = ReadTarget(root / "share" / name)
+        assert any(target in row.targets and condition in row.condition for row in rows), name
 
 
 @pytest.mark.parametrize("context", [{}, {"agent_id": "child"}, {"turn_id": "turn"}])
@@ -2218,9 +2247,9 @@ def test_public_missing_selected_document_guides_repair_without_blocking(tmp_pat
     assert not memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})
 
 
-def _role_plugin(tmp_path, monkeypatch):
+def _role_plugin(tmp_path, monkeypatch, root=None):
     """他の担当の手順書、その起動契約、読込表で自身の工程として手順書を指定する役割を持つplugin rootを用意する。"""
-    root = tmp_path / "plugin"
+    root = root or tmp_path / "plugin"
     share = root / "share"
     share.mkdir(parents=True)
     method = share / "read-trigger-contract.md"
@@ -2245,6 +2274,19 @@ def _role_plugin(tmp_path, monkeypatch):
     rows = parse_tables(lane, root)
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
     return root, other, contract, lane, integration
+
+
+def _lane_worktree_plugin(tmp_path, monkeypatch):
+    """plugin rootを含むリポジトリと、process-wiのレーン担当が作業位置とする同じリポジトリの別worktreeを用意する。
+
+    レーンの作業ツリーは主作業ツリーの`.claude/worktrees/`配下に置かれ、手順書は同じ相対位置にある。
+    """
+    repository = tmp_path / "repo"
+    root, other, contract, lane, _integration = _role_plugin(tmp_path, monkeypatch, root=repository / "agent-toolkit")
+    init_repository(repository, initial_branch="main", commit_message="手順書を置く")
+    worktree = repository / ".claude/worktrees/process-wi-lane-07"
+    run_git(repository, "worktree", "add", "--quiet", "-b", "lane-07", str(worktree))
+    return root, worktree / "agent-toolkit/share", other, contract, lane
 
 
 def _read_request(host: str, path):
@@ -2284,22 +2326,55 @@ def test_reading_another_roles_task_document_warns_and_points_to_the_launch_cont
 
 
 @pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
-@pytest.mark.parametrize("case", ["own-role", "outside-root", "subagent-own-role"])
+@pytest.mark.parametrize("document", ["reviewer.subagent.md", "lane.subagent.md"])
+@pytest.mark.usefixtures("memory")
+def test_reading_another_roles_task_document_in_lane_worktree_warns(tmp_path, monkeypatch, host, document):
+    """同じリポジトリの別worktreeにある他の担当の手順書も、plugin root側の起動契約へ誘導する警告の対象にする。"""
+    _root, worktree_share, _other, contract, _lane = _lane_worktree_plugin(tmp_path, monkeypatch)
+    target = worktree_share / document
+    payload, tool, inputs = _read_request(host, target)
+    log = tmp_path / "transcript.jsonl"
+    _write_transcript(log, "実行レビューを再依頼する", codex=host == "codex-exec")
+    decision = read_delivery.deliver({**payload, "cwd": str(tmp_path), "transcript_path": str(log)}, tool, inputs, "test")
+    body = _notice_body(decision)
+    assert f"他の担当の手順書`{target}`を取得しようとしている" in body
+    assert decision.block is None
+    if document == "reviewer.subagent.md":
+        assert f"`{contract}`" in body
+
+
+@pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
+@pytest.mark.parametrize("case", ["own-role", "own-role-in-worktree", "other-repository", "outside-share", "subagent-own-role"])
 @pytest.mark.usefixtures("memory")
 def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host, case):
-    """自身の担当とplugin root外の同名ファイルの取得には警告しない。"""
-    _root, other, _contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
+    """自身の担当の手順書（別worktreeの同じ位置を含む）と、別リポジトリ・`share`以外の同名ファイルには警告しない。"""
+    if case in {"own-role-in-worktree", "outside-share"}:
+        _root, worktree_share, other, _contract, _lane = _lane_worktree_plugin(tmp_path, monkeypatch)
+        target = (
+            worktree_share / other.name
+            if case == "own-role-in-worktree"
+            else worktree_share.parent / "docs/reviewer.subagent.md"
+        )
+    else:
+        _root, other, _contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
+        target = other
     log = tmp_path / "transcript.jsonl"
-    target = other
     payload: dict = {"cwd": str(tmp_path), "transcript_path": str(log)}
     header = read_delivery.task_documents.task_prompt_header
-    if case == "own-role":
+    if case in {"own-role", "own-role-in-worktree"}:
         _write_transcript(log, header(other), codex=host == "codex-exec")
-    elif case == "outside-root":
+    elif case in {"other-repository", "outside-share"}:
         _write_transcript(log, "作業ツリーの手順書を編集する", codex=host == "codex-exec")
-        target = tmp_path / "worktree/agent-toolkit/share/reviewer.subagent.md"
-        target.parent.mkdir(parents=True)
-        target.write_text("# 編集対象\n", encoding="utf-8")
+        if case == "other-repository":
+            repository = init_repository(
+                tmp_path / "other-repo",
+                files={"agent-toolkit/share/reviewer.subagent.md": "# 別リポジトリ\n"},
+                commit_message="別リポジトリ",
+            )
+            target = repository / "agent-toolkit/share/reviewer.subagent.md"
+        else:
+            target.parent.mkdir(parents=True)
+            target.write_text("# shareの外\n", encoding="utf-8")
     else:
         if host == "codex-exec":
             pytest.skip("Agentツールのサブエージェントは Claude Code だけの起動形")
@@ -2321,6 +2396,17 @@ def test_legitimate_task_document_reads_do_not_warn(tmp_path, monkeypatch, host,
         ("sed -n '1p' -- {path} | cat", "# 読者別探索\n"),
         ("sed -n 1,60p {path} | grep -n -E '入力|^\\\\|' | head -30", "1:# 読者別探索\n"),
         ("awk '{print}' {path} | head -n 1", "# 読者別探索\n"),
+        ("sed -n '/^## 入力/,/^## /p' {path} | head -60", "## 入力\n"),
+        ("sed -n '/返却/p' -- {path}", "返却形式\n"),
+        ("awk '/返却/' {path}", "返却形式\n"),
+        (
+            "awk '/^## 入力/{f=1} f&&/^## /&&!/^## 入力/{exit} f' {path} | head -60",
+            "## 入力\n",
+        ),
+        (
+            "cd {parent} && sed -n '/^## 入力/,/^## /p' {name} | head -60",
+            "## 入力\n",
+        ),
         ("head -n 1 -- {path}", "# 読者別探索\n"),
         ("tail -n 1 -- {path}", "返却形式\n"),
         ("grep -n -- '返却' {path}", "3:返却形式\n"),
@@ -2341,7 +2427,11 @@ def test_public_foreign_role_partial_display_warns_without_acquiring(tmp_path, m
         "transcript_path": str(log),
         **({"turn_id": "turn"} if codex else {}),
     }
-    inputs = {"command": template.replace("{path}", shlex.quote(str(other)))}
+    inputs = {
+        "command": template.replace("{path}", shlex.quote(str(other)))
+        .replace("{parent}", shlex.quote(str(other.parent)))
+        .replace("{name}", shlex.quote(other.name))
+    }
     first = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
     assert first.returncode == 0 and not first.stderr
     output = json.loads(first.stdout)["hookSpecificOutput"]
@@ -2370,6 +2460,10 @@ def test_public_foreign_role_partial_display_warns_without_acquiring(tmp_path, m
     "case",
     [
         "sed-inplace",
+        "sed-write",
+        "awk-write",
+        "awk-system",
+        "conditional-pipe-redirect",
         "edit",
         "write",
         "redirect",
@@ -2377,31 +2471,52 @@ def test_public_foreign_role_partial_display_warns_without_acquiring(tmp_path, m
         "rg-directory",
         "grep-directory",
         "own-role",
-        "outside-root",
+        "other-repository",
+        "worktree-edit",
+        "worktree-redirect",
+        "worktree-directory",
     ],
 )
 @pytest.mark.usefixtures("memory")
 def test_public_foreign_role_display_excludes_writes_directories_and_owned_documents(tmp_path, monkeypatch, codex, case):
-    """編集・出力保存・ディレクトリ検索と、自身の担当・plugin root外の同名資料を警告対象から除く。"""
-    root, other, _contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
+    """編集・出力保存・ディレクトリ検索と、自身の担当・別リポジトリの同名資料を警告対象から除く。
+
+    レーンの作業ツリーの手順書を編集・保存・ディレクトリ検索する操作も、plugin root側と同じく除外を保つ。
+    """
+    worktree_share = None
+    if case.startswith("worktree-"):
+        root, worktree_share, other, _contract, _lane = _lane_worktree_plugin(tmp_path, monkeypatch)
+    else:
+        root, other, _contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
     log = tmp_path / "transcript.jsonl"
     text = read_delivery.task_documents.task_prompt_header(other) if case == "own-role" else "手順書を保守する"
     _write_transcript(log, text, codex=codex)
     target = other
-    if case == "outside-root":
-        target = tmp_path / "worktree/agent-toolkit/share/reviewer.subagent.md"
-        target.parent.mkdir(parents=True)
-        target.write_text(other.read_text(encoding="utf-8"), encoding="utf-8")
+    if case == "other-repository":
+        repository = init_repository(
+            tmp_path / "other-repo",
+            files={"agent-toolkit/share/reviewer.subagent.md": other.read_text(encoding="utf-8")},
+            commit_message="別リポジトリ",
+        )
+        target = repository / "agent-toolkit/share/reviewer.subagent.md"
+    elif worktree_share is not None:
+        target = worktree_share / other.name
+        case = {"worktree-edit": "edit", "worktree-redirect": "redirect", "worktree-directory": "rg-directory"}[case]
+        root = worktree_share.parent
     path = shlex.quote(str(target))
     destination = shlex.quote(str(tmp_path / "saved.md"))
     commands = {
         "sed-inplace": f"sed -i 's/返却/応答/' {path}",
+        "sed-write": f"sed -n '/返却/w {destination}' {path}",
+        "awk-write": f"awk '{{print > \"saved.md\"}}' {path}",
+        "awk-system": f"awk '{{system(\"cat\")}}' {path}",
+        "conditional-pipe-redirect": f"sed -n '/返却/p' {path} | head -1 > {destination}",
         "redirect": f"cat -- {path} > {destination}",
         "pipe-redirect": f"cat -- {path} | head -n 1 > {destination}",
         "rg-directory": f"rg -n -- '返却' {shlex.quote(str(root))}",
         "grep-directory": f"grep -R -n -- '返却' {shlex.quote(str(root))}",
         "own-role": f"head -n 1 -- {path}",
-        "outside-root": f"rg -n -- '返却' {path}",
+        "other-repository": f"rg -n -- '返却' {path}",
     }
     tool = "Edit" if case == "edit" else "Write" if case == "write" else "Bash"
     inputs = (
@@ -2429,8 +2544,12 @@ def test_public_foreign_role_display_excludes_writes_directories_and_owned_docum
 @pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
 @pytest.mark.parametrize("own_declaration", [False, True])
 @pytest.mark.usefixtures("memory")
-def test_return_time_declaration_does_not_suppress_foreign_notice(tmp_path, monkeypatch, host, own_declaration):
-    """返却後条件の宣言元を取得済みでも、自身の役割へ掲載されていても警告を保つ。"""
+def test_task_document_named_by_own_role_table_does_not_warn(tmp_path, monkeypatch, host, own_declaration):
+    """自身の役割文書の読込表が読ませる手順書は警告しない。取得済みでも他の担当の資料の宣言では警告を保つ。
+
+    execの統合工程が`lane-integration.subagent.md`を自分の手順として読むように、役割文書の読込表が名指す手順書は
+    起動準備の読取ではない。返却後の検収を条件とする行でも、自身の役割文書が読ませる限り同じに扱う。
+    """
     root, _other, _contract, lane, integration = _role_plugin(tmp_path, monkeypatch)
     lane.write_text(
         lane.read_text(encoding="utf-8").replace("統合入力を確定するとき", "返却を受け取った後に形式を検収する時"),
@@ -2447,8 +2566,37 @@ def test_return_time_declaration_does_not_suppress_foreign_notice(tmp_path, monk
     _mark("test", lane, "main")
     payload, tool, inputs = _read_request(host, integration)
     decision = read_delivery.deliver({**payload, "cwd": str(tmp_path), "transcript_path": str(log)}, tool, inputs, "test")
-    assert f"他の担当の手順書`{integration}`" in _notice_body(decision)
+    assert (f"他の担当の手順書`{integration}`" in (_guidance(decision) or "")) is not own_declaration
     assert decision.block is None
+
+
+@pytest.mark.parametrize("host", ["claude-read", "claude-bash", "codex-exec"])
+@pytest.mark.usefixtures("memory")
+def test_delegate_launched_after_resource_instructions_keeps_its_own_documents(tmp_path, monkeypatch, host):
+    """agents_serverが資料案内の後に配送要素を置いた起動本文から役割を解決し、会話圧縮の後も自分の手順書へ警告しない。
+
+    `manager.start`は委譲先への最初の本文を資料案内、配送要素の順で組み立てる。
+    """
+    root, other, _contract, lane, integration = _role_plugin(tmp_path, monkeypatch)
+    log = tmp_path / "transcript.jsonl"
+    launch = (
+        '<atk-auto source="agent-toolkit" kind="plugin-resources">\n'
+        f"agent-toolkit plugin root: {root}\n"
+        "</atk-auto>\n\n"
+        '<atk-auto source="agents-server" kind="delivery">\n'
+        f"{read_delivery.task_documents.task_prompt_header(lane)}\n\n"
+        "入力:\n担当種別: レーン担当\n"
+        "</atk-auto>"
+    )
+    _write_transcript(log, launch, codex=host == "codex-exec")
+    base = {"cwd": str(tmp_path), "transcript_path": str(log)}
+    for phase in ("起動直後", "会話圧縮の後"):
+        if phase == "会話圧縮の後":
+            rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+        for target, warned in ((lane, False), (integration, False), (other, True)):
+            payload, tool, inputs = _read_request(host, target)
+            decision = read_delivery.deliver({**payload, **base}, tool, inputs, "test")
+            assert (f"他の担当の手順書`{target}`" in (_guidance(decision) or "")) is warned, (phase, target.name)
 
 
 @pytest.mark.usefixtures("memory")

@@ -33,6 +33,7 @@ from session_evidence_stats import (
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 from agent_toolkit._common import agy_records, requirement_units, shell_segments, shell_tokens
+from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PREFIX
 
 _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 _SHELL_ABSOLUTE_PATH = re.compile(
@@ -546,7 +547,7 @@ def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
             }
         )
         if call.result_line is not None:
-            result = _recorded_result(entries[call.result_line], call.call_id)
+            result = _restored_result(entries[call.result_line], call.call_id)
             if result is not None:
                 events.append(
                     {
@@ -612,6 +613,7 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
                 "observed_body_characters": len(body) if body is not None else None,
                 "recorded_result_characters": len(result) if result is not None else None,
                 "recorded_result_utf8_bytes": len(result.encode("utf-8")) if result is not None else None,
+                **(_persisted_result_metrics(entries[call.result_line], call.call_id) if call.result_line is not None else {}),
                 "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
                 "summary": call.text,
             }
@@ -634,6 +636,7 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
         shell_paths: list[dict[str, Any]] = []
         results: list[dict[str, Any]] = []
         large_reviews: list[dict[str, Any]] = []
+        persisted_results: list[dict[str, Any]] = []
         generated_inputs: list[dict[str, Any]] = []
         hook_notices: dict[tuple[str, str, str], dict[str, Any]] = {}
         expected_large_reads = 0
@@ -660,6 +663,7 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                 "result_location": f"{item.record_id}:{call.result_line}" if call.result_line is not None else None,
                 "characters": len(result) if result is not None else None,
                 "utf8_bytes": len(result.encode("utf-8")) if result is not None else None,
+                **(_persisted_result_metrics(entries[call.result_line], call.call_id) if call.result_line is not None else {}),
             }
             if call.text:
                 repeats.setdefault((call.tool, call.text), []).append(locator)
@@ -698,8 +702,15 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                     "tool": call.tool,
                     "characters": len(result),
                     "utf8_bytes": len(result.encode("utf-8")),
+                    **{
+                        key: value
+                        for key, value in result_metrics.items()
+                        if key.startswith("persisted") or key.startswith("original_")
+                    },
                 }
                 results.append(result_row)
+                if result_row.get("persisted") and (result_row.get("original_utf8_bytes") or 0) >= _LARGE_OUTPUT_MIN_BYTES:
+                    persisted_results.append({**result_row, "input_summary": " ".join(call.text.split())[:300]})
                 if result_row["utf8_bytes"] >= _LARGE_OUTPUT_MIN_BYTES:
                     if _expected_body_read(call.tool, inputs):
                         expected_large_reads += 1
@@ -729,6 +740,10 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
                 "large_output_reviews": sorted(large_reviews, key=lambda row: (-row["utf8_bytes"], row["location"]))[:10],
                 "large_output_review_count": len(large_reviews),
                 "expected_large_read_count": expected_large_reads,
+                "persisted_result_count": len(persisted_results),
+                "persisted_results": sorted(persisted_results, key=lambda row: (-row["original_utf8_bytes"], row["location"]))[
+                    :10
+                ],
                 "repeats": [
                     {"tool": tool, "input": text, "locations": locations, "count": len(locations)}
                     for (tool, text), locations in sorted(repeats.items(), key=lambda row: (-len(row[1]), row[0]))
@@ -803,18 +818,42 @@ def _recorded_input(entry: dict[str, Any], call_id: str | None) -> dict[str, Any
 
 
 def _recorded_result(entry: dict[str, Any], call_id: str | None) -> str | None:
-    """対応する結果本文の文字列を返し、取得量を現在のファイルサイズから推定しない。"""
+    """エージェントが受け取った記録本文を返す。退避先は量の集計へ展開しない。"""
     message = entry.get("message", {})
     if isinstance(message, dict) and isinstance(message.get("content"), list):
         for block in message["content"]:
             if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") == call_id:
-                return _tool_result_body(block, entry)
+                return "\n".join(_text_blocks(block.get("content")))
     payload = entry.get("payload", {})
     item = payload.get("item") if isinstance(payload, dict) else None
     if isinstance(item, dict) and item.get("type") in {"McpToolCall", "CommandExecution"}:
         return json.dumps(item.get("result", item), ensure_ascii=False)
     value = payload.get("output") if isinstance(payload, dict) else None
     return value if isinstance(value, str) else None
+
+
+def _restored_result(entry: dict[str, Any], call_id: str | None) -> str | None:
+    """中身を表示する照会用に、Claudeの退避された結果を復元する。"""
+    message = entry.get("message", {})
+    if isinstance(message, dict) and isinstance(message.get("content"), list):
+        for block in message["content"]:
+            if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") == call_id:
+                return _tool_result_body(block, entry)
+    return _recorded_result(entry, call_id)
+
+
+def _persisted_result_metrics(entry: dict[str, Any], call_id: str | None) -> dict[str, Any]:
+    """受領本文が退避案内の場合だけ、復元できた退避前の量を別の軸で返す。"""
+    received = _recorded_result(entry, call_id)
+    if received is None or not received.lstrip().startswith(PERSISTED_OUTPUT_PREFIX):
+        return {}
+    original = _restored_result(entry, call_id)
+    original = original if original != received else None
+    return {
+        "persisted": True,
+        "original_characters": len(original) if original is not None else None,
+        "original_utf8_bytes": len(original.encode("utf-8")) if original is not None else None,
+    }
 
 
 class _ToolCall(NamedTuple):

@@ -1,0 +1,51 @@
+# レーン統合タスク：入力
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
+| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` | |
+| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` | |
+| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md` | |
+| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
+| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md` | |
+
+## 入力
+
+**1.** 全計画・WIの証拠と採否、対象HEAD、所有者を確認する。
+
+統合の検収では、原要求・実際の回答・公開契約から必要な成果と制約を比較元にする。
+計画やreview_contractに記された内部方式の変更は、それだけで不適合とせず、成果・品質・認可・明示条件の保持を確かめる。
+由来と採否への具体的な反証がある場合は、既存の訂正記録と根拠を用いる。
+
+- `実行レビュー済みHEAD`: `マージあり`の場合は統合入力HEAD（実行レビューが収束したラウンドの対象HEAD、または収束後に再レビューを省略した修正後のHEAD）の7文字以上の一意な短縮OID。
+  `マージなし`の場合は`なし`を指定する。
+- `完成条件証拠`: `マージあり`で受け取る順序付きJSON配列。
+  計画ファイル名（計画を作成していない場合は`なし`）、対応するAWI群、最後に受理した実行レビューの返却ファイルへの絶対パス、その`レビューHEAD`、および`review_contract`の絶対パス（新形式のエージェント由来AWIがなければ`なし`も可）を各項目に含む。
+  AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
+  新形式のエージェント由来AWIは契約の条件表の各条件に判定行が対応することを確かめる。
+  契約が欠落または読取不能である場合や判定行が欠落する場合は委譲元へ差し戻す。
+  統合開始時にすべての返却ファイルを読み、採用予定のAWI群が重複や漏れなく網羅されていることを確認する。
+  各AWIに対して統合時の完成条件判定（各`達成`行に所在と観測内容の組が記載されていることの確認を含む）を適用する。
+  統合入力HEADと`レビューHEAD`は区別して保持する。
+- `計画ファイル名一覧`: 重複のないファイル名の順序付きJSON配列。
+  計画を作成しなかったレーンでは`[]`とする。
+  引き継ぎ記録に記載された計画群、対応AWI、および保存状態と一致することを確認する。
+- `レーン開始時刻`: メインエージェントが保持している、最初のレーン担当を起動したタイムゾーン付き時刻。
+  値が欠落していたり不正だったりする場合はメインに補完を依頼し、自身や再開後セッションの開始時刻で代用することは避ける。
+- `書込担当一覧`: 重複のない実際のセッションIDからなるJSON配列。
+  現在のレーン担当、統合先メイン、および合意済みの他の書込担当を含め、初回統合時や再開時に受け取った最新の全要素を使用する。
+- `プロジェクト固有の公開後の操作の順序`: 指定がある場合にのみ、AWIごとの対象と実行タイミングを渡す。
+
+`計画ファイル名一覧`と`完成条件証拠`は、全計画分を一度に受け取る配列である。
+計画ごとの成果物の受け渡しは、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+
+`引き継ぎ記録先`は、レーン担当の起動時に受け取った値をそのまま引き継ぐ。
+書き込み先は指定された統合先worktreeとする。
+延期対象（判定基準は`../skills/process-wi/references/run-lanes-completion.md`「採否の確定と終了区分」）は、統合時には採否を確定せず、`adoptを延期したAWIとcommit`として公開担当へ引き渡す。
+版数更新の完成条件についても、全レーンの統合完了後に公開担当が版数、派生マニフェスト、および公開結果を検収したうえで`adopt`を実行する。

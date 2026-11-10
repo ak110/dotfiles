@@ -32,6 +32,7 @@ _TASK_PROMPT_HEADER_PREFIX = "次の文書の手順を実行せよ（出所: "
 _TASK_PROMPT_HEADER_SUFFIX = "）。"
 INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 TASK_DOCUMENT_SUFFIX = ".subagent.md"
+TASK_PROMPT_REFERENCES = "\n## 手順・参照資料\n"
 
 LaunchKind = typing.Literal["delegate", "explore", "shell", "write"]
 LAUNCH_KINDS: tuple[LaunchKind, ...] = typing.get_args(LaunchKind)
@@ -284,6 +285,14 @@ def parse_named_inputs(lines: list[str]) -> dict[str, str]:
         params[name] = value.removeprefix(" ")
         first_continuation = not params[name]
     return params
+
+
+def task_prompt_inputs(launch_prompt: str) -> dict[str, str]:
+    """生成された参照資料の区切りより前の入力を返す。保存済みの旧末尾入力も読む。"""
+    instructions, boundary, _references = launch_prompt.partition(TASK_PROMPT_REFERENCES)
+    if boundary:
+        return parse_named_inputs(instructions.partition("\n入力:\n")[2].splitlines())
+    return parse_named_inputs(launch_prompt.rpartition("\n入力:\n")[2].splitlines())
 
 
 def find_task_documents(text: str) -> list[pathlib.Path]:

@@ -128,7 +128,7 @@ for line in sys.stdin:
         continue
     result = {"data": [json.loads(sys.argv[1])]} if request["method"] == "model/list" else {}
     print(json.dumps({"id": request["id"], "result": result}), flush=True)
-time.sleep(120)
+
 """
 
 
@@ -139,7 +139,7 @@ async def test_model_list_reclaims_descendant_started_after_first_listing(
 ) -> None:
     """一覧取得後の終了処理で、最初の列挙の後に起動した子孫も終了させてファイルを解放する。"""
     server = tmp_path / "model_list_server.py"
-    server.write_text(_MODEL_LIST_SERVER, encoding="utf-8")
+    server.write_text(_MODEL_LIST_SERVER + late_descendant.held_source(tmp_path / "model.release"), encoding="utf-8")
     model = _model("gpt-6-sol", "medium")
     monkeypatch.setattr(
         codex_models, "_APP_SERVER_COMMAND", (*late_descendant.cli_command(tmp_path, str(server)), json.dumps(model))

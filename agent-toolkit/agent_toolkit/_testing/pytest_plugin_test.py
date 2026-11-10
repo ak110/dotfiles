@@ -11,7 +11,7 @@ import subprocess
 import sys
 import textwrap
 import time
-from types import SimpleNamespace
+import xml.etree.ElementTree as ET
 from typing import Any, cast
 
 import claude_agent_sdk
@@ -19,7 +19,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import backends
-from agent_toolkit._testing import pytest_plugin, slot_yield
+from agent_toolkit._testing import late_descendant, pytest_plugin, xdist_stop
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
 # pylint: disable=protected-access
@@ -154,7 +154,7 @@ def test_pytest_owns_fixture_directory_and_reclaims_children(tmp_path: pathlib.P
             def test_probe(tmp_path, pytestconfig):
                 owner = execution_slot.read_owner()
                 assert owner is not None
-                child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])
+                child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / "probe.release")!r}])
                 pathlib.Path({str(evidence)!r}).write_text(json.dumps({{
                     'basetemp': str(pytestconfig.option.basetemp),
                     'fixture': str(tmp_path), 'pid': child.pid,
@@ -420,15 +420,17 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
     assert "8 passed" in result.stdout
 
 
-def _run_child_pytest(tmp_path: pathlib.Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+def _run_child_pytest(
+    tmp_path: pathlib.Path, *arguments: str, plugin: str = pytest_plugin.__name__
+) -> subprocess.CompletedProcess[str]:
     """起動時プラグインだけを読む子pytestを`tmp_path`で実行し、両出力と終了コードを返す。"""
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
     environment["PYFLTR_CACHE_DIR"] = str(tmp_path / "pyfltr")
-    argv = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
+    argv = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-o", "addopts="]
     return subprocess.run(
-        [*argv, *arguments],
+        [*argv, *arguments, "-p", plugin],
         cwd=tmp_path,
         env=environment,
         capture_output=True,
@@ -455,7 +457,7 @@ def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> N
 
             def test_probe():
                 KEPT.append(multiprocessing.get_context("spawn").Semaphore())
-                child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+                child = subprocess.Popen([sys.executable, "-c", {late_descendant.held_source(tmp_path / "tracker.release")!r}])
                 pathlib.Path({str(evidence)!r}).write_text(json.dumps({{
                     "tracker": resource_tracker._resource_tracker._pid, "child": child.pid,
                 }}), encoding="utf-8")
@@ -644,6 +646,32 @@ def test_invalid_test_shard_stops_before_collection(tmp_path: pathlib.Path) -> N
 
 
 @pytest.mark.parametrize(
+    "targets",
+    [
+        ["missing_test.py"],
+        ["missing-directory"],
+        ["valid_test.py::test_missing"],
+        ["valid_test.py[x]"],
+        ["valid_test.py", "missing_test.py"],
+    ],
+    ids=["file", "directory", "node-id", "parametrized-path", "mixed"],
+)
+def test_parallel_collection_preserves_usage_error(tmp_path: pathlib.Path, targets: list[str]) -> None:
+    """workerのUsageErrorを引数形式によらず本来の文面と終了コードで報告する。"""
+    (tmp_path / "valid_test.py").write_text("def test_valid():\n    pass\n", encoding="utf-8")
+    serial = _run_child_pytest(tmp_path, *targets, plugin=xdist_stop.__name__)
+    assert serial.returncode == pytest.ExitCode.USAGE_ERROR, serial.stdout + serial.stderr
+    expected = [line for line in serial.stderr.splitlines() if line.startswith("ERROR:")]
+    assert expected, serial.stderr
+    # 入力形式の網羅は軽いxdist適応だけで行い、混在の代表例では共通プラグインからの登録も通す。
+    plugin = pytest_plugin.__name__ if len(targets) > 1 else xdist_stop.__name__
+    parallel = _run_child_pytest(tmp_path, "-p", "xdist.plugin", "-n", "2", *targets, plugin=plugin)
+    assert parallel.returncode == serial.returncode, parallel.stdout + parallel.stderr
+    assert all(message in parallel.stderr for message in expected), (expected, parallel.stderr)
+    assert "引数のパス・node IDを確認して修正し、pytestを再実行してください。" in parallel.stderr
+
+
+@pytest.mark.parametrize(
     ("markexpr", "name", "body", "expected"),
     [
         ("windows", "posix_only_test.py", "import os\n_UID = os.getuid()\n", True),
@@ -674,21 +702,38 @@ import pytest
 
 @pytest.mark.parametrize("index", range(6))
 def test_slow(index):
+    evidence = pathlib.Path(os.environ["SLOT_EVIDENCE"])
+    queued = pathlib.Path(os.environ["SLOT_QUEUED"])
+    # 最初の試験の完了後に始まる試験は、待機者が実行枠の待ち列へ並んだ印を見てから進む。
+    # 待機者の起動の速さに左右されず、残りの試験の実行中に待機者が並んでいる状態を作る。
+    deadline = time.monotonic() + 60
+    while list(evidence.glob("test-*.json")) and not queued.exists():
+        assert time.monotonic() < deadline, "待機者が待ち列へ並ばない"
+        time.sleep(0.02)
     started = time.time()
-    time.sleep(0.4)
-    pathlib.Path(os.environ["SLOT_EVIDENCE"], f"test-{index}.json").write_text(
-        json.dumps({"started": started, "ended": time.time()}), encoding="utf-8"
-    )
+    (evidence / f"test-{index}.json").write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
+    assert os.environ.get("SLOT_FAIL") != str(index)
+    if os.environ.get("SLOT_INTERRUPT") == str(index):
+        raise KeyboardInterrupt
 """
 
 _SLOT_WAITER = """\
-import json, pathlib, sys, time
+import json, os, pathlib, sys, time
 from pyfltr.command import execution_slot
 
-with execution_slot.hold(label="waiter-probe"):
+# `on_wait`は待ち列への登録後に呼ばれるため、印は登録の完了を示す。
+queued = pathlib.Path(os.environ["SLOT_QUEUED"])
+
+def mark(_owner=None):
+    queued.write_text("", encoding="utf-8")
+
+with execution_slot.hold(label="waiter-probe", on_wait=mark):
+    mark()
     started = time.time()
-    time.sleep(0.3)
-    pathlib.Path(sys.argv[1]).write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
+    output = pathlib.Path(sys.argv[1])
+    temporary = output.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"started": started, "ended": time.time()}), encoding="utf-8")
+    temporary.replace(output)
 """
 
 _SLOT_OUTER = """\
@@ -700,118 +745,121 @@ with execution_slot.hold(label="outer-probe"):
 """
 
 
-@pytest.mark.parametrize(("workers", "outer"), [(2, False), (0, False), (2, True)])
-def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathlib.Path, workers: int, outer: bool) -> None:
-    """最外側の所有では試験の区切りで待機者へ譲って残りを再開し、継承時は外側の解放まで譲らない。
+_SLOT_RUN_COMMAND = """\
+import json, os, pathlib, sys
+from agent_toolkit._atk import run_command
 
-    待機者の保持区間がどの試験の実行区間とも重ならないこと（workerの稼働中の排他）と、全試験の結果を確かめる。
+record, code, failure = run_command.execute(sys.argv[1:], pathlib.Path.cwd(), 90, verification=True)
+pathlib.Path(os.environ["SLOT_RECORD"]).write_text(json.dumps(record), encoding="utf-8")
+sys.stdout.write(pathlib.Path(record["stdout_path"]).read_text(encoding="utf-8"))
+sys.stderr.write(pathlib.Path(record["stderr_path"]).read_text(encoding="utf-8"))
+raise SystemExit(code)
+"""
+
+
+@pytest.mark.parametrize(
+    ("workers", "route", "mode"),
+    [
+        (2, "direct", "pass"),
+        (0, "direct", "pass"),
+        (2, "direct", "fail"),
+        (0, "direct", "interrupt"),
+        (2, "inherited", "pass"),
+        (2, "pyfltr", "pass"),
+        (2, "run-command", "pass"),
+        pytest.param(2, "idle-fork", "pass", marks=pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応")),
+    ],
+)
+@pytest.mark.timeout(120)
+def test_pytest_holds_slot_until_all_tests_finish(tmp_path: pathlib.Path, workers: int, route: str, mode: str) -> None:
+    """試験の途中で並んだ別の検証は、pytestの全試験が終わるまで待ってから実行枠を取得する。
+
+    直接起動、xdistのworker、祖先の所有を継承する入れ子（外側の保持、pyfltr経由、統合検証経由）と、
+    失敗・中断する試験を含む実行で、待機者の保持区間がどの試験の実行区間よりも後に始まることを確かめる。
+    残りの試験は待機者が待ち列へ並んだ印を待ってから進むため、待機者の起動が遅れても判定は変わらない。
     """
     evidence = tmp_path / "evidence"
     evidence.mkdir()
-    (tmp_path / "probe_test.py").write_text(_SLOT_PROBE, encoding="utf-8")
+    probe = _SLOT_PROBE
+    if route == "idle-fork":
+        (tmp_path / "fork.py").write_text("pass\n", encoding="utf-8")
+        probe = probe.replace(
+            "    evidence =",
+            "    from agent_toolkit._testing import fork_runner\n"
+            "    assert fork_runner.run_script(pathlib.Path(__file__).with_name('fork.py')).returncode == 0\n"
+            "    assert fork_runner.idle_server_pid() is not None\n"
+            "    evidence =",
+            1,
+        )
+    (tmp_path / "probe_test.py").write_text(probe, encoding="utf-8")
     (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
     (tmp_path / "outer.py").write_text(_SLOT_OUTER, encoding="utf-8")
+    (tmp_path / "run_command.py").write_text(_SLOT_RUN_COMMAND, encoding="utf-8")
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment.update(
-        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1", PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"), SLOT_EVIDENCE=str(evidence)
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
+        PYFLTR_CACHE_DIR=str(tmp_path / "pyfltr"),
+        SLOT_EVIDENCE=str(evidence),
+        SLOT_QUEUED=str(tmp_path / "queued"),
+        SLOT_RECORD=str(tmp_path / "run-command.json"),
     )
+    if mode == "fail":
+        environment["SLOT_FAIL"] = "5"
+    elif mode == "interrupt":
+        environment["SLOT_INTERRUPT"] = "5"
     argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-o", "addopts=", "-p", pytest_plugin.__name__]
-    argv += ["-p", "xdist.plugin", "-n", str(workers), str(tmp_path / "probe_test.py")]
-    if outer:
+    argv += [
+        "-p",
+        "xdist.plugin",
+        "-n",
+        str(workers),
+        "--junitxml",
+        str(tmp_path / "pytest.xml"),
+        str(tmp_path / "probe_test.py"),
+    ]
+    if route == "inherited":
         argv = [sys.executable, str(tmp_path / "outer.py"), *argv]
+    elif route in ("pyfltr", "run-command"):
+        pytest_bin = pathlib.Path(sys.executable).with_name("pytest.exe" if os.name == "nt" else "pytest")
+        assert pytest_bin.is_file()
+        (tmp_path / "pyproject.toml").write_text(
+            '[tool.pyfltr]\npytest = true\npytest-runner = "direct"\nrespect-gitignore = false\n'
+            f"pytest-path = {json.dumps(str(pytest_bin))}\npytest-args = {json.dumps(argv[3:-1])}\n",
+            encoding="utf-8",
+        )
+        argv = [sys.executable, "-m", "pyfltr", "run", "--verbose", "--commands=pytest", "probe_test.py"]
+        if route == "run-command":
+            argv = [sys.executable, str(tmp_path / "run_command.py"), *argv]
     waited = tmp_path / "waiter.json"
     with subprocess.Popen(
         argv, cwd=tmp_path, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8"
     ) as child:
         deadline = time.monotonic() + 60
-        # 最初の試験の完了後に待機を始め、残りの試験の途中で待機者が並ぶようにする。
+        # 最初の試験の完了後に待機者を起動する。残りの試験は待機者が並んだ印を待ってから進む。
         while not list(evidence.glob("test-*.json")):
             assert child.poll() is None and time.monotonic() < deadline
             time.sleep(0.05)
-        waiter = subprocess.run(
-            [sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=environment, timeout=60, check=False
-        )
-        output, _ = child.communicate(timeout=60)
+        with subprocess.Popen([sys.executable, str(tmp_path / "waiter.py"), str(waited)], env=environment) as waiter:
+            try:
+                output, _ = child.communicate(timeout=90)
+                waiter.wait(timeout=60)
+            finally:
+                if waiter.poll() is None:
+                    waiter.kill()
+                    waiter.wait(timeout=5)
     assert waiter.returncode == 0
-    assert child.returncode == 0, output
-    assert "6 passed" in output
+    assert child.returncode == {"pass": 0, "fail": 1, "interrupt": 2}[mode], output
+    if mode != "interrupt":
+        assert len(ET.parse(tmp_path / "pytest.xml").findall(".//testcase")) == 6
     tests = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(evidence.glob("test-*.json"))]
     assert len(tests) == 6
     window = json.loads(waited.read_text(encoding="utf-8"))
-    assert all(test["ended"] <= window["started"] or window["ended"] <= test["started"] for test in tests), (window, tests)
-    last = max(test["ended"] for test in tests)
-    # 最外側の所有では残りの試験より先に待機者が実行され、継承時はpytestの終了後まで待つ。
-    assert (window["ended"] < last) is not outer, (window, tests)
-
-
-_SLOT_PARTICIPANT = """\
-import pathlib, sys, time
-from pyfltr.command import execution_slot
-
-ticket, mode, done = sys.argv[1:4]
-with execution_slot.hold(participant=ticket):
-    if mode == "boundary":
-        while not execution_slot.yield_requested():
-            time.sleep(0.05)
-        print("yielded", execution_slot.yield_to_waiters(), flush=True)
-pathlib.Path(done).write_text("", encoding="utf-8")
-"""
-
-_SLOT_DETACHED_WAITER = """\
-import subprocess, sys
-
-# 孫を起動して親だけ終了し、待機者を協調所有者の子孫から外す（子孫は所有を継承して待たないため）。
-subprocess.Popen([sys.executable, *sys.argv[1:]], start_new_session=True)
-"""
-
-
-def test_cooperative_owner_yields_after_finished_worker_released(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """先に終了したworkerの参加区間を完了印の後に閉じ、区切りで止まった残りのworkerの間に待機者へ譲る。
-
-    終了した参加者の登録を残すと協調所有者は譲らず、止まったworkerが再開されないままpytestが終了しない。
-    """
-    monkeypatch.setenv("PYFLTR_CACHE_DIR", str(tmp_path / "pyfltr"))
-    (tmp_path / "participant.py").write_text(_SLOT_PARTICIPANT, encoding="utf-8")
-    (tmp_path / "detach.py").write_text(_SLOT_DETACHED_WAITER, encoding="utf-8")
-    (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
-    owner = slot_yield.CooperativeOwner(lambda _owner: None)
-    owner.start()
-    try:
-        assert not owner.inherited
-        distribution = slot_yield.TicketDistribution(owner)
-        nodes = [SimpleNamespace(gateway=SimpleNamespace(id=f"gw{index}"), workerinput={}) for index in range(2)]
-        for node in nodes:
-            distribution.pytest_configure_node(node)
-        tickets = [node.workerinput[slot_yield.TICKET_KEY] for node in nodes]
-        dones = [pathlib.Path(node.workerinput[slot_yield.DONE_KEY]) for node in nodes]
-        finished = subprocess.run(
-            [sys.executable, str(tmp_path / "participant.py"), tickets[0], "finish", str(dones[0])], timeout=30, check=False
-        )
-        assert finished.returncode == 0
-        distribution.pytest_testnodedown(nodes[0], None)
-        with subprocess.Popen(
-            [sys.executable, str(tmp_path / "participant.py"), tickets[1], "boundary", str(dones[1])],
-            stdout=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-        ) as boundary:
-            waited = tmp_path / "waiter.json"
-            subprocess.run(
-                [sys.executable, str(tmp_path / "detach.py"), str(tmp_path / "waiter.py"), str(waited)],
-                timeout=30,
-                check=True,
-            )
-            try:
-                output, _ = boundary.communicate(timeout=30)
-            finally:
-                if boundary.poll() is None:
-                    boundary.kill()
-        assert boundary.returncode == 0
-        assert "yielded True" in output
-        assert waited.exists()
-    finally:
-        owner.close()
-    assert not owner.done_directory.exists()
+    # 待機者は試験の区切りでは進まず、最後の試験が終わった後に保持を始める。
+    assert max(test["ended"] for test in tests) <= window["started"], (window, tests)
+    if route == "run-command":
+        record = json.loads((tmp_path / "run-command.json").read_text(encoding="utf-8"))
+        assert record["child_exit_code"] == record["wrapper_exit_code"] == 0
+        assert not record["timed_out"] and record["failure"] is None
+        # 統合検証は開始前の待機だけを記録し、実行中に実行枠を取り直さない。
+        assert all(wait["kind"] == "initial" for wait in record["timing"]["slot_waits"])

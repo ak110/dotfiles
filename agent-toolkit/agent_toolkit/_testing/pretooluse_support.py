@@ -11,16 +11,16 @@ import io
 import json
 import os
 import pathlib
-import re
 import shlex
 import subprocess
 import sys
+from collections.abc import Generator
 
 import pytest
 
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import message_format as _message_format
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import persisted_output_reference, read_triggers, state_paths
 from agent_toolkit._common.session_state import state_path
 from agent_toolkit._testing import git_repository
 lazy from agent_toolkit._common.session_state import read_state
@@ -103,10 +103,10 @@ def run_hook_with_notice_details(
     response = json.loads(result.stdout)
     specific = response.get("hookSpecificOutput", {})
     context = specific.get("additionalContext", "")
-    match = re.search(r"(?m)^PreToolUse通知の詳細を保存した。保存先: (.+)$", context)
-    if match is None:
+    path = persisted_output_reference.reference_path(context)
+    if path is None:
         return result
-    specific["additionalContext"] = pathlib.Path(match[1]).read_text(encoding="utf-8")
+    specific["additionalContext"] = path.read_text(encoding="utf-8")
     return subprocess.CompletedProcess(
         result.args, result.returncode, json.dumps(response, ensure_ascii=False) + "\n", result.stderr
     )
@@ -428,6 +428,17 @@ def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str = "codex-
         "session_id": session_id,
         "turn_id": "turn-1",
     }
+
+
+@contextlib.contextmanager
+def read_delivery_preparation_scope() -> Generator[None]:
+    """資料・導入情報・解決環境が不変の試験区間だけ、静的な解析を共有する。
+
+    各入力の選択・配送・主体別の取得と公開hookの呼出しは毎回行う。
+    資料や環境を変える前にこの区間を終了し、次の区間で解析し直す。
+    """
+    with read_triggers.resolution_scope():
+        yield
 
 
 def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> None:

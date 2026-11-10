@@ -20,9 +20,11 @@ import contextlib
 import datetime
 import io
 import json
+import math
 import pathlib
 import re
 import shlex
+import statistics
 import sys
 import unicodedata
 from typing import Any, NamedTuple
@@ -30,6 +32,7 @@ from typing import Any, NamedTuple
 import session_conversation  # pylint: disable=import-error
 import session_effect_candidates  # pylint: disable=import-error
 import session_evidence_candidates  # pylint: disable=import-error
+import session_evidence_execution  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
 
 from agent_toolkit._atk import managed_temp, run_script
@@ -40,6 +43,7 @@ from agent_toolkit._common import atomic_file, file_lock, session_review
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._git import command as _git_command
 
 CONVERSATION_FILENAME = "conversation.md"
@@ -237,7 +241,7 @@ def _read_jsonl(path: pathlib.Path) -> list[dict[str, Any]]:
 def _parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
     """ensure_ascii=FalseとLFで生成したJSONLを、物理行の位置を保って読む。"""
     events = []
-    for number, line in enumerate(text.split("\n"), 1):
+    for number, line in enumerate(split_lines(text), 1):
         if not line.strip():
             continue
         try:
@@ -906,7 +910,7 @@ def _failure_ledger(candidates: list[dict[str, Any]], session_id: str, now: date
             file_lock.acquire_lock(lock)
             try:
                 try:
-                    lines = path.read_text(encoding="utf-8").splitlines()
+                    lines = split_lines(path.read_text(encoding="utf-8"))
                 except FileNotFoundError:
                     lines = []
                 except OSError, UnicodeError:
@@ -1033,6 +1037,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     ]
     selected: list[dict[str, Any]] = [*by_kind["stats-total"], *by_kind["stats-summary"], *owners]
     selected.extend(by_kind["stats-mode"])
+    selected.extend(by_kind["stats-hook-timings"])
     for kind in ("stats-critical-path", "stats-compaction-total"):
         for item in by_kind[kind]:
             row = dict(item)
@@ -1044,7 +1049,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
             else:
                 row["by_record"] = dict(sorted(item.get("by_record", {}).items(), key=lambda pair: -pair[1])[:10])
             selected.append(row)
-    for kind in ("stats-compaction", "stats-slow-call", "stats-token-peak"):
+    for kind in ("stats-compaction", "stats-compaction-usage", "stats-slow-call", "stats-token-peak"):
         selected.extend(by_kind[kind][:_SUMMARY_TOP_COUNT])
     for kind in ("stats-thread-tool", "stats-thread-gap", "stats-thread-repeat", "stats-thread-slow-call"):
         threads: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
@@ -1087,7 +1092,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     large_total = sum(item.get("large_output_review_count", 0) for item in resources)
     text += (
         "\n## 大出力の点検上位\n\n"
-        f"記録の返却本文8192バイト以上を、単独の明示本文取得を除き大きい順に最大10件表示する。対象{large_total}件、"
+        f"エージェントが受け取った本文8192バイト以上を、単独の明示本文取得を除き大きい順に最大10件表示する。対象{large_total}件、"
         f"上位外{max(0, large_total - len(large_results))}件。想定内本文取得の除外は"
         f"{sum(item.get('expected_large_read_count', 0) for item in resources)}件。"
         "複合コマンドや解釈できない入力は点検対象へ残す。バイト数は記録された本文だけを数える。\n"
@@ -1095,6 +1100,21 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
     for row in large_results:
         text += (
             f"- {row['utf8_bytes']}バイト {row['tool']} 入力={row['location']} 結果={row['result_location']}: "
+            + _clip_utf8(str(row.get("input_summary", "")), 240)
+            + "\n"
+        )
+    persisted = sorted(
+        [row for item in resources for row in item.get("persisted_results", [])],
+        key=lambda row: (-int(row["original_utf8_bytes"]), row["location"]),
+    )[:10]
+    persisted_count = sum(item.get("persisted_result_count", 0) for item in resources)
+    text += (
+        f"\n## 退避された大出力\n\n退避前8192バイト以上の結果は{persisted_count}件。退避前の量が大きい順に最大10件を示す。\n"
+    )
+    for row in persisted:
+        text += (
+            f"- 退避前{row['original_utf8_bytes']}バイト、受領{row['utf8_bytes']}バイト {row['tool']} "
+            f"入力={row['location']} 結果={row['result_location']}: "
             + _clip_utf8(str(row.get("input_summary", "")), 240)
             + "\n"
         )
@@ -1151,6 +1171,31 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         "",
         f"- 経過秒: {total.get('elapsed_seconds', 'unknown')}秒（セッションの最初の記録から準備時点まで）",
     ]
+    for item in by_kind.get("stats-hook-timings", []):
+        lines.extend(
+            [
+                "",
+                "## hookの所要時間",
+                "",
+                f"- 対象セッション: {item['session_id']}、取得状態: {item['status']}、観測{item['count']}件、"
+                f"不正・書込途中の行{item['invalid_rows']}件。保存先: bundle/hook-timings.jsonl",
+                "- 保持されている計測だけを対象とする。保持上限で古い計測が除かれるため、セッション全体の網羅は保証しない。"
+                "計測に時刻が無いため、batchの差分期間へ限定できない。",
+                "- totalとhandlerは区間別に示し、重ねて合算しない。並行hookの累積秒数を経過時間の占有率へ変換しない。",
+            ]
+        )
+        if item["status"] == "unreadable":
+            lines.extend(
+                [
+                    f"- hook計測を取得できなかった: {item['source']}。診断: {item['diagnostic']}",
+                    "- " + _next_action.next_action_line(item["next_action"]),
+                ]
+            )
+        for row in item["groups"]:
+            lines.append(
+                f"- {row['event'] or 'イベント不明'} / {row['operation']} / {row['stage']}: {row['count']}件、"
+                f"中央値{row['median_seconds']:.6f}秒、合計{row['total_seconds']:.6f}秒"
+            )
     for mode in by_kind.get("stats-mode", []):
         lines.append(f"- mode別費用: {json.dumps(mode, ensure_ascii=False)}")
     lines.extend(
@@ -1192,10 +1237,21 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
         f"（所要時間不明{compaction.get('duration_unknown_count', 0)}回）"
     )
     lines.extend(f"  - 記録{record}: {count}回" for record, count in compaction.get("by_record", {}).items())
-    lines.extend(
-        f"  - {item['record']}:{item['line']}: {item.get('timestamp') or '時刻なし'}"
-        for item in by_kind.get("stats-compaction", [])
-    )
+    usage = {(item["record"], item["line"]): item for item in by_kind.get("stats-compaction-usage", [])}
+    for item in by_kind.get("stats-compaction", []):
+        line = f"  - {item['record']}:{item['line']}: {item.get('timestamp') or '時刻なし'}"
+        interval = usage.get((item["record"], item["line"]))
+        if interval is not None:
+            top = "、".join(
+                f"{document['path']}（{document['count']}回、{document['bytes']}バイト）"
+                for document in interval.get("norm_doc_display_top", [])
+            )
+            line += (
+                f"、区間のツール出力{interval.get('tool_output_bytes', 0)}バイト、"
+                f"うちエージェント向け文書の表示{interval.get('norm_doc_display_bytes', 0)}バイト（上限寄り）"
+                + (f"、表示の多いエージェント向け文書: {top}" if top else "")
+            )
+        lines.append(line)
     threads = by_kind.get("stats-agent-thread", [])
     if threads:
         lines.extend(["", "| thread | 実行系 | 観測identity | 経過秒 | 応答回数 |", "| --- | --- | --- | --- | --- |"])
@@ -1248,7 +1304,7 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
                 f"{json.dumps(item.get('observed_identities', []), ensure_ascii=False)}",
                 f"- 生成入力: {item.get('generated_input_utf8_bytes', 0)}バイト、成分別: "
                 f"{json.dumps(item.get('input_components', {}), ensure_ascii=False)}",
-                "- 入力量は記録されたツール入力、結果量は返却本文を数える。API履歴の再送量・"
+                "- 入力量は記録されたツール入力、結果量はエージェントが受け取った本文を数える。API履歴の再送量・"
                 "未記録の注入資料・実際の読了量・料金はこの集計から推定しない。",
             ]
         )
@@ -1278,6 +1334,86 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
     for item in by_kind.get("stats-token-peak", []):
         lines.append(f"- メインのtoken上位: {json.dumps(item, ensure_ascii=False)}")
     return "\n".join(lines) + "\n"
+
+
+def _hook_timing_stats(session_id: str) -> dict[str, Any]:
+    """有限な診断記録のスナップショットを区間別に集計し、未記録と不正行を区別する。"""
+    result: dict[str, Any] = {
+        "kind": "stats-hook-timings",
+        "session_id": session_id,
+        "status": "missing",
+        "count": 0,
+        "invalid_rows": 0,
+        "groups": [],
+    }
+    directory = managed_temp.find_session_temp(session_id)
+    if directory is None:
+        return result
+    path = directory / "hook-timings.jsonl"
+    try:
+        path.stat()
+        with (directory / "hook-timings.lock").open("a+b") as lock:
+            file_lock.acquire_lock(lock)
+            try:
+                raw = path.read_bytes()
+            finally:
+                file_lock.release_lock(lock)
+    except FileNotFoundError:
+        return result
+    except OSError as error:
+        return {
+            **result,
+            "status": "unreadable",
+            "source": str(path),
+            "diagnostic": str(error),
+            "next_action": (
+                f"`{path}`と親ディレクトリの読取権限、および同じ場所のhook-timings.lockの作成・書込権限を確認せよ。"
+                "復旧できる場合は同じ入力引数で`atk run-script session-review-prepare --`を再実行せよ。"
+                "復旧できない場合はhookの統計を除いて振り返りを続け、取得できなかった範囲を報告せよ。"
+            ),
+        }
+    grouped: dict[tuple[str, str, str], list[float]] = collections.defaultdict(list)
+    lines = split_lines(raw)
+    if lines and not raw.endswith(b"\n"):
+        result["invalid_rows"] += 1
+        lines.pop()
+    for line in lines:
+        try:
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError("計測がobjectでない")
+            seconds = row["seconds"]
+            fields = (row["event"], row["operation"], row["stage"])
+            if (
+                not all(isinstance(field, str) for field in fields)
+                or isinstance(seconds, bool)
+                or not isinstance(seconds, (int, float))
+                or not math.isfinite(seconds)
+                or seconds < 0
+            ):
+                raise ValueError("計測欄が不正")
+        except ValueError, KeyError, TypeError:
+            result["invalid_rows"] += 1
+            continue
+        grouped[fields].append(float(seconds))
+    result.update(
+        status="available",
+        source=str(path),
+        retained_bytes=len(raw),
+        count=sum(len(values) for values in grouped.values()),
+        groups=[
+            {
+                "event": event,
+                "operation": operation,
+                "stage": stage,
+                "count": len(values),
+                "median_seconds": statistics.median(values),
+                "total_seconds": sum(values),
+            }
+            for (event, operation, stage), values in sorted(grouped.items())
+        ],
+    )
+    return result
 
 
 def _resource_summary_lines(summary: dict[str, Any]) -> list[str]:
@@ -1353,6 +1489,7 @@ def _thread_breakdown_lines(
     return lines
 
 
+@session_evidence_execution.shell_parse_scope()
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)
@@ -1573,6 +1710,10 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         + unconfirmed_text
         + improvement_text
     )
+    hook_timings = _hook_timing_stats(session_id)
+    hook_timings_path = bundle_dir / "hook-timings.jsonl"
+    hook_timings_path.write_text(json.dumps(hook_timings, ensure_ascii=False) + "\n", encoding="utf-8")
+    stats.append(hook_timings)
     stats_text = _stats_document(stats) + unconfirmed_text
     if len(candidate_text.encode("utf-8")) > _CANDIDATES_MAX_BYTES or len(stats_text.encode("utf-8")) > _STATS_MAX_BYTES:
         return _missing("bundle", "候補または統計の初回表示が表示予算を超えた。全量の証拠はbundleへ保持した。")
@@ -1603,6 +1744,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         "comparison_materials_path": str(comparison_path),
         "candidates_path": str(candidates_path),
         "stats_path": str(stats_path),
+        "hook_timings_path": str(hook_timings_path),
         "candidates_utf8_bytes": len(candidate_text.encode("utf-8")),
         "stats_utf8_bytes": len(stats_text.encode("utf-8")),
         "review_index_path": str(bundle_dir / "review-index.jsonl"),
@@ -1647,11 +1789,13 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
         result = f"{event['record']}:{event['result_line']}" if event.get("result_line") is not None else "未確認"
         body_count = event.get("observed_body_characters")
         result_count = event.get("recorded_result_characters")
+        persisted = f"退避あり、退避前={event.get('original_utf8_bytes', '未確認')}バイト、" if event.get("persisted") else ""
         lines.append(
             f"- {event['category']} {event['tool']}、担当={event['record']}（{event['role']}）、"
             f"時点={event.get('timestamp') or '未確認'}、形式={event['input_form']}、"
             f"直接本文={body_count if body_count is not None else '未確認'}字、"
             f"記録の結果本文={result_count if result_count is not None else '未確認'}字、"
+            f"{persisted}"
             f"対象={json.dumps(event['target'], ensure_ascii=False)}、入力={locator}、結果={result}、"
             f"代表入力={_one_line(str(event.get('summary', '')))}"
         )

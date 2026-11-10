@@ -258,11 +258,20 @@ def select_entries(
     source: str | Iterable[str] | None,
     texts: EntryTexts | None = None,
     important: str | Iterable[str] = "all",
+    snapshot: Iterable[EntryRecord] | None = None,
 ) -> list[EntryRecord]:
     """一覧の状態・対象repo・種別・回答状況・source・重要フラグの積集合を返す。"""
     selected: list[EntryRecord] = []
-    for entry in iter_entries(private_notes, _wi_filters.resolve_states(status), target_repo, entry_type, texts=texts):
+    states = _wi_filters.resolve_states(status)
+    kinds = {entry_type} if isinstance(entry_type, str) else set(entry_type)
+    matcher = _wi_filters.TargetRepoMatcher(target_repo)
+    entries = snapshot if snapshot is not None else iter_entries(private_notes, states, target_repo, entry_type, texts=texts)
+    for entry in entries:
         _, _, text, _, actual_type = entry
+        if entry[3] not in states or ("all" not in kinds and actual_type not in kinds):
+            continue
+        if actual_type is not None and not matcher.matches(entry[1]):
+            continue
         if not _wi_filters.answered_matches(actual_type, text, answered):
             continue
         if not _wi_filters.source_matches_any(parse_source(text), source):

@@ -1,0 +1,77 @@
+# 確認・報告の手段と認識合わせ：起動案内と進捗通知
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
+
+## 起動案内と進捗通知
+
+セッション開始時、`clear`実行後、および会話圧縮後の最初の実ユーザー発話に対して、`agent-toolkit:user-confirmation-and-report`の起動を案内する。
+また、不具合の有無・原因・修正方針を回答や確認に含める場合は、診断前に`agent-basics:bugfix`を起動するよう案内する。
+両ホストにおいて会話文脈ごとに1回配送し、機械的な注入処理では配送待ち状態を消費しない。
+発話内容と現物の突き合わせ作業は、同スキルの「原文の保持と取り込み」および「確認要否の判定」に従う。
+時間の経過のみを理由とした固定手順の再注入は行わない。
+
+案内の対象となる通常発話には、ユーザーが入力したスラッシュコマンドを含める。
+ハーネスが挿入した通知や機械注入によるターンは対象外とする。
+生成された注記は単一の`additionalContext`に統合し、Codex payloadにおいても同様に返却する。
+
+進捗のセルフチェック通知（`source="progress-self-check"`）は、前段の案内と別に、呼出主体ごとに30分間隔でPostToolUseとUserPromptSubmitが返す。
+経過時間と短い点検項目を示す点検の契機であり、前段の固定手順の再注入とは別の扱いとする。
+長い委譲の往復の間も点検の契機を届けるため、この通知は機械注入のターン（定期再確認を含む）にも付ける。
+実ユーザーの発話の有無や無操作期間の長さによらず、前回通知から30分以上たった観測で通知する。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
+
+1. 通知を受けた主体は、活動の有無と、目標への進展・試行から得た情報・工程の所要を分けて点検する。
+   新しい情報を得ない同じ試行が続く場合は、前提と優先順位を見直し、有効なら既存の独立文脈レビューを利用する。
+   APIの再試行待ちやツールの長時間実行は、戦略の停滞やプロセス停止と区別する。
+   作業契約と、それが参照する要求原本・計画・進捗記録の必要範囲を比べる。
+   委譲先は自身の作業記録と受領した全体作業契約から、担当範囲と全体目的の対応を確認する。
+   各担当の発話・操作を確認する場合は`../../review-session/references/session-records-conversation.md`「会話の少量取得」で前回以降を優先し、記録の観測時刻と公開の実行状態を併記する。
+   当初目的、追加・変更後も有効な全要求、保持対象、完成条件を比較し、割り込み対応後も元の未完了工程を保持する。
+   完成条件別の成果と証拠、未達・未確認、残工程を比べ、全工程を100%とする概算と根拠を見直す。
+   現在の作業がどの完成条件に必要か、未着手の要求、優先順位、反復の収束、経過時間に対する進み具合、品質を保てる低負担な方式を確かめ、必要なら進め方を修正する。
+   完成条件に必要でない対処は記録して本筋へ戻り、各条件の前提を満たしてから完了を返す。
+2. 比較した対象と具体的な結果は、既存の進捗ログ・引き継ぎ記録・検証記録のいずれかへ次の短表で残す。
+   作業契約は目的・要件と原本参照を保持し、進捗と証拠は既存記録が所有する。
+
+   | 点検対象 | 比較した記録と具体的な結果 | 継続または修正する対応 |
+   | --- | --- | --- |
+   | 今回点検した対象 | 記録の所在と比較して分かったこと | 必要な次の対応 |
+
+   委譲元と後続担当は、点検内容と継続判断の確認にこの記録を使う。
+
+3. 記録が無い項目は未観測、対象外の項目は非適用と示し、調査は点検の判断に必要な範囲に限る。
+   点検の証拠には、実際に比較した対象と結果を記録する。
+   最上位メインの出力形式は`rules-main.md`「進捗報告」、改善点の値と記入方法は同書「作業中の改善点の報告」の定義を参照する。
+   `予定`とした時点で、対象、区分と再開条件を既存の作業記録（計画の`## 進捗ログ`、計画が無ければ引き継ぎ記録）へ残す。
+   送達済みの途中報告を事象の原本とし、作業記録には原本の所在と現在の処置だけを書く。
+   `予定`の確定と完了報告への記載は、`SKILL.md`「工程」の手順5に従う。
+   委譲先の正常な前進のみの点検は既存記録へ保存し、要旨と記録先を次の規定された工程返却へまとめる。
+   通常点検を独立通知や役割返却の早期終了の理由にせず、作業を継続する。
+   判断・認可・入力・レーン調整を要する変化、無視できない改善、停滞の新根拠と規定された工程境界は、既存契約どおり通知する。
+   点検ごとの一律の受領返答や再照会は求めず、ユーザーへの送達は`communication-methods-delivery.md`「手段の選択」に従う。
+   工程開始時点や比較基準が不足する場合の情報取得を含む詳細は、`../../delegation/references/waiting-and-monitoring-progress.md`「成果物側の観測」に従う。
+
+   ユーザーが入力した文章は、Claude Codeの`AskUserQuestion`の回答（提示した`label`と一致しない`answers`の値、`response`、`annotations`の`notes`）として`PostToolUse`にも届く。
+   発話内容を判定材料とする注記は両hookで同一の定義本文を用い、原因・対象・対処の変化に応じた共通の新規性判定に基づいて配送する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 確認・報告の手段と認識合わせ：手段の選択の基準を適用する前 | `communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |

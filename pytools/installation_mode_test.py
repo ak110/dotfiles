@@ -57,7 +57,7 @@ def test_minimal_step_selection_keeps_shell_and_dotfiles_foundation(monkeypatch)
         "setup_mise",
         "setup_tmux_plugins",
         "setup_bin_path",
-        "setup_dotfiles_autoupdate",
+        "setup_tmpfiles_clean",
         "apply_dotfiles_plugins",
     } <= retained
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "full")

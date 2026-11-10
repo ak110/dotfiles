@@ -90,6 +90,32 @@ def test_non_search_commands_do_not_warn(command: str) -> None:
     assert not operation_skills.operation_matches("search", "Bash", {"command": command})
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("arguments", "recursive"),
+    [
+        ("-R -e -- /dev/null", True),
+        ("--regexp -- -R /dev/null", True),
+        ("--regexp=-- -R /dev/null", True),
+        ("--file -- -R /dev/null", True),
+        ("--file=-- -R /dev/null", True),
+        ("--regexp -R /dev/null", False),
+        ("--regexp=-R /dev/null", False),
+        ("--file -R /dev/null", False),
+        ("--include -R needle /dev/null", False),
+        ("--regexp needle -- -R", False),
+        ("-ne-R /dev/null", False),
+    ],
+)
+def test_grep_long_values_preserve_public_search_guidance(tmp_path, codex, arguments, recursive):
+    """長形式の値が終端や再帰指定と同形でも、実際の再帰指定だけで検索基準を案内する。"""
+    payload = _bash("grep " + arguments, "grep-value-boundary", **({"turn_id": "t"} if codex else {}))
+    result = _run(payload, _plan_file_state_env(tmp_path))
+    assert result.returncode == 0 and not result.stderr
+    context = _additional_context(result)
+    assert (_SEARCH_SKILL in context or "/skills/search/SKILL.md" in context) is recursive
+
+
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
@@ -153,14 +179,14 @@ def test_codex_inputs_match_required_skill_operations(payload: dict, skills: lis
         "echo rule > AGENTS.md",
         "printf rule 2>>.claude/rules/local.md",
         "printf rule | tee .claude/skills/x/SKILL.md",
-        "sed -i 's/old/new/' agent-toolkit/rules/01-agent.md",
+        "sed -i 's/old/new/' agent-toolkit/share/rules/common/01-agent.md",
         "sed --in-place -e 's/old/new/' CLAUDE.md",
         "python3 -c \"p='AGENTS.md'; open(p,'w').write('rule')\"",
         "uv run --frozen python -c \"from pathlib import Path; Path('.claude/rules/x.md').write_text('rule')\"",
         "python3 - <<'PY'\np='.claude/skills/server-log-review/SKILL.md'\nopen(p,'w').write('rule')\nPY",
         "python3 -c \"from pathlib import Path; p=Path('AGENTS.md'); p.write_bytes(b'rule')\"",
         "for item in one; do printf rule > AGENTS.md; done",
-        "if test -f marker; then sed -i 's/old/new/' agent-toolkit/rules/01-agent.md; fi",
+        "if test -f marker; then sed -i 's/old/new/' agent-toolkit/share/rules/common/01-agent.md; fi",
         "case value in one) printf rule | tee .claude/skills/x/SKILL.md;; esac",
         "time for item in one; do cp ordinary.md AGENTS.md; done",
         "! if test -f marker; then cp ordinary.md .claude/rules/local.md; fi",
@@ -359,7 +385,7 @@ def test_bash_document_write_option_boundaries(command: str) -> None:
         "cp AGENTS.md /tmp/AGENTS.md.bak",
         "mv AGENTS.md ordinary.md",
         "install -d AGENTS.md",
-        "install -vd .claude/rules agent-toolkit/rules",
+        "install -vd .claude/rules agent-toolkit/share/rules/common",
         "install --help AGENTS.md",
         "rsync AGENTS.md ordinary.md",
         "perl -e 'print 1' AGENTS.md",
@@ -548,7 +574,9 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
     env = _plan_file_state_env(tmp_path)
     _record_skill(env, "ready", "agent-toolkit:delegation")
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
-    assert "agent-toolkit:delegation" not in _additional_context(_run(payload, env))
+    # 組み込みの汎用Agentの起動には、取得済みでも実行手段の判定を促す警告が`runtime-routing.md`を名指しして出る。
+    # ここでは取得の案内だけが消えることを確かめる。
+    assert "`Skill`で`agent-toolkit:delegation`" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
     result = _run(codex, env)
     assert result.returncode == 0
@@ -565,7 +593,7 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
         key.startswith("read-trigger:") and "/skills/delegation/SKILL.md" in key and "main" in owners
         for key, owners in state[rules_context.OPERATION_SKILL_READY_KEY].items()
     )
-    assert "agent-toolkit:delegation" not in _additional_context(_run(codex, env))
+    assert "/skills/delegation/SKILL.md" not in _additional_context(_run(codex, env))
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:

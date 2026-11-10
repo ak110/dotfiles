@@ -73,6 +73,15 @@ def _strip_git_suffix(value: str) -> str:
     return value
 
 
+def main_worktree_path(common_dir: str) -> pathlib.Path:
+    r"""`git rev-parse --git-common-dir`が返すGit形式の文字列から、主作業ツリーのパスを返す。
+
+    接尾辞の`/.git`はGit形式（区切り文字`/`）の文字列から除く。WindowsでPathへ変換してから文字列へ戻すと区切り文字が`\`になり、
+    `/.git`と一致しなくなって`.git`が残るためである。
+    """
+    return pathlib.Path(_strip_git_suffix(common_dir))
+
+
 def _head(gitdir: pathlib.Path) -> tuple[str | None, bool]:
     """HEADが指す参照の完全名と、detached HEADかどうかを返す。"""
     content = _read_text(gitdir / "HEAD")
@@ -96,9 +105,10 @@ def list_worktrees(repo: pathlib.Path, *, timeout: float | None = None) -> list[
     `repo`は主作業ツリー、linked worktree、bareリポジトリのいずれでもよい。
     Gitが登録を読めずに一覧から外す項目（`gitdir`を読めないか空の登録）は返さない。
     """
-    common = pathlib.Path(_git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"], timeout).rstrip("\n"))
+    common_value = _git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"], timeout).rstrip("\n")
+    common = pathlib.Path(common_value)
     bare_value = _git(repo, ["config", "--bool", "--default", "false", "core.bare"], timeout).strip()
-    main_path = pathlib.Path(_strip_git_suffix(str(common)))
+    main_path = main_worktree_path(common_value)
     entries = [_entry(main_path, common, bare=bare_value == "true", locked=False, prunable=False)]
     registry = common / "worktrees"
     try:

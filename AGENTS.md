@@ -3,11 +3,13 @@
 このリポジトリはchezmoiで管理するdotfilesリポジトリであり、`.chezmoi-source/`配下のファイルを`~/.*`へ展開する。
 また、多数の小さなコマンドラインツールや、Claude Code用の共有設定（ルールやプラグイン）も備えている。
 
-この作業ツリーでPythonコードを実行するときは、標準ライブラリだけで済む簡単な確認には`python3`を使い、リポジトリの依存関係やモジュールを利用する処理には`uv run --frozen python`を使う。常時規範にある`python -c`は起動形式の例示であり、実行ファイル`python`が環境に存在することを保証するものではない。
+この作業ツリーでPythonコードを実行するときは、標準ライブラリだけで済む簡単な確認には`python3`を使い、リポジトリの依存関係やモジュールを利用する処理には`uv run --frozen python`を使う。
+常時規範にある`python -c`は起動形式の例示であり、実行ファイル`python`が環境に存在することを保証するものではない。
 
 ## 詳細な参照先
 
-以下の各文書には、これまでの経緯や根拠、構造の記録をまとめている。実際に作業する際に従う規範は、`agent-toolkit/rules/`配下や各スキルを参照する。
+以下の各文書には、これまでの経緯や根拠、構造の記録をまとめている。
+実際に作業する際に従う規範は、`agent-toolkit/share/rules/common/`配下や各スキルを参照する。
 
 - 開発者向けドキュメントの一覧: [docs/development/index.md](docs/development/index.md)
 - リポジトリ全体の構成、配布対象と開発対象の区別、プラットフォーム対応、bash補完の運用、PowerShellスクリプトの注意事項、agent-toolkitの3形式での配布と`agents_server` MCPの配置、ホームディレクトリ配下を編集する前の確認手順: [docs/development/architecture.md](docs/development/architecture.md)
@@ -15,6 +17,7 @@
 - 機構の目的、構造の理由、知識境界、却下した案を記録した設計記録の索引: [docs/development/design.md](docs/development/design.md)
 - 過去のAWIを通じて確定した方針や意向: [docs/development/concepts.md](docs/development/concepts.md)
 - 再発防止の判断材料となる障害や欠陥の記録: [docs/development/incidents.md](docs/development/incidents.md)
+- 導入後に撤去した仕組みを働きで引く台帳（新しい仕組みを加える前の照合に使う）: [docs/development/removed-mechanisms.md](docs/development/removed-mechanisms.md)
 - 各規範の条文が根拠としている検証記録の日付、版数、再検証の手順: [docs/development/audit-records.md](docs/development/audit-records.md)
 
 ## 本リポジトリのスキル
@@ -35,4 +38,6 @@
 
 ## 成果物の品質基準
 
-本リポジトリでは`agent-basics`を適用する。コード、ドキュメント、設定の作成や変更では`agent-basics:writing-standards`を用い、レビューや指摘の採否判断では`agent-basics:review-standards`を適用する。また、WI、委譲、認可、完了報告の運用は`agent-toolkit`に従う。
+本リポジトリでは`agent-basics`を適用する。
+コード、ドキュメント、設定の作成や変更では`agent-basics:writing-standards`を用い、レビューや指摘の採否判断では`agent-basics:review-standards`を適用する。
+また、WI、委譲、認可、完了報告の運用は`agent-toolkit`に従う。

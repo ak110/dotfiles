@@ -1,0 +1,26 @@
+# セッション状態ファイルとフラグ：UWI系
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-common.md` |
+| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
+| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-run-skill.md` |
+
+## UWI系
+
+- `uwi_answered_by_repo`: PostToolUseが記録する回答済みUWIファイル名の一覧。
+  データ構造は`{エージェント識別子: {対象リポジトリID: ファイル名一覧}}`という2段階の辞書形式とし、`agent_id`を持たないメインエージェントの会話では`main`をキーとして使用する。
+  メインとサブエージェントのフック呼び出しは同じ`session_id`で届くため、エージェント識別子ごとに分けないと、一方が回答差分を消費して他方へ通知が届かなくなる。
+  cwdが空、保存先が未解決、後述のフィンガープリントが前回と同一、リポジトリIDが未解決、走査が不完全な場合のいずれかに該当するときは更新しない。
+  前回の一覧に含まれていなかった新規の回答済みファイル名を通知するための判定に使用し、セッション終了まで保持する。
+  リセットは行わず、一覧の更新によってのみ状態を進める。
+- `uwi_fingerprint_by_repo`: PostToolUseが記録するアクティブな状態ディレクトリ（`inbox`、`processing`）の内容変更フィンガープリント。
+  データ構造は`{エージェント識別子: {作業ディレクトリ: 指紋文字列}}`という2段階の辞書形式とし、前回と同一である場合はディレクトリの走査および回答差分の検出処理をスキップする。
+  回答済みファイル名一覧の更新と同時に記録され、セッション終了まで保持する。
+
+上記の2つのキーについては、現行キーが存在しない場合に限り、改名前の古いキー名である`tbd_answered_by_repo`および`tbd_fingerprint_by_repo`を読み取って状態を引き継ぐ。
+書き込みは常に現行のキー名へ行う（パッケージ更新をまたいで稼働中のセッションが、改名前のキーで基準値を持つことがあるため）。

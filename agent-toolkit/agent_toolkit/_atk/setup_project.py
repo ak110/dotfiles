@@ -135,7 +135,7 @@ def _rules_paths(target: Path) -> tuple[Path, Path]:
 
 
 def _copy_rules(target: Path) -> None:
-    source = Path(__file__).resolve().parents[2] / "rules"
+    source = Path(__file__).resolve().parents[2] / "share" / "rules" / "common"
     if not source.is_dir():
         raise ValueError(f"配布元の規範がありません: {source}")
     destination, legacy = _rules_paths(target)
@@ -148,7 +148,9 @@ def _copy_rules(target: Path) -> None:
 def build_parser(parser: argparse.ArgumentParser) -> None:
     """`atk setup-project`の引数を登録する。"""
     options = parser.add_mutually_exclusive_group()
-    options.add_argument("--with-rules", action="store_true", help="agent-toolkit/rules/配下の規範をプロジェクトへ複製する。")
+    options.add_argument(
+        "--with-rules", action="store_true", help="agent-toolkit/share/rules/common/配下の規範をプロジェクトへ複製する。"
+    )
     options.add_argument("--clean", action="store_true", help="配置済みの共有リンクと規範を削除する。")
 
 

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from collections.abc import Callable
 from typing import Any
 
@@ -777,36 +778,78 @@ def _alive_followers() -> list[threading.Thread]:
 
 
 def test_join_threads_waits_all_until_deadline() -> None:
-    """処理期限を超えて終わるスレッドと、先に待つスレッドより遅いスレッドも共通の期限内に回収する。"""
-    released = threading.Event()
+    """先にjoinするスレッドの終了後に後続を解放し、全ての終了を待つ。"""
+    early_release = threading.Event()
+    late_release = threading.Event()
+    early_started = threading.Event()
+    late_started = threading.Event()
 
-    def finish_after_release() -> None:
-        released.wait(timeout=5)
+    def finish(release: threading.Event, started: threading.Event) -> None:
+        started.set()
+        assert release.wait(timeout=5)
 
-    late = threading.Thread(target=finish_after_release, daemon=True)
-    early = threading.Thread(target=time.sleep, args=(0.05,), daemon=True)
-    unstarted = threading.Thread(target=time.sleep, args=(0,), daemon=True)
-    late.start()
+    class EarlyThread(threading.Thread):
+        def join(self, timeout=None):
+            early_release.set()
+            super().join(timeout=timeout)
+            late_release.set()
+
+    early = EarlyThread(target=finish, args=(early_release, early_started), daemon=True)
+    late = threading.Thread(target=finish, args=(late_release, late_started), daemon=True)
+    unstarted = threading.Thread(target=late_release.wait, daemon=True)
     early.start()
-    threading.Timer(0.3, released.set).start()
+    late.start()
+    try:
+        assert early_started.wait(5) and late_started.wait(5)
+        assert _join_threads([early, late, unstarted], timeout=3.0) == []
+        assert not late.is_alive()
+    finally:
+        early_release.set()
+        late_release.set()
+        early.join(timeout=5)
+        late.join(timeout=5)
+        assert not early.is_alive() and not late.is_alive()
 
-    assert _join_threads([early, late, unstarted], timeout=3.0) == []
-    assert not late.is_alive()
 
-
-def test_join_threads_waits_rest_when_first_stays_alive() -> None:
-    """先に待つスレッドが期限後も生存していても、残りのスレッドを待ってから生存したスレッドだけを返す。"""
+def test_join_threads_waits_rest_when_first_stays_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """先頭の期限後も後続のjoinへ進み、生存する先頭だけを返す。"""
     released = threading.Event()
-    stuck = threading.Thread(target=released.wait, args=(5,), name="stuck", daemon=True)
-    finishing = threading.Thread(target=time.sleep, args=(0.2,), name="finishing", daemon=True)
+    finish_release = threading.Event()
+    ready = threading.Event()
+    clock = [100.0]
+    monkeypatch.setattr(sys.modules[__name__], "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+
+    class StuckThread(threading.Thread):
+        def join(self, timeout=None):
+            if not released.is_set():
+                clock[0] += 1
+                return super().join(timeout=0)
+            return super().join(timeout=timeout)
+
+    class FinishingThread(threading.Thread):
+        def join(self, timeout=None):
+            assert timeout == 0 or finish_release.is_set()
+            finish_release.set()
+            super().join(timeout=5)
+
+    def finish() -> None:
+        ready.set()
+        assert finish_release.wait(5)
+
+    stuck = StuckThread(target=released.wait, args=(5,), name="stuck", daemon=True)
+    finishing = FinishingThread(target=finish, name="finishing", daemon=True)
     stuck.start()
     finishing.start()
     try:
-        assert _join_threads([stuck, finishing], timeout=0.5) == ["stuck"]
+        assert ready.wait(5)
+        assert _join_threads([stuck, finishing], timeout=0.05) == ["stuck"]
         assert not finishing.is_alive()
     finally:
         released.set()
+        finish_release.set()
         stuck.join(timeout=5)
+        finishing.join(timeout=5)
+        assert not stuck.is_alive() and not finishing.is_alive()
 
 
 def _run_contended_wait(

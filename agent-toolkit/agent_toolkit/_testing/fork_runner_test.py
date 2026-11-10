@@ -5,16 +5,21 @@ subprocess.run同等の観測結果（終了コード・標準出力・標準エ
 """
 
 import concurrent.futures
+import contextlib
 import os
 import pathlib
 import signal
 import subprocess
 import sys
+import time
 import typing
 
+import psutil
 import pytest
 
+from agent_toolkit._common import process_tree
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing import late_descendant
 
 
 def _write_script(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
@@ -141,11 +146,17 @@ def test_child_signal_death_returns_negative_returncode(tmp_path: pathlib.Path) 
     assert result.returncode == -signal.SIGKILL
 
 
-def test_timeout_raises_and_server_survives(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(
+    "use_fork", [False, pytest.param(True, marks=pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応"))]
+)
+def test_timeout_raises_and_server_survives(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, use_fork: bool) -> None:
     # (d) timeout超過でsubprocess.TimeoutExpiredが送出され、後続リクエストが正常処理される。
-    slow_script = _write_script(tmp_path, "import time\ntime.sleep(5)\n")
+    monkeypatch.setattr(_fork_runner, "_HAS_FORK", use_fork)
+    release = tmp_path / "fork.release"
+    slow_script = _write_script(tmp_path, late_descendant.held_source(release))
     with pytest.raises(subprocess.TimeoutExpired):
-        _fork_runner.run_script(slow_script, timeout=0.1)
+        _fork_runner.run_script(slow_script, timeout=0.05, ready_path=release.with_suffix(".ready"))
+    assert release.with_suffix(".ready").exists()
     fast_script = tmp_path / "fast.py"
     fast_script.write_text("import sys\nsys.stdout.write('alive')\n", encoding="utf-8")
     result = _fork_runner.run_script(fast_script)
@@ -240,3 +251,69 @@ def test_terminate_server_waits_and_closes_pipes(tmp_path: pathlib.Path) -> None
     assert server.stdout is not None
     assert server.stdout.closed
     assert _fork_runner._SERVER is None  # noqa: SLF001  # pylint: disable=protected-access
+    assert _fork_runner.idle_server_pid() is None
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応")
+def test_only_idle_server_is_reported_while_active_child_stays_protected(tmp_path: pathlib.Path) -> None:
+    """待機中のserverは識別でき、fork子の実行中は除外用PIDを返さない。"""
+    release = tmp_path / "child.release"
+    script = _write_script(tmp_path, late_descendant.held_source(release))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_fork_runner.run_script, script, timeout=10)
+        try:
+            deadline = time.monotonic() + 10
+            while not release.with_suffix(".ready").exists():
+                assert not future.done() and time.monotonic() < deadline
+                time.sleep(0.01)
+            assert _fork_runner.idle_server_pid() is None
+        finally:
+            release.touch()
+        assert future.result(timeout=10).returncode == 0
+    assert _fork_runner.idle_server_pid() is not None
+
+
+@pytest.mark.parametrize("interruption", [KeyboardInterrupt, pytest.fail.Exception])
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork-server未対応")
+def test_interrupted_response_discards_server_before_the_next_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, interruption: type[BaseException]
+) -> None:
+    """呼出元の中断後は子孫と旧応答を破棄し、次の要求を新しいserverで実行する。"""
+    _fork_runner._terminate_server()  # noqa: SLF001  # pylint: disable=protected-access
+    ready = tmp_path / "request.ready"
+    release = tmp_path / "request.release"
+    script = _write_script(tmp_path, late_descendant.held_source(release))
+    server = _fork_runner._ensure_server()  # noqa: SLF001  # pylint: disable=protected-access
+    assert server.stdout is not None
+    children: list[psutil.Process] = []
+
+    def interrupt_readline(*args: typing.Any, **kwargs: typing.Any) -> bytes:
+        del args, kwargs
+        deadline = time.monotonic() + 30
+        while not ready.exists():
+            assert server.poll() is None and time.monotonic() < deadline
+            time.sleep(0.01)
+        children.extend(process_tree.collect_descendants(server.pid))
+        assert children
+        raise interruption("request interrupted")
+
+    monkeypatch.setattr(server.stdout, "readline", interrupt_readline)
+    try:
+        with pytest.raises(interruption):
+            _fork_runner.run_script(script)
+        assert _fork_runner._SERVER is None  # noqa: SLF001  # pylint: disable=protected-access
+        assert server.poll() is not None
+        for child in children:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                assert not child.is_running() or child.status() == psutil.STATUS_ZOMBIE
+        fast = tmp_path / "fresh.py"
+        fast.write_text("print('fresh response')\nraise SystemExit(23)\n", encoding="utf-8")
+        result = _fork_runner.run_script(fast)
+        assert result.returncode == 23
+        assert result.stdout == "fresh response\n"
+    finally:
+        release.touch()
+        if server.poll() is None:
+            failure = process_tree.stop_owned_process(server, context="interrupted fork-server test")
+            assert failure is None, failure
+        _fork_runner._terminate_server()  # noqa: SLF001  # pylint: disable=protected-access

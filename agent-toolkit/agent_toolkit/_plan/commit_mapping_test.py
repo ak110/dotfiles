@@ -66,7 +66,9 @@ def test_many_to_many_roundtrip_and_rewrite(repo: pathlib.Path) -> None:
     for old_value, new_value in ((old, new), (_short(repo, old), _short(repo, new))):
         replacements = repo / "rewrite.json"
         replacements.write_text(json.dumps({old_value: new_value}), encoding="utf-8")
-        event = commit_mapping.rewrite_event(repo, replacements, commit_mapping.read_mapping(repo, events, {WI_A, WI_B}))
+        event = commit_mapping.rewrite_event(
+            repo, replacements, commit_mapping.read_mapping(repo, events, {WI_A, WI_B}), {WI_A, WI_B}
+        )
         assert event == {"rewrite": {_short(repo, old): _short(repo, new)}}
     assert commit_mapping.get_commits(repo, [*events, event], [WI_A, WI_B], {WI_A, WI_B}) == {
         WI_A: [_short(repo, first), _short(repo, new)],
@@ -186,7 +188,9 @@ def test_records_range_added_by_cherry_pick_in_one_event(repo: pathlib.Path) -> 
     new = git_repository.git_output(repo, "rev-parse", "HEAD")
     replacements = repo / "rewrite.json"
     replacements.write_text(json.dumps({_short(repo, picked[1]): new}), encoding="utf-8")
-    rewrite = commit_mapping.rewrite_event(repo, replacements, commit_mapping.read_mapping(repo, [event], {WI_A, WI_B}))
+    rewrite = commit_mapping.rewrite_event(
+        repo, replacements, commit_mapping.read_mapping(repo, [event], {WI_A, WI_B}), {WI_A, WI_B}
+    )
     result = commit_mapping.get_commits(repo, [event, rewrite], [WI_A], {WI_A, WI_B})
     assert sorted(result[WI_A]) == sorted([_short(repo, picked[0]), _short(repo, new)])
 
@@ -234,15 +238,42 @@ def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
     with_outside = repo / "with-outside.json"
     with_outside.write_text(json.dumps({recorded: rebased_recorded, unrecorded: rebased_unrecorded}), encoding="utf-8")
     with pytest.raises(commit_mapping.CommitMappingError, match="履歴変更前の対応がありません"):
-        commit_mapping.rewrite_event(repo, with_outside, mapping)
+        commit_mapping.rewrite_event(repo, with_outside, mapping, {WI_A})
 
     with pytest.raises(commit_mapping.CommitMappingError, match="現在のHEAD"):
         commit_mapping.get_commits(repo, events, [WI_A], {WI_A})
 
     recorded_only = repo / "recorded-only.json"
     recorded_only.write_text(json.dumps({recorded: rebased_recorded}), encoding="utf-8")
-    events.append(commit_mapping.rewrite_event(repo, recorded_only, mapping))
+    events.append(commit_mapping.rewrite_event(repo, recorded_only, mapping, {WI_A}))
     assert commit_mapping.get_commits(repo, events, [WI_A], {WI_A}) == {WI_A: [_short(repo, rebased_recorded)]}
+
+
+def test_rewrite_to_same_oid_adds_awi_to_recorded_commit(repo: pathlib.Path) -> None:
+    """同じOIDへ写す分割指定で、記録済みcommitへ許可集合内のAWIを追加し、取得結果へ反映する。"""
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    recorded = _commit(repo, "recorded")
+    events = [commit_mapping.commit_event(repo, recorded, base, [WI_A], {WI_A, WI_B})]
+    split = repo / "add-awi.json"
+    split.write_text(json.dumps({recorded: [{"commit": recorded, "awi": [WI_A, WI_B]}]}), encoding="utf-8")
+    event = commit_mapping.rewrite_event(repo, split, commit_mapping.read_mapping(repo, events, {WI_A, WI_B}), {WI_A, WI_B})
+    assert event == {"rewrite": {_short(repo, recorded): [{"commit": _short(repo, recorded), "awi": sorted([WI_A, WI_B])}]}}
+    assert commit_mapping.get_commits(repo, [*events, event], [WI_A, WI_B], {WI_A, WI_B}) == {
+        WI_A: [_short(repo, recorded)],
+        WI_B: [_short(repo, recorded)],
+    }
+
+
+def test_rewrite_rejects_awi_outside_allowed_set(repo: pathlib.Path) -> None:
+    """計画の対象外のAWIを加えた分割指定は、記録を作らずに理由と次の操作を示して拒否する。"""
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    recorded = _commit(repo, "recorded")
+    events = [commit_mapping.commit_event(repo, recorded, base, [WI_A], {WI_A})]
+    split = repo / "outside.json"
+    split.write_text(json.dumps({recorded: [{"commit": recorded, "awi": [WI_A, WI_B]}]}), encoding="utf-8")
+    with pytest.raises(commit_mapping.CommitMappingError, match="対象外のAWI") as rejected:
+        commit_mapping.rewrite_event(repo, split, commit_mapping.read_mapping(repo, events, {WI_A}), {WI_A})
+    assert "記録は変更していない" in rejected.value.next_action
 
 
 def test_reads_legacy_body_comments_before_attachment(tmp_path: pathlib.Path, repo: pathlib.Path) -> None:

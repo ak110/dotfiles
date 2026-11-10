@@ -14,178 +14,83 @@ description: >
 
 # ユーザー確認とユーザーへの報告
 
-確認の要否の判定、伝達手段の選択、回答後の作業再開までを扱う。エージェントが判断できない事項だけをユーザーへ問い、技術判断は自ら確定して作業を進める。
+確認の要否の判定、伝達手段の選択、回答後の作業再開までを扱う。
+エージェントが判断できない事項だけをユーザーへ問い、技術判断は自ら確定して作業を進める。
 UWIの本文、キューへの投入、状態管理、依存関係の形式は`agent-toolkit:wi-standards`を起動して従う。
 
-対話での確認や結果の説明には、実行中のホストの応答・質問手段を使う。UWIの保存やWIの保留・再開にはキューの仕様資料と`atk`コマンドが要り、CLIが使えない環境では確認の本文と保存用の原稿を返してキューへ未保存と明示する。反映はこれらが使えるClaude CodeかCodexで引き継ぎ、原稿には[文章の品質基準](references/quality-standards.md)を適用する。
+対話の確認・説明にはホストの応答・質問手段を使う。
+UWI保存とWI保留・再開にはキュー仕様と`atk`が要る。
+CLIが無ければ確認本文と保存用原稿を返し、キューへ未保存と示す。
+反映はこれらが使えるClaude CodeかCodexで引き継ぎ、原稿には[文章の品質基準](references/quality-standards.md)を適用する。
 
 ## 名指し参照の読込方法
 
-本文で名指しした資料と読込表の資料は、条件が成立したら判断や操作の前に指定節と、その成立に必要な前提・例外を自分で読む。全体が判断に必要な場合は全文を読む。読込表の列の使い方は`agent-basics:writing-standards`の`references/quality-principles.md`「読込表の読み方」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/quality-standards.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md#「レビュー指摘の位置付け」` | 判断 | `section:agent-toolkit:*/share/exec-review-responses.md#「レビュー指摘の位置付け」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md#「方針と判断の記録との比較」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md#「由来と承認」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/SKILL.md#「由来と承認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/references/report-formats-completion.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-completion.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`agent-basics:bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」`、`section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」` |
-| ユーザーから成果物の欠陥の指摘・割り込み・是正要求を受け取り、採否と修正範囲を確定する前 | `agent-toolkit:user-confirmation-and-report/references/review-feedback.md#「ユーザー指摘の受領」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/review-feedback.md#「ユーザー指摘の受領」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
+| ユーザーから成果物の欠陥の指摘・割り込み・是正要求を受け取り、採否と修正範囲を確定する前 | `agent-toolkit:user-confirmation-and-report/references/review-feedback.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/review-feedback.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
-| 状況照会で再検証の要否を判定する前 | `agent-basics:check-execution/references/verification-scope.md#「実行条件と再実行」` | 判断 | `section:agent-basics:*/skills/check-execution/references/verification-scope.md#「実行条件と再実行」` |
+| 状況照会で再検証の要否を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
-| 読込表と本文の名指し参照を読む前 | `agent-basics:writing-standards/references/quality-principles.md`の「読込表の読み方」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「読込表の読み方」` |
 
 ## 読込表
 
-条件付きの行の資料は、条件が成立した時点で該当する判断の前に読む。取得済み本文の再利用と会話圧縮後の再読込は`agent-toolkit/rules/02-agent-operations.md`「ツール・コマンド運用」に従う。
+条件付きの行の資料は、条件が成立した時点で該当する判断の前に読む。
+取得済み本文の再利用と会話圧縮後の再読込は`agent-toolkit/share/rules/common/02-agent-operations.md`「ツール・コマンド運用」に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 「確認要否の判定」を適用する前（Claude Codeで`AskUserQuestion`を呼ぶ前、Codexで構造化質問か`references/codex-format.md`の固定形式の質問を発行する前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` | |
-| 確認前に技術的不確実性を実験で解消するか判断する前 | `agent-basics:writing-standards/references/design-heuristics.md`の「設計案の予備選別」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」` | |
+| 確認前に技術的不確実性を実験で解消するか判断する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` | |
 | 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点。`AskUserQuestion`の`questions`、Codexの構造化質問または固定形式の質問を組む前と、委譲先の返却が示した論点や問いの案から確認を組む前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/choice-construction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` | |
 | 協調モードで対象リポジトリの変更を伴う依頼へ着手する前 | `references/publish-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md` | |
 | Codexで条件に合う構造化質問が無く、固定形式で質問を提示する時点 | `references/codex-format.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/codex-format.md` | |
 | 起動元の工程が質問ラウンドを指定した時点 | `references/grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` | |
 | Claude Codeメインが利用上限の猶予通知を受けた時 | `references/usage-limit.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/usage-limit.md` | |
-| 原要求を復元する資料を取得できず、未確定判断を保留または暫定する前 | `references/pending-decisions.md`の「未確定判断の保留と暫定判断」 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md#「未確定判断の保留と暫定判断」` | |
+| 原要求を復元する資料を取得できず、未確定判断を保留または暫定する前 | `agent-toolkit:user-confirmation-and-report/references/pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` | |
 | 回答を得られない確認の保留、無回答後の確認の記録、事前承認の合意判定、対話中のUWIへの回答の受領のいずれかへ進む前（メインエージェント） | `references/pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` | |
 | 回答済みUWIを元の作業へ反映する時（回答の到達を確認する時を含む）と、`atk run-skill`が起動したセッションで過去の実行のUWIを扱う時 | `references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` | |
 | 規範どうしが矛盾する場合 | `references/conflict-resolution.md`（由来確定） | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/conflict-resolution.md` | |
 | 手順どおりに進められない場合 | `references/procedure-conflict.md`（判定順） | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/procedure-conflict.md` | |
-| ツール呼び出しが実行基盤・権限設定・auto mode classifierに拒否された場合、classifierが判定不能を返した場合、および委譲先からその報告を受けた場合 | `references/permission-denial.md`の「共通判断」と、診断に対応する詳細節 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md#「共通判断」` | |
+| ツール呼び出しが実行基盤・権限設定・auto mode classifierに拒否された場合、classifierが判定不能を返した場合、および委譲先からその報告を受けた場合 | `references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` | |
 | ユーザーへの確認・報告の手段を選ぶ時と認識合わせを行う時 | `references/communication-methods.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md` | |
 | 実際のユーザー発話を解釈・取り込み、訂正・割り込み・成果物の制限を扱う時 | `references/user-utterance.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md` | |
-| 実ユーザー発話やWI記入欄の入力を受領・分類し、既存判断への介入かを評価する時 | `references/analysis-operations.md`の「ユーザー介入と確認の判定」 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md#「ユーザー介入と確認の判定」` | |
+| 実ユーザー発話やWI記入欄の入力を受領・分類し、既存判断への介入かを評価する時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` | |
 
 ## 起動契機
 
-起動条件はfrontmatterの`description`に従う。除外する「自動生成されたプロンプト」は、システムがユーザー入力欄へ挿入し`atk-auto`タグで囲むメッセージ（`atk wi process-loop`が子セッションへ渡す初期プロンプトや、モデルの可用性チェック用プロンプトなど）である。境界の識別とユーザー発話としての証拠性は`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」に従う。委譲先のターンが受け取る委譲プロンプトもこの除外に含まれる。
+起動条件はfrontmatterの`description`に従う。
+除外する「自動生成されたプロンプト」は、システムがユーザー入力欄へ挿入し`atk-auto`タグで囲むメッセージ（`atk wi process-loop`が子セッションへ渡す初期プロンプトや、モデルの可用性チェック用プロンプトなど）である。
+境界の識別とユーザー発話としての証拠性は`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」に従う。
+委譲先のターンが受け取る委譲プロンプトもこの除外に含まれる。
 
-不具合の有無・原因・修正案を回答、補足説明、確認案、委譲先やAWIへ渡す方針に含めるときは、診断の前に`agent-basics:bugfix`を起動する。是正の認可の要否は「認可を要する操作」に従い、既存の仕様へ戻すバグ修正と新しい挙動の追加を区別する。
-
-## 確認要否の判定
-
-指示を「要件」と「技術判断」に分ける工程（計画作成・実装・提案・WI起草など）では、採用前に元の要求と実際の回答の出所を確かめて本節を適用し、引き継いだ要件欄・技術判断欄も判定し直して原文の確度・訂正・評価を保つ。
-ユーザーだけが持つ値が要る事項は確認事項として切り出し、回答の到達を確かめるまで、それに依存する成果物・操作・分類の確定を保留する。
-分類を検収するエージェントも本節を適用し、未回答のユーザー判断や原文より強い確度へ書き換えた結論を見つけたら分類した担当へ差し戻す。分類の根拠はその工程の計画ファイル・委譲時の入力プロンプト・検証の証拠記録などに残す。
-
-選択肢は、依頼の目的・要件、同じセッションでユーザーが示した判断基準、`agent-toolkit/rules/01-agent.md`「QCDと3段判定」、明文化された方針の順に優先する。方針はQCDを達成する手段であり、その場で指定された手段や進め方も同節で評価する。確認の要否は、目的・期待される結果・認可の確定と、その範囲内の手段の選択とを分けて判断する。
-
-「要件・意図の曖昧さ」は、原文・これまでの発話・現物を調べてもユーザー固有の判断材料が足りず解釈を確定できない状態を指す。目的・要件・成立済みの認可を満たし技術とQCDで決められる実現方式は、表示や出力に多少の違いが出ても自ら選ぶ。
-
-調査や変更の前に、目的・範囲・期待される結果・制約・外部から観測できる挙動・境界・例外・除外の各観点で曖昧な点を全て洗い出し、次の順で判定する。
-
-1. 目的・期待される結果・必要な認可が確定しているかを判定する。目的への適合は`agent-toolkit/rules/01-agent.md`「QCDと3段判定」の、成果物を使う主体と利用場面から仕様や設計を導く原則で評価し、既存仕様との整合、実装の正しさ、推奨案の有無とは切り離す。
-2. 不確実な点は、まず手元の情報（調査結果、現物、公式ドキュメント、明文化された方針、成立済みの承認、同じセッションの発話、適用中のスキル・規範・指示が定める工程や対象範囲）で解消し、これらの方針を変える根拠は現物で観測した客観的事実に限る。元の要求やユーザー判断の目的も、過去の判断記録、当時の確認文と選択肢、回答から調べる。解釈や区分（目的側か手段側か、バグ修正か新機能か、条文の失効など）や適用範囲に迷ったら目的に照らして自ら確定しステップ4で報告する。判断の目的を特定できないときや、ユーザー固有の判断が要るかが推測を出ないときはステップ3へ進む。
-   資料が足りないときは、必要な結果（検証結果や判断そのもの）と自分が選んだ資料や取得手段を区別する。確認済みのインターフェース契約、公式資料、再現テストなど別の妥当な手段で、必須の検証水準を保って同じ結果に届くなら技術判断として解決しステップ4で報告し、選んだ手段が使えないことだけを理由に資料を求めない。
-   採否を変える技術的不確実性が残る場合は、読込表の設計基準に従って最小の試作や実行実験で確かめる。得た結論・証拠・限界を既存の根拠記録へ残し、実験では決まらないユーザー固有の値だけをステップ3へ渡す。
-3. 調べ尽くしても解釈にユーザー固有の情報（選好、認可、外部の状態、達成に不可欠でユーザーからしか得られない資料）が足りない事項は、結果の差の大小や推奨案の有無にかかわらず全て確認し、推測で補わない。質問には回答で分かれる観測結果や操作、根拠、推奨案を書き、分岐を示せない問いや技術とQCDで決まる問いは自ら確定する。本質的な分岐点を残して周辺だけを尋ねる確認は、確認責任を果たしていない。
-   時間や費用の許容範囲もユーザーが決める値で、見込みは実測や観測から出して各案の影響として示す。費用・時間・工数を理由に範囲表現や例示が指す対象を除外・任意扱いにするのは範囲の縮小であり、「原文からの具体化を要する軸」に従って事前に確認する。
-4. 案を自ら確定する直前と有力な対案を記録する前に、見送る案のほうが原文の目的や理由に合っていないか、要求の程度や確度を厳しくしていないかを`references/user-utterance.md`「原文の保持と取り込み」に照らして点検する。技術とQCDで解決できるなら自ら案を直し、ユーザー固有の判断が残ればステップ3へ戻って後続工程の前に確認する。原文の対象範囲をそのまま適用する判断や、確定した目的と認可の内側の技術手段は、確認にせず自ら決めて進める。別の合理的なエージェントなら違う判断をしうる事項は、`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」の`### 自ら確定した判断`へ1件1行で書く。自律モードでは同資料「報告用UWIのフォーマット」の同じ見出しへ書く。
-
-手順4で数式や判定条件を具体化した場合は、選んだ案と有力な対案で結果が分かれる入力を使い、原文の目的・理由・論理関係と比べる。
-補足や換算から加えた原文にない条件は自ら除き、ユーザー固有の値が残る場合だけ手順3へ戻る。
-外部の結果を変える解釈の選択は、仕様へ確定した後も「自ら確定した判断」の対象とする。
-
-推論は確定した目的と認可の範囲内で最適な実装を選ぶために使い、明示された要件の上書き、合意のない目的側の変更、依頼にない挙動や機能の追加を推論だけで決めない。委譲先から戻った論点、委譲する技術的選択、工程やスキルが定める条件付きの確認事項にも同じ基準を適用し、手元の情報で決まる選択肢は委譲前に確定する。他の規範がいう「認識の違いによって要件や結果が変わりうる未確定事項」はステップ3の確認対象である。
-
-- 認可や選好などユーザー固有の判断を要する操作は、推奨案の有無にかかわらず「認可を要する操作」とし、事前承認と事後承認の区分は`references/approval-scope.md`に従う。
-- 目的と認可が確定した範囲内の配置先（規範・ドキュメント・設定ファイルや記載節）、関数の分割、内部データ構造、検証手段、実装手順、範囲表現が指す対象の適用、追加機構の要否は自ら決め、事後承認にもしない。適用水準や分類を指定された場合も、必要な工程で読まれるかを現行の読込規則で確かめて配置を決める。
-
-選択肢が複数あること、影響範囲の広さ、観測結果の変化、明示的な規定の欠如、手段の違い・由来の不明・作業の中断・依存関係の状態・レビュー指摘・特定工程への到達は、それだけでは確認の理由にならず、ステップ2と3で判定する。質問の件数や回数、規範上の自律度は判定の対象外とする。
-
-確認文と委譲先からの確認通知には「確認提示項目」（判断の対象、ユーザー固有の判断である根拠、推奨案、代替案、根拠、影響範囲、ユーザーが観測する結果）を漏れなく含め、協調モードでは回答後の操作も書く。
-「ユーザー固有の判断である根拠」には、不足する選好・認可・本人しか持たない情報と、調査や成立済みの認可で補えない理由を書く。確認を受領・発行するエージェントは、原要求、現物、既存認可と照らしてこの根拠を検収する。
-項目が揃っていることだけでは確認を必要と判定せず、実装手段の差や過去の手段を変えることだけで決まる事項は、担当範囲で技術判断を確定する。
-規範・手順・仕様を根拠に挙げるときは、従うことで防げる問題や得られる成果も書いて各案を比べられるようにする。対処法や回避策の提案には、試みている操作が実現できるかを書き、できなければ代わりに達成できる目的を併記する。
-
-確認を発行するメッセージの地の文にも推奨案と根拠の要約を書く（フォームより先に届く文面が判断を丸投げすると、ユーザーが推奨案を尋ね直すため）。確認せずに未確定の選択肢を示す場合は、`${CLAUDE_PLUGIN_ROOT}/share/rules-main.md`「ユーザー向け発話ルール」の推奨案の箇条に従う。
-
-## 判定の細則
-
-要求の具体化の前に`references/user-utterance.md`「原文の保持と取り込み」を適用し、質問の終了条件は`references/grilling.md`「終了条件」に従う。成立する案が1つだけの場合や明確な推奨案がある場合も、要件への合意は別に取る。
-内部の設定値を補正する前に、明示的な指定や過去の方針を戻す意図が無いかを原文と記録で確かめ、明示された要件なら内部値でも「認可を要する操作」とする。指定が無く外部から観測されない内部の値は、調査や実機確認で分かった正しい値へ自ら補正し、根拠を成果物に残す。
-確定済みの回答を変えうる場合は、調査と観測を先に済ませ、公開仕様との差が残るときだけ差分を示して質問する。
-要求が主題や責務で大まかな範囲を示す場合は、対象の主題宣言（ドキュメントの表題や最上位見出し、モジュールの責務記述など）から自ら適用範囲を確定し、同じセッションで自分が示した提案・見解・候補一覧をユーザーが指す場合はその集合を対象とする。状況報告にとどまる項目（編集提案を含まない項目、状態フラグ、見送りの記録など）を加えるときは「原文からの具体化を要する軸」に従って確認する。
-明示的な指示と異なる判断を確定したら、その判断と差の理由を記録する。
-
-原因分析と不具合対応の場面では、次の作法も同じ判定に含める。
-
-- 直接操作できない環境の問題で、コードの調査や手元での再現から因果関係を特定できない場合は、調査用コードやログの取得手順を示してユーザーへ取得を依頼する
-- 排他制御、競合状態、同時更新が原因候補に挙がった場合は、ユーザーへ確認する前に、共有状態を変更しうる主体を洗い出してロックの適用範囲と突き合わせる
-- 過去の再発防止策の条文と改善要求が衝突し、その条文の防止の仕組みを導入時の記録から特定できない場合は、判断に必要な情報がユーザーの手元環境や未公開資料にしかないときに限って確認する
-- CI失敗が今回のセッションの変更に帰属するかどうかだけを理由にユーザー確認しない
-- ユーザーから指示の取り消しや修正指示を受けたときは、確認や承認待ちの工程を増やす前に、その判断が本当にユーザー固有の意向に依存するかを確かめる
-- 人間から寄せられた不具合報告で追加の情報が要る場合は、報告者に内部実装の知識を求めず、報告者が直接観測できる操作手順、入力内容、期待した結果、実際の結果を尋ねる
-- 同じ症状への修正が2回で解消せず修正案を選び直すときは、ユーザーしか知り得ない情報が不可欠な場合に限り、確認質問を1件に限って尋ねる
-
-## 認可を要する操作
-
-次の操作は、技術的な選択肢が1つに定まる場合でも認可の判断がユーザー固有の領域に属するため事前に確認する。事前承認と事後承認の区分と成立済み承認の適用は`references/approval-scope.md`に従い、依頼自体がこれらの実施を明確に指示していればその依頼を承認源とみなす。
-
-- 公開インターフェースの変更
-- 破壊的操作
-- 第三者への影響を伴う操作
-- 外部サービスの設定変更
-- 依頼に含まれていないエンドユーザー向けの画面・ドキュメント・通知の変更
-- ユーザーが確定させた目的・要件、およびユーザーが観測する結果に関わる判断の変更
-
-公開操作の消費主体と削除・置換の判断は、`references/approval-scope.md`「公開操作の消費主体」に従う。
-
-実行中の依頼・WI・確定済み要件の達成に要るCI関連の外部サービス設定変更は、全agent-toolkitユーザー・全リポジトリに包括認可が成立しており、個別の確認は不要である。CI関連かは、ワークフロー・パイプライン・ジョブの選択や実行、入力値、実行権限、認証情報、実行前の保護設定、結果報告、合否判定への直接の関与で判定し、CI用シークレットの作成や変更も含む。リポジトリの公開範囲、CIから独立した成果物の配信や公開、CI以外のためのWebhookやアプリ連携、CIから独立したブランチ保護規則などは対象外とし、変更が混ざればCIと独立した副作用だけを従来の基準で判定する。
-
-WIの完成条件や依頼の範囲外で見つけた、エンドユーザー（ユーザー自身を含む）の作業が止まる場面（停止場面）や誤った結果を出す不具合は次の2つに分ける。
-
-- バグの修正: ドキュメント・テスト・画面表示・実装の意図などの既存仕様どおりに戻し、エンドユーザーが新しく覚える操作・設定・表示要素を増やさない是正。確認せずその場で直す。
-- 新しい挙動の追加: 外部から観測できる挙動・操作・設定・画面要素・通知の新設や、既存仕様の挙動を変える是正。認可を要する操作として確認する。
-
-ドキュメントや操作案内を製品機能の制約に合わせて直す場面では、足りない機能自体にもこの区分を適用する。案内された操作を製品内で完了できなければ停止場面とし、機能を追加する案を「新しい挙動の追加」として「確認を要する事項」へ送る。元のドキュメントがその機能を前提にしていた場合は修正と追加の両方に当たる。この分類は認可の要否を決めるためのもので、推奨は`references/choice-construction.md`「候補の構成」に従う。両方にまたがれば「新しい挙動の追加」とする（知らない機能が無断で公開される不利益が確認の手間より大きいため）。迷ったら、未知の機能を無確認で公開せず仕様内の是正は確認なしで直す目的に沿って自ら確定し報告する。停止場面を観測していない改善提案は対象外で、`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘の位置付け」に従う。
-
-「ユーザーが確定した判断の変更」は、`agent-toolkit/rules/01-agent.md`「協調と自律」の保存対象について、目的を変える操作、過去に退けた案（当時選ばなかった選択肢や記録で除外した対象）の採用、ユーザーが決めた結果の取り消しを指す。記録が明示していない対象や処理への既存判断の準用は、全体の目的に合い、退けた案を戻さず、今回の成果と矛盾しない範囲で認め、自ら確定した判断として報告する。目的・要件・対象範囲・期待される結果の変更は「目的側」、その実現方式（フックの適用範囲、フォーマット、作業工程、使うツールや担当工程など）は「手段側」とし、判断の目的で区別する。過去の目的や判断の由来は`agent-toolkit:wi-standards`の`references/drafting-completion.md`「方針と判断の記録との比較」の記録資料で調べ、今回の要求との比較には同節の共通基準を使う。
-
-「第三者」は、ユーザーとその指示で動くエージェント以外の外部の主体を指し、開発環境や検証環境などユーザー自身が管理するリソースを使う主体は対象外とする。
-
-## 原文からの具体化を要する軸
-
-範囲表現、開放的な列挙、限定や条件（「〜のみ」「〜のときだけ」など）は、原文が定めた1つの集合として扱い、現行の仕組みで処理できる範囲に合わせて狭めたり、限定を外して広げたりしない。
-原文から対象・適用範囲・外部から観測される結果・除外条件を新たに具体化する場合、原文の対象集合を縮小・置換・細分化する場合、原文に無い対象を含む既存条文へ新しい規則を広げる場合は、先に具体化の軸（対象・範囲・実行の契機・区分など結果や適用範囲を左右する観点）を全て洗い出す。省略で操作対象の種類が複数に読める場合は、反映先が全エンドユーザーへ配布される共通規範か特定環境の個別記録かも軸に加える。程度や裁量を含む表現の具体化基準は`agent-toolkit:wi-standards`「由来と承認」に従う。
-
-範囲表現や開放的な列挙（「すべて」「AやBなど」「〜など」「たとえば〜」など）の集合は、要求の背景にある仕組みや目的を先に特定し、その理由が当てはまる対象を漏れなく含め、例示に限らず開放性を保って確定する。入力インターフェースの制約、明示された範囲、過去に却下された方向による限定は保つ。集合に含まれるかは言葉が指す概念と要求の目的で判断し、現在のシステムで対応できるかは問わない。元の集合の適用は自ら行い、拡大は確認する。
-縮小に当たるかは、外す対象の数や「除外」「部分不採用」などの呼称ではなく、ユーザーの目的と通常の利用場面で得られる結果が変わるかで判定する。求める結果を満たし、通常の運用では生じない残余の経路だけが対応外となる判断は、自ら確定した判断として報告する。求める結果の一部を満たせない場合は、技術的に実現できない場合も含め、満たせない内容と代替手段を示して事前に明示的な承認を得る。
-
-洗い出した各軸は「原文で確定済み」「確認要否の判定で自ら確定可能」「ユーザー確認が必要」に分け、`references/user-utterance.md`「原文の保持と取り込み」の記録フォーマットで成果物に応じた場所へ残す（除外にはユーザーの明示的な承認の出所を必ず書く）。確認で確定した軸の値はその質問の要求だけに適用する。対象集合の広げ方は調査後に推奨案と観測根拠を示して成果物の確定前に、操作対象の種類は前提（委譲文での対象の想定、選択肢の設計、計画ファイルの対象集合）の確定前に確認する。対象・範囲・結果を明確に指定した提案の採用、ソースコードから確定できる事実、観測に基づく内部設定値の補正、ファイル配置、関数の分割、テスト手法の選定は自ら決める。
-同じ対象の表示方法や同じ目的の操作手順が複数あって相談を受けたら、操作から結果までの流れを比べ、エンドユーザーの操作手順と画面表示の変化で違いを説明する。
-
-## 確認を要する事項
-
-「確認要否の判定」で確認する代表的な場面を挙げる。確認文にはユーザー要件や運用方針の未確定部分だけを書き、技術的選択肢や調査の途中経過は書かない。手段は`references/communication-methods.md`「手段の選択」に従う。
-
-- 原文・過去の発話・依頼の目的を調べても解釈を1つに絞れず、解釈によってエンドユーザーから見える結果が変わる場合
-- 単独の発話から工程を特定できず、直前の要求との組み合わせ方で工程が分かれる場合（前後関係を確定してから変更や委譲へ進む）
-- 意図しない外部公開を解消した後の復旧で、追加の認可や復旧方針の選択が要る場合（解消の事実・影響・復旧方針は直ちに報告し、既存認可内の復旧は自ら行う。作業中に見つけた認証情報は含めず、`agent-toolkit/rules/01-agent.md`「完遂と先送り」に従う）
-- WIの完成条件に含まれない不足のうち、「認可を要する操作」で「新しい挙動の追加」と判定したものを今回の作業に含めるか別作業にするかを決める場合
-
-最後の項目は公開工程の最中でも直ちに確認し、回答を待たずに確定できる工程は続ける。確認文には、観測した停止場面、今回の変更でその問題に遭いやすくなるか、別作業にした場合のリリース内容の差を書く。「今回の作業に含める」と回答されたら実行中のスキル（`agent-toolkit:process-wi`など）の追加指示や即時対応の手順で同じ実行サイクルへ組み込み、公開工程の開始後の回答は同スキルの公開後指示に従う。期限までに回答が無ければ`references/pending-decisions.md`「未確定判断の保留と暫定判断」に従って実装を見送り、WI投入担当へAWIの起草を委譲し、実施の可否を問う事前承認型UWIを記録して、そのAWIの`depends_on`へUWIを加える。認可済みの元の変更は通常どおり公開・リリースの判定へ進める。
-
-## 確認の選択肢を組む手順
-
-現在求められている回答と、それに依存する確認の順序は`references/user-utterance.md`「問い・提案・疑問形の扱い」に従う。
-質問の前提も原文の保持と取り込みの対象とし、原文・回答とエージェントの案を区別する。
-
-確認は検証済みの事実を前提に、質問文だけで判断でき、合意がそのまま成果物に反映されるように組む。起草は`references/choice-construction.md`の「根拠の確定」「候補の構成」「影響と回答単位」「本文の語」に従う。
+不具合の有無・原因・修正案を回答、補足説明、確認案、委譲先やAWIへ渡す方針に含めるときは、診断の前に`agent-basics:bugfix`を起動する。
+是正の認可の要否は`references/user-confirmation-and-report-authorization.md`「認可を要する操作」に従い、既存の仕様へ戻すバグ修正と新しい挙動の追加を区別する。
 
 ## 工程で参照する運用資料
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-basics:writing-standards/references/investigation.md#「裏付け手段の回復と前提の相違」「実行結果の検証」「エージェント向け文書の技術的条文」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「裏付け手段の回復と前提の相違」「実行結果の検証」「エージェント向け文書の技術的条文」` | |
-| auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:user-confirmation-and-report`が扱う） | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md#「運用条件」「CLIサブコマンド」「カスタムルール追加のワークフロー」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/auto-mode.md#「運用条件」「CLIサブコマンド」「カスタムルール追加のワークフロー」` | |
+| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-basics:writing-standards/references/investigation-sources.md`、`agent-basics:writing-standards/references/investigation-technical-clauses.md`、`agent-basics:writing-standards/references/investigation-results.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md`、`read:agent-basics:*/skills/writing-standards/references/investigation-technical-clauses.md`、`read:agent-basics:*/skills/writing-standards/references/investigation-results.md` | |
+| auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:user-confirmation-and-report`が扱う） | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/auto-mode.md` | |
+
+## 条件別資料
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 確認要否の判定・判定の細則に関する判断・作業の前 | `references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 認可を要する操作・原文からの具体化を要する軸に関する判断・作業の前 | `references/user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 確認を要する事項・確認の選択肢を組む手順に関する判断・作業の前 | `references/user-confirmation-and-report-questions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-questions.md` |

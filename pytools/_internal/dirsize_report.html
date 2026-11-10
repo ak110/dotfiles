@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; base-uri 'none'; form-action 'none'">
+<title>容量レポート | dirsize</title>
+<style>
+:root { color-scheme: light; font-family: system-ui, sans-serif; color: #172938; background: #f5f7f8; }
+body { margin: 0; } main { max-width: 1200px; margin: auto; padding: 24px; }
+h1 { margin: 0 0 12px; } h2 { margin-top: 32px; } p { line-height: 1.7; }
+button, input, select { font: inherit; padding: 10px; min-height: 44px; box-sizing: border-box; }
+button { cursor: pointer; border: 1px solid #547184; border-radius: 4px; background: white; color: #172938; }
+button:hover { background: #e7eff3; } button:disabled { cursor: default; color: #526371; background: #e9edef; }
+:focus-visible { outline: 3px solid #a34408; outline-offset: 3px; }
+input[type=checkbox] { width: 24px; min-height: 24px; margin-inline-end: 10px; }
+.path, td:first-child, #candidate-path { overflow-wrap: anywhere; }
+.summary { padding: 20px; background: #e3eef1; border-radius: 6px; }
+#total { font-size: 1.7rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.controls, .pager { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0; }
+.controls label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#search { max-width: 100%; } .table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; background: white; }
+th, td { padding: 12px; text-align: start; border-bottom: 1px solid #c4ced4; vertical-align: top; }
+th { background: #e9eff2; } td { font-variant-numeric: tabular-nums; }
+td:first-child { min-width: 160px; } .num { white-space: nowrap; }
+#treemap { position: relative; height: 320px; background: #e4eaed; }
+.tile { position: absolute; box-sizing: border-box; border: 1px solid #f5f7f8; overflow: hidden; background: #24647b; color: white; padding: 6px; font-size: 12px; }
+.tile:nth-child(2n) { background: #4a637d; } .tile:nth-child(3n) { background: #306b5b; }
+.skip { position: absolute; top: -60px; } .skip:focus { top: 0; background: white; padding: 12px; }
+#candidate { border: 1px solid #a4b6bf; padding: 16px; background: white; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #eaf0f3; padding: 16px; }
+details { margin: 16px 0; } li { overflow-wrap: anywhere; margin-block: 8px; }
+@media (max-width: 500px) { main { padding: 16px; } th, td { padding: 8px; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">本文へ移動</a>
+<main id="main">
+<h1>容量レポート</h1>
+<p id="target" class="path"></p>
+<section class="summary" aria-label="集計結果">
+<div id="total"></div><p id="status"></p><p id="comparison"></p><p id="time"></p>
+</section>
+<p>通常ファイルの論理サイズを集計した。親ディレクトリの容量は子を含むため、一覧の各行は合算しない。
+取得中にもファイルは変化し得る。リンク・junction・reparse point・別ファイルシステムは追跡しない。</p>
+<details><summary>除外パスと走査の制約</summary>
+<p>ホーム直下のPictures・Photos・OneDrive・Dropbox・iCloudDrive、OneDrive系環境変数の対象、指定パスと出力先を除外する。
+任意配置・名称変更した写真・同期領域は自動発見しない。指定されない通常ディレクトリは走査されるため、必要なパスを--excludeで指定して再生成する。</p>
+<ul id="exclusions"></ul></details>
+<h2>容量の分布</h2>
+<p>ファイルだけを面積へ割り当て、親子の二重加算を避けている。小さな項目と取得状態は下の一覧で確認できる。</p>
+<div id="treemap" role="img" aria-label="通常ファイルの容量に比例したツリーマップ"></div>
+<p id="map-empty"></p>
+<h2>パス別の容量と影響</h2>
+<div class="controls">
+<label for="search">パスを検索<input id="search" type="search" placeholder="パスの一部" autocomplete="off"></label>
+<label for="scope">表示範囲<select id="scope"><option value="all">すべて</option><option value="directory">ディレクトリ</option><option value="file">ファイル</option><option value="issues">除外・未取得</option></select></label>
+</div>
+<p id="count" role="status"></p>
+<div class="table-wrap"><table><thead><tr><th scope="col">パス / 種類</th><th scope="col">サイズ</th><th scope="col">前回比</th><th scope="col">取得状態 / 整理の影響</th></tr></thead><tbody id="rows"></tbody></table></div>
+<div class="pager"><button id="prev" type="button">前のページ</button><span id="page"></span><button id="next" type="button">次のページ</button></div>
+<h2>整理候補とスクリプト</h2>
+<p>uvキャッシュ全体を選んだ場合だけ、<code>uv cache prune</code>のスクリプトを生成できる。
+未使用キャッシュとuvのキャッシュ内に保存されたPython実行環境を整理する操作で、表示した総容量がそのまま回収される保証はない。
+次回の再取得・環境再作成が必要になる場合があり、オフライン時は再取得できない。</p>
+<div id="candidate"><p id="candidate-reason"></p><label id="candidate-label" hidden><input type="checkbox" id="choose">uvキャッシュルート全体を選択 <span id="candidate-path"></span></label></div>
+<p>mise・npm・pip、AIセッション履歴・ローカルモデル・Docker・作業ツリー・用途不明の対象は要確認。
+各ツールの作用範囲と再取得の影響を確認する。個別ディレクトリからuv全体の操作への変換や汎用削除は行わない。</p>
+<div class="controls"><button id="shell" type="button" disabled>Shellをダウンロード</button><button id="powershell" type="button" disabled>PowerShellをダウンロード</button></div>
+<p id="download-status" role="status">候補を選択するとダウンロードできる。HTMLとdirsizeは整理処理を実行しない。</p>
+<pre id="preview" aria-label="生成コマンドのプレビュー" hidden></pre>
+<h2>履歴</h2>
+<p>同じ出力先のhistory.csvへUTF-8 BOM付きで追記する。同一対象・同一除外条件の直近の完全取得と比較し、部分取得は比較しない。
+履歴は出力先を保有する期間だけ保持される。自動削除・容量上限は設けず、空き容量不足は保存エラーとなる。</p>
+<noscript>一覧と候補選択にはJavaScriptを有効にする必要がある。</noscript>
+</main>
+<script id="report-data" type="application/json">__REPORT_DATA__</script>
+<script>
+"use strict";
+const report = JSON.parse(document.getElementById("report-data").textContent);
+const byId = id => document.getElementById(id);
+const sizes = value => value === null ? "未取得" : new Intl.NumberFormat("ja-JP").format(value) + " B";
+const delta = value => value === null ? "比較なし" : (value > 0 ? "+" : "") + sizes(value);
+const labels = {success: "取得済み", excluded: "除外", missing: "走査中に消失", unavailable: "取得不能", partial: "部分取得"};
+const kinds = {file: "ファイル", directory: "ディレクトリ", unknown: "種類未取得"};
+byId("target").textContent = report.target;
+byId("total").textContent = sizes(report.nodes[0].size) + (report.status === "partial" ? "（取得できた分）" : "");
+byId("status").textContent = report.status === "partial" ? "部分取得。未取得パスは一覧の「除外・未取得」で確認し、アクセス可能な対象で再実行する。" : "取得完了（除外した領域を除く）";
+byId("comparison").textContent = report.status === "partial" ? "部分取得のため前回比は計算しない。" : report.previous ? "前回比: " + delta(report.nodes[0].delta) : "初回（同一対象・同一集計条件の成功履歴なし）";
+byId("time").textContent = "取得時刻: " + report.time;
+for (const path of report.excluded) { const li = document.createElement("li"); li.textContent = path; byId("exclusions").append(li); }
+let page = 0;
+const pageSize = 100;
+function renderRows() {
+  const search = byId("search").value.toLocaleLowerCase();
+  const scope = byId("scope").value;
+  const nodes = report.nodes.filter(n => n.path.toLocaleLowerCase().includes(search) && (scope === "all" || (scope === "issues" ? n.status !== "success" : n.kind === scope)));
+  const maxPage = Math.max(0, Math.ceil(nodes.length / pageSize) - 1);
+  page = Math.min(page, maxPage);
+  byId("rows").replaceChildren();
+  for (const node of nodes.slice(page * pageSize, (page + 1) * pageSize)) {
+    const tr = document.createElement("tr");
+    const impact = report.candidate && node.path === report.candidate.path ? "uvルート全体: 未使用キャッシュ・キャッシュ内のPython実行環境の整理。再取得が必要になる場合あり" : "要確認: 用途・保持期間・再取得への影響を確認";
+    for (const [index, text] of [node.path + " / " + kinds[node.kind], sizes(node.size), delta(node.delta), labels[node.status] + (node.detail ? ": " + node.detail : "") + " / " + impact].entries()) {
+      const td = document.createElement("td"); td.textContent = text; if (index === 1 || index === 2) td.className = "num"; tr.append(td);
+    }
+    byId("rows").append(tr);
+  }
+  byId("count").textContent = nodes.length ? nodes.length + "件（容量の降順）" : report.nodes.length ? "一致するパスなし。検索条件・表示範囲を変更する。" : "データなし";
+  byId("page").textContent = (page + 1) + " / " + (maxPage + 1);
+  byId("prev").disabled = page === 0; byId("next").disabled = page === maxPage;
+}
+// ソートは表示用だけに適用し、集計済みのルートと親子関係を変えない。
+report.nodes = [report.nodes[0], ...report.nodes.slice(1).sort((a,b) => (b.size || 0) - (a.size || 0))];
+byId("search").addEventListener("input", () => { page = 0; renderRows(); });
+byId("scope").addEventListener("change", () => { page = 0; renderRows(); });
+byId("prev").addEventListener("click", () => { page--; renderRows(); });
+byId("next").addEventListener("click", () => { page++; renderRows(); });
+renderRows();
+function drawMap() {
+  const map = byId("treemap"); map.replaceChildren();
+  const files = report.nodes.filter(n => n.kind === "file" && n.size > 0);
+  byId("map-empty").textContent = files.length ? "" : "容量を表示できる通常ファイルがない。空ディレクトリ・未取得パスは一覧を確認する。";
+  // slice-and-diceの二分割で、全ファイルへ重複のない面積を割り当てる。
+  const stack = [{items: files, x: 0, y: 0, w: 100, h: 100}];
+  while (stack.length) {
+    const r = stack.pop(); if (!r.items.length) continue;
+    if (r.items.length === 1) {
+      const n = r.items[0], tile = document.createElement("div"); tile.className = "tile";
+      Object.assign(tile.style, {left:r.x+"%", top:r.y+"%", width:r.w+"%", height:r.h+"%"});
+      tile.textContent = n.path + " " + sizes(n.size); tile.title = tile.textContent; tile.setAttribute("aria-hidden", "true"); map.append(tile); continue;
+    }
+    const mid = Math.ceil(r.items.length / 2), left = r.items.slice(0,mid), right = r.items.slice(mid);
+    const sum = items => items.reduce((s,n) => s+n.size,0), ratio = sum(left) / sum(r.items);
+    if (r.w * map.clientWidth >= r.h * map.clientHeight) {
+      stack.push({items:right,x:r.x+r.w*ratio,y:r.y,w:r.w*(1-ratio),h:r.h}, {items:left,x:r.x,y:r.y,w:r.w*ratio,h:r.h});
+    } else {
+      stack.push({items:right,x:r.x,y:r.y+r.h*ratio,w:r.w,h:r.h*(1-ratio)}, {items:left,x:r.x,y:r.y,w:r.w,h:r.h*ratio});
+    }
+  }
+}
+drawMap();
+window.addEventListener("resize", drawMap);
+if (report.candidate) {
+  byId("candidate-label").hidden = false;
+  byId("candidate-path").textContent = report.candidate.path;
+  byId("candidate-reason").textContent = "再生成可能な整理候補（作用範囲は次のルート全体）";
+} else { byId("candidate-reason").textContent = "生成可能な項目なし: " + report.candidate_reason; }
+byId("choose").addEventListener("change", event => {
+  const enabled = event.target.checked && Boolean(report.candidate);
+  byId("shell").disabled = !enabled; byId("powershell").disabled = !enabled;
+  byId("preview").hidden = !enabled;
+  byId("preview").textContent = enabled ? report.candidate.shell + "\n" + report.candidate.powershell : "";
+});
+for (const [id, extension] of [["shell","sh"],["powershell","ps1"]]) {
+  byId(id).addEventListener("click", () => {
+    if (!report.candidate || !byId("choose").checked) return;
+    const prefix = id === "powershell" ? "\ufeff" : "";
+    const url = URL.createObjectURL(new Blob([prefix, report.candidate[id]], {type:"text/plain;charset=utf-8"}));
+    const a = document.createElement("a"); a.href = url; a.download = "uv-cache-prune." + extension; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    byId("download-status").textContent = "スクリプトを生成した。内容と作用範囲を確認してから自分で実行する。";
+  });
+}
+</script>
+</body>
+</html>

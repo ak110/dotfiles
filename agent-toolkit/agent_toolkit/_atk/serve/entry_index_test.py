@@ -368,10 +368,65 @@ def test_warnings_report_unknown_state_for_unreadable_fixed_entry(tmp_path: path
     """本文を読めない固定配置の項目は状態をunknownとして返す。"""
     directory = tmp_path / "2026" / "10"
     directory.mkdir(parents=True)
-    (directory / "broken.md").write_bytes(b"\xff")
+    broken = directory / "broken.md"
+    broken.write_bytes(b"\xff")
     result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
     assert not result
-    assert warnings == [{"state": "unknown", "filename": "broken.md", "reason": "UTF-8として読み取れません"}]
+    assert warnings == [
+        {
+            "state": "unknown",
+            "filename": "broken.md",
+            "path": str(broken),
+            "reason": "UTF-8として読み取れません",
+            "next_action": f"{broken}を別名で複製して元の内容を保全し、内容をUTF-8として保存し直す",
+        }
+    ]
+
+
+def test_warnings_carry_path_and_fix_action_for_invalid_state(tmp_path: pathlib.Path) -> None:
+    """不正なstateで一覧から除外した項目の警告は、年月の保存先と、発生源が持つstateの修正操作を持つ。"""
+    path = _write_entry(tmp_path, "bogus", "bad-state.md", "本文")
+
+    result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
+
+    assert not result
+    assert len(warnings) == 1
+    warning = warnings[0]
+    assert (warning["state"], warning["filename"], warning["path"]) == ("unknown", "bad-state.md", str(path))
+    assert "stateが不正" in warning["reason"]
+    # 理由は理由だけを保ち、次の操作を別項目へ分ける。
+    assert "修正する" not in warning["reason"]
+    assert str(path) in warning["next_action"]
+    assert warning["next_action"].endswith("のいずれかへ修正する")
+
+
+def test_warnings_carry_path_and_permission_check_for_stat_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ファイル情報を読めない項目の警告は、実際の保存先と、実在・読取権限を確認する操作を持つ。"""
+    path = _write_entry(tmp_path, "inbox", "denied.md", "本文")
+    original_lstat = os.lstat
+
+    def lstat(candidate: typing.Any, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        if os.fspath(candidate) == os.fspath(path):
+            raise PermissionError("読取り拒否")
+        return original_lstat(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(os, "lstat", lstat)
+
+    result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox",))
+
+    assert not result
+    assert warnings == [
+        {
+            "state": "unknown",
+            "filename": "denied.md",
+            "path": str(path),
+            "reason": "ファイル情報を読み取れません",
+            "next_action": f"{path}が実在し、atk serveを実行するOSアカウントから読み取れる権限になっているかを確認する",
+        }
+    ]
 
 
 def test_tracked_index_skips_walk_until_change_or_rescan_interval(
@@ -458,3 +513,92 @@ def test_tracked_index_rereads_only_pending_entries_after_write(
     fresh.unlink()
     entries, _ = index.scan(("inbox",))
     assert ([item.path.name for item in entries], walks) == (["old.md"], 1)
+
+
+def test_saved_index_skips_parsing_after_restart_and_reads_body_on_demand(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """保存した解析結果を次の起動で使い、変更の無いファイルは解析せず本文も読まない。変わったファイルだけ解析し直す。
+
+    `atk serve`の起動直後の最初の一覧は全件の走査を待つため、数千件の解析と読込を繰り返すと数秒かかる。
+    """
+    notes = tmp_path / "notes"
+    cache = tmp_path / "state" / "wi-entry-index.json"
+    stable = _write_entry(notes, "inbox", "stable.md", "変わらない本文")
+    changed = _write_entry(notes, "inbox", "changed.md", "前の本文")
+    for path in (stable, changed):
+        _age(path)
+    first, _ = entry_index.EntryIndex(notes, cache_path=cache).scan(("inbox",))
+    assert cache.is_file()
+    _write_entry(notes, "processing", "changed.md", "後の本文に変えた")
+    _age(changed)
+    parsed: list[str] = []
+    read: list[pathlib.Path] = []
+    original_parse = entry_index.frontmatter.parse_frontmatter
+    original_read = pathlib.Path.read_text
+
+    def recording_parse(text: str) -> typing.Any:
+        parsed.append(text)
+        return original_parse(text)
+
+    def recording_read(self: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str:
+        if self.suffix == ".md":
+            read.append(self)
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(entry_index.frontmatter, "parse_frontmatter", recording_parse)
+    monkeypatch.setattr(pathlib.Path, "read_text", recording_read)
+    restarted = entry_index.EntryIndex(notes, cache_path=cache)
+    inbox, _ = restarted.scan(("inbox",))
+    processing, _ = restarted.scan(("processing",))
+    assert [entry.path for entry in inbox] == [stable]
+    assert [entry.path for entry in processing] == [changed]
+    assert read == [changed] and len(parsed) == 1
+    assert inbox[0].metadata == first[[entry.path for entry in first].index(stable)].metadata
+    assert inbox[0].body == "\n変わらない本文\n"
+    assert read == [changed, stable]
+    assert processing[0].body == "\n後の本文に変えた\n"
+
+
+def test_body_read_after_rewrite_follows_new_frontmatter(tmp_path: pathlib.Path) -> None:
+    """保存した解析結果の項目を走査した後に書き換えた場合、本文は読んだ時点の内容から求め直す。"""
+    notes = tmp_path / "notes"
+    cache = tmp_path / "state" / "wi-entry-index.json"
+    path = _write_entry(notes, "inbox", "entry.md", "本文")
+    _age(path)
+    entry_index.EntryIndex(notes, cache_path=cache).scan(("inbox",))
+    restarted, _ = entry_index.EntryIndex(notes, cache_path=cache).scan(("inbox",))
+    path.write_text("---\nstate: inbox\ntype: awi\nextra: frontmatterを長くした\n---\n\n書き換えた本文\n", encoding="utf-8")
+    assert restarted[0].body == "\n書き換えた本文\n"
+
+
+def test_preloaded_texts_let_first_search_after_restart_skip_reading_bodies(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """再起動後に本文を先読みしておくと、最初の検索は本文のファイルを読まずに一致を判定する。
+
+    保存した解析結果から作った項目は本文を必要時に読むため、先読みしないと最初の検索が全項目の本文の読込を待つ。
+    """
+    notes = tmp_path / "notes"
+    cache = tmp_path / "state" / "wi-entry-index.json"
+    for index in range(3):
+        _age(_write_entry(notes, "inbox", f"entry-{index}.md", f"本文{index} 検索語{index}"))
+    wi_operations.Operations(notes, index_cache_path=cache).warm_index()
+    assert cache.is_file()
+    restarted = wi_operations.Operations(notes, index_cache_path=cache)
+    restarted.warm_index()
+    restarted.preload_entry_texts()
+    read: list[pathlib.Path] = []
+    original_read = pathlib.Path.read_text
+
+    def recording_read(self: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> str:
+        if self.suffix == ".md":
+            read.append(self)
+        return original_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", recording_read)
+    found, _warnings = restarted.entries_with_warnings({"q": "検索語1"})
+    assert [item["filename"] for item in found] == ["entry-1.md"]
+    assert not read

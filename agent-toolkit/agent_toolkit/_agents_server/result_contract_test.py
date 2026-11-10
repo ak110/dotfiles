@@ -26,6 +26,36 @@ def _task_session(tmp_path: pathlib.Path) -> state.SessionState:
     return state.SessionState("task", str(tmp_path), prompt=task_documents.task_prompt_header(document))
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_reader_fit_result_reads_front_loaded_and_legacy_targets(tmp_path: pathlib.Path, legacy: bool) -> None:
+    """返却検査は参照資料の例と混同せず、新旧起動記録の入力成果物を使う。"""
+    session = _task_session(tmp_path)
+    document = task_documents.launched_task_document(session.prompt)
+    assert document is not None
+    role = document.with_name("reader-fit-review.subagent.md")
+    role.write_text(
+        "---\nmode: explore\nmodel_type: review\nwrites_worktree: false\nrequired_inputs: [成果物]\n---\n",
+        encoding="utf-8",
+    )
+    target = str(tmp_path / "actual.md")
+    inputs = f"\n入力:\n成果物: {target}"
+    references = "# 手順\n入力:\n成果物: /example.md\n"
+    session.prompt = task_documents.task_prompt_header(role) + (
+        "\n" + references + inputs
+        if legacy
+        else "\n役割: reader-fit-review" + inputs + task_documents.TASK_PROMPT_REFERENCES + references
+    )
+    message = (
+        f"状態: completed\n- 成果物: {target}\n  完了状態: completed\n  比較資料: 全文\n"
+        "  判定: 指摘なし\n  根拠: 本文を照合済み"
+    )
+    assert result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message}) is None
+    reason = result_contract.invalid_result_reason(
+        session, {"status": "completed", "agent_message": message.replace(target, "/example.md")}
+    )
+    assert reason is not None and target in reason
+
+
 @pytest.mark.parametrize(
     "ending", ["状態: completed", "続行できない区分: inaccessible_input\n続行できない理由: 対象に到達できない"]
 )

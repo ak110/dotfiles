@@ -46,6 +46,8 @@ class ProviderClient(FakeCodexClient):
         self.connection = "openai"
         self.reject: set[str] = set()
         self.mismatch = False
+        self.start_mismatch = False
+        self.reject_data: Any = None
         self.usage_error = False
         self.window_minutes: int | None = None
         self.explicit_openai_api = False
@@ -104,8 +106,8 @@ class ProviderClient(FakeCodexClient):
         if method == "thread/start":
             self.connection = params.get("modelProvider", self.primary)
             if self.connection in self.reject:
-                raise codex.JsonRpcResponseError(method, -32600, "model is not accepted")
-            result["modelProvider"] = self.connection
+                raise codex.JsonRpcResponseError(method, -32600, "model is not accepted", self.reject_data)
+            result["modelProvider"] = "unrequested" if self.start_mismatch else self.connection
         if method == "thread/resume":
             if self.resume_started is not None:
                 self.resume_started.set()
@@ -319,10 +321,11 @@ async def test_explicit_openai_api_auth_is_preserved(tmp_path, provider_environm
 
 
 @pytest.mark.asyncio
-async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_environment):
+async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_environment, caplog):
     del provider_environment
     client = ProviderClient()
     client.reject.add("paid-a")
+    caplog.set_level("INFO", logger="agent-toolkit.agents-server.codex")
     async with backend_with_client(monkeypatch, client) as backend:
         session = await fail_subscription(backend, tmp_path)
         assert session.status == "running" and session.pending_result is not None
@@ -330,6 +333,10 @@ async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_enviro
         assert response["delivery"] == "reply_started"
         resumes = [params["modelProvider"] for method, params in client.requests if method == "thread/resume"]
         assert resumes == ["paid-a", "paid-b"]
+        assert (
+            f"Codex接続先の再開が拒否されました: session_id={session.session_id} provider=paid-a"
+            " code=-32600 reason=thread/resume: model is not accepted"
+        ) in caplog.text
         assert session.codex_model_provider == "paid-b"
         assert all(params["threadId"] == session.session_id for method, params in client.requests if method == "thread/resume")
         await complete(backend, session, {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401}}})
@@ -677,14 +684,95 @@ async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, prov
     client.reject.add("paid-a")
     async with backend_with_client(monkeypatch, client) as backend:
         if order == "credits":
-            with pytest.raises(codex.AppServerError, match="candidates were rejected"):
+            with pytest.raises(codex.AppServerError, match="candidates were rejected") as raised:
                 await backend.start("拒否するAPI", str(tmp_path))
+            # APIの拒否は利用上限による候補の不成立と区別し、次のengineへ進める型にしない。
+            assert raised.type is codex.AppServerError
+            assert "paid-a: code=-32600: thread/start: model is not accepted" in str(raised.value)
         else:
             session = await backend.start("後続のAPI", str(tmp_path))
             assert session.codex_model_provider == "paid-b"
         assert [params["modelProvider"] for method, params in client.requests if method == "thread/start"] == (
             ["paid-a"] if order == "credits" else ["paid-a", "paid-b"]
         )
+
+
+@pytest.mark.asyncio
+async def test_usage_limit_without_other_connection_is_candidate_unavailable(monkeypatch, tmp_path, provider_environment):
+    """利用上限で主候補を省き試す接続先が残らない起動は、理由と解除予定を持つ候補の不成立として返す。"""
+    del provider_environment
+    set_connections(monkeypatch, "subscription")
+    monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), "five-hour")
+    client = ProviderClient()
+    client.allowed = False
+    client.window_minutes = 10080
+    async with backend_with_client(monkeypatch, client) as backend:
+        with pytest.raises(codex.StartCandidateUnavailable) as raised:
+            await backend.start("上限時の起動", str(tmp_path))
+    error = raised.value
+    assert error.scope == "candidate"
+    for expected in (
+        "provider=openai",
+        "ordinaryUsageAllowed=false",
+        "上限種別=seven_day",
+        "解除予定=1970-01-01T00:00:01+00:00",
+        "`codex_usage_limit_wait`=five-hour",
+        "`codex_worker_connections`に他の利用可能な接続先が無い",
+    ):
+        assert expected in error.reason
+    assert "rejected" not in error.reason
+    assert error.next_action is not None
+    assert "解除予定" in error.next_action and "別のengine" in error.next_action and "認証" not in error.next_action
+    assert not any(method == "thread/start" for method, _ in client.requests)
+    # 記録済みの理由は保持期間の間、Codexの確認を省いて次の候補から始める根拠になる。
+    assert codex.AppServerManager.excludes_with_recorded_reason(error.reason)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("branch", ["all_rejected", "primary_rejected", "connection_mismatch"])
+async def test_start_abandonment_other_than_usage_limit_stays_error(
+    monkeypatch, tmp_path, provider_environment, caplog, branch
+):
+    """接続先の拒否と応答の契約違反は、次のengineへ進める型にせず原因を保ったエラーで返す。"""
+    del provider_environment
+    monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), "five-hour")
+    client = ProviderClient()
+    if branch == "all_rejected":
+        client.allowed = False
+        client.window_minutes = 10080
+        client.reject.update({"paid-a", "paid-b"})
+        client.reject_data = {"codexErrorInfo": "unauthorized", "providerDetails": {"token": "private-value"}}
+    elif branch == "primary_rejected":
+        client.reject.add("openai")
+    else:
+        client.start_mismatch = True
+    caplog.set_level("INFO", logger="agent-toolkit.agents-server.codex")
+    async with backend_with_client(monkeypatch, client) as backend:
+        with pytest.raises(codex.AppServerError) as raised:
+            await backend.start("拒否される起動", str(tmp_path))
+    error = raised.value
+    assert not isinstance(error, codex.StartCandidateUnavailable)
+    message = str(error)
+    started = [params["modelProvider"] for method, params in client.requests if method == "thread/start"]
+    if branch == "all_rejected":
+        assert raised.type is codex.AppServerError
+        assert started == ["paid-a", "paid-b"]
+        for provider in started:
+            assert f'{provider}: code=-32600: thread/start: model is not accepted (codexErrorInfo="unauthorized")' in message
+        assert "openai: 試していない" in message and "上限種別=seven_day" in message
+        assert "private-value" not in message and "providerDetails" not in message
+        assert (
+            "Codex接続先の開始が拒否されました: provider=paid-a code=-32600 reason=thread/start: model is not accepted"
+            ' codexErrorInfo="unauthorized"'
+        ) in caplog.text
+        assert "private-value" not in caplog.text
+    elif branch == "primary_rejected":
+        assert isinstance(error, codex.JsonRpcResponseError)
+        assert started == ["openai"] and message == "thread/start: model is not accepted"
+        assert "provider=openai code=-32600 reason=thread/start: model is not accepted" in caplog.text
+    else:
+        assert raised.type is codex.AppServerError
+        assert message == "thread/start did not confirm the requested connection"
 
 
 @pytest.mark.asyncio

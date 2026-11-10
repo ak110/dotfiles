@@ -1,12 +1,15 @@
 # 名前の方針と定義済みの名前の一覧
 
-品質基準の正式な提供元は`agent-basics:writing-standards/references/defined-names.md`である。呼び出し元の条件と節指定を引き継ぎ、本書の運用条件と正式な資料の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`../SKILL.md`「名指し参照の読込方法」に従う。
+品質基準の正式な提供元は`agent-basics:writing-standards/references/defined-names.md`である。
+呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
+両方に同じ主題があれば、両方の全文を確認する。
+範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 以下はagent-toolkitが所有する運用条件である。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
@@ -15,13 +18,15 @@
 ## 一覧
 
 識別子として記述する対象（スキル名、コマンド名、ファイル名など）は本書には掲載しない。
-「指示対象」列は用語を識別するための短い見出し語であり、正式な定義は「定義元」列が示す参照先にのみ存在する。定義元の列は、リポジトリ相対パスと節名で示す。`defined_names_invariant_test.py`が、各行の名前が定義元の文書内に実際に現れることを検証する。
+「指示対象」列は用語を識別するための短い見出し語であり、正式な定義は「定義元」列が示す参照先にのみ存在する。
+定義元の列は、リポジトリ相対パスと節名で示す。
+`defined_names_invariant_test.py`が、各行の名前が定義元の文書内に実際に現れることを検証する。
 
 | 名前 | 指示対象 | 定義元 |
 | --- | --- | --- |
-| ユーザー | エージェントへ要求・指示・判断を与える人 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
-| エージェント | ユーザーの要求に応じて調査・判断・作業をするコーディングエージェント（メインエージェント・サブエージェント・委譲先） | `agent-toolkit/rules/01-agent.md`「役割分担」 |
-| エンドユーザー | 成果物を使う人 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
+| ユーザー | エージェントへ要求・指示・判断を与える人 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
+| エージェント | ユーザーの要求に応じて調査・判断・作業をするコーディングエージェント（メインエージェント・サブエージェント・委譲先） | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
+| エンドユーザー | 成果物を使う人 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
 | 選定工程 | process-wiの工程 | `agent-toolkit:process-wi/references/lanes.md`「用語」 |
 | レーン工程 | process-wiの工程 | `agent-toolkit:process-wi/references/lanes.md`「用語」 |
 | 公開工程 | process-wiの工程 | `agent-toolkit:commit/references/publish.md`冒頭 |
@@ -41,9 +46,9 @@
 | 全体検証 | 検証の範囲 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
 | 受入シナリオ検証 | 検証の種類 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
 | 公開工程判定 | 完成条件の判定 | `agent-toolkit:/share/workflow-phases.md`「用語」 |
-| 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:write-plan/references/plan-file-standards.md`「要件・外部仕様」 |
-| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:write-plan/references/plan-file-standards.md`「検証と公開工程」 |
-| 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:/share/exec-review-recording.md`「統合時の完成条件判定」 |
+| 直接影響範囲 | 変更の影響範囲 | `agent-toolkit:write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」 |
+| 変更範囲の検証 | 検証の範囲 | `agent-toolkit:write-plan/references/plan-file-standards-verification.md`「検証と公開工程」 |
+| 統合時の完成条件判定 | 統合前の判定 | `agent-toolkit:/share/exec-review-recording-integration.md`「統合時の完成条件判定」 |
 | 初回レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
 | 再レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
 | 引き継ぎ再レビュー | 実行レビューの回 | `agent-toolkit:/share/exec-review.subagent.md` |
@@ -57,35 +62,35 @@
 | 投稿前レビュー担当 | 外部投稿の委譲先 | `agent-toolkit:/share/external-write-review.subagent.md` |
 | 調査担当 | 原因調査の委譲先 | `agent-toolkit:/share/defect-investigation.subagent.md` |
 | 読者別探索担当 | 読者適合の委譲先 | `agent-toolkit:/share/reader-fit-review.subagent.md` |
-| 再発防止セルフチェック | 具体的な再発防止観点を差分へ当てはめる工程 | `agent-toolkit:/share/exec-review.subagent.md`「再発防止セルフチェックの起動と受領」 |
+| 再発防止セルフチェック | 具体的な再発防止観点を差分へ当てはめる工程 | `agent-toolkit:/share/recurrence-self-check.parent.md` |
 | 再発防止セルフチェック担当 | 再発防止観点の判定の委譲先 | `agent-toolkit:/share/recurrence-self-check.subagent.md`冒頭 |
 | 再発防止セルフチェック観点 | レビュー時に差分へ当てはめる項目 | `agent-toolkit:/share/recurrence-self-check-items.md`冒頭 |
 | プロンプト評価担当 | refine-promptの委譲先 | `agent-toolkit:/share/refine-prompt.subagent.md`冒頭 |
-| ユーザー確認 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
-| ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/rules/01-agent.md`「役割分担」 |
-| 要件・意図の曖昧さ | 確認を要する事項 | `agent-toolkit:user-confirmation-and-report/SKILL.md`「確認要否の判定」 |
-| 3段判定 | 判断の順序 | `agent-toolkit/rules/01-agent.md`「QCDと3段判定」 |
+| ユーザー確認 | ユーザーへの行為 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
+| ユーザーへの報告 | ユーザーへの行為 | `agent-toolkit/share/rules/common/01-agent.md`「役割分担」 |
+| 要件・意図の曖昧さ | 確認を要する事項 | `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」 |
+| 3段判定 | 判断の順序 | `agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」 |
 | 委譲の要否判定 | 委譲の判定 | `agent-toolkit:delegation/references/routing.md` |
-| 元担当 | 既存の委譲先 | `agent-toolkit:delegation/references/codex-runtime.md`「後続操作の共通先行条件」 |
-| 独立文脈レビュー | レビューの形態 | `agent-toolkit:delegation/references/routing.md`「会話を引き継ぐ委譲」 |
+| 元担当 | 既存の委譲先 | `agent-toolkit:delegation/references/codex-runtime-continuation.md`「後続操作の共通先行条件」 |
+| 独立文脈レビュー | レビューの形態 | `agent-toolkit:delegation/references/routing-fork.md`「会話を引き継ぐ委譲」 |
 | 委譲元 | 委譲先を起動したエージェント | `agent-toolkit:delegation/SKILL.md` |
 | 委譲先 | 委譲元が起動したエージェント | `agent-toolkit:delegation/SKILL.md` |
-| 委譲プロンプト | 委譲の指示 | `agent-toolkit:delegation/references/base-contract.md` |
-| 返却値 | 委譲先の出力 | `agent-toolkit:delegation/references/base-contract.md` |
+| 委譲プロンプト | 委譲の指示 | `agent-toolkit:delegation/references/base-contract-preparation.md` |
+| 返却値 | 委譲先の出力 | `agent-toolkit:delegation/references/base-contract-preparation.md` |
 | エージェント向け文書 | エージェントが直接読み込む文書の種別 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`冒頭 |
-| 読込表 | 文書内の表 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「読込表」 |
+| 読込表 | 文書内の表 | `agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`「読込表」 |
 | 配送範囲表 | 文書内の表 | `agent-toolkit:delegation/references/delivery-scope.md`冒頭 |
-| 常時規範 | 規範の種別 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
-| プロジェクト規範 | 規範の種別 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
-| プロジェクト方針 | 方針の範囲 | `agent-basics/skills/writing-standards/references/agent-documents-basics.md`「置き場所と配送」 |
+| 常時規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
+| プロジェクト規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
+| プロジェクト方針 | 方針の範囲 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-basics:review-standards/SKILL.md`「対象成果物の作成規範」 |
-| 完成条件 | WIの条件 | `agent-toolkit:wi-standards/references/awi-body.md`「通常AWIの本文」 |
-| 完了条件 | 計画の条件 | `agent-toolkit:write-plan/references/plan-file-standards.md`「要件・外部仕様」 |
+| 完成条件 | WIの条件 | `agent-toolkit:wi-standards/references/awi-body-completion.md`「通常AWIの本文」 |
+| 完了条件 | 計画の条件 | `agent-toolkit:write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」 |
 | レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
 | CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
 | セッション記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records.md`冒頭 |
-| メイン記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records.md`「Claude Codeの記録」 |
-| サブエージェント記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records.md`「Claude Codeの記録」 |
+| メイン記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records-formats.md`「Claude Codeの記録」 |
+| サブエージェント記録 | 会話の記録 | `agent-toolkit:review-session/references/session-records-formats.md`「Claude Codeの記録」 |
 | 計画バンドル | 計画のファイル群 | `agent-toolkit:write-plan/references/plan-file-standards.md`冒頭の呼称の表 |
 | 計画の所有記録 | 計画の局所状態 | `agent-toolkit:write-plan/references/plan-file-storage.md`「計画ファイルの保存と参照」 |
 | バックグラウンドタスク | 非同期の処理 | `agent-toolkit:delegation/references/waiting-and-monitoring.md` |

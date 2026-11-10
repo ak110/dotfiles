@@ -1,0 +1,60 @@
+# 通常AWIの本文：原因分析・調査結果と判断根拠
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
+
+## 原因分析・調査結果と判断根拠
+
+### 原因分析
+
+`## 原因分析`は、計画ファイルからWIファイル名で参照される原因分析の記録である。
+直接的原因が未確定の場合は`## 原因分析`を置かず、`## 調査結果と判断根拠`に観測事実、原因候補、残る問いを分けて書く。
+分析表は、処理側が原因を確定した後に計画ファイル（バグ）へ記録する。
+具体的な書き方は、`agent-toolkit:wi-standards/references/analysis-records.md`「原因分析の記録先」に従い、表の常時掲載と必要な確認の完了を検収する。
+各バグの現象・期待する契約・原因の対応を確認し、対策・回帰防止策・再発防止策の各行は`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」で比較して記入する。
+表の掲載と分析確定に必要な確認は、分析の深さや重大度の全区分で行う。
+前述の代表AWI参照を使う場合は、参照先の表と確認結果を検収する。
+
+`## 原因分析`には、誤りの仕組みが成立する条件（`agent-basics:bugfix/references/root-cause-severity-quality.md`「原因分析の品質確認」の基準）とともに、観測された事象とは表面的な構造が異なる該当例を1件以上記載する。
+成立条件が観測事象のファイル名、工程名、識別子のみで構成されている本文は投入せず、誤りを生じさせる仕組みの条件を導き直す。
+類似見直しの母集団、是正対象と予防対象の選定は、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」に従う。
+根本原因から導出し、時間軸や他リポジトリも考慮に入れる。
+`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」も併用する。
+軽微な問題に対して探索範囲を限定する場合は、実際の探索範囲、その限界、許容する残存リスクを明示する。
+是正の対象範囲は、同スキルの「QとC・Dの区別」が定める保持対象全体に従う。
+
+### 調査結果と判断根拠の記述
+
+`## 調査結果と判断根拠`は必要な場合に設け、後続の処理担当者が実現方式の成立性を改めて再調査することなく作業に着手できるように記述する。
+APIやCLIの存在確認に留まらず、要求の実現に必要な利用側の仕組み、処理の開始から完了に至る状態遷移、および処理途中で失敗した場合の状態について、現物で確認した根拠とその確認範囲を対応付けて記載する。
+他の処理への影響がないと主張する場合は、確認した範囲における結論と実装の再確認先を示し、影響がないとする主張は実際に確認できた範囲に限定する。
+未確認の範囲について記載が許容されるのは、起草者が自身の環境で利用できる手段（読み取り照会、権限や接続性の確認など）では確認できず、かつその事項が未確定であっても実現方式の成立や完成条件の判定が左右されない場合に限る。
+未確認の結果を失敗として記録する設計にしたという理由は、この例外条件の根拠にはならない。
+判定を左右する事項や実施の有無が分岐する要求は、投入前に現物で確定させるか、本文の範囲から除外する。
+採用の確定判断には、元の目的に対する必要性の判定を含める。
+当初の目的に含まれていない永続状態、周辺機能、運用手順、規範の条文を新たに追加する場合は、その必要性と既存の機能や条文で代替できない理由を記載する。
+処理を実施しない、または延期するための保護条件（判定できない場合に処理をスキップする条件を含む）を設ける場合は、保護条件ごとに対応する確定要件、規範上の制約、または観測済みの欠陥のいずれかを根拠として記載する。
+外部文書に利用可能性が記載されていることや、結論が安全側に倒れることだけを理由にしない（`agent-basics:writing-standards/references/design-heuristics-mechanisms.md`「自作機構の兆候と自問」）。
+
+## 原因仮説を含む独立別件
+
+独立別件の通常AWIは、直接的原因が未確定でも「原因分析」に従って投入できる。
+未確定語だけで保存を拒否せず、観測事実、対象、期待結果および既存項目との被覆比較を保持する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-mechanisms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md` |

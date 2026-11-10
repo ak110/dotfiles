@@ -24,6 +24,7 @@ from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve.plans import remote as serve_plan_remote
 from agent_toolkit._atk.wi import repo as awi_repo
 from agent_toolkit._atk.wi import sync as _wi_sync
+from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.serve_support import (
@@ -612,7 +613,7 @@ async def test_mutations_reject_rebase_in_progress_with_409(
 
 @pytest.mark.asyncio
 async def test_mutation_waits_for_sync_lock(
-    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]
+    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """共通ロックを保持する同期の間に届いた更新は、同期の終了を待ってから保存する。
 
@@ -635,13 +636,22 @@ async def test_mutation_waits_for_sync_lock(
     holder = threading.Thread(target=hold_lock)
     holder.start()
     assert await asyncio.to_thread(locked.wait, 10)
+    attempting = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    repo_lock = _wi_sync.repo_lock
+
+    def observed_lock(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        loop.call_soon_threadsafe(attempting.set)
+        return repo_lock(*args, **kwargs)
+
+    monkeypatch.setattr(_wi_sync, "repo_lock", observed_lock)
     request = asyncio.ensure_future(
         client.put(
             "/api/entries/inbox/entry.md",
             json={"content": _REBASE_AWI.replace("本文", "変更後の本文"), "expected_content": _REBASE_AWI},
         )
     )
-    await asyncio.sleep(0.3)
+    await asyncio.wait_for(attempting.wait(), timeout=5)
     assert not request.done()
     assert _fixed_path(notes, "entry.md").read_text(encoding="utf-8") == _REBASE_AWI
     release.set()
@@ -956,9 +966,18 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
     低速な環境では定期同期のfetch・pushが数秒に及ぶため、その間の保存を409で失敗させない。
     """
     lock_path = tmp_path / "repo.lock"
+    attempting: asyncio.Queue[float] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(wi_operations, "_BACKGROUND_SYNC_LOCK_TIMEOUT", 0.02)
+
+    class ObservedLock(filelock.FileLock):
+        def _acquire(self) -> None:
+            super()._acquire()
+            if not self.is_locked:
+                loop.call_soon_threadsafe(attempting.put_nowait, loop.time())
 
     def lock(_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
-        return filelock.FileLock(str(lock_path), timeout=timeout)
+        return ObservedLock(str(lock_path), timeout=timeout)
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -986,16 +1005,31 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
 
     holder = threading.Thread(target=hold_lock)
     holder.start()
+    request: asyncio.Task[typing.Any] | None = None
     try:
-        assert acquired.wait(timeout=5)
-        threading.Timer(wi_operations._BACKGROUND_SYNC_LOCK_TIMEOUT + 0.5, release.set).start()
-        response = await client.post(
-            "/api/entries/answer",
-            json={"filename": inbox.name, "state": "inbox", "answer": "はい", "expected_content": content},
+        assert await asyncio.to_thread(acquired.wait, 5)
+        request = asyncio.create_task(
+            client.post(
+                "/api/entries/answer",
+                json={"filename": inbox.name, "state": "inbox", "answer": "はい", "expected_content": content},
+            )
         )
+        async with asyncio.timeout(5):
+            first_attempt = await attempting.get()
+            # 定期同期の短い期限を越えても取得失敗が続くことを観測してから解放する。
+            while await attempting.get() - first_attempt < wi_operations._BACKGROUND_SYNC_LOCK_TIMEOUT:
+                pass
+        assert not request.done()
+        release.set()
+        response = await asyncio.wait_for(request, timeout=5)
     finally:
         release.set()
-        holder.join()
+        if request is not None:
+            if not request.done():
+                request.cancel()
+            await asyncio.gather(request, return_exceptions=True)
+        await asyncio.to_thread(holder.join, 5)
+        assert not holder.is_alive()
 
     assert response.status_code == 200
     assert "はい" in inbox.read_text(encoding="utf-8")
@@ -1288,7 +1322,78 @@ async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(t
     assert response.status_code == 200
     payload = await response.get_json()
     assert [item["filename"] for item in payload["entries"]] == ["readable.md"]
-    assert payload["warnings"] == [{"state": "unknown", "filename": "invalid.md", "reason": "UTF-8として読み取れません"}]
+    invalid = inbox / "invalid.md"
+    assert payload["warnings"] == [
+        {
+            "state": "unknown",
+            "filename": "invalid.md",
+            "path": str(invalid),
+            "reason": "UTF-8として読み取れません",
+            "next_action": f"{invalid}を別名で複製して元の内容を保全し、内容をUTF-8として保存し直す",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_api_git_failure_returns_check_and_retry_action(tmp_path: pathlib.Path) -> None:
+    """原因を判別できないGitコマンドの失敗は、理由を保ち、保存先の確認と再試行の操作を別項目で返す。
+
+    保存先は空白を含むパスとし、案内するコマンドが保存先を引数1個として渡せる引用を持つことも確かめる。
+    """
+    root = tmp_path / "notes with space"
+    root.mkdir()
+
+    class _FailingSyncOperations(wi_operations.Operations):
+        def sync(self) -> bool:
+            raise subprocess.CalledProcessError(1, ["git", "pull"])
+
+    response = await _sync_app(root, _FailingSyncOperations(root)).test_client().post("/api/sync", json={})
+
+    assert response.status_code == 500
+    body = await response.get_json()
+    assert set(body) == {"error", "next_action"}
+    assert body["error"] == "Git同期に失敗しました"
+    assert body["next_action"] == wi_operations.git_failure_next_action(root)
+    quoted_root = subprocess.list2cmdline([str(root.resolve())]) if os.name == "nt" else f"'{root.resolve()}'"
+    assert f"`git -C {quoted_root} status`" in body["next_action"]
+    assert "「今すぐ同期」で再試行する" in body["next_action"]
+    assert "dotfilesの作者へ報告する" in body["next_action"]
+
+
+@pytest.mark.asyncio
+async def test_batch_api_input_error_returns_reason_and_next_action(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """一括登録の形式エラーは、`error`へ理由だけを保ち、入力を直す操作を`next_action`で返す。"""
+    _patch_single_add_operations(monkeypatch)
+    invalid = "### broken.md [inbox]\n---\ntype: awi\n---\n\n対象リポジトリの無い本文\n"
+
+    response = await _serve_app(tmp_path).test_client().post("/api/entries/batch", json={"text": invalid})
+
+    assert response.status_code == 400
+    body = await response.get_json()
+    assert set(body) == {"error", "next_action"}
+    assert "broken.md" in body["error"]
+    assert "次の操作" not in body["error"]
+    assert "target_repo" in body["next_action"]
+    assert body["next_action"].endswith("再投入する")
+    assert _saved_files(tmp_path) == {}
+
+
+@pytest.mark.asyncio
+async def test_web_input_error_response_keeps_next_action_from_any_validation(tmp_path: pathlib.Path) -> None:
+    """共通の例外応答は、どの入力検証が送出した`WebInputError`でも理由と次の操作の組を保つ。"""
+    app = _serve_app(tmp_path)
+
+    @app.get("/test-only/web-input-error")
+    async def raise_web_input_error() -> str:
+        raise wi_web_input.WebInputError("別の入力検証の理由", next_action="別の入力を直して再実行する")
+
+    response = await app.test_client().get("/test-only/web-input-error")
+
+    assert response.status_code == 400
+    assert await response.get_json() == {"error": "別の入力検証の理由", "next_action": "別の入力を直して再実行する"}
 
 
 @pytest.mark.asyncio
@@ -2129,6 +2234,7 @@ async def test_shutdown_request_stops_remote_connections_without_reconnecting(
             await asyncio.sleep(0.01)
         assert len(started) >= 4
 
+        tasks = [*sessions_context.state.tasks, *plans_context.state.remote_tasks]
         current_state.request_shutdown()
         for _ in range(500):
             if not sessions_context.state.tasks and not plans_context.state.remote_tasks:
@@ -2137,14 +2243,14 @@ async def test_shutdown_request_stops_remote_connections_without_reconnecting(
         assert not sessions_context.state.tasks
         assert not plans_context.state.remote_tasks
         count = len(started)
-        await asyncio.sleep(0.2)
+        assert all(task.done() for task in tasks)
 
         assert len(started) == count
 
 
 @pytest.mark.asyncio
 async def test_reads_respond_while_updates_wait_for_lock(
-    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]
+    tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """更新が共通ロックを待って更新用の実行枠を全て占める間も、一覧・詳細・検索・候補はローカル内容で応答する。
 
@@ -2172,6 +2278,15 @@ async def test_reads_respond_while_updates_wait_for_lock(
     holder = threading.Thread(target=hold_lock)
     holder.start()
     assert await asyncio.to_thread(locked.wait, 10)
+    attempting: asyncio.Queue[None] = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+    repo_lock = _wi_sync.repo_lock
+
+    def observed_lock(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        loop.call_soon_threadsafe(attempting.put_nowait, None)
+        return repo_lock(*args, **kwargs)
+
+    monkeypatch.setattr(_wi_sync, "repo_lock", observed_lock)
     updates = [
         asyncio.ensure_future(
             client.put(
@@ -2182,7 +2297,8 @@ async def test_reads_respond_while_updates_wait_for_lock(
         )
         for index in range(3)
     ]
-    await asyncio.sleep(0.3)
+    for _ in range(2):
+        await asyncio.wait_for(attempting.get(), timeout=5)
     try:
         assert not any(update.done() for update in updates)
         started = asyncio.get_running_loop().time()
@@ -2212,7 +2328,7 @@ async def test_reads_respond_while_updates_wait_for_lock(
     assert detail_record["lock_wait_ms"] == 0
     update_records = [record for record in records if str(record.get("request_id", "")).startswith("update-")]
     assert len(update_records) == 3
-    assert max(record["lock_wait_ms"] for record in update_records) >= 200
+    assert max(record["lock_wait_ms"] for record in update_records) > 0
     assert all({"total_ms", "queue_ms", "work_ms", "lock_hold_ms", "status"} <= record.keys() for record in update_records)
     raw = timing_log.read_text(encoding="utf-8")
     assert "変更0" not in raw

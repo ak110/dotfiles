@@ -22,6 +22,8 @@ import time
 import traceback
 from pathlib import Path
 
+from agent_toolkit._common import process_tree
+
 _HAS_FORK = hasattr(os, "fork")
 _LOCK = threading.Lock()
 _SERVER: subprocess.Popen[bytes] | None = None
@@ -36,6 +38,17 @@ class _ServerStartFailed(Exception):
     """fork-serverの起動失敗を示す内部例外。呼び出し元でsubprocess.runへフォールバックする。"""
 
 
+def idle_server_pid() -> int | None:
+    """要求処理中でない常駐serverのPIDだけを返し、実行中のfork子を除外対象にしない。"""
+    # Lockのwith構文は取得を待つため、試験区切りでは非ブロッキング取得とfinally解放を使う。
+    if not _LOCK.acquire(blocking=False):  # pylint: disable=consider-using-with
+        return None
+    try:
+        return _SERVER.pid if _SERVER is not None and _SERVER.poll() is None else None
+    finally:
+        _LOCK.release()
+
+
 def run_script(
     script_path: Path,
     *,
@@ -44,6 +57,7 @@ def run_script(
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
     timeout: float | None = None,
+    ready_path: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """スクリプトを実行しsubprocess.CompletedProcess互換の結果を返す。
 
@@ -53,9 +67,31 @@ def run_script(
     """
     if _HAS_FORK:
         try:
-            return _run_via_server(script_path, argv=argv, input=input, env=env, cwd=cwd, timeout=timeout)
+            return _run_via_server(
+                script_path, argv=argv, input=input, env=env, cwd=cwd, timeout=timeout, ready_path=ready_path
+            )
         except _ServerStartFailed:
             pass
+    if ready_path is not None:
+        with subprocess.Popen(
+            [sys.executable, str(script_path), *argv],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            cwd=cwd,
+        ) as process:
+            try:
+                _wait_ready(ready_path)
+                stdout, stderr = process.communicate(input, timeout=timeout)
+                return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+            except BaseException:
+                process.kill()
+                process.communicate()
+                raise
     return subprocess.run(
         [sys.executable, str(script_path), *argv],
         input=input,
@@ -78,6 +114,7 @@ def _run_via_server(
     env: dict[str, str] | None,
     cwd: Path | None,
     timeout: float | None,
+    ready_path: Path | None,
 ) -> subprocess.CompletedProcess[str]:
     with _LOCK:
         server = _ensure_server()
@@ -97,6 +134,7 @@ def _run_via_server(
                 "env": env if env is not None else os.environ.copy(),
                 "cwd": str(cwd) if cwd is not None else os.getcwd(),
                 "timeout": timeout,
+                "ready_path": str(ready_path) if ready_path is not None else None,
             }
             assert server.stdin is not None  # noqa: S101 -- _ensure_server()が保証する不変条件の表明
             assert server.stdout is not None  # noqa: S101
@@ -104,9 +142,16 @@ def _run_via_server(
                 server.stdin.write((json.dumps(request) + "\n").encode())
                 server.stdin.flush()
                 response_line = server.stdout.readline()
-            except OSError as exc:
-                _terminate_server()
-                raise ForkServerCommunicationError(f"fork-serverとの通信に失敗した: {exc}") from exc
+            except BaseException as exc:
+                # 未回収の応答を次の要求へ渡さず、一時ファイルの削除前に実行中の子孫も回収する。
+                try:
+                    if failure := process_tree.stop_owned_process(server, context="fork-server response interrupted"):
+                        exc.add_note(str(failure))
+                finally:
+                    _terminate_server()
+                if isinstance(exc, OSError):
+                    raise ForkServerCommunicationError(f"fork-serverとの通信に失敗した: {exc}") from exc
+                raise
             if not response_line:
                 _terminate_server()
                 raise ForkServerCommunicationError("fork-serverが応答を返さなかった")
@@ -271,8 +316,24 @@ def _handle_request(request: dict) -> dict:
     pid = os.fork()  # type: ignore[attr-defined]  # Windows型スタブにはPOSIX専用APIが無いため
     if pid == 0:
         _run_child(request)
+    if ready := request.get("ready_path"):
+        try:
+            _wait_ready(Path(ready))
+        except BaseException:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+            raise
     returncode, timed_out = _wait_with_timeout(pid, request.get("timeout"))
     return {"returncode": returncode, "timeout": timed_out}
+
+
+def _wait_ready(path: Path) -> None:
+    """準備の時間予算を、検証する実行期限から分ける。"""
+    deadline = time.monotonic() + 30
+    while not path.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"子の準備通知が届かない: {path}")
+        time.sleep(0.01)
 
 
 def _wait_with_timeout(pid: int, timeout: float | None) -> tuple[int, bool]:

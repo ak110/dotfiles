@@ -10,6 +10,7 @@ from agent_toolkit._atk.run_skill_test import _engine_env, _records, _run, _star
 from agent_toolkit._atk.wi import entries, frontmatter
 from agent_toolkit._atk.wi.uwi_test import _invoke_uwi_add, _make_uwi_add_fake, _setup_notes
 from agent_toolkit._common import session_review, skill_modes
+from agent_toolkit._testing.normative_contract import read_contract
 
 # pytestがモジュールの属性から取得する共有fixtureを公開する。
 __all__ = ["_engine_env"]
@@ -69,9 +70,12 @@ def test_general_run_skill_uwi_uses_documented_scope_for_the_same_mode(
     data = skill_invocation(skill, arguments, expected_scope)
     assert data["skill"] == skill and data["mode"] == mode
     document = pathlib.Path(__file__).resolve().parents[3] / "skills/wi-standards/references/origin-and-approval.md"
+    text = read_contract(
+        document, pathlib.Path(__file__).resolve().parents[3], ("origin-and-approval-origin.md", "由来と`source`")
+    )
     rows = [
         [cell.strip().strip("`") for cell in line.strip("|").split("|")]
-        for line in document.read_text(encoding="utf-8").splitlines()
+        for line in text.splitlines()
         if line.startswith("| `agent-toolkit:")
     ]
     scope = next(row[2] for row in rows if row[:2] == [data["skill"], data["mode"] or "なし"])

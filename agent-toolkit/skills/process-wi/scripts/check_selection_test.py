@@ -14,6 +14,91 @@ import yaml
 from agent_toolkit._atk import run_script  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._testing import git_repository
 
+
+def test_require_integrated_checks_all_stages_without_current_wi(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開前確認は全段階の保存状態を読み、既に無いWI本文や配置を再検査しない。"""
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["removed.py"], "統合状態": "統合済み"},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": ["removed.py"]},
+            {"WI": "c.md", "レーン": "lane-03", "書込対象": ["removed.py"]},
+        ],
+        [
+            {"レーン": "lane-01", "統合状態": "統合済み"},
+            {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]},
+            {"レーン": "lane-03", "段階": 3, "先行レーン": ["lane-02"]},
+        ],
+    )
+    before = path.read_bytes()
+    assert _dispatch(str(path), "--require-integrated") == 1
+    output = capsys.readouterr()
+    assert all(value in output.err for value in ("lane-02", "lane-03", "b.md", "c.md", "2", "3"))
+    assert path.read_bytes() == before
+    data = yaml.safe_load(before)
+    for row in data["レーンの所要時間"]:
+        row["統合状態"] = "統合済み"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--require-integrated") == 0
+
+
+@pytest.mark.parametrize("state", ["未知", 1])
+def test_require_integrated_rejects_invalid_state(
+    tmp_path: pathlib.Path, state: object, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """未知の状態は未統合の正常診断と区別する。"""
+    path = _write_selection(
+        tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": [], "統合状態": state}]
+    )
+    assert _dispatch(str(path), "--require-integrated") == 2
+    assert "統合状態" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("case", ["empty", "missing", "malformed", "unassigned-lane"])
+def test_require_integrated_empty_and_unreadable_inputs(tmp_path: pathlib.Path, case: str) -> None:
+    """正常な0レーンだけを完了とし、読取不能・破損・所属不一致を入力不備として返す。"""
+    path = tmp_path / "selection.yaml"
+    if case == "empty":
+        _write_selection(path, [])
+    elif case == "malformed":
+        path.write_text("選定: [\n", encoding="utf-8")
+    elif case == "unassigned-lane":
+        _write_selection(path, [], costs=[{"レーン": "lane-01"}])
+    before = path.read_bytes() if path.exists() else None
+    assert _dispatch(str(path), "--require-integrated") == (0 if case == "empty" else 2)
+    assert (path.read_bytes() if path.exists() else None) == before
+
+
+def test_reopen_wi_retains_original_allocation_and_other_integrations(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """上限使用済みでも同じWIだけを再開し、他の統合履歴を保持して不可分保存する。"""
+    repo, notes = env
+    _awi(notes, "a.md", "`README.md`を変更する。")
+    _awi(notes, "b.md", "`README.md`を変更する。")
+    _awi(notes, "c.md", "`src/model.py`を変更する。")
+    path = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]},
+            {"WI": "b.md", "レーン": "lane-01", "書込対象": ["README.md"]},
+            {"WI": "c.md", "レーン": "lane-02", "書込対象": ["src/model.py"]},
+        ],
+        [{"レーン": "lane-01", "統合状態": "統合済み"}, {"レーン": "lane-02", "統合状態": "統合済み"}],
+    )
+    before = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert _dispatch(str(path), "--reopen-wi", "a.md", "--output", str(path), "--work-dir", str(repo)) == 0
+    after = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert after["初回配分"] == before["初回配分"]
+    assert [row["統合状態"] for row in after["レーンの所要時間"]] == ["未統合", "統合済み"]
+    assert [row["統合状態"] for row in after["選定"]] == ["未統合", "統合済み", "統合済み"]
+    saved = path.read_bytes()
+    assert _dispatch(str(path), "--reopen-wi", "missing.md", "--output", str(path), "--work-dir", str(repo)) == 2
+    assert path.read_bytes() == saved
+
+
 _REPO_FILES = (
     "README.md",
     "src/model.py",
@@ -2515,7 +2600,7 @@ def _track(repo: pathlib.Path, *relatives: str) -> None:
     git_repository.run_git(repo, "add", "-A")
 
 
-_PLUGIN_SHARE_FILES = ("agent-toolkit/share/exec.parent.md", "agent-toolkit/share/rules-main.md", "share/README.md")
+_PLUGIN_SHARE_FILES = ("agent-toolkit/share/exec.parent.md", "agent-toolkit/share/rules/rules-main.md", "share/README.md")
 
 
 @pytest.mark.parametrize("wi_type", ["awi", "uwi"])
@@ -2628,7 +2713,7 @@ def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short
     _awi(
         notes,
         "glob.md",
-        "`agent-toolkit/`配下のうち`share/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
+        "`agent-toolkit/`配下のうち`share/rules/rules-*.md`と`share/exec-review.{parent,subagent}.md`、"
         "略記の`rules/`と`share/exec.parent.md`を改める。`docs/development/*.md`の記述は変えない。あわせて`src/model.py`と`src/new_module.py`も変える。",
     )
     body = (notes / "processing/glob.md").read_text(encoding="utf-8")
@@ -2652,7 +2737,7 @@ def test_reflected_paths_from_mixed_notations(env: tuple[pathlib.Path, pathlib.P
     body = (
         "---\ntype: awi\nsource: test\n---\n\n# 題\n\n## 反映内容と反映先\n\n"
         "変更対象はsrc/model.pyとdocs/development/design.mdである。"
-        "`share/rules-*.md`、`agent-toolkit/share/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
+        "`share/rules/rules-*.md`、`agent-toolkit/share/rules/rules-*.md`、`share/exec-review.{parent,subagent}.md`、`src/*.py`を改める。"
         "略記の`rules/`・`UCR/`・`share/exec.parent.md`、範囲`src/`と`missing/`、"
         "src/のmodel.py・new_module.py・draft、`docs/development/new.md`と`docs/development/new.`も扱う。"
         "src/model.pyのWorker.runと`src/model.py:42`の`Service.start`も直す。\n"

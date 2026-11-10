@@ -1,0 +1,41 @@
+# 委譲プロンプトの送信：起動と観測
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents-declarations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sub-agents-declarations.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
+| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
+| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
+
+## 起動と観測
+
+大量読取の入力には、結論を求める問い、原本の所在と対象範囲を渡す。
+返却は結論、確認範囲、根拠のパスと識別子または短い引用、未確認事項とし、チャットへの全量転記を省く。
+編集や難しい判断に使う原本は、返却の参照から必要な範囲を自身で取得する。
+必読規範の本人取得と独立文脈レビューは、それぞれの取得・判定契約を維持する。
+定型生成には確定仕様、適用できる参照ファイル、保存先、変更範囲を渡し、指定先へ直接保存させる。
+参照不足や仕様矛盾は委譲元へ返し、要件具体化・設計・安全性の判断は現行の担当区分を保つ。
+
+役割文書のfrontmatterおよび呼び出し元に記載する`起動対象:`の書式は、`sub-agents-declarations.md`「agents_serverのfrontmatter」「起動対象と入力の案内」に従う。
+`start`ツールは共通パーサーを介して入力内容と起動設定を読み込み、必須項目の欠落、宣言外の入力、不正な新規書式などを起動前に診断する。
+過去の宣言行の読み取りや既存セッションの継続については互換性処理によって維持される。
+宣言内容を確認できない古い形式の文書に対しては従来の警告メッセージを返し、モデル工程別のmodel_typeに対応していない役割は起動しない。
+PreToolUseフックは、役割の実行指示を伴う初回起動に対して、サーバー側と同一の宣言内容に基づいてチェックを実施する。
+`send_message`ツールは、構造化メッセージと自由本文メッセージの双方について、サーバー側での配送前にチェックする。
+宣言外の説明の混入、必須項目の欠落、保持済みの初回入力の再掲などの不備が見つかった場合は、指摘された違反箇所と再実行の書式を確認した上で修正する。
+自由本文で送信する新たな要求について、その内容が必要であるかの実質的な判断は送信側が担い、機械的なチェックは宣言、定型指示、既存の履歴から客観的に判定できる範囲に限定する。
+
+1. 作業ディレクトリについては、受け取った作業ツリーの絶対パスを`start`の`cwd`パラメーターへ渡す。
+   作業用の複製ツリー（linked worktree等）を使う場合、委譲先は`cwd`の`--git-common-dir`から複製元リポジトリとlinked worktreeを解決する。
+   その上でファイル編集を自身のworktree内に限定し、Git操作は`git -C <worktree絶対パス>`の形式で実行する。
+   Gitの構成から一意に特定できない除外対象がある場合に限り、名前付き入力として個別に渡す。
+
+2. `agents_server`の各ツールの引数、デフォルト値、レスポンス項目は、起動直前にMCPツールのスキーマを参照して確認する。
+   取得した`session_id`、および`send_message`で指示を送信したセッションに対する状態観測とセッション破棄の責務はMCP instructionsに従い、観測は`atk agents wait`を用いて実施する。
+   `send_message`はメッセージの配送結果のみを確定するものであり、相手の応答生成の完了待ちは対象外である。
+
+3. 観測結果として`running`が返された場合、あるいは観測処理がバックグラウンドタスクへ移行した場合は、いずれも観測の試行が行われたものとして扱い、そのターンを終了するかどうかは`waiting-and-monitoring-intervals.md`「待機区間の構成」に従って判断する。

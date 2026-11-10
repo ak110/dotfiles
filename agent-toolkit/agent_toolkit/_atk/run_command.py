@@ -30,8 +30,9 @@ _EXIT_TIMEOUT = 124
 _EXIT_WRAPPER_FAILURE = 125
 # 子プロセスの起動前に作業ツリーの状態を取る`git`の時間上限。観測の前処理で実行を止めないよう短く保つ。
 _GIT_STATE_TIMEOUT_SECONDS = 30.0
-# 成功記録の再利用判定で値を比べない環境変数。エージェントの会話・委譲・巡回の識別子と引き継ぎ記録の場所、
-# ホストとのメッセージング、端末・SSH・D-Busのセッション、シェルの作業ディレクトリと階層、miseのセッション差分は、
+# 成功記録の再利用判定で値を比べない環境変数。エージェントの会話・ツール呼び出し・委譲・巡回の識別子と引き継ぎ記録の場所、
+# ホストとのメッセージング、端末・SSH・D-Busのセッション、シェルの作業ディレクトリと階層、
+# miseのセッション差分とshimの起動経路（プロセス番号を含む）は、
 # 実行や再開のたびに値が変わり、同じ版・argv・cwdの検証結果を変えない。値まで比較すると再開ごとに同じ全体検証を
 # 繰り返すため、有無だけを比較する。有無は通知先の解決など動作を切り替えうるので比較に残す。
 # 委譲の種別や`1`で有効化するフラグ（`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`、`AGENT_TOOLKIT_DELEGATED_SESSION`、
@@ -52,6 +53,7 @@ _VOLATILE_ENVIRONMENT_NAMES = frozenset(
         "CLAUDE_PID",
         "CODEX_SESSION_ID",
         "CODEX_THREAD_ID",
+        "CODEX_TOOL_CALL_ID",
         "DBUS_SESSION_BUS_ADDRESS",
         "SSH_CLIENT",
         "SSH_CONNECTION",
@@ -62,6 +64,7 @@ _VOLATILE_ENVIRONMENT_NAMES = frozenset(
         "XDG_SESSION_ID",
         "__MISE_DIFF",
         "__MISE_SESSION",
+        "__MISE_SHIM_FALLBACK_CHAIN",
     }
 )
 
@@ -198,6 +201,7 @@ def execute(
         timing["slot_waits"] = list(waits.values())
         atomic_write(journal, json.dumps(timing, ensure_ascii=False) + "\n")
 
+    # 検証は開始から子孫の回収まで実行枠を保持する。子のpyfltrとpytestは祖先の所有を継承する。
     ownership = (
         execution_slot.hold(label=shlex.join(argv), on_wait_interval=record_wait) if verification else contextlib.nullcontext()
     )
@@ -223,7 +227,7 @@ def execute(
     except KeyboardInterrupt:
         outcome.report_warning(
             f"コマンドが中断された。待機・到達状態の記録: {journal}",
-            next_action="記録と保存出力から未実行・未完了の範囲を確認する",
+            next_action="記録と保存出力から未実行・未完了の範囲を確認せよ",
         )
         raise
     except OSError as error:
@@ -259,7 +263,7 @@ def execution_conditions(environment: dict[str, str] | None = None) -> dict[str,
     for name in _VOLATILE_ENVIRONMENT_NAMES & environment.keys():
         environment[name] = ""
     return {
-        "version": 3,
+        "version": 6,
         "python": {
             key: hashlib.sha256(value.encode("utf-8")).hexdigest()
             for key, value in {
@@ -321,7 +325,7 @@ def reusable_success(path: pathlib.Path, argv: list[str], cwd: pathlib.Path) -> 
         if different:
             outcome.report_warning(
                 f"保存済み検証を再利用しない: {path}: 条件が異なる {', '.join(different)}",
-                next_action="異なる条件に対応する検証を実行する",
+                next_action="異なる条件に対応する検証を実行せよ",
             )
             return None
         if observed["timed_out"] is not False or any(
@@ -365,7 +369,12 @@ def _execute(
             try:
                 # 回収不能でも記録を確定するため、context managerの無期限waitを重ねない。
                 process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
-                    argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
+                    argv,
+                    cwd=cwd,
+                    env=child_env,
+                    stdout=stdout_stream,
+                    stderr=stderr_stream,
+                    start_new_session=os.name == "posix",
                 )
                 try:
                     if is_human_terminal():
@@ -378,8 +387,10 @@ def _execute(
                     residual = process_tree.stop_process_tree(process)
                     if residual:
                         failure = "子孫プロセスを回収できない: " + "; ".join(residual)
-                except BaseException:
-                    process_tree.log_residual(process_tree.stop_process_tree(process), context="lane command exception")
+                except BaseException as error:
+                    reclaim_error = process_tree.stop_owned_process(process, context="lane command exception")
+                    if reclaim_error is not None:
+                        raise reclaim_error from error
                     raise
                 child_exit_code = process.returncode
             except (OSError, ValueError) as error:

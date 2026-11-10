@@ -4,11 +4,17 @@ import re
 
 import sync_codex_agents as subject
 from _scripts_test_helpers import TWO_LAYER_WAIT_HEADING, markdown_section
+from agent_toolkit._testing.normative_contract import read_contract
 
 
 def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
-    source = (subject.REPO_ROOT / "agent-toolkit/share/rules-common.codex.md").read_text(encoding="utf-8")
-    reference = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/codex-runtime.md").read_text(encoding="utf-8")
+    source = (subject.REPO_ROOT / "agent-toolkit/share/rules/rules-common.codex.md").read_text(encoding="utf-8")
+    plugin = subject.REPO_ROOT / "agent-toolkit"
+    reference = read_contract(
+        plugin / "skills/delegation/references/codex-runtime.md",
+        plugin,
+        ("codex-runtime-waiting.md", "agents_serverの二層待機"),
+    )
     generated = (subject.REPO_ROOT / subject.TARGET).read_text(encoding="utf-8")
     assert generated == subject.render()
 
@@ -18,9 +24,11 @@ def test_two_layer_wait_contract_is_owned_by_delegation_skill() -> None:
     assert {"`functions.exec`", "`atk agents wait`", "`cell_id`", "`functions.wait`"} <= set(re.findall(r"`[^`]+`", section))
     assert "タスク固有timeoutを渡さず" in section
     assert "対象が未終了なら" in section
-    assert "`references/waiting-and-monitoring.md`「`atk agents wait`の応答の扱い」" in section
-    waiting = (subject.REPO_ROOT / "agent-toolkit/skills/delegation/references/waiting-and-monitoring.md").read_text(
-        encoding="utf-8"
+    assert "`waiting-and-monitoring-responses.md`「`atk agents wait`の応答の扱い」" in section
+    waiting = read_contract(
+        plugin / "skills/delegation/references/waiting-and-monitoring.md",
+        plugin,
+        ("waiting-and-monitoring-responses.md", "応答の扱い"),
     )
     response_section = markdown_section(waiting, "## `atk agents wait`の応答の扱い")
     assert "前景のCLIが本文を返した後の逐次待機は新しいrunへ進む" in response_section
@@ -32,7 +40,7 @@ def test_shared_rule_references_resolve_from_codex_and_claude_distribution() -> 
     """共有ルールの参照資料が両配布経路のplugin rootから解決できることを固定する。"""
     skill_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`")
     reference_pattern = re.compile(r"`agent-toolkit:(?P<skill>[a-z0-9-]+)`の`(?P<reference>references/[A-Za-z0-9._/-]+)`")
-    rule_paths = sorted((subject.REPO_ROOT / "agent-toolkit/rules").glob("*.md"))
+    rule_paths = sorted((subject.REPO_ROOT / "agent-toolkit/share/rules/common").glob("*.md"))
     source_rules = "\n".join(path.read_text(encoding="utf-8") for path in rule_paths)
     generated = subject.render()
 

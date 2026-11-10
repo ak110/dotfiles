@@ -7,10 +7,16 @@ import json
 import os
 import pathlib
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 import filelock
+import psutil
 
+from agent_toolkit._atk.wi import snapshot as _wi_snapshot
+from agent_toolkit._atk.wi.entries import EntryRecord
+from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import session_launchers as _launchers
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common import state_paths as _state_paths
@@ -103,13 +109,26 @@ def _read(path: pathlib.Path) -> _Record | None:
         return None
     if not isinstance(record, dict) or not isinstance(record.get("token"), str):
         raise ValueError(f"処理所有記録を解釈できない: {path}")
+    residual = record.get(_RESIDUAL_KEY, [])
+    if not isinstance(residual, list) or not all(
+        isinstance(entry, dict) and isinstance(entry.get("pid"), int) for entry in residual
+    ):
+        # PIDを欠く項目もあり得るため、PIDに頼らない確認手段（起動コマンドか対象リポジトリのパスでの絞り込み）も示す。
+        raise ValueError(
+            f"処理所有記録の`{_RESIDUAL_KEY}`が不正なため、残存子孫の生存を判定できない: {path}。"
+            "PIDがある項目は、そのPIDのプロセスが無いか、項目の`command`と異なる起動コマンドの別プロセスであることを確かめる。"
+            "PIDが無い項目は、項目の`command`（無ければ記録の`repo_id`の"
+            "リポジトリのパス）を含むプロセスをプロセス一覧（POSIXは`ps -eo pid,lstart,args`、"
+            "Windowsは`Get-CimInstance Win32_Process | Select-Object ProcessId,CreationDate,CommandLine`）で探す。"
+            f"該当するプロセスが残っていないか、残りを終了させたことを確かめてから、記録から`{_RESIDUAL_KEY}`を削除する"
+        )
     return _Record.parse(record)
 
 
 def _live(record: _Record) -> bool:
     if record.stage in {OwnershipStage.RELEASED_COMPLETED, OwnershipStage.RELEASED_INCOMPLETE}:
         return False
-    if _executor_live(record.data):
+    if _executor_live(record.data) or _residual_processes(record.data):
         return True
     pid, created = record.data.get("pid"), record.data.get("create_time")
     if not isinstance(pid, int) or not isinstance(created, (int, float)):
@@ -152,6 +171,71 @@ def _executor_live(record: dict[str, Any]) -> bool:
     return _registry.ProcessIdentity(executor["pid"], executor["create_time"]).exists()
 
 
+_RESIDUAL_KEY = "residual_processes"
+"""統括CLIの停止で回収できなかった子孫の識別（PID・起動時刻・起動コマンド）を保存する所有記録の項目。
+
+process-loopは巡回ごとに自己再起動するため、プロセス内の変数では保持できない。記録に残し、
+消滅を確認するまで所有を保持して同じ対象の次の統括を起動しない。
+"""
+
+
+def _residual_processes(record: dict[str, Any]) -> list[psutil.Process]:
+    """保存した残存子孫のうち、同じPIDと起動時刻のまま生存しているものを返す。項目の形式は`_read`が検査済みである。"""
+    alive: list[psutil.Process] = []
+    for entry in record.get(_RESIDUAL_KEY, []):
+        try:
+            process = psutil.Process(entry["pid"])
+            if process.create_time() == entry.get("create_time") and process.status() != psutil.STATUS_ZOMBIE:
+                alive.append(process)
+        except psutil.Error:
+            continue
+    return alive
+
+
+def record_residual(ownership: Ownership, processes: list[psutil.Process]) -> None:
+    """統括CLIの停止で回収できなかった子孫を、自己再起動をまたいで保持するため所有記録へ加える。"""
+    entries = []
+    for process in processes:
+        try:
+            entries.append(
+                {"pid": process.pid, "create_time": process.create_time(), "command": _process_tree.describe(process)}
+            )
+        except psutil.Error:
+            # 記録の前に消滅した子孫は保持の対象にしない。
+            continue
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _owned_record(ownership)
+        saved = record.data.setdefault(_RESIDUAL_KEY, [])
+        saved.extend(entry for entry in entries if entry not in saved)
+        _save(ownership.path, record)
+
+
+def residual_running(ownership: Ownership) -> bool:
+    """保存した残存子孫が生存しているかを返す。"""
+    return bool(_residual_processes(_owned_record(ownership).data))
+
+
+def _reclaim_residual(path: pathlib.Path, record: _Record) -> None:
+    """保存した残存子孫を同じ識別で回収し直し、消滅を確認した子孫を記録から外す。残る間は対象と次の操作を示す。"""
+    if not record.data.get(_RESIDUAL_KEY):
+        return
+    _process_tree.reclaim_processes(_residual_processes(record.data))
+    alive = {(process.pid, process.create_time()) for process in _residual_processes(record.data)}
+    remaining = [entry for entry in record.data[_RESIDUAL_KEY] if (entry["pid"], entry.get("create_time")) in alive]
+    record.data[_RESIDUAL_KEY] = remaining
+    _save(path, record)
+    if remaining:
+        _next_action.report(
+            f"{record.data.get('repo_id')}: 前の統括の停止で回収できなかった子孫が残るため、"
+            f"所有を保持して次の統括を起動しない: {[entry.get('command') for entry in remaining]}",
+            next_action=(
+                "一覧のPIDと起動コマンドで対象を確かめ、不要なら終了させる"
+                "（POSIXは`kill -KILL <PID>`、Windowsは`taskkill /PID <PID> /T /F`）。"
+                "消滅後の巡回でprocess-loopが所有を解放して次の統括を起動する"
+            ),
+        )
+
+
 def executor_running(ownership: Ownership) -> bool:
     """会話IDの検出前でも、保存済みの統括CLIの生存を確認する。"""
     return _executor_live(_owned_record(ownership).data)
@@ -172,7 +256,7 @@ def _unfinished_record(record: dict[str, Any]) -> dict[str, Any]:
         record.get("session_id") is None or record.get("session_id") == previous.get("session_id")
     ):
         retained = dict(_unfinished_record(previous))
-        for key in ("manifest", "prepared_worktree"):
+        for key in ("manifest", "prepared_worktree", "snapshot_file"):
             if key in record:
                 retained[key] = record[key]
         return retained
@@ -200,6 +284,8 @@ def try_acquire(
     path.parent.mkdir(parents=True, exist_ok=True)
     with filelock.FileLock(str(path.with_suffix(".lock")), timeout=10):
         prior = _read(path)
+        if prior is not None and prior.stage in {OwnershipStage.OWNED, OwnershipStage.HELD}:
+            _reclaim_residual(path, prior)
         if prior is not None and _live(prior):
             return None
         if prior is not None and prior.stage is OwnershipStage.HELD:
@@ -285,6 +371,28 @@ def update_session(ownership: Ownership, session_id: str, *, lane_session_id: st
     return dataclasses.replace(ownership, session_id=session_id)
 
 
+def save_snapshot(ownership: Ownership, entries: Iterable[EntryRecord]) -> pathlib.Path:
+    """初回取得の集合を保存し、未完了の同じ実行では元の基準を再利用する。"""
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _owned_record(ownership)
+        prior = record.data
+        while True:
+            if "snapshot_file" in prior:
+                path = pathlib.Path(prior["snapshot_file"])
+                _wi_snapshot.read(path)
+                return path
+            if not isinstance(prior.get("previous"), dict):
+                break
+            prior = prior["previous"]
+        directory = ownership.path.parent / "inputs"
+        directory.mkdir(exist_ok=True)
+        path = directory / f"{ownership.path.stem}.{ownership.token}.{uuid.uuid4()}.snapshot.json"
+        _wi_snapshot.save(path, entries)
+        record.data["snapshot_file"] = str(path)
+        _save(ownership.path, record)
+        return path
+
+
 def save_candidates(ownership: Ownership, candidates: list[dict[str, Any]]) -> pathlib.Path:
     """凍結した候補を上書きせず保存し、担当の所有記録へ寿命を結び付ける。"""
     with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
@@ -300,6 +408,8 @@ def save_candidates(ownership: Ownership, candidates: list[dict[str, Any]]) -> p
 
 def _candidate_files(record: dict[str, Any]) -> list[pathlib.Path]:
     result = [pathlib.Path(value) for value in record.get("candidate_files", [])]
+    if "snapshot_file" in record:
+        result.append(pathlib.Path(record["snapshot_file"]))
     previous = record.get("previous")
     if isinstance(previous, dict):
         result.extend(_candidate_files(previous))
@@ -318,13 +428,14 @@ def release(ownership: Ownership, *, completed: bool = True) -> None:
         if completed:
             record.data.pop("previous", None)
             record.data.pop("candidate_files", None)
+            record.data.pop("snapshot_file", None)
         _save(ownership.path, record)
         for path in finished_inputs:
             # 同じoriginの生成物だけを回収し、所有記録に異常なパスがあっても範囲を広げない。
             if (
                 path.parent == ownership.path.parent / "inputs"
                 and path.name.startswith(ownership.path.stem + ".")
-                and path.name.endswith(".candidates.json")
+                and path.name.endswith((".candidates.json", ".snapshot.json"))
             ):
                 path.unlink(missing_ok=True)
 

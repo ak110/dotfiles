@@ -36,7 +36,12 @@
         <legend>表示モード</legend>
         <label><input id="wi-mode-normal" type="radio" name="wi-display-mode" value="normal" checked>通常表示</label>
         <label><input id="wi-mode-search" type="radio" name="wi-display-mode" value="search">条件検索</label>
+        <label><input id="wi-mode-waiting" type="radio" name="wi-display-mode" value="waiting">判断待ち</label>
       </fieldset>
+      <div id="waiting-filters" class="filter-grid" hidden>
+        <label for="waiting-target-filter">判断待ちのtarget-repo</label>
+        <select id="waiting-target-filter"><option value="">all</option></select>
+      </div>
       <button id="clear-filters-button" class="button-text" type="button">条件をクリア</button>
       <details open>
         <summary>条件検索の入力</summary>
@@ -109,7 +114,8 @@
       <div id="wi-effective-conditions" class="secondary-text" role="status">通常表示: state=active、直近2週間</div>
       <div id="copy-all-status" class="secondary-text" role="status" hidden></div>
       <div id="result-status" class="visually-hidden" role="status"></div>
-      <div id="list-warning" class="list-warning" role="alert" hidden></div>
+      <!-- 外枠は改行を保持する表示（pre-wrap）のため、タグの間へ空白を入れると余分な行になる。 -->
+      <div id="list-warning-box" class="list-warning" role="alert" hidden><details id="list-warning-details"><summary id="list-warning-summary"></summary><div id="list-warning" hidden></div></details></div>
       <div class="entry-columns">
         <span class="entry-metadata-label" aria-hidden="true">ファイル名</span>
         <span class="entry-metadata-label" aria-hidden="true">target-repo</span>
@@ -178,11 +184,16 @@
       </div>
       <footer id="detail-footer" class="dialog-footer detail-footer">
         <section id="answer-panel" class="answer-panel detail-footer-answer" aria-label="UWIへの回答" hidden>
+          <p id="waiting-progress" class="secondary-text" role="status" hidden></p>
           <div id="answer-choices" class="answer-choices" aria-label="回答候補" hidden></div>
           <div class="answer-row">
             <label for="answer-input" class="visually-hidden">UWIへの回答（必須）</label>
             <textarea id="answer-input" rows="1" placeholder="回答を入力（選択肢を押すと入力される）" aria-describedby="answer-input-error" required></textarea>
             <button id="save-answer-button" class="button-primary" type="button">回答を保存</button>
+          </div>
+          <div class="answer-choices">
+            <button id="save-next-answer-button" class="button-primary" type="button" hidden>保存して次へ</button>
+            <button id="skip-answer-button" class="button-secondary" type="button" hidden>保存せず次へ</button>
           </div>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>

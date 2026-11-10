@@ -215,7 +215,7 @@ def is_agent_facing_md(rel_path: str) -> bool:
 
     対象は拡張子`.md`のファイルのうち、次のいずれかに該当するもの。
     ルートの`AGENTS.md`・`CLAUDE.md`。パスを構成する要素に`rules`を含むもの
-    （`agent-toolkit/rules/`・`.claude/rules/`・`.chezmoi-source/dot_claude/rules/`等）。
+    （`agent-toolkit/share/rules/common/`・`.claude/rules/`・`.chezmoi-source/dot_claude/rules/`等）。
     末尾から3番目のパスを構成する要素が`skills`かつファイル名が`SKILL.md`のもの
     （`agent-toolkit/skills/<name>/SKILL.md`・`.claude/skills/<name>/SKILL.md`・
     `.chezmoi-source/dot_claude/skills/<name>/SKILL.md`等）。
@@ -243,7 +243,6 @@ def is_agent_facing_md(rel_path: str) -> bool:
 # （`pretooluse.py`側が絶対パス・tmp_path配下等の任意接頭辞パスを渡す既存挙動を保つ）。
 AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-toolkit/share/.+\.md$"),
-    re.compile(r"(^|/)agent-toolkit/rules/.+\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
     re.compile(r"(^|/)agent-basics/skills/[^/]+/SKILL\.md$"),

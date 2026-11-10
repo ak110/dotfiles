@@ -23,6 +23,22 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._git import remote as _git_remote
 
 
+def user_field_location(text: str, kind: str | None) -> tuple[str, int] | None:
+    """正式なユーザー記入欄の名前と、保存本文上の1始まりの開始行を返す。"""
+    section = _uwi.ANSWER_HEADING.removeprefix("## ") if kind == WI_TYPE_UWI else "ユーザーコメント"
+    if kind != WI_TYPE_UWI and not _user_comment.has_reserved_heading(text):
+        return None
+    normalized = _frontmatter.normalize_newlines(text)
+    parsed = _frontmatter.parse_frontmatter(normalized)
+    body = parsed[1] if parsed is not None else normalized
+    prefix_lines = normalized.count("\n") - body.count("\n")
+    for token, content in top_level_atx_headings(body, 2):
+        if content == section:
+            assert token.map is not None
+            return section, prefix_lines + token.map[0] + 1
+    return None
+
+
 @dataclasses.dataclass
 class _ShowOutput:
     """表示した行数と、同じ起動の保存後に示す記入欄の情報を保持する。"""
@@ -42,18 +58,8 @@ class _ShowOutput:
         if self.user_fields is None:
             return
         heading = _uwi.ANSWER_HEADING if kind == WI_TYPE_UWI else "## ユーザーコメント"
-        position: int | None = None
-        if kind == WI_TYPE_UWI or _user_comment.has_reserved_heading(text):
-            normalized = _frontmatter.normalize_newlines(text)
-            parsed = _frontmatter.parse_frontmatter(normalized)
-            body = parsed[1] if parsed is not None else normalized
-            prefix_lines = normalized.count("\n") - body.count("\n")
-            for token, content in top_level_atx_headings(body, 2):
-                if f"## {content}" == heading:
-                    assert token.map is not None
-                    position = prefix_lines + token.map[0]
-                    break
-        location = "なし" if position is None else f"あり 開始行: {start + position}"
+        field = user_field_location(text, kind)
+        location = "なし" if field is None else f"あり 開始行: {start + field[1] - 1}"
         self.user_fields.append(f"記入欄: {name} {heading} {location}")
 
 

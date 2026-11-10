@@ -22,7 +22,6 @@ from pytools._internal import (
     claude_marketplace,
     claude_plugin_references,
     common,
-    deferred_updates,
     log_format,
     post_apply_cache,
     post_apply_outcome,
@@ -763,9 +762,7 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
                 name,
                 f"plugin cache に {', '.join(missing)} がありませんが、稼働中の参照があるため修復を延期しました"
                 f"（{'、'.join(reasons)}）。導入先 {log_format.home_short(cache_dir)} を削除せず保持しています。"
-                + deferred_updates.retry_guidance(
-                    "Claude Codeのセッションを全て終了してから`update-dotfiles`を再実行してください。"
-                ),
+                + "Claude Codeのセッションを全て終了してから`update-dotfiles`を再実行してください。",
             ),
         )
         return "deferred"
@@ -829,7 +826,7 @@ def _remove_development_artifacts(name: str) -> tuple[bool, int, bool]:
                 log_format.format_status(
                     name,
                     f"plugin cache の開発用生成物 {short} を参照中のため削除を延期しました（{'、'.join(reasons)}）。"
-                    + deferred_updates.retry_guidance("参照の終了後に`update-dotfiles`を再実行してください。"),
+                    + "参照の終了後に`update-dotfiles`を再実行してください。",
                 ),
             )
             continue

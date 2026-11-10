@@ -759,35 +759,66 @@ def test_rebase_rejects_ambiguous_upstream_mapping(repo: pathlib.Path, tmp_path:
     assert not output.exists()
 
 
-@pytest.mark.parametrize("same_path", [False, True])
+_SHARED_LINES = [f"行{index}" for index in range(1, 13)]
+
+
+@pytest.mark.parametrize(
+    ("later_edit", "accepted"),
+    [
+        # 別pathの後続編集は省略された変更に触れない。
+        ("other-path", True),
+        # 同じpathでも、変更箇所と前後3行の文脈から離れた行の編集は変更を残す。
+        ("same-path-far", True),
+        # 変更箇所の文脈（直後の行）の書換えは、変更が残っているかを差分の適用で確かめられない。
+        ("same-path-context", False),
+        # 変更箇所そのものの書換えは変更を失わせる。
+        ("same-path-overlap", False),
+    ],
+)
 @pytest.mark.parametrize("all_skipped", [False, True])
-def test_upstream_retention_bounds_independent_later_edits(
-    repo: pathlib.Path, tmp_path: pathlib.Path, same_path: bool, all_skipped: bool
+def test_upstream_retention_judges_omitted_change_itself(
+    repo: pathlib.Path, tmp_path: pathlib.Path, later_edit: str, all_skipped: bool, accepted: bool
 ) -> None:
-    """省略変更を残す独立編集でも同pathのtree差は拒否し、別pathの編集は許容する。"""
-    base = _commit(repo, "shared.txt", "変更前\n中間\n末尾\n", "準備")
-    omitted = _commit(repo, "shared.txt", "変更後\n中間\n末尾\n", "対象変更")
+    """省略された変更が新baseに残るかを変更そのもので判定し、同じpathの離れた後続編集では統合を止めない。"""
+    before = _SHARED_LINES
+    changed = ["行1を変更", *before[1:]]
+    base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in before), "準備")
+    omitted = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in changed), "対象変更")
     old_head = omitted if all_skipped else _commit(repo, "feature.txt", "成果\n", "実装")
     _git(repo, "checkout", "-b", "upstream", base)
-    upstream = _commit(repo, "shared.txt", "変更後\n中間\n末尾\n", "上流対象変更")
-    new_base = _commit(
-        repo,
-        "shared.txt" if same_path else "unrelated.txt",
-        "変更後\n中間\n独立した末尾編集\n" if same_path else "独立編集\n",
-        "独立した後続編集",
-    )
+    upstream = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in changed), "上流対象変更")
+    edited = list(changed)
+    if later_edit == "other-path":
+        new_base = _commit(repo, "unrelated.txt", "独立編集\n", "独立した後続編集")
+    else:
+        index = {"same-path-far": 11, "same-path-context": 1, "same-path-overlap": 0}[later_edit]
+        edited[index] = "後続編集"
+        new_base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in edited), "後続編集")
     new_head = new_base if all_skipped else _commit(repo, "feature.txt", "成果\n", "実装")
     output = tmp_path / "retention-map.json"
     code = _compare(repo, output, "rebase", (base, old_head, new_base, new_head))
-    if same_path:
-        assert code == 1
-        assert not output.exists()
-    else:
+    if accepted:
         assert code == 0
         expected = {omitted: upstream}
         if not all_skipped:
             expected[old_head] = new_head
         assert json.loads(output.read_text(encoding="utf-8")) == expected
+    else:
+        assert code == 1
+        assert not output.exists()
+
+
+def test_upstream_retention_ignores_diff_prefix_configuration(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """`diff.noprefix`を設定したリポジトリでも、接頭辞を明示した差分で保持を判定する。"""
+    _git(repo, "config", "diff.noprefix", "true")
+    base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in _SHARED_LINES), "準備")
+    changed = "".join(f"{line}\n" for line in ["行1を変更", *_SHARED_LINES[1:]])
+    omitted = _commit(repo, "shared.txt", changed, "対象変更")
+    _git(repo, "checkout", "-b", "upstream", base)
+    upstream = _commit(repo, "shared.txt", changed, "上流対象変更")
+    output = tmp_path / "noprefix-map.json"
+    assert _compare(repo, output, "rebase", (base, omitted, upstream, upstream)) == 0
+    assert json.loads(output.read_text(encoding="utf-8")) == {omitted: upstream}
 
 
 @pytest.mark.parametrize("all_skipped", [False, True])
@@ -848,3 +879,130 @@ def test_skipped_changes_merge_wis_in_plan_and_handoff(
         assert {row["awi"]: row["commits"] for row in rows} == {
             wi: [_git(repo, "rev-parse", "--short", new_base)] for wi in wis
         }
+
+
+# 除外するパスと、Gitのパターンとして展開すると同じ指定へ一致してしまう類似名のパス。
+_EXCLUDED_PATH = "data [ab].txt"
+_SIMILAR_PATH = "data a.txt"
+
+
+def _commit_files(repo: pathlib.Path, files: dict[str, str], subject: str) -> str:
+    for filename, text in files.items():
+        (repo / filename).write_text(text, encoding="utf-8")
+    _git(repo, "add", "--", *files)
+    _git(repo, "commit", "--no-verify", "-m", subject)
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _separated_series(repo: pathlib.Path, violation: str) -> tuple[tuple[str, str, str, str], str, str]:
+    """複数パスを変更する旧commitから1パスだけを外した新系列を作り、比較の端点・旧commit・対応先を返す。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    first = _commit_files(repo, {"keep.txt": "保持\n", _EXCLUDED_PATH: "除外\n", _SIMILAR_PATH: "類似名\n"}, "一つ目")
+    old_head = _commit(repo, "second.txt", "通常変更", "二つ目")
+    _git(repo, "checkout", "-b", "separated", base)
+    new_base = _commit(repo, "upstream.txt", "上流", "上流")
+    if violation == "order":
+        _commit(repo, "second.txt", "通常変更", "二つ目")
+    files = {"keep.txt": "無断変更\n" if violation in {"content", "followed"} else "保持\n", _SIMILAR_PATH: "類似名\n"}
+    if violation == "still-changed":
+        files[_EXCLUDED_PATH] = "除外\n"
+    elif violation == "followed":
+        # 統合先のファイルへの追随で、旧commitに無い変更パスを増やす。
+        files["upstream.txt"] = "追随\n"
+    target = _commit_files(repo, files, "別件" if violation == "subject" else "一つ目")
+    if violation != "order":
+        _commit(repo, "second.txt", "通常変更", "二つ目")
+    return (base, old_head, new_base, _git(repo, "rev-parse", "HEAD")), first, target
+
+
+@pytest.mark.parametrize(
+    ("violation", "expected"),
+    [
+        ("none", ""),
+        ("outside", "旧系列"),
+        ("unchanged-path", "変更していないパス"),
+        ("pattern", "変更していないパス"),
+        ("all-paths", "全ての変更パス"),
+        ("still-changed", "新commitでも変更"),
+        ("content", "変更内容が対応しない旧commit"),
+        ("followed", "除外後の変更パス"),
+        ("subject", "件名"),
+        ("order", "相対順"),
+    ],
+)
+def test_exclude_path_accepts_only_explicit_literal_exclusion(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str, expected: str
+) -> None:
+    """指定した旧commitのパスだけを外して残る変更の一致を確認し、誤指定・欠落・内容差・件名や相対順の不一致を保存せず拒否する。"""
+    bases, first, target = _separated_series(repo, violation)
+    output = tmp_path / "excluded.json"
+    # 除外を指定しない場合のパスの減少は、意図しない欠落と区別できないため受理しない。
+    # 新commitが全パスを変更する系列だけは、指定なしで全変更が対応する。
+    if violation == "still-changed":
+        assert _compare(repo, output, "rebase", bases) == 0
+        output.unlink()
+    else:
+        assert _compare(repo, output, "rebase", bases) == 1
+        assert not output.exists()
+    exclusions = ["--exclude-path", bases[0] if violation == "outside" else first[:12], _EXCLUDED_PATH]
+    if violation == "unchanged-path":
+        exclusions += ["--exclude-path", first, "second.txt"]
+    elif violation == "pattern":
+        exclusions += ["--exclude-path", first, "data*"]
+    elif violation == "all-paths":
+        exclusions += ["--exclude-path", first, "keep.txt", "--exclude-path", first, _SIMILAR_PATH]
+    elif violation == "followed":
+        # 競合解消の明示は残るパスの内容差だけを認め、除外指定のある対応では変更パスの増加を認めない。
+        exclusions += ["--resolved-conflict", first]
+    capsys.readouterr()
+    result = _compare(repo, output, "rebase", bases, *exclusions)
+    reported = capsys.readouterr()
+    if violation == "none":
+        assert result == 0, reported.err
+        assert json.loads(output.read_text(encoding="utf-8")) == {first: target, bases[1]: bases[3]}
+        assert f"{first} -> {target}: {_EXCLUDED_PATH}" in reported.out + reported.err
+        return
+    assert result == 1
+    assert not output.exists()
+    assert expected in reported.err and "次の操作:" in reported.err
+    if violation == "content":
+        # 残る内容の変更は除外指定だけでは受理せず、競合解消の明示を併用した場合に限り検収する。
+        assert _compare(repo, output, "rebase", bases, *exclusions, "--resolved-conflict", first) == 0
+        assert json.loads(output.read_text(encoding="utf-8")) == {first: target, bases[1]: bases[3]}
+
+
+def test_exclude_path_is_rejected_for_other_operations(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """除外指定はrebaseの検収だけが受け付ける。"""
+    base = _git(repo, "rev-parse", "HEAD")
+    old_head = _commit(repo, "first.txt", "一", "一つ目")
+    output = tmp_path / "amend.json"
+    assert _compare(repo, output, "amend", (base, old_head, base, old_head), "--exclude-path", old_head, "first.txt") == 1
+    assert not output.exists()
+    assert "--exclude-path" in capsys.readouterr().err
+
+
+def test_excluded_mapping_is_consumed_by_public_record_command(
+    repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """除外指定で保存した対応表を加工せずに公開の記録更新へ渡し、WI実装commitの対応を分離後のcommitへ継承する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
+    wi = "20261009-043608-001.md"
+    plan = tmp_path / "09-excluded-1a2b.md"
+    plan.write_text(
+        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n"
+        f"  - {wi}: 対応\n\n## 進捗ログ\n\n| 日時 | 完了した工程 | 結果・特記事項 |\n"
+        "| --- | --- | --- |\n",
+        encoding="utf-8",
+    )
+    bases, first, target = _separated_series(repo, "none")
+    commit_mapping.append_event(plan, {"commit": first, "awi": [wi]})
+    mapping = tmp_path / "excluded-map.json"
+    assert _compare(repo, mapping, "rebase", bases, "--exclude-path", first, _EXCLUDED_PATH) == 0
+    before = mapping.read_bytes()
+    assert _rewrite_records(repo, bases[1], mapping, plan) == 0
+    events = commit_mapping.read_events(plan, plan.read_text(encoding="utf-8"))
+    assert commit_mapping.get_commits(repo, events, [wi], {wi}) == {wi: [_git(repo, "rev-parse", "--short", target)]}
+    assert mapping.read_bytes() == before
+    capsys.readouterr()

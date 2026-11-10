@@ -21,7 +21,7 @@ _LINKS: dict[str, str] = {
     "skills/operate-ak110-projects": ".chezmoi-source/dot_claude/skills/operate-ak110-projects",
     "docs": ".chezmoi-source/dot_claude/docs",
 }
-# `agent-toolkit/rules`は配布先で`atk-auto`の境界を付けた本文へ書き換えるため、
+# `agent-toolkit/share/rules/common`は配布先で`atk-auto`の境界を付けた本文へ書き換えるため、
 # `sync_agent_toolkit_rules`の同期で配る。
 
 

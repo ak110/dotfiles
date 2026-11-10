@@ -1,0 +1,78 @@
+# 実行レビュー反復の調整：ラウンドの遷移
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-recurrence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-recurrence.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-acceptance.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-records.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-records.md` |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+
+## ラウンドの遷移
+
+1. レビュー担当が対象HEADをレビューし、検出した指摘をレビュー指摘管理表へ登録する。
+   指摘がある場合でも、正常に完了したレビューは`completed`として修正工程へ引き渡す。
+2. `${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`の受領手順に従い、未解決件数が0件となり、かつ達成すべき条件の判定行が揃っていることを確認する。
+   各`達成`行に所在と観測内容の組が正しく記録されていれば収束とみなす。
+   この組を欠く`達成`行がある場合は、件数やHEADが一致していても同一のレビュー担当へ差し戻す。
+3. 指摘が存在する場合、初回・再レビューとも統括役が`exec-review-parent-correction.md`「レビュー修正」に従って全指摘を確認し、疑問を同じ修正依頼へ参考意見として添える。
+   再レビューでは`review-loop-coordination-recurrence.md`「反復原因の判定」を適用したうえで、レビューイーへ修正対応を指示する。
+   レビューイーは変更実体と突き合わせて全指摘の採否と応答を記録し、採用した指摘の修正、変更範囲の検証、および指摘管理表への証拠記録を完了させる。
+   指摘の採用件数が0件であっても正常な対応完了として扱い、コミットの作成や履歴の統合は実差分が生じた場合にのみ実施する（計画ファイルの修正のみであればコミットは不要とする）。
+4. 同一のレビュー担当へ、同一の「開始時のHEAD」（CI記録では「修正系列の開始時のHEAD」）、レビュー基準、初回受領時の`review_contract`（簡潔な直接契約、またはMarkdownファイルの絶対パス）、およびレビュー指摘管理表を渡して再レビューを実施させる。
+   計画のみから条項を生成した場合は、初回の計画内容を継続して使用する。
+   再レビューの対象は、前回指摘に対する修正内容、前回レビューHEADから今回HEADまでの修正差分、ならびに変更された識別子や契約の直接影響範囲とする。
+   初回から判定可能だった新たな軽微論点は、全体走査を再開せずに初回レビューの確認不足として記録し、重大な見落としや修正によって新たに生じた欠陥は根拠を添えて指摘する。
+
+履歴書き換えを実施した後は、前回および今回の開始時点とHEADの組み合わせに基づき、ファイルごとの差分を比較する。
+完成条件の証拠は、ラウンドごとに新しいHEADで全条件を判定し直し、返却の「レビューHEAD」にそのHEADを記録する。
+前ラウンドの返却結果を委譲元がすでに受理している判定行は、修正差分や前提条件の変化が影響しない条件に限り参照を許可する。
+判定を維持する簡潔な理由は根拠欄に記録する（`exec-review-recording-evidence.md`「受理済み判定への参照」）。
+変化の影響を受けた条件は、新たな根拠に基づいて判定し直す。
+第3ラウンド以降に未解決指摘が残る場合は、修正に着手する前に`exec-review-responses-recurrence.md`「round 3以降の方式見直し」を適用する。
+方式を全面的に置換した直後の再レビューに限り、開始時点からの全差分を走査対象とする。
+修正差分の比較元には前回レビュー時のHEADを指定し、返却の「レビュー開始時点」には初回から一貫して継続している開始時点を指定する。
+履歴書き換え後の開始時点には、書き換え後の対応するOIDを使用する。
+
+前ラウンドで記録された指摘は、解決状態および検証証拠とあわせて指摘管理表に保持する。
+複数の計画が並行する反復処理では、計画ごとに最終のレビューHEAD、ラウンド数、指摘管理表、ならびに受理した返却ファイルを保持する。
+別計画の認可については、判定対象外のコミットを現在のOIDに更新した契約として渡す。
+変更後の再レビュー対象は`git range-diff`や`git diff --name-only`を用いて判定する。
+基準は`exec-review-parent-launch.md`「起動方法別のレビュー基準」と`exec-review-contract-generation.md`「`review_contract`の生成」に従う。
+読者別探索の対象と修正範囲は自計画の判定対象コミットによる差分とし、他計画のコミットのみで変更された文書はその計画のレビューにおいて判定する。
+他計画が作成した記述に対する指摘候補は、委譲元がその計画のレビュー担当へ1回のみ回送し、その担当が同一HEADで読者別探索を完了して下した結論を採用する。
+自計画の変更が参照先、手順、識別子などの前提条件を変更した場合は、自計画の直接影響範囲として判定する。
+受領確認では、各返却本文（`atk agents wait`の`agent_message_path`）を`exec-review-parent-acceptance.md`「完成条件証拠の受領確認」の手順で検収する。
+この手順は、process-wiのレーン処理、およびメイン自身による計画あり・計画なしの実装のいずれにおいても共通して使用する。
+レーンを統合する際は、計画ごとに受理した返却ファイルと「レビューHEAD」を保持し、統合時の完成条件判定へ引き渡す。
+読者別探索の申告内容は、メイン自身の回答下書きとGit管理外の変更記録から算出した対象集合と、Git差分の対象集合の双方に対応付けて検証し、未解決件数が0件であることを確認して収束させる。
+各返却に含まれる今回の「レビュー開始時点」と、2回目以降の「前回確認版の開始時点」「前回確認版HEAD」も保持する。
+rebaseによって今回の開始時点が変更された場合でも前回の値を上書きせず、双方の差分の一致性とファイル別申告内容を同一の受領確認へ渡す。
+
+## ラウンド番号の保持先
+
+各ラウンドの契約ファイルも保持する。
+現在の契約内容へ更新した後も、前回の契約を前回の開始時点およびHEADとともに保持し続ける。
+
+ラウンド番号は、レビュー指摘管理表内の同一系統で記録されている最大ラウンド番号を出所とする。
+初回レビューは1とし、再レビューは最大値に1を加えた値とする。
+同一ラウンドは1つの表内の1つの番号で一意に識別する。
+
+## 応答済みの判定
+
+レビューイーは`exec-review-responses-records.md`「実行レビュー反復での記録」に従い、全指摘に対する応答を記録する。
+委譲元は、`atk review-table show <表の絶対パス> --format=summary --round <対応したround>`を実行して取得した`unanswered_count`が0件である場合のみ、再レビューへ進む。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビュー担当の起動とレビュー修正：レビュー修正の基準を適用する前 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
+| 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準の基準を適用する前 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
+| 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成の基準を適用する前 | `exec-review-recording-evidence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-evidence.md` |
+| 実行レビュー反復の調整：反復原因の判定の基準を適用する前 | `review-loop-coordination-recurrence.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-recurrence.md` |

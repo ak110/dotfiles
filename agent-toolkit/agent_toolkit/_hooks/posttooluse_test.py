@@ -2398,7 +2398,7 @@ class TestRemovedRecordsAreAbsent:
 
     def test_bash_and_edit_do_not_record_removed_state(self, tmp_path: pathlib.Path) -> None:
         sid = "removed-records"
-        rule = pathlib.Path(__file__).resolve().parents[2] / "rules" / "01-agent.md"
+        rule = pathlib.Path(__file__).resolve().parents[2] / "share" / "rules" / "common" / "01-agent.md"
         payloads: list[dict] = [
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "uv run pytest"}, "tool_response": {}},
             {"session_id": sid, "tool_name": "Bash", "tool_input": {"command": "git log -3"}, "tool_response": {}},

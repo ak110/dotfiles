@@ -1138,11 +1138,12 @@ async def test_serve_stops_promptly_while_slow_request_is_in_progress(
     """
 
     request_started = asyncio.Event()
+    request_release = asyncio.Event()
 
     async def slow_list_sessions(*args: object, **kwargs: object) -> typing.NoReturn:
         del args, kwargs
         request_started.set()
-        await asyncio.sleep(60)
+        await asyncio.wait_for(request_release.wait(), timeout=30)
         raise AssertionError("停止要求で打ち切られなかった")
 
     monkeypatch.setattr(serve_sessions, "list_sessions", slow_list_sessions)
@@ -1180,6 +1181,7 @@ async def test_serve_stops_promptly_while_slow_request_is_in_progress(
         assert status_line.startswith(b"HTTP/1.1 503")
         assert loop.time() - started < 3
     finally:
+        request_release.set()
         if writer is not None:
             writer.close()
         if not server.done():

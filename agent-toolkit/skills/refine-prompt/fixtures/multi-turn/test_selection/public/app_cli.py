@@ -3,7 +3,7 @@
 import json
 import sys
 
-import report  # ty: ignore[unresolved-import]  # 模擬リポジトリは同じディレクトリのモジュールを実行時のsys.pathで解決する
+import report  # ty: ignore[import-not-found]  # 模擬リポジトリは同じディレクトリのモジュールを実行時のsys.pathで解決する
 
 
 def main() -> int:

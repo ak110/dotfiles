@@ -1,0 +1,44 @@
+# 待機と観測：`atk agents wait`の応答の扱い
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies-failures.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-failures.md` |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
+| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+
+## `atk agents wait`の応答の扱い
+
+1. 中間値と最終結果を区別するため、バックグラウンドタスクとして実行中の`atk agents wait`が完了していない間の進捗状況は、listやshowによる活動情報で確認し、出力途中の内容は進捗情報として扱う。
+   最終的な終了時の結果は完了通知を受け取った後に出力全体を改めて読み取って回収し、同じ結果を得るためのwaitコマンドの並行重複実行は避ける。
+   Codexのcell IDやsession IDについては、前述のとおり同一ターン内での回収手順に従う。
+   公式資料と開発元ホストでの観測記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：進捗照会と結果回収：2026年10月10日」にある
+
+2. 応答各行の形式（JSON Lines、`session_id`、`label`、`agent_message_path`、`終了行:`の要約行）や待機が成立したかどうかの判定基準は、CLIの`--help`に従う。
+   どの依頼に対応するかは`label`で判別し、失敗で終了した行については要約行の`error`で原因を確認して`next_action`の指示に従う。
+   結果を正常に回収できなかった終了セッションの原因は、`show`の`error`情報で確認する
+
+3. 同一の書き込み主体による`atk agents wait`がすでに稼働している場合、後発のプロセスは`current.json`に示されるrun識別子を固定して保持し、先行する待機のロックが解放された後に、そのrunの状態を確認する。
+   配信済みの`foreground-delivered`または`consumed`なら本文を再出力せず、終了コード8と`run_path`を含む回復情報を返す。
+   未配送の`published`なら保存済み本文を回収し、`running`なら追加対象も含めて待機を続ける。
+   ロックを取得する前にCLIが算出する1回分の待機期限が開始され、この期限はロック取得待ちと取得後の結果待ちの双方で共有される。
+   正常な長時間待機、ホストセッション識別子の別名、対象セッションの追加に伴う合流にも同一の期限が適用され、ロック競合が期限まで解消しなかった場合は終了コード8と固定runの診断情報を返す。
+   前景のCLIが本文を返した後の逐次待機は新しいrunへ進む。
+   先行する実プロセスが一時的に残存している間の後発待機も、配信済み本文への回復情報を返す。
+   保存出力は`jq -r .output -- <run_path>`で読み直せる。
+   期限に達した際の復旧手順は、`wait-anomalies-failures.md`「終了コードと呼び出しの失敗」に従う
+
+4. 待機上限に達したことを示す終了コード3が返された場合は、`status`が`running`である応答と同様に扱い、同じコマンドを再発行して待機を継続する
+
+5. 取得した行に`notices`が含まれている場合は、その`session_id`を持つ委譲先から実行中に届いた即時通知として受け取り、本文を保持する（同一の通知が返されるのは1度だけである）。
+   待機を継続すべきかどうかは行の`status`で判定し、終了行が含まれていない場合は同一ターン内でコマンドを再発行する。
+   終了ステータスを示す行を受け取った場合は完了報告として扱い、そのセッションを未終了の対象一覧から除外する
+
+6. `agents_server`は終了時の結果を経過時間だけで破棄することはなく、結果本文を配送した後、または`stop`によって明示的に破棄された後にのみ解放する。
+   そのため、完了通知を受け取ってから時間が経過していたとしても、終了状態と結果本文を確実に回収できる

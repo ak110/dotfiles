@@ -303,7 +303,7 @@ def _catalog_scan(
         if meta.failure is not None:
             unresolved_loads += 1
             identity = f"claude:{path.parent.parent.name}/{path.stem}" if path.parent.name == "subagents" else str(path)
-            unresolved.append(_UnresolvedRecord(identity, 0))
+            unresolved.append(_UnresolvedRecord(identity, 0, reason=meta.failure.reason, failure_line=meta.failure.line))
             continue
         if meta.runtime != runtime:
             continue
@@ -460,39 +460,31 @@ def _catalog_grep_events(
     events: list[dict[str, Any]] = []
     seen: set[str] = set()
     counts: dict[str, int] = {}
-    unresolved = list(scan.unresolved)
+    unresolved: list[_UnresolvedRecord] = []
     undated = 0
+    selected = 0
+    resolved_ids: set[str] = set()
     for parent in scan.parents:
         try:
-            if selection is not None and not selection.matches(_catalog_parent_event(parent, runtime)):
-                continue
-            main = _catalog_read_item(parent.item)
-            collected, missing = _collect_records(str(main.path), main.records, None, boundary)
+            result = _catalog_grep_family(parent, since, boundary, pattern, selection, seen)
         except ValueError as error:
             return [_error_event(str(error), next_action=_CATALOG_ROOT_NEXT_ACTION)], 2
+        if result is None:
+            continue
+        selected += 1
+        family_events, family_counts, missing, identities, family_undated = result
+        events.extend(family_events)
+        counts.update(family_counts)
         unresolved.extend(missing)
-        for item in collected:
-            if item.record_id in seen:
-                continue
-            seen.add(item.record_id)
-            matches: list[dict[str, Any]] = []
-            for event in _grep_collection_events([item], [], pattern):
-                if event["kind"] != "match":
-                    continue
-                try:
-                    stamp = _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else None
-                except ValueError:
-                    stamp = None
-                if stamp is None:
-                    undated += 1
-                elif since < stamp <= boundary:
-                    matches.append(event)
-            # grepは1つのentryから複数の一致行を返す。件数は既存の単一記録照会と同じentry単位にする。
-            counts[item.record_id] = len({event["line"] for event in matches})
-            events.extend(_referenced_provenance_events([item], matches))
-            events.extend(matches)
-            events.append({"kind": "summary", "record": item.record_id, "count": counts[item.record_id]})
-    events.extend(_unresolved_events(list(dict.fromkeys(unresolved))))
+        resolved_ids.update(identities)
+        undated += family_undated
+    unresolved = list(
+        dict.fromkeys(item for item in unresolved if item.kind != "unresolved-record" or item.record_id not in resolved_ids)
+    )
+    query_ids = {item.record_id for item in unresolved}
+    scan_unresolved = [item for item in scan.unresolved if item.record_id not in resolved_ids | query_ids]
+    events.extend({**event, "scope": "scan-root"} for event in _unresolved_events(scan_unresolved))
+    events.extend({**event, "scope": "selected-family"} for event in _unresolved_events(unresolved))
     events.append(
         {
             "kind": "summary",
@@ -502,10 +494,63 @@ def _catalog_grep_events(
             "since": since.isoformat(),
             "observation_boundary": boundary.isoformat(),
             "undated_match_count": undated,
-            "unresolved_record_count": len(set(unresolved)),
+            "parent_record_count": len(scan.parents),
+            "selected_parent_count": selected,
+            "scan_root_unresolved_record_count": len(set(scan_unresolved)),
+            "query_unresolved_record_count": len(set(unresolved)),
+            "unresolved_record_count": len(set([*scan_unresolved, *unresolved])),
         }
     )
     return events, 0
+
+
+def _catalog_grep_family(
+    parent: _CatalogParent,
+    since: datetime.datetime,
+    boundary: datetime.datetime,
+    pattern: re.Pattern[str],
+    selection: _CatalogSelection | None,
+    seen: set[str],
+) -> tuple[list[dict[str, Any]], dict[str, int], list[_UnresolvedRecord], set[str], int] | None:
+    """親本文で選択し、一家族の検索結果だけを返して本文を解放する。"""
+    main = _catalog_read_item(parent.item)
+    if selection is not None:
+        workflow, _locator = _workflow_evidence(main)
+        if not selection.matches({"workflow": workflow, "cwd": _catalog_value(main.records, "cwd", "originalCwd")}):
+            return None
+    collected, missing = _collect_records(str(main.path), main.records, None, boundary)
+    events: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    identities = {
+        identity
+        for item in collected
+        for alias in (item.record_id, *item.aliases)
+        for identity in (alias, alias.partition(":")[2])
+        if identity
+    }
+    undated = 0
+    for item in collected:
+        if item.record_id in seen:
+            continue
+        seen.add(item.record_id)
+        matches: list[dict[str, Any]] = []
+        for event in _grep_collection_events([item], [], pattern):
+            if event["kind"] != "match":
+                continue
+            try:
+                stamp = _parse_timestamp(event["timestamp"]) if isinstance(event.get("timestamp"), str) else None
+            except ValueError:
+                stamp = None
+            if stamp is None:
+                undated += 1
+            elif since < stamp <= boundary:
+                matches.append(event)
+        # 一致件数はentry単位、時刻不明は既存の一致行単位を保つ。
+        counts[item.record_id] = len({event["line"] for event in matches})
+        events.extend(_referenced_provenance_events([item], matches))
+        events.extend(matches)
+        events.append({"kind": "summary", "record": item.record_id, "count": counts[item.record_id]})
+    return events, counts, missing, identities, undated
 
 
 def _catalog_tool_call_events(

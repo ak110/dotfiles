@@ -108,8 +108,58 @@ async def test_observer_lifecycle_waits_do_not_stall_event_loop(
         await task
         await stop()
     if owner == "wi":
-        assert not wi.observer.is_alive()
+        assert not wi.is_watching()
     elif owner == "plans":
         assert plan_context.state.local_observer is None
     else:
         assert session_context.state.record_watch is None
+
+
+@pytest.mark.asyncio
+async def test_warm_index_preloads_entry_texts_outside_read_workers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """索引の先行読込の後に本文を先読みし、先読みの間も読取用の実行枠を空けておく。"""
+    operations = wi_operations.Operations(tmp_path)
+    read_workers = runtime.BoundedWorkers(1)
+    current_state = state.ServeState(tmp_path)
+    preloading = threading.Event()
+    release = threading.Event()
+    calls: list[threading.Event | None] = []
+
+    def preload(stop: threading.Event | None = None, **_kwargs: Any) -> None:
+        calls.append(stop)
+        preloading.set()
+        release.wait(timeout=10)
+
+    monkeypatch.setattr(operations, "preload_entry_texts", preload)
+    current = runtime.ServeRuntime(operations, runtime.BoundedWorkers(1), current_state, read_workers=read_workers)
+    task = asyncio.create_task(current.warm_index())
+    try:
+        assert await asyncio.to_thread(preloading.wait, 10)
+        assert await asyncio.wait_for(read_workers.run(lambda: "空いている"), timeout=5) == "空いている"
+    finally:
+        release.set()
+        await asyncio.wait_for(task, timeout=10)
+    assert calls == [current_state.stop_requested]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("step", ["warm_index", "preload_entry_texts"])
+async def test_warm_index_failure_warning_names_check_targets(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, step: str
+) -> None:
+    """先行読込の失敗の警告は、失敗した処理を特定するトレースバックと確認するWIの保存先を示す。"""
+    operations = wi_operations.Operations(tmp_path)
+
+    def fail(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("想定外の失敗")
+
+    monkeypatch.setattr(operations, step, fail)
+    current = runtime.ServeRuntime(operations, runtime.BoundedWorkers(1), state.ServeState(tmp_path))
+    with caplog.at_level("WARNING", logger=runtime.logger.name):
+        await asyncio.wait_for(current.warm_index(), timeout=10)
+    [record] = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert "想定外の失敗" in record.getMessage()
+    assert f"WIの保存先（{tmp_path}）の読取権限" in record.getMessage()
+    assert record.exc_info is not None

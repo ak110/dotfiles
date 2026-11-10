@@ -58,7 +58,7 @@ repos:
         entry: uv run --project . --frozen pyfltr fast
         env:
           UV_PROJECT_ENVIRONMENT: .venv
-        always_run: true
+        # 対象ファイルが無いときに起動すると、引数なしのpyfltrがリポジトリ全体を検査するため、常時実行にしない。
         require_serial: true
         language: system
       - id: check-script-imports

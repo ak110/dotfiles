@@ -217,14 +217,29 @@ def _is_server_log(path: Path) -> bool:
     return suffix != path.name and (not suffix or (suffix.startswith(".") and suffix[1:].isdigit()))
 
 
+def _current_processes() -> list[psutil.Process]:
+    """現在のPIDごとに新しいProcessを構築して返す。
+
+    process_iterはPID単位でProcessを再利用し、起動時刻を以前の世代のまま保持する。
+    能力記録と保持根拠を現在の起動時刻で比べるため、列挙は現在のPIDの取得だけに使う。
+    """
+    processes: list[psutil.Process] = []
+    for listed in psutil.process_iter():
+        try:
+            processes.append(psutil.Process(listed.pid))
+        except psutil.NoSuchProcess:
+            continue
+    return processes
+
+
 def _server_may_use_root(area: Path, *, allow_unattributed: bool) -> bool:
     """同じOSアカウント・状態名前空間のMCPをOSの起動引数と参照から探す。"""
     try:
         username = psutil.Process().username()
         snapshot = _process_snapshot.get()
         if snapshot is not None and "processes" not in snapshot:
-            snapshot["processes"] = list(psutil.process_iter())
-        for process in psutil.process_iter() if snapshot is None else snapshot["processes"]:
+            snapshot["processes"] = _current_processes()
+        for process in _current_processes() if snapshot is None else snapshot["processes"]:
             try:
                 try:
                     arguments = process.cmdline()

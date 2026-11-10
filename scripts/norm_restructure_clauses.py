@@ -26,6 +26,7 @@ import sys
 
 # WI「対象集合」の10領域。Git追跡のMarkdown（`.md`と`.md.tmpl`）だけを対象にする
 TARGET_PATHSPECS = (
+    # 2026年11月に`agent-toolkit/share/rules/`へ移した常時規範の旧配置。移動前のcommitを台帳へ再現するため残す。
     "agent-toolkit/rules/",
     "agent-toolkit/share/",
     "agent-toolkit/skills/",

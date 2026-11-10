@@ -16,6 +16,7 @@ import dataclasses
 import datetime
 import json
 import logging
+import math
 import os
 import pathlib
 import socket
@@ -25,11 +26,13 @@ import typing
 
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
+from agent_toolkit._atk.serve import session_costs as _session_costs
 from agent_toolkit._atk.serve import session_parents, session_watch
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import session_cost_records, session_launchers, stream_lines
+from agent_toolkit._common import session_cost_records, session_cost_slim, session_launchers, stream_lines
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.async_operations import run_sync_operation
+from agent_toolkit._common.atomic_file import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -210,8 +213,22 @@ class SessionsState:
     stop_requested: threading.Event = dataclasses.field(default_factory=threading.Event)
     # ローカルの記録単位の解析結果。要求ごとの走査で変更のない記録を読み直さないために保持する。
     record_index: session_watch.RecordSummaryIndex = dataclasses.field(default_factory=session_watch.RecordSummaryIndex)
+    # ローカルの記録の家族ごとの推定費用。家族の記録が変わらない間は算出し直さない。
+    family_costs: _session_costs.FamilyCostCache = dataclasses.field(
+        default_factory=lambda: _session_costs.FamilyCostCache(None)
+    )
+    # 記録ごとの縮約記録。家族の記録が変わった時に、変わった記録の追記分だけを解析する（`session_cost_slim`）。
+    slim_records: session_cost_slim.SlimRecordStore = dataclasses.field(
+        default_factory=lambda: session_cost_slim.SlimRecordStore(None)
+    )
+    # 一覧の記録の家族の推定費用を背景で先に求める。serveの変更監視とともに`start_local_watch`が生成する。
+    cost_warmer: _session_costs.FamilyCostWarmer | None = None
     # 前回のローカル一覧。変更監視が一覧を変え得る変更を観測していない間だけ再利用する。
     local_list: _LocalListCache | None = None
+    # 前回の起動で最後に作ったローカル一覧の保存先と、起動時に読み込んだ一覧。
+    # 起動後の最初の一覧は記録数千件の全件の走査に負荷時で数秒かかるため、保存した一覧を返して背景で走査し直す。
+    local_list_path: pathlib.Path | None = None
+    saved_local_list: list[SessionSummary] | None = None
     # ローカル一覧の全件の走査を1つずつ実行する。要求の中の走査と背景の再走査が記録単位の索引を同時に更新しないためである。
     local_scan_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     # 再利用の上限時間を過ぎた後の背景の再走査が動いているか。同時に1つだけ動かす。
@@ -243,8 +260,13 @@ def create_context(
         raise ValueError("ローカルホスト名がリモートホストの指定と重複しています")
     resolved_state_dir = state_dir if state_dir is not None else _state_paths.state_dir()
     state = SessionsState(
-        record_index=session_watch.RecordSummaryIndex(cache_path=resolved_state_dir / "serve" / "session-summaries.json")
+        record_index=session_watch.RecordSummaryIndex(cache_path=resolved_state_dir / "serve" / "session-summaries.json"),
+        family_costs=_session_costs.FamilyCostCache(resolved_state_dir / "serve" / "session-costs.json"),
+        slim_records=session_cost_slim.SlimRecordStore(resolved_state_dir / "serve" / "cost-records"),
+        local_list_path=resolved_state_dir / "serve" / "session-list.json",
     )
+    state.saved_local_list = _load_local_list(state.local_list_path)
+    state.slim_records.prune()
     state.host_status[resolved_hostname] = "connected"
     for host in hosts:
         state.host_status[host] = "connecting"
@@ -311,6 +333,10 @@ def list_local_sessions(context: SessionsContext) -> list[SessionSummary]:
     """
     tracker = context.state.record_watch.tracker if context.state.record_watch is not None else None
     if tracker is not None:
+        saved, context.state.saved_local_list = context.state.saved_local_list, None
+        if context.state.local_list is None and saved is not None:
+            # 保存した一覧を上限時間の過ぎた前回の一覧として扱い、返した後に背景の走査で取り直させる。
+            context.state.local_list = _LocalListCache(tracker=tracker, entries=saved, scanned_at=-math.inf)
         reused = _reuse_local_list(context, tracker)
         if reused is not None:
             return reused
@@ -355,18 +381,46 @@ def _scan_local_sessions(context: SessionsContext, tracker: session_watch.Record
         delegated_ids=lambda path, engine: index.delegated_ids(pathlib.Path(path), engine),
         launcher_of=session_launchers.launcher_reader(context.state_dir),
     )
-    index.finish_scan()
     entries = [dataclasses.replace(entry, parent_path=links.get(entry.path)) for entry, _ in kept]
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
     limited = session_parents.limit_with_ancestors(
         entries, MAX_LIST_ENTRIES, path_of=lambda entry: entry.path, parent_of=lambda entry: entry.parent_path
     )
     messages = index.display_messages((pathlib.Path(entry.path), entry.engine) for entry in limited)
+    # 表示用の本文を求めた後に走査を終え、保存する索引へ本文を含める。先に保存すると、全件を読み直した最初の走査の
+    # 直後にserveを止めた場合、次の起動の最初の一覧が表示件数分の本文を読み直して数十秒かかる。
+    index.finish_scan()
     result = [dataclasses.replace(entry, first_user_message=messages[entry.path]) for entry in limited]
     context.state.local_list = (
         _LocalListCache(tracker=tracker, entries=result, scanned_at=scanned_at) if tracker is not None else None
     )
+    _save_local_list(context.state.local_list_path, result)
+    if context.state.cost_warmer is not None:
+        # 一覧の並び（開始日時の新しい順）で算出し、画面で開かれやすい最近の記録から保持する。
+        context.state.cost_warmer.request([(entry.engine, entry.path) for entry in result if entry.warning is None])
     return list(result)
+
+
+def _load_local_list(path: pathlib.Path | None) -> list[SessionSummary] | None:
+    """保存したローカル一覧を読む。不在・破損・項目の不一致は`None`を返し、要求の中の走査へ戻す。"""
+    if path is None:
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return [SessionSummary(**item) for item in payload["sessions"]]
+    except OSError, ValueError, KeyError, TypeError:
+        return None
+
+
+def _save_local_list(path: pathlib.Path | None, entries: list[SessionSummary]) -> None:
+    """走査したローカル一覧を保存する。失敗は一覧の取得を失敗させない（次の起動が要求の中で走査するだけである）。"""
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(path, json.dumps({"sessions": [entry.to_json() for entry in entries]}, ensure_ascii=False))
+    except OSError as error:
+        logger.debug("セッション一覧を保存できません: %s: %s", path, error)
 
 
 def _reuse_local_list(context: SessionsContext, tracker: session_watch.RecordChangeTracker) -> list[SessionSummary] | None:
@@ -475,6 +529,10 @@ def _read_local_records(
     """ローカルの記録を検証して読み、記録のパス、解析した行、解析できない行数を返す。"""
     if engine not in {"claude", "codex"} or not is_local_record_path(context, raw_path):
         raise SessionNotFoundError(raw_path)
+    return _read_record_file(raw_path)
+
+
+def _read_record_file(raw_path: str) -> tuple[pathlib.Path, list[dict[str, typing.Any]], int]:
     path = pathlib.Path(raw_path)
     try:
         data = path.read_bytes()
@@ -511,17 +569,66 @@ def read_local_detail(context: SessionsContext, engine: str, raw_path: str) -> d
 
 
 def read_local_cost(context: SessionsContext, engine: str, raw_path: str) -> dict[str, typing.Any]:
-    """ローカルの記録と子孫から、詳細の見出しに表示する推定費用を求める。"""
-    path, records, broken = _read_local_records(context, engine, raw_path)
-    return session_cost_records.estimate_detail_cost(
+    """ローカルの記録と子孫から、詳細の見出しに表示する推定費用を求める。
+
+    家族の記録が前回の算出から変わっていなければ、保持した結果を返す（`session_costs`）。
+    """
+    if engine not in {"claude", "codex"} or not is_local_record_path(context, raw_path):
+        raise SessionNotFoundError(raw_path)
+    cached = context.state.family_costs.get(pathlib.Path(raw_path))
+    if cached is not None:
+        return cached
+    started_ns = _session_costs.now_ns()
+    estimated = estimate_local_family(
+        engine,
+        raw_path,
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim=context.state.slim_records,
+    )
+    if estimated.complete:
+        context.state.family_costs.put(pathlib.Path(raw_path), estimated.members, estimated.cost, started_ns)
+    return estimated.cost
+
+
+def estimate_local_family(
+    engine: str,
+    raw_path: str,
+    *,
+    claude_home: pathlib.Path,
+    codex_home: pathlib.Path,
+    state_dir: pathlib.Path | None,
+    slim: session_cost_slim.SlimRecordStore,
+) -> session_cost_records.DetailCost:
+    """ローカルの記録1件を起点に、子孫を含む家族の推定費用を求める。背景の算出の別プロセスも同じ処理を使う。
+
+    家族の各記録は縮約記録（`slim`）から読み、変わった記録の追記分だけを解析する。
+    起点の記録を縮約できない場合（解析できない行や書き込み途中の末尾を含む）は、従来どおり全行を読み、
+    解析できない行数を不完全の判定へ渡す。
+    """
+    path = pathlib.Path(raw_path)
+    try:
+        size = path.stat().st_size
+    except OSError as error:
+        raise SessionNotFoundError(raw_path) from error
+    if size > MAX_RECORD_BYTES:
+        raise SessionNotFoundError(f"{raw_path}（記録が大きすぎます）")
+    slim_records = slim.records(raw_path)
+    if slim_records is not None:
+        records, broken = [record.entry for record in slim_records], 0
+    else:
+        path, records, broken = _read_record_file(raw_path)
+    return session_cost_records.estimate_detail_family(
         engine,
         path,
         records,
         include_descendants=True,
-        claude_home=context.claude_home,
-        codex_home=context.codex_home,
-        state_root=context.state_dir,
+        claude_home=claude_home,
+        codex_home=codex_home,
+        state_root=state_dir,
         broken_lines=broken,
+        record_loader=slim.loader,
     )
 
 
@@ -988,6 +1095,13 @@ def _start_local_record_watch(context: SessionsContext, loop: asyncio.AbstractEv
         logger.warning("セッション記録の監視を開始できません: %s", error)
         return None
     context.state.watch_loop = loop
+    context.state.cost_warmer = _session_costs.FamilyCostWarmer(
+        context.state.family_costs,
+        claude_home=context.claude_home,
+        codex_home=context.codex_home,
+        state_dir=context.state_dir,
+        slim_directory=context.state.slim_records.directory,
+    )
     return watch
 
 
@@ -1007,10 +1121,16 @@ async def stop_local_watch_async(context: SessionsContext) -> None:
     watch = context.state.record_watch
     if watch is not None:
         await run_sync_operation(watch.stop, on_success=lambda _result: setattr(context.state, "record_watch", None))
+    warmer = context.state.cost_warmer
+    if warmer is not None:
+        await run_sync_operation(warmer.stop, on_success=lambda _result: setattr(context.state, "cost_warmer", None))
 
 
 def stop_local_watch(context: SessionsContext) -> None:
     """ローカルの記録rootの変更監視を終了させる。"""
+    warmer, context.state.cost_warmer = context.state.cost_warmer, None
+    if warmer is not None:
+        warmer.stop()
     watch = context.state.record_watch
     if watch is None:
         return

@@ -1,60 +1,77 @@
 # grilling
 
-本書は、呼び出し元の工程が指定する場面において、ユーザーとの相互理解を深めるための質問ラウンドを実施する手順を定める。
-確認事項の取り扱いや質問ラウンド完了後の工程については、呼び出し元の工程の定めに従う。
+呼び出し元の工程が指定する場面で、相互理解を深める質問ラウンドの手順を定める。
+確認事項と質問ラウンド完了後の工程は、呼び出し元に従う。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 状態や業務ルールを持つ要求の曖昧さを洗い出す前 | `agent-basics:writing-standards/references/design-time.md`の「状態と業務ルールの条件」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-time.md#「状態と業務ルールの条件」` |
+| 状態や業務ルールを持つ要求の曖昧さを洗い出す前 | `agent-basics:writing-standards/references/design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
 | WI作成工程で質問ラウンドを終える前と原稿を確定する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md#「確認要否の判定」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md#「確認要否の判定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `publish-scope.md#「公開範囲の確認」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md#「公開範囲の確認」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/publish-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md#「命名の方針」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/defined-names.md#「命名の方針」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/user-utterance.md#「原文の保持と取り込み」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md#「原文の保持と取り込み」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../references/communication-methods.md#「手段の選択」` | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods.md#「手段の選択」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md#「作業完了報告のフォーマット」` | 判断 | `section:agent-toolkit:*/skills/report-completion/references/report-formats.md#「作業完了報告のフォーマット」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-completion.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-completion.md` |
 
 ## 確認対象
 
-まず現在求められている案・評価・説明を整理し、`user-utterance.md`「問い・提案・疑問形の扱い」に従って、回答に必要な調査と残るユーザー判断を分ける。
-回答を前提とする質問は、その回答を提示した後に行う。
+1. まず現在求められている案・評価・説明を整理し、`user-utterance-questions.md`「問い・提案・疑問形の扱い」に従って、回答に必要な調査と残るユーザー判断を分ける。
+   回答を前提とする質問は、その回答を提示した後に行う。
+2. 依頼内容や合意済みの内容から、目的、範囲、結果、制約、優先順位などを整理し、未確定の判断事項や判断同士の依存関係、要求間の競合、方針の不整合や例外、実現に必要な未指定の値を洗い出す。
+   洗い出した各候補に対して`user-confirmation-and-report-decisions.md`「確認要否の判定」を適用し、ユーザー固有の判断が必要な事項をすべて確認する。
+   調査によって特定できる事項や、技術的観点およびQCDの評価で決まる値はエージェント自身で確定させる。
+   両立可能な要求であっても例外があれば、その不整合や規約・運用の保守コストを確認文に記載する。
 
-依頼内容や合意済みの内容から、目的、範囲、結果、制約、優先順位などを整理し、未確定の判断事項や判断同士の依存関係、要求間の競合、方針の不整合や例外、実現に必要な未指定の値を洗い出す。洗い出した各候補に対して`SKILL.md`「確認要否の判定」を適用し、ユーザー固有の判断が必要な事項をすべて確認する。調査によって特定できる事項や、技術的観点およびQCDの評価で決まる値はエージェント自身で確定させる。両立可能な要求であっても例外が存在する場合は、その不整合や規約・運用の保守コストを確認文に記載する。
+   WI作成工程（`agent-toolkit:add-awi-by-user`などでAWIを登録する時点）で本書を使用する時は、登録する要求を後続工程で処理する時に判断を要する曖昧さ（完了条件の境界、外部から観測可能な動作、対象範囲の境界、除外条件など）も洗い出す。
+   前提条件が成立しないケースや環境・状態が異なるケースにも同じ目的を適用し、対応する結果、対象範囲、例外のうち、技術やQCDの評価で確定できない判断事項を同じ質問ラウンドですべて確認する。
+   後続工程に残すのは、登録時点の調査では判明せず、実際の処理時に初めて明らかになる曖昧さに限る。
+   登録時点で確認できる曖昧さを後続工程に残すと、自律モードで対象項目が保留となり、ユーザーの回答を待つ間作業が停止してしまうためである。
 
-WI作成工程（`agent-toolkit:add-awi-by-user`などでAWIを登録する時点）で本書を使用する場合は、登録する要求を後続工程で処理する際に判断を要する曖昧さ（完了条件の境界、外部から観測可能な動作、対象範囲の境界、除外条件など）も洗い出す。前提条件が成立しないケースや環境・状態が異なるケースにも同じ目的を適用し、対応する結果、対象範囲、例外のうち、技術やQCDの評価で確定できない判断事項を同じ質問ラウンドですべて確認する。後続工程に残すのは、登録時点の調査では判明せず、実際の処理時に初めて明らかになる曖昧さに限る。登録時点で確認できる曖昧さを後続工程に残すと、自律モードで対象項目が保留となり、ユーザーの回答を待つ間作業が停止してしまうためである。
+   WI作成工程では、質問ラウンドを終える前と原稿確定前に`../../add-awi-by-user/references/omission-check.md`で考慮漏れを点検し、同資料に従って処置を確定し、終了時に報告する。
+   状態や業務ルールを持つ要求では、`agent-basics:writing-standards/references/design-time-state.md`「状態と業務ルールの条件」の時機の区別も、登録前に洗い出す曖昧さへ含める。
 
-WI作成工程では、質問ラウンドを終える前と原稿確定前に`../../add-awi-by-user/references/omission-check.md`で考慮漏れを点検し、同資料に従って処置を確定し、終了時に報告する。
-状態や業務ルールを持つ要求では、`agent-basics:writing-standards/references/design-time.md`「状態と業務ルールの条件」の時機の区別も、登録前に洗い出す曖昧さへ含める。
+   ユーザーが判定基準を示した集合に属する対象や、その集合から派生するペアの対象（その対象を前提とする規範条文、テストコード、設定など）に同じ基準を適用する判断は起草者が確定する。
+   基準の適否が一意に定まらない対象についてのみ、判定を分ける条件を質問する。
+   協調モードでリポジトリを変更する時は、`references/publish-scope.md`「公開範囲の確認」において不足している公開の承認やユーザー選好のみを質問ラウンドに含める。
 
-ユーザーが判定基準を示した集合に属する対象や、その集合から派生するペアの対象（その対象を前提とする規範条文、テストコード、設定など）に同じ基準を適用する判断は起草者が確定する。基準の適否が一意に定まらない対象についてのみ、判定を分ける条件を質問する。
-協調モードでリポジトリを変更する際は、`references/publish-scope.md`「公開範囲の確認」において不足している公開の承認やユーザー選好のみを質問ラウンドに含める。
-
-資料や広い改善要求から評価軸を選ぶ場合は、目指す結果と対象範囲が変わるかを確認対象の基準で判定する。
-複数の合理的な目的が残れば関連候補と推奨を示して確認し、回答で目的が確定した後の技術手段は自ら選ぶ。
+   資料や広い改善要求から評価軸を選ぶ場合は、目指す結果と対象範囲が変わるかを確認対象の基準で判定する。
+   複数の合理的な目的が残れば関連候補と推奨を示して確認し、回答で目的が確定した後の技術手段は自ら選ぶ。
 
 ## 質問ラウンド
 
-判断ごとに独立した質問を作成し、他の未回答事項に依存せず単独で回答できる質問を同じラウンドで提示する。ユーザーから回答を得た後に質問同士の依存関係を更新し、その回答を前提とする質問を次のラウンドへ進める。調査完了を待って保留するのは、その調査結果を直接必要とする質問だけに限定する。
-概念名、画面ラベル、説明用語などの候補は`agent-basics:writing-standards/references/defined-names.md`「命名の方針」に従って提示し、既存の用例、意味、検索範囲を併記する。命名、用語、表記の方針を定める依頼では、対象範囲にある既存の名称も列挙し、方針に反するものにも適用するかどうかを「確認対象」の基準で判定する。
-指定された語句を変更する場合は`references/user-utterance.md`「原文の保持と取り込み」に従って確認する。別の質問文に掲載された例示に対して異論がなかったことだけを、その変更への合意とみなさない。
+1. 判断ごとに独立した質問を作成し、他の未回答事項に依存せず単独で回答できる質問を同じラウンドで提示する。
+   ユーザーから回答を得た後に質問同士の依存関係を更新し、その回答を前提とする質問を次のラウンドへ進める。
+   調査完了を待って保留するのは、その調査結果を直接必要とする質問だけに限定する。
+   概念名、画面ラベル、説明用語などの候補は`agent-basics:writing-standards/references/defined-names.md`「命名の方針」に従って提示し、既存の用例、意味、検索範囲を併記する。
+   命名、用語、表記の方針を定める依頼では、対象範囲にある既存の名称も列挙し、方針に反するものにも適用するかどうかを「確認対象」の基準で判定する。
+   指定された語句を変更する場合は`user-utterance-incorporation.md`「原文の保持と取り込み」に従って確認する。
+   別の質問文に掲載された例示に対して異論がなかったことだけを、その変更への合意とみなさない。
 
 ## 質問表示
 
-`references/communication-methods.md`「手段の選択」に定める手段を用いて提示し、そのラウンドの回答を受領してから次のラウンドへ進む。
+1. `communication-methods-delivery.md`「手段の選択」に定める手段を用いて提示し、そのラウンドの回答・追加発話を受領したら「確認対象」の手順1・2で要求と依存関係を更新し、「質問ラウンド」へ戻る。
 
 ## 終了条件
 
-元の依頼で求められた案や説明をユーザーへ返し、確認が必要な未回答事項と、その回答に必要な未調査の事実がどちらも残っていない状態を終了条件とする。
+1. 決定内容と最も有力な対案を記録する前に、`user-confirmation-and-report-decisions.md`「確認要否の判定」項目3の原文の目的・理由・程度との比較を適用する。
+   ユーザー固有の判断が残れば、終了や後続工程の前に「確認対象」手順2へ戻る。
+   元の依頼で求められた案や説明をユーザーへ返し、確認が必要な未回答事項と、その回答に必要な未調査の事実がどちらも残っていない状態を終了条件とする。
 
 ## 終了時報告
 
-決定内容と最も有力な対案を記録する前に、`SKILL.md`「確認要否の判定」項目4の原文の目的・理由・程度との比較を適用する。
-ユーザー固有の判断が必要な事項が残っている場合は、質問ラウンドの終了や回答を前提とする後続工程へ進む前に、確認へ戻る。
+1. 自ら確定した事項のうち、合理的な別判断もありうるものは、ラウンド終了時にまとめて報告する。
+   書式および自律モードでの記載方法は、`../../report-completion/references/report-formats-completion.md`「作業完了報告のフォーマット」にある`### 自ら確定した判断`に従う。
+   この報告は承認を求めるものではないため、報告後は呼び出し元の工程が定める次の作業へそのまま進む。
 
-質問せずに自身で判断した事項のうち、別の合理的なエージェントであれば異なる判断をする可能性があるものについては、質問ラウンドの終了時にまとめて報告する。書式および自律モードでの記載方法は、`agent-toolkit:report-completion`の`references/report-formats.md`「作業完了報告のフォーマット」にある`### 自ら確定した判断`に従う。この報告は承認を求めるものではないため、報告後は呼び出し元の工程が定める次の作業へそのまま進む。
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ユーザー発話の解釈と取り込み：問い・提案・疑問形の扱いの基準を適用する前 | `user-utterance-questions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-questions.md` |

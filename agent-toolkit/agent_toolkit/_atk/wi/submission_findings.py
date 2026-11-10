@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -17,7 +18,8 @@ from typing import Any
 
 from agent_toolkit._atk import run_script as _run_script
 from agent_toolkit._atk import session_records as _session_records
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import plugin_environment, process_tree
+from agent_toolkit._common.json_lines import split_lines
 
 CLASSIFICATIONS = ("考慮漏れ", "ユーザーだけが持つ新しい情報", "前提の誤り", "採用しない提案")
 """add-awi-by-user「指摘の分類と処置」の4分類。追加要求などの要求管理上の扱いは分類の代わりにならない。"""
@@ -60,24 +62,35 @@ def _normalized(text: str) -> str:
 
 
 def review_findings(path: pathlib.Path) -> list[str]:
-    """投入前レビューの返却から`指摘:`の箇条（`なし`を除く）を返す。複数要求の返却は全ての`指摘:`欄を読む。"""
+    """各`指摘:`欄の最上位箇条の先頭本文だけを、記録のtextと比較するキーとして返す。"""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         raise ValueError(f"投入前レビューの返却を読めない: {path}: {error}") from error
     found: list[str] = []
     collecting = False
+    item_indent: int | None = None
     for line in lines:
         stripped = line.strip()
         if stripped == "指摘:":
             collecting = True
+            item_indent = None
             continue
         if not collecting:
             continue
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip())
         if stripped.startswith("- "):
+            if item_indent is None:
+                item_indent = indent
+            if indent > item_indent:
+                continue
             item = stripped[2:].strip()
             if item and item != "なし":
                 found.append(item)
+            continue
+        if item_indent is not None and indent > item_indent:
             continue
         collecting = False
     return found
@@ -98,8 +111,11 @@ def user_events(session_id: str, started_at: str) -> list[dict[str, Any]]:
     script = _run_script.registered_script_path("session-review-evidence")
     try:
         # 同じ配布物の登録済みスクリプトを引数配列で起動し、時間上限では子孫まで停止する。
+        # `atk`は起動時に起動層が加えた`PYTHONPATH`などのモジュール検索パスを環境から外すため、
+        # 子が`agent_toolkit`を読めるよう配布rootを明示して渡す。
         completed = process_tree.run_with_timeout(
             [sys.executable, str(script), "--transcript", str(_transcript(session_id)), "--user-events", "--since", started_at],
+            env=plugin_environment.direct_environment(_run_script.PLUGIN_ROOT, os.environ),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -112,7 +128,7 @@ def user_events(session_id: str, started_at: str) -> list[dict[str, Any]]:
     if completed.returncode != 0:
         raise ValueError(f"実ユーザー発話を抽出できない（終了コード{completed.returncode}）: {completed.stderr.strip()[-500:]}")
     events = []
-    for line in completed.stdout.splitlines():
+    for line in split_lines(completed.stdout):
         event = json.loads(line)
         if event.get("kind") != "user":
             continue

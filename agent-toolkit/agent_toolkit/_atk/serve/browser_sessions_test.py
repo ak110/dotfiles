@@ -24,6 +24,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _browser_fixture,
     _hold_route,
     _isolate_creation_time_index,
+    _observe_screen_requests,
     _screen_harness_fixture,
     _ScreenHarness,
     _serve,
@@ -231,10 +232,9 @@ async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harnes
         menu = page.locator("#sessions-menu-btn")
         await menu.click()
         await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-        # SSEの購読開始は一覧・詳細の復元と初期化末尾の後に行われる。
-        async with page.expect_request("**/api/sessions/events"):
-            release.set()
-            await page.locator("#detail .event").first.wait_for(state="visible")
+        # 購読は一覧より先に始まるため、初期化の完了は復元した詳細で観測する。
+        release.set()
+        await page.locator("#detail .event").first.wait_for(state="visible")
         await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
         assert not await page.locator("#sessions-app > aside").evaluate("element => element.inert")
     finally:
@@ -950,8 +950,21 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
     """一覧の取得中に`refresh`通知が続いても、一覧の要求を同時に2件以上発行せず、完了後に1回だけ取り直す。
 
     通知ごとに要求を重ねると、サーバーで同じ走査が重なって他の画面の応答まで遅れる。
+    背景の再走査が完了後に送る通知も取得中に受信させ、走査の所要時間による追加取得を混ぜない。
     """
     page = screen_harness.page
+    await page.add_init_script("""
+        window.testSessionRefreshCount = 0;
+        const OriginalEventSource = window.EventSource;
+        window.EventSource = class extends OriginalEventSource {
+          constructor(...args) {
+            super(...args);
+            this.addEventListener("message", event => {
+              if (JSON.parse(event.data).type === "refresh") window.testSessionRefreshCount++;
+            });
+          }
+        };
+    """)
     await page.goto(screen_harness.base_url + "/sessions")
     items = page.locator("#sessions .session-item")
     await playwright.async_api.expect(items).to_have_count(2)
@@ -973,15 +986,23 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
     await page.route("**/api/sessions/list", hold_list)
     try:
         for index in range(3):
+            received = await page.evaluate("window.testSessionRefreshCount")
             _append_jsonl(
                 tmp_path / "claude" / "projects" / "-home-aki-burst" / f"burst-{index}.jsonl",
                 [{"type": "user", "timestamp": f"2026-09-05T00:00:0{index}Z", "message": {"content": f"通知{index}"}}],
             )
+            # 各作成の通知をブラウザーで受信してから次を作り、変更監視の時間窓によるまとめを避ける。
+            await page.wait_for_function("count => window.testSessionRefreshCount > count", arg=received)
             if index == 0:
                 await asyncio.wait_for(entered.wait(), timeout=5)
-            else:
-                # 記録の変更監視は0.5秒の時間窓で通知をまとめるため、窓を越えて別々の`refresh`を届ける。
-                await asyncio.sleep(1.0)
+        received = await page.evaluate("window.testSessionRefreshCount")
+        # 画面の取得要求を保留したまま一覧APIを直接呼び、再走査の完了と通知の受信を両方待つ。
+        response = await page.request.get(screen_harness.base_url + "/api/sessions/list")
+        assert response.ok
+        async with asyncio.timeout(10):
+            while screen_harness.sessions_context.state.local_rescan_running:
+                await asyncio.sleep(0.01)
+        await page.wait_for_function("count => window.testSessionRefreshCount > count", arg=received)
         assert concurrency["total"] == 1
         release.set()
         await playwright.async_api.expect(items).to_have_count(5, timeout=5000)
@@ -989,9 +1010,19 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
         release.set()
         await page.unroute("**/api/sessions/list", hold_list)
     assert concurrency["max"] == 1
-    # 取得中に届いた通知は完了後の1回の取り直しへまとまる。負荷で変更監視が3件の作成を1回の通知へ
-    # まとめた場合は取り直しが生じないため、上限だけを判定する。
+    # 作成と走査完了の通知は全て保留中に届いており、取り直し1回へまとまる。
     assert concurrency["total"] <= 2
+
+
+async def _wait_record_notification(harness: _ScreenHarness, queue: asyncio.Queue[str], path: Path) -> None:
+    try:
+        async with asyncio.timeout(5):
+            while True:
+                event = json.loads(await queue.get())
+                if event.get("type") == "record" and event.get("path") == str(path):
+                    return
+    finally:
+        await serve_sessions.unsubscribe(harness.sessions_context.state, queue)
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -1007,7 +1038,9 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     その後に末尾まで読み進めると追記したイベントへ到達する。サブエージェントの記録も同じ右ペインの描画で開く。
     続きの描画に操作が要ると、記録の後半と追記へ到達するたびにボタンを探す手間が生じる。
     """
+    queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
+    await _observe_screen_requests(page)
     await page.set_viewport_size({"width": 1280, "height": 600})
     parent = tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl"
     records: list[dict[str, Any]] = [
@@ -1035,7 +1068,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         path = subagents / "agent-long.jsonl"
         _append_jsonl(path, records)
     # 記録の作成による一覧の再取得の通知は、画面を開く前に配信を終えさせ、追記の検証へ混ぜない。
-    await asyncio.sleep(1.5)
+    await _wait_record_notification(screen_harness, queue, path)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
     if opened_from == "subagent":
@@ -1072,7 +1105,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     assert not await events.nth(120).evaluate("element => element.open")
     assert await page.evaluate("() => document.querySelector('#screen-sessions main').scrollTop") == scroll_top
     await playwright.async_api.expect(page.get_by_role("button", name=re.compile("新しいイベント"))).to_have_count(0)
-    await asyncio.sleep(1.0)
+    await page.wait_for_function("window.__screenRequests.pending === 0")
     assert _session_list_requests(screen_harness) == list_requests
 
     await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
@@ -1085,6 +1118,7 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
     tmp_path: Path,
 ) -> None:
     """末尾を読んでいる間の追記では通知を表示せず、追記した末尾へ追従する。"""
+    queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
     await page.set_viewport_size({"width": 1280, "height": 600})
     path = tmp_path / "claude" / "projects" / "-home-aki-tail" / "tail.jsonl"
@@ -1096,7 +1130,7 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
         for index in range(40)
     ]
     _append_jsonl(path, records)
-    await asyncio.sleep(1.5)
+    await _wait_record_notification(screen_harness, queue, path)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/tail").click()
     events = page.locator("#detail details.event")

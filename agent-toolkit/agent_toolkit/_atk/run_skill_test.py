@@ -41,6 +41,16 @@ import json, os, pathlib, subprocess, sys, time, uuid
 import datetime, re
 name = pathlib.Path(sys.argv[0]).name
 args = sys.argv[1:]
+def hold(release):
+    release = pathlib.Path(release)
+    release.with_suffix('.ready').touch()
+    deadline = time.monotonic() + 120
+    while not release.exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+if len(sys.argv) > 2 and sys.argv[1] == '--hold-child':
+    hold(sys.argv[2])
+    sys.exit(0)
 record_dir = pathlib.Path(os.environ["FAKE_RECORD_DIR"])
 probe = "availability-probe" in args[-1]
 kind = "probe" if probe else "session"
@@ -92,7 +102,7 @@ if os.environ.get("FAKE_CONNECTION_LIMIT") and record["connection"] == "subscrip
     print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
         "status": "rejected", "rateLimitType": "five_hour", "resetsAt": int(time.time()) + 3600
     }}}}), flush=True)
-    time.sleep(30)
+    hold(record_dir / "limit.release")
     sys.exit(1)
 if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
@@ -125,10 +135,9 @@ if os.environ.get("FAKE_REPORT_MODE", "saved") != "missing":
             subprocess.run(["git", "-C", str(notes), "add", "."], check=True, stdout=subprocess.DEVNULL)
             subprocess.run(["git", "-C", str(notes), "commit", "-qm", "other report"], check=True)
 if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_BATCH"):
+    from agent_toolkit._common import session_review
     manifest_path = pathlib.Path(os.environ["AGENT_TOOLKIT_SESSION_REVIEW_BATCH"])
-    manifest = json.loads(manifest_path.read_text())
-    manifest["analysis_succeeded"] = True
-    manifest_path.write_text(json.dumps(manifest))
+    session_review.BatchWriter(manifest_path).analyze()
 if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
     counter = record_dir / "session-count"
     count = int(counter.read_text()) if counter.exists() else 0
@@ -167,12 +176,22 @@ if os.environ.get("FAKE_PROGRESS_DIR"):
 if os.environ.get("FAKE_SESSION_STARTED_FILE"):
     pathlib.Path(os.environ["FAKE_SESSION_STARTED_FILE"]).write_text("started")
 if os.environ.get("FAKE_SESSION_SPAWN_PID_FILE"):
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    release = pathlib.Path(os.environ["FAKE_SESSION_SPAWN_PID_FILE"] + '.release')
+    child = subprocess.Popen([sys.executable, __file__, '--hold-child', str(release)])
+    deadline = time.monotonic() + 30
+    while not release.with_suffix('.ready').exists():
+        assert child.poll() is None and time.monotonic() < deadline
+        time.sleep(0.01)
     pathlib.Path(os.environ["FAKE_SESSION_SPAWN_PID_FILE"]).write_text(str(child.pid))
-    time.sleep(120)
+    child.wait(timeout=120)
 if os.environ.get("FAKE_SESSION_DETACH_PID_FILE"):
     # 出力のパイプを継承したまま残る子孫を起動し、自身は直ちに終わる。
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    release = pathlib.Path(os.environ["FAKE_SESSION_DETACH_PID_FILE"] + '.release')
+    child = subprocess.Popen([sys.executable, __file__, '--hold-child', str(release)])
+    deadline = time.monotonic() + 30
+    while not release.with_suffix('.ready').exists():
+        assert child.poll() is None and time.monotonic() < deadline
+        time.sleep(0.01)
     pathlib.Path(os.environ["FAKE_SESSION_DETACH_PID_FILE"]).write_text(str(child.pid))
 if os.environ.get("FAKE_SESSION_HOLD_FILE"):
     while not pathlib.Path(os.environ["FAKE_SESSION_HOLD_FILE"]).exists():
@@ -381,7 +400,15 @@ def test_tty_progress_arrives_before_child_exits(
 
 @pytest.mark.parametrize(
     ("mode", "expected"),
-    [("normal", 0), ("failed", 7), ("timeout", 124), ("first-reader", None), ("second-reader", None), ("interrupt", None)],
+    [
+        ("normal", 0),
+        ("failed", 7),
+        ("timeout", 124),
+        ("first-reader", None),
+        ("second-reader", None),
+        ("interrupt", None),
+        ("attach", None),
+    ],
 )
 def test_session_readers_close_both_pipes(
     engine_env: _Env,
@@ -425,6 +452,12 @@ def test_session_readers_close_both_pipes(
             original_start(reader, *args, **kwargs)
 
         monkeypatch.setattr(threading.Thread, "start", start)
+    elif mode == "attach":
+
+        def attach(*_args: typing.Any, **_kwargs: typing.Any) -> None:
+            raise RuntimeError("executor attach failed")
+
+        monkeypatch.setattr(run_skill._run_state.RecordWriter, "attach", attach)  # noqa: SLF001  # pylint: disable=protected-access
     elif mode == "interrupt":
         original_wait = real_popen.wait
         interrupted = False
@@ -733,6 +766,8 @@ def test_abnormal_session_exit_propagates_code_with_failure_line(
     assert not out
     assert err.startswith("失敗: ")
     assert str(_log_files(engine_env)[0]) in err
+    assert "原因を確かめ、解消してから`atk run-skill`を元の引数で再実行する" in err
+    assert "次回の定期実行" not in err
 
 
 def test_same_skill_is_not_started_twice_but_other_skill_runs(
@@ -769,6 +804,8 @@ def test_same_skill_is_not_started_twice_but_other_skill_runs(
             assert code == run_skill.CONCURRENT_EXIT_CODE
             assert not out
             assert err.startswith("失敗: ")
+            assert "進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する" in err
+            assert "次回の定期実行" not in err
             assert len(_records(engine_env, "session")) == 1
 
             release.write_text("release")
@@ -795,6 +832,9 @@ def test_timeout_terminates_session_and_descendants(
 
     assert code == run_skill.TIMEOUT_EXIT_CODE
     assert err.startswith("失敗: ")
+    assert "ログで進行状況を確かめ、必要なら`--timeout`を延ばして" in err
+    assert "`atk run-skill`を元の対象・スキル・スキル引数で再実行する" in err
+    assert "次回の定期実行" not in err
     assert pid_file.exists(), "子孫プロセスが時間上限より前に起動しなかった"
     grandchild = int(pid_file.read_text(encoding="utf-8"))
     deadline = time.monotonic() + 10

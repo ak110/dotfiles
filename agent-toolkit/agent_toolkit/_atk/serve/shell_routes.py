@@ -52,7 +52,8 @@ def register_error_handlers(app: quart.Quart) -> None:
 
     @app.errorhandler(wi_web_input.WebInputError)
     async def input_error(error: wi_web_input.WebInputError) -> tuple[quart.Response, int]:
-        return quart.jsonify(error=str(error)), 400
+        # `error`は理由の文字列のまま保ち、次の操作を別項目で返す。画面は両方を合わせて表示する。
+        return quart.jsonify(error=str(error), next_action=error.next_action), 400
 
     @app.errorhandler(_wi_operations.WebApiInputError)
     async def web_api_input_error(error: _wi_operations.WebApiInputError) -> tuple[quart.Response, int]:
@@ -105,7 +106,9 @@ def register_error_handlers(app: quart.Quart) -> None:
             message = _wi_operations.saved_commit_failure_message(state.root, mutation)
             return await sync_incomplete(_wi_operations.SyncIncompleteError(message))
         status = 503 if quart.request.method == "GET" else 500
-        return quart.jsonify(error="Git同期に失敗しました"), status
+        current_state: serve_state.ServeState = app.config["SERVE_STATE"]
+        next_action = _wi_operations.git_failure_next_action(current_state.root)
+        return quart.jsonify(error="Git同期に失敗しました", next_action=next_action), status
 
 
 def render_index(

@@ -1,4 +1,4 @@
-"""正式なagy生成rootの名前空間・全文転送・節指定を同じ入力で結合検証する。"""
+"""正式なagy生成rootの名前空間・全文転送・分割受信を同じ入力で結合検証する。"""
 
 import json
 import subprocess
@@ -29,7 +29,7 @@ def _generated(tmp_path):
         "| --- | --- | --- | --- |\n"
         "| 起動時 | `references/quality.md` | 起動時 | `skill:agent-basics:long` |\n"
         "| 対象を選ぶ前 | `../peer/SKILL.md` | 判断 | `read:*/skills/peer/SKILL.md` |\n"
-        "| 根拠を取得する時 | `references/quality.md#品質` | 判断 | `read:*/references/quality.md` |\n"
+        "| 根拠を取得する時 | `references/quality.md` | 判断 | `read:*/references/quality.md` |\n"
         "\n## 必要節\n選択した基準本文\n\n## 別用途\n" + "別用途の大きな本文\n" * 4000
     )
     raw = "---\nname: long\ndescription: 長文の品質資料\n---\n\n" + body
@@ -68,7 +68,7 @@ def test_generated_root_keeps_logical_namespace_and_relative_base(generated, mon
     assert rows[0].documents == (native / "skills/long/references/quality.md",)
     assert rows[1].documents == (native / "skills/peer/SKILL.md",)
     assert rows[2].documents == (native / "skills/long/references/quality.md",)
-    assert rows[2].headings == ("品質",)
+    assert rows[2].headings == ("",)
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
     monkeypatch.setattr(read_triggers, "document_sources", lambda *_args: [])
     assert all(row.source.is_relative_to(native) for row in read_delivery.declarations(str(toolkit.parent)))
@@ -83,8 +83,8 @@ def test_generated_root_keeps_logical_namespace_and_relative_base(generated, mon
 def test_generated_section_observes_received_body(generated, monkeypatch, exit_code):
     toolkit, _native, full = generated
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
-    target = read_triggers.ReadTarget(full, "必要節")
-    row = read_triggers.ReadTrigger(full, 1, "判断", ("tool:Do",), (full,), ("必要節",))
+    target = read_triggers.ReadTarget(full)
+    row = read_triggers.ReadTrigger(full, 1, "判断", ("tool:Do",), (full,), ("",))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
     memory: dict = {}
     monkeypatch.setattr(read_delivery, "read_state", lambda _session: memory)
@@ -109,5 +109,26 @@ def test_generated_section_observes_received_body(generated, monkeypatch, exit_c
     assert not read_delivery.target_ready({}, target, "main")
     assert _run_hook_in_process("posttooluse", event).returncode == 0
     records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
+    # 必要節だけを受信しても、転送先の規範全文を取得したことにはならない。
+    assert not read_delivery.target_ready(records, target, "main")
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(full, "必要節"), "main")
+    for span in (f"1,{start - 1}p", f"{end + 1},$p"):
+        output = subprocess.run(["sed", "-n", span, "--", str(full)], check=True, capture_output=True, encoding="utf-8").stdout
+        event["tool_input"] = {"command": f"sed -n '{span}' -- {full}"}
+        event["tool_response"] = {"stdout": output, "exit_code": exit_code}
+        assert _run_hook_in_process("posttooluse", event).returncode == 0
+        records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
+        assert read_delivery.target_ready(records, target, "main") == (span == f"{end + 1},$p")
+    records = memory.get(read_delivery.rules_context.OPERATION_SKILL_READY_KEY, {})
     assert read_delivery.target_ready(records, target, "main")
-    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(full), "main")
+
+
+def test_generated_root_rejects_normative_section_declaration(generated):
+    """生成先でも規範の旧節指定を拒否し、全文の相対参照を維持する。"""
+    toolkit, _native, full = generated
+    full.write_text(
+        full.read_text(encoding="utf-8").replace("`references/quality.md` | 判断", "`references/quality.md#品質` | 判断"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="節指定は使えない"):
+        read_triggers.parse_tables(full, toolkit, strict=True)

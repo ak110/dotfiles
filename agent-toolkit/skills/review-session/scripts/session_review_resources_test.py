@@ -190,7 +190,15 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
     assert pathlib.Path(result["candidates_path"]).read_text(encoding="utf-8") == baseline_candidates
 
 
-@pytest.mark.parametrize("owners, targets", [(2, 3), (64, 40)])
+@pytest.mark.parametrize(
+    "owners, targets",
+    [
+        (2, 3),
+        # 基準版でも60秒に達するため、20261108-212235-001.mdの重複解析削減まで
+        # 停止上限だけを暫定で延ばす。
+        pytest.param(64, 40, marks=pytest.mark.timeout(120)),
+    ],
+)
 def test_prepare_bounds_initial_documents_and_keeps_full_evidence(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], owners: int, targets: int
 ) -> None:
@@ -299,3 +307,59 @@ def test_prepare_shell_path_mentions_are_distinct_from_file_reads(
     summary = next(event for event in resources if event["kind"] == "stats-resource-summary")
     assert not summary["reads_by_target"]
     assert {row["target"]: row["count"] for row in summary["shell_paths_by_target"]} == targets
+
+
+@pytest.mark.parametrize("tool", ["Bash", "Read", "Skill"])
+def test_prepare_counts_received_preview_and_keeps_restored_result(tmp_path, capsys, tool):
+    """Claudeの退避結果は受領量で順位付けし、復元本文と退避前の量を保持する。"""
+    original = "x" * 986_043
+    saved = tmp_path / "tool-result.txt"
+    saved.write_text(original, encoding="utf-8")
+    # 2026年11月8日のClaude Code記録で観測した二重格納の形式。
+    preview = (
+        f"<persisted-output>\nOutput too large (962.9KB). Full output saved to: {saved}\nPreview:\nxxx\n</persisted-output>"
+    )
+    source = tmp_path / "persisted.jsonl"
+    inputs = (
+        {"command": "generate-output"}
+        if tool == "Bash"
+        else {"file_path": "/repo/rules.md"}
+        if tool == "Read"
+        else {"skill": "example:check"}
+    )
+    support.write_jsonl(
+        source,
+        [
+            support.timestamped_entry("2026-10-10T00:00:00Z", "出力を確認する"),
+            support.claude_call("2026-10-10T00:00:01Z", "saved", tool, inputs),
+            {
+                "type": "user",
+                "timestamp": "2026-10-10T00:00:02Z",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "saved", "content": preview}]},
+                "toolUseResult": {"stdout": original, "stderr": "", "persistedOutputPath": str(saved)},
+            },
+        ],
+    )
+    work = tmp_path / "prepared"
+    work.mkdir()
+    assert prepare.main(["--transcript", str(source), "--work-dir", str(work)]) == 0
+    capsys.readouterr()
+    resources = [json.loads(line) for line in (work / "bundle/resource-usage.jsonl").read_text(encoding="utf-8").splitlines()]
+    owner = next(row for row in resources if row["kind"] == "stats-resource-usage")
+    received_bytes = len(preview.encode("utf-8"))
+    assert owner["recorded_result_utf8_bytes"] == received_bytes
+    assert owner["largest_results"][0]["utf8_bytes"] == received_bytes
+    assert owner["persisted_results"][0]["original_utf8_bytes"] == 986_043
+    if tool in {"Read", "Skill"}:
+        assert owner["reads" if tool == "Read" else "skills"][0]["utf8_bytes"] == received_bytes
+    stats = (work / "stats.md").read_text(encoding="utf-8")
+    ranking = stats.split("## 大出力の点検上位", 1)[1].split("## 退避された大出力", 1)[0]
+    assert "986043" not in ranking
+    assert f"退避前986043バイト、受領{received_bytes}バイト" in stats
+    comparison = [
+        json.loads(line) for line in (work / "bundle/comparison-materials.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert comparison[0]["recorded_result_utf8_bytes"] == received_bytes
+    assert comparison[0]["original_utf8_bytes"] == 986_043
+    conversation = [json.loads(line) for line in (work / "bundle/conversation.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert next(row["text"] for row in conversation if row["kind"] == "tool-result") == original

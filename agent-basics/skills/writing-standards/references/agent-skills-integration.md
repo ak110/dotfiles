@@ -1,0 +1,32 @@
+# Agent Skills実装ガイドライン：スキル間操作
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-read-tables.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
+
+## スキル間操作
+
+- 別のスキルを起動する主体は現在実行中のエージェントであるため、起動を指示する場合は、起動するエージェント、スキル名、引数、期待する戻り値や効果を具体的に記載する。
+  参照文書の読み込みはスキル起動とは区別し、`agent-documents-basics-read-tables.md`「読込表」の資料分割と読込単位の基準に従って、読む資料を指定する
+- 他のスキルの参照資料を読む際は、`<plugin-name>:<skill-name>`の形式でスキルを識別し、その`SKILL.md`があるディレクトリを基準にして`references/<file>`のパスを解決して読み込む。
+  常時読み込まれる文書には参照先の識別子のみを記載する
+- スキル間で処理を引き継ぐ際は、提供側が必要な情報をすべて揃えた入力を返し、利用側は受け取った入力のみに基づいて処理を進める。
+  提供側が利用側固有の参照文書に依存する構成は避ける
+- 配布物に含まれる参照文書は、起点となる文書（`SKILL.md`、agent定義、委譲先の手順書など）からたどれる構成とし、過去の変更履歴などの保管は配布物の外に分離する（努力目標）
+- 重複する記述を1箇所に統一する場合の配置先と採否基準は、`agent-documents-basics-ownership.md`「定義の所有者」に従う
+
+## スキルのパス解決とfork実行（Claude Code固有）
+
+- `${CLAUDE_SKILL_DIR}`は、`SKILL.md`本文の処理時にのみ、その`SKILL.md`が配置されているディレクトリの絶対パスへ展開される。
+  自身のスキルに同梱されているファイルはこの変数で参照し、プラグイン全体や他のスキルのファイルは`${CLAUDE_PLUGIN_ROOT}`を起点として参照する
+- frontmatterに`context: fork`を指定すると、スキルを独立したサブエージェントのコンテキストで実行できる。
+  `agent`フィールドで種別（`Explore`、`Plan`、`claude`など）を指定する。
+  `agent: Explore`や`agent: Plan`によるfork配下の実行では、親の`CLAUDE.md`やルール群が引き継がれないため、必要な規範は実行時に明示的に読み込む
+- fork配下の環境では`AskUserQuestion`を利用できず、ネストは最大5階層までに制限され、親エージェントへは最終報告のテキストのみが返却される。
+  `agent:`に`agents/`配下の定義を指定すると、その定義に設定されているツール制限やモデル指定が適用される

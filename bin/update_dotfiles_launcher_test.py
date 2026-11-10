@@ -62,6 +62,9 @@ if [[ "${{1-}}" == "self" && "${{2-}}" == "update" ]]; then
     [[ -z "${{UV_SELF_UPDATE_MESSAGE-}}" ]] || printf '%s\n' "$UV_SELF_UPDATE_MESSAGE" >&2
     exit "${{UV_SELF_UPDATE_EXIT:-0}}"
 fi
+if [[ "${{1-}} ${{2-}}" == "python install" ]]; then
+    exit "${{PYTHON_UPGRADE_EXIT:-0}}"
+fi
 if [[ "${{1-}}" == "run" ]]; then
     printf 'uv run stderr\n' >&2
     exit "${{UV_RUN_EXIT:-0}}"
@@ -106,12 +109,16 @@ def _run_launcher(
     process_loop: bool = False,
     self_update_message: str = "",
     installer_exit: int | None = None,
+    python_upgrade_exit: int = 0,
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """隔離したHOMEとPATHでLinuxランチャーを実行する。"""
     home = tmp_path / "home"
     home.mkdir()
     if native_uv:
         _write_fake_uv(home / ".local" / "bin" / "uv", "native")
+        post_apply = home / ".local/bin/dotfiles-post-apply"
+        post_apply.write_text('#!/usr/bin/env bash\nprintf "%s\\0" "$@" >> "$POST_APPLY_CALL_LOG"\n', encoding="utf-8")
+        post_apply.chmod(0o755)
     path_dir = _make_path(tmp_path, with_uv=path_uv)
     if installer_exit is not None:
         installer = path_dir / "curl"
@@ -140,6 +147,8 @@ def _run_launcher(
             "UV_SELF_UPDATE_EXIT": str(self_update_exit),
             "UV_SELF_UPDATE_MESSAGE": self_update_message,
             "UV_RUN_EXIT": str(run_exit),
+            "PYTHON_UPGRADE_EXIT": str(python_upgrade_exit),
+            "POST_APPLY_CALL_LOG": str(tmp_path / "post-apply-calls"),
         }
     )
     environment.pop("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", None)
@@ -199,6 +208,7 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
     assert result.returncode == 0
     assert calls == [
         ["native", "self", "update"],
+        ["native", "python", "install", "--upgrade", "3.15"],
         [
             "native",
             "run",
@@ -207,6 +217,11 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
             str(_ROOT / "libexec" / "update_dotfiles.py"),
             *arguments,
         ],
+    ]
+    assert (tmp_path / "post-apply-calls").read_bytes().split(b"\0") == [
+        b"--prune-only-if-minimal",
+        *[value.encode() for value in arguments],
+        b"",
     ]
 
 
@@ -225,6 +240,7 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
     assert result.returncode == run_exit
     assert calls == [
         ["native", "self", "update"],
+        ["native", "python", "install", "--upgrade", "3.15"],
         [
             "native",
             "run",
@@ -236,10 +252,22 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
     assert result.stderr.splitlines() == ["uv run stderr", _UPDATE_WARNING]
 
 
+@_LINUX_ONLY
+def test_python_upgrade_failure_stops_before_dependency_installation(tmp_path: pathlib.Path) -> None:
+    """管理Pythonを更新できない時は、古い実行体で依存を導入せず失敗を返す。"""
+    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, python_upgrade_exit=17)
+    assert result.returncode == 17
+    assert calls == [
+        ["native", "self", "update"],
+        ["native", "python", "install", "--upgrade", "3.15"],
+    ]
+    assert not (tmp_path / "post-apply-calls").exists()
+
+
 @pytest.mark.parametrize("run_exit", [0, 23])
 @_LINUX_ONLY
 def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib.Path, run_exit: int) -> None:
-    """process-loop起動では自己更新を延期し、runの終了コードを保持する。"""
+    """process-loop起動ではuvとPythonの更新を省き、runの終了コードを保持する。"""
     result, calls = _run_launcher(
         tmp_path,
         native_uv=True,
@@ -260,19 +288,22 @@ def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib
         ]
     ]
     assert result.stderr == "uv run stderr\n"
+    assert (tmp_path / "post-apply-calls").exists() is (run_exit == 0)
 
 
+@pytest.mark.parametrize("arguments", [["logs"], ["--help"], ["-h", "--prune"]])
 @pytest.mark.parametrize("run_exit", [0, 23])
 @_LINUX_ONLY
-def test_logs_launcher_skips_self_update(tmp_path: pathlib.Path, run_exit: int) -> None:
-    """logsは自己更新を起動せず、引数と表示の終了コードを共通実装へ渡す。"""
+def test_logs_launcher_skips_self_update(tmp_path: pathlib.Path, run_exit: int, arguments: list[str]) -> None:
+    """logsとhelpはuv・Pythonの更新と整理を省き、引数と終了コードを共通実装へ渡す。"""
     result, calls = _run_launcher(
-        tmp_path, native_uv=True, path_uv=True, arguments=["logs"], self_update_exit=9, run_exit=run_exit
+        tmp_path, native_uv=True, path_uv=True, arguments=arguments, self_update_exit=9, run_exit=run_exit
     )
 
     assert result.returncode == run_exit
-    assert calls == [["native", "run", "--no-project", "--script", str(_ROOT / "libexec" / "update_dotfiles.py"), "logs"]]
+    assert calls == [["native", "run", "--no-project", "--script", str(_ROOT / "libexec" / "update_dotfiles.py"), *arguments]]
     assert result.stderr == "uv run stderr\n"
+    assert not (tmp_path / "post-apply-calls").exists()
 
 
 @pytest.mark.usefixtures("share_package_caches")
@@ -338,6 +369,10 @@ def test_launcher_replacement_preserves_update_exit(
     launcher = tmp_path / "bin" / ("update-dotfiles.cmd" if os.name == "nt" else "update-dotfiles")
     launcher.parent.mkdir()
     current = (_WINDOWS_LAUNCHER if os.name == "nt" else _LAUNCHER).read_bytes()
+    if os.name == "nt":
+        endpoint = b'"!USERPROFILE!\\.local\\bin\\dotfiles-post-apply.exe"'
+        assert current.count(endpoint) == 1
+        current = current.replace(endpoint, b'"!PRUNE_PROBE_PYTHON!" "!PRUNE_PROBE_SCRIPT!"')
     legacy = (_LEGACY_WINDOWS_PREFIX + "exit /b %ERRORLEVEL%\n").replace("\n", "\r\n").encode("cp932")
     logs = (_LOGS_WINDOWS_PREFIX + "exit /b %ERRORLEVEL%\n").replace("\n", "\r\n").encode("cp932")
     launcher.write_bytes({"current": current, "legacy": legacy, "logs": logs}[version])
@@ -345,6 +380,12 @@ def test_launcher_replacement_preserves_update_exit(
     replacement = current if version != "current" else b"@echo off\r\nexit /b 99\r\n"
     libexec = tmp_path / "libexec"
     libexec.mkdir()
+    prune_probe = libexec / "prune.py"
+    prune_probe.write_text("raise SystemExit(0)\n", encoding="utf-8")
+    if os.name != "nt":
+        endpoint = home / ".local/bin/dotfiles-post-apply"
+        endpoint.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        endpoint.chmod(0o755)
     calls = tmp_path / "update-calls"
     (libexec / "update_dotfiles.py").write_text(
         "import pathlib\n"
@@ -356,6 +397,7 @@ def test_launcher_replacement_preserves_update_exit(
     environment.update(
         {"HOME": str(home), "USERPROFILE": str(home), "UV_PYTHON": sys.executable, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1"}
     )
+    environment.update(PRUNE_PROBE_PYTHON=sys.executable, PRUNE_PROBE_SCRIPT=str(prune_probe))
     command = ["cmd.exe", "/d", "/c", str(launcher)] if os.name == "nt" else [str(launcher)]
 
     result = subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", timeout=45, check=False)
@@ -447,6 +489,9 @@ def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
     assert content.index("\r\n:start\r\n") < content.index(update_state) < content.index(process_loop_guard)
     assert "goto start\r\n:run\r\n" in content
     assert content.index("\r\n:update_uv\r\n") < content.index(update) < content.index(update_failure)
+    python_upgrade = '"%UV%" python install --upgrade 3.15'
+    assert content.index(update_failure) < content.index(python_upgrade) < content.index("\r\n:start\r\n")
+    assert "exit /b %ERRORLEVEL%" in content[content.index(python_upgrade) : content.index("\r\n:start\r\n")]
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShellが必要")
@@ -511,7 +556,7 @@ def test_prune_invokes_post_apply_after_successful_update(tmp_path: pathlib.Path
     if run_exit:
         assert not (tmp_path / "prune-calls").exists()
     else:
-        assert (tmp_path / "prune-calls").read_text(encoding="utf-8") == "--prune-only\n"
+        assert (tmp_path / "prune-calls").read_text(encoding="utf-8") == "--prune-only-if-minimal --prune --prune\n"
 
 
 def test_windows_prune_checks_runtime_exit_status_with_delayed_expansion() -> None:
@@ -539,6 +584,8 @@ def test_windows_prune_checks_runtime_exit_status_with_delayed_expansion() -> No
         (23, 0, ["--prune"]),
         (0, 9, ["--prune"]),
         (0, 0, []),
+        (0, 0, ["--mode", "full"]),
+        (0, 0, ["--mode", "minimal"]),
         (0, 0, ["--help", "--prune"]),
         (0, 0, ["--prune", "-h"]),
     ],
@@ -568,6 +615,7 @@ def test_public_launcher_prune_boundary_with_real_uv(
         "assert os.environ.get('DOTFILES_PRUNE_OUTSIDE_UV') == '1'\n"
         "parser = argparse.ArgumentParser()\n"
         "parser.add_argument('--prune', action='store_true')\n"
+        "parser.add_argument('--mode', choices=['minimal', 'full'])\n"
         "parser.parse_args()\n"
         f"pathlib.Path({str(calls)!r}).write_text('update\\n', encoding='utf-8')\n"
         f"raise SystemExit({run_exit})\n",
@@ -576,7 +624,11 @@ def test_public_launcher_prune_boundary_with_real_uv(
     probe = tmp_path / "prune.py"
     probe.write_text(
         "import os, pathlib, sys\n"
-        "assert sys.argv[1:] == ['--prune-only']\n"
+        f"assert sys.argv[1:] == {['--prune-only-if-minimal', *arguments]!r}\n"
+        f"with pathlib.Path({str(calls)!r}).open('a', encoding='utf-8') as stream:\n"
+        "    stream.write('post-apply\\n')\n"
+        "if '--prune' not in sys.argv and 'minimal' not in sys.argv:\n"
+        "    raise SystemExit(0)\n"
         "if os.name != 'nt':\n"
         "    import fcntl\n"
         "    with (pathlib.Path(os.environ['UV_CACHE_DIR']) / '.lock').open('a+b') as lock:\n"
@@ -619,10 +671,15 @@ def test_public_launcher_prune_boundary_with_real_uv(
     result = subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", timeout=45, check=False)
 
     help_requested = "--help" in arguments or "-h" in arguments
-    prune = "--prune" in arguments and not help_requested
+    prune = ("--prune" in arguments or "minimal" in arguments) and not help_requested
     assert result.returncode == (run_exit or (prune_exit if prune else 0)), result.stdout + result.stderr
     observed = calls.read_text(encoding="utf-8").splitlines() if calls.exists() else []
-    assert observed == ([] if help_requested else ["update", "prune"] if prune and not run_exit else ["update"])
+    expected = [] if help_requested else ["update"]
+    if not help_requested and not run_exit:
+        expected.append("post-apply")
+        if prune:
+            expected.append("prune")
+    assert observed == expected
 
 
 @pytest.mark.parametrize("run_exit", [0, 23])
@@ -640,7 +697,19 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     shutil.copy2(real_uv, native)
     libexec = tmp_path / "libexec"
     libexec.mkdir()
-    shutil.copy2(_ROOT / "libexec/update_dotfiles_job.py", libexec / "update_dotfiles_job.py")
+    job_source = (_ROOT / "libexec/update_dotfiles_job.py").read_text(encoding="utf-8")
+    endpoint = 'str(home_bin / ("dotfiles-post-apply.exe" if sys.platform == "win32" else "dotfiles-post-apply"))'
+    assert job_source.count(endpoint) == 1
+    job_source = job_source.replace(endpoint, 'sys.executable, str(_ROOT / "libexec/prune.py")')
+    (libexec / "update_dotfiles_job.py").write_text(job_source, encoding="utf-8")
+    prune_calls = tmp_path / "prune-calls"
+    (libexec / "prune.py").write_text(
+        "import pathlib, sys\n"
+        "assert sys.argv[1:] == ['--prune-only-if-minimal']\n"
+        f"with pathlib.Path({str(prune_calls)!r}).open('a', encoding='utf-8') as output:\n"
+        "    output.write('post-apply\\n')\n",
+        encoding="utf-8",
+    )
     counter = tmp_path / "updates"
     (libexec / "update_dotfiles.py").write_text(
         "import pathlib\n"
@@ -660,6 +729,7 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
             "CODEX_THREAD_ID": "public-job-thread",
             "AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1",
             "UV_PYTHON": sys.executable,
+            "UV_CACHE_DIR": str(tmp_path / "uv-cache"),
         }
     )
     for name in (
@@ -685,3 +755,6 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
         assert retrieved.returncode == run_exit, retrieved.stdout + retrieved.stderr
         assert f"job {job_id}: 終了 exit={run_exit}" in retrieved.stdout
     assert counter.read_text(encoding="utf-8").splitlines() == ["update"]
+    assert (prune_calls.read_text(encoding="utf-8").splitlines() if prune_calls.exists() else []) == (
+        [] if run_exit else ["post-apply"]
+    )

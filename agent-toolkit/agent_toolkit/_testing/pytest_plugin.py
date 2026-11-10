@@ -18,6 +18,8 @@ from multiprocessing import resource_tracker
 from typing import Any
 
 import pytest
+import watchdog.observers
+import watchdog.observers.polling
 from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
@@ -31,7 +33,7 @@ from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support, slot_yield, xdist_stop
+from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support, xdist_stop
 from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
@@ -76,6 +78,28 @@ class _StubPluginReloader:
 def _isolate_claude_plugin_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     """実監視の試験はclaude_pluginsの実クラスを明示的に使う。"""
     monkeypatch.setattr(claude, "ClaudePluginReloader", _StubPluginReloader)
+
+
+class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
+    """試験で`watchdog.observers.Observer`の代わりに使うObserver。実ファイルの変更を短い間隔の走査で検知し、OSの通知資源を確保しない。"""
+
+    def __init__(self, timeout: float = 0.05, **kwargs: Any) -> None:
+        super().__init__(timeout=timeout, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _observer_without_inotify(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """試験が使う`watchdog.observers.Observer`を、inotifyなどOSの通知資源を使わないポーリング監視へ差し替える。
+
+    watchdogが標準で選ぶObserver（Linuxでは`InotifyObserver`）は監視先ごとにinotifyのインスタンスを確保し、
+    その上限はOSアカウント全体で並行レーンの検証や常駐の`atk serve`と共有される。上限に達すると、
+    変更と無関係な試験の合否が実行環境で変わる。OSの通知そのものや監視資源の解放を確かめる試験だけが
+    `@pytest.mark.real_observer`を付けて実Observerを使い、その宣言が資源依存の一覧になる。
+    ポーリング監視は更新時刻とサイズの差で変更を検知する。更新時刻が1秒単位のファイルシステム（ext3など）では、
+    同じ秒の中で同じサイズのまま書き換えると検知しないため、変更を確かめる試験はサイズの異なる内容を書く。
+    """
+    if request.node.get_closest_marker("real_observer") is None:
+        monkeypatch.setattr(watchdog.observers, "Observer", _TestPollingObserver)
 
 
 def _target_plugin_root(config: pytest.Config) -> pathlib.Path | None:
@@ -165,29 +189,10 @@ def pytest_configure(config: pytest.Config) -> None:
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
-    # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。区切りでの譲渡は`slot_yield`の説明を参照する。
-    if not worker and config.getoption("numprocesses", None) and not config.getoption("collectonly"):
-        owner = slot_yield.CooperativeOwner(_notify_slot_wait)
-        owner.start()
-        stack.callback(owner.close)
-        if owner.inherited:
-            stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
-        else:
-            config.pluginmanager.register(slot_yield.TicketDistribution(owner), "dotfiles-execution-slot-tickets")
-    else:
-        ticket = config.workerinput.get(slot_yield.TICKET_KEY) if worker else None  # type: ignore[attr-defined]
-        if worker:
-            slot_yield.signal_done_after_hold(stack, config.workerinput)  # type: ignore[attr-defined]
-        stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait, participant=ticket))
+    # 最外側のpytestは開始から子孫の回収まで実行枠を保持し、試験の途中では待機者へ譲らない。
+    # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
+    stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
     previous_children = set(process_tree.collect_descendants(os.getpid()))
-    baseline = {child.pid for child in previous_children}
-
-    def ignored_children() -> set[int]:
-        # resource_trackerは同じインタープリターが終了まで使う補助プロセスで、試験の子ではない。
-        tracker = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
-        return baseline | ({tracker} if isinstance(tracker, int) else set())
-
-    config.pluginmanager.register(slot_yield.BoundaryYield(ignored_children), "dotfiles-execution-slot-yield")
     resource_environment = {
         name: os.environ.get(name)
         for name in ("HOME", "USERPROFILE", "XDG_STATE_HOME", "XDG_CACHE_HOME", "LOCALAPPDATA", "APPDATA")

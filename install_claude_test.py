@@ -596,6 +596,98 @@ def test_propagates_required_setup_failures(
     assert result.returncode != 0
 
 
+_CLAUDE_DIAGNOSTIC_STUB = """#!/bin/sh
+# CLAUDE_FAIL_COMMANDと一致する呼び出しのCLAUDE_FAIL_OCCURRENCE回目だけ、標準出力と標準エラーへ別々の診断を書いて失敗する。
+# toolkitとbasicsは同じマーケットプレイス更新コマンドを使うため、回数で失敗させる側を選ぶ。
+printf 'claude %s\\n' "$*" >> "$CLI_STUB_LOG"
+if [ "claude $*" = "$CLAUDE_FAIL_COMMAND" ] && \\
+    [ "$(grep -cxF -- "claude $*" "$CLI_STUB_LOG")" = "$CLAUDE_FAIL_OCCURRENCE" ]; then
+    echo "stdout diagnostic: marketplace unreachable"
+    echo "stderr diagnostic: authentication required" >&2
+    exit 7
+fi
+exit 0
+"""
+
+
+@pytest.mark.parametrize("kind", installer_runners())
+@pytest.mark.parametrize(
+    ("command", "occurrence"),
+    [
+        pytest.param("claude plugin marketplace update ak110-dotfiles", 1, id="basics-marketplace"),
+        pytest.param("claude plugin update agent-basics@ak110-dotfiles --scope=user", 1, id="basics-plugin"),
+        pytest.param("claude plugin marketplace update ak110-dotfiles", 2, id="toolkit-marketplace"),
+        pytest.param("claude plugin update agent-toolkit@ak110-dotfiles --scope=user", 1, id="toolkit-plugin"),
+    ],
+)
+def test_required_claude_update_failure_keeps_diagnostics_and_next_action(
+    kind: str,
+    command: str,
+    occurrence: int,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """必須のClaude更新が失敗したら、両ストリームの元診断・失敗コマンド・終了コード・次の操作を残して止まる。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+    claude_stub = stub_bin / "claude"
+    claude_stub.write_text(_CLAUDE_DIAGNOSTIC_STUB, encoding="utf-8")
+
+    result = run_installer(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        check=False,
+        extra_env={"CLAUDE_FAIL_COMMAND": command, "CLAUDE_FAIL_OCCURRENCE": str(occurrence)},
+    )
+
+    assert result.returncode != 0
+    lines = read_log_lines(stub_log)
+    # 失敗した呼び出しで導入を止め、後続のコマンドを起動しない。
+    assert lines[-1] == command
+    assert lines.count(command) == occurrence
+    failed_command = f"失敗したコマンド: {command}（終了コード: 7）"
+    next_action = "次の操作: 上の診断から原因を解消し、失敗したコマンドを再実行"
+    script_name = "install-claude.sh" if kind == "sh" else "install-claude.ps1"
+    for expected in (
+        "stdout diagnostic: marketplace unreachable",
+        "stderr diagnostic: authentication required",
+        failed_command,
+        next_action,
+        f"{script_name}を再実行してください。",
+        "dotfilesの作者へ報告してください。",
+    ):
+        assert expected in result.stderr
+    assert result.stderr.index("stdout diagnostic:") < result.stderr.index(failed_command) < result.stderr.index(next_action)
+    assert "設定が完了しました。" not in result.stdout
+
+
+@pytest.mark.parametrize("kind", installer_runners())
+@pytest.mark.parametrize(
+    "fail_pattern",
+    ["claude plugin marketplace add", "claude plugin install", "claude plugin uninstall"],
+)
+def test_ignorable_claude_failures_continue_without_failure_guidance(
+    kind: str,
+    fail_pattern: str,
+    tmp_path: pathlib.Path,
+    rules_url: str,
+) -> None:
+    """後続の更新成功で目的を達成できるClaude呼び出しの失敗では、導入を続け、失敗の案内を出さない。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+
+    result = run_installer(kind, home, rules_url, stub_bin=stub_bin, stub_log=stub_log, fail_pattern=fail_pattern)
+
+    assert "claude plugin update agent-toolkit@ak110-dotfiles --scope=user" in read_log_lines(stub_log)
+    assert "失敗したコマンド:" not in result.stderr
+    assert "設定が完了しました。" in result.stdout
+
+
 @pytest.mark.parametrize("kind", installer_runners())
 def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """plugin addが旧cacheを削除して失敗した場合は、更新前の全versionを復旧する。"""

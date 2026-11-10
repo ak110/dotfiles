@@ -61,7 +61,7 @@ def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, c
     whole = tmp_path / "work-contract.md"
     whole.write_text("目的: 入力契約の共有を確かめる\n", encoding="utf-8")
     _, server_prompt, _, _ = launch_requests.task_document_request("exec", params, whole_contract_path=str(whole))
-    assert task_documents.parse_named_inputs(server_prompt.rsplit("\n入力:\n", 1)[1].splitlines()) == params
+    assert task_documents.task_prompt_inputs(server_prompt) == params
     for invalid in ({"引き継ぎ記録先": params["引き継ぎ記録先"]}, {**params, "余分な説明": "説明"}):
         result, failure = _generate(tmp_path, capsys, {"kind": "initial", "subagent_md_path": "exec", "extra_params": invalid})
         assert result == 1

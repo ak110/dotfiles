@@ -41,6 +41,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._common import process_tree, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -231,6 +232,15 @@ async def test_tool_error_body_carries_next_action(
     reason, next_action = body.split(f"\n{NEXT_ACTION_PREFIX}", 1)
     assert reason.endswith(str(error))
     assert operation in next_action
+
+
+def test_candidate_unavailable_next_action_follows_its_cause() -> None:
+    """候補の不成立が原因に応じた次の操作を持つ場合はその操作を返し、利用上限で認証の確認へ誘導しない。"""
+    waiting = "解除予定まで待つか、`model_type`へ別のengineの候補を指定して起動し直す"
+    limited = codex_backend.StartCandidateUnavailable("利用上限で通常利用できない", next_action=waiting)
+    assert mcp_transport._unexpected_error_next_action(limited) == waiting  # pylint: disable=protected-access
+    plain = codex_backend.StartCandidateUnavailable("candidateDependencyUnavailable")
+    assert "導入と認証" in mcp_transport._unexpected_error_next_action(plain)  # pylint: disable=protected-access
 
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -521,7 +531,9 @@ def test_launched_server_reclaims_resources_on_failure(
 
     @contextlib.contextmanager
     def sleeping_process(_command: list[str], **kwargs: Any) -> Generator[subprocess.Popen]:
-        with original_scope([sys.executable, "-c", "import time; time.sleep(120)"], **kwargs) as process:
+        with original_scope(
+            [sys.executable, "-c", late_descendant.held_source(tmp_path / "transport.release")], **kwargs
+        ) as process:
             processes.append(process)
             yield process
 

@@ -52,7 +52,7 @@ def test_normal_task_gets_one_record_path(
     assert kind == "delegate"
     assert path == (None if explicit else handoff)
     designation = handoff_input if explicit else "新規"
-    assert prompt.count(f"引き継ぎ記録先: {handoff}（{designation}）") == 1
+    assert prompt.count(f"引き継ぎ記録先: {handoff}（{designation}）") == (2 if handoff_input is None else 1)
     for reference in references:
         assert reference.is_absolute() and reference.is_file()
         assert prompt.count(str(reference)) == 1

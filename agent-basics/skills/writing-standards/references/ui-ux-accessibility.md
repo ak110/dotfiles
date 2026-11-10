@@ -1,0 +1,31 @@
+# 画面の設計とユーザビリティの検収：アクセシビリティと性能
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 機能の正しさを確認するテスト層を選ぶ時 | `testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` |
+
+## アクセシビリティと性能
+
+WCAG 2.2レベルAAへの準拠を最低限の基準とし、すべての操作をキーボードのみで完結でき、現在のフォーカス位置が明確に視認できる状態を維持する。
+入力欄には必ず対応するラベルを関連付け、入力エラーや非同期通信の結果はスクリーンリーダーで正しく読み上げられるように実装する。
+テキストのコントラスト比は通常文字で4.5:1以上、大きな文字や情報を伝えるUI部品の境界線は3:1以上を確保する。
+操作可能な領域のサイズはWCAG 2.2 SC 2.5.8で定められた24×24 CSS pxを下回らないようにし、主要なタッチターゲットは44px程度を目安に確保する。
+
+実際の運用環境でCore Web Vitalsを計測できる場合は、LCP 2.5秒以下、INP 200ms以下、CLS 0.1以下を良好域の達成目標とする。
+画像や埋め込み要素の表示領域は事前にスタイル等で確保し、ファーストビューの表示に不要なリソースは遅延読み込み（lazy load）を行う。
+Web性能を改善・設計・レビューするときは、本番相当のbuildまたはpreviewで、主要な利用経路と遅い画面の変更前後を測定する。
+端末・回線・データ量・キャッシュ初期状態をそろえ、利用実態に応じて低性能のモバイル端末や低速回線も選ぶ。
+測定揺らぎが採否を左右する場合は反復と代表値を使い、Lighthouseなどの計測器は観測目的に応じて選ぶ。
+機能・データの正しさとアクセシビリティを保ち、実測したボトルネックから`ui-ux-web-rules.md`「アニメーション、画像、パフォーマンス」の改善候補を選ぶ。
+
+## 数値の一次資料
+
+- [W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/): 通常文字のコントラスト比4.5:1以上、大きな文字および情報を伝える非テキスト要素のコントラスト比3:1以上、SC 2.5.8における操作ターゲットサイズ24×24 CSS px以上。
+- [web.dev Core Web Vitals](https://web.dev/articles/vitals): LCP 2.5秒以下、INP 200ms以下、CLS 0.1以下の良好域基準。
+- [Apple Human Interface Guidelines: Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons): タッチ操作領域として推奨される44×44 ptの目安。
+  主要な操作要素の余白設計における参考値とする。

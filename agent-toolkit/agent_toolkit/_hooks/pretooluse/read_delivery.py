@@ -18,6 +18,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 import tempfile
 import tomllib
 import uuid
@@ -59,6 +60,7 @@ from agent_toolkit._hooks.pretooluse.large_reads import (
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 lazy from agent_toolkit._common import task_documents
+lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._hooks.pretooluse import shell_checks
 
 _INPUT_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.ContextVar(
@@ -114,7 +116,7 @@ def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> lis
     # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
     with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
         entries = [
-            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd))
+            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd, defer_material=True))
             for source in dict.fromkeys(sources)
         ]
     # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
@@ -279,6 +281,8 @@ def resolve_skill_document(qualified: object, candidates) -> pathlib.Path | None
 
 def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, reference: bool = False, cwd: str = "") -> str:
     """主体に合う取得手段と、必要な範囲の容量を示す。"""
+    if read_triggers.is_normative_document(target.path):
+        target = read_triggers.ReadTarget(target.path)
     path = target.path
     target.body()
     focus = f"。指定節`{target.heading}`と、その成立に必要な前提・例外を読め" if target.heading else ""
@@ -586,6 +590,27 @@ def _user_texts(entry: dict):
             yield "\n".join(texts)
 
 
+_DELIVERY_OPENING = '<atk-auto source="agents-server" kind="delivery">\n'
+_LEADING_AUTO_ELEMENT = re.compile(r"<atk-auto\s[^>]*>\n.*?\n</atk-auto>\s*", re.DOTALL)
+
+
+def _delivered_launch_text(text: str) -> str:
+    """配送要素の中身を返す。配送要素が無ければ本文全体を返す。
+
+    agents_serverは資料案内などの要素を配送要素より前に置くため、先頭に並ぶ他の`atk-auto`要素を順に除いてから配送要素を探す。
+    配送要素の後の本文は起動見出しではないため、先頭に並ぶ要素の間だけを探す。
+    """
+    rest = text
+    while not rest.startswith(_DELIVERY_OPENING):
+        leading = _LEADING_AUTO_ELEMENT.match(rest)
+        if leading is None:
+            return text
+        rest = rest[leading.end() :]
+    if not rest.rstrip().endswith("</atk-auto>"):
+        return text
+    return rest[len(_DELIVERY_OPENING) : rest.rfind("</atk-auto>")]
+
+
 def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> set[pathlib.Path]:
     """正式な起動入力と役割を解決し、圧縮をまたぐ実体指定を保持する。"""
     prefix = "read-trigger-role:"
@@ -614,10 +639,7 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
         for text in _user_texts(entry):
             context_seen = False
             startup_methods = ()
-            launch_text = text
-            opening = '<atk-auto source="agents-server" kind="delivery">\n'
-            if text.startswith(opening) and text.rstrip().endswith("</atk-auto>"):
-                launch_text = text[len(opening) : text.rfind("</atk-auto>")]
+            launch_text = _delivered_launch_text(text)
             for line in launch_text.splitlines()[:1]:
                 # 正式な役割見出しの候補だけでfrontmatterの処理を読み込む。
                 if ".subagent.md" not in line:
@@ -747,7 +769,9 @@ def _project_skill_rows(
             # 未読の宣言元は選択済みの行だけを復元し、別工程の行を有効にしない。
             rows.extend(
                 row
-                for row in read_triggers.parse_tables(path, plugin_resources.plugin_root(), host=host, project=project)
+                for row in read_triggers.parse_tables(
+                    path, plugin_resources.plugin_root(), host=host, project=project, defer_material=True
+                )
                 if path in selected or _declaration_identity(row) in origins.get(path, [])
             )
     return rows
@@ -759,6 +783,8 @@ def document_key(path: pathlib.Path, fingerprint: str = "") -> str:
 
 def read_guidance_key(target: read_triggers.ReadTarget, *, invocation: bool) -> str:
     """取得案内を送った記録のキー。保存・重複判定・未解消判定の全てがこの関数を使う。"""
+    if read_triggers.is_normative_document(target.path):
+        target = read_triggers.ReadTarget(target.path)
     key = (
         document_reads.skill_invocation_key(target.path, document_reads.content_fingerprint(target.path))
         if invocation
@@ -795,6 +821,7 @@ def dynamic_targets(
                 plugin_resources.plugin_root(),
                 host="codex" if is_codex_payload(payload) else "claude",
                 project=payload.get("cwd"),
+                defer_material=True,
             )
             if session_id:
                 update_state(session_id, operation_skills.mark_ready("resolved-project-skill:" + str(source), agent))
@@ -987,7 +1014,7 @@ def selected_targets(
             path = pathlib.Path(raw["path"])
             if not path.is_file():
                 continue
-            target = read_triggers.ReadTarget(path, raw["heading"])
+            target = read_triggers.ReadTarget(path, "" if read_triggers.is_normative_document(path) else raw["heading"])
             if target.heading:
                 try:
                     target.body()
@@ -1034,13 +1061,15 @@ def _select_targets(
             if path in current:
                 update_state(session_id, _unmark(key, agent))
     for target in targets:
+        origins = [_declaration_identity(row) for row in rows or () if target in row.targets]
+        if read_triggers.is_normative_document(target.path):
+            target = read_triggers.ReadTarget(target.path)
         if target.heading:
             try:
                 target.body()
             except ValueError:
                 # 不正な宣言を保持すると、宣言を復旧した後にも旧見出しが残る。
                 continue
-        origins = [_declaration_identity(row) for row in rows or () if target in row.targets]
         key = document_reads.selected_target_key(target, declarations=origins)
         update_state(session_id, operation_skills.mark_ready(key, agent))
 
@@ -1217,7 +1246,7 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
     return _llm_notice(
         "現在の操作に関連する読込条件の候補。条件の成立は未確定である。\n" + shown,
         tag=_WARN_TAG,
-        fix="自身の役割と現工程で各条件が成立するか確認し、成立する資料の必要節と前提・例外を判断・操作の前に読め。",
+        fix="自身の役割と現工程で各条件が成立するか確認し、成立する規範資料の全文を判断・操作の前に読め。",
         removable_cause=True,
         escalate_on_repeat=False,
     )
@@ -1261,12 +1290,79 @@ def _literal_task_documents(command: str, share: pathlib.Path) -> list[pathlib.P
     return [path for path in documents if path.is_file()]
 
 
+def _git_worktree_location(directory: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
+    """ディレクトリが属するGit作業ツリーの最上位と、Gitの共通ディレクトリを返す。Git管理外では`None`を返す。"""
+    try:
+        result = git_command.run(
+            ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
+            cwd=str(directory),
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+    lines = result.stdout.splitlines()
+    if result.returncode or len(lines) != 2:
+        return None
+    return pathlib.Path(lines[0]).resolve(), pathlib.Path(lines[1]).resolve()
+
+
+def _plugin_task_document(path: pathlib.Path, root: pathlib.Path) -> pathlib.Path | None:
+    """読取対象がplugin rootの手順書と同じものなら、plugin root側の手順書のパスを返す。
+
+    process-wiのレーン担当は、plugin rootを含むリポジトリの別worktreeから手順書を読む。
+    同じGit共通ディレクトリを持つworktreeで、リポジトリ最上位からの相対位置が一致するファイルを同じ手順書として扱う。
+    plugin rootがGit管理外の環境では、plugin root配下の手順書だけが対象になる。
+    手順書の候補に当たらない読取でGitを起動しないよう、ファイル名と親ディレクトリ名で先に限定する。
+    """
+    if path.parent.name != "share" or not path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX) or not path.is_file():
+        return None
+    share = root / "share"
+    if path.parent == share:
+        return path
+    read_location = _git_worktree_location(path.parent)
+    plugin_location = _git_worktree_location(root) if read_location is not None else None
+    if read_location is None or plugin_location is None or read_location[1] != plugin_location[1]:
+        return None
+    try:
+        counterpart = plugin_location[0] / path.relative_to(read_location[0])
+    except ValueError:
+        return None
+    return counterpart if counterpart.parent == share and counterpart.is_file() else None
+
+
+def _owned_task_documents(roles: set[pathlib.Path], root: pathlib.Path, payload: dict) -> set[pathlib.Path]:
+    """担当の役割文書と、その役割文書が読込表・名指し参照の表で読むよう指示する手順書を返す。
+
+    execの統合工程が`lane-integration.subagent.md`を読むように、役割文書は自分の工程として別の手順書を読ませることがある。
+    宣言から導くことで、役割文書の読込表を改めたときも除外の範囲が追随する。
+    """
+    owned = set(roles)
+    host = "codex" if is_codex_payload(payload) else "claude"
+    for role in roles:
+        try:
+            targets = [
+                *(target for row in read_triggers.parse_tables(role, root, host=host) for target in row.targets),
+                *read_triggers.reference_method_targets(role, root, host),
+            ]
+        except OSError, UnicodeError, ValueError:
+            continue
+        owned.update(
+            target.path.resolve() for target in targets if target.path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX)
+        )
+    return owned
+
+
 def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
-    """Plugin root配下の他の担当の手順書（`share/<役割名>.subagent.md`）を取得する操作に、非遮断の警告を返す。
+    """他の担当の手順書（`share/<役割名>.subagent.md`）を取得する操作に、非遮断の警告を返す。
 
     `agent-toolkit:delegation`の`SKILL.md`「送信」は委譲元が起動準備のために手順書の本文を読むことを禁じるが、
     事後の振り返りだけでは読んだ時点に作用しないため、読取の直前に起動契約へ誘導する。
-    読む主体の担当がその役割である場合は警告しない。plugin root外の同名ファイルは対象外とする。
+    対象はplugin root配下の手順書と、plugin rootと同じリポジトリの別worktreeにある同じ位置の手順書である。
+    別のリポジトリと`share`以外の位置にある同名ファイルは対象外とする。
+    読む主体の担当がその役割である場合と、その役割文書が読むよう指示する手順書は警告しない。
     編集と返却後の検収を目的の判定なしには区別できないため、遮断せずに続行の条件を示す。
     """
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
@@ -1284,29 +1380,32 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         if tool_name == "Bash" and isinstance(command, str)
         else _read_paths(tool_name, tool_input, cwd)
     )
-    paths = [
-        path
+    # 読んだパスと、自身の担当の判定・起動契約の解決に使うplugin root側の手順書を組にする。
+    documents = {
+        path: counterpart
         for path in dict.fromkeys(candidates)
-        if path.parent == share and path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX) and path.is_file()
-    ]
+        if (counterpart := _plugin_task_document(path, root)) is not None
+    }
     dynamic = False
-    if not paths and tool_name == "Bash" and isinstance(command, str) and has_dynamic_display_operand(command, cwd):
+    if not documents and tool_name == "Bash" and isinstance(command, str) and has_dynamic_display_operand(command, cwd):
         # 変数展開などで表示対象を確定できない操作は、シェルを再実行して解決しない。
         # 同じコマンドが手順書を指すリテラルを含む場合だけ、読む可能性として案内する。
-        paths = _literal_task_documents(command, share)
-        dynamic = bool(paths)
-    if not paths:
+        documents = {path: path for path in _literal_task_documents(command, share)}
+        dynamic = bool(documents)
+    if not documents:
         return None
     agent = agent_id.resolve_hook_agent_id(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     records = records if isinstance(records, dict) else {}
-    own = active_roles(payload, session_id, records, agent) if agent == agent_id.MAIN_AGENT_ID else set()
-    own |= _subagent_task_documents(payload) if agent != agent_id.MAIN_AGENT_ID else set()
-    foreign = [path for path in paths if path not in own]
-    if not foreign:
+    roles = active_roles(payload, session_id, records, agent) if agent == agent_id.MAIN_AGENT_ID else set()
+    roles |= _subagent_task_documents(payload) if agent != agent_id.MAIN_AGENT_ID else set()
+    own = _owned_task_documents(roles, root, payload)
+    foreign_documents = {path: counterpart for path, counterpart in documents.items() if counterpart not in own}
+    if not foreign_documents:
         return None
+    foreign = list(foreign_documents)
     contracts: list[str] = []
-    for path in foreign:
+    for path in foreign_documents.values():
         try:
             targets = read_triggers.parent_contract_targets(path, root)
         except OSError, ValueError:
@@ -1545,10 +1644,23 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     and target_identity[1] == "SKILL.md"
                     and not target.heading
                 ):
+                    selection_rows.append(row)
                     pending.extend(item for item in row.targets if item not in pending and not ready(item))
         # 選択資料の解析で追加した宣言にも、同じ役割境界を適用する。
         rows = [row for row in rows if not row.source.name.endswith(".subagent.md") or row.source in roles]
     except (OSError, ValueError) as error:
+        if isinstance(error, PluginRootError):
+            return Decision(
+                notices=(
+                    _llm_notice(
+                        f"読込宣言を取得できない: {error}",
+                        tag=_WARN_TAG,
+                        fix="読取・導入診断と正規の依存追加で宣言を復旧し、取得結果を確かめてから判断・その他の変更へ進め。",
+                        removable_cause=True,
+                        escalate_on_repeat=False,
+                    ),
+                )
+            )
         if isinstance(error, FileNotFoundError) and isinstance(error.filename, str):
             missing = read_triggers.ReadTarget(pathlib.Path(error.filename))
             return Decision(
@@ -1640,7 +1752,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         try:
             acquisition_step(target, subject, reference=target.path not in invocation_paths, cwd=cwd)
         except (OSError, UnicodeError, ValueError) as error:
-            repairs = {row.source.resolve() for row in rows if target in row.targets} | {target.path}
+            repairs = {row.source.resolve() for row in selection_rows if target in row.targets} | {target.path}
             writes = operation_skills.written_paths(tool_name, tool_input, cwd)
             if not warning_only and writes and all(pathlib.Path(path).resolve() in repairs for path in writes):
                 return Decision(
@@ -1664,7 +1776,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
             if not target.path.is_file():
                 # 欠けているのが宣言元と同じ版の資料か、別版を解決した結果かを区別できるよう宣言元を示す。
-                origins = sorted({str(row.source) for row in rows if target in row.targets})
+                origins = sorted({str(row.source) for row in selection_rows if target in row.targets})
                 if origins:
                     failures[target] += f"。宣言元: {'、'.join(f'`{origin}`' for origin in origins)}"
     acquisition = "。\n".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd)) + "。"
@@ -2322,7 +2434,7 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         )
     )
     chosen_targets = selected_targets(records if isinstance(records, dict) else {}, agent)
-    targets = {path for row in rows for path in row.documents} | {target.path for target in chosen_targets}
+    targets = {target.path for target in chosen_targets}
     targets.update(path for path in paths if path.suffix == ".md" and _document_owner(path) is not None)
     if tool_name == "Skill":
         qualified = tool_input.get("skill")

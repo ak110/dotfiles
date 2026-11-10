@@ -1,4 +1,4 @@
-"""明示的な--pruneで、現在の導入モードの対象外になった実体を削除する。
+"""minimal更新または明示的な--pruneで、導入モードの対象外になった実体を削除する。
 
 実行中のエージェントと依存環境を先に照合し、使用中なら実体を保持して再実行を案内する。
 fullへの更新と依存準備は旧環境を回収しない。
@@ -59,16 +59,20 @@ def removal_paths() -> tuple[Path, ...]:
     data = Path(os.environ.get("MISE_DATA_DIR", platformdirs.user_data_dir("mise", appauthor=False)))
     codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex"))
     claude_home = Path(os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude"))
+    rustup = Path(os.environ.get("RUSTUP_HOME", home / ".rustup"))
+    cargo = Path(os.environ.get("CARGO_HOME", home / ".cargo"))
     paths = [
-        Path(os.environ.get("RUSTUP_HOME", home / ".rustup")),
-        Path(os.environ.get("CARGO_HOME", home / ".cargo")),
+        # 共有ホームの設定・資格情報・ユーザー導入物は残し、再生成可能な実体だけを整理する。
+        *(rustup / name for name in ("toolchains", "downloads", "tmp", "update-hashes")),
+        *(cargo / name for name in ("registry", "git")),
         Path(os.environ.get("MISE_DOTNET_ROOT", data / "dotnet-root")),
-        home / ".dotnet",
+        *(
+            home / ".dotnet" / name
+            for name in ("sdk", "host", "shared", "packs", "sdk-manifests", "templates", "metadata", "dotnet", "dotnet.exe")
+        ),
         home / ".local/share/claude",
         claude_home / "plugins/cache",
         home / ".cache/claude",
-        home / ".antigravity_cli",
-        home / ".local/share/herdr",
         home / ".cache/opencode",
         home / ".cache/herdr",
         codex_home / "packages",
@@ -101,7 +105,7 @@ class _InUseError(Exception):
 def _command(command: list[str]) -> None:
     """コマンドを実行し、失敗を例外へ変換する。
 
-    排他ロックを取るuvの操作（`uv cache prune`など）がロック待ちで失敗した場合は、
+    排他ロックを取るuvの操作（`uv cache clean`など）がロック待ちで失敗した場合は、
     他のuvプロセスがキャッシュを使用中と判定して`_InUseError`を送出する。
     """
     result = common.run_subprocess(
@@ -185,7 +189,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         minimal = dotfiles_mode.is_minimal()
         excluded = excluded_tools(root, minimal=minimal)
         paths = (*removal_paths(), root / "agent-toolkit-codex", root / "agent-toolkit/.venv") if minimal else ()
-        for path in paths:
+        roots = tuple(Path(os.environ[name]) for name in ("RUSTUP_HOME", "CARGO_HOME") if name in os.environ) if minimal else ()
+        for path in (*paths, *roots):
             resolved = path.resolve()
             if Path.home().resolve().is_relative_to(resolved) or root.resolve().is_relative_to(resolved):
                 raise ValueError(f"共有ランタイム設定がホームまたは作業ツリー全体を含むため削除しません: {path}")
@@ -233,7 +238,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             uv = common.resolve_executable("uv")
             if uv is None:
                 raise RuntimeError("uvが見つからずキャッシュ整理を実行できません")
-            _command([str(uv), "cache", "prune"])
+            _command([str(uv), "cache", "clean"])
     except _InUseError as error:
         logger.warning(
             "prune: 他のuvプロセスがキャッシュを使用中のため整理を保留した: %s\n"

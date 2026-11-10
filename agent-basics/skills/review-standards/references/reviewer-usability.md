@@ -1,0 +1,44 @@
+# レビュー担当側心得：ユーザビリティレビューの判定
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 変更した状態の散在表現と遷移の分散を走査する前 | `../../writing-standards/references/implementation-time-data.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-data.md` |
+| 変更した状態の不変条件と保証箇所を比較する前 | `../../writing-standards/references/design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` |
+| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
+| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md`、`read:agent-basics:*/skills/writing-standards/references/testing-platforms.md` |
+
+## ユーザビリティレビューの判定
+
+ユーザビリティレビューでは、変更された画面を実際に描画・操作し、エンドユーザーが画面の意味を迷わず理解して作業を完了できるかを評価する。
+対象は、E2Eテスト、VRT（ビジュアルリグレッションテスト）、lintなどの自動テストでは判定できない、エンドユーザーの視点から見た使いやすさである。
+
+<例>
+
+- 現在の状態、処理の進行、操作の結果を確認できるか
+- 業務で使う言葉と自然な順序で情報を示しているか
+- 戻る、取り消す、中断する操作を選べるか
+- 同じ役割のデザインと操作が画面間で一貫しているか
+- 誤操作を防げる配置と確認があり、非活性の意味が分かるか
+- 必要な選択肢が見え、前の画面の情報を覚えていなくても操作できるか
+- 初めて使う人と反復操作する人の双方が効率よく進めるか
+- 情報と表示条件がエンドユーザーの目的・利用場面・判断・次の操作に対応し、必要な情報の欠落や判断・操作に寄与しない表示がないか。
+  0、空、該当なし、旧仕様の情報も必要性で選び、現在の状態を伝える0表示は保つ
+- 情報の優先順位が明確で、冗長なラベルや説明、スローガン調の文言がないか
+- エラーの原因と復旧操作を理解できるか
+- 必要な場面でヘルプや操作説明を参照できるか
+- 要素の重なりや切り詰めがなく、キーボード操作、狭い画面、拡大、長い入力でも操作できるか
+</例>
+
+参考資料: [Impeccableのユーザビリティ確認](https://github.com/pbakaus/impeccable/blob/5e745ace7e151feb2a93d360d0281fe39448b857/skill/reference/critique.md)を日本語へ翻訳・再構成した。
+Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD-PARTY-NOTICES.md)を参照。
+
+受入シナリオの期待結果との一致、データの正確な反映、操作の成否といった機能的な正しさは、本レビューの判定対象から外す。
+これらは`../../writing-standards/references/testing-selection.md`「検証単位の選定」で選んだ層の自動テストや実行レビューへ委ねる。
+同じ確認を繰り返すと、使いやすさを評価する本来の目的が損なわれるためである。
+テストが不足している受入シナリオは、実行レビューの種類5として扱う。
+各指摘には、観測した画面の状態とキャプチャー画像、エンドユーザーが誤解したり操作を中断したりする具体的な場面、および`agent-basics:writing-standards`の`references/ui-ux.md`の該当基準を提示する。

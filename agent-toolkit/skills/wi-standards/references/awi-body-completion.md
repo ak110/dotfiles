@@ -1,0 +1,80 @@
+# 通常AWIの本文：完成条件
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-origin.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-escalation.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-escalation.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-confirmation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-confirmation.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
+
+## 完成条件
+
+起草者は`## 反映内容と反映先`と`## 完成条件`に、そのAWIの目的達成に必要な事項だけを書く。
+過去対策の効果を条件にする場合は、同じ原因と適用条件、実装・配布済みである根拠、観測機会と結果を対応付ける。
+今回の実装の正しさと後日の実利用効果を区別し、適用機会のない状態は効果未確認として保持する。
+要求によらず標準工程が必ず行う版数更新、commit、push、CIなどは、そのAWI固有の反映内容や完成条件から除く。
+完成状態は本文から一意に導けるようにし、曖昧さが残る固有の条件だけを`## 完成条件`に補足する。
+内部的なファイル名、節名、配置場所を固定して記述するのは、ユーザーの要件や公開契約においてその名前自体が指定されている場合に限定する。
+記載する条件は、完成を判定するために必要十分なものに絞る。
+全体検証やCIの実行は`agent-toolkit:process-wi`の公開工程に委ね、反映内容の単なる言い換え、採否や実装を左右しない項目の列挙、外部挙動の再現における結論や典拠以外の経過、他の項目や過去セッションの経緯などは記載しない。
+観測された不具合を起点としbugfixを起動して起草する場合は、重大度に応じた類似見直しと再発防止の完了状態を判定できる記述を含める。
+基準は`agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」に従う。
+根本原因に対する処置の要否と完了は同節に従って判定し、採用した処置の効果を結果として示す。
+共通定義の利用やチェック処理の存在といった、選択した処置の内部構造を固定的に指定することは避ける。
+個々の完成条件には、観測する消費主体と観測手段（CLI、画面、hook、文書など）を対応付けて記述する。
+文書の文面や趣旨を観測する手段は、`../../write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」に従う。
+完成判定を行う観測主体は、その項目を処理するエージェントとする。
+完成条件と実現方式を選定する段階では、CIや再現テストなどを用いて、同一の作業セッション内で合否を観測して完遂できる手順を優先する。
+要件自体が求める観測とエージェントが具体化した観測条件を区別する。
+後者を技術的に満たしにくい場合は、`../../../share/review-loop-coordination-escalation.md`「技術判断で外せる完成条件」に従い、目的と必要な品質を保つ条件へ見直す。
+明示要件の未達やユーザー判断が必要な変更は確認手順へ渡す。
+エージェント自身で観測可能な事項を、ユーザーによる実機確認へ安易に委ねることは避ける。
+起草者は、リモート操作、非対話型CLI、ログ出力やAPIなど、同一セッション内で完結する観測手段を十分に確認したうえで選択する。
+GUI操作や配布後の挙動という分類だけで、人手による確認や後日の確認と即断することは避ける。
+人手による観測そのものが明示的な要件である場合は、その根拠を本文の適切な箇所に記載する。
+環境制約などによってエージェント自身で観測しきれないという理由だけで、人手による完成条件や個別のUWIを追加しない。
+実施可能な確認手段と残存する限界を示し、作業完了後に完了報告へ記載する。
+また、処理を担当する主体も、人手による観測と記載されている条件について、現在の環境における到達性から自己観測が可能かを検討する。
+複数の実装方式を許容する場合であっても、最終的に達成すべき状態と消費主体に求める操作の要否は一意に定める。
+対象リポジトリの外部（サブモジュールの参照先や、別リポジトリが所有する設定など）へ変更を反映する項目では、反映先ごとに完成とみなす状態（コミットまで完了するか、プッシュまで完了するか）と、その操作の対象および影響範囲を処理側が判定できるように記述する。
+完了状態が反映先リポジトリのプロジェクト規範や既存の承認によって一意に定まる場合は、その規範のパスと節名、または承認の出所を参照し、一般的な公開原則をWIごとに再掲しない。
+認可の適用範囲は`../../user-confirmation-and-report/references/approval-scope.md`「承認源と適用範囲」に従う。
+参照先で一意に定まらない反映先、今回限りの例外、個別に承認された範囲については、要求に固有の境界として完成条件に記載する。
+完成条件に公開操作（push、release、配布など）を記載できるのは承認源を併記できる場合に限られ、起草者の記載のみを新たな公開の認可とみなさない（`origin-and-approval-origin.md`「承認」）。
+状態の決定に必要な情報がユーザーの手元にのみ存在する場合は、`drafting-completion-confirmation.md`「未確定事項と確認」に従って処理する。
+否定形の条件を記述する場合は、観測範囲を要求の差分に限定し、「要求の差分に含まれない」と明記する。
+成果物全体の不変や不在を完成条件に設定できるのは、独立した後続要求によっても変更されない恒常的な状態に限る。
+
+完成条件や判断材料の観測は、低いコストで処理可能な同一セッション内に得られる範囲に留める（公開・配布後であっても同じセッション内で反映して観測できる場合は含めてよい）。
+事象の自然発生を待つ観測、専用計測環境の構築、複数セッションにわたるデータの蓄積を要する観測は、任意の参考材料とするか、要求の対象外とする。
+既知の不具合と明示要件の未達は明確に区別する。
+要件自体が求めている観測を独断で除外してはならず、検証が成立しない根拠を記録したうえで`agent-toolkit:process-wi`の`references/finish-session.md`に定める延期adoptおよび再開記録へ引き継ぐ。
+起動前提が整っていない新設のworkflowなどでは、実装の検証と公開工程における検収を明確に分離する。
+所要時間・トークン・待ちの削減を目的に仕組み・工程・設定を変えるAWIでは、同じ代表入力と並行条件で測った変更前後の全体所要を完成条件に置く。
+全体所要は本体に並行する他作業の待ちと障害停止・調査修正を含む作業開始から完了までとし、同一セッションの既存のコマンド・CI等の実行記録で測る。
+同一セッション内の前後比較で改善を示せない案は採用せず、処理担当は変更を取り込まずに測定結果を記録して項目を終える。
+速度や資源使用量の性能改善を主目的とする作業では、変更前のボトルネックを確認する。
+同じ負荷・比較可能な条件による変更前後の数値、挙動維持、トレードオフも確認する。
+基準は`agent-toolkit:user-confirmation-and-report/references/investigation.md`と`agent-basics:check-execution`の`references/diagnostics.md`に従う。
+長期の運用観測やユーザーへの効果判定の回答は完成条件の対象から除く。
+機能の正確性、安全性、公開契約の検証はそれぞれの要件として設定し、計測についてユーザーが明示した要求も維持する。
+所要時間のようにマシンの負荷状態に左右される計測値は、同一のマシンと同一の時点で実行した対照環境（変更前のバージョン、あるいは原因要素のみを元に戻した構成）との比率や差分として記述する。
+比較した結論と再取得先に加え、入力件数・並行条件・負荷状況などの測定条件、双方の主要な生の実測値と比率を計画またはWIへ記録する。
+ユーザーが目標値を指定した場合はその値をそのまま採用する。
+なお、`timeout`などの設定値はここでの計測値には当たらない。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 再発防止の選定と完了：類似見直しと再発防止の完了の基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |

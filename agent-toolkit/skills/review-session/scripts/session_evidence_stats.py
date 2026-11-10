@@ -5,6 +5,7 @@ from __future__ import annotations
 import collections
 import datetime
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from session_evidence_records import (
 )
 
 from agent_toolkit._common.agy_records import normalize_entries, usage_tokens
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_identity import distinct_identities as _distinct_identities
 
 _CLAUDE_TOKEN_KEYS = (
@@ -486,7 +488,7 @@ def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
 def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
     """threadの有効な計測記録から所要秒数を記録順で返す。"""
     try:
-        lines = (directory / f"{thread_id}.jsonl").read_text(encoding="utf-8").splitlines()
+        lines = split_lines((directory / f"{thread_id}.jsonl").read_text(encoding="utf-8"))
     except OSError, UnicodeError:
         return []
     durations: list[float] = []
@@ -503,6 +505,141 @@ def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
     return durations
 
 
+# エージェント向け文書の表示とみなすパス。配布物の原本と、プロジェクトスキルを対象にする。
+# 版付きのプラグインキャッシュ（`agent-toolkit/<版>/share/...`）も同じ文書として数えるため、
+# プラグイン名と区分の間に任意の階層を許し、集計の鍵は`<プラグイン>/<区分>/<残り>`へ正規化する。
+_NORM_DOC_PATTERN = re.compile(
+    r"(?:(?P<plugin>agent-basics|agent-toolkit)(?:/[^/\s'\"`|;&()<>]+)*?/(?P<kind>skills|share|rules)"
+    r"|(?P<project>\.claude/skills))/(?P<rest>[^\s'\"`|;&()<>]+?\.md)\b"
+)
+# 表示とみなすコマンド。検索（rg・grep）や一覧は本文の表示ではないため数えない。
+# Codexの`exec`はコマンドをJavaScriptの文字列（`tools.exec_command({cmd:"cat ..."})`）へ埋め込むため、
+# 直前が引用符の場合もコマンドの先頭として扱う。
+_DISPLAY_COMMAND_PATTERN = re.compile(r"(?:^|[\s;&|(\"'`])(?:cat|sed|head|tail|nl)\s")
+_DISPLAY_TOOLS = frozenset({"Read", "View", "read_file"})
+_COMPACTION_TOP_DOCUMENTS = 5
+
+
+def _norm_documents(text: str) -> list[str]:
+    """文字列が指すエージェント向け文書の正規化パスを出現順・重複なしで返す。"""
+    found: list[str] = []
+    for match in _NORM_DOC_PATTERN.finditer(text):
+        key = (
+            f"{match.group('plugin')}/{match.group('kind')}/{match.group('rest')}"
+            if match.group("plugin")
+            else f".claude/skills/{match.group('rest')}"
+        )
+        if key not in found:
+            found.append(key)
+    return found
+
+
+def _displayed_norm_documents(tool: str, block_input: Any, hint: str | None) -> list[str]:
+    """呼び出しがエージェント向け文書の本文を表示する場合に、その文書の正規化パスを返す。"""
+    if tool in _DISPLAY_TOOLS and isinstance(block_input, dict):
+        for key in ("file_path", "path"):
+            value = block_input.get(key)
+            if isinstance(value, str):
+                return _norm_documents(value)
+        return []
+    if hint and _DISPLAY_COMMAND_PATTERN.search(hint):
+        return _norm_documents(hint)
+    return []
+
+
+def _output_bytes(value: Any) -> int:
+    """ツール出力の本文をUTF-8のバイト数で返す。構造化された出力は文字列部分だけを数える。"""
+    if isinstance(value, str):
+        return len(value.encode())
+    if isinstance(value, list):
+        return sum(_output_bytes(item) for item in value)
+    if isinstance(value, dict):
+        if isinstance(value.get("text"), str):
+            return len(value["text"].encode())
+        if "content" in value:
+            return _output_bytes(value["content"])
+        if "output" in value:
+            return _output_bytes(value["output"])
+    return 0
+
+
+def _compaction_usage_events(item: _CollectedRecord) -> list[dict[str, Any]]:
+    """圧縮で終わる区間ごとに、ツール出力とエージェント向け文書の表示が占めるバイト数を返す。
+
+    区間は直前の圧縮（無ければ記録の先頭）からその圧縮までとする。
+    1回の表示で複数の文書を出力した呼び出しは、出力の全量をエージェント向け文書の表示として数え、
+    文書別の内訳では各文書へ同じ量を計上する。このためエージェント向け文書のバイト数は上限寄りの値になる。
+    """
+    runtime = item.runtime
+    if runtime not in {"claude", "codex"}:
+        return []
+    calls: dict[str, list[str]] = {}
+    events: list[dict[str, Any]] = []
+    total = 0
+    norm = 0
+    documents: dict[str, list[int]] = {}
+    for record in item.records:
+        entry = record.entry
+        if _compaction_event(record, item.record_id) is not None:
+            top = sorted(documents.items(), key=lambda pair: (-pair[1][1], -pair[1][0], pair[0]))
+            events.append(
+                {
+                    "kind": "stats-compaction-usage",
+                    "record": item.record_id,
+                    "line": record.line,
+                    "tool_output_bytes": total,
+                    "norm_doc_display_bytes": norm,
+                    "norm_doc_display_top": [
+                        {"path": path, "count": count, "bytes": size} for path, (count, size) in top[:_COMPACTION_TOP_DOCUMENTS]
+                    ],
+                }
+            )
+            total = 0
+            norm = 0
+            documents = {}
+            continue
+        outputs: list[tuple[str, Any]] = []
+        if runtime == "claude":
+            message = entry.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                    name = str(block.get("name", ""))
+                    calls[block["id"]] = _displayed_norm_documents(
+                        name, block.get("input"), _claude_call_hint(block.get("input"))
+                    )
+                elif block.get("type") == "tool_result" and isinstance(block.get("tool_use_id"), str):
+                    outputs.append((block["tool_use_id"], block.get("content")))
+        else:
+            payload = entry.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            payload_type = payload.get("type")
+            if payload_type in {"custom_tool_call", "function_call"} and isinstance(payload.get("call_id"), str):
+                calls[payload["call_id"]] = _displayed_norm_documents(
+                    str(payload.get("name", "")), _json_object(payload.get("arguments")), _codex_call_hint(payload)
+                )
+            elif payload_type in {"custom_tool_call_output", "function_call_output"} and isinstance(
+                payload.get("call_id"), str
+            ):
+                outputs.append((payload["call_id"], payload.get("output")))
+        for call_id, value in outputs:
+            size = _output_bytes(value)
+            total += size
+            displayed = calls.get(call_id, [])
+            if displayed:
+                norm += size
+                for path in displayed:
+                    counts = documents.setdefault(path, [0, 0])
+                    counts[0] += 1
+                    counts[1] += size
+    return events
+
+
 def _stats_compaction_events(
     collected: list[_CollectedRecord],
     compaction_record_dir: Path,
@@ -513,6 +650,7 @@ def _stats_compaction_events(
     発生が無い場合も件数0の集計イベントだけは返し、発生の有無を呼び出し側が判別できるようにする。
     """
     events: list[dict[str, Any]] = []
+    usage: list[dict[str, Any]] = []
     for item in collected:
         thread_id = _codex_record_thread_id(item)
         durations = iter(_compaction_durations(compaction_record_dir, thread_id)) if thread_id is not None else iter(())
@@ -525,6 +663,7 @@ def _stats_compaction_events(
                 if duration is not None:
                     event["duration_seconds"] = duration
             events.append(event)
+        usage.extend(_compaction_usage_events(item))
     events.sort(key=lambda event: (event["record"], event["line"]))
     counts = collections.Counter(event["record"] for event in events)
     total = {
@@ -536,7 +675,8 @@ def _stats_compaction_events(
         ),
         "duration_unknown_count": sum("duration_seconds" not in event for event in events),
     }
-    return [*events, total]
+    usage.sort(key=lambda event: (event["record"], event["line"]))
+    return [*events, total, *usage]
 
 
 def _stats_breakdown_events(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:

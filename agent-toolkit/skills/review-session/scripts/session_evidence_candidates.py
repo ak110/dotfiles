@@ -59,6 +59,7 @@ from agent_toolkit._atk.wi.frontmatter import parse_frontmatter as _parse_wi_fro
 from agent_toolkit._common import response_language_check as _response_language_check
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common.bash_invocations import extract_bash_invocations, is_read_predicate
+from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.shell_quoting import QuotingScanner as _QuotingScanner
 from agent_toolkit._common.shell_segments import resolve_execution_segment as _resolve_execution_segment
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
@@ -681,7 +682,8 @@ def _delegate_notice_events(collected: list[_CollectedRecord]) -> list[dict[str,
         wait_lines = {
             call.line
             for call in calls
-            if any(
+            if call.tool.casefold().rsplit("__", 1)[-1].rsplit(".", 1)[-1] in _ADHOC_SHELL_TOOLS
+            and any(
                 _is_atk_command(list(simple.words)) and list(simple.words)[1:3] == ["agents", "wait"]
                 for command in session_evidence_execution.command_inputs(call.tool, call.text)
                 for simple in session_evidence_execution.shell_simple_commands(command)
@@ -735,7 +737,7 @@ def _wait_response_parts(value: Any) -> tuple[list[str], set[tuple[str, int | st
                 handles.add(("cell_id", cell_match[1]))
             active: list[str] | None = None
             session_text = ""
-            for line in value.splitlines():
+            for line in split_lines(value):
                 if line.startswith(WAIT_BODY_START_PREFIX):
                     active, session_text = [], line.removeprefix(WAIT_BODY_START_PREFIX)
                 elif active is not None and line == f"{WAIT_BODY_END_PREFIX}{session_text}":
@@ -1355,7 +1357,7 @@ def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
     if len(args) < 4 or not _is_atk_command(args) or args[1] != "run-command" or "--" not in args[2:]:
         return event
     text = str(event.get("diagnostic") or event.get("text") or "")
-    results = [_json_object(line) for line in text.splitlines() if line.startswith("{")]
+    results = [_json_object(line) for line in split_lines(text) if line.startswith("{")]
     if len(results) != 1 or results[0] is None:
         return event
     result = results[0]
@@ -1824,6 +1826,8 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
     display = value if not isinstance(raw, str) and isinstance(value, str) else shlex.join(args)
     shell_unwrapped = False
     for _ in range(5):
+        while args and _ENV_ASSIGNMENT.match(args[0]):
+            args = args[1:]
         if not args:
             break
         name = _basename(args[0])
@@ -1831,8 +1835,22 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
             args = args[2:]
         elif name == "env":
             index = 1
-            while index < len(args) and _ENV_ASSIGNMENT.match(args[index]):
-                index += 1
+            while index < len(args):
+                word = args[index]
+                if word == "--":
+                    index += 1
+                    break
+                if word in {"-i", "--ignore-environment", "-"} or _ENV_ASSIGNMENT.match(word):
+                    index += 1
+                elif word in {"-u", "--unset", "-C", "--chdir"} and index + 1 < len(args):
+                    index += 2
+                elif (word.startswith(("-u", "-C")) and len(word) > 2) or word.startswith(("--unset=", "--chdir=")):
+                    index += 1
+                elif word.startswith("-"):
+                    # 未解釈の包装は入力全体で区別し、オプション名による誤統合を避ける。
+                    return "env", shlex.join(args), display, args
+                else:
+                    break
             args = args[index:]
         elif name in _SHELL_NAMES and len(args) >= 3 and args[1] in {"-c", "-lc"}:
             if not shell_unwrapped:

@@ -1,0 +1,116 @@
+# 由来と承認：由来と`source`
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies-completion.md`、`states-and-dependencies-approvals.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-approvals.md` |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md`、`read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
+| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
+| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-completion.md` |
+
+## 由来と`source`
+
+`source`属性は起票処理の記録であり、明示的な出所を持たない要求単位の由来の初期値に使う。
+WIの作成者・起票契機と、個々の要求の出所・承認範囲を区別する。
+`source`が存在しない項目のみを人間由来とみなし、値が設定されている項目は明示的な由来の記載がない限りエージェント由来として扱う。
+すでに保存されている値と形式はそのまま保持する。
+
+エージェントが投入する項目では`source`の指定を必須とする。
+値には、起動中のスキル名からプラグイン名のプレフィックスを除いたもの（`add-awi-by-user`、`process-wi`など）を使用し、該当するスキルがない起票では`agent`を設定する。
+スキル名が`review-session`の場合、作成するAWIの`source`は保存済み項目との由来の一貫性を保つため`session-review`とする。
+ユーザーの指示に基づいて投入する場合も同様の規則で値を付与し、人間由来である範囲は明示的な由来の記載によって示す。
+`atk run-skill`が起動したセッションのUWIでは、`source`を`run-skill`とする。
+一般の確認UWIと報告用UWIのどちらも、`--scope`にはSessionStartの起動入力の`skill`と`mode`から得た起動単位を渡す。
+モードがあればスキル名、半角空白、モードを連結し、モードがない通常起動ではスキル名だけを使う。
+モード語以外の自由記述はscopeに含めない。
+同一セッションのAWIには前述の一般的な規則を適用する。
+
+| 起動スキル | 起動入力のmode | scope |
+| --- | --- | --- |
+| `agent-toolkit:review-session` | なし | `agent-toolkit:review-session` |
+| `agent-toolkit:review-session` | `batch` | `agent-toolkit:review-session batch` |
+| `agent-toolkit:process-wi` | なし | `agent-toolkit:process-wi` |
+| `agent-toolkit:process-wi` | `single-lane` | `agent-toolkit:process-wi single-lane` |
+| `agent-toolkit:process-wi` | `all-repos` | `agent-toolkit:process-wi all-repos` |
+
+次回の同一起動単位はこのscopeのUWIを取り込み、通常起動や別モードのUWIとは区別する。
+既存項目の`source`とscopeは保持し、旧保存データの取込互換は`../../user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」に従う。
+
+人間の発話を契機にエージェントが起草したWIでも、ユーザーが指定した要件は原文で明示された要求単位へ限定する。
+エージェント提案への了解は、実際に提示して問うた結果と範囲へ限定して対応付ける。
+後から具体化した内部方式・仮説・未回答の案は、別の由来と承認範囲で扱う。
+ユーザーが明示した技術条件は内容を保つ。
+個々の要求単位に以下の明示的な由来が記録されている場合は、初期値よりも優先して適用する。
+種類ごとに本文の内容を確認して判定する。
+
+- 末尾に置かれた厳密なH2見出し`## ユーザーコメント`配下の要求（ユーザー専用記入欄）
+- UWIの`## 回答`に記録された要求
+- 関連する計画書の「実施内容」に記録された由来
+- 逐語で保持された対話における回答（他の見出しの下に配置される場合もある）
+
+対話における回答を明示的な由来として認めるのは、後述する`origin-and-approval-quotation.md`「逐語転記」の記法に従った逐語引用が本文中に存在する場合に限る。
+その根拠には、要約や言い換えではなく逐語引用を用いる。
+逐語引用から直接導き出せない対象、範囲、または外部から観測される結果をエージェントが補足した場合は、それらを引用の外に記述し、エージェント由来として扱う。
+引用された発話の主と、WIを作成したセッションや実行環境とは別個の事実であり、後者の2つは作成処理の記録などに基づいて判定する。
+
+確認質問に対する回答記録のうち、ユーザー自身の回答として扱えるのは、選択された選択肢と自由記述の内容のみである。
+`atk run-script session-review-evidence`の出力では、`text`および`user_response`（`answers`と`notes`）がこれに該当する。
+質問文や選択肢の一覧を含む`assistant_context`（`question`と`options`）は、意味、対象、除外事項、認可の解釈を補助するためにのみ参照し、JSONLの1行全体に対する部分一致などを証拠として採用しない。
+また、すでに保存されている記録で`質問:`、`選択肢:`、`回答:`、`自由記述:`という行頭ラベルを持つ形式の場合は、`回答:`と`自由記述:`の値のみをユーザーの回答として扱う。
+質問本文、`共通前提:`の行、選択肢の補足説明などはエージェントが作成した文章であり、ユーザーから異論が出なかったことだけをもって合意の根拠とみなさない。
+選択された選択肢によって確定するのは、その質問が直接尋ねた判断事項のみである。
+`共通前提:`行に過去の合意事項が記載されている場合は、その合意が成立した際の発話、または確認回答の逐語引用を根拠として確認する。
+
+通常は確定済みの出所を再利用し、再取得・再分類は具体的な不一致の確認に必要な範囲へ限定する。
+原文との具体的な不一致が見つかった場合は、根拠を示して既存の採否記録を訂正する。
+ユーザーが決める結果・選好・認可の変更は、既存の確認手順で扱う。
+
+## 承認
+
+由来を明確に区別できない要求は、安全側に倒して人間由来として扱う。
+人間由来の内容を一部でも含む要求単位を全体的または部分的に不採用とする場合は、事前に元の文面との差異、技術的な理由、および代替案を提示し、ユーザーから明示的な承認を得る。
+事後承認の予定、変更の可逆性（元に戻せること）、あるいは一部を採用済みであることなどは、承認の判定材料としては扱わない。
+部分的な不採用に当たるかは、`../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「原文からの具体化を要する軸」の縮小の判定に従い、要求単位が求める結果で決める。
+未承認のまま処理を終了させてしまうと、ユーザーが依頼した範囲が処理対象から失われるためである。
+
+人間由来のWI本文、ユーザーコメント、UWIの回答、または対話中の回答に、外部操作、対象、および範囲が具体的に明記されている場合、その範囲に限り承認として扱う。
+単なる`source`属性の値、空のコメント欄、エージェント側の推奨文、あるいは「進めてください」といった一般的な了解の発話は、承認とはみなさない。
+手動で起動された`agent-toolkit:process-wi`の公開工程における承認スコープは、同スキルの`../../process-wi/references/lanes-completion.md`「公開工程の承認スコープ」が定める。
+署名や認証、監査用の複雑な仕組みは設けず、読み書きする主体はユーザーとエージェントのみとする。
+
+要求の一部を別の作業単位へ引き継ぐことを理由に元のWIから除外する場合は、引き継ぎ先のWIが実際に存在し、除外する要求単位を過不足なく含んでいることを確認する。
+引き継ぎ先が存在しない場合は、元のWIに要求を戻すか、先に新しいWIを確定させる。
+ただし、同一の委譲元から同時に依頼された一連の分割起票や、投入先リポジトリの外部にある対象を委譲元へ通知して割り当てを委譲元に委ねた場合は、元のWIを先に保存してよい。
+引き継ぎ先の実在と処置の対応関係は、委譲元が`../../../share/add-wi-parent-acceptance.md`「保存の検収」において確認する。
+
+## 範囲語と程度
+
+ユーザーが範囲語や開放列挙で指定した集合は、`../../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」に定める範囲の記録書式で記述する。
+集合を絞り込む縮小に当たるかとその承認は、同スキル「原文からの具体化を要する軸」に従い、承認を得た除外はその出所を除外理由とともに記載する。
+以下のように程度や裁量を含む要求に対しては、どこで線引きを行うか、待機時間や再試行回数の設定、代替手段へ切り替える基準を決定する。
+決定は`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に沿って行う。
+
+```text
+消せるだけ消して
+できる範囲で
+```
+
+ユーザーへ確認するのは、調査を尽くした後も線引きの位置によって要件や意図に曖昧さが残る場合、または許容可能なコストや放棄してよい保護機能など、ユーザー固有の判断事項が残る場合に限る。
+走査した対象の実測結果や観測根拠、およびQCDに基づいて決定できる線引きはエージェント自身が判断して確定させ、その根拠と除外した対象を完了報告に記載する。
+確認する場合は、線引きの位置ごとに外部から観測される結果と推奨案を提示し、得られた回答をその対象と範囲に適用する。
+範囲語や開放列挙で示された集合の未走査部分については、確認の対象から除外する。
+走査が技術的に可能である限り、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」に従って走査を最後まで完遂する。
+回答が得られない場合の保留と終了の扱いは、`states-and-dependencies-approvals.md`「承認型UWIと元項目」および「終了」に従う。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| AWIの処理の基準を適用する前 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 由来と承認：逐語転記の基準を適用する前 | `origin-and-approval-quotation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-quotation.md` |

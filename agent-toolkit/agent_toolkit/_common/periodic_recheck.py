@@ -30,7 +30,7 @@ LEGACY_PERIODIC_RECHECK_MARKER = _message_format.opening_tag(
 """旧形式の役割標識。過去に装着したtaskの発火を同じく機械注入と判定するために読む。"""
 
 _PERIODIC_RECHECK_BODY_LINES: tuple[str, ...] = (
-    "定期再確認の発火である。待機中の対象を次の順に再確認せよ。",
+    "待機中の対象を次の順に再確認せよ。",
     "1. 待機対象を記録側から列挙せよ。agents_serverのsessionは保持した`session_id`と`atk agents list`、"
     "バックグラウンドタスクは起動結果が返した識別子と出力ファイル、その他は計画ファイルや引き継ぎ記録など"
     "現在の作業状態を正とする記録から読み直せ。",

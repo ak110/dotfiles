@@ -1,0 +1,31 @@
+# 委譲プロンプトの送信：未検証情報の取り扱い
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
+| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
+
+## 未検証情報の取り扱い
+
+`未検証`は、自身で直接裏付けを取っていない具体的な数値、システムの挙動、または制約事項に対して付与する識別ラベルである。
+ラベルを付与すべき対象範囲は、`agent-basics:writing-standards/references/investigation-sources.md`「根拠と主張の一致」に定義された出所帰属のルールに従い、本節では委譲処理における取り扱いを定める。
+
+- 委譲先が作業着手時に読み込む成果物（委譲プロンプトや計画ファイルなど）へ、自身で確認していない具体値や既存実装の挙動・制約を記載する場合は、必ず`未検証`と明記し、作業に着手する前に裏付けを調査するよう指示する。
+  該当箇所の明示には、行番号ではなく見出しや識別子を用いる（努力目標）。
+- 委譲した調査タスクの完了報告を受け取る前に原因をユーザーへ伝える必要がある場合は、確定的な事実ではなく推定であることを明記する。
+- 委譲先が実行する手順として外部コマンドやツールを提示する際の入力契約および根拠の確認手順は、`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
+  また、toolkit固有の監査や記録の保存については、`agent-basics:writing-standards`の同名資料に従う。
+
+## 判断材料と一時領域
+
+作業用の一時ファイルを配置する場所は、`agent-toolkit:managed-temp`の定めに従う。
+判断材料となる情報量が2万文字（目安）を超える場合は、一時領域内に所有者のみが読み書きできるMarkdownファイルとして保存する。
+内容が一意に定まる情報であれば絶対パスと対象IDのみを提示し、一意に定まらない情報であれば絶対パスに加えて判断に必要な範囲の要約を添えて渡し、委譲先の着手時に読み込ませる。

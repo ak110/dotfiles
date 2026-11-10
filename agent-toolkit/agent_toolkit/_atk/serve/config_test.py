@@ -824,7 +824,17 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
     entries, warnings = wi_operations.Operations(tmp_path).entries_with_warnings({"status": "inbox"})
 
     assert [(entry["filename"], entry["kind"]) for entry in entries] == [("unknown.md", "unknown")]
-    assert warnings == [{"state": "unknown", "filename": "os-error.md", "reason": "ファイルを読み取れません"}]
+    assert warnings == [
+        {
+            "state": "unknown",
+            "filename": "os-error.md",
+            "path": str(failed_path),
+            "reason": "ファイルを読み取れません",
+            "next_action": (
+                f"{failed_path}が実在し、atk serveを実行するOSアカウントから読み取れる権限になっているかを確認する"
+            ),
+        }
+    ]
 
 
 @pytest.mark.asyncio

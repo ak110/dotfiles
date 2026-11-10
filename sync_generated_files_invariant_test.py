@@ -10,7 +10,7 @@ def test_sync_targets_cover_agent_toolkit_skills_and_share() -> None:
     config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     targets = config["tool"]["pyfltr"]["custom-commands"]["sync-generated-files"]["targets"]
     representatives = (
-        pathlib.Path("agent-toolkit/share/rules-subagent.md"),
+        pathlib.Path("agent-toolkit/share/rules/rules-subagent.md"),
         pathlib.Path("agent-toolkit/skills/process-wi/SKILL.md"),
         pathlib.Path("agent-toolkit/skills/write-plan/references/plan-file-standards.md"),
         pathlib.Path("agent-toolkit/delegation_contract_invariant_test.py"),
@@ -18,7 +18,7 @@ def test_sync_targets_cover_agent_toolkit_skills_and_share() -> None:
         pathlib.Path("agent-toolkit/skills/review-session/session_review_contract_invariant_test.py"),
         pathlib.Path("agent-toolkit/skills/write-plan/references/structure_contract_invariant_test.py"),
         pathlib.Path("agent-toolkit/share/task_documents_invariant_test.py"),
-        pathlib.Path("agent-toolkit/rules/rules_invariant_test.py"),
+        pathlib.Path("agent-toolkit/share/rules/common/rules_invariant_test.py"),
         pathlib.Path("agent-toolkit/hooks/rules_context_registration_invariant_test.py"),
     )
 

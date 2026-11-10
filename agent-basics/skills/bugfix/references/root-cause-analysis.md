@@ -1,94 +1,40 @@
 # 初動と直接的原因の確認
 
-問題を見つけたエージェントが、期待契約・実際の結果・直接的原因と拡張原因分析の要否を確定する。根本原因、重大度、処置の詳細は、その判断へ進む時点で各資料を選ぶ。
+問題を見つけたエージェントが、期待契約・実際の結果・直接的原因と拡張原因分析の要否を確定する。
+根本原因、重大度、処置の詳細は、その判断へ進む時点で各資料を選ぶ。
 
-記録の粒度は`agent-basics:writing-standards`の`references/writing.md`「文章の共通規定」に従う。分析や検収を担当するエージェントが後から再確認できるよう、探索の手順、照会結果、比較検討や各段階での評価の過程は証拠として残す。報告本文には最終的な結論と、詳細を確認するための参照先を記載する。
+記録の粒度は`../../writing-standards/references/writing-common.md`「文章の共通規定」に従う。
+分析や検収を担当するエージェントが後から再確認できるよう、探索の手順、照会結果、比較検討や各段階での評価の過程は証拠として残す。
+報告本文には最終的な結論と、詳細を確認するための参照先を記載する。
 
 各段階の共通判断は本スキルの段階別資料を定義元とし、他工程では固有の入力、認可、記録、検収のみを定める。
-記録は`analysis-records.md`、資料探索の順序と2系統4段階の分析は`causal-analysis.md`に従う。拡張原因分析の実施にかかわらず各段階の基準を適用する。
-同じ原因の処置の統合と異なる原因の切り分けは、`agent-basics:writing-standards/references/design-heuristics.md`「設計案の予備選別」に従う。
+記録は`analysis-records.md`、資料探索の順序と2系統4段階の分析は`causal-analysis.md`に従う。
+拡張原因分析の実施にかかわらず各段階の基準を適用する。
+同じ原因の処置の統合と異なる原因の切り分けは、`../../writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」に従う。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md#「文章の共通規定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「文章の共通規定」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics.md#「設計案の予備選別」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「設計案の予備選別」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation.md#「根拠と主張の一致」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/investigation.md#「根拠と主張の一致」` |
-| 本文の条件に従い「QとC・Dの区別」「前提の再検討」を判断する前 | `root-cause-severity.md`の「QとC・Dの区別」「前提の再検討」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」「前提の再検討」` |
-| 本文の条件に従い「処置の階層」を判断する前 | `root-cause-actions.md`の「処置の階層」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」` |
-| 本文の条件に従い「類似見直し」を判断する前 | `root-cause-remediation.md`の「類似見直し」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
-| 本文の条件に従い「再発防止策の必須性」「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention.md`の「再発防止策の必須性」「類似見直しと再発防止の完了」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策の必須性」「類似見直しと再発防止の完了」` |
-| 本文の条件に従い「反復した指摘の原因判定」を判断する前 | `root-cause-scenarios.md`の「反復した指摘の原因判定」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md#「反復した指摘の原因判定」` |
-| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/quality-principles.md`の「文書と既存コードの不一致」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「文書と既存コードの不一致」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 本文の条件に従い「QとC・Dの区別」「前提の再検討」を判断する前 | `root-cause-severity-quality.md`、`root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文の条件に従い「処置の階層」を判断する前 | `root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
+| 本文の条件に従い「類似見直し」を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文の条件に従い「再発防止策の必須性」「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention-requirements.md`、`root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 本文の条件に従い「反復した指摘の原因判定」を判断する前 | `root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
+| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/quality-principles-source-consistency.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-source-consistency.md` |
 | 文書・規範・出力メッセージを変える対策を提案する前 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
 
-## 問題を見つけたときの対処
+## 条件別資料
 
-対処の候補は、品質原則である「許容性」「必要性」「実装品質」の観点から選定し、構造の比較検討は`agent-basics:writing-standards`の`references/design-heuristics.md`に従って行う。終了コードが0であっても警告が出ている場合は内容を確認し、未適用や未完了の項目があれば対処する。関係がないと判断した場合はその根拠を残す。要求された結果自体を変更する修正や、事前の認可が必要な操作は、合意を得てから着手する。認可された範囲内にある内部実装の是正は、そのまま完遂する。
-受け取った通知が担当外の対象を指していたり、実行できない処置や実在しない前提を示していたりする場合は、通知内容への対応と通知の仕組み自体の不備を切り分け、仕組み側の欠陥原因と修正方針も記録する。
-文書、規範、出力メッセージなどを変更する対策を提案する前には`agent-basics:writing-standards`を起動し、それらを受け取る側が実際に観測できる条件を踏まえて評価する。
-
-## 初動と拡張原因分析の判定
-
-調査の深度や重大度の区分にかかわらず、原因分析の記録は`analysis-records.md`に従い、必要な確認を終えてから分析を確定する。
-確認できない事情が実在する場合は、必要な確認と続行できない理由を未完了事項として明示する。
-処置はL3到達で決定してよいが、L4までの確認・記録は継続する。
-各段と類似見直し観点の該当なしは、`causal-analysis.md`「原因分析の段階」の共通規則に従い、上位原因を推測で補わない。
-
-複雑なシステムや未知のコード、抽象化境界をまたぐ調査では、`agent-basics:writing-standards/references/design-heuristics.md`「設計案の予備選別」の構造把握を使う。
-全体の概略から関係する経路へ絞り、公開操作、責務・依存、データと制御、状態の変更主体、外部境界を観測点と結ぶ。
-既存の記録へ調査の再開に必要な関係と理由を残し、軽微な文言変更に全体調査を追加しない。
-
-- 具体的な処置案を考える前に、まず発生した事象、実際の結果、発生条件、本来期待されていた契約（仕様や前提）を明確にする。その上で、直接的な原因、作り込み要因、見逃し要因、根本原因、および類似見直しの対象範囲（母集団）を確定する。確定した直接的原因からの対策を選定する。独立別件を引き渡す際は、観測事実、支持根拠のある原因仮説、残る問いを区別し、別件自身の原因確定と対策選定の時点を投入工程の契約に従って定める。支持根拠のある上位要因の仮説は、仮説であること、残る不確実性、因果の見込み、確認結果を対応付けて改善の採否と実施結果を記録する。確定にあたっての基準は後続の各節に従う
-- 調査や対処を他の担当者や後続の作業へ引き継ぐ場合であっても、実装または対策選定を引き継ぐ前に本節の内容を完了させる
-- 問題を「品質（Q）に影響する問題」と「コスト・納期（C・D）のみに影響する問題」に分類し、それを利用する側への影響の大きさから重大度を判断する。原因分析の記録には、調査の深度、調査を打ち切る基準、および再発防止策が必要かどうかの判断根拠を残す（分類の定義や影響の詳細は`root-cause-severity.md`「QとC・Dの区別」を参照）
-- 実装または対策選定工程では根本原因（誤りが発生・成立した背景にある構造や判断基準）を特定する。その根本原因をもとに類似見直しの母集団、処置の階層、再発防止策を導き出し、変更した範囲を検証する。この基準は`root-cause-prevention.md`「再発防止策の必須性」および`root-cause-remediation.md`「類似見直し」`root-cause-actions.md`「処置の階層」`root-cause-prevention.md`「類似見直しと再発防止の完了」に従う。拡張原因分析するかどうかによって資料探索や分析の深さを決定し、類似見直しの範囲や再発防止策の要否は重大度の判定に基づいて決定する
-- 直接的な原因を特定したら、拡張原因分析に進む必要があるかを判定する。判定には、当時の判断を記録した計画書や設計書、指示内容、契約、およびその判断を取り込んだ変更履歴を用いる。これらの材料が揃っているか判断できない場合は、拡張原因分析を実施する
-- 拡張原因分析を実施する条件：計画や設計の段階で必要な判断材料が揃っており、適切に判断していれば回避できた事象であること。機能的な実害の有無にかかわらず対象とする。コードをpushした後のCI失敗については、現在のセッションに起因するもの、または起因が特定できていないものであれば、一見自明な単純ミスであっても対象に含める。この条件に直接当てはまらない事象であっても、根本原因の特定に過去の履歴や記録の調査、あるいは2系統の分析が必要な場合は同様の手順を踏む。実施する際は`causal-analysis.md`に従う
-- 類似する原因や作業工程の重複・反復があるかは、実際に存在する具体的な箇所を特定した上で判断する
-- ユーザーが「問題として扱わない」と明示的に示した事象については、その意向の範囲を維持する。認証情報などの所在を問題視するかどうかは現在適用されている認可や報告の方針に従い、過剰な反応を改めるよう求められた場合はその指示に沿って対処する
-- 根本原因を確定する前には、問題が再発したものかどうかにかかわらず、`root-cause-severity.md`「前提の再検討」を適用する。同じ種類の間違いが繰り返されている場合は`root-cause-scenarios.md`「反復した指摘の原因判定」もあわせて適用し、関連する規範の条文自体も分析対象に含める
-
-## 直接的原因と事象時点の確定
-
-対策の成立に必要な入力について、生成主体、途中の変換・省略・退避、観測点、最終消費主体を対応付ける。
-ホストや呼出方式で実形が変わる部分は、対象版の実記録または一次仕様と比較してから前提を確定する。
-確認の十分性は`agent-basics:writing-standards/references/investigation.md`「根拠と主張の一致」に従い、コードや合成入力での再現が示す範囲を、実際の入力から確認した範囲と区別する。
-
-修正前に期待結果・症状・発生条件と取得済み証拠を整理し、原因候補を区別するための不足情報を得る操作を選ぶ。
-明確な診断や保存済みの失敗は先に精読し、コード・変更差分・正常系との比較、公式仕様、公開操作による再現、追加計測から症状に合う調査を選ぶ。
-挙動や発生条件が不明なら再現・計測を優先し、確認済みの失敗を全件で重複実行する前提にしない。
-各試行の原因仮説、根拠、期待する観測、実際の結果を対応付け、候補を見分ける最小の検証で裏付け・反証する。
-後続担当が再試行を避けられるよう、得た証拠と棄却した前提を既存の作業記録へ簡潔に残す。
-効果のなかった調査用変更は自身の変更だけを整理し、変更の効果を切り分け、利用中の成果と他担当の差分を保護する。
-
-修正後は元の期待結果と症状の解消を、その問題を観測できる手段で確かめる。
-実行挙動は元の公開操作または原因と結果を確認できる限定操作、lintは対応する規則、文書指摘は期待契約との比較を使う。
-失敗から成功への変化を示す出力・画面記録や比較結果を、修正前後の入力・版と対応付けて既存の検証記録へ保存する。
-
-再現できない場合は条件の絞込みや診断を続け、到達できない部分と必要な情報を明示する。
-未確認の解消を修正完了とせず、既に解消している場合も症状を観測できる手段による確認結果を示す。
-実行を伴わない文書の誤りは、対象文書と期待契約の比較を証拠とし、無関係な実機実行を追加しない。
-
-- 発生した事象、実際の結果、発生条件は、問題の再現やログ、実装コードの確認を通じて特定する。本来期待される契約（仕様）は、目的を定めている仕様書、設計記録、規範から導き出し、現在の実装が置いている前提やコード内の文言は検証される対象として扱う
-- 欠陥の候補を確定する前に、それが意図通りの実装ではないか、計測方法の誤り（サンプル数、単位、計算順序、測定ツールが意図した量を正確に測定しているか）ではないか、ノイズや単なる相関関係を因果関係と取り違えていないか、一部の狭い範囲だけを見て判断していないかを検証する。対象のデータを生成・更新するすべての書き込み処理について、呼び出し元を含めた入出力の流れと正常系の動作例を少なくとも1件確認して再現する（努力目標）
-- 定められた方針と実際の実装・動作に食い違いがある場合は、それぞれの適用範囲、適用された時点、および実態がどのように作られたかを確認する。対象が存在するかどうかは実装や設定ファイルから確認する。明文化されたプロジェクトの方針は、`agent-basics:writing-standards`の`references/quality-principles.md`「文書と既存コードの不一致」に基づき現行方針であることが確認できた場合、実態のコードよりも優先する。複数の条件が絡み合っている場合は個別の要素に分解して整理し、誰が作成したかという情報は原因の特定に不可欠な場合に限って調べる
-- 処理が最後まで実行されなかった場合は、そもそもその処理に処理の流れ（制御）が到達していなかったのか、到達した処理が途中で失敗したのかを明確に区別する。エラー診断メッセージだけで発生箇所を推測せず、実際に起動された条件と成功・失敗の記録を比較し、結果の違いが生じた箇所を同じ条件下で再現して確かめる。
-  入力データの生成側から消費側に至るまで条件が一致しているかの検証は、`agent-basics:writing-standards`の`references/investigation.md`「根拠と主張の一致」に従って判定する。
-- 実行挙動の直接的な原因は、原因候補の仕組みだけを変更した対照実験で事象の変化を確認して確定する。lint診断や実行を伴わない文書指摘は、対応する規則・期待契約と対象の比較によって原因を裏付ける
-- 次のような値や仮説は「推定」として扱い、直接的な原因の確定には使わず、確実に観測された事実を用いる
-  - 単なる相関関係しか確認できていない候補
-  - 条件を揃えた比較対象が存在しない集計結果
-  - 生成元の処理、公式ドキュメント、データ構造の定義などで測定対象との対応関係が確認されていない値
-  - 実行時刻、負荷、事前準備の状態など、前提条件が揃っていない環境での比較結果
-  - 単独実行での成功や高負荷状態であることだけを根拠にした競合・排他制御の候補
-- 状況によって変化する値の確認：設定値、依存ライブラリのバージョン、外部システムの状態、規範・スキル・手順書の条文などを原因として挙げる場合（条文が守られていなかった、条文が不足していたと指摘する場合を含む）は、問題が発生した時点でそれらが実際に適用されていたことを変更履歴や当時の記録から確認する。確認できていないものは推定として扱う
-- 対策は、直接的な原因となった仕組みを共有している対象全体に適用する。これには、その仕組みを呼び出している箇所（呼び出し元、生成側、消費側など）と、その仕組みが扱う対象（値、入力データ、項目の種類など）の双方が含まれる。対象の範囲は、その仕組みが動作する条件に基づいて決定し、実際に不具合が観測された特定の呼び出し元や、特定の値・入力の種類を超えて広く含める。なお、類似見直しの母集団は根本原因から導き出す（`root-cause-remediation.md`「類似見直し」を参照）
-- 排他制御、競合状態、同時更新が原因候補に挙がった場合は、原因を特定する前に、共有状態を変更する可能性のある主体（別プロセス、ロックを取得しない手動操作、別の作業ディレクトリや別マシンなど）をすべて洗い出す。それぞれの主体とロックの適用範囲を突き合わせ、同じロックを共有していない主体は原因候補として残す
-- アップストリーム（上位ライブラリや外部基盤）の挙動や変更が原因候補となる場合は、公式ドキュメント、ソースコードの変更差分、提供元のIssueなど一次情報に当たって事実を確認する（実装コードの読解や手元環境での再現は補足として用いる）。原因が外部の依存・実行環境・提供元側の変化にある場合も同様に一次情報で確かめる。変化には同梱物や機能の削除・廃止、デフォルト値・挙動・形式の変更、非推奨化、推奨手順や主流の方法の移り変わりなどを含む。変化の事実と適用版に加えて、変化の理由・背景と、提供元および関連するエコシステムの現在の推奨やよりモダンな代替を、公式の変更記録・PR・議事録・移行案内・各候補の公式資料などで確かめる。資料が明示する事実・推奨と、そこからの自環境への適用判断を分けて記録する。検索時は内部の識別子名だけでなく、機能の説明や公式ドキュメントで使用されている用語も用いる
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 問題を見つけたときの対処・初動と拡張原因分析の判定に関する判断・作業の前 | `root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 直接的原因と事象時点の確定に関する判断・作業の前 | `root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |

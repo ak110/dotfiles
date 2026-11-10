@@ -359,8 +359,10 @@ async def test_reply_cancels_old_retention_deadline(tmp_path: pathlib.Path, monk
             clock_patch.setattr(loop, "time", lambda: completed_at)
             _complete(session)
             await manager.send_message(session.session_id, "続行")
-        # 実時計へ戻し、旧turnの期限を過ぎても再開中のsessionが解放されないことを確かめる。
-        await asyncio.sleep(0.03)
+        with monkeypatch.context() as clock_patch:
+            clock_patch.setattr(loop, "time", lambda: completed_at + 1)
+            manager._expire_retained_session(session)  # pylint: disable=protected-access
+            await asyncio.sleep(0)
         assert not backend.release_calls
         assert manager.sessions[session.session_id] is session
         assert session.status == "running"

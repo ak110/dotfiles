@@ -32,7 +32,8 @@ Codex固有の詳細は[Codex利用ガイド](docs/guide/codex-guide.md)を参�
 Windows PowerShellでは、環境によって公式インストーラーが使用する`Get-FileHash`を解決できず、Codex CLIの導入に失敗する。
 
 agent-toolkitのGit呼び出しはGit 2.34.1以上に対応する。
-Git 2.34.1が受理しない引数（`git worktree list -z`など）を使わない。worktree登録の列挙は共通実装`agent-toolkit/agent_toolkit/_git/worktrees.py`がGitの保存形式から読む。
+Git 2.34.1が受理しない引数（`git worktree list -z`など）を使わない。
+worktree登録の列挙は共通実装`agent-toolkit/agent_toolkit/_git/worktrees.py`がGitの保存形式から読む。
 CIの`pytest (3.15)`はUbuntu公式パッケージのGit 2.34.1を使い、通常のテストを実行する。
 ローカルでは環境変数`AGENT_TOOLKIT_TEST_GIT`へGitの実行ファイルの絶対パスを指定して同じテストを実行できる。
 
@@ -124,7 +125,8 @@ aquaがGitHub artifact attestations検証のために`api.github.com`へアク�
 `update-dotfiles`はAntigravity CLI（`agy`）も導入する。
 日本語の技術文書の推敲に使い、`agents_server`からはモデルを明示指定したときだけ選べる。
 
-初回はブラウザでの認証を要する。`agy`を対話で起動して認証を済ませるまで、`agents_server`からは使えない。
+初回はブラウザでの認証を要する。
+`agy`を対話で起動して認証を済ませるまで、`agents_server`からは使えない。
 
 ```bash
 agy
@@ -234,11 +236,12 @@ update-dotfiles --prune
 update-dotfiles --mode full
 ```
 
-`--prune`は現在のモードで対象外の導入済みツールとキャッシュを削除する。
+minimalでは通常の`update-dotfiles`で、対象外の導入済みツールと整理可能なキャッシュを削除する。
+fullで同じ整理を明示的に行う場合は`--prune`を指定する。
 minimalでは共有ランタイム領域とAIエージェントの実体も対象となる。
 Claude CodeとCodexの設定・会話履歴は保持する。
 使用中のエージェントや旧Python環境を検出した場合は保持し、終了後の`update-dotfiles --prune`の再実行を案内する。
-通常の更新では、共有Python依存環境と使用中の旧環境を削除しない。
+fullの通常更新では共有Python依存環境を保持し、どちらのモードでも使用中の旧環境は削除しない。
 
 ## 使い方
 
@@ -251,6 +254,31 @@ update-dotfiles
 ```bash
 update-dotfiles logs
 ```
+
+### 開発環境の容量レポート
+
+`dirsize`はディレクトリの容量をテキストで表示する。
+ローカルHTMLと増減のCSV履歴を保存する場合は出力先を明示する。
+
+```bash
+dirsize --report-dir ./capacity-report --exclude ./private-data .
+```
+
+`report.html`をブラウザーで開くと、容量の分布・パス別のサイズ・同一対象と除外条件の直近成功値からの増減を確認できる。
+ファイル本文を収集せず、HTMLも通信しない。
+ホーム直下のPictures・Photos・OneDrive・Dropbox・iCloudDrive、OneDrive系環境変数の対象と出力先は除外する。
+リンク・junction・reparse point・別ファイルシステムは追跡しない。
+任意配置・名称変更した写真・同期領域は自動発見しないため、`--exclude <path>`を反復指定する。
+相対パスはtarget基準で、指定先が存在しない場合は走査前にエラーとなる。
+除外・取得不能・消失・部分取得はHTMLで確認でき、部分取得では前回比を計算しない。
+
+完全取得したuvキャッシュルート全体だけを選択し、`uv cache prune`のShell・PowerShellスクリプトをダウンロードできる。
+整理処理は自動実行しない。
+対象は未使用キャッシュとuvのキャッシュ内に保存されたPython実行環境であり、表示容量全体の回収を保証しない。
+次回の再取得・環境再作成が必要になる場合があり、オフライン時は再取得できない。
+他ツールのキャッシュや履歴・モデル・作業ツリーなどは要確認として説明だけを表示する。
+履歴は出力先の`history.csv`へUTF-8 BOM付きで蓄積し、出力先を保有する期間だけ保持する。
+自動削除・容量上限は設けず、不正履歴や空き容量不足は保存エラーとして表示する。
 
 ## ドキュメント
 

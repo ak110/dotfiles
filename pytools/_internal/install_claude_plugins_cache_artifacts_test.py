@@ -19,7 +19,6 @@ from pytools._internal import claude_common as _claude_common
 from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import claude_plugin_references as _claude_plugin_references
 from pytools._internal import common as _common
-from pytools._internal import deferred_updates as _deferred_updates
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
 from ._test_helpers import ResidentProcesses
@@ -143,7 +142,6 @@ def test_defers_artifact_referenced_by_process(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, install_into: typing.Callable[..., None]
 ) -> None:
     """生成物のパスを参照するプロセスがある間は削除せず延期し、他の生成物は除く。"""
-    monkeypatch.setattr(_deferred_updates, "has_retry_timer", lambda: False)
     cache_dir = _cache_dir(tmp_path)
     install_into(cache_dir)
     real_install = _install_claude_plugins._install_plugin

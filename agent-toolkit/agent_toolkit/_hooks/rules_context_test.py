@@ -96,11 +96,14 @@ def test_session_start_delivers_current_conversation_identity(
             )
         )
         output = _output(capsys)
-        assert f"この会話のセッションID: {session}" in output
-        assert f"この会話のtranscript: {transcript}" in output
+        assert f"--transcript {shlex.quote(transcript)}" in output
+        if source != "compact":
+            assert output.count(f"--transcript {shlex.quote(transcript)}") == 1
+        else:
+            assert "この会話の原文が必要な場合" not in output
         other = "conversation-b" if session == "conversation-a" else "conversation-a"
-        assert f"この会話のセッションID: {other}" not in output
-        assert f"この会話のtranscript: {tmp_path / (other + '.jsonl')}" not in output
+        assert str(tmp_path / (other + ".jsonl")) not in output
+        assert not any(line.startswith(("この会話のセッションID:", "この会話のtranscript:")) for line in output.splitlines())
 
 
 @pytest.mark.parametrize("host,delegated", (("claude", True), ("codex", False), ("codex", True)))
@@ -151,9 +154,8 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     assert rules_context.SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
     assert (rules_context.QUALITY_CHECKPOINT_NOTICE in output) is (source == "compact")
     assert rules_context.RESPONSE_LANGUAGE_NOTICE in output
-    assert "ユーザーが読む報告・回答・質問・計画" in output
-    assert "ユーザーへ送らない内部文面は、言語だけで書き直させるな" in output
-    assert "送達主体が説明を日本語化" in output
+    assert "日本語で書け" not in rules_context.RESPONSE_LANGUAGE_NOTICE
+    assert "「使用言語」を参照せよ" in rules_context.RESPONSE_LANGUAGE_NOTICE
     assert "思考を除いてエージェントが書く全ての文" not in output
     normative_start = (
         f'<{rules_context.NORMATIVE_ELEMENT} source="{rules_context.NORMATIVE_SOURCE}" '
@@ -671,7 +673,7 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in output
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in output
     assert f"このセッションのmanaged-temp: {session_temp}" in output
-    assert f"agent-toolkitのCLI: {root / 'scripts'}" in output
+    assert "起動部分:" in output and str(root / "scripts") in output
     if contract:
         assert str(record) in output or rules_context.work_contract.SHORT_NOTICE in output
 
@@ -693,11 +695,8 @@ def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
     output = _output(capsys)
     entry = rules_context.SHARE_DIR.parent / "scripts" / ("atk.cmd" if windows else "atk")
     assert entry.is_file()
-    notified_entry = next(
-        pathlib.Path(line.removeprefix("agent-toolkitのCLI: "))
-        for line in output.splitlines()
-        if line.startswith("agent-toolkitのCLI: ")
-    )
+    command = next(line.removeprefix("起動部分: ") for line in output.splitlines() if line.startswith("起動部分: "))
+    notified_entry = pathlib.Path(shlex.split(command)[-1])
     plugin_root = notified_entry.parent.parent
     assert notified_entry == entry
     assert plugin_root == rules_context.SHARE_DIR.parent
@@ -705,7 +704,6 @@ def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
     skill = basics / "skills" / "writing-standards" / "SKILL.md"
     assert skill.is_file()
     assert "name: writing-standards" in skill.read_text(encoding="utf-8")
-    command = next(line.removeprefix("起動部分: ") for line in output.splitlines() if line.startswith("起動部分: "))
     if windows:
         assert command == "& '" + str(entry).replace("'", "''") + "'"
     else:
@@ -938,8 +936,11 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    assert (skill_name in _operation_context(None)) is main_warns
-    assert _operation_context("sub-1") == ""
+    # 組み込みの汎用Agentの起動には、取得済みでも実行手段の判定を促す警告が`agent-toolkit:delegation`を名指しして出る。
+    # ここでは取得の案内の有無だけを確かめる。
+    acquisition = f"`Skill`で`{skill_name}`"
+    assert (acquisition in _operation_context(None)) is main_warns
+    assert acquisition not in _operation_context("sub-1")
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
@@ -975,7 +976,8 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "実行受付前に終了" in context
     assert f"{host} {event}" in context
-    assert "ユーザーへ伝える" in context
+    assert "ユーザーへ伝えよ" in context
+    assert "Get-Content -LiteralPath" in context or "cat --" in context
     assert "/agent-toolkit:review-session batch" in context
     log_path = next((session_review.directory() / "launches").glob("*.log"))
     assert str(log_path) in context
@@ -983,3 +985,23 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert rules_context.main(payload, host=host) == 0
     assert "実行受付前に終了" not in capsys.readouterr().out
     assert session_review.pending()
+
+
+@pytest.mark.parametrize("host", ["claude", "codex", "agy"])
+@pytest.mark.parametrize("heading", ["対象", "移動した旧見出し"])
+def test_compact_normative_guidance_always_reads_full_file(tmp_path, monkeypatch, capsys, host, heading):
+    """圧縮前の見出し指定が残っていても、規範の復旧案内は全文を指定する。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    path = tmp_path / "AGENTS.md"
+    path.write_text("# 基準\n## 対象\n本文\n## 例外\n必須例外\n", encoding="utf-8")
+    monkeypatch.setattr(
+        rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(path, heading, "old", True)]
+    )
+    monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
+    payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": "normative-recovery"}
+    assert rules_context.main(json.dumps(payload), host=host) == 0
+    output = _output(capsys)
+    assert str(path) in output and "全文" in output
+    assert "必要節" not in output and "sed -n" not in output and "見出しの解決に失敗" not in output
+    assert ("cat --" in output) is (host != "claude")

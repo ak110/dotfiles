@@ -4,6 +4,7 @@ import contextlib
 import datetime
 import io
 import pathlib
+import shlex
 import subprocess
 import sys
 
@@ -44,6 +45,131 @@ from agent_toolkit.atk_test import (
 
 _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT")
 _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+@pytest.mark.parametrize(
+    ("action", "source", "destination"),
+    [
+        ("start-processing", "inbox", "processing"),
+        ("hold", "inbox", "hold"),
+        ("unhold", "hold", "inbox"),
+        ("return-to-inbox", "processing", "inbox"),
+        ("adopt", "inbox", "adopted"),
+        ("reject", "inbox", "rejected"),
+    ],
+)
+def test_public_transitions_locate_user_fields(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    bulk: bool,
+    newline: str,
+    action: str,
+    source: str,
+    destination: str,
+) -> None:
+    """6操作の個別・一括で保存行と読取方法を示し、欄無しと偽見出しには通知しない。"""
+    notes = _setup_notes(tmp_path)
+    _patch_bulk_git(monkeypatch, [])
+    monkeypatch.setenv("AI_AGENT", "1")
+    bodies = {
+        "comment.md": ("awi", "# 要求\n\n```text\n## ユーザーコメント\n```\n\n## ユーザーコメント\n\n保持する指示\n"),
+        "answer.md": ("uwi", "## 質問\n\n確認事項\n\n## 回答\n\n保持する回答\n"),
+        "fenced.md": ("awi", "```text\n## ユーザーコメント\n```\n"),
+        "none.md": ("uwi", "## 質問\n\n回答欄無し\n"),
+    }
+    for name, (kind, body) in bodies.items():
+        text = f"---\nstate: {source}\ntarget_repo: github.com/example/foo\ntype: {kind}\n---\n\n{body}"
+        _test_entry_path(notes, name).write_bytes(text.replace("\n", newline).encode())
+    args = ["wi", action]
+    args += ["--all", "--yes", "--skip-pull", "--target-repo=github.com/example/foo"] if bulk else list(bodies)
+    with pytest.raises(SystemExit) as result:
+        atk.main(args, home=tmp_path, now=_FIXED_DT)
+    assert result.value.code == 0
+    output = capsys.readouterr()
+    assert output.out.startswith("成功: ")
+    assert not output.err
+    fields = [line for line in output.out.splitlines() if line.startswith("記入欄:")]
+    assert len(fields) == 2
+    for name, (kind, body) in bodies.items():
+        path = _test_entry_path(notes, name)
+        assert entry_state_of(path) == destination
+        saved = path.read_text(encoding="utf-8")
+        assert body in saved
+        if name not in {"comment.md", "answer.md"}:
+            assert not any(line.startswith(f"記入欄: {name} ") for line in fields)
+            continue
+        section = "ユーザーコメント" if kind == "awi" else "回答"
+        # frontmatter 6行に、入力本文中の正式見出しの行位置を加える。
+        expected_line = 13 if kind == "awi" else 11
+        field = next(line for line in fields if line.startswith(f"記入欄: {name} "))
+        assert f"## {section} あり 開始行: {expected_line}（保存本文上の1始まり）" in field
+        command = shlex.split(field.split(" 読取: ", 1)[1])
+        assert command == ["atk", "wi", "show", name, "--section", section]
+        with pytest.raises(SystemExit) as shown:
+            atk.main([*command[1:], "--skip-pull"], home=tmp_path)
+        assert shown.value.code == 0
+        assert f"保持する{'指示' if kind == 'awi' else '回答'}" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("agent", [False, True])
+def test_plain_transition_api_does_not_print_user_fields(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], agent: bool
+) -> None:
+    """Web APIも使う平引数処理には、エージェント環境でもCLIの通知を混ぜない。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "comment.md", body="要求\n\n## ユーザーコメント\n\n指示")
+    _disable_transition_git(monkeypatch)
+    if agent:
+        monkeypatch.setenv("AI_AGENT", "1")
+    assert mutation_transitions.transition_entries(notes, action="hold", filenames=[path.name], now=_FIXED_DT) == [path.name]
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert not captured.err
+
+
+def test_failed_transition_does_not_report_user_fields(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """遷移前の状態が不正なら、成功や記入欄を通知せず本文も保持する。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "comment.md", body="要求\n\n## ユーザーコメント\n\n指示")
+    original = path.read_bytes()
+    _disable_transition_git(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "unhold", path.name], home=tmp_path)
+    assert result.value.code == 2
+    captured = capsys.readouterr()
+    assert "記入欄:" not in captured.out
+    assert "成功:" not in captured.out
+    assert "失敗:" in captured.err
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("type_line", ["", "type: legacy\n"])
+def test_transition_notice_does_not_add_type_validation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    type_line: str,
+) -> None:
+    """記入欄の通知は、holdが従来受け付ける種別不明の保存項目を拒否しない。"""
+    notes = _setup_notes(tmp_path)
+    path = _write_awi_file(notes, "legacy.md", body="要求\n\n## ユーザーコメント\n\n指示")
+    path.write_text(path.read_text(encoding="utf-8").replace("type: awi\n", type_line), encoding="utf-8")
+    _disable_transition_git(monkeypatch)
+    monkeypatch.setenv("AI_AGENT", "1")
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "hold", path.name], home=tmp_path)
+    assert result.value.code == 0
+    captured = capsys.readouterr()
+    assert captured.out.startswith("成功: ")
+    assert "記入欄: legacy.md ## ユーザーコメント" in captured.out
+    assert not captured.err
+    assert entry_state_of(path) == "hold"
 
 
 @pytest.mark.parametrize("bulk", [False, True])
@@ -832,7 +958,7 @@ class TestAppendEdit:
             filename: str,
             content: bytes,
             target_repo: str | None = None,
-            lock_timeout: float = -1,
+            storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
             expected_content: bytes | None = None,
             finalized_content: dict[str, str] | None = None,
         ) -> bool:
@@ -843,7 +969,7 @@ class TestAppendEdit:
                 filename=filename,
                 content=content,
                 target_repo=target_repo,
-                lock_timeout=lock_timeout,
+                storage=storage,
                 expected_content=expected_content,
                 finalized_content=finalized_content,
             )

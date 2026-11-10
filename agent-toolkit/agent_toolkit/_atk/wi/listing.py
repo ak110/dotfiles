@@ -15,6 +15,7 @@ from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filters as _wi_filters
 from agent_toolkit._atk.wi import readiness as _wi_readiness
+from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATES, WI_TYPE_UWI, WI_TYPES
@@ -310,18 +311,23 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     種別見出し・エントリ行は出力しない。
     `--summary-only`指定時は、ファイル名と要約だけをJSON Linesで出力する。
     """
+    baseline = _wi_snapshot.read(args.new_since) if getattr(args, "new_since", None) is not None else None
     if not args.skip_pull:
         with _wi_sync.repo_lock(private_notes):
             _wi_sync.pull_with_recent_reuse(private_notes, force_pull=getattr(args, "pull", False))
     if getattr(args, "configured_repos", False):
         snapshots = configured_repo_snapshot(private_notes)
+        if getattr(args, "snapshot_output", None) is not None:
+            _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
         total = 0
         for snapshot in snapshots:
             states = _wi_filters.resolve_states(args.status)
             kinds = {args.type} if isinstance(args.type, str) else set(args.type)
             selected = [
                 entry
-                for entry in snapshot.entries
+                for entry in (
+                    _wi_snapshot.new_entries(snapshot.entries, baseline) if baseline is not None else snapshot.entries
+                )
                 if entry[3] in states
                 and ("all" in kinds or entry[4] in kinds)
                 and _wi_filters.answered_matches(entry[4], entry[2], args.answered)
@@ -353,7 +359,10 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     resolved_repos = tuple(dict.fromkeys(resolve_repo_id(repo) for repo in target_values))
     readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None
     texts = EntryTexts()
-    readiness = _wi_readiness.calculate_readiness(private_notes, readiness_target, texts=texts)
+    all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
+    if getattr(args, "snapshot_output", None) is not None:
+        _wi_snapshot.save(args.snapshot_output, all_entries)
+    readiness = _wi_readiness.calculate_readiness(private_notes, readiness_target, texts=texts, snapshot=all_entries)
 
     selected = _wi_entries.select_entries(
         private_notes,
@@ -364,6 +373,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         source=args.source,
         texts=texts,
         important=getattr(args, "important", "all"),
+        snapshot=_wi_snapshot.new_entries(all_entries, baseline) if baseline is not None else all_entries,
     )
     if getattr(args, "effect_check", None) is not None:
         selected = [

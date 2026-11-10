@@ -36,7 +36,6 @@ from pytools._internal import (
     setup_cli_common,
     setup_codex_cli,
     setup_codex_links,
-    setup_dotfiles_autoupdate,
     setup_herdr_cli,
     setup_media_remote,
     setup_mise,
@@ -44,6 +43,7 @@ from pytools._internal import (
     setup_registry,
     setup_sendto_shortcuts,
     setup_statusline_binary,
+    setup_tmpfiles_clean,
     setup_tmux_plugins,
     sync_agent_toolkit_rules,
     update_claude_settings,
@@ -242,7 +242,7 @@ def _codex_claude_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: P
 
 
 def _rules_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    rules = tmp_path / "dotfiles" / "agent-toolkit" / "rules"
+    rules = tmp_path / "dotfiles" / "agent-toolkit" / "share" / "rules" / "common"
     rules.mkdir(parents=True)
     (rules / "01.md").write_text("rule\n", encoding="utf-8")
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
@@ -331,11 +331,12 @@ def _atk_serve_launcher_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     _euryale_root(monkeypatch, tmp_path)
 
 
-def _autoupdate_unit_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    root = _euryale_root(monkeypatch, tmp_path)
-    script = root / setup_dotfiles_autoupdate._SCRIPT_RELATIVE
-    script.parent.mkdir(parents=True, exist_ok=True)
-    script.write_text("", encoding="utf-8")
+def _autoupdate_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    unit = tmp_path / ".config/systemd/user/dotfiles-autoupdate.timer"
+    unit.parent.mkdir(parents=True)
+    unit.touch()
+    monkeypatch.setattr(setup_tmpfiles_clean.shutil, "which", lambda _name: None)
 
 
 def _registry_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -439,7 +440,7 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "libarchive (Windows)": [(_libarchive_download_fails, 0)],
     "claude-statusline バイナリの取得": [(_statusline_build_fails, 0)],
     "atk serve 自動起動セットアップ (Linux)": [(_atk_serve_launcher_write_fails, 1)],
-    "dotfiles自動更新タイマー セットアップ (Linux)": [(_autoupdate_unit_write_fails, 1)],
+    "一時ファイルの経過削除タイマー セットアップ (Linux)": [(_autoupdate_removal_fails, 1)],
     "Windowsレジストリ設定": [(_registry_write_fails, 1)],
     "SendTo ショートカット (Windows)": [(_sendto_shortcut_fails, 1)],
     "メディアリモコン自動起動 (Windows/media_remote)": [(_media_remote_removal_fails, 1)],

@@ -1,0 +1,23 @@
+# 承認範囲の判定：公開操作の消費主体
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 経験の記録から承認の適用範囲を判断する前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+
+## 公開操作の消費主体
+
+公開インターフェースに当たるかは、実行時に機能を呼ぶ主体や出力を読む主体（消費主体）で判定する。
+配布元・配置場所・名称だけでエージェント専用とは判断せず、人間とエージェントの双方が使うCLIは人間向けの公開契約として扱う。
+公開操作の削除・置換前には、呼び出しコード、公開ヘルプ、人間向けの案内、導入理由、ユーザーが示した利用実態から、消費主体と利用目的を確かめる。
+対象にはサブコマンド、オプション、補助スクリプトも含む。
+標準手段で代替できることと、人間が使う操作を廃止してよいことは分け、人間の便益を含めて採否を判断する。
+利用実態が不明な場合はエージェント専用とみなさず、`user-confirmation-and-report-authorization.md`「認可を要する操作」で認可の要否を判定する。
+消費主体がエージェントだけと確認できた変更（エージェント専用のMCPツール、エージェント向け文書の起動契約や返却形式、フックがエージェントへ返す通知文など）は自ら確定して成果物に記録する。
+ユーザーが起動するスキルのスキル名・引数・モード指定は、人間向けの公開操作として扱い、ここでいうエージェント向け文書の起動契約には含めない。
+ブラウザーUI、エンドユーザー向けドキュメント、ユーザー宛ての通知文などは人間が直接見るため確認する。
+他の区分に当たる操作や明示的な要件を変える操作も同様である。

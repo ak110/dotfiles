@@ -16,6 +16,7 @@ from create_plan_files_test import (  # pylint: disable=import-error,unused-impo
 from agent_toolkit import atk
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.normative_contract import read_contract
 
 _DOCUMENTED_BUG_REFERENCE_PATTERN = re.compile(r"計画ファイル（バグ）: `([^`]+)`")
 
@@ -26,7 +27,8 @@ def test_lane_planning_document_command_creates_plan_from_another_worktree(
     """起草手順4の実物の書式へ案件値を指定すると、異なるcwdから対象repoの計画を作成できる。"""
     source, _ = _source(repo, tmp_path)
     guide = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
-    matched = re.search(r"`(atk run-script plan-create -- [^`]+)`", guide.read_text(encoding="utf-8"))
+    text = read_contract(guide, guide.parents[3], ("lane-planning-drafting.md", "計画の起草"))
+    matched = re.search(r"`(atk run-script plan-create -- [^`]+)`", text)
     assert matched is not None
     command = matched[1]
     for placeholder, value in {
@@ -57,7 +59,8 @@ def repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
 def _documented_bug_reference() -> str:
     """計画ファイル作成基準が示す計画ファイル（バグ）の参照値を返す。"""
     standards = pathlib.Path(__file__).resolve().parents[3] / "skills/write-plan/references/plan-file-standards.md"
-    references = _DOCUMENTED_BUG_REFERENCE_PATTERN.findall(standards.read_text(encoding="utf-8"))
+    text = read_contract(standards, standards.parents[3], ("plan-file-standards-structure.md", "計画ファイルの構成"))
+    references = _DOCUMENTED_BUG_REFERENCE_PATTERN.findall(text)
     assert len(references) == 1, "計画ファイル（バグ）の参照値の記載例が1件に定まらない"
     return references[0]
 
@@ -83,9 +86,9 @@ def test_documented_bug_reference_is_accepted_without_substitution(repo: pathlib
 def _lane_plan_creation_step() -> str:
     """レーン担当が読む計画作成手順の本文を返す。"""
     task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/process-wi/references/lane-planning.md"
-    content = task_path.read_text(encoding="utf-8")
-    steps = re.split(r"\n(?=\d+\. )", content)
-    matches = [step for step in steps if re.match(r"\d+\. ", step) and "plan-create" in step]
+    content = read_contract(task_path, task_path.parents[3], ("lane-planning-drafting.md", "計画の起草"))
+    steps = re.split(r"\n(?=\*\*\d+\.\*\* )", content)
+    matches = [step for step in steps if re.match(r"\*\*\d+\.\*\* ", step) and "plan-create" in step]
     assert len(matches) == 1
     return matches[0]
 
@@ -128,9 +131,8 @@ def test_document_template_supports_create_progress_and_commit_lookup(
 ) -> None:
     """実在文書の雛形を記入し、公開操作だけで作成、進捗と対応の保存、取得まで進む。"""
     document = pathlib.Path(__file__).resolve().parents[1] / "references" / "plan-file-standards.md"
-    template = (
-        document.read_text(encoding="utf-8").split("## 初回起草の雛形\n", 1)[1].split("```md\n", 1)[1].split("\n```", 1)[0]
-    )
+    text = read_contract(document, document.parents[3], ("plan-file-standards-template.md", "初回起草の雛形"))
+    template = text.split("## 初回起草の雛形\n", 1)[1].split("```md\n", 1)[1].split("\n```", 1)[0]
     content = re.sub(r"<[^>]+>", "案件の記入内容", template).replace("/absolute/repository/path", str(repo))
     if not refactoring:
         start = content.index("| 対象 | 現状の問題 | 対応 |")

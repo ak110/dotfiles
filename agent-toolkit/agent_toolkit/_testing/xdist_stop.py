@@ -1,7 +1,8 @@
-"""xdist 3.8の停止理由をworkerへ伝え、失敗上限で未実行キューを打ち切る。
+"""xdist 3.8の停止理由と収集時の使用法エラーを、workerとcontrollerの間で補う。
 
 上流PR https://github.com/pytest-dev/pytest-xdist/pull/1395 の局所適応。
-修正を含む安定版へ更新し、同じ早期停止・正常完了試験を通した時点で本モジュールを撤去する。
+停止理由の修正を含む安定版へ更新したら早期停止の適応を撤去する。
+収集時のUsageErrorが元の文面と終了コードで中継される安定版へ更新したら、対応する結合試験を通して診断の適応も撤去する。
 """
 
 # MIT License
@@ -27,12 +28,46 @@
 # SOFTWARE.
 
 import contextlib
+import sys
 import time
+from collections.abc import Generator
 from typing import Any
 
 import pytest
 from xdist.dsession import DSession
 from xdist.workermanage import WorkerController
+
+_COLLECTION_USAGE_ERRORS = pytest.StashKey[list[str]]()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_collection(session: pytest.Session) -> Generator[None, object, object]:
+    """xdistが文面を中継しない収集時のUsageErrorを、終了時に転送するworkeroutputへ残す。"""
+    try:
+        return (yield)
+    except pytest.UsageError as error:
+        if hasattr(session.config, "workerinput"):
+            session.config.workeroutput["collection_usage_errors"] = [str(message) for message in error.args]  # type: ignore[attr-defined]
+        raise
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_testnodedown(node: Any, error: object) -> None:
+    """workerの収集時の使用法エラーをcontrollerの最終結果へ引き継ぐ。"""
+    del error  # noqa
+    messages = getattr(node, "workeroutput", {}).get("collection_usage_errors", [])
+    errors = node.config.stash.setdefault(_COLLECTION_USAGE_ERRORS, [])
+    errors.extend(message for message in messages if message not in errors)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """同じ引数を収集したworkerの診断を1回だけ報告し、pytest本来の使用法エラーとして終了する。"""
+    errors = session.config.stash.get(_COLLECTION_USAGE_ERRORS, [])
+    if errors:
+        for message in errors:
+            print(f"ERROR: {message}", file=sys.stderr)
+        print("次の操作: 引数のパス・node IDを確認して修正し、pytestを再実行してください。", file=sys.stderr)
+        session.exitstatus = pytest.ExitCode.USAGE_ERROR
 
 
 def _shutdown(node: WorkerController, shouldstop: bool | str = False) -> None:

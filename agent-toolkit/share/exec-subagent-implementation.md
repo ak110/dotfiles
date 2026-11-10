@@ -1,0 +1,154 @@
+# レーン実行タスク：実装
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` | |
+| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` | |
+| 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-hypotheses.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` | |
+| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
+| CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` | |
+| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` | |
+| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| 手動観測を保存する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` | |
+| `検証結果`を書く前 | `verification-evidence-records.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-records.md` | |
+| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-verification-failure.md` | |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
+| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | 判断 | `read:agent-toolkit:*/share/exec-review-fix.md` | |
+
+## 実装
+
+**4.** 「担当種別ごとの修正」の基準を適用し、以下の順で実装・検証・自己検収・commitを終える。
+レビュー修正後は手順5、他は6へ進む。
+
+検証前に、受入条件と通常検証を`agent-toolkit:/share/verification-operations.md`に従って比較し、初回の実行単位・条件・出力を確定する。
+対象定義と公開入力から選んだ起動形を、計画か訂正済み検証表と`検証結果`へ記す。
+試験では入力の由来、生産側・変換・最終消費を確認し、差し替えた境界と観測結果を`検証結果`へ記す。
+観測手段・環境とテストの有効性は`agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」と冒頭の基準を適用し、実行後は要求された結果を観測できた範囲を`検証結果`へ対応付ける。
+
+`実装開始`を受領した`レーン担当`、待機を要しない`計画検査完了`を通知した`レーン担当`、および修正入力を受領した他の担当種別が本節の作業を実施する。
+本節が計画の進捗ログへ記録する内容は、計画を作成していない場合は引き継ぎ記録へ記録する。
+
+1. 実装契約として、元の要求・回答・公開契約から必要結果と制約を確かめ、計画の`## 要件・外部仕様`を契約、`## 実施内容`と`## 変更履歴`の対象・範囲・観測可能な結果を認可の上限とする。
+   WIの説明・例示を成果物へ転記する際は、`../skills/wi-standards/references/notation-rules.md`「チェックの対象範囲」に従い、要件・認可・逐語指定を保持して、転記先の品質基準と妥当なlint診断へ対応する。
+   エージェントが選んだ設計・検証手段は結果・品質・認可・制約を保って変更できる。
+   計画なしではAWIの要求・完成条件と引き継ぎ記録の採否・範囲を守る。
+   計画凍結は`plan-file-standards.md`に従う。
+
+2. 初回実装（CI修正では修正）の直前に、`agent-basics:check-execution`の`references/diagnostics.md`が定める基準版の一意な短縮OIDを記録し、レビュー修正や履歴統合の後も同一の基準版を使用する。
+   各検証の実行後は、同資料「読む出力」の共通基準に従って診断メッセージや警告、および個別・全体の所要時間を判定し、比較対象のバージョンと、残す判断をした診断の意味・影響・帰属・理由を検証結果および進捗ログに記録する。
+
+3. 実装に着手する前に、受入シナリオの消費主体、公開されている呼び出し手段、具体的な入力値と初期状態、有効な期待結果、および検出対象とする失敗を確定する。
+   テストの選定は`agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」に従う。
+   計画を作成しない場合やレビュー修正においても、要求と完成条件から同様に対応関係を確定する。
+   不具合の再現と修正後の確認・証拠保存は、`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従う。
+   計画凍結後の仕様変更は既存のレビュー指摘管理表および採否・変更記録と関連付ける。
+
+4. 初回実装では、`lane-planning.md`「計画の起草」で選んだ最も近い既存実装と契約・構造を比較し、入力値・時間経過・操作順・保持状態・反復の境界を検証する。
+   採用案の必要性を既存構造への一致と分け、「前提を疑う観点」で責務移動・既存機構や上流への統合・削除・簡素化を比較する。
+   採否は`agent-basics:writing-standards/references/design-heuristics-decisions.md`「案の採否と実施順の判定」に従う。
+   不具合対策は`exec-review-criteria.md`「初回レビュー」で害の解消と呼び出し側修正も比較する。
+
+5. 書き込み認可の境界はWIの要求（目的・対象・完成条件）とする。
+   計画と選定結果の`書込対象`は、その境界内で着手時に見込んだ編集先である。
+   要求内で必要な計画外ファイル（エージェント向け文書、新規作成先や移動先、直接影響範囲の追随先など）は、他レーンとの重なりにかかわらず、レーン担当の判断で編集を進める。
+   追加を理由とする事前通知・認可待ち・選定記録の更新・追加一覧の受渡し・進捗ログへの記載は不要である。
+   実行レビューはcommit差分を要求と比較し、統合時は最新の統合先への追随・競合解消・再検証で両方の要求を維持する。
+   同一worktree内の書込担当間の所有権は「作業ツリーの保護」に従う。
+   WIの要求を超える変更は`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」でメインへ返し、判断を受けてから実施する。
+
+6. Git管理外のファイルについては、各ファイルの最初の変更直前に現行の本文をmanaged-temp（`agent-toolkit:managed-temp`）へバックアップし、原本と複製の絶対パスの対応を引き継ぎ記録に残す（実行レビュー担当者が変更前後の差異を確認できるようにするため）。
+
+7. 変更する前に作成規範を確認し、担当ファイルおよび直接影響範囲のみを変更する。
+   生成元ファイルを変更した場合は、生成・配布手段も追随して更新する。
+
+8. 実装中に要件や外部仕様レベルの技術判断が生じた場合は、その時点の結論を計画があればレビュー指摘管理表へ、なければ引き継ぎ記録へ記録して実装を継続する。
+   ユーザーの選好や認可範囲の変更を要する事項に限り、`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」で報告し、回答が必要な単位で待機する。
+   通知済みの事後承認対象について、レビュー修正によって実施内容に変更が生じた場合は、変更後の内容を再度同様の即時通知でメインへ送信する。
+
+9. 前述の目的達成に不要なエージェント起草条件の除外を除き、完成条件を変更または除外する判断が必要な場合は、旧条件、新条件または除外範囲、技術的制約、保持する要求と根拠を整理し、ユーザー判断の有無と所在とともにメインへ通知する。
+   返答された判断に基づいて作業を再開する。
+   メインから技術判断を受け取った後は、その完成条件を扱うレビュー指摘管理表の行（存在しない場合は`atk review-table add`で追加）へ`atk review-table respond`の`--no-response-reason-file`を用いて記録する。
+   `根拠の所在:`行には`メインの技術判断`、対象AWIと上記の判断内容を記載する。
+
+10. ユーザーがAWIの`## ユーザーコメント`やUWIの`## 回答`において処理側へ宛てて直接記入した質問（AWI本文へ転記された質問は除く）については、回答本文（用語は`agent-toolkit:wi-standards`冒頭の基準に従う）と根拠を下書きファイルへ保存する。
+    その絶対パスをメインへ通知するとともに`検証結果`にも記載する。
+    レビューで受けた指摘は下書きへ反映する。
+    メインエージェントが回答UWIを保存して返却したファイル名を進捗ログ（計画なしの場合は引き継ぎ記録）へ追記する。
+    回答完了の判定は、保存が完了した後にのみ行う。
+
+11. 実装中に作成した後続工程のうち、セッション終了後やWI終了後に参照されるものについては、作成時に対象AWIの本文へ追記する。
+    これには反映後の観測手順、自然発生を待つ後段の解除条件、取得すべき記録、および再開操作が含まれる。
+    追記は`atk wi edit <対象AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`で実行する。
+    計画を作成している場合は、追記先を`atk run-script plan-progress --`を用いて`## 進捗ログ`へ記録する。
+
+12. `レーン担当`自身はバージョン更新コマンドを実行せず、bumpの種別と根拠を計画または引き継ぎ記録に記載して公開工程へ引き渡す。
+
+13. 最終実装コミット前に変更ファイル全体と関連成果物を`agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」で評価し、各観点の結論を検証結果へ残す。
+    機能不全・必要な責務是正と選好による構造変更を区別し、必要性・総費用で選ぶ。
+    対象内というだけで処置を増やさず、認可内の品質劣化は同じコミットで解消する。
+
+14. 変更範囲の検証を実行する前に（計画なし、レビュー修正、CI修正、および会話圧縮後の再開時を含む）、直接影響範囲を確定する。
+    1. 外部から観測可能な文言や挙動を変更した場合は、`plan-file-standards.md`「要件・外部仕様」の直接影響範囲に関する記述に従い、検索語を固定文字列で個別に検索する。
+       動的に値を組み立てる生成コードの場合は、変更前の実行結果から旧値を列挙するか、生成元を利用するすべてのテストを実行する。
+    2. 検出された直接影響範囲の実装ファイルに対応するテストを、変更範囲の検証対象に追加する。
+       追加しない場合はその理由を記録する。
+    3. 計画起草時に確定した検証対象と実装の現物を突き合わせ、`agent-toolkit:/share/verification-operations.md`の類型に基づいて漏れていた対象を追加する。
+    4. 検索語、検出結果、採否、テスト実行の採否、検証対象ごとの結果、および除外理由を、自身のセッションのmanaged-temp内のファイルへ保存し、`検証結果`から参照できるようにする。
+    5. 検証の実行後、手順2および手順3で選定した消費側のテストごとに、保存された結果の合否を紐付ける。
+       結果に含まれていないテストは追加して再実行し、紐付け情報を手順4の保存ファイルへ追記する。
+       入力パスからテストを自動選定するツールの成功結果やテスト総数をもって、この対応付けの代用とすることは避ける。
+
+    検索はキーワードごとに`git -C <対象worktreeの絶対パス> grep -n -F -e '<検索語>' -- .`（Git追跡外のファイルは`rg -n -F -e '<検索語>' -- <対象の絶対パス>`）で実行し、出力結果と終了コードを手順4の保存ファイルへ記録する。
+    終了コード0は一致、1は不一致、それ以外は検索失敗を表す。
+    検索の失敗を検索結果の不在の根拠にしない。
+
+15. 変更範囲の検証は、`exec.subagent.md`「操作の直前に判定する前提」で取得したコマンドを`verification-operations.md`「実行のしかた」に従って実行し、`verification-evidence-records.md`「完成条件証拠の検証記録」へ記録する。
+    実装を書込担当へ分けた場合は、レーン担当が全書込担当の書込終了後に実行する（`exec.subagent.md`「操作区分」の広範囲検証の段落）。
+
+16. 結果に影響を与える実装、テスト、入力値、および消費側の期待値を整合させ、`../skills/commit/references/commit-verification.md`「検証」に定めるタイミングで最終的な変更範囲の検証と有限回の手動観測を実施する。
+    保存済みの成功結果と失敗限定の結果の統合は、`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
+
+17. 実装の完了前に、具体化した`### 受入シナリオ`を受入シナリオ検証（`workflow-phases.md`）によって自己検収し、公開されている呼び出し手段と入力値を用いて期待結果と実際の結果が一致することを確認する。
+    計画を作成していない場合も、WIの完成条件に対して同様に確認する。
+    ドキュメントに関する条件については、送受信の主体、入力、条件、次操作、参照先の間で、渡される値と受理される値が一致しているかを検証する。
+    `検証結果`にはシナリオ別のテスト名と合否、手動判定結果の保存先、検証済み・未実施・条件変更の判断を明確に区別して記載する。
+
+18. ユーザーの要求・公開契約で名指しされた観測結果（コマンド出力、画面表示、フック通知など）を実装から得られない場合は、実装の不足として是正する。
+    計画でエージェントが選んだ観測手段だけを変更する場合は、同じ必要成果と制約を観測できることを確かめて検証記録へ残す。
+    完成条件自体の変更が必要な場合は、採否の変更として「確認事項の即時通知」に従う。
+    環境の不在など実装側で制御できない要因によって観測できない場合は、実施できた範囲と観測に必要な後続工程を記録する。
+    残存する状態が観測を妨げている場合は、その状態の生成主体、起動元、起動契機を調査し、未確定の範囲とともに記録する。
+
+19. 公開された呼び出し手段を置き換えや廃止とした場合の完遂基準は、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」に従う。
+    単なる存在確認、モック、部分的なプローブ、または旧手段を併用した成功結果を検証結果の根拠としない。
+
+20. コミットの直前に`agent-toolkit:commit`に従う。
+    計画を作成している場合は、該当コミットの実装単位に属する`### 恒久化`および`### リファクタリング`の行を差分と比較し、不足があれば同一コミットに含める。
+    最後の実装コミットを作成する前には、両表のすべての行がいずれかのコミットに対応していることを確認する。
+    各コミットの前後のHEADを`atk run-script plan-progress --`へ渡し、進捗ログと同一のstemを持つ対応記録ファイルへ記録する（コミット失敗時は記録しない。最初の記録では専用worktreeの絶対パスとブランチ名を`--result`へ渡す）。
+    実装、レビュー修正、CI修正の各コミットにおいて、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に定める記録を残す。
+
+### 担当種別ごとの修正
+
+手順4の修正基準は、`exec-review-fix.md`「担当種別ごとの修正」とする（`レビュー修正担当`・`CI修正担当`）。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
+| レーン実行タスクの基準を適用する前 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |

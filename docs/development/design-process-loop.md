@@ -19,14 +19,31 @@
 CLI引数の`--orchestrator`・`--model`を設定と併存させる案は、設定との優先関係を複雑化するため
 ユーザー合意で廃止した。
 
-Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存する。完全IDへの解決は`resolve_orchestrator_specs()`内の`resolve_model_candidates("orchestrate")`が子セッションの起動前ごとに行い、App Serverの`model/list`を最終ページまで取得して表示対象の同系列の最新版へ解決する。委譲起動は保持中のApp Server接続を使い、設定CLIは短命の接続を所有する。選んだ完全IDが指定effortを受理しない場合は理由を返し、別系列または旧版へ暗黙に置換しない。明示された完全IDは固定し、engine側の可用性判定が返す診断を候補とともに示す。Claude候補の可用性判定は構造化出力（`stream-json`）で起動し、Weekly limitか5時間の利用上限による拒否を出力の利用枠情報から判定する。この拒否では次の候補へ進まず、解除予定時刻（不明なら300秒後）まで待って同じ候補を判定し直し、待機の種類と解除予定時刻を端末とprocess-loopのログ（`usage_limit_wait`）へ出力する（ユーザー指示）。本作業のセッションが利用上限で終わった場合も、次の反復の可用性判定が同じ待機へ入る。モデルを試行起動して系列の最新版を推測する案は、実行費用を生み、利用可能なモデル一覧との対応も保証できないため採用しない。複数の起動処理が同じ判断を持たないよう、一覧取得と系列解決の知識境界を`agent-toolkit/agent_toolkit/_common/codex_models.py`に置く。
+Codexの`astra`・`sol`・`terra`・`luna`は設定へ系列名として保存する。
+完全IDへの解決は`resolve_orchestrator_specs()`内の`resolve_model_candidates("orchestrate")`が子セッションの起動前ごとに行い、App Serverの`model/list`を最終ページまで取得して表示対象の同系列の最新版へ解決する。
+委譲起動は保持中のApp Server接続を使い、設定CLIは短命の接続を所有する。
+選んだ完全IDが指定effortを受理しない場合は理由を返し、別系列または旧版へ暗黙に置換しない。
+明示された完全IDは固定し、engine側の可用性判定が返す診断を候補とともに示す。
+Claude候補の可用性判定は構造化出力（`stream-json`）で起動し、Weekly limitか5時間の利用上限による拒否を出力の利用枠情報から判定する。
+この拒否では次の候補へ進まず、解除予定時刻（不明なら300秒後）まで待って同じ候補を判定し直し、待機の種類と解除予定時刻を端末とprocess-loopのログ（`usage_limit_wait`）へ出力する（ユーザー指示）。
+本作業のセッションが利用上限で終わった場合も、次の反復の可用性判定が同じ待機へ入る。
+モデルを試行起動して系列の最新版を推測する案は、実行費用を生み、利用可能なモデル一覧との対応も保証できないため採用しない。
+複数の起動処理が同じ判断を持たないよう、一覧取得と系列解決の知識境界を`agent-toolkit/agent_toolkit/_common/codex_models.py`に置く。
 
-review・choresの初期値ではCodex候補に`sol/medium`を使う。`luna/xhigh`を前二者へ残す案は、ユーザーが速度と精度の釣り合いを見直したため採用しない。これらのモデル名は運用中に変わる設定値であり、テストは工程別候補列の保存と実行時解決の接続を確認する。
+review・choresの初期値ではCodex候補に`sol/medium`を使う。
+`luna/xhigh`を前二者へ残す案は、ユーザーが速度と精度の釣り合いを見直したため採用しない。
+これらのモデル名は運用中に変わる設定値であり、テストは工程別候補列の保存と実行時解決の接続を確認する。
 2026年10月27日に`gpt-6.1-terra`（Computer use向け）を避けるため`sol/low`へ置き換えた。
 しかし2026年10月22〜29日のCodexの記録では、`sol/low`の実行レビュー担当は最初の応答10件のすべてで点検を残したまま返り、`sol/medium`は4件すべてが完了した。
-役割文書を持たない作業の途中終了は、`sol/low`が58件中26件、`sol/medium`が381件中21件だった。途中終了は出力や文脈の上限によるものではなく、差分9ファイルの小さなレーンでも起きたため、レーンの規模で選び分ける案は採らない。ユーザーは2026年10月29日の確認で`sol/medium`への変更を承認した。
-候補を変える前の確認（`agent-toolkit/skills/delegation/references/runtime-routing.md`「工程別モデル設定」）をこの変更へ適用した。2026年10月29日、保存済みの設定を`codex:sol/medium,claude:sonnet[1m]/medium`へ更新したうえで、この変更自身の実行レビュー担当を`model_type`を省略して起動した。起動候補は`gpt-6.1-sol`のeffort `medium`で、最初の応答は返却形式どおりの完了（状態`completed`、未解決の指摘0件、全条件の判定行あり）だった。
-2026年10月29日、ユーザーはreviewのCodex候補を`terra/medium`へ戻すよう指示した。同日、保存済みの設定を`codex:terra/medium,claude:sonnet[1m]/medium`へ変えて実行レビュー担当を起動したところ、起動候補`terra/medium`の最初の応答と1回目の継続の応答はどちらも未完了で返り、2回目の継続で完了した。この観測を受けたユーザーの同日の指示で、reviewの初期値は`sol/medium`のまま据え置いた。
+役割文書を持たない作業の途中終了は、`sol/low`が58件中26件、`sol/medium`が381件中21件だった。
+途中終了は出力や文脈の上限によるものではなく、差分9ファイルの小さなレーンでも起きたため、レーンの規模で選び分ける案は採らない。
+ユーザーは2026年10月29日の確認で`sol/medium`への変更を承認した。
+候補を変える前の確認（`agent-toolkit/skills/delegation/references/process-model-settings.md`「工程別モデル設定」）をこの変更へ適用した。
+2026年10月29日、保存済みの設定を`codex:sol/medium,claude:sonnet[1m]/medium`へ更新したうえで、この変更自身の実行レビュー担当を`model_type`を省略して起動した。
+起動候補は`gpt-6.1-sol`のeffort `medium`で、最初の応答は返却形式どおりの完了（状態`completed`、未解決の指摘0件、全条件の判定行あり）だった。
+2026年10月29日、ユーザーはreviewのCodex候補を`terra/medium`へ戻すよう指示した。
+同日、保存済みの設定を`codex:terra/medium,claude:sonnet[1m]/medium`へ変えて実行レビュー担当を起動したところ、起動候補`terra/medium`の最初の応答と1回目の継続の応答はどちらも未完了で返り、2回目の継続で完了した。
+この観測を受けたユーザーの同日の指示で、reviewの初期値は`sol/medium`のまま据え置いた。
 
 Codexの可用性判定で利用上限を観測した場合は、次の候補を先に試す。
 全候補が失敗し、そのうちに利用上限の失敗がある場合だけ最も早い解除予定まで待ち、先頭から判定し直す。
@@ -35,17 +52,32 @@ Codexの可用性判定で利用上限を観測した場合は、次の候補を
 
 可用性判定は応答内容を使わず、engine単位の起動の成否と利用上限だけを観測する。
 そのためchores_fast_model・review_fast_modelで設定した該当engineの候補（候補がなければClaudeはhaiku、Codexはluna）とeffort `low`で起動する（2026年10月18日、ユーザーの確認回答「最安モデル+軽量」）。
-Claudeはセッションを保存せず、ユーザーとプロジェクトの設定・ツール・MCP・スキルを読まず、最小のシステムプロンプトで起動し、process-loopの接続設定の`--settings`は保つ。`--bare`はOAuth認証を読まないため使わない。
+Claudeはセッションを保存せず、ユーザーとプロジェクトの設定・ツール・MCP・スキルを読まず、最小のシステムプロンプトで起動し、process-loopの接続設定の`--settings`は保つ。
+`--bare`はOAuth認証を読まないため使わない。
 Claudeの別名はそのまま渡して最新版へ解決させる。
 Codexの系列名はChatGPT認証で系列名のままでは拒否されるため、既存の系列解決で完全IDへ解決し、1回の候補選択の中ではengineごとに1回だけ解決する。
-Codexはユーザー設定とrulesを読まずに起動する。利用上限の判定はrolloutを読むため、rolloutを残さない`--ephemeral`は`--json`の出力だけで判定できることを確かめるまで使わない。
-候補モデル固有の利用上限とeffortの無視はこの起動形では判定しない。ユーザーはモデル固有の制限は現状まれで、検出のための複雑化を避けるよう求めたため、代わりの検出や本作業の起動失敗時の再選択も加えない。
+Codexはユーザー設定とrulesを読まずに起動する。
+利用上限の判定はrolloutを読むため、rolloutを残さない`--ephemeral`は`--json`の出力だけで判定できることを確かめるまで使わない。
+候補モデル固有の利用上限とeffortの無視はこの起動形では判定しない。
+ユーザーはモデル固有の制限は現状まれで、検出のための複雑化を避けるよう求めたため、代わりの検出や本作業の起動失敗時の再選択も加えない。
 
 ## process-loopのモジュール構成
 
-`atk wi process-loop`の工程は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールが持つ。作業ツリーの準備と上流との同期は`process_loop_worktree.py`、自己更新の確認と再起動は`process_loop_update.py`、miseの更新は`process_loop_mise.py`が持つ。変更の監視とprivate-notesの同期は`process_loop_watch.py`、アラートの確認は`process_loop_alerts.py`が持つ。プロンプトとオーケストレーターの選択、セッションの起動および担当の終了後のレーン回収は`process_loop_session.py`、無進捗記録と担当の起動要否の判定は`process_loop_launch_gate.py`が持つ。中断要求と追加指示の状態ファイルは`process_loop_control.py`、子プロセスの環境と実行ファイルの解決は`process_loop_env.py`が持つ。`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御だけを持つ。以前は1つのファイルが全ての責務を持ち、工程を加える計画ごとに同じファイルへ追記していた。モジュール間の呼び出しは定義元のモジュールの属性として行い、テストは定義元を差し替える。テストも同じ単位で`process_loop_<責務>_test.py`へ分ける。
+`atk wi process-loop`の工程は`agent-toolkit/agent_toolkit/_atk/wi/`配下の責務ごとのモジュールが持つ。
+作業ツリーの準備と上流との同期は`process_loop_worktree.py`、自己更新の確認と再起動は`process_loop_update.py`、miseの更新は`process_loop_mise.py`が持つ。
+変更の監視とprivate-notesの同期は`process_loop_watch.py`、アラートの確認は`process_loop_alerts.py`が持つ。
+プロンプトとオーケストレーターの選択、セッションの起動および担当の終了後のレーン回収は`process_loop_session.py`、無進捗記録と担当の起動要否の判定は`process_loop_launch_gate.py`が持つ。
+中断要求と追加指示の状態ファイルは`process_loop_control.py`、子プロセスの環境と実行ファイルの解決は`process_loop_env.py`が持つ。
+`process_loop.py`の`cmd_process_loop`はこれらを順に呼ぶ制御だけを持つ。
+以前は1つのファイルが全ての責務を持ち、工程を加える計画ごとに同じファイルへ追記していた。
+モジュール間の呼び出しは定義元のモジュールの属性として行い、テストは定義元を差し替える。
+テストも同じ単位で`process_loop_<責務>_test.py`へ分ける。
 
-CI失敗の収集・キー重複除外・本文生成・AWI保存は`alerts.py`が持ち、単発の`atk wi check-alerts`と常駐側が同じ本体を呼ぶ。単発は対象作業ツリーの解決と取得・投入結果を報告して終了し、process-wiの1回の実行やDependabot監査を起動しない。`process_loop_alerts.py`は監視間隔とDependabot監査の起動要否を持ち、収集失敗では従来どおり待機を続ける。単発用に収集処理を複製する案は、本文・キー・取得範囲の一致を別々に保守するため採らない。呼び出す時機は各環境が選び、`docs/guide/claude-code-guide.md`「推奨ワークフロー」はその境界を示す。
+CI失敗の収集・キー重複除外・本文生成・AWI保存は`alerts.py`が持ち、単発の`atk wi check-alerts`と常駐側が同じ本体を呼ぶ。
+単発は対象作業ツリーの解決と取得・投入結果を報告して終了し、process-wiの1回の実行やDependabot監査を起動しない。
+`process_loop_alerts.py`は監視間隔とDependabot監査の起動要否を持ち、収集失敗では従来どおり待機を続ける。
+単発用に収集処理を複製する案は、本文・キー・取得範囲の一致を別々に保守するため採らない。
+呼び出す時機は各環境が選び、`docs/guide/claude-code-guide.md`「推奨ワークフロー」はその境界を示す。
 
 CI失敗の本文には実行日時、対象commitのSHA、現在のブランチHEADとその比較結果を含める。
 HEADを取得できない場合は理由を示す。
@@ -59,7 +91,8 @@ GitLabでjobが未確定の場合は、job一覧の取得と対象jobのtrace取
 収集側と待機側で同じ案内を使い、CLIの対話画面を必要とする手順の分散を防ぐ。
 
 GitLabのリポジトリ識別子とAPI接続先は別に扱う。
-SSH接続先はglabのホスト別設定を選ぶキーとし、API接続先はその設定と公開環境指定で解決する。API側を明示上書きする場合はHTTP(S) URLをポート込みでrepositoryへ指定し、baseline作成・待機・再開で同じ指定を使う。
+SSH接続先はglabのホスト別設定を選ぶキーとし、API接続先はその設定と公開環境指定で解決する。
+API側を明示上書きする場合はHTTP(S) URLをポート込みでrepositoryへ指定し、baseline作成・待機・再開で同じ指定を使う。
 ホスト指定は`GITLAB_HOST`・`GITLAB_URI`・`GL_HOST`の順とし、`GITLAB_API_HOST`の上書きと明示URL・`prefer_environment`の優先関係を保つ。
 `_git/remote.py`が接続先を解析し、`_git/forge_cli.py`がglabの子環境へ渡す接続先指定を共通に所有する。
 呼び出しごとの子環境は`_common/json_command.py`が受け取り、親環境を保持する。
@@ -84,8 +117,11 @@ holdとrun-skillを抑止へ含めることと処理候補へ含めることは�
 投入先は同スキルが`atk wi submission begin`で会話別に記録し、変更時に置き換え、完了・中止時に`end`で削除する。
 完了時の`end --findings-file`は、`begin`が保持する作業開始時刻より後の実ユーザー発話と投入前レビューの指摘を指摘対応記録と照合し、不足があれば記録を残して失敗する。
 成果物の保存と、受けた指摘の分類・処置・報告が別々に完了し、処置を欠いたまま作業を解除できた構造を、既存の作業境界へ照合を接続して閉じるためである。
-照合は対応と必須欄の欠落だけを判定し、分類の意味判断は既存の独立検収に残す。別の監査記録や全発話を分類する判定器は設けない。
-正常な`end`は報告用要約を会話別に保存し、Stop hookの`submission_report_advisor`が最終応答の行と照合する。要約作成後にユーザーの新しい発話があれば報告の機会は過ぎたとして照合しない。中止は`--abort`で照合せずに削除する。
+照合は対応と必須欄の欠落だけを判定し、分類の意味判断は既存の独立検収に残す。
+別の監査記録や全発話を分類する判定器は設けない。
+正常な`end`は報告用要約を会話別に保存し、Stop hookの`submission_report_advisor`が最終応答の行と照合する。
+要約作成後にユーザーの新しい発話があれば報告の機会は過ぎたとして照合しない。
+中止は`--abort`で照合せずに削除する。
 記録はoriginの正規化URLで持ち、同じoriginの別worktreeと別表記のURLを同一リポジトリとして比べる。
 起動cwdから投入先を推定する案は、別リポジトリから投入する会話を誤判定するため採らない。
 記録はhookが会話の終了で削除する活動JSONと分けて置き、会話を再開した場合は残る記録が再び有効になる。
@@ -185,9 +221,16 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 現在のブランチが`worktree-<NAME>`であり、worktreeがcleanであることも再利用の条件とする。
 条件のいずれかを確認できない場合はfetchとrebaseを実行せず、セッションを起動しない。
 条件を満たしたworktreeは、現在のブランチの追跡先を優先し、解決できない場合だけ`origin/HEAD`へ後退して得た上流ブランチへfetchとrebaseで追随させる。
-解決した上流ブランチはfetch・rebaseの内部だけで使用し、対象リポジトリごとに異なる公開先をセッションのプロンプトへ推測注入しない。公開操作と公開先の判断は、その運用を所有する主体へ委ねる。
+解決した上流ブランチはfetch・rebaseの内部だけで使用し、対象リポジトリごとに異なる公開先をセッションのプロンプトへ推測注入しない。
+公開操作と公開先の判断は、その運用を所有する主体へ委ねる。
 
-並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。ロック中にstashを生成し、`refs/worktree/<退避ラベル>`とworktree・label別の共有保護refを記録してから生成分だけのstashをdropする。固有refだけでは別worktreeのGCから到達できないため、共有する`refs/atk/worktree-stash/`配下へ同じOIDを保護する。既存の`refs/stash`先頭OIDは維持し、途中失敗時は復旧識別子と保護または共有stashを保持する。固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
+並行worktreeの退避は`atk worktree-stash save --label <退避ラベル>`へ集約する。
+ヘルパーはGit共通ディレクトリ直下の固定`agent-toolkit-stash.lock`を`agent-toolkit/agent_toolkit/_common/file_lock.py`で排他する。
+ロック中にstashを生成し、`refs/worktree/<退避ラベル>`とworktree・label別の共有保護refを記録してから生成分だけのstashをdropする。
+固有refだけでは別worktreeのGCから到達できないため、共有する`refs/atk/worktree-stash/`配下へ同じOIDを保護する。
+既存の`refs/stash`先頭OIDは維持し、途中失敗時は復旧識別子と保護または共有stashを保持する。
+固定ロックファイルを削除しないのは、次回も同じinodeを排他対象として再利用するためである。
+未追跡ファイルを含む退避を実現できない`git stash create`方式は採用しない。
 
 `update-dotfiles`は同じPython環境で専用ヘルパーを1回起動し、旧退避の分類と保護をGitの一括処理へ渡す。
 保存した作業内容・index・未追跡内容がrootの`mise.lock`だけであり、退避元commitがbranch・remoteから到達できる旧退避は回収する。
@@ -195,10 +238,15 @@ worktreeの作成前と再利用前に、`.claude/worktrees/`がGitの無視対�
 固定ロック内で読み取ったOIDを条件に、回収と保護を`git update-ref --stdin`のトランザクションで確定する。
 履歴を保持するbranch・remoteのOIDも同じトランザクションで検証し、到達性判定の後に参照が移動した場合は回収を中止する。
 保護済みの退避を1件ずつ再起動・再表示する処理と、移行済みを表す専用の永続フラグは置かない。
-画面は整理が発生した場合の件数要約と、失敗した場合の原因・次の操作を示す。個別の識別子と処理の詳細は永続ログが保持する。
+画面は整理が発生した場合の件数要約と、失敗した場合の原因・次の操作を示す。
+個別の識別子と処理の詳細は永続ログが保持する。
 欠損や保護値の不整合ではデータを保持してpullへ進まない。
 
-今回退避は`stash apply --index`の成功後だけ`drop <ref>`で回収する。pull失敗後の復元成功も回収し、復元競合とrebase競合では保持する。回収失敗は復元失敗と分け、復元済み内容をresetせず再試行を案内する。dropは固定ロック内で読取OIDを条件として固有ref、共有保護refの順に削除し、片側だけ残っても同じ識別子で再試行できる。他worktreeの同label退避と既存共有stashは回収しない。
+今回退避は`stash apply --index`の成功後だけ`drop <ref>`で回収する。
+pull失敗後の復元成功も回収し、復元競合とrebase競合では保持する。
+回収失敗は復元失敗と分け、復元済み内容をresetせず再試行を案内する。
+dropは固定ロック内で読取OIDを条件として固有ref、共有保護refの順に削除し、片側だけ残っても同じ識別子で再試行できる。
+他worktreeの同label退避と既存共有stashは回収しない。
 `git pull --autostash`への単純置換は、未追跡内容・indexの保全と競合後の回復を満たさないため採用しない。
 退避の作成・復元・回収は既存のGit操作を使い、旧退避の整理のために新しい管理サービスや台帳は追加しない。
 
@@ -212,7 +260,12 @@ hookが無い対象は固定配置と対象固有のprepareを使い、hook指�
 
 ## process-loopの会話IDによる識別
 
-process-loopがClaude会話を新規に起動するときは`--session-id`で会話IDを指定し、同じIDを子環境へ渡す。ID指定の再開では指定値を渡す。hookは環境印とhook入力の`session_id`の一致から対象会話を決める。入れ子の`claude`は環境印を継承する一方で会話IDが異なるため、常駐本体の終了保証と空転ガードの対象にならない。IDを指定しない再開ではprocess-loopが対象IDを渡せないため、環境印による従来の判定を保つ。親プロセスの探索はプロセス階層とOSを前提とする条件を増やし、hook入力に既にある会話IDより間接的な判定になるため採用しない。
+process-loopがClaude会話を新規に起動するときは`--session-id`で会話IDを指定し、同じIDを子環境へ渡す。
+ID指定の再開では指定値を渡す。
+hookは環境印とhook入力の`session_id`の一致から対象会話を決める。
+入れ子の`claude`は環境印を継承する一方で会話IDが異なるため、常駐本体の終了保証と空転ガードの対象にならない。
+IDを指定しない再開ではprocess-loopが対象IDを渡せないため、環境印による従来の判定を保つ。
+親プロセスの探索はプロセス階層とOSを前提とする条件を増やし、hook入力に既にある会話IDより間接的な判定になるため採用しない。
 
 ## process-loopの中断要求
 
@@ -235,7 +288,9 @@ OSシグナルや稼働中プロセスへの直接通知は、process-loopが動
 ホストごとの目的入力の違いと終了能力の判定は保持する。
 目的文にmanifestや終了手順を連結する案は、反復評価の対象と更新箇所を増やすため採らない。
 
-ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:report-completion`が元の作業の完了報告を送り、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review.md`「完了報告と振り返りの関係」）。その結果は作業完了報告とは独立して届ける。
+ready項目がなくなり公開工程の検収を終えると、`agent-toolkit:report-completion`が元の作業の完了報告を送り、続いて`atk agents-exit-session`が`/goal`で登録した目的とセッションを終了する。
+振り返りはSessionStart/SessionEndを契機に起動する`agent-toolkit:review-session batch`が、非活動になったセッションを非同期に分析する（`design-session-review.md`「完了報告と振り返りの関係」）。
+その結果は作業完了報告とは独立して届ける。
 起動時の終了能力probeと、停止要求の直前に終了対象を新規識別する扱いは`design-workflow-boundaries.md`「セッションの終了」にある。
 Linuxでremote-controlを使わない直接CLIを終了対象として確認できた場合は、Codexが自律終了して親の監視ループへ戻る。
 終了対象を確認できない環境では対話UIに終了案内を表示し、ユーザーが`/exit`を入力すると親の監視ループへ戻る。
@@ -244,13 +299,14 @@ Linuxでremote-controlを使わない直接CLIを終了対象として確認で�
 上限による失敗の後に新turnが無い場合だけ、その所有する子へ終了を要求し、正常終了として次の反復へ進む。
 新turnがあれば子を保持する。
 次の反復は可用性判定で解除を待ち、新しい会話でprocess-wiを起動する。
-親の`process_loop_session.py`は子の終了後に`lane.cleanup_session`で回収を試み、未統合・dirty・稼働中・確認不能などのレーンは所有登録と成果を保持する。実体が全て無い登録は同じ処理が回収するため、固定作成先を次のprocess-wiが再利用できる。
+親の`process_loop_session.py`は子の終了後に`lane.cleanup_session`で回収を試み、未統合・dirty・稼働中・確認不能などのレーンは所有登録と成果を保持する。
+実体が全て無い登録は同じ処理が回収するため、固定作成先を次のprocess-wiが再利用できる。
 レーンのbranch・worktree・選定原本・旧所有sessionは、`lane.py`が状態ディレクトリの`lanes/<旧所有session>/lane-*.json`へ保存する所有登録が持つ。
 所有登録は選定原本から写したレーンのWI集合と統合状態、rebase後の対応表と検証記録も持つため、managed-tempにある選定原本が失効した後の再開と回収も同じ所有登録から判定する。
 状態ディレクトリの絶対パスは`atk config get state_dir`で取得する。
 WIの本文と`processing`の状態はprivate-notesのキュー、計画と進捗ログは`~/.claude/plans`が保持する。
 新しい会話のprocess-wiは[選定手順](../../agent-toolkit/skills/process-wi/references/selection-procedure.md)に従い、`atk lane delete --list`で残存登録と回収結果を読み、WIに対応する計画を`atk plans list`から解決する。
-再開する工程は計画の進捗ログから決め、[中断レーンの再開](../../agent-toolkit/skills/process-wi/references/run-lanes.md#中断レーンの再開)に従って新しいレーン担当へ計画と既存worktree・branch・現在HEADを渡す。
+再開する工程は計画の進捗ログから決め、[中断レーンの再開](agent-toolkit:process-wi/references/run-lanes-integration.md)に従って新しいレーン担当へ計画と既存worktree・branch・現在HEADを渡す。
 資源を再利用するときは旧所有主体の終了を確認し、`atk lane create`の`--reuse-record <record_path>`へ所有登録のパスを渡して新しい所有sessionへ移す。
 この再開は保存した状態からの復元であり、親は中断した会話履歴を新しい会話へ複製しない。
 対応する計画や所有を一意に確定できない場合は、既存の再開手順が続行できない理由を返す。
@@ -271,11 +327,23 @@ process-loopはセッションを実際に起動する直前に状態ファイ�
 追加指示は起動集合の統括担当へ1回渡し、統括が対象に関係する部分を適用する。
 AWIが0件で変更検知を待つ反復は起動へ到達しないため、本文は保持したまま次の起動へ残る。
 `rules_context`のSessionStartは、`AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION`に値がある場合に前置きを添えて`additionalContext`へ加え、
-委譲先のセッションへは加えない。この本文がユーザーの入力であり、人間由来の明示的な指示であると前置きに明記する。
-本文は`forwarded-user-input`要素で囲み、`agent-toolkit/rules/01-agent.md`「方針が衝突する場合の優先順位」がこの要素の内側だけを機械が生成した本文の中のユーザー発話の証拠として扱う。
+委譲先のセッションへは加えない。
+この本文がユーザーの入力であり、人間由来の明示的な指示であると前置きに明記する。
+本文は`forwarded-user-input`要素で囲み、`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」がこの要素の内側だけを機械が生成した本文の中のユーザー発話の証拠として扱う。
 
 本文の上限を2,000文字とするのは、SessionStartの`additionalContext`がClaude Codeで10,000文字に切り詰められ、
 超過すると同じ出力に含まれる規範条文が欠落するためである。
 `/goal`の目的文へ連結する案は、目的文がターンを終えるたびの目標評価の入力となるため採用しない。
 起動後のセッションが自ら状態ファイルを読む案は、全セッションへ読取の1工程を課し、
 かつセッションが手順を実行する必要があるため採用しない。
+
+## 効率化の仕組みの棚卸し（2026年11月）
+
+横断的な記録の条件と限界は[設計索引](design.md)の「効率化の仕組みの棚卸し」を参照。
+判定の「単純化」には、以前に独自の方式を撤去して標準の手段へまとめた変更の維持も含む。
+
+| 仕組み・目的・導入や拡張の時期 | 不具合の件数と所要 | 実測した効果 | 壊れたときの既存手段 | 判定・実施結果または引継ぎ先 |
+| --- | --- | --- | --- | --- |
+| オーケストレーターの可用性確認を最安段位・effort low・軽量起動で行い、トークンを抑える。時期: 2026年の10月18日 由来: 最安モデル・low・軽量起動はユーザーが方式を要求し、確認回答でも選択した。モデルの古い固定IDを使わない条件もある。 | 独立した障害件数と修正所要は、今回参照した記録から確定していない。 | 実装後の可用性probe比較はClaude41574→630トークン、Codex入力30044→27130トークン。モデル・effort・読込設定が同時に変わるため、軽量起動だけの寄与ではない。全体所要の前後値は未確認。出所: 10月18日の3052b4d93の導入計画。 | 既存の設定済み候補と起動診断から選び、共有設定を勝手に書き換えない。 | 維持。可用性だけの確認を高価な実行担当へ回さない既存の最小入力を使い、実作業の品質・モデル指定を変えない。 |
+| process-loopの無進捗反復の検出（トークンの浪費を止める）。時期: 2026年の9月17日、10月19日 由来: 反復間の同入力再起動停止はユーザーの空転防止要求への具体化。初期の無進捗guardの要求原本は未特定。 | 無進捗の起動1回で約6.3 USDを消費した旧方式の報告がある。防止後の全体所要の対照は未測定。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 正規の中止要求と状態保存を使い、解除条件が変わった後に通常の選定へ戻る。 | 維持。無進捗反復によるトークンの浪費を止める資源保護である。回復条件を変えず同じ入力を再起動し続ける方式を使わない。 |
+| process-loopの開始前猶予の同時評価（活動猶予とUWI猶予の待ち時間を足さない、Enterで解除）。時期: 2026年の10月16日 由来: キー入力による猶予解除と活動対象の限定はユーザー要求。Enterと今回限りの制御は具体化。同時評価の初期原本は未特定。 | 猶予600秒の誤設定と、質問待ち約13922.5秒の旧方式の報告がある。個々の修正所要は不明。 | 同じ代表入力・並行条件で仕組みの有無を比べた全体所要は未測定。 | 対話する端末ではEnterによる一括解除がある。 | 維持。要求されたキー解除と活動対象の限定を保つ。猶予を同時評価する現行方式を変更しない。 |

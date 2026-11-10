@@ -10,6 +10,7 @@ import pytest
 from agent_toolkit._common import session_family as family
 from agent_toolkit._common.session_family import (
     _agents_server_call_ids,
+    _collect_records,
     _load_records_checked,
     _scan_record_metadata,
     _thread_ids_from_record,
@@ -133,3 +134,32 @@ def test_metadata_discards_ids_before_late_failure(tmp_path: Path) -> None:
     assert meta.failure is not None and meta.failure.line == 3
     assert not meta.record_id and not meta.child_ids
     assert meta.start is None and meta.record_count == 0
+
+
+@pytest.mark.parametrize("mode", ["subagent", "session"])
+def test_family_preserves_failure_line_separately_from_reference(tmp_path: Path, mode: str) -> None:
+    """家族の読込失敗は参照元位置と失敗した記録の物理行を分けて保持する。"""
+    parent = tmp_path / "parent.jsonl"
+    timestamp = "2026-10-01T00:00:00Z"
+    entries = [codex_tool_use_entry(timestamp, "start", "child"), codex_tool_result_entry(timestamp, "start", "child")]
+    if mode == "subagent":
+        entries = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
+        child = parent.with_suffix("") / "subagents/agent-child.jsonl"
+    else:
+        child = tmp_path / "child.jsonl"
+    write_jsonl(parent, entries)
+    child.parent.mkdir(parents=True, exist_ok=True)
+    child.write_bytes(b"{}\n{broken}\n")
+    loaded = _load_records_checked(str(parent))
+    assert loaded.records is not None
+
+    def resolve(_session_id: str, **_kwargs: Any) -> tuple[Path, family._Runtime]:
+        return child, "claude"
+
+    collected, unresolved = _collect_records(str(parent), loaded.records, session_resolver=resolve)
+    assert len(collected) == 1
+    assert len(unresolved) == 1
+    failure = unresolved[0]
+    assert failure.line == (0 if mode == "subagent" else 2)
+    assert failure.failure_line == 2
+    assert failure.reason and "2行目" in failure.reason

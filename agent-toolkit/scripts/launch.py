@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 from agent_toolkit._common import dotfiles_mode, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+lazy from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
 _STDERR_TAIL_BYTES = 16 * 1024
@@ -40,6 +40,11 @@ def main() -> int:
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parents[1], help="配布rootの絶対パス")
     parser.add_argument("--persist-claude-env", action="store_true", help="SessionStartのBash環境ファイルへCLIのPATHを追記する")
     parser.add_argument("--prepare", action="store_true", help="共有依存環境を準備して終了する")
+    parser.add_argument(
+        "--prepare-if-missing",
+        action="store_true",
+        help="共有依存環境が未準備なら準備してから起動する。呼び出し元が結果を待つCLIの起動部分だけが指定する",
+    )
     parser.add_argument("target", type=Path, help="root内のスクリプトの相対パスまたは絶対パス")
     parser.add_argument("arguments", nargs=argparse.REMAINDER, help="対象スクリプトへそのまま渡す引数")
     options = parser.parse_args()
@@ -80,6 +85,19 @@ def main() -> int:
     if options.prepare:
         return _prepare(root, uv, environment)
     python = plugin_environment.prepared_python(root, caller_environment)
+    if python is None and options.prepare_if_missing:
+        # dotfilesの更新直後は依存の固定内容が変わり、後段の準備まで共有依存環境が無い。
+        # CLIは呼び出し元が結果を待つため、準備してから起動する。hook・MCPと関数hookから起動する`atk.py`は
+        # ホストの短い時間上限で起動されるため待たせず、CLIの起動部分（`scripts/atk`・`scripts/atk.cmd`）だけがこの指定を渡す。
+        print(
+            "agent-toolkitの共有依存環境を準備してから起動します（通常は数十秒。並行する準備があれば完了を待ちます）。",
+            file=sys.stderr,
+            flush=True,
+        )
+        prepared = _prepare(root, uv, environment)
+        if prepared != 0:
+            return prepared
+        python = plugin_environment.prepared_python(root, caller_environment)
     if python is None:
         next_action.report(
             "共有依存環境が未準備のため、agent-toolkitを起動できません。",
@@ -131,6 +149,10 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
             ) as process:
                 returncode = process.wait(timeout=remaining)
             if returncode != 0:
+                next_action.report(
+                    f"共有依存環境の依存同期が失敗しました（終了コード: {returncode}）。",
+                    next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行してください。",
+                )
                 return returncode
             plugin_environment.publish_prepared_environment(root, environment)
             return 0

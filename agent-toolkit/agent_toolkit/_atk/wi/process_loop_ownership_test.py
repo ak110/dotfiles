@@ -9,8 +9,31 @@ import threading
 import pytest
 
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
+from agent_toolkit._atk.wi import snapshot as wi_snapshot
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository as git
+
+
+def test_snapshot_survives_incomplete_restarts(tmp_path: pathlib.Path) -> None:
+    """同じ実行の多段再開では初回集合だけを渡し、正常完了後だけ保存物を回収する。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo, mode="coordinator")
+    assert owner is not None
+    entries = [(tmp_path / "old.md", owner.repo_id, "本文", "adopted", "awi")]
+    baseline = ownership.save_snapshot(owner, entries)
+    assert wi_snapshot.read(baseline) == {(owner.repo_id, "old.md")}
+    for _ in range(2):
+        ownership.release(owner, completed=False)
+        owner = ownership.try_acquire(owner.repo_id, worktree=repo, mode="coordinator")
+        assert owner is not None
+        assert ownership.save_snapshot(owner, []) == baseline
+        assert wi_snapshot.read(baseline) == {(owner.repo_id, "old.md")}
+    baseline.write_text("broken", encoding="utf-8")
+    with pytest.raises(ValueError, match="開始時集合"):
+        ownership.save_snapshot(owner, entries)
+    assert baseline.read_text(encoding="utf-8") == "broken"
+    ownership.release(owner)
+    assert not baseline.exists()
 
 
 def test_dedicated_and_all_repos(tmp_path: pathlib.Path) -> None:
@@ -167,6 +190,24 @@ def test_saved_stage_requires_bool(tmp_path: pathlib.Path, key: str, value: obje
     owner.path.write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError, match="bool"):
         ownership.try_acquire(owner.repo_id, worktree=repo)
+
+
+@pytest.mark.parametrize("residual", [{}, [{}], [{"pid": "1"}], [{"command": "codex exec"}]])
+def test_invalid_residual_processes_name_record_and_pid_independent_check(tmp_path: pathlib.Path, residual: object) -> None:
+    """残存子孫の項目が不正なら、記録のパスと、PIDが無い項目でも実行できる確認手順を示して拒否する。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo)
+    assert owner is not None
+    record = json.loads(owner.path.read_text(encoding="utf-8"))
+    record["residual_processes"] = residual
+    owner.path.write_text(json.dumps(record), encoding="utf-8")
+    with pytest.raises(ValueError) as raised:
+        ownership.try_acquire(owner.repo_id, worktree=repo)
+    message = str(raised.value)
+    assert str(owner.path) in message
+    assert "PIDが無い項目" in message
+    assert "ps -eo pid,lstart,args" in message
+    assert "Get-CimInstance Win32_Process" in message
 
 
 @pytest.mark.parametrize("completed", [False, True])

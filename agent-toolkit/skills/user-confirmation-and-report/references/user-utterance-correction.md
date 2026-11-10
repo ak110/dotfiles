@@ -1,0 +1,68 @@
+# ユーザー発話の解釈と取り込み：割り込み・訂正・中止
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
+| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 本文の参照基準を適用する前 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 本文の参照基準を適用する前 | `../../report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
+| 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+
+## 割り込み・訂正・中止
+
+1. 是正・改善要求を受けた時点で、process-wiの統括・リポジトリ担当・レーン担当は、起動modeや通知経路を問わず`agent-toolkit:process-wi`の`references/immediate-fix.md`「即時対応」を適用する。
+   最小の直接修正と次回の正式対応を区別し、元WIの未達や今回混入した不良は元の完成条件で完遂する。
+   権限を持たない担当は判定材料を委譲元へ通知する。
+   改善点の報告時も、process-wi中は即時対応、それ以外はAWI化の要否を必ず判定する。
+
+   一時的なエラー後の実ユーザーの続行指示は、`../../../share/rules/rules-main.md`「協調と自律」に従って扱う。
+2. 会話に`/exit`などのローカルコマンドの記録が残っていても、続行指示の有無によらず元の未完了工程を続ける（会話圧縮後や再開後に読み直す場合も同じ）。
+   操作の記録は中止・終了の指示と区別し、この終了操作は対象から除く。
+   自然言語の明示的な中止指示や、終了操作の扱いを見直す要求は原文どおり処理する。
+
+   作業契約への追加入力の取り込みと、応答や部分修正の後の未完了工程への復帰は`user-utterance-incorporation.md`「原文の保持と取り込み」に従う。
+3. 進行中の作業の中断は、即時の対応を求める明示的な指示（「今すぐ」「先に」「割り込んで」など）がある場合に限る。
+   質問や提案には、作業を継続する通常の対応として応答する。
+4. 発話や確認回答で断言された事実（過去の実績、以前の説明、現在の状態など）は、真偽で次の行動・変更対象・成果物の前提・回答の結論が実質的に変わる場合だけ確かめ、変わらなければ発話由来の事実として受け取り、報告でもそう明記する。
+   成果物の誤り・認可・安全性・対象範囲・回答の正否を左右する前提は、断言だけを理由に確認を省かない。
+5. 発話や回答の技術的前提を理由に、実装・仕様・検証結果で裏付けた判断の変更を求められたら、前提の正否を確かめてから可否を決め、成り立たなければ誤りと代替案を示す。
+6. 成果物の状態の誤りを指摘されたら`agent-basics:bugfix`を起動し、同スキル「対策の選定」で原因側の改訂と補償機構を比べる。
+   訂正の由来、認可、停止か続行かは`../SKILL.md`で判断する。
+7. 設計判断の変更で過去の作業を巻き戻すのは明示された範囲に限る。
+8. 成果物（コード、文書、設定、規範など）を変える訂正は、受けるたびに訂正後の要件と現在の成果物から直す箇所を特定し直す。
+   過去の編集箇所に限らず参照元・呼び出し側・公開インターフェースまで追い、`agent-toolkit:/share/verification-operations.md`へ直接影響範囲を渡す。
+9. 実行中の工程を不要とする発話は省略の提案とし、実際の状態で要否を確かめる。
+   不要なら同じ応答で省略し、必要なら観測事実を示して続ける。
+   規範の改訂を提案する場合も、まず今回の動作を変えてから改訂案を別に示す。
+10. 中止や差し替えの指示では、対象の作業だけを`report-completion`の工程末尾の判断記録で止め、関係しない作業は続ける。
+11. 取り下げや差し替えを伴わない確認・訂正・状況照会に応えた後は、同じターンで元の未完了工程へ戻る（返答だけで終えると、再び促されるまで作業が止まる）。
+12. 成果物を伴う作業の後に`agent-toolkit:report-completion`を起動せず終えようとすると、Stop hookが起動と残りの工程の続行を促す。
+    プロジェクト規範で起動を省く場合は、`agent-toolkit:report-completion`の`references/termination-evidence.md`を直接読み、省いた根拠を記録する。
+    起動後の工程の完遂と報告内容はメインエージェントが同スキルに従って確かめる。
+
+## 成果物の制限
+
+対象リポジトリへの恒久的な書き込みを制限する契約と、現在の工程で要る調査・案の提示・回答・選好の確定は区別する。
+現在の質問への回答がWIの採否や内容を左右する時は、この工程で合意を済ませ、後続AWIの完成条件へ委ねる対象から回答の導出を除く。
+後続の調査・研究・アイデア出しそのものの登録を求められたら、その時点の成果物として登録する。
+通常AWIの調査と保存は、`../../wi-standards/references/wi-standards-body.md`「起票目的別の調査出口」に従う。
+
+- スキルが成果物の種類を制限している場合は、制限を課す対象・工程・主体を特定し、その範囲では主題の分類より制限を優先する。
+  範囲内の「反映して」「修正して」「直して」は許容された成果物への反映と解釈し、対象名や主題の違いだけで直接の実装へ移らない。
+  主題の分類は許容された成果物の中で更新対象を分けるのに使い、範囲外の是正は通常の依頼範囲・認可と`user-confirmation-and-report-decisions.md`「確認要否の判定」で判断する。
+  制限された工程を妨げる不具合は、先送りや再実行の案内で済ませず、原因と修正対象を示してその場での修正を提案し、指示を受けてから直す。
+  後続の工程や委譲先へは、成果物の種類と制限を課す対象・工程・主体を一体で引き継ぐ。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| ユーザー発話の解釈と取り込み：原文の保持と取り込みの基準を適用する前 | `user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |

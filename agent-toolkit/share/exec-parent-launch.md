@@ -1,0 +1,76 @@
+# レーン担当の起動と受領：入力
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` | |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` | |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` | |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+
+## 入力
+
+**1.** 資源の準備結果と入力を確認し、レーン担当を起動する。
+
+- 必須入力名: `担当種別`、`引き継ぎ記録先`、`書込担当一覧`
+
+初回資源は`skills/process-wi/references/lane-resources.md`「レーン資源の作成・再利用・回収」に沿う`atk lane create`から取得する。
+終了0、ready、環境準備の保存出力を確認して起動し、失敗時は登録・成果を保持して同じcreateを再開する。
+`cwd`はそのworktreeとし、生成側が保持する資源情報・選定項目を入力へ重複記載しない。
+
+レーン担当は、`agents_server`の`start`を以下の引数で呼び出して起動する。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 対象worktreeの絶対パス |
+| `subagent_md_path` | `exec` |
+| `extra_params` | 後述の各設定項目 |
+| `model_type` | 選定結果における該当レーンの`担当モデル.実装担当`。指定がない場合は省略する |
+
+指定値と実際の実行値の比較および記録は、`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」の担当モデルの節に従って行い、レーンの引き継ぎ記録へ保存する。
+
+- `担当種別`: 通常は`レーン担当`とする。
+  公開工程でのCI失敗修正では`CI修正担当`とする。
+  同一threadを継続できずに統合を担当するエージェントを新規起動する場合も`レーン担当`を指定する（統合手順は委譲先が読込表に従って`lane-integration.subagent.md`を参照する。所在参照）
+- `選定結果の出力先ファイル`: メインエージェントが選定結果を書き込んだファイルの絶対パス
+- `レーン識別子`: メインエージェントが該当レーンに割り当てた識別子
+- `先行調査記録`: 後段レーンの読み取り専用調査を先行した場合に、取得版、対象パス、確認した事実と仮定、残る問い、計画下書きを保存した記録の絶対パスを渡す。
+  調査担当の終了を既存の委譲契約で確認し、未完了・失敗部分を区別する。
+  省略時は先行調査なしとして通常の調査から開始し、記録の受領をレーン起動の開始条件にしない
+- `固有指示`: AWI固有の処理順序、公開、確認、検証に関する個別指示。
+  選定結果に含まれる`プロジェクト規範の指定`および上流投入に関する3行は除外する。
+  該当指示がない場合は省略する
+- `上流投入結果`: `上流投入`に`混在`の項目が含まれるレーンにのみ渡す。
+  `skills/process-wi/references/run-lanes.md`「上流投入」で受け取った要求ごとの要求内容、投入先、`ファイル名`、`結果`の組み合わせを指定する（選定結果には含まれないため）
+- `再開位置`: 中断したレーンを再開する際に、`~/.claude/plans`に残されている計画ファイルの絶対パス。
+  複数計画を持つレーンの場合は、全計画、対応AWI、保存状態を保持した引き継ぎ記録も併せて渡す。
+  初回起動時や、初回選定の項目別再開（`反映後の観測だけが残る`で始まる観測のみの再開を含む）では、担当者が選定結果から直接読み取るため入力から除外する
+- `レビュー参考意見`: `exec-review-parent-correction.md`「レビュー修正」で確認した疑問と理由を指摘ごとに対応付けた本文または既存記録の絶対パス。
+  省略時は参考意見なしとし、行が存在しない場合も同じ値として扱う。
+  同一threadの継続と新規起動の双方で指摘原文と区別して渡す
+- `レビュー指摘管理表`: レビュー修正担当を新規起動する場合に、未解決の指摘を含む全計画の管理表の絶対パスを指定する。
+  複数の場合はJSON配列とする
+- `環境構築`: 専用worktreeにおける環境の準備状況。
+  `atk lane create`の準備処理と保存済み出力から`完了済み`、または準備不要と判断した場合はその旨を記載する。
+  作成および準備の完了を確実に確認できない場合は担当者を起動せず、登録済み資源の準備状態を回復する。
+  CI修正などで既存の専用worktreeに対して起動し、環境構築を担当者に委ねる場合は`レーン担当が実行`と指定する
+- `書込担当一覧`: 重複のない実session IDを格納したJSON配列。
+  統合先メインエージェントと合意済みの担当者を初回入力に含め、起動直後に返された現在のレーン担当者のIDを追加して追送する。
+  担当範囲との対応関係を維持し、担当者の交代、再開、および単一レーンへの追送のタイミングで更新する
+- `引き継ぎ記録先`: `../skills/delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+  `再開位置`を指定する再開時、`レビュー修正担当`の起動時、ならびに統合するレーン担当を新規起動する際は、先行する記録をそのまま引き継ぐため`（継続）`と指定する
+
+`CI修正担当`には、`選定結果の出力先ファイル`、`レーン識別子`、`固有指示`、`再開位置`は渡さず、`CI記録`を委譲プロンプトへ直接記述する。
+`CI記録`の構成項目は`agent-toolkit:commit/references/ci-failure-handling.md`の定めに従い、1つの入力値にまとめてすべての項目が揃っていることを起動前に確認する。
+
+対象worktree、複製元、プロジェクト規範などは、委譲先が`cwd`およびGitの状態から特定する。
+対象リポジトリへの直接的なpushは委譲元が担当するが、private-notesにおける`atk plans commit`や`atk wi`を通じた保存・公開処理はレーン担当者の責務として残る。
+これらを混同して一律にpush禁止として指示すると、WIの`adopted`または`rejected`の状態のみが未公開のまま残ることになる。

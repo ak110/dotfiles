@@ -14,6 +14,7 @@ from pathlib import Path
 
 import psutil
 import pytest
+from agent_toolkit._testing import late_descendant
 
 from pytools._internal import common
 
@@ -229,7 +230,7 @@ class TestRunSubprocess:
 
 def test_run_subprocess_timeout_stops_grandchildren(monkeypatch, tmp_path):
     """時間上限の失敗を返す時点で、準備済みの子孫が解放されている。"""
-    ready = tmp_path / "ready"
+    ready = tmp_path / "child.ready"
     started: list[psutil.Process] = []
 
     class ReadyPopen(subprocess.Popen):
@@ -243,8 +244,8 @@ def test_run_subprocess_timeout_stops_grandchildren(monkeypatch, tmp_path):
                 started.extend([parent, *parent.children(recursive=True)])
             return super().communicate(input, timeout=timeout)
 
-    child = f"import pathlib,time; pathlib.Path({str(ready)!r}).touch(); time.sleep(120)"
-    parent = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child!r}]); time.sleep(120)"
+    child = late_descendant.held_source(ready.with_suffix(".release"))
+    parent = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child!r}]).wait(timeout=120)"
     monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
     try:
         assert common.run_subprocess([sys.executable, "-c", parent], timeout=0.05) is None
@@ -256,11 +257,31 @@ def test_run_subprocess_timeout_stops_grandchildren(monkeypatch, tmp_path):
                 process.kill()
 
 
-def test_run_subprocess_timeout_reports_limit_and_network_check(caplog: pytest.LogCaptureFixture) -> None:
+def _ready_timeout_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    release = tmp_path / "timed.release"
+    argv = [sys.executable, "-c", late_descendant.held_source(release)]
+    communicate = subprocess.Popen.communicate
+
+    def ready_communicate(self, input_data=None, timeout=None):
+        if self.args == argv and timeout is not None:
+            deadline = time.monotonic() + 30
+            while not release.with_suffix(".ready").exists():
+                assert self.poll() is None and time.monotonic() < deadline
+                time.sleep(0.01)
+        return communicate(self, input_data, timeout=timeout)
+
+    monkeypatch.setattr(subprocess.Popen, "communicate", ready_communicate)
+    return argv
+
+
+def test_run_subprocess_timeout_reports_limit_and_network_check(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """時間上限の診断は上限秒数とネットワーク到達などの確認を示し、起動失敗向けのアクセス権の確認を案内しない。"""
+    argv = _ready_timeout_argv(tmp_path, monkeypatch)
     with caplog.at_level("INFO"):
-        assert common.run_subprocess([sys.executable, "-c", "import time; time.sleep(60)"], timeout=0.5, tag="fixture") is None
-    assert "0.5秒以内に終わらず中断した" in caplog.text
+        assert common.run_subprocess(argv, timeout=0.05, tag="fixture") is None
+    assert "0.05秒以内に終わらず中断した" in caplog.text
     assert "ネットワーク到達" in caplog.text
     assert "アクセス権" not in caplog.text
 
@@ -270,7 +291,12 @@ def test_run_subprocess_timeout_reports_limit_and_network_check(caplog: pytest.L
 _LEADER_EXITED_CHILD = """
 import ctypes, pathlib, signal, sys, threading, time
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
-threading.Thread(target=time.sleep, args=(120,)).start()
+def hold():
+    deadline = time.monotonic() + 120
+    while not pathlib.Path(sys.argv[1] + '.release').exists():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+threading.Thread(target=hold).start()
 pathlib.Path(sys.argv[1]).touch()
 ctypes.CDLL(None).pthread_exit(None)
 """
@@ -434,9 +460,10 @@ class TestWriteSettingsHybrid:
         assert json.loads(text) == {"a": 2}
 
 
-def test_process_scope_reclaim_failure_is_not_absorbed_by_run_subprocess(monkeypatch):
+def test_process_scope_reclaim_failure_is_not_absorbed_by_run_subprocess(monkeypatch, tmp_path):
     """子を回収できない結果は、run_subprocessの任意失敗（None）へ変換されず呼出元へ届く。"""
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as survivor:
+    argv = _ready_timeout_argv(tmp_path, monkeypatch)
+    with late_descendant.held_process(tmp_path) as survivor:
         try:
             owned = psutil.Process(survivor.pid)
 
@@ -448,7 +475,7 @@ def test_process_scope_reclaim_failure_is_not_absorbed_by_run_subprocess(monkeyp
 
             monkeypatch.setattr(common, "stop_owned_process", stop_root_only)
             with pytest.raises(common.ProcessReclaimError) as raised:
-                common.run_subprocess([sys.executable, "-c", "import time; time.sleep(120)"], timeout=0.1)
+                common.run_subprocess(argv, timeout=0.05)
             assert raised.value.retry() == []
             assert survivor.wait(timeout=10) is not None
         finally:

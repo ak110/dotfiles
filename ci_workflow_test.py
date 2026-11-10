@@ -332,8 +332,16 @@ def test_python_jobs_separate_responsibilities(workflow_data: dict[str, object])
     test = next(step for step in expanded_workflow_steps(toolkit) if step.get("name") == "Python 3.15 pytest toolkit")
     assert "--test-shard=$TEST_SHARD" in str(test["run"])
     assert workflow_mapping(test["env"])["TEST_SHARD"] == "${{ matrix.shard }}"
-    prepare = next(step for step in workflow_steps(toolkit) if str(step.get("uses", "")).endswith("prepare-python-check"))
-    assert "${{ strategy.job-index }}" in str(workflow_mapping(prepare["with"])["cache-key"])
+    cached = []
+    for name in ("python-lint", "pylint", "pytest-root", "pytest-toolkit"):
+        prepare = next(
+            step
+            for step in workflow_steps(workflow_mapping(jobs[name]))
+            if str(step.get("uses", "")).endswith("prepare-python-check")
+        )
+        if workflow_mapping(prepare["with"]).get("cache-mise") == "true":
+            cached.append(name)
+    assert cached == ["python-lint"]
 
 
 @pytest.mark.parametrize(
@@ -375,6 +383,7 @@ _RELEASE_PULL_REQUEST_CONDITIONS = (
     "github.base_ref == 'master'",
 )
 _OWNS = "needs.common-ci-owner.outputs.owns == 'true'"
+_JUNIT_UPLOAD = "${{ !cancelled() && " + _OWNS + " && steps.pytest.outputs.junit != '' }}"
 
 
 def _common_job_names(workflow: dict[str, object]) -> list[str]:
@@ -422,7 +431,10 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
             assert real[-1]["if"] == "steps.selection.outputs.selected == 'true'"
         else:
             assert "if" not in job
-            assert all(step.get("if") == _OWNS for step in real)
+            # JUnit XMLの保存だけは、pytestの失敗後も実行するため所有条件へ継続条件を加える。
+            for step in real:
+                uploads = "upload-artifact@" in str(step.get("uses", ""))
+                assert step.get("if") == (_JUNIT_UPLOAD if uploads else _OWNS), step
 
     version = _statusline_job(workflow_data)
     assert "needs" not in version
@@ -701,7 +713,7 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
 
 
 def test_update_checks_container_dependencies_after_lock_updates() -> None:
-    """依存更新は両lockの更新後、全体検証の前にcontainerの依存導入を確かめる。"""
+    """依存更新は両lockの更新後にcontainerの依存導入を確かめ、全体試験を呼ばない。"""
     text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     match = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
     assert match is not None
@@ -711,7 +723,7 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
     assert (
         next(index for index, command in enumerate(commands) if "uv lock --upgrade --project agent-toolkit" in command) < check
     )
-    assert check < commands.index("\t$(MAKE) test")
+    assert "\t$(MAKE) test" not in commands
 
 
 @pytest.mark.parametrize("scope", ["直下", "toolkit"])
@@ -741,6 +753,30 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
     assert "--maxfail=0" in str(pytest_step["run"])
+
+    # 全ケースの合否と個別所要を、pytestの成否によらず各jobの同じ結果としてartifactへ保存する。
+    command = str(pytest_step["run"])
+    assert command.startswith("set -euo pipefail\n")
+    assert 'echo "junit=$junit"' in command and '>> "$GITHUB_OUTPUT"' in command
+    assert command.index('echo "junit=$junit"') < command.index("--junitxml=")
+    assert ('--junitxml="$junit"' if scope == "直下" else "--junitxml=$junit ") in command
+    assert pytest_step["id"] == "pytest"
+    upload = steps[pytest_index + 1]
+    assert str(upload["uses"]).startswith("actions/upload-artifact@")
+    assert upload["if"] == _JUNIT_UPLOAD
+    assert "continue-on-error" not in pytest_step and "continue-on-error" not in upload
+    settings = workflow_mapping(upload["with"])
+    assert settings["path"] == "${{ steps.pytest.outputs.junit }}"
+    assert settings["if-no-files-found"] == "error"
+    if scope == "直下":
+        assert 'junit="$RUNNER_TEMP/pytest-root-junit.xml"' in command
+        assert settings["name"] == "pytest-root-junit"
+    else:
+        # artifact名は分割ごとに一意にし、名前に使えない`/`を分割指定から除く。
+        assert 'shard="${TEST_SHARD%%/*}-of-${TEST_SHARD##*/}"' in command
+        assert 'junit="$RUNNER_TEMP/pytest-toolkit-junit-$shard.xml"' in command
+        assert 'echo "artifact=pytest-toolkit-junit-$shard"' in command
+        assert settings["name"] == "${{ steps.pytest.outputs.artifact }}"
 
 
 def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str, object]) -> None:
@@ -958,7 +994,22 @@ def test_update_includes_locked_rust_validation() -> None:
     assert f"cargo fmt {manifest} --check" in commands
     assert f"cargo clippy {manifest} --locked --all-targets --all-features -- -D warnings" in commands
     assert f"cargo test {manifest} --locked" in commands
-    assert commands.index("cargo update") < commands.index("cargo test") < commands.index("$(MAKE) test")
+    assert commands.index("cargo update") < commands.index("cargo test")
+    assert "$(MAKE) test" not in commands
+
+
+def test_removal_registry_expiry_runs_only_in_scheduled_audit() -> None:
+    """撤去表の期限は定期実行のAuditだけで判定し、push・PR毎のCIでは判定しない。
+
+    期限の判定は実行日で結果が変わるため、無関係な変更のCIとcommit hookを日付で止めないようにする。
+    """
+    audit = yaml.safe_load((REPO_ROOT / ".github/workflows/audit.yaml").read_text(encoding="utf-8"))
+    command = "uv run --frozen python -m pytools._internal.removal_registry_report"
+    steps = audit["jobs"]["removal-registry"]["steps"]
+    assert any(step.get("run") == command for step in steps)
+    assert set(audit[True]) == {"schedule", "workflow_dispatch"}
+    ci_text = (REPO_ROOT / ".github/workflows/ci.yaml").read_text(encoding="utf-8")
+    assert "removal_registry_report" not in ci_text
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Linux Audit jobのbashで検証する")

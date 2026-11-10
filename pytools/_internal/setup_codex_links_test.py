@@ -239,7 +239,7 @@ def test_run_leaves_the_rules_destination_to_the_rules_sync(
     codex_home = tmp_path / "home" / ".codex"
     monkeypatch.setattr(sync_agent_toolkit_rules, "CODEX_HOME", codex_home)
     monkeypatch.setattr(setup_codex_links, "CODEX_HOME", codex_home)
-    rules_src = dotfiles_root / "agent-toolkit" / "rules"
+    rules_src = dotfiles_root / "agent-toolkit" / "share" / "rules" / "common"
     rules_src.mkdir(parents=True)
     (rules_src / "01-agent.md").write_text("条文\n", encoding="utf-8")
 

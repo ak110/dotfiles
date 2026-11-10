@@ -17,6 +17,7 @@ from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import file_lock
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.json_lines import split_lines
 
 
 def record_directory(state_root: Path | None = None) -> Path:
@@ -68,7 +69,7 @@ def append_compaction_record(
         file_lock.acquire_lock(lock_file)
         try:
             if path.exists():
-                for line in path.read_text(encoding="utf-8").splitlines():
+                for line in split_lines(path.read_text(encoding="utf-8")):
                     try:
                         existing = json.loads(line)
                     except json.JSONDecodeError, ValueError:

@@ -1,6 +1,7 @@
 """成果作業と`agent-toolkit:report-completion`の起動証拠を作業単位で保持する。
 
-各イベントはこの所有モジュールへ観測を渡す。成果作業は成功した対象スキルの開始、リポジトリへの自編集、
+各イベントはこの所有モジュールへ観測を渡す。成功したSkill起動は本文版付きの共通取得記録にも接続する。
+成果作業は成功した対象スキルの開始、リポジトリへの自編集、
 計画の保存、WIの保存、commit・pushの実行記録から、起動証拠はClaude Codeの成功したSkill呼び出しと、
 Codexの実際の入力と結果が示す`SKILL.md`の読取から取得する。完了の自己申告と報告本文は受理しない。
 意味上の中止・開始はメインが原入力と対象を結び付け、ここでは識別子から実体を読み、由来と対象を確かめる。
@@ -29,13 +30,13 @@ lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command, join_words
 lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._git import worktrees as git_worktrees
-lazy from agent_toolkit._hooks import agent_id, agents_server_observations
+lazy from agent_toolkit._hooks import agent_id, agents_server_observations, plugin_resources
 lazy from agent_toolkit._hooks import document_reads as _document_reads
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.pretooluse.operation_skills import written_paths
-lazy from agent_toolkit._hooks.pretooluse.read_delivery import host_truncated
-lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens
+lazy from agent_toolkit._hooks.pretooluse.operation_skills import mark_ready, written_paths
+lazy from agent_toolkit._hooks.pretooluse.read_delivery import host_truncated, resolve_skill_document
+lazy from agent_toolkit._hooks.pretooluse.shell_checks import _git_subcommand_tokens, git_commit_options
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -48,8 +49,8 @@ TARGET_SKILLS = ("process-wi", "add-awi-by-user")
 """開始した時点で成果作業となるスキルの短縮名。適用条件は`report-completion/SKILL.md`「工程」の工程9に従う。"""
 
 _UNRESOLVED_REPOSITORY_FIX = (
-    "この作業では省略を記録できないため、`agent-toolkit:report-completion`を起動して終了工程を進める。"
-    "規範がその起動を禁じる場合は、その旨をユーザーへ報告する。"
+    "この作業では省略を記録できない。`agent-toolkit:report-completion`を起動して終了工程を進めよ。"
+    "規範がその起動を禁じる場合は、その旨をユーザーへ報告せよ。"
 )
 
 
@@ -67,31 +68,14 @@ class _InactiveWaitError(ValueError):
 
 _HOST_STOP_FIX = (
     "利用上限の猶予通知とホストによる背景コマンドの停止は技術的不成立に当たらない。"
-    "猶予通知は`agent-toolkit:user-confirmation-and-report`の`references/usage-limit.md`に従い同じ工程を続ける。"
-    "ホストが再開を禁じた処理は再開の可否をユーザーへ確認する。"
-    "協調モードは`AskUserQuestion`、自律モードはUWIを投入し`wait`の`uwi_file`で記録する。"
+    "猶予通知は`agent-toolkit:user-confirmation-and-report`の`references/usage-limit.md`に従い同じ工程を続けよ。"
+    "ホストが再開を禁じた処理は再開の可否をユーザーへ確認せよ。"
+    "協調モードは`AskUserQuestion`を使え。自律モードはUWIを投入し`wait`の`uwi_file`で記録せよ。"
 )
 
 
-_GIT_VALUE_OPTIONS = frozenset(
+_GIT_PUSH_VALUE_OPTIONS = frozenset(
     {
-        "-m",
-        "--message",
-        "-F",
-        "--file",
-        "-C",
-        "--reuse-message",
-        "-c",
-        "--reedit-message",
-        "--author",
-        "--date",
-        "--cleanup",
-        "-t",
-        "--template",
-        "--trailer",
-        "--fixup",
-        "--squash",
-        "--pathspec-from-file",
         "--repo",
         "--receive-pack",
         "--exec",
@@ -99,7 +83,7 @@ _GIT_VALUE_OPTIONS = frozenset(
         "--push-option",
     }
 )
-"""`git commit`・`git push`の値を伴うオプション。値を除外語の判定へ混ぜないため、値のトークンを判定の対象から除く。"""
+"""`git push`の値を伴うオプション。値のトークンを実行抑止の判定から除く。"""
 
 
 def _parse(payload_text: str) -> dict[str, Any] | None:
@@ -216,16 +200,19 @@ def published_git_operations(command: str) -> list[str]:
         arguments = parsed[1]
         if any("\x00" in argument for argument in arguments):
             continue
-        options = iter(arguments)
         excluded = False
-        for option in options:
-            if option == "--":
-                break
-            if option in _GIT_VALUE_OPTIONS:
-                next(options, None)
-            elif option in {"--dry-run", "--help", "-h"} or parsed[0] == "push" and option == "-n":
-                excluded = True
-                break
+        if parsed[0] == "commit":
+            excluded = any(option in {"--dry-run", "--help", "-h"} for option, _value in git_commit_options(arguments))
+        else:
+            options = iter(arguments)
+            for option in options:
+                if option == "--":
+                    break
+                if option in _GIT_PUSH_VALUE_OPTIONS:
+                    next(options, None)
+                elif option in {"--dry-run", "--help", "-h", "-n"}:
+                    excluded = True
+                    break
         prefix = invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
         if not excluded and "--help" not in prefix:
             operations.append(parsed[0])
@@ -289,7 +276,19 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
     if tool_name == "Skill" and not codex:
         skill = _skill_name(tool_input.get("skill"))
         if skill == COMPLETION_REPORT:
-            return [{"kind": "completion"}]
+            completion: dict[str, Any] = {"kind": "completion"}
+            response = payload.get("tool_response")
+            if response and not (
+                isinstance(response, dict) and any(response.get(key) for key in ("isError", "is_error", "interrupted", "error"))
+            ):
+                path = resolve_skill_document(
+                    f"agent-toolkit:{skill}", [plugin_resources.skill_document_path(skill, "SKILL.md")]
+                )
+                if path is not None:
+                    completion["skill_invocation"] = _document_reads.skill_invocation_key(
+                        path, _document_reads.content_fingerprint(path)
+                    )
+            return [completion]
         if skill in TARGET_SKILLS:
             record: dict[str, Any] = {"kind": "deliverable", "labels": [f"agent-toolkit:{skill}の開始"]}
             if isinstance(payload.get("cwd"), str) and (repository := _git_root(payload["cwd"])) is not None:
@@ -359,7 +358,7 @@ def _invocation_repository(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.
         return None
     tokens = invocation.segment.tokens
     parsed = _git_subcommand_tokens(invocation.segment)
-    options = tokens[1 : len(tokens) - len(parsed[1]) - 1] if parsed is not None else ()
+    options = tokens[1 : len(tokens) - len(parsed[1]) - 1] if parsed is not None and not is_atk_command(tokens) else ()
     return _git_root(cwd.path, options=options)
 
 
@@ -448,18 +447,87 @@ def observe_user(payload_text: str) -> None:
 
     def update(state: dict[str, Any]) -> dict[str, Any]:
         data = _data(state, payload["session_id"])
+        # この本文より前にセッション記録へ書かれた途中入力を先に取り込み、入力の順序を記録の順序と一致させる。
+        _sync_queued_inputs(data, payload.get("transcript_path"))
         reference = payload.get("turn_id") or payload.get("prompt_id")
         if not isinstance(reference, str) or not reference:
             data["sequence"] += 1
             reference = f"input-{data['sequence']}"
-        data["inputs"][reference] = {"text": prompt, "human": human, "offset": _position(payload)}
-        data["last_input"] = reference
-        if human:
-            data["last_human_input"] = reference
+        _store_input(data, reference, prompt, human=human, offset=_position(payload))
         _compact(data)
         return state
 
     session_state.update_state(payload["session_id"], update)
+
+
+def _store_input(data: dict[str, Any], reference: str, text: str, *, human: bool, offset: int) -> None:
+    """入力を1件の事象として保存し、直近の入力と人間入力の参照を進める。
+
+    Claude Codeの`prompt_id`は人間の入力と同じターンに届くtask-notificationなどにも付くため、事象の一意キーにならない。
+    同じキーに本文か由来の異なる入力が既にある場合は別のキーで保存し、人間入力の本文と由来を書き換えない。
+    同じ入力を重ねて観測した場合は同じキーを使う。
+    """
+    existing = data["inputs"].get(reference)
+    if isinstance(existing, dict) and (existing.get("text") != text or existing.get("human") is not human):
+        data["sequence"] += 1
+        reference = f"{reference}#{data['sequence']}"
+    data["inputs"][reference] = {"text": text, "human": human, "offset": offset}
+    data["last_input"] = reference
+    if human:
+        data["last_human_input"] = reference
+
+
+def _sync_queued_inputs(data: dict[str, Any], transcript_path: object) -> None:
+    """Claude Codeのセッション記録に`queued_command`として届いた入力を、前回の読取位置から取り込む。
+
+    ターンの途中で人間が送った指示はUserPromptSubmitを経ずに`attachment.type=queued_command`として記録される。
+    人間の入力は記録の`origin.kind=human`で判定し、通知や他エージェントの配送は非人間入力として保存する。
+    """
+    if isinstance(transcript_path, str) and transcript_path and transcript_path != data.get("transcript_path"):
+        # 読取位置は記録ファイルごとの値のため、別の記録へ移ったら先頭から読む。
+        data["transcript_path"] = transcript_path
+        data["queued_offset"] = 0
+    path = data.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return
+    start = data.get("queued_offset", 0)
+    start = start if isinstance(start, int) and not isinstance(start, bool) and start >= 0 else 0
+    queued: list[tuple[int, bytes]] = []
+    position = start
+    try:
+        with pathlib.Path(path).open("rb") as stream:
+            stream.seek(start)
+            for raw in stream:
+                # 書込途中の最終行は次回に読む。
+                if not raw.endswith(b"\n"):
+                    break
+                position += len(raw)
+                if b'"queued_command"' in raw:
+                    queued.append((position, raw))
+    except OSError:
+        return
+    for offset, raw in queued:
+        try:
+            entry = json.loads(raw)
+        except ValueError:
+            continue
+        attachment = entry.get("attachment") if isinstance(entry, dict) and entry.get("type") == "attachment" else None
+        if not isinstance(attachment, dict) or attachment.get("type") != "queued_command" or entry.get("isSidechain"):
+            continue
+        prompt = attachment.get("prompt")
+        if not isinstance(prompt, str) or not prompt:
+            continue
+        origin = attachment.get("origin")
+        human = (
+            isinstance(origin, dict)
+            and origin.get("kind") == "human"
+            and not runtime_inserted.is_runtime_inserted_text(prompt)
+            and not automated_prompt.contains(prompt)
+        )
+        uuid = entry.get("uuid")
+        reference = f"queued-{uuid}" if isinstance(uuid, str) and uuid else f"queued-{offset}"
+        _store_input(data, reference, prompt, human=human, offset=offset)
+    data["queued_offset"] = position
 
 
 def observe_tool(payload_text: str, *, after: bool) -> None:
@@ -587,6 +655,7 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
         if not invocations and STATE_KEY not in state:
             return state
         data = _data(state, payload["session_id"])
+        _sync_queued_inputs(data, payload.get("transcript_path"))
         records: Any = data["calls"].get(tool_id)
         if not isinstance(records, list):
             current = _current_work(data)
@@ -620,6 +689,8 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
             record["observed"] = True
             if record["kind"] == "completion":
                 work["completion_report"] = True
+                if "skill_invocation" in record:
+                    mark_ready(record["skill_invocation"], agent_id.resolve_hook_agent_id(payload))(state)
             elif record["kind"] == "deliverable":
                 known_labels = work.setdefault("deliverables", [])
                 known_labels.extend(label for label in record["labels"] if label not in known_labels)
@@ -658,9 +729,12 @@ def evidence_available(payload: dict[str, Any]) -> bool:
     return False
 
 
-def missing_completion(work: dict[str, Any]) -> list[str]:
-    """起動証拠と有効な省略の双方を欠く成果作業の種類を返す。"""
-    if work.get("completion_report"):
+def missing_completion(work: dict[str, Any], *, context_loaded: bool | None = None) -> list[str]:
+    """文脈の読込証拠と有効な省略を欠く成果作業を返す。
+
+    `None`は従来の直接呼出側として作業別の証拠を使う。明示した偽では圧縮前の作業別証拠を再利用しない。
+    """
+    if context_loaded is True or (context_loaded is None and work.get("completion_report")):
         return []
     omission = work.get("omit_completion")
     if isinstance(omission, dict) and omission.get("input_id") == work.get("input_at_last_call"):
@@ -743,6 +817,7 @@ def record_decision(document: dict[str, Any]) -> str:
     def update(state: dict[str, Any]) -> dict[str, Any]:
         nonlocal selected
         data = _data(state, session_id)
+        _sync_queued_inputs(data, None)
         evidence: dict[str, Any] = {}
         if action == "omit-completion":
             work = data["works"].get(document.get("work_id"))
@@ -788,9 +863,7 @@ def record_decision(document: dict[str, Any]) -> str:
                     )
                 active = agents_server_observations.actively_waited_session_ids([target])
                 if child.get("pending_observation") is not True and target not in active:
-                    raise _InactiveWaitError(
-                        f"対象sessionの有効なCLI待機がありません: {target}。実際の待機を開始するか回収後の残工程へ戻る"
-                    )
+                    raise _InactiveWaitError(f"対象sessionの有効なCLI待機がありません: {target}")
                 evidence["target_session_id"] = target
             else:
                 evidence["uwi_file"] = str(_waiting_uwi(document, session_id))
@@ -972,6 +1045,16 @@ def main(argv: list[str] | None = None) -> int:
             session_id = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
             if not session_id or not agent_id.is_main_agent_context({}):
                 raise ValueError("--contextは現在のClaude Codeメインで実行する")
+
+            def synchronize(state: dict[str, Any]) -> dict[str, Any] | None:
+                # 直前の作業観測より後に届いた途中入力も、返す人間入力へ含める。
+                current = state.get(STATE_KEY)
+                if not isinstance(current, dict) or current.get("session_id") != session_id:
+                    return None
+                _sync_queued_inputs(current, None)
+                return state
+
+            session_state.update_state(session_id, synchronize)
             data = session_state.read_state(session_id).get(STATE_KEY)
             if (
                 not isinstance(data, dict)
@@ -1013,7 +1096,7 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("判断記録はJSONオブジェクトで渡す")
         work_id = record_decision(document)
     except (OSError, UnicodeError, ValueError) as error:
-        recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行する"
+        recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行せよ"
         if isinstance(error, _UnresolvedRepositoryError):
             recovery = _UNRESOLVED_REPOSITORY_FIX
         elif isinstance(error, _FailureEvidenceError):
@@ -1022,10 +1105,7 @@ def main(argv: list[str] | None = None) -> int:
                 + _HOST_STOP_FIX
             )
         elif isinstance(error, _InactiveWaitError):
-            recovery = (
-                "実際の待機を開始するか回収後の残工程へ戻る。ホストが待機を停止して再開にユーザーの指示を要する場合は、"
-                + _HOST_STOP_FIX
-            )
+            recovery = "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ。" + _HOST_STOP_FIX
         next_action.report(
             str(error),
             next_action=recovery,

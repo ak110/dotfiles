@@ -22,20 +22,31 @@ def test_lock_update_renders_full_and_preserves_host_mode(tmp_path, monkeypatch)
         assert kwargs["env"]["AGENT_TOOLKIT_CONFIG_DOTFILES_MODE"] == "full"
         if arguments[0] == "chezmoi":
             return subprocess.CompletedProcess(arguments, 0, '[tools]\ndotnet = "10.0.1"\n', "")
+        if arguments[1] == "trust":
+            return subprocess.CompletedProcess(arguments, 0, "", "")
         directory = Path(kwargs["cwd"])
+        if arguments[1] == "lock" and Path(kwargs["env"]["MISE_CONFIG_DIR"]) == directory and "--global" not in arguments:
+            # mise 2026.10.25はconfig dir直下をglobal配置と扱い、local lockの対象から外す。
+            return subprocess.CompletedProcess(arguments, 0, "", "")
+        configuration = directory / ("mise.toml" if (directory / "mise.toml").exists() else "config.toml")
         if arguments[1] == "upgrade":
-            (directory / "config.toml").write_text('[tools]\ndotnet = "10.0.2"\n')
+            configuration.write_text('[tools]\ndotnet = "10.0.2"\n')
         else:
             (directory / "mise.lock").write_text("new lock")
+            # miseのglobal/localの生成配置を模し、配布lockが参照するnpm成果物まで更新されることを確かめる。
+            locks = directory / ("locks" if "--global" in arguments else ".mise/locks") / "npm-example" / "1.0.0"
+            locks.mkdir(parents=True)
+            (locks / "aube-lock.yaml").write_text("generated dependency graph\n")
         return subprocess.CompletedProcess(arguments, 0, "", "")
 
     monkeypatch.setattr(update_global_mise.process_tree, "run_with_timeout", run)
     update_global_mise.update(tmp_path)
     assert (source / "config.toml.tmpl").read_text() == '[tools]\ndotnet = "10.0.2"\n'
     assert (source / "mise.lock").read_text() == "new lock"
+    assert (source / "dot_mise/locks/exact_npm-example/1.0.0/aube-lock.yaml").read_text() == "generated dependency graph\n"
     assert os.environ["AGENT_TOOLKIT_CONFIG_DOTFILES_MODE"] == "minimal"
-    assert len(calls) == 3
-    assert [options["timeout"] for _, options in calls] == [60, 1200, 1200]
+    assert len(calls) == 4
+    assert [options["timeout"] for _, options in calls] == [60, 60, 1200, 1200]
     assert all(options["check"] for _, options in calls)
 
 

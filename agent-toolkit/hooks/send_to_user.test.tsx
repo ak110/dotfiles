@@ -209,6 +209,53 @@ const PASS_RESPONSE = { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", b
 const SECRET_STDERR = "入力本文を含めない";
 const JAPANESE_MESSAGE = "確認が完了しました。";
 
+for (const [name, message, notice, expectedCalls] of [
+  ["未取得の改善点", "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）", "<atk-auto source=\"improvement_status_advisor\" kind=\"warn\">\n判定資料を読め。\n</atk-auto>", 1],
+  ["取得済みの改善点", "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）", "", 1],
+  ["点検の改善案", "改善案:\n- A（AWI化ステータス: 不要 非欠陥）", "案内", 1],
+  ["説明文", "AWI化ステータス: 不要の区分を調べた。", "案内", 0],
+] as const) {
+  test(`send_to_userは${name}で判定資料の取得案内を非遮断で返す`, async ($, on) => {
+    mock.env(on, {});
+    on("session.id", () => ({ value: "guidance-session" }));
+    let called = 0;
+    on("process.run", (_$, e) => {
+      if (!e.argv.includes("improvement_status_advisor")) return { value: PASS_RESPONSE };
+      called += 1;
+      const payload: unknown = JSON.parse(e.init?.stdin ?? "{}");
+      expect(payload).toMatchObject({ session_id: "guidance-session" });
+      expect((payload as { last_assistant_message: string }).last_assistant_message).toContain("気付いた改善点:");
+      return { value: { ...PASS_RESPONSE, stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: notice } }) } };
+    });
+    const result = await $.tool.call({ tool: TOOL, message });
+    expect(result.result).toBe(DISPLAYED);
+    expect(result.deny).toBeUndefined();
+    expect(called).toBe(expectedCalls);
+    expect(result.context ?? []).toEqual(expectedCalls && notice ? [notice] : []);
+  });
+}
+
+test("取得案内の障害は送達を止めず、同じ診断を抑止し復旧後は再通知する", async ($, on) => {
+  mock.env(on, {});
+  on("session.id", () => ({ value: "guidance-failure-session" }));
+  let failing = true;
+  on("process.run", (_$, e) => ({ value: e.argv.includes("improvement_status_advisor")
+    ? { ...PASS_RESPONSE, exitCode: failing ? 7 : 0, stderr: SECRET_STDERR,
+      stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: "" } }) }
+    : PASS_RESPONSE }));
+  const message = "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）";
+  const first = await $.tool.call({ tool: TOOL, message });
+  expect(first.result).toBe(DISPLAYED);
+  expect(first.deny).toBeUndefined();
+  expect(first.context?.[0]).toContain("終了コード 7");
+  expect(first.context?.[0]).not.toContain(SECRET_STDERR);
+  expect((await $.tool.call({ tool: TOOL, message })).context ?? []).toEqual([]);
+  failing = false;
+  expect((await $.tool.call({ tool: TOOL, message })).context ?? []).toEqual([]);
+  failing = true;
+  expect((await $.tool.call({ tool: TOOL, message })).context).toHaveLength(1);
+});
+
 for (const [name, response, expected] of [
   ["非0終了", { ...PASS_RESPONSE, exitCode: 7, stdout: "", stderr: SECRET_STDERR }, "終了コード 7"],
   ["標準出力の切り詰め", { ...PASS_RESPONSE, stdout: "", isStdoutTruncated: true }, "標準出力の切り詰め true"],
@@ -310,24 +357,65 @@ for (const message of ["--help", "--text", "", "--Next verify", "-x\n日本語�
 // 区分外の理由（規範の存在など）で再発防止を省いた報告を送達時に本人へ気付かせるための判定である。
 for (const [name, message, warned] of [
   ["区分名で始まらない不要", "改善案:\n- 規範の取り違え（AWI化ステータス: 不要 上位規範から導けたため条文は追加しない）", true],
-  ["区分名の無い不要が区分名付きの不要と混在", "- A（AWI化ステータス: 不要 非欠陥）\n- B（AWI化ステータス: 不要 当座に直した）", true],
-  ["区分名で始まる不要", "- A（AWI化ステータス: 不要 被覆 20261106-000000-001.md）\n- B（AWI化ステータス: 不要 見送り 損失より継続費用が大きい）", false],
-  ["処置済みと非欠陥", "- A（AWI化ステータス: 不要 処置済み abc1234）\n- B（AWI化ステータス: 不要 非欠陥）", false],
-  ["不要を含まない本文", "- A（AWI化ステータス: 済 20261106-000000-001.md）", false],
+  ["区分名の無い不要が区分名付きの不要と混在", "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）\n気付いた改善点: B（AWI化ステータス: 不要 当座に直した）", true],
+  ["区分名で始まる不要", "気付いた改善点: A（AWI化ステータス: 不要 被覆 20261106-000000-001.md）\n気付いた改善点: B（AWI化ステータス: 不要 見送り 損失より継続費用が大きい）", false],
+  ["処置済みと非欠陥", "気付いた改善点: A（AWI化ステータス: 不要 処置済み abc1234）\n気付いた改善点: B（AWI化ステータス: 不要 非欠陥）", false],
+  ["不要を含まない本文", "気付いた改善点: A（AWI化ステータス: 済 20261106-000000-001.md）", false],
 ] as const) {
   test(`send_to_userは${name}の本文を送達し、警告は${warned ? "付ける" : "付けない"}`, async ($, on) => {
     mock.env(on, {});
-    on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "pass", body: null, fix: "" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+    on("process.run", (_$, e) => ({ value: e.argv.includes("improvement_status_advisor")
+      ? { ...PASS_RESPONSE, stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: "" } }) }
+      : PASS_RESPONSE }));
     const called = await $.tool.call({ tool: TOOL, message });
     expect(called.deny).toBeUndefined();
     expect(called.result).toBe(DISPLAYED);
-    const warnings = (called.context ?? []).filter((note) => note.includes("AWI化ステータス"));
+    const warnings = (called.context ?? []).filter((note) => note.startsWith('<atk-auto source="send-to-user"'));
     if (warned) {
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toMatch(/^<atk-auto source="send-to-user" kind="warn">\n/);
       expect(warnings[0]).toMatch("再発防止策の必須性");
     } else {
       expect(warnings).toEqual([]);
+    }
+  });
+}
+
+// `予定`の区分名の欠落と、原因の未調査を理由にした`不要`へ、それぞれの警告を付けて送達することを検証する。
+// コードフェンス内の例と引用行は報告として扱わず、処置を定めた理由や「未調査を理由に見送らない」説明にも付けない。
+for (const [name, message, expected] of [
+  ["観測した説明文", "2件目（前回batch）の通読も終えた。両セッションで共通に出た「`AWI化ステータス: 不要`の区分名」警告について、既存AWIの有無と原因を確認している。", []],
+  ["予定への説明上の言及", "書式はAWI化ステータス: 予定から始める。`AWI化ステータス: 予定`の区分も確認した。", []],
+  ["項目記号だけの説明", "- AWI化ステータス: 不要という書き方を調べた。", []],
+  ["点検の予定に区分が無い", "改善案:\n- X（AWI化ステータス: 予定 公開後）\n次: 実装", ["待機中の先行実施"]],
+  ["改善案なし", "改善案: なし\n次: 検証", []],
+  ["字下げコード例", "    気付いた改善点: X（AWI化ステータス: 予定 公開後）", []],
+  ["番号付きの報告", "  1) 気付いた改善点: X（AWI化ステータス: 予定 公開後）", ["待機中の先行実施"]],
+  ["挿入通知の引用", "<atk-auto source=\"example\" kind=\"notice\">\n気付いた改善点: X（AWI化ステータス: 予定 公開後）\n</atk-auto>", []],
+  ["区分名の無い予定", "気付いた改善点: A（AWI化ステータス: 予定 公開完了後に既存AWIと照合して登録要否を判定）", ["待機中の先行実施"]],
+  ["区分名で始まる予定", "気付いた改善点: A（AWI化ステータス: 予定 認可待ち ユーザーがpushを認可した後）\n気付いた改善点: B（AWI化ステータス: 予定 書込競合 lane-03の統合後）", []],
+  ["済と即時対応だけ", "気付いた改善点: A（AWI化ステータス: 済 20261106-000000-001.md）\n気付いた改善点: B（AWI化ステータス: 即時対応）", []],
+  ["観測した未調査理由", "気付いた改善点: 再現しない失敗（AWI化ステータス: 不要 原因が未調査で、このセッションでは再現条件を特定できないため。必要なら調査する）", ["再発防止策の必須性", "原因を調べていない"]],
+  ["区分名付きの未調査理由", "気付いた改善点: A（AWI化ステータス: 不要 見送り 原因を調べていないため）", ["原因を調べていない"]],
+  ["処置を定めた理由", "気付いた改善点: A（AWI化ステータス: 不要 処置済み abc1234。原因は未確定だが同じ入力で再現しない）", []],
+  ["未確定の後に引き継ぎ先を定めた理由", "気付いた改善点: A（AWI化ステータス: 不要 被覆 原因は未確定だが、既存AWI 20261106-174207-001.mdへ観測と調査を引き継ぎ済み）", []],
+  ["未調査を理由にしない説明", "気付いた改善点: A（AWI化ステータス: 不要 非欠陥 未調査を理由に見送らず、調査で仕様どおりと確認した）", []],
+  ["コードフェンス内の例", "```text\n気付いた改善点: X（AWI化ステータス: 予定 公開後）\n気付いた改善点: Y（AWI化ステータス: 不要 原因が未調査）\n```", []],
+  ["引用行", "> 気付いた改善点: X（AWI化ステータス: 不要 原因が未調査）", []],
+] as const) {
+  test(`send_to_userは${name}の本文を送達し、該当する警告だけを付ける`, async ($, on) => {
+    mock.env(on, {});
+    on("process.run", (_$, e) => ({ value: e.argv.includes("improvement_status_advisor")
+      ? { ...PASS_RESPONSE, stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: "" } }) }
+      : PASS_RESPONSE }));
+    const called = await $.tool.call({ tool: TOOL, message });
+    expect(called.deny).toBeUndefined();
+    expect(called.result).toBe(DISPLAYED);
+    const warnings = (called.context ?? []).filter((note) => note.startsWith('<atk-auto source="send-to-user"'));
+    expect(warnings).toHaveLength(expected.length);
+    for (const [index, phrase] of expected.entries()) {
+      expect(warnings[index]).toMatch(/^<atk-auto source="send-to-user" kind="warn">\n/);
+      expect(warnings[index]).toMatch(phrase);
     }
   });
 }

@@ -1,0 +1,20 @@
+# 実装時のコーディング品質：リソースと並行処理
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
+| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md`、`read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
+| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-jobs.md`、`read:agent-basics:*/skills/writing-standards/references/design-runtime-services.md` |
+
+## リソースと並行処理
+
+- リソースの確保と解放を正しく対応させ、RAIIなどの仕組みを活用して生存期間を管理する。
+  子プロセスをタイムアウトや停止シグナルで終了させる場合は、停止を指示する前にその子プロセスが起動したすべての子孫プロセスを列挙し、子プロセスと子孫プロセスのすべてを確実に終了させる。
+  すべての終了を確認した後に、出力の記録や終了ステータスなどの最終結果を確定する。
+- 共有状態を極力減らし、共有が必要な箇所には適切な排他制御や同期を設ける。
+  I/O待ちが発生する処理は非同期処理を基本とする。

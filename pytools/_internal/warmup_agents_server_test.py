@@ -5,12 +5,15 @@
 """
 
 import asyncio
+import contextlib
 import json
 import pathlib
 import subprocess
 import sys
 
+import anyio
 import pytest
+from agent_toolkit._testing import late_descendant
 
 from pytools._internal import common as _common
 from pytools._internal import post_apply_outcome
@@ -341,14 +344,16 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
     """公開MCPのinitializeとtools/listを使い、0件・停止・異常終了を起動成功へ混ぜない。"""
     server = tmp_path / "server.py"
     server.write_text(
-        "import json, sys, time\n"
+        "import json, pathlib, sys, time\n"
+        f"pathlib.Path({str(tmp_path / 'process.ready')!r}).touch()\n"
         f"behavior = {behavior!r}\n"
         "for line in sys.stdin:\n"
         "    message = json.loads(line)\n"
         "    if 'id' not in message: continue\n"
         "    if behavior == 'exit':\n"
         "        print('startup failed', file=sys.stderr); sys.exit(7)\n"
-        "    if behavior == 'timeout': time.sleep(60)\n"
+        "    if behavior == 'timeout':\n"
+        f"        exec({late_descendant.held_source(tmp_path / 'startup.release')!r})\n"
         "    if message['method'] == 'initialize':\n"
         "        result = {'protocolVersion': '2025-11-25', 'capabilities': {'tools': {}},\n"
         "                  'serverInfo': {'name': 'startup-probe', 'version': '1'}}\n"
@@ -358,7 +363,35 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
         encoding="utf-8",
     )
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 0.5)
-    outcome = asyncio.run(_CHECK_STARTUP([sys.executable, str(server)]))
+    tasks: list[asyncio.Task[None]] = []
+    fail_after = anyio.fail_after
+
+    async def arm(scope: anyio.CancelScope) -> None:
+        ready = tmp_path / ("startup.ready" if behavior == "timeout" else "process.ready")
+        while not ready.exists():
+            await asyncio.sleep(0.01)
+        scope.deadline = anyio.current_time() + (0.05 if behavior == "timeout" else 0.5)
+
+    @contextlib.contextmanager
+    def after_ready(delay, **kwargs):
+        # プロセスの起動時間を除き、応答待ちだけを短い期限で観測する。
+        controlled = delay == 0.5
+        with fail_after(30 if controlled else delay, **kwargs) as scope:
+            if controlled:
+                tasks.append(asyncio.create_task(arm(scope)))
+            yield scope
+
+    monkeypatch.setattr(anyio, "fail_after", after_ready)
+
+    async def check():
+        try:
+            return await _CHECK_STARTUP([sys.executable, str(server)])
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    outcome = asyncio.run(check())
     assert outcome.ok is (behavior == "ready")
     if behavior != "ready":
         assert "MCP起動確認に失敗" in outcome.message

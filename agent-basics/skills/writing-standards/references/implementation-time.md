@@ -5,186 +5,27 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time.md#「実装方針の選択」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-time.md#「実装方針の選択」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time-implementation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-implementation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「QCDと3段判定」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「QCDと3段判定」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-only-criteria.md#「コメントの再掲と重複」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/review-only-criteria.md#「コメントの再掲と重複」` |
-| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics.md#「責務帰属（SRP）分析の観点」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/design-heuristics.md#「責務帰属（SRP）分析の観点」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
+| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md`、`read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
+| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-jobs.md`、`read:agent-basics:*/skills/writing-standards/references/design-runtime-services.md` |
 
-## 編集前の読解
+## 条件別資料
 
-- 編集対象のファイルは、編集作業に入る前に全体を一通り読み込む（一部だけを読むと、全体のスタイルから逸脱したり、リファクタリングの必要性を見落としたりするため）。実装の正確な仕様はコード本体から読み取り、docstringはあくまで補助的な情報として扱う。
-
-## 記述順序と命名
-
-- 全体の構造を上位から自然にたどれる順序を意識し、関連する定義を近くに配置する。また、新しく追加する箇所の命名や用語は、既存コードの命名規則に合わせる（努力目標）。
-
-## コードの簡潔さ
-
-- 1か所からしか呼ばない補助関数を先回りで切り出さず、呼び出し箇所に書く。再利用される処理、複雑な境界を隠す処理、または実在の概念を名指しして呼び出し側を読みやすくする処理は切り出してよい。同じ理由で変更される重複は、`design-heuristics.md`「責務帰属（SRP）分析の観点」に従って共通化する。検証や補足の分岐が多い関数では、主処理を正常系の流れとして読み、補助関数は主処理の後ろに置く。
-
-```python
-# 良い例: 1か所でしか使わない処理を呼び出し箇所に置く。
-if config_path.exists():
-    config = json.loads(config_path.read_text())
-
-# 悪い例: 再利用も実在の概念もない処理を切り出す。
-def read_if_exists(path):
-    return json.loads(path.read_text()) if path.exists() else None
-
-config = read_if_exists(config_path)
-```
-
-- returnで抜けた分岐の後にelseを書かず、早期returnで分岐を平らにする。条件によって値を変えるだけの再代入より、三項演算子やif式で1回だけ束縛する形を優先する。Rustの`let value = if enabled { a } else { b };`のような式としてのif・elseは推奨する形に当たる。
-
-```typescript
-// 良い例
-if (!enabled) return;
-const label = debug ? "debug" : "normal";
-
-// 悪い例
-if (!enabled) return;
-else run();
-let label;
-if (debug) label = "debug";
-else label = "normal";
-```
-
-- 一度しか使わない値は、変数名が単位、役割、または判定の意図を式以上に加えない限り、変数にせず使う箇所に式を書く。
-
-```python
-# 良い例
-logger.info(response.status_code)
-
-# 悪い例
-status = response.status_code
-logger.info(status)
-```
-
-- 型の分からない外部の値は受け取る境界で一度だけ検証し、内側へは型の付いた値として渡す。スキーマ、コンストラクター、または内部の型が保証する値を防御的に検証し直さない。信頼境界と入力検証の詳細は「セキュリティ・ロギング・エラー処理」を参照する。
-  外部CLI・SDK・サービスの出力は、自分が所有する保存形式と分けて扱う。外形と選別に使う欄を確認し、利用対象を選んでから、その対象の利用欄へ必要な制約を課す。未利用項目・欄や未知の追加欄の形式差を主機能全体の失敗にしない。利用対象の欠落・不正、相関識別子、安全性や完全性の不成立は診断可能な失敗とする。
-  試験では、対象外項目の欠落・変形した欄と、正常/不正な利用対象を混在させ、選別前に利用時専用の制約を課していないことを確認する。
-
-```typescript
-// 良い例
-const settings = SettingsSchema.parse(await response.json());
-start(settings);
-
-// 悪い例
-const settings = await response.json();
-if (typeof settings === "object" && settings !== null && "port" in settings) start(settings);
-```
-
-## 言語横断のツールと構文
-
-プロジェクト側で個別の指定がない場合は、次の標準ツールを使用する。
-
-| 言語 | 依存管理・ビルド | lint・format・補助ツール |
-| --- | --- | --- |
-| Python | `uv` | `pyfltr`、`pytilpack` |
-| TypeScript | `pnpm`（一度限りのツール実行は`pnpx`） | `Biome`（Biomeが未対応のルールが必要な場合に限りESLintとPrettierを併用） |
-| Rust | `cargo` | `cargo clippy -D warnings`、`cargo fmt` |
-| C# | `dotnet` CLI | `dotnet format`、Roslynアナライザー、`Microsoft.CodeAnalysis.NetAnalyzers` |
-| Bash | 該当なし | `shellcheck`、`shfmt` |
-| PowerShell | 該当なし | PSScriptAnalyzer |
-
-公開互換性として宣言されている範囲内で利用できる新しい言語機能は、積極的に活用する。
-利用できるかどうかは、対象プロジェクトが指定している言語バージョンと公式リリースノートを突き合わせて確認する。これにはPythonの`requires-python`、TypeScriptのバージョン、Rustの`rust-version`やedition、C#の`LangVersion`や`TargetFramework`などが含まれる。
-判断にあたっては、サポート対象として宣言されているすべてのバージョンで動作するかを考慮する。
-
-- Python: <https://docs.python.org/3/whatsnew/index.html>
-- TypeScript: <https://www.typescriptlang.org/docs/handbook/release-notes/overview.html>
-- Rust: <https://doc.rust-lang.org/releases.html>
-- C#: <https://learn.microsoft.com/dotnet/csharp/whats-new/>
-
-同等の品質を実現できる場合は、外部パッケージを追加するよりも標準ライブラリの利用を優先する（検討の優先順位は`design-time.md`の「実装方針の選択」を参照）。
-プロジェクト固有の個別ルールがある場合は、各リポジトリの`CLAUDE.md`や`.claude/rules/`に記載する。
-
-## コメントの記述粒度
-
-コメントを書く前に「この情報は、後続の保守者（人間とエージェント）が対象コードだけからでは、他ファイル・履歴・外部資料の確認など複数回の調査をしないと得られないものか」を問う。
-明確にそうだと言えないコメントは書かない。
-他の規範が求める`// SAFETY:`、lint抑制の理由、依存の上書き設定の理由と解除条件などは、この問いによらず残す。
-
-- コメントには、実装の意図、前提となる成立条件、および自明でない判断理由を簡潔に残す。前述の問いを満たす場合に、ファイルの冒頭には全体の役割や適用範囲を書き、局所的なコメントでは実装上の判断理由を説明する（努力目標。自明な処理内容をそのまま繰り返すコメントは避ける）。
-- 実装判断の根拠となった外部ツールの挙動や観測データは、観測した原文のまま残しておく（省略すると、後の改修時に分岐の成立条件を判断できなくなる）。規範に言及する場合は恒久的なファイル名と見出しを示し、観測結果には再現条件を添え、ユーザーからの要望は一時的な対話ログではなく永続的な要件や期待される外部挙動として記述する。セッション情報や個人のやり取りの経緯は手元の作業メモにとどめる。
-- コード中に現れる設定値や数値リテラルそのものをコメントに書き写すのではなく、その値を選んだ理由や制約の根拠を記述する。コード上に現れない値や外部に由来する値で判断根拠に必要なものは、その出所も併記する。
-- 同一概念の説明は、呼び出し関係の起点となる場所に集約する。完成したコードとコメントの重複や再掲をチェックする手順は、`review-only-criteria.md`の「コメントの再掲と重複」を参照する。
-- ドキュメントには現在の仕様や状態を直接記述し、変更履歴の詳細はGitのコミットメッセージに委ねる（努力目標）。過去の挙動が現在の設計判断の根拠になっている場合は、その挙動自体の説明を現在の記述に含める。
-
-## データと計算
-
-実装時は次の観点を意識する。文字エンコーディングの扱いは`encoding.md`を参照する。
-
-- 状態の表現と所有者: 時間とともに遷移する対象に、型で表現できる不正な組合せや所有者の外の複数箇所からの書換えがある場合は、判別可能な1つの型（列挙型、判別共用体、状態ごとのデータを持つ型）で表し、遷移を所有者の遷移関数へ集約する。単純なboolが関数・クラス内で完結する場合や、遷移が既に1箇所へ集約されている場合は対象外とする。
-  独立した軸は別の状態として保ち、OS・ファイル・外部サービス・フレームワークなど別の主体が一次の状態を持つ場合は独自の値へ複製しない。
-  型の明示化と並行更新・複数資源の原子性を区別し、遷移条件の検査と更新は同じ排他境界で行う。
-- 計算量: 想定される入力データの規模に適したアルゴリズムを選ぶ。
-- 浮動小数点数: 正確な計算が求められる処理には整数型や十進型（Decimal）を使い、等値比較する場合は許容誤差（イプシロン）を考慮する。
-- 乱数: 言語標準のAPIを用い、予測不可能なシードを設定し、範囲変換には専用APIを使用する。セキュリティ用途には暗号論的擬似乱数生成器（CSPRNG）を用いる。
-- 整数オーバーフロー: オーバーフロー検知付きの演算、より広いビット幅の整数型、または事前の範囲チェックを取り入れる。意図的にラップアラウンドを利用する場合は、言語仕様で動作が保証された演算や専用のwrapping関数を用いる。
-- 日時処理: 概念ごとの意味を明確に区別し、プロジェクト全体の方針が特にない場合は、タイムスタンプをUTCで統一し、市民時刻（実生活の時刻）はタイムゾーン情報を保持する。CLI引数など外部からタイムゾーン指定なしで受け取った時刻の扱い（エラーとして拒否するか、特定のタイムゾーンとみなすか）は、その入力の役割から判断してヘルプに明記する。内部データ用のパース処理をそのまま流用しない（手入力された値を安易にUTCとみなすと、日付の境界がずれて検索結果が0件になる不具合の原因となる）。
-- ハッシュや識別子の生成: 複数の可変長データを連結してハッシュやIDの入力とする場合は、長さプレフィックスを付けるか一意な正規化形式を用いて境界を確定させ、分割位置の違いによって同じ入力列が生成されないことをテストで検証する。
-- ファイルの同一性判定: 更新時刻とファイルサイズの一致をもって内容が不変であるとみなす場合、更新時刻の精度はファイルシステムごとに異なる（1秒単位や2秒単位の環境があり、ナノ秒単位の項目があっても実際の更新精度が粗い場合がある）。精度の範囲内で同じファイルサイズのまま書き換えられた変更は検知できないため、更新時刻からその精度以上の時間が経過した後に取得した判定結果のみを再利用する。
-
-## リソースと並行処理
-
-- リソースの確保と解放を正しく対応させ、RAIIなどの仕組みを活用して生存期間を管理する。子プロセスをタイムアウトや停止シグナルで終了させる場合は、停止を指示する前にその子プロセスが起動したすべての子孫プロセスを列挙し、子プロセスと子孫プロセスのすべてを確実に終了させる。すべての終了を確認した後に、出力の記録や終了ステータスなどの最終結果を確定する。
-- 共有状態を極力減らし、共有が必要な箇所には適切な排他制御や同期を設ける。I/O待ちが発生する処理は非同期処理を基本とする。
-
-## セキュリティ・ロギング・エラー処理
-
-- セキュリティ: 外部からの入力、APIレスポンス、ユーザーの画面操作など、信頼境界を常に意識する。
-  - 外部入力はコマンドライン引数として安全に渡し、コード文字列を評価する実行コマンドには固定の文字列のみを渡す。動的な処理分岐が必要な場合は、あらかじめ定義した固定の候補から選ぶ方式にする（言語ごとの具体的な実装方法は各言語の資料を参照）。
-  - 入力バリデーションは許可リスト（ホワイトリスト）方式を優先し、SQL、シェルコマンド、HTMLなどの実行・解釈文脈への直接的な文字列結合、パストラバーサル、信頼できないデータの危険なデシリアライズを避ける。
-  - シークレット（パスワードやAPIキーなど）はソースコードやログ出力に含めず、権限は必要最小限に絞り込み、スタックトレースや内部ファイルパスなどのシステム内部情報をエンドユーザー画面へ露出させない。
-  - Cookie認証のWebアプリでは、セッションCookieに`HttpOnly`・`Secure`・`SameSite=Lax`または`Strict`を付け、Domainを指定せず、ログイン時にセッション識別子を更新する。Cookie名は指定がなければ`__Host-`接頭辞（`Path=/`）を付け、別サブドメインからの上書きを防ぐ。既存環境での改名方式は、サブドメインの管理範囲と再ログインなどの負担から選ぶ。
-  - `SameSite=None`、CSRF・Origin検査の無効化、他サイトからの埋め込み許可など、標準で有効な防御を外す場合は、Cookieが届く全エンドポイント（更新要求・埋め込み表示など）へ代わりの防御を置き、範囲をテストで固定する。同一オリジン制限など、新しいエンドポイントにも追加設定なしで防御が働く構造にする。
-- ロギング: 障害発生時の原因究明を前提とした設計とし、構造化ログや相関IDを活用する。ログにはシークレットや個人情報を含めない。
-- エラー処理: エラーの性質に応じて明確な方針を立てる。一時的な障害には指数バックオフとジッタを伴うリトライを適用し、恒久的なエラーは即座に呼び出し元へ原因を返し、プログラム自体の不具合（プログラマエラー）は早期失敗（fail-fast）で例外をそのまま伝播させる。例外の捕捉（catch）は具体的な型に限定し、広範な例外の捕捉（catch-all）はシステムの境界部分のみに留める。リトライ回数やタイムアウト時間は外部から設定可能にしておく。
-  - 再試行前に、操作が未実行、実行中、完了、成否不明のどれかを確かめる。応答喪失だけでは未実行と判断せず、公開された状態照会と同じ実行識別子で結果を回収する。成否不明の非冪等操作は、結果を確認するまで再発行しない。読取専用、未実行確認済み、同じ論理操作の冪等性を確認できた場合は既存の再試行条件を使う。
-  - 一時障害の解消待ち、引数修正、必要資料の取得など、失敗の種類に合う回復を選ぶ。権限拒否は必要な認可の手続きへ渡し、下位のツールやSDKによる再試行を重ねない。
-  - 失敗原因の報告処理を行う前に、終了処理（クリーンアップ）のタイムアウト待ちが超過する場合は、その例外を捕捉して対象プロセスの強制終了とリソース回収を完了させてから、本来の失敗原因を報告する処理に戻る。同様の終了待ち処理が複数箇所にある場合は、停止・待機・回収処理を1つの関数に集約する（終了処理の例外によって本来のエラー報告が上書きされると、呼び出し元で真の原因を判別できなくなるため）。
-  - 外部の状態取得に失敗した際に安全側の結論（中止や延期など）を採用するロジックでは、あらかじめ保護対象へのアクセス権や所有権、境界条件などから判断に必要な母集団を確定し、その母集団に属する対象の取得失敗のみを根拠とする。
-    その上で、実際の運用環境でその結論が常に成立してしまわないかを現物のデータで検証する（無関係な対象の取得失敗を拾って安全側の結論が常時成立してしまうと、システム全体が恒久的に停止する原因となる）。
-
-例外を捕捉できるのは、その場で回復する、失敗原因を判別できる文脈を付与して再送出する、公開境界・信頼境界で別の失敗表現へ変換する場合に限る。
-回復には、要件や観測した欠陥を根拠とする再試行や、別の処理方法への切替えなどを含む。
-主機能に不可欠な処理と補助機能を分ける。外部出力の変動やエンドユーザーが制御できない要因で補助機能が失敗し、主機能まで止めると作業を妨げる場合は、主機能の入力・必要成果・安全性・所有権を保てる縮退を設ける。利用できない補助機能を明示して無効化し、所有資源を回収する。この縮退は回復として扱い、不可欠な処理の不正やプログラム自体の欠陥を隠す用途には使わない。
-具体的な型を捕捉する場合も、ログを出力して続行するだけの処理、あらかじめ決めた値や空の値で失敗を隠す処理、そのまま再送出するだけの処理は書かず、例外を伝播させる。
-CLIで個別エラーを捕捉して続行し、終了コードで失敗を示す処理は境界での変換に当たる。
-
-```python
-# 良い例: 対象を判別できる文脈を付与し、原因を保持する。
-try:
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-except json.JSONDecodeError as exc:
-    raise ValueError(f"設定のJSONが不正: {config_path}") from exc
-
-# 悪い例: 具体的な型でも、空辞書を返して失敗を隠す。
-try:
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-except json.JSONDecodeError:
-    config = {}
-```
-
-## 依存と自動生成物
-
-- 依存関係の追加や設定の変更には専用のCLIツールを優先して使用し、ロックファイルとマニフェストファイルの内容を常に一致させる。自動生成ファイルは生成元の定義ファイルや専用CLIから更新し、直接編集が必要に思える場合でも、まずは生成元の設定で対応できないかを検討する。
-- 既存コードに設けられている意図的な制約（型定義の制約、アクセス制限、lint設定、不変条件のアサーションなど）は新しいコードでも尊重して維持し、変更する場合は事前にその妥当性を確認する。
-
-## lintと機械チェック
-
-指摘・エラーを受けたときは`agent-basics:bugfix`を起動し、原因分析と絞り込み型の類似見直しを行う。
-再発防止策の要否と初回検出の例外、記録の比例性は同スキルに従う。
-
-- lintの指摘への対応方針は、`quality-principles.md`の「QCDと3段判定」におけるQCDの原則（品質を第一に守り、その制約下でコストと納期を比較する）に従って決定する。本節をlint対応に関する基本方針の基準とし、警告の抑制（サプレス）を採用するかどうかもエージェント自身が技術的判断として確定する。
-- 正当な指摘はコード自体を修正して解消し、意図的な設計に該当して修正すべきでない指摘に限り、必要な最小範囲で警告を抑制する。理由が自明でない場合は抑制コメントに理由を明記する。コードの振る舞いを変えずに単にlint警告を回避するためだけの小手先の書き換えは避ける。新しく抑制を追加するときは、既存の抑制コメントの有無にとらわれず、個別に妥当性を判断する。
-- ファイル単位や設定ファイル全体でのルール緩和（ファイル全体の行数上限の引き上げなど）は、プロジェクト方針との不一致がある場合や、個別の抑制を繰り返すのでは対応しきれない場合に限定する。緩和により検出されなくなる違反とその影響を確かめ、将来の見逃しリスクを評価した上で実施する。コードの肥大化が原因であれば、責務やユースケースに応じたファイルの分割を優先する。
-- 新しいlintルールや静的チェックツールを有効化・強化する変更では、作業に着手する前に既存コードでの検出結果を確認し、「修正すべき対象」と「意図的な設計として許容する対象（理由付き抑制など）」へ1件ずつ分類する工程を設ける。例えば`pylint`の`duplicate-code`では、同期版と非同期版の並行実装や、プラットフォームごとのペア実装におけるコードの類似が正当な許容対象になり得る。
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 編集前の読解・記述順序と命名・コードの簡潔さ・言語横断のツールと構文に関する判断・作業の前 | `implementation-time-style.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-style.md` |
+| コメントの記述粒度に関する判断・作業の前 | `implementation-time-comments.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-comments.md` |
+| データと計算に関する判断・作業の前 | `implementation-time-data.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-data.md` |
+| リソースと並行処理に関する判断・作業の前 | `implementation-time-resources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-resources.md` |
+| セキュリティ・ロギング・エラー処理に関する判断・作業の前 | `implementation-time-errors.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-errors.md` |
+| 依存と自動生成物・lintと機械チェックに関する判断・作業の前 | `implementation-time-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-checks.md` |

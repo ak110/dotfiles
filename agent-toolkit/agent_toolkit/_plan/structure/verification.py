@@ -10,6 +10,13 @@ from agent_toolkit._plan.structure import constants, markdown
 
 _CODE = re.compile(r"`([^`]+)`")
 _BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# `cd <dir> && <command>`は検証表で最も多いshell構文のため、作業ディレクトリを引数で渡す書き換え先を示す。
+# 起草時の計画検査と統合時の検証行取得は同じ関数で判定し、統合で初めて拒否されることを避ける。
+_CD_REWRITE = (
+    "cdで作業ディレクトリを変える行は、作業ディレクトリを引数で渡すargv"
+    "（`uv run --directory <dir> <command>`、`git -C <dir> <command>`、`make -C <dir> <target>`など）へ書き換える。"
+    "引数で渡せないコマンドはscriptへ移し、そのscriptを実行するargvを書く"
+)
 
 
 def commands_from_cell(cell: str) -> list[tuple[str, list[str]]]:
@@ -31,7 +38,10 @@ def commands_from_cell(cell: str) -> list[tuple[str, list[str]]]:
             or any(word.expansion or re.search(r"[;&|<>`]", word.unquoted) for word in words)
             or (words and re.match(r"[A-Za-z_][A-Za-z0-9_]*=", words[0].unquoted))
         ):
-            raise ActionableError(f"shellの再評価を要する検証コマンドです: {command}", next_action=failure)
+            raise ActionableError(
+                f"shellの再評価を要する検証コマンドです: {command}",
+                next_action=_CD_REWRITE if words and words[0].unquoted == "cd" else failure,
+            )
         argv = [str(word) for word in words]
         if not argv:
             raise ActionableError("検証コマンドが空です", next_action=failure)

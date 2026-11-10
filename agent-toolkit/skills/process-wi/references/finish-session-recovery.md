@@ -1,0 +1,61 @@
+# 公開工程とセッション終了：公開工程の続行不能の回復と再開
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 合流した公開対象を判断する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
+| 目標起点の公開対象を判断する前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
+| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
+| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` |
+| 基準資料を選択・取得する時 | `termination-ci-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md` |
+| 基準資料を選択・取得する時 | `../../commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
+
+## 公開工程の続行不能の回復と再開
+
+**21.** `session-termination.parent.md`からCIの照会不能、あるいは公開後操作の前提条件不足が返却された場合は、公開状態の4項目が成立している場合であっても本節の処理へ進む。
+
+ 確認済みのpush、全体検証、バージョン更新、生成物同期、公開後操作、およびWIの採否確定の各到達点を保持し、残されたCI判定や公開後操作を公開工程の未完了事項として扱う。
+成功済みの公開後操作もそのまま保持する。
+ 回復、確認、個別UWIの保存と回答を要する未終了項目の保留は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従って行う。
+ 全体検証の失敗が含まれる場合は`references/termination-ci-failure.md`へ引き渡し、CI未判定の解消のみをもって全体成功とみなさない。
+
+**22.** 公開担当の引き継ぎ記録で再開位置と証拠を管理する。
+関連計画があれば`atk plans checkout`後に`atk run-script plan-progress --`で進捗を記録し、`atk plans commit`で保存する。
+
+ 計画が存在しない場合は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従い、再開記録と必要な証拠を公開工程を扱う未終了AWIの本文へ保存し、個別のUWIと対応付ける。
+該当するAWIが存在しない場合は、同資料の手順に沿って新規登録する。
+引き継ぎ記録は同一セッション内での情報受け渡しに用いる。
+ 未終了の元項目に対しては、公開先、コミット、確認済み工程、成功済みの公開後操作、CI結果、失敗した操作と対象、不足している前提条件、baseline・保存出力・UWIの配置場所、および再開位置を`atk wi edit --append`で追記する。
+ UWIの保存に失敗した場合は元項目へ依存を設定せず、未保存の確認事項があることと未完了である旨を記録する。
+ すでに採否確定が完了した実装要求を元の状態に戻すことはせず、残された公開工程のみを個別UWIと再開記録へ引き継ぐ。
+
+**23.** ユーザーからの回答を受領した後は、対象リポジトリ担当エージェントが元の公開先とコミットを再確認し、同一の公開担当セッションが保持されていれば不足していた回答を引き渡す。
+
+ セッションが保持されていない場合は、保存済み計画または公開工程を扱うAWI本文の再開記録から、未完了の工程のみを担当エージェントへ渡す。
+ 成功済みのpush、バージョン更新、公開後操作を重複して実行することは避け、対象コミットが進んでいる場合は追加差分と残存工程を明確に区別した上で「公開状態の検収と再起動」へ進む。
+ 有効な不在証拠が得られた場合は通常の不在受理へ進み、CIの成功が確認できた場合は通常の検収処理へ復帰する。
+ 回復待ちの状態で終了する場合は公開工程を完了扱いとせず、CI未判定や未完了となっている公開後操作の内容と、UWIおよび再開記録の保管場所を報告する。
+
+## 公開状態の検収と再起動
+
+**24.** report-completionによる報告の前に、公開状態の4項目（`agent-toolkit:commit`の`references/push-and-ci.md`）が確実に検収されているかを確認する。
+短絡処理時の検収、または`session-termination.parent.md`「受領と検収」で得られた4項目は、主作業ツリーや対象参照を変更する操作、あるいは外部からの更新が間に発生していなければそのまま利用し、それ以外の場合は現在のGit状態から改めて取得し直す。
+公開担当が返却した`ベースbranchの状態`のみをもって検収済みとみなさない。
+
+ 公開担当の結果返却後に、主作業ツリーのHEAD、追跡参照（ref）、最新HEADにおけるCI状態、および作業ツリーの状態を確認する。
+ GitLabでCI実行対象外を返した場合は、終了8のproject・commit・ref・errorsと同じHEADに対するローカル全体検証成功を検収する。
+ 新しいHEADへ更新された場合は非生成も再判定する。
+
+- 前回pushしたOIDからベースブランチへ新たなコミットが統合された場合（主作業ツリーで直接作成した是正コミットを含む）: すべてのレーンの終了と書き込み主体の解放を確認し、追加差分のbump種別、プロジェクト固有の公開後操作、延期`adopt`のみを入力として同一の公開手順を再実行する。
+  その上で、最新HEADのpushとCI結果を`session-termination.parent.md`「受領と検収」のCI成功・CI定義なし・CI実行対象外の各受理条件で確認する。
+- 新たなコミットが存在せず、CI未判定のみが残っている場合: 「公開工程の続行不能の回復と再開」の手順に従い、同一コミットに対する未完了工程を再開する。
+- 新たなコミットが存在せず、公開後操作のみが未完了の場合: 「公開工程の続行不能の回復と再開」の手順に従い、同一コミットに対する未完了の公開後操作のみを再開する。
+- 新たなコミットが存在せず、CIの検収および公開後操作がすべて完了している場合: 再起動は行わず、そのまま報告処理へ進む。
+- 新たなコミット以外の要因によって公開状態が成立していない場合: 原因と復旧手段を調査し、既存の認可範囲内で回復を図る。
+  ユーザー自身しか判断できない事項のみをUWIで確認し、観測結果と未完了の内容を報告に含める。

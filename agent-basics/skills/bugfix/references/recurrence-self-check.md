@@ -6,11 +6,11 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-prevention.md#「再発防止策」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「再発防止策」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-prevention-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-selection.md` |
 
 ## 観点の書き方
 
@@ -35,3 +35,9 @@
 
 根拠となっていた規範が削除された項目や、より上位の段階（第1段階〜第4段階）の処置によって同様の誤りが自動的・構造的に防止できるようになった項目は削除する。
 メンテナンスを行う際も、根拠となる規範、適用対象の条件、および検出できる誤りの内容が正しく対応しているかを確認する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 再発防止の選定と完了の基準を適用する前 | `root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |

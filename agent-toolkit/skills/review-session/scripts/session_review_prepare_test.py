@@ -16,6 +16,7 @@ from typing import Any
 
 import pytest
 import session_evidence_candidates as evidence_candidates  # pylint: disable=import-error
+import session_evidence_execution as execution
 import session_review_evidence as evidence  # pylint: disable=import-error
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -43,6 +44,76 @@ def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     work_dir = tmp_path / "work"
     work_dir.mkdir()
     return work_dir
+
+
+def test_prepare_reuses_syntax_through_effect_scan_without_carryover(tmp_path, capsys, monkeypatch) -> None:
+    """別位置の証拠を保ってbundleと効果確認で構文を共有し、次の準備では解析し直す。"""
+    parsed: list[str] = []
+    original = execution._parse_shell_simple_commands  # pylint: disable=protected-access
+
+    def counted(command, **kwargs):
+        parsed.append(command)
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(execution, "_parse_shell_simple_commands", counted)
+    command = "cat /repo/role.subagent.md; sed -n -e1p /cache/atk-output-example/output.txt"
+    for number in range(2):
+        transcript = tmp_path / f"session-{number}.jsonl"
+        support.write_jsonl(
+            transcript,
+            [
+                support.timestamped_entry("2026-09-06T12:00:00Z", "依頼"),
+                support.claude_call("2026-09-06T12:00:01Z", "a", "Bash", {"command": command}),
+                support.claude_call("2026-09-06T12:00:02Z", "b", "Bash", {"command": command}),
+                support.claude_call("2026-09-06T12:00:03Z", "read", "Read", {"file_path": "/repo/read-only.md"}),
+            ],
+        )
+        work = tmp_path / f"prepared-{number}"
+        work.mkdir()
+        assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+        capsys.readouterr()
+        candidates = [json.loads(line) for line in (work / "bundle/candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+        processing = next(row for row in candidates if row.get("candidate_kind") == "adhoc-processing")
+        assert [row["line"] for row in processing["calls"]] == [2, 3]
+        assert processing["count"] == 2
+        assert parsed.count(command) == number + 1
+        assert "/repo/read-only.md" not in parsed
+
+
+def test_prepare_rejudges_env_representative_events(tmp_path, capsys) -> None:
+    """誤統合された旧署名を残さず、代表イベントの既知・未知env入力を再分類する。"""
+    ledger = tmp_path / "state/session-review/failure-signatures.jsonl"
+    ledger.parent.mkdir(parents=True)
+    commands = ["env -u NAME git status", "env -u NAME pytest", "env -S git status", "env -S pytest"]
+    records = [
+        {
+            "candidate_kind": "tool-failure",
+            "session_id": f"past-{number}",
+            "observed_at": "2026-09-05T00:00:00+00:00",
+            "failure_signature": json.dumps(["tool-failure", "-u", "NAME", 2, "同じ診断"]),
+            "failure_summary": "旧署名",
+            "failure_event": {
+                "tool": "Bash",
+                "exit_code": 2,
+                "text": "同じ診断",
+                "operation": json.dumps({"command": command}),
+            },
+        }
+        for number, command in enumerate(commands)
+    ]
+    ledger.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8")
+    transcript = tmp_path / "current.jsonl"
+    support.write_jsonl(transcript, [support.timestamped_entry("2026-09-06T12:00:00Z", "依頼")])
+    work = _work_dir(tmp_path)
+    for _ in range(2):
+        assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+        result = json.loads(capsys.readouterr().out)
+        assert result["failure_ledger_skipped"] == 0
+        saved = [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines()]
+        assert len(saved) == 4
+        assert len({row["failure_signature"] for row in saved}) == 4
+        assert {row["session_id"] for row in saved} == {row["session_id"] for row in records}
+        assert {row["observed_at"] for row in saved} == {"2026-09-05T00:00:00+00:00"}
 
 
 def _bundle_rows(record: dict[str, Any], filename: str) -> list[dict[str, Any]]:
@@ -230,7 +301,7 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
 
 @pytest.mark.parametrize("has_identifier", [False, True])
 def test_prepare_unresolved_scope(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, has_identifier: bool) -> None:
-    """抽出から準備まで両未解決種別を通し、文書と1行JSONへ同じ対象を届ける。"""
+    """両未解決種別の全量を保存し、有限な文書概要から同じ対象へ到達する。"""
     result = {"session_id": "22222222-3333-4444-8555-666666666666"} if has_identifier else {"status": "completed"}
     entries = [
         {"type": "user", "message": {"role": "user", "content": "依頼"}},
@@ -294,9 +365,19 @@ def test_prepare_unresolved_scope(tmp_path: pathlib.Path, capsys: pytest.Capture
     assert len(record["unconfirmed_scope"]) == 1
     event = record["unconfirmed_scope"][0]
     assert event["kind"] == kind and event["line"] == 3 and event["record"]
+    assert event["next_action"] and "記録保持者" in event["next_action"]
+    saved = (work / "bundle" / "unconfirmed.jsonl").read_text(encoding="utf-8")
+    assert [json.loads(line) for line in saved.splitlines()] == [event]
+    serialized = json.dumps(event, ensure_ascii=False)
+    assert len(serialized.encode("utf-8")) > 200
     for key in ("candidates_path", "stats_path"):
         document = pathlib.Path(record[key]).read_text(encoding="utf-8")
-        assert json.dumps(event, ensure_ascii=False) in document
+        assert "全件はbundle/unconfirmed.jsonlへ保持する" in document
+        prefix = f"- {kind}: "
+        preview = next(line.removeprefix(prefix) for line in document.splitlines() if line.startswith(prefix))
+        assert '"record": ' in preview
+        assert preview.endswith("…") and serialized.startswith(preview[:-1])
+        assert len(preview.encode("utf-8")) <= 200
     assert record["candidate_total"] == 0 and not record["mandatory_candidates"]
 
 

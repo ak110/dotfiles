@@ -44,12 +44,33 @@ def test_missing_or_invalid_worktree_write_is_a_format_violation(tmp_path: pathl
     assert reason in declaration and str(path) in declaration
 
 
-def test_launched_task_document_round_trips_the_task_header(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("references_first", [False, True])
+def test_launched_task_document_round_trips_the_task_header(tmp_path: pathlib.Path, references_first: bool) -> None:
     """`task`の見出しで始まる起動本文からだけ役割文書のパスを得る。"""
     document = tmp_path / "share" / "exec.subagent.md"
-    prompt = task_documents.task_prompt_header(document) + "\n本文"
+    prompt = task_documents.task_prompt_header(document) + (
+        "\n本文\n入力:\n対象: 内容"
+        if references_first
+        else "\n役割: exec\n入力:\n対象: 内容" + task_documents.TASK_PROMPT_REFERENCES + "本文"
+    )
 
     assert task_documents.launched_task_document(prompt) == document
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_task_prompt_inputs_preserves_old_and_front_loaded_inputs(legacy: bool) -> None:
+    """新旧の起動記録で参照資料を入力から除き、値に含まれる見出しを保つ。"""
+    inputs = "対象:\n  内容\n  入力:\n  ## 手順・参照資料\n  末尾\n任意: 値"
+    references = "# 手順\n入力:\n対象: 手順内の別値"
+    prompt = (
+        references + "\n入力:\n" + inputs
+        if legacy
+        else "役割: exec\n入力:\n" + inputs + task_documents.TASK_PROMPT_REFERENCES + references
+    )
+    assert task_documents.task_prompt_inputs(prompt) == {
+        "対象": "内容\n入力:\n## 手順・参照資料\n末尾",
+        "任意": "値",
+    }
 
 
 @pytest.mark.parametrize(

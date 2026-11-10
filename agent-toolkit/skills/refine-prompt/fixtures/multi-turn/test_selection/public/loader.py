@@ -2,7 +2,7 @@
 
 import importlib
 
-import registry  # ty: ignore[unresolved-import]  # 模擬リポジトリは同じディレクトリのモジュールを実行時のsys.pathで解決する
+import registry  # ty: ignore[import-not-found]  # 模擬リポジトリは同じディレクトリのモジュールを実行時のsys.pathで解決する
 
 
 def load_plugins(config: dict) -> list:

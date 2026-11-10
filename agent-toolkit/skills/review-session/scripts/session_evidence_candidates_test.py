@@ -2,6 +2,7 @@
 
 import json
 import pathlib
+import shlex
 
 import pytest
 import session_evidence_candidates as evidence_candidates
@@ -12,8 +13,78 @@ import session_review_evidence as evidence
 from agent_toolkit._agents_server import tool_descriptions
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY
-from agent_toolkit._testing.failure_records import failure_entries
+from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
 from agent_toolkit._testing.helpers import _write_transcript
+
+
+@pytest.mark.parametrize("mode", ["argv", "shell", "Bash"])
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "env -u NAME",
+        "env -uNAME",
+        "env --unset=NAME",
+        "env --unset NAME",
+        "env -i",
+        "env --ignore-environment",
+        "env -",
+        "env -C /repo",
+        "env -C/repo",
+        "env --chdir=/repo",
+        "env --chdir /repo",
+        "env --",
+        "env -i A=1",
+        "A=1 env -u NAME B=2",
+    ],
+)
+def test_env_failures_keep_execution_identity(tmp_path, capsys, prefix, mode) -> None:
+    """既知の包装差を同じ署名へまとめ、同じ診断でも別の実行を別候補へ保つ。"""
+    commands = ["git status", f"{prefix} git status", f"{prefix} pytest"]
+    entries = []
+    for index, command in enumerate(commands):
+        if mode == "Bash":
+            entries.extend(bash_failure_entries(command, "Exit code 2\n実行に失敗した", f"call-{index}"))
+            continue
+        argv = ["bash", "-lc", command] if mode == "shell" else shlex.split(command)
+        entries.append(
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": "failed",
+                        "command": argv,
+                        "exit_code": 2,
+                        "stderr": "実行に失敗した",
+                    },
+                },
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    rows = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    failures = [row for row in rows if row.get("candidate_kind") == ("tool-failure" if mode == "Bash" else "command-failure")]
+    assert sorted(row["count"] for row in failures) == [1, 2]
+    assert {tuple(json.loads(row["failure_signature"])[1:3]) for row in failures} == {("git", "status"), ("pytest", "")}
+
+
+@pytest.mark.parametrize("prefix", ["env -S", "env --split-string", "env --unknown", "env -u", "env -C"])
+def test_unresolved_env_failures_preserve_original_input(prefix: str) -> None:
+    """未知・引数不足のenvをオプション名の共通署名へ縮めない。"""
+    commands = [prefix, f"{prefix} git status", f"{prefix} pytest", "env", "env A=1"]
+    signatures = []
+    for command in commands:
+        event = {"operation": json.dumps({"command": command}), "tool": "Bash", "exit_code": 2, "text": "同じ診断"}
+        signature, summary = evidence_candidates.failure_signature("tool-failure", event)
+        signatures.append(signature)
+        assert command in summary
+    # -u/-Cに後続値がある場合は既知の文法として解釈する。未知包装だけは全文を識別軸へ保持する。
+    if prefix not in {"env -u", "env -C"}:
+        assert len(set(signatures[:3])) == 3
 
 
 @pytest.mark.parametrize("failure_kind", ["command-failure", "tool-failure"])

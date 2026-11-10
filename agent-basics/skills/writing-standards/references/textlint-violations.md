@@ -4,20 +4,17 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「表記の一括置換」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「表記の一括置換」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「日本語の表記ルール」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「日本語の表記ルール」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lint-relax-criteria.md#「緩和判断のフレーム」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md#「緩和判断のフレーム」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles.md#「要件と認可」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/quality-principles.md#「要件と認可」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md#「ユーザー入力素材の取扱い」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/writing.md#「ユーザー入力素材の取扱い」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples.md#「冗長表現」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/tone-examples.md#「冗長表現」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `notation-rules.md#「Markdown記述スタイル」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-rules.md#「Markdown記述スタイル」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `tone-examples.md#「ら抜き言葉と可能表現」「カタカナ動詞比喩」「比喩動詞」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/tone-examples.md#「ら抜き言葉と可能表現」「カタカナ動詞比喩」「比喩動詞」` |
-| チェッカーがない環境で自己点検する前 | `notation-checks.md`の「チェックの対象範囲」 | 判断 | `section:agent-basics:*/skills/writing-standards/references/notation-checks.md#「チェックの対象範囲」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/lint-relax-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `input-material.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/input-material.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/tone-examples.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples.md` |
+| チェッカーがない環境で自己点検する前 | `agent-basics:writing-standards/references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` |
 
 ## textlint指摘への修正方針
 
@@ -25,14 +22,17 @@
 再発防止策の要否と初回検出の例外、記録の比例性は同スキルに従う。
 
 1対1の表記変更や、限られた候補から選べる反復表現の指摘については、`notation-rules.md`の「表記の一括置換」にある手順に従って候補を試し、変更した文をすべてレビューする。
-それ以外の指摘では、該当する文全体を自然な日本語へ書き直す。対象にはドキュメントのほか、コード内のコメント、docstring、表示メッセージ、プロンプトへの注入文なども含む。
+それ以外の指摘では、該当する文全体を自然な日本語へ書き直す。
+対象にはドキュメントのほか、コード内のコメント、docstring、表示メッセージ、プロンプトへの注入文なども含む。
 説明に使う語の基準は`notation-rules.md`の「日本語の表記ルール」に従い、文脈に合った語を選ぶ。
 
-- 指摘された語句だけを置き換えるのではなく、文全体を組み立て直す。その語句が担っていた動作や関係を動詞や自然な言い回しで表現し、基準となる資料の内容、確認対象の相手、実行する操作、比較する値などを文脈から補って文を整える
+- 指摘された語句だけを置き換えるのではなく、文全体を組み立て直す。
+  その語句が担っていた動作や関係を動詞や自然な言い回しで表現し、基準となる資料の内容、確認対象の相手、実行する操作、比較する値などを文脈から補って文を整える
 - `textlint --fix`による自動修正が多くの箇所に及ぶ場合は、修正後の差分を必ずレビューする
 - `no-short-topic-comma`（短い主題の直後の読点）の指摘では、インラインコードで始まる主題も含めて、読点を外すか文の構造を組み替える
 - `.textlintrc.yaml`の`allows`への登録は、`lint-relax-criteria.md`の「緩和判断のフレーム」で緩和が妥当と判断した場合に限定する
-- 書き直しによって意味や契約が変わってしまう場合は、`quality-principles.md`の「要件と認可」を適用する。指摘件数の多さや書き直しの難しさを理由に対応範囲を狭めない
+- 書き直しによって意味や契約が変わってしまう場合は、`quality-principles-authorization.md`「要件と認可」を適用する。
+  指摘件数の多さや書き直しの難しさを理由に対応範囲を狭めない
 - 繰り返し適用した書き直しのパターンは、参照時の負担を考慮しつつ、後述の「典型パターン」へ追記する
 
 ### 典型パターン
@@ -82,19 +82,28 @@
 ## 文の書き直しの委譲と検収
 
 成果物の種類、読者、事実関係、根拠、反映先が確定した文章の作成を委譲する場合も、次の品質基準に基づいて検収する。
-原文との意味の比較には`writing.md`「ユーザー入力素材の取扱い」を適用する。主体を補う際は原文、依頼、資料に根拠がある担当、通知先、責任を保ち、既存人物への作業の再割当も確認する。
+原文との意味の比較には`input-material.md`「ユーザー入力素材の取扱い」を適用する。
+主体を補う際は原文、依頼、資料に根拠がある担当、通知先、責任を保ち、既存人物への作業の再割当も確認する。
 
-- 依頼文には、読者の種別（人間向けかエージェント向けか）、対象ファイルと該当段落、指摘されたルール名と対象の語句、維持すべき事実や契約、前節で示した禁止事項を明記する。読者が異なる文書は依頼を分けて作成する
-- 返ってきた文は原文と比較して事実や契約が保たれているか確認し、textlintと、プロジェクトが導入している表記チェック（口語表現、ダッシュなど）を実行する。チェッカーが無い環境では`notation-checks.md`「チェックの対象範囲」に従って手動の自己点検をする。変更箇所の比較には`git diff --word-diff=plain --word-diff-regex=.`を使い、空白で区切られない日本語の差分を文字単位で把握する。語句の置換だけでは意味や自然さを保てない場合は、述語や文構造まで含めて見直す
-- 見出しに含まれる指摘語を修正した場合は、その節名を参照しているすべてのドキュメントやコードも同時に更新する。定義済みの用語に指摘語が含まれる場合も、用語の定義と使用箇所の表記を統一する。語句の出現頻度の記録など、指摘語そのものをデータとして扱う箇所は変更せず、インラインコードで表記する
+- 依頼文には、読者の種別（人間向けかエージェント向けか）、対象ファイルと該当段落、指摘されたルール名と対象の語句、維持すべき事実や契約、前節で示した禁止事項を明記する。
+  読者が異なる文書は依頼を分けて作成する
+- 返ってきた文は原文と比較して事実や契約が保たれているか確認し、textlintと、プロジェクトが導入している表記チェック（口語表現、ダッシュなど）を実行する。
+  チェッカーが無い環境では`notation-checks.md`「チェックの対象範囲」に従って手動の自己点検をする。
+  変更箇所の比較には`git diff --word-diff=plain --word-diff-regex=.`を使い、空白で区切られない日本語の差分を文字単位で把握する。
+  語句の置換だけでは意味や自然さを保てない場合は、述語や文構造まで含めて見直す
+- 見出しに含まれる指摘語を修正した場合は、その節名を参照しているすべてのドキュメントやコードも同時に更新する。
+  定義済みの用語に指摘語が含まれる場合も、用語の定義と使用箇所の表記を統一する。
+  語句の出現頻度の記録など、指摘語そのものをデータとして扱う箇所は変更せず、インラインコードで表記する
 - 書き直しを終えた後は、インラインコード、見出し、コードブロックの内容が変わっていないかを機械的に突き合わせ、意味や契約が維持されているかは別の担当者が差分をレビューして確認する
 
 ## 文字種と間隔
 
 - 日本語と半角文字（英数字・記号・インラインコード）が隣接する場合、間にスペースを入れない（JTF 3.1.1）
   例: `Pythonの設定`、`chezmoiで管理する`、「`uv add`を使う」
-  - ソースコード内の文字列リテラル（ログ、エラーメッセージ、CLIヘルプなど）を地の文へ引用すると、自動修正によってスペースが削除される恐れがある。そのため、完全一致検索を前提とする引用は`text`または言語名を指定したコードブロックで囲む
-- 日本語の文章中ではハイフン`-`を使わない（JTF 4.2.6）。接頭辞や識別子として用いる場合はインラインコードにする
+  - ソースコード内の文字列リテラル（ログ、エラーメッセージ、CLIヘルプなど）を地の文へ引用すると、自動修正によってスペースが削除される恐れがある。
+    そのため、完全一致検索を前提とする引用は`text`または言語名を指定したコードブロックで囲む
+- 日本語の文章中ではハイフン`-`を使わない（JTF 4.2.6）。
+  接頭辞や識別子として用いる場合はインラインコードにする
 - 本文中の山括弧`<>`は対応関係を保ち、プレースホルダーとして使う場合はインラインコード内に含める（JTF 4.3.7）
 
 ## 文長
@@ -114,7 +123,8 @@
 
 - Markdownのコードブロックの外側フェンスに4つのバッククォートを使うと、textlintが外側フェンスを認識できず、内側の記述を地の文として処理してしまう。
   その結果、内側の文章が文長制限などの違反として誤検出される原因になる
-  - 通常は外側フェンスに3つのバッククォートを使う。内側に3つのバッククォートを含むコードブロックを記述する場合に限り、外側フェンスに4つのバッククォートを使う
+  - 通常は外側フェンスに3つのバッククォートを使う。
+    内側に3つのバッククォートを含むコードブロックを記述する場合に限り、外側フェンスに4つのバッククォートを使う
 - 分類ラベルには、番号付きリスト記法を使うか、分類の意味を表す名前を用いる
   - 英字の分類を全角括弧で表記すると`ja-technical-writing/ja-unnatural-alphabet`で検出されるため、意味を表す名前に改める
   - インラインコードの使い分けは`notation-rules.md`の「Markdown記述スタイル」に従い、識別子と分類名を区別する
@@ -132,7 +142,8 @@
 
 ## typosの誤検出への対処
 
-typosは`text`コードブロックの中身も検査するため、固有名詞や末尾が省略されたファイル名などで誤検出が発生しやすい。対処する際は緩和判断に該当するため、`lint-relax-criteria.md`の「緩和判断のフレーム」に従う。
+typosは`text`コードブロックの中身も検査するため、固有名詞や末尾が省略されたファイル名などで誤検出が発生しやすい。
+対処する際は緩和判断に該当するため、`lint-relax-criteria.md`の「緩和判断のフレーム」に従う。
 
 - 固有名詞や意味のある単語は、除外単語として登録する（`pyproject.toml`の`[tool.typos.default.extend-words]`、または`.typos.toml`を使用する環境では同ファイルの`[default.extend-words]`）
 - 変更や破棄が前提の識別子（自動生成された名前やテスト用のダミー値など）は`XXX`などに置き換え、元の意図を注釈で説明する

@@ -72,15 +72,15 @@ def _generated_requests(context, host_environ):
     return requests
 
 
-@pytest.mark.parametrize("scenario", ["short", "japanese", "sections", "multiple", "one-line"])
+@pytest.mark.parametrize("scenario", ["short", "japanese", "sections", "normative-sections", "multiple", "one-line"])
 def test_public_hook_guidance_preserves_selected_body_and_budgets(tmp_path, monkeypatch, state, host_environ, scenario):
     """短文・不均等な85KB・非連続節・複数資料・超長行を、公開hookと実取得で検査する。"""
-    document = tmp_path / "file's $name.md"
-    sections = ["必須A", "必須B"] if scenario == "sections" else [""]
-    if scenario == "sections":
+    document = tmp_path / ("AGENTS.md" if scenario == "normative-sections" else "file's $name.md")
+    sections = ["必須A", "必須B"] if scenario in {"sections", "normative-sections"} else [""]
+    if scenario in {"sections", "normative-sections"}:
         first, last = "## 必須A\n第一の固有基準\n", "## 必須B\n第二の固有基準\n"
         body = "# 資料\n" + first + "## 対象外\n不要本文\n" + last + "## 後続\n不要末尾\n"
-        expected = (first + last).encode("utf-8")
+        expected = (body if scenario == "normative-sections" else first + last).encode("utf-8")
     elif scenario == "japanese":
         body = '# 資料\n短文"\\\n' + "長" * 14000 + "\r\n" + "末" * 14000
         expected = body.encode("utf-8")

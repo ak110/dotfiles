@@ -31,23 +31,19 @@ for argument in "$@"; do
 done
 if [[ "${1:-}" != "logs" && "$help_requested" == 0 && "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != "1" ]]; then
     bash "${SCRIPT_DIR}/libexec/update_uv.sh" "$UV" || self_update_failed=1
+    python_exit=0
+    "$UV" python install --upgrade 3.15 || python_exit=$?
+    if ((python_exit != 0)); then
+        printf '%s\n' '管理Pythonの更新に失敗したため中断しました。上の診断を確認し、update-dotfilesを再実行してください。' >&2
+        exit "$python_exit"
+    fi
 fi
 run_exit=0
-prune_requested=0
-for argument in "$@"; do
-    case "$argument" in
-    --prune) prune_requested=1 ;;
-    -h | --help)
-        prune_requested=0
-        break
-        ;;
-    esac
-done
 # 更新中にランチャーが置換されても、解析済みの終了処理を実行する。
 {
     DOTFILES_PRUNE_OUTSIDE_UV=1 "$UV" run --no-project --script "${SCRIPT_DIR}/libexec/update_dotfiles.py" "$@" || run_exit=$?
-    if ((run_exit == 0 && prune_requested == 1)); then
-        "$HOME/.local/bin/dotfiles-post-apply" --prune-only || run_exit=$?
+    if [[ "$run_exit" == 0 && "$help_requested" == 0 && "${1:-}" != "logs" ]]; then
+        "$HOME/.local/bin/dotfiles-post-apply" --prune-only-if-minimal "$@" || run_exit=$?
     fi
     if ((self_update_failed != 0)); then
         echo "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。対応不要（dotfilesの更新処理は継続しました）。" >&2

@@ -11,7 +11,7 @@ def test_with_rules_copies_plugin_rules_and_clean_removes_both(tmp_path: Path, m
     """配布元の全ルールを同じ内容で配置し、cleanで配布先を除去する。"""
     target = tmp_path / "project"
     (target / ".claude" / "skills").mkdir(parents=True)
-    source = Path(__file__).resolve().parents[2] / "rules"
+    source = Path(__file__).resolve().parents[2] / "share" / "rules" / "common"
 
     assert _run(monkeypatch, target, "--with-rules") == 0
     assert _run(monkeypatch, target, "--with-rules") == 0

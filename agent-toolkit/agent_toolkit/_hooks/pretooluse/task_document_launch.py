@@ -23,19 +23,20 @@
 
 from __future__ import annotations
 
+import functools
 import pathlib
 import re
 import string
 
-import markdown_it
+lazy import markdown_it
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from markdown_it.token import Token
 
 from agent_toolkit._agents_server import tool_names as _tool_names
-from agent_toolkit._common import task_documents
 from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._agents_server import launch_requests
+lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
@@ -75,7 +76,12 @@ _QUOTE_OPENERS = ("「", "『", "“", '"', "'")
 _MASKED_CODE = "\x00"
 """文書の絶対パス以外を内容とするインラインコードの置き換え。コード中の命令例を実行の命令と区別する。"""
 _CONTINUATION_PREFIX = "  "
-_MARKDOWN = markdown_it.MarkdownIt("commonmark")
+
+
+@functools.cache
+def _markdown() -> markdown_it.MarkdownIt:
+    """定数を参照するだけのBash判定では、Markdown解析を初期化しない。"""
+    return markdown_it.MarkdownIt("commonmark")
 
 
 def check_task_document_launch(tool_name: str, tool_input: dict) -> Decision:
@@ -191,7 +197,7 @@ def _execution_document(prompt: str) -> pathlib.Path | None:
         prompt = prompt.replace(path, escaped)
         paths[escaped] = document
     quote_depth = 0
-    for token in _MARKDOWN.parse(prompt):
+    for token in _markdown().parse(prompt):
         if token.type == "blockquote_open":
             quote_depth += 1
         elif token.type == "blockquote_close":

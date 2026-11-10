@@ -195,11 +195,19 @@ class AppServerError(session_errors.DelegateBackendError):
 class StartCandidateUnavailable(AppServerError):
     """モデルの実行開始前に候補の不成立が確定し、資源も回収済みであることを表す。"""
 
-    def __init__(self, reason: str, *, scope: typing.Literal["candidate", "launch_engine"] = "candidate") -> None:
+    def __init__(
+        self,
+        reason: str,
+        *,
+        scope: typing.Literal["candidate", "launch_engine"] = "candidate",
+        next_action: str | None = None,
+    ) -> None:
         super().__init__(reason)
         self.reason = reason
         # launch_engineは同じ起動要求内のengine共通能力の不成立で、永続記録へ渡さない。
         self.scope: typing.Literal["candidate", "launch_engine"] = scope
+        # CLIの導入と認証の確認では解消しない原因（利用上限など）に限り、原因に応じた次の操作を持つ。
+        self.next_action = next_action
 
 
 class ResourceReleaseError(session_errors.ActionableRuntimeError):
@@ -225,6 +233,18 @@ class JsonRpcResponseError(AppServerError):
         self.method = method
         self.code = code
         self.data = data
+
+    def diagnostic(self) -> tuple[str, str]:
+        """拒否理由を、エラー本文に使う形とログに使う形で返す。
+
+        `data`は任意の構造を持ちうるため、`codexErrorInfo`の値だけを含める。
+        """
+        info = self.data.get("codexErrorInfo") if isinstance(self.data, dict) else None
+        encoded = None if info is None else json.dumps(info, ensure_ascii=False)
+        return (
+            f"code={self.code}: {self}" + ("" if encoded is None else f" (codexErrorInfo={encoded})"),
+            f"code={self.code} reason={self}" + ("" if encoded is None else f" codexErrorInfo={encoded}"),
+        )
 
 
 class TurnStartResponseError(AppServerError):
@@ -1125,27 +1145,52 @@ class AppServerManager:
                 thread_response = None
                 if selection is not None and (selection.primary or selection.candidates):
                     order = (selection.primary, *selection.candidates)
+                    failures: list[str] = []
                     if (
                         selection.subscription
                         and selection.ordinary_usage_allowed is False
                         and not should_wait("codex", selection.usage_limit_type)
                     ):
                         order = selection.candidates
+                        resets = codex_usage_limit.UsageLimitState(selection.usage_limit_resets_at).resets_at_iso() or "不明"
+                        skipped = (
+                            "サブスクリプションが利用上限で通常利用できない"
+                            f"（ordinaryUsageAllowed=false、上限種別={selection.usage_limit_type or '不明'}、"
+                            f"解除予定={resets}）。"
+                            f"`codex_usage_limit_wait`={_atk_config.resolve_mutable_setting('codex_usage_limit_wait')}"
+                            "はこの上限の解除を待たない"
+                        )
+                        if not order:
+                            key = _atk_config.connection_order_key("codex", role)
+                            # 利用上限は時間の経過で解除され、接続先の設定や認証の欠陥を示さない。
+                            # 候補の不成立として返し、同じ起動要求の次の候補へ進める。
+                            raise StartCandidateUnavailable(
+                                f"Codexの接続を開始していない（provider={selection.primary}）: {skipped}。"
+                                f"使用順`{key}`に他の利用可能な接続先が無い",
+                                next_action=(
+                                    "理由に示した解除予定まで待つか、`model_type`へ別のengineの候補を指定して起動し直す。"
+                                    f"上限中もCodexを使う場合は`atk config set {key} <種別列>`でAPI課金の接続先を使用順へ加える"
+                                ),
+                            )
+                        failures.append(f"{selection.primary}: 試していない。{skipped}")
                     for candidate in order:
                         attempted.add(candidate)
                         try:
                             thread_response = await client.request("thread/start", {**params, "modelProvider": candidate})
-                        except JsonRpcResponseError:
-                            _LOG.info("Codex接続先の開始が拒否されました: provider=%s", candidate)
+                        except JsonRpcResponseError as exc:
+                            detail, logged = exc.diagnostic()
+                            _LOG.info("Codex接続先の開始が拒否されました: provider=%s %s", candidate, logged)
                             # サブスクリプションの主候補が一般的なRPC拒否を返した場合は、API課金の候補へ切り替えない。
                             if candidate == selection.primary and selection.subscription:
                                 raise
+                            failures.append(f"{candidate}: {detail}")
                             continue
                         if thread_response.get("modelProvider") != candidate:
                             raise AppServerError("thread/start did not confirm the requested connection")
                         break
                     if thread_response is None:
-                        raise AppServerError("Codex connection candidates were rejected")
+                        # 利用上限による未試行と区別し、RPC拒否の理由を委譲元へ返す。
+                        raise AppServerError("Codex connection candidates were rejected: " + "; ".join(failures))
                 else:
                     thread_response = await client.request("thread/start", params)
         except TimeoutError as exc:
@@ -1527,9 +1572,14 @@ class AppServerManager:
                     return False
                 session.codex_model_provider = candidate
                 await self._resume_thread(session, client, self._writer_session_ids.get(session.session_id))
-            except JsonRpcResponseError:
+            except JsonRpcResponseError as exc:
                 session.codex_model_provider = original
-                _LOG.info("Codex接続先の再開が拒否されました: session_id=%s provider=%s", session.session_id, candidate)
+                _LOG.info(
+                    "Codex接続先の再開が拒否されました: session_id=%s provider=%s %s",
+                    session.session_id,
+                    candidate,
+                    exc.diagnostic()[1],
+                )
                 continue
             except AppServerError, TimeoutError, OSError:
                 session.codex_model_provider = original

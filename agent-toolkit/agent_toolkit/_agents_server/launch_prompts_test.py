@@ -12,6 +12,7 @@ import pytest
 
 from agent_toolkit._agents_server import launch_prompts, state, tool_descriptions
 from agent_toolkit._common import automated_prompt, plugin_roots
+from agent_toolkit._testing.normative_contract import read_contract
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shellによる実行の受入例")
@@ -100,21 +101,25 @@ def test_process_loop_launched_delegate_takes_main_role() -> None:
     参照先の節は見出しの実在で確かめる。軽量委譲は担当を起動しないため条件を持たない。
     """
     marker = f'source="{automated_prompt.SOURCE_PROCESS_LOOP}"'
-    reference = "references/all-repos-orchestration.md`「担当の役割」"
+    reference = "references/all-repos-orchestration-roles.md`「担当の役割」"
     for prompt in (launch_prompts.DELEGATE_SYSTEM_PROMPT, launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT):
         assert marker in prompt
         assert reference in prompt
     for kind in ("explore", "shell", "write"):
         assert marker not in launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind], kind
-    orchestration = launch_prompts.SHARE_DIR.parent / "skills" / "process-wi" / "references" / "all-repos-orchestration.md"
-    assert "## 担当の役割" in orchestration.read_text(encoding="utf-8").splitlines()
+    orchestration = read_contract(
+        launch_prompts.SHARE_DIR / "agents-server-delegate.md",
+        launch_prompts.SHARE_DIR.parent,
+        ("../skills/process-wi/references/all-repos-orchestration-roles.md", "本文がこの資料の基準を使う場面"),
+    )
+    assert "## 担当の役割" in orchestration.splitlines()
     assert marker in automated_prompt.wrap("本文", source=automated_prompt.SOURCE_PROCESS_LOOP, kind="repository-delegate")
 
 
 def test_lightweight_launches_receive_shared_result_contract_only() -> None:
     """共通規範を省く全区分へ同じ返却条件が届き、ベース実務規律の全文は追加しない。"""
     base = _shared_document_body("agents-server-base.md")
-    rules = (launch_prompts.SHARE_DIR / "rules-subagent.md").read_text(encoding="utf-8")
+    rules = (launch_prompts.SHARE_DIR / "rules" / "rules-subagent.md").read_text(encoding="utf-8")
     result_body = (
         rules.split("<!-- subagent-result-contract:start -->", maxsplit=1)[1]
         .split("<!-- subagent-result-contract:end -->", maxsplit=1)[0]
@@ -172,6 +177,9 @@ def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> N
             assert operation in prompt, (backend, operation)
         for reading_rule in ("取得単位の選択にだけ", "読んだ本文で判定", "wc -c", "test -s", "改行文字の数", "'<開始行>,$p'"):
             assert reading_rule in prompt, (backend, reading_rule)
+        # シェル未指定のコマンドがPowerShellで動く環境でも、実在するbashの指定とbashが無い場合の同等の読取へ到達する。
+        for shell_rule in ("POSIXシェル", "実在を確かめたbash", "Get-Content -LiteralPath <絶対パス> -Encoding utf8"):
+            assert shell_rule in prompt, (backend, shell_rule)
         assert "行範囲を分けて最後まで読む" in prompt
         assert "内側コマンドと外側セル" in prompt
         assert "完成条件" in prompt

@@ -1,0 +1,158 @@
+# 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` | |
+| 形式判別前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 基準の参照時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
+| 検証結果を記録する前 | `verification-evidence-records.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-records.md` | |
+| 手動観測を保存する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` | |
+| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-verification.md` | |
+| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` | |
+| 基準の参照時 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
+| 初回起動前 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` | |
+| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
+| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
+| 基準の参照時 | `review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-rounds.md` | |
+| 基準の参照時 | `agent-toolkit:/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
+| 基準の参照時 | `agent-basics:secret-files/SKILL.md` | 判断 | `read:agent-basics:*/skills/secret-files/SKILL.md` | |
+| 基準の参照時 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` | |
+| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
+| 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md`、`read:agent-toolkit:*/share/review-loop-coordination-rounds.md` | |
+| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-verification.md` | |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
+| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` | |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` | |
+| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` | |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` | |
+
+## 起動方法別のレビュー基準
+
+**2.** 要求と認可に合うレビュー単位・基準・担当モデルを確定する。
+
+原要求・回答・公開契約から派生計画・review_contractの必要性も検収させる。
+内部方式・検証手段は必要結果・品質・認可・制約を保って変更できる。
+
+レビュー基準には、その実装を認可した手元の資料に応じて`計画`、`CI記録`、`WI`を組み合わせて指定する（対応する計画があれば`計画`、対象WIがあれば`WI`、計画がなくCI失敗に対応した実装なら`CI記録`）。
+1回の実行レビューは`cwd`から解決する単一のリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
+
+対象WIに`担当モデル.実行レビュー担当`の指定があれば、そのモデル名を起動時の`model_type`と委譲入力の`担当モデル`へ渡す（読者別探索担当にも引き継がれる）。
+モデルの比較と記録は`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」に従い、対象WIごとにモデル指定が異なればレビューの実行単位を分ける。
+
+同じレーンに複数の計画（初回分割時の複数計画、または凍結済みの先行計画と追加計画）がある場合は、計画ごとに同じ最終実装HEADでレビューを起動し、計画の識別名（stem）ごとにレビュー指摘管理表と返却を受け取る。
+各レビューには、その計画に対応するAWIだけを割り当てる。
+計画ごとの成果物は、レビュー指摘管理表、完成条件証拠を含む返却メッセージ、`review_contract`である。
+レーン全体を管理する担当には全計画分を計画との対応を保って1回で渡し、計画ごとのレビューthreadにはその計画の分を渡す。
+複数計画がある場合の契約ファイルは、初回・再レビューを問わず`exec-review-contract-generation.md`「`review_contract`の生成」に従って計画ごとに作る。
+
+レビュー修正やrebaseの競合解消でHEADが変わったら、影響する計画だけを再レビューする。
+前回レビューHEADを`R`、最新HEADを`H`、`<基点>`を開始時のHEAD（rebase後はrebase先OID）とし、次のどちらかに当たる計画を「影響を受ける計画」とする。
+
+- `git range-diff <開始時のHEAD>..<R> <基点>..<H>`の結果で、その計画の判定対象コミット（`review_contract`で判定対象外としたコミットを除く）のいずれかが`=`以外で対応している
+- `git diff --name-only <R> <H>`の変更ファイル一覧が、その計画の判定対象コミットで変更されたファイルと重なる
+
+対象worktreeで上記コマンドを直接実行する。
+判定対象コミットは`atk run-script plan-commits -- <計画の絶対パス> --worktree <対象worktreeの絶対パス>`が返すレビュー時点の一覧から判定対象外を除く。
+変更ファイルは`git show --name-only --format= <commit>`で確認する。
+終了が非0なら原因を解消して判定し直す。
+影響を受けない計画は再レビューを省き、計画名、`R`と`H`の完全なコミットOID、実行したコマンド、対応行の要点、省略理由をレーンの引き継ぎ記録に残す。
+rebaseでコミットOIDだけが変わった場合は再レビュー不要である。
+統合は、全計画のレビューが最終HEADで完了している場合か、最後のレビュー以降の差分が影響のない修正だけの場合に始める。
+各指摘管理表の未解決指摘が0件であることも条件とする。
+
+基準の`計画`には計画ファイルの絶対パスを書く。
+計画の`## 実施内容`に挙がったWIはレビュー担当が自ら取得するので、委譲プロンプトには計画にないWIだけを書く。
+プロンプトで渡すWIと、計画の`## 実施内容`に「人間由来のWI」「エージェント由来のWI」として挙がった関連WIを合わせた集合（対象WI集合）が空でない場合と、`ユーザー指示`由来の行がある場合を「証拠要求あり」と呼ぶ。
+証拠要求があるレビューの返却には条件別の判定行を出す。
+受理した返却の保存先（`agent_message_path`。`atk agents wait`の結果が示すファイルパス）は、計画名と対象WI集合に対応付けて後続の検収へ渡す。
+
+## レビュー指摘管理表のパス
+
+**3.** 既存のレビュー履歴を保持できる管理表を特定する。
+
+1回の実行レビューでは単一の指摘管理表を使う。
+レビュー担当は次の規則で保存先を決める。
+
+- 基準に`計画`を含む場合: 計画ファイルと同じディレクトリの`<計画stem>.exec-review.tsv`
+- 基準が`WI`のみの場合: `~/.claude/plans/wi-<開始時のHEAD>.exec-review.tsv`（`開始時のHEAD`は、委譲プロンプトに書く処理開始時のHEADの7文字以上の一意な短縮OID）
+- 基準が`CI記録`のみの場合: `~/.claude/plans/ci-<修正系列の開始時のHEAD>.exec-review.tsv`（`修正系列の開始時のHEAD`は、委譲プロンプトに書く一連の修正の開始時のHEADの7文字以上の一意な短縮OIDで、同じ修正系列では引き継ぐ）
+
+初回レビューで管理表が無い場合はレビュー担当が初回の読み取り前に作るので、メインエージェントは事前に初期化せず、表が無いことを理由に起動を拒まない。
+既存の管理表や再レビュー用の管理表はそのまま使い続ける。
+履歴を引き継ぐ場面で管理表が見つからない場合は、無い原因を調べ、空の表で代替しない。
+
+## 入力
+
+**4.** 基準ごとの不足を防ぐため、以下の入力を確定する。
+
+- 必須入力名: `レビュー基準`、`引き継ぎ記録先`
+
+必須の`レビュー基準`には「起動方法別のレビュー基準」で決めた基準を指定する。
+必須の`引き継ぎ記録先`は`../skills/delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従って決める。
+`計画`は対応する計画ファイルの絶対パスを渡す。
+`CI記録`はCI失敗に対応する場合に記録項目を渡す。
+`WI記録`は計画にない対象WIのファイル名、要求、完成条件、由来、採否を渡し、計画がない場合は全対象を含める。
+基準ごとの要否と関連する開始時点は「起動方法別のレビュー基準」、`review_contract`の要否と値は`exec-review-contract-generation.md`「`review_contract`の生成」に従う。
+`修正系列の開始時のHEAD`、`原因commitOID`、`開始時のHEAD`、`レーン識別子`、`レビュー種別`、`round`、`対象ファイル限定`、`Git管理外の変更`、`前回確認版`の要否と値は「起動」の説明に従って決める。
+`担当モデル`は「起動方法別のレビュー基準」、`rewrite_map`は「レビュー修正」、`受理済みの完成条件証拠`は本書冒頭の規則に従う。
+
+## 起動
+
+**5.** 入力と所属を点検してから、確定した単位でレビューを起動する。
+
+証拠の引渡しは`verification-evidence-records.md`「完成条件証拠の検証記録」に従う。
+
+次の引数で`agents_server`の`start`を呼ぶ。
+
+| 引数 | 値 |
+| --- | --- |
+| `cwd` | 対象worktreeの絶対パス |
+| `subagent_md_path` | `exec-review` |
+| `extra_params` | 「入力」に示す入力パラメーター |
+| `model_type` | `担当モデル.実行レビュー担当`の指定があればその値。なければ省略する |
+
+初回起動の`extra_params`には、レビュー基準と、複数計画、計画外の条項または新形式AWIにより作った`review_contract`を含める。
+`引き継ぎ記録先`の扱い（引き継ぎ再レビューでの`（継続）`表記を含む）は、`../skills/delegation/references/base-contract-handoff.md`「引き継ぎ記録先」に従う。
+特定レーンの作業を対象に起動する場合は`レーン識別子`も指定し、セッション識別名を`<レーン識別子>-exec-review`とする（`CI記録`のみによる起動を除く）。
+起動直前に`git merge-base <専用branch> <ベースbranch>`で分岐元コミットを解決し、計画の有無にかかわらず`開始時のHEAD`としてプロンプトに書く。
+それ以外で`WI`だけを渡す場合は、作業開始時のHEADを`開始時のHEAD`とする。
+`CI記録`を渡す場合は、`agent-toolkit:commit/references/ci-failure-handling.md`の項目に加えて`修正系列の開始時のHEAD`と`原因commitOID`を書く。
+`原因commitOID`はCI失敗が再帰するたびにCI記録と一緒に更新し、`修正系列の開始時のHEAD`は同じ修正系列で引き継ぐ。
+CI記録には、メインエージェントが原因コミットを作ったときに持っていた情報を直接書く。
+初回レビューでは、デフォルト値の`レビュー種別: 初回レビュー`と`round: 1`を省く。
+再レビューの指示と引き継ぎ再レビューでは、`review-loop-coordination-rounds.md`「ラウンド番号の保持先」に記録した値で`round: <ラウンド番号>`を含める。
+`対象ファイル限定`は対象ファイルを示す。
+リポジトリ、レビューHEAD、変更ファイル、検証結果、指摘管理表は担当が解決する。
+メインエージェントが読者別探索を起動する場合も、Git管理下の比較対象資料は`reader-fit-review.parent.md`「入力」のGit参照形式で渡す。
+再レビューの比較元には前回のレビューHEADを指定し、計画ごとの判定範囲は同節の`判定範囲差分`で渡す。
+
+Git管理外ファイルの変更前後の複製のペアがあれば、レーンの引き継ぎ記録にある全ペアを任意入力`Git管理外の変更`で渡し、無ければ省く。
+メインエージェント自身が実装した場合は、`exec-subagent-implementation.md`「実装」のGit管理外ファイルの手順に従って最初の変更の前に複製を作り、そのペアを計画の`## 進捗ログ`（計画がなければ直接実装の引き継ぎ記録）に残す。
+作業ツリー内の`.env`などの設定ファイルは通常の全文差分として扱う。
+作業ツリー外で`agent-basics:secret-files`の対象となるファイルのペアは、キー名の一覧とキーごとの値の一致だけを比べる（同スキルの全文読み取りと出力の禁止を守るため）。
+
+引き継ぎ再レビューは`レビュー種別: 引き継ぎ再レビュー`と次の情報を渡す。
+契約の再作成は`exec-review-contract-generation.md`「`review_contract`の生成」、継続不能の判定と引き継ぎは`agent-toolkit:delegation`のSKILL.md「継続と新規起動」に従う。
+
+- `前回確認版`: 前担当の引き継ぎ記録に保存された記録ファイルの絶対パス。
+  前回レビューしたHEADのほか、Git管理外の文章成果物ごとの識別子と前回本文の複製パスを含む。
+  記録ファイルと比較元の実在を確かめてから起動し、取得できない情報があれば、欠けたHEADや本文の取得元を委譲元へ報告する
+- 基準ごとの追加入力: 「起動方法別のレビュー基準」と本節の`CI記録`・`開始時のHEAD`の説明で定めた各値
+
+`agents_server`は必須入力の欠落を拒否する。
+`レビュー基準`は基準名だけの値か、選んだ基準の追加入力（「起動方法別のレビュー基準」と本節の各入力）が揃っているかを起動時に検査し、基準名へ資料のパスや説明を連結した値も拒否する。
+その後、新形式AWIでは初回・引き継ぎ再レビューとも、条件表の有無、列、主要完成状態、反映内容の全項目と出典の`反映内容N`の対応、補足条件数、AWI内の条件番号の一意性を起動時に検査する。
+対象は計画の関連WIと`WI記録`の和集合とし、項目内の具体的な成果が条件から欠けていないかは、レビュー担当が`exec-review-recording-contract.md`「記録する行と要求単位」に従い原文と読み比べる。
+起動前に追加入力、既存パスの実在、全基準・開始時点・管理表・`review_contract`の所属リポジトリの一致を確認する。
+不足時は起動せず、不足入力・条項を委譲元へ返す。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビューの指摘と完成条件証拠の記録：review_contractの書式の基準を適用する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` |

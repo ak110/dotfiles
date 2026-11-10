@@ -101,6 +101,7 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_TOOL_NAMES,
     _PLAN_MODE_SKILL_NAMES,
     _check_agents_server_continuation_target,
+    _check_generic_agent_launch,
     _check_task_stop,
     _clear_current_plan_file_path,
     _record_iss_sidechain_probe,
@@ -123,6 +124,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _git_commit_attribution_error,
     _git_commit_message_format_error,
     _git_commit_messages,
+    _warn_container_root_bind_mount,
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
@@ -250,7 +252,9 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
         return _decide_agents_server_tool(payload, tool_name, tool_input, session_id)
     if tool_name in AGENT_TOOL_NAMES:
-        return check_task_document_launch(tool_name, tool_input)
+        launch = check_task_document_launch(tool_name, tool_input)
+        generic = _check_generic_agent_launch(tool_input) if launch.block is None else None
+        return dataclasses.replace(launch, notices=(*launch.notices, generic)) if generic else launch
     if tool_name == "Bash":
         return _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex)
     if tool_name == "TaskStop":
@@ -330,6 +334,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         _check_bash_atk_output_loss,
         _check_read_predicate_stderr_discard,
         _warn_git_rev_parse_short_multiple,
+        _warn_container_root_bind_mount,
     ):
         if message := check(command):
             warnings.append(message)
@@ -505,6 +510,10 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
     repeated = _language_retry(_payload, tool_name, tool_input, remember=recoverable)
     for name, text in fields:
+        # rules-main.claude-code.md「ユーザー確認（AskUserQuestion）」がlabel末尾へ求める固定表記。
+        # 本文・説明の英語判定と文字化け判定には、この除外を適用しない。
+        if tool_name == "AskUserQuestion" and name.endswith(".label"):
+            text = text.removesuffix("(Recommended)").rstrip()
         outcome, body = _response_language_check.check_text(text)
         if outcome is _response_language_check.CheckOutcome.WARN:
             if recoverable and repeated:

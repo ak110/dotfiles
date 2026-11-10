@@ -1,6 +1,7 @@
 """`atk wi process-loop`のプロンプトとオーケストレーターの選択、セッションの起動と終了の扱いのテスト。"""
 
 import argparse
+import contextlib
 import io
 import json
 import os
@@ -13,6 +14,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+import psutil
 import pytest
 
 from agent_toolkit._atk import codex_connection as _codex_connection
@@ -23,8 +25,9 @@ from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._common import automated_prompt as _automated_prompt
+from agent_toolkit._common import codex_usage_limit, next_action, process_tree, session_record_paths, session_registry
 from agent_toolkit._common import inherited_venv as _inherited_venv
-from agent_toolkit._common import session_registry
+from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.process_loop_support import (
     isolate_process_loop_commands,
 )
@@ -281,14 +284,20 @@ def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
 def test_codex_orchestrator_session_record_keeps_provider(tmp_path: pathlib.Path) -> None:
     """統括担当の起動中に公開するセッション記録へ、選んだproviderを保存する。"""
     env = {**os.environ, _pl_env.PROCESS_LOOP_SESSION_ID_ENV: "orchestrator-thread", "CODEX_HOME": str(tmp_path)}
+    release = tmp_path / "provider.release"
+
+    def published(_identifier: str) -> None:
+        release.touch()
+
     result = _ORIGINAL_CODEX_SESSION(
-        [sys.executable, "-c", "import time; time.sleep(1.5)"],
+        [sys.executable, "-c", late_descendant.held_source(release)],
         env,
         tmp_path,
         orchestrator="codex",
         model="gpt-5.6-sol",
         effort="medium",
         codex_provider="my-credits",
+        on_session_started=published,
     )
     assert result.returncode == 0
     info = session_registry.resolve("orchestrator-thread").resume_info
@@ -454,7 +463,11 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
         "if subscription:\n"
         "    (root / 'limited').write_text('limited')\n"
         "    stopfailure_notifier.main(json.dumps({'session_id':identifier,'error':'rate_limit'}))\n"
-        "    if os.environ['HOLD_LIMIT'] == '1': time.sleep(20)\n"
+        "    if os.environ['HOLD_LIMIT'] == '1':\n"
+        "        deadline = time.monotonic() + 120\n"
+        "        while not (root / 'limited.release').exists():\n"
+        "            assert time.monotonic() < deadline\n"
+        "            time.sleep(0.01)\n"
         "    sys.exit(1)\n"
         "(root / 'continued').write_text(identifier)\n",
         encoding="utf-8",
@@ -857,6 +870,7 @@ def test_codex_usage_limit_child_continues_next_iteration(
     tmp_path: pathlib.Path,
     new_turn: bool,
     resume: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """実子の上限停止だけを親が終了し、新turn開始後の子は自身の正常終了まで保持する。"""
     binary = tmp_path / "codex"
@@ -877,7 +891,12 @@ def test_codex_usage_limit_child_continues_next_iteration(
         "if os.environ['NEW_TURN'] == '1': events.append({'type': 'event_msg', 'payload': {'type': 'task_started'}})\n"
         "record = directory / 'rollout-2026-10-16-00000000-0000-0000-0000-000000000001.jsonl'\n"
         "record.write_text('\\n'.join(json.dumps(e) for e in events))\n"
-        "time.sleep(2.5 if os.environ['NEW_TURN'] == '1' else 20)\n"
+        "release = pathlib.Path(os.environ['COMPLETED'] + '.release')\n"
+        "release.with_suffix('.ready').touch()\n"
+        "deadline = time.monotonic() + 120\n"
+        "while not release.exists():\n"
+        "    assert time.monotonic() < deadline\n"
+        "    time.sleep(0.01)\n"
         "pathlib.Path(os.environ['COMPLETED']).write_text('completed')\n",
         encoding="utf-8",
     )
@@ -890,6 +909,28 @@ def test_codex_usage_limit_child_continues_next_iteration(
         "RESUME": "1" if resume else "0",
         "COMPLETED": str(marker),
     }
+    from_rollout = _pl_session._codex_usage_limit.from_rollout  # pylint: disable=protected-access
+    release = marker.with_name(marker.name + ".release")
+
+    def observed_rollout(*args: Any, **kwargs: Any) -> Any:
+        result = from_rollout(*args, **kwargs)
+        if new_turn:
+            assert result is None
+            release.touch()
+        return result
+
+    class ReadyPopen(subprocess.Popen):
+        def wait(self, timeout=None):
+            if timeout == 1:
+                deadline = time.monotonic() + 30
+                while not release.with_suffix(".ready").exists():
+                    assert self.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.01)
+                timeout = 0.05
+            return super().wait(timeout=timeout)
+
+    monkeypatch.setattr(_pl_session._codex_usage_limit, "from_rollout", observed_rollout)  # pylint: disable=protected-access
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
     finished: list[bool] = []
     started = time.monotonic()
     assert (
@@ -909,3 +950,70 @@ def test_codex_usage_limit_child_continues_next_iteration(
     assert finished == [True]
     assert marker.exists() is new_turn
     assert time.monotonic() - started < 15
+
+
+@pytest.mark.parametrize("site", ["stalled", "codex-usage-limit", "exception", "claude-usage-limit"])
+def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, site: str
+) -> None:
+    """統括CLIを止める4箇所のいずれでも、回収できなかった子孫を診断ログだけで済ませず呼び出し元へ渡す。"""
+    owned = contextlib.ExitStack()
+    request.addfinalizer(owned.close)
+    survivor = owned.enter_context(late_descendant.held_process(tmp_path))
+
+    def reap() -> None:
+        survivor.kill()
+        survivor.wait()
+
+    request.addfinalizer(reap)
+    stopped: list[str] = []
+
+    def stop_owned_process(process: subprocess.Popen[Any], *, context: str) -> Any:
+        # 停止の結果に、統括CLIの子孫が残った状態を注入する。統括CLI自身は実際に止める。
+        process.kill()
+        process.wait()
+        stopped.append(context)
+        return process_tree.ReclaimError([f"{survivor.pid}: sleep"], [psutil.Process(survivor.pid)], context=context)
+
+    monkeypatch.setattr(_pl_session.process_tree, "stop_owned_process", stop_owned_process)
+    env = {**os.environ, "CODEX_HOME": str(tmp_path / "codex"), "CLAUDE_CONFIG_DIR": str(tmp_path / "claude")}
+    env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
+    orchestrator = "codex" if site == "codex-usage-limit" else "claude"
+    if site == "stalled":
+        started = time.time()
+        clock = iter([started, started + 9601])
+        monkeypatch.setattr(_pl_session.time, "time", lambda: next(clock, started + 9601))
+    elif site == "codex-usage-limit":
+        rollout = tmp_path / "x.jsonl"
+        monkeypatch.setattr(codex_usage_limit, "find_session_rollout", lambda *_args, **_kwargs: rollout)
+        monkeypatch.setattr(codex_usage_limit, "from_rollout", lambda _path: object())
+        monkeypatch.setattr(session_record_paths, "codex_session_id", lambda _path: "codex-session")
+    elif site == "claude-usage-limit":
+        env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = "limited-session"
+        request_file = tmp_path / "claude/agent-toolkit-function-hooks/rate-limit-limited-session.txt"
+        request_file.parent.mkdir(parents=True)
+        request_file.write_text("requested", encoding="utf-8")
+        monkeypatch.setattr(_pl_session, "_attach_orchestrator_child", lambda *_args: None)
+
+    def started_process(_identity: Any) -> None:
+        if site == "exception":
+            raise RuntimeError("統括の起動処理の失敗")
+
+    received: list[process_tree.ReclaimError] = []
+    expected: type[BaseException] | None = {
+        "exception": RuntimeError,
+        "claude-usage-limit": next_action.ActionableError,
+    }.get(site)
+    with contextlib.ExitStack() as stack:
+        if expected is not None:
+            stack.enter_context(pytest.raises(expected))
+        _ORIGINAL_CODEX_SESSION(
+            [sys.executable, "-c", late_descendant.held_source(tmp_path / "residual.release")],
+            env,
+            tmp_path,
+            orchestrator=orchestrator,
+            on_process_started=started_process,
+            on_residual=received.append,
+        )
+    assert len(stopped) == 1
+    assert [process.pid for failure in received for process in failure.processes] == [survivor.pid]

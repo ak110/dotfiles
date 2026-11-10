@@ -14,6 +14,7 @@ import psutil
 import pytest
 
 from agent_toolkit._common import process_tree, reclaim_records, recorded_process, session_registry, state_paths
+from agent_toolkit._testing import late_descendant
 
 
 @pytest.fixture(autouse=True)
@@ -22,8 +23,8 @@ def _state_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
 
 
 @contextlib.contextmanager
-def _sleeper() -> Generator[subprocess.Popen[bytes]]:
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"]) as process:
+def _sleeper(tmp_path: pathlib.Path) -> Generator[subprocess.Popen[bytes]]:
+    with late_descendant.held_process(tmp_path) as process:
         try:
             yield process
         finally:
@@ -53,8 +54,10 @@ def _stop_root_only(
     monkeypatch.setattr(process_tree, "stop_tree", stop_tree)
 
 
-def test_root_exit_with_unreclaimed_descendant_is_failure_and_retry_reclaims(monkeypatch: pytest.MonkeyPatch) -> None:
-    with _sleeper() as root, _sleeper() as child:
+def test_root_exit_with_unreclaimed_descendant_is_failure_and_retry_reclaims(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    with _sleeper(tmp_path) as root, _sleeper(tmp_path) as child:
         identity = _identity(root)
         real_stop_tree = process_tree.stop_tree
         _stop_root_only(monkeypatch, root, child, [])
@@ -73,9 +76,11 @@ def test_root_exit_with_unreclaimed_descendant_is_failure_and_retry_reclaims(mon
         assert not reclaim_records.path(identity.pid, identity.create_time).exists()
 
 
-def test_unconfirmed_generation_stop_is_kept_until_record_is_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unconfirmed_generation_stop_is_kept_until_record_is_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
     """生成の停止を確認できない記録は、残した対象を回収しても再試行だけでは停止済みにしない。"""
-    with _sleeper() as root, _sleeper() as child:
+    with _sleeper(tmp_path) as root, _sleeper(tmp_path) as child:
         identity = _identity(root)
         record_path = reclaim_records.path(identity.pid, identity.create_time)
         real_stop_tree = process_tree.stop_tree
@@ -101,11 +106,9 @@ def test_unconfirmed_generation_stop_is_kept_until_record_is_removed(monkeypatch
         assert recorded_process.stop_recorded_executor(identity) is None
 
 
-def test_root_and_descendant_reclaimed_returns_none_without_record() -> None:
-    script = (
-        "import subprocess, sys, time; "
-        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)']); time.sleep(120)"
-    )
+def test_root_and_descendant_reclaimed_returns_none_without_record(tmp_path: pathlib.Path) -> None:
+    child_source = late_descendant.held_source(tmp_path / "child.release")
+    script = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child_source!r}]).wait(timeout=30)"
     with subprocess.Popen([sys.executable, "-c", script]) as root:
         identity = _identity(root)
         try:
@@ -123,8 +126,8 @@ def test_root_and_descendant_reclaimed_returns_none_without_record() -> None:
             root.wait()
 
 
-def test_recorded_target_with_reused_pid_is_not_signalled() -> None:
-    with _sleeper() as unrelated:
+def test_recorded_target_with_reused_pid_is_not_signalled(tmp_path: pathlib.Path) -> None:
+    with _sleeper(tmp_path) as unrelated:
         gone = session_registry.ProcessIdentity(2**22 + 12345, 1.0)
         reclaim_records.save(gone.pid, gone.create_time, [], [], [])
         record_path = reclaim_records.path(gone.pid, gone.create_time)
@@ -138,7 +141,7 @@ def test_recorded_target_with_reused_pid_is_not_signalled() -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="親が回収しないzombieはPOSIXの状態")
-def test_unreaped_direct_child_blocks_stop_until_reaped() -> None:
+def test_unreaped_direct_child_blocks_stop_until_reaped(tmp_path: pathlib.Path) -> None:
     """回収を確認できなかった直接の子は、zombie表示でも同じPID世代が消えるまで停止済みにしない。
 
     run-skillの停止結果の保存から再開前の停止までを通す。別の親が回収しないzombieは、
@@ -149,7 +152,7 @@ def test_unreaped_direct_child_blocks_stop_until_reaped() -> None:
     script = (
         "import subprocess, sys, time; "
         "child = subprocess.Popen([sys.executable, '-c', 'pass']); print(child.pid, flush=True); "
-        "sys.stdin.readline(); child.wait(); time.sleep(120)"
+        "sys.stdin.readline(); child.wait(); " + late_descendant.held_source(tmp_path / "parent.release")
     )
     with subprocess.Popen([sys.executable, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE) as parent:
         try:

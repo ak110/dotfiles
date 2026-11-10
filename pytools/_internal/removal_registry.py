@@ -8,6 +8,11 @@
 最古の追加を採用する。`git blame`の日付は最終変更日のため登録日に使わない。
 期限は登録日に暦の月を`RETENTION_MONTHS`だけ加えた日（その月に同じ日が無い場合は月末）とし、
 今日が期限より後になった項目を期限切れとする。
+
+期限の検出は、日付で結果が変わるためcommit hookやpush時のCIでは行わない。
+期限は配布先の旧項目が除去済みになる期間の目安で、超過しても無関係な変更を止める必要は無いためである。
+定期実行のAudit workflowが`removal_registry_report`を毎日実行し、期限の`NOTICE_DAYS`日前から項目と対処を報告して失敗する。
+報告された項目は、期限前に表から外す。
 """
 
 import calendar
@@ -17,6 +22,8 @@ from collections.abc import Iterable, Mapping
 from typing import Protocol
 
 RETENTION_MONTHS = 6
+# 期限の何日前から報告するか。定期実行の失敗に気付いて表から外すまでの猶予として置く。
+NOTICE_DAYS = 14
 
 
 class HasRegistered(Protocol):
@@ -55,18 +62,24 @@ def is_expired(entry: HasRegistered, today: datetime.date) -> bool:
     return today > expiry_date(entry.registered)
 
 
-def find_expired[E: HasRegistered](entries: Iterable[E], today: datetime.date) -> list[E]:
-    """期限切れの項目を列挙順に返す。"""
-    return [entry for entry in entries if is_expired(entry, today)]
+def is_due(entry: HasRegistered, today: datetime.date, notice_days: int = NOTICE_DAYS) -> bool:
+    """今日が期限の`notice_days`日前以降なら真を返す。"""
+    return today >= expiry_date(entry.registered) - datetime.timedelta(days=notice_days)
 
 
-def expired_report(tables: Mapping[str, Iterable[HasRegistered]], today: datetime.date) -> list[str]:
-    """表名ごとの項目から期限切れの項目を探し、項目と対処を示す行を返す。期限切れが無ければ空。"""
+def due_report(
+    tables: Mapping[str, Iterable[HasRegistered]], today: datetime.date, notice_days: int = NOTICE_DAYS
+) -> list[str]:
+    """表名ごとの項目から期限切れと期限間近の項目を探し、項目と対処を示す行を返す。該当が無ければ空。"""
     lines: list[str] = []
     for table_name, entries in tables.items():
-        for entry in find_expired(entries, today):
+        for entry in entries:
+            if not is_due(entry, today, notice_days):
+                continue
+            expiry = expiry_date(entry.registered)
+            state = "の期限を過ぎた" if is_expired(entry, today) else "が近い"
             lines.append(
                 f"{table_name}: {entry!r} は登録日 {entry.registered} から{RETENTION_MONTHS}か月の期限"
-                f" {expiry_date(entry.registered)} を過ぎたため、表から外してください"
+                f" {expiry} {state}ため、表から外してください"
             )
     return lines

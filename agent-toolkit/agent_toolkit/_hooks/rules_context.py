@@ -34,6 +34,7 @@ from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
+lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import document_reads, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
@@ -42,13 +43,8 @@ lazy from agent_toolkit._hooks.message_format import xml_message
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-RESPONSE_LANGUAGE_NOTICE = (
-    "ユーザーが読む報告・回答・質問・計画と成果物は日本語で書け。"
-    "ユーザーへ送らない内部文面は、言語だけで書き直させるな。"
-    "送達主体が説明を日本語化し、識別子・コマンド・逐語引用は原表記を保て。"
-    "詳細は`01-agent.md`「使用言語」に従え。"
-)
-QUALITY_CHECKPOINT_NOTICE = "会話圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。会話限定の指示を成果物へ混入させるな。"
+RESPONSE_LANGUAGE_NOTICE = "言語の基準は、同時配送された`01-agent.md`「使用言語」を参照せよ。"
+QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
 BACKGROUND_TASKS_DISABLED_NOTICE = (
     "この`Claude Code`では`Bash`の背景実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）で、`run_in_background`は使えない。"
     "`atk agents wait`は単独の前景実行とし、`Bash`へ`timeout=600000`を指定して、"
@@ -60,11 +56,13 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 """
 
 SHARE_DIR = plugin_resources.plugin_root() / "share"
-MAIN_RULES_PATH = SHARE_DIR / "rules-main.md"
-MAIN_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-main.claude-code.md"
-MAIN_RULES_CODEX_PATH = SHARE_DIR / "rules-main.codex.md"
-SUBAGENT_RULES_PATH = SHARE_DIR / "rules-subagent.md"
-SUBAGENT_RULES_CLAUDE_CODE_PATH = SHARE_DIR / "rules-subagent.claude-code.md"
+# SHARE_DIRはplugin rootの算出にも使うため基点を保ち、役割別の規範だけ`share/rules/`から読む。
+RULES_DIR = SHARE_DIR / "rules"
+MAIN_RULES_PATH = RULES_DIR / "rules-main.md"
+MAIN_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-main.claude-code.md"
+MAIN_RULES_CODEX_PATH = RULES_DIR / "rules-main.codex.md"
+SUBAGENT_RULES_PATH = RULES_DIR / "rules-subagent.md"
+SUBAGENT_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-subagent.claude-code.md"
 CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 # 圧縮後に作業契約の後へ続く通知（原文の抽出先、資料の再取得案内）へ残す文字数。
 _COMPACTION_RESERVE = 1_500
@@ -83,9 +81,9 @@ NORMATIVE_KIND_SUBAGENT = "rules-subagent"
 def compose_session_start(source: str, *, delegated: bool, host: str) -> str | None:
     """SessionStartへ追加する本文を構成する。
 
-    使用言語の規定は`rules-main.md`「ユーザー向け発話ルール」が定めるが、この条文は本文の末尾寄りに
-    位置するため、最初の応答を生成する時点では冒頭の記述より参照されにくい。同じ規定を本文の冒頭の1文にも
-    置き、最初の応答を生成する前に読まれるようにする。委譲先はこの規定の対象外のため追加しない。
+    冒頭には常時規範の使用言語への参照を置き、メインの最初の応答前にも定義元を示す。
+    圧縮時の復元基準への参照も同じ通知へまとめ、文字数上限内で必要な参照を届けるために本文や標識を重ねない。
+    委譲先にはメイン向けの言語通知を追加しない。
 
     process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
     担うに過ぎず、この指示の宛先ではない。
@@ -132,10 +130,13 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
                 )
             )
     normative_parts: list[str] = []
+    rule_notices: list[str] = []
     if not delegated:
-        parts.append(_llm_notice(RESPONSE_LANGUAGE_NOTICE))
+        rule_notices.append(RESPONSE_LANGUAGE_NOTICE)
     if source == "compact":
-        parts.append(_llm_notice(QUALITY_CHECKPOINT_NOTICE))
+        rule_notices.append(QUALITY_CHECKPOINT_NOTICE)
+    if rule_notices:
+        parts.append(_llm_notice("\n".join(rule_notices)))
     if host == "claude" and wait_schedule.background_tasks_disabled():
         parts.append(_llm_notice(BACKGROUND_TASKS_DISABLED_NOTICE))
     if not delegated:
@@ -325,6 +326,8 @@ def _compact_recovery_context(
     """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
     steps = []
     for path, heading, _fingerprint, reference in recovery_targets:
+        if read_triggers.is_normative_document(path):
+            heading = ""
         target = read_triggers.ReadTarget(path, heading)
         try:
             if not path.is_file():
@@ -406,18 +409,22 @@ def _normative_context(body: str, *, kind: str) -> str:
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
-def session_temp_notice(session_temp: pathlib.Path | str) -> str:
+def session_temp_notice(session_temp: pathlib.Path | str, *, contract: pathlib.Path | None = None) -> str:
     """セッションのmanaged-tempの所在と、一時ファイルの置き場所を選ぶ時点で従う行動を対にした通知本文を返す。
 
     所在だけを示す通知では、一時ファイルを作成する時点で`/tmp`が選ばれ、後始末の削除が権限判定に拒否された。
     置き場所の選択と結び付く語（`/tmp`）と、委譲先へ所在を渡す行動を同じ本文へ置く。
     """
-    return (
-        f"このセッションのmanaged-temp: {session_temp}\n"
-        "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
-        "委譲時は、委譲先が受信した自身のmanaged-tempか専用一時領域の通知を優先し、"
-        "通知が無い場合だけこの絶対パスの直下へ置くよう伝えよ。"
-        "入力や出力の個別ファイルを指定した場合は、そのファイルの読み書きを行ってよい。"
+    if contract is not None and contract.parent == pathlib.Path(session_temp):
+        location = "このセッションのmanaged-tempは、次の原本の親ディレクトリである。\n"
+    else:
+        location = f"このセッションのmanaged-temp: {session_temp}\n"
+    if contract is not None:
+        location += work_contract.short_notice(contract) + "\n"
+    return location + (
+        "一時ファイルは直下へ置け。`/tmp`は使うな。"
+        "委譲先のmanaged-temp・専用一時領域の通知を優先せよ。"
+        "未通知ならこの領域を指定せよ。指定の入出力ファイルは読み書きしてよい。"
     )
 
 
@@ -444,21 +451,19 @@ def _resolve_transcript(session_id: object, transcript_path: object) -> str | No
 
 
 def _conversation_identity_notice(session_id: object, transcript_path: object) -> str:
-    """Claudeメイン自身の会話の所在を、SessionStartの入力値から通知する。"""
-    lines = [
-        f"この会話のセッションID: {session_id}"
-        if isinstance(session_id, str) and session_id
-        else "この会話のセッションID: 入力から取得できません。シェルのCLAUDE_CODE_SESSION_IDを使える場合はその値を使え。"
-    ]
+    """Claudeメイン自身の原文を取得する操作へ、入力から解決した所在を束縛する。"""
+    arguments = [str(SHARE_DIR.parent / "scripts/atk"), "run-script", "session-review-evidence", "--"]
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is not None:
-        lines.append(f"この会話のtranscript: {resolved}")
+        arguments.extend(["--transcript", resolved])
+    elif isinstance(session_id, str) and session_id:
+        arguments.extend(["--claude-session-id", session_id])
     else:
-        lines.append(
-            "この会話のtranscript: 絶対パスを入力から取得できません。特定済みIDをsession-review-evidenceの"
-            "--claude-session-idへ渡して記録を取得せよ。"
+        return (
+            "会話の原文の所在を入力から取得できない。CLAUDE_CODE_SESSION_IDを確認し、"
+            "`atk run-script session-review-evidence -- --claude-session-id <確認したID> --user-events`で取得せよ。"
         )
-    return "\n".join(lines)
+    return f"この会話の原文が必要な場合は`{shlex.join([*arguments, '--user-events'])}`で取得せよ。"
 
 
 def _existing_session_temp(session_id: object) -> str | None:
@@ -482,10 +487,8 @@ def _compaction_notice(
     """既存の証拠抽出CLIで全人間入力を保存し、会話の流れの取得先も通知する。"""
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
-        if not delegated:
-            # 同じSessionStartの会話識別の通知が記録の解決手順を示すため、同じ案内を重ねずに上限内の余白を残す。
-            return None
-        return "圧縮後の原文を抽出できない。特定済みIDをsession-review-evidenceの--claude-session-idへ渡して記録を解決せよ。"
+        arguments = ["run-script", "session-review-evidence", "--", "--claude-session-id", session_id, "--user-events"]
+        return f"原文は起動部分へ`{shlex.join(arguments)}`を続けて取得せよ。"
     command = [
         str(SHARE_DIR.parent / "scripts" / "atk"),
         "run-script",
@@ -508,7 +511,7 @@ def _compaction_notice(
     )
     lines = [
         f"会話全体の流れは`{conversation}`でconversation.mdを取得せよ。"
-        "前回以降の点検には同じコマンドへ`--conversation-window --conversation-recent 30`を追加する。"
+        "前回以降の点検には同じコマンドへ`--conversation-window --conversation-recent 30`を追加せよ。"
         "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
     ]
     if delegated:
@@ -536,7 +539,7 @@ def _compaction_notice(
         )
         users = [
             event
-            for line in result.stdout.splitlines()
+            for line in split_lines(result.stdout)
             if isinstance(event := json.loads(line), dict) and event.get("kind") == "user"
         ]
         data = "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in users)
@@ -552,7 +555,7 @@ def _compaction_notice(
 
         update_state(session_id, select_original)
         lines.append(
-            f"ユーザー発話の原文{len(users)}件: {output}。圧縮の要約で文言や範囲が変わり得るため、"
+            f"ユーザー発話の原文{len(users)}件をReadのfile_pathに`{output}`を指定して読め。"
             "ユーザーの要求・判断・行動の訂正を原文と作業契約で比較し、有効な指示を統合して元の未完了工程へ戻れ。"
         )
     except process_tree.ReclaimError as error:
@@ -635,7 +638,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         timing.record(payload, "rules_context", started, "ok", stage="review-session-request")
         if review_notice is not None:
             content = f"{content}\n\n{_llm_notice(review_notice)}" if content else _llm_notice(review_notice)
-        if not delegated and host == "claude":
+        if not delegated and host == "claude" and source != "compact":
             identity_context = _llm_notice(_conversation_identity_notice(session_id, payload.get("transcript_path")))
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
@@ -679,7 +682,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     if contract_notice is not None and len(contract_notice) + _CONTRACT_NOTICE_OVERHEAD <= budget:
                         contract_context = _llm_notice(contract_notice)
                     else:
-                        temp_text += "\n" + work_contract.SHORT_NOTICE
+                        temp_text = session_temp_notice(session_temp, contract=work_contract.record_path(session_id))
                 temp_context = _llm_notice(temp_text)
                 content = f"{content}\n\n{temp_context}" if content else temp_context
                 if contract_context:

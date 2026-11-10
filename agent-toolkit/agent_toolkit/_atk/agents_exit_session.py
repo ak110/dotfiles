@@ -307,7 +307,7 @@ def main() -> int:
     if cleanup["retained"]:
         _outcome.report_warning(
             "終了時に回収できないレーン資源を保持した",
-            next_action=f"{cleanup.get('result_path')}の理由を解消し、同じ所有sessionでatk lane deleteを実行する",
+            next_action=f"{cleanup.get('result_path')}の理由を解消し、同じ所有sessionでatk lane deleteを実行せよ",
         )
 
     def _before_signal(target: Target) -> None:

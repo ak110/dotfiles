@@ -1,0 +1,21 @@
+# 通常AWIの本文：外部の既存挙動の再現
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
+
+## 外部の既存挙動の再現
+
+外部の製品、サービス、またはホスト環境における既存の挙動を再現する観測を完成条件に採用する前に、起草者は処理担当者に求める手段で実際に実行し、成否に関係する主体、バージョン、入力および設定を結果と対応付けて確認する。
+過去の記録を現在の再現性の根拠としてはならず、過去の記録を再利用する場合は対象と実行条件の一致を厳密に確認する。
+再現しない場合や同一の条件を揃えられない場合は、任意の判断材料として扱い、観測結果と未確認の範囲を本文の適切な箇所に記載する。
+再現に用いた実行条件は、再取得可能な証拠として記録に残す。
+現象が再現しなかったことだけを理由に、外部の不具合が解消されたと断定したり、過去の記録が誤っていたと結論づけたりすることは避ける。
+合意済みの要件がその観測を不可欠としている場合は、勝手に要件を緩和せず、未確定事項として委譲元へ差し戻す。

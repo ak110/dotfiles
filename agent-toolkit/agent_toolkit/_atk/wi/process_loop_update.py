@@ -205,7 +205,7 @@ def _has_upstream_diff(dotfiles_root: pathlib.Path) -> bool:
         detail = f": {stderr.strip()}" if isinstance(stderr, str) and stderr.strip() else ""
         _next_action.report(
             f"上流差分確認に失敗しました（待機ループを続行します）: {exc}{detail}",
-            next_action=(f"対応不要（待機は継続した）。繰り返す場合は`git -C {dotfiles_root} fetch`で上流への到達を確認する"),
+            next_action=(f"対応不要（待機は継続した）。繰り返す場合は`git -C {dotfiles_root} fetch`で上流への到達を確認せよ"),
         )
         return False
 
@@ -236,7 +236,7 @@ def check_and_restart_on_update(
             if not update_succeeded:
                 _next_action.report(
                     f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
-                    next_action="対応不要（待機は継続した）。繰り返す場合は`update-dotfiles`を手作業で実行して原因を確認する",
+                    next_action="対応不要（待機は継続した）。繰り返す場合は`update-dotfiles`を手作業で実行して原因を確認せよ",
                 )
     current_hash = code_hash(dotfiles_root / "agent-toolkit")
     if current_hash != startup_hash:

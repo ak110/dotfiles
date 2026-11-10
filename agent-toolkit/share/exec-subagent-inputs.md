@@ -1,0 +1,95 @@
+# レーン実行タスク：入力
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` | |
+| 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-hypotheses.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-rounds.md` | |
+| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
+| CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` | |
+| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` | |
+| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| 手動観測を保存する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` | |
+| `検証結果`を書く前 | `verification-evidence-records.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-records.md` | |
+| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-verification-failure.md` | |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
+| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
+| `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | 判断 | `read:agent-toolkit:*/share/exec-review-fix.md` | |
+
+## 入力
+
+**1.** 担当種別・要求・対象・認可を確定し、着手する工程を選ぶ。
+
+`レビュー参考意見`は統括の疑問・理由の本文か記録の絶対パス。
+省略・行なしは参考意見なしとする。
+
+修正担当は原文と区別し、現物・要件から採否を決めて管理表へ記録する。
+
+`先行調査記録`を受け取ったレーン担当は、取得版、対象パス、事実と仮定、未確認部分を読み、専用worktreeの現行版との差分から更新する調査を確定する。
+計画下書きは`../skills/process-wi/references/lane-planning-drafting.md`「計画の起草」に従って正式化し、自己監査と構造検査を終えてから実装する。
+記録の省略時は先行調査なしとして扱い、取得失敗や未完了部分は通常の調査で補う。
+
+`レーン担当`は、`選定結果の出力先ファイル`から`レーン`が自身の`レーン識別子`と一致する`選定`項目のみを読み取り、AWIファイル名、順序、`鮮度`、`担当モデル`、`プロジェクト規範の指定`、上流投入に関する3行、および`プロジェクト固有の公開後の操作の順序`を入力として受け取る。
+書式とデフォルト値は`${CLAUDE_PLUGIN_ROOT}/skills/process-wi/references/selection-format.md`の`## 選定結果の書式`に従い、省略されている行はデフォルト値として処理する。
+該当項目が存在しない場合、同一AWIが重複している場合、あるいは必須フィールドが所定の形式から外れている場合は、推測で処理を進めずに「続行できない理由」を返す。
+
+計画作成と実装の着手前（計画を作成しない場合はAWI本文を読み込んだ時点）に、AWI本文に明示されている担当とモデルの組み合わせを選定結果の`担当モデル`と比較する。
+これらが一致しない場合は、下位担当を勝手に起動して補うのではなく、WIファイル名、本文中の指定、および選定結果の値を添えて「続行できない理由」を返す。
+`担当モデル.実装担当`がWIに明示された場合だけ、下位の書込担当（`exec.subagent.md`「操作区分」の内部グループなど）の`model_type`へ渡す。
+比較・記録は`agent-toolkit:delegation`の`references/process-model-settings.md`「工程別モデル設定」に従う。
+指定のない下位担当は確定済み書込を`chores`、定型走査・事実収集・コマンド実行を`chores_fast`で起動し、`execute`は使わない。
+中位以下の工程で済み、起動・規範読込込みで費用が下がる部分だけを分ける。
+計画起草・設計判断・原因分析と残りはレーン自身が行う（高価な`execute_model`と別sessionの規範再読の費用を抑えるため）。
+レーン全体を別の`レーン担当`へ渡さず、同一threadで担当し続ける。
+レーン数によらず単一担当の実行契約でレビュー起動・指摘対応・統合検収を行い、初期選定が複数レーンなら`統合許可`受領後にメインworktreeへ統合する。
+
+要求単位の由来は、`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画起草時に`atk wi show`で得られるAWI本文およびfrontmatterから判定する。
+判定結果は`agent-toolkit:write-plan`の`references/plan-file-standards.md`の書式に従って計画の`由来`欄に記入する。
+以後は確定した出所・採否・終了区分を再利用する。
+原文との具体的な不一致を発見した場合は、要求単位の根拠を示して既存のレビュー指摘管理表（計画なしでは引き継ぎ記録）へ訂正を残す。
+ユーザーが決める結果や認可を変える部分だけを既存の確認手順へ渡す。
+計画を省略するレーンでは、同様の判定結果を引き継ぎ記録に残す。
+ユーザーから報告された不具合が既存の実装ですでに充足されていると判断する場合は、`plan-file-standards.md`「実施内容」に定める調査（呼び出し手段、操作手順、結果、報告時点との相違点）を実施し、操作内容、観測結果、相違点、未特定の範囲を引き継ぎ記録に記録する。
+
+完成条件を計画、実装、受入の対象にする前に、AWIの目的達成に必要かを判定する。
+標準工程が要求によらず必ず行う作業も、この必要性の判定に含める。
+不要と判定したエージェント起草条件は、`source`と要求単位の明示的な由来を確認する。
+`review-loop-coordination-escalation.md`「技術判断で外せる完成条件」の境界を満たす場合は、レーン担当が対象から外す。
+対象AWI、旧条件と除外範囲、判断主体、不要とする理由、保持する目的・明示要求・必要な品質、およびその根拠を計画の記録とAWIの処理結果に残す。
+計画なしの場合は引き継ぎ記録へ、計画確定後は本文を凍結したまま進捗ログ、レビュー指摘管理表、実行レビューの`review_contract`へ記録する。
+除外した条件と根拠は、メインへ報告用UWIの自ら確定した判断として引き渡す。
+レビューと統合が旧条件を追跡できるよう、条件番号と判断記録の所在を`review_contract`に含める。
+人間由来の条件の除外は、`../skills/wi-standards/references/wi-standards-origin.md`「由来と承認」に従ってユーザー確認へ回す。
+
+`レビュー修正担当`は、同一スレッドの継続であれば保持している選定結果を引き継ぐ。
+`レビュー指摘管理表`は、単一の絶対パス、または全計画の管理表の絶対パスを保持する空でないJSON配列として受け取る。
+計画ごとの成果物の受け渡しは、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+各表で対応すべきラウンドは、`review-loop-coordination-rounds.md`「ラウンド番号の保持先」が定める、その表における最大のラウンド番号とする。
+新しいスレッドで起動された場合は、`再開位置`に指定された計画ファイル（`計画なし`の場合は引き継ぎ記録）と引き継ぎ記録に蓄積された全計画の進捗を読み、受け取った各表がその計画群のいずれかに属することを確認する。
+`環境構築`に`レーン担当が実行`が指定されている場合は、対象リポジトリの開発手順に従って実装前に環境構築を実施する。
+その他の値が指定されている場合や指定がない場合は、準備済みとして扱い、併記されている判定をそのまま適用する。
+`CI修正担当`は選定結果の代わりに、原因分析結果、修正認可の根拠、対象の検証結果、変更目的、変更対象、公開契約、入力計画の7項目を含む`CI記録`を受け取る。
+`書込担当一覧`は重複のないセッションIDからなるJSON配列であり、現在のレーン担当、統合先メインの実際のセッション、および合意済みの他の書込担当を含める。
+初回起動直後に現在のレーン担当自身のIDを追加して保持し、担当範囲を引き継ぎ記録に対応付ける。
+担当の交代や再開時、ならびに単一レーンでの追送時に更新を受け取り、統合時の`--writer-session`に合意済みの担当セッションを渡す。
+
+対象worktreeは`cwd`、複製元・対象外worktreeはGit共通ディレクトリとlinked worktree、プロジェクト規範は`cwd`でホストが読む指示ファイルから解決する。
+対象リポジトリでcommit・fast-forwardマージを行い、直接pushは委譲元へ委ねる。
+書込先は対象worktreeに限定し、対象外worktree・複製元は読み取り専用とする。
+private-notesの計画保存・WI状態変更は`atk`の通常の公開機能を使う。
+委譲入力の禁止がこれらにも適用されるか不明なら委譲元へ確認する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビュー反復の調整：エスカレーションの事由別の扱いの基準を適用する前 | `review-loop-coordination-escalation.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-escalation.md` |
+| 計画ファイル作成基準の基準を適用する前 | `../skills/write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
+| レーン実行タスクの基準を適用する前 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |

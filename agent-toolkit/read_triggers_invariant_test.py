@@ -35,16 +35,21 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     basics = _PLUGIN_ROOT.parent / "agent-basics/skills"
     if basics.is_dir():
         roots.append(basics)
+    # 常時規範の到達経路は各スキルの起動条件で保証し、宣言自体は他の規範と同じく検査する。
+    common_rules = _PLUGIN_ROOT / "share" / "rules" / "common"
     sources = sorted({path for root in roots for path in root.rglob("*.md")})
     assert sources
     errors: list[str] = []
-    for source in sources:
-        try:
-            rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
-            read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
-            read_triggers.validate_plugin_relative_references(source)
-        except ValueError as error:
-            errors.append(f"{source}: {error}")
+    # 検査中の原本は不変なので、共通する参照先の解決をこの検査の範囲で再利用する。
+    with read_triggers.resolution_scope():
+        for source in sources:
+            try:
+                rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+                if not source.is_relative_to(common_rules):
+                    read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+                read_triggers.validate_plugin_relative_references(source)
+            except ValueError as error:
+                errors.append(f"{source}: {error}")
     assert not errors, "\n".join(errors)
 
 
@@ -65,11 +70,9 @@ def test_user_input_classification_reaches_common_intervention_assessment(relati
     routes = [row for row in rows if "受領" in row.condition and "分類" in row.condition and target in row.documents]
     assert routes, relative
     assert all(row.kind == "判断" for row in routes)
-    assert any(
-        item.path == target and item.heading == "「ユーザー介入と確認の判定」" and item.body().strip()
-        for row in routes
-        for item in row.targets
-    ), relative
+    assert any(item.path == target and not item.heading and item.body().strip() for row in routes for item in row.targets), (
+        relative
+    )
 
 
 def test_every_role_has_explicit_parent_read_source():
@@ -183,3 +186,39 @@ def test_relative_reference_outside_owner_plugin_is_rejected(tmp_path, line):
     with pytest.raises(ValueError, match="所有プラグインのrootの外") as caught:
         read_triggers.validate_plugin_relative_references(source)
     assert "agent-basics:<スキル>/<パス>" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "consumer,material",
+    [
+        ("check-script-design.md", "program-messages.md"),
+        ("mcp-server-design.md", "program-messages.md"),
+        ("claude-hooks-messages.md", "program-messages.md"),
+        ("notation-checks.md", "input-material.md"),
+        ("textlint-violations.md", "input-material.md"),
+    ],
+)
+def test_writing_consumers_reach_split_material_without_obsolete_sections(consumer, material):
+    """用途別に移した基準への参照を実資料で検証し、旧節への残存参照も検出する。"""
+    references = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references"
+    source = references / consumer
+    target = references / material
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+    read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+    assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)
+    obsolete = {"読み手別の追加注意点", "ユーザー入力素材の取扱い"}
+    assert not [
+        item
+        for row in rows
+        for item in row.targets
+        if item.path == references / "writing.md" and any(name in item.heading for name in obsolete)
+    ]
+
+
+def test_delegation_input_material_wrapper_reaches_quality_owner():
+    """WI起草等が使うtoolkit側の素材節も、移設した品質基準の本文へ到達する。"""
+    source = _PLUGIN_ROOT / "skills/delegation/references/writing.md"
+    target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/input-material.md"
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+    read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
+    assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)

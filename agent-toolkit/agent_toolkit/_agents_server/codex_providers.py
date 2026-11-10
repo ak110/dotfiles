@@ -27,6 +27,7 @@ class ProviderSelection:
     """実効接続先と、通常接続がChatGPT認証を使うかの判定。
 
     `candidates`は使用順で`primary`より後ろにある利用可能なprovider ID、`diagnostics`は候補から除いた理由である。
+    `usage_limit_resets_at`は枯渇した利用枠の解除予定（UNIX秒）で、取得できない場合は`None`である。
     """
 
     primary: str
@@ -35,6 +36,7 @@ class ProviderSelection:
     ordinary_usage_allowed: bool | None = None
     usage_limit_type: str | None = None
     diagnostics: tuple[str, ...] = ()
+    usage_limit_resets_at: int | None = None
 
 
 def has_provider_configuration() -> bool:
@@ -132,6 +134,7 @@ async def select(
     subscription = bool(requires_auth and account_type == "chatgpt")
     allowed = None
     usage_limit_type = None
+    usage_limit_resets_at = None
     if subscription:
         try:
             usage = await request("account/rateLimits/read", {})
@@ -145,8 +148,11 @@ async def select(
         if snapshot_id is None or active_id is not None and snapshot_id == active_id:
             value = usage.get("ordinaryUsageAllowed")
             allowed = value if isinstance(value, bool) else None
-            usage_limit_type = codex_usage_limit.from_rate_limits(usage.get("rateLimits")).limit_type
-    return ProviderSelection(selected, subscription, tuple(remainder), allowed, usage_limit_type, tuple(diagnostics))
+            limit = codex_usage_limit.from_rate_limits(usage.get("rateLimits"))
+            usage_limit_type, usage_limit_resets_at = limit.limit_type, limit.resets_at
+    return ProviderSelection(
+        selected, subscription, tuple(remainder), allowed, usage_limit_type, tuple(diagnostics), usage_limit_resets_at
+    )
 
 
 def fallback_failure(error: Any, *, subscription: bool) -> bool:

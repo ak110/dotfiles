@@ -363,9 +363,9 @@ def test_worktree_versions_share_proven_logical_document(scenario, host_environ,
     status = document_reads.acquisition_state(
         state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(target, heading), "main"
     )
-    assert status == ("updated" if changed == "required" else "missing" if changed == "new-section" else "current")
-    assert ("取得済み資料の更新あり" in result) is (changed == "required")
-    if changed in {"manifest", "elsewhere"}:
+    assert status == ("current" if changed == "manifest" else "updated")
+    assert ("取得済み資料の更新あり" in result) is (changed != "manifest")
+    if changed == "manifest":
         assert str(target) not in result
     elif changed == "new-section":
         assert str(target) in result and "追加節" in result
@@ -616,6 +616,9 @@ def test_repeated_compact_excludes_unobserved_old_delivery(scenario, monkeypatch
 def test_split_delivery_preserves_scope_actor_and_version_evidence(scenario, host_environ, host, reader, mode):
     """同じ版・主体で実回収した全範囲だけを取得済みとし、再書込の許可と分けて検収する。"""
     _state, rows, path, _rollout, invoke, delivered = scenario
+    original = path
+    path = path.with_name("AGENTS.md")
+    path.write_bytes(original.read_bytes())
     if mode == "repeat":
         path.write_text("同じ行\n" * 4, encoding="utf-8")
     rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (path,)))

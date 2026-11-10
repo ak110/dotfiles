@@ -1,0 +1,174 @@
+# 報告のフォーマット：振り返り結果報告のフォーマット
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis-inputs.md`、`../../review-session/references/analysis-triage.md`、`../../review-session/references/analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-inputs.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
+| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+
+## 振り返り結果報告のフォーマット
+
+分析から受け取った比較結果を用い、対象化・検出・起票・実装配布・今回条件での解消を分けて報告する。
+`AWI登録済み`を含む各結果行には、残る原因条件、処置担当、適用機会と観測結果を必要に応じて追記する。
+適用機会が無ければ効果未確認とし、検出機会がある対象だけを未検出の評価に含める。
+見送りの根拠は`../../review-session/references/analysis-actions.md`「原因と対策」の成果と費用の比較から記し、正常終了・規範どおり・回復済みという分類だけで代替しない。
+
+手動の`agent-toolkit:review-session`が正常に完了した場合は、次の書式で報告を届ける。
+batchは同じ判断材料と区分を報告用UWIの1件へ集約し、対象IDと候補IDを対応付ける。
+以下の振り返り専用の最終報告では、末尾の固定文は今回の振り返りの完了を示し、元作業や未処理の別セッションの完了を推定しない。
+手動のAWI投入前の予告では、見出しを`## 振り返り結果の予告`に変更し、末尾の固定文は記載対象から除く。
+
+```text
+## 振り返り結果報告
+
+- 候補: <N>件 (<候補種別> <件数>件 / ...)
+- 所要時間: <秒数>秒 (準備時点)
+- 費用確認: <読込・Skill・結果量・反復・token上位を確認した結論>
+- 改善見込み: <案の合計短縮見込み、改善後の全体所要時間、目標値との差、超過時の律速区間。時間改善案が無い場合は「なし」>
+- 効果確認: <AWIと変更ファイルごとの「効果を確認」「効果不足」「適用機会なし」、根拠の記録位置、保存結果または是正AWI。候補0件は「なし」>
+- 効果確認の未確認: <effect_unconfirmed_countの件数と理由。0件は「なし」>
+
+### 確定した問題と対策
+
+- AWI登録予定: <H1タイトル>（<候補ID>）
+- AWI登録: <ファイル名>: <H1タイトル>（<候補ID>）
+- AWI登録済み: <ファイル名>: <H1タイトル>（<候補ID>）
+- 実装済み: <対策の要旨>; 根拠: <commitの短縮OIDまたは変更した成果物>（<候補ID>）
+
+### 対策を見送った問題
+
+- 判定済み: <問題>; 根拠: <対策不要と確定した観測>（<候補ID>）
+- 未確定: <問題>; 照会: <試行と結果>; 再現: <試行と結果または不能の具体的理由>; 残る理由: <確定できない理由>; 検証の引き継ぎ: <検証AWIのファイル名、または原因が対策の採否を左右しない理由>（<候補ID>）
+- 再発防止策なし: <問題>; Q影響: <あり・なしと根拠>; 重大度: <判定と根拠>; 探索: <範囲・限界>; 残存リスク: <許容する内容>; 系統別の候補と採否: <作り込み要因・見逃し要因それぞれの候補、採否、不採用の理由>; 反復: <過去の同種記録のファイル名と前回の処置で再発を防げなかった条件、または「一致なし」>（<候補ID>）
+- なし
+
+以上で、今回の振り返りは終わった。
+```
+
+`### 確定した問題と対策`には、原因と対策を確定した問題ごとに1行ずつ記載する。
+区分には、`AWI登録予定`（WI投入担当を起動する前の予告）、`AWI登録`（新しく投入したAWI）、`AWI登録済み`（対策を網羅している既存の未完了項目）、`実装済み`（同一セッション内で実装した対策）のいずれかを用いる。
+H1タイトルだけでは問題と対策の内容を読み取れない場合に限り、タイトルの後ろに`; 要旨: <補足内容>`を書き添える。
+複数の問題を1件のAWIで対応する場合は、各行に同じAWIを記載するか、候補IDの括弧内に複数のIDを並べて記載する。
+
+`### 対策を見送った問題`には、候補一覧や会話の経緯の中で見つかった問題のうち、対策を見送ったものを記載する。
+`判定済み`の根拠には確認済みの観測結果を簡潔に記載し、「欠陥ではないとの判定」「原因が未確定」「処置を採用しない判断」のいずれであるかが読み取れるようにする。
+原因や対策が未確定の場合は`未確定`の行に記載し、原因を分析したうえで再発防止策を採用しないと判断した問題は`再発防止策なし`の行に記載する。
+`再発防止策なし`で処理を終了するかどうかは、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に基づいて判定し、品質（Q）への影響、重大度、探索範囲・限界、および許容する残存リスクを客観的に記録する。
+`判定済み`や`再発防止策なし`の根拠として利用できない理由には、「規範や案内がすでに存在していたが適用が漏れたこと」「後段の確認工程や再実行によって回復したこと」「別の論点で下された判断でありユーザーの判断が必要であること」「問題への寄与が未確定であること」の4点がある。
+これらの定義は`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」に定められている。
+重大な問題に対して有効な手段が見出せない場合は、未達事項として`未確定`の行に記載する。
+対策を見送ることができる条件は、次の資料に従う。
+
+- `../../review-session/references/analysis-inputs.md`
+- `../../review-session/references/analysis-triage.md`
+- `../../review-session/references/analysis-actions.md`
+実施方法の見送り根拠は、同資料「コストの無駄の確認」に示された比較結果に対応付け、欠陥の有無に関する結論と、費用対効果の観点による採否とを明確に区別して記載する。
+
+候補一覧に含まれる候補に対応する行には、行末の括弧内に候補ID（`c0006`の形式。複数の場合は読点で区切る）を記載する。
+
+ローカルな終了操作とそれに関連する訂正・続行について、`agent-basics:bugfix`の`non-changing-request`に基づいて除外された事象は、候補一覧に残っている場合でも報告から除外する。
+この除外規定は`mandatory_candidates`の報告義務よりも優先され、問題内容、見送り理由、除外理由のいずれも報告に記載しない。
+
+この除外規定に該当せず、`atk run-script session-review-prepare`によって評価が必須と示された候補（1行JSONの`mandatory_candidates`）は、必ず次のいずれかの行で取り扱う。
+
+- `### 確定した問題と対策`の行
+- 根拠の先頭に除外区分を記載した`判定済み`の行（例: `根拠: non-changing-request: <観測>`）。
+  除外区分には、`single-inquiry`、`non-changing-request`、`unexplained-refusal`、`necessary-confirmation`、`credential-report`を使用する。
+  `definition-body-read`については後述の`definition-read-context`も使用できる
+- `未確定`の行
+- 共通定義の重大度判定に基づいて終了できる`再発防止策なし`の行。
+  準備結果においてその候補に過去の同種記録が示されている場合は、反復欄にそのうち1件以上のファイル名と、前回の対応で再発を防げなかった条件を記載する
+
+準備処理が出力する1行JSONの`improvement_lines`に含まれる各行についても、`### 確定した問題と対策`または`### 対策を見送った問題`のいずれかの行で取り扱う。
+同一内容の重複行は、1つの行にまとめて記載してよい。
+
+`definition-read-unresolved`はすべての検出箇所、`definition-body-read`は準備が起動準備の疑いあり（`launch_check`が`suspected`）と判定した箇所について、取得の有無、目的、結果の成否を個別に明記する。
+取得の根拠が不足している箇所は、元の入力、結果の箇所、未確定の理由に対応付けたうえで`未確定`に残す。
+起動準備の読み込みと確認を完了した箇所は`### 確定した問題と対策`に記載し、各箇所に原因、対策、保存先が正しく対応していることを示す。
+Codexの`functions.exec`の記録を扱う場合は、記載する区分にかかわらず、`../../review-session/references/analysis-definition-reads.md`「定義本文の読込の判定」に従って外側セルと内側実行の入力・結果を確認する。
+候補の`calls`または個別証拠の`definition_reads`の各要素について、`tool`に応じて`line`・`result_line`を読み、対応付けた内側実行は`operations`の`execution_line`・`execution_result_line`から確認する。
+対応付けられない場合は、セル全体へ集約された理由と、独立した`CommandExecution`の要素も確認して未確定の理由を記載する。
+編集作業、自身が受け取った定義、および返却後の検収については、根拠を添えた`definition-read-context`の`判定済み`行として扱う。
+この候補について未分類、証拠不足、または対策が未確定であるものは`未確定`として扱い、成功したこと、単発の事象であること、またはコストのみを理由として`再発防止策なし`に置き換えることは避ける。
+
+振り返り自体の所要時間が超過した要因をセッション終了前に分析した結果も今回の報告に含め、追加のAWI投入、既存AWIによる網羅、再発防止策なしの結論を、前述の対応する区分に沿って根拠とともに記載する。
+根拠として記載する証拠の実在性、原因と対策の対応関係、提案の採否についても、メインエージェント自身が確認する。
+いずれのH3見出しにおいても該当項目がない場合は`- なし`と記載する。
+状態の取得方法および表示規則は、`### 投入したWI`と同様とする。
+
+振り返りが未実施、または失敗した場合は、次の書式で報告を届ける。
+
+```text
+## 振り返り結果報告
+
+### 振り返り
+
+- review-session未実施: <理由。関連するUWIがある場合はファイル名を末尾に併記>
+
+以上で、今回の振り返りは終わった。
+```
+
+この書式を手動で依頼された振り返りの中断・失敗の報告に使う。
+通常作業で同期振り返りを実施しないことは未達ではなく、その理由報告も不要である。
+手動の中断・失敗には次の規定値を使う。
+batchの失敗報告はbatchの契約に従う。
+
+- 確認への回答や委譲先の結果を待つために中断した場合: `回答待ちで中断: <待機するUWIのファイル名か委譲先のsession識別子>`
+- `atk run-script session-review-prepare`が再試行後も失敗した場合: `分析失敗のため欠陥AWIへ記録`
+
+`回答待ちで中断`による報告は、残りの手順を保持した工程境界における報告として作成する。
+末尾の固定文の代わりに、`回答を受けた後に残る手順から続ける（待機対象: <待機するUWIのファイル名か委譲先のsession識別子>）。`という1行を記載する。
+報告用UWIでは、`### 未達・持ち越し`に残りの手順と再開条件（同一の待機対象）を記載する。
+`分析失敗のため欠陥AWIへ記録`となった場合でも、元の依頼のうち認可済みで実行可能な工程はそのまま継続する。
+正常完了時の2つのH3見出しと`### 振り返り`を併記することは避ける。
+
+要約行に記載する数値や項目は、`atk run-script session-review-prepare`が出力する1行JSONから取得する。
+
+- `候補`: `candidate_total`の値、および`candidate_counts`に示される種別ごとの件数（`atk run-script session-review-evidence`による除外後の件数）。
+  0件の場合は`0件`のみを記載する
+- `所要時間`: `elapsed_seconds`の値（セッションの最初の記録から準備処理時点までの経過秒数）
+- `費用確認`: `../../review-session/references/analysis-cost.md`「コストの無駄の確認」に示された比較結果を毎回1行で記載する。
+  現状維持を選択した場合でも、達成すべき成果・実際の作業量・品質を維持する対案と比較した結論を記載し、詳細については該当する対策行や見送り行に対応付ける
+- `改善見込み`: 同一の比較結果から、時間改善案の最終値における合計短縮見込み、改善後の所要時間、目標値との差、および目標超過時のボトルネック（律速区間）をこの1箇所にまとめて記載する。
+  各AWIにはその案固有の値のみを記載する
+
+振り返りの目標値・計測区間・用途は`agent-toolkit:review-session`の`references/duration-analysis.md`「所要時間の分析と改善」に従う。
+目標との差は改善案の必須性の判断にだけ使う。
+未達・持ち越しは実在する未完了の記録であり、時間目標を未確認の理由にしない。
+
+## AWI投入結果報告のフォーマット
+
+振り返りによって対策のAWIを1件以上投入した場合は、予告の後に送る最終報告として次の書式を使用する。
+
+```text
+## AWI投入結果報告
+
+<1文。予告どおり投入を完了した旨、または予告と異なる結果があった旨>
+
+### 投入したAWI
+
+- <ファイル名>: <H1タイトル>
+- <ファイル名>: <H1タイトル> (target_repo=<...>)
+
+### 予告との差分
+
+- <予告した対策>: <実際の結果>
+
+以上で、今回の振り返りは終わった。
+```
+
+`### 投入したAWI`には新しく投入したAWIを記載し（0件の場合は`- なし`とし、状態取得や表示規則は`### 投入したWI`と同様とする）、予告で行った分析内容は再掲しない。
+`### 予告との差分`は、予告内容と異なる結果が生じた場合にのみ設ける。
+既存の未完了AWIへ統合した場合はそのファイル名とH1タイトル、`condition_not_met`となった場合は不成立となった条件や調査により確定した投入見送りの結論と根拠・証拠の所在、作業を続行できない理由を返した要求についてはその理由およびユーザー確認や保留の扱いを簡潔に記載する。
+予告後に確定した振り返り自体の所要時間超過に関する分析結果についても、追加投入、既存AWIによる網羅、再発防止策なしといった結論と根拠を簡潔に反映する（分析全文は再掲しない）。

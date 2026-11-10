@@ -7,6 +7,8 @@ import re
 from collections import deque
 from typing import Any
 
+from agent_toolkit._common.json_lines import split_lines
+
 
 def is_agy_entry(entry: dict[str, Any]) -> bool:
     """対話ステップ、公開ストリーム、またはその正規化済みエントリを識別する。"""
@@ -226,7 +228,7 @@ def _result_mapping(value: Any) -> dict[str, Any] | None:
     if isinstance(parsed, dict):
         return parsed
     if isinstance(value, str):
-        for line in value.splitlines():
+        for line in split_lines(value):
             parsed = _decoded(line)
             if isinstance(parsed, dict):
                 return parsed

@@ -15,13 +15,14 @@ git作業コピー（`atk wi process-loop`が上流差分を確認するdotfiles
 """
 
 import contextlib
+import dataclasses
 import datetime
 import pathlib
 import re
 import subprocess
 import sys
 import time
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
 
 import filelock
 
@@ -34,6 +35,46 @@ from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._git import command as _git_command
+
+
+@dataclasses.dataclass(frozen=True)
+class Storage:
+    """WI操作が共有する同期と排他の保存方針。"""
+
+    local_only: bool = False
+    lock_timeout: float = -1
+
+    @contextlib.contextmanager
+    def mutation(
+        self,
+        private_notes: pathlib.Path,
+        *,
+        push_pending: bool = False,
+        skip_push: bool = False,
+    ) -> Generator[Mutation]:
+        """検証・変更・commitを同じ排他区間で行う。"""
+        with repo_lock(private_notes, timeout=self.lock_timeout):
+            ensure_mutation_allowed(private_notes)
+            if not self.local_only:
+                if push_pending and not skip_push:
+                    push_pending_commits(private_notes)
+                pull(private_notes)
+            yield Mutation(private_notes, skip_push=self.local_only or skip_push)
+
+
+@dataclasses.dataclass(frozen=True)
+class Mutation:
+    """保存方針で取得したロック内の変更をcommitする。"""
+
+    private_notes: pathlib.Path
+    skip_push: bool
+
+    def commit(self, message: str, rel_paths: Iterable[str]) -> int | None:
+        """操作で確定した変更を、取得済み方針に従ってcommitする。"""
+        return commit_and_push(self.private_notes, message, rel_paths, skip_push=self.skip_push)
+
+
+DEFAULT_STORAGE = Storage()
 
 
 def has_remote(private_notes: pathlib.Path) -> bool:
@@ -95,7 +136,7 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
         _outcome.report_warning(
             f"省略時の保存先へ自動生成したローカル管理用のprivate-notesを使っている（WIと計画は0件）: {root}",
             next_action="既存のprivate-notesを使う場合は、環境変数AGENT_TOOLKIT_PRIVATE_NOTESへそのパスを設定するか"
-            "~/private-notesへ配置して再実行する。この保存先を使い続ける場合は対応不要で、処理は継続した。"
+            "~/private-notesへ配置して再実行せよ。この保存先を使い続ける場合は対応不要で、処理は継続した。"
             f"AGENT_TOOLKIT_PRIVATE_NOTES={root}を設定すると、この警告は出力されなくなる",
         )
     return root

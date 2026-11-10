@@ -1,19 +1,22 @@
 # 表記の一括置換
 
-品質基準の正式な提供元は`agent-basics:writing-standards/references/bulk-replacement.md`である。呼び出し元の条件と節指定を引き継ぎ、本書の運用条件と正式な資料の必要節・前提・例外を読む。両方に同名の見出しがあれば、その範囲を両方で確認する。範囲の選択と取得済み本文の再利用は`../SKILL.md`「名指し参照の読込方法」に従う。
+品質基準の正式な提供元は`agent-basics:writing-standards/references/bulk-replacement.md`である。
+呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
+両方に同じ主題があれば、両方の全文を確認する。
+範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 以下はagent-toolkitが所有する運用条件である。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 指摘の原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 一括置換後の指摘を処置する前 | `../../../share/similar-review.parent.md` | 判断 | `read:agent-toolkit:*/share/similar-review.parent.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/bulk-replacement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/bulk-replacement.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` | 判断 | `section:agent-toolkit:*/skills/delegation/references/textlint-violations.md#「文の書き直しの委譲と検収」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/textlint-violations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/textlint-violations.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
 
 ## 運用条件
@@ -21,9 +24,11 @@
 指摘の受領時は`agent-basics:bugfix`による原因分析と類似見直しを行い、検索と個別判定は`share/similar-review.parent.md`の専用担当へ渡す。
 初回検出時の再発防止例外と短い記録はbugfixに従い、結果の採否は委譲元が確定する。
 
-- `git diff --word-diff=plain --word-diff-regex=.`による文字単位の差分をmanaged-tempへ保存し、後述の「一括置換後レビュー担当の起動と受領」に従って変更箇所を全件レビューさせる。意図しない誤置換が多発する場合は、置換候補を絞り込んで再試行する。
+- `git diff --word-diff=plain --word-diff-regex=.`による文字単位の差分をmanaged-tempへ保存し、後述の「一括置換後レビュー担当の起動と受領」に従って変更箇所を全件レビューさせる。
+  意図しない誤置換が多発する場合は、置換候補を絞り込んで再試行する。
 
-- 指摘を受けた文や置換候補外の文は自身で書き直すか、`agent-toolkit:delegation/references/textlint-violations.md`「文の書き直しの委譲と検収」に従って委譲して検収する。修正完了後に通常のtextlintおよび関連するテストを実行する。
+- 指摘を受けた文や置換候補外の文は自身で書き直すか、`agent-toolkit:delegation/references/textlint-violations.md`「文の書き直しの委譲と検収」に従って委譲して検収する。
+  修正完了後に通常のtextlintおよび関連するテストを実行する。
 
 ## 一括置換後レビュー担当の起動と受領
 
@@ -32,11 +37,13 @@
 ```
 
 本書冒頭の基準に従って候補置換を適用したエージェントは、以下の手順で一括置換後レビュー担当を起動して結果を受け取る。
-レビュー担当の観点は、`agent-toolkit:/share/bulk-replace-review.subagent.md`に従う（所在参照）。返却形式は後述の「一括置換後レビューの返却契約」を使用する。
+レビュー担当の観点は、`agent-toolkit:/share/bulk-replace-review.subagent.md`に従う（所在参照）。
+返却形式は後述の「一括置換後レビューの返却契約」を使用する。
 
 ### 起動
 
-置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をmanaged-temp（`agent-toolkit:managed-temp`）内のファイルへ保存し、`agents_server`の`start`を以下の引数で呼び出して1件起動する。
+1. 全置換をレビューへ渡すため、置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をmanaged-temp（`agent-toolkit:managed-temp`）内のファイルへ保存する。
+   `agents_server`の`start`を以下の引数で呼び出して1件起動する。
 
 | 引数 | 値 |
 | --- | --- |
@@ -46,17 +53,30 @@
 
 - `差分ファイル`: 保存した差分ファイルの絶対パス
 
-差分ファイルは読み取り可能なUTF-8の通常ファイルとする。起動側は、保存先がUTF-8の通常ファイルとして読み取れる状態にあることを確認する。満たしていない場合はUTF-8の通常ファイルとして保存し直した上で`start`を再発行する。差分内容の妥当性確認はレビュー担当が担う。
+   差分ファイルは読み取り可能なUTF-8の通常ファイルとする。
+   起動側は、保存先がUTF-8の通常ファイルとして読み取れる状態にあることを確認する。
+   満たしていない場合はUTF-8の通常ファイルとして保存し直した上で`start`を再発行する。
+   差分内容の妥当性確認はレビュー担当が担う。
 
 ### 受領
 
-結果は引数なしの`atk agents wait`で受け取る。問題が報告された文や置換候補外の文は、本書冒頭の基準に従って書き直す。
+1. レビュー結果を確定するため、引数なしの`atk agents wait`で受け取る。
+2. 全範囲の読了を確かめるため、返却の`読んだ変更箇所数`を起動時に保存した差分ファイルの変更箇所数と比較する。
+   変更箇所数は、差分中に`[-…-]`または`{+…+}`を含む行数とする。
+   - 少ない場合は完了とせず、問題が報告された箇所の結果を保持する。
+     返却のファイルと行から未読範囲を特定し、その範囲だけを差分ファイルへ保存して新しい起動へ渡す。
+     特定できなければ全差分を渡す。
+   - 多い場合も完了とせず、数え方の不一致として同じ担当へ数え直しを1回求め、再び数を比較する。
+
+3. 誤置換を解消するため、問題が報告された文や置換候補外の文を本書冒頭の基準に従って書き直す。
 
 <!-- return-contract:bulk-replace-review:start -->
 <!-- 生成元: share/bulk-replace-review.subagent.md「出力」。手動編集しない。 -->
 ### 一括置換後レビューの返却契約
 
-次の固定形式のみを返却する。`未解決の指摘数`には、問題が見つかった箇所の件数を指定する。
+次の固定形式のみを返却する。
+`未解決の指摘数`には、問題が見つかった箇所の件数を指定する。
+`読んだ変更箇所数`は、差分中に`[-…-]`または`{+…+}`を含む行数で数える。
 
 ```text
 状態: completed
@@ -65,5 +85,5 @@
 <問題のある箇所ごとのファイルと行、観点、問題点、修正案。0件なら全件で問題が無いこと>
 ```
 
-続行不能と追加報告行は、共通契約`../../../share/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:bulk-replace-review:end -->

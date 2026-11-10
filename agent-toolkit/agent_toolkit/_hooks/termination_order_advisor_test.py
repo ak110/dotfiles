@@ -16,6 +16,7 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt
 from agent_toolkit._hooks import (
     autonomous_exit,
+    rules_context,
     stop,
     termination_evidence,
     termination_order_advisor,
@@ -109,19 +110,22 @@ def test_notifies_target_skill_without_completion_report_once(tmp_path: pathlib.
     assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
 
 
-def test_completion_before_target_restart_is_not_reused(tmp_path: pathlib.Path) -> None:
-    """前の作業の起動証拠を、新しい依頼で再開始した対象スキルの作業へ流用しない。"""
+@pytest.mark.parametrize("compact", [False, True])
+def test_completion_before_target_restart_is_reused_until_compact(tmp_path: pathlib.Path, compact: bool) -> None:
+    """新しい依頼でも文脈内の読込を再利用し、圧縮で本文が失われた場合だけ再案内する。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_1")
     _start_skill("sess-second", trace, "agent-toolkit:report-completion", "toolu_2")
+    if compact:
+        rules_context.reset_main_operation_skill_ready("sess-second", retain_for_compact=True)
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(json.dumps({"session_id": "sess-second", "turn_id": "again", "prompt": "もう一度処理する"}))
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_3")
-    assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == "notify"
+    assert termination_order_advisor.evaluate(_payload("sess-second", str(trace)))[0] == ("notify" if compact else "approve")
 
 
 def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, monkeypatch):
-    """同じ不足を抑え、起動で解消した後に新しい作業で不足すれば再通知する。"""
+    """同じ不足を抑え、起動後は新しい作業でも再利用し、圧縮後に不足すれば再通知する。"""
     trace = _write_transcript(tmp_path, [])
     session_id = "completion-notice-cycle"
     _commit(session_id, trace)
@@ -139,6 +143,8 @@ def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, mo
     assert evaluate() == ("approve", "")
     _human_input(session_id, trace, "next", "次の作業を進める")
     _commit(session_id, trace, "next-commit")
+    assert evaluate() == ("approve", "")
+    rules_context.reset_main_operation_skill_ready(session_id, retain_for_compact=True)
     assert evaluate()[0] == "notify"
 
 

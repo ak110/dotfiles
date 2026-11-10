@@ -109,7 +109,7 @@ def test_unknown_revision_fails_with_reason(repository: pathlib.Path, capsys: py
         (".chezmoi-source/dot_claude/skills/tool/SKILL.md.tmpl", "通常"),
         (".claude/agents/reviewer.md", "通常"),
         ("/".join(("agent-toolkit", "share", "reviewer.subagent.md")), "通常"),
-        ("/".join(("agent-toolkit", "rules", "rule.md")), "通常"),
+        ("/".join(("agent-toolkit", "share", "rules", "common", "rule.md")), "通常"),
         ("/".join(("agent-toolkit", "skills", "tool", "SKILL.md")), "通常"),
         ("/".join(("agent-toolkit", "skills", "tool", "references", "detail.md")), "通常"),
         ("/".join(("agent-toolkit", "agents", "reviewer.md")), "通常"),

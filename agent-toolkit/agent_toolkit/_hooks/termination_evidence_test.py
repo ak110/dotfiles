@@ -20,8 +20,11 @@ from agent_toolkit._common import atomic_file, automated_prompt, session_state, 
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import (
     agents_server_observations,
+    document_reads,
+    plugin_resources,
     posttooluse,
     pretooluse,
+    rules_context,
     termination_evidence,
     termination_order_advisor,
     user_prompt_submit,
@@ -43,6 +46,7 @@ COMPLETION_SKILL_TEXT = "---\nname: report-completion\nuser-invocable: false\n--
         "pipeline",
         "assignment",
         "git-C",
+        "commit-wrapper",
         "codex-skill",
         "plan-edit",
         "other-cd",
@@ -69,6 +73,7 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
         "pipeline": "git add file && git commit -m 変更 2>&1 | tail -3",
         "assignment": "GIT_EDITOR=true git commit -m 変更",
         "git-C": f"git -C {shlex.quote(str(repo))} commit -m 変更",
+        "commit-wrapper": "atk run-script commit-with-timeout -- --timeout 3 -- -m 変更",
         "codex-skill": f"cd {shlex.quote(str(repo))} && cat plugin/skills/process-wi/SKILL.md",
         "other-cd": f"cd {shlex.quote(str(other))} && git commit -m 変更",
         "other-redirect": f"echo x > {shlex.quote(str(other / 'README.md'))}",
@@ -154,6 +159,14 @@ def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) ->
     monkeypatch.setenv("TEMP", str(tmp_path))
     monkeypatch.setenv("TMP", str(tmp_path))
     (tmp_path / "transcript.jsonl").touch()
+    # 終了証拠は各試験の文書・操作で検証する。配布規範全件の解析はread_deliveryの結合試験が担う。
+    root = tmp_path / "norms/agent-toolkit"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    completion_skill = root / "skills/report-completion/SKILL.md"
+    completion_skill.parent.mkdir(parents=True)
+    completion_skill.write_text(COMPLETION_SKILL_TEXT, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", str(root))
 
 
 def _tool(
@@ -355,6 +368,39 @@ def test_quoted_operators_do_not_create_deliverables(
     assert (label in _missing_completion(tmp_path)) is recorded
 
 
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("command", "recorded"),
+    [
+        ("git commit -a -m --dry-run", True),
+        ("git commit -am --dry-run", True),
+        ("git commit -am--dry-run", True),
+        ("git commit -am --help", True),
+        ("git commit -am--help", True),
+        ("git commit -aF --help", True),
+        ("git commit -aF--dry-run", True),
+        ("git commit -am --", True),
+        ("git commit -am 変更 --dry-run", False),
+        ("git commit --help -am 変更", False),
+        ("git commit -ahm 変更", False),
+        ("git commit -am 変更 &", False),
+    ],
+)
+def test_bundled_commit_values_reach_public_completion_evidence(tmp_path, codex, command, recorded):
+    """成功応答後の成果記録で、値の抑止語・本当の抑止指定・背景実行を区別する。"""
+    response = "出力" if codex else {"stdout": "出力", "exit_code": 0}
+    _tool(
+        tmp_path,
+        "commit-boundary",
+        "Bash",
+        {"command": command},
+        response,
+        codex=codex,
+        native_exit_code=0 if codex else None,
+    )
+    assert ("commit" in _missing_completion(tmp_path)) is recorded
+
+
 def test_codex_target_skill_read_is_deliverable(tmp_path: pathlib.Path) -> None:
     """Codexが対象スキルの`SKILL.md`を実際に読んだ記録を、対象スキルの開始として扱う。"""
     text = "---\nname: process-wi\n---\n\n# WI処理\n"
@@ -387,16 +433,17 @@ def test_answer_only_or_failed_work_is_not_deliverable(
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "回答した。")) == ("approve", "")
 
 
-def test_finished_work_is_not_reused_after_new_input(tmp_path: pathlib.Path) -> None:
-    """起動証拠を得た作業の後の新しい依頼による成果作業へ、前の起動証拠を流用しない。"""
+def test_new_input_keeps_work_identity_and_reuses_context_completion(tmp_path: pathlib.Path) -> None:
+    """新しい依頼は別作業にし、本文が残る同じ文脈の起動証拠をStopが再利用する。"""
     supply_commit(tmp_path, "commit-1")
     supply_completion(tmp_path, "completion-1")
     human_input(tmp_path, "next", "次の作業を頼む")
     supply_commit(tmp_path, "commit-2")
     works = termination_evidence.session_works(json.loads(stop_payload(tmp_path, "")))
     assert len(works) == 2
-    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
-    assert decision == "notify" and f"作業 {works[1][0]}:" in reason and "work-1:" not in reason
+    assert not works[1][1].get("completion_report")
+    assert _missing_completion(tmp_path) == ["commit"]
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE)) == ("approve", "")
 
 
 def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathlib.Path) -> None:
@@ -410,9 +457,9 @@ def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathli
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, "")) == ("approve", "")
 
 
-@pytest.mark.parametrize("invoked,new_input,missing", [(False, False, True), (True, False, False), (True, True, True)])
-def test_batch_report_save_requires_invocation_in_same_work(tmp_path, invoked, new_input, missing):
-    """batchの参照読取・起動・報告保存を、同じ作業の終了証拠として区別する。"""
+@pytest.mark.parametrize("invoked,new_input,missing", [(False, False, True), (True, False, False), (True, True, False)])
+def test_batch_report_save_reuses_invocation_in_same_context(tmp_path, invoked, new_input, missing):
+    """batchの参照読取と起動を分け、次の作業も同じ文脈の起動証拠を再利用する。"""
 
     def observe(call_id, tool, inputs, response):
         payload = {
@@ -757,7 +804,7 @@ def test_rejected_host_stop_guides_to_continue_or_confirmation(tmp_path: pathlib
     document.update({"call_id": "commit"} if action == "blocked" else {"target_session_id": "child"})
     code, reason = public_decision(tmp_path, document)
     assert code == 2
-    assert "猶予通知" in reason and "同じ工程を続ける" in reason
+    assert "猶予通知" in reason and "usage-limit.md" in reason and "続けよ" in reason
     assert "AskUserQuestion" in reason and "uwi_file" in reason
 
 
@@ -959,6 +1006,93 @@ def test_context_with_human_input_keeps_quote(
     }
 
 
+def _omission_document(repository: pathlib.Path, input_id: str | None = None) -> dict[str, Any]:
+    document: dict[str, Any] = {
+        "session_id": "evidence-test",
+        "action": "omit-completion",
+        "work_id": "work-1",
+        "reason": "適用規範に従う",
+        "policy_file": str(repository / "CLAUDE.md"),
+        "target_repo": str(repository),
+    }
+    if input_id is not None:
+        document["input_id"] = input_id
+    return document
+
+
+def test_notifications_sharing_the_prompt_id_keep_the_human_input(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Claude Codeが人間の入力と同じ`prompt_id`で届けるtask-notificationの後も、人間の本文と識別子で終了判断を記録できる。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": "完了報告は指示まで省く。\n"})
+    automated_input(tmp_path, "turn-1", "READMEを直してcommitする")
+    supply_commit(repository)
+    for index in range(2):
+        automated_input(tmp_path, "turn-1", f"<task-notification>\n委譲先{index}が終了した\n</task-notification>")
+    status, context = public_context(capsys)
+    assert status == 0
+    assert context == {
+        "session_id": "evidence-test",
+        "input_id": "turn-1",
+        "quote": "READMEを直してcommitする",
+        "work_id": "work-1",
+    }
+    status, reason = public_decision(tmp_path, _omission_document(repository, "turn-1"))
+    assert status == 0, reason
+    work = termination_evidence.session_works({"session_id": "evidence-test"})[0][1]
+    assert work["omit_completion"]["input_id"] == "turn-1"
+
+
+def _queued_command(directory: pathlib.Path, uuid: str, prompt: str, origin: str) -> None:
+    """ターンの途中に届いた入力を、Claude Codeのセッション記録の`queued_command`の形で追記する。"""
+    entry = {
+        "type": "attachment",
+        "uuid": uuid,
+        "attachment": {"type": "queued_command", "prompt": prompt, "origin": {"kind": origin}},
+    }
+    with (directory / "transcript.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+@pytest.mark.parametrize("human_request", [True, False])
+def test_queued_human_input_is_the_current_request_and_machine_queued_input_is_not(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], human_request: bool
+) -> None:
+    """途中で届いた人間の指示を最新の入力として返し、機械の途中入力だけの作業は人間の承認として受理しない。"""
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": "完了報告は指示まで省く。\n"})
+    if human_request:
+        human_input(tmp_path, "request", "成果を作成する")
+    else:
+        automated_input(
+            tmp_path,
+            "goal",
+            automated_prompt.wrap("WIを処理する", source=automated_prompt.SOURCE_PROCESS_LOOP, kind=automated_prompt.KIND_GOAL),
+        )
+    supply_commit(repository)
+    # 公開hookの補助関数は最後に観測した呼び出しの作業ディレクトリのセッション記録を渡すため、同じ記録へ追記する。
+    if human_request:
+        _queued_command(repository, "queued-human", "READMEも直して", "human")
+    _queued_command(
+        repository, "queued-task", "<task-notification>\n委譲先が終了した\n</task-notification>", "task-notification"
+    )
+    status, context = public_context(capsys)
+    assert status == 0 and context is not None
+    if human_request:
+        assert (context["input_id"], context["quote"]) == ("queued-queued-human", "READMEも直して")
+        # 途中の指示に応じた作業を観測した後は、その指示を省略判断の人間入力として受理する。
+        supply_commit(repository, "commit-after-queued")
+        status, reason = public_decision(tmp_path, _omission_document(repository, "queued-queued-human"))
+        assert status == 0, reason
+    else:
+        assert (context["input_id"], context["quote"]) == (None, None)
+        status, reason = public_decision(tmp_path, _omission_document(repository, "queued-queued-task"))
+        assert status != 0 and "input_id" in reason
+
+
 def _register_child(owner: str) -> None:
     def register(state: dict) -> dict:
         state.setdefault("agents_server_sessions", {})["child-1"] = {"owner_agent_id": owner, "pending_observation": True}
@@ -1154,6 +1288,21 @@ def test_explicit_child_wait_rejection_is_not_uwi_guidance(tmp_path: pathlib.Pat
             }
         )
     assert "child-x" in str(error.value) and "UWI" not in str(error.value)
+    if kind == "finished":
+        status, output = public_decision(
+            tmp_path,
+            {
+                "session_id": "evidence-test",
+                "action": "wait",
+                "work_id": "work-1",
+                "target_session_id": "child-x",
+                "reason": "対象の結果を待つ",
+            },
+        )
+        assert status == 2
+        assert "child-x" in output
+        assert output.count("atk agents wait") == 1
+        assert "次の操作:" in output
 
 
 @pytest.mark.parametrize(
@@ -1363,6 +1512,37 @@ def test_legacy_stop_review_notice_is_not_completion_evidence():
     """旧版の未参照キーが残っていても成果作業の起動証拠へ使わない。"""
     work = {"deliverables": ["commit"], "stop_review_notice": {"input_id": "request"}}
     assert termination_evidence.missing_completion(work) == ["commit"]
+
+
+@pytest.mark.parametrize("recorded", [False, True])
+@pytest.mark.parametrize("context_loaded", [None, False, True])
+def test_completion_context_overrides_legacy_work_evidence(recorded, context_loaded):
+    """明示した文脈状態は作業別証拠より優先し、未指定の直接呼出しは従来の結果を保つ。"""
+    work = {"deliverables": ["commit"], "completion_report": recorded}
+    missing = termination_evidence.missing_completion(work, context_loaded=context_loaded)
+    assert missing == ([] if context_loaded is True or context_loaded is None and recorded else ["commit"])
+
+
+@pytest.mark.parametrize("succeeded", [False, True])
+def test_public_completion_skill_records_versioned_context_evidence(tmp_path, succeeded):
+    """成功したSkill起動の本文版付き共通記録を、次の人間入力と別作業からも照会できる。"""
+    response = "起動" if succeeded else {"exit_code": 1, "error": "起動失敗"}
+    _tool(tmp_path, "completion-context", "Skill", {"skill": "agent-toolkit:report-completion"}, response, codex=False)
+    path = plugin_resources.skill_document_path("report-completion", "SKILL.md")
+    key = document_reads.skill_invocation_key(path, document_reads.content_fingerprint(path))
+    records = session_state.read_state("evidence-test").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert ("main" in records.get(key, [])) is succeeded
+    human_input(tmp_path, "next-context-work", "次の成果を作成する")
+    supply_commit(tmp_path)
+    records = session_state.read_state("evidence-test").get(rules_context.OPERATION_SKILL_READY_KEY, {})
+    assert ("main" in records.get(key, [])) is succeeded
+    works = termination_evidence.session_works({"session_id": "evidence-test"})
+    current = works[-1][1]
+    missing = termination_evidence.missing_completion(current, context_loaded="main" in records.get(key, []))
+    assert ("commit" in missing) is not succeeded
+    if succeeded:
+        assert len(works) == 2
+        assert not current.get("completion_report")
 
 
 @pytest.mark.parametrize(

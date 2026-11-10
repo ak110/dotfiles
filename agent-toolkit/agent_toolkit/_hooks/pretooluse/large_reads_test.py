@@ -1,6 +1,6 @@
 """大量の全文読取をPreToolUseで警告する条件を検証する。
 
-警告はCodexのBash実行だけへ適用し、Claude Codeの`Read`と`Bash`は補正も警告もしない。
+容量警告はCodexのBash実行だけへ適用し、見出し抽出の警告は両ホストへ適用する。
 """
 
 import json
@@ -18,6 +18,59 @@ from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_ski
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
 
 _THRESHOLD = 48 * 1024
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("search", "warned"),
+    [
+        ("rg -l -F -- needle", False),
+        ("rg -lF needle", False),
+        ("grep -rl needle", False),
+        ("grep -L needle", False),
+        ("rg -c needle", False),
+        ("rg --count needle", False),
+        ("rg --count-matches needle", False),
+        ("rg --files-with-matches needle", False),
+        ("rg --files-without-match needle", False),
+        ("rg --files", False),
+        ("rg -F -- needle", True),
+        ("rg -n needle", True),
+        ("rg -L needle", True),
+        ("rg -e '-lc'", True),
+        ("rg -Fe-lc", True),
+        ("rg --regexp --count", True),
+        ("rg --glob --count needle", True),
+        ("rg -g-l needle", True),
+        ("rg -r-l needle", True),
+        ("rg -- '-lc'", True),
+        ("grep -e '-l'", True),
+        ("grep --include --count needle", True),
+        ("grep -Hlc needle", False),
+    ],
+)
+def test_original_record_search_output_mode(tmp_path, monkeypatch, capsys, codex, search, warned):
+    """公開hookで所在・件数検索を通し、本文表示とフラグに似た値には照会を案内する。"""
+    home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    directory = home / "sessions"
+    directory.mkdir(parents=True)
+    (directory / "record.jsonl").write_text("{}\n", encoding="utf-8")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": f"{search} {shlex.quote(str(directory))}"},
+        "cwd": str(tmp_path),
+        **({"turn_id": "t"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    assert not captured.err
+    assert ("session-review-evidence" in captured.out) is warned
+    assert "permissionDecision" not in captured.out
+    if warned:
+        context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+        assert "rg -l -F --" in context
+        assert "単一の`--transcript`" in context
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +110,83 @@ def test_sed_range_read_paths_share_operand_contract(tmp_path, separator):
     command = f"sed -n '2,4p' {separator}{shlex.quote(str(target))}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
     assert not list(bash_read_paths(command, str(tmp_path)))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "sed -n '/開始/,/終了/p' {path}",
+        "sed -n '/条件/p' -- {path}",
+        "awk '/条件/' {path}",
+        "awk '/^## 入力/{f=1} f&&/^## /&&!/^## 入力/{exit} f' {path} | head -60",
+        "cd {parent} && sed -n '/^## 入力/,/^## /p' {name} | head -60",
+    ],
+)
+def test_conditional_display_candidates_do_not_prove_acquisition(tmp_path, template):
+    """表示案内の候補は条件付き抽出を含み、取得の被覆判定には流用しない。"""
+    target = tmp_path / "note.md"
+    target.write_text("# 表示対象\n## 入力\n本文\n", encoding="utf-8")
+    command = (
+        template.replace("{path}", shlex.quote(str(target)))
+        .replace("{parent}", shlex.quote(str(target.parent)))
+        .replace("{name}", shlex.quote(target.name))
+    )
+    assert large_reads.display_read_paths(command, str(tmp_path)) == [target]
+    assert not list(bash_read_paths(command, str(tmp_path), include_partial=True, include_piped=True))
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        "sed -i -n '/条件/p' {path}",
+        "sed -n '/条件/w out' {path}",
+        "sed -n '/条件/e' {path}",
+        "sed -n -f {path}",
+        "sed -n -e {path}",
+        "awk -f {path}",
+        "awk -v value={path} '{{print}}'",
+        "awk '{{print > \"out\"}}' {path}",
+        "awk '{{print >> \"out\"}}' {path}",
+        "awk '{{print | \"cat\"}}' {path}",
+        "awk '{{system(\"cat\")}}' {path}",
+        "awk '{{getline}}' {path}",
+        "awk '/条件/' {path} > out",
+        "awk '/条件/' {path} | head -1 > out",
+        "sed -n '/条件/p' {path} | cat > out",
+    ],
+)
+def test_script_display_excludes_program_options_writes_and_execution(tmp_path, script):
+    """存在する式・オプション値を入力と誤認せず、書込と外部実行を除く。"""
+    target = tmp_path / "note.md"
+    target.write_text("本文\n", encoding="utf-8")
+    command = script.format(path=shlex.quote(str(target)))
+    assert not large_reads.display_read_paths(command, str(tmp_path))
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    "template",
+    ["sed -n '/条件/p' {path}", "awk '/条件/{{print}}' {path}"],
+)
+def test_conditional_session_record_display_keeps_reference_guidance(tmp_path, monkeypatch, capsys, codex, template):
+    """同じ表示候補を使う原記録参照の案内も、両ホストの公開hookへ通す。"""
+    home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    target = home / "sessions/record.jsonl"
+    target.parent.mkdir(parents=True)
+    target.write_text("{}\n", encoding="utf-8")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": template.format(path=shlex.quote(str(target)))},
+        "cwd": str(tmp_path),
+        **({"turn_id": "t"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    captured = capsys.readouterr()
+    assert not captured.err
+    context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+    assert "session-review-evidence" in context and str(target) in context
+    assert "permissionDecision" not in captured.out
 
 
 @pytest.mark.parametrize("separator", [[], ["--"]])
@@ -502,3 +632,38 @@ def test_static_session_record_with_unknown_search_term_keeps_the_reference_guid
     assert notice is not None and str(record) in notice
     # 入力先そのものが未知なら、cwdを入力先と推定しない。
     assert large_reads.session_record_reference_warning("Bash", {"command": 'rg needle "$DIR"'}, str(root)) is None
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("normative", [False, True])
+@pytest.mark.parametrize(
+    "command,warned",
+    [
+        ("sed -n '/^## 対象/,/^## /p' -- {path}", True),
+        ("sed -n -e '/^## 対象/,/^## /p' -- {path}", True),
+        ("awk '/^## 対象/,/^## /' {path}", True),
+        ("awk '/^## 対象/ {{found=1}} found {{print}} /^## 後段/ {{exit}}' {path}", True),
+        ("sed -n '2,4p' -- {path}", False),
+        ("sed -n '/本文/p' -- {path}", False),
+        ("printf '%s' 'sed -n /###/p' {path}", False),
+    ],
+)
+def test_heading_extraction_warns_only_for_normative_files(tmp_path, capsys, codex, normative, command, warned):
+    """公開PreToolUseは両hostで見出し抽出だけを警告し、操作は許可する。"""
+    path = tmp_path / ("AGENTS.md" if normative else "record.md")
+    path.write_text("# 資料\n## 対象\n本文\n## 後段\n例外\n", encoding="utf-8")
+    payload = {
+        "tool_name": "Bash",
+        "tool_input": {"command": command.format(path=shlex.quote(str(path)))},
+        "cwd": str(tmp_path),
+        **({"turn_id": "turn"} if codex else {}),
+    }
+    assert pretooluse.main(json.dumps(payload)) == 0
+    output = capsys.readouterr()
+    assert not output.err
+    specific = json.loads(output.out).get("hookSpecificOutput", {}) if output.out else {}
+    assert specific.get("permissionDecision") != "deny"
+    context = specific.get("additionalContext", "")
+    assert ("見出しの正規表現" in context) is (normative and warned)
+    if normative and warned:
+        assert str(path) in context and "全文" in context and "cat --" in context

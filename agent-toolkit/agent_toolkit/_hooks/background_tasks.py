@@ -47,6 +47,7 @@ SubagentStop判定ではsidechainを含める。
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import contextlib
+import io
 import json
 import os
 import pathlib
@@ -84,7 +85,7 @@ _MCP_BACKGROUND_NOTICE_RE = re.compile(
 )
 """MCP呼び出しが実行時間の上限で背景へ移ったときにホストが返す移行通知の形。
 
-自身の呼び出しが返した識別子であり、`agent-toolkit/rules/02-agent-operations.md`「プロセス終了の安全規定」が
+自身の呼び出しが返した識別子であり、`agent-toolkit/share/rules/common/02-agent-operations.md`「プロセス終了の安全規定」が
 停止を許容する所有の根拠に当たる。
 
 ホストの通知はテキストの先頭から始まる単独の本文として届く（Claude Codeのtranscriptで観測した形）。
@@ -369,7 +370,9 @@ def async_launch_offsets(transcript_path: str) -> dict[str, int]:
     data = _transcript.read_transcript_bytes(transcript_path)
     if data is None:
         return {}
-    raw_lines = data.splitlines(keepends=True)
+    # 開始バイト位置は改行コード込みの長さで進めるため、LF行の末尾をそのまま保持する。
+    with io.BytesIO(data) as stream:
+        raw_lines = stream.readlines()
     parsed: list[dict] = []
     for raw in raw_lines:
         try:

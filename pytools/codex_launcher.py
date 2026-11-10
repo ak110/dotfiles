@@ -103,6 +103,15 @@ def _interactive(arguments: Sequence[str]) -> bool:
     return True
 
 
+def _with_cwd(arguments: Sequence[str], cwd: str) -> list[str]:
+    # --remote接続のTUIは自身のcwdを送らず、管理daemonのcwdで会話を始める。
+    # 通常起動と同じく起動したディレクトリを作業ルートにするため、指定が無ければ補う。
+    options = arguments[: arguments.index("--")] if "--" in arguments else arguments
+    if any(token in {"-C", "--cd"} or token.startswith(("-C", "--cd=")) for token in options):
+        return list(arguments)
+    return ["--cd", cwd, *arguments]
+
+
 def _resume_arguments(arguments: Sequence[str], identifier: str, cwd: str) -> list[str]:
     # 初期プロンプト・画像・worktree作成は元turnへ保存済み。再開時に再投入しない。
     result: list[str] = []
@@ -142,7 +151,7 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
         return 1
     async with RecoveryBridge(str(binary), environment, codex_runtime.codex_home(), timeout=timeout) as bridge:
         environment[_TOKEN_ENV] = bridge.token
-        command = arguments
+        command = _with_cwd(arguments, os.getcwd())
         while True:
             process = await asyncio.create_subprocess_exec(
                 str(binary),

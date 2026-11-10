@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 import pathlib
+import subprocess
 from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import run_script
 from agent_toolkit._atk.wi import submission_findings
-from agent_toolkit._common import session_activity
+from agent_toolkit._common import plugin_environment, session_activity
+from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 _SESSION = "11111111-2222-3333-4444-555555555555"
 _TARGET = "github.com/example/myrepo"
@@ -179,6 +183,48 @@ def test_review_finding_without_entry_is_detected(
     assert not _recorded()
 
 
+@pytest.mark.parametrize("multiple_sections", [False, True])
+def test_nested_review_findings_require_only_top_level_records(
+    claude_home: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    multiple_sections: bool,
+) -> None:
+    """最上位の先頭本文と記録のtextが一致すれば、入れ子・継続段落を複製せず要約を保存する。"""
+    _begin()
+    _write_session(claude_home, [])
+    # 発話抽出の実プロセス境界は配布ランチャー試験で扱い、ここでは最上位の指摘と記録のtextを比較する。
+    monkeypatch.setattr(
+        submission_findings.process_tree,
+        "run_with_timeout",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+    )
+    review = tmp_path / "review.txt"
+    separator = "確認した要求と根拠: 原稿\n要求: 2\n指摘:\n" if multiple_sections else ""
+    review.write_text(
+        "判定: 修正要\n指摘:\n- 親の指摘\n  - 実際値: 不足\n  - 期待値: 全対象\n"
+        "\n  補足の段落\n\n" + separator + "- 別の指摘\n  - 根拠: 入力\n確認した要求と根拠: 原稿\n",
+        encoding="utf-8",
+    )
+    assert submission_findings.review_findings(review) == ["親の指摘", "別の指摘"]
+    first = {**_OMISSION, "source": "review", "text": "親の指摘", "summary": "親の指摘を処置"}
+    assert _end(_findings(tmp_path, [first]), review) == 1
+    missing = capsys.readouterr().err
+    assert "別の指摘）の項目が無い" in missing
+    assert "実際値" not in missing
+    assert "期待値" not in missing
+    second = {**_OMISSION, "source": "review", "text": "別の指摘", "summary": "別の指摘を処置"}
+    assert _end(_findings(tmp_path, [first, second]), review) == 0
+    output = capsys.readouterr().out
+    assert output.count("- 親の指摘を処置:") == 1
+    assert output.count("- 別の指摘を処置:") == 1
+    report = session_activity.read_submission_report(_SESSION)
+    assert report is not None
+    assert len(report[1]) == 4
+    assert not _recorded()
+
+
 def test_normal_inputs_finish_and_save_summary(
     claude_home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -246,3 +292,44 @@ def test_end_requires_exactly_one_mode(capsys: pytest.CaptureFixture[str], argum
     assert _run("end", "--session-id", _SESSION, *arguments) == 1
     assert "--abort" in capsys.readouterr().err
     assert _recorded()
+
+
+@pytest.mark.usefixtures("share_package_caches")
+def test_distributed_launcher_checks_findings_without_inherited_pythonpath(
+    claude_home: pathlib.Path, tmp_path: pathlib.Path
+) -> None:
+    """配布ランチャーの環境復元後も内部子が発話を抽出し、不足と正常終了を区別する。"""
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    environment.pop("VIRTUAL_ENV", None)
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
+    prepare_plugin_environment(run_script.PLUGIN_ROOT, environment)
+    executable = run_script.PLUGIN_ROOT / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")
+
+    def invoke(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(executable), "wi", "submission", *arguments],
+            cwd=tmp_path,
+            env=environment,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=60,
+        )
+
+    begun = invoke("begin", "--session-id", _SESSION, "--target-repo", _TARGET)
+    assert begun.returncode == 0, begun.stdout + begun.stderr
+    path = _write_session(claude_home, [_user("前提がおかしい")])
+    findings = _findings(tmp_path, [])
+    rejected = invoke("end", "--session-id", _SESSION, "--findings-file", str(findings))
+    assert rejected.returncode == 1, rejected.stdout + rejected.stderr
+    assert "前提がおかしい）の項目が無い" in rejected.stderr
+    assert "ModuleNotFoundError" not in rejected.stderr
+    assert _recorded()
+
+    findings = _findings(tmp_path, [{"source": "user", "position": _user_events_position(path), **_OMISSION}])
+    accepted = invoke("end", "--session-id", _SESSION, "--findings-file", str(findings))
+    assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+    assert "指摘の分類と処置:" in accepted.stdout
+    assert "前提がおかしい" not in accepted.stderr
+    assert not _recorded()

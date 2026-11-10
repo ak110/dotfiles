@@ -68,6 +68,63 @@ def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
 
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize(
+    ("command", "warned"),
+    [
+        ("docker create --user root --mount type=bind,source=/work,target=/w image", True),
+        ('podman run -u 0 -v "$PWD":/work image', True),
+        ("docker container run -u0:1000 -v./src:/w image", True),
+        ("podman container create --user=0 --volume=~/src:/w:rw image", True),
+        ("docker --context local run --mount=type=bind,src=/work,dst=/w image", True),
+        ("env LANG=C docker run -v /work:/w image", True),
+        ("docker run -itv /work:/w image", True),
+        ("podman create -itv/work:/w image", True),
+        ("docker run -itv=/work:/w image", True),
+        ("docker run --health-start-period 5s -v /work:/w image", True),
+        ("podman run --health-retries 3 -v /work:/w image", True),
+        ("docker run --dns 1.1.1.1 -v /work:/w image", True),
+        ("docker run -ita stdout -v /work:/w image", True),
+        ("docker run -itu app -v /work:/w image", False),
+        ("docker run -ituapp -v /work:/w image", False),
+        ("docker run -itv /work:/w:ro image", False),
+        ("docker run -ite '-v /work:/w' image", False),
+        ("docker run --health-start-period 5s image -itv /work:/w", False),
+        ("docker run -v /work:/w:ro image", False),
+        ("docker run -v /work:/w:readonly image", False),
+        ('docker run --mount "type=bind,src=$PWD,dst=/source,readonly" image', False),
+        ("docker run --mount type=bind,src=/work,dst=/w,ro image", False),
+        ("docker run --user 1000:1000 -v /work:/w image", False),
+        ("docker run --user app -v /work:/w image", False),
+        ("docker run -v cache:/w image", False),
+        ("docker run --mount type=volume,dst=/w image", False),
+        ("docker compose run -u root -v /work:/w image", False),
+        ("printf '%s' 'docker run -u 0 -v /work:/w image'", False),
+        ("rg -F 'docker run -u 0 -v /work:/w' note.md", False),
+        ("docker run image echo --user root -v /work:/w", False),
+        ("docker run -e '-v /work:/w' image", False),
+        ("docker run --label=--user=root image", False),
+        ("docker run --user app -v /work:/w:ro -v /other:/o image", False),
+        ("docker run -v /work:/w:ro -v /other:/o image", True),
+        ("docker run --mount type=bind,src=/work,dst=/w,readonly=false image", True),
+    ],
+)
+def test_container_root_bind_mount_warning(tmp_path, codex, command, warned):
+    """公開hookで起動位置・ユーザー・bind mountの組み合わせを判定し、遮断しない。"""
+    result = _run(
+        {"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})},
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0
+    assert not result.stderr
+    context = _additional_context(result)
+    assert ("`root`所有でホストに残り" in context) is warned
+    assert "permissionDecision" not in result.stdout
+    if warned:
+        assert "readonly" in context
+        assert '--user "$(id -u):$(id -g)"' in context
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
     "predicate",
     [
         "rg x",
@@ -1038,6 +1095,31 @@ class TestBashGitRevParseShortMultiple:
             assert result.stdout.strip()
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("git -C sub commit -m text", ("commit", ("-m", "text"))),
+        ("atk run-script commit-with-timeout -- --timeout 3 -- -m text", ("commit", ("-m", "text"))),
+        ("/tools/atk run-script commit-with-timeout -- --timeout=3 -- -F -", ("commit", ("-F", "-"))),
+        (
+            "env FLAG=1 atk run-script commit-with-timeout -- --timeout 3 -- --amend --no-edit",
+            ("commit", ("--amend", "--no-edit")),
+        ),
+        ("atk run-script other -- --timeout 3 -- -m text", None),
+        ("atk run-script commit-with-timeout -- --help", None),
+        ("atk run-script commit-with-timeout -- --timeout 3 -m text", None),
+        ("echo atk run-script commit-with-timeout -- --timeout 3 -- -m text", None),
+    ],
+)
+def test_git_subcommand_tokens_recognizes_only_the_fixed_commit_wrapper(
+    command: str, expected: tuple[str, tuple[str, ...]] | None
+) -> None:
+    """専用起動の固定構文だけを通常commitへ対応付け、データと別scriptを除外する。"""
+    segments = shell_checks.extract_execution_segments(command)
+    assert len(segments) == 1
+    assert shell_checks.git_subcommand_tokens(segments[0]) == expected
+
+
 class TestGitCommitAttribution:
     """実行位置と最終メッセージを確定できる通常commitだけの帰属確認。"""
 
@@ -1050,6 +1132,7 @@ class TestGitCommitAttribution:
             f"git commit -m '変更' -m '{_trailer}'",
             f"git -C /work commit --message=変更 --message='{_trailer}'",
             f"git commit -m変更 -m'{_trailer}'",
+            f"atk run-script commit-with-timeout -- --timeout 3 -- -m 変更 -m '{_trailer}'",
         ],
     )
     def test_accepts_exactly_one_observed_identity_trailer(self, command: str) -> None:
@@ -1059,6 +1142,7 @@ class TestGitCommitAttribution:
         "command",
         [
             "git commit -m '変更'",
+            "atk run-script commit-with-timeout -- --timeout 3 -- -m '変更'",
             "while test -f marker; do git commit -m '変更'; done",
             "git commit -m '変更' -m 'Co-Authored-By: GPT-6.1 Sol / High <noreply@openai.com>'",
             "git commit -m '変更' -m 'Co-Authored-By: GPT-6 Sol / Medium <noreply@openai.com>'",
@@ -1111,7 +1195,9 @@ class TestGitCommitMessageFormat:
             "git commit -m '件名\n本文'",
             "git commit --message='件名\nCo-Authored-By: 著者'",
             "git commit -F - <<'EOF'\n件名\n本文\nEOF",
+            "atk run-script commit-with-timeout -- --timeout 3 -- -F - <<'EOF'\n件名\n本文\nEOF",
             "git commit --file=message.txt",
+            "atk run-script commit-with-timeout -- --timeout 3 -- --file=message.txt",
         ],
     )
     def test_rejects_missing_blank_line(self, tmp_path: pathlib.Path, command: str) -> None:
@@ -1175,24 +1261,27 @@ def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, e
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
 @pytest.mark.parametrize(
     "command_kind",
-    ["message", "file", "heredoc"],
+    ["message", "file", "heredoc", "am", "am-attached", "aF"],
 )
+@pytest.mark.parametrize("launcher", ["git commit", "atk run-script commit-with-timeout -- --timeout 3 --"])
 def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
-    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
+    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str], launcher: str
 ) -> None:
     """引数・ファイル・heredocから最終メッセージを確定し、WI名を持つcommitを公開hookが遮断する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
     message = "変更理由\n\n対応AWI: 20261020-151224-001.md"
-    if command_kind == "message":
+    if command_kind in {"am", "am-attached"}:
+        command = "git commit -am" + (" " if command_kind == "am" else "") + shlex.quote(message)
+    elif command_kind == "message":
         command = "git commit -m '変更理由' -m '対応AWI: 20261020-151224-001.md'"
-    elif command_kind == "file":
+    elif command_kind in {"file", "aF"}:
         message_file = repo / "message.txt"
         message_file.write_text(message, encoding="utf-8")
-        command = f"git commit -F '{message_file}'"
+        command = f"git commit {'-aF' if command_kind == 'aF' else '-F'} '{message_file}'"
     else:
         command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
 
-    result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
+    result = _run_git_commit_message_hook(repo, tmp_path, command.replace("git commit", launcher, 1), extra_payload)
 
     reason = _denial_reason(result)
     assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", reason)
@@ -1203,28 +1292,39 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
 @pytest.mark.parametrize(
     "command_kind",
-    ["message", "file", "heredoc"],
+    ["message", "file", "heredoc", "am", "am-attached", "aF"],
 )
+@pytest.mark.parametrize("launcher", ["git commit", "atk run-script commit-with-timeout -- --timeout 3 --"])
 def test_git_commit_without_work_item_filename_passes_public_hook(
-    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
+    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str], launcher: str
 ) -> None:
     """WI名のない同形メッセージは公開hookを通過する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
     message = "変更理由\n\n対象の動作を更新した。"
-    if command_kind == "message":
+    if command_kind in {"am", "am-attached"}:
+        command = "git commit -am" + (" " if command_kind == "am" else "") + shlex.quote(message)
+    elif command_kind == "message":
         command = "git commit -m '変更理由' -m '対象の動作を更新した。'"
-    elif command_kind == "file":
+    elif command_kind in {"file", "aF"}:
         message_file = repo / "message.txt"
         message_file.write_text(message, encoding="utf-8")
-        command = f"git commit -F '{message_file}'"
+        command = f"git commit {'-aF' if command_kind == 'aF' else '-F'} '{message_file}'"
     else:
         command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
 
-    result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
+    result = _run_git_commit_message_hook(repo, tmp_path, command.replace("git commit", launcher, 1), extra_payload)
 
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_commit_wrapper_message_file_is_relative_to_current_directory(tmp_path: pathlib.Path) -> None:
+    """`-C`というファイル名をGitのglobal optionと取り違えず、現在cwdの本文を読む。"""
+    message = "件名\n\n本文\n"
+    (tmp_path / "-C").write_text(message, encoding="utf-8")
+    command = "atk run-script commit-with-timeout -- --timeout 3 -- -F -C -m 追記"
+    assert list(shell_checks._git_commit_messages(command, cwd=str(tmp_path))) == ["追記\n\n" + message]
 
 
 class TestBashOptionAfterTerminator:
@@ -1247,8 +1347,19 @@ class TestBashOptionAfterTerminator:
             ("git grep -c -F -- 'X' -- --glob", "--glob"),
             ("git diff --stat a b -- $(printf path.py) --stat", "--stat"),
             ("git grep -c -F -e 'X' -- --glob", "--glob"),
+            ("git grep -i -e foo -- --glob", "--glob"),
+            ("git grep -iefoo -- --glob", "--glob"),
+            ("git grep -ie foo -- --glob", "--glob"),
+            ("git grep -if patterns.txt -- --glob", "--glob"),
+            ("git grep -ie -- -- --glob", "--glob"),
             # `-e`・`-f`を`--`より前に置くと`--`の後ろは全てパスになる（ripgrep 15.2.0、GNU grep）。
             ("rg -c -F -e 'X' -- --glob", "--glob"),
+            ("rg -n -e foo -- --glob", "--glob"),
+            ("rg -nefoo -- --glob", "--glob"),
+            ("rg -ne foo -- --glob", "--glob"),
+            ("grep -inefoo -- --include", "--include"),
+            ("rg -nfpatterns.txt -- --glob", "--glob"),
+            ("rg -ne -- -- --glob", "--glob"),
             ("grep -rc -F -e 'X' -- --include", "--include"),
             ("rg -c -F --regexp=X -- --glob", "--glob"),
             ("grep -rc -F -f patterns.txt -- --include", "--include"),
@@ -1270,7 +1381,7 @@ class TestBashOptionAfterTerminator:
         "command",
         [
             "rg -n -- '-foo' path",
-            "rg -l -F --glob '*.md' -- 'オプション終端' agent-toolkit/rules",
+            "rg -l -F --glob '*.md' -- 'オプション終端' agent-toolkit/share/rules/common",
             "grep -rn -- '--all' docs",
             "git log --oneline -- path",
             "git diff --stat -- a.py b.py",
@@ -1285,6 +1396,10 @@ class TestBashOptionAfterTerminator:
             "git grep -c -F -- -n -- agent-toolkit/share",
             "git grep -c -F -e 'X' -- agent-toolkit/share",
             "git grep -c -F 'X' -- agent-toolkit/share",
+            "git grep -ie -- agent-toolkit/share",
+            "git grep -iA 2 -- -n -- agent-toolkit/share",
+            "rg -ne -- agent-toolkit/share",
+            "grep --regexp -- /dev/null",
             "git diff --stat a b -- $(git diff --name-only c d) | tail -3",
             "git show --stat HEAD -- `git diff --name-only HEAD~1 HEAD`",
             "git diff --stat a b -- <(git diff --name-only c d)",
@@ -1489,6 +1604,61 @@ def _run_git_commit_message_hook(
     assert observed["head_after"] == head_before
     assert observed["status_after"] == status_before
     return result
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("form", ["-a -m {message}", "-am {message}", "-am{message}", "-aF {file}"])
+@pytest.mark.parametrize("correct", [False, True])
+def test_bundled_commit_attribution_reaches_public_hook(tmp_path, codex, form, correct):
+    """束ねた短形式も同じ本文を帰属検査へ渡し、正しいtrailerだけを受理する。"""
+    author = "GPT-6.1 Sol / Medium <noreply@openai.com>" if codex else "Claude Opus 5.5 / Medium <noreply@anthropic.com>"
+    message = "変更\n\n" + (f"Co-Authored-By: {author}" if correct else "帰属なし")
+    path = tmp_path / "message.txt"
+    path.write_text(message, encoding="utf-8")
+    command = "git commit " + form.format(message=shlex.quote(message), file=shlex.quote(str(path)))
+    result = _run(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+            "cwd": str(tmp_path),
+            "model": "gpt-6.1-sol" if codex else "claude-opus-5-5",
+            "effort": {"level": "medium"},
+            **({"turn_id": "codex-turn"} if codex else {}),
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0 and not result.stderr
+    if correct:
+        assert "permissionDecision" not in result.stdout
+    else:
+        assert f"Co-Authored-By: {author}" in _denial_reason(result)
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize(
+    ("command", "blocked"),
+    [
+        ("git grep -i -e pkill -- docs", False),
+        ("git grep -iepkill -- docs", False),
+        ("git grep -ie pkill -- docs", False),
+        ("git grep -if pkill -- docs", True),
+        ("git grep -iefoo -- pkill", True),
+        ("git grep -iA1e pkill", False),
+        ("git grep -O'pkill worker' -iefoo", True),
+        ("git grep -xe pkill -- docs", True),
+        ("git grep -iefoo -- docs; pkill worker", True),
+        ('git grep -ie"$(pkill worker)" -- docs', True),
+    ],
+)
+def test_bundled_search_patterns_preserve_public_process_protection(command, blocked, codex):
+    """検索語と確定した引数だけを免除し、ファイル・pager・実行位置の保護を保つ。"""
+    result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **({"turn_id": "t"} if codex else {})})
+    assert result.returncode == 0 and not result.stderr
+    if blocked:
+        assert "パターン一致によるプロセス終了" in _denial_reason(result)
+    else:
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
 
 def test_commit_message_file_is_read_with_unknown_pathspec(tmp_path):

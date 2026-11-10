@@ -682,6 +682,43 @@ class TestAgentTaskLaunchIndependence:
         assert result.returncode == 0
 
 
+class TestGenericAgentLaunchWarning:
+    """組み込みの汎用定義によるAgent・Taskの起動だけへ、実行手段の判定を促す非遮断の警告を返すことを確認する。"""
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize("agent_type", ["general-purpose", "Explore", "Plan", "web-fetch", "claude", None])
+    def test_generic_definition_is_warned_without_block(
+        self, tmp_path: pathlib.Path, tool_name: str, agent_type: str | None
+    ) -> None:
+        tool_input = {"prompt": "https://example.com/ の本文を取得して要約する。"}
+        if agent_type is not None:
+            tool_input["subagent_type"] = agent_type
+        result = _run_after_skill_acquisition(
+            {"session_id": f"generic-{tool_name}-{agent_type}", "tool_name": tool_name, "tool_input": tool_input},
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        output = json.loads(result.stdout)["hookSpecificOutput"]
+        assert "permissionDecision" not in output or output["permissionDecision"] != "deny"
+        context = _additional_context(result)
+        assert f"組み込みの汎用定義`{agent_type or 'general-purpose'}`" in context
+        assert "同等の手段が無いことの確認に当たらない" in context
+        assert "ユーザーの明示指示がある場合" in context
+
+    @pytest.mark.parametrize("agent_type", ["fork", "claude-code-guide", "project-reviewer"])
+    def test_fork_and_dedicated_definitions_are_not_warned(self, tmp_path: pathlib.Path, agent_type: str) -> None:
+        result = _run_after_skill_acquisition(
+            {
+                "session_id": f"dedicated-{agent_type}",
+                "tool_name": "Agent",
+                "tool_input": {"subagent_type": agent_type, "prompt": "担当の作業を進める。"},
+            },
+            env_overrides=_plan_file_state_env(tmp_path),
+        )
+        assert result.returncode == 0
+        assert "組み込みの汎用定義" not in _additional_context(result)
+
+
 class TestWorkflowSkillInvocation:
     """`agent-toolkit:delegation`以外のスキルの起動が、`agent-toolkit:delegation`の状態記録または事前案内を発生させないことを確認する。"""
 

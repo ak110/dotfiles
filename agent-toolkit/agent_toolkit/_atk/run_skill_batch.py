@@ -71,7 +71,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart":
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                "まとめて振り返るには /agent-toolkit:review-session batch を実行する。"
+                "まとめて振り返る場合は`/agent-toolkit:review-session batch`を実行せよ。"
             )
             return "\n".join(part for part in (notice, waiting) if part)
         return notice
@@ -244,7 +244,7 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         "# 非同期振り返り（review-session batch）の失敗の是正\n\n"
         "非同期振り返りが下記の対象セッションを処理できなかった。"
         "このAWIが終了するまで、同じ原因で失敗した対象の自動振り返りを止めている。"
-        "原因を是正し、対象の振り返りが自動で再開できる状態へ戻す。\n\n"
+        "原因を是正し、対象の振り返りを再実行できる状態へ戻す。AWIの終了により失敗抑止が解除される。\n\n"
         "## 反映内容と反映先\n\n"
         "失敗理由と実行記録から原因を特定し、振り返りの前後処理または準備処理を是正する。"
         f"反映先は`{_plugin_repository()}`とする。"
@@ -255,7 +255,10 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         "## 完成条件\n\n"
         "失敗理由の原因が是正され、対象セッションで準備から失敗した工程までの成功を確認する。"
         "準備以降に失敗した場合は、子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する。"
-        "このAWIの終了後、次のセッション開始・終了時に、止めていた対象の振り返りが自動で再試行される。\n\n"
+        "是正後は`atk run-skill agent-toolkit:review-session --args batch`で手動実行する。"
+        "このAWIの終了後、`session_review_auto_start=true`で開始条件を満たす場合に限り、"
+        "セッション開始・終了時に自動起動できる。"
+        "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する。\n\n"
         "## 詳細\n\n"
         f"失敗理由: {reason}\n"
         f"実行記録: {path}\n"

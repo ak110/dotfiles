@@ -640,7 +640,7 @@ class TestRemoveAllConcurrentChanges:
 
         captured = capsys.readouterr()
         assert "警告: 確認後に変更されたため削除しない: original.md\n次の操作: " in captured.out
-        assert "同じコマンドを再実行する" in captured.out
+        assert "atk wi show" in captured.out and "再実行せよ" in captured.out
         assert "成功: 対象0件のため削除しなかった（変更は無い）: github.com/example/foo" in captured.out
         assert not commits
 

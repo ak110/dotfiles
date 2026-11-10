@@ -522,7 +522,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
                     entry_type="uwi",
                     scope=SKILL,
                     question_type="yes-no",
-                    lock_timeout=30,
+                    storage=sync.Storage(lock_timeout=30),
                 )
         run["report_synced"] = add.has_synced_run_report(notes, run_id=run["run_id"], skill=SKILL)
         run["report_error"] = None

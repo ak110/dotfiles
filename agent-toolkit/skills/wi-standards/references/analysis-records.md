@@ -1,36 +1,40 @@
 # 原因分析を記録する場所と表の構成
 
-本書は、観測された不具合の原因分析を記録するエージェント向けに、記録先（AWIの`## 原因分析`節および計画ファイル（バグ））と各表の記載要領を定める。拡張原因分析の対象外となる不具合であっても、AWIの`## 原因分析`を起草する前、およびバグ調査の計画ファイルを作成する前に本書を確認する。
+本書は、観測された不具合の原因分析を記録するエージェント向けに、記録先と各表の記載要領を定める。
+記録先はAWIの`## 原因分析`節および計画ファイル（バグ）とする。
+拡張原因分析の対象外となる不具合であっても、AWIの`## 原因分析`を起草する前、およびバグ調査の計画ファイルを作成する前に本書を確認する。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 待機の確認要否と冷却期限を選ぶ前 | `states-and-dependencies.md#「依存と冷却時間」「着手不能要因の分類」` | 判断 | `section:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md#「依存と冷却時間」「着手不能要因の分類」` |
-| 配置や形式が判断で果たす機能の保持を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions.md#「削減の判定根拠」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md#「削減の判定根拠」` |
+| 待機の確認要否と冷却期限を選ぶ前 | `states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
+| 配置や形式が判断で果たす機能の保持を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
 | 検出策の実測を記録・検収する前 | `agent-basics:bugfix/references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` |
-| 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis.md#「原因分析の段階」` | 判断 | `section:agent-basics:*/skills/bugfix/references/causal-analysis.md#「原因分析の段階」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-standards.md#「バグ調査」` | 判断 | `section:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md#「バグ調査」` |
+| 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md`の「処置の階層」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-actions.md#「処置の階層」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md#「類似見直し」` | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-remediation.md#「類似見直し」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
 
 ## 原因分析の記録先
 
 記録欄や処置の要求を規範で定めるときは、欄・要求ごとに何を書けば十分かと省略・該当なし・途中での完了を許す条件を対で定め、通常の事例で常に成立するほど広い例外を設けない。
 書式を分割・簡略化・移設するときは、必須の意味内容ごとに記録先を対応付け、別の役割の欄へ混在させない。
-配置や形式が判断で果たす機能の保持は、`agent-basics:writing-standards/references/agent-documents-additions.md`「削減の判定根拠」に従って判定する。
+配置や形式が判断で果たす機能の保持は、`agent-basics:writing-standards/references/agent-documents-additions-volume.md`「削減の判定根拠」に従って判定する。
 
-確定したバグ単位は、観測された不具合を起点とする通常AWIの`## 原因分析`節に記録し、計画ファイルからはその節をWIファイル名で参照する。これにより、分析内容の記述をWI側の1箇所に集約して一元管理する。
-複数repoで共通する分析は、`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従い代表AWIへ集約できる。固有AWIにある正式名・target_repo・指定箇所から表と確認結果を取得し、repo固有の事実と対策の適用は個別に確認する。
-計画ファイル（バグ）の作成条件と見出し構成は`agent-toolkit:write-plan`の`references/plan-file-standards.md`「バグ調査」に従い、保存先および参照行の記述形式は同スキルの`references/plan-file-storage.md`に従う。
+確定したバグ単位は、観測された不具合を起点とする通常AWIの`## 原因分析`節に記録し、計画ファイルからはその節をWIファイル名で参照する。
+これにより、分析内容の記述をWI側の1箇所に集約して一元管理する。
+複数repoで共通する分析は、`agent-toolkit:wi-standards`の`references/cross-repository-submission.md`「独立したAWIへの分割と依存」に従い代表AWIへ集約できる。
+固有AWIにある正式名・target_repo・指定箇所から表と確認結果を取得し、repo固有の事実と対策の適用は個別に確認する。
+計画ファイル（バグ）の作成条件と見出し構成は`../../write-plan/references/plan-file-standards-verification.md`「バグ調査」に従う。
+保存先および参照行の記述形式は`../../write-plan/references/plan-file-storage.md`に従う。
 
 原因分析表は、`要因系統`、`L1 現象`、`L2 判断`、`L3 構造`、`L4 システム`の5列で構成し、`作り込み要因`、`見逃し要因`の2行をこの順序で記載する。
 各段位はL4まで必要な確認を終えた結論を記載し、該当なしは`agent-basics:bugfix/references/causal-analysis.md`「原因分析の段階」の共通規則に従う。
@@ -38,7 +42,7 @@ L3で処置を決めた後も各段の記録を残す。
 判断の具体的な検討過程は根拠資料やログへ残す。
 
 調査表は`項目`と`内容`の2列で構成し、計画ファイル（バグ）では以下の11行をこの順序で記載する。
-処置の6区分（対策から再発防止策（見逃し）まで）の定義は`agent-basics:bugfix/references/root-cause-actions.md`「処置の階層」に従う。
+対策から再発防止策（見逃し）までの処置の6区分の定義は`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」に従う。
 
 | 行名 | 記載内容 |
 | --- | --- |
@@ -57,24 +61,37 @@ L3で処置を決めた後も各段の記録を残す。
 直接的原因と原因分析の根拠は独立した行に書かず、原因分析表の該当セル（主にL1とL2）へ、確定に使った観測・再現・混入commit・資料の所在を添えて書く。
 件数やログの数値を挙げる場合は、主張対象を正しく表す生成元と、原因の条件を満たさない比較対象群の数値を併記し、実測で確認できていない数値は推定値と明記する。
 
-計画ファイル（バグ）では、バグ単位ごとの見出しの下に原因分析表と調査表をこの順序で配置する。拡張原因分析の対象外となる不具合にも、類似箇所の見直しと再発防止策の共通基準を適用する。
+計画ファイル（バグ）では、バグ単位ごとの見出しの下に原因分析表と調査表をこの順序で配置する。
+拡張原因分析の対象外となる不具合にも、類似箇所の見直しと再発防止策の共通基準を適用する。
 `agent-basics:bugfix/references/root-cause-remediation.md`と`agent-basics:bugfix/references/root-cause-prevention.md`に従って判定する。
-根本原因から導かれた見直し観点、結果、および再発防止策を記録する。表の行名、列名、配置順序は変更しない。
-類似見直し観点と再発防止策の作り込み・見逃しの4行には、それぞれ1件以上の候補を書き、採否は採否の2行へ分けて書く。候補の件数は採用件数の下限ではなく、採否はbugfixの影響度と費用対効果の基準で決める。
+根本原因から導かれた見直し観点、結果、および再発防止策を記録する。
+表の行名、列名、配置順序は変更しない。
+類似見直し観点と再発防止策の作り込み・見逃しの4行には、それぞれ1件以上の候補を書き、採否は採否の2行へ分けて書く。
+候補の件数は採用件数の下限ではなく、採否はbugfixの影響度と費用対効果の基準で決める。
 混入防止で見逃し側の処置が不要となる場合も、見逃し側の候補と不採用理由を残す。
 候補を作らない段1〜6や案の種類は、それぞれの理由を1行で示せばよい。
-類似見直しの実施結果と独立別件の引き渡し先、再発防止の選定済み方針、実装と有効性確認の状態を記録する。表への記載だけで処置済みとは判断しない。
+類似見直しの実施結果と独立別件の引き渡し先、再発防止の選定済み方針、実装と有効性確認の状態を記録する。
+表への記載だけで処置済みとは判断しない。
 検出策の実測は`agent-basics:bugfix/references/analysis-records.md`の基準に従い、既存の対策・再発防止策欄から入力・版・診断・終了状態・判定と正常系の証拠を参照する。
 検収と再発時の比較では、その実測、文書試行、後日の効果を分けて適用条件と保証範囲を確認する。
 
-AWIの`## 原因分析`節は原因分析表と、調査表から抽出した`対策`、`回帰防止策`、`類似見直し観点（作り込み）`、`類似見直し観点（見逃し）`、`再発防止策（作り込み）`、`再発防止策（見逃し）`、`類似見直しの採否`、`再発防止策の採否`の8行をこの順序で並べた2列表によって構成する。各行は上記の調査表と同じ定義とし、`対策`行には修正内容の要旨と`## 反映内容と反映先`節の対応項目への参照を書く。具体的な変更内容の詳細は`## 反映内容と反映先`節に記載する。調査表の残りの項目については、`現象`と`期待する契約`を各バグ単位から一意に特定できる場所に配置し、`類似見直し結果`を`## 原因分析`節の8行表の外に配置する。対策・回帰防止策・横展開処置・再発防止策の具体的な変更内容は、処置の区分を項目ごとに明記して`## 反映内容と反映先`節に配置する。
-保存済みの旧形式（`直接的原因`・`原因分析の根拠`行を持つ5行表や8行の調査表）は読み取りと、原因分析を変更しない編集で受理する。新規作成と原因分析を変更する更新には現行の形式を使う。
-拡張原因分析の対象外となる不具合のAWIでも、確定したバグ単位ごとに5列2行の原因分析表と前述の8行表を常に掲載し、対象条件に該当しない根拠を記載する。複数のバグ単位を含むAWIでは、`## 原因分析`節の中にバグ単位ごとのH3見出しを設けて整理する。
+AWIの`## 原因分析`節は原因分析表と、調査表から抽出した`対策`、`回帰防止策`、`類似見直し観点（作り込み）`、`類似見直し観点（見逃し）`、`再発防止策（作り込み）`、`再発防止策（見逃し）`、`類似見直しの採否`、`再発防止策の採否`の8行をこの順序で並べた2列表によって構成する。
+各行は上記の調査表と同じ定義とし、`対策`行には修正内容の要旨と`## 反映内容と反映先`節の対応項目への参照を書く。
+具体的な変更内容の詳細は`## 反映内容と反映先`節に記載する。
+調査表の残りの項目については、`現象`と`期待する契約`を各バグ単位から一意に特定できる場所に配置し、`類似見直し結果`を`## 原因分析`節の8行表の外に配置する。
+対策・回帰防止策・横展開処置・再発防止策の具体的な変更内容は、処置の区分を項目ごとに明記して`## 反映内容と反映先`節に配置する。
+保存済みの旧形式（`直接的原因`・`原因分析の根拠`行を持つ5行表や8行の調査表）は読み取りと、原因分析を変更しない編集で受理する。
+新規作成と原因分析を変更する更新には現行の形式を使う。
+拡張原因分析の対象外となる不具合のAWIでも、確定したバグ単位ごとに5列2行の原因分析表と前述の8行表を常に掲載し、対象条件に該当しない根拠を記載する。
+複数のバグ単位を含むAWIでは、`## 原因分析`節の中にバグ単位ごとのH3見出しを設けて整理する。
 H1直下は短い目的・変更・結果を保ち、各バグの具体的な現象と期待する契約は1箇所に記録する。
 各H3の冒頭に現象と期待する契約を1〜2文で記す形を標準とする。
 別の箇所を参照する場合は、各バグから該当する節・項目を一意に特定でき、実際の事象、期待との差、原因を比較できるようにする。
 
-複数の観測事象を1つのバグ単位にまとめるのは、直接的な原因と対策の変更対象単位がともに同一である場合に限る。根本原因が共通していることのみを理由に統合しない（たとえば同一の根本原因であっても、入力解析処理と状態更新処理のように直接的原因が異なる場合は個別のバグ単位に分け、逆に同一の原因と対策によって保存失敗と再試行停止の双方が解消される場合は1つに統合できる）。バグ単位を分けた場合であっても、同一の根本原因を持つ一連の不具合に対する類似見直しと再発防止の完了判定は、`agent-basics:bugfix`の`references/root-cause-prevention.md`「類似見直しと再発防止の完了」に従い、全件を対象として総合的に行う。
+複数の観測事象を1つのバグ単位にまとめるのは、直接的な原因と対策の変更対象単位がともに同一である場合に限る。
+根本原因が共通していることのみを理由に統合しない（たとえば同一の根本原因であっても、入力解析処理と状態更新処理のように直接的原因が異なる場合は個別のバグ単位に分け、逆に同一の原因と対策によって保存失敗と再試行停止の双方が解消される場合は1つに統合できる）。
+バグ単位を分けた場合であっても、同一の根本原因を持つ一連の不具合に対する類似見直しと再発防止の完了判定は、`agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」に従う。
+判定は全件を対象として総合的に行う。
 対応の網羅性を確認する際は、計画メタ情報に記載された関連WIの各バグが、WIの`## 原因分析`節、または計画ファイル（バグ）の確定済みバグ単位に正しく対応していることを確認する。
 計画ファイルの`### 恒久化`節には原因分析を記録した資料への参照を記載し、類似箇所の見直しに関する記述はその参照先資料にのみ集約して記載する。
 処置と完成条件の網羅に関する結論は、`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の比較元と対応付け、既存の類似見直し結果および再発防止策の記録欄へ残す。
@@ -82,12 +99,22 @@ H1直下は短い目的・変更・結果を保ち、各バグの具体的な現
 
 ## 潜在欠陥の受渡し
 
-元の修正に必要な追随は元の作業に含める。独立した別件は投入元が具体化して別AWIへ渡し、元の記録に調査結果と登録先を残す。手動登録では登録前に別件の原因と変更内容を確定し、他の工程では観測事実、支持根拠のある原因仮説、残る問いを区別して渡せる。元の根本原因からの類似調査と別件自身の原因確定を区別する。
-観測された事象に対する因果関係が観測によって確定していない潜在的な欠陥は、その因果関係を実測によって確認できた場合、またはユーザーが同一計画への併記に明示的に合意した場合に限り、同一の計画に含める。その際は合意や確認の根拠を計画へ記録する。同一の計画に含めない是正対象については、独立した通常のAWIとして登録するか委譲元へ返却し、引き渡し先と処置の進捗状況を記録する。引き渡し先を指定せずに調査対象から除外した場合は、類似見直しが未完了であるとみなす。計画を分割するのは記録の単位を整理するためであり、引き渡した処置が完了するまでは、元の類似見直し全体の完了条件として維持する。
+元の修正に必要な追随は元の作業に含める。
+独立した別件は投入元が具体化して別AWIへ渡し、元の記録に調査結果と登録先を残す。
+手動登録では登録前に別件の原因と変更内容を確定し、他の工程では観測事実、支持根拠のある原因仮説、残る問いを区別して渡せる。
+元の根本原因からの類似調査と別件自身の原因確定を区別する。
+観測された事象に対する因果関係が観測によって確定していない潜在的な欠陥は、その因果関係を実測によって確認できた場合、またはユーザーが同一計画への併記に明示的に合意した場合に限り、同一の計画に含める。
+その際は合意や確認の根拠を計画へ記録する。
+同一の計画に含めない是正対象については、独立した通常のAWIとして登録するか委譲元へ返却し、引き渡し先と処置の進捗状況を記録する。
+引き渡し先を指定せずに調査対象から除外した場合は、類似見直しが未完了であるとみなす。
+計画を分割するのは記録の単位を整理するためであり、引き渡した処置が完了するまでは、元の類似見直し全体の完了条件として維持する。
 
 ## 暫定回避と結果報告
 
-解除条件を伴う暫定回避を行う場合は、`agent-toolkit:wi-standards`の通常の投入手順に従い、正式対応の対象、解除条件、復帰後に期待される結果を保存済みAWIへ記録して接続する。時間経過や外部公開の待機は、`states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従って、ユーザー判断の要否と解決の見込みを先に確定し、UWIまたは冷却期限を選ぶ。再発防止策を採用するかどうかの判断は、作業完了報告および報告用UWIの`### 自ら確定した判断`に根拠とともに記録する。ユーザーのみが判断できる事項については、`agent-toolkit:user-confirmation-and-report`に従って確認する。
+解除条件を伴う暫定回避を行う場合は、`agent-toolkit:wi-standards`の通常の投入手順に従い、正式対応の対象、解除条件、復帰後に期待される結果を保存済みAWIへ記録して接続する。
+時間経過や外部公開の待機は、`states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従って、ユーザー判断の要否と解決の見込みを先に確定し、UWIまたは冷却期限を選ぶ。
+再発防止策を採用するかどうかの判断は、作業完了報告および報告用UWIの`### 自ら確定した判断`に根拠とともに記録する。
+ユーザーのみが判断できる事項については、`agent-toolkit:user-confirmation-and-report`に従って確認する。
 
 ## 参照資料の取得
 

@@ -1,0 +1,69 @@
+# WIの調査・起草・保存の共通手順：エージェント向け文書の構成
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-scenarios.md`を全文読む | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
+| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
+| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
+| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` |
+
+## エージェント向け文書の構成
+
+エージェント向け文書を追加・変更するAWIでは、次の資料に従う。
+
+- `agent-basics:writing-standards/references/agent-documents-additions-additions.md`
+- `agent-basics:writing-standards/references/agent-documents-additions-volume.md`
+反映先の現在の行数を確認し、変更後に目安を超える見込みなら、分割・統合・削除の候補を`## 調査結果と判断根拠`へ残す。
+`## 反映内容と反映先`には目的と対象文書を示し、ユーザーの要件や公開契約が配置を指定する場合を除き、計画で統合・分割を選べるよう節の位置や追記の形を固定しない。
+
+## 本文の起草
+
+1. 原因分析の処置は`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」で区別し、`analysis-records.md`「原因分析の記録先」の対策・回帰防止策・類似見直し観点・再発防止策の各行と採否の行へ対応付ける。
+   変更の詳細は反映内容節へ置き、各行の要旨から対応項目を参照する。
+
+2. 受け取った制約事項は、適用されるべき工程を原文から特定する。
+   WI作成工程にのみ適用される書き込み範囲や操作の許可・禁止は作成主体自身の行動に適用し、後続の計画・実装・公開工程を拘束する要件とするのは、原文がその工程への適用を明示しているものに限る。
+   原稿の反映内容、適用範囲、完成条件を確定する段階で、各制約と適用工程との対応関係を確認する。
+   現在の工程における案の提示・回答・対話と、後続工程へ登録すべき成果物との時期的な区別は、`agent-toolkit:user-confirmation-and-report`のSKILL.md「成果物の制限」に従って判定する。
+   現在回答すべき問いを後続の完成条件で代用した原稿を作成しない。
+
+3. 新規の通常AWIでは、`drafting-completion-duplicates.md`「重複判定」の起点別条件に従って既存項目と要求を比較する。
+   比較した既存項目が要求を完全に網羅している場合は原稿を作成せず、部分的に網羅している場合はカバーされていない部分のみを起草する。
+   付随型エージェントは判定結果と既存項目のファイル名を`既存項目の扱い`に記載して返す。
+   専念型の担当エージェントは、完全網羅の要求を投入前レビューや保存へ進めず、`add-wi.subagent.md`「保存の返却」における`reused`として結果を返し、部分網羅の場合は保存結果と既存項目がカバーする範囲を分けて報告する。
+   AWIは`wi-standards-body.md`「通常AWIの本文」、UWIは`references/uwi-format.md`に従う。
+   複数repoの共通本文は`cross-repository-submission.md`「独立したAWIへの分割と依存」の代表AWI参照を使い、指定箇所とユーザー記入欄を取得して固有要求と合わせる。
+   それ以外の委譲元の会話文脈を前提とする参照や、受け取った指示文の丸写しは避ける。
+   上流の改訂作業後に元項目の対象リポジトリで実施すべき作業がある場合は、それも本文に含める。
+   完成前に節間の重複を整理し、判断に必要な根拠・適用範囲・引用を保つ。
+   完成条件を固定する前に、比較・検収・工程の指定を逐語本文および由来と突き合わせ、ユーザーが明示した目的・要件と、委譲元または自身が選んだ中間手段とに明確に分類する。
+   中間手段については`drafting-completion.md`の必要性比較に基づいて残すかどうかを決定し、必要性を立証できない内部の検証手順は計画工程へ委ねる。
+   ユーザーが明示的に指定した手段は保持する。
+   手段を固定する根拠を記載する際は、委譲元の追送指示で求められたことに加え、それを固定する必要性を具体的に示す。
+   逐語本文を受け取った要求では原文を末尾へ転記し、反映内容との意味の一致を確認する。
+   分割した要求は内容と割当先の短い説明で担当範囲を特定する。
+   要求の趣旨にも割り当てにも該当しない単位は即時通知し、残りの原稿を完成させる。
+
+4. `質問への回答の扱い`が送達済みと示している質問に限り、`## ユーザー指摘の逐語引用`に回答済み注記を記載する。
+   調査によって回答内容を確定させただけの質問は、回答案と根拠を成立性の証拠に残し（回答済み注記は実際の送達後に追記する）、確定できなかった質問は調査対象と限界を同一の証拠に残す。
+   質問への回答に未確定部分が残っていても、採否と実現方式が確定した原稿は作成を進める。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| エージェント向け文書への追記と記述量の管理：規範追記時の判定の基準を適用する前 | `agent-basics:writing-standards/references/agent-documents-additions-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-additions.md` |
+| エージェント向け文書への追記と記述量の管理：文書記述量の管理の基準を適用する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
+| AWIとUWIの共通規範：通常AWIの本文の基準を適用する前 | `wi-standards-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-body.md` |

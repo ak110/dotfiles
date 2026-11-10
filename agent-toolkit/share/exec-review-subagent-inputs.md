@@ -1,0 +1,144 @@
+# 実行レビュータスク：入力
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
+| 本文でこの資料の基準を参照・取得する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
+| 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` | 判断 | `read:agent-basics:*/skills/secret-files/SKILL.md` | |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` | |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 条件表を検収する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` | |
+| 初回レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
+| 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
+| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md`、`read:agent-toolkit:*/skills/commit/references/testing.md` | |
+| `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-structure.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-scope.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-requirements.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
+| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check.parent.md` | |
+| 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/share/exec-review-recording-issues.md`、`read:agent-toolkit:*/share/exec-review-recording-evidence.md`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
+| 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
+| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` | |
+| 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` | |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` | |
+| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md`、`exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md`、`read:agent-toolkit:*/share/exec-review-recording-verdicts.md` | |
+
+## 入力
+
+**1.** 原要求と対象版を確定し、入力記録と管理表を準備する。
+
+原要求・回答・公開契約から必要結果・品質・認可・制約を定め、派生計画・review_contract・差分・試験を評価する。
+不要な内部方式は削除・縮小・代替も比較し、明示方式・データ保全・必要な不変条件を保つ。
+
+- `レビュー基準`: `計画`、`CI記録`、`WI`の基準名1つ以上を読点区切りで受け取り、各基準に応じた追加入力もすべて別入力で受け取る
+- `計画`: 計画ファイルの絶対パス。
+  各節の意味は読込表の`plan-file-standards.md`に基づいて解釈する。
+  レビュー指摘管理表と検証結果は、同じファイル名幹（stem）を持つ成果物から特定する。
+  検証結果は実装担当エージェントが`## 進捗ログ`に記録した行（レーン工程では`exec-subagent-implementation.md`「実装」）を指し、自身が作成する完成条件証拠とは別の検証資料として参照する
+- `CI記録`: 7項目のCI記録とともに、`修正系列の開始時のHEAD`（同一の修正系列で引き継ぐ短縮OID）および`原因commitOID`（今回の原因となったcommitの短縮OID。CIが再帰的に失敗した場合はCI記録と同時に更新される）を受け取る。
+  使用する管理表のパスは`~/.claude/plans/ci-<修正系列の開始時のHEAD>.exec-review.tsv`となる
+- `WI`: 計画に記載されていないWIについて、ファイル名、要求、完成条件、由来、採否を含む`WI記録`を受け取る（計画に記載があるWIは自身で取得する）。
+  `計画`が指定されていない場合は、1件以上のWI記録と`開始時のHEAD`を受け取り、管理表のパスは`~/.claude/plans/wi-<開始時のHEAD>.exec-review.tsv`とする。
+  計画がない場合の検証結果は、受け取ったWI記録または引き継ぎ記録が示す場所から読み取る
+- `review_contract`: `CI記録`、計画外の`WI`、新形式AWIでは必須とする。
+  単一条項の直接契約か、`条項`・`内容`・`出典`と判定対象外commitを記したMarkdownの絶対パスを受け取る。
+  AWI形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭で判別する。
+  新形式AWIでは`exec-review-recording-contract.md`「記録する行と要求単位」の条件表を含むファイルを検収する。
+  原要求から期待結果を確定後に契約全文を読み、必要性・整合性を評価する。
+  再レビューでは前回契約を維持し、更新時は旧版を保存する
+- `担当モデル`: 指定された場合は、読者別探索担当および再発防止セルフチェック担当の起動時引数`model_type`へ渡し、終了時の結果で得られた実際のモデルとの一致を引き継ぎ記録へ記録する。
+  指定がない場合は工程別の標準設定を用いる
+- `評価用WI原本`: 評価時点に固定したWI本文を取得するJSON一覧の絶対パス。
+  JSONはWIファイル名をキー、保存本文ファイルの絶対パスを値とする辞書であり、指定された場合は対象WI全件をこの一覧から読む。
+  条件表、起動前検査、レビュー判定で同じ原本を使い、一覧不足・読取不能を最新キューで代替しない。
+  評価入力だけに適用し、省略時は現行キューから取得する
+- `レビュー種別`と`round`: 省略時の値はそれぞれ`初回レビュー`および`1`となる。
+  引き継ぎ再レビューでは両方の指定を必須とする
+- `rewrite_map`: 前回のレビュー後に履歴の書き換えやcommit分割によってOIDが変更された際、再レビューで受け取る旧OIDから新OIDへの対応表の絶対パス。
+  形式は`../skills/commit/references/history-rewrite-wi-records.md`「WI実装commitの対応の継承」、取り扱いは`exec-review-subagent-followup.md`「再レビュー」に従う
+- `前回確認版`: 引き継ぎ再レビューで受け取る記録の絶対パス。
+  前回の開始時点とレビュー対象HEADの組み合わせ（差分の比較に使用）、およびGit管理外の文章成果物ごとの識別子と前回本文の複製パスを保持する。
+  同一thread内では`exec-review.subagent.md`「出力」で保存した記録をそのまま引き継ぐ。
+  比較元を特定できない場合は、不足しているHEADや本文の取得元を「続行できない理由」として返す
+- `受理済みの完成条件証拠`: 後続のレビューが参照できる、委譲元が受理済みの実行レビュー返却ファイルの絶対パス。
+  省略時や該当する返却がない場合は`なし`とする。
+  `exec-review-recording-evidence.md`「受理済み判定への参照」の条件を満たす判定行のみを参照する
+- `対象ファイル限定`: 指定がある場合は、その範囲に含まれるファイルのみをレビューする
+- `Git管理外の変更`: 元ファイルと変更前複製の絶対パスの組み合わせごとに、複製と現行本文の差分をレビュー対象に加え、元の絶対パスを変更ファイル一覧へ登録する。
+  作業ツリー内の`.env`などは通常の全文差分として扱う。
+  元ファイルが作業ツリー外にあり`agent-basics:secret-files`の対象となる組み合わせでは、キー名の集合とキーごとの値の一致・不一致のみを比較し、具体的な値は出力対象から除外する
+
+本文で受領したCI・WI記録は直ちに自身のmanaged-tempのMarkdownへ原文保存し、「入力記録」とする。
+判定根拠はそのパスと行番号を引用し、再レビューの更新値は同じファイルへ追記する。
+絶対パスで渡された記録はそのまま入力記録とする。
+計画を作成せずにWI全体を不採用とする場合、入力記録の`## 実施内容`の表形式は`exec-review-recording-verdicts.md`「判定の値」に従う。
+
+対象worktreeは`cwd`、リポジトリはGit共通ディレクトリ、対象HEAD・変更ファイルは現在のGit状態から取得する。
+計画・WI・CI記録・開始時点・管理表の所属リポジトリが異なれば「続行できない理由」を返して中断する。
+プロジェクト規範と適用スキルは対象worktreeと現plugin rootから解決する。
+
+管理表は初読前に存在を確かめる。
+初回で存在しない場合だけ`atk review-table init <表の絶対パス>`を単独実行し、成功後に読む。
+既存表は初期化せず使う。
+再レビュー・引き継ぎ再レビューで表が欠けた場合は新規作成せず、欠損した表と再開に必要な記録を「続行できない理由」で返す。
+
+## 差分とWIの取得
+
+**3.** 差分を原要求・回答・公開契約と比較し、判定対象を揃える。
+
+変更前の公開契約と比較するための開始時点は、`開始時のHEAD`が指定されていればその値を用いる。
+指定がない場合、`計画`を含むときは実装着手前のworktreeを、`CI記録`のみのときは`原因commitOID`の親commitを開始時点とする。
+差分を取得する直前に開始時点とレビュー対象HEADを具体的なcommitへ解決し、差分が計画から生成した条項、受け取った`review_contract`、および各基準の次の情報に個別に適合しているかを確認する。
+差分を読む際は、まず`git diff --stat`や`git diff --name-status`で変更規模を把握し、判定に必要な範囲から優先して読み進める（努力目標。必要な差分から読むため）。
+
+- `計画`: `## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`
+- `CI記録`: 受け取ったCI記録の各項目
+- `WI`: 要求、完成条件、由来、採否
+
+対象となるWIの集合は、受け取ったWI記録と、計画の`## 実施内容`で`由来`に`人間由来のWI`または`エージェント由来のWI`が指定されている行のWIを合わせたものとする（通常は計画の由来と採否を再利用し、原文との具体的反証がある単位は根拠を示して訂正する）。
+計画の有無にかかわらず、対象WIは`評価用WI原本`の指定時にはその一覧から、それ以外は対象worktree上の`atk wi show`から取得する。
+frontmatterの`type`が`awi`や`uwi`である項目の要求および完成条件を差分と比較する。
+ユーザーコメントやUWIの回答は要求単位ごとに分割し、元の文面と出所を保持した状態で比較する。
+`## ユーザー指摘の逐語引用`は起草時点で解決済みの発話であるため（`agent-toolkit:wi-standards`の`references/origin-and-approval.md`）、個別の要求単位には分割せず、`## 反映内容と反映先`や`## 完成条件`を解釈するための補足根拠として参照する。
+計画内の`ユーザー指示`に由来する行も要求単位に分割し、WI本文に含まれない追加要求として突き合わせる。
+WIの鮮度（staleness）は、`計画`がある場合は`## 変更履歴`に記録された設計時の`staleness`ならびに条件付き履歴確認の判断を参照する。
+`WI`のみで`評価用WI原本`が未指定の場合は、対象worktree上で`atk wi list --state=all --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を1回実行して対象WIの`staleness`を取得する。
+レビューの対象には、状態を問わずすべての対象WI（`processing`、`adopted`、`rejected`など）を含める。
+現行キューの取得経路で全状態の一覧に対象WIが1件も見当たらない場合、または指定された保存版を取得できない場合は、不足する原本と再開条件を返す。
+
+計画の条項を根拠として指摘を登録する前には、その条項が対象WIの明示的な条件（`## 反映内容と反映先`、`## 完成条件`、`## ユーザーコメント`、関連するUWIの`## 回答`）と整合しているかを確かめる。
+関連するUWIが存在することが分かった場合は、その回答を取得してから判定する。
+両者が衝突する場合は指摘を登録せず、計画の条項とWIの該当箇所を併記して「続行できない理由」として委譲元へ返す。
+実装がWIの条件を満たしており計画の条項のみから外れている場合は、計画側の不備としてその実装状態も併せて報告する。
+`exec-review-recording-verdicts.md`「失効の根拠」に挙げるユーザー判断によって、`source`を持つエージェント由来AWIの提案内容（前提、対象、方針、採否）が否定される場合がある。
+計画の`## 実施内容`または採否の変更を記録したレビュー指摘管理表の行が、そのユーザー判断を根拠として提案を`不採用`としている場合、否定された完成条件は失効として扱い、計画との衝突とはみなさない。
+否定された範囲を超える完成条件や、人間由来のWIの完成条件については通常どおり判定する。
+メインエージェントの技術判断を根拠として扱える範囲も同節の規定に従い、計画確定前の判断は計画の実施内容にある根拠欄から、着手後の判断は管理表の行から読み取る。
+全体が不採用となった条件は部分的な失効としては扱わず、初回から`reject`による`未達`と判定し、根拠には計画や入力記録の`実施内容`に記された不採用理由の所在を明記する。
+
+## 条項の生成
+
+**4.** 判定の根拠と認可を揃えるため、条項を生成・確認する。
+
+`計画`を受け取った場合は、計画の`## 概要`、`## 実施内容`、`## 要件・外部仕様`、`## 恒久化・リファクタリング`、`## 変更履歴`、および開始時点の実態からレビュー条項を生成する。
+条項は、ユーザーの目的、現行の公開契約、ユーザーとの合意事項、認可の範囲、除外・保持事項、通常入力、対象外入力、ならびに誤許可・誤拒否がユーザーや消費側に及ぼす影響について、出典を明記した独立した単位として記述する。
+変更対象の成果物に適用される作成規範やプロジェクト規範も条項に追加する。
+対象集合は条件によって定義し、件数自体が合否判定の条件となっている場合に限り、実際に計測した値と計測時点を記録する。
+`agent-toolkit:/share/exec-review-criteria.md`に定める種類9（設計品質の劣化）については、計画の記述内容にかかわらず、差分と変更後のファイル全体に基づいて客観的に判定する。
+
+条項が参照するcommitは対象リポジトリ内で特定し、WIは前述の取得元から読み、認可資料を直接読んで認可された範囲を確認する。
+未解決のcommit、取得できないWIや認可資料、認可範囲との不一致がある場合は、レビューのラウンドを問わず「認可不足」として「続行できない理由」を返す。
+事前に認可を確認できた範囲については重複した認可判定から除外するが、その変更が共通の公開契約や安全性、要求された統合結果に適合しているかは漏れなく評価する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実行レビュータスク：再レビューの基準を適用する前 | `exec-review-subagent-followup.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-followup.md` |
+| 実行レビュータスクの基準を適用する前 | `exec-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.subagent.md` |

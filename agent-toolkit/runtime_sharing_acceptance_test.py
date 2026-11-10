@@ -188,7 +188,8 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     assert console.is_file()
     _run([str(console), "-V"], environment, tmp_path)
     # 別の依存宣言は既存環境のready状態と混同しない。
-    pyproject.write_text(pyproject.read_text() + '\n[project.optional-dependencies]\nseparate = ["filelock>=4"]\n')
+    declared = pyproject.read_text()
+    pyproject.write_text(declared + '\n[project.optional-dependencies]\nseparate = ["filelock>=4"]\n')
     assert selected != plugin_environment.project_environment(second, environment)
     assert plugin_environment.prepared_python(second, environment) is None
     missing = subprocess.run(
@@ -202,6 +203,20 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     )
     assert missing.returncode == 1
     assert "update-dotfiles" in missing.stderr
+    # dotfilesの更新直後と同じく依存の固定内容だけが進んだ未準備のrootでも、CLIの起動部分は準備してから実CLIを返す。
+    # hookなどの起動対象は直前の`missing`のとおり待たずに終了する。
+    # 依存宣言を変えてuv.lockを解決し直すと、オフラインでは取得物の保存先に索引の情報が無い環境（CIなど）で失敗する。
+    # そのため依存宣言を戻し、解決結果を変えずにuv.lockの内容だけを進めて、`uv sync --locked`が成功する未準備のrootを作る。
+    pyproject.write_text(declared)
+    lock = second / "uv.lock"
+    lock.write_text(lock.read_text(encoding="utf-8") + "\n# 依存の固定内容が進んだ版\n", encoding="utf-8")
+    assert selected != plugin_environment.project_environment(second, environment)
+    assert plugin_environment.prepared_python(second, environment) is None
+    cli = [str(second / "scripts/atk.cmd")] if os.name == "nt" else [str(second / "scripts/atk")]
+    prepared_cli = _run([*cli, "--help"], environment, tmp_path)
+    assert "config" in prepared_cli.stdout
+    assert "共有依存環境を準備してから起動します" in prepared_cli.stderr
+    assert plugin_environment.prepared_python(second, environment) is not None
     # 更新版のキーが変わっても、旧版の環境とコードは残る。
     assert plugin_environment.prepared_python(first, environment) is not None
     assert (

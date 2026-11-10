@@ -133,9 +133,13 @@ def test_hook_failure_passes_and_reports_recovery(
     assert claude_hook.main(["pretooluse"]) == 0
     output = capsys.readouterr().err
     assert "通過" in output
-    assert ("UTF-8にそろえて" if failure == "decode" else "dotfilesのIssue") in output
+    if failure == "decode":
+        assert "UTF-8" in output and "入力" in output and "そろえよ" in output
+    else:
+        assert "Traceback" in output
+        assert "委譲元" in output and "ユーザー" in output and "報告せよ" in output
     if failure == "import":
-        assert "make sync" in output
+        assert "update-dotfiles" in output and "make sync" in output
 
 
 @pytest.mark.parametrize("command", ["serve", "doctor"])

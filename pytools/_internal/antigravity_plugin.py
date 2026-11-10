@@ -64,7 +64,7 @@ def _rules(source: Path) -> dict[Path, bytes]:
     current_bytes = 0
     in_fence = False
     body_limit = RULE_FILE_BYTES - len(_ALWAYS_ON.encode("utf-8"))
-    for path in sorted((source / "rules").glob("*.md")):
+    for path in sorted((source / "share" / "rules" / "common").glob("*.md")):
         text = path.read_text(encoding="utf-8")
         if not text.endswith("\n"):
             text += "\n"

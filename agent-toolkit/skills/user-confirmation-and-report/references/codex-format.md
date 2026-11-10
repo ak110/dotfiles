@@ -2,15 +2,17 @@
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 質問の共通前提を作成する前 | `choice-construction.md`「候補の構成」 | 判断 | `section:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md#「候補の構成」` |
+| 質問の共通前提を作成する前 | `agent-toolkit:user-confirmation-and-report/references/choice-construction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` |
 
 ## 質問の形式
 
-ユーザー確認の実施方法は`agent-toolkit/share/rules-main.codex.md`が定める。同書の条件に合致する構造化質問ツールが利用できない場合に限り、次の固定形式で質問を提示する。質問が複数存在する場合も、それぞれの質問を同じ単位に分割して記載する。
+ユーザー確認の実施方法は`agent-toolkit/share/rules/rules-main.codex.md`が定める。
+同書の条件に合致する構造化質問ツールが利用できない場合に限り、次の固定形式で質問を提示する。
+質問が複数存在する場合も、それぞれの質問を同じ単位に分割して記載する。
 
 `choice-construction.md`「候補の構成」に従い、以下の`共通前提:`にも原文・回答由来の内容とエージェント案の区別、原文との差と根拠を明示する。
 

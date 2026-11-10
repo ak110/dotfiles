@@ -299,10 +299,16 @@ def test_structured_material_types_reject_unreferenced_user_agreement() -> None:
 
 
 def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> None:
+    """素材ID行の前の注記・`Source:`行と、コードブロック内の素材ID形式の行を素材IDへ誤認しない。"""
+    material_start = "P-001:\n\n```text\n"
+    # fixtureの本文に依存しない素材IDの直前と素材本文の先頭を起点にし、置換の空振りを検出する。
+    assert _LEGACY_CONTENT.count(material_start) == 1
     content = _LEGACY_CONTENT.replace(
-        "P-001:\n\n```text\n対象を更新してほしい。",
-        "注記: 提示素材の説明\nSource: user transcript\n\nP-001:\n\n```text\nP-999: fence内の文字列\n対象を更新してほしい。",
+        material_start,
+        f"注記: 提示素材の説明\nSource: user transcript\n\n{material_start}P-999: fence内の文字列\n",
+        1,
     )
+    assert "注記: 提示素材の説明\nSource: user transcript\n\nP-001:\n\n```text\nP-999: fence内の文字列\n" in content
 
     errors = plan_sections.check_plan_structure(content)
 

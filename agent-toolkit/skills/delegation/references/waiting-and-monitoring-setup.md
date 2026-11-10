@@ -1,0 +1,65 @@
+# 待機と観測：待機手段の選択
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
+| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+
+## 待機手段の選択
+
+| 待機対象 | 待機手段 | 終了の受領方法 | 除外する操作 | 詳細節 |
+| --- | --- | --- | --- | --- |
+| `agents_server`の委譲先 | `atk agents wait` | 対象の`session_id`を持つ終了statusと結果本文 | 対象または待機上限の指定、未終了件数による遮断、同じ書込主体での併走 | 「待機区間の構成」「`atk agents wait`の応答の扱い」「待機の起動条件」 |
+| ホストの`Agent`ツールによるサブエージェント | ホストの完了通知と委譲一覧 | 完了通知または戻り値と、委譲プロンプトで指定した成果物 | `atk agents wait`、完了通知を待たない同じ処理の再委譲 | 「待機区間の構成」「待機の起動条件」 |
+| Codexの組み込み委譲のthread | `wait_agent` | `wait_agent`の終了通知と、`list_agents`で照会した状態 | 終了済みまたは待機中の担当への`send_message`、`followup_task`を使わない追加作業の起動 | 「待機区間の構成」「継続と新規起動」 |
+| ホストのバックグラウンドタスク | ホストの背景実行と完了通知 | 保持した実行識別子の終了状態と、出力ファイルの終了状態行 | 同じ処理の重複起動、実行中の所有対象の停止 | `waiting-claude-code.md`「背景ジョブの起動形（Claude Code）」、本書「完了通知を待ってターンを終える場合」 |
+| Codexの`functions.exec`のcell ID | 公開されている`functions.wait` | 同一ターンで出力と完了結果を回収 | 環境全体の自動再開通知を理由にしたターン終了 | 「待機区間の構成」 |
+| Codexの`exec_command`のsession ID | 公開されている`write_stdin` | 同一ターンで出力と終了コードを回収 | 前掲と同じ | 「待機区間の構成」 |
+| 外部サービスの状態変化 | 終了条件付きの待機または背景実行した終了条件ループ | 終了条件が成立したコマンドの終了時の結果 | 前景の固定時間待機、固定時間待機と状態確認の反復 | 「外部サービスの状態変化を待つ場合」 |
+| ユーザーの入力 | 定時起動による保存済みUWIの回答照会 | `atk wi list --type=uwi --answered=yes`に待機対象が現れた結果 | 前景の固定時間待機、回答前の元工程の再開 | 「外部サービスの状態変化を待つ場合」「完了通知を待ってターンを終える場合」 |
+
+## 待機の起動条件
+
+通知を受け取れない担当を新規起動へ切り替える場合も、`continuation.md`「継続と新規起動」に従って欠陥の処置を別に判定する。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+
+1. 起動手段と終了観測手段の組み合わせは、起動前に`references/runtime-routing.md`の「実行手段」に従って決定する
+
+2. 完了通知を受け取る手段が実際に存在し、通知を受けた後に処理を再開できることを待機開始前に確認する。
+   通知を受け取れない対象は待機対象に含めず、検収済みの状態を引き渡したうえで新規起動する（Codex環境では`codex-runtime-continuation.md`「後続操作の共通先行条件」を事前に適用する）
+
+3. 終了ステータスを返しながらもタスク契約で定められた返却値が含まれていない終了は、未完了として扱う。
+   終了したターンはそれ以降通知を発しないため、そのまま待ち続けることはせず、保持している識別子を使って同じセッションへ継続処理を要求し、返却値を取得する。
+   委譲先が自身の子プロセスの終了を待たずにターンを終えてしまった場合も同様に扱う（なお、`agents_server`の両バックエンドは子プロセスの生存中は終了時の結果を保留するため、この起動形態ではその事象の発生を防止できる）
+
+4. 完了通知が届かない場合は待ち直さず`waiting-stalls.md`「停滞の検知と巻き取り」へ進み、保持している識別子を使って対象の状態を直接照会する
+
+### 再照会の抑制と待機中の作業
+
+- 前回と同じ結果が返ると見込まれる状態照会を無駄に繰り返すことは避け、完了通知が届かない場合や、終了ステータスを確認する場合、定時起動の各回など、状態が変化する可能性のある契機に限って照会する
+- 待機中には、待機対象とは独立した別の作業を進める。
+  広範囲にわたる未完了の調査を単一の委譲先へまとめて再委譲するのではなく、独立した作業単位ごとに完了結果を個別に受け取って統合する
+
+## バックグラウンドタスクの所有記録
+
+バックグラウンドタスクは、BashやAgentを背景で実行した非同期処理を指す。
+自身の呼び出しに対して返された識別子が所有の根拠となる。
+起動成功時だけでなく、失敗時、時間上限やユーザー操作による背景移行時、およびMCPの構造化されたバックグラウンドタスクへの移行通知で返された識別子も追跡する。
+出力本文中の同じ文言は起動の根拠から除く。
+
+所有記録は起動の履歴であり、完了の観測後も所有履歴そのものが保持される。
+起動集合から完了集合を除いて未完了の処理を特定し、返却本文または保存出力と終了状態を回収する。
+未観測の呼び出しの有無と、有効な待機の状態は別に判定する。
+公開状態が`running`の記録件数だけで待機を遮断しない。

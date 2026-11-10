@@ -13,15 +13,21 @@ import io
 import json
 import os
 import pathlib
+import queue
 import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, BinaryIO, cast
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_ROOT / "agent-toolkit"))
+
+from agent_toolkit._common.windows_job import CREATE_SUSPENDED, WindowsJob  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+
 _TIMEOUT = 7200
 _RETENTION = 7 * 24 * 60 * 60
 _WARNING = (
@@ -108,33 +114,39 @@ def _procfs_parents() -> list[tuple[int, int]]:
     return pairs
 
 
-def _stop_tree(process: subprocess.Popen[Any]) -> None:
+def _stop_tree(process: subprocess.Popen[Any], windows_job: WindowsJob | None = None) -> None:
     try:
+        if sys.platform == "linux":
+            deadline = time.monotonic() + 30
+            while True:
+                # 直系の子はこのworkerがwaitするまでPIDを再利用されない。
+                # 親の終了でsubreaperへ移った孫も、次の列挙で同じ所有条件になる。
+                for pid, parent in _procfs_parents():
+                    if parent == os.getpid():
+                        with contextlib.suppress(ProcessLookupError):
+                            os.kill(pid, signal.SIGKILL)
+                process.wait(timeout=30)
+                try:
+                    while os.waitpid(-1, os.WNOHANG)[0] != 0:
+                        pass
+                except ChildProcessError:
+                    return
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("更新の子孫プロセスの終了確認が未完了です")
+                time.sleep(0.1)
         if sys.platform == "win32":
+            assert windows_job is not None
+            windows_job.terminate(timeout=30)
+        else:
             result = subprocess.run(
-                ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
-                check=False,
+                ["ps", "-e", "-o", "pid=,ppid="],
+                check=True,
                 capture_output=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=30,
+                timeout=10,
             )
-            if result.returncode and process.poll() is None:
-                raise RuntimeError(f"更新の子孫を停止できません: {result.stdout}\n{result.stderr}")
-        else:
-            # 更新本体もstart_new_sessionを使う子を持ち得るため、group停止前に子孫を列挙する。
-            if sys.platform == "linux":
-                parents = _procfs_parents()
-            else:
-                result = subprocess.run(
-                    ["ps", "-e", "-o", "pid=,ppid="],
-                    check=True,
-                    capture_output=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=10,
-                )
-                parents = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
+            parents = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
             descendants = {os.getpid()}
             while children := {pid for pid, parent in parents if parent in descendants} - descendants:
                 descendants.update(children)
@@ -142,21 +154,11 @@ def _stop_tree(process: subprocess.Popen[Any]) -> None:
             for pid in reversed(sorted(descendants)):
                 with contextlib.suppress(ProcessLookupError):
                     os.kill(pid, signal.SIGKILL)
-            with contextlib.suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
+            # 回収済みの親の数値PGIDは、別の群へ再利用され得る。
+            if process.poll() is None:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
         process.wait(timeout=30)
-        if sys.platform == "linux":
-            # subreaperが引き受けた孤児も回収してから、jobの終了を確定する。
-            deadline = time.monotonic() + 30
-            while True:
-                try:
-                    pid, _status = os.waitpid(-1, os.WNOHANG)
-                except ChildProcessError:
-                    break
-                if pid == 0:
-                    if time.monotonic() >= deadline:
-                        raise RuntimeError("更新の子孫プロセスの終了確認が未完了です")
-                    time.sleep(0.1)
     finally:
         # 列挙・子孫回収の診断時にも、Popenの無期限waitへ進めない。
         if process.poll() is None:
@@ -167,17 +169,72 @@ def _stop_tree(process: subprocess.Popen[Any]) -> None:
             process.wait(timeout=30)
 
 
+def _forward_output(
+    source: BinaryIO,
+    destination: BinaryIO,
+    errors: queue.SimpleQueue[Exception],
+    forwarding: threading.Event,
+    output_lock: threading.Lock,
+) -> None:
+    try:
+        while data := source.read(65536):
+            with output_lock:
+                if not forwarding.is_set():
+                    return
+                destination.write(data)
+                destination.flush()
+    except Exception as error:  # threadの失敗をworkerの結果へ伝える境界。
+        errors.put(error)
+
+
 def _run_command(command: list[str], job: pathlib.Path, deadline: float, env: dict[str, str]) -> int:
-    with subprocess.Popen(command, stdin=subprocess.DEVNULL, env=env, **separation_options()) as process:
+    with contextlib.ExitStack() as stack:
+        # 正常完了はpipeのEOFで判定する。出力を閉じたサービスはJob解放後も存続できる。
+        windows_job = stack.enter_context(WindowsJob(kill_on_close=False)) if sys.platform == "win32" else None
+        options = separation_options()
+        if windows_job is not None:
+            options["creationflags"] |= CREATE_SUSPENDED
+        process = stack.enter_context(
+            subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=0,
+                env=env,
+                **options,
+            )
+        )
+        readers: list[threading.Thread] = []
+        errors: queue.SimpleQueue[Exception] = queue.SimpleQueue()
+        forwarding = threading.Event()
+        forwarding.set()
+        output_lock = threading.Lock()
+        completed = False
         try:
-            while process.poll() is None:
+            if windows_job is not None:
+                handle = int(cast(Any, process)._handle)  # noqa: SLF001  # pylint: disable=protected-access
+                windows_job.assign_suspended(handle, process.pid)
+            assert process.stdout is not None and process.stderr is not None
+            for source, destination in ((process.stdout, sys.stdout), (process.stderr, sys.stderr)):
+                reader = threading.Thread(
+                    target=_forward_output, args=(source, destination.buffer, errors, forwarding, output_lock), daemon=True
+                )
+                reader.start()
+                readers.append(reader)
+            while True:
+                exited = process.poll() is not None
+                output_finished = all(not reader.is_alive() for reader in readers)
+                if not errors.empty():
+                    raise RuntimeError(f"更新出力の回収に失敗しました: {errors.get()}")
+                if exited and output_finished:
+                    completed = True
+                    return process.returncode
                 cancelled = (job / "stop").exists()
                 if cancelled or time.monotonic() >= deadline:
-                    _stop_tree(process)
+                    reason = "更新は中断され未完了です。" if cancelled else f"更新は{_TIMEOUT}秒の上限を超え未完了です。"
                     print(
-                        "更新は中断され未完了です。"
-                        if cancelled
-                        else f"更新は{_TIMEOUT}秒の上限を超え未完了です。"
+                        f"{reason}"
                         f"{job / 'stdout.log'}と{job / 'stderr.log'}を確認し、"
                         "原因を解消してupdate-dotfilesを再実行してください。",
                         file=sys.stderr,
@@ -185,10 +242,24 @@ def _run_command(command: list[str], job: pathlib.Path, deadline: float, env: di
                     )
                     return 130 if cancelled else 124
                 time.sleep(0.1)
-            return process.returncode
         finally:
-            if process.poll() is None:
-                _stop_tree(process)
+            try:
+                if not completed:
+                    _stop_tree(process, windows_job)
+            finally:
+                try:
+                    output_deadline = time.monotonic() + 30
+                    for reader in readers:
+                        reader.join(timeout=max(0, output_deadline - time.monotonic()))
+                    if any(reader.is_alive() for reader in readers):
+                        raise RuntimeError("更新出力の読取threadの終了確認が未完了です")
+                finally:
+                    # 停止失敗で読取が残っても、失敗結果公開後のログへの転送を止める。
+                    # raw pipeはBufferedReaderの読取lockを持たず、終了時closeも待ち続けない。
+                    with output_lock:
+                        forwarding.clear()
+            if not errors.empty():
+                raise RuntimeError(f"更新出力の回収に失敗しました: {errors.get()}")
 
 
 def _worker(job: pathlib.Path) -> int:
@@ -203,6 +274,8 @@ def _worker(job: pathlib.Path) -> int:
     code = 1
     try:
         if sys.platform == "linux":
+            # 直系の子を回収前に自動消滅させず、PIDの所有と終了コードを維持する。
+            signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             # uvや更新本体が終了した後の子孫も、独立workerが終了状態を回収する。
             libc = ctypes.CDLL(None, use_errno=True)
             if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
@@ -228,14 +301,18 @@ def _worker(job: pathlib.Path) -> int:
                 code = update_code
                 return code
             update_failed = update_code != 0
+            code = _run_command([uv, "python", "install", "--upgrade", "3.15"], job, deadline, env)
+            if code:
+                return code
         code = _run_command(
             [uv, "run", "--no-project", "--script", str(_ROOT / "libexec/update_dotfiles.py"), *arguments], job, deadline, env
         )
-        if code == 0 and "--prune" in arguments:
+        if code == 0:
             code = _run_command(
                 [
                     str(home_bin / ("dotfiles-post-apply.exe" if sys.platform == "win32" else "dotfiles-post-apply")),
-                    "--prune-only",
+                    "--prune-only-if-minimal",
+                    *arguments,
                 ],
                 job,
                 deadline,

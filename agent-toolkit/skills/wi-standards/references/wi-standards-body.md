@@ -1,0 +1,51 @@
+# AWIとUWIの共通規範：通常AWIの本文
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 通常AWIの本文を起草・検収する前 | `awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 報告用UWIを確認する前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 報告用を除くUWIの本文を起草・検収する前 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 既存WIとの重複を判定する前 | `drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
+| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../workflow-overview/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` |
+
+## 通常AWIの本文
+
+本文の書式、各節の役割分担、完成条件および調査結果と判断根拠の記載基準は[references/awi-body.md](awi-body.md)が定める。
+必須となるH2見出しの構成と順序は、`atk wi add`が保存処理の前に確認する。
+`## 反映内容と反映先`においてWI処理の工程や運用を変更する通常AWIを起草する場合は、起草に着手する前に`agent-toolkit:workflow-overview`を起動する。
+
+### 起草完了の条件
+
+通常AWIは次節の登録条件を満たし、報告用を除くUWIは採否と実現方式を投入前に1つの案へ確定させる。
+これらは[references/drafting-completion.md](drafting-completion.md)の投入前の読み直し基準を満たした本文のみを投入する。
+報告用UWIは`../../report-completion/references/report-formats-uwi.md`「報告用UWIの確認と保存」と、`uwi-format.md`で確認する。
+
+### 起票目的別の調査出口
+
+起票の目的は、`source`の文字列ではなく元要求と起票目的から決める。
+
+| 起票の目的 | 登録前に満たす条件 | 後続工程へ渡す内容 |
+| --- | --- | --- |
+| 全起点に共通 | 要求または観測事実、期待との差、対象と期待結果、対応が必要な根拠を確かめ、既存実装・文書との被覆を比較する。規範・基準・手順の被覆は`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「既存規範による被覆の判定」の読込経路で判定する。既存WIとの比較と検索する状態は`drafting-completion-duplicates.md`「重複判定」の起点別条件に従う | 確認した結論と再取得できる根拠 |
+| ユーザーが手動作成で具体化を求めた要求 | 今回の対象ごとの採否、外部可視の仕様、必要なユーザー判断を投入元で確定する | 確定した変更の内部設計、実装単位、実装後の検証 |
+| 作業途中で発見した、現在の要求から独立した別件 | 共通条件を満たし、確定事実・原因仮説・未確定事項を区別する | 原因の解明や解法選定の残り、次に確定する問いと期待結果 |
+
+手動作成に付随する真に独立した別件にも共通条件を適用する。
+手動作成では、処理時点の仕分けや後続調査の登録規定を理由に、今回必要な対象別の検討を先送りしない。
+元要求の一部を別件に分類する場合も同じ条件を適用する。
+現在の作業が導入した欠陥と、その完成に必要な追随修正は現在の作業で完遂する。
+振り返りなどで確定済みの原因・対策は保持する。
+重複判定の適用条件と比較手順は`drafting-completion-duplicates.md`「重複判定」に従う。
+既存項目と比較する場合、全被覆なら既存項目を再利用し、部分被覆なら既存項目の更新または未被覆部分の登録へ進む。
+検索が必要な起点では、原因が未確定でも観測事象と対象から候補を探し、既存本文との比較を終える。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 起草完了の条件の基準を適用する前 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |

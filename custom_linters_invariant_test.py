@@ -77,7 +77,7 @@ def test_custom_command_error_patterns_capture_severity() -> None:
 # 到達する2つのパスのうち片方だけを残す。いずれが崩れてもlinterは登録されたまま成功し続ける。
 AGENT_DOC_TONE_REPRESENTATIVES = (
     "AGENTS.md",
-    "agent-toolkit/rules/01-agent.md",
+    "agent-toolkit/share/rules/common/01-agent.md",
     "agent-toolkit/share/add-wi.parent.md",
     "agent-toolkit/skills/add-awi-by-user/SKILL.md",
     "agent-toolkit/skills/commit/references/ci-failure-handling.md",
@@ -91,7 +91,7 @@ AGENT_DOC_TONE_REPRESENTATIVES = (
     "agent-toolkit/skills/review-session/session_review_contract_invariant_test.py",
     "agent-toolkit/skills/write-plan/references/structure_contract_invariant_test.py",
     "agent-toolkit/share/task_documents_invariant_test.py",
-    "agent-toolkit/rules/rules_invariant_test.py",
+    "agent-toolkit/share/rules/common/rules_invariant_test.py",
     "agent-toolkit/hooks/rules_context_registration_invariant_test.py",
 )
 

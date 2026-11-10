@@ -24,6 +24,10 @@ from agent_toolkit._testing import git_repository
         "output",
         "session",
         "session-removed",
+        "tool-call",
+        "tool-call-removed",
+        "mise",
+        "mise-removed",
         "launch-kind",
         "path",
     ],
@@ -40,7 +44,10 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "before-session")
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "before-owner")
     monkeypatch.setenv("CODEX_THREAD_ID", "before-thread")
+    monkeypatch.setenv("CODEX_TOOL_CALL_ID", "before-tool-call")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND", "delegate")
+    monkeypatch.setenv("__MISE_SESSION", "before-mise-session")
+    monkeypatch.setenv("__MISE_SHIM_FALLBACK_CHAIN", '{"pid":1,"handoffs":[]}')
     argv = [sys.executable, "-c", "print('verified')"]
     observed, code, failure = run_command.execute(argv, repo, 30)
     assert code == 0 and failure is None
@@ -70,6 +77,19 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
     elif change == "session-removed":
         # 委譲元の識別子の有無は通知先の解決を切り替えるため、再利用しない。
         monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION")
+    elif change == "tool-call":
+        # 同じ会話の別のツール呼び出しからの再開。呼び出しごとに変わる識別子の値だけが違う。
+        monkeypatch.setenv("CODEX_TOOL_CALL_ID", "after-tool-call")
+    elif change == "tool-call-removed":
+        # 呼び出し識別子も、有無の変化は起動元の違いを示しうるため再利用しない。
+        monkeypatch.delenv("CODEX_TOOL_CALL_ID")
+    elif change == "mise":
+        # miseがシェルごとに付けるセッション差分とshimの起動経路（プロセス番号を含む）の値だけが違う再開。
+        monkeypatch.setenv("__MISE_SESSION", "after-mise-session")
+        monkeypatch.setenv("__MISE_SHIM_FALLBACK_CHAIN", '{"pid":2,"handoffs":[]}')
+    elif change == "mise-removed":
+        # 値を比べない変数も、有無の変化は従来どおり再利用しない。
+        monkeypatch.delenv("__MISE_SHIM_FALLBACK_CHAIN")
     elif change == "launch-kind":
         # 委譲の種別は取得条件などの動作を切り替えるため、識別子と違って値の差でも再利用しない。
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND", "explore")
@@ -81,13 +101,17 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
     else:
         pathlib.Path(observed["stdout_path"]).unlink()
     reused = run_command.reusable_success(path, argv, repo)
-    assert (reused is not None) == (change in {"launch", "python-alias", "session"})
+    assert (reused is not None) == (change in {"launch", "python-alias", "session", "tool-call", "mise"})
     diagnostic = capsys.readouterr().err
     assert "before-value" not in diagnostic and "after-value" not in diagnostic and "launch-value" not in diagnostic
+    if change == "tool-call-removed":
+        assert "environment: 削除 CODEX_TOOL_CALL_ID" in diagnostic and "before-tool-call" not in diagnostic
     if change in {"added", "removed", "changed"}:
         assert "VERIFICATION_INPUT" in diagnostic
     if change == "session-removed":
         assert "environment: 削除 AGENT_TOOLKIT_OWNER_SESSION" in diagnostic and "before-owner" not in diagnostic
+    if change == "mise-removed":
+        assert "environment: 削除 __MISE_SHIM_FALLBACK_CHAIN" in diagnostic
     if change == "launch-kind":
         assert "environment: 変更 AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND" in diagnostic and "explore" not in diagnostic
     if change == "path":

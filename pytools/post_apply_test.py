@@ -17,7 +17,6 @@ import os
 import re
 import subprocess
 import threading
-import time
 import types
 import typing
 from pathlib import Path
@@ -26,7 +25,7 @@ import pytest
 import pytilpack.jsonc
 
 from pytools import post_apply
-from pytools._internal import apply_dotfiles_plugins, claude_common, common, deferred_updates, post_apply_outcome
+from pytools._internal import apply_dotfiles_plugins, claude_common, common, post_apply_outcome
 
 # `post_apply`は削除対象の表をimport時のホームで組み立てる。テストの実行中はホームが一時ディレクトリへ隔離されるため、
 # 表を検索するキーもimport時のホームから組み立てる。
@@ -252,6 +251,42 @@ def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, cap
     assert "first-detail" in log and "second-detail" in log and "post-apply終了: exit=1" in log
 
 
+def test_run_records_unfinished_steps_periodically_without_terminal(monkeypatch, tmp_path, capsys):
+    """端末でない出力でも、終わらない工程の名前を一定間隔で記録し、止まった工程を判別できる。"""
+    monkeypatch.setattr(post_apply, "is_human_terminal", lambda: False)
+    monkeypatch.setattr(post_apply, "_RUNNING_NOTICE_SECONDS", 0.05)
+    release = threading.Event()
+
+    def stuck():
+        assert release.wait(30)
+        return post_apply_outcome.PostApplyOutcome(changed=False)
+
+    def quick():
+        return post_apply_outcome.PostApplyOutcome(changed=False)
+
+    real_wait = post_apply.wait
+    waits = []
+
+    def wait_until_noticed(*args, **kwargs):
+        waits.append(kwargs.get("timeout"))
+        # 未完了の工程の記録を観測した後（観測できない場合も待機の4回目以降）に、止まった工程を終わらせる。
+        if capsys.readouterr().out.count("未完了の工程: 止まる工程") or len(waits) > 3:
+            release.set()
+        return real_wait(*args, **kwargs)
+
+    monkeypatch.setattr(post_apply, "wait", wait_until_noticed)
+    steps = [post_apply._StepSpec("止まる工程", stuck), post_apply._StepSpec("すぐ終わる工程", quick)]
+    try:
+        with pytest.raises(SystemExit) as ended:
+            post_apply.main(runner=lambda: post_apply.run(steps))
+    finally:
+        release.set()
+    assert ended.value.code == 0
+    log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
+    assert "未完了の工程: 止まる工程（" in log
+    assert all(timeout is not None for timeout in waits)
+
+
 @pytest.fixture(autouse=True, name="sync_report_path")
 def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """同期結果の記録先を一時領域へ向け、実行環境の状態ディレクトリを書き換えないようにする。"""
@@ -411,53 +446,6 @@ def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Pat
     assert failed_step["name"] == "failure"
     assert failed_step["reason"] == "RuntimeError: boom"
     assert "RuntimeError: boom" in failed_step["detail"]
-
-
-def test_deferred_steps_are_recorded_and_cleared(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """延期を返した工程を延期記録へ残し、延期の無い実行で記録を削除する。
-
-    自動更新タイマーはこの記録を確認して上流変更の有無によらず再試行するため、延期が残る間は記録が要る。
-    """
-    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
-    record = deferred_updates.record_path(tmp_path / "dotfiles")
-    deferring = [
-        ("延期する工程", lambda: post_apply_outcome.PostApplyOutcome(deferred=True)),
-        ("通常の工程", lambda: post_apply_outcome.PostApplyOutcome(changed=True)),
-    ]
-
-    with pytest.raises(SystemExit) as exc_info:
-        post_apply.main(runner=lambda: post_apply.run(steps=deferring))
-
-    assert exc_info.value.code == 0
-    assert json.loads(record.read_text(encoding="utf-8"))["steps"] == ["延期する工程"]
-
-    with pytest.raises(SystemExit) as exc_info:
-        post_apply.main(runner=lambda: post_apply.run(steps=deferring[1:]))
-
-    assert exc_info.value.code == 0
-    assert not record.exists()
-
-
-def test_deferred_record_write_failure_fails_post_apply(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sync_report_path: Path
-) -> None:
-    """延期記録を保存できない場合は、自動の再試行が成立しないため失敗として終了コード1で伝える。"""
-    monkeypatch.setattr(common, "find_dotfiles_root", lambda: tmp_path / "dotfiles")
-
-    def fail(_steps: list[str]) -> None:
-        raise OSError("書込権限が無い")
-
-    monkeypatch.setattr(deferred_updates, "write", fail)
-
-    with pytest.raises(SystemExit) as exc_info:
-        post_apply.main(
-            runner=lambda: post_apply.run(steps=[("延期する工程", lambda: post_apply_outcome.PostApplyOutcome(deferred=True))])
-        )
-
-    assert exc_info.value.code == 1
-    failed_steps = json.loads(sync_report_path.read_text(encoding="utf-8"))["post_apply"]["failed_steps"]
-    assert [step["name"] for step in failed_steps] == ["延期記録"]
-    assert "書込権限が無い" in failed_steps[0]["reason"]
 
 
 def test_sync_report_preserves_report_of_the_same_run(monkeypatch: pytest.MonkeyPatch, sync_report_path: Path) -> None:
@@ -990,11 +978,16 @@ class TestRun:
         ok_flags = [r.ok for r in results]
         assert ok_flags == [True, True, False, True, True, True, True, True, True, True]
 
-    def test_foreground_completion_reports_step_duration(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_foreground_completion_reports_step_duration(
+        self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """前景ステップの完了行へステップ本体の所要時間を表示する。"""
 
+        clock = [0.0]
+        monkeypatch.setattr(post_apply, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+
         def foreground() -> post_apply_outcome.PostApplyOutcome:
-            time.sleep(0.3)
+            clock[0] += 0.3
             return post_apply_outcome.PostApplyOutcome()
 
         caplog.set_level(logging.INFO)
@@ -1021,7 +1014,6 @@ class TestRun:
             first_started.set()
             # 2番目のステップが同時に動いていなければ、待機が上限に達して失敗する。
             assert second_started.wait(timeout=5)
-            time.sleep(0.1)
             record("first-end")
             return post_apply_outcome.PostApplyOutcome()
 
@@ -1085,10 +1077,16 @@ class TestRun:
         """列挙順で前にある全ステップの完了後に開始する。"""
         finished: list[str] = []
         observed: list[list[str]] = []
+        fast_done = threading.Event()
 
         def slow() -> post_apply_outcome.PostApplyOutcome:
-            time.sleep(0.2)
+            assert fast_done.wait(timeout=5)
             finished.append("slow")
+            return post_apply_outcome.PostApplyOutcome()
+
+        def fast() -> post_apply_outcome.PostApplyOutcome:
+            finished.append("fast")
+            fast_done.set()
             return post_apply_outcome.PostApplyOutcome()
 
         def last() -> post_apply_outcome.PostApplyOutcome:
@@ -1098,7 +1096,7 @@ class TestRun:
         post_apply.run(
             [
                 post_apply._StepSpec("slow", slow),  # noqa: SLF001
-                post_apply._StepSpec("fast", _make_step("fast", finished)),  # noqa: SLF001
+                post_apply._StepSpec("fast", fast),  # noqa: SLF001
                 post_apply._StepSpec("last", last, after_all_preceding=True),  # noqa: SLF001
             ]
         )
@@ -1368,7 +1366,7 @@ class TestSubstitutedHome:
     _HOST_RESOURCE_STEPS = (
         "Codex 診断ログの通常ストレージ復元 (Linux)",
         "atk serve 自動起動セットアップ (Linux)",
-        "dotfiles自動更新タイマー セットアップ (Linux)",
+        "一時ファイルの経過削除タイマー セットアップ (Linux)",
     )
 
     def _default_steps_with_recorders(self, calls: list[str]) -> list[post_apply._StepSpec]:  # noqa: SLF001
@@ -1525,7 +1523,7 @@ class TestDefaultSteps:
         "claude-statusline バイナリの取得": {"Codex CLI の導入と更新"},
         "libarchive (Windows)": {"mise セットアップ"},
         "atk serve 自動起動セットアップ (Linux)": {"Claude Code plugin のインストール", "agents_serverのuv環境ウォームアップ"},
-        "dotfiles自動更新タイマー セットアップ (Linux)": {"atk serve 自動起動セットアップ (Linux)"},
+        "一時ファイルの経過削除タイマー セットアップ (Linux)": {"atk serve 自動起動セットアップ (Linux)"},
     }
     _WINDOWS_STEPS = {
         "bin PATH 登録 (Windows)",
@@ -1541,7 +1539,7 @@ class TestDefaultSteps:
         "Codex 診断ログの通常ストレージ復元 (Linux)",
         "tmux プラグインの導入 (Linux)",
         "atk serve 自動起動セットアップ (Linux)",
-        "dotfiles自動更新タイマー セットアップ (Linux)",
+        "一時ファイルの経過削除タイマー セットアップ (Linux)",
     }
 
     def test_step_names_are_unique_and_declarations_resolve(self) -> None:
@@ -2001,7 +1999,9 @@ def test_standalone_prune_entry_runs_on_both_platforms(monkeypatch: pytest.Monke
     assert calls == ["prune"]
 
 
-@pytest.mark.parametrize("arguments", [["--mode", "minimal"], ["--prune"], ["--mode", "minimal", "--prune"]])
+@pytest.mark.parametrize(
+    "arguments", [["--mode", "minimal"], ["--prune"], ["--mode", "minimal", "--prune"], ["--prune-only-if-minimal"]]
+)
 def test_prune_only_invalid_arguments_preserve_mode(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, arguments: list[str]
 ) -> None:
@@ -2055,3 +2055,39 @@ def test_prune_only_entry_runs_only_prune_and_propagates_failure(
     captured = capsys.readouterr()
     assert not captured.out
     assert captured.err == (f"{failure}。次の操作: 権限を確認する\n" if failure else "")
+
+
+@pytest.mark.parametrize(
+    ("saved", "explicit", "prune", "expected"),
+    [
+        ("minimal", None, False, True),
+        ("full", None, False, False),
+        ("full", None, True, True),
+        ("full", "minimal", False, True),
+        ("minimal", "full", False, False),
+        ("minimal", "full", True, True),
+    ],
+)
+def test_prune_only_if_minimal_uses_effective_mode(  # noqa: PLR0913 -- 保存mode・明示指定・pruneの組合せを検証する
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, saved: str, explicit: str | None, prune: bool, expected: bool
+) -> None:
+    """更新後整理は保存modeと明示指定から実効modeを解決し、必要な場合だけpruneを実行する。"""
+    configuration = tmp_path / "config.json"
+    configuration.write_text(json.dumps({"dotfiles_mode": saved}), encoding="utf-8")
+    monkeypatch.setattr(post_apply.dotfiles_mode, "configuration_path", lambda: configuration)
+    monkeypatch.delenv(post_apply.dotfiles_mode.MODE_ENV, raising=False)
+    calls: list[str] = []
+
+    def run_prune(**_kwargs: object) -> post_apply_outcome.PostApplyOutcome:
+        calls.append(post_apply.dotfiles_mode.resolve())
+        return post_apply_outcome.PostApplyOutcome(changed=True)
+
+    monkeypatch.setattr(post_apply.prune_installation, "run", run_prune)
+    monkeypatch.setattr(post_apply, "run", lambda: pytest.fail("通常の更新工程へ到達した"))
+    arguments = ["--prune-only-if-minimal"]
+    if explicit is not None:
+        arguments.extend(["--mode", explicit])
+    if prune:
+        arguments.append("--prune")
+    post_apply.main(arguments, runner=lambda: pytest.fail("通常の更新工程へ到達した"))
+    assert calls == ([explicit or saved] if expected else [])

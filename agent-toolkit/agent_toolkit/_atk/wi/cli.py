@@ -19,6 +19,7 @@ lazy from agent_toolkit._atk import help_text as _atk_help
 lazy from agent_toolkit._atk import outcome as _outcome
 lazy from agent_toolkit._atk.wi import add as _add
 lazy from agent_toolkit._atk.wi import alerts as _alerts
+lazy from agent_toolkit._atk.wi import arguments as _arguments
 lazy from agent_toolkit._atk.wi import batch as _batch
 lazy from agent_toolkit._atk.wi import constants as _wi_constants
 lazy from agent_toolkit._atk.wi import effect_check as _effect_check
@@ -106,19 +107,6 @@ def _cooldown_days(value: str) -> int:
     return days
 
 
-def _source_filter_type(value: str) -> str:
-    """`--source`の値を検証するargparse `type=`コールバック。
-
-    先頭`!`を除いた残りが空文字列の場合（`--source=`・`--source=!`）は`ArgumentTypeError`を送出する。
-    """
-    remainder = value[1:] if value.startswith("!") else value
-    if not remainder:
-        raise _cli_support.argument_type_error(
-            "空文字列は指定できません", "空でない投入元識別子を指定する（例: --source=session-review）"
-        )
-    return value
-
-
 def _nonnegative_finite_float(value: str) -> float:
     """0以上の有限な浮動小数点数だけをargparseへ渡す。"""
     try:
@@ -140,58 +128,6 @@ def _worktree_name(value: str) -> str:
     return value
 
 
-def _add_source_arg(parser: argparse.ArgumentParser, *, multiple: bool = False) -> None:
-    """`--source`オプションを共通形式で登録する。"""
-    parser.add_argument(
-        "--source",
-        metavar="NAME",
-        type=_source_filter_type,
-        action="append" if multiple else "store",
-        default=None,
-        help=(
-            "投入元識別子（frontmatterのsource）で限定する。完全一致の値、"
-            "または先頭に`!`を付けた否定指定（無指定エントリも対象に含む）を指定する。"
-            "空文字列（`--source=`・`--source=!`）は拒否する。"
-            "例: --source=session-review、--source=!session-review"
-        ),
-    )
-
-
-def _add_target_repo_arg(
-    parser: argparse.ArgumentParser,
-    *,
-    help_extra: str = "",
-    multiple: bool = False,
-    required: bool = False,
-    allow_all: bool = False,
-    resolved_by_consumer: bool = False,
-) -> None:
-    """`--target-repo`オプションを共通形式で登録する。
-
-    受理条件をヘルプ文面と同じ位置で確定する。`allow_all`は対象を限定しない`all`を受理するか、
-    `resolved_by_consumer`はサブコマンド自身が未指定時の解決を行うかを表す。
-    登録した値は`_resolve_wi_target_repo`が読み取る。
-    """
-    default_note = (
-        "" if required else "省略時はカレントディレクトリが属するリポジトリを対象とし、Gitの作業ツリー外では対象を限定しない。"
-    )
-    all_note = f"`{_wi_repo.TARGET_REPO_ALL}`を指定すると対象を限定しない。" if allow_all else ""
-    parser.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        action="append" if multiple else "store",
-        default=None,
-        required=required,
-        help="対象リポジトリ（パスまたは正規化リモートURL）でフィルターまたは検証する。" + default_note + all_note + help_extra,
-    )
-    parser.set_defaults(
-        _target_repo_multiple=multiple,
-        _target_repo_allow_all=allow_all,
-        _target_repo_resolved_by_consumer=resolved_by_consumer,
-        target_repo_defaulted=False,
-    )
-
-
 def _add_important_filter_arg(parser: argparse.ArgumentParser) -> None:
     """一覧・全文表示・検索へ共通の重要フラグの限定を登録する。"""
     parser.add_argument(
@@ -199,32 +135,6 @@ def _add_important_filter_arg(parser: argparse.ArgumentParser) -> None:
         choices=("all", "yes", "no"),
         default="all",
         help="重要フラグで限定する。yesは重要項目、noは非重要項目、allと省略時は全項目を対象とする。",
-    )
-
-
-def _absolute_note_path(raw_path: str) -> pathlib.Path:
-    """メモファイルの絶対パスだけを受理する。"""
-    path = pathlib.Path(raw_path)
-    if not path.is_absolute():
-        raise _cli_support.argument_type_error(
-            f"--note-fileが絶対パスではない: {raw_path}", "--note-fileには絶対パスを指定する"
-        )
-    return path
-
-
-def _add_note_args(parser: argparse.ArgumentParser, *, help_text: str) -> None:
-    """文字列またはUTF-8ファイルからメモを受け取る排他引数を登録する。"""
-    note = parser.add_mutually_exclusive_group()
-    note.add_argument("--note", metavar="TEXT", default=None, help=help_text)
-    note.add_argument(
-        "--note-file",
-        metavar="PATH",
-        type=_absolute_note_path,
-        default=None,
-        help=(
-            "メモを記載したUTF-8ファイルの絶対パス。引用符・改行・バッククォートを含む本文を"
-            "シェルのエスケープを介さず渡す場合に使う。--noteとは併用できない。"
-        ),
     )
 
 
@@ -343,7 +253,7 @@ def _add_wi_add_parser(sub: Any) -> None:
             "本文先頭のfrontmatterに source がある場合は本オプションより優先する。"
         ),
     )
-    _add_target_repo_arg(
+    _arguments.add_target_repo_arg(
         add,
         help_extra=(
             "ローカルパス指定時は指定worktree、正規化リモートURL指定時は"
@@ -378,11 +288,23 @@ def _add_mq_read_parsers(sub: Any) -> None:
     # 旧名`--json`・`--no-json`が改名後の`--jsonl`・`--no-jsonl`の省略形として受理され続けないよう、
     # 省略したオプション名では一致と判定しない。
     list_ = _atk_help.add_command(sub, "list", allow_abbrev=False, **_atk_help.HELP["atk wi list"])
-    _add_target_repo_arg(list_, multiple=True, allow_all=True)
+    _arguments.add_target_repo_arg(list_, multiple=True, allow_all=True)
     list_.add_argument(
         "--configured-repos",
         action="store_true",
         help="process_loop_repositoriesの登録集合を一括取得する。--target-repoとは併用できない。",
+    )
+    list_.add_argument(
+        "--snapshot-output",
+        type=pathlib.Path,
+        metavar="JSON",
+        help="同じ取得のフィルター適用前の全状態・全種別の対象repoとWI名だけをJSON配列へ保存する。",
+    )
+    list_.add_argument(
+        "--new-since",
+        type=pathlib.Path,
+        metavar="JSON",
+        help="開始時集合のJSONに無い項目だけへ通常の一覧条件を適用する。基準JSONは変更しない。",
     )
     list_.add_argument(
         "--type",
@@ -411,7 +333,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default=None,
         help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
-    _add_source_arg(list_, multiple=True)
+    _arguments.add_source_arg(list_, multiple=True)
     _add_important_filter_arg(list_)
     list_.add_argument(
         "--effect-check",
@@ -459,7 +381,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
         action="store_true",
         help="対象範囲の全件をtarget_repoごとにグループ化して表示する。",
     )
-    _add_target_repo_arg(
+    _arguments.add_target_repo_arg(
         show,
         multiple=True,
         allow_all=True,
@@ -508,60 +430,10 @@ def _add_mq_read_parsers(sub: Any) -> None:
         default=None,
         help="UWIの回答状況で限定する。省略時は全ての回答状況を対象とする。--all指定時のみ有効。`yes`・`no`指定時はAWIを除外する。",
     )
-    _add_source_arg(show, multiple=True)
+    _arguments.add_source_arg(show, multiple=True)
     _add_important_filter_arg(show)
     _add_mq_read_sync_args(show)
     show.set_defaults(subparser=show)
-
-
-def _add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
-    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢と省略時の値で追加する。
-
-    一括フィルターの綴りは`--status`だけとする。`rm`と`return-to-inbox`は
-    個別指定の探索先と差し戻し元を`--state`で受け取るため、同じ綴りが2つの概念を指す状態を避ける。
-    フィルター専用の`list`・`show`・`grep`だけが`--state`を正式名として受理する。
-    """
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help=f"--target-repoとフィルターに一致する全項目を{action_label}する。確認時は候補一覧を表示する。",
-    )
-    parser.add_argument(
-        "--type",
-        choices=("all", *_wi_constants.WI_TYPES),
-        action="append",
-        default=None,
-        help="--allの対象種別。省略時は全種別を対象とする。",
-    )
-    parser.add_argument(
-        "--status",
-        dest="status",
-        choices=("all", "active", "processable", *_wi_constants.WI_STATES),
-        action="append",
-        default=None,
-        help="--allの対象状態。省略時はactiveを対象とする。listと同じ集合名を受理する。",
-    )
-    parser.add_argument(
-        "--answered",
-        choices=("all", "yes", "no"),
-        action="append",
-        default=None,
-        help="--allのUWI回答状況。省略時は全ての回答状況を対象とする。",
-    )
-    _add_source_arg(parser, multiple=True)
-    parser.add_argument(
-        "--yes",
-        action="store_true",
-        help=f"--allによる一括{action_label}の候補一覧と確認入力を省略する。",
-    )
-    parser.add_argument(
-        "--skip-pull",
-        action="store_true",
-        help=(
-            f"{action_label}対象の選定・確認をremote同期せずローカル状態で行う"
-            f"（{action_label}の直前は毎回同期する）。--all指定時のみ有効。"
-        ),
-    )
 
 
 def _add_mq_transition_parsers(sub: Any) -> None:
@@ -573,8 +445,8 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         nargs="*",
         help="処理開始するAWIまたはUWIのファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _inbox_filename_completer  # type: ignore[attr-defined]
-    _add_bulk_transition_args(start_processing, action_label="処理開始")
-    _add_target_repo_arg(
+    _arguments.add_bulk_transition_args(start_processing, action_label="処理開始")
+    _arguments.add_target_repo_arg(
         start_processing,
         help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
         multiple=True,
@@ -598,8 +470,8 @@ def _add_mq_transition_parsers(sub: Any) -> None:
             "--allとは併用できない。"
         ),
     )
-    _add_bulk_transition_args(hold, action_label="保留")
-    _add_target_repo_arg(
+    _arguments.add_bulk_transition_args(hold, action_label="保留")
+    _arguments.add_target_repo_arg(
         hold,
         help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
         multiple=True,
@@ -613,8 +485,8 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         nargs="*",
         help="保留を解除するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _hold_filename_completer
-    _add_bulk_transition_args(unhold, action_label="保留解除")
-    _add_target_repo_arg(
+    _arguments.add_bulk_transition_args(unhold, action_label="保留解除")
+    _arguments.add_target_repo_arg(
         unhold,
         help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
         multiple=True,
@@ -641,49 +513,15 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         default=None,
         help="adoptedまたはrejectedから差し戻す場合に指定する。省略時はprocessingから差し戻す。--allとは併用できない。",
     )
-    _add_bulk_transition_args(return_to_inbox, action_label="差し戻し")
-    _add_target_repo_arg(
+    _arguments.add_bulk_transition_args(return_to_inbox, action_label="差し戻し")
+    _arguments.add_target_repo_arg(
         return_to_inbox,
         help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
         multiple=True,
     )
     return_to_inbox.set_defaults(subparser=return_to_inbox)
 
-    adopt = _atk_help.add_command(sub, "adopt", **_atk_help.HELP["atk wi adopt"])
-    adopt.add_argument(
-        "filenames",
-        metavar="FILENAME",
-        nargs="*",
-        help="採用するファイル名。--allと併用せず、個別指定では1個以上を指定する。",
-    ).completer = _active_filename_completer  # type: ignore[attr-defined]
-    _add_note_args(
-        adopt,
-        help_text="採否結果のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
-    )
-    adopt.add_argument(
-        "--commit",
-        metavar="SHA",
-        action="append",
-        default=None,
-        help=(
-            "ローカルworktreeとrevisionを検証し、一意な長さの短縮OIDと件名を記録する。短縮OIDと完全OIDのどちらも受理する。"
-            "worktreeまたはrevisionを解決できない場合は終了コード2で状態変更前に停止する。"
-            "対象worktreeの絶対パスを--target-repoへ指定して再実行する。"
-            "複数commitは--commitを反復指定する。--commit=VALUE形式で渡すことを推奨。"
-        ),
-    )
-    adopt.add_argument(
-        "--skip-push",
-        action="store_true",
-        help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
-    )
-    _add_bulk_transition_args(adopt, action_label="採用")
-    _add_target_repo_arg(
-        adopt,
-        help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
-        multiple=True,
-    )
-    adopt.set_defaults(subparser=adopt)
+    _arguments.add_adopt_parser(sub)
 
     reject = _atk_help.add_command(sub, "reject", **_atk_help.HELP["atk wi reject"])
     reject.add_argument(
@@ -692,7 +530,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         nargs="*",
         help="不採用とするファイル名。--allと併用せず、個別指定では1個以上を指定する。",
     ).completer = _active_filename_completer  # type: ignore[attr-defined]
-    _add_note_args(
+    _arguments.add_note_args(
         reject,
         help_text="不採用理由のメモ（本文末尾の`## 処理結果`節へ追記する）。--note=VALUE形式で渡すことを推奨。",
     )
@@ -720,8 +558,8 @@ def _add_mq_transition_parsers(sub: Any) -> None:
             "--allとは併用できない。"
         ),
     )
-    _add_bulk_transition_args(reject, action_label="不採用")
-    _add_target_repo_arg(
+    _arguments.add_bulk_transition_args(reject, action_label="不採用")
+    _arguments.add_target_repo_arg(
         reject,
         help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は対象を限定する。",
         multiple=True,
@@ -735,7 +573,7 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         nargs="*",
         help="削除するファイル名。--allと併用せず、個別削除では1個以上を指定する。",
     ).completer = _removable_filename_completer  # type: ignore[attr-defined]
-    _add_bulk_transition_args(rm, action_label="削除")
+    _arguments.add_bulk_transition_args(rm, action_label="削除")
     rm.add_argument(
         "--state",
         choices=_wi_constants.WI_STATES,
@@ -747,11 +585,11 @@ def _add_mq_transition_parsers(sub: Any) -> None:
         action="store_true",
         help="processing状態のファイルも削除する（指定しない場合は保護して削除を拒否する）。",
     )
-    _add_note_args(
+    _arguments.add_note_args(
         rm,
         help_text="削除の理由を記録するメモ。`--note=VALUE`の形式で渡すことを推奨する。",
     )
-    _add_target_repo_arg(
+    _arguments.add_target_repo_arg(
         rm,
         help_extra="個別指定時はfrontmatterと一致するか検証し、--all指定時は削除対象を限定する。",
         multiple=True,
@@ -817,7 +655,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
             "private-notesとremoteを変えない。--append・--cooldown-untilとは併用できない。"
         ),
     )
-    _add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
+    _arguments.add_target_repo_arg(edit, help_extra="指定時は対象ファイル名のfrontmatterと一致するか検証する。")
     edit.set_defaults(subparser=edit)
     _add_draft_comparison_arg(edit)
 
@@ -834,7 +672,7 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         default=None,
         help="処理完了を待つキュー項目。複数回指定でき、省略時は依存を全て解除する。",
     )
-    _add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
+    _arguments.add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
 
 
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
@@ -899,7 +737,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         default="all",
         help="UWIの回答状況で限定する。省略時は全ての回答状況を含める。`yes`・`no`指定時はAWIを除外する。",
     )
-    _add_source_arg(grep, multiple=True)
+    _arguments.add_source_arg(grep, multiple=True)
     grep.add_argument(
         "--since",
         type=datetime.date.fromisoformat,
@@ -907,7 +745,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         help="ファイル名の投入日が指定日以後のWIだけを検索する。投入日を持たない旧名は含めない。",
     )
     _add_important_filter_arg(grep)
-    _add_target_repo_arg(grep, allow_all=True)
+    _arguments.add_target_repo_arg(grep, allow_all=True)
     _add_mq_read_sync_args(grep)
     grep.set_defaults(subparser=grep)
 
@@ -916,7 +754,7 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         "filename", nargs="?", help="回答対象のUWIファイル名（省略時は対話モード）"
     ).completer = _uwi_filename_completer  # type: ignore[attr-defined]
     answer.add_argument("answer_body", nargs="?", help="回答本文（省略時は対話モード）")
-    _add_target_repo_arg(answer)
+    _arguments.add_target_repo_arg(answer)
 
     _atk_help.add_command(sub, "commit", **_atk_help.HELP["atk wi commit"])
     _atk_help.add_command(sub, "pull", **_atk_help.HELP["atk wi pull"])
@@ -1223,6 +1061,8 @@ def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
     managed-tempの掃引より前に呼ぶ。引数の誤りを掃引の警告より先に報告するためである。
     """
+    if args.command == "wi" and args.wi_subcommand == "list" and args.snapshot_output and args.new_since:
+        args.subparser.error("--snapshot-outputと--new-sinceは併用できません。開始時集合は初回だけ保存する。")
     if args.command == "wi" and args.wi_subcommand == "grep":
         if args.pattern is not None and args.regexp is not None:
             args.subparser.error("PATTERNと-eは併用できません。すべての検索語を-e PATTERNで反復指定する。")

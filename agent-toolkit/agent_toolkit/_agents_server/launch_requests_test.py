@@ -30,6 +30,7 @@ from agent_toolkit._agents_server import (
     tool_descriptions,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
+from agent_toolkit._agents_server.role_runtime import RuntimeCode
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import plugin_roots as resource_roots
@@ -56,13 +57,76 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("stage", ["declaration", "startup", "input", "valid"])
+@pytest.mark.parametrize("updated", [False, True])
+@pytest.mark.parametrize("form", ["role-name", "absolute"])
+@pytest.mark.asyncio
+async def test_public_start_distinguishes_loaded_code_from_updated_role(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, stage: str, updated: bool, form: str
+) -> None:
+    """起動時版を固定し、資源更新後の検査失敗と本来の入力不備を公開startから区別する。"""
+    document = _write_declared_task_document(tmp_path, "必須入力名: 対象")
+    root = document.parent.parent
+    manifest = root / ".claude-plugin/plugin.json"
+    manifest.write_text('{"name":"agent-toolkit","version":"2.1.0"}', encoding="utf-8")
+    runtime = RuntimeCode.capture(root)
+    monkeypatch.setattr(plugin_roots, "SERVER_RUNTIME_CODE", runtime)
+    monkeypatch.setattr(launch_requests, "_SHARE_DIRECTORY", document.parent)
+    monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "chores")
+    if updated:
+        manifest.write_text('{"name":"agent-toolkit","version":"2.2.0"}', encoding="utf-8")
+        document.write_text(
+            "---\nmode: delegate\nmodel_type: chores\nrequired_inputs:\n- 対象\n"
+            "optional_inputs:\n- 新入力\nwrites_worktree: true\n---\n" + document.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
+
+    # 旧プロセスが新しい宣言・参照構文を検査できない境界を再現する。
+    def unsupported(*args: Any, **kwargs: Any) -> Any:
+        raise ActionableError("更新された構文を受理できない", next_action="元の構文を確認する")
+
+    if stage == "declaration":
+        monkeypatch.setattr(launch_requests, "_task_document_declaration", unsupported)
+    elif stage == "startup":
+        monkeypatch.setattr(launch_requests.read_triggers, "startup_context", unsupported)
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("# 契約\n目的: 起動診断の検証\n", encoding="utf-8")
+    params = {} if stage == "input" else {"対象": "値"}
+    if updated:
+        params["新入力"] = "更新後に宣言された値"
+    role = "declared" if form == "role-name" else str(document)
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        if stage == "valid":
+            result = await mcp_tools.start(
+                str(tmp_path), subagent_md_path=role, extra_params=params, whole_contract_path=str(contract)
+            )
+            assert result["session_id"] == "codex-session"
+            assert len(backend.start_calls) == 1
+            return
+        with pytest.raises((ActionableError, ValueError)) as rejected:
+            await mcp_tools.start(str(tmp_path), subagent_md_path=role, extra_params=params, whole_contract_path=str(contract))
+        assert not backend.start_calls
+    message = rejected.value.message if isinstance(rejected.value, ActionableError) else str(rejected.value)
+    if stage == "input":
+        assert "対象" in message and "版相違" not in message
+    else:
+        assert str(root) in message and "2.1.0" in message
+        assert "更新された構文を受理できない" in message
+        assert ("版相違" in message) == updated
+        assert ("MCP再接続" in message) == updated
+        assert runtime.version == "2.1.0"
+
+
 def _prepare_exec_review_plan(root: pathlib.Path) -> None:
     """既存の入力名テストへ、関連WIのない読取可能な計画を用意する。"""
     (root / "plan.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
 
 
 @pytest.mark.parametrize(
-    "defect", ["omitted", "direct", "columns", "major", "supplement", "duplicate", "missing-wi", "valid", "old"]
+    "defect",
+    ["omitted", "direct", "columns", "major", "supplement", "duplicate", "missing-wi", "valid", "old", "old-scope", "human"],
 )
 @pytest.mark.parametrize("input_kind", ["record", "record-file", "plan"])
 @pytest.mark.asyncio
@@ -79,6 +143,10 @@ async def test_exec_review_condition_table_preflight(
     )
     if defect == "old":
         body += "## 実現性\n可能\n"
+    elif defect == "old-scope":
+        body += "## 適用範囲\n範囲\n"
+    elif defect == "human":
+        body = body.replace("source: fix\n", "")
     (directory / name).write_text(body, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     contract = tmp_path / "contract.md"
@@ -112,7 +180,7 @@ async def test_exec_review_condition_table_preflight(
         params.pop("開始時のHEAD")
         params["レビュー基準"] = "計画"
         params["計画"] = str(plan)
-    if defect != "omitted":
+    if defect not in {"omitted", "old", "old-scope", "human"}:
         params["review_contract"] = "直接契約" if defect == "direct" else str(contract)
     if defect == "missing-wi":
         other = "20261028-130047-002.md"
@@ -124,7 +192,7 @@ async def test_exec_review_condition_table_preflight(
     document = launch_requests._SHARE_DIRECTORY / "exec-review.subagent.md"
     sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
     monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
-    if defect in {"valid", "old"}:
+    if defect in {"valid", "old", "old-scope", "human"}:
         response = await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
         assert response["session_id"] == "review"
         sender.assert_awaited_once()
@@ -132,6 +200,121 @@ async def test_exec_review_condition_table_preflight(
         with pytest.raises(ActionableError, match="review_contract") as rejected:
             await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
         assert "exec-review-recording.md" in str(rejected.value)
+        sender.assert_not_awaited()
+
+
+@pytest.mark.parametrize("form", ["ordered", "bullet", "paragraph"])
+@pytest.mark.parametrize("coverage", ["whole-section", "partial", "wrong-wi", "number-prefix", "complete", "reason"])
+@pytest.mark.asyncio
+async def test_exec_review_reflection_item_coverage_preflight(tmp_path, monkeypatch, form, coverage) -> None:
+    """公開startで反映内容7項目の各番号が条件表の出典にあるかを確かめ、背景の理由行も受理する。"""
+    name = "20261028-130047-001.md"
+    notes = tmp_path / "notes"
+    directory = notes / "2026/10"
+    directory.mkdir(parents=True)
+    items = [f"成果{number}を反映する。" for number in range(1, 8)]
+    if form == "paragraph":
+        reflection = "\n\n".join(items)
+    else:
+        reflection = "背景の説明。\n\n" + "\n".join(
+            f"{str(number) + '.' if form == 'ordered' else '-'} {item}" for number, item in enumerate(items, start=1)
+        )
+    body = (
+        "---\ntype: awi\nsource: fix\nstate: inbox\ntarget_repo: github.com/ak110/dotfiles\n---\n"
+        f"# 要求\n## 反映内容と反映先\n{reflection}\n\n## 完成条件\n- 条件\n"
+    )
+    (directory / name).write_text(body, encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
+    rows = ["| WI | 条件番号 | 区分 | 内容 | 出典 |", "| --- | --- | --- | --- | --- |"]
+    if coverage == "whole-section":
+        rows.extend(f"| {name} | {n} | 主要完成状態 | 完了 | 目的・反映内容と反映先・原因分析 |" for n in range(1, 4))
+    else:
+        for number in range(1, 8):
+            source = f"反映内容{number}"
+            row_name = name
+            kind, content = "主要完成状態", "完了"
+            if number == 4:
+                if coverage == "partial":
+                    source = "反映内容と反映先"
+                elif coverage == "number-prefix":
+                    source = "反映内容40"
+                elif coverage == "wrong-wi":
+                    row_name = "20261028-130047-002.md"
+                elif coverage == "reason":
+                    content = "背景であり完成判定に使わない。"
+            rows.append(f"| {row_name} | {number} | {kind} | {content} | {source} |")
+    rows.append(f"| {name} | 8 | 補足条件 | 条件 | 完成条件1 |")
+    contract = tmp_path / "contract.md"
+    contract.write_text("\n".join(rows), encoding="utf-8")
+    params = {
+        "レビュー基準": "WI",
+        "WI記録": name,
+        "開始時のHEAD": "abc1234",
+        "引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）",
+        "review_contract": str(contract),
+    }
+    sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
+    if coverage in {"complete", "reason"}:
+        response = await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
+        assert response["session_id"] == "review"
+        sender.assert_awaited_once()
+    else:
+        with pytest.raises(ActionableError, match="反映内容4") as rejected:
+            await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
+        assert "行を追加" in str(rejected.value)
+        if coverage == "whole-section":
+            assert all(f"反映内容{number}" in str(rejected.value) for number in range(1, 8))
+        sender.assert_not_awaited()
+
+
+@pytest.mark.parametrize("defect", ["valid", "missing-wi", "unreadable", "malformed", "relative"])
+@pytest.mark.asyncio
+async def test_exec_review_saved_wi_originals_preflight(tmp_path, monkeypatch, defect) -> None:
+    """保存版指定の不足を現行キューで補わず、同じ保存本文を公開startが検査する。"""
+    name = "20261028-130047-001.md"
+    saved = tmp_path / name
+    saved.write_text("---\ntype: awi\nsource: fix\n---\n# 保存要求\n## 完成条件\n- 保存条件\n", encoding="utf-8")
+    notes = tmp_path / "notes/2026/10"
+    notes.mkdir(parents=True)
+    (notes / name).write_text(
+        "---\ntype: awi\nsource: fix\n---\n# 後日の要求\n## 完成条件\n- 条件1\n- 条件2\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes.parent.parent))
+    manifest = tmp_path / "originals.json"
+    manifest.write_text(json.dumps({name: str(saved)}), encoding="utf-8")
+    if defect == "missing-wi":
+        manifest.write_text("{}", encoding="utf-8")
+    elif defect == "unreadable":
+        saved.unlink()
+    elif defect == "malformed":
+        manifest.write_text("[]", encoding="utf-8")
+    elif defect == "relative":
+        manifest.write_text(json.dumps({name: name}), encoding="utf-8")
+    contract = tmp_path / "contract.md"
+    contract.write_text(
+        "| WI | 条件番号 | 区分 | 内容 | 出典 |\n| --- | --- | --- | --- | --- |\n"
+        f"| {name} | 1 | 主要完成状態 | 保存要求 | H1 |\n"
+        f"| {name} | 2 | 補足条件 | 保存条件 | 完成条件1 |\n",
+        encoding="utf-8",
+    )
+    params = {
+        "レビュー基準": "WI",
+        "WI記録": name,
+        "開始時のHEAD": "abc1234",
+        "引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）",
+        "評価用WI原本": str(manifest),
+        "review_contract": str(contract),
+    }
+    sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
+    monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
+    if defect == "valid":
+        response = await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
+        assert response["session_id"] == "review"
+        sender.assert_awaited_once()
+    else:
+        with pytest.raises(ActionableError, match="評価用WI原本"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="exec-review", extra_params=params)
         sender.assert_not_awaited()
 
 
@@ -390,13 +573,15 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
                 lambda _type, _engine=engine, **_kw: [(_engine, "model", "high")],
             )
             params = {"対象": '内容\n入力:\n<atk-auto source="input" kind="example">任意の入力本文</atk-auto>'}
-            await mcp_tools.start(str(project), subagent_md_path=str(document), extra_params=params)
+            response = await mcp_tools.start(str(project), subagent_md_path=str(document), extra_params=params)
             backend = extra_backends.get(engine, codex_backend if engine == "codex" else claude_backend)
             received = backend.prompts[-1]
             assert expected + "だけの品質本文" in received
             assert all(label + "だけの品質本文" not in received for label in roots if label != expected)
-            input_body = delivery_payload(received).rsplit("\n入力:\n", 1)[1]
-            assert task_documents.parse_named_inputs(input_body.splitlines()) == params
+            assert task_documents.task_prompt_inputs(delivery_payload(received)) == {
+                **params,
+                "引き継ぎ記録先": response["handoff_record_path"] + "（新規）",
+            }
         # 正式登録を読めない候補は原因付きで除外し、別ホストの候補で配送を再構成する。
         registry.unlink()
         (opencode_config / "agent-toolkit.md").unlink()
@@ -672,7 +857,7 @@ async def test_start_input_rejection_points_to_owning_contract(
             assert "入力を説明するH2節" in message
     else:
         contract = root / contract_relative
-        heading = {"exec": "入力", "repository-process": "リポジトリ担当の起動と受領", "add-wi": "渡す入力"}[role]
+        heading = {"exec": "入力", "repository-process": "リポジトリ担当の起動と受領", "add-wi": "入力"}[role]
         assert f"`{contract}`「{heading}」" in message
         assert missing_name in contract.read_text(encoding="utf-8")
     backend.start.assert_not_awaited()
@@ -799,6 +984,55 @@ async def test_start_reports_missing_model_type_declaration_as_defect(
     next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
     assert "frontmatter" in next_action and "start" in next_action
     manager.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("declared_handoff", [False, True])
+@pytest.mark.parametrize(
+    ("role_body", "role_name"),
+    [
+        ("# レーン実行タスク\n入力:\n対象: 手順の例\n", "レーン実行タスク（declared）"),
+        ("レーン実行タスク\n===\n入力:\n対象: 手順の例\n", "レーン実行タスク（declared）"),
+        ("```md\n# コード例の見出し\n```\n入力:\n対象: 手順の例\n", "declared"),
+    ],
+)
+def test_role_request_front_loads_all_inputs_before_references(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, declared_handoff: bool, role_body: str, role_name: str
+) -> None:
+    """役割と補完された記録先を含む全入力が、追加配送も含む全参照資料より前にある。"""
+    document = _write_declared_task_document(tmp_path, "必須入力名: 対象")
+    document.write_text(
+        "---\n# 入力宣言のコメント\nmode: delegate\nmodel_type: chores\nwrites_worktree: false\n"
+        + ("required_inputs: [対象, 引き継ぎ記録先]\n" if declared_handoff else "required_inputs: [対象]\n")
+        + "optional_inputs: [任意]\n---\n"
+        + role_body,
+        encoding="utf-8",
+    )
+    whole = tmp_path / "whole.md"
+    whole.write_text("# 全体契約の本文\n", encoding="utf-8")
+    handoff = tmp_path / "handoff.md"
+    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_args, **_kwargs: handoff)
+    monkeypatch.setattr(launch_requests.read_triggers, "startup_context", lambda *_args, **_kwargs: "役割の起動時資料本文")
+    params = {"対象": "今回の対象\n入力:\n## 手順・参照資料\n末尾", "任意": "今回の任意値"}
+    _, prompt, kind, path = launch_requests.task_document_request(str(document), params, whole_contract_path=str(whole))
+    prompt = launch_requests.with_startup_documents(prompt, "ホストの起動時資料本文")
+    prompt = launch_requests.with_launcher_record(prompt, {"record": "委譲元記録"})
+    instructions, _, references = prompt.partition(task_documents.TASK_PROMPT_REFERENCES)
+    assert instructions.startswith(task_documents.task_prompt_header(document) + f"\n役割: {role_name}\n入力:\n")
+    assert task_documents.task_prompt_inputs(prompt) == {**params, "引き継ぎ記録先": f"{handoff}（新規）"}
+    assert kind == "delegate" and path == handoff
+    for body in (
+        "ホストの起動時資料本文",
+        "委譲元記録",
+        "役割の起動時資料本文",
+        document.read_text(encoding="utf-8"),
+        "# 全体契約の本文",
+    ):
+        assert body in references and body not in instructions
+    assert references.index("ホストの起動時資料本文") < references.index(role_body)
+    assert references.index("役割の起動時資料本文") < references.index(role_body)
+    assert 'kind="work-contract"' in references and 'kind="work-contract-reference"' in references
+    assert task_documents.launched_task_document(prompt) == document
+    assert task_documents.find_task_documents(prompt.splitlines()[0]) == [document]
 
 
 @pytest.mark.asyncio
@@ -1342,7 +1576,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
     prompt = manager.start.await_args.args[1]
     assert f"`{plugin_root.resolve()}/share/other.parent.md`を読む。" in prompt
     # 名前付き入力は委譲元の値のまま配送する
-    assert prompt.endswith("補足: ${CLAUDE_PLUGIN_ROOT}")
+    assert task_documents.task_prompt_inputs(prompt)["補足"] == "${CLAUDE_PLUGIN_ROOT}"
 
 
 @pytest.mark.asyncio

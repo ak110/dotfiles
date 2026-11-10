@@ -294,7 +294,8 @@ async def test_local_watch_acquisition_and_release_are_owned(
     root = tmp_path / "plans"
     root.mkdir()
     context = _context(root)
-    observer = types.SimpleNamespace(ident=None, stopped=0, joined=0)
+    # 属性を差し替えた代替オブジェクトを監視として渡すため、型検査の対象から外す。
+    observer: typing.Any = types.SimpleNamespace(ident=None, stopped=0, joined=0)
 
     def schedule(*_args: typing.Any, **_kwargs: typing.Any) -> None:
         if failure == "schedule":
@@ -314,14 +315,11 @@ async def test_local_watch_acquisition_and_release_are_owned(
 
     observer.schedule, observer.start, observer.stop, observer.join = schedule, start, stop, join
     monkeypatch.setattr(views.watchdog.observers, "Observer", lambda: observer)
-    if failure != "none":
-        with pytest.raises(OSError):
-            await views.start_local_watchers_async(context)
-        assert context.state.local_observer is None
-    else:
-        await views.start_local_watchers_async(context)
-        await views.stop_local_watchers_async(context)
-        assert context.state.local_observer is None
+    await views.start_local_watchers_async(context)
+    # 通常の監視を開始できなければ、開始途中の監視を停止してポーリング監視へ切り替える。
+    assert (context.state.local_observer is observer) is (failure == "none")
+    await views.stop_local_watchers_async(context)
+    assert context.state.local_observer is None
     assert observer.stopped == 1
     assert observer.joined == (1 if failure == "none" else 0)
 

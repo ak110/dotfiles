@@ -1,0 +1,30 @@
+# 検証ツールの実行と保存出力の取得：保存した実行出力の取得
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+
+## 保存した実行出力の取得
+
+出力を保存する前に、生成元ツールが公開している出力オプションを確認し、目的に合致したフォーマットと対象範囲を選択する。
+保存されたpyfltrログは、対象版が提供する結果取得方法で読む。
+`show-run`を提供する版では、その公開ヘルプで対象・本文・構造化診断の取得方法を確かめる。
+別版の引数を流用せず、対象到達、必要なチェックの完了、終了状態および診断を保存結果から判定する。
+本文の表示だけを目的とする場合は、公開された本文表示機能を使い、不要なJSON解析を避ける。
+構造化された診断情報が必要で、選んだ出力形式がJSONの場合は`jq`コマンドで読み取る。
+テスト結果については、完全なテスト名と結果行を取得できる形式を対象のテストツールの公開契約から選び、要求仕様と正確に対応付ける。
+生成元ツールに専用の表示オプションが存在しない場合や、結果の関連付け・意味内容を評価する処理は、単なる本文ログの表示・取得処理とは明確に区別して取り扱う。
+
+## 警告の判定
+
+警告の意味、影響、帰属、残す理由と合否は、`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」「合否の判定」に従って判定し、検証結果へ記録する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |

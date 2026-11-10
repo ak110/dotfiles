@@ -701,7 +701,7 @@ def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path:
             filename=other.name,
             content="変更後の本文\n",
             expected_content=original,
-            skip_remote_sync=True,
+            storage=_wi_sync.Storage(local_only=True),
         )
 
     assert other.read_text(encoding="utf-8") == original

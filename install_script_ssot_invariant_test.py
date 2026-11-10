@@ -1,4 +1,4 @@
-"""install-claude.{sh,ps1}とagent-toolkit/rules/配下のSSOT整合性テスト。
+"""install-claude.{sh,ps1}とagent-toolkit/share/rules/common/配下のSSOT整合性テスト。
 
 配布対象のファイル名は`scripts/gen_install_files.py`がrules一覧から両インストーラーへ生成し、
 `scripts/sync_generated_files.py`が同生成器を統合実行する。
@@ -12,7 +12,7 @@ from collections.abc import Callable
 import pytest
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
-_RULES_DIR = _REPO_ROOT / "agent-toolkit" / "rules"
+_RULES_DIR = _REPO_ROOT / "agent-toolkit" / "share" / "rules" / "common"
 _INSTALL_SH = _REPO_ROOT / "install-claude.sh"
 _INSTALL_PS1 = _REPO_ROOT / "install-claude.ps1"
 
@@ -46,7 +46,7 @@ def _read_ps1_files() -> list[str]:
 
 
 class TestInstallScriptSsot:
-    """`agent-toolkit/rules/`配下のmdファイル一覧と`install-claude.{sh,ps1}`の配列の整合性を検証する。"""
+    """`agent-toolkit/share/rules/common/`配下のmdファイル一覧と`install-claude.{sh,ps1}`の配列の整合性を検証する。"""
 
     @pytest.mark.parametrize(
         ("name", "reader"),
@@ -59,5 +59,7 @@ class TestInstallScriptSsot:
         rules = _read_rules_dir()
         script_files = reader()
         assert script_files == rules, (
-            f"{name} のファイル一覧が agent-toolkit/rules/ と不一致: script={script_files} rules={rules}"
+            f"{name} のファイル一覧が agent-toolkit/share/rules/common/ と不一致: script={script_files} rules={rules}。"
+            "生成物を直接編集せず、原本の配置を確認してから"
+            "`uv run --frozen python scripts/sync_generated_files.py`で再生成すること"
         )

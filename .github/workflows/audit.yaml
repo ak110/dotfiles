@@ -1,7 +1,7 @@
 name: Audit
 
-# Python・Rust依存の脆弱性監査を定期実行する。監査は外部脆弱性データベースへ
-# 問い合わせるため結果がコード変更と無関係に変動する。push/PR毎のCIには載せず、
+# Python・Rust依存の脆弱性監査と撤去表の期限の確認を定期実行する。いずれも結果が
+# コード変更と無関係に変動する（外部脆弱性データベース・実行日）。push/PR毎のCIには載せず、
 # スケジュール実行と手動実行に限定する。
 # Pythonの検出はSARIF形式でCode Scanningへ送り、同一脆弱性を集約・解消時にクローズする。
 # Rustの検出とツール異常はジョブの失敗とログに残す。
@@ -84,10 +84,33 @@ jobs:
           fi
 
       - name: SARIFをCode Scanningへアップロード
-        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: ${{ runner.temp }}/audit.sarif
           category: uv-audit
+
+  removal-registry:
+    # 撤去表の期限は日付で結果が変わるため、push・PR毎のCIとcommit hookでは判定せず、この定期ジョブで判定する。
+    # 期限の14日前から失敗させ、通知を受けた開発者が期限前に表から外せるようにする（規則はpytools/_internal/removal_registry.py）。
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ak110/pyfltr:latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      # mise等がGitHub APIを呼び出す際のレート制限（403）回避
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install dependencies
+        run: uv sync --all-groups --all-extras
+
+      - name: 撤去表の期限の確認
+        run: uv run --frozen python -m pytools._internal.removal_registry_report
 
   rust-audit:
     # cargo-auditの導入はソースからのビルドでCリンカーを要し、pyfltrイメージには含まれない。
@@ -105,7 +128,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
 
       - name: Rust監査ツールの導入
         run: mise exec -- cargo install --locked --no-default-features cargo-audit

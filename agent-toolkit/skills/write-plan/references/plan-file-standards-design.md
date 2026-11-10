@@ -1,0 +1,90 @@
+# 計画ファイル作成基準：設計・実装方針
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-prediction.md` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+
+## 設計・実装方針
+
+内部関数、状態、分岐、手順、対象ファイル・識別子と直接影響範囲は本節へ記録できる。
+任意H3を使え、設けた節には内容を書く。
+複数の成立する案を比べて選んだ設計判断ごとに、実行レビュー担当が採否を反証できるよう、退けた有力な案と不採用理由を本節へ記録する。
+選択肢が1つに定まる判断と一般的な実装手順は記録の対象外とする。
+
+明示方式と公開契約が必要とする内部構造は、原文の根拠と拘束力を要件欄に残す。
+内部方式・検証手段は目的・結果・品質・認可・制約を保って変更でき、既存の進捗・採否記録に残す。
+由来・採否の具体的反証は原文で訂正し、結果や認可の変更はユーザー確認へ渡す。
+
+## 恒久化・リファクタリング
+
+`## 恒久化・リファクタリング`の直下には`### 恒久化`と`### リファクタリング`だけをこの順に置く。
+どちらにも後続の担当が実装や検収で使う結論を書き、検討の経緯や詳細は証拠資料に残す。
+
+恒久化は、将来の方針、選定基準、却下理由、制約、前提などを、判断時に読む場所へ保存する作業である。
+関連WI本文・ユーザーコメント、確認回答、変更履歴に渡された発話から候補を抽出し、表現の範囲・確度を保って一時指示と一般方針を分ける。
+局所実装の重複計上を避け、一般方針の保存は別に判定する。
+計画内の記録だけでは恒久化を満たさない。
+
+実作業の結果から再利用価値のある成功手順や教訓も候補にし、採否は次に利用する場面と原記録から判断する。
+
+- `### 恒久化`には`知見`、`出所`、`反映先`、`根拠`の4列の表を置き、知見1件を1行で書く。
+  反映する知見がなければ表を置かず、対象がない旨を1文で書く
+- `出所`に由来、`反映先`にファイルと節、`根拠`に反映・配置の理由を書く。
+  既存規範で充足する候補は該当箇所、計画内に保つ候補は`計画限り`と理由を書く。
+  一時指示など候補から外す理由は既存の証拠記録に残す
+- 反映先は、その知見を要する判断の際にエージェントがその文書を実際に読むかで選ぶ。
+  自動チェックツールへ反映する場合は、チェック失敗時にエージェントが見る位置に制約の理由を併記する
+- 反映を確定した知見は`## 実施内容`の表にも行として計上し、反映先で適用する仕様や置換の境界は`## 要件・外部仕様`に書く
+- バグ対応では、関連WIの`## 原因分析`・`## 反映内容と反映先`や計画ファイル（バグ）で原因・対策を対応付ける。
+  一般方針の保存を扱う行は参照し、局所修正だけで保存済みとは扱わない
+
+リファクタリングは付帯作業であり、今回の変更で必要になる既存箇所の見直しを実装と同時に行い、成果物全体の設計品質を保つ。
+
+- 検討対象は、本計画で変更・新設する成果物の変更後ファイル全体、参照・呼び出し・読込表で結び付く関連成果物（定義、呼び出し元、既存テスト、生成・配布手順など）、`## 実施内容`で新設・分割する構造、`### 恒久化`の反映先とする
+- 観点と判定基準は`agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」に従う。
+  設計の劣化を是正する箇所や、併せて整理すれば類似処理・責務・記述の分散を解消できる箇所は、`対象`、`現状の問題`、`対応`の3列の表に1行ずつ書く（対象がなければ表を置かない。記入例は「初回起草の雛形」）
+- WIを入力とする計画でも、WI本文の調査結果と判断根拠に設計品質劣化の評価がなければ、WIで確定した実現方式を同節の基準で評価する。
+  旧形式の対応節は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う。
+  劣化があればその是正を`## 実施内容`に計上する
+- エージェント向け文書を新設・改訂する計画では、次の基準を確認する
+  - `agent-basics:writing-standards/references/agent-documents-additions-volume.md`「文書記述量の管理」
+  同じ文書への変更全体についてファイルサイズの上限、責務の範囲、読込の時点、既存記述との重複などを比べ、整理の結論を書く
+  変更する各ファイルの変更前後の行数を`### リファクタリング`へ記録する。
+  変更後に目安を超える見込みのファイルと、すでに超えているファイルには、分割・統合・削除の検討結果と、残す場合の理由を記す。
+- 本計画で行うリファクタリングは`## 実施内容`の表に行として計上する。
+  テストの更新、直接影響範囲の同期、生成物の再生成など実装に付随する作業は`## 要件・外部仕様`に書き、`## 実施内容`の行の対象からは除く
+- 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の母集団に従う。
+  `agent-basics:bugfix/references/root-cause-prevention-verification.md`「類似見直しと再発防止の完了」の判定基準も適用する。
+  通常変更の計画では結果を`### リファクタリング`に記録し、専用の見出しは追加対象から除く
+- 本計画の変更範囲外で是正の必要も生じない既存の不備を見つけた場合は、`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」に従う
+
+## 変更履歴
+
+`## 変更履歴`には、初版の作成経緯、実装中の要件変更、方針転換などを見出しと地の文で記録する（表形式や履歴IDは使わない）。
+
+- 記録するユーザー発言は、`### ユーザー発言<1から始まる連番>`のH3見出しの下に、原文を変えない`text`コードブロックと、その発言で確定した現在の結論を書く。
+  `ユーザー指示`由来の行を`採用`か`部分採用`とした計画では、`### ユーザー発言1`と空でない`text`コードブロックを1件以上必ず置く
+- 記録対象は、計画の目的、対象範囲、外部から観測できる結果、実行上の制約、承認状態を変える、実際に届いたユーザーメッセージの逐語引用に限る。
+  委譲先エージェントでは、委譲プロンプトや追加メッセージのうち`<forwarded-user-input>`で囲まれた逐語テキストだけを対象とする（タグの扱いは`agent-toolkit/share/rules/common/01-agent.md`「方針が衝突する場合の優先順位」に従う）
+- ユーザー発言以外の経緯は、内容が分かる任意のH3見出しの下に書く
+- ユーザーの発話から導いた要求範囲を書く場合は、`../../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」の記録書式に従う。
+  原文の逐語と出所、該当する具体例、追加事項、承認出所を明記した除外事項を記録する。
+  `## 実施内容`の要求単位ごとの分解と`部分採用`の規定も適用する
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 再発防止の選定と完了：類似見直しと再発防止の完了の基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |

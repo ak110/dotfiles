@@ -11,7 +11,7 @@ import pathlib
 import shutil
 import tempfile
 
-from pytools._internal import codex_processes, deferred_updates, log_format, post_apply_outcome
+from pytools._internal import codex_processes, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def run(
     """管理対象の診断ログを通常ストレージへ復元し、安全な後続実行で旧targetを回収する。
 
     稼働中のCodexや競合で復元を延期する場合は警告を出力して変更なしを返し、ファイル操作の失敗は例外として送出する。
-    稼働中のCodexによる延期は`deferred`で返し、自動更新タイマーが延期記録から再試行する。
+    稼働中のCodexによる延期は`deferred`で返し、終了後の手動再実行を案内する。
     """
     changed, deferred = _restore(home_dir=home_dir, shm_root=shm_root)
     return post_apply_outcome.PostApplyOutcome(changed=changed, deferred=deferred)
@@ -55,7 +55,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> tuple[
                 "旧配置の復元・回収・管理リンク整理の対象: "
                 + ", ".join(f"{home_path} / {target_path}" for home_path, target_path in pending)
                 + "。"
-                + deferred_updates.retry_guidance("Codexを終了して`update-dotfiles`を再実行する"),
+                + "Codexを終了して`update-dotfiles`を再実行する",
             ),
         )
         return False, True
@@ -131,8 +131,7 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> tuple[
                 log_format.format_status(
                     "codex-logs",
                     "コピー中にCodexの起動を検知したため通常ストレージへの置換を延期: "
-                    f"{codex_processes.format_running_processes(running)}。"
-                    + deferred_updates.retry_guidance("Codexを終了して`update-dotfiles`を再実行する"),
+                    f"{codex_processes.format_running_processes(running)}。" + "Codexを終了して`update-dotfiles`を再実行する",
                 ),
             )
             return changed, True

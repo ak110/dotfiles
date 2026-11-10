@@ -1,0 +1,63 @@
+# 初動と直接的原因の確認：問題を見つけたときの対処
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
+| 本文の条件に従い「QとC・Dの区別」「前提の再検討」を判断する前 | `root-cause-severity-quality.md`、`root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文の条件に従い「処置の階層」を判断する前 | `root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
+| 本文の条件に従い「類似見直し」を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 本文の条件に従い「再発防止策の必須性」「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention-requirements.md`、`root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 本文の条件に従い「反復した指摘の原因判定」を判断する前 | `root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
+| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/quality-principles-source-consistency.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-source-consistency.md` |
+| 文書・規範・出力メッセージを変える対策を提案する前 | `../../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+
+## 問題を見つけたときの対処
+
+対処の候補は、品質原則である「許容性」「必要性」「実装品質」の観点から選定し、構造の比較検討は`agent-basics:writing-standards`の`references/design-heuristics.md`に従って行う。
+終了コードが0であっても警告が出ている場合は内容を確認し、未適用や未完了の項目があれば対処する。
+関係がないと判断した場合はその根拠を残す。
+要求された結果自体を変更する修正や、事前の認可が必要な操作は、合意を得てから着手する。
+認可された範囲内にある内部実装の是正は、そのまま完遂する。
+受け取った通知が担当外の対象を指していたり、実行できない処置や実在しない前提を示していたりする場合は、通知内容への対応と通知の仕組み自体の不備を切り分け、仕組み側の欠陥原因と修正方針も記録する。
+文書、規範、出力メッセージなどを変更する対策を提案する前には`agent-basics:writing-standards`を起動し、それらを受け取る側が実際に観測できる条件を踏まえて評価する。
+
+## 初動と拡張原因分析の判定
+
+1. 調査対象を守るため、ユーザーが「問題として扱わない」と明示した事象はその意向の範囲を維持する。
+   認証情報などの所在の扱いは現在の認可・報告方針に従い、過剰な反応の是正要求にも従う。
+2. 処置の前提を揃えるため、事象、実際の結果、発生条件、本来の期待契約を明確にし、`root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」の手順1〜5で直接的原因を特定する。
+   複雑なシステム、未知のコード、抽象化境界をまたぐ調査は、`../../writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」の構造把握を使う。
+   全体の概略から関係経路へ絞り、公開操作、責務・依存、データと制御、状態の変更主体、外部境界を観測点と結び、再開に必要な関係と理由を既存記録へ残す。
+   軽微な文言変更には全体調査を追加しない。
+3. 必要な分析の深さを選ぶため、当時の判断を記した計画書・設計書、指示、契約、判断を取り込んだ履歴から拡張原因分析の要否を判定する。
+   材料の充足を判断できなければ実施する。
+   計画・設計時に必要な材料が揃い、適切な判断で回避できた事象は、機能的実害の有無によらず対象とする。
+   push後のCI失敗が現在のセッションに起因するか起因未特定なら、自明な単純ミスも含める。
+   条件に直接該当しなくても、根本原因の特定に履歴・記録の調査や2系統の分析が必要なら同じ手順を踏む。
+   実施は`causal-analysis.md`に従う。
+4. 根本原因を裏付けるため、再発の有無によらず`root-cause-severity-quality.md`「前提の再検討」を適用し、反復時は`root-cause-scenarios-recurrence.md`「反復した指摘の原因判定」で関連規範自体も分析する。
+   具体的な処置案の前に、作り込み要因、見逃し要因、根本原因と類似見直しの母集団を確定する。
+   深度・重大度によらず`analysis-records.md`に従い、必要な確認後に分析を確定する。
+   各段と類似見直し観点の該当なしは`causal-analysis.md`「原因分析の段階」に従い、上位原因を推測で補わない。
+   L3で処置を決めてもL4の確認・記録を続け、確認不能の事情があれば必要な確認と続行できない理由を未完了事項とする。
+5. 影響に応じて処置するため、`root-cause-severity-impact.md`「QとC・Dの区別」で分類し、消費側への影響から重大度を判断する。
+   深度、調査打切り基準、再発防止策の要否の根拠を記録する。
+   実装・対策選定工程で特定した根本原因から母集団、処置の階層、再発防止策を導き、確定した直接的原因から対策を選び、`root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」の手順6〜8で適用・検証・記録する。
+   `root-cause-remediation.md`「類似見直し」、`root-cause-actions-hierarchy.md`「処置の階層」、`root-cause-prevention-requirements.md`、`root-cause-prevention-verification.md`に従い、拡張分析の要否は探索・分析の深さへ、重大度は類似見直しの範囲と予防策の要否へ反映する。
+   原因や工程の重複・反復は実在する具体箇所を特定して判断する。
+6. 引継ぎ後の判断を保つため、実装・対策選定を引き継ぐ前にも本節を完了する。
+   独立別件は観測事実、支持根拠のある原因仮説、残る問いを区別し、別件の原因確定・対策選定時点を投入工程の契約で定める。
+   支持根拠のある上位要因の仮説は、仮説であること、不確実性、因果の見込み、確認結果を改善の採否・実施結果と対応付けて記録する。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 初動と直接的原因の確認：直接的原因と事象時点の確定の基準を適用する前 | `root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |

@@ -1,17 +1,18 @@
 # 類似見直しの範囲と探索
 
-類似見直しを担当するエージェントが、根本原因から母集団と観点を導き、是正対象と予防対象を調べる。調査の深度と限界は確定した重大度に合わせる。
+類似見直しを担当するエージェントが、根本原因から母集団と観点を導き、是正対象と予防対象を調べる。
+調査の深度と限界は確定した重大度に合わせる。
 
 ## 名指し参照の読込方法
 
-名指し参照は`../SKILL.md`「名指し参照の読込方法」に従う。
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/agent-documents-basics.md#「置き場所と配送」` | 判断 | `section:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md#「置き場所と配送」` |
-| 本文の条件に従い「QとC・Dの区別」「原因分析の品質確認」を判断する前 | `root-cause-severity.md`の「QとC・Dの区別」「原因分析の品質確認」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-severity.md#「QとC・Dの区別」「原因分析の品質確認」` |
-| 本文の条件に従い「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention.md`の「類似見直しと再発防止の完了」 | 判断 | `section:agent-basics:*/skills/bugfix/references/root-cause-prevention.md#「類似見直しと再発防止の完了」` |
-| 本文の条件に従い参照先の基準を使う前 | `causal-analysis.md`の「原因分析の段階」 | 判断 | `section:agent-basics:*/skills/bugfix/references/causal-analysis.md#「原因分析の段階」` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+| 本文の条件に従い「QとC・Dの区別」「原因分析の品質確認」を判断する前 | `root-cause-severity-quality.md`、`root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 本文の条件に従い「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 本文の条件に従い参照先の基準を使う前 | `agent-basics:bugfix/references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
 
 ## 類似見直し
 
@@ -21,6 +22,13 @@
 作り込み・見逃しの各系統で観点の候補を1件以上作り、各観点に原因条件から導く対象と探す問題を示して、採否と理由を記録する。
 確定、仮説、未確認、該当なしは区別し、該当なしの基準は`causal-analysis.md`「原因分析の段階」に従う。
 仮説は支持する事実、不確実性、因果の見込み、実施結果を対応付ける。
+真偽によって採る対策が変わる仮説を検証しないまま分析を終える場合は、次のどちらかを選ぶ。
+採否を左右しない仮説は記録だけで終えてよい。
+これは、その場で調査できない事象を後続の作業項目へ先送りする扱いの適用であり、未検証であることを対策を立てない理由にしない。
+
+- その場の費用で検証できるなら検証し、結果を記録する
+- 検証用の後続の作業項目を登録する。
+  本文には仮説、支持する事実、検証方法、支持・反証・判定不能ごとの処置を書き、待機の要否と期限・依存は利用側の作業項目の手順に従う
 
 1. 根本原因から、破られた不変条件または誤った判断規則を1文で定め、母集団と該当・保留・非該当の判定基準を選ぶ。
    標準の母集団は対象リポジトリのGit管理下のファイル、直近7日間の作業項目、直近7日間のセッションログとし、根本原因が他の範囲に及ぶ場合だけ追加する。
@@ -51,7 +59,7 @@
 結果は、同じ誤りの仕組みを現に持つ「是正対象」と、将来の追加・変更で混入しうる「予防対象」に分ける。
 規範・実装・テストの組合せによる矛盾も、原因条件に沿って判定する。
 後続の実装・検収担当が使う母集団、修正・予防の対象、完了の結論と証拠の参照先を本文へ記し、検索各段・分類・除外根拠は既存の分析記録へ残す。
-完了は`root-cause-prevention.md`「類似見直しと再発防止の完了」に従う。
+完了は`root-cause-prevention-verification.md`「類似見直しと再発防止の完了」に従う。
 担当範囲・認可の外の対象は事象、原因、修正対象、修正方針を依頼元へ返す。
 独立した別件は具体化して後続作業へ渡し、引き継ぎ先と処置状況を元の記録へ残す。
 元の事象への寄与が未確認の潜在欠陥は、寄与を確認できた場合か同時対応の明示合意がある場合に同じ変更計画へ含める。

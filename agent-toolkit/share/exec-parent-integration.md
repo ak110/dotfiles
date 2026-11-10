@@ -1,0 +1,142 @@
+# レーン担当の起動と受領：統合の許可
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
+| --- | --- | --- | --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` | |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` | |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` | |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+
+## 統合の許可
+
+**6.** 統合を直列化し、依存条件を満たすレーンだけに許可を出す。
+
+初期選定において複数のレーンが存在する場合、主作業ツリーへの統合を同時に進められるレーンは常に1つに制限する。
+レーン担当者から`統合準備完了`が返されたら、次の4点を確認したうえで、同一threadへ`send_message`の`instruction`を用いて`統合許可`を送信する。
+
+1. 先に`統合許可`または`統合開始`を送信したレーンの返却（`統合完了`または`続行できない理由:`の行）をすでに受け取っていること。
+2. 選定結果における`段階`および`先行レーン`の依存条件を満たしていること。
+3. 統合先への追随と競合解消で各レーンの要求を維持でき、今回の統合が直列化されていること。
+4. `UWI保存状況`の対象について、`exec-parent-implementation.md`「レーン担当が確定した質問への回答」の回答UWIと`single-lane-execution.md`手順4の事後承認UWIを保存し、ファイル名を同じレーン担当へ返していること。
+   未保存なら、各節の条件と手順でレビュー済みの最新原稿を保存し、ファイル名を返してから許可する。
+複数のレーンから同時に`統合準備完了`が返された場合は、依存関係の順序を守りつつ、報告を受け取った順に許可を出す。
+
+許可後の`統合完了`は「統合の指示と受領」の受領条件と意味確認で検収する。
+統合前検収と入力確定はレーンが単一担当の実行契約で完了しており、メインはその結果を再利用し、重複実施を省く。
+
+## 統合の指示と受領
+
+**7.** 統合入力を検収して指示し、返却と最終化の実態・意味を確認する。
+
+検証結果の診断情報、警告、ならびに個別・全体の所要時間は、`agent-basics:check-execution/references/diagnostics-results.md`「読む出力」の共通基準に沿って受領する。
+統合前HEADとの比較および統合固有の是正処理は、`lane-integration-subagent-operation.md`「検証結果の警告の判定」に従う。
+
+すべての計画における実装の有無を確認し、採用すべき実装が1件でもあるレーンを`マージあり`、実装がないレーンを`マージなし`として確定する（計画ごとの`マージなし`の状態は計画に対応付けて保持する）。
+レーン担当者に統合処理を委ねる場合は、同一threadに対して`send_message`で指示を送り、`start`は呼び出さず、`引き継ぎ記録先`の指定を省略して起動時の設定を引き継ぐ。
+同一threadを継続できない場合の新規起動は`## 入力`の規定に従う。
+レーン担当者が統合を実行する手順は`lane-integration.subagent.md`が規定し（所在参照）、メインエージェント自身がCLIで実行する場合も後述の検収条件を適用する。
+
+統合入力HEADには、レビューが収束したラウンドの`レビューHEAD`を指定する。
+収束後に再レビューを省略した修正が含まれる場合は、`exec-review-parent-correction.md`「レビュー修正」で保持された修正後のHEADとする。
+`マージあり`の場合は、統合指示を出す前に以下の条件を確認する。
+
+1. 計画ごとに受理した最終実行レビューの返却ファイル（`atk agents wait`の`agent_message_path`）および`レビューHEAD`を保持していること。
+   AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
+   新形式のエージェント由来AWIを含む計画は同じ`review_contract`の絶対パスも保持し、条件表の各条件に判定行が対応することを確かめる。
+   欠落時はレビュー起動元へ差し戻す。
+   各返却の完成条件証拠を計画名とAWI集合へ対応付け、採用予定のAWI全体が重複や漏れなく網羅されていることを確かめる。
+2. すべての計画の実行レビューが`exec-review-parent-launch.md`「起動方法別のレビュー基準」に定める統合開始条件を満たしており、各レビュー指摘管理表における未解決指摘が0件であること。
+3. 画面差分が存在する場合は並行する画面レビューが収束しており、ユーザビリティレビューの判定が`合格`または`未確定`であること。
+   記録がない場合は`reviewer.md`の指摘の種類5（完了条件を満たしていない）として保留する。
+4. 統合入力HEADが対象worktreeの現在HEADと一致していること。
+   実行レビューの`レビューHEAD`とユーザビリティレビューの`レビューしたHEAD`が統合入力HEADと一致していること。
+   再レビューを省略した修正がある場合は、レビュー指摘管理表に記録された修正前の短縮OIDと一致していること。
+   影響を受けない計画として引き継ぎ記録に記録された計画では、`レビューHEAD`として記録された`R`および記録された`H`が統合入力HEADと一致していること。
+5. 読込表に定める「統合時の完成条件判定」において、対象となるすべての行が受理条件を満たしていること（各`達成`行に確認場所と観測内容の組み合わせが明記されていることを含む）。
+
+先行レーンの統合によってベースbranchが進んだ場合でも、指示内容は変更しない。
+rebaseおよび変更前後の内容一致確認はレーン担当者が担当する。
+
+主worktreeへ統合するレーンは1実行を通じ同時に1つとする。
+メインは先に`統合開始`・`統合許可`したレーンの返却（`統合完了`・`続行できない理由:`）を本文で受領後、次へ指示する。
+HEADの前進だけでは判定しない。
+fast-forward後も計画保存・採否確定が続くため、先行すると古いベースで再rebase・再検証が生じ、先行レーンの規範改訂も判断へ適用できない。
+再送・是正レーンも同じ前提を守る。
+
+同一threadへ以下の項目を送信する。
+実装を伴わないレーンに対しても同様に送信し、計画の最終化とAWIの採否確定を実行させる。
+
+- `統合開始`
+- `統合区分`: `マージあり`または`マージなし`
+- `レーン開始時刻`: メインエージェントが最初のレーン担当者を起動した直後に記録した時差情報付きの時刻。
+  担当sessionが置き換えられた後も初期起動時の値を保持する
+- `実行レビュー済みHEAD`: 統合入力HEADを示す7文字以上の一意な短縮OID。
+  `マージなし`の場合は`なし`とする
+- `統合先worktree`: 主作業ツリーの絶対パス
+- `統合先branch`: ベースbranch名
+- `計画ファイル名一覧`: 引き継ぎ記録に累積されたすべての計画ファイル名を格納した順序付きJSON配列。
+  計画がないレーンは`[]`とする
+- `AWI終了区分`: AWIごとに確定した採否および終了区分。
+  `completed`の上流要求を持つ`混在`項目（扱いは`skills/process-wi/references/run-lanes.md`「上流投入」）や、観測のみの再開において完成条件を観測できなかったか満たせなかった項目は`終了しない`とする。
+  後者の確認・保留、または`processing`での再開の判断は`run-lanes.md`「採否の確定と終了区分」に従う。
+  結果は`skills/process-wi/references/finish-session.md`「延期adoptと反映後の観測」に沿って状態へ反映し、満たせなかった項目はメインエージェントがセッション終了工程で`inbox`へ戻す
+- `プロジェクト固有の公開後の操作の順序`: 指定が存在するAWIごとの対象と実施時機。
+  指定がない場合は送信しない
+- `完成条件証拠`: `マージあり`の場合に渡す順序付きJSON配列。
+  各項目は計画ファイル名（計画なしは`なし`）、対応するAWIファイル名の配列、受理した最終実行レビューの返却ファイルの絶対パス、その返却における`レビューHEAD`、および`review_contract`の絶対パスを含む。
+  新形式のエージェント由来AWIがなければ契約は`なし`も可。
+  返却本文を再構成せずにファイルのパスを渡し、統合入力HEADとの整合性は前述の検収によって保持する
+- `書込担当一覧`: 初回から更新された最新のJSON配列。
+  現在のレーン担当者および統合先メインエージェントの実sessionを含める
+
+返却フォーマットは`exec.parent.md`「統合の返却契約」が規定する。
+返却本文（`atk agents wait`が保存した`agent_message_path`のファイル、または会話内容が分かる場合はセッションのmanaged-temp配下の`agents-wait/<session_id>.md`）を別ファイルへ転記せずに直接読み込む。
+統合指示で渡したパラメーターと以下の観測結果を比較し、受領条件を満たしているか確認する。
+
+1. 返却が`統合完了`で始まり、規定の各行を含んでおり、JSON配列の行に重複がないこと。
+2. `統合後のHEAD`が、統合先worktreeで`git rev-parse <統合先branch>`を実行した完全OIDの先頭と一致していること。
+3. 資源の`record_path`における所有登録情報で、`jq -r '.integration.phase' <record_path>`が`finalized`を返すこと。
+4. `保存した計画ファイル`が統合指示の`計画ファイル名一覧`と順序を含めて一致しており、各計画が`atk plans list`の出力に残っておらず、`atk config get private_notes`が返すrootの`plans/`配下に正しく保存されていること。
+5. `adoptしたWI`と`rejectしたWI`の各項目を統合先worktree上で`atk wi show <ファイル名> --target-repo=<統合先worktree> --skip-pull`で取得し、状態が`adopted`または`rejected`で`AWI終了区分`の採否と一致すること。
+   `終了しない`や延期の項目は状態が未変更であること。
+6. `adoptを延期したAWIとcommit`の各commitを統合先worktree上で`git rev-parse --verify <commit>^{commit}`で解決できること。
+   かつ`git merge-base --is-ancestor <commit> <統合先branch>`が正常終了（コード0）すること。
+7. `変更したエージェント向け文書`が、統合先worktreeで`atk run-script agent-doc-changes -- <統合前HEAD> <統合後のHEAD>`を単独実行した結果と一致していること。
+   同一レーンにおける追加統合の場合は、前回受理した返却値との和集合と比較する。
+
+受領条件を満たしたことを確認した後、以下の意味確認を実施する。
+
+1. `adoptしたWI`の実装commitを、`atk run-script plan-commits -- <計画の絶対パス> --worktree <統合先worktree>`で取得する（計画がない場合は`--handoff`と`--allowed-awi`を指定して引き継ぎ記録から取得する）。
+   実装commitを持たない項目については、実装差分が存在しないことを充足の根拠から判断する。
+2. `変更したエージェント向け文書`のうち、メインエージェントがすでに読み込んだ文書および残りの工程で読み込む文書のみを統合先worktreeから再度読み直し、後続のレーン判断や公開工程の前に適用する。
+3. 変更対象の集合に`<役割名>.parent.md`またはその`起動対象:`である`<役割名>.subagent.md`が含まれる場合、両者を同一のplugin rootから原子的に採用する。
+   統合済みworktree側の`<役割名>.parent.md`のrootにすべての起動対象が実際に存在し、委譲起動契約の確認に合格する場合に限り、後続の委譲処理において両者をそのrootから解決する。
+   一方の欠落や契約不成立がある場合は、起動開始時のplugin rootに存在する両ファイルを引き続き使用し、異なるrootの版を混在させない。
+4. 統合中に最後の独立文脈レビューの後で追加された変更（rebase後の検証失敗の是正など）がある場合は、追加変更、比較元のHEAD、追加変更後のHEADで行った直接影響範囲の検証を照らし合わせる。
+   追加変更より前のHEADの成功は追加変更の検証に充てない。
+   再レビューを省略した追加変更では、変更した定義・文言・構成の変更前の値から消費側を自分でたどり、提出された検証範囲と比べる。
+   最後の独立文脈レビューの後に契約の変更が無い場合はこの比較を繰り返さず、同じ版・同じ条件の成功は再利用する。
+
+受領条件または意味確認が不成立となった場合は、同一threadへ観測値を返して是正を求める。
+保存処理の途中で失敗した場合は、引き継ぎ記録に記録された保存済み・未保存の区分を手がかりに再開する。
+選定原本の統合状態は`atk lane integrate`が全計画の保存とWIの採否確定後に更新するため、メインエージェントが別の操作で同一状態を二重に保存しない。
+メインエージェント自身がCLIを実行する場合は、公開ヘルプに記載されたマニフェスト形式に従って受理済みの全計画、WI、独立文脈レビュー、採否を渡し、`phase: finalized`を確認する。
+Git統合後の処理で失敗した場合は、所有登録が保持する最終化工程から再開し、未完了argvの補完には`--amend-finalization`を使用する。
+資源は同一threadへの追加作業に備えて保持し、不要になった資源の回収は、すべての工程および外部プロセスの終了後に資源回収の手順である`atk lane delete`、ならびにprocess-loopの子プロセス終了後に行われる同等の回収処理に委ねる。
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
+| レーン担当の起動と受領：実装完了の受領の基準を適用する前 | `exec-parent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-implementation.md` |
+| レーン担当の起動と受領の基準を適用する前 | `exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |

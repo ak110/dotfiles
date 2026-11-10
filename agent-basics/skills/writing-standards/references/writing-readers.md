@@ -1,0 +1,42 @@
+# ドキュメント品質：読み手別の追加注意点
+
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| エージェント向け文書の条件、禁止、理由を整理する時 | `agent-documents-basics-content.md`、`agent-documents-basics-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-content.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-tone.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
+| 新しい概念名や内部識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` |
+| 会話の要約から文章の要求・事実・認可を復元する前 | `investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+
+## 読み手別の追加注意点
+
+- エンドユーザー向け文章: 内部実装に関する知識を持たない読者（一般ユーザーを含む）を想定し、専門用語を用いる場合は初出時にわかりやすい補足を加える。
+  ドキュメントは「何ができるか」「どのように使うか」を中心に記述し、対話型UIでは操作方法、現在の状態、エラー時の対処方法を端的に伝える
+  - 利用ガイドなど人間向けのドキュメントは、読者が通読できる分量に保つ。
+    `writing-common.md`「文章の共通規定」の「情報を追加する前の判断」を読者の主要な判断と操作へ当てはめ、主要操作の前提、コマンド例、結果と、料金・データの上書きなど判断を左右する注意を優先して残す。
+    内部の判定条件、状態遷移、全項目の定義、移行規則のように通常の操作で使わない詳細は、開発者向け資料へ移して必要時に選べる参照を置く。
+    エージェントだけが必要とする作業指示や内部契約はエージェント向け文書へ置き、人間向けのドキュメントからは除く。
+    詳細を別ページへ分けた場合も、通常の操作で読む範囲の分量を抑える
+  - 行動を促す指示文は、常体では「〜を参照」、敬体では「〜を参照してください」の形式を用いる（努力目標）
+- 開発者向け文章: 前提知識を共有している開発者を想定し、初歩的な解説やコードの識別子レベルの細かな説明は省略し、「なぜそのような設計にしたのか」「実装上の注意点はどこか」を中心に記述する
+- エージェント向け文書: 形式的な前置き、自己紹介、書き手の主観的な解説を省き、エージェントが判断を下すために必要な情報だけを直接記述する
+  - 要求事項は、主体・対象・動作と拘束力が分かる直接の指示を先に書く。
+    条件、禁止、理由の整理は`agent-documents-basics-content.md`、`agent-documents-basics-tone.md`に従う
+  - 箇条書きにおける体言止めの列挙を許容する
+  - 一般知識は、守る価値、判断の観点、想起の手掛かりとなる代表語で示す。
+    具体的に記述するのは、学習データから推測できない事実と硬い制約（`quality-principles-constraints.md`「規定の区分と標示」）とする。
+    固有のパス・コマンド・規約、観測した環境固有の注意点、知識カットオフ後の仕様変更などが該当する
+  - 記述の分量は、「手掛かりが不足してエージェントが考慮すべき観点を想起できないリスク」と、「手段や具体例を細かく書きすぎてエージェントの思考がその例だけに固定化されるリスク」を比較検討して決定する。
+    文字数や例示の件数だけで一律に決定しない
+  - 手順には、目的、守る価値、硬い制約、固有の事実、目的や価値を示しても過去に判断を誤った箇所を記す。
+    常識や文脈から判断できる進め方は読み手に委ねる。
+    細かな手順の追加は、判断の自由度と読み込み費用への影響も比べて決める
+
+## 本文参照の取得条件
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| ドキュメント品質：文章の共通規定の基準を適用する前 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |

@@ -23,6 +23,7 @@ import psutil
 import pytest
 
 from agent_toolkit._common import plugin_environment, process_tree
+from agent_toolkit._testing import late_descendant
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
 
@@ -50,6 +51,21 @@ def _launcher(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
+def test_launcher_help_does_not_import_server_logging(host_environ: Callable[[], dict[str, str]]) -> None:
+    """依存導入前の公開launcherは、通常のhelpでサーバー専用の診断依存を読み込まない。"""
+    result = subprocess.run(
+        [sys.executable, "-X", "importtime", str(_PROJECT_ROOT / "scripts" / "launch.py"), "--help"],
+        env=host_environ(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "agent_toolkit._agents_server.logging_config" not in result.stderr
+
+
 @pytest.mark.parametrize("stage", ["signal", "reader", "wait", "stop"])
 def test_agents_server_launcher_reclaims_resources_on_failure(
     stage: str,
@@ -65,6 +81,7 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
     request.addfinalizer(rescue.close)
     processes: list[subprocess.Popen] = []
     readers: list[threading.Thread] = []
+    release = tmp_path / "bootstrap.release"
     original_start = threading.Thread.start
     original_signal = launcher.signal.signal
     original_stop = launcher._stop_server_process
@@ -81,6 +98,11 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
             assert self.stderr is not None
             rescue.callback(self.stderr.close)
             rescue.callback(process_tree.stop_process_tree, self)
+            if stage != "stop":
+                deadline = time.monotonic() + 30
+                while not release.with_suffix(".ready").exists():
+                    assert self.poll() is None and time.monotonic() < deadline
+                    time.sleep(0.01)
 
         def wait(self, timeout: float | None = None) -> int:
             if stage == "wait" and timeout == 0.1:
@@ -108,7 +130,7 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
     monkeypatch.setattr(launcher.signal, "signal", set_signal)
     monkeypatch.setattr(launcher, "_stop_server_process", stop)
     monkeypatch.setattr(launcher.tempfile, "tempdir", str(tmp_path))
-    command = [sys.executable, "-c", "import time; time.sleep(120)"]
+    command = [sys.executable, "-c", late_descendant.held_source(release)]
     if stage == "stop":
         command = [sys.executable, "-c", "pass"]
     with pytest.raises(RuntimeError, match=stage):
@@ -129,7 +151,8 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
     marker = tmp_path / "ready"
     source = (
         "import os,pathlib,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(120)"
+        f"pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); "
+        + late_descendant.held_source(tmp_path / "stubborn.release")
     )
     if orphaned:
         source = f"import subprocess,sys; subprocess.Popen([sys.executable, '-c', {source!r}])"
@@ -140,7 +163,8 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
         with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
             acquired.append(process)
             deadline = time.monotonic() + 5
-            while not marker.exists():
+            # `write_text`はファイルの作成と書込が分かれるため、作成直後の空の印を読まないよう内容まで待つ。
+            while not (marker.exists() and marker.read_text(encoding="utf-8")):
                 assert time.monotonic() < deadline, "子のsignal設定が完了しませんでした"
                 time.sleep(0.01)
             child = psutil.Process(int(marker.read_text(encoding="utf-8")))
@@ -175,7 +199,7 @@ def test_launcher_signal_reaches_bounded_reclaim(
         "if len(sys.argv) > 1:\n"
         "    signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
         f"    pathlib.Path({str(ready)!r}).write_text(str(os.getpid()))\n"
-        "    time.sleep(60)\n"
+        f"    exec({late_descendant.held_source(tmp_path / 'signal.release')!r})\n"
         "else:\n"
         f"    spec = importlib.util.spec_from_file_location('probe_launch', {str(_PROJECT_ROOT / 'scripts/launch.py')!r})\n"
         "    module = importlib.util.module_from_spec(spec)\n"
@@ -321,6 +345,55 @@ def test_launcher_restores_callers_project_environment_for_children(
     assert {path.relative_to(other): path.read_bytes() for path in other.rglob("*") if path.is_file()} == before
 
 
+@pytest.mark.parametrize("option", ["--prepare", "--prepare-if-missing"])
+@pytest.mark.parametrize("failure", ["exit", "exception"])
+def test_prepare_failure_reports_recovery_once_without_publication(
+    launcher: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+    failure: str,
+) -> None:
+    """公開prepareの通常失敗と例外は診断・終了値を保ち、復旧操作を1回だけ示す。"""
+    root = tmp_path / "plugin"
+    root.mkdir()
+    target = root / "target.py"
+    target.write_text("", encoding="utf-8")
+    (root / "pyproject.toml").write_text('[project]\nname="probe"\ndependencies=[]\n', encoding="utf-8")
+    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(tmp_path / "runtime"))
+    monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(root), option, str(target)])
+    monkeypatch.setattr(launcher.shutil, "which", lambda *_args, **_kwargs: "uv")
+
+    class FailedProcess:
+        def wait(self, timeout: float) -> int:
+            assert timeout > 0
+            if failure == "exception":
+                raise OSError("同期の例外診断")
+            print("同期コマンドの診断", file=sys.stderr)
+            return 23
+
+    @contextlib.contextmanager
+    def lifetime(_arguments: list[str], **_kwargs: Any) -> Generator[FailedProcess]:
+        yield FailedProcess()
+
+    def unexpected_launch(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("失敗した準備の後に対象を起動した")
+
+    monkeypatch.setattr(launcher, "_server_lifetime", lifetime)
+    monkeypatch.setattr(launcher.os, "execve", unexpected_launch)
+    assert launcher.main() == (23 if failure == "exit" else 1)
+    output = capsys.readouterr()
+    assert not output.out
+    assert ("同期コマンドの診断" if failure == "exit" else "同期の例外診断") in output.err
+    assert ("依存同期が失敗" if failure == "exit" else "共有依存環境を準備できません") in output.err
+    assert output.err.count("次の操作:") == 1
+    assert output.err.count("公開インストーラーを再実行") == 1
+    assert "共有依存環境が未準備" not in output.err
+    assert plugin_environment.prepared_python(root, dict(os.environ)) is None
+
+
 def test_prepare_syncs_dependencies_only_and_publishes_after_success(
     launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
@@ -379,7 +452,7 @@ def test_prepare_timeout_reclaims_its_descendants(
     probe = tmp_path / "sync_probe.py"
     probe.write_text(
         "import pathlib, subprocess, sys\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'prepare.release')!r}])\n"
         "ready = pathlib.Path(sys.argv[1])\n"
         "temporary = ready.with_suffix('.tmp')\n"
         "temporary.write_text(str(child.pid))\n"

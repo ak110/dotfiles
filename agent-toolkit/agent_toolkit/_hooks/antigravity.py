@@ -12,8 +12,10 @@ import dataclasses
 import importlib
 import io
 import json
+import os
 import pathlib
 import re
+import shlex
 from typing import Any
 
 from agent_toolkit._common import agy_records, message_format, next_action, session_activity, session_state
@@ -195,9 +197,15 @@ def _latest_steps(path: object) -> tuple[dict[str, Any] | None, str]:
                 elif kind == "PLANNER_RESPONSE" and isinstance(step.get("content"), str):
                     last_response = step["content"]
     except OSError as error:
+        shown_path = str(record.absolute())
+        read_command = (
+            "Get-Content -LiteralPath '" + shown_path.replace("'", "''") + "' -Encoding utf8"
+            if os.name == "nt"
+            else "cat -- " + shlex.quote(shown_path)
+        )
         next_action.report(
-            f"Antigravityの原本を読めない: {error}",
-            next_action="transcriptPathが指す原本の所在と読取権限を確認する。復旧後のPreInvocationまたはStopで再読する。",
+            f"Antigravityの原本を読めない: {error}。復旧後のPreInvocationまたはStopでhookが再読する。",
+            next_action=f"`{read_command}`で所在と読取権限を確認せよ。取得できなければ、この診断を委譲元またはユーザーへ報告せよ。",
         )
     return latest_user, last_response
 
@@ -329,7 +337,8 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
         session_state.sweep_stale_states(keep_session_id=session_id)
         response = _invoke("rules_context", normalized)
         identity = message_format.auto_message(
-            f"この会話のAntigravityセッションID: {session_id}\nこの会話のtranscript: {normalized['transcript_path']}",
+            "この会話の原文が必要な場合は`atk run-script session-review-evidence -- --transcript "
+            f"{shlex.quote(str(normalized['transcript_path']))} --user-events`で取得せよ。",
             source="antigravity",
             kind="notice",
         )

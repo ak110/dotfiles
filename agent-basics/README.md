@@ -47,7 +47,8 @@ uvはtoolkitも導入する場合の前提である。
 
 ## 適用範囲
 
-このプラグインが配るのはスキルと参照資料である。常時フック、MCP、ホームへの運用規範の配送は含まない。
+このプラグインが配るのはスキルと参照資料である。
+常時フック、MCP、ホームへの運用規範の配送は含まない。
 認可・WI・委譲・セッション管理・完了報告には、利用するプロジェクトの手順を適用する。
 agent-toolkitはこれらの運用を提供し、品質判断でagent-basicsを参照する。
 併用時の導入と最初の操作は[agent-toolkitのREADME](https://github.com/ak110/dotfiles/tree/master/agent-toolkit)を参照。

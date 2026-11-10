@@ -33,7 +33,7 @@ class _Env:
 def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
     """疑似リポジトリ構造をtmp_path配下に用意し、モジュール定数を差し替えて返す。"""
     module = gen_install_files
-    rules_dir = tmp_path / "agent-toolkit" / "rules"
+    rules_dir = tmp_path / "agent-toolkit" / "share" / "rules" / "common"
     install_sh = tmp_path / "install-claude.sh"
     install_ps1 = tmp_path / "install-claude.ps1"
     rules_dir.mkdir(parents=True)

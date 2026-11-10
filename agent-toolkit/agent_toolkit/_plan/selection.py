@@ -61,6 +61,36 @@ def integrated_lanes(selection: object) -> set[str]:
     }
 
 
+def pending_lanes(selection: dict[str, object]) -> list[dict[str, object]]:
+    """選定全体の所属と状態の整合性を検査し、公開前に判断する未統合集合を返す。"""
+    items = typing.cast(list[dict[str, object]], decisions(selection))
+    costs = typing.cast(list[dict[str, object]], lane_costs(selection))
+    names = [str(item[WI_KEY]) for item in items]
+    lanes = [str(row[LANE_KEY]) for row in costs]
+    assigned = {str(item[LANE_KEY]) for item in items} - {"なし"}
+    if len(names) != len(set(names)) or len(lanes) != len(set(lanes)) or assigned != set(lanes):
+        raise ValueError("選定のWI・レーンが重複しているか、レーンの所要時間との対応が一致しない")
+    pending = []
+    for row in costs:
+        members = [item for item in items if item[LANE_KEY] == row[LANE_KEY]]
+        if any(
+            prior not in assigned or prior == row[LANE_KEY] for prior in typing.cast(list[str], row.get(PRIOR_LANES_KEY, []))
+        ):
+            raise ValueError(f"{row[LANE_KEY]}: 先行レーンが存在しないか自身を指している")
+        if row.get(INTEGRATION_STATE_KEY, NOT_INTEGRATED) != INTEGRATED or any(
+            item.get(INTEGRATION_STATE_KEY) == NOT_INTEGRATED for item in members
+        ):
+            pending.append(
+                {
+                    LANE_KEY: row[LANE_KEY],
+                    STAGE_KEY: row.get(STAGE_KEY, 1),
+                    WI_KEY: [item[WI_KEY] for item in members],
+                    PRIOR_LANES_KEY: row.get(PRIOR_LANES_KEY, []),
+                }
+            )
+    return pending
+
+
 _LEGACY_DECISIONS_KEY = "decisions"
 
 # 旧欄名から新しい欄名への対応。項目の欄だけを対象とし、値は変えない。

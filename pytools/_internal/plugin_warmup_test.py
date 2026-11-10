@@ -14,6 +14,7 @@ import sys
 
 import psutil
 import pytest
+from agent_toolkit._testing import late_descendant
 
 from pytools._internal import common as _common
 from pytools._internal import plugin_warmup as _plugin_warmup
@@ -232,9 +233,9 @@ def test_async_command_timeout_or_cancellation_reclaims_child_tree(tmp_path, mon
     script = tmp_path / "parent.py"
     script.write_text(
         "import pathlib, subprocess, sys, time\n"
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        f"child = subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'nested.release')!r}])\n"
         f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid))\n"
-        "time.sleep(60)\n",
+        "child.wait(timeout=120)\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(_plugin_warmup, "_WARMUP_TIMEOUT", 1.0)
