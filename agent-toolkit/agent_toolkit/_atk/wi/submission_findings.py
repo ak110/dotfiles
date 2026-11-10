@@ -62,24 +62,35 @@ def _normalized(text: str) -> str:
 
 
 def review_findings(path: pathlib.Path) -> list[str]:
-    """投入前レビューの返却から`指摘:`の箇条（`なし`を除く）を返す。複数要求の返却は全ての`指摘:`欄を読む。"""
+    """各`指摘:`欄の最上位箇条の先頭本文だけを、記録のtextと比較するキーとして返す。"""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError) as error:
         raise ValueError(f"投入前レビューの返却を読めない: {path}: {error}") from error
     found: list[str] = []
     collecting = False
+    item_indent: int | None = None
     for line in lines:
         stripped = line.strip()
         if stripped == "指摘:":
             collecting = True
+            item_indent = None
             continue
         if not collecting:
             continue
+        if not stripped:
+            continue
+        indent = len(line) - len(line.lstrip())
         if stripped.startswith("- "):
+            if item_indent is None:
+                item_indent = indent
+            if indent > item_indent:
+                continue
             item = stripped[2:].strip()
             if item and item != "なし":
                 found.append(item)
+            continue
+        if item_indent is not None and indent > item_indent:
             continue
         collecting = False
     return found
