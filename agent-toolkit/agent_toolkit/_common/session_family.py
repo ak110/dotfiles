@@ -85,6 +85,7 @@ class _UnresolvedRecord(NamedTuple):
     line: int
     kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
     reason: str | None = None
+    failure_line: int | None = None
 
 
 def _text_blocks(content: Any) -> list[str]:
@@ -628,7 +629,10 @@ def _subagent_records(
         if records is None:
             unresolved.append(
                 _UnresolvedRecord(
-                    f"{source.record_id}/{path.stem}", 0, reason=loaded.failure.reason if loaded.failure else None
+                    f"{source.record_id}/{path.stem}",
+                    0,
+                    reason=loaded.failure.reason if loaded.failure else None,
+                    failure_line=loaded.failure.line if loaded.failure else None,
                 )
             )
             continue
@@ -748,7 +752,12 @@ def _collect_records(
                 records = loaded.records
                 if records is None:
                     unresolved.append(
-                        _UnresolvedRecord(session_id, record.line, reason=loaded.failure.reason if loaded.failure else None)
+                        _UnresolvedRecord(
+                            session_id,
+                            record.line,
+                            reason=loaded.failure.reason if loaded.failure else None,
+                            failure_line=loaded.failure.line if loaded.failure else None,
+                        )
                     )
                     continue
                 seen_paths.add(resolved)

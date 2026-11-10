@@ -10,6 +10,7 @@ import weakref
 from typing import Any
 
 import pytest
+import session_evidence_catalog as catalog
 import session_review_evidence as evidence
 
 from agent_toolkit._common import session_family
@@ -264,10 +265,10 @@ def test_observation_boundary_without_timezone_is_local_time(
 
     root = tmp_path / "project"
     write_jsonl(root / "later-session.jsonl", [timestamped_entry("2026-10-06T15:01:13Z", "境界後に始まるセッション")])
-    catalog = ["--catalog-claude-project", str(root), "--since", "2026-10-06T00:00:00Z", "--observation-boundary"]
-    assert evidence.main([*catalog, "2026-10-07T00:00:00"]) == 0
+    catalog_arguments = ["--catalog-claude-project", str(root), "--since", "2026-10-06T00:00:00Z", "--observation-boundary"]
+    assert evidence.main([*catalog_arguments, "2026-10-07T00:00:00"]) == 0
     naive_catalog = read_jsonl(capsys, raw=True)
-    assert evidence.main([*catalog, "2026-10-07T00:00:00+09:00"]) == 0
+    assert evidence.main([*catalog_arguments, "2026-10-07T00:00:00+09:00"]) == 0
     assert naive_catalog == read_jsonl(capsys, raw=True)
     assert [event["kind"] for event in naive_catalog] == ["catalog-summary"]
 
@@ -571,7 +572,7 @@ class _TrackedEntry(dict[str, Any]):
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
-@pytest.mark.parametrize("query", [[], ["--user-events"], ["--tool-calls"]])
+@pytest.mark.parametrize("query", [[], ["--user-events"], ["--tool-calls"], ["--grep", "selected"]])
 def test_catalog_releases_previous_family_before_next_load(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -723,7 +724,7 @@ def test_catalog_keeps_cross_period_parent_child_relations(
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
-@pytest.mark.parametrize("query", [[], ["--user-events"], ["--tool-calls"]])
+@pytest.mark.parametrize("query", [[], ["--user-events"], ["--tool-calls"], ["--grep", "parent"]])
 def test_catalog_unresolved_counts_keep_query_specific_scope(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -731,7 +732,7 @@ def test_catalog_unresolved_counts_keep_query_specific_scope(
     runtime: str,
     query: list[str],
 ) -> None:
-    """全期間の読込失敗と親ごとの参照を数え、tool-callsだけroot外の解決済み診断を除く。"""
+    """全期間の読込失敗を保持し、家族の照会ではroot外の解決済み診断を除く。"""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     base = tmp_path / "home/.claude/projects" if runtime == "claude" else tmp_path / "codex/sessions"
@@ -749,10 +750,11 @@ def test_catalog_unresolved_counts_keep_query_specific_scope(
     os.utime(broken, (0, 0))
     events = _period_catalog(root, runtime, query, capsys)
     assert events[-1]["parent_record_count"] == 2
-    assert events[-1]["unresolved_record_count"] == (1 if query == ["--tool-calls"] else 3)
+    resolves_family = bool(query) and query[0] in {"--tool-calls", "--grep"}
+    assert events[-1]["unresolved_record_count"] == (1 if resolves_family else 3)
     diagnostics = [event for event in events if event["kind"] == "unresolved-record"]
     assert sum(event["record"] == str(broken) for event in diagnostics) == 1
-    assert sum(event["record"] == child for event in diagnostics) == (0 if query == ["--tool-calls"] else 2)
+    assert sum(event["record"] == child for event in diagnostics) == (0 if resolves_family else 2)
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
@@ -851,3 +853,85 @@ def test_catalog_duplicate_ids_and_cycles_keep_first_record(tmp_path: pathlib.Pa
     assert parent["descendant_count"] == 1
     assert parent["tokens"]["input_tokens"] == 7
     assert summary["parent_record_count"] == 1 and summary["unresolved_record_count"] == 0
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+def test_catalog_grep_selection_keeps_diagnostic_scopes_and_match_units(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], runtime: str
+) -> None:
+    """親条件の検索で統計を作らず、root外解決・未解決・破損・時刻不明と期間端を区別する。"""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    base = tmp_path / "home/.claude/projects" if runtime == "claude" else tmp_path / "codex/sessions"
+    root = base / ("selected" if runtime == "claude" else "2026/10/06")
+    child = "55555555-5555-4555-8555-555555555555"
+    missing = "66666666-6666-4666-8666-666666666666"
+    old_missing = "77777777-7777-4777-8777-777777777777"
+    parent = _period_record(root, runtime, "parent", "2026-10-06T00:00:00Z", child)
+    _period_record(root, runtime, "missing-parent", "2026-10-06T00:00:00Z", missing)
+    _period_record(root, runtime, "old", "2026-09-01T00:00:00Z", old_missing)
+    outside = _period_record(
+        base / ("outside" if runtime == "claude" else "2026/10/07"), runtime, child, "2026-10-06T00:00:00Z"
+    )
+    child_entries = [json.loads(line) for line in outside.read_text(encoding="utf-8").splitlines()]
+    match_entry = timestamped_entry("2026-10-06T00:00:00Z", "needle child")
+    if runtime == "codex":
+        match_entry = codex_item(
+            "2026-10-06T00:00:00Z",
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "needle child"}]},
+        )
+    write_jsonl(outside, [*child_entries, match_entry])
+    missing_parent = root / ("missing-parent.jsonl" if runtime == "claude" else "rollout-test-missing-parent.jsonl")
+    missing_entries = [json.loads(line) for line in missing_parent.read_text(encoding="utf-8").splitlines()]
+    for entry in missing_entries:
+        entry["cwd"] = "/repo/selected"
+    write_jsonl(missing_parent, missing_entries)
+    entries = [json.loads(line) for line in parent.read_text(encoding="utf-8").splitlines()]
+    for entry in entries:
+        entry["cwd"] = "/repo/selected"
+    for stamp, text in [
+        ("2026-10-05T00:00:00Z", "needle since"),
+        ("2026-10-07T00:00:00Z", "needle boundary"),
+        ("2026-10-07T00:00:01Z", "needle after"),
+        (None, "needle undated\nneedle second"),
+    ]:
+        entry = timestamped_entry(stamp, text)
+        if runtime == "codex":
+            entry = codex_item(
+                stamp or "", {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
+            )
+        entries.append(entry)
+    write_jsonl(parent, entries)
+    broken = root / ("broken.jsonl" if runtime == "claude" else "rollout-broken.jsonl")
+    broken.write_text("{}\n{broken}\n", encoding="utf-8")
+
+    def forbidden_statistics(*_args: Any, **_kwargs: Any) -> Any:
+        pytest.fail("grepの親選択が一覧用統計を構築した")
+
+    monkeypatch.setattr(catalog, "_catalog_parent_event", forbidden_statistics)
+    monkeypatch.setattr(catalog, "_catalog_family_tokens", forbidden_statistics)
+    monkeypatch.setattr(catalog, "_successful_wi_operations", forbidden_statistics)
+    events = _period_catalog(root, runtime, ["--grep", "needle", "--catalog-cwd-contains", "selected"], capsys)
+    summary = events[-1]
+    assert summary["selected_parent_count"] == 2
+    assert summary["count"] == 2
+    assert summary["undated_match_count"] == 2
+    assert summary["query_unresolved_record_count"] == 1, events
+    assert summary["scan_root_unresolved_record_count"] == 2
+    matches = [event for event in events if event["kind"] == "match"]
+    assert any(event["text"] == "needle boundary" for event in matches)
+    assert all("since" not in event["text"] and "after" not in event["text"] for event in matches)
+    assert any(event["record"] == f"{runtime}:{child}" for event in matches)
+    provenance = [event for event in events if event["kind"] == "record-provenance"]
+    assert any(event["record"] == f"{runtime}:{child}" and event["source_line"] for event in provenance)
+    diagnostics = [event for event in events if event["kind"] == "unresolved-record"]
+    assert all(event["scope"] == ("selected-family" if event["record"] == missing else "scan-root") for event in diagnostics)
+    assert {event["record"] for event in diagnostics} == {missing, old_missing, str(broken)}
+    failure = next(event for event in diagnostics if event["record"] == str(broken))
+    assert failure["line"] == 0 and failure["failure_line"] == 2 and failure["reason"]
+    assert failure["next_action"] == (
+        f"保持元ホストで記録 {broken} の所在と読取権限を確認する。"
+        "failure_lineがあればその行付近の形式も確認する。"
+        "取得できなければ記録保持者へ参照位置と失敗理由を示して原記録を依頼し、未確認範囲を報告する。"
+    )
+    assert all(event["next_action"] for event in diagnostics)

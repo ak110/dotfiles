@@ -239,9 +239,60 @@ def test_review_metrics_exec_review_only(dataset: tuple[Path, Path, Path], capsy
         "levels": {"要件": 1, "仕様": 0, "詳細": 1, "実装": 0, "未記録": 0},
         "finding_count": 2,
         "without_modification_count": 1,
+        "excluded_judgment_count": 0,
+        "excluded_judgments": [],
         "five_or_more_ratio": 0.5,
         "without_modification_ratio": 0.5,
     }
+
+
+def test_review_metrics_exclude_judgments_from_both_public_metrics(dataset, capsys) -> None:
+    """同じ8判断・4実指摘から両CLIが同じ件数と元行番号を返す。"""
+    claude, codex, repo = dataset
+    table = repo / "plans/ci/check.exec-review.tsv"
+    rows = [["9", "exec-review", "場所", f"実装時の判断: 記録{number}", "要件", "", "判断の引き継ぎ"] for number in range(8)]
+    rows.insert(3, ["9", "plan-review", "場所", "別track", "要件", "", ""])
+    rows.extend(
+        [
+            ["1", "exec-review", "場所", "採用", "仕様", "修正", ""],
+            ["1", "exec-review", "場所", "見送り", "仕様", "", "根拠の所在: メインの技術判断"],
+            ["2", "exec-review", "場所", "撤回", "詳細", "", "根拠の所在: レビュー担当が撤回"],
+            ["2", "exec-review", "場所", "未応答", "実装", "", ""],
+        ]
+    )
+    table.write_text(
+        "".join("\t".join(json.dumps(cell, ensure_ascii=False) for cell in row) + "\n" for row in rows), encoding="utf-8"
+    )
+    _commit(repo, "2026-10-07T12:00:00Z")
+    review = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")[0]["review"]
+    assert review["finding_count"] == 4
+    assert review["levels"] == {"要件": 0, "仕様": 2, "詳細": 1, "実装": 1, "未記録": 0}
+    assert review["without_modification_count"] == 2
+    assert review["without_modification_ratio"] == 0.5
+    assert review["rounds"] == {"0": 1, "1": 0, "2": 1, "3": 0, "4": 0, "5": 0, "6+": 0}
+    assert review["five_or_more_ratio"] == 0
+    assert review["excluded_judgment_count"] == 8
+    assert review["excluded_judgments"] == [{"table": str(table), "row": number} for number in (1, 2, 3, 5, 6, 7, 8, 9)]
+    arguments = [
+        "--",
+        "--since",
+        "2026-10-05",
+        "--until",
+        "2026-10-12",
+        "--private-notes",
+        str(repo),
+        "--claude-projects-dir",
+        str(claude),
+        "--codex-sessions-dir",
+        str(codex),
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="review-adoption", script_args=arguments)) == 0
+    periods = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    current = next(event for event in periods if event["kind"] == "review-adoption-period" and event["period"] == "current")
+    assert (current["adopted"], current["rejected"], current["unanswered"]) == (1, 2, 1)
+    assert current["by_reason"] == {"判断による見送り": 1, "レビュー担当の前提の誤り・撤回": 1}
+    assert current["excluded_judgments"] == review["excluded_judgments"]
+    assert current["excluded_judgment_count"] == review["excluded_judgment_count"]
 
 
 def test_coverage_reports_missing_weeks(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:

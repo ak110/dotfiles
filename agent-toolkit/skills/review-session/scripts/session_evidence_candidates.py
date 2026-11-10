@@ -682,7 +682,8 @@ def _delegate_notice_events(collected: list[_CollectedRecord]) -> list[dict[str,
         wait_lines = {
             call.line
             for call in calls
-            if any(
+            if call.tool.casefold().rsplit("__", 1)[-1].rsplit(".", 1)[-1] in _ADHOC_SHELL_TOOLS
+            and any(
                 _is_atk_command(list(simple.words)) and list(simple.words)[1:3] == ["agents", "wait"]
                 for command in session_evidence_execution.command_inputs(call.tool, call.text)
                 for simple in session_evidence_execution.shell_simple_commands(command)
@@ -1825,6 +1826,8 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
     display = value if not isinstance(raw, str) and isinstance(value, str) else shlex.join(args)
     shell_unwrapped = False
     for _ in range(5):
+        while args and _ENV_ASSIGNMENT.match(args[0]):
+            args = args[1:]
         if not args:
             break
         name = _basename(args[0])
@@ -1832,8 +1835,22 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
             args = args[2:]
         elif name == "env":
             index = 1
-            while index < len(args) and _ENV_ASSIGNMENT.match(args[index]):
-                index += 1
+            while index < len(args):
+                word = args[index]
+                if word == "--":
+                    index += 1
+                    break
+                if word in {"-i", "--ignore-environment", "-"} or _ENV_ASSIGNMENT.match(word):
+                    index += 1
+                elif word in {"-u", "--unset", "-C", "--chdir"} and index + 1 < len(args):
+                    index += 2
+                elif (word.startswith(("-u", "-C")) and len(word) > 2) or word.startswith(("--unset=", "--chdir=")):
+                    index += 1
+                elif word.startswith("-"):
+                    # 未解釈の包装は入力全体で区別し、オプション名による誤統合を避ける。
+                    return "env", shlex.join(args), display, args
+                else:
+                    break
             args = args[index:]
         elif name in _SHELL_NAMES and len(args) >= 3 and args[1] in {"-c", "-lc"}:
             if not shell_unwrapped:

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import session_evidence_execution
 from session_evidence_candidates import (
     _BUNDLE_BODY_LENGTH,
     _adhoc_processing_events,
@@ -66,6 +67,7 @@ _BUNDLE_WARNING_GROUP_LENGTH = 120
 _BUNDLE_WARNING_SAMPLE_COUNT = 3
 
 
+@session_evidence_execution.shell_parse_scope()
 def _bundle_events(
     collected: list[_CollectedRecord],
     unresolved: list[_UnresolvedRecord],

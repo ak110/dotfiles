@@ -766,6 +766,8 @@ def test_abnormal_session_exit_propagates_code_with_failure_line(
     assert not out
     assert err.startswith("失敗: ")
     assert str(_log_files(engine_env)[0]) in err
+    assert "原因を確かめ、解消してから`atk run-skill`を元の引数で再実行する" in err
+    assert "次回の定期実行" not in err
 
 
 def test_same_skill_is_not_started_twice_but_other_skill_runs(
@@ -802,6 +804,8 @@ def test_same_skill_is_not_started_twice_but_other_skill_runs(
             assert code == run_skill.CONCURRENT_EXIT_CODE
             assert not out
             assert err.startswith("失敗: ")
+            assert "進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する" in err
+            assert "次回の定期実行" not in err
             assert len(_records(engine_env, "session")) == 1
 
             release.write_text("release")
@@ -828,6 +832,9 @@ def test_timeout_terminates_session_and_descendants(
 
     assert code == run_skill.TIMEOUT_EXIT_CODE
     assert err.startswith("失敗: ")
+    assert "ログで進行状況を確かめ、必要なら`--timeout`を延ばして" in err
+    assert "`atk run-skill`を元の対象・スキル・スキル引数で再実行する" in err
+    assert "次回の定期実行" not in err
     assert pid_file.exists(), "子孫プロセスが時間上限より前に起動しなかった"
     grandchild = int(pid_file.read_text(encoding="utf-8"))
     deadline = time.monotonic() + 10

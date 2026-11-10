@@ -648,16 +648,18 @@ def test_collect_includes_start_custom_and_start_write_delegates(
     assert evidence.main([str(transcript), "--stats"]) == 0
     stats_events = read_jsonl(capsys, raw=True)
     assert [event["session_id"] for event in events_by_kind(stats_events, "stats-agent-thread")] == [custom_session]
-    assert events_by_kind(stats_events, "unresolved-record") == [
-        {"kind": "unresolved-record", "record": write_session, "line": 4}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(stats_events, "unresolved-record")]
+    next_action = unresolved.pop("next_action")
+    assert write_session in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": write_session, "line": 4}
 
     assert evidence.main([str(transcript)]) == 0
     default_events = read_jsonl(capsys, raw=True)
     assert f"claude:{custom_session}" in {event.get("record") for event in default_events}
-    assert events_by_kind(default_events, "unresolved-record") == [
-        {"kind": "unresolved-record", "record": write_session, "line": 4}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(default_events, "unresolved-record")]
+    next_action = unresolved.pop("next_action")
+    assert write_session in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": write_session, "line": 4}
 
 
 def test_collect_resolves_codex_agents_server_delegations(
@@ -768,9 +770,10 @@ def test_collect_reports_unresolved_delegation(
     )
 
     assert evidence.main([str(transcript), "--stats"]) == 0
-    assert events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation") == [
-        {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 2}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation")]
+    next_action = unresolved.pop("next_action")
+    assert "codex:transcript:2" in next_action and "委譲先の識別子" in next_action
+    assert unresolved == {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 2}
 
 
 def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -795,9 +798,10 @@ def test_collect_reports_unresolved_event_msg_delegation(tmp_path: pathlib.Path,
     )
 
     assert evidence.main([str(transcript), "--stats"]) == 0
-    assert events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation") == [
-        {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 1}
-    ]
+    (unresolved,) = [dict(event) for event in events_by_kind(read_jsonl(capsys, raw=True), "unresolved-delegation")]
+    next_action = unresolved.pop("next_action")
+    assert "codex:transcript:1" in next_action and "委譲先の識別子" in next_action
+    assert unresolved == {"kind": "unresolved-delegation", "record": "codex:transcript", "line": 1}
 
 
 def test_collect_ignores_existing_session_operations_as_delegation_sources(

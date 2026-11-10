@@ -307,7 +307,10 @@ def test_agy_delegate_without_log_is_unresolved_record(
     assert evidence.main([str(transcript)]) == 0
 
     events = read_jsonl(capsys, raw=True)
-    assert events_by_kind(events, "unresolved-record") == [{"kind": "unresolved-record", "record": session_id, "line": 3}]
+    (unresolved,) = [dict(event) for event in events_by_kind(events, "unresolved-record")]
+    next_action = unresolved.pop("next_action")
+    assert session_id in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": session_id, "line": 3}
 
 
 def test_agy_grandchild_launch_is_neither_detected_nor_collected(
@@ -598,7 +601,10 @@ def test_delegate_record_with_ambiguous_thread_id_is_unresolved(
     assert evidence.main([str(transcript)]) == 0
 
     events = read_jsonl(capsys, raw=True)
-    assert events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 2}
+    unresolved = dict(events[-1])
+    next_action = unresolved.pop("next_action")
+    assert thread_id in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": thread_id, "line": 2}
     serialized = json.dumps(events, ensure_ascii=False)
     assert "混入してはならない記録1" not in serialized
     assert "混入してはならない記録2" not in serialized
@@ -681,7 +687,10 @@ def test_backup_only_thread_id_is_evidence_insufficient(
     )
     assert evidence.main([str(transcript)]) == 0
     delegate_events = read_jsonl(capsys, raw=True)
-    assert delegate_events[-1] == {"kind": "unresolved-record", "record": thread_id, "line": 2}
+    unresolved = dict(delegate_events[-1])
+    next_action = unresolved.pop("next_action")
+    assert thread_id in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": thread_id, "line": 2}
     assert "backupの写し" not in json.dumps(delegate_events, ensure_ascii=False)
 
 

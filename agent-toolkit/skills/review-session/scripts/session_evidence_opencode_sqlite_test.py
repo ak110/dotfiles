@@ -180,7 +180,10 @@ def test_prepare_opencode_sqlite_family_and_queries(
     assert len(conversation.encode("utf-8")) <= 100_000
     assert prepared["utterance_counts"]["user"] == 3
     assert prepared["candidate_counts"]["user-intervention"] == 1
-    assert prepared["unconfirmed_scope"] == [{"kind": "unresolved-record", "record": "opencode:ses_empty", "line": 0}]
+    (unresolved,) = [dict(event) for event in prepared["unconfirmed_scope"]]
+    next_action = unresolved.pop("next_action")
+    assert "opencode:ses_empty" in next_action and "記録保持者" in next_action
+    assert unresolved == {"kind": "unresolved-record", "record": "opencode:ses_empty", "line": 0}
     bundle = work / "bundle"
     resources = _rows(bundle / "resource-usage.jsonl")
     main = next(row for row in resources if row["kind"] == "stats-resource-usage" and row["record"] == "opencode:ses_main")

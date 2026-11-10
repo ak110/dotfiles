@@ -165,3 +165,15 @@ def test_static_shell_body_is_parsed_even_with_unknown_positional_arguments() ->
     # 本文自身が未知なら、本文を推定せず外側の呼出しとして残す。
     unknown = extract_bash_invocations('sh -c "$BODY"')
     assert [item.segment.tokens[0] for item in unknown] == ["sh"]
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["bash -co pipefail", "bash -cO extglob", "bash -o pipefail -c", "bash -c -o pipefail", "bash --rcfile data -c"],
+)
+def test_shell_option_values_preserve_body_and_output_connections(prefix: str) -> None:
+    """助言の消費側へ本文の呼出しとパイプ接続を渡し、位置引数を解析しない。"""
+    calls = extract_bash_invocations(f"{prefix} 'atk wi list | cat' session_review_evidence.py")
+    assert [item.segment.tokens for item in calls] == [("atk", "wi", "list"), ("cat",)]
+    assert calls[0].output_pipe
+    assert not calls[1].output_redirected

@@ -12,10 +12,43 @@ from agent_toolkit._common.shell_segments import (
     ExecutionSegment,
     extract_execution_segments,
     resolve_execution_segment,
+    shell_execution_target,
     split_bash_segments,
 )
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        (["-co", "pipefail", "printf marker"], ("command", "printf marker")),
+        (["-cO", "extglob", "printf marker"], ("command", "printf marker")),
+        (["-o", "pipefail", "-c", "printf marker"], ("command", "printf marker")),
+        (["-c", "-o", "pipefail", "printf marker"], ("command", "printf marker")),
+        (["--rcfile", "data", "-c", "printf marker", "script.py"], ("command", "printf marker")),
+        (["-c", "printf marker", "-o", "pipefail"], ("command", "printf marker")),
+        (["--", "script.sh", "-c", "data"], ("script", "script.sh")),
+        (["script.sh", "-c", "data"], ("script", "script.sh")),
+        (["-c"], None),
+        (["--rcfile"], None),
+        (["--unknown", "data", "-c", "printf marker"], None),
+        (["-s", "script.sh"], None),
+    ],
+)
+def test_shell_execution_target_separates_option_values_and_positional_data(
+    options: list[str], expected: tuple[str, str] | None
+) -> None:
+    """シェルの引数仕様に従って実行対象を選び、本文の後ろのデータを再走査しない。"""
+    assert shell_execution_target(["/bin/bash", *options]) == expected
+
+
+def test_shell_specific_options_are_not_assumed_for_posix_shells() -> None:
+    """Bash固有の起動形をsh・dashの本文位置として確定しない。"""
+    for name in ("sh", "dash"):
+        assert shell_execution_target([name, "-co", "pipefail", "printf marker"]) == ("command", "printf marker")
+        assert shell_execution_target([name, "-cO", "extglob", "printf marker"]) is None
+        assert shell_execution_target([name, "--rcfile", "data", "-c", "printf marker"]) is None
 
 
 @pytest.mark.parametrize(

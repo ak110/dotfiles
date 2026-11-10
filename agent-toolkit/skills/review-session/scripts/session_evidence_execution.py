@@ -1,10 +1,14 @@
 """記録されたセルからコマンド実行入力を選び、保存出力の渡し方を判定する。"""
 
 import ast
+import collections
+import contextlib
+import contextvars
 import itertools
 import json
 import pathlib
 import re
+from collections.abc import Generator
 from typing import Any, NamedTuple
 
 import session_evidence_static
@@ -35,6 +39,24 @@ class SimpleCommand(NamedTuple):
     """単純コマンドを含むシェル文字列。置換の内側では置換の本体を指す。"""
     parsed: bool
     """区間の構文を解析できたか。偽の要素は語を持たない。"""
+
+
+_SHELL_PARSE_CACHE: contextvars.ContextVar[collections.OrderedDict[str, tuple[SimpleCommand, ...]] | None] = (
+    contextvars.ContextVar("session_review_shell_parse_cache", default=None)
+)
+
+
+@contextlib.contextmanager
+def shell_parse_scope() -> Generator[None]:
+    """1回の準備・単独bundleの間だけ、不変な構文情報を最大128入力まで共有する。"""
+    if _SHELL_PARSE_CACHE.get() is not None:
+        yield
+        return
+    token = _SHELL_PARSE_CACHE.set(collections.OrderedDict())
+    try:
+        yield
+    finally:
+        _SHELL_PARSE_CACHE.reset(token)
 
 
 def _literal(token: str) -> str | None:
@@ -184,11 +206,10 @@ def continuation_handles(tool: str, text: str) -> set[tuple[str, int | str]]:
 
 def command_execution_input(command: object) -> str:
     """CommandExecutionのargvから、シェルが受け取った実行文字列だけを返す。"""
-    if isinstance(command, list) and pathlib.PurePosixPath(str(command[0])).name in {"bash", "sh", "zsh"}:
-        for index, argument in enumerate(command[:-1]):
-            option = str(argument)
-            if option.startswith("-") and "c" in option[1:]:
-                return str(command[index + 1])
+    if isinstance(command, list):
+        body = shell_segments.shell_c_argument([str(value) for value in command])
+        if body is not None:
+            return body
     return " ".join(map(str, command)) if isinstance(command, list) else str(command)
 
 
@@ -231,6 +252,10 @@ def command_file_inputs(name: str, args: tuple[str, ...]) -> list[str]:
             continue
         if name == "rg" and value == "-E":
             index += 2
+            continue
+        if name == "sed" and (script_option := re.fullmatch(r"-[nErzsub]*[ef](.*)", value)):
+            expression = False
+            index += 1 if script_option[1] else 2
             continue
         if name == "jq" and value in {"--arg", "--argjson", "--slurpfile", "--rawfile"}:
             index += 3
@@ -508,6 +533,21 @@ def _strip_syntax_words(words: list[str]) -> list[str]:
 
 
 def shell_simple_commands(command: str) -> list[SimpleCommand]:
+    """処理内で構文を再利用し、呼び出しごとに独立したリストを返す。"""
+    cache = _SHELL_PARSE_CACHE.get()
+    if cache is None:
+        return _parse_shell_simple_commands(command)
+    if command in cache:
+        cache.move_to_end(command)
+        return list(cache[command])
+    result = tuple(_parse_shell_simple_commands(command))
+    cache[command] = result
+    if len(cache) > 128:
+        cache.popitem(last=False)
+    return list(result)
+
+
+def _parse_shell_simple_commands(command: str) -> list[SimpleCommand]:
     """シェル文字列を、置換の本体と複合コマンドの本体まで含めた単純コマンドへ分ける。
 
     置換の本体は外側のコマンドより先に実行されるため先に並べる。外側では置換を`SUBSTITUTION_MARK`の語へ置き換え、

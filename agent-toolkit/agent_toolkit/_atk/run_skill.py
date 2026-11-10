@@ -236,7 +236,7 @@ def _dispatch_once(args: argparse.Namespace) -> int:
                 _log_line(log, "終了状態: 同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった")
                 _outcome.report_failure(
                     f"同じ対象リポジトリと同じスキルの実行が進行中のため起動しなかった（ログ: {log_path}）",
-                    next_action="進行中の実行の終了を待つ。次回の定期実行で改めて起動されるため、操作は不要",
+                    next_action="進行中の実行の終了を確認してから、`atk run-skill`を元の引数で再実行する",
                 )
                 return CONCURRENT_EXIT_CODE
             with _console_title.console_title(_TITLE):
@@ -732,7 +732,10 @@ def _wait_session(
                 return 1
             _outcome.report_failure(
                 f"セッションが時間上限（{timeout:g}秒）を超えたため終了させた（ログ: {log_path}）",
-                next_action="ログで進行状況を確かめ、必要なら`--timeout`を延ばして次回の定期実行を待つ",
+                next_action=(
+                    "ログで進行状況を確かめ、必要なら`--timeout`を延ばして、"
+                    "`atk run-skill`を元の対象・スキル・スキル引数で再実行する"
+                ),
             )
             return TIMEOUT_EXIT_CODE
         _drain_output(readers, log, lock)
@@ -770,7 +773,7 @@ def _wait_session(
             f"{orchestrator}のセッションがexit code {returncode}で異常終了した（ログ: {log_path}）",
             next_action=(
                 "ログとセッション記録（Claude Codeは`~/.claude/projects`配下、Codexは`~/.codex/sessions`配下）で原因を確かめ、"
-                "解消してから次回の定期実行を待つ"
+                "解消してから`atk run-skill`を元の引数で再実行する"
             ),
         )
         return exit_code

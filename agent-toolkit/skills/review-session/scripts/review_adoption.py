@@ -102,6 +102,8 @@ def _period_events(
         "since": since.isoformat(),
         "until": until.isoformat(),
         "table_count": len(tables),
+        "excluded_judgment_count": 0,
+        "excluded_judgments": [],
         **_empty_counts(),
         "by_level": collections.defaultdict(_empty_counts),
         "by_model": collections.defaultdict(lambda: {**_empty_counts(), "tables": 0}),
@@ -111,7 +113,9 @@ def _period_events(
     for table in tables:
         model = models.get(table.path.name, _MODEL_UNKNOWN)
         summary["by_model"][model]["tables"] += 1
-        for number, row in enumerate(table.rows, 1):
+        summary["excluded_judgment_count"] += len(table.judgment_rows)
+        summary["excluded_judgments"].extend({"table": str(table.path), "row": number} for number, _ in table.judgment_rows)
+        for number, row in table.rows:
             if row[_RESPONSE].strip():
                 state = "adopted"
             elif row[_NO_RESPONSE].strip():

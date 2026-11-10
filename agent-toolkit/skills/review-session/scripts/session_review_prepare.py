@@ -32,6 +32,7 @@ from typing import Any, NamedTuple
 import session_conversation  # pylint: disable=import-error
 import session_effect_candidates  # pylint: disable=import-error
 import session_evidence_candidates  # pylint: disable=import-error
+import session_evidence_execution  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
 
 from agent_toolkit._atk import managed_temp, run_script
@@ -1488,6 +1489,7 @@ def _thread_breakdown_lines(
     return lines
 
 
+@session_evidence_execution.shell_parse_scope()
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)

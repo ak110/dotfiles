@@ -7,6 +7,7 @@ import collections
 import dataclasses
 import datetime
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +30,8 @@ from agent_toolkit._common.session_family import _scan_record_metadata
 from agent_toolkit._git import command as git_command
 
 _TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+_JUDGMENT_LABEL = re.compile(r"(?:実装時|実装中)の(?:技術)?(?:判断|解釈)\s*[:：]")
+_JUDGMENT_RECORD = re.compile(r"(?:実装時|実装中)の(?:技術)?(?:判断|解釈)の(?:記録|引き継ぎ)")
 
 
 @dataclasses.dataclass
@@ -63,6 +66,8 @@ def _new_week(day: str) -> dict[str, Any]:
             "levels": dict.fromkeys((*review_table.LEVEL_VALUES, "未記録"), 0),
             "finding_count": 0,
             "without_modification_count": 0,
+            "excluded_judgment_count": 0,
+            "excluded_judgments": [],
         },
     }
 
@@ -104,7 +109,8 @@ class SavedReviewTable:
 
     path: Path
     timestamp: datetime.datetime
-    rows: list[list[str]]
+    rows: list[tuple[int, list[str]]]
+    judgment_rows: list[tuple[int, list[str]]]
 
 
 @dataclasses.dataclass(frozen=True)
@@ -123,7 +129,8 @@ def saved_review_tables(
     """private-notesの`plans`配下から、最初の追加commitが期間内にある実行レビューの管理表を読む。
 
     週次指標と振り返りの採否集計が同じ読込・正規化と期間の割当を使うよう、両者から呼ぶ。
-    行は`track`が`exec-review`のものだけを残す。
+    行は`track`が`exec-review`のものだけを残し、明示された実装中の判断記録を分ける。
+    元の表の行番号とセルは、除外の追跡と応答の所在確認のため保持する。
     """
     first_additions: dict[str, datetime.datetime] = {}
     for path, _commit, timestamp in history:
@@ -140,13 +147,21 @@ def saved_review_tables(
         if not since <= timestamp <= until:
             continue
         try:
-            rows = [row for row in review_table.read_rows(path) if row[1] == "exec-review"]
-            for row in rows:
+            rows: list[tuple[int, list[str]]] = []
+            judgment_rows: list[tuple[int, list[str]]] = []
+            for number, row in enumerate(review_table.read_rows(path), 1):
+                if row[1] != "exec-review":
+                    continue
                 int(row[0])
+                # 主体名や応答状態だけでは、実指摘への見送り・撤回と区別できない。
+                is_judgment = any(_JUDGMENT_LABEL.match(row[column].strip()) for column in (2, 3, 6)) or bool(
+                    _JUDGMENT_RECORD.search(row[6])
+                )
+                (judgment_rows if is_judgment else rows).append((number, row))
         except OSError, UnicodeError, ValueError:
             unreadable += 1
             continue
-        tables.append(SavedReviewTable(path, timestamp, rows))
+        tables.append(SavedReviewTable(path, timestamp, rows, judgment_rows))
     return SavedReviewTables(tables, paths, unreadable, without_history)
 
 
@@ -189,12 +204,14 @@ def _queue_metrics(
     saved = saved_review_tables(repo, history, since, until)
     for table in saved.tables:
         rows = table.rows
-        rounds = max((int(row[0]) for row in rows), default=0)
+        rounds = max((int(row[0]) for _, row in rows), default=0)
         review = weeks[_week(table.timestamp)]["review"]
         review["table_count"] += 1
         review["rounds"][str(rounds) if rounds < 6 else "6+"] += 1
         review["finding_count"] += len(rows)
-        for row in rows:
+        review["excluded_judgment_count"] += len(table.judgment_rows)
+        review["excluded_judgments"].extend({"table": str(table.path), "row": number} for number, _ in table.judgment_rows)
+        for _, row in rows:
             level = row[4] or "未記録"
             review["levels"][level] = review["levels"].get(level, 0) + 1
             review["without_modification_count"] += bool(row[6].strip()) and not row[5].strip()

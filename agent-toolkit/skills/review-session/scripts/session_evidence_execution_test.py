@@ -26,6 +26,23 @@ _SAVED = "/cache/atk-output-example/output.txt"
         ("Bash", f"cat {_SAVED} | sed -n 1,20p repo.md", False),
         ("Bash", "printf '%s' 'python3 -c x; node -e x'", False),
         ("Bash", f"sed -n 1,20p {_SAVED}", True),
+        ("Bash", f"sed -n -e 1p {_SAVED}", True),
+        ("Bash", f"sed -n -e1p {_SAVED}", True),
+        ("Bash", f"sed -ne1p {_SAVED}", True),
+        ("Bash", f"sed -ne 1p {_SAVED}", True),
+        ("Bash", f"sed -nfexpr.sed {_SAVED}", True),
+        ("Bash", f"sed -n -f expr.sed {_SAVED}", True),
+        ("Bash", f"sed -n -fexpr.sed {_SAVED}", True),
+        ("Bash", f"sed -n --expression=1p -- {_SAVED}", True),
+        ("Bash", f"sed -n --file expr.sed {_SAVED}", True),
+        ("Bash", f"sed -n --file=expr.sed {_SAVED}", True),
+        ("Bash", f"sed -n -e1p -e 2p -- {_SAVED}", True),
+        ("Bash", f"sed -n -f {_SAVED} repo.md", False),
+        ("Bash", f"sed -n -f{_SAVED} repo.md", False),
+        ("Bash", f"sed -nf{_SAVED} repo.md", False),
+        ("Bash", f"sed -n --file={_SAVED} repo.md", False),
+        ("Bash", f"sed -n -e{_SAVED} repo.md", False),
+        ("Bash", f"cat {_SAVED} | sed -n -e1p", True),
         ("Bash", f"sed -n 1,20p < {_SAVED}", True),
         ("Bash", f"cat {_SAVED} | sed -n 1,20p", True),
         ("Bash", f"cat {_SAVED} | head -n 20 | jq '.'", True),
@@ -105,3 +122,153 @@ def test_dynamic_command_is_retained_without_evaluation(argument: str) -> None:
     original_input = observations[0]["input"]
     assert original_input is not None
     assert argument in original_input
+
+
+def test_shell_parse_scope_reuses_bounded_immutable_syntax(monkeypatch: pytest.MonkeyPatch) -> None:
+    """再入・別処理・例外終了でも寿命を保ち、呼出側の変更と未知構文を混同しない。"""
+    parsed: list[str] = []
+    original = execution.shell_segments.extract_execution_segments
+
+    def counted(command, **kwargs):
+        parsed.append(command)
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(execution.shell_segments, "extract_execution_segments", counted)
+    command = "cat role.subagent.md; printf '%s' marker"
+    expected = execution.shell_simple_commands(command)
+    parsed.clear()
+    with execution.shell_parse_scope():
+        first = execution.shell_simple_commands(command)
+        first.clear()
+        with execution.shell_parse_scope():
+            assert execution.shell_simple_commands(command) == expected
+        assert parsed == [command]
+        for number in range(128):
+            execution.shell_simple_commands(f"echo {number}")
+        assert execution.shell_simple_commands(command) == expected
+        assert parsed.count(command) == 2
+        malformed = "cat 'unclosed"
+        assert execution.shell_simple_commands(malformed) == [execution.SimpleCommand((), malformed, False)]
+        assert execution.shell_simple_commands(malformed) == [execution.SimpleCommand((), malformed, False)]
+    with pytest.raises(RuntimeError), execution.shell_parse_scope():
+        assert execution.shell_simple_commands(command) == expected
+        raise RuntimeError("処理中断")
+    with execution.shell_parse_scope():
+        assert execution.shell_simple_commands(command) == expected
+    assert parsed.count(command) == 4
+
+
+@pytest.mark.parametrize(
+    ("argv", "visible"),
+    [
+        (["bash", "-co", "pipefail", "printf marker"], True),
+        (["bash", "-cO", "extglob", "printf marker"], True),
+        (["bash", "--rcfile", "session_review_evidence.py", "-c", "printf marker"], True),
+        (["bash", "-c", "printf marker", "session_review_evidence.py"], True),
+        (["bash", "-c", "printf marker", "data;session_review_evidence.py"], True),
+        (["bash", "-c", "python session_review_evidence.py marker"], False),
+        (["bash", "-c", "printf marker; python session_review_evidence.py"], False),
+        (["bash", "session_review_evidence.py", "marker"], False),
+        ([r"C:\tools\bash", "-c", "python session_review_evidence.py marker"], False),
+        ([r"C:\tools\bash", "session_review_evidence.py", "marker"], False),
+        ([r"C:\tools\sh", "-c", "python session_review_evidence.py marker"], False),
+        ([r"C:\tools\sh", "session_review_evidence.py", "marker"], False),
+        ([r"C:\tools\zsh", "-c", "python session_review_evidence.py marker"], False),
+        ([r"C:\tools\zsh", "session_review_evidence.py", "marker"], False),
+    ],
+)
+def test_shell_execution_roles_reach_public_queries(tmp_path, capsys, argv, visible) -> None:
+    """本文だけを照会し、位置引数・rcfile名で実際の警告を除外しない。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "id": "call",
+                        "status": "completed",
+                        "command": argv,
+                        "exit_code": 0,
+                        "stdout": "warning: probe-visible",
+                    },
+                },
+            }
+        ],
+    )
+    assert evidence.main([str(transcript), "--tool-calls", "--input-regex", "marker"]) == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    calls = [row for row in rows if row.get("kind") == "tool-call"]
+    # --tool-callsは自己呼出しも監査できる。警告・本文走査だけが自己生成出力を除く。
+    assert len(calls) == 1
+    if visible:
+        assert calls[0]["text"] == "printf marker"
+    for query in (["--warn"], ["--grep", "probe-visible"]):
+        assert evidence.main([str(transcript), *query]) == 0
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert any("probe-visible" in row.get("text", "") for row in rows) is visible
+
+
+@pytest.mark.parametrize("runtime", ["claude", "codex"])
+@pytest.mark.parametrize(
+    ("command", "visible"),
+    [
+        ("bash -c 'printf marker'; python session_review_evidence.py --warn", False),
+        ("bash -c 'printf marker' && python session_review_evidence.py --warn", False),
+        ("bash -c 'printf marker' || python session_review_evidence.py --warn", False),
+        ("bash -c 'printf marker' | python session_review_evidence.py --warn", False),
+        ("bash -c 'printf marker' & python session_review_evidence.py --warn", False),
+        ("bash -c 'printf marker'\npython session_review_evidence.py --warn", False),
+        ("(printf marker; python session_review_evidence.py --warn)", False),
+        ("bash -c 'printf marker' 'data;session_review_evidence.py'", True),
+        ('bash -c \'printf "%s" "data;session_review_evidence.py"\'', True),
+        ("printf '%s' 'bash -c x; python session_review_evidence.py'", True),
+        ("printf '%s' 'data;session_review_evidence.py'; bash -c 'printf marker'", True),
+    ],
+)
+def test_compound_shell_self_calls_keep_quoted_data_visible(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str, command: str, visible: bool
+) -> None:
+    """外側の実自己呼出しを除き、本文・位置引数の引用データは保持する。"""
+    output = "warning: probe-visible"
+    if runtime == "claude":
+        entries = [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "call", "name": "Bash", "input": {"command": command}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "call", "content": output}]},
+            },
+        ]
+    else:
+        entries = [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "id": "call",
+                        "status": "completed",
+                        "command": command,
+                        "exit_code": 0,
+                        "stdout": output,
+                    },
+                },
+            }
+        ]
+    transcript = _write_transcript(tmp_path, entries)
+    assert evidence.main([str(transcript), "--tool-calls"]) == 0
+    calls = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [row["text"] for row in calls if row.get("kind") == "tool-call"] == [command]
+    for query in (["--warn"], ["--grep", "probe-visible"]):
+        assert evidence.main([str(transcript), *query]) == 0
+        rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+        assert any("probe-visible" in row.get("text", "") for row in rows) is visible

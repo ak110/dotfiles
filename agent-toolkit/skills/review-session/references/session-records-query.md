@@ -59,6 +59,12 @@
 時刻情報を持たない入力は`user-event-undated`として扱われ、読み取り不能や未解決の項目は診断情報として出力される。
 要約における`parent_record_count`、`selected_parent_count`、`count`は、それぞれ走査した親セッション数、選定された親セッション数、一致したイベント件数を表す。
 結果を読む際は、一致件数が0件であることと、調査が及んでいない未確認範囲が存在することを明確に区別する。
+カタログの`--grep`では、家族収集でroot外も含めて解決した記録を最終的な未解決から除く。
+診断の`scope=scan-root`は全走査root、`scope=selected-family`は選択家族の未確認範囲を示す。
+要約の`scan_root_unresolved_record_count`と`query_unresolved_record_count`を併記し、`unresolved_record_count`は両範囲の合併として読む。
+読込失敗の理由と失敗行、所在未解決、時刻のない一致行はそれぞれの診断で確認し、全走査rootの限界と選択した親・期間の照会の限界を区別する。
+`line`は参照元位置、読込失敗時に付く`failure_line`は読み取れなかった記録内の行番号である。
+時刻がない記録を期間外と推定せず、`undated_match_count`は一致エントリ数とは別の一致行数として読む。
 
 ```sh
 atk run-script session-review-evidence -- --catalog-claude-project <projectの絶対パス> --since 2026-10-01 --observation-boundary 2026-10-08 --user-events --user-match-fixed <文字列> --with-preceding-assistant

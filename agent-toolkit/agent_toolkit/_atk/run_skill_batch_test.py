@@ -272,7 +272,7 @@ def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeyp
     assert len(list(layout.iter_entry_paths(notes))) == 1
 
 
-def test_failure_blocks_auto_but_manual_can_retry_without_duplicate_report(tmp_path) -> None:
+def test_failure_blocks_auto_but_manual_can_retry_without_duplicate_report(tmp_path, monkeypatch) -> None:
     notes = _notes()
     _target(tmp_path, "one")
     calls = []
@@ -284,9 +284,18 @@ def test_failure_blocks_auto_but_manual_can_retry_without_duplicate_report(tmp_p
     assert run_skill_batch.dispatch(_args(), fail) == 124
     assert run_skill_batch.dispatch(_args(), fail) == 0
     assert len(calls) == 1
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+    assert run_skill_batch.dispatch(_args(), fail) == 0
+    assert len(calls) == 1 and session_review.pending()
     assert run_skill_batch.dispatch(_args("manual"), fail) == 124
     assert len(calls) == 2 and len(list(layout.iter_entry_paths(notes))) == 1
     assert session_review.pending()
+    body = _failure_awis(notes)[0].read_text(encoding="utf-8")
+    assert "AWIの終了により失敗抑止が解除される" in body
+    assert "atk run-skill agent-toolkit:review-session --args batch" in body
+    assert "`session_review_auto_start=true`で開始条件を満たす場合に限り" in body
+    assert "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する" in body
+    assert "振り返りが自動で再試行される" not in body
 
 
 def test_global_lock_prevents_different_repo_execution(tmp_path) -> None:
