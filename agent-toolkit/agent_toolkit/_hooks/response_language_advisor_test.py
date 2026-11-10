@@ -107,7 +107,7 @@ def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, 
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize("marker_body", ["ready", "consumed", None])
 def test_stop_language_follows_user_delivery_path(tmp_path, monkeypatch, marker_body, codex):
-    """送達ツールの準備状態によらず、実際に表示する最終本文を判定する。"""
+    """待機対象のないStopでは、送達ツールの準備状態によらず最終本文を判定する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     marker = tmp_path / "marker.txt"
