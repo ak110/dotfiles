@@ -36,6 +36,17 @@ class _ServerStartFailed(Exception):
     """fork-serverの起動失敗を示す内部例外。呼び出し元でsubprocess.runへフォールバックする。"""
 
 
+def idle_server_pid() -> int | None:
+    """要求処理中でない常駐serverのPIDだけを返し、実行中のfork子を除外対象にしない。"""
+    # Lockのwith構文は取得を待つため、試験区切りでは非ブロッキング取得とfinally解放を使う。
+    if not _LOCK.acquire(blocking=False):  # pylint: disable=consider-using-with
+        return None
+    try:
+        return _SERVER.pid if _SERVER is not None and _SERVER.poll() is None else None
+    finally:
+        _LOCK.release()
+
+
 def run_script(
     script_path: Path,
     *,

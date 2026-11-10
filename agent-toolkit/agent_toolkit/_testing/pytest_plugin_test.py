@@ -770,7 +770,15 @@ raise SystemExit(code)
 
 
 @pytest.mark.parametrize(
-    ("workers", "route"), [(2, "direct"), (0, "direct"), (2, "inherited"), (2, "pyfltr"), (2, "run-command")]
+    ("workers", "route"),
+    [
+        (2, "direct"),
+        (0, "direct"),
+        (2, "inherited"),
+        (2, "pyfltr"),
+        (2, "run-command"),
+        pytest.param(2, "idle-fork", marks=pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応")),
+    ],
 )
 @pytest.mark.timeout(120)
 def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathlib.Path, workers: int, route: str) -> None:
@@ -781,7 +789,18 @@ def test_pytest_yields_slot_between_tests_and_resumes_remaining(tmp_path: pathli
     """
     evidence = tmp_path / "evidence"
     evidence.mkdir()
-    (tmp_path / "probe_test.py").write_text(_SLOT_PROBE, encoding="utf-8")
+    probe = _SLOT_PROBE
+    if route == "idle-fork":
+        (tmp_path / "fork.py").write_text("pass\n", encoding="utf-8")
+        probe = probe.replace(
+            "    evidence =",
+            "    from agent_toolkit._testing import fork_runner\n"
+            "    assert fork_runner.run_script(pathlib.Path(__file__).with_name('fork.py')).returncode == 0\n"
+            "    assert fork_runner.idle_server_pid() is not None\n"
+            "    evidence =",
+            1,
+        )
+    (tmp_path / "probe_test.py").write_text(probe, encoding="utf-8")
     (tmp_path / "waiter.py").write_text(_SLOT_WAITER, encoding="utf-8")
     (tmp_path / "outer.py").write_text(_SLOT_OUTER, encoding="utf-8")
     (tmp_path / "run_command.py").write_text(_SLOT_RUN_COMMAND, encoding="utf-8")
@@ -920,7 +939,7 @@ def test_pytest_stops_yielding_after_budget_while_long_waiters_keep_queueing(
     )
     (tmp_path / "probe_test.py").write_text(probe_source, encoding="utf-8")
     # 予算は譲渡が完了してから判定する。模擬待機者の追越し窓だけを無効にし、上流の新規要求優先と予算を分ける。
-    # 通常設定の呼び出し経路は、上の協調5経路で別に確認する。
+    # 通常設定の各起動形式は、上の譲渡・復帰試験で別に確認する。
     waiter_source = _SLOT_WAITER.replace(
         "with execution_slot.hold(",
         "execution_slot._REACQUIRE_BYPASS_SECONDS = 0\n\nwith execution_slot.hold(",

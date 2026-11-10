@@ -32,8 +32,15 @@ from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
+from agent_toolkit._testing import (
+    fork_runner,
+    isolation,
+    resource_diagnostics,
+    session_evidence_support,
+    slot_yield,
+    xdist_stop,
+)
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support, slot_yield, xdist_stop
 from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
@@ -214,7 +221,9 @@ def pytest_configure(config: pytest.Config) -> None:
     def ignored_children() -> set[int]:
         # resource_trackerは同じインタープリターが終了まで使う補助プロセスで、試験の子ではない。
         tracker = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
-        return baseline | ({tracker} if isinstance(tracker, int) else set())
+        idle_server = fork_runner.idle_server_pid()
+        # 待機中の常駐補助だけを除く。fork子を含む残りの子孫は譲渡を止める。
+        return baseline | {pid for pid in (tracker, idle_server) if isinstance(pid, int)}
 
     config.pluginmanager.register(
         slot_yield.BoundaryYield(ignored_children, budget, exhausted_marker), "dotfiles-execution-slot-yield"

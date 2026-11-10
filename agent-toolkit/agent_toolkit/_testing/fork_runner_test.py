@@ -10,6 +10,7 @@ import pathlib
 import signal
 import subprocess
 import sys
+import time
 import typing
 
 import pytest
@@ -247,3 +248,23 @@ def test_terminate_server_waits_and_closes_pipes(tmp_path: pathlib.Path) -> None
     assert server.stdout is not None
     assert server.stdout.closed
     assert _fork_runner._SERVER is None  # noqa: SLF001  # pylint: disable=protected-access
+    assert _fork_runner.idle_server_pid() is None
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応")
+def test_only_idle_server_is_reported_while_active_child_stays_protected(tmp_path: pathlib.Path) -> None:
+    """待機中のserverは識別でき、fork子の実行中は除外用PIDを返さない。"""
+    release = tmp_path / "child.release"
+    script = _write_script(tmp_path, late_descendant.held_source(release))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_fork_runner.run_script, script, timeout=10)
+        try:
+            deadline = time.monotonic() + 10
+            while not release.with_suffix(".ready").exists():
+                assert not future.done() and time.monotonic() < deadline
+                time.sleep(0.01)
+            assert _fork_runner.idle_server_pid() is None
+        finally:
+            release.touch()
+        assert future.result(timeout=10).returncode == 0
+    assert _fork_runner.idle_server_pid() is not None
