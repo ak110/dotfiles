@@ -179,9 +179,8 @@ armedされた場合も、端末フォーカスが`focused`の間は自動継続
 このため、端末多重化ツールがペインのfocus-inを報告する環境では、常駐実行のペインをアクティブにしているだけで、設定した期限は満了しない。
 2026年11月7日、herdrのペインで実行したprocess-loopの統括の質問が5分で自動継続せず、ユーザーの回答まで約3時間52分待った。
 この事象はこの条件によると推定している（herdrがfocus-inを報告することは観測していない）。
-`atk wi process-loop`が起動したClaudeのメイン会話では、PreToolUse hookが`AskUserQuestion`を拒否し、事前承認型UWIへの記録へ切り替えさせる。
-拒否の判定は`agent-toolkit/agent_toolkit/_hooks/pretooluse/process_loop_question.py`にある。
-フォーカスはhookから観測できず、離席時にペインを非アクティブにする運用に依存せず質問待ちへ上限を与えるためである。
+2026年11月10日のユーザー回答に従い、process-loopのClaude統括も`AskUserQuestion`を使える。
+フォーカスによる待機延長はユーザーが離席時のペイン状態に気を付けて対処し、質問を拒否してUWIへ固定するhookは撤去した。
 `dialogExpiry`は対話TUIが描画する`AskUserQuestion`を対象にしない。
 `dialogExpiry`が未設定の場合の値を解決する関数の呼び出し元は、bridgeへ転送したダイアログの駐留、制御プロトコルのユーザーダイアログ要求、cross-sessionのHELDメッセージの失効の3箇所だけである。
 `AskUserQuestion`の転送はこの3箇所のいずれにも該当しない。

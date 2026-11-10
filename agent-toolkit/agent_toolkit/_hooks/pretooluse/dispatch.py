@@ -11,8 +11,6 @@ warn種別のcheckはstdoutの`hookSpecificOutput.additionalContext`へ警告を
 
 AskUserQuestion / ExitPlanMode:
 
-- process-loopが起動したClaudeのメイン会話の`AskUserQuestion`の拒否 (block)。端末フォーカスで回答期限が
-  働かないため、事前承認型UWIへの記録を案内する（`process_loop_question`）
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 - ユーザーが直接読む英語主体の質問本文・計画本文の書き直し要求 (block)
 - 確認の前に読む2資料（`agent-toolkit:user-confirmation-and-report`）を読まないままメインが呼んだ
@@ -97,7 +95,6 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
-lazy from agent_toolkit._hooks.pretooluse import process_loop_question as _process_loop_question
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
     _AGENTS_SERVER_SEND_TOOLS,
@@ -244,8 +241,6 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
     """ツールの種類ごとの判定を実行し、その結果を返す。"""
-    if block := _process_loop_question.check(payload, session_id):
-        return Decision(block=block)
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
     # Skill: write-plan起動時は前の計画のパスを消去する。

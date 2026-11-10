@@ -1,12 +1,12 @@
-"""process-loopのメイン会話の`AskUserQuestion`だけを、公開PreToolUse hookが拒否することを検証する。"""
+"""process-loopの統括も公開PreToolUse hookで質問を拒否されないことを検証する。"""
 
 import json
 
 import pytest
 
-from agent_toolkit._testing.pretooluse_support import _run, denial_reason
+from agent_toolkit._testing.pretooluse_support import _run
 
-# Claude Code 2.1.319の`AskUserQuestion`のPreToolUse入力から、判定に使う項目だけを残した。
+# 主体と起動環境の判定に必要なフィールドを持つ合成PreToolUse入力。
 _QUESTION = {"questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]}
 _PROCESS_LOOP = {"AGENT_TOOLKIT_PROCESS_LOOP_SESSION": "1", "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID": "loop-session"}
 
@@ -22,28 +22,25 @@ def _payload(session_id: str, **extra: str) -> dict[str, object]:
     }
 
 
-def test_process_loop_main_question_is_denied_with_uwi_guidance() -> None:
-    """process-loopが起動したメイン会話の質問は表示前に拒否し、UWIへの記録と元項目の保留を案内する。"""
-    reason = denial_reason(_run(_payload("loop-session"), _PROCESS_LOOP))
-    assert "回答期限が働かない" in reason
-    assert "事前承認型UWI" in reason and "未確定判断の保留と暫定判断" in reason
-
-
 @pytest.mark.parametrize(
     ("session_id", "extra", "environment"),
     [
+        ("loop-session", {}, _PROCESS_LOOP),
         ("other-session", {}, _PROCESS_LOOP),
         ("loop-session", {"agent_id": "subagent-1"}, _PROCESS_LOOP),
         ("loop-session", {}, {**_PROCESS_LOOP, "AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
         ("loop-session", {}, {}),
     ],
-    ids=["nested-claude", "subagent", "delegated-session", "interactive"],
+    ids=["process-loop-main", "nested-claude", "subagent", "delegated-session", "interactive"],
 )
-def test_question_outside_process_loop_main_is_not_denied(
+def test_question_is_not_denied_because_of_process_loop(
     session_id: str, extra: dict[str, str], environment: dict[str, str]
 ) -> None:
-    """入れ子の会話、サブエージェント、委譲先、通常の対話セッションの質問は拒否しない。"""
-    result = _run(_payload(session_id, **extra), environment)
+    """統括・入れ子・サブエージェント・委譲先・対話の質問を、process-loopという起動環境だけで拒否しない。"""
+    result = _run(
+        _payload(session_id, **extra),
+        {"AGENT_TOOLKIT_OWNER_SESSION": "", "AGENT_TOOLKIT_DELEGATED_SESSION": "0", **environment},
+    )
     assert result.returncode == 0
     if result.stdout.strip():
         specific = json.loads(result.stdout).get("hookSpecificOutput", {})

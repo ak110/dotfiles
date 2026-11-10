@@ -25,6 +25,7 @@ dotfilesで導入した後に撤去した仕組みを、何を補う・何を代
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
+| process-loopの統括のAskUserQuestionを拒否し、確認をUWIへ固定する | 2026-11-10（本行を追加した撤去commit） | UWI投入の負担と、auto mode classifierの偽陽性をUWIでは解消できない問題を理由とするユーザー回答で撤去した。 | process-loopの統括も通常の質問を使い、端末フォーカスによる待機延長はユーザーが運用で扱う。docs/development/concepts-governance.md「確認の提示形式」 | 2026年11月10日の回答が示す負担と解消不能の問題を解決し、ユーザーが変更を求めた場合 |
 | hookが規範本文を代替配送し、配送予算・補完読取・取得済み記録でホスト本来の資料取得を補う | 2026-10-19、10-27、10-31、commit: 840091fd5、187d9787d | 本文の代替配送がホスト本来の起動・読取と取得観測を置き換えていた。 | 本文はホスト本来の手段で取得し、hookは所在と必要範囲を案内する。docs/development/audit-records.md「補完読取と出力予算の契約更新（2026年10月30日）」、docs/development/concepts-runtime.md「Claude CodeとCodexの規範配置」、docs/development/incidents-runtime.md「フックとセッション状態の不全」 | 撤去理由を解消できることを示した場合 |
 | 存在しないパスを指定した検索にPreToolUseが警告する | 2026-09-26、commit: f2a2d11cf | 可逆な入力誤りへの静的検査が正当な操作への警告を増やしていた。 | 検索対象の実在は標準の探索で確かめ、hookは費用と便益で選ぶ。docs/development/audit-records.md「agent-toolkit/rules/01-agent.md：方針が衝突する場合の優先順位：2026年9月25日」 | 撤去理由を解消できることを示した場合 |
 | 編集時hookが成果物の文体をチェックする | 2026-09-26、commit: f2a2d11cf | 編集時の文体検査を外して英語応答警告だけを残すユーザー判断による。 | 文体の一次チェックはlint、規範は生成時の予防ガイドとする。docs/development/concepts-principles.md「規範文書の書き方」 | 撤去理由を解消できることを示した場合 |
