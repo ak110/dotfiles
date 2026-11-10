@@ -17,7 +17,7 @@ from agent_toolkit._hooks.agent_id import is_main_agent_context
 from agent_toolkit._hooks.notice import block_formatter
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 
 _block_notice = block_formatter("response-language")
 
@@ -35,7 +35,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
         return "", ""
-    if not is_codex_payload(payload):
+    outcome, body = check_text(text)
+    if outcome is not CheckOutcome.WARN:
+        return "", ""
+    if not is_codex_payload(payload) and not is_antigravity_payload(payload):
         transcript = payload.get("transcript_path")
         session = payload.get("session_id")
         session_id = session if isinstance(session, str) else ""
@@ -46,9 +49,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             session_state=read_state(session_id) if session_id else None,
         ):
             return "", ""
-    outcome, body = check_text(text)
-    if outcome is not CheckOutcome.WARN:
-        return "", ""
     recovery = "基準を満たさない場合は成果・判断・未達と指定の返却形式を含む完了本文を変更せず、そのまま再出力して停止せよ。"
     return "block", _block_notice(
         response_language_check.BLOCK_BODY

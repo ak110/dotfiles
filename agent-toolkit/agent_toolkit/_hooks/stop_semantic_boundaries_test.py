@@ -25,10 +25,10 @@ def test_codex_stop_keeps_only_blocking_checks():
     assert stop.CODEX_CHECK_MODULE_NAMES == ("response_language_advisor", "submission_report_advisor")
 
 
-@pytest.mark.parametrize("codex", (False, True))
+@pytest.mark.parametrize("runtime", ("claude", "codex", "agy"))
 @pytest.mark.parametrize("task_type", (None, "Agent", "Bash", "MCP"))
-def test_stop_language_distinguishes_pending_async_work(tmp_path, monkeypatch, codex, task_type):
-    """途中待機はClaudeだけ通し、作業終了とCodexの完了本文を保護する。"""
+def test_stop_language_distinguishes_pending_async_work(tmp_path, monkeypatch, runtime, task_type):
+    """途中待機の免除はClaudeだけに限り、他ホストの完了本文を保護する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("response_language_advisor",))
@@ -38,10 +38,12 @@ def test_stop_language_distinguishes_pending_async_work(tmp_path, monkeypatch, c
         "background_tasks": [] if task_type is None else [{"type": task_type, "id": "pending-task"}],
         "last_assistant_message": "The work is complete.",
     }
-    if codex:
+    if runtime == "codex":
         payload["turn_id"] = "turn"
+    elif runtime == "agy":
+        payload["runtime"] = "agy"
     result = stop.evaluate(json.dumps(payload))
-    assert (result.get("decision") == "block") is (codex or task_type is None)
+    assert (result.get("decision") == "block") is (runtime != "claude" or task_type is None)
     payload["stop_hook_active"] = True
     assert stop.evaluate(json.dumps(payload)).get("decision") != "block"
     payload["stop_hook_active"] = False
