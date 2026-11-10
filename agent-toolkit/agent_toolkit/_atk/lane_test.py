@@ -23,7 +23,7 @@ import pytest
 import yaml
 
 from agent_toolkit import atk
-from agent_toolkit._atk import agents_exit_session, lane, managed_temp, run_command
+from agent_toolkit._atk import agents_exit_session, lane, managed_temp, run_command, run_script
 from agent_toolkit._atk.wi import process_loop_session
 from agent_toolkit._common import session_registry, task_documents, wait_schedule
 from agent_toolkit._plan import commit_mapping
@@ -122,6 +122,82 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     assert code == 0 and not repeated["removed"]
     assert repeated["result_path"] != deleted["result_path"]
     assert json.loads(pathlib.Path(deleted["result_path"]).read_text(encoding="utf-8"))["removed"] == ["lane-01"]
+
+
+def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開選定更新から同じ資源の前進・新しい検収済みHEADでの再統合を完遂する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    manifest = _cleanup_integration_manifest(tmp_path, handoff_text="再開の証拠")
+    (worktree / "first").write_text("最初の成果", encoding="utf-8")
+    first = git_repository.commit_all(worktree, "最初の成果")
+    code, initial, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, first))
+    assert code == 0 and initial["phase"] == "finalized", stderr
+    original = yaml.safe_load(selected.read_text(encoding="utf-8"))["初回配分"]
+    (repo / "other-lane").write_text("他レーンの成果", encoding="utf-8")
+    advanced = git_repository.commit_all(repo, "他レーンの成果")
+    args = [str(selected), "--reopen-wi", "20261023-000000-001.md", "--output", str(selected), "--work-dir", str(repo)]
+    assert run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=args)) == 0
+    capsys.readouterr()
+    code, reused, stderr = _invoke(capsys, *_create_args(repo, selected))
+    assert code == 0 and reused["worktree"] == record["worktree"] and reused["branch"] == record["branch"], stderr
+    assert git_repository.git_output(worktree, "rev-parse", "HEAD") == advanced
+    assert (worktree / "other-lane").read_text(encoding="utf-8") == "他レーンの成果"
+    (worktree / "second").write_text("再開後の成果", encoding="utf-8")
+    second = git_repository.commit_all(worktree, "再開後の成果")
+    code, final, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, second))
+    assert code == 0 and final["phase"] == "finalized" and final["integrated_head"] == second, stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == second
+    document = yaml.safe_load(selected.read_text(encoding="utf-8"))
+    assert document["初回配分"] == original and document["レーンの所要時間"][0]["統合状態"] == "統合済み"
+    # 追加のコード変更がない観測再開も、前回のfinalizedを返すだけで選定を取り残さない。
+    assert run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=args)) == 0
+    capsys.readouterr()
+    code, repeated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, second))
+    assert code == 0 and repeated["phase"] == "finalized", stderr
+    assert yaml.safe_load(selected.read_text(encoding="utf-8"))["レーンの所要時間"][0]["統合状態"] == "統合済み"
+
+
+def test_integrate_manifest_timeout_reclaims_verification_descendants(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """上限を持たない検証へ内部の有限上限を渡し、子孫回収後の失敗を所有記録へ保存する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    manifest = _write_empty_finalization_manifest(tmp_path)
+    marker = tmp_path / "verification-child.pid"
+    program = (
+        "import pathlib,subprocess,sys,time; "
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],start_new_session=True); "
+        f"pathlib.Path({str(marker)!r}).write_text(str(child.pid)); time.sleep(60)"
+    )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["verification_timeout"] = 10**4000
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    assert code == 2 and "verification_timeout" in stderr
+    assert not marker.exists()
+    data.update(verification=[[sys.executable, "-c", program]], verification_timeout=0.5)
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    code, _result, _stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    child = None
+    with contextlib.suppress(lane.psutil.NoSuchProcess):
+        if marker.exists():
+            child = lane.psutil.Process(int(marker.read_text(encoding="utf-8")))
+    try:
+        assert code != 0 and marker.exists()
+        stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
+        assert stored["integration"]["results"]["verification-0"]["timed_out"]
+        if child is not None:
+            assert not child.is_running() or child.status() in (lane.psutil.STATUS_ZOMBIE, lane.psutil.STATUS_DEAD)
+    finally:
+        if child is not None:
+            with contextlib.suppress(lane.psutil.NoSuchProcess):
+                if child.is_running() and child.status() not in (lane.psutil.STATUS_ZOMBIE, lane.psutil.STATUS_DEAD):
+                    child.kill()
 
 
 def test_delete_retains_resources_and_explains_retry_after_ignore_check_failure(
@@ -2120,7 +2196,7 @@ def test_integrate_resumes_failed_history_compare_without_rebasing_again(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
 
 
-@pytest.mark.parametrize("resume_kind", ["accept", "advance", "correct-and-advance"])
+@pytest.mark.parametrize("resume_kind", ["accept", "advance", "correct-and-advance", "multiple"])
 def test_integrate_resumes_conflict_resolution_following_new_upstream_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], resume_kind: str
 ) -> None:
@@ -2130,6 +2206,12 @@ def test_integrate_resumes_conflict_resolution_following_new_upstream_file(
     worktree = pathlib.Path(record["worktree"])
     (worktree / "shared.txt").write_text("レーン\n", encoding="utf-8")
     reviewed = git_repository.commit_all(worktree, "成果")
+    resolved = [reviewed]
+    if resume_kind == "multiple":
+        (worktree / "second.txt").write_text("レーンの追加\n", encoding="utf-8")
+        reviewed = git_repository.commit_all(worktree, "第二の成果")
+        resolved.append(reviewed)
+        (repo / "second.txt").write_text("上流の追加\n", encoding="utf-8")
     (repo / "shared.txt").write_text("上流\n", encoding="utf-8")
     (repo / "added_test.py").write_text("旧名称\n", encoding="utf-8")
     before = git_repository.commit_all(repo, "先行統合")
@@ -2138,21 +2220,40 @@ def test_integrate_resumes_conflict_resolution_following_new_upstream_file(
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 2, stderr
     (worktree / "shared.txt").write_text("レーンと上流\n", encoding="utf-8")
-    (worktree / "added_test.py").write_text("新名称\n", encoding="utf-8")
-    git_repository.run_git(worktree, "add", "--", "shared.txt", "added_test.py")
-    git_repository.run_git(worktree, "-c", "core.editor=true", "-c", "submodule.recurse=false", "rebase", "--continue")
+    resolved_paths = ["shared.txt"]
+    if resume_kind != "multiple":
+        (worktree / "added_test.py").write_text("新名称\n", encoding="utf-8")
+        resolved_paths.append("added_test.py")
+    git_repository.run_git(worktree, "add", "--", *resolved_paths)
+    continued = git_repository.run_git(
+        worktree,
+        "-c",
+        "core.editor=true",
+        "-c",
+        "submodule.recurse=false",
+        "rebase",
+        "--continue",
+        check=resume_kind != "multiple",
+    )
+    if resume_kind == "multiple":
+        assert continued.returncode == 1
+        (worktree / "second.txt").write_text("レーンと上流の追加\n", encoding="utf-8")
+        git_repository.run_git(worktree, "add", "--", "second.txt")
+        git_repository.run_git(worktree, "-c", "core.editor=true", "-c", "submodule.recurse=false", "rebase", "--continue")
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 2 and "history-compare" in stderr
     code, _result, stderr = _invoke(capsys, *args, "--resolved-conflict", before)
     assert code == 2 and "history-compare" in stderr
     stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))["integration"]
     assert not stored.get("resolved_conflicts")
-    code, pending, stderr = _invoke(capsys, *args, "--resolved-conflict", reviewed)
+    conflict_args = [value for oid in resolved for value in ("--resolved-conflict", oid)]
+    code, pending, stderr = _invoke(capsys, *args, *conflict_args)
     assert code == 1 and pending["phase"] == "awaiting-validation", stderr
-    assert pending["resolved_conflicts"] == [reviewed]
-    assert json.loads(pathlib.Path(pending["rewrite_map"]).read_text(encoding="utf-8")) == {reviewed: pending["new_head"]}
+    assert set(pending["resolved_conflicts"]) == set(resolved)
+    mapping = json.loads(pathlib.Path(pending["rewrite_map"]).read_text(encoding="utf-8"))
+    assert set(mapping) == set(resolved) and mapping[reviewed] == pending["new_head"]
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
-    if resume_kind != "accept":
+    if resume_kind in {"advance", "correct-and-advance"}:
         if resume_kind == "correct-and-advance":
             (worktree / "correction").write_text("是正", encoding="utf-8")
             reviewed = git_repository.commit_all(worktree, "是正")

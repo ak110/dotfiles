@@ -127,7 +127,12 @@ description: >
 モデルの費用がかかるため、CIや定期工程には組み込まない。
 
 1. `uv run --frozen python scripts/review_eval.py prepare --out <managed-tempの絶対パス>`で事例ごとの作業ツリーと計画の複製を作る。
-   計画が新形式AWIを含む事例では、AWIの完成条件とH1・冒頭から写した条件表（`review_contract`）も作る。
+   事例定義の`revision`には計画・commit対応記録・WIを取得するprivate-notesの完全OIDを置き、WIだけ異なる整合版を要する場合は`wi_revisions`へWI名と完全OIDを記す。
+   変更時点の要求と対応する保存版を原本とし、変更前後で同じ定義と抽出原本を再利用する。
+   指定版の欠落や不正は事例定義を直し、最新本文で代用しない。
+   新形式AWIを含む事例では、反映項目ごとの主要完成状態と出典、リスト・段落の補足条件を条件表（`review_contract`）へ写す。
+   反映内容節がない対象AWIはH1と冒頭から主要完成状態1件を作り、人間由来と旧形式の対象外判定を維持する。
+   生成側と起動側は同じ必要条件を検査し、`評価用WI原本`のJSON一覧から同じ保存本文を取得する。
    出力の`start`をそのままagents_serverの`start`へ渡し、比べるモデルは`model_type`で指定する
 2. 変更前は稼働中のplugin rootの役割名（`exec-review`）、変更後は作業ツリーの`agent-toolkit/share/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。
    agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映された後の実行と、反映前に保存した結果を比べる

@@ -7,11 +7,14 @@ import json
 import os
 import pathlib
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 import filelock
 import psutil
 
+from agent_toolkit._atk.wi import snapshot as _wi_snapshot
+from agent_toolkit._atk.wi.entries import EntryRecord
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import session_launchers as _launchers
@@ -253,7 +256,7 @@ def _unfinished_record(record: dict[str, Any]) -> dict[str, Any]:
         record.get("session_id") is None or record.get("session_id") == previous.get("session_id")
     ):
         retained = dict(_unfinished_record(previous))
-        for key in ("manifest", "prepared_worktree"):
+        for key in ("manifest", "prepared_worktree", "snapshot_file"):
             if key in record:
                 retained[key] = record[key]
         return retained
@@ -368,6 +371,28 @@ def update_session(ownership: Ownership, session_id: str, *, lane_session_id: st
     return dataclasses.replace(ownership, session_id=session_id)
 
 
+def save_snapshot(ownership: Ownership, entries: Iterable[EntryRecord]) -> pathlib.Path:
+    """初回取得の集合を保存し、未完了の同じ実行では元の基準を再利用する。"""
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _owned_record(ownership)
+        prior = record.data
+        while True:
+            if "snapshot_file" in prior:
+                path = pathlib.Path(prior["snapshot_file"])
+                _wi_snapshot.read(path)
+                return path
+            if not isinstance(prior.get("previous"), dict):
+                break
+            prior = prior["previous"]
+        directory = ownership.path.parent / "inputs"
+        directory.mkdir(exist_ok=True)
+        path = directory / f"{ownership.path.stem}.{ownership.token}.{uuid.uuid4()}.snapshot.json"
+        _wi_snapshot.save(path, entries)
+        record.data["snapshot_file"] = str(path)
+        _save(ownership.path, record)
+        return path
+
+
 def save_candidates(ownership: Ownership, candidates: list[dict[str, Any]]) -> pathlib.Path:
     """凍結した候補を上書きせず保存し、担当の所有記録へ寿命を結び付ける。"""
     with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
@@ -383,6 +408,8 @@ def save_candidates(ownership: Ownership, candidates: list[dict[str, Any]]) -> p
 
 def _candidate_files(record: dict[str, Any]) -> list[pathlib.Path]:
     result = [pathlib.Path(value) for value in record.get("candidate_files", [])]
+    if "snapshot_file" in record:
+        result.append(pathlib.Path(record["snapshot_file"]))
     previous = record.get("previous")
     if isinstance(previous, dict):
         result.extend(_candidate_files(previous))
@@ -401,13 +428,14 @@ def release(ownership: Ownership, *, completed: bool = True) -> None:
         if completed:
             record.data.pop("previous", None)
             record.data.pop("candidate_files", None)
+            record.data.pop("snapshot_file", None)
         _save(ownership.path, record)
         for path in finished_inputs:
             # 同じoriginの生成物だけを回収し、所有記録に異常なパスがあっても範囲を広げない。
             if (
                 path.parent == ownership.path.parent / "inputs"
                 and path.name.startswith(ownership.path.stem + ".")
-                and path.name.endswith(".candidates.json")
+                and path.name.endswith((".candidates.json", ".snapshot.json"))
             ):
                 path.unlink(missing_ok=True)
 

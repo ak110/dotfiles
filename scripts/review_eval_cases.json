@@ -6,6 +6,7 @@
       "role": "exec-review",
       "repo": "dotfiles",
       "plan": "plans/2026/10/30-0137_single-lane-process",
+      "revision": "c4711ed2fa4e84e53bcdb2535e42a38b91cc09dd",
       "description": "Codexの読取本文をPostToolUseで全量配送する変更（9b4c6e6f6）。実際のレビューは通過し、2026年10月31日のユーザー指摘で撤去された",
       "expect": {
         "detect": [
@@ -24,6 +25,10 @@
       "role": "exec-review",
       "repo": "dotfiles",
       "plan": "plans/2026/10/22-0609_single-lane-process",
+      "revision": "f9623900119d5f8b02021486dc5edd3a1f52b3bb",
+      "wi_revisions": {
+        "20261019-150925-001.md": "236689ad8664d560991ed8992af77b2d1a8ba17a"
+      },
       "description": "宣言型読込表の導入で本文配送を再導入した変更（7454e5938）",
       "expect": {
         "detect": [
@@ -42,6 +47,7 @@
       "role": "exec-review",
       "repo": "dotfiles",
       "plan": "plans/2026/11/04-1334_process-wi_レーン03",
+      "revision": "6487fb49612ffe3f2bd37bcbf57868a8dfffa9d2",
       "description": "管理表の行1（計画の検証表と直接影響範囲の対象不足。採用済み）",
       "expect": {
         "detect": [
@@ -60,6 +66,7 @@
       "role": "exec-review",
       "repo": "glatasks",
       "plan": "plans/2026/11/06-0918_glatasks-process-wi-single-lane",
+      "revision": "9719a8fbbe9fc7397efa2de9e7df7bf821e291b3",
       "description": "@sveltejs/kitのredirectでバックスラッシュを含む戻り先が外部へ転送されるという指摘。レビュー担当自身が再確認で撤回した",
       "expect": {
         "detect": [],

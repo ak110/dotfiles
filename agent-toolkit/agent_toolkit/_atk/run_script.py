@@ -17,6 +17,7 @@ SCRIPT_PATHS = {
     "review-adoption": pathlib.Path("skills/review-session/scripts/review_adoption.py"),
     "delegation-prompt": pathlib.Path("skills/delegation/scripts/delegation_prompt.py"),
     "history-compare": pathlib.Path("skills/commit/scripts/compare_history.py"),
+    "commit-with-timeout": pathlib.Path("skills/commit/scripts/run_commit.py"),
     "agent-doc-changes": pathlib.Path("skills/write-plan/scripts/list_agent_doc_changes.py"),
     "plan-create": pathlib.Path("skills/write-plan/scripts/create_plan_files.py"),
     "plan-check": pathlib.Path("skills/write-plan/scripts/check_plan_file.py"),

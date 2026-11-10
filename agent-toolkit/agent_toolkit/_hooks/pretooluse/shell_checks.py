@@ -579,13 +579,21 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
 
 
 def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
-    """`git`区間のサブコマンド名と、そのサブコマンド以降の引数を返す。"""
+    """`git`と専用commit起動のサブコマンド名・引数を返す。"""
     if not segment.resolved or not segment.tokens:
         return None
-    if pathlib.PurePath(segment.tokens[0]).name != "git":
+    tokens = segment.tokens
+    # 専用起動でも通常commitと同じ検査へ渡す。任意の登録scriptは展開しない。
+    if is_atk_command(tokens) and tokens[1:4] == ("run-script", "commit-with-timeout", "--"):
+        arguments = tokens[4:]
+        if len(arguments) >= 3 and arguments[0] == "--timeout" and arguments[2] == "--":
+            return "commit", arguments[3:]
+        if len(arguments) >= 2 and arguments[0].startswith("--timeout=") and arguments[1] == "--":
+            return "commit", arguments[2:]
+        return None
+    if pathlib.PurePath(tokens[0]).name != "git":
         return None
     index = 1
-    tokens = segment.tokens
     while index < len(tokens):
         token = tokens[index]
         if not token.startswith("-"):
@@ -701,7 +709,8 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
             else:
                 body = _read_commit_message_file(
                     message_file,
-                    invocation.segment.tokens,
+                    # 専用起動にGitのglobal optionはなく、現在のcwdからcommitする。
+                    ("git", "commit") if is_atk_command(invocation.segment.tokens) else invocation.segment.tokens,
                     cwd=current.path if current.resolved else "",
                 )
             if body is None:

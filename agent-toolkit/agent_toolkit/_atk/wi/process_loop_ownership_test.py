@@ -9,8 +9,31 @@ import threading
 import pytest
 
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
+from agent_toolkit._atk.wi import snapshot as wi_snapshot
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository as git
+
+
+def test_snapshot_survives_incomplete_restarts(tmp_path: pathlib.Path) -> None:
+    """同じ実行の多段再開では初回集合だけを渡し、正常完了後だけ保存物を回収する。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo, mode="coordinator")
+    assert owner is not None
+    entries = [(tmp_path / "old.md", owner.repo_id, "本文", "adopted", "awi")]
+    baseline = ownership.save_snapshot(owner, entries)
+    assert wi_snapshot.read(baseline) == {(owner.repo_id, "old.md")}
+    for _ in range(2):
+        ownership.release(owner, completed=False)
+        owner = ownership.try_acquire(owner.repo_id, worktree=repo, mode="coordinator")
+        assert owner is not None
+        assert ownership.save_snapshot(owner, []) == baseline
+        assert wi_snapshot.read(baseline) == {(owner.repo_id, "old.md")}
+    baseline.write_text("broken", encoding="utf-8")
+    with pytest.raises(ValueError, match="開始時集合"):
+        ownership.save_snapshot(owner, entries)
+    assert baseline.read_text(encoding="utf-8") == "broken"
+    ownership.release(owner)
+    assert not baseline.exists()
 
 
 def test_dedicated_and_all_repos(tmp_path: pathlib.Path) -> None:

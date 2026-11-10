@@ -377,7 +377,12 @@ def _execute(
             try:
                 # 回収不能でも記録を確定するため、context managerの無期限waitを重ねない。
                 process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
-                    argv, cwd=cwd, env=child_env, stdout=stdout_stream, stderr=stderr_stream
+                    argv,
+                    cwd=cwd,
+                    env=child_env,
+                    stdout=stdout_stream,
+                    stderr=stderr_stream,
+                    start_new_session=os.name == "posix",
                 )
                 try:
                     if is_human_terminal():
@@ -406,8 +411,10 @@ def _execute(
                     residual = process_tree.stop_process_tree(process)
                     if residual:
                         failure = "子孫プロセスを回収できない: " + "; ".join(residual)
-                except BaseException:
-                    process_tree.log_residual(process_tree.stop_process_tree(process), context="lane command exception")
+                except BaseException as error:
+                    reclaim_error = process_tree.stop_owned_process(process, context="lane command exception")
+                    if reclaim_error is not None:
+                        raise reclaim_error from error
                     raise
                 child_exit_code = process.returncode
             except (OSError, ValueError) as error:

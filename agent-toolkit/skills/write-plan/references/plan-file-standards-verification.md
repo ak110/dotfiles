@@ -12,6 +12,7 @@
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
 | 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 訂正済み検証表の更新後に成功結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
 
 ## 検証と公開工程
 
@@ -36,7 +37,9 @@
 このファイルには本節と同じ`## 検証`の固定表を1つ置き、計画メタ情報は置かず、凍結した計画ファイルの検証表全体を差し替える内容を書く。
 訂正後の検証は訂正済み検証表のコマンドで行う。
 計画ファイル、訂正の結論、訂正済み検証表の対応と絶対パスは引き継ぎ記録に書き、実装、実行レビュー、統合の各工程へ渡す。
-訂正済み検証表を更新したら更新後の条件で検証を最初からやり直す。
+訂正済み検証表を更新したら、保存済み成功の本文・実行条件・対象の被覆と更新後の要求を比較する。
+不足または結果が変わる範囲を追加実行する。
+本文と条件の同定、成功保持、再実行の共通基準は`agent-basics:check-execution/references/verification-scope-reruns.md`に従い、同じ成功を表の更新だけで破棄しない。
 
 計画・訂正済み検証表・実行記録には、`agent-toolkit:/share/verification-operations.md`に従って選んだ起動形を記す。
 対象到達・完了・終了状態・診断を確かめる。

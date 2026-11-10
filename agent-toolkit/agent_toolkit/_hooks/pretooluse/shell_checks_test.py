@@ -1095,6 +1095,31 @@ class TestBashGitRevParseShortMultiple:
             assert result.stdout.strip()
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("git -C sub commit -m text", ("commit", ("-m", "text"))),
+        ("atk run-script commit-with-timeout -- --timeout 3 -- -m text", ("commit", ("-m", "text"))),
+        ("/tools/atk run-script commit-with-timeout -- --timeout=3 -- -F -", ("commit", ("-F", "-"))),
+        (
+            "env FLAG=1 atk run-script commit-with-timeout -- --timeout 3 -- --amend --no-edit",
+            ("commit", ("--amend", "--no-edit")),
+        ),
+        ("atk run-script other -- --timeout 3 -- -m text", None),
+        ("atk run-script commit-with-timeout -- --help", None),
+        ("atk run-script commit-with-timeout -- --timeout 3 -m text", None),
+        ("echo atk run-script commit-with-timeout -- --timeout 3 -- -m text", None),
+    ],
+)
+def test_git_subcommand_tokens_recognizes_only_the_fixed_commit_wrapper(
+    command: str, expected: tuple[str, tuple[str, ...]] | None
+) -> None:
+    """専用起動の固定構文だけを通常commitへ対応付け、データと別scriptを除外する。"""
+    segments = shell_checks.extract_execution_segments(command)
+    assert len(segments) == 1
+    assert shell_checks.git_subcommand_tokens(segments[0]) == expected
+
+
 class TestGitCommitAttribution:
     """実行位置と最終メッセージを確定できる通常commitだけの帰属確認。"""
 
@@ -1107,6 +1132,7 @@ class TestGitCommitAttribution:
             f"git commit -m '変更' -m '{_trailer}'",
             f"git -C /work commit --message=変更 --message='{_trailer}'",
             f"git commit -m変更 -m'{_trailer}'",
+            f"atk run-script commit-with-timeout -- --timeout 3 -- -m 変更 -m '{_trailer}'",
         ],
     )
     def test_accepts_exactly_one_observed_identity_trailer(self, command: str) -> None:
@@ -1116,6 +1142,7 @@ class TestGitCommitAttribution:
         "command",
         [
             "git commit -m '変更'",
+            "atk run-script commit-with-timeout -- --timeout 3 -- -m '変更'",
             "while test -f marker; do git commit -m '変更'; done",
             "git commit -m '変更' -m 'Co-Authored-By: GPT-6.1 Sol / High <noreply@openai.com>'",
             "git commit -m '変更' -m 'Co-Authored-By: GPT-6 Sol / Medium <noreply@openai.com>'",
@@ -1168,7 +1195,9 @@ class TestGitCommitMessageFormat:
             "git commit -m '件名\n本文'",
             "git commit --message='件名\nCo-Authored-By: 著者'",
             "git commit -F - <<'EOF'\n件名\n本文\nEOF",
+            "atk run-script commit-with-timeout -- --timeout 3 -- -F - <<'EOF'\n件名\n本文\nEOF",
             "git commit --file=message.txt",
+            "atk run-script commit-with-timeout -- --timeout 3 -- --file=message.txt",
         ],
     )
     def test_rejects_missing_blank_line(self, tmp_path: pathlib.Path, command: str) -> None:
@@ -1234,8 +1263,9 @@ def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, e
     "command_kind",
     ["message", "file", "heredoc", "am", "am-attached", "aF"],
 )
+@pytest.mark.parametrize("launcher", ["git commit", "atk run-script commit-with-timeout -- --timeout 3 --"])
 def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
-    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
+    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str], launcher: str
 ) -> None:
     """引数・ファイル・heredocから最終メッセージを確定し、WI名を持つcommitを公開hookが遮断する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
@@ -1251,7 +1281,7 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     else:
         command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
 
-    result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
+    result = _run_git_commit_message_hook(repo, tmp_path, command.replace("git commit", launcher, 1), extra_payload)
 
     reason = _denial_reason(result)
     assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", reason)
@@ -1264,8 +1294,9 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     "command_kind",
     ["message", "file", "heredoc", "am", "am-attached", "aF"],
 )
+@pytest.mark.parametrize("launcher", ["git commit", "atk run-script commit-with-timeout -- --timeout 3 --"])
 def test_git_commit_without_work_item_filename_passes_public_hook(
-    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str]
+    tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str], launcher: str
 ) -> None:
     """WI名のない同形メッセージは公開hookを通過する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
@@ -1281,11 +1312,19 @@ def test_git_commit_without_work_item_filename_passes_public_hook(
     else:
         command = "git commit -F - <<'EOF'\n" + message + "\nEOF"
 
-    result = _run_git_commit_message_hook(repo, tmp_path, command, extra_payload)
+    result = _run_git_commit_message_hook(repo, tmp_path, command.replace("git commit", launcher, 1), extra_payload)
 
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_commit_wrapper_message_file_is_relative_to_current_directory(tmp_path: pathlib.Path) -> None:
+    """`-C`というファイル名をGitのglobal optionと取り違えず、現在cwdの本文を読む。"""
+    message = "件名\n\n本文\n"
+    (tmp_path / "-C").write_text(message, encoding="utf-8")
+    command = "atk run-script commit-with-timeout -- --timeout 3 -- -F -C -m 追記"
+    assert list(shell_checks._git_commit_messages(command, cwd=str(tmp_path))) == ["追記\n\n" + message]
 
 
 class TestBashOptionAfterTerminator:

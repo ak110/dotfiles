@@ -26,6 +26,7 @@ def _write_cases(path: pathlib.Path) -> pathlib.Path:
                         "role": "exec-review",
                         "repo": "target",
                         "plan": "plans/2026/10/01-0000_case",
+                        "revision": "0000000000000000000000000000000000000000",
                         "description": "見逃し事例",
                         "expect": {
                             "detect": [{"id": "policy", "description": "方針違反", "patterns": ["本文.{0,10}配送", "方針"]}],
@@ -154,6 +155,18 @@ def _case_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str, st
     return repo, base, old, new
 
 
+def _save_notes(notes: pathlib.Path, cases: pathlib.Path) -> str:
+    """準備用原本を保存し、評価事例をその版へ固定する。"""
+    _git(notes, "init", "-q")
+    _git(notes, "add", ".")
+    _git(notes, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "saved")
+    revision = _git(notes, "rev-parse", "HEAD")
+    data = json.loads(cases.read_text(encoding="utf-8"))
+    data["cases"][0]["revision"] = revision
+    cases.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return revision
+
+
 def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, capsys) -> None:
     """対応記録の書換え後のOIDから範囲を求め、レビュー対象の作業ツリーと計画の複製、起動値を用意する。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
@@ -166,6 +179,8 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
         f'{{"commits":["{old}"],"awi":["x.md"]}}\n{{"rewrite":{{"{old}":"{new}"}}}}\n', encoding="utf-8"
     )
     out = tmp_path / "out"
+
+    _save_notes(notes, review_eval.CASES_PATH)
 
     assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
     (prepared,) = _results(capsys)
@@ -212,16 +227,27 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
         encoding="utf-8",
     )
     (entries / "20261001-000000-002.md").write_text(head + "# 旧形式\n## 実現性\n可能\n## 完成条件\n- 条件\n", encoding="utf-8")
+    (entries / "20261001-000000-003.md").write_text(
+        head + "# 旧形式\n## 適用範囲\n範囲\n## 完成条件\n- 条件\n", encoding="utf-8"
+    )
+    (entries / "20261001-000000-004.md").write_text(
+        head.replace("source: fix\n", "") + "# 人間由来\n## 完成条件\n- 条件\n", encoding="utf-8"
+    )
     plan_dir = notes / "plans/2026/10"
     plan_dir.mkdir(parents=True)
     (plan_dir / "01-0000_case.md").write_text(
         "# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n"
-        "  - 20261001-000000-001.md: 新形式\n  - 20261001-000000-002.md: 旧形式\n",
+        "  - 20261001-000000-001.md: 新形式\n  - 20261001-000000-002.md: 旧形式\n"
+        "  - 20261001-000000-003.md: 旧形式\n  - 20261001-000000-004.md: 人間由来\n",
         encoding="utf-8",
     )
     (plan_dir / "01-0000_case.wi-commits.jsonl").write_text(
         f'{{"commits":["{old}","{new}"],"awi":["x.md"]}}\n', encoding="utf-8"
     )
+    original_wi = entries / "20261001-000000-001.md"
+    if form == "legacy" and supplement_form == "paragraph":
+        original_wi.write_bytes(original_wi.read_bytes().replace(b"\n", b"\r\n"))
+    original_bytes = original_wi.read_bytes()
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
     manager = SimpleNamespace(
@@ -238,6 +264,7 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
     sender.assert_not_awaited()
 
     out = tmp_path / "out"
+    _save_notes(notes, review_eval.CASES_PATH)
     assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
     (prepared,) = _results(capsys)
     extra_params = prepared["start"]["extra_params"]
@@ -260,6 +287,29 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
         assert "ファイルB \\| 文書を更新する。" in contract
         assert "| 20261001-000000-001.md 反映内容2 |" in contract
     assert "20261001-000000-002.md" not in contract
+    assert "20261001-000000-003.md" not in contract
+    assert "20261001-000000-004.md" not in contract
+    originals = json.loads(pathlib.Path(extra_params["評価用WI原本"]).read_text(encoding="utf-8"))
+    assert set(originals) == {f"20261001-000000-00{n}.md" for n in range(1, 5)}
+    assert pathlib.Path(originals["20261001-000000-001.md"]).read_bytes() == original_bytes
+    saved_text = pathlib.Path(originals["20261001-000000-001.md"]).read_text(encoding="utf-8")
+    (entries / "20261001-000000-001.md").write_text(
+        head + "# 後日の要求\n## 完成条件\n- 新条件1\n- 新条件2\n- 新条件3\n", encoding="utf-8"
+    )
+    (plan_dir / "01-0000_case.md").write_text("# 後日の計画\n", encoding="utf-8")
+    (plan_dir / "01-0000_case.wi-commits.jsonl").write_text("後日の不正な記録\n", encoding="utf-8")
+    repeated = tmp_path / "repeated"
+    assert review_eval.main(["prepare", "--out", str(repeated), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
+    (again,) = _results(capsys)
+    assert pathlib.Path(again["start"]["extra_params"]["review_contract"]).read_text(encoding="utf-8") == contract
+    assert pathlib.Path(again["start"]["extra_params"]["計画"]).read_bytes() == pathlib.Path(extra_params["計画"]).read_bytes()
+    assert (
+        pathlib.Path(again["start"]["cwd"]).parent.joinpath("wi-commits.jsonl").read_bytes()
+        == pathlib.Path(prepared["start"]["cwd"]).parent.joinpath("wi-commits.jsonl").read_bytes()
+    )
+    again_originals = json.loads(pathlib.Path(again["start"]["extra_params"]["評価用WI原本"]).read_text(encoding="utf-8"))
+    assert pathlib.Path(again_originals["20261001-000000-001.md"]).read_text(encoding="utf-8") == saved_text
+    subprocess.run(again["cleanup"], check=True)
     try:
         response = await mcp_tools.start(**prepared["start"], whole_contract_path=str(whole))
         assert response["session_id"] == "review"
@@ -291,6 +341,7 @@ def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, c
     (plan_dir / "01-0000_case.wi-commits.jsonl").write_text(f'{{"commits":["{new}"],"awi":["x.md"]}}\n', encoding="utf-8")
 
     out = tmp_path / "out"
+    _save_notes(notes, cases)
     assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 0
     (prepared,) = _results(capsys)
     assert prepared["start"]["subagent_md_path"] == "wi-draft-review"
@@ -307,3 +358,60 @@ def test_bundled_cases_load_and_compile() -> None:
     cases = review_eval.load_cases()
     assert {case.kind for case in cases} >= {"見逃し", "正しい指摘", "誤指摘"}
     assert all(case.detect or case.absent for case in cases)
+
+
+@pytest.mark.parametrize("defect", ["supplement", "major", "revision", "wi-revision", "missing-plan", "missing-wi"])
+def test_prepare_rejects_incomplete_generation_or_saved_input(tmp_path, monkeypatch, capsys, defect) -> None:
+    """生成器だけの欠落と保存版の不成立を公開prepareで拒否し、起動値を返さない。"""
+    cases = _write_cases(tmp_path / "cases.json")
+    monkeypatch.setattr(review_eval, "CASES_PATH", cases)
+    repo, _base, _old, new = _case_repository(tmp_path)
+    notes = tmp_path / "notes"
+    plan = notes / "plans/2026/10/01-0000_case.md"
+    plan.parent.mkdir(parents=True)
+    name = "20261001-000000-001.md"
+    plan.write_text(f"# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n  - {name}: 要求\n", encoding="utf-8")
+    plan.with_suffix(".wi-commits.jsonl").write_text(f'{{"commits":["{new}"]}}\n', encoding="utf-8")
+    wi = notes / name
+    wi.write_text("---\ntype: awi\nsource: fix\n---\n# 要求\n\n目的。\n\n## 完成条件\n- 条件\n", encoding="utf-8")
+    if defect == "missing-plan":
+        plan.unlink()
+    if defect == "missing-wi":
+        wi.unlink()
+    _save_notes(notes, cases)
+    if defect == "revision":
+        data = json.loads(cases.read_text(encoding="utf-8"))
+        data["cases"][0]["revision"] = "HEAD"
+        cases.write_text(json.dumps(data), encoding="utf-8")
+    if defect == "wi-revision":
+        data = json.loads(cases.read_text(encoding="utf-8"))
+        data["cases"][0]["wi_revisions"] = {name: "f" * 40}
+        cases.write_text(json.dumps(data), encoding="utf-8")
+    if defect in {"supplement", "major"}:
+        # 公開prepareが生成欠落を拒否する境界を試すため、内部の生成処理だけを差し替える。
+        # pylint: disable-next=protected-access
+        original = review_eval._contract_rows
+
+        def incomplete(*args, **kwargs):
+            category = "補足条件" if defect == "supplement" else "主要完成状態"
+            return [row for row in original(*args, **kwargs) if f"| {category} |" not in row]
+
+        monkeypatch.setattr(review_eval, "_contract_rows", incomplete)
+    out = tmp_path / "out"
+    assert review_eval.main(["prepare", "--out", str(out), "--repo", f"target={repo}", "--private-notes", str(notes)]) == 1
+    captured = capsys.readouterr()
+    assert not captured.out
+    if defect in {"supplement", "major"}:
+        assert name in captured.err
+        assert "補足条件 0/1件" in captured.err if defect == "supplement" else "主要完成状態 0/1件" in captured.err
+        assert "scripts/review_eval.py" in captured.err
+    elif defect == "wi-revision":
+        assert name in captured.err
+        assert str(notes) in captured.err
+        assert "f" * 40 in captured.err
+        assert "--private-notes" in captured.err
+        assert "wi_revisions" in captured.err
+        assert "--repo <名前>" not in captured.err
+    else:
+        assert "revision" in captured.err
+    assert not (out / "missed/worktree").exists()

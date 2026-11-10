@@ -29,7 +29,8 @@ CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI�
 未終了と実行未登録は、失敗を示す明確な証拠を得てから既存不具合かを判断する。
 選定開始時の点検に加えて、公開時には従来どおりベースラインを作成し、push後のCI結果を検収する。
 
-**8.** 通常起動では、`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness`を実行する。
+**8.** 通常起動では、`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>`を実行する。
+同じ初回取得の全状態・全種別の識別子集合を保存し、新着確認と再開へ同じパスを引き継ぐ。
 
 `all-repos`のリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う。
 明示した一覧の項目が作業ツリー指定の初回取得結果に含まれない場合は、`atk wi show <WIファイル名> --target-repo=all`を実行して保存済みの`target_repo`を取得し、originとの不一致がリポジトリの移転やパス改名によるものか、別リポジトリであるかを判定する。

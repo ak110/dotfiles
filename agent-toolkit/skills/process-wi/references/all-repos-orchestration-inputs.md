@@ -16,13 +16,16 @@
 **3.** 集合JSONの`repositories`は対象別のオブジェクトの配列である。
 
 各要素は`target_repo`、登録元`registered_worktree`、準備済み`worktree`、`common_dir`を持つ。
-候補・選定用の項目は`candidate_file`、`readiness`、`lane_limit`である。
+候補・選定用の項目は`candidate_file`、`snapshot_file`、`readiness`、`lane_limit`である。
 所有・再開用の項目は`ownership_record`、`ownership_token`、`lane_session_id`、`previous`である。
 
 **4.** 開始時候補は本文・鮮度を含む`candidate_file`の原本をそのまま使う。
 
 リポジトリ担当は受領した全体作業契約から巡回開始時刻とタイムゾーンを取得し、自身の作業記録へ残す。
-`immediate-fix.md`「開始後に追加されたWIの確認」にはこの時刻を使う。
+新着の確認には受領した`snapshot_file`を使い、巡回開始時刻は経過時間の記録へ使う。
+`snapshot_file`は初回取得と同じ全状態・全種別の識別子集合であり、本文を持つ候補一覧とは別に保持する。
+再開時も初回の集合を引き継ぎ、欠落・破損時は原本を回復する。
+具体的な新着の取得と判定は`immediate-fix.md`「開始後に追加されたWIの確認」に従う。
 
 `pick-wi-check --candidate-file`にはその絶対パスを渡し、着手可否は受領したreadinessの診断も含めて適用する。
 不足する本文と依存先だけを通常キューCLIで補う。

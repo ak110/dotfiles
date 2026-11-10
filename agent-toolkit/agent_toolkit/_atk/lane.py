@@ -461,6 +461,7 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
                 _prepare(existing, path)
                 return dict(existing, record_path=str(path), reused=True)
             if _worktrees(repo).get(existing["worktree"]) == existing["branch"]:
+                _refresh_finalized_lane(existing)
                 _save(path, existing)
                 return dict(existing, record_path=str(path), reused=True)
             raise ValueError(f"レーンの作成が未完了: {path}。記録と残った資源を確認して回復する")
@@ -506,6 +507,32 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
         _save(path, record)
         _prepare(record, path)
         return dict(record, record_path=str(path), reused=False)
+
+
+def _refresh_finalized_lane(record: dict[str, typing.Any]) -> None:
+    """再開対象の完了済み資源だけを、成果を失わないfast-forwardで最新基点へ進める。"""
+    integration = record.get("integration", {})
+    if integration.get("phase") != "finalized" or record["selection"]["integrated"]:
+        return
+    worktree = pathlib.Path(record["worktree"])
+    current = _git(worktree, "rev-parse", "HEAD")
+    base = _git(pathlib.Path(record["repo"]), "rev-parse", f"refs/heads/{record['base_branch']}")
+    if current == base:
+        return
+    known_head = integration.get("new_head") or integration.get("integrated_head")
+    if current != known_head or _git(worktree, "status", "--porcelain=v1", "--untracked-files=all"):
+        raise ValueError("再開するレーンに最終化後の成果か未コミット変更がある。現在の担当へ戻して成果を検収する")
+    writers = _unowned_writers((worktree,), _caller_chain() | {record["session_id"]})
+    if writers:
+        raise ValueError(
+            f"再開するレーンを別の担当が使用中: {[writer.session_id for writer in writers]}。終了を待って再実行する"
+        )
+    result = git_command.run(["merge-base", "--is-ancestor", current, base], worktree, check=False)
+    if result.returncode:
+        raise ValueError(
+            "統合先と再開レーンをfast-forwardで対応付けられない。保存済み成果と履歴を検収し、元レーンの資源を再準備する"
+        )
+    _git(worktree, "-c", "submodule.recurse=false", "merge", "--ff-only", base)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -998,12 +1025,22 @@ def _integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) 
         "wis",
         "verification",
         "verification_records",
+        "verification_timeout",
         "handoff",
         "lane_started_at",
     }:
         raise ValueError(
-            "manifestはplans・wis・verification・verification_records・handoff・lane_started_atを持つobjectで指定する"
+            "manifestはplans・wis・verification・verification_records・verification_timeout・handoff・lane_started_atを持つobjectで指定する"
         )
+    verification_timeout = manifest.get("verification_timeout")
+    if verification_timeout is not None and (
+        isinstance(verification_timeout, bool)
+        or not isinstance(verification_timeout, int | float)
+        or verification_timeout <= 0
+        or verification_timeout > sys.float_info.max
+        or not math.isfinite(verification_timeout)
+    ):
+        raise ValueError("verification_timeoutは正の有限秒数かnullで指定する")
     reuse = manifest.get("verification_records", [])
     if not isinstance(reuse, list) or any(not isinstance(path, str) or not pathlib.Path(path).is_absolute() for path in reuse):
         raise ValueError("verification_recordsは保存済み実行記録JSONの絶対パスの配列で指定する")
@@ -1163,8 +1200,8 @@ def _integration_command(
 
 
 def _verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: list[list[str]], cwd: pathlib.Path) -> None:
-    # 検証argvは計画の検証コマンドをそのまま渡し、自身の上限（pyfltrのcommand-timeoutなど）で終わる。
-    # 固有手順向けのprocedure_timeoutを重ねると、検証が自身の上限より先に打ち切られる。
+    # 自身に上限が無い検証だけ、manifestの明示値を内部実行へ渡す。
+    # 固有手順向けのprocedure_timeoutは重ねず、実行枠の待ちも実処理の上限から外す。
     for index, argv in enumerate(argvs):
         key = f"verification-{index}"
         sources = [*state["input"]["manifest"].get("verification_records", [])]
@@ -1181,7 +1218,7 @@ def _verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: 
                 break
         else:
             state["completed"] = [value for value in state["completed"] if value != key]
-            _integration_command(record, state, key, argv, cwd, timeout=None)
+            _integration_command(record, state, key, argv, cwd, timeout=state["input"]["manifest"].get("verification_timeout"))
 
 
 def _rebase_unpublished(worktree: pathlib.Path, base: str, record: dict[str, typing.Any], state: dict[str, typing.Any]) -> None:
@@ -1221,7 +1258,7 @@ def _amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing
             "Git統合後は前回と同じレビューHEADと統合先を指定する"
         )
     old, new = previous["manifest"], identity["manifest"]
-    if any(old.get(key) != new.get(key) for key in ("verification", "handoff", "lane_started_at")):
+    if any(old.get(key) != new.get(key) for key in ("verification", "verification_timeout", "handoff", "lane_started_at")):
         raise ValueError(
             "最終化入力の補完では検証・引き継ぎ記録・レーン開始時刻を変更しない。"
             "Git統合前なら--amend-finalizationを外して--restart-reviewで是正して再開し、"
@@ -1447,6 +1484,10 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         }
         digest = hashlib.sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
         state: dict[str, typing.Any] | None = record.get("integration")
+        if state is not None and state["phase"] == "finalized" and not _selection_state(record)["integrated"]:
+            # 観測だけの再開ではHEADとmanifestが同じでも、選定の未統合を処置する必要がある。
+            record["previous_integration"] = state
+            state = None
         if state is not None and args.restart_review:
             if state["phase"] in {"git-integrated", "finalized"}:
                 raise ValueError("Git統合後は--restart-reviewで再開せず、同じ入力で残る最終化を実行する")

@@ -2080,3 +2080,11 @@ uv run --frozen pytest -v -p no:cacheprovider \
   surfaceを持つ会話は直接APIとskip判定を比較する。
   `claude plugin test agent-toolkit`で通知先着、閾値両境界、委譲先の除外、予約重複、skip・例外後の再予約を確認する。
   通常の作業会話へ検証用の圧縮を送らない。
+
+## agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月10日
+
+- 観測日: 2026年11月10日。
+- 確認版: Linux、Python 3.15.2、pytest 9.2.0、prek 0.5.9、agent-toolkitの作業ツリー版。
+- 再検証: `agent-toolkit/skills/commit/scripts/run_commit_test.py`の公開commit入口試験で、時間切れとプロセスグループSIGINT、別セッションの検証子、未ステージ差分の復元と無関係な実行の保持を確認する。
+  実pyfltrとの境界は、隔離Git・独立したpyfltrキャッシュ・ローカルprek hookを用意し、`*_test.py`の検証子から別セッションの子を起動して同じ2終了経路を観測する。
+  親終了時の所有子孫の状態、退避復元と次の検証の完了を別々に確認し、観測側の後始末による回収を製品の回収成功へ数えない。

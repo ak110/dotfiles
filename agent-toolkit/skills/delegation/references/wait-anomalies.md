@@ -20,5 +20,6 @@
 | --- | --- | --- | --- |
 | 待機を開始できない場合に関する判断・作業の前 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
 | 終了コードと呼び出しの失敗に関する判断・作業の前 | `wait-anomalies-failures.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-failures.md` |
+| 役割宣言・起動時資料の起動前検査で稼働実装と役割資源の版相違が示された時 | `wait-anomalies-failures.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-failures.md` |
 | ホストによる背景待機の停止後に関する判断・作業の前 | `wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
 | MCPサーバーの再起動後に関する判断・作業の前 | `wait-anomalies-server-restart.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-server-restart.md` |

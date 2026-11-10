@@ -11,6 +11,7 @@
 | 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
 | リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
 | 先行工程を次の巡回へ回す前 | `agent-toolkit:process-wi/references/lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
+| 同じ巡回で既存WIを元レーンへ戻して再開する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
 
 ## 結果と終了
 
@@ -56,10 +57,18 @@ WI自体の完成と区別し、残す項目・未達条件・解除条件・再
 
 **9.** 報告用UWIの保存と、起動した担当・writerの終了観測を済ませ、最終の`status`・`remaining`・`writer_sessions`を保存する。
 
+選定YAMLを持つ各対象では、結果の確定と終了前に`atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated`を実行し、選定全体の統合状態を読み取り専用で検収する。
+後段を含む未統合レーンが返った場合は、その工程を続行するか、対象・具体的理由・解除条件・再開先を`remaining`へ保存し、`completed`へ短絡しない。
+入力不正や読取失敗は統合完了と見なさず、原本を回復して再検収する。
+
 `completed`でも正当な延期があれば、対象・未達条件・解除条件・再開先を`remaining`へ列挙する。
 保存したJSONを読み戻し、既存の公開・CI・レーンの検収記録と対応することを確認してから、最上位セッションの終了手順へ進み、統括CLIの終了を常駐へ返す。
 
 **10.** goalの判定は訂正後の最終保存内容と既存工程の証拠に基づく。
+
+既存WIを同じ巡回で再開するときは、`selection-procedure-addition.md`「処理対象WIの追加」の既存WI再開の公開操作へ接続し、元レーンと初回配分を保って未統合へ戻す。
+保持した資源の再利用または回収後の再準備から、現在のレビューHEADで再統合する。
+今回の最終化と選定原本の更新が完了したことを確認する。
 
  訂正前の記載や正当に延期した項目の存在だけを、当回の到達点の未達としない。
  目標の評価が終了を拒否したら、評価が挙げた残工程と結果の`remaining`を1件ずつ、今回進められる工程と正当な先送り（未来の有効な冷却期限、未回答のUWI、外部の先行項目への依存、ユーザーが許容した後回し）に分ける。

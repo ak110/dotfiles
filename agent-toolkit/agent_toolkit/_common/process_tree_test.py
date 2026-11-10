@@ -838,7 +838,7 @@ def test_stop_process_tree_reports_residual(monkeypatch, spawn_parent):
         assert target in targets
         return [item for item in targets if item.pid == target.pid]
 
-    monkeypatch.setattr(process_tree, "_wait_until_released", fail_to_release)
+    monkeypatch.setattr(process_tree, "wait_until_released", fail_to_release)
     try:
         assert process_tree.stop_process_tree(parent) == [expected]
     finally:

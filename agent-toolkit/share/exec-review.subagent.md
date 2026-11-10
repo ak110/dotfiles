@@ -9,6 +9,7 @@ optional_inputs:
 - CI記録
 - WI記録
 - review_contract
+- 評価用WI原本
 - 修正系列の開始時のHEAD
 - 原因commitOID
 - 開始時のHEAD
@@ -86,6 +87,20 @@ continuations:
 | 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` | |
 
 ## 出力
+
+以下の本文返却に加え、同じ担当が正式原本を保存して所在だけを返す方式を選べる。
+正式原本には必須7行と必要な全条件判定行を記載する。
+保存後に全文を読み戻し、HEAD・round・管理表・読者の全対象・条件番号と根拠が判定結果と一致することを確かめる。
+不足は返却前に同じ原本へ補う。
+検収済み原本を使う返却通知は次の2行だけとし、同じ原本をパスで引き渡す。
+
+```text
+状態: completed
+正式原本: <この担当が保存・読み戻しした正式原本の絶対パス>
+```
+
+委譲元は終了した担当と原本を対応付け、その本文へ共通の受領条件と従来の検収を適用する。
+短い本文返却と正式原本返却のどちらでも、以下の必須内容と判定基準を保つ。
 
 - 読者別探索は`{"files":{"<相対パス>":{"sessions":["<ID>"]}},"external":{"<絶対パス>":{"sessions":["<ID>"]}}}`の1行JSONで申告する。
   IDにはUUID、16進数、`agent-`付き16進数、Codexの`task_name`（`/root/<名前>`）を受け付け、起動結果を使う。

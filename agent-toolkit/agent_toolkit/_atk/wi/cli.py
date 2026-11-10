@@ -295,6 +295,18 @@ def _add_mq_read_parsers(sub: Any) -> None:
         help="process_loop_repositoriesの登録集合を一括取得する。--target-repoとは併用できない。",
     )
     list_.add_argument(
+        "--snapshot-output",
+        type=pathlib.Path,
+        metavar="JSON",
+        help="同じ取得のフィルター適用前の全状態・全種別の対象repoとWI名だけをJSON配列へ保存する。",
+    )
+    list_.add_argument(
+        "--new-since",
+        type=pathlib.Path,
+        metavar="JSON",
+        help="開始時集合のJSONに無い項目だけへ通常の一覧条件を適用する。基準JSONは変更しない。",
+    )
+    list_.add_argument(
         "--type",
         choices=("all", *_wi_constants.WI_TYPES),
         action="append",
@@ -1049,6 +1061,8 @@ def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
     managed-tempの掃引より前に呼ぶ。引数の誤りを掃引の警告より先に報告するためである。
     """
+    if args.command == "wi" and args.wi_subcommand == "list" and args.snapshot_output and args.new_since:
+        args.subparser.error("--snapshot-outputと--new-sinceは併用できません。開始時集合は初回だけ保存する。")
     if args.command == "wi" and args.wi_subcommand == "grep":
         if args.pattern is not None and args.regexp is not None:
             args.subparser.error("PATTERNと-eは併用できません。すべての検索語を-e PATTERNで反復指定する。")

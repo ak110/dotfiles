@@ -12,9 +12,7 @@ import re
 import subprocess
 import uuid
 from collections.abc import Mapping
-from typing import Any, Never
-
-from markdown_it import MarkdownIt
+from typing import Any
 
 from agent_toolkit._agents_server import (
     launch_prompts,
@@ -28,12 +26,13 @@ from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, 
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter, headings
+from agent_toolkit._atk.wi.constants import normalized_wi_type
 from agent_toolkit._common import private_notes, read_triggers, session_registry, task_documents
 from agent_toolkit._common.markdown_headings import parse_headings
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
-from agent_toolkit._plan import commit_mapping
+from agent_toolkit._plan import commit_mapping, review_contract
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -292,7 +291,9 @@ def _validate_required_prompt_inputs(
 
     必須入力の欠落と宣言外の入力名は委譲先を起動せず`ValueError`で拒否する。
     """
-    declaration = _task_document_declaration(task_document, document_text)
+    declaration = plugin_root.SERVER_RUNTIME_CODE.check_role(
+        "役割宣言の検査", task_document, lambda: _task_document_declaration(task_document, document_text)
+    )
     if isinstance(declaration, str):
         return declaration
     _check_declared_inputs(task_document, declaration, extra_params)
@@ -877,74 +878,54 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
     if record and "\n" not in record and pathlib.Path(record).is_absolute():
         record = _material_paths("WI記録", record)[0].read_text(encoding="utf-8")
     names.update(re.findall(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md", record))
-    if not names:
-        return
-    selected, missing = wi_entries.read_named_entries(
-        private_notes.default_private_notes(pathlib.Path.home()),
-        [(name, name) for name in sorted(names)],
-        target_repo=None,
-    )
-    if missing:
-        raise _material_error("WI記録", f"AWI本文を取得できません: {', '.join(missing)}")
+    if original := params.get("評価用WI原本"):
+        try:
+            if not pathlib.Path(original).is_absolute() or "\n" in original:
+                raise ValueError("一覧ファイル1件の絶対パスが必要")
+            originals = _material_paths("評価用WI原本", original)
+            texts = review_contract.read_wi_originals(originals[0], names)
+        except ValueError as error:
+            raise _material_error("評価用WI原本", str(error)) from error
+    else:
+        if not names:
+            return
+        selected, missing = wi_entries.read_named_entries(
+            private_notes.default_private_notes(pathlib.Path.home()),
+            [(name, name) for name in sorted(names)],
+            target_repo=None,
+        )
+        if missing:
+            raise _material_error("WI記録", f"AWI本文を取得できません: {', '.join(missing)}")
+        texts = {path.name: text for path, _repo, text, _state, _kind in selected}
     required: dict[str, tuple[int, int]] = {}
-    for path, _repo, text, _state, kind in selected:
+    for name, text in texts.items():
         parsed = frontmatter.parse_frontmatter(text)
         sections = {name for name, _body in headings.h2_sections(text)}
-        if kind != "awi" or parsed is None or not parsed[0].get("source") or sections & {"適用範囲", "実現性"}:
-            continue
-        required[path.name] = (
-            len(headings.last_h2_section_items(text, "完成条件")),
-            len(headings.last_h2_section_items(text, "反映内容と反映先")),
+        metadata = parsed[0] if parsed is not None else {}
+        counts = review_contract.required_counts(
+            kind=normalized_wi_type(metadata.get("type")),
+            source=metadata.get("source"),
+            sections=sections,
+            supplements=len(headings.last_h2_section_items(text, "完成条件")),
+            reflections=len(headings.last_h2_section_items(text, "反映内容と反映先")),
         )
+        if counts is not None:
+            required[name] = counts
     if not required:
         return
     reference = "share/exec-review-recording.md「記録する行と要求単位」"
 
-    def reject(reason: str) -> Never:
-        raise _material_error("review_contract", f"{', '.join(required)}: {reason}。条件表の書式: {reference}")
-
     value = params.get("review_contract", "")
     if not value or "\n" in value or not pathlib.Path(value).is_absolute():
-        reject("条件表の実在するファイルの絶対パスが必要")
+        raise _material_error(
+            "review_contract",
+            f"{', '.join(required)}: 条件表の実在するファイルの絶対パスが必要。条件表の書式: {reference}",
+        )
     try:
         paths = _material_paths("review_contract", value)
-    except ActionableError as error:
-        reject(str(error))
-    tokens = MarkdownIt("commonmark").enable("table").parse(paths[0].read_text(encoding="utf-8"))
-    rows: list[list[str]] = []
-    row: list[str] | None = None
-    header: list[str] = []
-    columns = ["WI", "条件番号", "区分", "内容", "出典"]
-    for token in tokens:
-        if token.type == "table_open":
-            header = []
-        elif token.type == "tr_open":
-            row = []
-        elif token.type == "inline" and row is not None:
-            row.append(token.content.strip().strip("`"))
-        elif token.type == "tr_close" and row is not None:
-            if not header:
-                header = row
-            elif set(columns).issubset(header) and len(row) == len(header):
-                current_row = list(row)
-                rows.append([current_row[header.index(column)] for column in columns])
-            row = None
-    for name, (count, reflection_count) in required.items():
-        own = [row for row in rows if len(row) == 5 and row[0] == name]
-        major = sum(row[2] == "主要完成状態" for row in own)
-        supplements = sum(row[2] == "補足条件" for row in own)
-        if major < 1 or supplements < count:
-            reject(f"{name}: 主要完成状態 {major}/1件、補足条件 {supplements}/{count}件")
-        numbers = [row[1] for row in own]
-        if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
-            reject(f"{name}: 条件番号が不正または重複")
-        covered = {int(number) for row in own for number in re.findall(r"反映内容([1-9][0-9]*)(?![0-9])", row[4])}
-        uncovered = [f"反映内容{number}" for number in range(1, reflection_count + 1) if number not in covered]
-        if uncovered:
-            reject(
-                f"{name}: 出典に対応する行が無い項目: {'、'.join(uncovered)}。"
-                "各項目の主要完成状態または除外理由を記した行を追加し、出典へ`反映内容N`を記す"
-            )
+        review_contract.validate(paths[0].read_text(encoding="utf-8"), required)
+    except ValueError as error:
+        raise _material_error("review_contract", f"{', '.join(required)}: {error}。条件表の書式: {reference}") from error
 
 
 def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib.Path]) -> None:
@@ -1260,7 +1241,9 @@ def task_document_request(
     # 委譲先は配送された本文だけを読むため、プラグインルートの変数を配送側で解決する。
     # 未展開のまま渡すと、委譲先は変数の値を推測して参照先を探す。
     document_text = document_text.replace(_PLUGIN_ROOT_VARIABLE, str(task_document.parent.parent))
-    declaration = _task_document_declaration(task_document, document_text)
+    declaration = plugin_root.SERVER_RUNTIME_CODE.check_role(
+        "役割宣言の検査", task_document, lambda: _task_document_declaration(task_document, document_text)
+    )
     model_type = declaration.model_type if isinstance(declaration, task_documents.TaskDocumentDeclaration) else None
     # 旧版の文書と保存済みsessionだけは、移行前の役割設定で継続できるようにする。
     if model_type is None:
@@ -1288,8 +1271,12 @@ def task_document_request(
         _check_declared_inputs(task_document, declaration, extra_params)
     # 起動時の資料は、受領した役割の判断が始まる前に同じ会話へ届ける。
     initial_documents = (
-        read_triggers.startup_context(
-            task_document, task_document.parent.parent, dict(extra_params), host=host, project=project
+        plugin_root.SERVER_RUNTIME_CODE.check_role(
+            "起動時資料の検査",
+            task_document,
+            lambda: read_triggers.startup_context(
+                task_document, task_document.parent.parent, dict(extra_params), host=host, project=project
+            ),
         )
         if launch_kind == "delegate" and include_startup
         else ""

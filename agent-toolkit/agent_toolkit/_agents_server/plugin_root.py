@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent_toolkit._agents_server import role_runtime
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import plugin_environment, plugin_root_leases
 
@@ -152,4 +153,5 @@ if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 else:
     # backendが初めて使われる前に、サーバーが起動した版を確定して保持する。
+    SERVER_RUNTIME_CODE = role_runtime.RuntimeCode.capture(Path(__file__).resolve().parents[2])
     SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()

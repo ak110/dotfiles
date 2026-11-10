@@ -75,6 +75,7 @@ def repository_input(
         "lane_limit": previous_input.get("lane_limit", snapshot.lane_limit),
         "candidate_file": previous_input.get("candidate_file")
         or str(_ownership.save_candidates(ownership, snapshot.candidate_records())),
+        "snapshot_file": str(_ownership.save_snapshot(ownership, snapshot.entries)),
         "readiness": previous_input.get("readiness", dataclasses.asdict(snapshot.readiness)),
         "previous": ownership.previous,
     }

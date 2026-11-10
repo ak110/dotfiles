@@ -50,7 +50,7 @@ import unicodedata
 import markdown_it
 import selection_contract
 import yaml
-from selection_merge import extend_write_targets, merge_selection
+from selection_merge import extend_write_targets, merge_selection, reopen_wis
 
 from agent_toolkit._atk.wi import frontmatter as _wi_frontmatter
 from agent_toolkit._common import markdown_headings as _markdown_headings
@@ -1333,6 +1333,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した選定結果の保存先")
+    parser.add_argument("--require-integrated", action="store_true", help="公開前に全レーンの統合完了を読み取り専用で確認する")
+    parser.add_argument(
+        "--reopen-wi", action="append", metavar="WI", help="既存WIを元レーンで再開する。--outputと組で反復指定可"
+    )
     parser.add_argument(
         "--candidate-file",
         type=pathlib.Path,
@@ -1351,6 +1355,37 @@ def main(argv: list[str] | None = None) -> int:
         "--lane-cost-updates", type=pathlib.Path, metavar="PATH", help="最終レーンの確定した秒数と根拠のJSON（統合時だけ）"
     )
     args = parser.parse_args(argv)
+    other_updates = (
+        args.merge,
+        args.lane_map,
+        args.candidate_file,
+        args.mark_integrated,
+        args.extend_write_targets,
+        args.lane_cost_updates,
+        args.body_wi,
+    )
+    if args.require_integrated:
+        if args.output is not None or args.reopen_wi is not None or any(value is not None for value in other_updates):
+            parser.error("--require-integratedは更新操作・--body-wiと併用しない")
+        try:
+            pending = _selection.pending_lanes(load_selection(args.selection_file))
+        except (InputError, ValueError) as error:
+            _next_action.report(str(error), next_action=_FIX_CONTENT)
+            return 2
+        if pending:
+            for row in pending:
+                print(f"未統合: {json.dumps(row, ensure_ascii=False)}", file=sys.stderr)
+            print(
+                _next_action.next_action_line(
+                    "未起動・未完了レーンを開始・継続する。延期するWIは理由・解除条件・再開位置を検収する"
+                ),
+                file=sys.stderr,
+            )
+            return 1
+        print("全レーン統合済み")
+        return 0
+    if args.reopen_wi is not None and (args.output is None or any(value is not None for value in other_updates)):
+        parser.error("--reopen-wiは--outputと組で指定し、他の更新操作・--body-wiと併用しない")
     if args.extend_write_targets is not None and (
         args.output is None
         or any(
@@ -1372,6 +1407,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--mark-integratedは--outputと組で指定し、--merge・--lane-mapと併用しない")
     if (
         args.mark_integrated is None
+        and args.reopen_wi is None
         and args.extend_write_targets is None
         and not (args.candidate_file is not None and args.merge is None and args.lane_map is None)
         and any(value is not None for value in (args.merge, args.lane_map, args.output))
@@ -1384,6 +1420,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         work_dir = _resolve_work_dir(args.work_dir)
         selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
+        if args.reopen_wi is not None:
+            try:
+                selection = reopen_wis(selection, args.reopen_wi)
+            except ValueError as error:
+                raise InputError(
+                    str(error), next_action="保存済み選定の元WI名と所属を確認して同じ再開操作を実行する"
+                ) from error
         if args.extend_write_targets is not None:
             try:
                 addition = yaml.safe_load(args.extend_write_targets.read_text(encoding="utf-8"))

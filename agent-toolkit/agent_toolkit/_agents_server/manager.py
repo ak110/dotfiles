@@ -19,6 +19,7 @@ from agent_toolkit._agents_server import (
     lifetime,
     logging_config,
     manager_wait,
+    plugin_root,
     result_projection,
     session_handoff,
     session_identity,
@@ -218,12 +219,16 @@ class AgentsServerManager(manager_wait.ManagerWait):
                 )
                 initial_documents = (
                     await run_file_operation(
-                        read_triggers.startup_context,
+                        plugin_root.SERVER_RUNTIME_CODE.check_role,
+                        "起動時資料の検査",
                         startup_document,
-                        startup_document.parent.parent,
-                        dict(startup_inputs or {}),
-                        host=engine,
-                        project=cwd,
+                        lambda engine=engine: read_triggers.startup_context(
+                            startup_document,
+                            startup_document.parent.parent,
+                            dict(startup_inputs or {}),
+                            host=engine,
+                            project=cwd,
+                        ),
                     )
                     if startup_document is not None and launch_kind == "delegate"
                     else ""

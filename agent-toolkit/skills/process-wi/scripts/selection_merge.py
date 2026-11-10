@@ -44,6 +44,36 @@ def _costs(data: dict[str, object]) -> _Rows:
     return rows
 
 
+def reopen_wis(existing: dict[str, object], names: list[str]) -> dict[str, object]:
+    """元の所属と初回配分を保ち、指定した既存WIと所属レーンだけを未統合へ戻す。"""
+    result = copy.deepcopy(existing)
+    items = typing.cast(_Rows, result.get(_selection.DECISIONS_KEY, result.get("decisions")))
+    by_wi = {str(item.get(_selection.WI_KEY, item.get("awi"))): item for item in items}
+    missing = set(names) - by_wi.keys()
+    if missing:
+        raise ValueError(f"再開対象WIが保存済み選定に無い: {sorted(missing)}")
+
+    def lane_of(item: dict[str, object]) -> str:
+        return str(item.get(_selection.LANE_KEY, item.get("lane")))
+
+    targets = {lane_of(by_wi[name]) for name in names}
+    if "なし" in targets:
+        raise ValueError("レーンが`なし`のWIは元レーンで再開できない")
+    integrated = _selection.integrated_lanes(existing)
+    for item in items:
+        if lane_of(item) in integrated:
+            item.setdefault(_selection.INTEGRATION_STATE_KEY, _selection.INTEGRATED)
+    for name in names:
+        by_wi[name][_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
+    costs = typing.cast(_Rows, result.get(_selection.LANE_COSTS_KEY, result.get("lane_costs")))
+    if not targets <= {lane_of(row) for row in costs}:
+        raise ValueError("再開対象WIの元レーンが所要時間に無い")
+    for row in costs:
+        if lane_of(row) in targets:
+            row[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
+    return result
+
+
 def extend_write_targets(existing: dict[str, object], addition: object) -> dict[str, object]:
     """指定WIの書込対象と関連記録を追記し、既存の配分と他の欄を保持する。"""
     allowed = {_selection.DECISIONS_KEY, _selection.LANE_OVERLAPS_KEY}

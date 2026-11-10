@@ -27,6 +27,64 @@ def _holds_resources(process: psutil.Process) -> bool:
         return False
 
 
+@pytest.mark.skipif(os.name != "posix", reason="ホストからのプロセスグループSIGINTを再現する")
+def test_execute_host_interrupt_reclaims_detached_descendant(tmp_path: pathlib.Path) -> None:
+    """子が先に消える順序でも所有を失わないよう、呼出側と検証子の中断境界を分ける。"""
+    parent_pid, child_pid = tmp_path / "parent.pid", tmp_path / "child.pid"
+    verifier = tmp_path / "verifier.py"
+    verifier.write_text(
+        "import os,pathlib,subprocess,sys,time\n"
+        f"parent=pathlib.Path({str(parent_pid)!r}); pending=parent.with_suffix('.pending')\n"
+        "pending.write_text(str(os.getpid())); pending.replace(parent)\n"
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],start_new_session=True)\n"
+        f"marker=pathlib.Path({str(child_pid)!r}); pending=marker.with_suffix('.pending')\n"
+        "pending.write_text(str(child.pid)); pending.replace(marker)\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    driver = tmp_path / "driver.py"
+    driver.write_text(
+        "import contextlib,pathlib,signal,sys,time,psutil\n"
+        "from agent_toolkit._atk import run_command\n"
+        "def interrupted(number,frame):\n"
+        " deadline=time.monotonic()+0.5\n"
+        " with contextlib.suppress(psutil.NoSuchProcess):\n"
+        f"  parent=psutil.Process(int(pathlib.Path({str(parent_pid)!r}).read_text()))\n"
+        "  while parent.is_running() and parent.status()!=psutil.STATUS_ZOMBIE and time.monotonic()<deadline: "
+        "time.sleep(0.01)\n"
+        " raise KeyboardInterrupt\n"
+        "signal.signal(signal.SIGINT,interrupted)\n"
+        f"run_command.execute([sys.executable,{str(verifier)!r}],pathlib.Path({str(tmp_path)!r}),30)\n",
+        encoding="utf-8",
+    )
+    environment = {
+        **os.environ,
+        "PYFLTR_CACHE_DIR": str(tmp_path / "pyfltr"),
+        "PYTHONPATH": str(pathlib.Path(run_command.__file__).resolve().parents[2]),
+    }
+    known: list[psutil.Process] = []
+    with (
+        (tmp_path / "driver.stdout").open("wb") as out,
+        (tmp_path / "driver.stderr").open("wb") as err,
+        process_tree.process_scope(
+            [sys.executable, str(driver)], env=environment, stdout=out, stderr=err, start_new_session=True
+        ) as owned,
+    ):
+        try:
+            deadline = time.monotonic() + 15
+            while not child_pid.exists() and owned.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.02)
+            assert child_pid.exists()
+            child = psutil.Process(int(child_pid.read_text(encoding="utf-8")))
+            known = process_tree.collect_descendants(owned.pid)
+            os.killpg(owned.pid, signal.SIGINT)
+            assert owned.wait(timeout=15) != 0
+            assert not _holds_resources(child)
+            assert not any(_holds_resources(process) for process in known)
+        finally:
+            process_tree.stop_tree(None, known=known)
+
+
 @pytest.fixture(autouse=True)
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """既存の結果検証はエージェント向けの出力を使う。"""

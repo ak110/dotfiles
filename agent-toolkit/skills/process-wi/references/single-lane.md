@@ -99,6 +99,8 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 以下では、本スキル固有の対象取得、worktreeの紐付け、公開の手順を定める。
 
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。
+   初回一覧に`--snapshot-output <開始時集合JSONの絶対パス>`を付け、all-reposから受領した場合は既存の`snapshot_file`を使う。
+   30分点検と公開前の新着確認は`immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時集合と判定済み記録を維持する。
    同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行して回答済みUWIを取得する。
    対象worktreeごとに公開対象とベースブランチを明示し、`selection-procedure-candidates.md`「処理対象の決定」に定める開始時のCI点検を実施する。
    実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。

@@ -197,11 +197,11 @@ def _stop_owned_tree(tree: _OwnedTree, timeout: float) -> TreeStopResult:
             tree.suspended.clear()
             tree.freeze()
             tree.kill_all()
-        residual = _wait_until_released(tree.targets(), timeout=timeout)
+        residual = wait_until_released(tree.targets(), timeout=timeout)
         # 一時停止できなかった対象が終了までに子を起動していないかを確かめ、見つかれば同じく終了させる。
         if late := tree.scan():
             tree.kill_all()
-            residual = _wait_until_released(tree.targets(), timeout=timeout)
+            residual = wait_until_released(tree.targets(), timeout=timeout)
             tree.unresolve_late(late)
         tree.resolve_suspend_failures()
         finished = True
@@ -681,11 +681,11 @@ def reclaim_processes(targets: list[psutil.Process], *, timeout: float = RECLAIM
     for process in targets:
         with contextlib.suppress(psutil.Error, OSError):
             process.terminate()
-    alive = _wait_until_released(targets, timeout=timeout)
+    alive = wait_until_released(targets, timeout=timeout)
     for process in alive:
         with contextlib.suppress(psutil.Error, OSError):
             process.kill()
-    return _wait_until_released(alive, timeout=timeout)
+    return wait_until_released(alive, timeout=timeout)
 
 
 def reclaim_unreaped(targets: list[psutil.Process], *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[psutil.Process]:
@@ -708,7 +708,7 @@ def reclaim_unreaped(targets: list[psutil.Process], *, timeout: float = RECLAIM_
     return remaining
 
 
-def _wait_until_released(targets: list[psutil.Process], *, timeout: float) -> list[psutil.Process]:
+def wait_until_released(targets: list[psutil.Process], *, timeout: float) -> list[psutil.Process]:
     """対象が資源を解放するまで待ち、上限までに解放しなかった対象を返す。"""
     remaining = list(targets)
     deadline = time.monotonic() + timeout

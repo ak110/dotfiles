@@ -358,7 +358,7 @@ def _invocation_repository(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.
         return None
     tokens = invocation.segment.tokens
     parsed = _git_subcommand_tokens(invocation.segment)
-    options = tokens[1 : len(tokens) - len(parsed[1]) - 1] if parsed is not None else ()
+    options = tokens[1 : len(tokens) - len(parsed[1]) - 1] if parsed is not None and not is_atk_command(tokens) else ()
     return _git_root(cwd.path, options=options)
 
 

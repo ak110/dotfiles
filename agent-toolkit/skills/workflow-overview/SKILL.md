@@ -44,6 +44,7 @@ user-invocable: false
 | 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` | |
 | 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
 | レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes-launch.md`、`../process-wi/references/run-lanes-integration.md`、`../process-wi/references/lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-launch.md`、`read:agent-toolkit:*/skills/process-wi/references/run-lanes-integration.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` | |
+| 開始後の新着WIの確認と今回追加の判断を扱う前 | `../process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
 
 ## 利用形態と起動主体
 
@@ -87,7 +88,8 @@ process-wiのメインセッションは対象の選定・配分とユーザー�
 目標から必要作業を構成する依頼は、通常対話と、単一リポジトリのprocess-wiへの追加指示で受け付ける。
 通常対話は既存の作業契約と計画へ、process-wiは`../process-wi/references/lanes-goals.md`「明示された目標からの実行」へ接続する。
 メインが全体の作業構成・結果の採否・方針転換・完了を所有し、局所担当が設計・実装、独立した担当が実行レビューを担う。
-目標の追加がない通常のキュー処理は固定した処理対象を維持する。
+通常のキュー処理は初回の対象と配分を維持し、開始時集合との差分で新着を確認する。
+新着の確認と今回追加の判断は`../process-wi/references/immediate-fix.md`「開始後に追加されたWIの確認」に従い、既存の作業記録へ対処時機と根拠を残す。
 
 要求事項の登録は、ユーザーが`atk wi add`や`agent-toolkit:add-awi-by-user`、`atk serve`のWI管理画面から行うほか、処理中のエージェントや`agent-toolkit:review-session`からも投入できる。
 本文の記述形式、由来、状態、依存関係の扱いは`agent-toolkit:wi-standards`に従う。
