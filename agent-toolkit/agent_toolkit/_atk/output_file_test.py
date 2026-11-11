@@ -56,7 +56,7 @@ def test_forced_save_is_open_before_result_and_keeps_exception(
 
     非0で終わった本体の出力には成功時の要約を適用せず、保存先と行数だけを示す。
     """
-    summarized = []
+    summarized: list[pathlib.Path] = []
     with (
         pytest.raises(SystemExit) as raised,
         output_file.auto_save(lambda: tmp_path, force_stdout=True, after_save=summarized.append),

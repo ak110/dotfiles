@@ -6,14 +6,15 @@
 
 from __future__ import annotations
 
+import importlib
 import pathlib
 import sys
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 # スキルのスクリプトはパッケージ外にあり、同じディレクトリのモジュールを裸の名前で読み込む。
+# 静的解析はこの検索パスを解決できないため、実行時に名前で読み込む。
 sys.path.insert(0, str(_ROOT / "skills/review-session/scripts"))
-
-import cost_metrics  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+cost_metrics = importlib.import_module("cost_metrics")
 
 
 def test_documented_self_record_label_is_recognized_by_review_metrics() -> None:
