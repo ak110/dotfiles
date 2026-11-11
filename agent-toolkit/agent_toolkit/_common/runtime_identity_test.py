@@ -5,7 +5,28 @@ from agent_toolkit._common.runtime_identity import (
     co_author_trailer,
     distinct_identities,
     latest_identity,
+    observed_model,
 )
+
+
+@pytest.mark.parametrize(
+    "entry,runtime,expected",
+    [
+        ({"type": "assistant", "message": {"model": "claude-fable-5"}}, "claude", "claude-fable-5"),
+        ({"type": "assistant", "message": {"model": "<synthetic>"}}, "claude", None),
+        ({"type": "user", "message": {"model": "claude-fable-5"}}, "claude", None),
+        ({"type": "turn_context", "payload": {"model": "gpt-6.1-sol"}}, "codex", "gpt-6.1-sol"),
+        ({"type": "event_msg", "payload": {"model": "gpt-6.1-sol"}}, "codex", None),
+        ({"step_update": {"model": "gemini-test"}}, "agy", "gemini-test"),
+        (
+            {"opencode_source": {"table": "message", "data": {"role": "assistant", "providerID": "local", "modelID": "test"}}},
+            "opencode",
+            "local/test",
+        ),
+    ],
+)
+def test_observed_model_does_not_require_effort(entry, runtime, expected):
+    assert observed_model(entry, runtime) == expected
 
 
 def test_runtime_identity_keeps_source_and_machine_value() -> None:

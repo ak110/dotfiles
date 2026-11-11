@@ -1470,7 +1470,7 @@ class TestRemovedChecksAreSilent:
             {"tool_name": "Read", "tool_input": {"file_path": str(tmp_path / ".env")}},
             {"tool_name": "WebFetch", "tool_input": {"url": "https://example.com", "prompt": "全文を返す"}},
             {
-                # 汎用定義は実行手段の警告の対象のため、専用定義で撤去済みの判定の無出力を確かめる。
+                # 汎用定義は遮断の対象のため、専用定義で撤去済みの判定の無出力を確かめる。
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "project-reviewer", "prompt": "調べる", "description": "調査"},
             },

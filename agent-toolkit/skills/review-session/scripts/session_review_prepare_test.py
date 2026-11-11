@@ -21,7 +21,7 @@ import session_review_evidence as evidence  # pylint: disable=import-error
 import session_review_prepare as prepare  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 from agent_toolkit._atk.wi import layout
-from agent_toolkit._common import response_language_check, state_paths
+from agent_toolkit._common import response_language_check, session_registry, state_paths
 from agent_toolkit._testing import delegated_threads, git_repository
 from agent_toolkit._testing import session_evidence_support as support
 from agent_toolkit._testing.failure_records import bash_failure_entries, failure_entries
@@ -44,6 +44,78 @@ def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     work_dir = tmp_path / "work"
     work_dir.mkdir()
     return work_dir
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+def test_agents_session_id_resolves_conversation(tmp_path, monkeypatch, capsys, engine):
+    """登録済み委譲先の識別子だけで、上限付きの会話抜粋へ到達できる。"""
+    session_id = "019a0000-1111-7222-8333-444444444444"
+    text = "調査した結果。" * 4000
+    if engine == "claude":
+        home = tmp_path / "claude"
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
+        path = home / "projects/project" / f"{session_id}.jsonl"
+        entries = [support.timestamped_entry("2026-09-06T12:00:00Z", text)]
+    elif engine == "agy":
+        # Antigravityの記録はホームディレクトリ配下の会話IDごとのtranscriptから解決される。
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+        monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+        path = tmp_path / "home/.gemini/antigravity-cli/brain" / session_id / ".system_generated/logs/transcript_full.jsonl"
+        entries = [
+            {
+                "step_index": 0,
+                "source": "USER_EXPLICIT",
+                "type": "USER_INPUT",
+                "status": "DONE",
+                "content": f"<USER_REQUEST>\n{text}\n</USER_REQUEST>",
+                "created_at": "2026-09-06T12:00:00Z",
+            }
+        ]
+    else:
+        home = tmp_path / "codex"
+        monkeypatch.setenv("CODEX_HOME", str(home))
+        path = home / "sessions/2026/09/06" / f"rollout-2026-09-06T12-00-00-{session_id}.jsonl"
+        entries = [
+            support.codex_item(
+                "2026-09-06T12:00:00Z", {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
+            )
+        ]
+    support.write_jsonl(path, entries)
+    session_registry.publish(
+        session_id,
+        state=session_registry.PublicationState.RESULT_COMPLETED,
+        engine=engine,
+        cwd=str(tmp_path),
+        model="test",
+        effort="medium",
+    )
+    assert (
+        prepare.main(
+            [
+                "--agents-session-id",
+                session_id,
+                "--work-dir",
+                str(_work_dir(tmp_path)),
+                "--conversation-only",
+                "--conversation-window",
+            ],
+            now=_FIXED_NOW,
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    conversation = pathlib.Path(result["conversation_path"]).read_bytes()
+    assert len(conversation) == result["conversation_utf8_bytes"] <= 16000
+    assert "調査した結果" in conversation.decode("utf-8")
+
+
+@pytest.mark.parametrize("session_id", ["unknown-session", "../invalid"])
+def test_agents_session_id_unresolved_returns_next_action(session_id, capsys):
+    assert prepare.main(["--agents-session-id", session_id, "--conversation-only", "--conversation-window"]) == 2
+    output = capsys.readouterr()
+    assert not output.out
+    assert "次の操作:" in output.err and "atk agents show" in output.err
 
 
 def test_prepare_reuses_syntax_within_one_run_without_carryover(tmp_path, capsys, monkeypatch) -> None:

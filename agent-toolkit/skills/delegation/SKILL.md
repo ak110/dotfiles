@@ -65,6 +65,8 @@ hookの通知を待たずに選び、同じ版の取得済み本文は再利用�
 | 停滞の検知と巻き取りを判断する時 | `references/waiting-stalls.md` | | | |
 | agents_serverのexplore・shellを起動する前 | `references/delegation-lightweight.md` | | | |
 | 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` | | | |
+| 委譲先から`助言依頼:`で始まる通知を受け取り、助言を返す前 | `references/advice-request-receiving.md` | | | |
+| 起動本文に助言依頼ができる旨の通知を受け取った委譲先が、助言を求める前 | `references/advice-request.md` | | | |
 | 役割文書を持つ委譲を起動する前 | 呼び出し元の起動・受領契約。共有契約は`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`、単一の呼び出し元に統合された契約はその呼び出し元が示す節と条件付きで挙げる資料 | 操作 | `delegation` | `role-contract` |
 
 ## 送信

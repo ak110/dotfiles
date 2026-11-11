@@ -8,6 +8,7 @@ import pathlib
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import datetime
+lazy import hashlib
 lazy import re
 lazy import tempfile
 lazy import time
@@ -24,6 +25,7 @@ lazy from agent_toolkit._common.session_state import (
     update_state,
 )
 lazy from agent_toolkit._common.task_stop_state import has_recent_completion, target_ids
+lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import (
     plugin_resources as _plugin_resources,
@@ -59,39 +61,94 @@ _PLAN_MODE_SKILL_NAMES: frozenset[str] = frozenset({"agent-toolkit:write-plan", 
 
 # Claude Codeの組み込みの汎用定義。agents_serverのmodeで同等の作業を行えるため、
 # `runtime-routing.md`「実行手段」は専用定義の例外に含めない。`subagent_type`を省いた起動は`general-purpose`で動く。
-# `fork`と、これ以外の名前（プロジェクト固有の専用定義など）は同節の例外に当たり得るため警告しない。
+# `fork`と、これ以外の名前（プロジェクト固有の専用定義など）は対象外とする。
 _GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "web-fetch", "claude"})
+# 複数の並行依頼を再発行できる余裕を持たせつつ、入力本文を保存せず状態の増加を抑える。
+_GENERIC_AGENT_RETRY_LIMIT = 32
 
 
-def _check_generic_agent_launch(tool_input: dict) -> str | None:
-    """組み込みの汎用定義によるAgent・Taskの起動へ、実行手段の判定を促す非遮断の警告を返す。
+def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict) -> tuple[str | None, str | None]:
+    """汎用定義の起動を遮断し、同じ主体による同一入力の再発行だけを一度通す。
 
-    WebFetchが直接使えないという診断の後にホストがweb-fetch型のAgentを案内した場面などで、
-    案内だけを根拠に組み込みAgentを選ぶ判断を防ぐ。agents_serverを呼べない場合とユーザーの明示指示は正当な例外のため遮断しない。
+    戻り値は（遮断の通知, 非遮断の警告）で、どちらも無ければ対象外か再発行の通過である。
+
+    通常の遮断基準の4条件には該当しないが、web-fetchへのユーザーの切替要求と、
+    web-fetch・Exploreの2回の実測で警告が当該起動を変えなかったことから遮断する。
+    同じ依頼を対応するmodeへ渡せるため、損失は起動の再発行に限られる。
+    例外の成否は入力から判定できず受信側へ委ねる。別操作を挟む例外の確認と複数依頼を支えるため、
+    主体別に直近32件の指紋を保持し、通過時に消費する。寿命はセッション状態の回収に従う。
     軽量起動の委譲先は再委譲が禁止され、委譲のスキルも配送されないため対象外とする。
+    再発行の記録を保存できない場合は、案内した再発行も通せず遮断が続くため、警告だけを返して起動を通す。
     """
     if _delegated_session.is_lightweight_delegated(os.environ):
-        return None
-    agent_type = tool_input.get("subagent_type")
-    if agent_type is None or agent_type == "":
+        return None, None
+    # ホストが`general-purpose`で起動するのはキーの省略と空文字だけで、明示の`null`などの文字列以外は判定できないため通す。
+    agent_type = tool_input.get("subagent_type", "")
+    if agent_type == "":
         agent_type = "general-purpose"
     if not isinstance(agent_type, str) or agent_type not in _GENERIC_AGENT_TYPES:
-        return None
-    routing = _plugin_resources.skill_reference("delegation", "references/runtime-routing.md")
-    return _llm_notice(
-        f"組み込みの汎用定義`{agent_type}`で`Agent`を起動しようとしている。"
-        "`Claude Code`からの委譲は`agents_server`が標準であり、"
-        f"{routing}「実行手段」は汎用定義を組み込みの`Agent`の例外に含めない。"
-        "あるツールを直接使えないという診断や、ホストが特定の`Agent`を案内したことは、`agents_server`に同等の手段が無いことの確認に当たらない。",
-        tag=_WARN_TAG,
-        subject=agent_type,
-        removable_cause=False,
+        return None, None
+    repeated = _generic_agent_retry(payload, tool_name, tool_input)
+    if repeated:
+        return None, None
+    mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
+    if repeated is None:
+        return None, _llm_notice(
+            f"組み込みの汎用定義`{agent_type}`で`{tool_name}`を起動しようとしている。"
+            "再発行の記録を保存できないため、遮断せずに通した。",
+            tag=_WARN_TAG,
+            subject=agent_type,
+            removable_cause=False,
+            fix=(
+                f"`agents_server`の`MCP`ツールを呼べる場合は、次回から同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行せよ。"
+            ),
+        )
+    block = _block_notice(
+        f"組み込みの汎用定義`{agent_type}`による`{tool_name}`の起動を拒否した。"
+        "`agents_server`に同等の作業を行える`mode`があるため、標準の委譲手段へ切り替える。",
         fix=(
-            "`agents_server`の`start`の各`mode`が公開する機能と到達性を確かめ、同等の手段があれば`agents_server`で起動せよ。"
-            "`agents_server`の`MCP`ツールを呼べない場合、ユーザーの明示指示がある場合は、"
-            "同節の例外としてこのまま起動してよい（`agents_server`を呼べない場合は切り替えた工程、本来の設定値と理由を報告に記録する）。"
+            f"同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行せよ。"
+            "`agents_server`の`MCP`ツールを呼べない場合、ユーザーの明示指示がある場合、"
+            "対応する`mode`で起動したが同等の結果を得られなかった場合のいずれかでは、"
+            "同じ会話の同じ主体から、ツール名と入力全体を変えずに再発行してよい。"
+            "再発行の記録は通過時に消費する。"
         ),
     )
+    return block, None
+
+
+def _generic_agent_retry(payload: dict, tool_name: str, tool_input: dict) -> bool | None:
+    """遮断した入力の指紋の追加と再発行による消費を、同じ排他更新で行う。
+
+    再発行なら真、初回の記録なら偽、記録を保存できなければ`None`を返す。
+    """
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    actor = _agent_id.resolve_hook_agent_id(payload)
+    fingerprint = hashlib.sha256(json.dumps([tool_name, tool_input], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    repeated = False
+
+    def update(state: dict) -> dict:
+        nonlocal repeated
+        prior = state.get("generic_agent_retry_by_actor", {})
+        prior = dict(prior) if isinstance(prior, dict) else {}
+        values = prior.get(actor, [])
+        values = [value for value in values if isinstance(value, str)] if isinstance(values, list) else []
+        repeated = fingerprint in values
+        if repeated:
+            values.remove(fingerprint)
+        else:
+            values.append(fingerprint)
+        if values:
+            prior[actor] = values[-_GENERIC_AGENT_RETRY_LIMIT:]
+        else:
+            prior.pop(actor, None)
+        state["generic_agent_retry_by_actor"] = prior
+        return state
+
+    # 更新関数は常に辞書を返すため、偽は保存の失敗だけを表す。
+    return repeated if update_state(session_id, update) else None
 
 
 # --- TaskStop: 初回遮断と再実行窓 ---

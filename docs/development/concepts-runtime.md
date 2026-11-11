@@ -270,6 +270,12 @@ hook・MCP定義などホスト別に明確に分離された資源は、各ホ�
   用語は各定義元の正式名で書き、短縮しない。
   方針の維持は`review-session`の費用確認で確かめる。
   各工程への対応付けは`docs/development/design-delegation.md`「親子の重複の削減と保持する構成」にある
+- 委譲先は、自力で作業を進められなくなったときに、自分を起動した直上の委譲元へ助言を求められる。
+  相談先は最上位や統括へ固定せず、execute工程の担当がchores工程の委譲先を起動した場合はそのexecute工程の担当とする。
+  助言を求められるのは、委譲元が別エンジンのモデルか、同じエンジンで上の段のモデル（最上位: fable・astra、上位: opus・sol、中位: sonnet・terra、下位: haiku・luna）の場合とし、工程名ではなく実モデルで判定する。
+  別エンジンなら同等以下のモデルでも観点が異なりうるため対象とする。
+  委譲元は委譲先の会話の抜粋を読んで助言する（2026年11月10日、ユーザー指示。上位モデルを助言役に使う構成を、文脈の効率を保って取り入れる要求に由来する）。
+  現行の規定は`agent-toolkit/skills/delegation/references/advice-request.md`と`advice-request-receiving.md`にあり、構造の理由は[design-delegation.md](design-delegation.md#委譲先から直上の委譲元への助言依頼)にある
 - 環境識別子を受け取れない`agents_server`のMCPプロセスは、プロセス専用の会話ルートを所有する。
   公開startとlistが返すルートをPostToolUseが現在会話のaliasへ結び、CLIは直接解決したルートと確認済みaliasだけを読む。
   全ルート走査は会話境界を越えるため採用しない（2026年9月22日、ユーザー指示）

@@ -35,6 +35,8 @@
 | Claude Codeで長時間待機前の会話圧縮、またはバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | | | |
 | 停滞の検知と巻き取りを判断する時 | `waiting-stalls.md` | | | |
 | 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` | | | |
+| 委譲先から`助言依頼:`で始まる通知を受け取り、助言を返す前 | `advice-request-receiving.md` | | | |
+| 起動本文に助言依頼ができる旨の通知を受け取った委譲先が、助言を求める前 | `advice-request.md` | | | |
 | 役割文書を持つ委譲を起動する前 | 呼び出し元の起動・受領契約。共有契約は`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`、単一の呼び出し元に統合された契約はその呼び出し元が示す節と条件付きで挙げる資料 | 操作 | `delegation` | `role-contract` |
 | 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | | | |
 | 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | | | |

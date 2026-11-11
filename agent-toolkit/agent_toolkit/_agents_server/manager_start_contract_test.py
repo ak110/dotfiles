@@ -30,6 +30,84 @@ from agent_toolkit._testing import agents_server_support
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("first_engine,selected_engine", [("codex", "claude"), ("claude", "codex")])
+@pytest.mark.asyncio
+async def test_advice_request_notice_follows_selected_candidate(tmp_path, first_engine, selected_engine):
+    """候補を切り替えた後の実モデルで通知を組み立て直す。"""
+    async with manager.AgentsServerManager(None, launcher_environment={"CODEX_THREAD_ID": "parent-session"}) as current:
+        session_registry.publish(
+            "parent-session",
+            state=session_registry.PublicationState.PENDING_RUNNING,
+            engine="codex",
+            cwd=str(tmp_path),
+            model="gpt-6-sol",
+            effort="medium",
+        )
+
+        class Unavailable(ObservedBackend):
+            async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
+                self.prompts.append(args[0])
+                raise backends.StartCandidateUnavailable("candidateDependencyUnavailable")
+
+        unavailable = Unavailable(current.sessions, first_engine)
+        selected = ObservedBackend(current.sessions, selected_engine)
+        agents_server_support.install_backend(current, first_engine, unavailable)
+        agents_server_support.install_backend(current, selected_engine, selected)
+        response = await current.start(f"{first_engine}:test/medium,{selected_engine}:test/medium", "処理", str(tmp_path))
+        marker = 'kind="advice-request"'
+        assert (marker in unavailable.prompts[0]) is (first_engine != "codex")
+        assert (marker in selected.prompts[0]) is (selected_engine != "codex")
+        assert response["engine"] == selected_engine
+        if selected_engine != "codex":
+            assert "agent-toolkit:delegation/references/advice-request.md" in selected.prompts[0]
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex"])
+@pytest.mark.asyncio
+async def test_launcher_model_reads_latest_record_without_effort(tmp_path, monkeypatch, engine):
+    """登録簿の無い最上位の会話では最新モデルを読み、合成応答を除く。"""
+    record = tmp_path / "parent.jsonl"
+    entries = (
+        [{"type": "assistant", "message": {"model": model}} for model in ("claude-opus-5", "claude-fable-5", "<synthetic>")]
+        if engine == "claude"
+        else [{"type": "turn_context", "payload": {"model": model}} for model in ("gpt-6-sol", "gpt-6-astra")]
+    )
+    record.write_text("".join(json.dumps(entry) + "\n" for entry in entries), encoding="utf-8")
+    async with manager.AgentsServerManager(None, launcher_environment={"CODEX_THREAD_ID": "parent-session"}) as current:
+        monkeypatch.setattr(
+            record_paths, "find_session_record", lambda *_a, **_k: record_paths.SessionRecord(engine, (record,))
+        )
+        assert current.launcher_model() == (engine, "claude-fable-5" if engine == "claude" else "gpt-6-astra")
+        session_registry.publish(
+            "parent-session",
+            state=session_registry.PublicationState.PENDING_RUNNING,
+            engine="codex",
+            cwd=str(tmp_path),
+            model="gpt-6-luna",
+            effort="medium",
+        )
+        assert current.launcher_model() == ("codex", "gpt-6-luna")
+
+
+@pytest.mark.asyncio
+async def test_unreadable_launcher_record_warning_names_failed_path(tmp_path, monkeypatch, caplog):
+    """記録の探索が読取で失敗した場合、警告は例外が保持する探索対象のパスを次の確認先として示す。"""
+    denied = tmp_path / "projects" / "denied"
+
+    def find_record(*_args: Any, **_kwargs: Any) -> None:
+        raise PermissionError(13, "Permission denied", str(denied))
+
+    async with manager.AgentsServerManager(None, launcher_environment={"CODEX_THREAD_ID": "parent-session"}) as current:
+        monkeypatch.setattr(record_paths, "find_session_record", find_record)
+        with caplog.at_level("WARNING"):
+            context = current.launcher_record_context()
+    assert context["status"] == "unreadable"
+    messages = [record.getMessage() for record in caplog.records if "委譲元の記録" in record.getMessage()]
+    assert len(messages) == 1
+    assert str(denied) in messages[0]
+    assert "atk agents logs" not in messages[0]
+
+
 class _WindowsAccessDenied(PermissionError):
     """Windowsの`os.replace`が返すWinError 5と同じ識別値を持つ置換拒否。"""
 

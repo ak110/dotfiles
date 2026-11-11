@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from typing import Any, Self
 
 from agent_toolkit._agents_server import (
+    advice_request,
     backends,
     codex_resume_state,
     launch_prompts,
@@ -64,7 +65,7 @@ from agent_toolkit._agents_server.state import (
 )
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import codex_models, read_triggers, session_release
+from agent_toolkit._common import codex_models, read_triggers, session_release, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
 
@@ -204,6 +205,8 @@ class AgentsServerManager(manager_wait.ManagerWait):
         unavailable_session: SessionState | None = None
         excluded_session_ids: dict[ModelCandidate, str] = {}
         display_label = resolve_display_label(label, prompt)
+        role_document = startup_document or task_documents.launched_task_document(prompt)
+        parent_model = await run_file_operation(self.launcher_model) if launch_kind == "delegate" else None
         for candidate_index, candidate in enumerate(candidates):
             if candidate in excluded:
                 continue
@@ -238,6 +241,16 @@ class AgentsServerManager(manager_wait.ManagerWait):
                     + "\n\n"
                     + wrap_delivery_body(launch_requests.with_startup_documents(prompt, initial_documents))
                 )
+                if await run_file_operation(
+                    advice_request.advice_request_eligible,
+                    parent_model,
+                    engine,
+                    model,
+                    model_type=model_type,
+                    launch_kind=launch_kind,
+                    startup_document=role_document,
+                ):
+                    delivery_body += "\n\n" + launch_prompts.ADVICE_REQUEST_NOTICE
             except PluginRootError as exc:
                 reason = str(exc)
                 excluded.update({item: reason for item in candidates if item[0] == engine})

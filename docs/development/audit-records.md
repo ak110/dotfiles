@@ -2100,6 +2100,15 @@ uv run --frozen pytest -v -p no:cacheprovider \
   実pyfltrとの境界は、隔離Git・独立したpyfltrキャッシュ・ローカルprek hookを用意し、`*_test.py`の検証子から別セッションの子を起動して同じ2終了経路を観測する。
   親終了時の所有子孫の状態、退避復元と次の検証の完了を別々に確認し、観測側の後始末による回収を製品の回収成功へ数えない。
 
+## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年11月11日
+
+- 観測日: 2026年11月10日と11月11日。
+- 確認版: Claude Code 2.1.322、公式Hooksリファレンス（<https://code.claude.com/docs/en/hooks>、2026年11月11日取得）。
+- 再検証: 公式Hooksリファレンスの「PreToolUse decision control」と「Add context for Claude」を再取得する。
+  `additionalContext`が「alongside the tool result」としてエージェントへ届き、「on the next model request」で読まれる記述が残るかを確かめる。
+  実機では、PreToolUseで`additionalContext`だけを返すhookを置いて`Agent`ツールを呼び、呼び出しが実行されたうえで通知がツール結果と同時に表示されることを確かめる。
+  2026年11月10日には、組み込みのweb-fetchとExploreの起動に対する警告が起動を止めず、起動の結果と同時に表示された。
+
 ## agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月11日
 
 - 観測日: 2026年11月11日。

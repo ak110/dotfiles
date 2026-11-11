@@ -28,6 +28,8 @@ mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 Agent / Task:
 
 - 宣言外の説明を含む役割起動の形式を案内 (warn)。必須入力が欠ける定型起動は契約不成立として遮断 (block)
+- 組み込みの汎用定義を遮断し、同じ主体の同一入力の再発行を一度通す (block)
+- 汎用定義の再発行の記録を保存できない場合は警告だけで通す (warn)
 
 Bash:
 
@@ -254,8 +256,12 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return _decide_agents_server_tool(payload, tool_name, tool_input, session_id)
     if tool_name in AGENT_TOOL_NAMES:
         launch = check_task_document_launch(tool_name, tool_input)
-        generic = _check_generic_agent_launch(tool_input) if launch.block is None else None
-        return dataclasses.replace(launch, notices=(*launch.notices, generic)) if generic else launch
+        if launch.block is not None:
+            return launch
+        generic_block, generic_notice = _check_generic_agent_launch(payload, tool_name, tool_input)
+        if generic_block:
+            return dataclasses.replace(launch, block=generic_block)
+        return dataclasses.replace(launch, notices=(*launch.notices, generic_notice)) if generic_notice else launch
     if tool_name == "Bash":
         return _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex)
     if tool_name == "TaskStop":

@@ -12,6 +12,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import work_contract
+from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._testing.pretooluse_support import (
     _EXECUTE_REVIEW_TASK_NAMES,
     _additional_context,
@@ -682,41 +683,91 @@ class TestAgentTaskLaunchIndependence:
         assert result.returncode == 0
 
 
-class TestGenericAgentLaunchWarning:
-    """組み込みの汎用定義によるAgent・Taskの起動だけへ、実行手段の判定を促す非遮断の警告を返すことを確認する。"""
+class TestGenericAgentLaunchBlock:
+    """公開入口から汎用定義の遮断・再発行と対象外の無通知を確認する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
-    @pytest.mark.parametrize("agent_type", ["general-purpose", "Explore", "Plan", "web-fetch", "claude", None])
-    def test_generic_definition_is_warned_without_block(
+    @pytest.mark.parametrize("agent_type", ["general-purpose", "Explore", "Plan", "web-fetch", "claude", None, ""])
+    def test_generic_definition_is_blocked_then_reissue_passes(
         self, tmp_path: pathlib.Path, tool_name: str, agent_type: str | None
     ) -> None:
         tool_input = {"prompt": "https://example.com/ の本文を取得して要約する。"}
         if agent_type is not None:
             tool_input["subagent_type"] = agent_type
-        result = _run_after_skill_acquisition(
-            {"session_id": f"generic-{tool_name}-{agent_type}", "tool_name": tool_name, "tool_input": tool_input},
-            env_overrides=_plan_file_state_env(tmp_path),
-        )
-        assert result.returncode == 0
-        output = json.loads(result.stdout)["hookSpecificOutput"]
-        assert "permissionDecision" not in output or output["permissionDecision"] != "deny"
-        context = _additional_context(result)
-        assert f"組み込みの汎用定義`{agent_type or 'general-purpose'}`" in context
-        assert "同等の手段が無いことの確認に当たらない" in context
-        assert "ユーザーの明示指示がある場合" in context
+        payload = {"session_id": f"generic-{tool_name}-{agent_type}", "tool_name": tool_name, "tool_input": tool_input}
+        env = _plan_file_state_env(tmp_path)
+        reason = _denial_reason(_run_after_skill_acquisition(payload, env_overrides=env))
+        assert f"組み込みの汎用定義`{agent_type or 'general-purpose'}`" in reason
+        assert "同等の作業を行える`mode`" in reason
+        mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
+        assert f"`mode`が{mode}の`agents_server`の`start`へ発行せよ" in reason
+        assert "`MCP`ツールを呼べない場合" in reason
+        assert "ユーザーの明示指示がある場合" in reason
+        assert "対応する`mode`で起動したが同等の結果を得られなかった場合" in reason
+        repeated = _run(payload, env_overrides=env)
+        assert repeated.returncode == 0, repeated.stderr
+        assert not repeated.stderr
+        assert "deny" not in repeated.stdout
+        assert "組み込みの汎用定義" not in _additional_context(repeated)
+        _denial_reason(_run(payload, env_overrides=env))
 
-    @pytest.mark.parametrize("agent_type", ["fork", "claude-code-guide", "project-reviewer"])
-    def test_fork_and_dedicated_definitions_are_not_warned(self, tmp_path: pathlib.Path, agent_type: str) -> None:
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize(
+        ("agent_type", "launch_kind"),
+        [
+            ("fork", ""),
+            ("claude-code-guide", ""),
+            ("project-reviewer", ""),
+            ("Explore", "explore"),
+            ("general-purpose", "shell"),
+            ("web-fetch", "write"),
+        ],
+    )
+    def test_fork_dedicated_and_lightweight_are_not_blocked(
+        self, tmp_path: pathlib.Path, tool_name: str, agent_type: str, launch_kind: str
+    ) -> None:
         result = _run_after_skill_acquisition(
             {
                 "session_id": f"dedicated-{agent_type}",
-                "tool_name": "Agent",
+                "tool_name": tool_name,
+                "tool_input": {"subagent_type": agent_type, "prompt": "担当の作業を進める。"},
+            },
+            env_overrides={**_plan_file_state_env(tmp_path), "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND": launch_kind},
+        )
+        assert result.returncode == 0
+        assert not result.stderr
+        assert "deny" not in result.stdout
+        assert "組み込みの汎用定義" not in _additional_context(result)
+
+    @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.parametrize("agent_type", [None, 0, ["general-purpose"]])
+    def test_non_string_type_is_not_blocked(self, tmp_path: pathlib.Path, tool_name: str, agent_type: object) -> None:
+        """明示した文字列以外の`subagent_type`は汎用定義と判定できないため、遮断も通知もしない。"""
+        result = _run_after_skill_acquisition(
+            {
+                "session_id": f"non-string-{tool_name}-{agent_type!r}",
+                "tool_name": tool_name,
                 "tool_input": {"subagent_type": agent_type, "prompt": "担当の作業を進める。"},
             },
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "組み込みの汎用定義" not in _additional_context(result)
+        assert not result.stderr
+        assert "組み込みの汎用定義" not in result.stdout
+
+    @pytest.mark.parametrize("failure", ["missing-session", "unwritable-state"])
+    def test_unrecordable_reissue_passes_with_warning(self, monkeypatch, failure: str) -> None:
+        """再発行の記録を保存できない起動は、何度発行しても遮断せず警告だけを返す。"""
+        monkeypatch.setattr(agent_checks, "update_state", lambda *_args, **_kwargs: False)
+        payload = {"session_id": "" if failure == "missing-session" else "generic-unwritable"}
+        tool_input = {"subagent_type": "Explore", "prompt": "担当の作業を進める。"}
+        for _ in range(2):
+            # 状態の保存の失敗は公開入口から注入できないため、判定の関数を直接呼ぶ。
+            block, notice = agent_checks._check_generic_agent_launch(  # pylint: disable=protected-access
+                payload, "Agent", tool_input
+            )
+            assert block is None
+            assert notice is not None and "遮断せずに通した" in notice and "`explore`" in notice
 
 
 class TestWorkflowSkillInvocation:

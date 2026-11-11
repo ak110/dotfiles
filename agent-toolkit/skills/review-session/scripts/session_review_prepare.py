@@ -38,7 +38,7 @@ from agent_toolkit._atk import managed_temp, run_script
 from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sections as _wi_sections
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
-from agent_toolkit._common import atomic_file, file_lock, session_review
+from agent_toolkit._common import atomic_file, file_lock, session_record_paths, session_registry, session_review
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
@@ -134,6 +134,7 @@ def _build_parser() -> argparse.ArgumentParser:
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
     session.add_argument("--opencode-session-id", metavar="ID", help="OpenCodeのses_で始まるセッションID。")
+    session.add_argument("--agents-session-id", metavar="ID", help="agents_serverが起動した委譲先のsession ID。")
     parser.add_argument("--opencode-db", metavar="PATH", help="OpenCodeのSQLite記録。--opencode-session-idと併用する。")
     parser.add_argument(
         "--work-dir",
@@ -1492,6 +1493,30 @@ def _thread_breakdown_lines(
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
     """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)
+    if args.agents_session_id is not None:
+        try:
+            resolution = session_registry.resolve(args.agents_session_id)
+            info = resolution.resume_info or resolution.handoff_info
+            if info is None:
+                raise ValueError("session登録簿から実行エンジンを解決できない")
+            record = session_record_paths.find_session_record(args.agents_session_id)
+            if record is None or len(record.paths) != 1 or record.engine != info.engine:
+                raise ValueError("登録済みsessionのセッション記録を一意に解決できない")
+            if info.engine in {"claude", "agy"}:
+                # Antigravityの記録も単一ファイルのtranscriptとして証拠抽出が読めるため、同じ入力で渡す。
+                args.transcript = str(record.paths[0])
+            elif info.engine == "codex":
+                args.codex_thread_id = args.agents_session_id
+            elif info.engine == "opencode":
+                args.opencode_session_id = args.agents_session_id
+            else:
+                raise ValueError(f"この抜粋取得では対応していない実行エンジン: {info.engine}")
+        except (OSError, ValueError) as error:
+            return _missing(
+                "bundle",
+                f"--agents-session-id {args.agents_session_id}: {error}。"
+                "`atk agents show <session_id>`と`atk agents logs <session_id>`で登録と記録の所在を確認する",
+            )
     if not args.conversation_window and (
         args.conversation_record
         or args.conversation_since

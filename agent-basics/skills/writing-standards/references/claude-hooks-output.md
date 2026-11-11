@@ -44,6 +44,10 @@ PreToolUse、PostToolUse、UserPromptSubmitで挙動の強制が不要な場合�
 block、warn、noticeの各通知本文の整形（整形関数の利用、`fix`の要否、種別、繰り返した際の要約や重要度引き上げ）は、`claude-hooks-messages-format.md`「通知本文の整形」に従う。
 
 警告専用のPreToolUse出力では`hookSpecificOutput.additionalContext`のみを返し、`permissionDecision`は省略する（通常の権限判定フローが適用される）。
+PreToolUseの`additionalContext`は、その呼び出しの実行を止めず、エージェントが読むのは呼び出しの結果と同時である。
+その呼び出しを変えさせる目的には使えず、作用するのは次の操作からである。
+その呼び出しを別の手段へ替えさせるには、`permissionDecision: "deny"`による拒否が要る。
+監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年11月11日」にある。
 
 ### 出力上限
 

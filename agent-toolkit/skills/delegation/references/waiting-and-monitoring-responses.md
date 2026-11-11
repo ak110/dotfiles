@@ -11,6 +11,7 @@
 | 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` |
 | 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` |
 | 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
+| `notices`に`助言依頼:`で始まる通知を受け取り、助言を返す前 | `advice-request-receiving.md` |
 
 ## `atk agents wait`の応答の扱い
 

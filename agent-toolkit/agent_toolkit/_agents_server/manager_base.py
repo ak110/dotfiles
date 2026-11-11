@@ -6,8 +6,10 @@ import asyncio
 import copy
 import dataclasses
 import datetime
+import json
 import logging
 import os
+import pathlib
 from collections.abc import Mapping
 from typing import Any
 
@@ -31,7 +33,7 @@ from agent_toolkit._agents_server.state import (
     add_touch_listener,
     selected_candidate,
 )
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import runtime_identity, session_registry
 
 
 @dataclasses.dataclass
@@ -292,7 +294,15 @@ class ManagerBase:
         try:
             record = record_paths.find_session_record(launcher)
         except OSError as error:
-            _LOG.warning("委譲元の記録を取得できません: session_id=%s", launcher, exc_info=True)
+            # 記録の所在を表示する公開操作も同じ探索を実行するため回復の手段にならない。
+            # 失敗した探索対象のパスは例外が保持するので、それを案内に使う。
+            _LOG.warning(
+                "委譲元の記録を探索中に読取に失敗しました: session_id=%s、対象=%s。"
+                "対象のパスの存在と読取権限を確認してください",
+                launcher,
+                error.filename if error.filename is not None else "不明（直後の例外を参照）",
+                exc_info=True,
+            )
             return {**context, "status": "unreadable", "reason": str(error)}
         if record is None or not record.paths:
             return {**context, "status": "missing"}
@@ -300,6 +310,39 @@ class ManagerBase:
         if len(record.paths) != 1:
             return {**context, "status": "ambiguous", "record_candidates": [str(p.resolve()) for p in record.paths]}
         return {**context, "status": "resolved", "record_path": str(record.paths[0].resolve())}
+
+    def launcher_model(self) -> tuple[str, str] | None:
+        """直上の委譲元の登録を優先し、無ければ一意なセッション記録の最新モデルを返す。"""
+        launcher = self.launcher_session_id()
+        if launcher is None:
+            return None
+        resolution = session_registry.resolve(launcher)
+        info = resolution.resume_info or resolution.handoff_info
+        if info is not None:
+            return (info.engine, info.model) if info.model else None
+        if resolution.state != session_registry.Resolution.MISSING:
+            return None
+        context = self.launcher_record_context()
+        if context.get("status") != "resolved":
+            return None
+        engine = context["record_engine"]
+        latest: str | None = None
+        try:
+            with pathlib.Path(context["record_path"]).open(encoding="utf-8") as record:
+                for line in record:
+                    entry = json.loads(line)
+                    if isinstance(entry, dict) and (model := runtime_identity.observed_model(entry, engine)):
+                        latest = model
+        except OSError, UnicodeError, json.JSONDecodeError:
+            _LOG.warning(
+                "助言依頼用の委譲元モデルを解決できないため、この起動では助言依頼の通知を省きます: session_id=%s。"
+                "記録%sの読取権限と、UTF-8のJSON Linesとして読めるかを確認してください",
+                launcher,
+                context["record_path"],
+                exc_info=True,
+            )
+            return None
+        return (engine, latest) if latest else None
 
     def _carry_over_unavailable_candidate(self, session: SessionState) -> None:
         """可用性を理由に終了した候補を、同じ起動条件の次回へ引き継ぐ。

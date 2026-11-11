@@ -27,8 +27,13 @@
      - `agents_server`のMCPツールを呼び出せない場合。
        このときは切り替えた工程、本来の設定値（engine、モデル、effort）、および切り替え理由を報告に記録する
      - `agents_server`のexplore・delegate・taskに同等の手段がない専用agent定義を使う作業（プロジェクト固有の定義など）。
-       Explore・general-purpose・Plan・web-fetchなど、同等の作業を行えるホスト組み込みの汎用定義はこの例外の対象外とする。
-       同等の手段の有無は`agents_server`の各modeが公開する機能と到達性から判定し、直接のWebFetchなどあるツールを使えないという診断や、ホストが特定の組み込みAgentを案内したことは判定の根拠から外す
+       同等の作業を行えるホスト組み込みの汎用定義はこの例外の対象外とし、次の`mode`で`agents_server`の`start`へ発行する。
+       Exploreとweb-fetchは`explore`、general-purpose・claude・`subagent_type`を省いた起動は`delegate`（役割文書があれば`task`）、Planは`delegate`または`task`である。
+       同等の手段の有無は`agents_server`の各modeが公開する機能と到達性から判定し、直接のWebFetchなどあるツールを使えないという診断や、ホストが特定の組み込みAgentを案内したことは判定の根拠から外す。
+       同じmodeでも実行エンジンによって使える道具が異なるため、判定は工程別設定の候補となる実行エンジン（CodexとClaudeなど）ごとに行い、1つのエンジンの会話で確かめた結果を他のエンジンへ当てはめない。
+       対応する`mode`で起動したが同等の結果を得られなかった場合（`explore`がページの本文を取得できないと返した場合など）は、同等の手段がない場合に当たる。
+       汎用定義の起動はPreToolUseのhookが遮断し、対応する`mode`での出し直しを通知するため、遮断された場合は通知に従う。
+       本項の各ケースに当たる場合は、同じ入力で再発行すると起動できる
      - ユーザーから明示的な指示がある場合
      - `routing-fork.md`「会話を引き継ぐ委譲」によりforkを選択する場合。
        このときは`subagent_type: "fork"`で起動し、親と同一のモデルおよびeffortを使用する

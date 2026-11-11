@@ -115,3 +115,47 @@ def test_intervening_operation_invalidates_recovery(tool, capsys) -> None:
     assert _reason(payload, tool, _input(tool, text), capsys)
     assert _reason(payload, "Read", {}, capsys) is None
     assert _reason(payload, tool, _input(tool, text), capsys)
+
+
+def test_generic_reissues_survive_other_operations_and_are_consumed(capsys) -> None:
+    """複数依頼は別操作を挟んでも各1回だけ再発行できる。"""
+    payload = {"session_id": "generic-many", "agent_id": "one"}
+    first = {"subagent_type": "Explore", "prompt": "調査する。"}
+    second = {"subagent_type": "web-fetch", "prompt": "本文を取得する。"}
+    assert _reason(payload, "Agent", first, capsys)
+    assert _reason(payload, "Agent", second, capsys)
+    assert _reason(payload, "Read", {}, capsys) is None
+    assert _reason(payload, "Agent", first, capsys) is None
+    assert _reason(payload, "Agent", second, capsys) is None
+    assert _reason(payload, "Agent", first, capsys)
+    assert _reason(payload, "Agent", second, capsys)
+
+
+@pytest.mark.parametrize("difference", ["actor", "tool", "input", "session"])
+def test_generic_retry_requires_same_session_actor_tool_and_full_input(difference, capsys) -> None:
+    """別主体・別ツール・本文以外の引数・別会話の記録は流用しない。"""
+    payload = {"session_id": "generic-scope", "agent_id": "one"}
+    inputs = {"subagent_type": "Explore", "prompt": "調査する。", "run_in_background": True}
+    assert _reason(payload, "Agent", inputs, capsys)
+    changed_payload = {**payload}
+    changed_input = {**inputs}
+    tool = "Agent"
+    if difference == "actor":
+        changed_payload["agent_id"] = "two"
+    elif difference == "session":
+        changed_payload["session_id"] = "generic-other"
+    elif difference == "tool":
+        tool = "Task"
+    else:
+        changed_input["run_in_background"] = False
+    assert _reason(changed_payload, tool, changed_input, capsys)
+    assert _reason(payload, "Agent", inputs, capsys) is None
+
+
+def test_generic_retry_retains_only_latest_32_inputs(capsys) -> None:
+    """有限の保持集合から古い入力を除き、直近入力の再発行は通す。"""
+    payload = {"session_id": "generic-bounded"}
+    for index in range(33):
+        assert _reason(payload, "Agent", {"prompt": f"調査{index}"}, capsys)
+    assert _reason(payload, "Agent", {"prompt": "調査32"}, capsys) is None
+    assert _reason(payload, "Agent", {"prompt": "調査0"}, capsys)
