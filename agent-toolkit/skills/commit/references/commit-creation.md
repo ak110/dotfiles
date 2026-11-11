@@ -63,6 +63,7 @@ push後のCI失敗は`agent-basics:bugfix`を起動し、同スキルの`ci-fail
 ### hookの打ち切りと退避の復元
 
 1. POSIXのホストでcommit hookを伴う`git commit`は、`atk run-script commit-with-timeout -- --timeout <秒> -- <git commitの引数>`で時間上限を設けて実行する。
+   このコマンドが`git commit`を補うため、`--`の後には`commit`を書かず引数だけを渡す（例: `atk run-script commit-with-timeout -- --timeout 560 -- -m '<本文>'`）。
    `--timeout`は実行枠の順番待ちを含むコマンド全体の上限であり、ホストがコマンドを止める時間上限より先に達する値にする。
    Claude Codeでは`Bash`の`run_in_background: true`で起動し、`Bash`の`timeout`を`--timeout`より長く、背景実行の最大値（7,200,000ミリ秒）以下にする。
    前景で実行する場合は、`--timeout`を前景の`timeout`の最大値（600,000ミリ秒）より短くする。

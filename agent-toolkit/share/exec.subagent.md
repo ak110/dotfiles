@@ -91,7 +91,8 @@ continuations:
 | CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
-| 手動観測を保存する前 | `verification-evidence-observation.md` |
+| 受入シナリオや完成条件を手動で観測する前（実装の途中の観測を含む） | `verification-evidence-observation.md` |
+| 取得した変更範囲の検証コマンドを使う前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
 | `検証結果`を書く前 | `verification-evidence-records.md` |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) |
 | `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` |
@@ -107,6 +108,8 @@ continuations:
 - 変更範囲の検証を実行する直前: 訂正済みの検証表が存在する場合はその検証行から、存在しない場合は計画の`## 検証`にある`変更範囲の検証`行からコマンドを取得する。
   訂正済み検証表の保持と引き継ぎは、`../skills/write-plan/references/plan-file-standards-verification.md`「検証と公開工程」に従う。
   計画を作成していない場合は、引き継ぎ記録に記載された検証コマンドを使用する。
+  取得したコマンドを使う前に、`agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」で、実際の差分の契約から求める利用側の試験が含まれるかと、保存済みの結果を再利用できるかを判定する。
+  足りない利用側を加え、足さなかった残りを記録する。
 - 受入シナリオや完成条件を手動で観測する直前: `verification-evidence-observation.md`「手動観測の保存」に従う。
 
 ## 操作区分

@@ -21,6 +21,7 @@
 | hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` |
 | hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` |
 | hook通知の本文（`fix`・次の操作を含む）またはformatterを新設・変更する前 | `claude-hooks-messages.md` |
+| 既存のhookの実装・登録・判定を変える計画の採否を決める前（実装だけを変える改修を含む） | `../../../../docs/development/incidents.md`「区分」から「フックとセッション状態の不全」の所在ファイルを選び、今回の変更と同じ原因条件の事例。`../../../../docs/development/design.md`の索引から選ぶhookの設計記録の該当節。読んだ事例から守る条件を採否と検証へ対応付ける |
 
 ## 条件別資料
 
