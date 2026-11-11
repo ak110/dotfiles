@@ -221,9 +221,9 @@ def test_cli_table_positions_and_following_paragraph(
 def test_pyfltr_registration_covers_nested_markdown(tmp_path: pathlib.Path) -> None:
     repository = pathlib.Path(__file__).resolve().parents[1]
     config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
-    assert not config["markdown-structure-subproject-aware"]
+    assert not config["dotfiles-markdown-structure-subproject-aware"]
     candidates = [pathlib.Path(p) for p in ("README.md", "a/b/c/d/e.md", ".claude/skills/a/b.md", "a.md.tmpl", "a.py")]
-    patterns = config.commands["markdown-structure"].targets
+    patterns = config.commands["dotfiles-markdown-structure"].targets
     assert isinstance(patterns, list)
     selected = pyfltr.command.targets.filter_by_globs(candidates, patterns)
     assert selected == candidates[:-1]

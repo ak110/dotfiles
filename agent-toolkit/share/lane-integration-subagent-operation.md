@@ -41,6 +41,8 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 マージありの統合、マージなしの統合、および失敗後の再開のいずれにおいても、同一の許可集合を使用する。
 
 マニフェストはJSONオブジェクトであり、以下のフィールドを持つ。
+追加計画を合流させたレーンの再統合でも、`plans`と`wis`には前回までに統合した計画とWIを含める（保存済み計画は`saved`、終了済みWIは`commands: []`）。
+CLIは選定YAMLにあるレーンの全WIがmanifestに載っているかを確かめ、追加分だけのmanifestを終了2で拒否する。
 
 - `plans`: 全計画を保持する順序付き配列。
   各項目は`name`（計画ファイル名）と`commands`（`lane-integration-subagent-finalization.md`「計画最終化」で実行するplan-checkや保存用のargv配列）を持つ。

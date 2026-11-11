@@ -173,7 +173,7 @@ claude-plugin-validate-subproject-aware = false
 function-hooks-types-subproject-aware = false
 agent-doc-tone-subproject-aware = false
 writing-check-dash-subproject-aware = false
-markdown-structure-subproject-aware = false
+dotfiles-markdown-structure-subproject-aware = false
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
@@ -411,7 +411,7 @@ targets = ["*.md", "*.md.tmpl"]
 error-pattern = '^(?P<file>.+?):(?P<line>\d+):(?P<column>\d+): (?P<severity>error): (?P<message>.+)$'
 fast = true
 
-[tool.pyfltr.custom-commands.markdown-structure]
+[tool.pyfltr.custom-commands.dotfiles-markdown-structure]
 type = "linter"
 path = "uv"
 args = ["run", "--frozen", "python", "scripts/check_markdown_structure.py"]
