@@ -30,6 +30,7 @@ commitは一意な短縮OIDで扱い、入力には完全OIDも使える。
 
 **1.** AWIとの対応を保持するため、実装コミットを作成する前に、対応するAWIの集合と現在のHEADを取得する。
 `git commit`を単独で実行して正常に完了した場合に限り、作成前のHEAD、新しいHEAD、worktree、および対応するすべてのAWIを`atk run-script plan-progress`へ渡して記録する。
+1つのcommitが複数のAWIの変更を含む場合は、それらのAWIを全件同じ記録へ渡す。
 引き継ぎ記録は`--handoff`と対象AWI全件の`--allowed-awi`を指定する。
 レビュー修正やCI修正も同様に全件記録する。
 cherry-pickやfast-forwardで複数commitを取り込んだ場合は操作前後のHEADで一括記録できる。

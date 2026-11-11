@@ -30,6 +30,8 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
   保存した出力結果から`# subproject: .`と`# subproject: agent-toolkit`それぞれのpytestの終了状態を確認し、双方のプロジェクトにまたがる横断検証の結果として採用する。
   ルートと`agent-toolkit/`の`pytest-always-targets`設定により、pytestを実行する他のpyfltr操作（対象ファイルを指定した`run`やMCP経由の`run`、`commands`未指定の実行など）でも、同じ横断テストが自動的に追加されて実行される。
   変更範囲の検証にそうした実行が含まれている場合は、その実行結果からサブプロジェクトごとの終了状態を確認して横断検証の結果に充てることができ、同じ内容に対してfastを重ねて実行する必要はない。
+  直接pytestや手で選んだテストファイルの一覧など、`pytest-always-targets`が加わらない起動形で最初の検証を組む場合は、追跡済みの`*_invariant_test.py`全件（`git ls-files -- '*_invariant_test.py'`）を同じ実行の対象へ加える。
+  commitフックの`pyfltr fast`はこれらを実行するため、最初の検証から漏れるとcommitの時点で初めて失敗する。
   コミット時にprekが実行するfastも、対象集合・入力・依存条件と保存出力を確認でき、フック後の最終内容へ適用できる場合は同じ横断検証の結果に充てる。
   フックで不足する検証や、結果に影響する更新があった範囲だけを追加し、コミットフックの実行自体は省略しない。
   前提条件と再検証の手順は`docs/development/audit-records.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日」に記載されている。

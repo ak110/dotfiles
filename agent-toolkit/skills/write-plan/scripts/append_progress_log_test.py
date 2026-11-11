@@ -211,6 +211,54 @@ def test_public_cli_records_and_reads_commit_mapping(
     assert json.loads(capsys.readouterr().out) == {"awi": wi, "commits": [new_short]}
 
 
+def test_one_commit_records_multiple_awi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """一体の変更を1つのcommitにまとめても、1回の記録で全AWIへ同じcommitが対応付く。
+
+    commitの単位を作業項目から切り離す規定（commit-creation.md手順4）が、
+    作業項目ごとの採否とcommitの対応を失わずに成り立つことを固定する。
+    """
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git_repository.run_git(repo, "init")
+    identity = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    git_repository.run_git(repo, *identity, "commit", "--allow-empty", "-m", "base")
+    previous_head = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
+    git_repository.run_git(repo, *identity, "commit", "--allow-empty", "-m", "combined")
+    short = git_repository.git_output(repo, "rev-parse", "--short", "HEAD")
+    wis = ["20261111-000000-001.md", "20261111-000000-002.md"]
+    path = tmp_path / "plan.md"
+    path.write_text(
+        "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n"
+        + "".join(f"  - {wi}: 対応\n" for wi in wis)
+        + "\n"
+        + _plan().removeprefix("# 計画\n\n"),
+        encoding="utf-8",
+    )
+    awi_args = [arg for wi in wis for arg in ("--awi", wi)]
+    common = [str(path), "--worktree", str(repo)]
+    assert (
+        append_progress_log.main(
+            [
+                *common,
+                *awi_args,
+                "--commit",
+                "HEAD",
+                "--previous-head",
+                previous_head,
+                "--completed-step",
+                "実装",
+                "--result",
+                "成功",
+            ]
+        )
+        == 0
+    )
+    assert append_progress_log.main(common, retrieval=True) == 0
+    assert [json.loads(line) for line in capsys.readouterr().out.splitlines()] == [
+        {"awi": wi, "commits": [short]} for wi in wis
+    ]
+
+
 def test_cli_structure_error_reports_next_action(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """CLIは理由の行に続けて次の操作の行を書く。"""
     path = tmp_path / "plan.md"
