@@ -105,11 +105,13 @@ def test_subagent_commit_uses_the_subagent_record_model(capsys: pytest.CaptureFi
 
 
 def test_commit_without_observed_identity_remains_unblocked(capsys: pytest.CaptureFixture[str]) -> None:
-    """agent session外相当の観測identityがない入力は推測で遮断しない。"""
+    """観測identityが無い入力の帰属を推測せず、repository対象の解決と分ける。"""
     payload = {"tool_name": "Bash", "tool_input": {"command": "git commit -m '変更'"}}
 
     assert pretooluse.main(json.dumps(payload)) == 0
-    assert _denial_reason(capsys.readouterr()) == ""
+    reason = _denial_reason(capsys.readouterr())
+    assert "Co-Authored-By" not in reason
+    assert "コミット先のリポジトリを解決できない" in reason
 
 
 def test_claude_commit_respects_explicit_empty_attribution_setting(

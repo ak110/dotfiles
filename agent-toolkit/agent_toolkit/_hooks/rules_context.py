@@ -36,7 +36,7 @@ lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
-lazy from agent_toolkit._hooks import document_reads, timing, work_contract
+lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 
@@ -636,6 +636,15 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     else:
         raise ValueError("hook_event_nameはSessionStartまたはSubagentStartである必要がある")
 
+    try:
+        repository_notice = repository_protection.start_notice(str(payload.get("cwd", "")))
+    except (OSError, ValueError) as error:
+        repository_notice = (
+            f"repository設定を確認できない: {error}。`atk config repos list`で診断を確認せよ。"
+            "編集可否が確定するまで直接編集するな。"
+        )
+    if repository_notice:
+        content = f"{content}\n\n{_llm_notice(repository_notice)}" if content else _llm_notice(repository_notice)
     if content is not None:
         if (
             host == "claude"

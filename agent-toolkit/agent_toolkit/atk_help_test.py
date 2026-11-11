@@ -168,14 +168,14 @@ def test_command_without_subcommand_prints_help(
     assert captured.err == ""
 
 
-def test_wi_grep_rejects_extended_regex_option_with_recovery(capsys: pytest.CaptureFixture[str]) -> None:
-    """不要な-Eの拒否を維持し、同じ検索を実行する方法を示す。"""
+def test_wi_grep_rejects_conflicting_search_modes(capsys: pytest.CaptureFixture[str]) -> None:
+    """Python正規表現の明示と固定文字列の同時指定を検索前に拒否する。"""
     with pytest.raises(SystemExit) as rejected:
-        atk.main(["wi", "grep", "-E", "alpha|beta"])
+        atk.main(["wi", "grep", "-E", "-F", "alpha|beta"])
     assert rejected.value.code == 2
     diagnostic = capsys.readouterr().err
-    assert "-Eを外して再実行する" in diagnostic
-    assert "固定文字列を検索する場合は-Fを指定する" in diagnostic
+    assert "-E" in diagnostic
+    assert "-F" in diagnostic
 
 
 def test_every_argument_has_help() -> None:

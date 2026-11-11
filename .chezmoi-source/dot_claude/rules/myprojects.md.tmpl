@@ -38,8 +38,11 @@
 | `~/pytilpack` | Pythonライブラリ | Python | Linux | 実行はWindowsも考慮 |
 | `~/smpr` | Python CLIツール（非公開・個人用） | Python | Linux | 実行はWindowsも考慮 |
 | `~/glatasks` | TypeScript Webシステム | TypeScript + Python | Linux | pnpm使用 |
-| `~/gv` | Windows用画像ビューアー | Rust | Windows・Linux | このPCでは`mise run setup-linux`でクロスビルド環境を構築し、`mise run test`（テストはコンパイルまで）と`mise run build`を実行できる（LinuxビルドはRAR展開を除外）。テスト実行はWindows CIで行う。文書生成・文書lintでpnpm併用 |
-| `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows・Linux | このPCでは`mise run setup-linux`で環境を構築し、`mise run test`（dotnet-testを除く）と`mise run build`を実行できる。テスト実行はWindows CIで行う。文書生成・文書lintでpnpm併用 |
+| `~/gv` | Windows用画像ビューアー | Rust | Windows・Linux | Linuxは`mise run setup-linux`でクロスビルド環境を構築し、`mise run test`（コンパイルまで）と`mise run build`を実行できる（LinuxビルドはRAR展開を除外）。文書生成・文書lintでpnpm併用 |
+| `~/lc` | Windows用コマンドラインランチャー | C# (.NET) | Windows・Linux | Linuxは`mise run setup-linux`で環境を構築し、`mise run test`（dotnet-testを除く）と`mise run build`を実行できる。文書生成・文書lintでpnpm併用 |
+
+検証を実行するOSは`atk config repos`の`platforms`で管理する。
+process-wiでのローカル検査と対象OSのCIの分担は`agent-toolkit:process-wi`「検証環境」に従う。
 
 `~/dotfiles`が持つagent-toolkitとagent-basicsは、この一覧の外のエンドユーザーやプロジェクト（業務のプロジェクトなど）へも配布される。
 その規範や機能の要否と適用範囲は、この一覧のプロジェクトに場面があるかだけで判断しない。

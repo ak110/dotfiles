@@ -215,8 +215,8 @@ class TestManifestCheck:
         assert "package.json" in _additional_context(result)
         assert "pnpm add" in _additional_context(result)
 
-    def test_normal_file_no_warn(self):
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": "foo.txt", "content": "x"}})
+    def test_normal_file_no_warn(self, tmp_path):
+        result = _run({"cwd": str(tmp_path), "tool_name": "Write", "tool_input": {"file_path": "foo.txt", "content": "x"}})
         assert result.returncode == 0
         assert _agent_messages(result).strip() == ""
 

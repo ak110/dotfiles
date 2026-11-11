@@ -150,38 +150,96 @@ def _allocation(assignments: dict[str, str], candidate_count: int = 1) -> dict[s
     }
 
 
-@pytest.mark.parametrize("case", ["room", "integrated", "empty", "body", "cost"])
-def test_public_merge_rejects_new_final_lane_with_room(
+@pytest.mark.parametrize("case", ["room", "integrated", "empty", "empty-room", "body", "cost"])
+def test_public_merge_accepts_new_final_lane_with_room(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     case: str,
 ) -> None:
-    """上限の空き・完了状態・本文限定・費用更新でも最終レーンを増設しない。"""
+    """上限内の新規受入先を公開mergeで保存し、上限0の原本は保持する。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     original["初回配分"] = _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 21)
     if case == "integrated":
         for row in original["レーンの所要時間"]:
             row["統合状態"] = "統合済み"
-    if case == "empty":
+    if case in {"empty", "empty-room"}:
         original = {
             "選定": [],
             "見込みの補正": {"係数": 1, "参照した記録": [], "除外した記録": []},
             "レーンの所要時間": [],
-            "初回配分": _allocation({}, 0),
+            "初回配分": _allocation({}, 21 if case == "empty-room" else 0),
         }
+        addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+        addition["レーン間の重なり"] = [_overlap("lane-03", "lane-04")]
+        added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
     existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
     mapping.write_text(json.dumps({"lane-03": "lane-99", "lane-04": "lane-01"}), encoding="utf-8")
     extra = ["--body-wi", "c.md", "--body-wi", "d.md"] if case == "body" else []
     if case == "cost":
         costs = tmp_path / "costs.json"
-        costs.write_text(json.dumps({"lane-99": {"実装秒数": 1, "統合秒数": 1, "根拠": "更新"}}), encoding="utf-8")
+        costs.write_text(
+            json.dumps(
+                {
+                    "lane-99": {
+                        "実装秒数": 1,
+                        "統合秒数": 1,
+                        "補正前の実装秒数": 1,
+                        "補正前の統合秒数": 1,
+                        "根拠": "更新",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         extra = ["--lane-cost-updates", str(costs)]
     before = {path: path.read_bytes() for path in (existing, added, mapping)}
-    assert _merge_into_existing(repo, existing, added, mapping, *extra) == 2
-    assert "既存選定にない" in capsys.readouterr().err
+    result = _merge_into_existing(repo, existing, added, mapping, *extra)
+    if case == "empty":
+        assert result == 1
+        assert "上限" in capsys.readouterr().err
+        assert all(path.read_bytes() == value for path, value in before.items())
+    else:
+        assert result == 0, capsys.readouterr().err
+        merged = yaml.safe_load(existing.read_text(encoding="utf-8"))
+        assert merged["初回配分"] == original["初回配分"]
+        expected_lanes = {"lane-01", "lane-99"} if case == "empty-room" else {"lane-01", "lane-02", "lane-99"}
+        assert {row["レーン"] for row in merged["レーンの所要時間"]} == expected_lanes
+        assert merged["追加WI"] == ["c.md", "d.md"]
+        assert added.read_bytes() == before[added] and mapping.read_bytes() == before[mapping]
+        assert _dispatch(str(existing), "--work-dir", str(repo)) == 0
+
+
+@pytest.mark.parametrize("case", ["limit", "resume", "overlap"])
+def test_new_final_lane_keeps_whole_selection_constraints(
+    inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    case: str,
+) -> None:
+    """新規レーンでも累計上限・同じ再開計画・同一定義の並行書込を拒否して原本を保つ。"""
+    repo, existing, added = inputs
+    original = yaml.safe_load(existing.read_text(encoding="utf-8"))
+    addition = yaml.safe_load(added.read_text(encoding="utf-8"))
+    if case != "limit":
+        original["初回配分"] = _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 21)
+    if case == "resume":
+        original["選定"][0]["再開位置"] = "/plans/shared.md"
+        addition["選定"][0]["再開位置"] = "/plans/shared.md"
+    if case == "overlap":
+        for record in addition["レーン間の重なり"]:
+            if "lane-03" in (record["レーン1"], record["レーン2"]):
+                record["判定"] = "交わる"
+    existing.write_text(yaml.safe_dump(original, allow_unicode=True), encoding="utf-8")
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-99", "lane-04": "lane-01"}), encoding="utf-8")
+    before = {path: path.read_bytes() for path in (existing, added, mapping)}
+    assert _merge_into_existing(repo, existing, added, mapping) == 1
+    expected = {"limit": "上限", "resume": "同じ再開計画", "overlap": "同じ段階で定義が交わる"}[case]
+    assert expected in capsys.readouterr().err
     assert all(path.read_bytes() == value for path, value in before.items())
 
 
@@ -430,7 +488,7 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
     marker_side: str,
     new_lanes: bool,
 ) -> None:
-    """完了の書式をどちらの側に置いても既存レーンへの合流では受理し、新しい最終レーンへの追加では原本を変えずに拒否する。合流の保存結果は次の既存入力へ渡す。"""
+    """完了の書式をどちらの側に置いても合流でき、新規レーンの累計上限超過は原本を保持する。"""
     repo, existing, added = inputs
     for side, path in (("existing", existing), ("added", added)):
         if marker_side in (side, "both", "empty"):
@@ -446,7 +504,7 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
     output = tmp_path / "whole.yaml"
     assert _dispatch(
         str(existing), "--merge", str(added), "--lane-map", str(mapping), "--output", str(output), "--work-dir", str(repo)
-    ) == (2 if new_lanes else 0)
+    ) == (1 if new_lanes else 0)
     if new_lanes:
         assert all(path.read_bytes() == data for path, data in before.items())
         assert not output.exists()

@@ -4,6 +4,10 @@
 
 以下の設定を推奨する。
 
+agent-toolkitの実効設定は`atk config list`で一覧表示し、`atk config get <KEY>`で値を確認する。
+`atk config show`も同じ一覧を表示する。
+リポジトリごとの編集可否・処理対象・検証OSは`atk config repos list`で確認する（[登録例](claude-code-workflows.md#自律型)）。
+
 ### `~/.claude/settings.json`
 
 - `autoMemoryEnabled`: `false`（自動メモリー機能を無効化）

@@ -23,7 +23,7 @@
    独立文脈レビューと元担当の終了確認を保ち、書込権限の移動は`mandatory-rules.md`「作業ツリーの保護」に従う。
    担当の交代やモデル・実行手段の変更は、担当の回復として扱う。
    停止や失敗反復の原因が既存不良なら、欠陥の処置は回復と別に判定する。
-   process-wiの実行中は`../../process-wi/references/immediate-fix.md`「即時対応」、それ以外は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」に従う。
+   `agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の条件を前提とし、process-wiの実行中は`../../process-wi/references/immediate-fix.md`「即時対応」で対処時機を具体化する。
    可用性の障害と同型のツール入力失敗への切替条件は`fallback-launch.md`「代替起動」に従う。
 
    自身で実行可能な処理を残したままの返却が繰り返される場合は、同一の担当者へ再送を重ねる前に、担当者の交代、作業単位の再編、モデルや実行手段の変更を総コストの観点から比較検討する。

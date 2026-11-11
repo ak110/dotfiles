@@ -195,6 +195,7 @@ def test_new_body_keeps_writing_standards_without_existing_edit_materials(
     folder.mkdir()
     if not temporary:
         git_repository.init_repository(folder)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", json.dumps({str(folder): {"edit": "allow"}}))
     target = folder / filename
     content = "sleep 1\n" if filename.endswith(".sh") else "新本文\n"
     if exists:

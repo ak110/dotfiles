@@ -8,6 +8,7 @@ import pathlib
 import tomllib
 from typing import Any
 
+from agent_toolkit._atk import config_repositories
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import next_action as _next_action
@@ -108,7 +109,7 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
     その後のsetで修復できるようにする。新しいCLI値として空候補は受理しない。
     """
     changes = dict(updates or {})
-    migrated = plan_connection_migration(config, changes)
+    migrated = config_repositories.migrate(plan_connection_migration(config, changes))
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
         return migrated
@@ -156,8 +157,9 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
 
 def migrate_legacy_settings() -> None:
     """旧モデル設定と旧接続設定の保存値を移行先へ一括移行する。環境変数は保存しない。"""
-    config = _config_settings.load_config()
-    if not any(key in config for key in (*_config_settings.RETIRED_MODEL_KEYS, *_config_settings.RETIRED_CONNECTION_KEYS)):
+    config = _config_settings.load_config_strict()
+    legacy_keys = (*_config_settings.RETIRED_MODEL_KEYS, *_config_settings.RETIRED_CONNECTION_KEYS, "process_loop_repositories")
+    if not any(key in config for key in legacy_keys):
         return
     migrated = plan_legacy_migration(config)
     if migrated != config:
@@ -259,6 +261,7 @@ def migrate_serve_settings() -> None:
 
 def check_legacy_environment() -> None:
     """廃止キーの環境変数があれば、対応する工程別環境変数を案内する。"""
+    _config_settings.check_repository_environment()
     found = sorted(key for key in _config_settings.RETIRED_MODEL_KEYS if _config_settings.config_env_name(key) in os.environ)
     if found:
         replacements = []

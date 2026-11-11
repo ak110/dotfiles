@@ -42,7 +42,10 @@ user-invocable: false
 
 process-loopの起動・待機・制御を扱う際は、事前に`atk wi process-loop --help`で利用条件を確認する。
 公開されている主な操作には、中断を要求する`atk wi process-loop abort`、次の1セッションへの指示を与える`instruct`、状態を確認する`status`がある。
-ホームディレクトリなどから`atk wi process-loop`を実行し、`process_loop_repositories`に登録されている対象一覧を`atk wi list --configured-repos`で確認する。
+ホームディレクトリなどから`atk wi process-loop`を実行し、`repositories`で`process_loop`が有効な対象一覧を`atk wi list --configured-repos`で確認する。
+リポジトリごとの編集可否・ローカルパス・process-loopの対象・検証OSは`atk config repos`で登録・変更・削除・一覧表示する。
+未登録は編集不可であり、`allow`への登録は編集の認可を確認してから行う。
+`awi`は直接編集せずAWIを投入し、`deny`は必要な変更を報告する。
 常駐はprocess-wiの実行ごとに統括担当を1つ起動し、リポジトリごとの準備・所有・進捗を管理する。
 統括は対象の規範・スキルを明示的に読み、今回の対象が1リポジトリならレーン数上限によらず自ら処理する。
 対象が複数の場合も、今回進められる負荷が最大のリポジトリを統括が直接担当する。
@@ -50,7 +53,7 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 具体的な選定と通常の継続は`../process-wi/references/all-repos-starting.md`「開始と振り分け」に従う。
 直接処理でも上限が2以上なら通常のレーン処理へ、1以下ならsingle-laneへ接続し、起動したwriterの終了観測と常駐への対象別結果の保存を保つ。
 計画・検証・レビュー・公開は対象worktreeごとに分離し、process-wiの実行全体の完了報告は統括が行う。
-常時処理するリポジトリだけを登録し、投入だけを行うリポジトリは登録しない。
+常時処理するリポジトリだけ`process_loop`を有効にし、投入だけを行うリポジトリも`edit=awi`として登録できる。
 非常駐の全体処理は`agent-toolkit:process-wi all-repos`を手動起動する。
 同スキルは`atk wi process-loop --once`で、常駐と共通の対象取得・所有・worktree準備・結果検収・回収を1集合に対して行う。
 対象が0件なら待機せず終了し、未完了・所有待ち・準備失敗が残れば非0で終了する。

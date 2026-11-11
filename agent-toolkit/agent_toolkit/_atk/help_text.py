@@ -95,7 +95,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi grep": {
         "summary": "本文を正規表現か固定文字列で検索して該当行または一致した項目を列挙する",
-        "description": "本文を正規表現か固定文字列で検索して該当行または一致した項目を列挙する。\n\n目的: 対象範囲のキュー項目の本文全体をPythonの正規表現か固定文字列で検索し、該当行、または一致した項目の件数・ファイル名・要約を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。キュー全体から候補を探すときは`--summary-only`で候補と表題を先に得て、本文は`atk wi show`で読む。\n対象と出力: private-notesを読み取り、標準出力へ書く。出力形式を指定しない場合は該当行ごとの`<ファイル名>:<行番号>:<該当行>`の形式である。`-c`・`--count`は一致した項目ごとに`<ファイル名>:<一致行数>`を書き、値は項目ごとの一致行数で`atk wi list --count`の総件数（整数1つ）とは異なる。`-l`・`--files-with-matches`は一致した項目のファイル名だけを書く。`--summary-only`は一致した項目ごとに`atk wi list --summary-only`と同じ`filename`・`summary`へ一致行数の`match_count`を加えた1件1行のJSON Linesを書く。3つの形式は併用できない。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNは、`-F`・`--fixed-strings`を指定しない場合はPythonのreモジュールが解釈できる正規表現として、指定した場合は固定文字列として解釈する。識別子、パス、本文の一部などの語を探すときは`-F`を付け、記号を正規表現として使うときだけ`-F`を付けない。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "本文を正規表現か固定文字列で検索して該当行または一致した項目を列挙する。\n\n目的: 対象範囲のキュー項目の本文全体をPythonの正規表現か固定文字列で検索し、該当行、または一致した項目の件数・ファイル名・要約を列挙する。\n利用場面: 同じ主題の既存項目を探すとき。特定の識別子を含む項目を洗い出すとき。キュー全体から候補を探すときは`--summary-only`で候補と表題を先に得て、本文は`atk wi show`で読む。\n対象と出力: private-notesを読み取り、標準出力へ書く。出力形式を指定しない場合は該当行ごとの`<ファイル名>:<行番号>:<該当行>`の形式である。`-c`・`--count`は一致した項目ごとに`<ファイル名>:<一致行数>`を書き、値は項目ごとの一致行数で`atk wi list --count`の総件数（整数1つ）とは異なる。`-l`・`--files-with-matches`は一致した項目のファイル名だけを書く。`--summary-only`は一致した項目ごとに`atk wi list --summary-only`と同じ`filename`・`summary`へ一致行数の`match_count`を加えた1件1行のJSON Linesを書く。3つの形式は併用できない。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。該当が0件のときは標準エラーへ`該当0件: `で始まる行を書き、終了コード1を返す。ファイルは変更しない。\n前提: PATTERNは、省略時と`-E`ではPythonのreモジュールが解釈できる正規表現として、`-F`・`--fixed-strings`では固定文字列として解釈する。-Eと-Fは併用できない。識別子、パス、本文の一部などの語を探すときは`-F`を付け、記号を正規表現として使うときだけ`-F`を付けない。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": '現在の重複確認にはactiveを、過去の存在確認にはallを指定し、`--summary-only`で得た候補の本文を`atk wi show`で比べて一致を確かめる。\n\n実行例:\n\n  atk wi grep --summary-only -F "worktree-stash" --state=active\n  atk wi grep --summary-only -F "worktree-stash" --state=all\n  atk wi grep -F "text[1] 文字" --state=all\n  atk wi grep "worktree-stash|stash-pop" --state=active',
     },
     "atk wi start-processing": {
@@ -208,8 +208,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
-        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: process_loop_repositoriesの対象をprocess-wiの実行ごとに1つの統括会話へ渡す。\n利用場面: 登録した全対象を継続的に処理するとき、または--onceで1回だけ処理するとき。\n対象と出力: 起動cwdでorchestrateのprocess-wi all-reposを起動する。少数候補の対象は統括自身が処理し、多数候補だけを対象cwdの担当へ委譲する。所有・進捗・worktree準備・レーン回収は対象別に管理する。--onceは1集合を処理して終了し、対象0件でも待機しない。未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config set process_loop_repositoriesでローカルworktreeのJSON配列を登録する。空配列では通常は変更待機し、--onceでは終了する。--resume SESSION_IDは統括会話を再開し、--auto-resumeとは同時指定できない。--worktreeは対象別に適用し、対象がdotfilesの場合は無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは現在のセッション終了後に停止し、abort-cancelで取り消す。停止未確認・未統合・dirtyの資源は保持する。",
-        "epilog": "実行例:\n\n  atk config set process_loop_repositories '[\"/absolute/repository\"]'\n  atk wi process-loop\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
+        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象をprocess-wiの実行ごとに1つの統括会話へ渡す。\n利用場面: 登録した全対象を継続的に処理するとき、または--onceで1回だけ処理するとき。\n対象と出力: 起動cwdでorchestrateのprocess-wi all-reposを起動する。少数候補の対象は統括自身が処理し、多数候補だけを対象cwdの担当へ委譲する。所有・進捗・worktree準備・レーン回収は対象別に管理する。--onceは1集合を処理して終了し、対象0件でも待機しない。未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。対象0件では通常は変更待機し、--onceでは終了する。--resume SESSION_IDは統括会話を再開し、--auto-resumeとは同時指定できない。--worktreeは対象別に適用し、対象がdotfilesの場合は無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは現在のセッション終了後に停止し、abort-cancelで取り消す。停止未確認・未統合・dirtyの資源は保持する。",
+        "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",
@@ -280,9 +280,44 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。接続設定は次のとおり。`claude_credits_env_file`・`claude_payg_env_file`はClaudeのAPIクレジット・従量課金APIの環境変数を書いたenvファイルのパス1つを受理し、先頭の~を展開する。初期値は空で、set時にはファイルの存在・内容を確かめない。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに4キーのどれも設定しない場合は親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはexecute・chores・chores_fast・writeがlow、review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧接続設定キーと廃止環境変数は移行先のキー名を示して拒否する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`・`serve_sessions_claude_home`・`serve_sessions_codex_home`は参照元のパス（空文字列は未指定）、`serve_plans_remote_hosts`・`serve_sessions_remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。envファイルとprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
+        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。接続設定は次のとおり。`claude_credits_env_file`・`claude_payg_env_file`はClaudeのAPIクレジット・従量課金APIの環境変数を書いたenvファイルのパス1つを受理し、相対パスと~をcwd基準の絶対パスへ正規化する。初期値は空で、set時にはファイルの存在・内容を確かめない。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに4キーのどれも設定しない場合は親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはexecute・chores・chores_fast・writeがlow、review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧接続設定キーと廃止環境変数は移行先のキー名を示して拒否する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`・`serve_sessions_claude_home`・`serve_sessions_codex_home`は参照元のパス（空文字列は未指定）、`serve_plans_remote_hosts`・`serve_sessions_remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。envファイルとprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
         "epilog": "実行例:\n\n  atk config set execute_model codex:sol/medium\n  atk config set review_model claude:sonnet[1m]/medium,codex:sol/medium\n  atk config set claude_worker_connections credits,subscription\n\n"
         + CONNECTION_GUIDE_NOTICE,
+    },
+    "atk config add": {
+        "summary": "配列設定へ要素を1件追加する",
+        "description": "配列設定へ要素を1件追加する。\n\n目的: 配列全体を指定せずVALUEを追加する。\n利用場面: SSH接続先名を1件追加するとき。\n対象と出力: config.jsonへ保存する。既存の要素なら変更せず成功する。\n前提: 現在の配列設定はserve_plans_remote_hostsとserve_sessions_remote_hosts。配列以外はsetを案内して終了2。\n復元・後始末: removeで要素を削除できる。",
+        "epilog": "実行例:\n\n  atk config add serve_plans_remote_hosts remote-host",
+    },
+    "atk config remove": {
+        "summary": "配列設定から要素を1件削除する",
+        "description": "配列設定から要素を1件削除する。\n\n目的: 配列全体を指定せずVALUEを削除する。\n利用場面: SSH接続先名を1件外すとき。\n対象と出力: config.jsonへ保存する。不在なら現在の一覧を示して終了2。\n前提: JSON文字列配列の設定を指定する。配列以外はsetを案内して終了2。\n復元・後始末: addで要素を戻せる。",
+        "epilog": "実行例:\n\n  atk config remove serve_plans_remote_hosts remote-host",
+    },
+    "atk config repos": {
+        "summary": "repositoryの編集可否とprocess-loop対象・検証OSを管理する",
+        "description": "repositoryの扱いを管理する。\n\n目的: repositoriesのJSON mapを操作する。\n利用場面: 編集可否、process-loop対象、検証OSを登録するとき。\n対象と出力: ユーザー単位のconfig.jsonを読み書きする。旧process_loop_repositoriesは初回読取で同じ対象のallow・process_loop=trueへ移行する。既存登録と不整合なら上書きせず修正を案内する。\n前提: 識別子はoriginの正規化URL、originなしは元repositoryの絶対パス。worktreeも同じ扱いとなる。未登録は編集不可。\n復元・後始末: setで以前の属性へ戻し、removeで登録を削除できる。",
+        "epilog": "実行例:\n\n  atk config repos list\n  atk config repos add example.org/team/repo --edit awi",
+    },
+    "atk config repos add": {
+        "summary": "未登録repositoryを追加する",
+        "description": "未登録repositoryを追加する。\n\n目的: REPOを--edit allow|awi|denyで登録する。\n利用場面: 編集可否を初めて設定するとき。\n対象と出力: ユーザー単位のconfig.jsonを更新する。\n前提: cloneのないURLも登録できる。ローカルパスならoriginを解決する。pathは任意だがprocess-loop対象では同じrepositoryの実在するworktreeが必要。platformsはlinux,windowsのカンマ区切りで、省略時は両方を対象とする。\n復元・後始末: repos removeで登録を削除できる。",
+        "epilog": "実行例:\n\n  atk config repos add ./repo --edit allow --process-loop --platforms windows",
+    },
+    "atk config repos set": {
+        "summary": "登録済みrepositoryの指定属性を変更する",
+        "description": "登録済みrepositoryの属性を変更する。\n\n目的: 指定した属性だけを更新して他の属性を保持する。\n利用場面: 編集可否・ローカルパス・検証OSを変えるとき。\n対象と出力: config.jsonを更新する。パスはcwd起点の絶対パスへ正規化する。\n前提: 登録済みの識別子を指定する。--no-process-loopで対象から外す。\n復元・後始末: 同じ操作で以前の値を設定できる。",
+        "epilog": "実行例:\n\n  atk config repos set example.org/team/repo --edit deny --no-process-loop",
+    },
+    "atk config repos remove": {
+        "summary": "repository登録を削除する",
+        "description": "repository登録を削除する。\n\n目的: 未登録時の扱い（編集不可）へ戻す。\n利用場面: repositoryを登録対象から外すとき。\n対象と出力: config.jsonの登録を削除する。不在は終了2。\n前提: 登録済みの識別子を指定する。\n復元・後始末: repos addで登録を戻せる。",
+        "epilog": "実行例:\n\n  atk config repos remove example.org/team/repo",
+    },
+    "atk config repos list": {
+        "summary": "repository登録をJSONで一覧表示する",
+        "description": "repository登録をJSONで一覧表示する。\n\n目的: edit・path・process_loop・platformsを確認する。\n利用場面: 編集や設定変更の前に扱いを確認するとき。\n対象と出力: repositoriesの正規化済みJSON mapを表示する。旧設定がある初回は移行結果を保存する。\n前提: 登録がなければ空のmapを表示する。\n復元・後始末: 一覧表示だけなら不要。",
+        "epilog": "実行例:\n\n  atk config repos list",
     },
     "atk config apply-preset": {
         "summary": "工程別モデル候補列をプリセットで確認・一括設定する",
@@ -542,6 +577,11 @@ for _command in ("atk wi list", "atk wi show", "atk wi grep"):
         "--important allと省略時は全項目を対象とする。"
     )
 HELP["atk wi show"]["description"] += "重要フラグの限定は--all指定時に適用する。"
+HELP["atk config list"] = HELP["atk config show"]
+HELP["atk config set"]["description"] += (
+    "\nパス型のserve_*とenvファイル設定は、空文字を保持し相対パスと~をcwd基準の絶対パスへ正規化する。repositoriesは識別子をキーとするJSON mapで、edit（allow/awi/deny、必須）・path（任意）・process_loop（真偽、省略時false）・platforms（linux/windowsの配列、省略時は両方）を持つ。全体setにもreposと同じ検証を適用する。"
+)
+
 HELP["atk wi grep"]["description"] += (
     "\n複数パターン: -e PATTERN・--regexp PATTERNを反復指定すると、各Python正規表現を独立に評価し、"
     "いずれかに一致する行を1回だけ出力・計上する。-Fと-iは全パターンへ適用する。"
@@ -671,12 +711,6 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
                 ]
                 accepted = "・".join(positionals) if positionals else "なし"
                 self.error(f"余った位置引数: {rejected}。{self.prog}が受け取る位置引数は{accepted}")
-            if self.prog.endswith(" wi grep") and "-E" in remaining:
-                self.error(
-                    f"解釈できない引数: -E。{self._accepted_form()}。"
-                    "オプションを指定しない場合は正規表現で検索します。次の操作: -Eを外して再実行する。"
-                    "固定文字列を検索する場合は-Fを指定する"
-                )
             self.error(f"解釈できない引数: {remaining[0]}。{self._accepted_form()}")
         return parsed, remaining
 

@@ -58,7 +58,10 @@ def _run_git_commit_message_hook(
     head_before = git_repository.git_output(repo, "rev-parse", "HEAD")
     status_before = git_repository.git_output(repo, "status", "--porcelain=v1")
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo), **extra_payload}
-    result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
+    env = _plan_file_state_env(tmp_path)
+    # 本試験はcommit本文の検査を対象とする。repository保護を通す登録を明示する。
+    env["AGENT_TOOLKIT_CONFIG_REPOSITORIES"] = json.dumps({str(repo): {"edit": "allow"}})
+    result = _run(payload, env_overrides=env)
     observed = {
         "payload": payload,
         "shell_checks_source": shell_checks.__file__,

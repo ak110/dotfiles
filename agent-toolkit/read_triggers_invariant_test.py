@@ -127,14 +127,29 @@ def test_process_wi_body_defines_immediate_fix_for_all_modes():
     source = _PLUGIN_ROOT / "skills" / "process-wi" / "SKILL.md"
     body = read_triggers.ReadTarget(source, "即時対応").body()
     for required in (
-        "最小限の直接修正",
-        "次のセッション用AWI",
-        "直さないと、残る工程か次のセッションで停止・遮断、誤った判断や成果物、手戻りが生じるか",
+        "現時点で起きている不良",
+        "今回の正式対応",
+        "先送り",
+        "共通規範",
+        "潜在不良・効率改善",
         "references/immediate-fix.md",
     ):
         assert required in body
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
     assert any("即時対応" in row.condition and {path.name for path in row.documents} == {"immediate-fix.md"} for row in rows)
+
+
+def test_formal_remediation_consumers_keep_shared_timing_and_lane_choices():
+    """最小修正後も共通の時機を使い、現在不良の新規レーン受入を一律禁止しない。"""
+    root = _PLUGIN_ROOT / "skills/process-wi/references"
+    single = read_triggers.ReadTarget(root / "single-lane.md", "見つけた既存不良の扱い").body()
+    addition = (root / "run-lanes-addition.md").read_text(encoding="utf-8")
+    assert "正式対応のAWIも" in single and "今回追加なら処理対象と対応表へ加える" in single
+    assert "正式対応AWIも同書で時機を判定" in addition
+    assert "新しいレーンも受入先にできる" in addition
+    for body in (single, addition):
+        assert "今回の処理対象や対応表には追加しない" not in body
+        assert "新規レーンを作成することは避ける" not in body
 
 
 def test_cross_plugin_references_resolve_in_codex_cache_layout(tmp_path, monkeypatch):

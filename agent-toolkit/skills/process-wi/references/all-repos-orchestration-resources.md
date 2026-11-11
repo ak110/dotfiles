@@ -15,7 +15,9 @@
 
 ## 登録集合
 
-登録集合は`process_loop_repositories`のローカルworktreeの絶対パスのJSON配列で定める。
+登録集合は`atk config repos`で管理する`repositories`のうち、`process_loop`が有効な項目のローカルworktreeで定める。
+直接編集は`edit=allow`のリポジトリだけで行い、`awi`・`deny`・未登録は`immediate-fix.md`「レーンの変更範囲へ加える修正の認可」の扱いに従う。
+検証OSの選定は`../SKILL.md`「検証環境」に従い、登録した`platforms`を各担当へ引き継ぐ。
 空集合は通常起動で待機し、`--once`では終了する。
 不正な登録は診断の対象を修正してから再開する。
 同じoriginは登録順の先頭へまとめ、Git共通ディレクトリと処理worktreeの対応を維持する。

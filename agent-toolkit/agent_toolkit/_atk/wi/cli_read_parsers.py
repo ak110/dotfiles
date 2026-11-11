@@ -24,7 +24,7 @@ def _add_mq_read_parsers(sub: Any) -> None:
     list_.add_argument(
         "--configured-repos",
         action="store_true",
-        help="process_loop_repositoriesの登録集合を一括取得する。--target-repoとは併用できない。",
+        help="repositoriesでprocess_loopが有効な登録集合を一括取得する。--target-repoとは併用できない。",
     )
     list_.add_argument(
         "--snapshot-output",
@@ -189,7 +189,9 @@ def _add_mq_search_and_answer_parsers(sub: Any) -> None:
         ),
     )
     grep.add_argument("-i", "--ignore-case", action="store_true", help="大文字小文字を無視して検索する。")
-    grep.add_argument(
+    mode = grep.add_mutually_exclusive_group()
+    mode.add_argument("-E", action="store_true", dest="regex", help="省略時と同じPythonの正規表現で検索する。")
+    mode.add_argument(
         "-F",
         "--fixed-strings",
         action="store_true",

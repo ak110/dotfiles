@@ -267,8 +267,11 @@ def test_cli_add_omits_target_commit_for_url_only_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """URLだけのtarget_repo指定ではローカルworktreeを推測せずOIDを省略する。"""
+    """cloneなしの登録先へAWIを投入でき、ローカルworktreeを推測してOIDを付けない。"""
     notes = _setup_notes(tmp_path)
+    with pytest.raises(SystemExit) as registered:
+        atk.main(["config", "repos", "add", "github.com/example/remote", "--edit", "awi"], home=tmp_path)
+    assert registered.value.code == 0
     git_commands: list[list[str]] = []
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:

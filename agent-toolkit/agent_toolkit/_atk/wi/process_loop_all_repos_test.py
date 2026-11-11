@@ -26,7 +26,12 @@ def _repositories(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tu
     paths = [
         git.init_repository(tmp_path / name, origin=f"https://example.test/team/{name}.git") for name in ("one", "two", "empty")
     ]
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(path) for path in paths]))
+    monkeypatch.setenv(
+        "AGENT_TOOLKIT_CONFIG_REPOSITORIES",
+        json.dumps(
+            {f"example.test/team/{path.name}": {"edit": "allow", "path": str(path), "process_loop": True} for path in paths}
+        ),
+    )
     monkeypatch.setenv(
         "AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / ("private-notes" if (tmp_path / "private-notes").exists() else "notes"))
     )
@@ -38,16 +43,20 @@ def test_configured_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     one = git.init_repository(tmp_path / "one", origin="https://example.test/team/one.git")
     clone = git.init_repository(tmp_path / "clone", origin="git@example.test:team/one.git")
     two = git.init_repository(tmp_path / "two", origin="https://example.test/team/two.git")
-    value = json.dumps([str(one), str(clone), str(two)])
-    args = argparse.Namespace(config_subcommand="set", key="process_loop_repositories", value=value)
+    # 旧パス配列の初回移行でも、同originのcloneは最初のworktreeだけを残す。
+    path = config._config_file_path()  # noqa: SLF001  # pylint: disable=protected-access
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"process_loop_repositories": json.dumps([str(one), str(clone), str(two)])}), encoding="utf-8")
+    args = argparse.Namespace(config_subcommand="show")
     assert config.dispatch(args, tmp_path) == 0
     repositories = config.resolve_configured_repositories()
     assert [repository.worktree for repository in repositories] == [one, two]
-    args.value = "[]"
+    args = argparse.Namespace(config_subcommand="set", key="repositories", value="{}")
     assert config.dispatch(args, tmp_path) == 0
     assert not config.resolve_configured_repositories()
-    for invalid in ('{"repo": 1}', "broken", '["relative"]', json.dumps([str(tmp_path / "missing")])):
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", invalid)
+    missing = {"example.test/team/one": {"edit": "allow", "path": str(tmp_path / "missing"), "process_loop": True}}
+    for invalid in ('{"repo": 1}', "broken", '["relative"]', json.dumps(missing)):
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", invalid)
         with pytest.raises(ValueError, match=".+"):
             config.resolve_configured_repositories()
 

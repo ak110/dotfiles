@@ -120,7 +120,11 @@ def test_installed_cache_provenance_keeps_source_boundary(scenario, monkeypatch,
     (root / ".claude-plugin/plugin.json").write_text('{"name":"example-plugin","version":"2.0"}', encoding="utf-8")
     target.write_text(source.read_text(encoding="utf-8").replace("固有の必要本文", "新版の必要本文"), encoding="utf-8")
 
-    def public_inventory(argv, **_kwargs):
+    original_runner = plugin_roots.process_tree.run_with_timeout
+
+    def public_inventory(argv, **kwargs):
+        if argv[0] == "git":
+            return original_runner(argv, **kwargs)
         # Codex 0.166.0の公開marketplace/listで実観測したroot・name・導入属性を使う。
         data = {"marketplaces": [{"name": "mine", "root": str(repo if same_source else other)}]}
         if argv[1:3] == ["plugin", "list"]:

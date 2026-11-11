@@ -135,9 +135,14 @@ class TestGitCommitMessageFormat:
     ],
 )
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
-def test_reserved_prefix_reaches_bash_hook_checks(command: str, expected: str, extra_payload: dict[str, str]) -> None:
+def test_reserved_prefix_reaches_bash_hook_checks(
+    tmp_path: pathlib.Path,
+    command: str,
+    expected: str,
+    extra_payload: dict[str, str],
+) -> None:
     """共通解析の前置分岐が、公開hookの出力接続・Git・オプションの判定まで到達する。"""
-    result = _run({"tool_name": "Bash", "tool_input": {"command": command}, **extra_payload})
+    result = _run({"tool_name": "Bash", "cwd": str(tmp_path), "tool_input": {"command": command}, **extra_payload})
     if expected == "空行":
         assert expected in _denial_reason(result)
     else:

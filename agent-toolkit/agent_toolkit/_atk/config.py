@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import pathlib
 import sys
@@ -11,6 +12,7 @@ from typing import Any, cast
 lazy import platformdirs
 
 from agent_toolkit._atk import config_migration as _config_migration
+from agent_toolkit._atk import config_repositories_cli
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import help_text as _atk_help
 from agent_toolkit._atk import outcome as _outcome
@@ -111,6 +113,7 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
         if key not in _config_settings.MUTABLE_KEY_DEFAULTS:
             raise KeyError(key)
         _config_settings.validate_mutable_setting(key, value)
+    updates = {key: _config_settings.normalize_setting(key, value) for key, value in updates.items()}
     config = _config_settings.load_config_strict()
     if all(config.get(key) == value for key, value in updates.items()):
         return False
@@ -176,6 +179,8 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
 def _legacy_key_guidance(keys: list[str]) -> str:
     """旧モデル設定キーと旧接続設定キーを指定した場合に、置き換える新キーを示す文を返す。"""
     guidance = ""
+    if "process_loop_repositories" in keys:
+        guidance += "。process_loop_repositoriesは廃止した。`atk config repos`でrepositoriesを変更する"
     if any(key in _config_settings.RETIRED_MODEL_KEYS for key in keys):
         guidance += "。旧モデル設定キーは廃止した。対応する工程別の`*_model`キーを指定する"
     for key in keys:
@@ -221,12 +226,8 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
     _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
     # 旧serve.tomlの値を先に移行し、続く保存で明示値が移行値に上書きされないようにする。
     _config_migration.migrate_serve_settings()
-    value = (
-        ",".join(_config_settings.parse_connection_order(args.value))
-        if args.key in _config_settings.CONNECTION_ORDER_KEYS
-        else args.value
-    )
-    config = _config_migration.plan_legacy_migration(_config_settings.load_config(), updates={args.key: value})
+    value = _config_settings.normalize_setting(args.key, args.value)
+    config = _config_migration.plan_legacy_migration(_config_settings.load_config_strict(), updates={args.key: value})
     _config_settings.save_config(config)
     _outcome.report_success(f"設定を更新した: {args.key}={value}")
     active_env = (
@@ -312,6 +313,12 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     """`config`サブパーサ配下にshow/get/set/apply-presetを登録する。"""
     sub = _atk_help.add_subcommands(config, dest="config_subcommand", required=False)
     _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
+    _atk_help.add_command(sub, "list", **_atk_help.HELP["atk config list"])
+    for name in ("add", "remove"):
+        array = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
+        array.add_argument("key", metavar="KEY", help="JSON配列型の設定キー。")
+        array.add_argument("value", metavar="VALUE", help="追加・削除する要素1件。")
+    config_repositories_cli.build_parser(sub)
     get = _atk_help.add_command(sub, "get", **_atk_help.HELP["atk config get"])
     get.add_argument("key", metavar="KEY", nargs="+", help="取得する1件以上のキー（config showの出力キーと同一）。")
     set_ = _atk_help.add_command(sub, "set", **_atk_help.HELP["atk config set"])
@@ -330,12 +337,16 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path) -> int:
     """`config`サブコマンドを実行し、終了コードを返す（サブコマンド省略時は`show`扱い）。"""
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
-        if sub == "show":
+        if sub in {"show", "list"}:
             _cmd_config_show(home)
         elif sub == "get":
             _cmd_config_get(args, home)
         elif sub == "apply-preset":
             _cmd_config_apply_preset(args)
+        elif sub in {"add", "remove"}:
+            _cmd_config_array(args, remove=sub == "remove")
+        elif sub == "repos":
+            config_repositories_cli.dispatch(args)
         else:
             _cmd_config_set(args)
     except ValueError as error:
@@ -347,3 +358,27 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path) -> int:
         _outcome.report_failure(str(error), next_action=next_action)
         return 2
     return 0
+
+
+def _cmd_config_array(args: argparse.Namespace, *, remove: bool) -> None:
+    """配列要素を1件更新し、重複追加と不在削除を区別する。"""
+    if args.key not in _config_settings.ARRAY_KEYS:
+        raise ValueError(f"{args.key}は配列型の設定ではない。単一値の設定には`atk config set`を使う")
+    _config_migration.migrate_legacy_settings()
+    stored = _config_settings.load_config_strict()
+    value = stored.get(args.key, _config_settings.mutable_setting_default(args.key))
+    if not isinstance(value, str):
+        raise ValueError(f"{args.key}の保存値はJSON文字列配列を表す文字列で指定する")
+    items = list(_config_settings.parse_remote_hosts(value))
+    item = args.value
+    _config_settings.validate_mutable_setting(args.key, json.dumps([item]))
+    if remove:
+        if item not in items:
+            raise ValueError(f"要素が存在しない: {item}。現在の一覧: {json.dumps(items, ensure_ascii=False)}")
+        items = [current for current in items if current != item]
+    elif item in items:
+        _outcome.report_success(f"既に登録されているため変更しない: {item}")
+        return
+    else:
+        items.append(item)
+    _cmd_config_set(argparse.Namespace(key=args.key, value=json.dumps(items, ensure_ascii=False)))
