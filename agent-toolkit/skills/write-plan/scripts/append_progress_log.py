@@ -194,6 +194,13 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         try:
             result = commit_mapping.get_commits(args.worktree, events, targets, allowed)
         except commit_mapping.CommitMappingError as error:
+            if args.awi is None and isinstance(error, commit_mapping.CommitGitError):
+                raise ProgressLogError(
+                    error.reason + "。解決できないcommitは別のリポジトリのものである可能性があります",
+                    next_action="`atk run-script plan-commits -- <Markdownの絶対パス> --worktree <対象worktreeの絶対パス> "
+                    "--awi <対象AWI>`で再実行する。引き継ぎ記録には--handoffと対象全件の--allowed-awiも指定する。"
+                    + error.next_action,
+                ) from error
             if args.awi is not None or not error.reason.startswith("実装commitの記録がありません:"):
                 raise
             raise ProgressLogError(

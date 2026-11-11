@@ -28,6 +28,52 @@ def _prepare_two_commits(worktree: pathlib.Path) -> str:
 
 
 @pytest.mark.parametrize("handoff", [False, True])
+def test_public_plan_commits_selects_repository_from_mixed_record(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
+) -> None:
+    """別repoの短縮OIDとrewriteを含む記録から対象だけ取得し、全件時は再実行を案内する。"""
+    repo = tmp_path / "repo"
+    other = tmp_path / "other"
+    _prepare_two_commits(repo)
+    _prepare_two_commits(other)
+    git_repository.run_git(
+        other, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "other"
+    )
+    local_oid = git_repository.run_git(repo, "rev-parse", "--short", "HEAD").stdout.strip()
+    foreign_oid = git_repository.run_git(other, "rev-parse", "--short", "HEAD").stdout.strip()
+    wis = ["20261004-044311-001.md", "20261004-044311-002.md"]
+    record = tmp_path / "record.md"
+    record.write_text(
+        "# 引き継ぎ\n"
+        if handoff
+        else "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n" + "".join(f"  - {wi}: 対応\n" for wi in wis),
+        encoding="utf-8",
+    )
+    events: list[dict[str, object]] = [
+        {"commits": [local_oid], "awi": [wis[0]]},
+        {"commits": [foreign_oid], "awi": [wis[1]]},
+        {"rewrite": {foreign_oid: "deadbee"}},
+    ]
+    for event in events:
+        commit_mapping.append_event(record, event)
+    base = [str(record), "--worktree", str(repo)]
+    if handoff:
+        base += ["--handoff", "--allowed-awi", wis[0], "--allowed-awi", wis[1]]
+    before = (record.read_bytes(), commit_mapping.mapping_path(record).read_bytes())
+    args = argparse.Namespace(script_name="plan-commits", script_args=[*base, "--awi", wis[0]])
+    assert run_script.dispatch(args) == 0
+    assert json.loads(capsys.readouterr().out) == {"awi": wis[0], "commits": [local_oid]}
+    args.script_args = base
+    assert run_script.dispatch(args) == 1
+    diagnostic = capsys.readouterr().err
+    assert "別の" in diagnostic and "--awi" in diagnostic and "再実行" in diagnostic
+    args.script_args = [*base, "--awi", wis[1]]
+    assert run_script.dispatch(args) == 1
+    assert "deadbee" in capsys.readouterr().err
+    assert before == (record.read_bytes(), commit_mapping.mapping_path(record).read_bytes())
+
+
+@pytest.mark.parametrize("handoff", [False, True])
 @pytest.mark.parametrize(
     "case", ["invalid-input", "outside-input", "missing-record", "broken-record", "record-wi", "missing-git"]
 )

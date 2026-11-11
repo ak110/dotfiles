@@ -430,12 +430,14 @@ def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Pa
                         if isinstance(names, list):
                             allowed.update(name for name in names if isinstance(name, str))
                 commit_mapping.validate_targets([row["name"]], allowed)
-                mapping = commit_mapping.read_mapping(worktree, events, allowed)
+                mapping = commit_mapping.read_mapping(worktree, events, allowed, allow_missing=True)
+                expected = {
+                    commit_mapping.resolve_commit(worktree, oid) for oid, names in mapping.items() if row["name"] in names
+                }
             except (OSError, ValueError) as error:
                 raise ValueError(
                     f"{row['name']}: 指定値={specified}、期待集合を取得できない: {source}。{error}。{action}"
                 ) from error
-            expected = {oid for oid, names in mapping.items() if row["name"] in names}
             effective_commits = specified
             if any("{{integrated_head_short}}" in value for value in specified):
                 # fast-forwardするHEADの短縮OIDは、最終化の_expandへ渡す値と同じになる。

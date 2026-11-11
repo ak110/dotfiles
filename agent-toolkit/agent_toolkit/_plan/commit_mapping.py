@@ -204,7 +204,8 @@ def read_mapping(
 ) -> dict[str, set[str]]:
     """記録順に生成と履歴変更の対応を適用し、OIDからAWIへの対応を返す。
 
-    通常は完全OIDへ解決する。重複判定用の`allow_missing`では解決不能な保存済みOIDも保持する。
+    通常は完全OIDへ解決する。`allow_missing`では解決不能な保存済みOIDも保持し、
+    重複判定や、最終対応を選別してから実在を検査する取得に使う。
     """
     mapping: dict[str, set[str]] = {}
     for event in events:
@@ -564,9 +565,13 @@ def get_commits(
 ) -> dict[str, list[str]]:
     """対象AWIの現在の実装commit集合を取得時点で一意な長さの短縮OIDで返し、不足があれば推測せず失敗する。"""
     targets = validate_targets(wis, allowed_wis)
-    mapping = read_mapping(worktree, events, allowed_wis)
+    # 1つの引き継ぎ記録に別repoのcommitや失われた書換え前objectが混在し得る。
+    # 構造と継承を全体で検査し、選択したAWIの最終commitだけに実在を要求する。
+    mapping = read_mapping(worktree, events, allowed_wis, allow_missing=True)
     result: dict[str, list[str]] = {wi: [] for wi in sorted(targets)}
     for oid, names in mapping.items():
+        if not names & targets:
+            continue
         current = short_oid(worktree, resolve_commit(worktree, oid))
         for wi in names & targets:
             result[wi].append(current)
