@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._common import plugin_roots, read_triggers
+from agent_toolkit._common import plugin_roots, read_triggers, read_triggers_targets
 from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import large_reads, read_acquisition, read_delivery
 
@@ -23,7 +23,7 @@ def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_pat
         scans.append(body)
         yield from document_lines(body)
 
-    monkeypatch.setattr(read_triggers, "document_lines", observe_lines)
+    monkeypatch.setattr(read_triggers_targets, "document_lines", observe_lines)
     versions = []
     for body in (text, text.replace("old", "new")):
         path.write_text(body, encoding="utf-8")

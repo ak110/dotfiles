@@ -56,4 +56,4 @@
 
 8. 実績として記録する情報は、起動結果として返されたrouteと識別子とする
 
-   fork機能に関する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：実行手段：2026年9月27日」に記載されている
+   fork機能に関する監査記録は、`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：実行手段：2026年9月27日」に記載されている

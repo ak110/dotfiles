@@ -14,7 +14,7 @@
 委譲先が引き継ぐ入力は委譲プロンプトのみであり、委譲元の会話履歴や読み込んだファイル、起動したスキルは引き継がれない。
 例外として、`routing-fork.md`「会話を引き継ぐ委譲」に基づきホスト標準のforkを選択した場合は、起動時点までの会話履歴も委譲先へ引き継がれる。
 取り決めを記述する文書の配置指針は、`agent-basics:writing-standards/references/sub-agents-contracts.md`「`<役割名>.parent.md`と`<役割名>.subagent.md`の自己完結（双方向）」で定める。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日」に記載されている。
 
 ## 起動前の確認
 

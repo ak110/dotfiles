@@ -13,7 +13,14 @@ from typing import Any
 import pytest
 from claude_agent_sdk import ToolResultBlock, UserMessage
 
-from agent_toolkit._agents_server import child_environment, claude, claude_settings, resume_waits
+from agent_toolkit._agents_server import (
+    child_environment,
+    claude,
+    claude_messages,
+    claude_options,
+    claude_settings,
+    resume_waits,
+)
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.state import ResumePrompt
 from agent_toolkit._common import session_registry
@@ -47,7 +54,7 @@ async def test_subscription_launch_drops_parent_api_auth(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-key")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "parent-token")
     monkeypatch.setattr(
-        claude,
+        claude_options,
         "_parent_settings",
         lambda: json.dumps(
             {
@@ -83,7 +90,7 @@ async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     child_environment.prepare(os.environ)
     monkeypatch.setattr(
-        claude,
+        claude_options,
         "_parent_settings",
         lambda: json.dumps({"apiKeyHelper": "parent-helper", "env": {"ANTHROPIC_AUTH_TOKEN": "parent-token"}}),
     )
@@ -164,7 +171,7 @@ async def test_unconfigured_start_and_cold_resume_preserve_parent_auth(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-key")
     monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
     monkeypatch.setattr(
-        claude,
+        claude_options,
         "_parent_settings",
         lambda: json.dumps(
             {
@@ -406,7 +413,7 @@ def _pay_as_you_go_with_clock(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     clock = {"now": 1_000_000.0}
     fake_time = types.SimpleNamespace(time=lambda: clock["now"])
     monkeypatch.setattr(resume_waits, "time", fake_time)
-    monkeypatch.setattr(claude, "time", fake_time)
+    monkeypatch.setattr(claude_messages, "time", fake_time)
     return clock
 
 

@@ -72,7 +72,7 @@ def test_post_apply_removes_old_units_and_state_before_enabling_tmpfiles(
 
     codes = {"is-enabled": 1}
     calls = _stub_systemctl(monkeypatch, codes, observe)
-    step = next(step for step in post_apply._DEFAULT_STEPS if step.run is setup_tmpfiles_clean.run)
+    step = next(step for step in post_apply.DEFAULT_STEPS if step.run is setup_tmpfiles_clean.run)
     with pytest.raises(SystemExit) as result:
         post_apply.main(runner=lambda: post_apply.run([(step.name, step.run)]))
     assert result.value.code == 0

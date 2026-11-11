@@ -57,7 +57,7 @@ def _run_in_terminal(timeout: float | None, input_text: str | None) -> tuple[int
                             return super().communicate(input, timeout=timeout)
 
                     overrides.enter_context(mock.patch.object(update_dotfiles.subprocess, "Popen", ReadyPopen))
-                returncode = update_dotfiles._run_git_pull(1, 4, timeout=timeout)  # noqa: SLF001  # pylint: disable=protected-access
+                returncode = update_dotfiles.run_git_pull(1, 4, timeout=timeout)  # noqa: SLF001  # pylint: disable=protected-access
         except Exception:  # pylint: disable=broad-exception-caught
             # 子の例外を端末出力へ残し、親のJSON出力へ混ぜない。
             traceback.print_exc()

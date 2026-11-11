@@ -24,7 +24,8 @@
   これは委譲先自体の失敗とは異なる。
   起動時の応答や`atk agents list`でセッションが存在するか確認する。
   ホストの組み込み機能で起動した委譲対象については、そのホストの委譲一覧や指定された成果物から終了を観測する。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」を参照する。
+  監査記録は`docs/development/audit-records-delegation-waiting.md`にある。
+  該当節は「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」である。
 - 待機対象の登録と`starting`状態の保持中セッションがいずれも0件の状態で非0終了した場合は、回収すべき対象が存在しないため再実行せず、起動時の応答を確認する。
   保持中のセッションが残っている場合は、通常の待機上限まで待機を継続する。
 - ホストのリソース上限やメモリー不足によって背景待機の停止通知を受け取った場合は、次節の手順に従って元の待機状態と実行結果を回収する。

@@ -27,7 +27,8 @@ push先のリモート、更新対象のref、runの監視、ならびに証拠�
     失敗ジョブ全体の確認は、`wait_ci.py`を再呼び出しして全体の完了結果を受け取ってから行う。
     待機の再開にあたっては、終了コード6の場合は同一引数で再実行し、終了コード2の場合は`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の終了コード2に関する規定に従う（1は完了したCIの失敗、3は待機処理自体の失敗）。
     同規定に従い、同一のSHAおよびbaselineまたは待機専用記録を維持したまま、`--timeout`を延長して再呼び出しする
-  - 観測結果と再検証手順は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」に記載されている。
+  - 観測結果と再検証手順は、`docs/development/audit-records-commit-ci.md`にある。
+    該当節は「agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」である。
     `--log-failed`による出力欠落の観測記録は、同ファイルの「agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日」にある
 - VRTの差分画像やtest-resultsなどのartifactも併せて取得する。
   artifactが存在しない失敗については、ログに記録された失敗テスト名、ステップ名、およびエラーメッセージから分類する

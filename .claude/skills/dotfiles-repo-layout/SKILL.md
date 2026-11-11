@@ -30,7 +30,7 @@ description: >
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体の変更を担当するコーディングエージェント。
   全プロジェクト編集者の設定に加えて、リポジトリ直下の`.claude/`や`AGENTS.md`を読み込む。
   なお、Claude Codeは`CLAUDE.md`や`CLAUDE.local.md`が存在しないプロジェクトにおいて`AGENTS.md`を直接読み込む仕様となっている。
-  観測記録は`docs/development/audit-records.md`「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」を参照する。
+  観測記録は`docs/development/audit-records-project-instructions.md`「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」を参照する。
 
 | ファイル群 | 対象読者 | 役割 |
 | --- | --- | --- |

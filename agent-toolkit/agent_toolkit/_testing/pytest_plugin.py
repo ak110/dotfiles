@@ -25,7 +25,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
 import agent_toolkit
-from agent_toolkit._agents_server import api_credits, claude, launch_requests, state
+from agent_toolkit._agents_server import api_credits, claude, claude_stream, launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk import orchestrator as _orchestrator
@@ -36,8 +36,15 @@ from agent_toolkit._git import command as _git_command
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
+from agent_toolkit._testing import (
+    agents_server_fixtures,
+    hook_support,
+    isolation,
+    resource_diagnostics,
+    session_evidence_support,
+    xdist_stop,
+)
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support, xdist_stop
 from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
@@ -81,7 +88,7 @@ class _StubPluginReloader:
 @pytest.fixture(autouse=True)
 def _isolate_claude_plugin_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     """実監視の試験はclaude_pluginsの実クラスを明示的に使う。"""
-    monkeypatch.setattr(claude, "ClaudePluginReloader", _StubPluginReloader)
+    monkeypatch.setattr(claude_stream, "ClaudePluginReloader", _StubPluginReloader)
 
 
 class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
@@ -657,3 +664,13 @@ def _make_clean_repo() -> Callable[[pathlib.Path], pathlib.Path]:
         return _git_repository.init_repository(tmp_path / name, files={"file.txt": "clean"}, commit_message="init")
 
     return _make
+
+
+# fixture定義を起動時の名前空間へ登録するため、実装名を参照する。
+# pylint: disable=protected-access
+session_environment = agents_server_fixtures.session_environment
+diagnostic_log = agents_server_fixtures._diagnostic_log
+codex_stable_plugin_roots = agents_server_fixtures._isolate_stable_plugin_roots
+provider_environment = agents_server_fixtures._configure_provider_environment
+_wait_environment = agents_server_fixtures._wait_environment
+_unchanged_documents_resolution = hook_support._unchanged_documents_resolution

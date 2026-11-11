@@ -21,7 +21,7 @@
    `--fixup`オプションは`-m`や`-F`と併用できずエラーになる。
    そのため、非対話環境ではエディター指定の環境変数`GIT_EDITOR`に1行目を保持したまま2行目以降を差し替えるスクリプトを指定し、`amend:`は`git commit --no-verbose --fixup=amend:<sha>`として実行する。
    これにより`commit.verbose=true`が設定されている環境でも、コミット差分がコミット本文に混入するのを防げる。
-   この挙動の対照検証記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月8日」にある
+   この挙動の対照検証記録は、`docs/development/audit-records-commit-history.md`の「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月8日」にある
    `amend:`や`reword:`を用いる際は、統合先コミットにすでに付与されている異なるトレーラー（trailer）を保持し、統合後のコミットメッセージに`Co-Authored-By:`が1回だけ記載されるように整える
 
 3. fixupを作成した直後は、`git log -1 --format=%s`を実行して期待通りの件名（`fixup! <統合先の件名>`、`fixup! <対象の完全OID>`、または`amend! <統合先の件名>`）と完全に一致していることを確認し、一致した場合にのみautosquashを実行する
@@ -32,7 +32,8 @@
    このコマンド単位の設定により、作業中以外のローカルブランチ参照の更新と、サブモジュールの作業状態の変化を防止する。
    なお、`--no-update-refs`オプションはGit 2.38で追加された引数であり、agent-toolkitが対応環境とするGit 2.34.1では認識されない（Git 2.38未満の環境にはブランチ参照を自動更新する機能自体がない）
 
-対応するGit環境での履歴統合と参照保持の再検証記録は、`docs/development/audit-records.md`「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月18日」にある。
+対応するGit環境での履歴統合と参照保持の再検証記録は、`docs/development/audit-records-commit-history.md`にある。
+該当節は「agent-toolkit/skills/commit/references/history-rewrite.md：fixupの実行上の制約：2026年10月18日」である。
 また、サブモジュールの状態保持に関する再検証記録は、同書の「agent-toolkit/skills/commit/references/history-rewrite.md：親だけのGit操作とサブモジュール：2026年10月18日」にある。
 
 ## 本文参照の取得条件

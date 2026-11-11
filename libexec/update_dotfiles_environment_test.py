@@ -11,7 +11,7 @@ def test_child_env_removes_parent_virtual_environment(monkeypatch) -> None:
     monkeypatch.setenv("VIRTUAL_ENV_PROMPT", "(parent)")
     monkeypatch.setenv("PRESERVED_VALUE", "kept")
 
-    child_env = update_dotfiles._child_env()
+    child_env = update_dotfiles.child_env()
 
     assert "VIRTUAL_ENV" not in child_env
     assert "VIRTUAL_ENV_PROMPT" not in child_env

@@ -31,7 +31,7 @@ pytestの`skip`・`skipif`・`xfail(run=False)`、Playwrightの`test.skip`など
 
 例えばpyfltrの`commands_summary.needs_action.warning`は、コマンド実行結果のステータスカウントであり、個々の診断警告の件数とは異なる。
 この値が0であっても、診断メッセージの本文を確認し、今回の変更行に対する指摘が含まれていないかを確かめる。
-出力契約の確認記録については、`docs/development/audit-records.md`の「agent-basics/skills/check-execution/references/diagnostics.md：読む出力：2026年10月3日」を参照する。
+出力契約の確認記録については、`docs/development/audit-records-investigation.md`の「agent-basics/skills/check-execution/references/diagnostics.md：読む出力：2026年10月3日」を参照する。
 
 テストや検証を実行した際は、成功・失敗を問わず、結果を判定するたびに各テストケースの所要時間および実行全体の経過時間を確認し、想定を超える遅延がないかを以下の基準に基づいて評価する。
 この評価は、メインエージェントと委譲先、ローカル環境での実行とCI環境での結果確認のいずれにおいても共通して実施する。

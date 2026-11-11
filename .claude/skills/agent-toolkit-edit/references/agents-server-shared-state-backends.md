@@ -59,7 +59,8 @@ Claudeバックエンドでは全起動区分でSDKのenvに設定する。
 CodexバックエンドではセッションごとのApp Serverの子環境に対して、開始時の起動区分と再開時の`SessionState.launch_kind`を設定する（モデル一覧や`thread/read`の問い合わせ用App Serverからは除外する）。
 委譲先フックはこの値を参照して軽量起動かどうかを判別する。
 Claudeの`inherit`接続の場合でも同様に会話コンテキストの除去を適用し、認証や接続設定は通常の継承ルールに従う。
-これらの観測根拠は`docs/development/audit-records.md`の「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」に記録されている。
+これらの観測根拠は`docs/development/audit-records-project-environment.md`に記録されている。
+該当節は「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」である。
 
 API失敗状態は、すべてMCPサーバーの`SessionState`を基準（正）として管理し、同一の書込主体が状態ファイルへ反映（射影）する。
 対象となるのは、Claudeの合成assistantメッセージや`SystemMessage(api_retry)`、Codexの`willRetry: true`による再試行中状態、ならびに過負荷（`serverOverloaded`）に伴う自動継続待ちの`api_error`である。

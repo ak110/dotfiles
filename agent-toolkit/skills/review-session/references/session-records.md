@@ -11,7 +11,7 @@ Codexのロールアウト記録は`<CODEX_HOME>/sessions/<年>/<月>/<日>/roll
 コンパクション（会話圧縮）の記録形式は、実行環境（runtime）によって異なる。
 Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコードとして記録され、`compactMetadata`の中に`trigger`、`preTokens`、`postTokens`、`durationMs`が格納される。
 一方、Codexでは`type`が`compacted`のレコードに、所要時間を除いた情報が記録される。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：H1直下：2026年9月2日」に記載されている。
+監査記録は`docs/development/audit-records-session-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：H1直下：2026年9月2日」に記載されている。
 
 ## 名指し参照の読込方法
 

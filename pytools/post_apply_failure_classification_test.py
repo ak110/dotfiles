@@ -2,7 +2,7 @@
 
 分類の基準は`pytools._internal.post_apply_outcome.PostApplyOutcome`が定める。
 取得・導入の失敗は警告とスキップで終了コード0、設定の書き換え・撤去の失敗は失敗で終了コード1になる。
-`_DEFAULT_STEPS`の全工程について、各工程の失敗経路を模す手段を`_SIMULATIONS`に持ち、
+`DEFAULT_STEPS`の全工程について、各工程の失敗経路を模す手段を`_SIMULATIONS`に持ち、
 工程を加えたときに表への追加漏れを`test_simulations_cover_all_default_steps`が検出する。
 """
 
@@ -77,7 +77,7 @@ def _raise(error: Exception) -> Callable[..., object]:
 def _mise_install_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     del tmp_path
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: None)
-    monkeypatch.setattr(setup_mise, "_ensure_mise_installed", lambda: False)
+    monkeypatch.setattr(setup_mise, "ensure_mise_installed", lambda: False)
 
 
 def _codex_cli_installer_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -456,8 +456,8 @@ _CASES = [
 
 
 def test_simulations_cover_all_default_steps() -> None:
-    """分類の表が`_DEFAULT_STEPS`の全工程を持つ。"""
-    assert set(_SIMULATIONS) == {step.name for step in post_apply._DEFAULT_STEPS}
+    """分類の表が`DEFAULT_STEPS`の全工程を持つ。"""
+    assert set(_SIMULATIONS) == {step.name for step in post_apply.DEFAULT_STEPS}
 
 
 @pytest.mark.parametrize(("name", "simulation", "exit_code"), _CASES)
@@ -472,7 +472,7 @@ def test_failure_classification_per_step(
     """取得・導入の失敗はスキップで終了コード0、設定の書き換え・撤去の失敗は失敗で終了コード1になる。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update-dotfiles.log")
     monkeypatch.setattr(post_apply.sync_report, "REPORT_PATH", tmp_path / "state" / "sync-report.json")
-    step = next(step for step in post_apply._DEFAULT_STEPS if step.name == name)
+    step = next(step for step in post_apply.DEFAULT_STEPS if step.name == name)
     simulation(monkeypatch, tmp_path)
 
     # 対象OSの判定と先行工程を外し、工程の`run`だけを実行する。

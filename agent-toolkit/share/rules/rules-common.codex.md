@@ -13,7 +13,7 @@ Codex固有の公開機能と常時規範との差分を規定し、メインエ
   対象となるツールには、agents_serverの`start`、`send_message`、`kill`、`stop`、`list`、`show`や、pyfltrの`run`などが含まれる。
   直接的な関数一覧の確認とは別に、同一の`exec`内にある`ALL_TOOLS`の各要素の`name`および`description`を参照して、ツールの存在と引数仕様を確認する。
   stdio形式のMCPサーバーは起動から登録完了までに数秒を要する場合があるため、起動直後に見つからない場合は一定時間待機したうえで、別の`exec`から再度照会して存在の有無を判定する。
-  観測結果と再検証手順は、`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日」に記載されている。
+  観測結果と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日」に記載されている。
 - コマンド出力の取得と待機処理は、`02-agent-operations.md`「出力の保持と観測」「待機と背景実行」の結果契約に従う。
   ファイルの読み取りには`cat -- <絶対パス>`または`sed -n '<開始行>,<終了行>p' -- <絶対パス>`を使用し、JSONには`jq`を使用する。
   これらの例はPOSIXシェルを前提とする。
@@ -42,13 +42,13 @@ Codex固有の公開機能と常時規範との差分を規定し、メインエ
   `exit_code`が存在せず`session_id`が存在する結果は実行中として扱い、同一実行のコマンドを重複して再発行することは避ける。
   独立作業と受信済み通知の処理が尽きた長い終了待ちでは、外側の先頭pragma（`// @exec: {"yield_time_ms": 120000}`）、`functions.wait`、空入力の`write_stdin`の`yield_time_ms`に120,000msを指定することを目安とする。
   起動時の上限30,000msとCLI自身の期限を保ち、独立作業・受信済み通知・対話・短い操作では早く制御を返し、待機状況の報告だけなら長めに回収する。
-  観測条件と再検証手順は、`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
+  観測条件と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
 - 明示的な指示がない限り、Officeファイルは原本を直接変更せずに取り扱う。
   CSVファイルは利用側の要求仕様に従って処理し、仕様が不明な場合はUTF-8（BOM付き）で保存する。
 - `apply_patch`を用いて既存ファイルを全面的に置換する場合も、同一パスに対するUpdate操作を使用する。
   1つのpatch内で同一パスをDelete操作とAdd操作に分割して指定すると適用に失敗する。
 
-コマンドの戻り値および二層待機に関する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。
+コマンドの戻り値および二層待機に関する監査記録は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。
 
 ## Codexのplugin root解決
 

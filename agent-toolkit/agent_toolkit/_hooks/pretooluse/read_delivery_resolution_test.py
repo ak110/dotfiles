@@ -12,7 +12,7 @@ import markdown_it
 import pytest
 
 from agent_toolkit._common import read_triggers
-from agent_toolkit._hooks.pretooluse import read_delivery, task_document_launch
+from agent_toolkit._hooks.pretooluse import read_delivery, read_delivery_guidance, task_document_launch
 from agent_toolkit._testing import pretooluse_support
 
 
@@ -144,7 +144,7 @@ def test_unselected_material_does_not_replace_selected_acquisition_failure(tmp_p
             raise PermissionError("選択資料の取得失敗")
         return original(selected, *args, **kwargs)
 
-    monkeypatch.setattr(read_delivery, "acquisition_step", acquisition_step)
+    monkeypatch.setattr(read_delivery_guidance, "acquisition_step", acquisition_step)
     result = pretooluse_support.run_hook_with_notice_details(
         "pretooluse",
         {

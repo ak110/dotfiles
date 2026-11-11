@@ -38,11 +38,37 @@ def _read_static_text(filename: str) -> str:
 
 # 以前の埋め込み定数と同じく、末尾に改行を含めない。三重引用符で埋め込んでいたHTML/CSSは末尾に改行を含まなかった。
 HTML = _read_static_text("index.html").removesuffix("\n")
-CSS = _read_static_text("app.css").removesuffix("\n")
+# 配信するCSSは1枚のまま、主題別の原本を既存のカスケード順で連結する。
+STYLES = {
+    filename: _read_static_text(filename)
+    for filename in (
+        "app.css",
+        "app_wi_list.css",
+        "app_wi_dialogs.css",
+        "app_markdown.css",
+        "app_plans.css",
+        "app_sessions.css",
+    )
+}
+CSS = "".join(STYLES.values()).removesuffix("\n")
 
 SCRIPTS = {
     filename: _read_static_text(filename)
     # 3画面が共有するナビゲーションと処理、ワークアイテム・計画ファイル・セッションの各画面。
-    for filename in ("shell.js", "common.js", "wi.js", "plans.js", "sessions.js")
+    for filename in (
+        "shell.js",
+        "common.js",
+        "wi_state.js",
+        "wi_feedback.js",
+        "wi_list_render.js",
+        "wi_list.js",
+        "wi_detail.js",
+        "wi_waiting.js",
+        "wi_mutations.js",
+        "wi_create.js",
+        "wi.js",
+        "plans.js",
+        "sessions.js",
+    )
 }
 """`/static/<name>.js`で配信するESモジュール。ファイル名を指定して本文を取得する。"""

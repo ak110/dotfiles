@@ -22,4 +22,4 @@
 
 forkを利用する際の入力は作業対象、役割分担、完了条件、および報告様式に限定し、すでに会話内で共有されている規範や背景情報の説明は省略する。
 ホスト別の具体的な起動コマンドや指定方法は`references/runtime-routing.md`「実行手段」が定める。
-関連する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/routing.md：会話を引き継ぐ委譲：2026年9月27日」に記載されている。
+関連する監査記録は、`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/routing.md：会話を引き継ぐ委譲：2026年9月27日」に記載されている。

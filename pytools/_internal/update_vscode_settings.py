@@ -161,7 +161,15 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool)
         # markdown.styles 側と揃えて URL 化してはならない（揃えたくなる誘惑への注意）。
         # マシンごとに異なるパスなので両 scope で書き込む必要がある。
         share_vscode = dotfiles_root / "share" / "vscode"
-        settings["markdown-pdf.styles"] = [share_vscode.joinpath("markdown-pdf.css").as_posix()]
+        settings["markdown-pdf.styles"] = [
+            share_vscode.joinpath(name).as_posix()
+            for name in (
+                "markdown-pdf.css",
+                "markdown-pdf_base.css",
+                "markdown-pdf_content.css",
+                "markdown-pdf_syntax.css",
+            )
+        ]
     if is_user_scope:
         # markdown.styles は jsDelivr URL で全マシン共通。User scope 側に一度
         # 書けば Settings Sync や Machine scope への波及でカバーされる。

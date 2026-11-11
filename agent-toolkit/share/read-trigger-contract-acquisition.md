@@ -18,7 +18,8 @@
 純粋Read・静的Bash読取・Skill起動では依存案内と未確定条件の候補通知を保留し、次の関連する非取得操作で必要範囲を評価する。
 候補は現在の役割と選択・取得した資料の宣言へ限定し、同じ条件・対象・必要資料はまとめて案内する。
 条件の選択・適用と成果の意味上の判断はエージェントが担う。
-並行Readの観測条件は`docs/development/audit-records.md`の「agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py：並行Readの公開入力：2026年10月30日」にある。
+並行Readの観測条件は`docs/development/audit-records-read-delivery.md`にある。
+該当節は「agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py：並行Readの公開入力：2026年10月30日」である。
 現在必要と確定した資料は、同じ主体・必要範囲・本文版ごとに初回だけ警告する。
 案内済みの根拠は最終出力へ採用した非空本文の実配送に限る。
 案内と取得証拠を分け、未取得を理由に再書込を遮断したり、同じ要求を毎操作へ持ち越したりしない。

@@ -18,7 +18,8 @@ reasoning effortの省略時は`medium`を適用する。
 投稿の構成例や節約率を全モデル・課題への保証として用いず、条件が比較できる実績と未計測の部分を区別する。
 高いeffortは、推論の深さが結果を左右すると確かめた工程に限って選ぶ（努力目標）。
 モデルを明示するときはeffortも指定し、可用性による切替は`fallback-launch.md`「代替起動」に従う。
-関連する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」に記載されている。
+関連する監査記録は、`docs/development/audit-records-delegation.md`にある。
+該当節は「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」である。
 
 エージェント自身がeffortを選ぶ場合は、次の方針を適用する。
 工程別設定の初期値・プリセット、ユーザーの設定値は保持する。

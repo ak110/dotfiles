@@ -60,7 +60,7 @@ CLIは今回のWI集合と所有権を検収し、すべての最終化操作が
  実行中のセッションや解放できないリソースは破棄せずに保持し、次項の手順に従って再回収する。
 
 到達確認を行った上で`-D`オプションによりbranchを削除する理由は、通常の`-d`オプションがupstreamを基準に判定するため、push前のローカル統合を未統合と判定して削除を拒否してしまうためである。
-監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終了」：所有資源の回収：2026年9月3日」に記載されている。
+監査記録は`docs/development/audit-records-wi.md`「agent-toolkit/skills/process-wi/references/run-lanes-integration.md「統合とAWI終了」：所有資源の回収：2026年9月3日」に記載されている。
 
 ### 未回収レーンの再回収
 

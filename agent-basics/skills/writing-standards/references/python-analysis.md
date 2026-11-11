@@ -18,4 +18,4 @@
 実行環境のOSに存在しない標準モジュールのインポートでは、OS判定による分岐の両側のブロックに加え、特定OS専用のモジュール内やテストコード内であっても、`# pylint: disable=import-error`とその理由をコメントに明記する。
 pylintは`sys.platform`や`os.name`による条件分岐をimportエラーの無視条件として認識せず、解析を実行しているOS上に存在しないモジュールを検出するとエラーを報告するためである。
 一方のOSでのみ警告を抑制した場合、別のOS上でpylintを実行した際に初めてエラーが検出されることになる。
-監査記録は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日」を参照。
+監査記録は`docs/development/audit-records-languages.md`「agent-basics/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日」を参照。

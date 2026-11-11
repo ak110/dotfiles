@@ -3,7 +3,8 @@
 Claude Codeのメインエージェント向けに、利用上限の猶予通知後の報告・継続・再開手順を定める。
 
 利用上限の通知と解除後の再開に関する観測記録がある。
-詳細は`docs/development/audit-records.md`の「agent-toolkit/skills/user-confirmation-and-report/references/usage-limit.md：利用上限後の再開：2026年10月14日」に記載されている。
+詳細は`docs/development/audit-records-usage-limit.md`にある。
+該当節は「agent-toolkit/skills/user-confirmation-and-report/references/usage-limit.md：利用上限後の再開：2026年10月14日」である。
 
 Function hooks moduleは、Claude CodeがプラグインのTypeScriptモジュールを読み込み、会話イベントに応じた処理を登録する仕組みである。
 定義とAPI仕様は[mods API](https://code.claude.com/docs/en/plugins/mods/api)にある。

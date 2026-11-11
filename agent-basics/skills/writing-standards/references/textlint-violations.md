@@ -112,7 +112,7 @@
 - 冗長表現（`ja-no-redundant-expression`の`dict5`系）が指摘された場合は、`tone-examples.md`の「冗長表現」に記載された対処法を選んで書き直す
 - 番号付きリストの1つの項目内に空行を挟んで入れ子の箇条書きや段落を追加すると、`preset-jtf-style 1.1.3.箇条書き`によってリスト全体の項目が句点の統一チェック対象になる。
   全項目が句点で終わる手順一覧などでは、入れ子にする内容を独立した節へ移し、各項目を1行に保つ。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日」を参照する
+  監査記録は`docs/development/audit-records-languages.md`の「agent-basics/skills/writing-standards/references/textlint-violations.md：文体と箇条書き：2026年9月10日」を参照する
 
 ## コードフェンスとラベル
 

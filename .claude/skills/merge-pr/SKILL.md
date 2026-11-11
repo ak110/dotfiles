@@ -59,7 +59,7 @@ PRの存在確認だけでは起動しない。
    この待機は、`gh pr checks`のJSON出力を上限回数付きで繰り返し確認して行う。
    同じheadに対する`push`イベント起点の同名チェックは対象に含めない。
    これは、`push`起点のチェックが成功したあとに、`pull_request`起点の`statusline-version`チェックが非同期で遅れて登録される場合があるためである。
-   観測結果と再検証手順は`docs/development/audit-records.md`「.claude/skills/merge-pr/SKILL.md：マージ前の確認事項：2026年10月5日」を参照する。
+   観測結果と再検証手順は`docs/development/audit-records-project-environment.md`「.claude/skills/merge-pr/SKILL.md：マージ前の確認事項：2026年10月5日」を参照する。
 5. チェックの登録を確認したあと、`gh pr checks --required --watch`を実行して必須チェックが完了するまで待機する。
    チェック成功後は、保持していたheadと`headRefOid`が一致した状態を維持したまま、`mergeStateStatus=CLEAN`になるまで上限回数を設けて待機する。
 6. 各種照会の途中でheadが変更された場合は直ちに処理を停止する。

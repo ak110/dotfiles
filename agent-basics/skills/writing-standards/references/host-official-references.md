@@ -40,7 +40,8 @@ settingsには環境変数を削除する機能が存在しない点に留意す
 子プロセスが直接読み込むuser、project、local設定の`env`で同一変数が定義されている場合に限り、CLIのsettingsで空文字を指定することで接続先選択から除外できる。
 ただしこの場合でも、子プロセス内部には空文字として値が残る。
 これらの挙動の観測記録と再検証手順が存在する。
-詳細は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/host-official-references.md：子Claudeへ環境値を渡す：2026年10月22日」を参照する。
+詳細は`docs/development/audit-records-languages.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/host-official-references.md：子Claudeへ環境値を渡す：2026年10月22日」である。
 
 Desktop版やSelf-hosted runnerの環境では、設定の競合時に起動環境の値がsettingsよりも優先される。
 その根拠と最新の条件については、公式ドキュメントの[環境変数](https://code.claude.com/docs/en/env-vars)、[settingsの優先順](https://code.claude.com/docs/en/settings)、および[settings-referenceのenv](https://code.claude.com/docs/en/settings-reference#env)を参照する。

@@ -15,7 +15,8 @@ Claude Codeの`Agent`ツールで起動した担当に限り、`continuation.md`
 - 完了通知の配送先はプロバイダーやシステム構成によって異なり、3階層以上の構成における配送先は未検証である。
   最上位や直接の親が配送先であると決めつけず、起動結果として得られたIDへの`SendMessage`の成功と、送信後に対応する完了通知の受信をもって継続の成立を判定する。
   その上で`claude-code-runtime-receiving.md`「完了通知と中継の実行順」へ対応付ける。
-  関連する監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」に記載されている
+  関連する監査記録は`docs/development/audit-records-delegation.md`にある。
+  該当節は「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：同一セッション内の再開：2026年8月」である
 - 担当者とタスクの組み合わせが異なる場合や、実効の3設定値（engine・model・effort）の不一致、完了報告の配送不能、前提条件の無効化、処理中断のいずれかが起きた場合は、停止済みの識別子を再利用しない。
   必要な前提条件を明示的に再構成した上で新規セッションを起動する。
   参照可能な記録が存在する場合は、絶対パス、対象ID、および未記録の差分のみを引き渡す

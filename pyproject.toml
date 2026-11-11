@@ -174,6 +174,8 @@ function-hooks-types-subproject-aware = false
 agent-doc-tone-subproject-aware = false
 writing-check-dash-subproject-aware = false
 dotfiles-markdown-structure-subproject-aware = false
+file-lines-subproject-aware = false
+file-lines = true
 # rust/claude-statusline/はCargo.tomlを持つためサブプロジェクトとして検出され、スクリプトの相対パスが
 # サブプロジェクト基準で解決できなくなる。判定はリポジトリ全体の履歴を使うため分割を無効にする。
 statusline-version-subproject-aware = false
@@ -297,6 +299,14 @@ targets = [
 fast = true
 pass-filenames = false
 
+[tool.pyfltr.custom-commands.file-lines]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_file_lines.py"]
+targets = ["*"]
+fast = true
+pass-filenames = false
+
 [tool.pyfltr.custom-commands.check-cmd-encoding]
 type = "linter"
 path = "scripts/check-cmd-encoding.sh"
@@ -352,6 +362,9 @@ args = [
     "--term-root", ".claude-plugin/marketplace.json",
     "--term-root", "scripts/check_agent_doc_tone.py",
     "--term-root", "scripts/check_agent_doc_tone_test.py",
+    "--term-root", "scripts/check_agent_doc_tone_config_test.py",
+    "--term-root", "scripts/check_agent_doc_tone_terms_test.py",
+    "--term-root", "scripts/_scripts_test_helpers.py",
 ]
 # 終了コードに影響しない語の警告も位置付きの診断として取り込み、終了コード1の原因になる診断と
 # 重大度（error・warning）で区別する。JSONLなどの消費側は本文の文言を解析せずに両者を分けられる。
@@ -391,6 +404,9 @@ targets = [
     ".claude-plugin/marketplace.json",
     "scripts/check_agent_doc_tone.py",
     "scripts/check_agent_doc_tone_test.py",
+    "scripts/check_agent_doc_tone_config_test.py",
+    "scripts/check_agent_doc_tone_terms_test.py",
+    "scripts/_scripts_test_helpers.py",
     ".chezmoi-source/dot_claude/*/*.md",
     ".chezmoi-source/dot_claude/*/*/*.md",
     ".chezmoi-source/dot_claude/*/*/*/*.md",
@@ -490,8 +506,8 @@ extend-aliases = { datetime = "datetime" }
 "**/__init__.py" = ["D104"]
 
 [tool.pyright]
-# agent-toolkitの計画補助スクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["agent-toolkit/skills/write-plan/scripts"]
+# agent-toolkitの計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
+extraPaths = ["agent-toolkit/skills/write-plan/scripts", "agent-toolkit/skills/process-wi/scripts", "agent-toolkit/skills/review-session/scripts"]
 
 [tool.mypy]
 allow_redefinition = true

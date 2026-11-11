@@ -19,16 +19,17 @@ from agent_toolkit._hooks import (
     rules_context,
     stop,
     termination_evidence,
+    termination_evidence_operations,
     termination_order_advisor,
     user_prompt_submit,
 )
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import emit_response, notice_cycle
-from agent_toolkit._hooks.termination_evidence_test import isolated_session  # noqa: F401  # pylint: disable=unused-import
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
+from agent_toolkit._testing.termination_evidence_support import isolated_session  # noqa: F401  # pylint: disable=unused-import
 
 
 @pytest.fixture(autouse=True)
@@ -615,14 +616,14 @@ def test_windows_edit_paths_match_git_status_paths(monkeypatch: pytest.MonkeyPat
     repository = pathlib.PureWindowsPath("C:/repo")
     target = repository / "nested/note.md"
     with monkeypatch.context() as context:
-        context.setattr(termination_evidence, "written_paths", lambda *_args: [str(target)])
-        context.setattr(termination_evidence, "_git_root", lambda _cwd: repository)
+        context.setattr(termination_evidence_operations, "written_paths", lambda *_args: [str(target)])
+        context.setattr(termination_evidence_operations, "_git_root", lambda _cwd: repository)
         context.setattr(
-            termination_evidence.uwi_scan, "private_notes_root", lambda: pathlib.PureWindowsPath("C:/private-notes")
+            termination_evidence_operations.uwi_scan, "private_notes_root", lambda: pathlib.PureWindowsPath("C:/private-notes")
         )
-        context.setattr(termination_evidence._hook_tool_input, "parse_operations", lambda *_args: None)  # pylint: disable=protected-access
+        context.setattr(termination_evidence_operations._hook_tool_input, "parse_operations", lambda *_args: None)  # pylint: disable=protected-access
         context.setattr(pathlib, "Path", pathlib.PureWindowsPath)
-        invocations = termination_evidence._invocations(  # pylint: disable=protected-access
+        invocations = termination_evidence_operations._invocations(  # pylint: disable=protected-access
             {"tool_name": "Write", "tool_input": {"file_path": str(target)}, "cwd": str(repository)}, after=True, failed=False
         )
     assert invocations == [

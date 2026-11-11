@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._hooks import document_reads, plugin_resources, posttooluse
-from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
+from agent_toolkit._hooks.pretooluse import dispatch, read_delivery, read_delivery_paths
 from agent_toolkit._testing import git_repository, pretooluse_support
 
 
@@ -234,7 +234,7 @@ def test_request_reuses_read_parsing_and_rechecks_the_next_request(tmp_path, mon
         calls.append((args, kwargs))
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(read_delivery, "bash_read_paths", counted)
+    monkeypatch.setattr(read_delivery_paths, "bash_read_paths", counted)
     payload = {"cwd": str(tmp_path), "turn_id": "turn"}
     data = {"command": f"cat -- {target}"}
     read_delivery.deliver(payload, "Bash", data, "parsing-first")

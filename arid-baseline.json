@@ -22,8 +22,12 @@
       "lines": 10,
       "occurrences": [
         {
-          "path": "install_claude_test.py",
-          "count": 2
+          "path": "install_claude_failures_test.py",
+          "count": 1
+        },
+        {
+          "path": "install_claude_plugins_test.py",
+          "count": 1
         }
       ]
     },
@@ -120,7 +124,7 @@
       "lines": 13,
       "occurrences": [
         {
-          "path": "pytools/repack_archive_test.py",
+          "path": "pytools/repack_archive_conversion_test.py",
           "count": 2
         }
       ]

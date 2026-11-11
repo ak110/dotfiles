@@ -264,11 +264,11 @@ def test_update_dotfiles_public_entry_restores_all_previous_plugin_caches(
 
     monkeypatch.setattr(install_codex_plugins, "_codex_json", codex_json)
     monkeypatch.setattr(install_codex_plugins, "_command", command)
-    monkeypatch.setattr(update_dotfiles, "_DOTFILES_ROOT", root)
-    monkeypatch.setattr(update_dotfiles, "_LOCK_PATH", tmp_path / "state/update.lock")
-    monkeypatch.setattr(update_dotfiles, "_LOG_PATH", tmp_path / "state/update-dotfiles.log")
+    monkeypatch.setattr(update_dotfiles.update_dotfiles_runtime, "DOTFILES_ROOT", root)
+    monkeypatch.setattr(update_dotfiles.update_dotfiles_runtime, "LOCK_PATH", tmp_path / "state/update.lock")
+    monkeypatch.setattr(update_dotfiles.update_dotfiles_runtime, "LOG_PATH", tmp_path / "state/update-dotfiles.log")
     monkeypatch.setattr(update_dotfiles.sync_report, "REPORT_PATH", tmp_path / "state/sync-report.json")
-    monkeypatch.setattr(update_dotfiles, "_update_git_with_recovery", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(update_dotfiles.update_dotfiles_git, "update_git_with_recovery", lambda *_args, **_kwargs: 0)
 
     def no_daemon_pause() -> None:
         return None

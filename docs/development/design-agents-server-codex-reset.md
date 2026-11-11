@@ -1,0 +1,31 @@
+# Codex委譲先の週次利用枠の設計記録
+
+[設計記録の索引](design.md)から参照する、Codex委譲先の週次利用枠の記録である。
+
+## backend構成と起動
+
+### Codex委譲先の週次利用枠の自動reset
+
+`codex_auto_reset`は既存の設定保存へ接続する真偽値設定で、既定値を`false`とする。
+公開操作は`atk config get codex_auto_reset`と`atk config set codex_auto_reset true`で、無効化には値`false`を指定する。
+有効なsessionだけが、backend所有のApp Server接続からモデルを使わず利用枠とreset creditの在庫を定期確認する。
+`_agents_server/codex_auto_reset.py`はChatGPT接続、10080分の週次窓の使用率99%以上、在庫ありを確認して消費する。
+安定したアカウント識別用emailを取得できない場合は消費せず診断し、APIキー接続も対象外とする。
+
+複数server間の消費は同じOSアカウントのファイルロックで直列化し、ロック下で最新の利用枠を取得する。
+emailのhashと週次窓に対応する論理試行を状態領域へ保存し、応答を失った消費は同じ`idempotencyKey`で確認する。
+reset・既消費の確認後は利用枠を再取得し、同じ窓への重複消費を防ぐ。
+`nothingToReset`・`noCredit`をreset成功に数えず、在庫なしや通信失敗は既存の利用上限待機方針へ戻す。
+
+外部応答の検証は、対象の選別と消費時の利用に分ける。
+選別ではaccount種別、利用枠の基本構造、codex bucketの`limitId`と各windowの長さだけを検証し、ChatGPTの場合だけemailを検証する。
+消費判断に使う週次windowの値、消費する場合のcredit在庫と、種類・状態が一致したcreditのIDは厳格に検証し、不正なら消費せず失敗する。
+未利用の別bucket、非週次windowの使用率、対象外のaccountやcreditは表示形式が変わり得る値であり、応答全体へ消費用の制約を課すと、使わない値の形式差で確認が止まるためである（初版では応答全体を同じモデルで検証し、未利用bucketの`usedPercent`の型差で中断した）。
+成功後の再取得にも同じ選別検証を使う。
+再開判定は未検証の生値を受け取るため、使用率が有限の数値でないwindowが1つでもあれば空きを確認できたとせず、既存の利用上限待機へ進む。
+外部応答を一部選んで使う処理全般の検証原則は、本節ではなく規範側で扱う。
+
+通知readerのcallbackから同じ接続へのRPCを待つと応答の読取が停止するため、上限通知後の確認はbackend所有の別taskで行う。
+`codex_auto_reset_pending`で確認中の結果公開を保留し、turn番号と既存の制御lockで追送・中断との競合を判定する。
+再取得した枠で継続可能な場合は既存の監視へ同じsessionの再開を委ね、独自の再開RPCを重ねない。
+終了済みsessionのために新しいcreditを消費せず、接続解放時は監視taskを取消して終了を回収する。

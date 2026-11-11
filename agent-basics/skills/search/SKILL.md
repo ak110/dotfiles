@@ -29,10 +29,10 @@ description: >
 - 属性探索（ファイル名、種類、更新時刻、ディレクトリ構造など）: 対象パスを限定した`find`を使用する
 - 現在のGit作業ツリーの追跡対象に限定した内容検索や、追跡ファイル全体の残存確認: `git grep`を使用する。
   `rg`は`--hidden`を指定しないと隠しディレクトリ配下の追跡ファイルを検索対象から外してしまうためである。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（1）」を参照
+  監査記録は`docs/development/audit-records-search.md`の「agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（1）」を参照
 - 作業ツリー外の明示パス（別リポジトリを含む）、Git管理外の対象、または除外設定に従う内容検索: `rg`を使用する。
   隠しファイルや隠しディレクトリを含める場合は`--hidden`を付与する。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（2）」を参照
+  監査記録は`docs/development/audit-records-search.md`の「agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月8日（2）」を参照
 - 除外設定を反映したファイル一覧の取得: `rg --files`を使用する。
   構造化された集計や全体件数の上限設定が必要な検索には、MCPまたはCLIの`pyfltr grep`を使用する
 
@@ -44,13 +44,13 @@ description: >
 Claude CodeのBash環境では、`grep`がugrepへ転送するシェル関数として定義されている場合がある（`type grep`で確認できる。パイプの後段に置いた`grep`も同様）。
 ugrepはignore設定やバイナリ判定によって除外された場合に無出力かつ終了コード1を返すほか、上限付き繰り返しを2つ含む`-E`の正規表現（例: `.{0,160}a.{0,160}`）で複雑度エラーとなり終了コード2・標準出力が空になる。
 不在や件数の確定、有界反復の検索には、対照として`command grep`を使用する。
-監査記録は`docs/development/audit-records.md`「agent-basics/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日」を参照。
+監査記録は`docs/development/audit-records-search.md`「agent-basics/skills/search/SKILL.md：引数とシェルの扱い：2026年10月9日」を参照。
 
 `git grep`を使う際は`-F`、`-E`、`-P`のいずれかを明示し、オプション、検索パターン、`--`、pathspecの順に引数を並べて、`grep.patternType`などのホスト側の設定に影響されないようにする。
 正規表現のメタ文字を含む文字列を`-F`なしで渡すと、意図せず一致0件になることがある。
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日」を参照。
+監査記録は`docs/development/audit-records-search.md`の「agent-basics/skills/search/SKILL.md：検索手段の選定と出力量の制御：2026年9月7日」を参照。
 また、`grep.lineNumber=true`が設定されている環境では`-h`を指定しても行番号が出力され続けるため、行番号を消すには`--no-line-number`を指定する。
-観測結果は`docs/development/audit-records.md`の「agent-basics/skills/search/SKILL.md：引数とシェルの扱い：2026年9月14日」に記録されている。
+観測結果は`docs/development/audit-records-search.md`の「agent-basics/skills/search/SKILL.md：引数とシェルの扱い：2026年9月14日」に記録されている。
 なお、grepやrgの単語境界指定（`-w`、`\b`）は日本語の文字も単語構成文字として扱うため、日本語に隣接する英単語には一致しない。
 日本語ドキュメントを検索する際は、単語境界をパターン側で明示的に表現する。
 

@@ -52,7 +52,7 @@
 - 必須入力名: `投入する要求`、`引き継ぎ記録先`
 
 1. 引用符・改行の解釈を保つため、`投入する要求`をmanaged-temp内のUTF-8ファイルへ全て保存し、絶対パスを渡す。
-   根拠は`docs/development/audit-records.md`「agent-toolkit/share/add-wi.parent.md：渡す入力：2026年10月7日」にある。
+   根拠は`docs/development/audit-records-wi.md`「agent-toolkit/share/add-wi.parent.md：渡す入力：2026年10月7日」にある。
    共通入力の別ファイルも要求ファイルから絶対パスで参照する。
    互換用の本文直接指定も受理する。
 

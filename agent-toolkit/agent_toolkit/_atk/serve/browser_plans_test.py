@@ -968,6 +968,8 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
     if failure == "body":
         await page.route("**/api/plans/file?*", lambda route: route.fulfill(status=503, body="同じ取得失敗"))
     elif failure == "clipboard":
+        # コピーの失敗だけを確かめるため、共有の入力にある図を除き、外部CDNの読込を待たずに描画を終える。
+        harness.plan_path.write_text("# 初回\n\nコピーの失敗の検証\n", encoding="utf-8")
         await page.add_init_script(
             "Object.defineProperty(navigator, 'clipboard', {value: {writeText: async () => {throw new Error('書込拒否')}}})"
         )

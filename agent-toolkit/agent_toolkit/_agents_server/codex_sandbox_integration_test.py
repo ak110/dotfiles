@@ -11,7 +11,7 @@ import sys
 
 import pytest
 
-from agent_toolkit._agents_server import codex
+from agent_toolkit._agents_server import codex, codex_rpc
 from agent_toolkit._testing.isolation import restore_host_environment
 
 
@@ -70,7 +70,7 @@ async def test_explore_start_reaches_normal_commands(
     codex_home = tmp_path / "codex-home"
     codex_home.mkdir()
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
-    monkeypatch.setattr(codex, "APP_SERVER_WORKING_DIRECTORY", str(tmp_path))
+    monkeypatch.setattr(codex_rpc, "APP_SERVER_WORKING_DIRECTORY", str(tmp_path))
     source = tmp_path / "資料 空白.txt"
     source.write_text("探索対象の日本語本文", encoding="utf-8")
     async with codex.AppServerManager() as backend:

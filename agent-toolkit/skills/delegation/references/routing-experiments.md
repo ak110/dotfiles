@@ -25,4 +25,4 @@
   Codexでは`-c model_reasoning_effort=low --ignore-user-config --ignore-rules`を指定し、記録が不要な場合は`--ephemeral`も加える。
   `codex exec`はChatGPT認証において系列名`luna`を拒否するため、直接起動するときは`luna`系列の最新の完全なIDを指定する。
   起動回数は判定に必要な最小限に抑える。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/user-confirmation-and-report/references/investigation.md：実行結果の検証：2026年10月18日（2）」にある。
+  監査記録は`docs/development/audit-records-investigation.md`の「agent-toolkit/skills/user-confirmation-and-report/references/investigation.md：実行結果の検証：2026年10月18日（2）」にある。

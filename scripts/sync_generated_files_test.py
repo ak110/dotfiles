@@ -77,8 +77,10 @@ def test_quality_source_updates_normal_and_lightweight_delivery(tmp_path: Path) 
     normal_text = normal.read_text(encoding="utf-8")
     lightweight_text = lightweight.read_text(encoding="utf-8")
     assert "役割本文。" in normal_text
-    assert "#### 設計の判定順\n\n順序本文。" in normal_text
-    assert "### 結果の返却\n\n返却の条件。" in normal_text
+    assert "制約本文。" in normal_text
+    # 常時規範はQCDと事実の原則を要点と読む時点だけで持ち、全文は条件付きで正本から読む。
+    assert "品質本文。" not in normal_text
+    assert "返却の条件。" not in normal_text
     assert "返却の条件。" in lightweight_text
     assert "帰属本文。" not in lightweight_text
     assert "品質本文。" not in lightweight_text
@@ -89,8 +91,7 @@ def test_quality_source_updates_normal_and_lightweight_delivery(tmp_path: Path) 
         assert "旧本文。" not in text
     source.write_text(source.read_text(encoding="utf-8").replace("返却の条件。", "改訂した返却の条件。"), encoding="utf-8")
     subject.sync_quality_principles(tmp_path)
-    for path in (normal, lightweight):
-        assert "改訂した返却の条件。" in path.read_text(encoding="utf-8")
+    assert "改訂した返却の条件。" in lightweight.read_text(encoding="utf-8")
 
 
 def test_quality_sync_failure_stops_downstream_generation(monkeypatch, capsys) -> None:

@@ -86,8 +86,8 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "起動種別": (
         # `mode:`へ改める前の宣言行を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_common/task_documents.py", "_LEGACY_LAUNCH_KIND_PREFIX"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_test.py", "起動種別:"),
-        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_test.py", "起動種別: explore"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_routing_test.py", "起動種別:"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_routing_test.py", "起動種別: explore"),
     ),
     "背景ジョブ": (
         # 監査記録の見出しと対応させる節の見出しと、その節への参照
@@ -103,10 +103,11 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
         # 計画本文の旧表記を検出する正規表現とその入力例
         _AllowedLocation("agent-toolkit/skills/write-plan/scripts/check_plan_file.py"),
         _AllowedLocation("agent-toolkit/skills/write-plan/scripts/check_plan_file_test.py"),
+        _AllowedLocation("agent-toolkit/skills/write-plan/scripts/check_plan_file_references.py"),
     ),
     "鮮度情報": (
         # `atk wi list --with-staleness`のオプション説明（ヘルプの説明として維持する）
-        _AllowedLocation("agent-toolkit/agent_toolkit/_atk/wi/cli.py"),
+        _AllowedLocation("agent-toolkit/agent_toolkit/_atk/wi/cli_read_parsers.py"),
         # 基準版/取得時のwi list --help標準出力を、それぞれの保存行のまま保持する。
         _AllowedLocation(
             "docs/development/norm-restructure-20261022/public-compatibility.json",
@@ -134,7 +135,7 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     ),
     "振り返り担当": (
         # 撤去した担当を説明する設計の記録
-        _AllowedLocation("docs/development/design-session-review.md", "振り返り担当"),
+        _AllowedLocation("docs/development/design-session-review*.md", "振り返り担当"),
     ),
 }
 
@@ -147,13 +148,13 @@ _ENDING_TERM_ALLOWED = (
     # 保存済みの旧計画を読む際の見出し一覧。
     _AllowedLocation("agent-toolkit/skills/write-plan/references/legacy-plan-file-standards.md"),
     # 保存済み記録の旧名を現行の役割・工程へ対応付ける説明だけを許容する。
-    _AllowedLocation("docs/development/concepts-principles.md", "旧記録の読み替え:"),
+    _AllowedLocation("docs/development/concepts*.md", "旧記録の読み替え:"),
     _AllowedLocation(
-        "docs/development/concepts-principles.md",
+        "docs/development/concepts*.md",
         line_exact="  「終端工程」は内容に応じて「公開工程」「公開後の操作」「終了工程」を指す。",
     ),
     _AllowedLocation(
-        "docs/development/concepts-principles.md", line_exact="  「終端完了」という公開担当の成功返却値は「公開完了」を指す。"
+        "docs/development/concepts*.md", line_exact="  「終端完了」という公開担当の成功返却値は「公開完了」を指す。"
     ),
 )
 
@@ -208,9 +209,9 @@ _RETIRED_TERMS = (
                 "agent-basics/skills/writing-standards/references/notation-rules.md",
                 "成果物を使う人自身が読むガイドの見出しや案内では「利用者向け」も使える。",
             ),
-            _AllowedLocation("docs/development/concepts-principles.md", "新しい説明文に使わず"),
+            _AllowedLocation("docs/development/concepts*.md", "新しい説明文に使わず"),
             _AllowedLocation(
-                "docs/development/concepts-principles.md",
+                "docs/development/concepts*.md",
                 line_exact=(
                     "  この呼称の整理は、単独の「利用者」の禁止と製品別の呼称の改称という"
                     "ユーザーの提案を比べて選んだ技術判断である。"
@@ -225,7 +226,7 @@ _RETIRED_TERMS = (
             ),
             # 過去のcommitの正式件名だけを引用する行。説明への書き戻しは許容しない。
             _AllowedLocation(
-                "docs/development/concepts-workflows-wi.md",
+                "docs/development/concepts*.md",
                 line_exact=(
                     "  対応commitは2026年10月4日"
                     "「fix: UWIの本文を利用者が必要とする情報へそろえ取消操作の案内や不要な詳細を減らす」、"
@@ -245,7 +246,7 @@ _RETIRED_TERMS = (
                 line_exact=("配置する場合は見出しを「利用者向けガイド」で揃える。"),
             ),
             _AllowedLocation(
-                "docs/development/concepts-principles.md",
+                "docs/development/concepts*.md",
                 line_exact=(
                     "- 利用者向け文書の誤記または適用対象のスタイル違反は"
                     "実害ありとして必ず是正し、低頻度リスクの費用比較から除外する"
@@ -276,9 +277,9 @@ _RETIRED_TERMS = (
                 # 日付の付いた過去の障害記録
                 _AllowedLocation("docs/development/incidents-*.md"),
                 # 廃止を決めたユーザーの方針記録
-                _AllowedLocation("docs/development/concepts-principles.md"),
+                _AllowedLocation("docs/development/concepts*.md"),
                 # 廃止を記す方針記録の行
-                _AllowedLocation("docs/development/concepts-workflows-wi.md", "2026年9月13日のユーザー指示で廃止した"),
+                _AllowedLocation("docs/development/concepts*.md", "2026年9月13日のユーザー指示で廃止した"),
                 # 撤去の不在を確かめるテスト
                 _AllowedLocation("*_test.py"),
             ),
@@ -346,7 +347,7 @@ _RETIRED_TERMS = (
                 # 日付付きの経緯記録
                 _AllowedLocation("docs/development/concepts*.md"),
                 _AllowedLocation("docs/development/incidents*.md"),
-                _AllowedLocation("docs/development/audit-records.md"),
+                _AllowedLocation("docs/development/audit-records*.md"),
                 # 登録した語の不在を確かめる本テスト
                 _AllowedLocation("retired_terms_invariant_test.py"),
                 *_NAMING_EXTRA_ALLOWED.get(term, ()),
@@ -569,12 +570,14 @@ _RETIRED_TERMS = (
         allowed=(
             # 過去のセッション記録に残る旧形式の返却を読む定数と、その読み取り互換を確かめるテスト
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates.py",
+                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_returns.py",
                 line_exact='_ESCALATION_RETURN_STATUS = "needs_escalation"',
             ),
-            _AllowedLocation("agent-toolkit/skills/review-session/scripts/session_evidence_bundle_test.py", "needs_escalation"),
             _AllowedLocation(
-                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_test.py", "needs_escalation"
+                "agent-toolkit/skills/review-session/scripts/session_evidence_bundle_failures_test.py", "needs_escalation"
+            ),
+            _AllowedLocation(
+                "agent-toolkit/skills/review-session/scripts/session_evidence_candidates_returns_test.py", "needs_escalation"
             ),
             # 日付の付いた過去の障害記録
             _AllowedLocation("docs/development/incidents*.md"),
@@ -608,8 +611,8 @@ _VERBATIM_RECORD_LOCATIONS = (
     _AllowedLocation("docs/development/norm-restructure-20261022/ledger.tsv"),
     _AllowedLocation("docs/development/norm-restructure-20261022/mapping.json"),
     _AllowedLocation("docs/development/norm-restructure-20261022/reverse-index.tsv"),
-    # 撤去した仕組みの台帳は、撤去した仕組みと役割を当時の名称で記録して照合に使う。
-    _AllowedLocation("docs/development/removed-mechanisms.md"),
+    # 撤去した仕組みの台帳（索引と主題別の分割先）は、撤去した仕組みと役割を当時の名称で記録して照合に使う。
+    _AllowedLocation("docs/development/removed-mechanisms*.md"),
 )
 
 

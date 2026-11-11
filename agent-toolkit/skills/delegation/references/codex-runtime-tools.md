@@ -38,9 +38,9 @@ Codexネイティブ委譲は`spawn_agent`で起動する。
 `fork_turns`で引き渡される会話履歴と、`SubagentStart`フックが追加する`rules-subagent.md`は別個の入力である。
 forkを行わない場合でも、共通の委譲先規範はフックから渡され、`AGENTS.md`は対象worktreeの自動読込によって渡される。
 Codex固有の委譲先規範が必要になった場合は、共通規範とは別のファイルに配置し、同一のフック生成処理によってCodex環境のみに追加する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月21日」に記載されている。
 
 forkを選択する場合は、`spawn_agent`の`fork_turns`を省略するか、`"all"`を指定する。
 全会話履歴を引き渡す起動では、親エージェントのモデルとreasoning effortが自動的に継承され、上書き指定は受け付けられない。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/codex-runtime.md：ツール名の読み替え：2026年9月27日」に記載されている。
 forkを選択しない組み込み代替では、`fork_turns: "none"`を明示し、必要な委譲入力を引き渡す。

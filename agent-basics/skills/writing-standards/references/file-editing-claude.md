@@ -28,4 +28,5 @@
 未読を理由に編集が拒否されたときは、対象ファイルを`Read`してから再度実行する。
 軽量な書き込みを担当するサブエージェントにも、同様の事前条件を適用する。
 
-関連する監査記録は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/file-editing.md：ファイル更新時の編集ツールの前提：2026年10月7日」に記載されている。
+関連する監査記録は、`docs/development/audit-records-editing.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/file-editing.md：ファイル更新時の編集ツールの前提：2026年10月7日」である。

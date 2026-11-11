@@ -6,7 +6,7 @@
 CI対応レビュー指摘管理表は、対応する計画ファイルが存在しないCI失敗への対応において、レビュー指摘を記録する表（`ci-<OID>.exec-review.tsv`）を指す。
 `atk review-table init`を実行した直後の0バイトのファイルは、指摘が0件の初期化済みテーブルである。
 指摘がないままレビューを完了する場合も、ヘッダー行やダミーの指摘行を追加せず、そのまま使用する。
-これに関する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/share/review-table-operations.md：レビュー指摘管理表の共通操作：2026年10月8日」に記録されている。
+これに関する監査記録は、`docs/development/audit-records-wi.md`の「agent-toolkit/share/review-table-operations.md：レビュー指摘管理表の共通操作：2026年10月8日」に記録されている。
 指摘の追加や応答の記録は、すべて`atk review-table`コマンドで行う。
 指摘箇所、指摘内容、対応内容、および対応不要の理由は、ファイルパスを受け取るオプション経由で渡す。
 役割ごとのサブコマンドや必須オプションは各参照資料を参照し、列のフォーマットや出力形式は`atk review-table --help`で確認する。

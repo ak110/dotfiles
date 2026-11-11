@@ -19,9 +19,9 @@ import pytest
 import yaml
 
 from agent_toolkit import atk
-from agent_toolkit._atk import lane
-from agent_toolkit._atk.lane_test import integration_args
+from agent_toolkit._atk import lane, lane_integration_input, lane_records
 from agent_toolkit._testing import git_repository, wi_entry_files
+from agent_toolkit._testing.lane_integration_support import _integration_args
 
 _SESSION = "lane-parallel-session"
 # レーン数の上限（候補WI数から決まる）が2以上になるよう、lane-01へ10件、lane-02へ1件を割り当てる。
@@ -164,12 +164,12 @@ def test_second_lane_integrates_while_first_lane_verifies(
     repo, records = _prepare(tmp_path, monkeypatch, capsys)
     started, released = tmp_path / "first-verification.started", tmp_path / "second.done"
     first_manifest = _manifest(tmp_path / "first.json", "lane-01", verification=[_barrier(started, released)], wi_commands=[])
-    first_args = integration_args(records["lane-01"], repo, first_manifest, records["lane-01"]["reviewed_head"])
+    first_args = _integration_args(records["lane-01"], repo, first_manifest, records["lane-01"]["reviewed_head"])
     process = _start_first(first_args, started, tmp_path)
     try:
         second_manifest = _manifest(tmp_path / "second.json", "lane-02", verification=[], wi_commands=[])
         code, second, stderr = _invoke(
-            capsys, *integration_args(records["lane-02"], repo, second_manifest, records["lane-02"]["reviewed_head"])
+            capsys, *_integration_args(records["lane-02"], repo, second_manifest, records["lane-02"]["reviewed_head"])
         )
         assert code == 0 and second["phase"] == "finalized", stderr
         assert git_repository.git_output(repo, "rev-parse", "HEAD") == records["lane-02"]["reviewed_head"]
@@ -184,7 +184,7 @@ def test_second_lane_integrates_while_first_lane_verifies(
     # 既存の--restart-reviewで最新の統合先へ追随し、rebase結果の検収待ちへ戻る。
     code, restarted, stderr = _invoke(
         capsys,
-        *integration_args(
+        *_integration_args(
             records["lane-01"],
             repo,
             _manifest(first_manifest, "lane-01", verification=[[sys.executable, "-c", "pass"]], wi_commands=[]),
@@ -204,7 +204,7 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
     started, released = tmp_path / "first-finalization.started", tmp_path / "second.done"
     first_manifest = _manifest(tmp_path / "first.json", "lane-01", verification=[], wi_commands=[_barrier(started, released)])
     process = _start_first(
-        integration_args(records["lane-01"], repo, first_manifest, records["lane-01"]["reviewed_head"]), started, tmp_path
+        _integration_args(records["lane-01"], repo, first_manifest, records["lane-01"]["reviewed_head"]), started, tmp_path
     )
     try:
         # 先行側は統合先を更新済みで、最終化の途中にいる。
@@ -212,7 +212,7 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         second_manifest = _manifest(
             tmp_path / "second.json", "lane-02", verification=[[sys.executable, "-c", "pass"]], wi_commands=[]
         )
-        second_args = integration_args(records["lane-02"], repo, second_manifest, records["lane-02"]["reviewed_head"])
+        second_args = _integration_args(records["lane-02"], repo, second_manifest, records["lane-02"]["reviewed_head"])
         code, second, stderr = _invoke(capsys, *second_args)
         assert code == 1 and second["phase"] == "awaiting-validation", stderr
         code, second, stderr = _invoke(capsys, *second_args, "--accept-rebased-head", second["new_head"])
@@ -250,7 +250,7 @@ def test_target_advance_before_short_update_keeps_target(
     repo, records = _prepare(tmp_path, monkeypatch, capsys)
     record = records["lane-01"]
     manifest = _manifest(tmp_path / "first.json", "lane-01", verification=[[sys.executable, "-c", "pass"]], wi_commands=[])
-    original = lane._verify  # pylint: disable=protected-access
+    original = lane_integration_input.verify
     advanced: list[str] = []
 
     def advance_target(*arguments: Any) -> None:
@@ -260,16 +260,16 @@ def test_target_advance_before_short_update_keeps_target(
             (repo / "other.txt").write_text("別の統合", encoding="utf-8")
             advanced.append(git_repository.commit_all(repo, "別の統合"))
 
-    monkeypatch.setattr(lane, "_verify", advance_target)
-    code, result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, record["reviewed_head"]))
+    monkeypatch.setattr(lane_integration_input, "verify", advance_target)
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["reviewed_head"]))
     assert code == 1 and result["phase"] == "verified", stderr
     assert "統合先が準備の時点から進んだ" in stderr
     assert result["target_advanced"] == {"expected": record["initial_head"], "actual": advanced[0]}
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == advanced[0]
     stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
     assert stored["integration"]["phase"] == "verified"
-    monkeypatch.setattr(lane, "_verify", original)
-    args = integration_args(record, repo, manifest, record["reviewed_head"])
+    monkeypatch.setattr(lane_integration_input, "verify", original)
+    args = _integration_args(record, repo, manifest, record["reviewed_head"])
     code, result, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 1 and result["phase"] == "awaiting-validation" and result["new_base"] == advanced[0], stderr
     code, result, stderr = _invoke(capsys, *args, "--accept-rebased-head", result["new_head"])
@@ -292,11 +292,11 @@ def test_lane_starts_while_other_lane_updates_target(
     # --no-mergeは統合先を書かないが、統合先の作業ツリーと中断状態を確かめるため同じ待機を観測する。
     extra = ("--no-merge",) if no_merge else ()
     # 他レーンのfast-forwardの途中（統合先単位の排他を保持し、統合先にindex.lockがある状態）を作る。
-    with lane._target_locked(record, "main"):  # pylint: disable=protected-access
+    with lane_records.target_locked(record, "main"):
         index_lock.write_text("", encoding="utf-8")
         thread = threading.Thread(
             target=lambda: outcome.append(
-                _invoke(capsys, *integration_args(record, repo, manifest, record["reviewed_head"]), *extra)
+                _invoke(capsys, *_integration_args(record, repo, manifest, record["reviewed_head"]), *extra)
             )
         )
         thread.start()
@@ -326,7 +326,7 @@ def test_residual_target_state_is_still_rejected(
     else:
         (repo / "dirty.txt").write_text("未commit", encoding="utf-8")
         expected = "未commitまたは未追跡の変更がある"
-    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, record["reviewed_head"]))
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["reviewed_head"]))
     assert code == 2 and expected in stderr, stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == record["initial_head"]
 
@@ -337,7 +337,7 @@ def test_delete_retains_lane_while_its_integration_runs(
     """統合中のレーンは待たずに保持し、資源と所有登録を残す。"""
     _repo, records = _prepare(tmp_path, monkeypatch, capsys)
     record = records["lane-01"]
-    with lane._lane_locked(pathlib.Path(record["record_path"])):  # pylint: disable=protected-access
+    with lane_records.lane_locked(pathlib.Path(record["record_path"])):
         code, result, _stderr = _invoke(capsys, "delete")
     assert code == 1
     reasons = {pathlib.Path(row["record_path"]).stem: row["reason"] for row in result["retained"]}

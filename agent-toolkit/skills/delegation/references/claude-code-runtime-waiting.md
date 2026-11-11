@@ -38,7 +38,8 @@
    自身でタスクを設定する場合は、`atk wait-schedule`を1回実行し、出力された`cron`と`prompt`を変更せずにそのまま`CronCreate`へ渡し、`recurring: true`で1件のみタスクを作成する（`prompt`はmodが設定するものと同一の共通本文である）。
      プロンプトの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`のみで構成された行とする。
      UserPromptSubmitフックはこの行によって自動挿入ターンを判別し、セッション再開後の所有タスク確認もこの標識の完全一致に基づいて行う。
-   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」に記載されている。
+   監査記録は`docs/development/audit-records-delegation-waiting.md`にある。
+   該当節は「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」である。
 
 2. 必要な再確認のため、定期プロンプトに含める内容は、待機対象を記録側から列挙する手段、対象ごとの成果物パスを特定する方法、動的に解決したパスを引き渡すコマンド形式のみとする。
    作業ツリーに対する確認コマンドは`git -C "$worktree_path" status --porcelain=v1`と`git -C "$worktree_path" rev-parse --short HEAD`である。

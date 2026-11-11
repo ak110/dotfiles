@@ -5,6 +5,7 @@ import sys
 import pytest
 
 from agent_toolkit._agents_server import codex as subject
+from agent_toolkit._agents_server import codex_rpc
 
 
 async def _ignore_message(_message: dict[str, object]) -> None:
@@ -21,7 +22,7 @@ async def test_start_failure_reports_command_returncode_and_stderr(
         "-c",
         "import sys; sys.stderr.write('起動診断\\n'); raise SystemExit(23)",
     )
-    monkeypatch.setattr(subject, "APP_SERVER_COMMAND", command)
+    monkeypatch.setattr(codex_rpc, "APP_SERVER_COMMAND", command)
     async with subject.JsonRpcProcess(_ignore_message, _ignore_message) as client:
         with pytest.raises(subject.AppServerError) as raised:
             await client.start()
@@ -40,8 +41,8 @@ async def test_start_failure_bounds_reported_stderr(monkeypatch: pytest.MonkeyPa
         "-c",
         "import sys; sys.stderr.write('a' * 20 + '末尾'); raise SystemExit(2)",
     )
-    monkeypatch.setattr(subject, "APP_SERVER_COMMAND", command)
-    monkeypatch.setattr(subject, "APP_SERVER_STDERR_LIMIT_CHARS", 8)
+    monkeypatch.setattr(codex_rpc, "APP_SERVER_COMMAND", command)
+    monkeypatch.setattr(codex_rpc, "APP_SERVER_STDERR_LIMIT_CHARS", 8)
     async with subject.JsonRpcProcess(_ignore_message, _ignore_message) as client:
         with pytest.raises(subject.AppServerError) as raised:
             await client.start()

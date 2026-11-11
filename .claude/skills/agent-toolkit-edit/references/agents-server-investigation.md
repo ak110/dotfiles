@@ -62,7 +62,7 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
    API失敗の公開診断にはエラー種別、HTTPステータスコード、経過時間、初期化診断には受信メッセージの種別と失敗箇所の詳細がある。
    Claude接続候補の試行・選択・失敗は`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`を確認する。
    API切替は`claude_api_switch`、MCP再接続成否は`claude_mcp_recovered`・`claude_mcp_recovery_failed`を確認する。
-   MCP再接続の監査記録は`docs/development/audit-records.md`「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」にある。
+   MCP再接続の監査記録は`docs/development/audit-records-agents-server.md`「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」にある。
 
 3. 停止契機を特定するため、中断（`interrupted`）では`diagnostics.next_action`の行範囲（`sed -n '<開始行>,<終了行>p' -- <絶対パス>`）で終了診断を読む。
    受信シグナル、標準入力の切断、終了ステータスの有無を確認する。
@@ -100,7 +100,7 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 
 ## 外部プロセスでの再現
 
-1. 起動条件を揃えるため、`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`が生成する`ClaudeAgentOptions`で`ClaudeSDKClient`を構成する。
+1. 起動条件を揃えるため、`agent-toolkit/agent_toolkit/_agents_server/claude_options.py`の`_build_options`が生成する`ClaudeAgentOptions`で`ClaudeSDKClient`を構成する。
    診断ログの採取には`ClaudeAgentOptions.extra_args`へ`--debug-file`と出力先の絶対パスを指定する。
 2. 初期化へ到達させるため、`connect()`、`query()`、`receive_messages()`の順で必ず呼び出す。
    `query()`を省くと初期化に到達しない。

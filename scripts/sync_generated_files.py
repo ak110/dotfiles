@@ -20,9 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 QUALITY_SOURCE = "agent-basics/skills/writing-standards/references/quality-principles-{key}.md"
 QUALITY_TARGETS = (
     ("agent-toolkit/share/rules/common/01-agent.md", "roles", "役割分担", 2),
-    ("agent-toolkit/share/rules/common/01-agent.md", "qcd", "QCDと3段判定", 3),
     ("agent-toolkit/share/rules/common/01-agent.md", "constraints", "規定の区分と標示", 3),
-    ("agent-toolkit/share/rules/common/01-agent.md", "facts", "事実と推論", 2),
     ("agent-toolkit/share/agents-server-base.md", "result", "結果の返却", 2),
 )
 GENERATORS = (

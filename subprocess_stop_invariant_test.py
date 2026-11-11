@@ -39,14 +39,17 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "_terminate_process",
     ): "共通の停止処理で子孫を回収した後、asyncioの子の終了状態を上限付きで回収する",
     (
-        "agent-toolkit/agent_toolkit/_agents_server/codex.py",
+        "agent-toolkit/agent_toolkit/_agents_server/codex_rpc.py",
         "_close",
     ): "共通の停止処理で子孫を回収した後、App Serverの終了状態を上限付きで回収する",
     (
         "agent-toolkit/agent_toolkit/_common/codex_models.py",
         "list_models_from_app_server",
     ): "共通の停止処理で子孫を回収した後、asyncioの子の終了状態を上限付きで回収する",
-    ("agent-toolkit/agent_toolkit/_agents_server/launch_requests.py", "_run_preflight_command"): "固定のuv --version照会",
+    (
+        "agent-toolkit/agent_toolkit/_agents_server/launch_requests_preflight.py",
+        "_run_preflight_command",
+    ): "固定のuv --version照会",
     (
         "agent-toolkit/agent_toolkit/_atk/agents_exit_session.py",
         "request_termination",
@@ -64,7 +67,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "agent-toolkit/skills/refine-prompt/scripts/multi_turn_trials.py",
         "_grade",
     ): "固定の採点スクリプトで、提出コードが起動する子の残存は許容する",
-    ("libexec/update_dotfiles.py", "_kill_process_tree"): "停止前に列挙して子孫も回収する既存実装",
+    ("libexec/update_dotfiles_process.py", "kill_process_tree"): "停止前に列挙して子孫も回収する既存実装",
     (
         "libexec/update_dotfiles_job.py",
         "_stop_tree",
@@ -128,7 +131,7 @@ def test_timeouts_and_kills_use_process_tree_helpers():
     for path in paths:
         if not (root / path).exists():
             continue
-        if path.suffix == ".py" and not path.name.endswith("_test.py") and "_testing" not in path.parts:
+        if path.suffix == ".py" and not path.name.endswith(("_test.py", "_test_helpers.py")) and "_testing" not in path.parts:
             failures.extend(_violations(path, (root / path).read_text(encoding="utf-8")))
     assert not failures, "共通関数を経由しない停止・時間上限:\n" + "\n".join(failures)
 

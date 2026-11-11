@@ -38,8 +38,8 @@ process-wiのモード固有資料は、共通契約を参照して読み替え�
 - 複数ファイルにまたがる機構や委譲構造を新設・変更する場合は、`docs/development/design.md`の索引から該当する主題の本文を選び、目的、構造を採用した理由、知識境界、却下した代替案を追記または更新する（努力目標）。
   新たな主題は主題別ファイルを作成して索引テーブルに行を追加し、索引ファイル自体には詳細な見出しや機構の解説を書かない。
 - `agent-toolkit/skills/workflow-overview/SKILL.md`はエージェントの作業工程に関する契約を定義している。
-  ユーザーの運用形態、WIの登録方法、または回答操作が変わる場合は、`docs/guide/claude-code-guide.md`「推奨ワークフロー」も同一の変更単位で揃える。
-- `docs/guide/claude-code-guide.md`「設定確認」は、ユーザーが実行する確認コマンド、期待される結果、または復旧手順が変わる場合に更新する。
+  ユーザーの運用形態、WIの登録方法、または回答操作が変わる場合は、`docs/guide/claude-code-workflows.md`「推奨ワークフロー」も同一の変更単位で揃える。
+- `docs/guide/claude-code-models.md`「設定確認」は、ユーザーが実行する確認コマンド、期待される結果、または復旧手順が変わる場合に更新する。
 - `install-claude.sh`の`FILES`、`install-claude.ps1`の`$files`、および`agent-toolkit/share/rules/common/`配下のMarkdownファイル一覧は完全一致を保つ。
   この整合性は`install_script_ssot_invariant_test.py`で検証し、`uv run python scripts/sync_generated_files.py`で同期する。
 - 配布物スキルの外部インターフェース（判定区分、出力フォーマット、後始末コマンドの分岐、サマリー表現など）を追加・削除・変更する場合は、呼び出し元を検索し、連携先の記述も同一の計画内で更新する。

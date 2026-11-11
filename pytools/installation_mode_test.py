@@ -37,7 +37,7 @@ def test_minimal_step_selection_keeps_shell_and_dotfiles_foundation(monkeypatch)
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "minimal")
     excluded = {
         step.run.__module__.rsplit(".", 1)[-1]
-        for step in post_apply._DEFAULT_STEPS
+        for step in post_apply.DEFAULT_STEPS
         if post_apply._skip_reason(step, home_substituted=False) == "minimalモードのため導入対象外"
     }
     assert {
@@ -52,7 +52,7 @@ def test_minimal_step_selection_keeps_shell_and_dotfiles_foundation(monkeypatch)
         "install_codex_plugins",
         "setup_statusline_binary",
     } <= excluded
-    retained = {step.run.__module__.rsplit(".", 1)[-1] for step in post_apply._DEFAULT_STEPS if not step.full_only}
+    retained = {step.run.__module__.rsplit(".", 1)[-1] for step in post_apply.DEFAULT_STEPS if not step.full_only}
     assert {
         "setup_mise",
         "setup_tmux_plugins",
@@ -63,7 +63,7 @@ def test_minimal_step_selection_keeps_shell_and_dotfiles_foundation(monkeypatch)
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "full")
     assert all(
         post_apply._skip_reason(step, home_substituted=False) != "minimalモードのため導入対象外"
-        for step in post_apply._DEFAULT_STEPS
+        for step in post_apply.DEFAULT_STEPS
     )
 
 
@@ -73,9 +73,9 @@ def test_minimal_mise_install_ignores_working_tree(monkeypatch, tmp_path):
     (root / "mise.toml").write_text('[tools]\nrust="1"\n')
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(root))
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "minimal")
-    assert setup_mise._working_tree_with_config() == Path.home()
+    assert setup_mise.working_tree_with_config() == Path.home()
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "full")
-    assert setup_mise._working_tree_with_config() == root
+    assert setup_mise.working_tree_with_config() == root
 
 
 def test_minimal_mise_install_explicitly_selects_only_lightweight_tools(monkeypatch):
@@ -87,8 +87,8 @@ def test_minimal_mise_install_explicitly_selects_only_lightweight_tools(monkeypa
         calls.append(arguments)
         return subprocess.CompletedProcess(arguments, 0, "", "")
 
-    monkeypatch.setattr(setup_mise, "_run_mise", run)
-    assert setup_mise._ensure_tools_installed(Path("/fixture/mise"))
+    monkeypatch.setattr(setup_mise.setup_mise_common, "run_mise", run)
+    assert setup_mise.ensure_tools_installed(Path("/fixture/mise"))
     assert calls == [["install", "chezmoi", "fzf", "gh", "glab", "glow", "jq", "ripgrep"]]
 
 
@@ -121,7 +121,7 @@ def test_prune_runs_after_all_post_apply_steps(monkeypatch):
 
     monkeypatch.setenv("DOTFILES_PRUNE", "1")
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "minimal")
-    monkeypatch.setattr(post_apply, "_DEFAULT_STEPS", [post_apply._StepSpec("fixture", setup)])
+    monkeypatch.setattr(post_apply, "DEFAULT_STEPS", [post_apply._StepSpec("fixture", setup)])
     monkeypatch.setattr(post_apply, "_home_is_substituted", lambda: False)
     monkeypatch.setattr(post_apply.prune_installation, "run", prune)
     results, _ = post_apply.run()

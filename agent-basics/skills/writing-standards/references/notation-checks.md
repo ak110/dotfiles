@@ -44,7 +44,7 @@
 | textlint | 検出対象 | 対象外 |
 | ダッシュチェック | 検出対象 | 対象外 |
 
-監査記録は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日」を参照する。
+監査記録は、`docs/development/audit-records-languages.md`の「agent-basics/skills/writing-standards/references/notation-rules.md：逐語引用の検出範囲：2026年9月5日」を参照する。
 
 ## 文章チェックの一括実行
 

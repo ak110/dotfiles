@@ -18,7 +18,7 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._agents_server import codex_rpc
 
 FAKE_APP_SERVER = pathlib.Path(__file__).with_name("fake_codex_app_server.py")
 
@@ -101,5 +101,5 @@ def install(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> FakeAppS
     """Codex backendが起動するApp Serverを模擬App Serverへ差し替える。"""
     log_path = tmp_path / "fake-app-server.jsonl"
     monkeypatch.setattr(asyncio, "create_subprocess_exec", REAL_CREATE_SUBPROCESS_EXEC)
-    monkeypatch.setattr(codex_backend, "APP_SERVER_COMMAND", (sys.executable, str(FAKE_APP_SERVER), str(log_path)))
+    monkeypatch.setattr(codex_rpc, "APP_SERVER_COMMAND", (sys.executable, str(FAKE_APP_SERVER), str(log_path)))
     return FakeAppServer(log_path)

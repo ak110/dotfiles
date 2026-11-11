@@ -16,7 +16,8 @@ hookの追加や変更をする際は、出力契約と検証処理を同じ変�
 
 Claude Codeの`Stop hook error: JSON validation failed`は、プロンプト型hookの評価器がモデルの応答をJSONとして解析できなかった場合に発生する。
 `/goal`コマンドはセッション中のみ有効なプロンプト型Stop hookを登録するため、`/goal`を設定したセッションでは、コマンド型hookの出力形式にかかわらずこの表示が現れることがある。
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日」にある。
+監査記録は`docs/development/audit-records-hooks-protocol.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日」である。
 
 PreToolUse、PostToolUse、UserPromptSubmitでエージェントに行動を促す際は、`hookSpecificOutput.additionalContext`を第一の通知手段として用いる。
 各フィールドがターン継続を強制するかどうかは、以下の表に従う。
@@ -47,7 +48,8 @@ block、warn、noticeの各通知本文の整形（整形関数の利用、`fix`
 PreToolUseの`additionalContext`は、その呼び出しの実行を止めず、エージェントが読むのは呼び出しの結果と同時である。
 その呼び出しを変えさせる目的には使えず、作用するのは次の操作からである。
 その呼び出しを別の手段へ替えさせるには、`permissionDecision: "deny"`による拒否が要る。
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年11月11日」にある。
+監査記録は`docs/development/audit-records-hooks-protocol.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年11月11日」である。
 
 ### 出力上限
 
@@ -59,7 +61,7 @@ Claude Code自身がモデルにそのファイルの読み取りを促すこと
 公式資料の10,000文字制限では、PreToolUseが終了コード2で返す標準エラー出力は対象外である。
 標準エラー出力44,224文字が、接頭辞を含めて44,346文字のツール結果として全文届いた観測記録がある。
 ただし、この数値は特定の条件下で観測された配送量であり、標準エラー出力の上限を恒久的に保証するものではない。
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日」にある。
+監査記録は`docs/development/audit-records-hooks-protocol.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力上限：2026年10月20日」にある。
 
 ## 条件別資料
 

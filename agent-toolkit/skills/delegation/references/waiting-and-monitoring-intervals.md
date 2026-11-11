@@ -25,7 +25,8 @@
    この条件はSessionStartの通知と、Bashの公開入力に`run_in_background`が無いことで判別し、未知引数として拒否される背景指定を試さない。
    CLI自身はTTL由来の上限と540秒の小さい方で終了3を返すため、結果と終了コードを回収し、未終了なら同じコマンドを再発行する。
    MCP内部とlane資源回収の待機期限は、このCLI専用の短縮の対象外とする。
-   背景無効時の前景上限と公開引数の再検証は、`docs/development/audit-records.md`「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年11月2日」にある。
+   背景無効時の前景上限と公開引数の再検証は、`docs/development/audit-records-delegation-waiting.md`にある。
+   該当節は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年11月2日」である。
    Codexのcell IDやコマンドsession IDは、前掲の表に示した回収手段を用いて同じターン内で回収する。
    独立して進められる作業と受信済み通知の処理を先に行い、それらが尽きた長い終了待ちでは、`share/rules/rules-common.codex.md`「Codex固有の入出力」の長めの回収時間の目安を適用する。
    制御が戻るたびに追加入力と通知を処理する。
@@ -58,7 +59,7 @@
    Claudeバックエンドでは、背景実行されたシェル、背景のAgent委譲、背景へ移行したMCPツール呼び出しも自動再開の対象に含まれる。
    自動再開が行われるのは、対象となる子セッション、子スレッド、バックグラウンドタスクを実際に起動した場合に限られる。
    これらを起動せずに待機表明だけを行った場合は、委譲元が完了を確認して再開を指示する。
-   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日」を参照する。
+   監査記録は`docs/development/audit-records-delegation-waiting.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：待機区間の構成：2026年9月3日」を参照する。
    複数の子を待つ委譲先では、待機表明による自動再開は追跡対象の全件終了後に1回だけ起こる。
    先に終了した子の結果を残る工程の入力に使う場合は、待機表明でターンを終えず、同じターンの`atk agents wait`（本節の起動形に従う）で終了した分から回収して、その工程を進める。
    待機表明でターンを終えるのは、全件の結果がそろうまで進める工程が無い場合に限る。

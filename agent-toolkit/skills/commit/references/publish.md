@@ -64,7 +64,7 @@ CI固有のOS・言語バージョン・実機環境など、ローカルで再�
 push前のチェックを実行する前には、ロックファイルの変更有無にかかわらず、対象リポジトリの開発手順で定められた環境同期処理を毎回実行し、仮想環境をロックファイルの依存関係およびCI環境のPythonバージョンと完全に一致させる。
 なお、uvの`uv run`による自動同期は不要なパッケージが環境内に残留する可能性があるため、同期手段から除外する。
 `.python-version`ファイルが存在しないプロジェクトや、`UV_PYTHON`などで特定のバージョンが指定されている環境では、既存の仮想環境のPythonバージョンも正確に維持する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日」にある。
+監査記録は`docs/development/audit-records-commit-environment.md`の「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月11日」にある。
 `.python-version`の有無と版の指定による条件別の観測は、同じ文書の「agent-toolkit/skills/commit/references/publish.md：検証とCI：2026年10月19日」にある。
 
 push前のチェックやローカルの全体検証はログ出力が膨大になりやすい。

@@ -23,7 +23,8 @@ Pythonの対応バージョンを新しく追加する場合は、対象とな�
 互換性のある事前ビルド済みwheelが提供されているバージョンへ更新する案と、CI環境に必要なツールを整えてビルドを成立させる案を比較検討する。
 コンパイラーやC言語ヘッダーの追加は対象パッケージのビルドに真に必要な範囲に限定し、対象環境で導入されない依存パッケージはマーカーやextrasの指定に基づいて判断対象から除外する。
 採用したパッケージバージョン、Pythonバージョン、CIイメージとアーキテクチャ、配布形式、検証実施日、および再検証手順を記録に残す。
-観測記録の例は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日」にある。
+観測記録の例は`docs/development/audit-records-dependencies.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/dependency-management.md：Python対応版の追加：2026年10月10日」である。
 
 ## 本文参照の取得条件
 

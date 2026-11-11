@@ -36,7 +36,7 @@ Claude Code固有のtranscript形式や非遮断通知を前提とする他のSt
 ## 終了工程の証拠
 
 判定および証拠保持の責務は`agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が担う。
-設計の経緯と不採用とした案は`docs/development/design-hooks.md`「終了工程の証拠」に記録されている。
+設計の経緯と不採用とした案は`docs/development/design-hooks-termination-evidence.md`「終了工程の証拠」に記録されている。
 プロジェクト規範に基づく工程省略を記録するメインエージェントは、`agent-toolkit:report-completion`を起動せず、同スキルの`references/termination-evidence.md`を直接参照する。
 省略の意味と優先順位はメインエージェントが判断する。
 記録処理は指定パスから規範全文を読み込んで保存し、配置場所、観測した作業対象、現在のメインエージェントと会話・入力の対応関係を確認する。

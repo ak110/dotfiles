@@ -12,7 +12,7 @@
 それ以外の文字を含む文字列は、先頭と末尾を固定しないJavaScriptの正規表現として評価される。
 すべてのツールに一致させる新規登録では明示的に`"*"`を記述し（努力目標）、ツール名で評価しないイベントでは`matcher`キーを省略する。
 一次資料は<https://code.claude.com/docs/en/hooks.md>の`Matcher patterns`節である。
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
+監査記録は`docs/development/audit-records-hooks-protocol.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：matcher設定：2026年9月4日」にある。
 
 - `matcher`の対象を広く設定した場合は、スクリプト側で`tool_name`を確認して対象外のツールを早期リターンする。
 - Codexに対しては、ツール名を明示して対象を絞り込んだmatcherを提供する。

@@ -22,7 +22,7 @@
 forkは親エージェントのモデルと会話履歴を引き継いでバックグラウンドで実行され、通常のサブエージェントと同様の完了通知で結果を返し、親からの1階層のみで完結する。
 fork modeは対話型セッションではデフォルトで有効であるが、`-p`による非対話実行やAgent SDK環境では無効である。
 無効な環境では、`agents_server`による新規起動を利用する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：起動パラメーター：2026年9月27日」に記載されている。
 
 ## 委譲プロンプトへ含める前提
 

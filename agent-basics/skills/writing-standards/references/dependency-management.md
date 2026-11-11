@@ -33,7 +33,7 @@ digestやcommit SHAで固定する場合も、Renovate、Dependabot、pinactな�
 ## 公開待機設定
 
 - 最新版への追従を妨げる更新経路のない厳密な固定は採用せず、公開されたばかりの新しいバージョンを一定期間（目安として1日程度）待機してから取り込む設定を活用する。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/dependency-management.md：公開待機設定：2026年9月16日」にある。
+  監査記録は`docs/development/audit-records-dependencies.md`の「agent-basics/skills/writing-standards/references/dependency-management.md：公開待機設定：2026年9月16日」にある。
   本項の待機設定はパッケージマネージャーが解決する依存関係を対象とする。
   コンテナーのベースイメージやCIの外部actionの書式は`dockerfiles.md`と`github-actions.md`、版の選び方は「最新版への追従」に従う。
 - パッケージが公開された直後のバージョンを一定期間だけ解決対象から除外する仕組み（uvの`exclude-newer`、pnpmの`minimum-release-age`、miseの`minimum_release_age`など）を「公開待機設定」と呼ぶ。

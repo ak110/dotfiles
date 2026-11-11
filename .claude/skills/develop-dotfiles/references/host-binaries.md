@@ -21,4 +21,4 @@
   なお、正規表現の`.`は改行や不正なUTF-8シーケンスで一致が止まるため、取得された前後の文脈が指定した文字数より短くなることがある。
 - 検索には`rg`を使用する。
   Claude CodeのBashツール内の`grep`は組み込みのugrepに置き換わっており、ugrepおよびGNU grepのいずれを用いても`.{0,N}`による文脈取得が30秒以内に完了しなかったためである。
-  この観測結果と再検証の手順は`docs/development/audit-records.md`「develop-dotfiles：ホスト本体のバイナリの検索：2026年10月4日」に記録されている。
+  この観測結果と再検証の手順は`docs/development/audit-records-project-environment.md`「develop-dotfiles：ホスト本体のバイナリの検索：2026年10月4日」に記録されている。

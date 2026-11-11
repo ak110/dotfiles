@@ -62,7 +62,8 @@ CodexとClaudeの`explore`、`write`、`shell`への開始・再開指示には�
 `~/.claude/CLAUDE.md`はこの行の連結対象外であり、Claudeの各起動区分へはユーザー設定の読込元から、Codexのエージェントへは`~/.codex/AGENTS.md`の読込指示を通じて届く。
 Antigravityのプラグイン配送は`antigravity_plugin.py`、起動指示はAntigravity backendと`launch_prompts.py`を根拠とする。
 プロジェクト規範の自動読込に関する行は、実機での観測結果に基づく。
-観測記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日」に記載されている。
+観測記録は`docs/development/audit-records-agent-documents.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日」である。
 
 ## 名指し参照の読込方法
 

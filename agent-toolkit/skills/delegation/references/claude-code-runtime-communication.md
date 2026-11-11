@@ -20,7 +20,7 @@
 | Claude Platform on AWS | Sonnet 5、環境変数を`0`に設定 | 同一セッション内の親子・子孫 | `SendMessage`は成功したが、`ListAgents`ツールは公開されず、独立セッション間通信は成立しなかった |
 | Claude Codeローカル | 2.1.241、`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`を設定しない | 同一セッション内の親子・子孫 | `SendMessage`と`ListAgents`の公開および呼び出し成功を確認した |
 
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：実行時能力と通信scope：2026年9月4日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：実行時能力と通信scope：2026年9月4日」に記載されている。
 
 - `SendMessage`および`ListAgents`の利用可否は、現在のエージェントに実際にツールが公開されており、かつ呼び出しが成功するかどうかで判断する。
   環境変数、プロバイダー、agent定義での許可設定から推測せず、拒否されたツールは利用不能として扱う。

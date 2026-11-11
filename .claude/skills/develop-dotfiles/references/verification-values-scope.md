@@ -34,22 +34,26 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
   commitフックの`pyfltr fast`はこれらを実行するため、最初の検証から漏れるとcommitの時点で初めて失敗する。
   コミット時にprekが実行するfastも、対象集合・入力・依存条件と保存出力を確認でき、フック後の最終内容へ適用できる場合は同じ横断検証の結果に充てる。
   フックで不足する検証や、結果に影響する更新があった範囲だけを追加し、コミットフックの実行自体は省略しない。
-  前提条件と再検証の手順は`docs/development/audit-records.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日」に記載されている。
+  前提条件と再検証の手順は`docs/development/audit-records-project-verification.md`に記載されている。
+  該当節は「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月4日」である。
 - コミットフックの実行範囲: `pyfltr fast`は`<ツール名>-fast`がtrueのツールだけを実行する。
   本リポジトリではpylint・mypy・pyrightなどを含まないため、計画のlint（`uv run --frozen pyfltr run --disable=pytest <変更パス>`）全体をフックの成功で置き換えられない。
   実効値は`uv run --frozen pyfltr config list --all`の`*-fast`、実行済みツールは`uv run --frozen pyfltr list-runs`の`commands`で確かめる。
-  確認記録と再検証は`docs/development/audit-records.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年11月9日」にある。
+  確認記録と再検証は`docs/development/audit-records-project-verification.md`にある。
+  該当節は「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年11月9日」である。
   前項の横断テストの再利用は、pytestの対象集合と実行条件を確かめる別の条件付きの扱いである。
 - WI画面のアセットと擬似DOM: `agent-toolkit/agent_toolkit/_testing/serve_support.py`内の`_run_node_ui`が擬似DOMの構築と実行時に読み込むアセットが対象となる。
-  具体的には、`agent-toolkit/agent_toolkit/_atk/serve/static/`にある`common.js`、`wi.js`、`index.html`、および`serve_support.py`自身の変更が該当する。
+  具体的には、`agent-toolkit/agent_toolkit/_atk/serve/static/`にある`common.js`、`wi.js`、`wi_*.js`、`index.html`、および`serve_support.py`自身の変更が該当する。
   `static/`配下にあるその他のアセットの変更には本項を適用せず、他の検証項目や`agent-basics:check-execution`の類型に沿って対象を選ぶ。
   検証には`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit/_atk/serve`を実行する。
-  共有ヘルパーを利用するテストは`app_test.py`、`assets_test.py`、`cli_test.py`、`config_test.py`、`state_test.py`に分かれており、変更したファイル名だけから利用側のテストを特定することが難しいため、serveモジュール全体を検証対象とする。
+  共有ヘルパーを利用するテストは`app*_test.py`、`assets*_test.py`、`cli*_test.py`、`config*_test.py`、`state*_test.py`に分かれており、変更したファイル名だけから利用側のテストを特定することが難しいため、serveモジュール全体を検証対象とする。
 - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`にあるエンドユーザー向け通知メッセージを変更した場合は、各hookに対応する`<hook名>_test.py`が期待値を持っているため、対象のテストを実行する。
-  serveのAPIの辞書へ項目を足す変更では、既存の兄弟キーを固定文字列で検索し、辞書全体を完全一致で比べる`agent-toolkit/agent_toolkit/_atk/serve/assets_test.py`などを含める。
+  serveのAPIの辞書へ項目を足す変更では、既存の兄弟キーを固定文字列で検索し、辞書全体を完全一致で比べるテスト関数を特定して含める。
+  比べる試験は`agent-toolkit/agent_toolkit/_atk/serve/assets_test.py`、`assets_detail_test.py`、`cli_detail_test.py`などにある。
   hooks設定を新たに読む処理を加える変更では、その処理を実行するテストのfixture（`agent-toolkit/agent_toolkit/_agents_server/mcp_projection_test.py`の設定fixtureなど）を含める。
   目的文や説明文を変える変更では、変更前の文言で検索し、それを期待値に持つテスト（`agent-toolkit/agent_toolkit/_atk/agy_launch_test.py`など）を含める。
-- 別の構文で定義を読み込むテスト（「横断テスト」の項と異なり、`pyfltr fast`の対象に含まれないため個別に指定する）: `.github/workflows/`内のジョブ名・ステップ名やpytestの対象指定を変更した場合は、リポジトリ直下の`ci_workflow_test.py`を含める。
+- 別の構文で定義を読み込むテスト（「横断テスト」の項と異なり、`pyfltr fast`の対象に含まれないため個別に指定する）: `.github/workflows/`内のジョブ名・ステップ名やpytestの対象指定を変更した場合は、リポジトリ直下のCI定義の試験を含める。
+  対象は`ci_workflow_test.py`、`ci_workflow_ownership_test.py`、`ci_workflow_windows_test.py`である。
   `agent-toolkit/hooks/hooks.json`や`hooks.codex.json`の登録内容を変更した場合、および`agent-toolkit/agent_toolkit/hook.py`や各イベント処理が読み込むモジュールを変更した場合は、`agent-toolkit/agent_toolkit/hook_test.py`を含める。
   いずれも変更されたファイル名からは自動選定されないため注意する。
 - 共有契約を変更した場合は、その契約の参照元から特定した利用側の試験を実行する。
@@ -96,13 +100,13 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
   CIと同一のコンテナーイメージ内でmatrixの各Pythonバージョンにおける依存関係の導入と`uv sync`を再現することで、ローカル環境ではビルドできてもCIで失敗するようなsdistパッケージの問題などをpush前に検知できる。
   使用するコンテナーイメージや導入パッケージ、バージョン情報は`Makefile`内の変数で管理されており、`ci_workflow_test.py`によってCI定義との整合性が検証される。
   なお、このチェックにはDockerが必要であり、1バージョンあたり約1分を要する。
-  再検証の記録は`docs/development/audit-records.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月18日」にある。
+  再検証の記録は`docs/development/audit-records-project-verification.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月18日」にある。
 - 統合後の検証: rebase後のブランチの組み合わせはコミット時には検証できないため、fast-forwardマージを行う前に専用worktree上で`make sync`を実行し、続けて以下を一括で1回実行する。
   - 変更箇所と特定した利用側に関するpytest
     列挙が難しい場合も関連モジュールまでとし、未確認範囲を記録する
   - `uv run --frozen pyfltr fast --commands=pytest`
   - 統合後・公開前に追加した是正（統合時の検証失敗の是正、CI失敗の修正、案内文や構成の追随など）では、変更した文言・ジョブ名・設定キーの変更前の値を固定文字列で探す。
-    それを期待する試験（構成を読む`ci_workflow_test.py`、hookの期待値を持つ`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。
+    それを期待する試験（構成を読む`ci_workflow_test.py`、`ci_workflow_ownership_test.py`、`ci_workflow_windows_test.py`、hookの期待値を持つ`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。
     実Windowsの導入・API変換などCIだけで観測する条件はLinuxの成功で代替せず、公開CIで確かめる
 
 ## 本文参照の取得条件

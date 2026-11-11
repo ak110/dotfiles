@@ -129,8 +129,8 @@ extend-aliases = { datetime = "datetime" }
 "**/__init__.py" = ["D104"]
 
 [tool.pyright]
-# 計画補助スクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["skills/write-plan/scripts"]
+# 計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
+extraPaths = ["skills/write-plan/scripts", "skills/process-wi/scripts", "skills/review-session/scripts"]
 
 [tool.mypy]
 allow_redefinition = true

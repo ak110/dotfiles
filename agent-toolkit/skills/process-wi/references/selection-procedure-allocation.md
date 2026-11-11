@@ -35,7 +35,7 @@
 
 **19.** レーン分けで満たす価値は、「所要時間の均等化」「依存の連結成分を分割しないこと」「レーン数の最小化」の3点である。
 全体の完了時間は最も遅いレーンで決まり、レーンを増やすほど起動の固定オーバーヘッドも増える。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年8月31日」を参照する。
+監査記録は`docs/development/audit-records-wi.md`の「agent-toolkit/share/pick-wi.subagent.md：調査とレーン分け：2026年8月31日」を参照する。
 
  レーン数は`floor((WI数+9)/10)`を上限とし、前述の3つの価値を満たす最小の数を選ぶ。
 `WI数`は、selection-format.md「初回配分の算定根拠」に定める`候補WI`の件数Nであり、開始時の候補から除外条件に該当するものを除外した全件（包含された項目と初回確定前の明示的な追加WIを含む）を数える。

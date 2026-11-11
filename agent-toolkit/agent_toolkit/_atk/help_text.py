@@ -31,7 +31,7 @@ CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以�
 ヘルプと、表の名前が書式に合わないときのエラー文と次の操作は、表の名前の書式をこの定義から組み立てて案内する。
 """
 
-CONNECTION_GUIDE_URL = "https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#接続の使い分け"
+CONNECTION_GUIDE_URL = "https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-connections.md#接続の使い分け"
 """Claude・Codexの接続の使い分けの説明と条件ごとの設定例を載せたガイドの節。
 
 ガイドはプラグインの配布物に含まれないため、リポジトリの`master`ブランチの公開URLを案内する。

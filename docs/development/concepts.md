@@ -15,39 +15,39 @@
 コーディングエージェント向け文書を編集する前に本文書とincidents.mdを読み、
 過去の決定と矛盾する変更（再発）を止めることを目的とする。
 
-## [完遂と縮退の禁止](concepts-principles.md#完遂と縮退の禁止)
+## [完遂と縮退の禁止](concepts-completion.md#完遂と縮退の禁止)
 
-## [判断の優先順位（QCD）](concepts-principles.md#判断の優先順位qcd)
+## [判断の優先順位（QCD）](concepts-priorities.md#判断の優先順位qcd)
 
-## [計画と実行の運用](concepts-principles.md#計画と実行の運用)
+## [計画と実行の運用](concepts-planning.md#計画と実行の運用)
 
-## [所要時間とコスト](concepts-principles.md#所要時間とコスト)
+## [所要時間とコスト](concepts-duration.md#所要時間とコスト)
 
-## [付帯作業の単位](concepts-principles.md#付帯作業の単位)
+## [付帯作業の単位](concepts-incidental-work.md#付帯作業の単位)
 
-## [過剰設計の抑制](concepts-principles.md#過剰設計の抑制)
+## [過剰設計の抑制](concepts-overengineering.md#過剰設計の抑制)
 
-## [概念設計と最小実装の優先順位](concepts-principles.md#概念設計と最小実装の優先順位)
+## [概念設計と最小実装の優先順位](concepts-design-testing.md#概念設計と最小実装の優先順位)
 
-## [テストの本質性](concepts-principles.md#テストの本質性)
+## [テストの本質性](concepts-design-testing.md#テストの本質性)
 
-## [原因分析と再発防止の深さ](concepts-principles.md#原因分析と再発防止の深さ)
+## [原因分析と再発防止の深さ](concepts-root-causes.md#原因分析と再発防止の深さ)
 
-## [規範文書の書き方](concepts-principles.md#規範文書の書き方)
+## [規範文書の書き方](concepts-document-writing.md#規範文書の書き方)
 
-## [計画レビュー廃止前の運用（2026年9月13日まで）](concepts-principles.md#計画レビュー廃止前の運用2026年9月13日まで)
+## [計画レビュー廃止前の運用（2026年9月13日まで）](concepts-planning-history.md#計画レビュー廃止前の運用2026年9月13日まで)
 
 ## [複数環境での利用](concepts-workflows.md#複数環境での利用)
 
 ## [developとmasterのリリース運用](concepts-workflows.md#developとmasterのリリース運用)
 
-## [WIの状態と遷移](concepts-workflows-wi.md#wiの状態と遷移)
+## [WIの状態と遷移](concepts-wi-states.md#wiの状態と遷移)
 
 ## [`atk`の出力と操作](concepts-workflows.md#atkの出力と操作)
 
-## [AWI・UWIの本文と投入](concepts-workflows-wi.md#awiuwiの本文と投入)
+## [AWI・UWIの本文と投入](concepts-wi-drafting.md#awiuwiの本文と投入)
 
-## [確認と承認](concepts-workflows-wi.md#確認と承認)
+## [確認と承認](concepts-wi-approval.md#確認と承認)
 
 ## [process-wiとレーン](concepts-workflows-lanes.md#process-wiとレーン)
 
@@ -57,30 +57,30 @@
 
 ## [計画ファイルの体裁の扱い](concepts-workflows-lanes.md#計画ファイルの体裁の扱い)
 
-## [フックのホスト間共通化](concepts-runtime.md#フックのホスト間共通化)
+## [フックのホスト間共通化](concepts-hooks.md#フックのホスト間共通化)
 
-## [Claude CodeとCodexの規範配置](concepts-runtime.md#claude-codeとcodexの規範配置)
+## [Claude CodeとCodexの規範配置](concepts-host-rules.md#claude-codeとcodexの規範配置)
 
-## [委譲全般と利用上限](concepts-runtime.md#委譲全般と利用上限)
+## [委譲全般と利用上限](concepts-connections.md#委譲全般と利用上限)
 
-## [待機と観測](concepts-runtime.md#待機と観測)
+## [待機と観測](concepts-waiting.md#待機と観測)
 
-## [レビューの運用](concepts-runtime.md#レビューの運用)
+## [レビューの運用](concepts-reviews.md#レビューの運用)
 
-## [`review-session`](concepts-runtime.md#review-session)
+## [`review-session`](concepts-session-review.md#review-session)
 
-## [Codexの文脈長設定](concepts-runtime.md#codexの文脈長設定)
+## [Codexの文脈長設定](concepts-codex-context.md#codexの文脈長設定)
 
-## [確認・合意の運用](concepts-governance.md#確認合意の運用)
+## [確認・合意の運用](concepts-confirmation-decisions.md#確認合意の運用)
 
-## [依存とサプライチェーン](concepts-governance.md#依存とサプライチェーン)
+## [依存とサプライチェーン](concepts-dependencies-temp.md#依存とサプライチェーン)
 
-## [managed-temp](concepts-governance.md#managed-temp)
+## [managed-temp](concepts-dependencies-temp.md#managed-temp)
 
-## [秘匿値とworktree](concepts-governance.md#秘匿値とworktree)
+## [秘匿値とworktree](concepts-secrets.md#秘匿値とworktree)
 
-## [auto modeと許可ルール](concepts-governance.md#auto-modeと許可ルール)
+## [auto modeと許可ルール](concepts-auto-mode.md#auto-modeと許可ルール)
 
-## [実行環境と表示](concepts-governance.md#実行環境と表示)
+## [実行環境と表示](concepts-environment.md#実行環境と表示)
 
-## [配布するブラウザー資産](concepts-governance.md#配布するブラウザー資産)
+## [配布するブラウザー資産](concepts-environment.md#配布するブラウザー資産)

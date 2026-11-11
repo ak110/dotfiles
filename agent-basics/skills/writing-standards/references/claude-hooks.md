@@ -30,17 +30,18 @@ Claude Code向け資料の取得方法は`host-official-references.md`「公式�
   信頼設定が完了するまで、Codexはそのhookの実行をスキップする。
 - 呼び出し主体の判別: サブエージェントとメイン会話セッションの区別には、共通入力の`agent_id`を使用する。
   `transcript_path`はサブエージェント内で発火した場合でもメインセッションの記録を指すため、サブエージェント自身の記録を参照するには`SubagentStop`の`agent_transcript_path`を用いる。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある。
+  監査記録は`docs/development/audit-records-hooks-protocol.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月2日」にある。
 - 同一ターンの本文の可視性: `PreToolUse`が発火した時点では、同じアシスタントターン内のテキストブロックはまだ`transcript_path`のJSONLファイルに書き込まれていない。
   同一ターンの本文を入力として判定する処理は、`PreToolUse`以外のイベントに配置する。
   また、思考ブロックやツール呼び出しのみで構成されるターンも記録されるため、直近の本文を調べる判定では、テキストブロックを含まないターンを除外して過去へ遡る。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」にある。
+  監査記録は`docs/development/audit-records-hooks-protocol.md`にある。
+  該当節は「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」である。
 - 発火条件: hookの追加を計画に含める際は、対象イベントの発火条件を計画の実装者が読む箇所に明記する。
   `PostToolUse`はツール実行が成功したときにのみ発火する。
   `PostToolUseFailure`は実行が開始されたツールが失敗した際に発火して`additionalContext`を受け付けるが、入力検証による拒否や実行前の権限拒否は発火対象外となる。
   `PermissionDenied`はauto modeによる拒否でのみ発火する（deny規則への一致、ユーザーによる手動拒否、`PreToolUse`による遮断では発火しない）。
   出力は`hookSpecificOutput.retry`のみを受け付けるため、回復手順の案内本文は別の手段で提供する。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある。
+  監査記録は`docs/development/audit-records-hooks-protocol.md`の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月8日」にある。
   `PostToolUseFailure`と`PermissionDenied`の発火条件の記録は、同じ文書の「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年10月7日」にある。
 - Codexの`PostToolUse`は、`tool_response`として任意のJSON値を渡す。
   シェル実行では終了コードが含まれず出力文字列のみが渡されるため、状態を記録する条件からコマンドの成否判定を外す。

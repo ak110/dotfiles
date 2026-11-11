@@ -10,7 +10,16 @@ from typing import Any
 import claude_agent_sdk
 import pytest
 
-from agent_toolkit._agents_server import child_environment, claude, codex, launch_requests, resume_waits, session_handoff, state
+from agent_toolkit._agents_server import (
+    child_environment,
+    claude,
+    claude_options,
+    codex,
+    launch_requests,
+    resume_waits,
+    session_handoff,
+    state,
+)
 from agent_toolkit._atk import claude_connection
 from agent_toolkit._common import delegated_session
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
@@ -143,7 +152,7 @@ async def test_handoff_path_reaches_both_backends(tmp_path: pathlib.Path, monkey
         assert sum(line.startswith("引き継ぎ記録先:") for line in prompt.splitlines()) == 1
     configure_claude_payg(monkeypatch, "")
     monkeypatch.setattr(
-        claude,
+        claude_options,
         "_parent_settings",
         lambda: json.dumps({"env": {delegated_session.HANDOFF_PATH_ENV: str(tmp_path / "ancestor.md")}}),
     )

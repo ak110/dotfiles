@@ -13,7 +13,7 @@ import claude_agent_sdk
 import psutil
 import pytest
 
-from agent_toolkit._agents_server import claude, claude_plugins, launch_prompts, launch_requests
+from agent_toolkit._agents_server import claude, claude_plugins, claude_stream, launch_prompts, launch_requests
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import AssistantMessage, ManualObserver, QueueClaudeClient, ResultMessage
 
@@ -75,7 +75,7 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
             [AssistantMessage("継続"), ResultMessage("完了")],
         ]
     )
-    monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
+    monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         original = launch_prompts.plugin_resource_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT, "claude", str(tmp_path))
         session = await backend.start(launch_requests.wrap_delivery_body(original + "\n\n初回"), str(tmp_path))
@@ -152,7 +152,7 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
             [AssistantMessage("同じ接続の成果"), ResultMessage("完了")],
         ]
     )
-    monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
+    monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
     monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", ManualObserver)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         session = await backend.start("初回", str(tmp_path))
@@ -246,7 +246,7 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
             [AssistantMessage("同じ接続の成果"), ResultMessage("後続完了")],
         ]
     )
-    monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
+    monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
     monkeypatch.setattr(
         claude_plugins.watchdog.observers, "Observer", UnavailableObserver if monitor_failure else ManualObserver
     )
@@ -396,7 +396,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
 
     client = Client([[claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}), ResultMessage("初回完了")]])
     monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", Observer)
-    monkeypatch.setattr(claude, "ClaudePluginReloader", Reloader)
+    monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         session = await backend.start("初回", str(tmp_path))
         async with backend._condition:

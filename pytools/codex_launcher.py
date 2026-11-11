@@ -11,7 +11,7 @@ import sys
 from collections.abc import Sequence
 
 # 非対話の公開コマンドはhookから繰り返し起動される。対話端末の復旧だけが使う依存は、
-# 実行体へ引き渡すまで読み込まない（docs/development/design-hosts.md「Codexの起動管理とdaemon復旧」）。
+# 実行体へ引き渡すまで読み込まない（docs/development/design-hosts-codex-runtime.md「Codexの起動管理とdaemon復旧」）。
 lazy import asyncio
 
 lazy import psutil

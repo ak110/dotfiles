@@ -1,0 +1,128 @@
+# dotfilesの任意設定
+
+トークン、委譲先CLI、個人用プラグインの設定を扱う。
+
+## 設定（任意）
+
+### GitHubトークンの設定（任意）
+
+mise経由でインストールされる一部ツール（`jq`・`actionlint`・`pinact`など）では
+aquaがGitHub artifact attestations検証のために`api.github.com`へアクセスする。
+未認証では1時間あたり60リクエストのIPベース制限があり、`update-dotfiles`実行時に
+`API rate limit exceeded`で失敗することがあり、OSを問わず発生し得る。
+
+回避には個人アクセストークンを発行し、ユーザー環境変数`GITHUB_TOKEN`へ設定する。
+
+1. <https://github.com/settings/personal-access-tokens> へアクセスする
+2. `Generate new token`をクリックする
+3. `Repository access`は`Public Repositories (read-only)`を選択する（追加スコープ設定は不要）
+4. `Generate token`をクリックしてトークンを発行する
+5. 表示されたトークンをコピーする
+6. ユーザー環境変数に登録する
+
+   Linuxの場合は`~/.env`に追記する（`~/.bashrc`はchezmoiの管理対象で上書きされるため使わない）。
+
+   ```bash
+   export GITHUB_TOKEN=<コピーしたトークン>
+   ```
+
+   Windows（PowerShell）の場合は以下を実行する。
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("GITHUB_TOKEN", "<コピーしたトークン>", "User")
+   ```
+
+7. 新しいターミナルを開き直して`update-dotfiles`を再実行する
+
+### Antigravity CLI
+
+`update-dotfiles`はAntigravity CLI（`agy`）も導入する。
+日本語の技術文書の推敲に使い、`agents_server`からはモデルを明示指定したときだけ選べる。
+
+初回はブラウザでの認証を要する。
+`agy`を対話で起動して認証を済ませるまで、`agents_server`からは使えない。
+
+```bash
+agy
+```
+
+指定できるモデルスラッグは次のコマンドで確認する。
+
+```bash
+agy models
+```
+
+statuslineをClaude Codeと同じ体裁で表示する場合は、Antigravity CLIのstatuslineコマンドへ
+`claude-statusline agy-statusline`を設定する。
+
+### OpenCodeの委譲先
+
+`update-dotfiles`は未導入のOpenCode 1を`npm install --global opencode-ai`で導入する。
+導入に失敗した場合は警告の原因を解消して再実行し、`opencode --version`で確認する。
+OpenCodeは`agents_server`の委譲先として使い、作業全体を統括するorchestratorには使わない。
+
+対話ホストとして使うOpenCodeには、後処理がagent-toolkitとagent-basicsのスキル、agent-toolkitの常時規範を導入する。
+グローバルの`skills/agent-toolkit-<名前>/`と`skills/agent-basics-<名前>/`から検出し、例えば`agent-toolkit-wi-standards`を`skill`ツールで読める。
+配置先は`XDG_CONFIG_HOME`、未設定ならLinux・Windowsとも`~/.config`配下の`opencode/`である。
+`OPENCODE_CONFIG_DIR`でOpenCodeの設定ディレクトリを明示している場合は、その場所へ導入する。
+既存設定の`instructions`へ専用の`agent-toolkit.md`だけを追加し、既存の接続設定・権限・規範を保持する。
+MCPサーバーとClaude Code用hookは登録しない。
+反映は`update-dotfiles`後の新しいOpenCodeセッションで確認する。
+スキルの検出と自動選択の設定は[OpenCodeのskills仕様](https://opencode.ai/docs/skills/)に従う。
+
+Qwen3.8-27BなどのOpenAI互換エンドポイントは、[OpenCodeのprovider設定](https://opencode.ai/docs/providers/#custom-provider)へ定義する。
+次は`opencode.json`の例であり、URLとモデルIDを実際の接続先へ合わせる。
+認証が必要な場合はOpenCode側で設定する。
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "ローカルのQwen",
+      "options": {"baseURL": "http://127.0.0.1:8000/v1"},
+      "models": {"qwen3.8-27b": {"name": "Qwen3.8-27B"}}
+    }
+  }
+}
+```
+
+agent-toolkit側では使う工程の候補列へ`opencode:<provider>/<model>[@<effort>]`を直接指定する。
+モデル内の`/`を保持し、`@`より後をOpenCodeの`--variant`へ渡す。
+
+```bash
+atk config set review_model opencode:local/qwen3.8-27b,claude:sonnet/medium
+atk config set chores_model opencode:local/qwen3.8-27b
+```
+
+OpenCodeは各工程へ直接指定でき、orchestrate_modelはClaude・Codex・agyの候補を使う。
+5プリセットと7キーの対応は[工程別モデル設定](claude-code-models.md#工程別モデル設定)を参照する。
+
+### dotfilesプラグイン
+
+リポジトリ直下の`plugins/<名前>/`に、自分用の配布物と後処理を追加できる。
+`plugins/`配下はGitの追跡対象から外れる。
+
+```text
+plugins/
+  my-settings/
+    .chezmoi-source/
+    post_apply.py
+    .git/
+```
+
+各ファイルとディレクトリは任意である。
+本体の適用と後処理を終えてから、プラグイン名の昇順に次を行う。
+
+1. `.chezmoi-source/`があれば、その配布物をホームへ適用する
+2. `post_apply.py`があれば、プラグインのディレクトリで`uv run --no-project --script`により実行する
+
+本体と配布先が重なるファイルはプラグインの内容で上書きし、プラグイン名と配布先を警告する。
+プラグイン同士では、名前順で後のものが優先する。
+プラグインのテンプレートから本体の`.chezmoidata.toml`のデータは参照できない。
+
+`update-dotfiles`は本体のpull後に、`.git`を持つプラグインも名前順にpullする。
+プラグインのpullが失敗すると更新を停止する。
+applyや`post_apply.py`の失敗は後処理の失敗として返し、他のプラグインの処理は継続する。
+applyが失敗したプラグインの`post_apply.py`は実行しない。

@@ -14,7 +14,7 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit._agents_server import claude
+from agent_toolkit._agents_server import claude, claude_runtime, claude_stream
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import QueueClaudeClient, ResultMessage, SystemMessage
@@ -75,9 +75,9 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
             loop.call_soon_threadsafe(child_observed.set)
         return targets
 
-    monkeypatch.setattr(claude, "_owned_runtime_processes", observed_collect)
+    monkeypatch.setattr(claude_stream, "_owned_runtime_processes", observed_collect)
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
-    monkeypatch.setattr(claude, "_DISCONNECT_TIMEOUT", 0.8)
+    monkeypatch.setattr(claude_runtime, "_DISCONNECT_TIMEOUT", 0.8)
     wait = asyncio.wait
 
     async def wait_after_preparation(tasks, *, timeout=None, **kwargs):

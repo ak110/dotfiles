@@ -9,7 +9,7 @@
 会話の要素は、レコードの`type`が`user`または`assistant`であるものだけで判定する。
 Claude Code 2.1.301に存在する`api-request-blob`はAPIリクエストの控え（コピー）であり、同様の形式を持つ`message.content`内にツール入力・実行結果・発話が含まれるため、形式の一致だけでカウントすると二重計上になってしまう。
 生のレコード本文や構造を調査する照会では、この控えも含めて表示される。
-監査記録は`docs/development/audit-records.md`の「セッション記録のAPI要求の写し：2026年10月18日」に記載されている。
+監査記録は`docs/development/audit-records-session-records.md`の「セッション記録のAPI要求の写し：2026年10月18日」に記載されている。
 
 - ディレクトリ構造の深さは、メイン記録である深さ2（`<project>/<session-uuid>.jsonl`）と、サブエージェント記録である深さ4（`<session-uuid>/subagents/agent-<agentId>.jsonl`）のみである。
   孫エージェントの記録も含め、すべて祖先セッション直下の`subagents/`にフラットに配置される。
@@ -27,7 +27,8 @@ Claude Code 2.1.301に存在する`api-request-blob`はAPIリクエストの控�
 - 特定の性質を持つ行を抽出する処理では、その値がツール自身の出力なのか、ツールが読み取った外部ファイルの内容なのかを、レコードの構造から区別する（読み取ったファイルの本文も実行結果と同じ領域に格納されるため、単なる書式の一致だけで判定すると、ファイル内の例示記述まで実行時イベントとして数えてしまう）。
 - 文面を含む`thinking`ブロックには、ツール呼び出しの合間に挟まれる地の文をサーバー側で要約したもの（ナレーション要約）が含まれており、エージェントが書いた原文でも拡張思考の全文でもない。
   そのため、その形状や長さ、使用単語などは、原文の性質を測定する集計対象から除外する。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：Claude Codeの記録：2026年10月6日」に記載されている。
+  監査記録は`docs/development/audit-records-session-records.md`にある。
+  該当節は「agent-toolkit/skills/review-session/references/session-records.md：Claude Codeの記録：2026年10月6日」である。
 
 ## スキル起動の判定
 
@@ -39,7 +40,8 @@ Codexの記録には、スキルの起動を一意に示す専用のレコード
 そのためCodexでは、`type`が`response_item`、`payload.type`が`message`、`payload.role`が`user`であるレコードの`content`に含まれる`input_text`要素の`text`に、スキルの起動を依頼したプロンプト本文が含まれていることのみを判定条件とする。
 なお、最初のuserレコードは実行環境が挿入する前置き文である。
 このプロンプト本文を経由しない起動については、判定不能として扱う。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：スキル起動の判定：2026年9月10日」に記載されている。
+監査記録は`docs/development/audit-records-session-records.md`にある。
+該当節は「agent-toolkit/skills/review-session/references/session-records.md：スキル起動の判定：2026年9月10日」である。
 
 ## 暗号化された値
 
@@ -49,7 +51,7 @@ Codexの記録には、スキルの起動を一意に示す専用のレコード
 - Claude Codeの記録に含まれる`thinking`ブロックの`signature`、および`redacted_thinking`ブロックの`data`
 - Codexの記録において`payload.type`が`reasoning`であるレコードの`encrypted_content`
 
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：暗号化された値：2026年10月7日」に記載されている。
+監査記録は`docs/development/audit-records-session-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：暗号化された値：2026年10月7日」に記載されている。
 
 ## 進捗更新の判別
 

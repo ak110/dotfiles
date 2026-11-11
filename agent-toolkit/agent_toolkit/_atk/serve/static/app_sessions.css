@@ -1,0 +1,284 @@
+
+/* セッション画面の2ペイン表示。左ペインで記録を選び、右ペインへ発話を時系列に表示する。 */
+
+#screen-sessions {
+  margin: 0;
+  padding: 0;
+}
+
+/* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
+#screen-sessions #sessions-app {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--two-pane-sidebar-width) 1fr;
+}
+#screen-sessions #warnings {
+  margin: 8px 10px;
+  padding: 8px;
+  border: 1px solid #f0c36d;
+  border-radius: 6px;
+  background: #fdf6e3;
+  font-size: calc(var(--font-size-base) * 0.95);
+}
+/* 区切り線は木構造の行が1本だけ持ち、行内の項目は下線を持たない。 */
+#screen-sessions .session-tree-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--color-border);
+}
+#screen-sessions .session-tree-row .pane-item {
+  border-bottom: 0;
+}
+#screen-sessions .session-tree-row:has(> .pane-item[aria-current="true"]) {
+  border-bottom-color: var(--color-primary);
+}
+#screen-sessions .session-tree-toggle {
+  flex: 0 0 2rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+/* 子の無い行の開閉欄は、開閉ボタンと同じ幅で「−」を中央に置く。
+   展開済みの開閉ボタンの「−」と見分けられるよう、無効ボタンと同じ不透明度で薄く表示する。 */
+#screen-sessions .session-tree-leaf {
+  flex: 0 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+}
+#screen-sessions .session-tree-row .session-item {
+  min-width: 0;
+  flex: 1;
+}
+#screen-sessions .session-item .session-cwd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#screen-sessions .session-item .session-warning {
+  color: #b45309;
+  font-size: calc(var(--font-size-base) * 0.88);
+}
+#screen-sessions main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: auto;
+}
+
+/* 内側の余白は計画ファイル画面のツールバーとそろえる。 */
+#screen-sessions main .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+#screen-sessions main .spacer {
+  flex: 1;
+}
+/* セッション名は見出しだけが示すため、狭い幅や拡大時も省略せず折り返して全文を表示する。 */
+#screen-sessions .detail-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+#screen-sessions #detail-usage {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#screen-sessions .secondary-text {
+  color: var(--color-secondary-text);
+  font-size: calc(var(--font-size-base) * 0.95);
+}
+
+/* 計画ファイル画面の本文と同じ最大幅と左右余白にそろえる。 */
+#screen-sessions #detail {
+  flex: none;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+/* サブエージェントの記録は左ペインの一覧に現れないため、委譲元へ戻る操作を本文の先頭へ置く。
+   配色・境界・角丸・寸法は共通規則が定める。本規則は下の要素との間隔だけを指定する。 */
+#screen-sessions .detail-back {
+  margin-bottom: 10px;
+}
+/* 一覧が空のときの案内。対象rootの長いパスも枠内で折り返す。 */
+#screen-sessions #sessions-empty {
+  padding: var(--space-3);
+  color: var(--color-secondary-text);
+  overflow-wrap: anywhere;
+}
+#screen-sessions .subagents {
+  margin-bottom: 10px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+#screen-sessions .subagents h2 {
+  margin: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+  background: #f4f6fa;
+  font-size: calc(var(--font-size-base) * 0.95);
+}
+
+/* 左余白は`spawn_depth`に応じて描画側が設定する。 */
+#screen-sessions .subagent-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid #eceff3;
+  background: transparent;
+  text-align: left;
+  font-size: calc(var(--font-size-base) * 0.95);
+}
+#screen-sessions .subagent-item:last-child {
+  border-bottom: none;
+}
+#screen-sessions .subagent-item:hover:not(:disabled) {
+  background: #eef2ff;
+}
+#screen-sessions .subagent-item .subagent-type {
+  flex: none;
+  font-weight: 600;
+}
+#screen-sessions .subagent-item .subagent-description {
+  overflow: hidden;
+  color: var(--color-secondary-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#screen-sessions .event {
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+#screen-sessions .event > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  background: #f4f6fa;
+  font-size: calc(var(--font-size-base) * 0.95);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+#screen-sessions .event .event-kind {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #6b7280;
+  font-size: calc(var(--font-size-base) * 0.8);
+  white-space: nowrap;
+}
+#screen-sessions .event.kind-user .event-kind {
+  background: #2563eb;
+}
+#screen-sessions .event.kind-developer .event-kind {
+  background: #be185d;
+}
+#screen-sessions .event.kind-assistant .event-kind {
+  background: #18794e;
+}
+#screen-sessions .event.kind-thinking .event-kind {
+  background: #7c3aed;
+}
+#screen-sessions .event.kind-tool_call .event-kind {
+  background: #8a4b00;
+}
+#screen-sessions .event.kind-tool_result .event-kind {
+  background: #0c6177;
+}
+#screen-sessions .event.kind-compact_boundary .event-kind {
+  background: #b91c1c;
+}
+#screen-sessions .event .event-time {
+  flex: 0 0 auto;
+  color: var(--color-secondary-text);
+  white-space: nowrap;
+}
+#screen-sessions .event .event-input-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 整形しない本文の`<pre>`に限る。整形したアシスタントの発言の中のコードブロックへ及ぼさない。 */
+#screen-sessions .event > pre {
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fff;
+  font-size: var(--font-size-body);
+}
+/* 整形したアシスタントの発言。長いコード行と幅の広い表は本文の中で横スクロールさせ、右ペインの横幅を超えさせない。 */
+.markdown-body.event-markdown {
+  padding: 10px;
+  background: #fff;
+}
+.markdown-body.event-markdown pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+.markdown-body.event-markdown table {
+  display: block;
+  overflow-x: auto;
+}
+#screen-sessions .unavailable {
+  color: var(--color-secondary-text);
+  font-style: normal;
+}
+#screen-sessions #sessions-menu-btn {
+  display: none;
+}
+#screen-sessions #sessions-drawer-backdrop {
+  display: none;
+}
+@media (max-width: 768px) {
+  #screen-sessions #sessions-app {
+    grid-template-columns: 1fr;
+  }
+
+  /* 一覧のドロワーは計画ファイル画面と同じく画面全体を覆う。 */
+  #screen-sessions :is(aside) {
+    position: fixed;
+    z-index: 20;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--two-pane-sidebar-width);
+    max-width: 85vw;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+  #screen-sessions.drawer-open aside {
+    transform: translateX(0);
+  }
+  #screen-sessions.drawer-open #sessions-drawer-backdrop {
+    display: block;
+    position: fixed;
+    z-index: 15;
+    inset: 0;
+    background: rgb(0 0 0 / 0.35);
+  }
+
+  /* 配色・境界・角丸・寸法は共通規則が定める。本規則は表示の切り替えだけを指定する。 */
+  #screen-sessions #sessions-menu-btn {
+    display: inline-block;
+  }
+}
