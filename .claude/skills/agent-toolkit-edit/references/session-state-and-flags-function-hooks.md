@@ -30,6 +30,10 @@ process-loopによって起動された会話の最上位Stopでは、終了要�
 この条件に該当する場合、`agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`は終了要求を`consumed`に戻して終了をブロックする。
 Stop hookは同じターンの`turn.complete`より先に動くため、取り下げた終了要求で`/exit`が実行されることはない。
 
+`/goal`の評価もStopの時点で行われ、未達ならターンを継続させるため、`turn.complete`の後始末が動くのは評価の後になる。
+Stop入力の`session_crons`・`background_tasks`・`last_assistant_message`に未完了と読める状態を残す後始末を`turn.complete`へ置く場合は、目標の設定下でその状態を評価より前に解消する主体と手順を別に定める。
+定期再確認の通常回収は、目標の設定下ではメインエージェントが最終ターンを閉じる前に削除する（`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」）。
+
 Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終了要求は、Stopの全判定が完了した後に共通ハンドラー（`stop.py`）から発行される。
 終了要求が`requested`か特定PIDへの終了要求として成立した場合、そのStop hookの応答は停止の通知だけになる。
 このため`autonomous_exit_invoked`が偽のままでも、無進捗停止の終了要求は`turn.complete`で消費される。

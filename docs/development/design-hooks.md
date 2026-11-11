@@ -1164,6 +1164,12 @@ modごとに包装を複製する案は、片方だけの境界欠落を再び�
 `hooks.json`の`modules`は1件だけを受理し、ツール名の条件を持たない同じイベントのhookは1回しか登録できない。
 このためmodのhookは`agent-toolkit/hooks/register.ts`から登録し、本体を別モジュールに置く。
 通常の回収は`session_exit.ts`の既存の`turn.complete`へ集約する。
+`/goal`の評価はStopの時点で行われ、未達ならターンを継続させるため、`turn.complete`の回収は評価より後にしか動かない。
+評価はStop入力に残る定期再確認のtaskを未完了と判定する。
+このため`/goal`を設定したセッションでは、メインが全待機の回収後、最終ターンを閉じる前に同じ範囲のtaskを削除する（`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」）。
+2026年11月8日〜10日に`/goal`を設定して自動起動した3つのセッションが、担当工程と報告の送達を終えた後も、残ったtaskを理由に目標の評価で継続された事象への対処である（うち2つでは`…`だけの最終応答も理由に挙がった）。
+modの回収をStopの時点へ移す案は、modが登録できるイベントにStopの時点のものが無いため成立しない。
+`turn.complete`へ置く後始末が、Stop入力の`session_crons`・`background_tasks`・`last_assistant_message`に未完了と読める状態を残す場合は、目標の設定下でその状態を評価より前に解消する主体と手順を別に定める。
 PythonのStopが`transcript_path`・`session_id`・`background_tasks`・現在のセッション状態を既存の`is_pending_async_work`へ渡し、同じ会話のmodへ1回限りの判定を渡す。
 Stopごとに前の判定を無効にし、modは使用前に消費済みへ変える。
 session.startと新しいturn.startでも初期化して、中断したターンの判定の持越しを防ぐ。
