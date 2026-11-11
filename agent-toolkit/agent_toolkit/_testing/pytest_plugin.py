@@ -95,7 +95,7 @@ class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
 def _launch_follows_patched_subprocess_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """`subprocess.run`を差し替えた試験では、時間上限付きの起動も差し替え先へ渡す。
 
-    gitの共通起動関数などは時間切れで子孫まで止めるため`subprocess.Popen`から起動し、`subprocess.run`を通らない。
+    gitの共通起動関数などは時間切れで子孫まで止めるため`subprocess.Popen`から起動し、`subprocess.run`を経由しない。
     `subprocess.run`の差し替えで外部コマンドを偽装する既存の試験が実物を起動しないよう、各モジュールの起動の
     1か所（`_launch`）で橋渡しする。差し替えていない試験は実物の起動関数を使う。
     """
@@ -221,7 +221,9 @@ def pytest_configure(config: pytest.Config) -> None:
     # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
     # 収集だけの実行（`--collect-only`）は試験を実行せず、枠が守る外部ツールも起動しないため、枠を取らない。
     if not config.option.collectonly:
-        stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
+        stack.enter_context(
+            execution_slot.hold(label="pytest", on_wait=_notify_slot_wait, should_abort=resource_diagnostics.slot_wait_probe())
+        )
     previous_children = set(process_tree.collect_descendants(os.getpid()))
     resource_environment = {
         name: os.environ.get(name)

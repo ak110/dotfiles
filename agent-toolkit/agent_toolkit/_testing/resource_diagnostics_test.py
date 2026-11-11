@@ -14,9 +14,80 @@ from typing import cast
 from unittest import mock
 
 import pytest
+from pyfltr.command import execution_slot
 
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import pytest_plugin, resource_diagnostics
+
+
+def test_slot_wait_records_processes_once_after_delay(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """待機pollを通し、閾値前の無出力と、保持者記録・実親列の一度だけの保存を確認する。"""
+    clock = types.SimpleNamespace(value=0.0)
+    monkeypatch.setattr(resource_diagnostics, "time", types.SimpleNamespace(monotonic=lambda: clock.value))
+    owner = execution_slot.SlotOwner(os.getpid(), 1.0, "test", "test", "git commit")
+    monkeypatch.setattr(execution_slot, "read_owners", lambda: [owner])
+    monkeypatch.setattr(resource_diagnostics.managed_temp, "create_managed_temp", lambda _prefix: tmp_path)
+    probe = resource_diagnostics.slot_wait_probe(delay=10)
+    clock.value = 9
+    assert probe() is False
+    assert not capsys.readouterr().err
+    clock.value = 10
+    assert probe() is False
+    assert str(tmp_path / "diagnostic.json") in capsys.readouterr().err
+    record = json.loads((tmp_path / "diagnostic.json").read_text(encoding="utf-8"))
+    assert record["event"] == "execution_slot_wait"
+    assert record["owners"][0]["create_time"] == 1.0
+    observed = record["owners"][0]["observed"]
+    assert observed["pid"] == os.getpid() and observed["create_time"] != 1.0
+    ancestry = record["ancestry"]
+    assert ancestry[0]["pid"] == os.getpid()
+    assert ancestry[0]["ppid"] == os.getppid()
+    assert ancestry[1]["pid"] == os.getppid()
+    assert ancestry[0]["cmdline"] and ancestry[0]["create_time"] > 0
+    clock.value = 20
+    assert probe() is False
+    assert not capsys.readouterr().err
+
+
+def test_slot_owner_read_failure_is_preserved(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """実APIが吸収するファイル読取失敗を、保持者不在と区別してディスクへ残す。"""
+    directory = tmp_path / "locks"
+    directory.mkdir()
+    owner_file = directory / "execution.owner.json"
+    owner_file.write_text("{}", encoding="utf-8")
+    original_read = pathlib.Path.read_text
+
+    def read(path: pathlib.Path, *args, **kwargs):
+        if path == owner_file:
+            raise PermissionError("読取拒否")
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", read)
+    monkeypatch.setattr(execution_slot, "default_lock_dir", lambda: directory)
+    monkeypatch.setattr(resource_diagnostics.managed_temp, "create_managed_temp", lambda _prefix: tmp_path)
+    probe = resource_diagnostics.slot_wait_probe(delay=0)
+    assert probe() is False
+    record = json.loads((tmp_path / "diagnostic.json").read_text(encoding="utf-8"))
+    assert not record["owners"]
+    assert record["owner_files"]["entries"] == [{"name": "execution.owner.json", "size": 2, "unavailable": "PermissionError"}]
+
+
+@pytest.mark.parametrize("save_fails", [False, True])
+def test_slot_output_failure_keeps_waiting(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, save_fails: bool) -> None:
+    """保存と失敗通知の双方が失敗しても、実行枠の待機は中断しない。"""
+    monkeypatch.setattr(resource_diagnostics.managed_temp, "create_managed_temp", lambda _prefix: tmp_path)
+    if save_fails:
+        (tmp_path / "diagnostic.json").mkdir()
+    with open(os.devnull, "w", encoding="utf-8") as closed:
+        pass
+    monkeypatch.setattr(resource_diagnostics.sys, "stderr", closed)
+    probe = resource_diagnostics.slot_wait_probe(delay=0)
+    assert probe() is False
+    assert probe() is False
+    if not save_fails:
+        assert json.loads((tmp_path / "diagnostic.json").read_text(encoding="utf-8"))["event"] == "execution_slot_wait"
 
 
 @pytest.mark.parametrize(
