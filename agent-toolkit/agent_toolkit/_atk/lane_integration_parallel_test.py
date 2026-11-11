@@ -305,6 +305,26 @@ def test_lane_starts_while_other_lane_updates_target(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == record["reviewed_head"]
 
 
+@pytest.mark.parametrize("residual", ["index.lock", "dirty"])
+def test_residual_target_state_is_still_rejected(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], residual: str
+) -> None:
+    """排他を保持する統合が無いのに残る統合先の中断状態と未commitの変更は、短い更新で拒否して統合先を変えない。"""
+    repo, records = _prepare(tmp_path, monkeypatch, capsys)
+    record = records["lane-02"]
+    manifest = _manifest(tmp_path / "second.json", "lane-02", verification=[], wi_commands=[])
+    if residual == "index.lock":
+        git_path = git_repository.git_output(repo, "rev-parse", "--path-format=absolute", "--git-path", "index.lock")
+        pathlib.Path(git_path).write_text("", encoding="utf-8")
+        expected = "Gitの中断状態がある"
+    else:
+        (repo / "dirty.txt").write_text("未commit", encoding="utf-8")
+        expected = "未commitまたは未追跡の変更がある"
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, record["reviewed_head"]))
+    assert code == 2 and expected in stderr, stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == record["initial_head"]
+
+
 def test_delete_retains_lane_while_its_integration_runs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
