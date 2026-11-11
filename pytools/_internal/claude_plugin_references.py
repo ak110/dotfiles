@@ -7,11 +7,13 @@ plugin cacheの版ディレクトリは、起動中のClaude Codeセッション
 
 import contextlib
 import dataclasses
+import json
 import os
 import pathlib
 import typing
 
 import psutil
+from agent_toolkit._common import atomic_file, process_identity
 
 _ACCESS_DENIED = object()
 # 終了済みで、plugin実体を参照し得ないプロセスの状態。
@@ -20,6 +22,7 @@ _TERMINATED_STATUSES = frozenset({psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
 _NODE_EXECUTABLE_NAMES = frozenset({"node", "nodejs"})
 # Claude Codeがhook・MCPの子プロセスへ渡すplugin rootの環境変数。
 _PLUGIN_ROOT_ENV = "CLAUDE_PLUGIN_ROOT"
+_RETIRED_HOLDERS = ".dotfiles-retired-holders.json"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -82,6 +85,7 @@ def holding_reasons(
     directory: pathlib.Path,
     *,
     sessions_may_reference: bool = True,
+    retired: bool = False,
 ) -> list[str]:
     """`directory`を回収してはいけない理由を返す。空なら参照の終了を判定できている。
 
@@ -89,11 +93,21 @@ def holding_reasons(
 
     - 自ユーザーのプロセスの作業ディレクトリ・実行ファイル・command line・`CLAUDE_PLUGIN_ROOT`が`directory`の配下を指す
     - `sessions_may_reference`が真で、Claude Codeセッションが稼働中。
-      セッションは起動時に解決した版を使い続け、時計補正で動く起動日時では使用する版を限定できないため
+      非現行版（`retired=True`）は、初回の回収判定で保存した世代が残る間だけ保持する。
+      以後に起動したセッションは現行版を解決し、旧版の明示参照は上の直接参照で保護する
     - Claude Codeのプロセス（Claude Codeか判定できないプロセスを含む）の参照先を取得できない
     """
     targets = _path_strings(directory)
     reasons: list[str] = []
+    if sessions_may_reference and retired:
+        try:
+            reasons.extend(
+                f"旧版の保持候補 pid {identity.pid}が稼働中"
+                for identity in _retired_holders(directory, processes)
+                if identity.exists()
+            )
+        except (OSError, ValueError, TypeError, psutil.Error) as error:
+            reasons.append(f"旧版の保持者記録を確認できない: {error}。アクセス権と記録を確認してupdate-dotfilesを再実行する")
     for process in processes:
         if any(_refers(value, target) for value in process.values for target in targets):
             reasons.append(f"{process.label}が参照中")
@@ -101,9 +115,48 @@ def holding_reasons(
             continue
         elif not process.complete:
             reasons.append(f"Claude Code {process.label}の参照先を取得できない")
-        elif sessions_may_reference:
+        elif sessions_may_reference and not retired:
             reasons.append(f"Claude Code {process.label}が稼働中")
     return reasons
+
+
+def mark_current(directory: pathlib.Path) -> None:
+    """再び現行になった版の退役時観測を失効させ、次の退役で保持者を取り直す。"""
+    (directory / _RETIRED_HOLDERS).unlink(missing_ok=True)
+
+
+def _retired_holders(
+    directory: pathlib.Path, processes: tuple[ReferencingProcess, ...]
+) -> tuple[process_identity.ProcessIdentity, ...]:
+    path = directory / _RETIRED_HOLDERS
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        holders = []
+        for process in processes:
+            if not process.claude:
+                continue
+            try:
+                holders.append(process_identity.ProcessIdentity.capture(psutil.Process(process.pid)))
+            except psutil.NoSuchProcess:
+                continue
+        # 起動時の版は後から変わらない。退役後の初回観測にいた全Claudeを含めることで、
+        # 既存cacheにも導入履歴や壁時計に依存せず安全側の保持者集合を作る。
+        # 初回から長期稼働するセッションがあれば、無関係な旧版もその終了まで回収が遅れる。
+        # 後から起動した世代は集合へ加えず、常時稼働による保持の延長を避ける。
+        atomic_file.atomic_write(
+            path, json.dumps({"version": 1, "processes": [item.payload() for item in holders]}), fsync=True
+        )
+        return tuple(holders)
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("version"), int)
+        or isinstance(value["version"], bool)
+        or value["version"] != 1
+        or not isinstance(value.get("processes"), list)
+    ):
+        raise ValueError(f"旧版の保持者記録が不正: {path}")
+    return tuple(process_identity.ProcessIdentity(**item) for item in value["processes"])
 
 
 def _path_strings(directory: pathlib.Path) -> tuple[str, ...]:

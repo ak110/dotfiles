@@ -751,6 +751,17 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
             ),
         )
         return "unchanged"
+    try:
+        claude_plugin_references.mark_current(cache_dir)
+    except OSError as error:
+        logger.warning(
+            log_format.format_status(
+                name,
+                f"現行版の保持者記録を失効できず修復を延期: {error}。"
+                "導入先の書込権限を確認してupdate-dotfilesを再実行してください。",
+            )
+        )
+        return "deferred"
     missing = _missing_plugin_cache_files(name, cache_dir)
     if not missing:
         return "unchanged"

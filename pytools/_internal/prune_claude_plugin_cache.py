@@ -56,10 +56,17 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     processes: tuple[claude_plugin_references.ReferencingProcess, ...] | None = None
     for (marketplace, name), installed in sorted(current_paths.items()):
         plugin_dir = cache_root / marketplace / name
+        try:
+            for current in installed:
+                if current.is_relative_to(cache_resolved):
+                    claude_plugin_references.mark_current(current)
+        except OSError as error:
+            failures.append(f"現行版の保持者記録を失効できないため {marketplace}/{name} を保持: {error}")
+            continue
         for version_dir in _expired_versions(plugin_dir, installed, deadline):
             if processes is None:
                 processes = claude_plugin_references.scan()
-            reasons = claude_plugin_references.holding_reasons(processes, version_dir)
+            reasons = claude_plugin_references.holding_reasons(processes, version_dir, retired=True)
             if reasons:
                 logger.info(
                     log_format.format_status(

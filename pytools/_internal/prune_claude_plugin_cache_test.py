@@ -186,7 +186,11 @@ def test_keeps_expired_version_while_a_process_refers_to_it(
         if reference == "cwd":
             residents.start("python3", cwd=old / ".venv")
         else:
-            residents.start("python3", env={"CLAUDE_PLUGIN_ROOT": str(old)})
+            resident = residents.start("python3", env={"CLAUDE_PLUGIN_ROOT": str(old)})
+            deadline = time.monotonic() + 5
+            while psutil.Process(resident.pid).environ().get("CLAUDE_PLUGIN_ROOT") != str(old):
+                assert resident.poll() is None and time.monotonic() < deadline, "指定した環境参照を観測できない"
+                time.sleep(0.01)
         assert prune_claude_plugin_cache.run().changed is False
         assert old.is_dir()
 
@@ -233,7 +237,38 @@ def test_keeps_expired_versions_while_claude_runs_despite_clock_correction(
         assert prune_claude_plugin_cache.run().changed is False
         assert old.is_dir() and older.is_dir()
 
-    assert prune_claude_plugin_cache.run().changed is True
+        # 常に別のClaudeが稼働していても、初回観測の保持候補が終了すれば回収する。
+        unrelated = residents.start("claude", cwd=tmp_path)
+        residents.stop(resident)
+        assert prune_claude_plugin_cache.run().changed is True
+        assert not old.exists() and not older.exists()
+        assert unrelated.poll() is None
+
+    assert prune_claude_plugin_cache.run().changed is False
     assert not old.exists()
     assert not older.exists()
     assert current.is_dir()
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="常駐Claudeのプロセス観測はLinuxで行う")
+def test_reactivated_version_gets_new_holders(plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """旧版が再度現行になれば、前回退役後のプロセスも次の保持候補として記録する。"""
+    monkeypatch.setattr(claude_plugin_references, "scan", _REAL_SCAN)
+    old = _make_version(plugins_root, "mkt", "tool", "1", 30)
+    current = _make_version(plugins_root, "mkt", "tool", "2", 20)
+    _write_installed(plugins_root, {"tool@mkt": [current]})
+    with ResidentProcesses(tmp_path, monkeypatch) as residents:
+        previous = residents.start("claude", cwd=tmp_path)
+        assert not prune_claude_plugin_cache.run().changed
+        replacement = residents.start("claude", cwd=tmp_path)
+        _write_installed(plugins_root, {"tool@mkt": [old]})
+        assert not prune_claude_plugin_cache.run().changed
+        _write_installed(plugins_root, {"tool@mkt": [current]})
+        assert not prune_claude_plugin_cache.run().changed
+        residents.stop(previous)
+        assert not prune_claude_plugin_cache.run().changed
+        assert old.is_dir()
+        residents.stop(replacement)
+        residents.start("claude", cwd=tmp_path)
+        assert prune_claude_plugin_cache.run().changed
+        assert not old.exists()
