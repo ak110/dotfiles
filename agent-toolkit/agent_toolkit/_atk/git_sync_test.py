@@ -12,7 +12,6 @@ import time
 from typing import Any
 
 import filelock
-import psutil
 import pytest
 
 from agent_toolkit import atk
@@ -137,7 +136,9 @@ with git_sync.repo_lock(pathlib.Path(sys.argv[1])):
     partial = ready.with_name(ready.name + ".partial")
     partial.write_text(str(os.getpid()), encoding="utf-8")
     os.replace(partial, ready)
-    time.sleep(60)
+    deadline = time.monotonic() + 60
+    while not ready.with_suffix(".release").exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
 """
 
 # Windowsの仮想環境の`python.exe`と同じく、起動したプロセスとロックを取得するプロセスを別のPIDにする中継役。
@@ -153,7 +154,7 @@ def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
 
     待機上限の省略時の値が無期限の場合、保持者が終わる60秒後まで戻らず、失敗もしない。
     保持者は中継役を経由して起動する。起動したプロセスのPIDとロックを取得したプロセスのPIDが異なる構成でも、
-    失敗行が後者を示すことと、起動したツリーが残らないことを確かめる。
+    失敗行が後者を示すことを確かめる。保持側は正常終了させ、中継役が子を回収してから後始末を終える。
     """
     notes = tmp_path / "private-notes"
     git_repository.init_repository(notes, initial_branch="main", files={"README.md": "notes\n"}, commit_message="base")
@@ -194,11 +195,17 @@ def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
                 )
             elapsed = time.monotonic() - started
         finally:
-            residual = process_tree.stop_process_tree(holder)
+            # 親子を一斉に停止すると孫がzombieになり、initの回収時機に検査が依存する。
+            ready.with_suffix(".release").touch()
+            try:
+                holder.wait(timeout=5)
+            finally:
+                residual = process_tree.stop_process_tree(holder) if holder.poll() is None else []
 
     assert not residual
     assert holder_pid != holder.pid
-    assert not psutil.pid_exists(holder_pid)
+    with _atk_git_sync.repo_lock(notes, timeout=0):
+        pass
     assert exc_info.value.code == 1
     assert elapsed < 30
     error = capsys.readouterr().err
