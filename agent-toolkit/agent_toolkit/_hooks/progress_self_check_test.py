@@ -160,7 +160,22 @@ def test_notice_requests_stage_comparison_and_missing_information(monkeypatch, r
     record_property("actual_notice", notice)
     assert notice.count(_OPENING) == 1
     # 点検の契約上必要な観点と、規範をそのまま取得できる操作へ接続する。
-    for topic in ("工程", "経過時間", "再試行", "全要求", "成果", "証拠", "未達", "残工程", "進捗率", "完成条件"):
+    for topic in (
+        "工程",
+        "経過時間",
+        "再試行",
+        "全要求",
+        "成果",
+        "証拠",
+        "未達",
+        "残工程",
+        "進捗率",
+        "完成条件",
+        "目標までの残り時間",
+        "共有の待ちの累計",
+        "代替案",
+        "組み直せ",
+    ):
         assert topic in notice
     assert ("Get-Content -LiteralPath" if os.name == "nt" else "cat -- ") in notice
     guidance = pathlib.Path(__file__).resolve().parents[2] / "share/rules/common/01-agent.md"
