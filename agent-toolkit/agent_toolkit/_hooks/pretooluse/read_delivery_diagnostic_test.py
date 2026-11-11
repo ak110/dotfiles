@@ -144,3 +144,32 @@ def test_delivered_diagnostic_guidance_is_not_repeated_for_write(tmp_path, monke
     _assert_continues_without_guidance(run_hook("pretooluse", operation))
     records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
     assert document_reads.acquisition_state(records, read_triggers.ReadTarget(reference), "main") == "missing"
+
+
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize(
+    ("tool", "tool_input"),
+    [
+        pytest.param("Read", {"file_path": "{dir}/required.md"}, id="read"),
+        pytest.param("Bash", {"command": "cat -- {dir}/required.md"}, id="bash-read"),
+        pytest.param("Write", {"file_path": "{dir}/progress.md", "content": "進捗を記録した。"}, id="work-record"),
+    ],
+)
+def test_guidance_failure_does_not_block_reads_or_record_writes(tmp_path, monkeypatch, host, tool, tool_input):
+    """読込案内の処理が例外で終わっても、資料の読取と作業記録への書込を止めず、診断の警告だけを返す。
+
+    案内は補助であり、壊れた場合も担当が資料を自分で読んで作業を続けられることを保つ。
+    """
+    (tmp_path / "required.md").write_text("# 基準\n本文\n", encoding="utf-8")
+
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("読込案内の検証用の失敗")
+
+    monkeypatch.setattr(read_delivery, "_deliver_documents", broken)
+    payload = {"session_id": "guidance-failure", "cwd": str(tmp_path), **({"turn_id": "turn"} if host == "codex" else {})}
+    inputs = {key: value.format(dir=tmp_path) for key, value in tool_input.items()}
+    result = run_hook("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
+    assert result.returncode == 0 and not result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output.get("permissionDecision") != "deny"
+    assert "想定外" in output["additionalContext"] and "読込案内の検証用の失敗" in output["additionalContext"]

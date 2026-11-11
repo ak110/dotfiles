@@ -173,7 +173,13 @@ def is_windows_cli_running(cli_name: str, package_name: str, launchers: Iterable
         return False
     tokens = {cli_name.lower(), package_name.lower()}
     tokens.update(str(path).lower() for path in launchers)
-    for process in psutil.process_iter():
+    # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
+    # 同じ後処理の中の先行する列挙が残した値を使わないよう、現在のPIDから新しく構築したProcessで判定する。
+    for listed in psutil.process_iter():
+        try:
+            process = psutil.Process(listed.pid)
+        except psutil.NoSuchProcess:
+            continue
         try:
             name = (process.name() or "").lower()
             exe = (process.exe() or "").lower()
@@ -313,7 +319,7 @@ def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
     if result is None:
         return "実行できない"
     if result.returncode != 0:
-        return f"終了コード{result.returncode}"
+        return f"終了コード{result.returncode}: {common.format_cli_error(result)}"
     return (result.stdout or "").strip() or "出力なし"
 
 

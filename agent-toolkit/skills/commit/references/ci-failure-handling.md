@@ -11,20 +11,9 @@ push先のリモート、更新対象のref、runの監視、ならびに証拠�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-recording-evidence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling-classification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling-classification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling-investigation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling-investigation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-recording-evidence.md` |
 
 ## 失敗ログとartifactの取得
 
@@ -38,7 +27,8 @@ push先のリモート、更新対象のref、runの監視、ならびに証拠�
     失敗ジョブ全体の確認は、`wait_ci.py`を再呼び出しして全体の完了結果を受け取ってから行う。
     待機の再開にあたっては、終了コード6の場合は同一引数で再実行し、終了コード2の場合は`agent-toolkit:commit`の`references/push-and-ci.md`「pushと監視」の終了コード2に関する規定に従う（1は完了したCIの失敗、3は待機処理自体の失敗）。
     同規定に従い、同一のSHAおよびbaselineまたは待機専用記録を維持したまま、`--timeout`を延長して再呼び出しする
-  - 観測結果と再検証手順は、`docs/development/audit-records.md`の「agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」に記載されている。
+  - 観測結果と再検証手順は、`docs/development/audit-records-commit-ci.md`にある。
+    該当節は「agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月1日」である。
     `--log-failed`による出力欠落の観測記録は、同ファイルの「agent-toolkit/skills/commit/references/ci-failure-handling.md：GitHubの状態別ログ取得：2026年10月24日」にある
 - VRTの差分画像やtest-resultsなどのartifactも併せて取得する。
   artifactが存在しない失敗については、ログに記録された失敗テスト名、ステップ名、およびエラーメッセージから分類する

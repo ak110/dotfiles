@@ -8,19 +8,13 @@ WIの説明・例示を最終成果物へ転記する工程では、`../skills/w
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| WIの説明・例示を最終成果物へ転記する前 | `../skills/wi-standards/references/notation-rules.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/notation-rules.md` |
-| 目標起点の責務を判断する前 | `work-contract.md` | 判断 | `read:agent-toolkit:*/share/work-contract.md` |
-| 目標起点の処理対象を判断する前 | `../skills/process-wi/references/lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `add-wi-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文が起票目的別の登録条件を判定する時 | `../skills/wi-standards/references/wi-standards-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| WIの説明・例示を最終成果物へ転記する前 | `../skills/wi-standards/references/notation-rules.md` |
+| 目標起点の責務を判断する前 | `work-contract.md` |
+| 目標起点の処理対象を判断する前 | `../skills/process-wi/references/lanes-goals.md` |
+| 本文が起票目的別の登録条件を判定する時 | `../skills/wi-standards/references/wi-standards-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion-duplicates.md` |
 
 ## 工程表
 
@@ -71,6 +65,6 @@ WI起草工程の登録条件は、`../skills/wi-standards/references/wi-standar
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../skills/wi-standards/SKILL.md` |

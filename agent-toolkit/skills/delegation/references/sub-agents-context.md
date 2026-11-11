@@ -4,13 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-fork.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-
 ## コンテキスト境界
 
 通常のサブエージェントは委譲元とは独立した別コンテキストで動作し、引き継がれる入力情報は委譲プロンプトに限定される（委譲元の会話履歴、読み込み済みファイル、起動済みスキルは入力対象に含まれない）。
@@ -25,5 +18,5 @@ Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns
 軽量起動には同書の返却契約短節だけを配送し、全文配送と区別する。
 Claude Code固有の委譲先規範はCodexへ配送しない。
 Codexでforkを選択する場合は、`spawn_agent`の`fork_turns`を省略するか`"all"`を指定する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/sub-agents.md：コンテキスト境界：2026年9月27日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/sub-agents.md：コンテキスト境界：2026年9月27日」に記載されている。
 役割文書を渡して起動する際は、`agent-toolkit:delegation`のSKILL.md「送信」に従い、会話履歴を引き継がずに実行する。

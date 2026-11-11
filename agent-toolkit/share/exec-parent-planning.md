@@ -4,18 +4,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 実装完了の受領と実行レビューの起動へ進む前 | `exec-parent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-implementation.md` | |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` | |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` | |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実装完了の受領と実行レビューの起動へ進む前 | `exec-parent-implementation.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
 ## 計画準備の受領
 
@@ -29,7 +26,7 @@
 レビュー指摘の対応時は、`レビュー指摘管理表`に単一の絶対パス、または全計画の管理表の絶対パスを格納したJSON配列を1回で渡す。
 参考意見がある場合は同じ指示の`レビュー参考意見`へ渡す。
 ラウンド数は各管理表から取得する。
-計画ごとの成果物の受け渡し方法は、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+レビュー単位ごとの成果物の受け渡し方法は、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
 組み込み委譲におけるメッセージ本文の生成は、`../skills/delegation/references/sending-prompt.md`「委譲プロンプトの構成」に従う。
 
 レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。
@@ -77,7 +74,7 @@ WIの要求を超える変更の可否はメインが判断する。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| レーン担当の起動と受領：統合の許可の基準を適用する前 | `exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-integration.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` |
+| レーン担当の起動と受領：統合の許可の基準を適用する前 | `exec-parent-integration.md` |

@@ -11,10 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` |
-
 ## 一覧
 
 識別子として記述する対象（スキル名、コマンド名、ファイル名など）は本書には掲載しない。
@@ -36,7 +32,7 @@
 | CI修正担当 | レーン担当の担当種別 | `agent-toolkit:process-wi/references/lanes.md`「用語」 |
 | 公開担当 | 公開工程の担当 | `agent-toolkit:process-wi/references/lanes.md`「用語」 |
 | 監査担当 | 自動コードレビュー監査の委譲先 | `agent-toolkit:process-wi/references/review-audit-launch.md`「自動コードレビュー監査」 |
-| 自動コードレビュー | 外部サービスのレビュー | `agent-toolkit:process-wi/references/lanes.md`「自動コードレビュー監査」 |
+| 自動コードレビュー | 外部サービスのレビュー | `agent-toolkit:process-wi/references/lanes-preparation.md`「自動コードレビュー監査」 |
 | WI作成 | 作業の工程 | `agent-toolkit:/share/workflow-phases.md`「工程表」 |
 | 計画 | 作業の工程 | `agent-toolkit:/share/workflow-phases.md`「工程表」 |
 | 実行 | 作業の工程 | `agent-toolkit:/share/workflow-phases.md`「工程表」 |
@@ -84,7 +80,7 @@
 | プロジェクト規範 | 規範の種別 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
 | プロジェクト方針 | 方針の範囲 | `agent-basics:writing-standards/references/agent-documents-basics-placement.md`「置き場所と配送」 |
 | 作成規範 | 品質基準 | `agent-basics:review-standards/SKILL.md`「対象成果物の作成規範」 |
-| 完成条件 | WIの条件 | `agent-toolkit:wi-standards/references/awi-body-completion.md`「通常AWIの本文」 |
+| 完成条件 | WIの条件 | `agent-toolkit:wi-standards/references/wi-standards-body.md`「通常AWIの本文」 |
 | 完了条件 | 計画の条件 | `agent-toolkit:write-plan/references/plan-file-standards-requirements.md`「要件・外部仕様」 |
 | レビュー指摘管理表 | 実行レビューの指摘と応答を記録する表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |
 | CI対応レビュー指摘管理表 | 計画の無いCI失敗のレビュー指摘管理表 | `agent-toolkit:/share/review-table-operations.md`「レビュー指摘管理表の共通操作」 |

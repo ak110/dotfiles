@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 欠陥を示す診断の処置を確定する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 欠陥を示す診断の処置を確定する前 | `agent-basics:bugfix/SKILL.md` |
+| 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` |
 
 ## 基準版と変更行への帰属
 

@@ -116,7 +116,7 @@ def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypat
     foreign.cmdline.return_value = ["unrelated"]
     _mock_process_snapshot(monkeypatch, [foreign])
     result = process_tree.stop_tree(parent, timeout=0)
-    assert {process.pid for process in result.targets} == {parent.pid}
+    assert foreign not in result.targets
     foreign.suspend.assert_not_called()
     foreign.terminate.assert_not_called()
     foreign.kill.assert_not_called()

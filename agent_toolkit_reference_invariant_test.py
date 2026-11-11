@@ -1,15 +1,7 @@
-"""agent-toolkitスキルとPythonファイルへの参照が追跡ファイルから実体へ解決することを検査する。
-
-`git ls-files`を入力にすることで、通常の検索が省く隠しディレクトリも対象に含める。
-検査対象は`.json`・`.md`・`.py`であり、`install-claude.sh`と`install-claude.ps1`は含まない。
-規範Markdownが`` `<パス>.md` ``の直後に「<名前>」で節を指す参照は、参照先に同じ名前が残ること、参照先が一意に決まること、
-段落番号で位置を指さないこと、同じ文で名指しした識別子が参照先の節にあることも検査する。
-このファイル自身も走査対象となるため、欠損参照のテスト入力は接頭辞から組み立てる。
-"""
+"""agent-toolkit参照の主題別不変条件を検証する。"""
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import json
 import pathlib
@@ -18,22 +10,27 @@ import subprocess
 import warnings
 
 import pytest
-from agent_toolkit._common import read_triggers
-from agent_toolkit._plan.structure import is_agent_doc_target_file
 from agent_toolkit._testing.git_repository import commit_all, init_repository, run_git
-from agent_toolkit._testing.normative_contract import read_contract
 
-_PLUGIN_PREFIX = "agent-" + "toolkit"
+from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths
+
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
+
+
 _SKILL_INVOCATION_PATTERN = re.compile(rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:([A-Za-z0-9][A-Za-z0-9_-]*)")
+
+
 _SKILL_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?"
 )
+
+
 _PYTHON_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/(?:scripts|agent_toolkit)/"
     r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*\.py"
 )
-_SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
+
+
 # 基準版の原文・由来・逆引きを固定引用として保持する正式データ。READMEと他の文書は検査する。
 _VERBATIM_REFERENCE_SOURCES = frozenset(
     pathlib.Path(value)
@@ -43,30 +40,60 @@ _VERBATIM_REFERENCE_SOURCES = frozenset(
         "docs/development/norm-restructure-20261022/reverse-index.tsv",
     )
 )
+
+
 _SOURCE_MANIFEST = pathlib.Path("docs/development/norm-restructure-20261022/source-manifest.json")
+
+
 # 読込表の別ファイル（`*-delivery-<n>.md`、`*reading-references.md`）は本文の読込表へ統合して廃止した。
 # 規範再構成の記録は作成時点の配置を保持するため、記録が指すこれらの参照には現在の実体を求めない。
 _NORM_RESTRUCTURE_RECORDS = pathlib.Path("docs/development/norm-restructure-20261022")
+
+
 _RETIRED_READING_TABLE_PATTERN = re.compile(r"(?:-delivery-\d+|reading-references)\.md$")
-_INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-runtime.md")
-_INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-validation.md")
-_INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-workflows.md")
-_AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
-_CONCEPTS_GOVERNANCE = pathlib.Path("docs/development/concepts-governance.md")
-_DESIGN_HOSTS = pathlib.Path("docs/development/design-hosts.md")
+
+
+_INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-hooks-202606-20260914.md")
+
+
+_INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-judgment-202608-20260901.md")
+
+
+_INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-stagnation-202607-20260906.md")
+
+
+_INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-20260901-20261003.md")
+
+
+_CONCEPTS_CONFIRMATION_DECISIONS = pathlib.Path("docs/development/concepts-confirmation-decisions.md")
+_CONCEPTS_CONFIRMATION_FORMAT = pathlib.Path("docs/development/concepts-confirmation-format.md")
+
+
+_DESIGN_HOSTS_AUTHORIZATION = pathlib.Path("docs/development/design-hosts-authorization.md")
+
+
 _NORM_RESTRUCTURE_README = pathlib.Path("docs/development/norm-restructure/README.md")
+
+
 _NORM_RESTRUCTURE_CLAUSES_TEST = pathlib.Path("scripts/norm_restructure_clauses_test.py")
+
+
 _SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records.py")
+
+
 _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records_test.py")
+
+
 _PROCESS_LOOP_SESSION_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_session_test.py")
-_READ_METHODS = {"read_text", "read_bytes"}
+
+
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     # 保存済みの起動標識とscopeを読むための旧名。現行入口としては提供しない。
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS): 2,
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS_TEST): 1,
     (
         f"{_PLUGIN_PREFIX}:process-wi-all-repos",
-        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_candidates.py"),
+        pathlib.Path("agent-toolkit/skills/review-session/scripts/session_evidence_candidates_users.py"),
     ): 1,
     (f"{_PLUGIN_PREFIX}:session-review-batch", pathlib.Path("agent-toolkit/agent_toolkit/_common/session_review.py")): 1,
     (f"{_PLUGIN_PREFIX}:session-review", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 2,
@@ -91,19 +118,20 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS_WORKFLOWS): 1,
     (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_VALIDATION): 1,
     (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_WORKFLOWS): 4,
-    (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS_WORKFLOWS): 1,
+    (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS_REVIEW_SCOPE): 1,
     (f"{_PLUGIN_PREFIX}:shell-exec", _INCIDENTS_WORKFLOWS): 1,
     (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS_RUNTIME): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _INCIDENTS_RUNTIME): 5,
-    (f"{_PLUGIN_PREFIX}:exit-session", _AUDIT_RECORDS): 1,
+    (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
     (f"{_PLUGIN_PREFIX}:exit-session", _PROCESS_LOOP_SESSION_TEST): 1,
     # 分割前のStop判定モジュールを当時の所在で記す障害事例
     (f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py", _INCIDENTS_WORKFLOWS): 1,
     # 廃止したスキルの経緯を記す方針・設計の記録
-    (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_GOVERNANCE): 2,
-    (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS): 2,
+    (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_DECISIONS): 1,
+    (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_FORMAT): 1,
+    (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS_AUTHORIZATION): 2,
     # 判定台帳の説明が、基準commitの後に撤去したファイルを例として挙げる
     (f"{_PLUGIN_PREFIX}/skills/realign-with-user/SKILL.md", _NORM_RESTRUCTURE_README): 1,
     # 切り出しスクリプトのテストが一時リポジトリへ作成するスキルのパス
@@ -130,158 +158,6 @@ def _allowed_unresolved_reference_counts(
             if candidate is not None and candidate in source_set:
                 allowed_counts[(reference, candidate)] = count
     return allowed_counts
-
-
-def _tracked_source_paths(root: pathlib.Path, suffixes: frozenset[str] = _SOURCE_SUFFIXES) -> list[pathlib.Path]:
-    """追跡済みとignore対象外の新規ファイルから、検査対象の相対パスを返す。"""
-    result = subprocess.run(
-        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-        cwd=root,
-        check=True,
-        capture_output=True,
-    )
-    return sorted(
-        pathlib.Path(raw.decode("utf-8"))
-        for raw in result.stdout.split(b"\0")
-        if raw and pathlib.Path(raw.decode("utf-8")).suffix in suffixes and (root / pathlib.Path(raw.decode("utf-8"))).is_file()
-    )
-
-
-def _path_values(node: ast.AST, values: dict[str, list[pathlib.Path]], source: pathlib.Path) -> list[pathlib.Path]:
-    """静的に確定できるpathlib式をパスの一覧へ変換する。"""
-    if isinstance(node, ast.Name):
-        if node.id == "__file__":
-            return [source]
-        return values.get(node.id, [])
-    if isinstance(node, ast.Call):
-        if (
-            isinstance(node.func, ast.Name)
-            and node.func.id in {"Path", "PurePath"}
-            or isinstance(node.func, ast.Attribute)
-            and node.func.attr in {"Path", "PurePath"}
-        ) and node.args:
-            return _path_values(node.args[0], values, source) or (
-                [pathlib.Path(node.args[0].value)]
-                if isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)
-                else []
-            )
-        if isinstance(node.func, ast.Attribute):
-            bases = _path_values(node.func.value, values, source)
-            if node.func.attr == "resolve":
-                return [path.resolve() for path in bases]
-            if (
-                node.func.attr == "with_name"
-                and node.args
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                return [path.with_name(node.args[0].value) for path in bases]
-            if node.func.attr == "joinpath":
-                parts = [arg.value for arg in node.args if isinstance(arg, ast.Constant) and isinstance(arg.value, str)]
-                return [path.joinpath(*parts) for path in bases] if len(parts) == len(node.args) else []
-            if (
-                node.func.attr == "glob"
-                and len(node.args) == 1
-                and isinstance(node.args[0], ast.Constant)
-                and isinstance(node.args[0].value, str)
-            ):
-                return [candidate for path in bases for candidate in path.glob(node.args[0].value)]
-        if isinstance(node.func, ast.Name) and node.func.id == "sorted" and node.args:
-            return _path_values(node.args[0], values, source)
-    if isinstance(node, ast.Attribute) and node.attr == "parent":
-        return [path.parent for path in _path_values(node.value, values, source)]
-    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == "parents":
-        bases = _path_values(node.value.value, values, source)
-        if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, int):
-            return [path.parents[node.slice.value] for path in bases]
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        bases = _path_values(node.left, values, source)
-        if isinstance(node.right, ast.Constant) and isinstance(node.right.value, str):
-            return [path / node.right.value for path in bases]
-    return []
-
-
-def _read_paths(node: ast.AST, values: dict[str, list[pathlib.Path]], source: pathlib.Path) -> list[pathlib.Path]:
-    """構文木の呼び出しから直接読取り対象を返す。"""
-    paths: list[pathlib.Path] = []
-    for candidate in ast.walk(node):
-        if (
-            isinstance(candidate, ast.Call)
-            and isinstance(candidate.func, ast.Attribute)
-            and candidate.func.attr in _READ_METHODS
-        ):
-            paths.extend(_path_values(candidate.func.value, values, source))
-    return paths
-
-
-def _function_reads(
-    function: ast.FunctionDef | ast.AsyncFunctionDef,
-    module_values: dict[str, list[pathlib.Path]],
-    source: pathlib.Path,
-) -> list[pathlib.Path]:
-    """関数内の代入と反復をたどって直接読取り対象を返す。"""
-    reads: list[pathlib.Path] = []
-
-    def visit(statements: list[ast.stmt], values: dict[str, list[pathlib.Path]]) -> None:
-        for statement in statements:
-            if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
-                values[statement.targets[0].id] = _path_values(statement.value, values, source)
-            if isinstance(statement, (ast.For, ast.AsyncFor)) and isinstance(statement.target, ast.Name):
-                nested = dict(values)
-                nested[statement.target.id] = _path_values(statement.iter, values, source)
-                visit(statement.body, nested)
-                visit(statement.orelse, dict(values))
-                continue
-            reads.extend(_read_paths(statement, values, source))
-
-    visit(function.body, dict(module_values))
-    return reads
-
-
-def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
-    """通常テストから追跡中のエージェント向け文書を読む関数を列挙する。"""
-    violations: list[str] = []
-    for relative_source in sources:
-        if relative_source.name.endswith("_invariant_test.py"):
-            continue
-        source = repository / relative_source
-        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-        module_values: dict[str, list[pathlib.Path]] = {}
-        for statement in tree.body:
-            if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
-                module_values[statement.targets[0].id] = _path_values(statement.value, module_values, source)
-        pending: list[ast.AST] = [tree]
-        while pending:
-            function = pending.pop()
-            # 関数定義は文の配下にある。巨大なfixture文字列や式は関数探索で走査し直さない。
-            pending.extend(
-                child
-                for child in ast.iter_child_nodes(function)
-                if isinstance(child, (ast.stmt, ast.ExceptHandler, ast.match_case))
-            )
-            if not isinstance(function, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            for path in _function_reads(function, module_values, source):
-                try:
-                    relative = path.resolve().relative_to(repository)
-                except ValueError:
-                    continue
-                if path.is_file() and is_agent_doc_target_file(relative):
-                    violations.append(f"{relative_source}::{function.name} -> {relative}")
-    return sorted(set(violations))
-
-
-def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
-    """指定した追跡ファイルからスキルの起動名と相対パス参照を収集する。"""
-    references: list[tuple[str, pathlib.Path]] = []
-    for relative in sources:
-        if relative in _VERBATIM_REFERENCE_SOURCES:
-            continue
-        content = (root / relative).read_text(encoding="utf-8")
-        references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))
-        references.extend((match.group().rstrip("/"), relative) for match in _SKILL_PATH_PATTERN.finditer(content))
-        references.extend((match.group(), relative) for match in _PYTHON_PATH_PATTERN.finditer(content))
-    return references
 
 
 def _reference_exists(root: pathlib.Path, reference: str) -> bool:
@@ -398,11 +274,6 @@ def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]
         ):
             captured.setdefault((change["path"], _SOURCE_MANIFEST), []).append(captured_head)
     return captured
-
-
-def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
-    """未解決参照を参照元と対にして整形する。"""
-    return "\n".join(f"{reference} <- {source}" for reference, source in entries)
 
 
 def test_agent_toolkit_references_resolve() -> None:
@@ -562,10 +433,10 @@ def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
         _INCIDENTS_WORKFLOWS: [
             f"{_PLUGIN_PREFIX}:feedback-standards",
             *[f"{_PLUGIN_PREFIX}:process-feedbacks"] * 4,
-            f"{_PLUGIN_PREFIX}:reviewee-standards",
             f"{_PLUGIN_PREFIX}:shell-exec",
             f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py",
         ],
+        _INCIDENTS_REVIEW_SCOPE: [f"{_PLUGIN_PREFIX}:reviewee-standards"],
     }
 
 
@@ -619,642 +490,6 @@ def test_incident_history_rejects_different_unresolved_references(tmp_path: path
     assert str(source) in formatted
 
 
-# 見出し名で節を指す参照を検査する規範Markdownの範囲。
-_NORMATIVE_MARKDOWN_PREFIXES = (
-    "agent-basics/skills/",
-    f"{_PLUGIN_PREFIX}/rules/",
-    f"{_PLUGIN_PREFIX}/skills/",
-    f"{_PLUGIN_PREFIX}/share/",
-    ".claude/skills/",
-    ".chezmoi-source/dot_claude/",
-)
-_PLUGIN_ROOT_VARIABLES = ("${CLAUDE_PLUGIN_ROOT}/", "${PLUGIN_ROOT}/", "<plugin root>/")
-_HEADING_REFERENCE_PATTERN = re.compile(
-    rf"(?:(?P<plugin>{_PLUGIN_PREFIX}|agent-basics):(?P<skill>[A-Za-z0-9_-]+)`?の)?`(?P<path>[^`\s]+?\.md)`(?:の)?「(?P<name>[^」\n]+)」"
-)
-# `` `<パス>.md`の`### <見出し>` ``のように見出し記号付きで節を指す記法。
-_HEADING_SYMBOL_REFERENCE_PATTERN = re.compile(
-    rf"(?:(?P<plugin>{_PLUGIN_PREFIX}|agent-basics):(?P<skill>[A-Za-z0-9_-]+)`?の)?"
-    r"`(?P<path>[^`\s]+?\.md)`の`#{2,6} (?P<name>[^`\n]+)`"
-)
-# 規範Markdownに加えて見出し名参照を検査する設計文書。
-_EXTENDED_HEADING_REFERENCE_DOCS = re.compile(r"docs/development/(?:design[^/]*|architecture|operations)\.md")
-
-
-def _normative_markdown_paths(sources: list[pathlib.Path]) -> list[pathlib.Path]:
-    """追跡ファイルのうち見出し名参照を検査する規範Markdownを返す。"""
-    return [
-        path
-        for path in sources
-        if path.suffix == ".md" and (path.as_posix() == "AGENTS.md" or path.as_posix().startswith(_NORMATIVE_MARKDOWN_PREFIXES))
-    ]
-
-
-def _extended_heading_reference_sources(sources: list[pathlib.Path]) -> list[pathlib.Path]:
-    """規範Markdownの外で見出し名参照を検査する追跡ファイル（テスト以外のPythonと設計文書）を返す。
-
-    テストは欠落した参照をfixtureとして意図的に含み、方針記録（`concepts*.md`）と障害記録（`incidents*.md`）は
-    当時の節名を記録として保持するため、検査の対象から外す。
-    """
-    return [
-        path
-        for path in sources
-        if (path.suffix == ".py" and not path.name.endswith("_test.py"))
-        or _EXTENDED_HEADING_REFERENCE_DOCS.fullmatch(path.as_posix())
-    ]
-
-
-def _resolve_heading_reference_target(
-    root: pathlib.Path,
-    source: pathlib.Path,
-    skill: str | None,
-    reference: str,
-    markdown_paths: list[pathlib.Path],
-    plugin: str | None = None,
-) -> tuple[pathlib.Path | None, bool]:
-    """参照が一意に指すMarkdownと、候補が複数あって一意に決まらないかを返す。
-
-    候補が0件の参照（生成物の名前や`<役割名>`のような置換用の名前）は検査の対象外として`(None, False)`を返す。
-    スキル名で修飾した参照がそのスキルの配下に無い場合と、末尾一致の候補が複数ある場合は`(None, True)`を返す。
-    """
-    for variable in _PLUGIN_ROOT_VARIABLES:
-        reference = reference.replace(variable, f"{_PLUGIN_PREFIX}/")
-    if reference.startswith(("agent-toolkit:", "agent-basics:")):
-        return read_triggers.resolve_document(reference, root / source, root / _PLUGIN_PREFIX), False
-    if skill:
-        bases = [pathlib.Path(plugin or _PLUGIN_PREFIX, "skills", skill), pathlib.Path(plugin or _PLUGIN_PREFIX, "skills")]
-    else:
-        bases = [pathlib.Path("."), *source.parents]
-    for base in bases:
-        candidate = root / base / reference
-        if candidate.is_file():
-            return read_triggers.resolve_read_source(candidate, root / _PLUGIN_PREFIX), False
-    if skill:
-        return None, True
-    suffix_matches = [path for path in markdown_paths if path.as_posix().endswith(f"/{reference}")]
-    if len(suffix_matches) == 1:
-        return read_triggers.resolve_read_source(root / suffix_matches[0], root / _PLUGIN_PREFIX), False
-    return None, len(suffix_matches) > 1
-
-
-# 「<節名>」の直後で段落番号により位置を指す記法。節の改訂で番号がずれても検査を通るため失敗にする。
-_PARAGRAPH_NUMBER_PATTERN = re.compile(r"の?(?:第?\d+段落|段落\d+)")
-# 参照より前の同じ文でバッククォートにより名指しする識別子。参照先の節がその識別子を定めると読める記法を対象にする。
-_NAMED_IDENTIFIER_PATTERN = re.compile(r"`([a-z][a-z0-9]*_[a-z0-9_]+)`")
-_SENTENCE_BOUNDARY_PATTERN = re.compile(r"。|\n|：|: ")
-
-
-def _missing_named_identifiers(content: str, match: re.Match[str], target: pathlib.Path) -> list[str]:
-    """参照より前の同じ文で名指しした識別子のうち、参照先の節の本文に無いものを返す。
-
-    表の行は列ごとに別の対象を並べるため除く。行全体を対象にすると、参照と無関係な識別子を数えて誤検出が増える
-    （2026-11-06の試作で行全体は76件、同じ文で参照より前に限ると3件で、3件とも実際の不足だった）。
-    """
-    line_start = content.rfind("\n", 0, match.start()) + 1
-    if content[line_start:].lstrip().startswith("|"):
-        return []
-    boundaries = [found.end() for found in _SENTENCE_BOUNDARY_PATTERN.finditer(content, 0, match.start())]
-    sentence = content[boundaries[-1] if boundaries else 0 : match.start()]
-    names = [found.group(1) for found in _NAMED_IDENTIFIER_PATTERN.finditer(sentence)]
-    if not names:
-        return []
-    try:
-        body = read_triggers.ReadTarget(target, match.group("name")).body()
-    except ValueError:
-        return []
-    return [name for name in names if name not in body]
-
-
-def _unresolved_heading_references(
-    root: pathlib.Path,
-    sources: list[pathlib.Path],
-    markdown_paths: list[pathlib.Path],
-) -> list[tuple[str, pathlib.Path]]:
-    """見出し名参照の不備を、参照と参照元の対で返す。
-
-    不備は、参照先に同名の見出しも本文の文字列も無いこと、参照先を一意に解決できないこと、
-    節名の後に段落番号で位置を指すこと、参照より前の同じ文で名指しした識別子が参照先の節に無いことである。
-    """
-    unresolved: list[tuple[str, pathlib.Path]] = []
-    for source in sources:
-        content = (root / source).read_text(encoding="utf-8")
-        matches = [*_HEADING_REFERENCE_PATTERN.finditer(content), *_HEADING_SYMBOL_REFERENCE_PATTERN.finditer(content)]
-        for match in matches:
-            target, ambiguous = _resolve_heading_reference_target(
-                root, source, match.group("skill"), match.group("path"), markdown_paths, match.group("plugin")
-            )
-            line = content[
-                content.rfind("\n", 0, match.start()) + 1 : content.find("\n", match.end())
-                if "\n" in content[match.end() :]
-                else len(content)
-            ]
-            contextual = [
-                item
-                for item in read_triggers.material_targets(
-                    line,
-                    root / source,
-                    root / _PLUGIN_PREFIX,
-                    references_only=True,
-                    context=read_triggers.reference_context(
-                        content[: content.rfind("\n", 0, match.start())], root / source, root / _PLUGIN_PREFIX
-                    ),
-                )
-                if match.group("name") in item.heading and item.path.is_file()
-            ]
-            if len({item.path for item in contextual}) == 1:
-                target = contextual[0].path
-            reference = f"{match.group('path')}「{match.group('name')}」"
-            if target is None:
-                if ambiguous:
-                    unresolved.append((f"{reference}（参照先を一意に解決できない）", source))
-                continue
-            if match.group("name") not in target.read_text(encoding="utf-8"):
-                unresolved.append((reference, source))
-                continue
-            if _PARAGRAPH_NUMBER_PATTERN.match(content, match.end()):
-                unresolved.append((f"{reference}（段落番号で位置を指す）", source))
-            unresolved.extend(
-                (f"{reference}（`{name}`が参照先の節に無い）", source)
-                for name in _missing_named_identifiers(content, match, target)
-            )
-    return unresolved
-
-
-def test_normative_heading_references_resolve() -> None:
-    """規範Markdownの見出し名参照が、参照先に残る見出しまたは本文の文字列へ解決する。"""
-    root = pathlib.Path(__file__).resolve().parent
-    tracked = _tracked_source_paths(root)
-    markdown_paths = [path for path in tracked if path.suffix == ".md"]
-    sources = _normative_markdown_paths(tracked)
-    assert any(path.as_posix().startswith(".claude/skills/") for path in sources)
-    with read_triggers.resolution_scope():
-        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
-    assert not unresolved, _format_unresolved(unresolved)
-
-
-def test_code_and_design_heading_references_resolve() -> None:
-    """テスト以外のPythonと設計文書の見出し名参照が、参照先に残る見出しまたは本文の文字列へ解決する。"""
-    root = pathlib.Path(__file__).resolve().parent
-    tracked = _tracked_source_paths(root)
-    markdown_paths = [path for path in tracked if path.suffix == ".md"]
-    sources = _extended_heading_reference_sources(tracked)
-    assert any(path.suffix == ".py" for path in sources)
-    assert any(path.as_posix().startswith("docs/development/design") for path in sources)
-    with read_triggers.resolution_scope():
-        unresolved = _unresolved_heading_references(root, sources, markdown_paths)
-    assert not unresolved, _format_unresolved(unresolved)
-
-
-def test_heading_symbol_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:
-    """見出し記号付きで節を指す参照も、参照先から節が消えると未解決として報告する。"""
-    standard = tmp_path / "docs" / "standard.md"
-    standard.parent.mkdir(parents=True)
-    standard.write_text("# 基準\n\n### 受入シナリオ\n", encoding="utf-8")
-    source = pathlib.Path("tool.py")
-    (tmp_path / source).write_text(
-        'MESSAGE = "`docs/standard.md`の`### 受入シナリオ`と`docs/standard.md`の`### 消えた節`"\n', encoding="utf-8"
-    )
-    markdown_paths = [standard.relative_to(tmp_path)]
-
-    assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [("docs/standard.md「消えた節」", source)]
-
-
-def test_heading_reference_follows_explicit_compatibility_source(tmp_path: pathlib.Path) -> None:
-    """転送先の節の実在を検査し、消えた節を互換入口の案内文で補わない。"""
-    toolkit = tmp_path / "agent-toolkit"
-    basics = tmp_path / "agent-basics"
-    (basics / ".claude-plugin").mkdir(parents=True)
-    (basics / ".claude-plugin/plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
-    actual = basics / "skills/writing-standards/references/rule.md"
-    actual.parent.mkdir(parents=True)
-    actual.write_text("# 品質\n## 判定\n本文\n", encoding="utf-8")
-    wrapper = toolkit / "skills/sample/references/rule.md"
-    wrapper.parent.mkdir(parents=True)
-    wrapper.write_text(
-        "# 入口\n\n<!-- read-source: agent-basics:writing-standards/references/rule.md -->\n\n判定を引き継ぐ。\n",
-        encoding="utf-8",
-    )
-    source = pathlib.Path("source.md")
-    (tmp_path / source).write_text("`agent-basics:writing-standards`の`references/rule.md`「判定」\n", encoding="utf-8")
-    paths = [actual.relative_to(tmp_path), wrapper.relative_to(tmp_path), source]
-    assert not _unresolved_heading_references(tmp_path, [source], paths)
-    actual.write_text("# 品質\n節を撤去した。\n", encoding="utf-8")
-    assert _unresolved_heading_references(tmp_path, [source], paths) == [("references/rule.md「判定」", source)]
-
-
-def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> None:
-    """直前に起動した同スキルのSKILLを、参照元自身のSKILLと区別する。"""
-    root = tmp_path / "agent-basics/skills"
-    manifest = root.parent / ".claude-plugin/plugin.json"
-    manifest.parent.mkdir(parents=True)
-    manifest.write_text('{"name":"agent-basics"}', encoding="utf-8")
-    bugfix = root / "bugfix/SKILL.md"
-    bugfix.parent.mkdir(parents=True)
-    bugfix.write_text("# 不具合\n## 所要の原因調査\n基準\n", encoding="utf-8")
-    source = pathlib.Path("agent-toolkit/share/exec-review-responses.md")
-    (tmp_path / source).parent.mkdir(parents=True)
-    (tmp_path / source).parent.parent.joinpath("SKILL.md").write_text("# レビュー\n", encoding="utf-8")
-    (tmp_path / source).write_text(
-        "`agent-basics:bugfix`を起動し、同スキルの`SKILL.md`「所要の原因調査」へ渡す。\n", encoding="utf-8"
-    )
-    assert not _unresolved_heading_references(tmp_path, [source], [bugfix.relative_to(tmp_path), source])
-
-
-def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
-    """テスト、方針記録および障害記録を見出し名参照の拡大範囲から外し、コードと設計文書を含める。"""
-    paths = [
-        pathlib.Path("src/sample.py"),
-        pathlib.Path("src/sample_test.py"),
-        pathlib.Path("docs/development/design-hosts.md"),
-        pathlib.Path("docs/development/architecture.md"),
-        pathlib.Path("docs/development/operations.md"),
-        pathlib.Path("docs/development/concepts-runtime.md"),
-        pathlib.Path("docs/development/incidents-validation.md"),
-    ]
-
-    assert _extended_heading_reference_sources(paths) == [paths[0], paths[2], paths[3], paths[4]]
-
-
-# 監査記録の見出しを、索引元の条文またはコードが同じ文字列で指すことを検査する。
-# 索引元は、テスト（`*_test.py`）と`docs/`配下を除く追跡ファイルと、見出しのファイル部分が指すファイル自身とする。
-# テスト、設計記録と判定台帳は見出しを索引元として持たずに引用するため、そこにだけ現れる見出しは参照元を持たない。
-# 常時規範（`agent-toolkit/share/rules/common/`配下と`agent-toolkit/share/rules/rules-*.md`）は全主体が毎回読む。
-# そのため条文へ索引の文を置かず、見出しそのものを索引とする。
-# ファイル部分が常時規範を指す見出しは、そのファイルに節名と同じ見出しがあることで参照ありとする。
-# 規範原本を`share/rules/`へ集める前の見出しは旧パスのまま当時の記録として残すため、現在の所在へ読み替えて照合する。
-_RULE_DOCUMENT_RELOCATIONS = (
-    ("agent-toolkit/rules/", "agent-toolkit/share/rules/common/"),
-    ("agent-toolkit/share/rules-", "agent-toolkit/share/rules/rules-"),
-)
-_AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
-_AUDIT_INDEX_EXCLUDED_PREFIX = "docs/"
-# 監査記録の本文が他の記録を「<対象>：<節>：<年月日>」の見出しで指す参照。
-_AUDIT_BODY_REFERENCE_PATTERN = re.compile(r"「(?P<heading>[^」\n]*：[^」\n]*\d{4}年\d{1,2}月[^」\n]*)」")
-
-
-def _comment_joined(content: str) -> str:
-    """行頭の空白とコメント記号`#`を除いて各行を連結し、コメントの改行で分かれた参照を1つの文字列にする。"""
-    return "".join(line.strip().lstrip("#").strip() for line in content.splitlines())
-
-
-def _audit_headings(content: str) -> list[str]:
-    """監査記録のH2見出しを出現順に返す。"""
-    return [match.group("heading") for match in _AUDIT_HEADING_PATTERN.finditer(content)]
-
-
-def _reference_text(root: pathlib.Path, source: pathlib.Path) -> str:
-    """見出しの参照を探す本文として、ファイルの本文とコメントの改行を連結した本文を返す。"""
-    content = (root / source).read_text(encoding="utf-8")
-    return f"{content}\n{_comment_joined(content)}"
-
-
-def _current_rule_path(path: pathlib.Path) -> pathlib.Path:
-    """旧配置の規範パスを現在の所在へ読み替える。"""
-    value = path.as_posix()
-    for old, new in _RULE_DOCUMENT_RELOCATIONS:
-        if value.startswith(old):
-            return pathlib.Path(new + value.removeprefix(old))
-    return path
-
-
-def _is_rule_document(path: pathlib.Path) -> bool:
-    """常時規範（`agent-toolkit/share/rules/common/`直下と`agent-toolkit/share/rules/rules-*.md`）のパスかを返す。旧配置も読み替えて判定する。"""
-    path = _current_rule_path(path)
-    if path.suffix != ".md":
-        return False
-    parent = path.parent.as_posix()
-    return parent == "agent-toolkit/share/rules/common" or (
-        parent == "agent-toolkit/share/rules" and path.name.startswith("rules-")
-    )
-
-
-def _rule_section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str) -> bool:
-    """常時規範を指す監査見出しについて、ファイルが実在しそのファイルに節名と同じ見出しがあるかを返す。"""
-    parts = heading.split("：")
-    if len(parts) < 3:
-        return False
-    rule_file = _current_rule_path(pathlib.Path(parts[0]))
-    section = "：".join(parts[1:-1])
-    if rule_file not in tracked:
-        return False
-    content = (root / rule_file).read_text(encoding="utf-8")
-    return re.search(rf"^#{{2,6}} {re.escape(section)}$", content, re.MULTILINE) is not None
-
-
-def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
-    """監査記録のH2見出しのうち参照元を持たないものを返す。
-
-    常時規範を指す見出しはファイルと節の実在で判定し、他の見出しは索引元の追跡ファイルか
-    見出しのファイル部分が指すファイル自身に現れるかで判定する。
-    """
-    headings = _audit_headings((root / _AUDIT_RECORDS).read_text(encoding="utf-8"))
-    corpus = "\n".join(
-        _reference_text(root, source)
-        for source in sources
-        if not source.name.endswith("_test.py") and not source.as_posix().startswith(_AUDIT_INDEX_EXCLUDED_PREFIX)
-    )
-    tracked = set(sources) - {_AUDIT_RECORDS}
-    unreferenced: list[str] = []
-    for heading in headings:
-        own_file = pathlib.Path(heading.split("：", 1)[0])
-        if _is_rule_document(own_file):
-            if not _rule_section_exists(root, tracked, heading):
-                unreferenced.append(heading)
-            continue
-        if heading in corpus:
-            continue
-        if own_file in tracked and heading in _reference_text(root, own_file):
-            continue
-        unreferenced.append(heading)
-    return unreferenced
-
-
-def _unresolved_audit_body_references(content: str) -> list[str]:
-    """監査記録の本文で、実在しない見出しを「」で指す参照を出現順に返す。"""
-    headings = set(_audit_headings(content))
-    body = _AUDIT_HEADING_PATTERN.sub("", content)
-    return [
-        match.group("heading")
-        for match in _AUDIT_BODY_REFERENCE_PATTERN.finditer(body)
-        if match.group("heading") not in headings
-    ]
-
-
-def test_audit_record_headings_are_referenced() -> None:
-    """監査記録の各H2見出しを、索引元の条文またはコードが同じ文字列で指す。"""
-    root = pathlib.Path(__file__).resolve().parent
-    unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root, _SOURCE_SUFFIXES | {".ts", ".tsx"}))
-    assert not unreferenced, (
-        "参照元を持たない監査記録の見出し（常時規範を指す見出しは条文へ索引の文を置かず、見出しのファイルと節名を条文の現在の所在へ直す。"
-        "それ以外は索引元へ索引の1文を置くか、索引先の無い記録を削除する）:\n" + "\n".join(unreferenced)
-    )
-
-
-def test_audit_record_body_heading_references_resolve() -> None:
-    """監査記録の本文が「」で指す他の記録の見出しが、監査記録に実在する。"""
-    root = pathlib.Path(__file__).resolve().parent
-    unresolved = _unresolved_audit_body_references((root / _AUDIT_RECORDS).read_text(encoding="utf-8"))
-    assert not unresolved, (
-        "実在しない見出しを指す監査記録の本文の参照（参照先の記録の観測と再検証の手順を参照元の本文へ統合するか、見出しを直す）:\n"
-        + "\n".join(unresolved)
-    )
-
-
-def test_unreferenced_audit_heading_detector_joins_wrapped_comments(tmp_path: pathlib.Path) -> None:
-    """コメントの改行で分かれた参照を参照ありとし、どこにも現れない見出しだけを報告する。"""
-    audit = tmp_path / _AUDIT_RECORDS
-    audit.parent.mkdir(parents=True)
-    audit.write_text(
-        "# 監査記録\n\n## a.py：節：2026年1月1日\n\n記録。\n\n## b.md：節：2026年1月2日\n\n記録。\n", encoding="utf-8"
-    )
-    source = pathlib.Path("a.py")
-    (tmp_path / source).write_text(
-        "# 監査記録は`docs/development/audit-records.md`の\n# 「a.py：節：2026年1月1日」にある。\n", encoding="utf-8"
-    )
-    ledger = pathlib.Path("docs/development/norm-restructure/ledger.md")
-    (tmp_path / ledger).parent.mkdir(parents=True)
-    (tmp_path / ledger).write_text("b.md：節：2026年1月2日\n", encoding="utf-8")
-
-    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, source, ledger]) == ["b.md：節：2026年1月2日"]
-
-
-def test_unreferenced_audit_heading_detector_ignores_tests_and_docs(tmp_path: pathlib.Path) -> None:
-    """テストと`docs/`配下の他のファイルだけに現れる見出しを報告し、コードか見出しのファイル自身に現れる見出しを参照ありとする。"""
-    in_code = "tool.py：節：2026年1月1日"
-    in_own_file = "docs/development/design-a.md：節：2026年1月2日"
-    only_tests_and_docs = "c.md：節：2026年1月3日"
-    only_other_doc = "docs/development/design-b.md：節：2026年1月4日"
-    audit = tmp_path / _AUDIT_RECORDS
-    audit.parent.mkdir(parents=True)
-    audit.write_text(
-        "# 監査記録\n\n"
-        + "".join(f"## {heading}\n\n記録。\n\n" for heading in (in_code, in_own_file, only_tests_and_docs, only_other_doc)),
-        encoding="utf-8",
-    )
-    files = {
-        pathlib.Path("tool.py"): f"# 監査記録は「{in_code}」にある。\n",
-        pathlib.Path("sample_test.py"): f"# 「{only_tests_and_docs}」\n",
-        pathlib.Path("docs/development/design-a.md"): f"「{in_own_file}」「{only_tests_and_docs}」「{only_other_doc}」\n",
-        pathlib.Path("docs/development/design-b.md"): "# 設計\n",
-    }
-    for path, content in files.items():
-        (tmp_path / path).write_text(content, encoding="utf-8")
-
-    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [only_tests_and_docs, only_other_doc]
-
-
-def test_rule_audit_heading_requires_existing_section(tmp_path: pathlib.Path) -> None:
-    """常時規範を指す見出しは、索引の文の有無にかかわらず、ファイルに同名の節がある場合だけ参照ありとする。"""
-    existing = "agent-toolkit/rules/01-a.md：節A：2026年1月1日"
-    renamed = "agent-toolkit/rules/01-a.md：消えた節：2026年1月2日"
-    share_existing = "agent-toolkit/share/rules-main.md：節B：2026年1月3日"
-    missing_file = "agent-toolkit/share/rules-gone.md：節C：2026年1月4日"
-    audit = tmp_path / _AUDIT_RECORDS
-    audit.parent.mkdir(parents=True)
-    audit.write_text(
-        "# 監査記録\n\n"
-        + "".join(f"## {heading}\n\n記録。\n\n" for heading in (existing, renamed, share_existing, missing_file)),
-        encoding="utf-8",
-    )
-    files = {
-        pathlib.Path("agent-toolkit/share/rules/common/01-a.md"): "# 規範\n\n## 上位\n\n### 節A\n\n本文。\n",
-        pathlib.Path("agent-toolkit/share/rules/rules-main.md"): "# 規範\n\n## 節B\n\n本文。\n",
-        pathlib.Path("tool.py"): f"# 監査記録は「{renamed}」と「{missing_file}」にある。\n",
-    }
-    for path, content in files.items():
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / path).write_text(content, encoding="utf-8")
-
-    assert _unreferenced_audit_headings(tmp_path, [_AUDIT_RECORDS, *files]) == [renamed, missing_file]
-
-
-def test_audit_body_reference_to_missing_heading_is_reported() -> None:
-    """監査記録の本文が実在しない見出しを指すと報告し、実在する見出しと見出し以外の「」は報告しない。"""
-    content = (
-        "# 監査記録\n\n"
-        "## a.py：節：2026年1月1日\n\n"
-        "根拠は「b.md：待機区間の構成：2026年9月」にある。\n"
-        "閾値は「a.py：節：2026年1月1日」と「判断指針」を参照する。\n\n"
-        "## b.md：待機区間の構成：2026年9月3日\n\n記録。\n"
-    )
-
-    assert _unresolved_audit_body_references(content) == ["b.md：待機区間の構成：2026年9月"]
-
-
-def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -> None:
-    """参照先の見出しを削除すると、その見出しを名前で指す全ての参照を未解決として報告する。"""
-    rules = tmp_path / _PLUGIN_PREFIX / "share" / "rules" / "common" / "01-agent.md"
-    rules.parent.mkdir(parents=True)
-    rules.write_text("# 規範\n\n### 調査と検証\n\n観測で主張を支える。\n", encoding="utf-8")
-    skill = pathlib.Path(_PLUGIN_PREFIX, "skills", "sample", "SKILL.md")
-    (tmp_path / skill).parent.mkdir(parents=True)
-    (tmp_path / skill).write_text(
-        "\n".join(
-            [
-                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`「調査と検証」に従う。",
-                f"`{_PLUGIN_PREFIX}/share/rules/common/01-agent.md`の「調査と検証」を読む。",
-                "`${CLAUDE_PLUGIN_ROOT}/share/rules/common/01-agent.md`「調査と検証」を参照する。",
-            ]
-        ),
-        encoding="utf-8",
-    )
-    sources = [skill]
-    markdown_paths = [pathlib.Path(_PLUGIN_PREFIX, "share", "rules", "common", "01-agent.md"), skill]
-    assert not _unresolved_heading_references(tmp_path, sources, markdown_paths)
-
-    rules.write_text("# 規範\n\n観測で主張を支える。\n", encoding="utf-8")
-    unresolved = _unresolved_heading_references(tmp_path, sources, markdown_paths)
-    assert [source for _, source in unresolved] == [skill] * 3
-    assert all(reference.endswith("「調査と検証」") for reference, _ in unresolved)
-
-
-def test_heading_reference_resolves_skill_qualified_path(tmp_path: pathlib.Path) -> None:
-    """スキル名で修飾した参照資料のパスを、そのスキルの配下で解決する。"""
-    target = tmp_path / _PLUGIN_PREFIX / "skills" / "commit" / "references" / "push-and-ci.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("## 公開状態の4項目\n", encoding="utf-8")
-    source = pathlib.Path(".claude", "skills", "sample", "SKILL.md")
-    (tmp_path / source).parent.mkdir(parents=True)
-    (tmp_path / source).write_text(
-        f"`{_PLUGIN_PREFIX}:commit`の`references/push-and-ci.md`「公開状態の4項目」と「存在しない節」\n"
-        f"`{_PLUGIN_PREFIX}:commit`の`references/push-and-ci.md`「存在しない節」\n",
-        encoding="utf-8",
-    )
-    markdown_paths = [target.relative_to(tmp_path), source]
-
-    assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [
-        ("references/push-and-ci.md「存在しない節」", source)
-    ]
-
-
-def test_ambiguous_heading_reference_is_reported(tmp_path: pathlib.Path) -> None:
-    """候補が複数ある参照を未解決として報告し、候補0件の生成物名と一意な参照は報告しない。
-
-    `share/`配下から「本スキルの`SKILL.md`「<節名>」」と書くと、どのSKILL.mdも参照先として一意に決まらない。
-    """
-    for skill in ("first", "second"):
-        document = tmp_path / _PLUGIN_PREFIX / "skills" / skill / "SKILL.md"
-        document.parent.mkdir(parents=True)
-        document.write_text("# スキル\n\n## 共通操作\n", encoding="utf-8")
-    operations = tmp_path / _PLUGIN_PREFIX / "share" / "operations.md"
-    operations.parent.mkdir(parents=True)
-    operations.write_text("## 共通操作\n", encoding="utf-8")
-    source = pathlib.Path(_PLUGIN_PREFIX, "share", "criteria.md")
-    (tmp_path / source).write_text(
-        "本スキルの`SKILL.md`「共通操作」に従う。\n`operations.md`「共通操作」に従う。\n`stats.md`「集計」を読む。\n",
-        encoding="utf-8",
-    )
-    markdown_paths = [path.relative_to(tmp_path) for path in tmp_path.rglob("*.md")]
-
-    assert _unresolved_heading_references(tmp_path, [source], markdown_paths) == [
-        ("SKILL.md「共通操作」（参照先を一意に解決できない）", source)
-    ]
-
-
-def test_paragraph_number_reference_is_reported(tmp_path: pathlib.Path) -> None:
-    """節名の後に段落番号で位置を指す参照を報告する。節の改訂で番号がずれても見出しの実在だけでは検出できない。"""
-    target = tmp_path / "docs" / "prevention.md"
-    target.parent.mkdir(parents=True)
-    target.write_text("# 再発防止\n\n## 再発防止策\n\n本文\n\n## 自動検出の選定\n\n基準\n", encoding="utf-8")
-    source = pathlib.Path("rule.md")
-    (tmp_path / source).write_text(
-        "`docs/prevention.md`「再発防止策」の段落4に従う。\n`docs/prevention.md`「自動検出の選定」に従う。\n", encoding="utf-8"
-    )
-
-    assert _unresolved_heading_references(tmp_path, [source], [target.relative_to(tmp_path), source]) == [
-        ("docs/prevention.md「再発防止策」（段落番号で位置を指す）", source)
-    ]
-
-
-def test_named_identifier_must_exist_in_referenced_section(tmp_path: pathlib.Path) -> None:
-    """参照より前の同じ文で名指しした識別子が参照先の節に無ければ報告し、表の行と別の文の識別子は判定しない。"""
-    target = tmp_path / "docs" / "integration.md"
-    target.parent.mkdir(parents=True)
-    target.write_text(
-        "# 統合\n\n## 履歴統合\n\n`history_compare`で照合する。\n\n## 別の節\n\n`guard_value`を記録する。\n",
-        encoding="utf-8",
-    )
-    source = pathlib.Path("rule.md")
-    (tmp_path / source).write_text(
-        "\n".join(
-            [
-                "`guard_value`の規約は、`docs/integration.md`「履歴統合」にのみ定義されている。",
-                "`history_compare`の手順は`docs/integration.md`「履歴統合」に従う。",
-                "`guard_value`を残す。次に`docs/integration.md`「履歴統合」へ進む。",
-                "| `guard_value` | `docs/integration.md`「履歴統合」 |",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    assert _unresolved_heading_references(tmp_path, [source], [target.relative_to(tmp_path), source]) == [
-        ("docs/integration.md「履歴統合」（`guard_value`が参照先の節に無い）", source)
-    ]
-
-
-def test_agent_doc_readers_are_in_invariant_tests() -> None:
-    """追跡中のエージェント向け文書を読むテストをfast対象へ置く。"""
-    repository = pathlib.Path(__file__).resolve().parent
-    sources = [path for path in _tracked_source_paths(repository) if path.name.endswith("_test.py")]
-
-    violations = _agent_doc_reader_violations(repository, sources)
-    assert not violations, "エージェント向けMarkdownを直接読むテストを同じ領域の*_invariant_test.pyへ移す: " + ", ".join(
-        violations
-    )
-
-
-def test_agent_doc_reader_detector_ignores_fixture_paths_and_reports_repository_documents(
-    tmp_path: pathlib.Path,
-) -> None:
-    """一時fixtureを除外し、実リポジトリの文書読取りだけを配置違反にする。"""
-    repository = tmp_path / "repo"
-    repository.mkdir()
-    (repository / "AGENTS.md").write_text("# 規範\n", encoding="utf-8")
-    source = repository / "sample_test.py"
-    source.write_text(
-        "import pathlib\n"
-        "def test_reads(tmp_path):\n"
-        "    pathlib.Path(__file__).with_name('AGENTS.md').read_text(encoding='utf-8')\n"
-        "    (tmp_path / 'AGENTS.md').read_text(encoding='utf-8')\n"
-        "def test_glob():\n"
-        "    for path in pathlib.Path(__file__).parent.glob('*.md'):\n"
-        "        path.read_bytes()\n",
-        encoding="utf-8",
-    )
-
-    assert _agent_doc_reader_violations(repository, [source.relative_to(repository)]) == [
-        "sample_test.py::test_glob -> AGENTS.md",
-        "sample_test.py::test_reads -> AGENTS.md",
-    ]
-
-
-@pytest.mark.parametrize("method", ["read_text", "ｒｅａｄ＿ｔｅｘｔ"])
-@pytest.mark.parametrize(
-    ("container", "names"),
-    [
-        ("class Example:\n{function}", ["read"]),
-        ("if True:\n{function}", ["read"]),
-        ("try:\n    pass\nexcept ValueError:\n{function}", ["read"]),
-        ("match 1:\n    case 1:\n{nested_function}", ["read"]),
-        ("def outer():\n{function}", ["outer", "read"]),
-    ],
-)
-def test_agent_doc_reader_detector_keeps_nested_definitions(tmp_path, container, names, method):
-    """文に入れ子になった関数とUnicode正規化される属性も、式の走査を省いた探索で検出する。"""
-    (tmp_path / "AGENTS.md").write_text("# 規範\n", encoding="utf-8")
-    function = f"    def read():\n        pathlib.Path(__file__).with_name('AGENTS.md').{method}()\n"
-    source = tmp_path / "example_test.py"
-    source.write_text(
-        "import pathlib\n" + container.format(function=function, nested_function="    " + function.replace("\n", "\n    ")),
-        encoding="utf-8",
-    )
-
-    assert _agent_doc_reader_violations(tmp_path, [source.relative_to(tmp_path)]) == [
-        f"example_test.py::{name} -> AGENTS.md" for name in names
-    ]
-
-
 def test_verbatim_ledger_references_preserve_current_document_checks(tmp_path: pathlib.Path) -> None:
     """正式データの固定引用を保持し、同階層のREADME・別JSON・現行文書の参照不良を全て検出する。"""
     historical = [
@@ -1281,71 +516,14 @@ def test_verbatim_ledger_references_preserve_current_document_checks(tmp_path: p
     assert unresolved == [(reference, source) for source in current for reference in references]
 
 
-def test_ci_failure_read_row_delivers_quality_and_operations() -> None:
-    """同じ失敗受領条件で、品質と工程の二資料が資料列・配送列の両方から取得される。"""
-    root = pathlib.Path(__file__).resolve().parent
-    plugin = root / "agent-toolkit"
-    source = root / ".claude/skills/merge-pr/SKILL.md"
-    quality = root / "agent-basics/skills/bugfix/references/ci-failure-handling.md"
-    operations = plugin / "skills/commit/references/ci-failure-handling.md"
-    rows = read_triggers.parse_tables(source, plugin, strict=True)
-    row = next(row for row in rows if quality in row.documents)
-    assert set(row.documents) == {quality, operations}
-    assert set(row.operations) == {
-        "read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md",
-        "read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md",
-    }
-    assert all(target.body() for target in row.targets)
-
-
-def test_session_state_design_reference_reaches_local_development_rule() -> None:
-    """配布実装の開発用docstringから、実在するローカル規約の設計節に到達する。"""
-    root = pathlib.Path(__file__).resolve().parent
-    source = root / "agent-toolkit/agent_toolkit/_common/session_state.py"
-    docstring = ast.get_docstring(ast.parse(source.read_text(encoding="utf-8")))
-    assert docstring is not None
-    reference = re.search(r"`([^`]+session-state-and-flags\.md)`", docstring)
-    assert reference is not None
-    target = root / reference[1]
-    assert target == root / ".claude/skills/agent-toolkit-edit/references/session-state-and-flags.md"
-    text = read_contract(target, root / "agent-toolkit", ("session-state-and-flags-common.md", "状態ファイルの設計"))
-    assert "## 状態ファイルの設計" in text
-
-
-def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
-    """現行all-repos統括から取得済み候補を受け取る担当へ、受渡し契約を接続する。"""
-    root = pathlib.Path(__file__).resolve().parent
-    source = root / "agent-toolkit/skills/process-wi/references/lanes.md"
-    row_text = next(
-        line for line in source.read_text(encoding="utf-8").splitlines() if "| `all-repos-orchestration.md` |" in line
-    )
-    assert "`agent-toolkit:process-wi all-repos`の統括から" in row_text
-    rows = read_triggers.parse_tables(source, root / "agent-toolkit", strict=True)
-    expected = source.with_name("all-repos-orchestration.md")
-    row = next(row for row in rows if expected in row.documents)
-    assert row.operations == ("read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md",)
-    assert row.targets[0].body()
-
-
-def test_quality_definition_forwarders_reach_distinct_basics_documents() -> None:
-    """移設後の品質定義の転送が自己循環せず、正式提供元の実在する節へ到達する。"""
-    root = pathlib.Path(__file__).resolve().parent
-    plugin = root / "agent-toolkit"
-    found = []
-    for source in sorted((plugin / "share").glob("*.md")):
-        for line in source.read_text(encoding="utf-8").splitlines():
-            if not line.startswith("品質の定義については、"):
-                continue
-            reference = re.search(r"`([^`]+)`「([^」]+)」", line)
-            assert reference is not None, (source, line)
-            target = read_triggers.resolve_document(reference[1], source, plugin)
-            assert target is not None and target != source
-            assert target.is_relative_to(root / "agent-basics")
-            assert read_triggers.ReadTarget(target, reference[2]).body()
-            found.append((source.name, reference[2]))
-    read_contract(plugin / "share/exec-review-criteria.md", plugin, ("exec-review-criteria-execution.md", "実行レビューの判定"))
-    assert {name for name, _heading in found} == {
-        "exec-review-responses.md",
-        "exec-review-criteria.md",
-        "exec-review-criteria-execution.md",
-    }
+def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
+    """指定した追跡ファイルからスキルの起動名と相対パス参照を収集する。"""
+    references: list[tuple[str, pathlib.Path]] = []
+    for relative in sources:
+        if relative in _VERBATIM_REFERENCE_SOURCES:
+            continue
+        content = (root / relative).read_text(encoding="utf-8")
+        references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))
+        references.extend((match.group().rstrip("/"), relative) for match in _SKILL_PATH_PATTERN.finditer(content))
+        references.extend((match.group(), relative) for match in _PYTHON_PATH_PATTERN.finditer(content))
+    return references

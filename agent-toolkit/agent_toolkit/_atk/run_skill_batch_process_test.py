@@ -6,6 +6,7 @@ import psutil
 import pytest
 
 from agent_toolkit._atk import run_skill_batch
+from agent_toolkit._common import process_identity
 from agent_toolkit._testing.process_observation import ObservedProcess
 
 
@@ -16,10 +17,11 @@ def test_batch_live_checks_process_state_on_both_routes(monkeypatch, tmp_path, r
     manifest: dict[str, Any] = {"manifest_path": str(tmp_path / "manifest.json"), "processes": []}
     process = ObservedProcess(state=observation, arguments=("codex", f"batch manifest: {manifest['manifest_path']}"))
     current = ObservedProcess(pid=2147483001)
+    monkeypatch.setattr(process_identity, "start_id", lambda process, **kwargs: f"test:{process.create_time()}")
     monkeypatch.setattr(psutil, "Process", lambda pid=None, **_kwargs: current if pid is None else process)
     monkeypatch.setattr(psutil, "process_iter", lambda **_kwargs: iter([process] if route == "argv" else []))
     if route == "identity":
-        manifest["processes"] = [{"pid": process.pid, "create_time": 42.0}]
+        manifest["processes"] = [{"pid": process.pid, "create_time": 42.0, "start_id": "test:42.0"}]
     expected = observation == "running" or route == "identity" and observation == "access-denied"
     # argv探索は保存identityを持たず、別世代でも同じmanifestを実行するプロセスは稼働候補になる。
     if route == "argv" and observation == "pid-reused":

@@ -24,6 +24,8 @@ import time
 
 import psutil
 
+from agent_toolkit._common import process_identity
+
 UNAVAILABLE_MODEL = "fake-unavailable"
 """このモデルを指定したturnを、接続先の可用性を理由とする失敗として終える。"""
 
@@ -78,7 +80,16 @@ class _Server:
             assert child.poll() is None and time.monotonic() < deadline, "MCP子が準備へ到達しない"
             time.sleep(0.01)
         self.loaded[thread_id] = child.pid
-        self.record({"event": "mcp", "thread": thread_id, "pid": child.pid, "created": _created(child.pid), "cwd": cwd})
+        self.record(
+            {
+                "event": "mcp",
+                "thread": thread_id,
+                "pid": child.pid,
+                "created": _created(child.pid),
+                "start_id": process_identity.start_id(psutil.Process(child.pid)),
+                "cwd": cwd,
+            }
+        )
 
     def handle(self, request_id: object, method: str, params: dict[str, object]) -> list[dict[str, object]]:
         """応答を送り、続けて送る通知を返す。"""
@@ -191,7 +202,14 @@ def _created(pid: int) -> float:
 
 def main() -> None:
     server = _Server(pathlib.Path(sys.argv[1]))
-    server.record({"event": "server", "pid": os.getpid(), "created": _created(os.getpid())})
+    server.record(
+        {
+            "event": "server",
+            "pid": os.getpid(),
+            "created": _created(os.getpid()),
+            "start_id": process_identity.start_id(psutil.Process()),
+        }
+    )
     try:
         for line in sys.stdin:
             if not line.strip():

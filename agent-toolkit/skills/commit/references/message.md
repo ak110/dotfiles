@@ -23,16 +23,11 @@
   複数の変更が含まれる場合は共通の目的にまとめて件名とし、変更が必要となった背景や個別の詳細事項は本文に記載する。
   エンドユーザーが呼び出すAPI名、設定キー、画面上で目にする識別子などはそのまま表記し、読み手が直接知り得ない内部識別子のみを必要に応じて平易な言葉に言い換える。
 - 本文の記述は任意とする。
-  本文を記載する場合は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。
+  本文を記載する場合は、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に従う。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details-feasibility.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-feasibility.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
 
 ## `Co-Authored-By:`
 

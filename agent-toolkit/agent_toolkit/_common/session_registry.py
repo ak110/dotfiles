@@ -25,12 +25,11 @@ import re
 from collections.abc import Generator, Sequence
 from typing import Any, Literal
 
-import psutil
-
 from agent_toolkit._common import file_lock, reclaim_records, session_layout
 from agent_toolkit._common import session_launchers as _session_launchers
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.process_identity import ProcessIdentity
 
 _SESSION_ID_PATTERN = re.compile(r"^[0-9A-Za-z_-]+$")
 _STATUSES = frozenset({"starting", "running", "completed", "failed", "interrupted"})
@@ -91,37 +90,6 @@ class Resolution(enum.StrEnum):
     MISSING = "missing"
     UNREADABLE = "unreadable"
     RELEASED = "released"
-
-
-@dataclasses.dataclass(frozen=True)
-class ProcessIdentity:
-    """turnを実行し得るプロセスを、pidの再利用と区別できる起動時刻（`psutil`の`create_time`）とともに識別する。"""
-
-    pid: int
-    create_time: float
-
-    @classmethod
-    def of(cls, pid: int | None) -> ProcessIdentity | None:
-        """実在するプロセスの識別を返し、取得できなければ`None`を返す。"""
-        if pid is None:
-            return None
-        try:
-            return cls(pid, psutil.Process(pid).create_time())
-        except psutil.Error:
-            return None
-
-    def exists(self) -> bool:
-        """同じpidと起動時刻のプロセスが終了していなければ真を返す。照会を拒否された場合は存在するものとして扱う。"""
-        try:
-            process = psutil.Process(self.pid)
-            return process.create_time() == self.create_time and process.status() not in (
-                psutil.STATUS_ZOMBIE,
-                psutil.STATUS_DEAD,
-            )
-        except psutil.NoSuchProcess, psutil.ZombieProcess:
-            return False
-        except psutil.Error:
-            return True
 
 
 _OWNER_PROCESS: ProcessIdentity | None = None
@@ -316,7 +284,7 @@ def running_ownership(resolution: SessionResolution, *, writer_alive: bool) -> R
 
 def process_payload(process: ProcessIdentity) -> dict[str, Any]:
     """公開応答と診断へ載せる記録プロセスの識別を返す。"""
-    return {"pid": process.pid, "create_time": process.create_time}
+    return process.payload()
 
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
@@ -636,10 +604,6 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
                 owner_root_session_id=_recorded_owner_root(payload) or _recorded_owner_root(nested),
             ),
         )
-    if payload.get("version") == 1:
-        if not isinstance(payload.get("terminal"), bool):
-            return SessionResolution(Resolution.UNREADABLE)
-        return SessionResolution(Resolution.TERMINAL if payload["terminal"] else Resolution.RUNNING)
     if payload.get("version") != 2 or not isinstance(payload.get("terminal"), bool):
         return SessionResolution(Resolution.UNREADABLE)
     info = _resume_info(payload)
@@ -746,7 +710,7 @@ def _recorded_processes(payload: dict[str, Any]) -> tuple[ProcessIdentity, ...]:
             or isinstance(create_time, bool)
         ):
             return ()
-        processes.append(ProcessIdentity(pid, float(create_time)))
+        processes.append(ProcessIdentity(pid, float(create_time), entry.get("start_id")))
     return tuple(processes)
 
 

@@ -123,14 +123,14 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     session_state.update_state(sid, lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: records})
     extra = {"turn_id": "turn"} if codex else {}
     operation = {"session_id": sid, "tool_name": "Judge", "tool_input": {}, **extra}
-    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout
+    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
     path.write_text("# 目的\n継続する\n## 即時対応で確定した暫定規則\n契約専用の新規則\n", encoding="utf-8")
     updated = run_hook("pretooluse", operation)
     assert updated.returncode == 0
-    assert "取得済み資料の更新あり" in updated.stdout
+    assert "全体作業契約が取得後に更新された" in updated.stdout
     assert str(path) in updated.stdout and "契約専用の新規則" not in updated.stdout
     assert 'permissionDecision": "deny' not in updated.stdout
-    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout
+    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
     read = run_hook(
         "posttooluse",
         {
@@ -142,7 +142,7 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
         },
     )
     assert read.returncode == 0
-    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout
+    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
     compact = run_hook(
         "rules_context",
         {
@@ -153,11 +153,11 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
         },
     )
     assert compact.returncode == 0
-    assert str(path) in compact.stdout and "全体作業契約の現行版を再読" in compact.stdout
+    assert str(path) in compact.stdout and "全体作業契約の現行版を全文取得したことを確認できない" in compact.stdout
     assert "契約専用の新規則" not in compact.stdout
     path.write_text("# 目的\n## 即時対応で確定した暫定規則\n次の訂正を適用する\n", encoding="utf-8")
     reupdated = run_hook("pretooluse", operation)
     assert reupdated.returncode == 0
-    assert "全体作業契約の現行版を再読" in reupdated.stdout
+    assert "全体作業契約の現行版を全文取得したことを確認できない" in reupdated.stdout
     assert "次の訂正を適用する" not in reupdated.stdout
-    assert "全体作業契約の現行版を再読" not in run_hook("pretooluse", operation).stdout
+    assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout

@@ -20,7 +20,7 @@ from session_evidence_extract import (
 )
 
 from agent_toolkit._common import message_format as _message_format
-from agent_toolkit._common import persisted_output_reference
+from agent_toolkit._common import next_action, persisted_output_reference
 
 _HOOK_XML_END_MARKER = re.compile(rf"</(?:{_message_format.AUTO_ELEMENT_NAME_PATTERN})>")
 
@@ -256,8 +256,13 @@ def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
             continue
         try:
             bodies.append(path.read_text(encoding="utf-8"))
-        except OSError, UnicodeError:
-            bodies.append(f"通知詳細未展開: {path}")
+        except (OSError, UnicodeError) as error:
+            bodies.append(
+                next_action.with_next_action(
+                    f"通知詳細未展開: {path}: {type(error).__name__}: {error}",
+                    "保存元の通知詳細ファイルの所在・読取権限・文字コードを確かめ、証拠照会を再実行する",
+                )
+            )
     return bodies
 
 
@@ -339,6 +344,9 @@ def _hook_notice_kind_text(text: str) -> str:
     通知の種類本文の生成と、警告行などの別の本文を通知と比べる全ての箇所がこの関数を通すことで、
     正規化の変更が比較の両側へ同時に反映される。片側だけ別の正規化で比べると、同じ通知を別の事象として数える。
     """
+    if text.startswith("通知詳細未展開: "):
+        # 取得不能の診断は原文へ戻れないため、原因と再取得操作を種類本文にも残す。
+        return text.strip()
     return _normalize_candidate_kind_text(_HOOK_REPEAT_ANNOTATION.sub("", text))
 
 

@@ -23,7 +23,7 @@ from agent_toolkit._plan import locations as _plan_locations
 ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。`session-review-evidence`の`--grep`・`--tool-calls`は長い結果を保存した場合だけ、記録位置・kind・存在するrole/tool・改行を空白にした本文の先頭160文字を1件1行で続けて書く（短縮時は`…`、該当なしは`一致: 0件`）。一致が20件を超える場合は、全件数・kindとrole/tool別の件数・記録別の件数に続けて保存順の先頭20件だけを書き、残り件数と保存先から読む方法を示す。`--summary-only`と`--fixed-string`はこの一覧の対象外とする。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 ROOT_EPILOG += "\n\n保存したファイルは、ハーネスの読取（Read）か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で、示した行数を範囲に分けて読む。"
-ROOT_EPILOG += "\n全文を保存したatk wi showは、各項目のユーザー専用の記入欄（ユーザーコメント・回答）の有無と、保存先での開始行を全件示す。"
+ROOT_EPILOG += "\n全文を保存したatk wi showは、ユーザー専用の記入欄（ユーザーコメント・回答）がある項目と保存先での開始行を全件示し、記入欄が無い項目は件数を示す。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
 """CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
@@ -31,7 +31,7 @@ CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以�
 ヘルプと、表の名前が書式に合わないときのエラー文と次の操作は、表の名前の書式をこの定義から組み立てて案内する。
 """
 
-CONNECTION_GUIDE_URL = "https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#接続の使い分け"
+CONNECTION_GUIDE_URL = "https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-connections.md#接続の使い分け"
 """Claude・Codexの接続の使い分けの説明と条件ごとの設定例を載せたガイドの節。
 
 ガイドはプラグインの配布物に含まれないため、リポジトリの`master`ブランチの公開URLを案内する。
@@ -146,14 +146,16 @@ HELP: dict[str, dict[str, str]] = {
             "利用場面: 振り返りで適用機会と効果を調べるとき。\n"
             "対象と出力: FILENAMEを1件以上指定し、全対象へ同じ判定と理由を適用する。全件を検証してから書き込み、"
             "通常のrepo lockの下でcommitとpushを一回にまとめる。採用状態、要求本文、コメント、既存処理結果と"
-            "ファイル別判定を保持する。部分確認はpending、全変更ファイルがconfirmedならconfirmed、"
-            "一つでもinsufficientならinsufficientを記録する。規範以外の変更も集約対象とする。"
+            "ファイル別判定を保持する。--fileを省略すると、作業項目の目的を達したかの判定を全体へ保存する"
+            "（confirmed・insufficientも指定できる）。--fileを指定した部分確認はpending、全変更ファイルが"
+            "confirmedならconfirmed、一つでもinsufficientならinsufficientを記録する。規範以外の変更も集約対象とする。"
             "pending・not_requiredは--fileを省略して全体判定と理由を保存する。処理結果節のない旧項目には"
-            "既存本文を保持して節と全体効果行を末尾へ追記する。pendingは14日を過ぎても候補として保持する。"
+            "既存本文を保持して節と全体効果行を末尾へ追記する。pendingは日数によらず確認待ちとして保持する。"
             "一覧は`atk wi list --state=adopted --effect-check=pending`で絞り込める。\n"
             "前提: --worktreeは対象リポジトリを指定する。ファイル別判定では対応commitの解決を要する。"
             "--fileはリポジトリ相対パス、--checked-onはYYYY-MM-DD、--review-recordは判定の記録位置を指定する。"
             "pending・not_requiredには--reason、insufficientには保存済み是正先の--corrective-awiが必須。"
+            "全体へのconfirmed・insufficientには--reasonで判定の根拠を添えられる。"
             "機会なしや日時・commit不明は全体のpendingと理由を保存できる。同じ引数での再実行は判定行を重複させない。\n"
             "復元・後始末: 変更前の内容はprivate-notesのGit履歴に残る。途中保存やcommit・pushの失敗を解消して同じ引数で再実行する。"
         ),
@@ -303,8 +305,8 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk agents wait\n  atk agents wait --root-session-id <起動応答のroot_session_id>",
     },
     "atk agents notify": {
-        "summary": "委譲先から委譲元のルートセッションへ本文を1件送る",
-        "description": "委譲先から委譲元のルートセッションへ本文を1件送る。\n\n目的: 委譲先が自身のturnを終了せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーションまたは続行できない理由を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲元が`wait`で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
+        "summary": "自分を起動した委譲元へ本文を1件送る",
+        "description": "自分を起動した委譲元へ本文を1件送る。\n\n目的: 委譲先が自身のturnを終了せずに委譲元へ本文を1件届ける。\n利用場面: 想定外事象、エスカレーションまたは続行できない理由を完了報告より前に通知するとき。\n対象と出力: 環境変数から通知先と送信元を解決し、通知ファイルを1件作成する。\n前提: `AGENT_TOOLKIT_OWNER_SESSION`を保持する委譲先で実行し、本文を`--body`か`--body-file`で渡す。\n復元・後始末: 委譲先を起動した主体が`wait`の結果で受け取ると通知ファイルは削除される。非0で終了した場合は同じ事象を完了報告へ含める。",
         "epilog": "実行例:\n\n  atk agents notify --body='チェックに使うコマンドが未導入で実行できない'",
     },
     "atk agents list": {
@@ -471,9 +473,14 @@ HELP["atk lane integrate"]["description"] += (
     "\n検証の再利用: manifestの任意のverification_recordsへ保存済み実行記録JSONの絶対パス配列を渡す。"
     "同じcleanなHEAD・argv・cwd・Pythonと環境の実行条件で終了0となり、両出力が保存されている成功だけ再利用する。"
     "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検収待ちへ戻る。"
+    "\n並行する統合: rebase・検証・最終化は同じレーンの操作だけを排他し、統合先HEADの一致の確認とfast-forwardだけを"
+    "同じ統合先への全レーンで直列にする。統合先が準備の時点から進んでいた場合は統合先を変えず、"
+    "target_advancedを返して終了1とする。同じ入力に--restart-reviewを付けて現在HEADで再開する。"
     "\n競合の解消: rebaseが競合で止まったら競合を解消してrebase --continueで完了し、まず同じ入力を指定なしで再実行する。"
     "history-compareが変更内容の不一致を示した旧commitだけを--resolved-conflictへ反復指定する。"
     "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。"
+    "rebaseで省略された旧commitの統合先の同一変更が後続commitで書き換えられたとhistory-compareが示した場合も、"
+    "書換え後の統合先でレーンの変更が成立することを確かめた旧commitだけを同じ指定で明示する。"
     "history-compareに通った指定だけを所有登録へ保存し、拒否された指定は保存しない。"
     "指定を省いた後続の再開（--accept-rebased-headなど）は最後に成功した保存値を使う。"
     "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
@@ -512,8 +519,9 @@ HELP["atk plans checkout"]["description"] = HELP["atk plans checkout"]["descript
     "PLAN_FILEは`private-notes/plans/`相対またはそのroot配下の絶対パスで指定する。",
 )
 HELP["atk wi show"]["description"] += (
-    "\n全文を保存した場合は、保存先・行数・読取に続けて各項目を`記入欄: <ファイル名> <見出し> なし`または"
-    "`記入欄: <ファイル名> <見出し> あり 開始行: <N>`で全件示す。"
+    "\n全文を保存した場合は、保存先・行数・読取に続けて、記入欄がある項目を"
+    "`記入欄: <ファイル名> <見出し> あり 開始行: <N>`で全件示し、記入欄が無い項目は`記入欄なし: <N>件`の1行で件数を示す。"
+    "記入欄が無い項目が0件の場合は件数の行を書かない。"
     "見出しはAWIの`## ユーザーコメント`かUWIの`## 回答`、開始行は保存先での1始まりの行番号である。"
     "\n節の照会: --section H2は反復指定でき、指定したH2節の本文を読む。"
     "指定しない場合は本文全体を読み、--summary-onlyは要約だけを返す。"

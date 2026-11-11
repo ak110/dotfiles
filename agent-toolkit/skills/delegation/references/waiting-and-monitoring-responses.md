@@ -4,21 +4,22 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies-failures.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-failures.md` |
-| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
-| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
-| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
-| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` |
+| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
+| `notices`に`助言依頼:`で始まる通知を受け取り、助言を返す前 | `advice-request-receiving.md` |
 
 ## `atk agents wait`の応答の扱い
 
 1. 中間値と最終結果を区別するため、バックグラウンドタスクとして実行中の`atk agents wait`が完了していない間の進捗状況は、listやshowによる活動情報で確認し、出力途中の内容は進捗情報として扱う。
    最終的な終了時の結果は完了通知を受け取った後に出力全体を改めて読み取って回収し、同じ結果を得るためのwaitコマンドの並行重複実行は避ける。
    Codexのcell IDやsession IDについては、前述のとおり同一ターン内での回収手順に従う。
-   公式資料と開発元ホストでの観測記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：進捗照会と結果回収：2026年10月10日」にある
+   公式資料と開発元ホストでの観測記録は、`docs/development/audit-records-delegation-waiting.md`にある。
+   該当節は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：進捗照会と結果回収：2026年10月10日」である
 
 2. 応答各行の形式（JSON Lines、`session_id`、`label`、`agent_message_path`、`終了行:`の要約行）や待機が成立したかどうかの判定基準は、CLIの`--help`に従う。
    どの依頼に対応するかは`label`で判別し、失敗で終了した行については要約行の`error`で原因を確認して`next_action`の指示に従う。

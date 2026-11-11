@@ -35,7 +35,10 @@ export function languageCheckResult(root: string, checked: ProcessRunResult): La
     return languageCheckUnavailable(`検査スクリプト ${checker}、判定結果のoutcome・body・fixが契約外`);
   }
   return language.outcome === "warn"
-    ? { kind: "violation", deny: automatedMessage("response-language", "block", `${language.body ?? "英語主体の本文を検出した。"}${language.fix}`) }
+    ? { kind: "violation", deny: automatedMessage("response-language", "block",
+      "送信する入力本文を英語主体と判定し、表示を止めた。" +
+      "地の文が日本語主体でも、冒頭が`Now`・`Next`・`Then`などの英語の語で始まる本文は同じ判定になる。" +
+      "内容と引用・入力素材を保ち、説明を日本語で書き直して同じ呼び出しを再発行せよ。通知への返信・訂正や謝罪の宣言は省け。") }
     : { kind: "passed" };
 }
 

@@ -18,7 +18,8 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit._agents_server import codex as codex_backend
+from agent_toolkit._agents_server import codex_rpc
+from agent_toolkit._common import process_identity
 
 FAKE_APP_SERVER = pathlib.Path(__file__).with_name("fake_codex_app_server.py")
 
@@ -64,14 +65,17 @@ class FakeAppServer:
     def _process(self, pid: int) -> psutil.Process | None:
         """記録したPIDと起動時刻の組に一致する生存中のプロセスを返す。終了済みか別のプロセスなら`None`を返す。"""
         created = next(
-            (record["created"] for record in self.events() if record["event"] in {"server", "mcp"} and record["pid"] == pid),
+            (record for record in self.events() if record["event"] in {"server", "mcp"} and record["pid"] == pid),
             None,
         )
         if created is None:
             raise AssertionError(f"pid {pid} was not started by the fake App Server")
         try:
             process = psutil.Process(pid)
-            if process.create_time() != created or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+            if not process_identity.matches(process, created["created"], created.get("start_id")) or process.status() in (
+                psutil.STATUS_ZOMBIE,
+                psutil.STATUS_DEAD,
+            ):
                 return None
         except psutil.Error:
             return None
@@ -101,5 +105,5 @@ def install(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> FakeAppS
     """Codex backendが起動するApp Serverを模擬App Serverへ差し替える。"""
     log_path = tmp_path / "fake-app-server.jsonl"
     monkeypatch.setattr(asyncio, "create_subprocess_exec", REAL_CREATE_SUBPROCESS_EXEC)
-    monkeypatch.setattr(codex_backend, "APP_SERVER_COMMAND", (sys.executable, str(FAKE_APP_SERVER), str(log_path)))
+    monkeypatch.setattr(codex_rpc, "APP_SERVER_COMMAND", (sys.executable, str(FAKE_APP_SERVER), str(log_path)))
     return FakeAppServer(log_path)

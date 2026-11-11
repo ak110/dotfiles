@@ -6,12 +6,12 @@ Codexはagent-toolkitの標準構成に含まれ、単体インストーラー�
 
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル`AGENTS.md`と共有リンクを配置しない。
 dotfilesユーザーは`update-dotfiles`または`chezmoi apply`で、Codex向け`AGENTS.md`、共有ルール、スキルのリンク、プラグインをまとめて設定する。
-配布される構成は[architecture.md](../development/architecture.md#codex向けの配布構成)を参照。
+配布される構成は[architecture-agents-codex.md](../development/architecture-agents-codex.md#codex向けの配布構成)を参照。
 
 ## Codexで`atk wi process-loop`を使う
 
 統括担当をCodexにする場合は、起動前に候補列を設定する。
-起動・停止・再開などの操作は[agent-toolkit導入ガイド](claude-code-guide.md#推奨ワークフロー)と共通である。
+起動・停止・再開などの操作は[agent-toolkit導入ガイド](claude-code-workflows.md#推奨ワークフロー)と共通である。
 
 ```bash
 atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium
@@ -81,12 +81,12 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 daemonの自動再起動の条件は[プラグイン更新の反映](#プラグイン更新の反映)を参照。
 
 CodexのStopフックは説明言語だけを判定し、完了報告の起動忘れは通知しない。
-フックの判定内容とClaude Codeとの差は[design-hooks.md](../development/design-hooks.md#フックごとの処理とcodexの対応範囲)を参照。
+フックの判定内容とClaude Codeとの差は[design-hooks-host-support.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)を参照。
 
 ## CodexのサブスクとAPI接続先
 
 `agents_server`のCodex委譲先と、Codexで動く`atk wi process-loop`の統括担当は、サブスクリプション・APIクレジット・従量課金APIを役割ごとの使用順で使い分けられる。
-使用順と設定例は、Claudeと共通の[接続の使い分け](claude-code-guide.md#接続の使い分け)を参照する。
+使用順と設定例は、Claudeと共通の[接続の使い分け](claude-code-connections.md#接続の使い分け)を参照する。
 本節はCodex固有のprovider定義だけを扱う。
 
 サブスクリプション（`subscription`）ではCodexへ`codex login`でChatGPTログインし、provider `openai`を使う。
@@ -125,7 +125,7 @@ ChatGPTのtokenをAPIキーとして使わない。
 ## 利用上限後の再開
 
 `atk run-skill`、`atk wi process-loop`、`agents_server`の委譲先は、Codexの利用上限の解除後に自動で作業を続ける。
-待つ範囲は`codex_usage_limit_wait`で選ぶ（[工程別モデル設定](claude-code-guide.md#工程別モデル設定)を参照）。
+待つ範囲は`codex_usage_limit_wait`で選ぶ（[工程別モデル設定](claude-code-models.md#工程別モデル設定)を参照）。
 
 `agents_server`のCodex委譲先では、`codex_auto_reset`を明示的に有効にすると、ChatGPTの週次枠の使用率が99%以上でreset creditの在庫がある場合に1個を消費する。
 初期値は`false`である。

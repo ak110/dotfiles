@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-
 ## 両役の入力と返却
 
 **3.** 非公開情報の事前把握を防ぐため、以下の契約で入力を準備し、入力・返却形式を本文で指定して、`agent-toolkit:delegation`の`agents_server`自由文委譲で両役を独立した新規セッションとして起動する。

@@ -100,7 +100,7 @@ def main() -> int:
         python = plugin_environment.prepared_python(root, caller_environment)
     if python is None:
         next_action.report(
-            "共有依存環境が未準備のため、agent-toolkitを起動できません。",
+            f"共有依存環境が未準備のため、agent-toolkitを起動できません。Python: {plugin_environment.base_python()}",
             next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。",
         )
         return 1
@@ -112,6 +112,7 @@ def main() -> int:
         return _run_agents_server(arguments, environment, record_diagnostics=False)
     if os.name == "nt":
         # Windowsのexecveは子の終了を待たず、呼出元へ終了状態を渡せない。
+        # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
         return subprocess.run(arguments, env=environment, check=False).returncode
     os.execve(str(python), arguments, environment)
     return 1
@@ -138,7 +139,7 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
                     "--project",
                     str(root),
                     "--python",
-                    sys.executable,
+                    str(plugin_environment.base_python()),
                     "--locked",
                     "--no-default-groups",
                     "--no-install-project",
@@ -264,6 +265,7 @@ def _server_lifetime(
 ) -> Generator[subprocess.Popen[bytes]]:
     """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。"""
     # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
+    # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
     process = subprocess.Popen(  # pylint: disable=consider-using-with
         arguments, env=environment, stderr=subprocess.PIPE, start_new_session=os.name != "nt"
     )

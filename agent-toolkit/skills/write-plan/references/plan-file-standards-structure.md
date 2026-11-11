@@ -4,17 +4,17 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 参照基準の適用前 | `../../../share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 参照基準の適用前 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-prediction.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-prevention.md` |
+| 参照基準の適用前 | `../../../share/exec-review-responses.md` |
+| 参照基準の適用前 | `../../process-wi/SKILL.md` |
+| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
+| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 計画ファイルの構成
 
@@ -44,6 +44,7 @@ H1の主題に続けて、次のH2見出しを順に置く。
 任意節・引用位置の省略だけで再起草・再調査しない。
 計画で変更対象の分解・外部仕様・受入シナリオ・テスト・検証コマンド・恒久化・リファクタリング・公開工程を具体化する。
 WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認時に限り、影響項目だけに行う。
+完成条件と手段の必要性を現在の目的・方針で判定することは再導出に当たらず、`plan-file-standards-scope.md`「実施内容」に従って常に行う。
 乖離の事実・結論を`## 変更履歴`へ記録する。
 人間由来の要求範囲変更は`../../wi-standards/references/wi-standards-origin.md`「由来と承認」、原因分析の乖離は`plan-file-standards-verification.md`「バグ調査」で扱う。
 次の基準への不適合も、原因分析の乖離に含む。
@@ -81,8 +82,8 @@ WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 計画ファイル作成基準：初回起草の雛形の基準を適用する前 | `plan-file-standards-template.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-template.md` |
-| 計画ファイル作成基準：検証と公開工程の基準を適用する前 | `plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |
+| 計画ファイル作成基準：初回起草の雛形の基準を適用する前 | `plan-file-standards-template.md` |
+| 計画ファイル作成基準：検証と公開工程の基準を適用する前 | `plan-file-standards-verification.md` |

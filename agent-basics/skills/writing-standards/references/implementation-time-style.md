@@ -4,17 +4,19 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time-implementation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-implementation.md` |
-| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
-| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md`、`read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-jobs.md`、`read:agent-basics:*/skills/writing-standards/references/design-runtime-services.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` |
+| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` |
+| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` |
 
 ## 編集前の読解
 
 - 編集対象のファイルは、編集作業に入る前に全体を一通り読み込む（一部だけを読むと、全体のスタイルから逸脱したり、リファクタリングの必要性を見落としたりするため）。
+  変更が1つの定義（関数、定数、テストなど）の中に閉じる場合は、次の範囲を読めば編集へ進める。
+  差分が参照する定義、同じファイルの共有の準備処理と既存の補助関数（識別子の検索で探す）、差分の影響を受ける利用箇所、命名と構成の書き方が分かる周辺である。
+  複数の定義の構成を変える場合と、読んだ範囲に重複や不整合を見つけた場合は、全体を読んでから編集する。
   実装の正確な仕様はコード本体から読み取り、docstringはあくまで補助的な情報として扱う。
 
 ## 記述順序と命名
@@ -119,6 +121,6 @@ if (typeof settings === "object" && settings !== null && "port" in settings) sta
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実装時のコーディング品質：セキュリティ・ロギング・エラー処理の基準を適用する前 | `implementation-time-errors.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-errors.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実装時のコーディング品質：セキュリティ・ロギング・エラー処理の基準を適用する前 | `implementation-time-errors.md` |

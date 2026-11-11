@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` |
-
 ## 実行レビュー反復での記録
 
 実行レビューの反復においてレビューイーとなったエージェント（`agent-toolkit:/share/review-loop-coordination.md`冒頭）は、レビュー指摘管理表に登録されたすべての指摘に対して、採否、判断根拠、対応内容、および検証証拠を記録する。
@@ -59,6 +53,6 @@ atk review-table show <表の絶対パス> --row-id 1 --field no-response-reason
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レビューイーの品質基準と運用の基準を適用する前 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レビューイーの品質基準と運用の基準を適用する前 | `exec-review-responses.md` |

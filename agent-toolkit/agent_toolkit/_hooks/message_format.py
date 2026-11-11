@@ -5,7 +5,9 @@ LLMに行動を促すメッセージは用途に応じて出力先を使い分�
 Stop/SubagentStopでそのターンの継続を強制する誘導（必要なスキルの起動等、次のユーザー入力を待たず即時に続ける必要がある場面）は
 `decision: "block"`＋`reason`を採用する。
 PostToolUseで`decision: "block"`を返す場合、ホストは`reason`をblock理由として直前のツール結果に添えてLLMへ渡す。
-`systemMessage`はユーザー向け情報通知専用でLLMに届かない。
+`systemMessage`はユーザー向けでLLMに届かない。
+Claude Codeの最上位メインでは、エージェントに操作や是正を求める通知の写しを、
+hookの入口（`agent_toolkit/hook.py`）が同じ応答の`systemMessage`へ加える。
 
 LLM宛て出力は生成主体、種別および配送単位を属性に持つXML要素で囲む。
 包装の実装は`agent_toolkit._common.message_format`が持ち、本モジュールはhookから呼び出せるよう再公開する。

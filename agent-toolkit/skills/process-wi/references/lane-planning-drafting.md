@@ -4,20 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 計画する変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure-candidates.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-candidates.md` |
-| 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation-results.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-results.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-structure-check.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 計画する変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` |
+| 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-subagent-implementation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-criteria.md` |
 
 ## 計画の起草
 
@@ -44,8 +37,12 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
   境界の候補は、入力値、時間経過、操作順序、保持状態、反復、権限や環境の差異などの軸から選定する。
 - 調査後は、採用案の前提を客観的に評価する観点から、変更箇所が責務を負う必要性、既存機構への統合、上流ツールや共有設定への移管、機構の削除や簡素化を比較検討する。
   結論を`../../write-plan/references/plan-file-standards-design.md`「設計・実装方針」の不採用案と理由の記録へ反映する。
-  AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う）に結論が示されている観点については、記述との明白な食い違いが観測されない限り再度の比較検討は行わない。
-  規範の記述量と配置はこの省略から外し、AWIの反映先が指定されていても、計画で大きさの目安と分割・統合・削除を比べ直す。
+  AWI本文の`## 調査結果と判断根拠`（旧形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従う）に結論が示されている観点は、次の条件で再度の比較検討を行わない。
+  結論の前提（目的、現在の方針、利用条件）が今も一致し、記述との明白な食い違いが観測されないことを条件とする。
+  前提が変わった観点と、エージェントが加えた手段・検証は、必要性を現在の方針に照らして判定してから計画の受入条件や検証へ写す。
+  プロジェクト規範が指定する方針・障害の記録を読んだ成果は、守る条件と今回の採否・検証の対応として判断の根拠へ残し、記録の名前や取得済みであることは対応の根拠から除く。
+  既存の判断を再利用する場合も、この対応付けは行う。
+  一度作った対応は再利用し、同じ範囲の再調査は省く。
   `agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」は常に実施する。
   評価条件は`../../write-plan/references/plan-file-standards-design.md`「恒久化・リファクタリング」に準拠する。
   不具合対策においては、`../../../share/exec-review-criteria.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
@@ -120,6 +117,6 @@ atk run-script plan-check -- --reject-migration-warnings --selection-file <選�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レーン計画の起草と再開の基準を適用する前 | `lane-planning.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レーン計画の起草と再開の基準を適用する前 | `lane-planning.md` |

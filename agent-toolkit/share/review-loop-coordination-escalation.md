@@ -4,12 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| レビュー指摘管理表へ担当が行を足す前 | `review-table-operations.md` |
 
 ## エスカレーションの事由別の扱い
 
@@ -24,17 +22,17 @@
 | --- | --- | --- |
 | 計画の条項とWIの明示条件の衝突 | WIの明示条件から契約が一意に定まる場合はWIを優先して確定し、同一のレビューイーへ返却する。人間由来の要求に対する解釈が分かれる場合は、ユーザー確認によって確定させてから返却する | 不要 |
 | 選定結果の`担当モデル`とAWI本文のモデル指定の不一致 | 保存済みの選定原本における該当項目の`担当モデル`のみを本文の担当とモデルの組み合わせへ修正し、初回の配分および既存の判断履歴は保持する。`atk run-script pick-wi-check -- <元の選定原本の絶対パス> --work-dir <対象リポジトリの絶対パス>`を実行し、終了コードが0になることを1回で確認する。生成側に未確定のモデルを推測させず、下位担当を追加起動して不一致を補うことは避ける。`実装担当`の値が変更された場合は、引き継ぎ記録と専用リソースを保持したうえで返却元の担当の終了を確認し、同一レーンの回復処理として修正後の値を`model_type`に渡して再起動する。`実行レビュー担当`のみが変更された場合は、同一スレッドへそのまま続行指示を返却する | 不要 |
-| 完成条件の変更または除外の判断要請 | 後述の「技術判断で外せる完成条件」に該当する場合は、メインが技術判断と根拠を担当へ返却して記録させる。該当しない場合はユーザー判断の記録を確認し、存在しなければ`agent-toolkit:user-confirmation-and-report`「手段の選択」に従ってユーザー確認を行う。ユーザー判断の出所と受理条件は`agent-toolkit:/share/exec-review-recording.md`「失効の根拠」に従う | 必要 |
+| 完成条件の変更または除外の判断要請 | 後述の「技術判断で外せる完成条件」に該当する場合は、メインが技術判断と根拠を担当へ返却して記録させる。該当しない場合はユーザー判断の記録を確認し、存在しなければ`agent-toolkit:user-confirmation-and-report`「手段の選択」に従ってユーザー確認を行う。ユーザー判断の出所と受理条件は`agent-toolkit:/share/exec-review-recording-verdicts.md`「失効の根拠」に従う | 必要 |
 | ユーザーの選好、要件または認可範囲の変更 | ユーザー確認して回答を取得し、同一のレビューイーへ返却する | 不要 |
 | 外部状態または権限の不足 | 回復手段を確認し、ユーザーによる操作が必要な場合はユーザー確認を実施する。既存不良が原因なら、下記の既存不良の行も適用する | 必要 |
-| 同一論点に関する2回目以降の差し替え | 指摘内容と変更実体を突き合わせて変更の意図と影響範囲を確認し、それでも確定できない場合に限りユーザー確認を行ってから修正する。反復回数のみを確認の判断条件にしない（`agent-toolkit:/share/exec-review-responses.md`「同じ指摘の反復」） | 必要 |
+| 同一論点に関する2回目以降の差し替え | 指摘内容と変更実体を突き合わせて変更の意図と影響範囲を確認し、それでも確定できない場合に限りユーザー確認を行ってから修正する。反復回数のみを確認の判断条件にしない（`agent-toolkit:/share/exec-review-responses-recurrence.md`「同じ指摘の反復」） | 必要 |
 | 技術的に解消可能な実装欠陥 | レビューイーが同一工程内で修正を実施する | 不要 |
 | 対象リポジトリや配布物のhook・CLI・規範などの既存不良による続行不能 | 担当の回復と欠陥の処置を分け、process-wiの実行中は`../skills/process-wi/references/immediate-fix.md`「即時対応」の要否を判定する。それ以外は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」に従う | 必要 |
 | 同一スレッドを継続できない場合 | 後続の担当へ同一の計画ファイル（`~/.claude/plans`配下）、レビュー指摘管理表、および確定済みの判断事項を引き継ぐ。既存不良が原因なら前行の欠陥の処置も判定する | 必要 |
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 
 「再開位置の記録」が「必要」とされている項目では、計画ファイルを`~/.claude/plans`へ保存し、`atk run-script plan-progress --`を実行して`## 進捗ログ`に完了した工程、続行できない理由、および再開位置を記録する。
 キュー項目は現在の状態のまま維持する。
@@ -76,6 +74,7 @@ UWIに対象項目のファイル名、対象の詳細説明、必要な回答�
 
 記録の保存先は判断した時点で選択する。
 計画の確定前は対象AWIの実施内容の根拠欄へ、実装着手後はレビュー指摘管理表へ、旧条件、新条件または除外範囲、保持する要求、判断主体と根拠を記録する。
+既存の指摘行が無く新しい行として足す場合の書き出しは、`review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
 計画なしでレーン担当が不要条件を除外する場合は引き継ぎ記録へ記録する。
 技術的制約による変更ではその制約も記録する。
 レーン担当の除外は、計画確定後の進捗ログと`review_contract`にも記録し、AWIの処理結果へ反映する。
@@ -86,7 +85,7 @@ UWIに対象項目のファイル名、対象の詳細説明、必要な回答�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| AWIとUWIの共通規範の基準を適用する前 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `../skills/wi-standards/SKILL.md` |

@@ -4,20 +4,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| レビュー修正で新たな操作・機構・副作用を採用する前 | `exec-parent-planning.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-planning.md` | |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` | |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` | |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` | |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レビュー修正で新たな操作・機構・副作用を採用する前 | `exec-parent-planning.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
 ## 実装完了の受領
 
@@ -32,7 +27,7 @@
 不足がある場合は同一の担当者へ差し戻す。
 レビュー担当者はその記録を直接読み込み、完成条件証拠の判定は同担当者が記述する。
 
-受領後、対象worktreeの最終実装HEADを対象として、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従い計画ごとに実行レビュー担当を起動する（計画がない場合はWIを基準とする）。
+受領後、対象worktreeの最終実装HEADを対象として、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従い、同書「起動方法別のレビュー基準」で決めたレビュー単位ごとに実行レビュー担当を起動する（計画がない場合はWIを基準とする）。
 起動の直前に`git merge-base <専用branch> <ベースbranch>`を実行して共通祖先commitを特定し、`開始時のHEAD`として渡す。
 `画面差分: あり`の場合は、同一工程内で`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従いユーザビリティレビュー担当も起動する。
 実行レビューおよびユーザビリティレビューからの修正要求は、同一threadのレーン担当者へ返す。
@@ -65,7 +60,7 @@ WIへ直接記入された質問（AWIの`## ユーザーコメント`、UWIの`
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュー反復の調整の基準を適用する前 | `review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュー反復の調整の基準を適用する前 | `review-loop-coordination.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` |

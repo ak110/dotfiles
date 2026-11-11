@@ -8,15 +8,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 基準資料を選択・取得する時 | `../../../share/session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-recording-evidence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-evidence.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 基準資料を選択・取得する時 | `../../../share/session-termination.subagent.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review-recording-evidence.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
+| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec.parent.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review.parent.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` |
 
 ## 検証またはCIの失敗
 

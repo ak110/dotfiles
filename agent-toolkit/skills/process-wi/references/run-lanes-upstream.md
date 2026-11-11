@@ -4,12 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` |
+| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
 
 ## 上流投入
 

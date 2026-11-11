@@ -7,22 +7,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 類似見直しの検索と個別判定を依頼・検収する前 | `../../../share/similar-review.parent.md` | 判断 | `read:agent-toolkit:*/share/similar-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 調査担当の返却の類似見直しと処置を検収する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`、`agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 類似見直しの検索と個別判定を依頼・検収する前 | `../../../share/similar-review.parent.md` |
+| 委譲元が調査対象の外で動き、起動時の`cwd`を決める時 | `agent-toolkit:process-wi/references/lanes.md` |
+| 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
+| 調査担当の返却の類似見直しと処置を検収する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`、`agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
 
 ## 調査の進め方と委譲時の入力
 
@@ -56,7 +46,7 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 
 | 引数 | 値 |
 | --- | --- |
-| `cwd` | 不具合を発見したエージェントの作業ディレクトリの絶対パス |
+| `cwd` | 調査対象のリポジトリの作業ツリーの絶対パス。不具合を発見したエージェントがその作業ツリーで動いている場合は自身の作業ディレクトリ、対象の外で動く場合（常駐起動の統括など）は対象の主作業ツリー（`agent-toolkit:process-wi`の`references/lanes.md`「用語」。常駐起動では集合JSONの`worktree`）とする |
 | `subagent_md_path` | `defect-investigation` |
 | `extra_params` | 後述の「渡す入力」の各項目 |
 
@@ -132,9 +122,3 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 取得できない資料は取得済みファイルを渡して補い、必要な権限がない場合も権限境界を保つ。
 起点未検出時の条件修正1回と再依頼、結果の統合は同親契約に従う。
 専用担当は検索と個別判定の手順をさらに別の走査担当へ重複委譲しない。
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |

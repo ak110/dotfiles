@@ -18,14 +18,14 @@ Codexでは両プラグインを明示的に導入・更新する。
 | Codex | 統合インストーラーでプラグインと共有MCP・CLIを設定する。フックはユーザーによる信頼確認が必要 |
 | claude.aiのChat・Claude DesktopのChat | マーケットプレイスまたはZIPからスキルを利用する。CLI・hook・local MCPは使えない |
 | Claude DesktopのCowork | プラグインを追加する。hook・local MCPの利用にはホストの対応、uvとネットワーク、組織の許可が必要 |
-| Claude Codeクラウド | 専用セットアップと環境変数を設定する。[クラウドの手順](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#claude-codeクラウドの環境設定)を参照 |
+| Claude Codeクラウド | 専用セットアップと環境変数を設定する。[クラウドの手順](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#詳細設定と操作)を参照 |
 | Agent Plugins対応ホスト | `plugin.json`を含むパッケージルートを指定し、ホストが対応するスキル・MCPを利用する |
 | Antigravity CLI | dotfilesの更新処理が生成版`agent-toolkit-agy`と`agent-basics-agy`を登録する |
 
 Agent Pluginsの可搬な構成はrootのmanifestとスキル・MCP定義である。
 ホスト固有のフック、常時規範の配置、依存環境の準備は、対応ホストの導入手順に従う。
 プラグインの追加だけで統合インストーラーの全設定が有効になるわけではない。
-ClaudeのZIP作成・アップロードと各環境の設定は[詳細ガイド](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#claudeの各環境への導入)を参照。
+ClaudeのZIP作成・アップロードと各環境の設定は[詳細ガイド](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#詳細設定と操作)を参照。
 
 ## 前提条件
 
@@ -38,7 +38,7 @@ ClaudeのZIP作成・アップロードと各環境の設定は[詳細ガイド]
 
 プラグインとPython依存パッケージの取得にはネットワーク接続が必要である。
 委譲先を利用する場合は、使用するClaude・Codexのログインも済ませる。
-追加料金の発生するAPI接続を使う場合は、[接続の使い分け](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#接続の使い分け)で認証と使用順を設定する。
+追加料金の発生するAPI接続を使う場合は、[接続の使い分け](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#詳細設定と操作)で認証と使用順を設定する。
 
 ## 導入
 
@@ -76,6 +76,8 @@ atk --help
 
 一覧で`agent-toolkit`と`agent-basics`が導入・有効化されていることを確認する。
 新しい会話のスキル一覧で`agent-toolkit:process-wi`などを確認し、MCPの接続状態も確認する。
+PCの再起動直後などにClaude CodeでMCPサーバーが接続時間切れ（`CONNECT_TIMEOUT`）になった場合は、`/mcp`で再接続できる。
+時間切れを繰り返す場合は、`~/.claude/settings.json`の`env`へ`MCP_TIMEOUT`（ミリ秒。例: `"120000"`）を設定すると、接続を待つ上限を延ばせる。
 Codexのフックが未信頼・変更済みの場合は、[フックの信頼確認](https://github.com/ak110/dotfiles/blob/master/docs/guide/codex-guide.md#フックの信頼確認)を済ませて新しいセッションを開始する。
 
 ## 最初の操作
@@ -100,8 +102,8 @@ Codexのフックが未信頼・変更済みの場合は、[フックの信頼�
 atk serve
 ```
 
-常駐実行、複数リポジトリ、定期実行、CLIからの登録・回答は[推奨ワークフロー](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#推奨ワークフロー)を参照。
-工程ごとのモデルは[工程別モデル設定](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#工程別モデル設定)で変更できる。
+常駐実行、複数リポジトリ、定期実行、CLIからの登録・回答は[推奨ワークフロー](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#詳細設定と操作)を参照。
+工程ごとのモデルは[工程別モデル設定](https://github.com/ak110/dotfiles/blob/master/docs/guide/claude-code-guide.md#詳細設定と操作)で変更できる。
 
 ## 構成と機能
 
@@ -117,7 +119,7 @@ atk serve
 - `atk`: キュー、設定、委譲先、Web画面などを操作するCLI
 
 警告や遮断が表示された場合は、本文が示す次の操作に従う。
-ホストごとのフックの対応範囲は[フックの設計資料](https://github.com/ak110/dotfiles/blob/master/docs/development/design-hooks.md#フックごとの処理とcodexの対応範囲)を参照。
+ホストごとのフックの対応範囲は[フックの設計資料](https://github.com/ak110/dotfiles/blob/master/docs/development/design-hooks.md)を参照。
 
 ## 更新と削除
 

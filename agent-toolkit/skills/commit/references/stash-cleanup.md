@@ -29,6 +29,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| hookの退避ファイルを復元・削除する前 | `commit-creation.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-creation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| hookの退避ファイルを復元・削除する前 | `commit-creation.md` |

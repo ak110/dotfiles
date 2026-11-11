@@ -48,7 +48,7 @@ import os
 import re
 lazy import shlex
 
-from agent_toolkit._hooks.notice import begin_delivery, emit_response, resolve_notice, set_warning_session_id
+from agent_toolkit._hooks.notice import begin_delivery, emit_response, informational, resolve_notice, set_warning_session_id
 
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
@@ -105,7 +105,8 @@ _USER_PROMPT_SOURCE_KEY = "source"
 _USER_PROMPT_SOURCE_USER = "user"
 _llm_notice = _notice_formatter("user_prompt_submit")
 _USER_CONFIRMATION_NOTICE_BODY = (
-    "この発話は、セッション開始後か会話圧縮後で、`agent-toolkit:user-confirmation-and-report`の内容が文脈に無い状態で届いた。"
+    "この発話を受けた時点で、この文脈で`agent-toolkit:user-confirmation-and-report`を起動・全文取得したことを確認できない。"
+    "部分表示やパイプ・変数を使った表示は取得操作に数えない。"
 )
 _USER_CONFIRMATION_NOTICE_FIX = (
     "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定せよ。"
@@ -217,7 +218,8 @@ def _work_contract_notice(session_id: str, body: str) -> str:
     記録はこの原因の1件だけを保つため、入力が続いても状態は増えない。
     """
     resolve_notice(session_id, "user_prompt_submit", "_work_contract_notice")
-    return _llm_notice(body)
+    # 入力ごとに同じ本文を届ける配送であり、ユーザーの画面へは写さない。
+    return informational(_llm_notice(body))
 
 
 def main(payload_text: str) -> int:
@@ -246,7 +248,7 @@ def main(payload_text: str) -> int:
     except (OSError, ValueError, TypeError, KeyError) as error:
         initial_notices.append(
             _llm_notice(
-                f"終了工程の原入力を取得できない: {error}",
+                f"今回のユーザー発話を、作業終了時の確認に使う記録へ残せなかった: {error}",
                 tag="warn",
                 removable_cause=False,
                 fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
@@ -261,14 +263,17 @@ def main(payload_text: str) -> int:
         harness_notices: list[str] = list(initial_notices)
         harness_notices.extend(command_timing.observe_notifications(payload))
         if not is_codex_payload(payload):
+            # 完了通知のたびに同じ文面が出る定型の案内であり、ユーザーの画面へは写さない。
             harness_notices.append(
-                _llm_notice(
-                    "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
-                    "ユーザーの発話ではない。応答と成果物は日本語で書け。"
-                    "通知配送のための前ターンの`Stop`終了は、現在ターンのツール操作禁止を意味しない。"
-                    "通知の保存出力と終了状態を回収し、未終了の担当には有効な待機または同じセッションの自動再開を維持せよ。"
-                    "ホストが実際に操作を拒否した場合は、その拒否に従え。",
-                    tag="notice",
+                informational(
+                    _llm_notice(
+                        "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
+                        "ユーザーの発話ではない。応答と成果物は日本語で書け。"
+                        "通知配送のための前ターンの`Stop`終了は、現在ターンのツール操作禁止を意味しない。"
+                        "通知の保存出力と終了状態を回収し、未終了の担当には有効な待機または同じセッションの自動再開を維持せよ。"
+                        "ホストが実際に操作を拒否した場合は、その拒否に従え。",
+                        tag="notice",
+                    )
                 )
             )
         if self_check_notice is not None:
@@ -299,7 +304,7 @@ def main(payload_text: str) -> int:
         except (OSError, ValueError) as error:
             notices.append(
                 _llm_notice(
-                    f"現行の作業契約の入力位置を記録できない: {error}",
+                    f"今回のユーザー発話と現行の作業契約との対応を記録できない: {error}",
                     tag="warn",
                     removable_cause=False,
                     fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",

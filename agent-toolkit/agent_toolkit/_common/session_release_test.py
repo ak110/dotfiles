@@ -77,6 +77,7 @@ async def test_release_request_rechecks_owner_and_turn_and_preserves_failures(tm
         elif condition == "wrong-owner":
             payload = json.loads(paths[0].read_text(encoding="utf-8"))
             payload["owner"]["create_time"] += 1
+            payload["owner"]["start_id"] = "other-generation"
             paths[0].write_text(json.dumps(payload), encoding="utf-8")
         elif condition == "already-released":
             session_registry.release("child", reason="retention_expired", state_root=tmp_path)

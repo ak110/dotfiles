@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文の参照基準を適用する前 | `../../delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
-| 本文の参照基準を適用する前 | `grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` |
-| 本文の参照基準を適用する前 | `pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 本文の参照基準を適用する前 | `../../delegation/references/routing.md` |
+| 本文の参照基準を適用する前 | `grilling.md` |
+| 本文の参照基準を適用する前 | `pending-decisions.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` |
 
 ## 原文の保持と取り込み
 
@@ -20,6 +20,9 @@
 
 現行の作業契約を使うエージェントは、`../../../share/work-contract-updates.md`「追加入力の統合」に従い、原文と現在の目的・要件を比較してから変更、追加指示の送信、続行へ進む。
 要求を変えない質問や状況確認では、作業契約の本文を保って元の未完了作業へ戻る。
+割り込みへの回答や会話圧縮の後に戻るときは新しく起動する前に、起動済みの実行（待機、CI監視、サーバーなど）の識別子と終了の観測を確かめる。
+確かめ方は`agent-toolkit:delegation/references/waiting-and-monitoring-setup.md`「バックグラウンドタスクの所有記録」に従う。
+未終了なら同じ識別子で回収する。
 
 - 具体化・要約・工程への割り当て・範囲の確定の前に、原文の目的・要件・範囲・例示の開放性・変更指示・論理関係を把握し、結論を左右する未確認事項と未処理の制約・理由・過去の発話・資料を確かめる。
   長い資料は`02-agent-operations.md`の分割読込で読み、取得できなければ`pending-decisions.md`「未確定判断の保留と暫定判断」に従う（資料を読むことと資料にある機能の実装は別である）。
@@ -27,7 +30,8 @@
   原文の集合は、既存の分類、省略時の値、終了条件、古い規範によらず原文どおりに保つ。
   当初の要件を戻す訂正は新規の要件と区別し、それを前提にした成果物も直す。
 - 要求の目的・指定した結果・選好と、理由として述べた技術的な評価（用途、必要性、利用実態など、調査で真偽を確かめられるもの）を分ける。
-  評価は仮説として確かめてから要件へ反映し、違えば根拠と目的に合う代替案を要件の確定前に示し、`user-confirmation-and-report-decisions.md`「確認要否の判定」で自ら選べる方式とユーザー固有の判断を分ける。
+  評価は仮説として確かめてから要件へ反映し、違えば根拠と目的に合う代替案を、正しくても発話が解こうとしている課題をより良く解く別案があればその案を、要件の確定前（着手前）に示す。
+  `user-confirmation-and-report-decisions.md`「確認要否の判定」で自ら選べる方式とユーザー固有の判断を分ける。
   明示された目的・結果・選好と変更に必要な認可は保ち、真偽を確かめられない好みや用途を理解したうえで明示された表示・動作の指定は、評価の反証があっても維持する。
 - 例示・理由・作業の契機から導かれる原則を狭めず、範囲を表す言葉（「全体」「すべて」など）と例示が併記されていれば範囲表現を優先する（集合の扱いは`user-confirmation-and-report-authorization.md`「原文からの具体化を要する軸」）。
 - 範囲表現や開放的な列挙に例示や理由を併せた調査・見直し・点検の依頼では、例示が探索を周辺へ狭めやすい。
@@ -50,20 +54,18 @@
 - 範囲の指定が無い見直しや改善では、観点や規範の適用範囲を技術判断で決めて着手時に報告し、別のリポジトリや関係しない文書へ広げるのは明示的な指示がある場合に限る（努力目標）。
 - 規範・規約・フォーマットを新設・変更するときは、同じセッションの未公開の成果物（コミットメッセージ、PRやIssueの本文、コード、文書など）への適用を判断し、適用するなら同じセッションで反映し、今後の分に限るなら判断と理由を同じターンで報告する。
   履歴の書き換えなど承認を要する操作は事前に確認する。
-- 削除や撤去の対象が存在しなければ検索範囲と不在を報告し、代わりの規範や記述を新設しない。
-  目的の達成に別の追加が要るなら追加前に確認する。
+- 削除や撤去の対象が存在しなければ検索範囲と不在を報告し、代わりの規範や記述を新設せず、目的の達成に別の追加が要るなら追加前に確認する。
 - 外部仕様として具体的なコマンド名・オプション・実行順序・出力形式・公開インターフェースなどが指定されたら要件として扱い、外見上同等な変更案も確認へ回す。
   作業の進め方として示されたコマンドや手順は、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」の指定された手段として評価する。
 - 確認回答で対象・範囲・手段が具体化されたら、確定した参照先を確かめて元の工程を再開する。
 
 補足・換算・例示は、主文の何を説明しているかを保って具体化する。
-独立した条件・分岐・上下限を加える場合は、その関係を指定した原文を確かめる。
-原文が複数条件を示していれば、その論理関係も保持する。
+独立した条件・分岐・上下限を加える場合は、その関係を指定した原文を確かめ、原文が示す複数条件の論理関係も保持する。
 広い改善要求から評価軸を選ぶ際、目指す結果や範囲が変わる選択は目的側の判断として確認し、確定した目的内の技術手段の比較と分ける。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告：認可を要する操作の基準を適用する前 | `user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告：認可を要する操作の基準を適用する前 | `user-confirmation-and-report-authorization.md` |
+| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` |

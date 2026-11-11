@@ -7,24 +7,17 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-content.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-content.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-comments.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-comments.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 状態と一覧集合・状態遷移に関する判断・作業の前 | `states-and-dependencies-states.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-states.md` |
-| 保留と本文修正に関する判断・作業の前 | `states-and-dependencies-editing.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-editing.md` |
-| 終了に関する判断・作業の前 | `states-and-dependencies-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md` |
-| 採用済みAWIの効果記録に関する判断・作業の前 | `states-and-dependencies-effect.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-effect.md` |
-| 依存と冷却時間・着手不能要因の分類に関する判断・作業の前 | `states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
-| 承認型UWIと元項目・回答済みUWIの取り込みに関する判断・作業の前 | `states-and-dependencies-approvals.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-approvals.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 状態と一覧集合・状態遷移に関する判断・作業の前 | `states-and-dependencies-states.md` |
+| 保留と本文修正に関する判断・作業の前 | `states-and-dependencies-editing.md` |
+| 終了に関する判断・作業の前 | `states-and-dependencies-completion.md` |
+| 採用済みAWIの効果記録に関する判断・作業の前 | `states-and-dependencies-effect.md` |
+| 依存と冷却時間・着手不能要因の分類に関する判断・作業の前 | `states-and-dependencies-dependencies.md` |
+| 承認型UWIと元項目・回答済みUWIの取り込みに関する判断・作業の前 | `states-and-dependencies-approvals.md` |

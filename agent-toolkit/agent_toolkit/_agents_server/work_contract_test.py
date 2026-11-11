@@ -15,9 +15,64 @@ import pytest
 
 from agent_toolkit._agents_server import launch_requests, mcp_tools, plugin_root, session_handoff
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._common import delegated_session
 from agent_toolkit._common.next_action import ActionableError
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.asyncio
+async def test_delegate_with_explicit_record_uses_single_path(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, newline: str
+) -> None:
+    """明示記録先を、本文の改行形式によらず本文・応答・環境変数で共用する。"""
+    path = tmp_path / "explicit.md"
+    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_: pytest.fail("生成不要"))
+    manager = SimpleNamespace(
+        start=AsyncMock(return_value={"session_id": "child", "status": "running", "label": "担当"}),
+        launcher_session_id=lambda: None,
+    )
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    response = await mcp_tools.start(
+        str(tmp_path), mode="delegate", prompt=f"引き継ぎ記録先: {path}（新規）{newline}作業", model_type="chores"
+    )
+    prompt = manager.start.await_args.args[1]
+    assert sum(line.startswith("引き継ぎ記録先:") for line in prompt.splitlines()) == 1
+    assert response["handoff_record_path"] == str(path)
+    assert delegated_session.handoff_environment(prompt) == {delegated_session.HANDOFF_PATH_ENV: str(path)}
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize("value", ["relative.md", "", "（新規）"])
+@pytest.mark.asyncio
+async def test_delegate_rejects_unreadable_record_line(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, value: str, newline: str
+) -> None:
+    """不正な記録先では、本文の改行形式によらず起動しない。"""
+    manager = SimpleNamespace(start=AsyncMock(), launcher_session_id=lambda: None)
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    with pytest.raises(ActionableError, match="絶対パス"):
+        await mcp_tools.start(
+            str(tmp_path), mode="delegate", prompt=f"引き継ぎ記録先: {value}{newline}作業", model_type="chores"
+        )
+    manager.start.assert_not_awaited()
+
+
+@pytest.mark.parametrize("continued", [False, True])
+def test_record_path_is_consistent_across_launch_routes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, continued: bool
+) -> None:
+    """自動生成と引き継ぎ起動で記録先の行を1つに保つ。"""
+    path = tmp_path / "record.md"
+    monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_: path)
+    prompt, returned = launch_requests.delegate_request("作業")
+    if continued:
+        previous = SessionState("previous", str(tmp_path), engine="claude", prompt=prompt)
+        prompt = session_handoff.compose_prompt(previous, tmp_path / "conversation.md", ())
+    assert sum(line.startswith("引き継ぎ記録先:") for line in prompt.splitlines()) == 1
+    assert returned == path
+    assert delegated_session.handoff_environment(prompt) == {delegated_session.HANDOFF_PATH_ENV: str(path)}
 
 
 @pytest.mark.parametrize("handoff_input", [None, "auto", "新規", "継続"])
@@ -53,6 +108,9 @@ def test_normal_task_gets_one_record_path(
     assert path == (None if explicit else handoff)
     designation = handoff_input if explicit else "新規"
     assert prompt.count(f"引き継ぎ記録先: {handoff}（{designation}）") == (2 if handoff_input is None else 1)
+    if explicit:
+        assert sum(line.startswith("引き継ぎ記録先:") for line in prompt.splitlines()) == 1
+        assert delegated_session.handoff_environment(prompt) == {delegated_session.HANDOFF_PATH_ENV: str(handoff)}
     for reference in references:
         assert reference.is_absolute() and reference.is_file()
         assert prompt.count(str(reference)) == 1

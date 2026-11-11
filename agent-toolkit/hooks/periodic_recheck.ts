@@ -10,7 +10,7 @@ import { automatedMessage, changedWarning } from "./automated_message.ts";
 // `Agent`ツールのサブエージェント（`agentId`を持つ呼出主体）へは装着も通知もしない。`CronList`はメインと共有され、
 // サブエージェントが作成したtaskのpromptは親の会話へ届くため、サブエージェントの待機を再確認できない。
 // サブエージェントは完了通知で待機を解く。
-// 設計と不採用とした代替は`docs/development/design-hooks.md`「`start`の処理の中での定期再確認の装着」にある。
+// 設計と不採用とした代替は`docs/development/design-hooks-periodic-recheck.md`「`start`の処理の中での定期再確認の装着」にある。
 
 // Claude Codeがプラグインのstdio MCPサーバーのツールへ付ける名前（`mcp__plugin_<プラグイン名>_<サーバー名>__<ツール名>`）。
 // matcherの無い`tool.call`のhookは`send_to_user.tsx`が登録済みで同じイベントへ2件目を登録できないため、ツール名をmatcherに指定する。
@@ -37,7 +37,7 @@ function notMounted(reason: string): MountOutcome {
   return {
     note: notice(
       "warn",
-      `agent-toolkitのmodは定期再確認を装着できなかった（理由: ${reason}）。` +
+      `委譲先の起動後に待機状況を定期確認するtaskを、自動作成できなかった（理由: ${reason}）。` +
         `理由に示したツールの許可と公開状態を確認せよ。待機は${RUNTIME_REFERENCE}の完了通知と終了観測で続けよ。`,
     ),
     failed: true,

@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 欠陥を示す診断の処置を確定する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-testing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing-speed.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-speed.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
-| 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 欠陥を示す診断の処置を確定する前 | `agent-basics:bugfix/SKILL.md` |
+| 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing-speed.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 読む出力
 
@@ -19,6 +19,8 @@
 
 性能比較では、入力・版・依存環境、ウォームアップ、キャッシュ初期状態、並行負荷・計測器をそろえ、改善幅とノイズ、代表値と分布、全試行の成否、最高値の選別と計測負荷を確認する。
 交互実行や再測定は採否の判断に必要な場合に選ぶ。
+測定を始める前に、その結果で採否や方式が変わるかと、目的とする利用の結果（公開された操作の往復の成否など）を測れる手段かを比べ、どちらかに当たる測定だけを行う。
+利用の結果は直接観測した値で判定し、内部の部分の計測値は補助の手掛かりとして扱う。
 原因診断の手掛かりはCPU user/system・iowait、ディスク待ち・書込量、通信、メモリー・GC、ロック・接続プール待ちとする。
 必要な指標だけをプロセス別・時系列へ対応付け、レイテンシーの集中値と設定値、受信量と一時書込量、改善後の律速移動を調べる。
 
@@ -29,7 +31,7 @@ pytestの`skip`・`skipif`・`xfail(run=False)`、Playwrightの`test.skip`など
 
 例えばpyfltrの`commands_summary.needs_action.warning`は、コマンド実行結果のステータスカウントであり、個々の診断警告の件数とは異なる。
 この値が0であっても、診断メッセージの本文を確認し、今回の変更行に対する指摘が含まれていないかを確かめる。
-出力契約の確認記録については、`docs/development/audit-records.md`の「agent-basics/skills/check-execution/references/diagnostics.md：読む出力：2026年10月3日」を参照する。
+出力契約の確認記録については、`docs/development/audit-records-investigation.md`の「agent-basics/skills/check-execution/references/diagnostics.md：読む出力：2026年10月3日」を参照する。
 
 テストや検証を実行した際は、成功・失敗を問わず、結果を判定するたびに各テストケースの所要時間および実行全体の経過時間を確認し、想定を超える遅延がないかを以下の基準に基づいて評価する。
 この評価は、メインエージェントと委譲先、ローカル環境での実行とCI環境での結果確認のいずれにおいても共通して実施する。

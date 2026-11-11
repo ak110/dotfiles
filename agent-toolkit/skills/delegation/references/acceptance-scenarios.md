@@ -11,17 +11,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/acceptance-scenarios.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 対話の継続と成果物の達成を確かめる試行を選ぶ前 | `agent-toolkit:refine-prompt/references/multi-turn-trials.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/agents-server-explore.md` | 判断 | `read:agent-toolkit:*/share/agents-server-explore.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対話の継続と成果物の達成を確かめる試行を選ぶ前 | `agent-toolkit:refine-prompt/references/multi-turn-trials.md` |
 
 ## エージェント向け文書の試行
 
 対話の継続性や成果物の達成度を確認する手段として、読込表の基準に従い、同一の固定課題を用いた手動のマルチターン対話試行を選択できる。
+試行を加える前に、その結果で文書の採否や修正が変わるかと、受入シナリオの結果を他の観測でまだ確かめていないかを比べ、どちらかに当たる試行だけを行う。
+採否が変わらず、受入シナリオの結果を他の観測で確かめ済みの試行は行わない。
+同じ版の文書と同じ入力で得た試行の結果は再利用し、文書の修正後は結果が変わり得る試行だけをやり直す。
 読み取り専用で行う文書の判定試行については、以下の手順に従う。
 
 - 実装担当エージェントは、読み取り専用の委譲タスクとして固定入力と対象文書を渡し、委譲先はスキルを実際に起動せずに文書の判定ルールを入力データへ適用して結果を返す。

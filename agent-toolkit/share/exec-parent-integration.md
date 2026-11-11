@@ -4,29 +4,28 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` | |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` | |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` | |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
+| 統合結果のWI状態を一括取得する前 | `../skills/wi-standards/references/wi-show-bulk.md` |
+| 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/process-wi/references/finish-session.md` |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
 ## 統合の許可
 
-**6.** 統合を直列化し、依存条件を満たすレーンだけに許可を出す。
+**6.** 依存条件を満たすレーンへ許可を出し、統合先HEADの更新だけを`atk lane integrate`に直列化させる。
 
-初期選定において複数のレーンが存在する場合、主作業ツリーへの統合を同時に進められるレーンは常に1つに制限する。
-レーン担当者から`統合準備完了`が返されたら、次の4点を確認したうえで、同一threadへ`send_message`の`instruction`を用いて`統合許可`を送信する。
+初期選定において複数のレーンが存在する場合も、統合の準備と検証、計画保存とWI終了（記録の確定）はレーンごとに並行してよい。
+統合先HEADを同時に更新しないことは`atk lane integrate`が保証する（統合先ごとの排他の中で、準備時の統合先HEADとの一致を確かめてからfast-forwardする）。
+レーン担当者から`統合準備完了`が返されたら、先に許可したレーンの`統合完了`を待たずに次の3点を確認し、同一threadへ`send_message`の`instruction`を用いて`統合許可`を送信する。
 
-1. 先に`統合許可`または`統合開始`を送信したレーンの返却（`統合完了`または`続行できない理由:`の行）をすでに受け取っていること。
-2. 選定結果における`段階`および`先行レーン`の依存条件を満たしていること。
-3. 統合先への追随と競合解消で各レーンの要求を維持でき、今回の統合が直列化されていること。
-4. `UWI保存状況`の対象について、`exec-parent-implementation.md`「レーン担当が確定した質問への回答」の回答UWIと`single-lane-execution.md`手順4の事後承認UWIを保存し、ファイル名を同じレーン担当へ返していること。
+1. 選定結果における`段階`および`先行レーン`の依存条件を満たしていること（先行レーンは`統合完了`を受領済みであること）。
+2. 統合先への追随と競合解消で各レーンの要求を維持できること。
+3. `UWI保存状況`の対象について、`exec-parent-implementation.md`「レーン担当が確定した質問への回答」の回答UWIと`single-lane-execution.md`手順4の事後承認UWIを保存し、ファイル名を同じレーン担当へ返していること。
    未保存なら、各節の条件と手順でレビュー済みの最新原稿を保存し、ファイル名を返してから許可する。
 複数のレーンから同時に`統合準備完了`が返された場合は、依存関係の順序を守りつつ、報告を受け取った順に許可を出す。
 
@@ -49,7 +48,7 @@
 収束後に再レビューを省略した修正が含まれる場合は、`exec-review-parent-correction.md`「レビュー修正」で保持された修正後のHEADとする。
 `マージあり`の場合は、統合指示を出す前に以下の条件を確認する。
 
-1. 計画ごとに受理した最終実行レビューの返却ファイル（`atk agents wait`の`agent_message_path`）および`レビューHEAD`を保持していること。
+1. レビュー単位ごとに受理した最終実行レビューの返却ファイル（`atk agents wait`の`agent_message_path`）および`レビューHEAD`を保持していること。
    AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
    新形式のエージェント由来AWIを含む計画は同じ`review_contract`の絶対パスも保持し、条件表の各条件に判定行が対応することを確かめる。
    欠落時はレビュー起動元へ差し戻す。
@@ -66,10 +65,11 @@
 先行レーンの統合によってベースbranchが進んだ場合でも、指示内容は変更しない。
 rebaseおよび変更前後の内容一致確認はレーン担当者が担当する。
 
-主worktreeへ統合するレーンは1実行を通じ同時に1つとする。
-メインは先に`統合開始`・`統合許可`したレーンの返却（`統合完了`・`続行できない理由:`）を本文で受領後、次へ指示する。
-HEADの前進だけでは判定しない。
-fast-forward後も計画保存・採否確定が続くため、先行すると古いベースで再rebase・再検証が生じ、先行レーンの規範改訂も判断へ適用できない。
+統合先HEADを更新する区間は、`atk lane integrate`が統合先ごとの排他で1レーンずつに限る。
+メインは先に許可したレーンの`統合完了`を待たずに、次のレーンへ指示してよい。
+先行レーンが統合先を進めた後に短い更新へ達したレーンは、終了コード1と`target_advanced`を受けて`--restart-review`で最新の統合先へ追随し、rebase結果の検収をやり直す（`lane-integration-subagent-operation.md`「マージありの統合」）。
+先行レーンの規範改訂は、その`統合完了`を受領した時点で意味確認2に従って読み直し、以後の判断と公開工程へ適用する。
+`git-integrated`は最終化の途中であり、全レーンの`統合完了`を受領するまで公開工程へ進まない（`../skills/process-wi/references/finish-session.md`冒頭）。
 再送・是正レーンも同じ前提を守る。
 
 同一threadへ以下の項目を送信する。
@@ -103,14 +103,19 @@ fast-forward後も計画保存・採否確定が続くため、先行すると�
 統合指示で渡したパラメーターと以下の観測結果を比較し、受領条件を満たしているか確認する。
 
 1. 返却が`統合完了`で始まり、規定の各行を含んでおり、JSON配列の行に重複がないこと。
-2. `統合後のHEAD`が、統合先worktreeで`git rev-parse <統合先branch>`を実行した完全OIDの先頭と一致していること。
+2. `統合後のHEAD`が、所有登録の`jq -r '.integration.integrated_head' <record_path>`が返す完全OIDの先頭と一致すること。
+   かつ、統合先worktreeで`git merge-base --is-ancestor <統合後のHEAD> <統合先branch>`が終了コード0で終わること。
+   後続レーンの短い更新で統合先branchが`統合後のHEAD`より先へ進んでいても、その子孫であれば満たす。
 3. 資源の`record_path`における所有登録情報で、`jq -r '.integration.phase' <record_path>`が`finalized`を返すこと。
 4. `保存した計画ファイル`が統合指示の`計画ファイル名一覧`と順序を含めて一致しており、各計画が`atk plans list`の出力に残っておらず、`atk config get private_notes`が返すrootの`plans/`配下に正しく保存されていること。
-5. `adoptしたWI`と`rejectしたWI`の各項目を統合先worktree上で`atk wi show <ファイル名> --target-repo=<統合先worktree> --skip-pull`で取得し、状態が`adopted`または`rejected`で`AWI終了区分`の採否と一致すること。
-   `終了しない`や延期の項目は状態が未変更であること。
+5. `adoptしたWI`、`rejectしたWI`、`終了しない`および延期の項目を、`wi-show-bulk.md`の一括取得に従い、`atk wi show <ファイル名>... --target-repo=<統合先worktree> --skip-pull --summary-only`で1回取得する。
+   終了0と要求した全識別子が揃っていることを確認し、各状態を`AWI終了区分`と比較する。
+   採否に応じて`adopted`または`rejected`であり、`終了しない`や延期の項目は状態が未変更であること。
 6. `adoptを延期したAWIとcommit`の各commitを統合先worktree上で`git rev-parse --verify <commit>^{commit}`で解決できること。
    かつ`git merge-base --is-ancestor <commit> <統合先branch>`が正常終了（コード0）すること。
 7. `変更したエージェント向け文書`が、統合先worktreeで`atk run-script agent-doc-changes -- <統合前HEAD> <統合後のHEAD>`を単独実行した結果と一致していること。
+   統合前HEADには、そのレーンの短い更新の直前の統合先HEAD（所有登録の`jq -r '.integration.new_base // .integration.verified_base' <record_path>`）を使う。
+   許可した時点の統合先HEADは使わない（許可から短い更新までに他レーンが統合先を更新すると、範囲に他レーンのcommitが入るため）。
    同一レーンにおける追加統合の場合は、前回受理した返却値との和集合と比較する。
 
 受領条件を満たしたことを確認した後、以下の意味確認を実施する。
@@ -135,8 +140,8 @@ Git統合後の処理で失敗した場合は、所有登録が保持する最�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
-| レーン担当の起動と受領：実装完了の受領の基準を適用する前 | `exec-parent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-implementation.md` |
-| レーン担当の起動と受領の基準を適用する前 | `exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` |
+| レーン担当の起動と受領：実装完了の受領の基準を適用する前 | `exec-parent-implementation.md` |
+| レーン担当の起動と受領の基準を適用する前 | `exec.parent.md` |

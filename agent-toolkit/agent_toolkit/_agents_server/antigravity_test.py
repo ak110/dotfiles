@@ -303,7 +303,7 @@ while not (gates / str(os.getpid())).exists():
 
     first, second = asyncio.run(scenario())
 
-    owner_entry = {"pid": owner.pid, "create_time": owner.create_time}
+    owner_entry = owner.payload()
     assert first[0] == owner_entry and second[0] == owner_entry
     assert len(first) == len(second) == 2
     assert first[1] != second[1]

@@ -8,6 +8,7 @@ export function usageLimitResumePrompt(root: string): string {
   return automatedMessage(
     "usage-limit-resume",
     "notice",
+    "利用上限で中断した作業を再開するため、このターンを自動的に開始した。" +
     `Readのfile_pathに${JSON.stringify(`${root}/skills/user-confirmation-and-report/references/usage-limit.md`)}を指定し、` +
       "同書に従って再開情報を取得し、最初の未完了工程から続けよ。" +
       "未完了の作業が無い場合、既に続行済みの場合、ユーザーが中止を指示している場合は、何もせず終えよ。",

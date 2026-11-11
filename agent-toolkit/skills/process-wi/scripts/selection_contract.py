@@ -64,6 +64,7 @@ _TOP_LEVEL_KEYS = frozenset(
         _selection.SINGLE_STAGE_ESTIMATE_KEY,
         _selection.STAGED_ESTIMATE_KEY,
         _selection.ESTIMATE_CORRECTION_KEY,
+        _selection.TARGET_OVERRUN_COMPARISON_KEY,
         _selection.INITIAL_ALLOCATION_KEY,
         _selection.ADDED_WIS_KEY,
     }
@@ -100,6 +101,23 @@ def _explicit_model(value: object) -> bool:
     return value == f"{engine}:{model}/{effort}" or engine == "opencode" and value == f"{engine}:{model}@{effort}"
 
 
+def require_shared_wait_basis(correction: object) -> None:
+    """共有待ちの秒数を新しく確定する入力に、算定の区分が無ければ送出する。
+
+    読取では算定の無い保存済みの選定を受理するが、新しく生成する選定と追加の合流入力は未計測と実測を必ず区別させる。
+    追加側の待ちは合流後の全体の値になるため、区分が欠けると既存側の`実測`を引き継いで未計測を実測と取り違える。
+    """
+    if (
+        isinstance(correction, dict)
+        and _selection.SHARED_WAIT_SECONDS_KEY in correction
+        and _selection.SHARED_WAIT_BASIS_KEY not in correction
+    ):
+        raise ValueError(
+            f"`{_selection.ESTIMATE_CORRECTION_KEY}`へ`{_selection.SHARED_WAIT_BASIS_KEY}`"
+            f"（`{_selection.SHARED_WAIT_MEASURED}`か`{_selection.SHARED_WAIT_ESTIMATED}`）を指定する"
+        )
+
+
 def generate_selection(
     judgments: object,
     candidates: list[dict[str, typing.Any]],
@@ -115,6 +133,7 @@ def generate_selection(
         raise ValueError("判断入力に未知の欄がある。selection-format.mdの生成入力へそろえる")
     if _selection.INITIAL_ALLOCATION_KEY in judgments:
         raise ValueError("初回配分は生成側が候補と判断から作成するため、判断入力から除く")
+    require_shared_wait_basis(judgments.get(_selection.ESTIMATE_CORRECTION_KEY))
     facts: dict[str, dict[str, typing.Any]] = {}
     for candidate in candidates:
         name = candidate.get("filename")
@@ -248,6 +267,9 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
     staged = _selection.STAGED_ESTIMATE_KEY
     if staged in selection and selection[staged] != _selection.NO_STAGED_PLAN and not is_non_negative_number(selection[staged]):
         errors.append(f"`{staged}`はbool以外の0以上の数値か`{_selection.NO_STAGED_PLAN}`とする")
+    overrun = _selection.TARGET_OVERRUN_COMPARISON_KEY
+    if overrun in selection and (not isinstance(selection[overrun], str) or not selection[overrun].strip()):
+        errors.append(f"`{overrun}`は空でない文字列とする")
     if _selection.ESTIMATE_CORRECTION_KEY in selection:
         errors.extend(_correction_structure_errors(selection[_selection.ESTIMATE_CORRECTION_KEY]))
     items = _selection.decisions(selection)
@@ -634,9 +656,16 @@ def _correction_structure_errors(value: object) -> list[str]:
     records = {"参照した記録", "除外した記録"}
     coefficients = (_selection.IMPLEMENTATION_COEFFICIENT_KEY, _selection.INTEGRATION_COEFFICIENT_KEY)
     current = {*coefficients, _selection.SHARED_WAIT_SECONDS_KEY, *records}
-    if not isinstance(value, dict) or set(value) not in (current, {"係数", *records}):
-        return [f"`{field}`は実装係数・統合係数・共有待ち秒数・参照した記録・除外した記録を持つ写像にする"]
+    # `共有待ちの算定`を持たない形は、算定を区別する前に保存した選定として読む。
+    accepted = (current | {_selection.SHARED_WAIT_BASIS_KEY}, current, {"係数", *records})
+    if not isinstance(value, dict) or set(value) not in accepted:
+        return [f"`{field}`は実装係数・統合係数・共有待ち秒数・共有待ちの算定・参照した記録・除外した記録を持つ写像にする"]
     errors = []
+    basis = value.get(_selection.SHARED_WAIT_BASIS_KEY, _selection.SHARED_WAIT_MEASURED)
+    if basis not in (_selection.SHARED_WAIT_MEASURED, _selection.SHARED_WAIT_ESTIMATED):
+        errors.append(
+            f"`{field}`の共有待ちの算定は`{_selection.SHARED_WAIT_MEASURED}`か`{_selection.SHARED_WAIT_ESTIMATED}`にする"
+        )
     for key in ("係数",) if "係数" in value else coefficients:
         if not is_non_negative_number(value[key]) or value[key] == 0:
             errors.append(f"`{field}`の{key}はbool以外の0より大きい有限数にする")

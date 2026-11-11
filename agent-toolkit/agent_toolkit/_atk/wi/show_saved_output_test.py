@@ -16,7 +16,7 @@ def test_wi_show_saved_output_reports_user_fields(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """長い単発と一括取得で、保存本文の形式を保ち、各記入欄の有無と行を表示する。"""
+    """長い単発と一括取得で、保存本文の形式を保ち、記入欄がある項目の行と、無い項目の件数を表示する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "comment.md", body="# 表題\n\n" + "長い本文\n" * 2000 + "\n## ユーザーコメント\n\n是正要求")
     _write_awi_file(notes, "plain.md", body="# コメントなし\n\n本文")
@@ -42,14 +42,13 @@ def test_wi_show_saved_output_reports_user_fields(
     assert saved.read_text(encoding="utf-8") == direct
     assert report[1] == f"行数: {len(direct.splitlines())}"
     lines = direct.splitlines()
-    expected = {
-        "comment.md": f"## ユーザーコメント あり 開始行: {lines.index('## ユーザーコメント') + 1}",
-        "plain.md": "## ユーザーコメント なし",
-        "fenced.md": "## ユーザーコメント なし",
-    }
+    expected = [f"記入欄: comment.md ## ユーザーコメント あり 開始行: {lines.index('## ユーザーコメント') + 1}"]
     if selection != "single":
-        expected["answered.md"] = f"## 回答 あり 開始行: {len(lines) - lines[::-1].index('## 回答')}"
-    assert sorted(report[2:]) == sorted(f"記入欄: {name} {expected[name]}" for name in selected)
+        expected.append(f"記入欄: answered.md ## 回答 あり 開始行: {len(lines) - lines[::-1].index('## 回答')}")
+        # 記入欄が無い2件（本文に欄が無い項目と、コードフェンス内にだけ見出しがある項目）は件数の1行にまとめる。
+        expected.append("記入欄なし: 2件")
+    assert sorted(report[2:]) == sorted(expected)
+    assert report[-1] == expected[-1]
 
 
 def test_wi_show_saved_output_reports_all_user_fields(
@@ -67,3 +66,31 @@ def test_wi_show_saved_output_reports_all_user_fields(
     report = capsys.readouterr().out.splitlines()
     assert len(report[2:]) == len(names)
     assert [line.split()[1] for line in report[2:]] == names
+
+
+@pytest.mark.parametrize("selection", ["multiple", "all"])
+def test_wi_show_saved_output_counts_items_without_user_field(
+    selection: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """記入欄が無い項目が多くても個別の行を出さず、保存後の行数を記入欄がある項目の数で決める。"""
+    notes = _setup_notes(tmp_path)
+    plain = [f"plain-{index:03}.md" for index in range(57)]
+    commented = [f"comment-{index:03}.md" for index in range(3)]
+    for name in plain:
+        _write_awi_file(notes, name, body="# 表題\n\n本文")
+    for name in commented:
+        _write_awi_file(notes, name, body="# 表題\n\n## ユーザーコメント\n\nコメント")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    monkeypatch.setenv("CLAUDECODE", "1")
+    arguments = ["--all"] if selection == "all" else [*plain, *commented]
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", "show", *arguments, "--target-repo=all", "--skip-pull"], home=tmp_path)
+    report = capsys.readouterr().out.splitlines()
+    assert report[0].startswith("保存先: ")
+    assert report[1].startswith("行数: ")
+    fields = report[2:]
+    # 保存先・行数の後は、記入欄がある3件の行と件数の1行だけになる。「あり」の行数と「なし」の件数の合計は項目の数に一致する。
+    assert sorted(line.split()[1] for line in fields[:-1]) == commented
+    assert all(" あり 開始行: " in line for line in fields[:-1])
+    assert fields[-1] == f"記入欄なし: {len(plain)}件"
+    assert not any(name in line for line in fields for name in plain)

@@ -116,15 +116,21 @@ def compose_prompt(
     records: tuple[pathlib.Path, ...],
 ) -> str:
     """抽出した資料と保持する全文から、全mode共通の引き継ぎ節を組み立てる。"""
+    path = delegated_session.prompt_handoff_path(session.prompt)
+    original = session.prompt
+    if path is not None:
+        original = "\n".join(
+            f"引き継ぎ記録先: {path}（継続）" if line.startswith(("引き継ぎ記録先:", "引き継ぎ記録先：")) else line
+            for line in original.split("\n")
+        )
     lines = [
-        session.prompt,
+        original,
         "",
         "## 前任からの引き継ぎ",
-        "上の起動本文は前任へ配送した原文である。以下の引き継ぎ節を現在の開始条件として扱い、既存の記録を読む。",
+        "上の起動本文は前任へ配送した原文の記録先行を継続へ更新したものである。以下の引き継ぎ節を現在の開始条件として扱い、既存の記録を読む。",
     ]
-    path = delegated_session.prompt_handoff_path(session.prompt)
     if path is not None:
-        lines += [f"引き継ぎ記録先: {path}（継続）", "この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"]
+        lines += ["この引き継ぎ記録を最初に読み、確定事項と残工程を復元する。"]
     lines += [
         f"前任session: {session.session_id}",
         f"前任engine: {session.engine}",

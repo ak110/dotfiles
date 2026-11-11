@@ -1,0 +1,429 @@
+
+/* カスタムプロパティー・ボタン・ナビゲーションの共通定義はapp.cssが持つ。
+   本ファイルはWI画面固有の要素の配置と見た目だけを定義する。 */
+
+#screen-wi,
+#screen-wi * {
+  box-sizing: border-box;
+}
+#screen-wi {
+  scroll-behavior: smooth;
+}
+#screen-wi {
+  margin: 0;
+  background: var(--color-background);
+}
+#screen-wi input,
+#screen-wi select,
+#screen-wi textarea {
+  width: 100%;
+  max-width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text);
+  background: var(--color-surface);
+  font: inherit;
+}
+#screen-wi textarea {
+  resize: vertical;
+}
+#screen-wi [hidden] {
+  display: none !important;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+#screen-wi .app-header {
+  padding-inline: max(var(--space-3), calc((100% - 1800px) / 2));
+}
+#screen-wi .wi-screen-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+#screen-wi .header-title,
+#screen-wi .header-actions,
+#screen-wi .pane-heading,
+#screen-wi .detail-title-row,
+#screen-wi .dialog-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+#screen-wi .app-header h1,
+#screen-wi .pane-heading h2,
+#screen-wi .dialog-header h2 {
+  margin: 0;
+}
+#screen-wi .pane-heading {
+  justify-content: space-between;
+}
+#screen-wi #entry-heading {
+  flex-shrink: 0;
+}
+#screen-wi #copy-all-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0.2rem 0.5rem;
+  font-size: var(--font-size-secondary);
+}
+/* 件数と期間は1つのまとまりとして右端に置き、狭い幅では見出しを縮めずに折り返す。 */
+#screen-wi .entry-heading-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  column-gap: var(--space-2);
+  min-width: 0;
+}
+#screen-wi .connection-status,
+#screen-wi .secondary-text,
+#screen-wi .readonly-notice,
+#screen-wi .field-hint {
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
+}
+#screen-wi .is-pending::before {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-right: var(--space-1);
+  border: 2px solid currentcolor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  content: "";
+}
+#screen-wi .list-warning,
+#screen-wi .dialog-message {
+  padding: var(--space-3);
+  border: 1px solid #f2b8b5;
+  border-radius: var(--radius-small);
+  color: var(--color-danger);
+  background: #fff1f0;
+  white-space: pre-wrap;
+}
+/* ダイアログ本文はスクロールするため、結果表示領域を上端へ留め、スクロール位置によらず可視にする。 */
+#screen-wi .dialog-message {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+/* 広い幅ではスピナーをヘッダー基準の絶対位置へ置くため、枠自体はナビゲーションの幅を占めない。 */
+#screen-wi .nav-loading-slot {
+  display: contents;
+}
+#screen-wi .nav-loading {
+  /* 左欄は幅22rem以上、残り幅との比は0.28:1。両欄の間へアイコンを置く。 */
+  position: absolute;
+  top: 50%;
+  left: calc(max(0px, (100% - 1800px) / 2) + var(--space-3) + clamp(22rem, calc(21.875vw - 0.65625rem), 23.953125rem) - 1px);
+  transform: translateY(-50%);
+}
+#screen-wi .nav-loading::before {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--color-secondary-text);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  content: "";
+}
+@media (max-width: 1179px) {
+  /* 中央のリンクと境界位置が重なる幅では、リンク群の右隣の枠へ置く。枠はリンクの配置の外に置き、
+     ナビゲーションの幅と中央寄せの位置を変えない。広い幅ではスピナーの位置の基準がヘッダーであるため、
+     ナビゲーションを位置の基準にするのはこの幅に限る。 */
+  .app-header .app-nav { position: relative; }
+
+  #screen-wi .nav-loading-slot {
+    position: absolute;
+    top: 50%;
+    inset-inline-start: calc(100% + 4px);
+    display: grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    transform: translateY(-50%);
+  }
+
+  #screen-wi .nav-loading {
+    position: static;
+    transform: none;
+  }
+}
+
+@media (max-width: 700px) {
+  /* 1列表示ではナビゲーションが列の幅いっぱいに広がるため、枠をリンク群の後ろの流れへ戻す。 */
+  #screen-wi .nav-loading-slot {
+    position: static;
+    margin-inline-start: auto;
+    transform: none;
+  }
+}
+#screen-wi .list-warning {
+  margin-top: var(--space-3);
+  color: #7a4e00;
+  background: #fffaeb;
+  border-color: #fedf89;
+}
+#screen-wi .success-message {
+  color: var(--color-success);
+  background: #ecfdf3;
+  border-color: #abefc6;
+}
+#screen-wi .app-layout {
+  display: grid;
+  grid-template-columns: minmax(22rem, 0.28fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  width: min(1800px, 100%);
+  margin: 0 auto;
+  padding: var(--space-3);
+  align-items: start;
+}
+#screen-wi .card {
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-medium);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+#screen-wi .filters-body,
+#screen-wi .dialog-form-fields,
+#screen-wi .edit-panel,
+#screen-wi .answer-panel,
+#screen-wi .user-comment-panel,
+#screen-wi .decision-panel {
+  display: grid;
+  gap: var(--space-2);
+}
+#screen-wi .filters summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+#screen-wi .filters-body {
+  margin-top: var(--space-3);
+}
+#screen-wi .wi-display-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+#screen-wi .wi-display-mode label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+#screen-wi .wi-display-mode input {
+  width: auto;
+  accent-color: var(--color-primary);
+}
+#screen-wi #clear-filters-button {
+  margin-block: var(--space-2);
+}
+#screen-wi #wi-effective-conditions {
+  overflow-wrap: anywhere;
+}
+#screen-wi .filter-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+#screen-wi .additional-filters {
+  margin-top: var(--space-2);
+}
+#screen-wi .additional-filters h3 {
+  margin: 0 0 var(--space-2);
+  font-size: inherit;
+}
+#screen-wi .entry-pane {
+  container: wi-list / inline-size;
+  min-height: 34rem;
+}
+#screen-wi .entry-columns,
+#screen-wi .entry-row {
+  display: grid;
+  /* 識別子と状態の列幅を固定し、要約だけへ残りの幅を配分する。 */
+  grid-template-columns:
+    15rem
+    14rem
+    15rem
+    minmax(0, 1fr)
+    auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+#screen-wi .entry-columns {
+  margin-top: var(--space-3);
+  padding: 0 0 0 var(--space-2);
+  color: var(--color-secondary-text);
+  font-size: var(--font-size-secondary);
+  font-weight: 700;
+}
+#screen-wi .entry-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+#screen-wi .entry-select {
+  display: grid;
+  grid-column: 1 / 5;
+  grid-template-columns: subgrid;
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-text);
+  text-align: left;
+  text-decoration: none;
+  background: var(--color-surface);
+  font: inherit;
+  cursor: pointer;
+}
+#screen-wi .entry-copy {
+  grid-column: 5;
+  /* 完了文言とボタンの余白を常に予約し、題名へ割り当てた幅を変えない。 */
+  inline-size: 8rem;
+  padding-inline: 0.35rem;
+  white-space: nowrap;
+}
+#screen-wi .entry-select:hover {
+  border-color: #aeb9cd;
+  background: #f7f9fd;
+}
+#screen-wi .entry-select[aria-current="true"] {
+  border-color: var(--color-primary);
+  background: #eef2ff;
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+#screen-wi .entry-select[data-unanswered-uwi="true"] {
+  border-left: 0.4rem solid var(--color-warning);
+  background: #fffdf5;
+}
+#screen-wi .entry-select[data-kind="unknown"] {
+  border-style: dashed;
+}
+#screen-wi .entry-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#screen-wi .entry-cell::before {
+  display: none;
+}
+#screen-wi .filename-cell,
+#screen-wi .target-repo-cell,
+#screen-wi .summary-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#screen-wi .status-cell {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+  align-items: center;
+  white-space: nowrap;
+}
+#screen-wi .time-cell {
+  font-size: var(--font-size-secondary);
+}
+#screen-wi .entry-kind {
+  font-weight: 700;
+}
+#screen-wi .state-badge,
+#screen-wi .plan-badge,
+#screen-wi .attention-badge,
+#screen-wi .blocked-badge {
+  display: inline-flex;
+  width: fit-content;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  color: #344054;
+  background: #e9edf4;
+  font-size: var(--font-size-secondary);
+  font-weight: 700;
+}
+#screen-wi .plan-badge {
+  color: #6941c6;
+  background: #f4f3ff;
+}
+#screen-wi .attention-badge {
+  color: #7a4e00;
+  background: #fef0c7;
+}
+/* 回答待ちのblockedは自動着手を止めている状態として注意色で示す。 */
+#screen-wi .blocked-badge {
+  color: #7a4e00;
+  background: #fef0c7;
+}
+#screen-wi .state-badge[data-state="inbox"] {
+  color: #175cd3;
+  background: #eff8ff;
+}
+/* 反映後の観測だけが残るinboxの項目は、処理が続いている項目としてprocessingと同じ色で示す。 */
+#screen-wi .state-badge[data-state="processing"],
+#screen-wi .state-badge[data-needs-verify="true"] {
+  color: var(--color-warning);
+  background: #fffaeb;
+}
+#screen-wi .state-badge[data-state="adopted"] {
+  color: var(--color-success);
+  background: #ecfdf3;
+}
+/* 冷却中はneeds-verifyより優先し、保存状態inboxと同じ色にする。 */
+#screen-wi .state-badge[data-cooldown="true"] {
+  color: #175cd3;
+  background: #eff8ff;
+}
+#screen-wi .state-badge[data-state="rejected"] {
+  color: var(--color-danger);
+  background: #fff1f0;
+}
+#screen-wi .loading-state,
+#screen-plans .loading-state,
+#screen-wi .empty-state {
+  margin-top: var(--space-4);
+  padding: var(--space-5) var(--space-3);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-small);
+  color: var(--color-secondary-text);
+  text-align: center;
+}
+#screen-wi .pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  flex-wrap: wrap;
+}
+#screen-wi .pagination-status {
+  min-width: 8rem;
+  color: var(--color-secondary-text);
+  text-align: center;
+}
+#screen-wi .loading-state::before,
+#screen-plans .loading-state::before {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-right: var(--space-2);
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;

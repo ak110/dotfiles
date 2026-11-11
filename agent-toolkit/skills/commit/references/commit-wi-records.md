@@ -6,19 +6,19 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` | |
-| 未コミット検証の実行前とcommit後の適用確認前 | `../../../share/verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` | |
-| 取得版の異なる結果をレビューへ渡す前 | `../../../share/exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
-| Git識別子・worktree・履歴・公開済みの状態を判定または操作する前 | `git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` | |
-| 公開工程またはリリース操作に着手する前 | `publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
-| amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `history-rewrite.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite.md` | |
+| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | | |
+| 未コミット検証の実行前とcommit後の適用確認前 | `../../../share/verification-evidence-observation.md` | | | |
+| 取得版の異なる結果をレビューへ渡す前 | `../../../share/exec-review-recording-grounds.md` | | | |
+| Git識別子・worktree・履歴・公開済みの状態を判定または操作する前 | `git-identifier.md` | | | |
+| 公開工程またはリリース操作に着手する前 | `publish.md` | | | |
+| amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `history-rewrite.md` | | | |
 | 実際にpushする前 | `push-and-ci.md` | 操作 | `bash:git push` | |
-| コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `message.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/message.md` | |
-| 既存未コミット差分を不採用として破棄する前 | `stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
-| 一時ブランチ、`git stash`の退避、hookの退避ファイルまたは別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
-| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-toolkit:commit/references/design-time.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/design-time.md` | |
-| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/testing.md` | |
+| コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `message.md` | | | |
+| 既存未コミット差分を不採用として破棄する前 | `stash-cleanup.md` | | | |
+| 一時ブランチ、`git stash`の退避、hookの退避ファイルまたは別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `stash-cleanup.md` | | | |
+| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` | | | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-toolkit:commit/references/design-time.md` | | | |
+| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:commit/references/testing.md` | | | |
 
 ## WI実装commitの対応
 
@@ -30,6 +30,7 @@ commitは一意な短縮OIDで扱い、入力には完全OIDも使える。
 
 **1.** AWIとの対応を保持するため、実装コミットを作成する前に、対応するAWIの集合と現在のHEADを取得する。
 `git commit`を単独で実行して正常に完了した場合に限り、作成前のHEAD、新しいHEAD、worktree、および対応するすべてのAWIを`atk run-script plan-progress`へ渡して記録する。
+1つのcommitが複数のAWIの変更を含む場合は、それらのAWIを全件同じ記録へ渡す。
 引き継ぎ記録は`--handoff`と対象AWI全件の`--allowed-awi`を指定する。
 レビュー修正やCI修正も同様に全件記録する。
 cherry-pickやfast-forwardで複数commitを取り込んだ場合は操作前後のHEADで一括記録できる。
@@ -75,6 +76,6 @@ private-notesの保存に失敗した場合は、原因となるエラーを解�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 履歴書換え：WI実装commitの対応の継承の基準を適用する前 | `history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 履歴書換え：WI実装commitの対応の継承の基準を適用する前 | `history-rewrite-wi-records.md` |

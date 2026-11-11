@@ -17,6 +17,7 @@ from agent_toolkit._agents_server import (
     api_credits,
     child_environment,
     claude,
+    claude_options,
     mcp_tools,
     responses,
     resume_waits,
@@ -437,7 +438,9 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
             monkeypatch.setenv(key, "parent-environment")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth")
     monkeypatch.setattr(
-        claude, "_parent_settings", lambda: json.dumps({"env": {**dict.fromkeys(keys, "parent-settings"), "UNRELATED": "kept"}})
+        claude_options,
+        "_parent_settings",
+        lambda: json.dumps({"env": {**dict.fromkeys(keys, "parent-settings"), "UNRELATED": "kept"}}),
     )
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     child_environment.prepare(os.environ)

@@ -4,13 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更した状態の散在表現と遷移の分散を走査する前 | `../../writing-standards/references/implementation-time-data.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-data.md` |
-| 変更した状態の不変条件と保証箇所を比較する前 | `../../writing-standards/references/design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` |
-| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md`、`read:agent-basics:*/skills/writing-standards/references/testing-platforms.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更した状態の散在表現と遷移の分散を走査する前 | `../../writing-standards/references/implementation-time-data.md` |
+| 変更した状態の不変条件と保証箇所を比較する前 | `../../writing-standards/references/design-time-state.md` |
+| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` |
+| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` |
 
 ## ユーザビリティレビューの判定
 

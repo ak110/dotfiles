@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import pathlib
 import sys
 from collections.abc import Callable, Generator
@@ -59,6 +60,24 @@ def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bo
     return None
 
 
+def _report_error_events(path: pathlib.Path) -> None:
+    """保存した出力のJSON Linesから、`kind`が`error`の行の本文と次の操作を表示する。"""
+    with path.open(encoding="utf-8", newline="") as stream:
+        for raw in stream:
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict) or event.get("kind") != "error":
+                continue
+            text, action = event.get("text"), event.get("next_action")
+            if isinstance(text, str) and text:
+                print(f"失敗: {text}")
+            if isinstance(action, str) and action:
+                # 照会ごとに次の操作の標識の有無が異なるため、表示では標識を1つにそろえる。
+                print("次の操作: " + action.removeprefix("次の操作:").strip())
+
+
 def _discard_unused(saved: pathlib.Path, discard_directory: Callable[[pathlib.Path], None] | None) -> None:
     """結果を書かずに失敗した呼び出しの空の保存先と、その生成領域を片付ける。"""
     try:
@@ -83,6 +102,8 @@ def auto_save(
     例外とSystemExitでもそれまでの出力と元の終了状態を保持する。
     実行前に開いた保存先へ何も書かずに非0で終わった場合は、空の保存先と`discard_directory`へ渡す
     生成領域を片付け、保存先と行数を表示しない。読む結果が無い保存先を受信側へ渡さないためである。
+    実行前に開いた保存先へ出力を書いて非0で終わった場合は、`after_save`を呼ばず、保存した出力のうち
+    エラーの本文と次の操作を表示する。受信側が保存先を開かずに失敗の理由を読めるようにするためである。
     """
     stdout_buffer, stderr_buffer = io.StringIO(), io.StringIO()
     saved: pathlib.Path | None = None
@@ -115,7 +136,11 @@ def auto_save(
                 _discard_unused(saved, discard_directory)
             else:
                 _report_saved(saved)
-                if after_save is not None:
+                if failed:
+                    # 成功時の要約は結果の件数を示す。失敗した本体の出力へ適用すると、
+                    # 「0件」のように失敗を結果が無いことと読める表示になる。
+                    _report_error_events(saved)
+                elif after_save is not None:
                     after_save(saved)
         else:
             emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False)

@@ -44,4 +44,6 @@ def test_question_is_not_denied_because_of_process_loop(
     assert result.returncode == 0
     if result.stdout.strip():
         specific = json.loads(result.stdout).get("hookSpecificOutput", {})
-        assert specific.get("permissionDecision") != "deny"
+        # 確認の前に読む資料の未取得による拒否は、起動環境によらない別の判定である。
+        reason = specific.get("permissionDecisionReason", "")
+        assert specific.get("permissionDecision") != "deny" or "確認の前に全文を読むと定めた資料" in reason

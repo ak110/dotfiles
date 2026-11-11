@@ -12,22 +12,21 @@ description: >
 
 # dotfilesの規範の改訂
 
-このスキルは、本リポジトリのエージェント向け文書を改訂するエージェントに向けて、編集前に参照すべき記録、変更した規範を自身のセッションへ適用する手順、メインエージェントが記述する`プロジェクト規範の指定`、規範を削除・縮小する際の消失確認手順、撤去した仕組みの照合と再発の記録をまとめたものである。
+このスキルは、本リポジトリのエージェント向け文書を改訂するエージェントに向けて、次の事項をまとめたものである。
+編集前に参照すべき記録、変更した規範を自身のセッションへ適用する手順、メインエージェントが記述する`プロジェクト規範の指定`を扱う。
+規範を削除・縮小する際の消失確認手順、モデルとホストの更新時の点検、撤去した仕組みの照合と再発の記録も扱う。
 `agent-toolkit/`配下の配置やバージョン更新、配布の手順は、`agent-toolkit-edit`の読込表から作業に合う資料を選ぶ。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 不具合の原因が過去の対策と同じかを分類する前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 撤去した仕組みと一致する案の扱いを決める前 | `agent-toolkit:wi-standards/references/awi-body-placement.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-placement.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` |
+| 不具合の原因が過去の対策と同じかを分類する前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
+| モデルとホストの更新時の点検で、基準にする公式ガイドの掲載を確かめる前 | `agent-basics:writing-standards/references/host-official-references.md` |
+| 撤去した仕組みと一致する案の扱いを決める前 | `agent-toolkit:wi-standards/references/awi-body-placement.md` |
 
 ## 読込表
 
@@ -36,6 +35,9 @@ description: >
 | エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集するエージェント自身が全文を読む（要約、見出し一覧、部分読取、他のエージェントの読取結果では代えない） | 操作 | `agent-document-writing` | |
 
 編集を始める前に、読込表の1行目にある方針や障害対策の記録と、今回の変更内容に矛盾がないことを確認する。
+採否を決める担当は、選んだ方針と障害の本文から守る条件を今回の判断へ対応付け、その結論を計画の判断の根拠（計画が無ければ引き継ぎ記録）へ残す。
+実装担当と実行レビュー担当は、この対応で同じ失敗の条件の取り落としを確かめる。
+索引の名前や「取得済み」だけを照合の結果にせず、別の様式・台帳・全件の列挙は設けない。
 規範の節の内容を変えるときは、ファイル名と節名を個別の固定文字列で`docs/development/`から検索し、その節を現行規定の所在として挙げる記録も同じ変更で現行に合わせる。
 編集の過程で新たな障害が発生したり方針が確定したりした場合は、対応する記録文書を更新する。
 
@@ -62,6 +64,20 @@ description: >
      委譲先が現行のplugin rootから自律的に解決して実行するリソースの不具合を修正した場合は、`agent-toolkit:delegation`の`references/base-contract.md`にある`是正済み資源:`の行で作業ツリー側の絶対パスを渡す。
    - 変更後の規範に従うと作業を完遂できないと判明した場合は、その変更自体の設計見直しを優先して進める。
 
+## モデルとホストの更新時の点検
+
+規範を編集する作業の開始時に、自分のモデルIDとホスト（Claude Code、Codex）の版を、`docs/development/audit-records.md`の最新の「規範の点検記録」と比べる。
+公式ガイドが`agent-basics:writing-standards/references/host-official-references.md`に挙がっていることは、点検済みの根拠にしない。
+
+- モデルIDが点検記録に無い場合（記録が1件も無い場合を含む）は、そのモデルを基準にした規範全体の点検（`agent-toolkit:refine-prompt`の`audit`。所在参照）を求めるAWIを登録する。
+  同じモデルの点検を求める未終了のAWIがあれば登録しない。
+  基準はそのモデルの公式ガイドとし、モデル別のガイドが無ければ同資料が挙げる提供元の一般ガイドを使って、点検記録へその旨を記す。
+  モデル別のガイドが同資料に挙がっていなければ、点検のAWIへ同資料への追加を含める
+- ホストの版だけが点検記録と違う場合は、記録の版から現在の版までの公式の変更履歴をその場で読む。
+  エージェントへ配送される本文、ツールの入出力、hook、スキルの読込、権限の扱いを変える項目があれば、該当する項目と関係する規範に対象を絞った点検を求めるAWIを登録する。
+  該当する項目が無ければ、点検記録の確認済みの版を現在の版へ更新し、進行中の作業の変更に含める
+- モデルIDもホストの版も点検記録と一致する場合は、登録せずに作業を続ける
+
 ## メインが書くプロジェクト規範の指定
 
 `agent-toolkit:process-wi`の選定工程において、メインエージェントはAWIごとに`プロジェクト規範の指定`を記述する。
@@ -77,6 +93,7 @@ description: >
 - 反映先に本リポジトリのエージェント向け文書を含むAWI（`agent_toolkit._plan.structure`の`is_agent_doc_target_file`が真となるもの）には、変更を確定するエージェントが計画の採否を判断する前に読むべき資料を明記する。
   `docs/development/concepts.md`と`docs/development/incidents.md`は索引であるため全文を読み、さらにその索引から変更対象のファイル名・工程名・機能名に関連する分割ファイルの節を選択して読み込む。
   ユーザーが確定した方針の本文は分割ファイル側に書かれており、索引だけでは確認できないためである。
+  読んだ成果は、前節の守る条件と今回の採否・検証の対応として残す。
 - レーン担当者は選定結果から自レーンの指定を確認するため、委譲プロンプトで同じ要求を再掲することは省く（努力目標）。
   指定が`なし`以外の項目を担当するレーンには、その項目のファイル名と対象ファイルのパスを渡す。
 - レーン内で規範の変更を確定したエージェントは、同じレーンの以降の委譲先に対して、前節で述べた原本の絶対パス、適用する節、版を引き継ぐ。
@@ -85,7 +102,7 @@ description: >
 ## 規範を削除・縮小するときの消失確認
 
 エージェント向け文書の削除・縮小では、編集目的によらず以下を実施する。
-経緯は`docs/development/incidents-validation.md`「規範の消失と陳腐化」にある。
+経緯は`docs/development/incidents-norms.md`「規範の消失と陳腐化」にある。
 
 1. 規範の価値を守るため、ベースcommitとの差分から、失われる価値、適用範囲、条件、例外、拘束力を確認し、削除・縮小の理由をcommit本文に記録する。
    - 統合や移設を理由とする場合は、統合先（パスと該当節）の適用範囲が元の範囲を完全に含んでいることを確認し、commit本文に対応関係を明記する。
@@ -126,9 +143,11 @@ description: >
 `agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」の分類で過去の対策と同じ原因（範囲不足・未適用・効果不足）と判定したら、その分析の中で次の2つを記録する。
 記録は振り返りが原因ごとに再発を数え、同じ対策を繰り返す前に条文や仕組みを見直す材料になる。
 
-- `docs/development/incidents*.md`の該当事例へ`再発（YYYY年M月D日）:`行を加え、分類、事象、是正するAWI、元の対策のAWIを書く。
-  元のAWIが無ければ事例への行だけを書き、事例も無ければ元の事象を事例として`incidents.md`「区分」の所在ファイルへ置いてから行を加える
-- 元の対策が採用済みAWIにあれば、次の操作で効果確認を`insufficient`にし、是正するAWIと対応付ける
+- `docs/development/incidents*.md`の該当事例へ`再発（YYYY年M月D日）:`行を加え、分類、事象、是正の内容を書く。
+  公開する文書のため、作業項目のファイル名などの個人記録の識別子は書かない（`agent-basics:writing-standards/references/writing-common.md`の個人記録の規定）。
+  事例が無ければ元の事象を事例として`incidents.md`「区分」の所在ファイルへ置いてから行を加える
+- 是正するAWIと元の対策のAWIの対応はWIの側に保つ。
+  元の対策が採用済みAWIにあれば、次の操作で効果確認を`insufficient`にし、是正するAWIと対応付ける
 
   ```sh
   atk wi effect-check <元のAWI> --worktree <対象worktree> --file <元の対策で変更したファイル> --verdict insufficient --checked-on <判定日> --review-record <判定の記録位置> --corrective-awi <是正するAWI>
@@ -136,7 +155,7 @@ description: >
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:user-confirmation-and-report/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:wi-standards/SKILL.md` |

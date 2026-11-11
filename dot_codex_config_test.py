@@ -96,7 +96,7 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
 def test_config_template_applies_context_overrides(context_config: str) -> None:
     """コンテキスト設定の有無と値によらず指定値を反映し、無関係な設定を保つ。
 
-    固定値の目的と、値を変える前に観測する条件は`docs/development/concepts-runtime.md`「Codexの文脈長設定」にある。
+    固定値の目的と、値を変える前に観測する条件は`docs/development/concepts-codex-context.md`「Codexの文脈長設定」にある。
     このテストは生成値だけを確かめ、目的（圧縮の頻度と待ち時間）の達成は確かめない。
     """
     template = REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"

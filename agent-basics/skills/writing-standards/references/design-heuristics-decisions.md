@@ -4,13 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 品質改善の投資先を比較する前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-scope.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-scope.md` |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 品質改善の投資先を比較する前 | `design-heuristics-screening.md` |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 案の採否と実施順の判定
 

@@ -7,13 +7,13 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._common import plugin_roots, read_triggers
+from agent_toolkit._common import plugin_roots, read_triggers, read_triggers_targets
 from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks.pretooluse import large_reads, read_acquisition, read_delivery
 
 
 def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_path, monkeypatch):
-    """必要な節の受領を保ち、同じ本文の解析を共有して同サイズ更新も識別する。"""
+    """名指しの無い節には候補を作らず、資料全体の候補で同サイズ更新も識別する。"""
     path = tmp_path / "document.md"
     text = f"# {tmp_path.name}\n" + "".join(f"## Section {index}\nold\n" for index in range(20))
     scans = []
@@ -23,15 +23,15 @@ def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_pat
         scans.append(body)
         yield from document_lines(body)
 
-    monkeypatch.setattr(read_triggers, "document_lines", observe_lines)
+    monkeypatch.setattr(read_triggers_targets, "document_lines", observe_lines)
     versions = []
     for body in (text, text.replace("old", "new")):
         path.write_text(body, encoding="utf-8")
         scans.clear()
         candidates = document_reads.receipt_candidates([read_triggers.ReadTarget(path)])
         received = document_reads.received_candidates(candidates, [body])
-        assert len(received) == 22
-        assert next(item for item in received if item["heading"] == "Section 19")["ranges"] == [[40, 41]]
+        assert [item["heading"] for item in received] == [""]
+        assert received[0]["ranges"] == [[1, 41]]
         assert len(scans) <= 2
         versions.append(received[0]["version"])
     assert versions[0] != versions[1]
@@ -75,6 +75,8 @@ def test_basics_reference_uses_observed_manifest_and_path(tmp_path):
 
 def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path, monkeypatch):
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+    # 実行者のユーザースキルが持つ読込表を宣言へ含めない。
+    monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path / "home")
     root = tmp_path / "toolkit"
     source = root / "skills/example/SKILL.md"
     source.parent.mkdir(parents=True)
@@ -87,6 +89,8 @@ def test_hook_declarations_and_body_identity_use_the_effective_project(tmp_path,
     installed = [{"id": "agent-toolkit@mine", "scope": "user", "enabled": True, "installPath": str(root)}]
     for index, project in enumerate(projects):
         project.mkdir()
+        # Git作業ツリーの外では全祖先の`.claude/skills`を探すため、作業ツリーのrootにして探索を止める。
+        (project / ".git").mkdir()
         basics = tmp_path / f"basics-{index}"
         path = basics / "skills/writing-standards/references/writing.md"
         path.parent.mkdir(parents=True)
@@ -193,7 +197,8 @@ def test_chezmoi_source_and_distribution_link_require_full_body(tmp_path, monkey
         f"| 判断前 | `{path}` | 判断 | `section:{path}#{heading}` |\n",
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="エージェント向け文書"):
+    # 節単位の取得は判定しないため、`section:`は配送操作として受理しない。
+    with pytest.raises(ValueError, match="未登録の配送操作"):
         read_triggers.parse_tables(declaration, root, strict=True)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)

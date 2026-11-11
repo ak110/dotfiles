@@ -484,7 +484,7 @@ def _existing_session_temp(session_id: object) -> str | None:
 def _compaction_notice(
     session_id: str, transcript_path: object, session_temp: pathlib.Path | None, *, delegated: bool
 ) -> str | None:
-    """既存の証拠抽出CLIで全人間入力を保存し、会話の流れの取得先も通知する。"""
+    """既存の証拠抽出CLIで全人間入力を保存し、直近の会話の取得先も通知する。"""
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
         arguments = ["run-script", "session-review-evidence", "--", "--claude-session-id", session_id, "--user-events"]
@@ -507,11 +507,17 @@ def _compaction_notice(
             "--transcript",
             resolved,
             "--conversation-only",
+            "--conversation-window",
+            "--conversation-recent",
+            "30",
         ]
     )
+    # 復元で先に読むのは発話の原文と作業契約・計画・引き継ぎ記録である。会話は進行中の操作を補う直近の少量表示を案内し、
+    # 全期間の通常表示（数万文字）は不足する場合の手段にとどめる。
     lines = [
-        f"会話全体の流れは`{conversation}`でconversation.mdを取得せよ。"
-        "前回以降の点検には同じコマンドへ`--conversation-window --conversation-recent 30`を追加せよ。"
+        f"圧縮前の直近の操作は`{conversation}`でconversation.mdを取得して確かめよ。"
+        "それでも目的や経緯を復元できない場合だけ、"
+        "同じコマンドから`--conversation-window --conversation-recent 30`を外して全期間の流れを取得せよ。"
         "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
     ]
     if delegated:
@@ -563,14 +569,20 @@ def _compaction_notice(
         remaining = error.retry()
         if remaining:
             lines.append(f"ユーザー発話の抽出の子プロセスを回収できない: {remaining}。PIDと起動コマンドを確かめて終了させよ。")
-        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行せよ。")
+        lines.append(
+            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: {error}）。手動で`{shlex.join(command)}`を実行せよ。"
+        )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
             try:
                 output.unlink(missing_ok=True)
             except OSError:
-                lines.append("前回の抽出ファイルを削除できないため、そのファイルは使用するな。手動で原文を再取得せよ。")
-        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行せよ。")
+                lines.append(
+                    f"前回の抽出ファイル`{output}`を削除できないため、そのファイルは使用するな。次のコマンドで原文を再取得せよ。"
+                )
+        lines.append(
+            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: {error}）。手動で`{shlex.join(command)}`を実行せよ。"
+        )
     return "\n".join(lines)
 
 

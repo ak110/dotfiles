@@ -4,11 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-purpose.md`、`agent-documents-basics-placement.md`、`agent-documents-basics-read-tables.md`、`agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-purpose.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 設計品質の劣化確認
 
@@ -16,7 +14,7 @@
 
 変更履歴や現行構成に、機能・節・例外・条件分岐や責務の増加、同一情報の反復などの蓄積を認めたファイルは、直近の差分に劣化がなくても全体構成の適否を見直す。
 SSOT（単一の情報源）、責務の混在、重複、読み取り・変更の負担などを手掛かりとする。
-規範の大きさの目安と整理を検討する契機は、`agent-documents-additions-volume.md`「記述量の水準」に従う。
+ファイルの行数は構成の見直しの契機にせず、行数の上限を検査するプロジェクトでは超過の整理を`implementation-time-checks.md`「lintと機械チェック」に従って行う。
 
 常に遵守すべき不変条件は、変更後の成果物全体の設計品質が変更前よりも劣化しないことである。
 局所的な観点のみで評価すると、ファイル全体の章構成や他の成果物との関係性が損なわれたまま確定してしまい、後からの手戻りコストが初期の評価コストを大きく上回る結果となる。
@@ -34,7 +32,7 @@ SSOT（単一の情報源）、責務の混在、重複、読み取り・変更�
 - (d)関連性: 他の成果物との参照関係、呼び出し関係、記述の重複
 - (e)到達性: 読み手や呼び出し元が起点（常時規範、`SKILL.md`の読込表、公開された呼び出し手段など）から目的の規定や機能へ辿り着くまでに経由する文書や手段の変化
 - (f)分割と統合の比較: 現状維持・統合・分割・新設・移設・削除などについて、必要な契約と参照関係を保ちながら読解・変更の負担を比較する。
-  構造上の問題がなければ長いファイルも維持でき、分割や短縮を必須の結果としない
+  行数の上限を超えていないファイルは、構造上の問題がなければ長くても維持でき、分割や短縮を必須の結果としない
 
 判定基準には、`design-heuristics-responsibility.md`「責務帰属（SRP）分析の観点」と次の資料を用いる。
 
@@ -49,7 +47,7 @@ SSOT（単一の情報源）、責務の混在、重複、読み取り・変更�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| エージェント向け文書への追記と記述量の管理：文書記述量の管理の基準を適用する前 | `agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
-| 設計判断の手順と領域別の設計観点：責務帰属（SRP）分析の観点の基準を適用する前 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書への追記と記述量の管理：文書記述量の管理の基準を適用する前 | `agent-documents-additions-volume.md` |
+| 設計判断の手順と領域別の設計観点：責務帰属（SRP）分析の観点の基準を適用する前 | `design-heuristics-responsibility.md` |

@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の条件に従い「QとC・Dの区別」を判断する前 | `root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文の条件に従い「再発防止策」を判断する前 | `root-cause-prevention-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-selection.md` |
-| 外部の変化を受けた復元案を比べる前 | `root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の条件に従い「QとC・Dの区別」を判断する前 | `root-cause-severity-impact.md` |
+| 本文の条件に従い「再発防止策」を判断する前 | `root-cause-prevention-selection.md` |
+| 外部の変化を受けた復元案を比べる前 | `root-cause-analysis-evidence.md` |
 
 ## 処置の階層
 

@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-prediction.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
-| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
+| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
+| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 実施内容
 
@@ -41,8 +41,8 @@
 `根拠`列には、実施しない範囲と理由を、他の参照先を見ずに分かるように書く。
 
 - `エージェント提案`と`エージェント由来のWI`の行には観測可能な根拠を書く。
-  計画担当が範囲を変えずに採用するWIの行は、非空の`## 反映内容と反映先`または旧形式の非空の`## 適用範囲`を参照して`-`とできる。
-  範囲や採否を変える場合はその理由を書く
+  計画担当が範囲を変えずに採用するWIの行は、そのWIの完成条件と手段の必要性を現在の方針に照らして判定済みの場合に限り、非空の`## 反映内容と反映先`または旧形式の非空の`## 適用範囲`を参照して`-`とできる。
+  範囲や採否を変える場合と、必要性の無い条件を外した場合はその理由を書く
 - `人間由来のWI`と`ユーザー指示`の行には、採否にかかわらず原文の要求単位ごとに、原文の該当箇所と、実施範囲へ採用するか除外するかを対応付けた分解を書く（起草者の判断だけで作業範囲が縮むのを防ぐため）。
   WIの`## 反映内容と反映先`に要求単位ごとの対応があれば、踏襲する旨と計画で採否を変えた単位だけを書く。
   原文の全要求単位を開放性を保ったまま受け入れる`採用`行に限り、根拠を`-`としてよい
@@ -69,6 +69,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |

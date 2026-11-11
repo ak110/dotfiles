@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-
 ## 集計値の典拠
 
 期間を指定した週ごとのトークン消費量や実行レビューの指標、ならびにセッションごとの推定費用については、`atk run-script cost-metrics -- --since <開始日> --until <終了日>`の出力を典拠とする。
@@ -52,7 +46,7 @@ bundleには全量の詳細な内訳が保持され、準備文書には初回�
   一方、工程ごとの`stats-tool`に示される秒数はツール呼び出しごとの実行時間であり、親と委譲先が並行して動いている区間は重複して加算されるため、合計値が全体の総量を超えることがある。
   比率を示す場合は、この基準の違いを併記する。
 
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：集計値の典拠：2026年9月3日」に記載されている。
+監査記録は`docs/development/audit-records-session-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：集計値の典拠：2026年9月3日」に記載されている。
 
 集計値を判断の根拠として利用する前に、計測の始点・終点や数え方が、判断に必要な観点と正しく一致しているかを必ず確認する。
 過去に不一致が観測された例には以下のものがある。

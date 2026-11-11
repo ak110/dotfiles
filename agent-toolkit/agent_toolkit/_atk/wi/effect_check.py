@@ -179,8 +179,6 @@ def save_effect_check(
         raise ValueError("verdictはpending・confirmed・insufficient・not_requiredを指定してください")
     if verdict in ("pending", "not_required") and file is not None:
         raise ValueError("pending・not_requiredは全体判定です。--fileを省略してください")
-    if verdict in ("confirmed", "insufficient") and file is None:
-        raise ValueError("confirmed・insufficientには--fileを指定してください")
     if verdict in ("pending", "not_required") and (reason is None or not reason.strip()):
         raise ValueError("pending・not_requiredには--reasonで理由を指定してください")
     if reason is not None and any(c in reason for c in "\r\n\0"):

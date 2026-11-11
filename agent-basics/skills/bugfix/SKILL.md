@@ -2,23 +2,28 @@
 name: bugfix
 user-invocable: false
 description: >
-  問題の診断、原因分析、類似箇所の見直し、対策や再発防止策の選定を行う前に起動する。
-  ユーザーの是正・指摘・訂正、セルフレビューと他者のレビュー指摘、lint・型検査・自動テスト・CIのエラー、行動の誤りを示すhookの拒否にも適用する。
-  発見した工程（振り返り、作業項目の起草、規範改訂、レビューなど）を問わず使用する。
-  不具合の有無・原因・修正方法を説明したり確認で提案したりする前にも起動する（対処を委譲先や後続の作業項目へ任せる場合も含む）。
+  期待される結果・品質・手順・判断からの逸脱、またはその疑いを認識して、診断・訂正・対処を始める前に起動する。
+  対象の種類、工程、発見者、修正の有無を問わない（ユーザーの是正・指摘、レビュー指摘、lint・型検査・テスト・CIのエラー、hookの拒否、自分で気付いた作業ミス、文書の記述ミスなどを含む）。
+  不具合の有無・原因・修正方法を説明だけする場合、認可が足りず修正できない場合、既に直した後、対処を委譲先や後続の作業項目へ任せる場合も含む。
 ---
 
 # バグ対応
 
 観測された不具合は、本来あるべき仕様（期待契約）と直接の原因を確定してから修正し、同じ原因による別の問題の発生も防ぐ。
-ユーザーの介入、セルフレビューと他者のレビュー指摘、lint・型検査・自動テスト・CIのエラー、エージェントの行動誤りを示すhookの拒否すべてに、原因分析と類似見直しを行う。
+期待される結果・品質・手順・判断からの逸脱、またはその疑いを認識して診断・訂正・対処を始めるときは、対象の種類、工程、発見者、修正の有無を問わず、原因分析と類似見直しを行う。
+ユーザーの介入、セルフレビューと他者のレビュー指摘、lint・型検査・自動テスト・CIのエラー、エージェントの行動誤りを示すhookの拒否、自分で気付いた作業ミスは、その例である。
+エージェントの作業ミスは、その行動を生成・許容した規範と適用経路・作業構造の不具合として分析する。
+既存規範への違反でも、個人の注意不足やその場の訂正だけで終えず、未適用を生んだ要因を調べ、自己発見や再実行の成功を分析免除の根拠にしない。
+対象化の後に期待契約との比較で正常動作と欠陥を分け、影響に応じて分析の深さ・処置・再発防止策の採否を決める。
+同じ種類と規模のミスでも、ユーザーが指摘した場合はユーザーの時間と是正の負担を重大度へ加える。
 再発防止策を省ける条件は`references/root-cause-prevention-requirements.md`「再発防止策の必須性」に従う。
 初回のlint・テストエラーや単発のレビュー指摘は、原因と類似見直しの結果を既存の作業記録・指摘管理表・完了報告へ短く記し、バグ単位の原因分析表を一律には求めない。
 未対応（ユーザーの要求を満たさないまま完了した項目）やデグレード（過去に動作していた機能や定めた規範の喪失）も、不具合と同じ初動手順で扱う。
 本スキルは、原因分析、類似箇所の見直し、対策および再発防止策の定義を定めたものである。
 呼び出し元の各工程の文書では起動の契機、入力、権限、結果の適用、記録を定め、分析手順や処置の妥当性判断は本スキルを参照する。
 ユーザーの発話が新規の要求や提案の形式であっても、実際の作業内容が本スキルの対象に該当する場合は、作業着手前に本スキルを適用する。
-対象（成果物・規範・仕組み）が資料や要求の目的を満たしているか、不足・未対応があるかを判定する作業も対象に含め、不足の判定を伴わない単純な改善提案だけを不具合の対象外として区別する。
+対象（成果物・規範・仕組み）が資料や要求の目的を満たしているか、不足・未対応があるかを判定する作業も対象に含める。
+欠陥や不足の判定を伴わない単純な改善提案、正常な進捗照会、誤操作を伴わない通常の分割取得、予定された負例試験は、作業ミスへ変換しない。
 実装や文章の品質は`agent-basics:writing-standards`、レビューの判断基準は`agent-basics:review-standards`に従う。
 
 原因を確定するには仕様や契約、実装、記録を確認する手段が必要であり、再現や修正には対象コードを実行・編集できる権限や環境が必要である。
@@ -61,38 +66,32 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/quality-standards.md` |
-
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| QCD・3段判定、事実と推論、硬い制約・努力目標を判断へ用いる前 | `../writing-standards/references/quality-principles-qcd.md`、`../writing-standards/references/quality-principles-facts.md`、`../writing-standards/references/quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md`、`read:agent-basics:*/skills/writing-standards/references/quality-principles-facts.md`、`read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` | |
-| 期待・実際と直接的原因を確定する前（他担当へ引き渡す場合も含む） | `references/root-cause-analysis-initial.md`、`references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` | |
-| 根本原因と重大度を確定する前 | `references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` | |
-| 類似見直しの範囲・観点を定め、是正対象と予防対象を調べる前 | `references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` | |
-| 対策と直接影響範囲、処置の階層を確定する前 | `references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` | |
-| 再発防止策の候補・採否・有効性と、類似見直しを含む処置の完了を判断する前 | `references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` | |
-| 同じ指摘や症状が反復した時、調査が停滞した時、修正で別の症状や回避処理が増えた時 | `references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` | |
-| テストの失敗を調べる時 | `references/root-cause-scenarios-testing.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-testing.md` | |
-| テストの失敗を調べる時 | `references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` | |
-| 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-testing.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-testing.md` | |
-| 規範に従ったのに目的を達成できなかった事象（停止、差し戻し、空回り、要求を満たさない成果物など）を調べる時 | `references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` | |
-| 検索・読取は成功したのに必要な情報へ到達しなかった事象（案内不足・誤参照を含む）を調べる時 | `references/root-cause-scenarios-investigation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md` | |
-| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-reports.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-reports.md` | |
-| 拡張原因分析へ進む時、または原因確定に履歴・記録の探索や2系統の分析を用いる前 | `references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` | |
-| 再発防止セルフチェックへの追加を選ぶ前 | `references/recurrence-self-check.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/recurrence-self-check.md` | |
-| 原因分析の記録を作成する前 | `references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` | |
-| 独立した調査を依頼・検収する前 | `references/investigation-delegation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/investigation-delegation.md` | |
-| CI失敗の分類と対処を選ぶ前 | `references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md` | |
-| 分岐条件の効果を検証する前 | `../writing-standards/references/testing-conditions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-conditions.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| QCD・3段判定、事実と推論、硬い制約・努力目標を判断へ用いる前 | `../writing-standards/references/quality-principles-qcd.md`、`../writing-standards/references/quality-principles-facts.md`、`../writing-standards/references/quality-principles-constraints.md` |
+| 期待・実際と直接的原因を確定する前（他担当へ引き渡す場合も含む） | `references/root-cause-analysis-initial.md`、`references/root-cause-analysis-evidence.md` |
+| 根本原因と重大度を確定する前 | `references/root-cause-severity.md` |
+| 類似見直しの範囲・観点を定め、是正対象と予防対象を調べる前 | `references/root-cause-remediation.md` |
+| 対策と直接影響範囲、処置の階層を確定する前 | `references/root-cause-actions.md` |
+| 再発防止策の候補・採否・有効性と、類似見直しを含む処置の完了を判断する前 | `references/root-cause-prevention.md` |
+| 同じ指摘や症状が反復した時、調査が停滞した時、修正で別の症状や回避処理が増えた時 | `references/root-cause-scenarios-recurrence.md` |
+| テストの失敗を調べる時 | `references/root-cause-scenarios-testing.md` |
+| テストの失敗を調べる時 | `references/root-cause-prevention-verification.md` |
+| 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-testing.md` |
+| 規範に従ったのに目的を達成できなかった事象（停止、差し戻し、空回り、要求を満たさない成果物など）を調べる時 | `references/root-cause-scenarios-recurrence.md` |
+| 検索・読取は成功したのに必要な情報へ到達しなかった事象（案内不足・誤参照を含む）を調べる時 | `references/root-cause-scenarios-investigation.md` |
+| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-reports.md` |
+| 拡張原因分析へ進む時、または原因確定に履歴・記録の探索や2系統の分析を用いる前 | `references/causal-analysis.md` |
+| 再発防止セルフチェックへの追加を選ぶ前 | `references/recurrence-self-check.md` |
+| 原因分析の記録を作成する前 | `references/analysis-records.md` |
+| 独立した調査を依頼・検収する前 | `references/investigation-delegation.md` |
+| CI失敗の分類と対処を選ぶ前 | `references/ci-failure-handling.md` |
+| 分岐条件の効果を検証する前 | `../writing-standards/references/testing-conditions.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 再発防止の選定と完了：再発防止策の必須性の基準を適用する前 | `references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 再発防止の選定と完了：再発防止策の必須性の基準を適用する前 | `references/root-cause-prevention-requirements.md` |

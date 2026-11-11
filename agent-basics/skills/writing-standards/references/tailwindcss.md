@@ -8,10 +8,6 @@ v3からの移行点を含む公式ドキュメントは <https://tailwindcss.co
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` |
-
 ## セットアップと設定（v4のCSSファースト設定）
 
 - 設定ファイル`tailwind.config.js`を新規に作成することは避け、CSS内の`@theme`ディレクティブを用いてデザイントークンを定義する（努力目標。JavaScript形式の設定ファイルは、互換性維持のための`@config`経由でのみ読み込まれるため）。

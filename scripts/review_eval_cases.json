@@ -12,11 +12,22 @@
         "detect": [
           {
             "id": "hook-body-delivery-policy",
-            "description": "hookで資料本文を配送しない方針（docs/development/concepts-runtime.md「Claude CodeとCodexの規範配置」）への違反を指摘する",
-            "patterns": ["(本文|読取).{0,40}(配送|追加コンテキスト)|代替配送", "方針|concepts-runtime"]
+            "description": "hookで資料本文を配送しない方針（docs/development/concepts-host-rules.md「Claude CodeとCodexの規範配置」）への違反を指摘する",
+            "patterns": [
+              "(本文|読取).{0,40}(配送|追加コンテキスト)|代替配送",
+              "方針|concepts-runtime"
+            ]
           }
         ],
         "absent": []
+      },
+      "fixtures": {
+        "revision": "2e4fc1598ba0d7ba41b1034b62778589a4951797",
+        "plan": "review-eval/missed-hook-body-delivery-posttooluse/plan.md",
+        "contract": "review-eval/missed-hook-body-delivery-posttooluse/review-contract.md"
+      },
+      "wi_revisions": {
+        "20261029-221756-001.md": "801f358a6f396752fc270934cabc2efe4aca2b20"
       }
     },
     {
@@ -35,10 +46,18 @@
           {
             "id": "hook-body-delivery-policy",
             "description": "hookで資料本文を配送しない方針への違反を指摘する",
-            "patterns": ["(本文|資料).{0,40}配送|代替配送", "方針|concepts-runtime"]
+            "patterns": [
+              "(本文|資料).{0,40}配送|代替配送",
+              "方針|concepts-runtime"
+            ]
           }
         ],
         "absent": []
+      },
+      "fixtures": {
+        "revision": "9d8043897d53ad3735d7d54a1982d643a7b90a0a",
+        "plan": "review-eval/missed-hook-body-delivery-read-table/plan.md",
+        "contract": "review-eval/missed-hook-body-delivery-read-table/review-contract.md"
       }
     },
     {
@@ -54,10 +73,29 @@
           {
             "id": "verification-table-scope",
             "description": "変更範囲の検証表が最終差分の変更ファイルと直接消費側の試験を覆っていないことを指摘する",
-            "patterns": ["検証(表|コマンド)", "直接影響|消費側|未計上|不足"]
+            "patterns": [
+              "検証(表|コマンド)",
+              "直接影響|消費側|未計上|不足"
+            ]
           }
         ],
         "absent": []
+      },
+      "fixtures": {
+        "revision": "62fd933e3a2b316a334173185042312741d3e0c0",
+        "plan": "review-eval/correct-verification-table-scope/plan.md",
+        "contract": "review-eval/correct-verification-table-scope/review-contract.md"
+      },
+      "wi_revisions": {
+        "20261104-120810-001.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261103-215751-003.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261104-014833-001.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261104-015434-001.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261104-015806-001.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261104-013802-001.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261103-221100-002.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261104-104521-002.md": "1560cdac8693c2594935952fc557ba5a54f945be",
+        "20261103-215751-001.md": "1560cdac8693c2594935952fc557ba5a54f945be"
       }
     },
     {
@@ -74,9 +112,23 @@
           {
             "id": "redirect-backslash",
             "description": "safeReturnToがバックスラッシュを含む外部への転送を拒否できないという指摘を出さない",
-            "patterns": ["バックスラッシュ", "redirect|転送|Location|safeReturnTo"]
+            "patterns": [
+              "バックスラッシュ",
+              "redirect|転送|Location|safeReturnTo"
+            ]
           }
         ]
+      },
+      "fixtures": {
+        "revision": "4846d4faab3b2660e206d08aea98ba655d4996ed",
+        "plan": "review-eval/false-redirect-backslash/plan.md",
+        "contract": "review-eval/false-redirect-backslash/review-contract.md"
+      },
+      "wi_revisions": {
+        "20261106-083321-001.md": "204f21beaab576b848153b02599f25ed3041a9fa",
+        "20261106-091016-001.md": "204f21beaab576b848153b02599f25ed3041a9fa",
+        "20261106-110145-001.md": "204f21beaab576b848153b02599f25ed3041a9fa",
+        "20261106-130404-001.md": "204f21beaab576b848153b02599f25ed3041a9fa"
       }
     }
   ]

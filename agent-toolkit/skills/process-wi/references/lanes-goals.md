@@ -4,18 +4,18 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` | |
-| 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/review-audit-launch.md` | |
-| `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
-| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` | |
-| 選定YAMLを生成または消費する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` | |
-| 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
-| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` | |
-| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
-| 公開工程を開始する前（実行順7） | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
-| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/SKILL.md` |
+| 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` |
+| `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` |
+| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` |
+| 選定YAMLを生成または消費する前 | `selection-format.md` |
+| 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` |
+| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
+| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` |
+| 公開工程を開始する前（実行順7） | `finish-session.md` |
+| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
 
 ## 明示された目標からの実行
 
@@ -31,6 +31,8 @@
 次に進める作業、優先度、並行化、局所結果の採否、方針転換、全体の完了はメインが判断する。
 局所担当は割り当てられた設計・実装判断を所有し、メインはその判断を一律にやり直さず、全体目的への適合と結果間の矛盾を検収する。
 新しい証拠で前提が崩れたら、残る目標と保持すべき成果から作業構成を更新し、追加分を既存の追加計画・選定合流へ接続する。
+30分点検や所要の受領で残工程の見込みが目標所要時間を超えると分かった場合も、待ちの原因の除去、重複した実行の集約、独立した準備の先行など無駄を減らす代替案を比べて作業構成を更新する。
+点検の内容は`agent-toolkit:delegation`の`references/waiting-and-monitoring-progress.md`手順3が定める。
 確定済み計画の凍結と、他の処理対象WIの保持を守る。
 中断・圧縮後は作業契約、計画の進捗ログ、引き継ぎ記録から、目標、得られた証拠、残作業、採らなかった案と再検討条件を復元する。
 完了は目標と観測結果を比較して判断し、ユーザー判断待ちや未達を区別する。

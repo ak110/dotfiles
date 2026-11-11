@@ -6,26 +6,27 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` | |
-| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` | |
-| 未コミット検証の実行前とcommit後の適用確認前 | `../../../share/verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` | |
-| 取得版の異なる結果をレビューへ渡す前 | `../../../share/exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
-| Git識別子・worktree・履歴・公開済みの状態を判定または操作する前 | `git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` | |
-| 公開工程またはリリース操作に着手する前 | `publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
-| amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `history-rewrite.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite.md` | |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/investigation-sources.md` | | | |
+| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | | |
+| 未コミット検証の実行前とcommit後の適用確認前 | `../../../share/verification-evidence-observation.md` | | | |
+| 取得版の異なる結果をレビューへ渡す前 | `../../../share/exec-review-recording-grounds.md` | | | |
+| Git識別子・worktree・履歴・公開済みの状態を判定または操作する前 | `git-identifier.md` | | | |
+| 公開工程またはリリース操作に着手する前 | `publish.md` | | | |
+| amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `history-rewrite.md` | | | |
 | 実際にpushする前 | `push-and-ci.md` | 操作 | `bash:git push` | |
-| コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `message.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/message.md` | |
-| 既存未コミット差分を不採用として破棄する前 | `stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
-| 一時ブランチ、`git stash`の退避、hookの退避ファイルまたは別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `stash-cleanup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/stash-cleanup.md` | |
-| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-toolkit:commit/references/design-time.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/design-time.md` | |
-| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/testing.md` | |
+| コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `message.md` | | | |
+| 既存未コミット差分を不採用として破棄する前 | `stash-cleanup.md` | | | |
+| 一時ブランチ、`git stash`の退避、hookの退避ファイルまたは別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `stash-cleanup.md` | | | |
+| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` | | | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-toolkit:commit/references/design-time.md` | | | |
+| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:commit/references/testing.md` | | | |
 
 ## 通常commit
 
 **4.** 安全にレビュー・revertできる単位を保つため、変更目的、依存関係、レビュー・revertのしやすさで分割を決める。
 計画にcommit単位があれば基準にする。
+commitの単位は作業項目（WI）の識別と切り離して決め、同じファイル群へ一体で適用され同じ検証で確かめる変更は、複数の作業項目にまたがっても1つのcommitにまとめてよい。
+作業項目ごとの採否とcommitとの対応は、`commit-wi-records.md`「WI実装commitの対応」の記録で保つ。
 各コミットの中間状態（中間`HEAD`）でも、その時点の公開契約とテストを満たすように整える（努力目標。git bisectやrevertで各コミットを単独で安全に扱えるようにするため）。
 
 付帯作業を関連する開発のコミットに含める場合も、その開発作業と同じ変更目的として扱う。
@@ -62,14 +63,20 @@ push後のCI失敗は`agent-basics:bugfix`を起動し、同スキルの`ci-fail
 ### hookの打ち切りと退避の復元
 
 1. POSIXのホストでcommit hookを伴う`git commit`は、`atk run-script commit-with-timeout -- --timeout <秒> -- <git commitの引数>`で時間上限を設けて実行する。
-   ホストのコマンド時間上限（Claude Codeの`Bash`の`timeout`など）は、commit自身の上限より長くする。
+   このコマンドが`git commit`を補うため、`--`の後には`commit`を書かず引数だけを渡す（例: `atk run-script commit-with-timeout -- --timeout 560 -- -m '<本文>'`）。
+   `--timeout`は実行枠の順番待ちを含むコマンド全体の上限であり、ホストがコマンドを止める時間上限より先に達する値にする。
+   Claude Codeでは`Bash`の`run_in_background: true`で起動し、`Bash`の`timeout`を`--timeout`より長く、背景実行の最大値（7,200,000ミリ秒）以下にする。
+   前景で実行する場合は、`--timeout`を前景の`timeout`の最大値（600,000ミリ秒）より短くする。
+   Claude Code以外のホストは、ホストの時間上限の値を確かめていないため、`Bash`の入力に関するこの指定の対象外とする。
    hook管理ツールのprekはhookの実行中に未ステージの変更を一時ファイルへ退避し、通常終了とSIGINTでは作業ツリーへ戻すが、SIGTERM・SIGKILLやホストの時間上限による強制終了では戻さない（prek 0.5.7で確認）。
    起動側は所有する子孫へSIGINTを送り、退避復元の猶予と残存回収を終えてから、時間切れは124、明示中断は130を返す。
+   実行枠を待ったまま上限に達した場合も124を返し、標準エラーへ「commitは開始していない」と出力する。
+   このとき退避は行われていない。
    親だけが終了しても回収完了とは扱わず、残存を示す診断があれば対象の識別情報から処置する。
    hookが長引いた原因と退避の復元を確かめてからやり直す。
    Windowsのホストは同等の手段の挙動を確認していないため、この手順の対象外とする。
    観測条件と再検証は`docs/development/audit-records.md`にある。
-   参照する節は「agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月10日」である。
+   参照する節は「agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月10日」と「agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月11日」である。
 
 2. commitが失敗・中断した出力に`Unstaged changes detected. Temporarily saving them to <パス>`がある場合は、他の操作より先に退避が作業ツリーへ戻ったかを確かめる。
    SIGINTの打ち切りではcommitの終了後にprekが退避を戻すことがあり、`Restored unstaged changes from <パス>`の行の有無だけでは判定できない。
@@ -80,8 +87,8 @@ push後のCI失敗は`agent-basics:bugfix`を起動し、同スキルの`ci-fail
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| バグ対応の基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 編集時の注意点:：検証の基準を適用する前 | `commit-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-verification.md` |
-| 編集時の注意点:：WI実装commitの対応の基準を適用する前 | `commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| バグ対応の基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 編集時の注意点:：検証の基準を適用する前 | `commit-verification.md` |
+| 編集時の注意点:：WI実装commitの対応の基準を適用する前 | `commit-wi-records.md` |

@@ -5,6 +5,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import typing
 
 import agent_toolkit
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -13,10 +14,18 @@ from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common.plugin_environment import launch_command
 from agent_toolkit._git import command as _git_command
 
 _INTERNAL_MISE_REFRESHED_ARG = "--internal-mise-refreshed"
+
+_UPDATE_DOTFILES_TIMEOUT_SECONDS = 3600.0
+"""`update-dotfiles`の時間上限。
+
+無人のprocess-loopが終了を待つため有限にする。2026年11月6日・9日・10日の全体の所要（3.5分、15.4分、8.0分）の
+約4倍とし、内部のgit操作などが止まった場合も待機ループへ戻れるようにした。
+"""
 
 
 _INTERNAL_DOTFILES_UPDATED_ARG = "--internal-dotfiles-updated"
@@ -230,12 +239,12 @@ def check_and_restart_on_update(
     if _has_upstream_diff(dotfiles_root):
         executable = _pl_env.resolve_executable("update-dotfiles")
         if executable is not None:
-            result = subprocess.run([executable], check=False, env=_pl_env.child_env())
+            returncode = _run_update_dotfiles(executable, _pl_env.child_env())
             _console_title.set_console_title("atk wi process-loop")
-            update_succeeded = result.returncode == 0
+            update_succeeded = returncode == 0
             if not update_succeeded:
                 _next_action.report(
-                    f"update-dotfilesに失敗しました（exit code {result.returncode}）。待機ループを続行します。",
+                    f"update-dotfilesに失敗しました（{_describe_update_failure(returncode)}）。待機ループを続行します。",
                     next_action="対応不要（待機は継続した）。繰り返す場合は`update-dotfiles`を手作業で実行して原因を確認せよ",
                 )
     current_hash = code_hash(dotfiles_root / "agent-toolkit")
@@ -249,6 +258,26 @@ def check_and_restart_on_update(
             dotfiles_updated=update_succeeded,
         )
     return update_succeeded
+
+
+def _launch(command: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[typing.Any]:
+    """時間上限で子孫まで止める起動の唯一の箇所。テスト基盤（`_testing/pytest_plugin.py`）が起動の差し替えに使う。"""
+    return _process_tree.run_with_timeout(command, **kwargs)
+
+
+def _run_update_dotfiles(executable: str, env: dict[str, str]) -> int | None:
+    """`update-dotfiles`を時間上限付きで実行し、終了コードを返す。上限に達した場合は子孫まで止めて`None`を返す。"""
+    try:
+        return _launch([executable], check=False, env=env, timeout=_UPDATE_DOTFILES_TIMEOUT_SECONDS).returncode
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def _describe_update_failure(returncode: int | None) -> str:
+    """失敗の通知へ載せる、終了コードまたは時間切れの説明を返す。"""
+    if returncode is None:
+        return f"{_UPDATE_DOTFILES_TIMEOUT_SECONDS / 60:.0f}分で終わらなかったため打ち切った"
+    return f"exit code {returncode}"
 
 
 def update_before_session(
@@ -277,12 +306,12 @@ def update_before_session(
             next_action="`update-dotfiles`をPATHへ導入してからprocess-loopを再起動する",
         )
         return False, False
-    result = subprocess.run([executable], check=False, env=env)
+    returncode = _run_update_dotfiles(executable, env)
     _console_title.set_console_title("atk wi process-loop")
-    update_succeeded = result.returncode == 0
+    update_succeeded = returncode == 0
     if not update_succeeded:
         _next_action.report(
-            f"update-dotfilesに失敗しました（exit code {result.returncode}）。",
+            f"update-dotfilesに失敗しました（{_describe_update_failure(returncode)}）。",
             next_action="対応不要（子セッションの起動は続行した）。同期結果の記録は子セッションが判定する",
         )
     if dotfiles_root is not None and startup_hash is not None:

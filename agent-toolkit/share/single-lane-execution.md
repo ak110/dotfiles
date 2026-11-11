@@ -5,29 +5,29 @@
 これは、メインエージェントとレーン担当者が同じ計画やレビュー結果を重複して読み込み、同一の判断を繰り返す定型的な往復処理を省くためである。
 対象worktreeへ直接実装する呼出側では、そのworktreeへの書き込みを担当するメインエージェント自身へ適用する。
 
-初期選定で複数レーンが立ち上がっている場合は、メインエージェントが処理対象の選定、レーン間の書き込み競合と依存関係の調停、ユーザー判断の中継、主作業ツリーへの直列統合の許可、および最終結果の検収を担う。
+初期選定で複数レーンが立ち上がっている場合は、メインエージェントが処理対象の選定、レーン間の書き込み競合と依存関係の調停、ユーザー判断の中継、主作業ツリーへの統合の許可、および最終結果の検収を担う。
 レーン担当者は、実行レビュー担当の起動、指摘への対応、再レビューの調整、完成条件証拠の受領確認を担う。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 実装に着手する前、実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| WI要求の範囲で実装・修正に着手する前 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
-| 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review-parent-acceptance.md`、`exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-acceptance.md`、`read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
-| レビュー指摘の修正と管理表の保存に着手する前 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
-| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence.md` |
-| 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
-| 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
-| レビュー指摘への対応を開始する前 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md`、`read:agent-toolkit:*/share/review-loop-coordination-rounds.md` |
-| レーン専用資源を使い統合前の検収を行う前 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
-| レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` |
-| 初期選定が複数レーンで`統合準備完了`を返す前 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` |
+| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing-selection.md` |
+| 実装に着手する前、実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` |
+| WI要求の範囲で実装・修正に着手する前 | `exec-subagent-implementation.md` |
+| 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` |
+| 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review-parent-acceptance.md`、`exec-review-parent-existing-defects.md` |
+| レビュー指摘の修正と管理表の保存に着手する前 | `exec-review-parent-correction.md` |
+| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` |
+| 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` |
+| 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` |
+| レビュー指摘への対応を開始する前 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
+| レーン専用資源を使い統合前の検収を行う前 | `exec.parent.md`、`exec-parent-integration.md` |
+| レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` |
+| 初期選定が複数レーンで`統合準備完了`を返す前 | `exec.subagent.md` |
 
 ## 入力と書込所有
 
@@ -68,10 +68,11 @@ process-wiにおける専用資源の作成、統合、回収には既存のlane
    事後承認はレビュー収束後かつ統合前の内容に基づいて発行し、レーン担当者はメインエージェントから保存結果を受け取る。
    作業中に生じる通常の問い合わせや状況確認には次の応答で回答し、元の作業工程へ復帰する。
    WIへ直接記入された質問に対する回答用UWIの保存は、呼出側のレビュー収束後の保存手順に従う。
-5. レーン専用の資源を使用している場合は、`exec.parent.md`、`exec-parent-integration.md`に定める検収を自ら実施する。
+5. レーン専用の資源を使用している場合は、`exec.parent.md`、`exec-parent-integration.md`に定める検収に、完成条件証拠の受領時の受理記録を用いる。
+   完成条件の意味検収は`exec-review-recording-integration.md`に従い、変更の影響を受ける条件と未検収部分だけに行う。
    読込表に記載されたレーン担当の契約に従い、検収済みHEAD、全計画、WI、採否、および受理した返却ファイルと`レビューHEAD`の組み合わせに基づいて統合入力を確定する。
    初期選定が複数レーンである場合は、統合入力を確定した後に`exec.subagent.md`「出力」の`UWI保存状況`を含む`統合準備完了`を返す。
-   該当する回答・事後承認についてメインエージェントによるUWI保存とファイル名の返却を受領し、`統合許可`を受け取ってから統合を進める（主作業ツリーへ統合するレーンを常に1つに制限するため）。
+   該当する回答・事後承認についてメインエージェントによるUWI保存とファイル名の返却を受領し、`統合許可`を受け取ってから統合を進める（依存条件とUWIの保存をメインが確かめるため。統合先HEADの更新は`atk lane integrate`が1レーンずつに限る）。
    `atk lane integrate`を実行して統合、計画保存、WIの終了処理を最終化し、`phase: finalized`を確認した上で通常の`統合完了`形式のみをメインエージェントへ返す。
    対象worktreeへ直接実装している場合は、既存の受領確認を完了した後に呼出側の計画保存、WI終了、公開工程へ戻る。
    実装を伴う対象は実行レビューを受理した後に、実装やマージを伴わない対象は採否を確定した後に、それぞれ本手順を実施する。
@@ -116,6 +117,6 @@ process-wiにおける専用資源の作成、統合、回収には既存のlane
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証結果と手動観測の保存：手動観測の保存の基準を適用する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証結果と手動観測の保存：手動観測の保存の基準を適用する前 | `verification-evidence-observation.md` |

@@ -11,10 +11,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-block-warn.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn.md` |
-| 案内済み状態と取得済み状態の仕様を使う前 | `session-state-and-flags-common.md`、`session-state-and-flags-document-receipts.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-common.md`、`read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-document-receipts.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 案内済み状態と取得済み状態の仕様を使う前 | `session-state-and-flags-common.md`、`session-state-and-flags-document-receipts.md` |
 
 ## 遮断と警告の選択
 

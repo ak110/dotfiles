@@ -46,6 +46,8 @@ def test_lifetime_monitor_filters_children_and_stops_for_ended_parent(monkeypatc
         pytest.fail(f"模擬監視でプロセス終了へ進んだ: {code}")
 
     monkeypatch.setattr(lifetime.os, "_exit", unexpected_exit)
+    # 模擬プロセスには/procの起動情報が無いため、識別は模擬の生成時刻で与える。
+    monkeypatch.setattr(lifetime.process_identity, "key", lambda process: (process.pid, process.create_time()))
     monkeypatch.setattr(lifetime.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(
         lifetime.process_tree, "collect_descendants", lambda _pid, **_kwargs: [child] if route == "discovered" else []
@@ -59,3 +61,40 @@ def test_lifetime_monitor_filters_children_and_stops_for_ended_parent(monkeypatc
     stopped = route == "parent" and observation != "running"
     assert guard.stopping is stopped
     assert callbacks == (["stop"] if stopped else [])
+
+
+def test_lifetime_monitor_collects_descendants_once_per_interval(monkeypatch):
+    """親の確認は毎巡行い、全プロセスを走査する子孫の列挙は間隔ごとに1回だけ行う。"""
+    guard = lifetime.ServerLifetime()
+    os.close(guard._stdin_fd)  # pylint: disable=protected-access
+    cycles = 25  # 0.1秒刻みで2.5秒分
+    clock = {"now": 100.0}
+    parent_checks = []
+    collects = []
+
+    class Cycles:
+        calls = 0
+
+        def wait(self, _timeout):
+            self.calls += 1
+            clock["now"] = 100.0 + (self.calls - 1) * lifetime.POLL_INTERVAL
+            return self.calls > cycles
+
+        def is_set(self):
+            return self.calls > cycles
+
+    guard._finished = typing.cast(threading.Event, Cycles())  # pylint: disable=protected-access
+    guard._stdin_poll = None  # pylint: disable=protected-access
+    guard._pipe_closed = None  # pylint: disable=protected-access
+    monkeypatch.setattr(lifetime.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(guard, "_collect", lambda: collects.append(clock["now"]))
+
+    def parent_gone():
+        parent_checks.append(clock["now"])
+        return False
+
+    monkeypatch.setattr(guard, "_parent_gone", parent_gone)
+    guard._watch()  # pylint: disable=protected-access
+    guard._process_pins.close()  # pylint: disable=protected-access
+    assert len(parent_checks) == cycles
+    assert collects == pytest.approx([100.0, 101.0, 102.0])

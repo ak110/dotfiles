@@ -17,6 +17,14 @@ from agent_toolkit._common import wait_schedule
 from agent_toolkit._testing import cli_examples
 
 
+def test_notify_help_names_the_direct_launcher(capsys):
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "notify", "--help"])
+    text = "".join(capsys.readouterr().out.split())
+    assert "自分を起動した委譲元へ" in text
+    assert "委譲先を起動した主体が`wait`の結果で受け取る" in text
+
+
 def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixture[str]) -> None:
     """実際のMCP登録とCLI登録を公開ヘルプから見つけられる。"""
     source = pathlib.Path(__file__).parent / "_agents_server" / "mcp_tools.py"

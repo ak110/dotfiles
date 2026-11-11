@@ -4,15 +4,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| OSを模擬した試験の保証と環境条件を記録する前 | `agent-basics:writing-standards/references/testing-selection.md`、`agent-basics:writing-standards/references/testing-platforms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md`、`read:agent-basics:*/skills/writing-standards/references/testing-platforms.md` |
-| 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
-| 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
-| 保存出力を取得する前 | `check-execution-operations-output.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-output.md` |
-| 取得版の異なる観測を検証結果へ書く前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
-| レビューへ渡す最終観測を取得する前 | `../skills/commit/references/commit-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-verification.md` |
-| 保存済みの成功集合と限定再検証から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| OSを模擬した試験の保証と環境条件を記録する前 | `agent-basics:writing-standards/references/testing-selection.md`、`agent-basics:writing-standards/references/testing-platforms.md` |
+| 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards-verification.md` |
+| 保存出力を取得する前 | `check-execution-operations-output.md` |
+| 取得版の異なる観測を検証結果へ書く前 | `exec-review-recording-grounds.md` |
+| レビューへ渡す最終観測を取得する前 | `../skills/commit/references/commit-verification.md` |
+| 保存済みの成功集合と限定再検証から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 完成条件証拠の検証記録
 
@@ -30,8 +30,10 @@ OSを模擬した試験では、`agent-basics:writing-standards/references/testi
 - コマンドごとに、実行コマンド、cwd、終了コード、判定の根拠とした出力の要点（失敗、警告、対象への到達、件数など）、および検証した版の完全OID（`git rev-parse HEAD`）を記述する。
   未commitの変更を含む状態で検証を実施した場合は、その変更状態と`verification-evidence-observation.md`「検証時本文の保存」で確保した保存物を対応付け、出力を全量保存した場合は両出力ファイルの絶対パスを添える。
 - 受入シナリオごとに、公開された呼び出し手段、入力、期待結果に対応する実際の結果として、テストの完全名と合否結果、または保存した手動観測の入力・操作手順・期待結果・観測結果の所在を記述する。
-  pytestのテスト名については、同一の版に対して`-v`オプションを付けて実行した出力内に、該当するテスト名と結果の行が存在することを確認する。
+  pytestのテスト名については、同一の版に対して`-v`オプションか、成功の行を要約へ出す`-r`の指定（`p`を含む指定）を付けて実行した出力内に、該当するテスト名と結果の行が存在することを確認する。
   ドット（.）による進捗表示やテスト総数の表示は、個別の合否を証明する根拠にはならない。
+  検証の標準の実行（pyfltrなど）が実行ごとの出力を保存する場合は、その出力に結果の行があることを確かめ、実行の識別子と出力ファイルの絶対パス・行番号を記す。
+  レビュー担当が、同じ試験を個別の結果のためだけに実行し直さずに判定できるようにするためである。
 - 検証済み、未実施、条件変更の各判断を明確に区別して記述する。
   後続工程へ回す項目や不採用・別割当とした項目については、検証済みの範囲と、採否や後続工程を記録した場所を記載する。
   計画確定時に決定した後続工程は計画の`## 実施内容`、実装中に新たに作成した後続工程は対象AWIへの追記先、同一セッション内で参照するものは引き継ぎ記録の所在をそれぞれ示す。
@@ -52,7 +54,7 @@ CIの実行記録のみを対象とするレビューで証拠提出が要求さ
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビューの指摘と完成条件証拠の記録の基準を適用する前 | `exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
-| 検証結果と手動観測の保存：手動観測の保存の基準を適用する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビューの指摘と完成条件証拠の記録の基準を適用する前 | `exec-review-recording.md` |
+| 検証結果と手動観測の保存：手動観測の保存の基準を適用する前 | `verification-evidence-observation.md` |

@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 
 ## 担当の役割
 
@@ -40,7 +40,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 登録全体のAWI処理：開始と振り分けの基準を適用する前 | `all-repos-starting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-starting.md` |
-| 公開工程とセッション終了：公開対象が無い場合の短絡の基準を適用する前 | `finish-session-publishing.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-publishing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 登録全体のAWI処理：開始と振り分けの基準を適用する前 | `all-repos-starting.md` |
+| 公開工程とセッション終了：公開対象が無い場合の短絡の基準を適用する前 | `finish-session-publishing.md` |

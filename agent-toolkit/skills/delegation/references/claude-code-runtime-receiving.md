@@ -4,21 +4,18 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `receiving-format.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-responses.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-responses.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
-| `Agent`ツールで起動した担当を継続する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
-| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
+| `Agent`ツールで起動した担当を継続する前 | `continuation.md` |
+| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` |
 
 ## 一時領域と成果物の観測
 
 - `Agent`ツールの`output_file`はセッションのJSONLへのシンボリックリンクとなる場合があり、リンク自体の`stat`や`ls -l`の結果に変化がなくても、リンク先のファイルには追記されている可能性がある。
   補助的な観測には`stat -L -c %Y -- <output_file>`（macOSでは`stat -L -f %m -- <output_file>`）および`wc -l -- <output_file>`を用い、ファイル本文の読み取りは進捗確認以外の目的には限定する。
-  監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日」に記載されている。
+  監査記録は`docs/development/audit-records-delegation-waiting.md`にある。
+  該当節は「agent-toolkit/skills/delegation/references/claude-code-runtime.md：一時領域と成果物の観測：2026年10月9日」である。
 - 成果物側の状態確認は補助的な観測として扱う。
   作業ツリーの状態は`git -C <worktree> status --porcelain=v1`と`git -C <worktree> rev-parse --short HEAD`で観測する。
   成果物ファイルは`wc -l -- <file>`および`stat -L -c %Y -- <file>`（macOSでは`stat -L -f %m -- <file>`。最終更新のUNIXエポック秒）で観測する。
@@ -47,13 +44,14 @@
 バックグラウンドタスクの完了通知を受信した後でも、同一の`atk agents wait`の実プロセスが残存している場合がある。
 後続の待機処理の扱いは`waiting-and-monitoring-responses.md`「`atk agents wait`の応答の扱い」で定める。
 ホストからの停止通知についても、外側のタスクと子プロセスの終了を区別して扱い、`wait-anomalies-stopped.md`「ホストによる背景待機の停止後」に従って元の出力の回収と監視の再開を判断する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日」に記載されている。
+監査記録は`docs/development/audit-records-delegation-waiting.md`にある。
+該当節は「agent-toolkit/skills/delegation/references/claude-code-runtime.md：背景ジョブ完了通知と実プロセスの終了順：2026年9月21日」である。
 
 ### 完了通知と中継の実行順
 
 `Agent`ツールによって新規起動された子エージェントの完了通知は直接の委譲元へ届くが、`SendMessage`によって継続された相手の完了通知は送信元ではなく最上位セッションへ配送される。
 そのため、`SendMessage`で継続された工程は、最上位セッションが適切に中継することで再開する。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：2026年8月」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：完了通知と中継の実行順：2026年8月」に記載されている。
 
 1. 委譲元は`Agent`ツールの戻り値から直接の子エージェントのagent IDを保持し、通信先にはそのIDのみを使用する。
 2. 委譲先は通常の完了報告をツールの戻り値として1回だけ返却する。

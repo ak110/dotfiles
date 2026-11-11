@@ -3,7 +3,8 @@
 Claude Codeのメインエージェント向けに、利用上限の猶予通知後の報告・継続・再開手順を定める。
 
 利用上限の通知と解除後の再開に関する観測記録がある。
-詳細は`docs/development/audit-records.md`の「agent-toolkit/skills/user-confirmation-and-report/references/usage-limit.md：利用上限後の再開：2026年10月14日」に記載されている。
+詳細は`docs/development/audit-records-usage-limit.md`にある。
+該当節は「agent-toolkit/skills/user-confirmation-and-report/references/usage-limit.md：利用上限後の再開：2026年10月14日」である。
 
 Function hooks moduleは、Claude CodeがプラグインのTypeScriptモジュールを読み込み、会話イベントに応じた処理を登録する仕組みである。
 定義とAPI仕様は[mods API](https://code.claude.com/docs/en/plugins/mods/api)にある。
@@ -19,14 +20,6 @@ agent-toolkitの`hooks/usage_limit_resume.ts`は、この仕組みを利用し�
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
 
 ## 利用上限の猶予通知を受けたときの続行と再開
 

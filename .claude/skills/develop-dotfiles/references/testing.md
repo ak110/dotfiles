@@ -4,11 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../agent-toolkit-edit/references/distribution-and-hooks-layers.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/distribution-and-hooks-layers.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution/references/verification-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../agent-toolkit-edit/references/distribution-and-hooks-layers.md` |
 
 ## テスト配置
 
@@ -27,7 +26,7 @@
   実際のGit操作を伴うテストでは、コミット履歴、タグ、ブランチ、作業ツリーの状態をテスト自身の一時リポジトリ内に構築し、すべてのGitコマンド呼び出しで対象リポジトリを明示的に指定する。
   この際、`_testing/git_repository.py`が提供する`init_repository`、`commit_all`、`run_git`を活用できる。
   実行元リポジトリ自体の不変条件を検証するテストが存在するため、テスト実行時のカレントディレクトリ（cwd）は常に実行元リポジトリのルートを維持する。
-  再検証手順は`docs/development/audit-records.md`「develop-dotfiles：Git動作テストの状態準備：2026年10月9日」を参照する
+  再検証手順は`docs/development/audit-records-project-verification.md`「develop-dotfiles：Git動作テストの状態準備：2026年10月9日」を参照する
 - 外部ランタイムやCLIを子プロセスとして起動するテストを新設・修正する場合は、同モジュールの`host_environ()`を用いてテスト起動に必要なホスト側の環境変数を構築し、子プロセスの`env`へ渡す。
   子プロセスに直接環境変数を渡せない実行形態の場合は、`restore_host_environment(monkeypatch)`を使ってテストプロセス自身のHOME・設定ディレクトリ・PATHを一時的に隔離前の状態に戻し、テスト対象の設定や状態は別の一時ディレクトリへ明示的に退避して隔離性を確保する。
   変更範囲を検証する際は、[CI設定](../../../../.github/workflows/ci.yaml)の対象ジョブで使われるランチャーを経由してもテストを実行する。
@@ -51,6 +50,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| agent-toolkit（Agent Plugins・Claude Code・Codex・Antigravity）の基準を適用する前 | `../../agent-toolkit-edit/SKILL.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| agent-toolkit（Agent Plugins・Claude Code・Codex・Antigravity）の基準を適用する前 | `../../agent-toolkit-edit/SKILL.md` |

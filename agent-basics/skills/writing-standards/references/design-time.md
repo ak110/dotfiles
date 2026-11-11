@@ -7,16 +7,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実装方針の選択に関する判断・作業の前 | `design-time-implementation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-implementation.md` |
-| 状態と業務ルールの条件に関する判断・作業の前 | `design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
-| エンドユーザーデータの移行に関する判断・作業の前 | `design-time-migration.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-migration.md` |
-| エンドユーザー接点と公開インターフェースに関する判断・作業の前 | `design-time-interfaces.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-interfaces.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実装方針の選択に関する判断・作業の前 | `design-time-implementation.md` |
+| 状態と業務ルールの条件に関する判断・作業の前 | `design-time-state.md` |
+| エンドユーザーデータの移行に関する判断・作業の前 | `design-time-migration.md` |
+| エンドユーザー接点と公開インターフェースに関する判断・作業の前 | `design-time-interfaces.md` |

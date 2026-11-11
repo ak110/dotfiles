@@ -6,28 +6,28 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
-| 本文でこの資料の基準を参照・取得する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
-| 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` | 判断 | `read:agent-basics:*/skills/secret-files/SKILL.md` | |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` | |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| 条件表を検収する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` | |
-| 初回レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
-| 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
-| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` | |
-| 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
-| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md`、`read:agent-toolkit:*/skills/commit/references/testing.md` | |
-| `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-structure.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-scope.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-requirements.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` | |
-| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
-| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
-| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check.parent.md` | |
-| 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md`、`read:agent-toolkit:*/share/exec-review-recording-issues.md`、`read:agent-toolkit:*/share/exec-review-recording-evidence.md`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
+| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | | | |
+| 本文でこの資料の基準を参照・取得する時 | `exec-subagent-implementation.md` | | | |
+| 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` | | | |
+| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | | | |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | | |
+| 条件表を検収する前 | `exec-review-recording-contract.md` | | | |
+| 初回レビューに入る前 | `exec-review-criteria.md` | | | |
+| 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
+| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | | | |
+| 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
+| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:commit/references/testing.md` | | | |
+| `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | | | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
+| 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | | | |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | | | |
+| 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
-| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` | |
-| 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` | |
-| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` | |
-| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
-| レビュー工程の判定・記録を始める前 | `exec-review-recording.md`、`exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md`、`read:agent-toolkit:*/share/exec-review-recording-verdicts.md` | |
+| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | | | |
+| 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | | | |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | | |
+| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | | | |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md`、`exec-review-recording-verdicts.md` | | | |
 
 ## 入力
 
@@ -37,9 +37,11 @@
 不要な内部方式は削除・縮小・代替も比較し、明示方式・データ保全・必要な不変条件を保つ。
 
 - `レビュー基準`: `計画`、`CI記録`、`WI`の基準名1つ以上を読点区切りで受け取り、各基準に応じた追加入力もすべて別入力で受け取る
-- `計画`: 計画ファイルの絶対パス。
+- `計画`: 計画ファイルの絶対パス、または同じレビュー単位に含まれる全計画の絶対パスのJSON配列。
   各節の意味は読込表の`plan-file-standards.md`に基づいて解釈する。
   レビュー指摘管理表と検証結果は、同じファイル名幹（stem）を持つ成果物から特定する。
+  JSON配列では、全計画の要求と各計画の検証結果を集めて1つの管理表と1つの返却で判定し、管理表は作成順で最初の計画のstemから特定する。
+  起動側が1回の起動へまとめた計画を、受信側が別々の表や返却へ分けないためである。
   検証結果は実装担当エージェントが`## 進捗ログ`に記録した行（レーン工程では`exec-subagent-implementation.md`「実装」）を指し、自身が作成する完成条件証拠とは別の検証資料として参照する
 - `CI記録`: 7項目のCI記録とともに、`修正系列の開始時のHEAD`（同一の修正系列で引き継ぐ短縮OID）および`原因commitOID`（今回の原因となったcommitの短縮OID。CIが再帰的に失敗した場合はCI記録と同時に更新される）を受け取る。
   使用する管理表のパスは`~/.claude/plans/ci-<修正系列の開始時のHEAD>.exec-review.tsv`となる
@@ -138,7 +140,7 @@ WIの鮮度（staleness）は、`計画`がある場合は`## 変更履歴`に�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュータスク：再レビューの基準を適用する前 | `exec-review-subagent-followup.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-followup.md` |
-| 実行レビュータスクの基準を適用する前 | `exec-review.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.subagent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュータスク：再レビューの基準を適用する前 | `exec-review-subagent-followup.md` |
+| 実行レビュータスクの基準を適用する前 | `exec-review.subagent.md` |

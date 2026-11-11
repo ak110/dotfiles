@@ -4,12 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles.md` |
-| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
-| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` |
+| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 委譲元への返却
 
@@ -31,6 +30,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲先の完了報告の受領と検収：受領手段と報告様式の選択の基準を適用する前 | `receiving-format.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-format.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲先の完了報告の受領と検収：受領手段と報告様式の選択の基準を適用する前 | `receiving-format.md` |

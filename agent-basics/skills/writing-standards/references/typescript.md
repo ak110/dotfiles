@@ -7,10 +7,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` |
-| Svelteの分割代入の例外を判断する時 | `svelte.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/svelte.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Svelteの分割代入の例外を判断する時 | `svelte.md` |
 
 ## 言語スタイル
 
@@ -83,6 +82,6 @@ for (const user of users) if (user !== undefined) names.push(user.name);
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実装時のコーディング品質：編集前の読解の基準を適用する前 | `implementation-time-style.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-style.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実装時のコーディング品質：編集前の読解の基準を適用する前 | `implementation-time-style.md` |

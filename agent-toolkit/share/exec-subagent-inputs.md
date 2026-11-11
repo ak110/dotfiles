@@ -4,24 +4,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` | |
-| 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-hypotheses.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-rounds.md` | |
-| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
-| 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
-| CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` | |
-| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` | |
-| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
-| 手動観測を保存する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` | |
-| `検証結果`を書く前 | `verification-evidence-records.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-records.md` | |
-| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-verification-failure.md` | |
-| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
-| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
-| `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | 判断 | `read:agent-toolkit:*/share/exec-review-fix.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
+| 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` |
+| レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
+| 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
+| CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
+| 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) |
+| 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
+| 手動観測を保存する前 | `verification-evidence-observation.md` |
+| `検証結果`を書く前 | `verification-evidence-records.md` |
+| 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) |
+| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` |
+| ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） |
+| `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` |
 
 ## 入力
 
@@ -52,7 +49,8 @@
 
 要求単位の由来は、`agent-toolkit:wi-standards`の`## 由来と承認`に従い、計画起草時に`atk wi show`で得られるAWI本文およびfrontmatterから判定する。
 判定結果は`agent-toolkit:write-plan`の`references/plan-file-standards.md`の書式に従って計画の`由来`欄に記入する。
-以後は確定した出所・採否・終了区分を再利用する。
+以後は、確定したときの前提（目的、現在の方針、利用条件）が変わっていない範囲で、確定した出所・採否・終了区分を再利用する。
+前提が変わった単位だけを判定し直し、一致する要求と認可は調べ直さない。
 原文との具体的な不一致を発見した場合は、要求単位の根拠を示して既存のレビュー指摘管理表（計画なしでは引き継ぎ記録）へ訂正を残す。
 ユーザーが決める結果や認可を変える部分だけを既存の確認手順へ渡す。
 計画を省略するレーンでは、同様の判定結果を引き継ぎ記録に残す。
@@ -70,7 +68,7 @@
 
 `レビュー修正担当`は、同一スレッドの継続であれば保持している選定結果を引き継ぐ。
 `レビュー指摘管理表`は、単一の絶対パス、または全計画の管理表の絶対パスを保持する空でないJSON配列として受け取る。
-計画ごとの成果物の受け渡しは、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+レビュー単位ごとの成果物の受け渡しは、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
 各表で対応すべきラウンドは、`review-loop-coordination-rounds.md`「ラウンド番号の保持先」が定める、その表における最大のラウンド番号とする。
 新しいスレッドで起動された場合は、`再開位置`に指定された計画ファイル（`計画なし`の場合は引き継ぎ記録）と引き継ぎ記録に蓄積された全計画の進捗を読み、受け取った各表がその計画群のいずれかに属することを確認する。
 `環境構築`に`レーン担当が実行`が指定されている場合は、対象リポジトリの開発手順に従って実装前に環境構築を実施する。
@@ -88,8 +86,8 @@ private-notesの計画保存・WI状態変更は`atk`の通常の公開機能を
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュー反復の調整：エスカレーションの事由別の扱いの基準を適用する前 | `review-loop-coordination-escalation.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-escalation.md` |
-| 計画ファイル作成基準の基準を適用する前 | `../skills/write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
-| レーン実行タスクの基準を適用する前 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュー反復の調整：エスカレーションの事由別の扱いの基準を適用する前 | `review-loop-coordination-escalation.md` |
+| 計画ファイル作成基準の基準を適用する前 | `../skills/write-plan/references/plan-file-standards.md` |
+| レーン実行タスクの基準を適用する前 | `exec.subagent.md` |

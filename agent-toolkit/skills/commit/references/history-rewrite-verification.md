@@ -81,7 +81,7 @@ autosquashの直前、および競合を解消してrebaseを再開する直前�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 履歴書換え：失敗時の扱いの基準を適用する前 | `history-rewrite-recovery.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-recovery.md` |
-| 履歴書換え：WI実装commitの対応の継承の基準を適用する前 | `history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 履歴書換え：失敗時の扱いの基準を適用する前 | `history-rewrite-recovery.md` |
+| 履歴書換え：WI実装commitの対応の継承の基準を適用する前 | `history-rewrite-wi-records.md` |

@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
-
 ## ホスト本体のバイナリの検索
 
 ホスト本体バイナリの検索は、ホスト機能に関する公式ドキュメントや提供元のIssueトラッカーにおける既知の報告の確認を補足するための手段である。
@@ -26,4 +21,4 @@
   なお、正規表現の`.`は改行や不正なUTF-8シーケンスで一致が止まるため、取得された前後の文脈が指定した文字数より短くなることがある。
 - 検索には`rg`を使用する。
   Claude CodeのBashツール内の`grep`は組み込みのugrepに置き換わっており、ugrepおよびGNU grepのいずれを用いても`.{0,N}`による文脈取得が30秒以内に完了しなかったためである。
-  この観測結果と再検証の手順は`docs/development/audit-records.md`「develop-dotfiles：ホスト本体のバイナリの検索：2026年10月4日」に記録されている。
+  この観測結果と再検証の手順は`docs/development/audit-records-project-environment.md`「develop-dotfiles：ホスト本体のバイナリの検索：2026年10月4日」に記録されている。

@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `wait-anomalies.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies.md` |
-| 本文の参照基準を適用する前 | `claude-code-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md` |
-| 本書の基準を適用する前 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `wait-anomalies.md` |
+| 本文の参照基準を適用する前 | `claude-code-runtime.md` |
+| 本書の基準を適用する前 | `waiting-and-monitoring.md` |
 
 ## 長時間待機前の会話圧縮
 
@@ -37,7 +37,7 @@ Claude Codeが、他の担当者やCI監視の結果を後続工程の入力と�
    Claude Codeの直接の`/compact`入力とホスト標準の自動圧縮では、原本ログの所在へ置き換えられる場合に要約の生成を省く。
    同じプラグインからの`session.compact()`予約は自身の置換フックが再入除外されるため、標準の要約生成を使う。
    この経路でも復元時には原本を確認する。
-   原本置換の適用範囲と再検証は`docs/development/audit-records.md`「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
+   原本置換の適用範囲と再検証は`docs/development/audit-records-compaction.md`「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
 
    Claude Codeのメインエージェントが背景Bashで結果を待つ場合は、フックモジュールが同じ圧縮予約に接続する。
    CI監視も対象とする。
@@ -58,7 +58,7 @@ Claude Codeが、他の担当者やCI監視の結果を後続工程の入力と�
    受付後に時間上限を超えても完了とは扱わず、後着の完了または接続終了まで実行状態を保持する。
    セルやコマンドの実行識別子を同じturn内に回収するCodex最上位の待機は、ターン間の背景待機条件を満たさないため、この自動予約を起動しない。
    ホスト標準の圧縮と文脈上限設定を保持する。
-   確認した公開入力と再検証は`docs/development/audit-records.md`「agent-toolkit/skills/delegation/references/waiting-claude-code.md：Codex最上位の待機条件：2026年11月2日」にある。
+   確認した公開入力と再検証は`docs/development/audit-records-delegation-waiting.md`「agent-toolkit/skills/delegation/references/waiting-claude-code.md：Codex最上位の待機条件：2026年11月2日」にある。
    単発タイマーやターン完了通知を活用し、不要な継続ポーリングや圧縮のためだけのLLMターンを追加しないようにする
 
 ## 背景ジョブの起動形（Claude Code）
@@ -76,7 +76,8 @@ Claude Codeが、他の担当者やCI監視の結果を後続工程の入力と�
 
 4. コマンドの終了状態と出力内容は、起動時の結果に含まれる出力ファイルの絶対パスから取得する。
    このファイルは実行識別子とは独立してディスク上に残り、出力の全量と`[exited with code <整数>]`という形式の終了状態行を含んでいる（実行識別子自体は実行環境の再起動によって失効する）。
-   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月2日」にある。
+   監査記録は`docs/development/audit-records-delegation-waiting.md`にある。
+   該当節は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月2日」である。
    同じ文の記録は「agent-toolkit/skills/delegation/references/waiting-and-monitoring.md：背景ジョブの起動形（Claude Code）：2026年9月4日」にもある。
    待機タスクを別のセッションやエージェントへ引き継ぐ場合は、このファイルパスもあわせて引き継ぐ。
    監査記録は`docs/development/audit-records.md`に記載されている。
@@ -90,7 +91,7 @@ Claude Codeが、他の担当者やCI監視の結果を後続工程の入力と�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| Claude Codeでの委譲の実装：一時領域と成果物の観測の基準を適用する前 | `claude-code-runtime-receiving.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime-receiving.md` |
-| 待機の異常時の扱い：ホストによる背景待機の停止後の基準を適用する前 | `wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Claude Codeでの委譲の実装：一時領域と成果物の観測の基準を適用する前 | `claude-code-runtime-receiving.md` |
+| 待機の異常時の扱い：ホストによる背景待機の停止後の基準を適用する前 | `wait-anomalies-stopped.md` |

@@ -4,14 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-recurrence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-recurrence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-acceptance.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-records.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-records.md` |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 
 ## ラウンドの遷移
 
@@ -40,16 +35,16 @@
 履歴書き換え後の開始時点には、書き換え後の対応するOIDを使用する。
 
 前ラウンドで記録された指摘は、解決状態および検証証拠とあわせて指摘管理表に保持する。
-複数の計画が並行する反復処理では、計画ごとに最終のレビューHEAD、ラウンド数、指摘管理表、ならびに受理した返却ファイルを保持する。
+複数のレビュー単位が並行する反復処理では、レビュー単位ごとに最終のレビューHEAD、ラウンド数、指摘管理表、ならびに受理した返却ファイルを保持する。
 別計画の認可については、判定対象外のコミットを現在のOIDに更新した契約として渡す。
 変更後の再レビュー対象は`git range-diff`や`git diff --name-only`を用いて判定する。
 基準は`exec-review-parent-launch.md`「起動方法別のレビュー基準」と`exec-review-contract-generation.md`「`review_contract`の生成」に従う。
-読者別探索の対象と修正範囲は自計画の判定対象コミットによる差分とし、他計画のコミットのみで変更された文書はその計画のレビューにおいて判定する。
-他計画が作成した記述に対する指摘候補は、委譲元がその計画のレビュー担当へ1回のみ回送し、その担当が同一HEADで読者別探索を完了して下した結論を採用する。
-自計画の変更が参照先、手順、識別子などの前提条件を変更した場合は、自計画の直接影響範囲として判定する。
+読者別探索の対象と修正範囲は自レビュー単位の計画の判定対象コミットによる差分とし、他のレビュー単位のコミットのみで変更された文書はそのレビュー単位において判定する。
+他のレビュー単位が作成した記述に対する指摘候補は、委譲元がそのレビュー担当へ1回のみ回送し、その担当が同一HEADで読者別探索を完了して下した結論を採用する。
+自レビュー単位の変更が参照先、手順、識別子などの前提条件を変更した場合は、自レビュー単位の直接影響範囲として判定する。
 受領確認では、各返却本文（`atk agents wait`の`agent_message_path`）を`exec-review-parent-acceptance.md`「完成条件証拠の受領確認」の手順で検収する。
 この手順は、process-wiのレーン処理、およびメイン自身による計画あり・計画なしの実装のいずれにおいても共通して使用する。
-レーンを統合する際は、計画ごとに受理した返却ファイルと「レビューHEAD」を保持し、統合時の完成条件判定へ引き渡す。
+レーンを統合する際は、レビュー単位ごとに受理した返却ファイルと「レビューHEAD」を保持し、統合時の完成条件判定へ引き渡す。
 読者別探索の申告内容は、メイン自身の回答下書きとGit管理外の変更記録から算出した対象集合と、Git差分の対象集合の双方に対応付けて検証し、未解決件数が0件であることを確認して収束させる。
 各返却に含まれる今回の「レビュー開始時点」と、2回目以降の「前回確認版の開始時点」「前回確認版HEAD」も保持する。
 rebaseによって今回の開始時点が変更された場合でも前回の値を上書きせず、双方の差分の一致性とファイル別申告内容を同一の受領確認へ渡す。
@@ -70,9 +65,9 @@ rebaseによって今回の開始時点が変更された場合でも前回の�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュー担当の起動とレビュー修正：レビュー修正の基準を適用する前 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
-| 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準の基準を適用する前 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成の基準を適用する前 | `exec-review-recording-evidence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-evidence.md` |
-| 実行レビュー反復の調整：反復原因の判定の基準を適用する前 | `review-loop-coordination-recurrence.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-recurrence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュー担当の起動とレビュー修正：レビュー修正の基準を適用する前 | `exec-review-parent-correction.md` |
+| 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準の基準を適用する前 | `exec-review-parent-launch.md` |
+| 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成の基準を適用する前 | `exec-review-recording-evidence.md` |
+| 実行レビュー反復の調整：反復原因の判定の基準を適用する前 | `review-loop-coordination-recurrence.md` |

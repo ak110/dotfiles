@@ -4,15 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
-| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
-| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
-| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
-| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` |
+| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
 
 ## 待機手段の選択
 
@@ -31,9 +29,9 @@
 
 通知を受け取れない担当を新規起動へ切り替える場合も、`continuation.md`「継続と新規起動」に従って欠陥の処置を別に判定する。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
 
 1. 起動手段と終了観測手段の組み合わせは、起動前に`references/runtime-routing.md`の「実行手段」に従って決定する
 
@@ -62,4 +60,5 @@
 所有記録は起動の履歴であり、完了の観測後も所有履歴そのものが保持される。
 起動集合から完了集合を除いて未完了の処理を特定し、返却本文または保存出力と終了状態を回収する。
 未観測の呼び出しの有無と、有効な待機の状態は別に判定する。
+割り込みへの回答や会話圧縮の後に元の工程へ戻るときも、この記録から未終了の実行を選んで同じ識別子で回収し、同じ目的の待機や監視は新たに起動せず既存の実行を使う。
 公開状態が`running`の記録件数だけで待機を遮断しない。

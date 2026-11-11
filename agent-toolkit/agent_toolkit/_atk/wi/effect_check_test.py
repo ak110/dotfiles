@@ -320,6 +320,49 @@ def test_public_transition_only_implemented_awi_adoption_starts_pending(
         assert "effect_check:" not in entry_path(notes, filename).read_text(encoding="utf-8")
 
 
+def _adopt(notes: pathlib.Path, worktree: pathlib.Path, filename: str, *commits: str) -> int:
+    with pytest.raises(SystemExit) as finished:
+        atk.main(["wi", "adopt", filename, "--target-repo", str(worktree), *commits], home=notes.parent)
+    assert isinstance(finished.value.code, int)
+    return finished.value.code
+
+
+def test_adopt_warns_when_inbox_entry_has_commit(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """作業を示すcommitを持つ項目をinboxから直接採用すると、成功させたうえで処理中の抜けを警告する。"""
+    notes, worktree, _path = effect_repository
+    write_awi(notes, "skipped.md", state="inbox")
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    capsys.readouterr()
+
+    assert _adopt(notes, worktree, "skipped.md", "--commit", oid) == 0
+
+    captured = capsys.readouterr()
+    assert "state: adopted" in entry_path(notes, "skipped.md").read_text(encoding="utf-8")
+    assert "成功: 1件をadoptedへ移した" in captured.out
+    assert captured.err.count("skipped.mdは作業を示すcommitがあるのに処理中（processing）を経ずにinboxから終了した") == 1
+    assert "atk wi start-processing" in captured.err
+
+
+def test_adopt_does_not_warn_for_regular_transitions(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """処理中・保留からのcommit付きの採用と、commitを伴わないinboxからの採用は警告しない。"""
+    notes, worktree, _path = effect_repository
+    write_awi(notes, "processed.md", state="processing")
+    write_awi(notes, "held.md", state="hold")
+    write_uwi(notes, "answered.md", state="inbox", answer="回答済み")
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    capsys.readouterr()
+
+    assert _adopt(notes, worktree, "processed.md", "--commit", oid) == 0
+    assert _adopt(notes, worktree, "held.md", "--commit", oid) == 0
+    assert _adopt(notes, worktree, "answered.md") == 0
+
+    assert "処理中（processing）を経ずに" not in capsys.readouterr().err
+
+
 def test_public_effect_batch_validates_all_and_resumes_partial_save(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     monkeypatch: pytest.MonkeyPatch,
@@ -411,3 +454,68 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
         assert len(effect_check.result_values(text, "効果確認全体")) == 2
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "2"
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
+
+
+def test_public_effect_whole_item_verdicts_without_file(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--file`を省くと、目的を達したかの判定（確認済み・効果不足）を作業項目の全体へ保存でき、一覧と本文から読める。
+
+    ファイルごとの判定を先に持つ項目でも、その行を保ったまま全体の判定を保存する。
+    """
+    notes, worktree, path = effect_repository
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed") == 0
+    assert _invoke(notes, worktree, path.name, None, "insufficient") != 0  # 是正先の指定が無い効果不足は保存しない
+    assert (
+        _invoke(
+            notes,
+            worktree,
+            path.name,
+            None,
+            "insufficient",
+            "--corrective-awi",
+            "corrective.md",
+            "--reason",
+            "目的の値が延びた",
+        )
+        == 0
+    )
+    saved = path.read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(saved)
+    assert parsed is not None and parsed[0]["effect_check"] == "insufficient"
+    assert list(effect_check.checked_files(saved)) == ["agent-toolkit/share/rules/common/a.md"]
+    overall = json.loads(effect_check.result_values(saved, "効果確認全体")[-1])
+    assert overall == {
+        "checked_on": "2026-10-31",
+        "corrective_awi": "corrective.md",
+        "reason": "目的の値が延びた",
+        "review_record": "claude:session:42",
+        "verdict": "insufficient",
+    }
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as listed:
+        atk.main(
+            [
+                "wi",
+                "list",
+                "--target-repo",
+                str(worktree),
+                "--state=adopted",
+                "--effect-check=insufficient",
+                "--jsonl",
+                "--skip-pull",
+            ],
+            home=notes.parent,
+        )
+    assert listed.value.code == 0
+    assert json.loads(capsys.readouterr().out)["filename"] == path.name
+
+
+def test_public_effect_whole_item_confirmed_without_file(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+) -> None:
+    """`--file`を省いた確認済みは、変更ファイルごとの判定がそろっていなくても全体を確認済みにする。"""
+    notes, worktree, path = effect_repository
+    assert _invoke(notes, worktree, path.name, None, "confirmed") == 0
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None and parsed[0]["effect_check"] == "confirmed"

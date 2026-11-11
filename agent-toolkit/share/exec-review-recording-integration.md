@@ -4,27 +4,26 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
-| 返却形式を確認する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
-| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `lane-integration-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-inputs.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
-| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` |
+| 返却形式を確認する時 | `exec-review.parent.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |
 
 ## 統合時の完成条件判定
 
-計画ごとの実行レビューの返却に含まれる完成条件証拠に対して行う以下の確認を、「統合時の完成条件判定」と呼ぶ。
-委譲元は`exec.parent.md`、`exec-parent-integration.md`のタイミングでこの点を確認する。
-また、統合を担当するレーン担当は`lane-integration-subagent-inputs.md`「入力」のタイミングで行う。
+レビュー単位ごとの実行レビューの返却に含まれる完成条件証拠に対して行う以下の確認を、「統合時の完成条件判定」と呼ぶ。
+受領側は`exec-review-parent-acceptance.md`「完成条件証拠の受領確認」で以下の意味検収を1回行う。
+統合時は既存の進捗ログか引き継ぎ記録にある受理返却パス、`レビューHEAD`、原要求・`review_contract`、レビュー指摘管理表を参照する。
+HEAD・原要求・契約・返却・管理表の変更によって影響を受ける条件と未検収部分だけを以下の手順で判定し、同じ担当による受理済み条件の全件検収を繰り返さない。
+未検収の返却や受理記録が不足する範囲には、以下の手順をすべて適用する。
+HEAD更新時の再レビュー要否は手順2に従う。
 受理できない行が1行でも存在する場合、委譲元は統合指示を保留し、レーン担当はマージやAWIの完了処理を停止する。
 
-1. 計画ごとに受理した最新の返却ファイルをすべて読み込み、各返却の計画名と対応するAWIの集合を確認する
+1. レビュー単位ごとに受理した最新の返却ファイルをすべて読み込み、各返却が含む計画名と対応するAWIの集合を確認する
 2. 返却メッセージ内の`レビューHEAD`が、統合対象の入力HEAD、または`exec-review-parent-correction.md`「レビュー修正」で保持された修正前のHEADと一致していることを確認する。
    HEADが変更されており再レビューを省略できない計画については、新しいHEADですべての条件を判定し直した返却を求める
 3. 各WIの`review_contract`が`exec-review-recording-contract.md`「記録する行と要求単位」の反映項目ごとの対応を保持することを確認する。
@@ -49,7 +48,7 @@
 
 | 行 | 受理する条件と扱い | 受理できない行 |
 | --- | --- | --- |
-| `失効`の完成条件行 | 否定したユーザー判断と不採用の根拠、または「失効の根拠」に示すメインかレーン担当の技術判断の記録を確認して受理する。判断記録が`agent-toolkit:/share/review-loop-coordination.md`「技術判断で外せる完成条件」の境界を満たすことを確かめる。条件文を変更した場合は変更後の条件に対する観測結果を判定し、旧条件を無断で達成扱いにしない | 手順8のとおり差し戻す |
+| `失効`の完成条件行 | 否定したユーザー判断と不採用の根拠、または「失効の根拠」に示すメインかレーン担当の技術判断の記録を確認して受理する。判断記録が`agent-toolkit:/share/review-loop-coordination-escalation.md`「技術判断で外せる完成条件」の境界を満たすことを確かめる。条件文を変更した場合は変更後の条件に対する観測結果を判定し、旧条件を無断で達成扱いにしない | 手順8のとおり差し戻す |
 | `割当外`の原文要求行 | WI本文の`## 反映内容と反映先`、計画ファイルの`## 実施内容`の`根拠`欄、割当先AWIの引受記録のいずれかに割当の記録が実在し、かつ「判定の値」の`割当外`の割当先条件を満たしていれば受理する | 記録を特定できない行、計画の`移管`先を登録済みWIのファイル名で特定できない行は差し戻す |
 | `背景`の原文要求行 | 分類の記録がその単位と対応しており、その単位が要求、制約、採否、選好、回答を求める問いを含まないことを原文の文脈で確認して受理する | 記録を特定できない行、範囲が対応しない行、要求を含む行は差し戻す |
 | 統合時に`reject`で終了するWIの行 | 初回から`reject`による`未達`とし、不採用根拠の所在から、同じ入力記録内で全体不採用を特定できれば受理する。部分的な失効、延期adopt、割当外、背景と混同しない | 手順8のとおり差し戻す |
@@ -58,7 +57,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビューの指摘と完成条件証拠の記録：review_contractの書式の基準を適用する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` |
-| 実行レビューの指摘と完成条件証拠の記録：根拠の書き方の基準を適用する前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビューの指摘と完成条件証拠の記録：review_contractの書式の基準を適用する前 | `exec-review-recording-contract.md` |
+| 実行レビューの指摘と完成条件証拠の記録：根拠の書き方の基準を適用する前 | `exec-review-recording-grounds.md` |

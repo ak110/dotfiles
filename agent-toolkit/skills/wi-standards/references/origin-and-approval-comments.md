@@ -4,13 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies-editing.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-editing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
-| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` |
+| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
+| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
 
 ## ユーザー専用の記入欄と是正要求
 
@@ -30,8 +28,8 @@ UWIの`## 回答`およびAWIの`## ユーザーコメント`は、ユーザー�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
-| レビューイー側心得：レビュー指摘の位置付けの基準を適用する前 | `agent-basics:review-standards/references/reviewee-acceptance.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-acceptance.md` |
-| 由来と承認：由来と`source`の基準を適用する前 | `origin-and-approval-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-origin.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` |
+| レビューイー側心得：レビュー指摘の位置付けの基準を適用する前 | `agent-basics:review-standards/references/reviewee-acceptance.md` |
+| 由来と承認：由来と`source`の基準を適用する前 | `origin-and-approval-origin.md` |

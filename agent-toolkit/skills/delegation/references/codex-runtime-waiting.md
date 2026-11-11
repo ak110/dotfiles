@@ -4,13 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲先と起動手段を選ぶ前 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 委譲先と起動手段を選ぶ前 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 同一担当の継続・交代を判断する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
-| 可用性の障害を確認して回復する前 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-responses.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-responses.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲先と起動手段を選ぶ前 | `runtime-routing.md` |
+| 委譲先と起動手段を選ぶ前 | `process-model-settings.md` |
+| 同一担当の継続・交代を判断する前 | `continuation.md` |
+| 可用性の障害を確認して回復する前 | `fallback-launch.md` |
 
 ## agents_serverの二層待機
 
@@ -27,7 +26,7 @@
 2. 同一実行を回収するため、`functions.exec`から`atk agents wait`を起動する場合も、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定めるコマンド回収契約に従い、外側セルの`cell_id`を`functions.wait`へ渡す。
    待機CLIへタスク固有timeoutを渡さず、CLI自身が待機上限に達したときに対象が未終了なら、その結果を確かめてから新しい待機コマンドを実行する。
    逐次待機やロック競合によって遅れて開始された後発待機の回収手順は、`waiting-and-monitoring-responses.md`「`atk agents wait`の応答の扱い」に従う。
-   監査記録は`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。
+   監査記録は`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月19日」に記載されている。
 
    次は終了結果だけを待つ例である。
    `/absolute/path/to/atk`は確認済みCLIの絶対パス、`ROOT_SESSION_ID`は起動応答で保持した値、`CELL_ID`と`SESSION_ID`は各応答の識別子へ置き換える。
@@ -62,7 +61,7 @@
    `exec_command`の初回は公開上限30000ms以内とし、120000を待機CLI自身のtimeoutへ転記しない。
    先に終了すればその結果を回収し、制御が戻るたびに通知と追加入力を処理する。
    CIの終了確認など別の長いコマンドでも、起動コマンドだけをその正規手段へ替えて同じ二層で回収する。
-   観測条件と再検証手順は、`docs/development/audit-records.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
+   観測条件と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
 
    委譲先の成果物側のみを補助観測する場合は、作業ツリーの状態を`git -C <絶対パス> status --porcelain=v1`と`git -C <絶対パス> rev-parse --short HEAD`で観測する。
    成果物ファイルは`wc -l -- <絶対パス>`および`stat -L -c %Y -- <絶対パス>`（macOSでは`stat -L -f %m -- <絶対パス>`）で観測する。
@@ -70,6 +69,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| Codexでの委譲方法：後続操作の共通先行条件の基準を適用する前 | `codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Codexでの委譲方法：後続操作の共通先行条件の基準を適用する前 | `codex-runtime-continuation.md` |

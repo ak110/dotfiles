@@ -63,6 +63,7 @@ lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.pretooluse import dispatch as _pretooluse_dispatch
 lazy from agent_toolkit._hooks.pretooluse import read_delivery as _read_delivery
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
@@ -556,9 +557,10 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     except (OSError, UnicodeError, ValueError) as error:
         notices.append(
             _llm_notice(
-                f"読込資料の取得を記録できない: {error}",
+                f"資料の読取結果を取得済みとして記録できない: {error}。読取自体の成否はツール結果で確認せよ。",
                 tag=_WARN_TAG,
-                fix="資料の実在と宣言を確認し、必要な本文を取得せよ。",
+                fix="診断に示された資料と読込表を確認せよ。本文が欠けていれば必要な範囲を取得し、"
+                "記録の障害が続く場合は診断を委譲元またはユーザーへ報告せよ。",
                 removable_cause=True,
                 escalate_on_repeat=False,
             )
@@ -601,6 +603,18 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         if not payload.get("agent_id") and isinstance(skill, str):
             arguments = tool_input.get("args")
             session_title.observe_skill(session_id, skill, arguments if isinstance(arguments, str) else None)
+        # 帰属行の要件へ遮断で初めて触れることを避けるため、commitスキルの起動時点に検査が期待する行を示す。
+        # Codexは`message.md`の読取時にPreToolUseが同じ行を配送する。
+        if skill == "agent-toolkit:commit" and not is_codex_payload(payload):
+            trailer = _pretooluse_dispatch.observed_commit_trailer(payload, cwd, is_codex=False)
+            if trailer is not None:
+                notices.append(
+                    _llm_notice(
+                        "起動時点に観測したモデルと推論量の帰属行: " + trailer + "。通常commitのメッセージへこの1行を入れよ。"
+                        "明示指定と無効化の方針は`references/message.md`で確認せよ。",
+                        tag="notice",
+                    )
+                )
     elif tool_name in ("Agent", "Task"):
         # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す
         agent_id = _background_tasks.async_agent_launch_id(payload.get("tool_response"))
@@ -668,7 +682,8 @@ def main(payload_text: str) -> int:
     except (OSError, ValueError, TypeError, KeyError) as error:
         notices.append(
             _llm_notice(
-                f"終了工程の実行結果を取得できない: {error}",
+                f"ツール呼び出しの結果を、作業終了時の確認に使う記録へ残せなかった: {error}。"
+                "元の操作の成否はツール結果で確認せよ。",
                 tag="warn",
                 removable_cause=False,
                 fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",

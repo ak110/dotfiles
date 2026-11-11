@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/SKILL.md` |
-| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` |
+| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` |
 
 ## 実行結果の検証
 
@@ -40,7 +40,7 @@
   Git管理外の認証情報ファイルは元の場所に置いたままにする。
   通常の認証解決が成立しない場合は、成立しない条件を担当者へ報告する。
   こうした隔離処理の追加は本調査の場面に限定し、通常利用や既存のテスト環境の隔離設定は現状のまま維持する。
-  関連する監査記録は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月9日」を参照する。
+  関連する監査記録は、`docs/development/audit-records-investigation.md`の「agent-basics/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月9日」を参照する。
   同「agent-basics/skills/writing-standards/references/investigation.md：実行結果の検証：2026年10月18日（1）」も参照する。
 - 応答テキストの内容自体を評価対象とせず、動作確認や対照実験、識別子の観測のみを目的としてエージェントCLIを起動する場合は、検証対象がモデルの性能、思考レベル（effort）、設定、ツール群に依存しない限り、利用可能な最も安価なモデルと低いeffort設定を選択する。
   セッションは保存せず、不要な設定・ツール・MCPは読み込まず、最小限のシステムプロンプトで起動する。

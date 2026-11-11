@@ -14,7 +14,8 @@ AskUserQuestion / ExitPlanMode:
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 - ユーザーが直接読む英語主体の質問本文・計画本文の書き直し要求 (block)
 - 確認の前に読む2資料（`agent-toolkit:user-confirmation-and-report`）を読まないままメインが呼んだ
-  `AskUserQuestion`の警告 (warn、昇格しない)
+  確認ツール（`AskUserQuestion`・`request_user_input`・`request_user_input_async`）の拒否 (block)。
+  警告は回答と一緒に届き害を防げないため、質問の表示前に拒否する。宣言や記録を読めない場合は拒否しない
 
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
@@ -27,6 +28,8 @@ mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 Agent / Task:
 
 - 宣言外の説明を含む役割起動の形式を案内 (warn)。必須入力が欠ける定型起動は契約不成立として遮断 (block)
+- 組み込みの汎用定義を遮断し、同じ主体の同一入力の再発行を一度通す (block)
+- 汎用定義の再発行の記録を保存できない場合は警告だけで通す (warn)
 
 Bash:
 
@@ -36,6 +39,7 @@ Bash:
 - 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
 - Codexでcommitのmessage.mdを読むとき、観測したモデルと推論量の帰属行を先行配送 (warn)
+  （Claude Codeでは`agent-toolkit:commit`の起動完了時にPostToolUseが同じ行を示す）
 - 操作を起動の契機とするスキル（`agent-basics:search`・`agent-basics:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
 
 Grep / Glob:
@@ -121,8 +125,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_process_kill_by_pattern,
     _check_bash_unquoted_heredoc_substitution,
     _check_read_predicate_stderr_discard,
-    _git_commit_attribution_error,
-    _git_commit_message_format_error,
+    _git_commit_block,
     _git_commit_messages,
     _warn_container_root_bind_mount,
     _warn_git_rev_parse_short_multiple,
@@ -253,8 +256,12 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return _decide_agents_server_tool(payload, tool_name, tool_input, session_id)
     if tool_name in AGENT_TOOL_NAMES:
         launch = check_task_document_launch(tool_name, tool_input)
-        generic = _check_generic_agent_launch(tool_input) if launch.block is None else None
-        return dataclasses.replace(launch, notices=(*launch.notices, generic)) if generic else launch
+        if launch.block is not None:
+            return launch
+        generic_block, generic_notice = _check_generic_agent_launch(payload, tool_name, tool_input)
+        if generic_block:
+            return dataclasses.replace(launch, block=generic_block)
+        return dataclasses.replace(launch, notices=(*launch.notices, generic_notice)) if generic_notice else launch
     if tool_name == "Bash":
         return _decide_bash_tool(payload, tool_input, session_id, is_codex=is_codex)
     if tool_name == "TaskStop":
@@ -321,13 +328,12 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         if message is not None:
             return Decision(block=message)
     messages = tuple(_git_commit_messages(command, cwd=cwd))
-    format_error = _git_commit_message_format_error(messages)
-    if format_error is not None:
-        return Decision(block=format_error)
-    if messages and (is_codex or not _claude_commit_attribution_disabled(cwd)):
-        attribution_error = _git_commit_attribution_error(messages, _hook_observed_identity(payload, is_codex=is_codex))
-        if attribution_error is not None:
-            return Decision(block=attribution_error)
+    if messages:
+        checks_attribution = is_codex or not _claude_commit_attribution_disabled(cwd)
+        identity = _hook_observed_identity(payload, is_codex=is_codex) if checks_attribution else None
+        commit_block = _git_commit_block(messages, identity)
+        if commit_block is not None:
+            return Decision(block=commit_block)
     warnings: list[str] = []
     for check in (
         _check_bash_option_after_terminator,
@@ -387,6 +393,19 @@ def _reads_commit_message_rules(command: str, cwd: str) -> bool:
             if path.as_posix().endswith("/skills/commit/references/message.md") and path.is_file():
                 return True
     return False
+
+
+def observed_commit_trailer(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
+    """commitの帰属行の検査が期待する行を返す。観測できない場合と、帰属行を無効にした設定では`None`を返す。
+
+    事前に示す値と遮断の検査が期待する値を同じ生成元から作るために公開する。推測では補わない。
+    """
+    if not is_codex and _claude_commit_attribution_disabled(cwd):
+        return None
+    identity = _hook_observed_identity(payload, is_codex=is_codex)
+    if identity is None or identity.source != "observed":
+        return None
+    return co_author_trailer(identity)
 
 
 def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity | None:
@@ -520,7 +539,8 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
                 continue
             return Decision(
                 block=_block_notice(
-                    f"対象の入力欄: `{name}`。{_response_language_check.BLOCK_BODY}{body}",
+                    f"対象の入力欄: `{name}`。この入力本文を英語主体と判定し、呼び出しを止めた。"
+                    f"{(body or '').replace('直前のアシスタント応答の地の文', 'この入力本文の説明')}",
                     fix=(
                         _response_language_check.WARNING_FIX
                         + "引用・入力素材だけが英語で、説明が日本語なら、同じ主体から同じツールへ同一入力を再発行せよ。"

@@ -6,20 +6,20 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 待機中の改善要求の登録時機を決める前 | `../../delegation/references/waiting-and-monitoring-independent-work.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-independent-work.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
-| 基準資料を選択・取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 基準資料を選択・取得する時 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
-| 基準資料を選択・取得する時 | `run-lanes-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-addition.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:/share/exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
-| 公開後に追加修正を統合し再公開する前 | `finish-session-recovery.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機中の改善要求の登録時機を決める前 | `../../delegation/references/waiting-and-monitoring-independent-work.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review-parent-existing-defects.md` |
+| 基準資料を選択・取得する時 | `../../../share/add-wi.parent.md` |
+| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../review-session/SKILL.md` |
+| 基準資料を選択・取得する時 | `selection-procedure-addition.md` |
+| 基準資料を選択・取得する時 | `run-lanes-addition.md` |
+| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:/share/exec-review-contract-generation.md` |
+| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../wi-standards/references/wi-standards-origin.md` |
+| 公開後に追加修正を統合し再公開する前 | `finish-session-recovery.md` |
 
 ## 開始後に追加されたWIの確認
 

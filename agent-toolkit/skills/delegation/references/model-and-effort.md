@@ -1,15 +1,10 @@
 # 工程別設定の対象外のモデル選択
 
-本書は、工程別モデル設定の対象外となる委譲でモデルとreasoning effortを選ぶ方針を定める。
+本書は、工程別モデル設定の対象外となる委譲でモデルとreasoning effortを選ぶ方針と、委譲した成果が受入れ基準に届かないときにeffortとモデルを引き上げる順番を定める。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
 
 ## modelとreasoning effort
 
@@ -23,14 +18,36 @@ reasoning effortの省略時は`medium`を適用する。
 投稿の構成例や節約率を全モデル・課題への保証として用いず、条件が比較できる実績と未計測の部分を区別する。
 高いeffortは、推論の深さが結果を左右すると確かめた工程に限って選ぶ（努力目標）。
 モデルを明示するときはeffortも指定し、可用性による切替は`fallback-launch.md`「代替起動」に従う。
-関連する監査記録は、`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」に記載されている。
+関連する監査記録は、`docs/development/audit-records-delegation.md`にある。
+該当節は「agent-toolkit/skills/delegation/references/runtime-routing.md：modelとreasoning effort：2026年8月」である。
 
 エージェント自身がeffortを選ぶ場合は、次の方針を適用する。
 工程別設定の初期値・プリセット、ユーザーの設定値は保持する。
 
 - `xhigh`・`max`は、同種の作業で品質の向上を測って確かめた場合に限って選ぶ（努力目標。高いeffortは思考と出力トークンを増やし、前記の監査記録には軽量モデルの`max`で自動コンパクションが10回発生したというユーザーからの報告がある）。
+  `high`を超える値へ上げる前の比較は「成果が受入れ基準に届かないときの引き上げ順」に従う。
 - effortを指定できる起動では、思考を増減させる指示文を委譲プロンプトへ追加する前にeffortで調整する（努力目標。指示文より設定で調整する方針である）。
   effortを指定できない起動には適用しない。
 
 公式ガイドの対象モデルと推奨内容の確認記録は、`docs/development/audit-records.md`にある。
 項目名は「agent-basics/skills/writing-standards/references/agent-documents-basics.md：語調と現行規則の表現：2026年10月31日」である。
+
+## 成果が受入れ基準に届かないときの引き上げ順
+
+委譲した成果が受入れ基準に届かず、再委譲やeffort・モデルの変更を判断するときは、次の順に手を打つ。
+工程別設定（`chores`など）を使う委譲にも適用する。
+
+1. 委譲先が自分の成果を確かめられる手段（テスト、ビルド、対象を呼び出すスクリプトなど）を渡しているかを確かめ、無ければ渡す。
+2. effortを1段上げる。
+3. 上のモデルへ移る。
+   移った先では、下のモデルで使っていた値より低いeffortから始める。
+
+`high`を超えるeffortへ上げる前に、1つ上のモデルを低いeffortで試して結果を比べる。
+同じ品質へ届くまでの総費用は、高いeffortの下のモデルより低いeffortの上のモデルが小さい場合があるためである。
+
+エージェントが自分の判断でモデルを上げられる範囲は、`process-model-settings.md`「工程別モデル設定」が定める自律的な切出しの工程の内側に限る。
+その範囲を超える引き上げが要る作業は、判断を所有する担当が自分で引き取る。
+effortやモデルを変えた再委譲は新しい会話になり、前の文脈を引き継がないため、届かなかった検証の出力と残る差分を入力へ含める。
+
+出典はAnthropicの公式ガイド（<https://claude.dev/blog/which-claude-model-should-you-build-with>）である。
+同ガイドの数値は特定のモデルと課題での結果であり、他のモデルと課題への保証として用いない。

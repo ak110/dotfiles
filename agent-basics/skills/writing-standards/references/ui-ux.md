@@ -20,20 +20,15 @@ Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 機能の正しさを確認するテスト層を選ぶ時 | `testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/reviewer-usability.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-usability.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 機能の正しさを確認するテスト層を選ぶ時 | `testing-selection.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 判断の順序・操作と情報・状態と内容に関する判断・作業の前 | `ui-ux-interaction.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-interaction.md` |
-| 視覚と構造・装飾を選ぶ基準に関する判断・作業の前 | `ui-ux-visual.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-visual.md` |
-| アクセシビリティと性能・数値の一次資料に関する判断・作業の前 | `ui-ux-accessibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-accessibility.md` |
-| 完了前の実描画確認に関する判断・作業の前 | `ui-ux-rendering.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-rendering.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判断の順序・操作と情報・状態と内容に関する判断・作業の前 | `ui-ux-interaction.md` |
+| 視覚と構造・装飾を選ぶ基準に関する判断・作業の前 | `ui-ux-visual.md` |
+| アクセシビリティと性能・数値の一次資料に関する判断・作業の前 | `ui-ux-accessibility.md` |
+| 完了前の実描画確認に関する判断・作業の前 | `ui-ux-rendering.md` |

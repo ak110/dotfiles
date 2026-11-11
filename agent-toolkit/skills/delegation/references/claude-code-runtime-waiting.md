@@ -4,13 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
-| `Agent`ツールで起動した担当を継続する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
-| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-auto-resume.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-auto-resume.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
+| `Agent`ツールで起動した担当を継続する前 | `continuation.md` |
+| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` |
 
 ## 検証コマンドの実行形態
 
@@ -40,7 +38,8 @@
    自身でタスクを設定する場合は、`atk wait-schedule`を1回実行し、出力された`cron`と`prompt`を変更せずにそのまま`CronCreate`へ渡し、`recurring: true`で1件のみタスクを作成する（`prompt`はmodが設定するものと同一の共通本文である）。
      プロンプトの1行目は`<atk-auto source="periodic-recheck" kind="periodic-recheck">`のみで構成された行とする。
      UserPromptSubmitフックはこの行によって自動挿入ターンを判別し、セッション再開後の所有タスク確認もこの標識の完全一致に基づいて行う。
-   監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」に記載されている。
+   監査記録は`docs/development/audit-records-delegation-waiting.md`にある。
+   該当節は「agent-toolkit/skills/delegation/references/claude-code-runtime.md：待機中の定期再確認と背景転換：2026年10月4日」である。
 
 2. 必要な再確認のため、定期プロンプトに含める内容は、待機対象を記録側から列挙する手段、対象ごとの成果物パスを特定する方法、動的に解決したパスを引き渡すコマンド形式のみとする。
    作業ツリーに対する確認コマンドは`git -C "$worktree_path" status --porcelain=v1`と`git -C "$worktree_path" rev-parse --short HEAD`である。
@@ -71,6 +70,9 @@
    `sleep`コマンドの直接実行、初回から条件が成立するビジーループ、独自の待機機構の新設によって待機処理を代替しない。
 
 5. 所有タスクを適切に回収するため、modはすべての待機対象が終了して結果を回収した後に、共通プロンプトと一致する非durableな所有タスクを自動回収する。
+   `/goal`を設定したセッションでは、メインエージェントが同じ時点で、最終ターンを閉じる前に同じ範囲のタスクを`CronList`で特定して`CronDelete`で削除する。
+   目標の評価はターン終了時に残るタスクを未完了と判定し、modの自動回収はその評価より後にしか動かないためである。
+   手順は`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」が定める。
    複数対象の一部のみが終了した場合、バックグラウンド処理が継続中の場合、未配送の完了通知がある場合、`agents_server`の未回収結果が残っている間はタスクを保持する。
    モデルに対して`CronDelete`が公開されているかどうかは、自動回収の条件には含めない。
    経過時間に応じた起動義務を追加したタスクは通常の自動回収では保持し、既存のセッション終了時自動回収処理に委ねる。

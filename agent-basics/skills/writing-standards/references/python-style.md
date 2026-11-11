@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time-errors.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-errors.md` |
-
 ## 言語スタイル
 
 ### import・型・docstring
@@ -75,7 +71,7 @@ Windows環境でも実行や静的解析が行われるコードやテストを�
     これは`--no-project`では回避できないため、`uv run --python <ver> --script <path>`でPythonバージョンを明示的に指定する。
   - `uv run --script`が作成する仮想環境のキャッシュは、スクリプトのファイルパスごとに管理される場合がある（キャッシュキーの生成規則は公式ドキュメントに規定がない）。
     実行時間制限のあるスクリプトを事前にウォームアップする場合は、実行時に実際に参照される絶対パスを対象にする。
-    監査記録は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/python.md：実行環境：2026年8月17日」を参照。
+    監査記録は`docs/development/audit-records-languages.md`「agent-basics/skills/writing-standards/references/python.md：実行環境：2026年8月17日」を参照。
 - プロジェクトのlockfileを利用する`uv run`では、lockfileを更新しないオプション（`--frozen`または`--locked`）の指定を必須とする。
   prekなどのツールは親環境の`UV_FROZEN`環境変数を引き継がないためである。
 - `uv run --script`においては、スクリプト用のlockfileが存在する場合に限り、lockfileを更新しないオプションを付与する。

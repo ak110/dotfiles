@@ -7,11 +7,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 入力素材を文章へ取り込む前 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 各名詞句の定義元と参照可能性を確認する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
-| 文章の書き直しを委ねる時とtextlintの診断へ対処する時 | `textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 入力素材を文章へ取り込む前 | `writing.md` |
+| 各名詞句の定義元と参照可能性を確認する前 | `agent-basics:writing-standards/references/review-only-criteria.md` |
+| 文章の書き直しを委ねる時とtextlintの診断へ対処する時 | `textlint-violations.md` |
 
 ## ユーザー入力素材の取扱い
 

@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
-
 ## 入力の適格性と追送
 
 エージェント向け文書の修正を指示する場合は、同一の論点を修正するために必要なファイルを一度にすべて指定し、節名は該当箇所の所在の手掛かりとして提示する。
@@ -72,6 +67,6 @@ pushを行ってよいかどうか
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲：送信の基準を適用する前 | `delegation-sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-sending.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲：送信の基準を適用する前 | `delegation-sending.md` |

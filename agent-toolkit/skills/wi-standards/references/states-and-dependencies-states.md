@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-
 ## 状態と一覧集合
 
 | 分類 | 値 | 意味 |
@@ -36,7 +32,7 @@
 | `inbox`→`hold` | `atk wi hold` | 項目の修正が必要と判断した主体が実行する。ユーザーの回答待ちには使わず、「承認型UWIと元項目」の依存で表す |
 | `processing`→`hold` | `atk wi hold --state=processing <ファイル名>` | 項目を処理しているセッションが、本文の修正が必要と判断した時点で実行する。エージェント環境では`--state=processing`を付けずに`atk wi hold`を実行すると失敗する |
 | `hold`→`inbox` | `atk wi unhold` | 項目を修正した主体が、保存された本文の一致確認を完了した時点で実行する。回答済みUWIを待つ元項目は保留せずに依存で表すため、この遷移の対象にならない |
-| `inbox`→`processing` | `atk wi start-processing` | `agent-toolkit:process-wi`のメインエージェントが、処理対象とする項目を確定した直後に実行する。是正を求める回答が保存された事後承認型UWIや、元項目での追加作業を求める回答済み事前承認型UWIも、作業を担当するレーンの対象としてこの状態へ遷移させる。`agent-toolkit:process-wi`の外部で回答済みUWIの回答を反映する主体も、反映の作業を始める時点でそのUWIをこの状態へ遷移させる |
+| `inbox`→`processing` | `atk wi start-processing` | 項目の作業に着手する主体が、開始経路を問わず、着手の時点で項目が`inbox`なら先に実行する。対象は通常のAWI、作業を伴う回答済みUWI（是正を求める回答が保存された事後承認型UWIと、元項目での追加作業を求める回答済み事前承認型UWI）、依存の解消や`unhold`で`inbox`へ戻った元項目である。経路は`agent-toolkit:process-wi`の選定（メインエージェントが処理対象とする項目を確定した直後）、中断した実行の再開、レーン担当が実行中に回答を反映する場合、`agent-toolkit:process-wi`の外部での回答反映を含む。作業を示す`--commit`を付けた`atk wi adopt`が`inbox`の項目を終了すると、CLIはこの遷移の抜けを標準エラーへ警告する |
 | `inbox`→`adopted` | `atk wi adopt` | `agent-toolkit:process-wi`のメインエージェントが、回答済みで未終了のUWI（是正要求を含まない事後承認型を含む）を、AWIの処理を開始する前に終了させる際に実行する |
 | `processing`→`adopted` | `atk wi adopt` | メインエージェントが回答済みUWIを終了するとき、または作業レーンにおいてマージの完了時やコード変更を伴わない要求充足の確定後にAWIを終了するときに実行する。commitの対応付けでは、実装commitの短縮OID（完全なOIDも指定可能）を`--commit`に渡すと、`## 処理結果`に短縮OIDと件名が記録される。commitが複数ある場合は`--commit <OID>`を繰り返し指定することで、各commitの短縮OIDと件名をペアで残せる。要求単位やcommitに関する補足説明などのメモは`--note`または`--note-file`に記述する。コード差分を伴わずに要求を満たした場合は`--commit`を省略し、充足の根拠を処理結果に記載する |
 | `processing`→`rejected` | `atk wi reject` | 計画工程において確定した「全要求の不採用」を、メインエージェントが確認した後にレーンが実行する |

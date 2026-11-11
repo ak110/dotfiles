@@ -43,7 +43,7 @@
 
 ## 参照資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証のための構築・起動・単発実行のコマンドを選ぶ前 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
-| 不具合修正の受入確認を行う前 | `../../bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証のための構築・起動・単発実行のコマンドを選ぶ前 | `agent-basics:check-execution/SKILL.md` |
+| 不具合修正の受入確認を行う前 | `../../bugfix/references/root-cause-analysis-evidence.md` |

@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
-| 処理自体の失敗を異常終了で表すかを判断する前 | `../../bugfix/references/root-cause-prevention-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-selection.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time-state.md` |
+| 処理自体の失敗を異常終了で表すかを判断する前 | `../../bugfix/references/root-cause-prevention-selection.md` |
 
 ## 並行処理・排他制御の設計観点
 
@@ -31,6 +31,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| テスト方針（全言語共通）：状態遷移の性質確認の基準を適用する前 | `testing-transitions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-transitions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| テスト方針（全言語共通）：状態遷移の性質確認の基準を適用する前 | `testing-transitions.md` |

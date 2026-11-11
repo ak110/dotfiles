@@ -63,9 +63,14 @@ def main() -> None:
                     rust = browser = True
                     categories.add("未知のパス")
             reason = "変更領域: " + "、".join(sorted(categories))
-        except OSError, ValueError, subprocess.CalledProcessError:
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
             rust = browser = True
-            reason = "比較元・履歴・差分を確認できないため全体を実行する。"
+            detail = str(error)
+            if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+                stderr = error.stderr.decode("utf-8", errors="replace") if isinstance(error.stderr, bytes) else error.stderr
+                detail += f": {stderr.strip()}"
+            # GITHUB_OUTPUTの1行の値としても出すため、元の診断の改行を空白へ揃える。
+            reason = "比較元・履歴・差分を確認できないため全体を実行する。理由: " + " ".join(detail.splitlines())
     print(f"Rust={str(rust).lower()}, browser={str(browser).lower()}: {reason}")
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         output.write(f"rust={str(rust).lower()}\nbrowser={str(browser).lower()}\nscope_reason={reason}\n")

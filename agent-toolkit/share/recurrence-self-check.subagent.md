@@ -21,10 +21,6 @@ writes_worktree: false
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
-
 ## 入力
 
 - `観点ファイル`: 観点ファイルの絶対パスを格納したJSON配列。
@@ -74,9 +70,3 @@ agent-toolkitにおけるチェック観点は、`${CLAUDE_PLUGIN_ROOT}/share/re
 観点ファイルのH1見出しは`# 再発防止セルフチェック観点`で開始し、この見出し宣言は観点ファイルにのみ使用する。
 ファイルを分割した先のファイルも同一のH1宣言を持つ。
 実行レビューにおける観点の収集は、配置されているディレクトリにかかわらず同一の手順で実施する。
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/recurrence-self-check-items.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check-items.md` |

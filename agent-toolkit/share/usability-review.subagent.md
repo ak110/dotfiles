@@ -24,25 +24,20 @@ writes_worktree: true
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:managed-temp/references/ui-ux.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/references/ui-ux.md` |
-| 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:managed-temp/references/ui-ux.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/references/ui-ux.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
+| 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing-selection.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:managed-temp/references/ui-ux.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 着手時 | `exec-review-criteria.md`、`../skills/managed-temp/references/ui-ux.md` | 起動時 | `role:usability-review` | |
-| `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` | |
-| `変更画面`がフォーム、一覧、検索、通知、自動で切り替わる表示、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` | |
+| `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | | | |
+| `変更画面`がフォーム、一覧、検索、通知、自動で切り替わる表示、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | | | |
 
 ## 入力
 

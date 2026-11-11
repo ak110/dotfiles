@@ -16,4 +16,4 @@ Claude Code 2.1.304以降で`cc-plugin-sec-default`が有効になっている�
 - `prompt.section`、`prompt.context`、`prompt.attachment`、`prompt.compose`、`skill.prompt`、`attribution.text`、`session.compact`、`settings.read`
 - doorが`attachment`、`hook-context`、`compaction`である`session.append`
 
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日」にある。
+監査記録は`docs/development/audit-records-hooks-protocol.md`の「agent-basics/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日」にある。

@@ -11,35 +11,35 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| 参照基準の適用前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
-| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 参照基準の適用前 | `all-repos-orchestration-inputs.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-inputs.md` |
-| 参照基準の適用前 | `selection-format-schema.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-schema.md` |
-| 参照基準の適用前 | `finish-session-observation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-observation.md` |
-| 参照基準の適用前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
-| 参照基準の適用前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
-| 参照基準の適用前 | `run-lanes-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-addition.md` |
-| 参照基準の適用前 | `run-lanes-integration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-integration.md` |
-| 参照基準の適用前 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| 参照基準の適用前 | `lane-resources.md` |
+| 是正要求を分類する前 | `immediate-fix.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` |
+| 参照基準の適用前 | `all-repos-orchestration-inputs.md` |
+| 参照基準の適用前 | `selection-format-schema.md` |
+| 参照基準の適用前 | `finish-session-observation.md` |
+| 参照基準の適用前 | `../../wi-standards/references/wi-standards-operations.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
+| 参照基準の適用前 | `run-lanes-addition.md` |
+| 参照基準の適用前 | `run-lanes-integration.md` |
+| 参照基準の適用前 | `run-lanes.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
-| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 対象と保存先に関する判断・作業の前 | `selection-procedure-setup.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-setup.md` |
-| 処理対象の決定に関する判断・作業の前 | `selection-procedure-candidates.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-candidates.md` |
-| 調査とレーン分け・反映先と上流投入・プロジェクト規範の指定に関する判断・作業の前 | `selection-procedure-allocation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-allocation.md` |
-| 集合確定直後の処理開始に関する判断・作業の前 | `selection-procedure-starting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-starting.md` |
-| 保存後のチェック・保存後の意味検収・選定工程の完了に関する判断・作業の前 | `selection-procedure-validation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-validation.md` |
-| 処理対象WIの追加に関する判断・作業の前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対象と保存先に関する判断・作業の前 | `selection-procedure-setup.md` |
+| 処理対象の決定に関する判断・作業の前 | `selection-procedure-candidates.md` |
+| 調査とレーン分け・反映先と上流投入・プロジェクト規範の指定に関する判断・作業の前 | `selection-procedure-allocation.md` |
+| 集合確定直後の処理開始に関する判断・作業の前 | `selection-procedure-starting.md` |
+| 保存後のチェック・保存後の意味検収・選定工程の完了に関する判断・作業の前 | `selection-procedure-validation.md` |
+| 処理対象WIの追加に関する判断・作業の前 | `selection-procedure-addition.md` |

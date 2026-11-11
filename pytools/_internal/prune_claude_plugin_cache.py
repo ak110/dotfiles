@@ -53,27 +53,38 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     deadline = time.time() - GRACE_DAYS * 86400
     removed = 0
     failures: list[str] = []
-    processes: tuple[claude_plugin_references.ReferencingProcess, ...] | None = None
     for (marketplace, name), installed in sorted(current_paths.items()):
         plugin_dir = cache_root / marketplace / name
-        for version_dir, window in _expired_versions(plugin_dir, installed, deadline):
-            if processes is None:
-                processes = claude_plugin_references.scan()
-            reasons = claude_plugin_references.holding_reasons(processes, version_dir, session_window=window)
-            if reasons:
-                logger.info(
-                    log_format.format_status(
-                        log_format.home_short(version_dir),
-                        f"稼働中の参照があるため旧版を保持: {'、'.join(reasons)}。"
-                        "参照の終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
-                    )
-                )
-                continue
+        with claude_plugin_references.cache_lock(plugin_dir):
             try:
-                if _remove_version_dir(version_dir, cache_resolved):
-                    removed += 1
+                refreshed = _current_install_paths()
+                if refreshed is None:
+                    continue
+                installed = refreshed.get((marketplace, name), set())
+                for current in installed:
+                    if current.is_relative_to(cache_resolved):
+                        claude_plugin_references.mark_current(current)
             except OSError as error:
-                failures.append(f"{log_format.home_short(version_dir)} の削除に失敗: {error}")
+                failures.append(f"現行版の保持者記録を失効できないため {marketplace}/{name} を保持: {error}")
+                continue
+            expired = _expired_versions(plugin_dir, installed, deadline)
+            processes = claude_plugin_references.scan() if expired else ()
+            for version_dir in expired:
+                reasons = claude_plugin_references.holding_reasons(processes, version_dir, retired=True)
+                if reasons:
+                    logger.info(
+                        log_format.format_status(
+                            log_format.home_short(version_dir),
+                            f"稼働中の参照があるため旧版を保持: {'、'.join(reasons)}。"
+                            "参照の終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
+                        )
+                    )
+                    continue
+                try:
+                    if _remove_version_dir(version_dir, cache_resolved):
+                        removed += 1
+                except OSError as error:
+                    failures.append(f"{log_format.home_short(version_dir)} の削除に失敗: {error}")
     return post_apply_outcome.PostApplyOutcome(
         changed=removed > 0,
         failure=" / ".join(failures) or None,
@@ -131,23 +142,20 @@ def _current_install_paths() -> dict[tuple[str, str], set[Path]] | None:
     return result
 
 
-def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -> list[tuple[Path, tuple[float, float]]]:
-    """後継版の導入時刻が`deadline`以前である非現行の版ディレクトリと、その版が現行だった期間を返す。
-
-    期間は`(その版の導入時刻, 後継版の導入時刻)`とし、この間に起動したClaude Codeセッションがその版を使う。
-    """
+def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -> list[Path]:
+    """後継版の導入時刻が`deadline`以前である非現行の版ディレクトリを返す。"""
     try:
         candidates = [child for child in plugin_dir.iterdir() if not _is_link_like(child) and child.is_dir()]
     except OSError:
         return []
     timed = sorted(((_installed_at(child), child) for child in candidates), key=lambda item: (item[0], item[1].name))
-    expired: list[tuple[Path, tuple[float, float]]] = []
-    for index, (installed_at, version_dir) in enumerate(timed[:-1]):
+    expired: list[Path] = []
+    for index, (_, version_dir) in enumerate(timed[:-1]):
         if _resolve(version_dir) in installed:
             continue
         successor_installed_at = timed[index + 1][0]
         if successor_installed_at <= deadline:
-            expired.append((version_dir, (installed_at, successor_installed_at)))
+            expired.append(version_dir)
     return expired
 
 

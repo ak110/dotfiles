@@ -14,12 +14,3 @@
    ユーザー自身の判断で修正内容が変わる事項や、追加の認可が必要な操作は、着手前にユーザーへ確認する。
 5. 指摘を受けても、自律モードで残っている作業の実行義務は取り消されない。
    自身の提案に誤りが見つかったときは、提案の取り下げだけで終わらせず、観測した事象を起点にして代替案を提示する。
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/work-contract.md` | 判断 | `read:agent-toolkit:*/share/work-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |

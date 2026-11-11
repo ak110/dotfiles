@@ -4,9 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-
 ## 状態と業務ルールの条件
 
 状態や業務ルールを持つ機能を新設・変更するときは、業務ルールを状態が満たすべき条件（不変条件）として列挙し、関わる状態と、その状態を確認・変更する操作を対応付ける。
@@ -21,6 +18,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実装時のコーディング品質：データと計算の基準を適用する前 | `implementation-time-data.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-data.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実装時のコーディング品質：データと計算の基準を適用する前 | `implementation-time-data.md` |

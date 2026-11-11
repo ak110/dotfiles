@@ -8,10 +8,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 選定結果の欄の意味と段階の算出を確かめる時 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` |
+| 選定結果の欄の意味と段階の算出を確かめる時 | `selection-format.md` |
 
 ## 回答の材料
 
@@ -66,6 +66,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 選定YAMLの項目と省略規則：選定結果の書式の基準を適用する前 | `selection-format-schema.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-schema.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 選定YAMLの項目と省略規則：選定結果の書式の基準を適用する前 | `selection-format-schema.md` |

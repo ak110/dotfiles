@@ -7,9 +7,14 @@
 ## 会話の少量取得
 
 復元、進捗点検、状況照会、引き継ぎ、操作の調査では、`session-review-prepare --conversation-only`の抽出を共用する。
-全体概要が必要な復元では通常表示を読み、前回以降の点検では少量表示を選ぶ。
+会話圧縮後の復元では、ユーザー発話の原文、作業契約、計画と進捗、引き継ぎ記録を先に読み、進行中の操作は直近の少量表示で補う。
+全期間の通常表示は、それでも目的や経緯を復元できない場合と、担当の交代で後任が全体を把握する場合に読む。
+前回以降の点検でも少量表示を選ぶ。
 通常表示は予算を超える会話でも全期間から行を選んで省略区間を示すため、全体の把握のための少量表示の継続取得は省く。
-対象記録の指定は、同じコマンドの`--transcript`、`--codex-thread-id`、`--opencode-session-id`から選ぶ。
+対象記録の指定は、同じコマンドの`--transcript`、`--codex-thread-id`、`--opencode-session-id`、`--agents-session-id`から選ぶ。
+`--agents-session-id`は`agents_server`が起動した委譲先の`session_id`を受け取り、session登録簿から実行エンジンとセッション記録を解決する。
+対応する実行エンジンはClaude、Codex、OpenCode、Antigravityである。
+登録や記録を一意に解決できない場合は非0で終了し、登録と記録の所在を確かめる操作を示す。
 
 ```sh
 atk run-script session-review-prepare -- --transcript <記録の絶対パス> --conversation-only --conversation-window --conversation-recent 30

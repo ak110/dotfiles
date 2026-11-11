@@ -68,7 +68,6 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None, *, independent: 
     同じ保持rootからの子は完成マーカーを使い、自身のleaseを登録して同じ実体を使う。
     """
     root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
-    plugin_root_leases.register_lease_capability()
     cached = None if independent else _stable_plugin_roots.get(root)
     if cached is not None:
         return cached
@@ -144,6 +143,7 @@ def main(arguments: list[str]) -> int:
     environment["PYTHONPATH"] = str(root)
     command = [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
     if os.name == "nt":
+        # 時間上限なし: 常駐サーバーの実行そのものであり、終了は起動元が決める。
         return subprocess.run(command, env=environment, check=False).returncode
     os.execvpe(str(executable), command, environment)
     return 0

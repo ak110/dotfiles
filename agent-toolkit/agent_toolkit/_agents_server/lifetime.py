@@ -17,10 +17,13 @@ from typing import Any
 
 import psutil
 
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_identity, process_tree
 
 SHUTDOWN_TIMEOUT = 15.0
 POLL_INTERVAL = 0.1
+# 子孫の列挙はLinuxで全プロセスの走査になり、常駐する起動単位の数だけホストのCPUを使う。
+# 親の消滅・EOF・期限の確認（安価）とは分け、列挙だけを間引く。
+COLLECT_INTERVAL = 1.0
 
 
 async def wait_for_shutdown(tasks: Iterable[asyncio.Task[Any]], *, timeout: float = SHUTDOWN_TIMEOUT) -> list[Any]:
@@ -50,16 +53,21 @@ def _consume_exception(task: asyncio.Task[Any]) -> None:
 
 
 class ServerLifetime:
-    """起動時の親identityと、自身の子孫handleだけを監視・回収する。"""
+    """起動時の親identityと、自身の子孫handleだけを監視・回収する。
+
+    回収の起点は生成したプロセス自身であり、終了時にその全子孫を止める。
+    pytestのプロセスの中で生成して終了処理まで動かす試験は、起点を試験が起動したプロセスへ差し替えるか回収を無効にする。
+    そのまま動かすと、pytestが使うresource_trackerと常駐のfork-serverまで止める。
+    """
 
     def __init__(self, *, timeout: float | None = None) -> None:
         self._process = psutil.Process()
-        self._parent = self._process.parent()
+        self._parent = process_identity.parent(self._process)
         self._timeout = SHUTDOWN_TIMEOUT if timeout is None else timeout
         self._deadline: float | None = None
         self._exitcode = 0
         self._finished = threading.Event()
-        self._targets: dict[tuple[int, float], psutil.Process] = {}
+        self._targets: dict[tuple[int, str | float], psutil.Process] = {}
         self._process_pins = process_tree.ProcessIdentityPins()
         # 正常終了と期限監視が競合しても、回収中の親handleを閉じない。
         self._process_lock = threading.RLock()
@@ -173,7 +181,7 @@ class ServerLifetime:
         for process in process_tree.collect_descendants(self._process.pid, pins=self._process_pins):
             with contextlib.suppress(psutil.Error, OSError):
                 if process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                    self._targets[(process.pid, process.create_time())] = process
+                    self._targets[process_identity.key(process)] = process
 
     def _parent_gone(self) -> bool:
         if self._parent is None:
@@ -186,8 +194,11 @@ class ServerLifetime:
             return True
 
     def _watch(self) -> None:
+        next_collect = 0.0
         while not self._finished.wait(POLL_INTERVAL):
-            self._collect()
+            if (now := time.monotonic()) >= next_collect:
+                next_collect = now + COLLECT_INTERVAL
+                self._collect()
             if self._parent_gone():
                 self.request_stop()
             elif (

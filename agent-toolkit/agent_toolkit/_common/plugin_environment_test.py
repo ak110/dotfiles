@@ -8,6 +8,7 @@ import subprocess
 import sys
 import sysconfig
 import types
+import venv
 from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any
@@ -779,3 +780,96 @@ def test_project_environment_uses_selected_python_for_warmup_key(tmp_path: Path)
     expected = subject.project_environment(root, {}, python_executable=selected_python)
     assert expected == subject.project_environment(root, {}, python_executable=selected_python)
     assert expected != subject.project_environment(root, {})
+
+
+def test_prepared_python_is_found_from_inside_shared_environment(
+    tmp_path: Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """実行ファイルを複製した共有環境のPythonからも、同じ準備済み環境を見つける。"""
+    root = _root(tmp_path / "plugin")
+    environment = host_environ()
+    environment[subject.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
+    selected = subject.project_environment(root, environment)
+    venv.EnvBuilder(with_pip=False, symlinks=False).create(selected)
+    python = subject.python_path(selected)
+    assert not python.is_symlink()
+    subject.publish_prepared_environment(root, environment)
+    environment["PYTHONPATH"] = str(Path(subject.__file__).resolve().parents[2])
+    result = subprocess.run(
+        [
+            str(python),
+            "-c",
+            "import os, pathlib, sys; from agent_toolkit._common import plugin_environment; "
+            "print(plugin_environment.prepared_python(pathlib.Path(sys.argv[1]), os.environ))",
+            str(root),
+        ],
+        env=environment,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == str(python)
+    assert subject.project_environment(root, environment, python_executable=python) == selected
+
+
+def test_shared_environment_resolves_venv_creator_to_base_python(tmp_path: Path) -> None:
+    """Windowsの標準venvが作成元のvenvを記録しても、共有環境のキーは本体で一致する。"""
+    root = _root(tmp_path / "plugin")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
+    home = tmp_path / "python"
+    home.mkdir()
+    base = home / "python.exe"
+    base.touch()
+    creator = tmp_path / "creator" / "Scripts" / "python.exe"
+    creator.parent.mkdir(parents=True)
+    creator.touch()
+    (creator.parent.parent / "pyvenv.cfg").write_text(f"home = {home}\nversion_info = 3.15\n", encoding="utf-8")
+    shared = subject.project_environment(root, environment, python_executable=creator)
+    python = shared / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    (shared / "pyvenv.cfg").write_text(f"home = {home}\nversion = 3.15.2\nexecutable = {creator}\n", encoding="utf-8")
+
+    assert subject.project_environment(root, environment, python_executable=python) == shared
+    assert subject.project_environment(root, environment, python_executable=base) == shared
+
+
+@pytest.mark.parametrize(
+    ("linked", "settings", "expected"),
+    [
+        # リンクで作られた環境は、`home`の同名ファイルが別の版でもリンク先の本体になる。
+        pytest.param(
+            True,
+            "version_info = 3.15",
+            "python3.15",
+            # Windowsのリンク作成は権限に依存し、仮想環境も複製で作られる。
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="リンク式の仮想環境はPOSIXだけで作られる"),
+        ),
+        # 複製で作られた環境は、`home`の同名ファイルより版を含む名前を選ぶ。
+        (False, "version_info = 3.15", "python3.15"),
+        (False, "version = 3.15.0", "python3.15"),
+        # 標準の`venv`が書く`executable`は`home`より先に使う。
+        (False, "version = 3.14.0\nexecutable = {home}/python3.15", "python3.15"),
+        # 版を読めない場合は同名ファイルを使う。
+        (False, "", "python"),
+    ],
+)
+def test_base_python_selects_creating_interpreter(tmp_path: Path, linked: bool, settings: str, expected: str) -> None:
+    """`home`に別の版を指す同名の実行ファイルがあっても、環境を作ったPython本体へ正規化する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    for name in ("python", "python3.15"):
+        (home / name).write_text(name, encoding="utf-8")
+    binary = tmp_path / "venv" / "bin" / "python"
+    binary.parent.mkdir(parents=True)
+    if linked:
+        binary.symlink_to(home / "python3.15")
+    else:
+        binary.write_text("copy", encoding="utf-8")
+    (binary.parent.parent / "pyvenv.cfg").write_text(f"home = {home}\n{settings.format(home=home)}\n", encoding="utf-8")
+
+    assert subject.base_python(binary) == (home / expected).resolve()

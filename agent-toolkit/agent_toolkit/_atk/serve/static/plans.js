@@ -33,6 +33,8 @@ let visibleFiles = [];
 let mermaidLoadPromise = null;
 const MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min.js";
 const MERMAID_CDN_INTEGRITY = "sha384-xzghz1GQ5u9HCpVskeDPqMsdogD1yvuMQbEK53+wi+G70+6J1AG0L2cfi9PHjDWI";
+// CDNが応答を返さないと読込は完了も失敗もせず、プレビューが描画中のまま戻らない。上限を過ぎたら図の位置へエラーを表示する。
+const MERMAID_LOAD_TIMEOUT_MS = 30000;
 const PREVIEW_LOADING_DELAY_MS = 500;
 const MISSING_SELECTION_MESSAGE = "選択した計画ファイルは移動または削除されたため表示できません。一覧を更新しました。";
 let previewGeneration = 0;
@@ -422,20 +424,36 @@ async function renderDiagrams(preview, generation) {
 
 function loadMermaid() {
   if (mermaidLoadPromise) return mermaidLoadPromise;
-  mermaidLoadPromise = new Promise((resolve, reject) => {
+  const loading = new Promise((resolve, reject) => {
     const script = document.createElement("script");
+    const timer = setTimeout(() => {
+      // 上限を過ぎた要素の遅れた完了は、次の読込と重ねて初期化しないよう無視する。
+      script.onload = null;
+      script.onerror = null;
+      script.remove();
+      reject(new Error(`Mermaidの読み込みが${MERMAID_LOAD_TIMEOUT_MS / 1000}秒以内に終わりませんでした`));
+    }, MERMAID_LOAD_TIMEOUT_MS);
     script.src = MERMAID_CDN_URL;
     script.integrity = MERMAID_CDN_INTEGRITY;
     script.crossOrigin = "anonymous";
     script.onload = () => {
+      clearTimeout(timer);
       window.mermaid.initialize({
         startOnLoad: false,
         securityLevel: "strict",
       });
       resolve(window.mermaid);
     };
-    script.onerror = () => reject(new Error("Mermaidの読み込みに失敗しました"));
+    script.onerror = () => {
+      clearTimeout(timer);
+      reject(new Error("Mermaidの読み込みに失敗しました"));
+    };
     document.head.appendChild(script);
+  });
+  // 失敗した読込は保持せず、次の描画で読み込み直す。一時的な失敗の後も、再表示で図を描画できる。
+  mermaidLoadPromise = loading.catch((error) => {
+    mermaidLoadPromise = null;
+    throw error;
   });
   return mermaidLoadPromise;
 }

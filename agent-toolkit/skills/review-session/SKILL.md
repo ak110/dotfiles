@@ -25,7 +25,7 @@ CI履歴の継続改善も、各モードの共通分析で扱う。
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 最初の語がbatchと完全一致する時 | `references/batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` | |
-| batchに一致しない時、または引数なしの時 | `references/current-session.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/current-session.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 最初の語がbatchと完全一致する時 | `references/batch.md` |
+| batchに一致しない時、または引数なしの時 | `references/current-session.md` |

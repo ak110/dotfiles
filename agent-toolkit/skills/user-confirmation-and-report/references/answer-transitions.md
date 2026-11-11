@@ -6,16 +6,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-states.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
-| 回答が確認や行動の扱いを一般的に是正する内容を含む時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 回答を元の作業へ反映する前（計画の有無によらず） | `../../write-plan/references/plan-file-standards-design.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md` |
-| run-skillのUWIを保存・取得する起動単位を判定する前 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 回答が確認や行動の扱いを一般的に是正する内容を含む時 | `agent-basics:bugfix/SKILL.md` |
+| 回答を元の作業へ反映する前（計画の有無によらず） | `../../write-plan/references/plan-file-standards-design.md` |
+| run-skillのUWIを保存・取得する起動単位を判定する前 | `../../wi-standards/references/origin-and-approval.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-states.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` |
 
 ## 回答後の状態遷移
 
@@ -54,6 +51,8 @@ WIの投入前や着手前に回答済みUWIとの整合性を確かめる手順
 4. そのUWIを`depends_on`に持つ元項目は、UWIの終了で依存が解消する。
    元項目が依存している未回答のUWIが他に無ければ、中断していた元の処理を再開する。
    旧運用で`hold`に置かれた元項目は、回答を反映した後に`atk wi unhold <元項目ファイル名>`で`inbox`へ戻す。
+   元項目の処理を再開する前に`atk wi show <元項目ファイル名>`で現在の状態を照会し、`inbox`なら`atk wi start-processing <元項目ファイル名>`で`processing`へ移す（`unhold`で戻した元項目を含む）。
+   作業に着手する項目を開始経路によらず`processing`にする契約は、`../../wi-standards/references/wi-standards-states.md`「状態と依存」が示す状態遷移に従う。
 5. 元の`agents_server`セッションが残っている場合は、そのセッションへ回答を届けて処理を再開する。
    セッションが残っていない場合は、計画ファイルの進捗ログを確認し、未完了の工程から再開する。
    計画ファイルが存在しない場合は、依存の保存時に`atk wi edit --append`で元AWIの本文へ追記しておいた再開手順を読み取って進める。
@@ -89,6 +88,6 @@ frontmatterの`scope`が自身の起動単位（スキル名とモードの組�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |

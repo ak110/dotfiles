@@ -91,6 +91,18 @@ def _retry_writable(function: typing.Callable[[str], object], path: str, error: 
 
 def remove_tree(path: pathlib.Path) -> None:
     """包含判定済みの対象を削除する。ディレクトリは配下ごと削除し、不在は成功とする。"""
+    area = top_level_area(path)
+    if area.name.startswith(PLUGIN_ROOT_PREFIX):
+        with plugin_root_leases.plugin_root_lock(area, blocking=False):
+            if plugin_root_leases.plugin_root_in_use(area):
+                raise ManagedTempError(f"使用中または使用状態を確認できない配布物のため回収しない: {area}")
+            _remove_tree(path)
+        return
+    _remove_tree(path)
+
+
+def _remove_tree(path: pathlib.Path) -> None:
+    """使用登録との排他が必要な対象は、呼び出し側がロックを保持する。"""
     try:
         metadata = path.lstat()
     except FileNotFoundError:

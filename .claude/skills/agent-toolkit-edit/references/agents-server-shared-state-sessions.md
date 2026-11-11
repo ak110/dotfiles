@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 共有状態の共通設計・実行主体・保存と回収の条件を判断する前 | `agents-server-shared-state.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
-| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 共有状態の共通設計・実行主体・保存と回収の条件を判断する前 | `agents-server-shared-state.md` |
+| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` |
 
 ## セッション登録と再開・解放
 
@@ -149,6 +149,6 @@ CLI自身が生成した要求ファイルや応答ファイルは、CLI処理�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録の構造と集計：会話の少量取得の基準を適用する前 | `agent-toolkit:review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録の構造と集計：会話の少量取得の基準を適用する前 | `agent-toolkit:review-session/references/session-records-conversation.md` |

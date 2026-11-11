@@ -453,6 +453,7 @@ def _run_locked(
                 launch_argv = [*argv[:-1], "--settings", settings, argv[-1]]
             try:
                 process = resources.enter_context(
+                    # 時間上限なし: 長時間の子セッションの実行そのものであり、上限と無出力の監視は監督の仕組みが扱う。
                     _process_tree.process_scope(
                         launch_argv,
                         cwd=repo_root,

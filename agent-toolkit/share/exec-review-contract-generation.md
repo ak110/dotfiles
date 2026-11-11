@@ -6,15 +6,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 基準の参照時 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` |
-| 基準の参照時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 基準の参照時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
+| 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` |
+| 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
+| 基準の参照時 | `exec-review-recording-contract.md` |
+| 基準の参照時 | `exec-review-parent-launch.md` |
+| 基準の参照時 | `exec-review-parent-correction.md` |
 
 ## `review_contract`の生成
 
@@ -24,10 +24,13 @@
 通常のWI処理では現行キューを原本とする。
 
 計画なしでも、完成条件の条項化前に`../skills/wi-standards/references/awi-body-completion.md`「完成条件」で必要性と由来を判定する。
+判定は元の目的と保つべき結果に照らして行い、採用済みや計画に記載済みであることは必要性の根拠から除く。
 有効条件と不要なエージェント起草条件の除外根拠を既存の採否記録へ対応付け、明示要求や必要な品質の変更は既存の確認手順へ渡す。
+除外を記録したことと、有効な条件を網羅したことは別に確かめる。
 
 AWIの形式は同書冒頭で判別する。
-複数計画では`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従い、レビュー直前に計画外の明示入力を含む契約を各計画へ渡す。
+複数計画では`exec-review-parent-launch.md`「起動方法別のレビュー基準」で決めたレビュー単位ごとに、レビュー直前に計画外の明示入力を含む契約を渡す。
+1つのレビュー単位に複数の計画を含む場合は、1つの契約の中で条項ごとに計画名とAWIを書き、要求の識別を計画とAWIの単位で保つ。
 単一計画では、新形式のエージェント由来AWI（以下、新形式AWI）、初回の計画外条項、再レビューの別基準で認可された累積差分commitがある場合に作成し、他はレビュー担当が計画から条項を生成する。
 新形式AWIの条件表は、起動元1名が`exec-review-recording-contract.md`「記録する行と要求単位」に従い、反映内容の各項目から具体的な成果を保った行を作り、出典にWI名と`反映内容N`を記す。
 判定対象外の項目も理由付きで対応させ、全項目の対応を確認した表を絶対パスでレビューと統合へ渡す。
@@ -67,7 +70,7 @@ AWIの形式は同書冒頭で判別する。
   該当するコミットが無ければこの項目は省く
 
 新形式AWIを含まない、外部参照を持たない単一の条項なら、`条項`、`内容`、`出典`の3行の直接契約として委譲プロンプトに書ける。
-それ以外は、セッションのmanaged-tempに計画ごとにMarkdownファイルを作り、その絶対パスを渡す。
+それ以外は、セッションのmanaged-tempにレビュー単位ごとにMarkdownファイルを作り、その絶対パスを渡す。
 
 書式は`exec-review-recording-contract.md`「review_contractの書式」に従う。
 
@@ -75,7 +78,7 @@ AWIの形式は同書冒頭で判別する。
 コミット識別子とWI識別子は条項の各項目に書く。
 判定対象外コミットが無ければ、その見出しごと省く。
 同じリポジトリで複数の計画を扱う場合は、現HEADが全計画の実装コミットを含むworktreeで各計画の現在のコミットを`atk run-script plan-commits -- <計画の絶対パス> --worktree <対象worktreeの絶対パス>`で取得する。
-他の計画に属するコミットはその計画の「判定対象外commit」に書く。
+同じレビュー単位に含めない計画に属するコミットは、そのレビュー単位の「判定対象外commit」に書く。
 認可の意味的な判断はメインエージェントが行い、履歴の書き換え後は同じコマンドで最新のOIDを取り直して記述を更新する。
 レビューを起動する前に、全条項に「条項」「内容」「出典」が揃っていることと、判定対象外commitの各OIDが`git rev-parse --verify <OID>^{commit}`で解決できることを確かめる。
 委譲プロンプトの`review_contract`には、直接契約のテキストか、作成したMarkdownファイルの絶対パスのどちらか一方だけを指定する。

@@ -14,24 +14,19 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-actions-hierarchy.md`、`../../bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-testing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-necessity.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証単位の優先順位に関する判断・作業の前 | `testing-priorities.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md` |
-| 検証単位の選定に関する判断・作業の前 | `testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| private関数の直接テスト禁止・簡潔さに関する判断・作業の前 | `testing-structure.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-structure.md` |
-| プラットフォーム分岐の検証・失敗テストの除外による回避禁止に関する判断・作業の前 | `testing-platforms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-platforms.md` |
-| 分岐条件の効果の裏付けに関する判断・作業の前 | `testing-conditions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-conditions.md` |
-| 状態遷移の性質確認に関する判断・作業の前 | `testing-transitions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-transitions.md` |
-| 安定性: flakyテスト防止に関する判断・作業の前 | `testing-stability.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-stability.md` |
-| 速度に関する判断・作業の前 | `testing-speed.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-speed.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証単位の優先順位に関する判断・作業の前 | `testing-priorities.md` |
+| 検証単位の選定に関する判断・作業の前 | `testing-selection.md` |
+| private関数の直接テスト禁止・簡潔さに関する判断・作業の前 | `testing-structure.md` |
+| プラットフォーム分岐の検証・失敗テストの除外による回避禁止に関する判断・作業の前 | `testing-platforms.md` |
+| 分岐条件の効果の裏付けに関する判断・作業の前 | `testing-conditions.md` |
+| 状態遷移の性質確認に関する判断・作業の前 | `testing-transitions.md` |
+| 安定性: flakyテスト防止に関する判断・作業の前 | `testing-stability.md` |
+| 速度に関する判断・作業の前 | `testing-speed.md` |

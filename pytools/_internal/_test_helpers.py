@@ -6,9 +6,12 @@ import os
 import pathlib
 import shutil
 import subprocess
+import time
 import typing
 from collections.abc import Callable
 from pathlib import Path
+
+import psutil
 
 from pytools._internal import claude_common as _claude_common
 from pytools._internal import common as _common
@@ -268,8 +271,6 @@ class ResidentProcesses:
     """
 
     def __init__(self, tmp_path: Path, monkeypatch: typing.Any) -> None:
-        import psutil  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
         sleep = shutil.which("sleep")
         assert sleep is not None, "sleepコマンドが無い"
         self._sleep = sleep
@@ -300,6 +301,18 @@ class ResidentProcesses:
             _common.process_scope([str(link), "600"], cwd=cwd, env=None if env is None else {**os.environ, **env})
         )
         self._processes.append(process)
+        # Popen直後の子PIDでpytestの実体・引数が見えたため、execと環境の公開を確認してから走査へ渡す。
+        deadline = time.monotonic() + 5
+        while True:
+            observed = psutil.Process(process.pid)
+            if (
+                observed.exe() == str(Path(self._sleep).resolve())
+                and observed.cmdline() == [str(link), "600"]
+                and all(observed.environ().get(key) == value for key, value in (env or {}).items())
+            ):
+                break
+            assert process.poll() is None and time.monotonic() < deadline, "常駐プロセスの起動状態を観測できない"
+            time.sleep(0.01)
         return process
 
     def stop(self, process: subprocess.Popen[bytes]) -> None:

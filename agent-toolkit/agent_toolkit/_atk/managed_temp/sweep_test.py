@@ -9,12 +9,13 @@ import json
 import os
 import pathlib
 import stat
+import typing
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import paths, permissions, sweep
-from agent_toolkit._common import file_lock, plugin_root_leases
+from agent_toolkit._common import file_lock, plugin_root_leases, state_paths
 
 pytestmark = pytest.mark.windows
 
@@ -81,15 +82,23 @@ def test_sweep_removes_expired_files_and_directories_and_keeps_protected(tmp_pat
 
 
 def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
-    """使用中の保持配布物は期限切れでも残し、使用が終われば次の調査で回収する。"""
+    """使用中の保持配布物は期限切れでも残し、使用が終われば次の掃引で回収する。"""
     area = _area("agents-server-plugin-root-shared-abc", days=8)
-    in_use = True
-    monkeypatch.setattr(plugin_root_leases, "plugin_root_in_use", lambda _path: in_use)
+    with plugin_root_leases.plugin_root_lock(area):
+        plugin_root_leases.register_plugin_root_use(area)
+    monkeypatch.setattr(plugin_root_leases.psutil, "process_iter", lambda: [])
     assert area not in managed_temp.sweep_managed_temp(now=_NOW).deleted
     assert area.exists()
-    in_use = False
-    later = _NOW + datetime.timedelta(hours=2)
+    record = next((state_paths.state_dir() / "plugin-root-leases").glob("*.json"))
+    raw = json.loads(record.read_text(encoding="utf-8"))
+    # 使用の終了は、記録した世代が生存プロセスと一致しなくなることとして模擬する。
+    raw["created_at"] = 0
+    if raw.get("start_id") is not None:
+        raw["start_id"] += "-ended"
+    record.write_text(json.dumps(raw), encoding="utf-8")
+    later = _NOW + datetime.timedelta(days=1)
     assert area in managed_temp.sweep_managed_temp(now=later).deleted
+    assert not record.exists()
 
 
 @pytest.mark.skipif(
@@ -138,7 +147,7 @@ def test_sweep_keeps_legacy_area_while_old_cleanup_lock_is_held() -> None:
         finally:
             file_lock.release_lock(handle)
     assert area.exists() and area not in result.deleted
-    result = managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(hours=2))
+    result = managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(days=1))
     assert area in result.deleted
     assert not registry.exists() and not lock_path.exists()
 
@@ -176,10 +185,8 @@ def test_legacy_state_is_collected_individually() -> None:
     assert not orphan_reference.exists() and not (sessions / f"{'c' * 64}.lock").exists()
 
 
-def test_schedule_avoids_rescanning_until_due(monkeypatch: pytest.MonkeyPatch) -> None:
-    """rootが変わらず次の調査時刻にも達しない起動では、配下の走査をしない。"""
-    _area("fresh-abc", days=1)
-    managed_temp.sweep_managed_temp(now=_NOW)
+def _count_walks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
+    """配下の走査を受けた対象を記録するリストを返す。"""
     walks: list[pathlib.Path] = []
     original = sweep._latest_update_and_worktree  # pylint: disable=protected-access
 
@@ -188,19 +195,68 @@ def test_schedule_avoids_rescanning_until_due(monkeypatch: pytest.MonkeyPatch) -
         return original(path, now_ns)
 
     monkeypatch.setattr(sweep, "_latest_update_and_worktree", counting)
-    managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=5))
-    assert not walks
-    root = paths.temp_root()
-    recorded = root.stat().st_mtime_ns
-    (root / "added-abc").mkdir()
-    # ファイルシステムの時刻の粒度で記録時と同じ値にならないよう、追加後のrootの更新時刻を進める。
-    os.utime(root, ns=(recorded + 1_000_000_000, recorded + 1_000_000_000))
-    managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=6))
-    assert walks == [paths.temp_root() / "added-abc"]
+    return walks
 
 
-def test_sweep_reports_removal_failure_and_retries_later(monkeypatch: pytest.MonkeyPatch) -> None:
-    """削除できなかった対象は理由とともに返し、次の調査時刻（1時間後）まで再試行しない。"""
+def test_sweep_runs_once_per_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    """前回の掃引から1日以内の起動は一覧を取らずに戻り、1日が過ぎた起動は全対象を調べ直す。"""
+    fresh = _area("fresh-abc", days=1)
+    managed_temp.sweep_managed_temp(now=_NOW)
+    expired = _area("expired-abc", days=8)
+    walks = _count_walks(monkeypatch)
+    listed: list[object] = []
+    scandir = os.scandir
+
+    def recording(target: typing.Any) -> typing.Any:
+        listed.append(target)
+        return scandir(target)
+
+    with monkeypatch.context() as listing:
+        listing.setattr(os, "scandir", recording)
+        within = managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(hours=23, minutes=59))
+
+    assert within == sweep.SweepResult([], ())
+    assert not listed and not walks and expired.exists()
+    after = managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(days=1))
+    assert after.deleted == [expired]
+    assert sorted(walks) == sorted([expired, fresh])
+
+
+@pytest.mark.parametrize("record", ["missing", "broken", "future"])
+def test_sweep_runs_when_record_is_missing_broken_or_future(record: str) -> None:
+    """前回の掃引時刻の記録が欠落・破損している場合と、時刻が未来の場合は掃引する。"""
+    area = _area("expired-abc", days=8)
+    path = paths.state_root() / ".sweep/last-sweep"
+    path.parent.mkdir(mode=0o700, exist_ok=True)
+    if record == "broken":
+        path.write_bytes(b"\xff not a time\n")
+    elif record == "future":
+        path.write_text(f"{int((_NOW + datetime.timedelta(minutes=1)).timestamp() * 1_000_000_000)}\n", encoding="ascii")
+
+    assert area in managed_temp.sweep_managed_temp(now=_NOW).deleted
+    assert int(path.read_text(encoding="ascii")) == int(_NOW.timestamp() * 1_000_000_000)
+
+
+def test_sweep_record_write_failure_does_not_stop_atk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """掃引時刻を記録できなくても掃引の結果を返し、次回の起動が掃引し直す。"""
+    area = _area("expired-abc", days=8)
+
+    def fail(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("read-only state")
+
+    monkeypatch.setattr(sweep.os, "replace", fail)
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert result == sweep.SweepResult([area], ())
+    record_directory = paths.state_root() / ".sweep"
+    assert not record_directory.exists() or not list(record_directory.iterdir())
+    later = _area("later-abc", days=8)
+    assert later in managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=1)).deleted
+
+
+def test_sweep_reports_removal_failure_and_retries_on_next_sweep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """削除できなかった対象は理由とともに返し、次の掃引（1日後）で再試行する。"""
     area = _area("stuck-abc", days=8)
 
     def fail(_path: pathlib.Path) -> None:
@@ -209,8 +265,8 @@ def test_sweep_reports_removal_failure_and_retries_later(monkeypatch: pytest.Mon
     monkeypatch.setattr(sweep, "remove_tree", fail)
     first = managed_temp.sweep_managed_temp(now=_NOW)
     assert first.failed == ((area, "denied"),)
-    assert not managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(minutes=30)).failed
-    assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(hours=2)).failed
+    assert not managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(hours=2)).failed
+    assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(days=1)).failed == ((area, "denied"),)
 
 
 def test_cleanup_rejects_root_outside_and_links(tmp_path: pathlib.Path) -> None:
@@ -307,15 +363,15 @@ def test_sweep_preserves_only_registered_external_worktree(
     assert area.exists() is registered
 
 
-def test_sweep_invalidates_old_future_schedule() -> None:
-    """旧版が未来まで延期した領域も、初回の掃引で再調査する。"""
+def test_sweep_discards_schedule_of_previous_version() -> None:
+    """対象ごとの予定表を持っていた版の記録は読まずに削除し、延期されていた領域も初回の掃引で調べる。"""
     area = _area("old-schedule-abc", days=8)
     schedule = paths.state_root() / ".sweep/schedule"
     schedule.parent.mkdir(exist_ok=True)
     schedule.write_text(
         json.dumps(
             {
-                "version": 3,
+                "version": 4,
                 "temp_root": str(paths.temp_root()),
                 "root_mtime_ns": paths.temp_root().stat().st_mtime_ns,
                 "legacy_checked_ns": int(_NOW.timestamp() * 1_000_000_000),
@@ -325,6 +381,7 @@ def test_sweep_invalidates_old_future_schedule() -> None:
         encoding="utf-8",
     )
     assert area in managed_temp.sweep_managed_temp(now=_NOW).deleted
+    assert not schedule.exists()
 
 
 @pytest.mark.skipif(not hasattr(os, "O_PATH"), reason="O_PATHによる所有木の権限回復を検証する")

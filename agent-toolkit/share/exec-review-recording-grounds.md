@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
-| 返却形式を確認する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
-| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
-| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` |
+| 返却形式を確認する時 | `exec-review.parent.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |
 
 ## 根拠の書き方
 
@@ -43,7 +43,8 @@
 - 修正ラウンドでの経緯、応答内容、履歴の統合結果は、既存のレビュー指摘管理表や観測記録に残す。
   各判定行には判定に必要な所在と観測内容を参照し、複数の要求で同じログを根拠とする場合でも、該当する個別の観測結果を行ごとに関連付ける
 - 実行結果を根拠とする場合は、実行したコマンド、終了コード、および判定に使用した出力の要点を記述する。
-  テスト結果の場合は完全なテスト名と合否結果を記載し、同じバージョンのテスト出力（pytestであれば`-v`オプション付き）にそのテスト名と合否行が実在することを確認する。
+  テスト結果の場合は完全なテスト名と合否結果を記載し、同じバージョンのテスト出力（pytestであれば`-v`オプション付きか、成功の行を要約へ出す`-r`の指定付き）にそのテスト名と合否行が実在することを確認する。
+  実装担当の記録が示す保存済みの出力（pyfltrの実行ごとの出力など）に該当の行があれば、同じ試験を実行し直さずに、その行を根拠に使う。
   ドット表示や合格総数は、個別のテストの合否根拠として不十分である。
   出力をファイルに保存した場合は、その絶対パスと行番号も記載する
 - パスと行番号を指定する場合、リポジトリ内のファイルであればレビュー対象コミットの本文（`git show <レビューHEAD>:<パス>`で確認できる版）の位置を記述し、リポジトリ外であればその時点の実ファイルの位置を記述する。
@@ -80,6 +81,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成の基準を適用する前 | `exec-review-recording-evidence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成の基準を適用する前 | `exec-review-recording-evidence.md` |

@@ -47,37 +47,24 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 待機中の登録と残る予定項目を確認する前 | `../delegation/references/waiting-and-monitoring-independent-work.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-independent-work.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-session/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
-| 本文の参照基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance-correction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機中の登録と残る予定項目を確認する前 | `../delegation/references/waiting-and-monitoring-independent-work.md` |
+| 本文の参照基準を適用する前 | `../user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance-incorporation.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 通常起動時と、作業完了報告の到達水準を判定する前 | 起動のwhole_contract_pathまたはその正式な解決結果、メインでは自身のmanaged-temp直下にある現行の作業契約 | 起動時 | `skill:report-completion` | `input:作業契約` |
-| 作業完了報告の本文を書く前 | `references/report-formats-verification.md`、`references/report-formats-completion.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-verification.md`、`read:agent-toolkit:*/skills/report-completion/references/report-formats-completion.md` | |
-| 振り返り結果報告かその予告を書く前 | `references/report-formats-retrospective.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-retrospective.md` | |
-| AWI投入結果報告を書く前 | `references/report-formats-retrospective.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-retrospective.md` | |
-| 独立したWI投入を受付して投入元の終了を判定するとき | `../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` | |
+| 作業完了報告の本文を書く前 | `references/report-formats-verification.md`、`references/report-formats-completion.md` | | | |
+| 振り返り結果報告かその予告を書く前 | `references/report-formats-retrospective.md` | | | |
+| AWI投入結果報告を書く前 | `references/report-formats-retrospective.md` | | | |
+| 独立したWI投入を受付して投入元の終了を判定するとき | `../../share/wi-submission.md` | | | |
 | 報告用UWIを書く前 | `references/report-formats-uwi.md`、`../wi-standards/references/uwi-format.md`、`../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-save` | |
-| 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
-| Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` | |
+| 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | | | |
+| Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | | | |
 
 メインの作業契約が未作成の場合は、期待パスを示す警告に従い、`share/work-contract.md`の「作成と所有」に基づいて作成し、全文を取得する。
 
@@ -115,7 +102,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 局所工程から受け取った結果と残る報告事項を手順5の同じ報告本文へ集約し、元の作業の完了処理として送達する。
 送達前に主張と根拠、確認した版、未確認範囲、判断時点を既存の検証記録・進捗ログ・引き継ぎ記録へ保存する。
 指摘を受けたらこの事前記録と新しい反例・要件を比較し、指摘後に得た根拠を事前の確認済み事項へ付け替えない。
-報告対象は品質・結果・判断への影響、または観測した無視できない費用で選び、正常回復を問題化しない。
+報告対象は品質・結果・判断への影響、または観測した無視できない費用で選び、正常回復を問題化しない（実際の誤りの分析の要否は`agent-basics:writing-standards/references/quality-principles-facts.md`「報告の選別と判断記録」に従う）。
 分析表や点検記録は保持する。
 
 1. 常時稼働サーバーへの反映: 対象プロジェクトが開発機上で常時稼働するサーバーを持ち、そのプロジェクト規範やタスクランナー定義で反映手順と稼働確認手順の両方が定められている場合に実施する。
@@ -168,6 +155,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 7. 確定した本文をホストに合う手段で1回送達して終了する。
    Claude Codeの`send_to_user`は成功を確認し、起動元が要求する報告後の終了操作を同じ応答で実施する。
    通常ターンだけを終える場合、送達済みなら`…`のみを出力する。
+   `/goal`を設定したClaude Codeのセッションでは、`…`の代わりに担当工程の完了を述べる1文を出力する（`agent-toolkit/share/rules/rules-main.claude-code.md`「ターンの終え方」）。
    Codexで通常の`final`を使う場合は、必要なツール処理と未達事項の確認を先に終え、手順5の本文自体を`final`にする。
    必要な操作をすべて終えた後に最終応答を届ける。
    `atk agents-exit-session`などによってホスト本体を停止する場合は、報告用UWIの保存検収と必要な可視報告を先に終え、停止操作を最後のツール呼び出しとする。
@@ -179,7 +167,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    送達済み作業の再検証は、実際に判明した新たな問題に必要な範囲に限る。
    振り返りは別担当による非同期処理のままとする。
 
-最終送達後の終了指示の突き合わせおよび再検証手順は、`docs/development/audit-records.md`の「report-completion：最終報告送達後のターン終了：2026年10月9日」を参照する。
+最終送達後の終了指示の突き合わせおよび再検証手順は、`docs/development/audit-records-completion.md`の「report-completion：最終報告送達後のターン終了：2026年10月9日」を参照する。
 
 最後の会話圧縮以降に本スキルを読み込み済みなら、次の作業でも再起動・再読込せず、必要な工程を実施する。
 会話圧縮後は、残る工程に必要な本文を改めて取得する。
@@ -194,11 +182,11 @@ Claude Codeの終了時に本スキルの読込不足を警告された場合は
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | `ps1`・`ps1.tmpl`・`psm1`・`psd1` | `agent-toolkit:report-completion/references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl`、`path:*.psm1`、`path:*.psd1` | |
-| スキル編集 | `agent-toolkit:report-completion/references/agent-skills.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/agent-skills.md` | |
-| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md`、`../delegation/references/claude-code-runtime-communication.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/claude-hooks-stop.md`、`read:agent-toolkit:*/skills/delegation/references/claude-code-runtime-communication.md` | |
+| スキル編集 | `agent-toolkit:report-completion/references/agent-skills.md` | | | |
+| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md`、`../delegation/references/claude-code-runtime-communication.md` | | | |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 報告のフォーマットの基準を適用する前 | `references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 報告のフォーマットの基準を適用する前 | `references/report-formats.md` |

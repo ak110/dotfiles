@@ -7,13 +7,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 対策の前提となる入力を確定する前 | `root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-severity-quality.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md` |
-| 根本原因から類似箇所を見直す前 | `root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 処置の階層を判断する前 | `root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 再発防止策を選ぶ前 | `root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対策の前提となる入力を確定する前 | `root-cause-analysis-evidence.md` |
+| 根本原因から類似箇所を見直す前 | `root-cause-remediation.md` |
+| 処置の階層を判断する前 | `root-cause-actions.md` |
+| 再発防止策を選ぶ前 | `root-cause-prevention.md` |
 
 ## 拡張原因分析の資料確認と因果関係の特定
 

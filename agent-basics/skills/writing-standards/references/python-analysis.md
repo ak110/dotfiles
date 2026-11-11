@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-checks.md` |
-
 ## 静的解析の誤検出と抑制
 
 - lintの指摘への対応は`implementation-time-checks.md`「lintと機械チェック」に従う。
@@ -22,4 +18,4 @@
 実行環境のOSに存在しない標準モジュールのインポートでは、OS判定による分岐の両側のブロックに加え、特定OS専用のモジュール内やテストコード内であっても、`# pylint: disable=import-error`とその理由をコメントに明記する。
 pylintは`sys.platform`や`os.name`による条件分岐をimportエラーの無視条件として認識せず、解析を実行しているOS上に存在しないモジュールを検出するとエラーを報告するためである。
 一方のOSでのみ警告を抑制した場合、別のOS上でpylintを実行した際に初めてエラーが検出されることになる。
-監査記録は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日」を参照。
+監査記録は`docs/development/audit-records-languages.md`「agent-basics/skills/writing-standards/references/python.md：静的解析の誤検出と抑制：2026年10月20日」を参照。

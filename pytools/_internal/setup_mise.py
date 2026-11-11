@@ -3,83 +3,27 @@
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。
 """
 
-import contextlib
 import json
-import logging
-import ntpath
 import os
-import re
-import shutil
-import subprocess
-import tempfile
-import time
-import typing
 from pathlib import Path
 
 import platformdirs
 from agent_toolkit._common import dotfiles_mode
 
-# 他の処理で使わない依存は、使用時まで読み込まない。
-lazy import httpx
-
-from pytools._internal import common, log_format, post_apply_cache, post_apply_outcome, setup_cli_common, winutils
-
-logger = logging.getLogger(__name__)
-
-# `mise` CLI のタイムアウト (秒)。`ls --global --json` は数百 ms、`use --global` は
-# 新規インストールが実行されると数十秒かかるため余裕を持たせる。
-_MISE_TIMEOUT = 300
-
-# `mise install` のタイムアウト (秒)。aqua/npm バックエンドの初回ダウンロードや
-# 複数ツールの一括インストールで時間がかかるため、通常コマンドより長めに取る。
-_MISE_INSTALL_TIMEOUT = 600
-
-# minimalは単独post-applyでも既存のfull用グローバル設定から大型ツールを導入しない。
-_LIGHTWEIGHT_TOOLS = ("chezmoi", "fzf", "gh", "glab", "glow", "jq", "ripgrep")
-
-# 無人セットアップではネットワークの一時的な遅延で版一覧取得が失敗しないよう、
-# miseが設定のない場合に使う値より長い上限を全mise呼び出しへ適用する。
-_MISE_FETCH_REMOTE_VERSIONS_TIMEOUT = "120s"
-
-# Windows 上で mise の shims ディレクトリを指し示す値。レジストリ上は
-# `%LOCALAPPDATA%\mise\shims` のまま REG_EXPAND_SZ で保持する。
-_WINDOWS_SHIMS_ENTRY = r"%LOCALAPPDATA%\mise\shims"
-
-# Windows PATH のセパレータ。`os.pathsep` は実行ホストで値が変わるため、Windows 向け
-# 処理内では明示的に `;` を使う (Linux 上のテスト実行でも一貫するように)。
-_WINDOWS_PATHSEP = ";"
-
-
-def _is_windows() -> bool:
-    """Windows環境かどうかを返す。テストでmonkeypatchしやすいよう関数化している。"""
-    return os.name == "nt"
-
-
-def _mise_env_overrides() -> dict[str, str]:
-    """mise子プロセスへ渡す非対話設定とWindows固有の.NET設定を返す。"""
-    overrides = {
-        "MISE_YES": "1",
-        "CI": "1",
-        "MISE_FETCH_REMOTE_VERSIONS_TIMEOUT": _MISE_FETCH_REMOTE_VERSIONS_TIMEOUT,
-    }
-    if not _is_windows():
-        return overrides
-
-    dotnet_root = os.environ.get("MISE_DOTNET_ROOT")
-    if not dotnet_root:
-        mise_data_dir = os.environ.get("MISE_DATA_DIR") or platformdirs.user_data_dir("mise", appauthor=False)
-        dotnet_root = str(Path(mise_data_dir) / "dotnet-root")
-
-    normalized_root = ntpath.normcase(ntpath.normpath(dotnet_root))
-    path_entries = [entry for entry in os.environ.get("PATH", "").split(_WINDOWS_PATHSEP) if entry]
-    retained_entries = [entry for entry in path_entries if ntpath.normcase(ntpath.normpath(entry)) != normalized_root]
-    overrides["MISE_DOTNET_ROOT"] = dotnet_root
-    overrides["PATH"] = _WINDOWS_PATHSEP.join([dotnet_root, *retained_entries])
-    return overrides
-
-
-class _SettingError(Exception):
-    """設定の書き換えの失敗。`run`が失敗と数える。"""
+from pytools._internal import (
+    log_format,
+    post_apply_cache,
+    post_apply_outcome,
+    setup_mise_binary,
+    setup_mise_common,
+    setup_mise_tools,
+)
+from pytools._internal.setup_mise_binary import ensure_mise_installed, find_mise_binary
+from pytools._internal.setup_mise_tools import (
+    ensure_tools_installed,
+    ensure_windows_user_path_has_shims,
+    working_tree_with_config,
+)
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
@@ -90,10 +34,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     mise_bin = find_mise_binary()
     if mise_bin is None:
-        _ensure_mise_installed()
+        setup_mise_binary.ensure_mise_installed()
         mise_bin = find_mise_binary()
         if mise_bin is None:
-            logger.info(
+            setup_mise_common.logger.info(
                 log_format.format_status(
                     "mise",
                     "未検出のためスキップ。"
@@ -104,33 +48,35 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     changed = False
     failures: list[str] = []
-    changed |= _ensure_mise_up_to_date(mise_bin)
+    changed |= setup_mise_binary.ensure_mise_up_to_date(mise_bin)
     try:
-        changed |= _ensure_working_tree_trusted(mise_bin)
-    except _SettingError as error:
+        changed |= setup_mise_tools.ensure_working_tree_trusted(mise_bin)
+    except setup_mise_common.SettingError as error:
         failures.append(str(error))
     if not dotfiles_mode.is_minimal():
-        changed |= _ensure_global_node(mise_bin)
-        changed |= _ensure_gcloud_plugin_usable(mise_bin)
+        changed |= setup_mise_tools.ensure_global_node(mise_bin)
+        changed |= setup_mise_binary.ensure_gcloud_plugin_usable(mise_bin)
     maintenance_key = _maintenance_key(mise_bin)
     unchanged = maintenance_key is not None and post_apply_cache.matches("mise-tools", maintenance_key)
     installed = False
     if unchanged:
-        logger.info(log_format.format_status("mise", "設定・lock・導入状態が同じためinstall・prune・reshimを省略"))
+        setup_mise_common.logger.info(
+            log_format.format_status("mise", "設定・lock・導入状態が同じためinstall・prune・reshimを省略")
+        )
     else:
-        installed = _ensure_tools_installed(mise_bin)
+        installed = setup_mise_tools.ensure_tools_installed(mise_bin)
         changed |= installed
-    repaired = _ensure_tool_bin_paths_present(mise_bin)
+    repaired = setup_mise_tools.ensure_tool_bin_paths_present(mise_bin)
     changed |= repaired
     if not unchanged or repaired:
-        pruned = dotfiles_mode.is_minimal() or _ensure_orphan_shims_removed(mise_bin)
+        pruned = dotfiles_mode.is_minimal() or setup_mise_tools.ensure_orphan_shims_removed(mise_bin)
         changed |= pruned and not dotfiles_mode.is_minimal()
         if installed and pruned and (key := _maintenance_key(mise_bin)) is not None:
             post_apply_cache.save("mise-tools", key)
-    if _is_windows():
+    if setup_mise_common.is_windows():
         try:
-            changed |= _ensure_windows_user_path_has_shims()
-        except _SettingError as error:
+            changed |= setup_mise_tools.ensure_windows_user_path_has_shims()
+        except setup_mise_common.SettingError as error:
             failures.append(str(error))
     return post_apply_outcome.PostApplyOutcome(
         changed=changed,
@@ -141,10 +87,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 def _maintenance_key(mise_bin: Path) -> str | None:
     """mise自身が列挙する設定と導入状態を、成功済みの整理結果と比較する。"""
-    cwd = _working_tree_with_config()
-    configs = _run_mise(mise_bin, ["config", "ls", "--json", "--tracked-configs"], cwd=cwd)
-    installed = _run_mise(mise_bin, ["ls", "--json"], cwd=cwd)
-    version = _run_mise(mise_bin, ["--version"])
+    cwd = setup_mise_tools.working_tree_with_config()
+    configs = setup_mise_common.run_mise(mise_bin, ["config", "ls", "--json", "--tracked-configs"], cwd=cwd)
+    installed = setup_mise_common.run_mise(mise_bin, ["ls", "--json"], cwd=cwd)
+    version = setup_mise_common.run_mise(mise_bin, ["--version"])
     if (
         configs is None
         or installed is None
@@ -161,7 +107,12 @@ def _maintenance_key(mise_bin: Path) -> str | None:
         return None
     if not isinstance(entries, list) or not isinstance(tools, dict):
         return None
-    paths = [Path(__file__)]
+    paths = [
+        Path(__file__),
+        Path(setup_mise_binary.__file__),
+        Path(setup_mise_common.__file__),
+        Path(setup_mise_tools.__file__),
+    ]
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
             return None
@@ -178,869 +129,15 @@ def _maintenance_key(mise_bin: Path) -> str | None:
             str(cwd),
             str(dotfiles_mode.is_minimal()),
             json.dumps(tools, sort_keys=True),
-            json.dumps(_mise_env_overrides(), sort_keys=True),
+            json.dumps(setup_mise_common.mise_env_overrides(), sort_keys=True),
         ],
     )
 
 
-def _ensure_mise_installed(client: httpx.Client | None = None) -> bool:
-    """mise本体を導入し、後続のmise管理ツール導入を同じ実行で可能にする。
-
-    mise不在を正常終了として扱うと管理ツールが全て未導入のまま残るため、不在時は
-    Windowsではwinget、その他では公式インストーラーを使う。既存のself-update方針と
-    矛盾させないため`MISE_VERSION`は渡さず、導入版を固定しない。
-    """
-    if _is_windows():
-        try:
-            result = common.run_subprocess(
-                [
-                    "winget",
-                    "install",
-                    "--accept-package-agreements",
-                    "--accept-source-agreements",
-                    "--disable-interactivity",
-                    "jdx.mise",
-                ],
-                timeout=_MISE_INSTALL_TIMEOUT,
-                tag="mise",
-            )
-        except Exception as error:  # noqa: BLE001  # 導入失敗で後続のセットアップ全体を止めない
-            logger.warning(
-                log_format.format_status(
-                    "mise",
-                    f"本体の導入に失敗: {error}。https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
-                ),
-            )
-            return False
-        if result is None or result.returncode != 0:
-            logger.warning(
-                log_format.format_status(
-                    "mise",
-                    f"本体の導入に失敗: {common.format_cli_error(result)}。"
-                    "https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
-                ),
-            )
-            return False
-        return True
-
-    temp_path: Path | None = None
-    with contextlib.ExitStack() as resources:
-        try:
-            active_client = (
-                client if client is not None else resources.enter_context(httpx.Client(timeout=30.0, follow_redirects=True))
-            )
-            response = active_client.get("https://mise.run")
-            response.raise_for_status()
-            with tempfile.NamedTemporaryFile(mode="wb", suffix=".sh", delete=False) as temp:
-                temp_path = Path(temp.name)
-                temp.write(response.content)
-            result = common.run_subprocess(
-                ["sh", str(temp_path)],
-                timeout=_MISE_INSTALL_TIMEOUT,
-                tag="mise",
-                env_overrides={"MISE_INSTALL_PATH": str(Path.home() / ".local" / "bin" / "mise")},
-            )
-            if result is None or result.returncode != 0:
-                logger.warning(
-                    log_format.format_status(
-                        "mise",
-                        f"本体の導入に失敗: {common.format_cli_error(result)}。"
-                        "https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
-                    ),
-                )
-                return False
-            return True
-        except Exception as error:  # noqa: BLE001  # 取得・保存・実行の失敗を1件の警告へ集約する
-            logger.warning(
-                log_format.format_status(
-                    "mise",
-                    f"本体の導入に失敗: {error}。https://mise.jdx.dev/getting-started.html の手順でmiseを手動導入する",
-                ),
-            )
-            return False
-        finally:
-            if temp_path is not None:
-                with contextlib.suppress(OSError):
-                    temp_path.unlink()
-
-
-def find_mise_binary() -> Path | None:
-    """Mise の実行ファイルを絶対パスで返す。
-
-    現プロセスの PATH に無い場合 (Windows で User PATH 更新直後など) も看過しないよう、
-    既知のインストールパスも併せて確認する。
-    """
-    from_path = shutil.which("mise")
-    if from_path is not None:
-        return Path(from_path).absolute()
-
-    candidates: list[Path] = []
-    if _is_windows():
-        localappdata = os.environ.get("LOCALAPPDATA")
-        if localappdata:
-            candidates.append(Path(localappdata) / "Microsoft" / "WinGet" / "Links" / "mise.exe")
-            candidates.append(Path(localappdata) / "mise" / "bin" / "mise.exe")
-    else:
-        candidates.append(Path.home() / ".local" / "bin" / "mise")
-
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.absolute()
-    return None
-
-
-# `mise self-update`は公式インストーラーで導入したmiseだけが使える。手動でも失敗する場合の代替手段。
-_SELF_UPDATE_FALLBACK = "手動でも失敗する場合は、miseを導入した手段（パッケージマネージャーや公式インストーラー）で更新する"
-
-# WinGetの`upgrade`が「適用できる更新がない」ときに返す終了コード（APPINSTALLER_CLI_ERROR_UPDATE_NOT_APPLICABLE）。
-# Windowsの`returncode`は符号なしの値で返るが、符号付きで返る実行系にも対応する。
-_WINGET_UPDATE_NOT_APPLICABLE = frozenset({0x8A15002B, 0x8A15002B - (1 << 32)})
-
-
-def _is_winget_managed(mise_bin: Path) -> bool:
-    r"""Mise実行ファイルがWinGetの配置先（`WinGet\\Links`や`WinGet\\Packages`）にあるかを返す。
-
-    WinGetで導入したmiseは`mise self-update`を拒否するため、更新操作の選択に使う。
-    PATHで別の配置のmiseが先行する場合は、実際に使う実行ファイルの配置で判定する。
-    """
-    if not _is_windows():
-        return False
-    parts = [part.lower() for part in ntpath.normpath(str(mise_bin)).split("\\")]
-    # WinGetは`%LOCALAPPDATA%\Microsoft\WinGet\{Links,Packages}`へ配置する。ユーザー名など
-    # 別の位置にある`winget`という名前のディレクトリを取り違えないよう、連続する3要素で判定する。
-    winget_dirs = (["microsoft", "winget", "links"], ["microsoft", "winget", "packages"])
-    return any(parts[i : i + 3] in winget_dirs for i in range(len(parts)))
-
-
-def _ensure_mise_up_to_date(mise_bin: Path) -> bool:
-    """Mise本体を、導入した手段に合う操作で最新版へ更新する。
-
-    WinGetで導入したmiseは`mise self-update`を拒否するため`winget upgrade`で更新し、
-    それ以外は`mise self-update -y`で更新する。
-    更新の失敗は警告して吸収し、後続ステップ（trust・global node・tools install）は継続する。
-    """
-    if _is_winget_managed(mise_bin):
-        current = _run_mise(mise_bin, ["--version"])
-        match = re.search(r"\b(\d{4}\.\d+\.\d+)\b", current.stdout) if current is not None and current.returncode == 0 else None
-        if match is not None:
-            record = common.load_json_dict(post_apply_cache.record_path("mise-winget"))
-            if record is not None and record.get("version") == match[1]:
-                checked = record.get("checked")
-                if isinstance(checked, (int, float)) and 0 <= time.time() - checked < 86400:
-                    return False
-            candidate = common.run_subprocess(
-                [
-                    "winget",
-                    "show",
-                    "--id",
-                    "jdx.mise",
-                    "--exact",
-                    "--versions",
-                    "--accept-source-agreements",
-                    "--disable-interactivity",
-                ],
-                timeout=_MISE_TIMEOUT,
-                tag="mise",
-            )
-            versions = (
-                re.findall(r"(?m)^\s*(\d{4}\.\d+\.\d+)\s*$", common.strip_ansi(candidate.stdout))
-                if candidate is not None and candidate.returncode == 0
-                else []
-            )
-            if versions and tuple(map(int, match[1].split("."))) >= max(
-                tuple(map(int, value.split("."))) for value in versions
-            ):
-                common.atomic_write_text(
-                    post_apply_cache.record_path("mise-winget"),
-                    json.dumps({"version": match[1], "checked": time.time()}),
-                    tag="mise",
-                )
-                logger.info(log_format.format_status("mise", "本体がWinGet候補版以上のため更新を省略"))
-                return False
-        return _upgrade_mise_with_winget()
-    result = _run_mise(mise_bin, ["self-update", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
-    if result is None:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                "`self-update` がタイムアウトまたは例外で中断（処理は継続した）。`mise self-update -y`を手動実行する。"
-                f"{_SELF_UPDATE_FALLBACK}",
-            ),
-        )
-        return False
-    if result.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    f"`self-update` に失敗（処理は継続した）。`mise self-update -y`を手動実行する。{_SELF_UPDATE_FALLBACK}",
-                    result,
-                ),
-            ),
-        )
-        return False
-    logger.info(log_format.format_status("mise", "`self-update` を実行しました"))
-    return True
-
-
-def _upgrade_mise_with_winget() -> bool:
-    """WinGetで導入したmiseを`winget upgrade`で更新する。
-
-    適用できる更新がない場合は更新なしとして扱い、その他の失敗は警告して後続ステップを継続する。
-    """
-    manual = (
-        "`winget upgrade --id jdx.mise --exact`を手動実行する。"
-        "手動でも失敗する場合は、表示されたwingetの出力に従ってWinGetの状態を確かめる"
-    )
-    try:
-        result = common.run_subprocess(
-            [
-                "winget",
-                "upgrade",
-                "--id",
-                "jdx.mise",
-                "--exact",
-                "--accept-package-agreements",
-                "--accept-source-agreements",
-                "--disable-interactivity",
-            ],
-            timeout=_MISE_INSTALL_TIMEOUT,
-            tag="mise",
-        )
-    except Exception as error:  # noqa: BLE001  # 更新失敗で後続のセットアップ全体を止めない
-        logger.warning(log_format.format_status("mise", f"`winget upgrade` に失敗（処理は継続した）: {error}。{manual}"))
-        return False
-    if result is None:
-        logger.warning(
-            log_format.format_status("mise", f"`winget upgrade` がタイムアウトまたは例外で中断（処理は継続した）。{manual}"),
-        )
-        return False
-    if result.returncode in _WINGET_UPDATE_NOT_APPLICABLE:
-        logger.info(log_format.format_status("mise", "WinGetに適用できる更新が無いため本体は現在の版のまま"))
-        return False
-    if result.returncode != 0:
-        output = common.format_cli_error(result)
-        if "remove_all" in output and "access is denied" in output.lower():
-            manual = (
-                "miseの配置先を使用中の可能性があるため、miseを使うターミナルやエディターを終了し、"
-                "新しいターミナルで`update-dotfiles`を再実行する。プロセスの強制終了や自動昇格は行わない"
-            )
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                f"`winget upgrade` に失敗（処理は継続した）。{manual}\n{common.format_cli_error(result)}",
-            ),
-        )
-        return False
-    logger.info(log_format.format_status("mise", "`winget upgrade` で本体を更新しました"))
-    return True
-
-
-# 同梱のgcloudプラグインが`require("python")`を解決できず、gcloudの導入と実行が失敗するmiseの版（jdx/mise#15034）。
-_GCLOUD_PLUGIN_BROKEN_VERSIONS = frozenset({"2026.10.20", "2026.10.21"})
-
-# 同梱版の代わりに使うGit配布のgcloudプラグイン。ファイルシステムから読み込むプラグインは`hooks/`配下の
-# モジュールを解決できるため、上流のissueが回避策として示している。
-_GCLOUD_PLUGIN_URL = "https://github.com/jdx/vfox-gcloud"
-
-
-def _ensure_gcloud_plugin_usable(mise_bin: Path) -> bool:
-    """同梱gcloudプラグインが壊れた版のmiseでは、Git配布のプラグインを導入して置き換える。
-
-    WinGetなど管理元の配布が修正版より遅れると本体を更新しても壊れた版が残るため、版で判定する。
-    導入済みなら再導入しない。導入の失敗は警告し、後続の`mise install`へ進む。
-
-    Returns:
-        プラグインを新たに導入した場合True。
-    """
-    version_result = _run_mise(mise_bin, ["--version"])
-    if version_result is None or version_result.returncode != 0:
-        return False
-    match = re.search(r"\b(\d{4}\.\d+\.\d+)\b", version_result.stdout)
-    if match is None:
-        return False
-    # 更新後に実際に使う本体の版と実体を記録し、更新経路と回避処置の要否をログで確かめられるようにする。
-    logger.info(log_format.format_status("mise", f"本体 {match[1]} を使う: {mise_bin}"))
-    if match[1] not in _GCLOUD_PLUGIN_BROKEN_VERSIONS:
-        return False
-
-    listed = _run_mise(mise_bin, ["plugins", "ls", "--urls"])
-    if listed is not None and listed.returncode == 0:
-        for line in listed.stdout.splitlines():
-            fields = line.split()
-            if len(fields) >= 2 and fields[0] == "gcloud" and fields[1].removesuffix(".git") == _GCLOUD_PLUGIN_URL:
-                return False
-
-    result = _run_mise(mise_bin, ["plugins", "install", "gcloud", _GCLOUD_PLUGIN_URL], timeout=_MISE_INSTALL_TIMEOUT)
-    if result is None or result.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    f"mise {match[1]}の同梱gcloudプラグインの不具合を回避するGit配布プラグインの導入に失敗"
-                    f"（処理は継続した）。`mise plugins install gcloud {_GCLOUD_PLUGIN_URL}`を手動実行するか、"
-                    "miseを2026.10.22以降へ更新する",
-                    result,
-                ),
-            ),
-        )
-        return False
-    logger.info(
-        log_format.format_status(
-            "mise",
-            f"mise {match[1]}の同梱gcloudプラグインの不具合を回避するため、Git配布のプラグインを導入しました",
-        ),
-    )
-    return True
-
-
-def _working_tree_with_config() -> Path | None:
-    """`mise.toml` を持つchezmoi working treeを返す。該当しない場合は`None`を返す。"""
-    # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
-    # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
-    # `dotfiles-post-apply`の単独実行では作業ツリーの`mise.toml`を実行位置に使わないためである。
-    if dotfiles_mode.is_minimal():
-        return Path.home()
-    working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
-    if not working_tree:
-        return None
-    root = Path(working_tree)
-    return root if (root / "mise.toml").is_file() else None
-
-
-def _ensure_working_tree_trusted(mise_bin: Path) -> bool:
-    """Chezmoi workingTree直下の `mise.toml` を `mise trust` 対象にする。
-
-    未trustのままではmise CLIが毎回警告を表示して設定を無視するため、冪等にtrustする。
-    workingTreeは `CHEZMOI_WORKING_TREE` 環境変数経由で受け取る（未設定ならCLI単体実行
-    とみなしてスキップ）。既にtrust済みであっても `mise trust` は重複登録しない仕様のため、
-    事前チェックは行わず毎回実行する。副作用がないため、成功時はchanged判定も常にTrueを
-    返す（サマリで「更新」扱いになるが、ノイズよりも実行事実を確認できる方を優先する）。
-    """
-    # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
-    # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
-    # `dotfiles-post-apply`の単独実行ではtrustをスキップするためである。
-    working_tree = os.environ.get("CHEZMOI_WORKING_TREE")
-    if not working_tree:
-        logger.info(
-            log_format.format_status(
-                "mise",
-                "CHEZMOI_WORKING_TREE 未設定のため trust をスキップ。対象設定が無いため対応不要",
-            ),
-        )
-        return False
-
-    mise_toml = Path(working_tree) / "mise.toml"
-    if not mise_toml.is_file():
-        logger.info(
-            log_format.format_status("mise", f"{mise_toml} が無いため trust をスキップ。対象設定が無いため対応不要"),
-        )
-        return False
-
-    result = _run_mise(mise_bin, ["trust", str(mise_toml)])
-    if result is None or result.returncode != 0:
-        raise _SettingError(_with_mise_output("`mise trust` に失敗", result))
-
-    logger.info(log_format.format_status("mise", f"{mise_toml} を trust しました"))
-    return True
-
-
-def _ensure_global_node(mise_bin: Path) -> bool:
-    """global設定にnodeがなければ `mise use --global node@lts` を実行する。
-
-    Returns:
-        nodeを新たに設定した場合True。
-    """
-    result = _run_mise(mise_bin, ["ls", "--global", "--json"])
-    if result is None or result.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    "`ls --global --json` に失敗したため node 設定をスキップ（処理は継続した）。"
-                    f"`mise use --global node@lts`を手動実行する。{_MISE_REPORT_FALLBACK}",
-                    result,
-                ),
-            ),
-        )
-        return False
-
-    try:
-        data = json.loads(result.stdout) if result.stdout.strip() else {}
-    except json.JSONDecodeError as e:
-        logger.info(
-            log_format.format_status(
-                "mise",
-                f"`ls --global --json` の出力 JSON を解析できずスキップ: {e}。`mise use --global node@lts`を手動実行する",
-            ),
-        )
-        return False
-
-    if _has_global_node(data):
-        logger.info(log_format.format_status("mise", "global Node は既に設定済み"))
-        return False
-
-    install_result = _run_mise(mise_bin, ["use", "--global", "node@lts"])
-    if install_result is None or install_result.returncode != 0:
-        next_action = (
-            _install_next_action(install_result)
-            if install_result is not None and "os error 1314" in common.format_cli_error(install_result)
-            else "表示された接続先へのネットワーク到達を確かめてから`update-dotfiles`を再実行する。"
-        )
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    "`use --global node@lts` に失敗（処理は継続した）。"
-                    f"{next_action} 手動で設定する場合は`mise use --global node@lts`を実行する。"
-                    f"{_MISE_REPORT_FALLBACK}",
-                    install_result,
-                ),
-            ),
-        )
-        return False
-
-    logger.info(log_format.format_status("mise", "global に node@lts を設定しました"))
-    return True
-
-
-def _has_global_node(data: object) -> bool:
-    """`mise ls --global --json` の戻り値にnodeエントリがあるかを判定する。
-
-    miseの出力形式はversionにより揺れがあるため、以下の全パターンに対応する。
-
-    - ``{"node": [{...}, ...]}``: キーがツール名
-    - ``[{"name": "node", ...}, ...]``: 配列の各要素に ``name``
-    - 上記のネスト（例: ``{"tools": ...}``）
-    """
-    if isinstance(data, dict):
-        if "node" in data:
-            return True
-        return any(_has_global_node(value) for value in data.values())
-    if isinstance(data, list):
-        return any(_list_item_is_node(item) for item in data)
-    return False
-
-
-def _list_item_is_node(item: object) -> bool:
-    """`mise ls --global --json` の list 形式 1 エントリが node を指しているかを判定する。"""
-    if not isinstance(item, dict):
-        return False
-    item_dict = typing.cast("dict[object, object]", item)
-    name = item_dict.get("name")
-    return isinstance(name, str) and name == "node"
-
-
-# 作業ツリーを実行位置とする`mise install`だけへ与える環境変数。
-_LOCKED_INSTALL_ENV = {"MISE_LOCKED": "1", "MISE_LOCKED_SCOPES": "project"}
-
-# 案内した手動操作や再実行でも失敗が続く場合の報告先。dotfiles側で対処できない失敗は
-# miseの出力が原因を示すため、その出力を添えてmiseの開発元へ報告する。
-_MISE_REPORT_FALLBACK = "手動でも同じ失敗が続く場合は、表示されたmiseの出力を添えてmiseの開発元（GitHubの`jdx/mise`）へ報告する"
-
-# 手動導入でもprojectのlockを書き戻さない。
-_INSTALL_NEXT_ACTION = (
-    "表示された接続先へのネットワーク到達（プロキシ設定を含む）を確かめてから`update-dotfiles`を再実行する"
-    "（手動で導入する場合は、chezmoiの作業ツリーで`MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install`を実行する。"
-    "Windowsでは両環境変数を設定して`mise install`を実行する）。"
-    f"{_MISE_REPORT_FALLBACK}"
-)
-
-
-def _install_next_action(result: subprocess.CompletedProcess[str]) -> str:
-    """展開時の権限不足には、その場で必要なWindows設定を案内する。"""
-    if "os error 1314" in common.format_cli_error(result):
-        return (
-            "シンボリックリンクの作成権限を確認する。Windowsの設定で「開発者モード」を検索して有効にし、"
-            "新しいターミナルで`update-dotfiles`を再実行する。組織管理端末では管理者に設定変更を依頼する。"
-            "post-applyはOS設定を自動変更しない。"
-        )
-    return _INSTALL_NEXT_ACTION
-
-
-def _ensure_tools_installed(mise_bin: Path) -> bool:
-    """`mise install` で global/working-tree 設定のツールを取得する。
-
-    miseは実行時のカレントディレクトリから設定ファイルを探索するため、chezmoi後処理の
-    カレントディレクトリ（配布先ホーム）のままでは working tree の `mise.toml` が対象外になり、
-    そこにだけ定義されたツールが恒久的に未導入のまま残る。working tree を実行位置に指定すると
-    global設定も併合されるため、`CHEZMOI_WORKING_TREE` に `mise.toml` がある場合は
-    そこを実行位置として1回だけ実行する。
-
-    working treeの`mise.lock`を書き戻さないよう、プロジェクトのlockfileに対してlockedモード
-    （`MISE_LOCKED=1`・`MISE_LOCKED_SCOPES=project`）で実行する。global設定はlockにURLを持たない
-    ツールを含むため対象外とする。lockedモードで失敗しても、lockの書き戻しを招くため
-    lockedを外した再実行はしない。
-
-    終了コード非ゼロ・タイムアウト・例外は警告して吸収し、後続ステップを止めない。
-    取得・導入の失敗は`PostApplyOutcome`の契約どおりスキップと数えるためFalseを返す。
-    インストール差分の厳密判定は出力からは行えないため、成功時の`changed`は実行事実を記録してTrueを返す。
-    """
-    result = _run_mise(
-        mise_bin,
-        ["install", *(_LIGHTWEIGHT_TOOLS if dotfiles_mode.is_minimal() else ())],
-        timeout=_MISE_INSTALL_TIMEOUT,
-        cwd=_working_tree_with_config(),
-        extra_env=_LOCKED_INSTALL_ENV,
-    )
-    if result is None:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                f"`install` が{_MISE_INSTALL_TIMEOUT}秒以内に終わらないか起動できず中断した（処理は継続した）。"
-                f"{_INSTALL_NEXT_ACTION}",
-            ),
-        )
-        return False
-    if result.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(f"`install` に失敗（処理は継続した）。{_install_next_action(result)}", result),
-            ),
-        )
-        return False
-    logger.info(log_format.format_status("mise", "`install` を実行しました"))
-    return True
-
-
-def _ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
-    """導入済みツールの実行ファイルの配置先が欠落していれば、同じ版を強制再インストールする。
-
-    `symlink_bins`など配置先を変えるツールオプションは導入時にだけ配置を生成し、導入済みの版へ遡及しない。
-    `mise install`は導入済みの版を再導入せず、`mise install --dry-run-code`と`mise doctor`も欠落を示さないため、
-    配布設定の変更後も導入済みのホストではコマンドを解決できないまま残る。
-    欠落の原因となるオプションを列挙せず、mise自身が現在の設定から導く配置先（`mise bin-paths`）の実在で判定する。
-    `mise bin-paths --json`は実在しない配置先を含まないため、引数なしの出力を使う。
-    実行位置は`_ensure_tools_installed`と同じとし、working treeの`mise.toml`にだけあるツールも対象にする。
-    版を明示して再導入するため、版の解決とlockfileは変わらない。
-    検出・再導入の失敗は警告して後続のステップを止めない。
-
-    Returns:
-        再導入を1件以上実行した場合True。
-    """
-    cwd = _working_tree_with_config()
-    missing = _missing_bin_paths(mise_bin, cwd)
-    if not missing:
-        return False
-    installs = _installed_tool_paths(mise_bin, cwd)
-    if installs is None:
-        return False
-
-    targets: dict[tuple[str, str], list[Path]] = {}
-    for directory in missing:
-        owner = _owning_tool(directory, installs)
-        if dotfiles_mode.is_minimal() and (owner is None or owner[0] not in _LIGHTWEIGHT_TOOLS):
-            continue
-        if owner is None:
-            # 共有ランタイムへのリンクで導入されるツール（dotnet-root、~/.cargo/binなど）は再導入で生成されない。
-            logger.warning(
-                log_format.format_status(
-                    "mise",
-                    "実行ファイルの配置先が無いが、導入先を特定できないため再導入しない: "
-                    f"{directory}（処理は継続した）。"
-                    "`mise bin-paths`と`mise ls --current --installed "
-                    "--json`で配置先と導入ツールを確認し、該当ツールを手動導入する",
-                ),
-            )
-            continue
-        targets.setdefault(owner, []).append(directory)
-    if not targets:
-        return False
-
-    changed = False
-    for tool, version in targets:
-        spec = f"{tool}@{version}"
-        # lockedモードを与えない。mise 2026.9.17では、lockにURLがあってもlockedモードの`install --force <ツール>@<版>`は
-        # 「No lockfile URL found」で失敗する。版を明示した再導入はlockfileを書き戻さないことを同じ版で確かめた。
-        result = _run_mise(mise_bin, ["install", "--force", spec], timeout=_MISE_INSTALL_TIMEOUT, cwd=cwd)
-        if result is None:
-            logger.warning(
-                log_format.format_status(
-                    "mise",
-                    f"`install --force {spec}` がタイムアウトまたは例外で中断。手動で`mise install --force {spec}`を実行する",
-                ),
-            )
-            continue
-        if result.returncode != 0:
-            logger.warning(
-                log_format.format_status(
-                    "mise",
-                    _with_mise_output(
-                        f"`install --force {spec}` に失敗（処理は継続した）。"
-                        f"{_install_next_action(result)} 手動で`mise install --force {spec}`を実行する。",
-                        result,
-                    ),
-                ),
-            )
-            continue
-        logger.info(
-            log_format.format_status(
-                "mise",
-                f"実行ファイルの配置先を再生成するため `install --force {spec}` を実行しました",
-            ),
-        )
-        changed = True
-
-    remaining = _missing_bin_paths(mise_bin, cwd)
-    if remaining is None:
-        return changed
-    for directory in remaining:
-        owner = _owning_tool(directory, installs)
-        if owner is None or owner not in targets:
-            continue
-        tool, version = owner
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                f"{tool}の実行ファイルの配置先が再導入後も見つからない: {directory}。"
-                f"手動で`mise install --force {tool}@{version}`を実行する",
-            ),
-        )
-    return changed
-
-
-def _missing_bin_paths(mise_bin: Path, cwd: Path | None) -> list[Path] | None:
-    """`mise bin-paths`が返す配置先のうち実在しないものを返す。取得に失敗した場合は警告して`None`を返す。"""
-    result = _run_mise(mise_bin, ["bin-paths"], cwd=cwd)
-    if result is None:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                "`bin-paths` がタイムアウトまたは例外で中断したため配置先の確認を省いた（処理は継続した）。"
-                "`update-dotfiles`を再実行する",
-            ),
-        )
-        return None
-    if result.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    "`bin-paths` に失敗したため配置先の確認を省いた（処理は継続した）。"
-                    f"`update-dotfiles`を再実行する。{_MISE_REPORT_FALLBACK}",
-                    result,
-                ),
-            ),
-        )
-        return None
-    return [Path(line.strip()) for line in result.stdout.splitlines() if line.strip() and not Path(line.strip()).is_dir()]
-
-
-def _installed_tool_paths(mise_bin: Path, cwd: Path | None) -> dict[Path, tuple[str, str]] | None:
-    """導入済みの現行版について、導入先ディレクトリからツール名と版への対応を返す。
-
-    取得または解析に失敗した場合は警告して`None`を返す。
-    """
-    result = _run_mise(mise_bin, ["ls", "--current", "--installed", "--json"], cwd=cwd)
-    if result is None:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                "`ls --current --installed --json` がタイムアウトまたは例外で中断したため再導入を省いた（処理は継続した）。"
-                "`update-dotfiles`を再実行する",
-            ),
-        )
-        return None
-    if result.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    "`ls --current --installed --json` に失敗したため再導入を省いた（処理は継続した）。"
-                    f"`update-dotfiles`を再実行する。{_MISE_REPORT_FALLBACK}",
-                    result,
-                ),
-            ),
-        )
-        return None
-    try:
-        data = json.loads(result.stdout) if result.stdout.strip() else {}
-    except json.JSONDecodeError as error:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                "`ls --current --installed --json` の出力を解析できないため再導入を省いた（処理は継続した）。"
-                f"`update-dotfiles`を再実行する: {error}",
-            ),
-        )
-        return None
-    installs: dict[Path, tuple[str, str]] = {}
-    if not isinstance(data, dict):
-        return installs
-    for tool, entries in typing.cast("dict[object, object]", data).items():
-        if not isinstance(tool, str) or not isinstance(entries, list):
-            continue
-        for entry in typing.cast("list[object]", entries):
-            if not isinstance(entry, dict):
-                continue
-            entry_dict = typing.cast("dict[object, object]", entry)
-            install_path = entry_dict.get("install_path")
-            version = entry_dict.get("version")
-            if isinstance(install_path, str) and install_path and isinstance(version, str) and version:
-                installs[Path(install_path)] = (tool, version)
-    return installs
-
-
-def _owning_tool(directory: Path, installs: dict[Path, tuple[str, str]]) -> tuple[str, str] | None:
-    """配置先ディレクトリを配下に持つ導入先のうち最も深いもののツール名と版を返す。"""
-    owners = [install_path for install_path in installs if directory.is_relative_to(install_path)]
-    if not owners:
-        return None
-    return installs[max(owners, key=lambda install_path: len(install_path.parts))]
-
-
-def _ensure_orphan_shims_removed(mise_bin: Path) -> bool:
-    """`mise prune`と`mise reshim`で管理外の孤児shimを除去する。
-
-    shimの再生成元は`installs/`配下の実体であり、`prune`を伴わない`reshim`では
-    管理外shimが再生成される。`prune`はtracked configが参照するツールの現行版を
-    削除しないため、`mise install`の後に未参照実体を除去してshimを強制再構築する。
-    """
-    prune = _run_mise(mise_bin, ["prune", "-y"], timeout=_MISE_INSTALL_TIMEOUT)
-    if prune is None:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                "`prune -y` がタイムアウトまたは例外で中断（処理は継続した）。`mise prune -y`を手動実行する。"
-                f"{_MISE_REPORT_FALLBACK}",
-            ),
-        )
-        return False
-    if prune.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    f"`prune -y` に失敗（処理は継続した）。`mise prune -y`を手動実行する。{_MISE_REPORT_FALLBACK}",
-                    prune,
-                ),
-            ),
-        )
-        return False
-    result = _run_mise(mise_bin, ["reshim", "--force"])
-    if result is None:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                "`reshim --force` がタイムアウトまたは例外で中断（処理は継続した）。`mise reshim --force`を手動実行する。"
-                f"{_MISE_REPORT_FALLBACK}",
-            ),
-        )
-        return False
-    if result.returncode != 0:
-        logger.warning(
-            log_format.format_status(
-                "mise",
-                _with_mise_output(
-                    f"`reshim --force` に失敗（処理は継続した）。`mise reshim --force`を手動実行する。{_MISE_REPORT_FALLBACK}",
-                    result,
-                ),
-            ),
-        )
-        return False
-    logger.info(log_format.format_status("mise", "`reshim --force` を実行しました"))
-    return True
-
-
-def _ensure_windows_user_path_has_shims() -> bool:
-    r"""HKCU\Environment\Path に mise の shims ディレクトリを追加する (Windows 専用).
-
-    Returns:
-        レジストリを更新したら True。
-    """
-    localappdata = os.environ.get("LOCALAPPDATA")
-    if not localappdata:
-        logger.info(
-            log_format.format_status(
-                "mise",
-                "LOCALAPPDATA 環境変数が無いため shims 追加をスキップ。対象設定が無いため対応不要",
-            ),
-        )
-        return False
-
-    shims_dir = Path(localappdata) / "mise" / "shims"
-    if not shims_dir.is_dir():
-        logger.info(
-            log_format.format_status(
-                "mise",
-                f"{shims_dir} が無いため shims 追加をスキップ。対象設定が無いため対応不要",
-            ),
-        )
-        return False
-
-    try:
-        appended = winutils.append_user_path(_WINDOWS_SHIMS_ENTRY)
-    except OSError as e:
-        raise _SettingError(f"ユーザー PATH の更新に失敗: {e}") from e
-    if appended:
-        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} を追加しました"))
-        winutils.broadcast_environment_change()
-    else:
-        logger.info(log_format.format_status("mise", f"ユーザー PATH に {_WINDOWS_SHIMS_ENTRY} は既に登録済み"))
-
-    # 現プロセスの PATH にも反映しておく (post_apply の後続ステップが shims 内の
-    # コマンドを参照できるようにするため)。冪等性のため重複追加は避ける。
-    # 並列に動く他工程のPATH追加を失わないよう、読み取りから書き戻しまでを直列化する。
-    with setup_cli_common.PROCESS_PATH_LOCK:
-        current_process_path = os.environ.get("PATH", "")
-        if str(shims_dir) not in current_process_path.split(os.pathsep):
-            separator = os.pathsep if current_process_path else ""
-            os.environ["PATH"] = current_process_path + separator + str(shims_dir)
-
-    return appended
-
-
-def _run_mise(
-    mise_bin: Path,
-    args: list[str],
-    *,
-    timeout: float = _MISE_TIMEOUT,
-    cwd: Path | None = None,
-    extra_env: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str] | None:
-    """`mise` CLIを呼び出す共通ヘルパー。
-
-    タイムアウト・例外を吸収して `CompletedProcess` または `None` を返す。
-    非ゼロ終了の扱いは呼び出し元に委ねる。
-
-    miseの対話確認とTTY検出を抑止するため `MISE_YES=1`・`CI=1` を注入する。
-    aqua/npmバックエンドの初回ダウンロード時に確認プロンプトでブロックするのを防ぐ。
-    無人セットアップで版一覧取得が短時間のネットワーク遅延により失敗しないよう、
-    mise内部の版一覧取得上限も延長する。
-    Windowsではシステム版`dotnet.exe`が先行しても、miseのSDK検証が共有ルートを
-    参照するよう子プロセスだけの`PATH`を設定する。
-
-    失敗時の標準エラー出力は`_mise_error_lines`で失敗理由の行だけに限定する。
-    呼び出し元の診断へ進捗表示が混入しないよう、整形をここへ集約する。
-    """
-    result = common.run_subprocess(
-        [str(mise_bin), *args],
-        timeout=timeout,
-        cwd=cwd,
-        tag="mise",
-        env_overrides=_mise_env_overrides() | (extra_env or {}),
-    )
-    if result is None or result.returncode == 0:
-        return result
-    return subprocess.CompletedProcess(result.args, result.returncode, result.stdout, _mise_error_lines(result.stderr))
-
-
-def _mise_error_lines(stderr: str) -> str:
-    """miseの失敗出力から、色指定を除いた`mise ERROR`行以降を返す。該当行が無ければ色指定だけを除く。
-
-    miseは非TTYかつ`CI=1`でも進捗表示と`WARN`行を標準エラー出力へ書く。
-    mise 2026.10.17をネットワーク遮断下で失敗させた観測では、`mise ERROR`行以降は
-    `--quiet`を付けた場合の出力と一致し、ツールごとの失敗理由を含む。
-    """
-    lines = common.strip_ansi(stderr).splitlines()
-    start = next((index for index, line in enumerate(lines) if line.startswith("mise ERROR")), 0)
-    return "\n".join(lines[start:]).strip()
-
-
-def _with_mise_output(message: str, result: subprocess.CompletedProcess[str] | None) -> str:
-    """dotfilesが書く案内の後へ、miseの出力を独立した行として続けた診断を返す。
-
-    miseの出力は複数行で句点を持たないため、案内と同じ行へ連結すると文の境界が読めなくなる。
-    """
-    return f"{message}\n{common.format_cli_error(result)}"
+__all__ = [
+    "ensure_mise_installed",
+    "ensure_tools_installed",
+    "ensure_windows_user_path_has_shims",
+    "working_tree_with_config",
+    "find_mise_binary",
+]

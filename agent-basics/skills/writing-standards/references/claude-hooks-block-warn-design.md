@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-stop-delegates.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-delegates.md` |
-
 ## 発火対象のエージェントの限定
 
 通知が指示する対処手順を特定のエージェント種別や作業ツリー種別のみが実行できる場合は、その種別を発火条件に含める（含めないと、権限や資源の所有権を持たないエージェントが操作を差し戻されるだけの無駄な工程が発火ごとに生じる）。

@@ -33,12 +33,19 @@ def stop_recorded_executor(identity: session_registry.ProcessIdentity) -> str | 
     root: psutil.Process | None
     try:
         root = psutil.Process(identity.pid)
-        if root.create_time() != identity.create_time:
+        if not identity.matches(root):
+            if identity.exists():
+                return f"pid {identity.pid} の旧形式の識別を確定できないため停止しない。対象のPIDと起動コマンドを確認する"
             root = None
     except psutil.NoSuchProcess:
         root = None
     except psutil.Error as error:
         return f"pid {identity.pid} の起動時刻を照会できない: {error}"
+    if record is not None and (
+        len(record.live_targets(conservative=True)) != len(record.live_targets())
+        or len(record.held_unreaped(conservative=True)) != len(record.held_unreaped())
+    ):
+        return f"pid {identity.pid} の旧形式の回収対象を識別できない。記録されたPIDと起動コマンドを確認する"
     known = record.live_targets() if record is not None else []
     unresolved = list(record.unresolved) if record is not None else []
     unreaped = record.held_unreaped() if record is not None else []

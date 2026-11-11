@@ -4,12 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/references/judgment-details.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details.md` |
-| 本文の条件に従い「前提の再検討」を判断する前 | `root-cause-severity-quality.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md` |
-| 本文の条件に従い「再発防止策の必須性」を判断する前 | `root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/testing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の条件に従い「前提の再検討」を判断する前 | `root-cause-severity-quality.md` |
+| 本文の条件に従い「再発防止策の必須性」を判断する前 | `root-cause-prevention-requirements.md` |
+| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/testing.md` |
 
 ## 規範の適用と目的の成立
 
@@ -30,6 +29,7 @@
 `root-cause-severity-quality.md`「前提の再検討」で挙げた共有前提も比較し、未適用・範囲不足・効果不足・別原因を、`root-cause-prevention-requirements.md`「再発防止策の必須性」の基準と証拠で区別する。
 対象化・検出・起票・実装配布・今回条件での解消を分け、残る原因条件、処置担当、適用機会と観測結果を結論に残す。
 適用機会が無い処置は効果未確認とし、検出機会がある対象だけを未検出の評価に含める。
+依存先など提供元で直した処置は、提供元のcommit、使う側の版、実行する主体、稼働中の実行への適用機会を同じ記録へ対応付け、使う側の版と実行で解消を確かめる。
 過去に対象としたコード、入力、適用条件、実施した修正内容と、今回の指摘や観測条件を`root-cause-prevention-requirements.md`「再発防止策の必須性」に定める網羅性や有効性の観点から照らし合わせる。
 単に表面的な文言が同じであるかや、処置の階層が異なるかといった点だけで判断しない。
 新しい要件の追加や認可範囲の変更に当たる場合は所定の認可手順に差し戻し、前回の修正不足である場合は同じ原因に効果的に作用する処置を選び直す。

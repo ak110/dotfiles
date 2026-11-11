@@ -155,7 +155,7 @@ for (const deleteResponse of ["error", "deny"] as const) {
     await clock.advance(1);
     expect(calls).toEqual(["CronList", "CronDelete:common"]);
     expect(prompts[0]).toContain("common");
-    expect(prompts[0]).toContain("次のStop");
+    expect(prompts[0]).toContain("次にターンを終えるとき");
   });
 }
 
@@ -252,7 +252,7 @@ test("所有taskを確認した後のCronDelete非公開は対象IDを含む本�
   await clock.advance(1);
   expect(calls).toEqual(["CronList"]);
   expect(prompts[0]).toContain("common");
-  expect(prompts[0]).toContain("次のStop");
+  expect(prompts[0]).toContain("次にターンを終えるとき");
 });
 
 test("CronListが公開されても所有taskが無い通常終了は通知を作成せず結果を保持する", async ($, on) => {

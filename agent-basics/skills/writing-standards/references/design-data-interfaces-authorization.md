@@ -4,9 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-
 ## 認証・認可設計
 
 発火条件: 認証、認可、アクセス権限チェックを新規設計または変更する場面。
@@ -17,6 +14,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実装時のコーディング品質：セキュリティ・ロギング・エラー処理の基準を適用する前 | `implementation-time-errors.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-errors.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実装時のコーディング品質：セキュリティ・ロギング・エラー処理の基準を適用する前 | `implementation-time-errors.md` |

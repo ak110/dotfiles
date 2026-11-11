@@ -19,6 +19,7 @@ from pytools._internal import (
     plugin_warmup,
     post_apply_cache,
     setup_mise,
+    setup_mise_common,
     warmup_agents_server,
 )
 
@@ -34,7 +35,7 @@ def _mise(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[list[st
     monkeypatch.setenv("MISE_DATA_DIR", str(data))
     monkeypatch.setenv("CHEZMOI_WORKING_TREE", str(tmp_path))
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: binary)
-    monkeypatch.setattr(setup_mise, "_is_windows", lambda: False)
+    monkeypatch.setattr(setup_mise_common, "is_windows", lambda: False)
     calls: list[list[str]] = []
     responses: dict[str, Any] = {}
 
@@ -66,7 +67,7 @@ def _mise(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[list[st
 def test_winget_skips_equal_or_older_candidate(mise, monkeypatch: pytest.MonkeyPatch, candidate: str) -> None:
     calls, responses, _config = mise
     responses["candidate"] = candidate
-    monkeypatch.setattr(setup_mise, "_is_windows", lambda: True)
+    monkeypatch.setattr(setup_mise_common, "is_windows", lambda: True)
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: Path(r"C:\Microsoft\WinGet\Links\mise.exe"))
     setup_mise.run()
     setup_mise.run()
@@ -81,7 +82,7 @@ def test_winget_access_denied_identifies_holding_processes(mise, monkeypatch, ca
     responses[
         "upgrade --id jdx.mise --exact --accept-package-agreements --accept-source-agreements --disable-interactivity"
     ] = subprocess.CompletedProcess([], 0x8A150003, 'remove_all: Access is denied.: "C:\\mise"', "")
-    monkeypatch.setattr(setup_mise, "_is_windows", lambda: True)
+    monkeypatch.setattr(setup_mise_common, "is_windows", lambda: True)
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: Path(r"C:\Microsoft\WinGet\Links\mise.exe"))
     setup_mise.run()
     assert any(call[:2] == ["winget", "upgrade"] for call in calls)

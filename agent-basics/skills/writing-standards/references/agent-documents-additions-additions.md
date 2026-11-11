@@ -4,20 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 規範以外の品質改善案と投資先を比較する前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-content.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-content.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation-technical-clauses.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-technical-clauses.md` |
-| 類似見直しと再発防止の完了を判定する前 | `../../bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 規範以外の品質改善案と投資先を比較する前 | `design-heuristics-screening.md` |
+| 類似見直しと再発防止の完了を判定する前 | `../../bugfix/references/root-cause-prevention-verification.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity-impact.md` |
 
 ## 規範追記時の判定
 
@@ -114,7 +105,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| バグ対応の基準を適用する前 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| エージェント向け文書品質（基本）：定義の所有者の基準を適用する前 | `agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| バグ対応の基準を適用する前 | `../../bugfix/SKILL.md` |
+| エージェント向け文書品質（基本）：定義の所有者の基準を適用する前 | `agent-documents-basics-ownership.md` |

@@ -110,6 +110,8 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
         return "reader-fitの入力成果物が空でないパス配列ではありません"
     if len(set(targets)) != len(targets):
         return "reader-fitの入力成果物に重複があります"
+    # Markdownの改行用の行末空白は表記だけの差であり、パスや値の一部として比べない。
+    message = "\n".join(line.rstrip() for line in message.splitlines())
     blocks = list(re.finditer(r"(?m)^- 成果物: (.+)$", message))
     paths = [match[1] for match in blocks]
     if len(paths) != len(set(paths)):

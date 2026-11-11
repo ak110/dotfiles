@@ -25,7 +25,7 @@ from typing import Any
 
 import psutil
 
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_identity, process_tree
 
 _SCRIPT = r"""
 import os, pathlib, runpy, subprocess, sys, time
@@ -50,8 +50,10 @@ if role == "holder":
     with open(directory / "held" / "held.txt", "w", encoding="utf-8"):
         # PIDと起動時刻を一時ファイルへ書いてから置き換え、読み手が書きかけの内容を読まないようにする。
         import psutil
+        from agent_toolkit._common import process_identity
         record = directory / "holder.pid.tmp"
-        record.write_text(f"{os.getpid()} {psutil.Process().create_time()}", encoding="utf-8")
+        observed = process_identity.ProcessIdentity.capture(psutil.Process())
+        record.write_text(f"{observed.pid} {observed.create_time} {observed.start_id or '-'}", encoding="utf-8")
         os.replace(record, directory / "holder.pid")
         hold()
     sys.exit(0)
@@ -185,27 +187,30 @@ def assert_released(directory: pathlib.Path) -> None:
     detail = observation.read_text(encoding="utf-8") if observation.exists() else "同期点の観測なし"
     print(f"late_descendant: trigger={detail}")
     assert holder_file.exists(), "終了処理の最初の列挙の後にholderが起動しませんでした"
-    pid_text, created_text = holder_file.read_text(encoding="utf-8").split()
+    pid_text, created_text, start_id = holder_file.read_text(encoding="utf-8").split()
     holder, created = int(pid_text), float(created_text)
     deadline = time.monotonic() + 10.0
-    while _holds(holder, created) and time.monotonic() < deadline:
+    while _holds(holder, created, start_id) and time.monotonic() < deadline:
         time.sleep(0.05)
-    released = not _holds(holder, created)
+    released = not _holds(holder, created, start_id)
     # 観測記録として、生成したholderのPID・起動時刻と最終結果を残す（pytestの`-s`や`-rP`で表示される）。
     print(f"late_descendant: holder pid={holder} created_at={created} released={released}")
     try:
         assert released, f"列挙の後に起動したholder（pid {holder}、起動時刻 {created}）が残っています: {detail}"
         shutil.rmtree(directory / "held")
     finally:
-        if _holds(holder, created):
+        if _holds(holder, created, start_id):
             psutil.Process(holder).kill()
 
 
-def _holds(pid: int, created: float) -> bool:
+def _holds(pid: int, created: float, start_id: str) -> bool:
     """起動時刻が一致する同じholderが資源を保持したまま生存しているかを返す（PIDの再利用と区別する）。"""
     try:
         process = psutil.Process(pid)
-        return process.create_time() == created and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+        return process_identity.matches(process, created, None if start_id == "-" else start_id) and process.status() not in (
+            psutil.STATUS_ZOMBIE,
+            psutil.STATUS_DEAD,
+        )
     except psutil.Error, OSError:
         return False
 

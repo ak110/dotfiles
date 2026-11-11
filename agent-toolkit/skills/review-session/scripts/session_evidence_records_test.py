@@ -13,10 +13,6 @@ import session_evidence_records as evidence_records
 import session_evidence_stats as evidence_stats
 import session_evidence_warn as evidence_warn
 import session_review_evidence as evidence
-from session_review_evidence_test import (
-    _bundle_delegate_return_texts,
-    _user_events,
-)
 
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import (
@@ -33,6 +29,7 @@ from agent_toolkit._testing.session_evidence_support import (
     write_jsonl,
     write_subagent,
 )
+from agent_toolkit._testing.session_review_evidence_support import _bundle_delegate_return_texts, _user_events
 
 
 def test_main_resolves_codex_transcript_from_thread_id(

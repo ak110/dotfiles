@@ -4,21 +4,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-operations.md` |
-| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `../SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` |
+| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |
+| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` |
 
 ## 原因と対策
 
@@ -35,15 +35,32 @@
 有用な成功知見、誤った記録の訂正と重複・参照の整理も読込表の経験基準で選ぶ。
 同じ条件に有効な保存済み知見は再利用し、新しい教訓や重複するAWIを作ること自体を目標にしない。
 
-通常・batchの両方で、`effect_candidates_path`の変更と元セッションの実際の操作・結果を比較する。
+通常・batchの両方で、採用済みAWIの効果を、元セッションの実際の操作・結果と比べて確かめる。
+見直す項目は、確認待ちの一覧（`atk wi list --state=adopted --effect-check=pending`）と`atk wi grep --state=adopted`の検索から、振り返りの担当が選ぶ。
+対象のセッションで問題が続いているか悪化している場合は、その問題を目的にして採用された項目を先に選び、他の項目より前に判定する。
+続いている問題には、所要時間の分析で悪化していると判定した巡回の所要、同じ種類の指摘やユーザーの介入の反復、同じ不具合の再発が当たり、問題の種類は所要に限らない。
+選んだ項目が変更したファイル（`atk wi show`が示す対応commit）と、対象のセッションでの実際の操作（`atk run-script session-review-evidence`の照会）は、その場で確かめる。
+
+判定では、その項目の目的（H1直下に書かれた、何をどれだけ改善するか）の結果を確かめる。
+
+- 目的の値を比べる前に、提供する側の変更（対応commit）、配布（版の公開と稼働環境への反映）、使う側への適用（使う側が固定する版、主checkoutへの反映、対象セッションの実行記録）を同じ根拠でつなぐ。
+  使う側へ適用されていなければ、目的の値の変化から効果を判定せず「効果不足（未適用）」へ帰属させる。
+- 目的の値が採用の前後でどう変わったかを、同じ原因が残っているか、適用の条件が満たされていたか、1回あたりの所要と回数、仕事の量に分けて比べる。
+  対象の区間が短くなっていないことだけで効果不足とせず、回数や仕事の量が増えた場合はその原因へ帰属させる（`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」の区分に従う）。
+- その変更が、所要（足した工程、待ち）、複雑さ（足した状態、設定、条文）、不具合（その変更を直すための修正と作業項目）を増やしていないかを、変更履歴とキューの検索で確かめる。
+
 規範以外の仕組みも対応commitと通常操作から判断し、読込や起動だけで効果を確認済みとしない。
 判定は「効果を確認」「効果不足（同原因の再発・未適用・範囲不足）」「適用機会なし・観測不能（確認待ち）」「後日の確認不要」とし、適用機会、観測位置、未確認または不要の理由を残す。
+目的を達していない項目と、増やした負担が効果を上回ると判定した項目は、効果不足として保存し、是正のAWIを登録する。
+是正のAWIは、元の変更をやめる案と単純にする案を先に比べる（`../../wi-standards/references/drafting-completion-decisions.md`「採否と実現方式の確定」の効率改善の規定に従う）。
 効果不足は本節の過去対策比較へ渡す。
-ファイル別判定の保存、是正AWIの指定、部分確認・全確認の更新条件と保存結果の取得は、`../../wi-standards/references/states-and-dependencies-effect.md`「採用済みAWIの効果記録」に従う。
-`effect_unconfirmed_path`の件数と理由は、記録収集の`unconfirmed_scope`と分けて報告する。
-読込先や対応commitが不明なら、効果未確認として残す。
-効果候補が0件でも、対応付け不能や適用機会不明が残る項目を確認済みとしない。
-通読で既知の対策に対応する作業を認めた場合は、静的なファイル一致の有無だけで除外せず既存記録から比較する。
+判定の保存、是正AWIの指定と保存結果の取得は、`../../wi-standards/references/states-and-dependencies-effect.md`「採用済みAWIの効果記録」に従う。
+変更を実装したセッションの中で測れる部分（同じ条件での前後の比較）は、そのAWIの完成条件で確かめる。
+巡回の所要のように実装の後の巡回でしか測れない部分は、後の振り返りが採用の前の巡回と後の巡回を比べて確かめ、効果確認へ保存する。
+目標所要時間を持つ巡回の所要の改善は、元の項目が定めた同等の入力（件数、由来の内訳、レーンの数、検証・CI・成果の範囲）の巡回で、開始から終了までの所要を目標と比べて判定する。
+先に選んだ項目と判定は、振り返り結果報告の「効果確認」の行に書く。
+対応commitや適用機会が不明なら、効果未確認として残す。
+通読で既知の対策に対応する作業を認めた場合は、既存記録から比較する。
 
 `analysis-cost.md`「コストの無駄の確認」の採否・根拠を再利用し、品質と費用の判断結果を分けて保持する。
 改善機会の見送りは、維持すべき成果、作業量、代替案、採否の比較に対応付ける。
@@ -109,8 +126,8 @@ AWIの各節の記述分担は`agent-toolkit:wi-standards`、原稿と根拠の�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 対策と影響範囲の基準を適用する前 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 場面別の原因分析の基準を適用する前 | `agent-basics:bugfix/references/root-cause-scenarios.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
-| 振り返りの判断基準：比較して探す観点の基準を適用する前 | `analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対策と影響範囲の基準を適用する前 | `agent-basics:bugfix/references/root-cause-actions.md` |
+| 場面別の原因分析の基準を適用する前 | `agent-basics:bugfix/references/root-cause-scenarios.md` |
+| 振り返りの判断基準：比較して探す観点の基準を適用する前 | `analysis-cost.md` |

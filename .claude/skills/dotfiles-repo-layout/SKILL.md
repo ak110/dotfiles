@@ -16,10 +16,6 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../edit-dotfiles-norms/SKILL.md` | 判断 | `read:*/skills/edit-dotfiles-norms/SKILL.md` |
-
 ## ロールとファイル群の対応
 
 各ファイルを編集する際は、その対象読者となるロールを意識して作業を進める。
@@ -34,7 +30,7 @@ description: >
 - dotfiles編集者: 本リポジトリや`agent-toolkit`本体の変更を担当するコーディングエージェント。
   全プロジェクト編集者の設定に加えて、リポジトリ直下の`.claude/`や`AGENTS.md`を読み込む。
   なお、Claude Codeは`CLAUDE.md`や`CLAUDE.local.md`が存在しないプロジェクトにおいて`AGENTS.md`を直接読み込む仕様となっている。
-  観測記録は`docs/development/audit-records.md`「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」を参照する。
+  観測記録は`docs/development/audit-records-project-instructions.md`「プロジェクト指示のCLAUDE.mdアダプター：2026年9月26日」を参照する。
 
 | ファイル群 | 対象読者 | 役割 |
 | --- | --- | --- |

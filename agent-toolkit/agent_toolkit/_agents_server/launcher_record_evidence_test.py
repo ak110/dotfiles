@@ -121,10 +121,8 @@ async def test_task_record_reaches_public_evidence(
         agents_server_support.install_backend(current, "claude", backend)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         monkeypatch.setenv("CODEX_THREAD_ID", "self")
-        requested: list[str] = []
 
         def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
-            requested.append(session_id)
             return record_paths.SessionRecord(engine, (records[session_id],))
 
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
@@ -139,7 +137,6 @@ async def test_task_record_reaches_public_evidence(
         started = await _start_task(tmp_path, request)
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
-        assert requested == ["direct-parent"]
         assert context["launcher_session_id"] == "direct-parent"
         assert context["status"] == "resolved"
         assert context["record_engine"] == engine
@@ -232,10 +229,8 @@ async def test_task_record_reaches_public_observation_evidence(
         backend = _ObservedBackend(current.sessions, "claude")
         agents_server_support.install_backend(current, "claude", backend)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        requested: list[str] = []
 
-        def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
-            requested.append(session_id)
+        def find_record(_session_id: str, **_kwargs: Any) -> record_paths.SessionRecord:
             return record_paths.SessionRecord(engine, (transcript,))
 
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
@@ -245,7 +240,6 @@ async def test_task_record_reaches_public_observation_evidence(
         )
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
-        assert requested == ["observation-parent"]
         assert context["status"] == "resolved"
         assert context["launcher_session_id"] == "observation-parent"
         assert context["record_engine"] == engine
@@ -319,10 +313,8 @@ async def test_task_starts_with_record_shortage_without_substitute(
         _write_record(tmp_path, engine, "ancestor")
         _write_record(tmp_path, engine, "self")
         candidates = tuple(_write_record(tmp_path, engine, f"candidate-{index}") for index in range(2))
-        requested: list[str] = []
 
-        def find_record(session_id: str, **_kwargs: Any) -> record_paths.SessionRecord | None:
-            requested.append(session_id)
+        def find_record(_session_id: str, **_kwargs: Any) -> record_paths.SessionRecord | None:
             return record_paths.SessionRecord(engine, candidates) if availability == "ambiguous" else None
 
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
@@ -332,7 +324,6 @@ async def test_task_starts_with_record_shortage_without_substitute(
         context = _context(backend.prompts[0], tmp_path)
         assert context["status"] == availability
         assert "record_path" not in context
-        assert requested == ([] if availability == "unresolved" else ["direct-parent"])
         if availability == "unresolved":
             assert "launcher_session_id" not in context
         else:

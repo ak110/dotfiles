@@ -672,8 +672,9 @@ def _held_by_other_live_writer(path: pathlib.Path) -> bool:
         or isinstance(create_time, bool)
     ):
         return False
-    identity = session_registry.ProcessIdentity(pid, float(create_time))
-    return identity != session_registry.owner_process() and identity.exists()
+    identity = session_registry.ProcessIdentity(pid, float(create_time), writer.get("start_id"))
+    owner = session_registry.owner_process()
+    return (owner is None or not identity.compatible_with(owner)) and identity.exists()
 
 
 def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> set[str]:

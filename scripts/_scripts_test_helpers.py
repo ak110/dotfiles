@@ -4,6 +4,7 @@ pytestのprependモードではリポジトリ直下と`scripts/`がともに`sy
 先に読み込んだ方だけが`sys.modules`に残る。直下の`_test_helpers.py`と衝突しないよう、本ファイルは別の名前にする。
 """
 
+import pathlib
 import re
 from pathlib import Path
 
@@ -37,3 +38,31 @@ def expected_ps1_block(names: list[str]) -> str:
     """`install-claude.ps1`の自動生成ブロックの期待値を返す。"""
     body = "\n".join(f"    '{name}'" for name in names)
     return f"# {INSTALL_FILES_BEGIN}\n$files = @(\n{body}\n)\n# {INSTALL_FILES_END}"
+
+
+def _write(tmp_path: pathlib.Path, body: str, *, name: str = "doc.md") -> pathlib.Path:
+    """確認するファイルを作成し、そのパスを返す。"""
+    path = tmp_path / name
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+_DENSITY_BODY = (
+    "---\n"
+    "title: 例\n"
+    "---\n"
+    "<!-- 注記の1行目\n"
+    "注記の2行目\n"
+    "-->\n"
+    "前置きの文である。対象は変更しない。\n"
+    "- 結合する項目は変更し\n"
+    "ない。\n"
+    "値を読む。値は書かない。\n"
+    "当該の値を記録する。当該の行を読む。\n" + "観測した値を記録する。\n" * 15
+)
+
+
+"""前方に複数行のHTMLコメントとfrontmatterを置き、1行に複数の文がある行と句点の無い箇条書きの行を含む入力。
+
+文数22、否定形で終わる文は7行目・9行目・10行目の3文、「当該」は11行目の2回である。
+"""

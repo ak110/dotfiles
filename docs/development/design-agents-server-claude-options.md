@@ -1,0 +1,38 @@
+# Claudeのキャッシュと起動設定の設計記録
+
+[設計記録の索引](design.md)から参照する、Claudeのキャッシュと起動設定の記録である。
+
+## backend構成と起動
+
+### プロンプトキャッシュの保持期間
+
+Claude Codeが起動する委譲先のプロンプトキャッシュ保持期間を未設定のままにせず、`share/claude_settings_json_managed.json`の`promptCacheTtl`と`subagentPromptCacheTtl`でメイン会話側とサブエージェント側の双方へ明示する。
+Claude Agent SDKで開始する`agents_server`のセッションは、この設定だけでは意図した保持期間にならない。
+このため`agent-toolkit/agent_toolkit/_agents_server/claude_options.py`の`_build_options`がenvとsettings.envへ同じ辞書から`mode`ごとの値を渡す。
+user・project設定のenvは子の環境変数を上書きするため、CLIの最優先settings層にも値を置く。
+SDK自身が読むイベント通知の印にはenvも必要である。
+軽量起動はユーザー設定を読み、SDKのターンがmain conversationのrequest bucketとして扱われるため、main conversationのrequest bucketに対する未設定時の保持期間が適用される。
+連続する要求の間隔の中央値が6.3秒であり300秒を超える間隔が516件中1件しか発生しないため、5分でも失効せず、書き込み単価の低い5分を指定する。
+通常起動は設定読込元を指定していても配下のサブエージェントへ`subagentPromptCacheTtl`が届かず5分で書き込むため、1時間を指定する。
+届かない原因は公開資料から特定できておらず未確定とする。
+このため、サブエージェント側の未設定時の保持期間が短いことを理由に委譲を減らす設計判断は採らない。
+キャッシュ効率を根拠として委譲構造を見直す場合は、実際の計測値を根拠とする。
+Claude Codeでの計測値は`~/.claude/projects`配下のセッション記録から`message.usage.cache_creation`の`ephemeral_1h_input_tokens`と`ephemeral_5m_input_tokens`を担当ごとに集計して得る。
+集計に用いるフィールド名はClaude Code v2.1.258で確認した。
+2026年8月20日以降に開始し、サブエージェント側へ1時間を設定する前の649スレッドを対象とした集計では、Agentツール経由のサブエージェント全体は連続する要求の間隔が300秒を超える場合が3.26パーセントあり、その直後の要求が1件あたり約15万トークンを再度書き込む。
+保持期間を5分へ短縮するとこの再書き込みが復活する。
+1時間のトークン量に対する相対費用は5分の場合より4.45パーセント低いため、サブエージェント側の設定は1時間を維持する。
+
+### Claudeの起動設定と受信上限
+
+親の`--settings`がJSONなら他キーとenvの他キーを保ち、起動元の全envキーを上書きする。
+ファイルの場合は内容をargvへ展開せず、所有者だけが読める起動別の合成ファイルを渡す。
+不読・不正JSON・非objectの親は継承せずenvだけを使う。
+合成処理と回収は`_agents_server/claude_settings.py`が担当する。
+成功・失敗の接続終了と依存確認の終了で自身のファイルを回収し、異常終了後の残存物は既存のrootの7日掃引が回収する。
+CLIのstdoutのNDJSONの1行には、モデルへ渡らないtool_use_resultも含まれる。
+EditのoriginalFileがファイル全体を持つため、SDKの既定1MiBでは通常の編集だけで受信に失敗する。
+共通optionsは全起動区分・resumeへ4GiBのmax_buffer_sizeを渡す。
+CLIの最大編集可能サイズ1GiBと差分を収めるための上限値である。
+この指定で4GiBを事前に確保することはない。
+モデルへの出力量の指示ではこの受信失敗を防げない。

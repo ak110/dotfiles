@@ -3,7 +3,9 @@
 import logging
 import os
 import subprocess
+import sys
 import types
+import typing
 from pathlib import Path
 
 import httpx
@@ -11,6 +13,42 @@ import psutil
 import pytest
 
 from pytools._internal import setup_cli_common
+
+
+@pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
+def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog, stderr):
+    """npmの診断を保持の理由へ含め、空出力の失敗には終了コードを示す。"""
+    old = tmp_path / "old"
+    old.mkdir()
+    launcher = old / "codex"
+    launcher.touch()
+    (old / "npm").touch()
+    (old / "npm.cmd").touch()
+    monkeypatch.setenv("PATH", str(old))
+
+    def fail(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 1, "", stderr)
+
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fail)
+    assert not setup_cli_common.migrate_npm_launchers(
+        "codex", "@openai/codex", tmp_path / "canonical/bin/codex", tmp_path / "canonical"
+    )
+    assert launcher.is_file()
+    output = "\n".join(caplog.messages)
+    assert "npmの導入先を取得できない" in output
+    assert "終了コード1" in output
+    assert (stderr or "exit 1") in output
+    assert "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する" in output
+    print(output)
+
+
+def _patch_windows_processes(monkeypatch: pytest.MonkeyPatch, processes: list[object]) -> None:
+    """Windowsの列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
+    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
+    monkeypatch.setattr(
+        setup_cli_common.psutil, "process_iter", lambda: [types.SimpleNamespace(pid=pid) for pid in range(len(processes))]
+    )
+    monkeypatch.setattr(setup_cli_common.psutil, "Process", lambda pid: processes[pid])
 
 
 @pytest.mark.parametrize(
@@ -254,8 +292,7 @@ def test_windows_node_command_line_is_detected(monkeypatch) -> None:
         def cmdline(self) -> list[str]:
             return ["node.exe", "C:/node_modules/@openai/codex/bin/codex.js"]
 
-    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-    monkeypatch.setattr(setup_cli_common.psutil, "process_iter", lambda: [NodeProcess()])
+    _patch_windows_processes(monkeypatch, [NodeProcess()])
 
     assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex")
 
@@ -272,8 +309,7 @@ def test_windows_access_denied_for_possible_cli_process_defers(monkeypatch, proc
         def cmdline(self) -> list[str]:
             raise AssertionError("exeでAccessDeniedとなるため到達しない")
 
-    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-    monkeypatch.setattr(setup_cli_common.psutil, "process_iter", lambda: [InaccessibleProcess()])
+    _patch_windows_processes(monkeypatch, [InaccessibleProcess()])
 
     assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex") is (process_name == "codex.exe")
 
@@ -594,8 +630,7 @@ def test_windows_process_classification(
         def cmdline(self) -> list[str]:
             return cmdline
 
-    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-    monkeypatch.setattr(setup_cli_common.psutil, "process_iter", lambda: [Process()])
+    _patch_windows_processes(monkeypatch, [Process()])
 
     assert setup_cli_common.is_windows_cli_running("codex", "@openai/codex", [tmp_path / "bin" / "codex.cmd"]) is expected
 
@@ -606,7 +641,38 @@ def test_windows_process_races_are_ignored(monkeypatch, error: Exception) -> Non
         def name(self) -> str:
             raise error
 
-    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
-    monkeypatch.setattr(setup_cli_common.psutil, "process_iter", lambda: [VanishedProcess()])
+    _patch_windows_processes(monkeypatch, [VanishedProcess()])
 
     assert not setup_cli_common.is_windows_cli_running("codex", "@openai/codex")
+
+
+def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
+    """列挙が再利用するProcessだけを以前の世代の実行名・実行ファイルにし、走査を対象のPIDへ限る。
+
+    PIDの自然な再利用や実行ファイルの置き換えを待たずに、列挙キャッシュへ以前の値が残った状態を作る。
+    """
+    stale = psutil.Process(pid)
+    monkeypatch.setattr(stale, "_name", name)
+    monkeypatch.setattr(stale, "_exe", exe)
+    monkeypatch.setitem(vars(psutil)["_pmap"], pid, stale)
+    real_process_iter = psutil.process_iter
+
+    def own_process(*args: typing.Any, **kwargs: typing.Any) -> list[psutil.Process]:
+        return [item for item in real_process_iter(*args, **kwargs) if item.pid == pid]
+
+    monkeypatch.setattr(psutil, "process_iter", own_process)
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="仮想環境のpython.exeは本体を子として起動するため、起動したPIDだけに走査を限定できない"
+)
+def test_windows_cli_running_reads_current_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """列挙キャッシュに以前の世代のCLIの実行名と実行ファイルが残っていても、現在の属性で実行中かを判定する。"""
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
+        try:
+            _inject_previous_generation(monkeypatch, child.pid, name="codex.exe", exe="C:/tools/codex.exe")
+            monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
+            running = setup_cli_common.is_windows_cli_running("codex", "@openai/codex")
+        finally:
+            child.kill()
+    assert not running

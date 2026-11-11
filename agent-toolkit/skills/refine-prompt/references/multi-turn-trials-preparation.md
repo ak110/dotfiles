@@ -48,6 +48,6 @@ atk run-script multi-turn-trials -- prepare --case attachment-paths --output <�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 固定課題による多ターン試行：保存対話と採点の基準を適用する前 | `multi-turn-trials-grading.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials-grading.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 固定課題による多ターン試行：保存対話と採点の基準を適用する前 | `multi-turn-trials-grading.md` |

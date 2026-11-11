@@ -169,7 +169,13 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
         successor = manager.sessions[response["session_id"]]
         document = launch_requests._SHARE_DIRECTORY / "exec.subagent.md"  # pylint: disable=protected-access
         assert str(document) in successor.prompt
-        assert predecessor.prompt in successor.prompt
+        assert (
+            predecessor.prompt.replace(
+                f"引き継ぎ記録先: {params['引き継ぎ記録先']}",
+                f"引き継ぎ記録先: {params['引き継ぎ記録先']}（継続）",
+            )
+            in successor.prompt
+        )
         assert successor.model_type == predecessor.model_type == "execute"
         assert successor.launch_kind == predecessor.launch_kind
         assert successor.label == predecessor.label
@@ -204,7 +210,7 @@ def test_prompt_delivers_full_history_and_record_paths(
     records = (tmp_path / "record.jsonl",)
     prompt = session_handoff.compose_prompt(predecessor, conversation, records)
     for expected in (
-        predecessor.prompt,
+        predecessor.prompt.replace("（新規）", "（継続）"),
         f"引き継ぎ記録先: {handoff}（継続）",
         str(conversation),
         str(records[0]),

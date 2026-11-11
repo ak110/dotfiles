@@ -19,6 +19,7 @@ from agent_toolkit._agents_server import (
     codex,
     manager,
     manager_resume,
+    manager_start,
     mcp_tools,
     opencode,
     plugin_root,
@@ -154,7 +155,7 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
                 manifest.write_text(json.dumps({"name": "agent-basics"}), encoding="utf-8")
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setattr(plugin_root, "SERVER_PLUGIN_ROOT", toolkit)
-    monkeypatch.setattr(manager, "SERVER_PLUGIN_ROOT", toolkit)
+    monkeypatch.setattr(manager_start, "SERVER_PLUGIN_ROOT", toolkit)
     monkeypatch.setattr(manager_resume, "SERVER_PLUGIN_ROOT", toolkit)
     monkeypatch.setattr(plugin_roots, "_plugin_inventory", inventory.inventory)
     return inventory

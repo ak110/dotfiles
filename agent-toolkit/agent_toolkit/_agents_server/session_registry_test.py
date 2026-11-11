@@ -24,6 +24,17 @@ from agent_toolkit._testing.agents_server_support import (
 )
 
 
+@pytest.mark.parametrize("terminal", [False, True])
+def test_version_one_record_is_unreadable(tmp_path: pathlib.Path, terminal: bool) -> None:
+    """版数1は終了状態にかかわらず読めない記録として扱う。"""
+    subject.publish("old-session", state=subject.PublicationState.PENDING_RUNNING, state_root=tmp_path)
+    path = subject.registry_directory(tmp_path) / "old-session.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload.update(version=1, terminal=terminal)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert subject.resolve("old-session", state_root=tmp_path).state is subject.Resolution.UNREADABLE
+
+
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
     """同じsessionの実行中状態を終了状態で置き換えて観測する。"""
     subject.publish("child-session", state=subject.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), state_root=tmp_path)
@@ -289,7 +300,7 @@ def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(
     """
     owner = subject.owner_process()
     assert owner is not None
-    reused_pid = subject.ProcessIdentity(owner.pid, owner.create_time - 1.0)
+    reused_pid = subject.ProcessIdentity(owner.pid, owner.create_time - 1.0, "other-generation")
     subject.publish(
         "orphaned",
         state=subject.PublicationState.PENDING_RUNNING,
@@ -337,13 +348,13 @@ def test_session_publishes_owner_and_executor_processes(tmp_path: pathlib.Path, 
     session.touch()
     path = subject.registry_directory(tmp_path) / "published.json"
     recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
-    assert recorded == [{"pid": owner.pid, "create_time": owner.create_time}] * 2
+    assert recorded == [owner.payload()] * 2
 
     restarted = exited_process_identity()
     session.executor_process = restarted
     session.touch()
     recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
-    assert recorded[1] == {"pid": restarted.pid, "create_time": restarted.create_time}
+    assert recorded[1] == restarted.payload()
 
 
 @pytest.mark.parametrize("record_kind", ["completed", "released", "owner-gone"])

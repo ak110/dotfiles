@@ -6,10 +6,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
-| 再発防止セルフチェック担当を起動する前 | `recurrence-self-check.parent.md` | 判断 | `read:agent-toolkit:*/share/recurrence-self-check.parent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `reader-fit-review.parent.md` |
+| 再発防止セルフチェック担当を起動する前 | `recurrence-self-check.parent.md` |
 
 ## 操作区分
 

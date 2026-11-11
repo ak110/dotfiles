@@ -18,10 +18,6 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/references/quality-standards.md` |
-
 ## 一時rootと自動削除
 
 managed-tempの一時rootは次のディレクトリとなる。
@@ -106,6 +102,6 @@ process-wiのレーンworktreeは次の手順で扱う。
 
 ## 工程で参照する運用資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:managed-temp/references/ui-ux.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/references/ui-ux.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:managed-temp/references/ui-ux.md` |

@@ -4,12 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `read-method.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/read-method.md` |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
 
 ## 記述内容の取捨
 
@@ -42,6 +39,16 @@
 - 独立して変更され得る制約事項は、箇条書きの項目を分ける。
   衝突する可能性がある指示には優先順位や判断基準を明記し、否定形や例外条件が重なる場合は、条件と取るべき行動との対応関係が一目で読み取れるように記述を整理する（努力目標。相反する指示が併存すると満たしやすい方に判断が偏りやすく、変更範囲の最小化を優先する指示が原因への根本対策を妨げることがあるため）。
 - 代替案が自明でない制限を設ける場合は、代わりに行うべき行動を合わせて明記する。
+- 禁止や承認の規則は、次の3点に従って書く（努力目標。Claude Fable 5.2は規則を書かれたとおりに適用するためで、dotfilesでの比較は行っていない）。
+  根拠は`docs/development/audit-records.md`の次の見出しにある。
+  「agent-basics/skills/writing-standards/references/agent-documents-basics-content.md：条件と範囲の記述：2026年11月11日」
+  - 対象とする操作を特定して書く。
+    対象の広い規則は、日常の作業まで控えさせる。
+  - 禁止に例外や事前承認で許す条件がある場合は、その条件を同じ規則の文へ書く。
+    別の行に置いた許可は効果が小さい。
+  - 承認なしで進めてよい操作は個別に名指しする。
+    「より自由に行動してよい」のような一般的な指示では挙動が変わらない。
+    再試行を名指しするのは、繰り返しても安全な操作に限る。
 - 既存の規定の表現を変更する際は、実行時の振る舞いが意図せず変化しないことを確認する。
   条文を別資料への参照に置き換える場合は、集約した義務（判定、工程、契機など）が参照先の本文に確実に含まれていることを読み取って確認する（努力目標）。
 - 対象を一意に特定できる明確な言葉で記述し、指示語は具体的な名称に置き換える。

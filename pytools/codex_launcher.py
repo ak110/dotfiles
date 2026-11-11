@@ -11,11 +11,11 @@ import sys
 from collections.abc import Sequence
 
 # 非対話の公開コマンドはhookから繰り返し起動される。対話端末の復旧だけが使う依存は、
-# 実行体へ引き渡すまで読み込まない（docs/development/design-hosts.md「Codexの起動管理とdaemon復旧」）。
+# 実行体へ引き渡すまで読み込まない（docs/development/design-hosts-codex-runtime.md「Codexの起動管理とdaemon復旧」）。
 lazy import asyncio
 
 lazy import psutil
-lazy from agent_toolkit._common import process_tree
+lazy from agent_toolkit._common import process_identity, process_tree
 
 from pytools._internal import codex_runtime
 lazy from pytools._internal import common
@@ -166,7 +166,7 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
             try:
                 with contextlib.suppress(psutil.NoSuchProcess):
                     identity = psutil.Process(process.pid)
-                    identity.create_time()
+                    process_identity.start_id(identity)
                 waited = asyncio.create_task(process.wait())
                 try:
                     assert bridge.failure is not None

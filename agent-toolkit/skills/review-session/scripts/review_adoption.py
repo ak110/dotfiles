@@ -25,7 +25,8 @@ from agent_toolkit._common.runtime_identity import distinct_identities
 # 実行レビュー担当の記録だけを選ぶ標識。agents_serverは役割文書の所在を`出所:`の行で最初の入力へ配送する。
 # 委譲元の記録にも同じ管理表の名前が現れるため、名前の一致だけでは帰属させない。
 _ROLE_MARKER = re.compile(r"出所: \S*share/exec-review\.subagent\.md")
-_ROLE_SCAN_BYTES = 256 * 1024
+# Codexの記録で、モデルの出力として現れる`response_item`の種類。これより前の入力だけを依頼文の候補にする。
+_CODEX_OUTPUT_TYPES = frozenset({"reasoning", "function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
 # 判断主体を示す不採用（メイン・レーン担当・統括・ユーザーの判断による見送り）。それ以外はレビュー担当側の不採用とする。
 _JUDGMENT_REASON = re.compile(r"根拠の所在:[\s`]*(メイン|レーン担当|統括|ユーザー)")
 _MODEL_UNKNOWN = "モデル不明"
@@ -36,14 +37,54 @@ def _reason_class(text: str) -> str:
     return "判断による見送り" if _JUDGMENT_REASON.search(text) else "レビュー担当の前提の誤り・撤回"
 
 
+def _input_texts(entry: dict[str, Any]) -> list[str] | None:
+    """記録の1行から、user役割の入力本文を返す。モデルの出力ならNoneを返す。"""
+    message = entry.get("message")
+    payload = entry.get("payload")
+    content: Any = None
+    if entry.get("type") == "assistant":
+        return None
+    if entry.get("type") == "user" and isinstance(message, dict):
+        content = message.get("content")
+    elif entry.get("type") == "response_item" and isinstance(payload, dict):
+        if payload.get("type") in _CODEX_OUTPUT_TYPES:
+            return None
+        if payload.get("type") == "message":
+            if payload.get("role") == "assistant":
+                return None
+            if payload.get("role") == "user":
+                content = payload.get("content")
+    if isinstance(content, str):
+        return [content]
+    if isinstance(content, list):
+        return [block["text"] for block in content if isinstance(block, dict) and isinstance(block.get("text"), str)]
+    return []
+
+
 def _is_review_record(path: Path) -> bool:
-    """記録の先頭に実行レビュー担当の役割文書の配送があるかを返す。"""
+    """最初のモデル出力より前の入力本文に、実行レビュー担当の役割文書の配送があるかを返す。
+
+    依頼文より前に置かれる内容（道具の定義、規範の配送、環境の状態）の大きさは配布物の量で変わるため、
+    先頭からの固定長では依頼文に届かない記録がある。記録の構造から依頼文の位置を決める。
+    最初のモデル出力より後ろは読まない。標識の文字列を引用しただけの会話を、レビュー担当の記録と区別するためである。
+    """
     try:
-        with path.open("rb") as stream:
-            head = stream.read(_ROLE_SCAN_BYTES).decode("utf-8", errors="replace")
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(entry, dict):
+                    continue
+                texts = _input_texts(entry)
+                if texts is None:
+                    return False
+                if any(_ROLE_MARKER.search(text) for text in texts):
+                    return True
     except OSError:
         return False
-    return _ROLE_MARKER.search(head) is not None
+    return False
 
 
 def _record_identity(path: Path, text: str) -> str:
@@ -65,7 +106,7 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
     """管理表のファイル名ごとに、その名前を本文に含む実行レビュー担当の記録から求めたモデルを返す。
 
     配布先にripgrepがあるとは限らないため、外部コマンドを使わずに走査する。
-    全記録の本文を読むと重いため、先頭の役割標識で対象を実行レビュー担当の記録に限定してから本文を読む。
+    全記録の本文を読むと重いため、最初のモデル出力より前の役割標識で対象を実行レビュー担当の記録に限定してから本文を読む。
     """
     if not names:
         return {}

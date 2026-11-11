@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-common.md` |
-| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
-| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-run-skill.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` |
+| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
+| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` |
 
 ## hookの診断計測
 
@@ -50,3 +50,8 @@ Codex PreToolUseの長い追加通知は、既存のsession managed-tempへ全�
   別主体の値は回復に使わない。
   英語の説明は同一再発行でも遮断する。
   生存期間の上限はセッション状態ファイルと同一とする
+- `generic_agent_retry_by_actor`: `pretooluse/agent_checks.py`が、組み込みの汎用Agent定義の起動を拒否したときに、呼出主体からツール名・入力全体のSHA256の一覧（主体ごとに直近32件）へのマッピングを保持する。
+  同じ主体が同一入力で再発行した起動は通し、通した指紋は消費する。
+  この状態を保存できない場合は、拒否せず警告だけを返して起動を通す。
+  `agents_server`を試した後の再発行と、続けて発行した複数の起動を通すため、別の操作を挟んでも失効させない。
+  生存期間はセッション状態ファイルと同一とする

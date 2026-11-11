@@ -8,15 +8,11 @@ GitLabやCLIに接続できない環境では、提示された設定の検討�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーを返したとき | `gitlab-self-hosted-tls.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/gitlab-self-hosted-tls.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 自己署名のTLS証明書のGitLab私設ホストで`glab`がTLS証明書検証エラーを返したとき | `gitlab-self-hosted-tls.md` |
 
 ## 基本方針
 

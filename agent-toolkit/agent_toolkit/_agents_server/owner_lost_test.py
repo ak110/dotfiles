@@ -320,7 +320,7 @@ async def test_kill_does_not_stop_process_whose_start_time_differs(
 ) -> None:
     """起動時刻が記録と一致しないプロセスは、同じpidでも停止しない（完成条件2）。"""
     with _live_process(tmp_path) as (owner_process, owner), _live_process(tmp_path) as (reused_process, reused):
-        stale = session_registry.ProcessIdentity(reused.pid, reused.create_time - 1000)
+        stale = session_registry.ProcessIdentity(reused.pid, reused.create_time - 1000, "other-generation")
         _publish_running(monkeypatch, tmp_path, "codex", (owner, stale))
         async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
             manager.activate()

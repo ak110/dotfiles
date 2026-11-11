@@ -11,6 +11,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -61,6 +62,15 @@ def _normalized(text: str) -> str:
     return " ".join(text.split())
 
 
+_NO_FINDING_PATTERN = re.compile(r"なし(?:\s*(?:（[^（）]*）|\([^()]*\)))?")
+"""指摘0件を表す箇条。返却契約（`wi-draft-review.subagent.md`「出力」）は、前回の指摘の解消などの補足を
+`なし`に続く全角または半角の丸括弧の中へ書く形を許す。括弧の注記でない文が続く箇条は指摘として数える。"""
+
+
+def _is_no_finding(item: str) -> bool:
+    return _NO_FINDING_PATTERN.fullmatch(item) is not None
+
+
 def review_findings(path: pathlib.Path) -> list[str]:
     """各`指摘:`欄の最上位箇条の先頭本文だけを、記録のtextと比較するキーとして返す。"""
     try:
@@ -87,7 +97,7 @@ def review_findings(path: pathlib.Path) -> list[str]:
             if indent > item_indent:
                 continue
             item = stripped[2:].strip()
-            if item and item != "なし":
+            if item and not _is_no_finding(item):
                 found.append(item)
             continue
         if item_indent is not None and indent > item_indent:

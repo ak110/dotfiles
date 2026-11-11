@@ -4,23 +4,23 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 合流した公開対象を判断する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
-| 目標起点の公開対象を判断する前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
-| 基準資料を選択・取得する時 | `../../../share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
-| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
-| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 公開版反映後の役割起動で稼働実装と資源の版相違が示された時 | `../../delegation/references/wait-anomalies-failures.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-failures.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 合流した公開対象を判断する前 | `selection-procedure-addition.md` |
+| 目標起点の公開対象を判断する前 | `lanes-goals.md` |
+| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:/share/session-termination.parent.md` |
+| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` |
+| 基準資料を選択・取得する時 | `../../../share/add-wi.parent.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:report-completion/SKILL.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/waiting-claude-code.md` |
+| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
+| 基準資料を選択・取得する時 | `../../commit/references/push-and-ci.md` |
+| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` |
+| 公開版反映後の役割起動で稼働実装と資源の版相違が示された時 | `../../delegation/references/wait-anomalies-failures.md` |
 
 ## 公開対象が無い場合の短絡
 
@@ -107,7 +107,11 @@ worktreeの作成・回収のようにGit共通ディレクトリの構成を変
 - 独立した追加工程: 長時間を要する公開・デプロイ・CI待機や追加の公開工程については、入力コミット、成果物、配備先、排他制御が必要なリソース、先行工程の成功が前提となるかどうかを、起動前にあらかじめ進捗記録へ記載する。
   独立して進められる追加工程（別の成果物や配備先に対する緊急デプロイなど）は別のエージェントへ委ねて並行稼働させ、先行工程の成功を入力とする工程は、先行側の成功を確かめてから着手する。
   公開担当への指示においては、待機対象とする工程と並行して開始する工程を明確に区別する。
-- 常時稼働サーバーへの反映: `SKILL.md`「工程」に定める反映・稼働確認手段が備わるプロジェクトでは、全レーンの統合を検収してリソースを保持したまま、公開担当の起動直後（公開担当の起動を省く場合は統合検収の直後）に反映を開始する。
+- 常時稼働サーバーへの反映: 直接実行・委譲の双方で、`agent-toolkit:report-completion/SKILL.md`「工程」に定める反映・稼働確認手段が備わるプロジェクトでは、全レーンの統合を検収してリソースを保持したまま、反映入力が利用可能になった時点で反映・再起動を開始する。
+  反映入力がpush済みSHAならpush確認後、公開前でも利用できるローカル成果なら必要なローカル検収後に開始してよい。
+  CI未判定でもこの開始条件を満たせば進め、同じSHAのCI監視を並行して継続し、巡回の最終完了前に結果を検収する。
+  CI成功を前提とするリリースや配備などは、既存の成功条件を保つ。
+  再起動前には、入力SHA、CI監視の担当・実行識別子・保存出力、未完了工程と再開位置を既存の引き継ぎ記録へ保持し、再起動後に同じ監視を継続できることを確認する。
   反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、および稼働確認の結果を完了報告へ渡す。
 
 主checkoutへの反映と、既存の長命なMCPサーバーのコード更新を区別する。
@@ -122,16 +126,16 @@ worktreeの作成・回収のようにGit共通ディレクトリの構成を変
 
 ### 公開担当起動後の会話圧縮
 
-**11.** Claude Codeのメインエージェントは、公開担当を起動するたびに前述の並行工程（投入担当、読み取り調査担当、追加公開工程、常時稼働サーバーへの反映）を先に開始し、長時間の待機に入る前に会話圧縮を予約する。
+**11.** 公開担当の起動に伴う一律の会話圧縮の手動予約は行わず、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」にある時間・使用量条件付きの自動予約とホスト標準の圧縮に任せる。
+前述の並行工程は開始条件を満たしたものから先に進め、既存の圧縮予約がある場合も重複予約しない。
 
- 予約後の復元では、注入された要約を起点に対象worktree、公開入力コミット、担当別引き継ぎ記録、保存出力と既存の資源登録から必要な情報を取得する。
- 予約と復元の手順は`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従い、引数を指定せずに予約し、通知を受け取った後に同一の公開工程へ復帰する。
- 公開対象が存在しないため公開担当の起動を省略した場合は、この会話圧縮予約のステップも省略する。
+ 圧縮後の復元では、注入された要約を起点に対象worktree、公開入力コミット、担当別引き継ぎ記録、保存出力と既存の資源登録から必要な情報を取得する。
+ 同書の復元手順に従って要求・認可と未完了の操作を原本から確定し、同一の公開工程へ復帰する。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIの処理の基準を適用する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 公開工程とセッション終了：延期adoptと反映後の観測の基準を適用する前 | `finish-session-observation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-observation.md` |
-| 公開工程とセッション終了：公開工程の続行不能の回復と再開の基準を適用する前 | `finish-session-recovery.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの処理の基準を適用する前 | `../SKILL.md` |
+| 公開工程とセッション終了：延期adoptと反映後の観測の基準を適用する前 | `finish-session-observation.md` |
+| 公開工程とセッション終了：公開工程の続行不能の回復と再開の基準を適用する前 | `finish-session-recovery.md` |

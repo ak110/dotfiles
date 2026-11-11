@@ -6,13 +6,21 @@ import typing
 import psutil
 import pytest
 
-from agent_toolkit._common import plugin_root_leases, process_tree, session_activity, session_registry, state_paths
+from agent_toolkit._common import (
+    plugin_root_leases,
+    process_identity,
+    process_tree,
+    session_activity,
+    session_registry,
+    state_paths,
+)
 
 
 @pytest.mark.parametrize("observation", ["running", "zombie", "dead", "pid-reused", "access-denied"])
-@pytest.mark.parametrize("consumer", ["lease-basis", "lease-use", "identity", "activity", "reclaim"])
+@pytest.mark.parametrize("consumer", ["lease-basis", "lease-use", "lease-sweep", "identity", "activity", "reclaim"])
 def test_process_state_consumers_preserve_identity_and_end_states(tmp_path, monkeypatch, observation, consumer):
     """同じOS状態でも、終了・同一性・取得不能の各契約を区別する。"""
+    monkeypatch.setattr(process_identity, "start_id", lambda process, **kwargs: f"test:{process.create_time()}")
     original = psutil.Process
     username = original().username()
     value = {"state": "running"}
@@ -58,7 +66,9 @@ def test_process_state_consumers_preserve_identity_and_end_states(tmp_path, monk
     if consumer in {"identity", "activity", "reclaim"}:
         value["state"] = observation
         if consumer == "identity":
-            assert session_registry.ProcessIdentity(process.pid, 42.0).exists() is (observation in {"running", "access-denied"})
+            assert session_registry.ProcessIdentity(process.pid, 42.0, "test:42.0").exists() is (
+                observation in {"running", "access-denied"}
+            )
         elif consumer == "activity":
             assert bool(session_activity.host_processes()) is (observation not in {"zombie", "dead"})
         else:
@@ -72,7 +82,7 @@ def test_process_state_consumers_preserve_identity_and_end_states(tmp_path, monk
         plugin_root_leases.register_plugin_root_use(area)
         record = next((state_paths.state_dir() / "plugin-root-leases").glob("*.json"))
         raw = json.loads(record.read_text(encoding="utf-8"))
-        raw.update(pid=process.pid, created_at=42.0)
+        raw.update(pid=process.pid, created_at=42.0, start_id="test:42.0")
         record.write_text(json.dumps(raw), encoding="utf-8")
         assert plugin_root_leases.plugin_root_in_use(area)
         basis = plugin_root_leases.usage_basis()
@@ -80,5 +90,9 @@ def test_process_state_consumers_preserve_identity_and_end_states(tmp_path, monk
         value["state"] = observation
         if consumer == "lease-basis":
             assert plugin_root_leases.usage_basis_is_current(basis) is (observation == "running")
-        else:
+        elif consumer == "lease-use":
             assert plugin_root_leases.plugin_root_in_use(area) is (observation in {"running", "access-denied"})
+    if consumer == "lease-sweep":
+        with plugin_root_leases.reuse_process_observation():
+            plugin_root_leases.sweep_plugin_root_records()
+        assert record.exists() is (observation in {"running", "access-denied"})

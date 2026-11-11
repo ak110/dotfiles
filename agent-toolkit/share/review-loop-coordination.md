@@ -10,30 +10,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination-recurrence.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-recurrence.md` |
-| 判断要請を受領し対処を確定する前 | `review-loop-coordination-escalation.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-escalation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-recurrence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-recurrence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-acceptance.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-records.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-records.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/wi-standards-states.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination-recurrence.md` |
+| 判断要請を受領し対処を確定する前 | `review-loop-coordination-escalation.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ラウンドの遷移・ラウンド番号の保持先・応答済みの判定に関する判断・作業の前 | `review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-rounds.md` |
-| 反復原因の判定に関する判断・作業の前 | `review-loop-coordination-recurrence.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-recurrence.md` |
-| エスカレーションの事由別の扱い・技術判断で外せる完成条件に関する判断・作業の前 | `review-loop-coordination-escalation.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-escalation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ラウンドの遷移・ラウンド番号の保持先・応答済みの判定に関する判断・作業の前 | `review-loop-coordination-rounds.md` |
+| 反復原因の判定に関する判断・作業の前 | `review-loop-coordination-recurrence.md` |
+| エスカレーションの事由別の扱い・技術判断で外せる完成条件に関する判断・作業の前 | `review-loop-coordination-escalation.md` |

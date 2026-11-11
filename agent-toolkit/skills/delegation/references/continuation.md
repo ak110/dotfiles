@@ -6,18 +6,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-rounds.md` |
-| process-wi中の停止や反復の原因が既存不良である時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` |
-| 介入を扱う前 | `../../../share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 残工程の担当を選ぶ前 | `routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| process-wi中の停止や反復の原因が既存不良である時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` |
+| 介入を扱う前 | `../../../share/exec-review-responses.md` |
+| 残工程の担当を選ぶ前 | `routing.md` |
+| 委譲した成果が受入れ基準に届かず、再委譲やeffort・モデルの変更を判断する前 | `model-and-effort.md` |
 
 ## 継続と新規起動
 
@@ -87,7 +83,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュー反復の調整の基準を適用する前 | `../../../share/review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
-| 委譲の要否判定と委譲単位の確定：要否判定の基準を適用する前 | `routing-decisions.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュー反復の調整の基準を適用する前 | `../../../share/review-loop-coordination.md` |
+| 委譲の要否判定と委譲単位の確定：要否判定の基準を適用する前 | `routing-decisions.md` |

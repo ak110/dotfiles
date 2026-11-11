@@ -4,10 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-necessity.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
 
 ## プラットフォーム分岐の検証
 
@@ -35,6 +34,6 @@ fixtureが対象モジュールだけを模擬するのか、共有`sys`など�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| テスト方針（全言語共通）：安定性: flakyテスト防止の基準を適用する前 | `testing-stability.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-stability.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| テスト方針（全言語共通）：安定性: flakyテスト防止の基準を適用する前 | `testing-stability.md` |

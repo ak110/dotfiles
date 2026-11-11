@@ -4,11 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-roles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-roles.md` |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 自作機構の兆候と自問
 
@@ -60,6 +58,6 @@ Webシステムにおける開発者向け・管理者向けの機能につい�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 設計判断の手順と領域別の設計観点：設計案の予備選別の基準を適用する前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 設計判断の手順と領域別の設計観点：設計案の予備選別の基準を適用する前 | `design-heuristics-screening.md` |

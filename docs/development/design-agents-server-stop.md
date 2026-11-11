@@ -1,0 +1,105 @@
+# 中断と資源解放の設計記録
+
+[設計記録の索引](design.md)から参照する、中断と資源解放の記録である。
+
+## 公開ツールの契約
+
+### `kill`と`stop`
+
+`stop`は保持中で終了済みのsessionを破棄し、statusLineの表示対象と`list`の応答の双方から除く。
+目的は再開する予定の無いsessionが保持期限まで表示と一覧に残り、並行する委譲先の残作業の把握を妨げる状態を、委譲元の明示的な操作で解消することである。
+破棄時には対象sessionのengineに対応するbackendの資源を解放する。
+Claude backendでは破棄するsessionを所有するタスクを終了させ、SDKクライアントの接続を閉じる。
+Codex backendはsessionごとに`codex app-server`を起動して所有し、破棄ではそのApp Serverと子孫（threadごとのMCPサーバーと子孫threadの資源）の生成を止めて対象を確定し、終了させる。
+App Serverと全ての子孫の終了をOS上で確認してから解放成功とし、確認できない対象が残れば再試行できる失敗を返して所有を保つ（確認の保証境界は後述の`stop_tree`の段落を参照）。
+他のsessionのApp Serverは変更しない。
+実行中turnを持つsessionを拒否するのは、中断と破棄を1つの操作へ束ねると、中断の失敗と破棄の成否を委譲元が区別できないためである。
+中断が必要な場合は`kill`を先に発行する。
+結果本文の受領と破棄を1回の呼び出しで済ませる手段として、`kill`へ省略時に`false`となる`stop`引数を設け、終了時の結果を返した応答に限って破棄する。
+個別sessionの破棄は`stop`ツールで行う。
+この引数による破棄では終了時の結果を保持期限まで残し、同じ`session_id`への`atk agents wait`が期限内は保持した終了時の結果を返す。
+応答が委譲元へ届いたことをMCPの応答からは判定できず、届かなかった場合に成果を回収する手段が他に無いためである。
+`stop`ツールからの破棄は、委譲元が先行する`atk agents wait`で結果を回収済みであることが前提となるため、現行どおり終了時の結果も破棄する。
+破棄後も`send_message`が暗黙再開するのは、保持期限の経過時と同じく再開用の最小状態を別の保持先へ残すためである。
+却下した代替案は、経過時間その他の契機で自動的に破棄する案と、`stop`を呼び出していないことを検出して警告する案である。
+前者は委譲元が再開を予定するsessionを意図と無関係に破棄し、後者は努力目標である破棄を恒常的な義務へ変えるため、いずれも採用しない。
+
+`kill(session_id, timeout=270)`は実行中turnだけへ中断を要求し、sessionと会話履歴を保持する。
+`timeout`を省略すると270秒を使うため、固有のtimeout要件がなければ引数を省略する。
+`timeout=0`は要求配送後の現状態を返し、
+正のtimeoutは中断後の終了と結果を待つ。
+timeout超過時もsessionとbackend processは保持する。
+後続では`atk agents wait`で結果を受け取れる。
+終了後は`send_message`で再開できる。
+保持期限（30分）を過ぎた場合はmanagerの共通処理がbackendの`release_session`を呼び、backend資源とsession本体を解放し、未回収の結果本文は配送か`stop`による破棄まで保持する。
+managerは終了時に期限通知を登録し、ツール照会の有無によらず解放する。
+期限到達と会話再開が重なった場合は解放の完了を待ってから再開する。
+保持期限の経過とsessionを所有する実行主体の終了は独立に起こるため、同じ`send_message`はいずれの場合も保持済みの実効条件から会話を暗黙に再開する。
+結果本文を保持したまま所有主体だけが終了した場合は、再開の応答へ直前結果を`previous_result`として含める。
+`previous_result`は`atk agents wait`または`kill`が直前の結果本文を委譲元へ返していない場合だけ付ける。
+返し済みの結果本文を継続入力の応答で再送しないためである。
+`timeout=0`でも中断要求の配送と`turn_control_lock`の取得には270秒の上限を適用し、終了は待たない。
+上限に達した場合は、中断要求が未配送か配送の成否が確定しないかを区別した`TimeoutError`を返し、sessionとbackend processは破棄しない。
+成功応答は`status`・`kill_requested`を含み、`kill_requested`は要求の受理事実を示し、自然終了を`interrupted`へ置き換えない。
+終了時の結果の保持期限を過ぎたsessionへの`kill`は`status`を`expired`、`kill_requested`を偽とする成功応答を返す。
+`kill`の他の応答と項目をそろえず、この応答で消費される項目だけを返す。
+この統合により、backendごとに公開toolを増やさず、状態・進捗・結果配送・中断要求の共通契約を維持できる。
+
+2026年10月8日にcodex-cli 0.161.0で行われた調査では、親threadだけの解放ではsubagentのMCPサーバーが残り、子孫にもunsubscribeを送ると60秒以内に終了した。
+親と子孫の会話は`thread/resume`とsubagentへの再操作で復元できた。
+当時の実装はbackendで共有するApp Serverへ親と子孫の購読解除を送り、`thread/closed`の受領で解放成功としていた。
+同日の同版による公開MCP操作の検証では、stopした委譲のMCPプロセス4件が約60.1秒で共有App Serverの子孫から消え、直後の同じsessionへのsend_messageは先の会話にだけ含めた合言葉を返した。
+
+2026年10月16日に別リポジトリで行ったprocess-wiの1回の実行では、`stop`の成功後もレーンをcwdとするMCPサーバーが残り、`atk lane delete`と`atk agents-exit-session`がレーンを保持した。
+同日にCodex CLI 0.163.0で、モデルのturnを開始せず専用のstdio MCPを設定したthreadを購読解除すると、threadは`thread/loaded/list`に残りMCPも生存した。
+起動元のApp Serverを終了するとMCPも終了した。
+購読解除は猶予の後に資源を解放する非同期の要求であり（[Codex App Server](https://developers.openai.com/codex/app-server)の「Unsubscribe from a loaded thread」）、前段の約60秒は猶予の経過であって、破棄の成功時点の解放ではない。
+
+このため、App Serverの所有単位を委譲sessionへ分け、解放の完了をApp Serverと子孫の終了確認に置く。
+公開stop、保持期限経過、起動候補不成立とmanagerの停止は同じbackendの解放境界を使い、解放後の`send_message`は新しいApp Serverで`thread/resume`して会話を再開する。
+子孫threadは通知の`subAgentActivity.agentThreadId`とthreadの親子関係からSessionStateのメモリーに保持して所有sessionを特定し、親と同じApp Serverに載るため、その終了で併せて解放される。
+モデル一覧とturn履歴の照会も専用のApp Serverを起動し、応答後に終了させる。
+委譲ごとのApp Server起動は起動数が増える費用を持つが、起動時の所有をそのまま終了へ使え、既存の`JsonRpcProcess.close`と`_common/process_tree.py`の終了処理を再利用できる。
+却下した代替案は次のとおりである。
+
+- 共有App Serverを維持してOS上の子孫をthreadへ推定帰属させ、該当分だけ終了する案は、子孫とthreadの対応を管理する機構を新たに要する
+- 共有App Serverを会話の末尾だけで停止する案は、別の委譲が実行中の間は解放を先送りする
+- レーンの使用中判定からMCPを除外する案は、生存中のプロセスが参照するworktreeを削除する
+
+Windowsの所有App Serverは、開始時から`_common/windows_job.py`のJobへ所属させる。
+CREATE_SUSPENDEDで開始し、CPythonのasyncio transportが保持する元世代のPopen handleを使ってJobへ登録してから再開する。
+PIDの列挙と後からのhandle取得の間に短命な親が消滅しても、子はOSが保持する同じJobへ所属するため、親PIDから再び帰属を推定する必要がない。
+終了ではTerminateJobObjectを送り、QueryInformationJobObjectのActiveProcessesが0であることを確認してからhandleを閉じる。
+API失敗と未確認は解放成功にせず、同じJobを保持してcloseの再試行へ渡す。
+明示的なCREATE_BREAKAWAY_FROM_JOBは独立workerの寿命を保つため許可し、通常の子孫だけをJobの回収対象とする。
+Job登録前のrootは実行を開始していないため、登録失敗でもrootを停止して起動失敗として返す。
+仕様の根拠は[Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects)である。
+保持前に消えた親を一律成功とする案は、その親が残した未知の子を見失うため採らない。
+
+POSIXのApp Serverと、委譲先CLI・登録済み実行主体・stdio起動単位の子孫の終了は、`_common/process_tree.py`の`stop_tree`へ集約する。
+終了要求前に1回だけ列挙した一覧を回収対象にすると、列挙後に起動した子孫は一覧に含まれず、親の終了後は起点から辿れない。
+2026年11月2日のWindows CI（run `41528229267`）で、この漏れた孫がcodex-homeを保持したため一時領域の削除がWinError 32で失敗した。
+`stop_tree`は起点と子孫を一時停止しながら列挙を繰り返し、増えなくなった集合を終了対象として確定する。
+Windowsは一時停止した全対象を強制終了する。
+Windowsの親PIDは親の終了後も子に残るため、最初に所有を観測した時点から親のkernel handleを保持してPIDの再利用を止める。
+`ProcessIdentityPins`は通常の列挙と停止処理をまたいで保持し、寿命監視は終了した観測済み親も最終回収まで残す。
+ClaudeのSDK切断中の観測も同じ保持主体を最終回収へ渡す。
+handleの取得後に同じ親世代であることを確認し、終了対象の回収と例外処理を終えてから全handleを閉じる。
+世代を保持する前に終了した親のPIDだけを根拠に、未知の子孫へ所有を広げない。
+POSIXはSIGTERMを送ってから再開して正常終了の機会を保ち、猶予中に増えた子孫にもSIGTERMを送り、期限で再び一時停止してからSIGKILLを送る。
+stdio起動単位の寿命監視は監視主体自身を一時停止できないため、自身を除いた子孫だけを対象にする。
+寿命監視は、親の消滅・標準入力のEOF・停止期限を0.1秒ごとに確かめ、子孫の列挙は1秒ごとに行う。
+Linuxの子孫の列挙は全プロセスを走査するため、常駐する起動単位が約100あった2026年11月11日には、0.1秒ごとの列挙で1プロセスあたり約7%のCPUを使い、6コアのホストを飽和させた。
+列挙を1秒ごとにした代わりに、子を起動した親が次の列挙より前に終了すると、その子がinitへ付け替わって回収から漏れる時間の幅は、最大0.1秒から最大1秒へ広がった。
+解放の成功は終了対象の資源解放の確認で判定し、一時停止できない対象・列挙の失敗・反復上限への到達は「生成の停止を確認できない」として残存診断と同じ失敗へ渡す。
+完全な回収を保証しない範囲は、一時停止できない対象が起動した子孫と、POSIXの猶予中に子を起動した親がポーリング間隔より早く終了した場合の子である（親を失った子はinitへ付け替わる）。
+POSIXで一時停止できなかった対象は終了しても未確定として再試行可能な失敗を返し、再試行（Codexの再close）で所有対象を回収した後は、子孫を確認できないまま解放へ進んで残存診断へ記録する。
+未確定を保持し続けると、解放とagents_serverの停止が完了しなくなるためである。
+列挙の回数や待機時間だけを増やす案は、生成を続ける主体を止めないため採らない。
+POSIXのprocess groupだけで終了対象を決める案は、別groupへ移った子孫の回収と両立しないため採らない。
+
+接続先の切替（cold resume）は同じApp Server上で親threadの購読を外し、閉鎖を待ってから再開する。
+解除応答の`notLoaded`は既解放として扱い、`unsubscribed`と`notSubscribed`は`thread/closed`を待って閉鎖を確定する。
+接続喪失・未知の応答・閉鎖期限の到来は失敗として扱う。
+閉鎖処理中のthreadは再開を拒否するため、その応答に限り`thread/closed`通知を既存の初期化時間上限内で待ち、thread/resumeを再送する。
+通知の先着も保持し、固定秒数の待機へ置き換えない。

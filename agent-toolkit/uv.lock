@@ -54,7 +54,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil", specifier = ">=6" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pyfltr", specifier = ">=3.27.0" },
+    { name = "pyfltr", specifier = ">=3.30.1" },
     { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
     { name = "pyyaml" },
@@ -66,7 +66,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.27.0" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.30.1" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
@@ -1192,13 +1192,14 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.27.1"
+version = "3.30.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "arid" },
     { name = "bandit" },
     { name = "dill" },
+    { name = "markdown-it-py" },
     { name = "mcp" },
     { name = "mypy" },
     { name = "natsort" },
@@ -1224,9 +1225,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/00/94/ea05bf2a262a53ff2c8b613e8f9263699e59c61e31189613f59a216cf067/pyfltr-3.27.1.tar.gz", hash = "sha256:da79eb2aea51bb76286d7323d7a5e17eb3a544e6a0a4a9eae497338ba6f509ed", size = 1177263, upload-time = "2026-11-08T13:55:33.432Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/23/56/518c4b1bc98ecafb1dee674fc46c62d64057c617d08a6474339371f63897/pyfltr-3.30.1.tar.gz", hash = "sha256:af379ec11786578d14f88587606f478b0b937d47a1fb07192e6ec6e7fc8df32d", size = 1192241, upload-time = "2026-11-11T14:46:42.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/d8/b1bb9258348d6c59d8e86aa1c102c372db76f908ac1aace342edc6ae3410/pyfltr-3.27.1-py3-none-any.whl", hash = "sha256:98bbc953eca5dc8a3fc77934bd27aaa1d4c786b853dc7d01481f3e6ae468ae1a", size = 472832, upload-time = "2026-11-08T13:55:31.505Z" },
+    { url = "https://files.pythonhosted.org/packages/62/b6/09e0dd0ffbea635217a79c37448ae0001293dc5f23d8cd7092e6f697d531/pyfltr-3.30.1-py3-none-any.whl", hash = "sha256:30d50265290cd20f87a9d207b7d91282c97eda7ba08071e20d25c6874bfeab48", size = 514113, upload-time = "2026-11-11T14:46:40.699Z" },
 ]
 
 [[package]]

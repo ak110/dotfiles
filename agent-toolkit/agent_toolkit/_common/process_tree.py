@@ -39,6 +39,8 @@ from typing import Any, Self
 # 回収しない呼出し元では、プロセス管理の依存を読み込まない。
 lazy import psutil
 
+lazy from agent_toolkit._common import process_identity
+
 _LOG = logging.getLogger(__name__)
 
 RECLAIM_TIMEOUT_SECONDS = 5.0
@@ -218,7 +220,7 @@ class ProcessIdentityPins:
 
     def __init__(self) -> None:
         self._handles = contextlib.ExitStack()
-        self._retained: dict[tuple[int, float], bool] = {}
+        self._retained: dict[tuple[int, str | float], bool] = {}
         self._lock = threading.RLock()
         self._closed = False
 
@@ -257,12 +259,12 @@ class _OwnedTree:
         known: Iterable[psutil.Process],
         pins: ProcessIdentityPins | None,
     ) -> None:
-        self._anchors: dict[tuple[int, float], psutil.Process] = {}
-        self._owned: dict[tuple[int, float], psutil.Process] = {}
-        self.suspended: set[tuple[int, float]] = set()
+        self._anchors: dict[tuple[int, str | float], psutil.Process] = {}
+        self._owned: dict[tuple[int, str | float], psutil.Process] = {}
+        self.suspended: set[tuple[int, str | float]] = set()
         self.unresolved: list[str] = []
         # 一時停止できなかった対象と理由。終了処理の後も資源を保持していれば未確定として報告する。
-        self._suspend_failures: dict[tuple[int, float], tuple[psutil.Process, str]] = {}
+        self._suspend_failures: dict[tuple[int, str | float], tuple[psutil.Process, str]] = {}
         self._pins = ProcessIdentityPins() if pins is None else pins
         self._owns_pins = pins is None
         root_key = None if root is None else _key(root)
@@ -382,10 +384,10 @@ class _OwnedTree:
                 return
 
 
-def _key(process: psutil.Process) -> tuple[int, float] | None:
+def _key(process: psutil.Process) -> tuple[int, str | float] | None:
     """PIDの再利用と区別するため、PIDと起動時刻の組で対象を識別する。消滅済みならNoneを返す。"""
     try:
-        return process.pid, process.create_time()
+        return process_identity.key(process)
     except psutil.Error, OSError:
         return None
 
@@ -432,7 +434,7 @@ def _retain_windows_process(process: psutil.Process) -> Generator[bool]:
         ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
         handle_created_at = float(ticks - 116444736000000000) / 10000000
         observed_created_at = process.create_time()
-        same_generation = handle_created_at == observed_created_at
+        same_generation = process_identity.matches(process, handle_created_at)
         if not same_generation:
             _LOG.warning(
                 "Windows親世代保持診断: reason=creation-time observed=%s handle_created_at=%r current=%s",
@@ -485,7 +487,7 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
     for parent in parents:
         with contextlib.suppress(psutil.Error, OSError):
             if retain_parent(parent, "known"):
-                created[parent.pid] = parent.create_time()
+                created[parent.pid] = process_identity.start_order(parent)
     found: list[psutil.Process] = []
     pending = set(created)
     while pending:
@@ -494,12 +496,12 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
             if ppid not in pending or process.pid in created:
                 continue
             try:
-                child_created = process.create_time()
+                child_created = process_identity.start_order(process)
                 if child_created < created[ppid]:
                     continue
                 holder = holders.get(ppid)
                 # 親PIDを別の新しいプロセスが再利用していれば、その後に起動した子は再利用側の子である。
-                if holder is not None and created[ppid] != holder.create_time() <= child_created:
+                if holder is not None and created[ppid] != process_identity.start_order(holder) <= child_created:
                     continue
             except psutil.Error, OSError:
                 continue

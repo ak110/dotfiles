@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._hooks import document_reads, plugin_resources, posttooluse
-from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
+from agent_toolkit._hooks.pretooluse import dispatch, read_delivery, read_delivery_paths
 from agent_toolkit._testing import git_repository, pretooluse_support
 
 
@@ -153,7 +153,11 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
 
 
 @pytest.mark.parametrize("codex", [False, True])
-def test_confirmation_entry_warns_without_blocking(tmp_path, capsys, codex):
+def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, capsys, codex):
+    """確認の前に読む2資料が未取得の間は、公開hookが質問の表示前に毎回拒否する。
+
+    送達ツールを持つClaude Codeにだけ、判断材料を先に送って質問を短く保つ手順を案内する。
+    """
     payload = {
         "session_id": "confirmation-acceptance",
         "cwd": str(tmp_path),
@@ -162,14 +166,11 @@ def test_confirmation_entry_warns_without_blocking(tmp_path, capsys, codex):
     }
     if codex:
         payload["turn_id"] = "turn"
-    for index in range(2):
-        assert dispatch.main(json.dumps(payload)) == 0
-        context = _context(capsys.readouterr())
-        if index:
-            assert not context
-        else:
-            assert "approval-scope.md" in context
-            assert "choice-construction.md" in context
+    for _attempt in range(2):
+        reason = _denial(dispatch.main(json.dumps(payload)), capsys.readouterr())
+        assert "approval-scope.md" in reason
+        assert "choice-construction.md" in reason
+        assert ("`send_to_user`で先に送り" in reason) is not codex
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -222,7 +223,7 @@ def test_request_reuses_read_parsing_and_rechecks_the_next_request(tmp_path, mon
     target = tmp_path / "source.md"
     target.write_text("# 節\n本文\n", encoding="utf-8")
     rows = [
-        read_delivery.read_triggers.ReadTrigger(target, number, "判断", ("section:*/source.md#節",), (target,))
+        read_delivery.read_triggers.ReadTrigger(target, number, "判断", ("read:*/source.md",), (target,))
         for number in range(40)
     ]
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
@@ -233,7 +234,7 @@ def test_request_reuses_read_parsing_and_rechecks_the_next_request(tmp_path, mon
         calls.append((args, kwargs))
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(read_delivery, "bash_read_paths", counted)
+    monkeypatch.setattr(read_delivery_paths, "bash_read_paths", counted)
     payload = {"cwd": str(tmp_path), "turn_id": "turn"}
     data = {"command": f"cat -- {target}"}
     read_delivery.deliver(payload, "Bash", data, "parsing-first")

@@ -232,6 +232,7 @@ async def start_resident_helper(
     ヘルパーの起動失敗（依存解決の失敗など）は標準出力が空のまま終わり原因が残らないため、
     標準エラー出力を常時読み取り、`label`を付けて`logger`の警告へ転写する。
     """
+    # 時間上限なし: 常駐の接続であり、要求ごとの応答待ちの上限は呼び出し側が持つ。
     proc = await asyncio.create_subprocess_exec(
         "ssh",
         *ssh_options,

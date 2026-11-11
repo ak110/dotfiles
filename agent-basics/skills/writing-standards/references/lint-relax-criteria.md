@@ -7,12 +7,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-checks.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
-
 ## 根本目的（緩和判断の基準）
 
 lint設定全体は、主に次の2つの目的を支えるために導入されている。

@@ -4,15 +4,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` | |
-| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` | |
-| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md` | |
-| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
-| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
+| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` |
+| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
+| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
+| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
+| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
 
 ## 計画最終化
 
@@ -67,7 +67,7 @@
   adoptにおけるコミットの紐付けは、`../skills/wi-standards/references/wi-standards-states.md`「状態と依存」の遷移表に従って行い、開始時や統合時のHEADを一律に機械的複製しないようにする。
   複数のコミットが存在する場合は`--commit <OID>`を繰り返し指定する。
   コミットの説明などの補足メモは`--note-file`で記録する。
-- 対応コミットは、`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に定める取得手順に従い、計画または引き継ぎ記録と同一のstemを持つ対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。
+- 対応コミットは、`agent-toolkit:commit`の`references/commit-wi-records.md`「WI実装commitの対応」に定める取得手順に従い、計画または引き継ぎ記録と同一のstemを持つ対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。
 - コミットを記録する採否操作では、統合先worktreeの絶対パスを`--target-repo`に渡す（同節の共通前提）。
 - プロジェクト固有の公開後操作の完了まで延期する項目は状態を変更せず、該当するAWIとOIDの組をすべて返す。
 - `終了しない`項目、観測のみの再開で未処理となった項目、および観測結果が完成条件を満たさなかった項目は状態を変更しない。
@@ -78,6 +78,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 編集時の注意点:の基準を適用する前 | `../skills/commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 編集時の注意点:の基準を適用する前 | `../skills/commit/SKILL.md` |

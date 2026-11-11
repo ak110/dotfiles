@@ -1,8 +1,7 @@
 """一時root直下の期限切れの対象の自動掃引と、旧版が残した状態の個別回収。
 
-掃引は`atk`の共通起動から毎回呼ばれる。起動ごとの全走査を避けるため、root直下の名前ごとに
-次に調べる時刻を状態rootの1表（`.sweep/schedule`）へ記録し、rootの更新時刻が変わらず
-次の調査時刻にも達していない起動では一覧も取らずに戻る。
+掃引は`atk`の共通起動から毎回呼ばれる。起動ごとの全走査を避けるため、前回の掃引を終えた時刻だけを
+状態rootの1ファイル（`.sweep/last-sweep`）へ記録し、前回から1日が過ぎていない起動では一覧も取らずに戻る。
 """
 
 from __future__ import annotations
@@ -22,15 +21,12 @@ from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
 from agent_toolkit._common import file_lock, plugin_root_leases, session_registry
 
-_SCHEDULE_NAME = ".sweep/schedule"
-_SCHEDULE_VERSION = 4
+_RECORD_NAME = ".sweep/last-sweep"
+_OLD_SCHEDULE_NAME = ".sweep/schedule"
+"""対象ごとの予定表を持っていた版の記録。読まずに削除する。"""
 _NANOSECONDS_PER_SECOND = 1_000_000_000
-_RETRY_NS = 3600 * _NANOSECONDS_PER_SECOND
-"""使用中・ロック保持中・削除失敗の対象を次に調べるまでの間隔。"""
-_GIT_RECHECK_NS = 86_400 * _NANOSECONDS_PER_SECOND
-"""登録済みworktreeを含む期限切れの対象の再調査間隔。登録解除後は次の調査で回収する。"""
-_LEGACY_INTERVAL_NS = 86_400 * _NANOSECONDS_PER_SECOND
-"""旧版の状態を調べる間隔。数万件に及ぶ旧ロックを起動ごとに走査しない。"""
+_SWEEP_INTERVAL_NS = 86_400 * _NANOSECONDS_PER_SECOND
+"""掃引の間隔。使用中・ロック保持中・削除失敗の対象と旧版の状態も、次の掃引で調べ直す。"""
 _DESCRIPTOR_WALK = os.scandir in os.supports_fd and os.open in os.supports_dir_fd
 """記述子を基点に相対名で走査できるか。Windowsは記述子による走査を提供しない。"""
 _LEGACY_REGISTRY_SUFFIX = ".json"
@@ -43,60 +39,29 @@ class SweepResult(typing.NamedTuple):
     deleted: list[pathlib.Path]
     """自動削除したパス。"""
     failed: tuple[tuple[pathlib.Path, str], ...]
-    """期限切れでも削除できなかった対象と理由。次の調査時刻（1時間後）に再試行する。"""
+    """期限切れでも削除できなかった対象と理由。次の掃引（1日後）に再試行する。"""
 
 
-class _Schedule(typing.NamedTuple):
-    root_mtime_ns: int | None
-    entries: dict[str, tuple[int, int]]
-    """root直下の名前ごとの、記録時の自身の更新時刻と次に調べる時刻（ナノ秒）。"""
-    legacy_checked_ns: int
-
-
-def _load_schedule(state_root: pathlib.Path, temp_root: pathlib.Path) -> _Schedule:
-    """予定表を読む。欠落・破損・前提の不一致では空の表を返し、呼び出し元は全件を調べる。"""
-    empty = _Schedule(None, {}, 0)
+def _sweep_due(state_root: pathlib.Path, now_ns: int) -> bool:
+    """前回の掃引から間隔が過ぎたかを返す。記録の欠落・破損と、未来の時刻では真を返す。"""
     try:
-        value = json.loads((state_root / _SCHEDULE_NAME).read_text(encoding="utf-8"))
-    except OSError, UnicodeError, ValueError:
-        return empty
-    if not isinstance(value, dict) or value.get("version") != _SCHEDULE_VERSION or value.get("temp_root") != str(temp_root):
-        return empty
-    raw_entries = value.get("entries")
-    root_mtime = value.get("root_mtime_ns")
-    legacy_checked = value.get("legacy_checked_ns")
-    if not isinstance(raw_entries, dict) or not isinstance(root_mtime, int) or not isinstance(legacy_checked, int):
-        return empty
-    entries: dict[str, tuple[int, int]] = {}
-    for name, item in raw_entries.items():
-        if not (isinstance(item, list) and len(item) == 2 and _is_ns(item[0]) and _is_ns(item[1])):
-            return empty
-        entries[name] = (item[0], item[1])
-    return _Schedule(root_mtime, entries, legacy_checked)
+        last_ns = int((state_root / _RECORD_NAME).read_text(encoding="ascii"))
+    except OSError, ValueError:
+        return True
+    return not 0 <= now_ns - last_ns < _SWEEP_INTERVAL_NS
 
 
-def _save_schedule(state_root: pathlib.Path, temp_root: pathlib.Path, schedule: _Schedule) -> None:
-    """予定表を置き換える。書けない場合は次回の起動が全件を調べるだけなので、失敗を報告しない。"""
-    directory = state_root / pathlib.Path(_SCHEDULE_NAME).parent
-    temporary = directory / f".schedule-{secrets.token_hex(8)}.tmp"
-    value = {
-        "version": _SCHEDULE_VERSION,
-        "temp_root": str(temp_root),
-        "root_mtime_ns": schedule.root_mtime_ns,
-        "legacy_checked_ns": schedule.legacy_checked_ns,
-        "entries": {name: list(item) for name, item in sorted(schedule.entries.items())},
-    }
+def _save_sweep_time(state_root: pathlib.Path, now_ns: int) -> None:
+    """掃引を終えた時刻を置き換える。書けない場合は次回の起動が掃引するだけなので、失敗を報告しない。"""
+    record = state_root / _RECORD_NAME
+    temporary = record.with_name(f".last-sweep-{secrets.token_hex(8)}.tmp")
     try:
-        directory.mkdir(mode=0o700, exist_ok=True)
-        temporary.write_text(json.dumps(value, ensure_ascii=True) + "\n", encoding="utf-8")
-        os.replace(temporary, state_root / _SCHEDULE_NAME)
+        record.parent.mkdir(mode=0o700, exist_ok=True)
+        temporary.write_text(f"{now_ns}\n", encoding="ascii")
+        os.replace(temporary, record)
     except OSError:
         with contextlib.suppress(OSError):
             temporary.unlink(missing_ok=True)
-
-
-def _is_ns(value: object) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _now_ns(now: datetime.datetime) -> int:
@@ -240,7 +205,11 @@ def _sweep_legacy_state(state_root: pathlib.Path) -> None:
 
     旧版プロセスが解決に使う間は残すため、対象が実在する登録・参照と、消費途中状態を持つ登録は保持する。
     """
-    for name in ((state_root / ".sweep-schedule"), (state_root.parent / ".managed-temp-sweep-gate")):
+    for name in (
+        (state_root / _OLD_SCHEDULE_NAME),
+        (state_root / ".sweep-schedule"),
+        (state_root.parent / ".managed-temp-sweep-gate"),
+    ):
         name.unlink(missing_ok=True)
     with os.scandir(state_root) as entries:
         names = sorted(entry.name for entry in entries if entry.is_file(follow_symlinks=False))
@@ -298,28 +267,19 @@ def _examine(
     metadata: os.stat_result,
     cutoff_ns: int,
     now_ns: int,
-    max_age_ns: int,
     protected_sessions: set[pathlib.Path],
-) -> int | None:
-    """1件を調べ、保持する場合は次に調べる時刻を返す。削除した場合はNoneを返す。"""
+) -> bool:
+    """1件を調べ、削除した場合は真を返す。保持した対象は次の掃引で調べ直す。"""
     if stat.S_ISDIR(metadata.st_mode):
         latest, has_git = _latest_update_and_worktree(child, now_ns)
     else:
         latest, has_git = _update_time(metadata, now_ns), False
-    if latest >= cutoff_ns:
-        return latest + max_age_ns
-    if child in protected_sessions:
-        return now_ns + _RETRY_NS
-    if has_git:
-        return now_ns + _GIT_RECHECK_NS
-    if plugin_root_in_use(child):
-        return now_ns + _RETRY_NS
+    if latest >= cutoff_ns or child in protected_sessions or has_git or plugin_root_in_use(child):
+        return False
     if stat.S_ISDIR(metadata.st_mode) and os.path.lexists(child / paths.LEGACY_MARKER_NAME):
-        if not _remove_legacy_area(state_root, child):
-            return now_ns + _RETRY_NS
-        return None
+        return _remove_legacy_area(state_root, child)
     remove_tree(child)
-    return None
+    return True
 
 
 @plugin_root_leases.reuse_process_observation()
@@ -332,19 +292,17 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
     ユーザーのディレクトリを巻き込まない（2026年10月2日のユーザーの判断）。
     """
     now_ns = _now_ns(now)
-    max_age_ns = max_age_days * 86_400 * _NANOSECONDS_PER_SECOND
-    cutoff_ns = now_ns - max_age_ns
+    cutoff_ns = now_ns - max_age_days * 86_400 * _NANOSECONDS_PER_SECOND
     try:
         temp_root = paths.temp_root()
         state_root = paths.state_root()
     except ManagedTempError as error:
         return SweepResult([], ((paths.temp_root_path(), str(error)),))
-    schedule = _load_schedule(state_root, temp_root)
-    root_mtime_ns = temp_root.stat().st_mtime_ns
-    legacy_due = now_ns - schedule.legacy_checked_ns >= _LEGACY_INTERVAL_NS
-    next_due = min((due for _top, due in schedule.entries.values()), default=None)
-    if schedule.root_mtime_ns == root_mtime_ns and (next_due is None or now_ns < next_due) and not legacy_due:
+    if not _sweep_due(state_root, now_ns):
         return SweepResult([], ())
+    # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
+    with contextlib.suppress(OSError):
+        plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {
         area
         for identifier in session_registry.pending_session_ids()
@@ -352,7 +310,6 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
     }
     deleted: list[pathlib.Path] = []
     failed: list[tuple[pathlib.Path, str]] = []
-    entries: dict[str, tuple[int, int]] = {}
     with os.scandir(temp_root) as children:
         listed = sorted(children, key=lambda child: child.name)
     for entry in listed:
@@ -363,28 +320,13 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
             continue
         if paths.is_link(metadata):
             continue
-        known = schedule.entries.get(entry.name)
-        if known is not None and known[0] == metadata.st_mtime_ns and now_ns < known[1]:
-            entries[entry.name] = known
-            continue
         try:
-            due = _examine(state_root, child, metadata, cutoff_ns, now_ns, max_age_ns, protected_sessions)
+            if _examine(state_root, child, metadata, cutoff_ns, now_ns, protected_sessions):
+                deleted.append(child)
         except (OSError, ManagedTempError) as error:
-            if not os.path.lexists(child):
-                continue
-            failed.append((child, str(error)))
-            entries[entry.name] = (metadata.st_mtime_ns, now_ns + _RETRY_NS)
-            continue
-        if due is None:
-            deleted.append(child)
-        else:
-            entries[entry.name] = (metadata.st_mtime_ns, due)
-    legacy_checked_ns = schedule.legacy_checked_ns
-    if legacy_due:
-        with contextlib.suppress(OSError):
-            _sweep_legacy_state(state_root)
-        legacy_checked_ns = now_ns
+            if os.path.lexists(child):
+                failed.append((child, str(error)))
     with contextlib.suppress(OSError):
-        root_mtime_ns = temp_root.stat().st_mtime_ns
-    _save_schedule(state_root, temp_root, _Schedule(root_mtime_ns, entries, legacy_checked_ns))
+        _sweep_legacy_state(state_root)
+    _save_sweep_time(state_root, now_ns)
     return SweepResult(deleted, tuple(failed))

@@ -191,11 +191,12 @@ def _identify(argv: list[str], executable: pathlib.Path) -> agents_exit_session.
     return agents_exit_session._target(process)  # pylint: disable=protected-access  # noqa: SLF001
 
 
-def test_versioned_executable_with_claude_argv_is_identified(tmp_path: pathlib.Path) -> None:
+def test_versioned_executable_with_claude_argv_is_identified(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ネイティブ導入の実体が版数名でも、argv[0]からClaude Code本体を識別する。"""
     executable = tmp_path / "2.1.269"
     executable.write_text("", encoding="utf-8")
 
+    monkeypatch.setattr(agents_exit_session.process_identity, "start_id", lambda process, **kwargs: "test-generation")
     target = _identify(["claude"], executable)
 
     assert target is not None

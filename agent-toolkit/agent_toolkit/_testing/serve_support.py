@@ -95,11 +95,26 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
         "(() => {\n"
         + _module_body(assets.SCRIPTS["common.js"])
         + "\nfunction registerScreen() {}\n"
-        + _module_body(assets.SCRIPTS["wi.js"])
+        + "\n".join(
+            _module_body(assets.SCRIPTS[name])
+            for name in (
+                "wi_state.js",
+                "wi_feedback.js",
+                "wi_list_render.js",
+                "wi_list.js",
+                "wi_detail.js",
+                "wi_waiting.js",
+                "wi_mutations.js",
+                "wi_create.js",
+                "wi.js",
+            )
+        )
+        # 既存シナリオの状態変数への参照を、移動先の共有状態へ結び付ける。
+        + "\nwith (wiState) {\n"
         + "\n(async () => {\n"
         + scenario
         + "\n})().catch(error => { process.stderr.write(String(error.stack || error)); process.exitCode = 1; });\n"
-        + "})();\n"
+        + "}\n})();\n"
     )
     dom = _HtmlDom()
     dom.feed(assets.HTML)

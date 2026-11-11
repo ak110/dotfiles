@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-necessity.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
 
 ## 検証単位の優先順位
 

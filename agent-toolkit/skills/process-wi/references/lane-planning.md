@@ -23,26 +23,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure-candidates.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-candidates.md` |
-| 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-design.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/routing-decisions.md`、`../../delegation/references/routing-units.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-decisions.md`、`read:agent-toolkit:*/skills/delegation/references/routing-units.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation-results.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-results.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-template.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-template.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-structure-check.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `finish-session-observation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-observation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/lane-integration-subagent-finalization.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-finalization.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `run-lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` |
+| 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-subagent-implementation.md` |
 
 ## 計画検査完了の通知
 
@@ -58,16 +43,10 @@
 AWI: <AWIファイル名のASCIIカンマ区切り>
 ```
 
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
-
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 作成要否と計画なしの準備に関する判断・作業の前 | `lane-planning-no-plan.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-no-plan.md` |
-| 計画の起草に関する判断・作業の前 | `lane-planning-drafting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-drafting.md` |
-| 再開に関する判断・作業の前 | `lane-planning-resume.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-resume.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 作成要否と計画なしの準備に関する判断・作業の前 | `lane-planning-no-plan.md` |
+| 計画の起草に関する判断・作業の前 | `lane-planning-drafting.md` |
+| 再開に関する判断・作業の前 | `lane-planning-resume.md` |

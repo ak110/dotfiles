@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 定型処理の実行先をモデル選定前に比較する時 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` |
+| 委譲する部分を選び、起動手段とモデルを確定する前 | `process-model-settings.md` |
+| 定型処理の実行先をモデル選定前に比較する時 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` |
 
 ## 実行結果の検証
 
@@ -25,4 +25,4 @@
   Codexでは`-c model_reasoning_effort=low --ignore-user-config --ignore-rules`を指定し、記録が不要な場合は`--ephemeral`も加える。
   `codex exec`はChatGPT認証において系列名`luna`を拒否するため、直接起動するときは`luna`系列の最新の完全なIDを指定する。
   起動回数は判定に必要な最小限に抑える。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/user-confirmation-and-report/references/investigation.md：実行結果の検証：2026年10月18日（2）」にある。
+  監査記録は`docs/development/audit-records-investigation.md`の「agent-toolkit/skills/user-confirmation-and-report/references/investigation.md：実行結果の検証：2026年10月18日（2）」にある。

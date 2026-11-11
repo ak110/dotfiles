@@ -224,7 +224,7 @@ async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mod
     code, stdout, stderr = await peer.run(arguments, mode=mode)
     assert code == expected, (stdout, stderr, peer.records())
     records = peer.records()
-    assert len(records) == 1
+    assert len(records) == 1, (stdout, stderr, records)
     record = records[0]
     assert record["starts"] == (
         1 if mode in {"completed", "cancel", "error", "corrupt", "mcp-error", "elicitation-cancel"} else 2

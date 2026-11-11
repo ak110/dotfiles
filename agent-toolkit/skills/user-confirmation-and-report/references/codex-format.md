@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 質問の共通前提を作成する前 | `agent-toolkit:user-confirmation-and-report/references/choice-construction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 質問の共通前提を作成する前 | `agent-toolkit:user-confirmation-and-report/references/choice-construction.md` |
 
 ## 質問の形式
 

@@ -152,6 +152,25 @@ def test_price_brackets_follow_each_response_input(model: str, count: int, expec
 
 
 @pytest.mark.parametrize(
+    ("model", "count", "short_write", "expected"),
+    [
+        # 入力8・1時間書込16・読取0.20・出力40。5分書込は10。
+        ("claude-fable-5-2", 1_000_000, 0, 8 + 16 + 0.20 + 40),
+        ("claude-fable-5-2", 1_000_000, 1_000_000, 8 + 10 + 0.20 + 40),
+        ("claude-mythos-5-2", 1_000_000, 0, 8 + 16 + 0.20 + 40),
+        # 入力1・書込1.25・読取0.05・出力5。入力側の合計が272K以下。
+        ("gpt-6.1-terra", 50_000, 0, (1 + 1.25 + 0.05 + 5) * 0.05),
+        # 272K超は入力2・書込2.5・読取0.10・出力7.50。
+        ("gpt-6.1-terra", 1_000_000, 0, 2 + 2.5 + 0.10 + 7.50),
+    ],
+)
+def test_added_models_use_published_rates(model: str, count: int, short_write: int, expected: float) -> None:
+    """公式の料金表にある4区分の単価を、同数のトークンへ適用した金額と比べる。"""
+    tokens: dict[str, int] = {name: count for name in model_pricing.TOKEN_COMPONENTS}
+    assert model_pricing.response_price(model, tokens, short_write_tokens=short_write) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
     ("engine", "entries", "input_tokens", "output_tokens"),
     [
         ("claude", [_claude("m", "future-model", {"input_tokens": 20, "output_tokens": 10})], 20, 10),

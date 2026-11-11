@@ -6,15 +6,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-subagent-history.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-history.md` |
-| 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../../share/lane-integration-subagent-operation.md` |
+| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` |
+| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-verification.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-subagent-history.md` |
+| 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
+| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` |
+| レビュー指摘管理表へ担当が行を足す前 | `../../../share/review-table-operations.md` |
 
 ## rebaseの競合
 
@@ -26,6 +27,7 @@
    `../../commit/references/history-rewrite-verification.md`「履歴確認の起動形」に記載された`git log`を単独で実行する。
    続いて`git -c submodule.recurse=false rebase --continue`を実行してrebaseを完了させる。
    競合箇所、解消方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表に1行追加し、同じ行に対して`atk review-table respond`で解消内容を記録する。
+   追加する行の書き出しは`../../../share/review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
    その上で、`../../../share/exec-subagent-history.md`「レビュー修正の履歴統合」に定められた返却値を返す。
 
 3. 統合指示を再受領したら、`../../../share/lane-integration-subagent-operation.md`「マージありの統合」の冒頭（専用worktreeのクリーン確認）から再開する。

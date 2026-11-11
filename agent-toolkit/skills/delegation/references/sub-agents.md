@@ -11,17 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/sub-agents.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sending-prompt.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending-prompt.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-fork.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-
 ## `<役割名>.parent.md`と`<役割名>.subagent.md`の構成
 
 - `<役割名>.parent.md`の起動を説明する節には、`agents_server`の`start`引数（`cwd`、`subagent_md_path`、`extra_params`、`mode`、`model_type`）に渡す役割固有の値を記述する（`subagent_md_path`には役割名を指定する）。
@@ -51,7 +40,7 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| agents_serverのfrontmatter・起動対象と入力の案内に関する判断・作業の前 | `sub-agents-declarations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sub-agents-declarations.md` |
-| コンテキスト境界に関する判断・作業の前 | `sub-agents-context.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sub-agents-context.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| agents_serverのfrontmatter・起動対象と入力の案内に関する判断・作業の前 | `sub-agents-declarations.md` |
+| コンテキスト境界に関する判断・作業の前 | `sub-agents-context.md` |

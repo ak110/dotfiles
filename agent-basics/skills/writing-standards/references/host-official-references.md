@@ -7,10 +7,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents.md` |
-
 ## 公式リファレンス（Claude Code）
 
 公式マーケットプレイス（`anthropics/claude-plugins-official`）の`skill-creator:skill-creator`や`plugin-dev`の各スキルを参照する。
@@ -26,7 +22,8 @@
 モデル固有の推奨と、対象環境で観測した効果を分けて扱う。
 
 - Claude: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)と、同サイトのモデル別ガイドを確認する。
-  [Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)はeffort調整、思考量の指示、内部推論の再現要求を扱う
+  [Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)はeffort調整、思考量の指示、内部推論の再現要求を扱う。
+  [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)は、effortの選び方、作業を最後まで完了させる指示、承認規則の書き方、コードの所有者の明示、進捗の伝え方、委譲の指示、注意書きの蓄積、以前のモデル向けの指示の見直し、最終報告の書き方、拒否応答を扱う
 - OpenAI: [Prompt engineering](https://platform.openai.com/docs/guides/prompt-engineering)から、使用するモデルの公式ガイドと推論設定の資料へ進む
 
 ## 子Claudeへ環境値を渡す
@@ -43,7 +40,8 @@ settingsには環境変数を削除する機能が存在しない点に留意す
 子プロセスが直接読み込むuser、project、local設定の`env`で同一変数が定義されている場合に限り、CLIのsettingsで空文字を指定することで接続先選択から除外できる。
 ただしこの場合でも、子プロセス内部には空文字として値が残る。
 これらの挙動の観測記録と再検証手順が存在する。
-詳細は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/host-official-references.md：子Claudeへ環境値を渡す：2026年10月22日」を参照する。
+詳細は`docs/development/audit-records-languages.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/host-official-references.md：子Claudeへ環境値を渡す：2026年10月22日」である。
 
 Desktop版やSelf-hosted runnerの環境では、設定の競合時に起動環境の値がsettingsよりも優先される。
 その根拠と最新の条件については、公式ドキュメントの[環境変数](https://code.claude.com/docs/en/env-vars)、[settingsの優先順](https://code.claude.com/docs/en/settings)、および[settings-referenceのenv](https://code.claude.com/docs/en/settings-reference#env)を参照する。

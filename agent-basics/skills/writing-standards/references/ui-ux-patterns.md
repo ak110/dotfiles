@@ -12,11 +12,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `public-service-obligations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/public-service-obligations.md` |
-| 自動切替の操作とアクセシビリティを決める時 | `ui-ux-web-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-web-rules.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 自動切替の操作とアクセシビリティを決める時 | `ui-ux-web-rules.md` |
 
 ## フォームと入力
 

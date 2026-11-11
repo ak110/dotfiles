@@ -4,14 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 動作検証を実行する前 | `../../develop-dotfiles/references/verification-values-execution.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-execution.md` |
-| 全レーンの完了後にバージョンを更新する時点、および本書の更新手順へ入る前 | `agent-toolkit:process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
-| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules/rules-common.codex.md` | 判断 | `read:agent-toolkit:*/share/rules/rules-common.codex.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` | 判断 | `read:*/.claude/skills/release-dotfiles/SKILL.md` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `./../../develop-dotfiles/references/publishing.md` | 判断 | `read:*/skills/develop-dotfiles/references/publishing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 動作検証を実行する前 | `../../develop-dotfiles/references/verification-values-execution.md` |
+| 全レーンの完了後にバージョンを更新する時点、および本書の更新手順へ入る前 | `agent-toolkit:process-wi/references/finish-session.md` |
+| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules/rules-common.codex.md` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `./../../develop-dotfiles/references/publishing.md` |
 
 ## plan modeでの取り扱い
 
@@ -37,7 +36,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| バージョン更新の詳細手順：競合解決と統合後の確認の基準を適用する前 | `version-bump-execution.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-execution.md` |
-| バージョン更新の詳細手順の基準を適用する前 | `version-bump.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| バージョン更新の詳細手順：競合解決と統合後の確認の基準を適用する前 | `version-bump-execution.md` |
+| バージョン更新の詳細手順の基準を適用する前 | `version-bump.md` |

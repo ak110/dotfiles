@@ -4,16 +4,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-drafting.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 基準資料を選択・取得する時 | `finish-session-observation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-observation.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-parent-planning.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-planning.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
+| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
+| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
+| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
+| 基準資料を選択・取得する時 | `finish-session-observation.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-parent-planning.md` |
 
 ## 採否の確定と終了区分
 
@@ -79,6 +79,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |

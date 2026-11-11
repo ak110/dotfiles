@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `public-service-obligations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/public-service-obligations.md` |
-
 ## ファイルアップロード設計
 
 発火条件: ファイルアップロード機能を新規設計または変更する場面。
@@ -23,6 +19,6 @@ HTMLやSVGなど能動的コンテンツ（実行可能スクリプトを含み�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行と状態変更の設計：並行処理・排他制御の設計観点の基準を適用する前 | `design-runtime-concurrency.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-concurrency.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行と状態変更の設計：並行処理・排他制御の設計観点の基準を適用する前 | `design-runtime-concurrency.md` |

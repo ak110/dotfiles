@@ -15,7 +15,7 @@
    - 回収予定の作業領域ではローカル依存関係の同期のみを行い、Git hookやテンプレートには既存の設定を利用する。
      共有CLIのインストール元や共通のGit設定は、作業領域の回収後も残す必要があるためである。
      `mise run bootstrap`、`mise bootstrap`、`make setup`、`uv tool install --editable`、`prek install`、`git config --local commit.template`の実行は、恒久的に使う作業ツリーの初期設定時に限定する。
-     観測と再検証の手順は`docs/development/audit-records.md`「develop-dotfiles：回収予定の作業場所の環境準備：2026年10月1日」に記載がある。
+     観測と再検証の手順は`docs/development/audit-records-project-environment.md`「develop-dotfiles：回収予定の作業場所の環境準備：2026年10月1日」に記載がある。
 2. 信頼登録の不足を防ぐため、複製元と異なる絶対パスで`mise.toml`を参照する領域や、`XDG_STATE_HOME`などで状態ディレクトリを切り替える領域では、作成者が検証前に`mise trust`を実行する。
    信頼登録は設定ファイルの絶対パスに紐づき、状態ディレクトリ配下へ保存される。
    - linked worktreeは複製元の信頼設定を共有するため、複製元リポジトリのルートにある`mise.toml`に対して1回実行すれば足りる。

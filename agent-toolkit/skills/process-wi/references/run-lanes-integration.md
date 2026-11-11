@@ -4,17 +4,17 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
-| 基準資料を選択・取得する時 | `finish-session-observation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-observation.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` |
-| 基準資料を選択・取得する時 | `lane-planning-resume.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-resume.md` |
-| 基準資料を選択・取得する時 | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
+| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
+| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
+| 基準資料を選択・取得する時 | `finish-session-observation.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review-recording-integration.md` |
+| 基準資料を選択・取得する時 | `lane-planning-resume.md` |
+| 基準資料を選択・取得する時 | `finish-session.md` |
 
 ## 統合とAWI終了
 
@@ -25,6 +25,8 @@
 呼び出し引数とmanifestの作成手順は、レーン担当の`lane-integration.subagent.md`「公開統合操作」に従う。
 メインエージェント自身が現行CLIを呼び出す場合も、独立した文脈でのレビューと完成条件の判定を通過した同一の入力情報を使用する。
 Git統合と統合状態の更新は、この公開操作に集約して実施する。
+公開操作は、レーンの排他で行う準備と検証、統合先ごとの排他で行う短い更新（統合先HEADの一致の確認とfast-forward）、記録の確定（計画保存、WIの採否確定、選定の統合状態の更新）に分かれる。
+同じ統合先へ統合するレーンの間で直列になるのは短い更新だけであり、メインは先行レーンの`統合完了`を待たずに次のレーンへ統合を許可できる（`../../../share/exec-parent-integration.md`「統合の許可」）。
 
 **20.** 終了コード0、`phase: finalized`、統合結果のOID、計画ファイルの保存、ならびに終了対象AWIの採否確定を確認する。
 `終了しない`項目と延期対象は採否を確定しない。
@@ -58,7 +60,7 @@ CLIは今回のWI集合と所有権を検収し、すべての最終化操作が
  実行中のセッションや解放できないリソースは破棄せずに保持し、次項の手順に従って再回収する。
 
 到達確認を行った上で`-D`オプションによりbranchを削除する理由は、通常の`-d`オプションがupstreamを基準に判定するため、push前のローカル統合を未統合と判定して削除を拒否してしまうためである。
-監査記録は`docs/development/audit-records.md`「agent-toolkit/skills/process-wi/references/run-lanes.md「統合とAWI終了」：所有資源の回収：2026年9月3日」に記載されている。
+監査記録は`docs/development/audit-records-wi.md`「agent-toolkit/skills/process-wi/references/run-lanes-integration.md「統合とAWI終了」：所有資源の回収：2026年9月3日」に記載されている。
 
 ### 未回収レーンの再回収
 
@@ -84,6 +86,8 @@ CLIは今回のWI集合と所有権を検収し、すべての最終化操作が
    計画ファイルまたは引き継ぎ記録の実在、AWI集合の一致、および専用worktreeの元の所有主体が終了済みであることを事前に確認する。
    反映後の観測のみが残っている項目については、`finish-session-observation.md`「延期adoptと反映後の観測」によりAWI本文へ追記された再開記録に基づき、選定結果の観測専用の再開位置をそのまま引き渡す。
    レーン担当は`lane-planning-resume.md`「再開」に従って観測作業のみを実施する。
+   再開するレーンへ回答済みUWIや、依存の解消・`unhold`で`inbox`へ戻った元項目を引き渡す場合は、引渡しの前に`atk wi show`でそれらの現在の状態を照会し、`inbox`の項目を`atk wi start-processing`で`processing`へ移す。
+   作業に着手する項目を開始経路によらず`processing`にする契約は、`../../wi-standards/references/wi-standards-states.md`「状態と依存」が示す状態遷移に従う。
 
 2. 残存している専用worktreeおよびbranchを安全に再利用できる場合は、同一の絶対パス、branch、最新HEAD、および再開位置を新規のレーン担当へ渡す。
    安全に再利用できない場合は、既存の作業成果を損なわないよう最新HEADから新規の専用worktreeを作成し、移行内容を`atk run-script plan-progress --`を用いて進捗ログ（計画なしの場合は引き継ぎ記録）へ記録する。

@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` | |
-| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
-| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` | |
-| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
-| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| 是正要求を分類する前 | `immediate-fix.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` |
 
 ## 処理対象の決定
 
@@ -32,7 +32,7 @@ CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI�
 **8.** 通常起動では、`atk wi list --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull --with-staleness --snapshot-output <開始時集合JSONの絶対パス>`を実行する。
 同じ初回取得の全状態・全種別の識別子集合を保存し、新着確認と再開へ同じパスを引き継ぐ。
 
-`all-repos`のリポジトリ担当は[all-repos-orchestration.md](all-repos-orchestration.md)「取得済み候補の受領」に従い、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う。
+`all-repos`のリポジトリ担当は[all-repos-orchestration-inputs.md](all-repos-orchestration-inputs.md)「取得済み候補の受領」に従い、受け取った`candidate_file`の保存原本と`readiness`を初回の取得結果として扱う。
 明示した一覧の項目が作業ツリー指定の初回取得結果に含まれない場合は、`atk wi show <WIファイル名> --target-repo=all`を実行して保存済みの`target_repo`を取得し、originとの不一致がリポジトリの移転やパス改名によるものか、別リポジトリであるかを判定する。
 同一性と変更先の確定には、ユーザーの明示的な指定、または移転・別名の対応記録を根拠とする。
 `ls-remote`のOID一致だけでは移転の根拠にならない。
@@ -83,8 +83,8 @@ UWIを`選定`に含める場合は、元項目と同じレーンへ割り当て
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 登録全体の統括と対象別担当への受渡しの基準を適用する前 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` |
-| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
-| メインによるWI選定とレーン分け：集合確定直後の処理開始の基準を適用する前 | `selection-procedure-starting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-starting.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 登録全体の統括と対象別担当への受渡しの基準を適用する前 | `all-repos-orchestration.md` |
+| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` |
+| メインによるWI選定とレーン分け：集合確定直後の処理開始の基準を適用する前 | `selection-procedure-starting.md` |

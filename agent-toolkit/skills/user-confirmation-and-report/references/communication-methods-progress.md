@@ -4,14 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` |
+| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` |
+| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 
 ## 起動案内と進捗通知
 
@@ -30,11 +29,10 @@
 長い委譲の往復の間も点検の契機を届けるため、この通知は機械注入のターン（定期再確認を含む）にも付ける。
 実ユーザーの発話の有無や無操作期間の長さによらず、前回通知から30分以上たった観測で通知する。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` |
+| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 
 1. 通知を受けた主体は、活動の有無と、目標への進展・試行から得た情報・工程の所要を分けて点検する。
    新しい情報を得ない同じ試行が続く場合は、前提と優先順位を見直し、有効なら既存の独立文脈レビューを利用する。
@@ -60,7 +58,7 @@
    最上位メインの出力形式は`rules-main.md`「進捗報告」、改善点の値と記入方法は同書「作業中の改善点の報告」の定義を参照する。
    `予定`とした時点で、対象、区分と再開条件を既存の作業記録（計画の`## 進捗ログ`、計画が無ければ引き継ぎ記録）へ残す。
    送達済みの途中報告を事象の原本とし、作業記録には原本の所在と現在の処置だけを書く。
-   `予定`の確定と完了報告への記載は、`SKILL.md`「工程」の手順5に従う。
+   `予定`の確定と完了報告への記載は、`agent-toolkit:report-completion/SKILL.md`「工程」の手順5に従う。
    委譲先の正常な前進のみの点検は既存記録へ保存し、要旨と記録先を次の規定された工程返却へまとめる。
    通常点検を独立通知や役割返却の早期終了の理由にせず、作業を継続する。
    判断・認可・入力・レーン調整を要する変化、無視できない改善、停滞の新根拠と規定された工程境界は、既存契約どおり通知する。
@@ -72,6 +70,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 確認・報告の手段と認識合わせ：手段の選択の基準を適用する前 | `communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 確認・報告の手段と認識合わせ：手段の選択の基準を適用する前 | `communication-methods-delivery.md` |

@@ -13,16 +13,12 @@ MCP開発元によるベストプラクティス等の推奨事項は、利用�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `program-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/program-messages.md` |
-
 ## 典拠
 
 本書は、2026年10月2日時点で取得した以下の公式一次資料に基づいている。
 MCP仕様としてはバージョン`2025-11-25`を対象としている。
 実際に利用するSDKが対応している仕様バージョンは、実装前に確認する。
-監査記録と再検証手順は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月2日」を参照する。
+監査記録と再検証手順は、`docs/development/audit-records-mcp.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月2日」を参照する。
 公式プラグイン`mcp-server-dev`の資料は2026年10月29日に取得した。
 取得した版と再検証手順は同書の「agent-basics/skills/writing-standards/references/mcp-server-design.md：典拠：2026年10月29日」を参照する。
 
@@ -141,11 +137,11 @@ server instructionsはクライアントが取り込むかどうかを任意に�
   初期読み込み時と検索後の読み込み時のどちらであっても説明が欠落しないよう、すべての説明文を初期送信の上限（4,096文字）以内に収めることが望ましい。
   2026年10月2日時点の公式資料では、この上限を環境変数`CLAUDE_CODE_MAX_MCP_DESCRIPTION_LENGTH`で変更可能とされているが、新バージョンにおける変数名は未確認である。
   なお、引数の説明文にも同様の文字数制限が適用されるかどうかは、参照したリリースノートに記載がなく未確定である。
-  バージョンと典拠の記録は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」を参照する。
+  バージョンと典拠の記録は、`docs/development/audit-records-mcp.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日」を参照する。
 - ツール検索機能が有効になっている場合、セッション開始時に読み込まれる情報はツール名とserver instructionsのみとなる。
   そのためinstructionsには、扱う対象のタスク種別、どのような場面でツールを検索すべきか、および提供する主な機能を明記しておく。
 - Claude Codeは、`readOnlyHint: true`のツールと`idempotentHint: true`のツールを、接続断などでツールが実行済みの可能性がある失敗の後にも再試行する。
   `readOnlyHint: true`のツールは並行して呼び出す場合もある。
-  観測した版と再検証手順は、`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月29日」を参照する。
+  観測した版と再検証手順は、`docs/development/audit-records-mcp.md`の「agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月29日」を参照する。
 - MCPツールの出力データが10,000トークンを超えると警告が表示され、デフォルト設定では最大25,000トークンに制限される（環境変数`MAX_MCP_OUTPUT_TOKENS`で変更可能）。
   仕様上どうしても大きなデータを返却する必要があるツールについては、`tools/list`の`_meta["anthropic/maxResultSizeChars"]`メタデータを設定することで上限を引き上げることができる（画像データを返すツールには適用されない）。

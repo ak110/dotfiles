@@ -70,12 +70,30 @@ def observed_identity(entry: dict[str, Any], runtime: str) -> RuntimeIdentity | 
     OpenCode v1.19.3のSQLite入力は原本assistantの`providerID`・`modelID`・`variant`を使い、
     `variant`が無い場合は推論量を未確認として返さない。
     """
+    fields = _observed_model_effort(entry, runtime)
+    if fields is None:
+        return None
+    model, effort = fields
+    if isinstance(effort, str) and effort:
+        return RuntimeIdentity(runtime, model, effort, "observed")
+    return None
+
+
+def observed_model(entry: dict[str, Any], runtime: str) -> str | None:
+    """推論量の記録を要求せず、ホストが観測したモデルだけを返す。合成応答は除く。"""
+    fields = _observed_model_effort(entry, runtime)
+    return fields[0] if fields is not None else None
+
+
+def _observed_model_effort(entry: dict[str, Any], runtime: str) -> tuple[str, Any] | None:
     if runtime == "codex":
         payload = entry.get("payload")
         if entry.get("type") != "turn_context" or not isinstance(payload, dict):
             return None
         model, effort = payload.get("model"), payload.get("effort")
     elif runtime == "claude":
+        if entry.get("type") != "assistant":
+            return None
         message = entry.get("message")
         model = message.get("model") if isinstance(message, dict) else None
         effort = entry.get("effort")
@@ -98,8 +116,8 @@ def observed_identity(entry: dict[str, Any], runtime: str) -> RuntimeIdentity | 
         model, effort = f"{provider}/{model_id}", body.get("variant")
     else:
         return None
-    if isinstance(model, str) and model and isinstance(effort, str) and effort:
-        return RuntimeIdentity(runtime, model, effort, "observed")
+    if isinstance(model, str) and model and model != "<synthetic>":
+        return model, effort
     return None
 
 

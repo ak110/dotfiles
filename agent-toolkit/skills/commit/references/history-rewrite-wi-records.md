@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-
 ## WI実装commitの対応の継承
 
 コミット対応表のJSONフォーマットは、1対1または多対1の対応を表す`{"oldOID":"newOID"}`とする。
@@ -28,7 +23,12 @@ rebase後はまず指定なしで比較し、history-compareが「変更内容�
 rebaseで部分省略・全件省略された旧commitは、空白を含む同一変更が統合先の履歴に一意に存在し、旧commitの変更そのものが新baseに残っている場合に、その既存commitへ対応付ける。
 全件省略時は新baseと新HEADに同じOIDを指定する。
 変更が残っているかは、旧commitの差分を新baseへ逆適用でき、順適用できないことで判定する。
-同じpathへの後続編集も、変更箇所とその前後の文脈に重ならなければ受理し、重なる書換えは変更の保持を確かめられないため拒否する。
+同じpathへの後続編集も、変更箇所とその前後の文脈に重ならなければ受理する。
+重なる書換えは、取消しの後の編集と差分の適用では区別できないため、指定なしでは拒否し、`--resolved-conflict <旧OID>`の指定を求める診断を返す。
+この指定は、統合先の書換えの内容を読み、書換え後の統合先でレーンの変更が成立することを確かめた場合だけ行う。
+指定した旧commitは既存commitへ対応付け、成功の報告に列挙する。
+新baseへ順適用できる取消しは指定しても拒否するが、取消しの後に文脈を編集した場合のように差分の適用で区別できない喪失は機械的に排除できず、指定する側の検収に委ねる。
+同じ旧commitへの`--exclude-path`との併用は拒否する。
 revertやmergeで不採用となった変更、消失した変更、対応が曖昧な変更は受理しない。
 省略されたWIなしの依存commitも比較表に含め、WI付きcommitの対応は計画と引き継ぎ記録へ継承する。
 対応先が既存のWI対応を持つ場合は、旧commitのWI集合と合併する。
@@ -71,6 +71,6 @@ atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` |

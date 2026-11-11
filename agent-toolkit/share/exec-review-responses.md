@@ -9,19 +9,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewee.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `work-contract-updates.md` | 判断 | `read:agent-toolkit:*/share/work-contract-updates.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details-decisions.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewee-verification.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-verification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-
 ## レビュー指摘の位置付け
 
 品質の定義については、`agent-basics:review-standards/references/reviewee-acceptance.md`「レビュー指摘の位置付け」に従う。
@@ -55,16 +42,16 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 修正の分担と計画の保持・計画の確定内容の保持に関する判断・作業の前 | `exec-review-responses-planning.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-planning.md` |
-| 同じ指摘の反復・round 3以降の方式見直しに関する判断・作業の前 | `exec-review-responses-recurrence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-recurrence.md` |
-| 実行レビュー反復での記録・レビュー指摘管理表への応答に関する判断・作業の前 | `exec-review-responses-records.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-records.md` |
-| 完了報告に関する判断・作業の前 | `exec-review-responses-completion.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 修正の分担と計画の保持・計画の確定内容の保持に関する判断・作業の前 | `exec-review-responses-planning.md` |
+| 同じ指摘の反復・round 3以降の方式見直しに関する判断・作業の前 | `exec-review-responses-recurrence.md` |
+| 実行レビュー反復での記録・レビュー指摘管理表への応答に関する判断・作業の前 | `exec-review-responses-records.md` |
+| 完了報告に関する判断・作業の前 | `exec-review-responses-completion.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レビューイー側心得：レビュー指摘の位置付けの基準を適用する前 | `agent-basics:review-standards/references/reviewee-acceptance.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-acceptance.md` |
-| レビューイー側心得：修正要否の立証の基準を適用する前 | `agent-basics:review-standards/references/reviewee-correction.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-correction.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レビューイー側心得：レビュー指摘の位置付けの基準を適用する前 | `agent-basics:review-standards/references/reviewee-acceptance.md` |
+| レビューイー側心得：修正要否の立証の基準を適用する前 | `agent-basics:review-standards/references/reviewee-correction.md` |

@@ -9,13 +9,13 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| QCDと3段判定に関する判断・作業の前 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 事実と推論・報告の選別と判断記録に関する判断・作業の前 | `quality-principles-facts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-facts.md` |
-| 規定の区分と標示に関する判断・作業の前 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
-| 役割分担に関する判断・作業の前 | `quality-principles-roles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-roles.md` |
-| 要件と認可に関する判断・作業の前 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
-| 文書と既存コードの不一致に関する判断・作業の前 | `quality-principles-source-consistency.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-source-consistency.md` |
-| 変更と検証の範囲に関する判断・作業の前 | `quality-principles-scope.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-scope.md` |
-| 外部部品の版の追従に関する判断・作業の前 | `quality-principles-dependencies.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-dependencies.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| QCDと3段判定に関する判断・作業の前 | `quality-principles-qcd.md` |
+| 事実と推論・報告の選別と判断記録に関する判断・作業の前 | `quality-principles-facts.md` |
+| 規定の区分と標示に関する判断・作業の前 | `quality-principles-constraints.md` |
+| 役割分担に関する判断・作業の前 | `quality-principles-roles.md` |
+| 要件と認可に関する判断・作業の前 | `quality-principles-authorization.md` |
+| 文書と既存コードの不一致に関する判断・作業の前 | `quality-principles-source-consistency.md` |
+| 変更と検証の範囲に関する判断・作業の前 | `quality-principles-scope.md` |
+| 外部部品の版の追従に関する判断・作業の前 | `quality-principles-dependencies.md` |

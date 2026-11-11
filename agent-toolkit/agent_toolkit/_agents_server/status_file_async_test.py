@@ -26,7 +26,7 @@ from agent_toolkit._agents_server import (
     unavailable_candidates,
     wait_output_tracking,
 )
-from agent_toolkit._atk import config as atk_config
+from agent_toolkit._atk import config_settings as atk_config
 from agent_toolkit._common import atomic_file, session_registry, state_paths
 from agent_toolkit._testing.agents_server_support import FakeBackend, FakeCodexClient, _complete, install_backend
 
@@ -481,7 +481,7 @@ async def test_auxiliary_save_retry_runs_outside_loop(
                 config_path.write_text(
                     json.dumps({"execute_engine": "claude", "claude_high_tier_model": "test/medium"}), encoding="utf-8"
                 )
-                monkeypatch.setattr(atk_config, "_config_file_path", lambda: config_path)
+                monkeypatch.setattr(atk_config, "config_file_path", lambda: config_path)
             replace = atomic_file.os.replace
             attempts: list[str] = []
             delays: list[float] = []

@@ -4,29 +4,27 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` | |
-| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` | |
-| manifestの`verification`へ渡すローカル検証の上限を決める前 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` | |
-| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` | |
-| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md` | |
-| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
-| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
+| manifestの`verification`へ渡すローカル検証の上限を決める前 | `agent-basics:check-execution/references/verification-scope.md` |
+| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` |
+| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
+| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
+| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
+| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
 
 ## 公開統合操作
 
 **4.** 受理済み入力からmanifestと許可集合を準備し、統合区分に応じて手順5または7の公開操作を行う。
 
 単一担当の実行契約において、実行レビューを受理したレーン担当が統合入力を確定し、本節の操作へ進む（初期選定で複数レーンが存在する場合は`統合許可`を受領した後に進む）。
-レーン担当は、`exec.parent.md`、`exec-parent-integration.md`に定める統合前検収（完成条件証拠、レビューの収束、対象HEAD、採否の確認）を完了させてから統合操作を実行する。
+レーン担当は、`exec.parent.md`、`exec-parent-integration.md`に定める統合前検収に受領時の受理記録を用い、レビューの収束、対象HEAD、採否を確認してから統合操作を実行する。
 所有登録、レビュー済みHEAD、完成条件証拠、および最終化の検収条件は同一のものを用いる。
 
-受け取った完成条件証拠を検収し、全計画と今回のWI群、確定した採否や延期の情報を順序付きマニフェストへ保存する。
+完成条件証拠は`exec-review-recording-integration.md`の受理記録の再利用条件に従い、変更の影響を受ける条件と未検収部分だけを検収する。
+全計画と今回のWI群、確定した採否や延期の情報を順序付きマニフェストへ保存する。
 Gitの所有確認、rebase、内容比較、再検証、fast-forwardマージ、最終化、および選定状態の統合更新は、次の公開操作コマンドで実行する。
 
 ```text
@@ -44,6 +42,8 @@ atk lane integrate --record <所有登録の絶対パス> --reviewed-head <統�
 マージありの統合、マージなしの統合、および失敗後の再開のいずれにおいても、同一の許可集合を使用する。
 
 マニフェストはJSONオブジェクトであり、以下のフィールドを持つ。
+追加計画を合流させたレーンの再統合でも、`plans`と`wis`には前回までに統合した計画とWIを含める（保存済み計画は`saved`、終了済みWIは`commands: []`）。
+CLIは選定YAMLにあるレーンの全WIがmanifestに載っているかを確かめ、追加分だけのmanifestを終了2で拒否する。
 
 - `plans`: 全計画を保持する順序付き配列。
   各項目は`name`（計画ファイル名）と`commands`（`lane-integration-subagent-finalization.md`「計画最終化」で実行するplan-checkや保存用のargv配列）を持つ。
@@ -122,6 +122,9 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 診断は手順6で判定する。
 
 統合許可を待つ間にmanifestと検証表を準備し、許可受領・統合開始・終了を計画の進捗ログへ対応付ける。
+同じ間に、統合先の最新HEADとの競合を`git merge-tree --write-tree <統合先HEAD> <レーンのHEAD>`で先に調べる（終了コード0は競合なし、1は競合あり）。
+競合があれば両方の要求を保つ解消案を用意し、調べた統合先HEADと解消案を引き継ぎ記録へ残す。
+`統合許可`を受けたら、記録した統合先HEADから現在HEADまでに増えた差分だけを見直して解消案を適用する。
 統合後に初めて変わる呼出元・入力・組み合わせだけを追加観測し、内容と条件が一致する保存済み成功は保持する。
 
 呼び出し側、生成側、消費側の組み合わせに変化が生じる場合は、その変化の影響を受ける受入シナリオを統合後に自己検収する。
@@ -132,6 +135,11 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
 「公開統合操作」の稼働判定で対象となる担当プロセスが動作中である場合や、Gitの処理が中断状態にある場合は、作業成果をそのまま保持する。
 
 統合先ブランチのHEADの子孫になっている場合は、rebaseを行わずにfast-forwardマージへ進む。
+CLIはrebase、検証、検収を統合先の排他の外で終え、統合先ごとの排他の中では、統合先HEADが準備時の前提（rebaseした場合は新しいベース、しなかった場合は準備時に読んだ統合先HEAD）と一致することを確かめてからfast-forwardする。
+一致しない場合は統合先を変えず、`target_advanced`と終了コード1を返す。
+このときは同じ入力に`--restart-review`を付け、現在HEADを`--reviewed-head`へ渡して再開する。
+CLIは最新の統合先へ再rebaseし、対応表と再検証を保存して`phase: awaiting-validation`へ戻るため、以後は通常のrebase後と同じく検収して`--accept-rebased-head`で再開する。
+Git統合後の計画保存とWI終了は統合先の排他を持たずに実行し、他のレーンの統合先の更新を待たせない。
 分岐している場合は、書き換え対象となる全コミットがリモート追跡ブランチへ未到達であることを確認し、旧ベースとHEADを保存したうえでrebaseを実行する。
 親コミットのみを操作するrebase、およびその続行や中断の処理では、呼び出しごとに`git -c submodule.recurse=false`を適用し、初期化済みのサブモジュールのHEAD、ブランチ、作業内容を保護する。
 すでにpush済みである場合、競合が発生した場合、内容に不一致がある場合、または検証に失敗した場合は、続行できない理由と所有記録を返す。
@@ -177,7 +185,7 @@ CLIはfast-forward後に`phase: git-integrated`を保存し、plans・wisのargv
 Git統合後の再開では、所有登録に保持されている成功済み操作と残りの最終化処理に基づき、同一の入力から継続する。
 rebase後であっても、完成条件証拠の`レビューHEAD`は実際にレビューを実施した最終バージョンとして保持し、統合入力HEADとは区別して扱う。
 
-rebaseを実行した場合は、`history-compare`の対応表を`agent-toolkit:commit`の`SKILL.md`「WI実装commitの対応」に定める履歴変更手順の`--rewrite-map`へそのまま渡す。
+rebaseを実行した場合は、`history-compare`の対応表を`agent-toolkit:commit`の`references/commit-wi-records.md`「WI実装commitの対応」に定める履歴変更手順の`--rewrite-map`へそのまま渡す。
 追加commitを伴う再rebaseでは、前述の追加分の更新後に旧系列の対応表を渡す。
 この際、対応表の旧系列のHEADと統合対象のすべての計画または引き継ぎ記録も、同一の呼び出しで一度に渡す。
 rebaseによってOIDのみが変化した計画の完成条件証拠については、再判定する必要はない（`exec-review-parent-launch.md`「起動方法別のレビュー基準」を参照）。
@@ -198,8 +206,8 @@ rebaseによってOIDのみが変化した計画の完成条件証拠につい�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
-| 編集時の注意点:の基準を適用する前 | `../skills/commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
-| レーン統合タスク：計画最終化の基準を適用する前 | `lane-integration-subagent-finalization.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-finalization.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` |
+| 編集時の注意点:の基準を適用する前 | `../skills/commit/SKILL.md` |
+| レーン統合タスク：計画最終化の基準を適用する前 | `lane-integration-subagent-finalization.md` |

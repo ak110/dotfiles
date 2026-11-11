@@ -40,7 +40,7 @@ def set_entry_dependencies(
     filename: str,
     depends_on: tuple[str, ...],
     target_repo: str | None = None,
-    lock_timeout: float = -1,
+    lock_timeout: float | None = None,
 ) -> dict[str, object | None]:
     """既存AWIの明示依存だけを更新し、保存済みメタデータを返す。
 

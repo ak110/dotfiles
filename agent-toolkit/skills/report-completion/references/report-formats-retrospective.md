@@ -4,18 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis-inputs.md`、`../../review-session/references/analysis-triage.md`、`../../review-session/references/analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-inputs.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
-| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
+| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis-inputs.md`、`../../review-session/references/analysis-triage.md`、`../../review-session/references/analysis-actions.md` |
 
 ## 振り返り結果報告のフォーマット
 
@@ -33,11 +29,10 @@ batchは同じ判断材料と区分を報告用UWIの1件へ集約し、対象ID
 ## 振り返り結果報告
 
 - 候補: <N>件 (<候補種別> <件数>件 / ...)
-- 所要時間: <秒数>秒 (準備時点)
+- 所要時間: <秒数>秒 (準備時点)。対象に巡回のセッションがある場合は、その巡回の今回の所要、比べた過去の回の所要、悪化しているかの判定も書く
 - 費用確認: <読込・Skill・結果量・反復・token上位を確認した結論>
-- 改善見込み: <案の合計短縮見込み、改善後の全体所要時間、目標値との差、超過時の律速区間。時間改善案が無い場合は「なし」>
-- 効果確認: <AWIと変更ファイルごとの「効果を確認」「効果不足」「適用機会なし」、根拠の記録位置、保存結果または是正AWI。候補0件は「なし」>
-- 効果確認の未確認: <effect_unconfirmed_countの件数と理由。0件は「なし」>
+- 改善見込み: <案の合計短縮見込み、改善後の全体所要時間、目標値との差、超過時の律速区間。巡回が悪化している場合は、最も長いレーンの工程と比べた対策の案。時間改善案が無い場合は「なし」>
+- 効果確認: <見直した採用済みAWIごとの「効果を確認」「効果不足」「適用機会なし」、目的の値の前後、根拠の記録位置、保存結果または是正AWI。続いている問題のために先に選んだ項目はその旨。見直した項目が無ければ「なし」>
 
 ### 確定した問題と対策
 

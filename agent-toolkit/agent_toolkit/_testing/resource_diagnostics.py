@@ -1,18 +1,116 @@
-"""Windowsの回収失敗時に、失敗パスの保持PIDを診断する。
+"""pytestの実行枠待ちとWindowsの回収失敗時の保持PIDを診断する。
 
 取得不能は状態とAPIのエラー番号で表し、保持PIDの空集合と区別する。
 汎用の削除処理や回収対象には介入しない。
 """
 
+import contextlib
 import ctypes
+import dataclasses
 import datetime
 import json
 import os
 import pathlib
 import sys
+import time
+from collections.abc import Callable
 from typing import Any
 
+import psutil
+from pyfltr.command import execution_slot
+
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import process_tree
+
+
+def _slot_process(pid: int) -> dict[str, Any]:
+    try:
+        return psutil.Process(pid).as_dict(attrs=["pid", "ppid", "create_time", "cmdline"], ad_value="unavailable")
+    except psutil.Error as error:
+        return {"pid": pid, "unavailable": type(error).__name__}
+
+
+def _slot_ancestry() -> list[dict[str, Any]]:
+    # parents()は生成時刻の前後関係で列を打ち切るため、その判定自体の不成立も調べられるようppidをたどる。
+    ancestry = []
+    seen: set[int] = set()
+    pid = os.getpid()
+    while pid > 0 and pid not in seen:
+        seen.add(pid)
+        process = _slot_process(pid)
+        ancestry.append(process)
+        parent = process.get("ppid")
+        if not isinstance(parent, int):
+            break
+        pid = parent
+    return ancestry
+
+
+def _slot_files(directory: pathlib.Path) -> dict[str, Any]:
+    try:
+        paths = sorted(directory.iterdir())
+    except OSError as error:
+        return {"unavailable": type(error).__name__}
+    entries = []
+    for path in paths:
+        entry: dict[str, Any] = {"name": path.name}
+        try:
+            entry["size"] = path.lstat().st_size
+            if path.is_symlink() or not path.is_file():
+                entry["unavailable"] = "not_regular_file"
+            else:
+                entry["content"] = path.read_text(encoding="utf-8")
+                entry["read"] = "success"
+        except (OSError, UnicodeError) as error:
+            entry["unavailable"] = type(error).__name__
+        entries.append(entry)
+    return {"entries": entries}
+
+
+def _save_slot_wait() -> pathlib.Path:
+    directory = execution_slot.default_lock_dir()
+    record = {
+        "event": "execution_slot_wait",
+        "at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "lock_dir": str(directory),
+        "owner_files": _slot_files(directory),
+        "owners": [
+            {**dataclasses.asdict(owner), "observed": _slot_process(owner.pid)} for owner in execution_slot.read_owners()
+        ],
+        "ancestry": _slot_ancestry(),
+    }
+    # 親のpyfltrが結果をアーカイブする前に中断されても残る、既存の7日保持領域へ直接保存する。
+    path = managed_temp.create_managed_temp("pytest-slot-wait") / "diagnostic.json"
+    path.write_text(json.dumps(record, ensure_ascii=True) + "\n", encoding="utf-8")
+    return path
+
+
+def slot_wait_probe(*, delay: float = 10.0) -> Callable[[], bool]:
+    """実行枠の既存の待機pollから、一度だけ親列と保持者を保持期限付きファイルへ保存する。
+
+    短い競合待ちを記録で埋めず、時間上限に達する前の親列を採取する。
+    should_abortへ渡すが常にFalseを返し、取得規則や待機上限を変えない。
+    """
+    deadline = time.monotonic() + delay
+    reported = False
+
+    def probe() -> bool:
+        nonlocal reported
+        if reported:
+            return False
+        try:
+            if time.monotonic() < deadline:
+                return False
+            reported = True
+            path = _save_slot_wait()
+            print(f"resource-diagnostics: execution_slot_wait saved={path}", file=sys.stderr, flush=True)
+        except Exception as error:  # noqa: BLE001  # 補助診断の失敗で実行枠の取得を変えない
+            reported = True
+            with contextlib.suppress(Exception):
+                print(f"resource-diagnostics: execution_slot_wait unavailable={type(error).__name__}", file=sys.stderr)
+        return False
+
+    return probe
 
 
 class _IoStatusBlock(ctypes.Structure):

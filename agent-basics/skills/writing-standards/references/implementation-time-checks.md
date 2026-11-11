@@ -4,13 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
-| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md`、`read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-jobs.md`、`read:agent-basics:*/skills/writing-standards/references/design-runtime-services.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` |
+| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` |
+| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` |
 
 ## 依存と自動生成物
 
@@ -29,6 +28,14 @@
   理由が自明でない場合は抑制コメントに理由を明記する。
   コードの振る舞いを変えずに単にlint警告を回避するためだけの小手先の書き換えは避ける。
   新しく抑制を追加するときは、既存の抑制コメントの有無にとらわれず、個別に妥当性を判断する。
+- ファイルの行数の上限を検査するプロジェクトで、検査が超過を報告したら、同じ作業の中で分割・統合・削除し、超過したファイルと分割で作ったファイルを検査が示す整理後の行数以下にする。
+  数行を削って上限以下へ戻す対応はしない（上限の直前に貼り付き、次の追記で再び超えるため）。
+  分割は主題のまとまりを単位とし、行数だけを基準に前半と後半へ分けることは避ける。
+  整理は超過を生じた作業の付帯作業として同じ作業項目に含め、整理のcommitは本来の変更のcommitと分ける。
+  上限以下のファイルには行数の測定・見積もり・記録・削減を求めず、整理後の行数を上限以下のファイルの目標にしない。
+  上限を超えたかどうかの確認も検査の実行に任せ、編集の前後の行数の計測は省く。
+  計画とWIの起草は、行数を扱う工程の対象外とする。
+  数値は検査の設定とエラーメッセージが示す。
 - ファイル単位や設定ファイル全体でのルール緩和（ファイル全体の行数上限の引き上げなど）は、プロジェクト方針との不一致がある場合や、個別の抑制を繰り返すのでは対応しきれない場合に限定する。
   緩和により検出されなくなる違反とその影響を確かめ、将来の見逃しリスクを評価した上で実施する。
   コードの肥大化が原因であれば、責務やユースケースに応じたファイルの分割を優先する。

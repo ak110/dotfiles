@@ -12,10 +12,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 母集団・判定基準の確定と結果の採否を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 担当を起動・待機・受領する前 | `../skills/delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 母集団・判定基準の確定と結果の採否を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 担当を起動・待機・受領する前 | `../skills/delegation/SKILL.md` |
 
 ## 入力
 

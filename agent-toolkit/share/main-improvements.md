@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 改善点の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 待機中に改善の投入や独立作業を前倒しする前 | `../skills/delegation/references/waiting-and-monitoring-independent-work.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-independent-work.md` |
-| process-wiで改善の対処時機を決める前 | `../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 規範読込と委譲結果の改善報告を受領する前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
-| 当座の訂正と再発防止を判断する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 改善点の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
+| 待機中に改善の投入や独立作業を前倒しする前 | `../skills/delegation/references/waiting-and-monitoring-independent-work.md` |
+| process-wiで改善の対処時機を決める前 | `../skills/process-wi/references/immediate-fix.md` |
+| 規範読込と委譲結果の改善報告を受領する前 | `../skills/delegation/references/receiving-followup.md` |
+| 当座の訂正と再発防止を判断する前 | `agent-basics:bugfix/SKILL.md` |
 
 ## 作業中の改善点の報告
 
@@ -22,7 +22,12 @@
   区分は`判断待ち`・`認可待ち`・`入力待ち`・`書込競合`とし、再開条件を添える
 - `即時対応`: 今回是正する
 - `不要`: 独立した再発防止策の登録なし。
-  区分は`非欠陥`・`処置済み`・`被覆`・`見送り`とし、理由を添える
+  区分は`非欠陥`・`処置済み`・`被覆`・`見送り`とし、理由を添える。
+  費用だけの問題も含め、どの区分にも当たらなければ再発防止策を検討する
+  - `非欠陥`: 正常な回復や新しい情報だけで、期待契約からの逸脱が無い
+  - `処置済み`: 同じセッションで根本原因に作用する処置を実装した（commitかWI名を添える）
+  - `被覆`: 未完了の既存項目が根本原因と必要な処置をすべて被覆する（WI名を添える）
+  - `見送り`: 両系統の候補を作り、防げる損失と継続費用の比較で採用しない（結論を添える）
 
 process-wiの対応時機は読込表の`immediate-fix.md`で判定する。
 登録と修正を区別し、転記も同書式を使う。

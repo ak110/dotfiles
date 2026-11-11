@@ -17,38 +17,34 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 配布物のコードや文書を編集する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 配布物の技術的条文の根拠や監査記録を扱う前 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
-| 配布物の文書・コード・コメントを改訂する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../edit-dotfiles-norms/SKILL.md` | 判断 | `read:*/skills/edit-dotfiles-norms/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `./../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../agent-basics/skills/writing-standards/references/agent-documents-additions-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-additions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../agent-basics/skills/writing-standards/references/agent-documents-basics-purpose.md`、`../../../agent-basics/skills/writing-standards/references/agent-documents-basics-placement.md`、`../../../agent-basics/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`../../../agent-basics/skills/writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-purpose.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 配布物のコードや文書を編集する前 | `agent-basics:writing-standards/SKILL.md` |
+| 配布物の技術的条文の根拠や監査記録を扱う前 | `agent-basics:writing-standards/references/investigation.md` |
+| 配布物の文書・コード・コメントを改訂する前 | `agent-basics:review-standards/SKILL.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`、または`atk wi`の実装を編集する前 | `agent-toolkit:workflow-overview`を起動する。ユーザーの判断、操作、観測結果が変わる場合のみ、対応する`docs/guide/`節も読む | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` |
-| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下、または`rust/claude-statusline/src/agents_server.rs`の実装、および共有状態の読書き・保存先・更新主体・利用関係を変更・調査する前 | `references/agents-server-shared-state.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
-| セッション状態や内部フラグを設計・変更・調査する前 | `references/session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
-| `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agents-server-investigation.md` |
-| `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/atk-serve-static.md` |
-| 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/distribution-and-hooks.md` |
-| hook、自動チェック、永続状態、配送経路など新しい仕組みを加える計画を起草する前と、その変更を実行レビューする前 | `./../edit-dotfiles-norms/SKILL.md` | 判断 | `read:*/skills/edit-dotfiles-norms/SKILL.md` |
-| `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump-planning.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-planning.md` |
-| 全レーンの完了後にバージョンを更新する時点、および`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
-| `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とインポートを変更する前 | `references/distribution-and-hooks-layers.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/distribution-and-hooks-layers.md` |
-| 配布プラグインの文書・スキル・役割契約を編集する前、機構や外部インターフェースの変更に伴う文書・生成物の追随先を確定する前 | `references/agent-documents.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agent-documents.md` |
-| プラグインの版数・説明文・派生マニフェストを更新する前、または公開時の採番要否を確定する前 | `references/version-bump.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/version-bump.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`、または`atk wi`の実装を編集する前 | `agent-toolkit:workflow-overview`を起動する。ユーザーの判断、操作、観測結果が変わる場合のみ、対応する`docs/guide/`節も読む |
+| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下、`rust/claude-statusline/src/agents_server.rs`または`rust/claude-statusline/src/agents_server/`配下の実装、および共有状態の読書き・保存先・更新主体・利用関係を変更・調査する前 | `references/agents-server-shared-state.md` |
+| セッション状態や内部フラグを設計・変更・調査する前 | `references/session-state-and-flags.md` |
+| `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` |
+| `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
+| 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` |
+| hook、自動チェック、永続状態、配送経路など新しい仕組みを加える計画を起草する前と、その変更を実行レビューする前 | `./../edit-dotfiles-norms/SKILL.md` |
+| `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump-planning.md` |
+| 全レーンの完了後にバージョンを更新する時点、および`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` |
+| `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とインポートを変更する前 | `references/distribution-and-hooks-layers.md` |
+| 配布プラグインの文書・スキル・役割契約を編集する前、機構や外部インターフェースの変更に伴う文書・生成物の追随先を確定する前 | `references/agent-documents.md` |
+| プラグインの版数・説明文・派生マニフェストを更新する前、または公開時の採番要否を確定する前 | `references/version-bump.md` |
 
 ## ファイル構成と参照方向
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 環境変数の一覧から名称と用途を確認する前 | `./references/claude-hooks.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/claude-hooks.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 環境変数の一覧から名称と用途を確認する前 | `./references/claude-hooks.md` |
 
 - `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するプラグインルート。
 - `agent-basics/`: 成果物の品質スキルを独立して配布するプラグインルート。
@@ -112,11 +108,11 @@ description: >
 
 ## 開発専用資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| hookの実装・登録・遮断や警告の判定・出力・通知formatterを変更する前 | `references/distribution-and-hooks.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/distribution-and-hooks.md` |
-| toolkitのPython実装を新設・変更する前 | `references/python.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/python.md` |
-| 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/check-script-design.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| hookの実装・登録・遮断や警告の判定・出力・通知formatterを変更する前 | `references/distribution-and-hooks.md` |
+| toolkitのPython実装を新設・変更する前 | `references/python.md` |
+| 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` |
 
 ## レビュー評価セット
 
@@ -133,6 +129,9 @@ description: >
    新形式AWIを含む事例では、反映項目ごとの主要完成状態と出典、リスト・段落の補足条件を条件表（`review_contract`）へ写す。
    反映内容節がない対象AWIはH1と冒頭から主要完成状態1件を作り、人間由来と旧形式の対象外判定を維持する。
    生成側と起動側は同じ必要条件を検査し、`評価用WI原本`のJSON一覧から同じ保存本文を取得する。
+   事例定義の`fixtures`に保存版の指定（`revision`と、`plan`か`contract`のパス）がある事例では、評価用の計画と確かめた条件表を保存版から渡す。
+   出力の`temporary_evidence`は、渡す計画と条件表が参照する一時領域のパスの件数（`referenced`）と、現存しないパス（`missing`）を示す。
+   `missing`が空でない事例は、評価の前に、証拠を欠測と明記した評価用の計画を`store`で保存して`fixtures`へ指定する。
    出力の`start`をそのままagents_serverの`start`へ渡し、比べるモデルは`model_type`で指定する
 2. 変更前は稼働中のplugin rootの役割名（`exec-review`）、変更後は作業ツリーの`agent-toolkit/share/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。
    agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映された後の実行と、反映前に保存した結果を比べる
@@ -144,5 +143,15 @@ description: >
 障害事例や振り返りで、レビューの見逃し（レビュー後に判明した欠陥）か誤指摘（レビュー担当の前提の誤り・撤回で不採用になった指摘）が確定したら、`scripts/review_eval_cases.json`へ事例を追加する。
 入力はprivate-notesの`plans`配下の計画と`.wi-commits.jsonl`から再構成できるものを選び、期待には検出すべき問題か出すべきでない指摘を、同じ指摘行に揃って現れる照合語句（正規表現）で書く。
 メインやレーン担当の技術判断による見送りは誤指摘に数えない。
+追加する事例は、`prepare`の出力だけでレビューを始められる入力にしてから登録する。
+
+- 条件表を、対象AWIの要求の最終形（後の節で置き換えられた方式や条件を反映した形）と読み比べる。
+  自動生成の条件表が最終形と違う場合は、確かめた条件表を保存版にする。
+- 計画が参照する一時領域の証拠は保持期限で消える。
+  進捗ログを除き、実機の証拠が欠測であることを明記した評価用の計画を保存版にし、`temporary_evidence`の`referenced`が0件になることを確かめる。
+- 期待に書く問題が、渡す入力で未解決のまま残っていることを確かめる。
+  過去のレビュー指摘と判定、補正を記録した進捗行、訂正済みの検証表が入力に残ると、レビュー担当は問題を解決済みと読む。
+- 保存版は`uv run --frozen python scripts/review_eval.py store --case <事例ID> --plan <評価用の計画> --contract <確かめた条件表>`でprivate-notesへ保存し、出力の`fixtures`を事例定義へ書く。
+  AWIと計画の本文を含むため、公開リポジトリには置かない。
 実行レビュー以外のレビュー担当の事例は、`role`に役割名を、`extra_params`にその役割の起動入力を書いて追加する。
 値の`{plan}`・`{base}`・`{case_dir}`は準備時に計画の複製・開始時のHEAD・事例の出力先へ置き換わる。

@@ -52,20 +52,22 @@ def test_each_stream_preserves_boundary_and_entire_output(
 def test_forced_save_is_open_before_result_and_keeps_exception(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """出力が小さいwaitでも結果の回収前に保存先を開き、例外で終わるまでの結果をファイルへ保持する。"""
-    observed = []
+    """出力が小さいwaitでも結果の回収前に保存先を開き、例外で終わるまでの結果をファイルへ保持する。
+
+    非0で終わった本体の出力には成功時の要約を適用せず、保存先と行数だけを示す。
+    """
+    summarized: list[pathlib.Path] = []
     with (
         pytest.raises(SystemExit) as raised,
-        output_file.auto_save(
-            lambda: tmp_path, force_stdout=True, after_save=lambda path: observed.append(path.read_text(encoding="utf-8"))
-        ),
+        output_file.auto_save(lambda: tmp_path, force_stdout=True, after_save=summarized.append),
     ):
         assert (tmp_path / "output.txt").is_file()
         print('{"session_id":"child","status":"completed"}', flush=True)
         raise SystemExit(7)
     assert raised.value.code == 7
-    assert observed == ['{"session_id":"child","status":"completed"}\n']
-    assert capsys.readouterr().out.startswith("保存先: ")
+    assert (tmp_path / "output.txt").read_text(encoding="utf-8") == '{"session_id":"child","status":"completed"}\n'
+    assert not summarized
+    assert capsys.readouterr().out.splitlines()[1:] == ["行数: 1"]
 
 
 def test_forced_save_failure_does_not_consume_result(capsys: pytest.CaptureFixture[str]) -> None:
@@ -417,3 +419,37 @@ def test_removed_output_option_is_rejected(tmp_path: pathlib.Path, capsys: pytes
     code, _output, error = run_atk([*argv, "--output-file", str(destination)], capsys)
     assert code == 2 and "--output-file" in error
     assert not destination.exists()
+
+
+def test_failed_user_events_query_shows_error_instead_of_zero_count(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """失敗した`--user-events`の照会は「発話: 0件」を出さず、エラーの本文と次の操作を表示して終了コードを保つ。
+
+    成功して発話が無い照会は、従来どおり「発話: 0件」を表示する。
+    """
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    missing = "00000000-0000-4000-8000-000000000000"
+    argv = ["run-script", "session-review-evidence", "--", "--claude-session-id", missing, "--user-events"]
+    code, output, _error = run_atk(argv, capsys)
+    assert code == 2
+    lines = output.splitlines()
+    assert lines[0].startswith("保存先: ")
+    assert "発話: 0件" not in output
+    saved = [
+        json.loads(line) for line in pathlib.Path(lines[0].removeprefix("保存先: ")).read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event["kind"] for event in saved] == ["error"]
+    assert lines[2:] == [f"失敗: {saved[0]['text']}", f"次の操作: {saved[0]['next_action']}"]
+
+    trace = tmp_path / "trace.jsonl"
+    entry = {
+        "type": "assistant",
+        "timestamp": "2026-10-01T00:00:00Z",
+        "message": {"role": "assistant", "content": [{"type": "text", "text": "応答だけの記録"}]},
+    }
+    trace.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
+    code, output, error = run_atk(["run-script", "session-review-evidence", "--", str(trace), "--user-events"], capsys)
+    assert code == 0, error
+    assert output.splitlines()[2:] == ["発話: 0件"]

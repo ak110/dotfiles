@@ -2,7 +2,10 @@
 
 本スクリプトは履歴を読み取るだけで、認可・公開済みの確認・操作の実行は呼出側が所有する。
 rebaseは変更内容の一意な対応を検収する。統合先に既にある同一変更は、旧commitの変更が新baseに残っている
-（新baseへ逆適用でき、順適用できない）場合に限りその既存commitへ対応付け、
+（新baseへ逆適用でき、順適用できない）場合に限りその既存commitへ対応付ける。
+統合先の後続commitが変更箇所や文脈を書き換えた場合は、書換えと取消しを差分の適用で区別できないため、
+`--resolved-conflict`で明示した旧commitに限り対応付ける。新baseへ順適用できる取消しは明示しても拒否するが、
+取消し後の文脈編集のように差分の適用で区別できない喪失は機械的に排除できず、明示する側の検収に委ねる。
 明示した競合解消commitは件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことで対応付ける。
 同一変更が系列内で繰り返す場合（導入・復元・再導入など）は内容で対応先を決められないため、
 旧新が同数のときに限り位置で対応付ける。rebaseは相対順を保つため、同数の系列で相対順を保つ全単射は
@@ -180,17 +183,27 @@ def _same_content(work_dir: pathlib.Path, old_oid: str, new_oid: str, excluded: 
 
 
 def _upstream_mapping(
-    work_dir: pathlib.Path, old: list[str], new: list[str], old_base: str, new_base: str, explicit: set[str]
-) -> dict[str, str]:
+    work_dir: pathlib.Path,
+    old: list[str],
+    new: list[str],
+    old_base: str,
+    new_base: str,
+    explicit: set[str],
+    acknowledged: set[str],
+    excluded: set[str],
+) -> tuple[dict[str, str], dict[str, str]]:
     """省略された旧変更を、統合先で追加された同一変更へ一意に対応付ける。
 
     空白も区別する既存の内容識別で同一変更を探し、旧commitの変更そのものが新baseに残っている場合に限る。
-    同じpathの後続編集でも、変更箇所とその文脈に重ならなければ受理し、取消し・不採用・重なる書換えは拒否する。
+    同じpathの後続編集でも、変更箇所とその文脈に重ならなければ受理し、取消し・不採用は拒否する。
+    重なる書換えは取消しと区別できないため、`acknowledged`（`--resolved-conflict`）で明示された旧commitだけを受理し、
+    2つ目の戻り値で返す。明示は、書換え後の統合先でレーンの変更が成立することを呼出側が確かめた表明である。
+    `excluded`（`--exclude-path`）を併せて指定した旧commitは、除外の検収を経ずに対応付けることになるため拒否する。
     履歴内に同一変更があるだけでは受理しない。
-    `explicit`は競合解消または除外を明示した旧commitであり、新系列のcommitとの対応を検収するため省略の対象から外す。
+    `explicit`は競合解消または除外を明示した旧commitであり、変更が残る場合も新系列のcommitとの対応を検収するため省略の対象から外す。
     """
     if len(old) <= len(new):
-        return {}
+        return {}, {}
     old_ids = {oid: _content_id(work_dir, oid) for oid in old}
     if len(set(old_ids.values())) != len(old):
         raise ValueError("変更内容が重複し、commitの対応が一意ではありません")
@@ -198,22 +211,38 @@ def _upstream_mapping(
     upstream = _git(work_dir, "rev-list", "--no-merges", f"{old_base}..{new_base}").splitlines()
     upstream_ids = {oid: _content_id(work_dir, oid) for oid in upstream}
     mapping = {}
+    rewritten = {}
     for oid, content in old_ids.items():
-        if oid in explicit or content in new_ids:
+        if content in new_ids:
             continue
         matches = [target for target, candidate in upstream_ids.items() if candidate == content]
         if len(matches) > 1:
             raise ValueError(f"統合先の既存変更との対応が一意ではありません: {oid}")
-        if matches and _retained_at(work_dir, oid, new_base):
+        if not matches:
+            continue
+        state = _retention_at(work_dir, oid, new_base)
+        if state == "retained" and oid not in explicit:
             mapping[oid] = matches[0]
-    return mapping
+        elif state == "rewritten" and oid in acknowledged and oid in excluded:
+            raise ValueError(f"--exclude-pathを指定した旧commitは、統合先の同一変更への対応付けと併用できません: {oid}")
+        elif state == "rewritten" and oid in acknowledged:
+            mapping[oid] = matches[0]
+            rewritten[oid] = matches[0]
+        elif state == "rewritten":
+            raise ValueError(
+                f"統合先の同一変更{matches[0]}が後続commitで書き換えられ、取消しと区別できません: {oid}。"
+                "書換え後の統合先でこの変更に依存するレーンの変更が成立することを確かめた場合だけ、"
+                f"--resolved-conflict {oid}を指定して再実行する"
+            )
+    return mapping, rewritten
 
 
-def _retained_at(work_dir: pathlib.Path, oid: str, base: str) -> bool:
-    """`oid`の変更が`base`に残っていれば真を返す。作業ツリーと実indexは変えない。
+def _retention_at(work_dir: pathlib.Path, oid: str, base: str) -> str:
+    """`oid`の変更が`base`でどう扱われているかを返す。作業ツリーと実indexは変えない。
 
-    変更が残っていれば`base`へ逆適用でき、同じ変更を二重には加えられない（順適用できない）。
-    取消し・不採用では逆適用の文脈が一致せず順適用が成功し、変更箇所や前後の文脈への後続編集では逆適用が失敗する。
+    `retained`は変更がそのまま残る（逆適用でき、順適用できない）。
+    `rewritten`は後続編集が変更箇所か前後の文脈を書き換えた（逆適用も順適用もできない）。
+    `lost`は取消し・不採用で変更が無い（順適用できる）。
     差分は接頭辞を明示し（`diff.noprefix`の設定によらず`-p1`で適用できるように）、バイナリーとモード変更も含める。
     """
     patch = _git(
@@ -254,7 +283,9 @@ def _retained_at(work_dir: pathlib.Path, oid: str, base: str) -> bool:
         )
         if loaded.returncode:
             raise ValueError(f"新baseを一時indexへ読み込めません: {base}: {loaded.stderr.strip()}")
-        return apply("apply", "--cached", "--check", "-R") == 0 and apply("apply", "--cached", "--check") != 0
+        if apply("apply", "--cached", "--check") == 0:
+            return "lost"
+        return "retained" if apply("apply", "--cached", "--check", "-R") == 0 else "rewritten"
 
 
 def _changed_paths(work_dir: pathlib.Path, oid: str) -> set[str]:
@@ -475,7 +506,8 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=None,
         metavar="OID",
-        help="rebaseの競合解消で内容が変わった旧commit。件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことを検収する。反復指定",
+        help="rebaseの競合解消で内容が変わった旧commit。件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことを検収する。"
+        "統合先の同一変更が後続commitで書き換えられ省略された旧commitは、書換え後の成立を確かめた場合だけ指定して対応付ける。反復指定",
     )
     parser.add_argument(
         "--exclude-path",
@@ -490,6 +522,7 @@ def main(argv: list[str] | None = None) -> int:
     exclusions: dict[str, frozenset[str]] = {}
     added_paths: dict[tuple[str, str], list[str]] = {}
     removed_paths: dict[tuple[str, str], list[str]] = {}
+    rewritten: dict[str, str] = {}
     try:
         if not args.work_dir.is_absolute() or not args.work_dir.is_dir() or not args.output.is_absolute():
             raise ValueError("--work-dirは実在する絶対ディレクトリ、--outputは絶対パスを指定してください")
@@ -509,12 +542,14 @@ def main(argv: list[str] | None = None) -> int:
                 for value in args.resolved_conflict or []
             }
             exclusions = _exclusions(args.work_dir, old, args.exclude_path or [])
-            upstream = _upstream_mapping(args.work_dir, old, new, old_base, new_base, conflicts | set(exclusions))
+            upstream, rewritten = _upstream_mapping(
+                args.work_dir, old, new, old_base, new_base, conflicts | set(exclusions), conflicts, set(exclusions)
+            )
             mapping = _rebase(
                 args.work_dir,
                 [oid for oid in old if oid not in upstream],
                 new,
-                conflicts,
+                conflicts - set(rewritten),
                 exclusions,
                 added_paths,
                 removed_paths,
@@ -539,6 +574,9 @@ def main(argv: list[str] | None = None) -> int:
     added += "".join(
         f"。指定した変更パスを除外した対応: {oid} -> {mapping[oid]}: {', '.join(sorted(paths))}"
         for oid, paths in exclusions.items()
+    )
+    added += "".join(
+        f"。明示で受理した、統合先で書き換えられた既存変更への対応: {oid} -> {target}" for oid, target in rewritten.items()
     )
     outcome.report_success(f"{args.operation}の履歴を検収し、{len(mapping)}件の完全OID対応を保存した: {args.output}{added}")
     return 0

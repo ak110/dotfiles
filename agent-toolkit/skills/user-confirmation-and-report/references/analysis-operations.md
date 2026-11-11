@@ -12,6 +12,7 @@
 
 - `single-inquiry`（単発の照会）: 進捗や所要時間、状態を尋ねるのみの発話であり、是正、停止、方針変更、将来の振る舞い変更を含まないもの。
   発話の本文を根拠とする。
+  受け取った時の分類は、回答と調査の後に分かった事実で判定し直し、回答が既存の契約や成果物の不備を認める場合は、質問の形のままでも単発の照会として除外しない。
 - `non-changing-request`（判断を変えない追加要求）: これまでの判断、工程、成果物、要求分類、完了判定のいずれも変更しない要求。
   変更がないことを示す本文の箇所を根拠とする。
   ローカル環境での終了操作に関連する訂正や続行指示もこの区分に含め、問題や再発防止要求への変換、および除外理由の報告を省略する。
@@ -51,11 +52,9 @@
 
 ## 参照資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 振り返り工程の目標時間の超過を判定する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 振り返り工程の目標時間の超過を判定する前 | `agent-toolkit:review-session/references/duration-analysis.md` |
 
 ## 対処の認可と機能の不足
 
@@ -67,7 +66,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告：認可を要する操作の基準を適用する前 | `user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告：認可を要する操作の基準を適用する前 | `user-confirmation-and-report-authorization.md` |
+| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` |

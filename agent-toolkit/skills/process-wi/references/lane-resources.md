@@ -7,11 +7,11 @@ process-wiのメインエージェントが、レーンの専用worktree・branc
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `run-lanes-launch.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
+| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
+| 本文で基準を使う資料の選択・取得時 | `run-lanes-launch.md` |
 
 ## レーン資源の作成・再利用・回収
 
@@ -86,6 +86,10 @@ CLIはメイン作業ツリーや登録のない実体を自動回収しない�
 書込競合だけで後段となる場合と、調査や判断自体が先行成果を要する場合を区別し、後者の未確定部分は成果の到着まで保留する。
 共有検証や直列統合の処理能力を踏まえ、独立した準備の先行と準備・検証の集約を比較し、先行変更後に前提と所要見込みを更新する。
 
+worktreeの作成、正式な計画、最新本文への編集だけが先行統合の後に残り、成果を要しない準備は統合を待たずに始める。
+
+調査担当など統合先へ書き込まない補助の担当は、作業ディレクトリを統合先とレーンのworktreeの外（起動者か担当自身のmanaged-tempなど）にして起動し、読取対象は絶対パスで渡す。
+`atk lane integrate`は作業ディレクトリが属するworktreeで稼働中の担当を集め、役割文書を持たない起動を書込担当と数えて統合を止めるためである。
 調査担当は取得したリポジトリの版、対象パス、確認した事実と仮定、残る問いを自身のmanaged-tempへ保存する。
 先行調査では、正式計画の作成、WI状態の変更、レーン資源の登録、および対象worktreeへの書き込みを行わない。
 新しいCLI、準備専用レーン、キュー状態は設けず、レーン数上限と書込所有を維持する。
@@ -100,7 +104,7 @@ CLIはメイン作業ツリーや登録のない実体を自動回収しない�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レーン計画の起草と再開の基準を適用する前 | `lane-planning.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` |
-| レーンの実行の基準を適用する前 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レーン計画の起草と再開の基準を適用する前 | `lane-planning.md` |
+| レーンの実行の基準を適用する前 | `run-lanes.md` |

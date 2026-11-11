@@ -10,6 +10,7 @@ import datetime
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 import zlib
@@ -24,16 +25,26 @@ from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
 import agent_toolkit
-from agent_toolkit._agents_server import api_credits, claude, launch_requests, state
+from agent_toolkit._agents_server import api_credits, claude, claude_stream, launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk import orchestrator as _orchestrator
+from agent_toolkit._atk.wi import process_loop_update as _process_loop_update
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._git import command as _git_command
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
+from agent_toolkit._testing import (
+    agents_server_fixtures,
+    hook_support,
+    isolation,
+    resource_diagnostics,
+    session_evidence_support,
+    xdist_stop,
+)
 from agent_toolkit._testing import git_repository as _git_repository
-from agent_toolkit._testing import isolation, resource_diagnostics, session_evidence_support, xdist_stop
 from agent_toolkit._testing.logging_support import isolated_agents_server_logging
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
@@ -77,7 +88,7 @@ class _StubPluginReloader:
 @pytest.fixture(autouse=True)
 def _isolate_claude_plugin_watch(monkeypatch: pytest.MonkeyPatch) -> None:
     """実監視の試験はclaude_pluginsの実クラスを明示的に使う。"""
-    monkeypatch.setattr(claude, "ClaudePluginReloader", _StubPluginReloader)
+    monkeypatch.setattr(claude_stream, "ClaudePluginReloader", _StubPluginReloader)
 
 
 class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
@@ -85,6 +96,30 @@ class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
 
     def __init__(self, timeout: float = 0.05, **kwargs: Any) -> None:
         super().__init__(timeout=timeout, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _launch_follows_patched_subprocess_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`subprocess.run`を差し替えた試験では、時間上限付きの起動も差し替え先へ渡す。
+
+    gitの共通起動関数などは時間切れで子孫まで止めるため`subprocess.Popen`から起動し、`subprocess.run`を経由しない。
+    `subprocess.run`の差し替えで外部コマンドを偽装する既存の試験が実物を起動しないよう、各モジュールの起動の
+    1か所（`_launch`）で橋渡しする。差し替えていない試験は実物の起動関数を使う。
+    """
+    original_run = subprocess.run
+
+    def follow(launch: Callable[..., Any]) -> Callable[..., Any]:
+        def launch_or_patched_run(command: list[str], **kwargs: Any) -> Any:
+            if subprocess.run is original_run:
+                return launch(command, **kwargs)
+            # checkは呼び出し元が渡す。
+            return subprocess.run(command, **kwargs)  # noqa: PLW1510  # pylint: disable=subprocess-run-check
+
+        return launch_or_patched_run
+
+    for module in (_git_command, _orchestrator, _process_loop_update):
+        # 起動の1か所を差し替えるための参照であり、各モジュールのdocstringがこの利用を明記している。
+        monkeypatch.setattr(module, "_launch", follow(module._launch))  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)
@@ -191,7 +226,11 @@ def pytest_configure(config: pytest.Config) -> None:
     worker = hasattr(config, "workerinput")
     # 最外側のpytestは開始から子孫の回収まで実行枠を保持し、試験の途中では待機者へ譲らない。
     # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
-    stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
+    # 収集だけの実行（`--collect-only`）は試験を実行せず、枠が守る外部ツールも起動しないため、枠を取らない。
+    if not config.option.collectonly:
+        stack.enter_context(
+            execution_slot.hold(label="pytest", on_wait=_notify_slot_wait, should_abort=resource_diagnostics.slot_wait_probe())
+        )
     previous_children = set(process_tree.collect_descendants(os.getpid()))
     resource_environment = {
         name: os.environ.get(name)
@@ -336,6 +375,17 @@ def _clear_wait_schedule_environment(request: pytest.FixtureRequest, monkeypatch
         return
     for name in _WAIT_SCHEDULE_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _single_execution_slot_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """試験が起動する検証を、実行枠1つの構成で動かす。
+
+    pyfltr 3.30.0以降は、環境変数の指定が無ければ枠が2つあり、保持者1件の間にもう1件が待たずに実行枠を取る。
+    実行枠の待ちと区間の直列を確かめる試験は、一時の保存先で保持者1件の後ろに後続が並ぶ構成を前提にする。
+    外側のpytest自身の枠の取得は、試験より前の`pytest_configure`で済んでいるため、この指定の影響を受けない。
+    """
+    monkeypatch.setenv("PYFLTR_EXECUTION_SLOTS", "1")
 
 
 @pytest.fixture(autouse=True)
@@ -614,3 +664,13 @@ def _make_clean_repo() -> Callable[[pathlib.Path], pathlib.Path]:
         return _git_repository.init_repository(tmp_path / name, files={"file.txt": "clean"}, commit_message="init")
 
     return _make
+
+
+# fixture定義を起動時の名前空間へ登録するため、実装名を参照する。
+# pylint: disable=protected-access
+session_environment = agents_server_fixtures.session_environment
+diagnostic_log = agents_server_fixtures._diagnostic_log
+codex_stable_plugin_roots = agents_server_fixtures._isolate_stable_plugin_roots
+provider_environment = agents_server_fixtures._configure_provider_environment
+_wait_environment = agents_server_fixtures._wait_environment
+_unchanged_documents_resolution = hook_support._unchanged_documents_resolution

@@ -107,13 +107,14 @@ def _check_free_text_start(mode: str, prompt: str) -> Decision:
         notices=(
             _llm_notice(
                 f"`start`の`{mode}`で渡した`prompt`が`{document}`の手順を実行する命令を持つ。"
-                "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。",
+                "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。この警告では起動を止めていない。",
                 tag=_WARN_TAG,
                 subject=prompt,
                 removable_cause=True,
                 fix=(
-                    f"`agents_server`の`start`へ`mode`を指定せず、役割名の`subagent_md_path={role_name}`と、"
-                    "`<役割名>.subagent.md`が宣言した入力名だけを持つ`extra_params`を渡して起動せよ。"
+                    "今回の起動結果を確認し、同じ作業を重複起動するな。"
+                    f"次にこの役割を起動する際は、`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={role_name}`と"
+                    "宣言済みの入力名だけを持つ`extra_params`を渡せ。"
                     f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡せ。"
                 ),
             ),
@@ -153,8 +154,9 @@ def _check_agent_prompt(prompt: str) -> Decision:
                 block=_block_notice(
                     str(error),
                     fix=(
-                        "`atk run-script delegation-prompt -- --input <要求JSONの絶対パス>`で"
-                        "必須入力を持つ本文を生成し、その本文で起動し直せ。"
+                        f"欠けた入力を補い、1行目を`{expected_first}`、2行目以降を`<入力名>: <値>`の行と"
+                        "半角空白2字で字下げした続きの行だけにして起動し直せ。"
+                        f"受理する入力名: {', '.join(sorted(accepted))}。"
                     ),
                 )
             )

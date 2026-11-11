@@ -16,9 +16,9 @@ from agent_toolkit._atk.wi import process_loop as loop
 from agent_toolkit._atk.wi import process_loop_alerts as _pl_alerts
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi.layout import iter_entry_paths
-from agent_toolkit._atk.wi.process_loop_test import _start_entry
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.process_loop_coordinator_support import _start_entry
 from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
 

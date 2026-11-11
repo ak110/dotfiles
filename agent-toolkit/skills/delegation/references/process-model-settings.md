@@ -6,13 +6,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 作業を分担するかと総費用を比較する時 | `routing-decisions.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `model-and-effort.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/model-and-effort.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 作業を分担するかと総費用を比較する時 | `routing-decisions.md` |
 
 ## 工程別モデル設定
 
@@ -79,8 +75,8 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 候補列と設定の確認・変更を扱う前 | `process-model-settings-candidates.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings-candidates.md` |
-| OpenCodeのターン起動を扱う前 | `process-model-settings-opencode.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings-opencode.md` |
-| 旧モデル設定の移行を扱う前 | `process-model-settings-migration.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings-migration.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 候補列と設定の確認・変更を扱う前 | `process-model-settings-candidates.md` |
+| OpenCodeのターン起動を扱う前 | `process-model-settings-opencode.md` |
+| 旧モデル設定の移行を扱う前 | `process-model-settings-migration.md` |

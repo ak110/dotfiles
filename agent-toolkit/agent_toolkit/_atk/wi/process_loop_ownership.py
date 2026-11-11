@@ -16,6 +16,7 @@ import psutil
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi.entries import EntryRecord
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_identity
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import session_launchers as _launchers
 from agent_toolkit._common import session_registry as _registry
@@ -113,7 +114,7 @@ def _read(path: pathlib.Path) -> _Record | None:
     if not isinstance(residual, list) or not all(
         isinstance(entry, dict) and isinstance(entry.get("pid"), int) for entry in residual
     ):
-        # PIDを欠く項目もあり得るため、PIDに頼らない確認手段（起動コマンドか対象リポジトリのパスでの絞り込み）も示す。
+        # PIDを欠く項目もあり得るため、PIDに頼らない確認手段（起動コマンドか対象リポジトリのパスによる対象限定）も示す。
         raise ValueError(
             f"処理所有記録の`{_RESIDUAL_KEY}`が不正なため、残存子孫の生存を判定できない: {path}。"
             "PIDがある項目は、そのPIDのプロセスが無いか、項目の`command`と異なる起動コマンドの別プロセスであることを確かめる。"
@@ -133,7 +134,7 @@ def _live(record: _Record) -> bool:
     pid, created = record.data.get("pid"), record.data.get("create_time")
     if not isinstance(pid, int) or not isinstance(created, (int, float)):
         raise ValueError("処理所有記録のプロセス識別が不正")
-    if record.stage is OwnershipStage.OWNED and _registry.ProcessIdentity(pid, created).exists():
+    if record.stage is OwnershipStage.OWNED and _registry.ProcessIdentity(pid, created, record.data.get("start_id")).exists():
         return True
     sessions = {
         value for value in [record.data.get("session_id"), *record.data.get("writer_sessions", [])] if isinstance(value, str)
@@ -168,7 +169,7 @@ def _executor_live(record: dict[str, Any]) -> bool:
         or not isinstance(executor.get("create_time"), (int, float))
     ):
         raise ValueError("統括CLIのプロセス識別が不正")
-    return _registry.ProcessIdentity(executor["pid"], executor["create_time"]).exists()
+    return _registry.ProcessIdentity(executor["pid"], executor["create_time"], executor.get("start_id")).exists()
 
 
 _RESIDUAL_KEY = "residual_processes"
@@ -179,13 +180,16 @@ process-loopは巡回ごとに自己再起動するため、プロセス内の�
 """
 
 
-def _residual_processes(record: dict[str, Any]) -> list[psutil.Process]:
+def _residual_processes(record: dict[str, Any], *, conservative: bool = True) -> list[psutil.Process]:
     """保存した残存子孫のうち、同じPIDと起動時刻のまま生存しているものを返す。項目の形式は`_read`が検査済みである。"""
     alive: list[psutil.Process] = []
     for entry in record.get(_RESIDUAL_KEY, []):
         try:
             process = psutil.Process(entry["pid"])
-            if process.create_time() == entry.get("create_time") and process.status() != psutil.STATUS_ZOMBIE:
+            if (
+                process_identity.matches(process, entry["create_time"], entry.get("start_id"), conservative=conservative)
+                and process.status() != psutil.STATUS_ZOMBIE
+            ):
                 alive.append(process)
         except psutil.Error:
             continue
@@ -198,7 +202,7 @@ def record_residual(ownership: Ownership, processes: list[psutil.Process]) -> No
     for process in processes:
         try:
             entries.append(
-                {"pid": process.pid, "create_time": process.create_time(), "command": _process_tree.describe(process)}
+                {**process_identity.ProcessIdentity.capture(process).payload(), "command": _process_tree.describe(process)}
             )
         except psutil.Error:
             # 記録の前に消滅した子孫は保持の対象にしない。
@@ -219,9 +223,8 @@ def _reclaim_residual(path: pathlib.Path, record: _Record) -> None:
     """保存した残存子孫を同じ識別で回収し直し、消滅を確認した子孫を記録から外す。残る間は対象と次の操作を示す。"""
     if not record.data.get(_RESIDUAL_KEY):
         return
-    _process_tree.reclaim_processes(_residual_processes(record.data))
-    alive = {(process.pid, process.create_time()) for process in _residual_processes(record.data)}
-    remaining = [entry for entry in record.data[_RESIDUAL_KEY] if (entry["pid"], entry.get("create_time")) in alive]
+    _process_tree.reclaim_processes(_residual_processes(record.data, conservative=False))
+    remaining = [entry for entry in record.data[_RESIDUAL_KEY] if _residual_processes({_RESIDUAL_KEY: [entry]})]
     record.data[_RESIDUAL_KEY] = remaining
     _save(path, record)
     if remaining:
@@ -279,7 +282,10 @@ def try_acquire(
         check=False,
     )
     if common.returncode != 0:
-        raise ValueError(f"処理所有のGit共通ディレクトリを取得できない: {worktree}: {common.stderr.strip()}")
+        raise _next_action.ActionableError(
+            f"処理所有のGit共通ディレクトリを取得できない: {worktree}: {common.stderr.strip()}",
+            next_action="対象がGit作業ツリーかとGitの状態を確かめ、同じコマンドを再実行する",
+        )
     path = _path(repo_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     with filelock.FileLock(str(path.with_suffix(".lock")), timeout=10):
@@ -293,7 +299,10 @@ def try_acquire(
             _save(path, prior)
         identity = _registry.ProcessIdentity.of(os.getpid())
         if identity is None:
-            raise RuntimeError("処理所有者のPIDと起動時刻を取得できない")
+            raise _next_action.ActionableError(
+                "処理所有者のPIDと起動時刻を取得できない",
+                next_action="同じコマンドを再実行し、続く場合はこの診断を添えて不具合として報告する",
+            )
         token = str(uuid.uuid4())
         previous = (
             _unfinished_record(prior.payload())
@@ -305,8 +314,7 @@ def try_acquire(
             {
                 "repo_id": repo_id,
                 "token": token,
-                "pid": identity.pid,
-                "create_time": identity.create_time,
+                **identity.payload(),
                 "worktree": str(worktree.resolve()),
                 "session_id": session_id,
                 "mode": mode,

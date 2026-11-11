@@ -16,11 +16,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/SKILL.md`、`../skills/delegation/references/delegation-role-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md`、`read:agent-toolkit:*/skills/delegation/references/delegation-role-launch.md` |
-
 ## 入力
 
 **1.** 全観点と比較元を揃えるため、観点ファイルを収集し、以下の入力と省略条件を確定する。

@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文の参照基準を適用する前 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
-| 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 本文の参照基準を適用する前 | `approval-scope.md` |
+| 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` |
 
 ## 問い・提案・疑問形の扱い
 
@@ -40,6 +40,8 @@ WIに関する問いは、文脈から現在の操作、WIで依頼する内容�
 - 状況照会では、原文と取得済みの結果から完了・未完了・対象外と根拠を先に回答する。
   問いや報告への異議に、新しい要求、結果に影響する変更、新しい失敗、未検証の完成条件があるかを判定する。
   報告の不足は保存済みの証拠で補い、新しい根拠に対応する範囲だけ調査・検証を再開する。
+  回答のための調査で、これまでの判断・工程・成果物の不備が分かった場合は、個別の修正・追加の指示・報告の前に`agent-basics:bugfix`の初動へ進む。
+  不備の無い通常の状況の確認は、回答で終える。
   再検証は`agent-basics:check-execution/references/verification-scope-reruns.md`「実行条件と再実行」に従う。
 - 提案と読める表現は技術的に評価し、採用内容を実施報告に含める。
   反映先と時期は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」に従う。
@@ -47,7 +49,8 @@ WIに関する問いは、文脈から現在の操作、WIで依頼する内容�
   提案された操作を合意済みとみなす`approval-scope.md`の規定は一致する範囲だけに適用し、破壊的操作の事前説明は同資料に従う。
 - 提案の妥当性を問われたら評価と根拠を先に答え、採用が決まった要求だけを委譲する。
   未回答の論点を委譲先や成果物へ渡すときは未回答と明記する。
-- 回答だけを求める質問（`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の調査だけの依頼。案・意見・評価・是非を問う発話は同`user-utterance.md`「ユーザー発話の解釈」に従う）は、求められた成果物の種類で判定し、観測事実を答える。
+- 回答だけを求める質問（`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の調査だけの依頼。案・意見・評価・是非を問う発話は同`user-utterance.md`「ユーザー発話の解釈」に従う）は、求められた成果物の種類で判定する。
+  観測事実を先に答え、その後に回答の過程で見つけた関連課題と、問いの背後にある課題への提案を添える。
   誤った結果を生む現在の設定や状態が原因と分かったら、原因側の是正を「完遂と先送り」に沿って進め、成立済みの認可内ならその場で是正し、足りなければ是正案を同じ応答で`user-confirmation-and-report-decisions.md`「確認要否の判定」へ送る。
   解消済みの原因の説明や未確定の仮説は、通常の説明または仮説として報告する。
   派生した成果物の修正と原因への対処は別々に確かめ、成果物がWIに限られる場合の登録も「完遂と先送り」に従う。
@@ -57,9 +60,9 @@ WIに関する問いは、文脈から現在の操作、WIで依頼する内容�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
-| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| ユーザー発話の解釈と取り込み：割り込み・訂正・中止の基準を適用する前 | `user-utterance-correction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-correction.md` |
-| ユーザー発話の解釈と取り込みの基準を適用する前 | `user-utterance.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` |
+| ユーザー発話の解釈と取り込み：割り込み・訂正・中止の基準を適用する前 | `user-utterance-correction.md` |
+| ユーザー発話の解釈と取り込みの基準を適用する前 | `user-utterance.md` |

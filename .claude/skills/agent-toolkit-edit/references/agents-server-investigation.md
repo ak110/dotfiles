@@ -9,11 +9,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 共有状態の保存場所や読み書きの担当を調べる前 | `agents-server-shared-state.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 共有状態の保存場所や読み書きの担当を調べる前 | `agents-server-shared-state.md` |
+| 原因調査で発生位置と直接的原因を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
 
 ## 観測できる記録の所在
 
@@ -63,7 +62,7 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
    API失敗の公開診断にはエラー種別、HTTPステータスコード、経過時間、初期化診断には受信メッセージの種別と失敗箇所の詳細がある。
    Claude接続候補の試行・選択・失敗は`claude_connection_attempt`・`claude_connection_selected`・`claude_connection_failed`を確認する。
    API切替は`claude_api_switch`、MCP再接続成否は`claude_mcp_recovered`・`claude_mcp_recovery_failed`を確認する。
-   MCP再接続の監査記録は`docs/development/audit-records.md`「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」にある。
+   MCP再接続の監査記録は`docs/development/audit-records-agents-server.md`「docs/development/design-agents-runtime.md：MCP接続失敗の再接続：2026年10月20日」にある。
 
 3. 停止契機を特定するため、中断（`interrupted`）では`diagnostics.next_action`の行範囲（`sed -n '<開始行>,<終了行>p' -- <絶対パス>`）で終了診断を読む。
    受信シグナル、標準入力の切断、終了ステータスの有無を確認する。
@@ -101,7 +100,7 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 
 ## 外部プロセスでの再現
 
-1. 起動条件を揃えるため、`agent-toolkit/agent_toolkit/_agents_server/claude.py`の`_build_options`が生成する`ClaudeAgentOptions`で`ClaudeSDKClient`を構成する。
+1. 起動条件を揃えるため、`agent-toolkit/agent_toolkit/_agents_server/claude_options.py`の`_build_options`が生成する`ClaudeAgentOptions`で`ClaudeSDKClient`を構成する。
    診断ログの採取には`ClaudeAgentOptions.extra_args`へ`--debug-file`と出力先の絶対パスを指定する。
 2. 初期化へ到達させるため、`connect()`、`query()`、`receive_messages()`の順で必ず呼び出す。
    `query()`を省くと初期化に到達しない。

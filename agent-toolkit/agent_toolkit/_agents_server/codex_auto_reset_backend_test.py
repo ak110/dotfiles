@@ -17,7 +17,7 @@ from typing import Any, cast
 
 import pytest
 
-from agent_toolkit._agents_server import codex, manager, state
+from agent_toolkit._agents_server import codex, codex_clients, codex_reset, manager, state
 from agent_toolkit._testing.agents_server_support import install_backend
 
 # reader・所有taskの境界を駆動し、公開start/reply/waitへ結果を渡す。
@@ -132,7 +132,7 @@ async def _environment(
         clients.append(client)
         return client
 
-    monkeypatch.setattr(codex, "JsonRpcProcess", client_factory)
+    monkeypatch.setattr(codex_clients, "JsonRpcProcess", client_factory)
     async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:
         install_backend(owner, "codex", backend)
         yield owner, backend, clients
@@ -272,7 +272,7 @@ async def test_reset_outcomes_preserve_normal_wait_policy(
 
 @pytest.mark.asyncio
 async def test_periodic_check_resets_near_threshold_without_model_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(codex, "AUTO_RESET_CHECK_INTERVAL", 0.01)
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_CHECK_INTERVAL", 0.01)
     async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
@@ -357,7 +357,7 @@ async def test_external_provider_does_not_consume_chatgpt_credit(tmp_path: Path,
 
 @pytest.mark.asyncio
 async def test_completed_turn_cannot_start_a_later_consumption(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(codex, "AUTO_RESET_CHECK_INTERVAL", 0.01)
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_CHECK_INTERVAL", 0.01)
     async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
@@ -383,7 +383,7 @@ async def test_completed_turn_cannot_start_a_later_consumption(tmp_path: Path, m
 
 @pytest.mark.asyncio
 async def test_nothing_to_reset_is_rechecked_by_owned_monitor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(codex, "AUTO_RESET_CHECK_INTERVAL", 0.01)
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_CHECK_INTERVAL", 0.01)
     async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]

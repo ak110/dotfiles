@@ -8,14 +8,14 @@
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-behavior.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 遮断の条件と再帰呼び出し対策・入力に関する判断・作業の前 | `claude-hooks-stop-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-common.md` |
-| Codexの差分に関する判断・作業の前 | `claude-hooks-stop-codex.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-codex.md` |
-| 委譲先での発火に関する判断・作業の前 | `claude-hooks-stop-delegates.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-delegates.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 遮断の条件と再帰呼び出し対策・入力に関する判断・作業の前 | `claude-hooks-stop-common.md` |
+| Codexの差分に関する判断・作業の前 | `claude-hooks-stop-codex.md` |
+| 委譲先での発火に関する判断・作業の前 | `claude-hooks-stop-delegates.md` |

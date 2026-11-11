@@ -7,17 +7,11 @@ pushを実行するエージェントが、push先、更新する参照（ref）
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `history-rewrite-verification.md`、`history-rewrite-fixup.md`、`history-rewrite-recovery.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md`、`read:agent-toolkit:*/skills/commit/references/history-rewrite-fixup.md`、`read:agent-toolkit:*/skills/commit/references/history-rewrite-recovery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
-| CIの結果を成功時も含めて判定する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| CIの結果を成功時も含めて判定する前 | `agent-basics:check-execution/references/diagnostics-results.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring-intervals.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies-stopped.md` |
 
 ## 公開状態の4項目
 
@@ -135,6 +129,7 @@ pushが成功したあとは、各ベースラインに対して`atk run-script 
   それ以外で待機を終了し、私設GitLabの終了3は「私設GitLabのCLI失敗からの回復」へ進む
 - バックグラウンド実行する際は、ホスト側がコマンドを強制停止する時間上限を、スクリプトに渡す総待機時間よりも長く設定する。
   ホスト側によって先に停止されると、スクリプトが判定結果を返せなくなるためである。
+  見積もった総待機時間がホストの背景実行の最大値（Claude Codeの`Bash`では7,200,000ミリ秒）を超える場合は、最大値より短い`--timeout`で起動し、終了コード2を受けてから同じ対象を待ち直す。
   実行ハンドルのyieldや再開をする場合は、60秒未満の間隔で同一プロセスに再接続し、プロセスを短い`--timeout`ごとに分割したり、プラグインルートの更新を契機に別プロセスへ置き換えたりしない
 - push前のベースラインが無い場合や、他の主体がpushしたコミットを待機する場合は、40桁の完全長SHAを`--wait-sha`に渡す。
   managed-temp内に作成した待機専用JSONを`--failure-record`に渡す。

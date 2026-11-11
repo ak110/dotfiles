@@ -20,6 +20,6 @@ classifierの判定不能で待機を開始できなくても、未回収対象�
 複数の子を待つ場合、自動再開は全件の終了後になる。
 先に終了した子の結果で進める工程が残るときは、待機表明の前に`atk agents wait`で終了した分を回収して進め、全件の結果を待つだけになってから待機表明でターンを終える。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 判定不能や拒否により待機を開始できない時 | `../skills/delegation/references/wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判定不能や拒否により待機を開始できない時 | `../skills/delegation/references/wait-anomalies-refusal.md` |

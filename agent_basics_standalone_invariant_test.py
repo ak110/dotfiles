@@ -29,7 +29,7 @@ _TOOLKIT_DEPENDENCIES = {
 }
 
 # 規範の根拠となった検証記録は配布物の外に置く例外として、規範の失効を判定する場面でだけ参照する。
-_AUDIT_RECORDS = "docs/development/audit-records.md"
+_AUDIT_RECORDS = re.compile(r"docs/development/audit-records(?:-[a-z0-9-]+)?\.md")
 # 対象プロジェクトのファイルとして一般的に指す名前（agent-basicsの資料ではない）。
 _PROJECT_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "CLAUDE.local.md"})
 _PATH_SPAN = re.compile(r"`([^`\n]+?\.md)(?:#[^`\n]*)?`|\]\(([^)\s]+?\.md)(?:#[^)\s]*)?\)")
@@ -57,7 +57,7 @@ def _unresolved_references(path: pathlib.Path, skills: pathlib.Path) -> list[str
             value = match[1] or match[2]
             if any(char in value for char in "<*{$ ") or value.startswith(("http://", "https://")):
                 continue
-            if value == _AUDIT_RECORDS or value in _PROJECT_FILES:
+            if _AUDIT_RECORDS.fullmatch(value) or value in _PROJECT_FILES:
                 continue
             # 公式ドキュメントのURL配下のページ名を列挙する行は、外部の資料を指す。
             if "/" not in value and "https://" in line:
@@ -96,7 +96,7 @@ def test_agent_basics_references_resolve_inside_distribution() -> None:
     ("reference", "conditions"),
     [
         ("gitlab-ci.md", ("編集", "確認", "参照")),
-        ("pytilpack.md", ("読み書き", "参照")),
+        ("pytilpack.md", ("読み書き", "参照", "新しく実装する")),
     ],
 )
 def test_technical_materials_keep_read_only_decision_triggers(reference: str, conditions: tuple[str, ...]) -> None:
@@ -104,7 +104,9 @@ def test_technical_materials_keep_read_only_decision_triggers(reference: str, co
     text = (_SKILLS / "writing-standards/SKILL.md").read_text(encoding="utf-8")
     rows = [line for line in text.splitlines() if line.startswith("|") and f"`references/{reference}`" in line]
     assert rows
-    assert any("| 判断 |" in row and all(condition in row for condition in conditions) for row in rows)
+    # 契機を省いた行は判断の行である。操作・起動時を契機とする行だけが列を書く。
+    judgments = [row for row in rows if "| 操作 |" not in row and "| 起動時 |" not in row]
+    assert any(all(condition in row for condition in conditions) for row in judgments)
     description = text.split("---", 2)[1]
     assert all(condition in description for condition in conditions)
 
@@ -167,7 +169,8 @@ def test_reference_outside_distribution_is_detected(tmp_path: pathlib.Path) -> N
     (skills / "sample/references/rule.md").write_text("# 基準\n", encoding="utf-8")
     path = skills / "sample/SKILL.md"
     path.write_text(
-        "# 例\n\n`references/rule.md`と`docs/development/audit-records.md`と`AGENTS.md`に従い、"
+        "# 例\n\n`references/rule.md`と`docs/development/audit-records.md`と"
+        "`docs/development/audit-records-search.md`と`AGENTS.md`に従い、"
         "`share/exec.subagent.md`を読む。\n",
         encoding="utf-8",
     )

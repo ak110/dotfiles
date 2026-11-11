@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from pytools._internal import setup_cli_common, setup_codex_cli, setup_mise, setup_statusline_binary
+from pytools._internal import setup_cli_common, setup_codex_cli, setup_mise, setup_mise_common, setup_statusline_binary
 
 
 @pytest.mark.parametrize("installer", ["common", "codex", "mise", "statusline"])
@@ -24,7 +24,7 @@ def test_http_client_ownership_survives_interruption(
         monkeypatch.setattr(httpx, "Client", lambda **_kwargs: client)
         monkeypatch.setattr(setup_cli_common, "sys", types.SimpleNamespace(platform="linux"))
         monkeypatch.setattr(setup_codex_cli, "sys", types.SimpleNamespace(platform="linux"))
-        monkeypatch.setattr(setup_mise, "_is_windows", lambda: False)
+        monkeypatch.setattr(setup_mise_common, "is_windows", lambda: False)
         monkeypatch.setattr(setup_statusline_binary, "_INSTALL_DIR", tmp_path)
         monkeypatch.setattr(setup_statusline_binary, "_INSTALL_PATH", tmp_path / "statusline")
         monkeypatch.setattr(setup_statusline_binary, "_ETAG_PATH", tmp_path / "etag")
@@ -37,7 +37,7 @@ def test_http_client_ownership_survives_interruption(
             elif installer == "codex":
                 setup_codex_cli._run_installer(supplied)  # noqa: SLF001  # pylint: disable=protected-access
             elif installer == "mise":
-                setup_mise._ensure_mise_installed(supplied)  # noqa: SLF001  # pylint: disable=protected-access
+                setup_mise.ensure_mise_installed(supplied)  # noqa: SLF001  # pylint: disable=protected-access
             else:
                 setup_statusline_binary._download_release(supplied)  # noqa: SLF001  # pylint: disable=protected-access
         assert client.is_closed is not borrowed

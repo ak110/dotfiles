@@ -19,13 +19,12 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/references/quality-standards.md` |
-| 取得した内容を事実主張・引用の根拠に使う前 | `../writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 取得した内容を事実主張・引用の根拠に使う前 | `../writing-standards/references/investigation.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| Xの投稿本文・日時・添付写真を取得する前 | `references/x-posts.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/references/x-posts.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Xの投稿本文・日時・添付写真を取得する前 | `references/x-posts.md` |

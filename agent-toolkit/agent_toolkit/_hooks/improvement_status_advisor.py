@@ -97,7 +97,8 @@ def read_guidance_notice(payload: object) -> str:
         for path in missing
     )
     return _notice(
-        "改善点の処置とAWI化ステータスの判定資料を、現在の文脈で取得していない。",
+        "改善点の判定資料について、この文脈で全文取得したことを確認できない。"
+        "部分表示やパイプ・変数を使った表示は取得操作に数えない。",
         removable_cause=True,
         subject="\n".join(map(str, missing)),
         fix=f"次の各コマンドで資料を全文読め。\n{commands}\n読んだ基準で処置とAWI化ステータスを見直し、必要なら報告を訂正せよ。",

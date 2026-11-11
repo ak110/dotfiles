@@ -11,29 +11,17 @@ Codexのロールアウト記録は`<CODEX_HOME>/sessions/<年>/<月>/<日>/roll
 コンパクション（会話圧縮）の記録形式は、実行環境（runtime）によって異なる。
 Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコードとして記録され、`compactMetadata`の中に`trigger`、`preTokens`、`postTokens`、`durationMs`が格納される。
 一方、Codexでは`type`が`compacted`のレコードに、所要時間を除いた情報が記録される。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：H1直下：2026年9月2日」に記載されている。
+監査記録は`docs/development/audit-records-session-records.md`の「agent-toolkit/skills/review-session/references/session-records.md：H1直下：2026年9月2日」に記載されている。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| Claude Codeの記録・スキル起動の判定・暗号化された値・進捗更新の判別に関する判断・作業の前 | `session-records-formats.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-formats.md` |
-| 集計値の典拠・複数セッションの比較結果に関する判断・作業の前 | `session-records-metrics.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-metrics.md` |
-| 本文の検索に関する判断・作業の前 | `session-records-query.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-query.md` |
-| 会話の少量取得に関する判断・作業の前 | `session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Claude Codeの記録・スキル起動の判定・暗号化された値・進捗更新の判別に関する判断・作業の前 | `session-records-formats.md` |
+| 集計値の典拠・複数セッションの比較結果に関する判断・作業の前 | `session-records-metrics.md` |
+| 本文の検索に関する判断・作業の前 | `session-records-query.md` |
+| 会話の少量取得に関する判断・作業の前 | `session-records-conversation.md` |

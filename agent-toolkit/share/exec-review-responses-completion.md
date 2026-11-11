@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewee-verification.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-verification.md` |
-
 ## 完了報告
 
 採否、修正方針、対応結果、および検証結果は、指定されたレビュー指摘管理表および成果物へ記録する。
@@ -27,6 +23,6 @@ Gitの管理外の変更を受け取ったラウンドは「通常」として�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レビューイーの品質基準と運用の基準を適用する前 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レビューイーの品質基準と運用の基準を適用する前 | `exec-review-responses.md` |

@@ -4,16 +4,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-prediction.md` |
-| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` |
+| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 設計・実装方針
 
@@ -59,9 +59,8 @@
   劣化があればその是正を`## 実施内容`に計上する
 - エージェント向け文書を新設・改訂する計画では、次の基準を確認する
   - `agent-basics:writing-standards/references/agent-documents-additions-volume.md`「文書記述量の管理」
-  同じ文書への変更全体についてファイルサイズの上限、責務の範囲、読込の時点、既存記述との重複などを比べ、整理の結論を書く
-  変更する各ファイルの変更前後の行数を`### リファクタリング`へ記録する。
-  変更後に目安を超える見込みのファイルと、すでに超えているファイルには、分割・統合・削除の検討結果と、残す場合の理由を記す。
+  同じ文書への変更全体について責務の範囲、読込の時点、既存記述との重複などを比べ、整理の結論を書く。
+  行数は計画で扱わず、上限の判定はプロジェクトの機械チェックに任せる（`agent-basics:writing-standards/references/implementation-time-checks.md`「lintと機械チェック」）
 - 本計画で行うリファクタリングは`## 実施内容`の表に行として計上する。
   テストの更新、直接影響範囲の同期、生成物の再生成など実装に付随する作業は`## 要件・外部仕様`に書き、`## 実施内容`の行の対象からは除く
 - 同じ根本原因を持つ類似箇所の見直しは、作業種別を問わず`agent-basics:bugfix`の`references/root-cause-remediation.md`「類似見直し」の母集団に従う。
@@ -84,7 +83,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
-| 再発防止の選定と完了：類似見直しと再発防止の完了の基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` |
+| 再発防止の選定と完了：類似見直しと再発防止の完了の基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` |

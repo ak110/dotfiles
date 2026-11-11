@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 拡張原因分析の要否を判断する前 | `root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 拡張原因分析の要否を判断する前 | `root-cause-analysis-initial.md` |
 
 ## 分類判断のための詳細検討
 
@@ -25,7 +25,7 @@
 
 - ローカル環境での再現検証において考慮すべき層（CI RunnerとExecutorの差異、生成されるシェル、サービスコンテナーなど）が含まれていない場合は、それらの層を含めた形で再現する。
   GitLab CIの場合は、ジョブと同一のイメージdigestおよびRunnerバージョンを指定して`gitlab-runner run-single`を実行することで、Runnerが報告する終了ステータスを比較できる。
-  これに関する検証記録は`docs/development/audit-records.md`の「agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判断のための詳細検討：2026年10月7日」に記載されている。
+  これに関する検証記録は`docs/development/audit-records-commit-ci.md`の「agent-basics/skills/bugfix/references/ci-failure-handling.md：分類判断のための詳細検討：2026年10月7日」に記載されている。
   再現できていない層に原因があると結論づける場合は、確定ではなく「推定」として扱う
 - 過去に同様の失敗が発生していないかを`git log --grep`等で検索して確認する
 - テスト対象のコードを意図的に壊し、該当するテストが失敗するかどうかを確かめる

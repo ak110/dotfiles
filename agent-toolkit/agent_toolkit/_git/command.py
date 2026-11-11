@@ -3,6 +3,23 @@
 agent-toolkitの非テストのコードは`git`を直接起動せず、本モジュールの関数を通す。
 `scripts/check_script_imports.py`が`_git/`配下の外での`["git", ...]`の起動を失敗にする。
 テキストで受け取る出力は常にUTF-8として復号し、復号できないバイトは置換文字へ置き換える。
+
+デフォルトの時間上限: `run`は、呼び出し側が`timeout`を渡さず`timeout_scope`の期限も無い場合、
+大域オプションを除いた最初のサブコマンドの区分から上限を決める。
+外部の応答が止まっても有限の時間で終わり、共有ロックを保持したまま後続を止めないためである。
+
+- データを転送するリモートとの通信（`fetch`、`pull`、`push`、`clone`、`submodule`、`remote update`）: 300秒
+- データを転送しないリモートとの通信（`ls-remote`、`remote update`以外の`remote`）: 60秒
+- ローカルの照会（`rev-parse`、`status`、`config`、`log`、`cat-file`、`diff`など）: 30秒
+- 作業ツリーを書き換える操作と、どの区分にも当たらないサブコマンド: 120秒
+
+値は2026年11月10日の計測（`ls-remote`約1.2秒、1週間分の`fetch`約8秒、全履歴54MiBの`clone`約258秒、
+2,076ファイルの取り出し約4.6秒、`status`約0.2秒）の数十倍とし、遅い回線や大きなリポジトリでも打ち切らず、
+ユーザーが停止と判断して手作業で止めるより先に終わる長さにした。
+呼び出し側が`timeout`を渡すのは、処理の性質からデフォルト値より短く終えたい場合（表示用の補助的な照会など）と、
+デフォルト値を超える転送を見込む場合である。
+時間上限の付く呼び出しは常に子孫まで止める起動を使う。gitが起動したsshなどがパイプを保持したまま残ると、
+親だけを止める起動は時間切れの後も戻らないためである。
 """
 
 import contextlib
@@ -21,6 +38,55 @@ type _Cwd = str | pathlib.Path | None
 type _Stream = int | typing.IO[typing.Any] | None
 _DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar("git_deadline", default=None)
 
+TRANSFER_TIMEOUT_SECONDS = 300.0
+"""データを転送するリモートとの通信のデフォルトの時間上限。"""
+
+REMOTE_QUERY_TIMEOUT_SECONDS = 60.0
+"""データを転送しないリモートとの通信のデフォルトの時間上限。"""
+
+LOCAL_QUERY_TIMEOUT_SECONDS = 30.0
+"""ローカルの照会のデフォルトの時間上限。"""
+
+MUTATION_TIMEOUT_SECONDS = 120.0
+"""作業ツリーを書き換える操作と、区分に当たらないサブコマンドのデフォルトの時間上限。"""
+
+_TRANSFER_SUBCOMMANDS = frozenset({"fetch", "pull", "push", "clone", "submodule"})
+_REMOTE_QUERY_SUBCOMMANDS = frozenset({"ls-remote", "remote"})
+_LOCAL_QUERY_SUBCOMMANDS = frozenset(
+    {
+        "rev-parse",
+        "status",
+        "config",
+        "log",
+        "cat-file",
+        "diff",
+        "diff-index",
+        "diff-tree",
+        "diff-files",
+        "show",
+        "show-ref",
+        "ls-files",
+        "ls-tree",
+        "rev-list",
+        "merge-base",
+        "for-each-ref",
+        "symbolic-ref",
+        "describe",
+        "name-rev",
+        "check-ignore",
+        "check-attr",
+        "var",
+        "version",
+    }
+)
+_GLOBAL_OPTIONS_WITH_VALUE = frozenset(
+    {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--config-env", "--attr-source"}
+)
+"""値を次の引数で受け取るgitの大域オプション。`--git-dir=<path>`の形は1語で値を含む。"""
+
+_CWD_ATTRIBUTE = "git_cwd"
+"""時間切れの例外へ、打ち切ったgitの作業ディレクトリを記録する属性名。"""
+
 
 @contextlib.contextmanager
 def timeout_scope(seconds: float) -> Generator[None]:
@@ -38,6 +104,41 @@ def timeout_scope(seconds: float) -> Generator[None]:
 def command_line(args: Sequence[str]) -> list[str]:
     """`git`へ渡す引数列から、例外と記録へ載せるコマンドの全体を返す。"""
     return ["git", *args]
+
+
+def default_timeout(args: Sequence[str]) -> float:
+    """引数列のサブコマンドの区分から、デフォルトの時間上限の秒数を返す。区分と根拠はモジュールdocstringにある。"""
+    words = iter(args)
+    for word in words:
+        if word in _GLOBAL_OPTIONS_WITH_VALUE:
+            next(words, None)
+            continue
+        if word.startswith("-"):
+            continue
+        if word in _TRANSFER_SUBCOMMANDS:
+            return TRANSFER_TIMEOUT_SECONDS
+        if word == "remote" and next((rest for rest in words if not rest.startswith("-")), None) == "update":
+            return TRANSFER_TIMEOUT_SECONDS
+        if word in _REMOTE_QUERY_SUBCOMMANDS:
+            return REMOTE_QUERY_TIMEOUT_SECONDS
+        if word in _LOCAL_QUERY_SUBCOMMANDS:
+            return LOCAL_QUERY_TIMEOUT_SECONDS
+        break
+    return MUTATION_TIMEOUT_SECONDS
+
+
+def timeout_cwd(error: subprocess.TimeoutExpired) -> str | None:
+    """`run`が送出した時間切れの例外から、打ち切ったgitの作業ディレクトリを返す。記録が無ければ`None`を返す。"""
+    return getattr(error, _CWD_ATTRIBUTE, None)
+
+
+def _timeout_error(
+    args: Sequence[str], seconds: float, cwd: _Cwd, *, stdout: str | bytes | None = None, stderr: str | bytes | None = None
+) -> subprocess.TimeoutExpired:
+    """失敗の報告が対象を示せるよう、作業ディレクトリを記録した時間切れの例外を作る。"""
+    error = subprocess.TimeoutExpired(command_line(args), seconds, output=stdout, stderr=stderr)
+    setattr(error, _CWD_ATTRIBUTE, str(pathlib.Path.cwd() if cwd is None else cwd))
+    return error
 
 
 @typing.overload
@@ -90,6 +191,8 @@ def run(
     `cwd`を省略すると呼び出し元の作業ディレクトリで起動する。
     `check`・`timeout`・`input`・`env`・`stdout`・`stderr`は`subprocess.run`と同じ意味で、
     終了コードの扱いと時間切れの例外は呼び出し側が決める。
+    `timeout`を省略し`timeout_scope`の期限も無い場合は、`default_timeout`の値を上限にする。
+    上限に達すると子孫のプロセスまで止め、`timeout_cwd`で作業ディレクトリを取り出せる`subprocess.TimeoutExpired`を送出する。
 
     `text=True`で`input`に文字列を渡すと、子プロセスの標準入力へその文字列のUTF-8のバイト列を、全OSで改行を変えずに渡す。
     `subprocess`のテキストモードはWindowsで`\\n`を`\\r\\n`へ変えるため、本関数は子プロセスをバイト列で起動して出力だけを復号する。
@@ -100,11 +203,12 @@ def run(
     if deadline is not None:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise subprocess.TimeoutExpired(command_line(args), 0)
+            raise _timeout_error(args, 0, cwd)
         timeout = remaining if timeout is None else min(timeout, remaining)
+    elif timeout is None:
+        timeout = default_timeout(args)
     try:
-        runner = process_tree.run_with_timeout if deadline is not None else subprocess.run
-        result = runner(
+        result = _launch(
             command_line(args),
             cwd=cwd,
             check=False,
@@ -116,14 +220,18 @@ def run(
             stderr=stderr,
         )
     except subprocess.TimeoutExpired as e:
-        if text:
-            raise subprocess.TimeoutExpired(e.cmd, e.timeout, output=_decode(e.output), stderr=_decode(e.stderr)) from e
-        raise
+        captured = (_decode(e.output), _decode(e.stderr)) if text else (e.output, e.stderr)
+        raise _timeout_error(args, e.timeout, cwd, stdout=captured[0], stderr=captured[1]) from e
     if text:
         result = subprocess.CompletedProcess(result.args, result.returncode, _decode(result.stdout), _decode(result.stderr))
     if check:
         result.check_returncode()
     return result
+
+
+def _launch(command: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:
+    """gitを起動する唯一の箇所。テスト基盤（`_testing/pytest_plugin.py`）が起動の差し替えに使う。"""
+    return process_tree.run_with_timeout(command, **kwargs)
 
 
 def _decode(data: bytes | str | None) -> str | None:

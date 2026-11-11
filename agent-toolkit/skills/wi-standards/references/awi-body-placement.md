@@ -6,12 +6,9 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | | | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | | | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | | | |
 | プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
 
 ## 配置規約と導入目的の調査
@@ -34,11 +31,11 @@ hookによる配送は、この選択と取得を補助する。
 既存の実装、設計、規範を過去の状態へ戻す提案、過去に取り決めた契約を撤回する提案、あるいは既存の値を変更する提案（上書き設定の解除や値の削除を含む）を行う場合は、その箇所を現在の形へと変更した当初の導入目的を調査し、今回の提案がその目的を損なわずに満たせるかを確定する。
 新しく追加しようとしている設定値、記述、規定が、反映先ファイルの変更履歴において過去に削除されていた場合も、過去の状態へ戻す提案と同様に扱う。
 調査手順は、`agent-toolkit:write-plan`の`references/plan-restoration-contracts.md`「復元・巻き戻し型の変更」に従う。
-導入目的の妥当性は、現在の要件と承認の範囲内で評価し、維持すべき結果と変更する手段を[drafting-completion.md](drafting-completion.md)「方針と判断の記録との比較」における必要性の比較によって判定する。
+導入目的の妥当性は、現在の要件と承認の範囲内で評価し、維持すべき結果と変更する手段を[drafting-completion-policies.md](drafting-completion-policies.md)「方針と判断の記録との比較」における必要性の比較によって判定する。
 後続の処理担当エージェントが導入目的との整合性を判断できるように、判定結果と再取得先を本文の適切な箇所に記録する。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 起草完了の条件の基準を適用する前 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 起草完了の条件の基準を適用する前 | `drafting-completion.md` |

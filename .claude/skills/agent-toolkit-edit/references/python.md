@@ -11,10 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/python.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/python.md` |
-
 ## 標準ライブラリとログ
 
 - agent-toolkitパッケージ内でGitを起動するときは`agent_toolkit._git.command.run`を使う（`text=True`で渡した文字列の`input`も、UTF-8のバイト列として子プロセスへ渡される）。

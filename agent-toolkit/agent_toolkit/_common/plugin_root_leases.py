@@ -13,10 +13,10 @@ from pathlib import Path
 
 import psutil
 
-from agent_toolkit._common import file_lock, state_paths
+from agent_toolkit._common import file_lock, process_identity, state_paths
 
 SHARED_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root-shared"
-_process_snapshot: contextvars.ContextVar[dict[str, list[psutil.Process]] | None] = contextvars.ContextVar(
+_process_snapshot: contextvars.ContextVar[dict[str, dict[int, psutil.Process]] | None] = contextvars.ContextVar(
     "plugin_root_processes", default=None
 )
 _usage_details: contextvars.ContextVar[str] = contextvars.ContextVar("plugin_root_usage", default="")
@@ -58,7 +58,9 @@ def usage_basis_is_current(basis: dict[str, typing.Any]) -> bool:
             if path.parent != _directory() or basis["record_signature"] != _metadata_signature(path):
                 return False
         process = psutil.Process(basis["pid"])
-        return process.create_time() == basis["created_at"] and process.status() not in (
+        return process_identity.matches(
+            process, basis["created_at"], basis.get("start_id"), conservative=True
+        ) and process.status() not in (
             psutil.STATUS_ZOMBIE,
             psutil.STATUS_DEAD,
         )
@@ -73,6 +75,7 @@ def _record_process_use(process: psutil.Process, reason: str, *, record: Path | 
         {
             "pid": process.pid,
             "created_at": created_at,
+            "start_id": process_identity.start_id(process),
             "leases": _metadata_signature(_directory()),
             "record": str(record) if record is not None else None,
             "record_signature": _metadata_signature(record) if record is not None else None,
@@ -93,24 +96,43 @@ def _directory() -> Path:
 
 @contextlib.contextmanager
 def plugin_root_lock(path: Path, *, blocking: bool = True) -> Generator[None]:
-    """同じ保持領域の使用登録と回収を直列にする。ロック実体は回収後も残す。
+    """同じ保持領域の使用登録と回収を直列にする。
 
     `blocking=False`では即時取得できない場合に`OSError`を送出する。任意保守の自動掃引が、
     使用登録や明示回収の保持者を待たずに対象を保持して本来の操作へ進むために使う。
     """
-    with (_directory() / f"{_key(path)}.lock").open("a+", encoding="utf-8") as handle:
-        file_lock.acquire_lock(handle, blocking=blocking)
-        try:
-            yield
-        finally:
-            file_lock.release_lock(handle)
+    with _lock(_directory() / f"{_key(path)}.lock", blocking=blocking):
+        yield
+
+
+@contextlib.contextmanager
+def _lock(path: Path, *, blocking: bool) -> Generator[None]:
+    """待機中に掃引されたinodeでは登録せず、現在のロック実体を取り直す。"""
+    while True:
+        with path.open("a+", encoding="utf-8") as handle:
+            file_lock.acquire_lock(handle, blocking=blocking)
+            try:
+                try:
+                    current = os.path.samestat(os.fstat(handle.fileno()), path.stat())
+                except FileNotFoundError:
+                    current = False
+                if current:
+                    yield
+                    return
+            finally:
+                file_lock.release_lock(handle)
 
 
 def register_plugin_root_use(area: Path) -> None:
     """呼出元のPIDと作成時刻を記録する。呼出元は領域のロックを保持する。"""
     try:
         process = psutil.Process()
-        record = {"pid": process.pid, "created_at": process.create_time(), "path": str(area)}
+        record = {
+            "pid": process.pid,
+            "created_at": process.create_time(),
+            "start_id": process_identity.start_id(process),
+            "path": str(area),
+        }
     except psutil.Error as error:
         raise OSError(f"配布物を使うプロセスのidentityを取得できない: {error}") from error
     destination = _directory() / f"{_key(area)}-{process.pid}.json"
@@ -119,30 +141,77 @@ def register_plugin_root_use(area: Path) -> None:
     temporary.replace(destination)
 
 
-def register_lease_capability() -> None:
-    """保持領域を使わないMCPも、lease対応能力とprocess identityを公開する。"""
-    process = psutil.Process()
-    record = {"pid": process.pid, "created_at": process.create_time(), "lease_capable": True}
-    destination = _directory() / f"capability-{process.pid}.json"
-    temporary = destination.with_suffix(".tmp")
-    temporary.write_text(json.dumps(record), encoding="utf-8")
-    temporary.replace(destination)
-
-
-def _lease_capable(process: psutil.Process) -> bool:
-    """領域別leaseも対応能力の証拠として受理し、PID再利用を作成時刻で区分する。"""
-    created_at = process.create_time()
-    for path in _directory().glob(f"*-{process.pid}.json"):
-        record = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(record, dict):
-            raise ValueError(f"lease記録がobjectではない: {path}")
-        if (
-            record.get("pid") == process.pid
-            and record.get("created_at") == created_at
-            and (record.get("lease_capable") is True or isinstance(record.get("path"), str))
+def _record_is_live(record: typing.Any) -> bool:
+    """不正な記録は例外にし、確認できた終了・PID再利用だけを失効させる。"""
+    if (
+        not isinstance(record, dict)
+        or not isinstance(record.get("pid"), int)
+        or isinstance(record["pid"], bool)
+        or record["pid"] <= 0
+        or not isinstance(record.get("created_at"), (float, int))
+        or isinstance(record["created_at"], bool)
+    ):
+        raise ValueError("使用記録のprocess identityが不正")
+    try:
+        snapshot = _process_snapshot.get()
+        process = None if snapshot is None else _observed_processes().get(record["pid"])
+        if process is None or not process_identity.matches(
+            process, record["created_at"], record.get("start_id"), conservative=True
         ):
-            return True
-    return False
+            process = psutil.Process(record["pid"])
+        return process_identity.matches(
+            process, record["created_at"], record.get("start_id"), conservative=True
+        ) and process.status() not in (
+            psutil.STATUS_ZOMBIE,
+            psutil.STATUS_DEAD,
+        )
+    except psutil.NoSuchProcess:
+        return False
+
+
+def sweep_plugin_root_records() -> None:
+    """終了したプロセスの記録と、使用記録が無く即時取得できるロックを回収する。
+
+    対応能力の記録（`capability-*.json`）は変更前の版のサーバーだけが起動時に書く。
+    変更前の版はロックを開いてから取得した後、開いたファイルがまだ同じパスにあるかを確かめないため、その間にロックを消すと、
+    新旧の版が別のinodeで同時に排他を得る。変更前の版の生存を否定できない間はロックファイルを残す。
+    """
+    directory = _directory()
+    legacy_holder = False
+    for path in directory.glob("*.json"):
+        try:
+            if path.name.startswith("capability-"):
+                if _record_is_live(json.loads(path.read_text(encoding="utf-8"))):
+                    legacy_holder = True
+                else:
+                    path.unlink(missing_ok=True)
+                continue
+            key, separator, pid = path.stem.rpartition("-")
+            if not separator or len(key) != 64 or any(char not in "0123456789abcdef" for char in key) or not pid.isdecimal():
+                continue
+            with _lock(directory / f"{key}.lock", blocking=False):
+                if not _record_is_live(json.loads(path.read_text(encoding="utf-8"))):
+                    path.unlink(missing_ok=True)
+        except OSError, ValueError, psutil.Error:
+            # 読めない対応能力の記録は、生存を否定できないため変更前の版の生存として扱う。
+            if path.name.startswith("capability-"):
+                legacy_holder = True
+            continue
+    if legacy_holder:
+        return
+    for path in directory.glob("*.lock"):
+        try:
+            with _lock(path, blocking=False):
+                if any(directory.glob(f"{path.stem}-*.json")):
+                    continue
+                # POSIXでは排他中に消す。Windowsは開いたファイルの削除を拒否するため、
+                # 閉じた後に消す（他の取得者が開いていればその削除も拒否される）。
+                if os.name != "nt":
+                    path.unlink(missing_ok=True)
+            if os.name == "nt":
+                path.unlink(missing_ok=True)
+        except OSError:
+            continue
 
 
 def plugin_root_in_use(area: Path) -> bool:
@@ -177,7 +246,9 @@ def plugin_root_in_use(area: Path) -> bool:
                 return True
             try:
                 process = psutil.Process(record["pid"])
-                if process.create_time() == record["created_at"] and process.status() not in (
+                if process_identity.matches(
+                    process, record["created_at"], record.get("start_id"), conservative=True
+                ) and process.status() not in (
                     psutil.STATUS_ZOMBIE,
                     psutil.STATUS_DEAD,
                 ):
@@ -188,40 +259,16 @@ def plugin_root_in_use(area: Path) -> bool:
         except (OSError, ValueError, psutil.Error) as error:
             _usage_details.set(f"使用記録を取得できない: {path}: {error}")
             return True
-    # lease導入前のMCPは、コピー先と起動元の対応を永続化していない。
-    # 同じ状態名前空間のMCPが残る間、その帰属が曖昧な旧領域を保持する。
     if not area.name.startswith("agents-server-plugin-root-"):
         return False
-    allow_unattributed = (
-        not area.name.startswith(f"{SHARED_PLUGIN_ROOT_PREFIX}-") and not (area / ".agent-toolkit-plugin-root.json").exists()
-    )
-    return _server_may_use_root(area, allow_unattributed=allow_unattributed)
-
-
-def _server_namespace_may_match(process: psutil.Process) -> bool:
-    """実MCPが開いている既存診断ログから保存先を確認し、欠損時は保持する。"""
-    # logging_config.configure_loggingがstate_dir直下へ開く永続ログを使う。
-    # process.environは起動後の変更を反映しないOSがあるため判定に使わない。
-    # 別のMCPがログを回転させると、開いたままのファイルは`agents-server.log.<番号>`へ改名される。
-    logs = [Path(record.path) for record in process.open_files() if _is_server_log(Path(record.path))]
-    if len(logs) != 1 or not logs[0].is_file():
-        return True
-    return logs[0].parent.samefile(state_paths.state_dir())
-
-
-def _is_server_log(path: Path) -> bool:
-    """agents_serverの永続ログか、その回転後の名前かを判定する。"""
-    if path.parent.name != "agent-toolkit":
-        return False
-    suffix = path.name.removeprefix("agents-server.log")
-    return suffix != path.name and (not suffix or (suffix.startswith(".") and suffix[1:].isdigit()))
+    return _server_may_use_root(area)
 
 
 def _current_processes() -> list[psutil.Process]:
     """現在のPIDごとに新しいProcessを構築して返す。
 
     process_iterはPID単位でProcessを再利用し、起動時刻を以前の世代のまま保持する。
-    能力記録と保持根拠を現在の起動時刻で比べるため、列挙は現在のPIDの取得だけに使う。
+    使用記録と保持根拠を現在の起動時刻で比べるため、列挙は現在のPIDの取得だけに使う。
     """
     processes: list[psutil.Process] = []
     for listed in psutil.process_iter():
@@ -232,14 +279,21 @@ def _current_processes() -> list[psutil.Process]:
     return processes
 
 
-def _server_may_use_root(area: Path, *, allow_unattributed: bool) -> bool:
-    """同じOSアカウント・状態名前空間のMCPをOSの起動引数と参照から探す。"""
+def _observed_processes() -> dict[int, psutil.Process]:
+    """掃引内では現在の世代のプロセス列挙を1回だけ共有する。"""
+    snapshot = _process_snapshot.get()
+    if snapshot is None:
+        return {process.pid: process for process in _current_processes()}
+    if "processes" not in snapshot:
+        snapshot["processes"] = {process.pid: process for process in _current_processes()}
+    return snapshot["processes"]
+
+
+def _server_may_use_root(area: Path) -> bool:
+    """同じOSアカウントのMCPによる絶対パス引数の直接参照を探す。"""
     try:
         username = psutil.Process().username()
-        snapshot = _process_snapshot.get()
-        if snapshot is not None and "processes" not in snapshot:
-            snapshot["processes"] = _current_processes()
-        for process in _current_processes() if snapshot is None else snapshot["processes"]:
+        for process in _observed_processes().values():
             try:
                 try:
                     arguments = process.cmdline()
@@ -260,15 +314,6 @@ def _server_may_use_root(area: Path, *, allow_unattributed: bool) -> bool:
                 # cleanupの--pathは、MCP targetを持たないためこの候補集合へ入らない。
                 if any(Path(argument).is_absolute() and Path(argument).is_relative_to(area) for argument in arguments):
                     return _record_process_use(process, "領域の直接参照")
-                # 公開launcherのuv親と、スクリプトを実行するPythonを区分する。
-                if (
-                    not allow_unattributed
-                    or len(arguments) < 2
-                    or Path(arguments[1]).parts[-2:] != ("agent_toolkit", "agents_server_mcp.py")
-                ):
-                    continue
-                if _server_namespace_may_match(process) and not _lease_capable(process):
-                    return _record_process_use(process, "同じ状態名前空間のlease非対応MCP")
             except psutil.NoSuchProcess:
                 continue
             except psutil.Error as error:

@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 機構や外部インターフェースの変更に伴う文書の追随先を確定する前 | `agent-documents.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/agent-documents.md` |
-| Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state-retention.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-retention.md` |
-| hookの実装や登録を新設・変更する前 | `claude-hooks.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks.md` |
-| hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md` |
-| hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-output.md` |
-| hook通知の本文（`fix`・次の操作を含む）またはformatterを新設・変更する前 | `claude-hooks-messages.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-messages.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 機構や外部インターフェースの変更に伴う文書の追随先を確定する前 | `agent-documents.md` |
+| Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state-retention.md` |
+| hookの実装や登録を新設・変更する前 | `claude-hooks.md` |
+| hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` |
+| hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` |
+| hook通知の本文（`fix`・次の操作を含む）またはformatterを新設・変更する前 | `claude-hooks-messages.md` |
 
 ## 常駐CLIと自動起動の判定入力
 

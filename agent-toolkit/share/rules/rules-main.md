@@ -33,7 +33,7 @@
 
 ```text
 進捗: <整数>%（<工程>）
-<根拠・主な残工程・継続または変更する対応>
+<根拠・主な残工程・目標までの残り時間と残工程の見込みの差・共有の待ちの累計・継続または変更する対応>
 <前回以降の変化・想定外の事象（無ければ行を省く）>
 改善案:
 - <報告済み分も含む候補>（AWI化ステータス: 次節の値）
@@ -43,6 +43,7 @@
 `../../skills/user-confirmation-and-report/references/communication-methods-progress.md`「起動案内と進捗通知」に従う。
 報告基準を満たす改善案が無ければ`改善案: なし`の1行にする。
 進捗率は完成条件と残工程から見積もる全工程の概算とし、測定値と区別して点検だけに表示する。
+目標所要時間が無い作業では、目標との差を書かない。
 点検した対象と結果を同じ行に書く。
 点検以外は日本語で結果と判断を伝える。
 
@@ -92,15 +93,15 @@
 
 ## 参照資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 改善点を発見し、処置・AWI化・報告を行う前 | `../main-improvements.md` | 判断 | `read:agent-toolkit:*/share/main-improvements.md` |
-| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards-design.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md` |
-| process-wi中に`気付いた改善点:`の処置とAWI化ステータスを決める前、方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 改善点を発見し、処置・AWI化・報告を行う前 | `../main-improvements.md` |
+| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards-design.md` |
+| process-wi中に`気付いた改善点:`の処置とAWI化ステータスを決める前、方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` |
+| 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ドキュメント品質：文章の共通規定の基準を適用する前 | `agent-basics:writing-standards/references/writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ドキュメント品質：文章の共通規定の基準を適用する前 | `agent-basics:writing-standards/references/writing-common.md` |

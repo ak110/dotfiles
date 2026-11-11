@@ -4,10 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
 
 ## 依存と冷却時間
 
@@ -56,6 +55,6 @@ UWIの保存・元項目の依存設定・inboxへの差戻し・回答後の再
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 状態と依存：承認型UWIと元項目の基準を適用する前 | `states-and-dependencies-approvals.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-approvals.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 状態と依存：承認型UWIと元項目の基準を適用する前 | `states-and-dependencies-approvals.md` |

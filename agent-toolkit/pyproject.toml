@@ -16,7 +16,7 @@ dependencies = [
     "platformdirs>=4.0",
     "psutil>=6",
     "pydantic>=2",
-    "pyfltr>=3.27.0",
+    "pyfltr>=3.30.1",
     "pygments",
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
@@ -42,7 +42,7 @@ dev = [
     "hypothesis>=6.168.3",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
-    "pyfltr[python]>=3.27.0",
+    "pyfltr[python]>=3.30.1",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
@@ -129,8 +129,8 @@ extend-aliases = { datetime = "datetime" }
 "**/__init__.py" = ["D104"]
 
 [tool.pyright]
-# 計画補助スクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
-extraPaths = ["skills/write-plan/scripts"]
+# 計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。
+extraPaths = ["skills/write-plan/scripts", "skills/process-wi/scripts", "skills/review-session/scripts"]
 
 [tool.mypy]
 allow_redefinition = true
@@ -160,7 +160,8 @@ addopts = [
     "--durations=30",
     "--durations-min=0.5",
     # 失敗・エラーに加えてskipの理由を要約へ表示し、検証報告で未実行の範囲と理由を示せるようにする。
-    "-rfEs",
+    # 成功した試験の名前も要約へ出し（p）、保存した出力だけで試験ごとの合否を示せるようにする。
+    "-rfEsp",
     "--timeout=60",
     # コア数追従（-n auto等）を採用せず固定値とする（CI環境での逆効果とメモリ消費増を避けるため）
     "-n", "4",

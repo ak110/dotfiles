@@ -31,12 +31,12 @@
 
 ## 参照資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 報告対象と事前記録を判断する前 | `agent-basics:writing-standards/references/quality-principles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 報告対象と事前記録を判断する前 | `agent-basics:writing-standards/references/quality-principles.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 品質判断の原則：事実と推論の基準を適用する前 | `agent-basics:writing-standards/references/quality-principles-facts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-facts.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 品質判断の原則：事実と推論の基準を適用する前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |

@@ -610,11 +610,15 @@ def _run_cli_session(
     started_at = time.time()
     rollout: pathlib.Path | None = None
     published: str | None = None
+    # 時間上限なし: 長時間の子セッションの実行そのものであり、無出力の監視と中断は呼び出し側の待機ループが扱う。
     with subprocess.Popen(argv, env=env, cwd=cwd, creationflags=_pl_env.session_creation_flags(orchestrator)) as process:
         try:
             identity = _registry.ProcessIdentity.of(process.pid)
             if identity is None:
-                raise RuntimeError("統括CLIのPIDと起動時刻を取得できない")
+                raise _next_action.ActionableError(
+                    "統括CLIのPIDと起動時刻を取得できない",
+                    next_action="同じコマンドを再実行し、続く場合はこの診断を添えて不具合として報告する",
+                )
             if on_process_started is not None:
                 on_process_started(identity)
             while True:

@@ -4,14 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies-completion.md`、`states-and-dependencies-approvals.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-approvals.md` |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md`、`read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
-| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
-| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` |
+| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
+| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` |
 
 ## 由来と`source`
 
@@ -109,8 +107,8 @@ WIの作成者・起票契機と、個々の要求の出所・承認範囲を区
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIの処理の基準を適用する前 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 由来と承認：逐語転記の基準を適用する前 | `origin-and-approval-quotation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-quotation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの処理の基準を適用する前 | `../../process-wi/SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| 由来と承認：逐語転記の基準を適用する前 | `origin-and-approval-quotation.md` |

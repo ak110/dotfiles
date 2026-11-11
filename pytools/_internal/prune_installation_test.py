@@ -7,9 +7,12 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import types
+import typing
 from pathlib import Path
 
+import psutil
 import pytest
 from agent_toolkit._common import dotfiles_mode
 
@@ -97,7 +100,10 @@ def test_process_scan_detects_python_from_old_shared_environment(tmp_path, monke
             "status": "running",
         },
     )
-    monkeypatch.setattr(prune_installation.psutil, "process_iter", lambda attributes: [process])
+    own = prune_installation.psutil.Process()
+    current = types.SimpleNamespace(pid=process.pid, as_dict=lambda _attributes: process.info)
+    monkeypatch.setattr(prune_installation.psutil, "process_iter", lambda: [process])
+    monkeypatch.setattr(prune_installation.psutil, "Process", lambda pid=None: own if pid is None else current)
     monkeypatch.setattr(prune_installation.codex_processes, "codex_processes", lambda: ())
     assert prune_installation._active_users((environment,)) == ["python (pid 123)"]
 
@@ -294,3 +300,36 @@ def test_minimal_prune_cleans_real_uv_cache(tmp_path, monkeypatch, host_environ)
     assert result.failure is None
     assert not artifact.exists()
     assert retained.read_text(encoding="utf-8") == "preserved"
+
+
+def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
+    """列挙が再利用するProcessだけを以前の世代の実行名・実行ファイルにし、走査を対象のPIDへ限る。
+
+    PIDの自然な再利用や実行ファイルの置き換えを待たずに、列挙キャッシュへ以前の値が残った状態を作る。
+    """
+    stale = psutil.Process(pid)
+    monkeypatch.setattr(stale, "_name", name)
+    monkeypatch.setattr(stale, "_exe", exe)
+    monkeypatch.setitem(vars(psutil)["_pmap"], pid, stale)
+    real_process_iter = psutil.process_iter
+
+    def own_process(*args: typing.Any, **kwargs: typing.Any) -> list[psutil.Process]:
+        return [item for item in real_process_iter(*args, **kwargs) if item.pid == pid]
+
+    monkeypatch.setattr(psutil, "process_iter", own_process)
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="仮想環境のpython.exeは本体を子として起動するため、起動したPIDだけに走査を限定できない"
+)
+def test_active_users_reads_current_generation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """列挙キャッシュに対象実体を指す以前の世代の実行ファイルが残っていても、現在の属性で参照を判定する。"""
+    environment = tmp_path / "environments/old"
+    monkeypatch.setattr(prune_installation.codex_processes, "codex_processes", lambda: ())
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
+        try:
+            _inject_previous_generation(monkeypatch, child.pid, name="python", exe=str(environment / "bin/python"))
+            active = prune_installation._active_users((environment,))
+        finally:
+            child.kill()
+    assert not active

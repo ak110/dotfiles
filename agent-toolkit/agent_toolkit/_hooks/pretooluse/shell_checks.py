@@ -3,230 +3,64 @@ r"""PreToolUse統合フックのBashコマンドに対する実害保護と手�
 from __future__ import annotations
 
 import os
-import pathlib
 import re
 import sys
+lazy from collections.abc import Sequence
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy from collections.abc import (
-    Iterable,
-    Sequence,
-)
-
-lazy from agent_toolkit._common import shell_cwd, wait_schedule
+lazy from agent_toolkit._common import wait_schedule
 lazy from agent_toolkit._common.bash_invocations import (
-    STATIC_UNKNOWN,
-    BashInvocation,
     extract_bash_invocations,
     heredoc_command_substitutions,
     is_read_predicate,
-    is_unknown_word,
 )
-lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
-lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments, split_bash_segments
-lazy from agent_toolkit._common.shell_tokens import is_atk_command, split_words, strip_redirections
-lazy from agent_toolkit._common.uv_arguments import is_python_token
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import is_atk_command
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
-lazy from agent_toolkit._hooks.pretooluse import large_reads
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
-
-_GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
-    {
-        "-C",
-        "-c",
-        "--git-dir",
-        "--work-tree",
-        "--namespace",
-        "--super-prefix",
-        "--config-env",
-        "--list-cmds",
-    }
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_container import (
+    _warn_container_root_bind_mount,
+)
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import (
+    _GIT_GREP_PATTERN_FILE_OPTIONS,
+    _GIT_GREP_PATTERN_OPTIONS,
+    _GLOBAL_OPTIONS_LOCATING_REPOSITORY,
+    _GLOBAL_OPTIONS_POSSIBLY_AFFECTING_MESSAGE,
+    _GLOBAL_OPTIONS_WITH_VALUE,
+    _git_commit_block,
+    _git_commit_messages,
+    _git_subcommand_tokens,
+    _warn_git_rev_parse_short_multiple,
+    git_commit_options,
+    git_subcommand_tokens,
+)
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_process import (
+    _check_bash_process_kill_by_pattern,
+)
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_search import (
+    _GIT_GREP_VALUED_OPTIONS,
+    _check_bash_option_after_terminator,
 )
 
-
-def _warn_container_root_bind_mount(command: str) -> str | None:
-    """root所有の生成物をホストへ残し得る起動を警告し、正当なroot実行は継続する。
-
-    イメージのUSER属性は照会せず、起動時のユーザー未指定も警告する。composeの定義とイメージ以降の
-    コマンド引数は判定しない。変数を含むホストパスは、展開前の表記でbind mountと判定する。
-    """
-    for invocation in extract_bash_invocations(command):
-        tokens = invocation.static_tokens
-        if not tokens or pathlib.PurePosixPath(tokens[0]).name not in {"docker", "podman"}:
-            continue
-        index = 1
-        while index < len(tokens) and tokens[index].startswith("-"):
-            option = tokens[index]
-            index += (
-                2
-                if option
-                in {
-                    "-H",
-                    "--host",
-                    "-c",
-                    "--context",
-                    "--connection",
-                    "--url",
-                    "--root",
-                    "--runroot",
-                    "--storage-driver",
-                    "--log-level",
-                    "--config",
-                }
-                else 1
-            )
-        if tokens[index : index + 1] == ("container",):
-            index += 1
-        if index >= len(tokens) or tokens[index] not in {"run", "create"}:
-            continue
-        user: str | None = None
-        writable = False
-        index += 1
-        while index < len(tokens):
-            token = tokens[index]
-            index += 1
-            if token == "--" or not token.startswith("-"):
-                break
-            # pflagの結合短形式は、値付きオプション以降をその値として消費する。
-            short = re.fullmatch(r"-[ditPq]*([acehlmpuvw])(.*)", token)
-            if short:
-                token = "-" + short[1] + short[2]
-            option, separator, value = token.partition("=")
-            if option in {"--user", "--volume", "--mount", "-u", "-v"}:
-                if not separator:
-                    if index >= len(tokens):
-                        break
-                    value = tokens[index]
-                    index += 1
-            elif token.startswith(("-u", "-v")) and not token.startswith("--"):
-                option, value = token[:2], token[2:]
-            else:
-                # オプションの値とコンテナー内の実行語は、起動オプションの解析から除く。
-                if not separator and option in {
-                    "-e",
-                    "--env",
-                    "--env-file",
-                    "-w",
-                    "--workdir",
-                    "--entrypoint",
-                    "--name",
-                    "--hostname",
-                    "-h",
-                    "--label",
-                    "-l",
-                    "--network",
-                    "--net",
-                    "-p",
-                    "--publish",
-                    "--expose",
-                    "--device",
-                    "--cap-add",
-                    "--cap-drop",
-                    "--security-opt",
-                    "--group-add",
-                    "--platform",
-                    "--pull",
-                    "--restart",
-                    "--runtime",
-                    "--memory",
-                    "-m",
-                    "--cpus",
-                    "--cpuset-cpus",
-                    "--tmpfs",
-                    "--volume-driver",
-                    "--volumes-from",
-                    "--userns",
-                    "--pid",
-                    "--ipc",
-                    "--ulimit",
-                    "--shm-size",
-                    "--log-driver",
-                    "--log-opt",
-                    "--cidfile",
-                    "--stop-signal",
-                    "--stop-timeout",
-                    "--health-cmd",
-                    "--health-interval",
-                    "--health-timeout",
-                    "--health-start-period",
-                    "--health-start-interval",
-                    "--health-retries",
-                    "--add-host",
-                    "--annotation",
-                    "-a",
-                    "--attach",
-                    "--blkio-weight",
-                    "--blkio-weight-device",
-                    "--cgroup-parent",
-                    "--cgroupns",
-                    "--cpu-period",
-                    "--cpu-quota",
-                    "--cpu-rt-period",
-                    "--cpu-rt-runtime",
-                    "-c",
-                    "--cpu-shares",
-                    "--cpuset-mems",
-                    "--detach-keys",
-                    "--device-cgroup-rule",
-                    "--device-read-bps",
-                    "--device-read-iops",
-                    "--device-write-bps",
-                    "--device-write-iops",
-                    "--dns",
-                    "--dns-option",
-                    "--dns-search",
-                    "--domainname",
-                    "--gpus",
-                    "--ip",
-                    "--ip6",
-                    "--isolation",
-                    "--kernel-memory",
-                    "--label-file",
-                    "--link",
-                    "--link-local-ip",
-                    "--mac-address",
-                    "--memory-reservation",
-                    "--memory-swap",
-                    "--memory-swappiness",
-                    "--network-alias",
-                    "--oom-score-adj",
-                    "--pids-limit",
-                    "--storage-opt",
-                    "--sysctl",
-                    "--uts",
-                }:
-                    index += 1
-                continue
-            if option in {"--user", "-u"}:
-                user = value
-            elif option in {"--volume", "-v"}:
-                parts = value.split(":")
-                writable |= (
-                    len(parts) >= 2
-                    and value.startswith(("/", ".", "~", "$", STATIC_UNKNOWN))
-                    and not (len(parts) >= 3 and {"ro", "readonly"}.intersection(parts[-1].split(",")))
-                )
-            else:
-                fields = {key: item for key, _, item in (part.partition("=") for part in value.split(","))}
-                readonly = any(key in fields and fields[key] not in {"false", "0"} for key in ("readonly", "ro"))
-                writable |= fields.get("type") == "bind" and not readonly
-        if not writable or user is not None and user.split(":", 1)[0] not in {"root", "0"}:
-            continue
-        return _llm_notice(
-            "`root`またはユーザー未指定のコンテナーへ、書き込み可能なホストのバインドマウントを渡している。"
-            "この形では生成物が`root`所有でホストに残り、ホストで実行中のアカウントで削除できなくなった事例がある。",
-            tag=_WARN_TAG,
-            subject=command,
-            removable_cause=True,
-            fix=(
-                '元の起動のマウントを`--mount "type=bind,src=$PWD,dst=/source,readonly" '
-                "--mount type=volume,dst=/work`にし、コンテナー内で`cp -a /source/. /work/`として専用領域で作業せよ。"
-                'ホストへ書く必要があれば`--user "$(id -u):$(id -g)"`で起動せよ。'
-                "正当な`root`実行では、所有者と回収方法を確認した上で警告を受けたまま実行できる。"
-            ),
-        )
-    return None
+__all__ = [
+    "RuntimeIdentity",
+    "_GIT_GREP_PATTERN_FILE_OPTIONS",
+    "_GIT_GREP_PATTERN_OPTIONS",
+    "_GIT_GREP_VALUED_OPTIONS",
+    "_GLOBAL_OPTIONS_LOCATING_REPOSITORY",
+    "_GLOBAL_OPTIONS_POSSIBLY_AFFECTING_MESSAGE",
+    "_GLOBAL_OPTIONS_WITH_VALUE",
+    "_check_bash_option_after_terminator",
+    "_check_bash_process_kill_by_pattern",
+    "_git_commit_block",
+    "_git_commit_messages",
+    "_git_subcommand_tokens",
+    "_warn_container_root_bind_mount",
+    "_warn_git_rev_parse_short_multiple",
+    "co_author_trailer",
+    "git_commit_options",
+    "git_subcommand_tokens",
+]
 
 
 def _check_read_predicate_stderr_discard(command: str) -> str | None:
@@ -234,7 +68,7 @@ def _check_read_predicate_stderr_discard(command: str) -> str | None:
     for invocation in extract_bash_invocations(command):
         if is_read_predicate(invocation.segment.tokens) and invocation.outputs[1] == "/dev/null":
             return _llm_notice(
-                "読取述語の標準エラーの最終接続先が`/dev/null`であり、入力・パス・権限の異常の診断を失う。",
+                "読取・存在確認コマンドの標準エラーを`/dev/null`へ捨てるため、入力・パス・権限の異常の診断を失う。",
                 tag=_WARN_TAG,
                 subject=command,
                 removable_cause=True,
@@ -244,760 +78,9 @@ def _check_read_predicate_stderr_discard(command: str) -> str | None:
     return None
 
 
-_GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
-    {
-        "--no-pager",
-        "-p",
-        "--paginate",
-        "--bare",
-        "--no-replace-objects",
-        "--literal-pathspecs",
-        "--glob-pathspecs",
-        "--noglob-pathspecs",
-        "--icase-pathspecs",
-        "--no-optional-locks",
-        "--exec-path",
-        "--html-path",
-        "--man-path",
-        "--info-path",
-        "--help",
-        "--version",
-    }
-)
-
-
-# --- Bash: パターン一致によるプロセス終了の検出 ---
-
-_GIT_GREP_VALUED_OPTIONS = frozenset(
-    {"-A", "-B", "-C", "-m", "--after-context", "--before-context", "--context", "--max-count", "--max-depth", "--threads"}
-)
-"""`git grep -h`の必須値付きオプション（git 2.43.0の確認。パターン用は別集合）。"""
-
-
-_PROCESS_KILL_BY_PATTERN_RE = re.compile(r"(?<![\w-])(pkill|killall)(?![\w-])")
-_PROCESS_KILL_UNSAFE_MARKERS = frozenset("$`(){}")
-_PROCESS_KILL_LITERAL_SEARCH_COMMANDS = frozenset({"egrep", "fgrep", "grep", "rg"})
-_GIT_GREP_SHORT_FLAGS = frozenset("EFGPivwahnHIlLczonqrsuVpWN")
-
-
-def _bundled_search_value_option(token: str, *, command: str) -> tuple[str, str] | None:
-    """既知の短形式だけの束から最初の値付きオプションと密着値を返す。
-
-    未知の文字やpager指定の後ろを検索語と認定すると、プロセス終了保護の免除を広げるため走査を止める。
-    """
-    if not token.startswith("-") or token.startswith("--"):
-        return None
-    valued = "efABCm" if command == "git" else "efmABCdgtMTrjE" if command == "rg" else "efmABCDd"
-    flags = _GIT_GREP_SHORT_FLAGS if command == "git" else frozenset("EFGPivwxabhnHIlLczonqrsRsuUZV")
-    for position, char in enumerate(token[1:], 1):
-        if char in valued:
-            return "-" + char, token[position + 1 :]
-        if char not in flags:
-            return None
-    return None
-
-
-def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int | None, int | None]:
-    """検索パターンの位置、revision・パスの区切り、実際のオプション終端の位置を返す。
-
-    gitの受理形式（git 2.47.3の実行で確認）は、最初の`--`より前に`-e`・`-f`か位置引数の検索パターンがあるかで分かれる。
-
-    - ある場合: 最初の`--`がrevision・パスの区切りであり、その後ろは全てrevisionとパスとして読まれる
-    - 無い場合: 最初の`--`はオプションの終端であり、直後の1トークンが検索パターンになる。
-      その後ろに現れる最初の`--`がrevision・パスの区切りになる
-
-    パターンの位置には`-e`の値と位置引数の検索パターンを含め、`-f`が読むファイル名は含めない。
-    束ねた短形式は最初の値付きオプションで値の消費を止める。
-    """
-    indices: set[int] = set()
-    pattern_seen = False
-    index = 0
-    while index < len(arguments):
-        token = arguments[index]
-        if token == "--":
-            break
-        short = _bundled_search_value_option(token, command="git")
-        if short is not None:
-            option, attached = short
-            pattern_seen |= option in {"-e", "-f"}
-            if not attached:
-                index += 1
-            if option == "-e" and index < len(arguments):
-                indices.add(index)
-            index += 1
-            continue
-        if token.startswith("-") and not token.startswith("--") and not set(token[1:]) <= _GIT_GREP_SHORT_FLAGS:
-            return indices, None, None
-        option_name = token.split("=", 1)[0]
-        if option_name in _GIT_GREP_PATTERN_OPTIONS:
-            pattern_seen = True
-            if "=" in token:
-                indices.add(index)
-            elif index + 1 < len(arguments):
-                index += 1
-                indices.add(index)
-        elif option_name in _GIT_GREP_PATTERN_FILE_OPTIONS:
-            pattern_seen = True
-            if "=" not in token:
-                index += 1
-        elif option_name in _GIT_GREP_VALUED_OPTIONS:
-            if "=" not in token:
-                index += 1
-        elif not token.startswith("-") and not pattern_seen:
-            pattern_seen = True
-            indices.add(index)
-        index += 1
-    if index >= len(arguments):
-        return indices, None, None
-    if pattern_seen:
-        return indices, index, index
-    pattern_index = index + 1
-    if pattern_index >= len(arguments):
-        return indices, None, index
-    indices.add(pattern_index)
-    separator = next((i for i in range(pattern_index + 1, len(arguments)) if arguments[i] == "--"), None)
-    return indices, separator, index
-
-
-def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
-    """`git grep`がリテラル検索パターンとして読む引数位置を返す。"""
-    return _git_grep_argument_layout(arguments)[0]
-
-
-def _git_log_literal_search_indices(arguments: Sequence[str]) -> set[int]:
-    """`git log`が検索語として読む引数位置を返す。"""
-    indices: set[int] = set()
-    index = 0
-    while index < len(arguments):
-        token = arguments[index]
-        if token == "--":
-            break
-        if token in {"-S", "-G", "--grep"} and index + 1 < len(arguments):
-            index += 1
-            indices.add(index)
-        elif (token.startswith(("-S", "-G")) and len(token) > 2) or token.startswith("--grep="):
-            indices.add(index)
-        index += 1
-    return indices
-
-
-def _has_active_process_kill_syntax(segment: str) -> bool:
-    """区間に引用で無効化されていないシェル構文があれば真を返す。"""
-    quote: str | None = None
-    escaped = False
-    for character in segment:
-        if escaped:
-            escaped = False
-            continue
-        if quote != "'" and character == "\\":
-            escaped = True
-            continue
-        if quote == "'":
-            if character == "'":
-                quote = None
-            continue
-        if quote == '"':
-            if character == '"':
-                quote = None
-            elif character in "$`":
-                return True
-            continue
-        if character in {"'", '"'}:
-            quote = character
-        elif character in _PROCESS_KILL_UNSAFE_MARKERS or character in "\n\r":
-            return True
-    return False
-
-
-_ARGUMENT_EXECUTORS = frozenset(
-    {
-        "awk",
-        "bash",
-        "builtin",
-        "busybox",
-        "dash",
-        "deno",
-        "fish",
-        "gawk",
-        "git",
-        "ksh",
-        "lua",
-        "mawk",
-        "node",
-        "perl",
-        "php",
-        "ruby",
-        "sed",
-        "sh",
-        "zsh",
-        "chroot",
-        "command",
-        "doas",
-        "env",
-        "eval",
-        "exec",
-        "find",
-        "flock",
-        "ionice",
-        "nice",
-        "nohup",
-        "parallel",
-        "script",
-        "setsid",
-        "ssh",
-        "stdbuf",
-        "strace",
-        "su",
-        "sudo",
-        "time",
-        "timeout",
-        "unbuffer",
-        "watch",
-        "xargs",
-    }
-)
-"""引数として受け取った語をプログラムとして実行し得るコマンド（ラッパー、シェル、インタプリタ、gitの設定値など）。
-
-引数に終了コマンド名があれば実行位置と区別できない。gitは`-c`の設定値やpagerから実行するため含め、
-検索語として安全な`git grep`・`git log`の位置は後段の判定が扱う。
-"""
-
-
-def _process_kill_word_only_in_data(invocations: Sequence[BashInvocation]) -> bool:
-    """共通解析が確定した全ての実行位置で、終了コマンド名がデータ引数にだけ現れるかを返す。
-
-    `pkill`・`killall`自体を実行する呼出し、引数からプログラムを実行するコマンドの引数に現れる場合、
-    値の決まらない引数を持つ呼出し、解析できない入力（呼出しが空）は、データ引数と確定できないため偽を返す。
-    読取・検索の解析（`large_reads.arguments_are_data`）が引数をデータと確定した呼出しは、実行名の形の語もデータとして扱う。
-    """
-    if not invocations:
-        return False
-    for invocation in invocations:
-        tokens = invocation.segment.tokens
-        if not invocation.arguments_known or not tokens:
-            return False
-        name = pathlib.PurePosixPath(tokens[0]).name
-        if name in {"pkill", "killall"}:
-            return False
-        # 読取・検索の解析が引数をデータと確定した呼出し（`sed -n '1p'`・`awk '{print}'`の読取を含む）は、
-        # 引数を実行し得るコマンド名でも引数を実行しない。
-        data = large_reads.arguments_are_data(tokens)
-        executor = name in _ARGUMENT_EXECUTORS or is_python_token(name)
-        if not data and executor and any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in tokens[1:]):
-            return False
-        # 引数から実行するコマンドの集合は網羅できないため（`docker exec`、`npm exec`など）、読取・検索の解析が
-        # データと確定した呼出しを除き、語が実行名の形で現れる引数（語そのもの、または後ろに空白が続く本文）は
-        # データと確定しない。
-        if not data and any(_process_kill_command_shaped(token) for token in tokens[1:]):
-            return False
-    return True
-
-
-def _process_kill_command_shaped(token: str) -> bool:
-    """引数の語が、別のコマンドに実行名として渡され得る形かを返す。
-
-    語そのものか、本文の先頭・空白・区切り記号の直後に置かれて後ろに空白が続く場合を実行名の形とする。
-    `/tmp/pkill dir/out.log`のようにパスの区切りの直後にある語はディレクトリ名として扱う。
-    """
-    if pathlib.PurePosixPath(token).name in {"pkill", "killall"}:
-        return True
-    return any(
-        token[match.end() : match.end() + 1].isspace()
-        and (match.start() == 0 or token[match.start() - 1].isspace() or token[match.start() - 1] in ";&|(`'\"")
-        for match in _PROCESS_KILL_BY_PATTERN_RE.finditer(token)
-    )
-
-
-def _has_unsafe_process_kill_match(segment: str) -> bool:
-    """共通解析の実行位置とデータ引数を分け、未確定の実行と既知の終了操作を保護する。"""
-    try:
-        raw_tokens = split_words(segment)
-    except ValueError:
-        return True
-    if not raw_tokens:
-        return False
-    command_name = pathlib.PurePosixPath(raw_tokens[0]).name
-    attached_pager_match = command_name == "git" and any(
-        token.startswith("-O") and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:]) for token in raw_tokens
-    )
-    if not attached_pager_match and not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens):
-        return False
-    if _has_active_process_kill_syntax(segment):
-        return True
-    if not attached_pager_match and _process_kill_word_only_in_data(extract_bash_invocations(segment)):
-        return False
-    if command_name == "git":
-        parsed_segments = extract_execution_segments(segment)
-        if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
-            return True
-        subcommand = git_subcommand_tokens(parsed_segments[0])
-        if subcommand is None or subcommand[0] not in {"grep", "log"}:
-            return True
-        name, arguments = subcommand
-        prefix = raw_tokens[: len(raw_tokens) - len(arguments)]
-        if any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in prefix):
-            return True
-        safe_indices = (
-            _git_grep_literal_pattern_indices(arguments) if name == "grep" else _git_log_literal_search_indices(arguments)
-        )
-        return any(
-            (
-                _PROCESS_KILL_BY_PATTERN_RE.search(token)
-                or name == "grep"
-                and token.startswith("-O")
-                and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:])
-            )
-            and index not in safe_indices
-            for index, token in enumerate(arguments)
-        )
-    # 検索語のリテラルは許可するが、外部プログラムを起動する検索の指定（`rg --pre`）は実行位置と区別できない。
-    if command_name not in _PROCESS_KILL_LITERAL_SEARCH_COMMANDS or not large_reads.arguments_are_data(raw_tokens):
-        return True
-    return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
-
-
-def _check_bash_process_kill_by_pattern(command: str) -> str | None:
-    """`pkill`・`killall`等パターン指定によるプロセス終了をブロックする。
-
-    対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
-    自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文をマスクした文字列を共通解析へ渡し、終了コマンド名がデータ引数にだけ現れる読取・表示・検索と、
-    既知の検索用リテラルを許可する。語の存在だけでは終了操作と判定しない。
-    実行位置を確定できない入力、引数を実行し得るコマンド、置換・グループを含む区間は保守的な判定を維持する。
-    """
-    matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
-    if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
-        return None
-    return _block_notice(
-        "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
-        fix=(
-            "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使え。"
-            "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
-            "`p[k]ill`のように文字クラスで書け。"
-        ),
-    )
-
-
-def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
-    """`git`と専用commit起動のサブコマンド名・引数を返す。"""
-    if not segment.resolved or not segment.tokens:
-        return None
-    tokens = segment.tokens
-    # 専用起動でも通常commitと同じ検査へ渡す。任意の登録scriptは展開しない。
-    if is_atk_command(tokens) and tokens[1:4] == ("run-script", "commit-with-timeout", "--"):
-        arguments = tokens[4:]
-        if len(arguments) >= 3 and arguments[0] == "--timeout" and arguments[2] == "--":
-            return "commit", arguments[3:]
-        if len(arguments) >= 2 and arguments[0].startswith("--timeout=") and arguments[1] == "--":
-            return "commit", arguments[2:]
-        return None
-    if pathlib.PurePath(tokens[0]).name != "git":
-        return None
-    index = 1
-    while index < len(tokens):
-        token = tokens[index]
-        if not token.startswith("-"):
-            return token, tuple(tokens[index + 1 :])
-        if token in _GLOBAL_OPTIONS_WITH_VALUE:
-            index += 2
-            continue
-        if token in _GLOBAL_OPTIONS_WITHOUT_VALUE or "=" in token:
-            index += 1
-            continue
-        return None
-    return None
-
-
-# 終了証跡など既存の内部importを保持し、新しい消費側は公開名を使う。
-_git_subcommand_tokens = git_subcommand_tokens
-
-
-_GIT_COMMIT_VALUE_OPTIONS = frozenset(
-    {
-        "-m",
-        "--message",
-        "-F",
-        "--file",
-        "-C",
-        "--reuse-message",
-        "-c",
-        "--reedit-message",
-        "--author",
-        "--date",
-        "--cleanup",
-        "-t",
-        "--template",
-        "--trailer",
-        "--fixup",
-        "--squash",
-        "--pathspec-from-file",
-    }
-)
-
-
-def git_commit_options(arguments: Sequence[str]) -> Iterable[tuple[str, str | None]]:
-    """commitの値とオプションを分け、結合短形式を分離形と同じ順序で返す。
-
-    値として消費した`--`や`--help`を再解釈しない。実際の`--`以後のpathspecは返さない。
-    """
-    tokens = iter(arguments)
-    for token in tokens:
-        if token == "--":
-            break
-        if token.startswith("--"):
-            option, separator, value = token.partition("=")
-            yield option, value if separator else next(tokens, None) if option in _GIT_COMMIT_VALUE_OPTIONS else None
-        elif token.startswith("-") and len(token) > 1:
-            for position, char in enumerate(token[1:], 1):
-                option = "-" + char
-                if option in _GIT_COMMIT_VALUE_OPTIONS:
-                    yield option, token[position + 1 :] or next(tokens, None)
-                    break
-                if char in "Su":
-                    # 省略可能な値は同じ語の残りだけを消費する。
-                    yield option, token[position + 1 :] or None
-                    break
-                yield option, None
-        else:
-            yield token, None
-
-
-def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
-    """指定内容を確定できる通常commitのメッセージを返す。
-
-    メッセージは`-m`・`--message`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、
-    `-F <path>`・`--file=<path>`で指定したhookの時点で存在する通常ファイルからも読む。
-    エージェントのcommitの多くは`-F -`のheredocで作成されるため、この形を読めないと帰属行を確かめないまま通す。
-    相対パスは呼出しごとの実行位置と`git -C`で解決し、実行位置が不明なら本文を読まない。
-    heredocを一意に対応付けられない場合、存在しないファイル、`-C`・`-c`・`--reuse-message`・`--reedit-message`、
-    `--amend --no-edit`、fixup、squashの場合は判定しない。
-    """
-    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
-        parsed = git_subcommand_tokens(invocation.segment)
-        if parsed is None or parsed[0] != "commit":
-            continue
-        arguments = parsed[1]
-        # `--`より後ろはpathspecであり、未知でもメッセージの指定に作用しない。それより前の未知の語は
-        # メッセージやその入力ファイルを変える可能性があるため、検証済みと推定しない。
-        options = list(git_commit_options(arguments))
-        if any(is_unknown_word(option) or value is not None and is_unknown_word(value) for option, value in options) or any(
-            is_unknown_word(token) for token in invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
-        ):
-            continue
-        names = {option for option, _value in options}
-        if names & {"--fixup", "--squash"}:
-            continue
-        if {"--amend", "--no-edit"} <= names:
-            continue
-        messages: list[str] = []
-        message_files: list[str] = []
-        unknown = False
-        for token, value in options:
-            if token in {"-m", "--message", "-F", "--file"}:
-                if value is None:
-                    unknown = True
-                    break
-                (messages if token in {"-m", "--message"} else message_files).append(value)
-            elif token in {"-C", "--reuse-message", "-c", "--reedit-message"}:
-                unknown = True
-                break
-        if unknown:
-            continue
-        for message_file in message_files:
-            if message_file == "-":
-                body = _commit_heredoc_body(command)
-            else:
-                body = _read_commit_message_file(
-                    message_file,
-                    # 専用起動にGitのglobal optionはなく、現在のcwdからcommitする。
-                    ("git", "commit") if is_atk_command(invocation.segment.tokens) else invocation.segment.tokens,
-                    cwd=current.path if current.resolved else "",
-                )
-            if body is None:
-                unknown = True
-                break
-            messages.append(body)
-        if unknown or not messages:
-            continue
-        yield "\n\n".join(messages)
-
-
-_WORK_ITEM_FILENAME_PATTERN = re.compile(r"(?<![0-9A-Za-z_-])\d{8}-\d{6}-\d{3}\.md(?![0-9A-Za-z_.-])")
-
-
-def _git_commit_message_format_error(messages: Iterable[str]) -> str | None:
-    """通常commitのWI名記載と件名・本文間の空行欠落を返す。"""
-    for message in messages:
-        if match := _WORK_ITEM_FILENAME_PATTERN.search(message):
-            return _block_notice(
-                f"公開するコミットメッセージに作業項目のファイル名（`{match.group()}`）が含まれている。",
-                fix=(
-                    "公開するコミットへ作業項目のファイル名を書くな。実装コミットとAWIの対応は"
-                    "`atk run-script plan-progress`が記録する対応記録ファイル（`<stem>.wi-commits.jsonl`）へ残し、"
-                    "メッセージから作業項目のファイル名を含む行を除いて再実行せよ。"
-                ),
-            )
-        lines = message.splitlines()
-        if len(lines) > 1 and lines[1].strip():
-            return _block_notice(
-                "`commit`の件名と本文の間の空行が欠けている。",
-                fix="件名の次に空行を1行入れて再実行せよ。",
-            )
-    return None
-
-
-def _git_commit_attribution_error(
-    messages: Iterable[str],
-    identity: RuntimeIdentity | None,
-    *,
-    attribution_disabled: bool = False,
-) -> str | None:
-    """通常commitが観測identityのtrailerをちょうど1件持つか確認する。"""
-    if attribution_disabled or identity is None or identity.source != "observed":
-        return None
-    expected = co_author_trailer(identity)
-    for message in messages:
-        trailers = [line for line in message.splitlines() if line.startswith("Co-Authored-By:")]
-        if trailers != [expected]:
-            return _block_notice(
-                f"通常`commit`の`Co-Authored-By:`が実行ターンで観測したモデルと異なる。必要な行: {expected}",
-                fix="観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れて再実行せよ。",
-            )
-    return None
-
-
-def _commit_heredoc_body(command: str) -> str | None:
-    """`git commit`を宣言した行のheredoc本文を返す。対応するheredocが1件に定まらない場合は`None`を返す。
-
-    `mask_heredoc_bodies`が本文を空白へ、終端行の先頭を`;`へ置き換えた結果と元の行を比べて本文の範囲を求める。
-    """
-    original_lines = command.split("\n")
-    masked_lines = mask_heredoc_bodies(command).split("\n")
-    bodies: list[str] = []
-    for terminator, (original, masked) in enumerate(zip(original_lines, masked_lines, strict=True)):
-        if original == masked or not masked.startswith(";") or masked[1:].strip():
-            continue
-        # 本文は宣言行の直後から終了行の前までに連続し、置換後は空白だけの行になる。宣言行は空白だけにならない。
-        start = terminator
-        while start > 0 and not masked_lines[start - 1].strip():
-            start -= 1
-        declaration = masked_lines[start - 1] if start > 0 else ""
-        if any(
-            (parsed := git_subcommand_tokens(item.segment)) is not None and parsed[0] == "commit"
-            for item in extract_bash_invocations(declaration)
-        ):
-            bodies.append("\n".join(original_lines[start:terminator]))
-    return bodies[0] if len(bodies) == 1 else None
-
-
-def _read_commit_message_file(
-    path_text: str,
-    git_tokens: Sequence[str],
-    *,
-    cwd: str,
-) -> str | None:
-    """`git commit -F <path>`が読むファイルの本文を返す。解決できないか通常ファイルでない場合は`None`を返す。"""
-    path = pathlib.Path(path_text)
-    if not path.is_absolute():
-        if not cwd:
-            return None
-        base = pathlib.Path(cwd)
-        for index, token in enumerate(git_tokens[1:], start=1):
-            if token == "commit":
-                break
-            if token == "-C" and index + 1 < len(git_tokens):
-                base = base / git_tokens[index + 1]
-        path = base / path
-    try:
-        return path.read_text(encoding="utf-8") if path.is_file() else None
-    except OSError, UnicodeError:
-        return None
-
-
-_GIT_GREP_PATTERN_OPTIONS: frozenset[str] = frozenset({"-e", "--regexp"})
-_GIT_GREP_PATTERN_FILE_OPTIONS: frozenset[str] = frozenset({"-f", "--file"})
-
-
-# --- Bash: `git rev-parse --short`への複数revision ---
-
-_GIT_REV_PARSE_VALUED_OPTIONS = frozenset({"--default", "--prefix", "--git-path", "--resolve-git-dir", "-n"})
-"""`man git-rev-parse`の値を別引数で取るオプション（git 2.43.0）。"""
-
-
-def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
-    """通常modeの単一revision検証へ渡す通常revisionを返す。
-
-    `--`以降はパスとして扱い、revisionに数えない。リダイレクトの演算子と対象も数えない。
-    検証指定より前のrevisionとrangeは数えず、先頭の専用modeは対象外とする。
-    """
-    has_short = False
-    if arguments and arguments[0] in {"--sq-quote", "--parseopt"}:
-        return None
-    revisions: list[str] = []
-    skip_value = False
-    for token in strip_redirections(arguments):
-        if skip_value:
-            skip_value = False
-            continue
-        if token == "--":
-            break
-        if token in _GIT_REV_PARSE_VALUED_OPTIONS:
-            skip_value = True
-            continue
-        if token in {"--short", "--verify"} or token.startswith("--short="):
-            has_short = True
-            continue
-        if token.startswith("-"):
-            continue
-        if has_short and ".." not in token:
-            revisions.append(token)
-    return revisions if has_short else None
-
-
-def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
-    """単一revision検証へ複数revisionを渡す読取へ警告する。
-
-    同コマンドは1回に1つのrevisionだけを受理し、複数を渡すと`fatal: Needed a single revision`で失敗する。
-    条文で定めた後も同じ失敗が反復したため、実行の直前に判定する。
-    個別の取得で結果を復元できるため、警告とする。
-    """
-    for invocation in extract_bash_invocations(command):
-        if not invocation.arguments_known:
-            continue
-        segment = invocation.segment
-        subcommand = git_subcommand_tokens(segment)
-        if subcommand is None or subcommand[0] != "rev-parse":
-            continue
-        revisions = _rev_parse_short_revisions(subcommand[1])
-        if revisions is not None and len(revisions) >= 2:
-            return _llm_notice(
-                f"`git rev-parse`の単一リビジョン検証へ{len(revisions)}つのリビジョン（{'、'.join(revisions)}）を渡している。"
-                "`--short`または`--verify`は1回に1つのリビジョンだけを受理し、複数指定は失敗する。"
-                "`--quiet`によって診断と終了コードが変わるため、終了コード128とは限らない。",
-                tag=_WARN_TAG,
-                subject=command,
-                removable_cause=True,
-                fix="元の`--short`・`--short=<長さ>`・`--verify`などのオプションを保ち、リビジョンごとに"
-                "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保て。",
-            )
-    return None
-
-
-# --- Bash: オプション終端`--`の後ろに置いたCLI自身のオプション ---
-
-_OPTION_TERMINATOR_PATTERN_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
-"""`-e`・`-f`を`--`より前に置かない場合に、`--`の直後の1トークンを検索パターンとして受け取るコマンド。"""
-
-_OPTION_TERMINATOR_PATTERN_OPTIONS = frozenset({"-e", "--regexp", "-f", "--file"})
-"""`rg`・`grep`系で検索パターンを指定するオプション。`--`より前にあると`--`の後ろは全てパスとして読まれる。"""
-
-_OPTION_TERMINATOR_GIT_SUBCOMMANDS = frozenset({"log", "diff", "show", "grep"})
-"""`--`の後ろを全てパス指定として扱う`git`のサブコマンド。
-
-例外として`git grep`は、`--`より前に検索パターンが無い場合に最初の`--`の直後を検索パターンとし、
-続く`--`をrevision・パスの区切りとする（`_git_grep_argument_layout`）。
-"""
-
-
-def _options_after_terminator(arguments: Sequence[str], *, excluded: Iterable[int] = ()) -> list[str]:
-    """引数列の最初の`--`より後ろにある、`-`で始まるトークンを返す。
-
-    `excluded`の位置（検索パターンや区切りの`--`）は判定から除く。
-    `-`単独は標準入力を表すデータであり、オプションに数えない。
-    """
-    if "--" not in arguments:
-        return []
-    skip = set(excluded)
-    start = list(arguments).index("--") + 1
-    return [
-        token
-        for index, token in enumerate(arguments)
-        if index >= start and index not in skip and token.startswith("-") and token != "-"
-    ]
-
-
-def _pattern_command_slot(arguments: Sequence[str], *, command: str) -> set[int]:
-    """`rg`・`grep`系で、終端後のパスとして警告しない引数位置を返す。
-
-    `-e`・`--regexp`・`-f`・`--file`（`=`や`-eX`の連結形を含む）を`--`より前に置く場合は、
-    `--`の後ろが全てパスとして読まれる（ripgrep 15.2.0とGNU grepの実行で確認）。
-    実際の終端以前を除外し、明示パターンの無い入力では終端直後の検索語も除外する。
-    """
-    pattern_seen = False
-    index = 0
-    while index < len(arguments):
-        token = arguments[index]
-        if token == "--":
-            # 値として消費した`--`を、後段の単純な終端検索で再分類しない。
-            return set(range(index + 1 if pattern_seen else index + 2))
-        option, separator, _value = token.partition("=")
-        short = _bundled_search_value_option(token, command=command)
-        if short is not None:
-            pattern_seen |= short[0] in {"-e", "-f"}
-            if not short[1]:
-                index += 1
-        elif option in _OPTION_TERMINATOR_PATTERN_OPTIONS:
-            pattern_seen = True
-            if not separator:
-                index += 1
-        index += 1
-    return set(range(len(arguments)))
-
-
-def _check_bash_option_after_terminator(command: str) -> str | None:
-    """読取コマンドのオプション終端の後ろにあるオプションへ警告する。
-
-    `--`の後ろは全てデータとして扱われるため、後ろへ置いた`--glob`などは`rg`・`grep`系・`git grep`では
-    存在しないパスとして失敗し、`git log`・`git diff`・`git show`ではエラーを出力せずにパス指定として扱われ、誤った結果を返す。
-    条文で配置を定めた後も同じ誤りが反復したため、実行の直前に判定する。
-    読取入力を修正して再取得できるため警告し、通常の実行を続ける。
-    外側に所属する既知の引数だけを判定し、置換内の語と展開結果が未確定の引数はオプションとして扱わない。
-    `rg`・`grep`系と`git grep`では、`-e`・`-f`を`--`より前に置かない場合に`--`の直後を検索パターンとみなして除くため、
-    `-`で始まるパターンは遮断しない。`git grep`ではその後ろのrevision・パスの区切り`--`も除く。
-    下位コマンドへ`--`の後ろでオプションを渡すCLI（`uv run --`など）は対象コマンドに含めない。
-    """
-    for invocation in extract_bash_invocations(command):
-        segment = invocation.segment
-        if not segment.resolved or not segment.tokens:
-            continue
-        name = pathlib.PurePath(segment.tokens[0]).name
-        if name in _OPTION_TERMINATOR_PATTERN_COMMANDS:
-            arguments = list(strip_redirections(segment.tokens[1:]))
-            found = _options_after_terminator(arguments, excluded=_pattern_command_slot(arguments, command=name))
-            label = name
-        else:
-            subcommand = git_subcommand_tokens(segment)
-            if subcommand is None or subcommand[0] not in _OPTION_TERMINATOR_GIT_SUBCOMMANDS:
-                continue
-            arguments = list(strip_redirections(subcommand[1]))
-            excluded: set[int] = set()
-            if subcommand[0] == "grep":
-                pattern_indices, separator, terminator = _git_grep_argument_layout(arguments)
-                excluded = pattern_indices | ({separator} if separator is not None else set())
-                excluded.update(range(terminator + 1 if terminator is not None else len(arguments)))
-            found = _options_after_terminator(arguments, excluded=excluded)
-            label = f"git {subcommand[0]}"
-        if not found:
-            continue
-        return _llm_notice(
-            f"`{label}`のオプション終端`--`の後ろにオプション（{'、'.join(found)}）がある。"
-            "`--`の後ろは全てデータとして扱われるため、これらはパスとして解釈され、"
-            "存在しないパスとして失敗するか、エラーを出力せずに結果を限定する。",
-            tag=_WARN_TAG,
-            subject=command,
-            removable_cause=True,
-            fix=(
-                "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行せよ。"
-                "`-`で始まるパスを渡す場合は`./`を前置せよ。"
-            ),
-        )
-    return None
-
-
-# --- Bash: atkの結果を受領できない出力接続 ---
-
-
 _ATK_PROCESS_LOOP_CONTROL_SUBCOMMANDS = frozenset({"abort", "abort-cancel", "status", "instruct", "instruct-cancel"})
+
+
 """`atk wi process-loop`のうち常駐を起動せずに結果を返すサブコマンド。"""
 
 
@@ -1066,9 +149,9 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
     return None
 
 
-# --- Bash: 区切り語を引用しないheredocの本文にあるコマンド置換 ---
-
 _HEREDOC_SUBSTITUTION_DISPLAY_LIMIT = 120
+
+
 """通知へ載せる置換1件あたりの最大文字数。置換の範囲を特定できる長さに収め、文脈の占有を抑える。"""
 
 
@@ -1101,10 +184,12 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> str | None:
     )
 
 
-# --- Bash: WindowsのGit BashでPATHへ加えるドライブ文字形式の要素の検出 ---
-
 _SHELL_ASSIGNMENT_PATTERN = re.compile(r"^([A-Za-z_]\w*)=(.*)$", re.DOTALL)
+
+
 _DRIVE_LETTER_PATH_PATTERN = re.compile(r"[A-Za-z]:[/\\]")
+
+
 _PATH_ELEMENT_VARIABLE_PATTERN = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
 
 
@@ -1182,8 +267,8 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     return _llm_notice(
         f"`PATH`へドライブ文字形式の要素（{'、'.join(found)}）を加えている。"
         "`Git Bash`の`PATH`はコロン区切りのため、ドライブ文字形式の要素は`C`と`/...`の2要素に分かれ、"
-        "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`の内容で決まった結果"
-        "（`command -v`の出力、実行されたプログラム、計測値）は意図した構成のものではない。",
+        "この`PATH`では意図したディレクトリが検索対象にならない。"
+        "`PATH`に依存する結果は、修正した指定で実行して確かめよ。",
         tag=_WARN_TAG,
         fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行せよ。",
         removable_cause=True,

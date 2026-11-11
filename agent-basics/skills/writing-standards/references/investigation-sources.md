@@ -4,12 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` | 判断 | `read:agent-basics:*/skills/fetch-sources/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
-| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` |
+| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` |
 
 ## 情報源と裏付けの手段
 
@@ -101,6 +99,6 @@ SDKによる例外生成、パーサーの処理、フレームワークによ�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 品質判断の原則：事実と推論の基準を適用する前 | `quality-principles-facts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-facts.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 品質判断の原則：事実と推論の基準を適用する前 | `quality-principles-facts.md` |

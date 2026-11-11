@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| リポジトリ担当の処理規範を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 統括がlane_limit 2以上の対象を直接処理する時 | `lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
-| 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
-| リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
-| 先行工程を次の巡回へ回す前 | `agent-toolkit:process-wi/references/lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
-| 同じ巡回で既存WIを元レーンへ戻して再開する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| リポジトリ担当の処理規範を選択して取得する時 | `../SKILL.md` |
+| 統括がlane_limit 2以上の対象を直接処理する時 | `lanes.md` |
+| 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` |
+| リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract-handoff.md` |
+| 先行工程を次の巡回へ回す前 | `agent-toolkit:process-wi/references/lane-resources.md` |
+| 同じ巡回で既存WIを元レーンへ戻して再開する前 | `selection-procedure-addition.md` |
 
 ## 結果と終了
 

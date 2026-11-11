@@ -4,15 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents-contracts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents-contracts.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 類似見直しと再発防止の完了を判定する前 | `../../bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 類似見直しと再発防止の完了を判定する前 | `../../bugfix/references/root-cause-prevention-verification.md` |
 
 ## 文書記述量の管理
 
@@ -31,7 +25,9 @@
 - 重複する確認・検証の工程
 - 指示同士の矛盾・重複や、自律性・確認・承認・完遂の規定を同じ主体・入力・利用場面で比較したときの不明瞭さ
 - 停止・確認・未完了を招く文言が守る価値と適用境界。
-  明示された承認条件や安全性の保護と、通常作業へ意図せず確認を要求する条件を区別する
+  明示された承認条件や安全性の保護と、通常作業へ意図せず確認を要求する条件を区別する。
+  理由が当てはまらなくなった注意書きと、例外を別の場所に置いた禁止も対象にする
+- 委譲を常に促す指示が、作業に必要な数を超える委譲を招いていないか
 - 常時読み込まれる量
 
 採否を決める読者へ、対象ファイル、該当文言、観点、根拠、行動への影響、具体的な修正案を提案ごとに示す。
@@ -44,11 +40,10 @@
 
 対象は、エージェントが読み込む配布物と、その判定条件を実装した機械チェックスクリプトとする。
 新規作成や改訂の際は、追記前に既存記述の書き換え・統合・削除で目的を達成できるか検討する。
-規範Markdownは1文1行で数え、1ファイル200〜300行を目安にする。
-目安を超える見込みの変更と、すでに超えているファイルへの変更では、分割・統合・削除を先に検討し、残す場合は理由を記録する。
-対象は配布する規範のskills/・share/・rules/、プロジェクトの作成・レビューの規範を定めるスキル、およびAGENTS.mdとする。
-目安は整理を検討する契機であり、超過だけで検査や工程を失敗させず、変更のたびの縮小も義務付けない。
-ホストの出力上限に基づく容量の検査は、この目安と別に保つ。
+規範Markdownは1文1行で書く。
+ファイルの行数は、行数の上限を検査するプロジェクトの機械チェックだけが判定し、上限以下のファイルには行数の測定・見積もり・記録・削減を求めない。
+上限を超えたときの整理は`implementation-time-checks.md`「lintと機械チェック」に従う。
+ホストの出力上限に基づく容量の検査は、この上限と別に保つ。
 資料分割の優先と適用境界は`agent-documents-basics-read-tables.md`「読込表」に従い、`design-heuristics-quality.md`「設計品質の劣化確認」の観点 (f)で、統合案や現状維持案と読解・変更の負担を比較する。
 `<役割名>.parent.md`と`<役割名>.subagent.md`の役割分担は、`sub-agents-contracts.md`「`<役割名>.parent.md`と`<役割名>.subagent.md`の構成」に従う。
 
@@ -113,6 +108,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| エージェント向け文書品質（基本）：読込表の基準を適用する前 | `agent-documents-basics-read-tables.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書品質（基本）：読込表の基準を適用する前 | `agent-documents-basics-read-tables.md` |

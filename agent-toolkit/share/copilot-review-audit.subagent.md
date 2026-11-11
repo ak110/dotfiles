@@ -25,8 +25,8 @@ writes_worktree: false
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 着手時 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | 起動時 | `role:copilot-review-audit` | |
-| 判定結果をGitHubへ記録する前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
-| Dependabotアラートを扱う前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
+| 判定結果をGitHubへ記録する前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | | | |
+| Dependabotアラートを扱う前 | `agent-toolkit:process-wi/references/github-copilot-review-audit.md` | | | |
 
 ## 入力
 

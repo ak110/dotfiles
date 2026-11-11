@@ -6,11 +6,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies-states.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-states.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-
 ## 独立したAWIへの分割と依存
 
 1. 各リポジトリの現行状態を確認し、自身の管理対象だけで実施・完成判定できる個別のAWIへ分割する。

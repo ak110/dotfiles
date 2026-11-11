@@ -1,0 +1,35 @@
+# 撤去した仕組み: 工程と担当
+
+## 工程と担当
+
+| 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
+| --- | --- | --- | --- | --- |
+| ユーザーとの認識合わせを独立スキルの起動へ分ける | 2026-10-06、commit: ba7e256a8 | 認識合わせと確認規範の相互参照を解消して集約する判断による。 | 確認と認識合わせはuser-confirmation-and-reportへ集約する。docs/development/concepts-confirmation-decisions.md「確認要否の判定」、docs/development/design-hosts-authorization.md「ユーザーとの認識合わせ」 | 撤去理由を解消できることを示した場合 |
+| 稼働中の委譲先や受領済み差し戻しの有無で、同期確認の可否を制限する規定 | 2026-09-15、commit: d44227d1b | 確認自体と関係の無い稼働状態で可否を制限していた。 | 同期確認は回答期限と承認種別で選ぶ。docs/development/concepts-approval.md「承認の範囲」 | 撤去理由を解消できることを示した場合 |
+| auto mode classifierの拒否後、ユーザー承認なしで同一操作を再発行できる許可と手順 | 2026-10-07、commit: 158c28d32 | 同一操作の反復が攻撃的挙動と見なされるリスクを避けるユーザー判断による。 | 最初の拒否から確認手順へ進み、偽陽性の明示回答後に実行する。docs/development/concepts-auto-mode.md「auto modeと許可ルール」 | 偽陽性について対象を特定した明示回答を得た場合 |
+| 実装前に計画レビューを反復し、上限到達時には専用の打ち切り判定を行う工程 | 2026-09-13、commit: 5c6e77a69 | 計画レビューを廃止し、起草した担当が実装まで続けるユーザー判断による。 | レーン担当が計画・実装・変更範囲の検証を続ける。docs/development/concepts-planning-history.md「計画レビュー廃止前の運用（2026年9月13日まで）」、docs/development/concepts-review-history.md「計画レビュー廃止前の運用（2026年9月13日まで）」、docs/development/concepts-workflows-lanes.md「経緯（process-wiとレーン）」 | 撤去理由を解消できることを示した場合 |
+| `fast担当`・`fix担当`・`統合担当`と主作業ツリー前処理へ分業する旧工程 | 2026-09-13、commit: 5c6e77a69 | 計画レビュー廃止に伴い旧担当と主作業ツリー前処理を前提とする分業を終えた。 | 現在のレーン工程で同じ担当が作業を続ける。docs/development/concepts-review-history.md「計画レビュー廃止前の運用（2026年9月13日まで）」 | 撤去理由を解消できることを示した場合 |
+| 通常作業の終了・公開工程から同期的に振り返りを実行する | 2026-10-28、commit: b6c85e3c0 | 通常作業の終了と振り返りを非同期に分離する要求による。 | 通常作業の報告と非活動セッションのbatch分析を分離する。docs/development/concepts-session-review.md「`review-session`」、docs/development/design-session-review-completion.md「完了報告と振り返りの関係」 | 撤去理由を解消できることを示した場合 |
+| WIの選定をメインから独立した担当へ委譲する | 2026-10-09、commit: e1660db57 | 両ホストの選定をメインへ移すユーザー指示による。 | 選定の意味判断はメインが所有する。docs/development/concepts-workflows-lanes.md「process-wiとレーン」、docs/development/design-selection-workflow.md「AWI処理の工程と選定」 | 撤去理由を解消できることを示した場合 |
+| CI成功の待機を省略して局所公開する手順 | 2026-09-28、commit: 5b1d63087 | 公開工程で全体検証とCI成功を確認するユーザー指示による。 | 公開はCI成功まで検収する。docs/development/concepts-workflows-lanes.md「工程と検証の名前」 | 撤去理由を解消できることを示した場合 |
+| WIの投入前に独立担当が意味をレビューする（専念型へ再導入済み） | 2026-09-29、再導入2026-10-16、commit: bd52ed61c | 全投入を委譲する条件で廃止した後、親が意味を検収しない専念型へ再導入した。 | 専念型は投入前レビュー、付随型は親の意味検収を使う。docs/development/concepts-workflows-lanes.md「工程と検証の名前」 | 親が意味を検収しない専念型の完結する手順で使う場合（2026-10-16に再導入） |
+| 固定対象以外のWIがすべて着手不能であることを、日次リリースの条件とする | 2026-09-16、commit: a2ddd1bb9 | 全レーン終了後の公開で目的を守れ、キュー全体の再判定が不要だった。 | 日次リリースの判定はdevelopとmasterの比較で行う。docs/development/concepts-workflows.md「日次リリースの判定条件の経緯」 | 撤去理由を解消できることを示した場合 |
+| Codexの委譲不能などを想定し、メイン主体へ戻す既存フォールバック | 2026-08の事例、commit: 1f9fae5f7 | 未観測の委譲不能を想定した救済が通常経路を一意に定められなくした。 | 既存の例外も明示要件・制約・観測済み欠陥へ対応付ける。docs/development/incidents-judgment.md「誤判定と検証不足」 | 撤去理由を解消できることを示した場合 |
+| 修正前後OIDを`before_fix`・`after_fix`・`no_fix` checkpointで受け渡し、調整担当が詳細検収する | 2026-08-29、commit: 18c3509a3 | 詳細な受渡しと再検収を実装担当の保存・統合前照合へ集約した。 | 作業担当が前後OIDと履歴書換え防止の結果を保存して照合する。docs/development/incidents-review-scope.md「レビューの発散と目的の変質」 | 撤去理由を解消できることを示した場合 |
+| レビュー担当の被覆報告・詳細報告を調整担当が再検収する | 2026-08-29、commit: 18c3509a3 | 作業担当の修正・検証・統合責任とレビュー担当の全体確認へ分担を整理した。 | 初回全体確認と必要時のメイン介入を保つ。docs/development/incidents-review-scope.md「レビューの発散と目的の変質」 | 撤去理由を解消できることを示した場合 |
+| ユーザー専用migrationへlock・leaseによるagent間排他と復旧条件を適用する | 2026-08の事例、commit: 未特定 | ユーザー専用操作へ別操作のagent間排他を広げ、不要な追加と撤去を反復した。 | 状態管理を対象操作・主体・同時成立条件へ対応付ける。docs/development/incidents-review-scope.md「レビューの発散と目的の変質」 | 対象操作・操作主体・競合主体と同時成立条件を要件出所へ対応付けた場合 |
+| 計画起草・計画レビューを中間の調整担当が所有し、レビュー契約を生成する | 2026-09-03、commit: a3c880444 | 中間調整担当の廃止に伴い計画とレビューの所有をメインへ移した。 | 中間担当を置かず、起動失敗は失敗として返す。docs/development/incidents-review-scope.md「レビューの発散と目的の変質」、docs/development/incidents-judgment.md「誤判定と検証不足」 | 撤去理由を解消できることを示した場合 |
+| 選定資料を別担当が読み直して選定理由を説明する | 2026-10-25、commit: dc6a906fb | 同じ選定資料を説明担当が読み直し、メインの判断を再構成していた。 | 選定したメインが保存済みの判断から答える。docs/development/design-delegation.md「親子の重複の削減と保持する構成」、docs/development/design-selection-workflow.md「AWI処理の工程と選定」 | 撤去理由を解消できることを示した場合 |
+| 計画情報を渡さない別コンテキストで成果物を検証する工程 | 2026-08-28、commit: ca3e3c961 | 計画比較と独立した成果物観点を同一担当の二段階評価へまとめた。 | 二段階の評価を順番に行い、別文脈の独立性を保証しない。docs/development/design-planning-review-contract.md「`review_contract`とレビュー指摘管理表」 | 撤去理由を解消できることを示した場合 |
+| メインが計画の変更ファイルを再照合し、実装許可で個別名指しして追加ファイルも追送する運用 | 2026-10-19、commit: 1a7947657 | レーン側で済んだ確認をメインが繰り返し、待機と往復を生んでいた。 | 書込境界はWIの目的・対象・完成条件とする。docs/development/design-planning-lane-check.md「レーンの計画確認」、docs/development/design-delegation-contract.md「委譲の共通契約」 | 撤去理由を解消できることを示した場合 |
+| 統括終了後、同じ長い会話を残件だけで再起動する方式 | 2026-11-05、commit: c64810cde | 残件だけの再起動が次巡回の選定と重なり、延期ごとに再起動防止条件を要した。 | 残件の扱いは現在の候補診断と次巡回へ接続する。docs/development/design-process-loop-ownership.md「登録全体の統括と対象別所有」 | 撤去理由を解消できることを示した場合 |
+| 共通`python-lint`の内部でChromiumを導入し実ブラウザーE2Eを実行する構成 | 2026-09-07、commit: 270b08a83 | ブラウザー導入とE2Eの時間を共通python-lintから外すため分離した。 | E2Eは専用required checkで維持する。docs/development/design-release-ci-ownership.md「CIの実処理所有権」 | 撤去理由を解消できることを示した場合 |
+| リリース後CIの待機省略をcommit・ツリー同一性などの個別条件で判定する手順 | 2026-09-24、commit: 5da1d43c8 | 同じ中身でも個別の省略条件が不成立となりCIを重複して待っていた。 | リリース後の重複CIは待たず、最終commitと必要なReleaseを検収する。docs/development/design-release-merge.md「マージ後の同期と検収」 | 撤去理由を解消できることを示した場合 |
+| 独立した振り返り担当が分析からAWI起草・報告組立まで直列処理する分担 | 2026-09-25〜26の変更経緯、commit: 0059a861d | 規範読込から報告組立までの直列担当が多くの往復と時間を要した。 | 候補の雑音と固定往復を減らし、取得済み証拠を再利用する。docs/development/design-session-review-startup.md「review-sessionの構成と候補抽出」 | 撤去理由を解消できることを示した場合 |
+| `session-review-prepare`が素材AWIを投入し、後続セッションで分析する | 2026-09-26、commit: b75d2b29f | 素材生成と後続の読み直しが二重分析となり、対策が遅れ原記録にも到達できなかった。 | 対象固定・記録到達性・証拠再利用を保つ。docs/development/design-session-review-startup.md「review-sessionの構成と候補抽出」 | 撤去理由を解消できることを示した場合 |
+| 発見した資格情報について予防策評価や追加AWIを要求する扱い | 2026-10-10、全資格情報への一般化は2026-10-21、commit: eb7c66244、642cda8ed | 資格情報の存在への過剰反応をやめ、所在に応じた報告へ一般化した。 | 報告を済ませた資格情報に予防策評価や追加AWIを要求しない。docs/development/design-session-review-startup.md「review-sessionの構成と候補抽出」 | 撤去理由を解消できることを示した場合 |
+| 選定を行う2主体間でチェック結果を返し、受領側が同じ確認を再実行する運用 | 2026-10-09、commit: e1660db57 | 選定をメインが所有した後に旧2主体の返却と同じ確認が重複していた。 | 最新の実行結果を既存記録に保持し、メインが意味を検収する。docs/development/design-selection-workflow.md「AWI処理の工程と選定」 | 撤去理由を解消できることを示した場合 |
+| 追加件数や成分の所要時間でレーン数上限を増やす例外 | 2026-10-10、commit: 81848d838 | 独立成分は同じレーンで順に扱えるため、全件処理に上限拡張が不要だった。 | 初回配分の上限と成分の不可分性を保つ。docs/development/design-lane-allocation.md「レーン配分の上限と単独稼働の扱い」 | 撤去理由を解消できることを示した場合 |
+| CIが全体を担う場合も、統合のたびにローカルで全体の試験・静的検査を求める | 2026-11-11 | 見逃しへの是正のたびに実行範囲を広げ、条文の追記費用だけで採否を決めた。先行統合では全体pytestの成功1回が約567〜4411秒かかった。 | 変更箇所と特定した利用側・関連モジュールまでをローカルで検証し、残りはCIへ委ねる。docs/development/design-release-verification.md「検証」 | CIが全体を実行しない場合、または新しいユーザー判断がある場合。範囲を広げる案は1回の所要と回数を比較する |
+| ユーザーが`refine-prompt`スキルを手動で起動し、提案を対話で1件ずつ採否する流れ（モデル更新時の点検の手動起動を含む） | 2026-11-11 | 起動する主体が定まらず、モデル更新時の点検がエージェントの提案まで起動されなかった。対話での採否は既存の確認手順と重なる。 | エージェントが新設時・改訂が必要と確定した時・モデルとホストの更新時に起動する。docs/development/concepts-document-writing.md「規範文書の書き方」 | 撤去理由を解消できることを示した場合 |
+| `refine-prompt`の通常の評価でのシナリオなしの通読と、評価担当が独自に列挙する検証観点 | 2026-11-11 | 同じ基準を適用する実行レビュー、文書の品質基準と役割が重なる。 | シナリオなしの通読は文書の点検だけで使う。docs/development/concepts-document-writing.md「規範文書の書き方」 | 撤去理由を解消できることを示した場合 |

@@ -58,7 +58,6 @@ def test_public_commit_finishes_hook_with_a_waiting_verification(
     environment = dict(os.environ)
     environment["PATH"] = host_environ().get("PATH", "")
     # 競合状態の故障注入を他の検証から分離し、このテストの子だけで同じ枠を共有する。
-    environment.pop(execution_slot.TICKET_ENV, None)
     environment.update(PYTHONPATH=str(run_script.PLUGIN_ROOT), PYFLTR_CACHE_DIR=str(tmp_path / "cache"))
     repo = git_repository.init_repository(tmp_path / "repo", files={"tracked": "base"}, commit_message="基点")
     ready, waiting, release, complete, acquired = [
@@ -71,11 +70,11 @@ def test_public_commit_finishes_hook_with_a_waiting_verification(
         f"release=pathlib.Path({str(release)!r}); complete=pathlib.Path({str(complete)!r})\n"
         f"acquired=pathlib.Path({str(acquired)!r})\n"
         "if sys.argv[1]=='hook':\n"
-        " with slot.hold(label='hook',participant=slot.receive_ticket()):\n"
+        " with slot.hold(label='hook'):\n"
         "  ready.touch(); deadline=time.monotonic()+10\n"
         "  while not release.exists() and time.monotonic()<deadline: time.sleep(0.01)\n"
         "  assert release.exists()\n"
-        "  slot.yield_to_waiters(); complete.touch()\n"
+        "  complete.touch()\n"
         "else:\n"
         " def on_wait(_owner): waiting.touch()\n"
         " with slot.hold(label='waiter',on_wait=on_wait): acquired.touch()\n",
@@ -123,6 +122,47 @@ def test_public_commit_finishes_hook_with_a_waiting_verification(
             assert commit.wait(timeout=15) == 0, stderr.read_text(encoding="utf-8")
             assert waiter.wait(timeout=15) == 0, stderr.read_text(encoding="utf-8")
     assert complete.exists() and acquired.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="commit入口はPOSIX専用")
+def test_public_commit_counts_slot_wait_in_timeout_and_does_not_start_commit(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """実行枠を待ったまま上限に達すると、commitを起動せず終了コード124で終わる。
+
+    枠待ちを上限から除くと、枠が空くまで終わらず、呼び出し側がホストへ指定した時間上限に先に達する。
+    """
+    environment = dict(os.environ)
+    environment["PATH"] = host_environ().get("PATH", "")
+    environment.update(PYTHONPATH=str(run_script.PLUGIN_ROOT), PYFLTR_CACHE_DIR=str(tmp_path / "cache"))
+    repo = git_repository.init_repository(tmp_path / "repo", files={"tracked": "base"}, commit_message="基点")
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    (repo / "tracked").write_text("changed", encoding="utf-8")
+    git_repository.run_git(repo, "add", "tracked")
+    held = tmp_path / "held"
+    holder_code = (
+        "import pathlib,sys,time\nfrom pyfltr.command import execution_slot as slot\n"
+        "with slot.hold(label='holder'):\n pathlib.Path(sys.argv[1]).touch(); time.sleep(60)\n"
+    )
+    command = [sys.executable, "-m", "agent_toolkit.atk", "run-script", "commit-with-timeout", "--"]
+    command += ["--timeout", "2", "--", "-m", "枠待ちの上限の確認"]
+    stderr = tmp_path / "stderr"
+    with process_tree.process_scope([sys.executable, "-c", holder_code, str(held)], env=environment) as holder:
+        deadline = time.monotonic() + 10
+        while not held.exists() and holder.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert held.exists()
+        started = time.monotonic()
+        with stderr.open("wb") as err, process_tree.process_scope(command, cwd=repo, env=environment, stderr=err) as commit:
+            code = commit.wait(timeout=30)
+        elapsed = time.monotonic() - started
+        holder.kill()
+
+    assert code == 124, stderr.read_text(encoding="utf-8")
+    assert elapsed < 20
+    assert "commitは開始していない" in stderr.read_text(encoding="utf-8")
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == base
+    assert git_repository.git_output(repo, "diff", "--cached", "--name-only") == "tracked"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="SIGINTとprekの退避復元の入口はPOSIX専用")

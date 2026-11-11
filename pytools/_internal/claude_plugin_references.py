@@ -7,11 +7,15 @@ plugin cacheの版ディレクトリは、起動中のClaude Codeセッション
 
 import contextlib
 import dataclasses
+import json
 import os
 import pathlib
+import sys
 import typing
 
+import filelock
 import psutil
+from agent_toolkit._common import atomic_file, process_identity
 
 _ACCESS_DENIED = object()
 # 終了済みで、plugin実体を参照し得ないプロセスの状態。
@@ -20,6 +24,21 @@ _TERMINATED_STATUSES = frozenset({psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
 _NODE_EXECUTABLE_NAMES = frozenset({"node", "nodejs"})
 # Claude Codeがhook・MCPの子プロセスへ渡すplugin rootの環境変数。
 _PLUGIN_ROOT_ENV = "CLAUDE_PLUGIN_ROOT"
+_RETIRED_HOLDERS = ".dotfiles-retired-holders.json"
+
+
+def cache_lock(plugin_directory: pathlib.Path) -> filelock.FileLock:
+    """同じpluginの現行化・保持者記録・回収を、プロセスとスレッド間で直列化する。"""
+    # Windowsの表記の大小差でも、入れ子が同じ再入可能なインスタンスを取得する。
+    directory = pathlib.Path(os.path.normcase(str(plugin_directory.resolve())))
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    # 版の削除でロック実体を消さない。入れ子の判定も同じ再入可能なロックを使う。
+    return filelock.FileLock(
+        directory.parent / f".{directory.name}.dotfiles-cache.lock",
+        timeout=10,
+        is_singleton=True,
+        preserve_lock_file=True,
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -33,7 +52,6 @@ class ReferencingProcess:
     pid: int
     label: str
     claude: bool
-    started_at: float | None
     values: tuple[str, ...]
     complete: bool
 
@@ -43,7 +61,7 @@ def scan() -> tuple[ReferencingProcess, ...]:
     windows = os.name == "nt"
     owner = psutil.Process().username() if windows else os.getuid()
     owner_attribute = "username" if windows else "uids"
-    attributes = ["name", "exe", "cmdline", "cwd", "environ", "create_time", "status", owner_attribute]
+    attributes = ["name", "exe", "cmdline", "cwd", "environ", "status", owner_attribute]
     result: list[ReferencingProcess] = []
     # process_iterはPID単位でProcessを再利用し、実行ファイルと起動時刻を以前の世代のまま保持する。
     # 列挙は現在のPIDの取得だけに使い、属性は新しく構築したProcessから読む。
@@ -61,7 +79,7 @@ def scan() -> tuple[ReferencingProcess, ...]:
 
 def _referencing_process(pid: int, info: dict[str, typing.Any]) -> ReferencingProcess:
     name_value, exe_value, cmdline_value = info.get("name"), info.get("exe"), info.get("cmdline")
-    cwd_value, environ_value, started_value = info.get("cwd"), info.get("environ"), info.get("create_time")
+    cwd_value, environ_value = info.get("cwd"), info.get("environ")
     name = name_value if isinstance(name_value, str) else ""
     exe = exe_value if isinstance(exe_value, str) else ""
     cmdline = [value for value in cmdline_value if isinstance(value, str)] if isinstance(cmdline_value, list) else []
@@ -75,40 +93,95 @@ def _referencing_process(pid: int, info: dict[str, typing.Any]) -> ReferencingPr
     identified = bool(name or exe or cmdline)
     claude = not identified or _is_claude(name, exe, cmdline)
     label = _executable_name(name or exe or (cmdline[0] if cmdline else "")) or "不明"
-    started_at = started_value if isinstance(started_value, float) else None
-    return ReferencingProcess(pid, f"{label} (pid {pid})", claude, started_at, values, complete and identified)
+    return ReferencingProcess(pid, f"{label} (pid {pid})", claude, values, complete and identified)
 
 
 def holding_reasons(
     processes: tuple[ReferencingProcess, ...],
     directory: pathlib.Path,
     *,
-    session_window: tuple[float, float] | None,
+    sessions_may_reference: bool = True,
+    retired: bool = False,
 ) -> list[str]:
     """`directory`を回収してはいけない理由を返す。空なら参照の終了を判定できている。
 
     次のいずれかに当たる間は保持する。
 
     - 自ユーザーのプロセスの作業ディレクトリ・実行ファイル・command line・`CLAUDE_PLUGIN_ROOT`が`directory`の配下を指す
-    - Claude Codeのセッションがその版を使い得る。`session_window`が`None`なら稼働中の全セッション、
-      `(開始, 終了)`ならその期間に起動したセッション（起動時刻を取得できないセッションを含む）が当たる。
-      セッションは起動時に解決した版のhook・skillを使い続けるため
+    - `sessions_may_reference`が真で、Claude Codeセッションが稼働中。
+      非現行版（`retired=True`）は、初回の回収判定で保存した世代が残る間だけ保持する。
+      以後に起動したセッションは現行版を解決し、旧版の明示参照は上の直接参照で保護する
     - Claude Codeのプロセス（Claude Codeか判定できないプロセスを含む）の参照先を取得できない
     """
-    targets = _path_strings(directory)
-    reasons: list[str] = []
-    for process in processes:
-        if any(_refers(value, target) for value in process.values for target in targets):
-            reasons.append(f"{process.label}が参照中")
-        elif not process.claude:
-            continue
-        elif not process.complete:
-            reasons.append(f"Claude Code {process.label}の参照先を取得できない")
-        elif session_window is None:
-            reasons.append(f"Claude Code {process.label}が稼働中")
-        elif process.started_at is None or session_window[0] <= process.started_at < session_window[1]:
-            reasons.append(f"この版が現行だった期間に起動したClaude Code {process.label}が稼働中")
-    return reasons
+    with cache_lock(directory.parent):
+        targets = _path_strings(directory)
+        reasons: list[str] = []
+        if sessions_may_reference and retired:
+            try:
+                reasons.extend(
+                    f"旧版の保持候補 pid {identity.pid}が稼働中"
+                    for identity in _retired_holders(directory, processes)
+                    if identity.exists()
+                )
+            except (OSError, ValueError, TypeError, psutil.Error) as error:
+                reasons.append(
+                    f"旧版の保持者記録を確認できない: {error}。アクセス権と記録を確認してupdate-dotfilesを再実行する"
+                )
+        for process in processes:
+            if any(_refers(value, target) for value in process.values for target in targets):
+                reasons.append(f"{process.label}が参照中")
+            elif not process.claude:
+                continue
+            elif not process.complete:
+                reasons.append(f"Claude Code {process.label}の参照先を取得できない")
+            elif sessions_may_reference and not retired:
+                reasons.append(f"Claude Code {process.label}が稼働中")
+        return reasons
+
+
+def mark_current(directory: pathlib.Path) -> None:
+    """再び現行になった版の退役時観測を失効させ、次の退役で保持者を取り直す。"""
+    with cache_lock(directory.parent):
+        (directory / _RETIRED_HOLDERS).unlink(missing_ok=True)
+
+
+def _retired_holders(
+    directory: pathlib.Path, processes: tuple[ReferencingProcess, ...]
+) -> tuple[process_identity.ProcessIdentity, ...]:
+    path = directory / _RETIRED_HOLDERS
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        holders = []
+        for process in processes:
+            if not process.claude:
+                continue
+            try:
+                holders.append(process_identity.ProcessIdentity.capture(psutil.Process(process.pid)))
+            except psutil.NoSuchProcess:
+                continue
+        # 起動時の版は後から変わらない。退役後の初回観測にいた全Claudeを含めることで、
+        # 既存cacheにも導入履歴や壁時計に依存せず安全側の保持者集合を作る。
+        # 初回から長期稼働するセッションがあれば、無関係な旧版もその終了まで回収が遅れる。
+        # 後から起動した世代は集合へ加えず、常時稼働による保持の延長を避ける。
+        atomic_file.atomic_write(
+            path, json.dumps({"version": 1, "processes": [item.payload() for item in holders]}), fsync=True
+        )
+        return tuple(holders)
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("version"), int)
+        or isinstance(value["version"], bool)
+        or value["version"] != 1
+        or not isinstance(value.get("processes"), list)
+    ):
+        raise ValueError(f"旧版の保持者記録が不正: {path}")
+    return tuple(
+        process_identity.ProcessIdentity.parse(
+            item, require_start_id=sys.platform.startswith("linux") or sys.platform == "darwin"
+        )
+        for item in value["processes"]
+    )
 
 
 def _path_strings(directory: pathlib.Path) -> tuple[str, ...]:

@@ -4,26 +4,26 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` | |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| 検証結果を記録する前 | `verification-evidence-records.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-records.md` | |
-| 手動観測を保存する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` | |
-| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-verification.md` | |
-| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` | |
-| 初回起動前 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` | |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
-| 基準の参照時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` | |
-| 基準の参照時 | `review-loop-coordination-escalation.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-escalation.md` | |
-| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-verification.md` | |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` | |
-| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` | |
-| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` | |
-| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` | |
-| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` | |
-| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` |
+| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
+| 検証結果を記録する前 | `verification-evidence-records.md` |
+| 手動観測を保存する前 | `verification-evidence-observation.md` |
+| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` |
+| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
+| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 基準の参照時 | `exec-review-recording-integration.md` |
+| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` |
+| 基準の参照時 | `review-loop-coordination-escalation.md` |
+| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
+| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` |
+| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` |
+| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` |
 
 ## 完成条件証拠の受領確認
 
@@ -31,7 +31,7 @@
 
 `atk agents wait`で受領した`agent_message_path`の返却本文を読む。
 正式原本の所在を返した場合は、共通の`receiving-format.md`「受領手段と報告様式の選択」で担当・終了・原本を対応付け、その原本を返却本文として次を確認する。
-直接実装・レーン統合とも受領側が本確認と統合時の完成条件判定を担う。
+直接実装・レーン統合とも受領側が本確認で「統合時の完成条件判定」の意味検収を行い、統合時には同書の受理記録の再利用条件に従う。
 
 `評価用WI原本`を渡したレビュー評価では、以下のWI本文・完成条件・原文要求の取得元もその保存版に固定する。
 通常のキューの後日の編集を過去の評価へ混ぜず、指定原本の不足は準備入力の補完へ戻す。
@@ -72,12 +72,13 @@ WI全体を不採用とする場合は、未解決指摘の件数にかかわら
 いずれの技術判断も`review-loop-coordination-escalation.md`「技術判断で外せる完成条件」の境界を満たすことを確かめる。
 `review_contract`の記述だけをユーザー判断の代わりにせず、要求の取り下げや不採用の根拠との対応を本文で確認する。
 根拠の足りない条件変更は同書の「エスカレーションの事由別の扱い」で差し戻す。
-受領確認と内容の検収を通った返却本文のパス（正式原本を受領した場合はそのパス）は、計画書の進捗ログへ`受理済みの完成条件証拠`として記録し、以降のレビューで同名の任意入力に指定する。
+受領確認と内容の検収で受理した返却本文のパス（正式原本を受領した場合はそのパス）は、`レビューHEAD`、原要求・`review_contract`、レビュー指摘管理表の所在と対象roundに対応付け、計画書の進捗ログへ`受理済みの完成条件証拠`として記録する。
+計画がない場合は既存の引き継ぎ記録へ保持し、以降のレビューで同名の任意入力に指定する。
 レビュー完了後にHEADが更新された場合は、`exec-review-parent-launch.md`「起動方法別のレビュー基準」で影響がないと確かめた計画を除き、最新HEADで全条件を再判定した返却を受理してから後続へ進む。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準の基準を適用する前 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 実行レビュー担当の起動とレビュー修正の基準を適用する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準の基準を適用する前 | `exec-review-parent-launch.md` |
+| 実行レビュー担当の起動とレビュー修正の基準を適用する前 | `exec-review.parent.md` |

@@ -4,18 +4,18 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:delegation/references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
+| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:delegation/references/waiting-claude-code.md` |
+| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
+| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
 
 ## レーンと資源
 
@@ -46,16 +46,15 @@
  一覧と対象worktreeの対応関係は引き継ぎ記録へ保持し、統合を担当するレーン担当が同一の認可セットを利用できるようにする。
 
 **10.** 準備した専用worktreeと処理対象WIを各1名のレーン担当へ渡し、レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。
-工程境界も同契約で継続し、複数レーンではメインが`../../../share/exec-parent-integration.md`「統合の許可」に従い統合許可だけを直列に送る。
+工程境界も同契約で継続し、複数レーンではメインが`../../../share/exec-parent-integration.md`「統合の許可」に従い統合許可を送る。
 
 ## 各段階の全初期通常レーン起動後の会話圧縮
 
-**11.** Claude Code環境では、各段階（複数段階の場合は中間の段階も含む）において、すべての初期通常レーンの初回起動が完了した直後、その時点で並行開始できる独立工程を先行して開始した上で、待機状態に入る前に会話圧縮を予約する。
-通常レーンが0件の場合や処理中に追加されたレーンでは予約せず、実行レビュー待機時にも修正作業に必要な文脈を保持する。
-Codex環境では予約処理を省略して通常の待機へ進む。
-圧縮の予約および通知後の文脈復元手順は、`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」に従う。
+**11.** レーン起動に伴う一律の会話圧縮の手動予約は行わず、その時点で並行開始できる独立工程を先に進めて通常の待機へ接続する。
+会話圧縮は`agent-toolkit:delegation`の`references/waiting-claude-code.md`「長時間待機前の会話圧縮」にある時間・使用量条件付きの自動予約とホスト標準の圧縮に任せる。
+既存の圧縮予約がある場合も重複予約せず、修正作業に必要な記録と圧縮後の文脈復元手順は保持する。
 
-**12.** 予約後の復元では、注入された要約を起点に、必要に応じて次の既存記録と状態照会から情報を取得する。
+**12.** 圧縮後の復元では、注入された要約を起点に、同書に従って要求・認可を原本から確定し、必要に応じて次の既存記録と状態照会から情報を取得する。
 
 - 選定YAMLから各レーンの段階、統合状態、後続段階の先行統合条件を確認し、担当の`session_id`と稼働状態は起動結果と`atk agents list --include-terminated`の照会結果を対応付ける
 - 資源登録から専用worktreeおよびbranchの所有主体、回収対象、最初のレーン開始時刻を取得する
@@ -65,6 +64,6 @@ Codex環境では予約処理を省略して通常の待機へ進む。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レーンの実行：処理中に確定した必須是正レーンの基準を適用する前 | `run-lanes-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-addition.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レーンの実行：処理中に確定した必須是正レーンの基準を適用する前 | `run-lanes-addition.md` |

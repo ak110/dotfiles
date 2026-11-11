@@ -17,11 +17,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 基準資料を選択・取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 基準資料を選択・取得する時 | `../SKILL.md` |
+| 基準資料を選択・取得する時 | `../../managed-temp/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../delegation/references/base-contract-handoff.md` |
 
 ## 自動コードレビュー監査担当の起動と受領
 
@@ -92,6 +92,6 @@ Dependabotアラートの取得状態: <取得できた場合は「取得済み�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 公開工程とセッション終了：公開対象が無い場合の短絡の基準を適用する前 | `finish-session-publishing.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-publishing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 公開工程とセッション終了：公開対象が無い場合の短絡の基準を適用する前 | `finish-session-publishing.md` |

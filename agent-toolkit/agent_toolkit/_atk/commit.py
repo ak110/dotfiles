@@ -200,6 +200,7 @@ def _command(
 
 
 def _invoke(command: list[str], temporary: str) -> subprocess.CompletedProcess[str]:
+    # 時間上限なし: 前景でユーザーかエージェントが起動し、共有ロックを保持しない。待つ時間は起動側が決める。
     return subprocess.run(
         command,
         cwd=temporary,

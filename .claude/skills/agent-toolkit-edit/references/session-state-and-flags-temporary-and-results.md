@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-common.md` |
-| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
-| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-run-skill.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` |
+| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
+| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` |
 
 ## managed-tempの状態
 
@@ -17,7 +17,7 @@
 - 旧バージョンが作成した状態ルート（`<state_dir>/managed-temp`）の`.sessions/<sha256(session_id)>`が一時ルート直下の実在ディレクトリ（非シンボリックリンク）を指す場合は、旧パスを同一会話の領域として再利用し、参照処理は読み取りのみに限定する。
   旧マーカー（`.agent-toolkit-managed-temp.json`）、旧登録簿、`.sessions`参照、cleanupロックの名前変更や一括削除は行わない。
   定期スイープが回収条件を確かめ、対象ごとのロックを非ブロッキングで取得できたものだけを個別に回収する
-- 7日周期のスイープ処理における次回の確認時刻は、状態ルートの`.sweep/schedule`内に、一時ルート直下のディレクトリ名をキーとする単一のテーブル形式で記録する
+- 7日を超えた対象を回収するスイープ処理は1日に1回実行し、前回の実行を終えた時刻だけを状態ルートの`.sweep/last-sweep`へ記録する
 
 ## 完了報告からの状態読み取り
 

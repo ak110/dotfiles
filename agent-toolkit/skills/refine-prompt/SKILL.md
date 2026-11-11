@@ -1,11 +1,11 @@
 ---
 name: refine-prompt
+user-invocable: false
 description: >
-  エージェントへのテキスト指示を前提知識のないサブエージェントに読ませて改善提案の一覧を取得し、
-  起動目的に応じてユーザーとの対話または技術判断で採否を決めて反映する手法。
-  対象はスキル、スラッシュコマンド、タスクプロンプト、CLAUDE.mdの各節、コード生成プロンプトなど。
-  プロンプトやスキルを新規作成・大幅改訂した直後や、指示と挙動の不一致を評価したい場合に使用する。
-  引数auditではエージェント向け文書を点検し、採否・編集をせず提案一覧を返す。
+  エージェントへの指示文を前提知識のない評価担当に読ませ、解釈に迷う箇所の指摘を集めて反映する。
+  繰り返し使うスキル、役割文書、毎回読み込む規範の節を新しく作ってレビューへ渡す前と、
+  指示と挙動の食い違いを原因分析して指示文の改訂が必要と確定した時に、エージェントが自分で起動する。
+  引数auditでは、モデルやホストの更新を契機にエージェント向け文書を点検し、採否・編集をせず提案一覧を返す。
 # 元ネタ: https://zenn.dev/mizchi/articles/empirical-prompt-tuning
 ---
 
@@ -32,34 +32,26 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-questions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-questions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../write-plan/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 改善案を作成する前（エージェント向け文書が対象の場合） | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` | |
-| 対話と成果物を評価する多ターン試行を選んだ時と結果を受領する時 | `references/multi-turn-trials.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` | |
-| 実セッションから小課題を作り、条文変更の効果を比較する方法を選んだ時 | `references/multi-turn-trials.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` | |
+| 改善案を作成する前（エージェント向け文書が対象の場合） | `agent-basics:writing-standards/SKILL.md` | | | |
+| 対話と成果物を評価する多ターン試行を選んだ時と結果を受領する時 | `references/multi-turn-trials.md` | | | |
+| 実セッションから小課題を作り、条文変更の効果を比較する方法を選んだ時 | `references/multi-turn-trials.md` | | | |
 | `audit`で文書を点検する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md`、`agent-basics:writing-standards/references/host-official-references.md` | 判断 | `skill:refine-prompt` | |
 
 ## 使用条件
 
-frontmatterに記載した条件に加えて、利用頻度の高いスキルや、自動化の中核となるプロンプトを堅牢化したい場合にも本スキルを使用する。
-起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は、本スキルの適用対象から除外する。
+起動の契機は、文書を新しく作る作業と指示文を改訂する作業の前に読む`agent-toolkit:wi-standards/references/agent-documents-additions.md`（所在参照）と、文書の点検を求める作業項目が定める。
+対象は利用頻度の高いスキルと自動化の中核となる文書に限り、起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は除外する。
 この除外は本スキルという手段の選択に限定する。
 プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に従って処置の要否を判断する。
 指示と挙動の不一致を問題として調査するときは、原因を指示の曖昧さに限定せず、評価や追記案の検討に先立って`agent-basics:bugfix`を起動する。
@@ -68,22 +60,28 @@ frontmatterに記載した条件に加えて、利用頻度の高いスキルや
 
 ## 文書の点検
 
-`/agent-toolkit:refine-prompt audit`は、モデル更新などを契機に文書を見直すための、読み取り専用の点検である。
+引数`audit`で起動する点検は、モデルやホストの更新を契機に文書を見直すための、読み取り専用の点検である。
+費用のかかる通読を必要な文書に限るため、検索による判定と評価担当の通読の2段階で行う。
 点検観点と削減の判断基準は`agent-basics:writing-standards/references/agent-documents-additions-volume.md`「文書記述量の管理」に従う。
 
 1. 常時配送される規範（`share/rules/common/`と`share/rules/rules-main*.md`などの起動時本文）、agent-basics・agent-toolkitのスキル本体とreferences、hookがエージェントへ返す通知文を列挙する。
    配送元の定義を使い、点検済みと未点検を区別する。
+   ホストの更新による点検では、変更履歴の該当項目と関係する規範だけを対象にする。
 2. 処理するセッションのモデル・ホストに対応する公式プロンプトガイドを、`agent-basics:writing-standards/references/host-official-references.md`から確認する。
    対象の版と適用条件を確かめ、点検対象の一覧と取得した一次資料の保存先を点検資料へまとめる。
-3. 「プロンプト評価担当の起動と受領」から、前提知識のない担当へ対象本文を渡す。
-   `シナリオ`は`なし`とし、`点検資料`へ前項の資料の絶対パスを指定する。
+3. 1段階目として、対象の全ファイルを点検の観点ごとに検索し、該当箇所を読んで判定する。
+   ファイルごとに、該当なし、提案あり、本文を読まないと判定できない、のいずれかと、検索語・一致件数を記録する。
+4. 2段階目として、「プロンプト評価担当の起動と受領」から、前提知識のない担当へ対象本文を渡す。
+   対象は常時配送される規範と、1段階目で本文を読まないと判定できなかった文書に限る。
+   `シナリオ`は`なし`とし、`点検資料`へ手順2の資料の絶対パスを指定する。
    対象が多い場合は、既存の委譲基準に従い点検範囲を分け、全範囲の結果を回収する。
-4. 指摘を観点ごとの提案一覧へまとめ、提案ごとに対象ファイル・該当箇所・観点・根拠・推奨する処置を残す。
-   未点検範囲と未試行の比較も明示する。
+5. 指摘を観点ごとの提案一覧へまとめ、提案ごとに対象ファイル・該当箇所・観点・根拠・推奨する処置を残す。
+   対象の全ファイルについて、1段階目の判定と評価担当が通読したかを示し、未点検範囲と未試行の比較も明示する。
    採否判断と文書の編集には進まない。
-5. 一覧を自身のmanaged-tempへ保存し、ユーザーへ本文と保存先を届けて終了する。
+6. 一覧を自身のmanaged-tempへ保存し、ユーザーへ本文と保存先を届けて終了する。
    自律処理では報告用UWIにより届け、委譲先は一覧と保存先を委譲元へ返す。
    提案に基づく編集はユーザーの採否を得た後に別のAWIとして扱う。
+   点検記録（点検した日付、基準にしたガイド、モデルID、ホストごとの確認済みの版、提案一覧の保存先）を、プロジェクトが点検の要否の判定に使う記録へ追加または更新する。
 
 ## ワークフロー
 
@@ -91,9 +89,10 @@ frontmatterに記載した条件に加えて、利用頻度の高いスキルや
    問題起点では「使用条件」で確定した原因と対策の範囲を入力とし、原因は調査結果で確定し、評価担当の指摘は参考情報とする。
    元依頼の計画作成要否は変わらず、`agent-toolkit:write-plan`の呼び出しは不要である。
 2. 公平に比較できるよう、対象と目的に応じて手法を選ぶ。
-   シナリオによる読み取り専用の単発評価、シナリオなしの批判的通読、実際の操作・対話・成果物を採点する多ターン試行から選び、反復評価のシナリオは初回と同じ内容を維持する。
+   通常の評価はシナリオを与えた読み取り専用の単発評価とし、反復評価のシナリオは初回と同じ内容を維持する。
+   シナリオなしの通読は、同じ基準を適用する実行レビューと役割が重なるため、「文書の点検」だけで使う。
 
-   多ターン試行は、`references/multi-turn-trials.md`に従い、独立した2つの役割を起動できる環境で手動実行する。
+   実際の操作・対話・成果物を採点する多ターン試行は、`references/multi-turn-trials.md`に従い、独立した2つの役割を起動できる環境で手動実行する。
    結果の差異は、同一事例における観測事実として受け取る。
    既存の固定課題や単発評価で判断できる場合はその結果を活用する。
    実セッションに基づく比較が採否の判断に不可欠な場合に限り、同資料の「実セッション由来の小課題による比較」を選択する。
@@ -125,7 +124,7 @@ frontmatterに記載した条件に加えて、利用頻度の高いスキルや
 
    - `対象プロンプト`: 対象プロンプトの名前と、本文を保存したファイルの絶対パス
    - `シナリオ`: ワークフローで決定した状況設定の1段落。
-     シナリオを与えない場合は`なし`
+     文書の点検では`なし`
    - `点検資料`: `audit`の場合だけ指定する、対象一覧と公式一次資料の保存先をまとめたファイルの絶対パス。
      通常評価では省略する
 
@@ -177,48 +176,16 @@ frontmatterに記載した条件に加えて、利用頻度の高いスキルや
 6. 元の意図を保つため、メインエージェントは重複や関連する指摘をまとめ、`agent-basics:review-standards`と同スキルの`references/reviewee.md`に基づいて採否を判定する。
    転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics-ownership.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
    評価担当の出力はユーザーへ直接表示されないため、指摘の原表現をできる限り保持する。
-7. 起動目的に沿った判断で反映するため、次の分岐に従う。
-
-   - エージェントが品質確認のために起動した場合は、`../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に沿って技術的な指摘の採否を自ら判断して反映する。
-     目的や期待される結果の変更、あるいはユーザー固有の好みや認可が必要な事項に限ってユーザーに確認する。
-   - ユーザーが対話による採否判断を求めて起動した場合は、後述のフォーマットで提案を作り、回答しやすい件数ごとに確認する。
-     質問は`../user-confirmation-and-report/references/user-confirmation-and-report-questions.md`「確認の選択肢を組む手順」に従う。
-     Claude Codeでは`AskUserQuestion`の`multiSelect`で最大4件ずつ提示し、`label`に「提案N: <変更対象>」、`description`に変更前後の要点を記す。
-     片方だけの採用で矛盾する提案は同じ選択肢にまとめ、チェック付きは採用、付かないものは不採用とする。
-     修正希望は「Other」欄へ提案番号と修正内容を書くよう案内し、回答どおり反映する。
+7. `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に沿って、技術的な指摘の採否を自ら判断して反映する。
+   目的や期待される結果の変更、あるいはユーザー固有の好みや認可が必要な事項に限ってユーザーに確認する。
 8. 元の依頼を完遂するため、反映後は対象の編集手順を定めたスキルと`agent-basics:check-execution`に従う。
-   対話での採否や反復をユーザーが求めた起動では続行・終了を確認し、続行なら手順3へ戻り新しい担当で再評価する。
-   自身の品質確認では必要な評価と反映後、確認を挟まず元の残工程へ進む。
+   必要な評価と反映の後は、確認を挟まず元の残工程へ進む。
    依頼の完了時に成果・検証結果を`agent-toolkit:report-completion`の1つの作業完了報告へ集約する。
    評価の受領だけで全体を終了せず、同期の振り返りは起動しない。
 
-### ユーザー提示フォーマット（1件ごとに繰り返す）
-
-````text
-### 提案 N: <変更対象を1行で>
-- 指摘元: <プロンプト評価担当が報告した該当箇所と問題内容を1〜2文で>
-- 変更理由: <なぜ変更すべきか1〜2文>
-- 変更内容: 以下のdiff形式で示す。新規追加なら`+`のみ、削除なら`-`のみでよい
-
-  ```diff
-  - <現在の文言>
-  + <変更後の文言>
-  ```
-
-- 期待効果: <この変更で何が改善するか1文>
-- 追随対象: <採用時に追随する他の文書・記述。無い場合は「なし」>
-- 種別: 加筆 / 書き換え / 削除
-````
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/reviewee.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee.md` |
-
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 固定課題による多ターン試行：両役の入力と返却の基準を適用する前 | `references/multi-turn-trials-dialogue.md` | 判断 | `read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials-dialogue.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 固定課題による多ターン試行：両役の入力と返却の基準を適用する前 | `references/multi-turn-trials-dialogue.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` |

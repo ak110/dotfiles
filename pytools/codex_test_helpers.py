@@ -16,10 +16,9 @@ import uuid
 from typing import Any, BinaryIO
 from urllib.parse import urlsplit
 
-from agent_toolkit._common import process_tree
 from filelock import FileLock
-from wsproto import ConnectionType, WSConnection
-from wsproto.events import AcceptConnection, CloseConnection, RejectConnection, Request, TextMessage
+lazy from wsproto import ConnectionType, WSConnection
+lazy from wsproto.events import AcceptConnection, CloseConnection, RejectConnection, Request, TextMessage
 
 _ROOT = pathlib.Path(os.environ["CODEX_PEER_ROOT"])
 _MODE = os.environ["CODEX_PEER_MODE"]
@@ -395,11 +394,8 @@ def _actor(arguments: list[str]) -> int:
                 time.sleep(0.01)
             with FileLock(str(_ROOT / "restart.lock"), timeout=5):
                 if not (_ROOT / "restarted").exists():
-                    with process_tree.process_scope(
-                        [sys.executable, __file__, "app-server", "daemon", "restart"], stdout=-1, stderr=-1
-                    ) as restarted:
-                        _stdout, stderr = restarted.communicate()
-                        assert restarted.returncode == 0, stderr
+                    # daemonは実在せず世代ファイルだけで代用する。更新のためだけのPython起動を省く。
+                    _control("restart")
                     (_ROOT / "restarted").touch()
             if _MODE == "lost-response":
                 error = until(lambda value: value.get("id") == lost_request and "error" in value)["error"]

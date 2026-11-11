@@ -623,7 +623,7 @@ def test_registration_then_cleanup_is_fixed_point(monkeypatch: pytest.MonkeyPatc
         assert setup_bin_path.run().failure is None
         assert install_libarchive.run().failure is None
         # miseの工程全体はmise本体の起動を伴うため、ユーザーPATHへ登録する処理だけを呼ぶ。
-        setup_mise._ensure_windows_user_path_has_shims()  # noqa: SLF001  # pylint: disable=protected-access
+        setup_mise.ensure_windows_user_path_has_shims()  # noqa: SLF001  # pylint: disable=protected-access
 
     register_all()
     cleanup_user_path.run()

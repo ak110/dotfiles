@@ -42,7 +42,7 @@ class Storage:
     """WI操作が共有する同期と排他の保存方針。"""
 
     local_only: bool = False
-    lock_timeout: float = -1
+    lock_timeout: float | None = None
 
     @contextlib.contextmanager
     def mutation(
@@ -387,16 +387,17 @@ def repo_lock_path(repo_path: pathlib.Path) -> pathlib.Path:
     return _atk_git_sync.repo_lock_path(repo_path)
 
 
-def repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
+def repo_lock(repo_path: pathlib.Path, *, timeout: float | None = None) -> filelock.FileLock:
     """指定したgit作業コピーへのgit操作・ファイル変更を排他するプロセス間ロックを返す。
 
     WI保存リポジトリ（`private_notes`）のほか、`atk wi process-loop`が
     上流差分を確認するdotfiles作業コピーも対象とする。
     `filelock.FileLock`は同一インスタンス内で再入可能（スレッドローカル＋カウンタ管理）だが、
     現行のロック区間分割設計では同一関数内のネスト`with`は発生しない。
-    CLIは待機時間を指定しなければ取得できるまで無期限に待機する
-    （常駐ループはclaudeセッション実行中にロックを保持しない設計であり、
-    臨界区間はgit操作前後の短時間に限るため）。
+    待機時間を指定しなければ`git_sync.LOCK_WAIT_TIMEOUT_SECONDS`まで待ち、上限では保持者を示す
+    `git_sync.RepoLockTimeoutError`を送出する。保持中のgit操作は合計で`git_sync.LOCK_HOLD_TIMEOUT_SECONDS`を
+    上限とするため、正常に動いている保持者はこの待機の間に解放する。
+    リモートと通信するgit操作は短時間で終わる保証が無く、無期限の待機は保持者の停止を待つ全主体へ広げる。
     """
     return _atk_git_sync.repo_lock(repo_path, timeout=timeout)
 
@@ -473,7 +474,12 @@ def pull_if_stale(private_notes: pathlib.Path) -> bool:
     return True
 
 
-def synchronize(private_notes: pathlib.Path, *, only_if_stale: bool = False, lock_timeout: float = -1) -> bool:
+def synchronize(
+    private_notes: pathlib.Path,
+    *,
+    only_if_stale: bool = False,
+    lock_timeout: float | None = None,
+) -> bool:
     """Web操作が残したcommitをpushし、必要なremote差分を取得する。"""
     with repo_lock(private_notes, timeout=lock_timeout):
         push_pending_commits(private_notes)

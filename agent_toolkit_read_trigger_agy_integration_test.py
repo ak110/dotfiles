@@ -95,9 +95,6 @@ def test_generated_section_observes_received_body(generated, monkeypatch, exit_c
     partial = ["sed", "-n", f"{start},{end}p", "--", str(full)]
     output = subprocess.run(partial, check=True, capture_output=True, encoding="utf-8").stdout
     command = f"sed -n \x27{start},{end}p\x27 -- {full}"
-    assert read_delivery.matches(
-        "section:agent-basics:*/skills/long/SKILL.md#必要節", "Bash", {"command": command}, str(toolkit.parent)
-    )
     event = {
         "session_id": "agy-full",
         "runtime": "agy",

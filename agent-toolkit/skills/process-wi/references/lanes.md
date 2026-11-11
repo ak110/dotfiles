@@ -2,7 +2,7 @@
 
 選定済みAWIをレーンへ分け、各担当が同一スレッドで計画（必要時）から統合まで完遂する。
 メインは選定、ユーザー判断の中継、公開、終了を担う。
-レーン数によらず各担当へ`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用し、複数レーンではメインが書込競合・依存を調停して主作業ツリーへの統合を1レーンずつ許可する。
+レーン数によらず各担当へ`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用し、複数レーンではメインが書込競合・依存を調停して主作業ツリーへの統合を許可し、統合先HEADの更新は`atk lane integrate`が1レーンずつ行う。
 AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と手順は`agent-toolkit:user-confirmation-and-report`に従う。
 なお、本スキルの実行中は自律モードで動作する。
 登録全体の統括からリポジトリ担当として取得済み候補を受領した場合は、`all-repos-orchestration.md`の受渡し契約を確認し、対象worktreeで後述の実行順を進める。
@@ -16,38 +16,38 @@ AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 基準資料を選択・取得する時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
-| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 基準資料を選択・取得する時 | `quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/quality-standards.md` |
-| 基準資料を選択・取得する時 | `../../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 基準資料を選択・取得する時 | `../../../share/review-loop-coordination.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md` |
-| 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/review-audit-launch.md` |
-| 基準資料を選択・取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/references/user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |
-| 基準資料を選択・取得する時 | `../../delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
-| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 基準資料を選択・取得する時 | `../../../share/single-lane-execution.md` |
+| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/SKILL.md` |
+| 基準資料を選択・取得する時 | `quality-standards.md` |
+| 基準資料を選択・取得する時 | `../../../share/workflow-phases.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:write-plan/SKILL.md` |
+| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/mandatory-rules.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review.parent.md` |
+| 基準資料を選択・取得する時 | `../../../share/review-loop-coordination.md` |
+| 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` |
+| 基準資料を選択・取得する時 | `../../delegation/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review-responses.md` |
+| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/references/user-utterance-incorporation.md` |
+| 基準資料を選択・取得する時 | `../../delegation/references/base-contract.md` |
+| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review-parent-existing-defects.md` |
+| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
-| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` | |
-| 選定YAMLを生成または消費する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` | |
-| 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
-| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` | |
-| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
-| 公開工程を開始する前（実行順7） | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
-| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` |
+| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` |
+| 選定YAMLを生成または消費する前 | `selection-format.md` |
+| 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` |
+| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
+| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` |
+| 公開工程を開始する前（実行順7） | `finish-session.md` |
+| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
 
 ## 用語
 
@@ -106,7 +106,7 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
    Claude Codeでは、各段階の最初の起動がすべて完了した後に、共通の会話圧縮予約手順へ進む。
 4. 各レーンは単一担当の実行契約のもとで、計画、実装、実行レビューの調整、および指摘への対応を進める。
    メインエージェントはユーザー判断の通知を中継し、レーン間の書き込み競合や依存関係を調停する。
-5. 初期選定で複数レーンが存在する場合は、`統合準備完了`を返したレーンに対して、`../../../share/exec-parent-integration.md`「統合の許可」に従い1レーンずつ`統合許可`を出す。
+5. 初期選定で複数レーンが存在する場合は、`統合準備完了`を返したレーンに対して、`../../../share/exec-parent-integration.md`「統合の許可」に従い、依存条件を満たしたレーンへ先行レーンの`統合完了`を待たずに`統合許可`を出す。
    各レーンは`atk lane integrate`を実行して、統合から計画の最終確定、AWIの終了、選定結果への統合済み記録までを完了させる。
    メインは返却された`統合完了`を、同資料「統合の指示と受領」の受領条件に沿って検収する。
 6. 処理中に追加された処理対象WIも`run-lanes.md`に従って既存レーンへ割り当て、同じレーン担当スレッド内で修正を収束させて統合する。
@@ -114,19 +114,19 @@ WIの作成、計画、実行、実行レビューの責務と引き渡し手順
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 明示された目標からの実行に関する判断・作業の前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| 直前の同期結果の検分・自動コードレビュー監査に関する判断・作業の前 | `lanes-preparation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-preparation.md` |
-| 同一主題の追加指示・即時対応に関する判断・作業の前 | `lanes-followup.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-followup.md` |
-| 終了に関する判断・作業の前 | `lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 明示された目標からの実行に関する判断・作業の前 | `lanes-goals.md` |
+| 直前の同期結果の検分・自動コードレビュー監査に関する判断・作業の前 | `lanes-preparation.md` |
+| 同一主題の追加指示・即時対応に関する判断・作業の前 | `lanes-followup.md` |
+| 終了に関する判断・作業の前 | `lanes-completion.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 公開工程とセッション終了：公開対象が無い場合の短絡の基準を適用する前 | `finish-session-publishing.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-publishing.md` |
-| 公開工程とセッション終了：公開工程の続行不能の回復と再開の基準を適用する前 | `finish-session-recovery.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
-| レーンの実行：処理中に確定した必須是正レーンの基準を適用する前 | `run-lanes-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-addition.md` |
-| メインによるWI選定とレーン分け：処理対象WIの追加の基準を適用する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
-| メインによるWI選定とレーン分け：処理対象の決定の基準を適用する前 | `selection-procedure-candidates.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-candidates.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 公開工程とセッション終了：公開対象が無い場合の短絡の基準を適用する前 | `finish-session-publishing.md` |
+| 公開工程とセッション終了：公開工程の続行不能の回復と再開の基準を適用する前 | `finish-session-recovery.md` |
+| レーンの実行：処理中に確定した必須是正レーンの基準を適用する前 | `run-lanes-addition.md` |
+| メインによるWI選定とレーン分け：処理対象WIの追加の基準を適用する前 | `selection-procedure-addition.md` |
+| メインによるWI選定とレーン分け：処理対象の決定の基準を適用する前 | `selection-procedure-candidates.md` |

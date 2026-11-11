@@ -61,15 +61,49 @@ def _writable_directory(path: Path) -> bool:
     return os.access(path, os.W_OK)
 
 
+def base_python(python_executable: Path | None = None) -> Path:
+    """仮想環境の実行ファイルを、環境を作ったPython本体へ正規化する。
+
+    シンボリックリンクで作られた仮想環境は、リンクの解決だけで本体へ届く。
+    解決後も仮想環境の中に残る実行ファイル（複製で作られた環境）だけ、`pyvenv.cfg`から本体を探す。
+    `home`には別の版を指す`python`が置かれることがあるため、版を含む名前を同名より先に探す。
+    """
+    executable = python_executable or Path(sys.executable)
+    seen: set[Path] = set()
+    while True:
+        resolved = executable.resolve()
+        seen.add(resolved)
+        config = executable.parent.parent / "pyvenv.cfg"
+        if not config.is_file() or not resolved.is_relative_to(config.parent.resolve()):
+            return resolved
+        settings: dict[str, str] = {}
+        for line in config.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                settings.setdefault(key.strip(), value.strip())
+        # 標準の`venv`は`executable`と`version`、uvは`version_info`を書く。
+        # Windowsでvenvから作ると`executable`もvenvを指すため、本体まで解決を続ける。
+        candidates = [Path(settings["executable"])] if settings.get("executable") else []
+        if home := settings.get("home"):
+            version = (settings.get("version_info") or settings.get("version") or "").split(".")
+            if len(version) >= 2:
+                candidates.append(Path(home) / f"python{version[0]}.{version[1]}{executable.suffix}")
+            candidates.append(Path(home) / executable.name)
+        candidate = next((path for path in candidates if path.is_file() and path.resolve() not in seen), None)
+        if candidate is None:
+            return resolved
+        executable = candidate
+
+
 def project_environment(root: Path, environment: Mapping[str, str], *, python_executable: Path | None = None) -> Path:
     """依存解決とPython実行条件が一致する実行だけが共有する環境を返す。"""
     root = root.resolve()
     payload = {
         "dependency_project": _dependency_project(root / "pyproject.toml"),
         "lock": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
-        # launcherとwarmupは別のPythonプロセスから起動されることがある。
-        # 選択済みの実行ファイルは両者で共有できる実行時の識別子である。
-        "python": str((python_executable or Path(sys.executable)).resolve()),
+        # 作業ディレクトリの仮想環境と共有環境自身は、同じPython本体の別パスとして現れる。
+        # 呼び出し元の文脈によらず同じ共有環境を得るため、Python本体だけで識別する。
+        "python": str(base_python(python_executable)),
         "platform": {"os": sys.platform, "machine": platform.machine()},
     }
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")

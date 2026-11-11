@@ -1,0 +1,299 @@
+
+#screen-plans {
+  margin: 0;
+  max-width: none;
+  padding: 0;
+}
+/* ヘッダーの実際の高さへ追随させるため、残りの高さをflexで割り当てる。固定値の高さ変数は用いない。 */
+#screen-plans #plans-app {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--two-pane-sidebar-width) 1fr;
+}
+/* 計画ファイル画面とセッション画面の左ペインは、枠・検索欄・項目の見た目をここで共有する。
+   画面ごとに規則を複製すると片方だけの変更で見た目がずれるため、画面固有の規則には構造上の差だけを置く。 */
+.pane-sidebar {
+  border-right: 1px solid var(--color-border);
+  overflow: auto;
+  background: var(--color-background);
+  padding: 0;
+}
+.pane-sidebar .toolbar {
+  position: sticky;
+  top: 0;
+  background: var(--color-background);
+  padding: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+.pane-sidebar input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+/* セッション画面の項目はbutton要素のため、全体のbutton規則の角丸・枠・背景をここで打ち消す。 */
+.pane-item {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.pane-item:hover,
+.pane-item[aria-current="true"] {
+  background: #eef2ff;
+}
+.pane-item[aria-current="true"] {
+  box-shadow: inset 0.25rem 0 var(--color-primary);
+  border-color: var(--color-primary);
+}
+.pane-item-title {
+  font-size: var(--font-size-small);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pane-item-meta {
+  margin-top: 4px;
+  font-size: var(--font-size-small);
+  color: var(--color-secondary-text);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* 末尾の段階展開トリガー。`hidden`属性付与時は完全非表示、外したときは高さ1pxの不可視ブロックとして
+      IntersectionObserverの可視化検出に使う。一覧の行高に影響を与えない。 */
+#screen-plans #files-sentinel {
+  height: 1px;
+  margin: 0;
+  padding: 0;
+}
+#screen-plans .meta .host {
+  overflow-wrap: anywhere;
+}
+#screen-plans .meta .ctime {
+  white-space: nowrap;
+}
+#screen-plans #root-warnings {
+  padding: 8px 12px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-bottom: 1px solid #fecaca;
+  font-size: var(--font-size-small);
+}
+#screen-plans #plans-selection-status {
+  padding: 10px 12px;
+  background: #eef2ff;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--font-size-small);
+  overflow-wrap: anywhere;
+}
+@media (min-width: 769px) {
+  #screen-plans #plans-selection-status {
+    display: none;
+  }
+}
+/* ホスト名横の接続状態バッジ。connectedのときは表示しない。 */
+#screen-plans .host-badge {
+  display: none;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: var(--font-size-small);
+  color: #4b5563;
+  background: #f3f4f6;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  vertical-align: baseline;
+}
+#screen-plans .host-badge.connecting,
+#screen-plans .host-badge.disconnected {
+  display: inline-block;
+}
+#screen-plans main {
+  overflow: auto;
+  box-sizing: border-box;
+}
+#screen-plans main .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  padding: 8px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--color-border);
+}
+/* 配色・境界・角丸・無効時表示・寸法は共通規則が定める。本規則は移動ボタンの最小幅だけを指定する。 */
+#screen-plans main .toolbar {
+  flex-wrap: nowrap;
+}
+#screen-plans main .toolbar .spacer {
+  flex: 1;
+}
+#screen-plans main .toolbar button {
+  white-space: nowrap;
+}
+/* 結果文言を同じ領域へ重ね、コピー後も隣の操作を同じ位置へ保つ。 */
+#screen-plans main .toolbar .copy-feedback {
+  display: inline-grid;
+}
+#screen-plans .copy-feedback > span,
+#screen-plans .copy-feedback::after {
+  grid-area: 1 / 1;
+}
+#screen-plans .copy-feedback::after {
+  content: attr(data-reserve-wide);
+  visibility: hidden;
+}
+#screen-plans main .toolbar .nav-btn {
+  min-width: 36px;
+}
+#screen-plans .short-label {
+  display: none;
+}
+/* デスクトップで表示する場合は、ハンバーガーとモバイル幅だけで使うメタ情報欄を隠す。 */
+#screen-plans #plans-menu-btn {
+  display: none;
+}
+#screen-plans #meta-mobile {
+  display: none;
+}
+#screen-plans #plans-drawer-backdrop {
+  display: none;
+}
+#screen-plans main article {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+/* レビュー指摘管理表は7列あり、本文と同じ幅では各セルが細く折り返されるため、この描画のときだけ上限を外す。
+     通常のMarkdown本文は上の規則の上限と左右余白を維持する。 */
+#screen-plans main article:has(> .review-table) {
+  max-width: none;
+}
+#screen-plans .review-table {
+  width: 100%;
+}
+#screen-plans .diagram {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+#screen-plans .diagram-output {
+  max-width: 100%;
+}
+#screen-plans .mermaid-output {
+  overflow-x: auto;
+  text-align: center;
+}
+#screen-plans .svg-output {
+  display: block;
+  height: auto;
+  margin: 0 auto;
+}
+#screen-plans .diagram-source {
+  margin-top: 0.75rem;
+}
+#screen-plans .diagram-source summary {
+  color: #4b5563;
+  cursor: pointer;
+  font-size: var(--font-size-small);
+}
+#screen-plans .diagram-source pre {
+  margin-bottom: 0;
+  text-align: left;
+}
+#screen-plans .diagram-error {
+  margin: 0.75rem 0 0;
+  color: #b91c1c;
+  font-weight: 600;
+}
+/* モバイル幅（タブレット縦含む）では左ペインをドロワー化する。 */
+@media (max-width: 768px) {
+  #screen-plans #plans-app {
+    grid-template-columns: 1fr;
+  }
+  #screen-plans :is(aside) {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--two-pane-sidebar-width);
+    max-width: 85vw;
+    height: 100svh;
+    z-index: 20;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease-out;
+    box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+  }
+  /* 失効理由がある一覧は、ドロワーを直ちに全幅で表示する。 */
+  #screen-plans:has(#plans-selection-status:not([hidden])) aside {
+    transition: none;
+  }
+  #screen-plans.drawer-open aside {
+    transform: translateX(0);
+  }
+  #screen-plans #plans-drawer-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100svh;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 10;
+  }
+  #screen-plans.drawer-open #plans-drawer-backdrop {
+    display: block;
+  }
+  #screen-plans #plans-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #screen-plans .wide-label {
+    display: none;
+  }
+  #screen-plans .short-label {
+    display: inline;
+  }
+  #screen-plans .copy-feedback::after {
+    content: attr(data-reserve-short);
+  }
+  #screen-plans #meta-mobile {
+    display: block;
+    padding: 8px 16px;
+    font-size: var(--font-size-small);
+    color: var(--color-secondary-text);
+    background: var(--color-background);
+    border-bottom: 1px solid var(--color-border);
+    overflow-wrap: anywhere;
+  }
+  #screen-plans #meta-mobile .meta-host {
+    font-weight: 600;
+    color: #374151;
+  }
+  #screen-plans #meta-mobile .meta-path {
+    display: block;
+    margin-top: 2px;
+  }
+  #screen-plans #meta-mobile .meta-ctime {
+    display: inline-block;
+    margin-left: 8px;
+  }
+  #screen-plans #meta-mobile.empty {
+    display: none;
+  }
+}

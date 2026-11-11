@@ -11,12 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `./claude-hooks-block-warn.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/claude-hooks-block-warn.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/program-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/program-messages.md` |
-
 ## ヘルパー関数
 
 共有formatterを呼び出し元から使用する。
@@ -46,6 +40,6 @@ _llm_notice = formatter("myplugin/myhook")
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| エージェント宛てメッセージ：通知本文の整形の基準を適用する前 | `agent-basics:writing-standards/references/claude-hooks-messages-format.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages-format.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント宛てメッセージ：通知本文の整形の基準を適用する前 | `agent-basics:writing-standards/references/claude-hooks-messages-format.md` |

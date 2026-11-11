@@ -4,14 +4,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| メインの作業契約が未作成で、作成手順を確認する前 | `work-contract.md` | 判断 | `read:agent-toolkit:*/share/work-contract.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| メインの作業契約が未作成で、作成手順を確認する前 | `work-contract.md` |
 
 ## 表と取得方法
 
-読込表は「時点または条件」「全文読む資料」「契機」「配送操作」の各列を持つ。
-動的に解決する資料には「資料選択子」を加える。
+読込表は「時点または条件」と「全文読む資料」の列を持ち、必要な行だけが「契機」「配送操作」「資料選択子」を加える。
+「契機」と「配送操作」の両方を省いた行（列が無い表と、両セルが空の行）は、契機を`判断`、配送操作を資料列から解決した各資料自身の読取（`read:<その資料>`）として解析する。
+契機が`操作`・`起動時`の行、配送操作が資料自身の読取と異なる行、資料選択子を持つ行は列を書く。
+片方だけの省略は拒否する。
+本文（表の行を除く）が名指しし、同じ文書の読込表に行が無い資料には、条件「本文がこの資料の基準を使う場面で、資料を選択して取得する時」、契機`判断`、配送操作がその資料自身の読取の宣言を解析側が補う。
+名指しに数える書き方は、修飾名（`agent-toolkit:`・`agent-basics:`）、同じディレクトリのファイル名、`references/`で始まる相対パスである。
+`../`で始まる相対パスだけで示す資料には補わないため、読込条件の候補として案内する資料は表の行で宣言する。
+`share/rules/`配下の規範、「名指し参照の読込方法」の定義元、「所在参照」と書いた行の資料には補わない。
+本文の名指しを写すだけの行は表へ書かない。
 読み手が判断に使う列と、hookが解析する列の区別は`agent-basics:writing-standards`の`references/read-method.md`が定める。
 既存の読込条件を保ち、資料列と配送操作を以下の受理形式で指定する。
 読込単位と資料分割は`agent-basics:writing-standards/references/read-method.md`に従う。
@@ -21,7 +28,7 @@
 - 「時点または条件」の自然文は`ReadTrigger.condition`に保持する。
   現在の主体と異なる役割の行は対象外とする。
   「判断」の自然文条件は、配送操作の一致とは別に成立を確認する。
-  `read:`・`section:`の一致だけでは宣言元の役割・工程などの自然文条件を確定せず、未確定の行は条件確認の候補に留める。
+  `read:`の一致だけでは宣言元の役割・工程などの自然文条件を確定せず、未確定の行は条件確認の候補に留める。
   `confirmation`に一致する確認ツール呼出しと本文で識別したWI保存種別は、その操作で確かめられる条件だけを確定する。
   確認ツールは`AskUserQuestion`・`request_user_input`・`request_user_input_async`であり、確認本文・選択肢を起草する契機を観測できる。
   他の未確定な自然文条件は確認候補として示す。
@@ -33,9 +40,10 @@
   WI保存は`wi-report-save`と`wi-standard-save`で区別する。
   `--body-file`の先頭frontmatterが`run_skill_report: true`なら報告保存、それ以外（本文未指定・読取不能も含む）は通常保存とする。
   汎用の`bash:atk wi add`・`bash:atk wi edit`による保存宣言は拒否する。
-- 引数付きの操作には`skill:`、`write:`、`path:`、`dependency:`、`section:`、`tool:`、`bash:`、`role:`、`read:`がある。
-  規範資料の取得には`read:<パスglob>`を使う。
-  `section:<パスglob>#<見出し指定>`は規範以外の記録類やMakefileを対象とし、規範への指定は拒否する。
+- 引数付きの操作には`skill:`、`write:`、`path:`、`dependency:`、`tool:`、`bash:`、`role:`、`read:`がある。
+  資料の取得には`read:<パスglob>`を使う。
+  節単位の取得は判定しない。
+  規範以外の記録類の節やMakefileのtargetは、本文で所在を案内し、読む範囲は担当が選ぶ。
   `role:<役割名>`はその役割を受け取る主体を表す。
 - `skill:<名前>`の短縮名は宣言元pluginに実在するスキルに限る。
   別pluginのスキルは`skill:agent-basics:bugfix`のように完全名で指定する。
@@ -72,6 +80,6 @@ Antigravity向けの公式生成形式では、同階層の`agent-toolkit-agy`�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 編集時の注意点:の基準を適用する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 編集時の注意点:の基準を適用する前 | `agent-basics:writing-standards/SKILL.md` |

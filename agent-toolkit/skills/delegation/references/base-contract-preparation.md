@@ -4,13 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-fork.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/sub-agents-contracts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents-contracts.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-investigation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-investigation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/git-identifier.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/git-identifier.md` |
-
 ## 用語
 
 - 委譲プロンプト: 委譲先を起動するときに渡す指示の本文（`agents_server`の`start`の`prompt`、`Agent`ツールの`prompt`）。
@@ -21,7 +14,7 @@
 委譲先が引き継ぐ入力は委譲プロンプトのみであり、委譲元の会話履歴や読み込んだファイル、起動したスキルは引き継がれない。
 例外として、`routing-fork.md`「会話を引き継ぐ委譲」に基づきホスト標準のforkを選択した場合は、起動時点までの会話履歴も委譲先へ引き継がれる。
 取り決めを記述する文書の配置指針は、`agent-basics:writing-standards/references/sub-agents-contracts.md`「`<役割名>.parent.md`と`<役割名>.subagent.md`の自己完結（双方向）」で定める。
-監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/base-contract.md：基本委譲契約：2026年9月27日」に記載されている。
 
 ## 起動前の確認
 
@@ -71,7 +64,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲の基準を適用する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 委譲：`<役割名>.parent.md`を持つ委譲の起動の基準を適用する前 | `delegation-role-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-role-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲の基準を適用する前 | `../SKILL.md` |
+| 委譲：`<役割名>.parent.md`を持つ委譲の起動の基準を適用する前 | `delegation-role-launch.md` |

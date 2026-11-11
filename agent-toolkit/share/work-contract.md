@@ -8,10 +8,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../skills/review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../skills/review-session/references/session-records-conversation.md` |
 
 ## 作成と所有
 
@@ -45,12 +44,14 @@
 
 承認、進捗、残作業（途中報告で`予定`とした改善点の処置を含む）、担当、変更経緯、証拠一覧、検収記録は、それぞれの原本で管理する。
 本契約ファイルには目的・要件の現在形と必要な参照だけを記録する。
+全体作業契約は更新のたびに配下の全担当が現行版を読み直すため、担当sessionの一覧、担当の交代、統合の状況、担当間で引き継ぐ観測などの進捗・担当の情報も書かない。
+これらは進捗記録か引き継ぎ記録へ置き、必要とする担当へは追送で直接渡す。
 報告・レビュー引渡し前の主張と根拠、対象版、未確認範囲、判断時点も既存の進捗ログ・検証記録・引き継ぎ記録へ保存し、本契約にはその参照だけを残す。
 指摘時は保存した事前記録と比較する。
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 更新する時点・追加入力の統合に関する判断・作業の前 | `work-contract-updates.md` | 判断 | `read:agent-toolkit:*/share/work-contract-updates.md` |
-| 工程境界での要求と成果の確認に関する判断・作業の前 | `work-contract-boundaries.md` | 判断 | `read:agent-toolkit:*/share/work-contract-boundaries.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 更新する時点・追加入力の統合に関する判断・作業の前 | `work-contract-updates.md` |
+| 工程境界での要求と成果の確認に関する判断・作業の前 | `work-contract-boundaries.md` |

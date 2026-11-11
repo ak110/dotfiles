@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import typing
+from pathlib import Path
 
 import pytest
 import yaml
@@ -410,3 +411,70 @@ def render_chezmoi_modify_template(template: pathlib.Path, content: str, environ
     )
     assert result.returncode == 0, result.stderr
     return result.stdout
+
+
+_PLUGIN_PREFIX = "agent-" + "toolkit"
+
+
+_SOURCE_SUFFIXES = frozenset({".json", ".md", ".py"})
+
+
+_AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
+
+
+def _tracked_source_paths(root: pathlib.Path, suffixes: frozenset[str] = _SOURCE_SUFFIXES) -> list[pathlib.Path]:
+    """追跡済みとignore対象外の新規ファイルから、検査対象の相対パスを返す。"""
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    return sorted(
+        pathlib.Path(raw.decode("utf-8"))
+        for raw in result.stdout.split(b"\0")
+        if raw and pathlib.Path(raw.decode("utf-8")).suffix in suffixes and (root / pathlib.Path(raw.decode("utf-8"))).is_file()
+    )
+
+
+def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
+    """未解決参照を参照元と対にして整形する。"""
+    return "\n".join(f"{reference} <- {source}" for reference, source in entries)
+
+
+def _run_git(cwd: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+@pytest.fixture(scope="module", name="workflow_data")
+def _workflow_fixture() -> dict[str, object]:
+    return load_workflow()
+
+
+_OWNS = "needs.common-ci-owner.outputs.owns == 'true'"
+
+
+_JUNIT_UPLOAD = "${{ !cancelled() && " + _OWNS + " && steps.pytest.outputs.junit != '' }}"
+
+
+@pytest.fixture(name="rules_url", scope="module")
+def rules_url_fixture() -> typing.Iterator[str]:
+    """テスト用のルール配布先URLを返す。"""
+    yield from serve_rules()
+
+
+def _statusline_job(workflow: dict[str, object]) -> dict[str, object]:
+    jobs = [
+        job
+        for value in workflow_jobs(workflow).values()
+        if (job := workflow_mapping(value)).get("name") == "statusline-version"
+    ]
+    assert len(jobs) == 1
+    return jobs[0]

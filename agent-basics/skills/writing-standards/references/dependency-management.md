@@ -8,17 +8,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `dockerfiles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dockerfiles.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `github-actions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/github-actions.md` |
-
 ## 最新版への追従
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 外部部品の共通の版方針を判断へ用いる前 | `quality-principles-dependencies.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-dependencies.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 外部部品の共通の版方針を判断へ用いる前 | `quality-principles-dependencies.md` |
 
 `quality-principles-dependencies.md`「外部部品の版の追従」を適用する。
 版の上限、メジャー版だけを指すタグ、旧版の厳密指定などが最新の安定版の取り込みを妨げる場合は、一時的な措置の条件に従い、理由と解除条件を指定箇所のコメントへ残す。
@@ -39,7 +33,7 @@ digestやcommit SHAで固定する場合も、Renovate、Dependabot、pinactな�
 ## 公開待機設定
 
 - 最新版への追従を妨げる更新経路のない厳密な固定は採用せず、公開されたばかりの新しいバージョンを一定期間（目安として1日程度）待機してから取り込む設定を活用する。
-  監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/dependency-management.md：公開待機設定：2026年9月16日」にある。
+  監査記録は`docs/development/audit-records-dependencies.md`の「agent-basics/skills/writing-standards/references/dependency-management.md：公開待機設定：2026年9月16日」にある。
   本項の待機設定はパッケージマネージャーが解決する依存関係を対象とする。
   コンテナーのベースイメージやCIの外部actionの書式は`dockerfiles.md`と`github-actions.md`、版の選び方は「最新版への追従」に従う。
 - パッケージが公開された直後のバージョンを一定期間だけ解決対象から除外する仕組み（uvの`exclude-newer`、pnpmの`minimum-release-age`、miseの`minimum_release_age`など）を「公開待機設定」と呼ぶ。
@@ -70,7 +64,7 @@ digestやcommit SHAで固定する場合も、Renovate、Dependabot、pinactな�
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 配布物の版指定の検証・Python対応版の追加に関する判断・作業の前 | `dependency-management-distribution.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management-distribution.md` |
-| pnpmに関する判断・作業の前 | `dependency-management-pnpm.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management-pnpm.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 配布物の版指定の検証・Python対応版の追加に関する判断・作業の前 | `dependency-management-distribution.md` |
+| pnpmに関する判断・作業の前 | `dependency-management-pnpm.md` |

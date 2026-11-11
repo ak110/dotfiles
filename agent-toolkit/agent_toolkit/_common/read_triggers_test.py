@@ -125,7 +125,6 @@ def test_heading_containing_preamble_word_keeps_its_scope(tmp_path):
 @pytest.mark.parametrize(
     "header,row,diagnostic",
     [
-        ("| 条件 | 全文読む資料 |", "| 条件 | `rule.md` |", "契機と配送操作"),
         ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 不明 | `tool:Do` |", "不明な契機"),
         ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 判断 | |", "配送操作が無い"),
         ("| 条件 | 全文読む資料 | 契機 | 配送操作 |", "| 条件 | `rule.md` | 操作 | `unknown:Do` |", "未登録の配送操作"),
@@ -303,17 +302,108 @@ def test_role_document_rejects_an_empty_input_selector(tmp_path):
         read_triggers.parse_tables(source, tmp_path, strict=True)
 
 
-def test_named_reference_without_route_fails_ci(tmp_path):
-    source = tmp_path / "SKILL.md"
-    reference = tmp_path / "references/rule.md"
-    reference.parent.mkdir()
-    reference.write_text("# 基準\n", encoding="utf-8")
-    source.write_text("判定は`references/rule.md`に従う。\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="参照先へ届く経路が無い") as caught:
+def _skill_with_references(tmp_path, body: str, *names: str) -> pathlib.Path:
+    """pluginが所有するスキルと参照資料を置き、スキル本文のパスを返す。"""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    source = tmp_path / "skills/example/SKILL.md"
+    (source.parent / "references").mkdir(parents=True)
+    for name in names:
+        (source.parent / "references" / name).write_text("# 基準\n", encoding="utf-8")
+    source.write_text(body, encoding="utf-8")
+    return source
+
+
+def test_named_reference_without_row_gets_supplied_declaration(tmp_path):
+    """本文が名指しし表に行の無い資料へ、定型の条件と資料自身の読取の宣言を補う。"""
+    source = _skill_with_references(tmp_path, "判定は`references/rule.md`に従う。\n", "rule.md")
+    reference = source.parent / "references/rule.md"
+    read_triggers.validate_reference_routes(source, tmp_path, [])
+    rows = read_triggers.parse_tables(source, tmp_path, strict=True, named=True)
+    assert [(row.line, row.kind, row.condition, row.documents) for row in rows] == [
+        (1, "判断", read_triggers.NAMED_REFERENCE_CONDITION, (reference,))
+    ]
+    assert rows[0].effective_operations == ("read:agent-toolkit:*/skills/example/references/rule.md",)
+    # 全文書を毎回読む呼出しは補完を求めない。
+    assert not read_triggers.parse_tables(source, tmp_path, strict=True)
+
+
+def test_named_reference_with_explicit_row_or_location_note_is_not_supplied(tmp_path):
+    """明示の行がある資料、所在参照の行、自身への参照には補わない。"""
+    source = _skill_with_references(
+        tmp_path,
+        "判定は`references/rule.md`に従う。\n"
+        "定義は`references/other.md`にある（所在参照）。\n"
+        "本書の`SKILL.md`を読む。\n\n"
+        "| 時点または条件 | 全文読む資料 |\n| --- | --- |\n| 判定の前 | `references/rule.md` |\n",
+        "rule.md",
+        "other.md",
+    )
+    rows = read_triggers.parse_tables(source, tmp_path, strict=True, named=True)
+    assert [(row.condition, row.documents) for row in rows] == [("判定の前", (source.parent / "references/rule.md",))]
+
+
+def test_named_reference_to_missing_document_fails_ci(tmp_path):
+    source = _skill_with_references(tmp_path, "判定は`references/missing.md`に従う。\n")
+    with pytest.raises(ValueError, match="参照先が存在しない") as caught:
         read_triggers.validate_reference_routes(source, tmp_path, [])
     assert f"{source}:1:" in str(caught.value)
-    assert str(reference) in str(caught.value)
-    assert "読込表に参照先を指定し、読む時点・条件を記載" in str(caught.value)
+
+
+def test_omitted_trigger_columns_derive_judgment_and_self_read(tmp_path):
+    """2列の表と両セルが空の行は、契機`判断`と資料自身の読取として解析する。"""
+    source = _skill_with_references(
+        tmp_path,
+        "| 時点または条件 | 全文読む資料 |\n| --- | --- |\n| 判定の前 | `references/rule.md` |\n\n"
+        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        "| 別の判定の前 | `references/other.md` | | |\n"
+        "| 検索の前 | `references/rule.md` | 操作 | `search` |\n",
+        "rule.md",
+        "other.md",
+    )
+    rows = read_triggers.parse_tables(source, tmp_path, strict=True)
+    assert [(row.kind, row.operations, row.derived_read) for row in rows] == [
+        ("判断", (), True),
+        ("判断", (), True),
+        ("操作", ("search",), False),
+    ]
+    assert [row.effective_operations for row in rows] == [
+        ("read:agent-toolkit:*/skills/example/references/rule.md",),
+        ("read:agent-toolkit:*/skills/example/references/other.md",),
+        ("search",),
+    ]
+    deferred = read_triggers.parse_tables(source, tmp_path, defer_material=True)
+    assert [row.effective_operations for row in deferred] == [row.effective_operations for row in rows]
+
+
+@pytest.mark.parametrize(
+    "cells,message",
+    [
+        ("| 判断 | |", "配送操作が無い"),
+        ("| | `read:agent-toolkit:*/skills/example/references/rule.md` |", "不明な契機"),
+    ],
+)
+def test_partially_omitted_trigger_columns_are_rejected(tmp_path, cells, message):
+    """片方だけの省略は、宣言の書き漏れと区別できないため拒否する。"""
+    source = _skill_with_references(
+        tmp_path,
+        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        f"| 判定の前 | `references/rule.md` {cells}\n",
+        "rule.md",
+    )
+    with pytest.raises(ValueError, match=message):
+        read_triggers.parse_tables(source, tmp_path, strict=True)
+
+
+def test_selector_row_requires_explicit_trigger_columns(tmp_path):
+    source = _skill_with_references(
+        tmp_path,
+        "| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |\n| --- | --- | --- | --- | --- |\n"
+        "| 判定の前 | `references/rule.md` | | | `same-document` |\n",
+        "rule.md",
+    )
+    with pytest.raises(ValueError, match="資料選択子を持つ行は契機と配送操作を宣言する"):
+        read_triggers.parse_tables(source, tmp_path, strict=True)
 
 
 def _reference_method_documents(tmp_path, package="share"):
@@ -341,11 +431,24 @@ def test_common_reference_method_has_a_full_common_route(tmp_path, package):
     assert targets == (read_triggers.ReadTarget(method),)
     assert targets[0].body() == method.read_text(encoding="utf-8")
     read_triggers.validate_reference_routes(source, root, [])
+    # 共通の読込方法の定義元には宣言を補わず、他の名指しにだけ補う。
+    assert not read_triggers.named_reference_rows(source, root)
     with source.open("a", encoding="utf-8") as stream:
         stream.write("\n別の判断は`other.md`に従う。\n")
-    (source.parent / "other.md").write_text("# 他資料\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="参照先へ届く経路が無い"):
-        read_triggers.validate_reference_routes(source, root, [])
+    other = source.parent / "other.md"
+    other.write_text("# 他資料\n", encoding="utf-8")
+    assert [row.documents for row in read_triggers.named_reference_rows(source, root)] == [(other,)]
+    # `../`で始まる相対パスは名指しに数えず、宣言を補わない。候補として案内する資料は、表の明示の行で宣言する。
+    sibling = source.parent.parent / "sibling" / "guide.md"
+    sibling.parent.mkdir()
+    sibling.write_text("# 隣の資料\n", encoding="utf-8")
+    with source.open("a", encoding="utf-8") as stream:
+        stream.write("\n隣の判断は`../sibling/guide.md`「隣の資料」に従う。\n")
+    assert [row.documents for row in read_triggers.named_reference_rows(source, root)] == [(other,)]
+    with source.open("a", encoding="utf-8") as stream:
+        stream.write("\n| 時点または条件 | 全文読む資料 |\n| --- | --- |\n| 隣の判断の前 | `../sibling/guide.md` |\n")
+    declared = [row for row in read_triggers.parse_tables(source, root, strict=True) if row.documents == (sibling,)]
+    assert [(row.kind, row.condition) for row in declared] == [("判断", "隣の判断の前")]
 
 
 def test_role_startup_receives_the_common_reference_method(tmp_path):
@@ -723,7 +826,7 @@ def test_writing_entry_routes_select_purpose_specific_material(operation, expect
     root = pathlib.Path(__file__).resolve().parents[2]
     source = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
     rows = read_triggers.parse_tables(source, root, strict=True)
-    selected = [row for row in rows if operation in row.operations]
+    selected = [row for row in rows if operation in row.effective_operations]
     targets = [target for row in selected for target in row.targets]
     assert any(target.path.name == expected and target.body().strip() for target in targets)
     assert not excluded.intersection(target.path.name for target in targets)
@@ -749,7 +852,10 @@ def test_hook_message_judgment_route_reaches_message_and_program_material(condit
     assert routes and all(row.kind == "判断" for row in routes)
     targets = [target for row in routes for target in row.targets if target.path == hook_material]
     assert all(target.body().strip() for target in targets)
-    followups = read_triggers.parse_tables(hook_material, root, strict=True)
+    # 出力基準は整形の条件別資料が本文で名指しし、解析器が補う宣言で届く。
+    format_material = source.parent / "references/claude-hooks-messages-format.md"
+    assert any(format_material in row.documents for row in read_triggers.parse_tables(hook_material, root, strict=True))
+    followups = read_triggers.parse_tables(format_material, root, strict=True, named=True)
     program_material = source.parent / "references/program-messages.md"
     assert any(program_material in row.documents for row in followups)
     assert any(target.path == program_material and target.body().strip() for row in followups for target in row.targets)
@@ -782,7 +888,7 @@ def test_hook_message_judgment_route_reaches_message_and_program_material(condit
     ],
 )
 def test_normative_declarations_require_full_files(tmp_path, location, declaration):
-    """規範の資料列と配送操作の節指定を独立に拒否し、全文宣言を受理する。"""
+    """規範の資料列の節指定と、撤去した配送操作`section:`を拒否し、全文宣言を受理する。"""
     root = tmp_path / "plugin"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -806,10 +912,14 @@ def test_normative_declarations_require_full_files(tmp_path, location, declarati
         row = read_triggers.parse_tables(source, root, strict=True)[0]
         assert row.targets == (read_triggers.ReadTarget(target),)
         assert "必要な例外" in row.targets[0].body()
-    else:
+    elif declaration == "material-section":
         with pytest.raises(ValueError, match="エージェント向け文書") as error:
             read_triggers.parse_tables(source, root, strict=True)
         assert "分割" in str(error.value) and "read:" in str(error.value)
+    else:
+        # 節単位の取得は判定しないため、`section:`は配送操作の語彙に無い。
+        with pytest.raises(ValueError, match="未登録の配送操作"):
+            read_triggers.parse_tables(source, root, strict=True)
 
 
 @pytest.mark.parametrize("location", ["AGENTS.md", ".chezmoi-source/dot_claude/skills/local/references/rule.md"])
@@ -849,7 +959,7 @@ def test_record_and_makefile_sections_remain_valid_declarations(tmp_path, name, 
     source = tmp_path / "source.md"
     source.write_text(
         "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
-        f"| 調査時 | `{name}#{heading}` | 判断 | `section:*/{name}#{heading}` |\n",
+        f"| 調査時 | `{name}#{heading}` | 判断 | `read:*/{name}` |\n",
         encoding="utf-8",
     )
     row = read_triggers.parse_tables(source, tmp_path, strict=True)[0]

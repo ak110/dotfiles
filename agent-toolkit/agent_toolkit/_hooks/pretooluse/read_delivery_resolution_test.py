@@ -12,7 +12,7 @@ import markdown_it
 import pytest
 
 from agent_toolkit._common import read_triggers
-from agent_toolkit._hooks.pretooluse import read_delivery, task_document_launch
+from agent_toolkit._hooks.pretooluse import read_delivery, read_delivery_guidance, task_document_launch
 from agent_toolkit._testing import pretooluse_support
 
 
@@ -69,7 +69,7 @@ def test_public_small_operation_does_not_resolve_unselected_material_or_initiali
                 },
             )
         assert result.returncode == 0 and not result.stderr
-        assert "想定外エラー" not in result.stdout
+        assert "想定外のエラーが起きた" not in result.stdout
     finally:
         importlib.reload(task_document_launch)
 
@@ -121,7 +121,7 @@ def test_cold_small_operation_does_not_initialize_tool_only_dependencies(tmp_pat
     assert result.returncode == 0, result.stderr
     observed = json.loads(result.stdout)
     assert observed["returncode"] == 0 and not observed["stderr"], observed
-    assert "想定外エラー" not in observed["stdout"], observed
+    assert "想定外のエラーが起きた" not in observed["stdout"], observed
     assert not observed["initialized"], observed
 
 
@@ -144,7 +144,7 @@ def test_unselected_material_does_not_replace_selected_acquisition_failure(tmp_p
             raise PermissionError("選択資料の取得失敗")
         return original(selected, *args, **kwargs)
 
-    monkeypatch.setattr(read_delivery, "acquisition_step", acquisition_step)
+    monkeypatch.setattr(read_delivery_guidance, "acquisition_step", acquisition_step)
     result = pretooluse_support.run_hook_with_notice_details(
         "pretooluse",
         {
@@ -156,4 +156,4 @@ def test_unselected_material_does_not_replace_selected_acquisition_failure(tmp_p
     )
     assert result.returncode == 0 and not result.stderr
     assert "選択資料の取得失敗" in result.stdout
-    assert "想定外エラー" not in result.stdout and "missing.md" not in result.stdout
+    assert "想定外のエラーが起きた" not in result.stdout and "missing.md" not in result.stdout

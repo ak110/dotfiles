@@ -131,7 +131,13 @@ def test_recorded_target_with_reused_pid_is_not_signalled(tmp_path: pathlib.Path
         gone = session_registry.ProcessIdentity(2**22 + 12345, 1.0)
         reclaim_records.save(gone.pid, gone.create_time, [], [], [])
         record_path = reclaim_records.path(gone.pid, gone.create_time)
-        reused = [{"pid": unrelated.pid, "create_time": psutil.Process(unrelated.pid).create_time() - 1000}]
+        reused = [
+            {
+                "pid": unrelated.pid,
+                "create_time": psutil.Process(unrelated.pid).create_time() - 1000,
+                "start_id": "linux:00000000-0000-0000-0000-000000000001:1",
+            }
+        ]
         record_path.write_text(json.dumps({"targets": reused, "unresolved": [], "unreaped": reused}), encoding="utf-8")
 
         assert not reclaim_records.pending(gone.pid, gone.create_time)

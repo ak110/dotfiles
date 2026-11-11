@@ -43,6 +43,7 @@ from session_evidence_user_events import _query_user_events
 
 from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import agents_server_tools as _agents_server_tool_names
+from agent_toolkit._common import shell_tokens as _shell_tokens_module
 from agent_toolkit._common.session_family import _RecordMetadata, _scan_record_metadata
 from agent_toolkit._common.shell_tokens import is_atk_command as _is_atk_command
 
@@ -101,6 +102,17 @@ def _catalog_value(records: list[_Record], *keys: str) -> str:
     return "unknown"
 
 
+def _joins_commands(word: str) -> bool:
+    """語がコマンドをつなぐ記号を含むかを返す。
+
+    文字列から分けた語は引用の外側の文字だけを見る。引用された記号と、記録された引数の列の要素は
+    コマンドへ渡すデータであり、値が記号と同じでも区切りとして扱わない。
+    """
+    if not isinstance(word, _shell_tokens_module.ShellWord):
+        return False
+    return any(operator in word.unquoted for operator in (";", "|", "&&"))
+
+
 def _wi_command(tokens: list[str]) -> str | None:
     """直接実行された`atk wi`の操作名を返す。"""
     index = 0
@@ -113,7 +125,7 @@ def _wi_command(tokens: list[str]) -> str | None:
         if len(words) == 3 and words[1].startswith("-") and "c" in words[1]:
             return _wi_command(_shell_tokens(words[2]))
         return None
-    if any(word in {";", "&&", "||", "|"} for word in words):
+    if any(_joins_commands(word) for word in words):
         return None
     if len(words) < 3 or not _is_atk_command(words) or words[1] != "wi":
         return None

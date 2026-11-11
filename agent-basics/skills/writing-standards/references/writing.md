@@ -7,15 +7,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| エージェント向け文書の条件、禁止、理由を整理する時 | `agent-documents-basics-content.md`、`agent-documents-basics-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-content.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-tone.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/tone-examples-llm-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |
-| 新しい概念名や内部識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
-| 会話の要約から文章の要求・事実・認可を復元する前 | `investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書の条件、禁止、理由を整理する時 | `agent-documents-basics-content.md`、`agent-documents-basics-tone.md` |
+| 新しい概念名や内部識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `referent-table.md` |
+| 会話の要約から文章の要求・事実・認可を復元する前 | `investigation-sources.md` |
 
 ## 構成・構造
 
@@ -60,6 +56,17 @@
 省略した要素の補い方が一意に定まり、用いる動詞の意味が読者と正確に共有され、主語と述語の論理的な対応関係が成立していることを確認する。
 指示対象が曖昧な代名詞は具体的な対象名に戻し、同一段落内で誰が見ても一意にわかる指示語はそのまま残す。
 主語を常に文頭に置くことや受動態の全面的な排除を一律に求めるのではなく、日本語として自然な語順を重視する（努力目標）。
+
+1文では1つの事柄を述べる。
+主語や対象が異なる別々の事柄は、読点や「〜し、」「〜して」などの連用形でつないで1文にせず、文を分ける（努力目標。別々の事柄かどうかは文の意味から判断する必要があり、機械検査で判定できずレビューで回収するため）。
+並列する事柄は箇条書きにする。
+条件と結果、理由と結論、手段と目的のように、1つの事柄を成り立たせる論理関係は1文のまま書いてよい。
+文を分ける基準は事柄の数とし、文字数や読点の数は基準にしない。
+
+```text
+例文: 旧機能は次の版で廃止する。共有フォルダーの文書は、URLを指定するだけで参照できるようにする。
+説明: 旧機能の廃止と、共有フォルダーの文書の参照方法は、対象が異なる別々の事柄であるため2文に分ける。
+```
 
 具体的な操作や状態がイメージできない比喩表現や、漢語や名詞をやみくもに連続させた表現は避け、適切な助詞と動詞を補って文全体を再構成する。
 表現の不自然さを指摘する際は、その文や句の内部で論理関係が破綻している箇所を具体的に説明し、他の記述や専門知識との不整合に基づく事実誤認の指摘とは明確に区別する。
@@ -111,9 +118,9 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 文章の共通規定に関する判断・作業の前 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
-| 読み手別の追加注意点に関する判断・作業の前 | `writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
-| 文書種別ごとの注意点に関する判断・作業の前 | `writing-genres.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-genres.md` |
-| 改訂・保守に関する判断・作業の前 | `writing-maintenance.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-maintenance.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 文章の共通規定に関する判断・作業の前 | `writing-common.md` |
+| 読み手別の追加注意点に関する判断・作業の前 | `writing-readers.md` |
+| 文書種別ごとの注意点に関する判断・作業の前 | `writing-genres.md` |
+| 改訂・保守に関する判断・作業の前 | `writing-maintenance.md` |

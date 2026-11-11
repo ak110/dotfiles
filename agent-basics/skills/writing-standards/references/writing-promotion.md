@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 紹介・宣伝文に否定や除外を書くか判断する前 | `agent-basics:writing-standards/references/tone-examples-llm-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 紹介・宣伝文に否定や除外を書くか判断する前 | `agent-basics:writing-standards/references/tone-examples-llm-tone.md` |
 
 ## 訴求と利用条件
 

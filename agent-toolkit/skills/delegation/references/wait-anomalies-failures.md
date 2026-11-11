@@ -4,11 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
-| 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` |
+| 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` |
 
 ## 終了コードと呼び出しの失敗
 
@@ -25,7 +24,8 @@
   これは委譲先自体の失敗とは異なる。
   起動時の応答や`atk agents list`でセッションが存在するか確認する。
   ホストの組み込み機能で起動した委譲対象については、そのホストの委譲一覧や指定された成果物から終了を観測する。
-  監査記録は`docs/development/audit-records.md`の「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」を参照する。
+  監査記録は`docs/development/audit-records-delegation-waiting.md`にある。
+  該当節は「agent-toolkit/skills/delegation/references/wait-anomalies.md：終了コードと呼び出しの失敗：2026年9月20日」である。
 - 待機対象の登録と`starting`状態の保持中セッションがいずれも0件の状態で非0終了した場合は、回収すべき対象が存在しないため再実行せず、起動時の応答を確認する。
   保持中のセッションが残っている場合は、通常の待機上限まで待機を継続する。
 - ホストのリソース上限やメモリー不足によって背景待機の停止通知を受け取った場合は、次節の手順に従って元の待機状態と実行結果を回収する。
@@ -49,6 +49,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` |

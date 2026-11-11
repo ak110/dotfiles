@@ -6,27 +6,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更した状態の散在表現と遷移の分散を走査する前 | `../../writing-standards/references/implementation-time-data.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-data.md` |
-| 変更した状態の不変条件と保証箇所を比較する前 | `../../writing-standards/references/design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `judgment-details.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `judgment-details-feasibility.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-feasibility.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-mechanisms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/agent-documents-additions-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-additions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../check-execution/references/acceptance-scenarios.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/acceptance-scenarios.md` |
-| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md`、`read:agent-basics:*/skills/writing-standards/references/testing-platforms.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更した状態の散在表現と遷移の分散を走査する前 | `../../writing-standards/references/implementation-time-data.md` |
+| 変更した状態の不変条件と保証箇所を比較する前 | `../../writing-standards/references/design-time-state.md` |
+| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` |
+| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` |
 
 ## 適用契約
 
@@ -91,9 +76,9 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 初回レビューに関する判断・作業の前 | `reviewer-initial.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-initial.md` |
-| 再レビューの場合に関する判断・作業の前 | `reviewer-followup.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-followup.md` |
-| 実行レビューの判定・要求単位と観測の判定に関する判断・作業の前 | `reviewer-execution.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-execution.md` |
-| ユーザビリティレビューの判定に関する判断・作業の前 | `reviewer-usability.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-usability.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 初回レビューに関する判断・作業の前 | `reviewer-initial.md` |
+| 再レビューの場合に関する判断・作業の前 | `reviewer-followup.md` |
+| 実行レビューの判定・要求単位と観測の判定に関する判断・作業の前 | `reviewer-execution.md` |
+| ユーザビリティレビューの判定に関する判断・作業の前 | `reviewer-usability.md` |

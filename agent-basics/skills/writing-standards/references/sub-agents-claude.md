@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` |
 
 ## Claude Codeのfrontmatter
 
@@ -21,7 +21,8 @@
 
 `skills`によって注入されたスキル本文には、配置ディレクトリの絶対パスが付随しているため、プラグイン内の他のファイルはその絶対パスから特定したプラグインルートからの相対パスで解決できる。
 なお、スキル配下の`references/`ディレクトリは`skills`の宣言だけでは読み込まれないため、必要な参照文書はエージェントの本文から明示的に読み込む（`Read`する）。
-監査記録は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/sub-agents.md：Claude Codeのfrontmatter：2026年8月19日」を参照。
+監査記録は`docs/development/audit-records-languages.md`にある。
+該当節は「agent-basics/skills/writing-standards/references/sub-agents.md：Claude Codeのfrontmatter：2026年8月19日」である。
 
 ## コンテキスト境界
 
@@ -37,5 +38,5 @@
 - `skills`で宣言されたスキルの全文
 - `main`およびセッション内で稼働している他の名前付きエージェントの名簿（`tools`に`SendMessage`が含まれ、かつ他に名前付きエージェントが存在する場合）
 
-名簿に関する監査記録は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日」を参照。
+名簿に関する監査記録は`docs/development/audit-records-languages.md`「agent-basics/skills/writing-standards/references/sub-agents.md：コンテキスト境界：2026年9月13日」を参照。
 委譲元はサブエージェントの定義本文を直接読まずに委譲プロンプトを組み立てるため、起動に必要となる入力項目は、委譲元側の手順書に明記しておく。

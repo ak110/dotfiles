@@ -7,19 +7,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 類似見直しの検索と個別判定を依頼する前 | `similar-review.parent.md` | 判断 | `read:agent-toolkit:*/share/similar-review.parent.md` |
-| 入力、操作区分、phaseの対象、返却値を確かめる時 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
-| `CI修正担当`として原因を調べる前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-inputs.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-inputs.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis-initial.md`、`agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/history-rewrite-selection.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-selection.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 類似見直しの検索と個別判定を依頼する前 | `similar-review.parent.md` |
+| 入力、操作区分、phaseの対象、返却値を確かめる時 | `exec.subagent.md` |
+| `CI修正担当`として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-inputs.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/history-rewrite-selection.md` |
 
 ## 担当種別ごとの修正
 
@@ -78,13 +72,13 @@ fixupの対象が直前の1コミットのみである場合は、autosquashの�
 
 ## レビュー工程の運用資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` |
+| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レーン実行タスク：レビュー修正の履歴統合の基準を適用する前 | `exec-subagent-history.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-history.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レーン実行タスク：レビュー修正の履歴統合の基準を適用する前 | `exec-subagent-history.md` |

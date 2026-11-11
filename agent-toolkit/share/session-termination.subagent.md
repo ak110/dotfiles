@@ -20,25 +20,24 @@ writes_worktree: true
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-content.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/run-lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/run-lanes-completion.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` | |
-| 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md` | |
-| CI定義判定、baseline作成、CI監視または公開後の操作を前提不足で完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` | |
-| `adopt`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 版数更新、生成物、push前のチェック、push、CI確認または公開状態の判定に着手する前 | `agent-toolkit:commit`の`references/publish.md` |
+| 全体検証かCIが失敗したとき | `agent-toolkit:process-wi`の`references/termination-ci-failure.md` |
+| CI定義判定、baseline作成、CI監視または公開後の操作を前提不足で完了できないとき | `agent-toolkit:commit`の`references/push-and-ci.md` |
+| `adopt`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
 
 ## 入力
 
 対象リポジトリは起動時`cwd`のGit worktreeルート、ベースブランチ名は起動時のカレントブランチ、プロジェクト規範は`cwd`でホストが読む指示ファイルとする。
+push先はカレントブランチの上流追跡ブランチとし、カレントブランチと名前が異なる場合（常駐起動の専用ブランチなど）もブランチを切り替えずに上流追跡ブランチへpushする。
 対象リポジトリへの書き込みとpush、およびプロジェクト固有の公開後操作で明示された範囲のタグやリリースの作成を実施できる。
 これらを超える不可逆な操作には着手せず、該当する操作と対象を委譲元へ返す。
 

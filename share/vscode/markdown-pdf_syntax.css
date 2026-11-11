@@ -1,0 +1,186 @@
+
+  body .pl-c {
+    color: var(--color-prettylights-syntax-comment);
+  }
+
+  body .pl-c1,
+  body .pl-s .pl-v {
+    color: var(--color-prettylights-syntax-constant);
+  }
+
+  body .pl-e,
+  body .pl-en {
+    color: var(--color-prettylights-syntax-entity);
+  }
+
+  body .pl-smi,
+  body .pl-s .pl-s1 {
+    color: var(--color-prettylights-syntax-storage-modifier-import);
+  }
+
+  body .pl-ent {
+    color: var(--color-prettylights-syntax-entity-tag);
+  }
+
+  body .pl-k {
+    color: var(--color-prettylights-syntax-keyword);
+  }
+
+  body .pl-s,
+  body .pl-pds,
+  body .pl-s .pl-pse .pl-s1,
+  body .pl-sr,
+  body .pl-sr .pl-cce,
+  body .pl-sr .pl-sre,
+  body .pl-sr .pl-sra {
+    color: var(--color-prettylights-syntax-string);
+  }
+
+  body .pl-v,
+  body .pl-smw {
+    color: var(--color-prettylights-syntax-variable);
+  }
+
+  body .pl-bu {
+    color: var(--color-prettylights-syntax-brackethighlighter-unmatched);
+  }
+
+  body .pl-ii {
+    color: var(--color-prettylights-syntax-invalid-illegal-text);
+    background-color: var(--color-prettylights-syntax-invalid-illegal-bg);
+  }
+
+  body .pl-c2 {
+    color: var(--color-prettylights-syntax-carriage-return-text);
+    background-color: var(--color-prettylights-syntax-carriage-return-bg);
+  }
+
+  body .pl-sr .pl-cce {
+    font-weight: bold;
+    color: var(--color-prettylights-syntax-string-regexp);
+  }
+
+  body .pl-ml {
+    color: var(--color-prettylights-syntax-markup-list);
+  }
+
+  body .pl-mh,
+  body .pl-mh .pl-en,
+  body .pl-ms {
+    font-weight: bold;
+    color: var(--color-prettylights-syntax-markup-heading);
+  }
+
+  body .pl-mi {
+    font-style: italic;
+    color: var(--color-prettylights-syntax-markup-italic);
+  }
+
+  body .pl-mb {
+    font-weight: bold;
+    color: var(--color-prettylights-syntax-markup-bold);
+  }
+
+  body .pl-md {
+    color: var(--color-prettylights-syntax-markup-deleted-text);
+    background-color: var(--color-prettylights-syntax-markup-deleted-bg);
+  }
+
+  body .pl-mi1 {
+    color: var(--color-prettylights-syntax-markup-inserted-text);
+    background-color: var(--color-prettylights-syntax-markup-inserted-bg);
+  }
+
+  body .pl-mc {
+    color: var(--color-prettylights-syntax-markup-changed-text);
+    background-color: var(--color-prettylights-syntax-markup-changed-bg);
+  }
+
+  body .pl-mi2 {
+    color: var(--color-prettylights-syntax-markup-ignored-text);
+    background-color: var(--color-prettylights-syntax-markup-ignored-bg);
+  }
+
+  body .pl-mdr {
+    font-weight: bold;
+    color: var(--color-prettylights-syntax-meta-diff-range);
+  }
+
+  body .pl-ba {
+    color: var(--color-prettylights-syntax-brackethighlighter-angle);
+  }
+
+  body .pl-sg {
+    color: var(--color-prettylights-syntax-sublimelinter-gutter-mark);
+  }
+
+  body .pl-corl {
+    text-decoration: underline;
+    color: var(--color-prettylights-syntax-constant-other-reference-link);
+  }
+
+  body g-emoji {
+    display: inline-block;
+    min-width: 1ch;
+    font-family: "Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol";
+    font-size: 1em;
+    font-style: normal !important;
+    font-weight: var(--base-text-weight-normal, 400);
+    line-height: 1;
+    vertical-align: -0.075em;
+  }
+
+  body g-emoji img {
+    width: 1em;
+    height: 1em;
+  }
+
+  body .task-list-item {
+    list-style-type: none;
+  }
+
+  body .task-list-item label {
+    font-weight: var(--base-text-weight-normal, 400);
+  }
+
+  body .task-list-item.enabled label {
+    cursor: pointer;
+  }
+
+  body .task-list-item+.task-list-item {
+    margin-top: 4px;
+  }
+
+  body .task-list-item .handle {
+    display: none;
+  }
+
+  body .task-list-item-checkbox {
+    margin: 0 .2em .25em -1.4em;
+    vertical-align: middle;
+  }
+
+  body .contains-task-list:dir(rtl) .task-list-item-checkbox {
+    margin: 0 -1.6em .25em .2em;
+  }
+
+  body .contains-task-list {
+    position: relative;
+  }
+
+  body .contains-task-list:hover .task-list-item-convert-container,
+  body .contains-task-list:focus-within .task-list-item-convert-container {
+    display: block;
+    width: auto;
+    height: 24px;
+    overflow: visible;
+    clip: auto;
+  }
+
+  body ::-webkit-calendar-picker-indicator {
+    filter: invert(50%);
+  }
+
+  .page {
+    page-break-after: always;
+  }

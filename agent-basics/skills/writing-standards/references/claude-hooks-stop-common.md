@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-behavior.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` |
 
 ## 遮断の条件と再帰呼び出し対策
 
@@ -39,7 +39,7 @@ Stopフックであっても、エージェント自身で回復可能な手順�
 `background_tasks`には実行中のタスクごとに`id`、`type`、`status`、`description`が含まれ、`type`はタスクを生成した機能（`shell`、`subagent`、`monitor`、`workflow`、`teammate`、`cloud session`、`MCP task`）を示す。
 これはセッション全体の完了と、バックグラウンド処理の完了待ちによる一時停止とを識別するために用いる。
 `PostToolUse`はバックグラウンド実行へ移行した時点で発火し、そのジョブが完了した時点での再発火については公式ドキュメントに記載がない。
-監査記録は`docs/development/audit-records.md`の「agent-basics/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日」にある。
+監査記録は`docs/development/audit-records-hooks-protocol.md`の「agent-basics/skills/writing-standards/references/claude-hooks-stop.md：入力：2026年9月4日」にある。
 現行バージョンの入力に`background_tasks`が含まれていない場合は本項を失効とし、そのバージョンでの観測結果として改訂する。
 
 可視テキストを対象とする判定処理では、`last_assistant_message`および現行形式のトランスクリプトからアシスタントの可視テキストのみを抽出して判定する。

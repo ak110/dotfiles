@@ -390,7 +390,7 @@ _AGENTS_WARMUP = "agents_serverのuv環境ウォームアップ"
 # codexプロセスの稼働判定）を扱うステップの組と、先行ステップが導入する実行ファイルを使うステップへ宣言する。
 # 資源は子プロセスやサービスの再起動を経由して間接的に書き換える場合も含める。
 # 宣言の無いステップは他と同時に実行してよい。
-_DEFAULT_STEPS: list[_StepSpec] = [
+DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_BIN_PATH, setup_bin_path.run, platforms=_WINDOWS),
     _StepSpec("MSYS 環境変数 (Windows)", setup_msys_env.run, platforms=_WINDOWS),
     _StepSpec("user.env 環境変数 (Windows)", setup_user_env.run, platforms=_WINDOWS),
@@ -861,7 +861,7 @@ def run(
     各ステップの出力はそのステップと列挙順でそれより前の全ステップが完了した時点で出力する。
     `recommendations` は各ステップが`PostApplyOutcome.recommendations`で返した推奨コマンドを列挙順に並べたもの。
     """
-    selected_steps = list(_DEFAULT_STEPS if steps is None else steps)
+    selected_steps = list(DEFAULT_STEPS if steps is None else steps)
     if steps is None and os.environ.get("DOTFILES_PRUNE") == "1" and os.environ.get("DOTFILES_PRUNE_OUTSIDE_UV") != "1":
         selected_steps.append(
             _StepSpec("不要ツールとキャッシュの削除", prune_installation.run, after_all_preceding=True, host_resources=True)

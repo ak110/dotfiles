@@ -6,3 +6,30 @@
 *.ps1 text eol=crlf
 *.cmd.tmpl text eol=crlf
 *.ps1.tmpl text eol=crlf
+
+# 全体が生成される配布物・補完。生成元は検査し、部分生成の人手保守ファイルは除外しない。
+/.chezmoi-source/dot_codex/AGENTS.md linguist-generated
+/.agents/plugins/marketplace.json linguist-generated
+/agent-*/.codex-plugin/plugin.json linguist-generated
+/agent-*/plugin.json linguist-generated
+/agent-toolkit/.mcp.codex.json linguist-generated
+/agent-toolkit/mcp.json linguist-generated
+/agent-toolkit/hooks/hooks.codex.json linguist-generated
+/agent-*/skills/*/references/quality-standards.md linguist-generated
+/agent-toolkit-codex/** linguist-generated
+/agent-toolkit-agy/** linguist-generated
+/agent-basics-agy/** linguist-generated
+/completions/*.bash linguist-generated
+/agent-toolkit/completions/*.bash linguist-generated
+
+# 依存解決器と解析器が書く機械データ。人が編集する設定とは分ける。
+*.lock linguist-generated
+arid-baseline.json linguist-generated
+
+# 規範再編の機械記録。案内のREADME.mdなど人が書いたMarkdownは含めない。
+/docs/development/norm-restructure-20261022/*.json linguist-generated
+/docs/development/norm-restructure-20261022/*.tsv linguist-generated
+/docs/development/norm-restructure/*.tsv linguist-generated
+
+# 同梱した第三者の文面は自作の規範・ソースと区別する。
+/agent-basics/THIRD-PARTY-NOTICES.md linguist-vendored

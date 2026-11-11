@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest import mock
 
 from agent_toolkit import wait_ci
+from agent_toolkit._atk import wait_ci_forge
 
 
 def test_gitlab_pipeline_list_includes_same_project_downstream(monkeypatch) -> None:
@@ -29,7 +30,7 @@ def test_gitlab_pipeline_list_includes_same_project_downstream(monkeypatch) -> N
         commands.append(command)
         return responses.pop(0)
 
-    monkeypatch.setattr(wait_ci, "_run_forge_json_command", fake_run)
+    monkeypatch.setattr(wait_ci_forge, "_run_forge_json_command", fake_run)
 
     runs = wait_ci._glab_pipeline_list(  # pylint: disable=protected-access
         "gitlab.example.com/group/project",

@@ -10,13 +10,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:managed-temp/references/ui-ux.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/references/ui-ux.md` |
-| 実描画の確認条件と検証環境を決める前 | `agent-toolkit:managed-temp/references/ui-ux.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/references/ui-ux.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実描画の確認条件と検証環境を決める前 | `agent-toolkit:managed-temp/references/ui-ux.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` |
 
 ## 起動
 
@@ -80,7 +77,8 @@
 2. 判定が`不合格`となった場合は、その根拠が該当画面に対するWIの完成条件の範囲内にあるかどうかに応じて扱いを分ける。
 
    - 範囲外の観察結果: 判定の根拠から除外した上で、適用範囲を示して同一threadへ再判定を依頼する。
-     その観察結果がエンドユーザーの作業停止や誤った結果を示す欠落なら、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「認可を要する操作」に定める範囲外の不足区分に沿って判定する。
+     その観察結果がエンドユーザーの作業停止や誤った結果を示す欠落なら、範囲外の不足区分に沿って判定する。
+     区分は`agent-toolkit:user-confirmation-and-report`の`references/user-confirmation-and-report-authorization.md`「認可を要する操作」が定める。
      バグの修正はprocess-wiの同一実行内で是正し、新たな挙動の追加は同書の「確認を要する事項」に従って確認へ送る。
      それ以外の事項は参考記録とする。
    - 範囲内の根拠: 指摘された問題の機構、対象範囲、画面状態、操作手順、表示幅、および観測結果を修正条件として整理し、同一の実装担当者（レーン工程では同一のレーン担当者）へ返却する。
@@ -91,6 +89,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../skills/user-confirmation-and-report/SKILL.md` |

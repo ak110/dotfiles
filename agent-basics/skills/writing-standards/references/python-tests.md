@@ -23,7 +23,7 @@ Windows環境における仮想環境の`python.exe`は、Python本体を子プ�
 この仕組みにより、`subprocess.Popen([sys.executable, ...]).pid`で得られるプロセスのPIDと、子プロセス内部で`os.getpid()`を呼び出して取得したPIDが一致しない。
 子プロセス自身の実際のPIDと比較するテストを行う場合は、標準出力やファイルを経由して子プロセスから自己申告させたPIDを使用する。
 一方で、プロセスの親子ツリーのルートとしてプロセスの停止や生存確認を行う目的であれば、`Popen.pid`をそのまま利用できる。
-監査記録は`docs/development/audit-records.md`「agent-basics/skills/writing-standards/references/python.md：テストコード（pytest）：2026年10月20日」を参照。
+監査記録は`docs/development/audit-records-languages.md`「agent-basics/skills/writing-standards/references/python.md：テストコード（pytest）：2026年10月20日」を参照。
 
 ### Fixtureのコーディングルール
 

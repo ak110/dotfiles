@@ -14,6 +14,7 @@ from collections.abc import Mapping
 
 from agent_toolkit._atk import config
 from agent_toolkit._common import claude_connection as settings
+from agent_toolkit._common import next_action
 
 AUTH_ENV = settings.AUTH_ENV
 API_KINDS = settings.API_KINDS
@@ -77,18 +78,19 @@ def _api_env_file(kind: str) -> tuple[str | None, str | None]:
     if not raw:
         return None, None
     path = str(pathlib.Path(raw).absolute())
+    reason = "空、またはAPI認証・接続方式の変数に値が無い"
     try:
         values = settings.read_api_env_file(path)
-    except OSError, ValueError, UnicodeError:
+    except (OSError, ValueError, UnicodeError) as error:
         values = {}
+        reason = f"{type(error).__name__}: {error}"
     # 認証も接続方式も持たないファイル（空、コメントだけ、キーが空の値）では、API接続がサブスクリプションの認証を
     # 隔離した上で認証に失敗するため、読めない場合と同じく候補から除く。
     if any(values.get(name) for name in _API_AUTH_KEYS):
         return path, None
-    return None, (
-        f"API環境ファイルを使えません（{kind}。空、存在しない、読み取れない、形式が不正、"
-        f"またはAPI認証・接続方式の変数が無い）: {path}。"
-        f"atk config set {key} <パス>で修正するか、atk config set {key} ''で解除する"
+    return None, next_action.with_next_action(
+        f"API環境ファイルを使えません（{kind}）: {path}: {reason}",
+        f"atk config set {key} <パス>で修正するか、atk config set {key} ''で解除する",
     )
 
 

@@ -139,6 +139,14 @@ LAUNCH_SYSTEM_PROMPTS: dict[LaunchKind, str] = {
 AUTO_RESUME_NOTICE = _normative(_read_prompt("agents-server-auto-resume.md"), kind="auto-resume")
 
 
+ADVICE_REQUEST_NOTICE = _normative(
+    "この委譲先は、自分を起動した直上の委譲元へ技術的な助言を依頼できる。\n"
+    "助言依頼を出す条件と手順は`agent-toolkit:delegation/references/advice-request.md`にある。"
+    "助言依頼を検討するときに、この資料の全文を読め。",
+    kind="advice-request",
+)
+
+
 # Antigravity backendはイベントから子の起動結果を追跡集合へ登録しないため、子の終了による自動再開を保証できない。
 # 自動再開の能力を伝える代わりに、backendを問わず成立する公開待機で同じ実行中に結果を回収させる。
 PUBLIC_WAIT_NOTICE = _normative(
