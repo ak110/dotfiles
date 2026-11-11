@@ -427,6 +427,9 @@ function loadMermaid() {
   const loading = new Promise((resolve, reject) => {
     const script = document.createElement("script");
     const timer = setTimeout(() => {
+      // 上限を過ぎた要素の遅れた完了は、次の読込と重ねて初期化しないよう無視する。
+      script.onload = null;
+      script.onerror = null;
       script.remove();
       reject(new Error(`Mermaidの読み込みが${MERMAID_LOAD_TIMEOUT_MS / 1000}秒以内に終わりませんでした`));
     }, MERMAID_LOAD_TIMEOUT_MS);
