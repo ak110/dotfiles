@@ -156,7 +156,7 @@ Codexの委譲先（`codex:sol/medium`）とClaudeの委譲先（`claude:sonnet[
 ## agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日
 
 Codex担当がCLI 0.164.0の同日rolloutで、先頭`session_meta.model_provider`、providerを持たない`turn_context`、`response_item`のreasoning内`encrypted_content`を観測した。
-対象は`rollout-2026-10-23T16-42-16-01a167b5-e496-7fd2-846b-2965d3c94ea0.jsonl`である。
+対象はリポジトリ外のセッション記録である。
 値を再掲せず、フィールドの所在と型を確認した。
 互換性検体はこの形を架空のIDと暗号文へ置換している。
 再確認時は当該版の実会話で生成したrolloutの`session_meta`と不透明状態を持つ応答のキーを読み、接続先選択と生成先の記録を分けて照合する。
@@ -364,7 +364,7 @@ debugログにも無進捗判定と常駐ループへの中断要求があり、
 
 ## agent-toolkit/rules/01-agent.md：方針が衝突する場合の優先順位：2026年9月25日
 
-2026年9月25日、Claude Code 2.1.281で新しいセッション`0b228cab-e106-4b5e-805b-f5e88320691c`を起動し、`--include-hook-events --output-format stream-json`でhook応答を保存した。
+2026年9月25日、Claude Code 2.1.281で新しいセッションを起動し、`--include-hook-events --output-format stream-json`でhook応答を保存した。
 SessionStartの`additionalContext`は`<agent-toolkit-auto-inserted source="agent-toolkit/rules_context" kind="notice">`で始まった。
 存在しないパスを指定したBash検索に対するPreToolUseの`additionalContext`は`<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">`で始まった。
 両応答の`exit_code`は0だった。
@@ -413,15 +413,14 @@ v2.1.296以降は`allow_large: true`を指定すると、ファイル全体か�
 
 ## agent-toolkit/share/add-wi.parent.md：渡す入力：2026年10月7日
 
-Claude Code 2.1.292のセッション`6ff8ab5b-235b-4bfc-b765-115d1486cd60`で、要求本文を`extra_params`へ埋め込んだ`agents_server`の`start`が、ホストのJSON解析で拒否された。
-記録の184行目の`__unparsedToolInput.raw`には文字列中の未エスケープの改行と閉じていない末尾があり、185行目に`InputValidationError`と`could not be parsed as JSON`が残る。
+Claude Code 2.1.292のセッションで、要求本文を`extra_params`へ埋め込んだ`agents_server`の`start`が、ホストのJSON解析で拒否された。
+リポジトリ外のセッション記録の`__unparsedToolInput.raw`には文字列中の未エスケープの改行と閉じていない末尾があり、ツール結果に`InputValidationError`と`could not be parsed as JSON`が残る。
 長文一般や容量上限による拒否を示す観測ではない。
 
-同記録236行目では`投入する要求`へ要求ファイル`r1.md`の絶対パスと、同書が共通入力`common.md`を参照する旨を渡し、246行目にsession識別子と`running`が返った。
+同じセッション記録では`投入する要求`へ要求ファイル`r1.md`の絶対パスと、同書が共通入力`common.md`を参照する旨を渡し、ツール結果にsession識別子と`running`が返った。
 これはファイル参照入力による起動の受理を示し、起動結果だけで後続の保存成功まで主張しない。
 
-再検証では同記録の上記4行の入力・ツール結果・`version`・`timestamp`を比較する。
-JSON構文の条件は184行目のrawを標準JSONパーサーへ渡して確認し、本文を正しくエスケープした場合と比較できる。
+再検証では、値に生の改行を含み末尾の引用符を閉じていないJSON文字列を標準のJSONパーサーへ渡すと解析エラーになり、正しくエスケープした同じ本文は解析できることを比べる。
 不正入力をホストへ再送する必要はない。
 現行版でのファイル入力は、公開された`start`のスキーマと`add-wi.parent.md`の入力契約を確認し、要求・共通入力をmanaged-tempへ保存して絶対パスを渡し、起動の終了状態と担当が取得した内容を原文と比べる。
 
@@ -1619,7 +1618,7 @@ user役レコードの`text`の先頭が前置きであることも確認する�
 
 ## セッション記録のAPI要求の写し：2026年10月18日
 
-既存調査はClaude Code 2.1.301の記録`7542c54d-c7b2-4bca-9e29-c9199e63c7a4.jsonl`の1022行と1031行に、同じtool_use IDを持つ`assistant`と`api-request-blob`があると報告した。
+既存調査はClaude Code 2.1.301のリポジトリ外のセッション記録に、同じtool_use IDを持つ`assistant`と`api-request-blob`があると報告した。
 写しは`message`に会話と同じ形のcontentを持ち、timestampとuuidを持たない。
 公開仕様での形式の保証は未確認である。
 今回の検証は、報告された構造を最小化した検体へツール呼出・失敗結果・完了通知の写しを追加し、通常抽出・呼出照会・警告・統計・ユーザー発話の結果が追加前と一致することを確かめる。
@@ -1711,6 +1710,18 @@ PATHの先頭にcurlの引数記録用の代用だけを配置し、`--url`の�
 再検証は同じURLの対象モデルと上記3節を取得し、effortとプロンプト指示の関係、最上位effortの選定条件、内部推論と短い説明の区別を確認する。
 モデル更新時の点検では、[Claudeの共通ガイド](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)や[OpenAIのガイド](https://developers.openai.com/api/docs/guides/prompt-engineering)から使用モデルの資料へ進む。
 両URLも同日にHTTP 200を確認し、後者は旧platform URLから上記URLへの転送を確認した。
+
+## agent-basics/skills/writing-standards/references/agent-documents-basics-content.md：条件と範囲の記述：2026年11月11日
+
+2026年11月11日、[Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)の公式Markdownを取得した（取得は成功し、本文全体を読んだ）。
+対象版はClaude Fable 5.2とClaude Mythos 5.2であり、実モデルの比較実験は行っていない。
+同ガイドの「Approvals」は、承認の規則が対象とする操作を正確に名指しするよう案内する。
+承認者のいない模擬課題でのAnthropicの試験では、「この会話の外部の人にメッセージを送信すること」を要承認に挙げた規則のもとで、モデルが日常的な依頼のおよそ半分を控えたと記す。
+「Keep caution from piling up」は、不要になった注意書きの削除、承認の要らない操作の名指し、レビュー担当が付ける条件の確認、例外を規則自体へ書くことを案内する。
+同節は、承認済みの手順でも「never」の規則のもとでは実行が約10回に1回で、別の行に置いた許可では大きく変わらず、規則自体に事前の承認を得る旨を書くと約10回中9回になったと記す。
+承認の要らない操作として再試行を名指しすると再試行が増え、より自由に行動してよいという一般的な指示では変わらなかったこと、再試行の名指しは繰り返しても安全な呼び出しに限ることも記す。
+これらを規範の書き方の努力目標へ採ることは技術判断であり、dotfilesの規範での効果を実証した記録ではない。
+再検証は同じURLの上記2節を取得し、承認の規則の対象の特定、例外を規則の文へ書くこと、承認の要らない操作の名指しの3点の記述を確認する。
 
 ## docs/development/design-hooks.md：通知の整形と反復検出：2026年10月13日
 
@@ -1861,17 +1872,17 @@ Claude Code 2.1.295で、基準commit `4573be59230a11bdc9d717a1a1e03d994abf284f`
 
 対話UIでは、モデルが`compact_conversation`へ任意指示を渡した後に現在ターンを終えた。
 PTYに予約の受付と、その後の`Conversation compacted`・`Compacted`表示が保存された。
-人による`/compact`入力は無く、session `f616210b-3a9d-4a2e-a067-30a004973d93`は正常終了した。
+人による`/compact`入力は無く、セッションは正常終了した。
 
 非対話では`claude -p --verbose --output-format stream-json --include-hook-events`を使用した。
 モデルがBashのバックグラウンドタスクで65秒待機を起動し、予約後にターンを終えた。
-同じsession `b276a7e9-9b4d-435c-b7fb-85010d6cd575`でPreCompact・PostCompactを観測した。
+同じセッションでPreCompact・PostCompactを観測した。
 その後にmanual compact境界とホストの圧縮成功結果が現れた。
 待機終了のtask-notificationから同じ会話が再開し、圧縮指示に指定した応答`COMPACT_BACKGROUND_RESUMED`を返して正常終了した。
 
 故障の試行は隔離プラグインの`command.run`呼び出し直前に一度だけ例外を注入した。
 実ホスト自身のコマンド拒否を観測した試行とは区別する。
-session `1e19cda7-eaf3-49dd-b96c-916c43f077d1`へ失敗原因と再予約可能の通知が届いた。
+セッションへ失敗原因と再予約可能の通知が届いた。
 モデルは再予約し、同じ会話でmanual compact境界と圧縮成功を観測して正常終了した。
 未完了予約の重複排除と成功後の再予約は、ツール登録から時計のコールバックまでを動かす結合試験でも確認した。
 
@@ -1986,7 +1997,7 @@ SDK 0.2.168の起動環境はos.environへoptions.envを重ねるため、agents
 2026年10月21日の観測では、設定に接続変数が無い環境でも、委譲先のBashへ26変数が空の値で渡った。
 再検証はAPI環境ファイルを設定し、user・project・local設定のenvへ同じキーを持つ場合と持たない場合で、新規・再開した子の変数名と空値の件数だけを比較する。
 SDK・process-loop・可用性確認の起動環境と合成settingsを合わせた結果は、claude_connection_test.pyとruntime_isolation_test.pyの回帰検証で確認する。
-本記録の過去の実機観測はWI原本20261021-140153-001.mdに記された結果であり、今回の原稿作成担当による認証を伴う実機再測定は未実施である。
+本記録の過去の実機観測はリポジトリ外の作業記録に記された結果であり、今回の原稿作成担当による認証を伴う実機再測定は未実施である。
 
 ## agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年10月22日
 
@@ -2105,3 +2116,30 @@ uv run --frozen pytest -v -p no:cacheprovider \
   `git diff --binary --src-prefix=a/ --dst-prefix=b/`の出力は起動前に保存した差分と一致し、commitは作られず、hookのプロセスは残らなかった。
 - 再検証: 枠待ちを上限に含めることは`agent-toolkit/skills/commit/scripts/run_commit_test.py`の、実行枠を保持する別プロセスを置いた公開commit入口試験で確かめる。
   ホストの上限との前後関係は、観測2と同じ構成（終わらないローカルhook、600秒を超え背景の`timeout`より短い`--timeout`）を実際のClaude Codeで起動して確かめる。
+
+## 規範の点検記録
+
+点検を実施するたびに、実施日の小見出しで記録を加える。
+
+### 2026年11月11日
+
+2026年11月11日、公式ガイド「Prompting Claude Fable 5.2」を基準に、`agent-toolkit:refine-prompt`の「文書の点検」を規範全体へ1回実施した。
+この記録は`.claude/skills/edit-dotfiles-norms/SKILL.md`「モデルとホストの更新時の点検」が点検の要否の判定に使う。
+
+- 基準にしたモデルID: `claude-fable-5-2`
+- 基準にしたガイド: [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)と、`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「見直す契機と点検観点」
+- ホストごとの確認済みの版: Claude Code 2.1.322、codex-cli 0.167.1
+- 対象の版: 2026年11月10日のdevelopからmasterへのマージcommit（`6ec5050fa`）の本文
+- 対象: 572ファイル
+  - `agent-toolkit/share/rules/`の常時規範8
+  - `agent-toolkit/skills/`と`agent-basics/skills/`のスキル本体21、references 481、生成物19
+  - エージェントへ返す通知文を定義するhookのソース41
+  - `agents_server`の利用説明2
+- 1段階目（観点ごとの検索と一致箇所の読取）の判定: 提案あり40、該当なし513、生成物19、本文を読まないと判定できないファイル0
+- 2段階目（通読）: 常時規範8ファイルに限る
+- 提案: 63件（1段階目41件、2段階目22件）で、採否は未決定である
+- 点検対象の規範への編集: なし
+- 提案一覧の保存先: リポジトリ外（点検の担当がprocess-wiの統括へ引き渡し、ユーザーへは統合後の報告用UWIで届ける）
+
+評価を担当したのは`gpt-6.1-sol`の担当であり、Claude Fable 5.2自身による評価と、追加指示の無いモデルとの比較は実施していない。
+提案が挙げる行動への影響は、この点検では検証していない。

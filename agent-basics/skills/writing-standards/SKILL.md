@@ -167,7 +167,7 @@ hookの通知は選択を補助する。
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `references/design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時（作業項目の起草や対話でその案を示す時点を含む） | `references/design-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time.md` | |
 | コードの編集やコードレビューを行う時 | `references/program-messages.md` | 判断 | `skill:writing-standards` | |
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time.md` | |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics-screening.md`、`references/design-heuristics-necessity.md`、`references/design-heuristics-mechanisms.md`、`references/design-heuristics-responsibility.md`、`references/design-heuristics-proportionality.md`、`references/design-heuristics-decisions.md`、`references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md`、`read:agent-basics:*/skills/writing-standards/references/design-heuristics-necessity.md`、`read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md`、`read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md`、`read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md`、`read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md`、`read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` | |

@@ -26,7 +26,8 @@
 モデル固有の推奨と、対象環境で観測した効果を分けて扱う。
 
 - Claude: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)と、同サイトのモデル別ガイドを確認する。
-  [Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)はeffort調整、思考量の指示、内部推論の再現要求を扱う
+  [Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)はeffort調整、思考量の指示、内部推論の再現要求を扱う。
+  [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)は、effortの選び方、作業を最後まで完了させる指示、承認規則の書き方、コードの所有者の明示、進捗の伝え方、委譲の指示、注意書きの蓄積、以前のモデル向けの指示の見直し、最終報告の書き方、拒否応答を扱う
 - OpenAI: [Prompt engineering](https://platform.openai.com/docs/guides/prompt-engineering)から、使用するモデルの公式ガイドと推論設定の資料へ進む
 
 ## 子Claudeへ環境値を渡す
