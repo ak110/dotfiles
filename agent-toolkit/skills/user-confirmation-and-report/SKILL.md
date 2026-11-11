@@ -7,7 +7,7 @@ description: >
   計画作成・実装・提案・WI起草などで入力を「要件」または「技術判断」へ分類するときや、受け取った分類を採用・検収するときにも起動する。
   操作や判断について確認が必要かを判定するとき、ユーザーへの確認や報告の手段を選択するとき
   （Claude Codeの`AskUserQuestion`やCodexの構造化質問を呼び出す前を含む）、UWIへ確認事項を退避するとき、
-  回答が得られたUWIを元の作業へ反映するとき、Claude Codeのメインエージェントが利用上限の猶予通知を受け取ったとき、
+  回答が得られたUWIを元の作業へ反映するとき、メインエージェントが利用上限の予告または猶予通知を受け取ったとき、
   あるいはツール呼び出しが実行基盤・権限設定・auto mode classifierによって拒否されたときや、classifierが判定不能を返したとき（委譲先からその報告を受けた場合を含む）にも起動する。
   ユーザーと自身の認識が食い違っている可能性があるときや、行動への指摘を繰り返し受けた際にも起動して認識合わせを行う。
 ---
@@ -45,7 +45,7 @@ CLIが無ければ確認本文と保存用原稿を返し、キューへ未保�
 | 協調モードで対象リポジトリの変更を伴う依頼へ着手する前 | `references/publish-scope.md` |
 | Codexで条件に合う構造化質問が無く、固定形式で質問を提示する時点 | `references/codex-format.md` |
 | 起動元の工程が質問ラウンドを指定した時点 | `references/grilling.md` |
-| Claude Codeメインが利用上限の猶予通知を受けた時 | `references/usage-limit.md` |
+| メインが利用上限に達する前の予告、または利用上限の猶予通知を受けた時 | `references/usage-limit.md` |
 | 原要求を復元する資料を取得できず、未確定判断を保留または暫定する前 | `agent-toolkit:user-confirmation-and-report/references/pending-decisions.md` |
 | 回答を得られない確認の保留、無回答後の確認の記録、事前承認の合意判定、対話中のUWIへの回答の受領のいずれかへ進む前（メインエージェント） | `references/pending-decisions.md` |
 | 回答済みUWIを元の作業へ反映する時（回答の到達を確認する時を含む）と、`atk run-skill`が起動したセッションで過去の実行のUWIを扱う時 | `references/answer-transitions.md` |
