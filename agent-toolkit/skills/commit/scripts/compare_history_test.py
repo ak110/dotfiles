@@ -762,24 +762,10 @@ def test_rebase_rejects_ambiguous_upstream_mapping(repo: pathlib.Path, tmp_path:
 _SHARED_LINES = [f"行{index}" for index in range(1, 13)]
 
 
-@pytest.mark.parametrize(
-    ("later_edit", "accepted"),
-    [
-        # 別pathの後続編集は省略された変更に触れない。
-        ("other-path", True),
-        # 同じpathでも、変更箇所と前後3行の文脈から離れた行の編集は変更を残す。
-        ("same-path-far", True),
-        # 変更箇所の文脈（直後の行）の書換えは、変更が残っているかを差分の適用で確かめられない。
-        ("same-path-context", False),
-        # 変更箇所そのものの書換えは変更を失わせる。
-        ("same-path-overlap", False),
-    ],
-)
-@pytest.mark.parametrize("all_skipped", [False, True])
-def test_upstream_retention_judges_omitted_change_itself(
-    repo: pathlib.Path, tmp_path: pathlib.Path, later_edit: str, all_skipped: bool, accepted: bool
-) -> None:
-    """省略された変更が新baseに残るかを変更そのもので判定し、同じpathの離れた後続編集では統合を止めない。"""
+def _omitted_upstream_series(
+    repo: pathlib.Path, later_edit: str, all_skipped: bool
+) -> tuple[tuple[str, str, str, str], str, str]:
+    """統合先の同一変更の後に`later_edit`の後続編集がある系列を作り、端点・省略される旧commit・統合先の同一変更を返す。"""
     before = _SHARED_LINES
     changed = ["行1を変更", *before[1:]]
     base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in before), "準備")
@@ -790,22 +776,113 @@ def test_upstream_retention_judges_omitted_change_itself(
     edited = list(changed)
     if later_edit == "other-path":
         new_base = _commit(repo, "unrelated.txt", "独立編集\n", "独立した後続編集")
+    elif later_edit == "revert-and-context":
+        # 取消しの後に文脈を書き換えると、順適用も逆適用もできず書換えと区別できない。
+        _git(repo, "revert", "--no-edit", upstream)
+        reverted = list(before)
+        reverted[1] = "後続編集"
+        new_base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in reverted), "取消し後の文脈編集")
     else:
         index = {"same-path-far": 11, "same-path-context": 1, "same-path-overlap": 0}[later_edit]
         edited[index] = "後続編集"
         new_base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in edited), "後続編集")
     new_head = new_base if all_skipped else _commit(repo, "feature.txt", "成果\n", "実装")
+    return (base, old_head, new_base, new_head), omitted, upstream
+
+
+@pytest.mark.parametrize(
+    ("later_edit", "accepted"),
+    [
+        # 別pathの後続編集は省略された変更に触れない。
+        ("other-path", True),
+        # 同じpathでも、変更箇所と前後3行の文脈から離れた行の編集は変更を残す。
+        ("same-path-far", True),
+        # 変更箇所の文脈（直後の行）の書換えは、取消しと差分の適用で区別できない。
+        ("same-path-context", False),
+        # 変更箇所そのものの書換えも、取消しと区別できない。
+        ("same-path-overlap", False),
+        # 取消し後の文脈編集は、書換えと同じ適用結果になる。
+        ("revert-and-context", False),
+    ],
+)
+@pytest.mark.parametrize("all_skipped", [False, True])
+def test_upstream_retention_judges_omitted_change_itself(
+    repo: pathlib.Path, tmp_path: pathlib.Path, later_edit: str, all_skipped: bool, accepted: bool
+) -> None:
+    """省略された変更が新baseに残るかを変更そのもので判定し、同じpathの離れた後続編集では統合を止めない。"""
+    bases, omitted, upstream = _omitted_upstream_series(repo, later_edit, all_skipped)
     output = tmp_path / "retention-map.json"
-    code = _compare(repo, output, "rebase", (base, old_head, new_base, new_head))
+    code = _compare(repo, output, "rebase", bases)
     if accepted:
         assert code == 0
         expected = {omitted: upstream}
         if not all_skipped:
-            expected[old_head] = new_head
+            expected[bases[1]] = bases[3]
         assert json.loads(output.read_text(encoding="utf-8")) == expected
     else:
         assert code == 1
         assert not output.exists()
+
+
+@pytest.mark.parametrize("later_edit", ["same-path-context", "same-path-overlap"])
+@pytest.mark.parametrize("all_skipped", [False, True])
+def test_upstream_rewrite_is_accepted_only_when_resolved_conflict_names_it(
+    repo: pathlib.Path, tmp_path: pathlib.Path, later_edit: str, all_skipped: bool
+) -> None:
+    """統合先で書き換えられた同一変更は、`--resolved-conflict`で明示した旧commitだけを既存commitへ対応付ける。"""
+    bases, omitted, upstream = _omitted_upstream_series(repo, later_edit, all_skipped)
+    output = tmp_path / "rewrite-map.json"
+    assert _compare(repo, output, "rebase", bases, "--resolved-conflict", omitted) == 0
+    expected = {omitted: upstream}
+    if not all_skipped:
+        expected[bases[1]] = bases[3]
+    assert json.loads(output.read_text(encoding="utf-8")) == expected
+
+
+def test_upstream_rewrite_acknowledgement_rejects_exclude_path(
+    repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """書換えの明示と除外指定を同じ旧commitへ併用すると、除外の検収を迂回するため拒否する。"""
+    shared = "".join(f"{line}\n" for line in _SHARED_LINES)
+    changed = "".join(f"{line}\n" for line in ["行1を変更", *_SHARED_LINES[1:]])
+    base = _commit_files(repo, {"shared.txt": shared, "extra.txt": "元\n"}, "準備")
+    omitted = _commit_files(repo, {"shared.txt": changed, "extra.txt": "変更\n"}, "対象変更")
+    _git(repo, "checkout", "-b", "upstream", base)
+    _commit_files(repo, {"shared.txt": changed, "extra.txt": "変更\n"}, "上流対象変更")
+    rewritten = "".join(f"{line}\n" for line in ["後続編集", *_SHARED_LINES[1:]])
+    new_base = _commit(repo, "shared.txt", rewritten, "後続編集")
+    output = tmp_path / "rewrite-exclude-map.json"
+    capsys.readouterr()
+    code = _compare(
+        repo,
+        output,
+        "rebase",
+        (base, omitted, new_base, new_base),
+        "--resolved-conflict",
+        omitted,
+        "--exclude-path",
+        omitted,
+        "extra.txt",
+    )
+    assert code == 1
+    assert "併用できません" in capsys.readouterr().err
+    assert not output.exists()
+
+
+def test_upstream_rewrite_acknowledgement_does_not_accept_plain_revert(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
+    """明示しても、新baseへ順適用できる（変更が丸ごと失われた）取消しは受理しない。"""
+    base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in _SHARED_LINES), "準備")
+    changed = "".join(f"{line}\n" for line in ["行1を変更", *_SHARED_LINES[1:]])
+    omitted = _commit(repo, "shared.txt", changed, "対象変更")
+    old_head = _commit(repo, "feature.txt", "成果\n", "実装")
+    _git(repo, "checkout", "-b", "upstream", base)
+    upstream = _commit(repo, "shared.txt", changed, "上流対象変更")
+    _git(repo, "revert", "--no-edit", upstream)
+    new_base = _git(repo, "rev-parse", "HEAD")
+    new_head = _commit(repo, "feature.txt", "成果\n", "実装")
+    output = tmp_path / "revert-map.json"
+    assert _compare(repo, output, "rebase", (base, old_head, new_base, new_head), "--resolved-conflict", omitted) == 1
+    assert not output.exists()
 
 
 def test_upstream_retention_ignores_diff_prefix_configuration(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
