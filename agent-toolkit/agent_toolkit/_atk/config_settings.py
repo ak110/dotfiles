@@ -25,13 +25,13 @@ MODEL_TYPES = ("execute", "review", "review_fast", "chores", "chores_fast", "orc
 """工程ごとに直接解決するモデル候補列の種別。"""
 
 MODEL_DEFAULTS = {
-    "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
+    "execute_model": "claude:opus[1m]/low,codex:sol/low",
     "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
-    "chores_model": "codex:sol/medium,claude:sonnet[1m]/medium",
-    "chores_fast_model": "codex:luna/medium,claude:haiku/medium",
+    "chores_model": "codex:sol/low,claude:sonnet[1m]/low",
+    "chores_fast_model": "codex:luna/low,claude:haiku/low",
     "orchestrate_model": "claude:opus[1m]/medium,codex:sol/medium",
-    "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
+    "write_model": "agy:gemini-3.8-flash/low,claude:claude-opus-5-5/low",
 }
 
 # write_modelはプリセットによる変更対象から外す。
@@ -41,24 +41,24 @@ PRESET_MODELS = {
     },
     "codex-near-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
+        "execute_model": "codex:sol/low,claude:opus[1m]/low",
     },
     "codex-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
+        "execute_model": "codex:sol/low,claude:opus[1m]/low",
         "orchestrate_model": "codex:sol/medium,claude:opus[1m]/medium",
     },
     "claude-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "chores_model": "claude:sonnet[1m]/medium,codex:sol/medium",
-        "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
+        "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
+        "chores_fast_model": "claude:haiku/low,codex:luna/low",
     },
     "claude-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
         "review_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "review_fast_model": "claude:haiku/medium,codex:luna/medium",
-        "chores_model": "claude:sonnet[1m]/medium,codex:sol/medium",
-        "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
+        "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
+        "chores_fast_model": "claude:haiku/low,codex:luna/low",
     },
 }
 

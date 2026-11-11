@@ -108,20 +108,29 @@ Claude Codeと同じ規範で作業するためである。
 if test -d "$HOME/.claude"; then find -L "$HOME/.claude" -maxdepth 2 \( -path "$HOME/.claude/CLAUDE.md" -o -path "$HOME/.claude/rules/*.local.md" \) -type f; fi
 ```
 
-プロジェクト単位の例（`project`に対象worktreeの絶対パスを指定）:
+作業ディレクトリと上位、およびプロジェクト単位の例（`project`に対象worktree、`current`に作業ディレクトリの絶対パスを指定）:
 
 ```sh
 project=/absolute/path/to/worktree
+current=/absolute/path/to/working-directory
+while test -d "$current"; do
+  find -L "$current" -maxdepth 1 -type f \( -name CLAUDE.local.md -o \( -name CLAUDE.md ! -exec test -e "$current/AGENTS.md" \; \) \) -print || exit "$?"
+  parent=$(dirname -- "$current") || exit "$?"
+  test "$parent" != "$current" || break
+  current=$parent
+done &&
 if test -d "$project"; then
-  find -L "$project" -maxdepth 1 -type f \( -name CLAUDE.local.md -o \( -name CLAUDE.md ! -exec test -e "$project/AGENTS.md" \; \) \) -print &&
   if test -d "$project/.agents/skills"; then find -L "$project/.agents/skills" -type f; fi &&
   if test -d "$project/.claude/rules"; then find -L "$project/.claude/rules" -type f; fi
 fi
 ```
 
-- プロジェクト直下に配置された`.agents/skills/`、`AGENTS.md`が存在しない場合における`CLAUDE.md`、`CLAUDE.local.md`、および作業内容に該当する`.claude/rules/`を読み込む。
+- 作業ディレクトリからファイルシステムのルートまでの各ディレクトリの`CLAUDE.local.md`と、同じディレクトリに`AGENTS.md`が存在しない場合の`CLAUDE.md`を読む。
+- プロジェクト直下の`.agents/skills/`と、作業内容に該当する`.claude/rules/`を読み込む。
 - ユーザー単位の`~/.claude/CLAUDE.md`と`~/.claude/rules/*.local.md`（ホスト固有規範）は作業開始時に読む。
-- 起動指示に同じ本文が`atk-auto`などの境界タグ付きで含まれていれば読了済みとする。
+- 会話圧縮の後は、この節の読込対象の本文を読了済みとせずに再取得する。
+  起動指示や再開指示に同じ本文が`atk-auto`などの境界タグ付きで含まれ、現在の文脈にその全文がある場合は読了済みとする。
+  圧縮前の配送記録だけでは読了済みとしない。
 - 埋込済みの`~/.claude/rules/agent-toolkit/`と`~/.claude/rules/myprojects-common.md`は除外する。
   同主題をホスト共通本文で受け取るため、Claude Code向けの一覧・同期方針を持つ`~/.claude/rules/myprojects.md`も除外する。
 - `~/.codex/agent-toolkit/rules/`は配布元から同期された本文として扱い、dotfiles固有のスキルはClaude Code側の原本へのシンボリックリンクとして扱う。
@@ -169,6 +178,7 @@ context windowを切り替える前は、枯渇通知を受けた場合も含め
 `引き継ぎ記録先`を受け取った委譲先は、同じ記録先と起動入力も確認する。
 許可された取得手段で復元できない場合に限り、参照した所在と失敗した操作を明記して返す。
 会話圧縮後の復元でも、一時的な作業対象、処理対象のWI、保留事項、承認状態、当初の作業目的、確定済みの要件、残存する完成条件を、対象リポジトリ、private-notes、またはホストの記録原本から再解決し、出所情報の提示には記録原本の記述を使用する。
+工程を定める資料の再取得は`01-agent.md`「行動と手順の目的」、Claude Code向けの規範本文の再取得は本書「Claude Code向けに配置された規範の読込」に従う。
 要約は原本の取得の手掛かりとし、`share/work-contract.md`「工程境界での要求と成果の確認」に従って要求・訂正・認可・未完了の操作を原本から復元する。
 セッション記録の取得は`skills/review-session/references/session-records.md`「会話の少量取得」に従い、全体要求と前回以降の変更を原文・結果へ対応付ける。
 起動入力・追加入力と作業記録の要求を比較し、追送による要求変更と保持した実行識別子も復元する。

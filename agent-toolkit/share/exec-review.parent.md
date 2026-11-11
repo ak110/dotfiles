@@ -31,7 +31,16 @@
 
 ## 入力
 
+<!-- input-contract:exec-review:start -->
+<!-- 生成元: share/exec-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
 - 必須入力名: `レビュー基準`、`引き継ぎ記録先`
+- 任意入力名: `計画`、`CI記録`、`WI記録`、`review_contract`、`評価用WI原本`、`修正系列の開始時のHEAD`、`原因commitOID`、`開始時のHEAD`
+- 任意入力名: `レーン識別子`、`レビュー種別`、`round`、`対象ファイル限定`、`Git管理外の変更`、`前回確認版`、`担当モデル`、`rewrite_map`、`受理済みの完成条件証拠`
+
+<!-- input-contract:exec-review:end -->
 
 レビュー評価で過去の要求を固定する場合だけ、任意入力`評価用WI原本`へ、WI名から保存本文の絶対パスへのJSON辞書の絶対パスを渡す。
 計画・対応記録・WIの保存版を評価事例で確定し、条件表の生成・起動前検査・レビュー・完成条件証拠の受領で同じ原本を使う。

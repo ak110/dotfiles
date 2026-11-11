@@ -27,6 +27,18 @@
 起動対象: repository-process.subagent.md
 ```
 
+<!-- input-contract:repository-process:start -->
+<!-- 生成元: share/repository-process.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `引き継ぎ記録先`
+- 任意入力名: `repositories`、`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`
+- 任意入力名: `ownership_record`、`ownership_token`、`lane_session_id`、`previous`、`common_dir`
+- 任意入力名: `registered_worktree`、`追加指示`
+
+<!-- input-contract:repository-process:end -->
+
 ### 起動
 
 **4.** 定型のリポジトリ担当はagents_serverの`start`をtaskで呼ぶ。

@@ -22,7 +22,15 @@
 
 ## 入力
 
-- 必須入力名: `対象worktree`、`変更画面`、`主要シナリオ`、`検証環境`、`引き継ぎ記録先`、`round`。
+<!-- input-contract:usability-review:start -->
+<!-- 生成元: share/usability-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `対象worktree`、`変更画面`、`主要シナリオ`、`検証環境`、`引き継ぎ記録先`、`round`
+- 任意入力名: `レーン識別子`
+
+<!-- input-contract:usability-review:end -->
 
 - 対象worktree: `cwd`と同一の絶対パスを指定する。
 

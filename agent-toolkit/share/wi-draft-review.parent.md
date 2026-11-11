@@ -26,7 +26,15 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 
 ## 入力
 
-- 必須入力名: `要求と出所`、`成立性の証拠`、`引き継ぎ記録先`。
+<!-- input-contract:wi-draft-review:start -->
+<!-- 生成元: share/wi-draft-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `要求と出所`、`成立性の証拠`、`引き継ぎ記録先`
+- 任意入力名: `確認段階`、`方針`、`原稿`
+
+<!-- input-contract:wi-draft-review:end -->
 
 - `確認段階`: `方針`または`本文`。
   省略時は`本文`として扱う。

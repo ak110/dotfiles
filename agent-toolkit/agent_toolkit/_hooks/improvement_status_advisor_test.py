@@ -141,7 +141,7 @@ def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     text = "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"
     assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
-    rules_context.reset_main_operation_skill_ready("improvement-status", retain_for_compact=True)
+    rules_context.reset_main_operation_skill_ready("improvement-status")
     decision, body = improvement_status_advisor.evaluate(_payload(text))
     assert decision == "notify"
     assert "root-cause-prevention.md" in body

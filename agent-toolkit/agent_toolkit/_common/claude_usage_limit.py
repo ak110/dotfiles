@@ -2,7 +2,8 @@
 
 agents_server、process-loopの可用性判定と`atk commit`は同じ分類を使う。
 Weekly limit（`seven_day`、`seven_day_opus`、`seven_day_sonnet`）と5時間の利用上限（`five_hour`）で
-拒否された場合は、待てば解除されるため別のengineへ切り替えず、解除まで待って同じClaudeで続ける（ユーザー指示）。
+拒否された場合は、通常は解除まで待って同じClaudeで続ける。
+agents_serverの委譲先についてユーザーがモデル切替を指示した場合と、工程設定変更後の拒否は、引き継ぎ起動で扱う。
 HTTP状態の429・529だけからは種類を判別できないため推定せず、Claudeが出力する利用枠情報だけを根拠にする。
 """
 

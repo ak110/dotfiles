@@ -14,6 +14,7 @@ import hashlib
 import json
 import pathlib
 from collections.abc import Callable, Sequence
+from typing import Any
 
 from agent_toolkit._hooks.document_reads_fragments import (
     delivered_fragments,
@@ -358,7 +359,7 @@ def receipt_candidates(
                 continue
             if not parts or any(not part for part in parts):
                 continue
-            metadata = {
+            metadata: dict[str, Any] = {
                 "path": str(path),
                 "logical": logical,
                 "heading": heading,
@@ -370,6 +371,8 @@ def receipt_candidates(
                     if (piece := "".join(lines[start - 1 : end]).rstrip("\n"))
                 ],
             }
+            if read_triggers.is_normative_document(path):
+                metadata["line_chars"] = [len(line) for line in text.rstrip("\n").splitlines(keepends=True)]
             if not heading and fragment_paths is not None and path in fragment_paths:
                 metadata["lines"] = _line_hashes(text)
             candidates.append(metadata)

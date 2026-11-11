@@ -103,6 +103,9 @@ def listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
     停滞の判定は`seconds_since_activity`と閾値の比較で委譲元が行うため、判定済みの印を返さない。
     """
     public = {"session_id": session["session_id"], "status": session["status"]}
+    for key in ("engine", "model", "effort"):
+        if key in session:
+            public[key] = session[key]
     if "seconds_since_activity" in session:
         public["seconds_since_activity"] = session["seconds_since_activity"]
     if "api_error" in session:
@@ -248,6 +251,9 @@ class ManagerResponses(manager_base.ManagerBase):
             "launch_kind": session.launch_kind,
             "label": label,
             "result_available": result_available,
+            "engine": session.engine,
+            "model": session.model,
+            "effort": session.effort,
         }
         if session.started_at is not None:
             listed["started_at"] = session.started_at

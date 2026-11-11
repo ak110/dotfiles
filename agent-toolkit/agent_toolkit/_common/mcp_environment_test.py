@@ -62,6 +62,7 @@ def test_runtime_names_preserve_open_environment_and_exclude_parent_context(lowe
         "CLAUDE_PID",
         "CLAUDE_JOB_DIR",
         "CLAUDE_EFFORT",
+        "CLAUDE_CODE_EFFORT_LEVEL",
         "CLAUDE_CODE_REMOTE",
         "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
         "CLAUDE_ENV_FILE",

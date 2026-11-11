@@ -81,6 +81,8 @@ def test_compact_extracts_original_user_events(
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "--conversation-only" in output
+    assert "次の判断より前に" in output and "工程を定めるスキルと役割文書を全文読み直し" in output
+    assert "全体作業契約と引き継ぎ記録" in output
     saved = tmp_path / "compaction-user-events.jsonl"
     assert saved.exists() is not delegated
     if not delegated:

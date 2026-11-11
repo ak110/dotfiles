@@ -374,7 +374,7 @@ async def test_success_response_key_sets_for_all_tools(
         assert all(
             {"session_id", "status"}
             <= item.keys()
-            <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
+            <= {"session_id", "status", "engine", "model", "effort", "started_at", "updated_at", "seconds_since_activity"}
             for item in listed["sessions"]
         )
 

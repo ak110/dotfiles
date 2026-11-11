@@ -14,6 +14,7 @@ import pathlib
 import re
 import typing
 
+import markdown_it
 import yaml
 
 from agent_toolkit._common.markdown_headings import top_level_atx_headings
@@ -33,6 +34,58 @@ _TASK_PROMPT_HEADER_SUFFIX = "）。"
 INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
 TASK_DOCUMENT_SUFFIX = ".subagent.md"
 TASK_PROMPT_REFERENCES = "\n## 手順・参照資料\n"
+INPUT_CONTRACT_NOTICE = (
+    "入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。\n起動準備はこの契約の入力一覧で完結する。"
+)
+
+
+def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.Path, str]]:
+    """起動対象を宣言した全契約と役割名を返す。返却生成の対象表には依存しない。"""
+    contracts: list[tuple[pathlib.Path, str]] = []
+    markdown = markdown_it.MarkdownIt()
+    paths = [*sorted((plugin_root / "share").glob("*.md")), *sorted((plugin_root / "skills").rglob("*.md"))]
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        if "起動対象: " not in text:
+            continue
+        for token in markdown.parse(text):
+            if token.type != "fence" or token.level != 0 or token.info != "text":
+                continue
+            first = token.content.split("\n", 1)[0]
+            if not first.startswith("起動対象: "):
+                continue
+            for name in first.removeprefix("起動対象: ").split(","):
+                if not re.fullmatch(r"[a-z][a-z0-9-]*\.subagent\.md", name):
+                    raise ValueError(
+                        f"{path}: 起動対象の名前が不正: {name}。"
+                        "次の操作: 表示された契約の起動対象を、shareに実在する<役割名>.subagent.mdの名前へ修正せよ。"
+                    )
+                contracts.append((path, name.removesuffix(TASK_DOCUMENT_SUFFIX)))
+    return contracts
+
+
+def input_contract_body(task_document: pathlib.Path) -> str:
+    """共通の宣言解析から、呼出側へ配置する入力名と所有の説明を生成する。"""
+    declaration = read_declaration_unchecked(task_document)
+    if isinstance(declaration, str):
+        raise ValueError(declaration)
+    lines = [INPUT_CONTRACT_NOTICE, ""]
+    for label, names in (("必須入力名", declaration.required), ("任意入力名", declaration.optional)):
+        if not names:
+            if label == "必須入力名":
+                lines.append(f"- {label}: なし")
+            continue
+        prefix = f"- {label}: "
+        line = prefix
+        for name in names:
+            token = f"`{name}`"
+            if len(line) + len(token) > 100 and line != prefix:
+                lines.append(line)
+                line = prefix
+            line += ("、" if line != prefix else "") + token
+        lines.append(line)
+    return "\n".join(lines)
+
 
 LaunchKind = typing.Literal["delegate", "explore", "shell", "write"]
 LAUNCH_KINDS: tuple[LaunchKind, ...] = typing.get_args(LaunchKind)

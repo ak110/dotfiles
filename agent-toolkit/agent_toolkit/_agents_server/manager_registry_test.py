@@ -171,7 +171,7 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
         assert all(
             {"session_id", "status"}
             <= set(session)
-            <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
+            <= {"session_id", "status", "engine", "model", "effort", "started_at", "updated_at", "seconds_since_activity"}
             for session in response["sessions"]
         )
         assert response["sessions"][0]["status"] == "expired"
@@ -231,7 +231,7 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
         assert all(
             {"session_id", "status"}
             <= item.keys()
-            <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
+            <= {"session_id", "status", "engine", "model", "effort", "started_at", "updated_at", "seconds_since_activity"}
             for item in listed
         )
 

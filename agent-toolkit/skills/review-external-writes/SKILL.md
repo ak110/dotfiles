@@ -36,6 +36,15 @@ private-notesのWI本文も対象外であり、これらは`agent-toolkit:wi-st
 起動対象: external-write-review.subagent.md
 ```
 
+<!-- input-contract:external-write-review:start -->
+<!-- 生成元: share/external-write-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `文面ファイル`、`投稿先と目的`、`根拠の所在`
+
+<!-- input-contract:external-write-review:end -->
+
 `agent-toolkit:review-external-writes`の対象となる文面を投稿するエージェントは、本書に従って投稿前レビュー担当を起動し、その結果を受け取る。
 レビュー担当の確認観点は、`${CLAUDE_PLUGIN_ROOT}/share/external-write-review.subagent.md`で定めている（所在参照）。
 返却形式は後述の「投稿前レビューの返却契約」を使用する。

@@ -33,6 +33,15 @@
 起動対象: bulk-replace-review.subagent.md
 ```
 
+<!-- input-contract:bulk-replace-review:start -->
+<!-- 生成元: share/bulk-replace-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `差分ファイル`
+
+<!-- input-contract:bulk-replace-review:end -->
+
 本書冒頭の基準に従って候補置換を適用したエージェントは、以下の手順で一括置換後レビュー担当を起動して結果を受け取る。
 レビュー担当の観点は、`agent-toolkit:/share/bulk-replace-review.subagent.md`に従う（所在参照）。
 返却形式は後述の「一括置換後レビューの返却契約」を使用する。

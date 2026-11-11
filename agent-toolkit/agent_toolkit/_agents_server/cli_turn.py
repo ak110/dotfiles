@@ -536,7 +536,7 @@ def decode_event(line: bytes) -> dict[str, Any] | None:
 
 def finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
     """最新turnの終了時の結果を確定する。"""
-    if result_contract.hold_invalid_result(session, result):
+    if session.effort_resume_turn != session.turn_seq and result_contract.hold_invalid_result(session, result):
         return
     session.clear_hold()
     session.status = result["status"]

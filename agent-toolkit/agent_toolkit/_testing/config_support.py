@@ -31,13 +31,13 @@ def _recovery_old_values(*, multiple=False):
 _LEGACY_KEYS = ("high_tier_model", "medium_tier_model", "low_tier_model")
 
 _DEFAULTS = {
-    "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
+    "execute_model": "claude:opus[1m]/low,codex:sol/low",
     "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
-    "chores_model": "codex:sol/medium,claude:sonnet[1m]/medium",
-    "chores_fast_model": "codex:luna/medium,claude:haiku/medium",
+    "chores_model": "codex:sol/low,claude:sonnet[1m]/low",
+    "chores_fast_model": "codex:luna/low,claude:haiku/low",
     "orchestrate_model": "claude:opus[1m]/medium,codex:sol/medium",
-    "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
+    "write_model": "agy:gemini-3.8-flash/low,claude:claude-opus-5-5/low",
 }
 
 _CONNECTION_KEYS = (
@@ -64,10 +64,10 @@ def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
         codex_models,
         "list_models",
         lambda: [
-            {"model": "gpt-6-sol", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]},
+            {"model": "gpt-6-sol", "supportedReasoningEfforts": [{"reasoningEffort": value} for value in ("low", "medium")]},
             {
                 "model": "gpt-6-luna",
-                "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in ("medium", "xhigh")],
+                "supportedReasoningEfforts": [{"reasoningEffort": effort} for effort in ("low", "medium", "xhigh")],
             },
             {"model": "gpt-5.6-terra", "supportedReasoningEfforts": [{"reasoningEffort": "medium"}]},
         ],

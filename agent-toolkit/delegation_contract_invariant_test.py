@@ -14,11 +14,18 @@ from agent_toolkit._testing.delegation_contract_support import (
     _assert_role_models_registered,
     _declaration,
     _fixed_reply_errors,
+    _generated_input_errors,
     _h2_section,
     _marker_values,
     _read_table_subagents,
 )
 from agent_toolkit._testing.normative_contract import read_contract
+
+
+def test_all_launch_contract_inputs_are_generated() -> None:
+    """返却生成の対象表にない起動契約も、入力宣言との同期を保つ。"""
+    errors = _generated_input_errors(pathlib.Path(__file__).resolve().parent)
+    assert not errors, "\n".join(errors)
 
 
 def test_wi_draft_review_stage_and_continuation_contract() -> None:

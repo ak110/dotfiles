@@ -53,12 +53,12 @@ def test_public_model_round_trip_and_environment_precedence(tmp_path, monkeypatc
 def test_presets_save_exact_six_stage_values_and_preserve_write(tmp_path, capsys, preset):
     expected = {key: value for key, value in _DEFAULTS.items() if key != "write_model"}
     if preset.startswith("codex-") and preset != "codex-balanced":
-        expected["execute_model"] = "codex:sol/medium,claude:opus[1m]/medium"
+        expected["execute_model"] = "codex:sol/low,claude:opus[1m]/low"
     if preset == "codex-primary":
         expected["orchestrate_model"] = "codex:sol/medium,claude:opus[1m]/medium"
     if preset.startswith("claude-"):
-        expected["chores_model"] = "claude:sonnet[1m]/medium,codex:sol/medium"
-        expected["chores_fast_model"] = "claude:haiku/medium,codex:luna/medium"
+        expected["chores_model"] = "claude:sonnet[1m]/low,codex:sol/low"
+        expected["chores_fast_model"] = "claude:haiku/low,codex:luna/low"
     if preset == "claude-primary":
         expected["review_model"] = "claude:sonnet[1m]/medium,codex:sol/medium"
         expected["review_fast_model"] = "claude:haiku/medium,codex:luna/medium"

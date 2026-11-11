@@ -55,7 +55,15 @@
 
 ## 入力
 
+<!-- input-contract:reader-fit-review:start -->
+<!-- 生成元: share/reader-fit-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
 - 必須入力名: `成果物`、`種別`、`読者像`、`修正範囲`
+- 任意入力名: `レビュー種別`、`未解決事項`、`比較資料`
+
+<!-- input-contract:reader-fit-review:end -->
 
 | 引数 | 値 |
 | --- | --- |

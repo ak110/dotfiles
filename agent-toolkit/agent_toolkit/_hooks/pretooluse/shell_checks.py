@@ -141,6 +141,8 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
             fix=(
                 "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
                 "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読め。"
+                "複数対象は対応するコマンドへまとめて渡し、形は公開ヘルプで確認せよ"
+                "（例: `atk config get execute_model chores_model`）。出力量は対象限定や要約の公開入力で抑えよ。"
                 "`atk agents wait`は`&`も外して単独で発行せよ。"
                 f"{waiting}"
                 "保存した本文の選別は別の呼び出しで行え。"

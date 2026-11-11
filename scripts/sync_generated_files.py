@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from agent_toolkit._common import task_documents
+
 from pytools._internal.common import atomic_write_text
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -134,6 +136,29 @@ def sync_return_contracts(root: Path = REPO_ROOT) -> None:
             atomic_write_text(path, text)
 
 
+def sync_input_contracts(root: Path = REPO_ROOT) -> None:
+    """起動対象の宣言から全入力一覧を同期し、境界不正時は書き込まない。"""
+    plugin = root / "agent-toolkit"
+    updated: dict[Path, str] = {}
+    for path, role in task_documents.launch_contract_documents(plugin):
+        text = updated.get(path, path.read_text(encoding="utf-8"))
+        start = f"<!-- input-contract:{role}:start -->"
+        end = f"<!-- input-contract:{role}:end -->"
+        if text.count(start) != 1 or text.count(end) != 1 or text.index(start) >= text.index(end):
+            raise ValueError(f"{path}: {role}の入力生成境界が一意でない")
+        body = task_documents.input_contract_body(plugin / f"share/{role}.subagent.md")
+        before, rest = text.split(start)
+        _, after = rest.split(end)
+        updated[path] = (
+            f"{before}{start}\n"
+            f"<!-- 生成元: share/{role}.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->\n"
+            f"{body}\n\n{end}{after}"
+        )
+    for path, text in updated.items():
+        if path.read_text(encoding="utf-8") != text:
+            atomic_write_text(path, text)
+
+
 def relocate_path(reference: str, source: Path, target: Path) -> str:
     """Markdownリンクの相対参照を配置先から解決できる形にする。"""
     name, separator, heading = reference.partition("#")
@@ -195,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         sync_quality_principles()
         sync_return_contracts()
+        sync_input_contracts()
     except (OSError, KeyError, ValueError) as error:
         print(f"契約本文の同期に失敗: {error}。次の操作: 正本の節と配置先の生成境界を修正してください。", file=sys.stderr)
         return 1

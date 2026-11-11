@@ -110,20 +110,29 @@ Claude Codeと同じ規範で作業するためである。
 if test -d "$HOME/.claude"; then find -L "$HOME/.claude" -maxdepth 2 \( -path "$HOME/.claude/CLAUDE.md" -o -path "$HOME/.claude/rules/*.local.md" \) -type f; fi
 ```
 
-プロジェクト単位の例（`project`に対象worktreeの絶対パスを指定）:
+作業ディレクトリと上位、およびプロジェクト単位の例（`project`に対象worktree、`current`に作業ディレクトリの絶対パスを指定）:
 
 ```sh
 project=/absolute/path/to/worktree
+current=/absolute/path/to/working-directory
+while test -d "$current"; do
+  find -L "$current" -maxdepth 1 -type f \( -name CLAUDE.local.md -o \( -name CLAUDE.md ! -exec test -e "$current/AGENTS.md" \; \) \) -print || exit "$?"
+  parent=$(dirname -- "$current") || exit "$?"
+  test "$parent" != "$current" || break
+  current=$parent
+done &&
 if test -d "$project"; then
-  find -L "$project" -maxdepth 1 -type f \( -name CLAUDE.local.md -o \( -name CLAUDE.md ! -exec test -e "$project/AGENTS.md" \; \) \) -print &&
   if test -d "$project/.agents/skills"; then find -L "$project/.agents/skills" -type f; fi &&
   if test -d "$project/.claude/rules"; then find -L "$project/.claude/rules" -type f; fi
 fi
 ```
 
-- プロジェクト直下に配置された`.agents/skills/`、`AGENTS.md`が存在しない場合における`CLAUDE.md`、`CLAUDE.local.md`、および作業内容に該当する`.claude/rules/`を読み込む。
+- 作業ディレクトリからファイルシステムのルートまでの各ディレクトリの`CLAUDE.local.md`と、同じディレクトリに`AGENTS.md`が存在しない場合の`CLAUDE.md`を読む。
+- プロジェクト直下の`.agents/skills/`と、作業内容に該当する`.claude/rules/`を読み込む。
 - ユーザー単位の`~/.claude/CLAUDE.md`と`~/.claude/rules/*.local.md`（ホスト固有規範）は作業開始時に読む。
-- 起動指示に同じ本文が`atk-auto`などの境界タグ付きで含まれていれば読了済みとする。
+- 会話圧縮の後は、この節の読込対象の本文を読了済みとせずに再取得する。
+  起動指示や再開指示に同じ本文が`atk-auto`などの境界タグ付きで含まれ、現在の文脈にその全文がある場合は読了済みとする。
+  圧縮前の配送記録だけでは読了済みとしない。
 - 埋込済みの`~/.claude/rules/agent-toolkit/`と`~/.claude/rules/myprojects-common.md`は除外する。
   同主題をホスト共通本文で受け取るため、Claude Code向けの一覧・同期方針を持つ`~/.claude/rules/myprojects.md`も除外する。
 - `~/.codex/agent-toolkit/rules/`は配布元から同期された本文として扱い、dotfiles固有のスキルはClaude Code側の原本へのシンボリックリンクとして扱う。
@@ -171,6 +180,7 @@ context windowを切り替える前は、枯渇通知を受けた場合も含め
 `引き継ぎ記録先`を受け取った委譲先は、同じ記録先と起動入力も確認する。
 許可された取得手段で復元できない場合に限り、参照した所在と失敗した操作を明記して返す。
 会話圧縮後の復元でも、一時的な作業対象、処理対象のWI、保留事項、承認状態、当初の作業目的、確定済みの要件、残存する完成条件を、対象リポジトリ、private-notes、またはホストの記録原本から再解決し、出所情報の提示には記録原本の記述を使用する。
+工程を定める資料の再取得は`01-agent.md`「行動と手順の目的」、Claude Code向けの規範本文の再取得は本書「Claude Code向けに配置された規範の読込」に従う。
 要約は原本の取得の手掛かりとし、`share/work-contract.md`「工程境界での要求と成果の確認」に従って要求・訂正・認可・未完了の操作を原本から復元する。
 セッション記録の取得は`skills/review-session/references/session-records.md`「会話の少量取得」に従い、全体要求と前回以降の変更を原文・結果へ対応付ける。
 起動入力・追加入力と作業記録の要求を比較し、追送による要求変更と保持した実行識別子も復元する。
@@ -220,53 +230,6 @@ agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメ�
 AWIには汎用化した要求（必要な機能、想定する入出力、利用場面の一般的な説明）だけを書き、作業中のプロジェクトに固有の名称、コード、データは除く。
 pytilpackは公開リポジトリであり、要求の内容が実装とcommitとして公開されるためである。
 pytilpackのキューへ投入できない環境では、作業完了報告だけを行う。
-
-## 検証付き実装委譲のlow開始の試行
-
-個人プロジェクトに限り、検証コマンドで合否が決まる実装の委譲を低いeffortで始め、検証に失敗した分だけeffortを上げる運用を試している。
-効果は後続の評価AWIが集計して確かめ、継続か撤去かを決める。
-それまでは試行であり、工程別設定の値（`atk config`の設定、プリセット、初期値）は変えない。
-
-対象は、`chores`工程へ渡す委譲のうち、内容が確定した実装で、合否が検証コマンド（テスト、lint、ビルドなど）の終了状態で決まるものとする。
-次の委譲は対象外とし、設定どおりに起動する。
-
-- `atk commit`のメッセージ生成、読取・要約・走査、`refine-prompt`など、合否を自動判定できない用途
-- `chores`以外の工程
-- ユーザーがWIの`担当モデル`などでモデルやeffortを明示した委譲
-- `model_type`へ候補列を直接渡して上書きする委譲
-
-対象の委譲は、委譲する日のローカル日付の「日」で起動形を決める。
-
-- 奇数の日: `atk config get chores_model`の各候補のeffortを`low`へ置き換えた候補列を、`agents_server`の`start`の引数`model_type`へ渡して起動する。
-  例: `codex:sol/medium,claude:sonnet[1m]/medium`は`codex:sol/low,claude:sonnet[1m]/low`とする。
-- 偶数の日: 設定どおり`model_type: chores`で起動する。
-
-検証が失敗した場合は、`agent-toolkit:delegation`の`references/model-and-effort.md`が定める引き上げ順に従い、effortを1段上げて再委譲する。
-再委譲の入力には、失敗した検証の出力と残る差分を含める。
-
-評価で2つの群を機械的に取り出せるよう、対象の委譲（両方の群と再委譲）へ次の目印を付ける。
-
-依頼本文の最初の行を次の形にする。
-
-```text
-試行標識: chores-low-trial group=<low|configured> attempt=<連番> retry-of=<session_idまたは->
-```
-
-- `group`は奇数の日の起動で`low`、偶数の日の起動で`configured`とし、再委譲は元の委譲の値を引き継ぐ。
-- `attempt`は1から数え、`retry-of`は初回で`-`、再委譲で直前の委譲の`session_id`とする。
-- 委譲先へ、返却の末尾に`変更規模: <git diff --shortstat の出力>`の行を置くよう求める。
-- 検証の合否は、その委譲を`retry-of`で指す再委譲の有無で表す。
-  再委譲があれば不合格、無ければ合格である。
-  引き上げ順の最後まで失敗した委譲と、委譲元が巻き取った委譲は、再委譲が無くても不合格である。
-  目印では区別できないため、評価では連鎖の最後の委譲の返却本文で検証結果を確かめる。
-
-評価では、委譲元のセッション記録から目印の付いた起動を次のコマンドで取り出す。
-
-```text
-atk run-script session-review-evidence -- --transcript <記録の絶対パス> --tool-calls --tool <startのツール名> --input-regex 'chores-low-trial'
-```
-
-effortとトークンの内訳は、同じコマンドの`--stats`が返す担当記録から取り出す。
 </atk-auto>
 
 <atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/01-agent.md">
@@ -315,7 +278,10 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 不要な工程や達成後の反復は省き、同じターンで根拠を報告する（委譲先は委譲元へ）。
 硬い制約と、独立文脈レビュー・所有権・認可・必読資料・終了観測は費用によらず守る。
 工程の並行・分割と自動チェック対象の記述の前は`agent-toolkit/share/agent-conduct-details.md`「行動と手順の目的」を全文読む。
-会話圧縮の後は、目的、承認状態、残る工程を、計画、WI、受け取った`引き継ぎ記録先`などの記録から復元する。
+会話圧縮の後は、次の判断より前に、圧縮前に進めていた工程を定めるスキルと役割文書を全文読み直す。
+その読込表から、委譲先の返却、背景待機の完了、定期の再確認、ユーザーの回答への対応を含む次の判断に必要な資料を選んで読む。
+目的、承認状態、残る工程を、計画、WI、受け取った`引き継ぎ記録先`などの記録から復元し、全体作業契約と引き継ぎ記録が次工程の資料を指す場合はそれも読む。
+圧縮前の取得履歴は、一括再取得の義務として扱わない。
 
 ### 規定の区分と標示
 
@@ -521,11 +487,13 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
 
 ### `atk`の呼び出し
 
-- `atk`はエージェント環境で出力量を自分で扱い、長い出力は自分で保存して保存先と行数を示す。
+- 複数対象の取得は、`atk config get execute_model chores_model`のように対応するコマンドへまとめて渡す。
+  対象の指定形は公開ヘルプで確かめ、出力量は対象限定・要約の公開入力で抑える。
+  `atk`はエージェント環境で長い出力を自動保存して保存先と行数を示すため、保存・選別の目的で外側の繰返しや出力接続を加えない。
   そのため`atk`はパイプにもリダイレクト（`2>&1`や`/dev/null`への破棄を含む）にもつながず、単独で呼び出す。
   間に挟むと`atk`の終了コードと警告を同じ呼び出しで確かめられず、保存先と行数の行だけが後段へ渡る。
   常駐と追従の表示（`atk serve`、常駐の`atk wi process-loop`、`atk agents logs --follow`）を背景で起動するときの出力のリダイレクトは例外とする。
-  出力量は公開の対象限定（`--count`、`--summary-only`、状態・種別・対象リポジトリの指定など）で抑え、全量の機械処理は保存されたファイルへ別の呼び出しで行う。
+  全量の選別・機械処理は、保存されたファイルへ別の呼び出しで行う。
 
 ### 完了と不在の確認
 

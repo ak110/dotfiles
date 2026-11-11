@@ -15,6 +15,7 @@ from typing import Any, cast
 from agent_toolkit._agents_server import (
     claude_retry_record,
     claude_settings,
+    configured_model,
     resume_waits,
     session_errors,
     session_identity,
@@ -36,8 +37,64 @@ from agent_toolkit._common import claude_usage_limit, process_tree
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 
 
+async def _raise_changed_model(session: SessionState, status: object) -> None:
+    """拒否された利用枠がある429だけを、現在設定への引き継ぎに変換する。"""
+    if (
+        status == 429
+        and not session.interrupt_requested
+        and session.usage_limit is not None
+        and session.usage_limit.status == "rejected"
+        and (changed := await configured_model.changed_model_error(session)) is not None
+    ):
+        raise configured_model.ConfiguredModelChanged(changed)
+
+
+async def _apply_api_retry(session: SessionState, data: dict[str, Any], started_at: str) -> None:
+    """SDK通知に無い利用枠を同じ試行の記録から補い、再試行の状態を更新する。"""
+    if session.usage_limit is None or not session.usage_limit.is_wait_target:
+        limit = await run_file_operation(claude_retry_record.retry_usage_limit, session.session_id, data, started_at=started_at)
+        if limit is not None:
+            session.usage_limit = limit
+    await _raise_changed_model(session, data.get("error_status"))
+    recover_api_retry(session, data)
+
+
+async def _consume_rate_limit(message: Any, session: SessionState | None) -> claude_usage_limit.UsageLimitState | None:
+    """利用枠の更新と、既に429を受けた会話の再試行状態を反映する。"""
+    limit = claude_usage_limit.from_event(message)
+    if limit is not None and session is not None:
+        session.usage_limit = limit
+        if (
+            limit.status == "rejected"
+            and not session.interrupt_requested
+            and session.api_error is not None
+            and session.api_error.get("http_status") == 429
+        ):
+            await _raise_changed_model(session, 429)
+            recover_api_retry(session, {"error_status": 429}, record_notification=False)
+    return limit
+
+
 class ClaudeStream(ClaudeTurns):
     """Claude SDKの受信タスクを所有する。"""
+
+    async def _receive_failed(
+        self,
+        session: SessionState | None,
+        error: BaseException,
+        diagnostic: _InitializationDiagnostic,
+        initialized: asyncio.Future[SessionState],
+    ) -> None:
+        """初期化の待機と終了時の失敗結果を、同じ受信失敗から確定する。"""
+        diagnostic.record_exception(error)
+        if session is None:
+            if not initialized.done():
+                initialized.set_exception(error)
+        else:
+            self._record_failure(session, error, diagnostic=diagnostic)
+            if not initialized.done():
+                initialized.set_result(session)
+            await self._notify_waiters()
 
     async def _run(
         self,
@@ -83,17 +140,6 @@ class ClaudeStream(ClaudeTurns):
         early_cli_turn_state: str | None = None
         runtime_started_at = shared_state.utc_now()
 
-        async def apply_api_retry(data: dict[str, Any]) -> None:
-            """利用枠がSDK通知に無い場合だけ、会話・試行番号・待機時間が一致する元記録から利用枠を読む。"""
-            assert session is not None
-            if session.usage_limit is None or not session.usage_limit.is_wait_target:
-                limit = await run_file_operation(
-                    claude_retry_record.retry_usage_limit, session.session_id, data, started_at=runtime_started_at
-                )
-                if limit is not None:
-                    session.usage_limit = limit
-            recover_api_retry(session, data)
-
         async def initialize_session(session_id: str, data: dict[str, Any]) -> None:
             """initから同じ所有タスクのsessionを登録し、途中失敗時もその状態を保持する。"""
             nonlocal session
@@ -130,7 +176,7 @@ class ClaudeStream(ClaudeTurns):
             session.cli_turn_state = early_cli_turn_state
             session.status = "starting" if expected_session_id is None else "running"
             if early_api_retry is not None:
-                await apply_api_retry(early_api_retry)
+                await _apply_api_retry(session, early_api_retry, runtime_started_at)
             session.touch()
             self._channels[session_id] = channel
             current_task = asyncio.current_task()
@@ -323,19 +369,15 @@ class ClaudeStream(ClaudeTurns):
                                 if session is None:
                                     early_api_retry = data
                                 else:
-                                    await apply_api_retry(data)
+                                    await _apply_api_retry(session, data, runtime_started_at)
                                     await self._notify_waiters()
                         elif name == "RateLimitEvent":
                             # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
-                            usage_limit = claude_usage_limit.from_event(message)
-                            if usage_limit is not None:
-                                if session is None:
-                                    early_usage_limit = usage_limit
-                                else:
-                                    session.usage_limit = usage_limit
-                                    if session.api_error is not None and session.api_error.get("http_status") == 429:
-                                        recover_api_retry(session, {"error_status": 429}, record_notification=False)
-                                        await self._notify_waiters()
+                            usage_limit = await _consume_rate_limit(message, session)
+                            if session is None:
+                                early_usage_limit = usage_limit or early_usage_limit
+                            elif usage_limit is not None:
+                                await self._notify_waiters()
                         elif name == "AssistantMessage" and session is not None:
                             # 保留後のモデル出力は次のturnに属する。Stopの処理中に完了通知が先に届いた場合は、
                             # 保留の前に`running`が報告済みで、次のturnの開始が出力でしか観測できない。
@@ -384,13 +426,7 @@ class ClaudeStream(ClaudeTurns):
         except asyncio.CancelledError:
             raise
         except BaseException as exc:
-            diagnostic.record_exception(exc)
-            if session is None:
-                if not initialized.done():
-                    initialized.set_exception(exc)
-            else:
-                self._record_failure(session, exc, diagnostic=diagnostic)
-                await self._notify_waiters()
+            await self._receive_failed(session, exc, diagnostic, initialized)
         finally:
 
             async def cleanup_runtime(pins: process_tree.ProcessIdentityPins) -> None:

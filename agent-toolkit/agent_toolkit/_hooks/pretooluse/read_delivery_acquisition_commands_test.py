@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._common import read_triggers
-from agent_toolkit._hooks import document_reads, rules_context
+from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._hooks.pretooluse.read_delivery import _merged_steps
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
@@ -86,17 +86,16 @@ def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeyp
         elif route == "compact":
             monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
             monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
-            monkeypatch.setattr(
-                rules_context,
-                "reset_main_operation_skill_ready",
-                lambda *_args, **_kwargs: [(reference, "", document_reads.content_fingerprint(reference), False)],
-            )
             result = _run_hook_in_process(
                 "rules_context_codex", {**payload, "hook_event_name": "SessionStart", "source": "compact"}
             )
             assert result.returncode == 0 and not result.stderr
-            guidance = result.stdout
-        if route == "normal":
+            assert "工程を定めるスキルと役割文書を全文読み直し" in result.stdout
+            assert str(reference) not in result.stdout
+            resumed = _run_hook_in_process("pretooluse", writing)
+            assert resumed.returncode == 0 and not resumed.stderr
+            guidance = resumed.stdout
+        if route in {"normal", "compact"}:
             assert "内外の出力枠" in guidance
         else:
             assert "必要範囲の本文を実出力として返せ" in guidance

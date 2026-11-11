@@ -123,12 +123,14 @@ def require_start_cwd() -> None:
 
 
 def validate_handoff_inputs(handoff_from: str, **inputs: Any) -> None:
-    """引き継ぎ起動と通常起動の入力を排他的に受理する。"""
-    mixed = sorted(name for name, value in inputs.items() if value is not None)
+    """引き継ぎで変更できるモデル候補以外の通常入力を拒否する。"""
+    mixed = sorted(name for name, value in inputs.items() if value is not None and name != "model_type")
     if not handoff_from.strip() or mixed:
         raise ActionableError(
-            f"handoff_fromには前任IDだけを指定します。混在した入力: {', '.join(mixed) or 'なし'}。",
-            next_action='`start`へ`{"handoff_from": "<前任session_id>"}`だけを渡す',
+            f"handoff_fromには前任IDと任意のmodel_typeだけを指定します。混在した入力: {', '.join(mixed) or 'なし'}。",
+            next_action=(
+                '`start`へ`{"handoff_from": "<前任session_id>"}`を渡す。モデルを変える場合だけmodel_typeへ候補列を加える'
+            ),
         )
 
 

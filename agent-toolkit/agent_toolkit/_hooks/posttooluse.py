@@ -55,7 +55,7 @@ lazy from agent_toolkit._common.task_stop_state import consume_completion, targe
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import codex_read_observation as _codex_read_observation
-lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence
+lazy from agent_toolkit._hooks import command_timing, effort_notice, session_title, termination_evidence
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
@@ -675,6 +675,8 @@ def main(payload_text: str) -> int:
         ):
             notices.append(_llm_notice(_codex_read_observation.TRUNCATED_OUTPUT_NOTICE))
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
+        if (effort_advice := effort_notice.observe(payload)) is not None:
+            notices.append(effort_advice)
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:

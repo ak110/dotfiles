@@ -1,6 +1,5 @@
 """役割の起動配送と、主体別の取得手段をまたぐ読込契約を確かめる。"""
 
-import hashlib
 import json
 import shlex
 
@@ -20,15 +19,11 @@ __all__ = ["_assert_continues_without_guidance", "_state"]
 
 
 def test_compact_recovery_first_output_survives_notice_cycle(tmp_path, monkeypatch, state):
-    """実候補1件の予算見積りが、同じ公開SessionStartの初回配送を消費しない。"""
+    """圧縮後の工程選択案内を、公開SessionStartの初回配送で保持する。"""
     document = tmp_path / "compact-reference.md"
     document.write_text("# 圧縮候補\n再取得する固有基準\n", encoding="utf-8")
-    digest = hashlib.sha256(document.read_bytes()).hexdigest()
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
-    monkeypatch.setattr(
-        rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(document, "", digest, False)]
-    )
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
     result = _run_hook_in_process(
         "rules_context",
@@ -36,7 +31,8 @@ def test_compact_recovery_first_output_survives_notice_cycle(tmp_path, monkeypat
     )
     assert result.returncode == 0 and not result.stderr
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert context and str(document) in context
+    assert "圧縮前に進めていた工程" in context
+    assert str(document) not in context
     assert state.get("notice_fingerprints")
 
 
@@ -196,8 +192,8 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
         monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
         compact = _run_hook_in_process("rules_context", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
         assert compact.returncode == 0 and not compact.stderr
-        assert str(skill) in compact.stdout and "`Skill`で`local`" not in compact.stdout
-        assert "Readで" in compact.stdout and "cat --" in compact.stdout
+        assert str(skill) not in compact.stdout and "`Skill`で`local`" not in compact.stdout
+        assert "工程を定めるスキルと役割文書" in compact.stdout
         failed = _run_hook_in_process(
             "posttooluse",
             {
@@ -339,7 +335,7 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
         read(path)
     compact = _run_hook_in_process("rules_context_codex", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
     assert compact.returncode == 0
-    assert all(str(path) in compact.stdout for path in (delegation, waiting))
+    assert all(str(path) not in compact.stdout for path in (delegation, waiting))
     records = state[rules_context.OPERATION_SKILL_READY_KEY]
     assert all("main" in records[rules_context.carried_read_target_key(path)] for path in (delegation, waiting))
     target = tmp_path / "findings.json"

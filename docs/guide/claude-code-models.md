@@ -31,13 +31,13 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 
 | キー | 用途 | 初期値 |
 | --- | --- | --- |
-| `execute_model` | 計画・設計判断・原因分析・統合 | `claude:opus[1m]/medium,codex:sol/medium` |
+| `execute_model` | 計画・設計判断・原因分析・統合 | `claude:opus[1m]/low,codex:sol/low` |
 | `review_model` | 実行レビュー | `codex:sol/medium,claude:sonnet[1m]/medium` |
 | `review_fast_model` | 小規模レビュー | `codex:luna/medium,claude:haiku/medium` |
-| `chores_model` | 確定済みの作業・中規模の読取 | `codex:sol/medium,claude:sonnet[1m]/medium` |
-| `chores_fast_model` | 定型の走査・軽微な作業・コマンド実行 | `codex:luna/medium,claude:haiku/medium` |
+| `chores_model` | 確定済みの作業・中規模の読取 | `codex:sol/low,claude:sonnet[1m]/low` |
+| `chores_fast_model` | 定型の走査・軽微な作業・コマンド実行 | `codex:luna/low,claude:haiku/low` |
 | `orchestrate_model` | process-loop・run-skillの最上位 | `claude:opus[1m]/medium,codex:sol/medium` |
-| `write_model` | 文章起草 | `agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium` |
+| `write_model` | 文章起草 | `agy:gemini-3.8-flash/low,claude:claude-opus-5-5/low` |
 
 各候補は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`で書き、effortを省略するとmediumになる。
 `orchestrate_model`はOpenCodeを受け付けない。
@@ -51,15 +51,29 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 
 `atk config show`は現在値を一覧し、`atk config get <キー>`は指定キーの値を返す。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先する。
+保存済みのeffortは初期値の変更では書き換えない。
+
+通常の委譲先は、同じ会話の次turnからeffortを1段ずつ調整できる。
+
+```sh
+atk agents effort up
+atk agents effort down <子のsession_id>
+```
+
+対象IDの省略時は自身、指定時は自身または直接の子を対象にする。
+自身を変更した後は現在turnの終了後に1回再開する。
+実行中turnは中断せず、モデルと保存設定を維持する。
+orchestrate、対話中のメインと軽量起動は対象外である。
+規範の累積受信量が目安を超えた場合は、推論量を上げるか判断する案内が1回届く。
 
 モデルと推論強度（effort）は、同程度の作業が完成するまでの再試行・修正・委譲も含めて比較する。
 1回のトークン量や時間当たりの利用枠消費だけでは、完成までの費用は分からない。
 まず既存の工程別設定で役割に合うモデルを選び、低いeffortと高いeffortのどちらも無条件に省費用とは考えない。
 
-成果が足りない工程の設定を`atk config set`で調整するときは、次の順に試す。
+成果が足りない委譲の推論量やモデルを調整するときは、次の順に試す。
 
 1. 委譲先が自分の成果を確かめられる手段（テスト、ビルドなど）が作業に用意されているかを確かめる。
-2. effortを1段上げる。
+2. `atk agents effort up <子のsession_id>`で同じ会話のeffortを1段上げる。
 3. 上のモデルへ移る。
    移った先では、下のモデルで使っていた値より低いeffortから始める。
 
@@ -82,10 +96,10 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 | プリセット | 初期値から変更する工程 |
 | --- | --- |
 | `codex-balanced` | 初期値と同一 |
-| `codex-near-primary` | executeを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
-| `codex-primary` | executeとorchestrateを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
-| `claude-balanced` | choresを`claude:sonnet[1m]/medium,codex:sol/medium`、chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
-| `claude-primary` | review・choresを`claude:sonnet[1m]/medium,codex:sol/medium`、review_fast・chores_fastを`claude:haiku/medium,codex:luna/medium`へ変更 |
+| `codex-near-primary` | executeを`codex:sol/low,claude:opus[1m]/low`へ変更 |
+| `codex-primary` | executeを`codex:sol/low,claude:opus[1m]/low`、orchestrateを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
+| `claude-balanced` | choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
+| `claude-primary` | reviewを`claude:sonnet[1m]/medium,codex:sol/medium`、review_fastを`claude:haiku/medium,codex:luna/medium`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
 
 その他の主な設定は次のとおりである。
 

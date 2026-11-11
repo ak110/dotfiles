@@ -118,7 +118,7 @@ def test_completion_before_target_restart_is_reused_until_compact(tmp_path: path
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_1")
     _start_skill("sess-second", trace, "agent-toolkit:report-completion", "toolu_2")
     if compact:
-        rules_context.reset_main_operation_skill_ready("sess-second", retain_for_compact=True)
+        rules_context.reset_main_operation_skill_ready("sess-second")
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(json.dumps({"session_id": "sess-second", "turn_id": "again", "prompt": "もう一度処理する"}))
     _start_skill("sess-second", trace, "agent-toolkit:process-wi", "toolu_3")
@@ -145,7 +145,7 @@ def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, mo
     _human_input(session_id, trace, "next", "次の作業を進める")
     _commit(session_id, trace, "next-commit")
     assert evaluate() == ("approve", "")
-    rules_context.reset_main_operation_skill_ready(session_id, retain_for_compact=True)
+    rules_context.reset_main_operation_skill_ready(session_id)
     assert evaluate()[0] == "notify"
 
 

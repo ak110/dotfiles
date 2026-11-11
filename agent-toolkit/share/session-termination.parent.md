@@ -33,7 +33,15 @@
 
 ## 渡す入力
 
+<!-- input-contract:session-termination:start -->
+<!-- 生成元: share/session-termination.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
 - 必須入力名: `bump種別`、`引き継ぎ記録先`
+- 任意入力名: `プロジェクト固有の公開後の操作`、`延期adopt`、`公開対象のadopt済みAWI`
+
+<!-- input-contract:session-termination:end -->
 
 **2.** 既決の公開判断を継承するため、必須入力と該当する任意入力を確定する。
 

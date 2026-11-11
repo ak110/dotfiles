@@ -258,6 +258,12 @@ class SessionState:
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None
+    effort_history: tuple[tuple[str, str, str, str], ...] = ()
+    effort_levels: tuple[str, ...] = ()
+    effort_resume_turn: int | None = None
+    effort_resuming: bool = False
+    effort_request_results: dict[str, dict[str, Any]] = dataclasses.field(default_factory=dict, repr=False)
+    claude_applied_effort: str | None = None
     announced: bool = False
     # sessionを最初に開始した時刻。turnごとに更新する`started_at`とは別に保持し、再開後も引き継ぐ。
     # レーン稼働時間のようにsession全体の経過を測る呼び出し元が起点として読む。
@@ -355,6 +361,7 @@ class SessionState:
     _published_registry_state: session_registry.PublicationState | None = dataclasses.field(default=None, repr=False)
     _published_registry_turn_seq: int | None = dataclasses.field(default=None, repr=False)
     _published_registry_fast_mode: bool | None = dataclasses.field(default=None, repr=False)
+    _published_registry_effort: str | None = dataclasses.field(default=None, repr=False)
     _published_registry_result_contract_recovery_consumed: bool = dataclasses.field(default=False, repr=False)
     _published_registry_launch_info: session_registry.LaunchInfo | None = dataclasses.field(default=None, repr=False)
     _published_registry_executor: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)
@@ -484,7 +491,14 @@ class SessionState:
     @property
     def result_available(self) -> bool:
         """終了時の結果を返せる状態であるかを返す。"""
-        return self.terminal and self.turn_completed and not self.turn_start_ambiguous and not self.awaiting_auto_resume
+        return (
+            self.terminal
+            and self.turn_completed
+            and not self.turn_start_ambiguous
+            and not self.awaiting_auto_resume
+            and self.effort_resume_turn != self.turn_seq
+            and not self.effort_resuming
+        )
 
     @property
     def progress(self) -> str:
@@ -716,6 +730,7 @@ class SessionState:
             or self.fast_mode != self._published_registry_fast_mode
             or self.result_contract_recovery_consumed != self._published_registry_result_contract_recovery_consumed
             or launch_info != self._published_registry_launch_info
+            or self.effort != self._published_registry_effort
             or self.executor_process != self._published_registry_executor
             or self.owner_root_session_id != self._published_registry_owner_root
         ):
@@ -751,6 +766,7 @@ class SessionState:
         }
 
     def _remember_registration(self, parameters: dict[str, Any], executor: session_registry.ProcessIdentity | None) -> None:
+        self._published_registry_effort = parameters["effort"]
         self._published_registry_launcher = parameters["launcher_session_id"]
         self._published_registry_state = parameters["state"]
         self._published_registry_turn_seq = parameters["turn_seq"]
@@ -809,6 +825,8 @@ class SessionResumeState:
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None
+    effort_history: tuple[tuple[str, str, str, str], ...] = ()
+    effort_levels: tuple[str, ...] = ()
     # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
     created_at: str | None = None
     started_at: str | None = dataclasses.field(default_factory=utc_now)

@@ -19,7 +19,14 @@
 
 ## 入力
 
+<!-- input-contract:similar-review:start -->
+<!-- 生成元: share/similar-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
 - 必須入力名: `判定規則`、`母集団`、`判定基準`
+
+<!-- input-contract:similar-review:end -->
 
 1. 確定した原因から、次の3入力を確定する。
 

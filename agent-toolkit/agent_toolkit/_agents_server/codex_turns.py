@@ -6,7 +6,7 @@ import asyncio
 import typing
 from typing import Any
 
-from agent_toolkit._agents_server import codex_resume_state, wait_compaction
+from agent_toolkit._agents_server import codex_resume_state, configured_model, wait_compaction
 from agent_toolkit._agents_server.codex_instructions import _current_service_tier
 from agent_toolkit._agents_server.codex_protocol import (
     DEFAULT_WAIT_TIMEOUT,
@@ -45,11 +45,16 @@ class CodexTurnsMixin:
         if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
             # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
             failure.update(error.data)
+        changed = (
+            await configured_model.changed_model_error(session)
+            if failure.get("codexErrorInfo") == "usageLimitExceeded"
+            else None
+        )
         # 読取中に届いた中断要求は、続く保留判定でも維持する。
         session.interrupt_requested = False
         limit = (
             None
-            if isinstance(error, StartCandidateUnavailable) or writer_conflict
+            if changed is not None or isinstance(error, StartCandidateUnavailable) or writer_conflict
             else await self._read_usage_limit_failure(session, failure)
         )
         session.turn_id = ""
@@ -58,12 +63,13 @@ class CodexTurnsMixin:
         session.record_current_item_start(None)
         session.commentary = ""
         session.diff_changed = False
-        session.error = public_error
+        session.error = changed or public_error
         if (
             session.codex_model_provider
             and session.codex_model_provider != session.codex_subscription_provider
             and not isinstance(error, StartCandidateUnavailable)
             and not writer_conflict
+            and changed is None
         ):
             session.error = {"message": "Codex connection rejected the request"}
         session.agent_message = ""
@@ -73,6 +79,7 @@ class CodexTurnsMixin:
         if (
             not isinstance(error, StartCandidateUnavailable)
             and not writer_conflict
+            and changed is None
             and not self._hold_usage_limit_failure(session, limit)
         ):
             self._hold_provider_failure(session, failure)

@@ -22,6 +22,36 @@ from agent_toolkit._testing.codex_provider_support import (
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("route", ["changed", "same", "direct"])
+@pytest.mark.asyncio
+async def test_stage_model_change_precedes_codex_usage_wait_and_provider_migration(
+    monkeypatch, tmp_path, provider_environment, route
+):
+    """同じ拒否を公開通知へ渡し、工程の別モデル設定だけを引き継ぎ終了へ進める。"""
+    del provider_environment
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:gpt-before/medium")
+    monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), "always")
+    async with backend_with_client(monkeypatch, ProviderClient()) as backend:
+        session = await backend.start(
+            "確定済みの仕事を続ける",
+            str(tmp_path),
+            "gpt-before",
+            "medium",
+            model_type="codex:gpt-before/medium" if route == "direct" else "chores",
+        )
+        if route != "same":
+            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:gpt-after/medium")
+        await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
+        if route == "changed":
+            assert session.result_available
+            assert session.error["configuredModelChanged"] is True
+            assert session.usage_limit_resume_at is None
+            assert not session.codex_provider_resume_pending
+        else:
+            assert session.usage_limit_resume_at is not None
+            assert not session.result_available
+
+
 @pytest.mark.parametrize(
     ("policy", "minutes", "waits"),
     [

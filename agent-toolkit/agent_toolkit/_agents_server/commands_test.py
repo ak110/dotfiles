@@ -29,7 +29,7 @@ def test_mcp_only_operations_are_actionable_errors(operation: str, capsys: pytes
     assert "ALL_TOOLS" in captured.err
 
 
-@pytest.mark.parametrize("operation", ["wait", "notify", "list", "show", "logs"])
+@pytest.mark.parametrize("operation", ["wait", "notify", "list", "show", "logs", "effort"])
 def test_existing_agents_operations_keep_help(operation: str, capsys: pytest.CaptureFixture[str]) -> None:
     """既存CLIのヘルプは実行せず正常終了し、一般の誤入力は拒否する。"""
     with pytest.raises(SystemExit, match="0"):

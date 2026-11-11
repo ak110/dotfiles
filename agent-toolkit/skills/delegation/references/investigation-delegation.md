@@ -32,6 +32,15 @@
 起動対象: defect-investigation.subagent.md
 ```
 
+<!-- input-contract:defect-investigation:start -->
+<!-- 生成元: share/defect-investigation.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `対象の不良`、`引き継ぎ記録先`
+
+<!-- input-contract:defect-investigation:end -->
+
 自身の作業によって持ち込まれたものではない既存の不具合について、AWIを起草せずに不具合を発見したエージェント自身が元のコンテキストで修正する場合に、調査担当の起動および受領検収の手順を適用する。
 コンテキストを分離するのは調査工程のみとし、実際の修正作業は不具合を発見したエージェント自身が担当する。
 AWIとして登録して処理する場合（`agent-toolkit:process-wi`における即時対応や、次のセッションへ引き継ぐ不具合など）は、`agent-toolkit:/share/add-wi.parent.md`の手順を用いる。

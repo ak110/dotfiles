@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import pathlib
 
@@ -21,78 +20,49 @@ from agent_toolkit._testing.rules_context_support import _output
 
 @pytest.mark.parametrize("host", ["claude", "codex", "agy"])
 @pytest.mark.parametrize("inside", [False, True])
-def test_compact_skill_guidance_uses_host_acquisition(host: str, tmp_path: pathlib.Path, inside: bool) -> None:
+def test_acquisition_failure_uses_host_acquisition(host: str, tmp_path: pathlib.Path, inside: bool) -> None:
     skill = tmp_path / "project/.claude/skills/local/SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有スキル本文\n", encoding="utf-8")
-    digest = hashlib.sha256(skill.read_bytes()).hexdigest()
     cwd = str(tmp_path / ("project" if inside else "outside"))
-    output = rules_context._compact_recovery_context(host, 10000, [(skill, "", digest, False)], cwd=cwd)
-    if host == "claude" and inside:
-        assert output is None
-        return
-    assert output is not None
-    assert "固有スキル本文" not in output
-    assert str(skill) in output
     loadable = host == "claude" and inside
-    assert ("`Skill`で`local`" in output) is loadable
-    assert ("cat --" in output) is not loadable
     failure = rules_context.acquisition_failure(ReadTarget(skill), ValueError("読取失敗"), shell=host != "claude", cwd=cwd)
     assert ("`Skill`で`local`" in failure) is loadable
     assert ("cat --" in failure) is not loadable
 
 
-def test_compact_guidance_presents_candidates_for_remaining_steps(tmp_path: pathlib.Path) -> None:
-    """圧縮前の選択資料は候補として示し、残る工程の判断に使う資料だけを使う前に全文再取得させる。"""
-    reference = tmp_path / "reference.md"
-    reference.write_text("# 見出し\n本文\n", encoding="utf-8")
-    digest = hashlib.sha256(reference.read_bytes()).hexdigest()
-    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", digest, False)])
-    assert output is not None
-    assert "候補" in output and "残る工程の判断に使う資料だけ" in output and "使う前に" in output
-    assert "全文再取得" in output
-    assert "選択済み資料を再取得せよ" not in output
-
-
 @pytest.mark.parametrize("host", ["claude", "codex", "agy"])
-def test_compact_missing_heading_guides_full_acquisition(host: str, tmp_path: pathlib.Path) -> None:
-    reference = tmp_path / "reference.md"
-    reference.write_text("# 実見出し\n固有本文\n", encoding="utf-8")
-    digest = hashlib.sha256(reference.read_bytes()).hexdigest()
-    output = rules_context._compact_recovery_context(host, 10000, [(reference, "不存在", digest, False)])
-    assert output is not None
-    assert "不存在" in output and "見出し" in output
-    assert "固有本文" not in output
-    assert ("cat --" in output) is (host in {"codex", "agy"})
-    assert ("Readで全文読" in output) is (host == "claude")
-
-
-def test_compact_missing_document_guides_repair(tmp_path: pathlib.Path) -> None:
-    reference = tmp_path / "missing.md"
-    output = rules_context._compact_recovery_context("claude", 10000, [(reference, "", "old-hash", False)])
-    assert output is not None
-    assert str(reference) in output and "存在しない" in output and "復旧" in output
-    assert "委譲元" in output and "ユーザー" in output
-    assert "Readで全文読" not in output
-
-
-@pytest.mark.parametrize("host", ["claude", "codex", "agy"])
-def test_compact_public_session_start_reports_missing_material(tmp_path, monkeypatch, capsys, host):
-    missing = tmp_path / "missing.md"
+@pytest.mark.parametrize("waiting", [False, True])
+@pytest.mark.parametrize("history", [False, True])
+def test_compact_public_notice_uses_current_stage_without_history_paths(tmp_path, monkeypatch, capsys, host, waiting, history):
+    """履歴と待受けに依存せず、最初の判断前に工程文書と読込表へ戻す。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(rules_context, "update_state", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(rules_context, "mark_user_confirmation_pending", lambda *_args: None)
+    monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
-    monkeypatch.setattr(
-        rules_context, "reset_main_operation_skill_ready", lambda *_args, **_kwargs: [(missing, "対象", "old-hash", False)]
+    document = tmp_path / "past-material.md"
+    document.write_text("# 過去の資料\n", encoding="utf-8")
+    if history:
+        read_delivery._select_targets("stage", [ReadTarget(document)], "main")
+        read_delivery._mark("stage", document, "main")
+    if waiting:
+        rules_context.update_state("stage", lambda current: {**current, "waiting": {"target": "child"}})
+    assert (
+        rules_context.main(
+            json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "stage"}), host=host
+        )
+        == 0
     )
-    payload = {"hook_event_name": "SessionStart", "source": "compact", "session_id": "missing"}
-    assert rules_context.main(json.dumps(payload), host=host) == 0
     output = _output(capsys)
-    assert str(missing) in output and "存在しない" in output and "復旧" in output
-    assert "委譲元" in output and "ユーザー" in output
+    assert str(document) not in output
+    assert "工程を定めるスキルと役割文書を全文読み直し" in output
+    assert "読込表から次の判断に必要な資料を選んで読め" in output
+    assert "全体作業契約と引き継ぎ記録" in output
+    assert not read_delivery.target_ready(
+        read_state("stage").get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(document), "main"
+    )
 
 
 def test_compact_skill_becomes_ready_only_after_skill_success(capsys, monkeypatch, tmp_path):
@@ -148,7 +118,7 @@ def test_compact_restores_selected_material_only_for_the_same_main_agent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """compact直後は、同一主体が選択済みの必要範囲だけを次のPreToolUseより先に回復する。"""
+    """過去の取得を通知へ列挙せず、再取得した同一主体の本文だけを取得済みに戻す。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -172,7 +142,7 @@ def test_compact_restores_selected_material_only_for_the_same_main_agent(
         assert not read_delivery.target_ready(records, target, "main")
     else:
         assert expected not in output
-        assert str(document) in output
+        assert str(document) not in output
         assert not read_delivery.target_ready(records, target, "main")
         read_delivery.observe({"tool_response": document.read_text()}, "Read", {"file_path": str(document)}, "compact-recovery")
         records = read_state("compact-recovery").get(rules_context.OPERATION_SKILL_READY_KEY, {})
@@ -181,10 +151,10 @@ def test_compact_restores_selected_material_only_for_the_same_main_agent(
             assert "配送しない本文" not in output
 
 
-def test_compact_keeps_target_unread_and_shows_its_range_when_recovery_budget_is_insufficient(
+def test_compact_keeps_large_target_unread_without_listing_it(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """本文がSessionStart残予算へ収まらない場合、取得済みへ戻さず読取先と必要範囲を示す。"""
+    """大きい履歴資料でも通知へ列挙せず、未取得状態と通知予算を保つ。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -198,8 +168,8 @@ def test_compact_keeps_target_unread_and_shows_its_range_when_recovery_budget_is
 
     output = _output(capsys)
     records = read_state("compact-budget").get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    assert str(document) in output
-    assert "Read" in output
+    assert str(document) not in output
+    assert "工程を定めるスキルと役割文書" in output
     assert not read_delivery.target_ready(records, target, "main")
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
@@ -207,7 +177,7 @@ def test_compact_keeps_target_unread_and_shows_its_range_when_recovery_budget_is
 def test_compact_restores_acquired_material_for_a_delegated_independent_session(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """独立した委譲sessionも、自身のmain主体が取得済みだった資料をcompact後に回復する。"""
+    """独立した委譲sessionも履歴を列挙せず、自身のmain主体の取得状態をリセットする。"""
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -222,7 +192,7 @@ def test_compact_restores_acquired_material_for_a_delegated_independent_session(
     output = _output(capsys)
     records = read_state("delegated-compact").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert "委譲先の取得済み基準" not in output
-    assert str(document) in output
+    assert str(document) not in output
     assert not read_delivery.target_ready(records, target, "main")
 
 
@@ -230,7 +200,7 @@ def test_compact_restores_acquired_material_for_a_delegated_independent_session(
 def test_compact_discards_undelivered_recovery_target_before_a_later_context_boundary(
     between: str, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """予算超過後の復旧候補をclearまたは次のcompactへ持ち越さない。"""
+    """繰り返す文脈境界でも履歴一覧を通知へ戻さない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -242,7 +212,7 @@ def test_compact_discards_undelivered_recovery_target_before_a_later_context_bou
     read_delivery._mark(session_id, document, "main")
 
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": session_id}))
-    assert str(document) in _output(capsys)
+    assert str(document) not in _output(capsys)
 
     if between == "clear":
         rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "clear", "session_id": session_id}))

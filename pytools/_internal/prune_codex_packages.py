@@ -205,7 +205,7 @@ def _install_lock(root: pathlib.Path, *, windows: bool) -> collections.abc.Gener
         # 公式install.ps1のFileShare.Noneと同じ共有モードを指定する。
         # Linuxのctypes型情報にないWindows専用APIは、このOS分岐内で使用する。
         # pylint: disable-next=no-member
-        kernel32 = ctypes.WinDLL(  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        kernel32 = ctypes.WinDLL(  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
             "kernel32", use_last_error=True
         )
         create = kernel32.CreateFileW
@@ -222,7 +222,7 @@ def _install_lock(root: pathlib.Path, *, windows: bool) -> collections.abc.Gener
         handle = create(str(path), 0xC0000000, 0, None, 4, 0x80, None)
         if handle == ctypes.c_void_p(-1).value:
             # pylint: disable-next=no-member
-            error = ctypes.get_last_error()  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            error = ctypes.get_last_error()  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
             if error == 32:  # CreateFileWのERROR_SHARING_VIOLATION。
                 raise _DeferredError("公式install.lockが使用中")
             raise OSError(f"公式install.lockを取得できない (Windows error {error})")

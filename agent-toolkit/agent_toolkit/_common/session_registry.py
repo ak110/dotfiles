@@ -143,6 +143,8 @@ class LaunchInfo:
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
     terminal_error: str | None = None
+    effort_history: tuple[tuple[str, str, str, str], ...] = ()
+    effort_levels: tuple[str, ...] = ()
 
     @classmethod
     def of(cls, source: object) -> LaunchInfo:
@@ -155,12 +157,22 @@ class LaunchInfo:
         values = {
             field.name: payload[field.name] for field in dataclasses.fields(cls) if isinstance(payload.get(field.name), str)
         }
-        for name in ("followup_prompts", "final_responses"):
+        for name in ("followup_prompts", "final_responses", "effort_history", "effort_levels"):
             values.pop(name, None)
         followups = payload.get("followup_prompts", [])
         responses = payload.get("final_responses", [])
+        history = payload.get("effort_history", [])
+        levels = payload.get("effort_levels", [])
         return cls(
             **values,
+            effort_history=tuple(
+                (item[0], item[1], item[2], item[3])
+                for item in history
+                if isinstance(item, list) and len(item) == 4 and all(isinstance(value, str) for value in item)
+            )
+            if isinstance(history, list)
+            else (),
+            effort_levels=tuple(item for item in levels if isinstance(item, str)) if isinstance(levels, list) else (),
             followup_prompts=tuple(item for item in followups if isinstance(item, str)) if isinstance(followups, list) else (),
             final_responses=tuple(
                 (item[0], item[1])
@@ -464,6 +476,8 @@ def _preserve_launch_info(current: LaunchInfo, previous: LaunchInfo) -> LaunchIn
         created_at=previous.created_at or current.created_at,
         followup_prompts=followups,
         final_responses=tuple(responses.items()),
+        effort_history=tuple(dict.fromkeys((*previous.effort_history, *current.effort_history))),
+        effort_levels=current.effort_levels or previous.effort_levels,
     )
 
 

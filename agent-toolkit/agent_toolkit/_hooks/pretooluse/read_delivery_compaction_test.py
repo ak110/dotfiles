@@ -78,16 +78,16 @@ def test_unrecorded_copy_history_keeps_the_selected_path_unread(tmp_path, monkey
     assert _guidance(read_delivery.deliver({"transcript_path": str(log)}, "Do", {}, "test")) is not None
 
 
-def test_compaction_recovery_lists_a_selected_document_read_through_a_same_content_copy(tmp_path, monkeypatch, memory):
-    """会話圧縮時は、選択済み資料を同じ内容の別の場所で読んだ場合も、選択済み資料のパスを再取得の候補に挙げる。"""
+def test_compaction_resets_acquisition_read_through_a_same_content_copy(tmp_path, monkeypatch, memory):
+    """同じ内容の写しの取得も圧縮で失われ、現在の操作が選ぶ資料として案内し直す。"""
     checkout, worktree = _copies(tmp_path, monkeypatch)
     observe_received({"tool_response": worktree.read_text()}, "Read", {"file_path": str(worktree)}, "test")
     memory[rules_context.OPERATION_SKILL_READY_KEY][
         "selected-read-target:" + json.dumps({"path": str(checkout), "heading": ""}, ensure_ascii=False, separators=(",", ":"))
     ] = ["main"]
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
-    recovery = rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
-    assert [path for path, _heading, _fingerprint, _reference in recovery] == [checkout.resolve()]
+    rules_context.reset_main_operation_skill_ready("test")
+    _assert_acquired({}, checkout, False)
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
 
 
@@ -117,7 +117,7 @@ def test_compaction_reguides_only_current_documents_without_blocking(tmp_path, m
     _assert_acquired(payload, earlier, False)
     _assert_acquired(payload, later, True)
 
-    rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    rules_context.reset_main_operation_skill_ready("test")
     # 圧縮前の候補は操作ごとに再掲せず、現在の操作が選んだ資料だけを案内する。
     first = _notice_body(delivered("Write", write))
     assert str(later) in first and str(earlier) not in first
@@ -157,7 +157,7 @@ def test_selection_that_no_longer_matches_the_document_is_not_reguided(tmp_path,
     if scenario == "change-then-compaction":
         doc.write_text(changed, encoding="utf-8")
     if scenario != "no-compaction":
-        rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+        rules_context.reset_main_operation_skill_ready("test")
     if scenario in {"no-compaction", "compaction-then-change", "compaction-then-edit"}:
         doc.write_text(changed, encoding="utf-8")
     rows.clear()
@@ -206,5 +206,6 @@ def test_public_guidance_distinguishes_new_scope_target_and_compaction(tmp_path,
     restored = _run_hook_in_process("pretooluse", operation)
     assert restored.returncode == 0 and not restored.stderr
     assert str(other) in restored.stdout and str(path) not in restored.stdout
+    assert "会話圧縮で本文が文脈から失われた場合は再取得が必要" in restored.stdout
     assert not _run_hook_in_process("pretooluse", operation).stdout
     _assert_acquired(payload, other, False)

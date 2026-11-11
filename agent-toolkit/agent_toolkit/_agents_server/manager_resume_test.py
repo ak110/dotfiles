@@ -284,6 +284,8 @@ async def test_resumed_session_keeps_every_launch_info_item(
         "followup_prompts": ("先行追送",),
         "final_responses": ((1, "先行応答"),),
         "terminal_error": None,
+        "effort_levels": ("low", "medium", "high"),
+        "effort_history": (("2026-09-25T21:58:14+00:00", "low", "medium", "parent"),),
     }
     assert set(launch_values) == {field.name for field in dataclasses.fields(session_registry.LaunchInfo)}
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, writer):

@@ -30,7 +30,6 @@ def test_session_start_reacquires_plugin_inventory_for_the_same_session(tmp_path
     monkeypatch.setattr(plugin_roots.shutil, "which", lambda *_args, **_kwargs: str(executable))
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
-    monkeypatch.setattr(rules_context, "_compact_recovery_context", lambda *_args, **_kwargs: None)
     calls = []
 
     def acquire(args, **_kwargs):

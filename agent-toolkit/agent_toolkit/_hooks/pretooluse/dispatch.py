@@ -220,6 +220,10 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 decision = delivery
             elif delivery.notices:
                 decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
+        from agent_toolkit._hooks import effort_notice  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        if (effort_advice := effort_notice.observe(payload)) is not None:
+            pending_notices.append(effort_advice)
         state = read_state(session_id)
         contract_update = work_contract.delegated_notice(
             session_id,
