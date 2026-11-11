@@ -1,6 +1,7 @@
 """`atk serve`の計画ファイル画面の実ブラウザー統合テスト。"""
 
 import asyncio
+import contextlib
 import dataclasses
 import functools
 import json
@@ -455,6 +456,8 @@ async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness
 async def test_delayed_svg_result_survives_same_html_resync(screen_harness: _ScreenHarness, valid: bool) -> None:
     """同じ本文の再同期後も、表示中のSVGの描画結果とblob URLの所有を維持する。"""
     page = screen_harness.page
+    # SVGだけを確かめる試験のため、共有の入力にあるMermaid図の外部の読込を待たない（読込の失敗は図の位置へ表示されるだけ）。
+    await page.route(_MERMAID_CDN_URL, lambda route: route.abort())
     source = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>' if valid else "<svg>broken"
     screen_harness.plan_path.write_text(f"# 遅延SVG\n\n```svg\n{source}\n```\n", encoding="utf-8")
     await page.add_init_script("""
@@ -872,6 +875,37 @@ async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_ha
     assert await harness.page.locator("#preview .diagram-mermaid details").is_visible()
     assert "本文-初回" in await harness.page.locator("#preview").inner_text()
     assert await harness.page.locator("#preview .diagram-svg img").is_visible()
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_mermaid_cdn_without_response_ends_loading_with_error(screen_harness: _ScreenHarness) -> None:
+    """CDNが応答を返さない場合も、上限を過ぎたら図の位置へエラーを表示し、プレビューの描画中を終える。"""
+    harness = screen_harness
+    started = asyncio.Event()
+    release = asyncio.Event()
+    await harness.page.clock.install()
+
+    async def hold(route: playwright.async_api.Route) -> None:
+        started.set()
+        await release.wait()
+        # 上限を過ぎた画面は読込の要素を外すため、ブラウザーが要求を取り消し済みのことがある。
+        with contextlib.suppress(playwright.async_api.Error):
+            await route.abort()
+
+    await harness.page.route(_MERMAID_CDN_URL, hold)
+    try:
+        await harness.page.goto(harness.base_url + "/plans")
+        await asyncio.wait_for(started.wait(), timeout=30)
+        preview = harness.page.locator("#preview")
+        assert await preview.get_attribute("aria-busy") == "true"
+        await harness.page.clock.run_for(30_000)
+        error = harness.page.locator("#preview .diagram-mermaid .diagram-error")
+        await playwright.async_api.expect(error).to_contain_text("Mermaidの読み込みが30秒以内に終わりませんでした")
+        await playwright.async_api.expect(preview).to_have_attribute("aria-busy", "false")
+        assert "本文-初回" in await preview.inner_text()
+    finally:
+        release.set()
+        await harness.page.unroute(_MERMAID_CDN_URL, hold)
 
 
 @pytest.mark.asyncio(loop_scope="session")
