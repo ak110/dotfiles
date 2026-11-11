@@ -601,44 +601,64 @@ def _uninstall_deprecated(name: str, raw_data: object) -> bool:
     return False
 
 
+def _cache_operation_lock(name: str):
+    if not name or name in {".", ".."} or "/" in name or "\\" in name:
+        raise ValueError("plugin名が不正")
+    directory = claude_common.INSTALLED_PLUGINS_PATH.parent / "cache" / claude_common.MARKETPLACE_NAME / name
+    return claude_plugin_references.cache_lock(directory)
+
+
+def _is_managed_cache(directory: Path) -> bool:
+    root = claude_common.INSTALLED_PLUGINS_PATH.parent / "cache"
+    return directory.resolve().is_relative_to(root.resolve())
+
+
 def _install_plugin(name: str) -> bool:
     """指定 plugin をインストールする (成功時 True を返す)。"""
-    result = claude_common.run_claude(
-        ["plugin", "install", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=user", "-y"],
-        timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
-    )
-    if result is None or result.returncode != 0:
-        logger.info(
-            log_format.format_status(
-                name,
-                f"install に失敗: {common.format_cli_error(result)}。"
-                f"`claude plugin install {name}@{claude_common.MARKETPLACE_NAME} "
-                "--scope=user`を実行する",
-            ),
+    with _cache_operation_lock(name):
+        result = claude_common.run_claude(
+            ["plugin", "install", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=user", "-y"],
+            timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
         )
-        return False
-    logger.info(log_format.format_status(name, "インストールしました"))
-    return True
+        if result is None or result.returncode != 0:
+            logger.info(
+                log_format.format_status(
+                    name,
+                    f"install に失敗: {common.format_cli_error(result)}。"
+                    f"`claude plugin install {name}@{claude_common.MARKETPLACE_NAME} "
+                    "--scope=user`を実行する",
+                ),
+            )
+            return False
+        current = _plugin_cache_directory(name)
+        if current is not None and _is_managed_cache(current):
+            claude_plugin_references.mark_current(current)
+        logger.info(log_format.format_status(name, "インストールしました"))
+        return True
 
 
 def _update_plugin(name: str) -> bool:
     """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
-    result = claude_common.run_claude(
-        ["plugin", "update", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=user"],
-        timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
-    )
-    if result is None or result.returncode != 0:
-        logger.info(
-            log_format.format_status(
-                name,
-                f"update に失敗: {common.format_cli_error(result)}。"
-                f"`claude plugin update {name}@{claude_common.MARKETPLACE_NAME} "
-                "--scope=user`を実行する",
-            ),
+    with _cache_operation_lock(name):
+        result = claude_common.run_claude(
+            ["plugin", "update", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=user"],
+            timeout=claude_common.PLUGIN_OPERATION_TIMEOUT,
         )
-        return False
-    logger.info(log_format.format_status(name, "更新しました"))
-    return True
+        if result is None or result.returncode != 0:
+            logger.info(
+                log_format.format_status(
+                    name,
+                    f"update に失敗: {common.format_cli_error(result)}。"
+                    f"`claude plugin update {name}@{claude_common.MARKETPLACE_NAME} "
+                    "--scope=user`を実行する",
+                ),
+            )
+            return False
+        current = _plugin_cache_directory(name)
+        if current is not None and _is_managed_cache(current):
+            claude_plugin_references.mark_current(current)
+        logger.info(log_format.format_status(name, "更新しました"))
+        return True
 
 
 def _disable_plugin(plugin_id: str) -> bool:
@@ -729,76 +749,76 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
     このため導入先を参照するプロセスか稼働中のClaude Codeセッション（起動時刻を問わない）があれば、
     `claude_plugin_references`の判定に従って削除せず延期し、参照の終了後の`update-dotfiles`で修復する。
     """
-    cache_root = claude_common.INSTALLED_PLUGINS_PATH.parent / "cache"
-    cache_dir = _plugin_cache_directory(name)
-    if cache_dir is None:
-        source = log_format.home_short(claude_common.INSTALLED_PLUGINS_PATH)
-        logger.warning(
-            log_format.format_status(
-                name,
-                f"plugin cache の導入先を {source} から解決できず検査を省略。"
-                "`claude plugin list --json`でこのpluginの導入状態を確認して`update-dotfiles`を再実行する",
-            ),
-        )
-        return "unchanged"
-    if not cache_dir.is_relative_to(cache_root):
-        # 削除の対象は plugin cache の内側だけとし、想定外の位置にある導入先は削除しない。
-        short = log_format.home_short(cache_dir)
+    with _cache_operation_lock(name):
+        cache_dir = _plugin_cache_directory(name)
+        if cache_dir is None:
+            source = log_format.home_short(claude_common.INSTALLED_PLUGINS_PATH)
+            logger.warning(
+                log_format.format_status(
+                    name,
+                    f"plugin cache の導入先を {source} から解決できず検査を省略。"
+                    "`claude plugin list --json`でこのpluginの導入状態を確認して`update-dotfiles`を再実行する",
+                ),
+            )
+            return "unchanged"
+        if not _is_managed_cache(cache_dir):
+            # 削除の対象は plugin cache の内側だけとし、想定外の位置にある導入先は削除しない。
+            short = log_format.home_short(cache_dir)
+            logger.info(
+                log_format.format_status(
+                    name,
+                    f"plugin cache の外にある導入先のため検査を省略: {short}。配置を保持したため対応不要（処理は継続した）",
+                ),
+            )
+            return "unchanged"
+        try:
+            claude_plugin_references.mark_current(cache_dir)
+        except OSError as error:
+            logger.warning(
+                log_format.format_status(
+                    name,
+                    f"現行版の保持者記録を失効できず修復を延期: {error}。"
+                    "導入先の書込権限を確認してupdate-dotfilesを再実行してください。",
+                )
+            )
+            return "deferred"
+        missing = _missing_plugin_cache_files(name, cache_dir)
+        if not missing:
+            return "unchanged"
+        reasons = claude_plugin_references.holding_reasons(claude_plugin_references.scan(), cache_dir)
+        if reasons:
+            logger.warning(
+                log_format.format_status(
+                    name,
+                    f"plugin cache に {', '.join(missing)} がありませんが、稼働中の参照があるため修復を延期しました"
+                    f"（{'、'.join(reasons)}）。導入先 {log_format.home_short(cache_dir)} を削除せず保持しています。"
+                    + "Claude Codeのセッションを全て終了してから`update-dotfiles`を再実行してください。",
+                ),
+            )
+            return "deferred"
         logger.info(
             log_format.format_status(
                 name,
-                f"plugin cache の外にある導入先のため検査を省略: {short}。配置を保持したため対応不要（処理は継続した）",
+                f"plugin cache に {', '.join(missing)} が無いため削除して再インストールします: "
+                f"{log_format.home_short(cache_dir)}。"
+                "対応不要（処理は継続した）",
             ),
         )
-        return "unchanged"
-    try:
-        claude_plugin_references.mark_current(cache_dir)
-    except OSError as error:
-        logger.warning(
-            log_format.format_status(
-                name,
-                f"現行版の保持者記録を失効できず修復を延期: {error}。"
-                "導入先の書込権限を確認してupdate-dotfilesを再実行してください。",
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        if not _install_plugin(name):
+            message = f"plugin cache の修復インストールに失敗しました: {log_format.home_short(cache_dir)}"
+            raise RuntimeError(f"{name}: {message}")
+        repaired_dir = _plugin_cache_directory(name) or cache_dir
+        missing = _missing_plugin_cache_files(name, repaired_dir)
+        if missing:
+            command = f"claude plugin install {name}@{claude_common.MARKETPLACE_NAME} --scope=user -y"
+            message = (
+                f"再インストール後も plugin cache に {', '.join(missing)} がありません: "
+                f"{log_format.home_short(repaired_dir)} (確認手順: このディレクトリを削除して `{command}` を実行する)"
             )
-        )
-        return "deferred"
-    missing = _missing_plugin_cache_files(name, cache_dir)
-    if not missing:
-        return "unchanged"
-    reasons = claude_plugin_references.holding_reasons(claude_plugin_references.scan(), cache_dir)
-    if reasons:
-        logger.warning(
-            log_format.format_status(
-                name,
-                f"plugin cache に {', '.join(missing)} がありませんが、稼働中の参照があるため修復を延期しました"
-                f"（{'、'.join(reasons)}）。導入先 {log_format.home_short(cache_dir)} を削除せず保持しています。"
-                + "Claude Codeのセッションを全て終了してから`update-dotfiles`を再実行してください。",
-            ),
-        )
-        return "deferred"
-    logger.info(
-        log_format.format_status(
-            name,
-            f"plugin cache に {', '.join(missing)} が無いため削除して再インストールします: "
-            f"{log_format.home_short(cache_dir)}。"
-            "対応不要（処理は継続した）",
-        ),
-    )
-    shutil.rmtree(cache_dir, ignore_errors=True)
-    if not _install_plugin(name):
-        message = f"plugin cache の修復インストールに失敗しました: {log_format.home_short(cache_dir)}"
-        raise RuntimeError(f"{name}: {message}")
-    repaired_dir = _plugin_cache_directory(name) or cache_dir
-    missing = _missing_plugin_cache_files(name, repaired_dir)
-    if missing:
-        command = f"claude plugin install {name}@{claude_common.MARKETPLACE_NAME} --scope=user -y"
-        message = (
-            f"再インストール後も plugin cache に {', '.join(missing)} がありません: "
-            f"{log_format.home_short(repaired_dir)} (確認手順: このディレクトリを削除して `{command}` を実行する)"
-        )
-        raise RuntimeError(f"{name}: {message}")
-    logger.info(log_format.format_status(name, "plugin cache の欠落を再インストールで解消しました"))
-    return "repaired"
+            raise RuntimeError(f"{name}: {message}")
+        logger.info(log_format.format_status(name, "plugin cache の欠落を再インストールで解消しました"))
+        return "repaired"
 
 
 def _remove_development_artifacts(name: str) -> tuple[bool, int, bool]:

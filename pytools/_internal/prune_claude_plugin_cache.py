@@ -53,34 +53,38 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     deadline = time.time() - GRACE_DAYS * 86400
     removed = 0
     failures: list[str] = []
-    processes: tuple[claude_plugin_references.ReferencingProcess, ...] | None = None
     for (marketplace, name), installed in sorted(current_paths.items()):
         plugin_dir = cache_root / marketplace / name
-        try:
-            for current in installed:
-                if current.is_relative_to(cache_resolved):
-                    claude_plugin_references.mark_current(current)
-        except OSError as error:
-            failures.append(f"現行版の保持者記録を失効できないため {marketplace}/{name} を保持: {error}")
-            continue
-        for version_dir in _expired_versions(plugin_dir, installed, deadline):
-            if processes is None:
-                processes = claude_plugin_references.scan()
-            reasons = claude_plugin_references.holding_reasons(processes, version_dir, retired=True)
-            if reasons:
-                logger.info(
-                    log_format.format_status(
-                        log_format.home_short(version_dir),
-                        f"稼働中の参照があるため旧版を保持: {'、'.join(reasons)}。"
-                        "参照の終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
-                    )
-                )
-                continue
+        with claude_plugin_references.cache_lock(plugin_dir):
             try:
-                if _remove_version_dir(version_dir, cache_resolved):
-                    removed += 1
+                refreshed = _current_install_paths()
+                if refreshed is None:
+                    continue
+                installed = refreshed.get((marketplace, name), set())
+                for current in installed:
+                    if current.is_relative_to(cache_resolved):
+                        claude_plugin_references.mark_current(current)
             except OSError as error:
-                failures.append(f"{log_format.home_short(version_dir)} の削除に失敗: {error}")
+                failures.append(f"現行版の保持者記録を失効できないため {marketplace}/{name} を保持: {error}")
+                continue
+            expired = _expired_versions(plugin_dir, installed, deadline)
+            processes = claude_plugin_references.scan() if expired else ()
+            for version_dir in expired:
+                reasons = claude_plugin_references.holding_reasons(processes, version_dir, retired=True)
+                if reasons:
+                    logger.info(
+                        log_format.format_status(
+                            log_format.home_short(version_dir),
+                            f"稼働中の参照があるため旧版を保持: {'、'.join(reasons)}。"
+                            "参照の終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
+                        )
+                    )
+                    continue
+                try:
+                    if _remove_version_dir(version_dir, cache_resolved):
+                        removed += 1
+                except OSError as error:
+                    failures.append(f"{log_format.home_short(version_dir)} の削除に失敗: {error}")
     return post_apply_outcome.PostApplyOutcome(
         changed=removed > 0,
         failure=" / ".join(failures) or None,

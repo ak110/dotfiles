@@ -135,7 +135,7 @@ def test_recorded_target_with_reused_pid_is_not_signalled(tmp_path: pathlib.Path
             {
                 "pid": unrelated.pid,
                 "create_time": psutil.Process(unrelated.pid).create_time() - 1000,
-                "start_id": "other-generation",
+                "start_id": "linux:00000000-0000-0000-0000-000000000001:1",
             }
         ]
         record_path.write_text(json.dumps({"targets": reused, "unresolved": [], "unreaped": reused}), encoding="utf-8")

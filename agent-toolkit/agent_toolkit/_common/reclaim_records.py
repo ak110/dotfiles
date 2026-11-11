@@ -70,9 +70,9 @@ def load(pid: int, create_time: float) -> ReclaimRecord | None:
     try:
         raw = json.loads(target.read_text(encoding="utf-8"))
         return ReclaimRecord(
-            tuple(process_identity.ProcessIdentity(**item) for item in raw["targets"]),
+            tuple(process_identity.ProcessIdentity.parse(item) for item in raw["targets"]),
             tuple(str(reason) for reason in raw["unresolved"]),
-            tuple(process_identity.ProcessIdentity(**item) for item in raw["unreaped"]),
+            tuple(process_identity.ProcessIdentity.parse(item) for item in raw["unreaped"]),
         )
     except FileNotFoundError:
         return None

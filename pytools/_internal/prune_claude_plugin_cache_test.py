@@ -5,10 +5,13 @@
 （欠く場合は版ディレクトリのmtime）とする。
 """
 
+import contextlib
 import json
 import os
 import sys
 import time
+import types
+from collections.abc import Callable
 from pathlib import Path
 
 import psutil
@@ -186,11 +189,7 @@ def test_keeps_expired_version_while_a_process_refers_to_it(
         if reference == "cwd":
             residents.start("python3", cwd=old / ".venv")
         else:
-            resident = residents.start("python3", env={"CLAUDE_PLUGIN_ROOT": str(old)})
-            deadline = time.monotonic() + 5
-            while psutil.Process(resident.pid).environ().get("CLAUDE_PLUGIN_ROOT") != str(old):
-                assert resident.poll() is None and time.monotonic() < deadline, "指定した環境参照を観測できない"
-                time.sleep(0.01)
+            residents.start("python3", env={"CLAUDE_PLUGIN_ROOT": str(old)})
         assert prune_claude_plugin_cache.run().changed is False
         assert old.is_dir()
 
@@ -272,3 +271,101 @@ def test_reactivated_version_gets_new_holders(plugins_root: Path, tmp_path: Path
         residents.start("claude", cwd=tmp_path)
         assert prune_claude_plugin_cache.run().changed
         assert not old.exists()
+
+
+@pytest.mark.parametrize("damaged", [{"pid": None}, {"create_time": float("nan")}, {"start_id": "broken"}])
+def test_damaged_holder_keeps_old_version(plugins_root: Path, damaged: dict) -> None:
+    """PID・時刻・世代識別の破損を、保持者の終了と区別する。"""
+    old = _make_version(plugins_root, "mkt", "tool", "1", 30)
+    current = _make_version(plugins_root, "mkt", "tool", "2", 20)
+    _write_installed(plugins_root, {"tool@mkt": [current]})
+    holder = {"pid": 2147483647, "create_time": 1.0, "start_id": "linux:00000000-0000-0000-0000-000000000001:1"}
+    (old / ".dotfiles-retired-holders.json").write_text(
+        json.dumps({"version": 1, "processes": [{**holder, **damaged}]}), encoding="utf-8"
+    )
+    assert not prune_claude_plugin_cache.run().changed
+    assert old.is_dir()
+
+
+def test_invalidation_cannot_be_overtaken_by_older_snapshot(plugins_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """初回保存前に現行化を試みても、失効後に古い集合が復活して新保持者の版を消さない。"""
+    old = _make_version(plugins_root, "mkt", "tool", "1", 30)
+    current = _make_version(plugins_root, "mkt", "tool", "2", 20)
+    _write_installed(plugins_root, {"tool@mkt": [current]})
+    previous, replacement = 2147483001, 2147483002
+    alive = {previous}
+    actor = {"name": "sweep"}
+    owner = None
+    depth = 0
+    deferred: list[Callable[[], None]] = []
+
+    class Blocked(Exception):
+        """別の操作が排他を保持している。"""
+
+    @contextlib.contextmanager
+    def ordered_lock(_directory, **_kwargs):
+        nonlocal owner, depth
+        if owner not in {None, actor["name"]}:
+            raise Blocked
+        owner = actor["name"]
+        depth += 1
+        try:
+            yield
+        finally:
+            depth -= 1
+            if depth == 0:
+                owner = None
+                while deferred:
+                    deferred.pop(0)()
+
+    original_process = psutil.Process
+    original_start_id = claude_plugin_references.process_identity.start_id
+
+    def process(pid=None, **kwargs):
+        if pid not in {previous, replacement}:
+            return original_process(pid, **kwargs)
+        if pid not in alive:
+            raise psutil.NoSuchProcess(pid)
+        return types.SimpleNamespace(pid=pid, create_time=lambda: 1.0, status=lambda: psutil.STATUS_RUNNING)
+
+    def start_id(observed, **_kwargs):
+        if observed.pid in {previous, replacement}:
+            return f"linux:00000000-0000-0000-0000-000000000001:{observed.pid}"
+        return original_start_id(observed)
+
+    def scan(**_kwargs):
+        return tuple(claude_plugin_references.ReferencingProcess(pid, "Claude", True, (), True) for pid in sorted(alive))
+
+    def activate():
+        original_actor = actor["name"]
+        actor["name"] = "activate"
+        try:
+            claude_plugin_references.mark_current(old)
+            _write_installed(plugins_root, {"tool@mkt": [old]})
+            alive.add(replacement)
+        finally:
+            actor["name"] = original_actor
+
+    original_write = claude_plugin_references.atomic_file.atomic_write
+    attempted = False
+
+    def pause_before_first_write(path, content, **kwargs):
+        nonlocal attempted
+        if not attempted:
+            attempted = True
+            try:
+                activate()
+            except Blocked:
+                deferred.append(activate)
+        original_write(path, content, **kwargs)
+
+    monkeypatch.setattr(claude_plugin_references, "cache_lock", ordered_lock)
+    monkeypatch.setattr(claude_plugin_references, "scan", scan)
+    monkeypatch.setattr(psutil, "Process", process)
+    monkeypatch.setattr(claude_plugin_references.process_identity, "start_id", start_id)
+    monkeypatch.setattr(claude_plugin_references.atomic_file, "atomic_write", pause_before_first_write)
+    assert not prune_claude_plugin_cache.run().changed
+    _write_installed(plugins_root, {"tool@mkt": [current]})
+    alive.remove(previous)
+    assert not prune_claude_plugin_cache.run().changed
+    assert old.is_dir()

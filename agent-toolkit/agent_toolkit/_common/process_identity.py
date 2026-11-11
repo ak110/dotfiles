@@ -1,8 +1,10 @@
 """時計補正とPID再利用を区別する、保存可能なプロセス識別。"""
 
 import dataclasses
+import math
 import pathlib
 import sys
+import uuid
 from typing import Any
 
 import psutil
@@ -132,6 +134,37 @@ class ProcessIdentity:
         if stable is not None and (stable.get("pid"), stable.get("create_time")) == (identity.pid, identity.create_time):
             return cls(**stable)
         return identity
+
+    @classmethod
+    def parse(cls, value: object, *, require_start_id: bool = False) -> ProcessIdentity:
+        """保存されたPID・時刻・世代識別を検証し、不正な記録を終了済みと区別する。"""
+        if not isinstance(value, dict) or value.keys() - {"pid", "create_time", "start_id"}:
+            raise ValueError("保持者項目が不正")
+        pid, created, token = value.get("pid"), value.get("create_time"), value.get("start_id")
+        if not isinstance(pid, int) or isinstance(pid, bool) or not 0 < pid <= 2**32 - 1:
+            raise ValueError("保持者のPIDが不正")
+        if not isinstance(created, (int, float)) or isinstance(created, bool):
+            raise ValueError("保持者の起動時刻が不正")
+        try:
+            created = float(created)
+        except OverflowError as error:
+            raise ValueError("保持者の起動時刻が範囲外") from error
+        if not math.isfinite(created) or created <= 0:
+            raise ValueError("保持者の起動時刻が不正")
+        if token is None:
+            if require_start_id:
+                raise ValueError("保持者の不変な世代識別が無い")
+        elif isinstance(token, str) and token.startswith("linux:"):
+            parts = token.split(":")
+            if len(parts) != 3 or str(uuid.UUID(parts[1])) != parts[1] or not parts[2].isascii() or not parts[2].isdecimal():
+                raise ValueError("保持者のLinux世代識別が不正")
+        elif isinstance(token, str) and token.startswith("darwin:"):
+            started = float(token.removeprefix("darwin:"))
+            if not math.isfinite(started) or started < 0:
+                raise ValueError("保持者のmacOS世代識別が不正")
+        else:
+            raise ValueError("保持者の世代識別が不正")
+        return cls(pid, created, token)
 
     @classmethod
     def of(cls, pid: int | None) -> ProcessIdentity | None:
