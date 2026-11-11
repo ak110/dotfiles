@@ -192,7 +192,7 @@ async def test_initial_plan_restore_preserves_earlier_selection(
         if select_during_initial_fetch:
             assert await page.locator("#screen-plans main").evaluate("element => element.scrollTop") == 240
             await page.go_back()
-            await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+            await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("初回")
             await playwright.async_api.expect(page.locator('#files .file[aria-current="true"]')).to_contain_text("plan.md")
     finally:
         release.set()
@@ -205,7 +205,8 @@ async def test_later_file_selection_wins_when_first_response_arrives_last(
     """先に選択したファイルの応答が後から届いても、後の選択の表示を保つ。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/plans")
-    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    await playwright.async_api.expect(harness.page.locator("#preview h1")).to_have_text("初回")
+    await playwright.async_api.expect(harness.page.locator("#preview")).to_have_attribute("aria-busy", "false")
     (harness.root / "first.md").write_text("# 先の選択\n\n先の内容\n", encoding="utf-8")
     (harness.root / "second.md").write_text("# 後の選択\n\n後の内容\n", encoding="utf-8")
     await serve_plans.schedule_broadcast(harness.plans_state)
@@ -253,7 +254,8 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
     """再同期が先行しても、選択状態とツールバーの操作可否を保つ。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/plans")
-    await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
+    await playwright.async_api.expect(harness.page.locator("#preview h1")).to_have_text("初回")
+    await playwright.async_api.expect(harness.page.locator("#preview")).to_have_attribute("aria-busy", "false")
     second_path = harness.root / "second.md"
     second_path.write_text("# 選択直後\n\n更新前の内容\n", encoding="utf-8")
     await serve_plans.schedule_broadcast(harness.plans_state)

@@ -31,6 +31,7 @@ _MERMAID_CDN_URL = "https://cdn.jsdelivr.net/npm/mermaid@12.0.0/dist/mermaid.min
 async def test_diagrams_render_and_refresh_safely(screen_harness: _ScreenHarness) -> None:
     """MermaidとSVGを描画し、更新後も能動的な内容を実行させず、古いblob URLを解放する。"""
     harness = screen_harness
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await harness.page.goto(harness.base_url + "/plans")
 
     mermaid = harness.page.locator("#preview .diagram-mermaid svg")
@@ -130,6 +131,7 @@ async def test_delayed_svg_result_survives_same_html_resync(screen_harness: _Scr
 async def test_mermaid_strict_security_blocks_active_content(screen_harness: _ScreenHarness) -> None:
     """Mermaid図のクリック定義と埋め込みHTMLから、能動的な内容を実行させない。"""
     harness = screen_harness
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await harness.page.goto(harness.base_url + "/plans")
     await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
     await harness.page.evaluate(
@@ -179,6 +181,7 @@ async def test_mermaid_strict_security_blocks_active_content(screen_harness: _Sc
 async def test_mermaid_error_stays_near_source_and_keeps_preview(screen_harness: _ScreenHarness) -> None:
     """Mermaidの構文エラーは図の位置へ表示し、本文と他の図の描画を保つ。"""
     harness = screen_harness
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await harness.page.goto(harness.base_url + "/plans")
     await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
 
@@ -205,6 +208,7 @@ async def test_mermaid_error_stays_near_source_and_keeps_preview(screen_harness:
 async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_harness: _ScreenHarness) -> None:
     """CDNからMermaidを取得できない場合も図の位置へエラーを表示し、本文を保つ。"""
     harness = screen_harness
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await harness.page.route(_MERMAID_CDN_URL, lambda route: route.abort())
 
     await harness.page.goto(harness.base_url + "/plans")
@@ -223,6 +227,7 @@ async def test_mermaid_cdn_failure_stays_near_source_and_keeps_preview(screen_ha
 async def test_mermaid_cdn_without_response_ends_loading_with_error(screen_harness: _ScreenHarness) -> None:
     """CDNが応答を返さない場合も、上限を過ぎたら図の位置へエラーを表示し、プレビューの描画中を終える。"""
     harness = screen_harness
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     started = asyncio.Event()
     release = asyncio.Event()
     await harness.page.clock.install()
@@ -254,6 +259,7 @@ async def test_mermaid_cdn_without_response_ends_loading_with_error(screen_harne
 async def test_forwarded_prefix_uses_cdn_for_mermaid(screen_harness: _ScreenHarness) -> None:
     """ベースパス配下でもMermaidは同じCDNから読み込む。"""
     harness = screen_harness
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     route_pattern = harness.base_url + "/**"
 
     async def add_forwarded_prefix(route: playwright.async_api.Route) -> None:
