@@ -24,6 +24,7 @@ import psutil
 from agent_toolkit._common import (
     delegated_session,
     host_homes,
+    process_identity,
     session_launchers,
     session_parents,
     session_registry,
@@ -204,9 +205,9 @@ def _engine(process: psutil.Process) -> str | None:
 def host_process() -> HostProcess | None:
     """hookを起動した最も近いホスト祖先を返す。hook自身のPythonを記録しない。"""
     try:
-        for process in psutil.Process().parents():
+        for process in process_identity.parents(psutil.Process()):
             if (engine := _engine(process)) is not None:
-                return HostProcess(engine, session_registry.ProcessIdentity(process.pid, process.create_time()))
+                return HostProcess(engine, session_registry.ProcessIdentity.capture(process))
     except psutil.Error, OSError:
         pass
     return None
@@ -227,7 +228,7 @@ def host_processes() -> tuple[HostProcess, ...]:
             if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
                 continue
             if (engine := _engine(process)) is not None:
-                found.append(HostProcess(engine, session_registry.ProcessIdentity(process.pid, process.create_time())))
+                found.append(HostProcess(engine, session_registry.ProcessIdentity.capture(process)))
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         except psutil.AccessDenied:
@@ -235,7 +236,7 @@ def host_processes() -> tuple[HostProcess, ...]:
             with contextlib.suppress(psutil.Error):
                 name = process.name().lower().removesuffix(".exe")
                 if name in {"claude", "codex", "agy"}:
-                    found.append(HostProcess(name, session_registry.ProcessIdentity(process.pid, process.create_time())))
+                    found.append(HostProcess(name, session_registry.ProcessIdentity.capture(process)))
     return tuple(found)
 
 
@@ -259,7 +260,7 @@ def _identity(value: object) -> session_registry.ProcessIdentity | None:
         or not math.isfinite(started)
     ):
         return None
-    return session_registry.ProcessIdentity(pid, float(started))
+    return session_registry.ProcessIdentity(pid, float(started), value.get("start_id"))
 
 
 def _valid_activity_record(record: Mapping[str, Any], session_id: str) -> bool:

@@ -151,7 +151,7 @@ async def test_start_and_resume_record_owner_and_app_server_processes(
     monkeypatch.setattr(config_settings, "config_dir", lambda: tmp_path / "config")
     owner = session_registry.owner_process()
     assert owner is not None
-    expected = [{"pid": owner.pid, "create_time": owner.create_time}] * 2
+    expected = [owner.payload()] * 2
     record = session_registry.registry_directory() / "tier-thread.json"
     client = _ProcessTierClient(owner.pid)
     async with subject.AppServerManager({}, asyncio.Condition(), publish_registry=True) as manager:

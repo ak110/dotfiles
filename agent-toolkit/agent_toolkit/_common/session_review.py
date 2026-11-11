@@ -291,7 +291,13 @@ class BatchWriter:
     def attach(self, identity: session_registry.ProcessIdentity) -> None:
         """生存判定の一次情報を照会できるPID世代を保存する。"""
         with locked():
-            self._save({**self._active(), "processes": [{"pid": identity.pid, "create_time": identity.create_time}]})
+            self._save(
+                {
+                    **self._active(),
+                    "processes": [identity.payload(legacy=True)],
+                    "process_identities": [identity.payload()],
+                }
+            )
 
     def complete(self, *, report_synced: bool) -> dict[str, Any]:
         """分析と報告同期が揃った保存済み範囲だけを成功確定する。"""

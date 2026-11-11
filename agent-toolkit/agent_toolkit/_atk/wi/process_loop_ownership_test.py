@@ -88,10 +88,12 @@ def test_executor_keeps_ownership_before_session_id(tmp_path: pathlib.Path) -> N
     ownership.hold(first)
     record = json.loads(first.path.read_text(encoding="utf-8"))
     record["create_time"] = 0
+    record["start_id"] = "other-generation"
     first.path.write_text(json.dumps(record), encoding="utf-8")
     assert ownership.executor_running(first)
     assert ownership.try_acquire(first.repo_id, worktree=repository, mode="coordinator") is None
     record["executor_process"]["create_time"] = 0
+    record["executor_process"]["start_id"] = "other-generation"
     first.path.write_text(json.dumps(record), encoding="utf-8")
     recovered = ownership.try_acquire(first.repo_id, worktree=repository, mode="coordinator")
     assert recovered is not None and recovered.lane_session_id == first.lane_session_id
@@ -111,6 +113,7 @@ def test_live_descendant_blocks_takeover_after_parent_loss(tmp_path: pathlib.Pat
     )
     record = json.loads(first.path.read_text(encoding="utf-8"))
     record["create_time"] = 0
+    record["start_id"] = "other-generation"
     first.path.write_text(json.dumps(record), encoding="utf-8")
     assert ownership.try_acquire(first.repo_id, worktree=repository, mode="coordinator") is None
     session_registry.publish("writer", state=session_registry.PublicationState.RESULT_COMPLETED, launcher_session_id="root")
@@ -126,6 +129,7 @@ def test_dead_process_takeover(tmp_path: pathlib.Path) -> None:
     assert first is not None
     record = json.loads(first.path.read_text(encoding="utf-8"))
     record["create_time"] = 0
+    record["start_id"] = "other-generation"
     first.path.write_text(json.dumps(record), encoding="utf-8")
     replacement = ownership.try_acquire(first.repo_id, worktree=repo, mode="coordinator")
     assert replacement is not None and replacement.previous is not None

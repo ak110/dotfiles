@@ -125,7 +125,7 @@ def validate_ticket(value: object) -> Ticket:
     if (
         ticket.target_repo != request.target_repo
         or ticket.accepted_at != receipt["accepted_at"]
-        or ticket.owner.model_dump() != receipt["owner"]
+        or ticket.owner.model_dump() != session_registry.ProcessIdentity(**receipt["owner"]).payload(legacy=True)
     ):
         raise ValueError("受付票が保存済みの入力と所有移管記録に一致しない")
     return ticket
@@ -142,13 +142,28 @@ def _guard() -> filelock.FileLock:
 
 
 def _write(path: pathlib.Path, data: dict[str, Any]) -> None:
-    atomic_write(path, json.dumps(data, ensure_ascii=False, sort_keys=True) + "\n", fsync=True)
+    saved = dict(data)
+    # 旧版はowner/executorをProcessIdentity(**value)で読むため、追加情報を同じobjectへ入れない。
+    for name in ("owner", "executor"):
+        if isinstance(saved.get(name), dict):
+            identity = session_registry.ProcessIdentity(**saved[name])
+            saved[name] = identity.payload(legacy=True)
+            if identity.start_id is not None:
+                saved[f"{name}_identity"] = identity.payload()
+            else:
+                saved.pop(f"{name}_identity", None)
+    atomic_write(path, json.dumps(saved, ensure_ascii=False, sort_keys=True) + "\n", fsync=True)
 
 
 def _read(path: pathlib.Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"JSON objectが必要: {path}")
+    for name in ("owner", "executor"):
+        if isinstance(data.get(name), dict):
+            data[name] = session_registry.ProcessIdentity.from_payload(
+                data[name], stable=data.get(f"{name}_identity")
+            ).payload()
     return data
 
 
@@ -335,7 +350,7 @@ def show(identifier: str) -> dict[str, Any]:
             request_id=identifier,
             target_repo=receipt["request"]["target_repo"],
             accepted_at=receipt["accepted_at"],
-            owner=Owner.model_validate(receipt["owner"]),
+            owner=Owner.model_validate(session_registry.ProcessIdentity(**receipt["owner"]).payload(legacy=True)),
         ).model_dump()
         validate_ticket(ticket)
     bindings, reports = [], []
@@ -693,7 +708,7 @@ def _recover_runs(target: str, owner: session_registry.ProcessIdentity) -> None:
         if run.get("resume_requested"):
             continue
         if hashlib.sha256(run["target_repo"].encode()).hexdigest() != target or (
-            _identity_live(run.get("owner")) and run["owner"] != dataclasses.asdict(owner)
+            _identity_live(run.get("owner")) and not session_registry.ProcessIdentity(**run["owner"]).compatible_with(owner)
         ):
             continue
         if run["status"] in {"queued", "running", "waiting"}:

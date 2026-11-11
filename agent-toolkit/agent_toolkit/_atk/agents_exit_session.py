@@ -19,6 +19,7 @@ lazy import psutil
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import host_homes as _host_homes
+from agent_toolkit._common import process_identity
 
 _NO_VALUE = frozenset(
     {
@@ -100,6 +101,7 @@ class Target:
     executable: pathlib.Path
     device: int
     inode: int
+    start_id: str | None = None
 
 
 def is_interactive_codex(argv: list[str]) -> bool:
@@ -175,7 +177,9 @@ def _target(process: psutil.Process) -> Target | None:
             host = "claude"
         else:
             return None
-        return Target(process.pid, host, process.create_time(), executable, stat.st_dev, stat.st_ino)
+        return Target(
+            process.pid, host, process.create_time(), executable, stat.st_dev, stat.st_ino, process_identity.start_id(process)
+        )
     except OSError, psutil.Error:
         return None
 
@@ -183,7 +187,7 @@ def _target(process: psutil.Process) -> Target | None:
 def identify_current_host() -> Target | None:
     """現在プロセスの祖先から最初の対話ホストを一意に識別する。"""
     try:
-        ancestors = psutil.Process(os.getpid()).parents()
+        ancestors = process_identity.parents(psutil.Process(os.getpid()))
     except psutil.Error:
         return None
     for process in ancestors:
@@ -205,7 +209,7 @@ def _same_process(target: Target) -> bool:
         executable = pathlib.Path(process.exe()).resolve()
         stat = executable.stat()
         return (
-            process.create_time() == target.create_time
+            process_identity.matches(process, target.create_time, target.start_id)
             and executable == target.executable
             and stat.st_dev == target.device
             and stat.st_ino == target.inode

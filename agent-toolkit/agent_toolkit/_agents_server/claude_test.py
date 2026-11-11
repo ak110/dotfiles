@@ -74,8 +74,8 @@ async def test_claude_start_records_owner_and_cli_processes(
             record = session_registry.registry_directory() / f"{session.session_id}.json"
             processes = json.loads(record.read_text(encoding="utf-8"))["processes"]
         assert processes == [
-            {"pid": owner.pid, "create_time": owner.create_time},
-            {"pid": child.pid, "create_time": child.create_time},
+            owner.payload(),
+            child.payload(),
         ]
 
 

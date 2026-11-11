@@ -15,6 +15,7 @@ import pytest
 
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import codex_rpc
+from agent_toolkit._common import process_identity
 from agent_toolkit._testing import codex_app_server_support, late_descendant
 from agent_toolkit._testing.codex_backend_support import _fake_app_server_manager, _wait_terminal
 
@@ -108,7 +109,7 @@ async def test_stop_reclaims_late_descendant_with_short_lived_parent(
             spawner = psutil.Process(int((work / "spawner.pid").read_text(encoding="utf-8")))
             client_process = backend._clients[session_id].process
             assert client_process is not None
-            ancestors = spawner.parents()
+            ancestors = process_identity.parents(spawner)
             root_index = next(index for index, process in enumerate(ancestors) if process.pid == client_process.pid)
             pins = subject.process_tree.ProcessIdentityPins()
             request.addfinalizer(pins.close)

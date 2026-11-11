@@ -13,7 +13,7 @@ from pathlib import Path
 
 import psutil
 
-from agent_toolkit._common import file_lock, state_paths
+from agent_toolkit._common import file_lock, process_identity, state_paths
 
 SHARED_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root-shared"
 _process_snapshot: contextvars.ContextVar[dict[str, dict[int, psutil.Process]] | None] = contextvars.ContextVar(
@@ -58,7 +58,9 @@ def usage_basis_is_current(basis: dict[str, typing.Any]) -> bool:
             if path.parent != _directory() or basis["record_signature"] != _metadata_signature(path):
                 return False
         process = psutil.Process(basis["pid"])
-        return process.create_time() == basis["created_at"] and process.status() not in (
+        return process_identity.matches(
+            process, basis["created_at"], basis.get("start_id"), conservative=True
+        ) and process.status() not in (
             psutil.STATUS_ZOMBIE,
             psutil.STATUS_DEAD,
         )
@@ -73,6 +75,7 @@ def _record_process_use(process: psutil.Process, reason: str, *, record: Path | 
         {
             "pid": process.pid,
             "created_at": created_at,
+            "start_id": process_identity.start_id(process),
             "leases": _metadata_signature(_directory()),
             "record": str(record) if record is not None else None,
             "record_signature": _metadata_signature(record) if record is not None else None,
@@ -124,7 +127,12 @@ def register_plugin_root_use(area: Path) -> None:
     """呼出元のPIDと作成時刻を記録する。呼出元は領域のロックを保持する。"""
     try:
         process = psutil.Process()
-        record = {"pid": process.pid, "created_at": process.create_time(), "path": str(area)}
+        record = {
+            "pid": process.pid,
+            "created_at": process.create_time(),
+            "start_id": process_identity.start_id(process),
+            "path": str(area),
+        }
     except psutil.Error as error:
         raise OSError(f"配布物を使うプロセスのidentityを取得できない: {error}") from error
     destination = _directory() / f"{_key(area)}-{process.pid}.json"
@@ -147,9 +155,13 @@ def _record_is_live(record: typing.Any) -> bool:
     try:
         snapshot = _process_snapshot.get()
         process = None if snapshot is None else _observed_processes().get(record["pid"])
-        if process is None or process.create_time() != record["created_at"]:
+        if process is None or not process_identity.matches(
+            process, record["created_at"], record.get("start_id"), conservative=True
+        ):
             process = psutil.Process(record["pid"])
-        return process.create_time() == record["created_at"] and process.status() not in (
+        return process_identity.matches(
+            process, record["created_at"], record.get("start_id"), conservative=True
+        ) and process.status() not in (
             psutil.STATUS_ZOMBIE,
             psutil.STATUS_DEAD,
         )
@@ -234,7 +246,9 @@ def plugin_root_in_use(area: Path) -> bool:
                 return True
             try:
                 process = psutil.Process(record["pid"])
-                if process.create_time() == record["created_at"] and process.status() not in (
+                if process_identity.matches(
+                    process, record["created_at"], record.get("start_id"), conservative=True
+                ) and process.status() not in (
                     psutil.STATUS_ZOMBIE,
                     psutil.STATUS_DEAD,
                 ):

@@ -34,7 +34,8 @@ def _record(session_id: str, state_root: pathlib.Path | None) -> tuple[str, tupl
     if not isinstance(payload, dict):
         raise ValueError(f"session登録簿の形式を確認できない: {session_id}")
     processes = tuple(
-        session_registry.ProcessIdentity(entry["pid"], entry["create_time"]) for entry in payload.get("processes", [])
+        session_registry.ProcessIdentity(entry["pid"], entry["create_time"], entry.get("start_id"))
+        for entry in payload.get("processes", [])
     )
     return hashlib.sha256(raw).hexdigest(), processes
 
@@ -73,7 +74,8 @@ def request_release(
                 "worktree": str(worktree),
                 "record_digest": digest,
                 "deadline": deadline,
-                "owner": {"pid": processes[0].pid, "create_time": processes[0].create_time},
+                "owner": processes[0].payload(legacy=True),
+                "owner_identity": processes[0].payload(),
                 **({"worktree_paths": [str(path) for path in worktree_paths]} if worktree_paths is not None else {}),
             },
         )
@@ -120,11 +122,10 @@ async def process_requests(
             if (
                 not isinstance(payload, dict)
                 or payload.get("version") != 1
-                or payload.get("owner")
-                != {
-                    "pid": owner.pid,
-                    "create_time": owner.create_time,
-                }
+                or not isinstance(payload.get("owner"), dict)
+                or not session_registry.ProcessIdentity.from_payload(
+                    payload["owner"], stable=payload.get("owner_identity")
+                ).compatible_with(owner)
             ):
                 continue
             session_id = payload["session_id"]

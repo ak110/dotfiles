@@ -132,7 +132,7 @@ def test_living_roots_require_valid_process_evidence(tmp_path: pathlib.Path, inv
     elif invalid == "missing-process":
         record.pop("process")
     elif invalid == "reused":
-        record["process"]["create_time"] -= 1
+        record["process"]["start_id"] = "other-generation"
     elif invalid == "dead":
         record["process"] = {"pid": 2147483647, "create_time": 1}
     path.write_text("{" if invalid == "broken" else json.dumps(record), encoding="utf-8")
@@ -144,7 +144,7 @@ def test_living_roots_require_valid_process_evidence(tmp_path: pathlib.Path, inv
 def test_dead_and_reused_pid_records_expire(tmp_path: pathlib.Path) -> None:
     """保存記録のactiveだけでは活動とせず、PID再利用と実プロセスの終了を除く。"""
     host = _host("codex")
-    reused = dataclasses.replace(host.identity, create_time=host.identity.create_time - 1)
+    reused = dataclasses.replace(host.identity, create_time=host.identity.create_time - 1, start_id="other-generation")
     dead = session_registry.ProcessIdentity(2147483647, 1)
     for session_id, identity in (("reused", reused), ("dead", dead)):
         session_activity.record_activity(

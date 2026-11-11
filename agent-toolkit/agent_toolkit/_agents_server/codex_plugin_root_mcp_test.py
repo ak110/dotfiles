@@ -18,7 +18,7 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._common import plugin_environment, process_identity
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.codex_plugin_support import (
     _REAL_MCP_PREPARE_TIMEOUT,
@@ -134,8 +134,8 @@ async def test_stable_plugin_root_shared_across_processes(
                     assert (held / version_file).read_bytes() == original
                     for record in leases:
                         process = psutil.Process(record["pid"])
-                        assert process.create_time() == record["created_at"]
-                        ancestors = process.parents()
+                        assert process_identity.matches(process, record["created_at"], record.get("start_id"))
+                        ancestors = process_identity.parents(process)
                         parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
                         for member in (process, *ancestors[:parent_index]):
                             owned[member.pid] = member

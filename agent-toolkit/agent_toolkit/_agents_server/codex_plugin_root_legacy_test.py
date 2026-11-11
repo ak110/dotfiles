@@ -20,7 +20,7 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from agent_toolkit._agents_server import plugin_root as plugin_roots
-from agent_toolkit._common import plugin_environment, state_paths
+from agent_toolkit._common import plugin_environment, process_identity, state_paths
 from agent_toolkit._testing.codex_plugin_support import (
     _LEGACY_PLUGIN_ROOT_SOURCE,
     _REAL_MCP_PREPARE_TIMEOUT,
@@ -75,13 +75,16 @@ import runpy
 import sys
 import psutil
 
+from agent_toolkit._common import process_identity
+
 identities = json.loads(sys.argv[1])
 
 def fixture_processes(*_args, **_kwargs):
-    for pid, created_at in identities:
+    for entry in identities:
+        identity = process_identity.ProcessIdentity(**entry)
         try:
-            process = psutil.Process(pid)
-            if process.create_time() == created_at:
+            process = psutil.Process(identity.pid)
+            if identity.matches(process):
                 yield process
         except psutil.NoSuchProcess:
             continue
@@ -95,7 +98,10 @@ runpy.run_path(sys.argv[0], run_name="__main__")
 
     def cleanup(target: pathlib.Path, processes: dict[int, psutil.Process] | None = None) -> subprocess.CompletedProcess[str]:
         # 列挙集合だけをfixtureのidentityへ限定する。argv・実行中のOSアカウント・open_filesと公開cleanupは実物を使う。
-        identities = [(process.pid, process.create_time()) for process in (owned if processes is None else processes).values()]
+        identities = [
+            process_identity.ProcessIdentity.capture(process).payload()
+            for process in (owned if processes is None else processes).values()
+        ]
         return subprocess.run(
             [
                 sys.executable,
@@ -144,7 +150,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                             continue
                         if len(arguments) > 1 and pathlib.Path(arguments[1]) == entrypoint:
                             servers.append(process)
-                            ancestors = process.parents()
+                            ancestors = process_identity.parents(process)
                             ancestor_pids.update(parent.pid for parent in ancestors)
                             parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
                             for member in (process, *ancestors[:parent_index]):

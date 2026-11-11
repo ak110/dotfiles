@@ -16,7 +16,7 @@ import pathlib
 
 import psutil
 
-from agent_toolkit._common import state_paths
+from agent_toolkit._common import process_identity, state_paths
 from agent_toolkit._common.atomic_file import atomic_write
 
 _DIRECTORY = "recorded-process-reclaim"
@@ -31,27 +31,30 @@ class ReclaimRecord:
     終了済みと扱わず、同じPID世代が残る間は回収待ちとする。
     """
 
-    targets: tuple[tuple[int, float], ...]
+    targets: tuple[process_identity.ProcessIdentity, ...]
     unresolved: tuple[str, ...]
-    unreaped: tuple[tuple[int, float], ...]
+    unreaped: tuple[process_identity.ProcessIdentity, ...]
 
-    def live_targets(self) -> list[psutil.Process]:
+    def live_targets(self, *, conservative: bool = False) -> list[psutil.Process]:
         """記録した起動時刻と一致し、資源を保持するプロセスを返す。PIDの再利用先は含めない。"""
         processes: list[psutil.Process] = []
-        for pid, created in self.targets:
+        for identity in self.targets:
             with contextlib.suppress(psutil.NoSuchProcess, psutil.ZombieProcess):
-                process = psutil.Process(pid)
-                if process.create_time() == created and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                process = psutil.Process(identity.pid)
+                if identity.matches(process, conservative=conservative) and process.status() not in (
+                    psutil.STATUS_ZOMBIE,
+                    psutil.STATUS_DEAD,
+                ):
                     processes.append(process)
         return processes
 
-    def held_unreaped(self) -> list[psutil.Process]:
+    def held_unreaped(self, *, conservative: bool = False) -> list[psutil.Process]:
         """記録した起動時刻と一致する直接の子を、zombie表示でも返す。PIDの再利用先は含めない。"""
         processes: list[psutil.Process] = []
-        for pid, created in self.unreaped:
+        for identity in self.unreaped:
             with contextlib.suppress(psutil.NoSuchProcess):
-                process = psutil.Process(pid)
-                if process.create_time() == created:
+                process = psutil.Process(identity.pid)
+                if identity.matches(process, conservative=conservative):
                     processes.append(process)
         return processes
 
@@ -67,9 +70,9 @@ def load(pid: int, create_time: float) -> ReclaimRecord | None:
     try:
         raw = json.loads(target.read_text(encoding="utf-8"))
         return ReclaimRecord(
-            tuple((int(item["pid"]), float(item["create_time"])) for item in raw["targets"]),
+            tuple(process_identity.ProcessIdentity(**item) for item in raw["targets"]),
             tuple(str(reason) for reason in raw["unresolved"]),
-            tuple((int(item["pid"]), float(item["create_time"])) for item in raw["unreaped"]),
+            tuple(process_identity.ProcessIdentity(**item) for item in raw["unreaped"]),
         )
     except FileNotFoundError:
         return None
@@ -96,11 +99,11 @@ def save(
     )
 
 
-def _identities(processes: list[psutil.Process]) -> list[dict[str, float]]:
+def _identities(processes: list[psutil.Process]) -> list[dict[str, object]]:
     identities = []
     for process in processes:
         with contextlib.suppress(psutil.Error):
-            identities.append({"pid": process.pid, "create_time": process.create_time()})
+            identities.append(process_identity.ProcessIdentity.capture(process).payload())
     return identities
 
 
@@ -119,4 +122,6 @@ def pending(pid: int, create_time: float) -> bool:
         record = load(pid, create_time)
     except ValueError:
         return True
-    return record is not None and (bool(record.unresolved) or bool(record.live_targets()) or bool(record.held_unreaped()))
+    return record is not None and (
+        bool(record.unresolved) or bool(record.live_targets(conservative=True)) or bool(record.held_unreaped(conservative=True))
+    )

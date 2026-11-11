@@ -15,7 +15,7 @@ from collections.abc import Sequence
 lazy import asyncio
 
 lazy import psutil
-lazy from agent_toolkit._common import process_tree
+lazy from agent_toolkit._common import process_identity, process_tree
 
 from pytools._internal import codex_runtime
 lazy from pytools._internal import common
@@ -166,7 +166,7 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
             try:
                 with contextlib.suppress(psutil.NoSuchProcess):
                     identity = psutil.Process(process.pid)
-                    identity.create_time()
+                    process_identity.start_id(identity)
                 waited = asyncio.create_task(process.wait())
                 try:
                     assert bridge.failure is not None

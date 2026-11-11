@@ -35,6 +35,7 @@ def test_plugin_root_in_use_distinguishes_live_stale_and_unknown(
     elif observation == "pid-reused":
         record = json.loads(records[0].read_text(encoding="utf-8"))
         record["created_at"] = 0
+        record["start_id"] = "other-generation"
         records[0].write_text(json.dumps(record), encoding="utf-8")
     elif observation == "access-denied":
 
@@ -84,6 +85,7 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(tmp_path, monk
             return ["python", target]
 
     consumer = Consumer()
+    monkeypatch.setattr(subject.process_identity, "start_id", lambda process, **kwargs: f"test:{process.create_time()}")
     monkeypatch.setattr(subject.psutil, "process_iter", lambda: [consumer])
     monkeypatch.setattr(subject.psutil, "Process", lambda pid=None: consumer if pid == consumer.pid else own)
     assert subject.plugin_root_in_use(area) is (observation in {"direct", "denied"})
@@ -184,7 +186,7 @@ def test_sweep_removes_records_of_exited_processes_only(tmp_path, monkeypatch, k
     for index, state in enumerate(["live", "exited", "reused", "denied", "broken"], 1):
         key = hashlib.sha256(state.encode()).hexdigest()
         name = f"capability-{index}.json" if kind == "capability" else f"{key}-{index}.json"
-        record: dict[str, object] = {"pid": index, "created_at": 42.0}
+        record: dict[str, object] = {"pid": index, "created_at": 42.0, "start_id": "test:42.0"}
         record.update({"lease_capable": True} if kind == "capability" else {"path": str(tmp_path / state)})
         path = directory / name
         path.write_text("{" if state == "broken" else json.dumps(record), encoding="utf-8")
@@ -208,6 +210,7 @@ def test_sweep_removes_records_of_exited_processes_only(tmp_path, monkeypatch, k
 
     monkeypatch.setattr(subject.psutil, "process_iter", lambda: [Process(i) for i in range(1, 5)])
     monkeypatch.setattr(subject.psutil, "Process", lambda pid=None: own if pid is None else Process(pid))
+    monkeypatch.setattr(subject.process_identity, "start_id", lambda process, **kwargs: f"test:{process.create_time()}")
     busy = tmp_path / "busy"
     with subject.plugin_root_lock(busy):
         with subject.reuse_process_observation():

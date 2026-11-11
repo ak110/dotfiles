@@ -128,7 +128,7 @@ def test_agents_list_shows_living_childless_roots(
     assert commands.dispatch(args, environment={}) == 0
     assert "root root-alone" in capsys.readouterr().out
     for process in (
-        session_registry.ProcessIdentity(identity.pid, identity.create_time - 1),
+        session_registry.ProcessIdentity(identity.pid, identity.create_time - 1, "other-generation"),
         session_registry.ProcessIdentity(2147483647, 1),
     ):
         session_activity.record_activity(

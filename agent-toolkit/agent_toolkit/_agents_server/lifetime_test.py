@@ -21,7 +21,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import lifetime
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_identity, process_tree
 from agent_toolkit._testing import late_descendant
 
 
@@ -43,6 +43,7 @@ def test_collected_windows_parent_is_pinned_before_it_exits(monkeypatch):
     monkeypatch.setattr(psutil, "pids", lambda: [child.pid])
     monkeypatch.setattr(process_tree, "sys", types.SimpleNamespace(platform="win32"))
     monkeypatch.setattr(lifetime, "sys", types.SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(process_identity, "sys", types.SimpleNamespace(platform="win32"))
     kernel = mock.Mock()
     kernel.OpenProcess.side_effect = lambda _access, _inherit, pid: 0 if pid == parent.pid and not parent.is_running() else pid
 

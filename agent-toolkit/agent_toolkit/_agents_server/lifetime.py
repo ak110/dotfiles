@@ -17,7 +17,7 @@ from typing import Any
 
 import psutil
 
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_identity, process_tree
 
 SHUTDOWN_TIMEOUT = 15.0
 POLL_INTERVAL = 0.1
@@ -62,12 +62,12 @@ class ServerLifetime:
 
     def __init__(self, *, timeout: float | None = None) -> None:
         self._process = psutil.Process()
-        self._parent = self._process.parent()
+        self._parent = process_identity.parent(self._process)
         self._timeout = SHUTDOWN_TIMEOUT if timeout is None else timeout
         self._deadline: float | None = None
         self._exitcode = 0
         self._finished = threading.Event()
-        self._targets: dict[tuple[int, float], psutil.Process] = {}
+        self._targets: dict[tuple[int, str | float], psutil.Process] = {}
         self._process_pins = process_tree.ProcessIdentityPins()
         # 正常終了と期限監視が競合しても、回収中の親handleを閉じない。
         self._process_lock = threading.RLock()
@@ -181,7 +181,7 @@ class ServerLifetime:
         for process in process_tree.collect_descendants(self._process.pid, pins=self._process_pins):
             with contextlib.suppress(psutil.Error, OSError):
                 if process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                    self._targets[(process.pid, process.create_time())] = process
+                    self._targets[process_identity.key(process)] = process
 
     def _parent_gone(self) -> bool:
         if self._parent is None:

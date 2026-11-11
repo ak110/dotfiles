@@ -300,7 +300,7 @@ def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(
     """
     owner = subject.owner_process()
     assert owner is not None
-    reused_pid = subject.ProcessIdentity(owner.pid, owner.create_time - 1.0)
+    reused_pid = subject.ProcessIdentity(owner.pid, owner.create_time - 1.0, "other-generation")
     subject.publish(
         "orphaned",
         state=subject.PublicationState.PENDING_RUNNING,
@@ -348,13 +348,13 @@ def test_session_publishes_owner_and_executor_processes(tmp_path: pathlib.Path, 
     session.touch()
     path = subject.registry_directory(tmp_path) / "published.json"
     recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
-    assert recorded == [{"pid": owner.pid, "create_time": owner.create_time}] * 2
+    assert recorded == [owner.payload()] * 2
 
     restarted = exited_process_identity()
     session.executor_process = restarted
     session.touch()
     recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
-    assert recorded[1] == {"pid": restarted.pid, "create_time": restarted.create_time}
+    assert recorded[1] == restarted.payload()
 
 
 @pytest.mark.parametrize("record_kind", ["completed", "released", "owner-gone"])

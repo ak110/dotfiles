@@ -11,7 +11,7 @@ from collections.abc import AsyncGenerator, Mapping
 from typing import Any
 
 import psutil
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_identity, process_tree
 from pydantic import BaseModel, ConfigDict
 from wsproto import ConnectionType, WSConnection
 from wsproto.events import AcceptConnection, CloseConnection, Ping, RejectConnection, Request, TextMessage
@@ -128,7 +128,7 @@ async def native_proxy(binary: str, environment: Mapping[str, str], *, timeout: 
     try:
         try:
             identity = psutil.Process(process.pid)
-            identity.create_time()
+            process_identity.start_id(identity)
         except psutil.NoSuchProcess:
             pass
         assert process.stdin is not None and process.stdout is not None and process.stderr is not None

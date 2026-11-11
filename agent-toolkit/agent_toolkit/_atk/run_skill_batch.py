@@ -101,7 +101,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
                 "event": event,
                 "status": "starting",
                 "log_path": str(log_path),
-                "owner": {"pid": owner.pid, "create_time": owner.create_time} if owner else None,
+                "owner": owner.payload() if owner else None,
             }
         )
         value.save(launch_path)
@@ -327,8 +327,9 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
 
 
 def _live(manifest: dict[str, Any]) -> bool:
-    for raw in manifest.get("processes", []):
-        if session_registry.ProcessIdentity(**raw).exists():
+    stable = manifest.get("process_identities", [])
+    for index, raw in enumerate(manifest.get("processes", [])):
+        if session_registry.ProcessIdentity.from_payload(raw, stable=stable[index] if index < len(stable) else None).exists():
             return True
     # 別会話の環境読取権限には依存せず、起動argvの固有manifestパスで対象の子を特定する。
     marker = f"batch manifest: {manifest['manifest_path']}"

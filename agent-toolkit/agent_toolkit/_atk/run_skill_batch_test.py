@@ -230,7 +230,7 @@ def test_hook_launch_normal_outcomes_do_not_report_failure(tmp_path, monkeypatch
         identity = run_skill_batch.session_registry.ProcessIdentity.of(os.getpid())
         assert identity is not None
         value = session_review.read(path)
-        value["process"] = {"pid": identity.pid, "create_time": identity.create_time}
+        value["process"] = identity.payload()
         session_review.write(path, value)
     elif condition == "locked":
         with filelock.FileLock(str(session_review.directory() / "batch.lock")):
