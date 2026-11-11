@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 import filelock
+import psutil
 import pytest
 
 from agent_toolkit import atk
@@ -20,6 +21,7 @@ from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths
+from agent_toolkit._common import process_tree
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
@@ -122,6 +124,7 @@ def test_lock_timeout_records_wait_to_observer(tmp_path: pathlib.Path) -> None:
 
 
 _LOCK_HOLDER_SCRIPT = """
+import os
 import pathlib
 import sys
 import time
@@ -129,9 +132,18 @@ import time
 from agent_toolkit._atk import git_sync
 
 with git_sync.repo_lock(pathlib.Path(sys.argv[1])):
-    pathlib.Path(sys.argv[2]).write_text("held", encoding="utf-8")
+    ready = pathlib.Path(sys.argv[2])
+    # 読む側が書きかけの値を読まないよう、別名で書いてから置き換える。
+    partial = ready.with_name(ready.name + ".partial")
+    partial.write_text(str(os.getpid()), encoding="utf-8")
+    os.replace(partial, ready)
     time.sleep(60)
 """
+
+# Windowsの仮想環境の`python.exe`と同じく、起動したプロセスとロックを取得するプロセスを別のPIDにする中継役。
+_LOCK_HOLDER_LAUNCHER = (
+    "import subprocess, sys; sys.exit(subprocess.run([sys.executable, *sys.argv[1:]], check=False).returncode)"
+)
 
 
 def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
@@ -140,6 +152,8 @@ def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
     """別プロセスがロックを保持し続けると、`atk wi add`は待機上限で失敗し、保持者のPIDとコマンドラインを示す。
 
     待機上限の省略時の値が無期限の場合、保持者が終わる60秒後まで戻らず、失敗もしない。
+    保持者は中継役を経由して起動する。起動したプロセスのPIDとロックを取得したプロセスのPIDが異なる構成でも、
+    失敗行が後者を示すことと、起動したツリーが残らないことを確かめる。
     """
     notes = tmp_path / "private-notes"
     git_repository.init_repository(notes, initial_branch="main", files={"README.md": "notes\n"}, commit_message="base")
@@ -153,13 +167,15 @@ def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
     environ = os.environ.copy()
     package_root = pathlib.Path(_atk_git_sync.__file__).resolve().parents[2]
     environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(package_root), environ.get("PYTHONPATH")]))
-    with subprocess.Popen([sys.executable, str(script), str(notes), str(ready)], env=environ) as holder:
+    command = [sys.executable, "-c", _LOCK_HOLDER_LAUNCHER, str(script), str(notes), str(ready)]
+    with subprocess.Popen(command, env=environ) as holder:
         try:
             deadline = time.monotonic() + 30
             while not ready.exists():
                 assert holder.poll() is None, "保持者がロックの取得前に終了した"
                 assert time.monotonic() < deadline, "保持者のロック取得を観測できない"
                 time.sleep(0.05)
+            holder_pid = int(ready.read_text(encoding="utf-8"))
 
             started = time.monotonic()
             with pytest.raises(SystemExit) as exc_info:
@@ -178,13 +194,16 @@ def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
                 )
             elapsed = time.monotonic() - started
         finally:
-            holder.kill()
+            residual = process_tree.stop_process_tree(holder)
 
+    assert not residual
+    assert holder_pid != holder.pid
+    assert not psutil.pid_exists(holder_pid)
     assert exc_info.value.code == 1
     assert elapsed < 30
     error = capsys.readouterr().err
     failure = next(line for line in error.splitlines() if line.startswith("失敗: "))
-    assert f"PID {holder.pid}" in failure
+    assert f"PID {holder_pid}、" in failure
     assert "hold_lock.py" in failure
     assert str(_atk_git_sync.repo_lock_path(notes)) in failure
     assert any(line.startswith("次の操作: ") for line in error.splitlines())
