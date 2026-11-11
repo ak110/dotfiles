@@ -1768,7 +1768,8 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         metavar="OID",
         help=(
             "rebase --continueの後にまず指定なしで再開し、history-compareが変更内容の不一致を示した旧commitだけを指定する。"
-            "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。複数指定可能。"
+            "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。"
+            "統合先で書き換えられた同一変更として省略を示された旧commitも、成立を確かめた場合だけ指定する。複数指定可能。"
         ),
     )
     integrate_parser.add_argument(

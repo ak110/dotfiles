@@ -506,7 +506,8 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=None,
         metavar="OID",
-        help="rebaseの競合解消で内容が変わった旧commit。件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことを検収する。反復指定",
+        help="rebaseの競合解消で内容が変わった旧commit。件名・相対順と、旧commitの変更パスのうち統合先に残るものを含むことを検収する。"
+        "統合先の同一変更が後続commitで書き換えられ省略された旧commitは、書換え後の成立を確かめた場合だけ指定して対応付ける。反復指定",
     )
     parser.add_argument(
         "--exclude-path",

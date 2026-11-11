@@ -474,6 +474,8 @@ HELP["atk lane integrate"]["description"] += (
     "\n競合の解消: rebaseが競合で止まったら競合を解消してrebase --continueで完了し、まず同じ入力を指定なしで再実行する。"
     "history-compareが変更内容の不一致を示した旧commitだけを--resolved-conflictへ反復指定する。"
     "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。"
+    "rebaseで省略された旧commitの統合先の同一変更が後続commitで書き換えられたとhistory-compareが示した場合も、"
+    "書換え後の統合先でレーンの変更が成立することを確かめた旧commitだけを同じ指定で明示する。"
     "history-compareに通った指定だけを所有登録へ保存し、拒否された指定は保存しない。"
     "指定を省いた後続の再開（--accept-rebased-headなど）は最後に成功した保存値を使う。"
     "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
