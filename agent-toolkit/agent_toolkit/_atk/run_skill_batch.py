@@ -108,6 +108,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         with log_path.open("ab") as log:
             # hook終了後も生存確認できるようPIDを保存し、親が存続する間はスレッドで回収する。
             try:
+                # 時間上限なし: 長時間の子セッションの実行そのものであり、終了は監督の仕組みが扱う。
                 process = subprocess.Popen(  # pylint: disable=consider-using-with
                     [
                         sys.executable,

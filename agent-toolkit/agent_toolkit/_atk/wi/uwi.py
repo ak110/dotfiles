@@ -368,6 +368,7 @@ def cmd_answer(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             print(path.read_text(encoding="utf-8"))
             snapshot = path.read_bytes()
         tmp_path = _wi_cli_input.copy_to_tempfile(snapshot)
+        # 時間上限なし: 対話型のエディターであり、ユーザーが終了させる。共有ロックは解放済みである。
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
             _outcome.report_failure(

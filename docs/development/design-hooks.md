@@ -172,7 +172,7 @@ hookによるチェックを置くかは、QCDでhookの費用と防ぐ手戻り
 | `pretooluse/task_document_launch.py` | 入力契約の保護と起動支援 | 定型起動の必須入力の欠落はblock。自由本文の起動形式と宣言外の説明はwarn。コンテキストへの取込みだけを実害としない |
 | `pretooluse/content_checks.py` | 回復可能な支援、warn | 文字化け、ツール境界タグ、PowerShellの改行、lockfile・manifestを対象とし、再編集・再生成を案内する |
 | `pretooluse/large_reads.py` | 回復可能な支援、warn | 原記録参照の専用照会と大量読取の予算確認を案内する。予算内の標準読取を通し、超過・省略時は分割取得へ接続する |
-| `pretooluse/dispatch.py` 背景出力・帰属行 | 関連操作の支援・配送 | 途中出力の取扱いと、資料読取時点に観測した帰属行を共通noticeで通知する |
+| `pretooluse/dispatch.py` 背景出力・帰属行 | 関連操作の支援・配送 | 途中出力の取扱いと、資料読取時点（Claude Codeではcommitスキルの起動完了時点にPostToolUseから）に観測した帰属行を共通noticeで通知する |
 | `pretooluse/read_delivery.py` | 関連操作に必要な資料の初回warn | 通常読取・診断・結果回収・質問・既存復旧を保つ。現在の資料を案内し、取得証拠と案内の実配送を分ける。未取得を理由に再書込を遮断しない |
 | `posttooluse.py` | 観測・配送・出力の変換 | 所有・取得証拠を記録し、計画構造、回答UWI、完了処理の関連案内を共通noticeへ集約する。退避出力の置換は結果取得先を保つ |
 | `user_prompt_submit.py` | 状態観測・関連規範の配送 | 実ユーザー入力と機械生成を区別する。意味の判定は受領側が文書に従って行う |
@@ -763,8 +763,14 @@ hookが両ホストの委譲先でも発火するため、委譲基盤に別の�
 identityの不在と帰属設定の無効化は書式チェックを免除しない。
 reuse・reedit・amendのno-edit・fixup・squashと、ファイルや実行位置から本文を確定できない入力は既存の対象外条件を保つ。
 `dispatch.py`は通常commitの対象と本文を先に確定し、その本文を1回取得して書式チェックと帰属チェックへ渡す。
-非commit、対象外、本文不明と書式違反の場合は帰属用identity・transcript・設定を取得しない。
+非commit、対象外、本文不明の場合は帰属用identity・transcript・設定を取得しない。
 必要な通常commitだけで帰属設定と観測identityを使う。
+書式の違反と帰属行の違反は集めて1回の遮断へ並べ、通知はBashのコマンド全体（連結した`git add`などを含む）が未実行であることを示す。
+最初の違反だけを返すと残りの違反で再び遮断され、commitだけを直した再実行は前段の欠落で失敗するためである（2026年11月9日に2セッションで観測した）。
+`-C`・`--git-dir`・`--work-tree`の値は対象リポジトリと実行位置だけを変えるため、展開を含んでもcommitを検査し、実行位置を不明として相対パスの本文だけを読まない。
+`-c`など、メッセージに作用しうる大域オプションの値の未知語では従来どおり検査しない。
+値を取る大域オプションの分類はテストが全要素について強制する。
+以前は`commit`より前の語の未知語で一律に検査を外し、`git -C $R commit`の帰属行の欠落と作業項目のファイル名を遮断できなかった。
 通常のBash呼び出しごとにcommit用の記録を走査する案は、対象外の入力にも同じ取得費用を課すため採らない。
 
 Codexでは`commit/references/message.md`を実際にシェルで読む操作へ、既存の観測identityと`co_author_trailer`で求めた帰属行を先に届ける。
@@ -773,6 +779,10 @@ Codexでは`commit/references/message.md`を実際にシェルで読む操作へ
 先行配送は読取時点の観測であり、通常commit直前の帰属確認はそのturnの現在値を使う。
 turn変化、不正と重複を現在の行で回復させ、明示指定・無効化・Claude Codeと対象外入力の取得順を保つ。
 最初のcommitを拒否して行を教える案は、同turnの既知の情報を読取時に渡せるのに手戻りを残すため採らない。
+Claude Codeでは`agent-toolkit:commit`の`Skill`の起動が完了した時点に、PostToolUseが同じ生成元の帰属行を追加コンテキストで示す。
+スキルを起動して`message.md`を読まずにcommitする場合にも届く時点である。
+観測できない場合と帰属行を無効にした設定では示さない。
+常時読み込む規範へ要件を置く案は全セッションの読込量を増やし、`updatedInput`で行を加える案は`-F`やheredocの本文を書き換える範囲が広いため採らない。
 
 通常の`git commit`では、実行位置、最終メッセージ、実行turnの観測identityを確定できる場合だけ帰属trailerを確認する。
 Claude Codeは`attribution.commit`の`{model}`と`{effort}`を置き換えないため、確認しないと誤った帰属行がpushまで残る（2026年10月6日に4件のcommitで推論量の欠落と誤りを観測した）。

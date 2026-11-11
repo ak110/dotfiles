@@ -222,6 +222,7 @@ def _launch_worker(target: str) -> subprocess.Popen[bytes]:
     if sys.platform == "win32":
         creationflags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS
     with (cwd / "supervisor.stdout.log").open("ab") as stdout, (cwd / "supervisor.stderr.log").open("ab") as stderr:
+        # 時間上限なし: 投入作業を監督する常駐の起動であり、作業の上限は監督自身が持つ。
         return subprocess.Popen(  # noqa: SIM115 -- 所有権は永続受付と独立監督へ移す
             [str(executable), "-m", "agent_toolkit._agents_server.plugin_root", "--wi-submit-worker", target],
             cwd=cwd,

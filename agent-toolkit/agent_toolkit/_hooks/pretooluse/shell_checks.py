@@ -44,6 +44,21 @@ _GLOBAL_OPTIONS_WITH_VALUE: frozenset[str] = frozenset(
     }
 )
 
+_GLOBAL_OPTIONS_LOCATING_REPOSITORY: frozenset[str] = frozenset({"-C", "--git-dir", "--work-tree"})
+"""値が対象リポジトリと実行位置だけを変え、commitメッセージの本文に作用しない大域オプション。
+
+値に展開や置換を含んでもcommitの書式検査を行い、実行位置を不明として扱う。
+"""
+
+_GLOBAL_OPTIONS_POSSIBLY_AFFECTING_MESSAGE: frozenset[str] = frozenset(
+    {"-c", "--namespace", "--super-prefix", "--config-env", "--list-cmds"}
+)
+"""値がcommitメッセージやその入力に作用しうるか、作用しないと確かめていない大域オプション。
+
+値に展開や置換を含むcommitは、検証済みと推定せず書式検査の対象から外す。
+`_GLOBAL_OPTIONS_WITH_VALUE`へ加えるオプションは、どちらかへ必ず分類する（テストが強制する）。
+"""
+
 
 def _warn_container_root_bind_mount(command: str) -> str | None:
     """root所有の生成物をホストへ残し得る起動を警告し、正当なroot実行は継続する。
@@ -680,8 +695,9 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
         # `--`より後ろはpathspecであり、未知でもメッセージの指定に作用しない。それより前の未知の語は
         # メッセージやその入力ファイルを変える可能性があるため、検証済みと推定しない。
         options = list(git_commit_options(arguments))
-        if any(is_unknown_word(option) or value is not None and is_unknown_word(value) for option, value in options) or any(
-            is_unknown_word(token) for token in invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)]
+        location_unknown = _unknown_global_words(invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)])
+        if location_unknown is None or any(
+            is_unknown_word(option) or value is not None and is_unknown_word(value) for option, value in options
         ):
             continue
         names = {option for option, _value in options}
@@ -711,7 +727,7 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
                     message_file,
                     # 専用起動にGitのglobal optionはなく、現在のcwdからcommitする。
                     ("git", "commit") if is_atk_command(invocation.segment.tokens) else invocation.segment.tokens,
-                    cwd=current.path if current.resolved else "",
+                    cwd=current.path if current.resolved and not location_unknown else "",
                 )
             if body is None:
                 unknown = True
@@ -722,48 +738,96 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
         yield "\n\n".join(messages)
 
 
+def _unknown_global_words(prefix: Sequence[str]) -> bool | None:
+    """`commit`より前の語の未知語を分類する。
+
+    実行位置だけを変える大域オプションの値にだけ未知語があれば真、未知語が無ければ偽を返す。
+    メッセージに作用しうる語に未知語があれば、検査の対象から外すため`None`を返す。
+    展開を含む語は語の全体が未知語になるため、`--git-dir=$R`の形はオプション名を確定できず`None`になる。
+    """
+    location_unknown = False
+    words = iter(prefix)
+    for word in words:
+        if word in _GLOBAL_OPTIONS_LOCATING_REPOSITORY:
+            location_unknown = is_unknown_word(next(words, "")) or location_unknown
+        elif is_unknown_word(word):
+            return None
+    return location_unknown
+
+
 _WORK_ITEM_FILENAME_PATTERN = re.compile(r"(?<![0-9A-Za-z_-])\d{8}-\d{6}-\d{3}\.md(?![0-9A-Za-z_.-])")
 
 
-def _git_commit_message_format_error(messages: Iterable[str]) -> str | None:
-    """通常commitのWI名記載と件名・本文間の空行欠落を返す。"""
+_COMMIT_BLOCK_RERUN = (
+    "このBashコマンドは全体が実行されていない（`git add`など、連結した他のコマンドも実行されていない）。"
+    "同じコマンド全体へ修正を加えて再実行せよ。"
+)
+"""commitの遮断の是正へ添える、未実行の範囲と再実行の範囲。commitだけを直して前段を外す再実行を防ぐ。"""
+
+
+def _git_commit_format_violations(messages: Iterable[str]) -> list[tuple[str, str]]:
+    """通常commitのWI名記載と件名・本文間の空行欠落を、違反と是正の組で返す。"""
+    violations: list[tuple[str, str]] = []
     for message in messages:
         if match := _WORK_ITEM_FILENAME_PATTERN.search(message):
-            return _block_notice(
-                f"公開するコミットメッセージに作業項目のファイル名（`{match.group()}`）が含まれている。",
-                fix=(
+            violations.append(
+                (
+                    f"公開するコミットメッセージに作業項目のファイル名（`{match.group()}`）が含まれている。",
                     "公開するコミットへ作業項目のファイル名を書くな。実装コミットとAWIの対応は"
                     "`atk run-script plan-progress`が記録する対応記録ファイル（`<stem>.wi-commits.jsonl`）へ残し、"
-                    "メッセージから作業項目のファイル名を含む行を除いて再実行せよ。"
-                ),
+                    "メッセージから作業項目のファイル名を含む行を除け。",
+                )
             )
         lines = message.splitlines()
         if len(lines) > 1 and lines[1].strip():
-            return _block_notice(
-                "`commit`の件名と本文の間の空行が欠けている。",
-                fix="件名の次に空行を1行入れて再実行せよ。",
-            )
-    return None
+            violations.append(("`commit`の件名と本文の間の空行が欠けている。", "件名の次に空行を1行入れよ。"))
+    return violations
 
 
-def _git_commit_attribution_error(
+def _git_commit_attribution_violations(
+    messages: Iterable[str],
+    identity: RuntimeIdentity | None,
+    *,
+    attribution_disabled: bool = False,
+) -> list[tuple[str, str]]:
+    """通常commitが観測identityのtrailerをちょうど1件持つか確かめ、違反と是正の組を返す。"""
+    if attribution_disabled or identity is None or identity.source != "observed":
+        return []
+    expected = co_author_trailer(identity)
+    for message in messages:
+        trailers = [line for line in message.splitlines() if line.startswith("Co-Authored-By:")]
+        if trailers != [expected]:
+            return [
+                (
+                    f"通常`commit`の`Co-Authored-By:`が実行ターンで観測したモデルと異なる。必要な行: {expected}",
+                    "観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れよ。",
+                )
+            ]
+    return []
+
+
+def _git_commit_block(
     messages: Iterable[str],
     identity: RuntimeIdentity | None,
     *,
     attribution_disabled: bool = False,
 ) -> str | None:
-    """通常commitが観測identityのtrailerをちょうど1件持つか確認する。"""
-    if attribution_disabled or identity is None or identity.source != "observed":
+    """通常commitのメッセージに対する全ての検査の違反を、1回の遮断の通知へ並べて返す。違反が無ければ`None`を返す。
+
+    最初の違反だけを返すと、受け取ったエージェントは残りの違反で再び遮断される。
+    """
+    messages = tuple(messages)
+    violations = list(dict.fromkeys(_git_commit_format_violations(messages)))
+    violations += _git_commit_attribution_violations(messages, identity, attribution_disabled=attribution_disabled)
+    if not violations:
         return None
-    expected = co_author_trailer(identity)
-    for message in messages:
-        trailers = [line for line in message.splitlines() if line.startswith("Co-Authored-By:")]
-        if trailers != [expected]:
-            return _block_notice(
-                f"通常`commit`の`Co-Authored-By:`が実行ターンで観測したモデルと異なる。必要な行: {expected}",
-                fix="観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れて再実行せよ。",
-            )
-    return None
+    if len(violations) == 1:
+        return _block_notice(violations[0][0], fix=violations[0][1] + _COMMIT_BLOCK_RERUN)
+    return _block_notice(
+        f"`commit`のメッセージに違反が{len(violations)}件ある。"
+        + "".join(f"（{number}）{reason}" for number, (reason, _fix) in enumerate(violations, 1)),
+        fix="".join(f"（{number}）{fix}" for number, (_reason, fix) in enumerate(violations, 1)) + _COMMIT_BLOCK_RERUN,
+    )
 
 
 def _commit_heredoc_body(command: str) -> str | None:

@@ -80,6 +80,7 @@ def reset_console(*, platform: str = os.name, stream: typing.TextIO | None = Non
         return
     executable = shutil.which("reset")
     if executable is not None:
+        # 時間上限なし: 端末の初期化であり、外部の応答を待たない。
         subprocess.run([executable], check=False)
 
 

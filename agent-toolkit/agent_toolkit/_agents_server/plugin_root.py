@@ -144,6 +144,7 @@ def main(arguments: list[str]) -> int:
     environment["PYTHONPATH"] = str(root)
     command = [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
     if os.name == "nt":
+        # 時間上限なし: 常駐サーバーの実行そのものであり、終了は起動元が決める。
         return subprocess.run(command, env=environment, check=False).returncode
     os.execvpe(str(executable), command, environment)
     return 0

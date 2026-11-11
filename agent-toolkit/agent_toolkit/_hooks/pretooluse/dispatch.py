@@ -36,6 +36,7 @@ Bash:
 - 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
 - 未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告 (warn)
 - Codexでcommitのmessage.mdを読むとき、観測したモデルと推論量の帰属行を先行配送 (warn)
+  （Claude Codeでは`agent-toolkit:commit`の起動完了時にPostToolUseが同じ行を示す）
 - 操作を起動の契機とするスキル（`agent-basics:search`・`agent-basics:bugfix`）が未起動の操作の、文脈ごとに1回の警告 (warn)
 
 Grep / Glob:
@@ -121,8 +122,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_process_kill_by_pattern,
     _check_bash_unquoted_heredoc_substitution,
     _check_read_predicate_stderr_discard,
-    _git_commit_attribution_error,
-    _git_commit_message_format_error,
+    _git_commit_block,
     _git_commit_messages,
     _warn_container_root_bind_mount,
     _warn_git_rev_parse_short_multiple,
@@ -321,13 +321,12 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         if message is not None:
             return Decision(block=message)
     messages = tuple(_git_commit_messages(command, cwd=cwd))
-    format_error = _git_commit_message_format_error(messages)
-    if format_error is not None:
-        return Decision(block=format_error)
-    if messages and (is_codex or not _claude_commit_attribution_disabled(cwd)):
-        attribution_error = _git_commit_attribution_error(messages, _hook_observed_identity(payload, is_codex=is_codex))
-        if attribution_error is not None:
-            return Decision(block=attribution_error)
+    if messages:
+        checks_attribution = is_codex or not _claude_commit_attribution_disabled(cwd)
+        identity = _hook_observed_identity(payload, is_codex=is_codex) if checks_attribution else None
+        commit_block = _git_commit_block(messages, identity)
+        if commit_block is not None:
+            return Decision(block=commit_block)
     warnings: list[str] = []
     for check in (
         _check_bash_option_after_terminator,
@@ -387,6 +386,19 @@ def _reads_commit_message_rules(command: str, cwd: str) -> bool:
             if path.as_posix().endswith("/skills/commit/references/message.md") and path.is_file():
                 return True
     return False
+
+
+def observed_commit_trailer(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
+    """commitの帰属行の検査が期待する行を返す。観測できない場合と、帰属行を無効にした設定では`None`を返す。
+
+    事前に示す値と遮断の検査が期待する値を同じ生成元から作るために公開する。推測では補わない。
+    """
+    if not is_codex and _claude_commit_attribution_disabled(cwd):
+        return None
+    identity = _hook_observed_identity(payload, is_codex=is_codex)
+    if identity is None or identity.source != "observed":
+        return None
+    return co_author_trailer(identity)
 
 
 def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity | None:

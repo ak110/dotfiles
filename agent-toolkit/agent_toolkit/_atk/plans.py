@@ -700,7 +700,7 @@ def commit_plan(
     plan_file: str,
     *,
     home: pathlib.Path | str | None = None,
-    lock_timeout: float = -1,
+    lock_timeout: float | None = None,
     skip_push: bool = False,
 ) -> dict[str, object]:
     """指定計画bundleを`private-notes/plans/`へ移し、対象限定commitを作成する。
@@ -876,7 +876,7 @@ def commit_ci_review(
     review_table: str,
     *,
     home: pathlib.Path | str | None = None,
-    lock_timeout: float = -1,
+    lock_timeout: float | None = None,
     skip_push: bool = False,
 ) -> dict[str, object]:
     """CI対応レビュー指摘管理表を対象限定でcommitし、成功後に作業側を回収する。"""

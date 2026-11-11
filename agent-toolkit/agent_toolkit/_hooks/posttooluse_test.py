@@ -1089,6 +1089,54 @@ class TestPlanModeSkillInvocation:
         assert state.get("plan_mode_skill_invoked") is not True
 
 
+class TestCommitSkillAttributionNotice:
+    """Claude Codeで`agent-toolkit:commit`の起動が完了した時点に、観測した帰属行を示す。"""
+
+    @staticmethod
+    def _payload(tmp_path: pathlib.Path, skill: str, *, with_transcript: bool = True) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "session_id": "commit-skill",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Skill",
+            "tool_input": {"skill": skill},
+            "cwd": str(tmp_path),
+            "effort": {"level": "low"},
+        }
+        if with_transcript:
+            transcript = tmp_path / "project-records" / "commit-skill.jsonl"
+            transcript.parent.mkdir(parents=True, exist_ok=True)
+            line = {
+                "type": "assistant",
+                "version": "2.1.291",
+                "effort": "medium",
+                "message": {"model": "claude-opus-5-5", "role": "assistant", "content": [{"type": "text", "text": "応答"}]},
+            }
+            transcript.write_text(json.dumps(line) + "\n", encoding="utf-8")
+            payload["transcript_path"] = str(transcript)
+        return payload
+
+    def test_commit_skill_delivers_observed_trailer(self, tmp_path: pathlib.Path) -> None:
+        result = _run(self._payload(tmp_path, "agent-toolkit:commit"), state_dir=tmp_path, home_dir=tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>" in context
+
+    @pytest.mark.parametrize(
+        ("skill", "with_transcript"),
+        [("agent-toolkit:commit", False), ("agent-toolkit:write-plan", True)],
+    )
+    def test_trailer_is_not_delivered_without_observation_or_for_other_skills(
+        self, tmp_path: pathlib.Path, skill: str, with_transcript: bool
+    ) -> None:
+        payload = self._payload(tmp_path, skill, with_transcript=with_transcript)
+
+        result = _run(payload, state_dir=tmp_path, home_dir=tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        assert "Co-Authored-By:" not in result.stdout
+
+
 class TestUwiCompletionNotice:
     """UWI回答差分をPostToolUseの追加contextへ接続する。"""
 

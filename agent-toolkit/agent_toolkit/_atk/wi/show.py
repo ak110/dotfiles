@@ -41,10 +41,15 @@ def user_field_location(text: str, kind: str | None) -> tuple[str, int] | None:
 
 @dataclasses.dataclass
 class _ShowOutput:
-    """表示した行数と、同じ起動の保存後に示す記入欄の情報を保持する。"""
+    """表示した行数と、同じ起動の保存後に示す記入欄の情報を保持する。
+
+    保存後の案内は、読み手が保存先で読む対象（記入欄がある項目）だけを個別の行で示し、
+    記入欄が無い項目は件数の1行にまとめる。項目の数に比例する行を標準出力へ戻さないためである。
+    """
 
     user_fields: list[str] | None
     line: int = 1
+    without_field: int = 0
 
     def write(self, text: str = "") -> None:
         """printと同じ改行を加え、次に書く行の位置を進める。"""
@@ -59,8 +64,15 @@ class _ShowOutput:
             return
         heading = _uwi.ANSWER_HEADING if kind == WI_TYPE_UWI else "## ユーザーコメント"
         field = user_field_location(text, kind)
-        location = "なし" if field is None else f"あり 開始行: {start + field[1] - 1}"
-        self.user_fields.append(f"記入欄: {name} {heading} {location}")
+        if field is None:
+            self.without_field += 1
+            return
+        self.user_fields.append(f"記入欄: {name} {heading} あり 開始行: {start + field[1] - 1}")
+
+    def finish(self) -> None:
+        """記入欄が無い項目の件数を、個別の案内の後へ1行で加える。0件の場合は加えない。"""
+        if self.user_fields is not None and self.without_field:
+            self.user_fields.append(f"記入欄なし: {self.without_field}件")
 
 
 def _summary_line(text: str, kind: str | None) -> str:
@@ -163,6 +175,7 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             output.body(path.name, text, kind, args)
             if len(selected_by_name) > 1:
                 output.write()
+        output.finish()
         return
 
     selected = _wi_entries.select_entries(
@@ -192,3 +205,4 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                     output.write(f"### {name}{label}")
                     output.body(name, text, header_type, args)
                     output.write()
+    output.finish()

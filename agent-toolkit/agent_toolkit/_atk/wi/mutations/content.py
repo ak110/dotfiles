@@ -496,6 +496,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if message is None and args.cooldown_until is None:
         assert editor is not None
         tmp_path = _wi_cli_input.copy_to_tempfile(snapshot)
+        # 時間上限なし: 対話型のエディターであり、ユーザーが終了させる。共有ロックは保持していない。
         editor_result = subprocess.run([editor, str(tmp_path)], check=False)
         if editor_result.returncode != 0:
             _outcome.report_failure(

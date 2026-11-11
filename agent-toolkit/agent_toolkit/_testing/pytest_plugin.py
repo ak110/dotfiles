@@ -10,6 +10,7 @@ import datetime
 import os
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 import zlib
@@ -27,8 +28,11 @@ import agent_toolkit
 from agent_toolkit._agents_server import api_credits, claude, launch_requests, state
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk import orchestrator as _orchestrator
+from agent_toolkit._atk.wi import process_loop_update as _process_loop_update
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
 from agent_toolkit._common import wait_schedule as _wait_schedule
+from agent_toolkit._git import command as _git_command
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
@@ -85,6 +89,30 @@ class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
 
     def __init__(self, timeout: float = 0.05, **kwargs: Any) -> None:
         super().__init__(timeout=timeout, **kwargs)
+
+
+@pytest.fixture(autouse=True)
+def _launch_follows_patched_subprocess_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`subprocess.run`を差し替えた試験では、時間上限付きの起動も差し替え先へ渡す。
+
+    gitの共通起動関数などは時間切れで子孫まで止めるため`subprocess.Popen`から起動し、`subprocess.run`を通らない。
+    `subprocess.run`の差し替えで外部コマンドを偽装する既存の試験が実物を起動しないよう、各モジュールの起動の
+    1か所（`_launch`）で橋渡しする。差し替えていない試験は実物の起動関数を使う。
+    """
+    original_run = subprocess.run
+
+    def follow(launch: Callable[..., Any]) -> Callable[..., Any]:
+        def launch_or_patched_run(command: list[str], **kwargs: Any) -> Any:
+            if subprocess.run is original_run:
+                return launch(command, **kwargs)
+            # checkは呼び出し元が渡す。
+            return subprocess.run(command, **kwargs)  # noqa: PLW1510  # pylint: disable=subprocess-run-check
+
+        return launch_or_patched_run
+
+    for module in (_git_command, _orchestrator, _process_loop_update):
+        # 起動の1か所を差し替えるための参照であり、各モジュールのdocstringがこの利用を明記している。
+        monkeypatch.setattr(module, "_launch", follow(module._launch))  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)

@@ -14,6 +14,7 @@
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 公開工程の`cwd`にする主作業ツリーを確定する前 | `../skills/process-wi/references/lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/finish-session-recovery.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
@@ -27,7 +28,9 @@
 公開の短絡・直接実行・委譲のいずれでも、選定原本へ`atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated`を実行し、後段を含む選定全体の終了コード0を確認する。
 未統合があれば元のレーンで残工程を続けるか、正当な延期の理由・解除条件・再開先を保存して公開の可否を判定する。
 照会結果と選定原本の絶対パスを既存の引き継ぎ記録へ残し、起動済みレーンの終了だけを全体の完了へ代用しない。
-`cwd`を主作業ツリー、ブランチを公開対象のベースブランチに合わせ、「渡す入力」へ進む。
+公開する統合結果を持つ主作業ツリー（`../skills/process-wi/references/lanes.md`「用語」。常駐起動では集合JSONの`worktree`）を公開工程の`cwd`とする。
+ブランチは主作業ツリーが現にチェックアウトしているものをそのまま使い、公開先のブランチと名前が異なる場合（常駐起動の専用ブランチなど）も切り替えない。
+`cwd`を確定したら「渡す入力」へ進む。
 
 ## 渡す入力
 
@@ -70,7 +73,7 @@
 
 | 引数 | 値 |
 | --- | --- |
-| `cwd` | 対象リポジトリの絶対パス |
+| `cwd` | 「起動前の前提」手順1で確定した主作業ツリーの絶対パス |
 | `subagent_md_path` | `session-termination` |
 | `extra_params` | `## 渡す入力`の名前付き入力 |
 
@@ -118,6 +121,7 @@ push前の工程（バージョン更新、生成物同期、push前チェック
 
 **7.** 返却された`公開完了`に続く8行を現在のGit状態と比べ、次を確認する（成果物・実装差分の再読は不要）。
 一致しない項目がある場合は、同一の公開担当へ差し戻す。
+以下の`<対象リポジトリ>`には、起動時の`cwd`と同じ主作業ツリーを指定する。
 
 - ベースブランチとそのリモート追跡refを1件ずつ`git -C <対象リポジトリ> rev-parse --verify --short=7 '<対象ref>^{commit}'`へ渡して取得した値が、いずれも`ベースbranchのHEAD`と一致すること。
 - `全体検証`が`CI判定`または`ローカル成功`であること。

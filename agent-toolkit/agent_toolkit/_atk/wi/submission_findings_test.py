@@ -225,6 +225,42 @@ def test_nested_review_findings_require_only_top_level_records(
     assert not _recorded()
 
 
+@pytest.mark.parametrize(
+    ("item", "expected"),
+    [
+        ("なし", []),
+        ("なし（前回の指摘1件は解消済み。原稿の該当箇所を確かめた）", []),
+        ("なし(前回の指摘は解消済み)", []),
+        ("なし （補足）", []),
+        ("なしの場合に適用する条件が書かれていない", ["なしの場合に適用する条件が書かれていない"]),
+        ("なし（補足）ただし見出しが欠けている", ["なし（補足）ただし見出しが欠けている"]),
+    ],
+)
+def test_no_finding_item_accepts_only_parenthesized_note(tmp_path: pathlib.Path, item: str, expected: list[str]) -> None:
+    """返却契約が0件の形として定める`なし`と丸括弧の注記だけを0件とし、文が続く箇条は指摘として数える。"""
+    review = tmp_path / "review.txt"
+    review.write_text(f"判定: 合格\n未解決指摘: 0\n指摘:\n- {item}\n確認した要求と根拠: 原稿\n", encoding="utf-8")
+    assert submission_findings.review_findings(review) == expected
+
+
+def test_passing_rereview_with_note_finishes_without_record(
+    claude_home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """再レビューの合格の返却が`なし`へ注記を続けても、指摘対応記録の項目なしで終了検査が成功する。"""
+    _begin()
+    _write_session(claude_home, [])
+    review = tmp_path / "review.txt"
+    review.write_text(
+        "判定: 合格\n確認段階: 本文\n対象資料: /tmp/draft.md\n未解決指摘: 0\n指摘:\n"
+        "- なし（前回の指摘1件は解消済み。反映内容の項目2へ対象を追記したことを確かめた）\n"
+        "確認した要求と根拠: 原稿\n",
+        encoding="utf-8",
+    )
+    assert _end(_findings(tmp_path, []), review) == 0
+    assert "- 指摘: なし" in capsys.readouterr().out
+    assert not _recorded()
+
+
 def test_normal_inputs_finish_and_save_summary(
     claude_home: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -264,6 +264,7 @@ def _creation_epoch(path: pathlib.Path) -> float | None:
     value = getattr(info, "st_birthtime", None)
     if value is None:
         try:
+            # 時間上限なし: ローカルのファイル属性の取得であり、外部の応答を待たない。
             result = subprocess.run(
                 ["stat", "--format=%W", "--", str(path)],
                 capture_output=True,

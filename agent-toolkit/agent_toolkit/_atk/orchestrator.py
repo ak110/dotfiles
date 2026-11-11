@@ -17,6 +17,7 @@ import pathlib
 import subprocess
 import sys
 import time
+import typing
 from collections.abc import Callable, Iterable
 
 from agent_toolkit._atk import claude_connection as _connection
@@ -32,6 +33,7 @@ from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common import mcp_environment as _mcp_environment
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common.json_lines import split_lines
 
 PROCESS_LOOP_SESSION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
@@ -59,6 +61,13 @@ UsageLimitState = _claude_usage_limit.UsageLimitState | _codex_usage_limit.Usage
 # 可用性判定のeffortとClaudeのシステムプロンプト。応答内容を使わないため最小の費用で起動する。
 _PROBE_EFFORT = "low"
 _PROBE_SYSTEM_PROMPT = "OKだけを返す。"
+
+_PROBE_TIMEOUT_SECONDS = 180.0
+"""モデル候補の可用性判定の時間上限。
+
+無人のprocess-loopが結果を待つため有限にする。利用上限で再試行を待ち続けるCLIを、起動できない候補と同じく
+次の候補へ進める値として決めた（実測に基づく値ではない）。
+"""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -247,6 +256,11 @@ def is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str 
     return returncode in _CODEX_NORMAL_EXIT_CODES_POSIX
 
 
+def _launch(command: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[typing.Any]:
+    """時間上限で子孫まで止める起動の唯一の箇所。テスト基盤（`_testing/pytest_plugin.py`）が起動の差し替えに使う。"""
+    return _process_tree.run_with_timeout(command, **kwargs)
+
+
 def _probe_model(orchestrator: str) -> str:
     """軽量工程の同engine候補を可用性確認に使い、候補が無いengineは組込みモデルを使う。"""
     for key in ("chores_fast_model", "review_fast_model"):
@@ -426,7 +440,7 @@ def _probe_candidate_owned(
                 settings_owner.enter_context(settings)
             separator = probe_argv.index("--")
             probe_argv[separator:separator] = ["--settings", settings]
-        result = subprocess.run(
+        result = _launch(
             probe_argv,
             check=False,
             env=probe_env,
@@ -435,7 +449,17 @@ def _probe_candidate_owned(
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=_PROBE_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired:
+        _console_title.set_console_title(context.title)
+        _notify(
+            context,
+            f"モデル候補の可用性判定が{_PROBE_TIMEOUT_SECONDS:.0f}秒で終わらなかったため打ち切りました: {candidate}",
+            "次の候補を試す。全候補が失敗した場合は`atk config set orchestrate_engine <engine順>`か"
+            "`atk config set <engine>_execute_model <モデル>`で候補を変える",
+        )
+        return None, (orchestrator, 1, f"可用性判定が{_PROBE_TIMEOUT_SECONDS:.0f}秒で終わらなかった")
     except (OSError, ValueError) as error:
         _console_title.set_console_title(context.title)
         _notify(

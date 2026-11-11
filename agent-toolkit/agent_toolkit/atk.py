@@ -25,6 +25,7 @@ import dataclasses
 import datetime
 import os
 import pathlib
+import subprocess
 import sys
 from collections.abc import Callable
 
@@ -37,6 +38,7 @@ lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session 
 lazy from agent_toolkit._atk import cli_support as _cli_support
 lazy from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
 lazy from agent_toolkit._atk import config as _config_cmd  # noqa: E402
+lazy from agent_toolkit._atk import git_sync as _git_sync
 lazy from agent_toolkit._atk import help_text as _atk_help  # noqa: E402
 lazy from agent_toolkit._atk import info as _info
 lazy from agent_toolkit._atk import lane as _lane
@@ -58,6 +60,7 @@ lazy from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 lazy from agent_toolkit._common import delegated_session as _delegated_session  # noqa: E402
 lazy from agent_toolkit._common import inherited_venv as _inherited_venv
 lazy from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
+lazy from agent_toolkit._git import command as _git_command
 
 _MANAGED_TEMP_CHECK_NEXT_ACTION = (
     "本来の操作は継続した。表示した原因（所有者・権限など）を除去すると、1時間後以降の`atk`の起動で再び回収を試みる"
@@ -261,7 +264,7 @@ _OUTPUT_AS_FILE_CALLS = (
             and (args.all or len(set(args.filenames)) > 1)
         ),
         after_save=None,
-        reason="一括取得の本文を保存し、保存後は項目ごとのユーザー専用の記入欄の有無と開始行を表示する",
+        reason="一括取得の本文を保存し、保存後はユーザー専用の記入欄がある項目の開始行と、記入欄が無い項目の件数を表示する",
     ),
     _OutputAsFile(
         applies=lambda args: (
@@ -416,15 +419,20 @@ def main(
     command = _COMMANDS.get(args.command)
     if command is None:
         parser.error(f"未知のトップレベルコマンド: {args.command}")
-    sys.exit(
-        command(
-            _Invocation(
-                args=args,
-                home=home if home is not None else pathlib.Path.home(),
-                now=now,
-            )
-        )
-    )
+    invocation = _Invocation(args=args, home=home if home is not None else pathlib.Path.home(), now=now)
+    try:
+        exit_code = command(invocation)
+    except _git_sync.RepoLockTimeoutError as error:
+        _outcome.report_failure(error.reason, next_action=error.next_action)
+        exit_code = 1
+    except subprocess.TimeoutExpired as error:
+        if _git_command.timeout_cwd(error) is None:
+            raise
+        # gitの時間切れをトレースバックで終わらせず、打ち切った対象と次の操作を示す。同期層が出力済みなら重ねない。
+        if not _git_sync.is_reported(error):
+            _outcome.report_failure(_git_sync.git_timeout_reason(error), next_action=_git_sync.GIT_TIMEOUT_NEXT_ACTION)
+        exit_code = 1
+    sys.exit(exit_code)
 
 
 def _run_cli() -> None:

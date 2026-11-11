@@ -379,6 +379,7 @@ class JsonRpcProcess:
             if sys.platform == "win32":
                 self._job = windows_job.WindowsJob()
                 creation_options["creationflags"] = windows_job.CREATE_SUSPENDED
+            # 時間上限なし: 常駐の接続であり、要求ごとの応答待ちの上限は呼び出し側が持つ。
             self.process = await asyncio.create_subprocess_exec(
                 *APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,

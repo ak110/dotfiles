@@ -9,6 +9,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from collections.abc import Generator
 
 import psutil
@@ -58,7 +59,9 @@ def _term_as_interrupt(_number: int, _frame: object) -> None:
 def main(argv: list[str] | None = None) -> int:
     """公開commit-with-timeoutからGitの終了コード、上限124、中断130を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--timeout", required=True, type=float, help="commit全体の時間上限（正の有限秒数）")
+    parser.add_argument(
+        "--timeout", required=True, type=float, help="実行枠の順番待ちを含むcommit全体の時間上限（正の有限秒数）"
+    )
     parser.add_argument("commit_args", nargs=argparse.REMAINDER, help="--の後にgit commitの引数を指定する")
     args = parser.parse_args(argv)
     if not math.isfinite(args.timeout) or args.timeout <= 0:
@@ -67,17 +70,20 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("この中断・退避復元の実行方法はPOSIX専用。Windowsでは確認済みのホスト実行手段を使う")
     arguments = args.commit_args[1:] if args.commit_args[:1] == ["--"] else args.commit_args
     previous = signal.signal(signal.SIGTERM, _term_as_interrupt)
+    # 上限は実行枠の順番待ちを含むコマンド全体に適用する。枠待ちを除くと全体の所要が決まらず、呼び出し側が
+    # ホストの時間上限をこの上限より長く指定しても、ホストがhookの実行中に先に止めて退避が戻らない。
+    deadline = time.monotonic() + args.timeout
     try:
-        # 枠待ちは上限から除く。hookは祖先の所有を継承し、commit単位で保持する。
+        # hookは祖先の所有を継承し、commit単位で保持する。
         with (
-            execution_slot.hold(label="git commit"),
+            execution_slot.hold(label="git commit", should_abort=lambda: time.monotonic() >= deadline),
             process_tree.process_scope(
                 git_command.command_line(["commit", *arguments]),
                 start_new_session=True,
             ) as process,
         ):
             try:
-                code = process.wait(timeout=args.timeout)
+                code = process.wait(timeout=max(deadline - time.monotonic(), 0))
             except subprocess.TimeoutExpired:
                 _interrupt(process)
                 return 124
@@ -87,6 +93,15 @@ def main(argv: list[str] | None = None) -> int:
             return code if code >= 0 else 128 - code
     except KeyboardInterrupt:
         return 130
+    except execution_slot.WaitAborted:
+        if time.monotonic() < deadline:
+            raise
+        # commitを起動する前であり、hookの退避も行われていない。時間切れとして同じ終了コードを返す。
+        next_action.report(
+            f"実行枠の順番待ちのまま時間上限（{args.timeout:.0f}秒）に達した。commitは開始していない",
+            next_action="実行枠を保持している検証の終了を待つか、上限を延ばして同じcommitを再実行する",
+        )
+        return 124
     except (OSError, process_tree.ReclaimError) as error:
         next_action.report(
             str(error), next_action="表示された所有プロセスとhookの退避を確認し、回収・復元後に同じcommitを再実行する"

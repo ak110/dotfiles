@@ -93,6 +93,7 @@ def collect_message_via_editor(*, strip: bool = True) -> str | None:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8", delete=False) as f:
         tmp_path = pathlib.Path(f.name)
     try:
+        # 時間上限なし: 対話型のエディターであり、ユーザーが終了させる。共有ロックは保持していない。
         result = subprocess.run([editor, str(tmp_path)], check=False)
         if result.returncode != 0:
             _outcome.report_failure(

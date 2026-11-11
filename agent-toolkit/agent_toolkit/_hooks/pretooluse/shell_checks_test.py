@@ -1136,7 +1136,7 @@ class TestGitCommitAttribution:
         ],
     )
     def test_accepts_exactly_one_observed_identity_trailer(self, command: str) -> None:
-        assert shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages(command), self._identity) is None
+        assert shell_checks._git_commit_block(shell_checks._git_commit_messages(command), self._identity) is None
 
     @pytest.mark.parametrize(
         "command",
@@ -1150,7 +1150,7 @@ class TestGitCommitAttribution:
         ],
     )
     def test_rejects_missing_mismatched_or_duplicate_trailer(self, command: str) -> None:
-        error = shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages(command), self._identity)
+        error = shell_checks._git_commit_block(shell_checks._git_commit_messages(command), self._identity)
         assert error is not None
         assert self._trailer in error
 
@@ -1168,16 +1168,14 @@ class TestGitCommitAttribution:
         ],
     )
     def test_skips_non_new_or_unresolved_messages_and_literals(self, command: str) -> None:
-        assert shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages(command), self._identity) is None
+        assert shell_checks._git_commit_block(shell_checks._git_commit_messages(command), self._identity) is None
 
     def test_skips_when_host_identity_is_unobserved(self) -> None:
-        assert (
-            shell_checks._git_commit_attribution_error(shell_checks._git_commit_messages("git commit -m '変更'"), None) is None
-        )
+        assert shell_checks._git_commit_block(shell_checks._git_commit_messages("git commit -m '変更'"), None) is None
 
     def test_skips_when_commit_attribution_is_explicitly_disabled(self) -> None:
         assert (
-            shell_checks._git_commit_attribution_error(
+            shell_checks._git_commit_block(
                 shell_checks._git_commit_messages("git commit -m '変更'"),
                 self._identity,
                 attribution_disabled=True,
@@ -1202,10 +1200,7 @@ class TestGitCommitMessageFormat:
     )
     def test_rejects_missing_blank_line(self, tmp_path: pathlib.Path, command: str) -> None:
         (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
-        assert (
-            shell_checks._git_commit_message_format_error(shell_checks._git_commit_messages(command, cwd=str(tmp_path)))
-            is not None
-        )
+        assert shell_checks._git_commit_block(shell_checks._git_commit_messages(command, cwd=str(tmp_path)), None) is not None
 
     @pytest.mark.parametrize(
         "command",
@@ -1228,9 +1223,7 @@ class TestGitCommitMessageFormat:
     )
     def test_accepts_valid_and_unresolved_messages(self, tmp_path: pathlib.Path, command: str) -> None:
         (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
-        assert (
-            shell_checks._git_commit_message_format_error(shell_checks._git_commit_messages(command, cwd=str(tmp_path))) is None
-        )
+        assert shell_checks._git_commit_block(shell_checks._git_commit_messages(command, cwd=str(tmp_path)), None) is None
 
 
 @pytest.mark.parametrize(
@@ -1286,7 +1279,7 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     reason = _denial_reason(result)
     assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", reason)
     assert "対応記録" in reason and "plan-progress" in reason
-    assert "ファイル名を含む行を除いて再実行" in reason
+    assert "ファイル名を含む行を除け" in reason and "全体が実行されていない" in reason
 
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])
@@ -1669,3 +1662,78 @@ def test_commit_message_file_is_read_with_unknown_pathspec(tmp_path):
     assert list(shell_checks._git_commit_messages(f'git commit -F {quoted} -- "$PATHSPEC"')) == ["件名\n\n本文\n"]
     assert not list(shell_checks._git_commit_messages(f'git commit "$OPT" -F {quoted}'))
     assert not list(shell_checks._git_commit_messages('git commit -F "$MESSAGE"'))
+
+
+def test_global_options_with_value_are_all_classified_for_commit_message_check() -> None:
+    """値を取る大域オプションは、未知語の値でcommitの検査を外すかを必ず分類する。"""
+    locating = shell_checks._GLOBAL_OPTIONS_LOCATING_REPOSITORY
+    affecting = shell_checks._GLOBAL_OPTIONS_POSSIBLY_AFFECTING_MESSAGE
+    assert not locating & affecting
+    assert locating | affecting == shell_checks._GLOBAL_OPTIONS_WITH_VALUE
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'R=/repo; git -C $R add -- a.md && git -C $R commit -q -m "件名"',
+        'git -C "$R" commit -q -m "件名"',
+        'git --git-dir "$R/.git" --work-tree "$R" commit -m "件名"',
+    ],
+)
+def test_commit_message_is_checked_when_repository_location_is_unknown(command: str) -> None:
+    """対象リポジトリの指定に展開を含んでも、`-m`で確定するメッセージは検査の対象になる。"""
+    assert list(shell_checks._git_commit_messages(command)) == ["件名"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git -C $R commit -F message.txt",
+        "git -C $R commit --file=message.txt",
+        'git -c "$CONFIG" commit -m "件名"',
+        'git --namespace $NS commit -m "件名"',
+        'git --git-dir=$R/.git commit -m "件名"',
+        'git $OPTION commit -m "件名"',
+    ],
+)
+def test_commit_message_is_not_guessed_from_unknown_location_or_message_affecting_words(
+    tmp_path: pathlib.Path, command: str
+) -> None:
+    """実行位置が不明な場合の相対パスの本文は読まず、メッセージに作用しうる語の未知語では判定しない。"""
+    (tmp_path / "message.txt").write_text("件名\n本文\n", encoding="utf-8")
+    assert not list(shell_checks._git_commit_messages(command, cwd=str(tmp_path)))
+
+
+def test_commit_message_file_with_absolute_path_is_read_when_location_is_unknown(tmp_path: pathlib.Path) -> None:
+    """絶対パスの本文は実行位置によらず確定するため、対象リポジトリが不明でも読む。"""
+    message = tmp_path / "message.txt"
+    message.write_text("件名\n", encoding="utf-8")
+    assert list(shell_checks._git_commit_messages(f"git -C $R commit -F {message}")) == ["件名\n"]
+
+
+def test_commit_block_lists_all_violations_and_states_whole_command_was_not_run() -> None:
+    """作業項目のファイル名と帰属行の欠落は1回の遮断に並び、連結したコマンドを含む全体が未実行であることを示す。"""
+    identity = shell_checks.RuntimeIdentity("claude", "claude-fable-5-2", "medium", "observed")
+    command = 'R=/repo; git -C $R add -- a.md && git -C $R commit -q -m "fix: 直す\n\n20261109-105107-001.md"'
+
+    block = shell_checks._git_commit_block(shell_checks._git_commit_messages(command), identity)
+
+    assert block is not None
+    assert "違反が2件ある" in block
+    assert "20261109-105107-001.md" in block
+    assert shell_checks.co_author_trailer(identity) in block
+    assert "全体が実行されていない" in block
+    assert "`git add`" in block
+    assert "同じコマンド全体へ修正を加えて再実行せよ" in block
+
+
+def test_commit_block_with_single_violation_states_whole_command_was_not_run() -> None:
+    """違反が1件でも、遮断の通知は未実行の範囲と再実行の範囲を示す。"""
+    block = shell_checks._git_commit_block(
+        shell_checks._git_commit_messages("git add a.md && git commit -m '件名\n本文'"), None
+    )
+
+    assert block is not None
+    assert "違反が" not in block
+    assert "空行" in block
+    assert "全体が実行されていない" in block

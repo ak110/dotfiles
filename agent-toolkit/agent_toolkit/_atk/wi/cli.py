@@ -76,26 +76,6 @@ _returnable_filename_completer = _wi_filenames.make_filename_completer(
 _uwi_filename_completer = _wi_filenames.make_filename_completer(_wi_constants.WI_ACTIVE_STATES, _wi_constants.WI_TYPE_UWI)
 
 
-_WI_SYNC_MUTATIONS = frozenset(
-    (
-        "add",
-        "check-alerts",
-        "start-processing",
-        "hold",
-        "unhold",
-        "return-to-inbox",
-        "adopt",
-        "reject",
-        "rm",
-        "edit",
-        "effect-check",
-        "set-dependencies",
-        "answer",
-        "commit",
-    )
-)
-
-
 def _cooldown_days(value: str) -> int:
     """3以上の再処理抑制日数をargparse向けに検証する。"""
     try:
@@ -1167,6 +1147,7 @@ def dispatch(
         "process-loop": lambda: _process_loop.cmd_process_loop(args, private_notes),
         "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
     }
+    _atk_git_sync.reset_sync_attempt()
     try:
         exit_code = commands[sub]() or 0
     except (ValueError, _atk_git_sync.RebaseInProgressError) as error:
@@ -1178,5 +1159,6 @@ def dispatch(
     return _wi_sync.sync_exit_code(
         exit_code,
         private_notes,
-        should_check=sub in _WI_SYNC_MUTATIONS and not getattr(args, "skip_push", False),
+        # サブコマンド名では決めない。同じサブコマンドでも、保存しない検証のように何も書き込まずに終わる実行がある。
+        should_check=_atk_git_sync.sync_attempted() and not getattr(args, "skip_push", False),
     )

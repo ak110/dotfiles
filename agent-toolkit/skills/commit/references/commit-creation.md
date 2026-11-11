@@ -62,14 +62,19 @@ push後のCI失敗は`agent-basics:bugfix`を起動し、同スキルの`ci-fail
 ### hookの打ち切りと退避の復元
 
 1. POSIXのホストでcommit hookを伴う`git commit`は、`atk run-script commit-with-timeout -- --timeout <秒> -- <git commitの引数>`で時間上限を設けて実行する。
-   ホストのコマンド時間上限（Claude Codeの`Bash`の`timeout`など）は、commit自身の上限より長くする。
+   `--timeout`は実行枠の順番待ちを含むコマンド全体の上限であり、ホストがコマンドを止める時間上限より先に達する値にする。
+   Claude Codeでは`Bash`の`run_in_background: true`で起動し、`Bash`の`timeout`を`--timeout`より長く、背景実行の最大値（7,200,000ミリ秒）以下にする。
+   前景で実行する場合は、`--timeout`を前景の`timeout`の最大値（600,000ミリ秒）より短くする。
+   Claude Code以外のホストは、ホストの時間上限の値を確かめていないため、`Bash`の入力に関するこの指定の対象外とする。
    hook管理ツールのprekはhookの実行中に未ステージの変更を一時ファイルへ退避し、通常終了とSIGINTでは作業ツリーへ戻すが、SIGTERM・SIGKILLやホストの時間上限による強制終了では戻さない（prek 0.5.7で確認）。
    起動側は所有する子孫へSIGINTを送り、退避復元の猶予と残存回収を終えてから、時間切れは124、明示中断は130を返す。
+   実行枠を待ったまま上限に達した場合も124を返し、標準エラーへ「commitは開始していない」と出力する。
+   このとき退避は行われていない。
    親だけが終了しても回収完了とは扱わず、残存を示す診断があれば対象の識別情報から処置する。
    hookが長引いた原因と退避の復元を確かめてからやり直す。
    Windowsのホストは同等の手段の挙動を確認していないため、この手順の対象外とする。
    観測条件と再検証は`docs/development/audit-records.md`にある。
-   参照する節は「agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月10日」である。
+   参照する節は「agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月10日」と「agent-toolkit/skills/commit/references/commit-creation.md：hookの打ち切りと退避の復元：2026年11月11日」である。
 
 2. commitが失敗・中断した出力に`Unstaged changes detected. Temporarily saving them to <パス>`がある場合は、他の操作より先に退避が作業ツリーへ戻ったかを確かめる。
    SIGINTの打ち切りではcommitの終了後にprekが退避を戻すことがあり、`Restored unstaged changes from <パス>`の行の有無だけでは判定できない。

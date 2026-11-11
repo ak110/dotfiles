@@ -4,10 +4,11 @@ MQ固有のfrontmatterや状態遷移を持たず、同じGit作業コピーを�
 ロック、対象限定commit、remote同期、push再試行だけを提供する。呼び出し元は
 `repo_lock()`保持下でファイル変更とGit操作を行う。
 
-private-notesへcommitする操作は、副作用を確定した後も未pushのcommitが残る場合に、
-呼び出し元のCLIが専用の終了コードで同期未達を通知する。同期の保留は
-`push_pending_commits`の内部分岐で決まり、各サブコマンドからは観測できないため、
-通知の判定材料を本モジュールが提供する。
+private-notesへcommitしたか、未pushのcommitの送信を試みた実行は、副作用を確定した後も未pushのcommitが
+残る場合に、呼び出し元のCLIが専用の終了コードで同期未達を通知する。commitも送信も試みない実行
+（保存しない検証、差分の無い編集など）は、他の主体が残した未pushを自分の結果として通知しない。
+commitと送信の試行、同期の保留は本モジュールの内部分岐で決まり、各サブコマンドからは観測できないため、
+通知の判定材料（`sync_attempted`、`push_was_deferred`）を本モジュールが提供する。
 pullとpushの失敗も呼び出し元の実行主体が次の操作を決められる必要があるため、
 失敗理由を示すgitの出力に続けて、本モジュールが確認コマンドと再実行の手順を出力する。
 前提条件の確認と失敗時の復元は、その操作が書き込む対象パスへ限定する。共有Git作業コピーへ
@@ -17,8 +18,11 @@ pullとpushの失敗も呼び出し元の実行主体が次の操作を決めら
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
+import datetime
 import hashlib
+import json
 import pathlib
 import subprocess
 import sys
@@ -28,6 +32,7 @@ from collections.abc import Callable, Iterable
 from typing import Protocol
 
 import filelock
+import psutil
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_human_terminal
@@ -46,6 +51,19 @@ PUSH_DEFERRED_NEXT_ACTION = (
 
 _REPORTED_ATTRIBUTE = "_atk_sync_failure_reported"
 """失敗の原因と次の操作を本モジュールが出力済みであることを例外へ記録する属性名。"""
+
+LOCK_HOLD_TIMEOUT_SECONDS = 120.0
+"""`repo_lock`を保持している区間のgit操作全体の時間上限。
+
+1つの保持区間ではfetch・merge・commit・pushと、push拒否時の再試行まで続くため、操作ごとの上限だけでは
+保持が数分に及ぶ。区間全体を有限にすると、待つ側の上限を「正常な保持者が解放するまで」の値に決められる。
+"""
+
+LOCK_WAIT_TIMEOUT_SECONDS = 150.0
+"""`repo_lock`の待機上限を省略した場合の値。保持区間の上限より長くし、正常に動いている保持者の解放まで待てるようにする。"""
+
+GIT_TIMEOUT_NEXT_ACTION = "リモートへの接続（ネットワーク、VPN、認証）を確かめてから、失敗した操作を再実行する"
+"""gitの時間切れの失敗行に続けて案内する次の操作。"""
 
 _DivergenceRecovery = Callable[[pathlib.Path], bool]
 """ローカル側のcommitが冗長であることを呼び出し元の基準で判定する関数。"""
@@ -85,12 +103,40 @@ class GitSyncError(RuntimeError):
         self.next_action = next_action
 
 
-def mark_reported(error: subprocess.CalledProcessError) -> None:
+class RepoLockTimeoutError(filelock.Timeout):
+    """`repo_lock`を待機上限まで取得できなかった。`reason`に待った対象と保持者、`next_action`に次の操作を持つ。"""
+
+    next_action = (
+        "保持者のプロセスが動いているか確かめ、終了を待つか、応答しない場合は停止してから再実行する。"
+        "保持者が存在しない場合はそのまま再実行する"
+    )
+
+    def __init__(self, lock_file: str, *, waited: float, holder: str) -> None:
+        super().__init__(lock_file)
+        self.waited = waited
+        self.holder = holder
+
+    @property
+    def reason(self) -> str:
+        """失敗行へ載せる理由を返す。"""
+        return f"共有ロックを{self.waited:.0f}秒待ったが取得できなかった: {self.lock_file}。保持者: {self.holder}"
+
+
+def git_timeout_reason(error: subprocess.TimeoutExpired) -> str:
+    """gitの時間切れについて、打ち切ったコマンド、上限秒数、作業ディレクトリを示す理由を返す。"""
+    command = " ".join(error.cmd) if isinstance(error.cmd, list | tuple) else str(error.cmd)
+    return (
+        f"gitが時間上限の{error.timeout:.0f}秒に達したため、子プロセスまで止めて打ち切った: `{command}`"
+        f"（作業ディレクトリ: {_git_command.timeout_cwd(error)}）"
+    )
+
+
+def mark_reported(error: subprocess.SubprocessError) -> None:
     """失敗の原因と次の操作を出力済みであることを例外へ記録する。"""
     setattr(error, _REPORTED_ATTRIBUTE, True)
 
 
-def is_reported(error: subprocess.CalledProcessError) -> bool:
+def is_reported(error: subprocess.SubprocessError) -> bool:
     """本モジュールが失敗の原因と次の操作を出力済みの例外か返す。
 
     呼び出し元のCLIは出力済みの失敗へ汎用の失敗行を重ねず、原因別の失敗行を1本に保つ。
@@ -121,6 +167,7 @@ class _ThreadLocalHeldPaths(threading.local):
     def __init__(self) -> None:
         self.paths: dict[pathlib.Path, int] = {}
         self.push_deferred: set[pathlib.Path] = set()
+        self.sync_attempted = False
 
 
 _LOCK_HELD_PATHS = _ThreadLocalHeldPaths()
@@ -176,14 +223,51 @@ LOCK_OBSERVER: contextvars.ContextVar[LockObserver | None] = contextvars.Context
 """`repo_lock`の待機・保持を記録する観測先。`atk serve`が要求ごとに設定し、設定の無い呼出しでは計測しない。"""
 
 
+def _holder_path(lock_file: str) -> pathlib.Path:
+    """ロックの保持者を記録するファイルのパスを返す。
+
+    ロックファイル自体へは書かない。保持中のファイルを他のプロセスが読めるかはOSで異なるためである。
+    """
+    return pathlib.Path(lock_file + ".holder")
+
+
+def _write_holder(lock_file: str) -> None:
+    """待つ側が原因を示せるよう、ロックを取得したプロセスのPID・起動時刻・コマンドラインを記録する。"""
+    try:
+        process = psutil.Process()
+        record = {
+            "pid": process.pid,
+            "started_at": datetime.datetime.fromtimestamp(process.create_time()).astimezone().isoformat(timespec="seconds"),
+            "command": " ".join(process.cmdline()),
+        }
+        _holder_path(lock_file).write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    except OSError, psutil.Error:
+        # 記録は診断の補助であり、書けないことでロックの取得を失敗させない。
+        pass
+
+
+def _describe_holder(lock_file: str) -> str:
+    """保持者の記録から、失敗行へ載せる保持者の説明を返す。"""
+    try:
+        record = json.loads(_holder_path(lock_file).read_text(encoding="utf-8"))
+        pid = int(record["pid"])
+        description = f"PID {pid}、起動 {record['started_at']}、コマンド `{record['command']}`"
+    except OSError, ValueError, KeyError, TypeError:
+        return "記録が無いため特定できない"
+    if not psutil.pid_exists(pid):
+        return f"{description}（このPIDのプロセスは存在しない）"
+    return description
+
+
 class _RepoLock(filelock.FileLock):
     """Git common directory単位で保持記録を管理するFileLock。"""
 
-    def __init__(self, repo_path: pathlib.Path, *, timeout: float = -1) -> None:
+    def __init__(self, repo_path: pathlib.Path, *, timeout: float) -> None:
         self._repo_path = repo_path
         self._target = _lock_key(repo_path)
         self._observer: LockObserver | None = None
         self._acquired_at: float | None = None
+        self._hold_scope: contextlib.ExitStack | None = None
         super().__init__(str(repo_lock_path(repo_path)), timeout=timeout)
 
     def acquire(
@@ -217,10 +301,16 @@ class _RepoLock(filelock.FileLock):
                 )
             except filelock.Timeout:
                 # 取得できずに終わった待ちも、要求の所要のうちロック待ちが占めた区間として記録する。
+                waited = time.perf_counter() - wait_started
                 if observer is not None and self._acquired_at is None:
-                    observer.add_lock_wait(time.perf_counter() - wait_started)
-                raise
+                    observer.add_lock_wait(waited)
+                raise RepoLockTimeoutError(self.lock_file, waited=waited, holder=_describe_holder(self.lock_file)) from None
         _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
+        if self.lock_counter == 1:
+            _write_holder(self.lock_file)
+            # 呼び出し側ごとの指定に頼らず、保持区間のgit操作全体を有限にする。
+            self._hold_scope = contextlib.ExitStack()
+            self._hold_scope.enter_context(_git_command.timeout_scope(LOCK_HOLD_TIMEOUT_SECONDS))
         if observer is not None and self._acquired_at is None:
             acquired_at = time.perf_counter()
             observer.add_lock_wait(acquired_at - wait_started)
@@ -229,6 +319,15 @@ class _RepoLock(filelock.FileLock):
         return result
 
     def release(self, force: bool = False) -> None:
+        if self.is_locked and (force or self.lock_counter == 1):
+            # 保持者の記録は、次の取得者の記録を消さないようロックの解放より前に消す。
+            with contextlib.suppress(OSError):
+                _holder_path(self.lock_file).unlink(missing_ok=True)
+            if self._hold_scope is not None:
+                # 取得と別の文脈で解放された場合、期限の復元は行えないが、その文脈の終了とともに期限も消える。
+                with contextlib.suppress(ValueError):
+                    self._hold_scope.close()
+                self._hold_scope = None
         super().release(force)
         if not self.is_locked:
             _LOCK_HELD_PATHS.paths.pop(self._target, None)
@@ -238,9 +337,15 @@ class _RepoLock(filelock.FileLock):
             self._acquired_at = None
 
 
-def repo_lock(repo_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
-    """指定作業コピーへ対応するGit共通ロックを返す。"""
-    return _RepoLock(repo_path, timeout=timeout)
+def repo_lock(repo_path: pathlib.Path, *, timeout: float | None = None) -> filelock.FileLock:
+    """指定作業コピーへ対応するGit共通ロックを返す。
+
+    `timeout`を省略すると`LOCK_WAIT_TIMEOUT_SECONDS`まで待つ。
+    待機上限に達すると、保持者を示す`RepoLockTimeoutError`（`filelock.Timeout`の派生）を送出する。
+    保持している間のgit操作は、合計で`LOCK_HOLD_TIMEOUT_SECONDS`を上限とする。
+    """
+    # filelockは生成時の引数を検証するため、省略値はここで秒数へ解決する。
+    return _RepoLock(repo_path, timeout=LOCK_WAIT_TIMEOUT_SECONDS if timeout is None else timeout)
 
 
 def assert_repo_lock_held(repo_path: pathlib.Path) -> None:
@@ -273,6 +378,16 @@ def _report_missing_upstream(private_notes: pathlib.Path) -> None:
 def push_was_deferred(private_notes: pathlib.Path) -> bool:
     """現在のスレッドの直近pushで保留を報告したか返す。"""
     return private_notes.resolve() in _LOCK_HELD_PATHS.push_deferred
+
+
+def reset_sync_attempt() -> None:
+    """現在のスレッドの、commitと送信の試行の記録を消す。CLIが1回の操作を始める前に呼ぶ。"""
+    _LOCK_HELD_PATHS.sync_attempted = False
+
+
+def sync_attempted() -> bool:
+    """`reset_sync_attempt`の後に、現在のスレッドがcommitしたか未pushのcommitの送信を試みたかを返す。"""
+    return _LOCK_HELD_PATHS.sync_attempted
 
 
 def _git_path(private_notes: pathlib.Path, name: str, *, result_runner: _GitResultRunner) -> pathlib.Path | None:
@@ -329,6 +444,9 @@ def pull(
         if not is_reported(error):
             _report_sync_failure(private_notes, "pull", error)
             mark_reported(error)
+        raise
+    except subprocess.TimeoutExpired as error:
+        _report_sync_timeout(private_notes, "pull", error)
         raise
 
 
@@ -621,6 +739,17 @@ def _report_sync_failure(
     _outcome.report_failure(f"private-notesの{operation}に失敗した: {resolved}。{cause}", next_action=next_action)
 
 
+def _report_sync_timeout(private_notes: pathlib.Path, operation: str, error: subprocess.TimeoutExpired) -> None:
+    """pullまたはpushのgitが時間切れになった場合に、同期の失敗として1本の失敗行を出力する。"""
+    if is_reported(error):
+        return
+    _outcome.report_failure(
+        f"private-notesの{operation}に失敗した: {private_notes.resolve()}。{git_timeout_reason(error)}",
+        next_action=GIT_TIMEOUT_NEXT_ACTION,
+    )
+    mark_reported(error)
+
+
 def push_pending_commits(
     private_notes: pathlib.Path,
     *,
@@ -642,6 +771,9 @@ def push_pending_commits(
             _report_sync_failure(private_notes, "push", error)
             mark_reported(error)
         raise
+    except subprocess.TimeoutExpired as error:
+        _report_sync_timeout(private_notes, "push", error)
+        raise
 
 
 def _push_pending_commits_impl(
@@ -661,6 +793,7 @@ def _push_pending_commits_impl(
         print(f"remoteへ送信して同期中: {private_notes}", file=sys.stderr, flush=True)
     original_error: subprocess.CalledProcessError
     count = pending_commit_count(private_notes, result_runner=result_runner)
+    _LOCK_HELD_PATHS.sync_attempted = True
     try:
         run_git(["push"], private_notes, forward_error_output=False)
         return count
@@ -817,6 +950,7 @@ def commit_and_push(
             return push_fn(private_notes)
         return 0
     run_git(["commit", "-m", message, "--", *stage_paths], private_notes)
+    _LOCK_HELD_PATHS.sync_attempted = True
     if skip_push:
         return 0
     return push_fn(private_notes)

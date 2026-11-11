@@ -199,7 +199,7 @@ class CommitEntriesResult:
     pushed_commits: int | None
 
 
-def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float = -1) -> CommitEntriesResult:
+def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float | None = None) -> CommitEntriesResult:
     """平引数でprivate-notesの作業ツリー全体の外部編集差分をcommit・pushする。
 
     差分がない場合も滞留commitをpushし、外部編集とremoteの有無・送信件数を返す。

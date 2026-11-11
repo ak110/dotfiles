@@ -6,7 +6,9 @@ import datetime
 import os
 import pathlib
 import subprocess
+import sys
 import threading
+import time
 from typing import Any
 
 import filelock
@@ -18,6 +20,7 @@ from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import mutations as _atk_wi_mutations
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi.layout import entry_path, entry_state_of, iter_entry_paths
+from agent_toolkit._git import command as _git_command
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
@@ -116,6 +119,125 @@ def test_lock_timeout_records_wait_to_observer(tmp_path: pathlib.Path) -> None:
     assert len(observer.waits) == 1
     assert observer.waits[0] >= 0.2
     assert not observer.holds
+
+
+_LOCK_HOLDER_SCRIPT = """
+import pathlib
+import sys
+import time
+
+from agent_toolkit._atk import git_sync
+
+with git_sync.repo_lock(pathlib.Path(sys.argv[1])):
+    pathlib.Path(sys.argv[2]).write_text("held", encoding="utf-8")
+    time.sleep(60)
+"""
+
+
+def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """別プロセスがロックを保持し続けると、`atk wi add`は待機上限で失敗し、保持者のPIDとコマンドラインを示す。
+
+    待機上限の省略時の値が無期限の場合、保持者が終わる60秒後まで戻らず、失敗もしない。
+    """
+    notes = tmp_path / "private-notes"
+    git_repository.init_repository(notes, initial_branch="main", files={"README.md": "notes\n"}, commit_message="base")
+    script = tmp_path / "hold_lock.py"
+    script.write_text(_LOCK_HOLDER_SCRIPT, encoding="utf-8")
+    ready = tmp_path / "ready"
+    body = tmp_path / "body.md"
+    body.write_text(AGENT_AWI_BODY, encoding="utf-8")
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_atk_git_sync, "LOCK_WAIT_TIMEOUT_SECONDS", 1.0)
+    environ = os.environ.copy()
+    package_root = pathlib.Path(_atk_git_sync.__file__).resolve().parents[2]
+    environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(package_root), environ.get("PYTHONPATH")]))
+    with subprocess.Popen([sys.executable, str(script), str(notes), str(ready)], env=environ) as holder:
+        try:
+            deadline = time.monotonic() + 30
+            while not ready.exists():
+                assert holder.poll() is None, "保持者がロックの取得前に終了した"
+                assert time.monotonic() < deadline, "保持者のロック取得を観測できない"
+                time.sleep(0.05)
+
+            started = time.monotonic()
+            with pytest.raises(SystemExit) as exc_info:
+                atk.main(
+                    [
+                        "wi",
+                        "add",
+                        "--source",
+                        "session-review",
+                        "--target-repo",
+                        "github.com/example/repo",
+                        "--body-file",
+                        str(body),
+                    ],
+                    home=tmp_path,
+                )
+            elapsed = time.monotonic() - started
+        finally:
+            holder.kill()
+
+    assert exc_info.value.code == 1
+    assert elapsed < 30
+    error = capsys.readouterr().err
+    failure = next(line for line in error.splitlines() if line.startswith("失敗: "))
+    assert f"PID {holder.pid}" in failure
+    assert "hold_lock.py" in failure
+    assert str(_atk_git_sync.repo_lock_path(notes)) in failure
+    assert any(line.startswith("次の操作: ") for line in error.splitlines())
+
+
+def test_lock_records_holder_while_held_and_bounds_git_operations(tmp_path: pathlib.Path) -> None:
+    """保持中は保持者の記録があり、保持区間のgit操作は区間の上限を受ける。解放すると両方が消える。"""
+    holder_file = pathlib.Path(str(_atk_git_sync.repo_lock_path(tmp_path)) + ".holder")
+    limits: list[float] = []
+
+    def record(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        limits.append(kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(_git_command, "_launch", record)
+        # 再入は同じロックオブジェクトで行う。別のオブジェクトは同じプロセスでも互いに待つ。
+        lock = _atk_git_sync.repo_lock(tmp_path)
+        with lock:
+            assert f'"pid": {os.getpid()}' in holder_file.read_text(encoding="utf-8")
+            with lock:
+                _git_command.run(["fetch"], tmp_path)
+            assert holder_file.exists()
+        _git_command.run(["fetch"], tmp_path)
+
+    assert not holder_file.exists()
+    assert 0 < limits[0] <= _atk_git_sync.LOCK_HOLD_TIMEOUT_SECONDS
+    assert limits[1] == _git_command.TRANSFER_TIMEOUT_SECONDS
+
+
+def test_pull_reports_git_timeout_as_single_sync_failure(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], remote_sync: None
+) -> None:
+    """pullのgitが時間切れになると、打ち切ったコマンド・上限秒数・作業ディレクトリを持つ失敗行を1本だけ出す。"""
+    del remote_sync
+
+    def time_out(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
+        del forward_error_output
+        error = subprocess.TimeoutExpired(_git_command.command_line(args), 120)
+        # `_git_command.run`が時間切れの例外へ付ける作業ディレクトリの記録を模す。
+        setattr(error, "git_cwd", str(cwd))  # noqa: B010
+        raise error
+
+    with _atk_git_sync.repo_lock(tmp_path), pytest.raises(subprocess.TimeoutExpired) as raised:
+        _atk_git_sync.pull(tmp_path, run_git=time_out)
+
+    assert _atk_git_sync.is_reported(raised.value)
+    failures = [line for line in capsys.readouterr().err.splitlines() if line.startswith("失敗: ")]
+    assert len(failures) == 1
+    assert "private-notesのpullに失敗した" in failures[0]
+    assert "`git fetch`" in failures[0]
+    assert "120秒" in failures[0]
+    assert str(tmp_path) in failures[0]
 
 
 @pytest.fixture(name="remote_sync")

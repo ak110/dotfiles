@@ -27,6 +27,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp  # noqa: E402  # py
 from agent_toolkit._atk import plans as _plans_module
 from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.wi import add as _add  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import alerts as _wi_alerts
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import listing as _wi_listing
 from agent_toolkit._atk.wi import sync as _wi_sync
@@ -645,24 +646,59 @@ def _setup_notes_with_pending_commit(tmp_path: pathlib.Path, *, pending: bool = 
     return notes
 
 
-_SYNC_MUTATION_ENTRIES = ("wi start-processing", "wi add --dry-run", "plans commit")
-"""終了時に未pushを判定する同期対象操作のコマンド。`wi add --dry-run`は自身でcommitしない操作として含める。"""
+_SYNC_MUTATION_ENTRIES = ("wi start-processing", "plans commit")
+"""終了時に未pushを判定する操作のコマンド。`wi start-processing`は代役が実際にcommitし、送信を試みる。"""
+
+_NON_SAVING_ENTRIES = ("add --dry-run", "edit --dry-run", "edit without diff", "answer without target", "check-alerts")
+"""commitも未pushの送信も試みずに成功で終わる`atk wi`の操作。"""
+
+_EDIT_TARGET = "20260714-000001-001.md"
+# `_write_awi_file`が省略時に書く対象リポジトリ。実行位置から解決した値との不一致で編集が拒否されないよう明示する。
+_EDIT_TARGET_REPO = "github.com/example/foo"
 
 _DRY_RUN_SUCCESS = "成功: 投入前の検証が成立した（--dry-runのため保存していない）"
 
 
-def _prepare_sync_mutation(entry: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> list[str]:
+def _prepare_sync_mutation(entry: str, monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """同期対象操作のコマンドごとに外部への作用を差し替え、`atk.main`へ渡す引数を返す。"""
     if entry == "wi start-processing":
-        monkeypatch.setattr(_mutation_transitions, "cmd_start_processing", lambda *_args: None)
+
+        def commit_in_lock(_args: Any, notes: pathlib.Path, *_rest: Any) -> None:
+            # 実物と同じく、ロック内でcommitしてから未pushの送信を試みる。
+            with _wi_sync.repo_lock(notes):
+                (notes / "started.txt").write_text("started\n", encoding="utf-8")
+                _wi_sync.commit_and_push(notes, "chore: start", ["started.txt"])
+
+        monkeypatch.setattr(_mutation_transitions, "cmd_start_processing", commit_in_lock)
         return ["wi", "start-processing", "awi.md"]
-    if entry == "wi add --dry-run":
-        monkeypatch.setattr(_add, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
-        body = tmp_path / "body.md"
-        body.write_text("本文\n", encoding="utf-8")
-        return ["wi", "add", "--dry-run", "--target-repo", "github.com/example/repo", "--body-file", str(body)]
     monkeypatch.setattr(_plans_module, "dispatch", lambda *_args: 0)
     return ["plans", "commit", "01-0900_example.md"]
+
+
+def _prepare_non_saving_operation(
+    entry: str, notes: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> list[str]:
+    """保存しない操作ごとに入力を用意し、`atk.main`へ渡す引数を返す。"""
+    body = tmp_path / "body.md"
+    if entry == "add --dry-run":
+        monkeypatch.setattr(_add, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
+        body.write_text("本文\n", encoding="utf-8")
+        return ["wi", "add", "--dry-run", "--target-repo", "github.com/example/repo", "--body-file", str(body)]
+    if entry == "edit --dry-run":
+        body.write_text(f"{_wi_bodies.AGENT_AWI_BODY}\n追記\n", encoding="utf-8")
+        return ["wi", "edit", _EDIT_TARGET, "--dry-run", "--target-repo", _EDIT_TARGET_REPO, "--body-file", str(body)]
+    if entry == "edit without diff":
+        body.write_text(f"{_wi_bodies.AGENT_AWI_BODY}\n", encoding="utf-8")
+        return ["wi", "edit", _EDIT_TARGET, "--target-repo", _EDIT_TARGET_REPO, "--body-file", str(body)]
+    if entry == "answer without target":
+        monkeypatch.setenv("EDITOR", "true")
+        return ["wi", "answer"]
+    del notes
+    # CIの照会は外部サービスを呼ぶため、失敗の無い監視結果（投入0件）へ差し替える。
+    monkeypatch.setattr(
+        _wi_alerts, "check_and_submit_alerts", lambda *_args, **_kwargs: types.SimpleNamespace(submitted=0, failures=())
+    )
+    return ["wi", "check-alerts"]
 
 
 @pytest.mark.parametrize("entry", _SYNC_MUTATION_ENTRIES)
@@ -672,28 +708,60 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
     capsys: pytest.CaptureFixture[str],
     entry: str,
 ) -> None:
-    """同期対象操作だけが、処理の終了後に残る未pushを終了コード3で通知する。"""
+    """commitか送信を試みた操作は、送信できずに残った未pushを終了コード3で通知する。"""
     notes = _setup_notes_with_pending_commit(tmp_path)
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     monkeypatch.setattr(_wi_listing, "cmd_list", lambda *_args: None)
-    argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
+    # 送信が成立しなかった状態を作る。commitは行われ、リモートへは届かない。
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _notes: 0)
+    argv = _prepare_sync_mutation(entry, monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv, home=tmp_path)
+    monkeypatch.undo()
     assert exc_info.value.code == 3
     output = capsys.readouterr()
-    if entry == "wi add --dry-run":
-        assert _DRY_RUN_SUCCESS in output.out
-    assert "警告: private-notesに未pushのcommitが1件残る" in output.err
+    assert "警告: private-notesに未pushのcommitが" in output.err
     # pushの手順は警告行に続く次の操作の行へ置く。
     next_action = next(line for line in output.err.splitlines() if line.startswith("次の操作: "))
     assert f"`git -C {notes.resolve()} status`" in next_action
     assert "atk wi commit" in next_action
 
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    monkeypatch.setattr(_wi_listing, "cmd_list", lambda *_args: None)
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "list", "--skip-pull"], home=tmp_path)
     assert exc_info.value.code == 0
     assert "未pushのcommit" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("entry", _NON_SAVING_ENTRIES)
+def test_main_does_not_report_pending_commit_for_operations_without_commit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    entry: str,
+) -> None:
+    """commitも送信も試みない操作は、他の主体が残した未pushを警告にも終了コードにも反映しない。"""
+    notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
+    _write_awi_file(notes, _EDIT_TARGET, body=_wi_bodies.AGENT_AWI_BODY, source="session-review")
+    git_repository.commit_all(notes, "awi")
+    git_repository.run_git(notes, "push")
+    (notes / "pending.txt").write_text("pending\n", encoding="utf-8")
+    pending = git_repository.commit_all(notes, "pending")
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
+    argv = _prepare_non_saving_operation(entry, notes, tmp_path, monkeypatch)
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(argv, home=tmp_path, now=datetime.datetime(2026, 7, 15, 9, 0, 0))
+
+    output = capsys.readouterr()
+    assert exc_info.value.code == 0, output.err
+    assert "未pushのcommit" not in output.err
+    if entry == "add --dry-run":
+        assert _DRY_RUN_SUCCESS in output.out
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == pending
+    assert git_repository.git_output(notes, "rev-list", "--count", "@{u}..HEAD") == "1"
 
 
 _CONCURRENT_PUSH_SCRIPT = """
@@ -733,7 +801,7 @@ def test_main_does_not_report_commit_pushed_by_concurrent_process(
     """
     notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
-    argv = _prepare_sync_mutation(entry, tmp_path, monkeypatch)
+    argv = _prepare_sync_mutation(entry, monkeypatch)
     script = tmp_path / "concurrent_push.py"
     script.write_text(_CONCURRENT_PUSH_SCRIPT, encoding="utf-8")
     ready = tmp_path / "ready"
@@ -760,10 +828,7 @@ def test_main_does_not_report_commit_pushed_by_concurrent_process(
         assert writer.wait(timeout=30) == 0
 
     assert exc_info.value.code == 0
-    output = capsys.readouterr()
-    if entry == "wi add --dry-run":
-        assert _DRY_RUN_SUCCESS in output.out
-    assert "未pushのcommit" not in output.err
+    assert "未pushのcommit" not in capsys.readouterr().err
 
 
 class TestMutationTargetRepoParserOption:

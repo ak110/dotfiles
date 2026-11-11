@@ -89,6 +89,7 @@ async def list_models_from_app_server() -> list[dict[str, Any]]:
     """短命なApp Server接続で、`atk config`が他の接続と独立してモデル一覧を取得する。"""
     with tempfile.TemporaryFile(mode="w+b") as diagnostics:
         try:
+            # 時間上限なし: 常駐の接続であり、応答待ちは呼び出し側が`asyncio.wait_for`で打ち切る。
             process = await asyncio.create_subprocess_exec(
                 *_APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,

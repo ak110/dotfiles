@@ -37,6 +37,7 @@ def show_logs(*, follow: bool = False) -> int:
     if follow:
         command.append("-f")
     try:
+        # 時間上限なし: ユーザーが前景で見るログの表示と追従であり、ユーザーが終了させる。
         return subprocess.run(command, check=False).returncode
     except OSError as error:
         _next_action.report(

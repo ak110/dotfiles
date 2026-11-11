@@ -23,7 +23,7 @@ from agent_toolkit._plan import locations as _plan_locations
 ROOT_DESCRIPTION = "WIキュー、計画、レビュー記録、一時領域と委譲セッションを操作する。\n\n目的: agent-toolkitのWIキュー、計画ファイル、レビュー指摘管理表、managed-tempと委譲支援を1つのコマンドから操作する。\n利用場面: ユーザーとエージェントが、AWIの投入から計画、実装、保存までの一連の作業を進めるとき。\n対象と出力: サブコマンドを指定しない場合はコマンド一覧を標準出力へ書き、何も変更しない。実際の読み書きは各サブコマンドが行う。`AI_AGENT`・`CODEX_CI`・`CLAUDECODE`・`CURSOR_AGENT`のいずれかが設定されたエージェント環境では、標準出力と標準エラーを分けて保持する。UTF-8で16384バイトを超える出力は生成側が新規managed-tempへ保存し、標準出力には`保存先: <絶対パス>`・`行数: <N>`、標準エラーには`標準エラー保存先: <絶対パス>`・`標準エラー行数: <N>`を返す。結果をファイルとして受け取る呼び出し（FILENAMEを2件以上指定するか`--all`を指定した`atk wi show`、`atk run-script session-review-evidence`の`--user-events`）は短い標準出力も保存する。保存後は、`--user-events`が`kind`が`user`の行ごとに`発話: record=<record> line=<line> <本文の冒頭>`を続けて書く。`session-review-evidence`の`--grep`・`--tool-calls`は長い結果を保存した場合だけ、記録位置・kind・存在するrole/tool・改行を空白にした本文の先頭160文字を1件1行で続けて書く（短縮時は`…`、該当なしは`一致: 0件`）。一致が20件を超える場合は、全件数・kindとrole/tool別の件数・記録別の件数に続けて保存順の先頭20件だけを書き、残り件数と保存先から読む方法を示す。`--summary-only`と`--fixed-string`はこの一覧の対象外とする。それ以外の16384バイト以下の出力は直接表示する。`--help`の表示と、`atk info`のように結果を表示して終わるサブコマンドも同じ量で判定する。引数の誤りは標準エラーへ直接書き、終了コード2で終わる。`atk serve`、`atk wi process-loop`の常駐および`atk agents logs --follow`は対象外とし、エージェント環境でない場合は出力を変えない。保存先は最終更新から7日で自動削除される。\n前提: private-notesを扱うサブコマンドは`atk config get private_notes`が返すリポジトリを使う。\n復元・後始末: 本コマンド自身は状態を残さない。各サブコマンドの後始末はそのコマンドの`--help`に示す。"
 ROOT_EPILOG = "各コマンドの詳細は`atk <コマンド> --help`で表示する。階層コマンドではさらに`atk <コマンド> <サブコマンド> --help`を使う。\n\n実行例:\n\n  atk wi list\n  atk config show"
 ROOT_EPILOG += "\n\n保存したファイルは、ハーネスの読取（Read）か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で、示した行数を範囲に分けて読む。"
-ROOT_EPILOG += "\n全文を保存したatk wi showは、各項目のユーザー専用の記入欄（ユーザーコメント・回答）の有無と、保存先での開始行を全件示す。"
+ROOT_EPILOG += "\n全文を保存したatk wi showは、ユーザー専用の記入欄（ユーザーコメント・回答）がある項目と保存先での開始行を全件示し、記入欄が無い項目は件数を示す。"
 
 CI_REVIEW_TABLE_NAME_FORMAT = "ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv"
 """CI対応レビュー指摘管理表の名前の書式。保存済みの表は`ci/`を前置する。
@@ -512,8 +512,9 @@ HELP["atk plans checkout"]["description"] = HELP["atk plans checkout"]["descript
     "PLAN_FILEは`private-notes/plans/`相対またはそのroot配下の絶対パスで指定する。",
 )
 HELP["atk wi show"]["description"] += (
-    "\n全文を保存した場合は、保存先・行数・読取に続けて各項目を`記入欄: <ファイル名> <見出し> なし`または"
-    "`記入欄: <ファイル名> <見出し> あり 開始行: <N>`で全件示す。"
+    "\n全文を保存した場合は、保存先・行数・読取に続けて、記入欄がある項目を"
+    "`記入欄: <ファイル名> <見出し> あり 開始行: <N>`で全件示し、記入欄が無い項目は`記入欄なし: <N>件`の1行で件数を示す。"
+    "記入欄が無い項目が0件の場合は件数の行を書かない。"
     "見出しはAWIの`## ユーザーコメント`かUWIの`## 回答`、開始行は保存先での1始まりの行番号である。"
     "\n節の照会: --section H2は反復指定でき、指定したH2節の本文を読む。"
     "指定しない場合は本文全体を読み、--summary-onlyは要約だけを返す。"
