@@ -6,11 +6,14 @@ import asyncio
 import logging
 import pathlib
 import sys
+from asyncio.subprocess import Process
+from typing import Any
 
 import psutil
 import pytest
 
 from agent_toolkit._agents_server import codex as subject
+from agent_toolkit._agents_server import lifetime
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing import fake_codex_app_server
@@ -144,9 +147,13 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
             psutil.Process.kill,
         )
         suspends: list[int] = []
+        native_stops: list[int] = []
         job_stops: list[bool] = []
         first_stop = True
         original_job_terminate = subject.windows_job.WindowsJob.terminate
+        native_terminate = Process.terminate
+        native_kill = Process.kill
+        wait_shutdown = lifetime.wait_for_shutdown
 
         def terminate_job(job, **kwargs):
             job_stops.append(first_stop)
@@ -169,17 +176,40 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
             if not (first_stop and process.pid == server_pid):
                 original_kill(process)
 
+        def terminate_native(process: Process) -> None:
+            native_stops.append(process.pid)
+            if not first_stop:
+                native_terminate(process)
+
+        def kill_native(process: Process) -> None:
+            native_stops.append(process.pid)
+            if not first_stop:
+                native_kill(process)
+
+        async def wait_injected_shutdown(tasks: Any, **kwargs: Any) -> Any:
+            # 初回は終了要求を拒否するため、実時間5秒の待機自体はこの回収試験の検出対象に含めない。
+            if first_stop and kwargs.get("timeout") == 5:
+                kwargs = {**kwargs, "timeout": 0.01}
+            return await wait_shutdown(tasks, **kwargs)
+
         monkeypatch.setattr(psutil.Process, "suspend", suspend)
         monkeypatch.setattr(psutil.Process, "terminate", terminate)
         monkeypatch.setattr(psutil.Process, "kill", kill)
+        # RPCの後始末はpsutilを経由しない終了要求も使うため、同じ初回拒否へ含める。
+        monkeypatch.setattr(Process, "terminate", terminate_native)
+        monkeypatch.setattr(Process, "kill", kill_native)
+        monkeypatch.setattr(lifetime, "wait_for_shutdown", wait_injected_shutdown)
         if sys.platform == "win32":
             monkeypatch.setattr(subject.windows_job.WindowsJob, "terminate", terminate_job)
-        with pytest.raises(ActionableError) as raised:
-            await manager.stop(session_id)
-        assert "生成の停止を確認できない" in str(raised.value)
-        assert session_registry.resolve(session_id).state is not session_registry.Resolution.RELEASED
-        stopped_once = len(job_stops if sys.platform == "win32" else suspends)
-        first_stop = False
+        try:
+            with pytest.raises(ActionableError) as raised:
+                await manager.stop(session_id)
+            assert "生成の停止を確認できない" in str(raised.value)
+            assert session_registry.resolve(session_id).state is not session_registry.Resolution.RELEASED
+            assert fake.alive(server_pid)
+            stopped_once = len(job_stops if sys.platform == "win32" else [*suspends, *native_stops])
+        finally:
+            first_stop = False
 
         with caplog.at_level(logging.WARNING, logger="agent_toolkit._common.process_tree"):
             assert await manager.stop(session_id) == {}
@@ -189,7 +219,7 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
         assert all("停止操作を再実行しても回収されない" in message for message in retry_warnings)
 
         # 再発行では成功を前提にせず、所有対象から子孫を改めて回収した。
-        assert len(job_stops if sys.platform == "win32" else suspends) > stopped_once
+        assert len(job_stops if sys.platform == "win32" else [*suspends, *native_stops]) > stopped_once
         assert not fake.alive(server_pid)
         assert not any(fake.alive(pid) for pid in mcp_pids)
         assert session_registry.resolve(session_id).state is session_registry.Resolution.RELEASED
