@@ -13,8 +13,13 @@ runs:
         set -euo pipefail
         root="$RUNNER_TEMP/minimum-git"
         mkdir -p "$root"
-        # 取得先の名前解決などの一時的な失敗でjob全体が失敗しないよう、chezmoiの取得と同じく3回まで再試行する。
-        curl -sSfL --retry 3 --retry-all-errors --retry-delay 5 -o "$root/$GIT_DEB" "http://archive.ubuntu.com/ubuntu/pool/main/g/git/$GIT_DEB"
+        # 取得先の名前解決などの一時的な失敗でjob全体が失敗しないよう、各取得先を3回まで再試行し、
+        # GitHubのrunnerが標準で使うAzureのミラーから順に試す（同じファイルをsha256で検証する）。
+        for host in azure.archive.ubuntu.com archive.ubuntu.com; do
+          if curl -sSfL --retry 3 --retry-all-errors --retry-delay 5 -o "$root/$GIT_DEB" "http://$host/ubuntu/pool/main/g/git/$GIT_DEB"; then
+            break
+          fi
+        done
         echo "$GIT_DEB_SHA256  $root/$GIT_DEB" | sha256sum -c -
         dpkg -x "$root/$GIT_DEB" "$root/extract"
         printf '#!/bin/sh\nGIT_EXEC_PATH=%s/usr/lib/git-core exec %s/usr/bin/git "$@"\n' "$root/extract" "$root/extract" > "$root/git"
