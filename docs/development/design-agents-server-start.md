@@ -17,7 +17,7 @@ Claudeでは、完成したassistantメッセージが思考と最初の内容�
 失敗した要求は応答を始めないため、可用性失敗の検出は保たれる。
 応答開始後に生じた失敗は起動成功として扱い、`atk agents wait`が終了として受け取る。
 ただしCodexのturnが可用性確認を終えた後（委譲元の`send_message`で始めたturnを含む）にサーバー側過負荷（`serverOverloaded`）で終了した場合は、結果を保留して同じsessionの自動継続で扱う。
-待機の構造は`design-agents-runtime-connections.md`「API失敗・過負荷・利用上限の待機」にある。
+待機の構造は`design-agents-runtime-usage-wait.md`にある。
 可用性の失敗はモデルの最初の出力より前に生じ、正常に起動した委譲先は上限内に終了しないため、終了だけを条件にすると正常な起動が毎回上限まで待つためである。
 失敗より前に届く受信はモデル出力に数えない。
 API失敗を表すClaudeの合成メッセージ、Codexの`userMessage`などの入力の記録、agyの`user_input`・`system_message`・`error_message`がこれに当たる。
@@ -32,7 +32,7 @@ Codexの失敗の`message`がJSONの`error`オブジェクトを持ち、その`
 モデルIDの拒否は同じ候補で再試行しても解消せず、別候補なら結果が変わる。
 Claudeのモデル不受理は400と自由文の本文で届き、他の不正な要求と区別できないため含めない。
 Claudeでは、Claude Agent SDKが`ResultMessage.api_error_status`へ載せるHTTPステータスのうち429と529を用いる。
-待機方針に該当するClaudeの利用上限はこの判定の例外とし、同じsessionの解除待ちで扱う（`design-agents-runtime-connections.md`「API失敗・過負荷・利用上限の待機」）。
+待機方針に該当するClaudeの利用上限はこの判定の例外とし、同じsessionの解除待ちで扱う（`design-agents-runtime-usage-wait.md`）。
 候補を変えても結果が変わらない失敗では候補を進めない。
 Claude側で500を対象へ含めないのは、Claude APIの公式なエラーコード表が429を流量制限、529をサーバー側の過負荷とする一方、500をサービス内部の失敗とし、候補の変更で解決するとは限らないためである。
 上限を過ぎてから可用性の失敗が判明した場合は、呼び出し側が同じ起動条件で`start`を呼び直す。

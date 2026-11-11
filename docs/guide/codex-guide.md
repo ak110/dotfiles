@@ -6,7 +6,7 @@ Codexはagent-toolkitの標準構成に含まれ、単体インストーラー�
 
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、dotfiles固有のグローバル`AGENTS.md`と共有リンクを配置しない。
 dotfilesユーザーは`update-dotfiles`または`chezmoi apply`で、Codex向け`AGENTS.md`、共有ルール、スキルのリンク、プラグインをまとめて設定する。
-配布される構成は[architecture.md](../development/architecture-agents-codex.md#codex向けの配布構成)を参照。
+配布される構成は[architecture-agents-codex.md](../development/architecture-agents-codex.md#codex向けの配布構成)を参照。
 
 ## Codexで`atk wi process-loop`を使う
 
@@ -81,7 +81,7 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 daemonの自動再起動の条件は[プラグイン更新の反映](#プラグイン更新の反映)を参照。
 
 CodexのStopフックは説明言語だけを判定し、完了報告の起動忘れは通知しない。
-フックの判定内容とClaude Codeとの差は[design-hooks.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)を参照。
+フックの判定内容とClaude Codeとの差は[design-hooks-host-support.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)を参照。
 
 ## CodexのサブスクとAPI接続先
 

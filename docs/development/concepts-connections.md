@@ -25,7 +25,7 @@
   対象は`agents_server`、メインのセッション、`atk wi process-loop`の可用性判定、`atk run-skill`の本作業と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
   Claude統括CLIは同じengine内の利用可能な代替接続を先に試し、代替がない場合にこの待機を適用する（2026年11月4日、resume時に上限中の方式をスキップするユーザー指示）。
   待機は回数と総時間で打ち切らない。
-  実装契約は[design-agents-runtime.md](design-agents-runtime-connections.md#api失敗過負荷利用上限の待機)の「API失敗・過負荷・利用上限の待機」にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-stalls.md`「停滞の検知と巻き取り」が定める
+  実装契約は[design-agents-runtime-usage-wait.md](design-agents-runtime-usage-wait.md)にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-stalls.md`「停滞の検知と巻き取り」が定める
 
 - Claude・Codexの接続は、サブスクリプション（`subscription`）、有限のAPIクレジット（`credits`）、従量課金API（`payg`）の3種別とする。
   認証の所在は種別ごとの設定キー（Claudeは`claude_credits_env_file`・`claude_payg_env_file`、Codexは`codex_credits_provider`・`codex_payg_provider`）に置く。
@@ -60,7 +60,7 @@
   Claudeは親環境と親settingsからAPI認証を隔離し、選択したenvの値は起動ごとに読み直す。
   ユーザーの直接起動、組み込みAgentとfork、run-skill、commitは対象外である。
   エンドユーザー向けの説明と条件ごとの設定例は`docs/guide/claude-code-connections.md`「接続の使い分け」にあり、`atk config --help`からその節のURLを案内する（2026年10月29日、ユーザー指示）。
-  実装契約は[design-agents-runtime.md](design-agents-runtime-connections.md#api失敗過負荷利用上限の待機)にある
+  実装契約は[design-agents-runtime-connections.md](design-agents-runtime-connections.md#api失敗過負荷利用上限の待機)にある
 - 利用上限後の再開は、次の起動形態ごとに扱う。
   解除待ちのagents_serverの委譲先と背景wait・定期再確認は保持する。
   Codexの候補判定は次候補を優先し、全候補失敗かつ上限失敗がある場合だけ解除を待つ
@@ -76,7 +76,7 @@
 | Agentツールのサブエージェント | メインのセッションの一部であり、メインの再開で委譲元が続ける |
 | Codexのrun-skill | 解除後に`codex exec resume`で同じ会話を再開する |
 | Codexのprocess-loopの子 | 上限で止まった所有する子を終了し、次の反復の候補判定を経てレーンとWIから続ける |
-| 端末で`codex`を直接起動した対話画面 | 自動再開しない。外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないため（2026年10月24日の実機観測、[design-agents-runtime.md](design-agents-runtime-connections.md#api失敗過負荷利用上限の待機)）。解除後に`/goal resume`か発話で続ける |
+| 端末で`codex`を直接起動した対話画面 | 自動再開しない。外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないため（2026年10月24日の実機観測、[design-agents-runtime-handoff-resume.md](design-agents-runtime-handoff-resume.md)）。解除後に`/goal resume`か発話で続ける |
 | Codex TUIの子thread | 親threadの再開で親が続ける |
 | agents_serverのCodex委譲先 | run-skillとprocess-loopの再開の対象外。既存の接続先移行と、終了した前任からの引き継ぎ起動で扱う |
 | Codexのcommit | `--ephemeral`の単発操作であり、失敗を終了コードと次の操作として呼出元のエージェントへ返す |

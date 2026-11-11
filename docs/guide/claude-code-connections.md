@@ -51,7 +51,7 @@ Codexの統括担当は起動時に使用順の先頭の使える接続を選び
 Codexの会話は移った接続を使い続け、新しい会話だけを使用順の先頭から評価する。
 
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先するため、設定を変える場合はこの変数も確認する。
-切替と保持の詳細は[design-agents-runtime.md](../development/design-agents-runtime-connections.md#api失敗過負荷利用上限の待機)を参照。
+切替と保持の詳細は[design-agents-runtime-connections.md](../development/design-agents-runtime-connections.md#api失敗過負荷利用上限の待機)を参照。
 
 ### 認証の用意
 

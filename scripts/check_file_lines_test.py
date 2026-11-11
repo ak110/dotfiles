@@ -24,6 +24,8 @@ from agent_toolkit._testing.git_repository import init_repository, run_git
         ("file.md", b"", 0),
         ("file.py", b"\0" + b"x\n" * 1001, 0),
         ("日本語 空白.md", b"x\n" * 251, 1),
+        ("rules.md.tmpl", b"x\n" * 250, 0),
+        ("rules.md.tmpl", b"x\n" * 251, 1),
     ],
 )
 def test_line_boundaries(
@@ -40,11 +42,12 @@ def test_line_boundaries(
     if expected == 0:
         assert not output.out
         return
-    limit, after = (250, 150) if name.endswith(".md") else (1000, 600)
-    assert output.out == (
-        f"{name}:1: {content.count(b'\n')}行が上限{limit}行を超えている。次の操作: "
-        f"分割・統合・削除で整理後の行数{after}行以下にする。数行の削除で上限以下へ戻さない。\n"
-    )
+    # 文言の言い換えで壊れないよう、整理に必要な要素（位置・行数・上限・整理後・次の操作）だけを確かめる。
+    limit, after = (250, 150) if name.endswith((".md", ".md.tmpl")) else (1000, 600)
+    assert output.out.count("\n") == 1
+    assert output.out.startswith(f"{name}:1: ")
+    for element in (f"{content.count(b'\n')}行", f"{limit}行", f"{after}行", "次の操作"):
+        assert element in output.out
 
 
 @pytest.mark.parametrize(

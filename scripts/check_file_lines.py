@@ -20,6 +20,9 @@ MARKDOWN_LIMIT = 250
 MARKDOWN_AFTER_CLEANUP = 150
 OTHER_LIMIT = 1000
 OTHER_AFTER_CLEANUP = 600
+# chezmoiのテンプレート（`*.md.tmpl`）は人が保守するMarkdownの生成元であり、
+# pyproject.tomlのMarkdown検査と同じくMarkdownの上限を適用する。
+MARKDOWN_SUFFIXES = (".md", ".md.tmpl")
 
 
 def _git(root: pathlib.Path, *arguments: str, data: bytes | None = None) -> bytes:
@@ -57,7 +60,9 @@ def check_repository(directory: pathlib.Path) -> int:
                 continue
             lines = content.count(b"\n")
             limit, after = (
-                (MARKDOWN_LIMIT, MARKDOWN_AFTER_CLEANUP) if path.suffix == ".md" else (OTHER_LIMIT, OTHER_AFTER_CLEANUP)
+                (MARKDOWN_LIMIT, MARKDOWN_AFTER_CLEANUP)
+                if path.name.endswith(MARKDOWN_SUFFIXES)
+                else (OTHER_LIMIT, OTHER_AFTER_CLEANUP)
             )
             if lines > limit:
                 diagnostics.append(

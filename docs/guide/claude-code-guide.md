@@ -42,7 +42,7 @@ dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPA
 ### 常時有効な仕組み
 
 規範・フック・MCPの役割は[READMEの構成と機能](../../agent-toolkit/README.md#構成と機能)を参照。
-各フックの判定条件とCodexでの対応範囲は[design-hooks.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)、Codexでの信頼操作は[Codex利用ガイド](codex-guide.md#フックの信頼確認)を参照。
+各フックの判定条件とCodexでの対応範囲は[design-hooks-host-support.md](../development/design-hooks-host-support.md#フックごとの処理とcodexの対応範囲)、Codexでの信頼操作は[Codex利用ガイド](codex-guide.md#フックの信頼確認)を参照。
 
 ### 手動で起動する主なスキル
 

@@ -39,6 +39,6 @@ SIGKILLなどサーバーが記録できない終了は、起動ランチャー�
 ランチャーは終了状態と標準エラーを記録して終わる点で別ラッパー案と異なり、起動・停止・再起動の判断は持たない。
 常駐の監視サービスは設けない。
 session登録簿は記録を書いた所有サーバーの`server_instance`と、中断で終わったturnの履歴`interrupted_turns`を持つ。
-中断を返す`show`・`atk agents show`・`atk agents wait`はこの対応から`error.diagnostics`（`status`は表示時点で判定する）と`interrupted_turns`を返し、読み取りには既存の`atk read-file`を使う。
+中断を返す`show`・`atk agents show`・`atk agents wait`はこの対応から`error.diagnostics`（`status`は表示時点で判定する）と`interrupted_turns`を返し、読み取りには標準の読取（ハーネスのReadか`sed -n`）を使う。
 保持は参照元の存続に従い、登録簿と終了時の結果が参照する診断は7日を超えても残し、全参照元の回収後の掃引で回収する。
 参照元を持たない診断だけを古い順に容量上限（64MiB）で削除する。

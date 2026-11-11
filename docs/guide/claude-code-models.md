@@ -22,7 +22,7 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 
 出力はJSON Linesで、費用は実際の支払額とは異なる推定値である。
 記録が欠けた週の0は使用量0を意味しない。
-各出力項目の定義は[operations.md](../development/operations-cost-metrics.md#週次の費用指標cost-metricsの出力)を参照。
+各出力項目の定義は[operations-cost-metrics.md](../development/operations-cost-metrics.md#週次の費用指標cost-metricsの出力)を参照。
 
 ## 工程別モデル設定
 
