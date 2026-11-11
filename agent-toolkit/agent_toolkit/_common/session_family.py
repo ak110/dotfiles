@@ -86,6 +86,8 @@ class _UnresolvedRecord(NamedTuple):
     kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
     reason: str | None = None
     failure_line: int | None = None
+    source_record: str | None = None
+    source_line: int | None = None
 
 
 def _text_blocks(content: Any) -> list[str]:
@@ -263,6 +265,7 @@ class _RecordMetadata(NamedTuple):
     record_count: int = 0
     recoveries: tuple[_RecordRecovery, ...] = ()
     failure: _RecordLoadFailure | None = None
+    child_references: tuple[tuple[str, int], ...] = ()
 
 
 def _metadata_records(path: Path, recoveries: list[_RecordRecovery]) -> Iterator[_Record]:
@@ -295,7 +298,7 @@ def _scan_record_metadata(path: Path) -> _RecordMetadata:
     start = end = None
     start_value = end_value = None
     calls: set[str] = set()
-    references: list[tuple[set[str], tuple[str, ...], tuple[str, ...]]] = []
+    references: list[tuple[set[str], tuple[str, ...], tuple[str, ...], int]] = []
     is_subagent = path.parent.name == "subagents"
     count = 0
     try:
@@ -334,13 +337,16 @@ def _scan_record_metadata(path: Path) -> _RecordMetadata:
             direct = tuple(_thread_ids_from_record(record, set()))
             conditional = tuple(_thread_ids_from_record(record, result_ids))
             if direct or conditional:
-                references.append((result_ids, direct, conditional))
+                references.append((result_ids, direct, conditional, record.line))
     except _RecordReadError as error:
         return _RecordMetadata(path, failure=error.failure)
     # 呼出より前の結果も通常読込と同じく解決する。保留するのは候補IDだけである。
-    children = tuple(
-        dict.fromkeys(child for ids, direct, conditional in references for child in (conditional if ids & calls else direct))
+    child_references = tuple(
+        dict.fromkeys(
+            (child, line) for ids, direct, conditional, line in references for child in (conditional if ids & calls else direct)
+        )
     )
+    children = tuple(dict.fromkeys(child for child, _line in child_references))
     identity_records = [_Record(0, "", {"type": "session_meta", "payload": {"id": thread_id}})] if thread_id else []
     return _RecordMetadata(
         path,
@@ -355,6 +361,7 @@ def _scan_record_metadata(path: Path) -> _RecordMetadata:
         is_subagent,
         count,
         tuple(recoveries),
+        child_references=child_references,
     )
 
 
@@ -739,7 +746,15 @@ def _collect_records(
                 seen_sessions.add(session_id)
                 resolved_session = _session_path(session_id, codex_home, session_resolver)
                 if resolved_session is None:
-                    unresolved.append(_UnresolvedRecord(session_id, record.line))
+                    unresolved.append(
+                        _UnresolvedRecord(
+                            session_id,
+                            record.line,
+                            reason="record-location-unresolved",
+                            source_record=source.record_id,
+                            source_line=record.line,
+                        )
+                    )
                     continue
                 path, resolved_engine = resolved_session
                 record_id = f"{resolved_engine}:{session_id}"
@@ -757,6 +772,8 @@ def _collect_records(
                             record.line,
                             reason=loaded.failure.reason if loaded.failure else None,
                             failure_line=loaded.failure.line if loaded.failure else None,
+                            source_record=source.record_id,
+                            source_line=record.line,
                         )
                     )
                     continue

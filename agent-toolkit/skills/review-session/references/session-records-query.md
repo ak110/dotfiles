@@ -64,6 +64,11 @@
 要約の`scan_root_unresolved_record_count`と`query_unresolved_record_count`を併記し、`unresolved_record_count`は両範囲の合併として読む。
 読込失敗の理由と失敗行、所在未解決、時刻のない一致行はそれぞれの診断で確認し、全走査rootの限界と選択した親・期間の照会の限界を区別する。
 `line`は参照元位置、読込失敗時に付く`failure_line`は読み取れなかった記録内の行番号である。
+所在の診断の`reason=not-found-in-root`は指定root内で未発見、`reason=record-location-unresolved`は家族収集の解決手段でも所在を取得できなかった状態である。
+参照元は`source_record`と`source_line`から取得し、全rootの診断でも参照元へ戻れる。
+読込失敗は固有の`reason`と`failure_line`で区別する。
+参照元が期間外でも、未取得の参照先自体が期間外であるとは判定できず、所在未解決は削除済み・恒久欠損の証拠でもない。
+補助的な広域走査の未取得範囲は取得済みの結果とともに限界として報告でき、要求・認可・採否・原因の判断に不可欠な原記録の不足と区別する。
 時刻がない記録を期間外と推定せず、`undated_match_count`は一致エントリ数とは別の一致行数として読む。
 
 ```sh

@@ -331,9 +331,9 @@ def _catalog_scan(
 
     children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
     referenced: set[str] = set()
-    unresolved_references: set[tuple[str, str]] = set()
+    unresolved_references: dict[tuple[str, str], int] = {}
     for session_id, item in list(loaded.items()):
-        for child_id in metadata[session_id].child_ids:
+        for child_id, source_line in metadata[session_id].child_references:
             if child_id not in loaded and (agy_child := _catalog_agy_child(child_id)) is not None:
                 loaded[child_id] = agy_child
                 children[child_id] = []
@@ -342,7 +342,7 @@ def _catalog_scan(
                     children[session_id].append(child_id)
                 referenced.add(child_id)
             else:
-                unresolved_references.add((session_id, child_id))
+                unresolved_references.setdefault((session_id, child_id), source_line)
         if runtime == "claude":
             subagent_dir = item.path.with_suffix("") / "subagents"
             for path, child in path_items.items():
@@ -388,7 +388,16 @@ def _catalog_scan(
                 end_text if isinstance(end_text, str) else None,
             )
         )
-    unresolved.extend(_UnresolvedRecord(child_id, 0) for _, child_id in sorted(unresolved_references))
+    unresolved.extend(
+        _UnresolvedRecord(
+            child_id,
+            source_line,
+            reason="not-found-in-root",
+            source_record=metadata[parent_id].record_id,
+            source_line=source_line,
+        )
+        for (parent_id, child_id), source_line in sorted(unresolved_references.items())
+    )
     return _CatalogScan(resolved_root, parents, unresolved_loads + len(unresolved_references), unresolved)
 
 
