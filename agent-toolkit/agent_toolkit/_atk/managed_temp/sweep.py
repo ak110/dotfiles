@@ -298,10 +298,11 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         state_root = paths.state_root()
     except ManagedTempError as error:
         return SweepResult([], ((paths.temp_root_path(), str(error)),))
-    with contextlib.suppress(OSError):
-        plugin_root_leases.sweep_plugin_root_records()
     if not _sweep_due(state_root, now_ns):
         return SweepResult([], ())
+    # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
+    with contextlib.suppress(OSError):
+        plugin_root_leases.sweep_plugin_root_records()
     protected_sessions = {
         area
         for identifier in session_registry.pending_session_ids()
