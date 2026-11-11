@@ -27,7 +27,7 @@
 不足がある場合は同一の担当者へ差し戻す。
 レビュー担当者はその記録を直接読み込み、完成条件証拠の判定は同担当者が記述する。
 
-受領後、対象worktreeの最終実装HEADを対象として、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従い計画ごとに実行レビュー担当を起動する（計画がない場合はWIを基準とする）。
+受領後、対象worktreeの最終実装HEADを対象として、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従い、同書「起動方法別のレビュー基準」で決めたレビュー単位ごとに実行レビュー担当を起動する（計画がない場合はWIを基準とする）。
 起動の直前に`git merge-base <専用branch> <ベースbranch>`を実行して共通祖先commitを特定し、`開始時のHEAD`として渡す。
 `画面差分: あり`の場合は、同一工程内で`${CLAUDE_PLUGIN_ROOT}/share/usability-review.parent.md`に従いユーザビリティレビュー担当も起動する。
 実行レビューおよびユーザビリティレビューからの修正要求は、同一threadのレーン担当者へ返す。

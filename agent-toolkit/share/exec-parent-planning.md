@@ -26,7 +26,7 @@
 レビュー指摘の対応時は、`レビュー指摘管理表`に単一の絶対パス、または全計画の管理表の絶対パスを格納したJSON配列を1回で渡す。
 参考意見がある場合は同じ指示の`レビュー参考意見`へ渡す。
 ラウンド数は各管理表から取得する。
-計画ごとの成果物の受け渡し方法は、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+レビュー単位ごとの成果物の受け渡し方法は、`exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
 組み込み委譲におけるメッセージ本文の生成は、`../skills/delegation/references/sending-prompt.md`「委譲プロンプトの構成」に従う。
 
 レーン数によらず`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用する。

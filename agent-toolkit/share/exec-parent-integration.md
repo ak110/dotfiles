@@ -47,7 +47,7 @@
 収束後に再レビューを省略した修正が含まれる場合は、`exec-review-parent-correction.md`「レビュー修正」で保持された修正後のHEADとする。
 `マージあり`の場合は、統合指示を出す前に以下の条件を確認する。
 
-1. 計画ごとに受理した最終実行レビューの返却ファイル（`atk agents wait`の`agent_message_path`）および`レビューHEAD`を保持していること。
+1. レビュー単位ごとに受理した最終実行レビューの返却ファイル（`atk agents wait`の`agent_message_path`）および`レビューHEAD`を保持していること。
    AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。
    新形式のエージェント由来AWIを含む計画は同じ`review_contract`の絶対パスも保持し、条件表の各条件に判定行が対応することを確かめる。
    欠落時はレビュー起動元へ差し戻す。

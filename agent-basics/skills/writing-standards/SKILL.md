@@ -143,7 +143,7 @@ hookの通知は選択を補助する。
 - `references/writing-readers.md`
 - `references/writing-genres.md`
 - `references/writing-maintenance.md`
-同じ時点で`references/program-messages.md`と、以降の技術別・工程別の表で該当する資料を読む。
+同じ時点で、以降の技術別・工程別の表で該当する資料を読む。
 成果物として残さない使い捨ての一時コードは、言語別の必須読込の対象外とする。
 安全性、認可、データ保全の制約は維持し、成果物へ取り込む段階で該当する品質基準を適用する。
 
@@ -169,7 +169,7 @@ hookの通知は選択を補助する。
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時（作業項目の起草や対話でその案を示す時点を含む） | `references/design-time.md` | | | |
-| コードの編集やコードレビューを行う時 | `references/program-messages.md` | 判断 | `skill:writing-standards` | |
+| プログラムの出力メッセージ（エラー、警告、ログ、CLIの出力やヘルプなど）を新設・変更する時と、その変更をレビューする時 | `references/program-messages.md` | 判断 | `skill:writing-standards` | |
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | | | |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics-screening.md`、`references/design-heuristics-necessity.md`、`references/design-heuristics-mechanisms.md`、`references/design-heuristics-responsibility.md`、`references/design-heuristics-proportionality.md`、`references/design-heuristics-decisions.md`、`references/design-heuristics-quality.md` | | | |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` | | | |
