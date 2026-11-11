@@ -32,7 +32,7 @@ async def test_retained_executor_releases_child_when_manager_fails(
             del args, kwargs
             raise RuntimeError("所有managerの準備失敗")
 
-    class FailingManager(subject.server_manager.AgentsServerManager):
+    class FailingManager(subject.server_manager.AgentsServerManager):  # pylint: disable=too-many-ancestors  # 責務別のmixinを合成した本体を継承するため。
         async def close(self) -> None:
             await super().close()
             raise RuntimeError("所有managerの解放失敗")

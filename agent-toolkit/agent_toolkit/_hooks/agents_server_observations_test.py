@@ -110,7 +110,7 @@ async def test_projection_probe_preparation_failure_closes_manager(
     acquired = []
     closed = []
 
-    class TrackedManager(manager.AgentsServerManager):
+    class TrackedManager(manager.AgentsServerManager):  # pylint: disable=too-many-ancestors  # 責務別のmixinを合成した本体を継承するため。
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             acquired.append(self)
