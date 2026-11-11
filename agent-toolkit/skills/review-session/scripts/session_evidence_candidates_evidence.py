@@ -23,6 +23,7 @@ UNTRUNCATED_EVIDENCE_KINDS = frozenset(
         "tool-failure",
         "delegate-return",
         "escalation",
+        "post-delivery-long-text",
     }
 )
 """個別証拠の本文を切り詰めない候補種別。
@@ -94,7 +95,10 @@ def _candidate_evidence_events(
         budget = _DetailBudget(text_limit)
         details: list[dict[str, Any]] = []
         source_chars = 0
-        for locator in candidate["locators"]:
+        evidence_locators = list(candidate["locators"])
+        if candidate["candidate_kind"] == "post-delivery-long-text":
+            evidence_locators.append({"record": candidate["locators"][0]["record"], "line": candidate["delivery_line"]})
+        for locator in evidence_locators:
             key = (str(locator["record"]), int(locator["line"]))
             raw_entry = raw_entries.get(key)
             if raw_entry is not None:

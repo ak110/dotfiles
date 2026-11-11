@@ -40,10 +40,12 @@ atk run-script pick-wi-check -- <選定YAMLの絶対パス> --reopen-wi <既存W
 UWIの指定がなければ、次のコマンドで処理対象外の回答済みかつ未終了のUWIをすべて取得する。
 
 ```text
-atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --pull
+atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --pull
 ```
 
 **3.** 同じ実行へ追加するために起草・投入したAWIは、投入を他担当へ委譲した場合も、保存完了後の正式なファイル名を受け取った直後に候補差分へ含める。
+
+取得した本文は`selection-procedure-candidates.md`「処理対象の決定」の回答済みUWIの条件で分類し、`run_skill_report: true`の報告用だけを除く。
 
 ユーザーから伝達された個別のUWIおよびAWIは、`atk wi show <WIファイル名> --pull`を実行して取得する。
 強制同期後も未回答、項目の不在、更新前の内容のいずれかなら、`../../wi-standards/references/wi-standards-operations.md`「投入と取得」に定める再取得条件を適用する。

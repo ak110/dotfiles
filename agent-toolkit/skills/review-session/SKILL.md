@@ -1,5 +1,6 @@
 ---
 name: review-session
+argument-hint: "[batch] [着眼点]"
 description: >
   ユーザーが現在のセッションの振り返りを手動で依頼したときに起動する。
   batch引数ではOSアカウントに記録した非活動セッションをまとめて分析する。

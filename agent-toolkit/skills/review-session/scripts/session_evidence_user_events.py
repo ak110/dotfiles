@@ -279,6 +279,7 @@ def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str,
                     "line": event.get("line"),
                     "timestamp": event.get("timestamp"),
                     "text": text,
+                    **{field: event[field] for field in ("delivery", "text_length") if field in event},
                 },
             )
         )

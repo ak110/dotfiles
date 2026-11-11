@@ -58,6 +58,9 @@ _CANDIDATE_CONTEXT_FIELDS = (
     "answer_line",
     "question_call_id",
     "question_index",
+    "delivery_line",
+    "delivery_timestamp",
+    "text_length",
 )
 """候補へ写す判断材料の項目。確認の質問・選択肢・回答と、記入元のWIの所在を候補一覧へ載せるために使う。"""
 
@@ -72,11 +75,12 @@ def _candidate_events(
     wi_events: list[dict[str, Any]] | None = None,
     definition_reads: list[dict[str, Any]] | None = None,
     delegate_notices: list[dict[str, Any]] | None = None,
+    post_delivery: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """決定的に除外できる入力を省き、同種の候補を全位置付きで集約する。
 
     母集団はhook通知、ユーザー介入、ユーザー確認、WIの記入欄の是正、失敗したツール実行、警告、工程の返却値
-    およびその場のコードによる加工、定義本文の取得とする。
+    およびその場のコードによる加工、定義本文の取得、送達後の200文字超の終了本文とする。
     ユーザー確認（`confirmation-request`）は、提示した選択肢をそのまま選んだ確認への回答と、
     対象セッションが投入したUWI（`wi_events`のうち`submitted-uwi`）とする。確認が必要だったかは振り返りが判定するため、
     回答の形からは除外しない。WIの記入欄の是正（`wi-user-response`）は`_wi_candidate_events`が定める。
@@ -147,6 +151,7 @@ def _candidate_events(
         ),
         ("confirmation-request", (event for event in wi_events or () if event.get("kind") == "submitted-uwi")),
         ("wi-user-response", (event for event in wi_events or () if event.get("kind") == "wi-user-response")),
+        ("post-delivery-long-text", (event for event in post_delivery or () if event["kind"] == "post-delivery-long-text")),
     )
     for candidate_kind, events in sources:
         for event in events:
@@ -372,7 +377,7 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
     if candidate_kind in {"adhoc-processing", "definition-body-read", "definition-read-unresolved"}:
         # 記録（thread）ごとに1件へまとめ、委譲先が多い実行でも候補の件数が呼び出しの件数に比例しないようにする。
         return candidate_kind, str(event["record"])
-    if candidate_kind in {"confirmation-request", "wi-user-response"}:
+    if candidate_kind in {"confirmation-request", "wi-user-response", "post-delivery-long-text"}:
         # 確認ごとに要否を判定するため、同じ回答の文字列（選択肢のlabelなど）でも別の確認をまとめない。
         return candidate_kind, str(event["record"]), f"{int(event['line']):010d}", str(event.get("tag", ""))
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)

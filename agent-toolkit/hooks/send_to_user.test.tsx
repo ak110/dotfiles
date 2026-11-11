@@ -7,7 +7,7 @@ import { expect, mock, test } from "claude-code/testing";
 
 const PLUGIN = "agent-toolkit";
 const TOOL = `mcp__${PLUGIN}__send_to_user`;
-const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
+const DISPLAYED = "ユーザーの画面へ表示した。送達済みの本文の言い換え・要約・抜粋も再掲せず、新しい内容もsend_to_userで送れ。残工程は続け、ターンを終えるときは待機・完了を問わず…だけを返せ。/goalの担当工程を完了した場合だけは、報告を含めず完了を述べる1文を返せ。無発話の注意を受けても同じ規則に従え。";
 const MESSAGE = "## 作業完了報告\n\n- 変更: `a.py`\n- 検証: 成功\n\n次の工程へ進む。\n\n".repeat(30);
 
 function row(tool: string, input: unknown) {

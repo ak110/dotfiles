@@ -1,5 +1,6 @@
 ---
 name: process-wi
+argument-hint: "[single-lane|all-repos] [追加指示]"
 description: >
   対象リポジトリのAWIを計画、実装、レビュー、公開まで処理するときに起動する。
   single-lane引数で主作業ツリーの単一処理、all-repos引数で登録全体の処理を行う。

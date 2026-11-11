@@ -2,7 +2,8 @@
 name: workflow-overview
 description: >
   WI処理の工程や運用に関わる問題の原因分析と対策、運用工程や自動化の変更計画、
-  ユーザーへの運用説明で起動する。キュー、`atk wi process-loop`、process-wiの1回の実行、確認と回答、振り返りで得た要求を投入する方法を扱う。
+  ユーザーへの運用説明で起動する。process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前にも起動する。
+  キュー、`atk wi process-loop`、process-wiの1回の実行、確認と回答、振り返りで得た要求を投入する方法を扱う。
 user-invocable: false
 ---
 
@@ -25,6 +26,7 @@ user-invocable: false
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` |
+| process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `references/orchestrator-runtime.md` |
 | 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` |
 | レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes-launch.md`、`../process-wi/references/run-lanes-integration.md`、`../process-wi/references/lane-resources.md` |
 | 開始後の新着WIの確認と今回追加の判断を扱う前 | `../process-wi/references/immediate-fix.md` |
@@ -65,7 +67,9 @@ process-wiのメインセッションは対象の選定・配分とユーザー�
 準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`の順で進め、各操作の実行前に`../process-wi/references/run-lanes.md`の該当節を確認する。
 保持された資源の回復は、同書ならびに`atk lane delete --help`、`atk lane recover --help`に記載された条件や診断に従って再開する。
 
-`run-skill`に由来するUWIは、`source`が`run-skill`、`scope`がスキル名となり、process-wiの選定対象やprocess-loopの起動件数の計算から除外する。
+`run-skill`に由来するUWIは、`source`が`run-skill`、`scope`がスキル名となる。
+`run_skill_report: true`を持つ報告用だけをprocess-wiの選定対象とprocess-loopの起動件数の計算から除外する。
+報告用を除く回答済みの承認用UWIは、由来によらず既存の着手条件に従って対象に含める。
 
 ## 登録、回答、振り返り
 
@@ -84,7 +88,10 @@ process-wiのメインセッションは対象の選定・配分とユーザー�
 会話中のやり取りで回答を得られた事項はUWIとして重ねて登録せず、回答を得られないまま終了した確認事項はUWIへ引き継ぐ。
 保存条件、自律モードにおける確認手段、およびUWIへの切り替え手順は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。
 ユーザーは`atk wi answer`または`atk serve`から回答を入力する。
-回答済みのUWIについては、`source`が`run-skill`であれば同じ対象リポジトリ・同じスキルの次回`atk run-skill`実行時に取り込み、それ以外はprocess-wiの次回実行時にメインセッションが元の項目とともに処理へ取り込む。
+回答済みのUWIについては、`run_skill_report: true`を持つ報告用は同じ対象リポジトリ・同じスキルの次回`atk run-skill`実行時に取り込む。
+報告用を除く承認用は、process-wiの次回実行時にもメインセッションが処理へ取り込む。
+`source`が`run-skill`の場合は`scope`のスキルを解決して承認後の手順を用い、解決できなければ続行できない理由を返す。
+次回の定期実行は、process-wiが処理中のUWIを重複して取り込まない。
 処理中のprocess-wiセッションに対してユーザーから回答が伝えられた場合は、同一セッションの処理対象に追加する（`../process-wi/references/selection-procedure-addition.md`「処理対象WIの追加」）。
 
 作業完了後は`agent-toolkit:report-completion`で作業結果を報告して終了する。

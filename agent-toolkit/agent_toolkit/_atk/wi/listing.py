@@ -30,7 +30,6 @@ from agent_toolkit._atk.wi.formatters import (
 )
 from agent_toolkit._atk.wi.readiness import ReadinessResult
 from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id
-from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._git import command as _git_command
 
 
@@ -45,7 +44,7 @@ class RepositorySnapshot:
 
     @property
     def candidates(self) -> tuple[_wi_entries.EntryRecord, ...]:
-        """processing全件と、readyまたは内部依存待ちのinboxを返す。未回答のUWIと`run-skill`由来のUWIは除く。"""
+        """processing全件と、readyまたは内部依存待ちのinboxを返す。未回答のUWIと報告用UWIは除く。"""
         names = {*self.readiness.ready, *self.readiness.internal_dependency_waits}
         return tuple(
             entry
@@ -54,7 +53,10 @@ class RepositorySnapshot:
             and (entry[3] == "processing" or entry[0].name in names)
             and not (
                 entry[4] == WI_TYPE_UWI
-                and (parse_source(entry[2]) == _automated_prompt.SOURCE_RUN_SKILL or not _wi_uwi_scan.is_uwi_answered(entry[2]))
+                and (
+                    (parse_frontmatter(entry[2]) or ({}, ""))[0].get("run_skill_report") == "true"
+                    or not _wi_uwi_scan.is_uwi_answered(entry[2])
+                )
             )
         )
 

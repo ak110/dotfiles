@@ -111,7 +111,8 @@ def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatc
     _write(notes, "blocked-inbox.md", one.repo_id, extra="depends_on: [external.md]\n")
     run_skill = notes / "processing" / "run-skill.md"
     run_skill.write_text(
-        f"---\ntype: uwi\ntarget_repo: {one.repo_id}\nsource: run-skill\n---\n\n# 確認\n\n## 回答\n実施する\n",
+        f"---\ntype: uwi\ntarget_repo: {one.repo_id}\nsource: run-skill\n"
+        "run_skill_report: true\n---\n\n# 報告\n\n## 回答\n確認済み\n",
         encoding="utf-8",
     )
     snapshot = listing.configured_repo_snapshot(notes, repositories)[0]

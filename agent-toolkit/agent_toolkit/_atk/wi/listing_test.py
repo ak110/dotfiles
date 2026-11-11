@@ -9,9 +9,72 @@ import subprocess
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk import config as _config
+from agent_toolkit._atk.wi import listing as _wi_listing
+from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._atk.wi.layout import entry_path
+from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
 from agent_toolkit._testing.wi_listing_support import _clear_agent_environment as _clear_agent_environment
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
+
+
+@pytest.mark.parametrize("source", ["run-skill", "session-review", "process-wi", None])
+@pytest.mark.parametrize("state", ["inbox", "processing"])
+def test_candidates_include_answered_approval_regardless_of_source(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    source: str | None,
+    state: str,
+) -> None:
+    """公開CLIの回答取得から報告を分類でき、候補の消費側も同じ承認集合を返す。"""
+    notes = _setup_notes(tmp_path)
+    for name, answer in (("approval.md", "はい"), ("report.md", "確認済み"), ("unanswered.md", "")):
+        write_uwi(notes, name, answer=answer, source=source, state=state)
+    report = notes / "2026/10/report.md"
+    report.write_text(
+        report.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\nrun_skill_report: true\n"),
+        encoding="utf-8",
+    )
+    write_uwi(notes, "held.md", answer="はい", source=source, state="hold")
+    write_awi(notes, "dependent.md", depends_on=("approval.md",))
+    repositories = (_config.ConfiguredRepository("github.com/example/repo", tmp_path, tmp_path / ".git"),)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    with pytest.raises(SystemExit) as exc_info:
+        atk.main(
+            [
+                "wi",
+                "show",
+                "--all",
+                "--type=uwi",
+                "--answered=yes",
+                "--status=processable",
+                "--skip-pull",
+                "--target-repo=github.com/example/repo",
+            ],
+            home=tmp_path,
+        )
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr()
+    assert not output.err
+    acquired = {}
+    for block in output.out.split("\n### ")[1:]:
+        heading, _, text = block.partition("\n")
+        parsed = parse_frontmatter(text)
+        assert parsed is not None
+        acquired[heading.split()[0]] = parsed
+    assert set(acquired) == {"approval.md", "report.md"}
+    assert "はい" in acquired["approval.md"][1]
+    assert "確認済み" in acquired["report.md"][1]
+    assert acquired["report.md"][0]["run_skill_report"] == "true"
+    assert {name for name, (metadata, _) in acquired.items() if metadata.get("run_skill_report") != "true"} == {"approval.md"}
+
+    snapshot = _wi_listing.configured_repo_snapshot(notes, repositories)[0]
+
+    assert {entry[0].name for entry in snapshot.candidates} == {"approval.md", "dependent.md"}
+    assert {record["filename"] for record in snapshot.candidate_records()} == {"approval.md", "dependent.md"}
 
 
 class TestListEmpty:

@@ -4,7 +4,6 @@ description: >
   ユーザーが本スキルを明示的に手動起動し、AWI（エージェントワークアイテム）の
   具体化と登録を依頼したときだけ、要件の裏付けと対話による確定を経て登録する。
 disable-model-invocation: true
-argument-hint: "<要求>"
 ---
 
 # AWI投入

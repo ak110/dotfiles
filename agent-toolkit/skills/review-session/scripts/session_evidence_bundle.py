@@ -17,6 +17,7 @@ from session_evidence_candidates import (
     _wi_candidate_events,
     _write_candidate_evidence_files,
 )
+from session_evidence_delivery import post_delivery_events
 from session_evidence_extract import (
     _clip,
     _CollectedRecord,
@@ -110,6 +111,7 @@ def _bundle_events(
         else collected
     )
     timeline = _default_events(collected, [])
+    post_delivery = post_delivery_events(timeline)
     if after is not None:
         timeline = [event for event in timeline if _in_scope(event, scope)]
     metadata = _collection_events(collected, [], recoveries=False)
@@ -130,6 +132,7 @@ def _bundle_events(
         ),
         definition_reads=definition_body_read_events(incremental),
         delegate_notices=_delegate_notice_events(incremental),
+        post_delivery=[event for event in post_delivery if _in_scope(event, scope)],
     )
 
     candidate_evidence = _write_candidate_evidence_files(

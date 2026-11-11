@@ -41,6 +41,10 @@
 | `adopted`または`rejected`→`inbox` | `atk wi return-to-inbox --state=<adoptedまたはrejected>` | 誤って採否を確定した項目から過去の処理結果を除去し、再処理のためにキューへ戻す際に実行する |
 | `adopted`または`rejected`→`hold` | `atk wi hold --state=<adoptedまたはrejected>` | 誤って採否を確定した項目から過去の処理結果を除去し、確認や修正を行う間保留にする際に実行する |
 
+同じ遷移・メモ・commit・対象リポジトリで終了できる複数の項目は、個別に確認したファイル名を並べ、1回の`atk wi adopt <ファイル名>...`または`atk wi reject <ファイル名>...`で終了する。
+メモやcommitが異なる項目は個別に呼び出す。
+連続操作の中間で使う`--skip-push`と最後の操作でpushする条件は、`subagent-queue-ops.md`に従う。
+
 実装commitの対応記録の保存や取得、複数commitの指定、および欠落している情報の補完については、`../../commit/references/commit-wi-records.md`「WI実装commitの対応」に従う。
 終了後に履歴を書き換える場合は、同様の契約を持つ`plan-rewrite`を用いて対応commitと件名を付け替える。
 その際も、採否の結果と処理日時はそのまま保持される。

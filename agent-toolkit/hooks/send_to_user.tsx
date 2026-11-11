@@ -13,9 +13,11 @@ const TOOL_NAME = "send_to_user";
 
 const DESCRIPTION = [
   "ユーザーへ届ける本文を、途中・末尾ともにユーザーの画面へそのまま表示する。",
+  "本文は日本語の常体で書く。",
   "質問への回答、確認結果、判明した事実や原因、成果物、進捗、作業完了報告と次の工程の予告に使う。",
   "ユーザーの判断を求める確認には既存の質問手段を使う。推論は送らない。",
-  "表示成功後は同じ本文を地の文へ再掲せず、残工程または通常のターン終了へ進む。",
+  "表示成功後の言い換え・要約・抜粋も再掲に含む。新しい内容もこのツールで送る。",
+  "残工程は続け、ターンを終えるときは待機・完了を問わず…だけを返す。/goalの担当工程を完了した場合だけは、報告を含めず完了を述べる1文を返す。無発話の注意を受けても同じ規則に従う。",
 ].join("");
 
 const INPUT_SCHEMA = {
@@ -166,7 +168,7 @@ async function readGuidanceNotice($: EngineInterface, message: string, sessionId
   }
 }
 
-const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
+const DISPLAYED = "ユーザーの画面へ表示した。送達済みの本文の言い換え・要約・抜粋も再掲せず、新しい内容もsend_to_userで送れ。残工程は続け、ターンを終えるときは待機・完了を問わず…だけを返せ。/goalの担当工程を完了した場合だけは、報告を含めず完了を述べる1文を返せ。無発話の注意を受けても同じ規則に従え。";
 const INVALID_MESSAGE = automatedMessage("send-to-user", "block", "文字列のmessageが無いため、画面へ本文を表示していない。本文をmessageへ入れて呼び直せ。");
 
 export function register(on: On): void {

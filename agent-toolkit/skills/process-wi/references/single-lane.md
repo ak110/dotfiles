@@ -101,12 +101,14 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。
    初回一覧に`--snapshot-output <開始時集合JSONの絶対パス>`を付け、all-reposから受領した場合は既存の`snapshot_file`を使う。
    30分点検と公開前の新着確認は`immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時集合と判定済み記録を維持する。
-   同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行して回答済みUWIを取得する。
+   同時に`atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIの本文を取得する。
+   frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く。
    対象worktreeごとに公開対象とベースブランチを明示し、`selection-procedure-candidates.md`「処理対象の決定」に定める開始時のCI点検を実施する。
    実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。
    既存の失敗は「見つけた既存不良の扱い」に従って処理し、ユーザーのみが判断できる事項は確認手順へと回す。
    公開時のベースライン確認とCI検収も実行順8で実施する。
-   なお、`source`が`run-skill`であるUWIは次回の`atk run-skill`実行時に処理する。
+   `source: run-skill`の承認用UWIも対象にし、処理手順は`selection-procedure-candidates.md`「処理対象の決定」に従う。
+   報告用UWIは次回の同じ起動単位の`atk run-skill`が扱う。
    回答済みUWIは実装前に`../../wi-standards/references/wi-standards-states.md`「状態と依存」に従って終了するか処理対象へ加える。
    依存関係が未解決の項目は、依存元のWIがprocessableであり同一の`target_repo`を対象としている場合に限り、今回の実行に含めて報告する。
    依存元の状態変更や集合からの除外が必要な場合は、`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従って確認の要否を判断する。

@@ -93,6 +93,8 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
                 event["tool_name"] = tool_name
                 event["operation"] = operation
             event.setdefault("line", line)
+            if entry.get("isSidechain") is True:
+                event["is_sidechain"] = True
             _set_entry_timestamp(event, entry)
             events.append(event)
     # Claude Code形式の本文は途中発話と最終応答を区別する標識を持たない。
@@ -198,6 +200,11 @@ def _claude_entry_events(
                     event = _event("assistant", text)
                     if event:
                         event["_content_index"] = block_index
+                        event["delivery"] = (
+                            "send_to_user" if isinstance(block, dict) and block.get("type") == "tool_use" else "text"
+                        )
+                        event["text_length"] = len(text)
+                        event["stop_reason"] = message.get("stop_reason")
                         events.append(event)
             for text in _handback_messages(message.get("content")):
                 event = _event("assistant", text)
