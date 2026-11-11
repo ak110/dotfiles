@@ -616,7 +616,6 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 - `agent-toolkit:review-session batch`: 振り返り待ちのセッションをまとめて分析する。
   既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
 - `agent-toolkit:export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
-- `agent-toolkit:refine-prompt`: プロンプトやスキルの改善点を独立した実行者から集めて反映する
 
 ## 更新と削除
 
