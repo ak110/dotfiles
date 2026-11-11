@@ -636,10 +636,6 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
                 owner_root_session_id=_recorded_owner_root(payload) or _recorded_owner_root(nested),
             ),
         )
-    if payload.get("version") == 1:
-        if not isinstance(payload.get("terminal"), bool):
-            return SessionResolution(Resolution.UNREADABLE)
-        return SessionResolution(Resolution.TERMINAL if payload["terminal"] else Resolution.RUNNING)
     if payload.get("version") != 2 or not isinstance(payload.get("terminal"), bool):
         return SessionResolution(Resolution.UNREADABLE)
     info = _resume_info(payload)

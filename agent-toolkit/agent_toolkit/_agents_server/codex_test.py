@@ -1505,8 +1505,7 @@ async def test_stable_plugin_root_shared_across_processes(
                     clients.append(client)
                     records = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
                     leases = [record for record in records if "path" in record]
-                    capabilities = [record for record in records if record.get("lease_capable") is True]
-                    assert len(capabilities) == index + 1
+                    assert len(records) == len(leases)
                     assert len(leases) == index + 1
                     areas = {pathlib.Path(record["path"]) for record in leases}
                     assert len(areas) == 1
@@ -1735,9 +1734,27 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                     assert not (area / ".agent-toolkit-plugin-root.json").exists()
                     leases = tmp_path / "runtime-state/agent-toolkit/plugin-root-leases"
                     assert not list(leases.glob("*.json"))
+                    direct_command = plugin_environment.launch_command(
+                        area / version, pathlib.Path("agent_toolkit/agents_server_mcp.py")
+                    )
+                    direct_streams = await stack.enter_async_context(
+                        stdio_client(StdioServerParameters(command=uv, args=direct_command[1:], env=environment), errlog=errors)
+                    )
+                    direct_client = await stack.enter_async_context(ClientSession(*direct_streams))
+                    await direct_client.initialize()
+                    direct_servers = []
+                    for member in psutil.Process().children(recursive=True):
+                        try:
+                            if str(area / version / "agent_toolkit/agents_server_mcp.py") in member.cmdline():
+                                owned[member.pid] = member
+                                direct_servers.append(member)
+                        except psutil.NoSuchProcess:
+                            continue
+                    assert direct_servers
+                    server = direct_servers[-1]
                     arguments = server.cmdline()
                     assert pathlib.Path(arguments[1]).parts[-2:] == ("agent_toolkit", "agents_server_mcp.py")
-                    assert not pathlib.Path(arguments[1]).is_relative_to(area)
+                    assert pathlib.Path(arguments[1]).is_relative_to(area)
                     assert server.username() == psutil.Process().username()
                     try:
                         opened = [entry._asdict() for entry in server.open_files()]
@@ -1779,11 +1796,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
             _wait_mcp_processes(owned, timeout=5)
             assert area is not None
             parallel_process = psutil.Process(parallel.pid)
-            unknown_protected = cleanup(area, {parallel.pid: parallel_process})
-            assert unknown_protected.returncode == 2, unknown_protected.stderr
-            assert f"pid={parallel.pid}" in unknown_protected.stderr
-            assert area.exists() and parallel.returncode is None
-            cleaned = cleanup(area)
+            cleaned = cleanup(area, {parallel.pid: parallel_process})
             assert cleaned.returncode == 0, cleaned.stderr
             assert not area.exists()
             assert parallel.returncode is None
@@ -1791,7 +1804,6 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                 terminated_processes=sorted(owned),
                 stopped_cleanup={"exit_code": cleaned.returncode, "stdout": cleaned.stdout, "stderr": cleaned.stderr},
                 parallel_process={"pid": parallel.pid, "created_at": parallel_process.create_time(), "alive": True},
-                unknown_process_cleanup={"exit_code": unknown_protected.returncode, "stderr": unknown_protected.stderr},
                 root_removed=True,
             )
             print("旧形式MCP観測: " + json.dumps(observation, ensure_ascii=False))

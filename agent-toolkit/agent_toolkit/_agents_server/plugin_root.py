@@ -68,7 +68,6 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None, *, independent: 
     同じ保持rootからの子は完成マーカーを使い、自身のleaseを登録して同じ実体を使う。
     """
     root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
-    plugin_root_leases.register_lease_capability()
     cached = None if independent else _stable_plugin_roots.get(root)
     if cached is not None:
         return cached

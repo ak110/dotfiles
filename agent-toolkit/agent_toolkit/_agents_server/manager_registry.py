@@ -49,14 +49,9 @@ class _RegistryResumeState(SessionResumeState):
 def _terminal_turn_status(
     turns: Sequence[tuple[str, str]], turn_id: str | None
 ) -> Literal["completed", "failed", "interrupted"] | None:
-    """`thread/read`のturn一覧から、元turnが終了して後続の進行中turnが無い場合の終了状態を返す。
-
-    元turnの識別子を持たない旧形式の記録では、全turnが終了している場合に最後のturnの状態を返す。
-    """
+    """`thread/read`のturn一覧から、元turnが終了して後続の進行中turnが無い場合の終了状態を返す。"""
     if turn_id is None:
-        if not turns or any(status not in TERMINAL_STATUSES for _, status in turns):
-            return None
-        return cast(Literal["completed", "failed", "interrupted"], turns[-1][1])
+        return None
     index = next((position for position, (identifier, _) in enumerate(turns) if identifier == turn_id), None)
     if index is None or turns[index][1] not in TERMINAL_STATUSES:
         return None

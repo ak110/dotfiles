@@ -1389,7 +1389,7 @@ async def test_close_publishes_running_session_as_interrupted_for_restart(
     [
         ("turn-2", [("turn-1", "completed"), ("turn-2", "interrupted")], "interrupted"),
         ("turn-1", [("turn-1", "completed")], "completed"),
-        (None, [("turn-1", "completed"), ("turn-2", "interrupted")], "interrupted"),
+        (None, [("turn-1", "completed"), ("turn-2", "interrupted")], "running"),
     ],
     ids=["recorded-turn", "single-turn", "legacy-record-all-terminal"],
 )
@@ -1407,6 +1407,13 @@ async def test_orphaned_codex_record_is_taken_over_when_turn_has_ended(
         backend = ThreadReadBackend(manager.sessions, turns)
         _install_backend(manager, "codex", backend)
 
+        if turn_id is None:
+            with pytest.raises(ActionableError, match="still running"):
+                await _show_through_tool(monkeypatch, manager, session_id)
+            resolution = session_registry.resolve(session_id)
+            assert resolution.state is session_registry.Resolution.RUNNING
+            assert not backend.resume_calls
+            return
         assert (await _show_through_tool(monkeypatch, manager, session_id))["status"] == status
         resolution = session_registry.resolve(session_id)
         assert resolution.state is session_registry.Resolution.TERMINAL

@@ -15,7 +15,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.managed_temp import paths, permissions, sweep
-from agent_toolkit._common import file_lock, plugin_root_leases
+from agent_toolkit._common import file_lock, plugin_root_leases, state_paths
 
 pytestmark = pytest.mark.windows
 
@@ -84,13 +84,18 @@ def test_sweep_removes_expired_files_and_directories_and_keeps_protected(tmp_pat
 def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
     """使用中の保持配布物は期限切れでも残し、使用が終われば次の掃引で回収する。"""
     area = _area("agents-server-plugin-root-shared-abc", days=8)
-    in_use = True
-    monkeypatch.setattr(plugin_root_leases, "plugin_root_in_use", lambda _path: in_use)
+    with plugin_root_leases.plugin_root_lock(area):
+        plugin_root_leases.register_plugin_root_use(area)
+    monkeypatch.setattr(plugin_root_leases.psutil, "process_iter", lambda: [])
     assert area not in managed_temp.sweep_managed_temp(now=_NOW).deleted
     assert area.exists()
-    in_use = False
+    record = next((state_paths.state_dir() / "plugin-root-leases").glob("*.json"))
+    raw = json.loads(record.read_text(encoding="utf-8"))
+    raw["created_at"] = 0
+    record.write_text(json.dumps(raw), encoding="utf-8")
     later = _NOW + datetime.timedelta(days=1)
     assert area in managed_temp.sweep_managed_temp(now=later).deleted
+    assert not record.exists()
 
 
 @pytest.mark.skipif(

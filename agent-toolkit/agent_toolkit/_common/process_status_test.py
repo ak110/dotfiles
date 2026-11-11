@@ -10,7 +10,7 @@ from agent_toolkit._common import plugin_root_leases, process_tree, session_acti
 
 
 @pytest.mark.parametrize("observation", ["running", "zombie", "dead", "pid-reused", "access-denied"])
-@pytest.mark.parametrize("consumer", ["lease-basis", "lease-use", "identity", "activity", "reclaim"])
+@pytest.mark.parametrize("consumer", ["lease-basis", "lease-use", "lease-sweep", "identity", "activity", "reclaim"])
 def test_process_state_consumers_preserve_identity_and_end_states(tmp_path, monkeypatch, observation, consumer):
     """同じOS状態でも、終了・同一性・取得不能の各契約を区別する。"""
     original = psutil.Process
@@ -80,5 +80,9 @@ def test_process_state_consumers_preserve_identity_and_end_states(tmp_path, monk
         value["state"] = observation
         if consumer == "lease-basis":
             assert plugin_root_leases.usage_basis_is_current(basis) is (observation == "running")
-        else:
+        elif consumer == "lease-use":
             assert plugin_root_leases.plugin_root_in_use(area) is (observation in {"running", "access-denied"})
+    if consumer == "lease-sweep":
+        with plugin_root_leases.reuse_process_observation():
+            plugin_root_leases.sweep_plugin_root_records()
+        assert record.exists() is (observation in {"running", "access-denied"})

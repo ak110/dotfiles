@@ -298,6 +298,8 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         state_root = paths.state_root()
     except ManagedTempError as error:
         return SweepResult([], ((paths.temp_root_path(), str(error)),))
+    with contextlib.suppress(OSError):
+        plugin_root_leases.sweep_plugin_root_records()
     if not _sweep_due(state_root, now_ns):
         return SweepResult([], ())
     protected_sessions = {

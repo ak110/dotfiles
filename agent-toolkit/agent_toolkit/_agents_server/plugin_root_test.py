@@ -11,7 +11,7 @@ import typing
 import pytest
 
 from agent_toolkit._agents_server import plugin_root
-from agent_toolkit._common import plugin_root_leases
+from agent_toolkit._common import plugin_root_leases, state_paths
 
 
 def _source(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -51,6 +51,14 @@ def test_independent_copy_failure_never_falls_back_to_source(tmp_path, monkeypat
     with pytest.raises(OSError, match="保持先"):
         plugin_root.resolve_stable_plugin_root(source, independent=True)
     assert source.is_dir()
+
+
+def test_checkout_resolution_does_not_write_capability_record(tmp_path):
+    """保持実体を使わない起動のたびに状態ファイルを増やさない。"""
+    source = _source(tmp_path)
+    for _ in range(3):
+        assert plugin_root.resolve_stable_plugin_root(source) == source
+    assert not list((state_paths.state_dir() / "plugin-root-leases").glob("*.json"))
 
 
 @pytest.mark.parametrize("platform", ["posix", "nt"])
