@@ -60,9 +60,13 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     owner = psutil.Process().username() if windows else os.getuid()
     owner_attribute = "username" if windows else "uids"
     candidates: list[tuple[int, typing.Any, str, CodexRole, str | None, bool]] = []
-    for process in psutil.process_iter(["name", "exe", "cmdline", owner_attribute, "status", "ppid"], ad_value=_ACCESS_DENIED):
+    attributes = ["name", "exe", "cmdline", owner_attribute, "status", "ppid"]
+    # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
+    # 列挙は現在のPIDの取得だけに使い、分類と実行パスは新しく構築したProcessから読む。
+    for listed in psutil.process_iter():
         try:
-            info = process.info
+            process = psutil.Process(listed.pid)
+            info = process.as_dict(attributes, ad_value=_ACCESS_DENIED)
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         process_owner = info.get("username") if windows else getattr(info.get("uids"), "real", None)

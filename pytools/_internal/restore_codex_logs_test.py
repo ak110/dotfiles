@@ -3,6 +3,7 @@
 import os
 import pathlib
 import stat
+import typing
 from types import SimpleNamespace
 
 import pytest
@@ -472,12 +473,24 @@ def _uids(uid: int) -> SimpleNamespace:
 
 
 def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakeProcess]) -> None:
-    """`psutil.process_iter`を固定のプロセス集合へ差し替える。"""
+    """列挙と、列挙した直後のPIDからのProcess構築を、固定のプロセス集合へ差し替える。
 
-    def process_iter(_attrs: list[str], **_kwargs: object) -> list[_FakeProcess]:
-        return processes
+    製品は列挙したPIDから新しいProcessを構築して属性を読むため、偽の`info`をその構築結果から返す。
+    """
+    current: list[_FakeProcess] = []
+
+    def process_iter(*_args: object, **_kwargs: object) -> typing.Iterator[_FakeProcess]:
+        for process in processes:
+            current[:] = [process]
+            yield process
+
+    def build(pid: int, **_kwargs: object) -> SimpleNamespace:
+        process = current[0]
+        assert process.pid == pid
+        return SimpleNamespace(pid=pid, as_dict=lambda _attributes, ad_value=None: process.info)
 
     monkeypatch.setattr(codex_processes.psutil, "process_iter", process_iter)
+    monkeypatch.setattr(codex_processes.psutil, "Process", build)
 
 
 @pytest.mark.parametrize(

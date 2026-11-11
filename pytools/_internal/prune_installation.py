@@ -128,10 +128,16 @@ def _active_users(paths: tuple[Path, ...]) -> list[str]:
     attribute = "username" if windows else "uids"
     active = []
     ignored = {process.pid for process in codex_processes.codex_processes() if process.role == "update-loop"}
-    for process in psutil.process_iter(["name", "exe", "cmdline", attribute, "status"]):
-        if process.pid in ignored:
+    # process_iterはPID単位でProcessを再利用し、実行ファイルを以前の世代のまま保持する。
+    # 直前の`codex_processes`の列挙が残した値を使わないよう、現在のPIDから新しく構築したProcessで判定する。
+    for listed in psutil.process_iter():
+        if listed.pid in ignored:
             continue
-        info = process.info
+        try:
+            process = psutil.Process(listed.pid)
+            info = process.as_dict(["name", "exe", "cmdline", attribute, "status"])
+        except psutil.NoSuchProcess:
+            continue
         actual_owner = info.get("username") if windows else getattr(info.get("uids"), "real", None)
         if actual_owner != owner or info.get("status") in {psutil.STATUS_DEAD, psutil.STATUS_ZOMBIE}:
             continue
