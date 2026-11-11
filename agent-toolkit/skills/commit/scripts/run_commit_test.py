@@ -58,7 +58,6 @@ def test_public_commit_finishes_hook_with_a_waiting_verification(
     environment = dict(os.environ)
     environment["PATH"] = host_environ().get("PATH", "")
     # 競合状態の故障注入を他の検証から分離し、このテストの子だけで同じ枠を共有する。
-    environment.pop(execution_slot.TICKET_ENV, None)
     environment.update(PYTHONPATH=str(run_script.PLUGIN_ROOT), PYFLTR_CACHE_DIR=str(tmp_path / "cache"))
     repo = git_repository.init_repository(tmp_path / "repo", files={"tracked": "base"}, commit_message="基点")
     ready, waiting, release, complete, acquired = [
@@ -71,11 +70,11 @@ def test_public_commit_finishes_hook_with_a_waiting_verification(
         f"release=pathlib.Path({str(release)!r}); complete=pathlib.Path({str(complete)!r})\n"
         f"acquired=pathlib.Path({str(acquired)!r})\n"
         "if sys.argv[1]=='hook':\n"
-        " with slot.hold(label='hook',participant=slot.receive_ticket()):\n"
+        " with slot.hold(label='hook'):\n"
         "  ready.touch(); deadline=time.monotonic()+10\n"
         "  while not release.exists() and time.monotonic()<deadline: time.sleep(0.01)\n"
         "  assert release.exists()\n"
-        "  slot.yield_to_waiters(); complete.touch()\n"
+        "  complete.touch()\n"
         "else:\n"
         " def on_wait(_owner): waiting.touch()\n"
         " with slot.hold(label='waiter',on_wait=on_wait): acquired.touch()\n",

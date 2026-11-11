@@ -69,13 +69,11 @@ def main(argv: list[str] | None = None) -> int:
     previous = signal.signal(signal.SIGTERM, _term_as_interrupt)
     try:
         # 枠待ちは上限から除く。hookは祖先の所有を継承し、commit単位で保持する。
-        # 子を一時停止させる参加券を発行しないため、Git待機中の再開処理も不要になる。
         with (
-            execution_slot.hold(label="git commit", participant=execution_slot.receive_ticket()),
+            execution_slot.hold(label="git commit"),
             process_tree.process_scope(
                 git_command.command_line(["commit", *arguments]),
                 start_new_session=True,
-                env=execution_slot.tool_environ(dict(os.environ)),
             ) as process,
         ):
             try:
