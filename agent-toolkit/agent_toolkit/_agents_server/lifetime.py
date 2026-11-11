@@ -21,6 +21,9 @@ from agent_toolkit._common import process_tree
 
 SHUTDOWN_TIMEOUT = 15.0
 POLL_INTERVAL = 0.1
+# 子孫の列挙はLinuxで全プロセスの走査になり、常駐する起動単位の数だけホストのCPUを使う。
+# 親の消滅・EOF・期限の確認（安価）とは分け、列挙だけを間引く。
+COLLECT_INTERVAL = 1.0
 
 
 async def wait_for_shutdown(tasks: Iterable[asyncio.Task[Any]], *, timeout: float = SHUTDOWN_TIMEOUT) -> list[Any]:
@@ -191,8 +194,11 @@ class ServerLifetime:
             return True
 
     def _watch(self) -> None:
+        next_collect = 0.0
         while not self._finished.wait(POLL_INTERVAL):
-            self._collect()
+            if (now := time.monotonic()) >= next_collect:
+                next_collect = now + COLLECT_INTERVAL
+                self._collect()
             if self._parent_gone():
                 self.request_stop()
             elif (
