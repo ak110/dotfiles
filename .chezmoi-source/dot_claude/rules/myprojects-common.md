@@ -52,7 +52,7 @@ pytilpackのキューへ投入できない環境では、作業完了報告だ�
 
 対象の委譲は、委譲する日のローカル日付の「日」で起動形を決める。
 
-- 奇数の日: `atk config get chores_model`の各候補のeffortを`low`へ置き換えた候補列を、`model_type`へ渡して起動する。
+- 奇数の日: `atk config get chores_model`の各候補のeffortを`low`へ置き換えた候補列を、`agents_server`の`start`の引数`model_type`へ渡して起動する。
   例: `codex:sol/medium,claude:sonnet[1m]/medium`は`codex:sol/low,claude:sonnet[1m]/low`とする。
 - 偶数の日: 設定どおり`model_type: chores`で起動する。
 
@@ -72,6 +72,8 @@ pytilpackのキューへ投入できない環境では、作業完了報告だ�
 - 委譲先へ、返却の末尾に`変更規模: <git diff --shortstat の出力>`の行を置くよう求める。
 - 検証の合否は、その委譲を`retry-of`で指す再委譲の有無で表す。
   再委譲があれば不合格、無ければ合格である。
+  引き上げ順の最後まで失敗した委譲と、委譲元が巻き取った委譲は、再委譲が無くても不合格である。
+  目印では区別できないため、評価では連鎖の最後の委譲の返却本文で検証結果を確かめる。
 
 評価では、委譲元のセッション記録から目印の付いた起動を次のコマンドで取り出す。
 
