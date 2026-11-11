@@ -46,6 +46,8 @@ def test_lifetime_monitor_filters_children_and_stops_for_ended_parent(monkeypatc
         pytest.fail(f"模擬監視でプロセス終了へ進んだ: {code}")
 
     monkeypatch.setattr(lifetime.os, "_exit", unexpected_exit)
+    # 模擬プロセスには/procの起動情報が無いため、識別は模擬の生成時刻で与える。
+    monkeypatch.setattr(lifetime.process_identity, "key", lambda process: (process.pid, process.create_time()))
     monkeypatch.setattr(lifetime.time, "monotonic", lambda: 0.0)
     monkeypatch.setattr(
         lifetime.process_tree, "collect_descendants", lambda _pid, **_kwargs: [child] if route == "discovered" else []

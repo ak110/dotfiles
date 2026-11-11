@@ -91,7 +91,10 @@ def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None
     assert area.exists()
     record = next((state_paths.state_dir() / "plugin-root-leases").glob("*.json"))
     raw = json.loads(record.read_text(encoding="utf-8"))
+    # 使用の終了は、記録した世代が生存プロセスと一致しなくなることとして模擬する。
     raw["created_at"] = 0
+    if raw.get("start_id") is not None:
+        raw["start_id"] += "-ended"
     record.write_text(json.dumps(raw), encoding="utf-8")
     later = _NOW + datetime.timedelta(days=1)
     assert area in managed_temp.sweep_managed_temp(now=later).deleted
