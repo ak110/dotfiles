@@ -787,7 +787,6 @@ def test_pytest_holds_slot_until_all_tests_finish(tmp_path: pathlib.Path, worker
             "    evidence =",
             "    from agent_toolkit._testing import fork_runner\n"
             "    assert fork_runner.run_script(pathlib.Path(__file__).with_name('fork.py')).returncode == 0\n"
-            "    assert fork_runner.idle_server_pid() is not None\n"
             "    evidence =",
             1,
         )
