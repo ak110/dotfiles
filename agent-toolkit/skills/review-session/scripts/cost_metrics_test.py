@@ -296,7 +296,7 @@ def test_review_metrics_exclude_judgments_from_both_public_metrics(dataset, caps
     assert review["excluded_judgments"] == [{"table": str(table), "row": number} for number in (1, 2, 3, 5, 6, 7, 8, 9)]
     current = _current_adoption(dataset, capsys)
     assert (current["adopted"], current["rejected"], current["unanswered"]) == (1, 2, 1)
-    assert current["by_reason"] == {"判断による見送り": 1, "レビュー担当の前提の誤り・撤回": 1}
+    assert current["by_reason"] == {"判断主体不明": 2}
     assert current["excluded_judgments"] == review["excluded_judgments"]
     assert current["excluded_judgment_count"] == review["excluded_judgment_count"]
 
@@ -327,12 +327,58 @@ def test_review_metrics_exclude_rows_written_with_the_documented_self_record_lab
     assert review["excluded_judgments"] == [{"table": str(table), "row": number} for number in (1, 2, 3)]
     current = _current_adoption(dataset, capsys)
     assert (current["adopted"], current["rejected"], current["unanswered"]) == (1, 1, 0)
-    assert current["by_reason"] == {"レビュー担当の前提の誤り・撤回": 1}
+    assert current["by_reason"] == {"判断主体不明": 1}
     assert current["by_level"] == {
-        "仕様": {"adopted": 1, "rejected": 0, "unanswered": 0},
-        "詳細": {"adopted": 0, "rejected": 1, "unanswered": 0},
+        "仕様": {"adopted": 1, "rejected": 0, "transferred": 0, "unanswered": 0},
+        "詳細": {"adopted": 0, "rejected": 1, "transferred": 0, "unanswered": 0},
     }
     assert current["excluded_judgment_count"] == 3
+
+
+def test_review_metrics_share_transfer_and_legacy_interpretation(dataset, capsys) -> None:
+    """移管と旧自由文を両CLIが同じ状態で数え、表自体は変更しない。"""
+    _claude, _codex, repo = dataset
+    table = repo / "plans/ci/check.exec-review.tsv"
+    rows = [
+        ["1", "exec-review", "file.py", "採用", "仕様", "修正", ""],
+        [
+            "1",
+            "exec-review",
+            "file.py",
+            "移管",
+            "詳細",
+            "",
+            "根拠の所在: 次回へ登録\n判断主体: 統括\n移管先: 20261104-183257-001.md",
+        ],
+        ["1", "exec-review", "file.py", "見送り", "仕様", "", "根拠の所在: 指摘をメインが見送った\n判断主体: メイン"],
+        ["1", "exec-review", "file.py", "撤回", "詳細", "", "根拠の所在: 前提を再確認\n判断主体: レビュー担当"],
+        [
+            "1",
+            "exec-review",
+            "file.py",
+            "旧移管",
+            "詳細",
+            "",
+            "根拠の所在: レビュー担当が後続AWIへ移せると区分し、ユーザーの発話に基づきメインが次回へ回すと判断。"
+            "AWI 20261104-183257-001.mdへ登録した",
+        ],
+        ["1", "exec-review", "file.py", "旧見送り", "仕様", "", "根拠の所在: メインの技術判断"],
+        ["1", "exec-review", "file.py", "未応答", "実装", "", ""],
+    ]
+    table.write_text(
+        "".join("\t".join(json.dumps(cell, ensure_ascii=False) for cell in row) + "\n" for row in rows), encoding="utf-8"
+    )
+    before = table.read_bytes()
+    review = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")[0]["review"]
+    current = _current_adoption(dataset, capsys)
+    assert review["finding_count"] == 7
+    assert review["without_modification_count"] == current["rejected"] == 4
+    assert review["without_modification_ratio"] == pytest.approx(4 / 7)
+    assert (current["adopted"], current["transferred"], current["unanswered"]) == (1, 1, 1)
+    assert current["by_level"]["詳細"] == {"adopted": 0, "rejected": 2, "transferred": 1, "unanswered": 0}
+    assert current["by_model"]["モデル不明"]["transferred"] == 1
+    assert current["by_reason"] == {"判断による見送り": 1, "レビュー担当の前提の誤り・撤回": 1, "判断主体不明": 2}
+    assert table.read_bytes() == before
 
 
 def test_coverage_reports_missing_weeks(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:

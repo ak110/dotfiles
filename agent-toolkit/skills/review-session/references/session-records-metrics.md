@@ -12,6 +12,9 @@
 採否集計の`review-adoption`も同じ分類を使い、両方の出力で除外件数と元の表・行を追跡できる。
 `excluded_judgment_count`が除外件数、`excluded_judgments`の`table`と`row`が元表と1始まりの行番号を示す。
 表の期間・モデル帰属は保持し、明示されていない判断記録の完全な識別は保証しない。
+移管先を明示した行は`transferred`として採用・不採用・未応答と別に数え、修正なしで応答した比率の分子から除く。
+不採用の理由区分は`判断主体:`を典拠とし、ラベルの無い旧記録は`判断主体不明`とする。
+自由文の冒頭から判断主体を推定せず、メイン・レーン担当・統括の技術判断とレビュー担当の撤回を区別する。
 `--until`を省略した場合は、コマンド実行時刻までを集計範囲とする。
 `cost-metrics-hook-notice`は、同じルートセッションと全委譲先のhook通知をルートの開始週へ帰属させ、`week`、`runtime`、`hook`、`hook_name`、`tag`、`kind_text`ごとの`count`を返す。
 `tag`は`block`・`warn`・`notice`などの重要度、`kind_text`はパスやセッションIDなどの可変部分を正規化した本文の冒頭であり、`session-review-evidence --hook-notices`と同じ分類を使う。
@@ -30,6 +33,8 @@ Codexの場合は各`token_count.info.last_token_usage`と直前の`turn_context
 実支払額との区別については、後述の「複数セッションの比較結果」に従う。
 
 セッション記録から集計したトークン量、リクエスト数、所要時間を成果物やユーザーへの提示文書に記載する場合は、`atk run-script session-review-evidence -- <引数>`の出力を典拠とし、独自に作成した集計結果を根拠としない。
+`duration-analysis.md`が求めるレーンの工程時間は、同書で指定した工程記録の時刻差を使う。
+セッション統計の値とは区別し、時刻の出所と区間を保持する。
 トークン量とリクエスト数を取得する場合は`--stats`を指定し、所要時間を取得する場合は`--elapsed-until <ISO 8601形式の時刻>`を指定する。
 振り返りの対象候補は`--bundle`が生成する`candidates.jsonl`から取得し、`atk run-script session-review-prepare`を実行して`candidates.md`へ整形する。
 

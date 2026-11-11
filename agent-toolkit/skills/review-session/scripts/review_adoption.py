@@ -18,6 +18,7 @@ from typing import Any
 from cost_metrics import _history, saved_review_tables
 from session_evidence_stats import _parse_cli_timestamp
 
+from agent_toolkit._atk import review_table
 from agent_toolkit._common import private_notes
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_identity import distinct_identities
@@ -27,14 +28,8 @@ from agent_toolkit._common.runtime_identity import distinct_identities
 _ROLE_MARKER = re.compile(r"出所: \S*share/exec-review\.subagent\.md")
 # Codexの記録で、モデルの出力として現れる`response_item`の種類。これより前の入力だけを依頼文の候補にする。
 _CODEX_OUTPUT_TYPES = frozenset({"reasoning", "function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
-# 判断主体を示す不採用（メイン・レーン担当・統括・ユーザーの判断による見送り）。それ以外はレビュー担当側の不採用とする。
-_JUDGMENT_REASON = re.compile(r"根拠の所在:[\s`]*(メイン|レーン担当|統括|ユーザー)")
 _MODEL_UNKNOWN = "モデル不明"
-_LOCATION, _LEVEL, _RESPONSE, _NO_RESPONSE = 2, 4, 5, 6
-
-
-def _reason_class(text: str) -> str:
-    return "判断による見送り" if _JUDGMENT_REASON.search(text) else "レビュー担当の前提の誤り・撤回"
+_LOCATION, _LEVEL, _NO_RESPONSE = 2, 4, 6
 
 
 def _input_texts(entry: dict[str, Any]) -> list[str] | None:
@@ -131,7 +126,7 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
 
 
 def _empty_counts() -> dict[str, int]:
-    return {"adopted": 0, "rejected": 0, "unanswered": 0}
+    return {"adopted": 0, "rejected": 0, "transferred": 0, "unanswered": 0}
 
 
 def _period_events(
@@ -157,17 +152,12 @@ def _period_events(
         summary["excluded_judgment_count"] += len(table.judgment_rows)
         summary["excluded_judgments"].extend({"table": str(table.path), "row": number} for number, _ in table.judgment_rows)
         for number, row in table.rows:
-            if row[_RESPONSE].strip():
-                state = "adopted"
-            elif row[_NO_RESPONSE].strip():
-                state = "rejected"
-            else:
-                state = "unanswered"
+            state = review_table.response_state(row)
             level = row[_LEVEL] or "未記録"
             for counts in (summary, summary["by_level"][level], summary["by_model"][model]):
                 counts[state] += 1
             if state == "rejected":
-                reason = _reason_class(row[_NO_RESPONSE])
+                reason = review_table.rejection_reason_class(row[_NO_RESPONSE])
                 summary["by_reason"][reason] += 1
                 rejections.append(
                     {
