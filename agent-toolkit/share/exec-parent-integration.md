@@ -11,6 +11,7 @@
 | 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
 | 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
+| 統合結果のWI状態を一括取得する前 | `../skills/wi-standards/references/wi-show-bulk.md` |
 | 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/process-wi/references/finish-session.md` |
 | レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
@@ -107,8 +108,9 @@ rebaseおよび変更前後の内容一致確認はレーン担当者が担当�
    後続レーンの短い更新で統合先branchが`統合後のHEAD`より先へ進んでいても、その子孫であれば満たす。
 3. 資源の`record_path`における所有登録情報で、`jq -r '.integration.phase' <record_path>`が`finalized`を返すこと。
 4. `保存した計画ファイル`が統合指示の`計画ファイル名一覧`と順序を含めて一致しており、各計画が`atk plans list`の出力に残っておらず、`atk config get private_notes`が返すrootの`plans/`配下に正しく保存されていること。
-5. `adoptしたWI`と`rejectしたWI`の各項目を統合先worktree上で`atk wi show <ファイル名> --target-repo=<統合先worktree> --skip-pull`で取得し、状態が`adopted`または`rejected`で`AWI終了区分`の採否と一致すること。
-   `終了しない`や延期の項目は状態が未変更であること。
+5. `adoptしたWI`、`rejectしたWI`、`終了しない`および延期の項目を、`wi-show-bulk.md`の一括取得に従い、`atk wi show <ファイル名>... --target-repo=<統合先worktree> --skip-pull --summary-only`で1回取得する。
+   終了0と要求した全識別子が揃っていることを確認し、各状態を`AWI終了区分`と比較する。
+   採否に応じて`adopted`または`rejected`であり、`終了しない`や延期の項目は状態が未変更であること。
 6. `adoptを延期したAWIとcommit`の各commitを統合先worktree上で`git rev-parse --verify <commit>^{commit}`で解決できること。
    かつ`git merge-base --is-ancestor <commit> <統合先branch>`が正常終了（コード0）すること。
 7. `変更したエージェント向け文書`が、統合先worktreeで`atk run-script agent-doc-changes -- <統合前HEAD> <統合後のHEAD>`を単独実行した結果と一致していること。
