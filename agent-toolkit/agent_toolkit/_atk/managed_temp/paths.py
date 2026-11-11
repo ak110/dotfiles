@@ -47,7 +47,7 @@ def _temp_root_path() -> pathlib.Path:
 
 
 def _state_root_path() -> pathlib.Path:
-    """旧版の登録簿・参照・ロックと、掃引の予定表を置く状態ディレクトリ配下の`managed-temp`を返す。"""
+    """旧版の登録簿・参照・ロックと、前回の掃引時刻の記録を置く状態ディレクトリ配下の`managed-temp`を返す。"""
     return _state_paths.state_dir() / "managed-temp"
 
 

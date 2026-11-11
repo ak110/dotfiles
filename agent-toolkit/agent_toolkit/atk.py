@@ -63,7 +63,7 @@ lazy from agent_toolkit._common import private_notes as _private_notes  # noqa: 
 lazy from agent_toolkit._git import command as _git_command
 
 _MANAGED_TEMP_CHECK_NEXT_ACTION = (
-    "本来の操作は継続した。表示した原因（所有者・権限など）を除去すると、1時間後以降の`atk`の起動で再び回収を試みる"
+    "本来の操作は継続した。表示した原因（所有者・権限など）を除去すると、1日後以降の`atk`の起動で再び回収を試みる"
 )
 """managed-tempの期限切れの対象を自動削除できなかった場合に添える次の操作。"""
 
