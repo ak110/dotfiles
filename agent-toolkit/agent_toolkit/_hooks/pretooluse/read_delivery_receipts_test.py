@@ -164,7 +164,7 @@ def test_nontext_read_prepares_no_text_receipt(scenario, host):
     binary = path.with_name("binary.dat")
     binary.write_bytes(b"\x89PNG\r\n\xff\x00")
     result = invoke(host, "PreToolUse", "Read", {"file_path": str(binary)})
-    assert "想定外エラー" not in result and '"permissionDecision": "deny"' not in result
+    assert "想定外のエラーが起きた" not in result and '"permissionDecision": "deny"' not in result
     assert not state.get("document_read_candidates")
 
 

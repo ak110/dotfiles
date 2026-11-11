@@ -6,11 +6,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-code-runtime-receiving.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime-receiving.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
-
 ## Agentツールの継続
 
 Claude Codeの`Agent`ツールで起動した担当に限り、`continuation.md`「継続と新規起動」の共通条件に加えて本節を適用する。

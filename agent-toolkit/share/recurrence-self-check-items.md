@@ -26,7 +26,7 @@
 
 ## 根拠規範の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 項目「失敗・警告の文面に次の操作がある」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:writing-standards/references/program-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/program-messages.md` |
-| 項目「共通機構の是正が作用する全種類に届く」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 項目「失敗・警告の文面に次の操作がある」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:writing-standards/references/program-messages.md` |
+| 項目「共通機構の是正が作用する全種類に届く」の対象条件に該当すると判定した後、確認内容を判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |

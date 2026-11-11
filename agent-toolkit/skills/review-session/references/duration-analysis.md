@@ -7,18 +7,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-triage.md`、`analysis-cost.md`、`analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-cost.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `session-records-metrics.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-metrics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/drafting-completion-policies.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-origin.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
 
 ## 所要時間の分析と改善
 
@@ -181,14 +176,14 @@ SessionStartは規範構成、振り返り起動要求、圧縮復元の区間�
 
 ## 工程の参照
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 通常モードで所要時間の超過処置を選ぶ前 | `current-session.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/current-session.md` |
-| batchモードで所要時間の超過処置を選ぶ前 | `batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 通常モードで所要時間の超過処置を選ぶ前 | `current-session.md` |
+| batchモードで所要時間の超過処置を選ぶ前 | `batch.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 振り返りの判断基準の基準を適用する前 | `analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis.md` |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 振り返りの判断基準の基準を適用する前 | `analysis.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |

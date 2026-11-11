@@ -4,16 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md` | |
-| 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md` | |
-| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md`、`read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` | |
-| 委譲元が投入先の対象の外で動き、起動時の`cwd`を決める時 | `../skills/process-wi/references/lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wi-draft-review.parent.md` | 判断 | `read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` |
+| 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` |
+| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/add-awi-by-user/SKILL.md` |
+| 委譲元が投入先の対象の外で動き、起動時の`cwd`を決める時 | `../skills/process-wi/references/lanes.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/cross-repository-submission.md` |
 
 ## 起動方法
 
@@ -61,6 +59,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| WI投入担当の起動と受領：受領と検収の基準を適用する前 | `add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| WI投入担当の起動と受領：受領と検収の基準を適用する前 | `add-wi-parent-acceptance.md` |

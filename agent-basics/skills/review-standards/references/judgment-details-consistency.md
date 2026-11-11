@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-| 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-prevention-requirements.md` |
+| 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation-experience.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-proportionality.md` |
 
 ## 既存記述との重複と方針との整合
 

@@ -1282,7 +1282,7 @@ def test_verbatim_ledger_references_preserve_current_document_checks(tmp_path: p
 
 
 def test_ci_failure_read_row_delivers_quality_and_operations() -> None:
-    """同じ失敗受領条件で、品質と工程の二資料が資料列・配送列の両方から取得される。"""
+    """同じ失敗受領条件で、品質と工程の二資料が資料列と、そこから導出した配送操作の両方から取得される。"""
     root = pathlib.Path(__file__).resolve().parent
     plugin = root / "agent-toolkit"
     source = root / ".claude/skills/merge-pr/SKILL.md"
@@ -1291,7 +1291,7 @@ def test_ci_failure_read_row_delivers_quality_and_operations() -> None:
     rows = read_triggers.parse_tables(source, plugin, strict=True)
     row = next(row for row in rows if quality in row.documents)
     assert set(row.documents) == {quality, operations}
-    assert set(row.operations) == {
+    assert set(row.effective_operations) == {
         "read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md",
         "read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md",
     }
@@ -1323,7 +1323,7 @@ def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
     rows = read_triggers.parse_tables(source, root / "agent-toolkit", strict=True)
     expected = source.with_name("all-repos-orchestration.md")
     row = next(row for row in rows if expected in row.documents)
-    assert row.operations == ("read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md",)
+    assert row.effective_operations == ("read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md",)
     assert row.targets[0].body()
 
 

@@ -17,7 +17,7 @@
 - 現在も動作している外部プロセスやバックグラウンドタスクの種別、安定した実行識別子、および対象コマンド（認証情報は含めない）
 - `agents_server`で起動した`session_id`の一覧と、それぞれの状態観測を試みたかどうかの記録
 - 計画が無い作業で、途中報告のAWI化ステータスを`予定`とした改善点の対象、区分と再開条件、送達済み途中報告の所在と現在の処置。
-  確定の手順は`SKILL.md`「工程」の手順5に従う
+  確定の手順は`agent-toolkit:report-completion/SKILL.md`「工程」の手順5に従う
 
 指定が`（新規）`の場合は既存ファイルを読み込まずに最初の記録を作成し、`（継続）`の場合はまず全文を読み込んで状況を把握する。
 その後は、要求内容、再開位置、後続担当が必要とするリソースの参照先などが変化したタイミングで更新する。
@@ -28,13 +28,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
-| `予定`の改善点を確定する前 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `予定`の改善点を確定する前 | `agent-toolkit:report-completion/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../commit/references/commit-wi-records.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲の基準を適用する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲の基準を適用する前 | `../SKILL.md` |

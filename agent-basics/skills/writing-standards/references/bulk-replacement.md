@@ -18,8 +18,8 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 手順3の置換を適用する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
-| 手順5の個別の書き直しを検収する前 | `agent-basics:writing-standards/references/textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| 手順3の置換を適用する前 | `agent-basics:writing-standards/references/file-editing.md` |
+| 手順5の個別の書き直しを検収する前 | `agent-basics:writing-standards/references/textlint-violations.md` |

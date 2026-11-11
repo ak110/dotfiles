@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
-| 返却形式を確認する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
-| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
-| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` | 判断 | `read:agent-toolkit:*/share/exec-review-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 未コミット検証の結果を適用判定する前 | `verification-evidence-observation.md` |
+| 返却形式を確認する時 | `exec-review.parent.md` |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 差分外の候補を実在する不良として分類する前 | `agent-basics:writing-standards/references/investigation-sources.md` |
+| 保存済みの成功集合と限定再実行から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |
 
 ## 完成条件証拠の作成
 
@@ -71,9 +71,9 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュータスク：入力の基準を適用する前 | `exec-review-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-review-subagent-inputs.md` |
-| 実行レビューの指摘と完成条件証拠の記録：review_contractの書式の基準を適用する前 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` |
-| 実行レビューの指摘と完成条件証拠の記録：根拠の書き方の基準を適用する前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
-| 実行レビューの指摘と完成条件証拠の記録：判定の値の基準を適用する前 | `exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュータスク：入力の基準を適用する前 | `exec-review-subagent-inputs.md` |
+| 実行レビューの指摘と完成条件証拠の記録：review_contractの書式の基準を適用する前 | `exec-review-recording-contract.md` |
+| 実行レビューの指摘と完成条件証拠の記録：根拠の書き方の基準を適用する前 | `exec-review-recording-grounds.md` |
+| 実行レビューの指摘と完成条件証拠の記録：判定の値の基準を適用する前 | `exec-review-recording-verdicts.md` |

@@ -4,24 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 版数・説明文・派生マニフェストの更新を判断する前 | `version-bump.md` | 判断 | `read:*/skills/agent-toolkit-edit/references/version-bump.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../edit-dotfiles-norms/SKILL.md` | 判断 | `read:*/skills/edit-dotfiles-norms/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `./../../dotfiles-repo-layout/SKILL.md` | 判断 | `read:*/skills/dotfiles-repo-layout/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../../agent-basics/skills/writing-standards/references/agent-documents-additions-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-additions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../../agent-basics/skills/writing-standards/references/agent-documents-basics-purpose.md`、`../../../../agent-basics/skills/writing-standards/references/agent-documents-basics-placement.md`、`../../../../agent-basics/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`../../../../agent-basics/skills/writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-purpose.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-skills.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../../agent-basics/skills/writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../develop-dotfiles/references/verification-values-execution.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-execution.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 版数・説明文・派生マニフェストの更新を判断する前 | `version-bump.md` |
 
 ## 付帯作業の扱い
 
@@ -96,12 +81,6 @@ agent-toolkitの判断に今も使う内容は、agent-toolkit側の同名スキ
 agent-toolkitのリソースを編集する前は`agent-basics:writing-standards`も適用し、同スキルの読込表から配送、状態、起動、記録に関する運用条件を確認する。
 すでに取得済みの品質に関する記述は再利用する。
 
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation.md` |
-
 ## エージェント向け文書の技術的条文
 
 - 実機や現物の観測結果を根拠として、エージェント向け文書の技術的な条文（外部ライブラリ、実行環境、外部コマンドの挙動など）を新規に作成または改訂する場合は、観測した事象を条文に明記し、その観測記録を条文を保持するリポジトリの`docs/development/audit-records.md`に残す。
@@ -117,14 +96,9 @@ agent-toolkitのリソースを編集する前は`agent-basics:writing-standards
   ただし、既存の条文の誤りが品質（Q）に悪影響を及ぼす場合は、この限定にかかわらず是正要否と対応範囲を判定する。
   判定は`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| バージョン更新の詳細手順：競合解決と統合後の確認の基準を適用する前 | `version-bump-execution.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-execution.md` |
-| バージョン更新の詳細手順：plan modeでの取り扱いの基準を適用する前 | `version-bump-planning.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-planning.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| バージョン更新の詳細手順：競合解決と統合後の確認の基準を適用する前 | `version-bump-execution.md` |
+| バージョン更新の詳細手順：plan modeでの取り扱いの基準を適用する前 | `version-bump-planning.md` |

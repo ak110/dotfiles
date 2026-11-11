@@ -5,9 +5,9 @@
 本文書はCodex環境における`AGENTS.md`として、Codexの全エージェント（メインエージェント、サブエージェント、委譲先）へ配送され、`agent-toolkit/share/rules/common/`配下の常時規範と同等の拘束力を持つ。
 Codex固有の公開機能と常時規範との差分を規定し、メインエージェントだけの差分は`rules-main.codex.md`で扱う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 長い終了待ちの二層回収を選ぶ前 | `agent-toolkit:delegation/references/codex-runtime-waiting.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-waiting.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 長い終了待ちの二層回収を選ぶ前 | `agent-toolkit:delegation/references/codex-runtime-waiting.md` |
 
 ## Codex固有の入出力
 
@@ -210,6 +210,16 @@ Claude Codeでは`Skill`ツールから起動する。
 `operate-ak110-projects`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
+
+## pytilpackに無い汎用処理の改善要望
+
+`agent-basics:writing-standards`の`references/pytilpack.md`「汎用処理を自作する前の確認」で、必要な汎用処理がpytilpackに無かった場合に適用する。
+作業対象が個人プロジェクトの一覧に無いプロジェクト（業務のプロジェクトなど）でも適用する。
+ユーザーへ確認せずに、pytilpackのリポジトリを対象とするAWIを`agent-toolkit:wi-standards`の通常の投入手順で投入し、投入したAWIを作業完了報告で伝える。
+その場の作業は、同資料のとおりプロジェクト内へ実装して続ける。
+AWIには汎用化した要求（必要な機能、想定する入出力、利用場面の一般的な説明）だけを書き、作業中のプロジェクトに固有の名称、コード、データは除く。
+pytilpackは公開リポジトリであり、要求の内容が実装とcommitとして公開されるためである。
+pytilpackのキューへ投入できない環境では、作業完了報告だけを行う。
 </atk-auto>
 
 <atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/01-agent.md">
@@ -409,9 +419,9 @@ agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメ�
 ユーザーが確定した継続的な方針・要件は、次の判断で読む成果物へ、読み手・適用範囲・優先する判断・一般則との順位とともに保存する。
 同じセッションで保存先を変更できなければ、AWIへまとめる。
 
-ユーザーが確定した判断のうち、目的・要件・ユーザーが観測する結果に関する判断を変えるには、新しいユーザーの判断が必要である。
+ユーザーが確定した、目的・要件・ユーザーが観測する結果に関する判断を変えるには、新しいユーザーの判断が必要である。
 手段に関する方針は規範と同じく「QCDと3段判定」に従う。
-見分け方は`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「認可を要する操作」にある。
+区別は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」にある。
 実装や公開仕様と衝突しても、目的と結果を保てる技術的な解決は自分で確定し、目的側の変更と不足する認可だけを確認する。
 
 実行環境の権限拒否には、会話やWIの承認があってもそのまま従う。

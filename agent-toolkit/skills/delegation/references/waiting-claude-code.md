@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `wait-anomalies.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies.md` |
-| 本文の参照基準を適用する前 | `claude-code-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md` |
-| 本書の基準を適用する前 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `wait-anomalies.md` |
+| 本文の参照基準を適用する前 | `claude-code-runtime.md` |
+| 本書の基準を適用する前 | `waiting-and-monitoring.md` |
 
 ## 長時間待機前の会話圧縮
 
@@ -90,7 +90,7 @@ Claude Codeが、他の担当者やCI監視の結果を後続工程の入力と�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| Claude Codeでの委譲の実装：一時領域と成果物の観測の基準を適用する前 | `claude-code-runtime-receiving.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime-receiving.md` |
-| 待機の異常時の扱い：ホストによる背景待機の停止後の基準を適用する前 | `wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Claude Codeでの委譲の実装：一時領域と成果物の観測の基準を適用する前 | `claude-code-runtime-receiving.md` |
+| 待機の異常時の扱い：ホストによる背景待機の停止後の基準を適用する前 | `wait-anomalies-stopped.md` |

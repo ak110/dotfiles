@@ -4,16 +4,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 対象リポジトリとprivate-notesの操作を選ぶ前 | `repository-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/repository-scope.md` |
-| 外部更新の反映待ちを選ぶ前 | `../../delegation/references/waiting-and-monitoring-external.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-external.md` |
-| 回答内容と要求が両立しない場合の確認要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 依存関係を確定する前 | `states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| WI投入担当への委譲を選ぶ前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| WIの起草主体と独立した検収を選ぶ前 | `drafting-workflow.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md` |
-| WIの由来を確定する前 | `origin-and-approval-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-origin.md` |
-| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対象リポジトリとprivate-notesの操作を選ぶ前 | `repository-scope.md` |
+| 外部更新の反映待ちを選ぶ前 | `../../delegation/references/waiting-and-monitoring-external.md` |
+| 回答内容と要求が両立しない場合の確認要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 依存関係を確定する前 | `states-and-dependencies.md` |
+| WI投入担当への委譲を選ぶ前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
+| WIの起草主体と独立した検収を選ぶ前 | `drafting-workflow.md` |
+| WIの由来を確定する前 | `origin-and-approval-origin.md` |
+| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ |
 
 ## 投入と取得
 
@@ -62,6 +62,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |

@@ -4,11 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-skills-metadata.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills-metadata.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `sub-agents-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents-claude.md` |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
 
 ## 冒頭の責務と目的
 
@@ -20,6 +18,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| Agent Skills実装ガイドライン：知識を提供する文書と手順を担う文書の基準を適用する前 | `agent-skills-procedures.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-skills-procedures.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Agent Skills実装ガイドライン：知識を提供する文書と手順を担う文書の基準を適用する前 | `agent-skills-procedures.md` |

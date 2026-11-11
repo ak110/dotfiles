@@ -4,14 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies-failures.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-failures.md` |
-| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
-| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
-| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
-| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` |
+| 拒否またはclassifierの判定不能で待機を開始できない時 | `wait-anomalies-refusal.md` |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
 
 ## `atk agents wait`の応答の扱い
 

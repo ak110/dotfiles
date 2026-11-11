@@ -4,21 +4,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-operations.md` |
-| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `../SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` |
+| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |
+| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` |
 
 ## 原因と対策
 
@@ -123,8 +123,8 @@ AWIの各節の記述分担は`agent-toolkit:wi-standards`、原稿と根拠の�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 対策と影響範囲の基準を適用する前 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 場面別の原因分析の基準を適用する前 | `agent-basics:bugfix/references/root-cause-scenarios.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
-| 振り返りの判断基準：比較して探す観点の基準を適用する前 | `analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対策と影響範囲の基準を適用する前 | `agent-basics:bugfix/references/root-cause-actions.md` |
+| 場面別の原因分析の基準を適用する前 | `agent-basics:bugfix/references/root-cause-scenarios.md` |
+| 振り返りの判断基準：比較して探す観点の基準を適用する前 | `analysis-cost.md` |

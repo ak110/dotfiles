@@ -4,21 +4,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
-| 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/review-audit-launch.md` | |
-| 基準資料を選択・取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` | |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` | |
-| 基準資料を選択・取得する時 | `../../delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` | |
-| `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
-| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` | |
-| 選定YAMLを生成または消費する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` | |
-| 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
-| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` | |
-| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
-| 公開工程を開始する前（実行順7） | `finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` | |
-| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.parent.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/mandatory-rules.md` |
+| 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` |
+| 基準資料を選択・取得する時 | `../../delegation/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-review-responses.md` |
+| 基準資料を選択・取得する時 | `../../delegation/references/base-contract.md` |
+| `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` |
+| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` |
+| 選定YAMLを生成または消費する前 | `selection-format.md` |
+| 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` |
+| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
+| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` |
+| 公開工程を開始する前（実行順7） | `finish-session.md` |
+| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
 
 ## 同一主題の追加指示
 
@@ -54,6 +54,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIのレーン処理の基準を適用する前 | `lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIのレーン処理の基準を適用する前 | `lanes.md` |

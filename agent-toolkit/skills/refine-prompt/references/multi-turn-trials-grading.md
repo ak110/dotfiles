@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-
 ## 保存対話と採点
 
 **6.** 対話を証拠で判定するため、`dialogue`では仲介担当が履歴全体を読み、開示ルール違反と`trial.json`の対話基準への合致、質問と回答の論理的関係を、各役の自己評価とは独立して採点する。

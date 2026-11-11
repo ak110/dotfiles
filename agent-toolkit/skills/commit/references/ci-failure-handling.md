@@ -11,20 +11,9 @@ push先のリモート、更新対象のref、runの監視、ならびに証拠�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-recording-evidence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling-classification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling-classification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/ci-failure-handling-investigation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling-investigation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-recording-evidence.md` |
 
 ## 失敗ログとartifactの取得
 

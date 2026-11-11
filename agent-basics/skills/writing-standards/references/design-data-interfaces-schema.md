@@ -4,9 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-
 ## DBスキーマ・マイグレーション設計
 
 発火条件: データベースのスキーマを新しく設計する場面、スキーマを変更する場面、およびマイグレーションを設計する場面。
@@ -27,6 +24,6 @@ DDLの変更内容を事前にテスト用テーブルで検証する場合は�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 設計時のコーディング品質：エンドユーザーデータの移行の基準を適用する前 | `design-time-migration.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-migration.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 設計時のコーディング品質：エンドユーザーデータの移行の基準を適用する前 | `design-time-migration.md` |

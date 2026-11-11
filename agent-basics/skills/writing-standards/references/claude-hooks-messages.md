@@ -6,11 +6,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-block-warn.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `program-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/program-messages.md` |
-
 ## メッセージの記述言語
 
 エージェントへ直接渡す出力（`reason`、`additionalContext`、終了コード2のstderrなど）は日本語で記述する。
@@ -25,6 +20,6 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 通知本文の整形に関する判断・作業の前 | `claude-hooks-messages-format.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages-format.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 通知本文の整形に関する判断・作業の前 | `claude-hooks-messages-format.md` |

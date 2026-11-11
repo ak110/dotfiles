@@ -4,12 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 公開前の検証を実行する前 | `verification-values-execution.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-execution.md` |
-| 公開前の検証を実行する前 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
-| 公開前に実行する検証を選定する前 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` | 判断 | `read:*/.claude/skills/release-dotfiles/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 公開前の検証を実行する前 | `verification-values-execution.md` |
+| 公開前の検証を実行する前 | `agent-basics:check-execution/SKILL.md` |
+| 公開前に実行する検証を選定する前 | `agent-toolkit:commit/references/publish.md` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` |
 
 ## 公開前の検証
 

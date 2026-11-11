@@ -12,13 +12,13 @@ CIが実行しないチェックと、変更ファイルを対象にするcommit
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 必要なテストが収集され実行されたことを個別の結果から確かめ、追加検証を選ぶ前 | `diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 必要なテストが収集され実行されたことを個別の結果から確かめ、追加検証を選ぶ前 | `diagnostics-results.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 直接影響範囲の類型・範囲の決め方に関する判断・作業の前 | `verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` |
-| 実行条件と再実行に関する判断・作業の前 | `verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 直接影響範囲の類型・範囲の決め方に関する判断・作業の前 | `verification-scope-selection.md` |
+| 実行条件と再実行に関する判断・作業の前 | `verification-scope-reruns.md` |

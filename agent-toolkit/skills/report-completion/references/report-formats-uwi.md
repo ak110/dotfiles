@@ -4,16 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
+| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` |
 
 ## 報告用UWIのフォーマット
 
@@ -92,14 +89,14 @@
    失敗時にファイル名を取得済みなら、同じUWIを`atk wi edit --body-file`で修復する。
    未プッシュ通知は既存の投入手順で反映し、保存成功と警告の検収を終えて伝達完了とする。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 報告のフォーマット：振り返り結果報告のフォーマットの基準を適用する前 | `report-formats-retrospective.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-retrospective.md` |
-| 報告のフォーマット：検証結果と実行記録の基準を適用する前 | `report-formats-verification.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 報告のフォーマット：振り返り結果報告のフォーマットの基準を適用する前 | `report-formats-retrospective.md` |
+| 報告のフォーマット：検証結果と実行記録の基準を適用する前 | `report-formats-verification.md` |

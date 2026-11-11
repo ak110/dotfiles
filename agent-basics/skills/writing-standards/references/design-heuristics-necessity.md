@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 存在意義の点検
 
@@ -41,10 +41,10 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| テスト方針（全言語共通）：検証単位の選定の基準を適用する前 | `testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
-| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `design-heuristics-mechanisms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md` |
-| 設計判断の手順と領域別の設計観点：設計品質の劣化確認の基準を適用する前 | `design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
-| 設計判断の手順と領域別の設計観点：設計案の予備選別の基準を適用する前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| テスト方針（全言語共通）：検証単位の選定の基準を適用する前 | `testing-selection.md` |
+| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `design-heuristics-decisions.md` |
+| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `design-heuristics-mechanisms.md` |
+| 設計判断の手順と領域別の設計観点：設計品質の劣化確認の基準を適用する前 | `design-heuristics-quality.md` |
+| 設計判断の手順と領域別の設計観点：設計案の予備選別の基準を適用する前 | `design-heuristics-screening.md` |

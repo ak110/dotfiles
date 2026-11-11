@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` |
 
 ## 保存した実行出力の取得
 
@@ -25,6 +25,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` |

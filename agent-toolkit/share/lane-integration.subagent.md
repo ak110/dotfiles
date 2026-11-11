@@ -30,27 +30,20 @@ writes_worktree: true
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `check-execution-operations-launch.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/references/commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
-| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` |
-| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards-progress.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-progress.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-content.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
+| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md` | |
-| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
-| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-completion.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
+| `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
+| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
+| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
 
 ## マージなしの統合
 
@@ -82,16 +75,10 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 
 続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
-
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 入力に関する判断・作業の前 | `lane-integration-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-inputs.md` |
-| 計画最終化・AWI行の終了に関する判断・作業の前 | `lane-integration-subagent-finalization.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-finalization.md` |
-| 公開統合操作に関する判断・作業の前 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 入力に関する判断・作業の前 | `lane-integration-subagent-inputs.md` |
+| 計画最終化・AWI行の終了に関する判断・作業の前 | `lane-integration-subagent-finalization.md` |
+| 公開統合操作に関する判断・作業の前 | `lane-integration-subagent-operation.md` |

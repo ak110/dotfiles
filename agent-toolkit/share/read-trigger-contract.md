@@ -7,13 +7,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| メインの作業契約が未作成で、作成手順を確認する前 | `work-contract.md` | 判断 | `read:agent-toolkit:*/share/work-contract.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| メインの作業契約が未作成で、作成手順を確認する前 | `work-contract.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 表と取得方法に関する判断・作業の前 | `read-trigger-contract-declarations.md` | 判断 | `read:agent-toolkit:*/share/read-trigger-contract-declarations.md` |
-| 取得とチェックに関する判断・作業の前 | `read-trigger-contract-acquisition.md` | 判断 | `read:agent-toolkit:*/share/read-trigger-contract-acquisition.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 表と取得方法に関する判断・作業の前 | `read-trigger-contract-declarations.md` |
+| 取得とチェックに関する判断・作業の前 | `read-trigger-contract-acquisition.md` |

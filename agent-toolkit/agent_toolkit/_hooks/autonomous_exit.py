@@ -58,9 +58,9 @@ _STATE_KEY = "autonomous_exit_invoked"
 # 終了工程の実行を再び促す本文。本hookが実際に判定した入力だけを述べる。
 # 起動元のCLIや起動時のスキル名、個々の工程の完了状態は判定していないため本文へ書かない。
 _REASON_BODY = """\
-このセッションには常駐ループの終了保証が適用される。
-本判定の入力は、`atk agents-exit-session`の実行をセッション状態へ記録していないことだけである。
-どの工程が未完了かは判定していない。"""
+常駐ループが起動したこのセッションを終了するには、`atk agents-exit-session`の実行が必要である。
+その実行記録を確認できないため、今回の終了を止めた。
+その他の工程の完了・未完了は判定していない。"""
 
 
 # バックグラウンドタスクが残る終了要求を取り下げた場合の本文。残った作業の一覧は後ろへ続ける。
@@ -121,7 +121,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     append_stop_log(session_id, "block_autonomous_exit", {})
     reason = _block_notice(
         _REASON_BODY,
-        fix="`atk agents-exit-session`を単独で実行せよ。その実行の記録が本判定を通過させる。",
+        fix="既に実行したつもりの場合も、その呼び出し結果と終了状態を確認し、`atk agents-exit-session`を単独で実行せよ。",
     )
     return "block", reason
 

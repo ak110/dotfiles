@@ -12,11 +12,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 独立投入の起動と保存を検収する前 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 専念型の投入担当を起動・検収する前 | `add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
-| finish後の報告を保存・更新する前 | `../skills/report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 独立投入の起動と保存を検収する前 | `../skills/wi-standards/SKILL.md` |
+| 専念型の投入担当を起動・検収する前 | `add-wi.parent.md` |
+| finish後の報告を保存・更新する前 | `../skills/report-completion/SKILL.md` |
 
 ## 入力と受付票
 

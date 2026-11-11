@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-
 ## 集計値の典拠
 
 期間を指定した週ごとのトークン消費量や実行レビューの指標、ならびにセッションごとの推定費用については、`atk run-script cost-metrics -- --since <開始日> --until <終了日>`の出力を典拠とする。

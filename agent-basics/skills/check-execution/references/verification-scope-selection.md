@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 必要なテストが収集され実行されたことを個別の結果から確かめ、追加検証を選ぶ前 | `diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
-| ローカル検証の範囲とCIへ委ねる範囲を選ぶ前 | `verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 必要なテストが収集され実行されたことを個別の結果から確かめ、追加検証を選ぶ前 | `diagnostics-results.md` |
+| ローカル検証の範囲とCIへ委ねる範囲を選ぶ前 | `verification-scope.md` |
 
 ## 直接影響範囲の類型
 
@@ -50,6 +50,6 @@ CIが無い、または公開先でCIが実行されない場合は、これら�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `verification-scope-reruns.md` |

@@ -30,7 +30,7 @@ def test_unknown_body_preserves_pre_and_post_operation_classification(tmp_path, 
         result = _run_hook_in_process(entry, {**payload, "hook_event_name": event, "tool_response": ""})
         assert result.returncode == 0 and not result.stderr
         assert "embedded null byte" not in result.stdout
-        assert "読込資料の取得を記録できない" not in result.stdout
+        assert "資料の読取結果を取得済みとして記録できない" not in result.stdout
 
 
 def test_known_and_unknown_bodies_are_classified_independently(tmp_path):

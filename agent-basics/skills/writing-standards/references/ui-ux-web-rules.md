@@ -14,11 +14,9 @@ Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 機能の正しさを確認するテスト層を選ぶ時 | `testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux-rendering.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-rendering.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 機能の正しさを確認するテスト層を選ぶ時 | `testing-selection.md` |
 
 ## アクセシビリティとフォーカス
 
@@ -84,6 +82,6 @@ Web性能の改善候補は、`ui-ux-accessibility.md`「アクセシビリテ�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 画面の設計とユーザビリティの検収：アクセシビリティと性能の基準を適用する前 | `ui-ux-accessibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-accessibility.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 画面の設計とユーザビリティの検収：アクセシビリティと性能の基準を適用する前 | `ui-ux-accessibility.md` |

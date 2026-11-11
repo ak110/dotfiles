@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-
 ## 状態資料の選択
 
 状態資料の名指し参照と読込表では、読み書きする状態、更新する主体、消費側との利用関係から必要な資料を選ぶ。
@@ -15,21 +11,21 @@
 ファイル名だけで対象を限定せず、判断に必要な前提・例外が別の資料にある場合も、その資料を加える。
 共有状態は次の表、セッション状態と内部フラグは`session-state-and-flags.md`「セッション状態資料の選択」を使う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` |
 
 ## 共有状態資料の選択
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 待機run、終了結果の保持・回収、通知、保留結果や自動再開を変更・調査する前 | `agents-server-shared-state-waiting.md`、`agents-server-shared-state-sessions.md`、`agents-server-shared-state-projection.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-waiting.md`、`read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-sessions.md`、`read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-projection.md` |
-| セッションの登録、追送、引き継ぎ、再開、所有の解決や解放を変更・調査する前 | `agents-server-shared-state-sessions.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-sessions.md` |
-| ルート・書込主体の索引、statusline・CLIの状態表示、生存確認やコンテキスト使用量を変更・調査する前 | `agents-server-shared-state-projection.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-projection.md` |
-| バックエンドの接続・環境継承、API失敗・利用上限、モデル候補や可用性を変更・調査する前 | `agents-server-shared-state-backends.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-backends.md` |
-| process-loopの所有・再開・無進捗記録、活動記録やレーンの統合・回収を変更・調査する前 | `agents-server-shared-state-sessions.md`、`agents-server-shared-state-process-loop.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-sessions.md`、`read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-process-loop.md` |
-| 配布物の保持・リース、managed-tempや共有状態の掃引を変更・調査する前 | `agents-server-shared-state-retention.md`、`agents-server-shared-state-diagnostics.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-retention.md`、`read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-diagnostics.md` |
-| 診断・公開イベントログ、コンパクション計測やリソース集計を変更・調査する前 | `agents-server-shared-state-diagnostics.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-diagnostics.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機run、終了結果の保持・回収、通知、保留結果や自動再開を変更・調査する前 | `agents-server-shared-state-waiting.md`、`agents-server-shared-state-sessions.md`、`agents-server-shared-state-projection.md` |
+| セッションの登録、追送、引き継ぎ、再開、所有の解決や解放を変更・調査する前 | `agents-server-shared-state-sessions.md` |
+| ルート・書込主体の索引、statusline・CLIの状態表示、生存確認やコンテキスト使用量を変更・調査する前 | `agents-server-shared-state-projection.md` |
+| バックエンドの接続・環境継承、API失敗・利用上限、モデル候補や可用性を変更・調査する前 | `agents-server-shared-state-backends.md` |
+| process-loopの所有・再開・無進捗記録、活動記録やレーンの統合・回収を変更・調査する前 | `agents-server-shared-state-sessions.md`、`agents-server-shared-state-process-loop.md` |
+| 配布物の保持・リース、managed-tempや共有状態の掃引を変更・調査する前 | `agents-server-shared-state-retention.md`、`agents-server-shared-state-diagnostics.md` |
+| 診断・公開イベントログ、コンパクション計測やリソース集計を変更・調査する前 | `agents-server-shared-state-diagnostics.md` |
 
 ## 共通事項
 
@@ -138,13 +134,13 @@ Managerによる問い合わせ、復元、結果回収には非同期APIを使�
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 待機と終了結果・通知に関する判断・作業の前 | `agents-server-shared-state-waiting.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-waiting.md` |
-| セッション登録と再開・解放に関する判断・作業の前 | `agents-server-shared-state-sessions.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-sessions.md` |
-| 索引と状態表示に関する判断・作業の前 | `agents-server-shared-state-projection.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-projection.md` |
-| バックエンド固有の接続とAPI状態に関する判断・作業の前 | `agents-server-shared-state-backends.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-backends.md` |
-| process-loopとレーンに関する判断・作業の前 | `agents-server-shared-state-process-loop.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-process-loop.md` |
-| run-skillの再開入力に関する判断・作業の前 | `agents-server-shared-state-run-skill.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-run-skill.md` |
-| 配布物保持と掃引に関する判断・作業の前 | `agents-server-shared-state-retention.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-retention.md` |
-| 診断とログに関する判断・作業の前 | `agents-server-shared-state-diagnostics.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-diagnostics.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機と終了結果・通知に関する判断・作業の前 | `agents-server-shared-state-waiting.md` |
+| セッション登録と再開・解放に関する判断・作業の前 | `agents-server-shared-state-sessions.md` |
+| 索引と状態表示に関する判断・作業の前 | `agents-server-shared-state-projection.md` |
+| バックエンド固有の接続とAPI状態に関する判断・作業の前 | `agents-server-shared-state-backends.md` |
+| process-loopとレーンに関する判断・作業の前 | `agents-server-shared-state-process-loop.md` |
+| run-skillの再開入力に関する判断・作業の前 | `agents-server-shared-state-run-skill.md` |
+| 配布物保持と掃引に関する判断・作業の前 | `agents-server-shared-state-retention.md` |
+| 診断とログに関する判断・作業の前 | `agents-server-shared-state-diagnostics.md` |

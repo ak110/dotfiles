@@ -1260,13 +1260,12 @@ def test_guidance_gives_mandatory_host_steps_and_edit_review(tmp_path, monkeypat
         _assert_acquired(payload, path, False)
 
 
-def test_warning_has_all_paths_and_never_blocks(tmp_path, monkeypatch, memory):
+def test_confirmation_denial_has_all_paths_until_read(tmp_path, monkeypatch, memory):
     paths = _rows(tmp_path, monkeypatch, "confirmation", count=30)
     for _ in range(2):
         decision = read_delivery.deliver({}, "AskUserQuestion", {}, "test")
-        assert decision.block is None
-        assert len(decision.notices) == 1
-        assert all(str(path) in decision.notices[0] for path in paths)
+        assert decision.block is not None
+        assert all(str(path) in decision.block for path in paths)
     assert all(
         not read_delivery.target_ready(memory.get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(path), "main")
         for path in paths
@@ -1409,18 +1408,20 @@ def test_invalid_declaration_is_rejected(tmp_path, kind, operation, document):
         parse_tables(source, tmp_path, strict=True)
 
 
-def test_unclassified_table_is_rejected_in_strict_mode(tmp_path):
+def test_two_column_table_is_a_judgment_declaration_in_strict_mode(tmp_path):
+    """契機と配送操作の列が無い表は、資料を選んで読む判断の宣言として受理する。"""
+    (tmp_path / "reference.md").write_text("# 資料\n", encoding="utf-8")
     source = tmp_path / "SKILL.md"
     source.write_text("| 時点または条件 | 全文読む資料 |\n| --- | --- |\n| 検索 | `reference.md` |\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="契機と配送操作"):
-        parse_tables(source, tmp_path, strict=True)
+    rows = parse_tables(source, tmp_path, strict=True)
+    assert [(row.kind, row.derived_read, row.documents) for row in rows] == [("判断", True, (tmp_path / "reference.md",))]
 
 
 def test_selected_section_success_completes_acquisition(tmp_path, monkeypatch, memory):
     path = tmp_path / "reference.md"
     path.write_text("# 基準\n## 共通\n選択基準\n## 後段\n後段本文\n", encoding="utf-8")
     target = ReadTarget(path, "共通")
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("section:*reference.md#共通",), (path,), ("共通",))
+    row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("read:*reference.md",), (path,), ("共通",))
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     observe_received(
         {"turn_id": "turn", "tool_response": "## 共通\n選択基準\n"}, "Bash", {"command": f"sed -n '2,3p' -- {path}"}, "test"
@@ -1436,63 +1437,6 @@ def test_modified_document_invalidates_previous_acquisition(tmp_path, monkeypatc
     assert not _guidance(read_delivery.deliver({}, "Do", {}, "test"))
     path.write_text("# 更新した基準\n新しい本文\n", encoding="utf-8")
     assert _guidance(read_delivery.deliver({}, "Do", {}, "test"))
-
-
-@pytest.mark.parametrize(
-    ("script", "expected"), [("3,4p", True), ("1,4p", True), ("4p", True), ("1,2p", False), ("5,$p", False)]
-)
-def test_section_trigger_matches_intersecting_requested_ranges(tmp_path, script, expected):
-    document = tmp_path / "criteria.md"
-    document.write_text("# 基準\n共通前提\n## 必要節\n必要本文\n## 別用途\n別用途本文\n", encoding="utf-8")
-    section = "section:*/criteria.md#「必要節」"
-    assert read_delivery.matches(section, "Bash", {"command": f"sed -n '{script}' -- {document}"}, str(tmp_path)) is expected
-    assert read_delivery.matches(section, "Bash", {"command": f"cat -- {document}"}, str(tmp_path))
-    assert read_delivery.matches(section, "Read", {"file_path": str(document)}, str(tmp_path))
-
-
-@pytest.mark.parametrize("tool", ["Read", "Bash"])
-@pytest.mark.parametrize("codex", [False, True])
-@pytest.mark.usefixtures("memory")
-def test_public_section_selection_guides_only_the_requested_section(tmp_path, monkeypatch, tool, codex):
-    """A節の部分読取からの初回案内がB節へ広がらず、B節の明示選択では改めて案内する。"""
-    document = tmp_path / "criteria.md"
-    document.write_text("# 基準\n## A節\nA本文\n## B節\nB本文\n", encoding="utf-8")
-    rows = [
-        ReadTrigger(tmp_path / "source.md", index, "判断", (f"section:*/criteria.md#{heading}",), (document,), (heading,))
-        for index, heading in enumerate(("A節", "B節"), 1)
-    ]
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
-    payload = {"session_id": "test", "cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
-    inspect = {**payload, "tool_name": "Inspect", "tool_input": {}}
-    for start, heading, body in ((2, "A節", "A本文"), (4, "B節", "B本文")):
-        inputs = (
-            {"file_path": str(document), "offset": start, "limit": 2}
-            if tool == "Read"
-            else {"command": f"sed -n '{start},{start + 1}p' -- {document}"}
-        )
-        selected = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
-        assert selected.returncode == 0 and not selected.stderr
-        assert str(document) not in selected.stdout
-        guidance = _run_hook_in_process("pretooluse", inspect)
-        assert guidance.returncode == 0 and not guidance.stderr and heading in guidance.stdout
-        assert ("B節" if heading == "A節" else "A節") not in guidance.stdout
-        assert not _run_hook_in_process("pretooluse", inspect).stdout
-        _assert_acquired(payload, ReadTarget(document, heading), False)
-        observed = _run_hook_in_process(
-            "posttooluse",
-            {
-                **payload,
-                "hook_event_name": "PostToolUse",
-                "tool_name": tool,
-                "tool_input": inputs,
-                "tool_response": {"stdout": f"## {heading}\n{body}\n", "exit_code": 0},
-            },
-        )
-        assert observed.returncode == 0 and not observed.stderr
-        _assert_acquired(payload, ReadTarget(document, heading), True)
-        if heading == "A節":
-            _assert_acquired(payload, ReadTarget(document, "B節"), False)
-        assert not _run_hook_in_process("pretooluse", inspect).stdout
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -1603,7 +1547,7 @@ def test_unresolved_declarations_keep_confirmation_warning_only(monkeypatch):
     result = read_delivery.deliver({}, "request_user_input", {}, "test")
     assert result.block is None
     guidance = _notice_body(result)
-    assert "読込宣言を取得できない" in guidance
+    assert "読込表を取得できない" in guidance
     assert result.notices
 
 
@@ -2240,8 +2184,10 @@ def test_public_missing_selected_document_guides_repair_without_blocking(tmp_pat
     }
     result = _run_hook_in_process("pretooluse", payload)
     assert result.returncode == 0 and not result.stderr
-    assert str(missing) in result.stdout and "存在しない" in result.stdout and "復旧" in result.stdout
-    assert result.stdout.count("存在しない") == 1
+    assert str(missing) in result.stdout and "存在しない" in result.stdout and "参照先を直せ" in result.stdout
+    # 出力にはユーザー画面向けの写しも入るため、エージェント宛ての本文で数える。
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert context.count("存在しない") == 1
     assert "委譲元" in result.stdout and "ユーザー" in result.stdout
     assert "permissionDecision" not in result.stdout
     assert not memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})
@@ -2321,7 +2267,7 @@ def test_reading_another_roles_task_document_warns_and_points_to_the_launch_cont
     assert f"他の担当の手順書`{other}`を取得しようとしている" in body
     assert "`agent-toolkit:delegation`の`SKILL.md`「送信」" in body
     assert f"`{contract}`" in body
-    assert "返却を受け取った後の固有手順の検収であれば、このまま続行してよい" in body
+    assert "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい" in body
     assert "分割読取の続きを行わず呼出側契約へ進め" in body
 
 
@@ -2439,7 +2385,7 @@ def test_public_foreign_role_partial_display_warns_without_acquiring(tmp_path, m
     body = output["additionalContext"]
     assert f"他の担当の手順書`{other}`を取得しようとしている" in body
     assert str(contract) in body and "`agent-toolkit:delegation`の`SKILL.md`「送信」" in body
-    assert "返却を受け取った後の固有手順の検収であれば、このまま続行してよい" in body
+    assert "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい" in body
     assert "分割読取の続きを行わず呼出側契約へ進め" in body
     observed = _run_hook_in_process(
         "posttooluse",
@@ -2904,7 +2850,7 @@ def test_public_guidance_distinguishes_new_scope_target_and_compaction(tmp_path,
         {"file_path": str(path), "offset": 2, "limit": 2},
         "test",
     )
-    _assert_acquired(payload, ReadTarget(path, "初動"), True)
+    # 宣言が名指ししなくなった節の読取は、名指しされた節と資料全体のどちらの取得にも数えない。
     _assert_acquired(payload, ReadTarget(path, "詳細"), False)
     _assert_acquired(payload, path, False)
     assert not _run_hook_in_process("pretooluse", operation).stdout
@@ -3720,6 +3666,7 @@ def test_public_short_circuit_hidden_by_later_success_keeps_document_unacquired(
     [
         ("dynamic", "f=$(git ls-files 'share/reviewer.*' | head -1); grep -n 返却 \"$f\" | head -20"),
         ("dynamic", "doc=$(rg --files share | grep reviewer.subagent); sed -n '1,20p' \"$doc\""),
+        ("dynamic", "for f in share/reviewer.parent.md share/notes.md; do sed -n '1,20p' \"$f\"; done"),
         ("static", "grep -n 返却 share/reviewer.subagent.md | head -20"),
         ("own-role", "f=$(git ls-files 'share/reviewer.*' | head -1); grep -n 返却 \"$f\" | head -20"),
         ("unrelated", "f=$(git ls-files 'share/notes.*' | head -1); grep -n 返却 \"$f\" | head -20"),
@@ -3728,7 +3675,10 @@ def test_public_short_circuit_hidden_by_later_success_keeps_document_unacquired(
 )
 @pytest.mark.usefixtures("memory")
 def test_dynamic_foreign_role_display_warns_without_claiming_acquisition(tmp_path, monkeypatch, codex, case, template):
-    """変数で表示対象を確定できない操作も、手順書を指すリテラルがあれば非遮断で起動契約へ案内する。"""
+    """読取先が確定する操作だけを非遮断で起動契約へ案内し、変数で読取先を確定できない操作には警告しない。
+
+    コマンドの文字列から手順書を推測する経路は、起動契約を読む操作へ警告を出したため撤去した。
+    """
     root, other, contract, _lane, _integration = _role_plugin(tmp_path, monkeypatch)
     log = tmp_path / "transcript.jsonl"
     text = read_delivery.task_documents.task_prompt_header(other) if case == "own-role" else "読者別探索の継続指示を探す"
@@ -3740,15 +3690,12 @@ def test_dynamic_foreign_role_display_warns_without_claiming_acquisition(tmp_pat
     output = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
     assert output.get("permissionDecision") != "deny"
     body = output.get("additionalContext", "")
-    if case in {"own-role", "unrelated", "data-only"}:
+    if case in {"dynamic", "own-role", "unrelated", "data-only"}:
         assert "他の担当の手順書" not in body
         return
     assert str(contract) in body
-    assert "返却を受け取った後の固有手順の検収であれば、このまま続行してよい" in body
-    if case == "dynamic":
-        assert "確定できない" in body and f"`{other}`" in body
-    else:
-        assert f"他の担当の手順書`{other}`を取得しようとしている" in body
+    assert "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい" in body
+    assert f"他の担当の手順書`{other}`を取得しようとしている" in body
     observed = _run_hook_in_process(
         "posttooluse",
         {

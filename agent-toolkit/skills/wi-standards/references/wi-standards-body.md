@@ -4,14 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 通常AWIの本文を起草・検収する前 | `awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 報告用UWIを確認する前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
-| 報告用を除くUWIの本文を起草・検収する前 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 既存WIとの重複を判定する前 | `drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
-| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../workflow-overview/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 通常AWIの本文を起草・検収する前 | `awi-body.md` |
+| 報告用UWIを確認する前 | `../../report-completion/references/report-formats-uwi.md` |
+| 報告用を除くUWIの本文を起草・検収する前 | `uwi-format.md` |
+| 既存WIとの重複を判定する前 | `drafting-completion-duplicates.md` |
+| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ |
 
 ## 通常AWIの本文
 
@@ -46,6 +45,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 起草完了の条件の基準を適用する前 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 起草完了の条件の基準を適用する前 | `drafting-completion.md` |

@@ -21,16 +21,12 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` | 判断 | `read:*/skills/agent-toolkit-edit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 不具合の原因が過去の対策と同じかを分類する前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| モデルとホストの更新時の点検で、基準にする公式ガイドの掲載を確かめる前 | `agent-basics:writing-standards/references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` |
-| 撤去した仕組みと一致する案の扱いを決める前 | `agent-toolkit:wi-standards/references/awi-body-placement.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-placement.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` |
+| 不具合の原因が過去の対策と同じかを分類する前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
+| モデルとホストの更新時の点検で、基準にする公式ガイドの掲載を確かめる前 | `agent-basics:writing-standards/references/host-official-references.md` |
+| 撤去した仕組みと一致する案の扱いを決める前 | `agent-toolkit:wi-standards/references/awi-body-placement.md` |
 
 ## 読込表
 
@@ -153,7 +149,7 @@ description: >
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `agent-toolkit:user-confirmation-and-report/SKILL.md` |
+| AWIとUWIの共通規範の基準を適用する前 | `agent-toolkit:wi-standards/SKILL.md` |

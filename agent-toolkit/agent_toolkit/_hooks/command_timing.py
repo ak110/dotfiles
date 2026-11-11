@@ -15,7 +15,7 @@ from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.notice import formatter
+from agent_toolkit._hooks.notice import formatter, informational
 
 STATE_KEY = "command_timing"
 _notice = formatter("command-timing")
@@ -136,7 +136,8 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
     notices: list[str] = []
     for kind, seconds, review in result:
         measured = f"{kind}: {seconds:.1f}秒" if seconds is not None else "コマンド時間: 未計測（開始時刻を対応付けられない）"
-        notices.append(_notice(measured, tag="notice", subject=f"{actor}:{identifier}"))
+        # 実行ごとの測定値は操作を求めないため、ユーザーの画面へは写さない。
+        notices.append(informational(_notice(measured, tag="notice", subject=f"{actor}:{identifier}")))
         if review:
             notices.append(
                 _notice(

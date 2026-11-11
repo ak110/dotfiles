@@ -112,28 +112,19 @@
 
 ## 参照資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 再発・悪化を問う入力の分析単位を確定する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
-| 分析結果を報告へ引き継ぐ前 | `analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 再発・悪化を問う入力の分析単位を確定する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
+| 分析結果を報告へ引き継ぐ前 | `analysis-actions.md` |
 
 ## 通知の前提が成立しない場合
 
 - フックやツール、実行環境からの通知が担当外の対象、実行不可能な処置、あるいは実在しない前提を示していることがある。
   この場合は個別対応とは別に、通知機構自体の欠陥として処置する（同一セッション内での是正、`agent-toolkit:wi-standards`に従ったAWI起草の提案、または同じ欠陥を扱う未完了WIの参照のいずれかを行う）
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 判断の妥当性を評価する詳細：検収手段の到達可能性の基準を適用する前 | `agent-basics:review-standards/references/judgment-details-feasibility.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-feasibility.md` |
-| 振り返りの判断基準の基準を適用する前 | `analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判断の妥当性を評価する詳細：検収手段の到達可能性の基準を適用する前 | `agent-basics:review-standards/references/judgment-details-feasibility.md` |
+| 振り返りの判断基準の基準を適用する前 | `analysis.md` |

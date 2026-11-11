@@ -4,15 +4,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 判定不能により待機を開始できない時 | `../../delegation/references/wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判定不能により待機を開始できない時 | `../../delegation/references/wait-anomalies-refusal.md` |
 
 ## 一時的な判定不能
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 判定不能により待機を開始できない時 | `../../delegation/references/wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判定不能により待機を開始できない時 | `../../delegation/references/wait-anomalies-refusal.md` |
 
 1. classifierの判定不能は、通知本文の再試行指示で区別する。
    `no verdict`という語だけで一時的な失敗と扱わず、操作への拒否・`hard_deny`・偽陽性とも分ける。

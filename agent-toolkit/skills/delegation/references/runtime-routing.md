@@ -7,12 +7,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-fork.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` |
-
 ## 実行手段
 
 `agents_server`の`start`のうち、`mode`に`delegate`を指定する起動、および`mode:`を宣言しないか`delegate`を宣言している`<役割名>.subagent.md`による`task`の起動を「通常起動」と呼ぶ。

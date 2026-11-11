@@ -24,9 +24,9 @@ user-invocable: false
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲プロンプトや返却の文章を作成・検収する前 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/quality-standards.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲プロンプトや返却の文章を作成・検収する前 | `references/quality-standards.md` |
 
 ## 読込表
 
@@ -36,35 +36,35 @@ hookの通知を待たずに選び、同じ版の取得済み本文は再利用�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| Codexで委譲、待機、状態確認または中断へ着手する前（agents_serverのexplore・shellの起動から受領までを除く） | `references/codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime.md` | |
-| 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` | |
-| 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
-| 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` | |
-| 作業の分担・委譲単位を決める前（計画起草前、独立した複数単位や長い工程の着手前を含む）、起動契約に手順と必須入力がない委譲を開始する前（explore・shellを除く）、確定した委譲構成を変更する前 | `references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
-| 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` | |
-| 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` | |
-| 元担当の継続・回復・置換・再起動または役割引継ぎを選ぶ前 | `references/continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` | |
-| Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `references/continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` | |
-| Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `references/agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` | |
-| 可用性の障害を確認して代替起動を判断する前 | `references/fallback-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/fallback-launch.md` | |
-| 工程別設定の対象外でモデル・effortを選ぶ前 | `references/model-and-effort.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/model-and-effort.md` | |
-| Claude Codeで`Agent`ツールの委譲先やバックグラウンドタスクを初回起動する前、定期再確認タスクを自身で設定する前、設定や回収の失敗通知に対処する時、Claude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/claude-code-runtime.md` | |
-| 完了通知の処理、ならびに待機や停滞の判定を行う時 | `references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` | |
-| 判定不能や拒否で待機を開始できない時、`atk agents wait`が終了コード4・8・10、または待機対象0件の非ゼロで終了した時、待機呼び出しがホストの上限により失敗した時、ホストからバックグラウンド待機の停止通知を受信した時、委譲先や自身のツール呼び出しが終了ステータスを返さずに終わった時、`agents_server`のMCPサーバーが再起動した時 | `references/wait-anomalies.md`の該当節 | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies.md` | |
-| 稼働中の委譲先へ追加指示を送る前 | `references/base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` | |
-| 委譲済みの要求について自ら本文を読む、追加調査する、回答を作成する前 | 本書「継続と新規起動」、`references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` | |
-| 同一worktreeに対して後続または並列の書き込み担当を起動する前（shellを除く。shellは本書「explore・shellの起動」に従う） | `references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
-| 実装担当・レビュー担当のworktreeと書込所有権を割り当てる前、およびそれらの担当を起動する前 | `references/implementation-worktree.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/implementation-worktree.md` | |
-| 委譲先からの完了報告を受領して検収する前（explore・shellを除く） | `references/receiving.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving.md` | |
-| 委譲先からの完了報告を受領して検収する前（explore・shellを除く） | `references/mandatory-rules.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md` | |
-| 委譲先がプロンプトで`引き継ぎ記録先`を受け取り、最初の記録を書き込む前 | `references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` | |
-| 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:process-wi`の場合） | `../process-wi/references/run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` | |
-| 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:write-plan`による直接起動の場合） | `../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` | |
+| Codexで委譲、待機、状態確認または中断へ着手する前（agents_serverのexplore・shellの起動から受領までを除く） | `references/codex-runtime.md` | | | |
+| 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/base-contract.md` | | | |
+| 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/mandatory-rules.md` | | | |
+| 呼び出し元の起動契約で手順が定められていない委譲（`start`の`delegate`・`write`、`Agent`ツール、Codexの組み込み委譲）を開始する前 | `references/sending.md` | | | |
+| 作業の分担・委譲単位を決める前（計画起草前、独立した複数単位や長い工程の着手前を含む）、起動契約に手順と必須入力がない委譲を開始する前（explore・shellを除く）、確定した委譲構成を変更する前 | `references/routing.md` | | | |
+| 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/runtime-routing.md` | | | |
+| 委譲先とモデルを選定する時（explore・shell、および役割文書を持ち`model_type`を指定しない起動を除く） | `references/process-model-settings.md` | | | |
+| 元担当の継続・回復・置換・再起動または役割引継ぎを選ぶ前 | `references/continuation.md` | | | |
+| Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `references/continuation.md` | | | |
+| Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `references/agent-tool-continuation.md` | | | |
+| 可用性の障害を確認して代替起動を判断する前 | `references/fallback-launch.md` | | | |
+| 工程別設定の対象外でモデル・effortを選ぶ前 | `references/model-and-effort.md` | | | |
+| Claude Codeで`Agent`ツールの委譲先やバックグラウンドタスクを初回起動する前、定期再確認タスクを自身で設定する前、設定や回収の失敗通知に対処する時、Claude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `references/claude-code-runtime.md` | | | |
+| 完了通知の処理、ならびに待機や停滞の判定を行う時 | `references/waiting-and-monitoring.md` | | | |
+| 判定不能や拒否で待機を開始できない時、`atk agents wait`が終了コード4・8・10、または待機対象0件の非ゼロで終了した時、待機呼び出しがホストの上限により失敗した時、ホストからバックグラウンド待機の停止通知を受信した時、委譲先や自身のツール呼び出しが終了ステータスを返さずに終わった時、`agents_server`のMCPサーバーが再起動した時 | `references/wait-anomalies.md`の該当節 | | | |
+| 稼働中の委譲先へ追加指示を送る前 | `references/base-contract.md` | | | |
+| 委譲済みの要求について自ら本文を読む、追加調査する、回答を作成する前 | 本書「継続と新規起動」、`references/routing.md` | | | |
+| 同一worktreeに対して後続または並列の書き込み担当を起動する前（shellを除く。shellは本書「explore・shellの起動」に従う） | `references/mandatory-rules.md` | | | |
+| 実装担当・レビュー担当のworktreeと書込所有権を割り当てる前、およびそれらの担当を起動する前 | `references/implementation-worktree.md` | | | |
+| 委譲先からの完了報告を受領して検収する前（explore・shellを除く） | `references/receiving.md` | | | |
+| 委譲先からの完了報告を受領して検収する前（explore・shellを除く） | `references/mandatory-rules.md` | | | |
+| 委譲先がプロンプトで`引き継ぎ記録先`を受け取り、最初の記録を書き込む前 | `references/handoff-record.md` | | | |
+| 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:process-wi`の場合） | `../process-wi/references/run-lanes.md` | | | |
+| 実行工程を委譲する際の受領ルールを確定する時（explore・shellを除く。`起動経路`が`agent-toolkit:write-plan`による直接起動の場合） | `../write-plan/SKILL.md` | | | |
 | 指摘の採否と修正方針を確定する時 | `agent-basics:review-standards`を起動し、同スキルの`references/reviewee.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` | |
-| Claude Codeで長時間待機前の会話圧縮、またはバックグラウンドタスクの起動形を判断する時 | `references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` | |
-| 停滞の検知と巻き取りを判断する時 | `references/waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` | |
-| agents_serverのexplore・shellを起動する前 | `references/delegation-lightweight.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-lightweight.md` | |
-| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` | |
+| Claude Codeで長時間待機前の会話圧縮、またはバックグラウンドタスクの起動形を判断する時 | `references/waiting-claude-code.md` | | | |
+| 停滞の検知と巻き取りを判断する時 | `references/waiting-stalls.md` | | | |
+| agents_serverのexplore・shellを起動する前 | `references/delegation-lightweight.md` | | | |
+| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` | | | |
 | 役割文書を持つ委譲を起動する前 | 呼び出し元の起動・受領契約。共有契約は`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`、単一の呼び出し元に統合された契約はその呼び出し元が示す節と条件付きで挙げる資料 | 操作 | `delegation` | `role-contract` |
 
 ## 送信
@@ -97,34 +97,34 @@ Codex環境で元の担当者が稼働している間の処理保留は`referenc
 
 ## 工程で参照する運用資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
-| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` | |
-| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:delegation/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md` | |
-| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` | |
-| textlintなど文章チェックの診断へ対応する時 | `agent-toolkit:delegation/references/textlint-violations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/textlint-violations.md` | |
-| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/textlint-violations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/textlint-violations.md` | |
-| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` | |
-| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md`、`references/sub-agents-declarations.md`、`references/sub-agents-context.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sub-agents.md`、`read:agent-toolkit:*/skills/delegation/references/sub-agents-declarations.md`、`read:agent-toolkit:*/skills/delegation/references/sub-agents-context.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` |
+| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:delegation/references/agent-documents-basics.md` |
+| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:delegation/references/writing.md` |
+| textlintなど文章チェックの診断へ対応する時 | `agent-toolkit:delegation/references/textlint-violations.md` |
+| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/textlint-violations.md` |
+| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md`、`references/sub-agents-declarations.md`、`references/sub-agents-context.md` |
 
 ## 参照資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レビュー指摘への応答、修正、修正後の完了を判断する前 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レビュー指摘への応答、修正、修正後の完了を判断する前 | `agent-toolkit:/share/exec-review-responses.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 送信に関する判断・作業の前 | `references/delegation-sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-sending.md` |
-| explore・shellの起動に関する判断・作業の前 | `references/delegation-lightweight.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-lightweight.md` |
-| `<役割名>.parent.md`を持つ委譲の起動に関する判断・作業の前 | `references/delegation-role-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-role-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 送信に関する判断・作業の前 | `references/delegation-sending.md` |
+| explore・shellの起動に関する判断・作業の前 | `references/delegation-lightweight.md` |
+| `<役割名>.parent.md`を持つ委譲の起動に関する判断・作業の前 | `references/delegation-role-launch.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| Codexでの委譲方法：後続操作の共通先行条件の基準を適用する前 | `references/codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
-| 待機と観測：待機区間の構成の基準を適用する前 | `references/waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Codexでの委譲方法：後続操作の共通先行条件の基準を適用する前 | `references/codex-runtime-continuation.md` |
+| 待機と観測：待機区間の構成の基準を適用する前 | `references/waiting-and-monitoring-intervals.md` |

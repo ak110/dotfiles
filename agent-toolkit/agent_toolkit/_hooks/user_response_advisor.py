@@ -121,7 +121,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
     delivery = "応答本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では応答本文）"
     body = _notice(
-        "人間の発話の後に、ユーザーへ届いた応答本文が無い。",
+        "人間の発話の後に、ユーザーへ届いた応答本文が無い。思考とツール操作だけでは応答本文として扱わない。",
         fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届けよ。",
         removable_cause=True,
         subject=input_subject,

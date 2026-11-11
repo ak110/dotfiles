@@ -8,20 +8,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 待機の確認要否と冷却期限を選ぶ前 | `states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
-| 配置や形式が判断で果たす機能の保持を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 検出策の実測を記録・検収する前 | `agent-basics:bugfix/references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` |
-| 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機の確認要否と冷却期限を選ぶ前 | `states-and-dependencies-dependencies.md` |
+| 配置や形式が判断で果たす機能の保持を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:wi-standards/references/cross-repository-submission.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 検出策の実測を記録・検収する前 | `agent-basics:bugfix/references/analysis-records.md` |
+| 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-verification.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` |
 
 ## 原因分析の記録先
 
@@ -56,7 +52,7 @@ L3で処置を決めた後も各段の記録を残す。
 | 類似見直し結果 | 調査した母集団、是正対象と予防対象、必要となる横展開の処置、調査完了の結論、および再取得先を記載する。後続の担当者の判断に影響する探索の限界や残存リスクは本文に明記し、検索手順、非該当と判断した理由、独立走査や再検討の経過などの詳細情報は証拠ログに残す。 |
 | 再発防止策（作り込み） | 同じ要因の不良を今後作り込まないための候補を1件以上記載する。 |
 | 再発防止策（見逃し） | 同じ要因の見逃しを今後発生させないための候補を1件以上記載する。 |
-| 再発防止策の採否 | 候補ごとの採否、作用する要因、防げる損失と導入・継続費用、選定理由、実装と有効性確認の状態を記載する。採用する策は、作用を確かめた異なる形態の想定不具合と、維持すべき契約の記録先も示す。採用しない場合は`agent-basics:bugfix/references/root-cause-severity.md`「QとC・Dの区別」に基づく終了の結論を書き、`agent-basics:bugfix/references/root-cause-prevention.md`「再発防止策の必須性」で禁止されている根拠を終了の理由にしない。 |
+| 再発防止策の採否 | 候補ごとの採否、作用する要因、防げる損失と導入・継続費用、選定理由、実装と有効性確認の状態を記載する。採用する策は、作用を確かめた異なる形態の想定不具合と、維持すべき契約の記録先も示す。採用しない場合は`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に基づく終了の結論を書き、`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」で禁止されている根拠を終了の理由にしない。 |
 
 直接的原因と原因分析の根拠は独立した行に書かず、原因分析表の該当セル（主にL1とL2）へ、確定に使った観測・再現・混入commit・資料の所在を添えて書く。
 件数やログの数値を挙げる場合は、主張対象を正しく表す生成元と、原因の条件を満たさない比較対象群の数値を併記し、実測で確認できていない数値は推定値と明記する。
@@ -115,10 +111,3 @@ H1直下は短い目的・変更・結果を保ち、各バグの具体的な現
 時間経過や外部公開の待機は、`states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従って、ユーザー判断の要否と解決の見込みを先に確定し、UWIまたは冷却期限を選ぶ。
 再発防止策を採用するかどうかの判断は、作業完了報告および報告用UWIの`### 自ら確定した判断`に根拠とともに記録する。
 ユーザーのみが判断できる事項については、`agent-toolkit:user-confirmation-and-report`に従って確認する。
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |

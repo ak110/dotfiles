@@ -4,16 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-common.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/claude-hooks-stop.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/claude-hooks-stop.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/publish-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
-| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
-| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-run-skill.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` |
+| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
+| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` |
 
 ## 確認・操作スキル系
 
@@ -76,7 +71,7 @@
   ClaudeメインのSkill起動要求、名指し参照の内容取得、WebFetchのURL別出典確認は分離する。
   正式なstartup-documentは識別と本文を意味上で確認して記録する。
   選択は`ReadTrigger.condition`の自然文と役割を保持する。
-  他役割の行を除き、判断契機では`read:`・`section:`の一致だけで自然文条件を確定しない。
+  他役割の行を除き、判断契機では`read:`の一致だけで自然文条件を確定しない。
   `confirmation`に一致する確認ツール呼出しと本文で識別したWI保存種別は、その操作で確かめられる条件だけを確定する。
   `AskUserQuestion`・`request_user_input`・`request_user_input_async`の呼出しは確認本文・選択肢の起草契機を観測したものとして扱う。
   他の未確定な自然文条件は確認候補とする。

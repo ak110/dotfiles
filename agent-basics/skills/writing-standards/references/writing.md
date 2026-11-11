@@ -7,15 +7,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| エージェント向け文書の条件、禁止、理由を整理する時 | `agent-documents-basics-content.md`、`agent-documents-basics-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-content.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-tone.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/tone-examples-llm-tone.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples-llm-tone.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/textlint-violations.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/textlint-violations.md` |
-| 新しい概念名や内部識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `referent-table.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/referent-table.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/review-only-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/review-only-criteria.md` |
-| 会話の要約から文章の要求・事実・認可を復元する前 | `investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書の条件、禁止、理由を整理する時 | `agent-documents-basics-content.md`、`agent-documents-basics-tone.md` |
+| 新しい概念名や内部識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `referent-table.md` |
+| 会話の要約から文章の要求・事実・認可を復元する前 | `investigation-sources.md` |
 
 ## 構成・構造
 
@@ -122,9 +118,9 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 文章の共通規定に関する判断・作業の前 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
-| 読み手別の追加注意点に関する判断・作業の前 | `writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
-| 文書種別ごとの注意点に関する判断・作業の前 | `writing-genres.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-genres.md` |
-| 改訂・保守に関する判断・作業の前 | `writing-maintenance.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-maintenance.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 文章の共通規定に関する判断・作業の前 | `writing-common.md` |
+| 読み手別の追加注意点に関する判断・作業の前 | `writing-readers.md` |
+| 文書種別ごとの注意点に関する判断・作業の前 | `writing-genres.md` |
+| 改訂・保守に関する判断・作業の前 | `writing-maintenance.md` |

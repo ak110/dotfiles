@@ -4,17 +4,17 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 合流した公開対象を判断する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
-| 目標起点の公開対象を判断する前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 基準資料を選択・取得する時 | `run-lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-completion.md` |
-| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` | 判断 | `read:agent-toolkit:*/share/wi-submission.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 合流した公開対象を判断する前 | `selection-procedure-addition.md` |
+| 目標起点の公開対象を判断する前 | `lanes-goals.md` |
+| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../wi-standards/references/awi-body.md` |
+| 基準資料を選択・取得する時 | `run-lanes-completion.md` |
+| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
+| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
 
 ## 延期adoptと反映後の観測
 
@@ -104,6 +104,6 @@ UWIの保存に失敗した項目は`processing`のまま残す（待つUWIが�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| UWI本文の書式の基準を適用する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| UWI本文の書式の基準を適用する前 | `../../wi-standards/references/uwi-format.md` |

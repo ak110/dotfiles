@@ -6,15 +6,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 基準の参照時 | `exec-review-recording-contract.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-contract.md` |
-| 基準の参照時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 基準の参照時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
+| 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` |
+| 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
+| 基準の参照時 | `exec-review-recording-contract.md` |
+| 基準の参照時 | `exec-review-parent-launch.md` |
+| 基準の参照時 | `exec-review-parent-correction.md` |
 
 ## `review_contract`の生成
 

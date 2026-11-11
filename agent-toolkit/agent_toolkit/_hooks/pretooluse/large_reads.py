@@ -502,15 +502,6 @@ def display_read_paths(command: str, cwd: str) -> list[pathlib.Path]:
     return list(dict.fromkeys(paths))
 
 
-def has_dynamic_display_operand(command: str, cwd: str) -> bool:
-    """内容を表示する呼出しに、変数展開などで静的に確定できない被演算子があるかを返す。
-
-    `display_read_paths`の候補なしと区別するために使う。確定できない対象を推測して解決せず、
-    資料の取得証拠にも使わない。
-    """
-    return any(is_unknown_word(operand) for operand, _current in _terminal_display_operands(command, cwd))
-
-
 def _search_metadata_only(tokens: Sequence[str]) -> bool:
     """検索語とオプション値を除き、本文を出さない検索の指定を判定する。"""
     name = pathlib.PurePath(tokens[0]).name

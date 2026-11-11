@@ -14,12 +14,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/all-repos-orchestration-roles.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-roles.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/all-repos-orchestration-roles.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIの処理の基準を適用する前 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの処理の基準を適用する前 | `../skills/process-wi/SKILL.md` |

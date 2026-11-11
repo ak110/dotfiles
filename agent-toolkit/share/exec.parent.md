@@ -20,37 +20,19 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/sending-prompt.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending-prompt.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `review-loop-coordination-escalation.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-escalation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-acceptance.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
 <!-- return-contract:exec:start -->
 <!-- 生成元: share/exec.subagent.md「出力」。手動編集しない。 -->
@@ -105,12 +87,12 @@ adoptを延期したAWIとcommit: <[{"awi":"AWIファイル名","commit":"7文�
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 入力に関する判断・作業の前 | `exec-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-launch.md` |
-| 計画準備の受領に関する判断・作業の前 | `exec-parent-planning.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-planning.md` |
-| 実装完了の受領・レーン担当が確定した質問への回答・エスカレーションの受領に関する判断・作業の前 | `exec-parent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-implementation.md` |
-| 統合の許可・統合の指示と受領に関する判断・作業の前 | `exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-integration.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 入力に関する判断・作業の前 | `exec-parent-launch.md` |
+| 計画準備の受領に関する判断・作業の前 | `exec-parent-planning.md` |
+| 実装完了の受領・レーン担当が確定した質問への回答・エスカレーションの受領に関する判断・作業の前 | `exec-parent-implementation.md` |
+| 統合の許可・統合の指示と受領に関する判断・作業の前 | `exec-parent-integration.md` |
 
 ## 統合の指示と受領
 

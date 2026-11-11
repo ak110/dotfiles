@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/references/judgment-details-decisions.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-decisions.md` |
-
 ## 修正の分担と計画の保持
 
 - 修正作業を複数のエージェントへ委譲する場合は、変更対象のファイルが重複しない指摘群を別々の委譲先へ並行して割り当て、同一ファイルを変更する指摘は1つの担当へ集約する

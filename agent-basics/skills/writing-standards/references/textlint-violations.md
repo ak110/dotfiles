@@ -6,15 +6,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/lint-relax-criteria.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/lint-relax-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `input-material.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/input-material.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/tone-examples.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/tone-examples.md` |
-| チェッカーがない環境で自己点検する前 | `agent-basics:writing-standards/references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| チェッカーがない環境で自己点検する前 | `agent-basics:writing-standards/references/notation-checks.md` |
 
 ## textlint指摘への修正方針
 

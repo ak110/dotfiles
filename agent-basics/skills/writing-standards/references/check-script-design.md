@@ -11,10 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `program-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/program-messages.md` |
-
 ## 出力の簡潔さ
 
 - チェックに成功した場合（違反なし）はexit 0で終了し、標準出力を抑制する（出力を抑制する部分は努力目標）。

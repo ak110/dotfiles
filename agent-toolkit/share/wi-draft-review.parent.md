@@ -15,17 +15,14 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| add-awi-by-userの投入前レビュー結果を検収する前 | `../skills/add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion-decisions.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow-saving.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| add-awi-by-userの投入前レビュー結果を検収する前 | `../skills/add-awi-by-user/references/omission-check.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow-review-route.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval-origin.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion-decisions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow-saving.md` |
 
 ## 入力
 
@@ -74,10 +71,10 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 
 ## 検収と修正
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| add-awi-by-userで受けた指摘の分類・処置を確定する前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| add-awi-by-userで受けた指摘の分類・処置を確定する前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
 
 1. 方針段階と本文段階のどちらでも、指摘の受領後、採否・修正を確定する前に、呼出元が定める分類と処置を適用する。
    `agent-toolkit:add-awi-by-user`の分類は同スキルの「指摘の分類と処置」に従う。

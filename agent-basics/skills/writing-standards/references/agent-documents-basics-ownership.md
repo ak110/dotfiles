@@ -4,13 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
 
 ## 定義の所有者
 
@@ -52,8 +48,8 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 対策と影響範囲の基準を適用する前 | `../../bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 再発防止の選定と完了の基準を適用する前 | `../../bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 類似見直しの範囲と探索の基準を適用する前 | `../../bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対策と影響範囲の基準を適用する前 | `../../bugfix/references/root-cause-actions.md` |
+| 再発防止の選定と完了の基準を適用する前 | `../../bugfix/references/root-cause-prevention.md` |
+| 類似見直しの範囲と探索の基準を適用する前 | `../../bugfix/references/root-cause-remediation.md` |

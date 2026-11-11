@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 拡張原因分析の要否を判断する前 | `root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 拡張原因分析の要否を判断する前 | `root-cause-analysis-initial.md` |
 
 ## 分類判断のための詳細検討
 

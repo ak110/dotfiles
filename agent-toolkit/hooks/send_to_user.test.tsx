@@ -175,7 +175,7 @@ test("言語判定中と拒否・中断後のToolUseに入力本文を描かな�
   on("process.run", () => ({ value: { exitCode: 0, stdout: JSON.stringify({ outcome: "warn", body: "英語主体の本文。", fix: "日本語で書き直す。" }), stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
   const denied = await $.tool.call({ tool: TOOL, message });
   expect(denied.result).toBeUndefined();
-  expect(denied.deny).toContain("日本語で書き直す");
+  expect(denied.deny).toContain("日本語で書き直して同じ呼び出しを再発行せよ");
   for (const surface of ["terminal", "desktop"] as const) {
     for (const status of [
       { isRunning: true, isErrored: false, isInterrupted: false, output: undefined },
@@ -313,7 +313,7 @@ test("判定不能の後の英語のmessageは書き直しを求め、書き直�
   const denied = await $.tool.call({ tool: TOOL, message: "The work is complete." });
   expect(denied.result).toBeUndefined();
   expect(denied.deny).toMatch(/^<atk-auto source="response-language" kind="block">\n[\s\S]*\n<\/atk-auto>$/);
-  expect(denied.deny).toContain("日本語で書き直す");
+  expect(denied.deny).toContain("日本語で書き直して同じ呼び出しを再発行せよ");
   const rewritten = await $.tool.call({ tool: TOOL, message: "作業が完了した。" });
   expect(rewritten.result).toBe(DISPLAYED);
   expect(rewritten.context ?? []).toEqual([]);

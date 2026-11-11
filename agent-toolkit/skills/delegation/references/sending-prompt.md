@@ -4,18 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `base-contract.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` |
+| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
 
 ## 委譲プロンプトの構成
 
-文章量の判定は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。
+文章量の判定は、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に従う。
 
 1. 入力の前提を固めるため、起動する前に、委譲する独立した作業内容、読み取り専用か書き込み可能か、完了条件、および結果の受領方法を確定しておく。
    同一の母集団を複数の委譲先へ分割して割り当てる場合は、全要素と担当者との対応表を作成し、未割り当てや重複が一切ないことを集合演算によって検証する（主題単位で分割する場合であっても要素単位の対応関係で判定する）。
@@ -100,9 +96,9 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲の基準を適用する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 委譲：`<役割名>.parent.md`を持つ委譲の起動の基準を適用する前 | `delegation-role-launch.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-role-launch.md` |
-| 委譲プロンプトの送信：未検証情報の取り扱いの基準を適用する前 | `sending-evidence.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲の基準を適用する前 | `../SKILL.md` |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| 委譲：`<役割名>.parent.md`を持つ委譲の起動の基準を適用する前 | `delegation-role-launch.md` |
+| 委譲プロンプトの送信：未検証情報の取り扱いの基準を適用する前 | `sending-evidence.md` |

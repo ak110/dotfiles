@@ -4,11 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-purpose.md`、`agent-documents-basics-placement.md`、`agent-documents-basics-read-tables.md`、`agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-purpose.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 設計品質の劣化確認
 
@@ -49,7 +47,7 @@ SSOT（単一の情報源）、責務の混在、重複、読み取り・変更�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| エージェント向け文書への追記と記述量の管理：文書記述量の管理の基準を適用する前 | `agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
-| 設計判断の手順と領域別の設計観点：責務帰属（SRP）分析の観点の基準を適用する前 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書への追記と記述量の管理：文書記述量の管理の基準を適用する前 | `agent-documents-additions-volume.md` |
+| 設計判断の手順と領域別の設計観点：責務帰属（SRP）分析の観点の基準を適用する前 | `design-heuristics-responsibility.md` |

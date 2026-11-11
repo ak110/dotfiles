@@ -14,7 +14,7 @@ def main(payload_text: str) -> int:
     except (OSError, ValueError, TypeError, KeyError) as error:
         notices = (
             formatter("pretooluse")(
-                f"終了工程の開始位置を取得できない: {error}",
+                f"ツール呼び出しの開始を、作業終了時の確認に使う記録へ残せなかった: {error}",
                 tag="warn",
                 fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
                 removable_cause=False,

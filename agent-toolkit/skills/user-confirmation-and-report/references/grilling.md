@@ -7,18 +7,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 状態や業務ルールを持つ要求の曖昧さを洗い出す前 | `agent-basics:writing-standards/references/design-time-state.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-state.md` |
-| WI作成工程で質問ラウンドを終える前と原稿を確定する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/publish-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/publish-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/defined-names.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/defined-names.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-completion.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 状態や業務ルールを持つ要求の曖昧さを洗い出す前 | `agent-basics:writing-standards/references/design-time-state.md` |
+| WI作成工程で質問ラウンドを終える前と原稿を確定する前 | `../../add-awi-by-user/references/omission-check.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-completion.md` |
 
 ## 確認対象
 
@@ -72,6 +65,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー発話の解釈と取り込み：問い・提案・疑問形の扱いの基準を適用する前 | `user-utterance-questions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-questions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー発話の解釈と取り込み：問い・提案・疑問形の扱いの基準を適用する前 | `user-utterance-questions.md` |

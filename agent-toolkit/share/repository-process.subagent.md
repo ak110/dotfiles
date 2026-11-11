@@ -32,15 +32,15 @@ writes_worktree: true
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 各対象の処理へ着手する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 統括担当との受渡しを確かめる時 | `../skills/process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
-| 処理に着手する前 | `../skills/process-wi/references/all-repos-orchestration-roles.md`、`../skills/process-wi/references/all-repos-orchestration-inputs.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-roles.md`、`read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-inputs.md` |
-| 対象のlane_limitが2以上の時 | `../skills/process-wi/references/lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
-| 対象のlane_limitが1以下の時 | `../skills/process-wi/references/single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
-| 配下へ委譲する前 | `../skills/delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 引き継ぎ記録へ最初に書く前 | `../skills/delegation/references/handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 各対象の処理へ着手する時 | `../skills/process-wi/SKILL.md` |
+| 統括担当との受渡しを確かめる時 | `../skills/process-wi/references/all-repos.md` |
+| 処理に着手する前 | `../skills/process-wi/references/all-repos-orchestration-roles.md`、`../skills/process-wi/references/all-repos-orchestration-inputs.md` |
+| 対象のlane_limitが2以上の時 | `../skills/process-wi/references/lanes.md` |
+| 対象のlane_limitが1以下の時 | `../skills/process-wi/references/single-lane.md` |
+| 配下へ委譲する前 | `../skills/delegation/references/process-model-settings.md` |
+| 引き継ぎ記録へ最初に書く前 | `../skills/delegation/references/handoff-record.md` |
 
 ## 入力
 

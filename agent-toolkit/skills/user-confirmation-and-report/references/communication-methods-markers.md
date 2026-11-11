@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` |
+| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` |
+| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 
 ## エージェント宛てメッセージの標識
 

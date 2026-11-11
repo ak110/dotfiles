@@ -4,11 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
-| 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` |
+| 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` |
 
 ## 終了コードと呼び出しの失敗
 
@@ -49,6 +48,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` |

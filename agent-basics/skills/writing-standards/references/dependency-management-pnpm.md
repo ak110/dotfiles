@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 外部部品の共通の版方針を判断へ用いる前 | `quality-principles-dependencies.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-dependencies.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 外部部品の共通の版方針を判断へ用いる前 | `quality-principles-dependencies.md` |
 
 ## pnpm
 

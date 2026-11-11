@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-necessity.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
 
 ## 検証単位の選定
 
@@ -118,6 +118,6 @@ AIの探索結果は候補として扱い、深刻とされた指摘も再現と
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| テスト方針（全言語共通）：状態遷移の性質確認の基準を適用する前 | `testing-transitions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-transitions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| テスト方針（全言語共通）：状態遷移の性質確認の基準を適用する前 | `testing-transitions.md` |

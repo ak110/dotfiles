@@ -4,12 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| WIの状態と依存を判定・変更する前 | `states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| 上流リポジトリへの投入を選ぶ前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| WIの状態と依存を判定・変更する前 | `states-and-dependencies.md` |
+| 上流リポジトリへの投入を選ぶ前 | `cross-repository-submission.md` |
+| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ |
 
 ## 状態と依存
 

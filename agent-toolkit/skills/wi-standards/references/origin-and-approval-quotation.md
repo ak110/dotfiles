@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md`、`read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
-| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/answer-transitions.md` |
-| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-completion.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` |
+| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
+| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-acceptance.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` |
 
 ## 逐語転記
 

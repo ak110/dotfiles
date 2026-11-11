@@ -4,15 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `receiving-format.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring-responses.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-responses.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
-| `Agent`ツールで起動した担当を継続する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
-| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
+| `Agent`ツールで起動した担当を継続する前 | `continuation.md` |
+| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` |
 
 ## 一時領域と成果物の観測
 

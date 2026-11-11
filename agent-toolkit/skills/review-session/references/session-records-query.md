@@ -93,6 +93,6 @@ JSON Linesファイル群に対して汎用の検索コマンドを用いて無�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録の構造と集計：集計値の典拠の基準を適用する前 | `session-records-metrics.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-metrics.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録の構造と集計：集計値の典拠の基準を適用する前 | `session-records-metrics.md` |

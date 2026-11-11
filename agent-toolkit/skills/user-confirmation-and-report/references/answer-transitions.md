@@ -6,16 +6,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-states.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
-| 回答が確認や行動の扱いを一般的に是正する内容を含む時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 回答を元の作業へ反映する前（計画の有無によらず） | `../../write-plan/references/plan-file-standards-design.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md` |
-| run-skillのUWIを保存・取得する起動単位を判定する前 | `../../wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 回答が確認や行動の扱いを一般的に是正する内容を含む時 | `agent-basics:bugfix/SKILL.md` |
+| 回答を元の作業へ反映する前（計画の有無によらず） | `../../write-plan/references/plan-file-standards-design.md` |
+| run-skillのUWIを保存・取得する起動単位を判定する前 | `../../wi-standards/references/origin-and-approval.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-states.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` |
 
 ## 回答後の状態遷移
 
@@ -91,6 +88,6 @@ frontmatterの`scope`が自身の起動単位（スキル名とモードの組�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |

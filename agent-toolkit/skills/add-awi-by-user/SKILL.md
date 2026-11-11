@@ -53,47 +53,38 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 参考資料から改善候補を起草・採否判定する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/causal-analysis.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 考慮漏れの指摘を受けて原因を分析する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 既存の規範・手順で充足しているかを判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 疑問形の異議を受けて要求単位へ分ける前 | `../user-confirmation-and-report/references/user-utterance-questions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-questions.md` |
-| 考慮漏れ処置後の方針再確認で論点ごとの確認要否を判定する前 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-completion.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/drafting-completion-scope.md`、`../wi-standards/references/drafting-completion-confirmation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-confirmation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance-correction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 参考資料から改善候補を起草・採否判定する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 考慮漏れの指摘を受けて原因を分析する前 | `agent-basics:bugfix/SKILL.md` |
+| 参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
+| 既存の規範・手順で充足しているかを判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
+| 疑問形の異議を受けて要求単位へ分ける前 | `../user-confirmation-and-report/references/user-utterance-questions.md` |
+| 考慮漏れ処置後の方針再確認で論点ごとの確認要否を判定する前 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body-completion.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance-correction.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 手順2で質問ラウンドを始める前 | `agent-toolkit:user-confirmation-and-report`の`references/grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` | |
+| 手順2で質問ラウンドを始める前 | `agent-toolkit:user-confirmation-and-report`の`references/grilling.md` | | | |
 | WI作成の調査に入る前（手順2の1） | `../wi-standards/references/drafting-workflow.md`、`../wi-standards/references/drafting-workflow-investigation.md`、`../wi-standards/references/drafting-workflow-requirements.md`、`../wi-standards/references/drafting-completion-decisions.md`、`../wi-standards/references/drafting-completion-scope.md`、`../wi-standards/references/drafting-completion-confirmation.md`、`../wi-standards/references/drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-investigation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-decisions.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-confirmation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md`、`bash:atk wi submission begin` | |
-| 認可・解釈・観測の裏付けに必要な出所を再取得する時 | `../wi-standards/references/drafting-workflow-evidence.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-evidence.md` | |
+| 認可・解釈・観測の裏付けに必要な出所を再取得する時 | `../wi-standards/references/drafting-workflow-evidence.md` | | | |
 | 原稿を確定する前 | `../wi-standards/references/drafting-workflow-writing.md`、`../wi-standards/references/drafting-workflow-validation.md`、`../wi-standards/references/drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-writing.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-validation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md`、`wi-standard-save` | |
 | 独立した確認に入る前 | `../wi-standards/references/drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md`、`wi-standard-save` | |
 | 保存操作に入る前 | `../wi-standards/references/drafting-workflow-saving.md`、`../wi-standards/references/drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md`、`wi-standard-save` | |
 | 原稿の意味を確認する前 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-save` | |
-| 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
-| 独立した方針検収または本文検収を依頼する前 | `${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
-| 完成条件や採否を決める値を測定する前 | `references/measurement.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/measurement.md` | |
-| 推奨案や確認の選択肢を提示する前（手順2の2）、質問ラウンドを終える前と原稿を確定する前 | `references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` | |
-| 観測された問題の証拠収集・件数集計を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`../user-confirmation-and-report/references/user-utterance.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md` | |
+| 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | | | |
+| 独立した方針検収または本文検収を依頼する前 | `${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | | | |
+| 完成条件や採否を決める値を測定する前 | `references/measurement.md` | | | |
+| 推奨案や確認の選択肢を提示する前（手順2の2）、質問ラウンドを終える前と原稿を確定する前 | `references/omission-check.md` | | | |
+| 観測された問題の証拠収集・件数集計を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`../user-confirmation-and-report/references/user-utterance.md` | | | |
 
 ## 手順
 
@@ -237,6 +228,6 @@ Claude Codeでは、要約の行が最終応答に無い場合にStop hookが再
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` |

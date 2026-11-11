@@ -4,13 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles.md` |
-| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/repository-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/repository-scope.md` |
-| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` |
+| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 終了と報告内容の確認
 

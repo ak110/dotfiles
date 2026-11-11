@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` | |
-| 参照基準の適用前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` | |
-| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
-| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
-| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| 参照基準の適用前 | `lane-resources.md` |
+| 是正要求を分類する前 | `immediate-fix.md` |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` |
 
 ## 調査とレーン分け
 
@@ -70,7 +70,7 @@
 
  1. 各項目の変更要求から、予定するファイルまたは妥当なディレクトリ範囲を`書込対象`へ記録する。
     参照先・除外先の記録は任意とする。
-    公開工程だけが書く対象は`公開工程の書込対象`へ分ける（各項目の指定方法は[selection-format.md](selection-format.md)「欄の意味」参照）。
+    公開工程だけが書く対象は`公開工程の書込対象`へ分ける（各項目の指定方法は[selection-format-schema.md](selection-format-schema.md)「欄の意味」参照）。
     `公開工程の書込対象`は、対象リポジトリの規範において全レーン統合後の公開工程でのみ書き込むと定められた対象に限定し、`公開工程の規範根拠`にパス、規範ファイル、節を過不足なく1件ずつ記録する。
     他候補と重複する暫定的な範囲は、限定調査によって変更対象のファイルおよび節・定義まで限定し、一意に定まらない範囲は分割不能と判断する。
  2. 候補内における同一リポジトリの`depends_on`、同一の再開計画、および同じ段階で同一ファイルの同一節・定義を変更する項目を、分割不能な連結成分として扱い、各成分を同一レーンに配置する。
@@ -141,8 +141,8 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 選定YAMLの項目と省略規則：見込みの補正の算出の基準を適用する前 | `selection-format-prediction.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-prediction.md` |
-| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
-| メインによるWI選定とレーン分け：処理対象WIの追加の基準を適用する前 | `selection-procedure-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-addition.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 選定YAMLの項目と省略規則：見込みの補正の算出の基準を適用する前 | `selection-format-prediction.md` |
+| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` |
+| メインによるWI選定とレーン分け：処理対象WIの追加の基準を適用する前 | `selection-procedure-addition.md` |

@@ -54,10 +54,3 @@ atk run-script plan-check -- --reject-migration-warnings /absolute/path/to/plan.
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `legacy-plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/legacy-plan-file-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |

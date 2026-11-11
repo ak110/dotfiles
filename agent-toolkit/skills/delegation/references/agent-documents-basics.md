@@ -11,15 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/agent-documents-basics.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/agent-documents-additions.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/agent-documents-additions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/delivery-scope.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delivery-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/read-trigger-contract.md` | 判断 | `read:agent-toolkit:*/share/read-trigger-contract.md` |
-
 ## 運用条件
 
 規定の追記と記述量の管理は`agent-toolkit:wi-standards/references/agent-documents-additions.md`、計画ファイルの成果物契約は`agent-toolkit:write-plan`が定める。
@@ -45,14 +36,15 @@
 
 ## 読込表の宣言
 
-agent-toolkitの文書の読込表には、agent-basicsの必須列（「時点または条件」「全文読む資料」）に加えて「契機」「配送操作」を置き、動的資料を扱う場合は「資料選択子」を加える。
-語彙と入力形式は`agent-toolkit:/share/read-trigger-contract.md`に従う。
+agent-toolkitの文書の読込表は、agent-basicsの必須列（「時点または条件」「全文読む資料」）で書く。
+「契機」「配送操作」は解析側が導出できない行だけに書き、動的資料を扱う行には「資料選択子」を加える。
+列を省ける行と導出される値は`agent-toolkit:/share/read-trigger-contract-declarations.md`「表と取得方法」、語彙と入力形式は`agent-toolkit:/share/read-trigger-contract.md`に従う。
 条件と明示した節の範囲を守り、判断前の到達手順と確定操作への補完配送を区別して記述する。
 
 - 「契機」には、操作を機械的に判定できる行は「操作」、スキルや役割の受領ごとに成立する行は「起動時」、判断内容に応じて成立する行は「判断」を指定する。
   「判断」の行では、起動時の簡潔な選択基準と、具体的な判断をする前に詳細資料を取得する操作とを組み合わせる。
   他役割の行は対象外とし、自然文条件の成立は配送操作の一致とは別に確認する。
-  `read:`・`section:`に一致しても、宣言元の役割・工程などの自然文条件は別に確認する。
+  `read:`に一致しても、宣言元の役割・工程などの自然文条件は別に確認する。
   未確定の行は条件確認の候補とする。
   `confirmation`に一致する確認ツール呼出しと、本文から識別したWI保存種別は、その操作で確かめられる条件だけを確定側に含める。
   確認本文・選択肢の起草を観測できるツールは`AskUserQuestion`・`request_user_input`・`request_user_input_async`である。
@@ -67,9 +59,3 @@ agent-toolkitの文書の読込表には、agent-basicsの必須列（「時点�
   宣言を追加・変更・移動したときは、解決先、節、契機、実在するスキル名、取得手段と観測処理・公開hook登録の対応を宣言の検査で確かめる。
   会話圧縮前の候補と現在の再選択を分け、同じパスの複数節は取得を集約する。
   宣言修復後は保存した選択を現行へ接続する。
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |

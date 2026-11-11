@@ -8,11 +8,11 @@ Pull Requestのレビュースレッドへの返信、コメントの投稿、�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 基準資料を選択・取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 監査担当の返却の`pending取得結果`を入力に使う時 | `../../../share/copilot-review-audit.subagent.md` | 判断 | `read:agent-toolkit:*/share/copilot-review-audit.subagent.md` |
-| 基準資料を選択・取得する時 | `../../review-external-writes/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-external-writes/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 基準資料を選択・取得する時 | `../SKILL.md` |
+| 監査担当の返却の`pending取得結果`を入力に使う時 | `../../../share/copilot-review-audit.subagent.md` |
+| 基準資料を選択・取得する時 | `../../review-external-writes/SKILL.md` |
 
 ## 対象
 

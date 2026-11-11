@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 外部部品の具体的な版指定と更新経路を判断する前 | `dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 外部部品の具体的な版指定と更新経路を判断する前 | `dependency-management.md` |
 
 ## 外部部品の版の追従
 
@@ -18,6 +18,6 @@ LTS制度を持つ製品では最新のLTSを選び、公開待機設定があ�
 再現性と改ざん防止のための固定（ロックファイル、digest、commit SHA）は、固定値を最新版へ更新し続ける自動化か定期的な更新手順と組にして使う。
 具体的な版指定は`dependency-management.md`「最新版への追従」に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 外部部品の具体的な版指定と更新経路を判断する前 | `dependency-management.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/dependency-management.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 外部部品の具体的な版指定と更新経路を判断する前 | `dependency-management.md` |

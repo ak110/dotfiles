@@ -13,32 +13,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 既存WIとの比較の起点と検索対象を検収する前 | `drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
-| WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
-| 資料起点の採否を検収する前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-| 規範・手順による既存充足を検収する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 依頼の`再発の経過を問う要求`が`該当`、または検収者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求を検収する前 | `agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-scenarios.md`を全文読む | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
-| 複数バグの現象・期待する契約・原因の対応を検収する前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance-correction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-content.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-content.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-decisions.md`、`drafting-completion-scope.md`、`drafting-completion-confirmation.md`、`drafting-completion-validation.md`、`drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-decisions.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-confirmation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-workflow-saving.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md` |
-| 引用の認可や解釈のため出所を再取得する時 | `drafting-workflow-evidence.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 既存WIとの比較の起点と検索対象を検収する前 | `drafting-completion-duplicates.md` |
+| WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` |
+| add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` |
+| 資料起点の採否を検収する前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
+| 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
+| 規範・手順による既存充足を検収する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
+| 依頼の`再発の経過を問う要求`が`該当`、または検収者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求を検収する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む |
+| 複数バグの現象・期待する契約・原因の対応を検収する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| 引用の認可や解釈のため出所を再取得する時 | `drafting-workflow-evidence.md` |
 
 ## ユーザーが読む部分
 
@@ -155,7 +144,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 作業完了報告とセッションの完了処理の基準を適用する前 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| AWIとUWIの共通規範：通常AWIの本文の基準を適用する前 | `wi-standards-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-body.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 作業完了報告とセッションの完了処理の基準を適用する前 | `../../report-completion/SKILL.md` |
+| AWIとUWIの共通規範：通常AWIの本文の基準を適用する前 | `wi-standards-body.md` |

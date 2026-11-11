@@ -11,10 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/powershell.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/powershell.md` |
-
 ## 運用条件
 
 - agent-toolkitプラグインは、.ps1ファイルへ改行コードをLFのみで書き込もうとすると警告を返すが、書き込み自体は正常に成立する。

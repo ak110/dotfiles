@@ -12,13 +12,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 実行レビュー担当のモデル指定を比較・記録する前 | `agent-toolkit:delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 説明の追加の要否を判定する前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュー担当のモデル指定を比較・記録する前 | `agent-toolkit:delegation/references/process-model-settings.md` |
+| 説明の追加の要否を判定する前 | `agent-basics:writing-standards/references/writing-common.md` |
 
 ## 起動
 
@@ -142,7 +139,7 @@
    指摘の採否は、指摘が根拠とする作成規範の条文に本文が反しているか、あるいは読者像の観点から本文のみを根拠として行為者・対象・条件・結果を一意に読み取れず、判断・操作・検証を誤るか中断せざるを得ないかによって判定する。
    文章成果物の実害判定は、`agent-basics:review-standards`の両役割に共通する規定に従う。
    計画やWIの完成条件を満たしていること、機能的な実害がないこと、または説明の追加のみを求める指摘であることを、不採用の根拠にしない。
-   説明の追加が必要であるかの判定は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」の情報を追加する前の判定基準に従う。
+   説明の追加が必要であるかの判定は、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」の情報を追加する前の判定基準に従う。
    作成規範への違反は既存要件に対する指摘とする。
    不採用理由を記録する時は、指摘ごとに「条文への非該当」「範囲外」「事実誤認」のいずれであるかを特定し、その根拠を記録する。
    未解決件数として計上する対象は、差分および直接影響範囲に存在する既存要件への指摘に限定する。

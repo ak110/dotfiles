@@ -4,10 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` |
 
 ## 文章チェックの一括実行
 
@@ -18,12 +17,8 @@ MCPの`run`ツールを利用できない場合に限り、`check-execution-oper
 登録する実行手段には、複数の対象ファイルを受け取れる公開CLIである`atk run-script writing-check-dash -- <ファイル...>`を使用する。
 検出範囲の基準は`agent-basics:writing-standards/references/notation-checks.md`が定め、その検出処理の実装は`agent-toolkit/agent_toolkit/_atk/check_dash.py`に配置されている。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` |
-
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証ツールの実行と保存出力の取得：統合実行ツール経由の起動の基準を適用する前 | `check-execution-operations-launch.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証ツールの実行と保存出力の取得：統合実行ツール経由の起動の基準を適用する前 | `check-execution-operations-launch.md` |

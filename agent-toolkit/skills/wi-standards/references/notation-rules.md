@@ -12,11 +12,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 文章を執筆・修正する前 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
-| チェックの対象・実行と診断を判断する前 | `agent-basics:writing-standards/references/notation-checks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-checks.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/check-execution-operations-launch.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 文章を執筆・修正する前 | `agent-basics:writing-standards/references/notation-rules.md` |
+| チェックの対象・実行と診断を判断する前 | `agent-basics:writing-standards/references/notation-checks.md` |
 
 ## チェックの対象範囲
 
@@ -25,9 +24,3 @@
   WIや計画からコード・文書・設定などへ転記する時点で、要求の目的と意味を保って転記先の品質基準と妥当なlint診断へ従う。
   WIの説明・例示の文面に従ったことを理由に、成果物の不良を据え置かない。
   要件・認可と、明示的に逐語性を求められた公開文言は、説明・例示の表現と区別して保持する。
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |

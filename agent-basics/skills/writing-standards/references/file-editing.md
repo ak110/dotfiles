@@ -8,11 +8,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/encoding.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/encoding.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-scope.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-scope.md` |
-
 ## ファイル更新時の編集ツールの前提
 
 編集対象の現在内容と変更の前提条件を確認した上で編集を実行し、ツールの終了ステータスと生成された差分から、意図どおりに変更できたことを確認する。

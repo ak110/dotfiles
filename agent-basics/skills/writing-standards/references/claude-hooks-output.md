@@ -6,11 +6,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-messages-format.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages-format.md` |
-
 ## 出力フィールドの使い分け
 
 本節では出力先の選択方針を定める。
@@ -26,7 +21,9 @@ Claude Codeの`Stop hook error: JSON validation failed`は、プロンプト型h
 PreToolUse、PostToolUse、UserPromptSubmitでエージェントに行動を促す際は、`hookSpecificOutput.additionalContext`を第一の通知手段として用いる。
 各フィールドがターン継続を強制するかどうかは、以下の表に従う。
 標準エラー出力（stderr）は、終了コード2による遮断（block）と組み合わせる場合に限って使用する。
-`systemMessage`は、ユーザーの判断や操作に影響する重要な情報通知に限定する（失敗しない自動補正の発動など、ユーザーの対応を必要としない定常的な事象には使わない）。
+`systemMessage`は、ユーザーの判断や操作に影響する重要な情報通知と、エージェントに操作や是正を求める通知のユーザー向けの写しに使う（失敗しない自動補正の発動など、ユーザーの対応を必要としない定常的な事象には使わない）。
+写しは、エージェントが何を指摘されたかをユーザーが画面で読めるようにするためのもので、エージェント宛ての欄の内容と配送は元のまま保つ。
+実行ごとの測定値や規範本文の配送のように情報を渡すだけの通知は、画面が埋まるため写しの対象から外す。
 StopやSubagentStopでターン継続を強制する場合、振り返りの誘導といったエラー相当の遮断には`decision: "block"`と`reason`を使い、想定内の助言には`hookSpecificOutput.additionalContext`を使う。
 
 | フィールド | 表示先 | 用途 |
@@ -35,7 +32,7 @@ StopやSubagentStopでターン継続を強制する場合、振り返りの誘�
 | `hookSpecificOutput.updatedToolOutput` | エージェント | PostToolUseでモデルへ渡すツール結果の置き換え。同じイベントの複数のhookは元の出力に対して並行して動作し、最後に返された置き換え結果が採用される |
 | `reason` | エージェント（`decision: "block"`時のみ） | blockと併用する場合の理由欄 |
 | `permissionDecisionReason` | deny時はエージェント、allow/ask時はユーザーのみ | PreToolUseの決定理由 |
-| `systemMessage`・`stopReason` | ユーザーのみ | 情報通知および`continue: false`時の終了メッセージ |
+| `systemMessage`・`stopReason` | ユーザーのみ | 情報通知、是正を求める通知の写しおよび`continue: false`時の終了メッセージ |
 | `decision.*` | PermissionRequest専用 | 許可や拒否の決定。`hookSpecificOutput`の直下に配置する |
 
 deny時の`permissionDecisionReason`と`hookSpecificOutput.additionalContext`はどちらもエージェントに届くため、片方に統一する（努力目標）。
@@ -62,7 +59,7 @@ Claude Code自身がモデルにそのファイルの読み取りを促すこと
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| PermissionRequest・UserPromptSubmitに関する判断・作業の前 | `claude-hooks-output-events.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output-events.md` |
-| 組織向け設定に関する判断・作業の前 | `claude-hooks-output-organization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output-organization.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| PermissionRequest・UserPromptSubmitに関する判断・作業の前 | `claude-hooks-output-events.md` |
+| 組織向け設定に関する判断・作業の前 | `claude-hooks-output-organization.md` |

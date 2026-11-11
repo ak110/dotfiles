@@ -8,13 +8,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| エージェント向け文書の定義の置き場所と読込条件をレビューする時 | `agent-documents-basics-read-tables.md`、`agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| スライドの構成や配置をレビューする時 | `writing-slides.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-slides.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time-comments.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-comments.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| エージェント向け文書の定義の置き場所と読込条件をレビューする時 | `agent-documents-basics-read-tables.md`、`agent-documents-basics-ownership.md` |
+| スライドの構成や配置をレビューする時 | `writing-slides.md` |
 
 ## 指摘と採否
 
@@ -89,6 +86,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ドキュメント品質：改訂・保守の基準を適用する前 | `writing-maintenance.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-maintenance.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ドキュメント品質：改訂・保守の基準を適用する前 | `writing-maintenance.md` |

@@ -25,48 +25,48 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 参照基準の適用前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 参照基準の適用前 | `plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-| 参照基準の適用前 | `plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` |
-| 参照基準の適用前 | `plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-structure-check.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/writing-readers.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-readers.md` |
-| 参照基準の適用前 | `../../wi-standards/references/wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 参照基準の適用前 | `../../../share/exec-review-responses.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses.md` |
-| 参照基準の適用前 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-prediction.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/notation-rules.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/testing.md` |
-| 参照基準の適用前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/design-time.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/design-time.md` |
-| 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
-| 参照基準の適用前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
-| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
-| 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-volume.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 参照基準の適用前 | `../../user-confirmation-and-report/references/user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |
-| 参照基準の適用前 | `../../wi-standards/references/awi-body-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-completion.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
-| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
-| 本文で基準を使う資料を選択・取得する時 | `../../commit/references/commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
+| 参照基準の適用前 | `../SKILL.md` |
+| 参照基準の適用前 | `plan-file-storage.md` |
+| 参照基準の適用前 | `plan-restoration-contracts.md` |
+| 参照基準の適用前 | `plan-structure-check.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/SKILL.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/writing-readers.md` |
+| 参照基準の適用前 | `../../wi-standards/references/wi-standards-origin.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-prevention.md` |
+| 参照基準の適用前 | `../../../share/exec-review-responses.md` |
+| 参照基準の適用前 | `../../process-wi/SKILL.md` |
+| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md` |
+| 参照基準の適用前 | `agent-toolkit:commit/references/testing.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| 参照基準の適用前 | `agent-toolkit:commit/references/design-time.md` |
+| 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` |
+| 参照基準の適用前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` |
+| 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/references/user-utterance-incorporation.md` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body-completion.md` |
+| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/verification-operations.md` |
+| 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 本文で基準を使う資料を選択・取得する時 | `../../commit/references/commit-wi-records.md` |
+| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 計画ファイルの構成・概要と計画メタ情報に関する判断・作業の前 | `plan-file-standards-structure.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-structure.md` |
-| 実施内容に関する判断・作業の前 | `plan-file-standards-scope.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-scope.md` |
-| 要件・外部仕様に関する判断・作業の前 | `plan-file-standards-requirements.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-requirements.md` |
-| 設計・実装方針・恒久化・リファクタリング・変更履歴に関する判断・作業の前 | `plan-file-standards-design.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md` |
-| 検証と公開工程・バグ調査・要件の成立性・計画した検証の実行に関する判断・作業の前 | `plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
-| 進捗ログに関する判断・作業の前 | `plan-file-standards-progress.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-progress.md` |
-| 初回起草の雛形に関する判断・作業の前 | `plan-file-standards-template.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-template.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 計画ファイルの構成・概要と計画メタ情報に関する判断・作業の前 | `plan-file-standards-structure.md` |
+| 実施内容に関する判断・作業の前 | `plan-file-standards-scope.md` |
+| 要件・外部仕様に関する判断・作業の前 | `plan-file-standards-requirements.md` |
+| 設計・実装方針・恒久化・リファクタリング・変更履歴に関する判断・作業の前 | `plan-file-standards-design.md` |
+| 検証と公開工程・バグ調査・要件の成立性・計画した検証の実行に関する判断・作業の前 | `plan-file-standards-verification.md` |
+| 進捗ログに関する判断・作業の前 | `plan-file-standards-progress.md` |
+| 初回起草の雛形に関する判断・作業の前 | `plan-file-standards-template.md` |

@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文の参照基準を適用する前 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
-| 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 本文の参照基準を適用する前 | `approval-scope.md` |
+| 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` |
 
 ## 問い・提案・疑問形の扱い
 
@@ -58,9 +58,9 @@ WIに関する問いは、文脈から現在の操作、WIで依頼する内容�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
-| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| ユーザー発話の解釈と取り込み：割り込み・訂正・中止の基準を適用する前 | `user-utterance-correction.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-correction.md` |
-| ユーザー発話の解釈と取り込みの基準を適用する前 | `user-utterance.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` |
+| ユーザー発話の解釈と取り込み：割り込み・訂正・中止の基準を適用する前 | `user-utterance-correction.md` |
+| ユーザー発話の解釈と取り込みの基準を適用する前 | `user-utterance.md` |

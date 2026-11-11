@@ -7,13 +7,13 @@ CIの失敗について、原因箇所、今回の変更（セッション）へ
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 拡張原因分析の要否を判断する前 | `root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 拡張原因分析の要否を判断する前 | `root-cause-analysis-initial.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 失敗の性質による分類・対処法の選択肢と判定基準に関する判断・作業の前 | `ci-failure-handling-classification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling-classification.md` |
-| 分類判断のための詳細検討に関する判断・作業の前 | `ci-failure-handling-investigation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling-investigation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 失敗の性質による分類・対処法の選択肢と判定基準に関する判断・作業の前 | `ci-failure-handling-classification.md` |
+| 分類判断のための詳細検討に関する判断・作業の前 | `ci-failure-handling-investigation.md` |

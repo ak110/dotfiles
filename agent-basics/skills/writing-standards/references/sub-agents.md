@@ -7,11 +7,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-purpose.md`、`agent-documents-basics-placement.md`、`agent-documents-basics-read-tables.md`、`agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-purpose.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` |
 
 ## ディレクトリ構成
 
@@ -22,7 +20,7 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| `<役割名>.parent.md`と`<役割名>.subagent.md`の構成・返却形式の設計・名前付きagent、`<役割名>.subagent.md`およびskillの責務分離・手順設計時の確認に関する判断・作業の前 | `sub-agents-contracts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents-contracts.md` |
-| Claude Codeのfrontmatter・コンテキスト境界に関する判断・作業の前 | `sub-agents-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/sub-agents-claude.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| `<役割名>.parent.md`と`<役割名>.subagent.md`の構成・返却形式の設計・名前付きagent、`<役割名>.subagent.md`およびskillの責務分離・手順設計時の確認に関する判断・作業の前 | `sub-agents-contracts.md` |
+| Claude Codeのfrontmatter・コンテキスト境界に関する判断・作業の前 | `sub-agents-claude.md` |

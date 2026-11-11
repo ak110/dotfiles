@@ -18,42 +18,17 @@ WI作成専用では件数によらずメイン自身が作業し、専念型担
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-scenarios.md`を全文読む | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
-| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
-| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-launch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `wi-standards-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-comments.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-comments.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-decisions.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-external.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-external.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`、`../../user-confirmation-and-report/references/user-utterance.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-origin.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-completion.md` |
-| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-evidence.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-evidence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む |
+| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
+| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` |
+| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-launch.md` |
 
 ## 起票目的別の調査出口
 
@@ -61,19 +36,19 @@ WI作成専用では件数によらずメイン自身が作業し、専念型担
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 直接起草と独立した検収の選択に関する判断・作業の前 | `drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md` |
-| 出所と観測の取得に関する判断・作業の前 | `drafting-workflow-evidence.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-evidence.md` |
-| 投入条件の判定・前提と観測の確認に関する判断・作業の前 | `drafting-workflow-investigation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-investigation.md` |
-| 確定した要件と委譲元の判断・未確定事項に関する判断・作業の前 | `drafting-workflow-requirements.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md` |
-| エージェント向け文書の構成・本文の起草に関する判断・作業の前 | `drafting-workflow-writing.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-writing.md` |
-| 保存前の確認に関する判断・作業の前 | `drafting-workflow-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-validation.md` |
-| 投入に関する判断・作業の前 | `drafting-workflow-saving.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 直接起草と独立した検収の選択に関する判断・作業の前 | `drafting-workflow-review-route.md` |
+| 出所と観測の取得に関する判断・作業の前 | `drafting-workflow-evidence.md` |
+| 投入条件の判定・前提と観測の確認に関する判断・作業の前 | `drafting-workflow-investigation.md` |
+| 確定した要件と委譲元の判断・未確定事項に関する判断・作業の前 | `drafting-workflow-requirements.md` |
+| エージェント向け文書の構成・本文の起草に関する判断・作業の前 | `drafting-workflow-writing.md` |
+| 保存前の確認に関する判断・作業の前 | `drafting-workflow-validation.md` |
+| 投入に関する判断・作業の前 | `drafting-workflow-saving.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 作業完了報告とセッションの完了処理の基準を適用する前 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| AWIとUWIの共通規範：通常AWIの本文の基準を適用する前 | `wi-standards-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-body.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 作業完了報告とセッションの完了処理の基準を適用する前 | `../../report-completion/SKILL.md` |
+| AWIとUWIの共通規範：通常AWIの本文の基準を適用する前 | `wi-standards-body.md` |

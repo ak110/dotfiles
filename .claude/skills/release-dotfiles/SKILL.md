@@ -17,21 +17,11 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/references/publishing.md` | 判断 | `read:*/skills/develop-dotfiles/references/publishing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/commit/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:review-external-writes/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-external-writes/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../merge-pr/SKILL.md` | 判断 | `read:*/skills/merge-pr/SKILL.md` |
+## 関連する記録
 
-## 読込表
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| branch初期化、GitHubの保護設定またはマージ後の詳細手順が要る時 | [developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)、[branchとリリースの設計](../../../docs/development/design-release.md#developとmasterのbranchリリース設計) | 判断 | `section:*/docs/development/concepts-workflows.md#developとmasterのリリース運用`、`section:*/docs/development/design-release.md#developとmasterのbranchリリース設計` |
-| 主checkoutのfast-forward後に常時稼働サーバーへ反映する時 | [atk serveへの反映](../../../docs/development/operations.md#fast-forward後のatk-serveへの反映) | 判断 | `section:*/docs/development/operations.md#fast-forward後のatk-serveへの反映` |
+branch初期化、GitHubの保護設定、マージ後の詳細手順は、[developとmasterのリリース運用](../../../docs/development/concepts-workflows.md#developとmasterのリリース運用)と[branchとリリースの設計](../../../docs/development/design-release.md#developとmasterのbranchリリース設計)に記録がある（所在参照）。
+主checkoutのfast-forward後に常時稼働サーバーへ反映する手順は、[atk serveへの反映](../../../docs/development/operations.md#fast-forward後のatk-serveへの反映)にある（所在参照）。
+いずれも規範以外の記録であり、必要な範囲を選んで読む。
 
 ## 常時稼働サーバーへの反映
 

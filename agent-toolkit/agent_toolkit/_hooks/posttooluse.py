@@ -557,9 +557,10 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
     except (OSError, UnicodeError, ValueError) as error:
         notices.append(
             _llm_notice(
-                f"読込資料の取得を記録できない: {error}",
+                f"資料の読取結果を取得済みとして記録できない: {error}。読取自体の成否はツール結果で確認せよ。",
                 tag=_WARN_TAG,
-                fix="資料の実在と宣言を確認し、必要な本文を取得せよ。",
+                fix="診断に示された資料と読込表を確認せよ。本文が欠けていれば必要な範囲を取得し、"
+                "記録の障害が続く場合は診断を委譲元またはユーザーへ報告せよ。",
                 removable_cause=True,
                 escalate_on_repeat=False,
             )
@@ -681,7 +682,8 @@ def main(payload_text: str) -> int:
     except (OSError, ValueError, TypeError, KeyError) as error:
         notices.append(
             _llm_notice(
-                f"終了工程の実行結果を取得できない: {error}",
+                f"ツール呼び出しの結果を、作業終了時の確認に使う記録へ残せなかった: {error}。"
+                "元の操作の成否はツール結果で確認せよ。",
                 tag="warn",
                 removable_cause=False,
                 fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",

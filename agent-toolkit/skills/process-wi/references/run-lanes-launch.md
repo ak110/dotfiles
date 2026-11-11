@@ -4,18 +4,18 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:delegation/references/waiting-claude-code.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-claude-code.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
+| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` |
+| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:delegation/references/waiting-claude-code.md` |
+| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
+| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
 
 ## レーンと資源
 
@@ -65,6 +65,6 @@ Codex環境では予約処理を省略して通常の待機へ進む。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レーンの実行：処理中に確定した必須是正レーンの基準を適用する前 | `run-lanes-addition.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-addition.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レーンの実行：処理中に確定した必須是正レーンの基準を適用する前 | `run-lanes-addition.md` |

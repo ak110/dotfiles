@@ -179,7 +179,7 @@ def test_public_hook_uncertain_shell_targets_continue_and_observe(tmp_path, monk
     inputs = {"command": command}
     before = run_hook("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
     assert before.returncode == 0 and not before.stderr
-    assert "想定外エラー" not in before.stdout and "存在しない" not in before.stdout
+    assert "想定外のエラーが起きた" not in before.stdout and "存在しない" not in before.stdout
     assert '"permissionDecision": "deny"' not in before.stdout
     produced = subprocess.run(["/bin/bash", "-c", command], env=host_environ(), capture_output=True, timeout=10, check=False)
     assert produced.returncode == 0 and not produced.stderr and produced.stdout == expected
@@ -194,7 +194,7 @@ def test_public_hook_uncertain_shell_targets_continue_and_observe(tmp_path, monk
         },
     )
     assert observed.returncode == 0 and not observed.stderr
-    assert "想定外エラー" not in observed.stdout
+    assert "想定外のエラーが起きた" not in observed.stdout
     if scenario == "brace-shadow":
         assert (
             document_reads.acquisition_state(

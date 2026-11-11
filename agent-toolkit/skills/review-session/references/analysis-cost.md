@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-investigation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-operations.md` |
-| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` |
+| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |
+| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` |
 
 ## 比較して探す観点
 
@@ -88,7 +88,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 判断の妥当性を評価する詳細：問題と手段の比例性の基準を適用する前 | `agent-basics:review-standards/references/judgment-details-decisions.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/judgment-details-decisions.md` |
-| 振り返りの判断基準：原因と対策の基準を適用する前 | `analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判断の妥当性を評価する詳細：問題と手段の比例性の基準を適用する前 | `agent-basics:review-standards/references/judgment-details-decisions.md` |
+| 振り返りの判断基準：原因と対策の基準を適用する前 | `analysis-actions.md` |

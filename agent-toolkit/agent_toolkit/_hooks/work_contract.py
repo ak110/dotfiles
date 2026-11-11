@@ -99,7 +99,11 @@ def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str 
         if status == "current" or fingerprint in seen:
             continue
         text = (
-            ("取得済み資料の更新あり。" if status == "updated" else "全体作業契約の現行版を再読せよ。")
+            (
+                "全体作業契約が取得後に更新された。"
+                if status == "updated"
+                else "全体作業契約の現行版を全文取得したことを確認できない。"
+            )
             + "「即時対応で確定した暫定規則」を含む要求を確かめ、配布前の暫定規則に従え。"
             f"`{_read_command(path)}`で全文を取得してから判断・操作へ進め。"
         )

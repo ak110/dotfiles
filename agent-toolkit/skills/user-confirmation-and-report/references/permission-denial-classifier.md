@@ -4,14 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/auto-mode.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output-events.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output-events.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/auto-mode.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/auto-mode.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
-| 判定不能により待機を開始できない時 | `../../delegation/references/wait-anomalies-refusal.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-refusal.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判定不能により待機を開始できない時 | `../../delegation/references/wait-anomalies-refusal.md` |
 
 ## 拒否の確認手順
 
@@ -105,7 +100,7 @@ auto mode classifierの拒否は実行を妨げ、解消には同一セッショ
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 根本原因と重大度：QとC・Dの区別の基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 権限拒否への対応の基準を適用する前 | `permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 根本原因と重大度：QとC・Dの区別の基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
+| 権限拒否への対応の基準を適用する前 | `permission-denial.md` |

@@ -4,11 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-additions-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-additions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `read-method.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/read-method.md` |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
 
 ## 読込表
 
@@ -28,6 +26,8 @@
 - 読込を自動化する仕組み（hookなど）を持つプロジェクトでは、その仕組みの受理契約に従って「契機」「配送操作」「資料選択子」などの列を加える。
   加えた列も同じ表に置き、読み手向けの表と仕組み向けの表へ同じ条件を分けて書かない。
   同じ条件が2か所にあると、片方だけを改訂したときに内容が一致しなくなるためである。
+  仕組みが資料列や本文から導出できる値は表へ書かない（努力目標。読む量を減らすため）。
+  導出と同じ値だけの列は空にするか列ごと省き、本文が名指しした資料を写すだけの行は置かない。
 - 起動のたびに常に成立する行（起動時、着手時など）について、その文書でのみ読み込ませる資料であれば表の行には含めず、内容を文書本体に直接記述する。
   共有資料については、毎回の判断で必要な資料をファイル単位で指定した行を残す。
   要求の種類によって要否が分かれる資料は、その種別を条件とする独立した行に分ける。

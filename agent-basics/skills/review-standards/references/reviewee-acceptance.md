@@ -4,12 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘前の判断記録と比較する前 | `exec-review-recording.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/exec-review-recording.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 調査の停滞や修正による症状・回避処理の増加に対処する前 | `../../bugfix/references/root-cause-scenarios-recurrence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-recurrence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘前の判断記録と比較する前 | `exec-review-recording.md` |
+| 調査の停滞や修正による症状・回避処理の増加に対処する前 | `../../bugfix/references/root-cause-scenarios-recurrence.md` |
 
 ## レビュー指摘の位置付け
 
@@ -66,8 +64,8 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| バグ対応の基準を適用する前 | `../../bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| レビューイー側心得：修正要否の立証の基準を適用する前 | `reviewee-correction.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-correction.md` |
-| レビューイー側心得：同じ指摘の反復の基準を適用する前 | `reviewee-recurrence.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee-recurrence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| バグ対応の基準を適用する前 | `../../bugfix/SKILL.md` |
+| レビューイー側心得：修正要否の立証の基準を適用する前 | `reviewee-correction.md` |
+| レビューイー側心得：同じ指摘の反復の基準を適用する前 | `reviewee-recurrence.md` |

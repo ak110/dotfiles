@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `design-display.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-display.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `design-display.md` |
 
 ## API設計
 
@@ -28,6 +28,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 内部APIの整理方針を適用する前 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 内部APIの整理方針を適用する前 | `quality-principles-qcd.md` |

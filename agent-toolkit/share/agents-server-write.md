@@ -19,7 +19,7 @@ commit、push、ファイルの削除、依存関係の変更、外部公開、�
 
 ## 編集前の読込
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 既存ファイルを編集する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteで既存ファイルを更新する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 既存ファイルを編集する前 | `agent-basics:writing-standards/references/file-editing.md` |
+| Claude CodeのEditまたはWriteで既存ファイルを更新する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |

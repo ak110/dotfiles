@@ -4,15 +4,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| OSを模擬した試験の保証と環境条件を記録する前 | `agent-basics:writing-standards/references/testing-selection.md`、`agent-basics:writing-standards/references/testing-platforms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md`、`read:agent-basics:*/skills/writing-standards/references/testing-platforms.md` |
-| 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
-| 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
-| 保存出力を取得する前 | `check-execution-operations-output.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-output.md` |
-| 取得版の異なる観測を検証結果へ書く前 | `exec-review-recording-grounds.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
-| レビューへ渡す最終観測を取得する前 | `../skills/commit/references/commit-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-verification.md` |
-| 保存済みの成功集合と限定再検証から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| OSを模擬した試験の保証と環境条件を記録する前 | `agent-basics:writing-standards/references/testing-selection.md`、`agent-basics:writing-standards/references/testing-platforms.md` |
+| 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards-verification.md` |
+| 保存出力を取得する前 | `check-execution-operations-output.md` |
+| 取得版の異なる観測を検証結果へ書く前 | `exec-review-recording-grounds.md` |
+| レビューへ渡す最終観測を取得する前 | `../skills/commit/references/commit-verification.md` |
+| 保存済みの成功集合と限定再検証から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 手動観測の保存
 

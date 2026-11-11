@@ -9,8 +9,10 @@ hookの通知、process-loopが渡す追加指示、agent間配送、機械が�
 同じ包装を1つの実装で適用できる。
 """
 
+import contextlib
 import re
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from typing import NamedTuple
 from xml.sax.saxutils import quoteattr
 
 AUTO_INSERTED_ELEMENT = "atk-auto"
@@ -47,4 +49,36 @@ def starts_with_auto_element(text: str) -> bool:
 def auto_message(body: str, *, source: str, kind: str, attributes: Mapping[str, str] | None = None) -> str:
     """自動挿入本文へ共通の境界と出所を付ける。"""
     extras = {name: value for name, value in (attributes or {}).items() if name not in {"source", "kind"}}
-    return xml_message(AUTO_INSERTED_ELEMENT, body, {"source": source, "kind": kind, **extras})
+    text = xml_message(AUTO_INSERTED_ELEMENT, body, {"source": source, "kind": kind, **extras})
+    if _recordings:
+        _recordings[-1].append(GeneratedMessage(text, source, kind, body))
+    return text
+
+
+class GeneratedMessage(NamedTuple):
+    """`auto_message`が生成した包装済みの本文と、その生成元・種別・包装前の本文。"""
+
+    text: str
+    source: str
+    kind: str
+    body: str
+
+
+# 記録中の範囲ごとのリスト（入れ子では最も内側へ記録する）。範囲外では記録せず、
+# 常駐プロセス（agents_serverなど）で生成のたびに増え続けないようにする。
+_recordings: list[list[GeneratedMessage]] = []
+
+
+@contextlib.contextmanager
+def record_generated() -> Generator[list[GeneratedMessage]]:
+    """範囲内で`auto_message`が生成した本文を、生成元・種別・包装前の本文とともに記録する。
+
+    生成済みの本文から包装を字面で切り出すと、本文が引用した開始・終了タグを配送境界と取り違える。
+    生成時の値を保持すれば、引用の内容によらず本文の全文と生成元を区別できる。
+    """
+    recorded: list[GeneratedMessage] = []
+    _recordings.append(recorded)
+    try:
+        yield recorded
+    finally:
+        _recordings.pop()

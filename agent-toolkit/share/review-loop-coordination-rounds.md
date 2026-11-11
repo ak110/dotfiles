@@ -4,14 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-contract-generation.md` | 判断 | `read:agent-toolkit:*/share/exec-review-contract-generation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-recurrence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-recurrence.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-acceptance.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-responses-records.md` | 判断 | `read:agent-toolkit:*/share/exec-review-responses-records.md` |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 
 ## ラウンドの遷移
 
@@ -70,9 +65,9 @@ rebaseによって今回の開始時点が変更された場合でも前回の�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実行レビュー担当の起動とレビュー修正：レビュー修正の基準を適用する前 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
-| 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準の基準を適用する前 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成の基準を適用する前 | `exec-review-recording-evidence.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-evidence.md` |
-| 実行レビュー反復の調整：反復原因の判定の基準を適用する前 | `review-loop-coordination-recurrence.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination-recurrence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実行レビュー担当の起動とレビュー修正：レビュー修正の基準を適用する前 | `exec-review-parent-correction.md` |
+| 実行レビュー担当の起動とレビュー修正：起動方法別のレビュー基準の基準を適用する前 | `exec-review-parent-launch.md` |
+| 実行レビューの指摘と完成条件証拠の記録：完成条件証拠の作成の基準を適用する前 | `exec-review-recording-evidence.md` |
+| 実行レビュー反復の調整：反復原因の判定の基準を適用する前 | `review-loop-coordination-recurrence.md` |

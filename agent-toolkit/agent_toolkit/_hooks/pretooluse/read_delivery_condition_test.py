@@ -7,7 +7,7 @@ import pytest
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger
 from agent_toolkit._hooks import notice
 from agent_toolkit._hooks.pretooluse import read_delivery
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+from agent_toolkit._testing.pretooluse_support import _additional_context, _run_hook_in_process
 
 
 @pytest.fixture
@@ -134,7 +134,8 @@ def test_selected_source_candidates_are_deferred_and_deduplicated(tmp_path, monk
         assert "候補" not in result.stdout
     result = _run_hook_in_process("pretooluse", _progress(tmp_path))
     assert result.returncode == 0
-    assert result.stdout.count("条件: 設計を確定する前") == 1
+    # 出力にはユーザー画面向けの写しも入るため、エージェント宛ての本文で数える。
+    assert _additional_context(result).count("条件: 設計を確定する前") == 1
     assert "別工程の条件" not in result.stdout
     assert not read_delivery.target_ready(state.get("operation_skill_delivered_agents", {}), ReadTarget(source), "main")
 
@@ -160,3 +161,71 @@ def test_candidate_checks_source_acquisition_only_after_light_conditions(
         {"cwd": str(tmp_path)}, "Grep", {"pattern": "x"}, "test"
     )
     assert len(calls) == expected
+
+
+@pytest.fixture
+def _named_reference_skill(tmp_path, monkeypatch):
+    """本文が資料を名指しし、読込表に行を持たないスキルと、空の取得状態を用意する。"""
+    state: dict = {}
+    for module in (read_delivery, notice):
+        monkeypatch.setattr(module, "read_state", lambda _session: state)
+        monkeypatch.setattr(module, "update_state", lambda _session, mutate, **_kwargs: mutate(state))
+    monkeypatch.setattr(read_delivery.delegated_session, "is_lightweight_delegated", lambda _env: False)
+    notice.begin_delivery()
+    root = tmp_path / "plugin"
+    (root / ".claude-plugin").mkdir(parents=True)
+    (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+    source = root / "skills/example/SKILL.md"
+    reference = source.parent / "references/rule.md"
+    reference.parent.mkdir(parents=True)
+    reference.write_text("# 基準\n" + "本文\n" * 20, encoding="utf-8")
+    source.write_text("# 例\n\n判定は`references/rule.md`に従う。\n", encoding="utf-8")
+    monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: root)
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [source])
+    return source, reference
+
+
+def _partial_read(tmp_path, reference):
+    """資料の冒頭だけを読み、別の操作を続ける呼び出しを返す。
+
+    読取だけの呼び出しは取得操作として扱われ、読込条件の候補の通知は次の関連操作へ保留される。
+    """
+    return {
+        "session_id": "test",
+        "cwd": str(tmp_path),
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": f"sed -n '1,3p' -- {reference} && date"},
+    }
+
+
+def test_partial_read_of_named_reference_notifies_supplied_condition(tmp_path, _named_reference_skill):
+    """本文の名指しへ補った宣言でも、資料を一部だけ読むと定型の条件と資料で読込条件の候補を通知する。"""
+    source, reference = _named_reference_skill
+    unread = _run_hook_in_process("pretooluse", _partial_read(tmp_path, reference))
+    assert unread.returncode == 0 and "読込条件の候補" not in unread.stdout
+    read_delivery._mark("test", source, "main")  # pylint: disable=protected-access
+    result = _run_hook_in_process("pretooluse", _partial_read(tmp_path, reference))
+    assert result.returncode == 0
+    assert "読込条件の候補" in result.stdout
+    assert "本文がこの資料の基準を使う場面で、資料を選択して取得する時" in result.stdout
+    assert str(reference) in result.stdout and f"{source}:3" in result.stdout
+
+
+def test_named_reference_rows_are_not_resolved_for_unrelated_reads(tmp_path, monkeypatch, _named_reference_skill):
+    """読取対象の名前が本文に無い宣言元では、補完の宣言を求めない。"""
+    source, reference = _named_reference_skill
+    other = tmp_path / "other.md"
+    other.write_text("# 別の資料\n", encoding="utf-8")
+    called: list[pathlib.Path] = []
+
+    def _record_call(path, *_args, **_kwargs):
+        called.append(path)
+        return []
+
+    monkeypatch.setattr(read_delivery.read_triggers, "named_reference_rows", _record_call)
+    read_delivery._mark("test", source, "main")  # pylint: disable=protected-access
+    _run_hook_in_process("pretooluse", _partial_read(tmp_path, other))
+    assert not called
+    _run_hook_in_process("pretooluse", _partial_read(tmp_path, reference))
+    assert called == [source]

@@ -9,15 +9,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 動作検証を実行する前 | `../../develop-dotfiles/references/verification-values-execution.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-execution.md` |
-| 全レーンの完了後にバージョンを更新する時点、および本書の更新手順へ入る前 | `agent-toolkit:process-wi/references/finish-session.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session.md` |
-| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules/rules-common.codex.md` | 判断 | `read:agent-toolkit:*/share/rules/rules-common.codex.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` | 判断 | `read:*/.claude/skills/release-dotfiles/SKILL.md` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `./../../develop-dotfiles/references/publishing.md` | 判断 | `read:*/skills/develop-dotfiles/references/publishing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 動作検証を実行する前 | `../../develop-dotfiles/references/verification-values-execution.md` |
+| 全レーンの完了後にバージョンを更新する時点、および本書の更新手順へ入る前 | `agent-toolkit:process-wi/references/finish-session.md` |
+| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules/rules-common.codex.md` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` |
+| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `./../../develop-dotfiles/references/publishing.md` |
 
 ## 判定基準
 
@@ -34,9 +32,9 @@ Codexの導入処理は版数の不一致だけで再導入するため、版数
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| plan modeでの取り扱いに関する判断・作業の前 | `version-bump-planning.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-planning.md` |
-| 競合解決と統合後の確認・未プッシュ範囲での統合・バージョン更新に関する判断・作業の前 | `version-bump-execution.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-execution.md` |
-| Codex導入後のrootの再確認に関する判断・作業の前 | `version-bump-codex-root.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-codex-root.md` |
-| 新規CLI公開時の疎通確認に関する判断・作業の前 | `version-bump-new-cli.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/version-bump-new-cli.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| plan modeでの取り扱いに関する判断・作業の前 | `version-bump-planning.md` |
+| 競合解決と統合後の確認・未プッシュ範囲での統合・バージョン更新に関する判断・作業の前 | `version-bump-execution.md` |
+| Codex導入後のrootの再確認に関する判断・作業の前 | `version-bump-codex-root.md` |
+| 新規CLI公開時の疎通確認に関する判断・作業の前 | `version-bump-new-cli.md` |

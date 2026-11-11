@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `handoff-record.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/handoff-record.md` |
-
 ## 引き継ぎ記録先
 
 `<役割名>.subagent.md`で2つ以上の工程を順番に実行する委譲では、`引き継ぎ記録先: <絶対パス>（新規）`または`引き継ぎ記録先: <絶対パス>（継続）`の行を委譲プロンプトに含める。

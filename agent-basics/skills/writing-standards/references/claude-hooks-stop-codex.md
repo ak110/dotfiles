@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-behavior.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` |
 
 ## Codexの差分
 

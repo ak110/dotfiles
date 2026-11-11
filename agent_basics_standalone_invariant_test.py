@@ -96,7 +96,7 @@ def test_agent_basics_references_resolve_inside_distribution() -> None:
     ("reference", "conditions"),
     [
         ("gitlab-ci.md", ("編集", "確認", "参照")),
-        ("pytilpack.md", ("読み書き", "参照")),
+        ("pytilpack.md", ("読み書き", "参照", "新しく実装する")),
     ],
 )
 def test_technical_materials_keep_read_only_decision_triggers(reference: str, conditions: tuple[str, ...]) -> None:
@@ -104,7 +104,9 @@ def test_technical_materials_keep_read_only_decision_triggers(reference: str, co
     text = (_SKILLS / "writing-standards/SKILL.md").read_text(encoding="utf-8")
     rows = [line for line in text.splitlines() if line.startswith("|") and f"`references/{reference}`" in line]
     assert rows
-    assert any("| 判断 |" in row and all(condition in row for condition in conditions) for row in rows)
+    # 契機を省いた行は判断の行である。操作・起動時を契機とする行だけが列を書く。
+    judgments = [row for row in rows if "| 操作 |" not in row and "| 起動時 |" not in row]
+    assert any(all(condition in row for condition in conditions) for row in judgments)
     description = text.split("---", 2)[1]
     assert all(condition in description for condition in conditions)
 

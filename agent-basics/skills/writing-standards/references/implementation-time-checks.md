@@ -4,13 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
-| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-priorities.md`、`read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-runtime-jobs.md`、`read:agent-basics:*/skills/writing-standards/references/design-runtime-services.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` |
+| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` |
+| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` |
 
 ## 依存と自動生成物
 

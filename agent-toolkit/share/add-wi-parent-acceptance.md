@@ -4,13 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md` | |
-| 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md` | |
-| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md`、`read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/sending.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` |
+| 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` |
+| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` |
 
 ## 受領と検収
 
@@ -115,8 +113,8 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| WI投入担当の起動と受領：起動前の前提の基準を適用する前 | `add-wi-parent-inputs.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-inputs.md` |
-| WI投入担当の起動と受領：起動方法の基準を適用する前 | `add-wi-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-launch.md` |
-| WI投入担当の起動と受領の基準を適用する前 | `add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| WI投入担当の起動と受領：起動前の前提の基準を適用する前 | `add-wi-parent-inputs.md` |
+| WI投入担当の起動と受領：起動方法の基準を適用する前 | `add-wi-parent-launch.md` |
+| WI投入担当の起動と受領の基準を適用する前 | `add-wi.parent.md` |

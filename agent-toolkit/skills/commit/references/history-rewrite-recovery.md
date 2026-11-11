@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
-
 ## 失敗時の扱い
 
 本節における`pre_fixup`、`fixup`、`autosquash`、`amend`の各フェーズ名、および続行できない理由を通知する返却フォーマットは、`${CLAUDE_PLUGIN_ROOT}/share/exec.subagent.md`に定める実装担当エージェントの契約に準拠する。
@@ -35,7 +31,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
-| 履歴書換え：WI実装commitの対応の継承の基準を適用する前 | `history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` |
+| 履歴書換え：WI実装commitの対応の継承の基準を適用する前 | `history-rewrite-wi-records.md` |

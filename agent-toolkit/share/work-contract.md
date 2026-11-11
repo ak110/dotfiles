@@ -8,10 +8,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../skills/review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../skills/review-session/references/session-records-conversation.md` |
 
 ## 作成と所有
 
@@ -50,7 +49,7 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 更新する時点・追加入力の統合に関する判断・作業の前 | `work-contract-updates.md` | 判断 | `read:agent-toolkit:*/share/work-contract-updates.md` |
-| 工程境界での要求と成果の確認に関する判断・作業の前 | `work-contract-boundaries.md` | 判断 | `read:agent-toolkit:*/share/work-contract-boundaries.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 更新する時点・追加入力の統合に関する判断・作業の前 | `work-contract-updates.md` |
+| 工程境界での要求と成果の確認に関する判断・作業の前 | `work-contract-boundaries.md` |

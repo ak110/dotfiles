@@ -68,12 +68,9 @@ Antigravityのプラグイン配送は`antigravity_plugin.py`、起動指示はA
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/agent-documents-basics.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-documents-basics.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos-orchestration-roles.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration-roles.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/references/all-repos-orchestration-roles.md` |
 
 ## Antigravityの通常起動
 

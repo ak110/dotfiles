@@ -1,6 +1,6 @@
-"""確認操作に伴う資料取得案内と取得観測のテスト。
+"""確認操作に伴う資料取得の拒否と取得観測のテスト。
 
-PreToolUseとPostToolUseの公開hookを同一プロセスで起動し、読取成功の観測に応じた警告の有無を検証する。
+PreToolUseとPostToolUseの公開hookを同一プロセスで起動し、読取成功の観測に応じた拒否の有無を検証する。
 transcriptのエントリの形は、Claude Code 2.1.291の`~/.claude/projects`配下の記録（`tool_use`ブロックを持つ
 `assistant`エントリ、呼出IDに対応する`tool_result`を持つ`user`エントリと、
 `type`が`system`・`subtype`が`compact_boundary`のエントリ）から写した。
@@ -23,6 +23,8 @@ _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "us
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
 _WARNING = "未取得資料"
+_DENIAL = "この質問はまだユーザーへ表示していない"
+_CONFIRMATION_TOOLS = ("AskUserQuestion", "request_user_input", "request_user_input_async")
 _QUESTION_INPUT = {
     "questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]
 }
@@ -35,6 +37,12 @@ def _local_plugin_root(tmp_path, monkeypatch):
     path = tmp_path / "work-contract.md"
     path.write_text("目的: 確認操作固有の通知の検証\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: path)
+
+
+def _denial(result) -> str:
+    """PreToolUseの拒否の理由を返す。拒否していなければ空文字列を返す。"""
+    output = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    return output.get("permissionDecisionReason", "") if output.get("permissionDecision") == "deny" else ""
 
 
 def _assert_reference_state(path: pathlib.Path, expected: bool) -> None:
@@ -159,29 +167,33 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
         pytest.param([_bash(f"cat {_APPROVAL} {_CHOICE}")], [_APPROVAL, _CHOICE], id="bash-without-result"),
     ],
 )
-def test_unread_reference_warns_without_blocking(
-    tmp_path: pathlib.Path, entries: list[dict], unread: list[pathlib.Path]
-) -> None:
-    """最後の会話圧縮より後に読んでいない資料の絶対パスと次の操作を示して通し、反復しても遮断しない。
+def test_unread_reference_is_denied_until_read(tmp_path: pathlib.Path, entries: list[dict], unread: list[pathlib.Path]) -> None:
+    """最後の会話圧縮より後に読んでいない資料の絶対パスと次の操作を示して、質問の表示前に毎回拒否する。
 
     確認を組む時点に読込表の行が想起されないと、規定を満たさない前提と選択肢のまま確認が発行される。
-    遮断は`AskUserQuestion`の入力の再発行を要し損失が大きいため、警告で返す。
+    警告は回答と一緒に届くため、基準を適用しないまま質問する害を防げない。拒否は表示前に返り、ユーザーの入力は生じない。
     """
     payload = _payload(tmp_path, entries)
-    for attempt in range(2):
+    for _attempt in range(2):
         result = _run(payload)
-        assert result.returncode == 0
-        context = _additional_context(result)
+        assert result.returncode == 0 and not result.stderr
+        reason = _denial(result)
+        assert _DENIAL in reason and "次の操作:" in reason
         for path in (_APPROVAL, _CHOICE):
             _assert_reference_state(path, path not in unread)
-        if attempt:
-            assert _WARNING not in context
-            assert all(str(path) not in context for path in (_APPROVAL, _CHOICE))
-            continue
-        assert context.count(_WARNING) == 1
-        for path in (_APPROVAL, _CHOICE):
-            assert (str(path) in context) == (path in unread)
-        assert "次の操作:" in context
+            assert (str(path) in reason) == (path in unread)
+
+
+@pytest.mark.parametrize("tool", _CONFIRMATION_TOOLS)
+def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path: pathlib.Path, tool: str) -> None:
+    """3つの確認ツールを同じ判定で拒否し、2資料を全文読んだ後は通す。"""
+    unread = {**_payload(tmp_path, []), "tool_name": tool}
+    for _attempt in range(2):
+        assert _DENIAL in _denial(_run(unread))
+    read = {**_payload(tmp_path, [*_successful_read(_APPROVAL), *_successful_read(_CHOICE)]), "tool_name": tool}
+    result = _run(read)
+    assert result.returncode == 0 and not _denial(result)
+    assert _WARNING not in _additional_context(result)
 
 
 @pytest.mark.parametrize(
@@ -202,7 +214,7 @@ def test_unread_reference_warns_without_blocking(
 def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]) -> None:
     codex = any(entry.get("message", {}).get("content", [{}])[0].get("name") == "Bash" for entry in entries)
     result = _run(_payload(tmp_path, entries, **({"turn_id": "turn"} if codex else {})))
-    assert result.returncode == 0
+    assert result.returncode == 0 and not _denial(result)
     assert _WARNING not in _additional_context(result)
     for path in (_APPROVAL, _CHOICE):
         _assert_reference_state(path, True)
@@ -212,12 +224,12 @@ def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]
     "operation", ["printf '%s'", "ls", "test -e", "python3 -c \"print('approval-scope.md choice-construction.md')\""]
 )
 def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.Path, operation: str) -> None:
-    """成功しても対象本文を読まない操作では、未取得資料の警告を保持する。"""
+    """成功しても対象本文を読まない操作では、未取得資料の拒否を保持する。"""
     entries = _successful_bash(f"{operation} '{_APPROVAL}' '{_CHOICE}'")
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0
-    context = _additional_context(result)
-    assert _WARNING in context and str(_APPROVAL) in context and str(_CHOICE) in context
+    reason = _denial(result)
+    assert _DENIAL in reason and str(_APPROVAL) in reason and str(_CHOICE) in reason
     for path in (_APPROVAL, _CHOICE):
         _assert_reference_state(path, False)
 
@@ -231,39 +243,57 @@ def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.
     entries = _successful_read(other) if tool == "Read" else _successful_bash(f"cat {other}")
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0 and not result.stderr
-    assert _WARNING in _additional_context(result)
+    assert str(_APPROVAL) in _denial(result)
     _assert_reference_state(_APPROVAL, False)
 
 
 def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path: pathlib.Path) -> None:
     """圧縮をまたぐ未完了の読取結果を除き、圧縮後の成功だけで不足を解消する。"""
     entries = [_read(_APPROVAL), _COMPACT, _result("read-approval-scope.md"), *_successful_read(_CHOICE)]
-    first = _run(_payload(tmp_path, entries))
-    assert _WARNING in _additional_context(first)
-    assert str(_APPROVAL) in _additional_context(first)
-    assert str(_CHOICE) not in _additional_context(first)
+    first = _denial(_run(_payload(tmp_path, entries)))
+    assert _DENIAL in first
+    assert str(_APPROVAL) in first
+    assert str(_CHOICE) not in first
     _assert_reference_state(_APPROVAL, False)
     _assert_reference_state(_CHOICE, True)
-    assert _WARNING not in _additional_context(_run(_payload(tmp_path, [*entries, *_successful_read(_APPROVAL)])))
+    assert not _denial(_run(_payload(tmp_path, [*entries, *_successful_read(_APPROVAL)])))
     _assert_reference_state(_APPROVAL, True)
     _assert_reference_state(_CHOICE, True)
 
 
-def test_non_main_or_unreadable_context_does_not_warn(tmp_path: pathlib.Path) -> None:
-    """処置できない主体と判定できない入力では警告しない。"""
-    assert _WARNING not in _additional_context(_run(_payload(tmp_path, [], agent_id="sub-1")))
-    assert _WARNING not in _additional_context(_run(_payload(tmp_path, []), {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}))
+def test_non_main_or_unreadable_context_is_neither_denied_nor_warned(tmp_path: pathlib.Path) -> None:
+    """処置できない主体と判定できない入力では、拒否も警告もしない。"""
     missing = {**_payload(tmp_path, []), "transcript_path": str(tmp_path / "absent.jsonl")}
-    assert _WARNING not in _additional_context(_run(missing))
+    for result in (
+        _run(_payload(tmp_path, [], agent_id="sub-1")),
+        _run(_payload(tmp_path, []), {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"}),
+        _run(missing),
+    ):
+        assert not _denial(result) and _WARNING not in _additional_context(result)
+
+
+def test_unresolvable_declarations_warn_without_denying(tmp_path: pathlib.Path, monkeypatch) -> None:
+    """読込宣言を取得できない場合は、判定基盤の不調で質問を止めないよう警告にとどめる。"""
+    from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    def broken(*_args, **_kwargs):
+        raise ValueError("宣言の検証用の失敗")
+
+    payload = _payload(tmp_path, [])
+    monkeypatch.setattr(read_delivery, "declarations", broken)
+    result = _run(payload)
+    assert result.returncode == 0 and not _denial(result)
+    assert "読込表を取得できない" in _additional_context(result)
 
 
 def test_exit_plan_mode_and_mojibake_warning_are_unchanged(tmp_path: pathlib.Path) -> None:
-    """`ExitPlanMode`は対象外とし、文字化けの警告は未読の警告と並べて返す。"""
+    """`ExitPlanMode`は対象外とし、文字化けの警告は未読の拒否と並べて返す。"""
     plan = {**_payload(tmp_path, []), "tool_name": "ExitPlanMode", "tool_input": {"plan": "計画"}}
-    plan_context = _additional_context(_run(plan))
-    assert _WARNING not in plan_context
+    plan_result = _run(plan)
+    plan_context = _additional_context(plan_result)
+    assert not _denial(plan_result) and _WARNING not in plan_context
     assert all(str(path) not in plan_context for path in (_APPROVAL, _CHOICE))
     mojibake = _payload(tmp_path, [])
     mojibake["tool_input"] = {"questions": [{"question": "日本語の�本文", "header": "見出し", "options": [{"label": "A"}]}]}
-    context = _additional_context(_run(mojibake))
-    assert "U+FFFD" in context and _WARNING in context
+    result = _run(mojibake)
+    assert "U+FFFD" in _additional_context(result) and _DENIAL in _denial(result)

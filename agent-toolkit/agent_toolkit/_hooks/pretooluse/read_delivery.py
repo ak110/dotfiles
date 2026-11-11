@@ -53,11 +53,10 @@ from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import (
     bash_read_paths,
     display_read_paths,
-    has_dynamic_display_operand,
     is_dynamic_read_operand,
     sed_read_range,
 )
-from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 lazy from agent_toolkit._common import task_documents
 lazy from agent_toolkit._git import command as git_command
@@ -108,20 +107,48 @@ def _input_cached[**P, R](function: Callable[P, R]) -> Callable[P, R]:
 def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> list[read_triggers.ReadTrigger]:
     """稼働版と対象プロジェクト・ユーザースキルの宣言を読む。"""
     root = plugin_resources.plugin_root()
+    # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
+    with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
+        entries = [
+            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd, defer_material=True))
+            for source in _declaration_sources(cwd)
+        ]
+    # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
+    included = {row.source for source, rows in entries for row in rows if row.source != source}
+    return list(dict.fromkeys(row for source, rows in entries if source not in included for row in rows))
+
+
+@_input_cached
+def _declaration_sources(cwd: str) -> list[pathlib.Path]:
+    """宣言を読む文書（稼働版、対象プロジェクト・ユーザーのスキル、導入済みの品質スキル）を列挙する。"""
+    root = plugin_resources.plugin_root()
     sources = read_triggers.document_sources(root, cwd)
     # 外部分離された品質スキルは、導入された実体がある場合に同じ表形式で取り込む。
     sibling = sibling_plugin_root("agent-basics", root)
     if sibling is not None:
         sources.extend(sorted((sibling / "skills").rglob("*.md")))
-    # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
-    with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
-        entries = [
-            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd, defer_material=True))
-            for source in dict.fromkeys(sources)
-        ]
-    # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
-    included = {row.source for source, rows in entries for row in rows if row.source != source}
-    return list(dict.fromkeys(row for source, rows in entries if source not in included for row in rows))
+    return list(dict.fromkeys(sources))
+
+
+def _read_name_hints(tool_name: str, tool_input: dict, cwd: str) -> set[str]:
+    """読取対象を資料列の文字列と照らす名前（ファイル名、拡張子を除いた名前、スキルのディレクトリ名）を返す。
+
+    資料列は資料をファイル名かスキル名で名指しする。どの名前も現れない行は読取対象を指さないため、資料を解決せずに外せる。
+    """
+    hints: set[str] = set()
+    for path in _read_path_variants(tool_name, tool_input, cwd):
+        hints.update((path.name, path.stem))
+        if path.name == "SKILL.md":
+            hints.add(path.parent.name)
+        if path.name == "antigravity-full-instructions.md":
+            hints.update(("SKILL.md", path.parent.parent.name))
+    hints.discard("")
+    return hints
+
+
+def _row_operation_kinds(row: read_triggers.ReadTrigger) -> tuple[str, ...]:
+    """配送操作の種別の判定に使う値を、導出行の資料を解決せずに返す。"""
+    return ("read:",) if row.derived_read else row.operations
 
 
 def _skill(source: pathlib.Path) -> str | None:
@@ -153,7 +180,7 @@ def _read_paths(tool_name: str, tool_input: dict, cwd: str, *, resolve: bool = T
 def _read_path_variants(tool_name: str, tool_input: dict, cwd: str) -> list[pathlib.Path]:
     """資料の取得を始める読取のパスを、リンク経由の名前でも宣言へ一致させるため解決前後の両方で返す。
 
-    スキルの起動検出には1行目から始まる読取を使い、節指定の取得はsection宣言で扱う。
+    スキルの起動検出には1行目から始まる読取を使う。
     """
     command = tool_input.get("command")
     if tool_name == "Bash" and isinstance(command, str):
@@ -383,14 +410,6 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     if prefix == "path":
         paths = _artifact_written_paths(tool_name, tool_input, cwd)
         return any(fnmatch.fnmatch(path.replace("\\", "/"), value) for path in paths)
-    if prefix == "section":
-        pattern, separator, heading = value.partition("#")
-        requests = _fragment_requests({"cwd": cwd}, tool_name, tool_input)
-        return bool(separator) and any(
-            _matches_document_path(path, pattern) and _requested_section(path, heading, requests.get(str(path.resolve()), []))
-            for resolve in (True, False)
-            for path in _read_paths(tool_name, tool_input, cwd, resolve=resolve)
-        )
     if prefix == "dependency":
         # 名前の出現ではなく、読込記述と依存定義の項目だけを使用として扱う。編集後の本文と既存の本文の両方を見るため、
         # 変更断片にライブラリ名が無い部分編集でも、既存のコードが依存を読み込んでいれば成立する。
@@ -453,18 +472,6 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     return False
 
 
-def _requested_section(path: pathlib.Path, heading: str, requests: list[tuple[int, int | None, int]]) -> bool:
-    """部分読取で実際に選んだ節だけを、自然文条件の明示選択として扱う。"""
-    if not requests:
-        return False
-    try:
-        ranges = read_triggers.ReadTarget(path, heading).line_ranges()
-    except OSError, UnicodeError, ValueError:
-        # 不正な参照は、後続の宣言診断へ渡す。
-        return True
-    return any(0 < start <= last and (end is None or end >= first) for start, end, _order in requests for first, last in ranges)
-
-
 @_input_cached
 def _matches_document_path(path: pathlib.Path, pattern: str) -> bool:
     """同名skillを持つpluginを、明示した資料の取得操作でも区別する。"""
@@ -498,7 +505,7 @@ def _bound_operation_matches(
         return False
     owner = _document_owner(row.source)
     plugin = _document_plugin(str(row.source))
-    if owner is not None and operation.startswith((f"read:{plugin}:", f"section:{plugin}:", f"skill:{plugin}:")):
+    if owner is not None and operation.startswith((f"read:{plugin}:", f"skill:{plugin}:")):
         requests = [tool_input]
         if tool_name == "Bash" and isinstance(tool_input.get("command"), str):
             requests = [
@@ -532,12 +539,17 @@ def _bound_operation_matches(
 
 
 def row_matches(row: read_triggers.ReadTrigger, tool_name: str, tool_input: dict, cwd: str) -> bool:
+    if row.derived_read:
+        # 配送操作を省略した行は資料自身の読取だけを契機にする。読取対象の名前が資料列に無い行は解決しない。
+        hints = _read_name_hints(tool_name, tool_input, cwd)
+        if not any(hint in row.material for hint in hints):
+            return False
     plugin = _document_plugin(str(row.source))
     operations = tuple(
         "skill:" + plugin + ":" + operation.removeprefix("skill:")
         if operation.startswith("skill:") and ":" not in operation.removeprefix("skill:")
         else operation
-        for operation in row.operations
+        for operation in row.effective_operations
     )
     if any(_bound_operation_matches(row, operation, tool_name, tool_input, cwd) for operation in operations):
         return True
@@ -995,7 +1007,11 @@ def target_ready(records: dict, target: read_triggers.ReadTarget, agent: str, *,
 
 def _declaration_identity(row: read_triggers.ReadTrigger) -> dict:
     """行移動や参照見出しの改名をまたいで、選択元の宣言を識別する。"""
-    return {"source": str(row.source), "operations": list(row.operations), "kind": row.kind, "selector": row.selector}
+    identity = {"source": str(row.source), "operations": list(row.operations), "kind": row.kind, "selector": row.selector}
+    if row.derived_read:
+        # 導出行は配送操作を持たないため、同じ宣言元の行を資料列で区別する。
+        identity["material"] = row.material
+    return identity
 
 
 def selected_targets(
@@ -1099,6 +1115,38 @@ def _codex_dependency_repair(tokens: tuple[str, ...], error: Exception) -> bool:
     return len(marketplaces) == 1 and tokens[3] == "agent-basics@" + next(iter(marketplaces))
 
 
+def _question_material_guidance(payload: dict, tool_name: str) -> str:
+    """拒否した質問を出し直す時の、判断材料の送り方の案内を返す。
+
+    拒否で失われるのは質問本文の作り直しである。送達ツールを持つClaude Codeの確認ツールに限り、
+    材料を先に送って質問を短く保つ手順を示す。他のホストは質問本文へ材料を書く規定のため案内しない。
+    """
+    if tool_name != "AskUserQuestion" or operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_CODEX:
+        return ""
+    return (
+        "判断材料（経緯、調査結果、案の比較）が長い場合は、`send_to_user`で先に送り、"
+        "質問には問い・選択肢・推奨と最小限の前提だけを残せ。`send_to_user`が無ければ質問本文へ書け。"
+    )
+
+
+def _declarations_unavailable(error: Exception) -> Decision:
+    """読込表を取得できず、担当が読込表か依存を直せる場合の警告を返す。"""
+    return Decision(
+        notices=(
+            _llm_notice(
+                f"現在の操作の前に読む資料を定める読込表を取得できない: {error}",
+                tag=_WARN_TAG,
+                fix=(
+                    "診断が示すファイルとプラグインの導入状態を確かめ、読込表か不足する依存を正規の手順で直せ。"
+                    "必要な資料を取得してから、判断とその他の変更へ進め。"
+                ),
+                removable_cause=True,
+                escalate_on_repeat=False,
+            ),
+        )
+    )
+
+
 def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exception) -> bool:
     """読取・公開診断と、原因に対応する正規の依存追加を宣言取得から独立させる。"""
     if not isinstance(error, PluginRootError):
@@ -1144,12 +1192,31 @@ def _declaration_recovery_operation(tool_name: str, tool_input: dict, error: Exc
     return False
 
 
+def _work_record_only(written: list[str], payload: dict, session_id: str) -> bool:
+    """書込先が全て、その主体が到達点と残工程を保つ作業記録（委譲先の引き継ぎ記録、メインの作業契約）かを返す。
+
+    作業記録の更新は成果原稿の執筆と目的が異なるため、執筆基準などの資料の案内を出さない。
+    案内を出すと、作業記録を保つたびに使わない基準の読込を求めることになる（2026年11月の実測で、
+    作業契約の作成に執筆基準8本の取得を求める通知が3セッションとも出ていた）。
+    """
+    if not written:
+        return False
+    records = []
+    handoff = delegated_session.handoff_path(os.environ)
+    if handoff:
+        records.append(pathlib.Path(handoff).resolve())
+    if session_id and agent_id.resolve_hook_agent_id(payload) == agent_id.MAIN_AGENT_ID:
+        contract = work_contract.record_path(session_id)
+        if contract is not None:
+            records.append(contract.resolve())
+    return bool(records) and all(pathlib.Path(path).resolve() in records for path in written)
+
+
 @_input_scope
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
     """現在の操作に関係する宣言資料を配送または案内し、他の担当の手順書の取得へ警告を加え、通常操作の進行を保つ。"""
-    handoff = delegated_session.handoff_path(os.environ)
     written = operation_skills.written_paths(tool_name, tool_input, str(payload.get("cwd", "")))
-    if handoff and written and all(pathlib.Path(path).resolve() == pathlib.Path(handoff).resolve() for path in written):
+    if _work_record_only(written, payload, session_id):
         return Decision()
     _refresh_receipts(payload, tool_name, tool_input, session_id)
     decision = _deliver_documents(payload, tool_name, tool_input, session_id)
@@ -1173,11 +1240,7 @@ def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     for target in dict.fromkeys(current_targets):
         if document_reads.acquisition_state(records, target, agent) != "updated":
             continue
-        metadata = next(
-            item
-            for item in document_reads.receipt_candidates([target], include_headings=False)
-            if item["heading"] == target.heading
-        )
+        metadata = next(item for item in document_reads.receipt_candidates([target]) if item["heading"] == target.heading)
         key = "read-update:" + document_reads.receipt_key(metadata)
         if agent in records.get(key, []):
             continue
@@ -1207,9 +1270,7 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
         return ""
     cwd = str(payload.get("cwd", ""))
-    handoff = delegated_session.handoff_path(os.environ)
-    written = operation_skills.written_paths(tool_name, tool_input, cwd)
-    if handoff and written and all(pathlib.Path(path).resolve() == pathlib.Path(handoff).resolve() for path in written):
+    if _work_record_only(operation_skills.written_paths(tool_name, tool_input, cwd), payload, session_id):
         return ""
     agent = agent_id.resolve_hook_agent_id(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
@@ -1217,7 +1278,11 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
     roles = active_roles(payload, session_id, records, agent) | _subagent_task_documents(payload)
     selected_sources = {target.path for target in selected_targets(records, agent)} | roles
     try:
-        rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
+        host = "codex" if is_codex_payload(payload) else "claude"
+        rows = [
+            *declarations(cwd, host=host, session_id=session_id),
+            *_named_reference_rows(tool_name, tool_input, cwd, records, agent, selected_sources, host=host),
+        ]
         candidates = [
             row
             for row in rows
@@ -1252,6 +1317,38 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
     )
 
 
+def _named_reference_rows(
+    tool_name: str,
+    tool_input: dict,
+    cwd: str,
+    records: dict,
+    agent: str,
+    selected_sources: set[pathlib.Path],
+    *,
+    host: str,
+) -> list[read_triggers.ReadTrigger]:
+    """主体が取得済みの宣言元のうち、読取対象を本文で名指しする文書が補う宣言を返す。
+
+    補う宣言は本文の全行の解決で求まるため、全文書では求めない。読込条件の候補になるのは、
+    宣言元を取得済みで、今の操作が読む資料を名指しする文書だけである。
+    """
+    hints = _read_name_hints(tool_name, tool_input, cwd)
+    if not hints:
+        return []
+    root = plugin_resources.plugin_root()
+    rows: list[read_triggers.ReadTrigger] = []
+    for source in _declaration_sources(cwd):
+        source = source.resolve()
+        if not read_triggers.is_normative_document(source):
+            continue
+        if source not in selected_sources and not target_ready(records, read_triggers.ReadTarget(source), agent):
+            continue
+        if not any(hint in source.read_text(encoding="utf-8") for hint in hints):
+            continue
+        rows.extend(read_triggers.named_reference_rows(source, root, host=host, project=cwd))
+    return rows
+
+
 def _subagent_task_documents(payload: dict) -> set[pathlib.Path]:
     """Claude Codeの`Agent`ツールで起動したサブエージェントが受領した役割文書を、自身の記録の最初の依頼本文から返す。
 
@@ -1275,19 +1372,6 @@ def _subagent_task_documents(payload: dict) -> set[pathlib.Path]:
             documents = [launched] if launched is not None else task_documents.find_task_documents(text)
             return {document.resolve() for document in documents}
     return set()
-
-
-_TASK_DOCUMENT_LITERALS = (
-    re.compile(r"(?<![\w-])([a-z][a-z0-9-]*)\.subagent\b"),
-    re.compile(r"(?<![\w-])share/([a-z][a-z0-9-]*)(?=[.*?\[\s'\"]|$)"),
-)
-
-
-def _literal_task_documents(command: str, share: pathlib.Path) -> list[pathlib.Path]:
-    """コマンド文字列中のリテラルが指す、実在する手順書を返す。"""
-    names = dict.fromkeys(match[1] for pattern in _TASK_DOCUMENT_LITERALS for match in pattern.finditer(command))
-    documents = (share / (name + task_documents.TASK_DOCUMENT_SUFFIX) for name in names)
-    return [path for path in documents if path.is_file()]
 
 
 def _git_worktree_location(directory: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
@@ -1344,7 +1428,7 @@ def _owned_task_documents(roles: set[pathlib.Path], root: pathlib.Path, payload:
     for role in roles:
         try:
             targets = [
-                *(target for row in read_triggers.parse_tables(role, root, host=host) for target in row.targets),
+                *(target for row in read_triggers.parse_tables(role, root, host=host, named=True) for target in row.targets),
                 *read_triggers.reference_method_targets(role, root, host),
             ]
         except OSError, UnicodeError, ValueError:
@@ -1363,7 +1447,9 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
     対象はplugin root配下の手順書と、plugin rootと同じリポジトリの別worktreeにある同じ位置の手順書である。
     別のリポジトリと`share`以外の位置にある同名ファイルは対象外とする。
     読む主体の担当がその役割である場合と、その役割文書が読むよう指示する手順書は警告しない。
-    編集と返却後の検収を目的の判定なしには区別できないため、遮断せずに続行の条件を示す。
+    編集・返却後の検収・調査を目的の判定なしには区別できないため、遮断せずに続行の条件を示す。
+    変数などで読取先を確定できない操作は対象にしない。コマンドの文字列から対象を推測する経路は、
+    起動契約など手順書でない資料の読取へ警告を出したため撤去した。
     """
     if not session_id or delegated_session.is_lightweight_delegated(os.environ):
         return None
@@ -1373,7 +1459,6 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         root = plugin_resources.plugin_root().resolve()
     except OSError, PluginRootError:
         return None
-    share = root / "share"
     command = tool_input.get("command")
     candidates = (
         display_read_paths(command, cwd)
@@ -1386,12 +1471,6 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         for path in dict.fromkeys(candidates)
         if (counterpart := _plugin_task_document(path, root)) is not None
     }
-    dynamic = False
-    if not documents and tool_name == "Bash" and isinstance(command, str) and has_dynamic_display_operand(command, cwd):
-        # 変数展開などで表示対象を確定できない操作は、シェルを再実行して解決しない。
-        # 同じコマンドが手順書を指すリテラルを含む場合だけ、読む可能性として案内する。
-        documents = {path: path for path in _literal_task_documents(command, share)}
-        dynamic = bool(documents)
     if not documents:
         return None
     agent = agent_id.resolve_hook_agent_id(payload)
@@ -1417,20 +1496,16 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
         )
     shown = "、".join(f"`{path}`" for path in foreign)
     guidance = f"起動契約: {'、'.join(contracts)}。" if contracts else ""
-    subject = (
-        f"表示対象が変数などで確定できないが、同じ操作が他の担当の手順書{shown}を指しており、その本文を読む可能性がある。"
-        if dynamic
-        else f"他の担当の手順書{shown}を取得しようとしている。"
-    )
     return _llm_notice(
-        subject + "`agent-toolkit:delegation`の`SKILL.md`「送信」は、"
+        f"他の担当の手順書{shown}を取得しようとしている。`agent-toolkit:delegation`の`SKILL.md`「送信」は、"
         "委譲元が起動準備のために`<役割名>.subagent.md`の本文を読むことを禁じている。",
         tag=_WARN_TAG,
         fix=(
             "その担当を起動するなら、手順書ではなく起動契約（`起動対象:`でその手順書を宣言する`<役割名>.parent.md`、"
             f"または呼び出し元へ統合した契約）と、その生成済みの返却契約を読め。{guidance}"
             "起動準備なら、手順書の分割読取の続きを行わず呼出側契約へ進め。"
-            "手順書自体の編集と、返却を受け取った後の固有手順の検収であれば、このまま続行してよい。"
+            "手順書自体の編集、返却を受け取った後の固有手順の検収、"
+            "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい。"
         ),
         removable_cause=True,
         escalate_on_repeat=False,
@@ -1443,17 +1518,19 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         return Decision()
     cwd = payload.get("cwd", "")
     cwd = cwd if isinstance(cwd, str) else ""
-    handoff = delegated_session.handoff_path(os.environ)
     written = operation_skills.written_paths(tool_name, tool_input, cwd)
     temporary_code = bool(written) and all(
         _temporary_path(path) and pathlib.Path(path).suffix.lower() not in _PROSE_SUFFIXES for path in written
     )
     if temporary_code:
         written = []
-    if handoff and written and all(pathlib.Path(path).resolve() == pathlib.Path(handoff).resolve() for path in written):
+    if _work_record_only(written, payload, session_id):
         return Decision()
     diagnostic = operation_skills.is_diagnostic_operation(tool_name, tool_input, cwd)
     warning_only = tool_name in {"AskUserQuestion", "ExitPlanMode", "request_user_input", "request_user_input_async"}
+    # 確認ツールは、確認の前に読む資料の未取得だけを表示前に拒否する。宣言や記録を読めない場合は警告にとどめ、質問を止めない。
+    confirmation = warning_only and tool_name != "ExitPlanMode"
+    confirmation_pending: list[read_triggers.ReadTarget] = []
     try:
         rows = declarations(cwd, host="codex" if is_codex_payload(payload) else "claude", session_id=session_id)
     except (OSError, UnicodeError, ValueError) as error:
@@ -1461,26 +1538,16 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             return Decision(
                 notices=(
                     _llm_notice(
-                        f"読込宣言を取得できない: {error}",
+                        f"現在の操作の前に読む資料を定める読込表を取得できない: {error}",
                         tag=_WARN_TAG,
-                        fix="回答に依存する次の操作の前に宣言を復旧し、質問の前提を確認せよ。",
+                        fix="診断が示すファイルの読込表と参照先を確かめて直し、回答に依存する次の操作の前に、必要な資料を読んで質問の前提を確かめ直せ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
                 )
             )
         if _declaration_recovery_operation(tool_name, tool_input, error):
-            return Decision(
-                notices=(
-                    _llm_notice(
-                        f"読込宣言を取得できない: {error}",
-                        tag=_WARN_TAG,
-                        fix="読取・導入診断と正規の依存追加で宣言を復旧し、取得結果を確かめてから判断・その他の変更へ進め。",
-                        removable_cause=True,
-                        escalate_on_repeat=False,
-                    ),
-                )
-            )
+            return _declarations_unavailable(error)
         recovery_paths = operation_skills.written_paths(tool_name, tool_input, cwd) + [
             str(path) for path in _read_paths(tool_name, tool_input, cwd)
         ]
@@ -1488,9 +1555,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             return Decision(
                 notices=(
                     _llm_notice(
-                        f"読込宣言の復旧対象を操作する: {error}",
+                        f"読込表の取得に失敗したファイルを直す操作のため、今回の操作は通す: {error}",
                         tag=_WARN_TAG,
-                        fix="宣言を復旧した後に元の操作を再発行せよ。",
+                        fix="今回の操作の結果を確かめて読込表を直し、必要な資料を取得してから元の判断・操作へ戻れ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -1499,9 +1566,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         return Decision(
             notices=(
                 _llm_notice(
-                    f"読込宣言を取得できない: {error}",
+                    f"現在の操作の前に読む資料を定める読込表を取得できない: {error}",
                     tag=_WARN_TAG,
-                    fix="宣言と資料の所在を診断し、復旧後に必要な資料を読め。",
+                    fix="診断が示すファイルの読込表と参照先を確かめ、誤った記述や所在を直してから必要な資料を読め。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
@@ -1562,7 +1629,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         invocation_paths = {
             target.path
             for row in selection_rows
-            if not document_reads.reference_only([row.operations])
+            if not document_reads.reference_only([_row_operation_kinds(row)])
             for target in active_targets.get(row, row.targets)
             if not target.heading and requires_skill_invocation(target.path, host=host, subject=subject, cwd=cwd)
         }
@@ -1574,7 +1641,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             )
             if not target.heading
             and requires_skill_invocation(target.path, host=host, subject=subject, cwd=cwd)
-            and not document_reads.reference_only([row.operations for row in selection_rows if target in row.targets])
+            and not document_reads.reference_only(
+                [_row_operation_kinds(row) for row in selection_rows if target in row.targets]
+            )
         )
 
         def ready(target: read_triggers.ReadTarget) -> bool:
@@ -1584,6 +1653,16 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             return read_guidance_key(target, invocation=target.path in invocation_paths)
 
         pending = list(dict.fromkeys(target for row in active_rows for target in active_targets[row] if not ready(target)))
+        if confirmation:
+            confirmation_pending = list(
+                dict.fromkeys(
+                    target
+                    for row in active_rows
+                    if "confirmation" in row.operations
+                    for target in active_targets[row]
+                    if not ready(target)
+                )
+            )
         # 取得操作で保留した初回案内だけを次の依存操作へ渡す。実配送後は未取得でも再掲しない。
         carried = [
             target
@@ -1650,17 +1729,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         rows = [row for row in rows if not row.source.name.endswith(".subagent.md") or row.source in roles]
     except (OSError, ValueError) as error:
         if isinstance(error, PluginRootError):
-            return Decision(
-                notices=(
-                    _llm_notice(
-                        f"読込宣言を取得できない: {error}",
-                        tag=_WARN_TAG,
-                        fix="読取・導入診断と正規の依存追加で宣言を復旧し、取得結果を確かめてから判断・その他の変更へ進め。",
-                        removable_cause=True,
-                        escalate_on_repeat=False,
-                    ),
-                )
-            )
+            return _declarations_unavailable(error)
         if isinstance(error, FileNotFoundError) and isinstance(error.filename, str):
             missing = read_triggers.ReadTarget(pathlib.Path(error.filename))
             return Decision(
@@ -1668,9 +1737,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     _llm_notice(
                         f"資料`{missing.path}`は存在しない。",
                         tag=_WARN_TAG,
-                        fix=(
-                            "資料と読込宣言の参照先を復旧せよ。復旧できない場合、委譲先は委譲元へ、それ以外はユーザーへ報告せよ"
-                        ),
+                        fix=("資料と、読込表の参照先を直せ。直せない場合、委譲先は委譲元へ、それ以外はユーザーへ報告せよ"),
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -1680,9 +1747,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             return Decision(
                 notices=(
                     _llm_notice(
-                        f"動的資料を解決できない: {error}",
+                        f"読込表が指す資料を、現在の入力から特定できない: {error}",
                         tag=_WARN_TAG,
-                        fix="回答に依存する次の操作の前に入力と資料を確定し、質問の前提を確認せよ。",
+                        fix="診断が示す入力と参照先を確かめ、回答に依存する次の操作の前に取得対象を特定して読み、質問の前提を確かめ直せ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -1691,9 +1758,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         return Decision(
             notices=(
                 _llm_notice(
-                    f"動的資料を解決できない: {error}",
+                    f"読込表が指す資料を、現在の入力から特定できない: {error}",
                     tag=_WARN_TAG,
-                    fix="実在する入力と取得対象を確定し、該当する資料を読め。",
+                    fix="診断が示す入力と参照先を確かめ、実在する取得対象を特定して読め。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
@@ -1725,12 +1792,38 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
             # 取得操作を許可し、PostToolUseで対象パスへの読取の成功を観測する。
             # 次の依存操作では取得完了を確かめ、未取得なら関連資料を案内する。
             return Decision()
-    if warning_only and tool_name != "ExitPlanMode":
+    if confirmation:
         if not agent_id.is_main_agent_context(payload):
             return Decision()
         history_path = payload.get("transcript_path")
         if isinstance(history_path, str) and history_path and transcript.read_transcript_lines(history_path) is None:
             return Decision()
+        if confirmation_pending:
+            # 拒否が案内する資料だけを選択済みにする。ともに届く共有の資料まで選択済みにすると、
+            # 案内した資料を読んだ後の再発行で、その資料の未取得の警告が質問と一緒に届く。
+            _select_targets(session_id, confirmation_pending, agent, rows=selection_rows)
+            try:
+                steps = _merged_steps(
+                    confirmation_pending,
+                    {},
+                    operation_skills.resolve_subject(payload),
+                    invocation_paths=invocation_paths,
+                    cwd=cwd,
+                )
+            except OSError, UnicodeError, ValueError:
+                # 取得手段を示せない資料では拒否を解除できないため、後続の警告で宣言の復旧を案内する。
+                steps = []
+            if steps:
+                # 警告は回答と一緒に届き、基準を適用しないまま質問する害を防げない。未取得が解消するまで毎回拒否する。
+                return Decision(
+                    block=_block_notice(
+                        "この質問はまだユーザーへ表示していない。確認の前に全文を読むと定めた資料のうち、"
+                        "この文脈で全文の取得を確認できないものがある（一部だけの読取と、行を除いた表示は取得に数えない）。",
+                        fix="。\n".join(steps)
+                        + "。読んだ基準で、質問するか自分で判断するかを決め直せ。質問する場合は同じ呼び出しを出し直せ。"
+                        + _question_material_guidance(payload, tool_name),
+                    )
+                )
     _select_targets(session_id, pending, agent, rows=selection_rows)
     pending = [target for target in pending if agent not in records.get(guidance_key(target), [])]
     if not pending:
@@ -1746,7 +1839,12 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         has_read = any(target.path not in invocation_paths for target in pending)
         methods = "指定されたSkill・Read" if has_skill and has_read else "指定されたSkill" if has_skill else "指定されたRead"
     followup = "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。" if written and not diagnostic else ""
-    instruction = f"{label}がある。この操作の結果を使う前に{methods}で必要な基準を取得せよ。"
+    # 受け取る側は「既に読んだ」と考えていることがある。取得に数えない読み方を示し、誤判定との取り違えを防ぐ。
+    instruction = (
+        f"{label}がある。この文脈では全文の取得（スキルは起動）を確認できていない。"
+        "一部だけの読取、行を除いた表示、パイプや変数を使った表示は取得に数えない。"
+        f"この操作の結果を使う前に{methods}で必要な基準を取得せよ。"
+    )
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
@@ -1758,9 +1856,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 return Decision(
                     notices=(
                         _llm_notice(
-                            f"読込宣言の範囲を復旧する操作を通す: {error}",
+                            f"読込表が指す節と実際の見出しが一致しない。読込表か資料を直す操作のため、今回は通す: {error}",
                             tag=_WARN_TAG,
-                            fix="宣言と実見出しを整合させた後に元の操作を再発行せよ。",
+                            fix="読込表と実際の見出しを整合させ、必要な本文を取得してから元の判断・操作へ戻れ。",
                             removable_cause=True,
                             escalate_on_repeat=False,
                         ),
@@ -1839,6 +1937,27 @@ _PERSISTED_OUTPUT_OPEN = "<persisted-output>"
 _PERSISTED_OUTPUT_CLOSE = "</persisted-output>"
 
 
+def _named_section_targets(rows: list[read_triggers.ReadTrigger], paths: list[pathlib.Path]) -> list[read_triggers.ReadTarget]:
+    """読取対象の資料について、宣言が節を名指しする範囲を返す。
+
+    節の範囲は資料の途中から読むことが多く、条件の成立も読取の時点では確かめられないため、配送操作との一致では判定しない。
+    節を名指ししない大多数の行は、資料列の文字列と読取対象の名前で資料を解決せずに外す。
+    """
+    if not paths:
+        return []
+    names = {path.name for path in paths}
+    found: list[read_triggers.ReadTarget] = []
+    for row in rows:
+        if not row.headings and not ("「" in row.material and any(name in row.material for name in names)):
+            continue
+        try:
+            found.extend(target for target in row.targets if target.heading and target.path in paths)
+        except OSError, UnicodeError, ValueError:
+            # 解決できない宣言の診断は_deliver_documentsが返す。
+            continue
+    return found
+
+
 def _receipt_targets(
     payload: dict,
     tool_name: str,
@@ -1864,6 +1983,8 @@ def _receipt_targets(
         and row_matches(row, tool_name, tool_input, cwd)
         for target in row.targets
     ]
+    if active_only:
+        targets.extend(_named_section_targets(rows, _read_paths(tool_name, tool_input, cwd)))
     if include_selected:
         targets.extend(selected_targets(records, agent))
     targets.extend(read_triggers.ReadTarget(path) for path in _read_paths(tool_name, tool_input, cwd))

@@ -7,9 +7,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の共通編集基準を使う時 | `file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の共通編集基準を使う時 | `file-editing.md` |
 
 ## 操作前の読取状態
 

@@ -9,26 +9,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レビュー担当として判定する前 | `agent-basics:review-standards/references/reviewer.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer.md` |
-| 初回レビューを判定する前 | `agent-basics:review-standards/references/reviewer-initial.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-initial.md` |
-| 再レビューを判定する前 | `agent-basics:review-standards/references/reviewer-followup.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-followup.md` |
-| 要求単位・完成条件と観測の達成を判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-execution.md` |
-| 実行レビューを判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-execution.md` |
-| 画面のユーザビリティを判定する前 | `agent-basics:review-standards/references/reviewer-usability.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer-usability.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/reader-fit-review.parent.md` | 判断 | `read:agent-toolkit:*/share/reader-fit-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/origin-and-approval.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 要求の縮小を判定する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/wi-standards-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-body.md` |
-| AWIの新旧形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:/share/review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-criteria-execution.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria-execution.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レビュー担当として判定する前 | `agent-basics:review-standards/references/reviewer.md` |
+| 初回レビューを判定する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
+| 再レビューを判定する前 | `agent-basics:review-standards/references/reviewer-followup.md` |
+| 要求単位・完成条件と観測の達成を判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
+| 実行レビューを判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
+| 画面のユーザビリティを判定する前 | `agent-basics:review-standards/references/reviewer-usability.md` |
+| 要求の縮小を判定する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
+| AWIの新旧形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
 
 ## 専用レビュータスク契約
 
@@ -90,6 +80,6 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 計画と表の優先・実行レビューの判定に関する判断・作業の前 | `exec-review-criteria-execution.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria-execution.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 計画と表の優先・実行レビューの判定に関する判断・作業の前 | `exec-review-criteria-execution.md` |

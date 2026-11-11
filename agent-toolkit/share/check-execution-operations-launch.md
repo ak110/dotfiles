@@ -4,11 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` |
 
 ## 統合実行ツール経由の起動
 
@@ -53,6 +51,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更範囲の検証の対象選定：実行条件と再実行の基準を適用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |

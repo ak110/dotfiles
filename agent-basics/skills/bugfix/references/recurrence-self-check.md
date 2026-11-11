@@ -1,16 +1,12 @@
 # 再発防止セルフチェック観点の追加とメンテナンス
 
-[root-cause-prevention.md](root-cause-prevention.md)「再発防止策」に記載されている最終防衛ラインとしての採用条件をすべて満たす場合に、チェック観点を追加する。
+[root-cause-prevention-selection.md](root-cause-prevention-selection.md)「再発防止策」に記載されている最終防衛ラインとしての採用条件をすべて満たす場合に、チェック観点を追加する。
 なお、再発防止の第1段階から第6段階までの定義も同節に従う。
 観点を採用するかどうかの判断や、既存の規範が適用されていなかった原因への対処方針は、同書で定義されている。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `root-cause-prevention-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-selection.md` |
 
 ## 観点の書き方
 
@@ -38,6 +34,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 再発防止の選定と完了の基準を適用する前 | `root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 再発防止の選定と完了の基準を適用する前 | `root-cause-prevention.md` |

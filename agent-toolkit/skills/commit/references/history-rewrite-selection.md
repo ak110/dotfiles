@@ -50,7 +50,7 @@ autosquash成功後は`git rev-parse --short=7 HEAD`で新HEADを取得し、新
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 履歴書換え：fixupの実行上の制約の基準を適用する前 | `history-rewrite-fixup.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-fixup.md` |
-| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 履歴書換え：fixupの実行上の制約の基準を適用する前 | `history-rewrite-fixup.md` |
+| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` |

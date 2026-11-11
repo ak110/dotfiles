@@ -11,13 +11,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘の原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 一括置換後の指摘を処置する前 | `../../../share/similar-review.parent.md` | 判断 | `read:agent-toolkit:*/share/similar-review.parent.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/bulk-replacement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/bulk-replacement.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/textlint-violations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/textlint-violations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘の原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| 一括置換後の指摘を処置する前 | `../../../share/similar-review.parent.md` |
 
 ## 運用条件
 

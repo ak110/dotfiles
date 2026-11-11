@@ -193,7 +193,7 @@ def test_relative_reference_outside_owner_plugin_is_rejected(tmp_path, line):
     [
         ("check-script-design.md", "program-messages.md"),
         ("mcp-server-design.md", "program-messages.md"),
-        ("claude-hooks-messages.md", "program-messages.md"),
+        ("claude-hooks-messages-format.md", "program-messages.md"),
         ("notation-checks.md", "input-material.md"),
         ("textlint-violations.md", "input-material.md"),
     ],
@@ -203,7 +203,7 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
     references = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references"
     source = references / consumer
     target = references / material
-    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
     assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)
     obsolete = {"読み手別の追加注意点", "ユーザー入力素材の取扱い"}
@@ -219,6 +219,79 @@ def test_delegation_input_material_wrapper_reaches_quality_owner():
     """WI起草等が使うtoolkit側の素材節も、移設した品質基準の本文へ到達する。"""
     source = _PLUGIN_ROOT / "skills/delegation/references/writing.md"
     target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/input-material.md"
-    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
+    rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
     assert any(item.path == target and item.body().strip() for row in rows for item in row.targets)
+
+
+_SECTION_REFERENCE = re.compile(r"(?:`([^`]+\.md)`|\]\(([^)#]+\.md)(?:#[^)]*)?\))((?:「[^」]+」)+)")
+
+
+def _missing_section_references(source: pathlib.Path, plugin_root: pathlib.Path) -> list[str]:
+    """資料名の直後に節名を添えた参照のうち、指された資料にその見出しが無いものを返す。
+
+    資料を条件別のファイルへ分けた後も、分ける前の資料名のまま節名を指す参照は、パスの実在の検査では検出できない。
+    資料名と節名の間に助詞を挟む参照（節の中の項目名を指す書き方）と、解決できない例示のパスは対象にしない。
+    """
+    errors: list[str] = []
+    context = ""
+    for number, line, visible in read_triggers.document_lines(source.read_text(encoding="utf-8")):
+        if not visible:
+            continue
+        named: dict[str, set[str]] = {}
+        for code, link, quoted in _SECTION_REFERENCE.findall(line):
+            name = (code or link).rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+            named.setdefault(name, set()).update(re.findall(r"「([^」]+)」", quoted))
+        if named:
+            try:
+                targets = read_triggers.material_targets(line, source, plugin_root, references_only=True, context=context)
+            except ValueError:
+                targets = ()
+            for target in targets:
+                if not target.heading or target.path.suffix != ".md" or not target.path.is_file():
+                    continue
+                titles = {
+                    matched[1]
+                    for _number, text, shown in read_triggers.document_lines(target.path.read_text(encoding="utf-8"))
+                    if shown and (matched := re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", text))
+                }
+                errors.extend(
+                    f"{source}:{number}: `{target.path.name}`に見出し「{heading}」が無い。"
+                    "見出しのある資料を指すように参照を直せ（資料を分けた場合は分けた先の資料名にする）"
+                    for heading in re.findall(r"「([^」]+)」", target.heading)
+                    if heading in named.get(target.path.name, set()) and heading not in titles
+                )
+        if not line.startswith("|"):
+            context = read_triggers.reference_context(line, source, plugin_root) or context
+    return errors
+
+
+def test_section_references_point_to_documents_that_have_the_heading():
+    """規範が資料名と節名で指す基準は、指された資料を全文読めば得られる。"""
+    roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]
+    basics = _PLUGIN_ROOT.parent / "agent-basics/skills"
+    if basics.is_dir():
+        roots.append(basics)
+    errors: list[str] = []
+    with read_triggers.resolution_scope():
+        for source in sorted({path for root in roots for path in root.rglob("*.md")}):
+            errors.extend(_missing_section_references(source, _PLUGIN_ROOT))
+    assert not errors, "\n".join(errors)
+
+
+def test_section_reference_to_missing_heading_is_reported(tmp_path):
+    """分ける前の資料名のまま節名を指す参照を報告し、見出しのある資料への参照と項目名への参照は受理する。"""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name": "agent-toolkit"}', encoding="utf-8")
+    references = tmp_path / "skills/sample/references"
+    references.mkdir(parents=True)
+    table = "| 条件 | 全文読む資料 |\n| --- | --- |\n| 判定の前 | `rule-detail.md` |\n"
+    (references / "rule.md").write_text("# 基準\n\n" + table, encoding="utf-8")
+    detail = "# 基準：判定\n\n## 判定の手順\n\n- 入力の確認: 値を確かめる。\n"
+    (references / "rule-detail.md").write_text(detail, encoding="utf-8")
+    source = references / "consumer.md"
+    source.write_text("判定は`rule-detail.md`「判定の手順」と、`rule-detail.md`の「入力の確認」に従う。\n", encoding="utf-8")
+    assert not _missing_section_references(source, tmp_path)
+    source.write_text("判定は`rule.md`「判定の手順」に従う。\n", encoding="utf-8")
+    errors = _missing_section_references(source, tmp_path)
+    assert len(errors) == 1 and f"{source}:1:" in errors[0] and "「判定の手順」" in errors[0]

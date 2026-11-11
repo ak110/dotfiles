@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` |
 
 ## Claude Codeのfrontmatter
 

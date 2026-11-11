@@ -8,16 +8,6 @@ Claude Codeのauto modeのカスタムルールを追加・編集する時は、
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/auto-mode.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/claude-hooks-output-events.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-output-events.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/auto-mode.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/auto-mode.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `approval-scope.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
-
 ## 共通判断
 
 拒否された対象・操作、診断本文、実行した主体と拒否した主体を保持する。
@@ -42,8 +32,8 @@ Claude Codeのauto modeのカスタムルールを追加・編集する時は、
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| writer境界・Codexホストの拒否に関する判断・作業の前 | `permission-denial-host.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial-host.md` |
-| 一時的な判定不能に関する判断・作業の前 | `permission-denial-transient.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial-transient.md` |
-| 拒否の確認手順・既知の誤拒否パターンと対応・偽陽性と判断できる拒否への対応に関する判断・作業の前 | `permission-denial-classifier.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial-classifier.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| writer境界・Codexホストの拒否に関する判断・作業の前 | `permission-denial-host.md` |
+| 一時的な判定不能に関する判断・作業の前 | `permission-denial-transient.md` |
+| 拒否の確認手順・既知の誤拒否パターンと対応・偽陽性と判断できる拒否への対応に関する判断・作業の前 | `permission-denial-classifier.md` |

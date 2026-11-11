@@ -15,18 +15,13 @@ PRの存在確認だけでは起動しない。
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `./../release-dotfiles/SKILL.md` | 判断 | `read:*/skills/release-dotfiles/SKILL.md` |
-
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failure-handling.md`、`agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling.md`、`read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` | |
-| 必須CIの結果を成功時も含めて検収する前 | `../develop-dotfiles/references/verification-values-speed.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-speed.md` | |
-| マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/github-copilot-review-audit.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| CIまたはReleaseのrunが失敗し、原因を分類する前 | `agent-basics:bugfix/references/ci-failure-handling.md`、`agent-toolkit:commit/references/ci-failure-handling.md` |
+| 必須CIの結果を成功時も含めて検収する前 | `../develop-dotfiles/references/verification-values-speed.md` |
+| マージ後に到着したレビューを取得して判定する前 | `agent-toolkit/skills/process-wi/references/github-copilot-review-audit.md` |
 
 ## 失敗時の対応
 
@@ -141,6 +136,6 @@ PRの存在確認だけでは起動しない。
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| CI失敗の分類と適切な対処：失敗の性質による分類の基準を適用する前 | `agent-basics:bugfix/references/ci-failure-handling-classification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/ci-failure-handling-classification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| CI失敗の分類と適切な対処：失敗の性質による分類の基準を適用する前 | `agent-basics:bugfix/references/ci-failure-handling-classification.md` |

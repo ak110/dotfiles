@@ -7,17 +7,11 @@ pushを実行するエージェントが、push先、更新する参照（ref）
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../managed-temp/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies-stopped.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/wait-anomalies-stopped.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/ci-failure-handling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `history-rewrite-verification.md`、`history-rewrite-fixup.md`、`history-rewrite-recovery.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md`、`read:agent-toolkit:*/skills/commit/references/history-rewrite-fixup.md`、`read:agent-toolkit:*/skills/commit/references/history-rewrite-recovery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
-| CIの結果を成功時も含めて判定する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| CIの結果を成功時も含めて判定する前 | `agent-basics:check-execution/references/diagnostics-results.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/waiting-and-monitoring-intervals.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/references/wait-anomalies-stopped.md` |
 
 ## 公開状態の4項目
 

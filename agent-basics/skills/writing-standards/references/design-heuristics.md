@@ -12,33 +12,18 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-authorization.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-authorization.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-roles.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-roles.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-scope.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-basics-purpose.md`、`agent-documents-basics-placement.md`、`agent-documents-basics-read-tables.md`、`agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-purpose.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `testing-transitions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-transitions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `ui-ux-patterns.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux-patterns.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-prevention-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `implementation-time-errors.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/implementation-time-errors.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `design-time-migration.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-time-migration.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-documents-additions-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions-additions.md` |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 設計案の予備選別に関する判断・作業の前 | `design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
-| 存在意義の点検に関する判断・作業の前 | `design-heuristics-necessity.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-necessity.md` |
-| 自作機構の兆候と自問に関する判断・作業の前 | `design-heuristics-mechanisms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md` |
-| 責務帰属（SRP）分析の観点に関する判断・作業の前 | `design-heuristics-responsibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-responsibility.md` |
-| 問題と手段の比例性に関する判断・作業の前 | `design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-| 案の採否と実施順の判定に関する判断・作業の前 | `design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
-| 設計品質の劣化確認に関する判断・作業の前 | `design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 設計案の予備選別に関する判断・作業の前 | `design-heuristics-screening.md` |
+| 存在意義の点検に関する判断・作業の前 | `design-heuristics-necessity.md` |
+| 自作機構の兆候と自問に関する判断・作業の前 | `design-heuristics-mechanisms.md` |
+| 責務帰属（SRP）分析の観点に関する判断・作業の前 | `design-heuristics-responsibility.md` |
+| 問題と手段の比例性に関する判断・作業の前 | `design-heuristics-proportionality.md` |
+| 案の採否と実施順の判定に関する判断・作業の前 | `design-heuristics-decisions.md` |
+| 設計品質の劣化確認に関する判断・作業の前 | `design-heuristics-quality.md` |

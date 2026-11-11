@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 改善点の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 待機中に改善の投入や独立作業を前倒しする前 | `../skills/delegation/references/waiting-and-monitoring-independent-work.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-independent-work.md` |
-| process-wiで改善の対処時機を決める前 | `../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 規範読込と委譲結果の改善報告を受領する前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
-| 当座の訂正と再発防止を判断する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 改善点の処置とAWI化ステータスを決める前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
+| 待機中に改善の投入や独立作業を前倒しする前 | `../skills/delegation/references/waiting-and-monitoring-independent-work.md` |
+| process-wiで改善の対処時機を決める前 | `../skills/process-wi/references/immediate-fix.md` |
+| 規範読込と委譲結果の改善報告を受領する前 | `../skills/delegation/references/receiving-followup.md` |
+| 当座の訂正と再発防止を判断する前 | `agent-basics:bugfix/SKILL.md` |
 
 ## 作業中の改善点の報告
 

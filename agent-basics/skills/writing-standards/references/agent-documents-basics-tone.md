@@ -4,12 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-constraints.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-constraints.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `read-method.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/read-method.md` |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
 
 ## 語調と現行規則の表現
 

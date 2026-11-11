@@ -6,16 +6,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-wi-records.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-subagent-history.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-history.md` |
-| 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
-| レビュー指摘管理表へ担当が行を足す前 | `../../../share/review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 基準資料を選択・取得する時 | `../../../share/lane-integration-subagent-operation.md` |
+| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` |
+| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-verification.md` |
+| 基準資料を選択・取得する時 | `../../../share/exec-subagent-history.md` |
+| 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
+| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` |
+| レビュー指摘管理表へ担当が行を足す前 | `../../../share/review-table-operations.md` |
 
 ## rebaseの競合
 

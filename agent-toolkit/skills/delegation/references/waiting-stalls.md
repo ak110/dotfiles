@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime.md` |
-| 本書の基準を適用する前 | `waiting-and-monitoring.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring.md` |
-| 巻き取りや別手段への切り替えを判断する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `codex-runtime.md` |
+| 本書の基準を適用する前 | `waiting-and-monitoring.md` |
+| 巻き取りや別手段への切り替えを判断する前 | `continuation.md` |
 
 ## 停滞の検知と巻き取り
 
@@ -69,8 +69,8 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| Codexでの委譲方法：後続操作の共通先行条件の基準を適用する前 | `codex-runtime-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-continuation.md` |
-| Codexでの委譲方法：agents_serverの二層待機の基準を適用する前 | `codex-runtime-waiting.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-waiting.md` |
-| 待機と観測：成果物側の観測の基準を適用する前 | `waiting-and-monitoring-progress.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-progress.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| Codexでの委譲方法：後続操作の共通先行条件の基準を適用する前 | `codex-runtime-continuation.md` |
+| Codexでの委譲方法：agents_serverの二層待機の基準を適用する前 | `codex-runtime-waiting.md` |
+| 待機と観測：成果物側の観測の基準を適用する前 | `waiting-and-monitoring-progress.md` |

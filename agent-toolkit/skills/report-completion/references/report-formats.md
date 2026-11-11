@@ -17,43 +17,23 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
-| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/check-execution-operations-launch.md`、`../../../share/check-execution-operations-output.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-launch.md`、`read:agent-toolkit:*/share/check-execution-operations-output.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis-inputs.md`、`../../review-session/references/analysis-triage.md`、`../../review-session/references/analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-inputs.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
-| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
+| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証結果と実行記録・検証記録の引き渡しに関する判断・作業の前 | `report-formats-verification.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-verification.md` |
-| 作業完了報告のフォーマットに関する判断・作業の前 | `report-formats-completion.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-completion.md` |
-| 振り返り結果報告のフォーマット・AWI投入結果報告のフォーマットに関する判断・作業の前 | `report-formats-retrospective.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-retrospective.md` |
-| 報告用UWIのフォーマット・報告用UWIの確認と保存に関する判断・作業の前 | `report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証結果と実行記録・検証記録の引き渡しに関する判断・作業の前 | `report-formats-verification.md` |
+| 作業完了報告のフォーマットに関する判断・作業の前 | `report-formats-completion.md` |
+| 振り返り結果報告のフォーマット・AWI投入結果報告のフォーマットに関する判断・作業の前 | `report-formats-retrospective.md` |
+| 報告用UWIのフォーマット・報告用UWIの確認と保存に関する判断・作業の前 | `report-formats-uwi.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |

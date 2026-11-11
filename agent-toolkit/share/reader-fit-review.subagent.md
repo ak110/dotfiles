@@ -35,15 +35,9 @@ continuations:
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-criteria.md` | 判断 | `read:agent-toolkit:*/share/exec-review-criteria.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-content.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/awi-body-content.md` |
 
 ## 入力
 
@@ -114,9 +108,9 @@ continuations:
 
 - 既知と未知の整理: 読者がすでに知っている情報の重複記載を省き、未習熟の用語、内部的な呼称、作業環境固有の識別子には簡潔な説明を添えて用いる。
   既存の対象を指す名詞句は、定義元の実体が存在すること、および読者が対象文書からその実体へ到達できることを確かめる。
-  別文書の節名・用語・事例の略記の示し方は、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」に従う。
+  別文書の節名・用語・事例の略記の示し方は、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に従う。
 - 情報の充足と到達性: 判断、操作、検証に必要な情報（目的、対象、条件、後続の手順、参照先）をすべて網羅し、根拠や出所として参照する対象は読者がアクセス可能なものに限定する（個人の作業メモ、進行中の計画ファイル、会話ログなどは読者が到達できるか確認する）。
-- 情報の必要性: `agent-toolkit:delegation/references/writing.md`「文章の共通規定」の情報を追加する前の判定基準に従い、書き手のみが共有している文脈を読者の前提から除外する。
+- 情報の必要性: `agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」の情報を追加する前の判定基準に従い、書き手のみが共有している文脈を読者の前提から除外する。
 - 指示先の一意性: 行為者と対象が一意に識別可能であり、指示語や相対的な表現が指す対象が本文のみから明確に定まることを確かめる。
 
 文書の種別がエージェント向け文書または委譲関連文書なら、役割への適合性についても判定する。

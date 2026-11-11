@@ -249,7 +249,7 @@ def _check_read_predicate_stderr_discard(command: str) -> str | None:
     for invocation in extract_bash_invocations(command):
         if is_read_predicate(invocation.segment.tokens) and invocation.outputs[1] == "/dev/null":
             return _llm_notice(
-                "読取述語の標準エラーの最終接続先が`/dev/null`であり、入力・パス・権限の異常の診断を失う。",
+                "読取・存在確認コマンドの標準エラーを`/dev/null`へ捨てるため、入力・パス・権限の異常の診断を失う。",
                 tag=_WARN_TAG,
                 subject=command,
                 removable_cause=True,
@@ -799,7 +799,8 @@ def _git_commit_attribution_violations(
         if trailers != [expected]:
             return [
                 (
-                    f"通常`commit`の`Co-Authored-By:`が実行ターンで観測したモデルと異なる。必要な行: {expected}",
+                    "通常`commit`の`Co-Authored-By:`が、実行ターンで観測したモデルに対応する1行だけになっていない。"
+                    f"必要な行: {expected}",
                     "観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れよ。",
                 )
             ]
@@ -1246,8 +1247,8 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
     return _llm_notice(
         f"`PATH`へドライブ文字形式の要素（{'、'.join(found)}）を加えている。"
         "`Git Bash`の`PATH`はコロン区切りのため、ドライブ文字形式の要素は`C`と`/...`の2要素に分かれ、"
-        "そのディレクトリは検索されない。コマンドは実行済みであり、`PATH`の内容で決まった結果"
-        "（`command -v`の出力、実行されたプログラム、計測値）は意図した構成のものではない。",
+        "この`PATH`では意図したディレクトリが検索対象にならない。"
+        "`PATH`に依存する結果は、修正した指定で実行して確かめよ。",
         tag=_WARN_TAG,
         fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行せよ。",
         removable_cause=True,

@@ -4,17 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-completion.md` |
-| 一連の処理全体の成立を判定する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-placement.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-placement.md` |
-| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
+| 観測事象を契機とする要求の採用を確定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
+| 一連の処理全体の成立を判定する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` |
+| 類似見直しの限定探索と是正範囲を判定する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
+| 原因分析の記録が推定だけに依拠していないことを判定する前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
 
 ## 採否と実現方式の確定
 
@@ -35,7 +32,7 @@
 `agent-basics:bugfix/references/root-cause-actions-selection.md`「対策の選定」も併用して確認する。
 再発の主要な原因や害の発生源が残る案は、それを残す正当な理由を確定した上で採用する。
 害の発生源を定める既存方針や仕様があることだけでは、残す正当な理由とせず、`drafting-completion-policies.md`「方針と判断の記録との比較」に従って変更案を扱う。
-説明を追記するかどうかの採否は、完成条件を固定する前に、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」にある「情報を加える前の判定」に従って確定する。
+説明を追記するかどうかの採否は、完成条件を固定する前に、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」にある「情報を追加する前の判断」に従って確定する。
 完成条件を固定する前に、起点となった資料の目的と、エージェントが選んだ中間手段（安全対策、検収用ログ、例外処理やフォールバックなど）とを明確に区別する。
 その上で、新設機構を省いた既存の操作でも消費側に必要な結果が得られるかを`agent-basics:writing-standards/references/design-heuristics-mechanisms.md`「自作機構の兆候と自問」に沿って比較検討し、その結論を本文の適切な箇所に反映する。
 検収の準備・実行・再試行にかかる負担と、期待される品質改善とを比較し、要求された結果を十分に判定できる、より負担の少ない観測方法を選択する。
@@ -73,12 +70,12 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-decisions.md` |
-| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-mechanisms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md` |
-| 設計判断の手順と領域別の設計観点：問題と手段の比例性の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-| 設計判断の手順と領域別の設計観点：設計品質の劣化確認の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-quality.md` |
-| 設計判断の手順と領域別の設計観点：設計案の予備選別の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` |
-| 起草完了の条件：方針と判断の記録との比較の基準を適用する前 | `drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md` |
-| 起草完了の条件：投入前の読み直しの基準を適用する前 | `drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 設計判断の手順と領域別の設計観点：案の採否と実施順の判定の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` |
+| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-mechanisms.md` |
+| 設計判断の手順と領域別の設計観点：問題と手段の比例性の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
+| 設計判断の手順と領域別の設計観点：設計品質の劣化確認の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
+| 設計判断の手順と領域別の設計観点：設計案の予備選別の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` |
+| 起草完了の条件：方針と判断の記録との比較の基準を適用する前 | `drafting-completion-policies.md` |
+| 起草完了の条件：投入前の読み直しの基準を適用する前 | `drafting-completion-validation.md` |

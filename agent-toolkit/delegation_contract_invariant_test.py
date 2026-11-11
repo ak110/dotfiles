@@ -1153,7 +1153,8 @@ def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) 
 
 
 # 時点を限らない定型の読込条件。起動契約がこの条件で委譲先の手順書を挙げると、委譲元は起動前にそれを読む。
-_GENERIC_READ_CONDITION = "本文がこの資料の基準を使う場面で、資料を選択して取得する時"
+# 読込表に行の無い本文の名指しにも、解析器が同じ条件の宣言を補う。
+_GENERIC_READ_CONDITION = read_triggers.NAMED_REFERENCE_CONDITION
 
 
 def _launch_read_errors(share: pathlib.Path) -> list[str]:
@@ -1161,6 +1162,7 @@ def _launch_read_errors(share: pathlib.Path) -> list[str]:
 
     委譲元は委譲先の手順書を読まずに起動する（`agent-toolkit:delegation`「送信」）。
     返却後の検収・編集・調査で読む行は条件へその時点を書き、手順の所有者を示すだけの本文は「所在参照」と明記する。
+    時点を書いた行が無い本文の名指しは、定型の条件の宣言が補われるため報告する。
     """
     errors: list[str] = []
     contracts: list[_Contract] = [*sorted(share.glob("*.parent.md")), *_embedded_contracts(share)]
@@ -1169,14 +1171,29 @@ def _launch_read_errors(share: pathlib.Path) -> list[str]:
         if not valid_structure:
             continue
         source = contract if isinstance(contract, pathlib.Path) else contract.source
-        for number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+        lines = list(read_triggers.document_lines(source.read_text(encoding="utf-8")))
+
+        def named(target: str, text: str) -> bool:
+            return re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?=[`#)])", text) is not None
+
+        timed: set[str] = set()
+        for _number, line, visible in lines:
             cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
-            if len(cells) < 2 or cells[0] != _GENERIC_READ_CONDITION:
+            if visible and len(cells) >= 2 and cells[0] != _GENERIC_READ_CONDITION:
+                timed.update(target for target in targets if named(target, cells[1]))
+        for number, line, visible in lines:
+            if not visible:
                 continue
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")] if line.startswith("|") else []
+            if cells:
+                generic = len(cells) >= 2 and cells[0] == _GENERIC_READ_CONDITION
+                text = cells[1] if generic else ""
+            else:
+                text = "" if "所在参照" in line or line.startswith("<!--") else line
             errors.extend(
                 f"起動する委譲先の手順書を定型の条件で読ませる: {source.name}:{number} -> {target}"
                 for target in targets
-                if re.search(rf"(?<![A-Za-z0-9_.-]){re.escape(target)}(?=[`#])", cells[1])
+                if named(target, text) and (cells or target not in timed)
             )
     return list(dict.fromkeys(errors))
 
@@ -1221,8 +1238,7 @@ def test_launch_contract_generic_read_of_recipient_is_reported(tmp_path: pathlib
     share = tmp_path / "share"
     generic = f"| {_GENERIC_READ_CONDITION} | `task.subagent.md` | 判断 | `read:agent-toolkit:*/share/task.subagent.md` |\n"
     section = (
-        f"| {_GENERIC_READ_CONDITION} | `task.subagent.md#「入力」` | 判断 "
-        "| `section:agent-toolkit:*/share/task.subagent.md#「入力」` |\n"
+        f"| {_GENERIC_READ_CONDITION} | `task.subagent.md#「入力」` | 判断 | `read:agent-toolkit:*/share/task.subagent.md` |\n"
     )
     table = "\n## 名指し参照の読込方法\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
     _write_pair(
@@ -1230,18 +1246,29 @@ def test_launch_contract_generic_read_of_recipient_is_reported(tmp_path: pathlib
         parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める。\n" + table + generic + section),
     )
 
-    assert _launch_read_errors(share) == [
+    errors = _launch_read_errors(share)
+    # 時点を書いた行が無い本文の名指しにも定型の条件の宣言が補われるため、本文の行も報告する。
+    assert len(errors) == 3 and errors[0].endswith("-> task.subagent.md") and "task.parent.md:" in errors[0]
+    assert errors[1:] == [
         "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:13 -> task.subagent.md",
         "起動する委譲先の手順書を定型の条件で読ませる: task.parent.md:14 -> task.subagent.md",
     ]
 
     timed = (
         "| 返却を受け取った後に形式を検収する時 | `task.subagent.md#「出力」` | 判断 "
-        "| `section:agent-toolkit:*/share/task.subagent.md#「出力」` |\n"
+        "| `read:agent-toolkit:*/share/task.subagent.md` |\n"
     )
     _write_pair(
         share,
         parent_body=_parent_body(after_marker="\n委譲先の手順は`task.subagent.md`が定める（所在参照）。\n" + table + timed),
+    )
+
+    assert not _launch_read_errors(share)
+
+    # 時点を書いた行がある資料の本文の名指しには、定型の条件の宣言が補われない。
+    _write_pair(
+        share,
+        parent_body=_parent_body(after_marker="\n検収では`task.subagent.md`の出力を確かめる。\n" + table + timed),
     )
 
     assert not _launch_read_errors(share)

@@ -6,13 +6,9 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` | |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | | | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | | | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | | | |
 | プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
 
 ## 原因分析・調査結果と判断根拠
@@ -55,6 +51,6 @@ APIやCLIの存在確認に留まらず、要求の実現に必要な利用側�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-mechanisms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-mechanisms.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 設計判断の手順と領域別の設計観点：自作機構の兆候と自問の基準を適用する前 | `agent-basics:writing-standards/references/design-heuristics-mechanisms.md` |

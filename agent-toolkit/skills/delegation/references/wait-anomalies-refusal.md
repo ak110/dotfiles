@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/permission-denial.md` |
-| 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` |
+| 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` |
 
 ## 待機を開始できない場合
 
@@ -32,7 +32,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 待機と観測：完了通知を待ってターンを終える場合の基準を適用する前 | `waiting-and-monitoring-auto-resume.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-auto-resume.md` |
-| 待機と観測：待機区間の構成の基準を適用する前 | `waiting-and-monitoring-intervals.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-and-monitoring-intervals.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 待機と観測：完了通知を待ってターンを終える場合の基準を適用する前 | `waiting-and-monitoring-auto-resume.md` |
+| 待機と観測：待機区間の構成の基準を適用する前 | `waiting-and-monitoring-intervals.md` |

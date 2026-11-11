@@ -9,19 +9,19 @@ WI起草者と投入前レビュー担当が、原文・原稿・調査根拠か
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-ownership.md` |
-| (d)で推奨しない案と不採用にする候補を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-proportionality.md` |
-| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
+| (d)で推奨しない案と不採用にする候補を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
+| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow.md` |
 
 ## 点検類型
 
 | 類型 | 比べる内容 |
 | --- | --- |
 | (a) 範囲の限定 | 対象・調査母集団・完成条件を原文の範囲表現と比較し、例示・理由・観測した症状・現行の仕組みで扱える範囲への縮小がないか。対象外・不採用とした判断の前提（利用主体、環境、利用場面）が観測した事実か、確かめていない想定か |
-| (b) 関連して必要な変更 | 共通化・リファクタリング、同じ機構を使う他の箇所、追随修正、同時に直すべき既存不良が含まれるか。エージェント向け文書の変更は`agent-toolkit:wi-standards/references/drafting-workflow.md`「エージェント向け文書の構成」に従い、行数と分割・統合・削除を検討したか |
+| (b) 関連して必要な変更 | 共通化・リファクタリング、同じ機構を使う他の箇所、追随修正、同時に直すべき既存不良が含まれるか。エージェント向け文書の変更は`agent-toolkit:wi-standards/references/drafting-workflow-writing.md`「エージェント向け文書の構成」に従い、行数と分割・統合・削除を検討したか |
 | (c) 既存の仕組み・過去の判断との関係 | 同じ目的の既存機構、対象プロジェクトの方針記録・過去のユーザー指示、回答済みUWI、他AWIとの重複・衝突がないか |
 | (d) 過剰さ | 読み手が常識で判断できる細則、過剰な制限・仕組みがないか、より単純な構成案と比較したか。推奨しない案と不採用にする候補は、`agent-basics:writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」に従い、既存要素の再利用・統合・削除を使う構造の異なる案と比べたか。案の目的を満たす構成を対象リポジトリの既存の部品（稼働中の主体、既存の通信経路、既存のコマンドなど）から組める場合に、その構成の費用と便益で評価したか |
 | (e) 後続工程の模擬 | process-wiの計画・実装・完成条件の検証・公開・終了までをたどり、検証の認可・費用・第三者が観測する操作・実環境の対象、目標値未達時の扱い、実装詳細で分かれる外部挙動、公開範囲にユーザー判断が残らないか |

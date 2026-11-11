@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文の参照基準を適用する前 | `../../delegation/references/routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing.md` |
-| 本文の参照基準を適用する前 | `grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` |
-| 本文の参照基準を適用する前 | `pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 本文の参照基準を適用する前 | `../../delegation/references/routing.md` |
+| 本文の参照基準を適用する前 | `grilling.md` |
+| 本文の参照基準を適用する前 | `pending-decisions.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` |
 
 ## 原文の保持と取り込み
 
@@ -62,7 +62,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告：認可を要する操作の基準を適用する前 | `user-confirmation-and-report-authorization.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告：認可を要する操作の基準を適用する前 | `user-confirmation-and-report-authorization.md` |
+| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` |

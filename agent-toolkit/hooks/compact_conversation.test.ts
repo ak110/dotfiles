@@ -47,9 +47,9 @@ for (const trigger of ["manual", "auto", "plugin", "precompute"] as const) {
     } else {
       expect(result.messages?.length).toBe(1);
       const text = result.messages?.[0]?.text ?? "";
-      expect(text).toMatch(/生成していない/);
-      expect(text).toMatch(/SessionStart.*圧縮後通知.*コマンド.*実行/);
-      expect(text).toMatch(/復元せよ/);
+      expect(text).toMatch(/^<[^>]+>\s*この会話は圧縮され、ここより前のやり取りは現在の文脈に残っていない。/);
+      expect(text).toMatch(/要約は作っていない。最初に、この直後に届く会話圧縮後の通知が示すファイルとコマンドで/);
+      expect(text).toMatch(/作業契約、計画と進捗、引き継ぎ記録から、未完了の工程を復元して続けよ/);
       expect(text).not.toMatch(/会話の要約生成を省き|会話ID:|原本ログ:|\/records\/current-session.jsonl/);
       expect("usage" in result).toBe(false);
     }

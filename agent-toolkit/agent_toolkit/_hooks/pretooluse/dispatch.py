@@ -14,7 +14,8 @@ AskUserQuestion / ExitPlanMode:
 - ユーザーが直接読む質問本文・計画本文の文字化けの警告 (warn)
 - ユーザーが直接読む英語主体の質問本文・計画本文の書き直し要求 (block)
 - 確認の前に読む2資料（`agent-toolkit:user-confirmation-and-report`）を読まないままメインが呼んだ
-  `AskUserQuestion`の警告 (warn、昇格しない)
+  確認ツール（`AskUserQuestion`・`request_user_input`・`request_user_input_async`）の拒否 (block)。
+  警告は回答と一緒に届き害を防げないため、質問の表示前に拒否する。宣言や記録を読めない場合は拒否しない
 
 mcp__plugin_agent-toolkit_agents_server__start / send_message / kill / list:
 
@@ -532,7 +533,8 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
                 continue
             return Decision(
                 block=_block_notice(
-                    f"対象の入力欄: `{name}`。{_response_language_check.BLOCK_BODY}{body}",
+                    f"対象の入力欄: `{name}`。この入力本文を英語主体と判定し、呼び出しを止めた。"
+                    f"{(body or '').replace('直前のアシスタント応答の地の文', 'この入力本文の説明')}",
                     fix=(
                         _response_language_check.WARNING_FIX
                         + "引用・入力素材だけが英語で、説明が日本語なら、同じ主体から同じツールへ同一入力を再発行せよ。"

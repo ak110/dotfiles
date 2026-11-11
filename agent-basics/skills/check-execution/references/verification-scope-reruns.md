@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 必要なテストが収集され実行されたことを個別の結果から確かめ、追加検証を選ぶ前 | `diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 必要なテストが収集され実行されたことを個別の結果から確かめ、追加検証を選ぶ前 | `diagnostics-results.md` |
 
 ## 実行条件と再実行
 

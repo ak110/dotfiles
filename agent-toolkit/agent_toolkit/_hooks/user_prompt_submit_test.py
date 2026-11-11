@@ -615,7 +615,7 @@ class TestRealignNoticeInjection:
         result = _run({"session_id": "realign-machine", "prompt": prompt, **host_fields, **extra}, state_dir=tmp_path)
         assert result.returncode == 0
         assert "認識合わせ" not in result.stdout
-        assert "この発話は" not in result.stdout
+        assert "この発話を受けた時点で" not in result.stdout
         assert set(_read_state(tmp_path, "realign-machine")) <= {"notice_fingerprints"}
 
 
@@ -803,7 +803,7 @@ def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathli
     assert "<atk-auto" in context
     assert "ユーザーの発話ではない" in context
     assert "日本語で書" in context
-    assert "この発話は" not in context
+    assert "この発話を受けた時点で" not in context
 
 
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}], ids=["claude", "codex"])
@@ -833,7 +833,7 @@ def test_progress_notice_keeps_thirty_minute_cycles_during_user_prompts(monkeypa
             assert rc == 0 and not captured.err, captured.err
             output = json.loads(captured.out) if captured.out else {}
             context = output.get("hookSpecificOutput", {}).get("additionalContext", "")
-            assert "想定外エラー" not in context
+            assert "想定外のエラーが起きた" not in context
             notified = opening in context
             assert notified == (expected and subcommand == "user_prompt_submit"), (minute, subcommand, output)
             if notified:

@@ -12,15 +12,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証の開始前と未コミット結果の再利用前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
-| 変更範囲の検証対象と直接影響範囲を選ぶ前 | `agent-basics:check-execution/references/verification-scope.md`、`agent-basics:check-execution/references/verification-scope-selection.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md`、`read:agent-basics:*/skills/check-execution/references/verification-scope-selection.md` |
-| 完成条件の観測手段と未確認範囲を判定する前 | `../skills/wi-standards/references/awi-body-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-completion.md` |
-| 公開前の全体検証を選ぶ前 | `agent-toolkit:commit/references/publish.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/publish.md` |
-| 検証コマンドを起動する前 | `check-execution-operations-launch.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-launch.md` |
-| 計画の検証表を作成・訂正・引き継ぐ前 | `../skills/write-plan/references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` |
-| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証の開始前と未コミット結果の再利用前 | `verification-evidence-observation.md` |
+| 変更範囲の検証対象と直接影響範囲を選ぶ前 | `agent-basics:check-execution/references/verification-scope.md`、`agent-basics:check-execution/references/verification-scope-selection.md` |
+| 完成条件の観測手段と未確認範囲を判定する前 | `../skills/wi-standards/references/awi-body-completion.md` |
+| 公開前の全体検証を選ぶ前 | `agent-toolkit:commit/references/publish.md` |
+| 検証コマンドを起動する前 | `check-execution-operations-launch.md` |
+| 計画の検証表を作成・訂正・引き継ぐ前 | `../skills/write-plan/references/plan-file-standards-verification.md` |
+| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 実行のしかた
 
@@ -51,6 +51,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証ツールの実行と保存出力の取得：保存した実行出力の取得の基準を適用する前 | `check-execution-operations-output.md` | 判断 | `read:agent-toolkit:*/share/check-execution-operations-output.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証ツールの実行と保存出力の取得：保存した実行出力の取得の基準を適用する前 | `check-execution-operations-output.md` |

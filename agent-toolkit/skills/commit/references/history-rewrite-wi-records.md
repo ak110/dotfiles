@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `commit-wi-records.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/commit-wi-records.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-storage.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-storage.md` |
-
 ## WI実装commitの対応の継承
 
 コミット対応表のJSONフォーマットは、1対1または多対1の対応を表す`{"oldOID":"newOID"}`とする。
@@ -76,6 +71,6 @@ atk run-script plan-rewrite -- --worktree <worktree> --previous-head <書換え�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/history-rewrite-verification.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 履歴書換え：操作前後の確認の基準を適用する前 | `history-rewrite-verification.md` |

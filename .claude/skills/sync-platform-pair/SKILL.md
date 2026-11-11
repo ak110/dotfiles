@@ -14,10 +14,10 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/references/verification-values-execution.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-execution.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/references/verification-values-publishing.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/references/verification-values-publishing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/references/verification-values-execution.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../develop-dotfiles/references/verification-values-publishing.md` |
 
 ## 読込表
 
@@ -25,7 +25,7 @@ description: >
 | --- | --- | --- | --- |
 | PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl` |
 | Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/bash.md` | 操作 | `path:*.sh`、`path:*.sh.tmpl` |
-| Linux側とWindows側で分岐するコードを変更する前 | `../../../agent-basics/skills/writing-standards/references/testing-platforms.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-platforms.md` |
+| Linux側とWindows側で分岐するコードを変更する前 | `../../../agent-basics/skills/writing-standards/references/testing-platforms.md` | | |
 
 ## ペアファイルの判別
 
@@ -54,6 +54,6 @@ Windows実OS固有の動作は、CI上の`test-windows`などによる観測と�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| dotfilesの開発手順の基準を適用する前 | `../develop-dotfiles/SKILL.md` | 判断 | `read:*/.claude/skills/develop-dotfiles/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| dotfilesの開発手順の基準を適用する前 | `../develop-dotfiles/SKILL.md` |

@@ -6,12 +6,9 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` | |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/investigation.md` | |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics.md` | |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | | | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | | | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | | | |
 | プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
 
 ## 要求固有性と記載量
@@ -27,8 +24,8 @@
 本文には、元の要求そのものか、その要求に固有の採否判断、実装、完成判定に直接必要な記述のみを残す。
 通常のバージョン更新や生成物の同期、一般原則を変更しない旨の宣言、汎用的な検証やCIの手順、通常の記録更新、投入前に行った調査の途中経過などは記載から除く。
 一方で、必要な境界条件、根本原因、検討した代替案、外部から観測可能な結果、および否定形の完成条件は残す。
-説明文の追記を反映内容や完成条件へ含める前には、`agent-toolkit:delegation/references/writing.md`「文章の共通規定」にある「情報を加える前の判定」を適用する。
-H2見出し以降の記述の詳しさは、同資料の「読み手別の追加注意点」におけるエージェント向け文書の規定に従う。
+説明文の追記を反映内容や完成条件へ含める前には、`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」にある「情報を追加する前の判断」を適用する。
+H2見出し以降の記述の詳しさは、`agent-basics:writing-standards/references/writing-readers.md`「読み手別の追加注意点」におけるエージェント向け文書の規定に従う。
 なお、タイトルとH1直下の記述はユーザーを読者とするため、エージェント向けの規定ではなく`SKILL.md`冒頭の用語基準に従う。
 要求に固有の事実や契約、ユーザーが指定した手段、硬い制約は具体的に記載し、一般的な実装手順や検証方法の解説は省く。
 本文は、実装担当者が登録時に確認した対象、判断と根拠を再調査せずに着手できる粒度で記述する。

@@ -13,10 +13,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
-
 ## 機械処理へ当てはめた動詞
 
 人や物の動きを表す比喩的な動詞を使わず、システムの処理内容を直接表現する。
@@ -233,6 +229,6 @@ AI特有の抽象的な愛用表現、名詞の比喩、独自の造語を使わ
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ドキュメント品質：文章の共通規定の基準を適用する前 | `writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ドキュメント品質：文章の共通規定の基準を適用する前 | `writing-common.md` |

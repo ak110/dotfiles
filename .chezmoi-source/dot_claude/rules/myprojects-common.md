@@ -25,4 +25,14 @@ Claude Codeでは`Skill`ツールから起動する。
 `operate-ak110-projects`スキルを起動し、同スキルの「リリース運用」に従う。
 個人プロジェクトの一連の作業（`agent-toolkit:process-wi`の公開工程を含む）がpushとCI成功まで終わったときも同スキルを起動し、「リリース運用」に従ってリリース要否を判定する。
 agent-toolkit自身のversion bump、個人プロジェクト外、Dockerイメージの再構築およびworkflow内部の処理は対象外とする。
+
+## pytilpackに無い汎用処理の改善要望
+
+`agent-basics:writing-standards`の`references/pytilpack.md`「汎用処理を自作する前の確認」で、必要な汎用処理がpytilpackに無かった場合に適用する。
+作業対象が個人プロジェクトの一覧に無いプロジェクト（業務のプロジェクトなど）でも適用する。
+ユーザーへ確認せずに、pytilpackのリポジトリを対象とするAWIを`agent-toolkit:wi-standards`の通常の投入手順で投入し、投入したAWIを作業完了報告で伝える。
+その場の作業は、同資料のとおりプロジェクト内へ実装して続ける。
+AWIには汎用化した要求（必要な機能、想定する入出力、利用場面の一般的な説明）だけを書き、作業中のプロジェクトに固有の名称、コード、データは除く。
+pytilpackは公開リポジトリであり、要求の内容が実装とcommitとして公開されるためである。
+pytilpackのキューへ投入できない環境では、作業完了報告だけを行う。
 </atk-auto>

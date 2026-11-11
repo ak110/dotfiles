@@ -295,7 +295,6 @@ def receipt_key(metadata: dict) -> str:
 def receipt_candidates(
     targets: Sequence[read_triggers.ReadTarget],
     *,
-    include_headings: bool = True,
     bodies: dict[pathlib.Path, str] | None = None,
     fragment_paths: set[pathlib.Path] | None = None,
 ) -> list[dict]:
@@ -312,13 +311,8 @@ def receipt_candidates(
         lines = text.splitlines(keepends=True)
         logical = logical_document(path)
         version = bytes_fingerprint(text.encode("utf-8"))
+        # 範囲の要約値は、対象が名指しした範囲と資料全体だけに作る。全文の受信は版の一致で再利用する。
         headings = [target.heading for target in targets if target.path == path]
-        # 選択前の全文取得も、後で必要になる実在節へ再利用できるようにする。
-        headings.extend(
-            match[1]
-            for _number, line, visible in read_triggers.document_lines(text)
-            if include_headings and visible and (match := re.fullmatch(r"#{1,6} (.+?)[ \t]*", line))
-        )
         for heading in dict.fromkeys(["", *headings]):
             target = read_triggers.ReadTarget(path, heading)
             try:
@@ -941,9 +935,7 @@ def acquisition_state(records: dict, target: read_triggers.ReadTarget, agent: st
             return "missing"
     if content_ready(records, bytes_fingerprint(raw), agent):
         return "current"
-    current = next(
-        (item for item in receipt_candidates([target], include_headings=False) if item["heading"] == target.heading), None
-    )
+    current = next((item for item in receipt_candidates([target]) if item["heading"] == target.heading), None)
     if current is None:
         return "missing"
     receipts = [
@@ -955,7 +947,8 @@ def acquisition_state(records: dict, target: read_triggers.ReadTarget, agent: st
     known = {tuple(part) for item in receipts for part in item["parts"]}
     if all(tuple(part) in known for part in current["parts"]):
         return "current"
-    if any(item["logical"] == current["logical"] and item["heading"] == current["heading"] for item in receipts):
+    # 節単位の候補は名指しされた読取でだけ作るため、旧版を全文で受信した記録も同じ節の旧版の取得として扱う。
+    if any(item["logical"] == current["logical"] and item["heading"] in {current["heading"], ""} for item in receipts):
         return "updated"
     # 旧形式の証拠は保持する。新版の受信記録へ変換せず、全文の更新として区別する。
     if not target.heading and any(
@@ -989,7 +982,7 @@ def skill_invocation_key(path: pathlib.Path, fingerprint: str) -> str:
 
 def reference_only(operations: Sequence[Sequence[str]]) -> bool:
     """選択元がすべて名指し参照である場合だけ、Readによる取得を案内する。"""
-    return bool(operations) and all(any(value.startswith(("read:", "section:")) for value in group) for group in operations)
+    return bool(operations) and all(any(value.startswith("read:") for value in group) for group in operations)
 
 
 def content_ready(records: dict, fingerprint: str, agent: str) -> bool:

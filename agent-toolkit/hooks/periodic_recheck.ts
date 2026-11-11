@@ -37,7 +37,7 @@ function notMounted(reason: string): MountOutcome {
   return {
     note: notice(
       "warn",
-      `agent-toolkitのmodは定期再確認を装着できなかった（理由: ${reason}）。` +
+      `委譲先の起動後に待機状況を定期確認するtaskを、自動作成できなかった（理由: ${reason}）。` +
         `理由に示したツールの許可と公開状態を確認せよ。待機は${RUNTIME_REFERENCE}の完了通知と終了観測で続けよ。`,
     ),
     failed: true,

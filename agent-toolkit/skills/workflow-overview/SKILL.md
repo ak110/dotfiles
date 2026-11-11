@@ -20,31 +20,14 @@ user-invocable: false
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-session/references/batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` | |
-| 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` | |
-| レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes-launch.md`、`../process-wi/references/run-lanes-integration.md`、`../process-wi/references/lane-resources.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-launch.md`、`read:agent-toolkit:*/skills/process-wi/references/run-lanes-integration.md`、`read:agent-toolkit:*/skills/process-wi/references/lane-resources.md` | |
-| 開始後の新着WIの確認と今回追加の判断を扱う前 | `../process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` |
+| 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` |
+| レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes-launch.md`、`../process-wi/references/run-lanes-integration.md`、`../process-wi/references/lane-resources.md` |
+| 開始後の新着WIの確認と今回追加の判断を扱う前 | `../process-wi/references/immediate-fix.md` |
 
 ## 利用形態と起動主体
 
@@ -123,13 +106,13 @@ process-loop、子セッションのメイン、レーン担当、まとめ処�
 
 ## 工程で参照する運用資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 人間向け文書の役割と残す内容を選ぶ時 | `agent-toolkit:workflow-overview/references/document-types.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/references/document-types.md` | |
-| 既存の対象を名前で指す時と新しい名前を付ける時 | `agent-toolkit:workflow-overview/references/defined-names.md` | 判断 | `read:agent-toolkit:*/skills/workflow-overview/references/defined-names.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 人間向け文書の役割と残す内容を選ぶ時 | `agent-toolkit:workflow-overview/references/document-types.md` |
+| 既存の対象を名前で指す時と新しい名前を付ける時 | `agent-toolkit:workflow-overview/references/defined-names.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告の基準を適用する前 | `../user-confirmation-and-report/SKILL.md` |

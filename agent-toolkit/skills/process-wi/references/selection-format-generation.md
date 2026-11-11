@@ -4,10 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `selection-procedure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure.md` |
-| 初期配分の見込みと実装中の編集範囲を区別する時 | `../../../share/exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 初期配分の見込みと実装中の編集範囲を区別する時 | `../../../share/exec-subagent-implementation.md` |
 
 ## 選定の生成入力
 
@@ -49,7 +48,7 @@ WIを明示的に追加する場合は`--merge <追加の意味判断YAML> --can
 merge操作の追加側YAMLのみ本項目を省略でき、選定されたすべてのWIは`追加WI`に分類される。
 初回配分の内容は、追加統合やレーン名の対応付けの前後で同一の値を維持する。
 `候補WI`には、開始時の候補から通常の除外条件に該当するものを除いたすべての件数（包含された項目を含む）を1回ずつ記述する。
-初回確定前に行われた明示的な追加WIは、[selection-procedure.md](selection-procedure.md)「処理対象の決定」の集合和に含める。
+初回確定前に行われた明示的な追加WIは、[selection-procedure-candidates.md](selection-procedure-candidates.md)「処理対象の決定」の集合和に含める。
 `レーン割当`では、初回に選定した各WIを初回のレーンまたは`なし`に対応付ける。
 初回の割当集合と`追加WI`は互いに排他であり、両者の和が現在の選定集合と一致する。
 不可分成分は、初回の`なし`以外のWIを過不足なく1回ずつ網羅し、各成分を1つのレーンへ割り当てる。
@@ -70,7 +69,7 @@ merge操作の追加側YAMLのみ本項目を省略でき、選定されたす�
   ファイル単位で範囲が特定されていない場合は、双方の定義に同一のファイル名を記述する。
   段階比較と定義の妥当性は、メインエージェントが検収する。
 
-Nは`候補WI`の件数であり、[selection-procedure.md](selection-procedure.md)「調査とレーン分け」における`WI数`も同じ件数を指す。
+Nは`候補WI`の件数であり、[selection-procedure-allocation.md](selection-procedure-allocation.md)「調査とレーン分け」における`WI数`も同じ件数を指す。
 上限Bは`floor((N+9)/10)`と計算し、初回の割当数および現在の全レーン集合（`なし`を除き、統合済みレーンや全段階のレーンを含む）をそれぞれB以下に抑える。
 所要時間の見込み、成分の規模、追加件数などを理由とした例外は認めず、独立した成分の数がBを超える場合は、複数の成分を同一レーンにまとめて順番に処理する。
 上限を超過した場合は、N、B、実際のレーン数、および理由を示して保存を拒否する。
@@ -98,4 +97,4 @@ Bの枠に空きがある場合であっても、新しい最終レーン名の�
 別段階の先行関係は書込予定の重複から導き、詳細を省略した入力も`先行レーン`の欠落・逆転を拒否する。
 旧詳細記録は読取を維持する。
 追加選定では新旧・追加同士の必要な組だけを追加側へ記録し、既存記録を保持する。
-追加レーンには既存と重複しない仮名を用い、[selection-procedure.md](selection-procedure.md)「処理対象WIの追加」の統合操作で最終名へ対応付ける。
+追加レーンには既存と重複しない仮名を用い、[selection-procedure-addition.md](selection-procedure-addition.md)「処理対象WIの追加」の統合操作で最終名へ対応付ける。

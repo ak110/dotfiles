@@ -49,12 +49,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             session_state=read_state(session_id) if session_id else None,
         ):
             return "", ""
-    recovery = "基準を満たさない場合は成果・判断・未達と指定の返却形式を含む完了本文を変更せず、そのまま再出力して停止せよ。"
+    recovery = (
+        "日本語以外なのが引用・入力素材・技術的な識別子だけなら、"
+        "成果・判断・未達と指定の返却形式を含む完了本文を変更せず、そのまま再出力して停止せよ。"
+    )
     return "block", _block_notice(
         response_language_check.BLOCK_BODY
-        + "判定基準: 検出した箇所が引用・入力素材・技術的な識別子か、エージェント自身の日本語以外の説明かを確かめよ。"
+        + "判定基準: 検出した箇所が、自身の日本語以外の説明か、引用・入力素材・技術的な識別子だけかを確かめよ。"
         f"検出した本文: {response_language_check._plain_text(text)[:200]}\n" + (body or "完了本文の説明を日本語で書け。"),  # pylint: disable=protected-access
-        fix="基準を満たす場合は成果・判断・未達と指定の返却形式、引用・入力素材を保ち、説明を日本語で書いてから停止せよ。"
+        fix="自身の説明が日本語以外なら、成果・判断・未達と指定の返却形式、引用・入力素材を保ち、説明を日本語で書いてから停止せよ。"
         + recovery
-        + "再呼び出しは`stop_hook_active`で通過する。",
+        + "書き直しか再出力の後の停止は、この検査を通過する。",
     )

@@ -3,9 +3,9 @@
 本文書はCodex環境における`AGENTS.md`として、Codexの全エージェント（メインエージェント、サブエージェント、委譲先）へ配送され、`agent-toolkit/share/rules/common/`配下の常時規範と同等の拘束力を持つ。
 Codex固有の公開機能と常時規範との差分を規定し、メインエージェントだけの差分は`rules-main.codex.md`で扱う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 長い終了待ちの二層回収を選ぶ前 | `agent-toolkit:delegation/references/codex-runtime-waiting.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/codex-runtime-waiting.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 長い終了待ちの二層回収を選ぶ前 | `agent-toolkit:delegation/references/codex-runtime-waiting.md` |
 
 ## Codex固有の入出力
 

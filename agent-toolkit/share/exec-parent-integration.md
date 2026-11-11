@@ -4,17 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `single-lane-execution.md` | 判断 | `read:agent-toolkit:*/share/single-lane-execution.md` | |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-inputs.md` | |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` | |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` | |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-integration.md` | |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
 ## 統合の許可
 
@@ -135,8 +132,8 @@ Git統合後の処理で失敗した場合は、所有登録が保持する最�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/diagnostics-results.md` |
-| レーン担当の起動と受領：実装完了の受領の基準を適用する前 | `exec-parent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-parent-implementation.md` |
-| レーン担当の起動と受領の基準を適用する前 | `exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証結果の診断と警告の判定：読む出力の基準を適用する前 | `agent-basics:check-execution/references/diagnostics-results.md` |
+| レーン担当の起動と受領：実装完了の受領の基準を適用する前 | `exec-parent-implementation.md` |
+| レーン担当の起動と受領の基準を適用する前 | `exec.parent.md` |

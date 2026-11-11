@@ -4,11 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution/references/verification-scope.md` | 判断 | `read:agent-basics:*/skills/check-execution/references/verification-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:check-execution/SKILL.md` | 判断 | `read:agent-basics:*/skills/check-execution/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../agent-toolkit-edit/references/distribution-and-hooks-layers.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/distribution-and-hooks-layers.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution/references/verification-scope.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../agent-toolkit-edit/references/distribution-and-hooks-layers.md` |
 
 ## テスト配置
 
@@ -51,6 +50,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| agent-toolkit（Agent Plugins・Claude Code・Codex・Antigravity）の基準を適用する前 | `../../agent-toolkit-edit/SKILL.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| agent-toolkit（Agent Plugins・Claude Code・Codex・Antigravity）の基準を適用する前 | `../../agent-toolkit-edit/SKILL.md` |

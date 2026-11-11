@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 責務帰属（SRP）分析の観点
 

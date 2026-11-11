@@ -4,17 +4,17 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes-goals.md` | |
-| 是正要求を分類する前 | `immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` | |
-| 参照基準の適用前 | `finish-session-observation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-observation.md` | |
-| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-explanation.md` | |
-| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 目標起点の判断を行う前 | `lanes-goals.md` |
+| 是正要求を分類する前 | `immediate-fix.md` |
+| 参照基準の適用前 | `finish-session-observation.md` |
+| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` |
+| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` |
 
 ## 保存後のチェック
 
-**34.** メインエージェントは、分類、割り当て、担当モデル、配置根拠、見込み時間、プロジェクト規範指定、ならびに結合条件の意味判断を、[selection-format.md](selection-format.md)「選定の生成入力」の形式に従ってYAMLファイルへ記録する。
+**34.** メインエージェントは、分類、割り当て、担当モデル、配置根拠、見込み時間、プロジェクト規範指定、ならびに結合条件の意味判断を、[selection-format-generation.md](selection-format-generation.md)「選定の生成入力」の形式に従ってYAMLファイルへ記録する。
 `atk wi list --jsonl --with-staleness`の取得済み出力を`--candidate-file`に渡し、定型欄の生成、本文との対応確認、全体の条件検証、および不可分なファイル保存を1回の操作で実行する。
 候補が0件の場合や、再開位置を持つ初回選定でも同じ操作を使う。
 
@@ -96,7 +96,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format.md` |
-| メインによるWI選定とレーン分け：調査とレーン分けの基準を適用する前 | `selection-procedure-allocation.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-procedure-allocation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 選定YAMLの項目と省略規則の基準を適用する前 | `selection-format.md` |
+| メインによるWI選定とレーン分け：調査とレーン分けの基準を適用する前 | `selection-procedure-allocation.md` |

@@ -4,10 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-necessity.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
 
 ## private関数の直接テスト禁止
 
@@ -40,6 +39,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| テスト方針（全言語共通）：分岐条件の効果の裏付けの基準を適用する前 | `testing-conditions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-conditions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| テスト方針（全言語共通）：分岐条件の効果の裏付けの基準を適用する前 | `testing-conditions.md` |

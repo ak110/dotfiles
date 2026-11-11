@@ -11,10 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/ui-ux.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/ui-ux.md` |
-
 ## 完了前の実描画確認
 
 画面キャプチャは、描画ツールが書き込める場所へ保存し、その絶対パスを記録する。

@@ -4,16 +4,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/selection-format-prediction.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/testing.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/testing.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/design-time.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/design-time.md` |
-| 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording.md` |
-| 参照基準の適用前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/acceptance-scenarios.md` |
-| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
+| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
+| 参照基準の適用前 | `agent-toolkit:commit/references/testing.md` |
+| 参照基準の適用前 | `agent-toolkit:commit/references/design-time.md` |
+| 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` |
+| 参照基準の適用前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
+| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 要件・外部仕様
 
@@ -97,6 +97,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 計画ファイル作成基準：実施内容の基準を適用する前 | `plan-file-standards-scope.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-scope.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 計画ファイル作成基準：実施内容の基準を適用する前 | `plan-file-standards-scope.md` |

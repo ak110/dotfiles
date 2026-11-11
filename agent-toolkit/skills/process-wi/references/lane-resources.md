@@ -7,11 +7,11 @@ process-wiのメインエージェントが、レーンの専用worktree・branc
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `run-lanes-launch.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
+| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
+| 本文で基準を使う資料の選択・取得時 | `run-lanes-launch.md` |
 
 ## レーン資源の作成・再利用・回収
 
@@ -100,7 +100,7 @@ CLIはメイン作業ツリーや登録のない実体を自動回収しない�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| レーン計画の起草と再開の基準を適用する前 | `lane-planning.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` |
-| レーンの実行の基準を適用する前 | `run-lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/run-lanes.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| レーン計画の起草と再開の基準を適用する前 | `lane-planning.md` |
+| レーンの実行の基準を適用する前 | `run-lanes.md` |

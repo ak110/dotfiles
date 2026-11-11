@@ -12,22 +12,22 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` |
-| 実装に着手する前、実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` | 判断 | `read:agent-toolkit:*/share/exec-review.parent.md` |
-| WI要求の範囲で実装・修正に着手する前 | `exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
-| 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-launch.md` |
-| 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review-parent-acceptance.md`、`exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-acceptance.md`、`read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
-| レビュー指摘の修正と管理表の保存に着手する前 | `exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
-| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence.md` |
-| 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `read:agent-toolkit:*/share/usability-review.parent.md` |
-| 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
-| レビュー指摘への対応を開始する前 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | 判断 | `read:agent-toolkit:*/share/review-loop-coordination.md`、`read:agent-toolkit:*/share/review-loop-coordination-rounds.md` |
-| レーン専用資源を使い統合前の検収を行う前 | `exec.parent.md`、`exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
-| レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` |
-| 初期選定が複数レーンで`統合準備完了`を返す前 | `exec.subagent.md` | 判断 | `read:agent-toolkit:*/share/exec.subagent.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` |
+| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing-selection.md` |
+| 実装に着手する前、実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` |
+| WI要求の範囲で実装・修正に着手する前 | `exec-subagent-implementation.md` |
+| 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` |
+| 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review-parent-acceptance.md`、`exec-review-parent-existing-defects.md` |
+| レビュー指摘の修正と管理表の保存に着手する前 | `exec-review-parent-correction.md` |
+| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` |
+| 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` |
+| 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` |
+| レビュー指摘への対応を開始する前 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
+| レーン専用資源を使い統合前の検収を行う前 | `exec.parent.md`、`exec-parent-integration.md` |
+| レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` |
+| 初期選定が複数レーンで`統合準備完了`を返す前 | `exec.subagent.md` |
 
 ## 入力と書込所有
 
@@ -116,6 +116,6 @@ process-wiにおける専用資源の作成、統合、回収には既存のlane
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 検証結果と手動観測の保存：手動観測の保存の基準を適用する前 | `verification-evidence-observation.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-observation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 検証結果と手動観測の保存：手動観測の保存の基準を適用する前 | `verification-evidence-observation.md` |

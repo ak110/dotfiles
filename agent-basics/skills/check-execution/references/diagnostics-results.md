@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 欠陥を示す診断の処置を確定する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-scenarios-testing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing-speed.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-speed.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-initial.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis-initial.md` |
-| 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 欠陥を示す診断の処置を確定する前 | `agent-basics:bugfix/SKILL.md` |
+| 所要の増大や不要仕事を原因調査へ渡す前 | `agent-basics:bugfix/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/testing-speed.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 読む出力
 

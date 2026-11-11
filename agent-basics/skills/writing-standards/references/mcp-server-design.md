@@ -13,10 +13,6 @@ MCP開発元によるベストプラクティス等の推奨事項は、利用�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `program-messages.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/program-messages.md` |
-
 ## 典拠
 
 本書は、2026年10月2日時点で取得した以下の公式一次資料に基づいている。

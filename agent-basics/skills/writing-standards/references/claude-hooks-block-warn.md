@@ -7,20 +7,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-messages-format.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-messages-format.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-stop.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-principles-qcd.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-qcd.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-stop-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-common.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-stop-delegates.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-stop-delegates.md` |
-
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 遮断・警告フックの成立条件に関する判断・作業の前 | `claude-hooks-block-warn-eligibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-eligibility.md` |
-| 遮断と警告の選択・迂回手段に関する判断・作業の前 | `claude-hooks-block-warn-behavior.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-behavior.md` |
-| 発火対象のエージェントの限定・設計の型に関する判断・作業の前 | `claude-hooks-block-warn-design.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-design.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 遮断・警告フックの成立条件に関する判断・作業の前 | `claude-hooks-block-warn-eligibility.md` |
+| 遮断と警告の選択・迂回手段に関する判断・作業の前 | `claude-hooks-block-warn-behavior.md` |
+| 発火対象のエージェントの限定・設計の型に関する判断・作業の前 | `claude-hooks-block-warn-design.md` |

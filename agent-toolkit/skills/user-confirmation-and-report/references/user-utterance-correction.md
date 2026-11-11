@@ -4,16 +4,16 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/analysis-operations.md` |
-| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 本文の参照基準を適用する前 | `agent-toolkit:/share/verification-operations.md` | 判断 | `read:agent-toolkit:*/share/verification-operations.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文の参照基準を適用する前 | `../../report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 本文の参照基準を適用する前 | `../../report-completion/references/termination-evidence.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/termination-evidence.md` |
-| 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 本文の参照基準を適用する前 | `agent-toolkit:/share/verification-operations.md` |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
+| 本文の参照基準を適用する前 | `../../report-completion/SKILL.md` |
+| 本文の参照基準を適用する前 | `../../report-completion/references/termination-evidence.md` |
+| 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` |
+| 本資料の基準で判断する前 | `../SKILL.md` |
 
 ## 割り込み・訂正・中止
 
@@ -62,7 +62,7 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| ユーザー発話の解釈と取り込み：原文の保持と取り込みの基準を適用する前 | `user-utterance-incorporation.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-utterance-incorporation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` |
+| ユーザー発話の解釈と取り込み：原文の保持と取り込みの基準を適用する前 | `user-utterance-incorporation.md` |

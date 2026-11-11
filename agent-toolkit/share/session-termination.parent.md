@@ -11,16 +11,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 公開工程の`cwd`にする主作業ツリーを確定する前 | `../skills/process-wi/references/lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/finish-session-recovery.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-handoff.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:commit/references/push-and-ci.md` | 判断 | `read:agent-toolkit:*/skills/commit/references/push-and-ci.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/report-completion/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/SKILL.md` |
-| 公開工程を直接実行する前 | `agent-toolkit:/share/session-termination.subagent.md` | 判断 | `read:agent-toolkit:*/share/session-termination.subagent.md` |
-| 直接実行中に全体検証またはCIが失敗したとき | `../skills/process-wi/references/termination-ci-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/termination-ci-failure.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` |
+| 公開工程の`cwd`にする主作業ツリーを確定する前 | `../skills/process-wi/references/lanes.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/finish-session-recovery.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/report-completion/SKILL.md` |
+| 公開工程を直接実行する前 | `agent-toolkit:/share/session-termination.subagent.md` |
+| 直接実行中に全体検証またはCIが失敗したとき | `../skills/process-wi/references/termination-ci-failure.md` |
 
 ## 起動前の前提
 

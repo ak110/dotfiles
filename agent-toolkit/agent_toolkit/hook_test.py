@@ -378,7 +378,7 @@ class TestEntrypointExceptionStages:
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert auto_message_opening_attributes(context) == {"source": "hook", "kind": "warn"}
-        assert "[pretooluse] 想定外エラー: RuntimeError: boom" in context
+        assert "agent-toolkitの自動処理pretooluseで想定外のエラーが起きた: RuntimeError: boom" in context
         assert not result.stderr
 
     def test_session_end_cleanup_exception_returns_0_without_json(

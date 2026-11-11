@@ -24,11 +24,9 @@ rebase進行中の競合を受け取った場合は、次の手順で対処す�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md` |
-| 統合の返却で警告の判定と根拠を受け取る時 | `../../../share/lane-integration-subagent-operation.md` | 判断 | `read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:process-wi/references/lane-integration-failure.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-integration-failure.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-parent-correction.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` | 判断 | `read:agent-toolkit:*/share/exec.parent.md`、`read:agent-toolkit:*/share/exec-parent-integration.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 統合の返却で警告の判定と根拠を受け取る時 | `../../../share/lane-integration-subagent-operation.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-parent-correction.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` |

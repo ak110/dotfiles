@@ -31,13 +31,15 @@ import types
 lazy import datetime
 
 from agent_toolkit._common import inherited_venv
+lazy from agent_toolkit._common import delegated_session as _delegated_session
+lazy from agent_toolkit._common import message_format as _common_message_format
 lazy from agent_toolkit._common import session_launchers as _session_launchers
 lazy from agent_toolkit._common.plugin_roots import plugin_resolution_scope
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import notice as _notice
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks import timing
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._hooks.pretooluse.warning_context import CODEX_CONTEXT_BYTES, bounded_codex_context
 
@@ -158,7 +160,8 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
         specific = result.setdefault("hookSpecificOutput", {})
         specific["hookEventName"] = events[subcommand]
         warning = _notice_formatter("hook")(
-            f"[{subcommand}] 想定外エラー: {type(error).__name__}: {error}",
+            f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: {type(error).__name__}: {error}。"
+            "元の操作の成否はツール結果で確認せよ。",
             tag="warn",
             removable_cause=False,
             fix="再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
@@ -201,13 +204,42 @@ def _bound_pretooluse_context(response: dict, payload: object, subcommand: str) 
     return True
 
 
+# エージェント宛ての通知をユーザーの画面にも写すイベント。SessionStartなどの情報の配送と、ホストが画面へ出すStop系は含めない。
+_USER_COPY_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "user_prompt_submit"})
+
+
+def _add_user_copy(
+    response: dict, payload: object, subcommand: str, generated: list[_common_message_format.GeneratedMessage]
+) -> bool:
+    """Claude Codeの最上位メインの応答へ、エージェント宛ての通知の写しを`systemMessage`として加える。
+
+    PreToolUseの警告とUserPromptSubmitの通知は画面に出ず、拒否の理由も先頭の1行しか出ないため、
+    ユーザーはエージェントが何を指摘されたかを読めない。エージェント宛ての欄の内容と配送は変えない。
+    サブエージェント内の呼出しと`agents_server`の委譲先はユーザーの画面を持たず、他ホストは対象外とする。
+    """
+    if subcommand not in _USER_COPY_SUBCOMMANDS or not isinstance(payload, dict):
+        return False
+    if is_codex_payload(payload) or is_antigravity_payload(payload) or payload.get("agent_id"):
+        return False
+    if _delegated_session.is_delegated(os.environ):
+        return False
+    copy = _notice.user_copy(response, generated)
+    if not copy:
+        return False
+    existing = response.get("systemMessage")
+    response["systemMessage"] = "\n\n".join(filter(None, (existing if isinstance(existing, str) else "", copy)))
+    return True
+
+
 def _invoke_module(module: types.ModuleType, payload_text: str, payload: object, argv: list[str]) -> int:
     """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。"""
     started = time.monotonic()
     output = io.StringIO()
     error = None
     result = 0
-    with _notice.defer_delivery(), contextlib.redirect_stdout(output):
+    _notice.reset_informational()
+    # 写しは応答へ現れた通知を生成時の記録から選ぶ（`notice.user_copy`）。
+    with _common_message_format.record_generated() as generated, _notice.defer_delivery(), contextlib.redirect_stdout(output):
         try:
             if argv[0] == "antigravity":
                 if len(argv) != 2:
@@ -224,10 +256,19 @@ def _invoke_module(module: types.ModuleType, payload_text: str, payload: object,
         if isinstance(parsed, dict):
             response = parsed
     if error is not None:
-        response = _failure_response(argv[0], error, response or {})
+        with _common_message_format.record_generated() as failure_notices:
+            response = _failure_response(argv[0], error, response or {})
+        generated.extend(failure_notices)
         raw = json.dumps(response, ensure_ascii=False) if response else ""
     if response is not None and _bound_pretooluse_context(response, payload, argv[0]):
         raw = (json.dumps(response, ensure_ascii=False) + ("\n" if raw.endswith("\n") else "")) if response else ""
+    copied = False
+    if response is not None:
+        # 写しは画面向けの補助である。組み立ての失敗で、エージェント宛ての通知と拒否の配送を失わない。
+        with contextlib.suppress(Exception):
+            copied = _add_user_copy(response, payload, argv[0], generated)
+    if response is not None and copied:
+        raw = json.dumps(response, ensure_ascii=False) + ("\n" if raw.endswith("\n") else "")
     if raw:
         sys.stdout.write(raw)
         if response is not None:

@@ -4,13 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| `make update`を実行の候補にする前 | 現行`Makefile`の`update` targetと、それが呼び出す子target | 判断 | `section:*/Makefile#make:update` |
-
 ## 自動チェックと依存更新
 
-- `make update`は、読込表にあるターゲットの実際の処理対象に変更対象が含まれている場合のみ実行候補とする。
+- `make update`を実行の候補にする前に、現行の`Makefile`の`update` targetと、それが呼び出す子targetを読み、実際の処理対象を確かめる（所在参照）。
+  その処理対象に変更対象が含まれている場合のみ実行候補とする。
   現在の主な更新対象は`uv.lock`と`agent-toolkit/uv.lock`の依存関係更新である。
   lockファイルの更新後はコンテナーでの依存関係インストールを検証し（`ci-deps-check`）、さらに`prek autoupdate`、`mise lock`、`pinact`で更新する。
   更新後は参照をたどって特定した利用側の試験・lintを実行し、列挙しきれなかった範囲を記録して残りをCIへ委ねる。

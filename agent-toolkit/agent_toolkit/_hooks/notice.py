@@ -5,8 +5,9 @@ lazy import contextlib
 lazy import hashlib
 lazy import inspect
 lazy import json
-lazy from collections.abc import Callable, Generator
+lazy from collections.abc import Callable, Generator, Sequence
 
+lazy from agent_toolkit._common import message_format as _common_message_format
 lazy from agent_toolkit._common import next_action as _next_action
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import message_format as _message_format
@@ -15,12 +16,51 @@ _WARN_TAG = "warn"
 _warning_context: dict[str, object] = {"session_id": "", "blocks": []}
 _delivery_candidates: list[dict[str, str]] = []
 _output_context = {"deferred": 0}
+# 操作を求めず情報を渡すだけの通知。ユーザーの画面への写しから除く。hookの呼出しごとに入口が消去する。
+_informational: list[str] = []
 
 
 def begin_delivery() -> None:
     """最上位の呼出しで、前回の未採用候補を破棄する。"""
     if not _output_context["deferred"]:
         _delivery_candidates.clear()
+
+
+def reset_informational() -> None:
+    """hookの呼出しの開始時に、前回の呼出しで付けた印を消去する。"""
+    _informational.clear()
+
+
+def informational(text: str) -> str:
+    """操作や是正を求めない通知へ印を付けて返す。印の付いた通知はユーザーの画面へ写さない。
+
+    実行ごとの測定値や、入力ごとに届ける同じ本文は、画面を埋めるだけでユーザーの判断に使えない。
+    """
+    if text:
+        _informational.append(text)
+    return text
+
+
+def user_copy(response: dict, generated: Sequence[_common_message_format.GeneratedMessage]) -> str:
+    """応答がエージェントへ渡す通知のうち、ユーザーの画面へ写す本文を返す。写す通知が無ければ空文字列を返す。
+
+    エージェントが何を指摘されたかをユーザーが読めるよう、包装を外して生成元と種別の見出しに本文の全文を続ける。
+    `generated`は同じhookの呼出しで生成した通知の記録（`message_format.record_generated`）で、
+    応答へ現れた通知を記録から選ぶ。応答の字面から包装を切り出すと、本文が引用した開始・終了タグを
+    配送境界と取り違え、本文の欠落や後続の通知の吸収、引用の生成元の取り違えが起きるためである。
+    別の通知の本文に引用として含まれる通知、包装を持たない本文（複数の警告を束ねる件数の見出しなど）、
+    印の付いた通知は写さない。
+    """
+    text = output_text(response)
+    present = [item for item in dict.fromkeys(generated) if item.text in text]
+    outer = [
+        item
+        for item in present
+        if item.text not in _informational and not any(other is not item and item.text in other.text for other in present)
+    ]
+    outer.sort(key=lambda item: text.find(item.text))
+    copies = [f"agent-toolkitのhookがエージェントへ通知した内容（{item.source}・{item.kind}）:\n{item.body}" for item in outer]
+    return "\n\n".join(dict.fromkeys(copies))
 
 
 def stage_delivery(text: str, session_id: str, field: str, key: str, value: str) -> None:

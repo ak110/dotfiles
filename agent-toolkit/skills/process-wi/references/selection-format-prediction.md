@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 初期配分の見込みと実装中の編集範囲を区別する時 | `../../../share/exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 初期配分の見込みと実装中の編集範囲を区別する時 | `../../../share/exec-subagent-implementation.md` |
 
 ## 見込みの補正の算出
 

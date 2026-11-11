@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-common.md` |
-| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks.md` |
-| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-run-skill.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` |
+| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
+| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` |
 
 ## Function hooksの終了要求
 
@@ -47,8 +47,8 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 定期再確認の通常回収の判定に関する判断・作業の前 | `session-state-and-flags-function-hooks-recheck.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-function-hooks-recheck.md` |
-| 利用上限による中断の再開予約に関する判断・作業の前 | `session-state-and-flags-function-hooks-limits.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-function-hooks-limits.md` |
-| 待機時圧縮の判定記録に関する判断・作業の前 | `session-state-and-flags-function-hooks-compaction.md` | 判断 | `read:*/.claude/skills/agent-toolkit-edit/references/session-state-and-flags-function-hooks-compaction.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 定期再確認の通常回収の判定に関する判断・作業の前 | `session-state-and-flags-function-hooks-recheck.md` |
+| 利用上限による中断の再開予約に関する判断・作業の前 | `session-state-and-flags-function-hooks-limits.md` |
+| 待機時圧縮の判定記録に関する判断・作業の前 | `session-state-and-flags-function-hooks-compaction.md` |

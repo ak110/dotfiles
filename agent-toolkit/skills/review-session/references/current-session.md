@@ -16,28 +16,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-quality.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-retrospective.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-retrospective.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `session-records-conversation.md` |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 工程1のprepareが失敗した時 | `analysis-failure.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-failure.md` | |
-| 準備済みの対象を分析する前（工程2〜5） | `session-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-analysis.md` | |
-| 効果候補を判定し保存する前 | `analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` | |
-| 事実関係の調査を分担させる前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
-| コスト削減案と所要時間超過への処置を確定する前 | `duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 工程1のprepareが失敗した時 | `analysis-failure.md` |
+| 準備済みの対象を分析する前（工程2〜5） | `session-analysis.md` |
+| 効果候補を判定し保存する前 | `analysis-actions.md` |
+| 事実関係の調査を分担させる前 | `agent-toolkit:delegation/references/investigation-delegation.md` |
+| コスト削減案と所要時間超過への処置を確定する前 | `duration-analysis.md` |
 
 ## 起動するエージェント
 
@@ -156,6 +149,6 @@ AWIを1件以上投入した場合は「AWI投入結果報告のフォーマッ�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |

@@ -22,7 +22,6 @@ Gitの祖先関係や差分の見た目だけで同一とみなすことは避�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 指摘が成立するかを判定する時 | `reviewer.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewer.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `reviewee.md` | 判断 | `read:agent-basics:*/skills/review-standards/references/reviewee.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 指摘が成立するかを判定する時 | `reviewer.md` |

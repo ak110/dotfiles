@@ -7,12 +7,6 @@ hookの実装は各ホストの公式仕様に適合させ、Claude Code固有�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/host-official-references.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/host-official-references.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `claude-hooks-block-warn-eligibility.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-block-warn-eligibility.md` |
-
 ## hookスクリプトの基本プロトコル
 
 公式の一次資料は、Claude Code向けが<https://code.claude.com/docs/ja/hooks.md>、Codex向けが<https://learn.chatgpt.com/docs/hooks>である。
@@ -61,7 +55,7 @@ Claude Code向け資料の取得方法は`host-official-references.md`「公式�
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| matcher設定に関する判断・作業の前 | `claude-hooks-matcher.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-matcher.md` |
-| Codexの編集ツール入力に関する判断・作業の前 | `claude-hooks-codex-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/claude-hooks-codex-editing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| matcher設定に関する判断・作業の前 | `claude-hooks-matcher.md` |
+| Codexの編集ツール入力に関する判断・作業の前 | `claude-hooks-codex-editing.md` |

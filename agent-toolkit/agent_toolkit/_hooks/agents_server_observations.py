@@ -530,9 +530,10 @@ def observe_tool(
             return []
         return [
             ObservationWarning(
-                f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正である。"
-                "このセッションは別名索引へ記録されていない。",
-                "`show`で同じセッションを再取得せよ。欠落が続く場合は`agents_server`の不具合としてユーザーへ報告せよ。",
+                f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正であり、"
+                "待機対象を識別するための記録を更新できなかった。",
+                "`list`の結果にある対象の`session_id`を指定して`show`で照会せよ。"
+                "`session_id`が無い場合と欠落が続く場合は、この診断を`agents_server`の不具合として委譲元かユーザーへ報告せよ。",
             )
         ]
 

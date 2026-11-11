@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-content.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-content.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-
 ## 終了
 
 AWIを終了する主体は、`adopt`のメモの冒頭に、`awi-body-content.md`「節の構成と分担」のH1直下に記載された変更要求を実施した結果として、具体的に何をどのように変更したかを1文で簡潔に記述する。
@@ -45,6 +39,6 @@ AWIを終了する主体は、`adopt`のメモの冒頭に、`awi-body-content.m
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 状態と依存：依存と冷却時間の基準を適用する前 | `states-and-dependencies-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies-dependencies.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 状態と依存：依存と冷却時間の基準を適用する前 | `states-and-dependencies-dependencies.md` |

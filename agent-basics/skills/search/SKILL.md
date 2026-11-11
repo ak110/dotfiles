@@ -18,14 +18,11 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-basics:*/skills/search/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../secret-files/SKILL.md` | 判断 | `read:agent-basics:*/skills/secret-files/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/writing-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/agent-documents-basics-read-tables.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-read-tables.md` |
-| 判断対象と検索の母集団を決める時 | `../writing-standards/references/quality-principles-facts.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/quality-principles-facts.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 判断対象と検索の母集団を決める時 | `../writing-standards/references/quality-principles-facts.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/investigation-sources.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../writing-standards/references/agent-documents-basics-read-tables.md` |
 
 ## 手段の選定
 

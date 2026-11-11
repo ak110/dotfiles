@@ -4,11 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:review-standards/SKILL.md` | 判断 | `read:agent-basics:*/skills/review-standards/SKILL.md` |
-| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` |
+| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
 
 ## 権限と成果物の取り決め
 

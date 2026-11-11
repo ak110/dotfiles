@@ -4,28 +4,17 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 観測した不具合・ユーザーの指摘・エラー・hookの誤動作を起点とする調査に入る前 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
-| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity.md`と`agent-basics:bugfix/references/root-cause-scenarios.md`を全文読む | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-scenarios.md` |
-| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/analysis-records.md` |
-| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md` |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/cross-repository-submission.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `origin-and-approval-comments.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/origin-and-approval-comments.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `drafting-completion-decisions.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `awi-body-external.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/awi-body-external.md` |
-| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/writing.md` |
-| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/agent-documents-additions.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 観測した不具合・ユーザーの指摘・エラー・hookの誤動作を起点とする調査に入る前 | `agent-basics:bugfix/SKILL.md` |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む |
+| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
+| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
+| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` |
+| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` |
 
 ## 投入条件の判定
 
@@ -42,7 +31,7 @@
 独立別件の区分、調査の深さ・母集団・終了条件はbugfixの基準にそろえる。
 
 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から反復・頻度・悪化・守られなくなった時期への言及と判断した場合は、原因確定前に読込表の2資料を全文読む。
-`root-cause-severity.md`「前提の再検討」と`root-cause-scenarios.md`「反復した指摘の原因判定」を適用する。
+`root-cause-severity-quality.md`「前提の再検討」と`root-cause-scenarios-recurrence.md`「反復した指摘の原因判定」を適用する。
 結論は個別事象の原因と再発の経過に分け、過去対策の有無、未適用・範囲不足・効果不足・別原因の区分、残る原因条件を`## 原因分析`または`## 調査結果と判断根拠`へ記す。
 
 1. 現行の規範・実装と必要な変更履歴で欠陥と修正方針を判断できる場合は、セッション記録の照会を追加しない。
@@ -78,6 +67,6 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| WIの調査・起草・保存の共通手順：出所と観測の取得の基準を適用する前 | `drafting-workflow-evidence.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-evidence.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| WIの調査・起草・保存の共通手順：出所と観測の取得の基準を適用する前 | `drafting-workflow-evidence.md` |

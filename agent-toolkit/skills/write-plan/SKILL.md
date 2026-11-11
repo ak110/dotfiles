@@ -23,41 +23,27 @@ description: >
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/workflow-phases.md` | 判断 | `read:agent-toolkit:*/share/workflow-phases.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `references/quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/grilling.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/grilling.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../process-wi/references/lane-planning.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lane-planning.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-actions.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-actions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../share/exec-subagent-implementation.md` | 判断 | `read:agent-toolkit:*/share/exec-subagent-implementation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/codex-runtime.md` | |
-| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-requirements.md`、`references/plan-file-standards-design.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-structure.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-scope.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-requirements.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md`、`read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-template.md` | |
-| 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/design-heuristics-screening.md` | |
-| 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-hypotheses.md` | |
-| 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing-selection.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/testing-selection.md` | |
-| WIの原因分析を補うか計画ファイル（バグ）を書く前 | `references/plan-file-standards-verification.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-verification.md` | |
-| 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards-progress.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-progress.md` | |
+| Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | | | |
+| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-requirements.md`、`references/plan-file-standards-design.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md` | | | |
+| 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | | | |
+| 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | | | |
+| 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | | |
+| WIの原因分析を補うか計画ファイル（バグ）を書く前 | `references/plan-file-standards-verification.md` | | | |
+| 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards-progress.md` | | | |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |
-| 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-restoration-contracts.md` | |
-| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`../../share/exec-review.parent.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/main-launch.md`、`read:agent-toolkit:*/share/exec-review.parent.md` | |
-| 計画構造を検証する前 | `references/plan-structure-check.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-structure-check.md` | |
-| `検証結果`を記録する前 | `../../share/verification-evidence-records.md` | 判断 | `read:agent-toolkit:*/share/verification-evidence-records.md` | |
-| 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/legacy-plan-file-standards.md` | |
+| 保持、不変性、完全復元のいずれかを計画の契約か確認の選択肢へ書く前と、過去の契約へ戻す変更か過去の契約を撤去する変更を計画する前 | `references/plan-restoration-contracts.md` | | | |
+| `起動経路`がメインによる起動で、計画構造の検証を終えて実装へ進む前（メインが自ら実装に着手する直前） | `references/main-launch.md`、`../../share/exec-review.parent.md` | | | |
+| 計画構造を検証する前 | `references/plan-structure-check.md` | | | |
+| `検証結果`を記録する前 | `../../share/verification-evidence-records.md` | | | |
+| 旧単一ファイル形式または旧二ファイル形式の計画を読む前と、計画書式の読み取り互換の実装・自動チェックを変更する前 | `references/legacy-plan-file-standards.md` | | | |
 
 ## 確認と起動経路
 

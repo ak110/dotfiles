@@ -575,7 +575,9 @@ def _compaction_notice(
             try:
                 output.unlink(missing_ok=True)
             except OSError:
-                lines.append("前回の抽出ファイルを削除できないため、そのファイルは使用するな。手動で原文を再取得せよ。")
+                lines.append(
+                    f"前回の抽出ファイル`{output}`を削除できないため、そのファイルは使用するな。次のコマンドで原文を再取得せよ。"
+                )
         lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行せよ。")
     return "\n".join(lines)
 

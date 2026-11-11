@@ -4,18 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md` | |
-| 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md` | |
-| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md`、`read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/states-and-dependencies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/states-and-dependencies.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-parent-existing-defects.md` | 判断 | `read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:writing-standards/references/investigation-sources.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-sources.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` |
+| 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` |
+| 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` |
 
 ## 起動前の前提
 
@@ -40,7 +33,7 @@
    原因を観測で確認していない要求については、「渡す入力」の原因未確認の要求に関する規定に従い、観測事象・期待する契約・確定すべき問いを渡す。
    担当者の調査によって投入先の外部に原因を共有する対象が見つかった場合は、`add-wi-parent-acceptance.md`「続行できない理由の扱い」の投入先の外の対象として処理する。
    ユーザーが明示した対象集合はそのまま保持する。
-   集合を名指しの例だけに絞り込む案については、`agent-toolkit:user-confirmation-and-report`の`SKILL.md`「原文からの具体化を要する軸」に沿って確認する。
+   集合を名指しの例だけに絞り込む案については、`agent-toolkit:user-confirmation-and-report`の`references/user-confirmation-and-report-authorization.md`「原文からの具体化を要する軸」に沿って確認する。
    実行レビューの差分外にある既存不良を専念型へ渡す場合（`exec-review-parent-existing-defects.md`「返却に含まれる既存不良の受領」）は、委譲元は前述した投入先確定のための観測も行わない。
    投入先は不良の対象ファイルを管理しているリポジトリとし、投入先のリポジトリを越える対象については、`add-wi-parent-acceptance.md`「続行できない理由の扱い」の投入先の外の対象として担当者からの返却を受けて処理する。
    原因調査に必須であり、ユーザーだけが提供できる資料や実例があるときは、同スキルの`references/pending-decisions.md`「未確定判断の保留と暫定判断」に従い、担当者からの返却を待たずに資料の提供を依頼し、該当する要求を保留にする。
@@ -129,8 +122,8 @@
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 未確定判断の保留と回答の受領の基準を適用する前 | `../skills/user-confirmation-and-report/references/pending-decisions.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/pending-decisions.md` |
-| WI投入担当の起動と受領：受領と検収の基準を適用する前 | `add-wi-parent-acceptance.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-acceptance.md` |
-| WI投入担当の起動と受領：起動方法の基準を適用する前 | `add-wi-parent-launch.md` | 判断 | `read:agent-toolkit:*/share/add-wi-parent-launch.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 未確定判断の保留と回答の受領の基準を適用する前 | `../skills/user-confirmation-and-report/references/pending-decisions.md` |
+| WI投入担当の起動と受領：受領と検収の基準を適用する前 | `add-wi-parent-acceptance.md` |
+| WI投入担当の起動と受領：起動方法の基準を適用する前 | `add-wi-parent-launch.md` |

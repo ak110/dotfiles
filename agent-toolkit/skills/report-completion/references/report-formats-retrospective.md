@@ -4,18 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/add-awi-by-user/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/review-session/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis-inputs.md`、`../../review-session/references/analysis-triage.md`、`../../review-session/references/analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-inputs.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` |
-| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
+| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../review-session/references/analysis-inputs.md`、`../../review-session/references/analysis-triage.md`、`../../review-session/references/analysis-actions.md` |
 
 ## 振り返り結果報告のフォーマット
 

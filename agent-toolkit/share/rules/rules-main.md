@@ -92,15 +92,15 @@
 
 ## 参照資料の取得
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 改善点を発見し、処置・AWI化・報告を行う前 | `../main-improvements.md` | 判断 | `read:agent-toolkit:*/share/main-improvements.md` |
-| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards-design.md` | 判断 | `read:agent-toolkit:*/skills/write-plan/references/plan-file-standards-design.md` |
-| process-wi中に`気付いた改善点:`の処置とAWI化ステータスを決める前、方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 改善点を発見し、処置・AWI化・報告を行う前 | `../main-improvements.md` |
+| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards-design.md` |
+| process-wi中に`気付いた改善点:`の処置とAWI化ステータスを決める前、方針の反映を追加AWIへ渡す時と、ユーザーが「即時対応」を指示した時 | `../../skills/process-wi/references/immediate-fix.md` |
+| 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` |
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| ドキュメント品質：文章の共通規定の基準を適用する前 | `agent-basics:writing-standards/references/writing-common.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/writing-common.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ドキュメント品質：文章の共通規定の基準を適用する前 | `agent-basics:writing-standards/references/writing-common.md` |

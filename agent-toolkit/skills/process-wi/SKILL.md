@@ -35,15 +35,15 @@ all-reposでは統括の巡回開始時刻を各リポジトリの担当へ引�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 30分点検を行う時と公開工程を始める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
-| ユーザーが時機の指示として「即時対応」や同義の表現を使った時と、即時対応の対象・担当・基点・時機を決める前 | `references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 30分点検を行う時と公開工程を始める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| ユーザーが時機の指示として「即時対応」や同義の表現を使った時と、即時対応の対象・担当・基点・時機を決める前 | `references/immediate-fix.md` |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| 最初の語がsingle-laneと完全一致する時 | `references/single-lane.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/single-lane.md` | |
-| 最初の語がall-reposと完全一致する時 | `references/all-repos.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/all-repos.md` | |
-| 上記の語に一致しない時、または引数なしの時 | `references/lanes.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/lanes.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 最初の語がsingle-laneと完全一致する時 | `references/single-lane.md` |
+| 最初の語がall-reposと完全一致する時 | `references/all-repos.md` |
+| 上記の語に一致しない時、または引数なしの時 | `references/lanes.md` |

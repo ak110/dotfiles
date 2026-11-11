@@ -6,31 +6,24 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `quality-standards.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/quality-standards.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/SKILL.md` | 判断 | `read:agent-basics:*/skills/bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-quality.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-quality.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-retrospective.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-retrospective.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/communication-methods-delivery.md` | 判断 | `read:agent-toolkit:*/skills/user-confirmation-and-report/references/communication-methods-delivery.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-retrospective.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 工程2で`atk run-script session-review-prepare`の出力に含まれる`reference_document`に値が設定されている場合 | `reference_document`が示す対象リポジトリ固有の振り返り参照文書 | 判断 | `tool:Read`、`tool:Bash` | `review-reference` |
-| 工程2で`conversation.md`の全体を通読する前（工程2の判定および工程3の選別の基準として使用する） | `analysis.md`、`analysis-inputs.md`、`analysis-definition-reads.md`、`analysis-triage.md`、`analysis-cost.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-inputs.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-definition-reads.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-triage.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-cost.md` | |
-| 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis-cost.md`、`analysis-actions.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-cost.md`、`read:agent-toolkit:*/skills/review-session/references/analysis-actions.md` | |
-| コスト削減案の採否および所要時間300秒超過時の対応を確定する前 | `duration-analysis.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/duration-analysis.md` | |
-| 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` | |
-| 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-analysis.md` | |
-| 工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `read:agent-toolkit:*/share/add-wi.parent.md` | |
-| batchの保存開始を送る前 | `batch.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/batch.md` | |
-| 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | 判断 | `read:agent-basics:*/skills/writing-standards/references/investigation-experience.md`、`read:agent-basics:*/skills/writing-standards/references/agent-documents-basics-placement.md` | |
+| 工程2で`conversation.md`の全体を通読する前（工程2の判定および工程3の選別の基準として使用する） | `analysis.md`、`analysis-inputs.md`、`analysis-definition-reads.md`、`analysis-triage.md`、`analysis-cost.md` | | | |
+| 工程3および工程4で、問題の原因と対策を導き、既存AWIで対処済みかを確認する前 | `analysis-cost.md`、`analysis-actions.md` | | | |
+| コスト削減案の採否および所要時間300秒超過時の対応を確定する前 | `duration-analysis.md` | | | |
+| 工程3または工程4において、事実関係の調査をサブエージェントへ委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | | | |
+| 工程4で問題ごとに`agent-basics:bugfix`を起動した時点（`analysis-actions.md`「原因と対策」において、ユーザー介入を拡張原因分析の対象として扱うため） | `agent-basics:bugfix/references/root-cause-analysis.md` | | | |
+| 工程5でAWIの登録要求をWI投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | | | |
+| batchの保存開始を送る前 | `batch.md` | | | |
+| 工程4で経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` | | | |
 
 ## 分析と投入
 
@@ -184,7 +177,7 @@ Codexの`functions.exec`による定義本文の読取では、`atk run-script s
 
 ## 工程で参照する運用資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前 | `agent-toolkit:review-session/references/analysis-operations.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/analysis-operations.md` | |
-| セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records.md` | |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前 | `agent-toolkit:review-session/references/analysis-operations.md` |
+| セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` |

@@ -36,7 +36,7 @@ OPERATIONS = frozenset(
         "wi-standard-save",
     }
 )
-PREFIXES = ("skill:", "write:", "path:", "dependency:", "section:", "tool:", "bash:", "role:", "read:")
+PREFIXES = ("skill:", "write:", "path:", "dependency:", "tool:", "bash:", "role:", "read:")
 DYNAMIC_SELECTORS = frozenset(
     {
         "role-contract",
@@ -53,6 +53,8 @@ INPUT_SELECTOR_RESOLUTION_SOURCES = {"input:作業契約": "main-work-contract"}
 _CODE = re.compile(r"`([^`]+)`")
 _REFERENCE = re.compile(r"`([^`]+)`|\[[^\]]+\]\(([^)]+)\)")
 _REFERENCE_METHOD_HEADING = "名指し参照の読込方法"
+# 本文が名指しする資料へ補う宣言の条件。読込表へ書かれていた定型の行と同じ文言を保つ。
+NAMED_REFERENCE_CONDITION = "本文がこの資料の基準を使う場面で、資料を選択して取得する時"
 _RESOLUTION_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.ContextVar(
     "read_trigger_resolution_cache", default=None
 )
@@ -282,6 +284,8 @@ class ReadTrigger:
     plugin_root: pathlib.Path | None = None
     host: str = "claude"
     project: pathlib.Path | str | None = None
+    # 「契機」「配送操作」を省略した行と、本文の名指しへ補った行。配送操作は資料自身の読取として導出する。
+    derived_read: bool = False
 
     @functools.cached_property
     def targets(self) -> tuple[ReadTarget, ...]:
@@ -290,6 +294,34 @@ class ReadTrigger:
             return _row_targets(self.material, self.source, self.line, self.plugin_root, self.host, self.project, self.selector)
         headings = self.headings or ("",) * len(self.documents)
         return tuple(ReadTarget(path, heading) for path, heading in zip(self.documents, headings, strict=True))
+
+    @functools.cached_property
+    def effective_operations(self) -> tuple[str, ...]:
+        """宣言された配送操作か、省略時に資料から導出した読取の配送操作を返す。
+
+        導出は資料の解決を伴うため、解決を遅らせた行では、読取対象と名前が一致して候補に残った行だけで参照する。
+        """
+        if not self.derived_read:
+            return self.operations
+        return tuple(dict.fromkeys(read_operation(target.path) for target in self.targets))
+
+
+def read_operation(path: pathlib.Path) -> str:
+    """資料自身の読取を表す配送操作を返す。
+
+    pluginが所有する資料は`read:<plugin名>:*/<plugin rootからの相対パス>`、プロジェクト・ユーザーのスキルは
+    `read:*/.claude/skills/...`、その他のプロジェクト内の資料は`read:*/<プロジェクトからの相対パス>`とする。
+    読込表へ明示していた宣言と同じ読取に一致する書式を保つ。
+    """
+    path = path.resolve()
+    owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
+    if owner is not None:
+        return f"read:{_plugin_manifest(owner).get('name')}:*/{path.relative_to(owner).as_posix()}"
+    for parent in path.parents:
+        if parent.name == "skills" and parent.parent.name in {".claude", ".codex", ".agents", ".gemini"}:
+            return f"read:*/{path.relative_to(parent.parent.parent).as_posix()}"
+    project = next((parent for parent in path.parents if (parent / "AGENTS.md").is_file() or (parent / ".git").exists()), None)
+    return f"read:*/{path.relative_to(project).as_posix()}" if project is not None else f"read:{path.as_posix()}"
 
 
 def known_operation(operation: str) -> bool:
@@ -643,15 +675,26 @@ def parse_tables(
     host: str = "claude",
     project: pathlib.Path | str | None = None,
     defer_material: bool = False,
+    named: bool = False,
 ) -> list[ReadTrigger]:
-    """資料列を持つ表から宣言を読む。strictでは未分類の表も拒否する。
+    """資料列を持つ表から宣言を読む。「契機」「配送操作」を省略した行は、資料自身の読取を契機とする判断の宣言になる。
 
     要求内（`resolution_scope`）では同じ資料の解析結果を共有する。呼出側が結果を変更しても共有へ及ばないよう複製を返す。
     `defer_material`では資料列の解決を`targets`参照まで遅らせ、`documents`・`headings`は空のまま保持する。
     strict検査はこの指定によらず全資料を解決する。
+    `named`では本文の名指しへ補う宣言（`named_reference_rows`）を末尾へ加える。本文の全行を解決するため、
+    `defer_material`とは併用せず、全文書を毎回読む呼出しでは指定しない。
     """
     return list(
-        _parse_tables(source.resolve(), plugin_root, strict=strict, host=host, project=project, defer_material=defer_material)
+        _parse_tables(
+            source.resolve(),
+            plugin_root,
+            strict=strict,
+            host=host,
+            project=project,
+            defer_material=defer_material,
+            named=named,
+        )
     )
 
 
@@ -664,6 +707,7 @@ def _parse_tables(
     host: str,
     project: pathlib.Path | str | None,
     defer_material: bool,
+    named: bool,
 ) -> tuple[ReadTrigger, ...]:
     text = source.read_text(encoding="utf-8")
     result: list[ReadTrigger] = []
@@ -684,15 +728,15 @@ def _parse_tables(
         if len(cells) != len(headers):
             raise ValueError(f"{source}:{number}: 読込表の列数が一致しない")
         row = dict(zip(headers, cells, strict=True))
-        if "契機" not in row or "配送操作" not in row:
-            if strict:
-                raise ValueError(f"{source}:{number}: 契機と配送操作を宣言する")
-            continue
-        kind = row["契機"].strip("` ")
-        operations = tuple(_CODE.findall(row["配送操作"]))
+        kind = row.get("契機", "").strip("` ")
+        operations = tuple(_CODE.findall(row.get("配送操作", "")))
+        # 両方の省略は、資料を選んで読む判断の宣言として扱う。配送操作は資料自身の読取を導出する。
+        derived = not kind and not row.get("配送操作", "").strip()
+        if derived:
+            kind = "判断"
         if kind not in KINDS:
             raise ValueError(f"{source}:{number}: 不明な契機: {kind}")
-        if kind in {"操作", "判断"} and not operations:
+        if not derived and kind in {"操作", "判断"} and not operations:
             raise ValueError(f"{source}:{number}: 配送操作が無い")
         if any(not known_operation(value) for value in operations):
             raise ValueError(f"{source}:{number}: 未登録の配送操作: {operations}")
@@ -721,6 +765,8 @@ def _parse_tables(
                 # Skillの実在は転送前に確かめ、全文資料の欠落・循環は共通解決で拒否する。
                 resolve_read_source(selected, plugin_root, host, project=project)
         selector = row.get("資料選択子", "").strip("` ")
+        if derived and selector:
+            raise ValueError(f"{source}:{number}: 資料選択子を持つ行は契機と配送操作を宣言する")
         is_role_document = source.name.endswith(".subagent.md")
         if (
             selector
@@ -749,23 +795,6 @@ def _parse_tables(
                         "読込条件別にファイルを分割し、資料列をファイル全体、配送操作を`read:`に変更せよ。"
                     )
                 target.body()
-            for operation in operations:
-                if not operation.startswith("section:"):
-                    continue
-                value = operation.removeprefix("section:").partition("#")[0]
-                plugin, separator, relative = value.partition(":*/")
-                if separator:
-                    value = f"{plugin}:/{relative}"
-                elif value.startswith(("*/skills/", "*/share/", "*/rules/")):
-                    value = str(plugin_root / value[2:])
-                elif value.startswith("*/"):
-                    value = str(pathlib.Path(project) / value[2:]) if project else str(plugin_root.parent / value[2:])
-                path = resolve_document(value, source, plugin_root, host, project=project)
-                if path is not None and is_normative_document(path):
-                    raise ValueError(
-                        f"{source}:{number}: エージェント向け文書への`section:`は使えない: {operation}。"
-                        "読込条件別にファイルを分割し、配送操作を`read:`に変更せよ。"
-                    )
         result.append(
             ReadTrigger(
                 source,
@@ -776,12 +805,16 @@ def _parse_tables(
                 tuple(target.heading for target in targets),
                 selector,
                 row.get("時点または条件", row.get("条件", "")),
-                material if deferred else "",
+                # 導出行は配送操作を持たないため、同じ宣言元の行を資料列で区別できるよう保持する。
+                material if deferred or derived else "",
                 plugin_root if deferred else None,
                 host if deferred else "claude",
                 project if deferred else None,
+                derived,
             )
         )
+    if named and not defer_material:
+        result.extend(named_reference_rows(source, plugin_root, result, host=host, project=project))
     return tuple(dict.fromkeys(result))
 
 
@@ -962,39 +995,77 @@ def _is_rule_document(path: pathlib.Path, plugin_root: pathlib.Path) -> bool:
     return path.resolve().is_relative_to(plugin_root.resolve() / "share" / "rules")
 
 
-def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, rows: list[ReadTrigger]) -> None:
-    """他資料を使わせる参照に、同じ文書の到達経路があることを確かめる。
-
-    定義の所在を示すだけの行には「所在参照」を明記する。常時配送のrules文書は配送元が別に保証する。
-    """
-    if resolve_read_source(source, plugin_root) != source.resolve():
-        return
-    routed = {path for row in rows for path in row.documents} | {source.resolve()}
-    methods = reference_method_targets(source, plugin_root)
-    bootstrap = plugin_root / "share/read-trigger-bootstrap.md"
-    if _is_rule_document(source, plugin_root) and bootstrap.is_file():
-        routed.update(path for row in parse_tables(bootstrap, plugin_root, strict=True) for path in row.documents)
+def _named_references(
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    host: str = "claude",
+    *,
+    project: pathlib.Path | str | None = None,
+) -> Iterator[tuple[int, ReadTarget]]:
+    """本文（表・フェンス・所在参照の行を除く）が名指しする他資料を、行番号とともに返す。"""
     context = ""
     for number, line, visible in document_lines(source.read_text(encoding="utf-8")):
         if not visible or line.startswith("|") or "所在参照" in line:
             continue
-        targets = material_targets(line, source, plugin_root, references_only=True, context=context)
+        targets = material_targets(line, source, plugin_root, host, references_only=True, context=context, project=project)
         context = reference_context(line, source, plugin_root) or context
         for target in targets:
-            path = target.path
-            if not path.is_file():
-                raise ValueError(
-                    f"{source}:{number}: 参照先が存在しない: {path}。"
-                    "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"
-                )
-            if _is_rule_document(path, plugin_root):
-                continue
-            method_route = any(method.path == path for method in methods)
-            if path not in routed and not method_route:
-                raise ValueError(
-                    f"{source}:{number}: 参照先へ届く経路が無い: {path}。"
-                    "この文書の読込表に参照先を指定し、読む時点・条件を記載してください。"
-                )
+            yield number, target
+
+
+@plugin_resolution_scope()
+def named_reference_rows(
+    source: pathlib.Path,
+    plugin_root: pathlib.Path,
+    rows: list[ReadTrigger] | None = None,
+    *,
+    host: str = "claude",
+    project: pathlib.Path | str | None = None,
+) -> list[ReadTrigger]:
+    """本文が名指しし、読込表に明示の行が無い資料へ補う宣言を返す。
+
+    読込表へ本文の名指しを写していた定型の行の代わりである。条件は`NAMED_REFERENCE_CONDITION`、契機は`判断`、
+    配送操作はその資料自身の読取とする。別の経路で届く資料（`share/rules/`配下の規範、「名指し参照の読込方法」の定義元、
+    宣言元自身）と、同じ文書に明示の行がある資料、実在しない参照には補わない。
+    読込元が別の文書へ解決される転送文書と、hookと同期処理が配送する`share/rules/`配下の規範は宣言元にしない。
+    """
+    source = source.resolve()
+    if not source.is_file() or _is_rule_document(source, plugin_root):
+        return []
+    if resolve_read_source(source, plugin_root, host, project=project) != source:
+        return []
+    if rows is None:
+        rows = parse_tables(source, plugin_root, host=host, project=project)
+    routed = {target.path for row in rows for target in row.targets} | {source}
+    routed.update(method.path for method in reference_method_targets(source, plugin_root, host, project=project))
+    result: list[ReadTrigger] = []
+    for number, target in _named_references(source, plugin_root, host, project=project):
+        path = target.path
+        if path in routed or not path.is_file() or _is_rule_document(path, plugin_root):
+            continue
+        routed.add(path)
+        material = f"`{path}`"
+        result.append(
+            ReadTrigger(source, number, "判断", (), (path,), ("",), "", NAMED_REFERENCE_CONDITION, material, derived_read=True)
+        )
+    return result
+
+
+def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, rows: list[ReadTrigger]) -> None:
+    """本文が名指しする他資料が実在することを確かめる。
+
+    読む経路は、読込表の明示の行か、`named_reference_rows`が補う宣言で成立する。
+    定義の所在を示すだけの行には「所在参照」を明記する。
+    """
+    del rows  # 経路は補完で成立するため、明示の行とは比べない。
+    if resolve_read_source(source, plugin_root) != source.resolve():
+        return
+    for number, target in _named_references(source, plugin_root):
+        if not target.path.is_file():
+            raise ValueError(
+                f"{source}:{number}: 参照先が存在しない: {target.path}。"
+                "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"
+            )
 
 
 def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: pathlib.Path | None = None) -> list[pathlib.Path]:

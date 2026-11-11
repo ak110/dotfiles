@@ -4,13 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `runtime-routing.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `routing-fork.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/base-contract-operations.md` |
-| `Agent`ツールで起動した担当を継続する前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
-| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/agent-tool-continuation.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
+| `Agent`ツールで起動した担当を継続する前 | `continuation.md` |
+| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` |
 
 ## 起動パラメーター
 
@@ -54,7 +52,7 @@ fork modeは対話型セッションではデフォルトで有効であるが�
 
 ## 本文参照の取得条件
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| 委譲の基準を適用する前 | `../SKILL.md` | 判断 | `read:agent-toolkit:*/skills/delegation/SKILL.md` |
-| 委譲：送信の基準を適用する前 | `delegation-sending.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/delegation-sending.md` |
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 委譲の基準を適用する前 | `../SKILL.md` |
+| 委譲：送信の基準を適用する前 | `delegation-sending.md` |
