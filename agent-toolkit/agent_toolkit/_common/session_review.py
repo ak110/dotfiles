@@ -196,11 +196,16 @@ class TargetGeneration:
         self.pending = PendingGeneration.model_validate(value)
         write(self.pending_path, self.pending.model_dump(mode="json", exclude_unset=True))
 
-    def fail(self, generation: str, failure_key: str, *, reported: bool) -> None:
+    def fail(self, generation: str, failure_key: str, *, reported: bool, version: str | None = None) -> None:
         """遅れた失敗結果で後続の入力世代を変更しない。"""
         if self.pending is not None and self.pending.generation == generation:
             self.register(
-                {**self.pending.model_dump(exclude_unset=True), "failure_key": failure_key, "failure_unreported": not reported}
+                {
+                    **self.pending.model_dump(exclude_unset=True),
+                    "failure_key": failure_key,
+                    "failure_unreported": not reported,
+                    "failure_version": version,
+                }
             )
 
     def discard(self, generation: str) -> bool:
@@ -250,10 +255,22 @@ class BatchWriter:
             raise ValueError("確定済みbatchは更新できない")
         return batch.model_dump(exclude_unset=True)
 
-    def fail(self, failure_key: str, reason: str) -> dict[str, Any]:
+    def fail(
+        self, failure_key: str, reason: str, *, version: str | None = None, exit_code: int | None = None
+    ) -> dict[str, Any]:
         """失敗報告を所有する未確定のbatchへ移す。"""
         with locked():
-            return self._save({**self._active(), "status": BatchStatus.FAILED, "failure_key": failure_key, "error": reason})
+            value = self._active()
+            return self._save(
+                {
+                    **value,
+                    "status": BatchStatus.FAILED,
+                    "failure_key": failure_key,
+                    "error": reason,
+                    "failure_version": version,
+                    "exit_code": exit_code if exit_code is not None else value.get("exit_code"),
+                }
+            )
 
     def report_failure(self, *, synced: bool) -> dict[str, Any]:
         """失敗報告の同期結果を対象の入力世代へ反映する。"""
@@ -264,7 +281,7 @@ class BatchWriter:
             value = self._save({**value, "report_synced": synced})
             for target in value["targets"]:
                 TargetGeneration(target["host"], target["session_id"]).fail(
-                    target["generation"], value["failure_key"], reported=synced
+                    target["generation"], value["failure_key"], reported=synced, version=value.get("failure_version")
                 )
             return value
 
@@ -374,6 +391,34 @@ def discard_pending(target: Mapping[str, Any]) -> bool:
     """記録ファイルが作られなかった会話など、振り返る内容の無い待ちを同じ世代に限って除去する。"""
     with locked():
         return TargetGeneration(target["host"], target["session_id"]).discard(target["generation"])
+
+
+def failure_version(target: Mapping[str, Any], current: str) -> str:
+    """版の無い旧失敗は最初に照会した版で固定し、後続の登録世代は変更しない。"""
+    with locked():
+        state = TargetGeneration(target["host"], target["session_id"])
+        if state.pending is not None and state.pending.generation == target["generation"]:
+            value = state.pending.model_dump(exclude_unset=True)
+            if not value.get("failure_version"):
+                state.register({**value, "failure_version": current})
+            return value.get("failure_version") or current
+        return target.get("failure_version") or current
+
+
+def failure_reported(failure_key: str, *, reported: bool | None = None) -> bool:
+    """キューの削除と独立した起票済み記録を交換する。終了AWIの観測時だけ解除する。"""
+    name = hashlib.sha256(failure_key.encode()).hexdigest()
+    with locked():
+        path = directory() / "failures" / f"{name}.json"
+        if reported is True:
+            write(path, {"failure_key": failure_key, "reported_at": timestamp()})
+        elif reported is False:
+            path.unlink(missing_ok=True)
+        if not path.exists():
+            return False
+        if read(path).get("failure_key") != failure_key:
+            raise ValueError("起票済み失敗の識別子が一致しない")
+        return True
 
 
 def pending() -> list[dict[str, Any]]:

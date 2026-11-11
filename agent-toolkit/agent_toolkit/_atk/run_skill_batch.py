@@ -24,12 +24,14 @@ from typing import Any
 import filelock
 import psutil
 
-from agent_toolkit._atk import config, orchestrator, outcome, run_script
+from agent_toolkit._atk import config, orchestrator, outcome, run_script, run_skill_batch_evidence
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync
 from agent_toolkit._atk.wi.constants import (
+    WI_STATE_ADOPTED,
     WI_STATE_HOLD,
     WI_STATE_INBOX,
     WI_STATE_PROCESSING,
+    WI_STATE_REJECTED,
     WI_TYPE_AWI,
 )
 from agent_toolkit._atk.wi.web_input import WebInputError
@@ -142,8 +144,8 @@ _ACTIVE_FAILURE_STATES = frozenset({WI_STATE_INBOX, WI_STATE_PROCESSING, WI_STAT
 """失敗報告AWIが未完了で、同じ原因の対象の自動再試行を止める状態。"""
 
 
-def _active_failure(failure_key: str) -> tuple[pathlib.Path, dict[str, Any]] | None:
-    """同じ原因の未完了の失敗報告AWIを返す。"""
+def _failure_entry(failure_key: str, states: frozenset[str]) -> tuple[pathlib.Path, dict[str, Any]] | None:
+    """同じ原因の失敗報告AWIを指定状態から返す。"""
     root = private_notes.default_private_notes()
     for path in layout.iter_entry_paths(root):
         if path.is_file():
@@ -153,7 +155,7 @@ def _active_failure(failure_key: str) -> tuple[pathlib.Path, dict[str, Any]] | N
                 if (
                     data.get("type") == WI_TYPE_AWI
                     and data.get("session_review_failure_key") == failure_key
-                    and data.get("state") in _ACTIVE_FAILURE_STATES
+                    and data.get("state") in states
                 ):
                     return path, data
     return None
@@ -161,8 +163,16 @@ def _active_failure(failure_key: str) -> tuple[pathlib.Path, dict[str, Any]] | N
 
 def _blocked(target: dict[str, Any]) -> bool:
     key = target.get("failure_key")
-    # 是正を担うAWIの終了（採用・不採用）までは同じ失敗を繰り返さず、終了後の次回起動で再試行する。
-    return isinstance(key, str) and bool(key) and _active_failure(key) is not None
+    if not isinstance(key, str) or not key:
+        return False
+    version = run_skill_batch_evidence.plugin_version(PLUGIN_ROOT)
+    failed_version = session_review.failure_version(target, version)
+    if _failure_entry(key, _ACTIVE_FAILURE_STATES) is not None:
+        return True
+    if _failure_entry(key, frozenset({WI_STATE_ADOPTED, WI_STATE_REJECTED})) is not None:
+        session_review.failure_reported(key, reported=False)
+        return False
+    return failed_version == version
 
 
 def _lacks_record(target: dict[str, Any]) -> bool:
@@ -170,7 +180,16 @@ def _lacks_record(target: dict[str, Any]) -> bool:
     if target["host"] != "claude":
         return False
     path = target.get("transcript_path")
-    return not isinstance(path, str) or not pathlib.Path(path).is_file()
+    if not isinstance(path, str) or not path:
+        return False
+    try:
+        pathlib.Path(path).lstat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        # 読取権限や形式の問題は、不在として待ちを消さずprepareの診断へ渡す。
+        return False
+    return False
 
 
 def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
@@ -187,7 +206,8 @@ def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
             if session_review.discard_pending(target):
                 print(f"記録ファイルの無い対象を振り返りの待ちから外した: {target['session_id']}", file=sys.stderr)
             continue
-        if not manual and (_blocked(target) or target.get("failure_unreported")):
+        blocked = _blocked(target)
+        if not manual and (blocked or target.get("failure_unreported")):
             continue
         selected.append(target)
     return selected if any(not target.get("review_batch") for target in selected) else []
@@ -258,19 +278,22 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
     body = (
         "# 非同期振り返り（review-session batch）の失敗の是正\n\n"
         "非同期振り返りが下記の対象セッションを処理できなかった。"
-        "このAWIが終了するまで、同じ原因で失敗した対象の自動振り返りを止めている。"
-        "原因を是正し、対象の振り返りを再実行できる状態へ戻す。AWIの終了により失敗抑止が解除される。\n\n"
+        "同じ原因の未完了AWIがある間は対象の自動振り返りを止めている。"
+        "AWIがadopted・rejectedで終了した場合、または未完了AWIが無くagent-toolkitの版が変わった場合に再試行する。"
+        "削除だけでは再試行せず、起票済みの同じ失敗は終了AWIを観測するまで再起票しない。\n\n"
         "## 反映内容と反映先\n\n"
         "失敗理由と実行記録から原因を特定し、振り返りの前後処理または準備処理を是正する。"
         f"反映先は`{_plugin_repository()}`とする。"
         "是正にユーザーの判断が要る点があれば、UWIで確認する。\n\n"
         "## 調査結果と判断根拠\n\n"
         "失敗理由は振り返りの起動元が記録した値である。"
-        "実行記録には固定した対象、準備結果、失敗の記録があり、対象のセッション記録の所在は待ち記録にある。\n\n"
+        "下記に入力のメタ情報と診断を埋め込んだ。セッション記録の本文は転記していない。\n\n"
         "## 完成条件\n\n"
-        "失敗理由の原因が是正され、対象セッションで準備から失敗した工程までの成功を確認する。"
+        "埋め込まれた入力と記録状態から合成した再現テストを作り、是正前の失敗と是正後の成功を確認する。"
+        "再現テストで準備から失敗した工程までの成功を確認する。"
         "準備以降に失敗した場合は、子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する。"
-        "是正後は`atk run-skill agent-toolkit:review-session --args batch`で手動実行する。"
+        "起票ホストでの実際の再試行は是正を含む版の配布後に行い、処理担当は観測しなくてよい。"
+        "手動で再試行する場合は`atk run-skill agent-toolkit:review-session --args batch`を使う。"
         "このAWIの終了後、`session_review_auto_start=true`で開始条件を満たす場合に限り、"
         "セッション開始・終了時に自動起動できる。"
         "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する。\n\n"
@@ -279,14 +302,15 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
         f"実行記録: {path}\n"
         f"{log}"
         f"次の操作: {action}"
-        "別ホストの場合は、記録を保持するホストで実行記録と対象セッション記録を取得する。\n"
+        "本文の埋め込み情報で足りない場合に限り、起票ホストで不足する情報を取得する。\n"
         f"対象: {targets}\n"
+        f"\n{run_skill_batch_evidence.failure_details(manifest, PLUGIN_ROOT)}"
     )
     metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n"
     return f"---\n{metadata}---\n\n{body}"
 
 
-def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
+def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_code: int | None = None) -> None:
     signature: list[Any] = [reason.split(":", 1)[0]]
     if signature[0].startswith("run-skill-exit-"):
         # 終了コードだけから別の対象で同じ原因が生じたとは推定しない。
@@ -296,9 +320,11 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
         normalized = re.sub(r"\d{4}-\d\d-\d\dT[0-9:.+-]+Z?", "<timestamp>", normalized)
         signature.append(normalized)
     failure_key = hashlib.sha256(json.dumps(signature, ensure_ascii=False).encode()).hexdigest()
-    existing = _active_failure(failure_key)
+    existing = _failure_entry(failure_key, _ACTIVE_FAILURE_STATES)
     writer = session_review.BatchWriter(path)
-    manifest = writer.fail(failure_key, reason)
+    manifest = writer.fail(
+        failure_key, reason, version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT), exit_code=exit_code
+    )
     saved = False
     if existing is not None:
         report_path, _data = existing
@@ -310,6 +336,8 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
             saved = True
         except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
             _LOG.exception("既存の失敗報告を同期できない: %s", report_path)
+    elif session_review.failure_reported(failure_key):
+        saved = True
     else:
         try:
             add.add_entries(
@@ -323,6 +351,8 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str) -> None:
         except OSError, ValueError, subprocess.SubprocessError:
             _LOG.exception("振り返りの失敗報告を保存できない。次回起動時に同じ報告から再開する: %s", path)
             saved = False
+    if saved:
+        session_review.failure_reported(failure_key, reported=True)
     writer.report_failure(synced=saved)
 
 
@@ -414,6 +444,7 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
                 manifest,
                 path,
                 getattr(args, "batch_failure", None) or f"run-skill-exit-{code}: 元のbatchの再開が完了しなかった",
+                exit_code=code,
             )
             return code
         _finish_batch(manifest, path)
@@ -537,6 +568,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                     path,
                     getattr(run_args, "batch_failure", None)
                     or f"run-skill-exit-{code}: 振り返りを完了できなかった。run-skillのログで原因を確認する",
+                    exit_code=code,
                 )
                 return code
             _finish_batch(manifest, path)

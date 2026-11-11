@@ -291,7 +291,7 @@ def test_failure_blocks_auto_but_manual_can_retry_without_duplicate_report(tmp_p
     assert len(calls) == 2 and len(list(layout.iter_entry_paths(notes))) == 1
     assert session_review.pending()
     body = _failure_awis(notes)[0].read_text(encoding="utf-8")
-    assert "AWIの終了により失敗抑止が解除される" in body
+    assert "adopted・rejectedで終了" in body and "版が変わった場合に再試行" in body
     assert "atk run-skill agent-toolkit:review-session --args batch" in body
     assert "`session_review_auto_start=true`で開始条件を満たす場合に限り" in body
     assert "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する" in body
@@ -362,10 +362,8 @@ def test_activity_resumed_after_selection_is_deferred(tmp_path, monkeypatch, oth
     if other is not None:
         _target(tmp_path, other)
     if other == "broken":
-        # 読めない行を持つ記録は、準備が不足項目を出して失敗する。
-        (tmp_path / "broken.jsonl").write_text(
-            '{"type": "user", "message": {"role": "user", "content": "末尾が欠けた行\n', encoding="utf-8"
-        )
+        (tmp_path / "broken.jsonl").unlink()
+        (tmp_path / "broken.jsonl").mkdir()
     queries = 0
 
     def activity(session_ids, **kwargs):
@@ -566,10 +564,8 @@ def test_prepare_failure_diagnostic_reaches_run_record_and_awi(tmp_path) -> None
     """prepareがstderrへ出す不足項目と詳細を、失敗理由としてrun記録と配布元への是正AWIへ残す。"""
     notes = _notes()
     _target(tmp_path, "gone")
-    # 読めない行を持つセッション記録は、prepare本物が不足項目をstderrへ出して非0終了する。
-    (tmp_path / "gone.jsonl").write_text(
-        '{"type": "user", "message": {"role": "user", "content": "末尾が欠けた行\n', encoding="utf-8"
-    )
+    (tmp_path / "gone.jsonl").unlink()
+    (tmp_path / "gone.jsonl").mkdir()
 
     def unexpected(args):
         raise AssertionError("準備できた対象が無いためモデルは起動しない")
@@ -688,9 +684,8 @@ def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path
     """準備失敗の是正AWIが未完了の間は再試行を止め、終了後の自動起動で再試行して再失敗すれば診断付きの新AWIを投入する。"""
     notes = _notes()
     _target(tmp_path, "gone")
-    (tmp_path / "gone.jsonl").write_text(
-        '{"type": "user", "message": {"role": "user", "content": "末尾が欠けた行\n', encoding="utf-8"
-    )
+    (tmp_path / "gone.jsonl").unlink()
+    (tmp_path / "gone.jsonl").mkdir()
 
     def unexpected(args):
         raise AssertionError("準備できた対象が無いためモデルは起動しない")
@@ -729,17 +724,19 @@ def _report_and_finish(notes, monkeypatch, calls):
     return execute
 
 
-def test_target_without_record_file_is_dropped_without_failure_report(tmp_path, monkeypatch, capsys) -> None:
+@pytest.mark.parametrize("other", [False, True])
+def test_target_without_record_file_is_dropped_without_failure_report(tmp_path, monkeypatch, capsys, other) -> None:
     """発話せずに終了して記録ファイルが作られなかった対象は、失敗報告と抑止にせず待ちから外し、他の対象は処理する。"""
     notes = _notes()
-    _target(tmp_path, "one")
+    if other:
+        _target(tmp_path, "one")
     _target(tmp_path, "gone")
     (tmp_path / "gone.jsonl").unlink()
     calls: list[dict] = []
 
-    assert run_skill_batch.dispatch(_args(), _report_and_finish(notes, monkeypatch, calls)) == 0
+    assert run_skill_batch.dispatch(_args("manual"), _report_and_finish(notes, monkeypatch, calls)) == 0
 
-    assert [[item["session_id"] for item in manifest["targets"]] for manifest in calls] == [["one"]]
+    assert [[item["session_id"] for item in manifest["targets"]] for manifest in calls] == ([["one"]] if other else [])
     assert not session_review.pending()
     assert not _failure_awis(notes)
     assert "記録ファイルの無い対象を振り返りの待ちから外した: gone" in capsys.readouterr().err
