@@ -4,7 +4,7 @@
 モデルの割り当てを変える前後に、同じ事例で見逃しと誤指摘の件数を比べるための手動コマンドである。
 モデルの費用がかかるため、CIや定期工程からは起動しない。
 
-起動は`uv run --frozen python scripts/review_eval.py <prepare|score> ...`とする。
+起動は`uv run --frozen python scripts/review_eval.py <prepare|score|store> ...`とする。
 レビュー担当の起動はagents_serverのMCP（`start`）からしか行えないため、本コマンドは起動に渡す入力の準備と、
 返却された管理表の採点だけを担う。手順は`.claude/skills/agent-toolkit-edit/SKILL.md`「レビュー評価セット」にある。
 """
@@ -21,7 +21,7 @@ import sys
 from typing import Any
 
 from agent_toolkit._atk import review_table
-from agent_toolkit._atk.wi import frontmatter, headings
+from agent_toolkit._atk.wi import frontmatter, headings, sync
 from agent_toolkit._atk.wi.constants import normalized_wi_type
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.next_action import ActionableError
@@ -59,6 +59,9 @@ class _Case:
     # 省略時は実行レビュー（exec-review）の入力を組み立てる。
     extra_params: dict[str, str] | None = None
     wi_revisions: dict[str, str] = dataclasses.field(default_factory=dict)
+    # 評価用の資料の保存版。`revision`はprivate-notesの完全OID、`plan`と`contract`はそのcommitでのパス（どちらも省略可）。
+    # `plan`は保存版の計画の代わりにレビュー担当へ渡す評価用の計画、`contract`は自動生成の代わりに渡す確かめた条件表である。
+    fixtures: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 def _expectations(items: list[dict[str, Any]]) -> tuple[_Expectation, ...]:
@@ -78,6 +81,13 @@ def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
                 not isinstance(name, str) or not isinstance(revision, str) for name, revision in case.wi_revisions.items()
             ):
                 raise ValueError(f"{case.id}: wi_revisionsにはWI名と保存revisionの辞書が必要")
+            if (
+                not isinstance(case.fixtures, dict)
+                or not set(case.fixtures) <= {"revision", "plan", "contract"}
+                or any(not isinstance(value, str) or not value for value in case.fixtures.values())
+                or (case.fixtures and "revision" not in case.fixtures)
+            ):
+                raise ValueError(f"{case.id}: fixturesにはrevisionと、planかcontractの保存パスの辞書が必要")
     except (ValueError, KeyError, TypeError, re.error) as error:
         raise ActionableError(
             f"評価セットを読み込めない: {path}: {error!r}",
@@ -104,6 +114,7 @@ def _parse_cases(data: dict[str, Any]) -> list[_Case]:
             absent=_expectations(item["expect"]["absent"]),
             extra_params=item.get("extra_params"),
             wi_revisions=item.get("wi_revisions", {}),
+            fixtures=item.get("fixtures", {}),
         )
         for item in data["cases"]
     ]
@@ -250,12 +261,44 @@ def _saved_wis(case: _Case, notes: pathlib.Path, names: set[str]) -> dict[str, s
     return texts
 
 
+_TARGET_REPOSITORY_LINE = re.compile(r"^(- 対象リポジトリ: )`[^`\n]*`", re.MULTILINE)
+# 計画と条件表が参照する一時領域（managed-temp）の絶対パス。区切りの記号と日本語の句読点の手前までをパスとして扱う。
+_TEMPORARY_PATH = re.compile(r"/[A-Za-z0-9_./@+-]*/managed-temp/[A-Za-z0-9_./@+-]*[A-Za-z0-9_@+-]")
+
+
+def store(
+    case: _Case, *, private_notes: pathlib.Path, plan: pathlib.Path | None, contract: pathlib.Path | None
+) -> dict[str, Any]:
+    """評価用の計画と確かめた条件表をprivate-notesへ保存し、事例定義の`fixtures`へ書く値を返す。
+
+    AWIと計画の本文を含むため、公開リポジトリには置かない。保持期限のある一時領域にも置かない。
+    """
+    if plan is None and contract is None:
+        raise ValueError("--planか--contractの少なくとも一方を指定する")
+    saved: dict[str, str] = {}
+    with sync.repo_lock(private_notes):
+        sync.ensure_mutation_allowed(private_notes)
+        sync.pull(private_notes)
+        directory = private_notes / "review-eval" / case.id
+        directory.mkdir(parents=True, exist_ok=True)
+        for key, source, name in (("plan", plan, "plan.md"), ("contract", contract, "review-contract.md")):
+            if source is None:
+                continue
+            (directory / name).write_bytes(source.read_bytes())
+            saved[key] = f"review-eval/{case.id}/{name}"
+        sync.commit_and_push(private_notes, f"chore: レビュー評価セットの資料を保存（{case.id}）", list(saved.values()))
+        revision = _git(private_notes, "rev-parse", "HEAD")
+    return {"case": case.id, "fixtures": {"revision": revision, **saved}}
+
+
 def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> dict[str, Any]:
     """事例の入力を`out/<事例ID>/`へ再構成し、レビュー担当の起動に渡す値を返す。"""
     if case.repo not in repos:
         raise ValueError(f"対象リポジトリの所在が無い: {case.repo}。--repo {case.repo}=<絶対パス>を指定して再実行する")
     repo = repos[case.repo]
     plan_text = _saved_text(private_notes, case.revision, f"{case.plan}.md")
+    if "plan" in case.fixtures:
+        plan_text = _saved_text(private_notes, case.fixtures["revision"], case.fixtures["plan"])
     commits_text = _saved_text(private_notes, case.revision, f"{case.plan}.wi-commits.jsonl")
     names = commit_mapping.plan_allowed_wis(plan_text, pathlib.Path(f"{case.plan}.md")) if case.extra_params is None else set()
     texts = _saved_wis(case, private_notes, names)
@@ -270,7 +313,16 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
     head_oid = _git(repo, "rev-parse", "--verify", f"{head}^{{commit}}")
     worktree = case_dir / "worktree"
     plan = case_dir / pathlib.Path(f"{case.plan}.md").name
+    if "plan" in case.fixtures:
+        # 評価用の計画は保存時の作業ツリーを指しているため、今回の準備で作る作業ツリーへ付け替える。
+        plan_text, replaced = _TARGET_REPOSITORY_LINE.subn(rf"\g<1>`{worktree}`", plan_text)
+        if replaced != 1:
+            raise ActionableError(
+                f"評価用の計画に計画メタ情報の対象リポジトリの行が1件無い: {case.id}（{replaced}件）",
+                next_action=f"評価セットのfixtures.plan（{case.fixtures['plan']}）を直し、storeで保存し直す",
+            )
     plan.write_bytes(plan_text.encode("utf-8"))
+    delivered = [plan_text]
     if case.extra_params is not None:
         values = {"plan": str(plan), "base": base_oid, "case_dir": str(case_dir)}
         extra_params = {key: value.format(**values) for key, value in case.extra_params.items()}
@@ -289,30 +341,50 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
         manifest = case_dir / "wi-originals.json"
         manifest.write_text(json.dumps(originals, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         extra_params["評価用WI原本"] = str(manifest)
-        rows = _contract_rows(texts)
-        header = [
-            "## 新形式のエージェント由来AWIの条件表",
-            "",
-            "| WI | 条件番号 | 区分 | 内容 | 出典 |",
-            "| --- | --- | --- | --- | --- |",
-        ]
-        contract_text = "\n".join([*header, *rows, ""])
+        if "contract" in case.fixtures:
+            # 要求の最終形と読み比べて確かめた条件表。自動生成は、後の節で置き換えられた要求を見分けられない。
+            # 出典が指す保存時のWI原本の複製は保持期限で消えるため、今回の準備で書き出した同名の原本へ付け替える。
+            contract_text = _TEMPORARY_PATH.sub(
+                lambda match: originals.get(pathlib.PurePosixPath(match[0]).name, match[0]),
+                _saved_text(private_notes, case.fixtures["revision"], case.fixtures["contract"]),
+            )
+            # 旧形式の要求には条件表の行が無く、評価の範囲だけを定める保存版もあるため、行の有無によらず渡す。
+            deliver = True
+            repair = f"評価セットのfixtures.contract（{case.fixtures['contract']}）を直し、storeで保存し直して再準備する"
+        else:
+            rows = _contract_rows(texts)
+            deliver = bool(rows)
+            header = [
+                "## 新形式のエージェント由来AWIの条件表",
+                "",
+                "| WI | 条件番号 | 区分 | 内容 | 出典 |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+            contract_text = "\n".join([*header, *rows, ""])
+            repair = "scripts/review_eval.pyの条件表生成と評価セットの保存WI原本を直して再準備する"
         try:
             review_contract.validate(contract_text, _requirements(texts))
         except ValueError as error:
-            raise ActionableError(
-                f"条件表の生成結果が不完全: {case.id}: {error}",
-                next_action="scripts/review_eval.pyの条件表生成と評価セットの保存WI原本を直して再準備する",
-            ) from error
-        if rows:
+            raise ActionableError(f"条件表が不完全: {case.id}: {error}", next_action=repair) from error
+        if deliver:
             contract = case_dir / "review-contract.md"
             contract.write_text(contract_text, encoding="utf-8")
             extra_params["review_contract"] = str(contract)
+            delivered.append(contract_text)
     _git(repo, "worktree", "add", "--detach", str(worktree), head_oid)
+    referenced = sorted(
+        {path for text in delivered for path in _TEMPORARY_PATH.findall(text) if not path.startswith(str(case_dir))}
+    )
     return {
         "case": case.id,
         "kind": case.kind,
         "table": str(plan.with_suffix(".exec-review.tsv")),
+        # 渡す計画と条件表が参照する一時領域の証拠は保持期限で消える。
+        # 評価を始める前に、欠けた入力を持つ事例を把握できるようにする。
+        "temporary_evidence": {
+            "referenced": len(referenced),
+            "missing": [path for path in referenced if not pathlib.Path(path).exists()],
+        },
         "start": {"cwd": str(worktree), "subagent_md_path": case.role, "extra_params": extra_params},
         "cleanup": ["git", "-C", str(repo), "worktree", "remove", "--force", str(worktree)],
     }
@@ -388,6 +460,13 @@ def main(argv: list[str] | None = None) -> int:
     prep.add_argument("--private-notes", type=pathlib.Path, default=pathlib.Path.home() / "private-notes")
     sc = sub.add_parser("score", help="返却された管理表を採点し、事例別の結果と合計をJSON Linesで出す")
     sc.add_argument("--result", action="append", required=True, help="<事例ID>=<管理表の絶対パス>（反復指定）")
+    st = sub.add_parser(
+        "store", help="評価用の計画と確かめた条件表をprivate-notesへ保存し、事例定義のfixturesへ書く値をJSONで出す"
+    )
+    st.add_argument("--case", required=True, help="対象の事例ID")
+    st.add_argument("--plan", type=pathlib.Path, help="評価用の計画の絶対パス")
+    st.add_argument("--contract", type=pathlib.Path, help="確かめた条件表の絶対パス")
+    st.add_argument("--private-notes", type=pathlib.Path, default=pathlib.Path.home() / "private-notes")
     args = parser.parse_args(argv)
     try:
         cases = load_cases()
@@ -397,6 +476,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     json.dumps(prepare(case, out=args.out, repos=repos, private_notes=args.private_notes), ensure_ascii=False)
                 )
+            return 0
+        if args.command == "store":
+            case = _select(cases, [args.case])[0]
+            result = store(case, private_notes=args.private_notes, plan=args.plan, contract=args.contract)
+            print(json.dumps(result, ensure_ascii=False))
             return 0
         totals = {"detected": 0, "missed": 0, "false_findings": 0, "unclassified": 0}
         for value in args.result:

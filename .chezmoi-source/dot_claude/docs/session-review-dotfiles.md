@@ -13,8 +13,9 @@
 適切に並列化されていれば全体の処理件数が所要時間へ与える影響は小さいという前提で、並列化の成立条件と律速区間を調べる。
 件数増加自体を超過の原因や許容理由にせず、過去対策との比較は`agent-toolkit:review-session`の`agent-toolkit:review-session/references/analysis-actions.md`「原因と対策」に従う。
 
-次の目標値と計測範囲は、対象リポジトリ`github.com/ak110/dotfiles`で`agent-toolkit:process-wi`を起動したセッションだけへ適用する。
-他のリポジトリでの作業や、本リポジトリで別の方法により起動した作業は目標値の適用対象から除く。
+次の目標値と計測範囲は、`github.com/ak110/dotfiles`を処理の対象に含む`agent-toolkit:process-wi`のセッションへ適用する。
+本リポジトリで同スキルを起動したセッションと、`atk wi process-loop`が別のディレクトリで起動する統括のセッションのうち本リポジトリを対象に含むものが該当する。
+本リポジトリを対象に含まない作業と、同スキルによらない作業は目標値の適用対象から除く。
 
 - 1セッションの所要時間は、セッションの最初の記録からそのセッションが終了する時点までとする。
   振り返り、公開工程とセッション終了工程、`agent-toolkit:report-completion`および`atk agents-exit-session`に要する時間も計測範囲へ含める

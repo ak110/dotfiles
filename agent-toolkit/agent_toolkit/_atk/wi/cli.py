@@ -582,16 +582,14 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     effect = _atk_help.add_command(sub, "effect-check", **_atk_help.HELP["atk wi effect-check"])
     effect.add_argument("filenames", metavar="FILENAME", nargs="+", help="効果を記録する採用済みAWIのファイル名（1件以上）")
     effect.add_argument("--worktree", required=True, help="対応commitの変更ファイルを確かめる対象リポジトリの作業ツリー")
-    effect.add_argument(
-        "--file", help="対応commitで変更したリポジトリ相対パス。省略時は全体のpending・not_requiredを記録する。"
-    )
+    effect.add_argument("--file", help="対応commitで変更したリポジトリ相対パス。省略時は作業項目の全体へ判定を記録する。")
     effect.add_argument(
         "--verdict", required=True, choices=("pending", "confirmed", "insufficient", "not_required"), help="効果の判定"
     )
     effect.add_argument("--checked-on", required=True, help="判定日（YYYY-MM-DD）")
     effect.add_argument("--review-record", required=True, help="判定した振り返りの記録位置")
     effect.add_argument("--corrective-awi", help="効果不足の是正先AWIの保存済みファイル名")
-    effect.add_argument("--reason", help="確認待ち・確認不要の理由（pending・not_requiredでは必須）")
+    effect.add_argument("--reason", help="判定の理由（pending・not_requiredでは必須）")
     edit = _atk_help.add_command(sub, "edit", **_atk_help.HELP["atk wi edit"])
     edit.add_argument(
         "filename",

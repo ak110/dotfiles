@@ -454,3 +454,68 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
         assert len(effect_check.result_values(text, "効果確認全体")) == 2
     assert git_repository.git_output(notes, "rev-list", "--count", f"{base}..HEAD") == "2"
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
+
+
+def test_public_effect_whole_item_verdicts_without_file(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--file`を省くと、目的を達したかの判定（確認済み・効果不足）を作業項目の全体へ保存でき、一覧と本文から読める。
+
+    ファイルごとの判定を先に持つ項目でも、その行を保ったまま全体の判定を保存する。
+    """
+    notes, worktree, path = effect_repository
+    assert _invoke(notes, worktree, path.name, "agent-toolkit/share/rules/common/a.md", "confirmed") == 0
+    assert _invoke(notes, worktree, path.name, None, "insufficient") != 0  # 是正先の指定が無い効果不足は保存しない
+    assert (
+        _invoke(
+            notes,
+            worktree,
+            path.name,
+            None,
+            "insufficient",
+            "--corrective-awi",
+            "corrective.md",
+            "--reason",
+            "目的の値が延びた",
+        )
+        == 0
+    )
+    saved = path.read_text(encoding="utf-8")
+    parsed = frontmatter.parse_frontmatter(saved)
+    assert parsed is not None and parsed[0]["effect_check"] == "insufficient"
+    assert list(effect_check.checked_files(saved)) == ["agent-toolkit/share/rules/common/a.md"]
+    overall = json.loads(effect_check.result_values(saved, "効果確認全体")[-1])
+    assert overall == {
+        "checked_on": "2026-10-31",
+        "corrective_awi": "corrective.md",
+        "reason": "目的の値が延びた",
+        "review_record": "claude:session:42",
+        "verdict": "insufficient",
+    }
+    capsys.readouterr()
+    with pytest.raises(SystemExit) as listed:
+        atk.main(
+            [
+                "wi",
+                "list",
+                "--target-repo",
+                str(worktree),
+                "--state=adopted",
+                "--effect-check=insufficient",
+                "--jsonl",
+                "--skip-pull",
+            ],
+            home=notes.parent,
+        )
+    assert listed.value.code == 0
+    assert json.loads(capsys.readouterr().out)["filename"] == path.name
+
+
+def test_public_effect_whole_item_confirmed_without_file(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+) -> None:
+    """`--file`を省いた確認済みは、変更ファイルごとの判定がそろっていなくても全体を確認済みにする。"""
+    notes, worktree, path = effect_repository
+    assert _invoke(notes, worktree, path.name, None, "confirmed") == 0
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None and parsed[0]["effect_check"] == "confirmed"

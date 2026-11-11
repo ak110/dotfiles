@@ -30,7 +30,6 @@ import unicodedata
 from typing import Any, NamedTuple
 
 import session_conversation  # pylint: disable=import-error
-import session_effect_candidates  # pylint: disable=import-error
 import session_evidence_candidates  # pylint: disable=import-error
 import session_evidence_execution  # pylint: disable=import-error
 import session_review_evidence  # pylint: disable=import-error
@@ -1728,13 +1727,6 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     )
     record = {
         **identity,
-        **session_effect_candidates.prepare_effect_candidates(
-            bundle_dir / "scope.json",
-            timeline,
-            target_repo,
-            work_dir,
-            main_record_id=f"{identity['host']}:{identity['session_id']}",
-        ),
         "scope_path": str(bundle_dir / "scope.json"),
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),

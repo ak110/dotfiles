@@ -59,10 +59,8 @@
 
 ### 工程1
 
-prepareは会話・問題候補・統計に加え、効果候補の`effect_candidates_path`と件数、効果専用の未確認の`effect_unconfirmed_path`と件数を返す。
-効果候補は元セッション開始前14日以内（両端を含む）に採用された未確認AWIのうち、読込・起動・hookの読込指示・常時rulesへ対応する変更ファイルである。
-`--after`による差分の開始位置は、この14日間の基準に使わない。
-共通分析でファイル別に判定し、保存と報告は`analysis-actions.md`「原因と対策」に従う。
+prepareは会話・問題候補・統計を返す。
+採用済みAWIの効果を確かめる項目は、共通分析で`analysis-actions.md`「原因と対策」に従って選び、判定の保存と報告も同節に従う。
 
 次のいずれかの形式で`atk run-script session-review-prepare`を1回実行する。
 出力先となる作業領域は、実行ごとに対象セッションのmanaged-temp内に自動で確保される。

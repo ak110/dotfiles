@@ -415,3 +415,93 @@ def test_prepare_rejects_incomplete_generation_or_saved_input(tmp_path, monkeypa
     else:
         assert "revision" in captured.err
     assert not (out / "missed/worktree").exists()
+
+
+def test_store_then_prepare_uses_saved_plan_and_contract(tmp_path, monkeypatch, capsys) -> None:
+    """保存版を指定しない事例は自動生成の条件表と不在の証拠の件数を返し、保存版を指定した事例は保存した計画と条件表を渡す。
+
+    保存版の条件表が指す保存時のWI原本の複製は、準備で書き出した同名の原本へ付け替える。
+    """
+    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+    repo, _base, old, new = _case_repository(tmp_path)
+    notes = tmp_path / "notes"
+    entries = notes / "2026" / "10"
+    entries.mkdir(parents=True)
+    (entries / "20261001-000000-001.md").write_text(
+        "---\ntype: awi\nsource: fix\nstate: done\ntarget_repo: github.com/ak110/dotfiles\n---\n"
+        "# 要求\n\n目的。\n\n## 反映内容と反映先\n\n1. 同じ読取の再実行は採らない。\n\n## 完成条件\n\n- 条件A\n\n"
+        "## 方式見直し\n\n成功した読取の再取得を採用する。\n",
+        encoding="utf-8",
+    )
+    missing_evidence = "/home/u/.cache/agent-toolkit/managed-temp/session-a/verify.stdout"
+    plan_dir = notes / "plans/2026/10"
+    plan_dir.mkdir(parents=True)
+    (plan_dir / "01-0000_case.md").write_text(
+        "# 計画\n## 概要\n### 計画メタ情報\n- 対象リポジトリ: `/original/worktree`\n- 関連WI:\n"
+        "  - 20261001-000000-001.md: 要求\n## 進捗ログ\n"
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
+        f"| 1 | 検証 | 出力は{missing_evidence}。指摘1を採用した。 |\n",
+        encoding="utf-8",
+    )
+    (plan_dir / "01-0000_case.wi-commits.jsonl").write_text(
+        f'{{"commits":["{old}","{new}"],"awi":["20261001-000000-001.md"]}}\n', encoding="utf-8"
+    )
+    _save_notes(notes, review_eval.CASES_PATH)
+    _git(notes, "config", "user.name", "t")
+    _git(notes, "config", "user.email", "t@example.com")
+    arguments = ["--repo", f"target={repo}", "--private-notes", str(notes)]
+
+    assert review_eval.main(["prepare", "--out", str(tmp_path / "generated"), *arguments]) == 0
+    (generated,) = _results(capsys)
+    assert generated["temporary_evidence"] == {"referenced": 1, "missing": [missing_evidence]}
+    generated_contract = pathlib.Path(generated["start"]["extra_params"]["review_contract"]).read_text(encoding="utf-8")
+    assert "同じ読取の再実行は採らない" in generated_contract
+
+    evaluation_plan = tmp_path / "evaluation-plan.md"
+    evaluation_plan.write_text(
+        "# 評価用の計画\n## 概要\n### 計画メタ情報\n- 対象リポジトリ: `/saved/elsewhere/worktree`\n- 関連WI:\n"
+        "  - 20261001-000000-001.md: 要求\n## 進捗ログ\n"
+        "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n| 1 | 保存版の確認 | 実機証拠は欠測として扱う。 |\n",
+        encoding="utf-8",
+    )
+    checked_contract = tmp_path / "checked-contract.md"
+    stale_original = "/home/u/.cache/agent-toolkit/managed-temp/earlier/private-notes-input/2026/10/20261001-000000-001.md"
+    checked_contract.write_text(
+        generated_contract.replace("同じ読取の再実行は採らない", "成功した読取の再取得を採用する")
+        + f"\n出典の原本: {stale_original}#完成条件\n",
+        encoding="utf-8",
+    )
+    assert (
+        review_eval.main(
+            [
+                "store",
+                "--case",
+                "missed",
+                "--plan",
+                str(evaluation_plan),
+                "--contract",
+                str(checked_contract),
+                "--private-notes",
+                str(notes),
+            ]
+        )
+        == 0
+    )
+    (stored,) = _results(capsys)
+    assert stored["fixtures"]["revision"] == _git(notes, "rev-parse", "HEAD")
+    data = json.loads(review_eval.CASES_PATH.read_text(encoding="utf-8"))
+    data["cases"][0]["fixtures"] = stored["fixtures"]
+    review_eval.CASES_PATH.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+    assert review_eval.main(["prepare", "--out", str(tmp_path / "saved"), *arguments]) == 0
+    (saved,) = _results(capsys)
+    plan_text = pathlib.Path(saved["start"]["extra_params"]["計画"]).read_text(encoding="utf-8")
+    assert f"- 対象リポジトリ: `{saved['start']['cwd']}`" in plan_text
+    assert "実機証拠は欠測として扱う" in plan_text and "指摘1を採用した" not in plan_text
+    originals = json.loads(pathlib.Path(saved["start"]["extra_params"]["評価用WI原本"]).read_text(encoding="utf-8"))
+    assert pathlib.Path(saved["start"]["extra_params"]["review_contract"]).read_text(
+        encoding="utf-8"
+    ) == checked_contract.read_text(encoding="utf-8").replace(stale_original, originals["20261001-000000-001.md"])
+    assert saved["temporary_evidence"] == {"referenced": 0, "missing": []}
+    for prepared in (generated, saved):
+        subprocess.run(prepared["cleanup"], check=True)

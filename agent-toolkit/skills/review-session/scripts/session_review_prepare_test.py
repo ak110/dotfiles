@@ -46,8 +46,8 @@ def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     return work_dir
 
 
-def test_prepare_reuses_syntax_through_effect_scan_without_carryover(tmp_path, capsys, monkeypatch) -> None:
-    """別位置の証拠を保ってbundleと効果確認で構文を共有し、次の準備では解析し直す。"""
+def test_prepare_reuses_syntax_within_one_run_without_carryover(tmp_path, capsys, monkeypatch) -> None:
+    """別位置の証拠を保って同じ準備の中で構文を共有し、次の準備では解析し直す。"""
     parsed: list[str] = []
     original = execution._parse_shell_simple_commands  # pylint: disable=protected-access
 
