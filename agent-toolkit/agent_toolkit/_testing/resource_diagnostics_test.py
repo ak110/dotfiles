@@ -1,5 +1,6 @@
 """回収失敗診断のAPI境界と、自身が起動するWindows保持者の識別を検証する。"""
 
+import contextlib
 import ctypes
 import errno
 import json
@@ -263,11 +264,15 @@ def test_windows_owned_holder_is_identified_and_released(
         env=host_environ(),
     ) as child:
         deadline = time.monotonic() + 30
-        while not ready.exists():
+        holder_pid = None
+        while holder_pid is None:
             assert child.poll() is None, "保持用の子が準備前に終了した"
             assert time.monotonic() < deadline, "保持用の子が準備完了を通知しなかった"
-            time.sleep(0.01)
-        holder_pid = int(ready.read_text(encoding="utf-8"))
+            # Windowsでは置換直後のファイルを、走査などの他のhandleが一時的に開いていて読めないことがある。
+            with contextlib.suppress(FileNotFoundError, PermissionError):
+                holder_pid = int(ready.read_text(encoding="utf-8"))
+            if holder_pid is None:
+                time.sleep(0.01)
         before = [process_tree.identity(holder_pid)]
         with pytest.raises(OSError) as failure:
             target.unlink()
