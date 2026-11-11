@@ -102,7 +102,9 @@ rebaseおよび変更前後の内容一致確認はレーン担当者が担当�
 統合指示で渡したパラメーターと以下の観測結果を比較し、受領条件を満たしているか確認する。
 
 1. 返却が`統合完了`で始まり、規定の各行を含んでおり、JSON配列の行に重複がないこと。
-2. `統合後のHEAD`が、統合先worktreeで`git rev-parse <統合先branch>`を実行した完全OIDの先頭と一致していること。
+2. `統合後のHEAD`が、所有登録の`jq -r '.integration.integrated_head' <record_path>`が返す完全OIDの先頭と一致すること。
+   かつ、統合先worktreeで`git merge-base --is-ancestor <統合後のHEAD> <統合先branch>`が終了コード0で終わること。
+   後続レーンの短い更新で統合先branchが`統合後のHEAD`より先へ進んでいても、その子孫であれば満たす。
 3. 資源の`record_path`における所有登録情報で、`jq -r '.integration.phase' <record_path>`が`finalized`を返すこと。
 4. `保存した計画ファイル`が統合指示の`計画ファイル名一覧`と順序を含めて一致しており、各計画が`atk plans list`の出力に残っておらず、`atk config get private_notes`が返すrootの`plans/`配下に正しく保存されていること。
 5. `adoptしたWI`と`rejectしたWI`の各項目を統合先worktree上で`atk wi show <ファイル名> --target-repo=<統合先worktree> --skip-pull`で取得し、状態が`adopted`または`rejected`で`AWI終了区分`の採否と一致すること。
@@ -110,6 +112,8 @@ rebaseおよび変更前後の内容一致確認はレーン担当者が担当�
 6. `adoptを延期したAWIとcommit`の各commitを統合先worktree上で`git rev-parse --verify <commit>^{commit}`で解決できること。
    かつ`git merge-base --is-ancestor <commit> <統合先branch>`が正常終了（コード0）すること。
 7. `変更したエージェント向け文書`が、統合先worktreeで`atk run-script agent-doc-changes -- <統合前HEAD> <統合後のHEAD>`を単独実行した結果と一致していること。
+   統合前HEADには、そのレーンの短い更新の直前の統合先HEAD（所有登録の`jq -r '.integration.new_base // .integration.verified_base' <record_path>`）を使う。
+   許可した時点の統合先HEADは使わない（許可から短い更新までに他レーンが統合先を更新すると、範囲に他レーンのcommitが入るため）。
    同一レーンにおける追加統合の場合は、前回受理した返却値との和集合と比較する。
 
 受領条件を満たしたことを確認した後、以下の意味確認を実施する。

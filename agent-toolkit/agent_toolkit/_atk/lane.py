@@ -1333,13 +1333,23 @@ def _amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing
     state.update(previous_manifest=old, input=identity, input_digest=digest)
 
 
-def _assert_integration_tree(record: dict[str, typing.Any], target: pathlib.Path, branch: str) -> pathlib.Path:
+def _assert_integration_tree(
+    record: dict[str, typing.Any], target: pathlib.Path, branch: str, *, target_state: bool = True
+) -> pathlib.Path:
+    """レーンと統合先の登録と、作業ツリー・中断状態を確かめる。
+
+    `target_state`をFalseにすると統合先の作業ツリーと中断状態を確かめない。
+    統合先は他レーンの短い更新が統合先単位の排他の中で一時的にロックファイルを作るため、
+    その排他の外（統合の開始時）では登録だけを確かめ、作業ツリーと中断状態は排他の中で確かめる。
+    """
     worktree = pathlib.Path(record["worktree"])
     if not record.get("ready") or _common(target) != record["common_dir"]:
         raise ValueError("準備状態または統合先のGit共通ディレクトリが所有記録と異なる")
     for tree, expected in ((worktree, record["branch"]), (target, branch)):
         if _worktrees(tree).get(str(tree)) != expected or _common(tree) != record["common_dir"]:
             raise ValueError(f"worktreeとbranchの登録が所有記録と異なる: {tree}")
+        if tree == target and not target_state:
+            continue
         if _git(tree, "status", "--porcelain=v1", "--untracked-files=all"):
             raise ValueError(f"統合作業ツリーに未commitまたは未追跡の変更がある: {tree}")
         for name in (
@@ -1535,7 +1545,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         target = args.target_worktree.resolve()
         if args.target_branch != record["base_branch"]:
             raise ValueError("統合先branchが所有登録と異なる")
-        worktree = _assert_integration_tree(record, target, args.target_branch)
+        worktree = _assert_integration_tree(record, target, args.target_branch, target_state=False)
         excluded: frozenset[str] = frozenset([session_id, *(args.writer_session or []), *_caller_chain()])
         writers = _unowned_writers((worktree, target), excluded)
         if writers:

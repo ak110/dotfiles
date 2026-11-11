@@ -11,6 +11,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 
@@ -223,6 +224,18 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         code, first, stderr = _finish_first(process, tmp_path)
     assert code == 0 and first["phase"] == "finalized", stderr
     assert first["integrated_head"] == records["lane-01"]["reviewed_head"]
+    # メインの受領条件（exec-parent-integration.md「統合の受領」の2と7）を、統合先が先へ進んだ状態の両レーンへ当てはめる。
+    target_head = git_repository.git_output(repo, "rev-parse", "main")
+    assert target_head == second["integrated_head"] != first["integrated_head"]
+    for result, lane_id in ((first, "lane-01"), (second, "lane-02")):
+        stored = json.loads(pathlib.Path(records[lane_id]["record_path"]).read_text(encoding="utf-8"))["integration"]
+        assert stored["integrated_head"] == result["integrated_head"]
+        git_repository.run_git(repo, "merge-base", "--is-ancestor", result["integrated_head"], "main")
+        # 統合前HEAD（短い更新の直前の統合先HEAD）からの範囲は、そのレーンの1commitだけを含む。
+        before = stored.get("new_base") or stored["verified_base"]
+        assert (
+            git_repository.git_output(repo, "rev-list", f"{before}..{result['integrated_head']}") == result["integrated_head"]
+        )
     selected = yaml.safe_load(pathlib.Path(records["lane-01"]["selection_file"]).read_text(encoding="utf-8"))
     assert {row["レーン"]: row["統合状態"] for row in selected["レーンの所要時間"]} == {
         "lane-01": "統合済み",
@@ -262,6 +275,34 @@ def test_target_advance_before_short_update_keeps_target(
     code, result, stderr = _invoke(capsys, *args, "--accept-rebased-head", result["new_head"])
     assert code == 0 and result["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == result["new_head"]
+
+
+def test_lane_starts_while_other_lane_updates_target(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """他レーンの短い更新が統合先のロックファイルを作っている間に始めた統合が、中断状態と誤判定せずに更新を待つ。"""
+    repo, records = _prepare(tmp_path, monkeypatch, capsys)
+    record = records["lane-02"]
+    manifest = _manifest(tmp_path / "second.json", "lane-02", verification=[], wi_commands=[])
+    index_lock = pathlib.Path(
+        git_repository.git_output(repo, "rev-parse", "--path-format=absolute", "--git-path", "index.lock")
+    )
+    outcome: list[tuple[int, dict[str, Any], str]] = []
+    # 他レーンのfast-forwardの途中（統合先単位の排他を保持し、統合先にindex.lockがある状態）を作る。
+    with lane._target_locked(record, "main"):  # pylint: disable=protected-access
+        index_lock.write_text("", encoding="utf-8")
+        thread = threading.Thread(
+            target=lambda: outcome.append(_invoke(capsys, *integration_args(record, repo, manifest, record["reviewed_head"])))
+        )
+        thread.start()
+        thread.join(timeout=5)
+        assert thread.is_alive(), outcome
+        index_lock.unlink()
+    thread.join(timeout=_WAIT_SECONDS)
+    assert not thread.is_alive(), "排他の解放後に統合が終わらなかった"
+    code, result, stderr = outcome[0]
+    assert code == 0 and result["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == record["reviewed_head"]
 
 
 def test_delete_retains_lane_while_its_integration_runs(

@@ -2,7 +2,7 @@
 
 選定済みAWIをレーンへ分け、各担当が同一スレッドで計画（必要時）から統合まで完遂する。
 メインは選定、ユーザー判断の中継、公開、終了を担う。
-レーン数によらず各担当へ`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用し、複数レーンではメインが書込競合・依存を調停して主作業ツリーへの統合を1レーンずつ許可する。
+レーン数によらず各担当へ`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`を適用し、複数レーンではメインが書込競合・依存を調停して主作業ツリーへの統合を許可し、統合先HEADの更新は`atk lane integrate`が1レーンずつ行う。
 AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と手順は`agent-toolkit:user-confirmation-and-report`に従う。
 なお、本スキルの実行中は自律モードで動作する。
 登録全体の統括からリポジトリ担当として取得済み候補を受領した場合は、`all-repos-orchestration.md`の受渡し契約を確認し、対象worktreeで後述の実行順を進める。
