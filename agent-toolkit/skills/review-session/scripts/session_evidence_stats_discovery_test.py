@@ -282,7 +282,15 @@ def test_collect_includes_start_custom_and_start_write_delegates(
     (unresolved,) = [dict(event) for event in events_by_kind(stats_events, "unresolved-record")]
     next_action = unresolved.pop("next_action")
     assert write_session in next_action and "記録保持者" in next_action
-    assert unresolved == {"kind": "unresolved-record", "record": write_session, "line": 4}
+    expected_unresolved = {
+        "kind": "unresolved-record",
+        "record": write_session,
+        "line": 4,
+        "reason": "record-location-unresolved",
+        "source_record": "claude:transcript",
+        "source_line": 4,
+    }
+    assert unresolved == expected_unresolved
 
     assert evidence.main([str(transcript)]) == 0
     default_events = read_jsonl(capsys, raw=True)
@@ -290,7 +298,7 @@ def test_collect_includes_start_custom_and_start_write_delegates(
     (unresolved,) = [dict(event) for event in events_by_kind(default_events, "unresolved-record")]
     next_action = unresolved.pop("next_action")
     assert write_session in next_action and "記録保持者" in next_action
-    assert unresolved == {"kind": "unresolved-record", "record": write_session, "line": 4}
+    assert unresolved == expected_unresolved
 
 
 def test_collect_resolves_codex_agents_server_delegations(
