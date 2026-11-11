@@ -27,6 +27,7 @@
 | `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` | 判断 | `read:agent-toolkit:*/share/lane-integration.subagent.md` | |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） | 判断 | `read:agent-toolkit:*/skills/wi-standards/SKILL.md` | |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` | 判断 | `read:agent-toolkit:*/share/exec-review-fix.md` | |
+| レビュー指摘管理表へ担当が行を足す前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` | |
 
 ## 実装
 
@@ -75,12 +76,14 @@
    生成元ファイルを変更した場合は、生成・配布手段も追随して更新する。
 
 8. 実装中に要件や外部仕様レベルの技術判断が生じた場合は、その時点の結論を計画があればレビュー指摘管理表へ、なければ引き継ぎ記録へ記録して実装を継続する。
+   管理表へ行を足すときの書き出しは`review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
    ユーザーの選好や認可範囲の変更を要する事項に限り、`agent-toolkit/share/rules/rules-subagent.md`「確認事項の即時通知」で報告し、回答が必要な単位で待機する。
    通知済みの事後承認対象について、レビュー修正によって実施内容に変更が生じた場合は、変更後の内容を再度同様の即時通知でメインへ送信する。
 
 9. 前述の目的達成に不要なエージェント起草条件の除外を除き、完成条件を変更または除外する判断が必要な場合は、旧条件、新条件または除外範囲、技術的制約、保持する要求と根拠を整理し、ユーザー判断の有無と所在とともにメインへ通知する。
    返答された判断に基づいて作業を再開する。
    メインから技術判断を受け取った後は、その完成条件を扱うレビュー指摘管理表の行（存在しない場合は`atk review-table add`で追加）へ`atk review-table respond`の`--no-response-reason-file`を用いて記録する。
+   追加する行の書き出しは`review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
    `根拠の所在:`行には`メインの技術判断`、対象AWIと上記の判断内容を記載する。
 
 10. ユーザーがAWIの`## ユーザーコメント`やUWIの`## 回答`において処理側へ宛てて直接記入した質問（AWI本文へ転記された質問は除く）については、回答本文（用語は`agent-toolkit:wi-standards`冒頭の基準に従う）と根拠を下書きファイルへ保存する。

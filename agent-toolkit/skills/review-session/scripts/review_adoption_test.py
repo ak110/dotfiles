@@ -147,3 +147,71 @@ def test_review_adoption_counts_periods_levels_reasons_and_models(dataset, capsy
     ]
     assert "要件" not in current["by_level"]
     assert events[-1]["kind"] == "review-adoption-coverage"
+
+
+def _codex_review(path: Path, table: str, *, preamble_bytes: int) -> None:
+    """実記録と同じ並び（道具の定義、developerの本文、標識の無い規範の配送、環境の状態、依頼文）のCodexの記録を書く。"""
+    filler = "規" * (preamble_bytes // 3)
+    time = "2026-11-03T00:00:00Z"
+    write_jsonl(
+        path,
+        [
+            {"type": "session_meta", "timestamp": time, "payload": {"id": "review"}},
+            {"type": "response_item", "timestamp": time, "payload": {"type": "additional_tools", "tools": []}},
+            {
+                "type": "response_item",
+                "timestamp": time,
+                "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "方針"}]},
+            },
+            {
+                "type": "response_item",
+                "timestamp": time,
+                "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": filler}]},
+            },
+            {"type": "world_state", "timestamp": time, "payload": {"state": "x"}},
+            {
+                "type": "response_item",
+                "timestamp": time,
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": f"{_ROLE_PROMPT}\nレビュー指摘管理表: /p/{table}"}],
+                },
+            },
+            {
+                "type": "turn_context",
+                "timestamp": time,
+                "payload": {"model": "gpt-6.1-sol", "effort": "medium"},
+            },
+            {"type": "response_item", "timestamp": time, "payload": {"type": "function_call", "call_id": "c", "name": "shell"}},
+        ],
+    )
+
+
+def test_review_adoption_finds_request_after_large_preamble_and_ignores_quotes(dataset, capsys) -> None:
+    """依頼文より前の内容が256KiBを超えるCodexの記録へ帰属させ、標識を引用しただけの記録へは帰属させない。"""
+    _notes, claude, codex = dataset
+    _codex_review(codex / "2026/11/03/rollout-review.jsonl", "03-0001_unknown.exec-review.tsv", preamble_bytes=300 * 1024)
+    # 振り返りの会話など、最初のモデル出力より後ろで標識と表の名前を引用した記録。
+    write_jsonl(
+        claude / "p/quote.jsonl",
+        [
+            {"type": "user", "timestamp": "2026-11-03T00:00:00Z", "message": {"role": "user", "content": "振り返りを行う"}},
+            {
+                "type": "assistant",
+                "timestamp": "2026-11-03T00:00:01Z",
+                "effort": "low",
+                "message": {"role": "assistant", "model": "claude-quote-1", "content": [{"type": "text", "text": "読む"}]},
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-11-03T00:00:02Z",
+                "message": {"role": "user", "content": f"{_ROLE_PROMPT} 03-0000_known.exec-review.tsv"},
+            },
+        ],
+    )
+    events = _run(dataset, capsys)
+    current = next(event for event in events if event.get("period") == "current")
+    assert "モデル不明" not in current["by_model"]
+    assert [model for model in current["by_model"] if model.startswith("codex:")] == ["codex:gpt-6.1-sol/medium"]
+    assert not any("claude-quote-1" in model for model in current["by_model"])

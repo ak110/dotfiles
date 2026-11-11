@@ -10,6 +10,7 @@
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-verification.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `exec-review-recording-verdicts.md` | 判断 | `read:agent-toolkit:*/share/exec-review-recording-verdicts.md` |
 | process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| レビュー指摘管理表へ担当が行を足す前 | `review-table-operations.md` | 判断 | `read:agent-toolkit:*/share/review-table-operations.md` |
 
 ## エスカレーションの事由別の扱い
 
@@ -76,6 +77,7 @@ UWIに対象項目のファイル名、対象の詳細説明、必要な回答�
 
 記録の保存先は判断した時点で選択する。
 計画の確定前は対象AWIの実施内容の根拠欄へ、実装着手後はレビュー指摘管理表へ、旧条件、新条件または除外範囲、保持する要求、判断主体と根拠を記録する。
+既存の指摘行が無く新しい行として足す場合の書き出しは、`review-table-operations.md`「レビュー指摘管理表の共通操作」に従う。
 計画なしでレーン担当が不要条件を除外する場合は引き継ぎ記録へ記録する。
 技術的制約による変更ではその制約も記録する。
 レーン担当の除外は、計画確定後の進捗ログと`review_contract`にも記録し、AWIの処理結果へ反映する。

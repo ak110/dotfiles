@@ -300,8 +300,10 @@ def test_compact_recovery_command_is_delivered_once(tmp_path, monkeypatch, capsy
     arguments = shlex.split(commands[0])
     assert arguments[arguments.index("--transcript") + 1] == str(path)
     assert "--conversation-only" in arguments
+    # 復元の最初の取得は直近の少量表示とし、全期間の流れは不足する場合の手段として案内する。
+    assert arguments[-3:] == ["--conversation-window", "--conversation-recent", "30"]
     assert not any(line.startswith(("会話ID:", "原本ログ:", "この会話のtranscript:")) for line in output.splitlines())
-    assert "--conversation-window --conversation-recent 30`を追加せよ" in output
+    assert "`--conversation-window --conversation-recent 30`を外して全期間の流れを取得せよ" in output
 
 
 def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkeypatch, capsys):

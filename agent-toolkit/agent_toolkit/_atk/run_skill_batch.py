@@ -165,17 +165,31 @@ def _blocked(target: dict[str, Any]) -> bool:
     return isinstance(key, str) and bool(key) and _active_failure(key) is not None
 
 
+def _lacks_record(target: dict[str, Any]) -> bool:
+    """Claudeの対象の記録ファイルが存在しないかを返す。記録の所在を別の識別子で解決するhostは対象外とする。"""
+    if target["host"] != "claude":
+        return False
+    path = target.get("transcript_path")
+    return not isinstance(path, str) or not pathlib.Path(path).is_file()
+
+
 def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
     selected = []
     for target in session_review.pending():
         # 同じ呼び出しで準備に失敗した対象は、manualでも再選定せず同じ失敗の反復を避ける。
         if target["key"] in attempted:
             continue
+        if session_activity.review_activity({target["session_id"]}).has_activity:
+            continue
+        if _lacks_record(target):
+            # 発話せずに終了した会話は開始時に待ちへ登録されるが、記録ファイルは作られない。
+            # 準備へ渡すと不足の失敗として報告と抑止の対象になるため、振り返る内容の無い対象として待ちから外す。
+            if session_review.discard_pending(target):
+                print(f"記録ファイルの無い対象を振り返りの待ちから外した: {target['session_id']}", file=sys.stderr)
+            continue
         if not manual and (_blocked(target) or target.get("failure_unreported")):
             continue
-        activity = session_activity.review_activity({target["session_id"]})
-        if not activity.has_activity:
-            selected.append(target)
+        selected.append(target)
     return selected if any(not target.get("review_batch") for target in selected) else []
 
 
@@ -409,6 +423,24 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
     return 0
 
 
+_INTERRUPTED_REASON = "interrupted: 実行プロセスが終了し成功を確認できない"
+
+
+def _interrupted_before(runs: pathlib.Path, manifest: dict[str, Any]) -> bool:
+    """同じ対象の同じ世代が、直前にも中断として再試行へ戻されたかを返す。
+
+    中断の回数は実行記録だけから数え、待ち記録へ状態を足さない。対象が活動を再開して世代が変わった後の中断は1回目として扱う。
+    """
+    current = {(item["key"], item["generation"]) for item in manifest["targets"]}
+    for path in runs.glob("*.json"):
+        other = session_review.read(path)
+        if other.get("run_id") == manifest["run_id"] or not other.get("interrupted_retry"):
+            continue
+        if current & {(item.get("key"), item.get("generation")) for item in other.get("targets", [])}:
+            return True
+    return False
+
+
 def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int], *, manual: bool) -> int:
     runs = session_review.directory() / "runs"
     runs.mkdir(parents=True, exist_ok=True)
@@ -426,11 +458,16 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         ):
             session_review.BatchWriter(path).complete(report_synced=True)
             run_skill_state.mark_completed(old["run_id"])
+        elif old["status"] == "running" and not old.get("error") and not _interrupted_before(runs, old):
+            # 端末の停止などで実行プロセスだけが終了した回は、原因を示す診断を持たない。
+            # 1回目は報告と抑止にせず対象を待ちに残し、同じ対象が続けて中断した場合に失敗として報告する。
+            session_review.BatchWriter(path).retry_interrupted(_INTERRUPTED_REASON)
+            print(f"実行プロセスが終了した振り返りを再試行の対象へ戻した: {path}", file=sys.stderr)
         elif old["status"] == "running" or any(
             item.get("failure_unreported") and item.get("failure_key") == old.get("failure_key")
             for item in session_review.pending()
         ):
-            _failure(old, path, old.get("error", "interrupted: 実行プロセスが終了し成功を確認できない"))
+            _failure(old, path, old.get("error", _INTERRUPTED_REASON))
             session_review.launch_result(manifest=path)
             return 1
     attempted: set[str] = set()

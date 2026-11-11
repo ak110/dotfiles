@@ -203,6 +203,14 @@ class TargetGeneration:
                 {**self.pending.model_dump(exclude_unset=True), "failure_key": failure_key, "failure_unreported": not reported}
             )
 
+    def discard(self, generation: str) -> bool:
+        """振り返る記録の無い待ち世代を除去する。選定後に再登録された世代は残す。"""
+        if self.pending is None or self.pending.generation != generation:
+            return False
+        self.pending_path.unlink()
+        self.pending = None
+        return True
+
     def complete(self, scope: dict[str, Any], generation: str | None, *, appended: bool) -> None:
         """処理範囲を保存し、準備時と一致した待ちだけを除去する。"""
         reviewed = ReviewedScope.model_validate(scope)
@@ -297,6 +305,14 @@ class BatchWriter:
                 complete(prepared)
             return self._save({**value, "status": BatchStatus.COMPLETED})
 
+    def retry_interrupted(self, reason: str) -> dict[str, Any]:
+        """診断を残さずに実行プロセスが終了した回を終了扱いにし、対象を待ちに残して次の選定で再試行させる。"""
+        with locked():
+            value = self._active()
+            if value["status"] != BatchStatus.RUNNING:
+                raise ValueError("実行中でないbatchは中断の再試行へ移せない")
+            return self._save({**value, "status": BatchStatus.RESOLVED, "error": reason, "interrupted_retry": True})
+
     def resolve(self, *, waiting: set[str] | None = None) -> dict[str, Any]:
         """通常対象が無い回、または失敗対象が解消した回を終了する。"""
         with locked():
@@ -346,6 +362,12 @@ def locked() -> Generator[None]:
     root.mkdir(parents=True, exist_ok=True)
     with filelock.FileLock(str(root / "state.lock"), timeout=10, is_singleton=True):
         yield
+
+
+def discard_pending(target: Mapping[str, Any]) -> bool:
+    """記録ファイルが作られなかった会話など、振り返る内容の無い待ちを同じ世代に限って除去する。"""
+    with locked():
+        return TargetGeneration(target["host"], target["session_id"]).discard(target["generation"])
 
 
 def pending() -> list[dict[str, Any]]:

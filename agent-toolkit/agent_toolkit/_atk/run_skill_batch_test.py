@@ -362,7 +362,10 @@ def test_activity_resumed_after_selection_is_deferred(tmp_path, monkeypatch, oth
     if other is not None:
         _target(tmp_path, other)
     if other == "broken":
-        (tmp_path / "broken.jsonl").unlink()
+        # 読めない行を持つ記録は、準備が不足項目を出して失敗する。
+        (tmp_path / "broken.jsonl").write_text(
+            '{"type": "user", "message": {"role": "user", "content": "末尾が欠けた行\n', encoding="utf-8"
+        )
     queries = 0
 
     def activity(session_ids, **kwargs):
@@ -563,8 +566,10 @@ def test_prepare_failure_diagnostic_reaches_run_record_and_awi(tmp_path) -> None
     """prepareがstderrへ出す不足項目と詳細を、失敗理由としてrun記録と配布元への是正AWIへ残す。"""
     notes = _notes()
     _target(tmp_path, "gone")
-    # 記録後に消えたセッション記録は、prepare本物が不足項目をstderrへ出して非0終了する。
-    (tmp_path / "gone.jsonl").unlink()
+    # 読めない行を持つセッション記録は、prepare本物が不足項目をstderrへ出して非0終了する。
+    (tmp_path / "gone.jsonl").write_text(
+        '{"type": "user", "message": {"role": "user", "content": "末尾が欠けた行\n', encoding="utf-8"
+    )
 
     def unexpected(args):
         raise AssertionError("準備できた対象が無いためモデルは起動しない")
@@ -683,7 +688,9 @@ def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path
     """準備失敗の是正AWIが未完了の間は再試行を止め、終了後の自動起動で再試行して再失敗すれば診断付きの新AWIを投入する。"""
     notes = _notes()
     _target(tmp_path, "gone")
-    (tmp_path / "gone.jsonl").unlink()
+    (tmp_path / "gone.jsonl").write_text(
+        '{"type": "user", "message": {"role": "user", "content": "末尾が欠けた行\n', encoding="utf-8"
+    )
 
     def unexpected(args):
         raise AssertionError("準備できた対象が無いためモデルは起動しない")
@@ -697,3 +704,86 @@ def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path
     assert run_skill_batch.dispatch(_args(), unexpected) == 1
     active = [path for path in _failure_awis(notes) if "state: inbox" in path.read_text(encoding="utf-8")]
     assert len(active) == 1 and "不足:" in active[0].read_text(encoding="utf-8")
+
+
+def _report_and_finish(notes, monkeypatch, calls):
+    """準備済みの対象を1件の報告で確定する実行の代役を返す。"""
+
+    def execute(args):
+        calls.append(session_review.read(pathlib.Path(args.batch_manifest)))
+        monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", args.run_id)
+        monkeypatch.setenv(session_review.BATCH_ENV, args.batch_manifest)
+        add.add_entries(
+            notes,
+            messages=["---\nrun_skill_report: true\n---\n# 振り返り結果\n\n確認した。"],
+            target_repo=args.target_repo,
+            source="run-skill",
+            now=datetime.datetime.now(datetime.UTC),
+            entry_type="uwi",
+            scope=session_review.BATCH_SCOPE,
+            question_type="post-approval",
+        )
+        assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
+        return 0
+
+    return execute
+
+
+def test_target_without_record_file_is_dropped_without_failure_report(tmp_path, monkeypatch, capsys) -> None:
+    """発話せずに終了して記録ファイルが作られなかった対象は、失敗報告と抑止にせず待ちから外し、他の対象は処理する。"""
+    notes = _notes()
+    _target(tmp_path, "one")
+    _target(tmp_path, "gone")
+    (tmp_path / "gone.jsonl").unlink()
+    calls: list[dict] = []
+
+    assert run_skill_batch.dispatch(_args(), _report_and_finish(notes, monkeypatch, calls)) == 0
+
+    assert [[item["session_id"] for item in manifest["targets"]] for manifest in calls] == [["one"]]
+    assert not session_review.pending()
+    assert not _failure_awis(notes)
+    assert "記録ファイルの無い対象を振り返りの待ちから外した: gone" in capsys.readouterr().err
+
+
+class _ProcessDied(BaseException):
+    """実行プロセスの強制終了を模す。batchの失敗処理が捕捉しない例外で、実行記録を実行中のまま残す。"""
+
+
+def test_interrupted_run_is_retried_once_before_failure_report(tmp_path, monkeypatch) -> None:
+    """診断を残さず実行プロセスが終了した回は、1回目は報告せずに再試行し、同じ対象が続けて中断したら失敗として報告する。"""
+    notes = _notes()
+    _target(tmp_path, "one")
+
+    def die(_args):
+        raise _ProcessDied
+
+    with pytest.raises(_ProcessDied):
+        run_skill_batch.dispatch(_args("manual"), die)
+    # 1回目の中断: 次の起動は報告と抑止をせず、同じ対象の実行まで進む。
+    with pytest.raises(_ProcessDied):
+        run_skill_batch.dispatch(_args("manual"), die)
+    assert not _failure_awis(notes)
+    assert [item["session_id"] for item in session_review.pending()] == ["one"]
+    # 同じ対象の2回目の中断: 失敗として報告し、実行へ進まない。
+    calls: list[dict] = []
+    assert run_skill_batch.dispatch(_args("manual"), _report_and_finish(notes, monkeypatch, calls)) == 1
+    assert not calls
+    failures = _failure_awis(notes)
+    assert len(failures) == 1
+    assert "interrupted: 実行プロセスが終了し成功を確認できない" in failures[0].read_text(encoding="utf-8")
+
+
+def test_interrupted_run_recovers_on_next_start(tmp_path, monkeypatch) -> None:
+    """1回の中断の後、次の起動で同じ対象の振り返りが完了し、失敗報告を残さない。"""
+    notes = _notes()
+    _target(tmp_path, "one")
+
+    def die(_args):
+        raise _ProcessDied
+
+    with pytest.raises(_ProcessDied):
+        run_skill_batch.dispatch(_args("manual"), die)
+    calls: list[dict] = []
+    assert run_skill_batch.dispatch(_args("manual"), _report_and_finish(notes, monkeypatch, calls)) == 0
+    assert len(calls) == 1 and not session_review.pending()
+    assert not _failure_awis(notes)

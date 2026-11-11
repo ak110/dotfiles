@@ -154,6 +154,51 @@ def test_claude_success_is_explicit_and_terminal(
     assert len(_operation_catalog(tmp_path, capsys, entries, runtime="claude")) == expected
 
 
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("atk wi grep -e '|'", ["grep"]),
+        ('atk wi grep -e "a && b"', ["grep"]),
+        ("atk wi list | head", []),
+        ("atk wi add --body-file a.md && echo ok", []),
+        ("atk wi list|head", []),
+        ("atk wi list;echo ok", []),
+    ],
+)
+def test_claude_quoted_operator_is_argument_data(
+    command: str, expected: list[str], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """引用された記号は引数のデータとして数え、引用されていない記号でつないだコマンドは数えない。"""
+    entries: list[dict[str, Any]] = [
+        {"message": {"content": [{"type": "tool_use", "id": "a", "input": {"command": command}}]}},
+        {"message": {"content": [{"type": "tool_result", "tool_use_id": "a", "content": "ok", "is_error": False}]}},
+    ]
+    operations = _operation_catalog(tmp_path, capsys, entries, runtime="claude")
+    assert [item["operation"] for item in operations] == expected
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        (["atk", "wi", "grep", "-e", "|"], ["grep"]),
+        (["bash", "-lc", "atk wi grep -e '|'"], ["grep"]),
+        (["bash", "-lc", "atk wi list | head"], []),
+    ],
+)
+def test_codex_argv_operator_is_argument_data(
+    command: list[str], expected: list[str], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """引数の列の要素はデータであり、シェルへ渡す文字列の中の記号だけをコマンドの区切りとして扱う。"""
+    entry = {
+        "type": "event_msg",
+        "payload": {
+            "type": "item_completed",
+            "item": {"type": "CommandExecution", "command": command, "status": "completed", "exit_code": 0},
+        },
+    }
+    assert [item["operation"] for item in _operation_catalog(tmp_path, capsys, [entry])] == expected
+
+
 def _catalog_fixture(tmp_path: pathlib.Path, runtime: str) -> list[str]:
     """既存のClaude・Codexテストコードと同じ記録形で、時刻順と条件が異なる3つの親セッションを作成する。"""
     root = tmp_path / "catalog"

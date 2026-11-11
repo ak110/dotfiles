@@ -18,9 +18,20 @@ from agent_toolkit._common import session_activity, session_review
 
 def _pending(name, *, batch=False):
     path = session_review.directory() / "pending" / f"claude-{name}.json"
+    # 記録ファイルの無い対象は待ちから外れるため、準備を差し替える試験でも記録の実体を置く。
+    transcript = session_review.directory() / "test-records" / f"{name}.jsonl"
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_text("{}\n", encoding="utf-8")
     session_review.write(
         path,
-        {"key": path.stem, "host": "claude", "session_id": name, "review_batch": batch, "generation": f"{name}-generation"},
+        {
+            "key": path.stem,
+            "host": "claude",
+            "session_id": name,
+            "review_batch": batch,
+            "generation": f"{name}-generation",
+            "transcript_path": str(transcript),
+        },
     )
 
 

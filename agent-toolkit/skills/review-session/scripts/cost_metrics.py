@@ -31,6 +31,9 @@ from agent_toolkit._git import command as git_command
 
 _TOKEN_KEYS = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
 _JUDGMENT_LABEL = re.compile(r"(?:実装時|実装中)の(?:技術)?(?:判断|解釈)\s*[:：]")
+# `share/review-table-operations.md`「レビュー指摘管理表の共通操作」が定める、担当が自分で足す行の指摘箇所の書き出し。
+# 通常の指摘の本文がこの語を引用しても外さないよう、指摘箇所の列だけで判定する。
+_SELF_RECORD_LABEL = re.compile(r"担当の記録\s*[:：]")
 _JUDGMENT_RECORD = re.compile(r"(?:実装時|実装中)の(?:技術)?(?:判断|解釈)の(?:記録|引き継ぎ)")
 
 
@@ -129,7 +132,7 @@ def saved_review_tables(
     """private-notesの`plans`配下から、最初の追加commitが期間内にある実行レビューの管理表を読む。
 
     週次指標と振り返りの採否集計が同じ読込・正規化と期間の割当を使うよう、両者から呼ぶ。
-    行は`track`が`exec-review`のものだけを残し、明示された実装中の判断記録を分ける。
+    行は`track`が`exec-review`のものだけを残し、明示された実装中の判断記録と、担当が自分で足した行を分ける。
     元の表の行番号とセルは、除外の追跡と応答の所在確認のため保持する。
     """
     first_additions: dict[str, datetime.datetime] = {}
@@ -154,8 +157,10 @@ def saved_review_tables(
                     continue
                 int(row[0])
                 # 主体名や応答状態だけでは、実指摘への見送り・撤回と区別できない。
-                is_judgment = any(_JUDGMENT_LABEL.match(row[column].strip()) for column in (2, 3, 6)) or bool(
-                    _JUDGMENT_RECORD.search(row[6])
+                is_judgment = (
+                    bool(_SELF_RECORD_LABEL.match(row[2].strip()))
+                    or any(_JUDGMENT_LABEL.match(row[column].strip()) for column in (2, 3, 6))
+                    or bool(_JUDGMENT_RECORD.search(row[6]))
                 )
                 (judgment_rows if is_judgment else rows).append((number, row))
         except OSError, UnicodeError, ValueError:

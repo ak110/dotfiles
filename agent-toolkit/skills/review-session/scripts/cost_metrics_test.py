@@ -246,9 +246,30 @@ def test_review_metrics_exec_review_only(dataset: tuple[Path, Path, Path], capsy
     }
 
 
+def _current_adoption(dataset, capsys) -> dict[str, Any]:
+    """同じ期間の採否集計を公開入口から取得し、今回の期間の行を返す。"""
+    claude, codex, repo = dataset
+    arguments = [
+        "--",
+        "--since",
+        "2026-10-05",
+        "--until",
+        "2026-10-12",
+        "--private-notes",
+        str(repo),
+        "--claude-projects-dir",
+        str(claude),
+        "--codex-sessions-dir",
+        str(codex),
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="review-adoption", script_args=arguments)) == 0
+    periods = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    return next(event for event in periods if event["kind"] == "review-adoption-period" and event["period"] == "current")
+
+
 def test_review_metrics_exclude_judgments_from_both_public_metrics(dataset, capsys) -> None:
     """同じ8判断・4実指摘から両CLIが同じ件数と元行番号を返す。"""
-    claude, codex, repo = dataset
+    _claude, _codex, repo = dataset
     table = repo / "plans/ci/check.exec-review.tsv"
     rows = [["9", "exec-review", "場所", f"実装時の判断: 記録{number}", "要件", "", "判断の引き継ぎ"] for number in range(8)]
     rows.insert(3, ["9", "plan-review", "場所", "別track", "要件", "", ""])
@@ -273,26 +294,45 @@ def test_review_metrics_exclude_judgments_from_both_public_metrics(dataset, caps
     assert review["five_or_more_ratio"] == 0
     assert review["excluded_judgment_count"] == 8
     assert review["excluded_judgments"] == [{"table": str(table), "row": number} for number in (1, 2, 3, 5, 6, 7, 8, 9)]
-    arguments = [
-        "--",
-        "--since",
-        "2026-10-05",
-        "--until",
-        "2026-10-12",
-        "--private-notes",
-        str(repo),
-        "--claude-projects-dir",
-        str(claude),
-        "--codex-sessions-dir",
-        str(codex),
-    ]
-    assert run_script.dispatch(argparse.Namespace(script_name="review-adoption", script_args=arguments)) == 0
-    periods = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    current = next(event for event in periods if event["kind"] == "review-adoption-period" and event["period"] == "current")
+    current = _current_adoption(dataset, capsys)
     assert (current["adopted"], current["rejected"], current["unanswered"]) == (1, 2, 1)
     assert current["by_reason"] == {"判断による見送り": 1, "レビュー担当の前提の誤り・撤回": 1}
     assert current["excluded_judgments"] == review["excluded_judgments"]
     assert current["excluded_judgment_count"] == review["excluded_judgment_count"]
+
+
+def test_review_metrics_exclude_rows_written_with_the_documented_self_record_label(dataset, capsys) -> None:
+    """規範が定める書き出しで担当が足した3種類の行を、両CLIが指摘の件数から外す。
+
+    書き出しと規範の現物の一致は`agent-toolkit/review_table_label_invariant_test.py`が確かめる。
+    """
+    label = "担当の記録:"
+    _claude, _codex, repo = dataset
+    table = repo / "plans/ci/check.exec-review.tsv"
+    rows = [
+        # 実装中の判断、完成条件の除外の判断、統合時の競合解消（対応内容が埋まる）の順。
+        ["9", "exec-review", f"{label} 実装中の判断（入力境界）", "解釈を記録する", "要件", "", "判断の引き継ぎ"],
+        ["9", "exec-review", f"{label} 完成条件3の除外", "条件を外す", "仕様", "", "根拠の所在: メインの技術判断"],
+        ["9", "exec-review", f"{label} 統合rebaseの競合解消", "両方の変更を保つ", "実装", "解消した", ""],
+        ["1", "exec-review", "file.py", "担当の記録: を引用しただけの通常の指摘", "仕様", "修正", ""],
+        ["1", "exec-review", "file.py", "見送り", "詳細", "", "根拠の所在: レビュー担当が撤回"],
+    ]
+    table.write_text(
+        "".join("\t".join(json.dumps(cell, ensure_ascii=False) for cell in row) + "\n" for row in rows), encoding="utf-8"
+    )
+    _commit(repo, "2026-10-07T12:00:00Z")
+    review = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")[0]["review"]
+    assert review["finding_count"] == 2
+    assert review["levels"] == {"要件": 0, "仕様": 1, "詳細": 1, "実装": 0, "未記録": 0}
+    assert review["excluded_judgments"] == [{"table": str(table), "row": number} for number in (1, 2, 3)]
+    current = _current_adoption(dataset, capsys)
+    assert (current["adopted"], current["rejected"], current["unanswered"]) == (1, 1, 0)
+    assert current["by_reason"] == {"レビュー担当の前提の誤り・撤回": 1}
+    assert current["by_level"] == {
+        "仕様": {"adopted": 1, "rejected": 0, "unanswered": 0},
+        "詳細": {"adopted": 0, "rejected": 1, "unanswered": 0},
+    }
+    assert current["excluded_judgment_count"] == 3
 
 
 def test_coverage_reports_missing_weeks(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
