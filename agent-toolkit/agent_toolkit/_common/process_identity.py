@@ -27,7 +27,12 @@ def start_id(process: psutil.Process) -> str | None:
         return f"linux:{boot}:{ticks}"
     if sys.platform == "darwin":
         # psutil自身もmacOSのPID世代判定にこの単調時刻を用いる。非公開APIへの依存はここに閉じる。
-        return f"darwin:{process._proc.create_time(monotonic=True)!r}"  # pylint: disable=protected-access
+        if not process.is_running():
+            raise psutil.NoSuchProcess(process.pid)
+        created = process._proc.create_time(monotonic=True)  # pylint: disable=protected-access
+        if not process.is_running():
+            raise psutil.NoSuchProcess(process.pid)
+        return f"darwin:{created!r}"
     return None
 
 

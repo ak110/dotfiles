@@ -56,10 +56,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     processes: tuple[claude_plugin_references.ReferencingProcess, ...] | None = None
     for (marketplace, name), installed in sorted(current_paths.items()):
         plugin_dir = cache_root / marketplace / name
-        for version_dir, window in _expired_versions(plugin_dir, installed, deadline):
+        for version_dir in _expired_versions(plugin_dir, installed, deadline):
             if processes is None:
                 processes = claude_plugin_references.scan()
-            reasons = claude_plugin_references.holding_reasons(processes, version_dir, session_window=window)
+            reasons = claude_plugin_references.holding_reasons(processes, version_dir)
             if reasons:
                 logger.info(
                     log_format.format_status(
@@ -131,23 +131,20 @@ def _current_install_paths() -> dict[tuple[str, str], set[Path]] | None:
     return result
 
 
-def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -> list[tuple[Path, tuple[float, float]]]:
-    """後継版の導入時刻が`deadline`以前である非現行の版ディレクトリと、その版が現行だった期間を返す。
-
-    期間は`(その版の導入時刻, 後継版の導入時刻)`とし、この間に起動したClaude Codeセッションがその版を使う。
-    """
+def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -> list[Path]:
+    """後継版の導入時刻が`deadline`以前である非現行の版ディレクトリを返す。"""
     try:
         candidates = [child for child in plugin_dir.iterdir() if not _is_link_like(child) and child.is_dir()]
     except OSError:
         return []
     timed = sorted(((_installed_at(child), child) for child in candidates), key=lambda item: (item[0], item[1].name))
-    expired: list[tuple[Path, tuple[float, float]]] = []
-    for index, (installed_at, version_dir) in enumerate(timed[:-1]):
+    expired: list[Path] = []
+    for index, (_, version_dir) in enumerate(timed[:-1]):
         if _resolve(version_dir) in installed:
             continue
         successor_installed_at = timed[index + 1][0]
         if successor_installed_at <= deadline:
-            expired.append((version_dir, (installed_at, successor_installed_at)))
+            expired.append(version_dir)
     return expired
 
 

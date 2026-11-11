@@ -33,7 +33,6 @@ class ReferencingProcess:
     pid: int
     label: str
     claude: bool
-    started_at: float | None
     values: tuple[str, ...]
     complete: bool
 
@@ -43,7 +42,7 @@ def scan() -> tuple[ReferencingProcess, ...]:
     windows = os.name == "nt"
     owner = psutil.Process().username() if windows else os.getuid()
     owner_attribute = "username" if windows else "uids"
-    attributes = ["name", "exe", "cmdline", "cwd", "environ", "create_time", "status", owner_attribute]
+    attributes = ["name", "exe", "cmdline", "cwd", "environ", "status", owner_attribute]
     result: list[ReferencingProcess] = []
     # process_iterはPID単位でProcessを再利用し、実行ファイルと起動時刻を以前の世代のまま保持する。
     # 列挙は現在のPIDの取得だけに使い、属性は新しく構築したProcessから読む。
@@ -61,7 +60,7 @@ def scan() -> tuple[ReferencingProcess, ...]:
 
 def _referencing_process(pid: int, info: dict[str, typing.Any]) -> ReferencingProcess:
     name_value, exe_value, cmdline_value = info.get("name"), info.get("exe"), info.get("cmdline")
-    cwd_value, environ_value, started_value = info.get("cwd"), info.get("environ"), info.get("create_time")
+    cwd_value, environ_value = info.get("cwd"), info.get("environ")
     name = name_value if isinstance(name_value, str) else ""
     exe = exe_value if isinstance(exe_value, str) else ""
     cmdline = [value for value in cmdline_value if isinstance(value, str)] if isinstance(cmdline_value, list) else []
@@ -75,24 +74,22 @@ def _referencing_process(pid: int, info: dict[str, typing.Any]) -> ReferencingPr
     identified = bool(name or exe or cmdline)
     claude = not identified or _is_claude(name, exe, cmdline)
     label = _executable_name(name or exe or (cmdline[0] if cmdline else "")) or "不明"
-    started_at = started_value if isinstance(started_value, float) else None
-    return ReferencingProcess(pid, f"{label} (pid {pid})", claude, started_at, values, complete and identified)
+    return ReferencingProcess(pid, f"{label} (pid {pid})", claude, values, complete and identified)
 
 
 def holding_reasons(
     processes: tuple[ReferencingProcess, ...],
     directory: pathlib.Path,
     *,
-    session_window: tuple[float, float] | None,
+    sessions_may_reference: bool = True,
 ) -> list[str]:
     """`directory`を回収してはいけない理由を返す。空なら参照の終了を判定できている。
 
     次のいずれかに当たる間は保持する。
 
     - 自ユーザーのプロセスの作業ディレクトリ・実行ファイル・command line・`CLAUDE_PLUGIN_ROOT`が`directory`の配下を指す
-    - Claude Codeのセッションがその版を使い得る。`session_window`が`None`なら稼働中の全セッション、
-      `(開始, 終了)`ならその期間に起動したセッション（起動時刻を取得できないセッションを含む）が当たる。
-      セッションは起動時に解決した版のhook・skillを使い続けるため
+    - `sessions_may_reference`が真で、Claude Codeセッションが稼働中。
+      セッションは起動時に解決した版を使い続け、時計補正で動く起動日時では使用する版を限定できないため
     - Claude Codeのプロセス（Claude Codeか判定できないプロセスを含む）の参照先を取得できない
     """
     targets = _path_strings(directory)
@@ -104,10 +101,8 @@ def holding_reasons(
             continue
         elif not process.complete:
             reasons.append(f"Claude Code {process.label}の参照先を取得できない")
-        elif session_window is None:
+        elif sessions_may_reference:
             reasons.append(f"Claude Code {process.label}が稼働中")
-        elif process.started_at is None or session_window[0] <= process.started_at < session_window[1]:
-            reasons.append(f"この版が現行だった期間に起動したClaude Code {process.label}が稼働中")
     return reasons
 
 

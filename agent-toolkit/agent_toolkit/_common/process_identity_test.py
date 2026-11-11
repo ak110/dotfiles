@@ -5,6 +5,8 @@ import json
 import os
 import pathlib
 import sys
+import types
+import typing
 
 import psutil
 import pytest
@@ -84,3 +86,22 @@ def test_current_process_and_missing_pid():
     saved = process_identity.ProcessIdentity.of(os.getpid())
     assert saved is not None and saved.exists()
     assert not dataclasses.replace(saved, pid=2147483647).exists()
+
+
+def test_macos_capture_rejects_generation_lost_during_observation(monkeypatch):
+    """起動識別の取得中に世代を失ったmacOS観測を、再利用先の識別へ付け替えない。"""
+    state = {"alive": True}
+
+    def changed_generation(**_kwargs):
+        state["alive"] = False
+        return 12.0
+
+    process = types.SimpleNamespace(
+        pid=123,
+        is_running=lambda: state["alive"],
+        _proc=types.SimpleNamespace(create_time=changed_generation),
+        create_time=lambda: 100.0,
+    )
+    monkeypatch.setattr(process_identity, "sys", types.SimpleNamespace(platform="darwin"))
+    with pytest.raises(psutil.NoSuchProcess):
+        process_identity.ProcessIdentity.capture(typing.cast(psutil.Process, process))

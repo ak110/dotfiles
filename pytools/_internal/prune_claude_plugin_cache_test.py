@@ -196,14 +196,12 @@ def test_keeps_expired_version_while_a_process_refers_to_it(
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="実行名をsymlinkで与える常駐プロセスはLinuxで起動する")
-@pytest.mark.parametrize("stale_previous_generation", [False, True])
-def test_keeps_expired_version_used_by_session_started_while_it_was_current(
-    plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stale_previous_generation: bool
+def test_keeps_expired_versions_while_claude_runs_despite_clock_correction(
+    plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """旧版が現行だった期間に起動したClaude Codeセッションが稼働中なら、作業ディレクトリが別でも旧版を残す。
+    """時計補正で起動日時が導入期間外に動いても、稼働中Claudeが使い得る旧版を保持する。
 
     セッションは起動時に解決した版のhook・skillを使い続けるため、参照先のパスはプロセス情報に現れない。
-    期間外に起動したセッションは旧版を使わないため、削除を妨げない。
     """
     monkeypatch.setattr(claude_plugin_references, "scan", _REAL_SCAN)
     # 起動時刻を旧版が現行だった期間へ収めるため、旧版の導入を1時間前、後継版の導入を1時間後に置き、猶予を負にして候補へ含める。
@@ -215,21 +213,27 @@ def test_keeps_expired_version_used_by_session_started_while_it_was_current(
     with ResidentProcesses(tmp_path, monkeypatch) as residents:
         resident = residents.start("claude", cwd=tmp_path)
         started_at = psutil.Process(resident.pid).create_time()
-        if stale_previous_generation:
-            # 以前の世代は現行期間の外で起動し、別の旧版を参照した状態にする。
-            stale = psutil.Process(resident.pid)
-            monkeypatch.setattr(stale, "_create_time", started_at - 10 * _DAY)
-            monkeypatch.setattr(stale, "_ident", (resident.pid, started_at - 10 * _DAY))
-            monkeypatch.setattr(stale, "_exe", str(older / ".venv" / "claude"))
-            monkeypatch.setitem(vars(psutil)["_pmap"], resident.pid, stale)
+        # 一覧のキャッシュに残る以前のPID世代を、現在の参照状態として採用しない。
+        stale = psutil.Process(resident.pid)
+        monkeypatch.setattr(stale, "_create_time", started_at - 10 * _DAY)
+        monkeypatch.setattr(stale, "_ident", (resident.pid, started_at - 10 * _DAY))
+        monkeypatch.setattr(stale, "_exe", str(older / ".venv" / "claude"))
+        monkeypatch.setitem(vars(psutil)["_pmap"], resident.pid, stale)
 
         scanned = claude_plugin_references.scan()
         assert len(scanned) == 1
-        assert scanned[0].started_at == started_at
-        assert prune_claude_plugin_cache.run().changed is True
-        assert old.is_dir()
-        assert not older.exists()
+        assert all(str(older) not in value for value in scanned[0].values)
+        assert prune_claude_plugin_cache.run().changed is False
+        assert old.is_dir() and older.is_dir()
+
+        def corrected_create_time(_self, **_kwargs):
+            return started_at + 10 * _DAY
+
+        monkeypatch.setattr(psutil.Process, "create_time", corrected_create_time)
+        assert prune_claude_plugin_cache.run().changed is False
+        assert old.is_dir() and older.is_dir()
 
     assert prune_claude_plugin_cache.run().changed is True
     assert not old.exists()
+    assert not older.exists()
     assert current.is_dir()

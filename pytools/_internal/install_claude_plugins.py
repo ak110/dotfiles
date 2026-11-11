@@ -10,7 +10,6 @@ dotfiles apply全体の失敗にはしない。前提を満たしたうえで管
 import json
 import logging
 import shutil
-import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, cast
@@ -755,7 +754,7 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
     missing = _missing_plugin_cache_files(name, cache_dir)
     if not missing:
         return "unchanged"
-    reasons = claude_plugin_references.holding_reasons(claude_plugin_references.scan(), cache_dir, session_window=None)
+    reasons = claude_plugin_references.holding_reasons(claude_plugin_references.scan(), cache_dir)
     if reasons:
         logger.warning(
             log_format.format_status(
@@ -811,15 +810,14 @@ def _remove_development_artifacts(name: str) -> tuple[bool, int, bool]:
         return False, 0, False
     processes = claude_plugin_references.scan()
     # セッションは版ディレクトリのhook・skillを使うが開発用生成物は使わないため、
-    # 稼働中のセッションを保持の理由にしない（空の期間を渡す）。生成物のパスを参照するプロセスと、
+    # 稼働中のセッションを保持の理由にしない。生成物のパスを参照するプロセスと、
     # 参照先を取得できないClaude Codeのプロセスがある間は保持する。
-    now = time.time()
     removed = False
     failed = 0
     held = False
     for target in targets:
         short = log_format.home_short(target)
-        reasons = claude_plugin_references.holding_reasons(processes, target, session_window=(now, now))
+        reasons = claude_plugin_references.holding_reasons(processes, target, sessions_may_reference=False)
         if reasons:
             held = True
             logger.warning(
