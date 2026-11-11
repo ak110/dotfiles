@@ -75,12 +75,12 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
     通常の遮断基準の4条件には該当しないが、web-fetchへのユーザーの切替要求と、
     web-fetch・Exploreの2回の実測で警告が当該起動を変えなかったことから遮断する。
     同じ依頼を対応するmodeへ渡せるため、損失は起動の再発行に限られる。
-    例外の成否は入力から判定できず受信側へ委ねる。別操作を挟む例外の確認と複数依頼を支えるため、
+    例外の成否は入力から判定できず受信側へ委ねる。別操作による例外の確認と複数依頼を支えるため、
     主体別に直近32件の指紋を保持し、通過時に消費する。寿命はセッション状態の回収に従う。
     軽量起動の委譲先は再委譲が禁止され、委譲のスキルも配送されないため対象外とする。
     再発行の記録を保存できない場合は、案内した再発行も通せず遮断が続くため、警告だけを返して起動を通す。
     """
-    if _delegated_session.is_lightweight_delegated(os.environ):
+    if payload.get("runtime") == "agy" or _delegated_session.is_lightweight_delegated(os.environ):
         return None, None
     # ホストが`general-purpose`で起動するのはキーの省略と空文字だけで、明示の`null`などの文字列以外は判定できないため通す。
     agent_type = tool_input.get("subagent_type", "")

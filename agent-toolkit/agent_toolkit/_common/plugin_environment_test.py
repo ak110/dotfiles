@@ -816,6 +816,28 @@ def test_prepared_python_is_found_from_inside_shared_environment(
     assert subject.project_environment(root, environment, python_executable=python) == selected
 
 
+def test_shared_environment_resolves_venv_creator_to_base_python(tmp_path: Path) -> None:
+    """Windowsの標準venvが作成元のvenvを記録しても、共有環境のキーは本体で一致する。"""
+    root = _root(tmp_path / "plugin")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
+    home = tmp_path / "python"
+    home.mkdir()
+    base = home / "python.exe"
+    base.touch()
+    creator = tmp_path / "creator" / "Scripts" / "python.exe"
+    creator.parent.mkdir(parents=True)
+    creator.touch()
+    (creator.parent.parent / "pyvenv.cfg").write_text(f"home = {home}\nversion_info = 3.15\n", encoding="utf-8")
+    shared = subject.project_environment(root, environment, python_executable=creator)
+    python = shared / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.touch()
+    (shared / "pyvenv.cfg").write_text(f"home = {home}\nversion = 3.15.2\nexecutable = {creator}\n", encoding="utf-8")
+
+    assert subject.project_environment(root, environment, python_executable=python) == shared
+    assert subject.project_environment(root, environment, python_executable=base) == shared
+
+
 @pytest.mark.parametrize(
     ("linked", "settings", "expected"),
     [

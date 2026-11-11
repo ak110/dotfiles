@@ -12,6 +12,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
 from agent_toolkit._hooks.pretooluse import operation_skills
@@ -572,10 +573,11 @@ def test_verification_queries_do_not_require_check_execution(payload: dict) -> N
 def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
     """資料不足を警告し、取得を観測するまで準備済みとして記録しない。"""
     env = _plan_file_state_env(tmp_path)
+    for session in ("ready", "codex-delegation"):
+        (managed_temp.resolve_session_temp(session) / "work-contract.md").write_text("委譲の試験\n", encoding="utf-8")
     _record_skill(env, "ready", "agent-toolkit:delegation")
-    payload = {"tool_name": tool, "tool_input": {"prompt": "調査する"}, "session_id": "ready"}
-    # 組み込みの汎用Agentの起動には、取得済みでも実行手段の判定を促す警告が`runtime-routing.md`を名指しして出る。
-    # ここでは取得の案内だけが消えることを確かめる。
+    payload = {"tool_name": tool, "tool_input": {"prompt": "調査する", "subagent_type": "specialist"}, "session_id": "ready"}
+    # 起動手段の拒否とは分け、許可された専用定義で取得前後の案内を検証する。
     assert "`Skill`で`agent-toolkit:delegation`" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
     result = _run(codex, env)
@@ -828,7 +830,7 @@ def test_standard_stream_alias_is_not_discarded_by_name(tmp_path: pathlib.Path, 
 
 
 def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path) -> None:
-    """公開Pre/Post経路で破棄だけを本文編集やリポジトリ編集として扱わない。"""
+    """公開Pre/Post hookで破棄だけを本文編集やリポジトリ編集として扱わない。"""
     env = _plan_file_state_env(tmp_path)
     payload = _bash(f"cat > {os.devnull} <<<'本文'", "discard-public", cwd=str(tmp_path))
     result = _run(payload, env)

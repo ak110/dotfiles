@@ -883,7 +883,10 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     ("skill_name", "operation"),
     [
         ("agent-basics:search", {"tool_name": "Bash", "tool_input": {"command": "rg x"}}),
-        ("agent-toolkit:delegation", {"tool_name": "Agent", "tool_input": {"prompt": "調査する"}}),
+        (
+            "agent-toolkit:delegation",
+            {"tool_name": "Agent", "tool_input": {"prompt": "調査する", "subagent_type": "specialist"}},
+        ),
     ],
 )
 def test_session_start_resets_operation_skill_ready_for_main(
@@ -908,6 +911,9 @@ def test_session_start_resets_operation_skill_ready_for_main(
         raise OSError("テストではセッションのmanaged-tempを作成しない")
 
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", _no_session_temp)
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("資料配送の試験\n", encoding="utf-8")
+    monkeypatch.setattr(rules_context.work_contract, "record_path", lambda _session: contract)
 
     def _hook_context(handler: Callable[[str], int], payload: dict) -> str:
         code = handler(json.dumps(payload))
@@ -936,8 +942,7 @@ def test_session_start_resets_operation_skill_ready_for_main(
 
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
-    # 組み込みの汎用Agentの起動には、取得済みでも実行手段の判定を促す警告が`agent-toolkit:delegation`を名指しして出る。
-    # ここでは取得の案内の有無だけを確かめる。
+    # 専用定義の起動を使い、起動手段の拒否と資料の取得案内を分ける。
     acquisition = f"`Skill`で`{skill_name}`"
     assert (acquisition in _operation_context(None)) is main_warns
     assert acquisition not in _operation_context("sub-1")

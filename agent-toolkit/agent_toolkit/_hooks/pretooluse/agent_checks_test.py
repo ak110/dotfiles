@@ -684,7 +684,7 @@ class TestAgentTaskLaunchIndependence:
 
 
 class TestGenericAgentLaunchBlock:
-    """公開入口から汎用定義の遮断・再発行と対象外の無通知を確認する。"""
+    """公開hookから汎用定義の遮断・再発行と対象外の無通知を確認する。"""
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("agent_type", ["general-purpose", "Explore", "Plan", "web-fetch", "claude", None, ""])
@@ -762,7 +762,7 @@ class TestGenericAgentLaunchBlock:
         payload = {"session_id": "" if failure == "missing-session" else "generic-unwritable"}
         tool_input = {"subagent_type": "Explore", "prompt": "担当の作業を進める。"}
         for _ in range(2):
-            # 状態の保存の失敗は公開入口から注入できないため、判定の関数を直接呼ぶ。
+            # 状態の保存の失敗は公開hookから注入できないため、判定の関数を直接呼ぶ。
             block, notice = agent_checks._check_generic_agent_launch(  # pylint: disable=protected-access
                 payload, "Agent", tool_input
             )

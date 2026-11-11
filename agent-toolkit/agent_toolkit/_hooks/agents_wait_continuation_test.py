@@ -16,12 +16,7 @@ def test_wait_result_keeps_running_target_until_continuation_is_owned(monkeypatc
     monkeypatch.setattr(shared_roots, "resolve_wait_identity", lambda *_args, **_kwargs: identity)
     monkeypatch.setattr(shared_roots, "resolve_conversation_root_session_id", lambda *_args, **_kwargs: root)
     wait_targets.retain_wait_targets(root, "root.json", [remote])
-    registry = session_registry.registry_directory() / f"{remote}.json"
-    registry.parent.mkdir(parents=True, exist_ok=True)
-    registry.write_text(
-        json.dumps({"version": 1, "session_id": remote, "updated_at": "2026-11-05T00:00:00Z", "terminal": False}),
-        encoding="utf-8",
-    )
+    session_registry.publish(remote, state=session_registry.PublicationState.PENDING_RUNNING, cwd="/test")
     session_state.update_state(
         local,
         lambda state: {
@@ -61,8 +56,5 @@ def test_wait_result_keeps_running_target_until_continuation_is_owned(monkeypatc
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     assert not stop.evaluate(json.dumps({"session_id": local, "last_assistant_message": f"待機中: {remote}"}))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION")
-    registry.write_text(
-        json.dumps({"version": 1, "session_id": remote, "updated_at": "2026-11-05T00:01:00Z", "terminal": True}),
-        encoding="utf-8",
-    )
+    session_registry.publish(remote, state=session_registry.PublicationState.RESULT_COMPLETED, cwd="/test")
     assert not stop.evaluate(payload)

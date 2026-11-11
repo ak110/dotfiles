@@ -69,26 +69,30 @@ def base_python(python_executable: Path | None = None) -> Path:
     `home`には別の版を指す`python`が置かれることがあるため、版を含む名前を同名より先に探す。
     """
     executable = python_executable or Path(sys.executable)
-    resolved = executable.resolve()
-    config = executable.parent.parent / "pyvenv.cfg"
-    if not config.is_file() or not resolved.is_relative_to(config.parent.resolve()):
-        return resolved
-    settings: dict[str, str] = {}
-    for line in config.read_text(encoding="utf-8").splitlines():
-        key, separator, value = line.partition("=")
-        if separator:
-            settings.setdefault(key.strip(), value.strip())
-    # 標準の`venv`は`executable`と`version`、uvは`version_info`を書く。
-    candidates = [Path(settings["executable"])] if settings.get("executable") else []
-    if home := settings.get("home"):
-        version = (settings.get("version_info") or settings.get("version") or "").split(".")
-        if len(version) >= 2:
-            candidates.append(Path(home) / f"python{version[0]}.{version[1]}{executable.suffix}")
-        candidates.append(Path(home) / executable.name)
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate.resolve()
-    return resolved
+    seen: set[Path] = set()
+    while True:
+        resolved = executable.resolve()
+        seen.add(resolved)
+        config = executable.parent.parent / "pyvenv.cfg"
+        if not config.is_file() or not resolved.is_relative_to(config.parent.resolve()):
+            return resolved
+        settings: dict[str, str] = {}
+        for line in config.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition("=")
+            if separator:
+                settings.setdefault(key.strip(), value.strip())
+        # 標準の`venv`は`executable`と`version`、uvは`version_info`を書く。
+        # Windowsでvenvから作ると`executable`もvenvを指すため、本体まで解決を続ける。
+        candidates = [Path(settings["executable"])] if settings.get("executable") else []
+        if home := settings.get("home"):
+            version = (settings.get("version_info") or settings.get("version") or "").split(".")
+            if len(version) >= 2:
+                candidates.append(Path(home) / f"python{version[0]}.{version[1]}{executable.suffix}")
+            candidates.append(Path(home) / executable.name)
+        candidate = next((path for path in candidates if path.is_file() and path.resolve() not in seen), None)
+        if candidate is None:
+            return resolved
+        executable = candidate
 
 
 def project_environment(root: Path, environment: Mapping[str, str], *, python_executable: Path | None = None) -> Path:

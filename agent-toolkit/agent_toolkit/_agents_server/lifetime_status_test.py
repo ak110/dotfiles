@@ -86,7 +86,12 @@ def test_lifetime_monitor_collects_descendants_once_per_interval(monkeypatch):
     guard._pipe_closed = None  # pylint: disable=protected-access
     monkeypatch.setattr(lifetime.time, "monotonic", lambda: clock["now"])
     monkeypatch.setattr(guard, "_collect", lambda: collects.append(clock["now"]))
-    monkeypatch.setattr(guard, "_parent_gone", lambda: parent_checks.append(clock["now"]) is not None)
+
+    def parent_gone():
+        parent_checks.append(clock["now"])
+        return False
+
+    monkeypatch.setattr(guard, "_parent_gone", parent_gone)
     guard._watch()  # pylint: disable=protected-access
     guard._process_pins.close()  # pylint: disable=protected-access
     assert len(parent_checks) == cycles

@@ -1,7 +1,7 @@
 # agent-doc-tone: test-data
 """`notation-checks.md`「文章チェックの一括実行」が定める引数と完了判定の回帰テスト。
 
-規範どおりの引数でpyfltr MCPの`run`ツールの実装（`pyfltr.cli.mcp_server.tool_run`）を呼び、
+規範どおりの引数でpyfltr MCPの公開`run`ツールを呼び、
 規範が定める判定条件が到達・完了した対象だけを完了と判定し、未到達・未完了を完了と判定しないことを確かめる。
 """
 
@@ -13,6 +13,7 @@ import sys
 
 import pyfltr.cli.mcp_server as pyfltr_mcp_server
 import pytest
+from mcp.types import CallToolResult
 
 # textlintをpnpmの`dlx`経由で実際に動かすため、取得物の保存先をホストと共有して毎回の取得し直しを避ける。
 pytestmark = pytest.mark.usefixtures("share_package_caches")
@@ -46,17 +47,23 @@ def _run_mcp(target: pathlib.Path | list[pathlib.Path], *, allow_external_paths:
     targets = [target] if isinstance(target, pathlib.Path) else target
     commands = sorted({command for path in targets for command in _commands_for(path)})
     result = asyncio.run(
-        pyfltr_mcp_server.tool_run(
-            paths=[str(path) for path in targets],
-            work_dir=str(_PROJECT_ROOT),
-            commands=commands,
-            enable=["colloquial-check"],
-            no_exclude=True,
-            no_fix=True,
-            allow_external_paths=allow_external_paths,
+        pyfltr_mcp_server.build_server().call_tool(
+            "run",
+            {
+                "paths": [str(path) for path in targets],
+                "work_dir": str(_PROJECT_ROOT),
+                "commands": commands,
+                "enable": ["colloquial-check"],
+                "no_exclude": True,
+                "no_fix": True,
+                "allow_external_paths": allow_external_paths,
+            },
         )
     )
-    return result.model_dump()
+    assert isinstance(result, CallToolResult)
+    assert not result.is_error
+    assert result.structured_content is not None
+    return result.structured_content
 
 
 def _external_markdown(tmp_path: pathlib.Path) -> pathlib.Path:
