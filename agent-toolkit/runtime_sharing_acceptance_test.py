@@ -203,6 +203,7 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     )
     assert missing.returncode == 1
     assert "update-dotfiles" in missing.stderr
+    assert str(plugin_environment.base_python()) in missing.stderr.splitlines()[0]
     # dotfilesの更新直後と同じく依存の固定内容だけが進んだ未準備のrootでも、CLIの起動部分は準備してから実CLIを返す。
     # hookなどの起動対象は直前の`missing`のとおり待たずに終了する。
     # 依存宣言を変えてuv.lockを解決し直すと、オフラインでは取得物の保存先に索引の情報が無い環境（CIなど）で失敗する。

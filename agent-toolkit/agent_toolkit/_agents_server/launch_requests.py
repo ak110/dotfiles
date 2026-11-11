@@ -27,7 +27,7 @@ from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter, headings
 from agent_toolkit._atk.wi.constants import normalized_wi_type
-from agent_toolkit._common import private_notes, read_triggers, session_registry, task_documents
+from agent_toolkit._common import delegated_session, private_notes, read_triggers, session_registry, task_documents
 from agent_toolkit._common.markdown_headings import parse_headings
 from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
@@ -1053,13 +1053,21 @@ def delegate_request(
 ) -> tuple[str, pathlib.Path]:
     """自由本文を保ち、通常委譲へ専用の現行記録先と全体作業契約の参照を配送する。"""
     whole_contract = whole_contract_reference(whole_contract_path=whole_contract_path, launcher_session_id=launcher_session_id)
-    path = _default_handoff_path(launcher_session_id)
+    present, explicit = delegated_session.parse_prompt_handoff_path(prompt)
+    if present and explicit is None:
+        raise ActionableError(
+            "引き継ぎ記録先を絶対パスとして読めません。委譲先は起動していない。",
+            next_action="引き継ぎ記録先の行を絶対パスへ直すか、行を削ってstartを再発行する",
+        )
+    path = pathlib.Path(explicit) if explicit is not None else _default_handoff_path(launcher_session_id)
     if path is None:
         raise ActionableError(
             "通常委譲の作業記録先を用意できません。委譲先は起動していない。",
             next_action="managed-tempの診断を確認し、記録先を確保してからstartを再発行する",
         )
-    return prompt + "\n\n" + handoff_notice(path, plugin_root.SERVER_PLUGIN_ROOT) + "\n\n" + whole_contract, path
+    return prompt + "\n\n" + handoff_notice(
+        None if present else path, plugin_root.SERVER_PLUGIN_ROOT
+    ) + "\n\n" + whole_contract, path
 
 
 _WHOLE_CONTRACT_KIND = "work-contract-reference"

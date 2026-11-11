@@ -191,7 +191,8 @@ EXTRA_PARAMS_DESCRIPTION = parameter_description(
 
 PROMPT_DESCRIPTION = parameter_description(
     "delegate・explore・writeで必須、taskとshellでは指定しない。委譲先へ渡す依頼本文。"
-    "delegateでは本文を保ち、サーバーが専用の引き継ぎ記録先を加え、同じパスをhandoff_record_pathで返す。"
+    "delegateでは本文を保ち、記録先の行が無い場合にサーバーが専用の引き継ぎ記録先を加える。"
+    "本文に記録先の行がある場合はその絶対パスを使い、同じパスをhandoff_record_pathで返す。"
     "explore・writeにも共通返却契約の短節を自動配送するため、呼出元での再掲は不要。"
     "委譲先向けの規範（`share/rules/rules-subagent.md`）の全文は受け取らず、"
     "ClaudeとCodexでは作業ディレクトリのプロジェクト規範も読まないため、作業に必要な固有指示を書く。"

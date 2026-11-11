@@ -57,6 +57,18 @@ Claude CodeとCodexは`uvx`でpyfltr MCPを起動し、ツール環境が未構�
 起動形は両ホストが実際に読むMCP定義（Claude Codeの`.mcp.json`、Codexの`.mcp.codex.json`）の`pyfltr`の`command`と`args`から導出し、末尾の`mcp`を`--version`へ置き換えて1回起動する。
 要求指定をウォームアップ側へ書き写すと、配布元の要求指定の更新に追随しない二重管理になるためである。
 
+ウォームアップは依存の準備が済んでいない初回起動の失敗を防ぐが、準備が済んだ後にPCの状態で起動が遅れる場合は防げない。
+Claude CodeはMCPサーバーの接続を`MCP_TIMEOUT`（既定30秒）まで待ち、最初の接続に失敗したstdioのサーバーを自動では再接続しない。
+agent-toolkitのMCPサーバーの接続所要は通常4〜6秒だが、2026年11月10日のPC再起動直後には約32秒かかり、`agents_server`と`pyfltr`の両方が時間切れになった（同じPCの接続記録と起動記録の突き合わせによる）。
+このときは起動の各段階が一様に6〜8倍遅く、サーバー固有の処理ではなくPC全体の遅さが原因だった。
+通常の所要と既定の上限の差は5〜7倍しかなく、この遅延を吸収できないため、dotfilesの管理設定（`share/claude_settings_json_managed.json`の`env`）で`MCP_TIMEOUT`を120秒にしている。
+120秒は観測した最長の所要の約4倍である。
+Claude Codeは既定でMCPサーバーの接続を待たずに最初の入力を受け付けるため、対話のセッションの開始は遅れず、`claude -p`が待つのもサーバーが起動に失敗した場合の最長120秒である。
+起動処理を重くする変更や、この上限を戻す変更では、通常の所要・遅い条件の所要・上限の3つを比べる。
+ウォームアップは更新の直後に動くため再起動直後の所要を観測できず、所要の割合で警告する案は採らない。
+起動所要そのものを縮める案も、一様な遅延の倍率を変えないため採らない。
+Codexの`startup_timeout_sec`（既定10秒）は、プラグインに同梱するMCP定義から上限を指定する方法が公式資料に無いため変えておらず、同じ時間切れが起き得る。
+
 MCPの処理開始前と`atk agents wait`の待機開始前に、状態ディレクトリ（`agent_toolkit/_common/state_paths.py`の`state_dir`）配下の`agents-server.log`を初期化する。
 MCPの処理と`atk agents wait`は同じlogger階層、UTF-8およびサイズrotationの設定を共有する。
 親MCPの起動モード、正常・異常終了、Codex子App Serverの起動、initialize応答と終了コードを記録する。

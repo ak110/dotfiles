@@ -18,7 +18,7 @@
 | Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `continuation.md` | | | |
 | Claude Codeの`Agent`ツールで起動した同一担当を継続する前 | `agent-tool-continuation.md` | | | |
 | 可用性の障害を確認して代替起動を判断する前 | `fallback-launch.md` | | | |
-| 工程別設定の対象外でモデル・effortを選ぶ前 | `model-and-effort.md` | | | |
+| 工程別設定の対象外でモデル・effortを選ぶ前、委譲した成果が受入れ基準に届かず再委譲やeffort・モデルの変更を判断する前 | `model-and-effort.md` | | | |
 | Claude Codeで`Agent`ツールの委譲先やバックグラウンドタスクを初回起動する前、定期再確認タスクを自身で設定する前、設定や回収の失敗通知に対処する時、Claude Code固有の手順を確定する時（explore・shellの起動から受領までの操作は除き、本書の同名節に従う） | `claude-code-runtime.md` | | | |
 | 完了通知の処理、ならびに待機や停滞の判定を行う時 | `waiting-and-monitoring.md` | | | |
 | 判定不能や拒否で待機を開始できない時、`atk agents wait`が終了コード4・8・10、または待機対象0件の非ゼロで終了した時、待機呼び出しがホストの上限により失敗した時、ホストからバックグラウンド待機の停止通知を受信した時、委譲先や自身のツール呼び出しが終了ステータスを返さずに終わった時、`agents_server`のMCPサーバーが再起動した時 | `wait-anomalies.md`の該当節 | | | |

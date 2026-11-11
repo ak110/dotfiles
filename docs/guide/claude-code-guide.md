@@ -127,6 +127,16 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 1回のトークン量や時間当たりの利用枠消費だけでは、完成までの費用は分からない。
 まず既存の工程別設定で役割に合うモデルを選び、低いeffortと高いeffortのどちらも無条件に省費用とは考えない。
 
+成果が足りない工程の設定を`atk config set`で調整するときは、次の順に試す。
+
+1. 委譲先が自分の成果を確かめられる手段（テスト、ビルドなど）が作業に用意されているかを確かめる。
+2. effortを1段上げる。
+3. 上のモデルへ移る。
+   移った先では、下のモデルで使っていた値より低いeffortから始める。
+
+`high`を超えるeffortへ上げる前に、1つ上のモデルを低いeffortで試して比べる。
+順番の出典は[Which Claude model should you build with?](https://claude.dev/blog/which-claude-model-should-you-build-with)である。
+
 Claude Codeの[advisor](https://code.claude.com/docs/en/advisor)は、全会話を読む別モデルへの追加相談で、呼び出すたびにそのモデルの使用量が加わる。
 [Ultracode](https://code.claude.com/docs/en/model-config#adjust-effort-level)は動的なワークフローを構成する設定で、effortとは別の機能である。
 追加する場合は、既存の委譲・独立文脈レビューと役割が重ならないか、相談や作業構成にかかる費用を含めて比較する。

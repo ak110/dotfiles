@@ -114,7 +114,7 @@ async def test_api_only_continues_same_conversation(
         assert resumed.claude_connection == "payg"
 
 
-@pytest.mark.parametrize("record", ["server", "parent", "continued", "none"])
+@pytest.mark.parametrize("record", ["server", "parent", "explicit", "continued", "none"])
 @pytest.mark.asyncio
 async def test_handoff_path_reaches_both_backends(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, record: str) -> None:
     """生成・明示・前任からの継続の同じパスを、両backendの起動環境へ渡す。"""
@@ -131,9 +131,16 @@ async def test_handoff_path_reaches_both_backends(tmp_path: pathlib.Path, monkey
         assert path.is_absolute() and not path.exists()
     else:
         prompt = "調査" if record == "none" else f"調査\n引き継ぎ記録先: {path}（新規）"
+    if record == "explicit":
+        contract = tmp_path / "work-contract.md"
+        contract.write_text("目的: 明示記録先の配送\n", encoding="utf-8")
+        prompt, returned = launch_requests.delegate_request(prompt, whole_contract_path=str(contract))
+        assert returned == path
     if record == "continued":
         previous = state.SessionState("previous", str(tmp_path), engine="claude", prompt=prompt)
         prompt = session_handoff.compose_prompt(previous, tmp_path / "conversation.md", ())
+    if record != "none":
+        assert sum(line.startswith("引き継ぎ記録先:") for line in prompt.splitlines()) == 1
     configure_claude_payg(monkeypatch, "")
     monkeypatch.setattr(
         claude,

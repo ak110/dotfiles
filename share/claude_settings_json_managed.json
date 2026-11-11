@@ -42,6 +42,7 @@
     "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "5",
     "CLAUDE_CODE_NO_FLICKER": "1",
     "CLAUDE_CODE_SCROLL_SPEED": "3",
+    "MCP_TIMEOUT": "120000",
     "PLAYWRIGHT_MCP_OUTPUT_DIR": "__HOME__/.cache/playwright-mcp"
   },
   "includeGitInstructions": false,

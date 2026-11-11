@@ -82,11 +82,17 @@ def handoff_path(environ: Mapping[str, str]) -> str | None:
 
 def prompt_handoff_path(prompt: str) -> str | None:
     """起動本文の記録先行から、新規・継続の標示を外す。"""
-    match = re.search(r"^引き継ぎ記録先[:：]\s*(.+)$", prompt, re.MULTILINE)
+    return parse_prompt_handoff_path(prompt)[1]
+
+
+def parse_prompt_handoff_path(prompt: str) -> tuple[bool, str | None]:
+    """最初の記録先行の有無と、絶対パスとして解釈した値を返す。"""
+    # `re.MULTILINE`の`$`はLFの直前だけに一致するため、CRLFの本文では行末のCRを消費してから`$`へ届かせる。
+    match = re.search(r"^引き継ぎ記録先[:：]([^\r\n]*)\r?$", prompt, re.MULTILINE)
     if match is None:
-        return None
+        return False, None
     value = re.sub(r"[（(](?:新規|継続)[）)]\s*$", "", match[1]).strip()
-    return handoff_path({HANDOFF_PATH_ENV: value})
+    return True, handoff_path({HANDOFF_PATH_ENV: value})
 
 
 def handoff_environment(prompt: str) -> dict[str, str]:

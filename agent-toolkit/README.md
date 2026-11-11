@@ -76,6 +76,8 @@ atk --help
 
 一覧で`agent-toolkit`と`agent-basics`が導入・有効化されていることを確認する。
 新しい会話のスキル一覧で`agent-toolkit:process-wi`などを確認し、MCPの接続状態も確認する。
+PCの再起動直後などにClaude CodeでMCPサーバーが接続時間切れ（`CONNECT_TIMEOUT`）になった場合は、`/mcp`で再接続できる。
+時間切れを繰り返す場合は、`~/.claude/settings.json`の`env`へ`MCP_TIMEOUT`（ミリ秒。例: `"120000"`）を設定すると、接続を待つ上限を延ばせる。
 Codexのフックが未信頼・変更済みの場合は、[フックの信頼確認](https://github.com/ak110/dotfiles/blob/master/docs/guide/codex-guide.md#フックの信頼確認)を済ませて新しいセッションを開始する。
 
 ## 最初の操作

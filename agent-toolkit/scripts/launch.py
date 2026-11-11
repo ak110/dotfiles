@@ -100,7 +100,7 @@ def main() -> int:
         python = plugin_environment.prepared_python(root, caller_environment)
     if python is None:
         next_action.report(
-            "共有依存環境が未準備のため、agent-toolkitを起動できません。",
+            f"共有依存環境が未準備のため、agent-toolkitを起動できません。Python: {plugin_environment.base_python()}",
             next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。",
         )
         return 1
@@ -139,7 +139,7 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
                     "--project",
                     str(root),
                     "--python",
-                    sys.executable,
+                    str(plugin_environment.base_python()),
                     "--locked",
                     "--no-default-groups",
                     "--no-install-project",

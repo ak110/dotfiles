@@ -66,6 +66,59 @@ def test_launcher_help_does_not_import_server_logging(host_environ: Callable[[],
     assert "agent_toolkit._agents_server.logging_config" not in result.stderr
 
 
+def test_launcher_uses_same_environment_in_directory_with_virtualenv(
+    tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """公開のuv起動形は、コピー式の仮想環境があるcwdでも同じ共有環境を使う。"""
+    root = tmp_path / "plugin"
+    root.mkdir()
+    (root / "pyproject.toml").write_text('[project]\nname="probe"\ndependencies=[]\n', encoding="utf-8")
+    (root / "uv.lock").write_text("lock", encoding="utf-8")
+    (root / "probe.py").write_text("import sys; print(sys.prefix)\n", encoding="utf-8")
+    environment = host_environ()
+    environment[plugin_environment.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
+    for key in ("VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT", "UV_PYTHON"):
+        environment.pop(key, None)
+    uv = shutil.which("uv", path=environment["PATH"])
+    assert uv is not None
+    without = tmp_path / "without"
+    without.mkdir()
+    caller = tmp_path / "with"
+    caller.mkdir()
+    venv.EnvBuilder(with_pip=False, symlinks=False).create(caller / ".venv")
+    caller_python = plugin_environment.python_path(caller / ".venv")
+    assert not caller_python.is_symlink()
+    selected = plugin_environment.project_environment(root, environment)
+    venv.EnvBuilder(with_pip=False, symlinks=False).create(selected)
+    plugin_environment.publish_prepared_environment(root, environment)
+    command = [uv, "run", "--no-config", "--no-project", "--python", "3.15", "python"]
+    chosen = subprocess.run(
+        [*command, "-c", "import sys; print(sys.executable)"],
+        cwd=caller,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+        timeout=15,
+    )
+    assert chosen.returncode == 0, chosen.stderr
+    assert pathlib.Path(chosen.stdout.strip()) == caller_python
+    for directory in (without, caller):
+        result = subprocess.run(
+            [*command, str(_PROJECT_ROOT / "scripts/launch.py"), "--project", str(root), "probe.py"],
+            cwd=directory,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+            timeout=15,
+        )
+        assert result.returncode == 0, result.stderr
+        assert pathlib.Path(result.stdout.strip()) == selected
+
+
 @pytest.mark.parametrize("stage", ["signal", "reader", "wait", "stop"])
 def test_agents_server_launcher_reclaims_resources_on_failure(
     stage: str,
@@ -429,7 +482,7 @@ def test_prepare_syncs_dependencies_only_and_publishes_after_success(
             "--project",
             str(root),
             "--python",
-            sys.executable,
+            str(plugin_environment.base_python()),
             "--locked",
             "--no-default-groups",
             "--no-install-project",

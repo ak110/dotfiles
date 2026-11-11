@@ -210,6 +210,13 @@ class TestUpdateClaudeSettings:
         assert result["env"]["PLAYWRIGHT_MCP_OUTPUT_DIR"] == f"{Path.home().as_posix()}/.cache/playwright-mcp"
         assert result["env"]["FOO"] == "bar"
 
+    def test_managed_env_extends_mcp_connect_timeout(self, tmp_path: Path):
+        """配布原本はMCPサーバーの接続上限を、再起動直後の遅い起動も待てる120秒へ延ばす。"""
+        managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
+        result = _run(tmp_path, managed, {"env": {"FOO": "bar"}})
+        assert result["env"]["MCP_TIMEOUT"] == "120000"
+        assert result["env"]["FOO"] == "bar"
+
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
         """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {
