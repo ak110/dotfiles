@@ -29,7 +29,9 @@
      両プロジェクトの`addopts`は同プラグインを`-p`で読み、`make test-browser`など`-o addopts=''`で解除するものは枠の対象外となる。
      シェルからの起動は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の形式と3分類に従う。
    - pytestと統合検証は、開始からworker・子孫の回収まで共有実行枠を保持する。
-     入れ子の実行は祖先の所有を継承し、別の検証は解放後に開始する。
+     収集だけのpytest（`--collect-only`）は枠を取らない。
+     枠はホスト全体で2つあり（pyfltr 3.30.0以降）、3件目以降の検証は空きを待つ。
+     入れ子の実行は祖先の所有を継承する。
 4. 確定した対象へ全チェックを適用するため、初回はMCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`commands`指定なしで実行する。
    修正後の再実行だけ失敗したチェックへ限定し、同じ内容の2回目以降の静的チェックでは`commands`（CLIは`--commands`）からpytestを除く。
    失敗テストだけの再確認は`--only-failed`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。

@@ -219,7 +219,9 @@ def pytest_configure(config: pytest.Config) -> None:
     worker = hasattr(config, "workerinput")
     # 最外側のpytestは開始から子孫の回収まで実行枠を保持し、試験の途中では待機者へ譲らない。
     # workerと入れ子の実行は、共有APIが祖先の所有を検証して継承する。
-    stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
+    # 収集だけの実行（`--collect-only`）は試験を実行せず、枠が守る外部ツールも起動しないため、枠を取らない。
+    if not config.option.collectonly:
+        stack.enter_context(execution_slot.hold(label="pytest", on_wait=_notify_slot_wait))
     previous_children = set(process_tree.collect_descendants(os.getpid()))
     resource_environment = {
         name: os.environ.get(name)
@@ -364,6 +366,17 @@ def _clear_wait_schedule_environment(request: pytest.FixtureRequest, monkeypatch
         return
     for name in _WAIT_SCHEDULE_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _single_execution_slot_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """試験が起動する検証を、実行枠1つの構成で動かす。
+
+    pyfltr 3.30.0以降は、環境変数の指定が無ければ枠が2つあり、保持者1件の間にもう1件が待たずに実行枠を取る。
+    実行枠の待ちと区間の直列を確かめる試験は、一時の保存先で保持者1件の後ろに後続が並ぶ構成を前提にする。
+    外側のpytest自身の枠の取得は、試験より前の`pytest_configure`で済んでいるため、この指定の影響を受けない。
+    """
+    monkeypatch.setenv("PYFLTR_EXECUTION_SLOTS", "1")
 
 
 @pytest.fixture(autouse=True)

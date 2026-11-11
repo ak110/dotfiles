@@ -137,6 +137,53 @@ def _environment(root: pathlib.Path) -> dict[str, str]:
     return {**os.environ, "PYFLTR_CACHE_DIR": str(root / "pyfltr-cache")}
 
 
+def test_pytest_collect_only_does_not_wait_for_execution_slot(tmp_path: pathlib.Path) -> None:
+    """収集だけのpytestは、別の検証が実行枠を保持していても待たずに終了する。"""
+    environment = _environment(tmp_path)
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "sample_test.py").write_text("def test_sample():\n    pass\n", encoding="utf-8")
+    (project / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\naddopts=['-p', 'agent_toolkit._testing.pytest_plugin']\n", encoding="utf-8"
+    )
+    argv = ["-m", "pytest", "-p", "no:cacheprovider", "--collect-only", "-q", str(project / "sample_test.py")]
+    with contextlib.ExitStack() as stack:
+        holder = stack.enter_context(_process(_driver("hold", tmp_path, "holder"), environment, project))
+        _wait(tmp_path / "holder.ready", holder)
+        collecting = stack.enter_context(_process(_driver("entry", tmp_path, "collect", *argv), environment, project))
+        stdout, stderr = collecting.communicate(timeout=60)
+        assert collecting.returncode == 0, f"標準出力:\n{stdout}\n標準エラー:\n{stderr}"
+        assert "sample_test.py::test_sample" in stdout
+        assert not (tmp_path / "collect.waiting").exists()
+        (tmp_path / "holder.release").touch()
+        assert holder.wait(timeout=10) == 0
+
+
+def test_two_independent_verifications_run_together_and_third_waits(tmp_path: pathlib.Path) -> None:
+    """枠2つの構成では、独立した2件の検証は待たずに並行し、3件目は空きができるまで待つ。"""
+    environment = {**_environment(tmp_path), "PYFLTR_EXECUTION_SLOTS": "2"}
+    project = tmp_path / "project"
+    project.mkdir()
+    with contextlib.ExitStack() as stack:
+        first = stack.enter_context(_process(_driver("hold", tmp_path, "first"), environment, project))
+        _wait(tmp_path / "first.ready", first)
+        second = stack.enter_context(_process(_driver("hold", tmp_path, "second"), environment, project))
+        _wait(tmp_path / "second.ready", second)
+        third = stack.enter_context(_process(_driver("hold", tmp_path, "third"), environment, project))
+        # 3件目は2つの枠が埋まっている間は取得できない。待機列への登録を待ってから、未取得を確かめる。
+        deadline = time.monotonic() + 30
+        while not any((tmp_path / "pyfltr-cache" / "locks").glob("execution.wait-*")):
+            assert third.poll() is None and time.monotonic() < deadline
+            time.sleep(0.01)
+        assert not (tmp_path / "third.ready").exists()
+        (tmp_path / "first.release").touch()
+        assert first.wait(timeout=10) == 0
+        _wait(tmp_path / "third.ready", third)
+        for label, process in (("second", second), ("third", third)):
+            (tmp_path / f"{label}.release").touch()
+            assert process.wait(timeout=10) == 0
+
+
 def _driver(mode: str, root: pathlib.Path, label: str, *argv: str) -> list[str]:
     return [sys.executable, str(_DRIVER), mode, str(root), label, *argv]
 
