@@ -1512,7 +1512,9 @@ def _update_target(
     検証と人の判断は区間の外で終えておき、統合先単位の排他は統合先HEADの確認と更新の間だけ保持する。
     前進を検出した場合は工程を変えずに返し、既存の`--restart-review`による再rebase・比較・検収へ戻す。
     """
-    with contextlib.nullcontext() if args.no_merge else _target_locked(record, args.target_branch):
+    # --no-mergeも統合先を書かないが同じ排他を取る。他レーンのfast-forwardが一時的に作るロックファイルを
+    # 中断状態と誤判定せず、その更新の終了を待ってから統合先の作業ツリーと中断状態を確かめるためである。
+    with _target_locked(record, args.target_branch):
         _assert_integration_tree(record, target, args.target_branch)
         if not args.no_merge:
             expected = state.get("new_base") or state.get("verified_base")

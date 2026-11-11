@@ -277,8 +277,9 @@ def test_target_advance_before_short_update_keeps_target(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == result["new_head"]
 
 
+@pytest.mark.parametrize("no_merge", [False, True])
 def test_lane_starts_while_other_lane_updates_target(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], no_merge: bool
 ) -> None:
     """他レーンの短い更新が統合先のロックファイルを作っている間に始めた統合が、中断状態と誤判定せずに更新を待つ。"""
     repo, records = _prepare(tmp_path, monkeypatch, capsys)
@@ -288,11 +289,15 @@ def test_lane_starts_while_other_lane_updates_target(
         git_repository.git_output(repo, "rev-parse", "--path-format=absolute", "--git-path", "index.lock")
     )
     outcome: list[tuple[int, dict[str, Any], str]] = []
+    # --no-mergeは統合先を書かないが、統合先の作業ツリーと中断状態を確かめるため同じ待機を観測する。
+    extra = ("--no-merge",) if no_merge else ()
     # 他レーンのfast-forwardの途中（統合先単位の排他を保持し、統合先にindex.lockがある状態）を作る。
     with lane._target_locked(record, "main"):  # pylint: disable=protected-access
         index_lock.write_text("", encoding="utf-8")
         thread = threading.Thread(
-            target=lambda: outcome.append(_invoke(capsys, *integration_args(record, repo, manifest, record["reviewed_head"])))
+            target=lambda: outcome.append(
+                _invoke(capsys, *integration_args(record, repo, manifest, record["reviewed_head"]), *extra)
+            )
         )
         thread.start()
         thread.join(timeout=5)
@@ -302,7 +307,8 @@ def test_lane_starts_while_other_lane_updates_target(
     assert not thread.is_alive(), "排他の解放後に統合が終わらなかった"
     code, result, stderr = outcome[0]
     assert code == 0 and result["phase"] == "finalized", stderr
-    assert git_repository.git_output(repo, "rev-parse", "HEAD") == record["reviewed_head"]
+    expected_head = record["initial_head"] if no_merge else record["reviewed_head"]
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == expected_head
 
 
 @pytest.mark.parametrize("residual", ["index.lock", "dirty"])
