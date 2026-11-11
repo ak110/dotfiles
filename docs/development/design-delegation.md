@@ -105,7 +105,7 @@ Codex 0.151.0はスキルのfrontmatterの`context: fork`を分離コンテキ�
 - WI投入: 委譲元の初動は投入先と要求の範囲の確定に必要な観測に限り、原因・対策・類似見直しの確定はWI投入担当が所有する。
   付随型の原稿返却、委譲元の意味の検収、保存開始の二段階と、専念型の投入前レビューは保つ（`agent-toolkit/share/add-wi.parent.md`）
 - レーン: レーン数によらず各レーンの同じ担当が計画・実装・実行レビューの調整・指摘対応を続ける。
-  メインは選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの直列統合の許可と最終結果の検収を所有する（`agent-toolkit/share/single-lane-execution.md`）
+  メインは選定、レーン間の書込競合と依存の調停、ユーザー判断の中継、主作業ツリーへの統合の許可と最終結果の検収を所有する（`agent-toolkit/share/single-lane-execution.md`）
 - 探索・原因分析・単純作業: 作業の細分化と起動単位の数を区別し、同じ背景と実行条件を使う確定済みの作業は1件の起動へまとめる。
   調査担当は詳細な分析を保存原本へ置き、結論と原本の所在を返す（`agent-toolkit/skills/delegation/references/routing.md`、`agent-toolkit/share/defect-investigation.subagent.md`）
 - 保存済み結果の受渡し: `atk agents wait`の`agent_message_path`、CLIの保存先、MCPの結果の保存ファイルは、パスのまま次の消費者へ渡す（`agent-toolkit:delegation/references/receiving-followup.md`「受領後の扱い」）

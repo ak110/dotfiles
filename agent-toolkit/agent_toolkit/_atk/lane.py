@@ -81,6 +81,47 @@ def _locked(session_id: str) -> Generator[pathlib.Path]:
             file_lock.release_lock(stream)
 
 
+@contextlib.contextmanager
+def _lane_locked(record_path: pathlib.Path, *, blocking: bool = True) -> Generator[None]:
+    """同じレーンの所有登録を変える操作（統合・作成・回収）を互いに排他する。
+
+    統合はrebase・検証・最終化の間この排他だけを保持し、所有session共通の`_locked`を持ち続けない。
+    他のレーンの統合と短い区間の操作を待たせないためである。
+    取得順はレーン単位、統合先単位、所有session単位の順に固定し、逆順の取得を作らない。
+    """
+    record_path.parent.mkdir(parents=True, exist_ok=True)
+    with record_path.with_suffix(".lock").open("a+", encoding="utf-8") as stream:
+        try:
+            file_lock.acquire_lock(stream, blocking=blocking)
+        except OSError as error:
+            if blocking:
+                raise
+            raise ValueError(f"{record_path.stem}の統合が実行中。統合の終了後に同じ操作を再実行する") from error
+        try:
+            yield
+        finally:
+            file_lock.release_lock(stream)
+
+
+@contextlib.contextmanager
+def _target_locked(record: dict[str, typing.Any], branch: str) -> Generator[None]:
+    """統合先HEADの一致の確認と更新を、同じ統合先へ統合する全レーンで直列にする。
+
+    所有sessionに依存させないのは、別sessionの統合が同じ統合先を更新する場合も直列にするためである。
+    保持区間はGitの数操作に限り、検証と人の判断を含めない。
+    置き場所を`lanes/`の外にするのは、`lanes/`直下をsessionのディレクトリとして走査する処理があるためである。
+    """
+    key = hashlib.sha256(f"{record['common_dir']}\0{branch}".encode()).hexdigest()[:32]
+    directory = state_paths.state_dir() / "lane-targets"
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / f"{key}.lock").open("a+", encoding="utf-8") as stream:
+        file_lock.acquire_lock(stream)
+        try:
+            yield
+        finally:
+            file_lock.release_lock(stream)
+
+
 def _save(path: pathlib.Path, record: dict[str, typing.Any]) -> None:
     atomic_file.atomic_write(path, json.dumps(record, ensure_ascii=False) + "\n")
 
@@ -444,6 +485,12 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
     if source_owner is not None:
         owners.add(source_owner)
     with contextlib.ExitStack() as stack:
+        # 統合中の同じレーンの登録を書き換えないよう、レーン単位の排他を所有session単位より先に取る。
+        lane_records: set[pathlib.Path] = {_directory(session_id) / f"{args.lane}.json"}
+        if source is not None:
+            lane_records.add(source)
+        for lane_record in sorted(lane_records):
+            stack.enter_context(_lane_locked(lane_record))
         directories = {owner: stack.enter_context(_locked(owner)) for owner in sorted(owners)}
         directory = directories[session_id]
         path = directory / f"{args.lane}.json"
@@ -781,12 +828,15 @@ def cleanup_session(
     result: dict[str, typing.Any] = {"session_id": session_id, "removed": [], "retained": [], "recovered": [], "missing": []}
     if session_id is None or not _directory(session_id).exists():
         return result
-    with _locked(session_id) as directory:
+    with _locked(session_id) as directory, contextlib.ExitStack() as lane_locks:
         records: list[tuple[pathlib.Path, dict[str, typing.Any]]] = []
         for path in sorted(directory.glob("lane-*.json")):
             if only is not None and path != only:
                 continue
             try:
+                # 統合中のレーンは待たずに保持する。統合はレーン単位の排他を持ったまま所有session単位を短く取るため、
+                # ここで待つと取得順が逆になる。
+                lane_locks.enter_context(_lane_locked(path, blocking=False))
                 record = json.loads(path.read_text(encoding="utf-8"))
                 if record["session_id"] != session_id or path.stem != record["lane"]:
                     raise ValueError("登録の所有sessionまたはlaneが異なる")
@@ -965,17 +1015,19 @@ def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing
                 raise ValueError(f"指定したレーンの登録が無い: {', '.join(missing)}")
             paths = [path for path in paths if path.stem in lanes]
         for path in paths:
+            # 統合中のレーンは待たずに保持する（取得順の理由は`cleanup_session`と同じ）。
             try:
-                record = json.loads(path.read_text(encoding="utf-8"))
-                if record["session_id"] != session_id or path.stem != record["lane"]:
-                    raise ValueError("登録の所有sessionまたはlaneが異なる")
-                if _resource_state(record).absent:
-                    path.unlink()
-                    result["removed"].append(record["lane"])
-                    continue
-                if not _recovered(record):
-                    _recover(record, path)
-                result["recovered"].append({"record_path": str(path), "worktree": record["worktree"], **record["recovery"]})
+                with _lane_locked(path, blocking=False):
+                    record = json.loads(path.read_text(encoding="utf-8"))
+                    if record["session_id"] != session_id or path.stem != record["lane"]:
+                        raise ValueError("登録の所有sessionまたはlaneが異なる")
+                    if _resource_state(record).absent:
+                        path.unlink()
+                        result["removed"].append(record["lane"])
+                        continue
+                    if not _recovered(record):
+                        _recover(record, path)
+                    result["recovered"].append({"record_path": str(path), "worktree": record["worktree"], **record["recovery"]})
             except _record_errors() as error:
                 result["retained"].append(_retained_resource(path, error))
     return result
@@ -1437,6 +1489,36 @@ def _validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.P
                 raise ValueError(f"{row['name']}: 指定値={specified}、期待集合={sorted(expected)}。{action}")
 
 
+def _update_target(
+    record: dict[str, typing.Any],
+    state: dict[str, typing.Any],
+    manifest: dict[str, typing.Any],
+    args: argparse.Namespace,
+    target: pathlib.Path,
+    worktree: pathlib.Path,
+) -> dict[str, str] | None:
+    """統合先を更新する短い区間。統合先が準備の前提から進んでいれば更新せず、前提と現在のHEADを返す。
+
+    検証と人の判断は区間の外で終えておき、統合先単位の排他は統合先HEADの確認と更新の間だけ保持する。
+    前進を検出した場合は工程を変えずに返し、既存の`--restart-review`による再rebase・比較・検収へ戻す。
+    """
+    with contextlib.nullcontext() if args.no_merge else _target_locked(record, args.target_branch):
+        _assert_integration_tree(record, target, args.target_branch)
+        if not args.no_merge:
+            expected = state.get("new_base") or state.get("verified_base")
+            current = _git(target, "rev-parse", "HEAD")
+            if current != expected:
+                return {"expected": expected or "", "actual": current}
+        _validate_adopt_commits(manifest, worktree)
+        if not args.no_merge:
+            if _git(worktree, "rev-parse", "HEAD") != state["new_head"]:
+                raise ValueError("検証済みHEADが変わっている")
+            _git(target, "merge", "--ff-only", state["new_head"])
+        state.update(phase="git-integrated", integrated_head=_git(target, "rev-parse", "HEAD"))
+        _save(pathlib.Path(record["record_path"]), record)
+    return None
+
+
 def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
     """所有登録からGit統合と最終化を再開し、全操作の成功後に選定を統合済みにする。"""
     for path in (args.record, args.manifest, args.target_worktree):
@@ -1445,7 +1527,8 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
     path = args.record.resolve()
     if path.parent != _directory(session_id) or not _LANE.fullmatch(path.stem):
         raise ValueError("recordは現在の所有sessionの登録済みlane recordを指定する")
-    with _locked(session_id):
+    # 全区間でこのレーンの排他だけを保持し、統合先HEADの更新と選定の更新だけを短い排他で直列にする。
+    with _lane_locked(path):
         record = json.loads(path.read_text(encoding="utf-8"))
         if record["session_id"] != session_id or record["record_path"] != str(path):
             raise ValueError("統合するレーンの書込所有を確認できない")
@@ -1601,7 +1684,8 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 state.update(phase="rebased", new_head=_git(worktree, "rev-parse", "HEAD"))
                 _save(path, record)
             else:
-                state.update(phase="verified", new_head=current)
+                # 短い更新で統合先がこの時点から進んでいないことを確かめるため、前提のHEADを保持する。
+                state.update(phase="verified", new_head=current, verified_base=base)
                 _save(path, record)
         if state["phase"] == "rebasing":
             state.update(phase="rebased", new_head=_git(worktree, "rev-parse", "HEAD"))
@@ -1651,14 +1735,17 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             _save(path, record)
         if state["phase"] == "verified" or (state["phase"] == "prepared" and args.no_merge):
             _verify(record, state, manifest.get("verification", []), worktree)
-            _assert_integration_tree(record, target, args.target_branch)
-            _validate_adopt_commits(manifest, worktree)
-            if not args.no_merge:
-                if _git(worktree, "rev-parse", "HEAD") != state["new_head"]:
-                    raise ValueError("検証済みHEADが変わっている")
-                _git(target, "merge", "--ff-only", state["new_head"])
-            state.update(phase="git-integrated", integrated_head=_git(target, "rev-parse", "HEAD"))
-            _save(path, record)
+            advanced = _update_target(record, state, manifest, args, target, worktree)
+            if advanced is not None:
+                return dict(
+                    state,
+                    record_path=str(path),
+                    target_advanced=advanced,
+                    next_action=(
+                        "統合先が準備の時点から進んだため統合先を更新していない。"
+                        "同じ入力に--restart-reviewを付け、現在HEADを--reviewed-headへ渡して最新の統合先へ追随する"
+                    ),
+                )
         if state["phase"] == "git-integrated":
             _git(target, "merge-base", "--is-ancestor", state["integrated_head"], "HEAD")
             if "lane_started_at" in manifest and "finalization_values" not in state:
@@ -1683,25 +1770,27 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 # 選定原本は失効した。統合済みの事実を所有登録の選定情報へ記録して回収判定へ渡す。
                 state["completed"].append("selection-mark")
                 state.setdefault("results", {})["selection-mark"] = {"skipped": "選定原本が失効したため所有登録へ記録した"}
-            _integration_command(
-                record,
-                state,
-                "selection-mark",
-                _atk_script(
-                    "run-script",
-                    "pick-wi-check",
-                    "--",
-                    str(selected),
-                    "--mark-integrated",
-                    record["lane"],
-                    "--output",
-                    str(selected),
-                    "--work-dir",
-                    str(target),
-                ),
-                target,
-                timeout=record["procedure_timeout"],
-            )
+            # 選定YAMLは同じ所有sessionの全レーンが共有するため、更新だけを所有session単位の排他で直列にする。
+            with _locked(session_id):
+                _integration_command(
+                    record,
+                    state,
+                    "selection-mark",
+                    _atk_script(
+                        "run-script",
+                        "pick-wi-check",
+                        "--",
+                        str(selected),
+                        "--mark-integrated",
+                        record["lane"],
+                        "--output",
+                        str(selected),
+                        "--work-dir",
+                        str(target),
+                    ),
+                    target,
+                    timeout=record["procedure_timeout"],
+                )
             record["selection"] = {**_selection_state(record), "integrated": True}
             state["phase"] = "finalized"
             _save(path, record)
@@ -1813,6 +1902,11 @@ def dispatch(args: argparse.Namespace) -> int:
         print(json.dumps(result, ensure_ascii=False))
         if result.get("phase") == "awaiting-validation":
             outcome.report_warning("rebase後の検収を待っている", next_action=result["next_action"])
+            return 1
+        if result.get("target_advanced"):
+            outcome.report_warning(
+                f"統合先が準備の時点から進んだ: {result['target_advanced']['actual']}", next_action=result["next_action"]
+            )
             return 1
         if result.get("retained"):
             if args.lane_subcommand == "recover":

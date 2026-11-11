@@ -134,7 +134,7 @@ def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     manifest = _cleanup_integration_manifest(tmp_path, handoff_text="再開の証拠")
     (worktree / "first").write_text("最初の成果", encoding="utf-8")
     first = git_repository.commit_all(worktree, "最初の成果")
-    code, initial, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, first))
+    code, initial, stderr = _invoke(capsys, *integration_args(record, repo, manifest, first))
     assert code == 0 and initial["phase"] == "finalized", stderr
     original = yaml.safe_load(selected.read_text(encoding="utf-8"))["初回配分"]
     (repo / "other-lane").write_text("他レーンの成果", encoding="utf-8")
@@ -148,7 +148,7 @@ def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     assert (worktree / "other-lane").read_text(encoding="utf-8") == "他レーンの成果"
     (worktree / "second").write_text("再開後の成果", encoding="utf-8")
     second = git_repository.commit_all(worktree, "再開後の成果")
-    code, final, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, second))
+    code, final, stderr = _invoke(capsys, *integration_args(record, repo, manifest, second))
     assert code == 0 and final["phase"] == "finalized" and final["integrated_head"] == second, stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == second
     document = yaml.safe_load(selected.read_text(encoding="utf-8"))
@@ -156,7 +156,7 @@ def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     # 追加のコード変更がない観測再開も、前回のfinalizedを返すだけで選定を取り残さない。
     assert run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=args)) == 0
     capsys.readouterr()
-    code, repeated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, second))
+    code, repeated, stderr = _invoke(capsys, *integration_args(record, repo, manifest, second))
     assert code == 0 and repeated["phase"] == "finalized", stderr
     assert yaml.safe_load(selected.read_text(encoding="utf-8"))["レーンの所要時間"][0]["統合状態"] == "統合済み"
 
@@ -177,12 +177,12 @@ def test_integrate_manifest_timeout_reclaims_verification_descendants(
     data = json.loads(manifest.read_text(encoding="utf-8"))
     data["verification_timeout"] = 10**4000
     manifest.write_text(json.dumps(data), encoding="utf-8")
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, record["initial_head"]))
     assert code == 2 and "verification_timeout" in stderr
     assert not marker.exists()
     data.update(verification=[[sys.executable, "-c", program]], verification_timeout=0.5)
     manifest.write_text(json.dumps(data), encoding="utf-8")
-    code, _result, _stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    code, _result, _stderr = _invoke(capsys, *integration_args(record, repo, manifest, record["initial_head"]))
     child = None
     with contextlib.suppress(lane.psutil.NoSuchProcess):
         if marker.exists():
@@ -257,7 +257,7 @@ def _finalize_lane_for_cleanup(
     (worktree / feature_name).write_text(feature_text, encoding="utf-8")
     head = git_repository.commit_all(worktree, feature_text)
     manifest = _cleanup_integration_manifest(tmp_path, handoff_text="検収済み")
-    code, integrated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    code, integrated, stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
     assert code == 0 and integrated["phase"] == "finalized", stderr
     return repo, record, worktree, head
 
@@ -1331,7 +1331,7 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
     assert repo.is_dir() and selected.is_file()
 
 
-def _integration_args(record: dict[str, Any], repo: pathlib.Path, manifest: pathlib.Path, head: str) -> tuple[str, ...]:
+def integration_args(record: dict[str, Any], repo: pathlib.Path, manifest: pathlib.Path, head: str) -> tuple[str, ...]:
     return (
         "integrate",
         "--record",
@@ -1472,7 +1472,7 @@ def prepare_lane_verification(
         sys.executable,
         str(pathlib.Path(atk.__file__).resolve()),
         "lane",
-        *_integration_args(record, repo, manifest, head),
+        *integration_args(record, repo, manifest, head),
         "--session-id",
         record["session_id"],
     ]
@@ -1505,7 +1505,7 @@ def test_integrate_public_lifecycle(
         ),
         encoding="utf-8",
     )
-    args = _integration_args(record, repo, manifest, head)
+    args = integration_args(record, repo, manifest, head)
     code, result, stderr = _invoke(capsys, *args)
     assert code == 0, stderr
     assert result["phase"] == "finalized" and result["integrated_head"] == head
@@ -1553,7 +1553,7 @@ def test_integrate_mixed_manifest_reviews_implemented_deferral_and_keeps_no_merg
         ),
         encoding="utf-8",
     )
-    args = _integration_args(record, repo, manifest, head)
+    args = integration_args(record, repo, manifest, head)
     code, result, stderr = _invoke(capsys, *args)
     assert code == 0 and result["phase"] == "finalized", stderr
 
@@ -1591,7 +1591,7 @@ def test_integrate_resume_and_preservation(
         ),
         encoding="utf-8",
     )
-    args = _integration_args(record, repo, manifest, head)
+    args = integration_args(record, repo, manifest, head)
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 2 and "終了4" in stderr
     stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
@@ -1627,7 +1627,7 @@ def test_integrate_rejects_unreviewed_or_unowned_work(
         monkeypatch.setenv(lane.SESSION_ENV, "foreign")
     else:
         session_registry.publish("child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(worktree))
-    code, _result, _stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    code, _result, _stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
     assert code == 2
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == old_head
     assert worktree.exists() and pathlib.Path(record["record_path"]).exists()
@@ -1671,7 +1671,7 @@ def test_integrate_rebase_returns_mapping_and_requires_diagnostic_acceptance(
         ),
         encoding="utf-8",
     )
-    args = _integration_args(record, repo, manifest, head)
+    args = integration_args(record, repo, manifest, head)
     code, pending, stderr = _invoke(capsys, *args)
     assert code == 1, stderr
     assert pending["phase"] == "awaiting-validation"
@@ -1756,7 +1756,7 @@ def test_hook_owned_resource(
     _integration_selection(selected, monkeypatch, repo)
     head = git_repository.commit_all(destination, "hookの成果を保存")
     manifest = _cleanup_integration_manifest(tmp_path, handoff_text="検収済みhook成果")
-    code, integrated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    code, integrated, stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
     assert code == 0 and integrated["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
     assert (repo / "hook-result").read_text(encoding="utf-8") == "hookの成果"
@@ -1840,7 +1840,7 @@ def test_integrate_observation_and_saved_plan(
         encoding="utf-8",
     )
     before = git_repository.git_output(repo, "rev-parse", "HEAD")
-    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, before), "--no-merge")
+    code, result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, before), "--no-merge")
     assert code == 0 and result["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
     assert saved.read_text(encoding="utf-8") == "保存済み計画"
@@ -1874,7 +1874,7 @@ def test_integrate_additional_wi_uses_current_review_and_collection(
         manifest.write_text(
             json.dumps({"plans": [], "wis": wis, "verification": [], "handoff": str(handoff)}), encoding="utf-8"
         )
-        code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+        code, result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
         assert code == 0 and result["phase"] == "finalized", stderr
         assert git_repository.git_output(repo, "rev-parse", "HEAD") == head
     assert (repo / "feature-0").exists() and (repo / "feature-1").exists()
@@ -1915,7 +1915,7 @@ def test_integrate_refreshes_publication_before_rewriting(
     (repo / "upstream").write_text("先行統合", encoding="utf-8")
     before = git_repository.commit_all(repo, "先行統合")
     manifest = _write_empty_finalization_manifest(tmp_path)
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
     assert code == 2 and "push済みcommit" in stderr
     assert git_repository.git_output(worktree, "rev-parse", "HEAD") == head
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
@@ -1931,7 +1931,7 @@ def test_integrate_restarts_after_reviewed_correction(
     reviewed = git_repository.commit_all(worktree, "是正")
     value["verification"] = [[sys.executable, "-c", "pass"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    args = _integration_args(record, repo, manifest, reviewed)
+    args = integration_args(record, repo, manifest, reviewed)
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 2 and "--restart-review" in stderr
     code, result, stderr = _invoke(capsys, *args, "--restart-review")
@@ -1981,7 +1981,7 @@ def test_integrate_uses_reviewed_oid_when_branch_advances_before_merge(
         return real_run(argv, cwd, *extra, **kwargs)
 
     monkeypatch.setattr(lane.git_command, "run", advancing_run)
-    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    code, result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
     assert code == 0 and result["integrated_head"] == head, stderr
     assert not (repo / "unreviewed").exists()
     assert (worktree / "unreviewed").exists()
@@ -2003,7 +2003,7 @@ def test_integrate_ignores_session_in_nested_lane_worktree(
         json.dumps({"plans": [], "wis": [{"name": "20261023-000000-001.md", "commands": []}], "handoff": str(handoff)}),
         encoding="utf-8",
     )
-    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    code, result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, record["initial_head"]))
     assert code == 0 and result["phase"] == "finalized", stderr
 
 
@@ -2014,7 +2014,7 @@ def test_integrate_rejects_session_in_target_outside_nested_worktree(
     """統合先の直下と通常の子ディレクトリを使う合意外の担当を検出する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     session_registry.publish("target-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(repo / relative))
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, tmp_path / "unused", record["initial_head"]))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, tmp_path / "unused", record["initial_head"]))
     assert code == 2 and "現在の書込所有に含まれない担当が稼働中" in stderr
 
 
@@ -2099,7 +2099,7 @@ def _rebased_integration(
         "verification": [[sys.executable, "-c", "raise SystemExit(3)" if failed else "pass"]],
     }
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, reviewed))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, reviewed))
     assert code == (2 if failed else 1), stderr
     if failed:
         assert "verification-0" in stderr
@@ -2139,7 +2139,7 @@ def test_integrate_restart_review_keeps_rebase_validation(
         handoff.touch()
         value[changed] = str(handoff)
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    args = _integration_args(record, repo, manifest, original[reviewed_key])
+    args = integration_args(record, repo, manifest, original[reviewed_key])
     code, pending, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 1 and pending["phase"] == "awaiting-validation", stderr
     assert pending["new_head"] == original["new_head"] and pending["rewrite_map"] == original["rewrite_map"]
@@ -2177,7 +2177,7 @@ def test_integrate_resumes_failed_history_compare_without_rebasing_again(
         (repo / "upstream").write_text("先行統合", encoding="utf-8")
         before = git_repository.commit_all(repo, "先行統合")
         manifest = _write_empty_finalization_manifest(tmp_path)
-        args = _integration_args(record, repo, manifest, reviewed)
+        args = integration_args(record, repo, manifest, reviewed)
         code, _result, stderr = _invoke(capsys, *args)
         assert code == 2 and "history-compare" in stderr
     state = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))["integration"]
@@ -2216,7 +2216,7 @@ def test_integrate_resumes_conflict_resolution_following_new_upstream_file(
     (repo / "added_test.py").write_text("旧名称\n", encoding="utf-8")
     before = git_repository.commit_all(repo, "先行統合")
     manifest = _write_empty_finalization_manifest(tmp_path)
-    args = _integration_args(record, repo, manifest, reviewed)
+    args = integration_args(record, repo, manifest, reviewed)
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 2, stderr
     (worktree / "shared.txt").write_text("レーンと上流\n", encoding="utf-8")
@@ -2259,7 +2259,7 @@ def test_integrate_resumes_conflict_resolution_following_new_upstream_file(
             reviewed = git_repository.commit_all(worktree, "是正")
         (repo / "later").write_text("追加の先行成果", encoding="utf-8")
         git_repository.commit_all(repo, "統合先の追加更新")
-        args = _integration_args(record, repo, manifest, reviewed)
+        args = integration_args(record, repo, manifest, reviewed)
         code, pending, stderr = _invoke(capsys, *args, "--restart-review")
         assert code == 1 and pending["phase"] == "awaiting-validation", stderr
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
@@ -2282,7 +2282,7 @@ def test_integrate_drops_rejected_conflict_input(
     (repo / "context.txt").write_text("A\nb\nc\nd\ne\n", encoding="utf-8")
     git_repository.commit_all(repo, "上流")
     manifest = _write_empty_finalization_manifest(tmp_path)
-    args = _integration_args(record, repo, manifest, reviewed)
+    args = integration_args(record, repo, manifest, reviewed)
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 1, stderr
     code, _result, stderr = _invoke(capsys, *args, "--resolved-conflict", reviewed)
@@ -2331,9 +2331,7 @@ def test_integrate_imports_only_matching_success(
         return execute(argv, *args, **kwargs)
 
     monkeypatch.setattr(lane.run_command, "execute", counted)
-    code, pending, stderr = _invoke(
-        capsys, *_integration_args(record, repo, manifest, original["old_head"]), "--restart-review"
-    )
+    code, pending, stderr = _invoke(capsys, *integration_args(record, repo, manifest, original["old_head"]), "--restart-review")
     assert code == 1 and pending["phase"] == "awaiting-validation", stderr
     result = pending["results"]["verification-0"]
     if difference is None:
@@ -2353,7 +2351,7 @@ def test_integrate_restart_tracks_advanced_target(
     latest = git_repository.commit_all(repo, "統合先の追加更新")
     value["verification"] = [[sys.executable, "-c", "pass"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    args = _integration_args(record, repo, manifest, original["old_head"])
+    args = integration_args(record, repo, manifest, original["old_head"])
     code, pending, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 1 and pending["phase"] == "awaiting-validation", stderr
     assert pending["new_base"] == latest
@@ -2390,7 +2388,7 @@ def test_integrate_restart_keeps_corrections_when_target_advances(
     latest = git_repository.commit_all(repo, "統合先の追加更新")
     value["verification"] = [[sys.executable, "-c", "pass"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    args = _integration_args(record, repo, manifest, correction)
+    args = integration_args(record, repo, manifest, correction)
     code, pending, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 1 and pending["phase"] == "awaiting-validation", stderr
     assert pending["old_head"] == original["old_head"] and pending["new_base"] == latest
@@ -2494,7 +2492,7 @@ def test_integrate_restart_rejects_non_descendant(
     repo, record, manifest, _value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     git_repository.run_git(worktree, "reset", "--hard", original["old_head"])
-    args = _integration_args(record, repo, manifest, original["old_head"])
+    args = integration_args(record, repo, manifest, original["old_head"])
     code, _result, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 2 and "子孫" in stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == original["new_base"]
@@ -2559,7 +2557,7 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
         ),
         encoding="utf-8",
     )
-    arguments = _integration_args(record, repo, manifest, head)
+    arguments = integration_args(record, repo, manifest, head)
     before_dirty = git_repository.git_output(worktree, "status", "--porcelain=v1")
     before_ff: dict[str, Any] = {}
     git_run = lane.git_command.run
@@ -2685,7 +2683,7 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
         return execute(*args, **kwargs)
 
     monkeypatch.setattr(lane.run_command, "execute", finalization)
-    args = _integration_args(record, repo, manifest, head if head != original["new_head"] else original["old_head"])
+    args = integration_args(record, repo, manifest, head if head != original["new_head"] else original["old_head"])
     code, pending, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 1, stderr
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
@@ -2707,7 +2705,7 @@ def test_integrate_restart_review_after_failed_rebased_verification(
     repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
     value["verification"] = [[sys.executable, "-c", "pass"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    args = _integration_args(record, repo, manifest, original["old_head"])
+    args = integration_args(record, repo, manifest, original["old_head"])
     code, pending, stderr = _invoke(capsys, *args, "--restart-review", "--accept-rebased-head", original["new_head"])
     assert code == 1 and pending["new_head"] == original["new_head"], stderr
     assert pending["phase"] == "awaiting-validation"
@@ -2725,7 +2723,7 @@ def test_integrate_rejects_changed_input_with_restart_guidance(
     repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
     value["verification"] = [[sys.executable, "-c", "assert True"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, original["old_head"]))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, original["old_head"]))
     record_property("restart_diagnostic", stderr)
     assert code == 2
     assert all(word in stderr for word in ("--restart-review", "検証argv", "最終化argv", "handoff", "検収待ち"))
@@ -2794,7 +2792,7 @@ def test_integrate_verification_is_not_limited_by_procedure_timeout(
         ),
         encoding="utf-8",
     )
-    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    code, result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
     if rebased:
         assert code == 1 and result["phase"] == "awaiting-validation", stderr
     else:
@@ -2819,7 +2817,7 @@ def test_integrate_finalization_keeps_procedure_timeout(
         ),
         encoding="utf-8",
     )
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, head))
     assert code == 2 and "wis:20261023-000000-001.md:0が終了124" in stderr, stderr
 
 
@@ -2891,7 +2889,7 @@ def test_integrate_finalizes_and_cleans_after_selection_file_expires(
         ),
         encoding="utf-8",
     )
-    args = _integration_args(record, repo, manifest, head)
+    args = integration_args(record, repo, manifest, head)
     correct = manifest.read_text(encoding="utf-8")
     wrong = json.loads(correct)
     wrong["wis"] = [{"name": "other.md", "commands": []}]
@@ -3036,7 +3034,7 @@ def test_integrate_rebuilds_expired_rebase_materials(
     stored["integration"]["rewrite_map"] = str(expired / "rewrite-map.json")
     stored["integration"]["results"]["verification-0"]["record_path"] = str(expired / "record.json")
     record_path.write_text(json.dumps(stored), encoding="utf-8")
-    args = _integration_args(record, repo, manifest, original["old_head"])
+    args = integration_args(record, repo, manifest, original["old_head"])
     code, pending, stderr = _invoke(capsys, *args)
     assert code == 1 and pending["phase"] == "awaiting-validation", stderr
     mapping = pathlib.Path(pending["rewrite_map"])
@@ -3152,7 +3150,7 @@ def test_integrate_does_not_count_non_writers_or_caller_chain(
         _running("main", repo)
 
     code, result, stderr = _invoke(
-        capsys, *_integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"])
+        capsys, *integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"])
     )
 
     assert code == 0 and result["phase"] == "finalized", stderr
@@ -3189,7 +3187,7 @@ def test_integrate_first_call_accepts_all_agreed_distinct_sessions(
     assert "integration" not in json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
 
     code, result, stderr = _invoke(
-        capsys, *_integration_args(record, repo, manifest, head), "--session-id", record["session_id"], *writers
+        capsys, *integration_args(record, repo, manifest, head), "--session-id", record["session_id"], *writers
     )
 
     assert code == 0, stderr
@@ -3236,7 +3234,7 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
     outside.mkdir(parents=True)
     _running("outside-reader", outside)
     args = (
-        *_integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"]),
+        *integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"]),
         "--writer-session",
         "agreed",
     )
@@ -3279,7 +3277,7 @@ def test_integrate_rejects_unresolvable_registration(
     (directory / "broken.json").write_text("{", encoding="utf-8")
 
     code, _result, stderr = _invoke(
-        capsys, *_integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"])
+        capsys, *integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"])
     )
 
     assert code == 2 and "担当登録の形式を確認できない" in stderr
@@ -3334,7 +3332,7 @@ def test_integrate_passes_confirmed_values_to_every_consumer(
         ),
         encoding="utf-8",
     )
-    args = _integration_args(record, repo, manifest, head)
+    args = integration_args(record, repo, manifest, head)
     if no_merge:
         args = (*args, "--no-merge")
 
@@ -3395,7 +3393,7 @@ def test_integrate_reuses_confirmed_values_after_failed_finalization(
         )
         return path
 
-    args = _integration_args(record, repo, manifest(started), head)
+    args = integration_args(record, repo, manifest(started), head)
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 2 and "終了4" in stderr
     stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
@@ -3404,11 +3402,11 @@ def test_integrate_reuses_confirmed_values_after_failed_finalization(
     values = stored["integration"]["finalization_values"]
 
     other = (datetime.datetime.fromisoformat(started) - datetime.timedelta(hours=1)).isoformat()
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest(other), head))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest(other), head))
     assert code == 2 and "最初のレーン開始時刻と異なる" in stderr
 
     permit.touch()
-    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest(started), head))
+    code, result, stderr = _invoke(capsys, *integration_args(record, repo, manifest(started), head))
     assert code == 0 and result["phase"] == "finalized", stderr
     assert result["finalization_values"] == values
     assert calls.read_text(encoding="utf-8") == "s"
@@ -3459,7 +3457,7 @@ def test_integrate_rejects_invalid_finalization_references(
     )
     target_head = git_repository.git_output(repo, "rev-parse", "HEAD")
 
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, record["initial_head"]))
+    code, _result, stderr = _invoke(capsys, *integration_args(record, repo, manifest, record["initial_head"]))
 
     assert code == 2 and reason in stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == target_head
