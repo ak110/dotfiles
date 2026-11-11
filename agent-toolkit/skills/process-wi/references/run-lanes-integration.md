@@ -84,6 +84,8 @@ CLIは今回のWI集合と所有権を検収し、すべての最終化操作が
    計画ファイルまたは引き継ぎ記録の実在、AWI集合の一致、および専用worktreeの元の所有主体が終了済みであることを事前に確認する。
    反映後の観測のみが残っている項目については、`finish-session-observation.md`「延期adoptと反映後の観測」によりAWI本文へ追記された再開記録に基づき、選定結果の観測専用の再開位置をそのまま引き渡す。
    レーン担当は`lane-planning-resume.md`「再開」に従って観測作業のみを実施する。
+   再開するレーンへ回答済みUWIや、依存の解消・`unhold`で`inbox`へ戻った元項目を引き渡す場合は、引渡しの前に`atk wi show`でそれらの現在の状態を照会し、`inbox`の項目を`atk wi start-processing`で`processing`へ移す。
+   作業に着手する項目を開始経路によらず`processing`にする契約は、`../../wi-standards/references/wi-standards-states.md`「状態と依存」が示す状態遷移に従う。
 
 2. 残存している専用worktreeおよびbranchを安全に再利用できる場合は、同一の絶対パス、branch、最新HEAD、および再開位置を新規のレーン担当へ渡す。
    安全に再利用できない場合は、既存の作業成果を損なわないよう最新HEADから新規の専用worktreeを作成し、移行内容を`atk run-script plan-progress --`を用いて進捗ログ（計画なしの場合は引き継ぎ記録）へ記録する。

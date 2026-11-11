@@ -310,6 +310,26 @@ def _apply_transition(
         atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
 
 
+def _inbox_names_with_commit(
+    states: dict[pathlib.Path, str],
+    commit_values: dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None],
+) -> list[str]:
+    """遷移元が`inbox`で、対応commitを受け取った項目のファイル名を返す。"""
+    return [path.name for path, state in states.items() if state == WI_STATE_INBOX and commit_values[path]]
+
+
+def _warn_skipped_processing(filenames: list[str]) -> None:
+    """作業を示すcommitを持つ項目が`processing`を経ずに終了したことを、項目ごとに警告する。
+
+    終了は成功させる。終了の直前に拒否しても作業中の表示は回復しないため、次回の着手時の操作を案内する。
+    """
+    for filename in filenames:
+        _outcome.report_warning(
+            f"{filename}は作業を示すcommitがあるのに処理中（processing）を経ずにinboxから終了した",
+            next_action="次回から項目の作業に着手する時点で`atk wi start-processing <ファイル名>`を実行せよ",
+        )
+
+
 def _transition_commit_message(action: str, count: int, note: str | None) -> str:
     """状態遷移の管理repo用コミットメッセージを返す。"""
     item_word = "entry" if count == 1 else "entries"
@@ -342,8 +362,12 @@ def transition_entries(
     local_worktree: pathlib.Path | None = None,
     skip_push: bool = False,
     actor_is_agent: bool = False,
+    inbox_with_commit: list[str] | None = None,
 ) -> list[str]:
     """平引数でエントリの一括状態遷移または削除を実行する。
+
+    `inbox_with_commit`へリストを渡すと、`adopt`・`reject`で遷移元が`inbox`かつ対応commitを受け取った項目の
+    ファイル名を追記する。警告の要否は呼び出し元が決める。
 
     `action="remove"`では`actor_is_agent`が真の場合にinboxとholdだけを対象とする。
     `action="hold"`では`actor_is_agent`が真で`state`を省いた場合、processingの項目を保留せず`WebInputError`を送出する。
@@ -383,6 +407,10 @@ def transition_entries(
             if action in {"adopt", "reject"}
             else {path: None for path in paths}
         )
+        if inbox_with_commit is not None:
+            inbox_with_commit.extend(
+                _inbox_names_with_commit({path: _wi_entries.entry_state_of(path) for path in paths}, commit_values)
+            )
         _apply_transition(
             private_notes,
             paths,
@@ -424,6 +452,7 @@ def _bulk_transition(
     skip_push = getattr(args, "skip_push", False)
     cooldown_days = getattr(args, "cooldown_days", None)
     local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if commit is not None else None
+    inbox_with_commit: list[str] = []
 
     def apply_fn(notes: pathlib.Path, candidates: list[_wi_entries.EntryRecord]) -> list[str]:
         paths = [entry[0] for entry in candidates]
@@ -438,6 +467,7 @@ def _bulk_transition(
             force=True,
         )
         commit_values = commit_values_by_path(paths, commit, local_worktree)
+        inbox_with_commit.extend(_inbox_names_with_commit({entry[0]: entry[3] for entry in candidates}, commit_values))
         _apply_transition(
             notes,
             paths,
@@ -455,7 +485,7 @@ def _bulk_transition(
         )
         return [path.name for path in paths]
 
-    return _bulk.bulk_apply_entries(
+    filenames = _bulk.bulk_apply_entries(
         private_notes,
         action=action,
         target_repo=args.target_repo,
@@ -469,6 +499,9 @@ def _bulk_transition(
         actor_is_agent=is_agent_environment(),
         apply_fn=apply_fn,
     )
+    if action == "adopt":
+        _warn_skipped_processing(inbox_with_commit)
+    return filenames
 
 
 def _report_user_fields(private_notes: pathlib.Path, filenames: list[str]) -> None:
@@ -493,6 +526,8 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
     移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
     `--note`指定時はメモ、`--commit`指定時は対応commitの短縮OIDと件名を含む。
     inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
+    inboxの項目を`--commit`付きで終了した場合は、処理中を経ていないことを標準エラーへ警告する。
+    `atk serve`の画面からの採用は`transition_entries`を直接呼ぶため、この警告の対象外である。
     位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
     """
     if args.all:
@@ -505,6 +540,7 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
         return
     args.filenames = _wi_filenames.dedup_positional_filenames(args.filenames, "adopt")
     local_worktree = candidate_local_worktree(_single_target_repo(args.target_repo)) if args.commit is not None else None
+    inbox_with_commit: list[str] = []
     filenames = transition_entries(
         private_notes,
         action="adopt",
@@ -515,7 +551,9 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
         commit=args.commit,
         local_worktree=local_worktree,
         skip_push=args.skip_push,
+        inbox_with_commit=inbox_with_commit,
     )
+    _warn_skipped_processing(inbox_with_commit)
     _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")
     for filename in filenames:
         print(_wi_entries.entry_path(private_notes, filename))

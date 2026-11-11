@@ -118,6 +118,8 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
    移転が確定した場合は、処理開始前に保存値と本文中の操作先を揃える。
    初回の`atk wi start-processing <ファイル名>... --target-repo=<対応worktreeの絶対パス>`に渡す引数は、保存済み対応表の中で開始前にinbox状態であった全件からworktreeごとに抽出する。
    すでに処理開始済みの項目を重複して状態遷移させない。
+   中断した実行を保存済みの対応表・計画・引き継ぎ記録から再開する場合と、回答済みUWIや、依存の解消・`unhold`で`inbox`へ戻った元項目を対応表へ加える場合も、作業の再開前に`atk wi show`で対応表の全件の現在の状態を照会し、`inbox`の項目を同じ操作で`processing`へ移す。
+   作業に着手する項目を開始経路によらず`processing`にする契約は、`../../wi-standards/references/wi-standards-states.md`「状態と依存」が示す状態遷移に従う。
    途中で処理が失敗した場合は、CLIの診断メッセージと残存状態を同じ対応表に記録し、未完了の工程から再開する。
    ユーザーの明示追加と本書「見つけた既存不良の扱い」で今回追加とした正式改善AWIは対応表へ反映し、後続工程の比較基準を更新する。
    集合固定後の追加は、`selection-procedure-addition.md`「処理対象WIの追加」の判断基準に従って扱う。

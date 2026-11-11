@@ -320,6 +320,49 @@ def test_public_transition_only_implemented_awi_adoption_starts_pending(
         assert "effect_check:" not in entry_path(notes, filename).read_text(encoding="utf-8")
 
 
+def _adopt(notes: pathlib.Path, worktree: pathlib.Path, filename: str, *commits: str) -> int:
+    with pytest.raises(SystemExit) as finished:
+        atk.main(["wi", "adopt", filename, "--target-repo", str(worktree), *commits], home=notes.parent)
+    assert isinstance(finished.value.code, int)
+    return finished.value.code
+
+
+def test_adopt_warns_when_inbox_entry_has_commit(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """作業を示すcommitを持つ項目をinboxから直接採用すると、成功させたうえで処理中の抜けを警告する。"""
+    notes, worktree, _path = effect_repository
+    write_awi(notes, "skipped.md", state="inbox")
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    capsys.readouterr()
+
+    assert _adopt(notes, worktree, "skipped.md", "--commit", oid) == 0
+
+    captured = capsys.readouterr()
+    assert "state: adopted" in entry_path(notes, "skipped.md").read_text(encoding="utf-8")
+    assert "成功: 1件をadoptedへ移した" in captured.out
+    assert captured.err.count("skipped.mdは作業を示すcommitがあるのに処理中（processing）を経ずにinboxから終了した") == 1
+    assert "atk wi start-processing" in captured.err
+
+
+def test_adopt_does_not_warn_for_regular_transitions(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """処理中・保留からのcommit付きの採用と、commitを伴わないinboxからの採用は警告しない。"""
+    notes, worktree, _path = effect_repository
+    write_awi(notes, "processed.md", state="processing")
+    write_awi(notes, "held.md", state="hold")
+    write_uwi(notes, "answered.md", state="inbox", answer="回答済み")
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    capsys.readouterr()
+
+    assert _adopt(notes, worktree, "processed.md", "--commit", oid) == 0
+    assert _adopt(notes, worktree, "held.md", "--commit", oid) == 0
+    assert _adopt(notes, worktree, "answered.md") == 0
+
+    assert "処理中（processing）を経ずに" not in capsys.readouterr().err
+
+
 def test_public_effect_batch_validates_all_and_resumes_partial_save(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     monkeypatch: pytest.MonkeyPatch,

@@ -39,6 +39,13 @@ WI処理の機構を設計した理由（却下した代替案など）は、[de
   - `agent-toolkit:/share/add-wi-parent-inputs.md`
   - `agent-toolkit:/share/add-wi-parent-acceptance.md`
 
+- エージェントが作業している項目は、開始経路を問わずキュー上で`processing`にする。
+  対象は通常のAWI、作業を伴う回答済みUWI、依存の解消や`unhold`で`inbox`へ戻った元項目で、経路はprocess-wiの選定、中断した実行の再開、実行中の回答の反映、process-wiの外での回答の反映を含む。
+  作業を伴わない回答済みUWIを選定直後に終了する扱いと、事後承認型UWIの肯定回答を直接`adopted`にする扱いは変えない。
+  選定の手順だけが遷移を定めていたため、選定を通らずに作業した項目が`inbox`のまま終了していた。
+  2026年11月のユーザー指摘（エージェントの対応が要る回答済みUWIが`processing`にならないまま採用される。AWIと同様に処理中は`processing`にする）への対処である。
+  契約の定義元は`agent-toolkit:wi-standards/references/states-and-dependencies-states.md`「状態遷移」で、作業を始める各手順はこの定義を参照する。
+  `atk wi adopt`は`inbox`の項目を`--commit`付きで終了したときに遷移の抜けを警告する
 - 項目の削除は、明示`state`として`inbox`・`processing`・`hold`に加えて終了状態（`adopted`・`rejected`）も受理する。
   エージェントが自身の誤りで投入した項目を`atk serve`の画面から片付けられるようにするためであり、`processing`の削除保護は維持する
 - エージェントが実行してよい遷移は`inbox`と`hold`の相互移動、`inbox`から`processing`を経た`adopted`・`rejected`への終了、および`adopted`・`rejected`から`inbox`または`hold`への差し戻しとする（2026年9月25日、ユーザー指示）。
