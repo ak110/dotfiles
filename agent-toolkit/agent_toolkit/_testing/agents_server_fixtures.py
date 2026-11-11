@@ -13,7 +13,6 @@ from agent_toolkit._agents_server import logging_config, shared_layout
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing import agents_wait_support
-from agent_toolkit._testing.codex_provider_support import set_connections
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 
@@ -76,6 +75,11 @@ def _isolate_stable_plugin_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: path
 @pytest.fixture(name="provider_environment")
 def _configure_provider_environment(monkeypatch):
     """資格情報は架空のAPI値だけとし、開発機の設定を使わない。"""
+    # 本モジュールはpytestプラグインの読込時にimportされる。codex_provider_supportは
+    # mcp_toolsを経てMCPライブラリの`logging.basicConfig`を呼ぶため、pytestのログ機能が
+    # ルートロガーを準備する前に読むと、全試験の出力へDEBUGログが混ざる。使う時点で読む。
+    from agent_toolkit._testing.codex_provider_support import set_connections  # pylint: disable=import-outside-toplevel
+
     set_connections(monkeypatch, "subscription,credits,payg")
     monkeypatch.setenv("TEST_PROVIDER_KEY", "isolated-fake-api-key")
     monkeypatch.delenv("UNSET_PROVIDER_KEY", raising=False)
