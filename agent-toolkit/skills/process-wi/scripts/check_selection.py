@@ -135,6 +135,14 @@ _NEXT_CORRECTION = (
     "各行へ`補正前の実装秒数`・`補正前の統合秒数`を書き、実装秒数・統合秒数を"
     "補正前の値×対応する工程の係数の1秒以内へそろえる。係数が1以外なら参照した記録を1件以上挙げる"
 )
+_NEXT_SHARED_WAIT = (
+    "`見込みの補正`の`共有待ちの算定`を、過去の実行記録から測った値なら`実測`と参照した記録へ、"
+    "測っていない値なら`推定`と、共有の検証枠・統合の順番の待ちを見積もった0より大きい秒数へ直し、根拠をレーンの`根拠`へ書く"
+)
+_NEXT_TARGET_OVERRUN = (
+    "段階の組み直し、独立した準備の先行、準備と検証の集約などの配分の代替案を目標所要秒数との差で比べ、"
+    "採った案と比べた見込みを最上位の`目標超過時の配分比較`へ書く。見込みの超過だけを理由に項目を外さず、レーン数の上限を保つ"
+)
 _NEXT_MISSING_BODY = "`atk wi list`の出力で対象のWIファイル名を確かめ、選定の`WI`をprivate-notesにあるファイル名へ直す"
 _NEXT_SINGLE_STAGE = (
     "比較した単一段階案の秒数を最上位の`単一段階案の完了見込み秒数`へ、配分の説明を`レーンの所要時間`の`根拠`へ書く"
@@ -157,6 +165,7 @@ _NEXT_RERUN = "直した後に同じコマンドで確かめる"
 
 _NORM_SPEC_KEY = "プロジェクト規範の指定"
 _NORM_CONFIG_TABLE = ("tool", "agent-toolkit", "pick-wi-check")
+_TARGET_SECONDS_KEY = "target-seconds"
 _NORM_CONDITION_KEYS = frozenset({"name", "paths", "suffixes", "agent-doc", "require-paths", "require-text"})
 
 
@@ -184,16 +193,11 @@ class NormCondition:
         return in_scope and (not self.suffixes or path.endswith(self.suffixes))
 
 
-def load_norm_conditions(work_dir: pathlib.Path) -> list[NormCondition]:
-    """`work_dir`の`pyproject.toml`から`プロジェクト規範の指定`の条件を読む。表が無ければ空の一覧を返す。"""
+def _load_check_table(work_dir: pathlib.Path) -> dict[str, object] | None:
+    """`work_dir`の`pyproject.toml`から`[tool.agent-toolkit.pick-wi-check]`の表を読む。表が無ければNoneを返す。"""
     config = work_dir / "pyproject.toml"
-    location = f"{config}の[{'.'.join(_NORM_CONFIG_TABLE)}]"
-    fix = (
-        f"{location}の`norm-spec`を、`name`（文字列）、`paths`・`suffixes`・`require-text`（文字列の配列）、"
-        "`agent-doc`・`require-paths`（真偽値）だけを持つ表の配列へ直してから、同じコマンドを再実行する"
-    )
     if not config.is_file():
-        return []
+        return None
     try:
         data = tomllib.loads(config.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError) as error:
@@ -207,9 +211,29 @@ def load_norm_conditions(work_dir: pathlib.Path) -> list[NormCondition]:
     for key in _NORM_CONFIG_TABLE:
         table = table.get(key) if isinstance(table, dict) else None
     if table is None:
+        return None
+    if not isinstance(table, dict):
+        raise InputError(
+            f"{config}の[{'.'.join(_NORM_CONFIG_TABLE)}]が表ではない",
+            next_action=f"{config}の[{'.'.join(_NORM_CONFIG_TABLE)}]を表へ直してから、同じコマンドを再実行する",
+        )
+    return table
+
+
+def load_norm_conditions(work_dir: pathlib.Path) -> list[NormCondition]:
+    """`work_dir`の`pyproject.toml`から`プロジェクト規範の指定`の条件を読む。表が無ければ空の一覧を返す。"""
+    config = work_dir / "pyproject.toml"
+    location = f"{config}の[{'.'.join(_NORM_CONFIG_TABLE)}]"
+    fix = (
+        f"{location}の`norm-spec`を、`name`（文字列）、`paths`・`suffixes`・`require-text`（文字列の配列）、"
+        "`agent-doc`・`require-paths`（真偽値）だけを持つ表の配列へ直してから、同じコマンドを再実行する"
+    )
+    table = _load_check_table(work_dir)
+    # 同じ表に目標所要秒数だけを置くプロジェクトもあるため、`norm-spec`の欠落は条件なしとして読む。
+    if table is None or "norm-spec" not in table:
         return []
-    entries = table.get("norm-spec") if isinstance(table, dict) else None
-    if not isinstance(table, dict) or not isinstance(entries, list):
+    entries = table["norm-spec"]
+    if not isinstance(entries, list):
         raise InputError(f"{location}の`norm-spec`が表の配列ではない", next_action=fix)
     conditions: list[NormCondition] = []
     for index, entry in enumerate(entries, start=1):
@@ -228,6 +252,24 @@ def load_norm_conditions(work_dir: pathlib.Path) -> list[NormCondition]:
             )
         )
     return conditions
+
+
+def load_target_seconds(work_dir: pathlib.Path) -> float | None:
+    """`work_dir`の`pyproject.toml`が定める1回の処理の目標所要秒数を読む。設定が無ければNoneを返す。
+
+    目標はプロジェクトごとの方針のため配布物に値を持たず、プロジェクトの検査設定から受け取る。
+    """
+    table = _load_check_table(work_dir)
+    if table is None or _TARGET_SECONDS_KEY not in table:
+        return None
+    value = table[_TARGET_SECONDS_KEY]
+    if not selection_contract.is_non_negative_number(value) or value == 0:
+        location = f"{work_dir / 'pyproject.toml'}の[{'.'.join(_NORM_CONFIG_TABLE)}]"
+        raise InputError(
+            f"{location}の`{_TARGET_SECONDS_KEY}`がbool以外の正の有限数ではない: {value!r}",
+            next_action=f"{location}の`{_TARGET_SECONDS_KEY}`を正の秒数へ直すか削除してから、同じコマンドを再実行する",
+        )
+    return typing.cast(float, value)
 
 
 def _norm_condition_problems(entry: object) -> list[str]:
@@ -696,8 +738,15 @@ def _check_public_write_rationales(items: list[dict[str, object]], work_dir: pat
     return errors
 
 
-def _check_estimate_records(selection: dict[str, object], costs: list[dict[str, object]]) -> list[Violation]:
-    """段階案の比較と補正の記録を、所要時間の値へ対応付ける。"""
+def _check_estimate_records(
+    selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None = None
+) -> list[Violation]:
+    """段階案の比較と補正の記録を、所要時間の値へ対応付ける。
+
+    `共有待ちの算定`を持つ選定では、未計測の待ちを0秒の推定にした組と、記録の無い実測を拒否し、
+    目標所要秒数を超える見込みに配分の代替案の比較記録を求める。算定を持たない保存済みの選定は、
+    この区別の前の形式として読み、これらの判定を適用しない。
+    """
     errors: list[Violation] = []
     costs = [dict(row) for row in costs]
     for row in costs:
@@ -738,6 +787,28 @@ def _check_estimate_records(selection: dict[str, object], costs: list[dict[str, 
         _completion_estimate(costs, typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY]))
     ):
         errors.append(Violation("全体の完了見込み秒数が有限数ではない", next_action=_NEXT_CORRECTION))
+    basis = correction.get(_selection.SHARED_WAIT_BASIS_KEY)
+    if basis is None:
+        return errors
+    wait = typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY])
+    if basis == _selection.SHARED_WAIT_ESTIMATED and wait == 0:
+        errors.append(Violation("未計測の共有待ちを0秒と推定している", next_action=_NEXT_SHARED_WAIT))
+    if basis == _selection.SHARED_WAIT_MEASURED and not correction["参照した記録"]:
+        errors.append(Violation("実測とした共有待ちに参照した記録がない", next_action=_NEXT_SHARED_WAIT))
+    if (
+        target_seconds is not None
+        and _completion_estimate(costs, wait) > target_seconds
+        and _selection.TARGET_OVERRUN_COMPARISON_KEY not in selection
+    ):
+        estimate = _completion_estimate(costs, wait)
+        # 違反時は要約を出さずに終了するため、組み直しの規模を判断できるよう差もここで示す。
+        errors.append(
+            Violation(
+                f"全体の完了見込み秒数{estimate}が目標所要秒数{target_seconds}を超える"
+                f"（差 {estimate - target_seconds}）のに`{_selection.TARGET_OVERRUN_COMPARISON_KEY}`がない",
+                next_action=_NEXT_TARGET_OVERRUN,
+            )
+        )
     return errors
 
 
@@ -869,7 +940,7 @@ def check(
         )
     )
     errors.extend(_check_public_write_rationales(pending, work_dir))
-    errors.extend(_check_estimate_records(selection, costs))
+    errors.extend(_check_estimate_records(selection, costs, load_target_seconds(work_dir)))
     errors.extend(selection_contract.allocation_errors(selection))
     errors.extend(_check_allocation_sources(selection, private_notes))
     return errors
@@ -1256,7 +1327,9 @@ def _string_list(decision: dict[str, object], key: str) -> list[str]:
     return typing.cast(list[str], decision.get(key, []))
 
 
-def summary_lines(selection: dict[str, object], body_wis: set[str] | None = None) -> list[str]:
+def summary_lines(
+    selection: dict[str, object], body_wis: set[str] | None = None, target_seconds: float | None = None
+) -> list[str]:
     """確認に合格した選定結果から、レーン構成の要約行を返す。
 
     WIファイル名は入力順に全件を示す。段階と先行レーンの省略は読み取り契約の省略時の値（1と空の列）で示し、
@@ -1280,9 +1353,10 @@ def summary_lines(selection: dict[str, object], body_wis: set[str] | None = None
     correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
     if isinstance(correction, dict) and _selection.SHARED_WAIT_SECONDS_KEY in correction:
         wait = typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY])
-        lines.append(
-            f"全体の完了見込み秒数: {_completion_estimate(list(costs.values()), wait)}（共有待ち秒数 {wait}を1回含む）"
-        )
+        estimate = _completion_estimate(list(costs.values()), wait)
+        lines.append(f"全体の完了見込み秒数: {estimate}（共有待ち秒数 {wait}を1回含む）")
+        if target_seconds is not None:
+            lines.append(f"目標所要秒数: {target_seconds}（差 {estimate - target_seconds}）")
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in selection:
         lines.append(f"{_selection.SINGLE_STAGE_ESTIMATE_KEY}: {selection[_selection.SINGLE_STAGE_ESTIMATE_KEY]}")
     if _selection.STAGED_ESTIMATE_KEY in selection:
@@ -1456,6 +1530,7 @@ def main(argv: list[str] | None = None) -> int:
                     if not isinstance(updates, dict):
                         raise ValueError("費用更新JSONは最終レーンから補正前後の実装秒数・統合秒数と根拠の5欄への写像とする")
                 addition = load_selection(args.merge, additional=True, candidate_file=args.candidate_file)
+                selection_contract.require_shared_wait_basis(addition.get(_selection.ESTIMATE_CORRECTION_KEY))
                 for data in (selection, addition):
                     estimate_errors = _check_estimate_records(
                         data, typing.cast(list[dict[str, object]], _selection.lane_costs(data))
@@ -1509,7 +1584,8 @@ def main(argv: list[str] | None = None) -> int:
             _next_action.report(str(error), next_action="保存先を確認して同じ統合操作を再実行する")
             return 2
         print(f"統合結果: {args.output.resolve()}")
-    print("\n".join(summary_lines(selection, body_wis)))
+    # 目標の設定は先行する`check`の呼出しで検証済みのため、ここでは読込の失敗が起きない。
+    print("\n".join(summary_lines(selection, body_wis, load_target_seconds(work_dir))))
     return 0
 
 

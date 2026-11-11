@@ -1460,7 +1460,8 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                 f"現在の書込所有に含まれない担当が稼働中: {len(writers)}件。"
                 + "; ".join(writer.describe() for writer in writers)
                 + "。各担当の担当範囲と統合への合意を確かめ、合意した担当は--writer-sessionへ反復指定し、"
-                "合意しない担当は終了を待ってから同じlane integrateを再実行する"
+                "合意しない担当は終了を待ってから同じlane integrateを再実行する。"
+                "統合先へ書き込まない読み取りだけの補助の担当は、作業ディレクトリを両worktreeの外にして起動し直してもよい"
             )
         manifest = _integration_input(args, record)
         if (

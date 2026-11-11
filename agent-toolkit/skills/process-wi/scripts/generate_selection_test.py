@@ -311,6 +311,7 @@ def test_minimal_selection_generation_merge_and_integration(
             "実装係数": 2,
             "統合係数": 3,
             "共有待ち秒数": 20,
+            "共有待ちの算定": "実測",
             "参照した記録": ["plans/phase.jsonl"],
             "除外した記録": [],
         }
@@ -425,6 +426,7 @@ def test_public_phase_correction_rejects_invalid_input_without_saving(
         "実装係数": 1,
         "統合係数": 1,
         "共有待ち秒数": 0,
+        "共有待ちの算定": "実測",
         "参照した記録": ["plans/phase.jsonl"],
         "除外した記録": [],
         field: value,
@@ -451,6 +453,7 @@ def test_public_phase_correction_total_overflow_preserves_destination(
         "実装係数": 1,
         "統合係数": 1,
         "共有待ち秒数": 20,
+        "共有待ちの算定": "推定",
         "参照した記録": [],
         "除外した記録": [],
     }
@@ -467,7 +470,7 @@ def test_public_phase_correction_preserves_excluded_incomplete_history(
     environment: tuple[pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
 ) -> None:
-    """未分離の総経過と未計測の待ちは、工程別実測へ置き換えず除外理由を保存する。"""
+    """未分離の総経過と未計測の待ちは、工程別実測へ置き換えず除外理由と待ちの推定を保存する。"""
     repo, notes = environment
     _wi(notes, "first.md")
     facts, judgments = _inputs(tmp_path, ["first.md"])
@@ -475,7 +478,8 @@ def test_public_phase_correction_preserves_excluded_incomplete_history(
     correction = {
         "実装係数": 1,
         "統合係数": 1,
-        "共有待ち秒数": 0,
+        "共有待ち秒数": 600,
+        "共有待ちの算定": "推定",
         "参照した記録": [],
         "除外した記録": [{"記録": "plans/legacy.jsonl", "理由": "総経過のみで工程別区間と共有待ちが未計測"}],
     }
@@ -498,7 +502,14 @@ def test_public_phase_correction_merge_rejects_mismatch_and_preserves_destinatio
     _wi(notes, "first.md")
     facts, judgments = _inputs(tmp_path, ["first.md"])
     data = yaml.safe_load(judgments.read_text(encoding="utf-8"))
-    correction = {"実装係数": 1, "統合係数": 1, "共有待ち秒数": 20, "参照した記録": [], "除外した記録": []}
+    correction = {
+        "実装係数": 1,
+        "統合係数": 1,
+        "共有待ち秒数": 20,
+        "共有待ちの算定": "推定",
+        "参照した記録": [],
+        "除外した記録": [],
+    }
     data["見込みの補正"] = correction
     judgments.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     output = tmp_path / "selection.yaml"

@@ -3231,6 +3231,10 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
     _running("agreed", repo, role="exec")
     _running("finished", repo, role="exec", terminal=True)
     _running("elsewhere", nested, role="exec")
+    # 読み取りだけの補助の担当は、役割文書が無くても作業ディレクトリが両worktreeの外なら数えない。
+    outside = tmp_path / "managed-temp" / "reader"
+    outside.mkdir(parents=True)
+    _running("outside-reader", outside)
     args = (
         *_integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"]),
         "--writer-session",
@@ -3250,7 +3254,8 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
         assert f"cwd={cwd}, 所属worktree={tree}" in stderr
     assert f"役割文書={_SHARE / 'exec.subagent.md'}" in stderr
     assert "--writer-sessionへ反復指定" in stderr
-    for excluded in ("caller", "main", "agreed", "finished", "elsewhere"):
+    assert "作業ディレクトリを両worktreeの外にして起動し直してもよい" in stderr
+    for excluded in ("caller", "main", "agreed", "finished", "elsewhere", "outside-reader"):
         assert f"session_id={excluded}," not in stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == target_head
     assert "統合済み" not in selected.read_text(encoding="utf-8")

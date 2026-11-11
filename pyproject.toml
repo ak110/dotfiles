@@ -104,6 +104,9 @@ dev = [
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
 # 記載の手順と理由は`.claude/skills/edit-dotfiles-norms/SKILL.md`「メインが書くプロジェクト規範の指定」が定め、
 # 対象範囲の一致は`project_norm_spec_invariant_test.py`が確かめる。
+# `target-seconds`は本リポジトリを処理する1回の巡回の目標所要（3時間。`.claude/skills/develop-dotfiles/SKILL.md`）。
+# 選定の見込みとの差を要約へ出し、超過時に配分の代替案の比較を求める。超過を理由に項目を外す判定には使わない。
+target-seconds = 10800
 
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。

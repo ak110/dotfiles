@@ -278,6 +278,11 @@ def merge_selection(
         typing.cast(dict[str, object], result[correction_key])[_selection.SHARED_WAIT_SECONDS_KEY] = additional_correction[
             _selection.SHARED_WAIT_SECONDS_KEY
         ]
+    if _selection.SHARED_WAIT_BASIS_KEY in additional_correction:
+        # 待ちの秒数と同じく、算定の区分も追加側で再確定した全体配分の値を採る。
+        typing.cast(dict[str, object], result[correction_key])[_selection.SHARED_WAIT_BASIS_KEY] = additional_correction[
+            _selection.SHARED_WAIT_BASIS_KEY
+        ]
     if _selection.INITIAL_ALLOCATION_KEY in existing:
         result[_selection.INITIAL_ALLOCATION_KEY] = existing[_selection.INITIAL_ALLOCATION_KEY]
     result[_selection.ADDED_WIS_KEY] = [
@@ -289,6 +294,8 @@ def merge_selection(
         result[_selection.SINGLE_STAGE_ESTIMATE_KEY] = added[_selection.SINGLE_STAGE_ESTIMATE_KEY]
     if _selection.STAGED_ESTIMATE_KEY in added:
         result[_selection.STAGED_ESTIMATE_KEY] = added[_selection.STAGED_ESTIMATE_KEY]
+    if _selection.TARGET_OVERRUN_COMPARISON_KEY in added:
+        result[_selection.TARGET_OVERRUN_COMPARISON_KEY] = added[_selection.TARGET_OVERRUN_COMPARISON_KEY]
     excluded = typing.cast(dict[str, object], result[correction_key])["除外した記録"]
     assert isinstance(excluded, list)
     excluded.extend(
