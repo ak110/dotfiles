@@ -52,7 +52,7 @@ dependencies = [
 
 [[package]]
 name = "claude-statusline"
-version = "0.11.7"
+version = "0.11.8"
 dependencies = [
  "chrono",
  "serde_json",
