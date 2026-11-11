@@ -50,7 +50,12 @@ def _consume_exception(task: asyncio.Task[Any]) -> None:
 
 
 class ServerLifetime:
-    """起動時の親identityと、自身の子孫handleだけを監視・回収する。"""
+    """起動時の親identityと、自身の子孫handleだけを監視・回収する。
+
+    回収の起点は生成したプロセス自身であり、終了時にその全子孫を止める。
+    pytestのプロセスの中で生成して終了処理まで動かす試験は、起点を試験が起動したプロセスへ差し替えるか回収を無効にする。
+    そのまま動かすと、pytestが使うresource_trackerと常駐のfork-serverまで止める。
+    """
 
     def __init__(self, *, timeout: float | None = None) -> None:
         self._process = psutil.Process()

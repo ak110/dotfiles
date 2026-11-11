@@ -11,10 +11,12 @@ import pathlib
 import shutil
 import subprocess
 import sys
+from multiprocessing import resource_tracker
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
+import psutil
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -22,6 +24,7 @@ import agent_toolkit.agents_server_mcp as entry_script
 from agent_toolkit._agents_server import (
     child_environment,
     launch_requests,
+    lifetime,
     logging_config,
     mcp_tools,
     session_handoff,
@@ -1314,7 +1317,18 @@ async def test_declared_role_continuations_keep_required_inputs(
 
 @pytest.mark.parametrize("stop_requested", [False, True])
 def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stop_requested: bool) -> None:
-    """stdio起動が例外で終わると、起動単位の終了診断へ例外型とメッセージを記録し、例外を呼出元へ伝える。"""
+    """stdio起動が例外で終わると、起動単位の終了診断へ例外型とメッセージを記録し、例外を呼出元へ伝える。
+
+    `serve`はこの試験ではpytestのプロセスの中で動く。終了時の回収は自プロセスの全子孫を対象にするため、
+    そのまま動かすと、pytestのインタープリターが終了まで使うresource_trackerと常駐のfork-serverまで止める。
+    止まったtrackerは、同じworkerで次にspawnの資源を使う試験で`process died unexpectedly, relaunching`の
+    警告とともに起動し直される。回収そのものは`lifetime_test.py`が別プロセスの`serve`で確かめる。
+    """
+    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda _self: [])
+    resource_tracker.ensure_running()
+    # 起動PIDは公開APIを持たないため、標準ライブラリの内部属性から読む。
+    tracker = getattr(resource_tracker._resource_tracker, "_pid", None)
+    assert tracker is not None
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", None)
@@ -1345,3 +1359,7 @@ def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path:
     # 終えた起動単位は同じプロセスの後続の記録へ書かない。
     assert logging_config.current_server_instance() is None
     assert session_registry.owner_server_instance() is None
+    # 試験のプロセスが使うtrackerを止めていない。止めていれば次の利用でPIDが変わる。
+    assert psutil.Process(tracker).status() != psutil.STATUS_ZOMBIE
+    resource_tracker.ensure_running()
+    assert getattr(resource_tracker._resource_tracker, "_pid", None) == tracker
