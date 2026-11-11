@@ -45,7 +45,8 @@ def _reader_request(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "case", ["valid", "missing", "duplicate", "collection", "unknown", "no-state", "blocked", "blocked-overall"]
+    "case",
+    ["valid", "hard-break", "missing", "duplicate", "collection", "unknown", "no-state", "blocked", "blocked-overall"],
 )
 @pytest.mark.asyncio
 async def test_reader_fit_requires_individual_completion(tmp_path, case):
@@ -73,8 +74,11 @@ async def test_reader_fit_requires_individual_completion(tmp_path, case):
         )
     overall = "" if case == "blocked" else "状態: completed\n"
     message = overall + "未解決の指摘数: 0\n対象別の判定と証拠:\n" + "\n".join(blocks) + "\n新しい要件: なし"
+    if case == "hard-break":
+        # Markdownの改行用に行末へ空白2文字を付けた返却も、同じ対象集合として受理する。
+        message = "\n".join(line + "  " for line in message.splitlines())
     result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
-    valid = case in {"valid", "blocked"}
+    valid = case in {"valid", "hard-break", "blocked"}
     assert result_contract.hold_invalid_result(session, result) is not valid
     if valid:
         assert session.pending_result is None
