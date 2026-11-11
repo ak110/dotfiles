@@ -569,7 +569,9 @@ def _compaction_notice(
         remaining = error.retry()
         if remaining:
             lines.append(f"ユーザー発話の抽出の子プロセスを回収できない: {remaining}。PIDと起動コマンドを確かめて終了させよ。")
-        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行せよ。")
+        lines.append(
+            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: {error}）。手動で`{shlex.join(command)}`を実行せよ。"
+        )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
             try:
@@ -578,7 +580,9 @@ def _compaction_notice(
                 lines.append(
                     f"前回の抽出ファイル`{output}`を削除できないため、そのファイルは使用するな。次のコマンドで原文を再取得せよ。"
                 )
-        lines.append(f"ユーザー発話の抽出に失敗した（{type(error).__name__}）。手動で`{shlex.join(command)}`を実行せよ。")
+        lines.append(
+            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: {error}）。手動で`{shlex.join(command)}`を実行せよ。"
+        )
     return "\n".join(lines)
 
 

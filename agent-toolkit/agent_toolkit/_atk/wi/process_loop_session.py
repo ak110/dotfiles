@@ -615,7 +615,10 @@ def _run_cli_session(
         try:
             identity = _registry.ProcessIdentity.of(process.pid)
             if identity is None:
-                raise RuntimeError("統括CLIのPIDと起動時刻を取得できない")
+                raise _next_action.ActionableError(
+                    "統括CLIのPIDと起動時刻を取得できない",
+                    next_action="同じコマンドを再実行し、続く場合はこの診断を添えて不具合として報告する",
+                )
             if on_process_started is not None:
                 on_process_started(identity)
             while True:

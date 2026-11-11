@@ -319,7 +319,7 @@ def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
     if result is None:
         return "実行できない"
     if result.returncode != 0:
-        return f"終了コード{result.returncode}"
+        return f"終了コード{result.returncode}: {common.format_cli_error(result)}"
     return (result.stdout or "").strip() or "出力なし"
 
 

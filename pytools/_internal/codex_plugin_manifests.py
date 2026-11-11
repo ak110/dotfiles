@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from agent_toolkit._atk import config as toolkit_config
-from agent_toolkit._common import mcp_environment
+from agent_toolkit._common import mcp_environment, next_action
 
 from pytools._internal import common
 
@@ -551,7 +551,12 @@ def repo_root() -> Path:
     """
     root = common.find_dotfiles_root()
     if root is None:
-        raise FileNotFoundError("dotfilesの作業ツリーを解決できない")
+        raise FileNotFoundError(
+            next_action.with_next_action(
+                "dotfilesの作業ツリーを解決できない",
+                "dotfilesの作業ツリーのパスを確かめ、その作業ツリー内で同じコマンドを再実行する",
+            )
+        )
     return root
 
 

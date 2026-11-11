@@ -279,7 +279,10 @@ def try_acquire(
         check=False,
     )
     if common.returncode != 0:
-        raise ValueError(f"処理所有のGit共通ディレクトリを取得できない: {worktree}: {common.stderr.strip()}")
+        raise _next_action.ActionableError(
+            f"処理所有のGit共通ディレクトリを取得できない: {worktree}: {common.stderr.strip()}",
+            next_action="対象がGit作業ツリーかとGitの状態を確かめ、同じコマンドを再実行する",
+        )
     path = _path(repo_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     with filelock.FileLock(str(path.with_suffix(".lock")), timeout=10):
@@ -293,7 +296,10 @@ def try_acquire(
             _save(path, prior)
         identity = _registry.ProcessIdentity.of(os.getpid())
         if identity is None:
-            raise RuntimeError("処理所有者のPIDと起動時刻を取得できない")
+            raise _next_action.ActionableError(
+                "処理所有者のPIDと起動時刻を取得できない",
+                next_action="同じコマンドを再実行し、続く場合はこの診断を添えて不具合として報告する",
+            )
         token = str(uuid.uuid4())
         previous = (
             _unfinished_record(prior.payload())

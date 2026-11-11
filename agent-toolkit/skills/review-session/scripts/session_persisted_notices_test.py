@@ -42,4 +42,8 @@ def test_saved_hook_notices_restore_kinds_and_report_missing_files(tmp_path, cap
     assert evidence.main([str(transcript), "--hook-notices"]) == 0
     missing = support.read_jsonl(capsys)
     assert missing[0]["kind_text"].startswith("通知詳細未展開: ")
+    assert "FileNotFoundError" in missing[0]["kind_text"]
+    assert str(path) in missing[0]["kind_text"]
+    assert "保存元の通知詳細ファイルの所在・読取権限・文字コードを確かめ" in missing[0]["kind_text"]
+    print(missing[0]["kind_text"])
     assert missing[-1] == {"kind": "summary", "count": 1, "unexpanded_count": 1}

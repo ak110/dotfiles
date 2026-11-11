@@ -15,6 +15,33 @@ import pytest
 from pytools._internal import setup_cli_common
 
 
+@pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
+def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog, stderr):
+    """npmの診断を保持の理由へ含め、空出力の失敗には終了コードを示す。"""
+    old = tmp_path / "old"
+    old.mkdir()
+    launcher = old / "codex"
+    launcher.touch()
+    (old / "npm").touch()
+    (old / "npm.cmd").touch()
+    monkeypatch.setenv("PATH", str(old))
+
+    def fail(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 1, "", stderr)
+
+    monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fail)
+    assert not setup_cli_common.migrate_npm_launchers(
+        "codex", "@openai/codex", tmp_path / "canonical/bin/codex", tmp_path / "canonical"
+    )
+    assert launcher.is_file()
+    output = "\n".join(caplog.messages)
+    assert "npmの導入先を取得できない" in output
+    assert "終了コード1" in output
+    assert (stderr or "exit 1") in output
+    assert "手動削除する場合はこのランチャーの参照先とpackage.jsonのbinを確認する" in output
+    print(output)
+
+
 def _patch_windows_processes(monkeypatch: pytest.MonkeyPatch, processes: list[object]) -> None:
     """Windowsの列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
