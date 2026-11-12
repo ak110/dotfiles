@@ -68,7 +68,7 @@
 基準版との`照合状態`は行全文一致1,755、一対一差分21、手動対応5、新規追加9で、未確定は0だった。
 宣言を含む249 sourceのSHA256を分類取得時の作業ツリー本文と照合し、不一致は0だった。
 前述の中間取得時の1,790行から、`agents-server-explore.md`冒頭を指定した宣言1行が削除された。
-その後、`agent-toolkit:delegation/references/writing.md`に宣言1行が追加された。
+その後、`agent-toolkit:/share/writing-operations.md`に宣言1行が追加された。
 追加行の参照先は`agent-basics/skills/writing-standards/references/textlint-violations.md`の「textlint指摘への修正方針」である。
 
 4語の検索結果は順に359、815、93、349行の計1,616行である。

@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` |
-| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
-
 ## 委譲元への返却
 
 1. 検収と処置を終えた結果を返すため、実行識別子、`<役割名>.subagent.md`の必須項目、対象リソース、付与された権限、および完了条件との整合性を確認した上で、次の書式のみを用いて結果を返却する。

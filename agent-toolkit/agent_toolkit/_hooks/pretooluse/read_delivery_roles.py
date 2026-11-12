@@ -357,8 +357,7 @@ def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dic
             "その担当を起動するなら、手順書ではなく起動契約（`起動対象:`でその手順書を宣言する`<役割名>.parent.md`、"
             f"または呼び出し元へ統合した契約）と、その生成済みの返却契約を読め。{guidance}"
             "起動準備なら、手順書の分割読取の続きを行わず呼出側契約へ進め。"
-            "手順書自体の編集、返却を受け取った後の固有手順の検収、"
-            "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい。"
+            "読む目的が起動準備ではない場合の扱いは`agent-toolkit:delegation`の`references/delegation-sending.md`「送信」に従え。"
         ),
         removable_cause=True,
         escalate_on_repeat=False,

@@ -6,11 +6,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
-| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` |
-
 ## 状態ファイルの設計
 
 Claude Code・Codexのhookは呼び出しごとに別プロセスで起動するため、セッション単位の状態ファイルで情報を共有する。

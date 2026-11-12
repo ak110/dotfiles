@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` |
-| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` |
-
 ## 実行結果の検証
 
 - 現在の製品の欠陥、期待どおりの挙動、過去の失敗、外部サービスの障害を、観測時点と原因の出所を区別して報告する。

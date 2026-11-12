@@ -7,12 +7,6 @@ process-wiのメインエージェントが、レーンの専用worktree・branc
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `run-lanes-launch.md` |
-
 ## レーン資源の作成・再利用・回収
 
 開始時や回収時に過去のエージェントによる残存資源・誤変更を認めた場合は、メインが`agent-toolkit/share/rules/common/02-agent-operations.md`「プロセス終了の安全規定」で登録と実体を調べる。

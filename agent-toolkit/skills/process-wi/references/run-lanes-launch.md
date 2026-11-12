@@ -8,14 +8,7 @@
 | --- | --- |
 | 目標起点の判断を行う前 | `lanes-goals.md` |
 | レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:delegation/references/waiting-claude-code.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
-| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
+| 複数レーンで統合許可を送る時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
 
 ## レーンと資源
 

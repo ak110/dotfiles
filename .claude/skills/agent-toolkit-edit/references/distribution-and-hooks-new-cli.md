@@ -1,16 +1,8 @@
-# バージョン更新の詳細手順：新規CLI公開時の疎通確認
+# agent-toolkitの実装と配布の規約：新規CLI公開時の疎通確認
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 動作検証を実行する前 | `../../develop-dotfiles/references/verification-values-execution.md` |
-| 全レーンの完了後にバージョンを更新する時点、および本書の更新手順へ入る前 | `agent-toolkit:process-wi/references/finish-session.md` |
-| Codex導入版変更後にrootを再解決する前 | `agent-toolkit:/share/rules/rules-common.codex.md` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` |
-| 公開前の統合差分に`rust/claude-statusline/`の変更があり、最終検証を選ぶ時 | `./../../develop-dotfiles/references/publishing.md` |
 
 ## 新規CLI公開時の疎通確認
 

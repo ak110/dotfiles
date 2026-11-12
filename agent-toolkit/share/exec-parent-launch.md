@@ -6,10 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
 | レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
@@ -66,7 +62,7 @@
   `再開位置`を指定する再開時、`レビュー修正担当`の起動時、ならびに統合するレーン担当を新規起動する際は、先行する記録をそのまま引き継ぐため`（継続）`と指定する
 
 `CI修正担当`には、`選定結果の出力先ファイル`、`レーン識別子`、`固有指示`、`再開位置`は渡さず、`CI記録`を委譲プロンプトへ直接記述する。
-`CI記録`の構成項目は`agent-toolkit:commit/references/ci-failure-handling.md`の定めに従い、1つの入力値にまとめてすべての項目が揃っていることを起動前に確認する。
+`CI記録`の構成項目は`agent-toolkit:process-wi/references/ci-fix-series.md`の定めに従い、1つの入力値にまとめてすべての項目が揃っていることを起動前に確認する。
 
 対象worktree、複製元、プロジェクト規範などは、委譲先が`cwd`およびGitの状態から特定する。
 対象リポジトリへの直接的なpushは委譲元が担当するが、private-notesにおける`atk plans commit`や`atk wi`を通じた保存・公開処理はレーン担当者の責務として残る。

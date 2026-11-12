@@ -24,4 +24,4 @@ Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコー�
 | Claude Codeの記録・スキル起動の判定・暗号化された値・進捗更新の判別に関する判断・作業の前 | `session-records-formats.md` |
 | 集計値の典拠・複数セッションの比較結果に関する判断・作業の前 | `session-records-metrics.md` |
 | 本文の検索に関する判断・作業の前 | `session-records-query.md` |
-| 会話の少量取得に関する判断・作業の前 | `session-records-conversation.md` |
+| 会話の少量取得に関する判断・作業の前 | `../../../share/session-conversation-extraction.md` |

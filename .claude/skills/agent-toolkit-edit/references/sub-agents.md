@@ -43,4 +43,4 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | agents_serverのfrontmatter・起動対象と入力の案内に関する判断・作業の前 | `sub-agents-declarations.md` |
-| コンテキスト境界に関する判断・作業の前 | `sub-agents-context.md` |
+| コンテキスト境界に関する判断・作業の前 | `agent-toolkit:delegation/references/sub-agents-context.md` |

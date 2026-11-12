@@ -6,14 +6,11 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/claude-hooks-block-warn.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` |
-| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |
-| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 
 ## 一次選別
 
@@ -32,7 +29,7 @@
 除外するのは、恒久対策が要らないと明らかな候補に限り、その根拠を「対策を見送った問題」に書く。
 原因探索の深さと再発防止策の要否・完了基準は重大度で決める（`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」）。
 資格情報の発見と報告の発話は、`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の手順を終えていれば判定済みとする。
-その除外区分には`../../user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」の`credential-report`を使う。
+その除外区分には`../../user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」の`credential-report`を使う。
 ただし過剰反応自体の是正をユーザーが求めた発話は分析対象とする。
 作業中に既存の規範が適用されなかった問題は、条文があることで除外せず、確証の無い候補も分析へ送る。
 過去の振り返りやキュー処理で不採用と確定した案は、新しい観測や要件の変更がある場合に限って再評価する。
@@ -50,8 +47,10 @@
   通知ごとに操作の目的、`--detail`で取った元記録、通知に従った後の結果を対応付け、出力自体の不良、呼び出し手順への規範未適用、通知の案内と操作の不一致を分ける。
   誤判定として継続した記録も、元の通知、適用条件、担当者の判断理由、実行結果を比較し、誤判定、判断の誤り、正常な支援に分ける。
   warn通知後も案内どおりの対応を取らなかった事象は、改善を検討する対象として`analysis-actions.md`「原因と対策」へ送る。
+  セッションごとに、warn通知の件数と、通知の種類（`atk-auto`の`source`）ごとに後続の操作で指定の取得・操作か誤りの根拠の記録があった割合を、`atk run-script session-review-evidence`の出力から数える。
+  件数が多い種類と処置の割合が低い種類は、従っても判断が変わらない場面に出ていないかを同じ「原因と対策」で調べる。
   未取得資料の読込案内では、案内を受けた主体自身が、対象操作の結果を使う前に資料を取得しなかった事象を含む。
-  見送りの判断には`analysis-operations.md`「規範の未適用と目的逸脱」を適用し、警告や条文の存在、後の回復だけを理由にしない。
+  見送りの判断には`analysis-operations-root-cause.md`「規範の未適用と目的逸脱」を適用し、警告や条文の存在、後の回復だけを理由にしない。
   読込の案内（読込表の条件・配送操作、スキルのdescription、資料配置）、警告文、手順の簡素化などを比べる。
   読込案内をhookの拒否へ変える案と、規範を読まないと書けない引数を加える案は候補から外す。
   過去の拒否運用で誤判定の副作用とコンテキストの無駄が大きかったため、警告を維持する。
@@ -85,7 +84,8 @@
 終了操作の語句を含んでも別の要求や方針変更を伴うときは、その趣旨どおり扱う。
 この扱いは「一次選別」と`analysis-actions.md`「原因と対策」の報告にも適用する。
 
-介入、WI記入欄の是正、ユーザー確認の必須性、除外区分の判定は、`../../user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」に従い、元の発話と構造化確認の全項目を判断材料にする。
+介入、WI記入欄の是正、ユーザー確認の必須性、除外区分の判定は、`../../user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」に従う。
+元の発話と構造化確認の全項目を判断材料にする。
 介入として抽出された発話がシステムの自動生成テキストだった場合、人間の入力と誤分類した事象も共通分析へ送る。
 自動生成テキストかの判定基準は、`agent-toolkit/agent_toolkit/_common/runtime_inserted.py`と`session-review-evidence --user-events`の抽出条件に従う。
 

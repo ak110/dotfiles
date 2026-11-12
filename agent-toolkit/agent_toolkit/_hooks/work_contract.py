@@ -137,9 +137,8 @@ def missing_notice(session_id: str, *, agent_id: object = None) -> str | None:
     return (
         "現行の作業契約が未作成。\n"
         f"`{_read_command(plugin_resources.plugin_root() / 'share/work-contract.md')}`で「作成と所有」を読め。"
-        "成果物の作成・変更・操作または複数工程の調査に着手するなら、"
-        f"編集ツール（`Write`の`file_path`や`apply_patch`の`Add File`など）へ`{path}`を指定し、作業契約の本文を保存せよ。"
-        "同じ応答で完結し未完了の工程を残さない事実回答では作成しない。"
+        "作成が必要なら、編集ツール（`Write`の`file_path`や`apply_patch`の`Add File`など）へ"
+        f"`{path}`を指定し、作業契約の本文を保存せよ。"
     )
 
 

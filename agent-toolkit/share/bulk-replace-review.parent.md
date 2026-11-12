@@ -1,4 +1,8 @@
-# 表記の一括置換
+# 表記の一括置換と一括置換後レビュー担当の起動
+
+```text
+起動対象: bulk-replace-review.subagent.md
+```
 
 品質基準の正式な提供元は`agent-basics:writing-standards/references/bulk-replacement.md`である。
 呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
@@ -14,24 +18,20 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 指摘の原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
-| 一括置換後の指摘を処置する前 | `../../../share/similar-review.parent.md` |
+| 一括置換後の指摘を処置する前 | `similar-review.parent.md` |
 
 ## 運用条件
 
 指摘の受領時は`agent-basics:bugfix`による原因分析と類似見直しを行い、検索と個別判定は`share/similar-review.parent.md`の専用担当へ渡す。
 初回検出時の再発防止例外と短い記録はbugfixに従い、結果の採否は委譲元が確定する。
 
-- `git diff --word-diff=plain --word-diff-regex=.`による文字単位の差分をmanaged-tempへ保存し、後述の「一括置換後レビュー担当の起動と受領」に従って変更箇所を全件レビューさせる。
+- `git diff --word-diff=plain --word-diff-regex=.`による文字単位の差分をmanaged-tempへ保存し、後述の「起動」「受領」に従って変更箇所を全件レビューさせる。
   意図しない誤置換が多発する場合は、置換候補を絞り込んで再試行する。
 
-- 指摘を受けた文や置換候補外の文は自身で書き直すか、`agent-toolkit:delegation/references/textlint-violations.md`「文の書き直しの委譲と検収」に従って委譲して検収する。
+- 指摘を受けた文や置換候補外の文は自身で書き直すか、`agent-toolkit:delegation/references/delegation-sending.md`「文の書き直しの委譲と検収」に従って委譲して検収する。
   修正完了後に通常のtextlintおよび関連するテストを実行する。
 
-## 一括置換後レビュー担当の起動と受領
-
-```text
-起動対象: bulk-replace-review.subagent.md
-```
+## 入力
 
 <!-- input-contract:bulk-replace-review:start -->
 <!-- 生成元: share/bulk-replace-review.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
@@ -46,7 +46,7 @@
 レビュー担当の観点は、`agent-toolkit:/share/bulk-replace-review.subagent.md`に従う（所在参照）。
 返却形式は後述の「一括置換後レビューの返却契約」を使用する。
 
-### 起動
+## 起動
 
 1. 全置換をレビューへ渡すため、置換した範囲の`git diff --word-diff=plain --word-diff-regex=.`をmanaged-temp（`agent-toolkit:managed-temp`）内のファイルへ保存する。
    `agents_server`の`start`を以下の引数で呼び出して1件起動する。
@@ -64,7 +64,7 @@
    満たしていない場合はUTF-8の通常ファイルとして保存し直した上で`start`を再発行する。
    差分内容の妥当性確認はレビュー担当が担う。
 
-### 受領
+## 受領
 
 1. レビュー結果を確定するため、引数なしの`atk agents wait`で受け取る。
 2. 全範囲の読了を確かめるため、返却の`読んだ変更箇所数`を起動時に保存した差分ファイルの変更箇所数と比較する。
@@ -78,7 +78,7 @@
 
 <!-- return-contract:bulk-replace-review:start -->
 <!-- 生成元: share/bulk-replace-review.subagent.md「出力」。手動編集しない。 -->
-### 一括置換後レビューの返却契約
+## 一括置換後レビューの返却契約
 
 次の固定形式のみを返却する。
 `未解決の指摘数`には、問題が見つかった箇所の件数を指定する。
@@ -91,5 +91,5 @@
 <問題のある箇所ごとのファイルと行、観点、問題点、修正案。0件なら全件で問題が無いこと>
 ```
 
-続行不能と追加報告行は、共通契約`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」に従う。
+続行不能と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 <!-- return-contract:bulk-replace-review:end -->

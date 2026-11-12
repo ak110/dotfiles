@@ -71,21 +71,7 @@ Git worktree、検証用clone、Git fixtureなど`.git`を含む領域を配置�
 別のファイルシステム名前空間（Dockerコンテナーなど）から同じパスへアクセスさせる場合: すべての消費主体からアクセス可能な既存の共有ディレクトリを確認し、`mktemp -d -p <共有先の絶対パス>`で作成した上で、作成者が明示的に回収する。
 </例>
 
-process-wiのレーンworktreeは次の手順で扱う。
-
-1. `atk lane create`で、主作業ツリー配下の`.claude/worktrees/process-wi-<レーン識別子>`に作成し、worktree・branch・所有セッションを紐付けて登録する。
-   メインエージェントによる所有資源の手作業での再登録は禁止する。
-2. 統合後も追加変更に備えて保持し、全工程と外部プロセスの終了後に`atk lane delete`で回収する。
-   回収順は`atk lane create --commands-file`に渡したdeleteコマンド、worktree、branch、以前の構成の個別managed-tempとする。
-   通常終了時の`atk agents-exit-session`とprocess-loopの子セッション終了後の処理も同じ回収処理を呼ぶ。
-3. CLIが未統合・dirty・稼働中・状態不明・一部失敗の資源を保持したら、メインが共通判断で理由を調べる。
-   理由を解消した対象は同じ操作で再判定する。
-   保護する成果、現在の担当、残るユーザー判断と再開条件がある対象は保持する。
-4. 登録情報と回収結果への参照は、回収対象のworktree・branch・個別managed-tempとは別の状態ディレクトリに保存する。
-   回収結果は通常の7日保持に任せる。
-   再開に必要な選定情報・rebase後の対応表・検証記録は`atk lane`が所有登録と同じ状態ディレクトリに保持するため、managed-tempの7日保持を前提としない。
-5. 選定原本も所有登録の選定情報も無い古い登録の作業ツリーは、`atk lane recover --session-id <所有session>`で解放する。
-   次回開始時は`atk lane delete --list`で残存理由と再開操作を確認する。
+process-wiのレーンworktreeの作成・保持・回収は`agent-toolkit:process-wi/references/lane-worktree-management.md`に従う。
 
 `.git`を含む作業領域を個別確認なしで安全に回収できるよう、保存物を寿命で分ける。
 
@@ -99,9 +85,3 @@ process-wiのレーンworktreeは次の手順で扱う。
 別の複製が必要な場合はmanaged-tempに配置する。
 設定領域内に配置したファイルは、自動コミットによって履歴に取り込まれ、後から削除してもローカル履歴やリモートへ送信された履歴に残ってしまう。
 ローカルの自動コミットと外部への送信状況をそれぞれ確認し、変更完了後は双方に作業用ファイルが混入していないことを確かめる。
-
-## 工程で参照する運用資料
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:managed-temp/references/ui-ux.md` |

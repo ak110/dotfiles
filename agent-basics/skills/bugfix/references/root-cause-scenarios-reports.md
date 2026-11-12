@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文の条件に従い「前提の再検討」を判断する前 | `root-cause-severity-quality.md` |
-| 本文の条件に従い「再発防止策の必須性」を判断する前 | `root-cause-prevention-requirements.md` |
-| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/testing.md` |
-
 ## 外部からの不具合報告
 
 ユーザーとの対話や、テスターからのIssue、問い合わせ、テスト結果など、人間から寄せられた不具合報告を扱う際は、「期待していた結果」「実際に観測された症状」「報告者が考える原因の説明」を明確に切り分けて読み解く。

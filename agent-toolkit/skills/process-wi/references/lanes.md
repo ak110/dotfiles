@@ -18,23 +18,7 @@ AWIとUWIの共通契約は`../../wi-standards/SKILL.md`に、確認の要否と
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 基準資料を選択・取得する時 | `../../../share/single-lane-execution.md` |
-| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/SKILL.md` |
-| 基準資料を選択・取得する時 | `quality-standards.md` |
-| 基準資料を選択・取得する時 | `../../../share/workflow-phases.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:write-plan/SKILL.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/mandatory-rules.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review.parent.md` |
-| 基準資料を選択・取得する時 | `../../../share/review-loop-coordination.md` |
 | 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` |
-| 基準資料を選択・取得する時 | `../../delegation/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-responses.md` |
-| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/references/user-utterance-incorporation.md` |
-| 基準資料を選択・取得する時 | `../../delegation/references/base-contract.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-parent-existing-defects.md` |
-| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` |
 
 ## 読込表
 

@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../skills/review-session/references/session-records-conversation.md` |
-
 ## 更新する時点
 
 目的、要求、作業範囲、認可、または保持対象が変化したときに更新する。

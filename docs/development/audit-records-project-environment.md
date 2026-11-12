@@ -2,7 +2,7 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## .claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日
+## .claude/skills/agent-toolkit-edit/references/agents-server-shared-state-backends.md：バックエンド固有の接続とAPI状態：2026年10月18日
 
 会話contextの継承に関する2026年10月16日の調査記録と、2026年10月18日の実stdio MCPでの変更前後の観測を分けて示す。
 元の調査の一次記録と今回の観測JSON・標準エラー・実行スクリプトは、リポジトリ外に保持する。

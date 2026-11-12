@@ -19,9 +19,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 基準資料を選択・取得する時 | `../SKILL.md` |
-| 基準資料を選択・取得する時 | `../../managed-temp/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../delegation/references/base-contract-handoff.md` |
+| `引き継ぎ記録先`の指定の省略や継続を扱う時 | `../../delegation/references/base-contract-handoff.md` |
 
 ## 自動コードレビュー監査担当の起動と受領
 

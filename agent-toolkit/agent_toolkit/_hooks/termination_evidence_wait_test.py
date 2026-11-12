@@ -252,5 +252,4 @@ def test_rejected_host_stop_guides_to_continue_or_confirmation(tmp_path: pathlib
     document.update({"call_id": "commit"} if action == "blocked" else {"target_session_id": "child"})
     code, reason = public_decision(tmp_path, document)
     assert code == 2
-    assert "猶予通知" in reason and "usage-limit.md" in reason and "続けよ" in reason
-    assert "AskUserQuestion" in reason and "uwi_file" in reason
+    assert "termination-evidence.md" in reason and "「技術的不成立の判定」" in reason

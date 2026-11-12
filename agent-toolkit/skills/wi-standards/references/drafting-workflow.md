@@ -20,15 +20,9 @@ WI作成専用では件数によらずメイン自身が作業し、専念型担
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
-| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む |
-| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
 | 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
-| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` |
 | エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi-parent-launch.md` |
+| 専念型担当の起動条件を判定する前 | `../../../share/add-wi-parent-launch.md` |
 
 ## 起票目的別の調査出口
 

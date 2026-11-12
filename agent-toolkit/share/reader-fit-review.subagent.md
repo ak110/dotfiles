@@ -103,7 +103,7 @@ continuations:
 ## 観点
 
 冒頭の1文が、読者が最初に抱く疑問へ的確に答えているかを確認する。
-見出しの表現や主語の選び方は、`agent-toolkit:delegation/references/writing.md`にある共通基準に基づいて判定する。
+見出しの表現や主語の選び方は、`agent-toolkit:/share/writing-operations.md`にある共通基準に基づいて判定する。
 
 読者への適合性の観点として、想定読者が文面のみから行為者と対象を一意に特定し、判断・操作・検証へ正しく進めるかを判定する。
 日本語の表現は、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」を参照し、執筆時と同一の基準で判定する。

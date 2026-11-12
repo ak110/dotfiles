@@ -34,7 +34,6 @@ Claude Code向け資料の取得方法は`host-official-references.md`「公式�
 - 同一ターンの本文の可視性: `PreToolUse`が発火した時点では、同じアシスタントターン内のテキストブロックはまだ`transcript_path`のJSONLファイルに書き込まれていない。
   同一ターンの本文を入力として判定する処理は、`PreToolUse`以外のイベントに配置する。
   また、思考ブロックやツール呼び出しのみで構成されるターンも記録されるため、直近の本文を調べる判定では、テキストブロックを含まないターンを除外して過去へ遡る。
-  監査記録は`docs/development/audit-records-hooks-protocol.md`にある。
   該当節は「agent-basics/skills/writing-standards/references/claude-hooks.md：hookスクリプトの基本プロトコル：2026年9月6日」である。
 - 発火条件: hookの追加を計画に含める際は、対象イベントの発火条件を計画の実装者が読む箇所に明記する。
   `PostToolUse`はツール実行が成功したときにのみ発火する。

@@ -78,10 +78,7 @@ def _question_material_guidance(payload: dict, tool_name: str) -> str:
     """
     if tool_name != "AskUserQuestion" or operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_CODEX:
         return ""
-    return (
-        "判断材料（経緯、調査結果、案の比較）が長い場合は、`send_to_user`で先に送り、"
-        "質問には問い・選択肢・推奨と最小限の前提だけを残せ。`send_to_user`が無ければ質問本文へ書け。"
-    )
+    return "質問の前に、`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」の判断材料の送り方に従え。"
 
 
 def _declarations_unavailable(error: Exception) -> Decision:

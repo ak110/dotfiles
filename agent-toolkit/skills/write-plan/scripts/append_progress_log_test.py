@@ -214,7 +214,7 @@ def test_public_cli_records_and_reads_commit_mapping(
 def test_one_commit_records_multiple_awi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """一体の変更を1つのcommitにまとめても、1回の記録で全AWIへ同じcommitが対応付く。
 
-    commitの単位を作業項目から切り離す規定（commit-creation.md手順4）が、
+    commitの単位を作業項目から切り離す規定（commit/SKILL.md「通常commit」節）が、
     作業項目ごとの採否とcommitの対応を失わずに成り立つことを固定する。
     """
     repo = tmp_path / "repo"

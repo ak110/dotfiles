@@ -182,8 +182,6 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
         "この手順の完了条件は`agent-toolkit:delegation`の"
         f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
         "「停滞の検知と巻き取り」節が定める。"
-        "進行が遅いことや、確認に手間がかかることだけでは停止の根拠にならない。"
-        "意図の解釈が複数残る場合は、停止の前にAskUserQuestionで確認せよ。"
         "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
         fix=(
             "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定せよ。"

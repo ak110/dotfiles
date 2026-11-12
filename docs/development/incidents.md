@@ -50,4 +50,4 @@
 区分の中では日付の昇順に並べ、日の無い事例はその月の末尾に置く。
 同じ機構の再発は、先の事例へ`再発（YYYY年M月D日）:`の行を加えて1つの事例にまとめる。
 `再発`行には、分類（範囲不足・未適用・効果不足）、事象、是正の内容を書き、作業項目のファイル名は書かない（AWIの対応は`atk wi effect-check`の記録が持つ）。
-記録する時点と効果確認の更新は`.claude/skills/edit-dotfiles-norms/SKILL.md`「再発の記録」に従う。
+記録する時点と効果確認の更新は`.claude/skills/edit-dotfiles-norms/references/recurrence-record.md`に従う。

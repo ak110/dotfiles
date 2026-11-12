@@ -71,7 +71,7 @@
 | 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
 | 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 | process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
+| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
 | 基準の参照時 | `../skills/delegation/references/base-contract-handoff.md` |
 | 基準の参照時 | `review-loop-coordination-rounds.md` |
 | 基準の参照時 | `agent-toolkit:/share/reader-fit-review.parent.md` |

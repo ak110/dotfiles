@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 機能の正しさを確認するテスト層を選ぶ時 | `testing-selection.md` |
-
 ## アクセシビリティと性能
 
 WCAG 2.2レベルAAへの準拠を最低限の基準とし、すべての操作をキーボードのみで完結でき、現在のフォーカス位置が明確に視認できる状態を維持する。

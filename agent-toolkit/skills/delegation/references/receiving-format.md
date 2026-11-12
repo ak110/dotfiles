@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` |
-| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
-
 ## 受領手段と報告様式の選択
 
 1. 完全な成果を受領するため、成果物の本文はツールの戻り値または完了通知から受け取り、委譲先の終了を確認した上で、要求内容と合致する完全な完了報告のみを受理する。

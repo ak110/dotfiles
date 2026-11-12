@@ -36,6 +36,9 @@ _llm_notice = formatter("myplugin/myhook")
 - blockおよびwarnの本文はこれらの整形関数のみを用いて組み立て、解消手段を本文に直接混ぜずに`fix`引数へ渡す（解消手段の欠落を機械的に検出するため）。
   文面の基準は、`agent-basics:writing-standards/references/program-messages.md`「出力の基準」に従う。
 
+- 通知本文は、検出した事実、読み手に必要な操作、規範の節への参照だけにする。
+  判断の手順と条件の本文は規範の節に置いて参照する（`agent-basics:writing-standards/references/agent-documents-placement-selection.md`「置き場所の選定」）。
+
 閾値および記録先は`agent-toolkit/agent_toolkit/_hooks/notice.py`で管理する。
 
 ## 本文参照の取得条件

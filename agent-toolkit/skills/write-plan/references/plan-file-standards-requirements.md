@@ -6,14 +6,11 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
-| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/testing.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/design-time.md` |
+| 参照基準の適用前 | `agent-toolkit:write-plan/references/testing-branch-verification.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/design-time.md` |
 | 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` |
-| 参照基準の適用前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 参照基準の適用前 | `agent-toolkit:/share/acceptance-scenarios.md` |
 | 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 要件・外部仕様
 
@@ -34,12 +31,12 @@
   必要成果、公開入出力、品質・認可・制約と合否の観測結果を書く。
   エージェント選定の検証コマンドは実現手段として区別する
 - テストを新設・変更する場合は、保証する契約と検出する主な失敗様態。
-  期待値は要求仕様や契約から導く（選定と導出は`agent-toolkit:commit/references/testing.md`に従う）
+  期待値は要求仕様や契約から導く（選定と導出は`agent-toolkit:write-plan/references/testing-branch-verification.md`に従う）
 - 事象を起こさないことを求める要求では、発生件数0件を客観的に観測する手段
 - エンドユーザーが観測できる公開インターフェース（設定キー、CLIオプション、環境変数、サブコマンドなど）を新設する場合は、新設の理由と、既存のインターフェースやデフォルト値の変更では目的を達成できない理由
 - ユーザー確認の回答（公開範囲を含む）と、`../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「原文からの具体化を要する軸」の判定結果
 - 実行環境の動作条件を前提とする設計方針では、実機で再現を確かめた典拠
-- 永続化されるデータや増え続けるデータを扱う場合は、保持期間、容量上限、上限到達時の外部仕様、保守の契機と所有者、長期的な動作条件の検証方法（基準は`agent-toolkit:commit/references/design-time.md`に従う）
+- 永続化されるデータや増え続けるデータを扱う場合は、保持期間、容量上限、上限到達時の外部仕様、保守の契機と所有者、長期的な動作条件の検証方法（基準は`agent-basics:writing-standards/references/design-time.md`に従う）
 
 `### 受入シナリオ`には`シナリオ | 由来 | 消費主体と入口 | 利用目的と後続行動 | 操作 | 期待結果 | テスト`の7列の表を置く。
 
@@ -56,7 +53,7 @@
   自動テスト化が難しいシナリオに限り、その理由と、手動観測の入力値、操作手順、合否基準を書く
 - 手動観測は、実装担当者が専用worktree内の成果物へ直接実行できる入力と操作で定め、公開、配布、稼働中の`atk wi process-loop`への反映の後にしか得られない観測を統合後へ先送りしない。
   WIの完成条件そのものが公開後にしか観測できない場合の判定は、実行レビュー担当者が`agent-toolkit:/share/exec-review-recording.md`に従って行い、計画ファイルには公開前に再現できる代替観測を置く。
-  `atk wi process-loop`など本番の常駐プロセスから起動される対象は、`agent-toolkit:delegation/references/acceptance-scenarios.md`「常駐サービスの公開前の観測」に従う
+  `atk wi process-loop`など本番の常駐プロセスから起動される対象は、`agent-toolkit:/share/acceptance-scenarios.md`「常駐サービスの公開前の観測」に従う
 - 操作、障害注入、擬似故障、自動終了の失敗などを含むシナリオは、同書の「検証資源の分離」に従って実行環境と利用の調整方法を定める
 - 処理時間など負荷や並行状況で変わる測定値は、`agent-toolkit:wi-standards`の`references/awi-body.md`の完成条件と同じく、同じマシンで同時に実行する対照群との比較で書く
 

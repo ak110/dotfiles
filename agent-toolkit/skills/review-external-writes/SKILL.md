@@ -8,7 +8,7 @@ description: >
 # 外部サービスへの投稿前レビュー
 
 第三者に届く文面は、投稿する前に、起草者とは独立した読み取り専用の担当者に検証させる。
-原文や資料から起草・推敲した文面の意味保持には`agent-toolkit:delegation/references/writing.md`「ユーザー入力素材の取扱い」を適用する。
+原文や資料から起草・推敲した文面の意味保持には`agent-toolkit:/share/writing-operations.md`「ユーザー入力素材の取扱い」を適用する。
 対象かどうかの判定、レビューの依頼、指摘の採否、および実際の投稿は、投稿を担当するエージェントが行う。
 投稿操作に必要な認可は`agent-toolkit:user-confirmation-and-report`に従って判定する。
 

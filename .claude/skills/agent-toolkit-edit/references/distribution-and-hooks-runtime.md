@@ -4,15 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 機構や外部インターフェースの変更に伴う文書の追随先を確定する前 | `agent-documents.md` |
-| Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state-retention.md` |
-| hookの実装や登録を新設・変更する前 | `claude-hooks.md` |
-| hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` |
-| hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` |
-| hook通知の本文（`fix`・次の操作を含む）またはformatterを新設・変更する前 | `claude-hooks-messages.md` |
-
 ## 常駐CLIと自動起動の判定入力
 
 常駐CLI（`atk wi process-loop`など）の待機・期限、hookからの自動起動、外部の返却の受理を実装・変更するときは、局所の処理が成立することと、呼出元の目的が成立することを分けて判定する。

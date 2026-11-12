@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time-state.md` |
-| 処理自体の失敗を異常終了で表すかを判断する前 | `../../bugfix/references/root-cause-prevention-selection.md` |
-
 ## 状態を変える多段手順の工程順
 
 発火条件: パッケージの削除、ディスクパーティションの縮小、設定ファイルの削除など、後続の工程が必要とする前提条件を変更する処理を含むスクリプトや手順書を作成する場面。

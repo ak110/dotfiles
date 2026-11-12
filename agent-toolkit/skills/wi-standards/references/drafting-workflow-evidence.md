@@ -6,18 +6,11 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
-| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む |
-| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
-| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` |
-| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../../share/session-conversation-extraction.md` |
 
 ## 出所と観測の取得
 
-1. 前後の発話と操作の位置を探す場合は、`../../review-session/references/session-records-conversation.md`「会話の少量取得」を使う。
+1. 前後の発話と操作の位置を探す場合は、`../../../share/session-conversation-extraction.md`「会話の少量取得」を使う。
    要求・判断・認可の確定は、下記の`--user-events`と必要な`--detail`で原文と直前の提案を比較して行う。
 
 2. 認可や解釈の判断に出所の再取得が必要な場合は、以下の公開操作コマンドを利用できる。

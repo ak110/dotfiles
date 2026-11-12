@@ -6,7 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 公開前の検証を実行する前 | `verification-values-execution.md` |
 | 公開前の検証を実行する前 | `agent-basics:check-execution/SKILL.md` |
 | 公開前に実行する検証を選定する前 | `agent-toolkit:commit/references/publish.md` |
 | 公開前の統合差分に`rust/claude-statusline/`の変更がある時、statusline採番規定を確認する前 | `../../release-dotfiles/SKILL.md` |

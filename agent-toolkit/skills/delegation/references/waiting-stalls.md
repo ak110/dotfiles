@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文の参照基準を適用する前 | `codex-runtime.md` |
-| 本書の基準を適用する前 | `waiting-and-monitoring.md` |
-| 巻き取りや別手段への切り替えを判断する前 | `continuation.md` |
-
 ## 停滞の検知と巻き取り
 
 停止や巻き取りの保留中も、`waiting-and-monitoring-progress.md`「成果物側の観測」に従って工程の所要・反復を比較し、改善を検討する。

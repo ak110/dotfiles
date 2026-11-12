@@ -69,8 +69,7 @@ description: >
   なお、dotfilesユーザーが各自で導入先を選択するようなアプリケーションは除く。
 - post_applyの処理で配置されるファイル（ランチャー、フラグファイル、systemd unitなど）はchezmoiの管理外となるため、適切に登録しておかないと古い生成物が配布先に残り続けてしまう。
   そのため、配置先のパスを変更したり処理自体を廃止したりした場合は、同じ変更の中で旧パスを`_REMOVED_PATHS`（dotfilesユーザー自身が編集する可能性のあるファイルは`_REMOVED_PATHS_IF_CONTENT`）に登録する。
-  撤去テーブル（この2つおよび`update_claude_settings.py`の除去テーブル）に登録する各項目には登録日を明記し、登録から6か月が経過したものは一覧から削除する。
-  この運用規則は`pytools/_internal/removal_registry.py`に定義されている。
+  撤去テーブル（この2つおよび`update_claude_settings.py`の除去テーブル）への登録日の記入と、6か月経過後の削除は`dotfiles-repo-layout`「ディレクトリ構造に関する注意点」の規則に従う。
   登録日の有無は`pytools/removed_paths_invariant_test.py`が検査し、期限の確認は日付で結果が変わるためcommit hookでは行わず、定期実行のAudit workflowが期限の14日前から報告する。
 - `rust/`配下のコードは、`rust/<クレート名>/`という単位でCargoクレートとして配置し、実装作法は`agent-basics:writing-standards`の`references/rust.md`に従う。
   通常の`make test`では`rust/`配下は検証されないため、変更を加えたクレート内で`cargo fmt --check`、`cargo clippy`、`cargo test`を変更範囲のローカル検証として実行する（CIでは`rust-lint`ジョブがこれを検証する）。

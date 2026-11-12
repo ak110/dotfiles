@@ -95,7 +95,7 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 完了・成功・不在・件数・互換性を述べる前と、要約・中継・報告を書く前は、`agent-basics:writing-standards/references/quality-principles-facts.md`「事実と推論」を全文読む。
 
 経験の保存・利用は認可・公開契約を保ち`agent-basics:writing-standards/references/investigation.md`に従う。
-調査・検証・成功判定・配布・反映は`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
+調査・検証・成功判定・配布・反映は`agent-toolkit:/share/investigation-operations.md`に従う。
 
 ## 協調と自律
 

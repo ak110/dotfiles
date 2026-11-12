@@ -1,7 +1,7 @@
 # 規範の配送範囲
 
 本書は規範と資料がどの起動区分のエージェントへ届くかを示す配送範囲表を提供する。
-常時規範の定義と置き場所の分類は`agent-toolkit:delegation/references/agent-documents-basics.md`「置き場所と配送」が定める。
+常時規範の定義と置き場所の分類は`agent-toolkit:/share/agent-documents-operations.md`「置き場所と配送」が定める。
 
 配送範囲表は、常時規範、配送文（`agents_server`が委譲先の起動時に渡す`share/agents-server-*.md`）、作業ディレクトリのプロジェクト規範、ならびにagent-toolkitのスキルが各エージェントへ届くかどうかを整理したものである。
 表内の値は実装コードから抽出している。

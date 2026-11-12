@@ -50,7 +50,7 @@ description: >
 
 ## 使用条件
 
-起動の契機は、文書を新しく作る作業と指示文を改訂する作業の前に読む`agent-toolkit:wi-standards/references/agent-documents-additions.md`（所在参照）と、文書の点検を求める作業項目が定める。
+起動の契機は、文書を新しく作る作業と指示文を改訂する作業の前に読む`references/evaluation-triggers.md`と、文書の点検を求める作業項目が定める。
 対象は利用頻度の高いスキルと自動化の中核となる文書に限り、起動コストに見合わない単発のプロンプトや、作成者の主観的な好みを反映するだけの作業は除外する。
 この除外は本スキルという手段の選択に限定する。
 プロンプトの欠陥が品質（Quality）に影響する場合は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に従って処置の要否を判断する。

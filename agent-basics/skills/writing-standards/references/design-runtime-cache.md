@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time-state.md` |
-| 処理自体の失敗を異常終了で表すかを判断する前 | `../../bugfix/references/root-cause-prevention-selection.md` |
-
 ## キャッシュ設計
 
 発火条件: キャッシュ層を新規に導入または変更する場面。

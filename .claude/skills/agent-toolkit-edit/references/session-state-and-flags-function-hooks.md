@@ -7,8 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 各状態の共通設計・生存期間・排他・継承を適用する前 | `session-state-and-flags-common.md` |
-| 呼び出し主体の判別方法を確かめる前 | `agent-basics:writing-standards/references/claude-hooks.md` |
-| run-skillの再開入力と寿命を変更・調査する前 | `agents-server-shared-state-run-skill.md` |
 
 ## Function hooksの終了要求
 

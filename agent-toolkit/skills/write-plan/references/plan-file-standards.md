@@ -43,11 +43,11 @@
 | 参照基準の適用前 | `../../process-wi/SKILL.md` |
 | レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/testing.md` |
+| 参照基準の適用前 | `agent-toolkit:write-plan/references/testing-branch-verification.md` |
 | 参照基準の適用前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
-| 参照基準の適用前 | `agent-toolkit:commit/references/design-time.md` |
+| 参照基準の適用前 | `agent-basics:writing-standards/references/design-time.md` |
 | 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` |
-| 参照基準の適用前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 参照基準の適用前 | `agent-toolkit:/share/acceptance-scenarios.md` |
 | 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` |

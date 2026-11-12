@@ -8,7 +8,6 @@
 | --- | --- |
 | WIの状態と依存を判定・変更する前 | `states-and-dependencies.md` |
 | 上流リポジトリへの投入を選ぶ前 | `cross-repository-submission.md` |
-| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ |
 
 ## 状態と依存
 

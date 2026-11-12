@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
-
 ## 起動と観測
 
 大量読取の入力には、結論を求める問い、原本の所在と対象範囲を渡す。
@@ -18,7 +13,8 @@
 定型生成には確定仕様、適用できる参照ファイル、保存先、変更範囲を渡し、指定先へ直接保存させる。
 参照不足や仕様矛盾は委譲元へ返し、要件具体化・設計・安全性の判断は現行の担当区分を保つ。
 
-役割文書のfrontmatterおよび呼び出し元に記載する`起動対象:`の書式は、`sub-agents-declarations.md`「agents_serverのfrontmatter」「起動対象と入力の案内」に従う。
+役割文書のfrontmatterおよび呼び出し元に記載する`起動対象:`の書式の定義と編集手順は、役割文書を編集する側の規範が持つ。
+委譲元は書式を確かめず、次に述べる`start`の検査に任せる。
 `start`ツールは共通パーサーを介して入力内容と起動設定を読み込み、必須項目の欠落、宣言外の入力、不正な新規書式などを起動前に診断する。
 過去の宣言行の読み取りや既存セッションの継続については互換性処理によって維持される。
 宣言内容を確認できない古い形式の文書に対しては従来の警告メッセージを返し、モデル工程別のmodel_typeに対応していない役割は起動しない。

@@ -22,15 +22,22 @@ continuations:
 作成者から独立した文脈において、方針または保存前の原稿が要求を網羅しているか、採用案や反映先が適切か、実現性・成立性を備えているかを確認する。
 対象リポジトリとキューの本文は読み取り専用とする。
 書き込み権限は、引き継ぎ記録およびmanaged-temp内のレビュー用資料に限定する。
-作業開始時にreview-standards、writing-standards、wi-standardsを起動し、共通する読込表の資料を1回取得して再利用する。
-本文段階では各原稿に`${CLAUDE_PLUGIN_ROOT}/skills/wi-standards/references/draft-semantic-review.md`を個別に適用する。
-不具合の原因や対策を評価する場合はbugfixも起動する。
+作業開始時にreview-standardsとwi-standardsを起動する。
+このレビューは意味と必要事項に集中し、表現だけの推敲は指摘しないため、writing-standardsは起動しない。
+wi-standardsの読込表から最初に取得する資料は、本文段階の`${CLAUDE_PLUGIN_ROOT}/skills/wi-standards/references/draft-semantic-review.md`と、原稿の種別に対応する次の資料に限り、取得した資料は再利用する。
+`draft-semantic-review.md`は各原稿に個別に適用する。
+
+- 通常AWI: `awi-body-content.md`と`drafting-completion-validation.md`
+- 不具合を起点とする通常AWI: 上記に加えて`awi-body-evidence.md`と、bugfixの起動および`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`
+- UWI: `uwi-format.md`
+
+上記以外の読込表の資料は、レビュー中にその資料の条件に当たる論点が生じた時に取得する。
 
 ## 入力
 
 原稿、出所、証拠には同じ既存ファイルを指定できる。
 既存の作業記録と検証出力を直接読み、原稿との同一性と対応を確かめる。
-情報が揃っていれば別の証拠要約は求めない。
+情報が揃っていれば、証拠の要約は既存の記載で足りるとする。
 
 `確認段階`は`方針`または`本文`とし、省略時は`本文`として扱う。
 `要求と出所`と`成立性の証拠`は両段階で必要とし、`方針`は方針段階、`原稿`は本文段階で必要とする。

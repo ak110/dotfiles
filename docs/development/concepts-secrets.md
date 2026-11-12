@@ -34,7 +34,7 @@
   2026年10月21日の処理で、第三者の値や公開先の違いも報告だけの扱いへ含めた。
   値の取得・複製・再掲の規定（`agent-basics:secret-files`と`agent-basics:search`）は保持し、対象プロジェクトが明示する値の扱いに反した実装不良は資格情報の存在と区別して扱う。
   現行の規定は`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」と`agent-toolkit:user-confirmation-and-report`「手段の選択」にある。
-  振り返りの除外区分`credential-report`は`agent-toolkit:user-confirmation-and-report`の`references/analysis-operations.md`「ユーザー介入と確認の判定」にある
+  振り返りの除外区分`credential-report`は`agent-toolkit:user-confirmation-and-report`の`references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」にある
 - 秘匿ファイルの読み取り禁止は全環境向けの配布設定へ置かない。
   秘匿ファイルを持つプロジェクトでは、リポジトリ直下の`.claude/settings.json`で設定する
   （2026年9月、ユーザー指示。`Read(*.key)`のようにディレクトリを含まないグロブが任意の深さに一致し、無関係なディレクトリ走査まで確認ダイアログの対象へ変えるため）

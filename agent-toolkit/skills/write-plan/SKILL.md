@@ -36,6 +36,9 @@ description: >
 | 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | | | |
 | 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | | | |
 | 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-time.md` | | | |
+| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:write-plan/references/testing-branch-verification.md` | | | |
+| 計画ファイルの文章を起草し、textlintなどの文章チェックの違反を予防する前 | `references/textlint-prevention.md` | | | |
 | WIの原因分析を補うか計画ファイル（バグ）を書く前 | `references/plan-file-standards-verification.md` | | | |
 | 進捗を記録する前と、中断後に再開する前 | `references/plan-file-standards-progress.md` | | | |
 | 計画バンドルを`atk plans commit`で保存する前 | `references/plan-file-storage.md` | 操作 | `bash:atk plans commit` | |

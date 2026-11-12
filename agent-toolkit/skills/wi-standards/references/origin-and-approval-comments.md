@@ -6,8 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` |
-| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
 | 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
 
 ## ユーザー専用の記入欄と是正要求

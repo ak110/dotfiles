@@ -10,10 +10,6 @@
 
 ## 一時的な判定不能
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 判定不能により待機を開始できない時 | `../../delegation/references/wait-anomalies-refusal.md` |
-
 1. classifierの判定不能は、通知本文の再試行指示で区別する。
    `no verdict`という語だけで一時的な失敗と扱わず、操作への拒否・`hard_deny`・偽陽性とも分ける。
 2. `gave no verdict (error)`で`transient failure`・`You may try the action again once`と示す一時的な失敗では、許された同じ操作の再試行を1回だけ選ぶ。

@@ -14,7 +14,7 @@ WI起草者と投入前レビュー担当が、原文・原稿・調査根拠か
 | 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
 | (d)で推奨しない案と不採用にする候補を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
-| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow.md` |
+| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow-writing.md` |
 
 ## 点検類型
 

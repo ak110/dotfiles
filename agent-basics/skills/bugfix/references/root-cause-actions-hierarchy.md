@@ -8,7 +8,6 @@
 | --- | --- |
 | 本文の条件に従い「QとC・Dの区別」を判断する前 | `root-cause-severity-impact.md` |
 | 本文の条件に従い「再発防止策」を判断する前 | `root-cause-prevention-selection.md` |
-| 外部の変化を受けた復元案を比べる前 | `root-cause-analysis-evidence.md` |
 
 ## 処置の階層
 

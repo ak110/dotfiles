@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time-state.md` |
-| 処理自体の失敗を異常終了で表すかを判断する前 | `../../bugfix/references/root-cause-prevention-selection.md` |
-
 ## 常駐サービス設計
 
 発火条件: 常駐サービスの設計・変更・レビュー、または子プロセス、委譲先、非同期ジョブなど配下を持つ機能の停止・再開・切替を要件化・設計・変更・レビューする場面。

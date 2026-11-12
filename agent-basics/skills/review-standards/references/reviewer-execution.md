@@ -6,11 +6,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 変更した状態の散在表現と遷移の分散を走査する前 | `../../writing-standards/references/implementation-time-data.md` |
-| 変更した状態の不変条件と保証箇所を比較する前 | `../../writing-standards/references/design-time-state.md` |
-| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` |
-| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/quality-principles-qcd.md` |
+| 規範を追記・新設・移動した差分の置き場所を判定する前 | `../../writing-standards/references/agent-documents-placement-selection.md` |
 
 ## 実行レビューの判定
 
@@ -22,6 +19,8 @@
 作業項目の完了条件に「説明の追記」が含まれていることだけを理由に必要性を認めず、`reviewer-initial.md`「初回レビュー」の必要性判定を満たさない追記は種類6とする。
 エージェント向け文書で法令調の堅苦しい表現に戻っている箇所は、意味と拘束力を保ちつつ、同僚に説明するような自然な日本語へ修正するよう指摘する。
 常時規範への追記については、`../../writing-standards/references/agent-documents-additions-additions.md`「規範追記時の判定」にある3条件を満たしているかを確認する。
+規範を追記・新設・移動した差分は、`../../writing-standards/references/agent-documents-placement-selection.md`「置き場所の選定」の手順を差分と独立に適用し、選ばれる層と資料が実際の置き場所と一致するかを確かめる。
+読む主体・読む契機・所属スキルの責務と合わない置き場所や、判断手順を本文に直書きした機械生成文は種類7とする。
 規範の差分が硬い制約以外の判断材料や結論を固定してしまう場合は、守るべき価値に照らして本当に必要かを確かめる。
 差分に記載された条件や限定が、条文が成り立つ本来の理由よりも狭すぎる場合は種類7として指摘する（基準は`agent-basics:writing-standards`の`references/review-only-criteria.md`「限定の反証」に従う）。
 レビュー限定基準への違反も種類7とし、指摘文には同資料の「指摘と採否」に定められた事項を記載する。

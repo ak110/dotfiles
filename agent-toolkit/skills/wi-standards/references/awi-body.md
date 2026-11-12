@@ -51,7 +51,7 @@ H1は1つとし、H2は次の順序とする。
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:/share/investigation-operations.md` |
 | 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` |
 
 ## 条件別資料

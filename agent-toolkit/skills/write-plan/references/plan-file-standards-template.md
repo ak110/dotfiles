@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
-| レーンの予測補正記録を書く前 | `../../process-wi/references/selection-format-prediction.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
-
 ## 初回起草の雛形
 
 次の雛形の`< >`とメタ情報を案件の値へ置換し、各欄は前述の基準に従う。

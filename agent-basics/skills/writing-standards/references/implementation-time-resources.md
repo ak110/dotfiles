@@ -4,13 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
-| 「コードの簡潔さ」で処理の共通化を判断する時 | `design-heuristics-responsibility.md` |
-| 内部の引数や選択肢の整理でテストを統合する前 | `testing-priorities.md`、`testing-selection.md` |
-| 外部通信の時間予算や再試行を選ぶ前 | `design-runtime-jobs.md`、`design-runtime-services.md` |
-
 ## リソースと並行処理
 
 - リソースの確保と解放を正しく対応させ、RAIIなどの仕組みを活用して生存期間を管理する。

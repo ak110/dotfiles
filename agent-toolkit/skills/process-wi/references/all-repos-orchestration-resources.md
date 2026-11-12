@@ -6,12 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 基準資料を選択・取得する時 | `../../process-wi/references/all-repos.md` |
-| 基準資料を選択・取得する時 | `run-lanes.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec.parent.md` |
-| 基準資料を選択・取得する時 | `finish-session.md` |
 | 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 
 ## 登録集合
 
@@ -36,7 +31,6 @@
 停止未確認の担当、未統合レーンとdirtyなworktreeは保持する。
 例外や利用上限で統括CLIを止める経路は所有するプロセスの子孫も回収し、残存を検知した場合は所有を保持する。
 利用上限時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`../../user-confirmation-and-report/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
-寿命・更新・停止の確認と再検証は、`docs/development/audit-records-usage-limit.md`にある。
 同記録の「agent-toolkit/skills/process-wi/references/all-repos-orchestration-resources.md：登録集合：2026年11月12日」を参照する。
 
 ## worktreeと資源

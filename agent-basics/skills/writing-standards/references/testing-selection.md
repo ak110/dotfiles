@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
-
 ## 検証単位の選定
 
 性能変更の前後を差分検証する場合は、基準版・変更版に同じ入力・初期状態・操作列を与え、成功値・エラー・順序・更新後状態・並行更新を比較する。

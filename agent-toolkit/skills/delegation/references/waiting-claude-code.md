@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文の参照基準を適用する前 | `wait-anomalies.md` |
-| 本文の参照基準を適用する前 | `claude-code-runtime.md` |
-| 本書の基準を適用する前 | `waiting-and-monitoring.md` |
-
 ## 長時間待機前の会話圧縮
 
 Claude Codeが、他の担当者やCI監視の結果を後続工程の入力として待つ際の共通手順である。

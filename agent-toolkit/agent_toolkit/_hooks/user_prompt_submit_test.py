@@ -195,7 +195,6 @@ class TestUserConfirmationSkillPrompt:
         context = self._prompt("表示が変わった原因は何か", tmp_path)
         assert self._has_notice(context)
         assert "診断より前に`agent-basics:bugfix`を起動" in context
-        assert "説明の補足や委譲・AWIの方針も対象" in context
         assert "「起動契機」から「認可を要する操作」" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path))
         self._invoke_skill(tmp_path)
@@ -295,7 +294,6 @@ class TestUserConfirmationSkillPrompt:
         context = self._prompt("表示が変わった原因は何か", tmp_path, host="codex")
         assert self._has_notice(context)
         assert "診断より前に`agent-basics:bugfix`を起動" in context
-        assert "説明の補足や委譲・AWIの方針も対象" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 
 
@@ -670,7 +668,6 @@ class TestExampleScopeNotice:
         assert len(bodies) == 1
         assert "「原文の保持と取り込み」" in bodies[0]
         assert "対応範囲を例示だけに狭めるな" in bodies[0]
-        assert "そのまま元の依頼を続けよ" in bodies[0]
         assert str(self._ROUTING_PATH) not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]
 

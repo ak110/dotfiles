@@ -199,16 +199,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         + "\n"
         + termination_evidence.decision_hint(payload),
         fix=(
-            "適用するプロジェクト規範で起動を省く場合は、"
-            f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/references/termination-evidence.md'}`を直接読み、"
-            "`omit-completion`を記録して通常の報告を届けよ。"
-            "起動が必要な作業を完了して終える場合は`Skill`で`agent-toolkit:report-completion`を起動し、"
-            "同スキルの工程の残り（作業完了報告、最終報告、"
-            "呼び出し元が定める公開工程）へ進め。"
-            "ユーザーの中止・置換、確認の回答や委譲先の結果の待機、技術的不成立で終える場合は、"
-            "原証拠と対象の`work_id`を`atk run-script termination-evidence -- --decision-file <判断JSONの絶対パス>`へ渡せ。"
-            "ホストの通知による停止は終了理由の記録に当たらない。利用上限の猶予通知では同じ工程を続け、"
-            "ホストが再開を禁じた処理は再開の可否をユーザーへ確認せよ。"
+            "`Skill`で`agent-toolkit:report-completion`を起動し、作業完了報告、最終報告、公開工程へ進め。"
+            "起動を省く場合と、中止・置換・待機・技術的不成立で終える場合の記録操作は、"
+            f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/references/termination-evidence.md'}`"
+            "「終了方法の分岐」に従え。"
         ),
         removable_cause=True,
     )

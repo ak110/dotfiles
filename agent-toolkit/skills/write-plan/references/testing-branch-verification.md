@@ -1,11 +1,6 @@
-# テスト方針（全言語共通）
+# 分岐条件の効果の裏付けの運用条件
 
-品質基準の正式な提供元は、`agent-basics:writing-standards/references/testing.md`である。
-呼び出し元の読込条件を引き継ぎ、本書の運用条件と条件に該当する正式な資料の全文を読む。
-両方に同じ主題があれば、両方の全文を確認する。
-範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-以下はagent-toolkitが所有する運用条件である。
+本書は、`agent-basics:writing-standards/references/testing.md`の「分岐条件の効果の裏付け」を実行するときの運用条件である。
 
 ## 名指し参照の読込方法
 

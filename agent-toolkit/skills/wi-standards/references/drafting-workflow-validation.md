@@ -6,14 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
-| 依頼の`再発の経過を問う要求`が`該当`の場合に加え、起草者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求で、原因を確定する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む |
-| 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
-| 保存する本文の共通品質を判定する前 | `agent-toolkit:delegation/references/writing.md` |
-| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` |
+| 保存する本文の共通品質を判定する前 | `agent-toolkit:/share/writing-operations.md` |
 
 ## 保存前の確認
 
@@ -47,7 +40,7 @@
      送達済みの質問だけに回答済み注記を付ける。
 
    - 完成条件ごとに同一セッション内で自己観測可能な手段を確認し、例外に該当する場合は`awi-body-completion.md`「完成条件」に従ってその根拠を本文の適切な箇所に記載していること。
-   - 本文が`agent-toolkit:delegation/references/writing.md`の人間向け文書共通規定を満たし、managed-tempの一時ファイルを参照せずとも、結論、判断条件、原文、ならびに再取得に必要な実装・設定・版管理文書の根拠が本文単体から復元できること。
+   - 本文が`agent-toolkit:/share/writing-operations.md`の人間向け文書共通規定を満たし、managed-tempの一時ファイルを参照せずとも、結論、判断条件、原文、ならびに再取得に必要な実装・設定・版管理文書の根拠が本文単体から復元できること。
    - 仕分け、要約、統合をした本文と元の調査結果との対応関係を証拠に記録していること。
    - UWIの各情報が`uwi-format.md`の選定基準に照らして必要十分であり、重複がないこと。
 

@@ -10,7 +10,6 @@
 | 報告用UWIを確認する前 | `../../report-completion/references/report-formats-uwi.md` |
 | 報告用を除くUWIの本文を起草・検収する前 | `uwi-format.md` |
 | 既存WIとの重複を判定する前 | `drafting-completion-duplicates.md` |
-| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ |
 
 ## 通常AWIの本文
 

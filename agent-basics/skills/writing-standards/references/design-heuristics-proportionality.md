@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
-
 ## 問題と手段の比例性
 
 計画や設計の採用案を確定する前、およびレビューで指摘の採否や要求する処置を判定する前に、設計者とレビュアーが共通して用いる比較基準である。

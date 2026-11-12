@@ -45,28 +45,8 @@ report-completionと振り返りは委譲先の終了工程の対象外とする
 | 合流した公開対象を判断する前 | `selection-procedure-addition.md` |
 | 目標起点の公開対象を判断する前 | `lanes-goals.md` |
 | 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` |
-| 基準資料を選択・取得する時 | `../../process-wi/references/all-repos.md` |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:/share/session-termination.parent.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` |
-| 基準資料を選択・取得する時 | `../../../share/add-wi.parent.md` |
-| 基準資料を選択・取得する時 | `../../review-session/SKILL.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:report-completion/SKILL.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/waiting-claude-code.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/references/awi-body.md` |
-| 基準資料を選択・取得する時 | `run-lanes-completion.md` |
 | 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 | 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
-| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/references/communication-methods-delivery.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` |
-| 基準資料を選択・取得する時 | `termination-ci-failure.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/push-and-ci.md` |
-| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/references/wi-standards-operations.md` |
-| 基準資料を選択・取得する時 | `run-lanes-integration.md` |
 
 ## 条件別資料
 

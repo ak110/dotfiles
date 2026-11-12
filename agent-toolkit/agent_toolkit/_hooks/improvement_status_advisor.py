@@ -137,13 +137,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     set_warning_session_id(session_id if isinstance(session_id, str) else "")
     reason_notice = _notice(
         "`AWI化ステータス: 不要`の理由が、原因を調べていないことを見送りの根拠にしている報告がある。"
-        "未調査は処置不要の根拠にならない。該当行: " + " / ".join(lines),
+        "該当行: " + " / ".join(lines),
         removable_cause=True,
         subject="\n".join(lines),
-        fix=(
-            "直接的原因と影響を確かめる最小調査をその場で行い、処置と担当を決めて報告を更新せよ。"
-            "担当範囲外なら、観測と残る問いを`agents_server`の委譲先かAWIへ引き継げ。"
-        ),
+        fix="`share/main-improvements.md`「作業中の改善点の報告」に従い、最小調査と処置・担当の決定をして報告を更新せよ。",
     )
     return "notify", "\n\n".join(filter(None, (guidance, reason_notice)))
 

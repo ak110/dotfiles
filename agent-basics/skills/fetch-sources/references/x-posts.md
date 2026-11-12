@@ -50,7 +50,6 @@ photo_url=$(jq -er --argjson index "$photo_index" \
 ```
 
 URLの欠落・不正や取得コマンドの失敗は「未取得」と記録し、保存・実体確認を終えた写真だけを表示する。
-引数の受け渡しの観測条件と再検証手順は、`docs/development/audit-records-fetch-sources.md`にある。
 該当節は「agent-basics/skills/fetch-sources/references/x-posts.md：添付写真の保存と確認：2026年11月10日」である。
 
 **2.** HTTPエラーページのHTML等を画像と誤認しないよう、正常な画像データであることを確認する。
@@ -66,6 +65,4 @@ URLの欠落・不正や取得コマンドの失敗は「未取得」と記録�
 Windows環境のcurlでSSL証明書の失効確認エラーが発生した過去の環境では、`--ssl-no-revoke`オプションを付与することで通信が成功した。
 同様のエラーが実際に発生した環境に限り、失効確認を無効化するセキュリティ上の影響を理解した上でこのオプションを選択する。
 その場合でも、証明書自体の検証処理は維持する。
-
-APIの参照先仕様、過去環境での観測条件や再検証手順を記録している。
 詳細は`docs/development/audit-records-fetch-sources.md`の「agent-basics/skills/fetch-sources/references/x-posts.md：投稿の同定と本文の取得：2026年10月10日」を参照する。

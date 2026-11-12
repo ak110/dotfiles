@@ -11,26 +11,9 @@
 | --- | --- |
 | 目標起点の判断を行う前 | `lanes-goals.md` |
 | レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/single-lane-execution.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../write-plan/references/plan-file-standards.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../delegation/references/process-model-settings.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:delegation/references/waiting-claude-code.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../wi-standards/references/origin-and-approval-origin.md` |
-| 参照基準の適用前 | `selection-procedure-addition.md` |
 | 追加WIと即時修正を区別する前 | `immediate-fix.md` |
-| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
-| 参照基準の適用前 | `selection-procedure.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
-| 基準資料を選択・取得する時 | `finish-session-observation.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-parent-planning.md` |
-| 基準資料を選択・取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-recording-integration.md` |
-| 基準資料を選択・取得する時 | `lane-planning-resume.md` |
-| 基準資料を選択・取得する時 | `finish-session.md` |
+| 変更したエージェント向け文書を再取得する時 | `../../../share/exec.parent.md` |
+| 変更したエージェント向け文書を再取得する時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
 
 ## メインが読む対象の境界
 

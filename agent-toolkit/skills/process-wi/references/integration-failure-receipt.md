@@ -2,6 +2,17 @@
 
 本書は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従いレーン担当を起動したメインエージェントが、統合の処理結果として「統合先との組み合わせによって生じた変更範囲の検証失敗に対する是正コミット」や「rebase進行中の競合」を受け取った際の対処手順を定める。
 
+## 名指し参照の読込方法
+
+名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
+
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 統合の返却で警告の判定と根拠を受け取る時 | `../../../share/lane-integration-subagent-operation.md` |
+| 対応完了を受けて再統合を指示する時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
+| 対応完了のレビュー修正を判定する時 | `../../../share/exec-review-parent-correction.md` |
+| 同一スレッドを継続できず新規のレーン担当を起動する時 | `../../delegation/SKILL.md` |
+
 是正コミットを受け取った場合は、失敗した検証が対象とする契約（送信側・受信側・実装・テスト）の差分と、再検証の終了コードを確認する。
 警告については、レーン担当が`../../../share/lane-integration-subagent-operation.md`「検証結果の警告の判定」で行った判定と根拠を受け入れる。
 処理の成立に影響しない既存の警告のみを理由として再度の受理確認を求めることは避ける。
@@ -19,14 +30,3 @@ rebase進行中の競合を受け取った場合は、次の手順で対処す�
    `対応完了（再レビュー不要）`の場合も同書「レビュー修正」の証拠判定を適用し、再度の判定が不要と確認できた場合に限り、保持している修正前後のOID対応関係を用いて現在のHEADで統合指示を再送する。
 
 同一スレッドを継続できない場合は、`../../delegation/SKILL.md`「継続と新規起動」に従い、新規のレーン担当へ`再開位置`として`~/.claude/plans`配下にある計画ファイルの絶対パスを渡す。
-
-## 名指し参照の読込方法
-
-名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 統合の返却で警告の判定と根拠を受け取る時 | `../../../share/lane-integration-subagent-operation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-parent-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../delegation/SKILL.md` |

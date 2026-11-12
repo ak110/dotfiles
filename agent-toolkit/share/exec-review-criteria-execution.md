@@ -6,12 +6,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| レビュー担当として判定する前 | `agent-basics:review-standards/references/reviewer.md` |
-| 初回レビューを判定する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
-| 再レビューを判定する前 | `agent-basics:review-standards/references/reviewer-followup.md` |
 | 要求単位・完成条件と観測の達成を判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
 | 実行レビューを判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
-| 画面のユーザビリティを判定する前 | `agent-basics:review-standards/references/reviewer-usability.md` |
 | 要求の縮小を判定する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
 | AWIの新旧形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
 
@@ -71,7 +67,7 @@ WIごとの完成条件については、今回の差分によって成立した
   公開、配布、実ホストへの反映が完了するまで実際に観測できない完成条件については、隔離環境での再現や部分的な実行結果を`達成`の根拠とせず、`根拠不足`と判定する。
   後続工程で実施予定である旨を記しただけの記述も、証拠から除く。
   ただし、条件が指定する観測手段を用いてその結果自体を直接確認した記録がある行（例えば、対象HEADに含まれるバージョン更新の成果物を直接確認した行など）のみは、この扱いの例外とする
-- 公開後にのみ観測可能な条件を`根拠不足`と判定する前に、提示された代替観測が受入シナリオ検証（`agent-toolkit:delegation/references/acceptance-scenarios.md`）の起動条件を満たしているかを確認する。
+- 公開後にのみ観測可能な条件を`根拠不足`と判定する前に、提示された代替観測が受入シナリオ検証（`agent-toolkit:/share/acceptance-scenarios.md`）の起動条件を満たしているかを確認する。
   公開前に再現可能な起動条件（起動単位の設定、常駐する子プロセスや外部接続を生成する設定など）を満たしていない代替観測は、観測のやり直しを求める指摘として記録する
 - 行全体が`../skills/wi-standards/references/wi-standards-body.md`「通常AWIの本文」に定める任意の判断材料であると明記されている完成条件（冒頭が「任意の判断材料」などで始まる行）は、観測結果が存在しない場合は`根拠不足`と判定する。
   この行は統合時にそのまま受理されるため、指摘としては登録しない。

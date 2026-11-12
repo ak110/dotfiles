@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` |
-| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` |
-
 ## 情報源と裏付けの手段
 
 X（旧Twitter）の投稿など外部資料の本文、日時、添付画像の取得手順は、`agent-basics:fetch-sources`に従う。

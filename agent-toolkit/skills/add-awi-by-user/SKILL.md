@@ -55,18 +55,15 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 参考資料から改善候補を起草・採否判定する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
-| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 考慮漏れの指摘を受けて原因を分析する前 | `agent-basics:bugfix/SKILL.md` |
-| 参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis-stages.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
+| 考慮漏れの指摘を受けて原因を分析する前、参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
 | 既存の規範・手順で充足しているかを判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
 | 疑問形の異議を受けて要求単位へ分ける前 | `../user-confirmation-and-report/references/user-utterance-questions.md` |
 | 考慮漏れ処置後の方針再確認で論点ごとの確認要否を判定する前 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body-completion.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` |
+| 対象リポジトリの外部へ成果を反映させる要求の終了状態を判定する前 | `../wi-standards/references/awi-body-completion.md` |
+| 成果物をAWIの登録と更新に限る契約を適用する前 | `../user-confirmation-and-report/references/user-utterance-correction.md` |
+| 対象リポジトリの外部に対する操作の認可と確認要否を判定する前 | `../user-confirmation-and-report/references/approval-scope.md` |
 
 ## 読込表
 
@@ -174,7 +171,7 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
      根拠と代替案を示す。
    - 採用しない提案: 検討の結果採らない提案。
      根拠を示す。
-3. 介入評価（ユーザーの手を煩わせた原因を見逃さない）: 分類とは別に、既存判断を是正した介入を`../user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」で評価する。
+3. 介入評価（ユーザーの手を煩わせた原因を見逃さない）: 分類とは別に、既存判断を是正した介入を`../user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」で評価する。
 4. 考慮漏れの処置（同じ仕組みの漏れを防ぐ）: `agent-basics:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。
    再発防止策を検討してから方針へ反映する。
    再発防止策は本スキルの成果物制限に従い、`## 原因分析`付きの別AWIとして起草し、元のAWIと一緒に登録する。

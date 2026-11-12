@@ -47,8 +47,7 @@ RESPONSE_LANGUAGE_NOTICE = "言語の基準は、同時配送された`01-agent.
 QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
 BACKGROUND_TASKS_DISABLED_NOTICE = (
     "この`Claude Code`では`Bash`の背景実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）で、`run_in_background`は使えない。"
-    "`atk agents wait`は単独の前景実行とし、`Bash`へ`timeout=600000`を指定して、"
-    "待機コマンド自身の期限で返る結果と終了コードを回収せよ。未終了なら同じコマンドを再発行せよ。"
+    "待機は`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従え。"
 )
 """背景実行を無効にした起動で、使える待機方法をメインと委譲先へ伝える本文。
 
@@ -299,11 +298,9 @@ def _compact_recovery_context() -> str:
     """次の判断前に、現在の工程を定める文書から必要な知識を回復させる。"""
     return _llm_notice(
         "会話が圧縮され、以前取得した資料の本文は文脈から失われている。次の判断より前に、"
-        "圧縮前に進めていた工程を定めるスキルと役割文書を全文読み直し、"
-        "その読込表から次の判断に必要な資料を選んで読め。"
-        "委譲先の返却、背景待機の完了、定期の再確認、ユーザーの回答への対応も含む。"
+        "`agent-toolkit/share/agent-conduct-details.md`「会話圧縮後の復元」に従い、"
+        "工程を定めるスキルと役割文書を全文読み直し、読込表から次の判断に必要な資料を選んで読め。"
         "全体作業契約と引き継ぎ記録が次工程の資料を指す場合は、それも読め。"
-        "圧縮前の読取履歴を一括再取得の対象にせず、現在の工程と判断から選べ。"
     )
 
 
@@ -435,8 +432,9 @@ def _compaction_notice(
     # 全期間の通常表示（数万文字）は不足する場合の手段にとどめる。
     lines = [
         f"圧縮前の直近の操作は`{conversation}`でconversation.mdを取得して確かめよ。"
-        "それでも目的や経緯を復元できない場合だけ、"
-        "同じコマンドから`--conversation-window --conversation-recent 30`を外して全期間の流れを取得せよ。"
+        "復元の判断は`agent-conduct-details.md`「会話圧縮後の復元」に従え。"
+        "それでも復元できない場合だけ、同じコマンドから`--conversation-window --conversation-recent 30`を外して"
+        "全期間の流れを取得せよ。"
         "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
     ]
     if delegated:
@@ -479,10 +477,7 @@ def _compaction_notice(
             return state
 
         update_state(session_id, select_original)
-        lines.append(
-            f"ユーザー発話の原文{len(users)}件をReadのfile_pathに`{output}`を指定して読め。"
-            "ユーザーの要求・判断・行動の訂正を原文と作業契約で比較し、有効な指示を統合して元の未完了工程へ戻れ。"
-        )
+        lines.append(f"ユーザー発話の原文{len(users)}件をReadのfile_pathに`{output}`を指定して読め。")
     except process_tree.ReclaimError as error:
         # hookは同じ所有対象を次の起動まで保持できないため、その場で回収し直し、残れば対象を示す。
         remaining = error.retry()

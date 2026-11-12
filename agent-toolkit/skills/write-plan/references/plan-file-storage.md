@@ -55,7 +55,7 @@ stemの命名規則は次表のとおりとする（`dd`は作成日、`HHmm`は
    短縮OIDには`git rev-parse --short=7 <revision>`の出力をそのまま用いる。
    前者の削除は`../../../share/exec-review-parent-correction.md`「レビュー指摘管理表の保存」に従う。
    後者は修正系列の終了時に`atk plans commit ci-<修正系列の開始時のHEADの7文字以上の一意な短縮OID>.exec-review.tsv`を実行し、`private-notes/plans/ci/`へ保存する。
-   この保存タイミングは、`agent-toolkit:commit/references/ci-failure-handling.md`内にある「入力計画」の段落に従う。
+   この保存タイミングは、`agent-toolkit:process-wi/references/ci-fix-series.md`内にある「入力計画」の段落に従う。
 
 6. 計画は実行レビューが収束するまで`~/.claude/plans`直下で更新し、収束した段階で`atk plans commit <~/.claude/plans直下のメイン計画ファイル名>`を実行して`private-notes/plans/yyyy/MM/`へ移動・保存する。
    計画ファイル、計画ファイル（バグ）、およびレビュー指摘管理表は、同一のコミットとして保存される。

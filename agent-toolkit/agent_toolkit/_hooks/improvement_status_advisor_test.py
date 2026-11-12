@@ -58,8 +58,8 @@ def test_uninvestigated_reason_is_notified(text: str, monkeypatch: pytest.Monkey
     decision, body = improvement_status_advisor.evaluate(_payload(text))
     assert decision == "notify"
     assert 'kind="warn"' in body
+    assert "main-improvements.md" in body
     assert "最小調査" in body
-    assert "引き継げ" in body
 
 
 @pytest.mark.parametrize(

@@ -103,7 +103,7 @@ API接続先を明示的に指定する場合は、ポート番号を含むHTTP(
 
 ## pushと監視
 
-**6.** CI修正の先行検証は`ci-failure-handling.md`「修正系列」で選び、先行CIと正式公開のSHA・ref・baseline・対象ジョブを区別して正式公開のcheck集合も検収する。
+**6.** CI修正の先行検証は`../../process-wi/references/ci-fix-series.md`「修正系列」で選び、先行CIと正式公開のSHA・ref・baseline・対象ジョブを区別して正式公開のcheck集合も検収する。
 引数なしの方式では`git push`を単独で実行し、引数明示の方式では成功したdry-runのコマンドラインから`--dry-run --porcelain`を除いた同一の引数でpushを実行する。
 
 **7.** `--baseline`による判定が完了するまでは、同じコミットに対して`gh workflow run`などを用いてワークフローを手動起動しない。
@@ -155,7 +155,7 @@ pushが成功したあとは、各ベースラインに対して`atk run-script 
 **10.** 修正作業する際は、元のベースライン待機が終了した時点の出力に含まれるすべての失敗ジョブの集合を修正範囲に含め、そのうえで再度pushする（失敗の全体集合を取得できない場合は、まずその原因を解消する）。
 
  再pushを行うごとに新しいベースラインを作成して再監視し、前回失敗したジョブが新しいpushの監視対象に正しく含まれていることを確認する。
- もし含まれていない場合は、`agent-toolkit:commit/references/ci-failure-handling.md`「修正commitが必要なCI失敗を修正するエージェント」に定める修正系列の定義に従う。
+ もし含まれていない場合は、`agent-toolkit:process-wi/references/ci-fix-series.md`「修正commitが必要なCI失敗を修正するエージェント」に定める修正系列の定義に従う。
 修正のコミット方法は、以下の2つの区分から選択する。
 
 - 原因コミットへ取り込む区分: 以下の3条件がすべて成立する場合に限り、修正を原因コミットへ統合する（amend、またはfixupとautosquash）。

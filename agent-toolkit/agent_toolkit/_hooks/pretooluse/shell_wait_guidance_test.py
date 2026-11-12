@@ -30,7 +30,7 @@ def test_wait_warning_uses_available_recovery(monkeypatch, claude, disabled, lim
         announced = rules_context.BACKGROUND_TASKS_DISABLED_NOTICE in (context or "")
         assert announced is (claude and disabled == "1")
         if announced:
-            assert "timeout=600000" in rules_context.BACKGROUND_TASKS_DISABLED_NOTICE
+            assert "waiting-and-monitoring-intervals.md" in rules_context.BACKGROUND_TASKS_DISABLED_NOTICE
             assert limit * 1000 < 600000
     corrected = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait", "timeout": 600000}})
     assert corrected.returncode == 0 and not corrected.stderr

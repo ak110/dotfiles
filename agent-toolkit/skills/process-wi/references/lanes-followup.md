@@ -6,11 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 基準資料を選択・取得する時 | `agent-toolkit:delegation/references/mandatory-rules.md` |
-| 選定前、対象がGitHub上にある場合 | `review-audit-launch.md` |
-| 基準資料を選択・取得する時 | `../../delegation/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-responses.md` |
-| 基準資料を選択・取得する時 | `../../delegation/references/base-contract.md` |
 | `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` |
 | メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` |
 | 選定YAMLを生成または消費する前 | `selection-format.md` |
@@ -19,6 +14,9 @@
 | 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` |
 | 公開工程を開始する前（実行順7） | `finish-session.md` |
 | 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
+| レビュー指摘の比較と採否を判定する時 | `../../../share/exec-review-responses.md` |
+| 委譲済みの主題を自分で読む・調べる・回答する前 | `../../delegation/SKILL.md` |
+| 書込主体を交代する時 | `agent-toolkit:delegation/references/mandatory-rules.md` |
 
 ## 同一主題の追加指示
 

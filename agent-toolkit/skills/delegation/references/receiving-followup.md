@@ -6,9 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 受領した事象を報告・分析の対象に選ぶ前 | `agent-basics:writing-standards/references/quality-principles.md` |
 | process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 修正後に保存済みの成功した検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-escalation.md` |
 
 ## 受領後の扱い
@@ -68,6 +66,7 @@
        報告元の情報とメインエージェントが確認できた範囲を引用の外側に補足し、未確認の主張については委譲先からの未検証報告であることが分かる形で明示する。
        作業完了を報告するための報告用UWIは、`agent-toolkit:report-completion`の規約に従って作成する。
      - 委譲先: `agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」に従って処理する。
+     - ツールや実行基盤の異常を示す同種の報告が2回現れたら、報告の中継とは別に、`agent-basics:bugfix`を起動して原因調査に着手する（調査は委譲してよい）。
 
 8. サブエージェントの動作や運用そのものを分析する場合は、現在稼働しているそのサブエージェントの完了報告も観測対象に含めた上で結論を確定する。
 

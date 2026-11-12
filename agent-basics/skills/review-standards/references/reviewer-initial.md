@@ -8,8 +8,6 @@
 | --- | --- |
 | 変更した状態の散在表現と遷移の分散を走査する前 | `../../writing-standards/references/implementation-time-data.md` |
 | 変更した状態の不変条件と保証箇所を比較する前 | `../../writing-standards/references/design-time-state.md` |
-| 機能の正しさを確認するテスト層を選ぶ時 | `../../writing-standards/references/testing-selection.md` |
-| OS分岐の試験や保存済み成功を適用判定する前 | `../../writing-standards/references/testing-selection.md`、`../../writing-standards/references/testing-platforms.md` |
 
 ## 初回レビュー
 

@@ -18,11 +18,11 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | add-awi-by-userの投入前レビュー結果を検収する前 | `../skills/add-awi-by-user/references/omission-check.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow-review-route.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/origin-and-approval-origin.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-completion-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/drafting-workflow-saving.md` |
+| 指摘が繰り返される原因を分析する前 | `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
+| 投入前レビューの起動要否を判定する前 | `../skills/wi-standards/references/drafting-workflow-review-route.md` |
+| 要件との不一致を指摘された時に、値の出所と`source`を確かめる前 | `../skills/wi-standards/references/origin-and-approval-origin.md` |
+| 修正した方式全体の整合性を確かめる前 | `../skills/wi-standards/references/drafting-completion-decisions.md` |
+| 正式名への置換だけの差分を保存へ進める前 | `../skills/wi-standards/references/drafting-workflow-saving.md` |
 
 ## 入力
 
@@ -85,13 +85,13 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | add-awi-by-userで受けた指摘の分類・処置を確定する前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
-| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 
 1. 方針段階と本文段階のどちらでも、指摘の受領後、採否・修正を確定する前に、呼出元が定める分類と処置を適用する。
    `agent-toolkit:add-awi-by-user`の分類は同スキルの「指摘の分類と処置」に従う。
    他の呼出元には、その呼出元の分類と処置を用いる。
    分類・処置の結果を次の確認へ引き継いでから、該当段階の修正・再判定へ進む。
-   実ユーザー発話やWI記入欄の介入評価は、分類元にかかわらず`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」へ接続する。
+   実ユーザー発話やWI記入欄の介入評価は、分類元にかかわらず`agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」へ接続する。
 
 2. 返却の確認段階と対象資料を入力と突き合わせる。
    方針段階では要求・調査根拠と方針の対応および未解決指摘を検収し、合格後は呼出元が定める承認条件に従って本文を起草する。

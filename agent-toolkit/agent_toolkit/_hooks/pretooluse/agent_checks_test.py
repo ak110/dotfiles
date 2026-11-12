@@ -197,8 +197,6 @@ class TestTaskStopBlock:
         assert "バックグラウンドタスクの所有記録も停滞検知完了記録も無い" in reason
         assert "明示的な即時停止要求" in reason
         assert "停滞検知の手順" in reason
-        assert "進行が遅い" in reason
-        assert "AskUserQuestionで確認" in reason
         assert "references/waiting-and-monitoring.md" in reason
         assert "「停滞の検知と巻き取り」節" in reason
 

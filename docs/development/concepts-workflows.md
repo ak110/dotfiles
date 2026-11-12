@@ -159,7 +159,7 @@ branchの公開またはCIが失敗した場合は`master`を保持し、同じc
   現行の項目定義は`agent-toolkit/agent_toolkit/_agents_server/commands.py`の`_public_session`にある
 - 人が直接使う長時間・常駐CLIは、処理の開始、工程の移行、待機理由など、実行中の状態を判断できる表示を届ける。
   人向けの表示量は、LLMが読む出力のトークン削減を理由に減らさない（2026年10月18日、ユーザー指示）。
-  実装・改訂時の規範は`agent-toolkit:delegation/references/writing.md`「読み手別の追加注意点」にある。
+  実装・改訂時の規範は`agent-toolkit:/share/writing-operations.md`「読み手別の追加注意点」にある。
   待機・同期・出力捕捉を行う既知の4箇所への処置と、限定探索の範囲・限界は[design-cli.md](design-cli-output.md#atkの出力に含める情報)に記録する
 - 同じ対象リポジトリの複数項目を同一工程で取得する場合は、複数引数対応の
   `atk wi show <filename>... --skip-pull`を1回実行して全文を確認する。

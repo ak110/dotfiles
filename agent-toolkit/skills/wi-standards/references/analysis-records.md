@@ -15,7 +15,7 @@
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
 | 検出策の実測を記録・検収する前 | `agent-basics:bugfix/references/analysis-records.md` |
-| 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis.md` |
+| 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis-stages.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-verification.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` |
 
@@ -33,7 +33,7 @@
 保存先および参照行の記述形式は`../../write-plan/references/plan-file-storage.md`に従う。
 
 原因分析表は、`要因系統`、`L1 現象`、`L2 判断`、`L3 構造`、`L4 システム`の5列で構成し、`作り込み要因`、`見逃し要因`の2行をこの順序で記載する。
-各段位はL4まで必要な確認を終えた結論を記載し、該当なしは`agent-basics:bugfix/references/causal-analysis.md`「原因分析の段階」の共通規則に従う。
+各段位はL4まで必要な確認を終えた結論を記載し、該当なしは`agent-basics:bugfix/references/causal-analysis-stages.md`「原因分析の段階」の共通規則に従う。
 L3で処置を決めた後も各段の記録を残す。
 判断の具体的な検討過程は根拠資料やログへ残す。
 

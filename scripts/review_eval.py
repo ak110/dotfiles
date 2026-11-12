@@ -6,7 +6,7 @@
 
 起動は`uv run --frozen python scripts/review_eval.py <prepare|score|store> ...`とする。
 レビュー担当の起動はagents_serverのMCP（`start`）からしか行えないため、本コマンドは起動に渡す入力の準備と、
-返却された管理表の採点だけを担う。手順は`.claude/skills/agent-toolkit-edit/SKILL.md`「レビュー評価セット」にある。
+返却された管理表の採点だけを担う。手順は`.claude/skills/agent-toolkit-edit/references/review-eval-set.md`にある。
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
     except (ValueError, KeyError, TypeError, re.error) as error:
         raise ActionableError(
             f"評価セットを読み込めない: {path}: {error!r}",
-            next_action=f"{path}を`.claude/skills/agent-toolkit-edit/SKILL.md`「レビュー評価セット」の事例の形式へ直す",
+            next_action=f"{path}を`.claude/skills/agent-toolkit-edit/references/review-eval-set.md`のレビュー評価セットの事例の形式へ直す",
         ) from error
     ids = [case.id for case in cases]
     duplicated = sorted({value for value in ids if ids.count(value) > 1})

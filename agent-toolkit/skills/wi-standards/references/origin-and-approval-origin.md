@@ -6,7 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` |
 | run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
 | 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` |
@@ -78,7 +77,7 @@ WIの作成者・起票契機と、個々の要求の出所・承認範囲を区
 
 人間由来のWI本文、ユーザーコメント、UWIの回答、または対話中の回答に、外部操作、対象、および範囲が具体的に明記されている場合、その範囲に限り承認として扱う。
 単なる`source`属性の値、空のコメント欄、エージェント側の推奨文、あるいは「進めてください」といった一般的な了解の発話は、承認とはみなさない。
-手動で起動された`agent-toolkit:process-wi`の公開工程における承認スコープは、同スキルの`../../process-wi/references/lanes-completion.md`「公開工程の承認スコープ」が定める。
+手動で起動された`agent-toolkit:process-wi`の公開工程における承認スコープは、同スキルの`../../process-wi/references/selection-procedure-starting.md`「公開工程の承認スコープ」が定める。
 署名や認証、監査用の複雑な仕組みは設けず、読み書きする主体はユーザーとエージェントのみとする。
 
 要求の一部を別の作業単位へ引き継ぐことを理由に元のWIから除外する場合は、引き継ぎ先のWIが実際に存在し、除外する要求単位を過不足なく含んでいることを確認する。

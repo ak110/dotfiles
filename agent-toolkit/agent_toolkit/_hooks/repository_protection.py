@@ -24,10 +24,8 @@ def _guidance(repo_id: str, edit: str | None) -> str:
     if edit == "deny":
         return "編集せず、必要な変更をユーザーへ報告せよ。"
     return (
-        f"登録案（識別子: {repo_id}、edit: allow）を示し、ユーザーが編集を求めている場合は"
-        "「エージェントが登録して作業を続ける」を最初から選択した推奨案として確認せよ。"
-        "確認手段はagent-toolkit:user-confirmation-and-reportに従え（協調は質問、自律はUWI）。"
-        f"承認後にエージェントが`atk config repos add {quoted} --edit allow`を実行せよ。承認なしに登録して回避するな。"
+        "未登録のため、`agent-toolkit:user-confirmation-and-report`の`references/user-confirmation-and-report-decisions.md`"
+        f"「未登録リポジトリの編集」に従って登録を確認せよ。承認後に`atk config repos add {quoted} --edit allow`を実行せよ。"
     )
 
 

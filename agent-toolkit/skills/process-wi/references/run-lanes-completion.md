@@ -6,14 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
-| 基準資料を選択・取得する時 | `finish-session-observation.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-parent-planning.md` |
+| 計画準備の返却を受領する時 | `../../../share/exec-parent-planning.md` |
 
 ## 採否の確定と終了区分
 

@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
-
 ## 冒頭の責務と目的
 
 - 特定の役割が読む文書（agent定義、スキル、委譲先の手順書、委譲元の契約文書など）では、担当する責務、担当しない責務、最初に行う行動を冒頭で明示する。

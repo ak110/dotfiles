@@ -65,7 +65,7 @@ def test_all_read_tables_have_valid_declarations_and_routes():
 def test_user_input_classification_reaches_common_intervention_assessment(relative):
     """受領・分類の段階から、共通の介入評価の同じ定義元へ直接到達する。"""
     source = _PLUGIN_ROOT / relative
-    target = _PLUGIN_ROOT / "skills/user-confirmation-and-report/references/analysis-operations.md"
+    target = _PLUGIN_ROOT / "skills/user-confirmation-and-report/references/analysis-operations-intervention.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
     routes = [row for row in rows if "受領" in row.condition and "分類" in row.condition and target in row.documents]
     assert routes, relative
@@ -87,9 +87,9 @@ def test_every_role_has_explicit_parent_read_source():
 
 # 配布版で届かない参照が報告された文書（20261028-161251-001）。
 _CROSS_PLUGIN_DOCUMENTS = (
-    "skills/user-confirmation-and-report/references/analysis-operations.md",
+    "skills/user-confirmation-and-report/references/analysis-operations-intervention.md",
     "skills/wi-standards/references/analysis-records.md",
-    "skills/review-session/references/analysis-operations.md",
+    "skills/review-session/references/analysis-operations-root-cause.md",
     "skills/user-confirmation-and-report/references/communication-methods.md",
     "skills/user-confirmation-and-report/references/user-utterance.md",
     "skills/wi-standards/references/draft-semantic-review.md",
@@ -219,7 +219,7 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
 
 def test_delegation_input_material_wrapper_reaches_quality_owner():
     """WI起草等が使うtoolkit側の素材節も、移設した品質基準の本文へ到達する。"""
-    source = _PLUGIN_ROOT / "skills/delegation/references/writing.md"
+    source = _PLUGIN_ROOT / "share/writing-operations.md"
     target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/input-material.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)

@@ -83,8 +83,8 @@ def test_missing_contract_public_hook_flow(tmp_path, monkeypatch, capsys, initia
         capsys.readouterr()
     output = operation()
     assert str(path) in output
-    assert "成果物の作成・変更・操作または複数工程の調査" in output
-    assert "事実回答では作成しない" in output
+    assert "「作成と所有」" in output
+    assert "事実回答では作成しない" not in output
     assert "作業契約が未作成" not in operation()
     assert user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "続きを進めて"})) == 0
     capsys.readouterr()

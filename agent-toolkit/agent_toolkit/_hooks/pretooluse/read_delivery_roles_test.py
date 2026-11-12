@@ -51,7 +51,7 @@ def test_reading_another_roles_task_document_warns_and_points_to_the_launch_cont
     assert f"他の担当の手順書`{other}`を取得しようとしている" in body
     assert "`agent-toolkit:delegation`の`SKILL.md`「送信」" in body
     assert f"`{contract}`" in body
-    assert "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい" in body
+    assert "`references/delegation-sending.md`「送信」" in body
     assert "分割読取の続きを行わず呼出側契約へ進め" in body
 
 
@@ -169,7 +169,7 @@ def test_public_foreign_role_partial_display_warns_without_acquiring(tmp_path, m
     body = output["additionalContext"]
     assert f"他の担当の手順書`{other}`を取得しようとしている" in body
     assert str(contract) in body and "`agent-toolkit:delegation`の`SKILL.md`「送信」" in body
-    assert "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい" in body
+    assert "`references/delegation-sending.md`「送信」" in body
     assert "分割読取の続きを行わず呼出側契約へ進め" in body
     observed = _run_hook_in_process(
         "posttooluse",
@@ -387,7 +387,7 @@ def test_dynamic_foreign_role_display_warns_without_claiming_acquisition(tmp_pat
         assert "他の担当の手順書" not in body
         return
     assert str(contract) in body
-    assert "作業項目の起草・原因分析・レビューで対象の文書として読む場合は、このまま続行してよい" in body
+    assert "`references/delegation-sending.md`「送信」" in body
     assert f"他の担当の手順書`{other}`を取得しようとしている" in body
     observed = _run_hook_in_process(
         "posttooluse",

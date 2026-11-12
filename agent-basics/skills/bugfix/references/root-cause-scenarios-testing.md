@@ -6,8 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の条件に従い「前提の再検討」を判断する前 | `root-cause-severity-quality.md` |
-| 本文の条件に従い「再発防止策の必須性」を判断する前 | `root-cause-prevention-requirements.md` |
 | 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/testing.md` |
 
 ## テストの原因調査

@@ -18,7 +18,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `session-records-conversation.md` |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../../share/session-conversation-extraction.md` |
 | 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../wi-standards/references/wi-standards-operations.md` |
 
@@ -87,7 +87,7 @@ OpenCodeを対象とする場合、スクリプトは環境変数`XDG_DATA_HOME`
   予算を超える長い会話でも全期間を対象とし、ツール呼出しを区間ごとの操作要約へ集約する。
   なお収まらない場合はユーザー発話を優先して全期間へ行を配分し、省略した区間の行数と記録位置を示す。
   詳細本文は記録位置を`--detail`へ渡して取得する。
-  復元・日常の点検に使う少量表示は`session-records-conversation.md`「会話の少量取得」に従う。
+  復元・日常の点検に使う少量表示は`../../../share/session-conversation-extraction.md`「会話の少量取得」に従う。
 - `comparison-materials.md`: 委譲時の入力内容や規範の読み込み状況を記録ごとに整理した参照資料である。
   対象、発生時点、記録位置を手がかりにして、詳細照会で全文を取得すべき位置を特定するために用いる。
   全体の時系列は会話の流れから把握する。
@@ -115,7 +115,7 @@ OpenCodeを対象とする場合、スクリプトは環境変数`XDG_DATA_HOME`
 これらの候補を振り返り結果報告のどの項目に記載するかは、`agent-toolkit:report-completion`の`references/report-formats.md`に従う。
 `conversation_utf8_bytes`、`candidates_utf8_bytes`、`stats_utf8_bytes`は生成された各文書のUTF-8バイト数を示す。
 `conversation_limit_bytes`は通常表示では100,000バイト、少量表示では指定した上限（省略時16,000バイト）を示す。
-少量表示に付く`conversation_window`の条件、件数、継続位置は、`session-records-conversation.md`「会話の少量取得」に従って読む。
+少量表示に付く`conversation_window`の条件、件数、継続位置は、`../../../share/session-conversation-extraction.md`「会話の少量取得」に従って読む。
 候補文書と統計文書のサイズは、合計で100,000バイト以下に収める。
 `improvement_lines`にはセッション記録の全文から抽出された実際の改善提案行が格納される。
 候補文書には先頭10件の概要と総件数が表示され、全行は同じ記録指定の`session-review-evidence --reported-improvements`で出所付きで取得する。

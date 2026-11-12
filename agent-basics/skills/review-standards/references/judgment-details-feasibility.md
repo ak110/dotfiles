@@ -8,7 +8,6 @@
 | --- | --- |
 | 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-analysis-evidence.md` |
 | 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-actions-selection.md` |
-| 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation-experience.md` |
 
 ## 検収手段の到達可能性
 

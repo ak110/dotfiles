@@ -4,13 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/add-wi.parent.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
-
 ## 上流投入
 
 **1.** レーン担当を起動する前に、`上流投入`が`なし`以外のすべての項目について、`${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`の上流投入手順に従って委譲する（同一の`元項目`に属する組は同一の投入担当へ委譲する）。

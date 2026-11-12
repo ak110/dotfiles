@@ -129,6 +129,6 @@ def test_background_notification_completes_original_once(_clock, capsys):
     }
     output = _invoke(user_prompt_submit.main, notification, capsys)
     assert "90.0秒" in output
-    assert "前ターンの`Stop`終了" in output and "未終了の担当" in output
+    assert "「完了通知で始まったターンの対処」" in output
     repeated = _invoke(user_prompt_submit.main, notification, capsys)
     assert "90.0秒" not in repeated

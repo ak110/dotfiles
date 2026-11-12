@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| テストとCIの所要基準を使う前 | `../../../../agent-basics/skills/writing-standards/references/testing-speed.md` |
-| テストとCIの所要基準を使う前 | `agent-basics:check-execution/references/diagnostics-results.md` |
-| 共有実行枠のコマンドをシェルから起動する前 | `agent-toolkit:/share/check-execution-operations-launch.md` |
-
 ## 変更範囲の検証の値
 
 変更範囲の検証対象は、`agent-basics:check-execution`の類型に基づいて選定する。

@@ -11,8 +11,6 @@
 | 本文の条件に従い「類似見直し」を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 | 本文の条件に従い「再発防止策の必須性」「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention-requirements.md`、`root-cause-prevention-verification.md` |
 | 本文の条件に従い「反復した指摘の原因判定」を判断する前 | `root-cause-scenarios-recurrence.md` |
-| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/quality-principles-source-consistency.md` |
-| 文書・規範・出力メッセージを変える対策を提案する前 | `../../writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-screening.md` |
 
 ## 問題を見つけたときの対処
@@ -42,7 +40,7 @@
 4. 根本原因を裏付けるため、再発の有無によらず`root-cause-severity-quality.md`「前提の再検討」を適用し、反復時は`root-cause-scenarios-recurrence.md`「反復した指摘の原因判定」で関連規範自体も分析する。
    具体的な処置案の前に、作り込み要因、見逃し要因、根本原因と類似見直しの母集団を確定する。
    深度・重大度によらず`analysis-records.md`に従い、必要な確認後に分析を確定する。
-   各段と類似見直し観点の該当なしは`causal-analysis.md`「原因分析の段階」に従い、上位原因を推測で補わない。
+   各段と類似見直し観点の該当なしは`causal-analysis-stages.md`「原因分析の段階」に従い、上位原因を推測で補わない。
    L3で処置を決めてもL4の確認・記録を続け、確認不能の事情があれば必要な確認と続行できない理由を未完了事項とする。
 5. 影響に応じて処置するため、`root-cause-severity-impact.md`「QとC・Dの区別」で分類し、消費側への影響から重大度を判断する。
    深度、調査打切り基準、再発防止策の要否の根拠を記録する。

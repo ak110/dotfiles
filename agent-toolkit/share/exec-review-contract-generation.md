@@ -11,7 +11,7 @@
 | 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
 | 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` |
 | 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
+| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
 | 基準の参照時 | `exec-review-recording-contract.md` |
 | 基準の参照時 | `exec-review-parent-launch.md` |
 | 基準の参照時 | `exec-review-parent-correction.md` |
@@ -46,7 +46,7 @@ AWIの形式は同書冒頭で判別する。
   別のレビュー基準で認可されたコミットの認可範囲、`agent-toolkit:process-wi`の`references/immediate-fix.md`「レーンの変更範囲へ加える修正の認可」で同じレーンへ加えた既存不良の修正認可（コミット、対象、出所）を含む。
   計画書にない終了区分（延期を示す`adopt`や`終了しない`）とその後続工程・検収の時機も含む。
   レビュー担当は計画書とWI本文だけではこれらを把握できないため、契約で明示する
-- 基準が`CI記録`の場合: 委譲プロンプトに書くCI実行記録（記録項目は`agent-toolkit:commit/references/ci-failure-handling.md`に従う）と、`原因commitOID`の親コミットを開始時点とする実装内容。
+- 基準が`CI記録`の場合: 委譲プロンプトに書くCI実行記録（記録項目は`agent-toolkit:process-wi/references/ci-fix-series.md`に従う）と、`原因commitOID`の親コミットを開始時点とする実装内容。
   入力された計画は不具合の由来を示す参考資料であり、原因コミットの正否を計画と比べる基準にはしない
 - 基準が`WI`の場合: 計画書に現れない対象WIの要求、完成条件、各要求の由来、確定した採否。
   `計画`を併用しない場合は、全対象WIと`開始時のHEAD`で特定される実装内容が対象となる

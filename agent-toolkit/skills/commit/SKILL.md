@@ -24,12 +24,22 @@ Gitを操作できない環境では差分からメッセージ案と確認条�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/investigation-sources.md` |
-| 保存済みの検証結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
-| 未コミット検証の実行前とcommit後の適用確認前 | `../../share/verification-evidence-observation.md` |
-| 取得版の異なる結果をレビューへ渡す前 | `../../share/exec-review-recording-grounds.md` |
+## 通常commit
+
+- 安全にレビュー・revertできる単位を保つため、変更目的、依存関係、レビュー・revertのしやすさで分割を決める。
+  計画にcommit単位があれば基準にする。
+  commitの単位は作業項目（WI）の識別と切り離して決め、同じファイル群へ一体で適用され同じ検証で確かめる変更は、複数の作業項目にまたがっても1つのcommitにまとめてよい。
+  作業項目ごとの採否とcommitとの対応は、`references/commit-wi-records.md`「WI実装commitの対応」の記録で保つ。
+  各コミットの中間状態（中間`HEAD`）でも、その時点の公開契約とテストを満たすように整える（努力目標。git bisectやrevertで各コミットを単独で安全に扱えるようにするため）。
+  付帯作業を関連する開発のコミットに含める場合も、その開発作業と同じ変更目的として扱う。
+- commit権限はメインが持つ。
+  サブエージェントは明示的な許可か`exec.subagent.md`の正規手順がある場合に限りcommitする。
+  `git push`は委譲先への明示指示がある場合を除き、委譲元が行う。
+- WI実装はcommit前に`references/commit-wi-records.md`「WI実装commitの対応」の手順1を行う。
+  他セッションの成果を守るため、自身の担当範囲だけをステージングし、ユーザーや他セッションの未コミット変更を残す。
+  commit直前に開始時からベースcommitが変わっていれば、`agent-toolkit/share/rules/common/02-agent-operations.md`「作業中に観測したリポジトリ状態変化の扱い」に従う。
+- コミットメッセージの書式は`references/message.md`に従う。
+  計画ファイルやプルリクエストの説明文に記載するコミットメッセージ案にも、同じ基準を適用する。
 
 ## 読込表
 
@@ -39,27 +49,10 @@ Gitを操作できない環境では差分からメッセージ案と確認条�
 | 公開工程またはリリース操作に着手する前 | `references/publish.md` | | | |
 | amend、fixup、autosquash、rebaseまたはpush済み判定の前 | `references/history-rewrite.md` | | | |
 | 実際にpushする前 | `references/push-and-ci.md` | 操作 | `bash:git push` | |
+| CI失敗を扱う前 | `references/ci-failure-handling.md` | | | |
 | コミットメッセージを書く前（計画ファイルやPR説明へコミットメッセージ案を書く前を含む） | `references/message.md` | | | |
 | 既存未コミット差分を不採用として破棄する前 | `references/stash-cleanup.md` | | | |
 | 一時ブランチ、`git stash`の退避、hookの退避ファイルまたは別パスへの複製を削除する前と、委譲先の完了報告が退避識別子か複製パスを開示したとき | `references/stash-cleanup.md` | | | |
-
-## コミットメッセージ
-
-件名のフォーマット、type、description、本文、および`Co-Authored-By:`の書式は`references/message.md`に従う。
-計画ファイルやプルリクエストの説明文に記載するコミットメッセージ案にも、同じ基準を適用する。
-
-## 工程で参照する運用資料
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-toolkit:commit/references/design-time.md` |
-| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:commit/references/testing.md` |
-
-## 条件別資料
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 検証に関する判断・作業の前 | `references/commit-verification.md` |
-| 通常commitに関する判断・作業の前 | `references/commit-creation.md` |
-| WI実装commitの対応に関する判断・作業の前 | `references/commit-wi-records.md` |
+| commitの実行前（ステージング対象の確認、hookの迂回、hookの打ち切りと退避の復元） | `references/commit-creation.md` | | | |
+| 検証に関する判断・作業の前 | `references/commit-verification.md` | | | |
+| WI実装commitの対応に関する判断・作業の前 | `references/commit-wi-records.md` | | | |

@@ -4,17 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 合流した公開対象を判断する前 | `selection-procedure-addition.md` |
-| 目標起点の公開対象を判断する前 | `lanes-goals.md` |
-| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:report-completion/SKILL.md` |
-| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
-| 基準資料を選択・取得する時 | `../../report-completion/SKILL.md` |
-| 基準資料を選択・取得する時 | `run-lanes-integration.md` |
-
 ## 完了報告と終了
 
 **25.** 単独のメインは公開工程の検収後に`agent-toolkit:report-completion`へ進み、成果・検証・公開結果・未達を同じ作業完了報告へ集約する。

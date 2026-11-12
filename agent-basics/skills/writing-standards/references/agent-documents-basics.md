@@ -9,10 +9,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

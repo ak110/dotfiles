@@ -6,9 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` |
-| 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-subagent-implementation.md` |
+| 計画ファイルなしで実装へ進む時 | `../../../share/exec-subagent-implementation.md` |
 
 ## 作成要否と計画なしの準備
 

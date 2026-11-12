@@ -179,5 +179,5 @@ Codexの`functions.exec`による定義本文の読取では、`atk run-script s
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前 | `agent-toolkit:review-session/references/analysis-operations.md` |
+| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 | セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` |
