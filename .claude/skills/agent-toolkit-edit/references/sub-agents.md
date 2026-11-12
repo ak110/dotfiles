@@ -14,7 +14,7 @@
 ## `<役割名>.parent.md`と`<役割名>.subagent.md`の構成
 
 - `<役割名>.parent.md`の起動を説明する節には、`agents_server`の`start`引数（`cwd`、`subagent_md_path`、`extra_params`、`mode`、`model_type`）に渡す役割固有の値を記述する（`subagent_md_path`には役割名を指定する）。
-  起動時の定型処理や共通の責務は、`agent-toolkit:delegation`のSKILL.md「`<役割名>.parent.md`を持つ委譲の起動」に集約されているため、そちらに委ねる。
+  起動時の定型処理や共通の責務は、`agent-toolkit:delegation`の`references/delegation-role-launch.md`「`<役割名>.parent.md`を持つ委譲の起動」に集約されているため、そちらに委ねる。
   全役割に共通するデフォルト値（`mode`を指定しない運用や、`model_type`省略時にサーバーが工程別設定を適用する仕様）や、定型に従う旨の記述は省略する。
 
 - 委譲先の恒常手順がClaude Codeの`agents/`配下に定義済みである場合は、その定義本文が`<役割名>.subagent.md`を兼ねるため、`<役割名>.parent.md`のみを配置する。

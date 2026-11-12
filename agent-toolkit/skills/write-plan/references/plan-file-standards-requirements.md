@@ -7,6 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 参照基準の適用前 | `agent-toolkit:write-plan/references/testing-branch-verification.md` |
+| 参照基準の適用前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/design-time.md` |
 | 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` |
 | 参照基準の適用前 | `agent-toolkit:/share/acceptance-scenarios.md` |

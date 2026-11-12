@@ -6,7 +6,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 参照基準の適用前 | `../../wi-standards/references/wi-standards-origin.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/notation-rules.md` |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body-completion.md` |
 
 ## 実施内容
 

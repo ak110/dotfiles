@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 参照基準の適用前 | `../../wi-standards/references/awi-body-completion.md` |
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:/share/verification-operations.md` |
 | 本文で基準を使う資料を選択・取得する時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
 | 訂正済み検証表の更新後に成功結果を再利用する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
