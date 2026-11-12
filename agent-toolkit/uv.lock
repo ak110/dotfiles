@@ -1192,7 +1192,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.30.1"
+version = "3.30.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1225,9 +1225,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/23/56/518c4b1bc98ecafb1dee674fc46c62d64057c617d08a6474339371f63897/pyfltr-3.30.1.tar.gz", hash = "sha256:af379ec11786578d14f88587606f478b0b937d47a1fb07192e6ec6e7fc8df32d", size = 1192241, upload-time = "2026-11-11T14:46:42.478Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a4/c8/f05506a273e26746b36d62fb62eb86cc0a078456e44be6dd013008b4a632/pyfltr-3.30.3.tar.gz", hash = "sha256:44588457a385edeecf952002495f711617fbcd6991717f46853057e4ae029b57", size = 1201827, upload-time = "2026-11-12T15:06:17.981Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/62/b6/09e0dd0ffbea635217a79c37448ae0001293dc5f23d8cd7092e6f697d531/pyfltr-3.30.1-py3-none-any.whl", hash = "sha256:30d50265290cd20f87a9d207b7d91282c97eda7ba08071e20d25c6874bfeab48", size = 514113, upload-time = "2026-11-11T14:46:40.699Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/78/c9dd8bf3b0d9c7f7e502d0fac70a9985731ff4b246c3299f8a8b4e62bf47/pyfltr-3.30.3-py3-none-any.whl", hash = "sha256:9fef3f830c0897db8f92bf9139fa253a3f81824df19b092f077a588ddf103ec8", size = 515511, upload-time = "2026-11-12T15:06:16.525Z" },
 ]
 
 [[package]]
