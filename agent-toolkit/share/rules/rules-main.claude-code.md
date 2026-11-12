@@ -18,7 +18,7 @@
 
 ## 自身の会話の記録
 
-- 自身のセッションID・transcript絶対パスはSessionStartの「この会話のセッションID」「この会話のtranscript」を使い、圧縮・再開・clear・fork後は通知値へ更新する。
+- 自身のセッションID・transcript絶対パスはSessionStartの通知値を使い、圧縮・再開・clear・fork後は更新する。
   更新時刻順・cwdからの推測名・MCPの`root_session_id`・委譲先IDで代えない（取り違え防止）。
 - 通知で取得不能とされた値は、Bash・PowerShellの`CLAUDE_CODE_SESSION_ID`か、特定済みIDを渡す`atk run-script session-review-evidence -- --claude-session-id <ID>`で解決する。
 - 委譲先へ証拠を渡すときもこの値を使い、過去・委譲先の会話は指定識別子で取得する。
