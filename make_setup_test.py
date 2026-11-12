@@ -137,7 +137,6 @@ def test_precommit_pyfltr_hook_follows_staged_files(tmp_path: pathlib.Path, stag
     config = yaml.safe_load((_REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
     hooks = [hook for repository in config["repos"] if repository["repo"] == "local" for hook in repository["hooks"]]
     (pyfltr_hook,) = (hook for hook in hooks if hook["id"] == "pyfltr")
-    assert pyfltr_hook["entry"] == "uv run --project . --frozen pyfltr fast"
     # 設定と一時リポジトリを分け、staged集合を試験が追加したファイルだけにする。
     hook_config = tmp_path / "hook-config.yaml"
     hook_config.write_text(
@@ -180,7 +179,11 @@ def test_precommit_pyfltr_hook_follows_staged_files(tmp_path: pathlib.Path, stag
     )
     assert result.returncode == 0, result.stdout + result.stderr
     calls = log_path.read_text(encoding="utf-8").splitlines() if log_path.exists() else []
-    expected = [f"run --project . --frozen pyfltr fast {' '.join(staged)} UV_PROJECT_ENVIRONMENT=.venv"] if staged else []
+    expected = (
+        [f"run --project . --frozen python scripts/pyfltr_precommit.py {' '.join(staged)} UV_PROJECT_ENVIRONMENT=.venv"]
+        if staged
+        else []
+    )
     assert calls == expected, result.stdout + result.stderr
 
 
