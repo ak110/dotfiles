@@ -3,7 +3,7 @@
 ## 計画と実行の運用
 
 レビュー指摘の採否は`agent-basics:review-standards`の`references/reviewee.md`が定める。
-工程別のモデル割当は`agent-toolkit:delegation`の`delegation/references/process-model-settings.md`が定める。
+工程別のモデル割当は`agent-toolkit:delegation/references/process-model-settings.md`が定める。
 計画の成果物契約は`agent-toolkit:write-plan`の計画ファイル基準が定める。
 
 - `atk`のキュー操作と計画保存のコマンドが自身の出力で成功を報告した場合は、その出力を根拠に完了と判定し、同じ状態を別のコマンドで取得し直さない。

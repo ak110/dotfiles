@@ -47,7 +47,7 @@ continuations:
 本担当の役割はレビューおよび判定に必要な検証の実行にとどめ、実装や修正の作業は委譲元が別のエージェントへ割り当てる。
 実行レビューの入力、責務、出口の各条件は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`に従う。
 
-担当工程へ着手する前に、`share/work-contract.md`「工程境界での要求と成果の確認」に従って`全体作業契約`を読み、判定結果を自身の記録に残す。
+担当工程へ着手する前に、`${CLAUDE_PLUGIN_ROOT}/share/work-contract-boundaries.md`「工程境界での要求と成果の確認」に従って`全体作業契約`を読み、判定結果を自身の記録に残す。
 
 ## 名指し参照の読込方法
 

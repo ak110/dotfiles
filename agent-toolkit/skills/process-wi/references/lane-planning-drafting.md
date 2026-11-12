@@ -45,7 +45,7 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
   一度作った対応は再利用し、同じ範囲の再調査は省く。
   `agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」は常に実施する。
   評価条件は`../../write-plan/references/plan-file-standards-design.md`「恒久化・リファクタリング」に準拠する。
-  不具合対策においては、`../../../share/exec-review-criteria.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
+  不具合対策においては、`agent-basics:review-standards/references/reviewer-initial.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
 - `選定`の各項目における`鮮度`を計画の`## 変更履歴`へ記録する。
   `鮮度`が`notice`であることのみを理由として作業を中断することは避け、現行内容との不一致、既存実装による充足済み、巻き戻しの危険のいずれかが確認された項目に限定して関連履歴を調査し、確認条件、調査した履歴、および採否への影響を同一記録に残す。
 - レーン担当は、レーン数にかかわらず自身のレーン内の作業分担を`../../delegation/references/routing-decisions.md`、`../../delegation/references/routing-units.md`に基づいて検討する。

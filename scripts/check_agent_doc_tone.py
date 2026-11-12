@@ -124,7 +124,8 @@ _TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _DENIED_
 _CAUTION_TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, (pattern, _category) in _CAUTION_PATTERNS.items())
 
 # 計画の列・メタ情報と担当の返却値として保存する名称。周辺の説明も判定する。
-# 「前提を疑う観点」はユーザーが確認で選んだ定義済みの名前（`reviewer.md`のレビュー観点）であるため、この完全一致だけを除く。
+# 「前提を疑う観点」はユーザーが確認で選んだ定義済みの名前（`reviewer-initial.md`のレビュー観点）であるため、
+# この完全一致だけを除く。
 # 名前の一部ではない同じ動詞の用法は引き続き検出する。
 _STRUCTURAL_LABELS = (
     "消費主体と入口",

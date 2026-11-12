@@ -74,7 +74,6 @@
 | 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
 | 基準の参照時 | `../skills/delegation/references/base-contract-handoff.md` |
 | 基準の参照時 | `review-loop-coordination-rounds.md` |
-| 基準の参照時 | `agent-toolkit:/share/reader-fit-review.parent.md` |
 | 基準の参照時 | `agent-basics:secret-files/SKILL.md` |
 | 基準の参照時 | `../skills/delegation/SKILL.md` |
 | 基準の参照時 | `exec.parent.md`、`exec-parent-integration.md` |

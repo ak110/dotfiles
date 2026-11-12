@@ -11,7 +11,7 @@
  確認済みのpush、全体検証、バージョン更新、生成物同期、公開後操作、およびWIの採否確定の各到達点を保持し、残されたCI判定や公開後操作を公開工程の未完了事項として扱う。
 成功済みの公開後操作もそのまま保持する。
  回復、確認、個別UWIの保存と回答を要する未終了項目の保留は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従って行う。
- 全体検証の失敗が含まれる場合は`references/termination-ci-failure.md`へ引き渡し、CI未判定の解消のみをもって全体成功とみなさない。
+ 全体検証の失敗が含まれる場合は`termination-ci-failure.md`へ引き渡し、CI未判定の解消のみをもって全体成功とみなさない。
 
 **22.** 公開担当の引き継ぎ記録で再開位置と証拠を管理する。
 関連計画があれば`atk plans checkout`後に`atk run-script plan-progress --`で進捗を記録し、`atk plans commit`で保存する。

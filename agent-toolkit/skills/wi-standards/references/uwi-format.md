@@ -9,9 +9,9 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | UWIの問い・選択肢・帰結を起草する前 | `../../user-confirmation-and-report/references/choice-construction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-questions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/approval-scope-preparation.md` |
+| UWIの確認の質問文を起草・検収する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-questions.md` |
+| UWIの保存・是正で確認の要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| UWIの承認後の操作と影響範囲を書く前 | `../../user-confirmation-and-report/references/approval-scope-preparation.md` |
 
 ## 構成
 

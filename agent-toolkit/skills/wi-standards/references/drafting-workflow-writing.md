@@ -16,6 +16,7 @@
 
 - `agent-basics:writing-standards/references/agent-documents-additions-additions.md`
 - `agent-basics:writing-standards/references/agent-documents-additions-volume.md`
+
 `## 反映内容と反映先`には目的と対象文書を示し、ユーザーの要件や公開契約が配置を指定する場合を除き、計画で統合・分割を選べるよう節の位置や追記の形を固定しない。
 
 ## 本文の起草
