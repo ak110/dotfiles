@@ -143,9 +143,12 @@ Git統合後の計画保存とWI終了は統合先の排他を持たずに実行
 分岐している場合は、書き換え対象となる全コミットがリモート追跡ブランチへ未到達であることを確認し、旧ベースとHEADを保存したうえでrebaseを実行する。
 親コミットのみを操作するrebase、およびその続行や中断の処理では、呼び出しごとに`git -c submodule.recurse=false`を適用し、初期化済みのサブモジュールのHEAD、ブランチ、作業内容を保護する。
 すでにpush済みである場合、競合が発生した場合、内容に不一致がある場合、または検証に失敗した場合は、続行できない理由と所有記録を返す。
-競合は`lane-integration-failure.md`に従って解消し、まず`--resolved-conflict`なしで同じCLI操作へ戻る。
+競合は`lane-integration-failure.md`に従って解消し、まず`--resolved-conflict`と`--exclude-path`なしで同じCLI操作へ戻る。
 比較が示した旧commitだけを同指定へ渡し、3-way適用で同じになる文脈行の変化は指定しない。
+旧commitの変更パスの一部が解消後に統合先と同一になるなど、意図して外したパスは`--exclude-path <旧OID> <リポジトリ相対パス>`へ反復指定する。
+同じ旧commitへの`--resolved-conflict`との併用、旧commitが変更していないパス、全変更パスの除外は拒否される。
 検査に成功した集合だけが保存され、誤指定は外すか直して再開できる。
+両指定とも、省略した後続の再開では最後に成功した保存値を使う。
 
 rebaseの完了後は、history-compareによる旧commit全件の一意な対応表と、変更範囲の再検証結果を保存し、`phase: awaiting-validation`とともに終了コード1を返す。
 部分省略・全件省略された変更の保持とWI継承は、`../skills/commit/references/history-rewrite-wi-records.md`「WI実装commitの対応の継承」に従って検収する。

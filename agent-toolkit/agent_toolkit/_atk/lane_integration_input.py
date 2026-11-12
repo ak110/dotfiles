@@ -322,7 +322,11 @@ def assert_integration_tree(
 
 
 def compare_integration_history(
-    record: dict[str, typing.Any], state: dict[str, typing.Any], worktree: pathlib.Path, resolved: list[str]
+    record: dict[str, typing.Any],
+    state: dict[str, typing.Any],
+    worktree: pathlib.Path,
+    resolved: list[str],
+    excluded: list[list[str]],
 ) -> None:
     directory = _lane_records.integration_directory(record)
     directory.mkdir(parents=True, exist_ok=True)
@@ -354,6 +358,7 @@ def compare_integration_history(
             "--output",
             str(output),
             *(argument for oid in resolved for argument in ("--resolved-conflict", oid)),
+            *(argument for oid, path in excluded for argument in ("--exclude-path", oid, path)),
         ),
         worktree,
         timeout=record["procedure_timeout"],
@@ -361,9 +366,11 @@ def compare_integration_history(
     # 省略時に再利用する入力は、消費する工程の成功後に保存する。
     # 拒否された指定を先に保存すると、次回に指定を外しても公開入力だけでは復帰できなくなる。
     state["resolved_conflicts"] = resolved
+    state["excluded_paths"] = excluded
     state["comparison"] = {
         **{key: comparison.get(key, state[key]) for key in ("old_base", "old_head", "new_base", "new_head")},
         "resolved_conflicts": resolved,
+        "excluded_paths": excluded,
     }
     if prefix := state.get("rewrite_prefix"):
         current = commit_mapping.load_rewrite_map(output)

@@ -31,11 +31,14 @@
    その上で、`../../../share/exec-subagent-history.md`「レビュー修正の履歴統合」に定められた返却値を返す。
 
 3. 統合指示を再受領したら、`../../../share/lane-integration-subagent-operation.md`「マージありの統合」の冒頭（専用worktreeのクリーン確認）から再開する。
-   rebase完了後、まず`--resolved-conflict`を付けずに同じ入力の`atk lane integrate`を再実行する。
+   rebase完了後、まず`--resolved-conflict`と`--exclude-path`を付けずに同じ入力の`atk lane integrate`を再実行する。
    history-compareが「変更内容が対応しない旧commit」として示したOIDだけを`--resolved-conflict <旧OID>`で反復指定する。
    指定するのは、旧commitの変更を新しい親へ3-way適用した結果が新commitと一致しないものとし、周辺の文脈行だけの変化は含めない。
+   旧commitの変更パスの一部が解消後に統合先と同一になるなど、意図して外したパスは`--exclude-path <旧OID> <リポジトリ相対パス>`へ反復指定する。
+   同じ旧commitへの`--resolved-conflict`との併用、旧commitが変更していないパス、全変更パスの除外は拒否される。
    CLIは指定をhistory-compareへ渡し、検査に成功した集合だけを所有登録へ保存する。
    拒否された指定は保存されないため、指定を外すか直して同じ操作から再開する。
+   両指定とも、省略した後続の再開では最後に成功した保存値を使う。
    競合解消で統合先の新しいファイルへ追随した場合など、旧コミットに無い変更パスが新コミットに増えた対応は、所有登録の`integration.results`に保存された`history-compare`の出力に列挙されるため、その追随が解消方針の範囲内かを対応表とともに検収する。
    対応表の検収と引き継ぎは、`../../commit/references/history-rewrite-wi-records.md`「WI実装commitの対応の継承」に従う。
 
