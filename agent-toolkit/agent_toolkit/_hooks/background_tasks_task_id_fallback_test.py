@@ -78,7 +78,7 @@ class TestTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_task_id_only_completion(self, tmp_path: pathlib.Path) -> None:
         """`<task-id>`のみを持つ通知でも起動時agentId経由で完了解決される。"""
@@ -88,7 +88,7 @@ class TestTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_both_present_completion(self, tmp_path: pathlib.Path) -> None:
         """`<tool-use-id>`と`<task-id>`の両方があり、双方とも同一起動へ対応する通知でも完了解決される。"""
@@ -98,7 +98,7 @@ class TestTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_both_missing_leaves_pending(self, tmp_path: pathlib.Path) -> None:
         """`<tool-use-id>`と`<task-id>`の両方が欠落した通知では完了解決されずpendingが残る。"""
@@ -108,7 +108,7 @@ class TestTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is True
+        assert is_pending_async_work(str(t), "", session_state=None) is True
 
 
 class TestAttachmentTaskIdFallbackCompletion:
@@ -127,7 +127,7 @@ class TestAttachmentTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_task_id_only_completion(self, tmp_path: pathlib.Path) -> None:
         """`<task-id>`のみを持つattachment通知でも起動時agentId経由で完了解決される。"""
@@ -137,7 +137,7 @@ class TestAttachmentTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_both_present_completion(self, tmp_path: pathlib.Path) -> None:
         """`<tool-use-id>`と`<task-id>`の両方があり、双方とも同一起動へ対応するattachment通知でも完了解決される。"""
@@ -147,7 +147,7 @@ class TestAttachmentTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_both_missing_leaves_pending_and_logs_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -163,7 +163,7 @@ class TestAttachmentTaskIdFallbackCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "session-fallback") is True
+        assert is_pending_async_work(str(t), "session-fallback", session_state=None) is True
         log_path = tmp_path / "claude-agent-toolkit-stop-session-fallback.log"
         assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
 
@@ -187,7 +187,7 @@ class TestNestedAgentTaskIdFallbackCompletion:
             _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
-        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is pending
+        assert is_pending_async_work(str(transcript), "", background_tasks=[], session_state=None) is pending
 
 
 class TestMcpBackgroundTaskCompletion:
@@ -200,7 +200,7 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_pending_mcp_task_without_completion_remains_pending(self, tmp_path: pathlib.Path) -> None:
         entries = [
@@ -208,7 +208,7 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is True
+        assert is_pending_async_work(str(transcript), "", session_state=None) is True
 
     @pytest.mark.parametrize(
         "notification",
@@ -225,7 +225,7 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_sidechain_mcp_timeout_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """sidechain内のMCP背景化は計画ファイル（メイン）側の未完了タスクに含めない。"""
@@ -234,7 +234,7 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_non_mcp_timeout_text_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """MCP以外のtool_resultに同じ文言があっても背景化として誤検出しない。"""
@@ -243,7 +243,7 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_one_of_multiple_mcp_tasks_completed_leaves_other_pending(self, tmp_path: pathlib.Path) -> None:
         """複数MCP背景化の一部だけが完了すると、未完了のタスクだけが残る。"""
@@ -254,7 +254,7 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is True
+        assert is_pending_async_work(str(transcript), "", session_state=None) is True
 
     @pytest.mark.parametrize(
         ("completed_entries", "expected"),
@@ -314,4 +314,4 @@ class TestMcpBackgroundTaskCompletion:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is expected
+        assert is_pending_async_work(str(transcript), "", session_state=None) is expected

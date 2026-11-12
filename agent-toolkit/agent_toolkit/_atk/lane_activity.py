@@ -50,11 +50,26 @@ class RunningSession:
         )
 
 
+def unreadable_registration_message(path: pathlib.Path) -> str:
+    """読めない担当登録のため作業を失いうる操作を止める理由と、回復手段を返す。
+
+    登録の所属worktreeは`resume_info`の`cwd`にしか無く、読めない登録からは判定できない。
+    稼働中の担当が対象worktreeにいた場合に未commitの作業を失わないよう、削除・統合・再利用・回収は止める。
+    `lane`の失敗出力は例外の`str()`だけを理由として使うため、回復手段も本文へ含める。
+    """
+    return (
+        f"担当登録を読めないため、作業を失いうる操作を止めた: {path.resolve()}。"
+        f"`atk agents show {path.stem}`で担当が終了済みかを確かめ、終了済みと確かめた後に"
+        f"{path.resolve()}を退避または削除して、同じ操作を再実行する"
+    )
+
+
 def running_sessions(worktree: pathlib.Path) -> list[RunningSession]:
     """session登録簿の解決結果から、その作業ツリーへ所属する稼働中の担当を全件返す。
 
     終了の判定は`session_registry.resolve`に従い、所有側が終了を公開せずに終了して実行プロセスも
-    存在しない記録は終了した担当として扱う。解決できない登録は、未確認の担当を見逃さないよう例外にする。
+    存在しない記録は終了した担当として扱う。解決できない登録は所属を判定できず、未確認の担当を見逃さないよう
+    `ValueError`で止める。対象外のworktreeに属すると判定できる登録は除かれる。新しいworktreeの作成は本関数を呼ばない。
     """
     state_root = state_paths.state_dir()
     directory = session_launchers.registry_directory(state_root)
@@ -67,9 +82,9 @@ def running_sessions(worktree: pathlib.Path) -> list[RunningSession]:
         try:
             resolution = session_registry.resolve(path.stem, state_root=state_root)
         except ValueError as exc:
-            raise ValueError(f"担当登録の形式を確認できない: {path}") from exc
+            raise ValueError(unreadable_registration_message(path)) from exc
         if resolution.state is session_registry.Resolution.UNREADABLE:
-            raise ValueError(f"担当登録の形式を確認できない: {path}")
+            raise ValueError(unreadable_registration_message(path))
         info = resolution.resume_info
         if resolution.state is not session_registry.Resolution.RUNNING or info is None or not info.cwd:
             continue

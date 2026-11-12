@@ -10,6 +10,8 @@ import os
 import pathlib
 import subprocess
 
+import pytest
+from agent_toolkit._common import session_state
 from agent_toolkit._testing import fork_runner as _fork_runner
 
 _SCRIPT = pathlib.Path(__file__).resolve().parent / "__init__.py"
@@ -103,6 +105,26 @@ class TestRingCondition:
 
 class TestSilentConditions:
     """ベルを鳴らさない条件: 再帰呼び出し・自律セッション・背景稼働中・判定材料の欠落。"""
+
+    @pytest.mark.parametrize("pending", [True, False])
+    def test_session_observation_controls_bell(self, tmp_path: pathlib.Path, pending: bool) -> None:
+        """未回収の終了結果だけが残る間は無音とし、回収済みならベルを鳴らす。"""
+        transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
+        session_state.update_state(
+            "observation-bell",
+            lambda state: {
+                **state,
+                "agents_server_sessions": {
+                    "child": {"status": "completed", "owner_agent_id": "main", "pending_observation": pending}
+                },
+            },
+        )
+        result = _run(
+            {"session_id": "observation-bell", "transcript_path": str(transcript), "background_tasks": []},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        assert (_output(result).get("terminalSequence") == _BELL) is not pending
 
     def test_stop_hook_active_is_silent(self, tmp_path: pathlib.Path):
         """他のStop hookのblock後の再呼び出し → 入力待ちではないため鳴らさない。"""

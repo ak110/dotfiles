@@ -49,7 +49,7 @@ class TestIsPendingAsyncWork:
 
     def test_missing_transcript_returns_false(self):
         """transcript が存在しない → False（Stop抑止しない）。"""
-        assert is_pending_async_work("/nonexistent/transcript.jsonl", "") is False
+        assert is_pending_async_work("/nonexistent/transcript.jsonl", "", session_state=None) is False
 
     @pytest.mark.usefixtures("real_end_turn_wait")
     def test_race_with_late_end_turn_flush(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
@@ -86,7 +86,7 @@ class TestIsPendingAsyncWork:
             types.SimpleNamespace(monotonic=time.monotonic, sleep=append_end_turn_on_first_poll),
         )
 
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
         assert appended
 
     def test_sendmessage_bg_resume_detected(self, tmp_path: pathlib.Path):
@@ -102,7 +102,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is True
+        assert is_pending_async_work(str(t), "", session_state=None) is True
 
     def test_sendmessage_bg_resume_completed_by_notification(self, tmp_path: pathlib.Path):
         """SendMessage背景再開後に同`tool_use_id`の完了通知を受信した場合は`False`を返す。
@@ -118,7 +118,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sendmessage_bg_resume_completed_by_attachment_notification(self, tmp_path: pathlib.Path):
         """SendMessage背景再開後に同`tool_use_id`の新形式完了通知（attachment形式）を受信した場合は`False`を返す。
@@ -135,7 +135,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sendmessage_bg_resume_str_content_detected(self, tmp_path: pathlib.Path):
         """tool_result contentが文字列形式の背景再開エントリも`True`を返す。
@@ -151,7 +151,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is True
+        assert is_pending_async_work(str(t), "", session_state=None) is True
 
     def test_sendmessage_bg_resume_current_format_detected(self, tmp_path: pathlib.Path):
         """現行形式（`toolUseResult.resumedAgentId`）の背景再開を`True`と判定する。
@@ -167,7 +167,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is True
+        assert is_pending_async_work(str(t), "", session_state=None) is True
 
     def test_sendmessage_bg_resume_current_format_completed_by_notification(self, tmp_path: pathlib.Path):
         """現行形式の背景再開も同`tool_use_id`の完了通知で相殺され`False`を返す。
@@ -183,7 +183,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sendmessage_bg_resume_legacy_marker_with_tool_use_result_detected(self, tmp_path: pathlib.Path):
         """`resumedAgentId`を持たない`toolUseResult`では旧マーカーとの一致判定へフォールバックする。
@@ -200,7 +200,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is True
+        assert is_pending_async_work(str(t), "", session_state=None) is True
 
     @pytest.mark.parametrize(
         ("resume_text", "expected"),
@@ -222,7 +222,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is expected
+        assert is_pending_async_work(str(t), "", session_state=None) is expected
 
     def test_sendmessage_bg_resume_current_format_without_sendmessage_call_returns_false(self, tmp_path: pathlib.Path):
         """SendMessage呼び出し由来でない`tool_use_id`は現行形式でも加算しない。
@@ -240,7 +240,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sendmessage_sync_only_returns_false(self, tmp_path: pathlib.Path):
         """マーカーを含まない同期SendMessage tool_resultのみの場合は`False`を返す。
@@ -268,7 +268,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_marker_in_other_tool_result_without_sendmessage_call_returns_false(self, tmp_path: pathlib.Path):
         """SendMessage呼び出しなしでマーカー文字列が他ツールtool_resultに含まれる場合は`False`を返す。
@@ -305,7 +305,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sidechain_sendmessage_bg_resume_is_ignored(self, tmp_path: pathlib.Path):
         """sidechain内のSendMessage呼び出し・背景再開tool_resultは対象外で`False`を返す。
@@ -320,4 +320,4 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False

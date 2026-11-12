@@ -26,6 +26,7 @@ import json
 import os
 
 from agent_toolkit._common.process_loop_session import is_process_loop_session
+from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks.background_tasks import is_pending_async_work
 from agent_toolkit._hooks.stop_session import append_stop_log
 from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
@@ -69,6 +70,7 @@ def main(payload_text: str) -> int:
         transcript_path,
         session_id,
         background_tasks=payload.get("background_tasks"),
+        session_state=read_state(session_id),
     ):
         append_stop_log(session_id, "silent_pending_async", {})
         _approve()

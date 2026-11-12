@@ -100,7 +100,7 @@ def test_plan_notice_tracks_target_changes_and_resolution(tmp_path, monkeypatch)
     plans.mkdir()
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     monkeypatch.setattr(plan_save_advisor, "is_process_loop_session", lambda *_args: False)
-    monkeypatch.setattr(plan_save_advisor, "is_pending_async_work", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(plan_save_advisor, "is_pending_async_work_from_payload", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(plan_save_advisor, "is_main_agent_context", lambda *_args: True)
     session_id = "plan-notice-cycle"
     payload = json.dumps({"session_id": session_id})
@@ -118,7 +118,7 @@ def test_plan_notice_tracks_target_changes_and_resolution(tmp_path, monkeypatch)
     _owner_records.write_owner_record(first, session_id=session_id)
     assert evaluate()[0] == "notify"
     with monkeypatch.context() as skipped:
-        skipped.setattr(plan_save_advisor, "is_pending_async_work", lambda *_args, **_kwargs: True)
+        skipped.setattr(plan_save_advisor, "is_pending_async_work_from_payload", lambda *_args, **_kwargs: True)
         assert evaluate() == ("approve", "")
     assert evaluate() == ("approve", "")
     second = plans / "second.md"
@@ -358,3 +358,24 @@ def test_process_wi_running_defers_notice_until_flag_is_reset(tmp_path: pathlib.
 
     assert not running
     assert str(plan) in finished["hookSpecificOutput"]["additionalContext"]
+
+
+def test_unretrieved_agents_server_result_is_treated_as_waiting(tmp_path: pathlib.Path) -> None:
+    """agents_serverの未回収の終了結果だけを待つセッションは、待機中として通知せず承認する。"""
+    home = tmp_path / "home"
+    plans = home / ".claude" / "plans"
+    plans.mkdir(parents=True)
+    plan = plans / "26-1103_wait.md"
+    plan.write_text("# plan\n", encoding="utf-8")
+    transcript = _write_transcript(tmp_path, _FINISHED_TURN_ENTRIES)
+    session_id = "waiting-for-result"
+    _owner_records.write_owner_record(plan, session_id=session_id)
+    pending = {"agents_server_sessions": {"child": {"pending_observation": True, "owner_agent_id": "main"}}}
+
+    _write_state(tmp_path, session_id, pending)
+    waiting = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
+    _write_state(tmp_path, session_id, {})
+    idle = _decision(_run(_payload(session_id, transcript), state_dir=tmp_path, home=home))
+
+    assert not waiting
+    assert str(plan) in idle["hookSpecificOutput"]["additionalContext"]

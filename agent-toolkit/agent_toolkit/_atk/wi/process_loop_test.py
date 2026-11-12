@@ -435,3 +435,66 @@ def test_unreclaimed_descendant_holds_ownership_until_it_disappears(
     assert results[repository.repo_id]["status"] != "owner_wait"
     saved = json.loads(next(ownership.ownership_directory().glob("*.json")).read_text(encoding="utf-8"))
     assert not saved.get("residual_processes")
+
+
+@pytest.mark.parametrize("failure", ["json", "writers", "directory", "residual"])
+def test_unreadable_ownership_record_skips_only_that_repository(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """解釈できない処理所有記録は、その対象リポジトリだけを回復手段つきで見送り、他の対象の処理を続ける。"""
+    _notes, snapshots = _targets(tmp_path, monkeypatch)
+    first = snapshots[0].repository
+    record = ownership._path(first.repo_id)  # pylint: disable=protected-access
+    record.parent.mkdir(parents=True, exist_ok=True)
+    if failure == "directory":
+        record.mkdir()
+    elif failure == "json":
+        record.write_text("{", encoding="utf-8")
+    else:
+        stored = {
+            "token": "broken",
+            "completed": False,
+            "released": False,
+            "held": False,
+            "pid": 999999999,
+            "create_time": 0,
+        }
+        stored.update({"writer_sessions": 1} if failure == "writers" else {"residual_processes": [{"pid": 1}]})
+        record.write_text(json.dumps(stored), encoding="utf-8")
+    original = record.read_bytes() if record.is_file() else None
+    targets: list[str] = []
+
+    def execute(_args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **_kwargs: Any) -> bool:
+        data = json.loads(_manifest(prompt, child_env).read_text())
+        targets.extend(target["target_repo"] for target in data["repositories"])
+        return False
+
+    monkeypatch.setattr(session, "run_process_session", execute)
+    results = loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
+
+    assert targets == [snapshots[1].repository.repo_id]
+    assert results[first.repo_id]["status"] == "prepare_failed"
+    stderr = capsys.readouterr().err
+    assert str(record) in stderr and "atk agents show" in stderr and "退避または削除" in stderr
+    assert (record.read_bytes() if record.is_file() else None) == original
+    assert record.exists()
+
+
+def test_unreadable_descendant_registration_holds_recovery_with_guidance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """読めない子孫の担当登録がある回収は保留し、登録ファイルの絶対パスと回復手段を示す。"""
+    _notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
+    repository = snapshots[0].repository
+    owner = ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
+    assert owner is not None
+    directory = session_registry.registry_directory()
+    directory.mkdir(parents=True, exist_ok=True)
+    broken = directory / "broken-child.json"
+    broken.write_text("{", encoding="utf-8")
+
+    assert not loop._writers_stopped(owner, writers=["broken-child"])  # pylint: disable=protected-access
+
+    stdout = capsys.readouterr().out
+    assert str(broken.resolve()) in stdout and "atk agents show broken-child" in stdout and "退避または削除" in stdout
+    ownership.release(owner, completed=False)

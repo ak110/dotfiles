@@ -17,9 +17,9 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_log as _log
 from agent_toolkit._atk.wi import readiness as _readiness
+from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote as _remote
 
 RESTART_CHANGES = (
@@ -119,6 +119,11 @@ def _path(repo_id: str) -> pathlib.Path:
 
 
 def _load(repo_id: str) -> LaunchInput | None:
+    """無進捗記録を読む。解釈できない記録は警告を出して記録なしとして扱う。
+
+    この記録は見送りだけに使う最適化であり、読めない場合の最悪の結果は担当を1回余分に起動することである。
+    例外にすると他のリポジトリの処理まで止まるため、対象リポジトリの起動へ倒す。
+    """
     path = _path(repo_id)
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
@@ -126,10 +131,11 @@ def _load(repo_id: str) -> LaunchInput | None:
     except FileNotFoundError:
         return None
     except (OSError, ValueError, KeyError, TypeError) as error:
-        raise ActionableError(
-            f"process-loopの無進捗記録を解釈できない: {path}: {error}",
-            next_action=f"{path}を削除してからprocess-loopを再起動する（次の反復は記録なしで担当を起動する）",
-        ) from error
+        _next_action.report(
+            f"process-loopの無進捗記録を解釈できないため、記録なしとして担当を起動する: {path}: {error}",
+            next_action=f"{path}を削除する（削除しなくても次に担当が進捗なしで終わった時点で記録を上書きする）",
+        )
+        return None
     return LaunchInput(items, None)
 
 

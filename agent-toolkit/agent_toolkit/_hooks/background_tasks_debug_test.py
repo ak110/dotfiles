@@ -32,7 +32,7 @@ class TestDebugOutput:
     def test_no_output_when_env_unset(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
         """環境変数が未設定の場合はstderr出力なし。"""
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
-        is_pending_async_work(str(t), "")
+        is_pending_async_work(str(t), "", session_state=None)
         captured = capsys.readouterr()
         assert captured.err == ""
 
@@ -43,7 +43,7 @@ class TestDebugOutput:
         """環境変数が真値（小文字一致）の場合はstderrへ1行出力する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
-        is_pending_async_work(str(t), "")
+        is_pending_async_work(str(t), "", session_state=None)
         captured = capsys.readouterr()
         assert "_stop_gate result=False" in captured.err
         assert "last_tool=-" in captured.err
@@ -61,7 +61,7 @@ class TestDebugOutput:
         """環境変数が偽値の場合はstderr出力なし。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
-        is_pending_async_work(str(t), "")
+        is_pending_async_work(str(t), "", session_state=None)
         captured = capsys.readouterr()
         assert captured.err == ""
 
@@ -81,7 +81,7 @@ class TestDebugOutput:
                 _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
             ],
         )
-        is_pending_async_work(str(t), "")
+        is_pending_async_work(str(t), "", session_state=None)
         captured = capsys.readouterr()
         assert "_stop_gate result=True" in captured.err
         assert "last_tool=Bash(bg=False)" in captured.err
@@ -110,6 +110,7 @@ class TestDebugOutput:
                 {"type": "shell", "status": "completed"},
                 {"id": "invalid", "description": "secret-invalid"},
             ],
+            session_state=None,
         )
         captured = capsys.readouterr()
         assert "payload_valid=3" in captured.err
@@ -141,7 +142,7 @@ class TestDebugOutput:
                 ),
             ],
         )
-        is_pending_async_work(str(t), "")
+        is_pending_async_work(str(t), "", session_state=None)
         captured = capsys.readouterr()
         assert "_stop_gate result=True" in captured.err
         assert "last_tool=Bash(bg=True)" in captured.err
@@ -163,7 +164,7 @@ class TestDebugOutput:
                 ),
             ],
         )
-        is_pending_async_work(str(t), "")
+        is_pending_async_work(str(t), "", session_state=None)
         captured = capsys.readouterr()
         assert "_stop_gate result=True" in captured.err
         assert "last_tool=Agent" in captured.err

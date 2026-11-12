@@ -92,7 +92,7 @@ class TestIsPendingAsyncWork:
         if tool_block is not None:
             content.append(tool_block)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry(content)])
-        assert is_pending_async_work(str(t), "") is expected
+        assert is_pending_async_work(str(t), "", session_state=None) is expected
 
     @pytest.mark.parametrize(
         ("pending_entries", "expected"),
@@ -133,7 +133,7 @@ class TestIsPendingAsyncWork:
             )
         )
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is expected
+        assert is_pending_async_work(str(t), "", session_state=None) is expected
 
     @pytest.mark.parametrize(
         ("background_tasks", "expected"),
@@ -163,7 +163,7 @@ class TestIsPendingAsyncWork:
     ) -> None:
         """有効な非`teammate` taskだけをStop時点の未完了根拠として扱う。"""
         transcript = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
-        assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks) is expected
+        assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks, session_state=None) is expected
 
     @pytest.mark.parametrize(
         ("record", "owner_agent_id", "expected"),
@@ -232,9 +232,9 @@ class TestIsPendingAsyncWork:
         transcript = _write_transcript(tmp_path, entries)
 
         if background_tasks is _BACKGROUND_TASKS_OMITTED:
-            actual = is_pending_async_work(str(transcript), "")
+            actual = is_pending_async_work(str(transcript), "", session_state=None)
         else:
-            actual = is_pending_async_work(str(transcript), "", background_tasks=background_tasks)
+            actual = is_pending_async_work(str(transcript), "", background_tasks=background_tasks, session_state=None)
         expected = last_tool_pending or payload_pending or (transcript_pending and not payload_authoritative)
         assert actual is expected
 
@@ -265,7 +265,7 @@ class TestIsPendingAsyncWork:
                 _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
             ],
         )
-        assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks) is True
+        assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks, session_state=None) is True
         captured = capsys.readouterr()
         assert f"payload_authoritative={expected_authoritative}" in captured.err
         assert f"source={expected_source}" in captured.err
@@ -282,16 +282,17 @@ class TestIsPendingAsyncWork:
                 _assistant_entry([{"type": "text", "text": _TEXT}]),
             ],
         )
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
         assert (
             is_pending_async_work(
                 str(transcript),
                 "",
                 background_tasks=[{"type": "subagent", "id": "agent-restarted", "status": "running"}],
+                session_state=None,
             )
             is True
         )
-        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
+        assert is_pending_async_work(str(transcript), "", background_tasks=[], session_state=None) is False
 
     def test_empty_background_tasks_do_not_hide_mcp_background_remainder(self, tmp_path: pathlib.Path) -> None:
         """申告対象外のMCPツールのバックグラウンドタスクへの移行は空の`background_tasks`でも未完了と判定する。"""
@@ -316,7 +317,7 @@ class TestIsPendingAsyncWork:
             ],
         )
 
-        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is True
+        assert is_pending_async_work(str(transcript), "", background_tasks=[], session_state=None) is True
 
     @pytest.mark.parametrize("phrase", _QUOTED_NOTICE_PHRASES)
     def test_mcp_result_quoting_notice_is_not_pending(self, tmp_path: pathlib.Path, phrase: str) -> None:
@@ -345,7 +346,7 @@ class TestIsPendingAsyncWork:
             ],
         )
 
-        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
+        assert is_pending_async_work(str(transcript), "", background_tasks=[], session_state=None) is False
         assert "task-1" not in pending_async_task_ids(str(transcript), "", background_tasks=[])
 
     def test_empty_background_tasks_hide_agent_remainder(self, tmp_path: pathlib.Path) -> None:
@@ -358,4 +359,4 @@ class TestIsPendingAsyncWork:
             ],
         )
 
-        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is False
+        assert is_pending_async_work(str(transcript), "", background_tasks=[], session_state=None) is False

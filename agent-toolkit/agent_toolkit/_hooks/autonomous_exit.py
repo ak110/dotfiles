@@ -44,7 +44,7 @@ lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
-lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work
+lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work_from_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
@@ -102,15 +102,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         )
         return "block", reason
 
-    raw_transcript = payload.get("transcript_path", "")
-    transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
     state = read_state(session_id)
-    if is_pending_async_work(
-        transcript_path,
-        session_id,
-        background_tasks=payload.get("background_tasks"),
-        session_state=state,
-    ):
+    if is_pending_async_work_from_payload(payload, session_id, session_state=state):
         append_stop_log(session_id, "approve_pending_async", {})
         return "approve", ""
 

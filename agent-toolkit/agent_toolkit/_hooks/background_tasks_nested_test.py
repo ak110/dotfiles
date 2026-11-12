@@ -69,7 +69,7 @@ class TestIsPendingAsyncWork:
             _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
-        assert is_pending_async_work(str(transcript), "") is True
+        assert is_pending_async_work(str(transcript), "", session_state=None) is True
 
     @pytest.mark.parametrize(("operation", "pending"), [("enqueue", True), ("remove", False)])
     def test_queue_operation_completion_completes_grandchild(
@@ -93,7 +93,7 @@ class TestIsPendingAsyncWork:
             _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries)
-        assert is_pending_async_work(str(transcript), "", background_tasks=[]) is pending
+        assert is_pending_async_work(str(transcript), "", background_tasks=[], session_state=None) is pending
 
     @pytest.mark.parametrize(
         ("operations", "pending"),
@@ -120,7 +120,7 @@ class TestIsPendingAsyncWork:
                 entries.append(_queue_operation_task_notification_entry(operation, tool_use_id="toolu_done"))
         entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "queued-order", background_tasks=[]) is pending
+        assert is_pending_async_work(str(transcript), "queued-order", background_tasks=[], session_state=None) is pending
 
     @pytest.mark.parametrize("operation", ["popAll", "popOne"])
     def test_editable_pop_before_notification_delivery(self, tmp_path: pathlib.Path, operation: str) -> None:
@@ -141,7 +141,7 @@ class TestIsPendingAsyncWork:
             directory = tmp_path / name
             directory.mkdir()
             transcript = _write_transcript(directory, [*queue, *([dequeue] * dequeues), *tail])
-            assert is_pending_async_work(str(transcript), "queued-pop", background_tasks=[]) is pending
+            assert is_pending_async_work(str(transcript), "queued-pop", background_tasks=[], session_state=None) is pending
 
     def test_non_notification_enqueue_still_occupies_fifo(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
@@ -155,7 +155,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "queued-source", background_tasks=[]) is True
+        assert is_pending_async_work(str(transcript), "queued-source", background_tasks=[], session_state=None) is True
         log_path = tmp_path / "claude-agent-toolkit-stop-queued-source.log"
         assert "source=queued_notification" in log_path.read_text(encoding="utf-8")
 
@@ -212,7 +212,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         transcript = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_malformed_or_unrelated_child_transcript_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """破損記録と親子関係の無い孫記録を無視し、最上位判定を例外化しない。"""
@@ -242,7 +242,7 @@ class TestIsPendingAsyncWork:
         unrelated.with_name("agent-unrelated.meta.json").write_text(
             json.dumps({"parentAgentId": "other-parent", "spawnDepth": 2}), encoding="utf-8"
         )
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_empty_child_metadata_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """直接の子を示すmetadataが空の場合はサブエージェント記録を走査しない。"""
@@ -256,7 +256,7 @@ class TestIsPendingAsyncWork:
             _user_async_launched_entry("toolu_grandchild", agent_id="grandchild-id"),
         ]
         transcript = _write_nested_subagent_fixture(tmp_path, entries, child_entries, metadata={})
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_partially_corrupt_child_transcript_is_ignored(self, tmp_path: pathlib.Path) -> None:
         """子transcriptに破損行が1行でもあれば有効行を部分採用しない。"""
@@ -273,7 +273,7 @@ class TestIsPendingAsyncWork:
         child_path = transcript.with_suffix("") / "subagents" / "agent-child-id.jsonl"
         with child_path.open("a", encoding="utf-8") as child_file:
             child_file.write("{not-json\n")
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_multiple_children_and_mixed_grandchildren_are_completed(self, tmp_path: pathlib.Path) -> None:
         """複数の直接の子から収集したAgent・Taskの孫を個別識別子で完了扱いする。"""
@@ -329,4 +329,4 @@ class TestIsPendingAsyncWork:
             json.dumps({"spawnDepth": 1}),
             encoding="utf-8",
         )
-        assert is_pending_async_work(str(transcript), "") is False
+        assert is_pending_async_work(str(transcript), "", session_state=None) is False

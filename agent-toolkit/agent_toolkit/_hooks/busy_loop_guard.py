@@ -129,6 +129,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         transcript_path,
         session_id,
         background_tasks=payload.get("background_tasks"),
+        session_state=state,
     )
     if pending or has_tool_use_block(entries[observed:]):
         _store(session_id, 0, total)

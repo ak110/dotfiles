@@ -74,7 +74,7 @@ class TestIsPendingAsyncWork:
         entries.append(_user_entry("続き"))
         entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is expected
+        assert is_pending_async_work(str(t), "", session_state=None) is expected
 
     def test_sidechain_background_bash_is_ignored(self, tmp_path: pathlib.Path):
         """sidechain内の背景Bash起動は未完了扱いしない。"""
@@ -85,7 +85,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_task_stop_success_completes_background_bash(self, tmp_path: pathlib.Path) -> None:
         """停止成功結果だけが残る場合は背景Bashを完了済みとして扱う。"""
@@ -96,7 +96,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_task_stop_for_other_id_keeps_background_bash_pending(
         self,
@@ -112,7 +112,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "sess-stop-unresolved") is True
+        assert is_pending_async_work(str(t), "sess-stop-unresolved", session_state=None) is True
         log_path = tmp_path / "claude-agent-toolkit-stop-sess-stop-unresolved.log"
         assert "decision=task_notification_unresolved" in log_path.read_text(encoding="utf-8")
 
@@ -125,4 +125,4 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False

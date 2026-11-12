@@ -197,12 +197,22 @@ def _writers_stopped(
     # 未申告の子孫は所属を確定できないため、各対象の停止条件へ残す。
     descendants.difference_update(_ownership.descendant_sessions(other_writers or set()))
     descendants.update(_ownership.descendant_sessions(set(writers or [])))
-    stopped = all(
-        _registry.resolve(identifier).state not in {_registry.Resolution.RUNNING, _registry.Resolution.UNREADABLE}
-        for identifier in descendants
-    )
+    states = {identifier: _registry.resolve(identifier).state for identifier in descendants}
+    stopped = all(state not in {_registry.Resolution.RUNNING, _registry.Resolution.UNREADABLE} for state in states.values())
     if not stopped:
         _ownership.hold(owner, writers=sorted(descendants))
+        # 読めない登録は担当の終了を確かめられないため回収を保留する。保留を解く回復手段を同じ出力へ示す。
+        for identifier, state in sorted(states.items()):
+            if state is _registry.Resolution.UNREADABLE:
+                path = _registry.registry_directory() / f"{identifier}.json"
+                _next_action.report(
+                    f"{owner.repo_id}: 担当登録を読めないため回収を保留した: {path.resolve()}",
+                    next_action=(
+                        f"`atk agents show {identifier}`で担当が終了済みかを確かめ、終了済みと確かめた後に"
+                        f"{path.resolve()}を退避または削除する（次の反復で回収を再判定する）"
+                    ),
+                    stream=sys.stdout,
+                )
     return stopped
 
 
@@ -267,7 +277,15 @@ def _run_coordinator(
     try:
         for snapshot in snapshots:
             repository = snapshot.repository
-            owner = _ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
+            try:
+                owner = _ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
+            except _ownership.UnreadableOwnershipError as error:
+                _next_action.report(error.reason, next_action=error.next_action)
+                _log.append(
+                    "ownership_unreadable", target_repo=repository.repo_id, detail=error.reason, next_action=error.next_action
+                )
+                results[repository.repo_id] = RepositoryResult(status=RepositoryStatus.PREPARE_FAILED)
+                continue
             if owner is None:
                 results[repository.repo_id] = RepositoryResult(status=RepositoryStatus.OWNER_WAIT)
                 print(f"{repository.repo_id}: 別のprocess-loopが処理中です。所有の解放を待ちます。", flush=True)

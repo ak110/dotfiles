@@ -52,7 +52,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sidechain_async_launched_is_ignored(self, tmp_path: pathlib.Path):
         """sidechain内の`async_launched`は未完了扱いしない。"""
@@ -63,7 +63,7 @@ class TestIsPendingAsyncWork:
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
         ]
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is False
+        assert is_pending_async_work(str(t), "", session_state=None) is False
 
     @pytest.mark.parametrize(
         ("pending_entries", "expected"),
@@ -134,4 +134,4 @@ class TestIsPendingAsyncWork:
         entries.append(_user_entry("続き"))
         entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
         t = _write_transcript(tmp_path, entries)
-        assert is_pending_async_work(str(t), "") is expected
+        assert is_pending_async_work(str(t), "", session_state=None) is expected
