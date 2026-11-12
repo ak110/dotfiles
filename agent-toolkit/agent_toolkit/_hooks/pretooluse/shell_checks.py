@@ -36,6 +36,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import (
 )
 lazy from agent_toolkit._hooks.pretooluse.shell_checks_process import (
     _check_bash_process_kill_by_pattern,
+    _check_bash_self_matching_pgrep,
 )
 lazy from agent_toolkit._hooks.pretooluse.shell_checks_search import (
     _GIT_GREP_VALUED_OPTIONS,
@@ -52,6 +53,7 @@ __all__ = [
     "_GLOBAL_OPTIONS_WITH_VALUE",
     "_check_bash_option_after_terminator",
     "_check_bash_process_kill_by_pattern",
+    "_check_bash_self_matching_pgrep",
     "_git_commit_block",
     "_git_commit_messages",
     "_git_subcommand_tokens",

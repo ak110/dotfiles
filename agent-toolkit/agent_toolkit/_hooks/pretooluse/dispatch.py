@@ -123,6 +123,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
     _check_bash_option_after_terminator,
     _check_bash_process_kill_by_pattern,
+    _check_bash_self_matching_pgrep,
     _check_bash_unquoted_heredoc_substitution,
     _check_read_predicate_stderr_discard,
     _git_commit_block,
@@ -319,7 +320,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     """Bashコマンドの遮断と警告を判定する。
 
     Codexの大量読取の警告、引用符なしheredoc本文の置換の遮断、パターン一致によるプロセス終了の遮断、
-    未起動のスキルの操作の警告、未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
+    自身に一致する`pgrep -f`の遮断、未起動のスキルの操作の警告、
+    未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
     遮断の判定は警告の判定より前に行い、遮断した呼び出しでは警告の記録（文脈ごとに1回の警告など）を進めない。
     """
     command = tool_input.get("command")
@@ -330,6 +332,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     for block in (
         lambda: _check_bash_unquoted_heredoc_substitution(command),
         lambda: _check_bash_process_kill_by_pattern(command),
+        lambda: _check_bash_self_matching_pgrep(command),
     ):
         message = block()
         if message is not None:
