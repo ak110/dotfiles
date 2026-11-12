@@ -112,7 +112,7 @@
 情報探索の証拠、原因、対策は、bugfixスキルの`agent-basics:bugfix/references/root-cause-scenarios-investigation.md`「情報探索の問題」で確定する。
 対策要求には、探していた情報、探索した区間、参照した文書の順、定義元、探索を妨げた要因を書く（資料の陳腐化が原因なら、参照した記述、現行仕様との差、判断への影響も書く）。
 これらを根拠の絶対パスと記録位置に対応付けて渡す。
-AWIの各節の記述分担は`agent-toolkit:wi-standards`、原稿と根拠の検収は`share/add-wi.parent.md`「受領と検収」に従い、振り返り結果報告からAWIのファイル名で直接たどれるようにする。
+AWIの各節の記述分担は`agent-toolkit:wi-standards`、原稿と根拠の検収は`${CLAUDE_PLUGIN_ROOT}/share/add-wi-parent-acceptance.md`「受領と検収」に従い、振り返り結果報告からAWIのファイル名で直接たどれるようにする。
 
 ## 既存キュー項目との重複確認
 

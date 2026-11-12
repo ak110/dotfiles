@@ -8,6 +8,7 @@
 | --- | --- |
 | 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
 | 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
+| 初回実装で「前提を疑う観点」を適用する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/managed-temp/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md` |
 | レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |

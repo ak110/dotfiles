@@ -263,8 +263,34 @@ def _missing_section_references(source: pathlib.Path, plugin_root: pathlib.Path)
                     for heading in re.findall(r"「([^」]+)」", target.heading)
                     if heading in named.get(target.path.name, set()) and heading not in titles
                 )
+        errors.extend(_missing_bare_share_sections(source, plugin_root, number, line))
         if not line.startswith("|"):
             context = read_triggers.reference_context(line, source, plugin_root) or context
+    return errors
+
+
+def _missing_bare_share_sections(source: pathlib.Path, plugin_root: pathlib.Path, number: int, line: str) -> list[str]:
+    """裸の`share/<名前>.md`を`share/<名前>.md`（プラグイン直下）として解決し、添えた節名の見出しの実在を確かめる。
+
+    配送側は裸の`share/…`を解決しないため、`material_targets`では参照切れを検出できない。
+    """
+    errors: list[str] = []
+    for code, _link, quoted in _SECTION_REFERENCE.findall(line):
+        if not code.startswith("share/"):
+            continue
+        target = plugin_root / code
+        if not target.is_file():
+            continue
+        titles = {
+            matched[1]
+            for _number, text, shown in read_triggers.document_lines(target.read_text(encoding="utf-8"))
+            if shown and (matched := re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", text))
+        }
+        errors.extend(
+            f"{source}:{number}: `{code}`に見出し「{heading}」が無い。見出しのある資料を指すように参照を直せ"
+            for heading in re.findall(r"「([^」]+)」", quoted)
+            if heading not in titles
+        )
     return errors
 
 
