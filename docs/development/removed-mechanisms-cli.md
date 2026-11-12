@@ -4,6 +4,7 @@
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
+| 選定検査が全工程の見込みの欠落・未確認前提・目標超過で終了コード1を返し、追加mergeが見込みの再確定を必須にする | 2026-11-12 | 経過時間や観測待ちに由来する事実は検査を渡した担当がその場で直せず、ユーザー指示による途中追加の正式な手順が通らなかった。 | 警告と組み直しの案内で返し、拒否はその場で直せる欠落・不整合とレーン数の上限に限る。docs/development/concepts-overengineering.md「過剰設計の抑制」、agent-basics/skills/writing-standards/references/design-heuristics-mechanisms.md「進行を止める判定の条件」 | 撤去理由を解消できることを示した場合 |
 | 上流developの変化を検知して`update-dotfiles`を自動実行し、稼働中のセッションを理由に延期した更新も再試行する | 2026-11-08 | 別ホストで開発していた頃の名残であり、ユーザーが廃止を指示した。 | 手動の`update-dotfiles`とprocess-loopの待機中の更新を維持する。旧`dotfiles-autoupdate`の撤去は`pytools/_internal/setup_tmpfiles_clean.py`が担う。 | 撤去理由を解消できることを示した場合 |
 | ヘルプの同一セッション内観測を実行と質問本文の前提として遮断する | 2026-09-09、09-16、commit: 89212c829、7f7bdbc2c | 通常用途の入力形式は手順への明記で目的を満たせた。 | 手順で確定した受理形式を使い、未確定の形式だけを確認する。docs/development/concepts-overengineering.md「過剰設計の抑制」 | 撤去理由を解消できることを示した場合 |
 | 旧API設定キーの組合せで接続方式と使用順を決める | 2026-10-29、commit: 34e02b90e | 接続種別と役割別の使用順を明示する設定へ置き換える判断による。 | 認証の所在と役割別・エンジン別の使用順を分ける。docs/development/concepts-connections.md「委譲全般と利用上限」 | 撤去理由を解消できることを示した場合 |
@@ -18,7 +19,7 @@
 | ランチャーを`execve`でMCPサーバー自身へ置換する起動方式 | 2026-10-20、commit: 538cf93ff | サーバー自身ではSIGKILL等による停止後の終了状態を記録できなかった。 | 既存ランチャーが子の終了と標準エラーを観測する。docs/development/design-agents-server-backend.md「backend構成と起動」 | 撤去理由を解消できることを示した場合 |
 | CLI・MCPの一覧や詳細で停滞判定済みの`stalled`を返す | 2026-09-18、commit: 18b537780 | 同じ応答の活動経過秒と閾値だけで再現できる派生値だった。 | 一次情報を公開し、停滞の判断は受け手に残す。docs/development/design-cli-launch.md「公開出力から導出できる項目の撤去」 | 撤去理由を解消できることを示した場合 |
 | コマンド・両出力・Git状態・終了状態を専用JSONに保存し再取得する | 2026-10-25、commit: 20ddd9a9b | 標準実行で得られる観測に専用JSONの学習と付替え工程を重ねていた。 | 有限実行の観測はハーネスの標準手段を使う。docs/development/design-cli-execution.md「有限終了コマンドの出力と終了状態の保持」、docs/development/design-storage.md「保存物の配置」 | 撤去理由を解消できることを示した場合 |
-| `atk wi`の出力末尾へ未回答UWIを通知する | 2026-09-30、commit: f62cd4ddb | 確認先がserveへ移って読み手を失い、出力選別と警告の見落としを誘った。 | 出力は受信者の次の判断に使う情報へ絞る。docs/development/design-cli-output.md「atkの出力に含める情報」 | 撤去理由を解消できることを示した場合 |
+| `atk wi`の出力末尾へ未回答UWIを通知する | 2026-09-30、commit: f62cd4ddb | 確認先がserveへ移って読み手を失い、出力選別と警告の見落としを誘った。 | 出力は受信者の次の判断に使う情報に限る。docs/development/design-cli-output.md「atkの出力に含める情報」 | 撤去理由を解消できることを示した場合 |
 | 文字位置と継続位置JSONで本文を分割取得する | 2026-10-25、commit: 20ddd9a9b | 標準読取で分割でき、継続位置JSONを扱う専用手順の学習費用が便益を上回った。 | 保存先と行数から標準手段で分割取得する。docs/development/design-cli-auto-save.md「エージェント環境での長い出力の自動保存」 | 撤去理由を解消できることを示した場合 |
 | 計画の検証行を専用処理で列挙・実行・保存する | 2026-10-25、commit: 20ddd9a9b | 標準実行で同じ検証ができ、専用の生成・保存形式を保つ費用が大きかった。 | 計画の検証コマンドをハーネスで直接実行する。docs/development/design-cli-public-boundaries.md「計画検証と検索記録」、docs/development/design-review-acceptance.md「完成条件の判定と受領」 | 撤去理由を解消できることを示した場合 |
 | Codex向けに外部marketplace登録・外部plugin導入・取得元検証を行う | 2026-08-30、commit: 327922025 | Codex側には外部marketplace導入と取得元検証の対応先が無かった。 | local pluginの導入経路を使う。docs/development/design-hosts-plugin-lifecycle.md「Codexのlocal plugin導入」 | 撤去理由を解消できることを示した場合 |

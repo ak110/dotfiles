@@ -148,32 +148,32 @@ def _generate(
     )
 
 
-@pytest.mark.parametrize(("seconds", "expected"), [(10724, 0), (10725, 0), (10726, 1), (92225, 1)])
-def test_complete_path_target_boundary_does_not_accept_comparison(environment, tmp_path, capsys, seconds, expected):
+@pytest.mark.parametrize("seconds", [10724, 10725, 10726, 92225])
+def test_target_overrun_is_a_warning_and_does_not_stop_selection(environment, tmp_path, capsys, seconds):
     repo, _ = environment
     _target(repo, 10800)
-    assert _generate(tmp_path, repo, plan=_workflow({"first.md": seconds}), comparison=True) == expected
+    assert _generate(tmp_path, repo, plan=_workflow({"first.md": seconds}), comparison=True) == 0
     captured = capsys.readouterr()
     output = tmp_path / "selection.yaml"
-    if expected:
-        assert not output.exists()
-        assert "通常対象の完了見込み秒数" in captured.err and "目標所要秒数10800" in captured.err
+    assert output.exists()
+    assert f"全工程の壁時計見込み秒数: {seconds + 75}" in captured.out
+    assert f"通常対象の完了見込み秒数: {seconds + 75}" in captured.out
+    if seconds + 75 > 10800:
+        assert "警告: 通常対象の完了見込み秒数" in captured.err and "目標所要秒数10800" in captured.err
         assert "項目を外さず" in captured.err and "品質工程の省略や次回送り" in captured.err
     else:
-        assert output.exists()
-        assert f"全工程の壁時計見込み秒数: {seconds + 75}" in captured.out
-        assert f"通常対象の完了見込み秒数: {seconds + 75}" in captured.out
-        saved = yaml.safe_load(output.read_text(encoding="utf-8"))
-        assert [item["WI"] for item in saved["選定"]] == ["first.md"]
-        assert _dispatch(str(output), "--work-dir", str(repo)) == 0
+        assert "警告" not in captured.err
+    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert [item["WI"] for item in saved["選定"]] == ["first.md"]
+    assert _dispatch(str(output), "--work-dir", str(repo)) == 0
 
 
 def test_dependent_publication_cannot_be_hidden_by_implementation_budget(environment, tmp_path, capsys):
     repo, _ = environment
     _target(repo, 10800)
-    assert _generate(tmp_path, repo, plan=_workflow({"first.md": 7200}, public=5400), comparison=True) == 1
+    assert _generate(tmp_path, repo, plan=_workflow({"first.md": 7200}, public=5400), comparison=True) == 0
     assert "12645" in capsys.readouterr().err
-    assert not (tmp_path / "selection.yaml").exists()
+    assert (tmp_path / "selection.yaml").exists()
 
 
 @pytest.mark.parametrize(("serial", "expected_seconds"), [(False, 55), (True, 45)])
@@ -199,7 +199,8 @@ def test_public_capacity_and_serial_definition_use_one_resource_path(environment
     selected = tmp_path / "selection.yaml"
     before = selected.read_bytes()
     _target(repo, expected_seconds - 1)
-    assert _dispatch(str(selected), "--work-dir", str(repo)) == 1
+    assert _dispatch(str(selected), "--work-dir", str(repo)) == 0
+    assert "警告: 通常対象の完了見込み秒数" in capsys.readouterr().err
     assert selected.read_bytes() == before
 
 
@@ -216,29 +217,30 @@ def test_public_model_work_cannot_bypass_model_capacity(environment, tmp_path, p
     assert not (tmp_path / "selection.yaml").exists()
 
 
-@pytest.mark.parametrize(("capacity", "expected"), [(1, 1), (2, 0)])
+@pytest.mark.parametrize(("capacity", "overrun_seconds"), [(1, "16075"), (2, None)])
 def test_public_model_capacity_is_preserved_with_shared_definition_dependencies(
-    environment, tmp_path, capsys, capacity, expected
+    environment, tmp_path, capsys, capacity, overrun_seconds
 ):
     repo, notes = environment
     _wi(notes, "second.md")
     _target(repo, 10800)
     plan = _workflow({"first.md": 8000, "second.md": 8000})
     plan["並列数"].update({"モデル同時数": capacity, "資源上限": capacity, "サービス上限": capacity})
-    assert _generate(tmp_path, repo, plan=plan, names=["first.md", "second.md"]) == expected
-    if expected == 0:
-        assert "通常対象の完了見込み秒数: 8085" in capsys.readouterr().out
+    assert _generate(tmp_path, repo, plan=plan, names=["first.md", "second.md"]) == 0
+    captured = capsys.readouterr()
+    if overrun_seconds is None:
+        assert "通常対象の完了見込み秒数: 8085" in captured.out
         (tmp_path / "selection.yaml").unlink()
         next(node for node in plan["工程"] if node["ID"] == "1-impl")["先行工程"].append("0-impl")
-        assert _generate(tmp_path, repo, plan=plan, names=["first.md", "second.md"]) == 1
-        assert "16075" in capsys.readouterr().err
-    else:
-        assert "16075" in capsys.readouterr().err
-    assert not (tmp_path / "selection.yaml").exists()
+        assert _generate(tmp_path, repo, plan=plan, names=["first.md", "second.md"]) == 0
+        overrun_seconds = "16075"
+        captured = capsys.readouterr()
+    assert overrun_seconds in captured.err and "警告" in captured.err
+    assert (tmp_path / "selection.yaml").exists()
 
 
-@pytest.mark.parametrize("missing", ["plan", "seconds", "conditional", "premise", "cost"])
-def test_incomplete_evidence_is_not_zero_or_target_success(environment, tmp_path, capsys, missing):
+@pytest.mark.parametrize("missing", ["plan", "seconds", "conditional", "premise"])
+def test_incomplete_evidence_is_a_warning_not_zero_or_target_success(environment, tmp_path, capsys, missing):
     repo, _ = environment
     _target(repo, 10800)
     plan = _workflow()
@@ -252,11 +254,29 @@ def test_incomplete_evidence_is_not_zero_or_target_success(environment, tmp_path
         plan["工程"][-1].pop("速度")
     elif missing == "premise":
         plan["工程"][-1]["未確認前提"] = ["公開後の観測未了"]
-    elif missing == "cost":
-        plan["並列数"]["根拠"]["費用"] = ""
-    result = _generate(tmp_path, repo, plan=plan, include_plan=missing != "plan", comparison=True)
-    assert result in {1, 2}
+    assert _generate(tmp_path, repo, plan=plan, include_plan=missing != "plan", comparison=True) == 0
+    assert "警告" in capsys.readouterr().err
+    assert (tmp_path / "selection.yaml").exists()
+
+
+def test_malformed_estimate_is_rejected_with_exit_code_2(environment, tmp_path, capsys):
+    repo, _ = environment
+    _target(repo, 10800)
+    plan = _workflow()
+    plan["並列数"]["根拠"]["費用"] = ""
+    assert _generate(tmp_path, repo, plan=plan, comparison=True) == 2
     assert capsys.readouterr().err
+    assert not (tmp_path / "selection.yaml").exists()
+
+
+def test_estimate_with_broken_completion_path_is_rejected_with_exit_code_1(environment, tmp_path, capsys):
+    repo, _ = environment
+    _target(repo, 10800)
+    plan = _workflow()
+    # 工程の定義は形式として成立するが、選定が実装の先行工程に無く、完成経路が成立しない。入力を直せば解消できる。
+    next(node for node in plan["工程"] if node["工程"] == "実装")["先行工程"] = []
+    assert _generate(tmp_path, repo, plan=plan, comparison=True) == 1
+    assert "全工程の見込みは未成立" in capsys.readouterr().err
     assert not (tmp_path / "selection.yaml").exists()
 
 
@@ -274,13 +294,19 @@ def test_giant_approval_keeps_parallel_normal_work(environment, tmp_path, capsys
             "出所": "合成した今回の名指し回答",
         }
     plan["巨大WI"] = [giant]
-    expected = 0 if approval == "matched" else 1
+    # 承認の無い・拒否・未回答の巨大WIは通常対象のままで、目標超過は警告にとどまる。
+    # 拒否するのは、入力を直せば解消できる承認元の対象WIの不一致（other）だけである。
+    expected = 1 if approval == "other" else 0
     assert _generate(tmp_path, repo, plan=plan, names=["first.md", "giant.md"]) == expected
     captured = capsys.readouterr()
     if expected == 0:
         assert "全工程の壁時計見込み秒数: 40075" in captured.out
-        assert "通常対象の完了見込み秒数: 4075" in captured.out
-        assert '承認済み巨大WI: ["giant.md"]' in captured.out
+        if approval == "matched":
+            assert "通常対象の完了見込み秒数: 4075" in captured.out
+            assert '承認済み巨大WI: ["giant.md"]' in captured.out
+        else:
+            assert "通常対象の完了見込み秒数: 40075" in captured.out
+        assert ("警告" in captured.err) == (approval != "matched")
     else:
         assert not (tmp_path / "selection.yaml").exists()
 
@@ -291,7 +317,8 @@ def test_legacy_history_is_readable_but_not_an_execution_allocation(environment,
     selected = tmp_path / "selection.yaml"
     before = selected.read_bytes()
     _target(repo, 10800)
-    assert _dispatch(str(selected), "--work-dir", str(repo)) == 1
+    assert _dispatch(str(selected), "--work-dir", str(repo)) == 0
+    assert "警告: 全工程の見込みが無く" in capsys.readouterr().err
     assert selected.read_bytes() == before
     assert _dispatch(str(selected), "--history", "--work-dir", str(repo)) == 0
     assert "これから実行する配分の目標内成立は検収していない" in capsys.readouterr().out
@@ -319,18 +346,66 @@ def test_public_merge_uses_recomputed_whole_plan_and_preserves_initial_allocatio
     mapping = tmp_path / "mapping.json"
     mapping.write_text(json.dumps({"lane-01": "lane-01"}), encoding="utf-8")
     merged = tmp_path / "merged.yaml"
-    assert _dispatch(
-        str(selected), "--merge", str(added), "--lane-map", str(mapping), "--output", str(merged), "--work-dir", str(repo)
-    ) == int(overrun)
+    assert (
+        _dispatch(
+            str(selected), "--merge", str(added), "--lane-map", str(mapping), "--output", str(merged), "--work-dir", str(repo)
+        )
+        == 0
+    )
     assert selected.read_bytes() == before and added.exists()
+    captured = capsys.readouterr()
+    result = yaml.safe_load(merged.read_text(encoding="utf-8"))
+    assert result["初回配分"] == existing["初回配分"]
+    assert [row["WI"] for row in result["選定"]] == ["first.md", "added.md"]
     if overrun:
-        assert not merged.exists()
-        assert "通常対象の完了見込み秒数" in capsys.readouterr().err
+        assert "警告: 通常対象の完了見込み秒数" in captured.err
     else:
-        result = yaml.safe_load(merged.read_text(encoding="utf-8"))
-        assert result["初回配分"] == existing["初回配分"]
-        assert [row["WI"] for row in result["選定"]] == ["first.md", "added.md"]
-        assert "通常対象の完了見込み秒数: 185" in capsys.readouterr().out
+        assert "警告" not in captured.err
+        assert "通常対象の完了見込み秒数: 185" in captured.out
+
+
+def test_public_merge_without_added_estimate_drops_stale_estimate_with_warning(environment, tmp_path, capsys):
+    repo, notes = environment
+    _target(repo, 10800)
+    assert _generate(tmp_path, repo) == 0
+    selected = tmp_path / "selection.yaml"
+    existing = yaml.safe_load(selected.read_text(encoding="utf-8"))
+    _wi(notes, "added.md")
+    addition = copy.deepcopy(existing)
+    del addition["初回配分"]
+    del addition["全工程の見込み"]
+    addition["選定"] = [{**existing["選定"][0], "WI": "added.md"}]
+    added = tmp_path / "addition.yaml"
+    added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "mapping.json"
+    mapping.write_text(json.dumps({"lane-01": "lane-01"}), encoding="utf-8")
+    merged = tmp_path / "merged.yaml"
+    assert (
+        _dispatch(
+            str(selected), "--merge", str(added), "--lane-map", str(mapping), "--output", str(merged), "--work-dir", str(repo)
+        )
+        == 0
+    )
+    assert "全工程の見込み" not in yaml.safe_load(merged.read_text(encoding="utf-8"))
+    assert "警告: 全工程の見込みが無く" in capsys.readouterr().err
+
+
+def test_lane_limit_stays_rejected_alongside_estimate_warnings(environment, tmp_path, capsys):
+    repo, notes = environment
+    _target(repo, 10800)
+    assert _generate(tmp_path, repo, include_plan=False) == 0
+    capsys.readouterr()
+    saved = yaml.safe_load((tmp_path / "selection.yaml").read_text(encoding="utf-8"))
+    # WI1件の上限は1レーンのため、別レーンのWIを足すとレーン数の上限だけが拒否の理由になる。
+    _wi(notes, "second.md")
+    (repo / "src/other.py").write_text("pass\n", encoding="utf-8")
+    saved["選定"].append({**saved["選定"][0], "WI": "second.md", "レーン": "lane-02", "書込対象": ["src/other.py"]})
+    saved["レーンの所要時間"].append({**saved["レーンの所要時間"][0], "レーン": "lane-02"})
+    selection = tmp_path / "two-lanes.yaml"
+    selection.write_text(yaml.safe_dump(saved, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(selection), "--work-dir", str(repo)) == 1
+    err = capsys.readouterr().err
+    assert "レーン数が上限を超える" in err
 
 
 @pytest.mark.parametrize("value", [0, -1, True, "10800"])

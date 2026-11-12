@@ -85,6 +85,7 @@ from check_selection_lanes import (
     _check_lane_stages,
     _check_resume_plan_lanes,
     _completion_estimate,
+    process_estimate_warnings,
 )
 from check_selection_loading import _NEXT_SOURCE_MISMATCH, _check_allocation_sources, load_selection
 from check_selection_norms import (
@@ -545,6 +546,13 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"統合結果: {args.output.resolve()}")
     # 目標の設定は先行する`check`の呼出しで検証済みのため、ここでは読込の失敗が起きない。
+    if not args.history and args.mark_integrated is None:
+        for warning in process_estimate_warnings(
+            selection,
+            typing.cast(list[dict[str, object]], _selection.lane_costs(selection)),
+            load_target_seconds(work_dir),
+        ):
+            print(f"警告: {warning}", file=sys.stderr)
     print("\n".join(summary_lines(selection, body_wis, load_target_seconds(work_dir), history=args.history)))
     return 0
 
