@@ -8,7 +8,6 @@
 | --- | --- |
 | テストの要否と期待値の出所を判断する前 | `agent-basics:writing-standards/references/testing-selection.md` |
 | 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution/references/verification-scope.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../agent-toolkit-edit/references/distribution-and-hooks-layers.md` |
 
 ## テスト配置
 
@@ -22,7 +21,7 @@
 - テストの共通ヘルパーモジュールは、`pytools/`配下では`pytools/_internal/_test_helpers.py`、リポジトリ直下では`_test_helpers.py`、`scripts/`配下では`scripts/_scripts_test_helpers.py`にそれぞれ配置する。
   リポジトリ直下と`scripts/`はどちらも`sys.path`に追加されるため、ヘルパーモジュール名が重複しないよう配慮する。
   なお、`agent-toolkit/`のテストコードは配布物の独立性を保つため、`pytools/_internal/`を参照しない構成にする。
-  共通処理が必要な場合は、`agent-toolkit-edit`の`../../agent-toolkit-edit/references/distribution-and-hooks-layers.md`「agent_toolkitパッケージの配置と層」に記載されたテスト専用パッケージに配置する
+  共通処理が必要な場合は、`agent-toolkit-edit`の読込表から選ぶ`distribution-and-hooks-layers.md`「agent_toolkitパッケージの配置と層」に記載されたテスト専用パッケージに配置する
 - 各テストは`agent-toolkit/agent_toolkit/_testing/isolation.py`による環境隔離のもとで実行され、ホームディレクトリや設定ディレクトリはテストごとに用意される一時ディレクトリを指す。
   実際のGit操作を伴うテストでは、コミット履歴、タグ、ブランチ、作業ツリーの状態をテスト自身の一時リポジトリ内に構築し、すべてのGitコマンド呼び出しで対象リポジトリを明示的に指定する。
   この際、`_testing/git_repository.py`が提供する`init_repository`、`commit_all`、`run_git`を活用できる。

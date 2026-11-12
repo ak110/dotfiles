@@ -60,7 +60,7 @@ hookの通知は選択を補助する。
 | 実行・測定・検証の結果を報告または判定する時（エージェントCLIや共有状態を扱うツールを検証のために実行する時を含む） | `references/investigation-results.md` | | | |
 | X投稿などの外部資料の本文・日時・添付画像を取得・確認する前 | `../fetch-sources/SKILL.md` | | | |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` | | | |
-| 計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質や累積したファイル構成を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics-screening.md`、`references/design-heuristics-necessity.md`、`references/design-heuristics-mechanisms.md`、`references/design-heuristics-responsibility.md`、`references/design-heuristics-proportionality.md`、`references/design-heuristics-decisions.md`、`references/design-heuristics-quality.md` | | | |
+| 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時、計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質や累積したファイル構成を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics-screening.md`、`references/design-heuristics-necessity.md`、`references/design-heuristics-mechanisms.md`、`references/design-heuristics-responsibility.md`、`references/design-heuristics-proportionality.md`、`references/design-heuristics-decisions.md`、`references/design-heuristics-quality.md` | | | |
 | 技術記事・操作手順などの技術文書を書く時 | `references/writing-technical.md` | | | |
 | 業務・仕様文書を書く時（変更説明、障害報告、提案書、議事録、規程、作業項目などを含む） | `references/writing-business.md` | | | |
 | 体験を述べる文章を書く時 | `references/writing-experience.md` | | | |
@@ -91,8 +91,8 @@ hookの通知は選択を補助する。
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 並行処理・排他制御を設計・変更・レビューする前 | `references/design-runtime-concurrency.md` |
-| 検索・一覧画面を設計・変更・レビューする前 | `agent-basics:writing-standards/references/design-display.md` |
-| 閾値と表示段階を設計・変更・レビューする前 | `agent-basics:writing-standards/references/design-display.md` |
+| 検索・一覧画面を設計・変更・レビューする前 | `references/design-display.md` |
+| 閾値と表示段階を設計・変更・レビューする前 | `references/design-display.md` |
 | キャッシュを設計・変更・レビューする前 | `references/design-runtime-cache.md` |
 | 負荷・データ・外部システムの条件に依存する技術仕様や非機能要件を設計・変更・レビューする前 | `references/design-runtime-environment.md` |
 | 非同期ジョブ・リトライを設計・変更・レビューする前 | `references/design-runtime-jobs.md` |
@@ -122,13 +122,13 @@ hookの通知は選択を補助する。
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | textlintなど文章チェックの診断へ対応する時 | `references/textlint-violations.md` | | | |
-| 文章の書き直しを委ねる時 | `agent-basics:writing-standards/references/textlint-violations.md` | | | |
+| 文章の書き直しを委ねる時 | `references/textlint-violations.md` | | | |
 | 独立したレビューを経ずに成果物を完成させる時（再レビューを省く修正、独立したレビューを起動しない修正経路を含む）と、レビュー限定基準の指摘を受けて採否を判断する時 | `references/review-only-criteria.md` | | | |
 | lint設定の緩和・無効化・除外指定を追加する時 | `references/lint-relax-criteria.md` | | | |
 | 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples.md` | | | |
 | 文の口調を書き換える処置を選ぶ時（口語表現の警告、textlintのAI文体の指摘を含む）。正しい例と説明から、元の意味と条件を保つ書き方を選ぶ | `references/tone-examples-llm-tone.md` | | | |
 | 人間向け文書の役割と残す内容を選ぶ時 | `references/document-types.md` | | | |
-| 設計の記録（ADRを含む）を作成・変更・レビューする時 | `agent-basics:writing-standards/references/document-types.md` | | | |
+| 設計の記録（ADRを含む）を作成・変更・レビューする時 | `references/document-types.md` | | | |
 | 新しい概念名または識別子を導入する時と、既存の名前で複数の主体・プロジェクト・変更前後の対象を説明する時 | `references/referent-table.md` | | | |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `references/defined-names.md` | | | |
 | 文章を書く時と表記を修正する時（他の行より先に読む） | `references/notation-rules.md` | 操作 | `body-writing` | |
@@ -149,7 +149,7 @@ hookの通知は選択を補助する。
 
 | 時点または条件（対象の拡張子・ファイル名・パス・依存名） | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| `py` | `agent-basics:writing-standards/references/python.md` | 操作 | `path:*.py` | |
+| `py` | `references/python.md` | 操作 | `path:*.py` | |
 | `ts`・`tsx` | `references/typescript.md` | 操作 | `path:*.ts`、`path:*.tsx` | |
 | `rs` | `references/rust.md` | 操作 | `path:*.rs` | |
 | `cs` | `references/csharp.md` | 操作 | `path:*.cs` | |
@@ -171,7 +171,6 @@ hookの通知は選択を補助する。
 | 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時（作業項目の起草や対話でその案を示す時点を含む） | `references/design-time.md` | | | |
 | プログラムの出力メッセージ（エラー、警告、ログ、CLIの出力やヘルプなど）を新設・変更する時と、その変更をレビューする時 | `references/program-messages.md` | 判断 | `skill:writing-standards` | |
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | | | |
-| 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics-screening.md`、`references/design-heuristics-necessity.md`、`references/design-heuristics-mechanisms.md`、`references/design-heuristics-responsibility.md`、`references/design-heuristics-proportionality.md`、`references/design-heuristics-decisions.md`、`references/design-heuristics-quality.md` | | | |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` | | | |
 | テスト設計・検証手法を選ぶ時、テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md`、`references/testing-selection.md` | 操作 | `path:*_test.*`、`path:*/test_*`、`path:*_spec.*`、`path:*.test.*`、`path:*.spec.*`、`path:*/tests/*`、`path:*/__tests__/*`、`path:*Tests.cs`、`path:*Test.cs`、`path:*.Tests.ps1`、`path:*.rs` | |
 | Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python-analysis.md` | | | |
@@ -189,7 +188,7 @@ hookの通知は選択を補助する。
 | エージェント向け文書（AGENTS.md、CLAUDE.md、ルール、SKILL.md、サブエージェント定義、referencesなど）の編集前 | `references/writing.md`、`references/writing-common.md`、`references/writing-readers.md`、`references/writing-genres.md`、`references/writing-maintenance.md`、`references/agent-documents-basics.md` | 操作 | `agent-document-writing` | |
 | スキル編集 | `references/agent-skills.md` | | | |
 | スキル編集 | `references/host-official-references.md` | | | |
-| エージェント向け文書の置き場所を選ぶ時 | `references/agent-documents-basics.md` | | | |
+| エージェント向け文書の置き場所を選ぶ時、規範を追記・新設・移動する置き場所を決める時 | `references/agent-documents-basics.md`、`references/agent-documents-placement-selection.md` | | | |
 | 既存の規範・基準・手順で対応済み（被覆済み）かを判定する時（作業項目の起草・計画・レビュー・再発防止策の採否を含む） | `references/agent-documents-basics-ownership.md` | | | |
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md` | | | |
 | hookスクリプトの新設・変更（入出力、matcher、環境変数） | `references/claude-hooks.md` | | | |

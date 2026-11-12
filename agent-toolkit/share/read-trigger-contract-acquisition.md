@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| メインの作業契約が未作成で、作成手順を確認する前 | `work-contract.md` |
-
 ## 取得とチェック
 
 宣言は文書の本文の読込表に置く。

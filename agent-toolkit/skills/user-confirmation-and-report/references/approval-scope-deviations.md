@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 経験の記録から承認の適用範囲を判断する前 | `agent-basics:writing-standards/references/investigation-experience.md` |
-
 ## 逸脱
 
 規範からの逸脱と、ユーザーが確定した手段に関する方針からの逸脱は、`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」の条件を満たす場合に限り実施する。

@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
-
 ## 存在意義の点検
 
 発火条件: テスト・CI・lintの失敗の分類と対処の選定、観測した問題への対策の選定（作業項目の起草を含む）、設計・リファクタリングの案の選定、実装完了前のセルフチェックと実行レビュー。

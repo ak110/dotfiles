@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 共有状態の共通設計・実行主体・保存と回収の条件を判断する前 | `agents-server-shared-state.md` |
-| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` |
-
 ## 診断とログ
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |

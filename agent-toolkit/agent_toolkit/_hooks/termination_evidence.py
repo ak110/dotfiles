@@ -368,11 +368,16 @@ def main(argv: list[str] | None = None) -> int:
             recovery = _UNRESOLVED_REPOSITORY_FIX
         elif isinstance(error, _FailureEvidenceError):
             recovery = (
-                "受理する証拠は失敗応答を返したツール呼び出しだけである。別のcall_idでの再試行では記録できない。"
+                "失敗応答を返したツール呼び出しの`call_id`で記録せよ。受理する証拠は"
+                "`agent-toolkit:report-completion`の`references/termination-evidence.md`「受理する証拠」に従え。"
                 + _HOST_STOP_FIX
             )
         elif isinstance(error, _InactiveWaitError):
-            recovery = "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ。" + _HOST_STOP_FIX
+            recovery = (
+                "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ。"
+                "`agent-toolkit:report-completion`の`references/termination-evidence.md`「受理する証拠」に従え。"
+                + _HOST_STOP_FIX
+            )
         next_action.report(
             str(error),
             next_action=recovery,

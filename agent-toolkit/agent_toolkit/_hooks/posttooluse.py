@@ -43,6 +43,7 @@ import re
 lazy import os
 lazy import shlex
 
+from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk import run_script as _run_script
@@ -91,19 +92,11 @@ USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
 # --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
-    "直前の発話から、その発話が主張する事実と是正を求めている対象を列挙せよ。"
-    "事実の裏付けを調べる前に、真の場合と偽の場合で次の行動、変更対象、成果物の前提、回答の結論が実質的に変わるか判断せよ。"
-    "変わらない事実は調べずにユーザーが述べた事実として受け取って依頼を進め、自ら確かめた事実として報告するな。"
-    "判断を変える事実と是正の対象は、現物（原文・実装・規範・実行結果・対象の目的を定める仕様・設計記録）と比べて確かめてから応答せよ。"
-    "是正を求める対象を含む発話では、対処の前に`agent-basics:bugfix`をスキル機能で起動せよ。"
-    "不具合の有無・原因・直し方を述べるか確認で提案する場合も、述べる前に起動せよ。"
-    "対処を委譲先やAWIへ委ねる場合も含む。"
-    "判断を変える事実を現物と比べて確かめられない場合は、同意も変更もするな。"
-    "確かめる事実も是正の対象も無いと判定した発話では、現物との比較を省いて次の工程へ進め。"
-    "稼働中の依頼がある場合は、未完了工程が元の依頼の目的に対応するか確かめてから次に実行する工程を確定せよ。"
-    "同じ論点で修正が続く場合は意図と要件への影響を確かめ、確定できないときだけユーザー確認せよ。"
+    "この発話は、事実の主張か是正を求める対象を含む場合がある。"
+    "応答の前に、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance-correction.md`"
+    "「割り込み・訂正・中止」の4〜6項に従い、現物との比較の要否を判定せよ。"
 )
-"""ユーザーが書いた文の内容を現物で確かめる手順を示す注記の本文。
+"""ユーザーが書いた文の内容を現物で確かめる手順の所在を示す注記の本文。
 
 ユーザーが書いた文はUserPromptSubmitの`prompt`と、`AskUserQuestion`の自由記述の回答としてPostToolUseの
 `tool_response`の両方に届くため、両hookがこの1か所の定義を使う。`user_prompt_submit.py`は本モジュールを
@@ -115,14 +108,11 @@ importするため、循環importを避けて本モジュールに置く。
 
 _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `{read_command}`で本文を取得し、"
-    "`agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめよ。"
+    "次の操作: `agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」に従い、"
+    "目標と解決したい問題の理解を確かめよ。"
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
-# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
-# 例示の語と調査を求める語は、引用を除いたユーザー自身の依頼文から探す。
-_QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
 
 
 def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | None:
@@ -131,7 +121,7 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     指摘・提案・実行指示のどれに当たるか、例示が上位の対象の一部かは受領側が判断し、本フックは字面の一致だけで返す。
     調査を求める語も併せ持つ発話には、独立した調査を委ねる手段の所在も加える。
     """
-    text = _QUOTED_MATERIAL_RE.sub("", prompt)
+    text = QUOTED_MATERIAL_RE.sub("", prompt)
     if not any(word in text for word in _EXAMPLE_WORDS):
         return None
     path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "references/user-utterance.md"))
@@ -145,7 +135,6 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
         f"応答や具体化の前に`{read_command}`で本文を取得せよ。"
         "「原文の保持と取り込み」で、原文が示す上位の対象と例示の関係を判断し、"
         "対応範囲を例示だけに狭めるな。"
-        "例示が対象そのものを指す通常の指示であれば、そのまま元の依頼を続けよ。"
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
         path = str(_plugin_resources.skill_document_path("delegation", "references/routing.md"))
@@ -167,13 +156,7 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
     notices: list[str] = []
     subject = subject or prompt
     if "！！" in prompt:
-        path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "SKILL.md"))
-        read_command = (
-            "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
-            if os.name == "nt"
-            else "cat -- " + shlex.quote(path)
-        )
-        body = _REALIGN_NOTICE_BODY.format(read_command=read_command)
+        body = _REALIGN_NOTICE_BODY
         notices.append(_notice_formatter(source)(body, tag="notice", subject=subject))
     if (example := _example_scope_notice(prompt, source, subject=subject)) is not None:
         notices.append(example)
@@ -183,17 +166,7 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
 _FREE_TEXT_ANSWER_PROCEDURE = (
     "この注記は`AskUserQuestion`への回答のうち、提示した選択肢と一致しない自由記述へ返している。"
-    "回答が質問の前提や推奨案の根拠を否定する場合も前段の判断を適用し、"
-    "その前提の真偽で推奨案や次の行動が変わる場合だけ、前提を現物（コミット件名、実装、規範、実行結果など）で確かめよ。"
-    "確かめた結果が回答と一致すれば、前提が誤っていたことと確定した事実だけを伝え、"
-    "質問本文と先の報告で述べた前提や懸念を再掲するな。"
-    "一致しなければ、確かめた手段と結果を示して回答と一致しない点を伝えよ。"
-    "行動を変えない前提は確かめずに回答を受け取り、回答に沿って進めよ。"
-    "自分の前の結論を覆す前や、既存設計を変える提案を採用する前に、"
-    "現行の結論や設計の根拠を記録からすべて挙げ、提案で失われるものと一つずつ比べよ。"
-    "結論を覆すのは、新しい事実が出た場合か、既知の根拠を比べ忘れたことや推論の誤りが見つかった場合に限り、"
-    "どれに当たるかを示せ。ユーザーが目的や選好を変えた場合は、要件の変更として扱え。"
-    "いずれにも当たらなければ結論を維持し、根拠を返せ。"
+    "同書「割り込み・訂正・中止」の13項に従え。"
 )
 """`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
 # Claude Codeが選択肢を選ばずに注記だけを残した質問へ入れる`answers`の値（2.1.283の記録で観測）。

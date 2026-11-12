@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 拡張原因分析の要否を判断する前 | `root-cause-analysis-initial.md` |
-
 ## 失敗の性質による分類
 
 原因箇所、セッション帰属、再現性の3観点をそれぞれ個別に分類し、ビジュアルリグレッションテスト（VRT）の場合は画面差分の形態も合わせて評価する。

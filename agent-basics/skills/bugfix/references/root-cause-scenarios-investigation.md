@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文の条件に従い「前提の再検討」を判断する前 | `root-cause-severity-quality.md` |
-| 本文の条件に従い「再発防止策の必須性」を判断する前 | `root-cause-prevention-requirements.md` |
-| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/testing.md` |
-
 ## 情報探索の問題
 
 検索やファイル読み込みのツール自体が成功したことと、目的の情報に実際に到達できたことは区別して評価する。

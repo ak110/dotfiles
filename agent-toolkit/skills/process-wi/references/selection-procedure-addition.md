@@ -9,10 +9,6 @@
 | 追加WIへ初期選定と同じ分類・割当・検収の基準を適用する前 | `selection-procedure.md` |
 | 目標起点の判断を行う前 | `lanes-goals.md` |
 | 是正要求を分類する前 | `immediate-fix.md` |
-| 参照基準の適用前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
-| 参照基準の適用前 | `run-lanes.md` |
-| 処理対象WIについて、包含、除外または構成の理由をユーザーが尋ねたとき | `selection-explanation.md` |
-| 回答済みUWIが元項目を指し、同じ元項目を指す未回答のactiveなUWIが残る時と、包含する候補へ依存を設定するかを判定する時 | `agent-toolkit:wi-standards`の`references/states-and-dependencies.md` |
 
 ## 処理対象WIの追加
 

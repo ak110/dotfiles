@@ -6,14 +6,12 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
 | 本文の参照基準を適用する前 | `approval-scope.md` |
 | 本文の参照基準を適用する前 | `pending-decisions.md` |
 | 本文の参照基準を適用する前 | `../../wi-standards/references/uwi-format.md` |
 | 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` |
 | `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` |
 | 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 

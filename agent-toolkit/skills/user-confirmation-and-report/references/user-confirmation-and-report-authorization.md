@@ -6,26 +6,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザーから成果物の欠陥の指摘・割り込み・是正要求を受け取り、採否と修正範囲を確定する前 | `agent-toolkit:user-confirmation-and-report/references/review-feedback.md` |
-| 状況照会で再検証の要否を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 | 「確認要否の判定」を適用する前（Claude Codeで`AskUserQuestion`を呼ぶ前、Codexで構造化質問か`codex-format.md`の固定形式の質問を発行する前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `approval-scope.md` |
-| 確認前に技術的不確実性を実験で解消するか判断する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` |
 | 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点。`AskUserQuestion`の`questions`、Codexの構造化質問または固定形式の質問を組む前と、委譲先の返却が示した論点や問いの案から確認を組む前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `choice-construction.md` |
-| 協調モードで対象リポジトリの変更を伴う依頼へ着手する前 | `publish-scope.md` |
-| Codexで条件に合う構造化質問が無く、固定形式で質問を提示する時点 | `codex-format.md` |
-| 起動元の工程が質問ラウンドを指定した時点 | `grilling.md` |
-| Claude Codeメインが利用上限の猶予通知を受けた時 | `usage-limit.md` |
-| 原要求を復元する資料を取得できず、未確定判断を保留または暫定する前 | `agent-toolkit:user-confirmation-and-report/references/pending-decisions.md` |
-| 回答を得られない確認の保留、無回答後の確認の記録、事前承認の合意判定、対話中のUWIへの回答の受領のいずれかへ進む前（メインエージェント） | `pending-decisions.md` |
-| 回答済みUWIを元の作業へ反映する時（回答の到達を確認する時を含む）と、`atk run-skill`が起動したセッションで過去の実行のUWIを扱う時 | `answer-transitions.md` |
-| 規範どうしが矛盾する場合 | `conflict-resolution.md`（由来確定） |
-| 手順どおりに進められない場合 | `procedure-conflict.md`（判定順） |
-| ツール呼び出しが実行基盤・権限設定・auto mode classifierに拒否された場合、classifierが判定不能を返した場合、および委譲先からその報告を受けた場合 | `permission-denial.md` |
-| ユーザーへの確認・報告の手段を選ぶ時と認識合わせを行う時 | `communication-methods.md` |
-| 実際のユーザー発話を解釈・取り込み、訂正・割り込み・成果物の制限を扱う時 | `user-utterance.md` |
-| 実ユーザー発話やWI記入欄の入力を受領・分類し、既存判断への介入かを評価する時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
-| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-basics:writing-standards/references/investigation-sources.md`、`agent-basics:writing-standards/references/investigation-technical-clauses.md`、`agent-basics:writing-standards/references/investigation-results.md` |
-| auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:user-confirmation-and-report`が扱う） | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-responses.md` |
 
 ## 認可を要する操作

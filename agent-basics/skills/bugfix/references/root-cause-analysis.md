@@ -8,7 +8,7 @@
 報告本文には最終的な結論と、詳細を確認するための参照先を記載する。
 
 各段階の共通判断は本スキルの段階別資料を定義元とし、他工程では固有の入力、認可、記録、検収のみを定める。
-記録は`analysis-records.md`、資料探索の順序と2系統4段階の分析は`causal-analysis.md`に従う。
+記録は`analysis-records.md`、資料探索の順序は`causal-analysis.md`、2系統4段階の分析は`causal-analysis-stages.md`に従う。
 拡張原因分析の実施にかかわらず各段階の基準を適用する。
 同じ原因の処置の統合と異なる原因の切り分けは、`../../writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」に従う。
 

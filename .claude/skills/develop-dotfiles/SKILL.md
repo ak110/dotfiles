@@ -8,38 +8,14 @@ description: >
   画面を実描画で確認するとき、本リポジトリのテスト配置を決めるとき、テストを新規作成・編集・レビューするとき、テストやCIの所要を判定するとき、
   commit typeを判定するとき、コミットメッセージ方針や`.gitmessage`を編集するとき、
   Claude Code本体やCodex本体のバイナリを検索してホスト機能の挙動を確かめるとき、
-  `agent-toolkit:review-session`の参照文書の位置を確認するときに起動する。
+  `agent-toolkit:review-session`の参照文書の位置を確認するとき、
+  本リポジトリを対象に含むprocess-wiの巡回（all-repos統括を含む）の所要時間目標と終了条件を適用するときに起動する。
 ---
 
 # dotfilesの開発手順
 
 本スキルでは、本リポジトリにおける自動チェック、コード整形、依存関係の更新、テストの配置、コミットメッセージの方針、ホスト本体バイナリの検索手順、および振り返りで参照する文書の位置を説明する。
 リリース運用は`release-dotfiles`、配布元と配布先の対応関係は`dotfiles-repo-layout`で扱う。
-
-## process-wiの所要時間と終了条件
-
-本リポジトリを対象に含む`agent-toolkit:process-wi`の巡回は、件数によらず、選定から公開・CI・後始末・報告までを原則180分以内に収める。
-別cwdのall-repos統括にも適用し、準備済みの全件、例外のないレーン上限と必要な品質工程を保つ。
-計測範囲は[セッションの所要時間目標](../../../.chezmoi-source/dot_claude/docs/session-review-dotfiles.md#セッションの所要時間目標)に従う。
-レーン内の先行準備・確定HEADごとの独立文脈レビュー・共有2検証枠への早期投入と成功再利用を使う。
-内部担当の読取・実装・レビューを合わせた同時数Cを資源・サービス・総費用の比較から選び、本リポジトリの開発環境では上限を12とする。
-12は6論理CPU・メモリー39GBの環境と2026年11月12日の巡回の観測から決めた値である。
-根拠と次回見込みは`docs/development/audit-records-wi.md`の同日の「内部担当の同時数と巨大WIの判定」の記録にある。
-レーンへの配分は`agent-toolkit:process-wi/references/selection-procedure-allocation.md`「調査とレーン分け」、Cの選定は同じファイルの「内部担当の同時数と巨大WIの判定」に従う。
-内部群は`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」に従う。
-
-毎回の終了前に、次回候補全体と今回の未確定項目を現キューへ対応付け、代表群の実測と残量から、選定・公開CI・後始末や代表外の実機・別ホストの前提を含む最長経路を再計算する。
-今回の採否・公開後観測・規定の最終新着確認を反映した一覧の取得時刻と集合を保存し、終了判定の母集団へ固定する。
-その後に判定を変える明示追加や処置結果の変更があれば、変化分を見込みへ反映する。
-合理的なCと2検証枠で180分以内の見込みが成立する根拠を得るまで、必要な改善の実装・公開・検収を同じ巡回で続ける。
-局所の成功、未実測の予算、打切り値の完走速度への外挿と、未確認工程を0秒にする計算は、達成見込みの根拠へ使わない。
-進行中の30分点検と所要受領でも、巡回開始から180分の絶対完了時刻に対して、律速群の量・実測速度・待ち・依存を比べ、必要な組み直しを実際に指示する。
-
-同じ品質での分割・並行化・先行レビュー・共通仕事の集約を比べても、資源/費用に合理的なCの下で時間内に収まらないと裏付けられた巨大WIだけは、ユーザーの具体的対象への事前承認により時間目標から除外できる。
-判定材料と承認経路は前記の「内部担当の同時数と巨大WIの判定」に従う。
-未承認・拒否時は通常の時間対象へ残し、承認後も全件の実装・必要品質・公開を保つ。
-全体壁時計、承認対象の作業/待ちと通常対象の最長経路を分ける。
-並行した通常仕事の時間は保持し、時間除外は巨大WIだけが全体を遅らせた最長経路上の寄与へ限る。
 
 ## 名指し参照の読込方法
 
@@ -49,14 +25,13 @@ description: >
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| `agent-toolkit:process-wi`の所要時間目標を適用する前 | `agent-toolkit:process-wi/SKILL.md` | | |
+| 本リポジトリを対象に含む`agent-toolkit:process-wi`の巡回（all-repos統括を含む）の所要時間目標と終了条件を適用する前、巡回の終了を判定する前 | `references/process-wi-duration.md` | | |
 | 配布元と配布先の対応関係を判断する前 | `../dotfiles-repo-layout/SKILL.md` | | |
 | リリース運用を判断する前 | `../release-dotfiles/SKILL.md` | | |
 | 振り返りの参照文書の位置を確認する前 | `agent-toolkit:review-session/SKILL.md` | | |
-| 進捗と時間目標を見直す前 | `agent-basics:writing-standards/references/quality-principles-qcd.md` | | |
 | 専用worktree・回収予定の検証用複製・miseの状態ディレクトリを準備する前、専用worktreeの変更を`atk`で確認する前 | `references/worktree.md` | | |
 | `make update`・`make update-actions`を実行候補にする前 | `references/dependency-update.md` | | |
-| 公開前の検証を選定・実行する前 | `references/publishing.md` | | |
+| 公開前の検証を選定・実行する前 | `references/publishing.md`、`references/verification-values-execution.md` | | |
 | 変更範囲の検証対象を選ぶ前 | `references/verification-values-scope.md` | | |
 | pyfltr・MCPの`run`・pytestを実行する前、コード整形や検証時間の比較を行う前 | `references/verification-values-execution.md` | | |
 | テストを追加・変更・レビューする前と、テストやCIの結果を成功時も含めて判定する前 | `references/verification-values-speed.md` | | |

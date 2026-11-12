@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 版数・説明文・派生マニフェストの更新を判断する前 | `version-bump.md` |
-
 ## 付帯作業の扱い
 
 `agent-toolkit/skills/`、`agent-toolkit/share/`（規範原本を含む）配下のエージェント向け文書は、エンドユーザーへ配布する成果物そのものである。
@@ -52,16 +48,8 @@ process-wiのモード固有資料は、共通契約を参照して読み替え�
   宣言と参照先への読込行は`agent-toolkit/read_triggers_invariant_test.py`で確かめる。
   読込表の別ファイル化の再発は`agent_basics_standalone_invariant_test.py`で確かめる。
   書き方は`agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`「読込表」に従う。
-  agent-toolkitの文書では、`agent-toolkit:delegation/references/agent-documents-basics.md`「読込表の宣言」にも従う。
-- 計画ファイルの見出し、固定H3、表の行名は、`agent-toolkit/agent_toolkit/_plan/structure/constants.py`の構造定数で定義されている。
-  これらを改訂する場合は構造定数を変更し、同一名称を使用している以下の文書も同一の変更単位で揃える。
-  - `agent-toolkit/skills/write-plan/references/plan-file-standards.md`
-  - `agent-toolkit/share/`配下の`<役割名>.subagent.md`
-  - `docs/development/`配下の該当設計資料および`concepts.md`
-  ※ユーザーの操作や画面の観測結果が変わる場合のみ、対応するガイドを更新する。
-    改訂前の名称は読み取り互換用の構造定数として残し、新規作成や改訂のバリデーション処理でのみエラーとする。
-- 構造定数を持たず、`plan-file-standards.md`のみで必須とされている見出しについては、同ファイルの記述に従う。
-  稼働中の計画が自動チェックで不合格になるのを防ぐためにこの形式を採用した場合は、その理由を計画ファイルへ記録する
+  agent-toolkitの文書では、`agent-toolkit:/share/agent-documents-operations.md`「読込表の宣言」にも従う。
+- 計画ファイルの見出し、固定H3、表の行名を改訂する場合は`plan-structure-constants.md`に従う。
 
 ## agent-basicsとの責務境界
 
@@ -83,18 +71,12 @@ agent-toolkitのリソースを編集する前は`agent-basics:writing-standards
 
 ## エージェント向け文書の技術的条文
 
-- 実機や現物の観測結果を根拠として、エージェント向け文書の技術的な条文（外部ライブラリ、実行環境、外部コマンドの挙動など）を新規に作成または改訂する場合は、観測した事象を条文に明記し、その観測記録を条文を保持するリポジトリの`docs/development/audit-records.md`に残す。
-  記録には、再現条件としての観測日、観測時のバージョン、および再検証手段の3項目のみを記載し、見出しは`<ファイルパス>：<節名>：<日付>`とする。
-  条文本文には観測環境やモデルのバージョンは記載せず、条文の末尾に記録の所在を示す文を1文置く。
-  ただし、適用範囲を定める対象バージョン（参照資料の冒頭に掲げる対象バージョンなど）は条文本文に記載する。
-  常時規範（`AGENTS.md`や`CLAUDE.md`など）では、全エージェントの読み込み量を抑えるため、記録の見出しのみを索引として記載する。
-  条文を別の場所へ移動した場合は、見出しのファイルパスと節名も移動先の位置へ修正する。
-  再検証の結果が条文の記述と異なっていた場合は、再現条件をそろえた上で再検証し、そろえられなかった条件の差異を記録する。
-  条文の失効は、条件をそろえて実施した再検証の結果に基づいて判定する。
-  エンドユーザー向け文書、README、設定ファイル、コードコメント、ならびにユーザーの指示に由来する規範、運用手順、確認時の選択肢の説明は、この記録義務の対象外とする。
-  既存の記述は現行のまま維持する（努力目標）。
-  ただし、既存の条文の誤りが品質（Q）に悪影響を及ぼす場合は、この限定にかかわらず是正要否と対応範囲を判定する。
-  判定は`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」と、`agent-basics:bugfix/references/root-cause-remediation.md`「類似見直し」に従う。
+観測に基づく技術的条文の新設・改訂は`agent-basics:writing-standards/references/investigation-technical-clauses.md`に従う。
+本リポジトリでは、観測の記録を`docs/development/audit-records.md`の索引から選ぶ記録ファイルへ置き、見出しを`<ファイルパス>：<節名>：<日付>`とする。
+記録には観測日、観測時のバージョン、再検証手段の3項目のみを書き、条文の末尾に記録の所在を示す文を1文置く。
+条文本文には観測環境やモデルのバージョンを書かない（対象バージョンは除く）。
+常時規範（`AGENTS.md`など）には記録の見出しだけを索引として書く。
+条文を別の場所へ移動したときは、見出しのファイルパスと節名も移動先へ直す。
 
 ## 本文参照の取得条件
 

@@ -14,7 +14,8 @@ import time
 import psutil
 import pytest
 
-from agent_toolkit._atk import run_command
+from agent_toolkit._atk import managed_temp, run_command
+from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import git_repository, late_descendant
 
@@ -310,3 +311,10 @@ def test_start_failure_returns_125_with_empty_saved_streams(tmp_path: pathlib.Pa
     assert metadata["child_exit_code"] is None
     assert _saved(metadata, "stdout_path") == b""
     assert _saved(metadata, "stderr_path") == b""
+
+
+def test_execute_records_owner_process_in_saved_area(tmp_path: pathlib.Path) -> None:
+    """保存領域へ作成プロセスを記録し、空きによる回収が実行中の領域を使用中と判定できるようにする。"""
+    metadata, _code, _failure = run_command.execute([sys.executable, "-c", "pass"], tmp_path, 60)
+    area = pathlib.Path(metadata["stdout_path"]).parent
+    assert sweep.owner_alive((area / managed_temp.OWNER_FILE).read_text(encoding="ascii"))

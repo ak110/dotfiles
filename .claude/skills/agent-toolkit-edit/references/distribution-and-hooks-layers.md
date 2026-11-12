@@ -4,15 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 機構や外部インターフェースの変更に伴う文書の追随先を確定する前 | `agent-documents.md` |
-| Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state-retention.md` |
-| hookの実装や登録を新設・変更する前 | `claude-hooks.md` |
-| hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` |
-| hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` |
-| hook通知の本文（`fix`・次の操作を含む）またはformatterを新設・変更する前 | `claude-hooks-messages.md` |
-
 ## agent_toolkitパッケージの配置と層
 
 - `agent-toolkit/agent_toolkit/`の直下には、配布物の外部から絶対パスで解決される公開スクリプトのみを配置し、先頭にアンダースコア（`_`）を付けない命名にする。

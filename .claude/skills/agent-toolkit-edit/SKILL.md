@@ -29,23 +29,28 @@ description: >
 | --- | --- |
 | WI処理の工程や運用を担うスキル、`share/`配下の`<役割名>.subagent.md`、`atk wi`の実装、`agent-toolkit/agent_toolkit/_atk/run_skill.py`または`agent-toolkit/agent_toolkit/_atk/orchestrator.py`を編集する前 | `agent-toolkit:workflow-overview`を起動する。ユーザーの判断、操作、観測結果が変わる場合のみ、対応する`docs/guide/`節も読む |
 | 統括の起動引数、turn終了、再開または外部制御の経路を変更する前 | `agent-toolkit:workflow-overview/references/orchestrator-runtime.md`。同資料の実装由来の要約も同じ変更単位で更新する |
-| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下、`rust/claude-statusline/src/agents_server.rs`または`rust/claude-statusline/src/agents_server/`配下の実装、および共有状態の読書き・保存先・更新主体・利用関係を変更・調査する前 | `references/agents-server-shared-state.md` |
-| セッション状態や内部フラグを設計・変更・調査する前 | `references/session-state-and-flags.md` |
-| `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md` |
+| `agent-toolkit/agent_toolkit/agents_server_mcp.py`、`agent-toolkit/agent_toolkit/_agents_server/`配下、`rust/claude-statusline/src/agents_server.rs`または`rust/claude-statusline/src/agents_server/`配下の実装、および共有状態の読書き・保存先・更新主体・利用関係を変更・調査する前 | `references/agents-server-shared-state.md`。保存先、更新する主体、状態ディレクトリ配下のファイル構成を変更する場合は、同一の変更単位で該当資料も更新する |
+| セッション状態や内部フラグを設計・変更・調査する前 | `references/session-state-and-flags.md`。フラグを追加・変更する際は、該当する主題別資料を更新する |
+| `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md`。ログの所在、診断項目、委譲先CLIへ渡す引数を変更する場合は、同一の変更単位で同資料も更新する |
+| toolkitのPython実装を新設・変更する前 | `references/python.md` |
+| 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` |
+| 環境変数を新設・変更する前、環境変数の一覧から名称と用途を確認する前 | `references/claude-hooks.md` |
+| レビュー担当への指示・モデルの割り当てを変える前 | `references/review-eval-set.md` |
+| WindowsのCodex境界試験の記録、またはpytest回収失敗時の標準エラー`resource-diagnostics:`を調べる前 | `references/agents-server-investigation-resource-diagnostics.md` |
 | `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
-| 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` |
+| 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、遮断や警告の判定・出力・通知formatter、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` |
 | hook、自動チェック、永続状態、配送経路など新しい仕組みを加える計画を起草する前と、その変更を実行レビューする前 | `./../edit-dotfiles-norms/SKILL.md` |
 | `agent-toolkit/`配下を変更対象に含む計画を起草する前 | `references/version-bump-planning.md` |
+| 新しいCLI・コマンド・ラッパースクリプトを公開する計画を起草する前 | `references/distribution-and-hooks-new-cli.md` |
 | 全レーンの完了後にバージョンを更新する時点、および`references/version-bump.md`の手順へ入る前 | `agent-toolkit/skills/process-wi/references/finish-session.md` |
 | `agent-toolkit/agent_toolkit/`・`agent-toolkit/scripts/`の配置とインポートを変更する前 | `references/distribution-and-hooks-layers.md` |
+| スキル（`SKILL.md`・`references/`）を新設・編集する前 | `../../../agent-toolkit/share/agent-skills-operations.md` |
+| `.ps1`・`.ps1.tmpl`・`.psm1`・`.psd1`を編集する前 | `../../../agent-toolkit/share/powershell-operations.md` |
 | 配布プラグインの文書・スキル・役割契約を編集する前、機構や外部インターフェースの変更に伴う文書・生成物の追随先を確定する前 | `references/agent-documents.md` |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂（`<役割名>.parent.md`・`<役割名>.subagent.md`を含む） | `references/sub-agents.md`、`references/sub-agents-declarations.md` |
 | プラグインの版数・説明文・派生マニフェストを更新する前、または公開時の採番要否を確定する前 | `references/version-bump.md` |
 
 ## ファイル構成と参照方向
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 環境変数の一覧から名称と用途を確認する前 | `./references/claude-hooks.md` |
 
 - `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するプラグインルート。
 - `agent-basics/`: 成果物の品質スキルを独立して配布するプラグインルート。
@@ -88,71 +93,3 @@ description: >
 - ファイル編集時に`pytools/claude_hook/pretooluse.py`の固有名チェックが個人環境固有の識別子を検出した場合は、汎用的な表現へ置き換える。
 - 配布物スキルの本文では、フックの挙動をエンドユーザーが観測できる結果として示し、ハッシュ値の比較や状態フラグの更新といった内部実装の詳細は記載しない（努力目標）。
   状態フラグやフック間連携の内部仕様は`references/session-state-and-flags.md`へ集約する。
-
-## agents_serverの共有状態
-
-共有状態ごとの保存場所や読み書きの担当モジュールは、`references/agents-server-shared-state.md`から選ぶ主題別資料に記録されている。
-保存先、更新する主体、または状態ディレクトリ配下のファイル構成を変更する場合は、同一の変更単位で該当資料も更新する。
-`references/agents-server-shared-state.md`「状態資料の選択」「共有状態資料の選択」から、必要な共通資料と主題別資料を選んで全文を読む。
-
-## agents_serverの委譲不具合の調査
-
-`references/agents-server-investigation.md`は、ログ記録の所在、切り分けの順序、外部プロセスでの再現手順をまとめている。
-ログの所在、診断項目、または委譲先CLIへ渡す引数を変更する場合は、同一の変更単位で同文書も更新する。
-
-## セッション状態フラグ
-
-`agent-toolkit`プラグインで管理するフラグの仕様は、`references/session-state-and-flags.md`から選ぶ主題別資料に集約する。
-フラグを追加・変更する際は、該当する主題別資料を更新する。
-フックの実装・編集やセッション状態の設計・変更する際は、`agent-basics:writing-standards`を起動して参照する（フック実装の基準を含む。エージェントの行動規範自体は役割別ルールまたは作業別スキルに置く）。
-`references/session-state-and-flags.md`「セッション状態資料の選択」から、必要な共通資料と主題別資料を選んで全文を読む。
-
-## 開発専用資料の取得
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| hookの実装・登録・遮断や警告の判定・出力・通知formatterを変更する前 | `references/distribution-and-hooks.md` |
-| toolkitのPython実装を新設・変更する前 | `references/python.md` |
-| 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` |
-
-## レビュー評価セット
-
-対象はレビュー担当への指示とモデルの割り当てを変える変更である。
-指示の例は`agent-toolkit/share/exec-review*.md`、`agent-toolkit/share/recurrence-self-check.parent.md`、`agent-basics:review-standards`である。
-これらの変更では、`scripts/review_eval_cases.json`の評価セットで変更前後の結果を比べてから採用する。
-見逃しと誤指摘の件数を実例で比べ、改訂が良くなったかを印象ではなく結果で判断するためである。
-モデルの費用がかかるため、CIや定期工程には組み込まない。
-
-1. `uv run --frozen python scripts/review_eval.py prepare --out <managed-tempの絶対パス>`で事例ごとの作業ツリーと計画の複製を作る。
-   事例定義の`revision`には計画・commit対応記録・WIを取得するprivate-notesの完全OIDを置き、WIだけ異なる整合版を要する場合は`wi_revisions`へWI名と完全OIDを記す。
-   変更時点の要求と対応する保存版を原本とし、変更前後で同じ定義と抽出原本を再利用する。
-   指定版の欠落や不正は事例定義を直し、最新本文で代用しない。
-   新形式AWIを含む事例では、反映項目ごとの主要完成状態と出典、リスト・段落の補足条件を条件表（`review_contract`）へ写す。
-   反映内容節がない対象AWIはH1と冒頭から主要完成状態1件を作り、人間由来と旧形式の対象外判定を維持する。
-   生成側と起動側は同じ必要条件を検査し、`評価用WI原本`のJSON一覧から同じ保存本文を取得する。
-   事例定義の`fixtures`に保存版の指定（`revision`と、`plan`か`contract`のパス）がある事例では、評価用の計画と確かめた条件表を保存版から渡す。
-   出力の`temporary_evidence`は、渡す計画と条件表が参照する一時領域のパスの件数（`referenced`）と、現存しないパス（`missing`）を示す。
-   `missing`が空でない事例は、評価の前に、証拠を欠測と明記した評価用の計画を`store`で保存して`fixtures`へ指定する。
-   出力の`start`をそのままagents_serverの`start`へ渡し、比べるモデルは`model_type`で指定する
-2. 変更前は稼働中のplugin rootの役割名（`exec-review`）、変更後は作業ツリーの`agent-toolkit/share/exec-review.subagent.md`の絶対パスを`subagent_md_path`へ渡す。
-   agent-basicsのスキルなど役割文書の外の改訂は、稼働版へ反映された後の実行と、反映前に保存した結果を比べる
-3. 各担当の終了後、`uv run --frozen python scripts/review_eval.py score --result <事例ID>=<出力のtableのパス>`で事例別の検出・見逃し・誤指摘・未分類と合計を出す。
-   未分類の行は本文を読み、正しい指摘か誤指摘かを手で分類する
-4. 変更後に悪化した事例があれば理由を確かめ、改訂の採否を決める。
-   比較結果の保存先を計画の検証結果へ残し、出力の`cleanup`で作業ツリーを回収する
-
-障害事例や振り返りで、レビューの見逃し（レビュー後に判明した欠陥）か誤指摘（レビュー担当の前提の誤り・撤回で不採用になった指摘）が確定したら、`scripts/review_eval_cases.json`へ事例を追加する。
-入力はprivate-notesの`plans`配下の計画と`.wi-commits.jsonl`から再構成できるものを選び、期待には検出すべき問題か出すべきでない指摘を、同じ指摘行に揃って現れる照合語句（正規表現）で書く。
-メインやレーン担当の技術判断による見送りは誤指摘に数えない。
-追加する事例は、`prepare`の出力だけでレビューを始められる入力にしてから登録する。
-
-- 条件表を、対象AWIの要求の最終形（後の節で置き換えられた方式や条件を反映した形）と読み比べる。
-  自動生成の条件表が最終形と違う場合は、確かめた条件表を保存版にする。
-- 計画が参照する一時領域の証拠は保持期限で消える。
-  進捗ログを除き、実機の証拠が欠測であることを明記した評価用の計画を保存版にし、`temporary_evidence`の`referenced`が0件になることを確かめる。
-- 期待に書く問題が、渡す入力で未解決のまま残っていることを確かめる。
-  過去のレビュー指摘と判定、補正を記録した進捗行、訂正済みの検証表が入力に残ると、レビュー担当は問題を解決済みと読む。
-- 保存版は`uv run --frozen python scripts/review_eval.py store --case <事例ID> --plan <評価用の計画> --contract <確かめた条件表>`でprivate-notesへ保存し、出力の`fixtures`を事例定義へ書く。
-  AWIと計画の本文を含むため、公開リポジトリには置かない。
-実行レビュー以外のレビュー担当の事例は、`role`に役割名を、`extra_params`にその役割の起動入力を書いて追加する。
-値の`{plan}`・`{base}`・`{case_dir}`は準備時に計画の複製・開始時のHEAD・事例の出力先へ置き換わる。

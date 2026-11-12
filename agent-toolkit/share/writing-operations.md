@@ -25,5 +25,5 @@
 
 ## ユーザー入力素材の取扱い
 
-文章の起草を`agents_server`の`start`で`write`モードに委ねる際の条件や検収基準は、`agent-toolkit:delegation/references/textlint-violations.md`「文の書き直しの委譲と検収」に従う。
+文章の起草を`agents_server`の`start`で`write`モードに委ねる際の条件や検収基準は、`agent-toolkit:delegation/references/delegation-sending.md`「文の書き直しの委譲と検収」に従う。
 また、textlintの指摘への対応方針は`agent-basics:writing-standards/references/textlint-violations.md`「textlint指摘への修正方針」に従う。

@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 経験の記録から承認の適用範囲を判断する前 | `agent-basics:writing-standards/references/investigation-experience.md` |
-
 ## 公開操作の消費主体
 
 公開インターフェースに当たるかは、実行時に機能を呼ぶ主体や出力を読む主体（消費主体）で判定する。

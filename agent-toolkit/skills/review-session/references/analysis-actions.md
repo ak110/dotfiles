@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `../SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
@@ -15,10 +15,8 @@
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` |
-| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 | 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` |
 
 ## 原因と対策
 
@@ -69,7 +67,7 @@
 改善機会の見送りは、維持すべき成果、作業量、代替案、採否の比較に対応付ける。
 選別した問題と所要分析の律速条件は、発見元の分類・過去事例の有無を問わず`agent-basics:bugfix`を起動して共通手順へ渡す。
 選別・見送りは、同スキル起動時の`SKILL.md`の初動基準（QとC・Dの区別、重大度、再発防止策の必須性、不採用根拠）で判断する。
-介入の判定は`../../user-confirmation-and-report/references/analysis-operations.md`に従う。
+介入の判定は`../../user-confirmation-and-report/references/analysis-operations-intervention.md`に従う。
 規範の未適用・目的逸脱・反復性は`agent-basics:bugfix/references/root-cause-scenarios.md`で判定する。
 類似事例の見直しは`agent-basics:bugfix/references/root-cause-remediation.md`に従う。
 処置の階層は`agent-basics:bugfix/references/root-cause-actions.md`に従う。
@@ -114,7 +112,7 @@
 情報探索の証拠、原因、対策は、bugfixスキルの`agent-basics:bugfix/references/root-cause-scenarios-investigation.md`「情報探索の問題」で確定する。
 対策要求には、探していた情報、探索した区間、参照した文書の順、定義元、探索を妨げた要因を書く（資料の陳腐化が原因なら、参照した記述、現行仕様との差、判断への影響も書く）。
 これらを根拠の絶対パスと記録位置に対応付けて渡す。
-AWIの各節の記述分担は`agent-toolkit:wi-standards`、原稿と根拠の検収は`share/add-wi.parent.md`「受領と検収」に従い、振り返り結果報告からAWIのファイル名で直接たどれるようにする。
+AWIの各節の記述分担は`agent-toolkit:wi-standards`、原稿と根拠の検収は`${CLAUDE_PLUGIN_ROOT}/share/add-wi-parent-acceptance.md`「受領と検収」に従い、振り返り結果報告からAWIのファイル名で直接たどれるようにする。
 
 ## 既存キュー項目との重複確認
 

@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
-
 ## 状態遷移の性質確認
 
 事前検証が保証する範囲は、満たすべき性質、生成入力、負荷モデル、モックの仮定で決まる。

@@ -170,7 +170,7 @@ def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, caps
         reason = _denial(dispatch.main(json.dumps(payload)), capsys.readouterr())
         assert "approval-scope.md" in reason
         assert "choice-construction.md" in reason
-        assert ("`send_to_user`で先に送り" in reason) is not codex
+        assert ("「ユーザー確認（`AskUserQuestion`）」" in reason) is not codex
 
 
 @pytest.mark.parametrize("codex", [False, True])

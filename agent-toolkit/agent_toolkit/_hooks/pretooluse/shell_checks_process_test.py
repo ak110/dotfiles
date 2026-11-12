@@ -209,3 +209,47 @@ class TestBashProcessKillByPattern:
     def test_blocks_indirect_or_executable_matches(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert "パターン一致によるプロセス終了" in _denial_reason(result)
+
+
+class TestBashSelfMatchingPgrep:
+    """パターンが自身のコマンド行に一致する`pgrep -f`の検出（block）。"""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'until ! pgrep -f "pytest -q -p no:cacheprovider retired_terms" > /dev/null; do sleep 10; done',
+            'until ! kill -0 $(pgrep -f "pytest -q retired_terms" | head -1); do sleep 10; done',
+            "pgrep -f pytest",
+            "pgrep -af 'codex exec'",
+            "pgrep -u aki -f worker",
+            "pgrep --full -- worker",
+        ],
+    )
+    def test_blocks(self, command: str):
+        reason = _denial_reason(_run({"tool_name": "Bash", "tool_input": {"command": command}}))
+        assert "`pgrep -f`のパターンがこのコマンド自身の本文に一致する" in reason
+        assert "`[p]ytest`" in reason
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # 文字クラスで書いたパターンは本文に一致しない。
+            "pgrep -f '[p]ytest -q'",
+            "until ! pgrep -f '[r]etired_terms' > /dev/null; do sleep 10; done",
+            # `-f`の無い検索はプロセス名だけを比べ、ラッパーのシェルの名前（bash）とは別である。
+            "pgrep pytest",
+            "kill -0 12345",
+            # 検索語として現れるだけの語は実行位置ではない。
+            "rg -n -F 'pgrep -f' -- notes.md",
+            # 完全一致（`-x`）と不一致の列挙（`-v`）は、ラッパーのシェルを結果に含めない。
+            "pgrep -fx 'sleep 100'",
+            "pgrep -x -f 'sleep 100'",
+            "pgrep -fv worker",
+            # pgrepと解釈の異なるPOSIXの文字クラスと、ラッパーの引用で置き換わる単一引用符は判定しない。
+            "pgrep -f '[[:alpha:]]x'",
+            'pgrep -f "it\'s"',
+        ],
+    )
+    def test_allows(self, command: str):
+        result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
+        assert "`pgrep -f`のパターン" not in result.stdout + result.stderr

@@ -41,7 +41,7 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 目的や範囲を変える選択、要件の曖昧さ、選好、不足する認可は手順2で確認する。
 資料に複数の合理的な改善目的がある場合は、関連候補と推奨を示して目指す結果を確認する。
 AWI登録の認可はスキル起動で成立しているため、確定した目的内の技術手段は自ら決め、本文全文の提示による一律の登録可否確認と独立した方針検収を挟まず、手順3の意味検収と保存まで進める。
-投入前レビューで方針段階から本文段階へ進む場合は、`share/wi-draft-review.parent.md`の`本文確認`を使う。
+投入前レビューで方針段階から本文段階へ進む場合は、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md`の`本文確認`を使う。
 
 正式なAWI登録には、対象リポジトリと既存キューの読み取り権限、`atk`コマンド、参照資料が必要である。
 これらが利用できない環境では、対話によって要求を整理した原稿を作成して返却し、登録前の下書きとして取り扱う。
@@ -55,18 +55,15 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 参考資料から改善候補を起草・採否判定する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
-| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 考慮漏れの指摘を受けて原因を分析する前 | `agent-basics:bugfix/SKILL.md` |
-| 参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
+| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis-stages.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
+| 考慮漏れの指摘を受けて原因を分析する前、参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
 | 既存の規範・手順で充足しているかを判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
 | 疑問形の異議を受けて要求単位へ分ける前 | `../user-confirmation-and-report/references/user-utterance-questions.md` |
 | 考慮漏れ処置後の方針再確認で論点ごとの確認要否を判定する前 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/root-cause-actions-selection.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../wi-standards/references/awi-body-completion.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-utterance-correction.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/approval-scope.md` |
+| 対象リポジトリの外部へ成果を反映させる要求の終了状態を判定する前 | `../wi-standards/references/awi-body-completion.md` |
+| 成果物をAWIの登録と更新に限る契約を適用する前 | `../user-confirmation-and-report/references/user-utterance-correction.md` |
+| 対象リポジトリの外部に対する操作の認可と確認要否を判定する前 | `../user-confirmation-and-report/references/approval-scope.md` |
 
 ## 読込表
 
@@ -141,7 +138,7 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
    - 検収の構成は`../wi-standards/references/drafting-workflow-review-route.md`「直接起草と独立した検収の選択」に従う。
      原文と反映内容を読み比べて構造を確認し、`../wi-standards/references/draft-semantic-review.md`に基づいて文脈を再確認する。
      本スキルでは4条件への該当にかかわらず毎回投入前レビューする。
-     同時に準備した原稿、要求内容、出所、証拠を要求識別子で紐付けて`share/wi-draft-review.parent.md`へ一括して引き渡し、作成主体がレビュー指摘の採否を確定した上で保存する。
+     同時に準備した原稿、要求内容、出所、証拠を要求識別子で紐付けて`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md`へ一括して引き渡し、作成主体がレビュー指摘の採否を確定した上で保存する。
      `要求と出所`には起動したリポジトリ（起動時のcwdが属するリポジトリ）を、`成立性の証拠`には対象リポジトリの選定結果（起動したリポジトリの採否と理由、派生して見直したリポジトリ）を含める。
    - ユーザー自身しか決定できない未確定事項のみを手順2の質問に戻す。
      委譲した調査に不足がある場合は元の調査担当へ差し戻す。
@@ -174,7 +171,7 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
      根拠と代替案を示す。
    - 採用しない提案: 検討の結果採らない提案。
      根拠を示す。
-3. 介入評価（ユーザーの手を煩わせた原因を見逃さない）: 分類とは別に、既存判断を是正した介入を`../user-confirmation-and-report/references/analysis-operations.md`「ユーザー介入と確認の判定」で評価する。
+3. 介入評価（ユーザーの手を煩わせた原因を見逃さない）: 分類とは別に、既存判断を是正した介入を`../user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」で評価する。
 4. 考慮漏れの処置（同じ仕組みの漏れを防ぐ）: `agent-basics:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。
    再発防止策を検討してから方針へ反映する。
    再発防止策は本スキルの成果物制限に従い、`## 原因分析`付きの別AWIとして起草し、元のAWIと一緒に登録する。

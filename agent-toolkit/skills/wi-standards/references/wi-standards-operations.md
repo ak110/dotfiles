@@ -13,7 +13,6 @@
 | WI投入担当への委譲を選ぶ前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
 | WIの起草主体と独立した検収を選ぶ前 | `drafting-workflow.md` |
 | WIの由来を確定する前 | `origin-and-approval-origin.md` |
-| 本書に関わる操作・判断に着手する前 | `../SKILL.md`の読込表から、その操作・判断に該当する資料を選ぶ |
 
 ## 投入と取得
 

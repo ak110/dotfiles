@@ -295,8 +295,8 @@ def merge_selection(
     if _selection.PROCESS_ESTIMATE_KEY in added:
         # 追加分だけの経路を既存へ足すと共有工程を二重計上するため、全体を再確定した入力を使う。
         result[_selection.PROCESS_ESTIMATE_KEY] = added[_selection.PROCESS_ESTIMATE_KEY]
-    elif _selection.PROCESS_ESTIMATE_KEY in existing:
-        raise ValueError("追加側へ合流後の全対象を持つ`全工程の見込み`を指定する")
+    # 追加側が見込みを持たない場合、追加分を含まない既存の値を残すと誤った見込みを表示するため合流結果へ引き継がない。
+    # 見込みの欠落は検査の警告として出す。
     excluded = typing.cast(dict[str, object], result[correction_key])["除外した記録"]
     assert isinstance(excluded, list)
     excluded.extend(

@@ -9,7 +9,7 @@
 ### 2026年11月11日
 
 2026年11月11日、公式ガイド「Prompting Claude Fable 5.2」を基準に、`agent-toolkit:refine-prompt`の「文書の点検」を規範全体へ1回実施した。
-この記録は`.claude/skills/edit-dotfiles-norms/SKILL.md`「モデルとホストの更新時の点検」が点検の要否の判定に使う。
+この記録は`.claude/skills/edit-dotfiles-norms/references/model-host-audit.md`が点検の要否の判定に使う。
 
 - 基準にしたモデルID: `claude-fable-5-2`
 - 基準にしたガイド: [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)と、`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「見直す契機と点検観点」

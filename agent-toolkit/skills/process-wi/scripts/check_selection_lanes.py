@@ -48,7 +48,7 @@ _NEXT_SHARED_WAIT = (
 _NEXT_TARGET_OVERRUN = (
     "全対象と必要品質・レーン数の上限を保ち、依存経路・先行レビュー・検証の集約を組み直す。"
     "資源・サービス制限・費用比較に基づく同時数と全工程の根拠を直して再検査する。"
-    "項目を外さず、品質工程の省略や次回送りで目標内にしない。比較欄だけでは成立としない"
+    "項目を外さず、品質工程の省略や次回送りで目標内にしない。組み直しの判断は30分ごとの進捗点検でも続ける"
 )
 
 _NEXT_PROCESS_ESTIMATE = (
@@ -162,15 +162,23 @@ def _check_estimate_records(
     return errors
 
 
-def _check_process_estimate(
+# 観測を待つ未確認の前提は、入力を直しても解消できないため警告に分ける。`selection_estimate.forecast`の文言と対応する。
+_UNCONFIRMED_ISSUE = "秒数・算定または前提が未確認"
+
+
+def _process_estimate_findings(
     selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None
-) -> list[Violation]:
-    """全工程の欠測・依存と通常対象の目標を、比較文と独立して検収する。"""
+) -> tuple[list[Violation], list[str]]:
+    """全工程の見込みの判定を、拒否する違反と警告へ分けて返す。
+
+    止める判定は、渡した担当がその場で入力を直せる欠落・不整合に限る。
+    見込みの欠落・未確認の前提・目標超過は経過時間や観測待ちに由来し、その場で変えられないため警告で返す。
+    """
     plan = selection.get(_selection.PROCESS_ESTIMATE_KEY)
     if plan is None:
         if target_seconds is None:
-            return []
-        return [Violation("全工程の見込みが無く、目標内の実行可能性は未確認", next_action=_NEXT_PROCESS_ESTIMATE)]
+            return [], []
+        return [], [f"全工程の見込みが無く、目標内の実行可能性は未確認。{_NEXT_PROCESS_ESTIMATE}。{_NEXT_TARGET_OVERRUN}"]
     assignments = {
         str(item[_selection.WI_KEY]): str(item[_selection.LANE_KEY])
         for item in typing.cast(list[dict[str, object]], _selection.decisions(selection))
@@ -178,16 +186,34 @@ def _check_process_estimate(
     }
     prior = {str(row[_selection.LANE_KEY]): typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])) for row in costs}
     result = _estimate.forecast(plan, assignments, prior)
-    errors = [Violation(f"全工程の見込みは未成立: {issue}", next_action=_NEXT_PROCESS_ESTIMATE) for issue in result.issues]
+    errors: list[Violation] = []
+    warnings: list[str] = []
+    for issue in result.issues:
+        if _UNCONFIRMED_ISSUE in issue:
+            warnings.append(f"全工程の見込みに未確認の前提が残る: {issue}。{_NEXT_PROCESS_ESTIMATE}")
+        else:
+            errors.append(Violation(f"全工程の見込みは未成立: {issue}", next_action=_NEXT_PROCESS_ESTIMATE))
     if target_seconds is not None and result.normal_seconds is not None and result.normal_seconds > target_seconds:
-        errors.append(
-            Violation(
-                f"通常対象の完了見込み秒数{result.normal_seconds:g}が目標所要秒数{target_seconds:g}を超える"
-                f"（差 {result.normal_seconds - target_seconds:g}、全件の壁時計見込み{result.total_seconds:g}）",
-                next_action=_NEXT_TARGET_OVERRUN,
-            )
+        warnings.append(
+            f"通常対象の完了見込み秒数{result.normal_seconds:g}が目標所要秒数{target_seconds:g}を超える"
+            f"（差 {result.normal_seconds - target_seconds:g}、全件の壁時計見込み{result.total_seconds:g}）。"
+            f"{_NEXT_TARGET_OVERRUN}"
         )
-    return errors
+    return errors, warnings
+
+
+def _check_process_estimate(
+    selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None
+) -> list[Violation]:
+    """全工程の見込みのうち、入力を直せば解消できる欠落・不整合だけを違反として返す。"""
+    return _process_estimate_findings(selection, costs, target_seconds)[0]
+
+
+def process_estimate_warnings(
+    selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None
+) -> list[str]:
+    """見込みの欠落・未確認・目標超過の警告を返す。進行は止めない。"""
+    return _process_estimate_findings(selection, costs, target_seconds)[1]
 
 
 def _completion_estimate(costs: list[dict[str, object]], shared_wait: float) -> float:

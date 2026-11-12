@@ -56,25 +56,7 @@ _RESERVED_AT_KEY = "reserved_at"
 
 _reservations: list[tuple[str, str, float]] = []
 
-_SELF_CHECK_NOTICE_BODY = (
-    "進捗点検を行え。既存の作業記録と要求原本・計画を読取ツールで確認し、"
-    "工程・開始時点・経過時間を目標と前回の成果・再試行に比較せよ。"
-    "追加・変更後も有効な全要求に対する成果・証拠・未達・残工程と、全工程を100%とする進捗率の概算と根拠を記録せよ。"
-    "目標所要時間があれば、目標までの残り時間を残工程の見込みと、共有の待ちの累計を正常な前進と分けて比べ、"
-    "差があれば待ち・重複・手戻りを減らす代替案を選んで残りの工程を組み直せ"
-    "（次のセッションへの持ち越しと品質維持に必要な工程の省略は選択肢から除け）。"
-    "クリティカルパスの所要は、委譲先から受け取ったものも含め、規模と待ち・本体の内訳に照らして疑え。"
-    "律速の担当ごとに、選定時などの初期見込みの代わりに、担当の内部の工程まで現在の内訳と実測の処理速度を取り直し、"
-    "並行化・分割・計測や検証の集約・独立工程の前倒しを比べ、選んだ組み直しを担当へ指示せよ（継続ならその根拠を記録せよ）。"
-    "今の作業が必要な完成条件を1行で示せ。前提は実データ・実装・実行結果で確かめ、不成立の条件も保持せよ。\n"
-    "比較・取得・報告の基準は、`{read_command}`で取得し、"
-    "「判断指針」「行動と手順の目的」「結果の返却」を読め。"
-    "配下がある場合は活動と成果・所要を分け、取得済みの`waiting-and-monitoring.md`「成果物側の観測」に従って点検せよ。\n"
-    "具体的な比較結果を既存の進捗記録へ保存せよ。最上位メインの出力形式は`rules-main.md`「進捗報告」の定義に従え。"
-    "改善点を報告する場合は同書「作業中の改善点の報告」の読込表から判定資料を全文読み、"
-    "対処とAWI化ステータスを見直せ。委譲先の正常な前進は要旨と記録先を次の工程返却へ含め、"
-    "判断・認可・入力・調整が必要な変化や無視できない改善・停滞の新根拠は委譲元へ直ちに通知せよ。"
-)
+_SELF_CHECK_NOTICE_BODY = "進捗点検を行え。手順は`{read_command}`で取得する`agent-conduct-details.md`「進捗点検」節に従え。"
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -158,7 +140,7 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         return None
     # 整形や後続の出力が例外で終わっても終了時に予約を外せるよう、整形より先に解除の対象へ登録する。
     _reservations.append((session_id, agent_id, current_time))
-    path = str(plugin_resources.plugin_root() / "share/rules/common/01-agent.md")
+    path = str(plugin_resources.plugin_root() / "share/agent-conduct-details.md")
     read_command = (
         "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
         if os.name == "nt"

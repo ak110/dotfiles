@@ -413,6 +413,9 @@ def main(
                 f"managed-tempの期限切れの対象を自動削除できなかった: {path}: {reason}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
+    # 空きの不足は全セッションの書込を止める共有の状態であり、回収した対象の記録も回収した起動が残すため、委譲先にも出力する。
+    if sweep_result.pressure is not None:
+        _report_space_pressure(sweep_result.pressure)
     args.repo_path_override = repo_path_override
     if args.command == "wi":
         _wi_cli.validate_args(args)
@@ -433,6 +436,29 @@ def main(
             _outcome.report_failure(_git_sync.git_timeout_reason(error), next_action=_git_sync.GIT_TIMEOUT_NEXT_ACTION)
         exit_code = 1
     sys.exit(exit_code)
+
+
+def _report_space_pressure(pressure: _managed_temp.SpacePressure) -> None:
+    """空きが下限を割った起動の回収結果を標準エラーへ記録し、回収できず下限を割ったままなら原因を判断できる警告にする。
+
+    回収量上位の対象名を残すのは、参照を終えた作成者が回収しなかった大きな領域を振り返りで見つけるためである。
+    """
+    gib = 1024**3
+    if pressure.reclaimed_bytes:
+        top = ", ".join(f"{name}={size / gib:.2f}GiB" for name, size in pressure.top_reclaimed)
+        _outcome.report_warning(
+            f"managed-tempの空きが下限（容量の10%）を割ったため、使用中でない対象を古い順に回収した: "
+            f"空き {pressure.free_before / gib:.1f}GiB→{pressure.free_after / gib:.1f}GiB"
+            f"（回収 {pressure.reclaimed_bytes / gib:.2f}GiB）。回収量の上位: {top}",
+            next_action="回収量の上位の対象を作成した作業が参照後に回収していたかを確かめると、再発を防げる",
+        )
+    if pressure.still_low:
+        used = "不明" if pressure.temp_root_bytes is None else f"{pressure.temp_root_bytes / gib:.1f}GiB"
+        _outcome.report_warning(
+            f"一時rootを含むディスクの空きが下限（容量の10%）を割っており、回収できる対象が無い: "
+            f"空き {pressure.free_after / gib:.1f}GiB / 容量 {pressure.total / gib:.1f}GiB、一時rootの使用量 {used}",
+            next_action="使用中の一時領域の作成者が終了すると次の起動で回収できる。一時root以外のディスク使用も空きを減らしている場合がある",
+        )
 
 
 def _run_cli() -> None:

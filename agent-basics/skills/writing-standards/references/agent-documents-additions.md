@@ -16,4 +16,5 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 規範追記時の判定に関する判断・作業の前 | `agent-documents-additions-additions.md` |
+| 規範の置き場所の選定に関する判断・作業の前 | `agent-documents-placement-selection.md` |
 | 文書記述量の管理に関する判断・作業の前 | `agent-documents-additions-volume.md` |

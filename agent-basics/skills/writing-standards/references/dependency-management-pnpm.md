@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 外部部品の共通の版方針を判断へ用いる前 | `quality-principles-dependencies.md` |
-
 ## pnpm
 
 - pnpm 12以降は、初回に`npm install -g pnpm@<版>`またはstandaloneで導入し、`packageManager`を`pnpm@<版>`で固定する。

@@ -177,6 +177,8 @@ def execute(
     }
     try:
         directory = managed_temp.create_output_temp("atk-command")
+        # 出力の無い長時間のコマンドは最終更新で使用中と判定できない。作成プロセスを記録し、掃引が生存を確認できるようにする。
+        (directory / managed_temp.OWNER_FILE).write_text(managed_temp.owner_token(), encoding="ascii")
     except (OSError, managed_temp.ManagedTempError) as error:
         failed = _metadata(
             argv=argv,

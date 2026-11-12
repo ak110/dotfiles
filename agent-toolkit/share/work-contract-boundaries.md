@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../skills/review-session/references/session-records-conversation.md` |
-
 ## 工程境界での要求と成果の確認
 
 本節の規定は、計画の起草・更新、実行レビュー、統合、完了判定、および会話圧縮後の復元処理に適用する。

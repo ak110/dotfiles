@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 待機の呼び出しが拒否された時、またはclassifierが判定不能を返した時 | `../../user-confirmation-and-report/references/permission-denial.md` |
-| 必須操作を報告する前 | `../../user-confirmation-and-report/SKILL.md` |
-
 ## 終了コードと呼び出しの失敗
 
 - 終了コード4: `agents_server`の状態ディレクトリを解決できない実行環境で発生する。

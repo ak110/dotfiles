@@ -147,7 +147,7 @@ _SERIES_HEAD = "修正系列の開始時のHEAD"
 
 """表の名前の識別子の呼称。
 
-`agent-toolkit:commit/references/ci-failure-handling.md`がこの呼称で表を名付け、
+`agent-toolkit:process-wi/references/ci-fix-series.md`がこの呼称で表を名付け、
 `retired_terms_invariant_test.py`が撤去した旧呼称の置き換え先として記録する。
 """
 

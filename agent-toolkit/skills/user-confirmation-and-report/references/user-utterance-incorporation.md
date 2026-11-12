@@ -6,16 +6,14 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
-| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 本文の参照基準を適用する前 | `../../delegation/references/routing.md` |
 | 本文の参照基準を適用する前 | `grilling.md` |
 | 本文の参照基準を適用する前 | `pending-decisions.md` |
-| 本資料の基準で判断する前 | `../SKILL.md` |
 
 ## 原文の保持と取り込み
 
-情報の由来の分類と、既存判断を是正した介入かの評価を分け、受領・分類時に`analysis-operations.md`「ユーザー介入と確認の判定」を適用する。
+情報の由来の分類と、既存判断を是正した介入かの評価を分け、受領・分類時に`analysis-operations-intervention.md`「ユーザー介入と確認の判定」を適用する。
 選好や追加要件という分類だけで分析を免除せず、判断を変えない追加要求などの除外も同じ定義から判定する。
 
 現行の作業契約を使うエージェントは、`../../../share/work-contract-updates.md`「追加入力の統合」に従い、原文と現在の目的・要件を比較してから変更、追加指示の送信、続行へ進む。

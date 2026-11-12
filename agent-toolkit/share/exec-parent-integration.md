@@ -7,8 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
 | 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
 | 統合結果のWI状態を一括取得する前 | `../skills/wi-standards/references/wi-show-bulk.md` |

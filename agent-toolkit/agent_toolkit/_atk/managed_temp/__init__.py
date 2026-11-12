@@ -30,15 +30,20 @@ from agent_toolkit._atk.managed_temp.removal import (
     validate_managed_temp,
 )
 from agent_toolkit._atk.managed_temp.sweep import (
+    OWNER_FILE,
+    SpacePressure,
     SweepResult,
+    owner_token,
     sweep_managed_temp,
 )
 
 __all__ = [
     "MAX_AGE_DAYS",
+    "OWNER_FILE",
     "PLUGIN_ROOT_PREFIX",
     "SESSION_TEMP_PREFIX",
     "ManagedTempError",
+    "SpacePressure",
     "SweepResult",
     "cleanup_managed_temp",
     "contained_target",
@@ -47,6 +52,7 @@ __all__ = [
     "create_session_temp",
     "find_session_temp",
     "list_managed_temp",
+    "owner_token",
     "plugin_root_in_use",
     "resolve_session_temp",
     "session_temp_path",

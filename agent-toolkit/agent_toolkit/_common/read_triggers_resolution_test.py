@@ -45,3 +45,23 @@ def test_cached_source_keeps_cycle_detection(tmp_path: pathlib.Path) -> None:
         assert read_triggers.resolve_read_source(source, tmp_path) == source
         with pytest.raises(ValueError, match="循環"):
             read_triggers.resolve_read_source(source, tmp_path, seen=(source,))
+
+
+def test_canonical_markdown_files_returns_real_paths(tmp_path: pathlib.Path) -> None:
+    """リンクの起点とリンクのファイルも実体のパスで返す。
+
+    宣言の列挙の利用側は、この契約を前提に返されたパスを解決し直さない。
+    """
+    real = tmp_path / "real"
+    (real / "sub").mkdir(parents=True)
+    plain = real / "sub" / "plain.md"
+    plain.write_text("# 本文\n", encoding="utf-8")
+    target = tmp_path / "target.md"
+    target.write_text("# 実体\n", encoding="utf-8")
+    root = tmp_path / "root"
+    try:
+        root.symlink_to(real, target_is_directory=True)
+        (real / "linked.md").symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"このホストでリンク作成権限が無い: {error}")
+    assert read_triggers.canonical_markdown_files(root) == [target.resolve(), plain.resolve()]

@@ -1,8 +1,10 @@
-"""プロセス終了コマンドの所有権保護。"""
+"""プロセス終了コマンドの所有権保護と、自身に一致するプロセス検索の遮断。"""
 
 from __future__ import annotations
 
 import pathlib
+import re
+import warnings
 lazy from collections.abc import Sequence
 
 lazy from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations
@@ -218,3 +220,109 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
             "`p[k]ill`のように文字クラスで書け。"
         ),
     )
+
+
+# `pgrep`の値を取るオプション。パターンの位置を求めるとき、オプションの直後の値をパターンと取り違えないために使う。
+_PGREP_VALUE_OPTIONS = frozenset(
+    {
+        "-d",
+        "-g",
+        "-G",
+        "-P",
+        "-s",
+        "-t",
+        "-u",
+        "-U",
+        "-F",
+        "-O",
+        "--delimiter",
+        "--pgroup",
+        "--group",
+        "--parent",
+        "--session",
+        "--terminal",
+        "--euid",
+        "--uid",
+        "--pidfile",
+        "--older",
+        "--ns",
+        "--nslist",
+        "--signal",
+        "-r",
+        "--runstates",
+        "--cgroup",
+        "--env",
+    }
+)
+
+
+def _pgrep_full_pattern(tokens: Sequence[str]) -> str | None:
+    """`pgrep -f`のパターンを返す。`-f`が無いか、引数の形を確定できない場合はNoneを返す。
+
+    `-x`（コマンド行全体との完全一致）と`-v`（不一致の列挙）は、自身を囲むシェルを結果に含めないためNoneを返す。
+    """
+    full = False
+    pattern: str | None = None
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "--":
+            pattern = tokens[index + 1] if index + 1 < len(tokens) else None
+            break
+        if token in {"-x", "--exact", "-v", "--inverse"}:
+            return None
+        if token in {"-f", "--full"}:
+            full = True
+        elif token in _PGREP_VALUE_OPTIONS:
+            index += 1
+        elif token.startswith("--") and "=" in token:
+            pass
+        elif token.startswith("-") and len(token) > 1:
+            # 短いオプションの連結（`-af`など）は、値を取る文字を含まない場合だけ解釈する。
+            letters = token[1:]
+            if any(f"-{letter}" in _PGREP_VALUE_OPTIONS for letter in letters) or "x" in letters or "v" in letters:
+                return None
+            full = full or "f" in letters
+        elif pattern is None:
+            pattern = token
+        index += 1
+    return pattern if full else None
+
+
+def _check_bash_self_matching_pgrep(command: str) -> str | None:
+    """パターンが自身のコマンド行に一致する`pgrep -f`をブロックする。
+
+    Bashツールのコマンドはラッパーのシェルが引数として受け取るため、`pgrep -f`はそのシェルのコマンド行にも一致する。
+    パターンがコマンド本文に一致する場合は、自身を囲むシェルを必ず検出する。
+    この結果で待機するループ（`until ! pgrep -f X`、`kill -0 $(pgrep -f X)`）は終わらず、
+    一覧の結果も自身を含んで誤る（2026年11月12日、待機ループが自身に一致して最長38分残った事例を複数観測した）。
+    パターンを`[p]ytest`のように文字クラスで書けば自身に一致しないため、本文に一致しない場合は許可する。
+    """
+    if "pgrep" not in command:
+        return None
+    for invocation in extract_bash_invocations(command):
+        tokens = invocation.segment.tokens
+        if not invocation.arguments_known or not tokens or pathlib.PurePosixPath(tokens[0]).name != "pgrep":
+            continue
+        pattern = _pgrep_full_pattern(tokens)
+        # pgrepのEREにあるPOSIXの文字クラス（`[[:alpha:]]`）はPythonの正規表現と解釈が異なる。
+        # 単一引用符はラッパーの引用で別の文字列へ置き換わり、本文に一致しても実際のコマンド行に一致しない。
+        # どちらも自己一致を確定できないため判定しない。
+        if pattern is None or "[:" in pattern or "'" in pattern:
+            continue
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                matches_itself = re.search(pattern, command) is not None
+        except re.error:
+            continue
+        if matches_itself:
+            return _block_notice(
+                "blocked: `pgrep -f`のパターンがこのコマンド自身の本文に一致するため、"
+                "コマンドを実行するシェル自身を検出し、待機や判定が誤る。",
+                fix=(
+                    "自身が起動したプロセスは起動時のPID（`$!`）か、ホストの背景実行・`atk agents wait`の識別子で待て。"
+                    "プロセスの一覧が必要なら、`[p]ytest`のように先頭の1文字を文字クラスで書き、パターンが本文に一致しない形にせよ。"
+                ),
+            )
+    return None

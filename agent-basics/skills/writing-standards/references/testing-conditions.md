@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
-
 ## 分岐条件の効果の裏付け
 
 効果の判定では、条件の反転・無効化に加え、誤った戻り値、必要な副作用の欠落、二重実行、禁止された副作用の発生も契約に応じた故障例とする。

@@ -23,7 +23,7 @@
 - 目標は振り返り対象セッションのこの区間へ適用する
 - 目標超過時も必要な品質工程と対象集合を保持し、時間を理由に作業を停止・先送りしない
 
-巡回の終了条件は`AGENTS.md`と`develop-dotfiles`「process-wiの所要時間と終了条件」に従う。
+巡回の終了条件は`AGENTS.md`と`develop-dotfiles`の`references/process-wi-duration.md`に従う。
 毎回、次回候補全体の180分以内の見込みを根拠とともに検収するまで、必要な改善の実装・公開を続ける。
 
 経緯は`docs/development/concepts.md`にある。
@@ -34,7 +34,7 @@ batchでは、対象にdotfilesの作業が含まれる場合に、障害事例�
 `git -C <dotfilesの作業ツリー> grep -n -F '再発（' -- 'docs/development/incidents*.md'`で行を列挙し、各行が属する事例（事例の書式の先頭行）を原因の単位とする。
 2回以上再発した事例を分析候補にし、`agent-basics:bugfix`の`agent-basics:bugfix/references/root-cause-severity-quality.md`「前提の再検討」に従って、同じ条文や仕組みを維持・修正・撤去する案を比べる。
 効果確認が`insufficient`の採用済みAWIは件数に加えず、各`再発`行が指す是正AWIと元のAWIの対応を確かめる材料にだけ使う（同じ再発を二重に数えないため）。
-今回の分析で新たに再発と判定した不具合は、`.claude/skills/edit-dotfiles-norms/SKILL.md`「再発の記録」に従って記録する。
+今回の分析で新たに再発と判定した不具合は、`.claude/skills/edit-dotfiles-norms/references/recurrence-record.md`に従って記録する。
 
 ## pyfltr
 

@@ -4,15 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 機構や外部インターフェースの変更に伴う文書の追随先を確定する前 | `agent-documents.md` |
-| Claudeの子入力の寿命とserver保持版を判断する前 | `agents-server-shared-state-retention.md` |
-| hookの実装や登録を新設・変更する前 | `claude-hooks.md` |
-| hookの遮断・警告の判定を新設・変更する前 | `claude-hooks-block-warn.md` |
-| hookの出力フィールドを選択・変更する前 | `claude-hooks-output.md` |
-| hook通知の本文（`fix`・次の操作を含む）またはformatterを新設・変更する前 | `claude-hooks-messages.md` |
-
 ## worktreeでの編集時の注意
 
 別の作業用ワークツリー（worktree）で編集した配布物の内容は、配布処理と再起動して初めて実行中のフックや自動チェックに反映される。

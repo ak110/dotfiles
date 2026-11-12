@@ -6,7 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` |
 | 委譲する部分を選び、起動手段とモデルを確定する前 | `process-model-settings.md` |
 | 定型処理の実行先をモデル選定前に比較する時 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` |
 

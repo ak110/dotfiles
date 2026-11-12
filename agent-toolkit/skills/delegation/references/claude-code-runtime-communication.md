@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
-| `Agent`ツールで起動した担当を継続する前 | `continuation.md` |
-| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` |
-
 ## 実行時能力と通信scope
 
 ツールの公開状況、呼び出し結果、完了通知の配送挙動は、プロバイダー、Claude Codeのバージョン、設定、通信スコープの組み合わせによって変化する。

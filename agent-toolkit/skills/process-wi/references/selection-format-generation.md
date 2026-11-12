@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 初期配分の見込みと実装中の編集範囲を区別する時 | `../../../share/exec-subagent-implementation.md` |
-
 ## 選定の生成入力
 
 [selection-procedure.md](selection-procedure.md)の生成付き保存操作に渡す意味判断YAMLには、後述の`選定`、`レーンの所要時間`、および必要な比較値、重なり、続行できない理由を記載する。

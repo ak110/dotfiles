@@ -39,8 +39,6 @@ settingsには環境変数を削除する機能が存在しない点に留意す
 子プロセスへ変数を引き継ぎたくない場合は、子プロセスを起動する元の環境からその変数をunsetしておく必要がある。
 子プロセスが直接読み込むuser、project、local設定の`env`で同一変数が定義されている場合に限り、CLIのsettingsで空文字を指定することで接続先選択から除外できる。
 ただしこの場合でも、子プロセス内部には空文字として値が残る。
-これらの挙動の観測記録と再検証手順が存在する。
-詳細は`docs/development/audit-records-languages.md`にある。
 該当節は「agent-basics/skills/writing-standards/references/host-official-references.md：子Claudeへ環境値を渡す：2026年10月22日」である。
 
 Desktop版やSelf-hosted runnerの環境では、設定の競合時に起動環境の値がsettingsよりも優先される。

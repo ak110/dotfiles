@@ -68,7 +68,7 @@ Codex CLI 0.157.1の`spawn_agent`公開スキーマでは`fork_turns="all"`が�
 Codex CLI 0.157.1の`spawn_agent`公開スキーマは`fork_turns`省略または`"all"`の全履歴forkを示す。
 再検証は両ホストの起動スキーマを取得し、親のモデルとeffortの継承条件を確かめる。
 
-## agent-toolkit/skills/delegation/references/sub-agents.md：コンテキスト境界：2026年9月27日
+## agent-toolkit/skills/delegation/references/sub-agents-context.md：コンテキスト境界：2026年9月27日
 
 2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>とCodex CLI 0.157.1の`spawn_agent`公開スキーマで、通常起動とforkの履歴入力が異なることを確認した。
 再検証は同じ起動文で通常起動と全履歴forkを行い、委譲先に渡る会話履歴の有無を比較する。

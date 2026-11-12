@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 共有状態の共通設計・実行主体・保存と回収の条件を判断する前 | `agents-server-shared-state.md` |
-| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` |
-
 ## バックエンド固有の接続とAPI状態
 
 保存済みCodex会話の再開では、`codex.py`が`thread/resume`の送信前に`hosts`索引を公開する。
@@ -60,7 +55,7 @@ CodexバックエンドではセッションごとのApp Serverの子環境に�
 委譲先フックはこの値を参照して軽量起動かどうかを判別する。
 Claudeの`inherit`接続の場合でも同様に会話コンテキストの除去を適用し、認証や接続設定は通常の継承ルールに従う。
 これらの観測根拠は`docs/development/audit-records-project-environment.md`に記録されている。
-該当節は「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state.md：実行主体：2026年10月18日」である。
+該当節は「.claude/skills/agent-toolkit-edit/references/agents-server-shared-state-backends.md：バックエンド固有の接続とAPI状態：2026年10月18日」である。
 
 API失敗状態は、すべてMCPサーバーの`SessionState`を基準（正）として管理し、同一の書込主体が状態ファイルへ反映（射影）する。
 対象となるのは、Claudeの合成assistantメッセージや`SystemMessage(api_retry)`、Codexの`willRetry: true`による再試行中状態、ならびに過負荷（`serverOverloaded`）に伴う自動継続待ちの`api_error`である。

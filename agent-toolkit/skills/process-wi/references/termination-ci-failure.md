@@ -10,26 +10,20 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 基準資料を選択・取得する時 | `../../../share/session-termination.subagent.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-recording-evidence.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec.parent.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review.parent.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` |
+| 受理済みの完成条件証拠を参照する時 | `../../../share/exec-review-recording-evidence.md` |
 
 ## 検証またはCIの失敗
 
-1. 最初に観測された失敗からCIの成功、または本タスクの終了に至るまでを、1つの修正系列（`agent-toolkit:commit/references/ci-failure-handling.md`「修正系列」）として扱う。
-   `agent-basics:bugfix`を起動し、ログ、参照実装、期待値から直接的な原因を特定した上で、`agent-toolkit:commit/references/ci-failure-handling.md`で定められた項目を含むCI記録を保持する。
+1. 最初に観測された失敗からCIの成功、または本タスクの終了に至るまでを、1つの修正系列（`agent-toolkit:process-wi/references/ci-fix-series.md`「修正系列」）として扱う。
+   `agent-basics:bugfix`を起動し、ログ、参照実装、期待値から直接的な原因を特定した上で、`agent-toolkit:process-wi/references/ci-fix-series.md`で定められた項目を含むCI記録を保持する。
 
 2. 修正が必要と判断された場合は、`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`に従い、メインの作業ツリーを対象作業ツリーとする`CI修正担当`を起動する。
    書き込みを行う主体はこのCI修正担当の1つのみに限定する。
-   原因となったコミットに対応する保存済みの計画ファイルが存在する場合は、`agent-toolkit:commit/references/ci-failure-handling.md`の`入力計画`の取得と、修正系列の終了時における再保存を公開担当が行う。
+   原因となったコミットに対応する保存済みの計画ファイルが存在する場合は、`agent-toolkit:process-wi/references/ci-fix-series.md`の`入力計画`の取得と、修正系列の終了時における再保存を公開担当が行う。
    取得した計画ファイルの`private-notes/plans/`からの相対パスと再保存の結果は、引き継ぎ記録に記録する。
    修正コミットと検証結果を受け取った後は、バージョン番号、manifest、生成ファイルの同期、push、CIの確認を改めて判定し直す。
 
-3. 手元で対象条件の成否を観測できない修正は、`agent-toolkit:commit/references/ci-failure-handling.md`「修正系列」の先行CIへ接続する。
+3. 手元で対象条件の成否を観測できない修正は、`agent-toolkit:process-wi/references/ci-fix-series.md`「修正系列」の先行CIへ接続する。
    公開担当が認可済み作業refへのpushと監視を所有し、CI修正担当の書込終了を確認して再レビューの合格を待たずに先行CIを開始する。
    必要なレビューは並行して進め、正式公開前にCI結果とともに合格を検収する。
    先行結果のSHA・ref・対象ジョブと、正式公開のcheck集合を区別する。
@@ -38,7 +32,7 @@
 4. 計画を基準とする修正系列の実行レビューにおいて、取得した計画の進捗ログに記録されている受理済みの実行レビュー返却ファイルが後続担当から読み取り可能である場合は、その絶対パスを任意入力`受理済みの完成条件証拠`に指定する（存在しない場合は`なし`とする）。
    参照を使用する際の条件は、`../../../share/exec-review-recording-evidence.md`「受理済み判定への参照」に従う。
 
-5. `agent-toolkit:commit/references/ci-failure-handling.md`「修正系列」の起動条件に合致する修正では、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビューを1件起動する。
+5. `agent-toolkit:process-wi/references/ci-fix-series.md`「修正系列」の起動条件に合致する修正では、`${CLAUDE_PLUGIN_ROOT}/share/exec-review.parent.md`に従って実行レビューを1件起動する。
    原因コミットに対応する計画が存在する場合は`レビュー基準: 計画`として計画ファイルを渡す。
    存在しない場合は`レビュー基準: CI記録`とし、所定の7項目に加えて`修正系列の開始時のHEAD`と`原因commitOID`を渡す。
    `修正系列の開始時のHEAD`は修正系列の開始時点のHEADを表す7文字以上の重複のない短縮OIDとし、系列の処理中は変更しない。

@@ -3,7 +3,7 @@
 ## 計画と実行の運用
 
 レビュー指摘の採否は`agent-basics:review-standards`の`references/reviewee.md`が定める。
-工程別のモデル割当は`agent-toolkit:delegation`の`delegation/references/process-model-settings.md`が定める。
+工程別のモデル割当は`agent-toolkit:delegation/references/process-model-settings.md`が定める。
 計画の成果物契約は`agent-toolkit:write-plan`の計画ファイル基準が定める。
 
 - `atk`のキュー操作と計画保存のコマンドが自身の出力で成功を報告した場合は、その出力を根拠に完了と判定し、同じ状態を別のコマンドで取得し直さない。
@@ -60,7 +60,7 @@
   CI成功の待機を省略できる例外条件を定める規範は現行に無い
 - CIの早期失敗を検出したら全jobの終了を待たず直ちに調査へ着手する
 - 2026年8月19日のユーザー指示は、条文が存在しても未適用を対策不要として終えないための判断である。
-  未適用の原因と処置は`agent-toolkit:review-session`の`references/analysis-operations.md`「規範の未適用と目的逸脱」を参照する。
+  未適用の原因と処置は`agent-toolkit:review-session`の`references/analysis-operations-root-cause.md`「規範の未適用と目的逸脱」を参照する。
   `agent-basics:bugfix`の`SKILL.md`「再発防止策の必須性」も併用し、各工程の恒久反映の契約から接続する
 - 計画の起草、WIの実現方式の確定、実装および実行レビューでは、変更を適用した後の成果物群の設計品質（章構成、責務、他の成果物との関係）が変更前より劣化しないことを不変条件とし、各工程で評価する。
   毎計画の評価と変更後のファイル全体の読解は負担を増やすが、劣化を後から全関係リポジトリで見直す費用の方が大きいため、評価を省かない。

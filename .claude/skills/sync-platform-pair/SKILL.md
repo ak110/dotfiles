@@ -24,6 +24,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
 | PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/powershell.md` | 操作 | `path:*.ps1`、`path:*.ps1.tmpl` |
+| PowerShell（`.ps1`・`.ps1.tmpl`）側を編集する前（agent-toolkit配下の場合） | `../../../agent-toolkit/share/powershell-operations.md` | | |
 | Bash（`.sh`・`.sh.tmpl`）側を編集する前 | `agent-basics:writing-standards/references/bash.md` | 操作 | `path:*.sh`、`path:*.sh.tmpl` |
 | Linux側とWindows側で分岐するコードを変更する前 | `../../../agent-basics/skills/writing-standards/references/testing-platforms.md` | | |
 
@@ -45,12 +46,7 @@ description: >
 
 ## ローカルで実行するチェックとCIジョブの対応関係
 
-Windows実OS固有の動作は、CI上の`test-windows`などによる観測と、Linuxの`make test`での分岐値の模擬を区別する。
-`agent-basics:writing-standards/references/testing-platforms.md`「プラットフォーム分岐の検証」に従い、判定値をパラメーター化して両方の分岐を検証し、fixtureが共有モジュールと実ホストAPIへ及ぼす影響も確認する。
-引数・終了状態・パス表現・権限・ファイル共有の実OSでの成功は、模擬した分岐選択の成功と分けて検証記録へ残す。
-配布時の初期状態や起動時の依存解決はローカルでも前提を比較し、実Windowsでしか確かめられない条件を未確認のまま保証へ含めない。
-候補branchへのpushによるWindows検証は、必要性・認可・重複費用を確認して選べる。
-ローカルの`make test`では実行されないCIジョブの一覧については、`develop-dotfiles`の`../develop-dotfiles/references/verification-values-publishing.md`「push前のチェックとCIだけが実行するチェック」を参照する。
+Windows実OS固有の動作の検証と、ローカルの`make test`では実行されないCIジョブの一覧は、`develop-dotfiles`の`../develop-dotfiles/references/verification-values-publishing.md`に従う。
 
 ## 本文参照の取得条件
 

@@ -6,8 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| テストとCIの所要基準を使う前 | `../../../../agent-basics/skills/writing-standards/references/testing-speed.md` |
-| テストとCIの所要基準を使う前 | `agent-basics:check-execution/references/diagnostics-results.md` |
 | 共有実行枠のコマンドをシェルから起動する前 | `agent-toolkit:/share/check-execution-operations-launch.md` |
 
 ## 検証コマンドの実行
@@ -32,10 +30,30 @@
      収集だけのpytest（`--collect-only`）は枠を取らない。
      枠はホスト全体で2つあり（pyfltr 3.30.0以降）、3件目以降の検証は空きを待つ。
      入れ子の実行は祖先の所有を継承する。
-4. 確定した対象へ全チェックを適用するため、初回はMCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`commands`指定なしで実行する。
-   修正後の再実行だけ失敗したチェックへ限定し、同じ内容の2回目以降の静的チェックでは`commands`（CLIは`--commands`）からpytestを除く。
-   失敗テストだけの再確認は`--only-failed`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。
+4. 確定した対象へ全チェックを適用し、共有実行枠の占有を減らすため、静的チェックを先に通してからpytestを含む実行を1回行う。
+   pyfltrは1回の実行の間ずっと枠を保持するため、静的チェックで失敗する実行にpytestを含めると、枠を数分ずつ無駄に占有する。
+   2026年11月12日の同時数12の実測では、実装担当の`pyfltr run`のうち失敗した18件中12件が静的チェックだけの失敗で、その12件でもpytestが流れていた。
+   - 初回は`uv run --frozen pyfltr run --disable pytest <対象ファイルの絶対パス>`で静的チェックを実行し、失敗が無くなるまで直す。
+     修正後の再実行は失敗したチェックへ限定する。
+   - 静的チェックが通ったら、commitする内容を確定してから、MCPの`run`へパスを渡すか`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`commands`指定なしで1回実行する。
+     このpytestが失敗した場合は直した後に同じ形で実行し直す。
+     `develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）では、この実行に`--no-always-targets`を付け、変更ファイルに対応する試験だけを実行する（pyfltr 3.31.0以降）。
+     不変条件試験の全量は、後述のレーンの統合前の実行で1回だけ実行する。
+   失敗テストだけの再確認は`--only-failed --from-run <初回のrun_id>`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。
+   `--from-run`を省いた`--only-failed`は、他の作業ツリーを含むホスト全体の直近の実行を参照する。
+   その実行に失敗が無ければ何も実行せずに終了0となり、自分の失敗が残っていても成功として報告される。
    pytestを含む実行には両プロジェクトの`pytest-always-targets`が加わるため、本書の横断テストの項で重複実行を避ける。
+   commitのhookは、`develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）ではpytestを外して実行する。
+   統合先のブランチでは、同じ内容でpytestが成功した`pyfltr run`があればpytestを外して実行する（判定条件は`scripts/pyfltr_precommit.py`の冒頭）。
+   - レーンの担当は、統合準備完了を返す前に、統合入力のHEADで`commands`指定なしの`uv run --frozen pyfltr run <レーンの変更ファイルの絶対パス>`を成功させ、そのrun_idを返却に含める。
+     この実行は不変条件試験の全量を含み、hookが外したpytestを補う。
+     統合する側はff統合の前に、統合入力のHEADを指す変更の無い作業ツリー（通常はレーンの作業ツリー）で`uv run --frozen python scripts/pyfltr_precommit.py --verify-run <run_id>`を実行し、終了0を確かめる。
+     このコマンドは、indexと作業ツリーがHEADと一致し、ファイルの更新時刻がそのrunのpytestの開始より前で、pytestが成功していることを確かめる。
+     `show-run`の出力には実行時の内容の識別子が無く、それだけでは同じ内容か判定できないためである。
+     run_idの後に統合先へrebaseした場合は内容が変わるため、rebase後に全量の実行をやり直す。
+     レーンのブランチのcommitごとに不変条件試験を実行すると共有実行枠を占め、2026年11月13日の同時数8の集計では検証の待ちが巡回の所要の大半になったためである。
+   統合先のブランチでは、pytestを含む実行の後にファイルを変えた場合と、commitしない差分を作業ツリーに残した場合に、hookはpytestを再び実行する。
+   後者を避けるため、そのcommitに含めない差分は先に別のcommitへ分けるか、作業ツリーから外してからcommitする。
    - CIが無い、または公開先でCIが実行されずローカルの全体pytestが必要な場合は、`--maxfail=10`を指定し、計画からmanifestまで同じ値を保つ。
      CIが全体を担う本リポジトリの通常のレーン内・統合時・公開前は関連範囲だけを実行する。
      直接pytestでは`--maxfail=10`、pyfltr経由では`--pytest-args='--maxfail=10'`を使い、他のpytest追加引数は同じ値へ併記する。

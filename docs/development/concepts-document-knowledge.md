@@ -87,4 +87,4 @@
   2026年10月31日に採用した点検手順はユーザーが`/agent-toolkit:refine-prompt audit`で起動する形だったが、この指示がその起動の形を置き換えた。
   点検が提案だけを返し、採否をユーザーが決める扱いは保つ。
   現行の規定は`agent-toolkit:refine-prompt`と、起動の契機を定める次の2資料にある。
-  `agent-toolkit:wi-standards/references/agent-documents-additions.md`「新設と改訂の評価」と、`.claude/skills/edit-dotfiles-norms/SKILL.md`「モデルとホストの更新時の点検」である
+  `agent-toolkit:refine-prompt/references/evaluation-triggers.md`「新設と改訂の評価」と、`.claude/skills/edit-dotfiles-norms/references/model-host-audit.md`である

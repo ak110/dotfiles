@@ -35,7 +35,7 @@ JSONLのdiagnosticのmessages、commandのstatus・diagnosticsとsummaryの`comm
 次に`--tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'`も指定して実行する。
 両実行のstream-jsonの`system`/`init`にある`tools`と`mcp_servers`を比較する。
 
-## agent-toolkit/skills/user-confirmation-and-report/references/investigation.md：実行結果の検証：2026年10月18日（2）
+## agent-toolkit/share/investigation-operations.md：実行結果の検証：2026年10月18日（2）
 
 観測した日付は2026年10月18日、版数はClaude Code 2.1.302とcodex-cli 0.163.0である。
 `atk wi process-loop`と`atk run-skill`の可用性確認の固定プロンプトで、変更前の起動形（本作業の候補のモデルとeffortの通常起動）と変更後の軽量起動を1回ずつ比べた。

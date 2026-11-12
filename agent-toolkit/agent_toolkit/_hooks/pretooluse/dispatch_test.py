@@ -201,7 +201,7 @@ def test_original_record_access_is_guided_through_shared_pretooluse(
     context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
     assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
     assert "session-review-evidence" in context and "session-records.md" in context
-    assert "--transcript" in context and "--tool-calls" in context and "--fixed-string" in context
+    assert "--transcript" in context and "session-records-query.md" in context
 
 
 @pytest.mark.parametrize("codex", [False, True], ids=["claude-hook", "codex-hook"])

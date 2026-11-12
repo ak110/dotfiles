@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 外部部品の具体的な版指定と更新経路を判断する前 | `dependency-management.md` |
-
 ## 事実と推論
 
 要件・契約で対象・環境を定め、観測範囲と比べる。

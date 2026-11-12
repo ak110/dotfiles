@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 経験の記録から承認の適用範囲を判断する前 | `agent-basics:writing-standards/references/investigation-experience.md` |
-
 ## 新しい挙動と準備の提示
 
 依頼内容に含まれていない新しい挙動の追加（`user-confirmation-and-report-authorization.md`「認可を要する操作」で定義する「範囲外の不足」の区分）は、変更が可逆で外部への影響がない場合であっても事前承認の対象とし、合意が得られるまではリリースの対象に含めない。

@@ -6,18 +6,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
-| 検証結果を記録する前 | `verification-evidence-records.md` |
-| 手動観測を保存する前 | `verification-evidence-observation.md` |
-| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` |
-| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
-| 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 | 基準の参照時 | `exec-review-recording-integration.md` |
 | 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` |
 | 基準の参照時 | `review-loop-coordination-escalation.md` |
-| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
 | 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
 | `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` |

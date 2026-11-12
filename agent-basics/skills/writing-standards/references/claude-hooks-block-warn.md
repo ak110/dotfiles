@@ -7,6 +7,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
+| 時点または条件 | 全文読む資料 |
+| --- | --- |
+| 通知・警告・遮断を出す場面を新設・変更する前（従うと判断が変わる場面と、不要な通知を繰り返す場面の比較） | `agent-documents-additions-additions.md` |
+
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

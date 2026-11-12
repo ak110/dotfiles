@@ -152,9 +152,11 @@ def test_wait_for_end_turn_late_arrival_and_timeout(tmp_path: pathlib.Path, monk
     _transcript_scan.wait_for_end_turn(str(missing), timeout=5)
     assert counter.polls == 0
 
-    invalid = tmp_path / "invalid.jsonl"
-    invalid.write_bytes(b"\xff\xfe")
-    _transcript_scan.wait_for_end_turn(str(invalid), timeout=5)
+    # 不正なUTF-8は行ごとの解釈で空行として読めるため読取失敗に当たらない。
+    # statは成功し読取だけが失敗する対象として、ディレクトリを使う。
+    unreadable = tmp_path / "unreadable.jsonl"
+    unreadable.mkdir()
+    _transcript_scan.wait_for_end_turn(str(unreadable), timeout=5)
     assert counter.polls == 0
 
     pending = tmp_path / "pending.jsonl"

@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | OSを模擬した試験の保証と環境条件を記録する前 | `agent-basics:writing-standards/references/testing-selection.md`、`agent-basics:writing-standards/references/testing-platforms.md` |
-| 受入シナリオを起動する前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 受入シナリオを起動する前 | `agent-toolkit:/share/acceptance-scenarios.md` |
 | 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards-verification.md` |
 | 保存出力を取得する前 | `check-execution-operations-output.md` |
 | 取得版の異なる観測を検証結果へ書く前 | `exec-review-recording-grounds.md` |
@@ -16,7 +16,7 @@
 
 ## 手動観測の保存
 
-受入シナリオまたは完成条件を手動で観測する直前に、受入シナリオ検証（`agent-toolkit:delegation/references/acceptance-scenarios.md`）の起動条件に従って対象を起動する。
+受入シナリオまたは完成条件を手動で観測する直前に、受入シナリオ検証（`agent-toolkit:/share/acceptance-scenarios.md`）の起動条件に従って対象を起動する。
 コマンドの実行は、実行ハーネスが提供する標準の実行・背景実行・待機機能を用いて対象worktreeから実施する。
 
 手動観測と通常の検証のどちらも、後続のレビューや統合で結果を使う場合は、実行前に「検証時本文の保存」を適用する。

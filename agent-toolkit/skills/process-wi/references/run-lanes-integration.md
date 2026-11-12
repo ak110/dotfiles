@@ -6,15 +6,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
-| 参照基準の適用前 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
-| 基準資料を選択・取得する時 | `finish-session-observation.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-recording-integration.md` |
-| 基準資料を選択・取得する時 | `lane-planning-resume.md` |
-| 基準資料を選択・取得する時 | `finish-session.md` |
+| 統合前の完成条件判定を確認する時 | `../../../share/exec-review-recording-integration.md` |
+| 統合指示の委任と検収を行う時 | `../../../share/exec.parent.md` |
+| 統合指示の委任と検収を行う時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
 
 ## 統合とAWI終了
 

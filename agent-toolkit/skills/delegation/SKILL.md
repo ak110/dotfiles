@@ -24,10 +24,6 @@ user-invocable: false
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲プロンプトや返却の文章を作成・検収する前 | `references/quality-standards.md` |
-
 ## 読込表
 
 次に行う委譲・受領・待機の操作と、自身の役割から条件を選び、判断前に必要な資料の全文を読む。
@@ -68,6 +64,15 @@ hookの通知を待たずに選び、同じ版の取得済み本文は再利用�
 | 委譲先から`助言依頼:`で始まる通知を受け取り、助言を返す前 | `references/advice-request-receiving.md` | | | |
 | 起動本文に助言依頼ができる旨の通知を受け取った委譲先が、助言を求める前 | `references/advice-request.md` | | | |
 | 役割文書を持つ委譲を起動する前 | 呼び出し元の起動・受領契約。共有契約は`${CLAUDE_PLUGIN_ROOT}/share/<役割名>.parent.md`、単一の呼び出し元に統合された契約はその呼び出し元が示す節と条件付きで挙げる資料 | 操作 | `delegation` | `role-contract` |
+| 委譲プロンプトや返却の文章を作成・検収する前 | `references/quality-standards.md` | | | |
+| 委譲プロンプトの送信、役割指定の初回入力の構成に関する判断・作業の前 | `references/delegation-sending.md` | | | |
+| `<役割名>.parent.md`を持つ委譲の起動に関する判断・作業の前 | `references/delegation-role-launch.md` | | | |
+| 事象単位の調査を委譲する前 | `references/investigation-delegation.md` | | | |
+| エージェント向け文書の置き場所を選ぶ時 | `references/delivery-scope.md` | | | |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂（コンテキスト境界） | `references/sub-agents-context.md` | | | |
+| Codexで元の担当者が稼働している間に、巻き取り・新規起動・役割の引継ぎを判断する前 | `references/codex-runtime-continuation.md` | | | |
+| 待機区間の構成を決める前 | `references/waiting-and-monitoring-intervals.md` | | | |
+| レビュー指摘への応答、修正、修正後の完了を判断する前 | `agent-toolkit:/share/exec-review-responses.md` | | | |
 
 ## 送信
 
@@ -96,37 +101,3 @@ Codex環境で元の担当者が稼働している間の処理保留は`referenc
 上位のエージェントから委譲を受けたエージェントがさらに別のエージェントへ委譲する場合は、本スキルが委譲元に対して定めている規定を自身に適用する。
 
 - 上位から受け取った取り決め（作業場所、書込を行う主体、出力言語、プロセスの所有権、不可逆操作の権限と許可範囲）を同一の意味で引き継がせ、子孫エージェントの完了本文を自身で受け取って自身の完了報告に含める。
-
-## 工程で参照する運用資料
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` |
-| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
-| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:delegation/references/agent-documents-basics.md` |
-| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:delegation/references/writing.md` |
-| textlintなど文章チェックの診断へ対応する時 | `agent-toolkit:delegation/references/textlint-violations.md` |
-| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/textlint-violations.md` |
-| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` |
-| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `references/sub-agents.md`、`references/sub-agents-declarations.md`、`references/sub-agents-context.md` |
-
-## 参照資料の取得
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| レビュー指摘への応答、修正、修正後の完了を判断する前 | `agent-toolkit:/share/exec-review-responses.md` |
-
-## 条件別資料
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 送信に関する判断・作業の前 | `references/delegation-sending.md` |
-| explore・shellの起動に関する判断・作業の前 | `references/delegation-lightweight.md` |
-| `<役割名>.parent.md`を持つ委譲の起動に関する判断・作業の前 | `references/delegation-role-launch.md` |
-
-## 本文参照の取得条件
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| Codexでの委譲方法：後続操作の共通先行条件の基準を適用する前 | `references/codex-runtime-continuation.md` |
-| 待機と観測：待機区間の構成の基準を適用する前 | `references/waiting-and-monitoring-intervals.md` |

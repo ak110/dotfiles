@@ -4,14 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 振り返りの時間目標と改善見込みを報告する前 | `agent-toolkit:review-session/references/duration-analysis.md` |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
-| 未検証の仮説を理由に対策を見送った判断を書く前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` |
-
 ## 検証結果と実行記録
 
 環境上の制約などで十分に確認できなかった範囲がある場合は、実施済みの検証結果と区別し、未実施・未確認の内容とその理由を明記する。

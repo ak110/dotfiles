@@ -5,7 +5,7 @@
 両方に同じ主題があれば、両方の全文を確認する。
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-以下はagent-toolkitが所有する運用条件である。
+以下はagent-toolkitのスキルを編集するときの運用条件である。
 
 ## 名指し参照の読込方法
 

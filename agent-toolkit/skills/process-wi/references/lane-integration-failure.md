@@ -8,14 +8,13 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../../share/lane-integration-subagent-operation.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-wi-records.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/history-rewrite-verification.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-subagent-history.md` |
 | 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` |
 | レビュー指摘管理表へ担当が行を足す前 | `../../../share/review-table-operations.md` |
+| 統合指示を再受領して統合を再開する時 | `../../../share/lane-integration-subagent-operation.md` |
+| rebase競合の解消後に履歴を確認する時 | `../../commit/references/history-rewrite-verification.md` |
+| 解消後の対応表を検収して引き継ぐ時 | `../../commit/references/history-rewrite-wi-records.md` |
+| レビュー修正の履歴統合の返却値を返す時 | `../../../share/exec-subagent-history.md` |
+| 統合後の検証失敗の是正に着手する前 | `agent-basics:bugfix/SKILL.md` |
 
 ## rebaseの競合
 

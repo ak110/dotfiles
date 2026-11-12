@@ -26,9 +26,12 @@ TARGET_SKILLS = ("process-wi", "add-awi-by-user")
 """開始した時点で成果作業となるスキルの短縮名。適用条件は`report-completion/SKILL.md`「工程」の工程9に従う。"""
 
 
+_TERMINATION_EVIDENCE_REFERENCE = "`agent-toolkit:report-completion`の`references/termination-evidence.md`"
+
+
 _UNRESOLVED_REPOSITORY_FIX = (
     "この作業では省略を記録できない。`agent-toolkit:report-completion`を起動して終了工程を進めよ。"
-    "規範がその起動を禁じる場合は、その旨をユーザーへ報告せよ。"
+    f"規範がその起動を禁じる場合は、{_TERMINATION_EVIDENCE_REFERENCE}「終了方法の分岐」に従い、その旨をユーザーへ報告せよ。"
 )
 
 
@@ -44,12 +47,7 @@ class _InactiveWaitError(ValueError):
     """所有する委譲先への有効な待機が終わっていることを表す。"""
 
 
-_HOST_STOP_FIX = (
-    "利用上限の猶予通知とホストによる背景コマンドの停止は技術的不成立に当たらない。"
-    "猶予通知は`agent-toolkit:user-confirmation-and-report`の`references/usage-limit.md`に従い同じ工程を続けよ。"
-    "ホストが再開を禁じた処理は再開の可否をユーザーへ確認せよ。"
-    "協調モードは`AskUserQuestion`を使え。自律モードはUWIを投入し`wait`の`uwi_file`で記録せよ。"
-)
+_HOST_STOP_FIX = f"技術的不成立の判定と確認手段は{_TERMINATION_EVIDENCE_REFERENCE}「技術的不成立の判定」に従え。"
 
 
 _GIT_PUSH_VALUE_OPTIONS = frozenset(

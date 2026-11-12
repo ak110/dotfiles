@@ -43,6 +43,7 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 不要な工程や達成後の反復は省き、同じターンで根拠を報告する（委譲先は委譲元へ）。
 硬い制約と、独立文脈レビュー・所有権・認可・必読資料・終了観測は費用によらず守る。
 工程の並行・分割と自動チェック対象の記述の前は`agent-toolkit/share/agent-conduct-details.md`「行動と手順の目的」を全文読む。
+進捗点検の通知（`source="progress-self-check"`）を受けた時は、同書「進捗点検」を全文読んで従う。
 会話圧縮の後は、次の判断より前に、圧縮前に進めていた工程を定めるスキルと役割文書を全文読み直す。
 その読込表から、委譲先の返却、背景待機の完了、定期の再確認、ユーザーの回答への対応を含む次の判断に必要な資料を選んで読む。
 目的、承認状態、残る工程を、計画、WI、受け取った`引き継ぎ記録先`などの記録から復元し、全体作業契約と引き継ぎ記録が次工程の資料を指す場合はそれも読む。
@@ -94,7 +95,7 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 完了・成功・不在・件数・互換性を述べる前と、要約・中継・報告を書く前は、`agent-basics:writing-standards/references/quality-principles-facts.md`「事実と推論」を全文読む。
 
 経験の保存・利用は認可・公開契約を保ち`agent-basics:writing-standards/references/investigation.md`に従う。
-調査・検証・成功判定・配布・反映は`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
+調査・検証・成功判定・配布・反映は`agent-toolkit:/share/investigation-operations.md`に従う。
 
 ## 協調と自律
 

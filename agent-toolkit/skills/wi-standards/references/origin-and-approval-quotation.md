@@ -6,8 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` |
-| run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:/share/writing-operations.md` |
 | 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` |
 
@@ -18,7 +17,7 @@
 処理側が達成を確認すべきユーザー発話は、処理側宛てに書かれた`## ユーザーコメント`、回答済みUWIの`## 回答`、計画書の`ユーザー指示`行、ならびに完成条件節を持たない人間由来のAWI本文である。
 
 ユーザーからの要求を起点とするWIには、会話内の採否や実装方針の根拠となった原文を逐語的に転記する。
-`agent-toolkit:delegation/references/writing.md`「ユーザー入力素材の取扱い」に従い、ユーザー発話とエージェントの質問・説明・判断を区別する。
+`agent-toolkit:/share/writing-operations.md`「ユーザー入力素材の取扱い」に従い、ユーザー発話とエージェントの質問・説明・判断を区別する。
 認可や解釈の判断に再取得が必要な場合は必要な所在情報を残す。
 転記はユーザー専用の2つの記入欄とは区別する。
 転記する発話の中に質問が含まれている場合は投入元エージェントが回答を作成し、実際にユーザーへ送達済みの質問に限り、引用箇所の近傍に「回答済み」と明記する。

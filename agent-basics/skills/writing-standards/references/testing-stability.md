@@ -6,7 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../bugfix/references/root-cause-scenarios-testing.md` |
 
 ## 安定性: flakyテスト防止

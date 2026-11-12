@@ -13,7 +13,7 @@
 
 ## 運用条件
 
-規定の追記と記述量の管理は`agent-toolkit:wi-standards/references/agent-documents-additions.md`、計画ファイルの成果物契約は`agent-toolkit:write-plan`が定める。
+規定の追記と記述量の管理は`agent-basics:writing-standards/references/agent-documents-additions.md`、計画ファイルの成果物契約は`agent-toolkit:write-plan`が定める。
 
 ## 置き場所と配送
 
@@ -24,9 +24,7 @@
   軽量委譲へ共通規範を配送しない場合は、軽量委譲の起動契約に必要な制約を記述する。
   agent-toolkitが読み手へ常に配送する規範（`share/rules/common/`配下、および読み手に応じて配送する`share/rules/rules-main*.md`、`rules-common.codex.md`、`rules-subagent*.md`）を常時規範と呼ぶ。
 
-- 読込の階層: 常時ロードは`share/rules/common/`とfrontmatterの`description`、役割別の注入は`share/rules/`配下の`rules-`で始まるファイル、配送文は`share/agents-server-*.md`である。
-  スキル起動時は`SKILL.md`本体、役割起動時は委譲元の`share/<役割名>.parent.md`と委譲先の`share/<役割名>.subagent.md`、明示読取は`references/`、サブエージェント注入はagent定義とfrontmatterの`skills`が該当する。
-  起動時に読む対象はその起動契約と起動時行が定める。
+- 読込の階層と各層に置く内容は、dotfilesで規範を編集するエージェントが`.claude/skills/edit-dotfiles-norms/references/norm-layer-map.md`で確かめる（agent-toolkitの規範を編集するのは同リポジトリだけのため）。
   条件付き資料は現在の役割・工程で条件が成立したとき、全文を判断前に読む。
 
 - 各起動区分のエージェントへどの文書が届くかは、`agent-toolkit:delegation/references/delivery-scope.md`の配送範囲表で確認する。

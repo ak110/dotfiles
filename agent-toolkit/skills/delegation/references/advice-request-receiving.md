@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 委譲先の会話の抜粋を取得する前 | `../../review-session/references/session-records-conversation.md` | 判断 | `read:agent-toolkit:*/skills/review-session/references/session-records-conversation.md` |
+| 委譲先の会話の抜粋を取得する前 | `../../../share/session-conversation-extraction.md` | 判断 | `read:agent-toolkit:*/share/session-conversation-extraction.md` |
 | 助言を返すか担当を巻き取るかを選ぶ前 | `continuation.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/continuation.md` |
 | 委譲先の停滞を判定する前 | `waiting-stalls.md` | 判断 | `read:agent-toolkit:*/skills/delegation/references/waiting-stalls.md` |
 
@@ -25,7 +25,7 @@
    ```
 
    出力の`conversation_path`が抜粋の保存先である。
-   直近の件数やバイト上限の指定は`../../review-session/references/session-records-conversation.md`「会話の少量取得」に従う。
+   直近の件数やバイト上限の指定は`../../../share/session-conversation-extraction.md`「会話の少量取得」に従う。
    委譲先の記録全文は読まず、抜粋で足りない箇所だけを`atk agents show`などの既存の詳細照会で補う。
 2. 助言を返すか、担当を巻き取るかを、既存の`continuation.md`「継続と新規起動」と`waiting-stalls.md`「停滞の検知と巻き取り」で選ぶ。
 3. 助言を返す場合は、`agents_server`の`send_message`で同じsessionへ送る。

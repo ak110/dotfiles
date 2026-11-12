@@ -29,13 +29,13 @@ writes_worktree: true
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
 | 機能の正しさを確認するテスト層を選ぶ時 | `agent-basics:writing-standards/references/testing-selection.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
-| 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:managed-temp/references/ui-ux.md` |
+| 実描画の確認条件と検証環境を判定する前 | `agent-toolkit:/share/ui-ux-operations.md` |
 
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 着手時 | `exec-review-criteria.md`、`../skills/managed-temp/references/ui-ux.md` | 起動時 | `role:usability-review` | |
+| 着手時 | `exec-review-criteria.md`、`ui-ux-operations.md` | 起動時 | `role:usability-review` | |
 | `変更画面`がWeb画面である | `agent-basics:writing-standards`の`references/ui-ux-web-rules.md` | | | |
 | `変更画面`がフォーム、一覧、検索、通知、自動で切り替わる表示、パネル、AI機能、同意と解約、多言語表示などの主題を含む | `agent-basics:writing-standards`の`references/ui-ux-patterns.md` | | | |
 
@@ -55,12 +55,12 @@ writes_worktree: true
 1. 自身が起動するコマンド・プロセス（検証環境、ブラウザ、描画スクリプトなど）には実行時間の上限を設定する。
 2. 対象worktreeは読み取り専用として扱い、接続先はローカルの検証環境、待ち受けアドレスは127.0.0.1に限定する。
    プロジェクトの手順に沿って環境を起動し、起動したプロセスが対象worktreeのコードを正しく配信していることを確認した上で画面を描画する（別の作業ツリーのコードを配信している画面は評価の対象としない）。
-   許可される操作およびキャプチャーの保存先は、`agent-toolkit:managed-temp/references/ui-ux.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。
+   許可される操作およびキャプチャーの保存先は、`agent-toolkit:/share/ui-ux-operations.md`「完了前の実描画確認」に従い、取得した記録はmanaged-temp配下へ保存する。
    `主要シナリオ`に`検証環境`で許可されていない操作が含まれる場合や、同節において実データから切り離された環境でのみ実施すると定められた操作を要する時は、その操作の実行を見合わせ、該当する手順を`続行できない理由`に記載して返却する。
 
 ## 判定と記録
 
-1. `agent-toolkit:managed-temp/references/ui-ux.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。
+1. `agent-toolkit:/share/ui-ux-operations.md`「完了前の実描画確認」に沿って、主要シナリオおよび操作後に現れる各表示状態へ到達する。
    指摘の確定基準は`exec-review-criteria.md`「ユーザビリティレビューの判定」に従い、指摘の範囲と内容は同書の「基本方針」および「指摘内容」に従う。
 2. 指摘を確定して返却する前に、発見した問題の発生機構について、依頼された変更画面、表示幅、操作後の状態の全体にわたって確認する。
    同一の原因に起因する該当箇所は、同じラウンドの1件の指摘として集約し、問題の機構、対象範囲、該当箇所、確認条件を引き継ぎ記録へ記録する。

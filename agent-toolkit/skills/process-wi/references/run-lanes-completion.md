@@ -6,14 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
-| 基準資料を選択・取得する時 | `finish-session-observation.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:wi-standards/references/uwi-format.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-parent-planning.md` |
+| 計画準備の返却を受領する時 | `../../../share/exec-parent-planning.md` |
 
 ## 採否の確定と終了区分
 
@@ -60,7 +53,7 @@
 ## 実装とレビュー
 
 **14.** レーン担当とメインは、実装前に通常の変更範囲検証と受入確認の入力・期待結果・必要な出力を比較して選んだ実行単位を使用する。
-実行レビューの前には、取得版、入力・環境条件、要求別の観測箇所を`verification-evidence.md`の検証記録へ対応付ける。
+実行レビューの前には、取得版、入力・環境条件、要求別の観測箇所を`${CLAUDE_PLUGIN_ROOT}/share/verification-evidence.md`の検証記録へ対応付ける。
 保存済み結果の適用可否と追加観測の必要範囲は、実行レビュー担当が判断する。
 
 **15.** 準備結果の取り扱い、および待機を要する場合の`実装開始`または`実装なし`の返却は`../../../share/exec-parent-planning.md`「計画準備の受領」に従う。

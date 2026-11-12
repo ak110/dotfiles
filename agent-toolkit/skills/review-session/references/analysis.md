@@ -16,7 +16,7 @@
 | 本文で基準を使う資料の選択・取得時 | `../../report-completion/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../delegation/references/delegation-sending.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/claude-hooks-block-warn.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../user-confirmation-and-report/references/permission-denial-classifier.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
@@ -28,7 +28,7 @@
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/references/drafting-completion-duplicates.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:review-standards/references/judgment-details-decisions.md` |
 | 本文で基準を使う資料の選択・取得時 | `duration-analysis.md` |
 | 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |

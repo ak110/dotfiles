@@ -25,7 +25,8 @@
 
 - 既存の規範の条文やその前提（ホスト機能や実行環境の挙動など）と異なる結果を観測した場合は、公式の一次資料に明示されているか、実機で再現できるかを確認し、既存の条文が失効しているかを判定する。
   失効を確定できた場合は、調査したエージェントが`agent-basics:bugfix`を起動し、`agent-basics:bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」に従ってその場で是正するか改訂を提案する。
-  ユーザー確認するのは、確定に必要な観測がユーザーの環境や資料でしか得られない場合と、是正内容が`user-confirmation-and-report-authorization.md`「認可を要する操作」に該当する場合に限る。
+  ユーザー確認するのは、確定に必要な観測がユーザーの環境や資料でしか得られない場合に限る。
+  是正内容が`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-authorization.md`「認可を要する操作」に該当する場合も、ユーザー確認の対象とする。
   その際は、観測した事象、対象条文の記載箇所、再検証手段を添えて報告する。
   失効を確定できない場合は条文を維持し、相違内容と再検証手段を`agent-toolkit/share/rules/common/01-agent.md`「完遂と先送り」の手順に沿ってWIとして残す。
 

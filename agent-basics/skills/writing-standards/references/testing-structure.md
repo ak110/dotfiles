@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
-
 ## private関数の直接テスト禁止
 
 本節は、段3（単一関数の内部処理）を検証する際の手段の選定基準を定める。

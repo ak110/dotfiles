@@ -65,7 +65,7 @@ def test_all_read_tables_have_valid_declarations_and_routes():
 def test_user_input_classification_reaches_common_intervention_assessment(relative):
     """受領・分類の段階から、共通の介入評価の同じ定義元へ直接到達する。"""
     source = _PLUGIN_ROOT / relative
-    target = _PLUGIN_ROOT / "skills/user-confirmation-and-report/references/analysis-operations.md"
+    target = _PLUGIN_ROOT / "skills/user-confirmation-and-report/references/analysis-operations-intervention.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True)
     routes = [row for row in rows if "受領" in row.condition and "分類" in row.condition and target in row.documents]
     assert routes, relative
@@ -87,9 +87,9 @@ def test_every_role_has_explicit_parent_read_source():
 
 # 配布版で届かない参照が報告された文書（20261028-161251-001）。
 _CROSS_PLUGIN_DOCUMENTS = (
-    "skills/user-confirmation-and-report/references/analysis-operations.md",
+    "skills/user-confirmation-and-report/references/analysis-operations-intervention.md",
     "skills/wi-standards/references/analysis-records.md",
-    "skills/review-session/references/analysis-operations.md",
+    "skills/review-session/references/analysis-operations-root-cause.md",
     "skills/user-confirmation-and-report/references/communication-methods.md",
     "skills/user-confirmation-and-report/references/user-utterance.md",
     "skills/wi-standards/references/draft-semantic-review.md",
@@ -219,7 +219,7 @@ def test_writing_consumers_reach_split_material_without_obsolete_sections(consum
 
 def test_delegation_input_material_wrapper_reaches_quality_owner():
     """WI起草等が使うtoolkit側の素材節も、移設した品質基準の本文へ到達する。"""
-    source = _PLUGIN_ROOT / "skills/delegation/references/writing.md"
+    source = _PLUGIN_ROOT / "share/writing-operations.md"
     target = _PLUGIN_ROOT.parent / "agent-basics/skills/writing-standards/references/input-material.md"
     rows = read_triggers.parse_tables(source, _PLUGIN_ROOT, strict=True, named=True)
     read_triggers.validate_reference_routes(source, _PLUGIN_ROOT, rows)
@@ -263,8 +263,38 @@ def _missing_section_references(source: pathlib.Path, plugin_root: pathlib.Path)
                     for heading in re.findall(r"「([^」]+)」", target.heading)
                     if heading in named.get(target.path.name, set()) and heading not in titles
                 )
+        errors.extend(_missing_bare_share_sections(source, plugin_root, number, line))
         if not line.startswith("|"):
             context = read_triggers.reference_context(line, source, plugin_root) or context
+    return errors
+
+
+def _missing_bare_share_sections(source: pathlib.Path, plugin_root: pathlib.Path, number: int, line: str) -> list[str]:
+    """裸の`share/<名前>.md`を`share/<名前>.md`（プラグイン直下）として解決し、参照先ファイルと添えた節名の見出しの実在を確かめる。
+
+    範囲は節名を添えた裸の形式の参照に限り、参照先ファイルと節見出しの実在を確かめる。
+    節名を添えない裸の参照と、裸の形式そのものは誤りとして扱わない。
+    「所在参照」を付けた行も対象に含める。
+    `material_targets`は裸の`share/…`を解決しないため、参照切れを検出できない。
+    """
+    errors: list[str] = []
+    for code, _link, quoted in _SECTION_REFERENCE.findall(line):
+        if not code.startswith("share/"):
+            continue
+        target = plugin_root / code
+        if not target.is_file():
+            errors.append(f"{source}:{number}: `{code}`が実在しない。実在する資料を指すように参照を直せ")
+            continue
+        titles = {
+            matched[1]
+            for _number, text, shown in read_triggers.document_lines(target.read_text(encoding="utf-8"))
+            if shown and (matched := re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", text))
+        }
+        errors.extend(
+            f"{source}:{number}: `{code}`に見出し「{heading}」が無い。見出しのある資料を指すように参照を直せ"
+            for heading in re.findall(r"「([^」]+)」", quoted)
+            if heading not in titles
+        )
     return errors
 
 
@@ -297,3 +327,16 @@ def test_section_reference_to_missing_heading_is_reported(tmp_path):
     source.write_text("判定は`rule.md`「判定の手順」に従う。\n", encoding="utf-8")
     errors = _missing_section_references(source, tmp_path)
     assert len(errors) == 1 and f"{source}:1:" in errors[0] and "「判定の手順」" in errors[0]
+
+
+def test_bare_share_reference_to_missing_file_or_heading_is_reported(tmp_path):
+    """裸の`share/…`の参照先ファイルの不在と節見出しの不在を報告し、実在する参照は受理する。"""
+    share = tmp_path / "share"
+    share.mkdir()
+    (share / "sample.md").write_text("# 資料\n\n## 手順\n\n本文。\n", encoding="utf-8")
+    source = tmp_path / "consumer.md"
+    assert not _missing_bare_share_sections(source, tmp_path, 1, "`share/sample.md`「手順」に従う。")
+    errors = _missing_bare_share_sections(source, tmp_path, 2, "`share/sample.md`「無い節」に従う。")
+    assert len(errors) == 1 and "「無い節」" in errors[0] and f"{source}:2:" in errors[0]
+    errors = _missing_bare_share_sections(source, tmp_path, 3, "`share/missing.md`「手順」に従う。")
+    assert len(errors) == 1 and "`share/missing.md`が実在しない" in errors[0]

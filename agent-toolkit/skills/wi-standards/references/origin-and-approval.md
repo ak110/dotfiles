@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:delegation/references/writing.md` |
+| ユーザーの発言を出所と引用範囲を保って取り込む前 | `agent-toolkit:/share/writing-operations.md` |
 | run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
 
 ## 工程の参照

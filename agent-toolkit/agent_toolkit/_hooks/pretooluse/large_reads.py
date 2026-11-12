@@ -624,21 +624,14 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
     if not paths:
         return None
     reference = plugin_resources.skill_reference("review-session", "references/session-records.md")
+    query_reference = plugin_resources.skill_reference("review-session", "references/session-records-query.md")
     return _notice(
         "セッションの原記録の本文を、汎用ツールで直接参照しようとしている。\n対象: " + "、".join(str(path) for path in paths),
         tag="warn",
         fix=(
-            "`atk run-script session-review-evidence --`へ、"
-            "ファイルは`--transcript <原記録の絶対パス>`、"
-            "本文の検索は`--grep <正規表現>`、単一の`--transcript`では`--fixed-string <文字列>`も使える。"
-            "指定位置は`--detail <record:line>`、"
-            "ツール入力は`--tool-calls --tool <名前> --input-regex <正規表現>`を渡せ。"
-            "記録をまたぐ文字列の所在は`rg -l -F -- '<文字列>' <記録のディレクトリ>`で列挙し、"
-            "各パスを`--transcript`へ渡して本文を照会せよ。"
-            "期間と親セッションの一覧には`--catalog-claude-project <ディレクトリ>`か`--catalog-codex-history <ディレクトリ>`へ"
-            "`--since <時刻> --observation-boundary <時刻>`を加えよ。"
-            "発話後の呼出順は`--user-events`とツール一覧、または`--bundle`の抽出済み`conversation.jsonl`から集計せよ。"
-            f"入力の選択は{reference}に従い、抽出済みの結果を後処理せよ。"
+            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"
+            f"オプションの使い分けは{query_reference}に従い、抽出済みの結果を後処理せよ。"
+            f"入力の選択は{reference}に従え。"
         ),
         removable_cause=False,
         escalate_on_repeat=False,

@@ -7,9 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 委譲の総費用と判断の所有を確かめる前 | `routing-decisions.md` |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `process-model-settings.md` |
-| 定型処理の実行先をモデル選定前に比較する時 | `agent-basics:writing-standards/references/design-heuristics-decisions.md` |
 
 ## 委譲単位の確定
 

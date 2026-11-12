@@ -34,7 +34,7 @@
    一致した`channel`が`user`と`assistant`のみである場合は、会話の中での単なる言及として扱う。
 3. `agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」の未適用規範に関する是正原則に従って原因を特定する。
    条文の想起性を改善する案と、改善後の条文によって誤りの発生を未然に防げる見込みの根拠をAWIへ記録する。
-   その見込みは、`agent-toolkit:delegation/references/agent-documents-basics.md`に示されている読み手（LLM）の特性に基づいて評価する。
+   その見込みは、`agent-toolkit:/share/agent-documents-operations.md`に示されている読み手（LLM）の特性に基づいて評価する。
 
 目的逸脱には、規範に従ったことによる処理の停止、差し戻し、空転、不要な反復、条文間の矛盾、前提の欠落、あるいは要求を満たさない成果物の生成などが含まれる。
 正常に完了した工程であっても、資料の読み込み、照会、事前準備、確認に要した作業量を、本来達成すべき目的の操作と比較して評価する。

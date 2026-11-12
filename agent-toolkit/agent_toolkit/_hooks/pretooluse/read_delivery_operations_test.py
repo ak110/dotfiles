@@ -142,9 +142,12 @@ def test_temporary_area_writes_do_not_require_artifact_reads(tmp_path, monkeypat
         assert decision.block is None
         assert not _guidance(decision)
     if operation == "body-writing":
-        # 同じ基準の実配送後は、一時領域の文章原稿でも再掲しない。
-        draft = managed_temp.temp_root_path() / "session-0123456789abcdef" / "awi-body.md"
-        assert not _guidance(read_delivery.deliver(payload, "Write", {"file_path": str(draft), "content": "# 目的\n"}, "test"))
+        # 一時領域の作業記録・下書き（文章）への書込にも、初回から執筆基準を案内しない。
+        for name in ("orchestrator-log.md", "awi-body.md"):
+            record = managed_temp.temp_root_path() / "session-0123456789abcdef" / name
+            first = read_delivery.deliver(payload, "Write", {"file_path": str(record), "content": "# 目的\n"}, "test")
+            assert first.block is None
+            assert not _guidance(first)
 
 
 @pytest.mark.parametrize("codex", [False, True])

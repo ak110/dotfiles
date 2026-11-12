@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` |
-| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` |
-
 ## 仮説から次の確認を選ぶ
 
 未確定の前提や試行結果によって次の行動が変わる場面では、仮説、識別したい不確実性、最小の確認、観測、採否を対応付ける。

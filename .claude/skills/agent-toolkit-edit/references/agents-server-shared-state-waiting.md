@@ -6,7 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 共有状態の共通設計・実行主体・保存と回収の条件を判断する前 | `agents-server-shared-state.md` |
 | セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` |
 
 ## 待機と終了結果・通知
@@ -21,7 +20,8 @@
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`および`notices/<通知ファイル>` | 中断後に同一のrunを再開する`atk agents wait` | 待機CLI。結果ファイルは所有者を確認した排他区間内で退避し、通知ファイルは原本を削除する前に退避する |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | PostToolUseフック（子セッション開始時およびreply再開時の追加。`atk agents wait`と同様に索引を経由したルートへ登録する）、`atk agents wait`（待機開始時の追加、および回収・破棄時の削除）。助言機能側は読み取りのみを行う |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | 現在turnの状態ファイルの書込所有者と`atk agents wait`。状態投影の親IDまたは登録簿の`launcher_session_id`を受取会話と照合し、引き継ぎ後は現在の書込所有者を優先する | `notify.py`がCLIの委譲先通知とManagerの復旧失敗通知を作成主体付きで保存する。`notice_inbox.py`は帰属を確認した本文だけを回収する。待機登録とルート一致だけでは原本を削除しない |
-| MCPツールの呼び出し記録 | セッション状態の`agents_server_sessions` | PostToolUseフック、およびStop処理時の助言機能 | PostToolUseフック |
+
+MCPツールの呼び出し記録（セッション状態`agents_server_sessions`）は`session-state-and-flags-agents-server.md`が保持先と更新主体を定める。
 
 | 対象 | モジュール |
 | --- | --- |

@@ -14,17 +14,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 目標起点の判断を行う前 | `lanes-goals.md` |
-| 参照基準の適用前 | `lane-resources.md` |
 | 是正要求を分類する前 | `immediate-fix.md` |
-| 参照基準の適用前 | `../../user-confirmation-and-report/SKILL.md` |
-| 参照基準の適用前 | `all-repos-orchestration-inputs.md` |
-| 参照基準の適用前 | `selection-format-schema.md` |
-| 参照基準の適用前 | `finish-session-observation.md` |
-| 参照基準の適用前 | `../../wi-standards/references/wi-standards-operations.md` |
-| 参照基準の適用前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
-| 参照基準の適用前 | `run-lanes-addition.md` |
-| 参照基準の適用前 | `run-lanes-integration.md` |
-| 参照基準の適用前 | `run-lanes.md` |
 
 ## 読込表
 

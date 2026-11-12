@@ -7,10 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations.md` |
-| 効果を記録する前 | `../../wi-standards/references/states-and-dependencies.md` |
-| 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-| 経験を知見として保存・再利用する前 | `agent-basics:writing-standards/references/investigation-experience.md`、`agent-basics:writing-standards/references/agent-documents-basics-placement.md` |
+| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 
 ## 比較して探す観点
 
@@ -74,11 +71,11 @@
 
 ### 通読で使う比較
 
-記録全体の比較観点は`analysis-operations.md`「通読で使う比較」に従う。
+記録全体の比較観点は`analysis-operations-root-cause.md`「通読で使う比較」に従う。
 
 ## 規範適用による目的逸脱
 
-事象、原因、対策は、`analysis-operations.md`「規範の未適用と目的逸脱」で判定する。
+事象、原因、対策は、`analysis-operations-root-cause.md`「規範の未適用と目的逸脱」で判定する。
 前提の評価には`agent-basics:bugfix/references/root-cause-severity-quality.md`「前提の再検討」を適用する。
 対象条文の所在（ファイル名と節）、観測された処理停止、採用する改善案と根拠を記録する。
 正常に完了した作業でも、読込、準備、検収、後始末の作業量と成果を比べ、規範が求める工程を簡略化できないかを検討する。

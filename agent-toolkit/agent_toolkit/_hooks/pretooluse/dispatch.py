@@ -92,7 +92,7 @@ lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
 )
-lazy from agent_toolkit._hooks import command_timing, repository_protection, rules_context, work_contract
+lazy from agent_toolkit._hooks import bugfix_gate, command_timing, repository_protection, rules_context, work_contract
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -123,6 +123,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
     _check_bash_option_after_terminator,
     _check_bash_process_kill_by_pattern,
+    _check_bash_self_matching_pgrep,
     _check_bash_unquoted_heredoc_substitution,
     _check_read_predicate_stderr_discard,
     _git_commit_block,
@@ -253,6 +254,11 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     """ツールの種類ごとの判定を実行し、その結果を返す。"""
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
+    if (
+        tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX)
+        and (bugfix_block := bugfix_gate.send_block(payload)) is not None
+    ):
+        return Decision(block=bugfix_block)
     # Skill: write-plan起動時は前の計画のパスを消去する。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
@@ -319,7 +325,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     """Bashコマンドの遮断と警告を判定する。
 
     Codexの大量読取の警告、引用符なしheredoc本文の置換の遮断、パターン一致によるプロセス終了の遮断、
-    未起動のスキルの操作の警告、未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
+    自身に一致する`pgrep -f`の遮断、未起動のスキルの操作の警告、
+    未完了のバックグラウンドタスクが書き込む出力ファイルの読取の警告を扱う。
     遮断の判定は警告の判定より前に行い、遮断した呼び出しでは警告の記録（文脈ごとに1回の警告など）を進めない。
     """
     command = tool_input.get("command")
@@ -330,6 +337,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     for block in (
         lambda: _check_bash_unquoted_heredoc_substitution(command),
         lambda: _check_bash_process_kill_by_pattern(command),
+        lambda: _check_bash_self_matching_pgrep(command),
     ):
         message = block()
         if message is not None:

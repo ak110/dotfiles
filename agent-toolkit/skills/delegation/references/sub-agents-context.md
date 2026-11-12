@@ -1,4 +1,4 @@
-# サブエージェント定義ファイルと`<役割名>.parent.md`・`<役割名>.subagent.md`の記述基準：コンテキスト境界
+# 委譲先のコンテキスト境界
 
 ## 名指し参照の読込方法
 
@@ -18,5 +18,5 @@ Codexネイティブの`spawn_agent`で起動した委譲先では、`fork_turns
 軽量起動には同書の返却契約短節だけを配送し、全文配送と区別する。
 Claude Code固有の委譲先規範はCodexへ配送しない。
 Codexでforkを選択する場合は、`spawn_agent`の`fork_turns`を省略するか`"all"`を指定する。
-監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/sub-agents.md：コンテキスト境界：2026年9月27日」に記載されている。
+監査記録は`docs/development/audit-records-delegation.md`の「agent-toolkit/skills/delegation/references/sub-agents-context.md：コンテキスト境界：2026年9月27日」に記載されている。
 役割文書を渡して起動する際は、`agent-toolkit:delegation`のSKILL.md「送信」に従い、会話履歴を引き継がずに実行する。

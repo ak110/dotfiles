@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 遮断と警告を選ぶ前 | `claude-hooks-block-warn-behavior.md` |
-
 ## Codexの差分
 
 CodexのStopフックでは、`decision: "block"`と`reason`を返すことで同一ターンを継続させる。

@@ -28,7 +28,7 @@ from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 from agent_toolkit._hooks.pretooluse.read_delivery_conditions import _work_record_only
-from agent_toolkit._hooks.pretooluse.read_delivery_matching import _PROSE_SUFFIXES, _artifact_written_paths, _temporary_path
+from agent_toolkit._hooks.pretooluse.read_delivery_matching import _artifact_written_paths, _temporary_path
 from agent_toolkit._hooks.pretooluse.read_delivery_paths import _acquiring, _document_owner, _read_paths, _row_operation_kinds
 from agent_toolkit._hooks.pretooluse.read_delivery_roles import _subagent_task_documents
 from agent_toolkit._hooks.pretooluse.read_delivery_selection import _declaration_identity, _unmark
@@ -78,10 +78,7 @@ def _question_material_guidance(payload: dict, tool_name: str) -> str:
     """
     if tool_name != "AskUserQuestion" or operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_CODEX:
         return ""
-    return (
-        "判断材料（経緯、調査結果、案の比較）が長い場合は、`send_to_user`で先に送り、"
-        "質問には問い・選択肢・推奨と最小限の前提だけを残せ。`send_to_user`が無ければ質問本文へ書け。"
-    )
+    return "質問の前に、`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」の判断材料の送り方に従え。"
 
 
 def _declarations_unavailable(error: Exception) -> Decision:
@@ -119,9 +116,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     cwd = payload.get("cwd", "")
     cwd = cwd if isinstance(cwd, str) else ""
     written = operation_skills.written_paths(tool_name, tool_input, cwd)
-    temporary_code = bool(written) and all(
-        _temporary_path(path) and pathlib.Path(path).suffix.lower() not in _PROSE_SUFFIXES for path in written
-    )
+    temporary_code = bool(written) and all(_temporary_path(path) for path in written)
     if temporary_code:
         written = []
     if _work_record_only(written, payload, session_id):

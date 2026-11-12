@@ -8,7 +8,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| セッション記録を復元・進捗・操作の観測へ使う前 | `../../review-session/references/session-records-conversation.md` |
+| セッション記録を復元・進捗・操作の観測へ使う前 | `../../../share/session-conversation-extraction.md` |
 | process-wi中の停止や反復の原因が既存不良である時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
 | 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` |
 | 介入を扱う前 | `../../../share/exec-review-responses.md` |
@@ -32,7 +32,7 @@
    これは通信エラーによる継続不能とは区別して判断する。
    同一計画の起草から実装、および変更範囲の検証までは、同一のレーン担当者が同一のworktreeにおいて一貫して実施する。
    継続が不可能な場合に限って新たな担当者を起動し、検収済みの状態と残りの工程を1つの担当者へまとめて引き渡す。
-   交代時の会話確認は`../../review-session/references/session-records-conversation.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録の判断・残工程と比較する
+   交代時の会話確認は`../../../share/session-conversation-extraction.md`「会話の少量取得」で全体要求と最新の変更を読み、引き継ぎ記録の判断・残工程と比較する
 
 2. ユーザー介入時は、`../../../share/exec-review-responses.md`「指摘発生時の扱い」で採否を確定した差分だけを追送する。
    停止は、対象や前提が無効となり、続行すると誤った成果物ができる恐れがあり、稼働中の作業の完了まで対応を待てない場合に限る

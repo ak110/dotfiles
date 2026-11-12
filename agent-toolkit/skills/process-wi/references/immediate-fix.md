@@ -9,17 +9,9 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 待機中の改善要求の登録時機を決める前 | `../../delegation/references/waiting-and-monitoring-independent-work.md` |
-| 基準資料を選択・取得する時 | `../../../share/exec-review-parent-existing-defects.md` |
-| 基準資料を選択・取得する時 | `../../../share/add-wi.parent.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../review-session/SKILL.md` |
-| 基準資料を選択・取得する時 | `selection-procedure-addition.md` |
-| 基準資料を選択・取得する時 | `run-lanes-addition.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:/share/exec-review-contract-generation.md` |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` |
-| 基準資料を選択・取得する時 | `../../wi-standards/references/wi-standards-origin.md` |
 | 公開後に追加修正を統合し再公開する前 | `finish-session-recovery.md` |
+| 実行レビューから差分範囲外の既存不良が返された時 | `../../../share/exec-review-parent-existing-defects.md` |
+| ユーザーの要求をWIの由来へ転記する時 | `../../wi-standards/references/wi-standards-origin.md` |
 
 ## 開始後に追加されたWIの確認
 
@@ -66,7 +58,7 @@ all-reposの統括は各対象の確認を所有する。
    修正した規範は配布と再起動を経るまで稼働中の担当へ届かず、会話圧縮で失われることもある。
    このため、修正後の規範が届くまで従わせる規則（暫定規則）が確定したら、メインエージェントは現行の全体作業契約の「即時対応で確定した暫定規則」節へ書き、稼働中の担当へ同節の再読を指示する。
    以後に起動する担当へは既存の全体作業契約の受け渡し（`whole_contract_path`）で届け、軽量起動には必要な規則を委譲本文へ写す。
-   新しい記録ファイルは作らない。
+   記録は既存のファイルへ追記する。
    暫定規則が届くのは、同じセッションの全体作業契約を受け取る担当に限られる。
    このため、暫定規則を作った不備は、規範への最小修正を今回の公開に含め、正式対応のAWIは残る本格的な是正に使う。
    公開工程の開始前に、暫定規則の各項目へ対応する最小修正のcommitがあることを確かめる。
@@ -120,7 +112,7 @@ all-reposの統括は各対象の確認を所有する。
    次回へ渡す理由は、欠陥と確定した既存不良なら`01-agent.md`「完遂と先送り」の該当する先送り条件名と根拠、未確定の候補・効率改善ならその区分の根拠と本書「即時対応」の比較結果から書き始める。
    再開条件も同じ既存記録へ残す。
    修正時機とAWIの登録時機を分け、待機中に判定できる改善要求は`../../delegation/references/waiting-and-monitoring-independent-work.md`「待機中の先行実施」に従って発見時に保存まで進める。
-   次回修正の判定だけで投入自体を延期しない。
+   次回修正の判定にかかわらず、投入は同じ工程で行う。
    ユーザーからの要求は、`../../wi-standards/references/wi-standards-origin.md`「由来と承認」に従って発話を逐語的に転記する。
 
 2. メインエージェントは、即時対応の対象外とした既存不良についても、投入担当からの結果を受け取った時点で投入済みWIと対象箇所を自身の引き継ぎ記録に対応付け、報告元へその対応内容を伝える。
@@ -174,5 +166,3 @@ all-reposの統括は各対象の確認を所有する。
 今回の作業自体で混入させた不具合や、初期選定のWIが本来求めている正式対応は、元の要求と完成条件に沿って同一セッション内で完了させる。
 即時対応の枠組みを口実にして、初期選定された作業範囲を縮小しない。
 実行レビューから返された差分範囲外の既存不良も本節で対処時機を判定し、原因分析・起草は`../../../share/exec-review-parent-existing-defects.md`「返却に含まれる既存不良の受領」の独立した投入担当へ渡す。
-
-具体的な手順、レーンの変更範囲に修正を加える際の認可、および対象外とした不良や是正要求の扱いについては、`immediate-fix.md`の定めに従う。

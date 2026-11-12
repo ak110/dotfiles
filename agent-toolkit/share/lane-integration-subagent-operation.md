@@ -6,8 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
-| manifestの`verification`へ渡す検証の範囲を決める前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
 | manifestの`verification`へ渡すローカル検証の上限を決める前 | `agent-basics:check-execution/references/verification-scope.md` |
 | 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` |
 | 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |

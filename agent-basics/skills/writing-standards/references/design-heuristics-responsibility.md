@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
-
 ## 責務帰属（SRP）分析の観点
 
 責務の肥大化や単一責任の原則（SRP）違反を点検する場面（リファクタリングの検討、改善提案の主提案の確定、コード設計レビューなど）で使用する。

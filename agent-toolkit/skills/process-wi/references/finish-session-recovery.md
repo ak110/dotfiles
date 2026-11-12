@@ -4,18 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 合流した公開対象を判断する前 | `selection-procedure-addition.md` |
-| 目標起点の公開対象を判断する前 | `lanes-goals.md` |
-| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/push-and-ci.md` |
-| 基準資料を選択・取得する時 | `agent-toolkit:commit/references/publish.md` |
-| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
-| 基準資料を選択・取得する時 | `termination-ci-failure.md` |
-| 基準資料を選択・取得する時 | `../../commit/references/push-and-ci.md` |
-
 ## 公開工程の続行不能の回復と再開
 
 **21.** `session-termination.parent.md`からCIの照会不能、あるいは公開後操作の前提条件不足が返却された場合は、公開状態の4項目が成立している場合であっても本節の処理へ進む。
@@ -23,7 +11,7 @@
  確認済みのpush、全体検証、バージョン更新、生成物同期、公開後操作、およびWIの採否確定の各到達点を保持し、残されたCI判定や公開後操作を公開工程の未完了事項として扱う。
 成功済みの公開後操作もそのまま保持する。
  回復、確認、個別UWIの保存と回答を要する未終了項目の保留は、`agent-toolkit:commit`の`references/publish.md`「公開工程の続行不能からの再開」に従って行う。
- 全体検証の失敗が含まれる場合は`references/termination-ci-failure.md`へ引き渡し、CI未判定の解消のみをもって全体成功とみなさない。
+ 全体検証の失敗が含まれる場合は`termination-ci-failure.md`へ引き渡し、CI未判定の解消のみをもって全体成功とみなさない。
 
 **22.** 公開担当の引き継ぎ記録で再開位置と証拠を管理する。
 関連計画があれば`atk plans checkout`後に`atk run-script plan-progress --`で進捗を記録し、`atk plans commit`で保存する。

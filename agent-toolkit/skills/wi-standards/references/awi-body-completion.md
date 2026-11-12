@@ -6,12 +6,8 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | | | |
-| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` | | | |
+| 性能改善を主目的とする要求の完成条件を決める前 | `agent-toolkit:/share/investigation-operations.md` | | | |
 | 性能改善を主目的とする要求の完成条件を決める前 | `agent-basics:check-execution/references/diagnostics.md` | | | |
-| プロジェクトスキルを起動できず、確定したSKILL.mdの実在する絶対パスを取得操作へ渡す時 | 呼出側が確定したSKILL.mdと、その宣言が指す起動時・条件付きの必読資料 | 操作 | `read:*/.claude/skills/*/SKILL.md`、`read:*/.agents/skills/*/SKILL.md` | `project-skill` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-escalation.md` | | | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/approval-scope.md` | | | |
 
 ## 完成条件
 
@@ -61,7 +57,7 @@ GUI操作や配布後の挙動という分類だけで、人手による確認�
 同一セッション内の前後比較で改善を示せない案は採用せず、処理担当は変更を取り込まずに測定結果を記録して項目を終える。
 速度や資源使用量の性能改善を主目的とする作業では、変更前のボトルネックを確認する。
 同じ負荷・比較可能な条件による変更前後の数値、挙動維持、トレードオフも確認する。
-基準は`agent-toolkit:user-confirmation-and-report/references/investigation.md`と`agent-basics:check-execution`の`references/diagnostics.md`に従う。
+基準は`agent-toolkit:/share/investigation-operations.md`と`agent-basics:check-execution`の`references/diagnostics.md`に従う。
 長期の運用観測やユーザーへの効果判定の回答は完成条件の対象から除く。
 機能の正確性、安全性、公開契約の検証はそれぞれの要件として設定し、計測についてユーザーが明示した要求も維持する。
 所要時間のようにマシンの負荷状態に左右される計測値は、同一のマシンと同一の時点で実行した対照環境（変更前のバージョン、あるいは原因要素のみを元に戻した構成）との比率や差分として記述する。

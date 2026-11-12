@@ -7,8 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 目標起点の判断を行う前 | `lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 参照基準の適用前 | `selection-procedure-addition.md` |
 | 追加WIと即時修正を区別する前 | `immediate-fix.md` |
 
 ## 処理中に確定した必須是正レーン

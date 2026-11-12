@@ -6,22 +6,15 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
 | 基準の参照時 | `exec-subagent-implementation.md` |
 | 検証結果を記録する前 | `verification-evidence-records.md` |
-| 手動観測を保存する前 | `verification-evidence-observation.md` |
-| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` |
-| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 | 基準の参照時 | `reader-fit-review.parent.md` |
 | 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
+| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
 | 基準の参照時 | `review-loop-coordination-rounds.md` |
 | 基準の参照時 | `agent-toolkit:/share/reader-fit-review.parent.md` |
 | 基準の参照時 | `agent-basics:secret-files/SKILL.md` |
 | 基準の参照時 | `../skills/delegation/SKILL.md` |
-| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` |
 | 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
 | 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
 | 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
@@ -141,7 +134,7 @@ rebaseでコミットOIDだけが変わった場合は再レビュー不要で�
 特定レーンの作業を対象に起動する場合は`レーン識別子`も指定し、セッション識別名を`<レーン識別子>-exec-review`とする（`CI記録`のみによる起動を除く）。
 起動直前に`git merge-base <専用branch> <ベースbranch>`で分岐元コミットを解決し、計画の有無にかかわらず`開始時のHEAD`としてプロンプトに書く。
 それ以外で`WI`だけを渡す場合は、作業開始時のHEADを`開始時のHEAD`とする。
-`CI記録`を渡す場合は、`agent-toolkit:commit/references/ci-failure-handling.md`の項目に加えて`修正系列の開始時のHEAD`と`原因commitOID`を書く。
+`CI記録`を渡す場合は、`agent-toolkit:process-wi/references/ci-fix-series.md`の項目に加えて`修正系列の開始時のHEAD`と`原因commitOID`を書く。
 `原因commitOID`はCI失敗が再帰するたびにCI記録と一緒に更新し、`修正系列の開始時のHEAD`は同じ修正系列で引き継ぐ。
 CI記録には、メインエージェントが原因コミットを作ったときに持っていた情報を直接書く。
 初回レビューでは、デフォルト値の`レビュー種別: 初回レビュー`と`round: 1`を省く。

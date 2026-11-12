@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 外部部品の具体的な版指定と更新経路を判断する前 | `dependency-management.md` |
-
 ## 文書と既存コードの不一致
 
 プロジェクトの文書（`AGENTS.md`、`CLAUDE.md`、README、設計文書など）が定める規約や構成と、既存のコードや設定で一貫して採用されている規約が一致しない場合がある。

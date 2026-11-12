@@ -1,17 +1,11 @@
 # レーン資源と後段レーンの先行調査
 
 process-wiのメインエージェントが、レーンの専用worktree・branch・所有登録を作成、再利用、回収する手順と、後段レーンのworktreeを作成する前に始める読み取り専用の先行調査を定める。
-レーンの処理順、担当の起動、統合は`run-lanes.md`が定め、本書はその「レーンと資源」から読む。
+レーンの処理順、担当の起動、統合は`run-lanes.md`が定め、本書は`run-lanes.md`の条件別資料の表から読む。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `../../../share/exec.parent.md` |
-| 本文で基準を使う資料の選択・取得時 | `lane-planning-drafting.md` |
-| 本文で基準を使う資料の選択・取得時 | `run-lanes-launch.md` |
 
 ## レーン資源の作成・再利用・回収
 

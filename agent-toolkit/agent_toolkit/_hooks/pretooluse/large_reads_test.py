@@ -69,8 +69,7 @@ def test_original_record_search_output_mode(tmp_path, monkeypatch, capsys, codex
     assert "permissionDecision" not in captured.out
     if warned:
         context = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
-        assert "rg -l -F --" in context
-        assert "単一の`--transcript`" in context
+        assert "session-records-query.md" in context
 
 
 @pytest.fixture(autouse=True)

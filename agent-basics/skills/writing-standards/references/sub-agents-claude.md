@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` |
-
 ## Claude Codeのfrontmatter
 
 - サブエージェントの定義はセッション起動時に一括して読み込まれるため、セッション実行中に新設または改訂した定義は、同一セッション内の`subagent_type`による認識・解決の対象外となる
@@ -21,7 +17,6 @@
 
 `skills`によって注入されたスキル本文には、配置ディレクトリの絶対パスが付随しているため、プラグイン内の他のファイルはその絶対パスから特定したプラグインルートからの相対パスで解決できる。
 なお、スキル配下の`references/`ディレクトリは`skills`の宣言だけでは読み込まれないため、必要な参照文書はエージェントの本文から明示的に読み込む（`Read`する）。
-監査記録は`docs/development/audit-records-languages.md`にある。
 該当節は「agent-basics/skills/writing-standards/references/sub-agents.md：Claude Codeのfrontmatter：2026年8月19日」である。
 
 ## コンテキスト境界

@@ -54,13 +54,6 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
-| --- | --- | --- | --- |
-| WIから最終成果物へ転記する前 | `references/notation-rules.md` | | |
-| WIの起草・投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | | |
-| 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-save` |
-| 規範・基準・手順による既存の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | |
-
 ## 読込表
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
@@ -88,6 +81,15 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 | 同じ対象リポジトリの複数項目を一括取得する場合 | `references/wi-show-bulk.md` | | | |
 | 通常AWIの投入、または投入済みAWIの内容の更新を、WI投入担当へ委譲するか自分で起草するかを決める前 | `../../share/add-wi-parent-launch.md` | | | |
 | WI投入担当を起動する前（委譲すると決めた後） | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`。起動・受領の契約として全文を読む | | | |
+| WIから最終成果物へ転記する前 | `references/notation-rules.md` | | | |
+| WIの起草・投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | | | |
+| 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-save` | |
+| 規範・基準・手順による既存の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | | |
+| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `references/analysis-records.md` | | | |
+| 通常AWIの本文の構成と、起票目的別の登録条件を判定する前 | `references/wi-standards-body.md` | | | |
+| WIの由来（`source`）と承認、人間由来の要求の不採用を判断する前 | `references/wi-standards-origin.md` | | | |
+| WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | | | |
+| WIの投入、取得、回答済みUWIとの整合確認を行う前 | `references/wi-standards-operations.md` | | | |
 
 本文は`agent-basics:writing-standards`に従い、引き継いだエージェントが対象と期待する結果を正確に理解して完了まで作業を進められる粒度で書く。
 AWIの粒度は要求の同一性に基づいて判断する。
@@ -105,23 +107,6 @@ AWIの粒度は要求の同一性に基づいて判断する。
 反映内容と反映先の調査は投入前に完了させる。
 記述を短縮する際は、重複表現や判断に影響しない記述を削ることで行い、略語は本文または参照先で定義してから使用する。
 文字数や行数の機械的な上限は設けない。
-
-## 工程で参照する運用資料
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-toolkit:wi-standards/references/agent-documents-additions.md` |
-
-## 条件別資料
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 通常AWIの本文に関する判断・作業の前 | `references/wi-standards-body.md` |
-| 由来と承認に関する判断・作業の前 | `references/wi-standards-origin.md` |
-| 状態と依存に関する判断・作業の前 | `references/wi-standards-states.md` |
-| 事後承認型UWIに関する判断・作業の前 | `references/wi-standards-post-approval.md` |
-| 投入と取得に関する判断・作業の前 | `references/wi-standards-operations.md` |
 
 ## 本文参照の取得条件
 

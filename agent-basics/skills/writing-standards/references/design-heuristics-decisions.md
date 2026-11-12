@@ -7,7 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 品質改善の投資先を比較する前 | `design-heuristics-screening.md` |
-| 変更対象外で見つけた不備への対処を判断する前 | `../../bugfix/references/root-cause-analysis-initial.md` |
 
 ## 案の採否と実施順の判定
 

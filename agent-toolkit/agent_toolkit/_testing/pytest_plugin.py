@@ -10,6 +10,7 @@ import datetime
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +30,7 @@ from agent_toolkit._agents_server import api_credits, claude, claude_stream, lau
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk import orchestrator as _orchestrator
+from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._atk.wi import process_loop_update as _process_loop_update
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
 from agent_toolkit._common import wait_schedule as _wait_schedule
@@ -207,6 +209,34 @@ def pytest_ignore_collect(collection_path: pathlib.Path, config: pytest.Config) 
     return "pytest.mark.windows" not in collection_path.read_text(encoding="utf-8")
 
 
+def reclaim_stale_pytest_fixtures() -> list[pathlib.Path]:
+    """作成プロセスが終了した`pytest-fixtures-*`を回収し、回収したパスを返す。
+
+    異常終了したpytestの領域は正常終了時の後始末が働かず、7日の期限まで残る。実行中のpytestの領域を
+    消すと試験が壊れるため、作成プロセスの終了を確認できた領域に限る。識別の記録が無い領域は、
+    作成途中か旧版の領域かを区別できないので期限の掃引へ任せる。
+    """
+    try:
+        root = managed_temp.temp_root_path()
+        candidates = sorted(root.glob("pytest-fixtures-*"))
+    except OSError, managed_temp.ManagedTempError:
+        return []
+    reclaimed: list[pathlib.Path] = []
+    for area in candidates:
+        try:
+            if (
+                area.is_symlink()
+                or not area.is_dir()
+                or sweep.owner_alive((area / sweep.OWNER_FILE).read_text(encoding="ascii"))
+            ):
+                continue
+            managed_temp.cleanup_managed_temp(area)
+            reclaimed.append(area)
+        except OSError, managed_temp.ManagedTempError:
+            continue
+    return reclaimed
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """共有検証の所有と一時領域をpytestの寿命へ結び、配布CLIの依存環境の保存先を固定する。
@@ -221,6 +251,8 @@ def pytest_configure(config: pytest.Config) -> None:
     if (shard := config.getoption("test_shard")) is not None:
         _parse_test_shard(shard)
     os.environ.setdefault(plugin_environment.RUNTIME_DATA_ENV, str(plugin_environment.runtime_data(os.environ)))
+    # 試験が起動する子プロセスの`atk`が、実ディスクの空き不足で他の試験の領域を回収しないよう、環境変数で継承させて止める。
+    os.environ.setdefault(sweep.MIN_FREE_RATIO_ENV, "0")
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
@@ -238,7 +270,9 @@ def pytest_configure(config: pytest.Config) -> None:
     }
     directory = None
     if not worker and config.option.basetemp is None:
+        reclaim_stale_pytest_fixtures()
         directory = managed_temp.create_managed_temp("pytest-fixtures")
+        (directory / sweep.OWNER_FILE).write_text(sweep.owner_token(), encoding="ascii")
         # pytestは開始時にbasetempを削除して作成し直すため、作成した領域の子を初期化対象にする。
         config.option.basetemp = str(directory / "fixtures")
 
@@ -502,6 +536,12 @@ def _real_end_turn_wait(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
     """自動fixtureの差し替えを外し、対象内で実物の待機を使わせる。"""
     if request.path.is_relative_to(_PACKAGE_ROOT):
         monkeypatch.setattr(_transcript_scan, "wait_for_end_turn", _ORIGINAL_WAIT_FOR_END_TURN)
+
+
+@pytest.fixture(autouse=True)
+def _roomy_disk_for_sweep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """掃引の空き判定を実ディスクから隔離する。実機の空きが下限を割っていても、他のテストの一時領域を回収させない。"""
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 0, 1000))  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)

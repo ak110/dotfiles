@@ -6,22 +6,13 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
 | 基準の参照時 | `exec-subagent-implementation.md` |
-| 検証結果を記録する前 | `verification-evidence-records.md` |
-| 手動観測を保存する前 | `verification-evidence-observation.md` |
-| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` |
-| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 | 基準の参照時 | `usability-review.parent.md` |
-| 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:commit/references/ci-failure-handling.md` |
+| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
 | 基準の参照時 | `review-loop-coordination-rounds.md` |
 | 基準の参照時 | `../skills/delegation/SKILL.md` |
 | 基準の参照時 | `exec.parent.md`、`exec-parent-integration.md` |
 | 基準の参照時 | `exec-review-recording-integration.md` |
-| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` |
 | 基準の参照時 | `../skills/delegation/references/sending.md` |
 | 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
 | 基準の参照時 | `exec-parent-launch.md` |
@@ -90,7 +81,7 @@ amendやautosquashでHEADのコミットOIDが変わるため、統合入力HEAD
   統合の検査と再開で表を参照するため、最終化が終わるまでは保持する。
   保存先はprivate-notesの管理外とする
 - 基準が`CI記録`のみの場合: 同じ修正系列では同じ指摘管理表と`修正系列の開始時のHEAD`を引き継ぎ、系列の完了時に`atk plans commit ci-<修正系列の開始時のHEAD>.exec-review.tsv`で`private-notes/plans/ci/`へ保存する。
-  保存の時機は`agent-toolkit:commit/references/ci-failure-handling.md`の「入力計画」に従い、`process-wi`の公開工程では公開担当が実行する
+  保存の時機は`agent-toolkit:process-wi/references/ci-fix-series.md`の「入力計画」に従い、`process-wi`の公開工程では公開担当が実行する
 - 基準に`計画`を含む場合: 計画を管理するエージェントが、`agent-toolkit:write-plan`の`references/plan-file-storage.md`「計画ファイルの保存と参照」に従って計画バンドルとともに保存する
 
 ## 本文参照の取得条件

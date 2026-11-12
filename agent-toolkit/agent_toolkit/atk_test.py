@@ -19,6 +19,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import git_sync as _git_sync
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk.managed_temp import sweep as _sweep
 from agent_toolkit._atk.wi import listing as _wi_listing
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
@@ -410,3 +411,35 @@ class TestMainFailureNextAction:
         _git_sync.mark_reported(error)
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert not any(line.startswith("失敗: ") for line in lines)
+
+
+def test_report_space_pressure_writes_top_reclaimed_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
+    """回収した起動は回収量の上位の対象名を標準エラーへ、標準出力へは何も出さない。"""
+    gib = 1024**3
+    pressure = _managed_temp.SpacePressure(
+        100 * gib, 5 * gib, 12 * gib, 7 * gib, (("pytest-old", 4 * gib), ("big-area", 3 * gib)), None
+    )
+
+    atk._report_space_pressure(pressure)  # pylint: disable=protected-access
+
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "pytest-old=4.00GiB, big-area=3.00GiB" in output.err
+    assert "空き 5.0GiB→12.0GiB" in output.err
+
+
+def test_report_space_pressure_warns_with_usage_when_still_low(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """回収できず下限を割ったままなら、空きと一時rootの使用量を標準エラーへ出す。"""
+    # 試験基盤が子プロセス向けに設定した下限の上書きを外し、容量の10%の下限で判定する。
+    monkeypatch.delenv(_sweep.MIN_FREE_RATIO_ENV, raising=False)
+    gib = 1024**3
+    pressure = _managed_temp.SpacePressure(100 * gib, 3 * gib, 3 * gib, 0, (), 20 * gib)
+
+    atk._report_space_pressure(pressure)  # pylint: disable=protected-access
+
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "回収できる対象が無い" in output.err
+    assert "空き 3.0GiB / 容量 100.0GiB、一時rootの使用量 20.0GiB" in output.err

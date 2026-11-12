@@ -26,7 +26,7 @@
 | 期待からの逸脱を認識し、診断・訂正・対処を判断する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `skill:agent-basics:bugfix` |
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
 | レビュー指摘管理表を作成・更新する前 | `review-table-operations.md` | 判断 | `skill:agent-basics:review-standards` |
-| エージェント向け文書の編集前 | `agent-toolkit:delegation/references/writing.md`、`agent-toolkit:delegation/references/agent-documents-basics.md` | 操作 | `agent-document-writing` |
+| エージェント向け文書の編集前 | `agent-toolkit:/share/writing-operations.md`、`agent-toolkit:/share/agent-documents-operations.md` | 操作 | `agent-document-writing` |
 
 ## 常時規範が名指しする資料
 
@@ -38,7 +38,7 @@
 | 成果作業を終える作業完了報告を送る前 | `../skills/report-completion/SKILL.md` |
 | 採否・手段・進め方を判断する前 | `agent-basics:writing-standards/references/quality-principles-qcd.md` |
 | 完了・成功・不在・件数・互換性を述べる前と、要約・中継・報告を書く前 | `agent-basics:writing-standards/references/quality-principles-facts.md` |
-| 常時規範の節が名指す時点（手段・規範・確定方針から外れる案の評価、資格情報の扱い、方針の衝突の判定、発話への回答の確定など） | `agent-conduct-details.md` |
+| 常時規範の節が名指す時点（手段・規範・確定方針から外れる案の評価、資格情報の扱い、方針の衝突の判定、発話への回答の確定、進捗点検の通知を受けた時など） | `agent-conduct-details.md` |
 
 読込経路の取得時分類と廃止前の本文配送の観測記録は、`docs/development/audit-records-read-triggers-initial.md`にある。
 該当節は「agent-toolkit/share/read-trigger-bootstrap.md：操作を契機とする共有資料：2026年10月27日」である。
@@ -51,32 +51,33 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:delegation/references/agent-documents-basics.md` |
-| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` |
+| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:/share/agent-documents-operations.md` |
+| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-toolkit:/share/investigation-operations.md` |
 | セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` |
 | process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `agent-toolkit:workflow-overview/references/orchestrator-runtime.md` |
-| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:delegation/references/writing.md` |
-| textlintなど文章チェックの診断へ対応する時 | `agent-toolkit:delegation/references/textlint-violations.md` |
-| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/textlint-violations.md` |
+| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:/share/writing-operations.md` |
+| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/delegation-sending.md` |
 | 人間向け文書の役割と残す内容を選ぶ時 | `agent-toolkit:workflow-overview/references/document-types.md` |
 | 既存の対象を名前で指す時と新しい名前を付ける時 | `agent-toolkit:workflow-overview/references/defined-names.md` |
-| `ps1`・`ps1.tmpl`・`psm1`・`psd1` | `agent-toolkit:report-completion/references/powershell.md` |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-toolkit:commit/references/design-time.md` |
-| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:commit/references/testing.md` |
-| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:managed-temp/references/ui-ux.md` |
-| スキル編集 | `agent-toolkit:report-completion/references/agent-skills.md` |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-time.md` |
+| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:write-plan/references/testing-branch-verification.md` |
+| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:/share/ui-ux-operations.md` |
+| `ps1`・`ps1.tmpl`・`psm1`・`psd1`を編集する時 | `agent-toolkit:/share/powershell-operations.md` |
+| スキル（`SKILL.md`・`references/`）を新設・編集する時 | `agent-toolkit:/share/agent-skills-operations.md` |
+| process-wiのレーンworktreeを作成・保持・回収する時 | `agent-toolkit:process-wi/references/lane-worktree-management.md` |
 | エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` |
-| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents.md` |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents-context.md` |
 | `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `agent-toolkit:report-completion/references/claude-hooks-stop.md` |
 | auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:user-confirmation-and-report`が扱う） | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
-| エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-toolkit:wi-standards/references/agent-documents-additions.md` |
+| エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:refine-prompt/references/evaluation-triggers.md` |
 | AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
 | 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` |
 | CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` |
-| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前 | `agent-toolkit:review-session/references/analysis-operations.md`、`agent-toolkit:user-confirmation-and-report/references/analysis-operations.md` |
+| 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
+| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md`、`agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 検証対象の選定と計画・保存結果の実行・取得前（実行レビューで直接影響範囲だけを求める場合を除く） | `agent-toolkit:/share/verification-operations.md` |
 | 実行レビューで直接影響範囲を求める前 | `agent-toolkit:/share/verification-operations.md` |
-| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:delegation/references/acceptance-scenarios.md` |
+| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:/share/acceptance-scenarios.md` |
 | 専用レビュータスク契約を受領し、判定と返却する前 | `agent-toolkit:/share/exec-review-criteria.md` |
 | 読者別探索を起動・検収する前 | `agent-toolkit:/share/exec-review-criteria.md` |
 | 計画・WIの要件と証拠を判定する前 | `agent-toolkit:/share/exec-review-criteria.md` |

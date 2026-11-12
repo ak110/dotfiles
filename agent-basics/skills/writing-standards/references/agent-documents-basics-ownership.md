@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 実作業の知見を保存・整理する前 | `investigation-experience.md` |
-
 ## 定義の所有者
 
 - 複数の文書や実装から共通で利用する手順は、定義の所有者を1つ決定してその場所にのみ定義を配置し、生成元とすべての利用側を把握する。

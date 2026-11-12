@@ -32,7 +32,8 @@
 | 常駐CLIと自動起動の判定入力に関する判断・作業の前 | `distribution-and-hooks-runtime.md` |
 | MCPサーバー識別子とホスト別ツール名・プラグイン内リソースの参照書式・権限設定の配置に関する判断・作業の前 | `distribution-and-hooks-resources.md` |
 | worktreeでの編集時の注意・marketplace管理に関する判断・作業の前 | `distribution-and-hooks-deployment.md` |
-| フック実装の配置先（個人フックと配布物）・agents_serverのツール呼び出しを判定するhook・複数hook共存時の識別子に関する判断・作業の前 | `distribution-and-hooks-hooks.md` |
+| フック実装の配置先（個人フックと配布物）・agents_serverのツール呼び出しを判定するhook・複数hook共存時の識別子、`launch.py`の起動コマンド・依存準備・`pyproject.toml`と`uv.lock`の更新に関する判断・作業の前 | `distribution-and-hooks-hooks.md` |
+| 新しいCLI・コマンド・ラッパースクリプトを公開する計画を起草する前と、その疎通確認に関する判断・作業の前 | `distribution-and-hooks-new-cli.md` |
 
 ## 本文参照の取得条件
 

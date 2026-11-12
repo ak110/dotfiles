@@ -15,7 +15,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 取得済み候補を受領する前 | `all-repos-orchestration-inputs.md` |
-| 本文の参照基準を適用する前 | `../../delegation/references/waiting-claude-code.md` |
 | 工程の責務と受け渡しを確認する前 | `../../../share/workflow-phases.md` |
 | 操作機能がなく計画原稿を整理する前 | `quality-standards.md` |
 | 複数レーンへ処理を切り替える前、または既存不良の即時対応を判断する前 | `../SKILL.md` |

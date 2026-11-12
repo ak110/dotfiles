@@ -259,7 +259,19 @@ def document_sources(plugin_root: pathlib.Path, cwd: str = "", user_skills: path
     if cwd:
         roots.extend(project_skill_dirs(pathlib.Path(cwd)))
     roots.append(user_skills or pathlib.Path.home() / ".claude" / "skills")
-    return list(dict.fromkeys(path.resolve() for root in roots if root.is_dir() for path in sorted(root.rglob("*.md"))))
+    return list(dict.fromkeys(path for root in roots if root.is_dir() for path in canonical_markdown_files(root)))
+
+
+def canonical_markdown_files(root: pathlib.Path) -> list[pathlib.Path]:
+    """`root`配下のMarkdownを、ファイル名順に実体の絶対パスで返す。
+
+    hookは要求ごとに数百の文書を列挙するため、各パスの`resolve()`（構成要素ごとの`lstat`）が所要の大半を占めた。
+    `rglob`はシンボリックリンクのディレクトリへ降りないため、解決済みの起点から得たパスは、
+    ファイル自体がシンボリックリンクである場合を除いて実体のパスである。
+    そのため起点を1回だけ解決し、シンボリックリンクのファイルだけを個別に解決する。
+    """
+    base = root.resolve()
+    return [path.resolve() if path.is_symlink() else path for path in sorted(base.rglob("*.md"))]
 
 
 def project_skill_dirs(cwd: pathlib.Path) -> list[pathlib.Path]:

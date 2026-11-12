@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
-
 ## 未検証情報の取り扱い
 
 `未検証`は、自身で直接裏付けを取っていない具体的な数値、システムの挙動、または制約事項に対して付与する識別ラベルである。
@@ -17,7 +12,7 @@
 - 委譲先が作業着手時に読み込む成果物（委譲プロンプトや計画ファイルなど）へ、自身で確認していない具体値や既存実装の挙動・制約を記載する場合は、必ず`未検証`と明記し、作業に着手する前に裏付けを調査するよう指示する。
   該当箇所の明示には、行番号ではなく見出しや識別子を用いる（努力目標）。
 - 委譲した調査タスクの完了報告を受け取る前に原因をユーザーへ伝える必要がある場合は、確定的な事実ではなく推定であることを明記する。
-- 委譲先が実行する手順として外部コマンドやツールを提示する際の入力契約および根拠の確認手順は、`agent-toolkit:user-confirmation-and-report/references/investigation.md`に従う。
+- 委譲先が実行する手順として外部コマンドやツールを提示する際の入力契約および根拠の確認手順は、`agent-toolkit:/share/investigation-operations.md`に従う。
   また、toolkit固有の監査や記録の保存については、`agent-basics:writing-standards`の同名資料に従う。
 
 ## 判断材料と一時領域

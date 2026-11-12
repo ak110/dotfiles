@@ -10,7 +10,6 @@ import json
 import os
 import pathlib
 import re
-import shlex
 import subprocess
 from collections.abc import Callable
 
@@ -187,7 +186,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return f'Skill(skill="{cls._SKILL}")' in context and "次の操作:" in context
+        return f"`{cls._SKILL}`スキルを起動せよ" in context and "次の操作:" in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -196,7 +195,6 @@ class TestUserConfirmationSkillPrompt:
         context = self._prompt("表示が変わった原因は何か", tmp_path)
         assert self._has_notice(context)
         assert "診断より前に`agent-basics:bugfix`を起動" in context
-        assert "説明の補足や委譲・AWIの方針も対象" in context
         assert "「起動契機」から「認可を要する操作」" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path))
         self._invoke_skill(tmp_path)
@@ -296,7 +294,6 @@ class TestUserConfirmationSkillPrompt:
         context = self._prompt("表示が変わった原因は何か", tmp_path, host="codex")
         assert self._has_notice(context)
         assert "診断より前に`agent-basics:bugfix`を起動" in context
-        assert "説明の補足や委譲・AWIの方針も対象" in context
         assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 
 
@@ -372,15 +369,8 @@ class TestMachineInjectedTurn:
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in context
-        document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/SKILL.md"
-        assert document.is_file()
-        command = (
-            "Get-Content -LiteralPath '" + str(document).replace("'", "''") + "' -Encoding utf8"
-            if os.name == "nt"
-            else "cat -- " + shlex.quote(str(document))
-        )
-        assert f"それ以外では`{command}`で全文を取得して適用せよ" in context
+        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in context
+        assert "cat --" not in context and "Get-Content" not in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
 
@@ -584,7 +574,7 @@ class TestRealignNoticeInjection:
             output = json.loads(result.stdout)["hookSpecificOutput"]
             bodies = _notice_bodies(output["additionalContext"])
             assert len(bodies) == 1
-            assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[0]
+            assert "agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」" in bodies[0]
             assert "次の操作:" in bodies[0]
             assert set(_read_state(tmp_path, sid)) == {
                 "termination_evidence",
@@ -678,7 +668,6 @@ class TestExampleScopeNotice:
         assert len(bodies) == 1
         assert "「原文の保持と取り込み」" in bodies[0]
         assert "対応範囲を例示だけに狭めるな" in bodies[0]
-        assert "そのまま元の依頼を続けよ" in bodies[0]
         assert str(self._ROUTING_PATH) not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]
 
@@ -739,8 +728,8 @@ class TestExampleScopeNotice:
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 3
-        assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in bodies[0]
-        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
+        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in bodies[0]
+        assert "agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」" in bodies[1]
         assert str(self._UTTERANCE_PATH) in bodies[2]
 
 
@@ -839,10 +828,6 @@ def test_progress_notice_keeps_thirty_minute_cycles_during_user_prompts(monkeypa
             assert notified == (expected and subcommand == "user_prompt_submit"), (minute, subcommand, output)
             if notified:
                 assert context.count(opening) == 1
-                assert "`rules-main.md`「進捗報告」の定義に従え" in context
-                assert "工程・開始時点・経過時間を目標と前回の成果・再試行に比較せよ" in context
-                assert "追加・変更後も有効な全要求に対する成果・証拠・未達・残工程" in context
-                assert "具体的な比較結果を既存の進捗記録へ保存せよ" in context
             observations.append({"経過分": minute, "入力": payload, "出力": output, "通知": notified, "終了": rc})
         entry = session_state.read_state(sid)[progress_self_check.STATE_KEY]["main"]
         assert entry["started_at"] == started_at

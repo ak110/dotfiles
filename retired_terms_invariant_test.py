@@ -625,36 +625,27 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
         for location in _VERBATIM_RECORD_LOCATIONS
         if location.line_substring is None and location.line_exact is None and location.line_sha256 is None
     ]
-    for retired in terms:
-        proc = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repo_root),
-                "grep",
-                "-n",
-                "-I",
-                "-F",
-                "-z",
-                "--no-color",
-                "--full-name",
-                "-e",
-                retired.term,
-                "--",
-                ".",
-                *excluded_paths,
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=False,
-        )
-        # git grepは一致が無い場合に終了コード1を返す。
-        if proc.returncode == 1:
-            continue
-        assert proc.returncode == 0, proc.stderr
-        for record in proc.stdout.splitlines():
-            path, line_number, line = record.split("\0", 2)
+    # 全語を1回の`git grep`で走査し、行ごとに含む語を判定する。
+    # 語ごとに起動すると、1回の呼び出しで200件超のサブプロセスを起動し、
+    # 本関数を呼ぶ試験ケースの数だけ繰り返して、不変条件試験の所要の大半を占めていた。
+    patterns = [argument for retired in terms for argument in ("-e", retired.term)]
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "grep", "-n", "-I", "-F", "-z", "--no-color", "--full-name", *patterns]
+        + ["--", ".", *excluded_paths],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    # git grepは一致が無い場合に終了コード1を返す。
+    if proc.returncode == 1:
+        return violations
+    assert proc.returncode == 0, proc.stderr
+    for record in proc.stdout.splitlines():
+        path, line_number, line = record.split("\0", 2)
+        for retired in terms:
+            if retired.term not in line:
+                continue
             if any(location.allows(path, line) for location in (*retired.allowed, *_VERBATIM_RECORD_LOCATIONS)):
                 continue
             violations.append(

@@ -68,7 +68,7 @@
 基準版との`照合状態`は行全文一致1,755、一対一差分21、手動対応5、新規追加9で、未確定は0だった。
 宣言を含む249 sourceのSHA256を分類取得時の作業ツリー本文と照合し、不一致は0だった。
 前述の中間取得時の1,790行から、`agents-server-explore.md`冒頭を指定した宣言1行が削除された。
-その後、`agent-toolkit:delegation/references/writing.md`に宣言1行が追加された。
+その後、`agent-toolkit:/share/writing-operations.md`に宣言1行が追加された。
 追加行の参照先は`agent-basics/skills/writing-standards/references/textlint-violations.md`の「textlint指摘への修正方針」である。
 
 4語の検索結果は順に359、815、93、349行の計1,616行である。
@@ -78,7 +78,7 @@
 原本の節指定列は宣言の内容を表し、取得済み状態や実機での成功を示さない。
 
 全文取得方式の分類原本のSHA256を次に示す。
-保存先と版は前述のprivate-notesのディレクトリとGit履歴で確認する。
+保存先と版は[初回取得の記録](audit-records-read-triggers-initial.md)が示すprivate-notesのディレクトリとGit履歴で確認する。
 再取得は比較基準`c31bea2b6`と、保存されたroutesのsource SHAが一致する公開履歴の版を選び、前述の4語の独立検索と宣言・参照の対応付けを実行する。
 3原本の行末はLFである。
 次のSHA256は取得時の値で、保存の有無は上記ディレクトリのGit履歴で確認する。

@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 類似見直しと再発防止の完了を判定する前 | `../../bugfix/references/root-cause-prevention-verification.md` |
-
 ## 文書記述量の管理
 
 ### 見直す契機と点検観点

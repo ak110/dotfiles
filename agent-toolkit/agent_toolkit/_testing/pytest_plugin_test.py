@@ -19,6 +19,8 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import backends
+from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._testing import late_descendant, pytest_plugin, xdist_stop
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
@@ -862,3 +864,27 @@ def test_pytest_holds_slot_until_all_tests_finish(tmp_path: pathlib.Path, worker
         assert not record["timed_out"] and record["failure"] is None
         # 統合検証は開始前の待機だけを記録し、実行中に実行枠を取り直さない。
         assert all(wait["kind"] == "initial" for wait in record["timing"]["slot_waits"])
+
+
+def test_reclaim_stale_pytest_fixtures_keeps_running_owner(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """作成プロセスが終了した`pytest-fixtures-*`だけを回収し、実行中・識別の記録が無い領域は残す。"""
+    root = tmp_path / "temp-root"
+    root.mkdir()
+    monkeypatch.setattr(managed_temp, "temp_root_path", lambda: root)
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as finished:
+        finished.wait()
+        dead_token = f"{finished.pid} "
+    live = root / "pytest-fixtures-live"
+    dead = root / "pytest-fixtures-dead"
+    unknown = root / "pytest-fixtures-unknown"
+    for area in (live, dead, unknown):
+        area.mkdir()
+        (area / "data").write_text("x", encoding="utf-8")
+    (live / sweep.OWNER_FILE).write_text(sweep.owner_token(), encoding="ascii")
+    (dead / sweep.OWNER_FILE).write_text(dead_token, encoding="ascii")
+    monkeypatch.setattr(managed_temp, "cleanup_managed_temp", lambda area: __import__("shutil").rmtree(area))
+
+    reclaimed = pytest_plugin.reclaim_stale_pytest_fixtures()
+
+    assert reclaimed == [dead]
+    assert live.exists() and unknown.exists() and not dead.exists()

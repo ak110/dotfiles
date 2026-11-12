@@ -9,8 +9,8 @@
 | 計画する変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `../../wi-standards/references/cross-repository-submission.md` |
 | 旧形式WIの節を現行の責務へ対応付ける前 | `../../wi-standards/references/awi-body.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-subagent-implementation.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/exec-review-criteria.md` |
+| 不具合対策の計画を起草する時 | `../../../share/exec-review-criteria.md` |
+| 計画の書き込み先集合へ実装中の追加が生じた時 | `../../../share/exec-subagent-implementation.md` |
 
 ## 計画の起草
 
@@ -45,7 +45,7 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
   一度作った対応は再利用し、同じ範囲の再調査は省く。
   `agent-basics:writing-standards/references/design-heuristics-quality.md`「設計品質の劣化確認」は常に実施する。
   評価条件は`../../write-plan/references/plan-file-standards-design.md`「恒久化・リファクタリング」に準拠する。
-  不具合対策においては、`../../../share/exec-review-criteria.md`「初回レビュー」の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
+  不具合対策においては、`agent-basics:review-standards/references/reviewer-initial.md`「初回レビュー」手順4の「前提を疑う観点」に従い、観測された害の解消策と呼び出し側の修正案も併せて比較する。
 - `選定`の各項目における`鮮度`を計画の`## 変更履歴`へ記録する。
   `鮮度`が`notice`であることのみを理由として作業を中断することは避け、現行内容との不一致、既存実装による充足済み、巻き戻しの危険のいずれかが確認された項目に限定して関連履歴を調査し、確認条件、調査した履歴、および採否への影響を同一記録に残す。
 - レーン担当は、レーン数にかかわらず自身のレーン内の作業分担を`../../delegation/references/routing-decisions.md`、`../../delegation/references/routing-units.md`に基づいて検討する。
@@ -55,9 +55,7 @@ AWIが代表AWIへ共通本文を参照している場合は、`agent-toolkit:wi
 - 多数の対象へ同一作業を適用する要求では、`../../write-plan/references/plan-file-standards-scope.md`「実施内容」の実施方式も比較検討し、採用した方式と理由を記録する。
   大量のファイル編集では、実装へ入る前に作業構成を決める。
   要求と完成条件はレーンが1つのWIとして所有し、並行できる作業単位はそれと分けて、共通の変換規則と前提、出力元と直接消費するテスト、相互参照の整合責任でファイル群をまとめる。
-  対象の列挙、変換、差分の分類、機械的な保持確認はスクリプトか既存CLIを先に選び、意味の判断を要する残りと区別する。
   変換、参照の追随、保持確認が同じ原本と対応表から進むように構成し、担当ごとの再探索と、レーン担当による同じ機械比較の再実行を避ける。
-  スクリプト、内部担当、レーン担当の役割と開始条件を`## 実施内容`へ記録する。
   独立した準備は先行成果を待たずに始め、共有定義は単一writerへ集約する。
   内部群の総数と同時数を分け、巡回全体のCと巨大WIの判定は`selection-procedure-allocation.md`「内部担当の同時数と巨大WIの判定」へ接続する。
   各群の実装・焦点検証・commitが済んだ順に、`../../../share/exec-review-parent-launch.md`の独立文脈レビューへ渡す。

@@ -10,8 +10,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 基準資料を選択・取得する時 | `agent-basics:bugfix/SKILL.md` |
 | 選定結果の欄の意味と段階の算出を確かめる時 | `selection-format.md` |
+| 回答の過程で規定の不備が判明し、是正に着手する前 | `agent-basics:bugfix/SKILL.md` |
 
 ## 回答の材料
 

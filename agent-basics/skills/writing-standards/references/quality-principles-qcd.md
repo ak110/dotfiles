@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 外部部品の具体的な版指定と更新経路を判断する前 | `dependency-management.md` |
-
 ## QCDと3段判定
 
 品質は機能、使いやすさ、性能、信頼性、保守性、可用性、セキュリティ、安全性を含み、名前や文言の分かりやすさも評価する。

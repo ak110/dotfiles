@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 状態や業務ルールに関わる排他・トランザクションの単位を導く前 | `design-time-state.md` |
-| 処理自体の失敗を異常終了で表すかを判断する前 | `../../bugfix/references/root-cause-prevention-selection.md` |
-
 ## 技術仕様と実利用環境の評価
 
 負荷、データ、外部システムの条件に依存する技術仕様や非機能要件では、期待する利用結果、事前検証の仮定と限界、実利用環境で評価する観測を対応付ける（努力目標。影響と取得費用に合う検証を選ぶため）。

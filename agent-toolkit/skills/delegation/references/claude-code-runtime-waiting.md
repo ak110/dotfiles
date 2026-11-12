@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
-| `Agent`ツールで起動した担当を継続する前 | `continuation.md` |
-| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` |
-
 ## 検証コマンドの実行形態
 
 待機の起動と結果回収は`waiting-and-monitoring-intervals.md`「待機区間の構成」に従い、待機以外の検証・ビルドやリモートホストでの長時間コマンドは同書「背景ジョブの起動形（Claude Code）」に従う。
