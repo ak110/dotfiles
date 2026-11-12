@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import stat
 import typing
 
@@ -270,7 +271,7 @@ def test_sweep_reports_removal_failure_and_retries_on_next_sweep(monkeypatch: py
 
 
 def test_cleanup_rejects_root_outside_and_links(tmp_path: pathlib.Path) -> None:
-    """内部回収はroot自身・root外・リンクとリンクを経由する経路を削除せず、不在は成功とする。"""
+    """内部回収はroot自身・root外・リンクとリンクを含むパスを削除せず、不在は成功とする。"""
     root = paths.temp_root()
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -431,3 +432,75 @@ def test_cleanup_removes_unreadable_owned_tree(restricted: str) -> None:
     finally:
         if area.exists():
             locked.chmod(0o700)
+
+
+class _FakeDisk:
+    """`shutil.disk_usage`を差し替え、一時root配下の実使用量だけ空きへ反映する。"""
+
+    def __init__(self, total: int, free_without_root: int, root: pathlib.Path) -> None:
+        self.total, self.base, self.root = total, free_without_root, root
+
+    def __call__(self, _path: object) -> typing.Any:
+        used = sum(item.stat().st_size for item in self.root.rglob("*") if item.is_file())
+        return shutil._ntuple_diskusage(self.total, 0, self.base - used)  # pylint: disable=protected-access
+
+
+def _first_sweep_done() -> None:
+    """間隔内の起動（全走査をしない通常の起動）にする。"""
+    sweep._save_sweep_time(paths.state_root(), sweep._now_ns(_NOW))  # pylint: disable=protected-access
+
+
+def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    """空きが10%未満なら間隔内でも古い順に回収し、使用中・保護セッションは残し、上位名を記録する。"""
+    _first_sweep_done()
+    old = _area("old-abc", days=3, files={"big": "x" * 400})
+    newer = _area("newer-abc", days=1, files={"big": "x" * 400})
+    worktree = _area("wt-abc", days=5, files={"payload.txt": "x" * 400})
+    session = _area("session-keep", days=6, files={"payload.txt": "x" * 400})
+    registered = pathlib.Path(paths.temp_root().parent / "gitdir-wt")
+    registered.mkdir()
+    (registered / "gitdir").write_text(f"{worktree / '.git'}\n", encoding="utf-8")
+    (worktree / ".git").write_text(f"gitdir: {registered}\n", encoding="utf-8")
+    monkeypatch.setattr(sweep.session_registry, "pending_session_ids", lambda: ["keep"])
+    monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: session)
+    # 容量1000のうち使用1600B相当ではなく、空きが10%（100）を割るよう基準の空きを設定する。
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1700, paths.temp_root()))
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert result.pressure is not None
+    assert result.deleted[0] == old
+    assert not old.exists()
+    assert worktree.exists() and session.exists()
+    assert result.pressure.top_reclaimed[0][0] == "old-abc"
+    assert result.pressure.free_after > result.pressure.free_before
+    assert newer.exists()
+
+
+def test_normal_free_space_does_not_reclaim_or_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """空きが10%以上なら、間隔内の起動は何も回収せず走査もしない。"""
+    _first_sweep_done()
+    kept = _area("recent-abc", days=3)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 0, 500))  # pylint: disable=protected-access
+    monkeypatch.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("全走査をした"))
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert result.pressure is None
+    assert result.deleted == []
+    assert kept.exists()
+
+
+def test_space_pressure_without_reclaimable_target_reports_low_space(monkeypatch: pytest.MonkeyPatch) -> None:
+    """回収できる対象が無いまま空きが下限を割る場合は、下限割れの状態と一時rootの使用量を返す。"""
+    _first_sweep_done()
+    in_use = _area("session-keep", days=3, files={"payload.txt": "x" * 300})
+    monkeypatch.setattr(sweep.session_registry, "pending_session_ids", lambda: ["keep"])
+    monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: in_use)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 900, 50))  # pylint: disable=protected-access
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert result.pressure is not None and result.pressure.still_low
+    assert result.deleted == [] and in_use.exists()
+    assert (result.pressure.temp_root_bytes or 0) > 0

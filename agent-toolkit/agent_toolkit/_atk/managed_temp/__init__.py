@@ -30,6 +30,7 @@ from agent_toolkit._atk.managed_temp.removal import (
     validate_managed_temp,
 )
 from agent_toolkit._atk.managed_temp.sweep import (
+    SpacePressure,
     SweepResult,
     sweep_managed_temp,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "PLUGIN_ROOT_PREFIX",
     "SESSION_TEMP_PREFIX",
     "ManagedTempError",
+    "SpacePressure",
     "SweepResult",
     "cleanup_managed_temp",
     "contained_target",

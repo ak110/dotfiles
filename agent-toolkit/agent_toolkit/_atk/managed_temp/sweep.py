@@ -13,6 +13,7 @@ import json
 import os
 import pathlib
 import secrets
+import shutil
 import stat
 import typing
 
@@ -29,6 +30,13 @@ _SWEEP_INTERVAL_NS = 86_400 * _NANOSECONDS_PER_SECOND
 """掃引の間隔。使用中・ロック保持中・削除失敗の対象と旧版の状態も、次の掃引で調べ直す。"""
 _DESCRIPTOR_WALK = os.scandir in os.supports_fd and os.open in os.supports_dir_fd
 """記述子を基点に相対名で走査できるか。Windowsは記述子による走査を提供しない。"""
+_MIN_FREE_RATIO = 0.10
+"""一時rootを含むFSの空きの下限（容量比）。
+
+2026-11-12にmanaged-tempだけで容量の約16%（46GB/292GB）に達し、空きが約3%から同時実行中の測定で
+短時間に尽きて`atk`の書込が失敗した。容量比にすれば、ディスクの大きさによらず同じ比率の余裕を残せる。
+"""
+_TOP_RECLAIMED = 5
 _LEGACY_REGISTRY_SUFFIX = ".json"
 _LEGACY_CLEANUP_LOCK_SUFFIX = ".json.cleanup.lock"
 
@@ -40,6 +48,26 @@ class SweepResult(typing.NamedTuple):
     """自動削除したパス。"""
     failed: tuple[tuple[pathlib.Path, str], ...]
     """期限切れでも削除できなかった対象と理由。次の掃引（1日後）に再試行する。"""
+    pressure: SpacePressure | None = None
+    """空きが下限を割った起動の回収結果。空きが下限以上の通常時はNone。"""
+
+
+class SpacePressure(typing.NamedTuple):
+    """空きが下限（容量の10%）を割った起動の、回収前後の空きと回収量上位。"""
+
+    total: int
+    """一時rootを含むFSの容量（バイト）。"""
+    free_before: int
+    free_after: int
+    reclaimed_bytes: int
+    top_reclaimed: tuple[tuple[str, int], ...]
+    """回収量の多い順の対象名とバイト数。作成者が回収しなかった大きな領域を振り返りで見つけるための記録。"""
+    temp_root_bytes: int | None
+    """回収後の一時root全体の使用量。回収できる対象が残らなかった場合の警告にだけ数える。"""
+
+    @property
+    def still_low(self) -> bool:
+        return self.free_after < self.total * _MIN_FREE_RATIO
 
 
 def _sweep_due(state_root: pathlib.Path, now_ns: int) -> bool:
@@ -62,6 +90,28 @@ def _save_sweep_time(state_root: pathlib.Path, now_ns: int) -> None:
     except OSError:
         with contextlib.suppress(OSError):
             temporary.unlink(missing_ok=True)
+
+
+def _disk_usage(path: pathlib.Path) -> typing.Any:
+    """空きの観測点。テストが実ディスクの空きから掃引を隔離できるよう、標準関数を1箇所で包む。"""
+    return shutil.disk_usage(path)
+
+
+def _tree_bytes(path: pathlib.Path) -> int:
+    """対象の実使用量（バイト）を、リンクを辿らずに数える。数えられない項目は0として扱う。"""
+    total = 0
+    pending = [path]
+    while pending:
+        current = pending.pop()
+        try:
+            metadata = current.lstat()
+            total += getattr(metadata, "st_blocks", 0) * 512 or metadata.st_size
+            if stat.S_ISDIR(metadata.st_mode) and not paths.is_link(metadata):
+                with os.scandir(current) as children:
+                    pending.extend(current / child.name for child in children)
+        except OSError:
+            continue
+    return total
 
 
 def _now_ns(now: datetime.datetime) -> int:
@@ -276,10 +326,93 @@ def _examine(
         latest, has_git = _update_time(metadata, now_ns), False
     if latest >= cutoff_ns or child in protected_sessions or has_git or plugin_root_in_use(child):
         return False
+    return _remove(state_root, child, metadata)
+
+
+def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_result) -> bool:
+    """回収可と判定済みの1件を削除し、削除した場合は真を返す。"""
     if stat.S_ISDIR(metadata.st_mode) and os.path.lexists(child / paths.LEGACY_MARKER_NAME):
         return _remove_legacy_area(state_root, child)
     remove_tree(child)
     return True
+
+
+def _below_floor(temp_root: pathlib.Path) -> bool:
+    """一時rootを含むFSの空きが容量の10%を下回るかを返す。観測できない場合は偽を返す。"""
+    try:
+        usage = _disk_usage(temp_root)
+    except OSError:
+        return False
+    return usage.free < usage.total * _MIN_FREE_RATIO
+
+
+def _reclaim_for_space(
+    state_root: pathlib.Path,
+    temp_root: pathlib.Path,
+    now_ns: int,
+    protected_sessions: set[pathlib.Path],
+    deleted: list[pathlib.Path],
+    failed: list[tuple[pathlib.Path, str]],
+) -> SpacePressure | None:
+    """空きが下限を割る場合に限り、保持期間を待たず使用中でない対象を最終更新の古い順に回収する。
+
+    使用中・保護セッション・登録済みworktree・保持配布物・リンクは、期限の掃引と同じ判定で残す。
+    消した領域は回復できず、実行中の作業の一時領域を消すと作業が壊れるためである。
+    """
+    try:
+        usage = _disk_usage(temp_root)
+    except OSError:
+        return None
+    if usage.free >= usage.total * _MIN_FREE_RATIO:
+        return None
+    candidates: list[tuple[int, pathlib.Path, os.stat_result]] = []
+    with os.scandir(temp_root) as children:
+        listed = sorted(children, key=lambda child: child.name)
+    for entry in listed:
+        child = temp_root / entry.name
+        try:
+            metadata = entry.stat(follow_symlinks=False)
+            if paths.is_link(metadata):
+                continue
+            if stat.S_ISDIR(metadata.st_mode):
+                latest, has_git = _latest_update_and_worktree(child, now_ns)
+            else:
+                latest, has_git = _update_time(metadata, now_ns), False
+            if child in protected_sessions or has_git or plugin_root_in_use(child):
+                continue
+        except FileNotFoundError:
+            continue
+        except (OSError, ManagedTempError) as error:
+            failed.append((child, str(error)))
+            continue
+        candidates.append((latest, child, metadata))
+    candidates.sort(key=lambda item: (item[0], item[1].name))
+    sizes: list[tuple[str, int]] = []
+    free = usage.free
+    for _latest, child, metadata in candidates:
+        if free > usage.total * _MIN_FREE_RATIO:
+            break
+        size = _tree_bytes(child)
+        try:
+            if not _remove(state_root, child, metadata):
+                continue
+        except (OSError, ManagedTempError) as error:
+            if os.path.lexists(child):
+                failed.append((child, str(error)))
+            continue
+        deleted.append(child)
+        sizes.append((child.name, size))
+        try:
+            free = _disk_usage(temp_root).free
+        except OSError:
+            free = usage.free + sum(size for _name, size in sizes)
+    sizes.sort(key=lambda item: item[1], reverse=True)
+    pressure = SpacePressure(
+        usage.total, usage.free, free, sum(size for _name, size in sizes), tuple(sizes[:_TOP_RECLAIMED]), None
+    )
+    if pressure.still_low:
+        pressure = pressure._replace(temp_root_bytes=_tree_bytes(temp_root))
+    return pressure
 
 
 @plugin_root_leases.reuse_process_observation()
@@ -298,8 +431,20 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         state_root = paths.state_root()
     except ManagedTempError as error:
         return SweepResult([], ((paths.temp_root_path(), str(error)),))
-    if not _sweep_due(state_root, now_ns):
-        return SweepResult([], ())
+    due = _sweep_due(state_root, now_ns)
+    if not due:
+        # 間隔内の起動は全走査をしない。空きの確認は1回のstatvfsで済むため、下限を割る場合だけ回収へ進む。
+        if not _below_floor(temp_root):
+            return SweepResult([], ())
+        protected = {
+            area
+            for identifier in session_registry.pending_session_ids()
+            if (area := creation.find_session_temp(identifier)) is not None
+        }
+        deleted_early: list[pathlib.Path] = []
+        failed_early: list[tuple[pathlib.Path, str]] = []
+        pressure = _reclaim_for_space(state_root, temp_root, now_ns, protected, deleted_early, failed_early)
+        return SweepResult(deleted_early, tuple(failed_early), pressure)
     # 終了したプロセスの使用記録も1日1回の掃引で回収する。間隔内の起動で走査しないことは掃引全体の契約である。
     with contextlib.suppress(OSError):
         plugin_root_leases.sweep_plugin_root_records()
@@ -326,7 +471,8 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
                 failed.append((child, str(error)))
+    pressure = _reclaim_for_space(state_root, temp_root, now_ns, protected_sessions, deleted, failed)
     with contextlib.suppress(OSError):
         _sweep_legacy_state(state_root)
     _save_sweep_time(state_root, now_ns)
-    return SweepResult(deleted, tuple(failed))
+    return SweepResult(deleted, tuple(failed), pressure)
