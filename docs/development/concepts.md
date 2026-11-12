@@ -51,9 +51,11 @@
 
 ## [process-wiとレーン](concepts-workflows-lanes.md#process-wiとレーン)
 
+## [WI選定と処理](concepts-wi-processing.md#wi選定と処理)
+
 ## [工程と検証の名前](concepts-workflows-lanes.md#工程と検証の名前)
 
-## [多数の単純作業の分担](concepts-workflows-lanes.md#多数の単純作業の分担)
+## [多数の単純作業の分担](concepts-wi-processing.md#多数の単純作業の分担)
 
 ## [計画ファイルの体裁の扱い](concepts-workflows-lanes.md#計画ファイルの体裁の扱い)
 

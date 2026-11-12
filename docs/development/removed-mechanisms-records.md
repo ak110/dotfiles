@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- |
 | 固定したAWI件数を計算式へ入れて所要時間目標を決める | 2026-09-04、commit: c691647aa | 目標の参照ごとに件数確定と計算が必要となり、内訳分析に対して複雑だった。 | 所要時間目標は分析に使い、停止や工程省略の条件にしない。docs/development/concepts-duration.md「所要時間とコスト」 | 撤去理由を解消できることを示した場合 |
 | 圧縮に備えて専用`parent-handoff.md`へ作業状態を重複保存する義務 | 2026-10-26、commit: 648815a7a | 既存の選定・資源・担当記録と要約から復元でき、圧縮専用保存が重複していた。 | 圧縮後は既存の原本から不足だけを補う。docs/development/concepts-workflows-lanes.md「process-wiとレーン」 | 撤去理由を解消できることを示した場合 |
-| 計画の専用の提示素材節へ入力素材を記録する | 2026-09-01、commit: a54184c43 | 由来を実施内容へ集約し、WI本文を計画へ複製しない構成へ移した。 | 元WI名は実施内容の由来欄に保持する。docs/development/concepts-workflows-lanes.md「process-wiとレーン」 | 撤去理由を解消できることを示した場合 |
+| 計画の専用の提示素材節へ入力素材を記録する | 2026-09-01、commit: a54184c43 | 由来を実施内容へ集約し、WI本文を計画へ複製しない構成へ移した。 | 元WI名は実施内容の由来欄に保持する。docs/development/concepts-wi-processing.md「WI選定と処理」 | 撤去理由を解消できることを示した場合 |
 | AWI投入時の整合記録`scope_alignment`としてSHA-256を保存する照合機構 | 2026-09-23、commit: 80c85e135 | SHA-256を保存しても消費側が無く、判断に寄与しなかった。 | 必要性を消費主体と実際の判断で評価する。docs/development/concepts-overengineering.md「過剰設計の抑制」、docs/development/incidents-judgment.md「誤判定と検証不足」 | 撤去理由を解消できることを示した場合 |
 | レビュー契約の条項内参照を`commit_references`・`awi_references`へ重複記載し、同期を要求する | 2026-10-03、commit: 71bbcb627 | 別配列が読む情報を増やさず、同じ参照の同期だけを増やした。 | 参照はレビュー契約の条項内へ置く。docs/development/incidents-judgment.md「誤判定と検証不足」、docs/development/design-planning-review-contract.md「`review_contract`とレビュー指摘管理表」 | 撤去理由を解消できることを示した場合 |
 | 所要時間目標の適用外や返却本文の説明を根拠に、律速threadの内訳分析を見送れる扱い | 2026-10-06の事例、commit: 0e505eb66 | 目標の適用範囲が内訳分析の省略条件へ拡張され、律速区間の調査を失わせた。 | 律速threadの内訳は記録から分析する。docs/development/incidents-judgment.md「誤判定と検証不足」 | 撤去理由を解消できることを示した場合 |

@@ -55,7 +55,13 @@ WI自体の完成と区別し、残す項目・未達条件・解除条件・再
 {"repositories":{"example.test/team/repository":{"status":"incomplete","remaining":"CIの検収","writer_sessions":[]}}}
 ```
 
-**9.** 報告用UWIの保存と、起動した担当・writerの終了観測を済ませ、最終の`status`・`remaining`・`writer_sessions`を保存する。
+**9.** 各対象固有の終了条件、報告と終了観測を検収し、最終の`status`・`remaining`・`writer_sessions`を保存する。
+
+統括のcwdと異なる対象も、対象worktreeの`AGENTS.md`などのプロジェクト規範が終了時に要求する資料を取得する。
+所要時間と次回の目標達成に必要な改善を終了条件としている対象では、全候補・全工程・合理的な内部同時数と共有検証能力、未確認前提を含む見込みを実測と残量から検収する。
+リポジトリ担当へ任せた場合もその根拠を受領し、対象固有の条件が未達なら今回進められる改善を続ける。
+局所の実装・公開の成功と、全体の達成見込みの成立を区別する。
+報告用UWIの保存と、起動した担当・writerの終了観測も済ませる。
 
 選定YAMLを持つ各対象では、結果の確定と終了前に`atk run-script pick-wi-check -- <選定YAMLの絶対パス> --require-integrated`を実行し、選定全体の統合状態を読み取り専用で検収する。
 後段を含む未統合レーンが返った場合は、その工程を続行するか、対象・具体的理由・解除条件・再開先を`remaining`へ保存し、`completed`へ短絡しない。
