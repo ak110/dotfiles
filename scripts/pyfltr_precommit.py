@@ -7,8 +7,13 @@ commitの直前に同じ内容へ`pyfltr run`を成功させている場合、�
 pyfltrの内部構造には依存しない。次をすべて満たす実行だけを再利用する。
 
 - 作業ツリーとindexが一致する（commit対象の内容と作業ツリーが同じ）。
-- 追跡ファイル・未追跡ファイルとその親ディレクトリの更新時刻が、実行の開始より前である
+- 追跡ファイル・未追跡ファイルとその親ディレクトリの更新時刻が、その実行のpytestの開始より前である
   （ファイルの追加・削除・改名は親ディレクトリの更新時刻に現れる）。
+  基準を実行の開始にしないのは、`pyfltr run`の整形段（`sync-generated-files`など）が
+  内容を変えずにファイルを書き直し、pytestの開始の直前に更新時刻を進めるためである。
+  pytestは整形段の終了後に始まる（2026年11月12日、pyfltr 3.30.1の`show-run`で、
+  整形段の終了とpytestの開始の間隔が約12ミリ秒だったことを観測した）。
+  このため時刻の比較に余裕を設けない。
 - 実行のcwdがこの作業ツリーで、pyfltrの版が同じで、引数が試験の範囲を変えない形だけである。
 - その実行でpytestが成功している。
 
@@ -32,8 +37,6 @@ from agent_toolkit._git import command as git_command
 
 from pytools._internal.common import format_cli_error, run_subprocess
 
-# ファイルシステムの時刻の粒度と、編集の直後に起動した実行との取り違えを避ける余裕（秒）。
-_MARGIN_NS = 2_000_000_000
 # 他の作業ツリーの実行も同じ一覧に並ぶため、直近の実行から候補を探す件数。
 _LIST_LIMIT = 50
 # `show-run`は1件ごとに起動するため、照会する候補の上限を設けてhookの所要を抑える。
@@ -120,11 +123,9 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str) -> Reuse:
         (
             run
             for run in listed.get("runs", [])
-            if run.get("finished_at") is not None
-            and "pytest" in run.get("commands", [])
-            and _to_ns(run.get("started_at")) > latest + _MARGIN_NS
+            if _to_ns(run.get("finished_at")) > latest and "pytest" in run.get("commands", [])
         ),
-        key=lambda run: _to_ns(run.get("started_at")),
+        key=lambda run: _to_ns(run.get("finished_at")),
         reverse=True,
     )
     for run in candidates[:_SHOW_LIMIT]:
@@ -137,7 +138,9 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str) -> Reuse:
             and f"pyfltr {meta.get('version')}" == version.stdout.strip()
             and _neutral_argv(meta.get("argv", []))
             and any(
-                command.get("command") == "pytest" and command.get("status") == "succeeded"
+                command.get("command") == "pytest"
+                and command.get("status") == "succeeded"
+                and _to_ns(command.get("started_at")) > latest
                 for command in shown.get("commands", [])
             )
         ):

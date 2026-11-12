@@ -11,6 +11,8 @@ import pytest
 from agent_toolkit._testing.git_repository import commit_all, init_repository
 
 _VERSION = "3.30.1"
+# 整形段がファイルを書き直す実行を表すため、実行の開始は作業ツリーの変更より前に置く。
+_RUN_STARTED_AT = "2000-01-01T00:00:00+00:00"
 
 
 def _repository(tmp_path: pathlib.Path) -> pathlib.Path:
@@ -29,7 +31,7 @@ def _install_pyfltr(
     monkeypatch: pytest.MonkeyPatch,
     repository: pathlib.Path,
     *,
-    started_at: str,
+    pytest_started_at: str,
     argv: list[str] | None = None,
     cwd: pathlib.Path | None = None,
     version: str = _VERSION,
@@ -40,7 +42,7 @@ def _install_pyfltr(
     calls: list[list[str]] = []
     run = {
         "run_id": "01RUN",
-        "started_at": started_at,
+        "started_at": _RUN_STARTED_AT,
         "finished_at": _iso(120),
         "exit_code": 0,
         "commands": ["ruff-check", "pytest"],
@@ -51,11 +53,11 @@ def _install_pyfltr(
             "cwd": str(cwd or repository),
             "version": version,
             "argv": argv if argv is not None else ["run", "--no-fix", "src/a.py"],
-            "started_at": started_at,
+            "started_at": _RUN_STARTED_AT,
         },
         "commands": [
             {"command": "ruff-check", "status": "succeeded"},
-            {"command": "pytest", "status": pytest_status},
+            {"command": "pytest", "status": pytest_status, "started_at": pytest_started_at},
         ],
     }
 
@@ -75,9 +77,11 @@ def _install_pyfltr(
 
 
 def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実行開始後に作業ツリーが変わっていなければ、その実行のpytestを再利用する。"""
+    """pytestの開始後に作業ツリーが変わっていなければ、整形段より前の実行開始によらずpytestを再利用する。"""
     repository = _repository(tmp_path)
-    _install_pyfltr(monkeypatch, repository, started_at=_iso(60), argv=["run", "--output-format", "jsonl", "--commands=pytest"])
+    _install_pyfltr(
+        monkeypatch, repository, pytest_started_at=_iso(60), argv=["run", "--output-format", "jsonl", "--commands=pytest"]
+    )
 
     assert pyfltr_precommit.find_reusable_run(repository, "pyfltr") == pyfltr_precommit.Reuse("01RUN", "")
 
@@ -85,7 +89,7 @@ def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monk
 @pytest.mark.parametrize(
     "overrides",
     [
-        pytest.param({"started_at": _iso(-3600)}, id="changed-after-run"),
+        pytest.param({"pytest_started_at": _iso(-3600)}, id="changed-after-pytest-start"),
         pytest.param({"pytest_status": "failed"}, id="pytest-failed"),
         pytest.param({"version": "3.29.0"}, id="other-version"),
         pytest.param({"argv": ["run", "--pytest-args=-k one"]}, id="narrowed-pytest"),
@@ -101,7 +105,7 @@ def test_runs_pytest_unless_every_condition_holds(
 ) -> None:
     """条件のどれかを満たさない実行や、照会の失敗では再利用しない。"""
     repository = _repository(tmp_path)
-    options: dict[str, Any] = {"started_at": _iso(60)}
+    options: dict[str, Any] = {"pytest_started_at": _iso(60)}
     if overrides.pop("cwd_other", False):
         options["cwd"] = tmp_path
     options.update(overrides)
@@ -130,7 +134,7 @@ def test_worktree_differing_from_index_is_not_reused(
         target.write_text("x = 2\n", encoding="utf-8")
     else:
         target.unlink()
-    calls = _install_pyfltr(monkeypatch, repository, started_at=_iso(60))
+    calls = _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60))
 
     reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr")
 
