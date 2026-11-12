@@ -272,7 +272,9 @@ def _missing_section_references(source: pathlib.Path, plugin_root: pathlib.Path)
 def _missing_bare_share_sections(source: pathlib.Path, plugin_root: pathlib.Path, number: int, line: str) -> list[str]:
     """裸の`share/<名前>.md`を`share/<名前>.md`（プラグイン直下）として解決し、参照先ファイルと添えた節名の見出しの実在を確かめる。
 
-    範囲は裸の形式の参照先ファイルと節見出しの実在であり、裸の形式そのものは誤りとして扱わない。
+    範囲は節名を添えた裸の形式の参照に限り、参照先ファイルと節見出しの実在を確かめる。
+    節名を添えない裸の参照と、裸の形式そのものは誤りとして扱わない。
+    「所在参照」を付けた行も対象に含める。
     `material_targets`は裸の`share/…`を解決しないため、参照切れを検出できない。
     """
     errors: list[str] = []
