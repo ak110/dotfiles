@@ -4,7 +4,7 @@
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
-| 選定検査が全工程の見込みの欠落・未確認前提・目標超過で終了コード1を返し、追加mergeが見込みの再確定を必須にする | 2026-11-12 | 経過時間や観測待ちに由来する事実は検査を渡した担当がその場で直せず、ユーザー指示による途中追加の正式な手順が通らなかった。 | 警告と組み直しの案内で返し、拒否はその場で直せる欠落・不整合とレーン数の上限に限る。docs/development/concepts-overengineering.md「過剰設計の抑制」、agent-basics/skills/writing-standards/references/design-heuristics-mechanisms.md「進行を止める判定の条件」 | 撤去理由を解消できることを示した場合 |
+| 選定検査が全工程の見込みの欠落・未確認前提・目標超過で終了コード1を返し、追加mergeが見込みの再確定を必須にする | 2026-11-12、commit: 6c981ce5d | 経過時間や観測待ちに由来する事実は検査を渡した担当がその場で直せず、ユーザー指示による途中追加の正式な手順が通らなかった。 | 警告と組み直しの案内で返し、拒否はその場で直せる欠落・不整合とレーン数の上限に限る。docs/development/concepts-overengineering.md「過剰設計の抑制」、agent-basics/skills/writing-standards/references/design-heuristics-mechanisms.md「進行を止める判定の条件」 | 撤去理由を解消できることを示した場合 |
 | 上流developの変化を検知して`update-dotfiles`を自動実行し、稼働中のセッションを理由に延期した更新も再試行する | 2026-11-08 | 別ホストで開発していた頃の名残であり、ユーザーが廃止を指示した。 | 手動の`update-dotfiles`とprocess-loopの待機中の更新を維持する。旧`dotfiles-autoupdate`の撤去は`pytools/_internal/setup_tmpfiles_clean.py`が担う。 | 撤去理由を解消できることを示した場合 |
 | ヘルプの同一セッション内観測を実行と質問本文の前提として遮断する | 2026-09-09、09-16、commit: 89212c829、7f7bdbc2c | 通常用途の入力形式は手順への明記で目的を満たせた。 | 手順で確定した受理形式を使い、未確定の形式だけを確認する。docs/development/concepts-overengineering.md「過剰設計の抑制」 | 撤去理由を解消できることを示した場合 |
 | 旧API設定キーの組合せで接続方式と使用順を決める | 2026-10-29、commit: 34e02b90e | 接続種別と役割別の使用順を明示する設定へ置き換える判断による。 | 認証の所在と役割別・エンジン別の使用順を分ける。docs/development/concepts-connections.md「委譲全般と利用上限」 | 撤去理由を解消できることを示した場合 |
