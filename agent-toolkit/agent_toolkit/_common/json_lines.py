@@ -44,6 +44,8 @@ def split_joined_line(line: bytes) -> tuple[int, dict[str, typing.Any]] | None:
     次の記録が続いた連結行の両方でありうる。前者では入れ子の`type`付きobject（content blockなど）が
     行末まで成立するため、この形では後半が記録の最上位にだけ現れる`sessionId`も持つ場合に限り連結とする。
     hookは記録の全行を読むため、候補ごとに行の残りを切り出さず、候補の位置から1つの値だけを解析する。
+    入れ子が極端に深い行では候補ごとの解析が重なって二乗の時間になるため、解析する文字数の合計が
+    行の長さの`_SCAN_BUDGET_FACTOR`倍を超えたら連結とみなさない（欠落を受理しない側へ倒す）。
     """
     # 断片の不正なバイトを1文字ずつに写し、文字位置とバイト位置の対応を保ったまま走査する。
     text = line.decode("utf-8", "surrogateescape")
@@ -56,12 +58,18 @@ def split_joined_line(line: bytes) -> tuple[int, dict[str, typing.Any]] | None:
         return None
     else:
         return None
+    budget = _SCAN_BUDGET_FACTOR * len(text)
     start = text.find('{"', 1)
     while start >= 0:
         try:
             tail, end = _DECODER.raw_decode(text, start)
-        except ValueError, RecursionError:
-            tail, end = None, start
+        except json.JSONDecodeError as e:
+            tail, end = None, e.pos
+        except RecursionError:
+            tail, end = None, len(text)
+        budget -= end - start
+        if budget < 0:
+            return None
         if isinstance(tail, dict) and end >= content_end and all(key in tail for key in required_keys):
             byte_start = len(text[:start].encode("utf-8", "surrogateescape"))
             # 後半はUTF-8として正しい記録に限る。写した不正なバイトを含む後半は記録と扱わない。
@@ -72,6 +80,8 @@ def split_joined_line(line: bytes) -> tuple[int, dict[str, typing.Any]] | None:
 
 
 _DECODER = json.JSONDecoder()
+# 実際の記録の入れ子は数十段で、候補の解析の合計は行の長さの数倍にとどまる。
+_SCAN_BUDGET_FACTOR = 64
 _JSON_WHITESPACE = " \t\n\r"
 
 

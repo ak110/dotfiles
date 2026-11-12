@@ -64,10 +64,14 @@ def test_split_joined_line_separates_only_fragment_and_record(line: bytes, expec
 
 
 def test_split_joined_line_handles_long_lines_without_quadratic_cost() -> None:
-    """hookは全行を読むため、入れ子のobjectが多い長い行でも行の長さに比例する時間で判定する。"""
+    """hookは全行を読むため、入れ子のobjectが多い行や入れ子の深い行でも行の長さに比例する時間で判定する。"""
     # 候補ごとに行の残りを解析すると、この規模では数十秒以上かかる。
     fragment = b'{"type":"x","l":[' + b",".join(b'{"type":"t","v":%d}' % i for i in range(50000))
     started = time.monotonic()
     assert split_joined_line(fragment) is None
     assert split_joined_line(fragment + _NEXT_RECORD) == (len(fragment), {"type": "user", "uuid": "u2"})
+    # 入れ子が極端に深い行は、候補ごとの解析が重なる前に連結の判定を打ち切る。
+    deep = b'{"a":' * 20000
+    assert split_joined_line(deep) is None
+    assert split_joined_line(deep + _RECORD_WITH_SESSION) is None
     assert time.monotonic() - started < 10
