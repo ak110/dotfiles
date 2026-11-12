@@ -6,6 +6,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
+| 参照基準の適用前 | `../../wi-standards/references/wi-standards-origin.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` |
