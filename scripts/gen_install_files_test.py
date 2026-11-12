@@ -6,6 +6,7 @@
 
 import dataclasses
 import pathlib
+import time
 import types
 
 import gen_install_files
@@ -73,3 +74,22 @@ def test_missing_marker_raises(_env: _Env) -> None:
 
 def _script_with_block(block: str) -> str:
     return f"before\n# {INSTALL_FILES_BEGIN}\n{block}# {INSTALL_FILES_END}\nafter\n"
+
+
+def test_unchanged_run_keeps_install_script_metadata(_env: _Env) -> None:
+    """生成済みで実行権限も揃っている場合は、2回目の実行でinstall scriptの更新時刻（ctimeを含む）を変えない。
+
+    commitのhookは作業ツリーの更新時刻でpytestの成功を再利用できるか判定するため、内容の変わらない実行で
+    ctimeを進めると再利用を妨げる。
+    """
+    (_env.rules_dir / "01-agent.md").write_text("", encoding="utf-8")
+    assert _env.module.main([]) == 0
+    before = _env.install_sh.stat()
+    assert before.st_mode & 0o111 == 0o111
+    # 秒単位で時刻を記録するファイルシステムでも変化を観測できるよう、次の秒へ進めてから再実行する。
+    time.sleep(1.05 - time.time() % 1)
+
+    assert _env.module.main([]) == 0
+
+    after = _env.install_sh.stat()
+    assert (after.st_mtime_ns, after.st_ctime_ns, after.st_mode) == (before.st_mtime_ns, before.st_ctime_ns, before.st_mode)

@@ -41,7 +41,12 @@ def main(argv: list[str] | None = None) -> int:
     # 原子的書き込みは一時ファイルを生成して置き換えるため元ファイルの実行権限が失われる。
     # install-claude.shはshebangを持ちエンドユーザーがそのまま実行するファイルであり、
     # pre-commitのcheck-shebang-scripts-are-executableも実行権限を要求するため復元する。
-    _INSTALL_SH.chmod(_INSTALL_SH.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    # 権限が揃っている場合は変更しない。`chmod`はctimeを進め、commitのhookが内容の変わらない作業ツリーを
+    # 変更後とみなしてpytestの成功を再利用できなくなるためである。
+    mode = _INSTALL_SH.stat().st_mode
+    executable = mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    if executable != mode:
+        _INSTALL_SH.chmod(executable)
     return 0
 
 
