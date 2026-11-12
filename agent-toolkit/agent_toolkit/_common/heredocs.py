@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 
 from agent_toolkit._common.shell_quoting import QuotingScanner
 
@@ -146,6 +147,15 @@ def heredoc_bodies(command: str) -> list[HeredocBody]:
     本文の範囲と展開の有無は`_heredoc_declarations`の1つの定義から得る。
     本文のマスクと、展開される本文の置換の判定はいずれも本関数の結果を使う。
     """
+    return list(_cached_heredoc_bodies(command))
+
+
+@functools.lru_cache(maxsize=256)
+def _cached_heredoc_bodies(command: str) -> tuple[HeredocBody, ...]:
+    """同じコマンド文字列の本文範囲を共有する。
+
+    hookは同じコマンドを何度も判定するため再走査を省く。範囲は文字列だけで決まり要素は不変である。
+    """
     bodies: list[HeredocBody] = []
     line_start = 0
     while line_start < len(command):
@@ -171,7 +181,7 @@ def heredoc_bodies(command: str) -> list[HeredocBody]:
                     break
             bodies.append(HeredocBody(body_start, body_end, terminator_end, declaration.expands))
         line_start = cursor
-    return bodies
+    return tuple(bodies)
 
 
 def _blank_line(masked: list[str], start: int, end: int, *, separator: bool = False) -> None:

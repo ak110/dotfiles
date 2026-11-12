@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextvars
 import dataclasses
 import enum
+import functools
 import pathlib
 import re
 import shlex
@@ -158,12 +159,25 @@ def extract_bash_invocations(command: str) -> list[BashInvocation]:
     PreToolUseはその置換を含むコマンドを実行前に遮断するため、本文の置換の内側を個別の判定へ渡さない。
     変数や別ファイルに隠れた起動、未対応の複合構文、閉じない構文から実行位置を推定しない。
     """
+    return list(_cached_bash_invocations(command, _INCLUDE_UNKNOWN_EXECUTIONS.get()))
+
+
+@functools.lru_cache(maxsize=256)
+def _cached_bash_invocations(command: str, include_unknown: bool) -> tuple[BashInvocation, ...]:
+    """同じコマンド文字列の解析結果を共有する。
+
+    1回のhookは同じコマンドを宣言の行ごとに何十回も判定するため、解析をやり直すと所要の大半を占める。
+    結果は入力の文字列と未知の実行を含めるかだけで決まり、要素は不変なので、複製した一覧を返せば共有してよい。
+    """
+    token = _INCLUDE_UNKNOWN_EXECUTIONS.set(include_unknown)
     try:
         tokens = _bash_tokens(mask_heredoc_bodies(command))
         invocations, end = _bash_command_list(tokens, 0)
     except ValueError:
-        return []
-    return invocations if end == len(tokens) else []
+        return ()
+    finally:
+        _INCLUDE_UNKNOWN_EXECUTIONS.reset(token)
+    return tuple(invocations) if end == len(tokens) else ()
 
 
 def _bash_tokens(command: str) -> list[_BashToken]:
