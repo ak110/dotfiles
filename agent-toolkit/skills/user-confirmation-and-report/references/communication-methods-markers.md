@@ -30,7 +30,8 @@ detected ...
 </atk-auto>
 ```
 
-`systemMessage`や`stopReason`などエージェントに届かないフィールド、および追加メッセージを持たない`permissionDecision: "allow"`の呼び出しには付与しない。
+エージェント宛ての通知を`systemMessage`へ写す場合は、同じ`atk-auto`の開始・終了タグを保つ。
+それ以外の`systemMessage`や`stopReason`などユーザー専用の本文、および追加メッセージを持たない`permissionDecision: "allow"`の呼び出しには付与しない。
 
 ## hook以外で生成する本文の要素
 

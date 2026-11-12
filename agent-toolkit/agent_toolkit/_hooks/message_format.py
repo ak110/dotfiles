@@ -7,7 +7,7 @@ Stop/SubagentStopでそのターンの継続を強制する誘導（必要なス
 PostToolUseで`decision: "block"`を返す場合、ホストは`reason`をblock理由として直前のツール結果に添えてLLMへ渡す。
 `systemMessage`はユーザー向けでLLMに届かない。
 Claude Codeの最上位メインでは、エージェントに操作や是正を求める通知の写しを、
-hookの入口（`agent_toolkit/hook.py`）が同じ応答の`systemMessage`へ加える。
+hookの入口（`agent_toolkit/hook.py`）が同じXML包装を保って同じ応答の`systemMessage`へ加える。
 
 LLM宛て出力は生成主体、種別および配送単位を属性に持つXML要素で囲む。
 包装の実装は`agent_toolkit._common.message_format`が持ち、本モジュールはhookから呼び出せるよう再公開する。

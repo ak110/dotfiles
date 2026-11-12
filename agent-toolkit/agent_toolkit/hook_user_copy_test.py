@@ -12,8 +12,7 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _WARNING_BODY = "読取の診断を捨てている。\n次の操作: 2>/dev/nullを外せ。"
 _TIMING_BODY = "実行時間: 1.2秒"
-_HEADING = "agent-toolkitのhookがエージェントへ通知した内容"
-_WARNING_COPY = f"{_HEADING}（pretooluse・warn）:\n{_WARNING_BODY}"
+_WARNING_COPY = f'<atk-auto source="pretooluse" kind="warn">\n{_WARNING_BODY}\n</atk-auto>'
 
 
 @pytest.fixture(autouse=True)
@@ -58,8 +57,8 @@ def _deliver(monkeypatch, subcommand: str, build: Callable[[], dict], payload: d
     ("subcommand", "event"),
     [("pretooluse", "PreToolUse"), ("posttooluse", "PostToolUse"), ("user_prompt_submit", "UserPromptSubmit")],
 )
-def test_corrective_notice_is_copied_in_full_without_wrapper(monkeypatch, subcommand, event):
-    """警告・案内の本文を、包装を外した全文と生成元・種別の見出しで写し、エージェント宛ての欄は変えない。"""
+def test_corrective_notice_is_copied_in_full_with_wrapper(monkeypatch, subcommand, event):
+    """警告・案内を同じ包装付きの全文で写し、エージェント宛ての欄は変えない。"""
     built, delivered = _deliver(monkeypatch, subcommand, lambda: _response(_warning(), event=event))
     assert delivered["hookSpecificOutput"] == built["hookSpecificOutput"]
     assert delivered["systemMessage"] == _WARNING_COPY
@@ -90,7 +89,9 @@ def test_notice_quoting_a_wrapper_keeps_each_notice_and_exclusion(monkeypatch, q
         return _response(message_format.llm_notice(body, "pretooluse", tag="warn"), _timing(), _warning())
 
     _built, delivered = _deliver(monkeypatch, "pretooluse", build)
-    assert delivered["systemMessage"] == f"{_HEADING}（pretooluse・warn）:\n{bodies[0]}\n\n{_WARNING_COPY}"
+    assert delivered["systemMessage"] == (
+        f'<atk-auto source="pretooluse" kind="warn">\n{bodies[0]}\n</atk-auto>\n\n{_WARNING_COPY}'
+    )
 
 
 def test_denial_reason_and_multiple_notices_are_merged_into_one_message(monkeypatch):
@@ -111,7 +112,9 @@ def test_denial_reason_and_multiple_notices_are_merged_into_one_message(monkeypa
 
     message = _deliver(monkeypatch, "pretooluse", build)[1]["systemMessage"]
     assert message.startswith("既存の通知\n\n")
-    assert "（pretooluse・block）:\nblocked: 所有を確認できない。" in message
+    assert (
+        '<atk-auto source="pretooluse" kind="block">\nblocked: 所有を確認できない。\n次の操作: PIDで止めよ。\n</atk-auto>'
+    ) in message
     assert _WARNING_COPY in message
 
 
