@@ -51,7 +51,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             return "", ""
     return "block", _block_notice(
         response_language_check.BLOCK_BODY
-        + f"検出した本文: {response_language_check._plain_text(text)[:200]}\n"
-        + (body or "完了本文の説明を日本語で書け。"),  # pylint: disable=protected-access
+        + f"検出した本文: {response_language_check._plain_text(text)[:200]}\n"  # pylint: disable=protected-access
+        + (body or "完了本文の説明を日本語で書け。"),
         fix="`agent-toolkit/share/agent-conduct-details.md`「使用言語」の「言語検査の通知への対処」に従い、判定して書き直すか再出力してから停止せよ。",
     )

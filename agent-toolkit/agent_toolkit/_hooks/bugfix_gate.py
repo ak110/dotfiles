@@ -24,9 +24,12 @@ lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.host import is_codex_payload
-lazy from agent_toolkit._hooks.posttooluse import _QUOTED_MATERIAL_RE
 lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
 
+# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
+# 例示の語と調査を求める語、欠陥の指摘を表す語は、引用を除いたユーザー自身の依頼文から探す。
+# posttooluseがbugfix_gateを取り込む向きに保つため、共有する定義はこちらへ置く。
+QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
 _BUGFIX_SKILLS = frozenset({"agent-basics:bugfix", "bugfix"})
 # 欠陥の指摘を表す語。貼り付けた素材（コードブロック、インラインコード、引用行）は除いた本文へ適用する。
 _DEFECT_RE = re.compile(
@@ -40,7 +43,7 @@ _block_notice = notice.block_formatter("bugfix_gate")
 
 def is_defect_report(prompt: str) -> bool:
     """人間の発話が欠陥の指摘を含むかを、語の一致だけで返す。"""
-    return _DEFECT_RE.search(_QUOTED_MATERIAL_RE.sub("", prompt)) is not None
+    return _DEFECT_RE.search(QUOTED_MATERIAL_RE.sub("", prompt)) is not None
 
 
 def _invokes_bugfix(entry: dict) -> bool:

@@ -43,6 +43,7 @@ import re
 lazy import os
 lazy import shlex
 
+from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk import run_script as _run_script
@@ -112,9 +113,6 @@ _REALIGN_NOTICE_BODY = (
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
-# フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
-# 例示の語と調査を求める語は、引用を除いたユーザー自身の依頼文から探す。
-_QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
 
 
 def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | None:
@@ -123,7 +121,7 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     指摘・提案・実行指示のどれに当たるか、例示が上位の対象の一部かは受領側が判断し、本フックは字面の一致だけで返す。
     調査を求める語も併せ持つ発話には、独立した調査を委ねる手段の所在も加える。
     """
-    text = _QUOTED_MATERIAL_RE.sub("", prompt)
+    text = QUOTED_MATERIAL_RE.sub("", prompt)
     if not any(word in text for word in _EXAMPLE_WORDS):
         return None
     path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "references/user-utterance.md"))
