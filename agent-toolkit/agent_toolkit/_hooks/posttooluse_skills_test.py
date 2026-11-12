@@ -70,6 +70,7 @@ class TestCommitSkillAttributionNotice:
         return payload
 
     def test_commit_skill_delivers_observed_trailer(self, tmp_path: pathlib.Path) -> None:
+        # test-copy-contract: transcriptの観測モデルとpayloadの推論量から帰属行を生成し、Skill完了時に配送する契約。
         result = _run(self._payload(tmp_path, "agent-toolkit:commit"), state_dir=tmp_path, home_dir=tmp_path)
 
         assert result.returncode == 0, result.stderr

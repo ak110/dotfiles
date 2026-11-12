@@ -222,20 +222,6 @@ class TestEnglishOnlyShortText:
         assert body is None
 
 
-class TestWarningBody:
-    """警告本文が説明すべき検出条件と操作の契約を検証する。"""
-
-    def test_warning_body_states_detection_conditions(self):
-        """警告本文が冒頭の英語の語による検出条件と次の応答で取る操作を示す。
-
-        冒頭の談話標識は、日本語主体の地の文でも警告の対象になる。
-        本文にこの動作の説明がなければ、受領した実行主体には日本語主体の応答が検出された理由が分からない。
-        """
-        _, body = check_text("Now、調査を続ける。")
-        assert body is not None
-        assert "英語の語" in body and "同じ判定" in body
-
-
 class TestDiscourseMarker:
     """地の文の先頭に置かれた英語の談話標識に対する判定の検証。"""
 

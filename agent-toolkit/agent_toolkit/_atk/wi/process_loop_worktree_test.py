@@ -34,9 +34,16 @@ def test_worktree_tracks_upstream_and_preserves_local_commit(
     tracking: str,
     existing: bool,
 ) -> None:
-    """追跡先優先・別名remote・origin/HEAD fallbackで先行成果とローカル成果を共存させる。"""
+    """mainと異なる追跡branch・別名remote・origin/HEAD fallbackで双方の成果を保持する。"""
     local, peer = _upstream_repository(tmp_path)
     worktree = local / ".claude/worktrees/process-loop"
+    if tracking != "fallback":
+        git_repository.run_git(peer, "switch", "-c", "feature")
+        (peer / "feature.md").write_text("非既定branch固有の成果\n", encoding="utf-8")
+        git_repository.commit_all(peer, "feature work")
+        git_repository.run_git(peer, "push", "-u", "origin", "feature")
+        git_repository.run_git(local, "fetch", "origin")
+        git_repository.run_git(local, "switch", "-c", "feature", "--track", "origin/feature")
     if tracking == "upstream":
         git_repository.run_git(local, "remote", "rename", "origin", "upstream")
     if tracking == "fallback":
@@ -54,6 +61,8 @@ def test_worktree_tracks_upstream_and_preserves_local_commit(
     assert _pl_worktree._sync_worktree_with_upstream(local, "process-loop") == worktree  # pylint: disable=protected-access
     assert git_repository.run_git(worktree, "merge-base", "--is-ancestor", upstream, "HEAD", check=False).returncode == 0
     assert (worktree / "remote.md").read_text(encoding="utf-8") == "先行成果\n"
+    if tracking != "fallback":
+        assert (worktree / "feature.md").read_text(encoding="utf-8") == "非既定branch固有の成果\n"
     if existing:
         assert (worktree / "local.md").read_text(encoding="utf-8") == "ローカル成果\n"
         assert git_repository.git_output(worktree, "log", "-1", "--format=%s") == "local work"

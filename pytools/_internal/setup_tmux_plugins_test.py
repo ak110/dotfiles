@@ -177,6 +177,9 @@ def test_clone_and_update_preserve_git_results(tmp_path: Path, monkeypatch: pyte
     remote = init_repository(tmp_path / "remote", initial_branch="master", files={"plugin": "old\n"}, commit_message="初期状態")
     first = git_output(remote, "rev-parse", "HEAD")
     run_git(remote, "tag", "v1")
+    if pin_is_tag:
+        (remote / "plugin").write_text("master after v1\n", encoding="utf-8")
+        assert commit_all(remote, "v1後に既定branchだけを進める") != first
     dest = tmp_path / "plugins" / "plugin"
     origin = remote.as_uri()
     plugin = setup_tmux_plugins._Plugin(dest, origin, "v1" if pin_is_tag else "master", pin_is_tag)  # pylint: disable=protected-access
@@ -189,6 +192,8 @@ def test_clone_and_update_preserve_git_results(tmp_path: Path, monkeypatch: pyte
     second = commit_all(remote, "更新")
     run_git(remote, "tag", "v2")
     if pin_is_tag:
+        (remote / "plugin").write_text("master after v2\n", encoding="utf-8")
+        assert commit_all(remote, "v2後に既定branchだけを進める") != second
         plugin = setup_tmux_plugins._Plugin(dest, origin, "v2", True)  # pylint: disable=protected-access
         monkeypatch.setattr(setup_tmux_plugins, "_PLUGINS", (plugin,))
     assert setup_tmux_plugins.run().changed

@@ -118,6 +118,7 @@ class TestProductionManagedSettings:
         assert result.stdout == b""
         assert result.stderr == b""
 
+    # test-copy-contract: Windows PowerShell 5.1が読む配布PreToolUseスクリプトのBOM付きUTF-8/CRLF形式を保つ。
     def test_windows_pretooluse_script_uses_bom_and_crlf(self):
         """PowerShellスクリプトはBOM付きUTF-8とCRLF改行で書く。"""
         raw = _PROD_PRETOOLUSE_SCRIPT.read_bytes()
@@ -125,6 +126,7 @@ class TestProductionManagedSettings:
         assert b"\r\n" in raw
         assert b"\n" not in raw.replace(b"\r\n", b"")
 
+    # test-copy-contract: Windows PowerShell 5.1が読む配布PostToolUseスクリプトのBOM付きUTF-8/CRLF形式を保つ。
     def test_windows_posttooluse_script_uses_bom_and_crlf(self):
         """PostToolUseの互換起動用のPowerShellスクリプトもBOM付きUTF-8とCRLF改行で書く。"""
         raw = _PROD_POSTTOOLUSE_SCRIPT.read_bytes()

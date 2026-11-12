@@ -4,14 +4,19 @@ from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
+import asyncio
 import json
 import pathlib
 import re
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolResult
 
-from agent_toolkit._agents_server import mcp_tools
+from agent_toolkit._agents_server import manager as server_manager
+from agent_toolkit._agents_server import mcp_tools, state
 from agent_toolkit._testing.agents_server_support import (
     _manager_with_fake,
     _observed_input_params,
@@ -107,3 +112,55 @@ async def test_tool_list_publishes_title_and_side_effect_annotations() -> None:
         assert tool.annotations is not None, name
         assert tool.annotations.read_only_hint is read_only, name
         assert tool.annotations.destructive_hint is destructive, name
+
+
+@pytest.mark.parametrize("operation", ["send_message", "kill"])
+@pytest.mark.asyncio
+async def test_public_timeout_description_matches_effective_wait(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, operation: str
+) -> None:
+    """公開操作の省略時に実装が使う待機予算が、schemaと説明の秒数に一致する。"""
+    tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
+    tool = tools[operation]
+    timeout_schema = tool.input_schema["properties"]["timeout"]
+    observed: list[float] = []
+    real_wait_for = asyncio.wait_for
+    real_timeout = asyncio.timeout
+
+    def observe_timeout(seconds: float) -> asyncio.Timeout:
+        observed.append(seconds)
+        return real_timeout(0.001)
+
+    async def observe_wait_for(awaitable: Any, timeout: float | None, **_kwargs: Any) -> Any:
+        assert timeout is not None
+        observed.append(timeout)
+        return await real_wait_for(awaitable, timeout=0.001)
+
+    # 期限の減算だけを固定し、実際のロック待ちと取消・公開エラーへの変換は動かす。
+    proxy = SimpleNamespace(
+        **{
+            **vars(asyncio),
+            "timeout": observe_timeout,
+            "wait_for": observe_wait_for,
+            "get_running_loop": lambda: SimpleNamespace(time=lambda: 0.0),
+        }
+    )
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        session = state.SessionState("timeout-contract", str(tmp_path), engine="codex", turn_id="turn")
+        manager.sessions[session.session_id] = session
+        async with session.turn_control_lock:
+            with monkeypatch.context() as scoped:
+                scoped.setattr(server_manager, "asyncio", proxy)
+                with pytest.raises(ToolError, match="timed out"):
+                    await mcp_tools.mcp.call_tool(
+                        operation,
+                        {"session_id": session.session_id, **({"prompt": "追加指示"} if operation == "send_message" else {})},
+                    )
+        assert backend.send_calls == backend.interrupt_calls == 0
+        assert session.session_id in manager.sessions
+
+    assert observed == [timeout_schema["default"]]
+    for description in (tool.description or "", timeout_schema["description"]):
+        seconds = {float(value) for value in re.findall(r"(\d+(?:\.\d+)?)秒", description)}
+        assert observed[0] in seconds, (operation, description, observed)

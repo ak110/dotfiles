@@ -64,7 +64,7 @@ def test_delivery_and_restoration_share_targets(tmp_path: pathlib.Path, monkeypa
 
 
 def test_next_hook_call_detects_declaration_revision(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-    """宣言一覧と取得済み資料の再解決が、次の要求では改訂後の宣言を読む。"""
+    """宣言解析を要求内で共有し、次の要求では改訂後の宣言を読む。"""
     (tmp_path / "rule.md").write_text("# 資料\n## 対象\n判断基準\n", encoding="utf-8")
     owner = tmp_path / "SKILL.md"
 
@@ -78,6 +78,14 @@ def test_next_hook_call_detects_declaration_revision(tmp_path: pathlib.Path, mon
         )
 
     observed: list[list[str]] = []
+    reads = 0
+    original_read_text = pathlib.Path.read_text
+
+    def read_text(path, *args, **kwargs):
+        nonlocal reads
+        if path == owner:
+            reads += 1
+        return original_read_text(path, *args, **kwargs)
 
     def declarations(*_args, **_kwargs):
         # 宣言一覧の解決と、取得済み資料の宣言の再解決（入れ子のscope）を同じhook呼出しで行う。
@@ -93,6 +101,7 @@ def test_next_hook_call_detects_declaration_revision(tmp_path: pathlib.Path, mon
         mutate(state)
 
     monkeypatch.setattr(read_delivery, "declarations", declarations)
+    monkeypatch.setattr(pathlib.Path, "read_text", read_text)
     monkeypatch.setattr(read_delivery, "read_state", lambda _session: state)
     monkeypatch.setattr(read_delivery, "update_state", update)
     monkeypatch.setattr(notice, "read_state", lambda _session: state)
@@ -106,9 +115,12 @@ def test_next_hook_call_detects_declaration_revision(tmp_path: pathlib.Path, mon
     first = len(observed)
     assert first >= 1
     assert all(conditions == ["改訂前", "改訂前"] for conditions in observed)
+    # 要求内共有の性能契約を、次要求での改訂検出とは別に本文の読取回数で観測する。
+    assert reads == 1
 
     write_owner("改訂後")
     notice.begin_delivery()
     read_delivery.deliver({"turn_id": "t"}, "Do", {}, "reuse")
     assert len(observed) > first
     assert all(conditions == ["改訂後", "改訂後"] for conditions in observed[first:])
+    assert reads == 2

@@ -10,6 +10,7 @@ from agent_toolkit._testing.serve_support import _run_node_ui
 
 
 def test_assets_are_self_contained() -> None:
+    # test-copy-contract: WI資産内への絶対HTTP/HTTPS URLの混入を検出し、外部配信元の追加を防ぐ。
     """WI資産は外部配信元から取得しない。本文の安全表示は実ブラウザー試験で検証する。"""
     combined = (
         assets.HTML

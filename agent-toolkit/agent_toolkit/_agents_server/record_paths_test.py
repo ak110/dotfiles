@@ -1,10 +1,11 @@
 """record_pathsモジュールのテスト。"""
 
+import json
 import pathlib
 
 import pytest
 
-from agent_toolkit._agents_server import record_paths
+from agent_toolkit._agents_server import backends, record_paths
 
 
 @pytest.mark.parametrize(
@@ -62,4 +63,45 @@ def test_claude_parent_record_precedes_same_named_subagent(tmp_path: pathlib.Pat
 
     assert record_paths.find_session_record(agent_id, codex_home=tmp_path / "codex") == record_paths.SessionRecord(
         "claude", (parent,)
+    )
+
+
+@pytest.mark.parametrize("engine", sorted(backends.SUPPORTED_ENGINES))
+def test_every_start_engine_resolves_its_isolated_record(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
+) -> None:
+    """起動可能な各engineの記録を実際に探索し、登録追加時の記録側の未対応も検出する。"""
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    claude_home, codex_home, state_root = (tmp_path / name for name in ("claude", "codex", "state"))
+    identifier = "11111111-2222-4333-8444-555555555555"
+    inputs = {
+        "claude": claude_home / "projects" / "project" / f"{identifier}.jsonl",
+        "codex": codex_home / "sessions" / "2026" / "11" / "12" / f"rollout-2026-11-12T00-00-00-{identifier}.jsonl",
+        "agy": state_root / "agents-server" / "root" / "logs" / f"{identifier}.jsonl",
+        "opencode": state_root / "agents-server" / "root" / "logs" / "opencode" / f"{identifier}.jsonl",
+    }
+    assert engine in inputs, f"新しい起動engineの記録入力と解決契約を追加する必要がある: {engine}"
+    record = inputs[engine]
+    record.parent.mkdir(parents=True)
+    body = json.dumps({"engine_input": engine, "session": identifier}, ensure_ascii=False) + "\n"
+    record.write_text(body, encoding="utf-8")
+
+    resolved = record_paths.find_session_record(
+        identifier, claude_home=claude_home, codex_home=codex_home, state_root=state_root
+    )
+
+    assert resolved is not None
+    assert resolved.engine == engine
+    assert resolved.paths == (record,)
+    assert resolved.paths[0].read_text(encoding="utf-8") == body
+    assert (
+        record_paths.find_session_record(
+            "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            claude_home=claude_home,
+            codex_home=codex_home,
+            state_root=state_root,
+        )
+        is None
     )

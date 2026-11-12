@@ -126,6 +126,7 @@ def test_stop_does_not_treat_machine_input_as_human(
     assert _stop([entry, _assistant("…")], tmp_path, capsys).get("decision") != "block"
 
 
+# test-copy-contract: 機械入力とscheduledTaskの記録から人間への応答義務を誤検出せず、Stopへ不要通知を返さない契約。
 @pytest.mark.parametrize(
     "entry",
     [
@@ -155,6 +156,7 @@ def test_stop_accepts_scheduled_turn_after_machine_input(
     assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
+# test-copy-contract: 同じ人間入力でもagent_idと委譲環境印の主体にはユーザー応答義務通知を出さない契約。
 def test_stop_does_not_require_delegate_to_answer_user(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -186,6 +188,7 @@ def test_missing_response_notifies_again_after_resolution_or_new_input(tmp_path,
     assert "user_response_advisor" in _stop(next_input, tmp_path, capsys)["hookSpecificOutput"]["additionalContext"]
 
 
+# test-copy-contract: 通知タグを引用した人間入力を機械通知へ誤分類せず、通常・queued両経路で応答不足を検出する契約。
 @pytest.mark.parametrize("queued", [False, True])
 @pytest.mark.parametrize("prompt", ["<task-notification>を説明して", "通知の例は<task-notification>です"])
 def test_human_notification_quote_still_requires_response(
@@ -214,6 +217,7 @@ _QUEUED_OK = {
 }
 
 
+# test-copy-contract: 了承表記の正規化と構成規則を実記録へ適用し、内部ツール有無によらず省略記号の応答を受理する契約。
 @pytest.mark.parametrize(
     "human",
     [

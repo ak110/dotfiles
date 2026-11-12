@@ -147,6 +147,7 @@ def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> 
     assert "root-cause-prevention.md" in body
 
 
+# test-copy-contract: 不正な報告区分の入力には書式修正だけを案内し、追加資料の取得へ誤誘導しない契約。
 @pytest.mark.parametrize("status", ["不要。調査で正常と確認", "予定 入力が届いたら再開"])
 def test_format_correction_uses_delivered_template_without_extra_reads(status: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """区分名の取り違えは常時配送された書式で直せ、追加資料の全文取得へ誘導しない。"""

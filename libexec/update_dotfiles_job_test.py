@@ -184,6 +184,7 @@ def test_codex_logs_and_help_do_not_start_jobs(
     assert not (pathlib.Path(environment["XDG_STATE_HOME"]) / "agent-toolkit/update-jobs").exists()
 
 
+# test-copy-contract: process-loop環境で公開launcherを実行し、自己更新を省いた本体とpruneの実argvを観測する。
 @_POSIX
 def test_process_loop_job_skips_uv_self_update(project: tuple[pathlib.Path, dict[str, str]]) -> None:
     """process-loopの更新jobは自己更新を省いて本体の終了状態を保存する。"""

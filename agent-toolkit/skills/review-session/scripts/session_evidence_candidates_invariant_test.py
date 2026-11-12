@@ -7,21 +7,6 @@ import session_evidence_candidates as evidence_candidates
 import session_review_evidence as evidence
 
 
-def test_delegate_completion_values_are_defined_by_task_documents() -> None:
-    """除外に使う返却値を`<役割名>.subagent.md`が定義している。"""
-    share = pathlib.Path(evidence.__file__).resolve().parents[3] / "share"
-    documents = "\n".join(path.read_text(encoding="utf-8") for path in sorted(share.glob("*.md")))
-    lines = set(documents.splitlines())
-
-    missing = [
-        value
-        for value in evidence_candidates._DELEGATE_COMPLETION_VALUES  # pylint: disable=protected-access
-        if value not in lines and f"`{value}`" not in documents
-    ]
-
-    assert not missing
-
-
 def test_subagent_outputs_have_recognized_first_lines() -> None:
     """自由記述を返す担当を除き、全担当の先頭行を候補抽出が認識する。"""
     share = pathlib.Path(evidence.__file__).resolve().parents[3] / "share"

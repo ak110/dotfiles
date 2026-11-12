@@ -149,6 +149,7 @@ def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, too
     assert result.stdout == ""
 
 
+# test-copy-contract: 回答欄4種から抽出した本文の強調・例示・調査・引用に応じて通知を選択する契約。
 @pytest.mark.parametrize("field", ["response", "answers", "annotations", "multi"])
 @pytest.mark.parametrize(
     "text",
@@ -181,6 +182,7 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     assert ("範囲語か開放列挙" in context) == (has_example and "調査" in text)
 
 
+# test-copy-contract: 同一回答の再送は抑止し、別の質問・回答・呼出IDでは通知を再び1回だけ配送する契約。
 @pytest.mark.parametrize("changed_field", ["tool_use_id", "question", "answer"])
 def test_free_text_notices_distinguish_replays_questions_and_answers(tmp_path: pathlib.Path, changed_field: str) -> None:
     """同一回答の再配送を抑え、別の質問・自由回答へ必要な手順と内容注記を届ける。"""

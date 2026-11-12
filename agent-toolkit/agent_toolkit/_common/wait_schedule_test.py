@@ -472,6 +472,7 @@ def test_rejects_unknown_request_bucket() -> None:
         _wait_schedule.get_wait_timeout("worker")
 
 
+# test-copy-contract: 待機値が独立したホスト上限1800秒とTTL3600秒を下回り、ホスト先行打切りとcache満了を防ぐ制約を検査する。
 def test_1h_wait_timeout_below_host_limits() -> None:
     """保持期間1hの待機上限は、Bashツールの背景実行で上限を指定しない場合の1800秒とキャッシュTTLの3600秒を下回る。
 

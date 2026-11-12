@@ -49,6 +49,7 @@ def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> No
     assert not errors, "\n".join(errors)
 
 
+# test-copy-contract: 生成器が読書きする返却契約のstart/end保存標識を一意に保ち、委譲先本文の先読みを防ぐ。
 @pytest.mark.parametrize(
     "relative,role",
     [

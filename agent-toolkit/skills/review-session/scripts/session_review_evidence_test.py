@@ -457,6 +457,7 @@ def test_final_result_skips_commentary_phase(tmp_path: pathlib.Path) -> None:
     ]
 
 
+# test-copy-contract: session-review-evidenceの解析登録を起動側の全engineと比べ、記録の未対応を検出する。
 def test_extractor_runtimes_match_supported_engines() -> None:
     """本スクリプトが時系列へ変換できる実行系は、agents_serverが起動できる実行系と一致する。
 

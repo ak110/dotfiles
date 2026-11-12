@@ -108,6 +108,7 @@ def test_positive_operations_cover_every_entry() -> None:
         assert matched == expected
 
 
+# test-copy-contract: 起動側とhook側の区分を比べ、資料を省く実行系へ取得を要求する不整合を防ぐ。
 def test_lightweight_launch_kinds_match_agents_server() -> None:
     """hookが読む軽量起動の写しは、agents_serverが軽量起動として扱う区分と一致する。"""
     assert delegated_session.LIGHTWEIGHT_LAUNCH_KINDS == launch_prompts.LIGHTWEIGHT_LAUNCH_KINDS

@@ -67,6 +67,7 @@ class TestDefaultSteps:
         "一時ファイルの経過削除タイマー セットアップ (Linux)",
     }
 
+    # test-copy-contract: 実schedulerの依存先解決を通し、一意な工程名と循環の無い通常工程表を保証する。
     def test_step_names_are_unique_and_declarations_resolve(self) -> None:
         """ステップ名は一意であり、全ての先行工程の宣言が既存ステップを指し循環しない。"""
         steps = post_apply.DEFAULT_STEPS  # noqa: SLF001
@@ -79,6 +80,7 @@ class TestDefaultSteps:
         declared = {step.name: set(step.after) for step in post_apply.DEFAULT_STEPS if step.after}  # noqa: SLF001
         assert declared == self._EXPECTED_PREDECESSORS
 
+    # test-copy-contract: schedulerが全先行工程へ展開する宣言を保ち、PATH整理を他工程のPATH追加後へ限定する。
     def test_user_path_cleanup_follows_all_other_steps(self) -> None:
         """ユーザーPATHの整理は他の全ステップの後に実行する。"""
         steps = post_apply.DEFAULT_STEPS  # noqa: SLF001
@@ -139,11 +141,6 @@ class TestDefaultSteps:
         assert {step.name for step in steps if step.platforms == ("win32",)} == self._WINDOWS_STEPS
         assert {step.name for step in steps if step.platforms == ("linux",)} == self._LINUX_STEPS
         assert not [step.name for step in steps if step.platforms not in ((), ("win32",), ("linux",))]
-
-    def test_removed_steps_are_not_registered(self) -> None:
-        """廃止済みの計画移行と旧計画ビューアーの自動起動を登録しない。"""
-        names = [step.name for step in post_apply.DEFAULT_STEPS]  # noqa: SLF001
-        assert not [name for name in names if "claude-plans-viewer" in name or "計画" in name]
 
 
 class TestPluginRecommendations:

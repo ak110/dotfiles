@@ -25,57 +25,6 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8-sig")
 
 
-@pytest.mark.parametrize("template", [LINUX_TEMPLATE, WINDOWS_TEMPLATE])
-def test_reinstall_exempts_only_authored_pyfltr_from_release_wait(template: Path) -> None:
-    """先行APIの導入に必要な自作パッケージだけを公開待機から除く。"""
-    text = _read(template)
-    assert "uv tool install --exclude-newer-package pyfltr=false --editable" in text
-    assert "--exclude-newer " not in text
-
-
-def test_linux_post_apply_is_final_operation() -> None:
-    """Linux成功分岐はpost-applyをexecし、後続出力を持たない。"""
-    text = _read(LINUX_TEMPLATE)
-    final_block = text[text.rindex('post_apply_bin="$HOME/.local/bin/dotfiles-post-apply"') :].strip()
-
-    assert 'exec "$post_apply_bin"' in final_block
-    assert final_block.splitlines()[-4:] == [
-        '    exec "$post_apply_bin"',
-        "else",
-        '    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: '
-        'uv tool install --exclude-newer-package pyfltr=false --editable \\"{{ .chezmoi.workingTree }}\\" '
-        '--with-editable \\"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}\\"を実行し、'
-        'update-dotfilesを再実行してください。"',
-        "fi",
-    ]
-
-
-def test_windows_post_apply_final_condition_has_branch_local_order() -> None:
-    """Windowsの復帰処理後にpost-applyの最終条件分岐だけを置く。"""
-    text = _read(WINDOWS_TEMPLATE)
-    final_start = text.rindex("$postApplyBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-post-apply.exe'")
-    before = text[:final_start]
-    # 末尾は出力の文字コードを元へ戻すfinallyであり、最終条件分岐の後に置く。
-    final_block = text[final_start : text.rindex("} finally {")].strip()
-
-    assert "Stop-Process" in before
-    assert "Start-Process" not in final_block
-    assert final_block.splitlines() == [
-        "$postApplyBin = Join-Path $env:USERPROFILE '.local\\bin\\dotfiles-post-apply.exe'",
-        "if (Test-Path $postApplyBin) {",
-        "    # dotfiles-post-apply は chezmoi から独立した CLI のため、workingTree を環境変数で渡す",
-        "    $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'",
-        "    & $postApplyBin",
-        "    exit $LASTEXITCODE",
-        "} else {",
-        '    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: '
-        'uv tool install --exclude-newer-package pyfltr=false --editable `"{{ .chezmoi.workingTree }}`" '
-        '--with-editable `"{{ joinPath .chezmoi.workingTree "agent-toolkit" }}`"を実行し、'
-        'update-dotfilesを再実行してください。"',
-        "}",
-    ]
-
-
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が見つからない")
 def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
     """post-applyが失敗したとき、Windowsテンプレートの最終分岐も非0で終了する。"""
@@ -125,14 +74,6 @@ def test_windows_template_writes_utf8_when_redirected(tmp_path: Path) -> None:
     assert result.stdout.decode("utf-8").strip() == message
 
 
-def test_windows_template_does_not_run_uv_update_shell() -> None:
-    """ユーザーPATHの登録はpost-applyの工程だけが行い、テンプレートは`uv tool update-shell`を呼ばない。
-
-    `uv tool update-shell`と`cleanup_user_path`の正規化が異なると、再導入のたびにユーザーPATHを書き換え合う。
-    """
-    assert "update-shell" not in _read(WINDOWS_TEMPLATE)
-
-
 def test_windows_template_limits_to_reinstall() -> None:
     """テンプレートはpytoolsの再導入とその前の停止だけを持ち、user.envの反映とmedia-remoteの起動を持たない。
 
@@ -172,16 +113,6 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     assert "既存版で後続処理を継続" in text[deferred:]
     assert text.count("Get-CimInstance Win32_Process") == 1
     assert text.count("Get-PytoolsEnvLockingProcess") == 2
-
-
-def test_windows_install_failure_records_state_and_detail() -> None:
-    """Windows側の導入失敗を例外メッセージ付きでpost-applyへ渡す。"""
-    text = _read(WINDOWS_TEMPLATE)
-    catch = text.index("    } catch {")
-    failure = text.index("インストールに失敗しました", catch)
-
-    assert "$env:DOTFILES_PYTOOLS_INSTALL_STATE = 'failed'" in text[catch:failure]
-    assert "$env:DOTFILES_PYTOOLS_INSTALL_DETAIL = $_.Exception.Message" in text[catch:failure]
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が見つからない")

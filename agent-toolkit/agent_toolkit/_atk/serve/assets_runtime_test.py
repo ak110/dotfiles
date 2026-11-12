@@ -3,6 +3,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import io
 import logging
 import pathlib
 import threading
@@ -174,27 +175,37 @@ async def test_protocol_relative_prefix_logs_rejection_via_proxy_fix(
 def test_run_initializes_logging_and_logs_startup(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """起動先を1回記録し、サーバーの診断を重複させない。"""
-    diagnostics: list[str] = []
-
-    class Capture(logging.Handler):
-        def emit(self, record: logging.LogRecord) -> None:
-            diagnostics.append(record.getMessage())
-
-    handler = Capture()
+    """WARNINGと既存ハンドラーのある状態から実初期化で起動先を出力し、診断を重複させない。"""
+    root = logging.getLogger()
     error_logger = logging.getLogger("hypercorn.error")
-    monkeypatch.setattr(logging.getLogger(), "handlers", [handler, *logging.getLogger().handlers])
-    monkeypatch.setattr(error_logger, "handlers", [handler])
-    monkeypatch.setattr(error_logger, "propagate", True)
-    monkeypatch.setattr(serve.logging, "basicConfig", lambda **kwargs: None)
-    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda home: tmp_path)
-    monkeypatch.setattr(serve.asyncio, "run", lambda coro: coro.close())
-
-    with caplog.at_level("INFO", logger=serve.logger.name):
-        serve.run(host="127.0.0.1", port=28766, home=tmp_path)
-
-    assert sum("http://127.0.0.1:28766/" in record.getMessage() for record in caplog.records) == 1
-    error_logger.warning("試験用のサーバー診断")
-    assert diagnostics.count("試験用のサーバー診断") == 1
+    with io.StringIO() as previous_output, monkeypatch.context() as patch:
+        previous_handler = logging.StreamHandler(previous_output)
+        server_handler = logging.StreamHandler()
+        # force付きの実初期化がpytest自身のハンドラーを閉じないよう、試験用の初期状態へ隔離する。
+        patch.setattr(root, "handlers", [previous_handler])
+        patch.setattr(root, "level", logging.WARNING)
+        for logger in (serve.logger, error_logger):
+            patch.setattr(logger, "parent", root)
+            patch.setattr(logger, "level", logging.NOTSET)
+            patch.setattr(logger, "disabled", False)
+            patch.setattr(logger, "propagate", True)
+            # 直前の試験のINFO有効判定を再利用せず、今回のWARNINGから有効レベルを解決する。
+            patch.setattr(logger, "_cache", {})
+        patch.setattr(serve.logger, "handlers", [])
+        patch.setattr(error_logger, "handlers", [server_handler])
+        patch.setattr(_wi_sync, "ensure_environment", lambda home: tmp_path)
+        patch.setattr(serve.asyncio, "run", lambda coro: coro.close())
+        try:
+            serve.run(host="127.0.0.1", port=28766, home=tmp_path)
+            error_logger.warning("試験用のサーバー診断")
+            output = capsys.readouterr().err
+            assert output.count("http://127.0.0.1:28766/") == 1
+            assert output.count("試験用のサーバー診断") == 1
+            assert not previous_output.getvalue()
+        finally:
+            for handler in (*root.handlers, previous_handler, server_handler):
+                handler.close()
+            patch.undo()
+            root.setLevel(root.level)

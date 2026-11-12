@@ -51,6 +51,7 @@ def _launcher(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     return module
 
 
+# test-copy-contract: 公開launcherの--helpを実起動し、準備前にサーバー診断依存をimportしない境界を観測する。
 def test_launcher_help_does_not_import_server_logging(host_environ: Callable[[], dict[str, str]]) -> None:
     """依存導入前の公開launcherは、通常のhelpでサーバー専用の診断依存を読み込まない。"""
     result = subprocess.run(

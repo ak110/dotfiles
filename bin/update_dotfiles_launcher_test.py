@@ -41,6 +41,7 @@ _LOGS_WINDOWS_PREFIX = _LEGACY_WINDOWS_PREFIX.replace(
 )
 
 
+# test-copy-contract: 公開済み旧batchのbyte読取位置で、更新後も終了値取得から再開する互換契約を保つ。
 @pytest.mark.parametrize("prefix", [_LEGACY_WINDOWS_PREFIX, _LOGS_WINDOWS_PREFIX], ids=["legacy", "logs"])
 def test_windows_replacement_resumes_at_exit_capture(prefix: str) -> None:
     """公開済みbatchの再開位置から更新を重複実行せず終了状態を取得する。"""

@@ -156,8 +156,12 @@ def test_installed_declarations_detect_inventory_revision(tmp_path, monkeypatch,
         return subprocess.CompletedProcess(args, 0, json.dumps(claude), "")
 
     codex_cli = codex_plugin_cli(codex["installed"], other=claude_inventory)
+    inventories = []
 
     def inventory(args, **kwargs):
+        # Codexの導入一覧照会は、設定済みmarketplaceの列挙から始まる。
+        if args[0] == "claude" or args[0] == "codex" and args[1:3] == ["plugin", "marketplace"]:
+            inventories.append(args[0])
         return codex_cli(args, **kwargs)
 
     # Codexの公開cache配置をそのまま使う。
@@ -169,7 +173,7 @@ def test_installed_declarations_detect_inventory_revision(tmp_path, monkeypatch,
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: sources)
     assert plugin_roots.sibling_plugin_root("agent-basics", toolkit) is None
-    for version in ("1.0", "2.0"):
+    for request, version in enumerate(("1.0", "2.0"), start=1):
         if version == "2.0":
             basics = basics.with_name(version)
             (basics / "skills/writing-standards").mkdir(parents=True)
@@ -184,6 +188,7 @@ def test_installed_declarations_detect_inventory_revision(tmp_path, monkeypatch,
             assert len(rows) == 2
             root = basics if host == "claude" else codex_basics
             assert {target.path for row in rows for target in row.targets} == {root / "skills/writing-standards/SKILL.md"}
+            assert inventories == [host] * request
 
 
 def test_body_tables_keep_document_order(tmp_path, monkeypatch):

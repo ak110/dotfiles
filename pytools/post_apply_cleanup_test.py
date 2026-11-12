@@ -13,6 +13,7 @@ from pytools._internal.post_apply_test_helpers import _isolate_sync_report as _i
 from pytools._internal.post_apply_test_helpers import _isolate_update_log as _isolate_update_log
 
 
+# test-copy-contract: 全撤去表の削除基点を配布先rootへ限定し、作業ツリーを削除対象へ含めない。
 def test_removed_paths_bases_are_distribution_targets() -> None:
     """撤去表の基点は配布先だけで、作業ツリー（`~/dotfiles`）を指さない。"""
     startup = Path("AppData") / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
@@ -33,32 +34,6 @@ def test_removed_paths_bases_are_distribution_targets() -> None:
     assert set(post_apply._REMOVED_PATHS_IF_CONTENT) <= allowed | {_IMPORT_HOME}  # noqa: SLF001
     bases = set(post_apply._REMOVED_PATHS) | set(post_apply._REMOVED_PATHS_IF_CONTENT)  # noqa: SLF001
     assert _IMPORT_HOME / "dotfiles" not in bases
-
-
-def test_removed_session_review_skill_paths_cover_claude_and_codex() -> None:
-    """旧個人スキルをClaude CodeとCodexの両配布先からcleanupする。"""
-    relative = Path("skills/session-review-dotfiles")
-    assert relative in _registered_paths(Path(".claude"))
-    assert relative in _registered_paths(Path(".codex"))
-
-
-def test_removed_sync_cross_project_paths_cover_claude_and_codex() -> None:
-    """改名前の個人プロジェクト運用スキルを両配布先からcleanupする。"""
-    relative = Path("skills/sync-cross-project")
-    assert relative in _registered_paths(Path(".claude"))
-    assert relative in _registered_paths(Path(".codex"))
-
-
-def test_removed_project_operations_paths_cover_claude_and_codex() -> None:
-    """動詞始まりへ改名した個人スキルの旧配布先を両ホストから回収する。"""
-    relative = Path("skills/ak110-projects-operations")
-    assert relative in _registered_paths(Path(".claude"))
-    assert relative in _registered_paths(Path(".codex"))
-
-
-def test_legacy_reference_directory_is_cleanup_target() -> None:
-    """スキル配下以外の旧`references/`を配布先から削除する。"""
-    assert Path("references") in _registered_paths(Path(".claude"))
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:

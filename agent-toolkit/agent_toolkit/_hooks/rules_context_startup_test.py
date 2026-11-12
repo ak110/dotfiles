@@ -22,12 +22,14 @@ from agent_toolkit._testing.rules_context_support import _disable_review_model_s
 from agent_toolkit._testing.rules_context_support import _output, _session_start_length_report
 
 
+# test-copy-contract: 実際に生成したSubagentStart全出力がホストの文字数上限に収まる容量契約。
 def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixture[str]) -> None:
     """Claude固有規範を含むSubagentStart本文がhook上限へ収まる。"""
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "general-purpose"}))
     assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
 
+# test-copy-contract: SubagentStartでは規範を配送しても領域作成APIを呼ばない副作用契約。
 def test_subagent_start_does_not_create_session_scoped_managed_temp(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

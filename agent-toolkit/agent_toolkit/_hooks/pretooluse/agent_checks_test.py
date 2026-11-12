@@ -830,7 +830,7 @@ class TestWorkflowSkillInvocation:
             },
             env_overrides=env,
         )
-        agent_result = _run_after_skill_acquisition(
+        agent_result = _run_after_generic_reissue(
             {
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "general-purpose", "prompt": "調査する。"},
@@ -841,6 +841,8 @@ class TestWorkflowSkillInvocation:
         assert skill_result.returncode == 0, skill_result.stderr
         assert "/skills/delegation/SKILL.md" not in _additional_context(skill_result)
         assert agent_result.returncode == 0
+        specific = json.loads(agent_result.stdout).get("hookSpecificOutput", {}) if agent_result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert "agent-toolkit:delegation" not in agent_result.stderr
 
 

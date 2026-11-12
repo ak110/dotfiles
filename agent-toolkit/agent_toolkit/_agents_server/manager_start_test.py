@@ -361,6 +361,7 @@ async def test_start_shell_rejects_empty_command_and_summary_policy(tmp_path: pa
         assert not backend.start_calls
 
 
+# test-copy-contract: 初期化の試行予算と可用性待機の合計が、ホストの背景移行期限より短いことを守る。
 def test_initialization_failure_resolves_before_host_moves_call_to_background() -> None:
     """初期化の失敗は、ホストが呼び出しをバックグラウンドタスクへ移す閾値より前に確定する。
 

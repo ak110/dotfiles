@@ -178,6 +178,7 @@ def test_every_argument_has_help() -> None:
             assert action.help is not None, (command, action.dest)
 
 
+# test-copy-contract: 全コマンドの実formatter出力で英語usageの日本語化と、引数・子コマンドの有無に応じた節の表示を検査する。
 def test_help_sections_and_builtin_help_are_japanese() -> None:
     for command, parser, _summary in _walk_commands():
         help_text = parser.format_help()
@@ -306,6 +307,7 @@ def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.Captur
     capsys.readouterr()
 
 
+# test-copy-contract: 実argvのinfo -- --helpをparserへ渡し、後置helpの受理・終了0・stdout表示・stderrなしを検査する。
 def test_separator_before_help_displays_help(capsys: pytest.CaptureFixture[str]) -> None:
     """位置引数を取らないコマンドは後置したhelpでも正常に案内する。"""
     with pytest.raises(SystemExit) as accepted:
@@ -328,6 +330,7 @@ def test_trailing_options_preserve_repeatable_arguments_and_supplied_namespace()
     assert result.existing == "keep"
 
 
+# test-copy-contract: COLUMNS=60で実formatterを動かし、オプション名とref識別子が途中で分割されない折返し結果を検査する。
 def test_wrapped_help_keeps_identifiers_intact(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COLUMNS", "60")
     commands = {command: parser for command, parser, _summary in _walk_commands()}
