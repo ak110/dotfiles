@@ -165,6 +165,7 @@ markdownlint-subproject-aware = false
 textlint-subproject-aware = false
 lychee-subproject-aware = false
 sync-generated-files-subproject-aware = false
+test-copies-subproject-aware = false
 check-cmd-encoding-subproject-aware = false
 check-templates-subproject-aware = false
 require-ps1-bom-subproject-aware = false
@@ -306,6 +307,15 @@ args = ["run", "--frozen", "python", "scripts/check_file_lines.py"]
 targets = ["*"]
 fast = true
 pass-filenames = false
+
+[tool.pyfltr.custom-commands.test-copies]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_test_copies.py"]
+targets = ["*_test.py", "*_spec.py", "*.ts", "*.tsx", "*.rs", "**/*_test.py", "**/*_spec.py", "**/*.ts", "**/*.tsx", "**/*.rs"]
+fast = true
+pass-filenames = true
+error-pattern = '^(?P<file>.+?):(?P<line>\d+): (?P<severity>error): (?P<rule>[^:]+): (?P<message>.+)$'
 
 [tool.pyfltr.custom-commands.check-cmd-encoding]
 type = "linter"
@@ -450,7 +460,7 @@ type = "linter"
 path = "scripts/check_plugin_version.py"
 pass-filenames = false
 # prekのpre-commitが実行する`pyfltr fast`で版数更新前の途中commitを遮断しないよう、fastにしない。
-# 判定対象はプラグインroot配下の全ファイルで、対象ファイルの絞り込みはスクリプトがGitの差分で行う。
+# 判定対象はプラグインroot配下の全ファイルで、対象ファイルの限定はスクリプトがGitの差分で行う。
 fast = false
 
 [tool.pylint."messages control"]
