@@ -20,6 +20,10 @@
 
 **18.** 統合前の確認作業は、`../../../share/exec-review-recording-integration.md`「統合時の完成条件判定」に従う。
 レーン担当へ委ねる統合指示、およびメインエージェント自身がCLIを実行する場合の検収は、`../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md`に準拠する。
+内部群の焦点検証と独立文脈レビューは、`../../../share/exec-subagent-implementation.md`「実装」と`../../../share/exec-review-parent-launch.md`「起動方法別のレビュー基準」に従う。
+群の保存完了順に開始し、全群完了待ちの一斉初回レビューへ戻さない。
+既存の共有2枠へ群ごとに早期投入し、群別対象の和集合と元WI全条件の対応を保持する。
+親は受理済みの同じ本文・環境・契約の結果を再利用し、全群の取り込み後に群間の契約、共有生成物、組合せ差分と未達条件を検収してから統合入力を確定する。
 
 **19.** Git統合、全計画の保存、WIの採否確定、選定情報の統合状態更新は、同一の所有登録をもとに`atk lane integrate`が一括して実行する。
 呼び出し引数とmanifestの作成手順は、レーン担当の`lane-integration.subagent.md`「公開統合操作」に従う。
