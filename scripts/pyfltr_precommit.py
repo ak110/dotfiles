@@ -93,11 +93,30 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="*")
+    parser.add_argument(
+        "--verify-run",
+        metavar="RUN_ID",
+        help="commitせずに、指定した実行が現在のHEADの内容で不変条件試験を含むpytestに成功したかを確かめる。"
+        "統合する側が、統合入力の作業ツリーでff統合の前に使う。成立すれば終了0、しなければ終了1。",
+    )
     args = parser.parse_args(argv)
     pyfltr = shutil.which("pyfltr")
     if pyfltr is None:
         print("pyfltr-precommit: pyfltrが見つからない。`uv sync --frozen`で開発環境を準備する。", file=sys.stderr)
         return 2
+    if args.verify_run is not None:
+        try:
+            verified = find_reusable_run(pathlib.Path.cwd(), pyfltr, run_id=args.verify_run)
+        except (KeyError, TypeError, AttributeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
+            verified = Reuse(None, f"判定できない: {type(exc).__name__}: {exc}")
+        if verified.run_id is None:
+            print(
+                f"pyfltr-precommit: run {args.verify_run}は現在のHEADの内容の成功と確かめられない（{verified.reason}）。",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"pyfltr-precommit: run {args.verify_run}は現在のHEADの内容でpytestに成功している。")
+        return 0
     branch = current_branch(pathlib.Path.cwd())
     if branch is not None and branch not in _INTEGRATION_BRANCHES:
         print(
@@ -127,19 +146,24 @@ def current_branch(directory: pathlib.Path) -> str | None:
     """現在のブランチ名を返す。detached HEADや取得の失敗ではNoneを返し、pytestを含める側へ倒す。"""
     try:
         result = git_command.run(
-            ["-C", str(directory), "symbolic-ref", "--short", "-q", "HEAD"],
+            # `--short`は同名のタグがあると`heads/<名前>`を返すため、完全な参照名から接頭辞を除く。
+            ["-C", str(directory), "symbolic-ref", "-q", "HEAD"],
             capture_output=True,
             text=True,
             timeout=_QUERY_TIMEOUT_SECONDS,
         )
     except OSError, subprocess.TimeoutExpired:
         return None
-    name = result.stdout.strip()
-    return name if result.returncode == 0 and name else None
+    name = result.stdout.strip().removeprefix("refs/heads/")
+    return name if result.returncode == 0 and name and not name.startswith("refs/") else None
 
 
-def find_reusable_run(directory: pathlib.Path, pyfltr: str) -> Reuse:
-    """`directory`の作業ツリーの現在の内容でpytestが成功した実行を探す。"""
+def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | None = None) -> Reuse:
+    """`directory`の作業ツリーの現在の内容でpytestが成功した実行を探す。
+
+    `run_id`を指定した場合は、その実行だけを調べる。加えてindexとHEADの一致も求め、
+    HEADの内容で成功したことを確かめる（統合の前の確認に使う）。
+    """
     toplevel = git_command.run(
         ["-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=_QUERY_TIMEOUT_SECONDS
     )
@@ -152,6 +176,12 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str) -> Reuse:
         return Reuse(None, "作業ツリーにindexと異なる変更がある")
     if diff.returncode:
         return Reuse(None, f"作業ツリーとindexを比較できない: {format_cli_error(diff)}")
+    if run_id is not None:
+        cached = git_command.run(
+            ["-C", str(root), "diff", "--cached", "--quiet"], capture_output=True, text=True, timeout=_QUERY_TIMEOUT_SECONDS
+        )
+        if cached.returncode:
+            return Reuse(None, "indexにHEADと異なる変更がある")
     latest = _latest_change_ns(root)
     if isinstance(latest, str):
         return Reuse(None, latest)
@@ -159,17 +189,25 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str) -> Reuse:
     version = run_subprocess([pyfltr, "--version"], timeout=_QUERY_TIMEOUT_SECONDS, cwd=root, tag="pyfltr")
     if version is None or version.returncode:
         return Reuse(None, f"pyfltrの版を取得できない: {format_cli_error(version)}")
-    listed = _query_json(pyfltr, root, ["list-runs", "--limit", str(_LIST_LIMIT), "--output-format", "json"])
+    if run_id is not None:
+        specified: dict[str, typing.Any] = {"run_id": run_id, "finished_at": None, "commands": ["pytest"]}
+        listed: dict[str, typing.Any] | str = {"runs": [specified]}
+    else:
+        listed = _query_json(pyfltr, root, ["list-runs", "--limit", str(_LIST_LIMIT), "--output-format", "json"])
     if isinstance(listed, str):
         return Reuse(None, listed)
-    candidates = sorted(
-        (
-            run
-            for run in listed.get("runs", [])
-            if _to_ns(run.get("finished_at")) > latest and "pytest" in run.get("commands", [])
-        ),
-        key=lambda run: _to_ns(run.get("finished_at")),
-        reverse=True,
+    candidates = (
+        list(listed["runs"])
+        if run_id is not None
+        else sorted(
+            (
+                run
+                for run in listed.get("runs", [])
+                if _to_ns(run.get("finished_at")) > latest and "pytest" in run.get("commands", [])
+            ),
+            key=lambda run: _to_ns(run.get("finished_at")),
+            reverse=True,
+        )
     )
     for run in candidates[:_SHOW_LIMIT]:
         shown = _query_json(pyfltr, root, ["show-run", run["run_id"], "--output-format", "json"])

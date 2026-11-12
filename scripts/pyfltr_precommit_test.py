@@ -261,3 +261,49 @@ def test_current_branch_reads_branch_and_detached_head(tmp_path: pathlib.Path) -
     assert pyfltr_precommit.current_branch(repository) == "work"
     subprocess.run(["git", "-C", str(repository), "checkout", "-q", "--detach"], check=True)
     assert pyfltr_precommit.current_branch(repository) is None
+
+
+def test_current_branch_is_not_confused_by_same_named_tag(tmp_path: pathlib.Path) -> None:
+    """統合先のブランチと同名のタグがあっても、ブランチ名をそのまま返す。"""
+    repository = _repository(tmp_path)
+    subprocess.run(["git", "-C", str(repository), "checkout", "-q", "-b", "develop"], check=True)
+    subprocess.run(["git", "-C", str(repository), "tag", "develop"], check=True)
+    assert pyfltr_precommit.current_branch(repository) == "develop"
+
+
+@pytest.mark.parametrize("staged_change", [False, True], ids=["head-content", "index-differs-from-head"])
+def test_verify_run_requires_head_content(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, staged_change: bool) -> None:
+    """指定した実行はHEADの内容でpytestに成功した場合だけ確かめられ、indexがHEADと異なれば確かめられない。"""
+    repository = _repository(tmp_path)
+    if staged_change:
+        (repository / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repository), "add", "src/a.py"], check=True)
+    calls = _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60))
+
+    reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN")
+
+    assert (reuse.run_id == "01RUN") is not staged_change
+    # 指定した実行だけを調べ、一覧の照会はしない。
+    assert all(call[0] != "list-runs" for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("reuse", "expected"), [(pyfltr_precommit.Reuse("01RUN", ""), 0), (pyfltr_precommit.Reuse(None, "理由"), 1)]
+)
+def test_main_verify_run_returns_result_without_commit(
+    monkeypatch: pytest.MonkeyPatch, reuse: pyfltr_precommit.Reuse, expected: int
+) -> None:
+    """`--verify-run`は`pyfltr fast`を起動せず、確かめた結果を終了コードで返す。"""
+    launched: list[list[str]] = []
+
+    def _find(directory: pathlib.Path, pyfltr: str, *, run_id: str | None = None) -> pyfltr_precommit.Reuse:
+        del directory, pyfltr
+        assert run_id == "01RUN"
+        return reuse
+
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "find_reusable_run", _find)
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", lambda cmd, **kwargs: launched.append(cmd))
+
+    assert pyfltr_precommit.main(["--verify-run", "01RUN"]) == expected
+    assert not launched
