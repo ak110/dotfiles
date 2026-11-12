@@ -413,7 +413,8 @@ def main(
                 f"managed-tempの期限切れの対象を自動削除できなかった: {path}: {reason}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
-    if sweep_result.pressure is not None and not _delegated_session.is_delegated(os.environ):
+    # 空きの不足は全セッションの書込を止める共有の状態であり、回収した対象の記録も回収した起動が残すため、委譲先にも出力する。
+    if sweep_result.pressure is not None:
         _report_space_pressure(sweep_result.pressure)
     args.repo_path_override = repo_path_override
     if args.command == "wi":

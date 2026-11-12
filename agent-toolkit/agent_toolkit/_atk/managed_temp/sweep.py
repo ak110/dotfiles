@@ -17,10 +17,12 @@ import shutil
 import stat
 import typing
 
+import psutil
+
 from agent_toolkit._atk.managed_temp import creation, paths, permissions
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
-from agent_toolkit._common import file_lock, plugin_root_leases, session_registry
+from agent_toolkit._common import file_lock, plugin_root_leases, process_identity, session_registry
 
 _RECORD_NAME = ".sweep/last-sweep"
 _OLD_SCHEDULE_NAME = ".sweep/schedule"
@@ -36,7 +38,21 @@ _MIN_FREE_RATIO = 0.10
 2026-11-12にmanaged-tempだけで容量の約16%（46GB/292GB）に達し、空きが約3%から同時実行中の測定で
 短時間に尽きて`atk`の書込が失敗した。容量比にすれば、ディスクの大きさによらず同じ比率の余裕を残せる。
 """
+MIN_FREE_RATIO_ENV = "AGENT_TOOLKIT_MANAGED_TEMP_MIN_FREE_RATIO"
+"""空きの下限（容量比）を上書きする環境変数。
+
+pytestが起動する子プロセスの`atk`は実ディスクの空きを見て回収を始めるため、同一プロセスの差し替えでは隔離できない。
+試験基盤が`0`を設定して子へ継承させ、空きによる回収を止める。
+"""
+OWNER_FILE = ".owner-process"
+"""作成プロセスの識別を記録するファイル名。長時間書き込まない実行中の領域を、最終更新の猶予だけでは使用中と区別できないため残す。"""
 _TOP_RECLAIMED = 5
+_PRESSURE_GRACE_NS = 3600 * _NANOSECONDS_PER_SECOND
+"""空きの不足で回収する際に残す、配下を含む最終更新からの猶予。
+
+作成直後の領域は、実行中のコマンドが書き込む途中でもセッション登録や使用記録をまだ持たず、使用中と区別できない。
+これを回収すると、空きが不足した起動と同時に動く別のコマンドの記録を消して失敗させる。
+"""
 _LEGACY_REGISTRY_SUFFIX = ".json"
 _LEGACY_CLEANUP_LOCK_SUFFIX = ".json.cleanup.lock"
 
@@ -67,7 +83,7 @@ class SpacePressure(typing.NamedTuple):
 
     @property
     def still_low(self) -> bool:
-        return self.free_after < self.total * _MIN_FREE_RATIO
+        return self.free_after < self.total * _min_free_ratio()
 
 
 def _sweep_due(state_root: pathlib.Path, now_ns: int) -> bool:
@@ -337,13 +353,60 @@ def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_res
     return True
 
 
+def owner_token() -> str:
+    """作成プロセスの識別（PIDと起動世代）を返す。PID再利用で別のプロセスを作成者と誤認しないため、起動世代を含める。"""
+    return f"{os.getpid()} {process_identity.start_id(psutil.Process()) or ''}"
+
+
+def owner_alive(token: str) -> bool:
+    """記録した作成プロセスが同じ世代のまま実行中かを返す。判定できない場合は実行中として残す。"""
+    pid_text, _, saved_id = token.strip().partition(" ")
+    try:
+        process = psutil.Process(int(pid_text))
+        return process.is_running() and (not saved_id or process_identity.start_id(process) == saved_id)
+    except psutil.NoSuchProcess:
+        return False
+    except ValueError, psutil.Error, OSError:
+        return True
+
+
+def _has_live_owner(area: pathlib.Path) -> bool:
+    """領域か直下の子が記録した作成プロセスが実行中、または記録を読めない場合に真を返す。
+
+    セッションの領域は`atk-command-*`などの子に記録を持つため、直下の子まで調べる。
+    """
+    if not area.is_dir():
+        return False
+    candidates = [area]
+    with os.scandir(area) as children:
+        candidates.extend(area / entry.name for entry in children if entry.is_dir(follow_symlinks=False))
+    for candidate in candidates:
+        try:
+            token = (candidate / OWNER_FILE).read_text(encoding="ascii")
+        except FileNotFoundError:
+            continue
+        except OSError, UnicodeDecodeError:
+            return True
+        if owner_alive(token):
+            return True
+    return False
+
+
+def _min_free_ratio() -> float:
+    """空きの下限（容量比）を返す。環境変数が不正な値なら容量の10%を使う。"""
+    try:
+        return float(os.environ.get(MIN_FREE_RATIO_ENV, _MIN_FREE_RATIO))
+    except ValueError:
+        return _MIN_FREE_RATIO
+
+
 def _below_floor(temp_root: pathlib.Path) -> bool:
     """一時rootを含むFSの空きが容量の10%を下回るかを返す。観測できない場合は偽を返す。"""
     try:
         usage = _disk_usage(temp_root)
     except OSError:
         return False
-    return usage.free < usage.total * _MIN_FREE_RATIO
+    return usage.free < usage.total * _min_free_ratio()
 
 
 def _reclaim_for_space(
@@ -363,7 +426,7 @@ def _reclaim_for_space(
         usage = _disk_usage(temp_root)
     except OSError:
         return None
-    if usage.free >= usage.total * _MIN_FREE_RATIO:
+    if usage.free >= usage.total * _min_free_ratio():
         return None
     candidates: list[tuple[int, pathlib.Path, os.stat_result]] = []
     with os.scandir(temp_root) as children:
@@ -378,7 +441,13 @@ def _reclaim_for_space(
                 latest, has_git = _latest_update_and_worktree(child, now_ns)
             else:
                 latest, has_git = _update_time(metadata, now_ns), False
-            if child in protected_sessions or has_git or plugin_root_in_use(child):
+            if (
+                child in protected_sessions
+                or has_git
+                or plugin_root_in_use(child)
+                or latest >= now_ns - _PRESSURE_GRACE_NS
+                or _has_live_owner(child)
+            ):
                 continue
         except FileNotFoundError:
             continue
@@ -390,7 +459,7 @@ def _reclaim_for_space(
     sizes: list[tuple[str, int]] = []
     free = usage.free
     for _latest, child, metadata in candidates:
-        if free > usage.total * _MIN_FREE_RATIO:
+        if free > usage.total * _min_free_ratio():
             break
         size = _tree_bytes(child)
         try:

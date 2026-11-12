@@ -10,6 +10,8 @@ import os
 import pathlib
 import shutil
 import stat
+import subprocess
+import sys
 import typing
 
 import pytest
@@ -21,6 +23,12 @@ from agent_toolkit._common import file_lock, plugin_root_leases, state_paths
 pytestmark = pytest.mark.windows
 
 _NOW = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=datetime.UTC)
+
+
+@pytest.fixture(autouse=True)
+def _default_free_ratio(monkeypatch: pytest.MonkeyPatch) -> None:
+    """試験基盤が子プロセス向けに設定する下限の上書きを外し、容量の10%の下限で判定する。"""
+    monkeypatch.delenv(sweep.MIN_FREE_RATIO_ENV, raising=False)
 
 
 def _set_times(path: pathlib.Path, stamp: float) -> None:
@@ -504,3 +512,48 @@ def test_space_pressure_without_reclaimable_target_reports_low_space(monkeypatch
     assert result.pressure is not None and result.pressure.still_low
     assert result.deleted == [] and in_use.exists()
     assert (result.pressure.temp_root_bytes or 0) > 0
+
+
+def test_space_pressure_keeps_recently_updated_area(monkeypatch: pytest.MonkeyPatch) -> None:
+    """空きが不足していても、作成直後（最終更新から1時間以内）の領域は使用中の可能性があるため回収しない。"""
+    _first_sweep_done()
+    fresh = _area("fresh-abc", days=0, files={"big": "x" * 400})
+    old = _area("old-abc", days=2, files={"big": "x" * 400})
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 850, paths.temp_root()))
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert result.pressure is not None
+    assert fresh.exists() and not old.exists()
+
+
+def test_free_ratio_environment_disables_reclaim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """下限を`0`へ上書きすると、空きが少なくても回収しない。不正な値は容量の10%の下限を使う。"""
+    _first_sweep_done()
+    old = _area("old-abc", days=2, files={"big": "x" * 400})
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 450, paths.temp_root()))
+    monkeypatch.setenv(sweep.MIN_FREE_RATIO_ENV, "0")
+
+    assert managed_temp.sweep_managed_temp(now=_NOW).pressure is None
+    assert old.exists()
+
+    monkeypatch.setenv(sweep.MIN_FREE_RATIO_ENV, "abc")
+    assert managed_temp.sweep_managed_temp(now=_NOW).pressure is not None
+    assert not old.exists()
+
+
+def test_space_pressure_keeps_area_whose_owner_process_is_alive(monkeypatch: pytest.MonkeyPatch) -> None:
+    """作成プロセスが実行中の領域は、最終更新が古くても残す。直下の子が記録した場合と、終了したプロセスの領域を区別する。"""
+    _first_sweep_done()
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as finished:
+        finished.wait()
+        dead_token = f"{finished.pid} "
+    direct = _area("direct-abc", days=3, files={"big": "x" * 300, sweep.OWNER_FILE: sweep.owner_token()})
+    nested = _area("session-abc", days=3, files={"big": "x" * 300, f"atk-command-x/{sweep.OWNER_FILE}": sweep.owner_token()})
+    dead = _area("dead-abc", days=3, files={"big": "x" * 300, sweep.OWNER_FILE: dead_token})
+    monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1000, paths.temp_root()))
+
+    result = managed_temp.sweep_managed_temp(now=_NOW)
+
+    assert result.pressure is not None
+    assert direct.exists() and nested.exists() and not dead.exists()

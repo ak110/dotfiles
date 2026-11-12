@@ -20,6 +20,7 @@ import pytest
 
 from agent_toolkit._agents_server import backends
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._testing import late_descendant, pytest_plugin, xdist_stop
 
 # 読込済みrootと公開設定から求める対象rootを正負で直接比較する。
@@ -879,8 +880,8 @@ def test_reclaim_stale_pytest_fixtures_keeps_running_owner(tmp_path: pathlib.Pat
     for area in (live, dead, unknown):
         area.mkdir()
         (area / "data").write_text("x", encoding="utf-8")
-    (live / pytest_plugin._OWNER_FILE).write_text(pytest_plugin._owner_token(), encoding="ascii")  # pylint: disable=protected-access
-    (dead / pytest_plugin._OWNER_FILE).write_text(dead_token, encoding="ascii")  # pylint: disable=protected-access
+    (live / sweep.OWNER_FILE).write_text(sweep.owner_token(), encoding="ascii")
+    (dead / sweep.OWNER_FILE).write_text(dead_token, encoding="ascii")
     monkeypatch.setattr(managed_temp, "cleanup_managed_temp", lambda area: __import__("shutil").rmtree(area))
 
     reclaimed = pytest_plugin.reclaim_stale_pytest_fixtures()

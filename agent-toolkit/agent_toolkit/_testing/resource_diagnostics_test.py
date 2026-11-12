@@ -195,7 +195,12 @@ def test_pytest_cleanup_preserves_failure_and_reports_cause_path(
         add_cleanup=callbacks.append,
     )
     monkeypatch.setattr(sys, "platform", "win32")
-    monkeypatch.setattr(pytest_plugin.managed_temp, "create_managed_temp", lambda *_args, **_kwargs: tmp_path / "owned")
+    # 実際の`create_managed_temp`は作成済みのディレクトリを返すため、差し替えも作成して契約をそろえる。
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    monkeypatch.setattr(pytest_plugin.managed_temp, "create_managed_temp", lambda *_args, **_kwargs: owned)
+    # 実機の`pytest-fixtures-*`を回収対象にしない。
+    monkeypatch.setattr(pytest_plugin, "reclaim_stale_pytest_fixtures", list)
     monkeypatch.setattr(process_tree, "collect_descendants", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(
         process_tree,

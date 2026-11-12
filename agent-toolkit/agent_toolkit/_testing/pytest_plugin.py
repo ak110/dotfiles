@@ -19,7 +19,6 @@ from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
 from typing import Any
 
-import psutil
 import pytest
 import watchdog.observers
 import watchdog.observers.polling
@@ -33,7 +32,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._atk.wi import process_loop_update as _process_loop_update
-from agent_toolkit._common import codex_models, plugin_environment, process_identity, process_tree
+from agent_toolkit._common import codex_models, plugin_environment, process_tree
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._hooks import notice
@@ -210,26 +209,6 @@ def pytest_ignore_collect(collection_path: pathlib.Path, config: pytest.Config) 
     return "pytest.mark.windows" not in collection_path.read_text(encoding="utf-8")
 
 
-_OWNER_FILE = ".owner-process"
-
-
-def _owner_token() -> str:
-    """作成プロセスの識別（PIDと起動世代）を返す。PID再利用で別のプロセスを作成者と誤認しないため、起動世代を含める。"""
-    return f"{os.getpid()} {process_identity.start_id(psutil.Process()) or ''}"
-
-
-def _owner_alive(token: str) -> bool:
-    """記録した作成プロセスが同じ世代のまま実行中かを返す。判定できない場合は実行中として残す。"""
-    pid_text, _, saved_id = token.strip().partition(" ")
-    try:
-        process = psutil.Process(int(pid_text))
-        return process.is_running() and (not saved_id or process_identity.start_id(process) == saved_id)
-    except psutil.NoSuchProcess:
-        return False
-    except ValueError, psutil.Error, OSError:
-        return True
-
-
 def reclaim_stale_pytest_fixtures() -> list[pathlib.Path]:
     """作成プロセスが終了した`pytest-fixtures-*`を回収し、回収したパスを返す。
 
@@ -245,7 +224,11 @@ def reclaim_stale_pytest_fixtures() -> list[pathlib.Path]:
     reclaimed: list[pathlib.Path] = []
     for area in candidates:
         try:
-            if area.is_symlink() or not area.is_dir() or _owner_alive((area / _OWNER_FILE).read_text(encoding="ascii")):
+            if (
+                area.is_symlink()
+                or not area.is_dir()
+                or sweep.owner_alive((area / sweep.OWNER_FILE).read_text(encoding="ascii"))
+            ):
                 continue
             managed_temp.cleanup_managed_temp(area)
             reclaimed.append(area)
@@ -268,6 +251,8 @@ def pytest_configure(config: pytest.Config) -> None:
     if (shard := config.getoption("test_shard")) is not None:
         _parse_test_shard(shard)
     os.environ.setdefault(plugin_environment.RUNTIME_DATA_ENV, str(plugin_environment.runtime_data(os.environ)))
+    # 試験が起動する子プロセスの`atk`が、実ディスクの空き不足で他の試験の領域を回収しないよう、環境変数で継承させて止める。
+    os.environ.setdefault(sweep.MIN_FREE_RATIO_ENV, "0")
     stack = contextlib.ExitStack()
     config.add_cleanup(stack.close)
     worker = hasattr(config, "workerinput")
@@ -287,7 +272,7 @@ def pytest_configure(config: pytest.Config) -> None:
     if not worker and config.option.basetemp is None:
         reclaim_stale_pytest_fixtures()
         directory = managed_temp.create_managed_temp("pytest-fixtures")
-        (directory / _OWNER_FILE).write_text(_owner_token(), encoding="ascii")
+        (directory / sweep.OWNER_FILE).write_text(sweep.owner_token(), encoding="ascii")
         # pytestは開始時にbasetempを削除して作成し直すため、作成した領域の子を初期化対象にする。
         config.option.basetemp = str(directory / "fixtures")
 
