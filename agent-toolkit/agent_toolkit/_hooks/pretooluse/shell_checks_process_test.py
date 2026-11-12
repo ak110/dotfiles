@@ -10,6 +10,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._hooks.pretooluse import shell_checks
+from agent_toolkit._hooks.pretooluse.shell_checks_process import _check_bash_process_kill_by_pattern
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.pretooluse_support import _run
 from agent_toolkit._testing.shell_checks_support import _denial_reason
@@ -73,8 +74,7 @@ class TestBashProcessKillByPattern:
             "docker exec worker pkill -f app",
             "mise exec -- pkill -f worker",
             "npm exec -- killall worker",
-            # 読取・検索の解析が引数の扱いを確定できない呼出しと、外部プログラムを起動する検索の指定。
-            "echo killall",
+            # 外部プログラムを起動する検索の指定と、引数を実行する読取の指定。
             "rg --pre pkill needle /tmp/worker.log",
             "sed -e '1e pkill worker' /tmp/worker.log",
             "awk 'BEGIN{system(\"pkill worker\")}'",
@@ -102,9 +102,10 @@ class TestBashProcessKillByPattern:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         reason = _denial_reason(result)
         assert auto_message_opening_attributes(reason)["source"] == "pretooluse"
-        # 遮断本文が示す検索語の書き方は、同じ判定条件を通過する形である
-        assert "`git log -S`" in reason
+        # 遮断本文が示す書き方は、同じ判定条件を通過する形である
+        assert "`kill <PID>`" in reason
         assert "`p[k]ill`" in reason
+        assert not _check_bash_process_kill_by_pattern("echo p[k]ill")
 
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
@@ -209,6 +210,69 @@ class TestBashProcessKillByPattern:
     def test_blocks_indirect_or_executable_matches(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert "パターン一致によるプロセス終了" in _denial_reason(result)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # 区切りの縦棒を含む正規表現と、語を含まない引数の変数展開
+            "grep -n -E 'a|pkill|Stop' \"$f\" | head -30",
+            'grep -e pkill "$f"',
+            'grep -e pkill "$(pwd)/log"',
+            'echo pkill "$(date)"',
+            'echo killall "`date`"',
+            "echo \"$(printf '%s' x)\" pkill",
+            'grep -e killall <(printf "%s\\n" x)',
+            'echo pkill "$(printf \'%s\' "$(date)")"',
+            "atk wi grep -e pkill",
+            "echo pkill",
+            "echo killall",
+            "gh issue list --search pkill",
+            "gh issue list --search 'pkill|killall' --limit \"$n\"",
+            'printf "%s\\n" pkill "$HOME"',
+            "x=pkill",
+            "echo ok; echo pkill",
+        ],
+    )
+    def test_data_arguments_are_allowed(self, command: str) -> None:
+        """語を検索・表示のデータとして渡す一般の形は、コマンドの種類を問わず許可する。"""
+        assert _check_bash_process_kill_by_pattern(command) is None
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "pkill -f x",
+            "/usr/bin/killall x",
+            "sudo pkill -f x",
+            "xargs pkill",
+            "sh -c 'pkill -f x'",
+            "eval pkill -f x",
+            "docker exec c pkill -f x",
+            "docker run --rm img killall x",
+            "kubectl exec pod -- pkill x",
+            "npm exec -- pkill x",
+            "uv run pkill x",
+            "mise exec -- pkill x",
+            "npx pkill",
+            "echo $(pkill -f x)",
+            "echo `pkill -f x`",
+            'echo pkill "$(date)" "$(killall x)"',
+            'echo pkill "$(printf \'%s\' "$(killall x)")"',
+            "$(echo pkill) -f x",
+            "x=pkill; $x -f y",
+            "x=pkill\n$x -f y",
+            "'pkill -f x'",
+            "echo 'pkill -f x'",
+            "tmux send-keys 'pkill -f x' Enter",
+            "ssh host pkill -f x",
+            "FOO=1 pkill -f x",
+            "{ pkill -f x; }",
+        ],
+    )
+    def test_executable_positions_are_blocked(self, command: str) -> None:
+        """終了コマンドが実行され得る位置にある形は遮断する。"""
+        reason = _check_bash_process_kill_by_pattern(command)
+        assert reason is not None
+        assert "パターン一致によるプロセス終了" in reason
 
 
 class TestBashSelfMatchingPgrep:
