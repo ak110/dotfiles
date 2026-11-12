@@ -247,7 +247,8 @@ class _PythonAnalysis:
                     if isinstance(item, (ast.Assign, ast.AnnAssign)):
                         self.assign(item, local, (*stack, name))
                 result = _combine([self.value(item, local, (*stack, name)) for item in returns])
-                return result if result in {"text", "constant"} else "unknown"
+                # 補助の定数戻り値は計算結果なので、静的定数自体の比較として扱わない。
+                return result if result == "text" else "unknown"
             imported = self.imported_helper(name)
             if imported is not None and name not in stack:
                 analysis, helper_name = imported

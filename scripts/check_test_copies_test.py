@@ -460,3 +460,25 @@ def test_data_html_and_state_logs_are_not_copy_sources(
     assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 0
     report = json.loads(capsys.readouterr().out)
     assert not report["diagnostics"]
+
+
+@pytest.mark.parametrize("imported", [False, True])
+def test_computed_enum_result_is_not_a_static_constant_copy(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    imported: bool,
+) -> None:
+    producer = 'from outcome import CheckOutcome\ndef check_text(text):\n    return CheckOutcome.WARN, "warning"\n'
+    if imported:
+        (tmp_path / "producer.py").write_text(producer, encoding="utf-8")
+    path = tmp_path / "result_test.py"
+    path.write_text(
+        ("from outcome import CheckOutcome\nfrom producer import check_text\n" if imported else producer)
+        + 'def test_result():\n    assert check_text("input")[0] is CheckOutcome.WARN\n'
+        + '    assert check_text("corrected")[0] is not CheckOutcome.WARN\n',
+        encoding="utf-8",
+    )
+    assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert not report["diagnostics"]
+    assert {item["status"] for item in report["files"][0]["functions"]} == {"unclassified"}
