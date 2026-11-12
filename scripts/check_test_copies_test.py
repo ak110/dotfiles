@@ -320,13 +320,15 @@ def test_global_constant_and_await_keep_their_origin(tmp_path: pathlib.Path, cap
 @pytest.mark.parametrize(
     "body",
     [
-        'notice = create_notice({"now": 60})\nassert "stage" in notice\nassert "secret" not in notice\n',
-        'notice = create_notice()\nassert notice.startswith("<notice>")\nassert notice.count("stage") == 1\n',
-        'notice = create_notice()\nassert re.search(r"stage: [0-9]+", notice)\n',
-        'result = cli(["--help"])\nassert result.returncode == 0\nassert "usage:" in result.stdout\n',
+        'notice = create_notice({"now": 60}).get("additionalContext", "")\n'
+        'assert "stage" in notice\nassert "secret" not in notice\n',
+        'notice = create_notice().get("additionalContext", "")\n'
+        'assert notice.startswith("<notice>")\nassert notice.count("stage") == 1\n',
+        'notice = create_notice().get("additionalContext", "")\nassert re.search(r"stage: [0-9]+", notice)\n',
+        'result = subprocess.run(["tool", "--help"])\nassert result.returncode == 0\nassert "usage:" in result.stdout\n',
     ],
 )
-def test_unknown_text_fragment_only_functions_are_candidates(
+def test_public_notice_fragment_only_functions_are_candidates(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     body: str,
@@ -358,7 +360,9 @@ def test_result_state_denial_and_unknown_checks_prevent_shape_only_verdict(
 ) -> None:
     path = tmp_path / "text_shape_test.py"
     path.write_text(
-        'def test_result(tmp_path):\n    result = run()\n    assert "stage" in notice\n    ' + extra + "\n", encoding="utf-8"
+        'def test_result(tmp_path):\n    result = run()\n    notice = result.get("additionalContext", "")\n'
+        '    assert "stage" in notice\n    ' + extra + "\n",
+        encoding="utf-8",
     )
     assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 0
     report = json.loads(capsys.readouterr().out)
@@ -371,7 +375,10 @@ def test_imported_assert_helper_joins_the_whole_function_verdict(
 ) -> None:
     (tmp_path / "helper.py").write_text('def inspect(text):\n    assert "stage" in text\n', encoding="utf-8")
     path = tmp_path / "text_shape_test.py"
-    path.write_text("from helper import inspect\ndef test_notice():\n    inspect(create_notice())\n", encoding="utf-8")
+    path.write_text(
+        'from helper import inspect\ndef test_notice():\n    inspect(create_notice().get("additionalContext", ""))\n',
+        encoding="utf-8",
+    )
     assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 1
     report = json.loads(capsys.readouterr().out)
     assert [(item["id"], item["kinds"]) for item in report["files"][0]["functions"]] == [("test_notice", ["text-only"])]
@@ -386,7 +393,7 @@ def test_state_preparation_and_static_source_presence_do_not_hide_text_only_chec
         "import persistence\nfrom pathlib import Path\ndef prepare():\n"
         '    def update(state):\n        state["started"] = 1\n        return state\n'
         "    assert persistence.update(update)\ndef test_notice():\n    prepare()\n"
-        '    notice = run_notice()\n    assert notice.count("<notice>") == 1\n'
+        '    notice = run_notice().get("additionalContext", "")\n    assert notice.count("<notice>") == 1\n'
         '    for topic in ("stage", "remaining"):\n        assert topic in notice\n'
         '    guidance = Path(__file__).parent / "guide.md"\n    assert guidance.is_file()\n',
         encoding="utf-8",
@@ -412,8 +419,12 @@ def test_one_exception_cannot_cover_two_functions(tmp_path: pathlib.Path, capsys
 @pytest.mark.parametrize(
     ("filename", "source", "status"),
     [
-        ("shape.ts", 'test("notice", () => { expect(notice).toContain("stage"); });', 1),
-        ("shape.rs", '#[test]\nfn notice() { assert!(notice.contains("stage")); }', 1),
+        (
+            "shape.ts",
+            'test("notice", () => { const notice = readFileSync("guide.md"); expect(notice).toContain("stage"); });',
+            1,
+        ),
+        ("shape.rs", '#[test]\nfn notice() { let notice = include_str!("guide.md"); assert!(notice.contains("stage")); }', 1),
         ("shape.rs", '#[test]\nfn result() { assert!(notice.contains("stage") && result.denied); }', 0),
     ],
 )
@@ -429,3 +440,23 @@ def test_foreign_text_shape_and_mixed_boolean_result(
     assert check_test_copies.main(["--root", str(tmp_path), "--json", filename]) == status
     report = json.loads(capsys.readouterr().out)
     assert bool(report["diagnostics"]) == bool(status)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'html = render_html("<script>input</script>")\nassert "&lt;script&gt;" in html\nassert "<script>" not in html\n',
+        'state_transition("finished")\nassert "finished" in caplog.text\nassert caplog.text.count("finished") == 1\n',
+        'text = transform("input")\nassert "output" in text\n',
+    ],
+)
+def test_data_html_and_state_logs_are_not_copy_sources(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    body: str,
+) -> None:
+    path = tmp_path / "result_test.py"
+    path.write_text("def test_result(caplog):\n    " + body.replace("\n", "\n    "), encoding="utf-8")
+    assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert not report["diagnostics"]

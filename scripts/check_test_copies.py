@@ -6,7 +6,9 @@ PythonはASTで固定値、ソース読取、help/説明/通知、定数属性�
 コメント・文字列を分離した括弧構造からtest/it、#[test]とassertを抽出する。
 TS/Rustの解析は全言語文法の検証ではなく、対応する宣言・比較式の部分解析である。
 括弧や文字列の不整合、Python構文エラー、読取失敗は終了2とする。
-出自に加え、検査全体が固定テキスト断片の包含・先頭/末尾・回数・regexだけの形も候補にする。
+公開hook通知フィールドadditionalContextの本文も既知のテキストとして扱い、
+検査全体が固定断片の包含・先頭/末尾・回数・regexだけの形を候補にする。
+一般のHTML変換・状態ログなど、出自不明の文字列比較は候補にしない。
 未知の比較や検査式内の呼出し、入力変換・保存・拒否等を検査する関数は候補に断定しない。
 動的生成、解決不能なimport、複雑な別名・分岐・マクロには見逃しがある。
 候補は独立契約の不存在を証明せず、自動削除もしない。終了1は人による
@@ -22,6 +24,7 @@ analyzed/out_of_scope/error。通常成功は無出力、--jsonは全対象を�
 import argparse
 import ast
 import dataclasses
+import functools
 import io
 import json
 import os
@@ -91,6 +94,7 @@ def _combine(values: list[str]) -> str:
     return "literal" if all(value == "literal" for value in values) else "unknown"
 
 
+@functools.lru_cache(maxsize=16384)
 def _name(node: ast.AST) -> str:
     return ast.unparse(node)
 
@@ -104,8 +108,10 @@ class _PythonAnalysis:
         loaded: dict[pathlib.Path, _PythonAnalysis] | None = None,
     ) -> None:
         self.path, self.root = path, root
+        self.tree = tree
         self.loaded = loaded if loaded is not None else {}
         self.imports: dict[str, tuple[str, int]] = {}
+        self.import_cache: dict[str, tuple[_PythonAnalysis, str] | None] = {}
         if path is not None:
             self.loaded[path] = self
         self.helpers = {node.name: node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
@@ -131,6 +137,11 @@ class _PythonAnalysis:
                         self.globals[target.id] = "constant"
 
     def imported_helper(self, name: str) -> tuple[_PythonAnalysis, str] | None:
+        if name not in self.import_cache:
+            self.import_cache[name] = self._imported_helper(name)
+        return self.import_cache[name]
+
+    def _imported_helper(self, name: str) -> tuple[_PythonAnalysis, str] | None:
         if self.path is None or self.root is None or name.split(".")[0] not in self.imports:
             return None
         alias, *tail = name.split(".")
@@ -191,6 +202,8 @@ class _PythonAnalysis:
                         local[target.id] = kind
             return self.value(node.elt, local, stack)
         if isinstance(node, ast.Subscript):
+            if isinstance(node.slice, ast.Constant) and node.slice.value == "additionalContext":
+                return "text"
             return self.value(node.value, env, stack)
         if isinstance(node, ast.JoinedStr):
             return _combine(
@@ -201,6 +214,13 @@ class _PythonAnalysis:
         if isinstance(node, ast.Call):
             name = _name(node.func)
             leaf = name.rsplit(".", 1)[-1]
+            if (
+                leaf == "get"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value == "additionalContext"
+            ):
+                return "text"
             if leaf in {"read_text", "read_bytes"} and isinstance(node.func, ast.Attribute):
                 return "text" if self.value(node.func.value, env, stack) in _COPY else "unknown"
             if leaf in {"getsource", "getdoc", "format_help", "format_usage"}:
@@ -316,8 +336,10 @@ class _PythonAnalysis:
                 return None
         else:
             return None
-        if isinstance(target, ast.Subscript) or any(
-            isinstance(child, ast.Call) and self.value(child, env) == "unknown" for child in ast.walk(target)
+        if (
+            self.value(target, env) != "text"
+            or isinstance(target, ast.Subscript)
+            or any(isinstance(child, ast.Call) and self.value(child, env) == "unknown" for child in ast.walk(target))
         ):
             return None
         env["__text-target:" + _name(target)] = "yes"
@@ -470,9 +492,12 @@ class _PythonAnalysis:
         return checks
 
 
-def _python(source: str, path: pathlib.Path, root: pathlib.Path) -> tuple[list[_Function], dict[int, str]]:
-    tree = ast.parse(source)
-    analysis = _PythonAnalysis(tree, path, root)
+def _python(
+    source: str, path: pathlib.Path, root: pathlib.Path, loaded: dict[pathlib.Path, _PythonAnalysis]
+) -> tuple[list[_Function], dict[int, str]]:
+    analysis = loaded.get(path)
+    if analysis is None:
+        analysis = _PythonAnalysis(ast.parse(source), path, root, loaded)
     functions: list[_Function] = []
 
     def visit(body: list[ast.stmt], prefix: str = "") -> None:
@@ -509,7 +534,7 @@ def _python(source: str, path: pathlib.Path, root: pathlib.Path) -> tuple[list[_
                     )
                 )
 
-    visit(tree.body)
+    visit(analysis.tree.body)
     comments = {
         token.start[0]: token.string
         for token in tokenize.generate_tokens(io.StringIO(source).readline)
@@ -703,19 +728,6 @@ def _foreign_checks(
             if opening in pairs:
                 content = tokens[opening + 1 : pairs[opening]]
                 kind = _foreign_value(content, env)
-                if (
-                    kind in {"unknown", "literal"}
-                    and not any(item.value in {"&&", "||"} for item in content)
-                    and any(item.value in {"contains", "starts_with", "ends_with"} for item in content)
-                    and any(item.literal and item.value.startswith(('"', "'", "r")) for item in content)
-                ):
-                    calls = [
-                        item.value
-                        for position, item in enumerate(content[:-1])
-                        if content[position + 1].value == "(" and item.value.isidentifier()
-                    ]
-                    if all(name in {"contains", "starts_with", "ends_with", "count", "len"} for name in calls):
-                        kind = "text"
                 checks.append("text-only" if kind == "text" else "constant-only" if kind == "constant" else "unknown")
                 index = pairs[opening]
         elif token.value == "expect" and index + 1 in pairs:
@@ -733,17 +745,7 @@ def _foreign_checks(
                 matcher = next((position for position in range(close + 1, matcher_end) if position in pairs), None)
                 if matcher is not None:
                     expected = tokens[matcher + 1 : pairs[matcher]]
-                    if (
-                        kind == "unknown"
-                        and not any(item.value in {"(", "["} for item in content)
-                        and any(item.value in {"toContain", "toMatch", "toStartWith", "toEndWith"} for item in tail)
-                        and len(expected) == 1
-                        and expected[0].literal
-                        and not expected[0].value.isdecimal()
-                    ):
-                        kind = "text"
-                    else:
-                        kind = _combine([kind, _foreign_value(expected, env)])
+                    kind = _combine([kind, _foreign_value(expected, env)])
                 checks.append("text-only" if kind == "text" else "constant-only" if kind == "constant" else "unknown")
             index = close
         elif token.value.startswith("assert") and index + 1 < end:
@@ -889,6 +891,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     files: list[dict[str, object]] = []
     diagnostics: list[dict[str, object]] = []
+    loaded: dict[pathlib.Path, _PythonAnalysis] = {}
     try:
         if not root.is_dir():
             raise ValueError(f"rootがディレクトリではない: {root}")
@@ -908,7 +911,7 @@ def main(argv: list[str] | None = None) -> int:
                 if language is None:
                     continue
                 functions, comments = (
-                    _python(source, path, root) if language == "python" else _foreign(source, language == "rust")
+                    _python(source, path, root, loaded) if language == "python" else _foreign(source, language == "rust")
                 )
                 entry["status"] = "analyzed" if functions else "out_of_scope"
                 for line, message in _exceptions(functions, comments):
