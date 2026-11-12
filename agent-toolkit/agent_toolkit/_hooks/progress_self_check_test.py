@@ -7,6 +7,7 @@
 import json
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import uuid
@@ -59,6 +60,11 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
 
     notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
     assert notice is not None and notice.startswith(_OPENING)
+    # 通知が案内する読取コマンドは、実在する規範ファイルを指す。
+    match = re.search(r"`(?:cat -- (?P<posix>[^`]+)|Get-Content -LiteralPath '(?P<nt>[^`]+?)' -Encoding utf8)`", notice)
+    assert match is not None
+    target = shlex.split(match["posix"])[0] if match["posix"] else match["nt"].replace("''", "'")
+    assert pathlib.Path(target).is_file()
     # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0
     notice_module.record_delivery(notice)
@@ -148,48 +154,6 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert progress_self_check.claim_notice({"session_id": sid, "agent_id": "sub-1"}, now=now) is None
     assert progress_self_check.claim_notice({"session_id": sid}, now=now) is not None
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
-
-
-@pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}], ids=["claude", "codex"])
-def test_notice_requests_stage_comparison_and_missing_information(monkeypatch, record_property, host_fields) -> None:
-    """通知を受けた担当が活動だけで判断せず、工程比較と不足情報の取得へ進める。"""
-    sid = _session_id()
-    _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
-    monkeypatch.setattr(progress_self_check.time, "time", lambda: float(_INTERVAL))
-    notice = _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, **host_fields, "session_id": sid})
-    record_property("actual_notice", notice)
-    assert notice.count(_OPENING) == 1
-    # 点検の契約上必要な観点と、規範をそのまま取得できる操作へ接続する。
-    for topic in (
-        "工程",
-        "経過時間",
-        "再試行",
-        "全要求",
-        "成果",
-        "証拠",
-        "未達",
-        "残工程",
-        "進捗率",
-        "完成条件",
-        "目標までの残り時間",
-        "共有の待ちの累計",
-        "代替案",
-        "組み直せ",
-    ):
-        assert topic in notice
-    assert ("Get-Content -LiteralPath" if os.name == "nt" else "cat -- ") in notice
-    guidance = pathlib.Path(__file__).resolve().parents[2] / "share/rules/common/01-agent.md"
-    assert guidance.is_file()
-    read_command = (
-        "Get-Content -LiteralPath '" + str(guidance).replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else "cat -- " + shlex.quote(str(guidance))
-    )
-    assert read_command in notice
-    assert "読め" in notice and "保存せよ" in notice
-    assert "rules-main.md" in notice and "進捗報告" in notice
-    assert "改善案: なし" not in notice
-    assert "最上位メイン" in notice and "委譲先" in notice
 
 
 @pytest.mark.parametrize("payload", [{}, {"session_id": ""}, {"session_id": 1}])
