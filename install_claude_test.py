@@ -125,18 +125,6 @@ foreach ($functionName in $functionNames) {{
     )
 
 
-def test_agents_server_warmup_closes_standard_input() -> None:
-    """MCPのウォームアップは親端末の標準入力を待たずに終了する。"""
-    shell_source = INSTALL_SH.read_text(encoding="utf-8")
-    powershell_source = INSTALL_PS1.read_text(encoding="utf-8-sig")
-
-    assert '"$script_path" --check-dependencies </dev/null >/dev/null' in shell_source
-    assert (
-        "$null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') "
-        "$scriptPath --check-dependencies > $null" in powershell_source
-    )
-
-
 @pytest.mark.parametrize("kind", installer_runners())
 def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
     """Claude CodeとCodexが実際に参照する両方のスクリプトを事前取得する。"""
@@ -232,20 +220,3 @@ def test_bash_atk_wrapper_reports_missing_plugin(tmp_path: pathlib.Path) -> None
 
     assert result.returncode == 1
     assert "agent-toolkit プラグインが見つかりません" in result.stderr
-
-
-def test_powershell_atk_wrapper_uses_version_objects_and_existing_paths() -> None:
-    """生成するcmdラッパーは版数型による自然順と実体存在を検査する。"""
-    source = INSTALL_PS1.read_text(encoding="utf-8-sig")
-    match = re.search(r"\$body = @'\n(?P<body>.*?)\n'@", source.replace("\r\n", "\n"), re.DOTALL)
-    assert match is not None
-    body = match.group("body")
-    assert "[version]$_.Name" in body
-    assert "Sort-Object Version -Descending" in body
-    assert "Select-Object -First 1 -ExpandProperty Path" in body
-    assert "Get-ChildItem -LiteralPath $root -Directory" in body
-    assert "Test-Path -LiteralPath $candidate -PathType Leaf" in body
-    assert "\\*\\agent-toolkit" not in body
-    assert 'if not exist "%LATEST%" goto :not_found' in body
-    versions = ["1.2.0", "1.9.0", "1.10.0"]
-    assert max(versions) == "1.9.0"

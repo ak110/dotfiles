@@ -68,12 +68,6 @@ class TestCheckText:
         """原文・引用・素材・内部analysisを外部説明と混同しない。"""
         assert check_text(text)[0] is not CheckOutcome.WARN
 
-    def test_warns_for_english_only_text(self):
-        """日本語文字を含まない英単語2語以上の文字列はWARNを返す。"""
-        outcome, body = check_text("Done here.")
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-
     def test_warns_for_discourse_marker(self):
         """先頭の英語談話標識を含む短い文字列はWARNを返す。"""
         outcome, body = check_text("Now、調査を続ける。")

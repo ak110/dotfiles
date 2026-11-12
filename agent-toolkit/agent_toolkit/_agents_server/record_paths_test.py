@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._agents_server import backends, record_paths
+from agent_toolkit._agents_server import record_paths
 
 
 @pytest.mark.parametrize(
@@ -31,15 +31,6 @@ from agent_toolkit._agents_server import backends, record_paths
 def test_launch_identifier_formats(identifier: object, accepted: bool) -> None:
     """受理形式は起動結果の種類に従い、観測例の長さに固定しない。"""
     assert record_paths.is_launch_identifier(identifier) is accepted
-
-
-def test_record_engines_match_supported_engines() -> None:
-    """記録を探索できる実行系は、agents_serverが起動できる実行系と一致する。
-
-    実行系を追加して記録の探索を追随させないと、その実行系の委譲先は`atk agents logs`と
-    `atk run-script session-review-evidence`の双方で記録なしとして扱われる。
-    """
-    assert record_paths.RECORD_ENGINES == backends.SUPPORTED_ENGINES
 
 
 def test_claude_subagent_record_is_found_by_its_agent_id(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

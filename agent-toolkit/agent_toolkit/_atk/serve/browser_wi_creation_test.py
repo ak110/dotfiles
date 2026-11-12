@@ -19,6 +19,41 @@ pytestmark = [
 
 
 @pytest.mark.asyncio(loop_scope="session")
+async def test_work_item_hostile_html_keeps_text_without_execution_or_external_requests(
+    browser_harness: _BrowserHarness,
+) -> None:
+    """WIの悪意ある本文は文字として保持し、能動的なHTMLと外部通信を発生させない。"""
+    harness = browser_harness
+    hostile = (
+        "安全な本文\n\n<script>window.__wiXss = 1</script>\n\n"
+        '<img src="https://invalid.example/tracker" onerror="window.__wiXss = 2">\n\n'
+        "[危険リンク](javascript:window.__wiXss=3)\n"
+    )
+    _entry_path(harness.root, "hostile.md").write_text(
+        "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\n---\n\n" + hostile, encoding="utf-8"
+    )
+    page = harness.page
+    requests: list[str] = []
+    page.on("request", lambda request: requests.append(request.url))
+
+    async def allow_local_only(route: playwright.async_api.Route) -> None:
+        if route.request.url.startswith(harness.base_url + "/"):
+            await route.continue_()
+        else:
+            await route.abort()
+
+    await page.route("**/*", allow_local_only)
+    await page.goto(harness.base_url + "/?filename=hostile.md")
+    body = page.locator("#detail-content")
+    await playwright.async_api.expect(body).to_contain_text("安全な本文")
+    await playwright.async_api.expect(body).to_contain_text("<script>window.__wiXss = 1</script>")
+    assert await body.locator("script, img, [onerror], [onload], a[href^='javascript:']").count() == 0
+    assert await page.evaluate("window.__wiXss") is None
+    assert any(url.endswith("/api/entries/hostile.md") for url in requests)
+    assert all(url.startswith(harness.base_url + "/") for url in requests)
+
+
+@pytest.mark.asyncio(loop_scope="session")
 async def test_batch_input_error_shows_reason_and_fix_action(browser_harness: _BrowserHarness) -> None:
     """一括登録の形式エラーは、理由と入力を直す操作を登録ダイアログへ表示し、入力を保持する。"""
     harness = browser_harness
@@ -324,22 +359,3 @@ async def test_create_failure_is_visible_inside_open_dialog(browser_harness: _Br
     await playwright.async_api.expect(create_dialog.locator("#create-alert")).to_be_visible()
     await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
     await page.unroute("**/api/entries", fail_create)
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_create_dialog_is_wider_but_narrower_than_detail(browser_harness: _BrowserHarness) -> None:
-    """横幅が許す画面では、新規追加ダイアログを従来（42rem）より広く、詳細ダイアログ（72rem）より狭くする。"""
-    page = browser_harness.page
-    await page.set_viewport_size({"width": 1600, "height": 900})
-    await page.goto(browser_harness.base_url + "/")
-    await page.locator("#create-button").click()
-    dialog = page.get_by_role("dialog", name="新規追加")
-    await dialog.wait_for(state="visible")
-    widths = await page.evaluate(
-        """() => {
-          const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-          return {create: document.getElementById('create-dialog').getBoundingClientRect().width, rem};
-        }"""
-    )
-    await page.keyboard.press("Escape")
-    assert 42 * widths["rem"] < widths["create"] < 72 * widths["rem"]

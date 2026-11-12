@@ -135,42 +135,6 @@ async def test_session_non_assistant_events_stay_preformatted(
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_session_thinking_with_text_opens_like_assistant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
-) -> None:
-    """本文のある思考・要約は発言と同じく開いて排他の対象から外し、空の思考は閉じて排他の対象に残す。"""
-    path = _write_local_session(
-        tmp_path,
-        "thinking-open",
-        {
-            "type": "assistant",
-            "timestamp": "2026-09-30T00:00:01Z",
-            "message": {
-                "content": [
-                    {"type": "thinking", "thinking": ""},
-                    {"type": "thinking", "thinking": "本文のある思考"},
-                    {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
-                    {"type": "text", "text": "発言"},
-                ]
-            },
-        },
-    )
-    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
-        await _open_session(page, base_url, "browser-test", path)
-        thinking = page.locator("#detail .event.kind-thinking")
-        await playwright.async_api.expect(thinking).to_have_count(2)
-        empty, filled = thinking.nth(0), thinking.nth(1)
-        await playwright.async_api.expect(filled).to_have_attribute("open", "")
-        await playwright.async_api.expect(filled).not_to_have_attribute("data-exclusive-event", "true")
-        await playwright.async_api.expect(page.locator("#detail .event.kind-assistant")).to_have_attribute("open", "")
-        await playwright.async_api.expect(empty).not_to_have_attribute("open", "")
-        await playwright.async_api.expect(empty).to_have_attribute("data-exclusive-event", "true")
-        # 排他の項目を開いても、本文のある思考は閉じない。
-        await page.locator("#detail .event.kind-tool_call summary").click()
-        await playwright.async_api.expect(filled).to_have_attribute("open", "")
-
-
-@pytest.mark.asyncio(loop_scope="session")
 async def test_session_assistant_markdown_escapes_raw_html(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:

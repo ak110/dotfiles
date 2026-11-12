@@ -10,11 +10,13 @@ import pytest
 
 from agent_toolkit._atk.serve import app as serve_app
 from agent_toolkit._atk.serve import config, state, wi_operations
-from agent_toolkit._atk.wi import add as wi_add_module
+from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment
+from agent_toolkit._testing import wi_entry_files as wi_files
 from agent_toolkit._testing.serve_support import (
     _BATCH_TEXT,
+    _disable_wi_git,
     _patch_batch_repo_operations,
     _patch_comment_edit_dependencies,
     _session_review_awi,
@@ -198,23 +200,22 @@ def test_add_omits_frontmatter_when_source_is_the_only_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """投入元だけのfrontmatterを除いた本文へ空の区切りを残さない。"""
-    captured: dict[str, object] = {}
-
-    def add_entries(_private_notes: pathlib.Path, **kwargs: typing.Any) -> list[str]:
-        captured.update(kwargs)
-        return ["entry.md"]
-
-    monkeypatch.setattr(wi_add_module, "add_entries", add_entries)
-
-    result = wi_operations.Operations(tmp_path).add(
+    """投入元だけのfrontmatterを除いて本文を保存し、空の区切りを残さない。"""
+    _disable_wi_git(monkeypatch)
+    filenames = wi_operations.Operations(tmp_path).add(
         ["---\nsource: add-awi\n---\n\n本文"],
         entry_type="awi",
         target_repo="github.com/example/repo",
     )
-
-    assert result == ["entry.md"]
-    assert captured["messages"] == ["\n本文"]
+    assert len(filenames) == 1
+    content = wi_files.entry_path(tmp_path, filenames[0]).read_text(encoding="utf-8")
+    parsed = wi_entries.parse_frontmatter(content)
+    assert parsed is not None
+    metadata, body = parsed
+    assert metadata["target_repo"] == "github.com/example/repo"
+    assert metadata["type"] == "awi"
+    assert "source" not in metadata
+    assert body.strip() == "本文"
 
 
 @pytest.mark.asyncio

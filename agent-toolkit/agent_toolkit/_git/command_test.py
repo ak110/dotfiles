@@ -122,32 +122,21 @@ def test_run_passes_text_input_without_newline_conversion(tmp_path: pathlib.Path
     received = tmp_path / "received.bin"
     script = tmp_path / "read_stdin.py"
     script.write_text(
-        "import pathlib, sys\npathlib.Path(sys.argv[1]).write_bytes(sys.stdin.buffer.read())\n",
+        "import pathlib, sys\npathlib.Path(sys.argv[1]).write_bytes(sys.stdin.buffer.read())\n"
+        "sys.stdout.buffer.write('出力\\r\\n次行\\n'.encode('utf-8'))\n"
+        "sys.stderr.buffer.write('診断\\r\\n'.encode('utf-8'))\n",
         encoding="utf-8",
     )
     shell_command = f'"{pathlib.Path(sys.executable).as_posix()}" "{script.as_posix()}" "{received.as_posix()}"'
 
-    result = subject.run(["-c", f"alias.dump=!{shell_command}", "dump"], tmp_path, text=True, input="a\nb\n日本語\n")
+    result = subject.run(
+        ["-c", f"alias.dump=!{shell_command}", "dump"], tmp_path, text=True, capture_output=True, input="a\nb\n日本語\n"
+    )
 
     assert result.returncode == 0
     assert received.read_bytes() == "a\nb\n日本語\n".encode()
-
-
-def test_run_hands_text_input_to_subprocess_as_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
-    """文字列の入力は`subprocess`のテキストモードを経由せず、バイト列で渡す（Windowsの改行変換を避ける）。"""
-    captured: dict[str, object] = {}
-
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        captured.update(kwargs)
-        return subprocess.CompletedProcess(command, 0, b"out\r\nline\n", b"")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    result = subject.run(["hash-object", "--stdin"], text=True, capture_output=True, input="a\nb\n")
-
-    assert captured["input"] == b"a\nb\n"
-    assert not captured.get("text")
-    assert result.stdout == "out\nline\n"
+    assert result.stdout == "出力\n次行\n"
+    assert result.stderr == "診断\n"
 
 
 def test_scoped_deadline_preserves_defaults_explicit_limits_and_restores_context(monkeypatch):

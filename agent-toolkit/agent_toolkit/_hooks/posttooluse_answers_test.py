@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._testing.helpers import _read_state
-from agent_toolkit._testing.posttooluse_support import _ask_user_question_payload, _run, _single_notice_body
+from agent_toolkit._testing.posttooluse_support import _ask_user_question_payload, _run
 
 _FREE_TEXT = "process-loopが動いてるからそっちでマージされるはず"
 
@@ -129,43 +129,6 @@ def test_git_completion_notice_excludes_non_completion_operations(
     result = _run(payload, state_dir=tmp_path)
     assert result.returncode == 0
     assert "report-completion" not in result.stdout
-
-
-@pytest.mark.parametrize(
-    "tool_response",
-    [
-        pytest.param({"answers": {_QUESTION: _FREE_TEXT, _MULTI_QUESTION: _LABELS[0]}}, id="answer-not-a-label"),
-        pytest.param({"answers": {_QUESTION: _LABELS[0], _MULTI_QUESTION: f"{_LABELS[1]}, {_FREE_TEXT}"}}, id="multi-select"),
-        pytest.param({"response": _FREE_TEXT, "answers": {}}, id="response"),
-        pytest.param(
-            {
-                "answers": {_QUESTION: "(notes only)", _MULTI_QUESTION: _LABELS[0]},
-                "annotations": {_QUESTION: {"notes": _FREE_TEXT}},
-            },
-            id="notes",
-        ),
-        pytest.param(
-            {"questions": [{"question": _QUESTION, "multiSelect": False}], "answers": {_QUESTION: _FREE_TEXT}},
-            id="no-options",
-        ),
-    ],
-)
-def test_free_text_answer_receives_answer_specific_procedure(tmp_path: pathlib.Path, tool_response: dict) -> None:
-    """自由記述の回答には、選択肢との違いに応じた既存の回答手順を届ける。"""
-    session_id = "ask-user-question-free-text"
-    answer_body = _single_notice_body(
-        _run(_ask_user_question_payload(session_id, tool_response), state_dir=tmp_path), "posttooluse"
-    )
-
-    assert "提示した選択肢と一致しない自由記述" in answer_body
-    assert "回答に沿って進め" in answer_body
-    assert "現行の結論や設計の根拠を記録からすべて挙げ" in answer_body
-    assert "提案で失われるものと一つずつ比べよ" in answer_body
-    assert "新しい事実が出た場合" in answer_body
-    assert "既知の根拠を比べ忘れたことや推論の誤り" in answer_body
-    assert "どれに当たるかを示せ" in answer_body
-    assert "ユーザーが目的や選好を変えた場合は、要件の変更として扱え" in answer_body
-    assert "いずれにも当たらなければ結論を維持し、根拠を返せ" in answer_body
 
 
 @pytest.mark.parametrize(

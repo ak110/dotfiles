@@ -46,10 +46,22 @@ def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: p
     assert specific["permissionDecision"] == "deny"
     assert "引き継ぎ記録先" in specific["permissionDecisionReason"]
     valid = prompt + f'引き継ぎ記録先: {tmp_path / "引継ぎ 記録.md"}\n書込担当一覧: ["session-main"]\n'
-    assert _invoke(tool_name, valid, tmp_path).returncode == 0
+    result = _invoke_after_generic_reissue(tool_name, valid, tmp_path)
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
 
 
-def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None) -> subprocess.CompletedProcess[str]:
+def _invoke_after_generic_reissue(
+    tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """汎用Agent/Taskでは初回拒否後の同一入力、MCPでは初回の結果を検査する。"""
+    return _invoke(tool_name, prompt, tmp_path, mode, reissue_generic=tool_name in {"Agent", "Task"})
+
+
+def _invoke(
+    tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None, *, reissue_generic: bool = False
+) -> subprocess.CompletedProcess[str]:
     tool_input = {"prompt": prompt, "cwd": str(tmp_path), "model_type": "execute"}
     if mode is not None:
         tool_input["mode"] = mode
@@ -66,15 +78,20 @@ def _invoke(tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | Non
         env,
     )
     assert recorded.returncode == 0
-    return _run(
-        {
-            "tool_name": tool_name,
-            "tool_input": tool_input,
-            "session_id": session_id,
-            "cwd": str(tmp_path),
-        },
-        env_overrides=env,
-    )
+    payload = {
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "session_id": session_id,
+        "cwd": str(tmp_path),
+    }
+    result = _run(payload, env_overrides=env)
+    if reissue_generic:
+        assert result.returncode == 0 and not result.stderr
+        specific = json.loads(result.stdout)["hookSpecificOutput"]
+        assert specific["permissionDecision"] == "deny"
+        assert "組み込みの汎用定義" in specific["permissionDecisionReason"]
+        result = _run(payload, env_overrides=env)
+    return result
 
 
 @pytest.mark.parametrize(
@@ -101,16 +118,24 @@ def test_free_text_start_pointing_task_document_is_warned(tool_name: str, mode: 
 @pytest.mark.parametrize("mode", [None, "shell"])
 def test_task_and_shell_modes_are_not_free_text_starts(mode: str | None, tmp_path: pathlib.Path) -> None:
     """taskとshellは`prompt`を受理しないmodeであり、本文の遮断対象にしない。入力の拒否はサーバーが行う。"""
-    result = _invoke("mcp__plugin_agent-toolkit_agents_server__start", f"{_EXEC_DOCUMENT}の手順を実行せよ。\n", tmp_path, mode)
+    result = _invoke_after_generic_reissue(
+        "mcp__plugin_agent-toolkit_agents_server__start", f"{_EXEC_DOCUMENT}の手順を実行せよ。\n", tmp_path, mode
+    )
 
     assert result.returncode == 0
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
 
 
 def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) -> None:
     """`<役割名>.subagent.md`を指さない自由本文の起動は遮断しない。"""
-    result = _invoke("mcp__plugin_agent-toolkit_agents_server__start", "対象の所在を調べて返す。", tmp_path, "explore")
+    result = _invoke_after_generic_reissue(
+        "mcp__plugin_agent-toolkit_agents_server__start", "対象の所在を調べて返す。", tmp_path, "explore"
+    )
 
     assert result.returncode == 0
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
 
 
 @pytest.mark.parametrize(
@@ -127,8 +152,10 @@ def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) ->
 def test_task_document_reading_passes(tool_name: str, mode: str | None, operation: str, tmp_path: pathlib.Path) -> None:
     """役割の実行と同じ実在文書を読解・引用・比較の対象にしても、委譲を通す。"""
     other = _SHARE_DIR / "reader-fit-review.subagent.md"
-    result = _invoke(tool_name, f"{_EXEC_DOCUMENT}と{other}の{operation}", tmp_path, mode)
+    result = _invoke_after_generic_reissue(tool_name, f"{_EXEC_DOCUMENT}と{other}の{operation}", tmp_path, mode)
     assert result.returncode == 0
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
 
 
 @pytest.mark.parametrize(("tool_name", "mode"), [("mcp__agents_server__start", "explore"), ("Agent", None)])
@@ -146,8 +173,12 @@ def test_task_document_reading_passes(tool_name: str, mode: str | None, operatio
 def test_quoted_execution_command_passes(tool_name: str, mode: str | None, quoted: str, tmp_path: pathlib.Path) -> None:
     """実行命令の例を引用した入力を、実際の役割起動と区別する。"""
     command = f"{_EXEC_DOCUMENT}の手順を実行せよ。"
-    result = _invoke(tool_name, quoted.format(command=command) + "\nこの命令の入力書式を説明する。", tmp_path, mode)
+    result = _invoke_after_generic_reissue(
+        tool_name, quoted.format(command=command) + "\nこの命令の入力書式を説明する。", tmp_path, mode
+    )
     assert result.returncode == 0
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
 
 
 @pytest.mark.parametrize(("tool_name", "mode"), [("mcp__agents_server__start", "write"), ("Task", None)])
@@ -212,8 +243,14 @@ def test_reader_fit_review_inputs_pass_task_document_hook(tmp_path: pathlib.Path
         f"修正範囲: 保存節の差分、直接影響は読込節\n比較資料: {materials}\n"
     )
     rereview = initial + ("レビュー種別: 再レビュー\n未解決事項: なし\n")
-    assert _invoke("Agent", initial, tmp_path).returncode == 0
-    assert _invoke("Agent", rereview, tmp_path).returncode == 0
+    result = _invoke_after_generic_reissue("Agent", initial, tmp_path)
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
+    result = _invoke_after_generic_reissue("Agent", rereview, tmp_path)
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
     rejected = _invoke("Agent", rereview + "追加説明: 全文から指摘して\n", tmp_path)
     assert rejected.returncode == 0
     assert "追加説明" in _additional_context(rejected)
@@ -230,7 +267,10 @@ def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathl
         f"引き継ぎ記録先: {tmp_path / 'handoff.md'}\n"
         f"レビュー種別: 引き継ぎ再レビュー\nround: 2\n前回確認版: {tmp_path / 'previous.md'}\n"
     )
-    assert _invoke("Agent", prompt, tmp_path).returncode == 0
+    result = _invoke_after_generic_reissue("Agent", prompt, tmp_path)
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
 
 
 def test_agent_prompt_with_role_preface_before_command_is_warned(tmp_path: pathlib.Path) -> None:
@@ -314,9 +354,11 @@ def test_rephrased_execution_command_is_warned(tool_name: str, mode: str | None,
 )
 def test_reading_and_command_examples_pass(tool_name: str, mode: str | None, prompt: str, tmp_path: pathlib.Path) -> None:
     """役割文書の読解・比較・適合確認と、括弧やコードに載せた命令例は実行の命令として扱わない。"""
-    result = _invoke(tool_name, prompt.format(document=_EXEC_DOCUMENT), tmp_path, mode)
+    result = _invoke_after_generic_reissue(tool_name, prompt.format(document=_EXEC_DOCUMENT), tmp_path, mode)
 
     assert result.returncode == 0
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"
 
 
 def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathlib.Path) -> None:
@@ -326,4 +368,7 @@ def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathl
         f'引き継ぎ記録先: {tmp_path / "handoff.md"}\n書込担当一覧: ["session-main"]\n'
     )
 
-    assert _invoke("Agent", prompt, tmp_path).returncode == 0
+    result = _invoke_after_generic_reissue("Agent", prompt, tmp_path)
+    assert result.returncode == 0 and not result.stderr
+    specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    assert specific.get("permissionDecision") != "deny"

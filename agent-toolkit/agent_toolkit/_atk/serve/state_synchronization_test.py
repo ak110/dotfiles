@@ -3,7 +3,6 @@
 # pylint: disable=protected-access
 
 import asyncio
-import contextlib
 import pathlib
 import typing
 
@@ -11,8 +10,10 @@ import pytest
 import watchdog.events
 
 from agent_toolkit._atk.serve import state, wi_operations
+from agent_toolkit._atk.wi import constants as wi_constants
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._testing.serve_support import _BlockingSync, _FakeTimer, _recorder, _sync_app
+from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.serve_support import _BlockingSync, _FakeTimer, _sync_app
 
 
 @pytest.mark.asyncio
@@ -97,45 +98,70 @@ async def test_cancelled_sync_request_does_not_cancel_shared_sync(
     assert await response.get_json() == {"synced": True}
 
 
-def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """状態監視は年月配置を含むキューrootを再帰監視する。"""
-    current = state.ServeState(tmp_path)
-    scheduled: list[tuple[str, bool]] = []
-    observer = state.watchdog.observers.Observer()
-    monkeypatch.setattr(state.watchdog.observers, "Observer", lambda: observer)
-    monkeypatch.setattr(
-        observer,
-        "schedule",
-        lambda _handler, path, recursive=False: scheduled.append((path, recursive)),
-    )
-    monkeypatch.setattr(observer, "start", lambda: None)
-    loop = asyncio.new_event_loop()
-    try:
-        current.start(loop)
-        assert scheduled == [(str(tmp_path), True)]
-        assert not (tmp_path / "awi").exists()
-        assert not (tmp_path / "uwi").exists()
-    finally:
-        current.stop()
-        loop.close()
+@pytest.mark.asyncio
+async def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path) -> None:
+    """年月配下の各状態のファイルを追加・変更・削除すると、購読者へ通知する。"""
+    directory = tmp_path / "2026" / "11"
+    directory.mkdir(parents=True)
+    async with state.ServeState(tmp_path, debounce_seconds=0.01) as current:
+        events = current.events(heartbeat=30)
+        assert (await anext(events)).startswith("event: subscribed")
+        try:
+            for state_name in wi_constants.WI_STATES:
+                path = directory / f"{state_name}.md"
+                original = f"---\ntype: awi\nstate: {state_name}\n---\n\n元の本文\n"
+                await asyncio.to_thread(path.write_text, original, encoding="utf-8")
+                assert (await asyncio.wait_for(anext(events), timeout=5)).startswith("event: changed")
+                await asyncio.to_thread(path.write_text, original + "追記\n", encoding="utf-8")
+                assert (await asyncio.wait_for(anext(events), timeout=5)).startswith("event: changed")
+                await asyncio.to_thread(path.unlink)
+                assert (await asyncio.wait_for(anext(events), timeout=5)).startswith("event: changed")
+        finally:
+            await events.aclose()
 
 
 def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """エンドユーザーの明示的な同期はレート制限を経由せず、毎回未送信commitをpushしてからpullする。"""
-    calls: list[str] = []
+    """連続した明示同期も未送信commitを送信し、直後の遠隔変更を取り込む。"""
+    remote = git_repository.init_bare_repository(tmp_path / "remote.git")
+    notes = git_repository.init_repository(
+        tmp_path / "notes", initial_branch="main", origin=str(remote), files={"seed.md": "初期本文"}, commit_message="初期化"
+    )
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    peer = tmp_path / "peer"
+    git_repository.run_git(tmp_path, "clone", str(remote), str(peer))
+    operations = wi_operations.Operations(notes)
+    for index in range(2):
+        outgoing = notes / f"local-{index}.md"
+        outgoing.write_text(f"送信本文{index}", encoding="utf-8")
+        git_repository.commit_all(notes, "ローカル更新")
+        assert operations.sync() is True
+        assert git_repository.git_output(remote, "show", f"main:{outgoing.name}") == f"送信本文{index}"
 
-    @contextlib.contextmanager
-    def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
-        yield
+        git_repository.run_git(peer, "pull", "--ff-only")
+        incoming = peer / f"remote-{index}.md"
+        incoming.write_text(f"受信本文{index}", encoding="utf-8")
+        git_repository.commit_all(peer, "遠隔更新")
+        git_repository.run_git(peer, "push")
+        assert operations.sync() is True
+        assert (notes / incoming.name).read_text(encoding="utf-8") == f"受信本文{index}"
+        assert outgoing.read_text(encoding="utf-8") == f"送信本文{index}"
 
-    monkeypatch.setattr(_wi_sync, "repo_lock", lock)
-    monkeypatch.setattr(_wi_sync, "push_pending_commits", _recorder(calls, "push", result=None))
-    monkeypatch.setattr(_wi_sync, "pull", _recorder(calls, "pull", result=None))
-    monkeypatch.setattr(_wi_sync, "pull_if_stale", _recorder(calls, "pull_if_stale", result=True))
-    operations = wi_operations.Operations(tmp_path)
-    assert operations.sync() is True
-    assert operations.sync() is True
-    assert calls == ["push", "pull", "push", "pull"]
+    pending = notes / "pending.md"
+    pending.write_text("送信失敗でも保持する本文", encoding="utf-8")
+    local_head = git_repository.commit_all(notes, "未送信の更新")
+    (peer / "after-failure.md").write_text("取得してはいけない遠隔変更", encoding="utf-8")
+    git_repository.commit_all(peer, "新しい遠隔変更")
+    git_repository.run_git(peer, "push")
+
+    def fail_push(_notes: pathlib.Path) -> None:
+        raise RuntimeError("送信失敗")
+
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", fail_push)
+    with pytest.raises(RuntimeError, match="送信失敗"):
+        operations.sync()
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == local_head
+    assert pending.read_text(encoding="utf-8") == "送信失敗でも保持する本文"
+    assert not (notes / "after-failure.md").exists()
 
 
 def test_markdown_change_marks_index_before_debounced_publish(tmp_path: pathlib.Path) -> None:

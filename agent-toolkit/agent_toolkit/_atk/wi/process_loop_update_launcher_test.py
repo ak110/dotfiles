@@ -2,9 +2,12 @@
 """POSIXとWindowsのprocess-loop監督ランチャーを検証する。"""
 
 import argparse
+import json
 import os
 import pathlib
 import subprocess
+import sys
+from collections.abc import Callable
 
 import pytest
 
@@ -118,16 +121,66 @@ def test_posix_launcher_runs_other_commands_once(tmp_path: pathlib.Path) -> None
         assert len(uv_calls) == 1
 
 
-def test_windows_launcher_routes_same_process_loop_aliases() -> None:
-    """WindowsランチャーもPOSIX版と同じ`wi process-loop`だけを監督する。"""
+def test_windows_launcher_preserves_crlf() -> None:
+    """Windowsに配布するバッチファイルのCRLF契約を保つ。"""
     launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk.cmd"
     data = launcher.read_bytes()
-    text = data.decode("cp932")
-
+    assert data.endswith(b"\r\n")
     assert b"\n" not in data.replace(b"\r\n", b"")
-    assert 'if not "%~1"=="wi" goto :run_once' in text
-    assert '"%~1"=="mq"' not in text
-    assert 'if not "%~2"=="process-loop" goto :run_once' in text
+
+
+@pytest.mark.windows
+@pytest.mark.skipif(os.name != "nt", reason="Windowsのcmd/powershellで監督とargvを検証する")
+@pytest.mark.parametrize(
+    ("argv", "supervised"),
+    [
+        (["wi", "process-loop", "--no-alerts"], True),
+        (["wi", "process-loop", "status"], True),
+        (["wi", "list", "value with spaces", "a!b"], False),
+        (["mq", "process-loop"], False),
+    ],
+)
+def test_windows_launcher_preserves_arguments_and_restart_result(
+    tmp_path: pathlib.Path,
+    argv: list[str],
+    supervised: bool,
+    host_environ: Callable[[], dict[str, str]],
+) -> None:
+    """公開argvを子へ保ち、監督対象だけ再起動して非対象の終了値を返す。"""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log = tmp_path / "calls.json"
+    fake_uv = fake_bin / "fake_uv.py"
+    fake_uv.write_text(
+        "import json, os, pathlib, sys\n"
+        "log = pathlib.Path(os.environ['FAKE_UV_LOG'])\n"
+        "calls = json.loads(log.read_text(encoding='utf-8')) if log.exists() else []\n"
+        "payload = sys.argv[sys.argv.index('--prepare-if-missing') + 1:]\n"
+        "calls.append(payload)\n"
+        "log.write_text(json.dumps(calls), encoding='utf-8')\n"
+        "spec = os.environ.get('AGENT_TOOLKIT_RESTART_SPEC')\n"
+        "if spec and len(calls) == 1:\n"
+        "    pathlib.Path(spec).write_text('\\n'.join(payload) + '\\n', encoding='utf-8')\n"
+        "    raise SystemExit(75)\n"
+        "raise SystemExit(0 if spec else 7)\n",
+        encoding="utf-8",
+    )
+    (fake_bin / "uv.cmd").write_bytes(
+        f'@echo off\r\n"{sys.executable}" "{fake_uv}" %*\r\nexit /b %ERRORLEVEL%\r\n'.encode("cp932")
+    )
+    env = host_environ()
+    env["TEMP"] = str(tmp_path)
+    env["TMP"] = str(tmp_path)
+    env.pop("AGENT_TOOLKIT_RESTART_SPEC", None)
+    env["PATH"] = os.pathsep.join((str(fake_bin), env["PATH"]))
+    env["FAKE_UV_LOG"] = str(log)
+    launcher = pathlib.Path(atk.__file__).resolve().parents[1] / "scripts" / "atk.cmd"
+    command = f'cmd.exe /d /s /c "{subprocess.list2cmdline([str(launcher), *argv])}"'
+    result = subprocess.run(command, env=env, capture_output=True, check=False, timeout=60)
+    assert result.returncode == (0 if supervised else 7), result.stderr
+    calls = json.loads(log.read_text(encoding="utf-8"))
+    assert len(calls) == (2 if supervised else 1)
+    assert all(call[1:] == argv for call in calls)
 
 
 def test_posix_launcher_logs_received_termination(tmp_path: pathlib.Path) -> None:

@@ -2,6 +2,7 @@
 # pylint: disable=protected-access
 """dispatch_planの契約テスト。"""
 
+import json
 import pathlib
 
 import pytest
@@ -39,6 +40,8 @@ class TestAtkContractBeforeQuestion:
         result = _run(self._payload(field, f"contract-{field}"), env_overrides=_plan_file_state_env(tmp_path))
 
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert result.stderr == ""
 
     def test_question_without_subcommand_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
@@ -49,6 +52,8 @@ class TestAtkContractBeforeQuestion:
         result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
 
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert result.stderr == ""
 
     def test_exit_plan_mode_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
@@ -62,6 +67,8 @@ class TestAtkContractBeforeQuestion:
         result = _run(payload, env_overrides=_plan_file_state_env(tmp_path))
 
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert result.stderr == ""
 
 
@@ -159,7 +166,9 @@ class TestPlanFileDoesNotRequireTextlintRead:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "textlint-violations.md" not in result.stderr
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
+        assert "textlint-violations.md" not in (result.stdout + result.stderr)
 
     def test_edit_without_read_does_not_warn(self, tmp_path: pathlib.Path):
         """資料未読のEditを警告しない。"""
@@ -178,7 +187,9 @@ class TestPlanFileDoesNotRequireTextlintRead:
             env_overrides=env,
         )
         assert result.returncode == 0
-        assert "textlint-violations.md" not in result.stderr
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
+        assert "textlint-violations.md" not in (result.stdout + result.stderr)
 
     def test_legacy_read_flag_does_not_change_result(self, tmp_path: pathlib.Path):
         """旧読了フラグが残るセッションでも計画編集を妨げない。"""
@@ -202,6 +213,8 @@ class TestPlanFileDoesNotRequireTextlintRead:
             env_overrides=env,
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_allows_non_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
         """plan file以外の編集はフラグ未設定でも通過する。"""
@@ -219,4 +232,6 @@ class TestPlanFileDoesNotRequireTextlintRead:
             env_overrides=env,
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert result.stdout == ""

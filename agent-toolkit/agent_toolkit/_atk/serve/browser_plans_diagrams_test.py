@@ -252,7 +252,8 @@ async def test_mermaid_cdn_without_response_ends_loading_with_error(screen_harne
         assert "本文-初回" in await preview.inner_text()
     finally:
         release.set()
-        await harness.page.unroute(_MERMAID_CDN_URL, hold)
+        # この試験専用pageのルートを解除し、保留していたコールバックの終了まで所有する。
+        await harness.page.unroute_all(behavior="wait")
 
 
 @pytest.mark.asyncio(loop_scope="session")

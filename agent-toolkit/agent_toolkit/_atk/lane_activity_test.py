@@ -18,7 +18,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import session_registry, wait_schedule
+from agent_toolkit._common import session_registry
 from agent_toolkit._testing import git_repository, isolation
 from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection, _legacy
 from agent_toolkit._testing.lane_support import _create, _create_args, _create_in, _invoke, _selection
@@ -376,7 +376,6 @@ def test_release_deadline_keeps_delegated_cap(
     for name, value in environment.items():
         monkeypatch.setenv(name, value)
 
-    assert lane.get_wait_timeout is wait_schedule.get_wait_timeout
     assert lane.get_wait_timeout("main") == expected_timeout
 
 

@@ -56,22 +56,6 @@ class TestIsEntryHealthy:
     known_marketplaces.json に各エントリ形式を書いて確認する。
     """
 
-    def test_directory_type_with_dotfiles_path(
-        self,
-        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
-    ):
-        """directory 型 + dotfiles 絶対パスなら is_directory_type_registered が True。"""
-        known, _settings = marketplace_paths
-        write_known_entry(
-            known,
-            {
-                "source": {"source": "directory", "path": str(dotfiles_root)},
-                "installLocation": str(dotfiles_root),
-            },
-        )
-        assert _claude_marketplace.is_directory_type_registered() is True
-
     def test_github_type_is_legacy_unhealthy(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
@@ -330,6 +314,7 @@ class TestRepairMarketplace:
             ),
             encoding="utf-8",
         )
+        original_other = json.loads(known.read_text(encoding="utf-8"))["claude-plugins-official"]
         monkeypatch.setattr(
             _common,
             "run_subprocess",
@@ -338,6 +323,7 @@ class TestRepairMarketplace:
 
         assert _claude_marketplace.repair_marketplace() is True
         data = json.loads(known.read_text(encoding="utf-8"))
+        assert data["claude-plugins-official"] == original_other
         # 他キーは保持
         assert data["claude-plugins-official"]["source"]["repo"] == "anthropics/claude-plugins-official"
         assert (

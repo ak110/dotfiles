@@ -20,7 +20,6 @@ from agent_toolkit._testing.plans_support import (
     _create_saved_plan,
     _init_local_notes,
     _isolate_state_directory,
-    _preserved_times,
 )
 
 __all__ = ["_isolate_state_directory"]
@@ -69,23 +68,6 @@ def test_creation_record_precedes_available_creation_time(
     result = _atk_plans.commit_plan(notes, main.name, home=home, skip_push=True)
     assert result["plan_file"] == "2025/12/31-0900_計画.md"
     assert not main.with_suffix(".created.json").exists()
-
-
-def test_preserved_times_ignores_unavailable_birth_time(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """作成日時を取得できない場合も更新日時を検証対象として返す。"""
-    source = tmp_path / "plan.md"
-    source.write_text("# plan\n", encoding="utf-8")
-    expected_mtime_ns = source.stat().st_mtime_ns
-
-    def unavailable_creation(_path: pathlib.Path) -> None:
-        return None
-
-    monkeypatch.setattr(_plan_file, "_creation_epoch", unavailable_creation)
-
-    assert _preserved_times(source) == (None, expected_mtime_ns)
 
 
 def test_commit_plan_moves_direct_working_bundle_to_birth_month(tmp_path: pathlib.Path) -> None:

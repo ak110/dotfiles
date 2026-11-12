@@ -133,7 +133,7 @@ def _block_named_replace(monkeypatch: pytest.MonkeyPatch, name: str) -> tuple[as
 async def test_replace_retry_runs_outside_loop(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, winerror: int, route: str
 ) -> None:
-    """実際の保存で共有違反の解消を待つ間もloopを止めず、同じ一時ファイルで6回試行し5回待機して終える。"""
+    """実際の保存で共有違反の解消を待つ間もloopを止めず、共有違反から復旧して保存と一時ファイル回収を終える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     sessions: dict[str, state.SessionState] = {}
     writer = status_file.StatusFileWriter(
@@ -158,6 +158,7 @@ async def test_replace_retry_runs_outside_loop(
         replace = atomic_file.os.replace
         attempts: list[str] = []
         delays: list[float] = []
+        saved: dict[pathlib.Path, bytes] = {}
         loop_thread = threading.get_ident()
         completed = asyncio.Event()
         loop = asyncio.get_running_loop()
@@ -165,10 +166,12 @@ async def test_replace_retry_runs_outside_loop(
         def fail_then_replace(source: str, target: pathlib.Path, **_kwargs: Any) -> None:
             if target == destination:
                 attempts.append(source)
-                if len(attempts) <= 5:
+                if len(attempts) == 1:
                     raise _WindowsReplaceError(winerror)
+            content = pathlib.Path(source).read_bytes()
             replace(source, target)
             if target == destination:
+                saved[target] = content
                 loop.call_soon_threadsafe(completed.set)
 
         def observe_sleep(delay: float, **_kwargs: Any) -> None:
@@ -205,9 +208,14 @@ async def test_replace_retry_runs_outside_loop(
             await owner.activate_async()
         else:
             await owner.close()
-        assert len(attempts) == 6
-        assert len(set(attempts)) == 1
-        assert delays == [0.01, 0.02, 0.04, 0.08, 0.16]
+        assert 1 < len(attempts) < 20
+        assert delays and all(delay > 0 for delay in delays)
+        if route == "close":
+            assert not destination.exists()
+            retained = retained_results.read_retained_result("root", "session", tmp_path)
+            assert retained is not None and retained["status"] == "interrupted"
+        else:
+            assert destination.read_bytes() == saved[destination]
         assert not list(destination.parent.glob(f".{destination.name}.*.tmp"))
 
 
@@ -485,6 +493,7 @@ async def test_auxiliary_save_retry_runs_outside_loop(
             replace = atomic_file.os.replace
             attempts: list[str] = []
             delays: list[float] = []
+            saved: dict[pathlib.Path, bytes] = {}
             loop_thread = threading.get_ident()
 
             def matches(target: pathlib.Path) -> bool:
@@ -501,9 +510,12 @@ async def test_auxiliary_save_retry_runs_outside_loop(
             def fail_then_replace(source: str, target: pathlib.Path, **_kwargs: Any) -> None:
                 if matches(target):
                     attempts.append(source)
-                    if len(attempts) <= 5:
+                    if len(attempts) == 1:
                         raise _WindowsReplaceError(winerror)
+                content = pathlib.Path(source).read_bytes()
                 replace(source, target)
+                if matches(target):
+                    saved[target] = content
 
             def observe_sleep(delay: float, **_kwargs: Any) -> None:
                 assert threading.get_ident() != loop_thread
@@ -540,9 +552,12 @@ async def test_auxiliary_save_retry_runs_outside_loop(
                     started = await owner.start("execute", "処理", str(tmp_path))
                     assert started["session_id"] == "claude-session"
                     assert "claude_high_tier_model" not in json.loads(config_path.read_text(encoding="utf-8"))
-                assert len(attempts) == 6
-                assert len(set(attempts)) == 1
-                assert delays == [0.01, 0.02, 0.04, 0.08, 0.16]
+                assert 1 < len(attempts) < 20
+                assert delays and all(delay > 0 for delay in delays)
+                assert saved
+                for destination, content in saved.items():
+                    assert destination.read_bytes() == content
+                    assert not list(destination.parent.glob(f".{destination.name}.*.tmp"))
             finally:
                 monkeypatch.setattr(status_file, "atomic_write", original_write)
                 await direct.close()
@@ -900,3 +915,27 @@ async def test_scheduled_writer_drain_waits_for_other_worker_after_first_failure
     assert not wrote_after_close.is_set()
     assert all(task.done() for task in tasks)
     assert not writer.path.exists()
+
+
+@pytest.mark.asyncio
+async def test_persistent_replace_failure_is_finite_and_preserves_saved_content(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """競合が解消しない場合も有限に失敗し、旧本文を保持して一時ファイルを回収する。"""
+    destination = tmp_path / "state.json"
+    destination.write_text("旧本文", encoding="utf-8")
+    attempts = 0
+
+    def reject_replace(_source: str, _target: pathlib.Path, **_kwargs: Any) -> None:
+        nonlocal attempts
+        attempts += 1
+        assert attempts < 100, "再試行が有限の予算内で終了しない"
+        raise _WindowsReplaceError(32)
+
+    monkeypatch.setattr(atomic_file.os, "replace", reject_replace)
+    monkeypatch.setattr(atomic_file.time, "sleep", lambda _delay: None)
+    with pytest.raises(_WindowsReplaceError):
+        await asyncio.to_thread(atomic_file.atomic_write, destination, "新本文")
+    assert 1 < attempts < 100
+    assert destination.read_text(encoding="utf-8") == "旧本文"
+    assert not list(tmp_path.glob(".state.json.*.tmp"))

@@ -89,7 +89,7 @@ AGENT_DOC_TONE_REPRESENTATIVES = (
     "agent-toolkit/delegation_contract_invariant_test.py",
     "agent-toolkit/skills/skill_interfaces_invariant_test.py",
     "agent-toolkit/skills/review-session/session_review_contract_invariant_test.py",
-    "agent-toolkit/skills/write-plan/references/structure_contract_invariant_test.py",
+    "agent-toolkit/skills/commit/references/history_rewrite_invariant_test.py",
     "agent-toolkit/share/task_documents_invariant_test.py",
     "agent-toolkit/share/rules/common/rules_invariant_test.py",
     "agent-toolkit/hooks/rules_context_registration_invariant_test.py",

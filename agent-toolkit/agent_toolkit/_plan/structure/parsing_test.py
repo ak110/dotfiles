@@ -392,12 +392,13 @@ def test_detail_structure_requires_bug_section_for_bug_work_type() -> None:
     "body",
     [
         _wi_source(source=False),
+        _wi_source(source=True),
         _wi_source(source=True, trailing_user_comment=True),
         _wi_source(source=True, answer=True),
     ],
 )
 def test_origin_check_accepts_human_origin(tmp_path: pathlib.Path, body: str) -> None:
-    """`source`の欠落と機械判定できる明示由来を持つWI本文は指摘の対象にしない。"""
+    """`source`の有無から由来を推測せず、各WI本文を構文の契約で受理する。"""
     _write_wi(tmp_path, body)
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors

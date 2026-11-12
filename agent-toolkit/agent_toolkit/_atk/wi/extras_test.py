@@ -25,15 +25,12 @@ from agent_toolkit._testing.git_fakes import make_git_remote_fake as _make_git_r
 from agent_toolkit.atk_test import (  # noqa: E402  # pylint: disable=wrong-import-position
     _FIXED_DT,
     _FIXED_TIMESTAMP,
-    _GitCall,
     _make_subprocess_fake,
     _setup_notes,
     _setup_notes_with_pending_commit,
     _write_awi_file,
     _write_uwi_file,
 )
-
-_UPSTREAM_QUERY = ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
 
 
 def _add_with_target_repo(home: pathlib.Path, body_file: pathlib.Path) -> None:
@@ -116,123 +113,8 @@ class TestAddSourceOption:
         assert "source:" not in content
 
 
-class TestListPullsBeforeRead:
-    """listサブコマンド: 出力前に明示したupstreamへ同期する。"""
-
-    def test_list_pulls_before_reading(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """list実行時にfetchと明示upstreamへのfast-forward統合を行うこと。"""
-        _setup_notes(tmp_path)
-        calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--target-repo=all"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"] and c["cmd"] != _UPSTREAM_QUERY]
-        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
-
-
-class TestShowAllPullsBeforeRead:
-    """showサブコマンド: --all指定時も出力前に明示したupstreamへ同期する。"""
-
-    def test_show_all_pulls_before_reading(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """show --all実行時にfetchと明示upstreamへのfast-forward統合を行うこと。"""
-        _setup_notes(tmp_path)
-        calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "--all", "--target-repo=all"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:1] == ["git"] and c["cmd"] != _UPSTREAM_QUERY]
-        assert git_cmds[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
-
-
-def _record_commit_git_calls(calls: list[_GitCall], *, dirty: bool) -> Any:
-    """外部編集の有無だけを変え、commitのGit呼出しを記録する。"""
-
-    def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-        calls.append({"cmd": list(cmd), "kwargs": dict(kwargs)})
-        status = " M inbox/x.md\n" if dirty else ""
-        if cmd[:3] == ["git", "status", "--porcelain"]:
-            stdout = status if kwargs.get("text") else status.encode()
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=stdout, stderr=stdout)
-        return subprocess.CompletedProcess(cmd, returncode=0, stdout=b"", stderr=b"")
-
-    return fake_run
-
-
 class TestCommitSubcommand:
     """commitサブコマンド: 外部編集分をコミットし、滞留commitをpushする。"""
-
-    def test_commit_when_dirty(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """未コミット差分ありの場合、滞留push→remote同期→add→commit→pushの順で呼び出される。"""
-        notes = _setup_notes(tmp_path)
-        calls: list[_GitCall] = []
-
-        monkeypatch.setattr(subprocess, "run", _record_commit_git_calls(calls, dirty=True))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "commit"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"] and c["cmd"] != _UPSTREAM_QUERY]
-        assert git_cmds[:3] == [
-            ["git", "push"],
-            ["git", "fetch"],
-            ["git", "merge", "--ff-only", "@{u}"],
-        ]
-        # 対象領域はprivate-notesの作業ツリー全体であり、いずれのコマンドもpathspecで限定しない。
-        assert git_cmds[3] == ["git", "status", "--porcelain"]
-        assert git_cmds[4] == ["git", "add", "--all", "--", "."]
-        assert git_cmds[5] == ["git", "commit", "-m", "chore: edit private notes externally", "--", "."]
-        assert git_cmds[6] == ["git", "push"]
-        assert calls[0]["kwargs"].get("cwd") == notes
-        captured = capsys.readouterr()
-        assert "外部編集分をcommitした" in captured.out
-
-    def test_commit_when_clean_pushes_pending_commits(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """未コミット差分なしの場合、commitを呼ばず滞留commitをpushする。"""
-        _setup_notes(tmp_path)
-        calls: list[_GitCall] = []
-
-        monkeypatch.setattr(subprocess, "run", _record_commit_git_calls(calls, dirty=False))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "commit"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        git_cmds = [c["cmd"] for c in calls if c["cmd"][:2] != ["git", "rev-list"] and c["cmd"] != _UPSTREAM_QUERY]
-        assert git_cmds[:3] == [
-            ["git", "push"],
-            ["git", "fetch"],
-            ["git", "merge", "--ff-only", "@{u}"],
-        ]
-        assert git_cmds[3][:3] == ["git", "status", "--porcelain"]
-        assert not [cmd for cmd in git_cmds if cmd[:2] == ["git", "commit"]]
-        assert [cmd for cmd in git_cmds if cmd[:2] == ["git", "push"]] == [["git", "push"], ["git", "push"]]
-        captured = capsys.readouterr()
-        assert "外部編集の差分は無い" in captured.out
 
     def test_commit_confirms_plans_only_diff(
         self,
@@ -267,6 +149,11 @@ class TestCommitSubcommand:
             capture_output=True,
         )
         assert tracked.returncode == 0
+        assert (
+            git_repository.git_output(notes, "show", f"HEAD:{table.relative_to(notes).as_posix()}")
+            == table.read_text(encoding="utf-8").strip()
+        )
+        assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "@{u}")
 
 
 def test_commit_reports_sent_count_then_zero(
@@ -274,13 +161,17 @@ def test_commit_reports_sent_count_then_zero(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """実Gitで滞留1件の送信と送信対象なしを区別する。"""
-    _setup_notes_with_pending_commit(tmp_path)
+    notes = _setup_notes_with_pending_commit(tmp_path)
+    before = git_repository.git_output(notes, "rev-parse", "HEAD")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "commit"], home=tmp_path)
     assert "1件のcommitをpushした" in capsys.readouterr().out
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "commit"], home=tmp_path)
     assert "pushするcommitは無かった" in capsys.readouterr().out
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == before
+    assert git_repository.git_output(notes, "rev-parse", "@{u}") == before
+    assert git_repository.git_output(notes, "status", "--porcelain") == ""
 
 
 def test_local_only_commit_reports_skipped_remote_operations(
@@ -309,11 +200,13 @@ def test_local_only_commit_reports_skipped_remote_operations(
     assert "pushした" not in clean + edited
 
 
-def test_wi_pull_fast_forwards_remote_entry(
+@pytest.mark.parametrize("argv", [["pull"], ["list", "--target-repo=all"], ["show", "--all", "--target-repo=all"]])
+def test_read_commands_fast_forward_remote_entry(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    argv: list[str],
 ) -> None:
-    """別cloneが送った項目を`atk wi pull`で取り込み、同期先を1行で示す。"""
+    """別cloneが送った本文を公開pull/list/showが同期し、結果に反映する。"""
     origin = git_repository.init_bare_repository(tmp_path / "origin.git")
     seed = git_repository.init_repository(
         tmp_path / "seed", initial_branch="main", origin=str(origin), files={".gitkeep": ""}, commit_message="base"
@@ -323,15 +216,21 @@ def test_wi_pull_fast_forwards_remote_entry(
     peer = tmp_path / "peer"
     git_repository.run_git(tmp_path, "clone", str(origin), str(notes))
     git_repository.run_git(tmp_path, "clone", str(origin), str(peer))
-    _write_awi_file(peer, "remote.md")
+    _write_awi_file(peer, "remote.md", body="remote本文")
     git_repository.commit_all(peer, "remote entry")
     git_repository.run_git(peer, "push")
 
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["wi", "pull"], home=tmp_path)
+        atk.main(["wi", *argv], home=tmp_path)
 
     assert (notes / "2026/10/remote.md").exists()
-    assert capsys.readouterr().out == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n"
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(peer, "rev-parse", "HEAD")
+    assert "remote本文" in (notes / "2026/10/remote.md").read_text(encoding="utf-8")
+    output = capsys.readouterr().out
+    if argv == ["pull"]:
+        assert output == f"成功: private-notesをremoteと同期した: {notes.resolve()}\n"
+    else:
+        assert "remote.md" in output and "remote本文" in output
 
 
 def _write_processing_file(

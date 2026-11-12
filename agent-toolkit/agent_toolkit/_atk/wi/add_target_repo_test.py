@@ -15,52 +15,18 @@ from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import uwi as uwi_module
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT
 from agent_toolkit._testing.git_fakes import fake_git_worktree_remote_response as _fake_git_worktree_remote_response
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_add_support import _patch_add_editor, _patch_add_git, _prepare_notes
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
+from agent_toolkit._testing.wi_entry_files import write_awi
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
 class TestAddOrderEditorFirst:
     """addサブコマンド: エディター起動を`pull`より前に呼ぶ順序保証。"""
-
-    def test_editor_invoked_before_pull(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """messages省略時、エディターは`pull`より前に起動される（対象リポジトリはcwdから解決）。"""
-        notes = _setup_notes(tmp_path)
-        monkeypatch.setenv("EDITOR", "fake-editor")
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        call_order: list[str] = []
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "-C", str(myrepo), "rev-parse", "--verify", "HEAD^{commit}"]:
-                call_order.append("head")
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            if cmd[0] == "fake-editor":
-                call_order.append("editor")
-                pathlib.Path(cmd[1]).write_text("本文テスト", encoding="utf-8")
-                return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-            if cmd[:2] == ["git", "fetch"]:
-                call_order.append("sync")
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add"], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        assert call_order == ["editor", "head", "sync"]
-        assert list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
     def test_message_preserved_when_remote_sync_fails(
         self,
@@ -82,44 +48,6 @@ class TestAddOrderEditorFirst:
         captured = capsys.readouterr()
         assert "remote同期に失敗" in captured.err
         assert "消失させたくない本文" in captured.err
-
-    def test_explicit_message_still_pulls_before_write(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """引数で指定した場合もremote同期→書き込み→commitの順序で動作すること。"""
-        notes = _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        git_cmds: list[list[str]] = []
-        inbox = notes / "2024" / "01"
-
-        def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
-            resp = _fake_git_worktree_remote_response(cmd, myrepo, kwargs)
-            if resp is not None:
-                return resp
-            empty: Any = "" if kwargs.get("text") else b""
-            if cmd[0] == "git":
-                git_cmds.append(list(cmd))
-                if cmd[:2] == ["git", "add"]:
-                    # add時点でinboxにファイルが存在することを確認する
-                    assert list(inbox.iterdir()), "書き込みはgit add前に完了している必要がある"
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout=empty, stderr=empty)
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-
-        body_path = tmp_path / "body.md"
-        body_path.write_text("本文", encoding="utf-8")
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 0
-        upstream_query = ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
-        assert upstream_query in git_cmds
-        synchronization_and_save = [cmd for cmd in git_cmds if cmd[1] in {"fetch", "merge", "add", "commit", "push"}]
-        assert synchronization_and_save[:2] == [["git", "fetch"], ["git", "merge", "--ff-only", "@{u}"]]
-        assert synchronization_and_save[2][:2] == ["git", "add"]
 
 
 class TestAddRepoPathOverrideCli:
@@ -549,3 +477,58 @@ def test_editor_nonzero_exit_guides_body_file(
     stderr = capsys.readouterr().err
     assert stderr.startswith("失敗: エディターが終了コード1で終了した\n次の操作: 本文は保存していない。")
     assert "--body-file" in stderr
+
+
+@pytest.mark.parametrize("input_kind", ["editor", "body-file"])
+def test_add_preserves_remote_entry_and_draft(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    input_kind: str,
+) -> None:
+    """原稿確定後に同期したremote本文と新規原稿を、ともにremoteへ保存する。"""
+    origin = git_repository.init_bare_repository(tmp_path / "origin.git")
+    notes = _setup_notes(tmp_path)
+    git_repository.init_repository(notes, initial_branch="main", origin=str(origin), commit_message="base")
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    peer = tmp_path / "peer"
+    git_repository.run_git(tmp_path, "clone", str(origin), str(peer))
+    target = git_repository.init_repository(tmp_path / "target", commit_message="target")
+    git_repository.run_git(target, "remote", "add", "origin", "https://github.com/example/target.git")
+    draft = "消失させない新規原稿"
+    published = False
+
+    def publish_peer() -> None:
+        nonlocal published
+        write_awi(peer, "remote.md")
+        git_repository.commit_all(peer, "remote entry")
+        git_repository.run_git(peer, "push")
+        published = True
+
+    if input_kind == "editor":
+        original_run = subprocess.run
+        monkeypatch.setenv("EDITOR", "fake-editor")
+
+        def run(cmd: list[str], *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+            if cmd[0] == "fake-editor":
+                pathlib.Path(cmd[1]).write_text(draft, encoding="utf-8")
+                publish_peer()
+                return subprocess.CompletedProcess(cmd, 0)
+            return original_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", run)
+        extra: list[str] = []
+    else:
+        body = tmp_path / "draft.md"
+        body.write_text(draft, encoding="utf-8")
+        publish_peer()
+        extra = ["--body-file", str(body)]
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "add", "--target-repo", str(target), *extra], home=tmp_path, now=_FIXED_DT)
+    assert result.value.code == 0
+    assert published
+    saved = notes / "2024/01" / f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"
+    assert draft in saved.read_text(encoding="utf-8")
+    assert (notes / "2026/10/remote.md").read_bytes() == (peer / "2026/10/remote.md").read_bytes()
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "@{u}")
+    assert draft in git_repository.git_output(origin, "show", f"main:{saved.relative_to(notes).as_posix()}")
+    assert git_repository.git_output(notes, "status", "--porcelain") == ""

@@ -197,9 +197,9 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
 
         state.add_terminal_listener(on_terminal)
         try:
-            async with asyncio.timeout(3):
-                session = await backend.start("調査", str(tmp_path))
-                await terminal.wait()
+            # 使用量の試験へ初期化速度の上限を重ねず、ハングは共通のpytest timeoutで検出する。
+            session = await backend.start("調査", str(tmp_path))
+            await terminal.wait()
             assert session.context_tokens == 3500
             assert session.context_window is None
             assert session.agent_message == "完了"

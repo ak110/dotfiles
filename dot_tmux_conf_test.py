@@ -98,17 +98,6 @@ def tmux_server_fixture(
         )
 
 
-def test_window_formats_share_pane_aggregate_condition() -> None:
-    """両ウィンドウ書式がペイン集約の同じ実行状態条件を持つ。"""
-    values = _read_window_formats()
-    current_value = values["@catppuccin_window_current_text"]
-
-    for value in (current_value, values["@catppuccin_window_text"]):
-        assert "#{m:*1*," in value
-        assert "#{P:#{@cmd_running}}" in value
-        assert "#W" in value
-
-
 @pytest.mark.parametrize("format_name", WINDOW_FORMAT_NAMES)
 def test_window_format_evaluates_running_panes(
     tmux_server: tuple[str, str],

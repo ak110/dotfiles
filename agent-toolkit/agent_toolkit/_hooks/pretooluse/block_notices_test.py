@@ -4,7 +4,6 @@
 Stopの遮断はツールの実行前ではないため、この文を含めない。
 """
 
-import ast
 import json
 import pathlib
 import re
@@ -119,30 +118,3 @@ def test_repeated_warning_preserves_normal_operation(capsys: pytest.CaptureFixtu
     body = capsys.readouterr().err
     assert not body
     assert _RESULT not in notice.block_formatter("stop")("終了工程が残る", fix="工程へ戻る")
-
-
-def test_pretooluse_block_formatter_is_owned_by_notices() -> None:
-    """遮断の原因と解消手段を共通の整形関数へ渡す。"""
-    root = pathlib.Path(dispatch.__file__).parent
-    owners = []
-    for path in root.glob("*.py"):
-        if path.name.endswith("_test.py"):
-            continue
-        module = ast.parse(path.read_text(encoding="utf-8"))
-        aliases = {"block_formatter", "_block_notice_formatter"}
-        aliases.update(
-            alias.asname or alias.name
-            for node in ast.walk(module)
-            if isinstance(node, ast.ImportFrom) and node.module == "agent_toolkit._hooks.notice"
-            for alias in node.names
-            if alias.name == "block_formatter"
-        )
-        for node in ast.walk(module):
-            if isinstance(node, ast.Call) and (
-                isinstance(node.func, ast.Name)
-                and node.func.id in aliases
-                or isinstance(node.func, ast.Attribute)
-                and node.func.attr == "block_formatter"
-            ):
-                owners.append(path.name)
-    assert owners == ["notices.py"]

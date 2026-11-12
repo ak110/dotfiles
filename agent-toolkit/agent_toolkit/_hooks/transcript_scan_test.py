@@ -43,7 +43,8 @@ class TestReadTranscriptEntriesCached:
             first = read_transcript_entries_cached(str(transcript))
             second = read_transcript_entries_cached(str(transcript))
 
-        assert first == second
+        assert first == [_user_entry("hello")]
+        assert second == [_user_entry("hello")]
         assert calls["wait"] == 1
         assert calls["read"] == 1
 

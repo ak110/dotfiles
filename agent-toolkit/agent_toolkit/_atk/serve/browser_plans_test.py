@@ -245,40 +245,6 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_harness: _ScreenHarness) -> None:
-    """コピー結果の表示中に再度コピーしても、両ボタンの画面幅ごとの操作名を元に戻す。"""
-    page = screen_harness.page
-    await page.route("https://cdn.jsdelivr.net/**", lambda route: route.abort())
-    await page.goto(screen_harness.base_url + "/plans")
-    await page.locator("#preview h1").wait_for(state="visible")
-    await page.evaluate(
-        """() => {
-          const nativeSetTimeout = window.setTimeout.bind(window);
-          window.copyLabelTimers = [];
-          window.setTimeout = (callback, delay, ...args) => {
-            if (delay !== 2000) return nativeSetTimeout(callback, delay, ...args);
-            window.copyLabelTimers.push(() => callback(...args));
-            return window.copyLabelTimers.length;
-          };
-        }"""
-    )
-
-    for selector, wide, short in (
-        ("#copy-btn", "Markdownをコピー", "本文"),
-        ("#copy-path-btn", "計画ファイルのパスをコピー", "パス"),
-    ):
-        button = page.locator(selector)
-        await button.click()
-        await playwright.async_api.expect(button.locator(".short-label")).to_have_text("完了")
-        await page.wait_for_function("window.copyLabelTimers.length === 1")
-        await button.click()
-        await page.wait_for_function("window.copyLabelTimers.length === 2")
-        await page.evaluate("() => window.copyLabelTimers.splice(0).forEach(callback => callback())")
-        assert await button.locator(".wide-label").inner_text() == wide
-        assert await button.locator(".short-label").inner_text() == short
-
-
-@pytest.mark.asyncio(loop_scope="session")
 async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenHarness) -> None:
     """更新時刻を変えない連続書き換えでも、SSE通知後に新しい本文と図を表示する。"""
     harness = screen_harness

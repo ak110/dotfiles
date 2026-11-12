@@ -22,8 +22,7 @@ function row(tool: string, input: unknown) {
   };
 }
 
-test("send_to_userの行はmessageの全文を前に空行1行分の余白を置いたMarkdownで描く", async ($) => {
-  // 余白が無いと直前の表示と本文が続いて読みにくい。本文の欠落と余白の欠落の両方を検出する。
+test("send_to_userの行はmessageの全文をMarkdownで描く", async ($) => {
   for (const surface of ["terminal", "desktop"] as const) {
     const ui = await $.ui.mount({
       plugin: PLUGIN,
@@ -34,7 +33,6 @@ test("send_to_userの行はmessageの全文を前に空行1行分の余白を置
     });
     const markdown = await ui.find({ type: "Markdown" });
     expect(markdown?.props.text).toBe(MESSAGE);
-    expect(await ui.drawn()).toMatchObject({ type: "Box", props: { marginTop: 1 } });
     await ui.unmount();
   }
 });

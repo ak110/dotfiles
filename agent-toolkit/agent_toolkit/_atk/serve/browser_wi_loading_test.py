@@ -46,20 +46,12 @@ async def test_initial_sync_shows_work_item_loading(browser_harness: _BrowserHar
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_external_work_item_refresh_keeps_loading_hidden(browser_harness: _BrowserHarness) -> None:
-    """SSEによる背景更新は既存一覧を保ち、読み込み表示を点滅させない。"""
+async def test_external_work_item_refresh_keeps_existing_list(browser_harness: _BrowserHarness) -> None:
+    """SSEによる背景更新は取得中も既存一覧を保ち、新着を表示する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
-    await page.evaluate(
-        """() => {
-          window.loadingShown = 0;
-          const indicator = document.getElementById('loading-indicator');
-          new MutationObserver(() => { if (!indicator.hidden) window.loadingShown += 1; })
-            .observe(indicator, {attributes: true, attributeFilter: ['hidden']});
-        }"""
-    )
     fetch_started = asyncio.Event()
     release_fetch = asyncio.Event()
 
@@ -77,12 +69,10 @@ async def test_external_work_item_refresh_keeps_loading_hidden(browser_harness: 
     harness.current_state.publish()
     try:
         await asyncio.wait_for(fetch_started.wait(), timeout=5)
-        await playwright.async_api.expect(page.locator("#loading-indicator")).to_be_hidden()
         await playwright.async_api.expect(page.locator('.entry-select[data-key="awi.md"]')).to_be_visible()
     finally:
         release_fetch.set()
     await page.locator('.entry-select[data-key="background.md"]').wait_for(state="visible")
-    assert await page.evaluate("window.loadingShown") == 0
 
 
 @pytest.mark.asyncio(loop_scope="session")

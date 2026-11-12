@@ -58,6 +58,7 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list").wait_for(state="visible")
+    screen_urls = [harness.base_url + path for path in ("/", "/plans", "/sessions")]
     # 再読み込みが起きると失われる値を置き、遷移後も同じドキュメントが生きていることを判定する。
     await page.evaluate("() => { window.__atkReloadMarker = 'kept'; }")
 
@@ -71,21 +72,6 @@ async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarnes
     await page.locator("#sessions .session-item").first.wait_for(state="visible")
     assert await page.evaluate("() => window.__atkReloadMarker") == "kept"
     assert await page.evaluate("() => location.pathname") == "/sessions"
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_navigation_uses_one_html_document_across_all_screens(screen_harness: _ScreenHarness) -> None:
-    """起動時のHTMLだけを使い、3画面の切り替えで文書を追加取得しない。"""
-    harness = screen_harness
-    page = harness.page
-    screen_urls = [harness.base_url + path for path in ("/", "/plans", "/sessions")]
-    await page.goto(screen_urls[0])
-    await page.locator("#entry-list").wait_for(state="visible")
-    await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
-    await page.locator("#preview h1", has_text="初回").wait_for(state="visible")
-    await page.locator("nav.app-nav").get_by_role("link", name="セッション").click()
-    await page.locator("#sessions .session-item").first.wait_for(state="visible")
-
     assert [harness.requests.count(url) for url in screen_urls] == [1, 0, 0]
 
 

@@ -183,8 +183,8 @@ def test_claude_answer_ignores_non_string_annotation_notes(tmp_path: pathlib.Pat
     """辞書以外または文字列以外のnotesを自由記述として出力しない。"""
     event = _claude_answer_event(tmp_path, {"answers": {"質問": "回答"}, "annotations": annotations})
 
-    assert isinstance(event["text"], str)
-    assert "自由記述" not in event["text"]
+    assert event["text"] == "回答"
+    assert event["user_response"] == [{"answers": ["回答"]}]
 
 
 @pytest.mark.parametrize(

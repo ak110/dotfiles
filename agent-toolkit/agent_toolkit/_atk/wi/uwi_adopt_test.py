@@ -64,7 +64,6 @@ class TestUwiAdopt:
 
         assert exc_info.value.code == 2
         assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
-        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
         assert "対応commitを検証できる対象リポジトリ" in capsys.readouterr().err
 
     def test_short_commit_is_resolved_with_explicit_worktree(
@@ -229,7 +228,6 @@ class TestUwiAdopt:
 
         assert exc_info.value.code == 2
         assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
-        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
     def test_duplicate_filenames_deduplicated_without_warning(
         self,
@@ -300,27 +298,6 @@ class TestUwiRm:
         assert exc_info.value.code == 0
         commit_cmd = [c["cmd"] for c in git_calls if "commit" in c["cmd"]][0]
         assert "(理由: 誤投入)" in " ".join(commit_cmd)
-
-    def test_multiple_files_removed_single_commit(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """複数ファイル指定時に1コミットへまとめて削除されること。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(
-                ["wi", "rm", f"{_FIXED_TIMESTAMP}-001.md", f"{_FIXED_TIMESTAMP}-002.md"],
-                home=tmp_path,
-            )
-        assert exc_info.value.code == 0
-        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
-        assert len(commit_cmds) == 1
-        assert "chore: remove 2 entries" in " ".join(commit_cmds[0])
 
     def test_rejects_traversal(
         self,

@@ -11,7 +11,7 @@ import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import next_action, plugin_environment
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, termination_evidence_support
 from agent_toolkit._testing.isolation import restore_host_environment
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
@@ -153,12 +153,6 @@ def test_public_multi_turn_trials_execution_failure_has_retry_action(
             assert all(row["status"] == "達成" for row in saved["requirements"])
 
 
-def test_dispatch_forwards_help_and_exit_code(capsys: pytest.CaptureFixture[str]) -> None:
-    args = argparse.Namespace(script_name="plan-check", script_args=["--", "--help"])
-    assert run_script.dispatch(args) == 0
-    assert "計画に必要な情報と実体が揃っているか確かめる" in capsys.readouterr().out
-
-
 def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(run_script.SCRIPT_PATHS, "missing", pathlib.Path("missing.py"))
     args = argparse.Namespace(script_name="missing", script_args=[])
@@ -166,18 +160,32 @@ def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPa
         run_script.dispatch(args)
 
 
-def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
-    """再度の一致確認に使う全引数を`atk run-script session-review-evidence`へ同じ順序で渡す。"""
-    observed: list[str] = []
-
-    def capture_argv(_target: str, *, run_name: str) -> None:
-        assert run_name == "__main__"
-        observed.extend(sys.argv)
-
-    monkeypatch.setattr(run_script.runpy, "run_path", capture_argv)
+def test_dispatch_consumes_session_review_evidence_arguments(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """登録済みscriptが指定区間だけを原文・出所位置付きで返し、呼出元の状態を復元する。"""
+    transcript = tmp_path / "transcript.jsonl"
+    original_text = '原文の"引用"\tと\n改行、空白  を保持'
+    transcript.write_text(
+        "".join(
+            json.dumps(
+                {"type": "user", "timestamp": timestamp, "message": {"role": "user", "content": text}},
+                ensure_ascii=False,
+            )
+            + "\n"
+            for timestamp, text in [
+                ("2026-09-21T19:59:59Z", "区間前"),
+                ("2026-09-21T20:01:00Z", original_text),
+                ("2026-09-21T20:05:01Z", "区間後"),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    original_bytes = transcript.read_bytes()
+    previous_argv, previous_path = list(sys.argv), list(sys.path)
     script_args = [
         "--transcript",
-        "/tmp/transcript.jsonl",
+        str(transcript),
         "--user-events",
         "--since",
         "2026-09-21T20:00:00Z",
@@ -187,7 +195,14 @@ def test_dispatch_forwards_session_review_evidence_arguments(monkeypatch: pytest
 
     assert run_script.dispatch(argparse.Namespace(script_name="session-review-evidence", script_args=["--", *script_args])) == 0
 
-    assert observed == [str(run_script.registered_script_path("session-review-evidence")), *script_args]
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [(event["record"], event["line"], event["text"]) for event in events[:-1]] == [
+        ("claude:transcript", 2, original_text)
+    ]
+    assert events[-1] == {"kind": "summary", "count": 1}
+    assert transcript.read_bytes() == original_bytes
+    assert sys.argv == previous_argv
+    assert sys.path == previous_path
 
 
 @pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report", "report-completion-check"])
@@ -204,20 +219,47 @@ def test_removed_session_review_entries_are_rejected(script_name: str, capsys: p
     assert "session-review-prepare" in run_script.SCRIPT_PATHS
 
 
-def test_dispatch_forwards_termination_decision_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`termination-evidence`へ終了判断記録のファイル引数を同じ順序で渡す。"""
-    observed: list[str] = []
+@pytest.mark.parametrize("matches", [True, False])
+def test_dispatch_consumes_termination_decision_file(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], matches: bool
+) -> None:
+    """原入力に合う判断だけが実保存され、JSON入力と原文を変更しない。"""
+    session_id = "evidence-test"
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    quote = '作業を開始する。\n"引用"と\t末尾空白  '
+    (tmp_path / "transcript.jsonl").touch()
+    termination_evidence_support.human_input(tmp_path, "request", quote)
+    document = {
+        "session_id": session_id,
+        "action": "start",
+        "input_id": "request",
+        "reason": "原入力に従って開始する。\n理由の末尾  ",
+        "quote": quote if matches else quote + "改変",
+    }
+    decision = tmp_path / "decision.json"
+    decision.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    original_bytes = decision.read_bytes()
+    previous_argv, previous_path = list(sys.argv), list(sys.path)
 
-    def capture_argv(_target: str, *, run_name: str) -> None:
-        assert run_name == "__main__"
-        observed.extend(sys.argv)
+    code = run_script.dispatch(
+        argparse.Namespace(script_name="termination-evidence", script_args=["--", "--decision-file", str(decision)])
+    )
 
-    monkeypatch.setattr(run_script.runpy, "run_path", capture_argv)
-    script_args = ["--decision-file", "/tmp/decision.json"]
-
-    assert run_script.dispatch(argparse.Namespace(script_name="termination-evidence", script_args=["--", *script_args])) == 0
-
-    assert observed == [str(run_script.registered_script_path("termination-evidence")), *script_args]
+    assert code == (0 if matches else 2)
+    captured = capsys.readouterr()
+    works = termination_evidence_support.recorded_works()
+    if matches:
+        assert json.loads(captured.out) == {"work_id": works[0][0]}
+        assert works[0][1]["decisions"] == [{"action": "start", "input_id": "request", "reason": document["reason"]}]
+        assert not captured.err
+    else:
+        assert not works
+        assert not captured.out
+        assert "原入力の全文と一致" in captured.err
+    assert decision.read_bytes() == original_bytes
+    assert sys.argv == previous_argv
+    assert sys.path == previous_path
 
 
 @pytest.mark.parametrize(

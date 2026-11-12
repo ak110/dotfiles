@@ -6,13 +6,22 @@ from pytools._internal import setup_registry as _setup_registry
 
 
 class TestApplyAll:
-    """``run`` 経由で winreg 呼び出し列を検証する。"""
+    """``run`` 経由でHKCUへ保存する対象と値を検証する。"""
 
-    def test_calls_create_key_ex_and_set_value_ex(self, monkeypatch: pytest.MonkeyPatch):
-        """run() が winreg の CreateKeyEx / SetValueEx を期待順で呼ぶ。"""
-        calls: list[tuple] = []
+    @pytest.mark.parametrize("write_fails", [False, True])
+    def test_saves_only_requested_hkcu_values(self, monkeypatch: pytest.MonkeyPatch, write_fails: bool):
+        """指定キー・型・値を保存し、無関係な値の保持と書込失敗の伝播を検査する。"""
+        original: dict[tuple[str, str, str], tuple[int, object]] = {
+            ("HKLM", "unrelated", "value"): (1, "keep"),
+            ("HKCU", "unrelated", "value"): (1, "keep"),
+        }
+        registry = original.copy()
 
         class _FakeKey:
+            def __init__(self, hive: str, path: str):
+                self.hive = hive
+                self.path = path
+
             def __enter__(self):
                 return self
 
@@ -27,26 +36,33 @@ class TestApplyAll:
             REG_BINARY = 3
 
             @staticmethod
-            def CreateKeyEx(hive: object, sub_key: str, reserved: int, access: int) -> _FakeKey:
-                calls.append(("CreateKeyEx", hive, sub_key, reserved, access))
-                return _FakeKey()
+            def CreateKeyEx(hive: str, sub_key: str, reserved: int, access: int) -> _FakeKey:
+                assert (hive, reserved, access) == ("HKCU", 0, 2)
+                return _FakeKey(hive, sub_key)
 
             @staticmethod
-            def SetValueEx(_key: object, value_name: str, reserved: int, reg_type: int, value: object) -> None:
-                calls.append(("SetValueEx", value_name, reserved, reg_type, value))
+            def SetValueEx(key: _FakeKey, value_name: str, reserved: int, reg_type: int, value: object) -> None:
+                assert reserved == 0
+                if write_fails:
+                    raise PermissionError("registry denied")
+                registry[key.hive, key.path, value_name] = (reg_type, value)
 
         monkeypatch.setattr(_setup_registry.winutils, "import_winreg", lambda: _FakeWinreg)
 
-        result = _setup_registry.run()
-
-        assert result.changed is True
-        # CreateKeyEx と SetValueEx が設定エントリ数と一致して呼ばれる
-        create_calls = [c for c in calls if c[0] == "CreateKeyEx"]
-        set_calls = [c for c in calls if c[0] == "SetValueEx"]
-        assert len(create_calls) > 0
-        assert len(set_calls) == len(create_calls)
-        # link エントリは REG_BINARY (3) で書き込まれる
-        link_set = [c for c in set_calls if c[1] == "link"]
-        assert len(link_set) == 1
-        assert link_set[0][3] == _FakeWinreg.REG_BINARY
-        assert link_set[0][4] == b"\x00\x00\x00\x00"
+        if write_fails:
+            with pytest.raises(PermissionError, match="registry denied"):
+                _setup_registry.run()
+            assert registry == original
+            return
+        assert _setup_registry.run().changed is True
+        explorer = r"Software\Microsoft\Windows\CurrentVersion\Explorer"
+        assert registry == {
+            **original,
+            ("HKCU", explorer + r"\Advanced", "HideFileExt"): (4, 0),
+            ("HKCU", r"Software\Microsoft\Windows\CurrentVersion\Search", "SearchboxTaskbarMode"): (4, 0),
+            ("HKCU", explorer, "link"): (3, b"\x00\x00\x00\x00"),
+            ("HKCU", r"Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell", "FolderType"): (
+                1,
+                "NotSpecified",
+            ),
+        }

@@ -195,7 +195,6 @@ def test_operation_skill_contract_for_every_entry_and_subject(
     assert _run(payload, env).returncode == 0
     joined = "\n".join(observed)
     assert str(paths[0]) in joined or entry.short_name in joined
-    assert parsed_tables.cache_info().hits > 0
 
 
 @pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])

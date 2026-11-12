@@ -1,8 +1,9 @@
 """公開された計画ファイル作成コマンドのPostToolUse記録を検証する。"""
 
+import json
 import pathlib
 
-from agent_toolkit._common.shell_segments import extract_execution_segments
+from agent_toolkit._common import session_state
 from agent_toolkit._hooks import posttooluse
 
 
@@ -14,12 +15,23 @@ def test_run_script_plan_create_records_current_plan_file_path(
     plan_path = tmp_path / ".claude" / "plans" / "15-0713_process-wi_レーン01.md"
     plan_path.parent.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(tmp_path))
-    recorded: list[tuple[str, str]] = []
-    monkeypatch.setattr(posttooluse, "_record_plan_file", lambda session_id, path: recorded.append((session_id, path)))
-
-    segments = extract_execution_segments("atk run-script plan-create -- --main-source /tmp/main.md --lane lane-01")
-    posttooluse._record_created_plan_file(  # pylint: disable=protected-access
-        "plan-path-run-script", segments, {"stdout": f"{plan_path}\n"}
+    sid = "plan-path-run-script"
+    session_state.update_state(sid, lambda state: {**state, "plan_mode_skill_invoked": True})
+    assert (
+        posttooluse.main(
+            json.dumps(
+                {
+                    "session_id": sid,
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "atk run-script plan-create -- --main-source /tmp/main.md --lane lane-01"},
+                    "tool_response": {"stdout": f"{plan_path}\n", "stderr": "", "exit_code": 0},
+                }
+            )
+        )
+        == 0
     )
 
-    assert recorded == [("plan-path-run-script", str(plan_path))]
+    state = session_state.read_state(sid)
+    assert state["current_plan_file_path"] == str(plan_path)
+    assert state["plan_mode_skill_invoked"] is True

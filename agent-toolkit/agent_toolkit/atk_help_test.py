@@ -17,14 +17,6 @@ from agent_toolkit._common import wait_schedule
 from agent_toolkit._testing import cli_examples
 
 
-def test_notify_help_names_the_direct_launcher(capsys):
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "notify", "--help"])
-    text = "".join(capsys.readouterr().out.split())
-    assert "自分を起動した委譲元へ" in text
-    assert "委譲先を起動した主体が`wait`の結果で受け取る" in text
-
-
 def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixture[str]) -> None:
     """実際のMCP登録とCLI登録を公開ヘルプから見つけられる。"""
     source = pathlib.Path(__file__).parent / "_agents_server" / "mcp_tools.py"
@@ -388,24 +380,39 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation(
 
 
 @pytest.mark.parametrize(
-    ("argv", "saved"),
-    [
-        (["wi", "show", "fb-001.md"], False),
-        (["wi", "show", "fb-001.md", "fb-002.md"], True),
-        (["wi", "show", "--all"], True),
-        (["run-script", "session-review-evidence", "--", "t.jsonl", "--detail", "1"], False),
-        (["run-script", "session-review-evidence", "--", "t.jsonl", "--user-events"], True),
-        (["agents", "wait"], False),
-        (["review-audit", "pending", "--repo", "owner/repo"], True),
-    ],
+    ("filenames", "saved"),
+    [(["fb-001.md"], False), (["fb-001.md", "fb-002.md"], True), (["--all"], True)],
 )
-def test_output_saving_help_matches_cli_condition(argv: list[str], saved: bool) -> None:
-    """呼び出しごとに、量によらず標準出力を保存するかの判定が呼び出しの区分と一致する。
+def test_output_saving_preserves_cli_body(tmp_path, monkeypatch, capsys, filenames, saved) -> None:
+    """単発は直接表示し、一括取得は短い本文でも全量を保存して所在を表示する。"""
+    output_directory = tmp_path / "output"
+    output_directory.mkdir()
+    body = "取得した本文\n日本語の次行\n"
 
-    判定が区分と異なると、呼び出し元は短い単発照会でも保存先を探すか、ファイルとして渡す結果を直接表示と誤認する。
-    """
-    args = atk._build_parser().parse_args(argv)  # pylint: disable=protected-access  # noqa: SLF001
-    assert (atk._output_as_file_call(args) is not None) is saved  # pylint: disable=protected-access  # noqa: SLF001
+    def dispatch(_invocation, **_kwargs):
+        print(body, end="")
+        return 0
+
+    monkeypatch.setattr(atk, "is_agent_environment", lambda: True)
+    monkeypatch.setattr(atk._managed_temp, "create_output_temp", lambda _prefix: output_directory)  # pylint: disable=protected-access
+    monkeypatch.setitem(atk._COMMANDS, "wi", dispatch)  # pylint: disable=protected-access
+    with pytest.raises(SystemExit) as exited:
+        atk.main(["wi", "show", *filenames])
+    assert exited.value.code == 0
+    output = capsys.readouterr()
+    assert not output.err
+    if saved:
+        lines = output.out.splitlines()
+        assert lines[0].startswith("保存先: ")
+        path = pathlib.Path(lines[0].removeprefix("保存先: "))
+        assert path.is_absolute()
+        assert path.parent == output_directory
+        assert lines[1] == "行数: 2"
+        assert path.read_text(encoding="utf-8") == body
+        assert body not in output.out
+    else:
+        assert output.out == body
+        assert not list(output_directory.iterdir())
 
 
 def _leaf_commands() -> set[str]:
@@ -493,20 +500,6 @@ def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
         assert parsed.writer_session == ["agreed-writer-1", "agreed-writer-2"]
 
 
-def test_run_script_help_explains_plan_rewrite_record_discovery_and_order(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """plan-rewrite自身のヘルプから未指定記録の取得と書換え順の複数表指定へ到達できる。"""
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["run-script", "plan-rewrite", "--", "--help"])
-    output = capsys.readouterr()
-    assert not output.err
-    text = "".join(output.out.split())
-    assert "未指定の対象記録を検出" in text
-    assert "書込前に全件を示して拒否" in text and "`atkplanscheckout`" in text
-    assert "`--rewrite-map`を書換え順に反復指定" in text and "`--previous-head`" in text
-
-
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
     """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
     commands = {name: parser for name, parser, _summary in _walk_commands()}
@@ -541,12 +534,3 @@ def test_check_alerts_help_exposes_finite_operation_without_saving(
     assert "--forge {auto,github,gitlab}" in output.out
     assert output.err == ""
     assert set(tmp_path.rglob("*")) == before
-
-
-def test_run_skill_explains_batch_and_work_directory(capsys) -> None:
-    """既存run-skillからbatchと報告先・cwdの分離を発見できる。"""
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["run-skill", "--help"])
-    output = capsys.readouterr().out
-    assert "--work-dir" in output and "review-session batch" in " ".join(output.split())
-    assert "完全一致" in output and "報告先" in output

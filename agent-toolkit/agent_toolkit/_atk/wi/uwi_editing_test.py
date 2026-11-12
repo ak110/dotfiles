@@ -11,7 +11,14 @@ from agent_toolkit._atk.wi import uwi as uwi_module
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_uwi_support import _body_file_args, _invoke_uwi_add, _make_uwi_add_fake
 from agent_toolkit._testing.wi_uwi_support import _clear_agent_environment as _clear_agent_environment
-from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _GitCall, _make_subprocess_fake, _setup_notes, _write_uwi_file
+from agent_toolkit.atk_test import (
+    _FIXED_TIMESTAMP,
+    _GitCall,
+    _make_subprocess_fake,
+    _setup_notes,
+    _write_awi_file,
+    _write_uwi_file,
+)
 
 
 class TestUwiMutationTargetRepoVerification:
@@ -65,7 +72,6 @@ class TestUwiMutationTargetRepoVerification:
 
         assert exc_info.value.code == 2
         assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
-        assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
     def test_uwi_adopt_match_succeeds(
         self,
@@ -106,47 +112,28 @@ class TestUwiMutationTargetRepoVerification:
         assert "state: inbox\n" in _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
 
 
-class TestUwiList:
-    """UWI一覧のフィルター動作検証。"""
-
-    def test_status_filter(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--answered=noで未回答のみが1件1行（ファイル名・`target_repo`・要約）形式で出力される。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=uwi", "--answered", "no", "--no-jsonl"], home=tmp_path)
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
-
-
-class TestUwiListSkipPull:
-    """UWI一覧: --skip-pull指定時はremote同期全体をスキップする。"""
-
-    def test_skip_pull_omits_git_pull(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
-        notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--type=uwi", "--skip-pull"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        assert not any(c["cmd"][:2] in (["git", "fetch"], ["git", "merge"], ["git", "rebase"]) for c in git_calls)
+@pytest.mark.parametrize("skip_pull", [False, True])
+def test_uwi_list_filters_answers_and_honors_sync_option(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    skip_pull: bool,
+) -> None:
+    """回答済みUWIとAWIを除外し、同期省略時も同じ未回答本文を表示する。"""
+    notes = _setup_notes(tmp_path)
+    _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
+    _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
+    _write_awi_file(notes, "awi.md")
+    calls: list[_GitCall] = []
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(calls))
+    with pytest.raises(SystemExit) as result:
+        atk.main(
+            ["wi", "list", "--type=uwi", "--answered=no", "--no-jsonl", *(["--skip-pull"] if skip_pull else [])], home=tmp_path
+        )
+    assert result.value.code == 0
+    assert capsys.readouterr().out == f"# uwi\n{_FIXED_TIMESTAMP}-001.md: github.com/example/foo [inbox/unanswered] q1\n"
+    synchronized = any(call["cmd"][:2] == ["git", "fetch"] for call in calls)
+    assert synchronized is not skip_pull
 
 
 class TestUwiEdit:

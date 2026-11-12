@@ -106,11 +106,25 @@ fn shared_context_usage_examples_reach_all_rendered_statuses() {
 }
 
 #[test]
-fn statusline_width_reserves_claude_render_margin() {
-    assert_eq!(statusline_columns(80), 76);
-    assert_eq!(statusline_columns(4), 0);
-    assert_eq!(statusline_columns(3), 0);
-    assert_eq!(statusline_columns(1), 0);
+fn statusline_rendering_fits_available_columns() {
+    let row = status_session("session-id", "running", "2025-12-31T23:59:00+00:00");
+    let files = [state_file(
+        "root.json",
+        Value::Null,
+        serde_json::json!([row]),
+    )];
+    let now = DateTime::parse_from_rfc3339("2026-01-01T00:00:00+00:00")
+        .unwrap()
+        .with_timezone(&Utc);
+    for width in [1, 3, 4, 40, 80] {
+        let lines = render_state_files(&files, statusline_columns(width), now);
+        assert!(lines.iter().all(|line| display_width(line) <= width));
+        if width >= 40 {
+            assert_eq!(lines.len(), 1);
+            assert!(lines[0].contains("session-id"), "{lines:?}");
+            assert!(lines[0].contains("1m0s"), "{lines:?}");
+        }
+    }
 }
 
 #[test]

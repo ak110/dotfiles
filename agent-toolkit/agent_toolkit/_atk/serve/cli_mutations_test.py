@@ -9,73 +9,50 @@ import typing
 import pytest
 
 from agent_toolkit._atk.serve import app as serve_app
-from agent_toolkit._atk.serve import config, state, wi_operations
+from agent_toolkit._atk.serve import config, state
+from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment
 from agent_toolkit._atk.wi import uwi as wi_uwi
 from agent_toolkit._testing import wi_entry_files as wi_files
-from agent_toolkit._testing.serve_support import _patch_comment_edit_dependencies, _session_review_awi
+from agent_toolkit._testing.serve_support import _disable_wi_git, _patch_comment_edit_dependencies, _session_review_awi
 
 
 @pytest.mark.asyncio
-async def test_transition_routes_forward_only_supported_explicit_states(tmp_path: pathlib.Path) -> None:
-    """各遷移ルートが共通契約の明示状態だけを処理層へ渡す。"""
-
-    class CaptureOperations(wi_operations.Operations):
-        def __init__(self, private_notes: pathlib.Path) -> None:
-            super().__init__(private_notes)
-            self.calls: list[tuple[str, list[str], dict[str, object]]] = []
-
-        def transition(self, action: str, filenames: list[str], **kwargs: object) -> list[str]:
-            self.calls.append((action, filenames, kwargs))
-            return filenames
-
-    operations = CaptureOperations(tmp_path)
-    app = serve_app.create_app(
-        tmp_path,
-        config.ServeConfig("127.0.0.1", 28766),
-        state.ServeState(tmp_path),
-        operations=operations,
-    )
+async def test_transition_routes_forward_only_supported_explicit_states(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """明示状態の対象だけを遷移・削除し、省略時の解決と禁止状態の拒否を保つ。"""
+    _disable_wi_git(monkeypatch)
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
-    for action, state_name in (
-        ("start-processing", "hold"),
-        ("return-to-inbox", "rejected"),
-        ("adopt", "hold"),
-        ("reject", "hold"),
-        ("remove", "hold"),
+    other = wi_files.write_awi(tmp_path, "other.md", state="inbox")
+    unchanged = other.read_bytes()
+    for action, initial, expected in (
+        ("start-processing", "hold", "processing"),
+        ("return-to-inbox", "rejected", "inbox"),
+        ("adopt", "hold", "adopted"),
+        ("reject", "hold", "rejected"),
+        ("remove", "hold", None),
     ):
-        response = await client.post(
-            f"/api/entries/{action}",
-            json={"filenames": ["entry.md"], "state": state_name},
-        )
+        path = wi_files.write_awi(tmp_path, f"{action}.md", state=initial)
+        response = await client.post(f"/api/entries/{action}", json={"filenames": [path.name], "state": initial})
         assert response.status_code == 200
-        assert operations.calls[-1] == (
-            action,
-            ["entry.md"],
-            {
-                "note": None,
-                "commit": None,
-                "target_repo": None,
-                "force": False,
-                "state": state_name,
-                "expected_content": None,
-            },
-        )
+        if expected is None:
+            assert not path.exists()
+        else:
+            assert wi_entries.entry_state_of(path) == expected
+        assert other.read_bytes() == unchanged
 
-    implicit = await client.post("/api/entries/adopt", json={"filenames": ["entry.md"]})
+    path = wi_files.write_awi(tmp_path, "implicit.md")
+    implicit = await client.post("/api/entries/adopt", json={"filenames": [path.name]})
     assert implicit.status_code == 200
-    assert operations.calls[-1] == (
-        "adopt",
-        ["entry.md"],
-        {"note": None, "commit": None, "target_repo": None, "force": False},
-    )
-
-    invalid = await client.post(
-        "/api/entries/adopt",
-        json={"filenames": ["entry.md"], "state": "inbox"},
-    )
+    assert wi_entries.entry_state_of(path) == "adopted"
+    before = path.read_bytes()
+    invalid = await client.post("/api/entries/adopt", json={"filenames": [path.name], "state": "inbox"})
     assert invalid.status_code == 400
+    assert path.read_bytes() == before
+    assert other.read_bytes() == unchanged
 
 
 @pytest.mark.asyncio

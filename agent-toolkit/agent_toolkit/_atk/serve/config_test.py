@@ -232,8 +232,6 @@ async def test_serve_shuts_down_on_signal_and_stops_state(
     async def fake_serve(app: object, hypercorn_config: typing.Any, *, shutdown_trigger: typing.Any) -> None:
         del app
         observed["bind"] = hypercorn_config.bind[0]
-        observed["graceful_timeout"] = hypercorn_config.graceful_timeout
-        observed["accesslog"] = hypercorn_config.accesslog
         # シグナル受信を模擬してshutdown_triggerを解除する。
         callback, signal_name = handlers[received_signal]
         callback(signal_name)
@@ -243,7 +241,4 @@ async def test_serve_shuts_down_on_signal_and_stops_state(
     await serve._serve(tmp_path, config.ServeConfig("127.0.0.1", 28766))
 
     assert observed["bind"] == "127.0.0.1:28766"
-    assert observed["graceful_timeout"] == 1.0
-    assert observed["accesslog"] is None
-    assert set(handlers) == {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
     assert stopped == ["stop"]

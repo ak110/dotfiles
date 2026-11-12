@@ -1,11 +1,17 @@
-"""engine別のbackendの型（`_agents_server/backends.py`）を検証する。"""
+"""engine別のbackendの操作結果（`_agents_server/backends.py`）を検証する。"""
 
 import asyncio
 import pathlib
+from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
-from agent_toolkit._agents_server import backends, engine_availability, state
+from agent_toolkit._agents_server import backends, engine_availability, manager, state
+from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
+
+pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 def _failed(engine: str, error: dict[str, object]) -> state.SessionState:
@@ -30,9 +36,6 @@ async def test_backends_satisfy_protocol(tmp_path: pathlib.Path) -> None:
     }
 
     for engine, backend in created.items():
-        backend_type = backends.backend_class(engine)
-        assert backend_type is not None
-        assert isinstance(backend, backend_type)
         assert backend.unavailable_reason(state.SessionState(session_id="s", cwd="/", engine=engine)) is None
         await backend.close()
 
@@ -53,8 +56,6 @@ async def test_backends_satisfy_protocol(tmp_path: pathlib.Path) -> None:
     assert backends.excludes_with_recorded_reason("codex", engine_availability.LEGACY_CLAUDE_RATE_LIMIT_REASON)
     assert backends.interrupt_requires_turn_id("codex")
     assert not backends.interrupt_requires_turn_id("claude")
-    assert [engine for engine in sorted(created) if created[engine].START_FAILURE_EXCLUDES_CANDIDATE] == ["agy", "opencode"]
-    assert [engine for engine in sorted(created) if created[engine].ORPHAN_TAKEOVER] == ["codex"]
 
 
 def test_unsupported_engine_has_no_backend() -> None:
@@ -70,3 +71,65 @@ def test_unsupported_engine_has_no_backend() -> None:
             root_session_id=None,
             log_directory=None,
         )
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy", "opencode"])
+@pytest.mark.asyncio
+async def test_start_exception_only_advances_cli_candidates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, engine: str
+) -> None:
+    """実backendの開始境界が失敗した場合、CLI型だけが次候補へ進む。"""
+    async with manager.AgentsServerManager(None) as owner:
+        backend = owner._backend(engine)  # noqa: SLF001  # pylint: disable=protected-access
+
+        async def failed_start(*_args: Any, **_kwargs: Any) -> state.SessionState:
+            raise RuntimeError("開始境界の失敗")
+
+        monkeypatch.setattr(backend, "start", failed_start)
+        fallback_engine = "codex" if engine == "claude" else "claude"
+        fallback = FakeBackend(owner.sessions, fallback_engine)
+        install_backend(owner, fallback_engine, fallback)
+        model = "local/first" if engine == "opencode" else "first"
+        first = f"opencode:{model}" if engine == "opencode" else f"{engine}:{model}/medium"
+        candidates = f"{first},{fallback_engine}:second/medium"
+        if engine in {"agy", "opencode"}:
+            response = await owner.start(candidates, "調査", str(tmp_path))
+            assert response["engine"] == fallback_engine
+            assert response["excluded_candidates"] == [
+                {"engine": engine, "model": model, "effort": "medium", "reason": "開始境界の失敗"}
+            ]
+        else:
+            with pytest.raises(RuntimeError, match="開始境界の失敗"):
+                await owner.start(candidates, "調査", str(tmp_path))
+            assert not fallback.start_calls
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy", "opencode"])
+@pytest.mark.asyncio
+async def test_orphan_takeover_only_publishes_confirmed_codex_turn(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, engine: str
+) -> None:
+    """所有者不在の旧記録は、対応backendが元turnの終了を確認した場合だけ終了へ遷移する。"""
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    identifier = "a0278936-c56f-4a22-9f34-2a5683019a57"
+    session_registry.publish(
+        identifier,
+        state=session_registry.PublicationState.PENDING_RUNNING,
+        engine=engine,
+        cwd=str(tmp_path),
+        turn_seq=3,
+        turn_id="turn-1",
+    )
+    async with manager.AgentsServerManager(None) as owner:
+        backend = owner._backend(engine)  # noqa: SLF001  # pylint: disable=protected-access
+        read_turns = AsyncMock(return_value=[("turn-1", "completed")])
+        monkeypatch.setattr(backend, "read_thread_turns", read_turns, raising=False)
+        await owner.take_over_orphaned_session(identifier)
+        resolution = session_registry.resolve(identifier)
+        if engine == "codex":
+            assert resolution.state is session_registry.Resolution.TERMINAL
+            assert (await owner.show_session(identifier))["status"] == "completed"
+            read_turns.assert_awaited_once_with(identifier)
+        else:
+            assert resolution.state is session_registry.Resolution.RUNNING
+            read_turns.assert_not_awaited()

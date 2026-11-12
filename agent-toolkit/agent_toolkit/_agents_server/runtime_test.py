@@ -11,6 +11,7 @@ from agent_toolkit._agents_server import manager, status_file, unavailable_candi
 from agent_toolkit._agents_server.shared_roots import StatusFileIdentity
 from agent_toolkit._atk import config
 from agent_toolkit._common import session_registry
+from agent_toolkit._common.next_action import ActionableError
 
 
 @pytest.mark.parametrize("operation", ["activate", "claim", "notices", "candidates", "registry"])
@@ -39,6 +40,8 @@ async def test_blocking_waits_do_not_stall_event_loop(
         else:
             release.wait()
         observed.append(progressed.is_set() and threading.get_ident() != loop_thread)
+        if operation == "registry":
+            return session_registry.SessionResolution(session_registry.Resolution.MISSING)
         return (None, None) if operation == "claim" else ([] if operation == "notices" else {})
 
     def controller() -> None:
@@ -75,8 +78,9 @@ async def test_blocking_waits_do_not_stall_event_loop(
                 await server._resolve_start_candidates("plan", launch_kind="delegate")  # noqa: SLF001  # pylint: disable=protected-access
             else:
                 monkeypatch.setattr(session_registry, "resolve", blocking)
-                with pytest.raises(AttributeError):
-                    await server.show_session("child")
+                with pytest.raises(ActionableError, match="unknown session: a0278936") as raised:
+                    await server.show_session("a0278936-c56f-4a22-9f34-2a5683019a57")
+                assert "no agents_server on this host has a record" in str(raised.value)
             await heartbeat_task
             assert observed == [True]
         finally:

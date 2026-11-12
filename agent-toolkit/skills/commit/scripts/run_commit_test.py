@@ -1,7 +1,6 @@
 """公開コミット起動から、実hookの中断と所有する資源の回収を確認する。"""
 
 import argparse
-import contextlib
 import os
 import pathlib
 import shlex
@@ -9,13 +8,11 @@ import shutil
 import signal
 import sys
 import time
-import types
 from collections.abc import Callable
 
 import psutil
 import pytest
 import yaml
-from pyfltr.command import execution_slot
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import process_tree
@@ -23,24 +20,28 @@ from agent_toolkit._testing import git_repository
 
 
 @pytest.mark.skipif(os.name != "posix", reason="commit入口はPOSIX専用")
-def test_public_commit_forwards_git_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    """登録済みscriptからGitの終了コードを返す。"""
-    commands = []
-
-    def hold(*_args, **_kwargs):
-        return contextlib.nullcontext(None)
-
-    def scope(command, **_kwargs):
-        commands.append(command)
-        return contextlib.nullcontext(types.SimpleNamespace(wait=lambda **_kwargs: 7))
-
-    monkeypatch.setattr(execution_slot, "hold", hold)
-    monkeypatch.setattr(process_tree, "process_scope", scope)
+def test_public_commit_forwards_git_exit_code(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """実hookで拒否されたGitの終了コードを返し、HEADとstage済み変更を保持する。"""
+    repo = git_repository.init_repository(tmp_path / "repo", files={"tracked": "base"}, commit_message="基点")
+    base = git_repository.git_output(repo, "rev-parse", "HEAD")
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    marker = tmp_path / "hook-ran"
+    hook = hooks / "pre-commit"
+    hook.write_text(f"#!/bin/sh\nprintf rejected > {shlex.quote(str(marker))}\nexit 7\n", encoding="utf-8")
+    hook.chmod(0o755)
+    git_repository.run_git(repo, "config", "core.hooksPath", str(hooks))
+    (repo / "tracked").write_text("changed", encoding="utf-8")
+    git_repository.run_git(repo, "add", "tracked")
+    monkeypatch.chdir(repo)
     result = run_script.dispatch(
-        argparse.Namespace(script_name="commit-with-timeout", script_args=["--timeout", "1", "--", "-m", "終了コードの確認"])
+        argparse.Namespace(script_name="commit-with-timeout", script_args=["--timeout", "10", "--", "-m", "終了コードの確認"])
     )
-    assert result == 7
-    assert len(commands) == 1 and commands[0][-3:] == ["commit", "-m", "終了コードの確認"]
+    # Gitはpre-commitの非0終了をcommitの終了コード1へ変換する。
+    assert result == 1
+    assert marker.read_text(encoding="utf-8") == "rejected"
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == base
+    assert git_repository.git_output(repo, "show", ":tracked") == "changed"
 
 
 def _holds_resources(process: psutil.Process) -> bool:

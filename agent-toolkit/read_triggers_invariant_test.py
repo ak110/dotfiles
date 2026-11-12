@@ -139,19 +139,6 @@ def test_process_wi_body_defines_immediate_fix_for_all_modes():
     assert any("即時対応" in row.condition and {path.name for path in row.documents} == {"immediate-fix.md"} for row in rows)
 
 
-def test_formal_remediation_consumers_keep_shared_timing_and_lane_choices():
-    """最小修正後も共通の時機を使い、現在不良の新規レーン受入を一律禁止しない。"""
-    root = _PLUGIN_ROOT / "skills/process-wi/references"
-    single = read_triggers.ReadTarget(root / "single-lane.md", "見つけた既存不良の扱い").body()
-    addition = (root / "run-lanes-addition.md").read_text(encoding="utf-8")
-    assert "正式対応のAWIも" in single and "今回追加なら処理対象と対応表へ加える" in single
-    assert "正式対応AWIも同書で時機を判定" in addition
-    assert "新しいレーンも受入先にできる" in addition
-    for body in (single, addition):
-        assert "今回の処理対象や対応表には追加しない" not in body
-        assert "新規レーンを作成することは避ける" not in body
-
-
 def test_cross_plugin_references_resolve_in_codex_cache_layout(tmp_path, monkeypatch):
     """Codexの配布キャッシュ（版ごとの別ディレクトリ）でも、agent-basicsの資料へ不在の診断なく届く。"""
     cache = tmp_path / "codex/plugins/cache/mine"

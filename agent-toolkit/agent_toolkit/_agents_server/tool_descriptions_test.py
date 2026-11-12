@@ -4,46 +4,52 @@ from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
-import pytest
+import json
+import pathlib
+import re
 
-from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import (
-    mcp_tools,
-    tool_descriptions,
-    tool_names,
-)
+import pytest
+from mcp.types import CallToolResult
+
+from agent_toolkit._agents_server import mcp_tools
 from agent_toolkit._testing.agents_server_support import (
+    _manager_with_fake,
+    _observed_input_params,
+    _recording_candidates,
     _start_tool,
 )
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
-def test_start_parameter_descriptions_are_self_contained() -> None:
-    """各引数の説明は外部の説明を参照せず、`mode`の説明は公開する全modeを挙げる。"""
-    properties = _start_tool().parameters["properties"]
-    for name, schema in properties.items():
-        description = schema.get("description", "")
-        assert "instructions" not in description, name
-        assert "共通引数" not in description, name
-        assert "agent-toolkit:delegation" not in description, name
-    mode = properties["mode"]["description"]
-    for value in tool_names.START_MODES:
-        assert f"`{value}`" in mode, value
-
-
-def test_start_description_selects_mode_and_lists_minimal_calls() -> None:
-    """`start`の説明と`mode`の引数説明が、公開する全modeの受理可能な呼び出し例を持つ。"""
+@pytest.mark.asyncio
+async def test_start_description_selects_mode_and_lists_minimal_calls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """公開説明の最小例はschemaと起動条件を通り、記載されたmodeでsessionを生成する。"""
     tool = _start_tool()
     description = tool.description + tool.parameters["properties"]["mode"]["description"]
-    for mode in tool_names.START_MODES:
-        if mode == "task":
-            continue
-        assert f"- {mode}: `{{" in description, mode
-    assert '- 通常task: `{"cwd":' in description
-    assert '- 軽量task: `{"cwd":' in description
-    assert tool_descriptions.START_NORMAL_TASK_EXAMPLE in description
-    assert tool_descriptions.START_LIGHTWEIGHT_TASK_EXAMPLE in description
+    examples = dict(re.findall(r"^- ([^:]+): `(\{[^`]+\})`", description, re.MULTILINE))
+    assert set(examples) == {"通常task", "軽量task", "delegate", "explore", "write", "shell"}
+    contract = tmp_path / "work-contract.md"
+    contract.write_text("# 全体作業契約\n", encoding="utf-8")
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, _backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        for name, example in examples.items():
+            arguments = json.loads(example.replace("{...}", "{}"))
+            arguments["cwd"] = str(tmp_path)
+            if "whole_contract_path" in arguments:
+                arguments["whole_contract_path"] = str(contract)
+            if name.endswith("task"):
+                role = "exec" if name == "通常task" else "external-write-review"
+                arguments["subagent_md_path"] = role
+                arguments["extra_params"] = _observed_input_params(f"{role}.subagent.md", tmp_path)
+            response = await mcp_tools.mcp.call_tool("start", arguments)
+            assert isinstance(response, CallToolResult)
+            assert response.structured_content is not None
+            shown = await manager.show_session(response.structured_content["session_id"])
+            assert shown["launch_kind"] == ({"通常task": "delegate", "軽量task": "explore"}.get(name, name))
 
 
 @pytest.mark.asyncio
@@ -58,40 +64,6 @@ async def test_tool_descriptions_fit_claude_code_truncation_and_describe_every_a
         assert len(tool.description or "") <= 4096, tool.name
         for name, schema in tool.input_schema.get("properties", {}).items():
             assert schema.get("description"), f"{tool.name}.{name}"
-
-
-def test_instructions_keep_server_overview_without_argument_specification() -> None:
-    """instructionsは撤去したmodeの名前を案内しない。"""
-    instructions = mcp_tools.mcp.instructions or ""
-    for legacy in tool_names.LEGACY_START_MODES:
-        assert legacy not in instructions, legacy
-
-
-def test_lightweight_selection_reaches_instructions_and_mode_schema() -> None:
-    """独立した2つの配送先が同じ判断基準を持ち、開始前の文脈の上限へ収まる。"""
-    selection = tool_descriptions.LIGHTWEIGHT_MODE_SELECTION
-    instructions = mcp_tools.mcp.instructions or ""
-    mode = _start_tool().parameters["properties"]["mode"]["description"]
-    assert selection in instructions
-    assert selection in mode
-    assert "同じ担当が似た対象から順に調べ" in selection
-    assert "件数や独立性だけで担当を分けず" in selection
-    assert "重複読込・指示作成・検収・結論の再構築" in selection
-    assert len(instructions) <= 4096
-
-
-def test_public_timeout_schemas_expose_unified_defaults() -> None:
-    """公開schemaの待機系操作の説明が、timeoutを省略した場合の実装の上限秒数を示す。"""
-    for tool_name, default in (
-        ("send_message", server_manager.DEFAULT_SEND_MESSAGE_TIMEOUT),
-        ("kill", server_manager.DEFAULT_KILL_TIMEOUT),
-    ):
-        tool = mcp_tools.mcp._tool_manager.get_tool(tool_name)
-        assert tool is not None
-        assert default.is_integer(), tool_name
-        seconds = f"{int(default)}秒"
-        assert seconds in tool.description, tool_name
-        assert seconds in tool.parameters["properties"]["timeout"]["description"], tool_name
 
 
 @pytest.mark.asyncio

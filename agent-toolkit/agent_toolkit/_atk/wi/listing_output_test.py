@@ -38,24 +38,6 @@ class TestListCount:
         captured = capsys.readouterr()
         assert captured.out == "3\n"
 
-    def test_count_suppresses_headers_and_entries(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--count指定時は種別ヘッダ・エントリ行を出力しない。"""
-        notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-001.md")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "list", "--count"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert captured.out == "1\n"
-
     def test_count_with_status_filter(
         self,
         monkeypatch: pytest.MonkeyPatch,

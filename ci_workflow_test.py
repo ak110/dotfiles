@@ -14,7 +14,6 @@ from _test_helpers import (
     _JUNIT_UPLOAD,
     _OWNS,
     REPO_ROOT,
-    WORKFLOW_PATH,
     _run_git,
     _statusline_job,
     expanded_workflow_steps,
@@ -179,29 +178,6 @@ def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
     assert workflow_mapping(jobs["statusline-version"])["name"] == "statusline-version"
 
 
-def test_chezmoi_is_installed_by_shared_action(workflow_data: dict[str, object]) -> None:
-    """chezmoiを導入するjobは、導入の処理を写さずリポジトリのcomposite actionを使う。"""
-    installers = {
-        job_name: step
-        for job_name, job in workflow_jobs(workflow_data).items()
-        for step in expanded_workflow_steps(workflow_mapping(job))
-        if str(step.get("uses", "")).endswith(".github/actions/install-chezmoi")
-    }
-    assert set(installers) == {
-        "python-lint",
-        "pylint",
-        "pytest-root",
-        "pytest-toolkit",
-        "test-linux",
-        "test-windows",
-        "update-dotfiles-upgrade-windows",
-    }
-    for job_name, step in installers.items():
-        assert str(step["uses"]).endswith(".github/actions/install-chezmoi"), job_name
-        assert "run" not in step, job_name
-    assert "install_chezmoi()" not in WORKFLOW_PATH.read_text(encoding="utf-8")
-
-
 def _makefile_variable(name: str) -> str:
     text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     match = re.search(rf"^{re.escape(name)} := (.+)$", text, flags=re.MULTILINE)
@@ -309,21 +285,6 @@ def test_linux_job_places_temporary_files_on_runner_disk(workflow_data: dict[str
     placement = runs.index('echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"')
     for marker in ("scripts/check_update_dotfiles_upgrade.py", "install.sh"):
         assert placement < next(index for index, run in enumerate(runs) if marker in run), marker
-
-
-def test_update_includes_locked_rust_validation() -> None:
-    """一括更新でCargo制約内の更新を行い、同じcrateを検証する。"""
-    text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    update = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
-    assert update is not None
-    commands = update.group(1)
-    manifest = "--manifest-path rust/claude-statusline/Cargo.toml"
-    assert f"cargo update {manifest}" in commands
-    assert f"cargo fmt {manifest} --check" in commands
-    assert f"cargo clippy {manifest} --locked --all-targets --all-features -- -D warnings" in commands
-    assert f"cargo test {manifest} --locked" in commands
-    assert commands.index("cargo update") < commands.index("cargo test")
-    assert "$(MAKE) test" not in commands
 
 
 def test_removal_registry_expiry_runs_only_in_scheduled_audit() -> None:

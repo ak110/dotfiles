@@ -171,38 +171,6 @@ class TestRewriteKnownMarketplacesEntry:
         assert entry["installLocation"] == str(dotfiles_root)
         assert isinstance(entry["lastUpdated"], str) and entry["lastUpdated"].endswith("Z")
 
-    def test_preserves_other_keys(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
-    ):
-        """他の marketplace キーを保持したまま対象キーだけ上書きする。"""
-        known, _settings = marketplace_paths
-        known.write_text(
-            json.dumps(
-                {
-                    "claude-plugins-official": {"source": {"source": "github", "repo": "anthropics/claude-plugins-official"}},
-                    _claude_common.MARKETPLACE_NAME: {"source": {"source": "github", "repo": "ak110/dotfiles"}},
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(_common, "run_subprocess", lambda *_a, **_k: _FakeResult(returncode=0))
-
-        result = _claude_marketplace.repair_marketplace()
-
-        assert result is True
-        data = json.loads(known.read_text(encoding="utf-8"))
-        # 他キーが保持されている
-        assert "claude-plugins-official" in data
-        # 対象キーが directory 型に書き換わっている
-        assert data[_claude_common.MARKETPLACE_NAME]["source"] == {
-            "source": "directory",
-            "path": str(dotfiles_root),
-        }
-
     def test_write_failure_returns_false(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -559,22 +527,6 @@ class TestEnsureMarketplace:
 
 class TestLoadKnownMarketplaceEntry:
     """known_marketplaces.json の読み込み分岐が is_directory_type_registered() に正しく反映されること。"""
-
-    def test_returns_entry_when_exists(
-        self,
-        marketplace_paths: tuple[pathlib.Path, pathlib.Path],
-        dotfiles_root: pathlib.Path,
-    ):
-        """known_marketplaces.json に健全な directory 型エントリがあれば True。"""
-        known, _settings = marketplace_paths
-        write_known_entry(
-            known,
-            {
-                "source": {"source": "directory", "path": str(dotfiles_root)},
-                "installLocation": str(dotfiles_root),
-            },
-        )
-        assert _claude_marketplace.is_directory_type_registered() is True
 
     def test_returns_false_when_file_absent(
         self,

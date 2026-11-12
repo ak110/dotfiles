@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import pathlib
 
@@ -16,8 +15,17 @@ from agent_toolkit._testing.run_skill_support import _engine_env, _records, _run
 __all__ = ["_engine_env"]
 
 
-@pytest.mark.parametrize("engine", ["claude", "codex"])
-def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, monkeypatch, capsys, engine) -> None:
+@pytest.mark.parametrize(
+    "engine,arguments",
+    [
+        ("claude", None),
+        ("claude", "auto"),
+        ("claude", "batchx"),
+        ("claude", "batch auto 任意の着眼点"),
+        ("codex", "batch auto 任意の着眼点"),
+    ],
+)
+def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, monkeypatch, capsys, engine, arguments) -> None:
     """2会話の実prepareから偽ホスト・同期済み報告・範囲確定まで公開CLIで検証する。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     for name in ("one", "two"):
@@ -35,47 +43,35 @@ def test_batch_uses_existing_runner_and_report_receipt(engine_env, tmp_path, mon
             host="claude",
             target_repo="https://example.com/team/repo",
         )
-    code, _out, error = _run(["--args", "batch auto 任意の着眼点", "agent-toolkit:review-session"], capsys)
+    options = ["--target-repo", str(engine_env.repo)]
+    if arguments is not None:
+        options.extend(["--args", arguments])
+    code, _out, error = _run([*options, "agent-toolkit:review-session"], capsys)
     assert code == 0, error
-    assert not session_review.pending()
     assert len(_records(engine_env, "session")) == 1
     manifests = list((session_review.directory() / "runs").glob("*.json"))
+    records = _records(engine_env, "session")
+    data = _startup_input(records[0], monkeypatch, capsys)
+    assert data["arguments"] == arguments
+    if arguments != "batch auto 任意の着眼点":
+        assert not manifests
+        assert len(session_review.pending()) == 2
+        assert data["mode"] is None
+        assert data["free_text"] == arguments
+        return
+    assert not session_review.pending()
     assert len(manifests) == 1
     value = session_review.read(manifests[0])
     assert value["status"] == "completed" and len(value["prepared"]) == 2
-    records = _records(engine_env, "session")
     assert records[0]["argv"][-1] == (
         ("/goal " if engine == "claude" else "") + '<atk-auto source="run-skill" kind="goal">\n'
         "このセッションが担当するスキル`agent-toolkit:review-session batch`の工程を完遂する"
         "（起動元が終了後に行う検収と確定は含まない）\n</atk-auto>"
     )
-    data = _startup_input(records[0], monkeypatch, capsys)
     assert data["arguments"] == "batch auto 任意の着眼点"
     assert data["free_text"] == "auto 任意の着眼点"
     assert data["target_repo"] == "example.com/team/repo"
     assert pathlib.Path(data["batch_manifest"]) == manifests[0]
-
-
-@pytest.mark.parametrize("arguments,is_batch", [(None, False), ("auto", False), ("batchx", False), ("batch auto", True)])
-def test_dispatch_selects_exact_batch_mode(monkeypatch, arguments, is_batch):
-    from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-    observed = []
-
-    def once(args, **_kwargs):
-        observed.append((False, args.args))
-        return 0
-
-    def batch(args, execute, **_kwargs):
-        observed.append((True, args.args))
-        assert execute is once
-        return 0
-
-    monkeypatch.setattr(run_skill, "_dispatch_once", once)
-    monkeypatch.setattr(run_skill_batch, "dispatch", batch)
-    args = argparse.Namespace(skill="agent-toolkit:review-session", args=arguments)
-    assert run_skill.dispatch(args) == 0
-    assert observed == [(is_batch, arguments)]
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])

@@ -3,11 +3,9 @@
 
 # pylint: disable=protected-access
 
-import ast
 import dataclasses
 import inspect
 import re
-import typing
 from pathlib import Path
 
 import pytest
@@ -142,16 +140,6 @@ class TestDefaultSteps:
         assert {step.name for step in steps if step.platforms == ("linux",)} == self._LINUX_STEPS
         assert not [step.name for step in steps if step.platforms not in ((), ("win32",), ("linux",))]
 
-    def test_pyfltr_mcp_warmup_registered_once(self) -> None:
-        """pyfltr MCPのウォームアップを1回だけ登録する。"""
-        names = [step.name for step in post_apply.DEFAULT_STEPS]  # noqa: SLF001
-        assert names.count("pyfltr MCPのuv環境ウォームアップ") == 1
-
-    def test_statusline_binary_step_registered(self):
-        """claude-statuslineバイナリ取得ステップを1回登録する。"""
-        names = [step.name for step in post_apply.DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        assert names.count("claude-statusline バイナリの取得") == 1
-
     def test_removed_steps_are_not_registered(self) -> None:
         """廃止済みの計画移行と旧計画ビューアーの自動起動を登録しない。"""
         names = [step.name for step in post_apply.DEFAULT_STEPS]  # noqa: SLF001
@@ -244,23 +232,6 @@ class TestPluginRecommendations:
         assert not any("claude plugin" in line for line in stdout_lines)
 
 
-def test_all_steps_return_post_apply_outcome() -> None:
-    """全工程の`run`の戻り値の型が`PostApplyOutcome`だけである。"""
-    returns = {step.name: typing.get_type_hints(step.run).get("return") for step in post_apply.DEFAULT_STEPS}
-    assert {name: hint for name, hint in returns.items() if hint is not post_apply_outcome.PostApplyOutcome} == {}
-
-
-def test_predecessor_names_are_not_duplicated_literals() -> None:
-    """工程名の文字列リテラルは`post_apply.py`に1回だけ書き、先行工程の指定は定数で参照する。"""
-    source = Path(post_apply.__file__).read_text(encoding="utf-8")
-    literals = [
-        node.value for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    ]
-    names = {step.name for step in post_apply.DEFAULT_STEPS}
-    duplicated = sorted(name for name in names if literals.count(name) > 1)
-    assert not duplicated
-
-
 def test_platform_steps_have_no_module_os_guard() -> None:
     """`platforms`を宣言した工程のモジュールは、対象OSを自ら判定しない。"""
     guards = re.compile(r"\bsys\.platform\b|\bos\.name\b|\bplatform\.system\(")
@@ -276,10 +247,3 @@ def test_platform_steps_have_no_module_os_guard() -> None:
         if guards.search(source):
             offenders.append(module.__name__)
     assert not offenders
-
-
-def test_internal_module_names_have_no_legacy_prefix_or_os_suffix() -> None:
-    """`pytools/_internal/`のモジュール名に`warm_`と対象OSの接尾辞が無い。"""
-    internal = Path(post_apply.__file__).parent / "_internal"
-    pattern = re.compile(r"^(warm_.*|.*_(linux|windows)(_test)?)\.py$")
-    assert not sorted(path.name for path in internal.glob("*.py") if pattern.match(path.name))

@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from _test_helpers import INSTALL_PS1, INSTALL_SH, installer_runners, make_command_stubs, read_log_lines, run_installer
+from _test_helpers import installer_runners, make_command_stubs, read_log_lines, run_installer
 from _test_helpers import rules_url_fixture as _rules_url_fixture  # noqa: F401  # pytestがfixtureとして収集する。
 from pytools._internal import common
 
@@ -269,12 +269,50 @@ def test_plugin_add_failure_restores_previous_cache(kind: str, tmp_path: pathlib
     assert (cache_root / "1.2.2/scripts/hook.py").read_text(encoding="utf-8") == "old hook\n"
 
 
-def test_cache_restore_failure_reports_retained_backup() -> None:
-    """両OSのインストーラーは復旧失敗時に退避先の扱いと報告先を案内する。"""
-    instruction = "退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
+@pytest.mark.parametrize("kind", installer_runners())
+def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: pathlib.Path, rules_url: str) -> None:
+    """更新と復元を失敗させ、全退避bytesと失敗理由・保存先・次の操作を保持する。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    cache_root = home / ".codex/plugins/cache/ak110-dotfiles/agent-toolkit"
+    original = {"1.2.0/data.bin": b"\x00\xff\r\n", "1.2.1/nested/marker": "旧版".encode()}
+    for relative, body in original.items():
+        path = cache_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+    stub_bin, stub_log = make_command_stubs(tmp_path)
+    stub = stub_bin / "codex"
+    source = stub.read_text(encoding="utf-8")
+    delete = '            rm -rf "$CODEX_PLUGIN_CACHE_ROOT"'
+    assert source.count(delete) == 1
+    stub.write_text(
+        source.replace(delete, delete + '\n            printf blocked > "$CODEX_PLUGIN_CACHE_ROOT"'), encoding="utf-8"
+    )
 
-    assert instruction in INSTALL_SH.read_text(encoding="utf-8")
-    assert instruction in INSTALL_PS1.read_text(encoding="utf-8-sig")
+    result = run_installer(
+        kind,
+        home,
+        rules_url,
+        stub_bin=stub_bin,
+        stub_log=stub_log,
+        fail_pattern="codex plugin add agent-toolkit",
+        codex_plugin_before=("1.2.2", True),
+        codex_home=home / ".codex",
+        delete_cache_before_failure=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "stub failure: codex plugin add agent-toolkit" in result.stderr
+    assert "復旧に失敗" in result.stderr
+    assert "退避先を変更せず" in result.stderr and "作者へ報告" in result.stderr
+    backups = [path for path in tmp_path.iterdir() if path.is_dir() and (path / "1.2.0/data.bin").is_file()]
+    assert len(backups) == 1
+    backup = backups[0]
+    assert str(backup) in result.stderr
+    for relative, body in original.items():
+        assert (backup / relative).read_bytes() == body
+    assert (backup / "1.2.2/scripts/hook.py").read_bytes() == b"old hook\n"
 
 
 @pytest.mark.parametrize("kind", installer_runners())

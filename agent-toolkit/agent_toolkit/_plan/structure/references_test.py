@@ -23,24 +23,12 @@ from agent_toolkit._testing.plan_structure_support import (
     _VALID_DETAIL_CONTENT,
     _VALID_MAIN_CONTENT,
     _canonical_human_main_content,
-    _canonical_main_content,
-    _origin_check,
     _plan_with_uncovered_requirement,
     _wi_source,
     _write_wi,
 )
 
 pytestmark = pytest.mark.windows
-
-
-def test_human_readable_action_rejects_non_adopted_empty_reason() -> None:
-    """人間向け形式の採用以外の行は自足した理由を持つ。"""
-    content = _HUMAN_MAIN_CONTENT.replace(
-        _plan_fixture.PROPOSAL_ACTION_ROW,
-        "| 類似するが対象外の記述は変更しない | エージェント提案 | 対象外 | - |",
-    )
-    _work_type, errors = plan_sections.check_plan_main_structure(content)
-    assert any("エージェント提案行" in error for error in errors), errors
 
 
 @pytest.mark.parametrize("heading", ["### ユーザー発言0", "### ユーザー発言2"])
@@ -310,13 +298,6 @@ def test_duplicate_headings_checks_deep_headings_and_ignores_fences() -> None:
     assert "7行目と13行目" in errors[0]
 
 
-def test_main_structure_accepts_new_fixed_headings_and_empty_judgment() -> None:
-    """新しい固定H2と、エージェント提案が無い場合の`なし`を受理する。"""
-    work_type, errors = plan_sections.check_plan_main_structure(_canonical_main_content())
-    assert work_type == "通常変更"
-    assert not errors, errors
-
-
 def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> None:
     """人間向け実施内容のエージェント提案と判断表を一対一で対応させる。"""
     _work_type, errors = plan_sections.check_plan_main_structure(_canonical_human_main_content())
@@ -364,15 +345,6 @@ def test_main_structure_rejects_empty_verification_command() -> None:
     assert matched, errors
     # 位置に加えて、検証コマンドの欄へ実行するコマンドを書く直し方を示す。
     assert all("検証コマンドの欄には実行するコマンドを書く" in error for error in matched)
-
-
-def test_origin_check_does_not_infer_origin_from_source(tmp_path: pathlib.Path) -> None:
-    """`source`を持つWIでも要求単位の由来は構文確認だけで受理する。"""
-    _write_wi(tmp_path, _wi_source(source=True))
-    errors, notices, skips = _origin_check(tmp_path)
-    assert not errors, errors
-    assert not skips, skips
-    assert not notices, notices
 
 
 def test_origin_check_is_inactive_without_collectors(tmp_path: pathlib.Path) -> None:

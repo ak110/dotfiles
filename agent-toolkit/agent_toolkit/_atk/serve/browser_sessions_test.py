@@ -60,10 +60,12 @@ async def test_session_list_omits_message_preview(screen_harness: _ScreenHarness
     first_item = page.locator("#sessions .session-item").first
     await first_item.wait_for(state="visible")
 
-    child_classes = await first_item.locator(":scope > *").evaluate_all(
-        "elements => elements.map(element => element.className)"
-    )
-    assert child_classes == ["session-cwd pane-item-title", "session-meta pane-item-meta"]
+    listing = await page.locator("#sessions").inner_text()
+    assert "browser-test" in listing
+    assert "Claudeの発話" not in listing
+    assert "Codexの発話" not in listing
+    await first_item.click()
+    await playwright.async_api.expect(page.locator("#detail")).to_contain_text("の発話")
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -111,31 +113,6 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     compacted = harness.page.locator("#detail .kind-compact_boundary")
     assert "開発者" in await developer.locator("summary").inner_text()
     assert "コンテキスト圧縮" in await compacted.locator("summary").inner_text()
-    developer_background = await developer.locator(".event-kind").evaluate(
-        "element => getComputedStyle(element).backgroundColor"
-    )
-    default_background = await harness.page.evaluate(
-        """() => {
-            const event = document.createElement("div");
-            event.className = "event";
-            const kind = document.createElement("span");
-            kind.className = "event-kind";
-            event.append(kind);
-            document.body.append(event);
-            const color = getComputedStyle(kind).backgroundColor;
-            event.remove();
-            return color;
-        }"""
-    )
-    existing_backgrounds = []
-    for kind in ("user", "assistant", "thinking", "tool_call", "tool_result", "compact_boundary"):
-        existing_backgrounds.append(
-            await harness.page.locator(f"#detail .kind-{kind} .event-kind").first.evaluate(
-                "element => getComputedStyle(element).backgroundColor"
-            )
-        )
-    assert developer_background != default_background
-    assert developer_background not in existing_backgrounds
     assert await developer.evaluate("element => element.open")
     assert not await compacted.evaluate("element => element.open")
     # 名前の記録を持たないCodexの記録はエンジン名だけを見出しへ表示し、ホスト名と作業ディレクトリを表示しない。

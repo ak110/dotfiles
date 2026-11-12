@@ -17,7 +17,6 @@ from agent_toolkit._testing.plan_structure_support import (
     _BUG_FILE_CONTENT,
     _HUMAN_DETAIL_CONTENT,
     _HUMAN_MAIN_CONTENT,
-    _HUMAN_PARTIAL_ROW,
     _LEGACY_BUG_FILE_CONTENT,
     _VALID_CONTENT,
     _VALID_DETAIL_CONTENT,
@@ -64,19 +63,6 @@ def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
     assert not unit_errors, unit_errors
     assert units is not None
     assert tuple(unit.unit_id for unit in units) == ("契約境界の更新", "回帰検証の追加")
-
-
-def test_human_readable_action_accepts_review_origin_with_matching_round(tmp_path: pathlib.Path) -> None:
-    """計画レビュー由来の採用行は絶対パスのTSVと同じ正のラウンドを指定する。"""
-    review_path = tmp_path / "review.tsv"
-    review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
-    content = _HUMAN_MAIN_CONTENT.replace(
-        _HUMAN_PARTIAL_ROW,
-        f"| 入力の境界を追加確認する | 計画レビュー第2ラウンド | 採用 | {review_path.as_posix()}のround 2 |",
-        1,
-    )
-    errors = plan_sections.check_plan_main_structure(content)[1]
-    assert not errors, errors
 
 
 def test_agent_wi_adopted_action_accepts_rederived_scope() -> None:
@@ -246,14 +232,6 @@ def test_bug_file_structure_reports_literal_pipe_for_column_mismatch() -> None:
 
     assert any("列数が一致しない" in error and "`\\|`へエスケープ" in error for error in errors), errors
     assert not any("空の`内容`" in error for error in errors), errors
-
-
-def test_canonical_fixture_accepts_mixed_agreements_and_numeric_target() -> None:
-    """実施・除外・保持の条項分解と数値目標を含む正規fixtureを受理する。"""
-    assert "診断件数を2件から1件へ減らす" in _VALID_CONTENT
-    assert "対象外の挙動を変更しない" in _VALID_CONTENT
-    assert "基準値は診断2件、目標は1件" in _VALID_CONTENT
-    assert not plan_sections.check_plan_structure(_VALID_CONTENT)
 
 
 def test_legacy_plan_accepts_legacy_history_review_identifier() -> None:

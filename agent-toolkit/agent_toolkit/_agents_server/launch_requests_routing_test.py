@@ -334,11 +334,6 @@ async def test_recurrence_self_check_public_start_keeps_review_usage(
     manager.start.assert_not_awaited()
 
 
-def test_every_task_role_has_engineering_model_type() -> None:
-    """全役割が工程別モデル候補列を参照する。"""
-    assert set(launch_requests._TASK_MODEL_TYPES.values()) <= set(_atk_config.MODEL_TYPES)
-
-
 @pytest.mark.parametrize(
     ("role", "expected"),
     [

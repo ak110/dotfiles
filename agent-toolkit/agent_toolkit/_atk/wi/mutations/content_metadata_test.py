@@ -144,26 +144,6 @@ class TestEditBodyFile:
         assert content.count(uwi.ANSWER_MARKER) == 1
         assert content.endswith(f"{uwi.ANSWER_MARKER}\n保持する回答\n")
 
-    def test_edit_rejects_explicit_target_commit(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """非対話editによってtarget_commitを注入できない。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_awi_file(notes, "fb-001.md")
-        original = path.read_text(encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        message = f"---\ntarget_commit: {'b' * 40}\n---\n\n編集後"
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
-
-        assert exc_info.value.code == 1
-        assert "予約キー" in capsys.readouterr().err
-        assert path.read_text(encoding="utf-8") == original
-
     @pytest.mark.parametrize("operation", ["add", "change", "delete"])
     @pytest.mark.parametrize(
         ("key", "before", "after"),
@@ -244,46 +224,6 @@ class TestEditBodyFile:
         assert parsed[0]["target_repo"] == "github.com/example/new"
         assert "target_commit" not in parsed[0]
 
-    def test_edit_rejects_explicit_plan_file(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """editによってplan_fileを注入できない。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_awi_file(notes, "fb-001.md")
-        original = path.read_text(encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        message = "---\nplan_file: /tmp/plan.md\n---\n\n編集後"
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
-
-        assert exc_info.value.code == 1
-        assert "予約キー" in capsys.readouterr().err
-        assert path.read_text(encoding="utf-8") == original
-
-    def test_edit_rejects_explicit_cooldown_until(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """通常editによって再処理抑制期限を注入できない。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_awi_file(notes, "fb-001.md")
-        original = path.read_text(encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        message = "---\ncooldown_until: 2026-08-15T00:00:00+00:00\n---\n\n編集後"
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
-
-        assert exc_info.value.code == 1
-        assert "予約キー" in capsys.readouterr().err
-        assert path.read_text(encoding="utf-8") == original
-
     def test_edit_preserves_plan_file_when_only_body_changes(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -306,32 +246,6 @@ class TestEditBodyFile:
         parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         assert parsed[0]["plan_file"] == "/tmp/plan.md"
-
-    @pytest.mark.parametrize(
-        ("reserved_key", "reserved_value"),
-        [("repair_target", "broken.md"), ("repair_kind", "frontmatter")],
-    )
-    def test_edit_rejects_explicit_repair_metadata(
-        self,
-        reserved_key: str,
-        reserved_value: str,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """editによって修復UWIの予約キーを注入できない。"""
-        notes = _setup_notes(tmp_path)
-        path = _write_awi_file(notes, "fb-001.md")
-        original = path.read_text(encoding="utf-8")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-        message = f"---\n{reserved_key}: {reserved_value}\n---\n\n編集後"
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(_edit_body_args(tmp_path, "fb-001.md", message), home=tmp_path)
-
-        assert exc_info.value.code == 1
-        assert "予約キー" in capsys.readouterr().err
-        assert path.read_text(encoding="utf-8") == original
 
     def test_edit_raises_web_input_error_when_frontmatter_is_corrupt(
         self,

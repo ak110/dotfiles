@@ -17,11 +17,11 @@ def test_deferred_tables_resolve_only_selected_material_and_refresh_next_scope(t
     source = tmp_path / "SKILL.md"
     target = tmp_path / "first.md"
     target.write_text("最初の資料\n", encoding="utf-8")
-    source.write_text(_table(target.name) + _table("missing.md"), encoding="utf-8")
+    source.write_text(_table(f"{target.name}#見出し") + _table("missing.md"), encoding="utf-8")
     with read_triggers.resolution_scope():
         rows = read_triggers.parse_tables(source, tmp_path, defer_material=True)
         assert rows[0].operations == ("tool:Write",)
-        assert rows[0].targets == (read_triggers.ReadTarget(target),)
+        assert rows[0].targets == (read_triggers.ReadTarget(target, "見出し"),)
         with pytest.raises(ValueError, match="資料が存在しない"):
             _ = rows[1].targets
     replacement = tmp_path / "second.md"

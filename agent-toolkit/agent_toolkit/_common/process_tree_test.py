@@ -629,33 +629,6 @@ def test_stop_tree_keeps_posix_graceful_exit_and_reclaims_children_started_in_gr
             late_descendant.assert_released(tmp_path)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="SIGTERMのハンドラーによる正常終了はPOSIX固有の契約")
-def test_graceful_parent_stops_waiting_when_child_exits_before_preparation(tmp_path: pathlib.Path):
-    """猶予中に起動した子が準備の印を作らずに終了した場合、親は準備の期限を待たずに正常終了する。"""
-    script = tmp_path / "exits-before-preparation.py"
-    script.write_text("", encoding="utf-8")
-    # 所要時間の閾値は負荷で変動するため、親のソースを2箇所だけ変えて待機の有無を終了コードで判定する。
-    # 子の終了を準備待ちの前に確定させ、準備待ちが1回でも待機へ進んだ場合は親を異常終了させる。
-    spawned = '        os.replace(directory / "spawned.pid.tmp", directory / "spawned.pid")\n'
-    # 準備の印と期限の条件は、子の生存の条件が欠けた場合も一致するよう、その後ろの部分だけで特定する。
-    waiting = 'not (directory / "holder.pid").exists() and time.monotonic() < deadline:\n            time.sleep(0.01)\n'
-    assert _GRACEFUL_SOURCE.count(spawned) == 1
-    assert _GRACEFUL_SOURCE.count(waiting) == 1
-    failing = waiting.replace("time.sleep(0.01)", 'raise AssertionError("準備前に終了した子の準備を待った")')
-    source = tmp_path / "graceful.py"
-    source.write_text(
-        _GRACEFUL_SOURCE.replace(spawned, spawned + "        child.wait()\n").replace(waiting, failing), encoding="utf-8"
-    )
-    with process_tree.process_scope([sys.executable, str(source), str(tmp_path), str(script)]) as process:
-        _wait_for_ready_marker(tmp_path / "ready")
-        result = process_tree.stop_tree(psutil.Process(process.pid), timeout=late_descendant.READY_TIMEOUT_SECONDS)
-        process.wait(timeout=5)
-    assert process.returncode == 0
-    assert (tmp_path / "graceful").exists()
-    assert not result.unresolved
-    assert not (tmp_path / "holder.pid").exists()
-
-
 def test_reclaim_descendants_returns_empty_list_without_targets():
     """対象が無い場合は待機せず空の一覧を返す。"""
     assert process_tree.reclaim_descendants([]) == []

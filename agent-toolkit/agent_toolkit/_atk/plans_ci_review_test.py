@@ -113,19 +113,6 @@ def test_commit_ci_review_rejects_noncanonical_working_name(tmp_path: pathlib.Pa
         _atk_plans.commit_plan(notes, name, home=tmp_path / "home")
 
 
-def test_plans_commit_help_names_ci_review_table_by_series_head(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """`atk plans commit --help`の位置引数の説明が、表を修正系列の開始時のHEAD由来の名前で案内する。"""
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["plans", "commit", "--help"], home=tmp_path / "home")
-
-    assert exc_info.value.code == 0
-    output = capsys.readouterr().out
-    _assert_guides_series_head_name(output[output.index("位置引数:") : output.index("オプション:")])
-    _assert_guides_series_head_name(output)
-
-
 def test_ci_review_name_errors_guide_series_head_format(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

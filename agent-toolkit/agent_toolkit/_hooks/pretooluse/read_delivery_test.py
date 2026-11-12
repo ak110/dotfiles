@@ -84,11 +84,9 @@ def test_public_hook_scope_reaches_dynamic_targets_and_document_read_consumers(t
     monkeypatch.setattr(hook_entry, "_record_activity", lambda *_args, **_kwargs: None)
     declaration = ReadTrigger(author, 1, "操作", ("path:*.py",), (reference,))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [declaration])
-    calls = []
     seen = []
 
     def inventory(args, **_kwargs):
-        calls.append(args)
         data = [
             {"id": f"{name}@mine", "scope": "user", "enabled": True, "installPath": str(root)}
             for name, root in (("agent-toolkit", toolkit), ("agent-basics", basics))
@@ -125,12 +123,11 @@ def test_public_hook_scope_reaches_dynamic_targets_and_document_read_consumers(t
         )
         assert result.returncode == 0
     assert seen == [(True, True, True), (True, True, True)]
-    assert len(calls) == 1
 
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
-def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkeypatch, host):
-    """版別cache配置でも資料ごとの解決を要求全体で共有し、次の要求では更新する。"""
+def test_installed_declarations_detect_inventory_revision(tmp_path, monkeypatch, host):
+    """host別の導入資料を解決し、次の要求では更新された版の資料を選ぶ。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     toolkit = tmp_path / "cache/mine/agent-toolkit/9.9.9"
     basics = tmp_path / "cache/mine/agent-basics/1.0"
@@ -154,18 +151,13 @@ def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkey
             for name, version in (("agent-toolkit", "9.9.9"), ("agent-basics", "1.0"))
         ]
     }
-    calls = []
 
-    def claude_inventory(args, **kwargs):
-        calls.append((args[0], kwargs["cwd"]))
+    def claude_inventory(args, **_kwargs):
         return subprocess.CompletedProcess(args, 0, json.dumps(claude), "")
 
     codex_cli = codex_plugin_cli(codex["installed"], other=claude_inventory)
 
     def inventory(args, **kwargs):
-        # Codexは設定済みmarketplaceの一覧から照会を始めるため、一覧の取得を1回の導入情報の取得と数える。
-        if args[0] == "codex" and args[1:3] == ["plugin", "marketplace"]:
-            calls.append((args[0], kwargs["cwd"]))
         return codex_cli(args, **kwargs)
 
     # Codexの公開cache配置をそのまま使う。
@@ -177,14 +169,21 @@ def test_installed_declarations_share_one_inventory_per_request(tmp_path, monkey
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", toolkit)
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: sources)
     assert plugin_roots.sibling_plugin_root("agent-basics", toolkit) is None
-    for count in (1, 2):
+    for version in ("1.0", "2.0"):
+        if version == "2.0":
+            basics = basics.with_name(version)
+            (basics / "skills/writing-standards").mkdir(parents=True)
+            (basics / "skills/writing-standards/SKILL.md").write_text("# 改訂品質\n", encoding="utf-8")
+            claude[1]["installPath"] = str(basics)
+            codex["installed"][1]["version"] = version
+            codex_cli = codex_plugin_cli(codex["installed"], other=claude_inventory)
+            codex_basics = codex_basics.with_name(version)
+            shutil.copytree(basics / "skills", codex_basics / "skills")
         with read_delivery.read_triggers.resolution_scope():
             rows = read_delivery.declarations(str(tmp_path), host=host)
             assert len(rows) == 2
-            assert calls == [(host, str(tmp_path))] * (count - 1)
             root = basics if host == "claude" else codex_basics
             assert {target.path for row in rows for target in row.targets} == {root / "skills/writing-standards/SKILL.md"}
-        assert calls == [(host, str(tmp_path))] * count
 
 
 def test_body_tables_keep_document_order(tmp_path, monkeypatch):

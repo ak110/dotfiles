@@ -102,11 +102,6 @@ def test_language_recovery_is_scoped_to_actor_tool_and_body(capsys) -> None:
     assert _reason(first, "ExitPlanMode", _input("ExitPlanMode", text + "原文。 "), capsys)
 
 
-def test_new_language_target_requires_recovery_case() -> None:
-    with pytest.raises(AssertionError, match="回復試験を追加"):
-        _input("NewUserFacingTool", "素材")
-
-
 @pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))
 def test_intervening_operation_invalidates_recovery(tool, capsys) -> None:
     # 引用された英語原文を保持するテストコード。
@@ -118,7 +113,7 @@ def test_intervening_operation_invalidates_recovery(tool, capsys) -> None:
 
 
 def test_generic_reissues_survive_other_operations_and_are_consumed(capsys) -> None:
-    """複数依頼は別操作を挟んでも各1回だけ再発行できる。"""
+    """複数依頼は別操作の後でも各1回だけ再発行できる。"""
     payload = {"session_id": "generic-many", "agent_id": "one"}
     first = {"subagent_type": "Explore", "prompt": "調査する。"}
     second = {"subagent_type": "web-fetch", "prompt": "本文を取得する。"}

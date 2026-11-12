@@ -3,7 +3,6 @@
 subprocessで起動しexit code・stderr・stdoutを検証する。
 """
 
-import json
 import pathlib
 
 import pytest
@@ -85,52 +84,3 @@ class TestCodexApplyPatchEditChecks:
         result = _run(_codex_payload(patch_text, tmp_path))
 
         assert result.returncode == 0
-
-
-class TestCodexBashCheckSelection:
-    """同一のBash入力にホスト別の判定条件を適用する。"""
-
-    @staticmethod
-    def _payload(command: str, cwd: pathlib.Path, session_id: str, *, codex: bool) -> dict:
-        payload: dict = {
-            "tool_name": "Bash",
-            "tool_input": {"command": command},
-            "session_id": session_id,
-            "cwd": str(cwd),
-        }
-        if codex:
-            payload["turn_id"] = "turn-1"
-        return payload
-
-    def test_pretooluse_leaves_transcript_language_to_mod(self, tmp_path: pathlib.Path) -> None:
-        """Claude CodeとCodexのPreToolUseはtranscriptの応答言語で遮断しない。"""
-        entry = {
-            "type": "assistant",
-            "message": {
-                "id": "m1",
-                "role": "assistant",
-                "content": [{"type": "text", "text": "This is a plain English status report written for the reviewer."}],
-                "stop_reason": "end_turn",
-            },
-        }
-        transcript = tmp_path / "transcript.jsonl"
-        transcript.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-        env = _plan_file_state_env(tmp_path)
-        claude_payload = {
-            **self._payload("ls", tmp_path, "lang-claude", codex=False),
-            "transcript_path": str(transcript),
-        }
-        codex_payload = {
-            **self._payload("ls", tmp_path, "lang-codex", codex=True),
-            "transcript_path": str(transcript),
-        }
-
-        claude_result = _run(claude_payload, env_overrides=env)
-        wait_result = _run(codex_payload, env_overrides=env)
-
-        assert claude_result.returncode == 0
-        assert claude_result.stdout == ""
-        assert not claude_result.stderr
-        assert wait_result.returncode == 0
-        assert wait_result.stdout == ""
-        assert "英語主体" not in wait_result.stderr

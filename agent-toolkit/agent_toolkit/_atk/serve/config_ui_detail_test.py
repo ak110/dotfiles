@@ -10,7 +10,7 @@ from agent_toolkit._testing.serve_support import _run_node_ui
 
 
 def test_assets_are_self_contained() -> None:
-    """UI資産は外部配信元から取得せず、HTMLとして解釈する本文の代入を1箇所へ限る。"""
+    """WI資産は外部配信元から取得しない。本文の安全表示は実ブラウザー試験で検証する。"""
     combined = (
         assets.HTML
         + assets.CSS
@@ -18,8 +18,6 @@ def test_assets_are_self_contained() -> None:
     )
     assert "https://" not in combined
     assert "http://" not in combined
-    assert combined.count("innerHTML") == 1
-    assert "insertAdjacentHTML" not in combined
 
 
 def test_assets_global_error_does_not_restore_refresh_after_user_focus_move() -> None:

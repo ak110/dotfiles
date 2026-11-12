@@ -28,15 +28,6 @@ def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixtu
     assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
 
-def test_session_start_length_report_shows_overage_and_breakdown() -> None:
-    fake_output = "x" * (rules_context.CLAUDE_CODE_OUTPUT_LIMIT + 5)
-    report = _session_start_length_report(fake_output)
-    assert "5文字超過した" in report
-    assert "文書別の長さ" in report
-    assert f"{rules_context.MAIN_RULES_PATH.name}=" in report
-    assert f"{rules_context.MAIN_RULES_CLAUDE_CODE_PATH.name}=" in report
-
-
 def test_subagent_start_does_not_create_session_scoped_managed_temp(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

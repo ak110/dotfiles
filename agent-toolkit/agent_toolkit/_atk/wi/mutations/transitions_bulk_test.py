@@ -8,7 +8,6 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import sync as _wi_sync
-from agent_toolkit._atk.wi.constants import TRANSITION_EXPLICIT_STATES, bulk_source_states
 from agent_toolkit._atk.wi.layout import entry_state_of
 from agent_toolkit._testing.wi_mutations_support import _disable_transition_git
 from agent_toolkit._testing.wi_mutations_transitions_support import (
@@ -246,13 +245,3 @@ def test_bulk_cooldown_rejects_non_awi_like_individual_route(
     assert uwi_entry.is_file()
     assert "cooldown_until" not in awi_entry.read_text(encoding="utf-8")
     assert "cooldown_until" not in uwi_entry.read_text(encoding="utf-8")
-
-
-def test_bulk_source_states_cover_transition_explicit_states() -> None:
-    """明示`state`として受理する状態が、その操作の遷移元状態集合に含まれる。
-
-    `remove`は呼出主体で値が変わるため、明示`state`の受理範囲と一致する非エージェント環境の値で比較する。
-    """
-    for action, explicit_states in TRANSITION_EXPLICIT_STATES.items():
-        source_states = bulk_source_states(action, actor_is_agent=False)
-        assert set(explicit_states) <= set(source_states), action

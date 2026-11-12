@@ -23,42 +23,18 @@ class TestCommitAndPushRetry:
         """ロックファイル配置先を実環境の`user_state_dir`から隔離する。"""
         monkeypatch.setattr(platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
 
-    def test_retries_once_after_explicit_upstream_rebase_on_push_failure(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """履歴分岐のpush失敗時はfetch後に明示したupstreamへrebaseし、pushを1回だけ再試行する。"""
-        calls: list[list[str]] = []
-        push_attempts = 0
-
-        def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
-            nonlocal push_attempts
-            del cwd, forward_error_output
-            calls.append(args)
-            if args[0] == "push":
-                push_attempts += 1
-                if push_attempts == 1:
-                    raise subprocess.CalledProcessError(1, ["git", *args])
-            if args[:2] == ["merge-base", "--is-ancestor"]:
-                raise subprocess.CalledProcessError(1, ["git", *args])
-
-        monkeypatch.setattr(_wi_sync, "run_git", fake_run_git)
-        monkeypatch.setattr(_atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
-
-        with _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
-
-        assert calls == [
-            ["add", "--all", "--", "inbox"],
-            ["commit", "-m", "chore: test", "--", "inbox"],
-            ["push"],
-            ["fetch"],
-            ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
-            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
-            ["-c", "submodule.recurse=false", "rebase", "@{u}"],
-            ["push"],
-        ]
+    def test_rebases_divergent_commits_and_pushes_both_results(self, tmp_path: pathlib.Path) -> None:
+        """non-fast-forwardから復旧し、local/remoteの双方の本文をremoteへ送信する。"""
+        remote, local, _other = TestExplicitUpstreamIntegration()._make_remote_and_clones(tmp_path)  # pylint: disable=protected-access
+        (local / "local.md").write_text("ローカル成果\n", encoding="utf-8")
+        with _wi_sync.repo_lock(local):
+            _wi_sync.commit_and_push(local, "local result", ["local.md"])
+        head = git_repository.git_output(local, "rev-parse", "HEAD")
+        assert git_repository.git_output(remote, "rev-parse", "main") == head
+        assert git_repository.git_output(local, "rev-parse", "@{u}") == head
+        assert git_repository.git_output(remote, "show", "main:local.md") == "ローカル成果"
+        assert git_repository.git_output(remote, "show", "main:queue.md") == "updated"
+        assert git_repository.git_output(local, "status", "--porcelain") == ""
 
     def test_reraises_when_retry_push_also_fails(
         self,
@@ -67,12 +43,18 @@ class TestCommitAndPushRetry:
     ) -> None:
         """再試行後もpushが失敗した場合は例外をそのまま送出する。"""
 
+        attempts = []
+
         def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
             del cwd, forward_error_output
             if args[0] == "push":
+                attempts.append(args)
+                raise subprocess.CalledProcessError(1, ["git", *args])
+            if args[:2] == ["merge-base", "--is-ancestor"]:
                 raise subprocess.CalledProcessError(1, ["git", *args])
 
         monkeypatch.setattr(_wi_sync, "run_git", fake_run_git)
+        monkeypatch.setattr(_atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)
 
         with (
             pytest.raises(subprocess.CalledProcessError),
@@ -80,65 +62,31 @@ class TestCommitAndPushRetry:
         ):
             _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
 
-    def test_keeps_rebase_state_and_reports_manual_steps_when_rebase_fails(
+        assert len(attempts) == 2
+
+    def test_keeps_real_rebase_conflict_and_reports_manual_steps(
         self,
         tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """rebaseが失敗した場合はabortせず、状態と手動手順をstderrへ出力する。"""
-        calls: list[list[str]] = []
-
-        def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
-            del cwd, forward_error_output
-            calls.append(args)
-            if args[0] == "push" or args == ["-c", "submodule.recurse=false", "rebase", "@{u}"]:
-                raise subprocess.CalledProcessError(1, ["git", *args])
-            if args[:2] == ["merge-base", "--is-ancestor"]:
-                raise subprocess.CalledProcessError(1, ["git", *args])
-
-        monkeypatch.setattr(_wi_sync, "run_git", fake_run_git)
-        monkeypatch.setattr(_atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
-
-        with pytest.raises(subprocess.CalledProcessError), _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
-
+        """実rebaseの競合状態と双方のcommitを保持し、自動abortせず復旧を案内する。"""
+        remote, local, _other = TestExplicitUpstreamIntegration()._make_remote_and_clones(tmp_path)  # pylint: disable=protected-access
+        (local / "queue.md").write_text("ローカル競合\n", encoding="utf-8")
+        before_remote = git_repository.git_output(remote, "rev-parse", "main")
+        with pytest.raises(subprocess.CalledProcessError), _wi_sync.repo_lock(local):
+            _wi_sync.commit_and_push(local, "local conflict", ["queue.md"])
+        git_dir = local / ".git"
+        assert (git_dir / "rebase-merge").is_dir() or (git_dir / "rebase-apply").is_dir()
+        assert git_repository.git_output(local, "show", "ORIG_HEAD:queue.md") == "ローカル競合"
+        assert git_repository.git_output(remote, "rev-parse", "main") == before_remote
+        assert git_repository.git_output(remote, "show", "main:queue.md") == "updated"
+        assert "queue.md" in git_repository.git_output(local, "diff", "--name-only", "--diff-filter=U")
+        assert "<<<<<<<" in (local / "queue.md").read_text(encoding="utf-8")
         error = capsys.readouterr().err
         assert "rebase状態を保持" in error
         assert "git add <競合解消済みパス>" in error
         assert "自動abortは行っていない" in error
         assert "git -c submodule.recurse=false rebase --abort" in error
-        assert ["-c", "submodule.recurse=false", "rebase", "@{u}"] in calls
-        assert not any("--abort" in args for args in calls)
-
-    def test_reports_conflict_path_when_rebase_fails(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """rebase失敗時に競合解消手順をstderrへ出力してから例外を送出する。"""
-        calls: list[list[str]] = []
-
-        def fake_run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
-            del cwd, forward_error_output
-            calls.append(args)
-            if args[0] == "push" or args == ["-c", "submodule.recurse=false", "rebase", "@{u}"]:
-                raise subprocess.CalledProcessError(1, ["git", *args])
-            if args[:2] == ["merge-base", "--is-ancestor"]:
-                raise subprocess.CalledProcessError(1, ["git", *args])
-
-        monkeypatch.setattr(_wi_sync, "run_git", fake_run_git)
-        monkeypatch.setattr(_atk_git_sync, "is_worktree_dirty", lambda _path, **_kwargs: False)  # pylint: disable=protected-access  # noqa: SLF001
-
-        with (
-            pytest.raises(subprocess.CalledProcessError),
-            _wi_sync.repo_lock(tmp_path),  # pylint: disable=protected-access  # noqa: SLF001
-        ):
-            _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001
-
-        assert "rebase状態を保持" in capsys.readouterr().err
-        assert ["-c", "submodule.recurse=false", "rebase", "@{u}"] in calls
 
 
 class TestExplicitUpstreamIntegration:
@@ -369,27 +317,35 @@ class TestPullIfStale:
 class TestPullWithRecentNotice:
     """読み取り専用操作の同期再利用・強制同期・移行契約を検証する。"""
 
-    def test_reuses_recent_sync_when_upstream_is_ancestor(
+    @pytest.mark.parametrize("mode", ["recent", "forced", "expired"])
+    def test_recent_and_forced_reads_preserve_or_refresh_saved_entries(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
+        mode: str,
     ) -> None:
-        """直近同期が統合済みの場合はfetch・mergeを省略し、補足を出力しない。"""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        fetch_head = git_dir / "FETCH_HEAD"
-        fetch_head.touch()
-        os.utime(fetch_head, (1000.0, 1000.0))
-        monkeypatch.setattr(_wi_sync.time, "time", lambda: 1010.0)
-        calls: list[list[str]] = []
-        monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
-
-        with _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _wi_sync.pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
-
-        assert [call for call in calls if call[0] in ("fetch", "merge")] == []
-        assert not capsys.readouterr().err
+        """直近同期は保存済みsnapshotを使い、強制指定と期限後はremoteの新しい本文を取り込む。"""
+        remote, local, peer = TestExplicitUpstreamIntegration()._make_remote_and_clones(tmp_path)  # pylint: disable=protected-access
+        with _wi_sync.repo_lock(local):
+            _wi_sync.pull(local)
+        before = git_repository.git_output(local, "rev-parse", "HEAD")
+        fetch_mtime = (local / ".git/FETCH_HEAD").stat().st_mtime
+        git_repository.run_git(peer, "pull", "--ff-only")
+        (peer / "new.md").write_text("新しい本文\n", encoding="utf-8")
+        latest = git_repository.commit_all(peer, "new remote body")
+        git_repository.run_git(peer, "push")
+        monkeypatch.setattr(_wi_sync.time, "time", lambda: fetch_mtime + (30.0 if mode == "expired" else 10.0))
+        with _wi_sync.repo_lock(local):
+            _wi_sync.pull_with_recent_reuse(local, force_pull=mode == "forced")
+        expected = before if mode == "recent" else latest
+        assert git_repository.git_output(local, "rev-parse", "HEAD") == expected
+        assert git_repository.git_output(remote, "rev-parse", "main") == latest
+        assert (local / "queue.md").read_text(encoding="utf-8") == "updated\n"
+        assert git_repository.git_output(local, "status", "--porcelain") == ""
+        if mode == "recent":
+            assert not (local / "new.md").exists()
+        else:
+            assert (local / "new.md").read_text(encoding="utf-8") == "新しい本文\n"
 
     def test_recent_reuse_still_migrates_legacy_reservations(
         self,
@@ -417,28 +373,6 @@ class TestPullWithRecentNotice:
 
         assert [call for call in calls if call[0] in ("fetch", "merge")] == []
         assert migrations == [tmp_path]
-
-    def test_force_pull_bypasses_recent_reuse(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """強制同期指定時は直近同期形跡があってもfetch・mergeを実行する。"""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        fetch_head = git_dir / "FETCH_HEAD"
-        fetch_head.touch()
-        os.utime(fetch_head, (1000.0, 1000.0))
-        monkeypatch.setattr(_wi_sync.time, "time", lambda: 1010.0)
-        calls: list[list[str]] = []
-        monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
-
-        with _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _wi_sync.pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
-
-        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
-        assert not capsys.readouterr().err
 
     def test_fetch_failure_stops_before_merge_and_migration(
         self,
@@ -469,7 +403,7 @@ class TestPullWithRecentNotice:
         ):
             _wi_sync.pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert calls == [["fetch"]]
+        assert not any(call[0] in ("merge", "rebase", "commit", "push") for call in calls)
         assert not migrations
 
     def test_merge_failure_stops_before_legacy_migration(
@@ -501,12 +435,7 @@ class TestPullWithRecentNotice:
         ):
             _wi_sync.pull_with_recent_reuse(tmp_path, force_pull=True)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert calls == [
-            ["fetch"],
-            ["merge", "--ff-only", "@{u}"],
-            ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
-            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
-        ]
+        assert not any(call[0] in ("rebase", "commit", "push") for call in calls)
         assert not migrations
 
     def test_failed_merge_after_recent_fetch_is_retried_and_rebased(
@@ -529,15 +458,7 @@ class TestPullWithRecentNotice:
         fetch_mtime = fetch_head.stat().st_mtime
         monkeypatch.setattr(_wi_sync.time, "time", lambda: fetch_mtime + 1.0)
 
-        calls: list[list[str]] = []
         migrations: list[pathlib.Path] = []
-        original_run_git = _wi_sync.run_git  # pylint: disable=protected-access  # noqa: SLF001
-
-        def run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
-            calls.append(args)
-            original_run_git(args, cwd, forward_error_output=forward_error_output)
-
-        monkeypatch.setattr(_wi_sync, "run_git", run_git)
 
         def migrate(private_notes: pathlib.Path) -> int:
             migrations.append(private_notes)
@@ -547,34 +468,8 @@ class TestPullWithRecentNotice:
         with _wi_sync.repo_lock(local):  # pylint: disable=protected-access  # noqa: SLF001
             _wi_sync.pull_with_recent_reuse(local)  # pylint: disable=protected-access  # noqa: SLF001
 
-        assert calls == [
-            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
-            ["fetch"],
-            ["merge", "--ff-only", "@{u}"],
-            ["merge-base", "--is-ancestor", "HEAD", "@{u}"],
-            ["merge-base", "--is-ancestor", "@{u}", "HEAD"],
-            ["-c", "submodule.recurse=false", "rebase", "@{u}"],
-        ]
+        assert git_repository.run_git(local, "merge-base", "--is-ancestor", "@{u}", "HEAD", check=False).returncode == 0
+        assert (local / "local.md").read_text(encoding="utf-8") == "local\n"
+        assert (local / "queue.md").read_text(encoding="utf-8") == "updated\n"
+        assert git_repository.git_output(local, "status", "--porcelain") == ""
         assert migrations == [local]
-
-    def test_pulls_without_notice_when_fetch_head_is_old(
-        self,
-        tmp_path: pathlib.Path,
-        monkeypatch: pytest.MonkeyPatch,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """30秒以上前の同期形跡では注記せずpullする。"""
-        git_dir = tmp_path / ".git"
-        git_dir.mkdir()
-        fetch_head = git_dir / "FETCH_HEAD"
-        fetch_head.touch()
-        os.utime(fetch_head, (1000.0, 1000.0))
-        monkeypatch.setattr(_wi_sync.time, "time", lambda: 1030.0)
-        calls: list[list[str]] = []
-        monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
-
-        with _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
-            _wi_sync.pull_with_recent_reuse(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
-
-        assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
-        assert "同期形跡" not in capsys.readouterr().err

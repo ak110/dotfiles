@@ -7,16 +7,12 @@ import os
 import pathlib
 import shutil
 import subprocess
-from typing import Any
 
 import pytest
 
 from agent_toolkit._atk.wi import process_loop as _process_loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
-from agent_toolkit._atk.wi import process_loop_update as _pl_update
-from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
-from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._testing.process_loop_session_support import _isolate_process_loop_commands as _isolate_process_loop_commands
 
@@ -36,36 +32,6 @@ class TestProcessLoopPromptAndEnv:
         }
         _inherited_venv.strip_inherited_venv(env)
         assert env["PATH"] == os.pathsep.join(("", "/usr/bin", ""))
-
-    def test_prompt_is_short_goal_with_workflow_boundary(self) -> None:
-        """新規セッションの目的文がスキルの完遂だけを伝え、機械生成を示す`atk-auto`要素を持つこと。"""
-        prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
-        assert prompt.startswith("/goal ")
-        assert (
-            "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
-            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）" in prompt
-        )
-        assert _automated_prompt.contains(prompt)
-        assert "agent-toolkit:exit-session" not in prompt
-
-        forbidden_details = (
-            "atk wi list",
-            "atk wi show",
-            "frontmatter",
-            "worker",
-            "レビュー",
-            "commit",
-            "push",
-            "CI",
-            "atk wi adopt",
-            "review-session",
-        )
-        assert all(detail not in prompt for detail in forbidden_details)
-
-    def test_prompt_references_process_wi(self) -> None:
-        """プロンプトが後続工程の集約先としてprocess-wiスキルを参照すること。"""
-        prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
-        assert "agent-toolkit:process-wi" in prompt
 
     @pytest.mark.parametrize("orchestrator", ["claude", "codex", "agy"])
     @pytest.mark.parametrize("resume", [None, "saved-session"])
@@ -271,38 +237,6 @@ class TestProcessLoopReturncode:
 class TestConsoleTitleReset:
     """常駐区間のコンソールタイトル制御を検証する（再起動先は`TestProcessLoopUpdateAndRestart`の既存argv検証が担う）。"""
 
-    def test_helper_functions_reset_title_after_each_run(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """`_sync_worktree_with_upstream`・`_check_and_restart_on_update`配下の各subprocess.run直後にタイトルを再設定すること。"""
-        local_path = tmp_path / "repo"
-        (local_path / ".claude" / "worktrees" / "process-loop").mkdir(parents=True)
-        calls: list[str] = []
-        monkeypatch.setattr(_pl_session._console_title, "set_console_title", calls.append)  # pylint: disable=protected-access  # noqa: SLF001
-
-        def fake_run(cmd: list[str], *_a: object, **_kwargs: object) -> subprocess.CompletedProcess[Any]:
-            if cmd == ["git", "check-ignore", "-q", ".claude/worktrees/"]:
-                return subprocess.CompletedProcess(cmd, 0, "", "")
-            if cmd == ["git", "check-ref-format", "--branch", "worktree-process-loop"]:
-                return subprocess.CompletedProcess(cmd, 0, "", "")
-            if cmd == ["git", "rev-parse", "--git-common-dir"]:
-                return subprocess.CompletedProcess(cmd, 0, str(local_path / ".git"), "")
-            if cmd == ["git", "rev-parse", "--show-toplevel"]:
-                return subprocess.CompletedProcess(cmd, 0, str(local_path / ".claude" / "worktrees" / "process-loop"), "")
-            if cmd == ["git", "symbolic-ref", "HEAD"]:
-                return subprocess.CompletedProcess(cmd, 0, "worktree-process-loop", "")
-            if cmd == ["git", "symbolic-ref", "refs/remotes/origin/HEAD"]:
-                return subprocess.CompletedProcess(cmd, 0, "origin/master\n", "")
-            if cmd == ["git", "remote"]:
-                return subprocess.CompletedProcess(cmd, 0, "origin\n", "")
-            stdout = "1\n" if "rev-list" in cmd else ""
-            return subprocess.CompletedProcess(cmd, 0, stdout, "")
-
-        monkeypatch.setattr(subprocess, "run", fake_run)
-        monkeypatch.setattr(_pl_update, "code_hash", lambda _plugin_root: "same-hash")  # 再起動へ進ませない
-        _pl_worktree._sync_worktree_with_upstream(local_path, "process-loop")  # pylint: disable=protected-access  # noqa: SLF001
-        _pl_update.check_and_restart_on_update(tmp_path, "same-hash", ["argv0"])  # pylint: disable=protected-access  # noqa: SLF001
-        assert calls
-        assert all(call == "atk wi process-loop" for call in calls)
-
     @pytest.mark.parametrize(
         ("platform", "tty_result", "reset_path", "expected"),
         [
@@ -346,37 +280,3 @@ class TestConsoleTitleReset:
         )
 
         assert calls == expected
-
-    def test_console_is_reset_between_child_session_and_title_reset(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """子セッション終了後、タイトル再設定より前にコンソールを初期化する。"""
-        calls: list[str] = []
-
-        def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-            calls.append("session")
-            return subprocess.CompletedProcess(command, 0)
-
-        monkeypatch.setattr(_pl_session, "_build_session_argv", lambda *_a, **_kw: (["claude"], None))
-        monkeypatch.setattr(_pl_session._process_loop_log, "append", lambda *_a, **_kw: None)  # pylint: disable=protected-access  # noqa: SLF001
-        monkeypatch.setattr(_pl_env, "session_env", lambda env, _orchestrator: env)
-        monkeypatch.setattr(_pl_env, "session_creation_flags", lambda _orchestrator: 0)
-        monkeypatch.setattr(_pl_env, "reset_console", lambda: calls.append("reset"))
-        monkeypatch.setattr(_pl_session._console_title, "set_console_title", lambda _title: calls.append("title"))  # pylint: disable=protected-access  # noqa: SLF001
-        monkeypatch.setattr(_pl_session, "_run_cli_session", lambda argv, _env, _cwd, **_kwargs: fake_run(argv))
-
-        result = _pl_session.run_process_session(  # pylint: disable=protected-access  # noqa: SLF001
-            argparse.Namespace(no_update=True),
-            tmp_path,
-            "prompt",
-            {},
-            orchestrator="claude",
-            model="model",
-            effort="effort",
-            resume_pending=False,
-        )
-
-        assert result is True
-        assert calls == ["session", "reset", "title"]

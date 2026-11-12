@@ -12,7 +12,6 @@ from agent_toolkit import atk
 from agent_toolkit._atk.wi import add as add_module
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module
-from agent_toolkit._atk.wi.uwi import _detect_self_containment_deficiency
 from agent_toolkit._testing.git_fakes import _FIXED_HEAD_COMMIT
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_uwi_support import _body_file_args, _invoke_uwi_add, _make_uwi_add_fake
@@ -47,79 +46,37 @@ def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pyt
     assert content.count(uwi_module.ANSWER_MARKER) == 1
 
 
-class TestDetectSelfContainmentDeficiency:
-    """`_detect_self_containment_deficiency`単体テスト（UWI本文の一時識別子の文脈欠落の判定）。"""
-
-    def test_temporary_identifier_alone(self) -> None:
-        assert _detect_self_containment_deficiency("fb 090830 これでよいか") == "一時識別子の単独使用"
-
-    @pytest.mark.parametrize(
-        "body",
-        [
-            "採否は?",
-            "保存の失敗をエンドユーザーへ通知する変更を残してよいか?",
-            "対象ファイルの現在の実装状況を確認した。今回変更するコードの分量は限定的であり、"
-            "既存のテストケースを維持しながら新しい関数を追加する。実装完了後は担当者へ結果を共有する。",
-        ],
-    )
-    def test_short_body_or_missing_reasoning_vocabulary_is_not_flagged(self, body: str) -> None:
-        """短さや特定の根拠語彙の欠落だけでは、対象・問い・回答による結果の不足として扱わない。"""
-        assert _detect_self_containment_deficiency(body) is None
-
-    def test_identifier_with_context_words_not_flagged(self) -> None:
-        """一時識別子の近傍に文脈語がある場合は警告しない。"""
-        assert _detect_self_containment_deficiency("fb 090830についての採否を残してよいか") is None
-
-    def test_identifier_without_context_in_long_body(self) -> None:
-        """近傍30文字以内に文脈語を含めない一時識別子は、本文の長さによらず警告する。"""
-        body = (
-            "あああああああああああああああああああああああああああああああ"
-            "fb090830いいいいいいいいいいいいいいいいいいいいいいいいいいいいいい"
-            "ううううううううううううううううううううううううううううううう"
-        )
-        assert _detect_self_containment_deficiency(body) == "一時識別子の単独使用"
-
-    def test_commit_oid_substring_not_flagged(self) -> None:
-        """commit OIDの途中に現れる`fb67`は一時識別子として扱わない。"""
-        assert _detect_self_containment_deficiency("`afb67cd`の変更を残してよいか") is None
-
-
-class TestCmdUwiAddSelfContainmentWarning:
-    """UWI投入: 自己完結性ヒューリスティック警告と疑問文警告の併存を検証する。"""
-
-    def test_short_valid_body_is_saved_without_padding_request(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """対象・問い・回答による結果が分かる短い本文は、加筆を求める警告なしに公開CLIで保存される。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
-
-        assert _invoke_uwi_add(tmp_path, str(myrepo), body="保存の失敗をエンドユーザーへ通知する変更を残してよいか?").code == 0
-        stderr = capsys.readouterr().err
-        assert "自己完結要件" not in stderr
-        assert "警告" not in stderr
-
-    def test_warning_printed_for_identifier_without_context(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """文脈の無い一時識別子の診断は公開CLIで保持する。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-        monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
-
-        assert _invoke_uwi_add(tmp_path, str(myrepo), body="fb 090830 これでよいか?").code == 0
-        stderr = capsys.readouterr().err
-        assert "一時識別子の単独使用" in stderr
-        assert "agent-toolkit:wi-standardsが定める自己完結要件" in stderr
+@pytest.mark.parametrize(
+    ("body", "warned"),
+    [
+        ("fb 090830 これでよいか?", True),
+        ("採否は?", False),
+        ("保存の失敗をエンドユーザーへ通知する変更を残してよいか?", False),
+        ("fb 090830についての採否を残してよいか?", False),
+        ("あ" * 40 + "fb090830" + "い" * 40 + "これでよいか?", True),
+        ("`afb67cd`の変更を残してよいか?", False),
+        ("対象ファイルの現在の実装状況を確認した。" * 8 + "この変更を残してよいか?", False),
+    ],
+)
+def test_public_uwi_add_self_containment_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    body: str,
+    warned: bool,
+) -> None:
+    """文脈の無い一時識別子だけを警告し、短さやOIDによらず質問本文を保存する。"""
+    notes = _setup_notes(tmp_path)
+    myrepo = tmp_path / "myrepo"
+    myrepo.mkdir()
+    monkeypatch.setattr(subprocess, "run", _make_uwi_add_fake(myrepo))
+    assert _invoke_uwi_add(tmp_path, str(myrepo), body=body).code == 0
+    stderr = capsys.readouterr().err
+    assert ("一時識別子の単独使用" in stderr) is warned
+    assert ("自己完結要件" in stderr) is warned
+    saved = _fixed_path(notes, f"{_FIXED_TIMESTAMP}-001.md").read_text(encoding="utf-8")
+    assert body in saved
+    assert saved.count(uwi_module.ANSWER_MARKER) == 1
 
 
 class TestUwiAdd:

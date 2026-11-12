@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from agent_toolkit._hooks import document_reads, plugin_resources, posttooluse
-from agent_toolkit._hooks.pretooluse import dispatch, read_delivery, read_delivery_paths
+from agent_toolkit._hooks.pretooluse import dispatch, read_delivery
 from agent_toolkit._testing import git_repository, pretooluse_support
 
 
@@ -220,30 +220,26 @@ def test_new_body_keeps_writing_standards_without_existing_edit_materials(
     assert ("references/file-editing-claude.md" in context) is (exists and not codex)
 
 
-def test_request_reuses_read_parsing_and_rechecks_the_next_request(tmp_path, monkeypatch):
+def test_next_request_detects_changed_read_document(tmp_path, monkeypatch, capsys):
     target = tmp_path / "source.md"
     target.write_text("# 節\n本文\n", encoding="utf-8")
-    rows = [
-        read_delivery.read_triggers.ReadTrigger(target, number, "判断", ("read:*/source.md",), (target,))
-        for number in range(40)
-    ]
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
-    original = read_delivery.bash_read_paths
-    calls = []
-
-    def counted(*args, **kwargs):
-        calls.append((args, kwargs))
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(read_delivery_paths, "bash_read_paths", counted)
-    payload = {"cwd": str(tmp_path), "turn_id": "turn"}
-    data = {"command": f"cat -- {target}"}
-    read_delivery.deliver(payload, "Bash", data, "parsing-first")
-    first = len(calls)
-    assert 0 < first <= 3
+    row = read_delivery.read_triggers.ReadTrigger(target, 1, "判断", ("tool:Write",), (target,))
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    payload = {
+        "cwd": str(tmp_path),
+        "session_id": "revision",
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "成果"},
+    }
+    pretooluse_support.prepare_read_delivery(payload)
+    records = read_delivery.read_state("revision")[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+    reference = read_delivery.read_triggers.ReadTarget(target)
+    assert document_reads.acquisition_state(records, reference, "main") == "current"
     target.write_text("# 節\n変更後\n", encoding="utf-8")
-    read_delivery.deliver(payload, "Bash", data, "parsing-second")
-    assert len(calls) == first * 2
+    assert dispatch.main(json.dumps(payload)) == 0
+    assert "取得済み資料の更新あり" in _context(capsys.readouterr())
+    records = read_delivery.read_state("revision")[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
+    assert document_reads.acquisition_state(records, reference, "main") == "updated"
 
 
 def test_prepare_batches_reads_and_keeps_received_version_after_external_change(tmp_path, monkeypatch):
@@ -252,15 +248,6 @@ def test_prepare_batches_reads_and_keeps_received_version_after_external_change(
     second.write_text("# 第二\n別本文\n", encoding="utf-8")
     row = read_delivery.read_triggers.ReadTrigger(first, 1, "操作", ("body-writing",), (first, second))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
-    # 取得イベントを実際のPostToolUseへ通し、準備処理の被覆判定を監視する。
-    original = pretooluse_support._run_posttooluse  # pylint: disable=protected-access
-    events = []
-
-    def recorded(payload, env, **_kwargs):
-        events.append(payload)
-        return original(payload, env)
-
-    monkeypatch.setattr(pretooluse_support, "_run_posttooluse", recorded)
     payload: dict = {
         "cwd": str(tmp_path),
         "turn_id": "turn",
@@ -269,8 +256,6 @@ def test_prepare_batches_reads_and_keeps_received_version_after_external_change(
         "tool_input": {"command": f"*** Begin Patch\n*** Add File: {tmp_path / 'new.md'}\n+本文\n*** End Patch"},
     }
     pretooluse_support.prepare_read_delivery(payload)
-    assert len(events) == 1
-    assert events[0]["tool_name"] == "Bash"
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
     assert all(
         read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(path), "main") for path in (first, second)
@@ -280,6 +265,6 @@ def test_prepare_batches_reads_and_keeps_received_version_after_external_change(
     assert read_delivery.target_ready(records, target, "main")
     assert document_reads.acquisition_state(records, target, "main") == "updated"
     pretooluse_support.prepare_read_delivery(payload)
-    assert len(events) == 1
     records = read_delivery.read_state(payload["session_id"])[read_delivery.rules_context.OPERATION_SKILL_READY_KEY]
-    assert read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(first), "main")
+    assert document_reads.acquisition_state(records, target, "main") == "updated"
+    assert document_reads.acquisition_state(records, read_delivery.read_triggers.ReadTarget(second), "main") == "current"

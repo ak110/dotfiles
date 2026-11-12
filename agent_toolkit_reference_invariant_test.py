@@ -84,9 +84,6 @@ _SESSION_RECORDS = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_record
 _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_records_test.py")
 
 
-_PROCESS_LOOP_SESSION_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/process_loop_session_test.py")
-
-
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     # 保存済みの起動標識とscopeを読むための旧名。現行入口としては提供しない。
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS): 2,
@@ -125,7 +122,6 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
-    (f"{_PLUGIN_PREFIX}:exit-session", _PROCESS_LOOP_SESSION_TEST): 1,
     # 分割前のStop判定モジュールを当時の所在で記す障害事例
     (f"{_PLUGIN_PREFIX}/agent_toolkit/_hooks/stop_gate.py", _INCIDENTS_WORKFLOWS): 1,
     # 廃止したスキルの経緯を記す方針・設計の記録
