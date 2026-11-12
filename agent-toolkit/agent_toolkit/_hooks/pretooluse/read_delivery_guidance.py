@@ -28,7 +28,7 @@ from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 from agent_toolkit._hooks.pretooluse.read_delivery_conditions import _work_record_only
-from agent_toolkit._hooks.pretooluse.read_delivery_matching import _PROSE_SUFFIXES, _artifact_written_paths, _temporary_path
+from agent_toolkit._hooks.pretooluse.read_delivery_matching import _artifact_written_paths, _temporary_path
 from agent_toolkit._hooks.pretooluse.read_delivery_paths import _acquiring, _document_owner, _read_paths, _row_operation_kinds
 from agent_toolkit._hooks.pretooluse.read_delivery_roles import _subagent_task_documents
 from agent_toolkit._hooks.pretooluse.read_delivery_selection import _declaration_identity, _unmark
@@ -116,9 +116,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     cwd = payload.get("cwd", "")
     cwd = cwd if isinstance(cwd, str) else ""
     written = operation_skills.written_paths(tool_name, tool_input, cwd)
-    temporary_code = bool(written) and all(
-        _temporary_path(path) and pathlib.Path(path).suffix.lower() not in _PROSE_SUFFIXES for path in written
-    )
+    temporary_code = bool(written) and all(_temporary_path(path) for path in written)
     if temporary_code:
         written = []
     if _work_record_only(written, payload, session_id):

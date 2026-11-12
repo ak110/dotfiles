@@ -5,6 +5,8 @@
 判定は理由の冒頭が決まった語句と一致するかだけで行い、理由の意味は推定しない。誤検出があり得るため遮断せず通知する。
 報告行の抽出は`runtime_inserted.reported_improvement_lines`を使い、コード例と引用を報告から除く。
 同じ判定を`send_to_user`の送信前にも行う（`hooks/send_to_user.tsx`の`UNINVESTIGATED_REASON`）。判定語を変える場合は両方を合わせる。
+判定資料の取得案内は送達前（`main`が受ける`send_to_user`の送信前照会）だけで出す。送達後のStopで案内しても、
+報告は既に届いていて見直しが反映されないため、Stopでは取得案内を出さず、報告行の書式と理由の判定だけを通知する。
 
 委譲先での実行可否: 委譲先は改善点を委譲元へ返却し、委譲元が処置とAWI化を判断するため判定しない。
 """
@@ -54,8 +56,11 @@ def uninvestigated_unneeded_reasons(text: str) -> list[str]:
     return found
 
 
-def read_guidance_notice(payload: object) -> str:
-    """最上位メインの改善点報告で、未取得の判定資料を既存の取得記録から案内する。"""
+def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
+    """最上位メインの改善点報告で、書式の誤りと、未取得の判定資料を既存の取得記録から案内する。
+
+    `include_reads`が偽の場合は、判定資料の取得案内を返さず書式の誤りだけを返す（送達後のStopの利用）。
+    """
     if not isinstance(payload, dict) or not is_main_agent_context(payload):
         return ""
     text = payload.get("last_assistant_message")
@@ -76,6 +81,8 @@ def read_guidance_notice(payload: object) -> str:
                     fix="`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式・区分で報告行を直せ。"
                     "書式の修正だけなら判定資料の追加取得は不要である。",
                 )
+    if not include_reads:
+        return ""
     state = read_state(session_id)
     root = plugin_resources.plugin_root()
     cwd = payload.get("cwd")
@@ -130,7 +137,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if not isinstance(text, str):
         return "", ""
     lines = uninvestigated_unneeded_reasons(text)
-    guidance = read_guidance_notice(payload)
+    guidance = read_guidance_notice(payload, include_reads=False)
     if not lines:
         return ("notify", guidance) if guidance else ("", "")
     session_id = payload.get("session_id")

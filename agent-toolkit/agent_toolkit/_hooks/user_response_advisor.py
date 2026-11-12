@@ -129,6 +129,28 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     return ("notify", body) if body else ("approve", "")
 
 
+def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:
+    """最後の人間の発話の本文と、その後に続くsidechainを除いた記録の列を返す。人間の発話が無ければ`None`を返す。
+
+    Stopの判定が「今のターン」の操作と応答を数える入口である。人間の入力の判定は本モジュールの`evaluate`と同じにする。
+    """
+    prompt: str | None = None
+    entries: list[dict] = []
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or entry.get("isSidechain"):
+            continue
+        text = _input_text(entry)
+        if text is not None and _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(text):
+            prompt, entries = text, []
+        elif prompt is not None:
+            entries.append(entry)
+    return None if prompt is None else (prompt, entries)
+
+
 def _input_text(entry: dict) -> str | None:
     """人間の発話とtask-notificationを識別する文字列入力を返す。"""
     if entry.get("type") == "user":

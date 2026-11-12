@@ -39,6 +39,8 @@ CHECK_MODULE_NAMES = (
     "plan_save_advisor",
     "agents_server_session_advisor",
     "user_response_advisor",
+    "bugfix_gate",
+    "delivered_repost_gate",
     "termination_order_advisor",
     "submission_report_advisor",
     "queued_notification_advisor",

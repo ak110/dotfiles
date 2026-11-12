@@ -126,8 +126,12 @@ def test_missing_guidance_is_notified_before_report(
     session_state.update_state(
         "improvement-status", lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {}, "session_title_kind": kind}
     )
-    decision, body = improvement_status_advisor.evaluate(_payload("気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"))
-    assert decision == "notify"
+    # 取得案内は送達前の照会（`main`）が返す。送達後のStopの`evaluate`は返さない。
+    assert improvement_status_advisor.evaluate(_payload("気付いた改善点: A（AWI化ステータス: 不要 非欠陥）")) == ("", "")
+    body = improvement_status_advisor.read_guidance_notice(
+        json.loads(_payload("気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"))
+    )
+    assert body
     paths = _guidance_documents if kind != "add-awi" else _guidance_documents[:2]
     _assert_guidance_commands(body, paths, windows=windows)
     assert "root-cause-prevention.md" in body
@@ -140,10 +144,11 @@ def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> 
     """既存の圧縮時リセット後に、取得済みだった資料を再び案内する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     text = "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"
-    assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
+    payload = json.loads(_payload(text))
+    assert improvement_status_advisor.read_guidance_notice(payload) == ""
     rules_context.reset_main_operation_skill_ready("improvement-status")
-    decision, body = improvement_status_advisor.evaluate(_payload(text))
-    assert decision == "notify"
+    body = improvement_status_advisor.read_guidance_notice(payload)
+    assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
     assert "root-cause-prevention.md" in body
 
 

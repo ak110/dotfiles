@@ -59,8 +59,6 @@ def _pyproject_dependencies(text: str) -> object:
 
 _FILE_SCOPED_OPERATIONS = frozenset({"existing-file-edit", "claude-existing-file-edit"})
 
-_PROSE_SUFFIXES = frozenset({".md", ".markdown", ".txt"})
-
 
 def _temporary_path(path: str) -> bool:
     """成果物ではない一時領域（managed-tempの一時rootと、Claude Codeの一時領域）の配下かを返す。
@@ -86,19 +84,16 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     """共通語彙を既存の静的な操作判定へ結びつける。
 
     書込先で成立する操作（既存ファイルの編集、`path:`・`write:`・`dependency:`）は、一時領域の書込先を除いて判定する。
-    本文の作成（`body-writing`）は、一時領域の文章の下書きを除き、スクリプトやデータだけの書込で成立させない。
+    本文の作成（`body-writing`）も、一時領域の書込先だけの場合は成立させない。
     """
     if operation in _FILE_SCOPED_OPERATIONS:
         written = operation_skills.written_paths(tool_name, tool_input, cwd)
         if written and all(_temporary_path(path) for path in written):
             return False
     if operation == "body-writing":
-        # 一時領域の作業項目の本文・コミットメッセージ・応答などの文章の下書きは、投入・送信される成果物の本文であり、
-        # 文章の品質基準を適用する。使い捨てのスクリプトやデータだけを書く場合は成果物の本文に当たらない。
+        # 一時領域の書込は、使い捨てのスクリプト・データと、作業記録・下書きなどの個人記録であり、成果物の本文に当たらない。
         written = operation_skills.written_paths(tool_name, tool_input, cwd)
-        if written and all(
-            _temporary_path(path) and pathlib.Path(path).suffix.lower() not in _PROSE_SUFFIXES for path in written
-        ):
+        if written and all(_temporary_path(path) for path in written):
             return False
     matched = operation_skills.operation_matches(operation, tool_name, tool_input, cwd)
     if matched is not None:

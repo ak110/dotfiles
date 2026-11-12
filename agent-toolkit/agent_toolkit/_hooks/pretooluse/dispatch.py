@@ -92,7 +92,7 @@ lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
 )
-lazy from agent_toolkit._hooks import command_timing, repository_protection, rules_context, work_contract
+lazy from agent_toolkit._hooks import bugfix_gate, command_timing, repository_protection, rules_context, work_contract
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -254,6 +254,11 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     """ツールの種類ごとの判定を実行し、その結果を返す。"""
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
+    if (
+        tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX)
+        and (bugfix_block := bugfix_gate.send_block(payload)) is not None
+    ):
+        return Decision(block=bugfix_block)
     # Skill: write-plan起動時は前の計画のパスを消去する。
     if tool_name == "Skill":
         skill_name = tool_input.get("skill")
