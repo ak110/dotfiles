@@ -22,7 +22,9 @@ description: >
 別cwdのall-repos統括にも適用し、準備済みの全件、例外のないレーン上限と必要な品質工程を保つ。
 計測範囲は[セッションの所要時間目標](../../../.chezmoi-source/dot_claude/docs/session-review-dotfiles.md#セッションの所要時間目標)に従う。
 レーン内の先行準備・確定HEADごとの独立文脈レビュー・共有2検証枠への早期投入と成功再利用を使う。
-内部担当の読取・実装・レビューを合わせた同時数Cを資源・サービス・総費用の比較から選ぶ。
+内部担当の読取・実装・レビューを合わせた同時数Cを資源・サービス・総費用の比較から選び、本リポジトリの開発環境では上限を12とする。
+12は6論理CPU・メモリー39GBの環境と2026年11月12日の巡回の観測から決めた値である。
+根拠と次回見込みは`docs/development/audit-records-wi.md`の同日の「内部担当の同時数と巨大WIの判定」の記録にある。
 レーンへの配分は`agent-toolkit:process-wi/references/selection-procedure-allocation.md`「調査とレーン分け」、Cの選定は同じファイルの「内部担当の同時数と巨大WIの判定」に従う。
 内部群は`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」に従う。
 
