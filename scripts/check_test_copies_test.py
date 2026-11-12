@@ -536,3 +536,86 @@ def test_adjacent_one_line_functions_keep_individual_exception_reasons(
         ("one", "exempt", "公開契約one"),
         ("two", "exempt", "公開契約two"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("target", "value"),
+    [
+        ('state["existing"]', "(module.OTHER, 1)"),
+        ('state["existing"], other', "(module.OTHER, 1)"),
+        ('[state["existing"], other]', "(module.OTHER, 1)"),
+        ('((state["existing"],), other)', "((module.OTHER,), 1)"),
+        ('*state["existing"], other', "(module.OTHER, 1)"),
+        ("state.existing", "(module.OTHER, 1)"),
+        ("state.existing, other", "(module.OTHER, 1)"),
+        ("[other, *state.existing]", "(module.OTHER, 1)"),
+    ],
+)
+def test_single_and_unpacking_partial_updates_have_the_same_cli_verdict(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+    value: str,
+) -> None:
+    path = tmp_path / "state_test.py"
+    seed = "module.STATE" if "state.existing" in target else '{"existing": module.FLAG}'
+    observed = "state.writes" if "state.existing" in target else 'state["writes"]'
+    path.write_text(
+        f"import module\ndef test_result():\n    state = {seed}\n    {target} = {value}\n"
+        f"    run()\n    assert {observed} == [1]\n",
+        encoding="utf-8",
+    )
+    assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert [(item["id"], item["status"]) for item in report["files"][0]["functions"]] == [("test_result", "unclassified")]
+    assert not report["diagnostics"]
+
+
+@pytest.mark.parametrize(
+    ("source", "status", "kind"),
+    [
+        ("def test_result():\n    assert transform(2) == 4\n", 0, None),
+        (
+            "import module\ndef test_one():\n    assert module.VALUE == 1\ndef test_two():\n    assert module.OTHER == 2\n",
+            1,
+            "constant-only",
+        ),
+        ("def test_broken(:\n", 2, "input-error"),
+        ("import module\n# test-copy-contract:\ndef test_value():\n    assert module.VALUE == 1\n", 2, "invalid-exception"),
+    ],
+)
+def test_json_and_text_deliver_one_shared_action_only_on_failure(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    source: str,
+    status: int,
+    kind: str | None,
+) -> None:
+    path = tmp_path / "result_test.py"
+    path.write_text(source, encoding="utf-8")
+    assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == status
+    encoded = capsys.readouterr()
+    assert not encoded.err
+    report = json.loads(encoded.out)
+    assert report["schema_version"] == 1
+    assert {"root", "files", "diagnostics"} <= report.keys()
+    if status:
+        action = report["next_action"]
+        assert isinstance(action, str) and action.strip()
+        assert encoded.out.count('"next_action"') == 1
+        assert kind in {item["kind"] for item in report["diagnostics"]}
+        assert all({"path", "line", "kind", "message"} <= item.keys() for item in report["diagnostics"])
+        assert all(action not in item["message"] and "next_action" not in item for item in report["diagnostics"])
+        if status == 1:
+            assert {item["id"] for item in report["files"][0]["functions"]} == {"test_one", "test_two"}
+            assert len(report["diagnostics"]) == 2
+    else:
+        assert "next_action" not in report
+        assert not report["diagnostics"]
+    assert check_test_copies.main(["--root", str(tmp_path), path.name]) == status
+    plain = capsys.readouterr()
+    assert not plain.out
+    if status:
+        assert plain.err.count(report["next_action"]) == 1
+    else:
+        assert not plain.err

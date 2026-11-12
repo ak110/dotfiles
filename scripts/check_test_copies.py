@@ -16,6 +16,7 @@ TS/Rustの解析は全言語文法の検証ではなく、対応する宣言・�
 
 JSON v1: root, files[{path,language,status,functions[{id,line,status,kinds,
 reason,checks}]}], diagnostics[{path,line,kind,message}], schema_version。
+診断があるJSON応答には共通のnext_actionを1回だけ含める。
 関数idはPythonの修飾名、TSはtest/itの名前と行、Rustは関数名と行。
 statusは関数がcandidate/exempt/clear/unclassified、ファイルが
 analyzed/out_of_scope/error。通常成功は無出力、--jsonは全対象を出力する。
@@ -38,6 +39,10 @@ from agent_toolkit._git import command as git_command
 
 _MARKER = "test-copy-contract:"
 _COPY = {"literal", "constant", "text"}
+_NEXT_ACTION = (
+    "次の操作: 写しだけの関数を削除するか、独立した結果の検査へ置き換える。正当な契約は関数直前か本文先頭に "
+    "# test-copy-contract: <保証する独立契約の理由> を置く。入力不良は対象の構文・パス・読取権限を修正する。"
+)
 _TRANSPARENT_METHODS = {
     "strip",
     "lstrip",
@@ -263,33 +268,39 @@ class _PythonAnalysis:
 
     def assign(self, node: ast.Assign | ast.AnnAssign, env: dict[str, str], stack: tuple[str, ...] = ()) -> None:
         kind = self.value(node.value, env, stack)
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        for target in targets:
+        targets: list[ast.expr] = list(reversed(node.targets)) if isinstance(node, ast.Assign) else [node.target]
+        while targets:
+            item = targets.pop()
+            if isinstance(item, (ast.Tuple, ast.List)):
+                targets.extend(reversed(item.elts))
+                continue
+            if isinstance(item, ast.Starred):
+                targets.append(item.value)
+                continue
             # 部分更新は状態全体の固定出自を無効にし、添字の変数へ右辺を伝播させない。
-            if isinstance(target, (ast.Subscript, ast.Attribute)):
-                owner = target.value
+            if isinstance(item, (ast.Subscript, ast.Attribute)):
+                owner = item.value
                 while isinstance(owner, (ast.Subscript, ast.Attribute)):
                     owner = owner.value
                 if isinstance(owner, ast.Name):
                     env.update({owner.id: "unknown", "__fragment:" + owner.id: "no", "__source:" + owner.id: "no"})
-            for item in ast.walk(target):
-                if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store):
-                    env[item.id] = kind
-                    env["__fragment:" + item.id] = "yes" if self.fixed_text(node.value, env) else "no"
-                    env["__source:" + item.id] = (
-                        "yes"
-                        if kind in _COPY
-                        and any(
-                            isinstance(child, ast.Constant)
-                            and isinstance(child.value, str)
-                            and child.value.endswith((".py", ".md", ".ts", ".tsx", ".rs"))
-                            for child in ast.walk(node.value or ast.Constant(value=None))
-                        )
-                        else "no"
+            elif isinstance(item, ast.Name):
+                env[item.id] = kind
+                env["__fragment:" + item.id] = "yes" if self.fixed_text(node.value, env) else "no"
+                env["__source:" + item.id] = (
+                    "yes"
+                    if kind in _COPY
+                    and any(
+                        isinstance(child, ast.Constant)
+                        and isinstance(child.value, str)
+                        and child.value.endswith((".py", ".md", ".ts", ".tsx", ".rs"))
+                        for child in ast.walk(node.value or ast.Constant(value=None))
                     )
-                    if kind == "text":
-                        env[f"{item.id}.stdout"] = "text"
-                        env[f"{item.id}.stderr"] = "text"
+                    else "no"
+                )
+                if kind == "text":
+                    env[f"{item.id}.stdout"] = "text"
+                    env[f"{item.id}.stderr"] = "text"
 
     def fixed_text(self, node: ast.AST | None, env: dict[str, str]) -> bool:
         if isinstance(node, ast.Constant):
@@ -960,13 +971,10 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         diagnostics.append({"path": str(root), "line": 1, "kind": "input-error", "message": str(error)})
     if args.json:
-        print(
-            json.dumps(
-                {"schema_version": 1, "root": str(root), "files": files, "diagnostics": diagnostics},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        response = {"schema_version": 1, "root": str(root), "files": files, "diagnostics": diagnostics}
+        if diagnostics:
+            response["next_action"] = _NEXT_ACTION
+        print(json.dumps(response, ensure_ascii=False, indent=2))
     else:
         for diagnostic in diagnostics:
             print(
@@ -974,11 +982,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
         if diagnostics:
-            print(
-                "次の操作: 写しだけの関数を削除するか、独立した結果の検査へ置き換える。正当な契約は関数直前か本文先頭に "
-                "# test-copy-contract: <保証する独立契約の理由> を置く。入力不良は対象の構文・パス・読取権限を修正する。",
-                file=sys.stderr,
-            )
+            print(_NEXT_ACTION, file=sys.stderr)
     if any(item["kind"] in {"input-error", "invalid-exception"} for item in diagnostics):
         return 2
     return 1 if diagnostics else 0
