@@ -125,7 +125,8 @@ def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> lis
     # 宣言表ごとの入れ子scopeを、1回のhook要求が共有する一覧へ接続する。
     with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
         entries = [
-            (source.resolve(), read_triggers.parse_tables(source, root, host=host, project=cwd, defer_material=True))
+            # `_declaration_sources`は実体のパスを返すため、ここで解決し直さない。
+            (source, read_triggers.parse_tables(source, root, host=host, project=cwd, defer_material=True))
             for source in _declaration_sources(cwd)
         ]
     # 参照先の所有plugin全体は有効化しない。選択した実体の宣言は取得時に追加する。
@@ -141,7 +142,7 @@ def _declaration_sources(cwd: str) -> list[pathlib.Path]:
     # 外部分離された品質スキルは、導入された実体がある場合に同じ表形式で取り込む。
     sibling = sibling_plugin_root("agent-basics", root)
     if sibling is not None:
-        sources.extend(sorted((sibling / "skills").rglob("*.md")))
+        sources.extend(read_triggers.canonical_markdown_files(sibling / "skills"))
     return list(dict.fromkeys(sources))
 
 

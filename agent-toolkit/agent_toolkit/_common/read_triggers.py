@@ -27,6 +27,7 @@ from agent_toolkit._common.read_triggers_references import (
 from agent_toolkit._common.read_triggers_resolution import (
     _direct_document,
     _plugin_manifest,
+    canonical_markdown_files,
     document_sources,
     parent_contract_targets,
     project_skill_dirs,
@@ -51,6 +52,7 @@ __all__ = [
     "NAMED_REFERENCE_CONDITION",
     "ReadTarget",
     "ReadTrigger",
+    "canonical_markdown_files",
     "document_lines",
     "document_sources",
     "is_normative_document",
