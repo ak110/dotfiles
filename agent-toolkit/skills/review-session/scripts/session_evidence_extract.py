@@ -198,7 +198,7 @@ def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, An
 
 
 def _recovery_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """JSONとして成立しない行を後続の完全な行で置き換えた対応を、記録と行番号で示す。"""
+    """JSONとして成立しない行の回復（後続の完全な行での置換、またはNUL断片の除外）を、記録と行番号で示す。"""
     return [
         {
             "kind": "recovered-record-line",
@@ -208,6 +208,7 @@ def _recovery_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
             "ordinal": recovery.ordinal,
             "entry_type": recovery.entry_type,
             "length": recovery.length,
+            "method": recovery.method,
         }
         for item in collected
         for recovery in item.recoveries

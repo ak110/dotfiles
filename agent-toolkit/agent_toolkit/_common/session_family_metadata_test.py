@@ -118,6 +118,52 @@ def test_metadata_extracts_references_without_body_loader(
     assert not any(isinstance(value, (dict, list)) for value in meta)
 
 
+def _codex_line(ordinal: int) -> bytes:
+    return json.dumps(
+        {"timestamp": "2026-11-11T21:36:18Z", "ordinal": ordinal, "type": "event_msg", "payload": {"type": "x"}},
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+_FRAGMENTS = [b"\0" * 2153 + b"RWQYfwj4lFRS", b"\0" * 1313 + b"AUKfgHHqcc88"]
+
+
+def test_zero_filled_fragments_are_excluded_between_consecutive_ordinals(tmp_path: Path) -> None:
+    """異常終了でNULと断片が残った行は、前後の`ordinal`が連続すれば解析対象から除く。"""
+    path = tmp_path / "rollout-zero.jsonl"
+    path.write_bytes(b"\n".join([_codex_line(3), *_FRAGMENTS, _codex_line(4)]) + b"\n")
+    loaded = _load_records_checked(str(path))
+    meta = _scan_record_metadata(path)
+    assert loaded.failure is None and meta.failure is None
+    assert loaded.records is not None
+    assert [record.line for record in loaded.records] == [1, 4]
+    assert [tuple(item) for item in loaded.recoveries] == [
+        (2, 4, 4, "event_msg", len(_FRAGMENTS[0]), "zero-filled-skipped"),
+        (3, 4, 4, "event_msg", len(_FRAGMENTS[1]), "zero-filled-skipped"),
+    ]
+    assert meta.recoveries == loaded.recoveries
+
+
+@pytest.mark.parametrize(
+    ("lines", "failure_line"),
+    [
+        pytest.param([_codex_line(3), *_FRAGMENTS, _codex_line(5)], 2, id="ordinal-gap"),
+        pytest.param([*_FRAGMENTS, _codex_line(4)], 1, id="no-previous-record"),
+        pytest.param([_codex_line(3), *_FRAGMENTS], 2, id="ends-with-fragment"),
+        pytest.param([_codex_line(3), *_FRAGMENTS, b'{"type":"event_msg"}'], 2, id="next-without-ordinal"),
+        pytest.param([_codex_line(3), *_FRAGMENTS, _codex_line(4)[:-3]], 2, id="next-broken"),
+        pytest.param([b'{"type":"user"}', *_FRAGMENTS, _codex_line(4)], 2, id="previous-without-ordinal"),
+    ],
+)
+def test_zero_filled_fragments_fail_when_gap_cannot_be_ruled_out(tmp_path: Path, lines: list[bytes], failure_line: int) -> None:
+    """記録の欠落を否定できない配置では、NUL断片の行を読込失敗として報告する。"""
+    path = tmp_path / "rollout-zero.jsonl"
+    path.write_bytes(b"\n".join(lines) + b"\n")
+    loaded = _load_records_checked(str(path))
+    assert loaded.failure is not None and loaded.failure.line == failure_line
+    assert _scan_record_metadata(path).failure == loaded.failure
+
+
 def test_metadata_discards_ids_before_late_failure(tmp_path: Path) -> None:
     """正常なIDと子参照の後で破損したファイルを、部分的な関係索引として採用しない。"""
     path = tmp_path / "rollout-broken.jsonl"
