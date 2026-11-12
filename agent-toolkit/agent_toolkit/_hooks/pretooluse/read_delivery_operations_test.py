@@ -1,5 +1,6 @@
 """両ホストの宣言配送、取得範囲、主体と圧縮の境界を確かめる。"""
 
+import json
 import os
 import pathlib
 import shlex
@@ -8,9 +9,10 @@ import tempfile
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common.read_triggers import ReadTrigger
+from agent_toolkit._common.read_triggers import ReadTrigger, parse_tables
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
+from agent_toolkit._testing.pretooluse_support import _additional_context
 from agent_toolkit._testing.read_delivery_support import (
     _assert_acquired,
     _guidance,
@@ -20,6 +22,91 @@ from agent_toolkit._testing.read_delivery_support import (
 )
 
 __all__ = ["_assert_acquired", "_guidance", "_local_plugin_root", "_memory", "_rows"]
+
+
+@pytest.mark.parametrize(
+    "filename,before",
+    [
+        ("sample_test.py", "def test_value():\n    assert 1 == 1\n"),
+        ("sample.test.ts", "test('value', () => expect(1).toBe(1));\n"),
+        ("sample.spec.tsx", "test('view', () => <div>1</div>);\n"),
+        ("src/lib.rs", "#[test]\nfn value() { assert_eq!(1, 1); }\n"),
+    ],
+)
+@pytest.mark.parametrize(
+    "tool,exists", [("Write", False), ("Write", True), ("Edit", True), ("apply_patch", False), ("apply_patch", True)]
+)
+@pytest.mark.parametrize("acquired", [False, True])
+@pytest.mark.usefixtures("memory")
+def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisition(
+    tmp_path, monkeypatch, filename, before, tool, exists, acquired
+):
+    """現物宣言から試験編集の両基準を初回に案内し、取得済み本文は再要求しない。"""
+    root = pathlib.Path(__file__).resolve().parents[3]
+    owner = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
+    references = tuple(owner.parent / "references" / name for name in ("testing.md", "testing-selection.md"))
+    rows = parse_tables(owner, root, strict=True)
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
+    target = tmp_path / filename
+    if exists:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(before, encoding="utf-8")
+    after = before.replace("1", "2")
+    if tool == "Write":
+        inputs = {"file_path": str(target), "content": after}
+    elif tool == "Edit":
+        inputs = {"file_path": str(target), "old_string": before, "new_string": after}
+    elif exists:
+        removed = "".join("-" + line + "\n" for line in before.splitlines())
+        added = "".join("+" + line + "\n" for line in after.splitlines())
+        inputs = {"command": f"*** Begin Patch\n*** Update File: {target}\n@@\n{removed}{added}*** End Patch\n"}
+    else:
+        added = "".join("+" + line + "\n" for line in after.splitlines())
+        inputs = {"command": f"*** Begin Patch\n*** Add File: {target}\n{added}*** End Patch\n"}
+    payload = {
+        "session_id": "test-file-standards",
+        "cwd": str(tmp_path),
+        **({"turn_id": "turn"} if tool == "apply_patch" else {}),
+    }
+
+    def acquire():
+        for reference in references:
+            observed = _run_hook_in_process(
+                "posttooluse",
+                {
+                    **payload,
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": "Read",
+                    "tool_input": {"file_path": str(reference)},
+                    "tool_response": reference.read_text(encoding="utf-8"),
+                },
+            )
+            assert observed.returncode == 0 and not observed.stderr
+            _assert_acquired(payload, reference, True)
+
+    if acquired:
+        # 初回Preより先に取得し、案内済み通知の抑止と取得済み判定を区別する。
+        acquire()
+    operation = {**payload, "tool_name": tool, "tool_input": inputs}
+    first = _run_hook_in_process("pretooluse", operation)
+    assert first.returncode == 0 and not first.stderr
+    assert json.loads(first.stdout).get("hookSpecificOutput", {}).get("permissionDecision") != "deny" if first.stdout else True
+    for reference in references:
+        assert (str(reference) in _additional_context(first)) is (not acquired)
+        _assert_acquired(payload, reference, acquired)
+    if not acquired:
+        acquire()
+    repeated = _run_hook_in_process("pretooluse", operation)
+    assert repeated.returncode == 0 and not repeated.stderr
+    assert (
+        json.loads(repeated.stdout).get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
+        if repeated.stdout
+        else True
+    )
+    for reference in references:
+        assert str(reference) not in _additional_context(repeated)
+        _assert_acquired(payload, reference, True)
 
 
 @pytest.mark.parametrize("operation", ["path:*.py", "write:*.py", "existing-file-edit", "body-writing"])

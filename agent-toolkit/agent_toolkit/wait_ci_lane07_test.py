@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pathlib
+import subprocess
+import sys
+from collections.abc import Callable
 from unittest import mock
 
 from agent_toolkit import wait_ci
@@ -47,12 +51,10 @@ def test_gitlab_pipeline_list_includes_same_project_downstream(monkeypatch) -> N
     assert any("/pipelines/13" in part for part in commands[4])
 
 
-def test_main_wait_sha_uses_all_runs_and_initializes_utf8_first(monkeypatch) -> None:
-    """完全長SHAモードはbaselineを除外せず、argparse前にUTF-8を初期化する。"""
-    events: list[str] = []
+def test_main_wait_sha_uses_all_runs(monkeypatch) -> None:
+    """完全長SHAモードは正規化したSHAの全runをbaseline無しで待つ。"""
     waited = mock.Mock(return_value=wait_ci.EXIT_SUCCESS)
-    monkeypatch.setattr(wait_ci._outcome, "force_utf8_stdio", lambda: events.append("utf8"))  # pylint: disable=protected-access
-    monkeypatch.setattr(wait_ci, "_install_signal_handlers", lambda: events.append("signals"))
+    monkeypatch.setattr(wait_ci, "_install_signal_handlers", lambda: None)
     monkeypatch.setattr(wait_ci, "wait_for_ci", waited)
 
     result = wait_ci.main(
@@ -70,6 +72,25 @@ def test_main_wait_sha_uses_all_runs_and_initializes_utf8_first(monkeypatch) -> 
     )
 
     assert result == wait_ci.EXIT_SUCCESS
-    assert events == ["utf8", "signals"]
     assert waited.call_args.args[0] == "a" * 40
     assert waited.call_args.kwargs["baseline_ids"] == frozenset()
+
+
+def test_main_emits_utf8_in_non_utf8_environment(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
+    """ASCII標準出力で起動しても、公開CLIの引数エラーは日本語をUTF-8で出力する。"""
+    environment = host_environ()
+    environment.update(PYTHONIOENCODING="ascii", PYTHONUTF8="0")
+    result = subprocess.run(
+        [sys.executable, str(pathlib.Path(wait_ci.__file__).resolve()), "--wait-sha", "invalid"],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == wait_ci.EXIT_USAGE
+    assert result.stdout == b""
+    error = result.stderr.decode("utf-8")
+    assert "40桁の完全長commit SHAを指定してください" in error
+    assert "次の操作:" in error
+    assert "UnicodeEncodeError" not in error

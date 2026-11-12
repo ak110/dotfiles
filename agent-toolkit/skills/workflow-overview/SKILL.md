@@ -2,7 +2,8 @@
 name: workflow-overview
 description: >
   WI処理の工程や運用に関わる問題の原因分析と対策、運用工程や自動化の変更計画、
-  ユーザーへの運用説明で起動する。キュー、`atk wi process-loop`、process-wiの1回の実行、確認と回答、振り返りで得た要求を投入する方法を扱う。
+  ユーザーへの運用説明で起動する。process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前にも起動する。
+  キュー、`atk wi process-loop`、process-wiの1回の実行、確認と回答、振り返りで得た要求を投入する方法を扱う。
 user-invocable: false
 ---
 
@@ -25,6 +26,7 @@ user-invocable: false
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` |
+| process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `references/orchestrator-runtime.md` |
 | 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` |
 | レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes-launch.md`、`../process-wi/references/run-lanes-integration.md`、`../process-wi/references/lane-resources.md` |
 | 開始後の新着WIの確認と今回追加の判断を扱う前 | `../process-wi/references/immediate-fix.md` |
@@ -40,7 +42,10 @@ user-invocable: false
 
 process-loopの起動・待機・制御を扱う際は、事前に`atk wi process-loop --help`で利用条件を確認する。
 公開されている主な操作には、中断を要求する`atk wi process-loop abort`、次の1セッションへの指示を与える`instruct`、状態を確認する`status`がある。
-ホームディレクトリなどから`atk wi process-loop`を実行し、`process_loop_repositories`に登録されている対象一覧を`atk wi list --configured-repos`で確認する。
+ホームディレクトリなどから`atk wi process-loop`を実行し、`repositories`で`process_loop`が有効な対象一覧を`atk wi list --configured-repos`で確認する。
+リポジトリごとの編集可否・ローカルパス・process-loopの対象・検証OSは`atk config repos`で登録・変更・削除・一覧表示する。
+未登録は編集不可であり、`allow`への登録は編集の認可を確認してから行う。
+`awi`は直接編集せずAWIを投入し、`deny`は必要な変更を報告する。
 常駐はprocess-wiの実行ごとに統括担当を1つ起動し、リポジトリごとの準備・所有・進捗を管理する。
 統括は対象の規範・スキルを明示的に読み、今回の対象が1リポジトリならレーン数上限によらず自ら処理する。
 対象が複数の場合も、今回進められる負荷が最大のリポジトリを統括が直接担当する。
@@ -48,7 +53,7 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 具体的な選定と通常の継続は`../process-wi/references/all-repos-starting.md`「開始と振り分け」に従う。
 直接処理でも上限が2以上なら通常のレーン処理へ、1以下ならsingle-laneへ接続し、起動したwriterの終了観測と常駐への対象別結果の保存を保つ。
 計画・検証・レビュー・公開は対象worktreeごとに分離し、process-wiの実行全体の完了報告は統括が行う。
-常時処理するリポジトリだけを登録し、投入だけを行うリポジトリは登録しない。
+常時処理するリポジトリだけ`process_loop`を有効にし、投入だけを行うリポジトリも`edit=awi`として登録できる。
 非常駐の全体処理は`agent-toolkit:process-wi all-repos`を手動起動する。
 同スキルは`atk wi process-loop --once`で、常駐と共通の対象取得・所有・worktree準備・結果検収・回収を1集合に対して行う。
 対象が0件なら待機せず終了し、未完了・所有待ち・準備失敗が残れば非0で終了する。
@@ -65,7 +70,9 @@ process-wiのメインセッションは対象の選定・配分とユーザー�
 準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`の順で進め、各操作の実行前に`../process-wi/references/run-lanes.md`の該当節を確認する。
 保持された資源の回復は、同書ならびに`atk lane delete --help`、`atk lane recover --help`に記載された条件や診断に従って再開する。
 
-`run-skill`に由来するUWIは、`source`が`run-skill`、`scope`がスキル名となり、process-wiの選定対象やprocess-loopの起動件数の計算から除外する。
+`run-skill`に由来するUWIは、`source`が`run-skill`、`scope`がスキル名となる。
+`run_skill_report: true`を持つ報告用だけをprocess-wiの選定対象とprocess-loopの起動件数の計算から除外する。
+報告用を除く回答済みの承認用UWIは、由来によらず既存の着手条件に従って対象に含める。
 
 ## 登録、回答、振り返り
 
@@ -84,7 +91,10 @@ process-wiのメインセッションは対象の選定・配分とユーザー�
 会話中のやり取りで回答を得られた事項はUWIとして重ねて登録せず、回答を得られないまま終了した確認事項はUWIへ引き継ぐ。
 保存条件、自律モードにおける確認手段、およびUWIへの切り替え手順は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。
 ユーザーは`atk wi answer`または`atk serve`から回答を入力する。
-回答済みのUWIについては、`source`が`run-skill`であれば同じ対象リポジトリ・同じスキルの次回`atk run-skill`実行時に取り込み、それ以外はprocess-wiの次回実行時にメインセッションが元の項目とともに処理へ取り込む。
+回答済みのUWIについては、`run_skill_report: true`を持つ報告用は同じ対象リポジトリ・同じスキルの次回`atk run-skill`実行時に取り込む。
+報告用を除く承認用は、process-wiの次回実行時にもメインセッションが処理へ取り込む。
+`source`が`run-skill`の場合は`scope`のスキルを解決して承認後の手順を用い、解決できなければ続行できない理由を返す。
+次回の定期実行は、process-wiが処理中のUWIを重複して取り込まない。
 処理中のprocess-wiセッションに対してユーザーから回答が伝えられた場合は、同一セッションの処理対象に追加する（`../process-wi/references/selection-procedure-addition.md`「処理対象WIの追加」）。
 
 作業完了後は`agent-toolkit:report-completion`で作業結果を報告して終了する。

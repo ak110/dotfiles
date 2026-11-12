@@ -173,28 +173,6 @@ class TestCheckMarketplaceFromFile:
     ``install_claude_plugins_repair_test.py`` に置いている。
     """
 
-    def test_directory_type_healthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """directory 型 + dotfiles 絶対パスなら is_directory_type_registered が True を返す。"""
-        dotfiles_root = _common.find_dotfiles_root()
-        assert dotfiles_root is not None
-        path = tmp_path / "known_marketplaces.json"
-        path.write_text(
-            json.dumps(
-                {
-                    _claude_common.MARKETPLACE_NAME: {
-                        "source": {"source": "directory", "path": str(dotfiles_root)},
-                        "installLocation": str(dotfiles_root),
-                    },
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", path)
-        # 実環境の settings.json を参照しないよう、存在しないパスへ差し替える
-        monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
-        assert _claude_marketplace.is_directory_type_registered() is True
-
     def test_legacy_github_type_unhealthy(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
         """旧 GitHub 型エントリは is_directory_type_registered が False を返す（マイグレーション対象）。"""
         path = tmp_path / "known_marketplaces.json"

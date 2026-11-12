@@ -13,8 +13,9 @@ from agent_toolkit._common import state_paths
 def test_configure_logging_reuses_handlers_and_rotation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """設定を繰り返しても同じ保存先とhandlerを再利用する。
+    """設定を繰り返しても同じ保存先へログを一度だけ記録する。
 
     loggerのhandlerの退避と回収は`pytest_plugin`の自動fixtureが行い、試験は空のhandler一覧から始まる。
     """
@@ -22,12 +23,12 @@ def test_configure_logging_reuses_handlers_and_rotation(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     first = logging_config.configure_logging()
     second = logging_config.configure_logging()
-    file_handlers = [handler for handler in logger.handlers if isinstance(handler, logging_config._LogFileHandler)]  # pylint: disable=protected-access  # noqa: SLF001
-
     assert first == second == tmp_path / "agents-server.log"
-    assert len(file_handlers) == 1
-    stderr_handlers = [handler for handler in logger.handlers if isinstance(handler, logging_config._StderrHandler)]  # pylint: disable=protected-access  # noqa: SLF001
-    assert len(stderr_handlers) == 1
+    message = "繰り返し設定後の識別可能な記録"
+    logger.warning(message)
+    logging_config.flush_logging()
+    assert first.read_text(encoding="utf-8").count(message) == 1
+    assert capsys.readouterr().err.count(message) == 1
 
 
 def test_instance_diagnostics_independent_of_log_rotation(

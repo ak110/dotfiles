@@ -16,20 +16,22 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 class TestAddEmptyBodyRejection:
     """`atk wi add`が実質空の本文の投入を拒否することを検証する。"""
 
-    def test_empty_string_body_rejected(
+    @pytest.mark.parametrize("body", ["", "-", "-\n-\n"])
+    def test_empty_body_rejected(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        body: str,
     ) -> None:
-        """本文が空文字のみのとき非ゼロ終了し、エラー出力に検出理由が含まれる。"""
-        _setup_notes(tmp_path)
+        """実質空の本文は保存せず、検出理由と再投入の案内を返す。"""
+        notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
 
         _patch_add_git(monkeypatch, myrepo)
         body_path = tmp_path / "body.md"
-        body_path.write_text("", encoding="utf-8")
+        body_path.write_text(body, encoding="utf-8")
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
@@ -38,44 +40,7 @@ class TestAddEmptyBodyRejection:
         captured = capsys.readouterr()
         assert "実質空" in captured.err
         assert "\n次の操作: 本文を記入して再投入する" in captured.err
-
-    def test_single_dash_body_rejected(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """本文が単一の`-`のみのとき非ゼロ終了する。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        _patch_add_git(monkeypatch, myrepo)
-        body_path = tmp_path / "body.md"
-        body_path.write_text("-", encoding="utf-8")
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 1
-
-    def test_multiline_bullet_markers_only_rejected(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-    ) -> None:
-        """複数行の箇条書きマーカーのみ（`-\\n-\\n`等）のとき非ゼロ終了する。"""
-        _setup_notes(tmp_path)
-        myrepo = tmp_path / "myrepo"
-        myrepo.mkdir()
-
-        _patch_add_git(monkeypatch, myrepo)
-        body_path = tmp_path / "body.md"
-        body_path.write_text("-\n-\n", encoding="utf-8")
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "add", str(myrepo), "--body-file", str(body_path)], home=tmp_path, now=_FIXED_DT)
-
-        assert exc_info.value.code == 1
+        assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
     def test_valid_body_with_content_still_accepted(
         self,

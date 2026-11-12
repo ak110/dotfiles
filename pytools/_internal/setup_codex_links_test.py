@@ -280,7 +280,7 @@ def test_windows_recreates_link_when_junction_like_dangling(
         del source, destination
         calls.append("create")
 
-    fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     monkeypatch.setitem(sys.modules, "_winapi", fake_winapi)
 
     assert setup_codex_links.run().changed is True
@@ -307,7 +307,7 @@ def test_windows_creates_junction(
         # CreateJunctionは実体作成だがテストでは空ディレクトリで代替する。
         Path(destination).mkdir(parents=True, exist_ok=True)
 
-    fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     monkeypatch.setitem(sys.modules, "_winapi", fake_winapi)
 
     assert setup_codex_links.run().changed is True

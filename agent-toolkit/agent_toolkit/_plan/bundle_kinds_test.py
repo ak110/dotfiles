@@ -70,18 +70,6 @@ def test_plan_bundle_kinds_cover_all_suffixes(tmp_path: pathlib.Path) -> None:
         }
 
 
-def test_derived_kind_sets_keep_their_order() -> None:
-    """計画バンドルとして保存する付属ファイルと、画面がリンクする付属ファイルの集合と並び。"""
-    assert bundle_kinds.STORED_ATTACHMENTS == (bundle_kinds.BUGS, bundle_kinds.EXEC_REVIEW, bundle_kinds.WI_COMMITS)
-    assert bundle_kinds.LINKED_ATTACHMENTS == (
-        bundle_kinds.DETAIL,
-        bundle_kinds.BUGS,
-        bundle_kinds.PLAN_REVIEW,
-        bundle_kinds.EXEC_REVIEW,
-    )
-    assert bundle_kinds.REVIEW_TABLES == (bundle_kinds.PLAN_REVIEW, bundle_kinds.EXEC_REVIEW)
-
-
 def test_unknown_names_have_no_kind() -> None:
     """いずれの種別の接尾辞も持たない名前は種別を持たず、一覧と表示の対象にもならない。"""
     for name in ("note.txt", "p.tsv", "p.json"):

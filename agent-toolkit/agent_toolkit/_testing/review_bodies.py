@@ -17,4 +17,4 @@ def response_body(summary: str) -> str:
 
 def reason_body(summary: str) -> str:
     """`--no-response-reason-file`の必須ラベルを持ち、`summary`を根拠の所在として含む対応不要理由を返す。"""
-    return f"根拠の所在: {summary}"
+    return f"根拠の所在: {summary}\n判断主体: メイン"

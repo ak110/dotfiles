@@ -361,18 +361,3 @@ def test_claude_shell_options_share_lightweight_launch_with_command_tools(
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
     assert set(options.allowed_tools) == {"Bash", "Read"}
-
-
-@pytest.mark.usefixtures("agents_server_isolation")
-def test_claude_dependency_check_builds_options_without_client(monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存の確認処理は現在の作業ディレクトリでoptionsだけを構築する。"""
-    calls: list[tuple[str, str | None, str | None]] = []
-
-    def fake_build_options(cwd: str, model: str | None, effort: str | None) -> object:
-        calls.append((cwd, model, effort))
-        return object()
-
-    monkeypatch.setattr(claude, "_build_options", fake_build_options)
-    claude.check_dependencies()
-
-    assert calls == [(str(pathlib.Path.cwd()), None, None)]

@@ -1,8 +1,10 @@
 """`atk wi process-loop`のテストが共有する、子プロセスの起動の差し替えとprivate-notesの準備。"""
 
+import json
 import pathlib
 import shutil
 import subprocess
+from collections.abc import Sequence
 from typing import Any, NoReturn
 
 import pytest
@@ -16,6 +18,14 @@ from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 DOTFILES_REPO_ID = _pl_worktree.DOTFILES_REPO_ID  # pylint: disable=protected-access  # noqa: SLF001
+
+
+def set_process_loop_repositories(monkeypatch: pytest.MonkeyPatch, paths: Sequence[pathlib.Path]) -> None:
+    """正常系で使うGit作業ツリーを現行のrepository属性mapで登録する。"""
+    monkeypatch.setenv(
+        "AGENT_TOOLKIT_CONFIG_REPOSITORIES",
+        json.dumps({str(path): {"edit": "allow", "process_loop": True} for path in paths}),
+    )
 
 
 def set_orchestrate_model(tmp_path: pathlib.Path, value: str) -> None:

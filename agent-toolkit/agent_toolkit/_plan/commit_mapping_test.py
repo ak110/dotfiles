@@ -143,6 +143,37 @@ def test_squash_inherits_union_of_wis(repo: pathlib.Path) -> None:
     }
 
 
+def test_selected_awi_resolves_only_final_split_destinations(repo: pathlib.Path) -> None:
+    """旧objectの無いrewriteと分割を継承し、他AWIの分割先の欠落を取得条件にしない。"""
+    current = git_repository.git_output(repo, "rev-parse", "HEAD")
+    events: list[dict[str, object]] = [
+        {"commits": ["abcdef0"], "awi": [WI_A, WI_B]},
+        {"rewrite": {"abcdef0": "abcdef1"}},
+        {"rewrite": {"abcdef1": [{"commit": current, "awi": [WI_A]}, {"commit": "abcdef2", "awi": [WI_B]}]}},
+    ]
+    assert commit_mapping.get_commits(repo, events, [WI_A], {WI_A, WI_B}) == {WI_A: [_short(repo, current)]}
+    with pytest.raises(commit_mapping.CommitGitError):
+        commit_mapping.get_commits(repo, events, [WI_B], {WI_A, WI_B})
+
+
+@pytest.mark.parametrize(
+    "bad_event",
+    [
+        {"commits": [], "awi": [WI_B]},
+        {"commits": ["abcdef0"], "awi": []},
+        {"rewrite": {"abcdef0": [{"commit": "abcdef1", "awi": []}]}},
+        {"rewrite": {"abcdef0": [{"commit": "invalid", "awi": [WI_B]}]}},
+        {"rewrite": {"abcdef9": "abcdef1"}},
+    ],
+)
+def test_selected_awi_still_rejects_invalid_unselected_records(repo: pathlib.Path, bad_event: dict[str, object]) -> None:
+    """選択外でも記録の構造、rewrite元とAWI割当の不足を検査する。"""
+    current = git_repository.git_output(repo, "rev-parse", "HEAD")
+    events: list[dict[str, object]] = [{"commit": current, "awi": [WI_A]}, {"commit": "abcdef0", "awi": [WI_B]}, bad_event]
+    with pytest.raises(commit_mapping.CommitMappingError):
+        commit_mapping.get_commits(repo, events, [WI_A], {WI_A, WI_B})
+
+
 def test_commit_event_requires_nonempty_range_and_previous_ancestor(repo: pathlib.Path) -> None:
     """空の区間と前HEADの不正な指定を理由・修正操作付きで拒否する。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")

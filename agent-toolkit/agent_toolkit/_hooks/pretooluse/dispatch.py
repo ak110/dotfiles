@@ -92,7 +92,7 @@ lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
 )
-lazy from agent_toolkit._hooks import command_timing, rules_context, work_contract
+lazy from agent_toolkit._hooks import command_timing, repository_protection, rules_context, work_contract
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -211,6 +211,9 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
         if tool_name not in _USER_FACING_TEXT_TOOL_NAMES:
             _language_retry(payload, tool_name, tool_input, remember=False)
         decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
+        protection = repository_protection.check(tool_name, tool_input, str(payload.get("cwd", "")))
+        if protection is not None:
+            decision = dataclasses.replace(decision, block="\n\n".join(filter(None, (decision.block, protection))))
         if decision.block is None:
             delivery = read_delivery(payload, tool_name, tool_input, session_id)
             if delivery.block is not None:
@@ -220,6 +223,10 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 decision = delivery
             elif delivery.notices:
                 decision = dataclasses.replace(decision, notices=decision.notices + delivery.notices)
+        from agent_toolkit._hooks import effort_notice  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+        if (effort_advice := effort_notice.observe(payload)) is not None:
+            pending_notices.append(effort_advice)
         state = read_state(session_id)
         contract_update = work_contract.delegated_notice(
             session_id,

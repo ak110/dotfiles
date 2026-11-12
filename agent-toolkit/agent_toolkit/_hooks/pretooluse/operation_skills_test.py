@@ -284,6 +284,7 @@ def test_operations_without_body_edit_do_not_deliver(tool, tool_input):
     assert not operation_skills.operation_matches("body-writing", tool, tool_input)
 
 
+# test-copy-contract: 複合Bash入力の検索と文書書込を実matcherが両方選ぶ契約を検査する。
 def test_operation_skills_for_one_operation_share_one_notice() -> None:
     """既存の操作に対する検出条件を静的解析で確かめる。"""
     matched = {

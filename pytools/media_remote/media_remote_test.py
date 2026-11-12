@@ -572,5 +572,6 @@ def test_doctor_subcommand_renders_all_sections(
 
 
 def test_assets_index_html_references_all_keys():
+    # test-copy-contract: 手書きHTMLのdata-keyが、別moduleのWindows送出側が受理する全操作名へ接続することを保つ。
     for name in _keys.VK_CODES:
         assert f'data-key="{name}"' in _assets.INDEX_HTML

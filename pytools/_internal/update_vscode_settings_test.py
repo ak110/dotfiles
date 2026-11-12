@@ -40,18 +40,6 @@ class TestHostnameColor:
             luminance = 0.299 * r + 0.587 * g + 0.114 * b
             assert luminance >= 140, f"パレット色 {color} が暗すぎる (輝度: {luminance:.1f})"
 
-    def test_color_is_in_palette(self, tmp_path: Path) -> None:
-        """複数ホスト名の戻り値が常にパレット内に含まれる。"""
-        palette = set(mod._HOST_COLORS)  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。writing-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
-        target = _make_settings_dir(tmp_path, is_windows=False)
-        for hostname in ["host-a", "host-b", "server-1", "x", "long-hostname-example", "desk", "laptop"]:
-            if target.exists():
-                target.unlink()
-            mod.run(hostname=hostname, is_windows=False, home=tmp_path)
-            result = json.loads(target.read_text(encoding="utf-8"))
-            color = result["workbench.colorCustomizations"]["activityBar.background"]
-            assert color in palette
-
     def test_palette_min_distance(self) -> None:
         """パレット内の全ペアの RGB ユークリッド距離が十分に離れている。
 

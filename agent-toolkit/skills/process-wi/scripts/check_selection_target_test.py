@@ -1,8 +1,9 @@
-"""選定の見込みを目標所要秒数と比べ、未計測の共有待ちと超過時の配分比較を公開操作で確かめる。"""
+"""全工程の算定と目標の受理を、生成・検査・mergeの公開操作で検証する。"""
 
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import pathlib
 from typing import Any
@@ -13,13 +14,17 @@ import yaml
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 
-# 2026年11月11日の巡回の開始時の見込み（実装の合計28,000秒、統合の合計10,500秒、共有待ち0秒）を1レーンへ縮めた値。
-_IMPLEMENTATION = 28000
-_INTEGRATION = 10500
-
 
 def _dispatch(*args: str) -> int:
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
+
+
+def _wi(notes: pathlib.Path, name: str) -> None:
+    header = yaml.safe_dump({"type": "awi", "state": "processing", "target_repo": "github.com/test/repo"})
+    (notes / "2026" / "11" / name).write_text(
+        f"---\n{header}---\n# 要求\n\n## 反映内容と反映先\n\n「src/model.py」を変更する\n",
+        encoding="utf-8",
+    )
 
 
 @pytest.fixture(name="environment")
@@ -30,10 +35,7 @@ def _environment(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tup
     git_repository.init_repository(repo, origin="https://github.com/test/repo.git")
     notes = tmp_path / "notes"
     (notes / "2026" / "11").mkdir(parents=True)
-    header = yaml.safe_dump({"type": "awi", "state": "processing", "target_repo": "github.com/test/repo"})
-    (notes / "2026" / "11" / "first.md").write_text(
-        f"---\n{header}---\n# 要求\n\n## 反映内容と反映先\n\n`src/model.py`を変更する\n", encoding="utf-8"
-    )
+    _wi(notes, "first.md")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     return repo, notes
 
@@ -44,157 +46,301 @@ def _target(repo: pathlib.Path, seconds: object) -> None:
     )
 
 
-def _generate(tmp_path: pathlib.Path, repo: pathlib.Path, correction: dict[str, Any], top: dict[str, Any] | None = None) -> int:
-    """1件・1レーンの判断入力から選定を生成し、生成時の検査の終了コードを返す。"""
+def _node(name: str, phase: str, wis: list[str], prior: list[str], seconds: float, resource: str) -> dict[str, Any]:
+    # 合成した仕事量と速度から秒数を定義し、実機の測定済み性能と取り違えない。
+    return {
+        "ID": name,
+        "工程": phase,
+        "WI": wis,
+        "先行工程": prior,
+        "資源": resource,
+        "秒数": seconds,
+        "算定": "残量/速度",
+        "残量": seconds,
+        "速度": 1,
+        "根拠": "合成仕様の仕事量と速度",
+        "未確認前提": [],
+    }
+
+
+def _workflow(work: dict[str, float] | None = None, *, public: float = 30) -> dict[str, Any]:
+    work = {"first.md": 100} if work is None else work
+    nodes = [_node("select", "選定", [], [], 5, "直列")]
+    integrations = []
+    for index, (wi, seconds) in enumerate(work.items()):
+        impl, review, verify, integrate = (f"{index}-{phase}" for phase in ("impl", "review", "verify", "integrate"))
+        nodes.extend(
+            [
+                _node(impl, "実装", [wi], ["select"], seconds, "モデル"),
+                _node(review, "レビュー", [wi], [impl], 10, "モデル"),
+                _node(verify, "検証", [wi], [impl], 20, "検証"),
+                _node(integrate, "統合", [wi], [review, verify], 10, "直列"),
+            ]
+        )
+        integrations.append(integrate)
+    nodes.extend(
+        [
+            _node("publish", "公開", [], integrations, public, "直列"),
+            _node("cleanup", "後始末", [], ["publish"], 5, "直列"),
+            _node("report", "報告", [], ["cleanup"], 5, "直列"),
+        ]
+    )
+    return {
+        "並列数": {
+            "モデル同時数": 2,
+            "資源上限": 4,
+            "サービス上限": 4,
+            "根拠": {"資源": "合成仕様の資源制約", "サービス": "合成仕様の利用枠", "費用": "同品質の1/2同時の合成比較"},
+        },
+        "工程": nodes,
+    }
+
+
+def _generate(
+    tmp_path: pathlib.Path,
+    repo: pathlib.Path,
+    *,
+    plan: dict[str, Any] | None = None,
+    include_plan: bool = True,
+    comparison: bool = False,
+    names: list[str] | None = None,
+    correction: dict[str, Any] | None = None,
+) -> int:
+    names = ["first.md"] if names is None else names
     facts = tmp_path / "candidates.jsonl"
     facts.write_text(
-        json.dumps({"filename": "first.md", "staleness": {"status": "current", "later_commit_count": 0}}) + "\n",
+        "".join(
+            json.dumps({"filename": name, "staleness": {"status": "current", "later_commit_count": 0}}) + "\n" for name in names
+        ),
         encoding="utf-8",
     )
-    judgments = tmp_path / "judgments.yaml"
     document: dict[str, Any] = {
-        "選定": [{"WI": "first.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}],
-        "見込みの補正": {"実装係数": 1, "統合係数": 1, "参照した記録": [], "除外した記録": [], **correction},
+        "選定": [{"WI": name, "レーン": "lane-01", "書込対象": ["src/model.py"]} for name in names],
+        "見込みの補正": {
+            "実装係数": 1,
+            "統合係数": 1,
+            "共有待ち秒数": 0,
+            "共有待ちの算定": "実測",
+            "参照した記録": ["合成例の旧補正"],
+            "除外した記録": [],
+            **(correction or {}),
+        },
         "レーンの所要時間": [
             {
                 "レーン": "lane-01",
-                "実装秒数": _IMPLEMENTATION,
-                "統合秒数": _INTEGRATION,
-                "補正前の実装秒数": _IMPLEMENTATION,
-                "補正前の統合秒数": _INTEGRATION,
-                "根拠": "1件を1レーンで処理する",
+                "実装秒数": 100,
+                "統合秒数": 10,
+                "補正前の実装秒数": 100,
+                "補正前の統合秒数": 10,
+                "根拠": "合成例の1レーン配分",
             }
         ],
-        "段階案の完了見込み秒数": "成立する段階案なし",
         "結合条件": [],
-        **(top or {}),
     }
-    judgments.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
-    output = tmp_path / "selection.yaml"
-    return _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo))
+    if include_plan:
+        document["全工程の見込み"] = _workflow() if plan is None else plan
+    if comparison:
+        document["目標超過時の配分比較"] = "独立群の先行レビューと共有検証の集約を比較した"
+    source = tmp_path / "judgments.yaml"
+    source.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+    return _dispatch(
+        str(source), "--candidate-file", str(facts), "--output", str(tmp_path / "selection.yaml"), "--work-dir", str(repo)
+    )
 
 
-def test_unmeasured_wait_and_overrun_are_reported_against_target(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """今回の巡回の見込みと目標10,800秒では、差を示し、0秒の推定の待ちと比較記録の欠落で止める。"""
+@pytest.mark.parametrize(("seconds", "expected"), [(10724, 0), (10725, 0), (10726, 1), (92225, 1)])
+def test_complete_path_target_boundary_does_not_accept_comparison(environment, tmp_path, capsys, seconds, expected):
     repo, _ = environment
     _target(repo, 10800)
-    assert _generate(tmp_path, repo, {"共有待ち秒数": 0, "共有待ちの算定": "推定"}) == 1
-    error = capsys.readouterr().err
-    assert "未計測の共有待ちを0秒と推定している" in error
-    assert "全体の完了見込み秒数38500が目標所要秒数10800を超える（差 27700）のに`目標超過時の配分比較`がない" in error
-    assert "項目を外さず" in error
+    assert _generate(tmp_path, repo, plan=_workflow({"first.md": seconds}), comparison=True) == expected
+    captured = capsys.readouterr()
+    output = tmp_path / "selection.yaml"
+    if expected:
+        assert not output.exists()
+        assert "通常対象の完了見込み秒数" in captured.err and "目標所要秒数10800" in captured.err
+        assert "項目を外さず" in captured.err and "品質工程の省略や次回送り" in captured.err
+    else:
+        assert output.exists()
+        assert f"全工程の壁時計見込み秒数: {seconds + 75}" in captured.out
+        assert f"通常対象の完了見込み秒数: {seconds + 75}" in captured.out
+        saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+        assert [item["WI"] for item in saved["選定"]] == ["first.md"]
+        assert _dispatch(str(output), "--work-dir", str(repo)) == 0
+
+
+def test_dependent_publication_cannot_be_hidden_by_implementation_budget(environment, tmp_path, capsys):
+    repo, _ = environment
+    _target(repo, 10800)
+    assert _generate(tmp_path, repo, plan=_workflow({"first.md": 7200}, public=5400), comparison=True) == 1
+    assert "12645" in capsys.readouterr().err
     assert not (tmp_path / "selection.yaml").exists()
 
 
-def test_comparison_record_and_estimated_wait_pass_and_show_difference(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """待ちを推定して比較記録を書いた選定は保存し、要約に目標との差を出す。"""
-    repo, _ = environment
-    _target(repo, 10800)
-    comparison = "後段の独立準備を先行し、検証を集約する案で見込み31,000秒。段階の組み直しは見込み34,000秒で不採用"
-    correction = {"共有待ち秒数": 1800, "共有待ちの算定": "推定"}
-    assert _generate(tmp_path, repo, correction, {"目標超過時の配分比較": comparison}) == 0
-    out = capsys.readouterr().out
-    assert "全体の完了見込み秒数: 40300（共有待ち秒数 1800を1回含む）" in out
-    assert "目標所要秒数: 10800（差 29500）" in out
-    saved = yaml.safe_load((tmp_path / "selection.yaml").read_text(encoding="utf-8"))
-    assert saved["目標超過時の配分比較"] == comparison
-    assert [item["WI"] for item in saved["選定"]] == ["first.md"]
-
-
-def test_without_target_no_target_line_or_overrun_violation(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """目標を設定しないプロジェクトでは、目標の行も超過の違反も出さない。"""
-    repo, _ = environment
-    assert _generate(tmp_path, repo, {"共有待ち秒数": 600, "共有待ちの算定": "推定"}) == 0
-    captured = capsys.readouterr()
-    assert "目標所要秒数" not in captured.out
-    assert "目標超過時の配分比較" not in captured.err
-
-
-def test_measured_wait_requires_referenced_records(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """記録を参照しない実測の待ちは拒否する。"""
-    repo, _ = environment
-    assert _generate(tmp_path, repo, {"共有待ち秒数": 0, "共有待ちの算定": "実測"}) == 1
-    assert "実測とした共有待ちに参照した記録がない" in capsys.readouterr().err
-
-
-def test_generation_requires_wait_basis(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """新しく生成する選定は、共有待ちの算定の無い補正を受け付けない。"""
-    repo, _ = environment
-    assert _generate(tmp_path, repo, {"共有待ち秒数": 0}) == 2
-    assert "`共有待ちの算定`" in capsys.readouterr().err
-
-
-def test_saved_selection_without_basis_is_read_as_before(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
-) -> None:
-    """算定を持たない保存済みの選定は、目標の設定があっても従来どおり検査を通す。"""
-    repo, _ = environment
-    assert _generate(tmp_path, repo, {"共有待ち秒数": 600, "共有待ちの算定": "推定"}) == 0
-    output = tmp_path / "selection.yaml"
-    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
-    del saved["見込みの補正"]["共有待ちの算定"]
-    saved["見込みの補正"]["共有待ち秒数"] = 0
-    output.write_text(yaml.safe_dump(saved, allow_unicode=True), encoding="utf-8")
-    _target(repo, 10800)
-    assert _dispatch(str(output), "--work-dir", str(repo)) == 0
-
-
-@pytest.mark.parametrize("value", [0, -1, True, "10800"])
-def test_invalid_target_is_rejected(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, value: object
-) -> None:
-    """目標所要秒数が正の有限数でなければ入力の誤りとして止める。"""
-    repo, _ = environment
-    _target(repo, value)
-    assert _generate(tmp_path, repo, {"共有待ち秒数": 600, "共有待ちの算定": "推定"}) == 2
-
-
-def test_merge_rejects_addition_without_shared_wait_basis(
-    environment: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """追加の合流入力が算定を欠くと、既存側の`実測`を引き継がずに拒否し、統合結果を保存しない。"""
+@pytest.mark.parametrize(("serial", "expected_seconds"), [(False, 55), (True, 45)])
+def test_public_capacity_and_serial_definition_use_one_resource_path(environment, tmp_path, capsys, serial, expected_seconds):
     repo, notes = environment
-    header = yaml.safe_dump({"type": "awi", "state": "processing", "target_repo": "github.com/test/repo"})
-    (notes / "2026" / "11" / "added.md").write_text(
-        f"---\n{header}---\n# 追加\n\n## 反映内容と反映先\n\n`src/model.py`を変更する\n", encoding="utf-8"
-    )
-    measured = {"共有待ち秒数": 20, "共有待ちの算定": "実測", "参照した記録": ["previous"]}
-    assert _generate(tmp_path, repo, measured) == 0
+    names = ["first.md", "second.md", "third.md"]
+    for name in names[1:]:
+        _wi(notes, name)
+    plan = _workflow(dict.fromkeys(names, 10 if serial else 0), public=0)
+    previous_impl = None
+    for node in plan["工程"]:
+        if node["工程"] in {"レビュー", "統合"}:
+            node.update({"秒数": 0, "残量": 0})
+        if node["工程"] == "実装" and serial:
+            if previous_impl is not None:
+                node["先行工程"].append(previous_impl)
+            previous_impl = node["ID"]
+        if node["工程"] == "検証" and serial:
+            node.update({"秒数": 0, "残量": 0})
+    _target(repo, expected_seconds)
+    assert _generate(tmp_path, repo, plan=plan, names=names) == 0
+    assert f"通常対象の完了見込み秒数: {expected_seconds}" in capsys.readouterr().out
     selected = tmp_path / "selection.yaml"
-    addition = yaml.safe_load(selected.read_text(encoding="utf-8"))
+    before = selected.read_bytes()
+    _target(repo, expected_seconds - 1)
+    assert _dispatch(str(selected), "--work-dir", str(repo)) == 1
+    assert selected.read_bytes() == before
+
+
+@pytest.mark.parametrize("phase", ["実装", "レビュー"])
+@pytest.mark.parametrize("resource", ["直列", "検証"])
+def test_public_model_work_cannot_bypass_model_capacity(environment, tmp_path, phase, resource):
+    repo, notes = environment
+    _wi(notes, "second.md")
+    _target(repo, 10800)
+    plan = _workflow({"first.md": 8000, "second.md": 8000})
+    plan["並列数"].update({"モデル同時数": 1, "資源上限": 1, "サービス上限": 1})
+    next(node for node in plan["工程"] if node["工程"] == phase)["資源"] = resource
+    assert _generate(tmp_path, repo, plan=plan, names=["first.md", "second.md"]) == 2
+    assert not (tmp_path / "selection.yaml").exists()
+
+
+@pytest.mark.parametrize(("capacity", "expected"), [(1, 1), (2, 0)])
+def test_public_model_capacity_is_preserved_with_shared_definition_dependencies(
+    environment, tmp_path, capsys, capacity, expected
+):
+    repo, notes = environment
+    _wi(notes, "second.md")
+    _target(repo, 10800)
+    plan = _workflow({"first.md": 8000, "second.md": 8000})
+    plan["並列数"].update({"モデル同時数": capacity, "資源上限": capacity, "サービス上限": capacity})
+    assert _generate(tmp_path, repo, plan=plan, names=["first.md", "second.md"]) == expected
+    if expected == 0:
+        assert "通常対象の完了見込み秒数: 8085" in capsys.readouterr().out
+        (tmp_path / "selection.yaml").unlink()
+        next(node for node in plan["工程"] if node["ID"] == "1-impl")["先行工程"].append("0-impl")
+        assert _generate(tmp_path, repo, plan=plan, names=["first.md", "second.md"]) == 1
+        assert "16075" in capsys.readouterr().err
+    else:
+        assert "16075" in capsys.readouterr().err
+    assert not (tmp_path / "selection.yaml").exists()
+
+
+@pytest.mark.parametrize("missing", ["plan", "seconds", "conditional", "premise", "cost"])
+def test_incomplete_evidence_is_not_zero_or_target_success(environment, tmp_path, capsys, missing):
+    repo, _ = environment
+    _target(repo, 10800)
+    plan = _workflow()
+    if missing == "seconds":
+        plan["工程"][-1].update({"秒数": None, "算定": "未確認"})
+        plan["工程"][-1].pop("残量")
+        plan["工程"][-1].pop("速度")
+    elif missing == "conditional":
+        plan["工程"][-1]["算定"] = "条件付き試算"
+        plan["工程"][-1].pop("残量")
+        plan["工程"][-1].pop("速度")
+    elif missing == "premise":
+        plan["工程"][-1]["未確認前提"] = ["公開後の観測未了"]
+    elif missing == "cost":
+        plan["並列数"]["根拠"]["費用"] = ""
+    result = _generate(tmp_path, repo, plan=plan, include_plan=missing != "plan", comparison=True)
+    assert result in {1, 2}
+    assert capsys.readouterr().err
+    assert not (tmp_path / "selection.yaml").exists()
+
+
+@pytest.mark.parametrize("approval", ["none", "rejected", "matched", "other"])
+def test_giant_approval_keeps_parallel_normal_work(environment, tmp_path, capsys, approval):
+    repo, notes = environment
+    _target(repo, 10800)
+    _wi(notes, "giant.md")
+    plan = _workflow({"first.md": 4000, "giant.md": 40000})
+    giant: dict[str, Any] = {"WI": "giant.md", "巨大判定根拠": "合成した仕事量と合理的な容量上限の比較"}
+    if approval != "none":
+        giant["承認元"] = {
+            "対象WI": "first.md" if approval == "other" else "giant.md",
+            "判断": "拒否" if approval == "rejected" else "承認",
+            "出所": "合成した今回の名指し回答",
+        }
+    plan["巨大WI"] = [giant]
+    expected = 0 if approval == "matched" else 1
+    assert _generate(tmp_path, repo, plan=plan, names=["first.md", "giant.md"]) == expected
+    captured = capsys.readouterr()
+    if expected == 0:
+        assert "全工程の壁時計見込み秒数: 40075" in captured.out
+        assert "通常対象の完了見込み秒数: 4075" in captured.out
+        assert '承認済み巨大WI: ["giant.md"]' in captured.out
+    else:
+        assert not (tmp_path / "selection.yaml").exists()
+
+
+def test_legacy_history_is_readable_but_not_an_execution_allocation(environment, tmp_path, capsys):
+    repo, _ = environment
+    assert _generate(tmp_path, repo, include_plan=False) == 0
+    selected = tmp_path / "selection.yaml"
+    before = selected.read_bytes()
+    _target(repo, 10800)
+    assert _dispatch(str(selected), "--work-dir", str(repo)) == 1
+    assert selected.read_bytes() == before
+    assert _dispatch(str(selected), "--history", "--work-dir", str(repo)) == 0
+    assert "これから実行する配分の目標内成立は検収していない" in capsys.readouterr().out
+    assert _dispatch(str(selected), "--history", "--output", str(selected), "--work-dir", str(repo)) == 2
+    assert selected.read_bytes() == before
+    assert _dispatch(str(selected), "--mark-integrated", "lane-01", "--output", str(selected), "--work-dir", str(repo)) == 0
+
+
+@pytest.mark.parametrize("overrun", [False, True])
+def test_public_merge_uses_recomputed_whole_plan_and_preserves_initial_allocation(environment, tmp_path, capsys, overrun):
+    repo, notes = environment
+    _target(repo, 10800)
+    assert _generate(tmp_path, repo) == 0
+    selected = tmp_path / "selection.yaml"
+    before = selected.read_bytes()
+    existing = yaml.safe_load(before)
+    _wi(notes, "added.md")
+    addition = copy.deepcopy(existing)
     del addition["初回配分"]
-    addition["選定"][0]["WI"] = "added.md"
-    del addition["見込みの補正"]["共有待ちの算定"]
-    addition["見込みの補正"].update({"共有待ち秒数": 0, "参照した記録": []})
+    addition["選定"] = [{**existing["選定"][0], "WI": "added.md"}]
+    addition["全工程の見込み"] = _workflow({"first.md": 100, "added.md": 20000 if overrun else 100})
+    addition["目標超過時の配分比較"] = "全対象を保持して代替を比較した"
     added = tmp_path / "addition.yaml"
     added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "mapping.json"
     mapping.write_text(json.dumps({"lane-01": "lane-01"}), encoding="utf-8")
     merged = tmp_path / "merged.yaml"
-    capsys.readouterr()
-    rc = _dispatch(
-        str(selected),
-        "--merge",
-        str(added),
-        "--lane-map",
-        str(mapping),
-        "--output",
-        str(merged),
-        "--work-dir",
-        str(repo),
-        "--body-wi",
-        "added.md",
-    )
-    assert rc == 2
-    assert "`共有待ちの算定`" in capsys.readouterr().err
-    assert not merged.exists()
+    assert _dispatch(
+        str(selected), "--merge", str(added), "--lane-map", str(mapping), "--output", str(merged), "--work-dir", str(repo)
+    ) == int(overrun)
+    assert selected.read_bytes() == before and added.exists()
+    if overrun:
+        assert not merged.exists()
+        assert "通常対象の完了見込み秒数" in capsys.readouterr().err
+    else:
+        result = yaml.safe_load(merged.read_text(encoding="utf-8"))
+        assert result["初回配分"] == existing["初回配分"]
+        assert [row["WI"] for row in result["選定"]] == ["first.md", "added.md"]
+        assert "通常対象の完了見込み秒数: 185" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("value", [0, -1, True, "10800"])
+def test_invalid_target_is_rejected(environment, tmp_path, value):
+    repo, _ = environment
+    _target(repo, value)
+    assert _generate(tmp_path, repo) == 2
+
+
+def test_measured_wait_still_requires_its_historical_record(environment, tmp_path, capsys):
+    repo, _ = environment
+    assert _generate(tmp_path, repo, correction={"参照した記録": []}) == 1
+    assert "実測とした共有待ちに参照した記録がない" in capsys.readouterr().err

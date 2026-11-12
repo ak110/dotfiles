@@ -160,6 +160,10 @@ def _pair_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
         return errors
 
     parent_content = parent.read_text(encoding="utf-8")
+    declaration = task_documents.read_declaration_unchecked(recipient)
+    if isinstance(declaration, str):
+        return [declaration]
+    optional_content = parent_content
     if isinstance(parent, pathlib.Path) and parent.name.endswith(".parent.md"):
         headings = top_level_atx_headings(parent_content, 2)
         inputs = [index for index, (_, title) in enumerate(headings) if title in ("入力", "渡す入力")]
@@ -176,12 +180,13 @@ def _pair_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
             next_token = headings[index + 1][0] if index + 1 < len(headings) else None
             end = next_token.map[0] if next_token is not None and next_token.map else len(parent_content.splitlines())
             parent_content = "\n".join(parent_content.splitlines()[token.map[0] + 1 : end])
+            optional_content = parent_content
             lines = [line for line in parent_content.splitlines() if line.startswith(f"- {_REQUIRED_INPUT_PREFIX}")]
-            names = re.findall(r"`([^`]+)`", lines[0]) if len(lines) == 1 else []
-            if len(lines) != 1 or len(names) != len(set(names)):
+            names = re.findall(r"`([^`]+)`", "\n".join(lines))
+            if not lines or len(names) != len(set(names)):
                 errors.append(
                     f"必須入力名の一覧が不正: {parent.name} -> {recipient.name}"
-                    "\n次の操作: 入力専用節の必須入力名を重複のない1行の一覧にそろえる。"
+                    "\n次の操作: 入力専用節の必須入力名を重複のない一覧にそろえる。"
                 )
             for name in sorted(set(names) - set(required_names)):
                 errors.append(
@@ -196,6 +201,43 @@ def _pair_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
             error = f"必須入力名が欠けている: {parent.name} -> {recipient.name}: {name}"
             if error not in errors:
                 errors.append(error)
+    optional_lines = [line for line in optional_content.splitlines() if line.startswith("- 任意入力名:")]
+    optional_names = re.findall(r"`([^`]+)`", "\n".join(optional_lines))
+    if len(optional_names) != len(set(optional_names)):
+        errors.append(_format_contract_error(f"任意入力名の一覧が不正: {parent.name} -> {recipient.name}"))
+    for name in sorted(set(optional_names) - set(declaration.optional)):
+        errors.append(_format_contract_error(f"宣言外の任意入力名: {parent.name} -> {recipient.name}: {name}"))
+    for name in declaration.optional:
+        if name not in optional_names:
+            errors.append(_format_contract_error(f"任意入力名が欠けている: {parent.name} -> {recipient.name}: {name}"))
+    return errors
+
+
+def _generated_input_errors(plugin_root: pathlib.Path) -> list[str]:
+    """全起動対象の生成境界、区分・順序・所有説明の手修正を検出する。"""
+    errors = []
+    for path, role in task_documents.launch_contract_documents(plugin_root):
+        text = path.read_text(encoding="utf-8")
+        start = f"<!-- input-contract:{role}:start -->"
+        end = f"<!-- input-contract:{role}:end -->"
+        if text.count(start) != 1 or text.count(end) != 1 or text.index(start) >= text.index(end):
+            errors.append(
+                f"入力生成境界が不正: {path}: {role}"
+                "\n次の操作: 表示された契約のinput-contract開始・終了標識を1組へ直し、"
+                "リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行せよ。"
+            )
+            continue
+        expected = (
+            f"\n<!-- 生成元: share/{role}.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->\n"
+            + task_documents.input_contract_body(plugin_root / f"share/{role}.subagent.md")
+            + "\n\n"
+        )
+        if text.split(start)[1].split(end)[0] != expected:
+            errors.append(
+                f"入力生成物が宣言と一致しない: {path}: {role}"
+                "\n次の操作: リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行し、"
+                "表示された契約を役割宣言から生成し直せ。"
+            )
     return errors
 
 
@@ -384,7 +426,13 @@ def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker
 def _format_contract_error(error: str) -> str:
     """入力専用節の新しい検出範囲へ案内を付け、他の既存診断は保つ。"""
     if "\n次の操作:" in error:
-        return error + "\n修正できない場合は対象文書と診断を委譲元へ報告する。"
+        return error if "\n修正できない場合" in error else error + "\n修正できない場合は対象文書と診断を委譲元へ報告する。"
+    if error.startswith(("任意入力名の一覧が不正:", "宣言外の任意入力名:", "任意入力名が欠けている:")):
+        return (
+            f"{error}\n次の操作: 表示された役割宣言のoptional_inputsと一覧を比べ、"
+            "リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行して正式生成せよ。"
+            "\n修正できない場合は対象文書と診断を委譲元へ報告せよ。"
+        )
     if error.startswith("必須入力名が欠けている:"):
         return (
             f"{error}\n次の操作: 入力専用節があれば必須入力名の一覧も確認し、"
@@ -535,12 +583,15 @@ def _selection_procedure(plugin_root: pathlib.Path) -> str:
 
 def _selection_format(plugin_root: pathlib.Path) -> str:
     """生成・消費が共有する書式の定義を取得する。"""
-    return read_contract(
+    reference = plugin_root / "skills/process-wi/references"
+    layout = read_contract(
         plugin_root / "skills/process-wi/references/selection-format.md",
         plugin_root,
         ("selection-format-generation.md", "選定の生成入力"),
         ("selection-format-schema.md", "選定結果の書式"),
     )
+    fields = read_contract(reference / "selection-format-schema.md", plugin_root, ("selection-format-fields.md", "欄の意味"))
+    return layout + fields.removeprefix((reference / "selection-format-schema.md").read_text(encoding="utf-8"))
 
 
 def _selection_documents(plugin_root: pathlib.Path) -> str:

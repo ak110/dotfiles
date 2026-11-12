@@ -800,6 +800,10 @@ def test_catalog_unresolved_counts_keep_query_specific_scope(
     diagnostics = [event for event in events if event["kind"] == "unresolved-record"]
     assert sum(event["record"] == str(broken) for event in diagnostics) == 1
     assert sum(event["record"] == child for event in diagnostics) == (0 if resolves_family else 2)
+    for diagnostic in (event for event in diagnostics if event["record"] == child):
+        assert diagnostic["reason"] == "not-found-in-root"
+        assert diagnostic["source_line"] > 0
+        assert diagnostic["source_record"].endswith(("a-parent", "b-parent"))
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
@@ -972,6 +976,14 @@ def test_catalog_grep_selection_keeps_diagnostic_scopes_and_match_units(
     diagnostics = [event for event in events if event["kind"] == "unresolved-record"]
     assert all(event["scope"] == ("selected-family" if event["record"] == missing else "scan-root") for event in diagnostics)
     assert {event["record"] for event in diagnostics} == {missing, old_missing, str(broken)}
+    selected_missing = next(event for event in diagnostics if event["record"] == missing)
+    assert selected_missing["reason"] == "record-location-unresolved"
+    assert selected_missing["source_record"] == f"{runtime}:missing-parent"
+    assert selected_missing["source_line"] > 0
+    scanned_missing = next(event for event in diagnostics if event["record"] == old_missing)
+    assert scanned_missing["reason"] == "not-found-in-root"
+    assert scanned_missing["source_record"] == f"{runtime}:old"
+    assert scanned_missing["source_line"] > 0
     failure = next(event for event in diagnostics if event["record"] == str(broken))
     assert failure["line"] == 0 and failure["failure_line"] == 2 and failure["reason"]
     assert failure["next_action"] == (

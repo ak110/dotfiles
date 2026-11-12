@@ -13,8 +13,8 @@ import pytest
 
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import mcp_tools, resume_waits, state, turn_state
+from agent_toolkit._common import process_identity, state_paths
 from agent_toolkit._common import session_registry as subject
-from agent_toolkit._common import state_paths
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
@@ -348,7 +348,7 @@ def test_session_publishes_owner_and_executor_processes(tmp_path: pathlib.Path, 
     session.touch()
     path = subject.registry_directory(tmp_path) / "published.json"
     recorded = json.loads(path.read_text(encoding="utf-8"))["processes"]
-    assert recorded == [owner.payload()] * 2
+    assert [process_identity.ProcessIdentity.parse(item) for item in recorded] == [owner] * 2
 
     restarted = exited_process_identity()
     session.executor_process = restarted

@@ -29,6 +29,15 @@
 起動対象: copilot-review-audit.subagent.md
 ```
 
+<!-- input-contract:copilot-review-audit:start -->
+<!-- 生成元: share/copilot-review-audit.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `pending取得結果`、`引き継ぎ記録先`
+
+<!-- input-contract:copilot-review-audit:end -->
+
 `agent-toolkit:process-wi`のメインエージェントが自動コードレビュー監査を委譲する際は、本書に従って監査担当を起動し、結果を受け取る。
 監査の具体的な手順は、`${CLAUDE_PLUGIN_ROOT}/share/copilot-review-audit.subagent.md`に定められている（所在参照）。
 返却項目は本書「監査担当の返却契約」に従う。

@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import review_table as table
-from agent_toolkit._common import body_match, next_action
+from agent_toolkit._common import next_action
 from agent_toolkit._testing import review_bodies
 from agent_toolkit._testing.review_table_support import _TRACK, _isolated_home
 
@@ -57,52 +57,31 @@ def test_add_reports_each_saved_cell_match_without_saved_bodies(
     assert capsys.readouterr().out == f"成功: 指摘行を1件追加した: {path}（1件）\n"
 
 
-def test_add_matches_location_and_issue_with_corresponding_saved_cells(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """2列の判定は送信本文と対応する保存セルの組を各1回渡す。"""
-    path = tmp_path / "review.tsv"
-    location = "module.py:10"
-    issue = "修正が必要"
-    calls: list[tuple[str, str]] = []
-    original_verdict = body_match.verdict
-
-    def record_verdict(expected: str, saved: str) -> str:
-        calls.append((expected, saved))
-        return original_verdict(expected, saved)
-
-    monkeypatch.setattr(body_match, "verdict", record_verdict)
-
-    assert table.add(path, "1", _TRACK, location, issue) == 0
-
-    assert calls == [(location, location), (issue, issue)]
-    assert original_verdict(*calls[0]) == "一致"
-    assert original_verdict(calls[1][0], calls[1][1] + "差異").startswith("不一致（最初の差異:")
-
-
+@pytest.mark.parametrize("column,index", [("location", 2), ("issue", 3)])
 def test_add_rereads_decoded_cells_after_storage_write(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    column: str,
+    index: int,
 ) -> None:
     """追加は保存層を経たデコード済みセルを一致判定へ渡す。"""
     path = tmp_path / "review.tsv"
     original_atomic_write = table.atomic_write
 
-    def write_with_changed_location(target: pathlib.Path, content: str, *, fsync: bool = False) -> None:
+    def write_with_changed_cell(target: pathlib.Path, content: str, *, fsync: bool = False, **_kwargs: object) -> None:
         cells = content.rstrip("\n").split("\t")
-        cells[2] = json.dumps(f" {json.loads(cells[2])} ", ensure_ascii=False)
+        cells[index] = json.dumps(f" {json.loads(cells[index])} ", ensure_ascii=False)
         original_atomic_write(target, "\t".join(cells) + "\n", fsync=fsync)
 
-    monkeypatch.setattr(table, "atomic_write", write_with_changed_location)
+    monkeypatch.setattr(table, "atomic_write", write_with_changed_cell)
 
     with pytest.raises(ValueError) as exc_info:
         table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
 
     message = str(exc_info.value)
     assert str(path) in message
-    assert "不一致の列: location" in message
+    assert f"不一致の列: {column}" in message
     assert "最初の差異: 1文字目" in message
     assert "送信元本文:" in message
     assert "保存本文:" in message

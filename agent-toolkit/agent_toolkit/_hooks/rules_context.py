@@ -36,7 +36,7 @@ lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
-lazy from agent_toolkit._hooks import document_reads, timing, work_contract
+lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
 
@@ -182,41 +182,17 @@ def carried_read_target_key(path: pathlib.Path) -> str:
     return CARRIED_READ_TARGET_PREFIX + str(path.resolve())
 
 
-def reset_main_operation_skill_ready(
-    session_id: str, *, retain_for_compact: bool = False
-) -> list[tuple[pathlib.Path, str, str, bool]]:
+def reset_main_operation_skill_ready(session_id: str) -> None:
     """メイン会話の起動済みの記録を除く。
 
     `clear`と`compact`ではスキルの本文が文脈から外れるため、次の操作で再び取得を求める。
     サブエージェントの記録は親の会話圧縮と独立した文脈のため変えない。
     """
-    recovery: list[tuple[pathlib.Path, str, str, bool]] = []
 
     def _reset(current: dict) -> dict | None:
-        recovery.clear()
         recorded = current.get(OPERATION_SKILL_READY_KEY)
         if not isinstance(recorded, dict):
             recorded = {}
-        if retain_for_compact:
-            for name, agents in recorded.items():
-                if not name.startswith("selected-read-target:") or not isinstance(agents, list) or MAIN_AGENT_ID not in agents:
-                    continue
-                try:
-                    selected = json.loads(name.removeprefix("selected-read-target:"))
-                    path = pathlib.Path(selected["path"]).resolve()
-                    heading = selected["heading"]
-                    fingerprint = document_reads.content_fingerprint(path)
-                except KeyError, OSError, TypeError, ValueError:
-                    continue
-                # 同じ内容の写しを別の場所で読んだ取得も、選択済み資料の取得として候補に含める。
-                if (
-                    document_reads.acquisition_state(recorded, read_triggers.ReadTarget(path, heading), MAIN_AGENT_ID)
-                    != "missing"
-                ):
-                    reference = document_reads.reference_only(
-                        [origin["operations"] for origin in selected.get("declarations", [])]
-                    )
-                    recovery.append((path, heading, fingerprint, reference))
         updated = {
             name: (
                 [agent for agent in agents if agent != MAIN_AGENT_ID]
@@ -265,7 +241,6 @@ def reset_main_operation_skill_ready(
         return current
 
     update_state(session_id, _reset)
-    return recovery
 
 
 def shell_acquisition_conditions() -> str:
@@ -320,72 +295,16 @@ def acquisition_failure(
     return prefix + step
 
 
-def _compact_recovery_context(
-    host: str, budget: int, recovery_targets: list[tuple[pathlib.Path, str, str, bool]], *, cwd: str = ""
-) -> str | None:
-    """圧縮前に取得した選択資料を、ホスト本来の取得手段で案内する。"""
-    steps = []
-    for path, heading, _fingerprint, reference in recovery_targets:
-        if read_triggers.is_normative_document(path):
-            heading = ""
-        target = read_triggers.ReadTarget(path, heading)
-        try:
-            if not path.is_file():
-                raise FileNotFoundError(str(path))
-            if heading:
-                target.body()
-            skill = document_reads.skill_document(str(path))
-            # 作業ツリー内の写しは`Skill`起動では読み込まれないため、通常の読取手段を案内する。
-            if (
-                not reference
-                and skill
-                and skill[1] == "SKILL.md"
-                and document_reads.requires_skill_invocation(path, host=host, subject="main", cwd=cwd)
-            ):
-                continue
-            focus = f"。特に`{heading}`に注目せよ" if heading else ""
-            if host in {"codex", "agy"}:
-                if heading:
-                    steps.append(
-                        "、".join(
-                            f"`sed -n '{start},{end}p' -- {shlex.quote(str(path))}`" for start, end in target.line_ranges()
-                        )
-                        + "で必要範囲を取得せよ"
-                        + focus
-                    )
-                else:
-                    steps.append(f"`cat -- {shlex.quote(str(path))}`で全文読め")
-            else:
-                step = f"Readで`{path}`の必要節を取得せよ" if heading else f"Readで`{path}`を全文読め"
-                if skill and not document_reads.skill_loadable(path, cwd=cwd):
-                    step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"
-                steps.append(step + focus)
-        except (OSError, UnicodeError, ValueError) as error:
-            steps.append(acquisition_failure(target, error, shell=host in {"codex", "agy"}, reference=reference, cwd=cwd))
-    if not steps:
-        return None
-
-    def notice(items: list[str], remaining: int) -> str:
-        # 候補は操作ごとに再掲しないため、通知へ収まらない候補は件数だけを示す。
-        # 残る工程で必要な資料は、その操作の宣言が改めて選んだ時点で案内する。
-        suffix = f"。ほかに{remaining}件の候補を省いた" if remaining else ""
-        # 圧縮前の選択資料は候補として示し、全件の一括再取得は求めない。
-        # 残る工程で使わない資料まで読み直すと、圧縮直後に出力上限を超える複合取得が起きるため。
-        return _llm_notice(
-            "会話圧縮前に選んだ資料の候補を示す。残る工程の判断に使う資料だけを、使う前に次の手段で全文再取得せよ: "
-            + "。".join(items)
-            + suffix
-            + "。"
-            + (shell_acquisition_conditions() if host in {"codex", "agy"} else "")
-        )
-
-    included: list[str] = []
-    for step in steps:
-        candidate = [*included, step]
-        if len(notice(candidate, len(steps) - len(candidate))) > budget:
-            break
-        included = candidate
-    return notice(included, len(steps) - len(included)) if included else None
+def _compact_recovery_context() -> str:
+    """次の判断前に、現在の工程を定める文書から必要な知識を回復させる。"""
+    return _llm_notice(
+        "会話が圧縮され、以前取得した資料の本文は文脈から失われている。次の判断より前に、"
+        "圧縮前に進めていた工程を定めるスキルと役割文書を全文読み直し、"
+        "その読込表から次の判断に必要な資料を選んで読め。"
+        "委譲先の返却、背景待機の完了、定期の再確認、ユーザーの回答への対応も含む。"
+        "全体作業契約と引き継ぎ記録が次工程の資料を指す場合は、それも読め。"
+        "圧縮前の読取履歴を一括再取得の対象にせず、現在の工程と判断から選べ。"
+    )
 
 
 def mark_user_confirmation_pending(session_id: str) -> None:
@@ -664,9 +583,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                         else None
                     ),
                 )
-            recovery_targets: list[tuple[pathlib.Path, str, str, bool]] = []
             if source in _OPERATION_SKILL_RESET_SOURCES:
-                recovery_targets = reset_main_operation_skill_ready(session_id, retain_for_compact=source == "compact")
+                reset_main_operation_skill_ready(session_id)
             if not delegated and source in _CONTEXT_LOSING_SOURCES:
                 mark_user_confirmation_pending(session_id)
             if source == "compact":
@@ -707,15 +625,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                     compact = _llm_notice(compact_text)
                     content = f"{content}\n\n{compact}" if content else compact
             if source == "compact":
-                # PreToolUseを経ない最初の判断にも、圧縮前の選択資料の取得を案内する。
-                recovery = _compact_recovery_context(
-                    host,
-                    CLAUDE_CODE_OUTPUT_LIMIT - len(content or "") - 2,
-                    recovery_targets,
-                    cwd=str(payload.get("cwd", "")),
-                )
-                if recovery is not None:
-                    content = f"{content}\n\n{recovery}" if content else recovery
+                # ツールを使わない返却・回答の判断にも、工程文書からの復元を先に案内する。
+                recovery = _compact_recovery_context()
+                content = f"{content}\n\n{recovery}" if content else recovery
     elif event_name == "SubagentStart":
         content = compose_subagent_start(host=host)
         session_temp = _existing_session_temp(payload.get("session_id"))
@@ -724,6 +636,15 @@ def main(payload_text: str, *, host: str = "claude") -> int:
     else:
         raise ValueError("hook_event_nameはSessionStartまたはSubagentStartである必要がある")
 
+    try:
+        repository_notice = repository_protection.start_notice(str(payload.get("cwd", "")))
+    except (OSError, ValueError) as error:
+        repository_notice = (
+            f"repository設定を確認できない: {error}。`atk config repos list`で診断を確認せよ。"
+            "編集可否が確定するまで直接編集するな。"
+        )
+    if repository_notice:
+        content = f"{content}\n\n{_llm_notice(repository_notice)}" if content else _llm_notice(repository_notice)
     if content is not None:
         if (
             host == "claude"

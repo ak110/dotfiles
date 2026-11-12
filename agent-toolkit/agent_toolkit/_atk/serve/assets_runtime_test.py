@@ -3,6 +3,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import io
 import logging
 import pathlib
 import threading
@@ -17,11 +18,15 @@ from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._testing.serve_support import _three_screen_app
 
 
-def test_navigation_offers_three_screens_in_declared_order(tmp_path: pathlib.Path) -> None:
-    """3画面を開くURLを同じappへ登録する。"""
-    app = _three_screen_app(tmp_path)
-    rules = {rule.rule for rule in app.url_map.iter_rules()}
-    assert {"/", "/plans", "/sessions"} <= rules
+@pytest.mark.asyncio
+async def test_navigation_serves_three_screens(tmp_path: pathlib.Path) -> None:
+    """3画面の公開URLがHTMLと画面のコンテナーを返す。"""
+    client = _three_screen_app(tmp_path).test_client()
+    for path, screen in (("/", "wi"), ("/plans", "plans"), ("/sessions", "sessions")):
+        response = await client.get(path)
+        assert response.status_code == 200
+        assert response.mimetype == "text/html"
+        assert f'id="screen-{screen}"' in await response.get_data(as_text=True)
 
 
 @pytest.mark.asyncio
@@ -170,19 +175,37 @@ async def test_protocol_relative_prefix_logs_rejection_via_proxy_fix(
 def test_run_initializes_logging_and_logs_startup(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """logging初期化と起動ログ出力を実施し、hypercorn.errorの伝搬を止める。"""
-    basic_config_calls: list[dict[str, object]] = []
-    monkeypatch.setattr(serve.logging, "basicConfig", lambda **kwargs: basic_config_calls.append(kwargs))
-    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda home: tmp_path)
-    monkeypatch.setattr(serve.asyncio, "run", lambda coro: coro.close())
-    logging.getLogger("hypercorn.error").propagate = True
-
-    with caplog.at_level("INFO", logger=serve.logger.name):
-        serve.run(host="127.0.0.1", port=28766, home=tmp_path)
-
-    assert basic_config_calls[0]["force"] is True
-    assert basic_config_calls[0]["level"] == logging.INFO
-    assert "http://127.0.0.1:28766/" in caplog.text
-    assert logging.getLogger("hypercorn.error").propagate is False
+    """WARNINGと既存ハンドラーのある状態から実初期化で起動先を出力し、診断を重複させない。"""
+    root = logging.getLogger()
+    error_logger = logging.getLogger("hypercorn.error")
+    with io.StringIO() as previous_output, monkeypatch.context() as patch:
+        previous_handler = logging.StreamHandler(previous_output)
+        server_handler = logging.StreamHandler()
+        # force付きの実初期化がpytest自身のハンドラーを閉じないよう、試験用の初期状態へ隔離する。
+        patch.setattr(root, "handlers", [previous_handler])
+        patch.setattr(root, "level", logging.WARNING)
+        for logger in (serve.logger, error_logger):
+            patch.setattr(logger, "parent", root)
+            patch.setattr(logger, "level", logging.NOTSET)
+            patch.setattr(logger, "disabled", False)
+            patch.setattr(logger, "propagate", True)
+            # 直前の試験のINFO有効判定を再利用せず、今回のWARNINGから有効レベルを解決する。
+            patch.setattr(logger, "_cache", {})
+        patch.setattr(serve.logger, "handlers", [])
+        patch.setattr(error_logger, "handlers", [server_handler])
+        patch.setattr(_wi_sync, "ensure_environment", lambda home: tmp_path)
+        patch.setattr(serve.asyncio, "run", lambda coro: coro.close())
+        try:
+            serve.run(host="127.0.0.1", port=28766, home=tmp_path)
+            error_logger.warning("試験用のサーバー診断")
+            output = capsys.readouterr().err
+            assert output.count("http://127.0.0.1:28766/") == 1
+            assert output.count("試験用のサーバー診断") == 1
+            assert not previous_output.getvalue()
+        finally:
+            for handler in (*root.handlers, previous_handler, server_handler):
+                handler.close()
+            patch.undo()
+            root.setLevel(root.level)

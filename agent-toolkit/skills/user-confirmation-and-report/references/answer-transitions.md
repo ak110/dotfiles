@@ -77,6 +77,8 @@ agent-toolkit:session-review-batch
 
 `atk run-skill`で起動したセッションは、作業を開始する前に`atk wi show --all --type=uwi --state=active --source=run-skill --target-repo=<対象リポジトリの絶対パス>`を実行する。
 frontmatterの`scope`が自身の起動単位（スキル名とモードの組。通常起動はスキル名）か、起動入力の取込対象scopeと一致する項目は、同じ作業の過去の実行で投入されたUWIとして扱う。
+`processing`の項目は別セッションの処理対象として保持する。
+承認用UWIは回答後のprocess-wiが先に処理・終了している場合もあるため、対応は取得した未終了の項目に限る。
 `atk run-skill`は同じ対象リポジトリに対して同じスキルを反復実行する一連の作業であり、次回起動するセッション自身が「次の実行」に該当する。
 そのため、「回答後の状態遷移」で定めた他セッションのUWIを無視する規定は、この場面では適用しない。
 

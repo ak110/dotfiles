@@ -1,15 +1,10 @@
 """WIのファイル名の検証、比較キー、依存先の警告と補完候補のテスト。"""
 
-import argparse
 import pathlib
-from typing import Any
 
 import pytest
 
-from agent_toolkit import atk
-from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import filenames as _wi_filenames
-from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
 
 
 def test_case_sensitivity_probe_reports_linux_filesystem_as_case_sensitive(tmp_path: pathlib.Path) -> None:
@@ -60,81 +55,6 @@ def test_missing_dependency_warnings_reports_only_unresolvable_references(case_s
 
     expected = ["a.mdのdepends_onが参照するPresent.mdは取り込み先に実在しません"] if case_sensitive else []
     assert warnings == [*expected, "a.mdのdepends_onが参照するabsent.mdは取り込み先に実在しません"]
-
-
-def test_make_filename_completer_limits_states(tmp_path: pathlib.Path) -> None:
-    """指定した状態のファイルだけを候補として返す。"""
-    private_notes = tmp_path / "private-notes"
-    write_awi(private_notes, "inbox.md", state="inbox")
-    write_awi(private_notes, "processing.md", state="processing")
-    completer = _wi_filenames.make_filename_completer((_wi_constants.WI_STATE_INBOX,))
-    assert completer("") == ["inbox.md"]
-
-
-def test_make_filename_completer_filters_entry_type(tmp_path: pathlib.Path) -> None:
-    """種別を指定した場合はfrontmatterの種別が一致するものだけを返す。"""
-    private_notes = tmp_path / "private-notes"
-    write_awi(private_notes, "awi.md")
-    write_uwi(private_notes, "uwi.md")
-    completer = _wi_filenames.make_filename_completer(_wi_constants.WI_ACTIVE_STATES, _wi_constants.WI_TYPE_UWI)
-    assert completer("") == ["uwi.md"]
-
-
-def test_make_filename_completer_matches_prefix_and_sorts(tmp_path: pathlib.Path) -> None:
-    """prefix一致で限定し、結果をソートして返す。"""
-    private_notes = tmp_path / "private-notes"
-    write_awi(private_notes, "pre-z.md")
-    write_awi(private_notes, "pre-a.md")
-    write_awi(private_notes, "other.md")
-    completer = _wi_filenames.make_filename_completer(_wi_constants.WI_ACTIVE_STATES)
-    assert completer("pre-") == ["pre-a.md", "pre-z.md"]
-
-
-def _positional_completer(command: str, dest: str) -> Any:
-    """`atk wi <command>`の位置引数へ実際に設定された補完関数を返す。"""
-    parser = atk._build_parser()  # pylint: disable=protected-access
-    wi_parser = next(
-        action.choices["wi"]
-        for action in parser._actions  # pylint: disable=protected-access
-        if isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
-    )
-    command_parser = next(
-        action.choices[command]
-        for action in wi_parser._actions  # pylint: disable=protected-access
-        if isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
-    )
-    return next(action.completer for action in command_parser._actions if action.dest == dest)  # pylint: disable=protected-access
-
-
-@pytest.mark.parametrize(
-    ("command", "dest", "expected"),
-    [
-        ("adopt", "filenames", ["hold-awi.md", "hold-uwi.md", "inbox-awi.md", "inbox-uwi.md", "processing-awi.md"]),
-        ("reject", "filenames", ["hold-awi.md", "hold-uwi.md", "inbox-awi.md", "inbox-uwi.md", "processing-awi.md"]),
-        ("set-dependencies", "filename", ["hold-awi.md", "hold-uwi.md", "inbox-awi.md", "inbox-uwi.md", "processing-awi.md"]),
-        ("answer", "filename", ["hold-uwi.md", "inbox-uwi.md"]),
-    ],
-)
-def test_filename_completion_includes_hold_entries(
-    tmp_path: pathlib.Path,
-    command: str,
-    dest: str,
-    expected: list[str],
-) -> None:
-    """holdを受け付けるサブコマンドの補完は、holdの項目を候補に含める。
-
-    `answer`はUWIだけを候補にする限定を保ち、終了状態の項目は候補に含めない。
-    """
-    private_notes = tmp_path / "private-notes"
-    write_awi(private_notes, "inbox-awi.md", state="inbox")
-    write_awi(private_notes, "processing-awi.md", state="processing")
-    write_awi(private_notes, "hold-awi.md", state="hold")
-    write_uwi(private_notes, "inbox-uwi.md")
-    write_uwi(private_notes, "hold-uwi.md")
-    held = private_notes / "2026" / "10" / "hold-uwi.md"
-    held.write_text(held.read_text(encoding="utf-8").replace("state: inbox", "state: hold"), encoding="utf-8")
-    write_awi(private_notes, "adopted-awi.md", state="adopted")
-    assert _positional_completer(command, dest)("") == expected
 
 
 class TestValidateFilename:

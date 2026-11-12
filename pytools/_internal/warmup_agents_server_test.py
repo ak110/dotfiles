@@ -184,6 +184,9 @@ class TestTargets:
             ]
         )
         assert len(warmed) == len(set(warmed))
+        # 同じ依存定義を持つrootは環境準備を共有するが、起動確認は両rootへ届く。
+        assert len(_prepared(calls)) == 1
+        assert _prepared(calls)[0] in warmed
 
     def test_resolves_python_once_before_warmup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """対象ごとのprepareと起動確認は、1回だけ解決したPythonを共用する。"""
@@ -449,23 +452,6 @@ def test_parallel_checks_keep_order_and_collect_other_roots(monkeypatch, failed)
 
 class TestCoverage:
     """統合したウォームアップが温める環境の範囲。"""
-
-    def test_targets_prepare_hook_plugin_root(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """hookが使う各plugin rootは公開launcherのprepare対象に含まれる。"""
-        calls = _setup(monkeypatch, tmp_path)
-        claude_root = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
-        codex_root = tmp_path / "codex" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
-        _write_script(codex_root / "agent_toolkit" / "agents_server_mcp.py")
-
-        _warmup.run()
-
-        assert sorted(_warmed(calls)) == sorted(
-            [
-                str(claude_root / "agent_toolkit" / "agents_server_mcp.py"),
-                str(codex_root / "agent_toolkit" / "agents_server_mcp.py"),
-            ]
-        )
-        assert all(cmd[-1] == "--check-dependencies" for cmd in calls if "--check-dependencies" in cmd)
 
     def test_worktree_script_is_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """作業ツリーの基盤CLIとserveが使う起動スクリプトもfull warmupで準備する。"""

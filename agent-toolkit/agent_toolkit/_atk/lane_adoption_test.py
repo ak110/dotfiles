@@ -144,7 +144,17 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
 
 @pytest.mark.parametrize(
     "case",
-    ["correct", "planned-correct", "omitted-correction", "stale", "missing", "no-implementation", "unexpected", "no-source"],
+    [
+        "correct",
+        "planned-correct",
+        "foreign-repository",
+        "omitted-correction",
+        "stale",
+        "missing",
+        "no-implementation",
+        "unexpected",
+        "no-source",
+    ],
 )
 def test_integrate_validates_adopt_commits_before_git_and_finalization(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
@@ -180,6 +190,12 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
         ]
     if expected:
         commit_mapping.append_event(handoff, {"commits": expected, "awi": [name]})
+    if case == "foreign-repository":
+        foreign = git_repository.init_repository(tmp_path / "foreign")
+        (foreign / "other-feature").write_text("別リポジトリの成果", encoding="utf-8")
+        foreign_head = git_repository.commit_all(foreign, "別リポジトリの実装")
+        foreign_short = git_repository.git_output(foreign, "rev-parse", "--short=7", foreign_head)
+        commit_mapping.append_event(handoff, {"commit": foreign_short, "awi": ["20261023-000000-002.md"]})
     supplied = expected or [original["new_head"]]
     if case in {"missing", "no-implementation"}:
         supplied = []
@@ -213,7 +229,7 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
     code, pending, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 1, stderr
     code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
-    accepted = case in {"correct", "planned-correct", "no-implementation"}
+    accepted = case in {"correct", "planned-correct", "foreign-repository", "no-implementation"}
     assert code == (0 if accepted else 2), stderr
     assert marker.exists() is accepted
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == (head if accepted else original["new_base"])

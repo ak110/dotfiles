@@ -98,3 +98,8 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 
 続行不能の場合は`状態:`行の代わりに`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
 統括担当はこの返却を`result_file`の`blocked`として記録する。
+`user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
+
+処置は`../skills/process-wi/references/run-lanes-completion.md`「採否の確定と終了区分」3に従う。
+統括自身か割当先が、事前承認型UWIを保存して元AWIへ依存を登録し、`inbox`へ差し戻す。
+統括は保存結果を検収する。

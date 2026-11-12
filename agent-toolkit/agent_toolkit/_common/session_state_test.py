@@ -154,9 +154,9 @@ class TestUpdateState:
     """単一スレッドからの基本動作。"""
 
     def test_initial_write_creates_file(self) -> None:
-        modified = update_state("sid", lambda current: {**current, "a": 1})
+        modified = update_state("sid", lambda current: {**current, "plan_mode_skill_invoked": True})
         assert modified is True
-        assert read_state("sid") == {"a": 1}
+        assert read_state("sid") == {"plan_mode_skill_invoked": True}
 
     def test_mutator_returns_none_skips_write(self) -> None:
         update_state("sid", lambda current: {**current, "a": 1})
@@ -508,20 +508,6 @@ class TestClearSessionState:
     def test_invalid_session_ids_fail(self) -> None:
         assert clear_session_state("") is False
         assert clear_session_state(cast(str, 123)) is False
-
-
-def test_session_state_persists_plan_flags() -> None:
-    """計画レビュー完了のフラグが永続化されることを確認する。"""
-    session_id = "test-plan-session"
-
-    def _set(state: dict) -> dict | None:
-        state["plan_mode_skill_invoked"] = True
-        return state
-
-    assert update_state(session_id, _set) is True
-    state = read_state(session_id)
-    assert state["plan_mode_skill_invoked"] is True
-    assert "codex_" + "exec_skill_invoked" not in state
 
 
 def test_mod_title_state_shares_locked_state(capsys: pytest.CaptureFixture[str]) -> None:

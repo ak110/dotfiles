@@ -227,7 +227,7 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     context = json.loads(compact.stdout)["hookSpecificOutput"]["additionalContext"]
     skill_step = "`Skill`で`agent-toolkit:process-wi`"
     assert skill_step not in context
-    assert ("Readで`" + str(skill) + "`" in context) is (purpose == "reference")
+    assert str(skill) not in context
     failure = rules_context.acquisition_failure(
         read_triggers.ReadTarget(skill, "欠落"), ValueError("見出し不明"), shell=False, reference=purpose == "reference"
     )

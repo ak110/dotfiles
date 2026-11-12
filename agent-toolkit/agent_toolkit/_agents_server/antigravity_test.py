@@ -500,15 +500,6 @@ def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: p
     assert [json.loads(line) for line in captured.read_text(encoding="utf-8").splitlines()] == ["manager-root", "manager-root"]
 
 
-@pytest.mark.parametrize("launch_kind", ["delegate", "explore", "shell", "write"])
-def test_every_launch_kind_instruction_promises_public_wait_only(launch_kind: shared_state.LaunchKind) -> None:
-    """全起動区分の開始・再開で共通に使う指示は、自動再開を約束せず公開待機による回収を案内する。"""
-    prompt = antigravity._system_prompt(launch_kind)  # noqa: SLF001  # pylint: disable=protected-access
-    assert launch_prompts.PUBLIC_WAIT_NOTICE in prompt
-    assert launch_prompts.AUTO_RESUME_NOTICE not in prompt
-    assert 'kind="auto-resume"' not in prompt
-
-
 @pytest.mark.parametrize("launch_kind", ["delegate", "shell", "write"])
 @pytest.mark.asyncio
 async def test_start_and_resume_deliver_public_wait_notice(

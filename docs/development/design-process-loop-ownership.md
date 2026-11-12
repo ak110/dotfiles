@@ -4,7 +4,10 @@
 
 ## 登録全体の統括と対象別所有
 
-`atk wi process-loop`はprocess_loop_repositoriesの登録全体を扱う唯一の常駐起動形式とする。
+`atk wi process-loop`はrepositoriesのうちprocess_loopが有効な登録全体を扱う唯一の常駐起動形式とする。
+repositoryの編集可否、ローカルパス、process-loopの対象、検証OSを単一の設定で保持し、`atk config repos`で属性を操作する。
+旧process_loop_repositoriesは既存の設定移行と同じ時点で編集可・常駐対象の登録へ移し、対象集合を保つ。
+編集保護の別台帳は同じrepositoryを二重登録するため設けず、ファイル編集とgit commitの判定もこの設定を読む。
 `--once`は同じ対象取得・開始gate・所有・準備・統括起動・結果検収・回収を1集合だけ実行する。
 対象が0件なら待機せず終了し、未完了・所有待ち・準備失敗が残れば非0で終了する。
 手動のprocess-wi all-reposはこの公開操作へ接続し、manifest付きの統括会話が対象を処理する。

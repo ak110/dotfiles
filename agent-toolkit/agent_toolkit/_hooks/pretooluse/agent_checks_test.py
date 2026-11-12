@@ -45,6 +45,13 @@ def _run_after_skill_acquisition(
     return run_after_read_delivery(payload, env_overrides)
 
 
+def _run_after_generic_reissue(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """汎用定義の初回拒否を確認し、同じ主体と入力で再発行した結果を返す。"""
+    first = _run_after_skill_acquisition(payload, env_overrides)
+    assert "組み込みの汎用定義" in _denial_reason(first)
+    return _run(payload, env_overrides=env_overrides)
+
+
 def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
     assert result.returncode == 0, result.stderr
     assert not result.stderr
@@ -141,7 +148,7 @@ class TestAgentNameParameterAccepted:
     def test_name_parameter_does_not_block(self, tmp_path: pathlib.Path, tool_name: str, name_value: str | None) -> None:
         """`name`キーの値によらず、委譲に必要な他の条件を満たす起動はブロックされない。"""
         sid = f"agent-name-accept-{tool_name.lower()}-{name_value!r}"
-        result = _run_after_skill_acquisition(
+        result = _run_after_generic_reissue(
             {
                 "tool_name": tool_name,
                 "tool_input": {"subagent_type": "claude", "name": name_value, "prompt": "調査してください。"},
@@ -151,6 +158,8 @@ class TestAgentNameParameterAccepted:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert "`name`" not in result.stderr
 
 
@@ -471,7 +480,7 @@ class TestExecuteReviewAlternateRouteAllowed:
     @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
     def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
         """可用性起因の代替としてClaudeによる実行へ切り替えた実行レビュー起動を遮断しない。"""
-        result = _run_after_skill_acquisition(
+        result = _run_after_generic_reissue(
             {
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "general-purpose", "prompt": f"{task_name}を読んでレビューする。"},
@@ -481,11 +490,13 @@ class TestExecuteReviewAlternateRouteAllowed:
             env_overrides=_stage_model_env(tmp_path, "codex,claude"),
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert "blocked:" not in result.stderr
         assert "review_engine" not in result.stderr
 
     def test_claude_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path) -> None:
-        result = _run_after_skill_acquisition(
+        result = _run_after_generic_reissue(
             {
                 "tool_name": "Agent",
                 "tool_input": {
@@ -498,12 +509,14 @@ class TestExecuteReviewAlternateRouteAllowed:
             env_overrides=_stage_model_env(tmp_path, "claude,codex"),
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_codex_setting_allows_main_session_agent(self, tmp_path: pathlib.Path) -> None:
         session_id = "execute-review-main"
         env = _stage_model_env(tmp_path, "codex")
         env.update(_plan_file_state_env(tmp_path))
-        result = _run_after_skill_acquisition(
+        result = _run_after_generic_reissue(
             {
                 "tool_name": "Agent",
                 "tool_input": {
@@ -516,6 +529,8 @@ class TestExecuteReviewAlternateRouteAllowed:
             env_overrides=env,
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
 
 class TestPlanFileDoesNotRequireSelfPath:
@@ -534,14 +549,16 @@ class TestPlanFileDoesNotRequireSelfPath:
             },
         )
 
-    def test_recorded_path_difference_does_not_warn(self, tmp_path: pathlib.Path):
-        """記録パス値とWrite先が異なっても警告しない。"""
+    @pytest.mark.parametrize("recorded", ["different", "matching", "placeholder"])
+    def test_recorded_path_value_does_not_block(self, tmp_path: pathlib.Path, recorded: str):
+        """記録パスの一致・不一致・プレースホルダーで計画編集を妨げない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "path-mismatch"
-        wrong_path = str(tmp_path / "scratchpad" / "other.md")
-        content = _path_section_build_content(wrong_path)
+        sid = "path-value"
+        value = {"different": str(tmp_path / "scratchpad/other.md"), "matching": str(plan), "placeholder": "plan-path-here"}[
+            recorded
+        ]
+        content = _path_section_build_content(value)
         self._prior_flags(tmp_path, sid, content)
         result = _run_after_skill_acquisition(
             {
@@ -550,29 +567,12 @@ class TestPlanFileDoesNotRequireSelfPath:
                 "session_id": sid,
                 "permission_mode": "default",
             },
-            env_overrides=env,
+            env_overrides=self._state_env(tmp_path, home),
         )
-        assert result.returncode == 0
-        assert "trailing path section" not in result.stderr
-
-    def test_allows_when_recorded_path_matches(self, tmp_path: pathlib.Path):
-        """記録パス値とWrite先のfile_pathが一致する場合は通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "path-match"
-        content = _path_section_build_content(str(plan))
-        self._prior_flags(tmp_path, sid, content)
-        result = _run_after_skill_acquisition(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
+        assert result.returncode == 0 and not result.stderr
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
+        assert "trailing path section" not in _agent_messages(result)
 
     def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
         """plan fileでないパスへ書き込む場合は判定しない。"""
@@ -588,25 +588,8 @@ class TestPlanFileDoesNotRequireSelfPath:
             env_overrides=self._state_env(tmp_path),
         )
         assert result.returncode == 0
-
-    def test_allows_when_recorded_value_is_placeholder(self, tmp_path: pathlib.Path):
-        """パス節配下の値が絶対パス表記でない（`/`・`~`で始まらない）場合はプレースホルダーとみなし通過する。"""
-        home = tmp_path / "home"
-        plan = self._make_plan(home)
-        env = self._state_env(tmp_path, home)
-        sid = "path-placeholder"
-        content = _path_section_build_content("plan-path-here")
-        self._prior_flags(tmp_path, sid, content)
-        result = _run_after_skill_acquisition(
-            {
-                "tool_name": "Write",
-                "tool_input": {"file_path": str(plan), "content": content},
-                "session_id": sid,
-                "permission_mode": "default",
-            },
-            env_overrides=env,
-        )
-        assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_allows_when_section_body_absent(self, tmp_path: pathlib.Path):
         """パス節が本文に存在しない場合はこの判定では通過する（他の条件でブロックされ得る）。"""
@@ -643,7 +626,7 @@ class TestAgentTaskLaunchIndependence:
         sid = f"missing-{tool_name.lower()}"
         plan = _make_plan_file(tmp_path / "home", f"{tool_name.lower()}-missing.md")
         env = {**_plan_file_state_env(tmp_path), **_process_loop_log_env(tmp_path)}
-        result = _run_after_skill_acquisition(
+        result = _run_after_generic_reissue(
             {
                 "session_id": sid,
                 "tool_name": tool_name,
@@ -655,20 +638,26 @@ class TestAgentTaskLaunchIndependence:
             env_overrides=env,
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert "agent-toolkit:delegation" not in result.stderr
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_with_delegation_or_sidechain_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
-        allowed = _run_after_skill_acquisition(
+        allowed = _run_after_generic_reissue(
             {"session_id": "ready", "tool_name": tool_name, "tool_input": {}}, env_overrides=env
         )
-        sidechain = _run_after_skill_acquisition(
+        sidechain = _run_after_generic_reissue(
             {"session_id": "sidechain", "tool_name": tool_name, "tool_input": {}, "isSidechain": True},
             env_overrides=env,
         )
         assert allowed.returncode == 0
+        specific = json.loads(allowed.stdout).get("hookSpecificOutput", {}) if allowed.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert sidechain.returncode == 0
+        specific = json.loads(sidechain.stdout).get("hookSpecificOutput", {}) if sidechain.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_claude_code_guide_without_delegation_passes(self, tmp_path: pathlib.Path) -> None:
         """公式資料照会専用エージェントも入力が条件を満たすか独立して判定した後に許可する。"""
@@ -681,6 +670,8 @@ class TestAgentTaskLaunchIndependence:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
 
 class TestGenericAgentLaunchBlock:
@@ -839,7 +830,7 @@ class TestWorkflowSkillInvocation:
             },
             env_overrides=env,
         )
-        agent_result = _run_after_skill_acquisition(
+        agent_result = _run_after_generic_reissue(
             {
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "general-purpose", "prompt": "調査する。"},
@@ -850,6 +841,8 @@ class TestWorkflowSkillInvocation:
         assert skill_result.returncode == 0, skill_result.stderr
         assert "/skills/delegation/SKILL.md" not in _additional_context(skill_result)
         assert agent_result.returncode == 0
+        specific = json.loads(agent_result.stdout).get("hookSpecificOutput", {}) if agent_result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert "agent-toolkit:delegation" not in agent_result.stderr
 
 

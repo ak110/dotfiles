@@ -34,7 +34,8 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 | `~/.claude/rules/myprojects-common.md` | `~/.codex/AGENTS.md`への埋め込み（同スクリプトの`PERSONAL_SOURCE`） |
 | `~/.claude/rules/myprojects.md` | Codexのメインと組み込み委譲先には届けない。ホスト別のプロジェクト一覧と同期方針であり、`myprojects-common.md`冒頭がClaude Codeへの配布と定めるためである |
 | `~/.claude/rules/`直下の`*.local.md`と`~/.claude/CLAUDE.md` | `~/.codex/AGENTS.md`からの読込指示 |
-| プロジェクト直下の`.claude/rules/`、`AGENTS.md`が無い場合の`CLAUDE.md`、`CLAUDE.local.md` | `~/.codex/AGENTS.md`からの読込指示 |
+| プロジェクト直下の`.claude/rules/` | `~/.codex/AGENTS.md`からの読込指示 |
+| 作業ディレクトリからルートまでの各ディレクトリの`CLAUDE.local.md`と、同階層に`AGENTS.md`が無い場合の`CLAUDE.md` | `~/.codex/AGENTS.md`からの読込指示 |
 
 ユーザー単位の`*.local.md`と`~/.claude/CLAUDE.md`の2種類は実行ホストごとにユーザーが置くファイルであり、リポジトリから生成する`~/.codex/AGENTS.md`へ埋め込めない。
 読込指示は実行時のファイルの有無によらず共通であるため、プロジェクト直下の`.claude/rules/`と同じ手段を選ぶ。
@@ -45,7 +46,9 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 作業に該当しないファイルも毎回の起動で文脈へ入り、hookの信頼登録を要する条件もCodexのメインに残る。
 `agents_server`の`developerInstructions`へ本文を連結する手段だけで届ける案は、Codexのメインとネイティブのサブエージェントに届かず不足する。
 この連結は`agents_server`の委譲先へ届ける手段として併用する（`design-agents-server-instructions.md`「委譲先への指示と起動時の規範」）。
-起動時の指示に同じファイルの本文が境界付きで含まれる場合は、読込指示の側で読み直さない。
+会話圧縮の後は、読込指示が対象とする規範本文を再取得する。
+ツールで読んだ本文は会話履歴の一部であり、圧縮で文脈から失われるためである。
+起動・再開指示に同じファイルの本文が境界付きで含まれる場合は、読込指示の側で読み直さない。
 
 `agents_server`の`start`で起動したClaude backendの委譲先は、`~/.claude/rules/agent-toolkit/`配下の3ファイルの全文をユーザー規範として保持し、起動時のシステム指示と区別する。
 また、`agent-toolkit/share/rules/rules-subagent.md`を起動時のシステム指示として保持する。

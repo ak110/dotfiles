@@ -230,7 +230,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             model_type=model_type,
             whole_contract_path=whole_contract_path,
         )
-        response = await _manager().start_handoff(handoff_from)
+        response = await _manager().start_handoff(handoff_from, model_type=model_type)
         public = public_start_response(response)
         public["cwd"] = response["cwd"]
         public["model_type"] = response["model_type"]
@@ -375,7 +375,8 @@ async def send_message(
     `reply_started`は終了済みまたは完了待ちで保留中のsessionで新しいturnを開始したことを示す。
     `reply_failed`は新しいturnを開始できなかったこと、`reply_ambiguous`は開始の成否を確定できなかったことを示し、
     いずれも`atk agents wait`で状態を確認してから次の操作を選ぶ。
-    sessionの起動後に工程別モデル設定の候補列が変わっても、起動時に確定したengine・model・effortで継続する。
+    sessionの起動後に工程別モデル設定の候補列が変わっても、保持したengine・model・effortで継続する。
+    相対effort操作を受理した会話は、その変更を次turnから使う。
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
@@ -468,7 +469,8 @@ async def list_sessions(
     """保持中のsessionの状態を開始順に返す。
 
     所有する`root_session_id`を常に返す。
-    各sessionの`session_id`と`status`を返し、稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
+    各sessionの`session_id`・`status`と現在の`engine`・`model`・`effort`を返す。
+    稼働中のsessionへ最終活動時刻からの経過秒数`seconds_since_activity`を加える。
     ClaudeとCodexのAPI再試行中は`api_error`に種別、HTTPステータスと経過秒を返す。
     Claudeの`api_retry`が示す次の再試行予定時刻は`retry_at`へ返す。
     Claude Codeの利用上限（Weekly limitと5時間）の解除待ちでは`api_error.type`が`usage_limit`となり、

@@ -246,6 +246,66 @@ def test_integrate_resumes_conflict_resolution_following_new_upstream_file(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
 
 
+@pytest.mark.parametrize("invalid", ["unchanged", "all", "resolved"])
+def test_integrate_excludes_paths_identical_to_upstream(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], invalid: str
+) -> None:
+    """変更から外れたパスの明示だけを受理し、成功した指定を省略再開でも再利用する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    worktree = pathlib.Path(record["worktree"])
+    dropped = ["shared.txt", "shared second.txt"]
+    for name in dropped:
+        (worktree / name).write_text("レーン\n", encoding="utf-8")
+        (repo / name).write_text("上流\n", encoding="utf-8")
+    (worktree / "feature").write_text("成果\n", encoding="utf-8")
+    reviewed = git_repository.commit_all(worktree, "成果")
+    before = git_repository.commit_all(repo, "先行統合")
+    manifest = _write_empty_finalization_manifest(tmp_path)
+    args = _integration_args(record, repo, manifest, reviewed)
+    code, _result, stderr = _invoke(capsys, *args)
+    assert code == 2, stderr
+    for name in dropped:
+        (worktree / name).write_text("上流\n", encoding="utf-8")
+    git_repository.run_git(worktree, "add", "--", *dropped)
+    git_repository.run_git(worktree, "-c", "core.editor=true", "-c", "submodule.recurse=false", "rebase", "--continue")
+    code, _result, stderr = _invoke(capsys, *args)
+    assert code == 2, stderr
+    exclusions = [value for name in dropped for value in ("--exclude-path", reviewed[:12], name)]
+    if invalid == "unchanged":
+        rejected = ["--exclude-path", reviewed, "unchanged.txt"]
+    elif invalid == "all":
+        rejected = [*exclusions, "--exclude-path", reviewed, "feature"]
+    else:
+        rejected = [*exclusions, "--resolved-conflict", reviewed]
+    code, _result, stderr = _invoke(capsys, *args, *rejected)
+    assert code == 2, stderr
+    record_path = pathlib.Path(record["record_path"])
+    stored = json.loads(record_path.read_text(encoding="utf-8"))["integration"]
+    assert not stored.get("excluded_paths")
+    assert not stored.get("resolved_conflicts")
+    code, pending, stderr = _invoke(capsys, *args, *exclusions)
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    expected = [[reviewed, name] for name in sorted(dropped)]
+    stored = json.loads(record_path.read_text(encoding="utf-8"))["integration"]
+    assert stored["excluded_paths"] == stored["comparison"]["excluded_paths"] == expected
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+    code, _result, stderr = _invoke(capsys, *args, *rejected)
+    assert code == 2, stderr
+    stored = json.loads(record_path.read_text(encoding="utf-8"))["integration"]
+    assert stored["excluded_paths"] == stored["comparison"]["excluded_paths"] == expected
+    # 比較を再実行させ、完了済み工程の省略と保存した指定の再利用を区別する。
+    pathlib.Path(pending["rewrite_map"]).unlink()
+    code, pending, stderr = _invoke(capsys, *args)
+    assert code == 1 and pending["phase"] == "awaiting-validation", stderr
+    assert pending["excluded_paths"] == expected
+    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    assert code == 0 and final["phase"] == "finalized", stderr
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == pending["new_head"]
+    assert (repo / "feature").read_text(encoding="utf-8") == "成果\n"
+    assert all((repo / name).read_text(encoding="utf-8") == "上流\n" for name in dropped)
+
+
 def test_integrate_drops_rejected_conflict_input(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

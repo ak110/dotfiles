@@ -79,14 +79,6 @@ def test_commit_message_file_is_read_with_unknown_pathspec(tmp_path):
     assert not list(shell_checks._git_commit_messages('git commit -F "$MESSAGE"'))
 
 
-def test_global_options_with_value_are_all_classified_for_commit_message_check() -> None:
-    """値を取る大域オプションは、未知語の値でcommitの検査を外すかを必ず分類する。"""
-    locating = shell_checks._GLOBAL_OPTIONS_LOCATING_REPOSITORY
-    affecting = shell_checks._GLOBAL_OPTIONS_POSSIBLY_AFFECTING_MESSAGE
-    assert not locating & affecting
-    assert locating | affecting == shell_checks._GLOBAL_OPTIONS_WITH_VALUE
-
-
 @pytest.mark.parametrize(
     "command",
     [

@@ -149,6 +149,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                             state,
                             worktree,
                             state.get("comparison", {}).get("resolved_conflicts", state.get("resolved_conflicts", [])),
+                            state.get("comparison", {}).get("excluded_paths", state.get("excluded_paths", [])),
                         )
                         state["rewrite_prefix"] = json.loads(pathlib.Path(state["rewrite_map"]).read_text(encoding="utf-8"))
                         # 再rebaseの旧系列には前回の競合解消が織り込まれている。指定の再利用も比較する系列ごとに保つ。
@@ -157,6 +158,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
                             "old_head": current,
                             "new_base": base,
                             "resolved_conflicts": [],
+                            "excluded_paths": [],
                         }
                     else:
                         state.pop("comparison", None)
@@ -231,24 +233,40 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             )
             _lane_records.save(path, record)
         saved_resolved = state.get("comparison", {}).get("resolved_conflicts", state.get("resolved_conflicts", []))
+        saved_excluded = state.get("comparison", {}).get("excluded_paths", state.get("excluded_paths", []))
         resolved = saved_resolved
-        if args.resolved_conflict is not None and state["phase"] in {"rebased", "awaiting-validation"}:
+        excluded_paths = saved_excluded
+        if state["phase"] in {"rebased", "awaiting-validation"}:
             # 競合解消の指定はhistory-compareへ渡す入力で、同じ統合入力の再開に付けるためinput_digestへ含めない。
             # 指定を省いた再開（検収待ちの受理など）は保存済みの集合を使い、集合が変わった場合だけhistory-compareをやり直す。
-            resolved = sorted(
-                {
-                    _lane_records.git(worktree, "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}")
-                    for value in args.resolved_conflict
-                }
-            )
-            if saved_resolved != resolved:
+            if args.resolved_conflict is not None:
+                resolved = sorted(
+                    {
+                        _lane_records.git(worktree, "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}")
+                        for value in args.resolved_conflict
+                    }
+                )
+            if args.exclude_path is not None:
+                excluded_paths = [
+                    list(pair)
+                    for pair in sorted(
+                        {
+                            (
+                                _lane_records.git(worktree, "rev-parse", "--verify", "--end-of-options", f"{oid}^{{commit}}"),
+                                name,
+                            )
+                            for oid, name in args.exclude_path
+                        }
+                    )
+                ]
+            if saved_resolved != resolved or saved_excluded != excluded_paths:
                 state.update(
                     phase="rebased",
                     completed=[key for key in state["completed"] if key != "history-compare"],
                 )
                 _lane_records.save(path, record)
         if state["phase"] == "rebased":
-            _lane_integration_input.compare_integration_history(record, state, worktree, resolved)
+            _lane_integration_input.compare_integration_history(record, state, worktree, resolved, excluded_paths)
             _lane_integration_input.verify(record, state, manifest["verification"], worktree)
             state["phase"] = "awaiting-validation"
             _lane_records.save(path, record)

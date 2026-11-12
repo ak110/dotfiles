@@ -171,6 +171,11 @@ def automated_session(directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
     automated_input(directory, "continuation", CONTINUATION)
 
 
+def recorded_works() -> list[tuple[str, dict[str, Any]]]:
+    """試験で観測した入力と判断から実保存された作業を、依存層の外側で読み取る。"""
+    return termination_evidence.session_works({"session_id": "evidence-test"})
+
+
 def public_context(capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any] | None]:
     """公開コマンド`atk run-script termination-evidence -- --context`の終了コードと出力のJSONを返す。"""
     capsys.readouterr()

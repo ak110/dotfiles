@@ -76,6 +76,7 @@ def test_helper_imports_from_checkout_of_bound_file(
 
 @pytest.mark.parametrize("bootstrap", [bootstrap for bootstrap, _ in _HELPERS])
 def test_bootstrap_avoids_shell_metacharacters(bootstrap: str) -> None:
+    # test-copy-contract: SSHが遠隔シェルへ連結するbootstrapの引用符・展開制御文字を禁止し、POSIX/cmd.exeで引数境界を保つ。
     """bootstrapはPOSIXシェルとcmd.exeの双方で1つのダブルクォート引数として渡せる文字だけで構成する。"""
     assert not set(bootstrap) & set('"$%<>|&^\\')
 

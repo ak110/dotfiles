@@ -15,7 +15,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import shared_roots, state
 from agent_toolkit._atk import config_settings
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import process_identity, session_registry, state_paths
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.agents_server_support import _complete
@@ -151,20 +151,22 @@ async def test_start_and_resume_record_owner_and_app_server_processes(
     monkeypatch.setattr(config_settings, "config_dir", lambda: tmp_path / "config")
     owner = session_registry.owner_process()
     assert owner is not None
-    expected = [owner.payload()] * 2
+    expected = [owner] * 2
     record = session_registry.registry_directory() / "tier-thread.json"
     client = _ProcessTierClient(owner.pid)
     async with subject.AppServerManager({}, asyncio.Condition(), publish_registry=True) as manager:
         monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
 
         await manager.start("開始", str(tmp_path))
-        assert json.loads(record.read_text(encoding="utf-8"))["processes"] == expected
+        recorded = json.loads(record.read_text(encoding="utf-8"))["processes"]
+        assert [process_identity.ProcessIdentity.parse(item) for item in recorded] == expected
 
         record.unlink()
         async with subject.AppServerManager({}, asyncio.Condition(), publish_registry=True) as restarted:
             monkeypatch.setattr(restarted, "_ensure_client", AsyncMock(return_value=client))
             await restarted.resume("tier-thread", state.ResumePrompt("再開"), str(tmp_path))
-            assert json.loads(record.read_text(encoding="utf-8"))["processes"] == expected
+            recorded = json.loads(record.read_text(encoding="utf-8"))["processes"]
+            assert [process_identity.ProcessIdentity.parse(item) for item in recorded] == expected
 
 
 @pytest.mark.asyncio

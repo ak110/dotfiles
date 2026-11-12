@@ -22,13 +22,17 @@ def _repo(tmp_path: Path) -> Path:
     return repository
 
 
+@pytest.mark.parametrize("model_type", [None, "claude:sonnet/high"])
 def test_public_commit_creates_git_commit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    model_type: str | None,
 ) -> None:
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:haiku/low")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:gpt-6-sol/medium")
     monkeypatch.setattr(commit, "_executable", lambda _engine: "/fake/claude")
     original_run = subprocess.run
     calls: list[list[str]] = []
@@ -48,14 +52,14 @@ def test_public_commit_creates_git_commit(
 
     monkeypatch.setattr(commit.subprocess, "run", run)
     with pytest.raises(SystemExit, match="0"):
-        atk.main(["commit", "--model-type", "claude:sonnet/high"])
+        atk.main(["commit", *(["--model-type", model_type] if model_type else [])])
 
     assert len(calls) == 1
     output = capsys.readouterr().out.splitlines()
     assert output[0].startswith("成功: ")
     assert output[1] == "子の完了報告"
-    assert "--model=sonnet" in calls[0]
-    assert "--effort=high" in calls[0]
+    assert ("--model=sonnet" if model_type else "--model=haiku") in calls[0]
+    assert ("--effort=high" if model_type else "--effort=low") in calls[0]
     assert calls[0][-1].startswith('<atk-auto source="atk-commit" kind="commit-request">')
     assert 'source="agent-toolkit/atk-commit"' not in calls[0][-1]
     assert (
@@ -131,22 +135,6 @@ def test_format_instructions_follow_repository_priority(tmp_path: Path) -> None:
     (repository / ".gitmessage").unlink()
     subprocess.run(["git", "-C", str(repository), "config", "--unset", "commit.template"], check=True)
     assert commit._format_instructions(repository) == commit._DEFAULT_FORMAT  # pylint: disable=protected-access
-
-
-def test_default_model_type_reaches_candidate_resolver_as_chores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    repository = _repo(tmp_path)
-    monkeypatch.chdir(repository)
-    received: list[str] = []
-
-    def resolve(model_type: str) -> list[tuple[str, str, str]]:
-        received.append(model_type)
-        return []
-
-    monkeypatch.setattr(commit.config, "resolve_model_candidates", resolve)
-    with pytest.raises(SystemExit, match="1"):
-        atk.main(["commit"])
-
-    assert received == ["chores"]
 
 
 @pytest.mark.parametrize(

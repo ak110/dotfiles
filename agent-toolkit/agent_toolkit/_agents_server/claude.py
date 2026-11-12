@@ -373,6 +373,7 @@ class ClaudeServerManager(ClaudeStream):
             await run_file_operation(rename_debug_file_for_session, debug_file, session.session_id, launch_kind)
         )
         await session.drain_registration()
+        session.claude_applied_effort = effort
         return session
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
@@ -382,6 +383,10 @@ class ClaudeServerManager(ClaudeStream):
         # 通常の追送と、孫sessionの終了・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
         # 進行中のturnと、CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）では所有タスクを止めない。
         held_without_pending = session.awaiting_auto_resume and not resume_waits.has_pending_auto_resume_targets(session)
+        if (session.terminal or held_without_pending) and session.claude_applied_effort != session.effort:
+            previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
+            await self._resume_next_turn(session, prompt)
+            return {"delivery": "reply_started", "previous_result": previous}
         role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
         # 保持した接続の種別を使用順から外した会話は、次のturnで使用順の先頭の利用可能な候補へ移す。
         if (session.terminal or held_without_pending) and claude_connection.outside_order(session.claude_connection, role):
@@ -401,6 +406,16 @@ class ClaudeServerManager(ClaudeStream):
         if actual_delivery in {"reply_started", "reply_failed", "reply_ambiguous"}:
             result["previous_result"] = previous_result
         return result
+
+    async def set_effort(self, session: SessionState, value: str) -> None:
+        """CLIの次turn設定を、SDK接続を所有するタスクへ渡す。"""
+        channel = self._channels.get(session.session_id)
+        if channel is None:
+            raise SessionOwnerGoneError("the Claude session owner task has ended")
+        # 所有taskだけがSDKの制御要求を送る。進行中のturnは中断しない。
+        delivery, _previous = await channel.send("effort", value)
+        if delivery != "effort_applied":
+            raise RuntimeError(f"Claude effort設定を確認できない: {delivery}")
 
     async def _return_to_subscription(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """APIへ移した会話を、次のturnの指示とともにサブスクリプションの新しい所有タスクで再開する。

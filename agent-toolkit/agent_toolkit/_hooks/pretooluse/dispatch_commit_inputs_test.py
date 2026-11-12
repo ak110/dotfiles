@@ -76,7 +76,9 @@ def test_claude_commit_does_not_judge_unresolved_message_inputs(
     (tmp_path / "message.txt").write_text("fix: 変更\n", encoding="utf-8")
 
     assert pretooluse.main(json.dumps(_claude_commit_hook_payload(tmp_path, command))) == 0
-    assert _denial_reason(capsys.readouterr()) == ""
+    reason = _denial_reason(capsys.readouterr())
+    assert "Co-Authored-By" not in reason
+    assert "コミット先のリポジトリを解決できない" in reason
 
 
 def test_observed_commit_trailer_matches_the_line_required_by_commit_check(

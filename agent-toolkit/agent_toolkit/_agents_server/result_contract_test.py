@@ -157,16 +157,22 @@ def test_valid_result_is_not_held(tmp_path: pathlib.Path, message: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "message",
+    ("message", "reason"),
     [
-        "続行できない理由: 入力が必要",
-        "続行できない区分: unknown\n続行できない理由: 入力が必要",
-        " 続行できない区分: owner_input\n続行できない理由: 入力が必要",
-        "続行できない区分: owner_input\n続行できない理由:   ",
-        "待機中: session-1\n続行できない理由: 入力が必要",
+        ("続行できない理由: 入力が必要", "1行目の続行できない理由の直前に同じインデントの続行できない区分がありません"),
+        ("続行できない区分: unknown\n続行できない理由: 入力が必要", "1行目の続行できない区分が閉集合外です: unknown"),
+        (
+            " 続行できない区分: owner_input\n続行できない理由: 入力が必要",
+            "2行目の続行できない理由の直前に同じインデントの続行できない区分がありません",
+        ),
+        ("続行できない区分: owner_input\n続行できない理由:   ", "2行目の続行できない理由が空です"),
+        (
+            "待機中: session-1\n続行できない理由: 入力が必要",
+            "2行目の続行できない理由の直前に同じインデントの続行できない区分がありません",
+        ),
     ],
 )
-def test_invalid_result_is_held_once(tmp_path: pathlib.Path, message: str) -> None:
+def test_invalid_result_is_held_once(tmp_path: pathlib.Path, message: str, reason: str) -> None:
     """理由の直前に同インデントの有効区分が無ければ保留する。"""
     session = _task_session(tmp_path)
     result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
@@ -177,9 +183,11 @@ def test_invalid_result_is_held_once(tmp_path: pathlib.Path, message: str) -> No
 
     assert not result_contract.hold_invalid_result(session, result)
     assert result["error"] == {
-        "resultContract": result_contract.invalid_result_reason(session, result),
+        "resultContract": reason,
         "nextAction": result_contract.RECOVERY_NEXT_ACTION,
     }
+    assert result["agent_message"] == message
+    assert not result_contract.hold_invalid_result(session, result)
     assert "同じsessionへ" in result_contract.RECOVERY_NEXT_ACTION
     assert "連続する2行" in result_contract.RECOVERY_NEXT_ACTION
     assert "agents_server.send_messageのsession_id" in result_contract.RECOVERY_NEXT_ACTION

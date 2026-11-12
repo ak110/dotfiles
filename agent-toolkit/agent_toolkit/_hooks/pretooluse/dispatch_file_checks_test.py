@@ -70,6 +70,8 @@ class TestMojibakeCheck:
             }
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
 
 class TestPs1EolCheck:
@@ -89,11 +91,15 @@ class TestPs1EolCheck:
         )
         assert "既存ファイルには`Edit`ツールを使" in context
 
-    def test_ps1_tmpl_edit_with_lf_only_allowed(self):
+    def test_ps1_tmpl_edit_with_lf_only_allowed(self, tmp_path):
         """Edit は内部的に CRLF を維持するため、LF-only でもブロックしない。"""
         content = "Set-StrictMode\n{{ .chezmoi.homeDir }}\n"
-        result = _run({"tool_name": "Edit", "tool_input": {"file_path": "./a.ps1.tmpl", "new_string": content}})
+        result = _run(
+            {"cwd": str(tmp_path), "tool_name": "Edit", "tool_input": {"file_path": "./a.ps1.tmpl", "new_string": content}}
+        )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_ps1_tmpl_write_with_lf_only_warns(self):
         """Write は LF のまま書き込むため警告する。"""
@@ -102,20 +108,34 @@ class TestPs1EolCheck:
         assert result.returncode == 0
         assert "`LF`だけの内容" in _additional_context(result)
 
-    def test_ps1_with_crlf_allowed(self):
+    def test_ps1_with_crlf_allowed(self, tmp_path):
         content = "Set-StrictMode\r\nWrite-Host 'x'\r\n"
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
+        result = _run({"cwd": str(tmp_path), "tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
-    def test_non_ps1_with_lf_only_allowed(self):
+    def test_non_ps1_with_lf_only_allowed(self, tmp_path):
         """対象拡張子でなければ LF-only は関知しない。"""
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "hello\nworld\n"}})
+        result = _run(
+            {"cwd": str(tmp_path), "tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "hello\nworld\n"}}
+        )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
-    def test_ps1_single_line_edit_allowed(self):
+    def test_ps1_single_line_edit_allowed(self, tmp_path):
         """改行を含まない 1 行の Edit は誤検出を避けて通過する。"""
-        result = _run({"tool_name": "Edit", "tool_input": {"file_path": "a.ps1", "old_string": "Old", "new_string": "New"}})
+        result = _run(
+            {
+                "cwd": str(tmp_path),
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "a.ps1", "old_string": "Old", "new_string": "New"},
+            }
+        )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
 
 class TestLockfilesCheck:
@@ -159,10 +179,12 @@ class TestLockfilesCheck:
         assert "cargo add" in context
         assert "\n次の操作: " in context
 
-    def test_normal_file_allowed(self):
+    def test_normal_file_allowed(self, tmp_path):
         """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": "uv.lock.bak", "content": "x"}})
+        result = _run({"cwd": str(tmp_path), "tool_name": "Write", "tool_input": {"file_path": "uv.lock.bak", "content": "x"}})
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
 
 class TestManifestCheck:
@@ -215,8 +237,8 @@ class TestManifestCheck:
         assert "package.json" in _additional_context(result)
         assert "pnpm add" in _additional_context(result)
 
-    def test_normal_file_no_warn(self):
-        result = _run({"tool_name": "Write", "tool_input": {"file_path": "foo.txt", "content": "x"}})
+    def test_normal_file_no_warn(self, tmp_path):
+        result = _run({"cwd": str(tmp_path), "tool_name": "Write", "tool_input": {"file_path": "foo.txt", "content": "x"}})
         assert result.returncode == 0
         assert _agent_messages(result).strip() == ""
 
@@ -277,6 +299,8 @@ class TestUserFacingTextChecks:
         result = _run({"tool_name": tool_name, "tool_input": tool_input})
 
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
         assert "[block]" not in result.stderr
 
     @pytest.mark.parametrize("field", ["question", "header", "label", "description", "plan"])

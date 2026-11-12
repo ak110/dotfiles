@@ -14,6 +14,7 @@ from agent_toolkit._atk import config
 from agent_toolkit._atk.wi import frontmatter, listing
 from agent_toolkit._atk.wi.layout import entry_path
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
 from agent_toolkit._testing.wi_listing_support import _clear_agent_environment as _clear_agent_environment
 from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
@@ -42,17 +43,20 @@ def test_list_filters_important_entries(
 
 
 def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存待ち・未回答・run-skillの本文を除き、候補件数と同じ集合を引き渡す。"""
+    """依存待ち・未回答・報告用UWIの本文を除き、候補件数と同じ集合を引き渡す。"""
     notes = _setup_notes(tmp_path)
     repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/foo.git")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repo)]))
+    set_process_loop_repositories(monkeypatch, [repo])
     _write_awi_file(notes, "ready.md")
     blocked = _write_awi_file(notes, "blocked.md", body="候補外の依存待ち")
     blocked.write_text(
         blocked.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [missing.md]\n"), encoding="utf-8"
     )
     _write_uwi_file(notes, "unanswered.md", question="候補外の未回答", answer="")
-    _write_uwi_file(notes, "run-skill.md", question="候補外のrun-skill", answer="回答", source="run-skill")
+    report = _write_uwi_file(notes, "run-skill.md", question="候補外の報告", answer="回答", source="run-skill")
+    report.write_text(
+        report.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\nrun_skill_report: true\n"), encoding="utf-8"
+    )
     snapshot = listing.configured_repo_snapshot(notes, config.resolve_configured_repositories())[0]
     records = snapshot.candidate_records()
     assert {record["filename"] for record in records} == {"ready.md"}

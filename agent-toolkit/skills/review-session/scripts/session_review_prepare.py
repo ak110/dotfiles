@@ -208,10 +208,12 @@ def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, A
             [
                 "",
                 f"回復した記録行{len(recovered)}件。JSONとして成立しない行を、直後にある同じordinalとtypeの完全な行で置き換えた。"
+                "NULで始まる断片の行は、前後の完全な行のordinalが連続する場合だけ解析対象から除いた（除外と表示する）。"
                 "原本は変更していない。全件はbundle/recovered.jsonlへ保持する。",
                 *(
                     f"- {event['record']}: {event['line']}行目 → {event['superseded_by']}行目"
-                    f"（ordinal={event['ordinal']}、type={event['entry_type']}）"
+                    f"（ordinal={event['ordinal']}、type={event['entry_type']}"
+                    f"{'、除外' if event.get('method') == 'zero-filled-skipped' else ''}）"
                     for event in recovered[:10]
                 ),
             ]

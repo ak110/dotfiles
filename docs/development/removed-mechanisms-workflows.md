@@ -4,6 +4,8 @@
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
+| 個人プロジェクトの検証付き実装委譲を日付の奇偶でlow開始と設定どおりの群へ分け、再委譲の目印から評価する試行 | 2026-11-12（本行を含む撤去commit） | ユーザーが試行を終えて相対effort操作と工程のlow初期値へ統合することを選んだ。 | `docs/development/design-agents-runtime-effort.md`「対象と権限」、`.chezmoi-source/dot_claude/rules/myprojects-common.md` | 同じ試行を再開する新しいユーザー判断がある場合 |
+| effortだけを変える場合も、新しい会話へ再委譲する運用 | 2026-11-12（本行を含む撤去commit） | 同じ会話のまま本人と直接親が相対変更できるようになり、推論量の調整で文脈を捨てる必要が無くなった。 | `agent-toolkit/skills/delegation/references/model-and-effort.md`「同じ会話のeffortの上げ下げ」、`docs/development/design-agents-runtime-effort.md` | 同じ会話での変更が技術的に成立しなくなり、文脈を保つ代替案と比べて再委譲が必要と確認できる場合 |
 | ユーザーとの認識合わせを独立スキルの起動へ分ける | 2026-10-06、commit: ba7e256a8 | 認識合わせと確認規範の相互参照を解消して集約する判断による。 | 確認と認識合わせはuser-confirmation-and-reportへ集約する。docs/development/concepts-confirmation-decisions.md「確認要否の判定」、docs/development/design-hosts-authorization.md「ユーザーとの認識合わせ」 | 撤去理由を解消できることを示した場合 |
 | 稼働中の委譲先や受領済み差し戻しの有無で、同期確認の可否を制限する規定 | 2026-09-15、commit: d44227d1b | 確認自体と関係の無い稼働状態で可否を制限していた。 | 同期確認は回答期限と承認種別で選ぶ。docs/development/concepts-approval.md「承認の範囲」 | 撤去理由を解消できることを示した場合 |
 | auto mode classifierの拒否後、ユーザー承認なしで同一操作を再発行できる許可と手順 | 2026-10-07、commit: 158c28d32 | 同一操作の反復が攻撃的挙動と見なされるリスクを避けるユーザー判断による。 | 最初の拒否から確認手順へ進み、偽陽性の明示回答後に実行する。docs/development/concepts-auto-mode.md「auto modeと許可ルール」 | 偽陽性について対象を特定した明示回答を得た場合 |

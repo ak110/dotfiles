@@ -6,10 +6,10 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common import session_state
+from agent_toolkit._hooks import posttooluse, uwi_completion
 from agent_toolkit._testing.helpers import _read_state
-from agent_toolkit._testing.posttooluse_support import _load_posttooluse_module, _observe, _run
-
-_POSTTOOLUSE_MODULE = _load_posttooluse_module()
+from agent_toolkit._testing.posttooluse_support import _run
 
 
 class TestPlanModeSkillInvocation:
@@ -70,6 +70,7 @@ class TestCommitSkillAttributionNotice:
         return payload
 
     def test_commit_skill_delivers_observed_trailer(self, tmp_path: pathlib.Path) -> None:
+        # test-copy-contract: transcriptの観測モデルとpayloadの推論量から帰属行を生成し、Skill完了時に配送する契約。
         result = _run(self._payload(tmp_path, "agent-toolkit:commit"), state_dir=tmp_path, home_dir=tmp_path)
 
         assert result.returncode == 0, result.stderr
@@ -92,106 +93,74 @@ class TestCommitSkillAttributionNotice:
 
 
 class TestUwiCompletionNotice:
-    """UWI回答差分をPostToolUseの追加contextへ接続する。"""
-
-    @staticmethod
-    def _clear_delegation_marks(monkeypatch: pytest.MonkeyPatch) -> None:
-        """メインの実行主体として判定されるよう、委譲先セッションの印を除く。"""
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-        monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-
-    def test_dispatch_appends_answered_filename_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """回答差分通知をLLM向けnoticeとして蓄積する。"""
-        self._clear_delegation_marks(monkeypatch)
-        monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
-            "build_notice",
-            lambda _session_id, _cwd, _transcript_path: "newly answered: answered.md",
-        )
-        payload = {
-            "session_id": "uwi-answer",
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Read",
-            "tool_input": {"file_path": "README.md"},
-            "cwd": "/repo",
-        }
-
-        notices = _observe(payload)
-
-        assert len(notices) == 1
-        assert "newly answered: answered.md" in notices[0]
-
-    @pytest.mark.parametrize("hook_event_name", ["PostToolUseFailure", "PermissionDenied"])
-    def test_failure_events_skip_uwi_notice(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        hook_event_name: str,
-    ) -> None:
-        """失敗イベントでは回答差分を問い合わせない。"""
-        monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
-            "build_notice",
-            lambda *_args: pytest.fail("失敗イベントでUWI通知が呼ばれた"),
-        )
-        payload = {
-            "session_id": "uwi-failure",
-            "hook_event_name": hook_event_name,
-            "tool_name": "Read",
-            "tool_input": {"file_path": "README.md"},
-            "cwd": "/repo",
-        }
-
-        notices = _observe(payload)
-
-        assert not notices
-
-    def test_in_process_subagent_skips_uwi_notice(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`agent_id`を持つin-processのサブエージェントでは通知を組み立てない。"""
-        self._clear_delegation_marks(monkeypatch)
-        monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
-            "build_notice",
-            lambda *_args: pytest.fail("サブエージェントでUWI通知が呼ばれた"),
-        )
-        payload = {
-            "session_id": "uwi-subagent",
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Read",
-            "tool_input": {"file_path": "README.md"},
-            "cwd": "/repo",
-            "agent_id": "agent-1",
-        }
-
-        notices = _observe(payload)
-
-        assert not notices
+    """実回答差分の配送と、対象外イベントによる未消費を検証する。"""
 
     @pytest.mark.parametrize(
-        ("name", "value"),
-        [("AGENT_TOOLKIT_DELEGATED_SESSION", "1"), ("AGENT_TOOLKIT_OWNER_SESSION", "owner-1")],
+        "excluded",
+        [
+            None,
+            "PostToolUseFailure",
+            "PermissionDenied",
+            "in-process",
+            "AGENT_TOOLKIT_DELEGATED_SESSION",
+            "AGENT_TOOLKIT_OWNER_SESSION",
+        ],
     )
-    def test_delegated_session_skips_uwi_notice(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        name: str,
-        value: str,
-    ) -> None:
-        """`agents_server`が起動した委譲先セッションでは通知を組み立てない。"""
-        self._clear_delegation_marks(monkeypatch)
-        monkeypatch.setenv(name, value)
-        monkeypatch.setattr(
-            _POSTTOOLUSE_MODULE._uwi_completion,  # pylint: disable=protected-access  # noqa: SLF001
-            "build_notice",
-            lambda *_args: pytest.fail("委譲先セッションでUWI通知が呼ばれた"),
-        )
+    def test_answer_transition_is_delivered_only_to_main(self, tmp_path, monkeypatch, capsys, excluded):
+        for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
+            monkeypatch.delenv(name, raising=False)
+        repo = "example.com/owner/repo"
+        root = tmp_path / "private-notes"
+        inbox = root / "inbox"
+        inbox.mkdir(parents=True)
+        (root / "processing").mkdir()
+        monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(root))
+        monkeypatch.setattr(uwi_completion, "resolve_target_repo", lambda _cwd: repo)
+        entry = "---\ntarget_repo: " + repo + "\ntype: uwi\n---\n\n## 質問\n\n本文\n\n## 回答\n\n"
+        answered = inbox / "new-answer.md"
+        answered.write_text(entry, encoding="utf-8")
+        (inbox / "unanswered.md").write_text(entry, encoding="utf-8")
+        (inbox / "already-answered.md").write_text(entry + "既存回答\n", encoding="utf-8")
+        sid = "uwi-transition"
         payload = {
-            "session_id": "uwi-delegate",
+            "session_id": sid,
             "hook_event_name": "PostToolUse",
             "tool_name": "Read",
             "tool_input": {"file_path": "README.md"},
-            "cwd": "/repo",
+            "cwd": str(tmp_path),
         }
 
-        notices = _observe(payload)
+        def run(event):
+            capsys.readouterr()
+            assert posttooluse.main(json.dumps(event)) == 0
+            output = capsys.readouterr()
+            assert not output.err
+            if not output.out:
+                return ""
+            return json.loads(output.out)["hookSpecificOutput"]["additionalContext"]
 
-        assert not notices
+        assert not run(payload)
+        baseline = {"main": {repo: ["already-answered.md"]}}
+        assert session_state.read_state(sid)[uwi_completion.STATE_KEY_ANSWERED] == baseline
+        answered.write_text(entry + "回答する。\n", encoding="utf-8")
+        if excluded is not None:
+            with monkeypatch.context() as marks:
+                event = dict(payload)
+                if excluded == "in-process":
+                    event["agent_id"] = "agent-1"
+                elif excluded.startswith("AGENT_TOOLKIT_"):
+                    marks.setenv(excluded, "1" if excluded == "AGENT_TOOLKIT_DELEGATED_SESSION" else "owner")
+                else:
+                    event["hook_event_name"] = excluded
+                assert not run(event)
+            assert session_state.read_state(sid)[uwi_completion.STATE_KEY_ANSWERED] == baseline
+
+        context = run(payload)
+        assert "新たに回答されたUWI" in context
+        assert "new-answer.md" in context
+        assert "already-answered.md" not in context
+        assert "unanswered.md" not in context
+        assert session_state.read_state(sid)[uwi_completion.STATE_KEY_ANSWERED] == {
+            "main": {repo: ["already-answered.md", "new-answer.md"]}
+        }
+        assert not run(payload)

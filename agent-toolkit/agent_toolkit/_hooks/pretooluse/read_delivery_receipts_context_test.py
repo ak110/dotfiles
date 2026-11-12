@@ -1,6 +1,5 @@
 """配送本文を独立の比較元に、公開hookの受領証拠・更新案内・継続許可を検収する。"""
 
-import importlib
 import json
 import shlex
 import subprocess
@@ -10,7 +9,7 @@ import pytest
 from agent_toolkit._common import plugin_roots, read_triggers, session_state
 from agent_toolkit._hooks import document_reads, rules_context, work_contract
 from agent_toolkit._hooks.pretooluse import read_delivery
-from agent_toolkit._testing import git_repository
+from agent_toolkit._testing import git_repository, pretooluse_support
 from agent_toolkit._testing.pretooluse_support import run_hook_with_notice_details as _run_hook_in_process
 from agent_toolkit._testing.read_delivery_receipts_support import (
     _assert_acquisition,
@@ -120,7 +119,11 @@ def test_installed_cache_provenance_keeps_source_boundary(scenario, monkeypatch,
     (root / ".claude-plugin/plugin.json").write_text('{"name":"example-plugin","version":"2.0"}', encoding="utf-8")
     target.write_text(source.read_text(encoding="utf-8").replace("固有の必要本文", "新版の必要本文"), encoding="utf-8")
 
-    def public_inventory(argv, **_kwargs):
+    original_runner = plugin_roots.process_tree.run_with_timeout
+
+    def public_inventory(argv, **kwargs):
+        if argv[0] == "git":
+            return original_runner(argv, **kwargs)
         # Codex 0.166.0の公開marketplace/listで実観測したroot・name・導入属性を使う。
         data = {"marketplaces": [{"name": "mine", "root": str(repo if same_source else other)}]}
         if argv[1:3] == ["plugin", "list"]:
@@ -209,12 +212,25 @@ def test_existing_work_contract_body_delivery_is_received(scenario, monkeypatch)
     )
 
 
-def test_session_state_bindings_survive_receipt_scenarios():
-    """先行scenarioの終了後も公開hookの状態取得が実保存先へ接続する。"""
-    dispatch = importlib.import_module("agent_toolkit._hooks.pretooluse.dispatch")
-
-    assert dispatch.read_state is session_state.read_state
-    assert dispatch.update_state is session_state.update_state
+def test_session_state_persists_after_preparation_scope(tmp_path):
+    """準備scope終了後の公開hookが、取得証拠を実保存先へ書き込む。"""
+    path = tmp_path / "rules.md"
+    path.write_text("# 判断基準\n本文\n", encoding="utf-8")
+    payload: dict = {
+        "session_id": "persisted-receipt",
+        "cwd": str(tmp_path),
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(path)},
+    }
+    with pretooluse_support.read_delivery_preparation_scope():
+        pretooluse_support.prepare_read_delivery(payload)
+    result = _run_hook_in_process(
+        "posttooluse", {**payload, "hook_event_name": "PostToolUse", "tool_response": path.read_text(encoding="utf-8")}
+    )
+    assert result.returncode == 0 and not result.stderr
+    records = session_state.read_state(payload["session_id"])[rules_context.OPERATION_SKILL_READY_KEY]
+    assert document_reads.acquisition_state(records, read_triggers.ReadTarget(path), "main") == "current"
+    assert not read_delivery.target_ready(records, read_triggers.ReadTarget(path), "agent:other")
 
 
 def test_repeated_compact_excludes_unobserved_old_delivery(scenario, monkeypatch, host_environ):

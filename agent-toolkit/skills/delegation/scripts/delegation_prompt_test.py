@@ -13,26 +13,6 @@ from agent_toolkit._atk import run_script
 from agent_toolkit._common import task_documents
 
 
-def test_help_explains_initial_and_history_continuation_inputs(capsys: pytest.CaptureFixture[str]) -> None:
-    """公開helpだけで初回と履歴継続の有効な要求JSONを作成できる。"""
-    result = run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"]))
-
-    assert result == 0
-    help_text = capsys.readouterr().out
-    for value in (
-        "initial",
-        "subagent_md_path",
-        "extra_params",
-        "continuation",
-        "session_id",
-        "history_file",
-        "instruction",
-        "prompt",
-    ):
-        assert value in help_text
-    assert "起動せず" in help_text
-
-
 def _generate(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], request: dict) -> tuple[int, dict]:
     input_path = tmp_path / "委譲 要求.json"
     input_path.write_text(json.dumps(request, ensure_ascii=False), encoding="utf-8")
@@ -43,6 +23,9 @@ def _generate(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], reques
 
 def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """初回生成は必須値と役割参照を保ち、サーバーと同じ欠落・宣言外を拒否する。"""
+    assert run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"])) == 0
+    help_text = capsys.readouterr().out
+    assert all(field in help_text for field in ("initial", "subagent_md_path", "extra_params", "--input"))
     params = {
         "担当種別": "レーン担当",
         "引き継ぎ記録先": str(tmp_path / "引継ぎ 記録.md"),
@@ -72,6 +55,9 @@ def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, c
 
 def test_continuation_uses_existing_launch_record(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """既存の起動記録JSONを参照し、必須のroundだけで継続本文を生成する。"""
+    assert run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"])) == 0
+    help_text = capsys.readouterr().out
+    assert all(field in help_text for field in ("continuation", "history_file", "instruction", "extra_params", "prompt"))
     document = pathlib.Path(__file__).resolve().parents[3] / "share" / "exec-review.subagent.md"
     history_path = tmp_path / "既存記録.json"
     history_path.write_text(

@@ -126,6 +126,7 @@ def test_read_predicate_diagnostic_is_preserved(tmp_path, command):
     """保持先と実行位置を静的に確定できる範囲で遮断を限定する。"""
     result = _run({"tool_name": "Bash", "tool_input": {"command": command}}, env_overrides=_plan_file_state_env(tmp_path))
     assert result.returncode == 0
+    assert "診断" not in _additional_context(result)
 
 
 @pytest.mark.parametrize("launcher", ["atk", "C:/tools/atk.cmd", r"'C:\tools\atk.cmd'", "atk.py"])

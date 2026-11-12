@@ -49,9 +49,11 @@ upstreamがある場合は実remoteへのpush到達も確かめ、全て成立�
 
 過去の実行が投入したUWIは、次回の同じスキルの実行が`source`（`run-skill`）と`scope`（スキル名）で識別して扱う。
 手順は`agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md`「`atk run-skill`の過去の実行のUWI」にある。
-process-wiは回答済みUWIの取得へ`--source=!run-skill`を付け、`calculate_readiness`もこれらのUWIをreadyへ含めない。
-含めると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。
-識別には既存の`source`と`scope`を使い、新しい状態や保存先は加えない。
+process-wiとprocess-loopは、回答済みの承認用UWIを`source`によらず処理対象へ含め、`run_skill_report: true`の報告用だけを除外する。
+承認された操作を次回の定期起動まで待たせないためであり、処理担当は`scope`のスキルを起動して承認後の操作を実施し、結果を記録する。
+次回定期実行は処理中の項目を取り込まず、終了済みの項目はactiveの取得に入らない。
+報告用を除くことで、実施を要しない報告の回答のためにprocess-loopが起動することを避ける。
+識別には既存のfrontmatterを使い、新しい状態や起動経路は加えない。
 
 実行ごとのログは状態ディレクトリの`run-skill/`へ置き、各実行の開始時に最終更新から30日を超えたものを削除する。
 数日に1回の起動で同じ組の直近約10回分を調べられる長さとした。

@@ -32,7 +32,7 @@ from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.environment import is_agent_environment
-from agent_toolkit._common import session_activity, session_registry
+from agent_toolkit._common import effort_requests, session_activity, session_registry
 from agent_toolkit._common.next_action import report, with_next_action
 
 _WATCH_INTERVAL_SECONDS = 2.0
@@ -69,6 +69,9 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     )
     show = _help.add_command(sub, "show", **_help.HELP["atk agents show"])
     show.add_argument("session_id", help="表示するsession識別子。")
+    effort = _help.add_command(sub, "effort", **_help.HELP["atk agents effort"])
+    effort.add_argument("direction", choices=("up", "down"), help="推論量を1段上げるか下げる。")
+    effort.add_argument("session_id", nargs="?", help="直接の子のID。省略時は自身。")
     logs = _help.add_command(sub, "logs", **_help.HELP["atk agents logs"])
     logs.set_defaults(error_parser=logs)
     logs.add_argument("session_id", nargs="?", help="単一の記録を表示するsession識別子。")
@@ -119,6 +122,14 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         assert body is not None
         return send_notification(body)
     env = os.environ if environment is None else environment
+    if args.agents_subcommand == "effort":
+        try:
+            response = effort_requests.request(args.direction, args.session_id, env)
+        except (OSError, ValueError, TimeoutError) as error:
+            report(str(error), next_action="atk agents showで対象と現在値を確認し、操作できない場合は親へ報告せよ")
+            return 1
+        print(_dump(response, env))
+        return 1 if response.get("error") else 0
     root_resolution = shared_roots.resolve_conversation_root(env)
     root_session_id = None if root_resolution is None else root_resolution.root_session_id
     if args.agents_subcommand == "list":
@@ -240,6 +251,9 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False, human
         "session_id",
         "status",
         "label",
+        "engine",
+        "model",
+        "effort",
         "last_action",
         "result_available",
         "created_at",
@@ -248,7 +262,7 @@ def _public_session(session: Mapping[str, Any], *, detailed: bool = False, human
         "api_error",
     )
     if detailed:
-        fields += ("cwd", "engine", "model", "effort", "model_type", "launch_kind", "prompt", "progress", "agent_message")
+        fields += ("cwd", "model_type", "launch_kind", "prompt", "progress", "agent_message")
     result = {key: session[key] for key in fields if key in session}
     if human:
         result.update(context_usage.fields(session.get("context_tokens"), session.get("context_window")))

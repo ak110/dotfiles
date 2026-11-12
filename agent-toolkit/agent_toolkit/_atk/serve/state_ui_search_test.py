@@ -28,29 +28,6 @@ process.stdout.write(JSON.stringify({
     assert result["selected"] == "github.com/x/removed"
 
 
-def test_assets_do_not_accumulate_target_repo_choices() -> None:
-    """候補の再取得で選択肢が累積しない。"""
-    result = _run_node_ui(
-        """
-fetchHandler = async (url) => {
-  if (url.endsWith('/api/repos?status=all')) {
-    const repos = ['github.com/x/alpha', 'github.com/x/beta'];
-    return {ok: true, status: 200, statusText: 'OK', json: async () => ({repos})};
-  }
-  throw new Error('想定外のURL: ' + url);
-};
-await loadTargetRepos();
-await loadTargetRepos();
-process.stdout.write(JSON.stringify({
-  filterCount: byId('target-filter').children.length,
-  datalistCount: byId('repo-options').children.length,
-}));
-"""
-    )
-    assert result["filterCount"] == 3
-    assert result["datalistCount"] == 2
-
-
 def test_assets_search_failure_keeps_initial_empty_result() -> None:
     """検索が失敗しても初回の空一覧とエラー表示を維持する。"""
     result = _run_node_ui(

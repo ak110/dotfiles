@@ -12,6 +12,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     claude_mcp,
+    configured_model,
     result_contract,
     resume_waits,
     turn_state,
@@ -75,6 +76,16 @@ class ClaudeTurns(ClaudeRuntime):
             # killの所有者がCLIの終了を確認してから公開する。後着の失敗結果を回復の契機へ戻さない。
             session.hold_result(turn_state.InterruptedWait({**result, "status": "interrupted"}))
             return
+        if (
+            result["status"] == "failed"
+            and session.usage_limit is not None
+            and session.usage_limit.status == "rejected"
+            and isinstance(result["error"], dict)
+            and result["error"].get("apiErrorStatus") == 429
+            and (changed := await configured_model.changed_model_error(session)) is not None
+        ):
+            self._finalize_turn(session, {**result, "error": changed})
+            return
         if session.claude_api_resume_pending:
             if result["status"] == "completed":
                 session.api_error = None
@@ -86,7 +97,7 @@ class ClaudeTurns(ClaudeRuntime):
             session.api_error = None
             session.usage_limit = None
         # 対象の利用上限では結果を保留し、MCP層の常駐監視がAPI移行または解除後の継続を進める。
-        if result_contract.hold_invalid_result(session, result):
+        if session.effort_resume_turn != session.turn_seq and result_contract.hold_invalid_result(session, result):
             return
         if resume_waits.begin_usage_limit_wait(session, result):
             return
@@ -146,6 +157,22 @@ class ClaudeTurns(ClaudeRuntime):
             await self._notify_waiters()
             return iterator
         if future.cancelled():
+            return iterator
+        if command_kind == "effort":
+            try:
+                # Python SDK 0.2.179に公開setterが無いため、CLIの既存制御プロトコルを所有キューから送る。
+                # 起動時の--effortを重ねるだけでは、CLIが自発的に始める次turnへ反映できない。
+                await client._query._send_control_request(  # pylint: disable=protected-access
+                    {"subtype": "apply_flag_settings", "settings": {"effortLevel": prompt}}
+                )
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                if not future.done():
+                    future.set_exception(error)
+            else:
+                session.claude_applied_effort = prompt
+                session.touch()
+                if not future.done():
+                    future.set_result(("effort_applied", None))
             return iterator
         if reloader is not None:
             await reloader.reload_if_idle(client, session)
@@ -266,6 +293,9 @@ class ClaudeTurns(ClaudeRuntime):
         diagnostic: _InitializationDiagnostic | None = None,
     ) -> None:
         """失敗を終了時の結果へ確定し、初期化の完了後に生じた失敗へは原因の特定に要する診断を添える。"""
+        if isinstance(error, configured_model.ConfiguredModelChanged):
+            cls._finalize_turn(session, {"status": "failed", "agent_message": session.agent_message, "error": error.error})
+            return
         failure: dict[str, Any] = {"message": str(error) or error.__class__.__name__}
         if diagnostic is not None:
             stderr = diagnostic.stderr.strip()

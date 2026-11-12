@@ -27,6 +27,18 @@
 起動対象: repository-process.subagent.md
 ```
 
+<!-- input-contract:repository-process:start -->
+<!-- 生成元: share/repository-process.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `引き継ぎ記録先`
+- 任意入力名: `repositories`、`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`
+- 任意入力名: `ownership_record`、`ownership_token`、`lane_session_id`、`previous`、`common_dir`
+- 任意入力名: `registered_worktree`、`追加指示`
+
+<!-- input-contract:repository-process:end -->
+
 ### 起動
 
 **4.** 定型のリポジトリ担当はagents_serverの`start`をtaskで呼ぶ。
@@ -50,6 +62,7 @@
 
 返却の各`対象`を割当集合と突き合わせ、重複・欠落なく各対象の`状態`、`残工程`、`writer_sessions`を`all-repos-completion.md`「結果と終了」の`result_file`へ保存して読戻す。
 続行不能はその対象だけ`blocked`として理由と再開先を残し、他対象の結果は保つ。
+不足する判断・認可・資料・観測・操作をユーザーだけが提供できる場合は、本書の返却契約に従って同じprocess-wiの実行内でUWI依存へ接続し、保存と差戻しを検収する。
 
 <!-- return-contract:repository-process:start -->
 <!-- 生成元: share/repository-process.subagent.md「出力」。手動編集しない。 -->
@@ -73,6 +86,11 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
 
 続行不能の場合は`状態:`行の代わりに`../../../share/rules/rules-subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
 統括担当はこの返却を`result_file`の`blocked`として記録する。
+`user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
+
+処置は`run-lanes-completion.md`「採否の確定と終了区分」3に従う。
+統括自身か割当先が、事前承認型UWIを保存して元AWIへ依存を登録し、`inbox`へ差し戻す。
+統括は保存結果を検収する。
 <!-- return-contract:repository-process:end -->
 
 ## 条件別資料

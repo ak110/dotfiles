@@ -99,7 +99,7 @@ class TestBashOptionAfterTerminator:
 
 
 class TestBashAtkOutputLoss:
-    """結果を失う入力を遮断し、通知の案内で直した入力とリテラルを通す。"""
+    """結果を失う入力へ警告し、通知の案内で直した入力とリテラルを通す。"""
 
     @pytest.mark.parametrize(
         "command",
@@ -174,6 +174,8 @@ class TestBashAtkOutputLoss:
             "printf data | atk wi add --body-file body.md",
             "printf data | atk agents wait",
             "atk agents list --count=1",
+            "atk config get execute_model chores_model",
+            "atk wi show first.md second.md --skip-pull --summary-only",
             "atk wi show 20261004-004833-001.md --skip-pull",
             "head -c 3000 output.jsonl",
             "atk agents list && printf done",

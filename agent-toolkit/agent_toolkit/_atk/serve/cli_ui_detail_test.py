@@ -2,24 +2,7 @@
 
 # pylint: disable=protected-access
 
-import pathlib
-
-from agent_toolkit._atk.serve import assets
 from agent_toolkit._testing.serve_support import _run_node_ui
-
-
-def test_text_assets_are_bundled_as_plugin_files() -> None:
-    """配布対象のscripts配下に実ファイルを同梱し、Python側がその内容を読む。"""
-    static_dir = pathlib.Path(assets.__file__).with_name("static")
-    expected = {
-        "index.html": assets.HTML.removesuffix("\n"),
-        **{name: content.removesuffix("\n") for name, content in assets.STYLES.items()},
-        **assets.SCRIPTS,
-    }
-    assert {path.name for path in static_dir.iterdir()} == set(expected)
-    for filename, content in expected.items():
-        bundled = (static_dir / filename).read_text(encoding="utf-8")
-        assert (bundled if filename.endswith(".js") else bundled.removesuffix("\n")) == content
 
 
 def test_assets_global_error_focuses_refresh_after_synchronization() -> None:

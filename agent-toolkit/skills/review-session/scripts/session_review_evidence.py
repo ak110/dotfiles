@@ -44,6 +44,7 @@ from session_evidence_context import (
     _context_at_events,
     _record_schema_collection_events,
 )
+from session_evidence_delivery import catalog_delivery_events, delivery_events, delivery_summary
 from session_evidence_detail import (
     _detail_collection_events,
     _fixed_string_collection_events,
@@ -117,7 +118,15 @@ def _print_events(events: list[dict[str, Any]], *, collected: list[_CollectedRec
 
 def _summary_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """照会が生成した件数・判定・保存先と診断を保持して表示を選ぶ。"""
-    omitted = {"match", "context-match", "tool-call", "warning", "bundle-locator", "bundle-warning-group"}
+    omitted = {
+        "match",
+        "context-match",
+        "tool-call",
+        "warning",
+        "bundle-locator",
+        "bundle-warning-group",
+        "delivery-repost-candidate",
+    }
     selected = [
         {key: value for key, value in event.items() if key != "locators"} if event["kind"] == "fixed-string-summary" else event
         for event in events
@@ -145,6 +154,7 @@ _QUERY_OPTIONS = {
     "elapsed_until": (False, False),
     "hook_notices": (False, False),
     "reported_improvements": (False, False),
+    "delivery_reposts": (True, True),
 }
 
 
@@ -345,8 +355,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--summary-only",
         action="store_true",
         help="`--grep`・`--fixed-string`・`--context-at`・`--tool-calls`・`--warn`・`--bundle`・`--stats`と併用し、"
-        "件数・判定・保存先だけを返す。警告は重複除去後のwarningイベント数を返す。"
+        "`--delivery-reposts`とも併用でき、件数・判定・保存先だけを返す。警告は重複除去後のwarningイベント数を返す。"
         "statsは総量・親・サブエージェント・threadの要約を全フィールド・既存順で返す。診断と由来を保持する。",
+    )
+    parser.add_argument(
+        "--delivery-reposts",
+        action="store_true",
+        help="Claude Codeの非sidechainの送達呼び出しと後続の地の文から再掲候補を集計する。"
+        "送達60文字以上・地の文30文字以上、空白を除いた4-gramの少ない側が20要素以上で共通割合0.5以上を候補とする。"
+        "送達ごとに次の人間入力までの最初の一致を数え、確認済みの再掲とは区別する。"
+        "--sinceより後・--observation-boundary以前の送達を選び、UTCの送達日別と全期間の件数・割合を返す。"
+        "期間指定時の時刻不明の送達は除く。--summary-onlyでは集計だけを返す。"
+        "--catalog-claude-projectとも併用できる。",
     )
     parser.add_argument(
         "--reported-improvements",
@@ -413,8 +433,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--since",
         metavar="TIMESTAMP",
-        help="`--user-events`またはカタログ走査の開始境界をISO 8601の時刻で指定する。"
-        "カタログ走査では必須、`--user-events`では省略すると記録の最初からを対象とする。" + _LOCAL_TIME_NOTE,
+        help="`--user-events`・`--delivery-reposts`またはカタログ走査の開始境界をISO 8601の時刻で指定する。"
+        "カタログ走査では必須、`--user-events`・`--delivery-reposts`では省略すると記録の最初からを対象とする。"
+        + _LOCAL_TIME_NOTE,
     )
     parser.add_argument(
         "--tool-calls",
@@ -475,6 +496,7 @@ def _single_transcript_query_modes(args: argparse.Namespace) -> tuple[bool, ...]
         args.context_at is not None,
         args.tool_calls,
         args.reported_improvements,
+        args.delivery_reposts,
     )
 
 
@@ -561,13 +583,15 @@ def main(argv: list[str] | None = None) -> int:
         or args.catalog_fields is not None
     ):
         selection_next_action = (
-            "親行の選択は`--catalog-claude-project`か`--catalog-codex-history`と併用し、`--tool-calls`を外す。"
+            "親行の選択は`--catalog-claude-project`か`--catalog-codex-history`と併用し、"
+            "`--tool-calls`と`--delivery-reposts`を外す。"
             "`--catalog-fields`は親一覧だけで使い、`--user-events`との組では外す。"
             "表示項目は重複なしで指定して再実行する: " + ",".join(CATALOG_PARENT_FIELDS)
         )
         if (
             catalog_root is None
             or args.tool_calls
+            or args.delivery_reposts
             or (args.user_events or args.grep is not None)
             and args.catalog_fields is not None
         ):
@@ -614,10 +638,10 @@ def main(argv: list[str] | None = None) -> int:
             "--fixed-stringへ空でない固定文字列を指定する",
             next_action="`--fixed-string=<固定文字列>`を1件以上付けて再実行する",
         )
-    if args.since is not None and not args.user_events and catalog_root is None:
+    if args.since is not None and not args.user_events and not args.delivery_reposts and catalog_root is None:
         return _print_error(
-            "--sinceは--user-eventsまたはカタログ走査と併用する",
-            next_action="`--user-events`かカタログ走査の引数を付けるか、`--since`を外して再実行する",
+            "--sinceは--user-events・--delivery-repostsまたはカタログ走査と併用する",
+            next_action="`--user-events`・`--delivery-reposts`かカタログ走査の引数を付けるか、`--since`を外して再実行する",
         )
     if catalog_root is not None and args.since is None:
         return _print_error("カタログ走査には--sinceが必要", next_action=_SINCE_NEXT_ACTION)
@@ -668,7 +692,9 @@ def main(argv: list[str] | None = None) -> int:
             return _print_error(f"観測境界が不正: {args.observation_boundary}", next_action=_BOUNDARY_NEXT_ACTION)
         if catalog_boundary < since:
             return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
-        if args.grep is not None:
+        if args.delivery_reposts:
+            events, exit_code = catalog_delivery_events(Path(catalog_root), catalog_runtime, since, catalog_boundary)
+        elif args.grep is not None:
             try:
                 grep_pattern = re.compile(args.grep)
             except re.error as error:
@@ -831,6 +857,13 @@ def main(argv: list[str] | None = None) -> int:
         return exit_code
     events = list(elapsed_events)
     exit_code = elapsed_code
+    if args.delivery_reposts:
+        if since is not None and boundary is not None and boundary < since:
+            return _print_error("観測境界は開始境界以後を指定する", next_action=_BOUNDARY_NEXT_ACTION)
+        deliveries = delivery_events(collected, since=since, boundary=boundary)
+        events.extend(event for event in deliveries if event["kind"] == "delivery-repost-candidate")
+        events.append(delivery_summary(deliveries, since=since, boundary=boundary))
+        events.extend(_unresolved_events(unresolved))
     if args.warn:
         events.extend(_warning_collection_events(collected, unresolved))
     if args.grep is not None:
@@ -926,6 +959,7 @@ def main(argv: list[str] | None = None) -> int:
             or args.hook_notices
             or args.tool_calls
             or args.reported_improvements
+            or args.delivery_reposts
             or args.user_events
             and (args.delegation_record is not None or args.owner_session)
         )

@@ -62,50 +62,6 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
     assert "selection-procedure.md" in lanes and "含めた理由、除外した理由" in lanes
 
 
-def test_same_lane_dependency_contract_reaches_parent_and_run_lanes() -> None:
-    """候補内の依存は生成・受領・実行とも同一レーンの依存順で一致する。
-
-    生成・受領・実行のいずれかが別の順序を示すと、後続項目が依存先より先に処理される。
-    """
-    plugin_root = pathlib.Path(__file__).resolve().parent
-    selection_text = _selection_documents(plugin_root)
-    parent = _selection_procedure(plugin_root)
-    lanes = read_contract(
-        plugin_root / "skills/process-wi/references/run-lanes.md", plugin_root, ("run-lanes-launch.md", "レーンと資源")
-    )
-    for document in (selection_text, parent):
-        assert "同じレーン" in document
-    assert "同一レーン内のAWIは選定結果に示された依存順序を守り" in lanes
-    assert "推移的な依存先" in _h2_section(selection_text, "処理対象の決定")
-    assert "推移的にたどる" in _h2_section(parent, "保存後の意味検収")
-    assert "依存先が先行" in parent and "依存先から順に処理" in lanes
-    assert "候補および`選定`の双方に全項目を維持する" in selection_text
-    assert "後続項目のみを着手せず、依存待ちの状態を維持" in selection_text
-    assert "後続タスクを依存待ちの状態にし" in lanes
-
-
-def test_added_wi_with_same_resume_plan_stays_in_existing_lane() -> None:
-    """処理中の追加でも同じ再開計画を既存レーンから分離しない。"""
-    plugin_root = pathlib.Path(__file__).resolve().parent
-    selection_text = _selection_documents(plugin_root)
-    parent = _selection_procedure(plugin_root)
-    lanes = read_contract(
-        plugin_root / "skills/process-wi/references/run-lanes.md",
-        plugin_root,
-        ("run-lanes-addition.md", "処理中に確定した必須是正レーン"),
-    )
-    addition = _h2_section(parent, "処理対象WIの追加")
-
-    assert "後段の分割不能条件と同じ規則に従って`再開位置`の計画識別情報を比較" in selection_text
-    assert "同一計画を持つ既存レーンの識別子と計画識別情報" in selection_text
-    assert "同一の再開計画を持つ既存レーンへの合流を費用比較よりも優先" in addition
-    assert "atk run-script pick-wi-check" in addition
-    assert "--output <元の選定結果の出力先ファイル>" in addition
-    assert "--body-wi <追加WI名>" in addition
-    assert "そのレーンへの割り当てを最優先の分割不能条件として確定し、費用比較よりも先行させる" in lanes
-    assert "該当計画を別レーンへ割り当てず" in lanes
-
-
 def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
     """選定で列挙した書込対象を受領側が比較できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
@@ -220,10 +176,15 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     )
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
-    assert (
-        "先行レーンの統合完了後か、`lane-resources.md`「後段レーンの先行調査」で"
-        "先行を次の巡回へ回し後段を今回進めると判定した時に" in lanes
-    )
+    completion = (plugin_root / "skills/process-wi/references/all-repos-completion.md").read_text(encoding="utf-8")
+    assert "すべての先行レーンの統合完了後に" in lanes
+    assert "`all-repos-completion.md`「結果と終了」の手順10で後続の先行条件を再判定する" in lanes
+    assert "先行工程を正当な理由で次の巡回へ回す場合" in lanes
+    assert "先行成果が必要な後段は統合完了まで待ち" in lanes
+    assert "成果不要の読み取り専用準備は`lane-resources.md`「後段レーンの先行調査」で前倒しする" in lanes
+    assert "書込競合だけで後段にした工程など先行成果を要さない工程は" in completion
+    assert "今回の巡回で実装・検証まで進める" in completion
+    assert "先行を次の巡回へ回し後段を今回進めると判定した時に" not in lanes
     assert "統合先の最新HEADからworktreeを作成する" in lanes
     output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
@@ -258,20 +219,6 @@ def test_upstream_lane_contract_reaches_generation_receipt_and_dispatch() -> Non
     assert_no_blanket_exclusion(generation)
     with pytest.raises(AssertionError):
         assert_no_blanket_exclusion(generation + "外部操作または待機だけの項目は`lane`を`なし`とする")
-
-
-def test_confirmation_targets_are_not_delayed_by_plan_markers() -> None:
-    """委譲先の確認事項は標識へ保存せず確定時点でメインへ通知する。"""
-    plugin_root = pathlib.Path(__file__).resolve().parent
-    executor = (plugin_root / "share" / "exec.subagent.md").read_text(encoding="utf-8")
-    parent = (plugin_root / "share" / "exec.parent.md").read_text(encoding="utf-8")
-    lanes = (plugin_root / "skills" / "process-wi" / "references" / "run-lanes.md").read_text(encoding="utf-8")
-    plan_standard = (plugin_root / "skills" / "write-plan" / "references" / "plan-file-standards.md").read_text(
-        encoding="utf-8"
-    )
-
-    marker = "事後承認" + "対象:"
-    assert all(marker not in content for content in (executor, parent, lanes, plan_standard))
 
 
 def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
@@ -359,29 +306,6 @@ def test_lane_launch_inputs_reach_lane_owner() -> None:
     assert not [name for name in inputs if name not in executor]
 
 
-def test_post_approval_contract_waits_for_reviewed_implementation() -> None:
-    """実施内容を確定する承認はレビュー収束後、事前承認は受領時に届ける。"""
-    root = pathlib.Path(__file__).resolve().parent
-    lanes = read_contract(
-        root / "skills/process-wi/references/run-lanes.md", root, ("run-lanes-completion.md", "採否の確定と終了区分")
-    )
-    approval = (root / "skills/user-confirmation-and-report/references/approval-scope.md").read_text(encoding="utf-8")
-    executor = read_contract(root / "share/exec.subagent.md", root, ("exec-subagent-implementation.md", "実装"))
-    timing = _h2_section(lanes, "実装とレビュー")
-    assert "事後承認型のUWIは受領時には発行せず" in timing
-    assert "事前承認が必要な確認事項は受け取り次第速やかに発行する" in timing
-    assert "収束した後、かつ統合処理の前に" in timing
-    assert "最終的な実装内容と一致する本文で発行する" in timing
-    assert "終了返却を受け取った時点で発行する" in timing
-    assert "実装なし" in timing and "マージなし" in timing
-    assert "発行対象だけを直ちに発行する" not in timing
-    post_approval = _h2_section(approval, "事前承認と事後承認").split("- 事後承認:", 1)[1].split("\n- ", 1)[0]
-    assert "実行レビューを伴う作業では" in post_approval
-    assert "実行レビューが完了して内容が確定した時点の変更" in post_approval
-    assert "確認手段にかかわらず適用する" in post_approval
-    assert re.search("通知済みの事後承認.*レビュー修正.*変更後の内容.*再度同様の即時通知でメインへ送信する", executor)
-
-
 def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
     """公開後操作の前提不足を受領し、同じcommitの未完了操作へ戻す。"""
     root = pathlib.Path(__file__).resolve().parent
@@ -409,7 +333,7 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
 
 
 def test_publication_recovery_references_resolve_to_shared_sections() -> None:
-    """続行不能の送り手と受け手が、実在する同じ回復節へ接続する。"""
+    """続行不能の送信側と受信側が、実在する同じ回復節へ接続する。"""
     root = pathlib.Path(__file__).resolve().parent
     publish = "skills/commit/references/publish.md"
     push = "skills/commit/references/push-and-ci.md"

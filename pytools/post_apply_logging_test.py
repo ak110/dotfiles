@@ -6,7 +6,6 @@
 import io
 import json
 import logging
-import logging.handlers
 from pathlib import Path
 
 import pytest
@@ -94,16 +93,23 @@ def test_main_records_steps_and_failure_in_persistent_log() -> None:
     assert "post-apply終了: exit=1" in log_text
 
 
-def test_persistent_log_uses_size_limited_rotation() -> None:
+def test_persistent_log_uses_size_limited_rotation(monkeypatch: pytest.MonkeyPatch) -> None:
     """永続ログの総容量を固定世代数で制限する。"""
-    root_logger = logging.getLogger()
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_MAX_BYTES", 512)
+    monkeypatch.setattr(post_apply, "_UPDATE_LOG_BACKUP_COUNT", 2)
     with post_apply._configure_logging() as persistent_log_ready:  # noqa: SLF001
-        current_handlers = root_logger.handlers.copy()
-        file_handlers = [handler for handler in current_handlers if isinstance(handler, logging.handlers.RotatingFileHandler)]
         assert persistent_log_ready
-        assert len(file_handlers) == 1
-        assert file_handlers[0].maxBytes == post_apply._UPDATE_LOG_MAX_BYTES  # noqa: SLF001
-        assert file_handlers[0].backupCount == post_apply._UPDATE_LOG_BACKUP_COUNT  # noqa: SLF001
+        for number in range(30):
+            logging.getLogger("rotation-test").warning("診断%02d: %s", number, "x" * 120)
+
+    path = post_apply._UPDATE_LOG_PATH  # noqa: SLF001
+    generations = sorted(path.parent.glob(f"{path.name}*"))
+    assert {item.name for item in generations} == {path.name, f"{path.name}.1", f"{path.name}.2"}
+    assert all(0 < item.stat().st_size <= 512 for item in generations)
+    assert "診断29:" in path.read_text(encoding="utf-8")
+    retained = "".join(item.read_text(encoding="utf-8") for item in generations)
+    assert "診断00:" not in retained
+    assert "診断28:" in retained
 
 
 def test_logging_scope_restores_logger_and_closes_all_handlers_after_close_failure(

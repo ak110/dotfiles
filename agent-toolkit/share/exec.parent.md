@@ -11,7 +11,15 @@
 
 ## 入力
 
+<!-- input-contract:exec:start -->
+<!-- 生成元: share/exec.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
 - 必須入力名: `担当種別`、`引き継ぎ記録先`、`書込担当一覧`
+- 任意入力名: `選定結果の出力先ファイル`、`レーン識別子`、`固有指示`、`上流投入結果`、`再開位置`、`レビュー指摘管理表`、`レビュー参考意見`、`CI記録`、`環境構築`、`先行調査記録`
+
+<!-- input-contract:exec:end -->
 
 入力値の確定と起動前の検収は`exec-parent-launch.md`に従う。
 `subagent_md_path`には`exec`を渡す。

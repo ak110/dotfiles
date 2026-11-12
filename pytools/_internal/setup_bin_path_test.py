@@ -48,56 +48,44 @@ def test_entries_without_root_register_only_local_bin() -> None:
     assert setup_bin_path._bin_entries(None, Path("/home/user")) == (r"%USERPROFILE%\.local\bin",)  # pylint: disable=protected-access
 
 
-def test_run_all_entries_appended(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_append = mock.Mock(return_value=True)
-    mock_broadcast = mock.Mock()
-    monkeypatch.setattr(setup_bin_path.winutils, "append_user_path", mock_append)
-    monkeypatch.setattr(setup_bin_path.winutils, "broadcast_environment_change", mock_broadcast)
-    assert setup_bin_path.run().changed is True
-    assert [call.args[0] for call in mock_append.call_args_list] == _PREVIOUS_ENTRIES
-    mock_broadcast.assert_called_once()
+@pytest.mark.parametrize("existing", [0, 2, 3])
+def test_run_appends_local_bin_once(monkeypatch: pytest.MonkeyPatch, existing: int) -> None:
+    """既存項目と表記を保って不足分だけ保存し、再適用では書込も通知もしない。"""
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\test")
+    registry = FakeEnvironmentRegistry(
+        user_path=";".join([r"C:\Windows", *_PREVIOUS_ENTRIES[:existing]]),
+        system_path=r"C:\Windows\System32",
+    )
+    registry.install(monkeypatch)
+    broadcast = mock.Mock()
+    monkeypatch.setattr(setup_bin_path.winutils, "broadcast_environment_change", broadcast)
 
-
-def test_run_all_entries_existing(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_append = mock.Mock(return_value=False)
-    mock_broadcast = mock.Mock()
-    monkeypatch.setattr(setup_bin_path.winutils, "append_user_path", mock_append)
-    monkeypatch.setattr(setup_bin_path.winutils, "broadcast_environment_change", mock_broadcast)
+    assert setup_bin_path.run().changed is (existing != 3)
+    assert registry.read_user("Path") == (";".join([r"C:\Windows", *_PREVIOUS_ENTRIES]), registry.REG_EXPAND_SZ)
+    assert registry.system == {"Path": (r"C:\Windows\System32", registry.REG_EXPAND_SZ)}
+    assert broadcast.call_count == (1 if existing != 3 else 0)
     assert setup_bin_path.run().changed is False
-    mock_broadcast.assert_not_called()
-
-
-def test_run_partial_appended(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_append = mock.Mock(side_effect=[True, False, False])
-    mock_broadcast = mock.Mock()
-    monkeypatch.setattr(setup_bin_path.winutils, "append_user_path", mock_append)
-    monkeypatch.setattr(setup_bin_path.winutils, "broadcast_environment_change", mock_broadcast)
-    assert setup_bin_path.run().changed is True
-    mock_broadcast.assert_called_once()
+    assert registry.user_path().split(";") == [r"C:\Windows", *_PREVIOUS_ENTRIES]
+    assert len(registry.writes) == 3 - existing
+    assert broadcast.call_count == (1 if existing != 3 else 0)
 
 
 def test_run_entry_write_failure_continues_and_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    """1件の書き込みに失敗しても残りを登録し、工程は失敗と数える。"""
-    mock_append = mock.Mock(side_effect=[PermissionError("boom"), True, False])
-    mock_broadcast = mock.Mock()
-    monkeypatch.setattr(setup_bin_path.winutils, "append_user_path", mock_append)
-    monkeypatch.setattr(setup_bin_path.winutils, "broadcast_environment_change", mock_broadcast)
+    """最初の書込失敗後も残りを保存し、失敗と保存変更の通知を返す。"""
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\test")
+    registry = FakeEnvironmentRegistry(user_path=r"C:\Windows")
+    registry.install(monkeypatch)
+    broadcast = mock.Mock()
+    monkeypatch.setattr(setup_bin_path.winutils, "broadcast_environment_change", broadcast)
+
+    def write(name: str, value: str, reg_type: int, **_kwargs: object) -> None:
+        if _PREVIOUS_ENTRIES[0] in value.split(";"):
+            raise PermissionError("boom")
+        registry.write_user(name, value, reg_type)
+
+    monkeypatch.setattr(setup_bin_path.winutils, "write_user_env_var", write)
     outcome = setup_bin_path.run()
     assert outcome.changed is True
-    assert outcome.failure is not None
-    assert "boom" in outcome.failure
-    assert mock_append.call_count == 3
-    mock_broadcast.assert_called_once()
-
-
-def test_run_appends_local_bin_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    """どちらにも無い`.local\\bin`を既存2件の後へ1回だけ追加し、2回目は書き込まない。"""
-    monkeypatch.setenv("USERPROFILE", r"C:\Users\test")
-    registry = FakeEnvironmentRegistry(user_path=r"C:\Windows", system_path=r"C:\Windows\System32")
-    registry.install(monkeypatch)
-
-    assert setup_bin_path.run().changed is True
-    assert setup_bin_path.run().changed is False
-
-    assert registry.user_path().split(";") == [r"C:\Windows", *_PREVIOUS_ENTRIES]
-    assert len(registry.writes) == 3
+    assert outcome.failure and "boom" in outcome.failure
+    assert registry.read_user("Path") == (";".join([r"C:\Windows", *_PREVIOUS_ENTRIES[1:]]), registry.REG_EXPAND_SZ)
+    broadcast.assert_called_once()

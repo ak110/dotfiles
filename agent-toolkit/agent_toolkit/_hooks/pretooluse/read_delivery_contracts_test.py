@@ -299,7 +299,7 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
     assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
     assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
-    rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+    rules_context.reset_main_operation_skill_ready("test")
     restored = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
     assert "起動入力の本文" not in restored
     assert str(original) in restored

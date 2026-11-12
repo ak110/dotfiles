@@ -131,6 +131,7 @@ def test_missing_worktree_entry_fails_without_using_installed_success(repositori
     assert "次の操作:" in result.stderr
 
 
+# test-copy-contract: cmd.exeが解釈する配布batchのCP932/CRLFという公開ファイル形式を保つ。
 def test_windows_entry_preserves_batch_encoding() -> None:
     """実行可能なWindowsバッチの文字コードと行末を保つ。"""
     content = (_ROOT / "bin" / "atk.cmd").read_bytes()

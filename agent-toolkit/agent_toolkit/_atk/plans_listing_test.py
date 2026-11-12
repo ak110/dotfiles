@@ -154,35 +154,13 @@ def test_dispatch_rejects_removed_progress_subcommand(
     """公開parserを迂回した旧progress指定もdispatchで拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
-    _init_local_notes(notes)
-    relative = pathlib.Path("2026/09/09-進捗取得-a1b2.md")
-    _write_saved_progress_plan(
-        notes,
-        relative,
-        "| 2026-09-09 10:00 | 統合順1の実装 | 変更範囲の検証が終了コード0 |\n| 2026-09-09 11:00 | 統合順2の実装 | 警告0件 |\n",
-    )
-    args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
+    args = types.SimpleNamespace(plans_subcommand="progress", plan_file="2026/09/09-計画.md")
 
     with pytest.raises(_wi_web_input.WebInputError, match="未知のplansサブコマンド: progress"):
         _atk_plans.dispatch(args, notes, home)
     assert capsys.readouterr().out == ""
-
-
-def test_dispatch_rejects_removed_progress_subcommand_for_empty_plan(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """進捗行が無い場合も旧progressのdispatchを復活させない。"""
-    home = tmp_path / "home"
-    notes = tmp_path / "private-notes"
-    _init_local_notes(notes)
-    relative = pathlib.Path("2026/09/09-進捗なし-a1b3.md")
-    _write_saved_progress_plan(notes, relative, "")
-    args = types.SimpleNamespace(plans_subcommand="progress", plan_file=relative.as_posix())
-
-    with pytest.raises(_wi_web_input.WebInputError, match="未知のplansサブコマンド: progress"):
-        _atk_plans.dispatch(args, notes, home)
-    assert capsys.readouterr().out == ""
+    assert not home.exists()
+    assert not notes.exists()
 
 
 def test_progress_prefers_saved_plan_and_falls_back_to_working_copy(tmp_path: pathlib.Path) -> None:

@@ -2,6 +2,7 @@
 # pylint: disable=protected-access
 """shell_checks_heredocの契約テスト。"""
 
+import json
 import pathlib
 
 import pytest
@@ -47,6 +48,8 @@ class TestBashHeredocLiteralExclusion:
             _plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_pattern_kill_before_heredoc_is_still_blocked(self, tmp_path: pathlib.Path) -> None:
         """ヒアドキュメントより前にある実際のパターン終了コマンドは遮断する。"""
@@ -130,3 +133,5 @@ class TestBashUnquotedHeredocSubstitution:
             _plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"

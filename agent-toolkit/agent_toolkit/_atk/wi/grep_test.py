@@ -58,27 +58,28 @@ class TestGrepBasic:
         assert result.value.code == 2
         assert "--since" in capsys.readouterr().err
 
-    def test_rejected_extended_option_recovers_to_regex_and_fixed_search(
+    def test_explicit_regex_matches_default_and_excludes_fixed_search(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """拒否後の案内に従って正規表現と固定文字列を検索できる。"""
+        """-Eは省略時と同じPython正規表現を使い、固定文字列との同時指定は拒否する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "regex.md", body="alpha")
         _write_awi_file(notes, "literal.md", body="alpha|beta")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
-        with pytest.raises(SystemExit) as rejected:
+        with pytest.raises(SystemExit) as explicit:
             atk.main(["wi", "grep", "-E", "alpha|beta", "--skip-pull"], home=tmp_path)
-        assert rejected.value.code == 2
-        assert "-Eを外して再実行する" in capsys.readouterr().err
+        assert explicit.value.code == 0
+        explicit_output = capsys.readouterr().out
 
         with pytest.raises(SystemExit) as regex:
             atk.main(["wi", "grep", "alpha|beta", "--skip-pull"], home=tmp_path)
         assert regex.value.code == 0
         output = capsys.readouterr().out
+        assert output == explicit_output
         assert "regex.md:" in output
         assert "literal.md:" in output
 
@@ -88,6 +89,10 @@ class TestGrepBasic:
         output = capsys.readouterr().out
         assert "literal.md:" in output
         assert "regex.md:" not in output
+
+        with pytest.raises(SystemExit) as rejected:
+            atk.main(["wi", "grep", "-E", "-F", "alpha|beta", "--skip-pull"], home=tmp_path)
+        assert rejected.value.code == 2
 
     def test_grep_finds_match_in_single_file(
         self,

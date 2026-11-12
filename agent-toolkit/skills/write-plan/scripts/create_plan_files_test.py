@@ -23,6 +23,24 @@ from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
 
 
+def _fix_creation_clock(monkeypatch: pytest.MonkeyPatch, clock: str) -> None:
+    """命名処理を差し替えず、ローカルをJSTとする時計だけを固定する。"""
+    instant = datetime.datetime.fromisoformat(clock)
+    jst = datetime.timezone(datetime.timedelta(hours=9))
+
+    class FixedDatetime(datetime.datetime):
+        """命名時刻とローカルtimezoneを固定する時計。"""
+
+        @classmethod
+        def now(cls, tz: datetime.tzinfo | None = None) -> typing.Self:
+            return cls.fromtimestamp(instant.timestamp(), tz or jst)
+
+        def astimezone(self, tz: datetime.tzinfo | None = None) -> typing.Self:
+            return super().astimezone(tz or jst)
+
+    monkeypatch.setattr(create_plan_files, "datetime", types.SimpleNamespace(datetime=FixedDatetime, UTC=datetime.UTC))
+
+
 @pytest.mark.parametrize(
     ("clock", "option", "value", "stem", "saved_month", "recorded_date"),
     [
@@ -43,20 +61,7 @@ def test_created_date_survives_edit_save_checkout_and_resave(
     recorded_date: str,
 ) -> None:
     """命名と同時に確定した日付を、月年跨ぎの編集と取得後にも保持する。"""
-    instant = datetime.datetime.fromisoformat(clock)
-    jst = datetime.timezone(datetime.timedelta(hours=9))
-
-    class FixedDatetime(datetime.datetime):
-        """ローカルをJSTとして命名時刻を固定する時計。"""
-
-        @classmethod
-        def now(cls, tz: datetime.tzinfo | None = None) -> typing.Self:
-            return cls.fromtimestamp(instant.timestamp(), tz or jst)
-
-        def astimezone(self, tz: datetime.tzinfo | None = None) -> typing.Self:
-            return super().astimezone(tz or jst)
-
-    monkeypatch.setattr(create_plan_files, "datetime", types.SimpleNamespace(datetime=FixedDatetime, UTC=datetime.UTC))
+    _fix_creation_clock(monkeypatch, clock)
     source, bug_source = _source(repo, tmp_path, bug=True)
     assert bug_source is not None
     home = tmp_path / "home"
@@ -369,7 +374,7 @@ def test_cli_accepts_bare_name(
 ) -> None:
     """CLIの--nameへ名称だけを渡して日時付きファイルを作成できる。"""
     source, _bug_source = _source(repo, tmp_path)
-    monkeypatch.setattr(create_plan_files, "named_plan_name", lambda name, **_kwargs: f"18-0334_{name}")
+    _fix_creation_clock(monkeypatch, "2026-09-18T23:34:00+09:00")
 
     result = create_plan_files.main(
         [
@@ -386,7 +391,10 @@ def test_cli_accepts_bare_name(
 
     captured = capsys.readouterr()
     assert result == 0, captured.err
-    assert pathlib.Path(captured.out.strip()).name == "18-0334_計画.md"
+    path = pathlib.Path(captured.out.strip())
+    assert path.name == "18-1434_計画.md"
+    assert path.read_bytes() == source.read_bytes()
+    assert json.loads(path.with_suffix(".created.json").read_text(encoding="utf-8")) == {"date": "2026-09-18"}
 
 
 def test_cli_accepts_source_alias_and_creates_bug_file(
@@ -438,11 +446,7 @@ def test_cli_creates_process_lane_plan_with_generated_name(
 ) -> None:
     """CLIのlane入力では呼び出し側から自由名を受け取らない。"""
     source, _bug_source = _source(repo, tmp_path)
-    monkeypatch.setattr(
-        create_plan_files,
-        "process_lane_plan_name",
-        lambda lane, **_kwargs: "14-1405_process-wi_レーン02" if lane == "lane-02" else "unexpected",
-    )
+    _fix_creation_clock(monkeypatch, "2026-09-14T23:05:00+09:00")
 
     result = create_plan_files.main(
         [
@@ -459,7 +463,10 @@ def test_cli_creates_process_lane_plan_with_generated_name(
 
     captured = capsys.readouterr()
     assert result == 0, captured.err
-    assert pathlib.Path(captured.out.strip()).name == "14-1405_process-wi_レーン02.md"
+    path = pathlib.Path(captured.out.strip())
+    assert path.name == "14-2305_process-wi_レーン02.md"
+    assert path.read_bytes() == source.read_bytes()
+    assert json.loads(path.with_suffix(".created.json").read_text(encoding="utf-8")) == {"date": "2026-09-14"}
 
 
 def test_adds_hex_suffix_only_after_collision(

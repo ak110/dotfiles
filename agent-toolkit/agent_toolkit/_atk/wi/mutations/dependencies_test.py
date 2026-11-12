@@ -50,31 +50,26 @@ def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
     mutation_transitions.transition_entries(notes, action="reject", filenames=["reject.md"], state="hold", now=_FIXED_DT)
     mutation_transitions.transition_entries(notes, action="remove", filenames=["remove.md"], state="hold", now=_FIXED_DT)
 
-    calls: list[tuple[str, pathlib.Path]] = []
-
-    def record_edit(_notes: pathlib.Path, *, directory: pathlib.Path, **_kwargs: object) -> bool:
-        calls.append(("edit", directory))
-        return True
-
-    def record_append(_notes: pathlib.Path, *, directory: pathlib.Path, **_kwargs: object) -> bool:
-        calls.append(("append", directory))
-        return True
-
-    monkeypatch.setattr(mutation_content, "_edit_entry", record_edit)
-    monkeypatch.setattr(mutation_content, "_append_entry", record_append)
-    assert mutation_content.edit_entry_content(notes, state="hold", filename="edit.md", content="編集後")
-    assert mutation_content.append_entry_content(
-        notes,
-        state="hold",
-        filename="append.md",
-        content="\n追記\n".encode(),
-    )
+    edit_path = notes / "2026/10/edit.md"
+    append_path = notes / "2026/10/append.md"
+    untouched = notes / "2026/10/adopt.md"
+    preserved = untouched.read_bytes()
+    edit_before = edit_path.read_text(encoding="utf-8")
+    append_before = append_path.read_bytes()
+    edited = edit_before.replace("本文", "編集後")
+    appended = append_before + "\n追記\n".encode()
+    assert mutation_content.edit_entry_content(notes, state="hold", filename="edit.md", content=edited)
+    assert mutation_content.append_entry_content(notes, state="hold", filename="append.md", content=appended)
 
     assert "state: processing\n" in (notes / "2026/10/process.md").read_text(encoding="utf-8")
-    assert "state: adopted\n" in (notes / "2026/10/adopt.md").read_text(encoding="utf-8")
+    assert "state: adopted\n" in untouched.read_text(encoding="utf-8")
     assert "state: rejected\n" in (notes / "2026/10/reject.md").read_text(encoding="utf-8")
     assert not (notes / "2026/10/remove.md").exists()
-    assert calls == [("edit", notes / "hold"), ("append", notes / "hold")]
+    assert edit_path.read_text(encoding="utf-8") == edited
+    assert append_path.read_bytes() == appended
+    assert "state: hold\n" in edited
+    assert b"state: hold\n" in appended
+    assert untouched.read_bytes() == preserved
 
 
 @pytest.mark.parametrize(

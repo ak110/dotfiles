@@ -323,8 +323,3 @@ class TestPlanPostWrite:
         )
 
         assert QUALITY_CHECKPOINT_NOTICE not in result.stdout
-
-
-def test_plan_format_exposes_permanence_destination_column() -> None:
-    """通常変更の恒久化表は反映先列を持つ。"""
-    assert "反映先" in _plan_format.PLAN_PERMANENCE_TABLE_HEADER

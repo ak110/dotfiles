@@ -25,7 +25,11 @@
   対象は`agents_server`、メインのセッション、`atk wi process-loop`の可用性判定、`atk run-skill`の本作業と`atk commit`であり、`overage`、他の429、529、認証・権限の失敗は従来の切替のままとする。
   Claude統括CLIは同じengine内の利用可能な代替接続を先に試し、代替がない場合にこの待機を適用する（2026年11月4日、resume時に上限中の方式をスキップするユーザー指示）。
   待機は回数と総時間で打ち切らない。
-  実装契約は[design-agents-runtime-usage-wait.md](design-agents-runtime-usage-wait.md)にあり、委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-stalls.md`「停滞の検知と巻き取り」が定める
+  実装契約は[design-agents-runtime-usage-wait.md](design-agents-runtime-usage-wait.md)にある。
+  委譲元の扱いは`agent-toolkit/skills/delegation/references/waiting-stalls.md`「停滞の検知と巻き取り」が定める。
+  agents_serverの委譲先は、明示的なモデル切替と工程別モデル設定変更後の利用上限拒否では、前任の記録を新しい会話へ渡して切り替える（2026年11月11日、ユーザー指示）。
+  設定不変時の待機・接続切替と、統括CLIのモデルは保つ。
+  実行時の操作は`fallback-launch.md`「代替起動」にある
 
 - Claude・Codexの接続は、サブスクリプション（`subscription`）、有限のAPIクレジット（`credits`）、従量課金API（`payg`）の3種別とする。
   認証の所在は種別ごとの設定キー（Claudeは`claude_credits_env_file`・`claude_payg_env_file`、Codexは`codex_credits_provider`・`codex_payg_provider`）に置く。

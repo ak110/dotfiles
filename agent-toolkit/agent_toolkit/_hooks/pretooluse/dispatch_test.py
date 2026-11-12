@@ -11,7 +11,6 @@ import pytest
 from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
-from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing import pretooluse_support
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
@@ -19,28 +18,6 @@ from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _write_session_state
 from agent_toolkit._testing.pretooluse_support import run_after_read_delivery as _run
-
-
-def test_preparation_reuses_declarations_only_within_one_invocation(monkeypatch) -> None:
-    calls = []
-
-    def declarations(cwd: str, *, host: str = "claude", session_id: str = "") -> list:
-        calls.append((cwd, host, session_id))
-        return []
-
-    def deliver(_payload, _tool, _inputs, session_id):
-        pretooluse_support.read_delivery.declarations("/project", session_id=session_id)
-        pretooluse_support.read_delivery.declarations("/project", session_id=session_id)
-        return Decision()
-
-    monkeypatch.setattr(pretooluse_support.read_delivery, "declarations", declarations)
-    monkeypatch.setattr(pretooluse_support.read_delivery, "deliver", deliver)
-    monkeypatch.setattr(pretooluse_support, "read_state", lambda _session: {})
-    payload = {"session_id": "cache-test", "tool_name": "Read", "tool_input": {}}
-    pretooluse_support.prepare_read_delivery(payload)
-    pretooluse_support.prepare_read_delivery(payload)
-    assert calls == [("/project", "claude", "cache-test")] * 2
-    assert pretooluse_support.read_delivery.declarations is declarations
 
 
 def test_preparation_scope_refreshes_changed_read_table(tmp_path) -> None:

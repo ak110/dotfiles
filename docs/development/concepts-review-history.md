@@ -10,7 +10,8 @@
 
 - メインはfast担当のエスカレーション時に実効設定を比較し、新規fix担当を起動する場合だけfast担当の終了を確認してからdirtyな同一worktreeを渡す。
   書込所有権は同時に1主体だけとする
-- fast担当からfix担当への移行は実効`engine`・`model`・`effort`がすべて一致する場合だけ同じthreadを継続する。
+- fast担当からfix担当への移行は実効`engine`・`model`・`effort`がすべて一致する場合だけ同じthreadを継続するという、廃止前の判断経緯である。
+  現行ではeffortだけが異なる場合は相対操作で同じthreadを継続する。
   継続接続は同じ担当へ同じタスクの後続作業を返す場合と、fast担当からfix担当へ移る場合に使い、
   実際の起動routeと保持識別子に対応する接続手段を使う。
   `agents_server`で起動したthreadは実行ホストとengineによらず`send_message(session_id, ...)`、Claude CodeのAgentツールで起動したthreadだけは`SendMessage`を使う。

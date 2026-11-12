@@ -44,7 +44,7 @@ def informational(text: str) -> str:
 def user_copy(response: dict, generated: Sequence[_common_message_format.GeneratedMessage]) -> str:
     """応答がエージェントへ渡す通知のうち、ユーザーの画面へ写す本文を返す。写す通知が無ければ空文字列を返す。
 
-    エージェントが何を指摘されたかをユーザーが読めるよう、包装を外して生成元と種別の見出しに本文の全文を続ける。
+    エージェントが何を指摘されたかと生成元・種別をユーザーが読めるよう、同じ包装を保って全文を写す。
     `generated`は同じhookの呼出しで生成した通知の記録（`message_format.record_generated`）で、
     応答へ現れた通知を記録から選ぶ。応答の字面から包装を切り出すと、本文が引用した開始・終了タグを
     配送境界と取り違え、本文の欠落や後続の通知の吸収、引用の生成元の取り違えが起きるためである。
@@ -59,7 +59,7 @@ def user_copy(response: dict, generated: Sequence[_common_message_format.Generat
         if item.text not in _informational and not any(other is not item and item.text in other.text for other in present)
     ]
     outer.sort(key=lambda item: text.find(item.text))
-    copies = [f"agent-toolkitのhookがエージェントへ通知した内容（{item.source}・{item.kind}）:\n{item.body}" for item in outer]
+    copies = [item.text for item in outer]
     return "\n\n".join(dict.fromkeys(copies))
 
 

@@ -39,6 +39,9 @@ class _RecordRecovery(NamedTuple):
 
     `line`は成立しない行、`superseded_by`は同じ`ordinal`と`type`を持ち、成立しない行の`payload`以降を
     接頭辞として含む行である。どちらも1始まりの行番号で、原本は変更しない。
+    `method`が`zero-filled-skipped`の対応は、NULで始まる断片を解析対象から除いたものである。
+    この場合の`superseded_by`・`ordinal`・`entry_type`は直後の完全な行の値で、除いた行の内容は確かめられない。
+    除外の根拠は、直前と直後の完全な行の`ordinal`が連続し、記録に欠落が無いことである。
     """
 
     line: int
@@ -46,6 +49,7 @@ class _RecordRecovery(NamedTuple):
     ordinal: int
     entry_type: str
     length: int
+    method: str = "superseded"
 
 
 class _RecordLoadFailure(NamedTuple):
@@ -86,6 +90,8 @@ class _UnresolvedRecord(NamedTuple):
     kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
     reason: str | None = None
     failure_line: int | None = None
+    source_record: str | None = None
+    source_line: int | None = None
 
 
 def _text_blocks(content: Any) -> list[str]:
@@ -186,6 +192,42 @@ def _superseding_line(broken: bytes, following: list[tuple[int, bytes]]) -> _Rec
     return None
 
 
+def _skipped_zero_filled_lines(
+    broken: tuple[int, bytes], lines: Iterator[tuple[int, bytes]], previous_ordinal: int | None
+) -> tuple[list[_RecordRecovery], tuple[int, bytes]] | None:
+    """NULで始まる成立しない行の連続が、`ordinal`の欠けない記録の間にある場合だけ解析対象から除く。
+
+    OSの異常終了後のCodexのrolloutで、NULの並びに続いて断片だけが残る行を観測した。
+    直前の完全な行と直後の完全な行の`ordinal`が連続していれば記録の欠落は無いため、
+    間にある行を解析対象から除き、直後の完全な行の番号を`superseded_by`に記録する。
+    それ以外は記録の欠落を否定できないため、読込失敗として扱う。
+    """
+    if previous_ordinal is None or not broken[1].startswith(b"\0"):
+        return None
+    skipped = [broken]
+    for number, value in lines:
+        value = value.removesuffix(b"\n").removesuffix(b"\r")
+        if not value.strip():
+            continue
+        if value.startswith(b"\0"):
+            skipped.append((number, value))
+            continue
+        head = _PARTIAL_HEAD.match(value)
+        if head is None or int(head.group(1)) != previous_ordinal + 1:
+            return None
+        try:
+            json.loads(value.decode("utf-8"))
+        except ValueError:
+            return None
+        entry_type = head.group(2).decode("utf-8", "replace")
+        recoveries = [
+            _RecordRecovery(line, number, previous_ordinal + 1, entry_type, len(raw), "zero-filled-skipped")
+            for line, raw in skipped
+        ]
+        return recoveries, (number, value)
+    return None
+
+
 class _RecordReadError(ValueError):
     """逐行読込の失敗を、通常読込とメタ走査へ同じ形で渡す。"""
 
@@ -195,7 +237,7 @@ class _RecordReadError(ValueError):
 
 
 def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) -> Iterator[_Record]:
-    """JSONLをLF単位で読み、部分書込みの直後の完全行だけで回復する。
+    """JSONLをLF単位で読み、部分書込みの直後の完全行と、欠落の無いNUL始まりの行の除外だけで回復する。
 
     バイナリ反復を使い、JSON文字列内のU+2028を行区切りとしない。
     途中の失敗では呼出側がそれまでの結果を破棄し、ファイル全体を不成立にする。
@@ -208,6 +250,7 @@ def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) 
     try:
         with path.open("rb") as stream:
             lines = enumerate(stream, start=1)
+            previous_ordinal: int | None = None
             for number, raw in lines:
                 raw = raw.removesuffix(b"\n").removesuffix(b"\r")
                 if not raw.strip():
@@ -216,18 +259,29 @@ def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) 
                     line = raw.decode("utf-8")
                     parsed = json.loads(line)
                 except ValueError as error:
-                    following = next(
-                        ((n, value.removesuffix(b"\n").removesuffix(b"\r")) for n, value in lines if value.strip()), None
-                    )
-                    recovery = _superseding_line(raw, [following] if following is not None else [])
-                    if recovery is None:
+                    zero_filled = _skipped_zero_filled_lines((number, raw), lines, previous_ordinal)
+                    if zero_filled is not None:
+                        skipped, (number, raw) = zero_filled
+                        recoveries.extend(skipped)
+                    elif raw.startswith(b"\0"):
+                        # 除外の判定で後続の行を消費したため、部分書込みの回復へ進まない。
                         raise _RecordReadError(_RecordLoadFailure(f"{number}行目を読めない: {error}", number)) from error
-                    recoveries.append(recovery._replace(line=number))
-                    assert following is not None
-                    number, raw = following
-                    del following
+                    else:
+                        following = next(
+                            ((n, value.removesuffix(b"\n").removesuffix(b"\r")) for n, value in lines if value.strip()),
+                            None,
+                        )
+                        recovery = _superseding_line(raw, [following] if following is not None else [])
+                        if recovery is None:
+                            raise _RecordReadError(_RecordLoadFailure(f"{number}行目を読めない: {error}", number)) from error
+                        recoveries.append(recovery._replace(line=number))
+                        assert following is not None
+                        number, raw = following
+                        del following
                     line = raw.decode("utf-8")
                     parsed = json.loads(line)
+                ordinal = parsed.get("ordinal") if isinstance(parsed, dict) else None
+                previous_ordinal = ordinal if isinstance(ordinal, int) else None
                 if isinstance(parsed, dict):
                     yield _Record(number, line, _analysis_entry(parsed))
     except OSError as error:
@@ -263,6 +317,7 @@ class _RecordMetadata(NamedTuple):
     record_count: int = 0
     recoveries: tuple[_RecordRecovery, ...] = ()
     failure: _RecordLoadFailure | None = None
+    child_references: tuple[tuple[str, int], ...] = ()
 
 
 def _metadata_records(path: Path, recoveries: list[_RecordRecovery]) -> Iterator[_Record]:
@@ -295,7 +350,7 @@ def _scan_record_metadata(path: Path) -> _RecordMetadata:
     start = end = None
     start_value = end_value = None
     calls: set[str] = set()
-    references: list[tuple[set[str], tuple[str, ...], tuple[str, ...]]] = []
+    references: list[tuple[set[str], tuple[str, ...], tuple[str, ...], int]] = []
     is_subagent = path.parent.name == "subagents"
     count = 0
     try:
@@ -334,13 +389,16 @@ def _scan_record_metadata(path: Path) -> _RecordMetadata:
             direct = tuple(_thread_ids_from_record(record, set()))
             conditional = tuple(_thread_ids_from_record(record, result_ids))
             if direct or conditional:
-                references.append((result_ids, direct, conditional))
+                references.append((result_ids, direct, conditional, record.line))
     except _RecordReadError as error:
         return _RecordMetadata(path, failure=error.failure)
     # 呼出より前の結果も通常読込と同じく解決する。保留するのは候補IDだけである。
-    children = tuple(
-        dict.fromkeys(child for ids, direct, conditional in references for child in (conditional if ids & calls else direct))
+    child_references = tuple(
+        dict.fromkeys(
+            (child, line) for ids, direct, conditional, line in references for child in (conditional if ids & calls else direct)
+        )
     )
+    children = tuple(dict.fromkeys(child for child, _line in child_references))
     identity_records = [_Record(0, "", {"type": "session_meta", "payload": {"id": thread_id}})] if thread_id else []
     return _RecordMetadata(
         path,
@@ -355,6 +413,7 @@ def _scan_record_metadata(path: Path) -> _RecordMetadata:
         is_subagent,
         count,
         tuple(recoveries),
+        child_references=child_references,
     )
 
 
@@ -739,7 +798,15 @@ def _collect_records(
                 seen_sessions.add(session_id)
                 resolved_session = _session_path(session_id, codex_home, session_resolver)
                 if resolved_session is None:
-                    unresolved.append(_UnresolvedRecord(session_id, record.line))
+                    unresolved.append(
+                        _UnresolvedRecord(
+                            session_id,
+                            record.line,
+                            reason="record-location-unresolved",
+                            source_record=source.record_id,
+                            source_line=record.line,
+                        )
+                    )
                     continue
                 path, resolved_engine = resolved_session
                 record_id = f"{resolved_engine}:{session_id}"
@@ -757,6 +824,8 @@ def _collect_records(
                             record.line,
                             reason=loaded.failure.reason if loaded.failure else None,
                             failure_line=loaded.failure.line if loaded.failure else None,
+                            source_record=source.record_id,
+                            source_line=record.line,
                         )
                     )
                     continue

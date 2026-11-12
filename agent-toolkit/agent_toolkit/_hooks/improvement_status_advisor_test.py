@@ -141,10 +141,24 @@ def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     text = "気付いた改善点: A（AWI化ステータス: 不要 非欠陥）"
     assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
-    rules_context.reset_main_operation_skill_ready("improvement-status", retain_for_compact=True)
+    rules_context.reset_main_operation_skill_ready("improvement-status")
     decision, body = improvement_status_advisor.evaluate(_payload(text))
     assert decision == "notify"
     assert "root-cause-prevention.md" in body
+
+
+# test-copy-contract: 不正な報告区分の入力には書式修正だけを案内し、追加資料の取得へ誤誘導しない契約。
+@pytest.mark.parametrize("status", ["不要。調査で正常と確認", "予定 入力が届いたら再開"])
+def test_format_correction_uses_delivered_template_without_extra_reads(status: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """区分名の取り違えは常時配送された書式で直せ、追加資料の全文取得へ誘導しない。"""
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    session_state.update_state("improvement-status", lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {}})
+    result = _run_hook_in_process("improvement_status_advisor", _payload(f"気付いた改善点: A（AWI化ステータス: {status}）"))
+    assert result.returncode == 0
+    body = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "テンプレート直下" in body
+    assert "cat -- " not in body
+    assert "Get-Content" not in body
 
 
 @pytest.mark.parametrize("windows", [False, True])

@@ -164,8 +164,8 @@ def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: 
             "採用しない修正方針:",
         ),
         ("--response-file", "前置き 違反を確認した規定: 規定\n" + _RESPONSE_WITHOUT_SEARCH, "同じ規定の検索:"),
-        ("--no-response-reason-file", "既存契約を維持する", "根拠の所在:"),
-        ("--no-response-reason-file", "根拠の所在:   \n補足", "根拠の所在:"),
+        ("--no-response-reason-file", "既存契約を維持する", "根拠の所在:、判断主体:"),
+        ("--no-response-reason-file", "根拠の所在:   \n補足", "根拠の所在:、判断主体:"),
     ],
 )
 def test_respond_rejects_body_without_required_labels_and_keeps_table(

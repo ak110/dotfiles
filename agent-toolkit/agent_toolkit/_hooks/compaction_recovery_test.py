@@ -81,6 +81,8 @@ def test_compact_extracts_original_user_events(
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "--conversation-only" in output
+    assert "次の判断より前に" in output and "工程を定めるスキルと役割文書を全文読み直し" in output
+    assert "全体作業契約と引き継ぎ記録" in output
     saved = tmp_path / "compaction-user-events.jsonl"
     assert saved.exists() is not delegated
     if not delegated:
@@ -306,6 +308,7 @@ def test_compact_recovery_command_is_delivered_once(tmp_path, monkeypatch, capsy
     assert "`--conversation-window --conversation-recent 30`を外して全期間の流れを取得せよ" in output
 
 
+# test-copy-contract: 原本パス不明のcompact入力から会話IDを照会CLIへ渡し、別会話の原文を取得しない回復契約。
 def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkeypatch, capsys):
     """パスを取得できない場合も、同じ圧縮後通知で実IDを渡す照会を案内する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)

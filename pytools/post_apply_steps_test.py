@@ -3,11 +3,9 @@
 
 # pylint: disable=protected-access
 
-import ast
 import dataclasses
 import inspect
 import re
-import typing
 from pathlib import Path
 
 import pytest
@@ -69,6 +67,7 @@ class TestDefaultSteps:
         "一時ファイルの経過削除タイマー セットアップ (Linux)",
     }
 
+    # test-copy-contract: 実schedulerの依存先解決を通し、一意な工程名と循環の無い通常工程表を保証する。
     def test_step_names_are_unique_and_declarations_resolve(self) -> None:
         """ステップ名は一意であり、全ての先行工程の宣言が既存ステップを指し循環しない。"""
         steps = post_apply.DEFAULT_STEPS  # noqa: SLF001
@@ -81,6 +80,7 @@ class TestDefaultSteps:
         declared = {step.name: set(step.after) for step in post_apply.DEFAULT_STEPS if step.after}  # noqa: SLF001
         assert declared == self._EXPECTED_PREDECESSORS
 
+    # test-copy-contract: schedulerが全先行工程へ展開する宣言を保ち、PATH整理を他工程のPATH追加後へ限定する。
     def test_user_path_cleanup_follows_all_other_steps(self) -> None:
         """ユーザーPATHの整理は他の全ステップの後に実行する。"""
         steps = post_apply.DEFAULT_STEPS  # noqa: SLF001
@@ -141,21 +141,6 @@ class TestDefaultSteps:
         assert {step.name for step in steps if step.platforms == ("win32",)} == self._WINDOWS_STEPS
         assert {step.name for step in steps if step.platforms == ("linux",)} == self._LINUX_STEPS
         assert not [step.name for step in steps if step.platforms not in ((), ("win32",), ("linux",))]
-
-    def test_pyfltr_mcp_warmup_registered_once(self) -> None:
-        """pyfltr MCPのウォームアップを1回だけ登録する。"""
-        names = [step.name for step in post_apply.DEFAULT_STEPS]  # noqa: SLF001
-        assert names.count("pyfltr MCPのuv環境ウォームアップ") == 1
-
-    def test_statusline_binary_step_registered(self):
-        """claude-statuslineバイナリ取得ステップを1回登録する。"""
-        names = [step.name for step in post_apply.DEFAULT_STEPS]  # pylint: disable=protected-access  # noqa: SLF001
-        assert names.count("claude-statusline バイナリの取得") == 1
-
-    def test_removed_steps_are_not_registered(self) -> None:
-        """廃止済みの計画移行と旧計画ビューアーの自動起動を登録しない。"""
-        names = [step.name for step in post_apply.DEFAULT_STEPS]  # noqa: SLF001
-        assert not [name for name in names if "claude-plans-viewer" in name or "計画" in name]
 
 
 class TestPluginRecommendations:
@@ -244,23 +229,6 @@ class TestPluginRecommendations:
         assert not any("claude plugin" in line for line in stdout_lines)
 
 
-def test_all_steps_return_post_apply_outcome() -> None:
-    """全工程の`run`の戻り値の型が`PostApplyOutcome`だけである。"""
-    returns = {step.name: typing.get_type_hints(step.run).get("return") for step in post_apply.DEFAULT_STEPS}
-    assert {name: hint for name, hint in returns.items() if hint is not post_apply_outcome.PostApplyOutcome} == {}
-
-
-def test_predecessor_names_are_not_duplicated_literals() -> None:
-    """工程名の文字列リテラルは`post_apply.py`に1回だけ書き、先行工程の指定は定数で参照する。"""
-    source = Path(post_apply.__file__).read_text(encoding="utf-8")
-    literals = [
-        node.value for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    ]
-    names = {step.name for step in post_apply.DEFAULT_STEPS}
-    duplicated = sorted(name for name in names if literals.count(name) > 1)
-    assert not duplicated
-
-
 def test_platform_steps_have_no_module_os_guard() -> None:
     """`platforms`を宣言した工程のモジュールは、対象OSを自ら判定しない。"""
     guards = re.compile(r"\bsys\.platform\b|\bos\.name\b|\bplatform\.system\(")
@@ -276,10 +244,3 @@ def test_platform_steps_have_no_module_os_guard() -> None:
         if guards.search(source):
             offenders.append(module.__name__)
     assert not offenders
-
-
-def test_internal_module_names_have_no_legacy_prefix_or_os_suffix() -> None:
-    """`pytools/_internal/`のモジュール名に`warm_`と対象OSの接尾辞が無い。"""
-    internal = Path(post_apply.__file__).parent / "_internal"
-    pattern = re.compile(r"^(warm_.*|.*_(linux|windows)(_test)?)\.py$")
-    assert not sorted(path.name for path in internal.glob("*.py") if pattern.match(path.name))

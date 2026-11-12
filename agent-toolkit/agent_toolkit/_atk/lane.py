@@ -113,6 +113,14 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         ),
     )
     integrate_parser.add_argument(
+        "--exclude-path",
+        action="append",
+        nargs=2,
+        default=None,
+        metavar=("OID", "PATH"),
+        help="rebaseの競合解消で変更パスの一部を意図して外した旧commitと、外したリポジトリ相対パス。複数指定可能。",
+    )
+    integrate_parser.add_argument(
         "--amend-finalization", action="store_true", help="全計画・WIの集合を変えずに、未完了の最終化操作のargvを補完する。"
     )
     integrate_parser.add_argument(

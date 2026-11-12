@@ -87,6 +87,7 @@ def test_superseded_partial_line_is_recovered_with_position(
             "ordinal": 1,
             "entry_type": "response_item",
             "length": len(partial),
+            "method": "superseded",
         }
     ]
     assert any("続き" in str(event.get("text", "")) for event in events)

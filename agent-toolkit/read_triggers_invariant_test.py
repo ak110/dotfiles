@@ -127,9 +127,11 @@ def test_process_wi_body_defines_immediate_fix_for_all_modes():
     source = _PLUGIN_ROOT / "skills" / "process-wi" / "SKILL.md"
     body = read_triggers.ReadTarget(source, "即時対応").body()
     for required in (
-        "最小限の直接修正",
-        "次のセッション用AWI",
-        "直さないと、残る工程か次のセッションで停止・遮断、誤った判断や成果物、手戻りが生じるか",
+        "現時点で起きている不良",
+        "今回の正式対応",
+        "先送り",
+        "共通規範",
+        "潜在不良・効率改善",
         "references/immediate-fix.md",
     ):
         assert required in body

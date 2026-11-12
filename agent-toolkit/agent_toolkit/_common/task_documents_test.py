@@ -14,6 +14,19 @@ def _document(tmp_path: pathlib.Path, block: str) -> pathlib.Path:
     return path
 
 
+def test_invalid_launch_target_reports_contract_and_repair(tmp_path: pathlib.Path) -> None:
+    """直接読む不変条件側でも、不正な対象名の修復先を得られる。"""
+    share = tmp_path / "share"
+    share.mkdir()
+    contract = share / "task.parent.md"
+    contract.write_text("# 起動\n\n```text\n起動対象: ../other.subagent.md\n```\n", encoding="utf-8")
+    with pytest.raises(ValueError) as captured:
+        task_documents.launch_contract_documents(tmp_path)
+    message = str(captured.value)
+    assert str(contract) in message and "../other.subagent.md" in message
+    assert "次の操作:" in message and "修正せよ" in message
+
+
 @pytest.mark.parametrize(("value", "expected"), [("あり", True), ("なし", False)])
 def test_worktree_write_declaration_is_read(tmp_path: pathlib.Path, value: str, expected: bool) -> None:
     """宣言値を真偽として返し、`mode:`など他の行の解析と両立する。"""

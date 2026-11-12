@@ -13,9 +13,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import background_task_outputs as subject
-from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import posttooluse
-from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.pretooluse import dispatch
 
 _WARNING = "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。"
@@ -257,18 +255,16 @@ def test_command_reads_path_only_for_read_command_operand() -> None:
     assert not subject.command_reads_path("cat /tmp/other.output", paths)
 
 
-def test_pending_bash_task_ids_excludes_completed(monkeypatch) -> None:
-    """Stopの継続判定の起動集合から完了集合を引いたタスクだけを返す。"""
-    monkeypatch.setattr(_transcript_scan, "read_transcript_entries_cached", lambda _path: [{"entry": 1}])
-    monkeypatch.setattr(
-        _background_tasks,
-        "describe_pending_background_entries",
-        lambda *_args, **_kwargs: ({"toolu_pending", "toolu_done"}, {"toolu_done"}, set()),
-    )
-    monkeypatch.setattr(
-        _background_tasks,
-        "collect_background_task_id_tool_use_ids",
-        lambda _entries: {"bg-pending": {"toolu_pending"}, "bg-done": {"toolu_done"}},
-    )
-
-    assert subject.pending_bash_task_ids("/tmp/transcript.jsonl", "session") == {"bg-pending"}
+def test_pretooluse_warns_only_for_pending_output_in_mixed_tasks(tmp_path, capsys) -> None:
+    """同じ記録に未完了と完了が混在しても、未完了側だけを警告する。"""
+    sid = "mixed-tasks"
+    pending = str(tmp_path / "pending.output")
+    done = str(tmp_path / "done.output")
+    entries, response = _background_launch("run_in_background", "bg-pending", "toolu_pending", pending)
+    _record_launch(sid, response)
+    completed, response = _background_launch("run_in_background", "bg-done", "toolu_done", done)
+    _record_launch(sid, response)
+    entries += completed + [_completion_entry("user", "bg-done", "toolu_done", done)]
+    transcript = _write_transcript(tmp_path / "transcript.jsonl", entries)
+    assert _WARNING not in _pretooluse_bash_context(capsys, sid, transcript, f"cat {done}", tmp_path)
+    assert _WARNING in _pretooluse_bash_context(capsys, sid, transcript, f"cat {pending}", tmp_path)

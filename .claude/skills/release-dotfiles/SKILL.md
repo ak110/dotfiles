@@ -49,6 +49,9 @@ auto-mergeの有効化や、失敗時の自動再試行、自動ロールバッ�
    0件なら、タイトルに今回の変更の主題を1文で記し、本文を`agent-basics:writing-standards/references/writing-common.md`「文章の共通規定」に沿ってmanaged-tempへ保存する。
    作成直前に`agent-toolkit:review-external-writes`を起動し、PRを作成する。
 4. PRの完全なURLを指定して`merge-pr`を起動し、マージ、ブランチ同期、CI確認、および必要なリリースの検収まで完了させる。
+   今回masterへ反映した変更の採用記録からエンドユーザー側の未実施操作を拾う。
+   `agent-toolkit:process-wi/references/finish-session.md`「エンドユーザー側の操作が必要な変更」に従って設定を進め、専用案内UWIを登録する。
+   developへのpushだけの段階では案内UWIを登録せず、後日のリリースでも同じ採用記録から再開する。
 5. PRの作成やマージに失敗した時点で停止し、外部状態、失敗工程、runのURLと再開に必要な情報を報告する。
    自動再試行とロールバックは行わない。
 

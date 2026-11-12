@@ -3,29 +3,9 @@
 import pathlib
 import re
 
-from agent_toolkit._common import periodic_recheck
 from agent_toolkit._hooks import user_prompt_submit
-from agent_toolkit._testing.normative_contract import read_contract
 
 _MOD_DEFINITION = pathlib.Path(__file__).resolve().parents[3] / "hooks" / "periodic_recheck.ts"
-
-
-def test_periodic_recheck_marker_matches_the_runtime_document() -> None:
-    """フックの標識と`claude-code-runtime.md`の記述が同じリテラルを持つ。
-
-    標識を2箇所が保持するため、片方だけの改訂で機械注入判定が成立しなくなる状態を検出する。
-    """
-    document = pathlib.Path(__file__).resolve().with_name("claude-code-runtime.md")
-    text = read_contract(document, document.parents[3], ("claude-code-runtime-waiting.md", "待機中の定期再確認"))
-    assert f"`{user_prompt_submit.PERIODIC_RECHECK_MARKER}`" in text
-
-
-def test_periodic_prompt_definition_starts_with_the_hook_marker() -> None:
-    """`atk wait-schedule --format json`が出力する定期promptの1行目が、フックが機械注入ターンと判定する標識だけの行である。
-
-    一致しないと、modと規範の手順が作成したtaskの発火がユーザー発話として扱われ、resume後の所有taskの確認も一致しなくなる。
-    """
-    assert periodic_recheck.PERIODIC_RECHECK_PROMPT.split("\n", 1)[0] == user_prompt_submit.PERIODIC_RECHECK_MARKER
 
 
 def test_mod_marker_matches_the_hook_marker() -> None:

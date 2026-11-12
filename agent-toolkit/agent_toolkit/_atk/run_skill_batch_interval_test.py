@@ -6,6 +6,7 @@ import io
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import types
 
@@ -14,6 +15,29 @@ import pytest
 from agent_toolkit import atk, hook
 from agent_toolkit._atk import run_script, run_skill
 from agent_toolkit._common import session_activity, session_review
+
+
+def _capture_batch_launches(monkeypatch):
+    """hook本体が行うGit照会と、非同期振り返りの起動を区別する。"""
+    original_popen = subprocess.Popen
+    requests = []
+    expected = [
+        sys.executable,
+        str(pathlib.Path(run_skill.__file__).resolve().parents[1] / "atk.py"),
+        "run-skill",
+        "--args",
+        "batch",
+        "agent-toolkit:review-session",
+    ]
+
+    def spawn(argv, **kwargs):
+        if list(argv) == expected:
+            requests.append((argv, kwargs["env"]))
+            return types.SimpleNamespace(pid=None, wait=lambda: 0)
+        return original_popen(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "Popen", spawn)
+    return requests
 
 
 def _pending(name, *, batch=False):
@@ -53,14 +77,7 @@ def test_public_hook_checks_six_hour_boundary(tmp_path, monkeypatch, event, elap
     _pending("ordinary")
     monkeypatch.setattr(session_activity, "host_process", object)
     monkeypatch.setattr("time.time", lambda: now)
-    calls = []
-
-    def spawn(argv, **kwargs):
-        del kwargs
-        calls.append(argv)
-        return types.SimpleNamespace(pid=None, wait=lambda: 0)
-
-    monkeypatch.setattr("subprocess.Popen", spawn)
+    calls = _capture_batch_launches(monkeypatch)
     payload = {"hook_event_name": event, "source": "startup", "session_id": "ordinary", "cwd": str(tmp_path)}
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())))
     monkeypatch.setattr(
@@ -75,14 +92,7 @@ def test_public_hook_records_batch_without_recursive_launch(tmp_path, monkeypatc
     if batch:
         monkeypatch.setenv(session_review.BATCH_ENV, "manifest")
     _pending("previous-batch", batch=True)
-    calls = []
-
-    def spawn(argv, **kwargs):
-        del kwargs
-        calls.append(argv)
-        return types.SimpleNamespace(pid=None, wait=lambda: 0)
-
-    monkeypatch.setattr("subprocess.Popen", spawn)
+    calls = _capture_batch_launches(monkeypatch)
     monkeypatch.setattr(session_activity, "host_process", object)
     payload = {
         "hook_event_name": "SessionStart",
@@ -287,13 +297,8 @@ def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
 
     record("batch", batch=True)
     transcript = record("ordinary")
-    requests = []
     executed = []
     failures = []
-
-    def spawn(argv, **kwargs):
-        requests.append((argv, kwargs["env"]))
-        return types.SimpleNamespace(pid=None, wait=lambda: 0)
 
     def invoke(request):
         argv, environment = request
@@ -333,7 +338,7 @@ def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
     monkeypatch.setattr(session_activity, "host_process", object)
     monkeypatch.setattr("agent_toolkit._atk.wi.repo.resolve_repo_id_or_raise", lambda *a, **k: None)
     with monkeypatch.context() as context:
-        context.setattr("subprocess.Popen", spawn)
+        requests = _capture_batch_launches(context)
         for event, module in (("SessionStart", "rules_context"), ("SessionEnd", "session_end_cleanup")):
             payload = {
                 "hook_event_name": event,
@@ -387,14 +392,7 @@ def test_public_failed_run_defers_automatic_retry_but_accepts_manual(tmp_path, m
     assert len(failures) == 1
     # 失敗の直後の開始イベントは、公開hookから起動しない。
     monkeypatch.delenv(session_review.LAUNCH_ENV)
-    spawned = []
-
-    def spawn(argv, **kwargs):
-        del kwargs
-        spawned.append(argv)
-        return types.SimpleNamespace(pid=None, wait=lambda: 0)
-
-    monkeypatch.setattr("subprocess.Popen", spawn)
+    spawned = _capture_batch_launches(monkeypatch)
     monkeypatch.setattr(session_activity, "host_process", object)
     payload = {"hook_event_name": "SessionStart", "source": "startup", "session_id": "next", "cwd": str(tmp_path)}
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())))

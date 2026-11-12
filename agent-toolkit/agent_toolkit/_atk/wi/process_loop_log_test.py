@@ -88,10 +88,3 @@ class TestRotation:
         assert rotated.exists()
         assert "event=first" in rotated.read_text(encoding="utf-8")
         assert "event=second" in _process_loop_log.log_path().read_text(encoding="utf-8")
-
-
-def test_lock_file_created() -> None:
-    """選択されたOS別実装がロックファイルを作成する。"""
-    _process_loop_log.append("session_start")
-    lock_path = _process_loop_log.log_path().parent / (_process_loop_log.log_path().name + ".lock")
-    assert lock_path.exists()

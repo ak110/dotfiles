@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._testing.helpers import _read_state
-from agent_toolkit._testing.posttooluse_support import _ask_user_question_payload, _run, _single_notice_body
+from agent_toolkit._testing.posttooluse_support import _ask_user_question_payload, _run
 
 _FREE_TEXT = "process-loopが動いてるからそっちでマージされるはず"
 
@@ -134,43 +134,6 @@ def test_git_completion_notice_excludes_non_completion_operations(
 @pytest.mark.parametrize(
     "tool_response",
     [
-        pytest.param({"answers": {_QUESTION: _FREE_TEXT, _MULTI_QUESTION: _LABELS[0]}}, id="answer-not-a-label"),
-        pytest.param({"answers": {_QUESTION: _LABELS[0], _MULTI_QUESTION: f"{_LABELS[1]}, {_FREE_TEXT}"}}, id="multi-select"),
-        pytest.param({"response": _FREE_TEXT, "answers": {}}, id="response"),
-        pytest.param(
-            {
-                "answers": {_QUESTION: "(notes only)", _MULTI_QUESTION: _LABELS[0]},
-                "annotations": {_QUESTION: {"notes": _FREE_TEXT}},
-            },
-            id="notes",
-        ),
-        pytest.param(
-            {"questions": [{"question": _QUESTION, "multiSelect": False}], "answers": {_QUESTION: _FREE_TEXT}},
-            id="no-options",
-        ),
-    ],
-)
-def test_free_text_answer_receives_answer_specific_procedure(tmp_path: pathlib.Path, tool_response: dict) -> None:
-    """自由記述の回答には、選択肢との違いに応じた既存の回答手順を届ける。"""
-    session_id = "ask-user-question-free-text"
-    answer_body = _single_notice_body(
-        _run(_ask_user_question_payload(session_id, tool_response), state_dir=tmp_path), "posttooluse"
-    )
-
-    assert "提示した選択肢と一致しない自由記述" in answer_body
-    assert "回答に沿って進め" in answer_body
-    assert "現行の結論や設計の根拠を記録からすべて挙げ" in answer_body
-    assert "提案で失われるものと一つずつ比べよ" in answer_body
-    assert "新しい事実が出た場合" in answer_body
-    assert "既知の根拠を比べ忘れたことや推論の誤り" in answer_body
-    assert "どれに当たるかを示せ" in answer_body
-    assert "ユーザーが目的や選好を変えた場合は、要件の変更として扱え" in answer_body
-    assert "いずれにも当たらなければ結論を維持し、根拠を返せ" in answer_body
-
-
-@pytest.mark.parametrize(
-    "tool_response",
-    [
         pytest.param({}, id="labels-only"),
         pytest.param({"answers": {_QUESTION: _FREE_TEXT}, "afkTimeoutMs": 60000}, id="afk-timeout"),
         pytest.param(
@@ -186,6 +149,7 @@ def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, too
     assert result.stdout == ""
 
 
+# test-copy-contract: 回答欄4種から抽出した本文の強調・例示・調査・引用に応じて通知を選択する契約。
 @pytest.mark.parametrize("field", ["response", "answers", "annotations", "multi"])
 @pytest.mark.parametrize(
     "text",
@@ -218,6 +182,7 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     assert ("範囲語か開放列挙" in context) == (has_example and "調査" in text)
 
 
+# test-copy-contract: 同一回答の再送は抑止し、別の質問・回答・呼出IDでは通知を再び1回だけ配送する契約。
 @pytest.mark.parametrize("changed_field", ["tool_use_id", "question", "answer"])
 def test_free_text_notices_distinguish_replays_questions_and_answers(tmp_path: pathlib.Path, changed_field: str) -> None:
     """同一回答の再配送を抑え、別の質問・自由回答へ必要な手順と内容注記を届ける。"""

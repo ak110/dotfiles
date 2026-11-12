@@ -186,6 +186,25 @@ def test_size_failure_keeps_previous_distribution(source: Path, body: str) -> No
     assert manifest.read_bytes() == before
 
 
+@pytest.mark.parametrize(("lines", "accepted"), [(16986, True), (18986, True), (19987, False)])
+def test_only_exceeding_budget_requires_reorganization(source: Path, lines: int, accepted: bool) -> None:
+    """整理後水準・水準と上限の間は生成し、超過だけを失敗させて前回の配布を保つ。"""
+    subject.sync(source)
+    target = source / "agent-toolkit-agy/rules"
+    before = {path.name: path.read_bytes() for path in target.glob("*.md")}
+    # ASCII本文と2ファイル目の常時ロード前置を合わせ、既存換算で17000・19000・20001 tokensにする。
+    body = "a\n" * lines
+    (source / "agent-toolkit/share/rules/common/01-agent.md").write_text(body, encoding="utf-8")
+    if not accepted:
+        with pytest.raises(ValueError, match="17000 tokens以下まで整理"):
+            subject.sync(source)
+        assert {path.name: path.read_bytes() for path in target.glob("*.md")} == before
+        return
+    subject.sync(source)
+    assert "".join(_rule_chunks(source)) == body
+    assert all(path.stat().st_size <= 24_000 for path in target.glob("*.md"))
+
+
 def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_path: Path, monkeypatch) -> None:
     """登録を追加して原本の更新を反映し、再実行で登録を重複させない。"""
     home = tmp_path / "home"

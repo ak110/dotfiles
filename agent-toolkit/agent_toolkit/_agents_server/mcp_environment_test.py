@@ -3,7 +3,7 @@
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import config
+from agent_toolkit._atk import config, config_settings
 from agent_toolkit._common import mcp_environment, proxy_environment
 
 
@@ -32,7 +32,7 @@ def test_mcp_setting_names_follow_public_config_keys(
             assert exited.value.code == 2
             assert "旧接続設定" in capsys.readouterr().err
             monkeypatch.delenv(name)
-        elif key not in keys:
+        elif key in config_settings.RETIRED_MODEL_KEYS:
             with pytest.raises(SystemExit) as exited:
                 atk.main(["config", "get", key])
             assert exited.value.code == 2
@@ -41,6 +41,19 @@ def test_mcp_setting_names_follow_public_config_keys(
             with pytest.raises(ValueError, match=name):
                 config.parse_unresolved_model_candidates("execute")
             monkeypatch.delenv(name)
+        elif key == "process_loop_repositories":
+            assert name in names
+            with pytest.raises(SystemExit) as exited:
+                atk.main(["config", "get", key])
+            assert exited.value.code == 2
+            diagnostic = capsys.readouterr().err
+            assert key in diagnostic and "atk config repos" in diagnostic
+            monkeypatch.setenv(name, "[]")
+            with pytest.raises(ValueError, match=name):
+                config.resolve_configured_repositories()
+            monkeypatch.delenv(name)
+        else:
+            assert key in keys
     assert not {"AGENT_TOOLKIT_CONFIG_STATE_DIR", "AGENT_TOOLKIT_CONFIG_PRIVATE_NOTES"} & set(names)
     assert proxy_environment.PROXY_ENVIRONMENT_VARIABLES is mcp_environment.PROXY_ENVIRONMENT_VARIABLES
 

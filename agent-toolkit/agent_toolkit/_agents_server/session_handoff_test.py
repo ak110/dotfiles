@@ -20,6 +20,7 @@ from agent_toolkit._testing.agents_server_support import (
     _install_backend,
     _manager_with_fake,
     _observed_input_params,
+    install_backend,
 )
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -102,6 +103,36 @@ async def test_public_start_rejects_mixed_handoff_inputs(extra: dict[str, str]) 
     """前任の入力を暗黙に上書きする混在は、MCP境界で修正可能な診断を返す。"""
     with pytest.raises(ToolError, match="handoff_from"):
         await mcp_tools.mcp.call_tool("start", {"handoff_from": "codex-session", **extra})
+
+
+@pytest.mark.parametrize("engine", ["claude", "codex", "agy", "opencode"])
+@pytest.mark.asyncio
+async def test_public_handoff_selects_explicit_model_and_keeps_full_input(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path, engine: str
+) -> None:
+    """前任engineによらず、公開startが指定候補と未要約の起動・追送本文を後任へ渡す。"""
+    del record_extractor
+    before = f"{engine}:provider/before@medium" if engine == "opencode" else f"{engine}:before/medium"
+    after = f"{engine}:provider/after@medium" if engine == "opencode" else f"{engine}:after/medium"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", before)
+    async with _manager_with_fake(engine) as (manager, _backend):
+        if engine == "opencode":
+            install_backend(manager, engine, FakeBackend(manager.sessions, engine))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await manager.start("execute", "起動の全要件", str(tmp_path))
+        previous = manager.sessions[started["session_id"]]
+        _complete(previous, message="最初の応答全文")
+        await manager.send_message(previous.session_id, "訂正の全要件")
+        _complete(previous, message="確定済み成果と残工程")
+        response = await mcp_tools.start(handoff_from=previous.session_id, model_type=after)
+        successor = manager.sessions[response["session_id"]]
+        assert successor.model == ("provider/after" if engine == "opencode" else "after") and successor.engine == engine
+        assert successor.session_id != previous.session_id
+        assert successor.model_type == after
+        assert "起動の全要件" in successor.prompt
+        assert "訂正の全要件" in successor.prompt
+        assert "最初の応答全文" in successor.prompt
+        assert "確定済み成果と残工程" in successor.prompt
 
 
 @pytest.mark.asyncio

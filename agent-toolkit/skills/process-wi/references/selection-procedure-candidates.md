@@ -58,11 +58,15 @@ CIの状態は「正常」「失敗」「未終了」「実行未登録」「CI�
 依存の全辺の設定や日付帰属・公開先マージ条件に関して、ユーザーのみが決定できる未確定事項が残る場合は、保留やUWIの扱いを次の基準で決める。
 基準は`../../wi-standards/references/states-and-dependencies-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
 
-**12.** 回答済みUWIは、通常起動では`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス> --skip-pull`を実行して取得する。
+**12.** 通常起動では`atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --skip-pull`で回答済みUWIの本文を取得する。
+frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く。
 
  `all-repos`の担当は、同じ条件に該当する受け取り済みの候補を使用する。
- `source: run-skill`のUWIは次回の`atk run-skill`が処理する。
+ `source: run-skill`の承認用UWIも候補に含め、報告用だけを次回の同じ起動単位の`atk run-skill`へ残す。
 作業を伴わない回答のUWIは`selection-procedure-starting.md`「集合確定直後の処理開始」で終了処理し、作業を伴う回答のUWIは`選定`に含める。
+`source: run-skill`の承認用UWIの処理担当は、frontmatterの`scope`が示すスキルとモードを解決し、そのスキルを起動する。
+`../../user-confirmation-and-report/references/answer-transitions.md`「回答後の状態遷移」の手順1〜3と、同スキルが定める承認後の操作・記録に従う。
+対象リポジトリまたはプラグインからスキルを解決できない場合は、処理せず、不足するscopeと必要なスキルの所在を続行できない理由へ記録する。
  UWIの本文が元の項目を参照している場合は、その項目の保存状態と`ready`フラグを確認する。
 元項目が依存している未回答のUWIが残っている場合は、`../../wi-standards/references/states-and-dependencies-approvals.md`「回答済みUWIの取り込み」に従い、元項目を処理対象外のまま維持する。
 元項目が`inbox`で処理候補（`ready`またはキュー内の依存待ち）にある場合と、旧運用で`hold`に置かれ`ready=true`である場合は、処理対象に1回だけ含める。

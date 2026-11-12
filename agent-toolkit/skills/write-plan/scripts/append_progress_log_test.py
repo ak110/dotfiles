@@ -522,16 +522,6 @@ def test_legacy_body_comment_and_attachment_are_combined(tmp_path: pathlib.Path,
     ]
 
 
-def test_help_describes_past_ranges(capsys: pytest.CaptureFixture[str]) -> None:
-    """ヘルプから区間の末尾commitの指定と事後の区間記録、マージ・重複の拒否を読める。"""
-    with pytest.raises(SystemExit, match="0"):
-        append_progress_log.main(["--help"])
-    output = "".join(capsys.readouterr().out.split())
-    assert "現在のHEADか、そのfirst-parentの履歴上のcommit" in output
-    assert "取り込み後もAWI集合ごとの区間を区間ごとに記録できる" in output
-    assert "マージcommitや記録済みcommitを含む範囲は受け付けない" in output
-
-
 @pytest.mark.parametrize("handoff", [False, True])
 def test_public_progress_split_preserves_assignment_and_rejects_loss(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
@@ -630,6 +620,9 @@ def test_public_progress_same_oid_split_adds_awi_or_rejects_outside(
 @pytest.mark.parametrize("handoff", [False, True])
 def test_record_past_ranges_per_awi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool) -> None:
     """HEADを先へ進めた後、公開コマンドから各区間を別AWIへ記録し、両取得コマンドで対応を得る。"""
+    assert run_script.dispatch(argparse.Namespace(script_name="plan-progress", script_args=["--help"])) == 0
+    help_text = capsys.readouterr().out
+    assert all(option in help_text for option in ("--commit", "--previous-head", "--awi", "--worktree"))
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo, initial_branch="main")

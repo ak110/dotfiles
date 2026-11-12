@@ -661,7 +661,7 @@ async def _screen_harness_fixture(
     plans_root = tmp_path / "plans"
     plans_root.mkdir()
     plan_path = plans_root / "plan.md"
-    plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
+    plan_path.write_text("# 初回\n\n本文-初回\n", encoding="utf-8")
     _write_session_records(tmp_path)
     app = _browser_app(tmp_path, plans_root)
     plans_state: serve_plans.BroadcastState = app.config["PLANS_CONTEXT"].state

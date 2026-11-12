@@ -48,7 +48,13 @@ chezmoiの`symlink_`はWindowsで特権不足により失敗するため、`chez
 
 Codexはプロジェクト直下の`.claude/rules/`と`.claude/skills/`を自動では読まない。
 プロジェクト専用スキルは`.agents/skills -> .claude/skills`のシンボリックリンクで共有する。
-`.claude/rules/`、`~/.claude/CLAUDE.md`、`~/.claude/rules/`直下の`*.local.md`、プロジェクト直下の`CLAUDE.local.md`は、`~/.codex/AGENTS.md`の読込指示に従ってCodexが作業の開始時に読む。
+Codexは`~/.codex/AGENTS.md`の読込指示に従い、作業の開始時に次の規範を読む。
+
+- プロジェクト直下の`.claude/rules/`
+- `~/.claude/CLAUDE.md`と`~/.claude/rules/`直下の`*.local.md`
+- 作業ディレクトリからルートまでの各ディレクトリの`CLAUDE.local.md`と、同階層に`AGENTS.md`が無い場合の`CLAUDE.md`
+
+会話圧縮の後も対象の本文を再取得し、起動・再開指示に同じ本文が境界付きで含まれる場合はその本文を使う。
 
 プロジェクト規範は`AGENTS.md`を実体ファイルとし、`CLAUDE.md`は置かない（コピー欠落やシンボリックリンク非対応環境での障害を避けるため）。
 Claude Codeは`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`のいずれかがあると`AGENTS.md`を読まない。

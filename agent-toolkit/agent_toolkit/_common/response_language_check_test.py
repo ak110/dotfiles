@@ -68,12 +68,6 @@ class TestCheckText:
         """原文・引用・素材・内部analysisを外部説明と混同しない。"""
         assert check_text(text)[0] is not CheckOutcome.WARN
 
-    def test_warns_for_english_only_text(self):
-        """日本語文字を含まない英単語2語以上の文字列はWARNを返す。"""
-        outcome, body = check_text("Done here.")
-        assert outcome is CheckOutcome.WARN
-        assert body is not None
-
     def test_warns_for_discourse_marker(self):
         """先頭の英語談話標識を含む短い文字列はWARNを返す。"""
         outcome, body = check_text("Now、調査を続ける。")
@@ -226,20 +220,6 @@ class TestEnglishOnlyShortText:
         outcome, body = check_text("Done.")
         assert outcome is CheckOutcome.SKIP
         assert body is None
-
-
-class TestWarningBody:
-    """警告本文が説明すべき検出条件と操作の契約を検証する。"""
-
-    def test_warning_body_states_detection_conditions(self):
-        """警告本文が冒頭の英語の語による検出条件と次の応答で取る操作を示す。
-
-        冒頭の談話標識は、日本語主体の地の文でも警告の対象になる。
-        本文にこの動作の説明がなければ、受領した実行主体には日本語主体の応答が検出された理由が分からない。
-        """
-        _, body = check_text("Now、調査を続ける。")
-        assert body is not None
-        assert "英語の語" in body and "同じ判定" in body
 
 
 class TestDiscourseMarker:

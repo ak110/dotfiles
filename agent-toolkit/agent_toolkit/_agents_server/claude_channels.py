@@ -17,7 +17,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 
 
-_Command = tuple[Literal["prompt", "interrupt", "compact", "plugin_reload"], str, asyncio.Future[_DeliveryResult]]
+_Command = tuple[Literal["prompt", "interrupt", "compact", "plugin_reload", "effort"], str, asyncio.Future[_DeliveryResult]]
 
 
 class _CommandChannel:
@@ -32,7 +32,7 @@ class _CommandChannel:
         self._closed = False
 
     def send(
-        self, kind: Literal["prompt", "interrupt", "compact", "plugin_reload"], prompt: str
+        self, kind: Literal["prompt", "interrupt", "compact", "plugin_reload", "effort"], prompt: str
     ) -> asyncio.Future[_DeliveryResult]:
         """要求を受理して応答futureを返す。閉鎖後は受理せず例外を送出する。"""
         if self._closed:

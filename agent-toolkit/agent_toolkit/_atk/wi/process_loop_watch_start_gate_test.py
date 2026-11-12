@@ -1,7 +1,6 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
 """活動とWI到着による開始猶予、Enter解除と中断優先を検証する。"""
 
-import json
 import os
 import pathlib
 from collections.abc import Callable
@@ -21,6 +20,7 @@ from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._common import session_activity, session_registry
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.process_loop_coordinator_support import _start_entry
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
 from agent_toolkit._testing.process_loop_watch_support import (
     _SUBMISSION_ACTIVE,
     _Console,
@@ -276,7 +276,7 @@ def test_enter_release_keeps_start_conditions(
     """Enter解除後も候補・所有・準備・同期の既存の起動条件を通り、その再試行の待機はEnterで解除しない。"""
     notes = _setup_notes(tmp_path)
     repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/myrepo.git")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repo)]))
+    set_process_loop_repositories(monkeypatch, [repo])
     monkeypatch.setattr(_pl_watch.time, "time", lambda: 1000.0)
     monkeypatch.setattr(_pl_watch, "_submission_active", lambda _targets: True)
     console = _Console()

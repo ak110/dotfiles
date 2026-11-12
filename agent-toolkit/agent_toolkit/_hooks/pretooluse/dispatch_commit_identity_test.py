@@ -4,7 +4,6 @@
 
 import json
 import pathlib
-from typing import Any
 
 import pytest
 
@@ -60,29 +59,22 @@ def test_bash_without_commit_message_does_not_acquire_attribution_inputs(
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude", "codex"])
 @pytest.mark.parametrize("option", ["-F", "--file", "--file="])
-def test_commit_message_file_is_read_once_for_format_and_attribution(
+@pytest.mark.parametrize("case", ["valid", "format", "attribution"])
+def test_commit_message_file_checks_format_and_attribution(
     tmp_path: pathlib.Path,
     option: str,
     extra_payload: dict[str, str],
-    monkeypatch: pytest.MonkeyPatch,
+    case: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """同じファイルの本文を、書式確認と観測identityの帰属確認で共用する。"""
+    """ファイル本文の書式と観測identityを独立に検査し、正しい本文は通す。"""
     message = tmp_path / "message.txt"
     author = (
         "GPT-6.1 Sol / Medium <noreply@openai.com>" if extra_payload else "Claude Opus 5.5 / Medium <noreply@anthropic.com>"
     )
-    message.write_text(f"fix: 変更\n\nCo-Authored-By: {author}\n", encoding="utf-8")
-    original = pathlib.Path.read_text
-    reads = 0
-
-    def read(path: pathlib.Path, *args: Any, **kwargs: Any) -> str:
-        nonlocal reads
-        if path == message:
-            reads += 1
-        return original(path, *args, **kwargs)
-
-    monkeypatch.setattr(pathlib.Path, "read_text", read)
+    trailer = author if case != "attribution" else "別モデル <other@example.com>"
+    separator_line = "\n" if case == "format" else "\n\n"
+    message.write_text(f"fix: 変更{separator_line}Co-Authored-By: {trailer}\n", encoding="utf-8")
     separator = "" if option.endswith("=") else " "
     payload = {
         "tool_name": "Bash",
@@ -94,8 +86,13 @@ def test_commit_message_file_is_read_once_for_format_and_attribution(
         **extra_payload,
     }
     assert pretooluse.main(json.dumps(payload)) == 0
-    capsys.readouterr()
-    assert reads == 1
+    reason = _denial_reason(capsys.readouterr())
+    if case == "valid":
+        assert not reason
+    elif case == "format":
+        assert "空行" in reason
+    else:
+        assert author in reason
 
 
 @pytest.mark.parametrize("reader", ["cat --", "sed -n '1,200p'", "sed -n '1,200p' --", "awk '{print}'"])

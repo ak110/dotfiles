@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import mcp_tools, shared_roots, state, status_file, tool_descriptions, tool_names
+from agent_toolkit._agents_server import mcp_tools, shared_roots, state, status_file, tool_names
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._testing.agents_server_support import (
@@ -26,17 +26,6 @@ from agent_toolkit._testing.agents_server_support import (
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
-
-
-def test_start_operations_match_registered_start_tools() -> None:
-    """子sessionを生成する登録ツールの集合が、判定箇所が参照する起動ツールの定義と一致する。
-
-    起動ツールを追加して定義を更新しない変更では、`atk run-script session-review-evidence`やフックがその委譲を認識しない。
-    未分類のツールを登録した変更も、子sessionを生成するかの分類を求めるため失敗させる。
-    """
-    non_start_operations = {"send_message", "kill", "list", "show", "stop"}
-    registered = set(mcp_tools.mcp._tool_manager._tools)
-    assert registered - non_start_operations == tool_names.START_OPERATIONS
 
 
 def test_public_tools_expose_single_start_with_modes() -> None:
@@ -70,67 +59,6 @@ def test_public_tools_expose_single_start_with_modes() -> None:
     stop_tool = mcp_tools.mcp._tool_manager.get_tool("stop")
     assert stop_tool is not None
     assert stop_tool.parameters["properties"].keys() == {"session_id"}
-
-
-def test_public_start_schema_delivers_explore_capabilities() -> None:
-    """登録済みの公開schemaが起動前に共通の能力説明を届ける。"""
-    start_tool = _start_tool()
-    capabilities = tool_descriptions.EXPLORE_CAPABILITIES
-    assert capabilities in start_tool.description[:4096]
-    assert capabilities in start_tool.parameters["properties"]["mode"]["description"]
-
-
-@pytest.mark.asyncio
-async def test_session_label_prefers_argument_over_generated_value(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    """識別名は引数の指定を優先し、省略時は依頼本文またはコマンド名から導く。"""
-    monkeypatch.setattr(
-        _atk_config,
-        "parse_unresolved_model_candidates",
-        lambda _model_type, **_kwargs: [("codex", "model", "high")],
-    )
-    async with _manager_with_fake("codex") as (manager, _):
-        named = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label="lane-02")
-        unnamed = await manager.start("plan", "対象の調査\n詳細", str(tmp_path))
-        shell_default = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す")
-        shell_named = await manager.start_shell(
-            "git status --short",
-            str(tmp_path),
-            "終了コードだけを返す",
-            label="作業ツリーの差分",
-        )
-
-        for response, expected in (
-            (named, "lane-02"),
-            (unnamed, "対象の調査"),
-            (shell_default, "shell-git"),
-            (shell_named, "作業ツリーの差分"),
-        ):
-            assert response["label"] == expected
-            assert (await manager.show_session(response["session_id"]))["label"] == expected
-
-
-@pytest.mark.parametrize("label", ["", "   "])
-@pytest.mark.asyncio
-async def test_empty_session_label_falls_back_to_the_generated_value(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    label: str,
-) -> None:
-    """空になる識別名の指定は未指定と同じ扱いとし、識別名の列を空のままにしない。"""
-    monkeypatch.setattr(
-        _atk_config,
-        "parse_unresolved_model_candidates",
-        lambda _model_type, **_kwargs: [("codex", "model", "high")],
-    )
-    async with _manager_with_fake("codex") as (manager, _):
-        started = await manager.start("plan", "対象の調査\n詳細", str(tmp_path), label=label)
-        shell = await manager.start_shell("git status --short", str(tmp_path), "終了コードだけを返す", label=label)
-
-        assert started["label"] == (await manager.show_session(started["session_id"]))["label"] == "対象の調査"
-        assert shell["label"] == (await manager.show_session(shell["session_id"]))["label"] == "shell-git"
 
 
 @pytest.mark.asyncio
@@ -169,15 +97,24 @@ async def test_public_start_returns_label_of_started_session(
                 cwd, mode="delegate", prompt="対象の調査\n詳細", model_type="chores", label="lane-02"
             ),
             "別の調査": await mcp_tools.start(cwd, mode="delegate", prompt="別の調査\n詳細", model_type="chores"),
+            "空の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空の調査", model_type="chores", label=""),
             "空白の調査": await mcp_tools.start(cwd, mode="delegate", prompt="空白の調査", model_type="chores", label="   "),
             "explore": await mcp_tools.start(cwd, mode="explore", prompt="探索"),
             "write-awi": await mcp_tools.start(cwd, mode="write", prompt="定型変更", label="write-awi"),
             "shell-git": await mcp_tools.start(
                 cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ"
             ),
+            "shell-named": await mcp_tools.start(
+                cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ", label="shell-named"
+            ),
             "lane-07-exec": await mcp_tools.start(cwd, subagent_md_path="exec", extra_params=task_params),
         }
 
+        for label in ("", "   "):
+            shell = await mcp_tools.start(
+                cwd, mode="shell", command="git status --short", summary_policy="終了コードだけ", label=label
+            )
+            assert shell["label"] == (await manager.show_session(shell["session_id"]))["label"] == "shell-git"
         assert "handoff_record_path" in responses["lane-07-exec"]
         assert len({response["session_id"] for response in responses.values()}) == len(responses)
         for expected, response in responses.items():
@@ -374,7 +311,7 @@ async def test_success_response_key_sets_for_all_tools(
         assert all(
             {"session_id", "status"}
             <= item.keys()
-            <= {"session_id", "status", "started_at", "updated_at", "seconds_since_activity"}
+            <= {"session_id", "status", "engine", "model", "effort", "started_at", "updated_at", "seconds_since_activity"}
             for item in listed["sessions"]
         )
 

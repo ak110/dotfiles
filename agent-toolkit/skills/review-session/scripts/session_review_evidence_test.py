@@ -15,26 +15,6 @@ from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl
 
 
-def test_direct_cli_returns_events_for_stream_redirection(
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
-    assert evidence.main([str(transcript)]) == 0
-
-    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    assert [event["kind"] for event in events] == ["user", "record-provenance"]
-    assert events[0] == {
-        "kind": "user",
-        "runtime_inserted": False,
-        "text": "入力",
-        "line": 1,
-        "timestamp": None,
-        "sequence": 1,
-        "record": "claude:transcript",
-    }
-
-
 @pytest.mark.parametrize("schema_locators", [["main:1"], ["main:2"], ["main:1", "main:2"]])
 def test_combined_locator_queries(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], schema_locators: list[str]
@@ -477,6 +457,7 @@ def test_final_result_skips_commentary_phase(tmp_path: pathlib.Path) -> None:
     ]
 
 
+# test-copy-contract: session-review-evidenceの解析登録を起動側の全engineと比べ、記録の未対応を検出する。
 def test_extractor_runtimes_match_supported_engines() -> None:
     """本スクリプトが時系列へ変換できる実行系は、agents_serverが起動できる実行系と一致する。
 

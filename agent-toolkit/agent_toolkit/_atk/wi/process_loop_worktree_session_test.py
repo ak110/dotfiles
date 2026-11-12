@@ -28,7 +28,6 @@ from agent_toolkit._testing.process_loop_worktree_support import (
 from agent_toolkit._testing.process_loop_worktree_support import (
     _process_loop_commands_isolated as _process_loop_commands_isolated,
 )
-from agent_toolkit.atk_test import _setup_notes  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
@@ -215,27 +214,6 @@ class TestProcessLoopSessionPreparation:
 
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
-def test_process_loop_worktree_option_reaches_public_handler(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-) -> None:
-    """公開CLIのworktree指定がprocess-loopハンドラへ伝わること。"""
-    _setup_notes(tmp_path)
-    received: list[str | None] = []
-
-    def fake_process_loop(args: Any, _private_notes: pathlib.Path) -> NoReturn:
-        received.append(args.worktree)
-        raise SystemExit(0)
-
-    monkeypatch.setattr(_process_loop, "cmd_process_loop", fake_process_loop)
-    for extra_argv, expected in (([], None), (["--worktree"], "process-loop"), (["--worktree=custom"], "custom")):
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "process-loop", *extra_argv], home=tmp_path)
-        assert exc_info.value.code == 0
-        assert received[-1] == expected
-
-
-@pytest.mark.usefixtures("process_loop_commands_isolated")
 @pytest.mark.parametrize("value", ["/tmp/worktree", "name/../other", "", ".hidden", "-leading"])
 def test_process_loop_rejects_invalid_worktree_name(
     monkeypatch: pytest.MonkeyPatch,
@@ -261,12 +239,14 @@ def test_process_loop_rejects_invalid_worktree_name(
 class TestProcessLoopWorktreeOption:
     """対象worktree名と、常駐cwdで起動する統括への受渡しを確認する。"""
 
-    @pytest.mark.parametrize(("flags", "name"), [(["--worktree"], "process-loop"), (["--worktree=custom"], "custom")])
+    @pytest.mark.parametrize(
+        ("flags", "name"), [([], None), (["--worktree"], "process-loop"), (["--worktree=custom"], "custom")]
+    )
     def test_registered_worktree_option(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, flags: list[str], name: str
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, flags: list[str], name: str | None
     ) -> None:
         local = _make_remote_repository(tmp_path, "target")
         sessions, _calls = _run_public_process_loop(monkeypatch, tmp_path, local, flags)
-        assert sessions[0]["worktree"] == local / ".claude/worktrees" / name
+        assert sessions[0]["worktree"] == (local / ".claude/worktrees" / name if name else local)
         assert sessions[0]["cwd"] == pathlib.Path.cwd()
         assert sessions[0]["target"]["target_repo"] == "github.com/example/repo"

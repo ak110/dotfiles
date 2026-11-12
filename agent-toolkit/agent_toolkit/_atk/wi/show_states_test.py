@@ -151,25 +151,3 @@ class TestShowProcessedStates:
         captured = capsys.readouterr()
         assert "### fb-adopted.md" in captured.out
         assert "adopted本文" in captured.out
-
-    def test_all_status_all_includes_processed(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """--all --status=allは全状態を表示する。"""
-        notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
-        _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
-        _write_awi_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "show", "--all", "--status=all"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        captured = capsys.readouterr()
-        assert "### fb-inbox.md" in captured.out
-        assert "adopted本文" in captured.out
-        assert "rejected本文" in captured.out

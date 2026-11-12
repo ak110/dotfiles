@@ -86,17 +86,19 @@ def test_add_reloads_saved_details_while_holding_lock(
     assert "body_match" not in saved_details[generated[0]]
 
 
+@pytest.mark.parametrize("count", [1, 2])
 def test_cli_add_does_not_output_body_verification_details(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
+    count: int,
 ) -> None:
-    """複数件投入でも本文の一致を確認する際の内部情報は出力しない。"""
+    """単件・複数件の投入で本文と一致確認の内部情報を再掲しない。"""
     _setup_notes(tmp_path)
     messages = [
         '1件目。"引用"を含む。\n\n## 見出し\n\n複数行。',
         "2件目。\n\n```text\n字下げしない本文\n```",
-    ]
+    ][:count]
     body_paths: list[str] = []
     for index, message in enumerate(messages):
         body_path = tmp_path / f"body-{index}.md"
@@ -115,8 +117,7 @@ def test_cli_add_does_not_output_body_verification_details(
     output = capsys.readouterr().out
     assert "body_match" not in output
     assert "saved_body" not in output
-    assert messages[0] not in output
-    assert messages[1] not in output
+    assert all(message not in output for message in messages)
 
 
 @pytest.mark.parametrize("target_commit", [_FIXED_HEAD_COMMIT, "a" * 64])
@@ -480,19 +481,6 @@ def test_add_reports_body_match_for_crlf_inputs(
     saved = (notes / "2024" / "01" / generated[0]).read_bytes()
     assert b"\r" not in saved
     assert (notes / "2024" / "01" / generated[0]).exists()
-
-
-def test_cli_add_omits_body_verification_details(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """投入の出力は一致判定と保存本文を再掲しない。"""
-    _invoke_add_body_file(monkeypatch, tmp_path, "投入本文")
-    output = capsys.readouterr().out
-    assert "body_match" not in output
-    assert "saved_body" not in output
-    assert "投入本文" not in output
 
 
 def test_cli_add_outputs_source_and_extra_frontmatter(

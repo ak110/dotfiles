@@ -430,6 +430,9 @@ def test_pretooluse_public_entry_returns_host_output(
 ) -> None:
     """登録された公開hookで通過・追加文脈・構造化denyの正常拒否を確認する。"""
     payload, environment = _build_fixture("PreToolUse", "pretooluse", tmp_path)
+    environment = {**host_environ(), **environment}
+    for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
+        environment.pop(name, None)
     if host == "codex":
         manifest = json.loads((_PLUGIN_ROOT / "hooks/hooks.codex.json").read_text(encoding="utf-8"))
         assert any(
@@ -445,7 +448,7 @@ def test_pretooluse_public_entry_returns_host_output(
     elif scenario == "block":
         payload["tool_name"] = "mcp__agents_server__kill"
         payload["tool_input"] = {"session_id": "missing"}
-    prepare_read_delivery(payload, {**host_environ(), **environment})
+    prepare_read_delivery(payload, environment)
     result = subprocess.run(
         [sys.executable, str(_HOOK_SCRIPT), "pretooluse"],
         input=json.dumps(payload, ensure_ascii=False),
@@ -453,7 +456,7 @@ def test_pretooluse_public_entry_returns_host_output(
         text=True,
         encoding="utf-8",
         check=False,
-        env={**host_environ(), **environment},
+        env=environment,
     )
     assert result.returncode == 0, result.stderr
     assert not result.stderr
@@ -470,3 +473,11 @@ def test_pretooluse_public_entry_returns_host_output(
         assert "permissionDecision" not in output.get("hookSpecificOutput", {})
     else:
         assert output["hookSpecificOutput"]["permissionDecision"] == "allow"
+    if scenario in {"warning", "block"}:
+        if host == "codex":
+            assert "systemMessage" not in output
+        else:
+            copy = output["systemMessage"]
+            assert copy.startswith('<atk-auto source="pretooluse" kind="')
+            assert copy.endswith("</atk-auto>")
+            assert ("cwd" if scenario == "block" else "U+FFFD") in copy

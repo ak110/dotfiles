@@ -62,8 +62,16 @@ def _dataset(tmp_path: Path) -> tuple[Path, Path, Path]:
         + _row("9", "記録", "実装", "", "", location="実装時の技術判断: 呼出側")
         + _row("1", "別track", "詳細", "", "").replace('"exec-review"', '"plan-review"')
         + _row("1", "実装時の判断を確認する指摘", "仕様", "修正した", "")
-        + _row("1", "見送り", "仕様", "", "理由: 対象外\n根拠の所在: メインの技術判断。計画の実施内容")
-        + _row("2", "撤回", "詳細", "", "理由: 前提が誤り\n根拠の所在: レビュー担当が再確認で撤回"),
+        + _row("1", "見送り", "仕様", "", "根拠の所在: レビュー担当の指摘をレーン担当が対象外と判断\n判断主体: レーン担当")
+        + _row("2", "撤回", "詳細", "", "判断主体: レビュー担当\n根拠の所在: 再確認で撤回")
+        + _row("2", "移管", "仕様", "", "根拠の所在: 後続へ移す\n判断主体: ユーザー\n移管先: 20261104-183257-001.md")
+        + _row(
+            "2",
+            "旧形式",
+            "詳細",
+            "",
+            "根拠の所在: レビュー担当が後続AWIへ移せると区分し、メインが次回へ回した。AWI 20261104-183257-001.mdへ登録した",
+        ),
         encoding="utf-8",
     )
     (plans / "03-0001_unknown.exec-review.tsv").write_text(_row("1", "未応答", "実装", "", ""), encoding="utf-8")
@@ -123,17 +131,36 @@ def test_review_adoption_counts_periods_levels_reasons_and_models(dataset, capsy
     events = _run(dataset, capsys)
     periods = {event["period"]: event for event in events if event["kind"] == "review-adoption-period"}
     current = periods["current"]
-    assert (current["table_count"], current["adopted"], current["rejected"], current["unanswered"]) == (3, 1, 2, 1)
-    assert current["by_level"]["仕様"] == {"adopted": 1, "rejected": 1, "unanswered": 0}
-    assert current["by_reason"] == {"判断による見送り": 1, "レビュー担当の前提の誤り・撤回": 1}
-    assert current["by_model"]["claude:claude-opus-5-5/high"] == {"adopted": 1, "rejected": 2, "unanswered": 0, "tables": 2}
-    assert current["by_model"]["モデル不明"] == {"adopted": 0, "rejected": 0, "unanswered": 1, "tables": 1}
+    assert (current["table_count"], current["adopted"], current["rejected"], current["transferred"], current["unanswered"]) == (
+        3,
+        1,
+        3,
+        1,
+        1,
+    )
+    assert current["by_level"]["仕様"] == {"adopted": 1, "rejected": 1, "transferred": 1, "unanswered": 0}
+    assert current["by_reason"] == {"判断による見送り": 1, "レビュー担当の前提の誤り・撤回": 1, "判断主体不明": 1}
+    assert current["by_model"]["claude:claude-opus-5-5/high"] == {
+        "adopted": 1,
+        "rejected": 3,
+        "transferred": 1,
+        "unanswered": 0,
+        "tables": 2,
+    }
+    assert current["by_model"]["モデル不明"] == {
+        "adopted": 0,
+        "rejected": 0,
+        "transferred": 0,
+        "unanswered": 1,
+        "tables": 1,
+    }
     assert periods["previous"]["table_count"] == 1
     assert periods["previous"]["adopted"] == 1
     rejections = [event for event in events if event["kind"] == "review-adoption-rejection"]
     assert {(event["row"], event["reason_class"]) for event in rejections} == {
         (8, "判断による見送り"),
         (9, "レビュー担当の前提の誤り・撤回"),
+        (11, "判断主体不明"),
     }
     notes, _, _ = dataset
     assert current["excluded_judgment_count"] == 8

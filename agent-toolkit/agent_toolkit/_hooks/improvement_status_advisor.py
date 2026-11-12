@@ -26,9 +26,10 @@ _HOOK_ID = "improvement_status_advisor"
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 # `不要`の理由の先頭に置く区分名。
-# 定義は`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」にある。
+# 書式と区分は`share/rules/rules-main.md`「進捗報告」のテンプレート直下にある。
 _UNNEEDED_CATEGORIES = ("非欠陥", "処置済み", "被覆", "見送り")
 _UNNEEDED_STATUS = re.compile(r"AWI化ステータス:\s*不要[ \t]*")
+_CATEGORY_STATUS = re.compile(r"AWI化ステータス:\s*(不要|予定)[ \t]*")
 # 原因を調べていないことを見送りの理由にした冒頭。
 # 処置・担当を定めた理由や「未調査を理由に見送らない」の説明は冒頭が一致しない。
 # 「原因は未確定だが、既存AWIへ引き継ぎ済み」のように逆接が続く形は、
@@ -63,6 +64,18 @@ def read_guidance_notice(payload: object) -> str:
         return ""
     if not isinstance(session_id, str) or not session_id:
         return ""
+    categories = {"不要": _UNNEEDED_CATEGORIES, "予定": ("判断待ち", "認可待ち", "入力待ち", "書込競合")}
+    for line in runtime_inserted.reported_improvement_lines(text):
+        for matched in _CATEGORY_STATUS.finditer(line):
+            if not line[matched.end() :].startswith(categories[matched.group(1)]):
+                set_warning_session_id(session_id)
+                return _notice(
+                    "改善点報告の区分名が、常時規範のテンプレートの書式と一致しない。",
+                    removable_cause=True,
+                    subject=line,
+                    fix="`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式・区分で報告行を直せ。"
+                    "書式の修正だけなら判定資料の追加取得は不要である。",
+                )
     state = read_state(session_id)
     root = plugin_resources.plugin_root()
     cwd = payload.get("cwd")

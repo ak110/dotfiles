@@ -5,7 +5,14 @@ from __future__ import annotations
 import typing
 from typing import Any
 
-from agent_toolkit._agents_server import compaction_metrics, context_usage, result_contract, resume_waits, wait_output_tracking
+from agent_toolkit._agents_server import (
+    compaction_metrics,
+    configured_model,
+    context_usage,
+    result_contract,
+    resume_waits,
+    wait_output_tracking,
+)
 from agent_toolkit._agents_server.codex_protocol import (
     JsonRpcResponseError,
     _public_turn_status,
@@ -189,6 +196,16 @@ class CodexNotificationsMixin:
             if status not in TERMINAL_STATUSES:
                 status = "failed"
             # 状態を終了へ進めた後にawaitすると、waitや状態保存が保留判定前の結果を回収できてしまう。
+            changed = (
+                await configured_model.changed_model_error(session)
+                if status == "failed"
+                and not session.interrupt_requested
+                and isinstance(error, dict)
+                and error.get("codexErrorInfo") == "usageLimitExceeded"
+                else None
+            )
+            if changed is not None:
+                error = changed
             limit = await self._read_usage_limit_failure(session, error) if status == "failed" else None
             session.status = status
             session.error = error
@@ -196,11 +213,17 @@ class CodexNotificationsMixin:
             if session.status == "completed":
                 session.codex_attempted_provider_ids = {session.codex_model_provider} if session.codex_model_provider else set()
             result = {"status": session.status, "agent_message": session.agent_message, "error": session.error}
-            held_by_result_contract = result_contract.hold_invalid_result(session, result)
+            held_by_result_contract = (
+                changed is None
+                and session.effort_resume_turn != session.turn_seq
+                and result_contract.hold_invalid_result(session, result)
+            )
             if not held_by_result_contract:
                 session.status = result["status"]
                 session.error = result["error"]
-            if held_by_result_contract:
+            if changed is not None:
+                session.clear_hold()
+            elif held_by_result_contract:
                 pass
             elif resume_waits.has_pending_auto_resume_targets(session) or (
                 session.codex_self_message_observed and not session.codex_self_message_repair_consumed

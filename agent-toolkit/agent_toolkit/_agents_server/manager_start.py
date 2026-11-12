@@ -261,6 +261,16 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             if self._status_writer is not None:
                 response["root_session_id"] = self._status_writer.root_session_id
             unavailable_reason = self._unavailable_reason(session)
+            if isinstance(session.error, dict) and session.error.get("configuredModelChanged") is True:
+                # 起動中に設定が変わった場合も、起動開始時の古い候補列へ進めず現在設定への引き継ぎを返す。
+                session.label = display_label
+                session.prompt = prompt
+                session.announced = True
+                persistence_warnings = await self._save_started_session(session)
+                if persistence_warnings:
+                    response["persistence_warnings"] = persistence_warnings
+                response["label"] = session.label
+                return response
             if unavailable_reason is None:
                 await run_file_operation(
                     unavailable_candidates.clear_unavailable_candidate,
@@ -323,9 +333,12 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             ),
         )
 
-    async def start_handoff(self, session_id: str) -> dict[str, Any]:
+    async def start_handoff(self, session_id: str, *, model_type: str | None = None) -> dict[str, Any]:
         """終了した前任の起動条件と進捗を使い、明示操作1回で後任を開始する。"""
         current = await self.resolve_handoff_predecessor(session_id)
+        if isinstance(current, SessionState):
+            # 終了通知がCLIの後始末より先に届いても、後任と前任が同じworktreeへ同時に作用しない。
+            await self._backend(current.engine).release_session(current)
         predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
         reason = session_handoff.availability_reason(
             predecessor.engine,
@@ -337,7 +350,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         prompt = await run_file_operation(session_handoff.prepare_prompt, predecessor)
         assert predecessor.model_type is not None
         response = await self.start(
-            predecessor.model_type,
+            predecessor.model_type if model_type is None else model_type,
             prompt,
             predecessor.cwd,
             launch_kind=predecessor.launch_kind,

@@ -58,6 +58,9 @@ class BashInvocation:
     `static_outputs`を使える。コマンド種別や本文の取得を確定する用途は、この値が真の呼出しだけを使う。
     """
 
+    environment_assignments: tuple[str, ...] = ()
+    """実行前置語または単独の代入。前置代入は子シェルの呼び出しにも継承する。"""
+
     @property
     def output_pipe(self) -> bool:
         """標準出力または標準エラーが後段のパイプへ渡るかを返す。"""
@@ -556,13 +559,22 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
             break
     known = not any(_UNKNOWN_BASH_WORD in token for token in segment.tokens)
     if segment.resolved and segment.tokens and _UNKNOWN_BASH_WORD not in segment.tokens[0]:
+        assignments = tuple(value for value in values[: len(values) - len(segment.tokens)] if ENV_ASSIGN_PATTERN.match(value))
         shell = shell_c_argument(segment.tokens)
         # 本文の確定は本文自身の語だけで決まる。後続の`$0`・位置引数が未知でも、静的な本文の入出力は失わない。
         if shell is not None and _UNKNOWN_BASH_WORD not in shell:
-            result.extend(_isolated_cwd_scope(extract_bash_invocations(shell)))
+            result.extend(
+                dataclasses.replace(item, environment_assignments=(*assignments, *item.environment_assignments))
+                for item in _isolated_cwd_scope(extract_bash_invocations(shell))
+            )
         else:
             result.append(
-                BashInvocation(segment, known, static_tokens=tuple(word.static_value for word in words[-len(segment.tokens) :]))
+                BashInvocation(
+                    segment,
+                    known,
+                    static_tokens=tuple(word.static_value for word in words[-len(segment.tokens) :]),
+                    environment_assignments=assignments,
+                )
             )
     elif _INCLUDE_UNKNOWN_EXECUTIONS.get():
         result.append(
@@ -571,6 +583,7 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
                 False,
                 static_tokens=tuple(word.static_value for word in words[prefix:]),
                 execution_known=False,
+                environment_assignments=tuple(values[:prefix]),
             )
         )
     substitutions: list[BashInvocation] = []

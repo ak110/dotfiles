@@ -182,13 +182,3 @@ def test_edit_dry_run_rejects_unsupported_combinations(
         assert "--dry-run" in capsys.readouterr().err
     assert path.read_bytes() == original
     assert not [call for call in calls if {"commit", "push"} & set(call["cmd"])]
-
-
-def test_edit_help_describes_dry_run(capsys: pytest.CaptureFixture[str]) -> None:
-    """`atk wi edit --help`が`--dry-run`と、検証だけを行いprivate-notesとremoteを変えないことを示す。"""
-    with pytest.raises(SystemExit):
-        atk.main(["wi", "edit", "--help"])
-    output = "".join(capsys.readouterr().out.split())
-    assert "--dry-run" in output
-    assert "保存と同じ検証にかけ、保存せずに結果を返す" in output
-    assert "private-notesとremoteを変えない" in output

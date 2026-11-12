@@ -105,6 +105,7 @@ from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import selection as _selection
+from agent_toolkit._plan import selection_estimate as _estimate
 
 _NEXT_MISSING_BODY = "`atk wi list`の出力で対象のWIファイル名を確かめ、選定の`WI`をprivate-notesにあるファイル名へ直す"
 
@@ -125,6 +126,7 @@ def check(
     *,
     selection: dict[str, object] | None = None,
     integrating: collections.abc.Set[str] = frozenset(),
+    validate_execution: bool = True,
 ) -> list[Violation]:
     """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
 
@@ -234,7 +236,9 @@ def check(
         )
     )
     errors.extend(_check_public_write_rationales(pending, work_dir))
-    errors.extend(_check_estimate_records(selection, costs, load_target_seconds(work_dir)))
+    errors.extend(
+        _check_estimate_records(selection, costs, load_target_seconds(work_dir), validate_execution=validate_execution)
+    )
     errors.extend(selection_contract.allocation_errors(selection))
     errors.extend(_check_allocation_sources(selection, private_notes))
     return errors
@@ -246,7 +250,11 @@ def _needs_body_check(decision: dict[str, object], body_wis: set[str] | None) ->
 
 
 def summary_lines(
-    selection: dict[str, object], body_wis: set[str] | None = None, target_seconds: float | None = None
+    selection: dict[str, object],
+    body_wis: set[str] | None = None,
+    target_seconds: float | None = None,
+    *,
+    history: bool = False,
 ) -> list[str]:
     """確認に合格した選定結果から、レーン構成の要約行を返す。
 
@@ -268,13 +276,30 @@ def summary_lines(
         else:
             lanes.setdefault(lane, []).append(awi)
     lines = [f"WI総数: {len(items)}", f"通常レーン数: {len(lanes)}"]
+    plan = selection.get(_selection.PROCESS_ESTIMATE_KEY)
     correction = selection.get(_selection.ESTIMATE_CORRECTION_KEY)
-    if isinstance(correction, dict) and _selection.SHARED_WAIT_SECONDS_KEY in correction:
+    if plan is not None:
+        result = _estimate.forecast(plan)
+        total = "未確認" if result.total_seconds is None else f"{result.total_seconds:g}"
+        normal = "未確認" if result.normal_seconds is None else f"{result.normal_seconds:g}"
+        lines.extend(
+            (
+                f"全工程の壁時計見込み秒数: {total}",
+                f"通常対象の完了見込み秒数: {normal}",
+                f"承認済み巨大WI: {json.dumps(list(result.excluded_wis), ensure_ascii=False)}",
+                f"モデル仕事・共有検証等の処理秒数: {json.dumps(result.resource_work_seconds, ensure_ascii=False)}",
+                f"資源待ち秒数（全体へ再加算しない）: {json.dumps(result.resource_wait_seconds, ensure_ascii=False)}",
+            )
+        )
+        if result.issues:
+            lines.append(f"実行可能性の未確認: {json.dumps(list(result.issues), ensure_ascii=False)}")
+        if target_seconds is not None:
+            difference = "未確認" if result.normal_seconds is None else f"{result.normal_seconds - target_seconds:g}"
+            lines.append(f"目標所要秒数: {target_seconds:g}（通常対象との差 {difference}）")
+    elif isinstance(correction, dict) and _selection.SHARED_WAIT_SECONDS_KEY in correction:
         wait = typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY])
         estimate = _completion_estimate(list(costs.values()), wait)
-        lines.append(f"全体の完了見込み秒数: {estimate}（共有待ち秒数 {wait}を1回含む）")
-        if target_seconds is not None:
-            lines.append(f"目標所要秒数: {target_seconds}（差 {estimate - target_seconds}）")
+        lines.append(f"履歴の局所見込み秒数: {estimate}（共有待ち秒数 {wait}を1回含む、全工程は未確認）")
     if _selection.SINGLE_STAGE_ESTIMATE_KEY in selection:
         lines.append(f"{_selection.SINGLE_STAGE_ESTIMATE_KEY}: {selection[_selection.SINGLE_STAGE_ESTIMATE_KEY]}")
     if _selection.STAGED_ESTIMATE_KEY in selection:
@@ -297,7 +322,11 @@ def summary_lines(
         if item[_selection.LANE_KEY] != _LANE_NONE and (body_wis is None or str(item[_selection.WI_KEY]) in body_wis)
     ]
     lines.append(f"本文検査対象: {json.dumps(checked, ensure_ascii=False)}")
+    if history:
+        lines.append("履歴表示: これから実行する配分の目標内成立は検収していない。")
     lines.append("形式・書込予定の妥当性と全体の関係を確認した。分類と配分の意味はWIの元本文と限定調査の結果で検収する。")
+    if plan is not None:
+        lines.append("資源・費用の根拠と巨大WIの承認は原記録から意味を検収する。数値の計算成功だけで保証しない。")
     return lines
 
 
@@ -321,6 +350,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="メインが保存した選定結果の絶対パス")
     parser.add_argument("--work-dir", type=pathlib.Path, metavar="DIR", default=None, help="対象リポジトリの絶対パス")
     parser.add_argument("--body-wi", action="append", metavar="WI", help="本文検査するWIファイル名。反復指定可、省略時は全件")
+    parser.add_argument(
+        "--history", action="store_true", help="保存済み選定の履歴を表示する。実行配分の成立判定や更新と併用しない"
+    )
     parser.add_argument("--merge", type=pathlib.Path, metavar="PATH", help="追加選定YAMLの絶対パス")
     parser.add_argument(
         "--extend-write-targets", type=pathlib.Path, metavar="PATH", help="保存済みWIの書込対象・新設先・重なりを追加するYAML"
@@ -358,6 +390,13 @@ def main(argv: list[str] | None = None) -> int:
         args.lane_cost_updates,
         args.body_wi,
     )
+    if args.history and (
+        args.output is not None
+        or args.reopen_wi is not None
+        or args.require_integrated
+        or any(value is not None for value in other_updates)
+    ):
+        parser.error("--historyは更新操作・--require-integrated・--body-wiと併用しない")
     if args.require_integrated:
         if args.output is not None or args.reopen_wi is not None or any(value is not None for value in other_updates):
             parser.error("--require-integratedは更新操作・--body-wiと併用しない")
@@ -453,7 +492,7 @@ def main(argv: list[str] | None = None) -> int:
                 selection_contract.require_shared_wait_basis(addition.get(_selection.ESTIMATE_CORRECTION_KEY))
                 for data in (selection, addition):
                     estimate_errors = _check_estimate_records(
-                        data, typing.cast(list[dict[str, object]], _selection.lane_costs(data))
+                        data, typing.cast(list[dict[str, object]], _selection.lane_costs(data)), validate_execution=False
                     )
                     if estimate_errors:
                         raise ValueError("\n".join(error.reason for error in estimate_errors))
@@ -472,6 +511,7 @@ def main(argv: list[str] | None = None) -> int:
             body_wis,
             selection=selection,
             integrating=set(args.mark_integrated or []),
+            validate_execution=not args.history and args.mark_integrated is None,
         )
     except InputError as error:
         _next_action.report(error.reason, next_action=error.next_action)
@@ -505,7 +545,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         print(f"統合結果: {args.output.resolve()}")
     # 目標の設定は先行する`check`の呼出しで検証済みのため、ここでは読込の失敗が起きない。
-    print("\n".join(summary_lines(selection, body_wis, load_target_seconds(work_dir))))
+    print("\n".join(summary_lines(selection, body_wis, load_target_seconds(work_dir), history=args.history)))
     return 0
 
 

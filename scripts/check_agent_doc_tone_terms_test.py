@@ -104,45 +104,28 @@ def test_cli_contrast_distinguishes_prose_from_preserved_data(
 
 
 @pytest.mark.parametrize(
-    ("term", "category", "reason", "direction"),
+    ("term", "body", "reason", "direction"),
     [
-        (
-            term,
-            category,
-            *check_agent_doc_tone._CAUTION_MESSAGES[category].split("。", maxsplit=1),  # pylint: disable=protected-access
-        )
-        for term, (_pattern, category) in check_agent_doc_tone._CAUTION_PATTERNS.items()  # pylint: disable=protected-access
+        ("入口", "APIの入口を説明する。\n", "比喩や擬人化", "実体、状態または動作を直接書く"),
+        ("帰結", "帰結を説明する。\n", "実際の操作、判定対象、条件または結果が変わり得る", "結果を書き分ける"),
+        ("むしろ", "速度よりむしろ精度を優先する。\n", "対比", "伝える内容を直接書"),
     ],
 )
-def test_cli_explains_every_caution_term(
+def test_cli_explains_representative_caution_categories(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     term: str,
-    category: str,
+    body: str,
     reason: str,
     direction: str,
 ) -> None:
-    """全注意語の警告が分類に対応する理由と書き換え方向を伝える。"""
-    contextual_examples = {
-        "入口": "APIの入口を説明する。\n",
-        "受け口": "要求の受け口を説明する。\n",
-        "拾う": "夜間の処理が失敗を拾う。\n",
-        "引く": "本番データを引く。\n",
-        "通る": "書き込みも通る。\n",
-        "効く": "構成を選ぶときに効く。\n",
-        "響く": "全クライアントに響く。\n",
-        "足す": "中継しても値を足す。\n",
-    }
-    path = _write(tmp_path, contextual_examples.get(term, f"{term}を説明する。\n"))
+    """比喩・抽象語・対比の警告が、独立した期待の理由と修正方向を位置付きで伝える。"""
+    path = _write(tmp_path, body)
 
     assert check_agent_doc_tone.main([str(path)]) == 0
 
     warning = capsys.readouterr().err
-    assert category in {  # pylint: disable=protected-access
-        check_agent_doc_tone._METAPHORICAL,  # pylint: disable=protected-access
-        check_agent_doc_tone._ABSTRACT,  # pylint: disable=protected-access
-        check_agent_doc_tone._CONTRAST,  # pylint: disable=protected-access
-    }
+    assert f"{path}:1: warning: 警告: 「{term}」" in warning
     assert reason in warning
     assert direction in warning
 

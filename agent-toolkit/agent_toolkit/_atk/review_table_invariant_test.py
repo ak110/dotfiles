@@ -62,28 +62,3 @@ def test_delegation_skill_refers_to_reviewee_response_section() -> None:
     )
     assert not any(f"`{label}`" in paragraph for label in table.RESPONSE_LABELS)
     assert not any(f"`{label}`" in receiving_section for label in table.RESPONSE_LABELS)
-
-
-def test_show_help_exposes_body_selection_and_history(capsys: pytest.CaptureFixture[str]) -> None:
-    """公開ヘルプから行・本文の選択と履歴を含むサマリーへ到達できる。"""
-    with pytest.raises(SystemExit) as result:
-        _parser().parse_args(["review-table", "show", "--help"])
-    assert result.value.code == 0
-    help_text = capsys.readouterr().out
-    assert "--row-id" in help_text
-    assert "--field" in help_text
-    assert "no-response-reason" in help_text
-    assert "previous_findings" in help_text
-    assert "history_command" in help_text
-    assert "repetition_guidance" in help_text
-
-
-def test_add_help_exposes_batch_input_and_single_exclusion(capsys: pytest.CaptureFixture[str]) -> None:
-    """公開ヘルプが配列schema・共通値・単数形との排他・全行読戻しを案内する。"""
-    with pytest.raises(SystemExit) as result:
-        _parser().parse_args(["review-table", "add", "--help"])
-    assert result.value.code == 0
-    help_text = capsys.readouterr().out
-    for marker in ("--items-file", "location", "issue", "level", "UTF-8", "非空JSON配列", "全件共通", "併用できない"):
-        assert marker in help_text
-    assert "既存行も含む全行の一致" in help_text

@@ -247,7 +247,7 @@ class TestPlanFilePostWriteNotice:
             home_dir=plan_path.parents[2],
         )
         assert result.returncode == 0
-        assert "post-write checks" not in result.stdout
+        assert not result.stdout
 
     def test_no_notice_on_non_plan_file_write(self, tmp_path: pathlib.Path) -> None:
         sid = "post-write-non-plan"
@@ -258,9 +258,10 @@ class TestPlanFilePostWriteNotice:
                 "tool_input": {"file_path": str(tmp_path / "a.py"), "content": "x"},
             },
             state_dir=tmp_path,
+            plan_mode_skill_invoked=True,
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == "" or "post-write checks" not in result.stdout
+        assert not result.stdout
 
     def test_no_notice_on_plan_file_edit(self, tmp_path: pathlib.Path) -> None:
         plan_path = self._make_plan_path(tmp_path)
@@ -273,10 +274,11 @@ class TestPlanFilePostWriteNotice:
                 "tool_input": {"file_path": str(plan_path), "old_string": "t", "new_string": "u"},
             },
             state_dir=tmp_path,
+            plan_mode_skill_invoked=True,
             home_dir=plan_path.parents[2],
         )
         assert result.returncode == 0
-        assert "post-write checks" not in result.stdout
+        assert not result.stdout
 
     def test_no_notice_on_sidecar_file_write(self, tmp_path: pathlib.Path) -> None:
         home = tmp_path / "home"
@@ -291,7 +293,8 @@ class TestPlanFilePostWriteNotice:
                 "tool_input": {"file_path": str(sidecar), "content": "# x\n"},
             },
             state_dir=tmp_path,
+            plan_mode_skill_invoked=True,
             home_dir=home,
         )
         assert result.returncode == 0
-        assert "post-write checks" not in result.stdout
+        assert not result.stdout

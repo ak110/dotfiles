@@ -110,6 +110,7 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
     )
 
 
+# test-copy-contract: 更新案内の別の生成側とログ検収側の許容定義を一致させ、正常更新の誤失敗を防ぐ。
 def test_allowed_notice_matches_post_apply_source() -> None:
     """許容する更新案内は、post-applyが実際に出す文言と一致する。"""
     assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access

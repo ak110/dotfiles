@@ -62,6 +62,11 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk plans checkout",
         "atk plans commit",
         "atk config set",
+        "atk config add",
+        "atk config remove",
+        "atk config repos add",
+        "atk config repos set",
+        "atk config repos remove",
         "atk config apply-preset",
         "atk review-table add",
         "atk review-table respond",
@@ -72,6 +77,7 @@ STATE_CHANGE_COMMANDS = frozenset(
 
 VALUE_OUTPUT_COMMANDS = frozenset(
     {
+        "atk agents effort",
         "atk wi submit",
         "atk worktree-stash save",
         "atk worktree-stash drop",
@@ -96,6 +102,8 @@ READ_ONLY_COMMANDS = frozenset(
         "atk plans list",
         "atk config",
         "atk config show",
+        "atk config list",
+        "atk config repos list",
         "atk config get",
         "atk agents wait",
         "atk agents list",

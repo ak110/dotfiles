@@ -8,6 +8,29 @@ from agent_toolkit._common.bash_invocations import extract_bash_effects, extract
 
 
 @pytest.mark.parametrize(
+    "command, expected",
+    [
+        ("GIT_DIR=/repo/.git git status", [("GIT_DIR=/repo/.git",)]),
+        ("env GIT_WORK_TREE=/repo git status", [("GIT_WORK_TREE=/repo",)]),
+        ("GIT_DIR=/repo/.git bash -c 'env NAME=value git status'", [("GIT_DIR=/repo/.git", "NAME=value")]),
+        ("NAME=value git status; git diff", [("NAME=value",), ()]),
+        ("echo GIT_DIR=data; git status", [(), ()]),
+    ],
+)
+def test_execution_prefix_assignments_are_retained(command: str, expected: list[tuple[str, ...]]) -> None:
+    """前置代入は子シェルへ継承し、通常引数や後続の独立した実行へ混入させない。"""
+    assert [item.environment_assignments for item in extract_bash_invocations(command)] == expected
+
+
+def test_assignment_only_effect_retains_environment_metadata() -> None:
+    """実行位置のない代入も、後続の保護判定へ値の実行なしで渡せる。"""
+    effects = extract_bash_effects("GIT_DIR=/repo/.git; git status")
+    assert not effects[0].execution_known
+    assert effects[0].environment_assignments == ("GIT_DIR=/repo/.git",)
+    assert not effects[1].environment_assignments
+
+
+@pytest.mark.parametrize(
     "command, names",
     [
         ("for item in one two; do atk wi list; done", ["atk"]),

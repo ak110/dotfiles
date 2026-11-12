@@ -186,11 +186,13 @@ class TestShowMultipleFiles:
         assert "対象外" not in captured.out
         assert not [call for call in git_calls if call["cmd"][:2] == ["git", "fetch"]]
 
-    def test_multiple_files_use_same_separator_as_all(
+    @pytest.mark.parametrize("filenames", [["fb-001.md"], ["fb-001.md", "fb-002.md"], ["--all"]])
+    def test_show_keeps_entry_separators(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
+        filenames: list[str],
     ) -> None:
         """複数指定の区切りは`--all`と同じく各項目の後の空行1行とする。"""
         notes = _setup_notes(tmp_path)
@@ -198,34 +200,12 @@ class TestShowMultipleFiles:
         _write_awi_file(notes, "fb-002.md", body="本文2")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
-        with pytest.raises(SystemExit):
-            atk.main(["wi", "show", "fb-001.md", "fb-002.md"], home=tmp_path)
-        by_name = capsys.readouterr().out
-
-        with pytest.raises(SystemExit):
-            atk.main(["wi", "show", "--all"], home=tmp_path)
-        by_all = capsys.readouterr().out
-
-        for entry_tail in ("本文1\n\n", "本文2\n\n"):
-            assert entry_tail in by_name
-            assert entry_tail in by_all
-        assert by_name.endswith("\n\n")
-
-    def test_single_file_keeps_output_without_extra_blank_line(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        """1件だけ指定した場合は従来どおり末尾へ空行を足さない。"""
-        notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-001.md", body="本文1")
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-
-        with pytest.raises(SystemExit):
-            atk.main(["wi", "show", "fb-001.md"], home=tmp_path)
-
-        assert capsys.readouterr().out.endswith("本文1\n\n")
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", "show", *filenames, "--target-repo=github.com/example/foo"], home=tmp_path)
+        assert result.value.code == 0
+        output = capsys.readouterr().out
+        assert output.endswith("本文1\n\n" if len(filenames) == 1 and filenames != ["--all"] else "本文2\n\n\n")
+        assert output.count("### fb-") == (1 if filenames == ["fb-001.md"] else 2)
 
     def test_normalized_duplicates_are_shown_once_without_warning(
         self,
@@ -457,6 +437,8 @@ class TestShowStatusAll:
         """`--all --status=all`指定時、inbox・processing・adopted・rejectedの全件が状態ラベル付きで出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", target_repo="github.com/example/foo", body="inbox本文")
+        _write_awi_state_file(notes, "processing", "fb-processing.md", body="processing本文")
+        _write_awi_state_file(notes, "hold", "fb-hold.md", body="hold本文")
         _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         _write_awi_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -467,5 +449,7 @@ class TestShowStatusAll:
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert "### fb-inbox.md [inbox]" in captured.out
+        assert "### fb-processing.md [processing]" in captured.out
+        assert "### fb-hold.md [hold]" in captured.out
         assert "### fb-adopted.md [adopted]" in captured.out
         assert "### fb-rejected.md [rejected]" in captured.out

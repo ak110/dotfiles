@@ -57,6 +57,7 @@ class TestPs1DirectivesBlock:
 
     _OK_HEADER = "Set-StrictMode -Version Latest\r\n$ErrorActionPreference = 'Stop'\r\n"
 
+    # test-copy-contract: 両ディレクティブを欠くWrite入力に対し、非遮断の終了0と両欠落名を含む警告JSONを観測する。
     @pytest.mark.parametrize("file_path", ["a.ps1", "scripts/foo.ps1.tmpl", "C:/x/setup.ps1"])
     def test_missing_both_warns(self, file_path: str):
         result = _run({"tool_name": "Write", "tool_input": {"file_path": file_path, "content": "Write-Host 'x'\r\n"}})
@@ -65,12 +66,14 @@ class TestPs1DirectivesBlock:
         assert "Set-StrictMode" in message
         assert "ErrorActionPreference" in message
 
+    # test-copy-contract: ErrorActionPreferenceだけを持つ入力に対し、欠けたStrictModeの警告を観測する。
     def test_missing_only_strict_mode_warns(self):
         content = "$ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
         assert "Set-StrictMode" in _get_additional_context(result)
 
+    # test-copy-contract: StrictModeだけを持つ入力に対し、欠けたErrorActionPreferenceの警告を観測する。
     def test_missing_only_error_action_warns(self):
         content = "Set-StrictMode -Version Latest\r\nWrite-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
@@ -99,6 +102,7 @@ class TestPs1DirectivesBlock:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1.tmpl", "content": content}})
         assert result.returncode == 0
 
+    # test-copy-contract: 有効ディレクティブが検査範囲外にある入力を作り、警告される境界を観測する。
     def test_directives_after_50_lines_warns(self):
         """先頭 50 行を超えた位置にしかディレクティブが無ければ警告する。"""
         padding = "\r\n".join(f"# pad {i}" for i in range(60)) + "\r\n"
@@ -133,6 +137,7 @@ class TestPs1DirectivesBlock:
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.sh", "content": "echo hi\n"}})
         assert result.returncode == 0
 
+    # test-copy-contract: コメント内にだけディレクティブ名がある入力を与え、実設定と誤認しない警告を観測する。
     def test_directive_in_comment_warns(self):
         """コメント行内に文字列だけ含まれる PS1 は検出されること (I-2)。"""
         content = "# TODO: add Set-StrictMode -Version Latest and $ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
@@ -142,6 +147,7 @@ class TestPs1DirectivesBlock:
         assert "Set-StrictMode" in message
         assert "ErrorActionPreference" in message
 
+    # test-copy-contract: インデントされた入力を与え、全体へ有効な行頭設定と誤認しない警告を観測する。
     def test_indented_directive_warns(self):
         """行頭にインデントされたディレクティブは検出されること (I-2)。
 
@@ -166,6 +172,7 @@ class TestAgentToolkitDotfilesNamesCheck:
     dotfiles 固有名は一般化した表現への置き換えを、OSS 名 (pyfltr / pytilpack) は意図した参照かの確認を求める。
     """
 
+    # test-copy-contract: 配布対象のWriteに個人固有名を入力し、その対象語・命令形・通知sourceを含む警告を観測する。
     @pytest.mark.parametrize(
         "name",
         [
@@ -195,6 +202,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "せよ" in message
         assert '<atk-auto source="dotfiles/claude_hook_pretooluse"' in message
 
+    # test-copy-contract: 規範ファイルへのEditのnew_stringを入力し、個人固有名の警告を観測する。
     def test_warn_in_agent_toolkit_rules(self):
         target = str(_AT_RULES_DIR / "01-agent.md")
         result = _run(
@@ -210,6 +218,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.returncode == 0
         assert "glatasks" in _get_additional_context(result)
 
+    # test-copy-contract: 複数編集に無害な文と個人固有名を混在させ、後者が警告される結果を観測する。
     def test_warn_in_multiedit(self):
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
@@ -235,6 +244,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.returncode == 0
         assert name in result.stdout
 
+    # test-copy-contract: OSS個人プロジェクト名を配布文面へ入力し、参照の意図確認を求める警告を観測する。
     @pytest.mark.parametrize("name", ["pyfltr", "pytilpack"])
     def test_warn_when_target_is_in_agent_toolkit(self, name: str):
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
@@ -249,6 +259,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert name in msg
         assert "warn" in msg.lower()
 
+    # test-copy-contract: 個人固有名とOSS名を同じ入力に混在させ、両方が警告本文へ届くことを観測する。
     def test_specific_and_oss_names_are_reported_together(self):
         """固有名とOSS名の双方が成立する場合は、いずれも同じ警告本文へ載せる。"""
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")

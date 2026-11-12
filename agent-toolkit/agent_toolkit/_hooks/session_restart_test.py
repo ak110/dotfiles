@@ -56,7 +56,9 @@ def test_restart_keeps_delegation_state(
         )
         assert not old.exists()
         assert current.exists()
-        capsys.readouterr()
+        migrated = capsys.readouterr()
+        assert not migrated.err
+        assert json.loads(migrated.out)["hookSpecificOutput"]["permissionDecision"] == "allow"
     monkeypatch.setattr("tempfile.tempdir", str(after))
     assert (
         pretooluse.main(
@@ -73,3 +75,4 @@ def test_restart_keeps_delegation_state(
     )
     result = capsys.readouterr()
     assert not result.err
+    assert json.loads(result.out)["hookSpecificOutput"]["permissionDecision"] == "allow"

@@ -54,6 +54,7 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | エージェント向け文書の責務と配置を決める前 | `agent-toolkit:delegation/references/agent-documents-basics.md` |
 | 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-toolkit:user-confirmation-and-report/references/investigation.md` |
 | セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` |
+| process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `agent-toolkit:workflow-overview/references/orchestrator-runtime.md` |
 | ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:delegation/references/writing.md` |
 | textlintなど文章チェックの診断へ対応する時 | `agent-toolkit:delegation/references/textlint-violations.md` |
 | 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/textlint-violations.md` |

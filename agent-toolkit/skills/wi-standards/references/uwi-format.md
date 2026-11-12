@@ -8,6 +8,7 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| UWIの問い・選択肢・帰結を起草する前 | `../../user-confirmation-and-report/references/choice-construction.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-questions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../user-confirmation-and-report/references/approval-scope-preparation.md` |
@@ -25,7 +26,9 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 具体的な値の指定やログの貼り付けのように選択肢を網羅できない回答であっても、回答欄への記入方法や確認できない旨の扱いを選択肢として提示する。
 自由記入の回答欄は選択肢の後ろに追加できる。
 文書の末尾には`## 判断材料`を配置する。
-問いの主題の選定や選択肢の組み立て方は、`../../user-confirmation-and-report/references/user-confirmation-and-report-questions.md`「確認の選択肢を組む手順」に従う。
+問い・選択肢の構成と帰結の根拠は、`../../user-confirmation-and-report/references/choice-construction.md`「根拠の確定」「候補の構成」に従い、実在する属性・選定条件・依存・冷却期限・公開コマンドなどの観測で確かめてから書く。
+キューが処理環境を区別しない場合、別環境のprocess-wiへ処理を回す選択肢は提示せず、必要な観測結果をユーザーが回答へ記入する選択肢を使う。
+別環境での作業を依頼する場合も、その回答で同じ環境の巡回から元AWIが外れると説明するには、実在する選定条件の裏付けが必要である。
 
 `atk wi add --type=uwi`と`atk wi edit`、Web画面の投入は、質問本文に加えて保存形式の未回答の外枠も受け付ける。
 ツールは先頭の空行を除いた最初の行が`## 質問`なら、その見出しと直後の空行を取り除く。
@@ -71,11 +74,14 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 手順を記述する前に、各工程を実行権限と到達可能性で次のように振り分ける。
 
 - 到達可能かつ実行権限がある工程（差分の生成、読み取り専用の確認、ログの読み取りなど）は起草者自身が事前に実施し、その結果を本文へ記載する。
-- 到達可能であり実行権限のみが不足している工程は、起草者がエージェントによる実施の可否を尋ねる選択肢を用意し、`agent-toolkit:user-confirmation-and-report`「手段の選択」に従って確認を取る。
+- 到達可能であり必要な認可を得ればエージェントが実施できる工程は、エージェントが行う案を推奨して初期選択にし、`agent-toolkit:user-confirmation-and-report`「手段の選択」に従って確認を取る。
   承認後の操作と影響範囲については、`../../user-confirmation-and-report/references/approval-scope-preparation.md`「新しい挙動と準備の提示」に従う。
   協調と自律の区別は`agent-toolkit/share/rules/common/01-agent.md`「協調と自律」に従う。
 - エージェントから到達できない工程は、ユーザー自身が実行する手順を提示する案と、エージェントへ到達権限を付与してもらう案を比較する。
   権限付与の案を選択肢に含めない場合は、その理由を`## 判断材料`へ明記する。
+
+ユーザーへの操作依頼はエージェントが実施できない場合に限り、その理由を示す。
+実行環境が拒否した権限は、確認への承認だけで上書きしない（`../../../share/rules/common/01-agent.md`「確認を要する事項」）。
 
 ## 承認型ごとの内容
 

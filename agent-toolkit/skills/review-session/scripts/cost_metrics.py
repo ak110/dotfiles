@@ -219,7 +219,7 @@ def _queue_metrics(
         for _, row in rows:
             level = row[4] or "未記録"
             review["levels"][level] = review["levels"].get(level, 0) + 1
-            review["without_modification_count"] += bool(row[6].strip()) and not row[5].strip()
+            review["without_modification_count"] += review_table.response_state(row) == "rejected"
     saved_names = {path.name for path in saved.all_paths}
     unsaved = sum(path.name not in saved_names for path in (Path.home() / ".claude" / "plans").glob("*.exec-review.tsv"))
     return {

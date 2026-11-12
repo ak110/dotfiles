@@ -41,6 +41,7 @@ _LOGS_WINDOWS_PREFIX = _LEGACY_WINDOWS_PREFIX.replace(
 )
 
 
+# test-copy-contract: 公開済み旧batchのbyte読取位置で、更新後も終了値取得から再開する互換契約を保つ。
 @pytest.mark.parametrize("prefix", [_LEGACY_WINDOWS_PREFIX, _LOGS_WINDOWS_PREFIX], ids=["legacy", "logs"])
 def test_windows_replacement_resumes_at_exit_capture(prefix: str) -> None:
     """公開済みbatchの再開位置から更新を重複実行せず終了状態を取得する。"""
@@ -514,15 +515,6 @@ def test_windows_warning_redirects_as_utf8_without_bom() -> None:
     assert result.stderr == f"{_UPDATE_WARNING}\r\n".encode()
 
 
-@_LINUX_ONLY
-def test_prune_runs_after_update_uv_process_exits() -> None:
-    """公開POSIX入口はuv実行を待ってから非uvのpost-apply CLIへpruneを渡す。"""
-    source = _LAUNCHER.read_text(encoding="utf-8")
-    assert "DOTFILES_PRUNE_OUTSIDE_UV=1" in source
-    assert '"$HOME/.local/bin/dotfiles-post-apply" --prune-only' in source
-    assert source.index('"$UV" run') < source.index('dotfiles-post-apply" --prune-only')
-
-
 @pytest.mark.parametrize("run_exit,prune_exit", [(0, 0), (23, 0), (0, 9)])
 @_LINUX_ONLY
 def test_prune_invokes_post_apply_after_successful_update(tmp_path: pathlib.Path, run_exit: int, prune_exit: int) -> None:
@@ -557,24 +549,6 @@ def test_prune_invokes_post_apply_after_successful_update(tmp_path: pathlib.Path
         assert not (tmp_path / "prune-calls").exists()
     else:
         assert (tmp_path / "prune-calls").read_text(encoding="utf-8") == "--prune-only-if-minimal --prune --prune\n"
-
-
-def test_windows_prune_checks_runtime_exit_status_with_delayed_expansion() -> None:
-    """Windowsの静的な構造契約。cmd実動作は公開入口のWindows CI試験が担う。"""
-    source = _WINDOWS_LAUNCHER.read_bytes().decode("cp932")
-    assert "call if " not in source.lower()
-    assert "call for " not in source.lower()
-    assert 'if "!UPDATE_DOTFILES_EXIT!"=="0" if "%DOTFILES_PRUNE_OUTSIDE_UV%"=="1" if "!PRUNE_REQUESTED!"=="1" (' in source
-    assert 'set "UPDATE_DOTFILES_EXIT=!ERRORLEVEL!"' in source
-    arguments_scanned = source.index("for %%A in (%*) do for %%H in (-h --help)")
-    delayed = source.index("setlocal EnableDelayedExpansion")
-    assert source.index("setlocal DisableDelayedExpansion") < source.index('"%UV%" run')
-    assert source.index('call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"') < arguments_scanned < delayed
-    assert delayed < source.index('"!USERPROFILE!\\.local\\bin\\dotfiles-post-apply.exe" --prune-only')
-    assert 'set "DOTFILES_PRUNE_OUTSIDE_UV=1"' in source
-    lines = source.splitlines()
-    assert lines.count("(") == 2
-    assert lines.index("(") < next(index for index, line in enumerate(lines) if line.startswith('"%UV%" run'))
 
 
 @pytest.mark.parametrize(

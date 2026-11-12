@@ -15,13 +15,29 @@
 
 ## 登録集合
 
-登録集合は`process_loop_repositories`のローカルworktreeの絶対パスのJSON配列で定める。
+登録集合は`atk config repos`で管理する`repositories`のうち、`process_loop`が有効な項目のローカルworktreeで定める。
+直接編集は`edit=allow`のリポジトリだけで行い、`awi`・`deny`・未登録は`immediate-fix.md`「レーンの変更範囲へ加える修正の認可」の扱いに従う。
+検証OSの選定は`../SKILL.md`「検証環境」に従い、登録した`platforms`を各担当へ引き継ぐ。
 空集合は通常起動で待機し、`--once`では終了する。
 不正な登録は診断の対象を修正してから再開する。
 同じoriginは登録順の先頭へまとめ、Git共通ディレクトリと処理worktreeの対応を維持する。
 登録変更は次回取得から反映し、現在処理している集合は取得時点のまま保持する。
 候補・診断・監査条件を満たす対象に対し、開始猶予と未回答UWIの開始抑止を一括判定する。
 開始前の共有更新は全体で1回行い、監査・CI・worktree・所有・失敗・再開の状態は対象別に保持する。
+
+通常の巡回では、常駐が統括の会話を起動する前に`update-dotfiles`を1回実行する。
+統括の会話の途中では実行せず、`--no-update`による明示停止と、更新直後の自己再起動による重複抑止を除く。
+会話終了後は対象別の結果、キューとレーンの状態を検収し、残件があれば次の巡回が新しい統括を起動する。
+`--resume`と`--auto-resume`を明示した起動は保存済みの会話を再開する場合があり、この指定は最初の巡回で消費される。
+
+結果を保存せずに終了した対象は完了扱いにならない。
+次の統括は、対象別の所有、準備済みworktree、lane_session_idと前回の結果を`previous`から引き継ぐ。
+統括CLIの終了だけで配下担当の停止を仮定せず、常駐が実プロセスと登録済みwriterの生存を確認する。
+停止未確認の担当、未統合レーンとdirtyなworktreeは保持する。
+例外や利用上限で統括CLIを止める経路は所有するプロセスの子孫も回収し、残存を検知した場合は所有を保持する。
+利用上限時の同じ会話の再開と、予告を受けた統括が先に保存する内容は、`../../user-confirmation-and-report/references/usage-limit.md`「常駐から起動された統括の保存と再開」に従う。
+寿命・更新・停止の確認と再検証は、`docs/development/audit-records-usage-limit.md`にある。
+同記録の「agent-toolkit/skills/process-wi/references/all-repos-orchestration-resources.md：登録集合：2026年11月12日」を参照する。
 
 ## worktreeと資源
 
@@ -35,6 +51,10 @@ resumeは既存の準備済み実体と未完了成果をそのまま再利用�
 準備・統合・実行レビューは[run-lanes.md](run-lanes.md)と`${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md`へ、公開とCI検収は[finish-session.md](finish-session.md)へ接続する。
 
 ## 所有・継続・回収
+
+担当を起動する前に、受領した`previous`と前回の結果ファイルから、ユーザーだけが提供できる入力の不足で`blocked`となったAWIの現状を確かめる。
+未回答UWIへの依存が未登録なら、`run-lanes-completion.md`「採否の確定と終了区分」3のUWI保存・依存登録・`inbox`への差戻しを先に行う。
+自分で調達できる入力の不足はこの回答待ちに含めず、通常の調査・再開へ渡す。
 
 **7.** 短時間の排他とPID・起動時刻・担当sessionの生存照会でorigin単位の所有を維持する。
 

@@ -322,7 +322,7 @@ def test_delegate_launched_after_resource_instructions_keeps_its_own_documents(t
     base = {"cwd": str(tmp_path), "transcript_path": str(log)}
     for phase in ("起動直後", "会話圧縮の後"):
         if phase == "会話圧縮の後":
-            rules_context.reset_main_operation_skill_ready("test", retain_for_compact=True)
+            rules_context.reset_main_operation_skill_ready("test")
         for target, warned in ((lane, False), (integration, False), (other, True)):
             payload, tool, inputs = _read_request(host, target)
             decision = read_delivery.deliver({**payload, **base}, tool, inputs, "test")

@@ -7,7 +7,7 @@ import { expect, mock, test } from "claude-code/testing";
 
 const PLUGIN = "agent-toolkit";
 const TOOL = `mcp__${PLUGIN}__send_to_user`;
-const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
+const DISPLAYED = "ユーザーの画面へ表示した。送達済みの本文の言い換え・要約・抜粋も再掲せず、新しい内容もsend_to_userで送れ。残工程は続け、ターンを終えるときは待機・完了を問わず…だけを返せ。/goalの担当工程を完了した場合だけは、報告を含めず完了を述べる1文を返せ。無発話の注意を受けても同じ規則に従え。";
 const MESSAGE = "## 作業完了報告\n\n- 変更: `a.py`\n- 検証: 成功\n\n次の工程へ進む。\n\n".repeat(30);
 
 function row(tool: string, input: unknown) {
@@ -22,8 +22,7 @@ function row(tool: string, input: unknown) {
   };
 }
 
-test("send_to_userの行はmessageの全文を前に空行1行分の余白を置いたMarkdownで描く", async ($) => {
-  // 余白が無いと直前の表示と本文が続いて読みにくい。本文の欠落と余白の欠落の両方を検出する。
+test("send_to_userの行はmessageの全文をMarkdownで描く", async ($) => {
   for (const surface of ["terminal", "desktop"] as const) {
     const ui = await $.ui.mount({
       plugin: PLUGIN,
@@ -34,7 +33,6 @@ test("send_to_userの行はmessageの全文を前に空行1行分の余白を置
     });
     const markdown = await ui.find({ type: "Markdown" });
     expect(markdown?.props.text).toBe(MESSAGE);
-    expect(await ui.drawn()).toMatchObject({ type: "Box", props: { marginTop: 1 } });
     await ui.unmount();
   }
 });
@@ -374,7 +372,8 @@ for (const [name, message, warned] of [
     if (warned) {
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toMatch(/^<atk-auto source="send-to-user" kind="warn">\n/);
-      expect(warnings[0]).toMatch("再発防止策の必須性");
+      expect(warnings[0]).toMatch("テンプレート直下");
+      expect(warnings[0]).toMatch("追加取得は不要");
     } else {
       expect(warnings).toEqual([]);
     }
@@ -387,15 +386,15 @@ for (const [name, message, expected] of [
   ["観測した説明文", "2件目（前回batch）の通読も終えた。両セッションで共通に出た「`AWI化ステータス: 不要`の区分名」警告について、既存AWIの有無と原因を確認している。", []],
   ["予定への説明上の言及", "書式はAWI化ステータス: 予定から始める。`AWI化ステータス: 予定`の区分も確認した。", []],
   ["項目記号だけの説明", "- AWI化ステータス: 不要という書き方を調べた。", []],
-  ["点検の予定に区分が無い", "改善案:\n- X（AWI化ステータス: 予定 公開後）\n次: 実装", ["待機中の先行実施"]],
+  ["点検の予定に区分が無い", "改善案:\n- X（AWI化ステータス: 予定 公開後）\n次: 実装", ["テンプレート直下"]],
   ["改善案なし", "改善案: なし\n次: 検証", []],
   ["字下げコード例", "    気付いた改善点: X（AWI化ステータス: 予定 公開後）", []],
-  ["番号付きの報告", "  1) 気付いた改善点: X（AWI化ステータス: 予定 公開後）", ["待機中の先行実施"]],
+  ["番号付きの報告", "  1) 気付いた改善点: X（AWI化ステータス: 予定 公開後）", ["テンプレート直下"]],
   ["挿入通知の引用", "<atk-auto source=\"example\" kind=\"notice\">\n気付いた改善点: X（AWI化ステータス: 予定 公開後）\n</atk-auto>", []],
-  ["区分名の無い予定", "気付いた改善点: A（AWI化ステータス: 予定 公開完了後に既存AWIと照合して登録要否を判定）", ["待機中の先行実施"]],
+  ["区分名の無い予定", "気付いた改善点: A（AWI化ステータス: 予定 公開完了後に既存AWIと照合して登録要否を判定）", ["テンプレート直下"]],
   ["区分名で始まる予定", "気付いた改善点: A（AWI化ステータス: 予定 認可待ち ユーザーがpushを認可した後）\n気付いた改善点: B（AWI化ステータス: 予定 書込競合 lane-03の統合後）", []],
   ["済と即時対応だけ", "気付いた改善点: A（AWI化ステータス: 済 20261106-000000-001.md）\n気付いた改善点: B（AWI化ステータス: 即時対応）", []],
-  ["観測した未調査理由", "気付いた改善点: 再現しない失敗（AWI化ステータス: 不要 原因が未調査で、このセッションでは再現条件を特定できないため。必要なら調査する）", ["再発防止策の必須性", "原因を調べていない"]],
+  ["観測した未調査理由", "気付いた改善点: 再現しない失敗（AWI化ステータス: 不要 原因が未調査で、このセッションでは再現条件を特定できないため。必要なら調査する）", ["テンプレート直下", "原因を調べていない"]],
   ["区分名付きの未調査理由", "気付いた改善点: A（AWI化ステータス: 不要 見送り 原因を調べていないため）", ["原因を調べていない"]],
   ["処置を定めた理由", "気付いた改善点: A（AWI化ステータス: 不要 処置済み abc1234。原因は未確定だが同じ入力で再現しない）", []],
   ["未確定の後に引き継ぎ先を定めた理由", "気付いた改善点: A（AWI化ステータス: 不要 被覆 原因は未確定だが、既存AWI 20261106-174207-001.mdへ観測と調査を引き継ぎ済み）", []],

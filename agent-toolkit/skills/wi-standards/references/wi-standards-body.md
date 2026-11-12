@@ -16,7 +16,7 @@
 
 本文の書式、各節の役割分担、完成条件および調査結果と判断根拠の記載基準は[references/awi-body.md](awi-body.md)が定める。
 必須となるH2見出しの構成と順序は、`atk wi add`が保存処理の前に確認する。
-`## 反映内容と反映先`においてWI処理の工程や運用を変更する通常AWIを起草する場合は、起草に着手する前に`agent-toolkit:workflow-overview`を起動する。
+WI処理の工程や運用を変更する通常AWIでは、反映内容を検討して案や確認の選択肢を出す前（起草前を含む）に`agent-toolkit:workflow-overview`を起動する。
 
 ### 起草完了の条件
 

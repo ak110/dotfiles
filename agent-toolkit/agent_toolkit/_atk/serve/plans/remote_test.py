@@ -3,6 +3,7 @@
 # pylint: disable=protected-access
 
 import asyncio
+import base64
 import json
 import pathlib
 import sys
@@ -20,7 +21,7 @@ from agent_toolkit._atk.serve.plans import roots as plans_roots
 from agent_toolkit._atk.serve.plans import views as plans_views
 from agent_toolkit._plan import viewer_files as plan_viewer_files
 from agent_toolkit._testing import late_descendant
-from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload, _runner_returning
+from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_payload
 
 
 @pytest.mark.asyncio
@@ -131,12 +132,22 @@ async def test_same_relative_path_in_two_roots_stays_separate(
 
 @pytest.mark.asyncio
 async def test_remote_read_passes_source_id_before_the_path() -> None:
-    """複数rootの構成では保存元IDを先頭の引数として渡す。"""
-    runner, calls = _runner_returning(_read_payload("body"))
+    """遠隔保存元の同名ファイルを取り違えず、それぞれの本文を取得する。"""
+    bodies = {(plans.NEW_SOURCE_ID, "same.md"): "新しい保存元の本文", (plans.LEGACY_SOURCE_ID, "same.md"): "従来の保存元の本文"}
 
-    await plans_remote.fetch_remote_file("remote-host", "p.md", runner, None, source_id=plans.NEW_SOURCE_ID)
+    async def runner(host: str, operation: str, args: list[str]) -> str:
+        assert host == "remote-host" and operation == "read"
+        source, path = (base64.b64decode(value).decode("utf-8") for value in args)
+        return json.dumps(_read_payload(bodies[source, path]))
 
-    assert len(calls[0][2]) == 2
+    assert (
+        await plans_remote.fetch_remote_file("remote-host", "same.md", runner, None, source_id=plans.NEW_SOURCE_ID)
+        == "新しい保存元の本文"
+    )
+    assert (
+        await plans_remote.fetch_remote_file("remote-host", "same.md", runner, None, source_id=plans.LEGACY_SOURCE_ID)
+        == "従来の保存元の本文"
+    )
 
 
 def test_local_hostname_must_not_collide_with_remote_hosts(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:

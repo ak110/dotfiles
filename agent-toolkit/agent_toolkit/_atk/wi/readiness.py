@@ -22,7 +22,6 @@ from agent_toolkit._atk.wi.constants import (
 )
 from agent_toolkit._atk.wi.entry_text import EntryText, EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
-from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._git import remote as _git_remote
 
 type RepairKind = Literal["frontmatter"]
@@ -43,7 +42,7 @@ class QueueEntry:
     legacy_dependency: dict[str, object] | None
     repair_target_filename: str | None
     repair_kind: RepairKind | None
-    source: str | None = None
+    run_skill_report: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -158,7 +157,7 @@ def _queue_entry(
         legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
         repair_target_filename=repair_target if isinstance(repair_target, str) else None,
         repair_kind=repair_kind,
-        source=data.get("source") if isinstance(data.get("source"), str) else None,
+        run_skill_report=data.get("run_skill_report") == "true",
     )
 
 
@@ -251,10 +250,10 @@ def applicable_cooldown_until(kind: str | None, value: object) -> datetime.datet
 
 
 def _can_become_candidate(entry: QueueEntry) -> bool:
-    """依存先がprocess-wiの同じ実行の候補へ入り得るかを返す。UWIは回答済みで`atk run-skill`由来でない場合だけ候補になる。"""
+    """依存先が同じ実行の候補へ入り得るかを返す。UWIは回答済みで報告用でない場合だけ候補になる。"""
     if entry.kind != WI_TYPE_UWI:
         return True
-    return entry.uwi_answered is True and entry.source != _automated_prompt.SOURCE_RUN_SKILL
+    return entry.uwi_answered is True and not entry.run_skill_report
 
 
 def _internal_dependency_waits(
@@ -264,7 +263,7 @@ def _internal_dependency_waits(
 ) -> list[str]:
     """依存先が全て同じ実行の候補へ入る項目だけを内部依存待ちとして返す。
 
-    候補は着手可能な項目、処理中の項目、内部依存待ちの項目であり、未回答のUWIと`atk run-skill`のUWIは除く。
+    候補は着手可能な項目、処理中の項目、内部依存待ちの項目であり、未回答のUWIと報告用UWIは除く。
     依存先の候補外は推移的に伝わる（AがB、Bが未回答UWIを待つ場合、Bが候補外なのでAも候補外）ため、
     候補外の依存先を持つ項目が無くなるまで内部依存待ちの集合を縮める。
     候補外の依存先を待つ項目を内部依存待ちに数えると、回答前の依存元が実装対象へ投入される。
@@ -538,9 +537,8 @@ def calculate_readiness(
     blocked: list[str] = []
     internal_wait_targets: dict[tuple[str, str | None], tuple[QueueEntry, ...]] = {}
     for entry in active:
-        if entry.kind == WI_TYPE_UWI and entry.source == _automated_prompt.SOURCE_RUN_SKILL:
-            # `atk run-skill`のUWIは同じ対象リポジトリと同じスキルの次回の実行が扱い、process-wiは選定から除く。
-            # readyへ含めると、process-loopが選定で除かれるUWIのために子セッションの起動を繰り返す。
+        if entry.kind == WI_TYPE_UWI and entry.run_skill_report:
+            # 報告の確認は次回の定期実行が扱う。承認回答はsourceによらず今回の候補へ含める。
             continue
         if entry.filename in deferred:
             blocked.append(entry.filename)

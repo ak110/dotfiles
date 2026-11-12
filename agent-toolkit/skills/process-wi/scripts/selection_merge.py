@@ -171,13 +171,6 @@ def merge_selection(
     ):
         raise ValueError("レーン対応は追加側の全対象レーンだけをキー、最終レーンを空でない文字列の値とする")
     mapping = typing.cast(dict[str, str], lane_map)
-    existing_lanes = {str(item[_selection.LANE_KEY]) for item in first} - {"なし"}
-    new_destinations = set(mapping.values()) - existing_lanes
-    if new_destinations:
-        raise ValueError(
-            f"追加の最終レーンが既存選定にない: {', '.join(sorted(new_destinations))}。"
-            "対応JSONの値を既存レーンへ直し、同じ担当の工程境界で追加する"
-        )
     if cost_updates is not None:
         errors = selection_contract.cost_update_errors(cost_updates, set(mapping.values()))
         if errors:
@@ -205,7 +198,10 @@ def merge_selection(
             dict.fromkeys(destination(value) for value in typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])))
         )
         prior = costs.get(lane)
-        assert prior is not None
+        if prior is None:
+            # 初回配分は保持し、新レーンも合流後の累計上限・再開計画の全体検査へ渡す。
+            costs[lane] = row
+            continue
         prior[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         if prior.get(_selection.STAGE_KEY, 1) != row.get(_selection.STAGE_KEY, 1):
             raise ValueError(f"{lane}: 合流するレーンの段階が異なる。最終割当に合う入力へ直す")
@@ -279,7 +275,7 @@ def merge_selection(
             _selection.SHARED_WAIT_SECONDS_KEY
         ]
     if _selection.SHARED_WAIT_BASIS_KEY in additional_correction:
-        # 待ちの秒数と同じく、算定の区分も追加側で再確定した全体配分の値を採る。
+        # 待ちの秒数と同じく、算定の区分も追加側で再確定した全体配分の値を採用する。
         typing.cast(dict[str, object], result[correction_key])[_selection.SHARED_WAIT_BASIS_KEY] = additional_correction[
             _selection.SHARED_WAIT_BASIS_KEY
         ]
@@ -296,6 +292,11 @@ def merge_selection(
         result[_selection.STAGED_ESTIMATE_KEY] = added[_selection.STAGED_ESTIMATE_KEY]
     if _selection.TARGET_OVERRUN_COMPARISON_KEY in added:
         result[_selection.TARGET_OVERRUN_COMPARISON_KEY] = added[_selection.TARGET_OVERRUN_COMPARISON_KEY]
+    if _selection.PROCESS_ESTIMATE_KEY in added:
+        # 追加分だけの経路を既存へ足すと共有工程を二重計上するため、全体を再確定した入力を使う。
+        result[_selection.PROCESS_ESTIMATE_KEY] = added[_selection.PROCESS_ESTIMATE_KEY]
+    elif _selection.PROCESS_ESTIMATE_KEY in existing:
+        raise ValueError("追加側へ合流後の全対象を持つ`全工程の見込み`を指定する")
     excluded = typing.cast(dict[str, object], result[correction_key])["除外した記録"]
     assert isinstance(excluded, list)
     excluded.extend(

@@ -109,10 +109,14 @@ class TestBashProcessKillByPattern:
     def test_kill_by_pid_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "kill 12345"}})
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_unrelated_command_allowed(self):
         result = _run({"tool_name": "Bash", "tool_input": {"command": "echo killall-report"}})
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     @pytest.mark.parametrize(
         "command",
@@ -141,6 +145,8 @@ class TestBashProcessKillByPattern:
     def test_allows_literal_argument_matches(self, command: str) -> None:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         assert result.returncode == 0
+        specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+        assert specific.get("permissionDecision") != "deny"
 
     def test_required_git_grep_options_match_help(self) -> None:
         """Gitが値を要求する全オプションを判定側が扱い、検索語の誤遮断を防ぐ。"""

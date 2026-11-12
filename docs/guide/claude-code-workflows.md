@@ -27,15 +27,24 @@
 `atk wi process-loop`を常駐させ、依頼したい内容をAWIとして登録する。
 登録したAWIは、調査・計画・実装・レビュー・公開まで自動で処理される。
 
-処理するリポジトリのローカルworktreeを絶対パスのJSON配列で登録し、ホームなどから起動する。
+処理するリポジトリを登録し、ホームなどから起動する。
+相対パスや`~`は絶対パスへ解決される。
 
 ```bash
-atk config set process_loop_repositories '["/home/user/project-a", "/home/user/project-b"]'
+atk config repos add ~/project-a --edit allow --process-loop
+atk config repos add ~/project-b --edit allow --process-loop
+atk config repos list
 atk wi list --configured-repos
 atk wi process-loop
 ```
 
 登録していないリポジトリへもAWIを登録できる（常駐実行の処理対象にはならない）。
+直接編集してよいリポジトリは`--edit allow`、AWIだけを投入するものは`--edit awi`、編集しないものは`--edit deny`で登録する。
+未登録は編集不可として扱われ、編集ツールと`git commit`が拒否される。
+編集を依頼した未登録リポジトリは、エージェントが登録内容を確認してから設定を進める。
+cloneの無い対象も`atk config repos add github.com/example/project --edit awi`のように登録できる。
+検証OSを限定する場合は`atk config repos set ~/project-a --platforms windows`のように指定する（未指定はLinuxとWindows）。
+ほかの配列設定は`atk config add serve_plans_remote_hosts remote-host`と`atk config remove serve_plans_remote_hosts remote-host`で要素単位に操作できる。
 dotfilesリポジトリでは自動で専用worktreeを使い、ほかのリポジトリでworktreeを分ける場合は`--worktree[=NAME]`を指定する。
 統括担当をCodexにする場合は、起動前に`atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium`を実行する。
 
@@ -84,7 +93,9 @@ PATH=/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 終了コード0は報告用UWIの保存（upstreamがあればpush）まで成功したこと、1は報告の保存に失敗したこと、124は時間上限に達したことを示す。
 ログは`atk config get state_dir`が示すディレクトリの`run-skill/`に保存される。
 未完了の実行入力とログは保持し、完了済みの記録とログは最終更新から30日を過ぎた実行開始時に回収する。
-破壊的な操作など判断が要る対応は実施されずにUWIとして届き、回答すると次回の実行がその対応を実施する。
+破壊的な操作など判断が要る対応は実施されずにUWIとして届く。
+回答済みの承認は、次に起動するprocess-wiまたは同じスキルの定期実行が、そのスキルの手順で実施する。
+結果報告への回答は、次回の同じスキルの実行が扱う。
 オプションは`atk run-skill --help`で確認する。
 
 報告の保存に失敗した場合（終了コード1）は、標準エラーが示すログを開いて次の手順で保存を完了する。

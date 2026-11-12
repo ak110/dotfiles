@@ -8,7 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._agents_server import agents_wait, shared_roots, state
+from agent_toolkit._agents_server import agents_wait, shared_roots
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._common.file_lock import release_lock
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
@@ -192,5 +192,3 @@ def test_cli_and_mcp_wait_limits_differ_only_by_delegation(
 
     assert asyncio.run(manager._resolve_wait_timeout("main")) == mcp_limit  # pylint: disable=protected-access
     assert _observe_cli_wait_limit(monkeypatch, wait_environment, capsys, cli_limit) == cli_limit
-    # CLI専用の待機上限の定数が`state`へ戻ると、保持期間とホストの判定がCLIとMCPで別々の値へ分かれ得る。
-    assert not [name for name in vars(state) if name.startswith("WAIT_TIMEOUT")]

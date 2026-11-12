@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import pathlib
 import shlex
 import subprocess
 import sys
+from types import ModuleType
 
 import pytest
 
-from agent_toolkit._agents_server import launch_prompts, state, tool_descriptions
-from agent_toolkit._common import automated_prompt, plugin_roots
-from agent_toolkit._testing.normative_contract import read_contract
+from agent_toolkit._agents_server import claude_options, launch_prompts
+from agent_toolkit._common import plugin_roots
+from agent_toolkit._testing.agents_server_claude_support import _capture_options
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX shellによる実行の受入例")
@@ -39,164 +41,6 @@ def test_python_runtime_information_runs_json_without_python_on_path(
     assert not result.stderr
 
 
-_LAUNCH_DOCUMENTS: dict[state.LaunchKind, str] = {
-    "delegate": "agents-server-delegate.md",
-    "explore": "agents-server-explore.md",
-    "shell": "agents-server-shell.md",
-    "write": "agents-server-write.md",
-}
-
-
-def _shared_document_body(name: str) -> str:
-    """共有文書から先頭のH1見出し行と直後の空行を除いた本文を返す。
-
-    除去する行数は共有文書の書式（1行目がH1見出し、2行目が空行）から導く。
-    書式が不正な場合は比較の前に失敗させ、実装側の分割結果と偶然一致する事態を防ぐ。
-    """
-    lines = (launch_prompts.SHARE_DIR / name).read_text(encoding="utf-8").rstrip("\n").split("\n")
-    assert lines[0].startswith("# "), f"{name}の1行目がH1見出しではない"
-    assert lines[1] == "", f"{name}の2行目が空行ではない"
-    return "\n".join(lines[2:])
-
-
-def test_launch_prompts_load_shared_documents() -> None:
-    """起動区分ごとに対応する共有文書を読み、委譲先通知と組み合わせて実行時のシステム指示を組み立てる。
-
-    共有文書の文面そのものはその文書側が定める内容であるため、判定対象にしない。
-    文面をテストへ書き写すと、実装の契約が変わらない改訂でもこのテストが失敗する。
-    """
-    notice = _shared_document_body("agents-server-delegate-notice.md")
-
-    assert notice == launch_prompts.DELEGATE_NOTICE
-    assert _shared_document_body("agents-server-base.md") == launch_prompts.SUBAGENT_BASE_INSTRUCTIONS
-    for kind, document in _LAUNCH_DOCUMENTS.items():
-        prompt = launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind]
-        assert f"{notice}\n{_shared_document_body(document)}" in prompt, kind
-        assert (launch_prompts.SUBAGENT_RULES in prompt) is (kind == "delegate"), kind
-    assert _shared_document_body("agents-server-auto-resume.md") in launch_prompts.AUTO_RESUME_NOTICE
-
-
-def test_public_descriptions_cover_shared_delivery_and_task_recovery() -> None:
-    """公開入力の説明から、固有指示と自動配送・有限回復の境界を判断できる。"""
-    for description in (tool_descriptions.MODE_DESCRIPTION, tool_descriptions.PROMPT_DESCRIPTION):
-        assert "共通返却契約の短節を自動配送" in description
-        assert "呼出元での再掲は不要" in description
-        assert "固有指示" in description
-        assert "全文は" in description
-    mode = tool_descriptions.MODE_DESCRIPTION
-    assert "役割を持つtaskだけ" in mode
-    assert "自由本文のdelegateとexplore・write・shellは対象外" in mode
-    assert "同じsessionへ1回だけ自動継続" in mode
-    assert "再違反や継続の配送失敗" in mode
-    assert "元の返却本文" in mode
-    assert "error.resultContract・error.nextAction" in mode
-
-
-def test_process_loop_launched_delegate_takes_main_role() -> None:
-    """process-loopの常駐プログラムが起動した通常委譲を、system promptがメインの役割へ切り替える。
-
-    all-reposの担当は委譲元がエージェントではないため、委譲先としてメイン限定の工程（完了報告・振り返り）を
-    省くと誰も実行しない。切替の条件は生成側が委譲プロンプトを包む`atk-auto`要素の`source`であり、
-    生成側の定数と配送文の条件が一致しないと、担当は委譲先として振る舞い続ける。
-    参照先の節は見出しの実在で確かめる。軽量委譲は担当を起動しないため条件を持たない。
-    """
-    marker = f'source="{automated_prompt.SOURCE_PROCESS_LOOP}"'
-    reference = "references/all-repos-orchestration-roles.md`「担当の役割」"
-    for prompt in (launch_prompts.DELEGATE_SYSTEM_PROMPT, launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT):
-        assert marker in prompt
-        assert reference in prompt
-    for kind in ("explore", "shell", "write"):
-        assert marker not in launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind], kind
-    orchestration = read_contract(
-        launch_prompts.SHARE_DIR / "agents-server-delegate.md",
-        launch_prompts.SHARE_DIR.parent,
-        ("../skills/process-wi/references/all-repos-orchestration-roles.md", "本文がこの資料の基準を使う場面"),
-    )
-    assert "## 担当の役割" in orchestration.splitlines()
-    assert marker in automated_prompt.wrap("本文", source=automated_prompt.SOURCE_PROCESS_LOOP, kind="repository-delegate")
-
-
-def test_lightweight_launches_receive_shared_result_contract_only() -> None:
-    """共通規範を省く全区分へ同じ返却条件が届き、ベース実務規律の全文は追加しない。"""
-    base = _shared_document_body("agents-server-base.md")
-    rules = (launch_prompts.SHARE_DIR / "rules" / "rules-subagent.md").read_text(encoding="utf-8")
-    result_body = (
-        rules.split("<!-- subagent-result-contract:start -->", maxsplit=1)[1]
-        .split("<!-- subagent-result-contract:end -->", maxsplit=1)[0]
-        .strip()
-    )
-    assert result_body
-    for prompt in (
-        launch_prompts.EXPLORE_SYSTEM_PROMPT,
-        launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT,
-        launch_prompts.SHELL_SYSTEM_PROMPT,
-        launch_prompts.WRITE_SYSTEM_PROMPT,
-    ):
-        assert result_body in prompt
-        assert base not in prompt
-        assert launch_prompts.SUBAGENT_RULES not in prompt
-    assert result_body in launch_prompts.SUBAGENT_RULES
-
-
-def test_launch_prompts_carry_normative_boundaries() -> None:
-    """system指示の各区分が、生成主体と種別を示す境界を持つこと。"""
-    for kind, prompt in launch_prompts.LAUNCH_SYSTEM_PROMPTS.items():
-        assert f'<{launch_prompts.NORMATIVE_ELEMENT} source="{launch_prompts.NORMATIVE_SOURCE}" kind="{kind}"' in prompt, kind
-        assert prompt.endswith(f"</{launch_prompts.NORMATIVE_ELEMENT}>"), kind
-    assert launch_prompts.AUTO_RESUME_NOTICE.startswith(f"<{launch_prompts.NORMATIVE_ELEMENT} ")
-    assert 'kind="rules-subagent"' in launch_prompts.DELEGATE_SYSTEM_PROMPT
-
-
-def test_explore_capabilities_are_shared_with_public_schema() -> None:
-    """公開schemaと実際の委譲プロンプトへ同じ能力定義を配送する。"""
-    capabilities = tool_descriptions.EXPLORE_CAPABILITIES
-    assert capabilities in tool_descriptions.START_DESCRIPTION[:4096]
-    assert capabilities in tool_descriptions.MODE_DESCRIPTION
-    for backend, prompt in (
-        ("claude", launch_prompts.CLAUDE_EXPLORE_SYSTEM_PROMPT),
-        ("codex", launch_prompts.EXPLORE_SYSTEM_PROMPT),
-    ):
-        assert tool_descriptions.EXPLORE_COMMON_CAPABILITIES in prompt
-        assert tool_descriptions.EXPLORE_BACKEND_CAPABILITIES[backend] in prompt
-        assert capabilities in prompt
-    for kind in ("delegate", "shell", "write"):
-        assert capabilities not in launch_prompts.LAUNCH_SYSTEM_PROMPTS[kind]
-
-
-def test_explore_contract_covers_complete_reading_and_tool_managed_output() -> None:
-    """保存結果の完全取得と成果物の読取専用境界を各backendへ配送する。"""
-    for backend in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES:
-        # 生成された最終本文で、軽量設定が省く規範を読まずに継続と終了を判断できることを確かめる。
-        prompt = launch_prompts._explore_system_prompt(backend)  # pylint: disable=protected-access
-        assert _shared_document_body("agents-server-explore.md") in prompt
-        assert "対象となる成果物、委譲された入力、およびユーザーデータ" in prompt
-        assert "成果物ファイルを自身で新規作成することは禁止する" in prompt
-        assert "キャッシュ・状態・保存出力" in prompt
-        assert "省略や未読" in prompt
-        for operation in ("sed -n '<開始行>,<終了行>p' -- <絶対パス>", "jq", "git grep", "rg"):
-            assert operation in prompt, (backend, operation)
-        for reading_rule in ("取得単位の選択にだけ", "読んだ本文で判定", "wc -c", "test -s", "改行文字の数", "'<開始行>,$p'"):
-            assert reading_rule in prompt, (backend, reading_rule)
-        # シェル未指定のコマンドがPowerShellで動く環境でも、実在するbashの指定とbashが無い場合の同等の読取へ到達する。
-        for shell_rule in ("POSIXシェル", "実在を確かめたbash", "Get-Content -LiteralPath <絶対パス> -Encoding utf8"):
-            assert shell_rule in prompt, (backend, shell_rule)
-        assert "行範囲を分けて最後まで読む" in prompt
-        assert "内側コマンドと外側セル" in prompt
-        assert "完成条件" in prompt
-        assert "担当内で完了" in prompt
-        assert "自身で解消できない" in prompt
-        assert "正常結果は、先頭" in prompt
-        assert "既存の末尾状態行も受理" in prompt
-        assert "すべての理由行" in prompt
-        assert "追加報告" in prompt
-        assert "状態: completed" in prompt
-        assert "続行できない理由:" in prompt
-        assert "1回だけ自動継続" in prompt
-        assert "保存先の無い出力" in prompt
-    assert "atk read-file" not in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
-    assert "pyfltr grep" in tool_descriptions.EXPLORE_BACKEND_CAPABILITIES["claude"]
-
-
 @pytest.mark.parametrize("existing", [False, True])
 def test_plugin_resource_instructions_reject_invalid_toolkit_root(tmp_path: pathlib.Path, existing: bool) -> None:
     """所在案内は、実在するskillsを持たないtoolkitを配送しない。"""
@@ -207,15 +51,57 @@ def test_plugin_resource_instructions_reject_invalid_toolkit_root(tmp_path: path
         launch_prompts.plugin_resource_instructions(root, "codex", str(tmp_path))
 
 
-def test_all_launch_system_prompts_include_language_condition() -> None:
-    """全modeの起動指示がユーザー向け説明の日本語化と内部返却の言語境界を届ける。
+def _load_prompt_consumer(path: pathlib.Path, name: str) -> ModuleType:
+    """実際のimport時の結線を、既存モジュールを再初期化せず試験用の名前空間へ読み込む。"""
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
-    共通規範を直接読み込まないバックエンドにも、成果物と内部連絡を区別した契約が必要となる。
-    """
-    for kind, prompt in launch_prompts.LAUNCH_SYSTEM_PROMPTS.items():
-        assert "ユーザーへ届ける主体が日本語の説明を作成する" in prompt, kind
-        assert "内部返却" in prompt, kind
-        assert "言語だけで書き直させず" in prompt, kind
-    for prompt in (launch_prompts.DELEGATE_SYSTEM_PROMPT, launch_prompts.CLAUDE_DELEGATE_SYSTEM_PROMPT):
-        assert "実行環境によって英語の指示が挿入された場合でも" in prompt
-        assert "成果物の記述言語として引き継がない" in prompt
+
+@pytest.mark.usefixtures("agents_server_isolation")
+def test_shared_mode_documents_reach_sdk_with_distinct_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """区分別の文書入力が実際の読込・import・合成を通り、別区分の本文を含まずSDKへ届く。"""
+    package = tmp_path / "package"
+    modules = package / "agent_toolkit" / "_agents_server"
+    modules.mkdir(parents=True)
+    share = package / "share"
+    share.mkdir()
+    inputs = {
+        name: f"文書識別:{name}:{tmp_path.name}"
+        for name in ("delegate", "explore", "shell", "write", "base", "delegate-notice", "auto-resume")
+    }
+    for name, marker in inputs.items():
+        (share / f"agents-server-{name}.md").write_text(f"# 入力文書\n\n{marker}\n", encoding="utf-8")
+    rules = share / "rules"
+    rules.mkdir()
+    result_marker = "返却契約識別:" + tmp_path.name
+    rules_marker = "通常規範識別:" + tmp_path.name
+    (rules / "rules-subagent.md").write_text(
+        f"{rules_marker}\n<!-- subagent-result-contract:start -->\n{result_marker}\n<!-- subagent-result-contract:end -->\n",
+        encoding="utf-8",
+    )
+    (rules / "rules-subagent.claude-code.md").write_text("Claude固有識別", encoding="utf-8")
+    for source in (launch_prompts, claude_options):
+        assert source.__file__ is not None
+        path = pathlib.Path(source.__file__)
+        (modules / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    prompts = _load_prompt_consumer(modules / "launch_prompts.py", "mode_contract_prompts")
+    monkeypatch.setitem(sys.modules, launch_prompts.__name__, prompts)
+    consumer = _load_prompt_consumer(modules / "claude_options.py", "mode_contract_options")
+    captured = _capture_options(monkeypatch)
+    monkeypatch.setattr(consumer, "_parent_settings", lambda: None)
+
+    for mode in ("delegate", "explore", "shell", "write"):
+        consumer._build_options(str(tmp_path), "model", "medium", launch_kind=mode)  # pylint: disable=protected-access
+        delivered = captured["system_prompt"]
+        assert isinstance(delivered, str)
+        assert inputs[mode] in delivered, mode
+        for other in {"delegate", "explore", "shell", "write"} - {mode}:
+            assert inputs[other] not in delivered, (mode, other)
+        assert inputs["delegate-notice"] in delivered
+        assert inputs["auto-resume"] in delivered
+        assert result_marker in delivered
+        assert (inputs["base"] in delivered) is (mode == "delegate")
+        assert (rules_marker in delivered) is (mode == "delegate")

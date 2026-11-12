@@ -4,9 +4,7 @@
 import pathlib
 import typing
 
-import check_selection
 import pytest
-import selection_contract
 import yaml
 
 from agent_toolkit._testing.selection_check_support import _awi, _derived, _dispatch, _overlap_record, _write_selection
@@ -113,12 +111,17 @@ def test_compound_diagnostics_name_failed_condition(
         assert value in line, line
 
 
-# 違反の種類ごとの次の操作。実装の定数を種類の識別に使い、出力に現れた種類の対処だけが1回ずつ出ることを確かめる。
-_NEXT_ACTIONS = {
-    name: value
-    for module in (check_selection, selection_contract)
-    for name, value in vars(module).items()
-    if name.startswith("_NEXT_") and name != "_NEXT_RERUN"
+# 修正対象と必要な操作を契約から指定し、実装の診断定数を期待値に使わない。
+_ACTION_CONTRACTS = {
+    "broad": ("広すぎる範囲を", "個別パスへ置き換える"),
+    "missing-body": ("`atk wi list`", "`WI`をprivate-notesにあるファイル名へ直す"),
+    "model-conflict": ("`担当モデル`の`実装担当`", "1つの値へそろえる", "別のレーンへ割り当てる"),
+    "stage-gap": ("`レーンの所要時間`の`段階`", "1から欠番なく連続する値へ直す"),
+    "prior-missing": ("段階2以上のレーンの`先行レーン`へ", "前段のレーンを挙げる"),
+    "edge-failure": ("診断行が示す条件を直す", "書込重複は両端の`書込対象`", "レーンの`段階`", "根拠を元のWIのfrontmatter"),
+    "component-link": ("不可分成分の構成WIを", "連結させる", "成分を分け直す"),
+    "source-mismatch": ("一致しない欄を", "`depends_on`・`target_repo`", "`再開位置`が示す計画の値へ直す"),
+    "lane-bound": ("統合済み・後段を含めて上限内のレーンへまとめ", "同じレーンで順に扱う"),
 }
 
 
@@ -187,16 +190,16 @@ def _next_action_case(case: str, tmp_path: pathlib.Path, notes: pathlib.Path) ->
 @pytest.mark.parametrize(
     "case,expected",
     [
-        ("broad", ["_NEXT_BROAD"]),
-        ("uncovered-broad", ["_NEXT_BROAD"]),
-        ("missing-body", ["_NEXT_MISSING_BODY"]),
-        ("model-conflict", ["_NEXT_LANE_MODEL"]),
-        ("stage-gap", ["_NEXT_STAGE_SEQUENCE"]),
-        ("prior-missing", ["_NEXT_PRIOR_MISSING"]),
+        ("broad", ["broad"]),
+        ("uncovered-broad", ["broad"]),
+        ("missing-body", ["missing-body"]),
+        ("model-conflict", ["model-conflict"]),
+        ("stage-gap", ["stage-gap"]),
+        ("prior-missing", ["prior-missing"]),
         # 成立しない辺は成分の連結も失わせるため、2つの種類の対処が1回ずつ現れる。
-        ("edge-failure", ["_NEXT_EDGE_FAILURE", "_NEXT_COMPONENT_LINK"]),
-        ("source-mismatch", ["_NEXT_SOURCE_MISMATCH"]),
-        ("lane-bound", ["_NEXT_LANE_BOUND"]),
+        ("edge-failure", ["edge-failure", "component-link"]),
+        ("source-mismatch", ["source-mismatch"]),
+        ("lane-bound", ["lane-bound"]),
     ],
 )
 def test_next_action_lists_only_reported_kinds(
@@ -214,15 +217,20 @@ def test_next_action_lists_only_reported_kinds(
     actions = [line for line in lines if line.startswith("次の操作:")]
     violations = [line for line in lines if not line.startswith("次の操作:")]
     assert len(actions) == 1 and violations, lines
-    present = {name for name, value in _NEXT_ACTIONS.items() if value in actions[0]}
+    present = {name for name, fragments in _ACTION_CONTRACTS.items() if fragments[0] in actions[0]}
     assert present == set(expected), lines
     for name in expected:
-        assert actions[0].count(_NEXT_ACTIONS[name]) == 1
+        for fragment in _ACTION_CONTRACTS[name]:
+            assert actions[0].count(fragment) == 1, lines
+    assert "同じコマンド" in actions[0], lines
+    expected_fragments = [fragment for name in expected for fragment in _ACTION_CONTRACTS[name]]
+    for instruction in actions[0].removeprefix("次の操作: ").split("。"):
+        assert not instruction or any(fragment in instruction for fragment in [*expected_fragments, "同じコマンド"]), lines
     if case in {"uncovered-multiple", "lane-bound"}:
         # 同じ種類の違反が複数行あっても、その種類の対処は1回だけ現れる。
         assert len(violations) >= 2
     for line in violations:
-        assert not any(value in line for value in _NEXT_ACTIONS.values()), line
+        assert not any(fragments[0] in line for fragments in _ACTION_CONTRACTS.values()), line
 
 
 _FIX_SELECTION = "同じコマンドを再実行する"

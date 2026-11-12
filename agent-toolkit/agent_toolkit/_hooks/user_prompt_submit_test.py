@@ -791,6 +791,7 @@ def test_python_hook_names_only_claude_session(tmp_path: pathlib.Path, codex: bo
     assert not (tmp_path / "claude-agent-toolkit-session-title").exists()
 
 
+# test-copy-contract: 包みの有無が異なる完了通知入力を機械通知と識別し、人間発話向け案内を混入させない契約。
 @pytest.mark.parametrize("prefix", ["", "[SYSTEM NOTIFICATION - NOT USER INPUT]\n"])
 def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathlib.Path, prefix: str) -> None:
     """本体の包みを含む完了通知も、実ユーザー発話の注記を消費しない。"""

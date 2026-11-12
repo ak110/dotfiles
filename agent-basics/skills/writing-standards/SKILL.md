@@ -173,7 +173,7 @@ hookの通知は選択を補助する。
 | コードを編集する時と、依存の追加・更新をする時 | `references/implementation-time.md` | | | |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時 | `references/design-heuristics-screening.md`、`references/design-heuristics-necessity.md`、`references/design-heuristics-mechanisms.md`、`references/design-heuristics-responsibility.md`、`references/design-heuristics-proportionality.md`、`references/design-heuristics-decisions.md`、`references/design-heuristics-quality.md` | | | |
 | MCPサーバーまたはホスト登録ツール（Function hooksなど）の説明、引数、応答を設計、実装、変更、レビューする時 | `references/mcp-server-design.md` | | | |
-| テスト設計・検証手法を選ぶ時、テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md` | | | |
+| テスト設計・検証手法を選ぶ時、テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `references/testing.md`、`references/testing-selection.md` | 操作 | `path:*_test.*`、`path:*/test_*`、`path:*_spec.*`、`path:*.test.*`、`path:*.spec.*`、`path:*/tests/*`、`path:*/__tests__/*`、`path:*Tests.cs`、`path:*Test.cs`、`path:*.Tests.ps1`、`path:*.rs` | |
 | Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python-analysis.md` | | | |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` | | | |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` | | | |

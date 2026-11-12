@@ -122,6 +122,8 @@ def test_exit_requested_with_current_marker(
     result = json.loads(output.out)
     assert result["status"] == "exit_requested"
     assert "ターンを終えると/exit" in result["next_action"]
+    assert "report-completion" in result["next_action"]
+    assert "送達済み本文を再掲せず" in result["next_action"]
     assert not output.err
     assert (directory / "request-session-1.txt").read_text(encoding="utf-8") == "requested"
 

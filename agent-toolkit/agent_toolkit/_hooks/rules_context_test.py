@@ -30,7 +30,6 @@ def test_session_start_reacquires_plugin_inventory_for_the_same_session(tmp_path
     monkeypatch.setattr(plugin_roots.shutil, "which", lambda *_args, **_kwargs: str(executable))
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
-    monkeypatch.setattr(rules_context, "_compact_recovery_context", lambda *_args, **_kwargs: None)
     calls = []
 
     def acquire(args, **_kwargs):
@@ -208,6 +207,7 @@ def test_session_start_main_places_response_language_notice_first(
     )
 
 
+# test-copy-contract: 委譲環境とSubagentStartを入力に、メイン向け通知を別主体へ誤配送しない契約。
 def test_response_language_notice_absent_for_delegates(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -221,6 +221,7 @@ def test_response_language_notice_absent_for_delegates(
     assert rules_context.RESPONSE_LANGUAGE_NOTICE not in _output(capsys)
 
 
+# test-copy-contract: Codex開始入力には共通規範を配送し、Claude専用規範を混入させないホスト別配送契約。
 def test_session_start_codex_excludes_claude_code_rules(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -255,6 +256,7 @@ def test_codex_main_receives_codex_main_rules(capsys: pytest.CaptureFixture[str]
     assert codex_main_rules not in _output(capsys)
 
 
+# test-copy-contract: 主体種別と委譲環境を変えてもサブエージェント規範だけを配送し、メイン規範を混入させない契約。
 @pytest.mark.parametrize("agent_type", ["Explore", "Plan", "general-purpose", "plan-reviewer"])
 @pytest.mark.parametrize("environment", [None, "delegated", "owner"])
 def test_subagent_start_claude_includes_common_and_claude_subagent_rules(
@@ -273,6 +275,7 @@ def test_subagent_start_claude_includes_common_and_claude_subagent_rules(
     assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() not in output
 
 
+# test-copy-contract: CodexのSubagentStartには共通規範を配送し、Claude専用規範を混入させない契約。
 def test_subagent_start_codex_excludes_claude_code_rules(capsys: pytest.CaptureFixture[str]) -> None:
     """CodexのSubagentStartへClaude固有規範を追加しない。"""
     rules_context_codex.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "explorer"}))

@@ -344,6 +344,8 @@ def test_user_events_preceding_assistant(tmp_path: pathlib.Path, capsys: pytest.
         "line": 2,
         "timestamp": "2026-10-01T00:00:02Z",
         "text": "needle",
+        "delivery": "text",
+        "text_length": 6,
     }
     assert events[-1]["count"] == 2
 

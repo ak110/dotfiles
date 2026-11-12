@@ -29,6 +29,68 @@ from agent_toolkit._testing.agents_server_support import (
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize("kind", ["seven_day", "seven_day_overage_included"])
+@pytest.mark.parametrize("route", ["changed", "same", "direct"])
+@pytest.mark.asyncio
+async def test_retry_uses_changed_stage_model_before_waiting_or_connection_migration(
+    kind: str, route: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """実SDKの拒否通知を通し、工程の別モデル設定だけが下位CLIの再試行を終える。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:before/medium")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "always")
+    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
+    cli = _RetryCLI("changed-model-retry")
+    async with (
+        manager.AgentsServerManager(None) as owner,
+        claude.ClaudeServerManager(owner.sessions, owner._condition, client_factory=lambda _options: cli) as backend,
+    ):
+        install_backend(owner, "claude", backend)
+        started = await owner.start(
+            "claude:before/medium" if route == "direct" else "chores", "既存の仕事を維持する", str(tmp_path)
+        )
+        if route != "same":
+            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:after/medium")
+        cli.messages.put_nowait(_limit(kind))
+        cli.messages.put_nowait(_retry())
+        owner._wait_timeouts["main"] = 5
+        if route == "changed":
+            result = await owner.wait()
+            assert result["status"] == "failed", result
+            assert result["error"]["configuredModelChanged"] is True
+            assert "handoff_from" in result["next_action"]
+            assert owner.sessions[started["session_id"]].usage_limit_resume_at is None
+        else:
+            await _wait_reason(owner, started["session_id"])
+            assert owner.sessions[started["session_id"]].status == "running"
+            assert "configuredModelChanged" not in (owner.sessions[started["session_id"]].error or {})
+
+
+@pytest.mark.parametrize("kind", ["seven_day", "seven_day_overage_included"])
+@pytest.mark.asyncio
+async def test_changed_model_rejection_before_init_resolves_start(kind, tmp_path, monkeypatch):
+    """init前の通知を再生する途中で終了しても、起動待ちを未確定のまま残さない。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:before/medium")
+    monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
+    cli = _RetryCLI("early-model-retry", initial=[_limit(kind), _retry()])
+    query = cli.query
+
+    async def change_setting(prompt):
+        await query(prompt)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:after/medium")
+
+    monkeypatch.setattr(cli, "query", change_setting)
+    async with (
+        manager.AgentsServerManager(None) as owner,
+        claude.ClaudeServerManager(owner.sessions, owner._condition, client_factory=lambda _options: cli) as backend,
+    ):
+        install_backend(owner, "claude", backend)
+        async with asyncio.timeout(3):
+            started = await owner.start("chores", "既存の仕事を維持する", str(tmp_path))
+        assert started["status"] == "failed"
+        assert owner.sessions[started["session_id"]].error["configuredModelChanged"] is True
+
+
 class _RetryCLI:
     """終了しない再試行と、停止後の遅延結果を所有する模擬CLI。"""
 

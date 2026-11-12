@@ -178,6 +178,8 @@ def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, An
             "line": item.line,
             **({"reason": item.reason} if item.reason else {}),
             **({"failure_line": item.failure_line} if item.failure_line is not None else {}),
+            **({"source_record": item.source_record} if item.source_record is not None else {}),
+            **({"source_line": item.source_line} if item.source_line is not None else {}),
             "next_action": (
                 (
                     f"記録 {item.record_id}:{item.line} の委譲入力と結果を確認し、"
@@ -196,7 +198,7 @@ def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, An
 
 
 def _recovery_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """JSONとして成立しない行を後続の完全な行で置き換えた対応を、記録と行番号で示す。"""
+    """JSONとして成立しない行の回復（後続の完全な行での置換、またはNUL断片の除外）を、記録と行番号で示す。"""
     return [
         {
             "kind": "recovered-record-line",
@@ -206,6 +208,7 @@ def _recovery_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
             "ordinal": recovery.ordinal,
             "entry_type": recovery.entry_type,
             "length": recovery.length,
+            "method": recovery.method,
         }
         for item in collected
         for recovery in item.recoveries

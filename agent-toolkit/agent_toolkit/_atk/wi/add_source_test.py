@@ -299,19 +299,6 @@ def test_public_batch_preserves_source(tmp_path: pathlib.Path, monkeypatch: pyte
     assert (notes / "2026" / "01" / "20260101-000000-001.md").read_text(encoding="utf-8") == original
 
 
-def test_public_add_help_explains_source_contract(capsys: pytest.CaptureFixture[str]) -> None:
-    """公開ヘルプが仕様で定めたsourceの指定方法と人間環境の省略を案内する。"""
-    with pytest.raises(SystemExit) as shown:
-        atk.main(["wi", "add", "--help"])
-    assert shown.value.code == 0
-    help_text = "".join(capsys.readouterr().out.split())
-    assert "起動スキル名（プラグイン接頭辞を除く）" in help_text
-    assert "スキルが無い場合はagent" in help_text
-    assert "通常追加ではhumanを拒否" in help_text
-    assert "人間の直接投入ではsourceを省略" in help_text
-    assert "agent・human・plan" not in help_text
-
-
 def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

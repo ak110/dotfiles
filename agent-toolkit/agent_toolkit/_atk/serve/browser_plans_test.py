@@ -40,6 +40,7 @@ async def test_plan_copy_feedback_preserves_toolbar_positions(
 ) -> None:
     """本文・パスのコピー成功と失敗の表示で、ボタン幅と隣接操作の位置が変わらない。"""
     page = screen_harness.page
+    await page.route("https://cdn.jsdelivr.net/**", lambda route: route.abort())
     await page.set_viewport_size({"width": width, "height": 800})
     await page.goto(screen_harness.base_url + "/plans?host=browser-test&path=plan.md")
     await page.locator("#preview h1").wait_for(state="visible")
@@ -219,6 +220,7 @@ async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_ha
 async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _ScreenHarness) -> None:
     """390px幅の計画画面で本文とパスのコピー操作を1行の高さに保つ。"""
     page = screen_harness.page
+    await page.route("https://cdn.jsdelivr.net/**", lambda route: route.abort())
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(screen_harness.base_url + "/plans")
     await page.locator("#files .file").first.wait_for(state="visible")
@@ -243,42 +245,10 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_plan_copy_buttons_restore_labels_after_repeated_clicks(screen_harness: _ScreenHarness) -> None:
-    """コピー結果の表示中に再度コピーしても、両ボタンの画面幅ごとの操作名を元に戻す。"""
-    page = screen_harness.page
-    await page.goto(screen_harness.base_url + "/plans")
-    await page.locator("#preview h1").wait_for(state="visible")
-    await page.evaluate(
-        """() => {
-          const nativeSetTimeout = window.setTimeout.bind(window);
-          window.copyLabelTimers = [];
-          window.setTimeout = (callback, delay, ...args) => {
-            if (delay !== 2000) return nativeSetTimeout(callback, delay, ...args);
-            window.copyLabelTimers.push(() => callback(...args));
-            return window.copyLabelTimers.length;
-          };
-        }"""
-    )
-
-    for selector, wide, short in (
-        ("#copy-btn", "Markdownをコピー", "本文"),
-        ("#copy-path-btn", "計画ファイルのパスをコピー", "パス"),
-    ):
-        button = page.locator(selector)
-        await button.click()
-        await playwright.async_api.expect(button.locator(".short-label")).to_have_text("完了")
-        await page.wait_for_function("window.copyLabelTimers.length === 1")
-        await button.click()
-        await page.wait_for_function("window.copyLabelTimers.length === 2")
-        await page.evaluate("() => window.copyLabelTimers.splice(0).forEach(callback => callback())")
-        assert await button.locator(".wide-label").inner_text() == wide
-        assert await button.locator(".short-label").inner_text() == short
-
-
-@pytest.mark.asyncio(loop_scope="session")
 async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenHarness) -> None:
     """更新時刻を変えない連続書き換えでも、SSE通知後に新しい本文と図を表示する。"""
     harness = screen_harness
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await harness.page.goto(harness.base_url + "/plans")
     await harness.page.locator("#preview h1", has_text="初回").wait_for()
     await harness.page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
@@ -321,6 +291,7 @@ async def test_plan_operations_record_open_and_notified_reload(screen_harness: _
     """
     harness = screen_harness
     page = harness.page
+    harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
     # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
     sent: list[dict] = []
@@ -411,6 +382,7 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
     """選択した計画の取得の失敗とブラウザー側の処理の失敗を区別して表示し、表示中の本文を保つ。"""
     harness = screen_harness
     page = harness.page
+    await page.route("https://cdn.jsdelivr.net/**", lambda route: route.abort())
     if failure == "body":
         await page.route("**/api/plans/file?*", lambda route: route.fulfill(status=503, body="同じ取得失敗"))
     elif failure == "clipboard":
@@ -435,6 +407,9 @@ async def test_plan_failures_keep_selected_source_and_browser_owner(screen_harne
     if failure == "clipboard":
         await playwright.async_api.expect(alert).to_contain_text("書込拒否")
         await playwright.async_api.expect(page.locator("#preview h1")).to_have_text("初回")
+        await playwright.async_api.expect(
+            page.locator("#preview").get_by_text("コピーの失敗の検証", exact=True)
+        ).to_be_visible()
 
 
 @pytest.mark.asyncio(loop_scope="session")

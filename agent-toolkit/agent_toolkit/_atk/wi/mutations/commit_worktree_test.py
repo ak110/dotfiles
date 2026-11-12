@@ -61,14 +61,3 @@ def test_commit_transition_from_outside_worktree(
         assert source.read_text(encoding="utf-8") == original
         assert not (notes / "adopted/entry.md").exists()
         assert not (notes / "rejected/entry.md").exists()
-
-
-@pytest.mark.parametrize("action", ["adopt", "reject"])
-def test_help_describes_short_oid_and_subject(action: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """adoptとrejectのヘルプが、--commitで短縮OIDと件名を記録すると示す。"""
-    with pytest.raises(SystemExit):
-        atk.main(["wi", action, "--help"])
-    output = "".join(capsys.readouterr().out.split())
-    assert "短縮OIDと件名を記録する" in output
-    if action == "adopt":
-        assert "対応commitの短縮OID・件名を記録する" in output

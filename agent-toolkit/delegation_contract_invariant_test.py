@@ -6,7 +6,6 @@ import pytest
 
 from agent_toolkit._agents_server import launch_prompts
 from agent_toolkit._common import task_documents
-from agent_toolkit._testing.agents_server_support import _start_tool
 from agent_toolkit._testing.delegation_contract_support import (
     _INPUT_BULLET_PATTERN,
     _LAUNCH_TARGET_PREFIX,
@@ -14,11 +13,17 @@ from agent_toolkit._testing.delegation_contract_support import (
     _assert_role_models_registered,
     _declaration,
     _fixed_reply_errors,
-    _h2_section,
+    _generated_input_errors,
     _marker_values,
     _read_table_subagents,
 )
 from agent_toolkit._testing.normative_contract import read_contract
+
+
+def test_all_launch_contract_inputs_are_generated() -> None:
+    """返却生成の対象表にない起動契約も、入力宣言との同期を保つ。"""
+    errors = _generated_input_errors(pathlib.Path(__file__).resolve().parent)
+    assert not errors, "\n".join(errors)
 
 
 def test_wi_draft_review_stage_and_continuation_contract() -> None:
@@ -45,26 +50,6 @@ def test_wi_draft_review_stage_and_continuation_contract() -> None:
                 ("drafting-workflow-review-route.md", "直接起草と独立した検収の選択"),
             )
         assert "本文確認" in content
-
-
-def test_public_start_guidance_preserves_delegation_responsibilities() -> None:
-    """公開schemaと独立した委譲規範が、入力の確定と起動検査を同じ主体へ割り当てる。"""
-    root = pathlib.Path(__file__).resolve().parent
-    read_contract(root / "skills/delegation/SKILL.md", root, ("references/delegation-sending.md", "送信"))
-    sending = _h2_section((root / "skills/delegation/references/delegation-sending.md").read_text(encoding="utf-8"), "送信")
-    assert "委譲元は呼び出し元の契約に基づき、対象と実行時の値のみを渡す" in sending
-    assert "起動設定や必須入力の形式チェックはサーバーに任せる" in sending
-    assert "編集のための読取、委譲先自身による読取、完了後の形式確認" in sending
-
-    properties = _start_tool().parameters["properties"]
-    for name in ("mode", "extra_params"):
-        guidance = properties[name]["description"]
-        assert "呼び元の起動・受領契約" in guidance, name
-        assert "サーバー" in guidance, name
-        assert "定義本文の読取" in guidance, name
-        assert "同ファイルが宣言した入力名と`extra_params`が一致するか確かめてから起動" not in guidance, name
-        assert "`## 入力`で宣言した入力名" not in guidance, name
-    assert "起動設定・必須入力・宣言外入力の機械検査はサーバーが行う" in properties["mode"]["description"]
 
 
 def test_distributed_roles_have_model_types() -> None:

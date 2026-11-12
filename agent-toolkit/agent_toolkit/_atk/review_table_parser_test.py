@@ -68,21 +68,6 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
     assert "標準入力" in exc_info.value.next_action
 
 
-def test_review_table_help_names_ci_review_table_by_series_head(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """`atk review-table init --help`の位置引数の説明が、表を修正系列の開始時のHEAD由来の名前で案内する。
-
-    説明文の「原因commitに対応する計画がない処理」は表の用途を述べるため、位置引数の節だけを確かめる。
-    """
-    with pytest.raises(SystemExit) as exc_info:
-        atk.main(["review-table", "init", "--help"], home=tmp_path)
-
-    assert exc_info.value.code == 0
-    output = capsys.readouterr().out
-    _assert_guides_series_head_name(output[output.index("位置引数:") : output.index("オプション:")])
-
-
 def test_missing_review_table_guides_series_head_name(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """存在しない表を`atk review-table show`へ渡すと、次の操作が修正系列の開始時のHEAD由来の名前を案内する。"""
     missing = tmp_path / "missing.exec-review.tsv"
@@ -328,15 +313,3 @@ def test_parser_rejects_unsupported_options_with_guidance(
     else:
         accepted = "・".join(accepted_options) if accepted_options else "なし"
         assert f"atk review-table {subcommand}が受理するオプションは{accepted}" in error
-
-
-def test_shared_column_layout_is_explained_by_parent_help(capsys: pytest.CaptureFixture[str]) -> None:
-    """親コマンドのヘルプが説明する列順は、表の実装が読み書きする列順と一致する。"""
-    with pytest.raises(SystemExit) as exc_info:
-        _parser().parse_args(["review-table", "--help"])
-
-    assert exc_info.value.code == 0
-    help_text = "".join(capsys.readouterr().out.split())
-    described = re.search(r"列は((?:`[^`]+`、?)+)の順", help_text)
-    assert described is not None
-    assert tuple(re.findall(r"`([^`]+)`", described.group(1))) == table.COLUMNS

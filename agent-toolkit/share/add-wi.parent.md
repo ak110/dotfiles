@@ -16,7 +16,15 @@ AWIやUWIの作成・更新にあたって成立性調査や起草をWI投入担
 
 ## 入力
 
+<!-- input-contract:add-wi:start -->
+<!-- 生成元: share/add-wi.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
 - 必須入力名: `投入する要求`、`引き継ぎ記録先`
+- 任意入力名: `投入経路`
+
+<!-- input-contract:add-wi:end -->
 
 入力値の確定と起動前の検収は`add-wi-parent-inputs.md`に従う。
 `subagent_md_path`には`add-wi`を渡す。

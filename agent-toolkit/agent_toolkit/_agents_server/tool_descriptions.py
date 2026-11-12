@@ -129,7 +129,8 @@ CWD_DESCRIPTION = parameter_description(
 
 
 HANDOFF_FROM_DESCRIPTION = parameter_description(
-    "終了した前任のsession_id。指定時はこの引数だけを渡す。mode・model_type・用途・cwd・label・起動本文と進捗を復元して後任を起動する。"
+    "終了した前任のsession_id。model_typeに後任のモデル候補列を任意指定できる。他の引数は併用しない。"
+    "指定なしでは前任の工程の現在設定を使い、用途・cwd・label・起動本文と進捗を復元して新しい会話の後任を起動する。"
     "可用性失敗の前任候補は保持期限にかかわらず除外する。実行中の前任は終了を待つかkillしてから指定する。"
     "応答のsession_idは後任であり、atk agents waitの待機対象になる。"
     "復元したcwdとmodel_typeも応答へ返す。"
@@ -316,7 +317,8 @@ START_MODE_EXAMPLES = {
 START_DESCRIPTION = "\n".join(
     (
         "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。"
-        '引き継ぎ起動は`{"handoff_from": "<終了した前任session_id>"}`だけを渡す。通常起動の入力との混在は拒否する。',
+        '引き継ぎ起動は`{"handoff_from": "<終了した前任session_id>"}`を渡し、'
+        "後任のモデル候補を指定する場合だけmodel_typeを加える。他の通常起動入力との混在は拒否する。",
         DELEGATION_INPUT_GUIDANCE,
         "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
         "waitは`session_id`を引数に取らず、登録済みの全sessionの終了を待つ。",

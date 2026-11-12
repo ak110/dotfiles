@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| テストの要否と期待値の出所を判断する前 | `agent-basics:writing-standards/references/testing-selection.md` |
 | 不変条件のテストの検証対象を探索する時 | `agent-basics:check-execution/references/verification-scope.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../agent-toolkit-edit/references/distribution-and-hooks-layers.md` |
 

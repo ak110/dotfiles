@@ -106,6 +106,16 @@ description: >
 起動対象: refine-prompt.subagent.md
 ```
 
+<!-- input-contract:refine-prompt:start -->
+<!-- 生成元: share/refine-prompt.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
+- 必須入力名: `対象プロンプト`、`シナリオ`
+- 任意入力名: `点検資料`
+
+<!-- input-contract:refine-prompt:end -->
+
 `agent-toolkit:refine-prompt`を実行するエージェントが、本書に従ってプロンプト評価担当を起動し、指摘を受け取る。
 プロンプト評価担当の手順は`${CLAUDE_PLUGIN_ROOT}/share/refine-prompt.subagent.md`に従う（所在参照）。
 返却形式は本書「評価担当の返却契約」に従う。

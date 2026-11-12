@@ -92,7 +92,9 @@ _ActionableError = _next_action.ActionableError
 # 応答本文の必須ラベル。各ラベルに書く内容は`agent-toolkit:/share/exec-review-responses.md`が定める。
 # 記録時点で同じ規定の検索と不採用の根拠の確認を求めるため、列を増やさず本文の行頭ラベルで表す。
 RESPONSE_LABELS = ("違反を確認した規定:", "同じ規定の検索:", "採用する修正範囲:", "採用しない修正方針:")
-NO_RESPONSE_REASON_LABELS = ("根拠の所在:",)
+NO_RESPONSE_REASON_LABELS = ("根拠の所在:", "判断主体:")
+DECISION_MAKER_VALUES = ("メイン", "レーン担当", "統括", "ユーザー", "レビュー担当")
+_TRANSFER_TARGET_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
 _LABEL_DEFINITION = "`agent-toolkit:/share/exec-review-responses.md`「レビュー指摘管理表への応答」"
 _YES_VALUES = frozenset({"yes", "true", "1", "required", "対応要"})
 _NO_VALUES = frozenset({"no", "false", "0", "not-required", "対応不要"})
@@ -238,6 +240,30 @@ def _read(path: Path) -> list[list[str]]:
 def read_rows(path: str | Path) -> list[list[str]]:
     """レビュー指摘管理表の各行をデコード済みのセル列として返す。読み込めない場合は理由と次の操作を持つ例外を送出する。"""
     return _read(Path(path))
+
+
+def _label_values(body: str, label: str) -> list[str]:
+    return [line.strip()[len(label) :].strip() for line in body.splitlines() if line.strip().startswith(label)]
+
+
+def response_state(row: list[str]) -> str:
+    """記録された応答を採用・移管・不採用・未応答へ分類する。旧記録の自由文は推定しない。"""
+    if row[5].strip():
+        return "adopted"
+    if not row[6].strip():
+        return "unanswered"
+    targets = _label_values(row[6], "移管先:")
+    if len(targets) == 1 and _TRANSFER_TARGET_RE.fullmatch(targets[0]):
+        return "transferred"
+    return "rejected"
+
+
+def rejection_reason_class(body: str) -> str:
+    """対応不要理由の判断主体ラベルだけから理由区分を求める。"""
+    makers = _label_values(body, "判断主体:")
+    if len(makers) != 1 or makers[0] not in DECISION_MAKER_VALUES:
+        return "判断主体不明"
+    return "レビュー担当の前提の誤り・撤回" if makers[0] == "レビュー担当" else "判断による見送り"
 
 
 def _normalized(value: str) -> str:
@@ -501,6 +527,18 @@ def respond(
         _require_labels(replacement, RESPONSE_LABELS, "--response-file")
     else:
         _require_labels(reason, NO_RESPONSE_REASON_LABELS, "--no-response-reason-file")
+        makers = _label_values(reason, "判断主体:")
+        if len(makers) != 1 or makers[0] not in DECISION_MAKER_VALUES:
+            raise _ActionableError(
+                "--no-response-reason-fileの判断主体が正規値1件ではない",
+                next_action=f"判断主体: の行を1つ置き、値を{', '.join(DECISION_MAKER_VALUES)}から指定する",
+            )
+        targets = _label_values(reason, "移管先:")
+        if targets and (len(targets) != 1 or not _TRANSFER_TARGET_RE.fullmatch(targets[0])):
+            raise _ActionableError(
+                "--no-response-reason-fileの移管先がWIのファイル名1件ではない",
+                next_action="移管先: の行を1つ置き、登録済みWIのファイル名（YYYYMMDD-HHMMSS-NNN.md）を書く",
+            )
     track = _normalize_track(track)
     given = [
         (index, _normalized(value)) for index, value in enumerate((round_value, track, location, issue)) if _normalized(value)

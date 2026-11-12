@@ -6,7 +6,6 @@
 
 import pathlib
 import re
-import runpy
 import subprocess
 import tomllib
 
@@ -312,20 +311,6 @@ class TestCheckDash:
         assert "em-dash(U+2014)" in result.stderr
         assert "horizontal-bar(U+2015)" in result.stderr
         assert "double-dash(U+2500x2)" in result.stderr
-
-    @pytest.mark.parametrize(
-        "url",
-        [
-            "ftp://example.com/path",
-            "custom+scheme://example.com/path",
-            "www.example.com/path",
-            "http://[::1]:8080/path",
-        ],
-    )
-    def test_url_pattern_recognizes_supported_forms(self, url: str) -> None:
-        """URLパターンが非HTTPスキーム・`www.`記法・IPv6を認識する。"""
-        url_pattern = runpy.run_path(str(_SCRIPT))["_URL_RE"]
-        assert url_pattern.fullmatch(url)
 
     @pytest.mark.parametrize(
         "url_prefix",

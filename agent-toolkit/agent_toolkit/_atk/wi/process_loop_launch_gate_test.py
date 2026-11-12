@@ -19,13 +19,14 @@ from agent_toolkit._atk.wi import process_loop_update as update_module
 from agent_toolkit._atk.wi import process_loop_watch as watch
 from agent_toolkit._atk.wi.process_loop_test import _manifest
 from agent_toolkit._testing import git_repository as git
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
 
 _REPO = "example.test/team/one"
 
 
 def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, config.ConfiguredRepository]:
     worktree = git.init_repository(tmp_path / "one", origin=f"https://{_REPO}.git")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(worktree)]))
+    set_process_loop_repositories(monkeypatch, [worktree])
     notes = tmp_path / "notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     directory = notes / "2026" / "10"

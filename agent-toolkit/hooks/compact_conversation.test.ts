@@ -296,8 +296,10 @@ test("受付と重複の応答後に一度だけ圧縮し、完了後は再予�
   expect((await $.tool.check({ tool: TOOL, input: {} })).decision).toBe("allow");
   const first = await $.tool.call({ tool: TOOL });
   expect(first.result).toMatch("まだ完了していない");
+  expect(first.result).toMatch("rules-main.claude-code.md「ターンの終え方」");
   const duplicate = await $.tool.call({ tool: TOOL });
   expect(duplicate.result).toMatch("追加していない");
+  expect(duplicate.result).toMatch("rules-main.claude-code.md「ターンの終え方」");
   expect(calls).toEqual([]);
   await clock.advance(0);
   expect(calls).toEqual([1]);

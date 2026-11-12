@@ -135,42 +135,6 @@ async def test_session_non_assistant_events_stay_preformatted(
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_session_thinking_with_text_opens_like_assistant(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
-) -> None:
-    """本文のある思考・要約は発言と同じく開いて排他の対象から外し、空の思考は閉じて排他の対象に残す。"""
-    path = _write_local_session(
-        tmp_path,
-        "thinking-open",
-        {
-            "type": "assistant",
-            "timestamp": "2026-09-30T00:00:01Z",
-            "message": {
-                "content": [
-                    {"type": "thinking", "thinking": ""},
-                    {"type": "thinking", "thinking": "本文のある思考"},
-                    {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
-                    {"type": "text", "text": "発言"},
-                ]
-            },
-        },
-    )
-    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
-        await _open_session(page, base_url, "browser-test", path)
-        thinking = page.locator("#detail .event.kind-thinking")
-        await playwright.async_api.expect(thinking).to_have_count(2)
-        empty, filled = thinking.nth(0), thinking.nth(1)
-        await playwright.async_api.expect(filled).to_have_attribute("open", "")
-        await playwright.async_api.expect(filled).not_to_have_attribute("data-exclusive-event", "true")
-        await playwright.async_api.expect(page.locator("#detail .event.kind-assistant")).to_have_attribute("open", "")
-        await playwright.async_api.expect(empty).not_to_have_attribute("open", "")
-        await playwright.async_api.expect(empty).to_have_attribute("data-exclusive-event", "true")
-        # 排他の項目を開いても、本文のある思考は閉じない。
-        await page.locator("#detail .event.kind-tool_call summary").click()
-        await playwright.async_api.expect(filled).to_have_attribute("open", "")
-
-
-@pytest.mark.asyncio(loop_scope="session")
 async def test_session_assistant_markdown_escapes_raw_html(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
@@ -188,46 +152,3 @@ async def test_session_assistant_markdown_escapes_raw_html(
         assert await body.locator('a[href^="javascript:"]').count() == 0
         await page.wait_for_timeout(200)
         assert await page.evaluate("window.__sessionXss") is None
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_session_assistant_markdown_scrolls_wide_blocks(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
-) -> None:
-    """長いコード行と幅の広い表は本文の中で横スクロールし、右ペインの横幅を超えない。"""
-    columns = 24
-    wide = (
-        "```text\n"
-        + "x" * 400
-        + "\n```\n\n"
-        + "| "
-        + " | ".join(f"列{index}見出しの長い名前" for index in range(columns))
-        + " |\n"
-        + "|"
-        + " --- |" * columns
-        + "\n"
-        + "| "
-        + " | ".join(f"値{index}" for index in range(columns))
-        + " |\n"
-    )
-    path = _write_local_session(tmp_path, "wide", _assistant_record(wide))
-    async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
-        await page.set_viewport_size({"width": 1100, "height": 800})
-        await _open_session(page, base_url, "browser-test", path)
-        body = page.locator("#detail .event.kind-assistant .event-markdown")
-        overflow = "element => [element.scrollWidth, element.clientWidth]"
-        for selector in ("pre", "table"):
-            target = body.locator(selector)
-            await playwright.async_api.expect(target).to_be_visible()
-            await page.wait_for_function(
-                "selector => { const element = document.querySelector(selector); "
-                "return element && element.clientWidth > 0 && element.scrollWidth > element.clientWidth; }",
-                arg=f"#detail .event.kind-assistant .event-markdown {selector}",
-            )
-            scroll_width, client_width = await target.evaluate(overflow)
-            assert scroll_width > client_width, selector
-        detail_scroll, detail_client = await page.locator("#detail").evaluate(overflow)
-        assert detail_scroll <= detail_client
-        pane = await page.locator("#detail").evaluate("element => element.getBoundingClientRect().right")
-        block = await page.locator("#detail .event.kind-assistant").evaluate("element => element.getBoundingClientRect().right")
-        assert block <= pane

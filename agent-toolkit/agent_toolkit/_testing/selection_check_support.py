@@ -175,4 +175,37 @@ def _norm_spec_selection(
         spec = specs.get(decision["WI"])
         if spec is not None:
             decision["プロジェクト規範の指定"] = spec
-    return _write_selection(tmp_path / "selection.yaml", decisions)
+    path = _write_selection(tmp_path / "selection.yaml", decisions)
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    # 実物のプロジェクト設定を使う規範試験にも、目標検査が要求する全工程の合成入力を添える。
+    wis = [item["WI"] for item in decisions if item["レーン"] != "なし"]
+    nodes = []
+    previous: list[str] = []
+    for phase in ("選定", "実装", "レビュー", "検証", "統合", "公開", "後始末", "報告"):
+        nodes.append(
+            {
+                "ID": phase,
+                "工程": phase,
+                "WI": wis if phase in {"実装", "レビュー", "検証", "統合"} else [],
+                "先行工程": previous,
+                "資源": {"実装": "モデル", "レビュー": "モデル", "検証": "検証"}.get(phase, "直列"),
+                "秒数": 1,
+                "算定": "残量/速度",
+                "残量": 1,
+                "速度": 1,
+                "根拠": "規範指定の試験用仕事量",
+                "未確認前提": [],
+            }
+        )
+        previous = [phase]
+    document["全工程の見込み"] = {
+        "並列数": {
+            "モデル同時数": 1,
+            "資源上限": 1,
+            "サービス上限": 1,
+            "根拠": {"資源": "試験用", "サービス": "試験用", "費用": "試験用"},
+        },
+        "工程": nodes,
+    }
+    path.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+    return path

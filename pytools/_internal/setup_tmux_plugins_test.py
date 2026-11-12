@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from agent_toolkit._testing.git_repository import commit_all, git_output, init_repository, run_git
 
 from pytools._internal import common, setup_tmux_plugins
 
@@ -58,77 +59,6 @@ def branch_env_fixture(
     plugin = _make_plugin(plugins_dir, pin_is_tag=False)
     calls = _install_env(monkeypatch, plugins_dir, plugin)
     return plugins_dir, calls
-
-
-@pytest.fixture(name="tag_env")
-def tag_env_fixture(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> tuple[Path, list[list[str]]]:
-    """`pin_is_tag=True`（catppuccin相当）の単独プラグインで`run_subprocess`を記録する環境を構築する。"""
-    plugins_dir = tmp_path / "plugins"
-    plugin = _make_plugin(plugins_dir, pin_is_tag=True)
-    calls = _install_env(monkeypatch, plugins_dir, plugin)
-    return plugins_dir, calls
-
-
-def test_clones_branch_pin_when_dest_missing(branch_env: tuple[Path, list[list[str]]]) -> None:
-    """`pin_is_tag=False`で配置先不在時は`git clone --branch <pin>`が想定引数で呼ばれる。"""
-    plugins_dir, calls = branch_env
-    assert setup_tmux_plugins.run().changed is True
-    assert calls == [
-        [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "--branch",
-            "master",
-            "https://github.com/tmux-plugins/tpm.git",
-            str(plugins_dir / "tpm"),
-        ],
-    ]
-
-
-def test_clones_tag_pin_when_dest_missing(tag_env: tuple[Path, list[list[str]]]) -> None:
-    """`pin_is_tag=True`で配置先不在時はタグ指定の`git clone`が呼ばれる。"""
-    plugins_dir, calls = tag_env
-    assert setup_tmux_plugins.run().changed is True
-    assert calls == [
-        [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "--branch",
-            "v2.3.0",
-            "https://github.com/catppuccin/tmux.git",
-            str(plugins_dir / "tmux"),
-        ],
-    ]
-
-
-def test_updates_branch_when_origin_matches(branch_env: tuple[Path, list[list[str]]]) -> None:
-    """`pin_is_tag=False`で配置先既存かつ`origin`一致時は`git pull --ff-only`が呼ばれる。"""
-    plugins_dir, calls = branch_env
-    (plugins_dir / "tpm" / ".git").mkdir(parents=True)
-    assert setup_tmux_plugins.run().changed is True
-    assert calls == [
-        ["git", "-C", str(plugins_dir / "tpm"), "remote", "get-url", "origin"],
-        ["git", "-C", str(plugins_dir / "tpm"), "pull", "--ff-only"],
-    ]
-
-
-def test_updates_tag_when_origin_matches(tag_env: tuple[Path, list[list[str]]]) -> None:
-    """`pin_is_tag=True`で配置先既存かつ`origin`一致時は`git fetch`+`git checkout FETCH_HEAD`が呼ばれる。"""
-    plugins_dir, calls = tag_env
-    (plugins_dir / "tmux" / ".git").mkdir(parents=True)
-    assert setup_tmux_plugins.run().changed is True
-    assert calls == [
-        ["git", "-C", str(plugins_dir / "tmux"), "remote", "get-url", "origin"],
-        ["git", "-C", str(plugins_dir / "tmux"), "fetch", "--depth", "1", "origin", "v2.3.0"],
-        ["git", "-C", str(plugins_dir / "tmux"), "checkout", "FETCH_HEAD"],
-    ]
 
 
 def test_skips_when_origin_mismatched(
@@ -239,3 +169,69 @@ def test_effective_origin_uses_override_when_set(
             str(plugins_dir / "tpm"),
         ],
     ]
+
+
+@pytest.mark.parametrize("pin_is_tag", [False, True])
+def test_clone_and_update_preserve_git_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pin_is_tag: bool) -> None:
+    """実Gitのbranch/tagを取得し、更新HEAD・originと変更済み原本の保存を検査する。"""
+    remote = init_repository(tmp_path / "remote", initial_branch="master", files={"plugin": "old\n"}, commit_message="初期状態")
+    first = git_output(remote, "rev-parse", "HEAD")
+    run_git(remote, "tag", "v1")
+    if pin_is_tag:
+        (remote / "plugin").write_text("master after v1\n", encoding="utf-8")
+        assert commit_all(remote, "v1後に既定branchだけを進める") != first
+    dest = tmp_path / "plugins" / "plugin"
+    origin = remote.as_uri()
+    plugin = setup_tmux_plugins._Plugin(dest, origin, "v1" if pin_is_tag else "master", pin_is_tag)  # pylint: disable=protected-access
+    monkeypatch.delenv("DOTFILES_TMUX_PLUGIN_ORIGIN_BASE", raising=False)
+    monkeypatch.setattr(setup_tmux_plugins, "_PLUGINS", (plugin,))
+    assert setup_tmux_plugins.run().changed
+    assert git_output(dest, "rev-parse", "HEAD") == first
+    assert git_output(dest, "remote", "get-url", "origin") == origin
+    (remote / "plugin").write_text("new\n", encoding="utf-8")
+    second = commit_all(remote, "更新")
+    run_git(remote, "tag", "v2")
+    if pin_is_tag:
+        (remote / "plugin").write_text("master after v2\n", encoding="utf-8")
+        assert commit_all(remote, "v2後に既定branchだけを進める") != second
+        plugin = setup_tmux_plugins._Plugin(dest, origin, "v2", True)  # pylint: disable=protected-access
+        monkeypatch.setattr(setup_tmux_plugins, "_PLUGINS", (plugin,))
+    assert setup_tmux_plugins.run().changed
+    assert git_output(dest, "rev-parse", "HEAD") == second
+    assert (dest / "plugin").read_text(encoding="utf-8") == "new\n"
+    assert git_output(dest, "remote", "get-url", "origin") == origin
+
+    (dest / "plugin").write_bytes(b"user changes\x00\xff")
+    (remote / "plugin").write_text("remote changes\n", encoding="utf-8")
+    commit_all(remote, "競合する更新")
+    run_git(remote, "tag", "v3")
+    if pin_is_tag:
+        monkeypatch.setattr(setup_tmux_plugins, "_PLUGINS", (setup_tmux_plugins._Plugin(dest, origin, "v3", True),))  # pylint: disable=protected-access
+    assert not setup_tmux_plugins.run().changed
+    assert git_output(dest, "rev-parse", "HEAD") == second
+    assert (dest / "plugin").read_bytes() == b"user changes\x00\xff"
+
+    fork = init_repository(tmp_path / "fork", commit_message="ユーザーfork")
+    run_git(dest, "remote", "set-url", "origin", fork.as_uri())
+    assert not setup_tmux_plugins.run().changed
+    assert git_output(dest, "remote", "get-url", "origin") == fork.as_uri()
+    assert git_output(dest, "rev-parse", "HEAD") == second
+    assert (dest / "plugin").read_bytes() == b"user changes\x00\xff"
+
+
+def test_branch_divergence_preserves_local_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ff-onlyで統合できない履歴はローカルcommitとファイルを保持する。"""
+    remote = init_repository(tmp_path / "remote", initial_branch="master", files={"base": "base"}, commit_message="初期状態")
+    dest = tmp_path / "plugin"
+    plugin = setup_tmux_plugins._Plugin(dest, remote.as_uri(), "master", False)  # pylint: disable=protected-access
+    monkeypatch.setattr(setup_tmux_plugins, "_PLUGINS", (plugin,))
+    monkeypatch.delenv("DOTFILES_TMUX_PLUGIN_ORIGIN_BASE", raising=False)
+    assert setup_tmux_plugins.run().changed
+    (dest / "local").write_text("keep", encoding="utf-8")
+    local_head = commit_all(dest, "ローカル変更")
+    (remote / "remote").write_text("remote", encoding="utf-8")
+    commit_all(remote, "remote変更")
+    assert not setup_tmux_plugins.run().changed
+    assert git_output(dest, "rev-parse", "HEAD") == local_head
+    assert (dest / "local").read_text(encoding="utf-8") == "keep"
+    assert not (dest / "remote").exists()

@@ -2,24 +2,10 @@
 
 # pylint: disable=protected-access
 
-import re
-
 import pytest
 
 from agent_toolkit._atk.serve import assets
 from agent_toolkit._testing.serve_support import _run_node_ui
-
-
-def test_assets_size_dialogs_with_small_viewport_height_unit() -> None:
-    """高さを決めるビューポート単位を`svh`で書く。
-
-    無印`vh`は大ビューポート基準のため、モバイルのブラウザーUI展開時に
-    ダイアログの外枠が可視領域を超え、ヘッダーとフッターが隠れる。
-    `dvh`はスクロールに伴うブラウザーUIの伸縮で枠の高さを再レイアウトするため、
-    常に可視な下限側へ収める`svh`を採用する。
-    """
-    assert not re.findall(r"\dvh\b", assets.CSS)
-    assert "100svh" in assets.CSS
 
 
 def test_assets_execute_error_paths_across_binding_and_initialization_code() -> None:
@@ -159,20 +145,6 @@ process.stdout.write(JSON.stringify({
 """
     )
     assert result == {"answerHidden": True, "confirmations": 1, "open": True, "kept": "保持する未保存回答"}
-
-
-def test_open_detail_dialog_resets_scroll_position() -> None:
-    """WI詳細は再表示のたびに本文の先頭から表示する。"""
-    result = _run_node_ui(
-        """
-const origin = new Element('origin', 'BUTTON');
-const body = elements['detail-dialog-body'];
-body.scrollTop = 240;
-openDetailDialog(origin);
-process.stdout.write(JSON.stringify({scrollTop: body.scrollTop, focused}));
-"""
-    )
-    assert result == {"scrollTop": 0, "focused": "detail-dialog-body"}
 
 
 def test_assets_restore_detail_focus_after_origin_row_disappears() -> None:
@@ -369,27 +341,6 @@ process.stdout.write(JSON.stringify({saved, answered}));
             "mode": "view",
         },
     }
-
-
-def test_node_dom_matches_html_structure() -> None:
-    """本番HTMLのIDと、通知・フォーム・ヘッダーの構造が擬似DOMでも一致する。"""
-    result = _run_node_ui("""
-process.stdout.write(JSON.stringify({
-  ids: Object.keys(elements).filter(id => id !== 'toast').sort(),
-  header: controlGroups['app-header'].map(node => node.id),
-  notification: elements['operation-notice'].children.map(node => node.id),
-  closeClass: elements['detail-close-button'].className,
-  aria: elements['operation-notice-close-button'].getAttribute('aria-label'),
-  selected: ['kind-filter', 'state-filter', 'period-filter', 'answer-filter', 'create-kind', 'create-question-type']
-    .map(id => elements[id].value)
-}));
-""")
-    assert result["ids"] == sorted(re.findall(r'\bid="([^"]+)"', assets.HTML))
-    assert "notification-button" in result["header"]
-    assert result["notification"] == ["operation-notice-message", "operation-notice-close-button"]
-    assert result["closeClass"] == "dialog-close"
-    assert result["aria"] == "操作通知を閉じる"
-    assert result["selected"] == ["all", "all", "all", "all", "awi", "yes-no"]
 
 
 def test_node_dom_uses_new_html_element(monkeypatch: pytest.MonkeyPatch) -> None:

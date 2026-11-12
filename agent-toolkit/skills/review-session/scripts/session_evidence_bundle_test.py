@@ -192,7 +192,14 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     unresolved = dict(bundle_events[-1])
     next_action = unresolved.pop("next_action")
     assert missing_thread in next_action and "記録保持者" in next_action
-    assert unresolved == {"kind": "unresolved-record", "record": missing_thread, "line": 10}
+    assert unresolved == {
+        "kind": "unresolved-record",
+        "record": missing_thread,
+        "line": 10,
+        "reason": "record-location-unresolved",
+        "source_record": "claude:transcript",
+        "source_line": 10,
+    }
     assert [event for event in bundle_events if event["kind"] == "hook-notice"] == []
 
 

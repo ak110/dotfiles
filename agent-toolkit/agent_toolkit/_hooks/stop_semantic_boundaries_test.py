@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from agent_toolkit._common import session_activity
 from agent_toolkit._hooks import stop
 from agent_toolkit._testing.helpers import _write_transcript
 
@@ -20,9 +21,27 @@ def test_stop_leaves_question_meaning_to_agent(tmp_path, monkeypatch, text):
     assert "pending_question_advisor" not in stop.CHECK_MODULE_NAMES
 
 
-def test_codex_stop_keeps_only_blocking_checks():
-    """非遮断通知を配送できないCodexのStopは、遮断で扱う言語保護と投入作業の報告確認だけを実行する。"""
-    assert stop.CODEX_CHECK_MODULE_NAMES == ("response_language_advisor", "submission_report_advisor")
+@pytest.mark.parametrize("scenario", ["language", "missing-summary", "complete"])
+def test_codex_stop_returns_blocking_results(monkeypatch, capsys, scenario):
+    """Codexの公開Stopが必要な遮断を返し、Claude専用の通知欄を送らない。"""
+    for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    sid = f"codex-{scenario}"
+    message = "The work is complete." if scenario == "language" else "完了した。"
+    if scenario == "missing-summary":
+        session_activity.record_submission_report(sid, ["指摘の分類と処置:", "- 確認の往復: 2回"])
+    payload = {"session_id": sid, "turn_id": "turn", "last_assistant_message": message}
+    assert stop.main(json.dumps(payload)) == 0
+    output = capsys.readouterr()
+    assert not output.err
+    result = json.loads(output.out)
+    if scenario == "complete":
+        assert not result
+    else:
+        assert result["decision"] == "block"
+        assert result["reason"]
+    assert "hookSpecificOutput" not in result
+    assert "continue" not in result
 
 
 @pytest.mark.parametrize("runtime", ("claude", "codex", "agy"))

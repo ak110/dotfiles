@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 import sync_generated_files as subject
-from agent_toolkit._common import read_triggers
+from agent_toolkit._common import read_triggers, task_documents
+from agent_toolkit._testing.delegation_contract_support import _generated_input_errors
 
 
 def test_runs_all_generators_in_order(monkeypatch) -> None:
@@ -18,8 +19,9 @@ def test_runs_all_generators_in_order(monkeypatch) -> None:
     monkeypatch.setattr(subject, "run_generator", fake_run)
     monkeypatch.setattr(subject, "sync_quality_principles", lambda: called.append("quality"))
     monkeypatch.setattr(subject, "sync_return_contracts", lambda: called.append("returns"))
+    monkeypatch.setattr(subject, "sync_input_contracts", lambda: called.append("inputs"))
     assert subject.main([]) == 0
-    assert called == ["quality", "returns", *subject.GENERATORS]
+    assert called == ["quality", "returns", "inputs", *subject.GENERATORS]
 
 
 def test_aggregates_failures_without_stopping(monkeypatch, capsys) -> None:
@@ -32,6 +34,7 @@ def test_aggregates_failures_without_stopping(monkeypatch, capsys) -> None:
     monkeypatch.setattr(subject, "run_generator", fake_run)
     monkeypatch.setattr(subject, "sync_quality_principles", lambda: None)
     monkeypatch.setattr(subject, "sync_return_contracts", lambda: None)
+    monkeypatch.setattr(subject, "sync_input_contracts", lambda: None)
     assert subject.main([]) == 1
     assert called == list(subject.GENERATORS)
     assert subject.GENERATORS[0] in capsys.readouterr().err
@@ -44,12 +47,96 @@ def test_input_is_handled_before_generation(monkeypatch, capsys, arguments, code
     monkeypatch.setattr(subject.subprocess, "run", lambda *args, **kwargs: calls.append(args))
     monkeypatch.setattr(subject, "sync_quality_principles", lambda: calls.append("quality"))
     monkeypatch.setattr(subject, "sync_return_contracts", lambda: calls.append("returns"))
+    monkeypatch.setattr(subject, "sync_input_contracts", lambda: calls.append("inputs"))
     with pytest.raises(SystemExit) as error:
         subject.main(arguments)
     assert error.value.code == code
     assert not calls
     output = capsys.readouterr()
     assert output.out if code == 0 else output.err
+
+
+@pytest.mark.parametrize("embedded", [False, True])
+@pytest.mark.parametrize(
+    "required,optional",
+    [
+        ("必須,追加", "任意"),
+        ("", ""),
+        ("改名", "任意,追加"),
+        ("必須", "改名"),
+        ("必須", ",".join(f"長い任意入力の項目{index}" for index in range(20))),
+    ],
+)
+def test_input_contract_tracks_declaration_changes(tmp_path: Path, embedded: bool, required: str, optional: str) -> None:
+    """新役割の全入力の追加・削除・改名を同期し、内部手順と入力説明を保つ。"""
+    plugin = tmp_path / "agent-toolkit"
+    source = plugin / "share/new-role.subagent.md"
+    source.parent.mkdir(parents=True)
+    original = (
+        "---\nmode: explore\nmodel_type: chores\nrequired_inputs: [必須]\n"
+        "optional_inputs: [任意]\nwrites_worktree: false\n---\n# 新役割\n\n内部手順。\n"
+    )
+    source.write_text(original, encoding="utf-8")
+    target = plugin / ("skills/example/SKILL.md" if embedded else "share/new-role.parent.md")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        "# 呼出側\n\n## 契約\n\n```text\n起動対象: new-role.subagent.md\n```\n\n"
+        "<!-- input-contract:new-role:start -->\n旧一覧\n<!-- input-contract:new-role:end -->\n\n入力値の説明。\n",
+        encoding="utf-8",
+    )
+    assert _generated_input_errors(plugin)
+    subject.sync_input_contracts(tmp_path)
+    assert not _generated_input_errors(plugin)
+    first = target.read_bytes()
+    subject.sync_input_contracts(tmp_path)
+    assert target.read_bytes() == first
+    source.write_text(
+        original.replace("required_inputs: [必須]", f"required_inputs: [{required}]").replace(
+            "optional_inputs: [任意]", f"optional_inputs: [{optional}]"
+        ),
+        encoding="utf-8",
+    )
+    assert _generated_input_errors(plugin)
+    subject.sync_input_contracts(tmp_path)
+    assert not _generated_input_errors(plugin)
+    text = target.read_text(encoding="utf-8")
+    assert task_documents.INPUT_CONTRACT_NOTICE in text
+    assert "入力値の説明。" in text and "内部手順。" not in text
+    for label, names in (("必須入力名", required), ("任意入力名", optional)):
+        if names:
+            listed = [line for line in text.splitlines() if line.startswith(f"- {label}: ")]
+            assert re.findall(r"`([^`]+)`", "\n".join(listed)) == names.split(",")
+            assert all(len(line) <= 114 for line in listed)
+        elif label == "任意入力名":
+            assert "任意入力名:" not in text
+    target.write_text(text.replace("必須入力名:", "任意入力名:"), encoding="utf-8")
+    assert _generated_input_errors(plugin)
+
+
+def test_input_sync_checks_all_boundaries_before_writing(tmp_path: Path) -> None:
+    """後続の生成境界が欠けても、先行契約を変更しない。"""
+    plugin = tmp_path / "agent-toolkit"
+    share = plugin / "share"
+    share.mkdir(parents=True)
+    for role in ("first", "last"):
+        (share / f"{role}.subagent.md").write_text(
+            "---\nmode: explore\nmodel_type: chores\nrequired_inputs: []\nwrites_worktree: false\n---\n",
+            encoding="utf-8",
+        )
+        (share / f"{role}.parent.md").write_text(
+            f"# 起動\n\n```text\n起動対象: {role}.subagent.md\n```\n"
+            + (
+                "<!-- input-contract:first:start -->\n旧一覧\n<!-- input-contract:first:end -->"
+                if role == "first"
+                else "境界なし"
+            ),
+            encoding="utf-8",
+        )
+    first = share / "first.parent.md"
+    before = first.read_bytes()
+    with pytest.raises(ValueError, match="入力生成境界"):
+        subject.sync_input_contracts(tmp_path)
+    assert first.read_bytes() == before
 
 
 def test_quality_source_updates_normal_and_lightweight_delivery(tmp_path: Path) -> None:

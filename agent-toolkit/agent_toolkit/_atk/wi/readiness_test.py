@@ -290,26 +290,23 @@ class TestReadiness:
         assert after.readiness.internal_dependency_waits == ("a.md", "b.md", "c.md")
         assert {entry[0].name for entry in after.candidates} == {"a.md", "b.md", "c.md", "d.md", "u.md"}
 
-    def test_run_skill_answered_uwi_is_not_ready(self, tmp_path: pathlib.Path) -> None:
-        """`atk run-skill`のUWIは次回の同じスキルの実行が扱うため、process-loopの起動件数へ数えない。
+    @pytest.mark.parametrize("source", ["run-skill", "session-review", "process-wi", None])
+    def test_answered_approval_is_ready_regardless_of_source(self, tmp_path: pathlib.Path, source: str | None) -> None:
+        """回答済み承認と依存元を同じ実行で扱い、報告・未回答・holdは候補にしない。"""
+        for name, answer in (("approval.md", "はい"), ("report.md", "確認済み"), ("unanswered.md", "")):
+            write_uwi(tmp_path, name, answer=answer, source=source)
+        _with_frontmatter(tmp_path / "2026/10/report.md", "run_skill_report: true", marker="type: uwi\n")
+        write_uwi(tmp_path, "held.md", answer="はい", source=source, state="hold")
+        write_awi(tmp_path, "approval-dependent.md", depends_on=("approval.md",))
+        write_awi(tmp_path, "report-dependent.md", depends_on=("report.md",))
+        write_awi(tmp_path, "transitive-report.md", depends_on=("report-dependent.md",))
 
-        数えると、process-wiの選定が除くUWIのためにprocess-loopが子セッションの起動を繰り返す。
-        `source`を持たないUWIとprocess-wiのUWIは従来どおり回答済みでready件数へ数える。
-        """
-        write_uwi(tmp_path, "run-skill.md", answer="回答済み", source="run-skill")
+        result = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        only_run_skill = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo")
-
-        assert not only_run_skill.ready
-        assert _wi_readiness.count_pending_entries(tmp_path, target_repo="github.com/example/repo") == 0  # pylint: disable=protected-access  # noqa: SLF001
-
-        write_uwi(tmp_path, "no-source.md", answer="回答済み")
-        write_uwi(tmp_path, "process-wi.md", answer="回答済み", source="process-wi")
-
-        mixed = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo")
-
-        assert mixed.ready == ("no-source.md", "process-wi.md")
-        assert _wi_readiness.count_pending_entries(tmp_path, target_repo="github.com/example/repo") == 2  # pylint: disable=protected-access  # noqa: SLF001
+        assert result.ready == ("approval.md",)
+        assert result.internal_dependency_waits == ("approval-dependent.md",)
+        assert result.actionable_count == 1
+        assert _wi_readiness.count_pending_entries(tmp_path, target_repo="github.com/example/repo") == 1
 
     def test_answered_uwi_does_not_satisfy_explicit_dependency_while_active(self, tmp_path: pathlib.Path) -> None:
         write_uwi(tmp_path, "answer.md", answer="回答済み")
@@ -613,7 +610,7 @@ def test_readiness_reuses_parsed_dependencies_and_terminal_metadata(tmp_path: pa
         result = _wi_readiness.calculate_readiness(
             tmp_path, "github.com/example/repo", now=datetime.datetime(2026, 10, 18, tzinfo=datetime.UTC), snapshot=acquired
         )
-        assert result.ready == ("legacy.md",)
+        assert result.ready == ("legacy.md", "skill.md")
         assert result.cooldown_pending == ("awi.md",)
         assert result.blocked == ("awi.md",)
         assert parser.call_count == 4

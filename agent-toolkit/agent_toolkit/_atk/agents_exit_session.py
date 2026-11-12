@@ -350,8 +350,12 @@ def main() -> int:
         )
         return 0
     assert target is not None
+    next_action = (
+        "ターンを終えると/exitでセッションを終了する。これ以上ツールを呼ばず、"
+        "agent-toolkit:report-completionの手順7に従い、送達済み本文を再掲せずターンを終えよ。"
+    )
     _outcome.report_success(
-        "ターンを終えると/exitでセッションを終了する。これ以上ツールを呼ばずにターンを終える。",
+        next_action,
         _outcome.ResultKind.VALUE_OUTPUT,
     )
     print(
@@ -361,7 +365,7 @@ def main() -> int:
                 "status": "exit_requested",
                 "host": target.host,
                 "pid": target.pid,
-                "next_action": "ターンを終えると/exitでセッションを終了する。これ以上ツールを呼ばずにターンを終える。",
+                "next_action": next_action,
                 "lane_cleanup": cleanup,
             },
             separators=(",", ":"),

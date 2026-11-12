@@ -16,9 +16,9 @@ def _bullet_categories(text: str) -> set[str]:
 
 
 def _status_categories(text: str, status: str) -> set[str]:
-    bullet = re.search(rf"^- `{re.escape(status)}`:(.*?)(?=^- |\Z)", text, re.MULTILINE | re.DOTALL)
+    bullet = re.search(rf"^- `{re.escape(status)} [^`]+`:(.*?)(?=^- |\Z)", text, re.MULTILINE | re.DOTALL)
     assert bullet is not None
-    return set(re.findall(r"`([^`]+)`", bullet[1].split("区分は", 1)[1].split("とし", 1)[0]))
+    return set(re.findall(r"`([^`]+)`", bullet[1].split("区分は", 1)[1].splitlines()[0]))
 
 
 def _sender_categories(text: str) -> dict[str, set[str]]:
@@ -44,7 +44,7 @@ def _assert_categories_match(sender: str, rules: str, prevention: str, waiting: 
 @pytest.fixture(name="definitions", scope="module")
 def _definitions() -> tuple[str, str, str, str]:
     sender = (_ROOT / "hooks/send_to_user.tsx").read_text(encoding="utf-8")
-    rules = read_contract(_ROOT / "share/rules/rules-main.md", _ROOT, ("../main-improvements.md", "改善点を発見"))
+    rules = (_ROOT / "share/rules/rules-main.md").read_text(encoding="utf-8")
     prevention = read_contract(
         _ROOT.parent / "agent-basics/skills/bugfix/references/root-cause-prevention.md",
         _ROOT,

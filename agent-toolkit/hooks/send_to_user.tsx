@@ -13,9 +13,11 @@ const TOOL_NAME = "send_to_user";
 
 const DESCRIPTION = [
   "ユーザーへ届ける本文を、途中・末尾ともにユーザーの画面へそのまま表示する。",
+  "本文は日本語の常体で書く。",
   "質問への回答、確認結果、判明した事実や原因、成果物、進捗、作業完了報告と次の工程の予告に使う。",
   "ユーザーの判断を求める確認には既存の質問手段を使う。推論は送らない。",
-  "表示成功後は同じ本文を地の文へ再掲せず、残工程または通常のターン終了へ進む。",
+  "表示成功後の言い換え・要約・抜粋も再掲に含む。新しい内容もこのツールで送る。",
+  "残工程は続け、ターンを終えるときは待機・完了を問わず…だけを返す。/goalの担当工程を完了した場合だけは、報告を含めず完了を述べる1文を返す。無発話の注意を受けても同じ規則に従う。",
 ].join("");
 
 const INPUT_SCHEMA = {
@@ -48,9 +50,8 @@ export const SEND_TO_USER_DELEGATED_DENY =
   "このツールを使わず、報告する本文を全て最終応答（終了の返却）へ書け。";
 
 // `AWI化ステータス`の値ごとに、理由の先頭に置く区分名と、区分名で始まらない場合の警告を対応付ける。
-// 値と記入方法の定義元は`share/rules/rules-main.md`「作業中の改善点の報告」、`不要`の区分は`agent-basics:bugfix`の
-// `references/root-cause-prevention.md`「再発防止策の必須性」、`予定`の区分は`agent-toolkit:delegation`の
-// `references/waiting-and-monitoring.md`「待機中の先行実施」にある。`済`・`即時対応`は理由を持たないため検査しない。
+// 書式と区分の定義元は`share/rules/rules-main.md`「進捗報告」のテンプレート直下にある。
+// `済`の時機と根拠、`即時対応`の意味判定は担当が行い、この書式検査では判定しない。
 // 判定は区分名と冒頭の語句との文字列照合だけとし、理由の意味は推定しない。送達は止めない。
 const STATUS_CHECKS = [
   {
@@ -60,8 +61,8 @@ const STATUS_CHECKS = [
       "send-to-user",
       "warn",
       "`AWI化ステータス: 不要`の直後が区分名（非欠陥・処置済み・被覆・見送り）で始まらない箇所がある。" +
-        "本文は表示済みである。`agent-basics:bugfix`の`references/root-cause-prevention.md`「再発防止策の必須性」で区分を判定し、" +
-        "どの区分にも入らなければ再発防止策を検討して、以後の報告で区分名から理由を書け。",
+        "本文は表示済みである。`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式・区分で、" +
+        "以後の報告を区分名と理由から書け。書式の修正だけなら判定資料の追加取得は不要である。",
     ),
   },
   {
@@ -71,9 +72,8 @@ const STATUS_CHECKS = [
       "send-to-user",
       "warn",
       "`AWI化ステータス: 予定`の直後が区分名（判断待ち・認可待ち・入力待ち・書込競合）で始まらない箇所がある。" +
-        "本文は表示済みである。待機中に登録できる改善は、その場で既存項目と比較してAWIを保存せよ。" +
-        "`agent-toolkit:delegation`の`references/waiting-and-monitoring.md`「待機中の先行実施」の区分に当たらなければ`予定`を使わず、" +
-        "以後の報告で区分名と再開条件から書け。",
+        "本文は表示済みである。`share/rules/rules-main.md`「進捗報告」のテンプレート直下の書式・区分で、" +
+        "以後の報告を区分名と再開条件から書け。書式の修正だけなら判定資料の追加取得は不要である。",
     ),
   },
 ] as const;
@@ -166,7 +166,7 @@ async function readGuidanceNotice($: EngineInterface, message: string, sessionId
   }
 }
 
-const DISPLAYED = "ユーザーの画面へ表示した。同じ本文の再掲は省き、残工程があれば続行せよ。伝える内容と残工程がない通常終了は、rules-main.claude-code.md「ターンの終え方」に従い省略記号で閉じよ。";
+const DISPLAYED = "ユーザーの画面へ表示した。送達済みの本文の言い換え・要約・抜粋も再掲せず、新しい内容もsend_to_userで送れ。残工程は続け、ターンを終えるときは待機・完了を問わず…だけを返せ。/goalの担当工程を完了した場合だけは、報告を含めず完了を述べる1文を返せ。無発話の注意を受けても同じ規則に従え。";
 const INVALID_MESSAGE = automatedMessage("send-to-user", "block", "文字列のmessageが無いため、画面へ本文を表示していない。本文をmessageへ入れて呼び直せ。");
 
 export function register(on: On): void {

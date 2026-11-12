@@ -17,6 +17,7 @@ from agent_toolkit._atk.wi.mutations import content as mutation_content
 from agent_toolkit._atk.wi.mutations import dependencies as mutation_dependencies
 from agent_toolkit._atk.wi.mutations import result_commits, targets
 from agent_toolkit._atk.wi.mutations import transitions as mutation_transitions
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_mutations_content_support import _USER_COMMENT_ERROR, _edit_body_args
@@ -374,25 +375,31 @@ class TestRejectZeroArgs:
 class TestRmMultiple:
     """rmサブコマンド: 複数件指定で単一コミットへまとめる。"""
 
+    @pytest.mark.parametrize("entry_type", ["awi", "uwi"])
     def test_multiple_files_removed_single_commit(
         self,
-        monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
+        entry_type: str,
     ) -> None:
-        """2件のrmで両方削除と単一コミットが行われること。"""
+        """指定2件だけの削除が単一commitに残り、対象外本文は保持される。"""
         notes = _setup_notes(tmp_path)
-        _write_awi_file(notes, "fb-001.md")
-        _write_awi_file(notes, "fb-002.md")
-        git_calls: list[_GitCall] = []
-        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
-
-        with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wi", "rm", "fb-001.md", "fb-002.md"], home=tmp_path)
-
-        assert exc_info.value.code == 0
-        commit_cmds = [c["cmd"] for c in git_calls if "commit" in c["cmd"]]
-        assert len(commit_cmds) == 1
-        assert "chore: remove 2 entries" in commit_cmds[0]
+        filenames = ["fb-001.md", "fb-002.md"]
+        write_entry = _write_awi_file if entry_type == "awi" else _write_uwi_entry
+        removed = [write_entry(notes, filename) for filename in filenames]
+        untouched = write_entry(notes, "untouched.md")
+        preserved = untouched.read_bytes()
+        git_repository.init_repository(notes, commit_message="before removal")
+        before = git_repository.git_output(notes, "rev-parse", "HEAD")
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", "rm", *filenames, "--target-repo=github.com/example/foo"], home=tmp_path)
+        assert result.value.code == 0
+        assert all(not path.exists() for path in removed)
+        assert untouched.read_bytes() == preserved
+        assert git_repository.git_output(notes, "rev-list", "--count", f"{before}..HEAD") == "1"
+        assert git_repository.git_output(notes, "diff", "--name-status", before, "HEAD").splitlines() == [
+            f"D\t{path.relative_to(notes).as_posix()}" for path in removed
+        ]
+        assert git_repository.git_output(notes, "status", "--porcelain") == ""
 
 
 def test_agent_environment_allows_comment_neutral_edit_and_append(

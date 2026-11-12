@@ -20,7 +20,14 @@
 
 **1.** 全観点と比較元を揃えるため、観点ファイルを収集し、以下の入力と省略条件を確定する。
 
+<!-- input-contract:recurrence-self-check:start -->
+<!-- 生成元: share/recurrence-self-check.subagent.mdのrequired_inputs・optional_inputs。手動編集しない。 -->
+入力の定義はこの起動契約とagents_serverの`start`の検査が所有する。
+起動準備はこの契約の入力一覧で完結する。
+
 - 必須入力名: `観点ファイル`、`今回差分`、`変更ファイル一覧`、`対象worktree`、`未解決指摘`
+
+<!-- input-contract:recurrence-self-check:end -->
 
 観点ファイルは、見出し1（H1）が`# 再発防止セルフチェック観点`で始まるMarkdownファイルである。
 次の2つの検索コマンドを実行し、実際に存在するファイルの和集合を観点ファイルとして特定する。

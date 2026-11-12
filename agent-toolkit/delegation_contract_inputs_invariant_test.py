@@ -8,6 +8,7 @@ from agent_toolkit._testing.delegation_contract_support import (
     _REQUIRED_INPUT_PREFIX,
     _contract_errors,
     _format_contract_error,
+    _generated_input_errors,
     _pair_errors,
     _parent_body,
     _write_pair,
@@ -21,6 +22,56 @@ def test_distributed_delegation_contract_is_complete() -> None:
     errors = _contract_errors(share)
 
     assert not errors, "\n".join(_format_contract_error(error) for error in errors)
+
+
+@pytest.mark.parametrize("declared", ["任意", "", "任意,追加", "改名"])
+def test_optional_input_changes_are_detected(tmp_path: pathlib.Path, declared: str) -> None:
+    """任意入力の追加・削除・改名を必須側と区別して検出する。"""
+    _write_pair(tmp_path, parent_body=_parent_body().replace("## 起動", "- 任意入力名: `任意`\n\n## 起動"))
+    recipient = tmp_path / "task.subagent.md"
+    recipient.write_text(
+        "---\nmode: explore\nmodel_type: review_fast\nrequired_inputs: [対象リポジトリ]\n"
+        f"optional_inputs: [{declared}]\nwrites_worktree: false\n---\n# 委譲先\n",
+        encoding="utf-8",
+    )
+    errors = _pair_errors(tmp_path / "task.parent.md", recipient)
+    if declared == "任意":
+        assert not errors
+    else:
+        assert any("任意入力名" in error for error in errors)
+        assert all("sync_generated_files.py" in error and "次の操作:" in error for error in errors if "任意入力名" in error)
+
+
+@pytest.mark.parametrize("boundary", [False, True])
+def test_generated_input_diagnostic_explains_official_regeneration(tmp_path: pathlib.Path, boundary: bool) -> None:
+    """境界不正と内容不一致は、修復する対象と正式生成の操作を返す。"""
+    _write_pair(tmp_path / "share", parent_body=_parent_body())
+    parent = tmp_path / "share/task.parent.md"
+    if boundary:
+        parent.write_text(
+            parent.read_text(encoding="utf-8")
+            + "\n<!-- input-contract:task:start -->\n改変\n<!-- input-contract:task:end -->\n",
+            encoding="utf-8",
+        )
+    errors = _generated_input_errors(tmp_path)
+    assert len(errors) == 1
+    assert str(parent) in errors[0]
+    assert "次の操作:" in errors[0] and "uv run --frozen python scripts/sync_generated_files.py" in errors[0]
+    assert ("境界が不正" in errors[0]) is not boundary
+
+
+def test_optional_input_cannot_be_listed_as_required(tmp_path: pathlib.Path) -> None:
+    """任意名を必須一覧へ移した場合は両区分の不一致になる。"""
+    body = _parent_body().replace("必須入力名: `対象リポジトリ`", "必須入力名: `対象リポジトリ`、`任意`")
+    _write_pair(tmp_path, parent_body=body)
+    recipient = tmp_path / "task.subagent.md"
+    recipient.write_text(
+        recipient.read_text(encoding="utf-8").replace("作業ツリーへの書込:", "任意入力名: 任意\n作業ツリーへの書込:"),
+        encoding="utf-8",
+    )
+    errors = _pair_errors(tmp_path / "task.parent.md", recipient)
+    assert any("宣言外の必須入力名" in error and "任意" in error for error in errors)
+    assert any("任意入力名が欠けている" in error and "任意" in error for error in errors)
 
 
 @pytest.mark.parametrize("case", ["section", "list", "undeclared", "required", "mode", "unassigned", "missing"])

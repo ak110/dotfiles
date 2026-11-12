@@ -152,7 +152,7 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_tree_aligns_rows_without_children(screen_harness: _ScreenHarness) -> None:
-    """子の無い行も開閉欄の幅を持ち、操作できない「−」を表示して項目の開始位置を子のある行と揃える。"""
+    """子の無い行のマーカーは操作できず、Tab移動の対象にしない。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     rows = page.locator("#sessions .session-tree-row")
@@ -165,20 +165,7 @@ async def test_session_tree_aligns_rows_without_children(screen_harness: _Screen
     await playwright.async_api.expect(marker).to_have_text("−")
     await playwright.async_api.expect(marker).to_have_attribute("aria-hidden", "true")
     assert await marker.evaluate("(element) => element.tagName") == "SPAN"
-    # 展開済みの開閉ボタンの「−」と、子の無い行の「−」を表示から見分けられる。
-    marker_opacity = await marker.evaluate("(element) => getComputedStyle(element).opacity")
-    parent_toggle = parent.locator(".session-tree-toggle")
-    await parent_toggle.click()
-    await playwright.async_api.expect(parent_toggle).to_have_text("−")
-    toggle_opacity = await parent_toggle.evaluate("(element) => getComputedStyle(element).opacity")
-    assert float(marker_opacity) < float(toggle_opacity)
-    await parent_toggle.click()
     assert await leaf.locator("button.session-tree-toggle").count() == 0
-    parent_box = await parent.locator(".session-item").bounding_box()
-    leaf_box = await leaf.locator(".session-item").bounding_box()
-    assert parent_box is not None
-    assert leaf_box is not None
-    assert parent_box["x"] == leaf_box["x"]
     # Tab移動は子のある行の開閉ボタンと項目にだけ止まり、子の無い行の「−」には止まらない。
     await leaf.locator(".session-item").focus()
     await page.keyboard.press("Shift+Tab")

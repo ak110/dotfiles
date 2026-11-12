@@ -35,11 +35,6 @@ def test_result_guidance_preserves_backend_availability_contract(engine: str, st
         assert '"handoff_from": "predecessor"' in action
 
 
-def test_existing_import_keeps_the_same_result_guidance() -> None:
-    """従来のsession_handoffからのimportも、分離した結果判定へ到達する。"""
-    assert session_handoff.result_next_action is handoff_next_action.result_next_action
-
-
 @pytest.mark.parametrize(
     ("error", "expected"),
     [

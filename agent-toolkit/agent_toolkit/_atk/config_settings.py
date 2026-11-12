@@ -12,11 +12,10 @@ from typing import Any
 
 lazy import platformdirs
 
+from agent_toolkit._atk import config_repositories
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._git import command as _git_command
-from agent_toolkit._git import remote as _git_remote
 
 CONFIG_FILENAME = "config.json"
 
@@ -25,13 +24,13 @@ MODEL_TYPES = ("execute", "review", "review_fast", "chores", "chores_fast", "orc
 """工程ごとに直接解決するモデル候補列の種別。"""
 
 MODEL_DEFAULTS = {
-    "execute_model": "claude:opus[1m]/medium,codex:sol/medium",
+    "execute_model": "claude:opus[1m]/low,codex:sol/low",
     "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
-    "chores_model": "codex:sol/medium,claude:sonnet[1m]/medium",
-    "chores_fast_model": "codex:luna/medium,claude:haiku/medium",
+    "chores_model": "codex:sol/low,claude:sonnet[1m]/low",
+    "chores_fast_model": "codex:luna/low,claude:haiku/low",
     "orchestrate_model": "claude:opus[1m]/medium,codex:sol/medium",
-    "write_model": "agy:gemini-3.8-flash/medium,claude:claude-opus-5-5/medium",
+    "write_model": "agy:gemini-3.8-flash/low,claude:claude-opus-5-5/low",
 }
 
 # write_modelはプリセットによる変更対象から外す。
@@ -41,24 +40,24 @@ PRESET_MODELS = {
     },
     "codex-near-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
+        "execute_model": "codex:sol/low,claude:opus[1m]/low",
     },
     "codex-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "execute_model": "codex:sol/medium,claude:opus[1m]/medium",
+        "execute_model": "codex:sol/low,claude:opus[1m]/low",
         "orchestrate_model": "codex:sol/medium,claude:opus[1m]/medium",
     },
     "claude-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
-        "chores_model": "claude:sonnet[1m]/medium,codex:sol/medium",
-        "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
+        "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
+        "chores_fast_model": "claude:haiku/low,codex:luna/low",
     },
     "claude-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
         "review_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "review_fast_model": "claude:haiku/medium,codex:luna/medium",
-        "chores_model": "claude:sonnet[1m]/medium,codex:sol/medium",
-        "chores_fast_model": "claude:haiku/medium,codex:luna/medium",
+        "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
+        "chores_fast_model": "claude:haiku/low,codex:luna/low",
     },
 }
 
@@ -126,6 +125,9 @@ CONNECTION_DEFAULTS = {
 
 ENV_FILE_KEYS = frozenset({"claude_credits_env_file", "claude_payg_env_file"})
 
+PATH_KEYS = SERVE_PATH_KEYS | ENV_FILE_KEYS
+ARRAY_KEYS = SERVE_HOSTS_KEYS
+
 PROVIDER_KEYS = frozenset({"codex_credits_provider", "codex_payg_provider"})
 
 CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.endswith("_connections"))
@@ -138,7 +140,7 @@ MUTABLE_KEY_DEFAULTS = {
     **CONNECTION_DEFAULTS,
     "claude_usage_limit_wait": "five-hour",
     "codex_usage_limit_wait": "five-hour",
-    "process_loop_repositories": "[]",
+    "repositories": "{}",
     "session_review_auto_start": "true",
     "dotfiles_mode": "full",
     **SERVE_KEY_DEFAULTS,
@@ -296,7 +298,8 @@ def config_env_name(key: str) -> str:
 
 def config_environment_variable_names() -> tuple[str, ...]:
     """現行設定と、置換案内の対象である旧設定の環境変数名を返す。"""
-    return tuple(config_env_name(key) for key in (*MUTABLE_KEY_DEFAULTS, *RETIRED_CONNECTION_KEYS, *sorted(RETIRED_MODEL_KEYS)))
+    keys = (*MUTABLE_KEY_DEFAULTS, *RETIRED_CONNECTION_KEYS, *sorted(RETIRED_MODEL_KEYS), "process_loop_repositories")
+    return tuple(config_env_name(key) for key in keys)
 
 
 def validate_stage_model_candidates(value: str) -> None:
@@ -348,8 +351,8 @@ def validate_mutable_setting(key: str, value: str) -> None:
     elif key in {"claude_usage_limit_wait", "codex_usage_limit_wait"}:
         if value not in {"never", "five-hour", "always"}:
             raise ValueError("受理可能値: never, five-hour, always")
-    elif key == "process_loop_repositories":
-        parse_process_loop_repositories(value)
+    elif key == "repositories":
+        config_repositories.parse(value)
     elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
@@ -370,63 +373,49 @@ class ConfiguredRepository:
     common_dir: pathlib.Path
 
 
-def parse_process_loop_repositories(value: str) -> tuple[str, ...]:
-    """登録先をJSON文字列配列として解釈する。空配列は待機を表す。"""
-    try:
-        paths = json.loads(value)
-    except json.JSONDecodeError as error:
-        raise ValueError("process_loop_repositoriesはローカルworktreeのJSON文字列配列で指定する") from error
-    if not isinstance(paths, list) or any(not isinstance(path, str) or not path.strip() for path in paths):
-        raise ValueError("process_loop_repositoriesは空でないパスのJSON文字列配列で指定する（空配列も可）")
-    return tuple(paths)
-
-
 def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
-    """登録先を厳密に読み、全件のGit作業ツリーとoriginを確かめ、同じoriginは登録順で最初の1件だけを返す。"""
-    key = "process_loop_repositories"
-    env_value = os.environ.get(config_env_name(key))
+    """移行済みのrepository登録からprocess-loop対象のGit実体を返す。"""
     try:
-        if env_value is not None:
-            value = env_value
-        else:
-            path = config_file_path()
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-            except FileNotFoundError:
-                data = {}
-            if not isinstance(data, dict):
-                raise ValueError(f"設定JSONがobjectではない: {path}")
-            value = data.get(key, "[]")
-            if not isinstance(value, str):
-                raise ValueError(f"設定キー{key}が文字列ではない: {path}")
-        repositories: dict[str, ConfiguredRepository] = {}
-        for raw_path in parse_process_loop_repositories(value):
-            candidate = pathlib.Path(raw_path).expanduser()
-            if not candidate.is_absolute():
-                raise ValueError(f"登録先は絶対パスで指定する: {raw_path}")
-            result = _git_command.run(
-                ["-C", str(candidate), "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode != 0:
-                raise ValueError(f"登録先のGit作業ツリーを解決できない: {candidate}: {result.stderr.strip()}")
-            lines = result.stdout.splitlines()
-            if len(lines) != 2:
-                raise ValueError(f"登録先のGit実体が不正: {candidate}")
-            worktree, common_dir = (pathlib.Path(line).resolve() for line in lines)
-            origin = _git_remote.origin_url(worktree)
-            if origin is None:
-                raise ValueError(f"登録先のoriginを取得できない: {worktree}")
-            repo_id = _git_remote.normalize_remote_url(origin)
-            repositories.setdefault(repo_id, ConfiguredRepository(repo_id, worktree, common_dir))
-        return tuple(repositories.values())
+        repositories = repository_settings()
+        result = []
+        for repo_id, item in repositories.items():
+            if not item["process_loop"]:
+                continue
+            location = config_repositories.locate(pathlib.Path(item["path"]))
+            if location is None:
+                raise ValueError(f"登録先のGit作業ツリーを解決できない: {item['path']}")
+            result.append(ConfiguredRepository(repo_id, location.worktree, location.common_dir))
+        return tuple(result)
     except (OSError, UnicodeError, ValueError) as error:
         raise _next_action.ActionableError(
             str(error),
-            next_action=f"`atk config set {key} <JSON配列>`で登録先を直して再実行する",
+            next_action="`atk config repos list`で登録を確認し、`atk config repos set REPO --path PATH`で直して再実行する",
         ) from error
+
+
+def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]]:
+    """登録を厳密に読み、hookは処理対象外のworktreeの存在確認を省く。"""
+    check_repository_environment()
+    data = load_config_strict()
+    # repositoryを読む主体にはモデル移行を依存させず、同じ初回読取で旧repository登録だけを移す。
+    # config CLIの既存の全設定移行もconfig_repositories.migrateを使い、移行規則は一か所に保つ。
+    migrated = config_repositories.migrate(data)
+    if migrated != data:
+        save_config(migrated)
+    data = migrated
+    value = os.environ.get(config_env_name("repositories")) or data.get("repositories", "{}")
+    if not isinstance(value, str):
+        raise ValueError("repositoriesの保存値はJSON文字列で指定する")
+    return config_repositories.parse(value, check_paths=check_paths)
+
+
+def check_repository_environment() -> None:
+    """旧repository環境変数を新しい登録操作へ案内する。"""
+    if os.environ.get(config_env_name("process_loop_repositories")):
+        raise _next_action.ActionableError(
+            "廃止した環境変数AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIESが設定されている",
+            next_action="旧環境変数を解除し、`atk config repos add REPO --edit allow --path PATH --process-loop`で登録する",
+        )
 
 
 def parse_remote_hosts(value: str) -> tuple[str, ...]:
@@ -486,8 +475,10 @@ def raw_mutable_setting(key: str) -> str:
 
 def normalize_setting(key: str, value: str) -> str:
     """検証済みの値を保存・表示する正規形へ揃える。"""
-    if key in ENV_FILE_KEYS:
-        return str(pathlib.Path(value).expanduser()) if value else ""
+    if key in PATH_KEYS:
+        return config_repositories.normalize_path(value)
+    if key == "repositories":
+        return json.dumps(config_repositories.parse(value), ensure_ascii=False)
     if key in CONNECTION_ORDER_KEYS:
         return ",".join(parse_connection_order(value))
     return value

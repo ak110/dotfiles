@@ -88,6 +88,9 @@ class TestLanguageRewrite:
                 assert "日本語で書き直" in reason
                 assert "識別子と名前" in reason
                 assert reason.rstrip().endswith("</atk-auto>")
+            else:
+                specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+                assert specific.get("permissionDecision") != "deny"
 
     def test_control_characters_in_input_do_not_leak_into_notice(self, tmp_path: pathlib.Path) -> None:
         result = _run(

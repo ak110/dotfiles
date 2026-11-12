@@ -82,8 +82,10 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 実行レビューから返された差分外の既存不良は、`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`「継続する工程」の受領契約で専任のWI投入担当へ渡す。
 対処時機は`immediate-fix.md`「即時対応」で判定し、今回追加とした正式改善AWIは既存の対応表へ追加する。
 同じworktreeで凍結済み計画を保持して追加計画・実装・独立文脈レビューへ進み、処理開始と全対象の検収を既存手順で行う。
+保存済みAWI名、対応表、追加計画、是正結果を同じ引き継ぎ記録へ対応付け、実行全体の終了前に処置を検収する。
+元レビューの収束やAWIの保存だけを是正完了とせず、共通の先送り条件に当たる場合は事実・残作業・再開条件を保持する。
 最小の直接修正は`immediate-fix.md`「即時対応」に従って範囲を判定し、安全性を確認する。
-直接修正後に残る正式対応のAWIは次回セッション用として登録し、今回の処理対象や対応表には追加しない。
+直接修正後に残る正式対応のAWIも、同書「即時対応」で対処時機を判定し、今回追加なら処理対象と対応表へ加える。
 今回の作業で混入した不良かを区別し、回避後や工程が完全には停止していない場合の扱いも、同書「即時対応」に従う。
 
 - 公開工程（実行順8）の開始前に見つけた不良は、観測事象、進行への影響度、および直接修正すべき範囲を確認する。
@@ -91,7 +93,7 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 - 今回の作業で混入させた不良や初期選定された要求に属する類似箇所は、元の要求の範囲内で是正する。
   独立改善の追加は同書の対処時機判定を経る
 - 公開工程の開始後に見つけた不良も、`immediate-fix.md`「対象外の不良と是正要求」に従い、公開を妨げる不良の修正と次のセッションの停止・遮断へ即時対応する。
-  対象外の不良は同様に委譲して次回用AWIへ登録し、追加統合後の再公開は`finish-session-recovery.md`「公開状態の検収と再起動」に従う
+  独立した不良は同資料「即時対応」で現在の影響と先送り条件から正式対応の時機を判定して委譲し、追加統合後の再公開は`finish-session-recovery.md`「公開状態の検収と再起動」に従う
 
 ## 実行順
 
@@ -101,12 +103,14 @@ Codex環境では、`../../write-plan/references/codex-runtime.md`が専用処�
 1. 処理可能なWI（processable）の一覧と各WIの本文を取得する。
    初回一覧に`--snapshot-output <開始時集合JSONの絶対パス>`を付け、all-reposから受領した場合は既存の`snapshot_file`を使う。
    30分点検と公開前の新着確認は`immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時集合と判定済み記録を維持する。
-   同時に`atk wi list --type=uwi --answered=yes --status=processable --source=!run-skill --target-repo=<対象リポジトリの絶対パス>`を実行して回答済みUWIを取得する。
+   同時に`atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス>`で回答済みUWIの本文を取得する。
+   frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く。
    対象worktreeごとに公開対象とベースブランチを明示し、`selection-procedure-candidates.md`「処理対象の決定」に定める開始時のCI点検を実施する。
    実装に着手する前に実際のCI状況を照会し、失敗ログの取得と残工程への影響判定を行う。
    既存の失敗は「見つけた既存不良の扱い」に従って処理し、ユーザーのみが判断できる事項は確認手順へと回す。
    公開時のベースライン確認とCI検収も実行順8で実施する。
-   なお、`source`が`run-skill`であるUWIは次回の`atk run-skill`実行時に処理する。
+   `source: run-skill`の承認用UWIも対象にし、処理手順は`selection-procedure-candidates.md`「処理対象の決定」に従う。
+   報告用UWIは次回の同じ起動単位の`atk run-skill`が扱う。
    回答済みUWIは実装前に`../../wi-standards/references/wi-standards-states.md`「状態と依存」に従って終了するか処理対象へ加える。
    依存関係が未解決の項目は、依存元のWIがprocessableであり同一の`target_repo`を対象としている場合に限り、今回の実行に含めて報告する。
    依存元の状態変更や集合からの除外が必要な場合は、`../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従って確認の要否を判断する。
