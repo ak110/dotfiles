@@ -1,7 +1,6 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
 """ファイル変更の監視、期限・割込での復帰と監視資源の回収を検証する。"""
 
-import json
 import pathlib
 import subprocess
 import threading
@@ -19,6 +18,7 @@ from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
 from agent_toolkit._testing.process_loop_watch_support import _Console, _use_windows_console
 from agent_toolkit._testing.process_loop_watch_support import _isolate_process_loop_commands as _isolate_process_loop_commands
 from agent_toolkit.atk_test import _setup_notes
@@ -248,7 +248,7 @@ class TestProcessLoopWaitMessage:
         """0件検知時に`_wait_for_changes`呼び出し直前で待機メッセージが出力されること。"""
         myrepo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/myrepo.git")
         _setup_notes(tmp_path)
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(myrepo)]))
+        set_process_loop_repositories(monkeypatch, [myrepo])
 
         def fake_wait(*_a: object, **_kw: object) -> None:
             raise KeyboardInterrupt

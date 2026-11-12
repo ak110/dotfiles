@@ -1,7 +1,6 @@
 """`atk wi process-loop`のアラートの確認のテスト。"""
 
 import argparse
-import json
 import pathlib
 import time
 from typing import Any
@@ -19,7 +18,7 @@ from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.process_loop_coordinator_support import _start_entry
-from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
+from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands, set_process_loop_repositories
 from agent_toolkit.atk_test import _setup_notes
 
 
@@ -57,7 +56,7 @@ class TestAlertMonitoring:
         """未判定だけでも起動し、CI投入後は再取得した候補を使い、無効化はCI確認を抑止する。"""
         notes = _setup_notes(tmp_path)
         repository = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/myrepo.git")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repository)]))
+        set_process_loop_repositories(monkeypatch, [repository])
         if initial:
             _start_entry(notes, "initial.md", kind="awi")
         checks: list[str] = []
@@ -104,7 +103,7 @@ class TestAlertMonitoring:
         """同じ登録先の確認時刻を反復間で保持し、間隔内の二重照会を抑止する。"""
         _setup_notes(tmp_path)
         repository = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/myrepo.git")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repository)]))
+        set_process_loop_repositories(monkeypatch, [repository])
         clock = [1000.0]
         monkeypatch.setattr(time, "monotonic", lambda: clock[0])
         checks: list[str] = []

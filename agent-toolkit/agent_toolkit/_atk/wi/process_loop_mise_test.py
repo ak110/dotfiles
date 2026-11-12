@@ -1,6 +1,5 @@
 """登録全体ループのmise更新契機と、共有更新コマンドの契約を検証する。"""
 
-import json
 import pathlib
 import subprocess
 
@@ -12,7 +11,7 @@ from agent_toolkit._atk.wi import process_loop_mise as mise
 from agent_toolkit._atk.wi import process_loop_update as update
 from agent_toolkit._atk.wi import process_loop_watch as watch
 from agent_toolkit._testing import git_repository
-from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
+from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands, set_process_loop_repositories
 from agent_toolkit.atk_test import _setup_notes
 
 
@@ -36,7 +35,7 @@ def test_registered_dotfiles_refresh_contract(
     """初回印、更新無効、24時間未満と到達を区別し、登録全体で一度だけ更新する。"""
     _setup_notes(tmp_path)
     repository = git_repository.init_repository(tmp_path / "dotfiles", origin="https://github.com/ak110/dotfiles.git")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repository)]))
+    set_process_loop_repositories(monkeypatch, [repository])
     monkeypatch.setattr(update, "resolve_dotfiles_root", lambda: repository)
     clock = [times[0]]
     monkeypatch.setattr(loop.time, "monotonic", lambda: clock[0])

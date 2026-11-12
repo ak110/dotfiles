@@ -14,6 +14,7 @@ from agent_toolkit._atk import config
 from agent_toolkit._atk.wi import frontmatter, listing
 from agent_toolkit._atk.wi.layout import entry_path
 from agent_toolkit._testing import git_repository
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
 from agent_toolkit._testing.wi_listing_support import _clear_agent_environment as _clear_agent_environment
 from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
@@ -45,7 +46,7 @@ def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, mon
     """依存待ち・未回答・報告用UWIの本文を除き、候補件数と同じ集合を引き渡す。"""
     notes = _setup_notes(tmp_path)
     repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/foo.git")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(repo)]))
+    set_process_loop_repositories(monkeypatch, [repo])
     _write_awi_file(notes, "ready.md")
     blocked = _write_awi_file(notes, "blocked.md", body="候補外の依存待ち")
     blocked.write_text(

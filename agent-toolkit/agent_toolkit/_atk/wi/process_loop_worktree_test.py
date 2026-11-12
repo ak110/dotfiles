@@ -14,6 +14,7 @@ from agent_toolkit._atk.wi import process_loop as _process_loop  # noqa: E402  #
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import process_loop_worktree as _pl_worktree
 from agent_toolkit._git import worktrees as _git_worktrees
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
 from agent_toolkit._testing.process_loop_worktree_support import (
     _prepare_process_loop_environment as _prepare_process_loop_environment,
 )
@@ -325,7 +326,7 @@ class TestWorktreeWriterGate:
     def test_title_set_at_start_and_after_runs(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """登録が空の待機でも、統括ループ全体にprocess-loopのタイトルを適用する。"""
         _setup_notes(tmp_path)
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", "[]")
+        set_process_loop_repositories(monkeypatch, [])
         entered: list[str] = []
 
         @contextlib.contextmanager

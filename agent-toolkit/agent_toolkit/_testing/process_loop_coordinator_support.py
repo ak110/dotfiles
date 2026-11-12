@@ -10,6 +10,7 @@ from agent_toolkit._atk.wi import listing
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing import wi_entry_files
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
 
 
 def _targets(
@@ -27,7 +28,7 @@ def _targets(
                 f"---\nstate: inbox\ntype: awi\ntarget_repo: {repo_id}\n---\n\n# 作業\n",
                 encoding="utf-8",
             )
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIES", json.dumps([str(path) for path in paths]))
+    set_process_loop_repositories(monkeypatch, paths)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     monkeypatch.setattr(
         session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "model", "medium", None, None)
