@@ -4,11 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` |
-| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
-
 ## エージェント宛てメッセージの標識
 
 エージェントに直接渡る出力（`reason`、`additionalContext`、終了コード2のstderr）は、全体を`atk-auto`要素で囲む。

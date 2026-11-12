@@ -30,7 +30,7 @@
 | 振り返り・モード・無進捗停止の状態を変更・調査する前 | `session-state-and-flags-progress.md` |
 | 進捗点検の状態を変更・調査する前 | `session-state-and-flags-progress.md` |
 | 確認・操作スキルの起動、資料取得証拠、読込の選択・案内や終了工程の証拠を変更・調査する前 | `session-state-and-flags-document-receipts.md` |
-| 通知の反復抑止・配送状態を変更・調査する前 | `session-state-and-flags-notifications.md` |
+| hookの診断計測、通知の反復抑止・配送状態を変更・調査する前 | `session-state-and-flags-notifications.md` |
 | agents_serverの呼出・所有・待機の観測状態を変更・調査する前 | `session-state-and-flags-agents-server.md` |
 | バックグラウンドタスクの所有・通知・停止の状態を変更・調査する前 | `session-state-and-flags-background-tasks.md` |
 | UWI回答の検出状態を変更・調査する前 | `session-state-and-flags-user-responses.md` |

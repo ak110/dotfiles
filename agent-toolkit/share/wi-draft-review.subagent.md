@@ -31,6 +31,7 @@ wi-standardsの読込表から最初に取得する資料は、本文段階の`$
 - 不具合を起点とする通常AWI: 上記に加えて`awi-body-evidence.md`と、bugfixの起動および`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`
 - UWI: `uwi-format.md`
 
+方針段階で観測された問題への対処や対策を評価する場合も、bugfixを起動する。
 上記以外の読込表の資料は、レビュー中にその資料の条件に当たる論点が生じた時に取得する。
 
 ## 入力

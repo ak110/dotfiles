@@ -139,7 +139,8 @@ CLI群のピークRSS・CPU・I/O、ページング、起動待ち、実際のAP
 上限を超える案は、上限の同時数でも最長経路が目標所要時間を超え、同時数の上限待ちが律速と実測で示された場合に、資源と追加費用の根拠を添えて比較する。
 目標内の案が無ければ、費用と資源の制約の内側で直列仕事・重複・待ちをさらに減らす。
 配分は、新しい常駐スケジューラーや費用DBを設けず、既存の起動・終了観測で行う。
-「agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：内部担当の同時数と巨大WIの判定：2026年11月12日」を参照する。
+監査記録は`docs/development/audit-records-wi.md`にある。
+該当節は「agent-toolkit/skills/process-wi/references/selection-procedure-allocation.md：内部担当の同時数と巨大WIの判定：2026年11月12日」である。
 
 巨大WIの判定では、長い初期見込みだけを根拠にせず、同じ品質で分割・並行化・先行レビュー・共通仕事の集約を比較する。
 並行区間と不可避直列区間を先に分け、並行区間の総worker分W、区間内の成果依存の最長経路P、共有2枠の検証量と依存Vを対応付ける。
