@@ -43,7 +43,12 @@
    `--from-run`を省いた`--only-failed`は、他の作業ツリーを含むホスト全体の直近の実行を参照する。
    その実行に失敗が無ければ何も実行せずに終了0となり、自分の失敗が残っていても成功として報告される。
    pytestを含む実行には両プロジェクトの`pytest-always-targets`が加わるため、本書の横断テストの項で重複実行を避ける。
-   commitのhookは、同じ内容でpytestが成功した`pyfltr run`があればpytestを外して実行する（判定条件は`scripts/pyfltr_precommit.py`の冒頭）。
+   commitのhookは、`develop`・`master`・`main`以外のブランチ（レーンと内部群の作業ブランチ）ではpytestを外して実行する。
+   統合先のブランチでは、同じ内容でpytestが成功した`pyfltr run`があればpytestを外して実行する（判定条件は`scripts/pyfltr_precommit.py`の冒頭）。
+   - レーンの担当は、統合準備完了を返す前に、統合入力のHEADで`commands`指定なしの`uv run --frozen pyfltr run <レーンの変更ファイルの絶対パス>`を成功させ、そのrun_idを返却に含める。
+     この実行は不変条件試験の全量を含み、hookが外したpytestを補う。
+     統合する側はff統合の前に、同じrun_idが統合入力と同じ内容で成功したことを`uv run --frozen pyfltr show-run <run_id>`で確かめる。
+     レーンのブランチのcommitごとに不変条件試験を実行すると共有実行枠を占め、2026年11月13日の同時数8の集計では検証の待ちが巡回の所要の大半になったためである。
    pytestを含む実行の後にファイルを変えた場合と、commitしない差分を作業ツリーに残した場合は、hookはpytestを再び実行する。
    後者を避けるため、そのcommitに含めない差分は先に別のcommitへ分けるか、作業ツリーから外してからcommitする。
    - CIが無い、または公開先でCIが実行されずローカルの全体pytestが必要な場合は、`--maxfail=10`を指定し、計画からmanifestまで同じ値を保つ。

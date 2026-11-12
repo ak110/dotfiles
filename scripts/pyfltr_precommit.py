@@ -1,4 +1,10 @@
-"""commitのhookで`pyfltr fast`を起動し、同じ内容で成功済みのpytestがあればpytestだけを外す。
+"""commitのhookで`pyfltr fast`を起動し、統合前のブランチか同じ内容で成功済みのpytestがあればpytestだけを外す。
+
+`develop`・`master`・`main`以外のブランチ（レーンや内部群の作業ブランチ）では、pytestを外す。
+これらのブランチの変更は、統合の前に不変条件試験を含む全量の`pyfltr run`を成功させ、統合する側が
+その成功を確かめてから取り込む。commitごとに不変条件試験を実行すると共有の検証枠を占め、検証の待ちが
+巡回の所要の大半になったためである（2026年11月13日、同時数8の比較の集計）。
+統合先のブランチへのcommitと、ブランチを特定できない状態（detached HEADなど）では、従来どおりpytestを含める。
 
 `pyfltr fast`のpytestは`pytest-always-targets`（不変条件試験）を毎回流し、共有の検証枠を約5分占有する。
 commitの直前に同じ内容へ`pyfltr run`を成功させている場合、この実行は同じ試験の繰り返しになる。
@@ -52,6 +58,8 @@ _SHOW_LIMIT = 5
 _QUERY_TIMEOUT_SECONDS = 60
 _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 _REUSABLE_SUBCOMMANDS = frozenset({"run", "ci", "fast"})
+# 統合先のブランチ。これらへのcommitでは従来どおり不変条件試験を含めて実行する。
+_INTEGRATION_BRANCHES = frozenset({"develop", "master", "main"})
 # 試験の対象を変えない引数。これ以外の引数（`--pytest-args`、`--only-failed`、`--disable`など）を含む実行は再利用しない。
 _NEUTRAL_FLAGS = frozenset(
     {
@@ -90,6 +98,14 @@ def main(argv: list[str] | None = None) -> int:
     if pyfltr is None:
         print("pyfltr-precommit: pyfltrが見つからない。`uv sync --frozen`で開発環境を準備する。", file=sys.stderr)
         return 2
+    branch = current_branch(pathlib.Path.cwd())
+    if branch is not None and branch not in _INTEGRATION_BRANCHES:
+        print(
+            f"pyfltr-precommit: 統合前のブランチ{branch}のためpytestを外して実行する。"
+            "統合の前に不変条件試験を含む全量の`pyfltr run`を成功させる。",
+            file=sys.stderr,
+        )
+        return subprocess.run([pyfltr, "fast", "--disable", "pytest", *args.files], check=False).returncode
     try:
         reuse = find_reusable_run(pathlib.Path.cwd(), pyfltr)
     except (KeyError, TypeError, AttributeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
@@ -105,6 +121,21 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
     return subprocess.run([pyfltr, "fast", *extra, *args.files], check=False).returncode
+
+
+def current_branch(directory: pathlib.Path) -> str | None:
+    """現在のブランチ名を返す。detached HEADや取得の失敗ではNoneを返し、pytestを含める側へ倒す。"""
+    try:
+        result = git_command.run(
+            ["-C", str(directory), "symbolic-ref", "--short", "-q", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=_QUERY_TIMEOUT_SECONDS,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+    name = result.stdout.strip()
+    return name if result.returncode == 0 and name else None
 
 
 def find_reusable_run(directory: pathlib.Path, pyfltr: str) -> Reuse:

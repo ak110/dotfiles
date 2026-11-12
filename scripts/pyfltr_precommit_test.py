@@ -167,6 +167,7 @@ def test_main_disables_only_pytest_when_reusing(
         return subprocess.CompletedProcess(cmd, 3)
 
     monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "current_branch", lambda directory: "develop")
     monkeypatch.setattr(pyfltr_precommit, "find_reusable_run", _find)
     monkeypatch.setattr(pyfltr_precommit.subprocess, "run", _run)
 
@@ -208,8 +209,55 @@ def test_main_runs_pytest_when_query_output_is_unexpected(monkeypatch: pytest.Mo
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "current_branch", lambda directory: "master")
     monkeypatch.setattr(pyfltr_precommit, "find_reusable_run", _find)
     monkeypatch.setattr(pyfltr_precommit.subprocess, "run", _run)
 
     assert pyfltr_precommit.main(["src/a.py"]) == 0
     assert launched == [["/bin/pyfltr", "fast", "src/a.py"]]
+
+
+@pytest.mark.parametrize(
+    ("branch", "expected_extra", "queried"),
+    [
+        pytest.param("process-wi-lane-01", ["--disable", "pytest"], False, id="lane-branch"),
+        pytest.param("develop", [], True, id="develop"),
+        pytest.param("master", [], True, id="master"),
+        pytest.param("main", [], True, id="main"),
+        pytest.param(None, [], True, id="detached-head"),
+    ],
+)
+def test_main_skips_pytest_only_outside_integration_branches(
+    monkeypatch: pytest.MonkeyPatch, branch: str | None, expected_extra: list[str], queried: bool
+) -> None:
+    """統合先のブランチとブランチを特定できない状態ではpytestを含め、他のブランチではpytestを外す。"""
+    launched: list[list[str]] = []
+    finds: list[pathlib.Path] = []
+
+    def _find(directory: pathlib.Path, pyfltr: str) -> pyfltr_precommit.Reuse:
+        del pyfltr
+        finds.append(directory)
+        return pyfltr_precommit.Reuse(None, "理由")
+
+    def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        launched.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "current_branch", lambda directory: branch)
+    monkeypatch.setattr(pyfltr_precommit, "find_reusable_run", _find)
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", _run)
+
+    assert pyfltr_precommit.main(["src/a.py"]) == 0
+    assert launched == [["/bin/pyfltr", "fast", *expected_extra, "src/a.py"]]
+    assert bool(finds) is queried
+
+
+def test_current_branch_reads_branch_and_detached_head(tmp_path: pathlib.Path) -> None:
+    """実際のリポジトリでブランチ名を返し、detached HEADではNoneを返す。"""
+    repository = _repository(tmp_path)
+    subprocess.run(["git", "-C", str(repository), "checkout", "-q", "-b", "work"], check=True)
+    assert pyfltr_precommit.current_branch(repository) == "work"
+    subprocess.run(["git", "-C", str(repository), "checkout", "-q", "--detach"], check=True)
+    assert pyfltr_precommit.current_branch(repository) is None
