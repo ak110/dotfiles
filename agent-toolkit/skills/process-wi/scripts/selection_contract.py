@@ -10,6 +10,7 @@ from collections.abc import Callable
 from agent_toolkit._atk import config as _model_config
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import selection as _selection
+from agent_toolkit._plan import selection_estimate as _estimate
 
 _LANE_NONE = "なし"
 _STALENESS_KEY = "鮮度"
@@ -65,6 +66,7 @@ _TOP_LEVEL_KEYS = frozenset(
         _selection.STAGED_ESTIMATE_KEY,
         _selection.ESTIMATE_CORRECTION_KEY,
         _selection.TARGET_OVERRUN_COMPARISON_KEY,
+        _selection.PROCESS_ESTIMATE_KEY,
         _selection.INITIAL_ALLOCATION_KEY,
         _selection.ADDED_WIS_KEY,
     }
@@ -272,6 +274,8 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
         errors.append(f"`{overrun}`は空でない文字列とする")
     if _selection.ESTIMATE_CORRECTION_KEY in selection:
         errors.extend(_correction_structure_errors(selection[_selection.ESTIMATE_CORRECTION_KEY]))
+    if _selection.PROCESS_ESTIMATE_KEY in selection:
+        errors.extend(_estimate.structure_errors(selection[_selection.PROCESS_ESTIMATE_KEY]))
     items = _selection.decisions(selection)
     if items is None:
         errors.append(f"`{_selection.DECISIONS_KEY}`の列がない")

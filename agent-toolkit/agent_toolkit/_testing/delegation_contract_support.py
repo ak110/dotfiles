@@ -583,12 +583,15 @@ def _selection_procedure(plugin_root: pathlib.Path) -> str:
 
 def _selection_format(plugin_root: pathlib.Path) -> str:
     """生成・消費が共有する書式の定義を取得する。"""
-    return read_contract(
+    reference = plugin_root / "skills/process-wi/references"
+    layout = read_contract(
         plugin_root / "skills/process-wi/references/selection-format.md",
         plugin_root,
         ("selection-format-generation.md", "選定の生成入力"),
         ("selection-format-schema.md", "選定結果の書式"),
     )
+    fields = read_contract(reference / "selection-format-schema.md", plugin_root, ("selection-format-fields.md", "欄の意味"))
+    return layout + fields.removeprefix((reference / "selection-format-schema.md").read_text(encoding="utf-8"))
 
 
 def _selection_documents(plugin_root: pathlib.Path) -> str:

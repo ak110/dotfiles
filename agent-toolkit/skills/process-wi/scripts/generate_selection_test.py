@@ -336,7 +336,7 @@ def test_minimal_selection_generation_merge_and_integration(
     assert _dispatch(str(judgments), "--candidate-file", str(facts), "--output", str(output), "--work-dir", str(repo)) == 0
     generated_report = capsys.readouterr().out
     if phase_correction:
-        assert f"全体の完了見込み秒数: {480 if staged else 280}（共有待ち秒数 20を1回含む）" in generated_report
+        assert f"履歴の局所見込み秒数: {480 if staged else 280}（共有待ち秒数 20を1回含む、全工程は未確認）" in generated_report
     else:
         assert "全体の完了見込み秒数:" not in generated_report
     with capsys.disabled():
@@ -361,7 +361,7 @@ def test_minimal_selection_generation_merge_and_integration(
     assert _dispatch(*_merge_args(tmp_path, repo, output, facts, addition, "added.md")) == 0
     merged_report = capsys.readouterr().out
     if phase_correction:
-        assert f"全体の完了見込み秒数: {715 if staged else 515}（共有待ち秒数 25を1回含む）" in merged_report
+        assert f"履歴の局所見込み秒数: {715 if staged else 515}（共有待ち秒数 25を1回含む、全工程は未確認）" in merged_report
     with capsys.disabled():
         print(merged_report, end="")
     saved = yaml.safe_load(output.read_text(encoding="utf-8"))

@@ -275,7 +275,7 @@ def merge_selection(
             _selection.SHARED_WAIT_SECONDS_KEY
         ]
     if _selection.SHARED_WAIT_BASIS_KEY in additional_correction:
-        # 待ちの秒数と同じく、算定の区分も追加側で再確定した全体配分の値を採る。
+        # 待ちの秒数と同じく、算定の区分も追加側で再確定した全体配分の値を採用する。
         typing.cast(dict[str, object], result[correction_key])[_selection.SHARED_WAIT_BASIS_KEY] = additional_correction[
             _selection.SHARED_WAIT_BASIS_KEY
         ]
@@ -292,6 +292,11 @@ def merge_selection(
         result[_selection.STAGED_ESTIMATE_KEY] = added[_selection.STAGED_ESTIMATE_KEY]
     if _selection.TARGET_OVERRUN_COMPARISON_KEY in added:
         result[_selection.TARGET_OVERRUN_COMPARISON_KEY] = added[_selection.TARGET_OVERRUN_COMPARISON_KEY]
+    if _selection.PROCESS_ESTIMATE_KEY in added:
+        # 追加分だけの経路を既存へ足すと共有工程を二重計上するため、全体を再確定した入力を使う。
+        result[_selection.PROCESS_ESTIMATE_KEY] = added[_selection.PROCESS_ESTIMATE_KEY]
+    elif _selection.PROCESS_ESTIMATE_KEY in existing:
+        raise ValueError("追加側へ合流後の全対象を持つ`全工程の見込み`を指定する")
     excluded = typing.cast(dict[str, object], result[correction_key])["除外した記録"]
     assert isinstance(excluded, list)
     excluded.extend(

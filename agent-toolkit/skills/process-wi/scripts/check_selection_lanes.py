@@ -21,6 +21,7 @@ from check_selection_common import (
 from check_selection_paths import _covers
 
 from agent_toolkit._plan import selection as _selection
+from agent_toolkit._plan import selection_estimate as _estimate
 
 _OBSERVATION_PLAN_RE = re.compile(r"計画:\s*([^）]+)")
 
@@ -45,8 +46,15 @@ _NEXT_SHARED_WAIT = (
 
 
 _NEXT_TARGET_OVERRUN = (
-    "段階の組み直し、独立した準備の先行、準備と検証の集約などの配分の代替案を目標所要秒数との差で比べ、"
-    "採った案と比べた見込みを最上位の`目標超過時の配分比較`へ書く。見込みの超過だけを理由に項目を外さず、レーン数の上限を保つ"
+    "全対象と必要品質・レーン数の上限を保ち、依存経路・先行レビュー・検証の集約を組み直す。"
+    "資源・サービス制限・費用比較に基づく同時数と全工程の根拠を直して再検査する。"
+    "項目を外さず、品質工程の省略や次回送りで目標内にしない。比較欄だけでは成立としない"
+)
+
+_NEXT_PROCESS_ESTIMATE = (
+    "`全工程の見込み`へ選定・内部群の実装/レビュー・共有2枠の検証・統合・公開・後始末・報告と"
+    "依存、資源/サービス上限と費用比較、秒数の算定・参照元・未確認前提を記録する。"
+    "保存済み旧選定を読むだけなら更新を伴わない`--history`を使う"
 )
 
 
@@ -87,13 +95,16 @@ _NEXT_PRIOR_REQUIRED = "別段階の書込予定が重なる前段へ直接ま�
 
 
 def _check_estimate_records(
-    selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None = None
+    selection: dict[str, object],
+    costs: list[dict[str, object]],
+    target_seconds: float | None = None,
+    *,
+    validate_execution: bool = True,
 ) -> list[Violation]:
-    """段階案の比較と補正の記録を、所要時間の値へ対応付ける。
+    """補正の履歴と、全工程の実行可能性の検収を分ける。
 
-    `共有待ちの算定`を持つ選定では、未計測の待ちを0秒の推定にした組と、記録の無い実測を拒否し、
-    目標所要秒数を超える見込みに配分の代替案の比較記録を求める。算定を持たない保存済みの選定は、
-    この区別の前の形式として読み、これらの判定を適用しない。
+    旧補正の記録は保持するが、比較文を全工程の根拠の代用品にはしない。
+    配分を変えない履歴更新では`validate_execution=False`で新たな成立判定を省く。
     """
     errors: list[Violation] = []
     costs = [dict(row) for row in costs]
@@ -102,7 +113,8 @@ def _check_estimate_records(
             if current not in row and legacy in row:
                 row[current] = row[legacy]
     if (
-        costs
+        _selection.PROCESS_ESTIMATE_KEY not in selection
+        and costs
         and all(row.get(_selection.STAGE_KEY, 1) == 1 for row in costs)
         and any(typing.cast(float, row[_IMPLEMENTATION_SECONDS_KEY]) > 6000 for row in costs)
         and _selection.STAGED_ESTIMATE_KEY not in selection
@@ -131,29 +143,47 @@ def _check_estimate_records(
                         next_action=_NEXT_CORRECTION,
                     )
                 )
-    if _selection.SHARED_WAIT_SECONDS_KEY in correction and not selection_contract.is_non_negative_number(
-        _completion_estimate(costs, typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY]))
+    if (
+        _selection.PROCESS_ESTIMATE_KEY not in selection
+        and _selection.SHARED_WAIT_SECONDS_KEY in correction
+        and not selection_contract.is_non_negative_number(
+            _completion_estimate(costs, typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY]))
+        )
     ):
         errors.append(Violation("全体の完了見込み秒数が有限数ではない", next_action=_NEXT_CORRECTION))
     basis = correction.get(_selection.SHARED_WAIT_BASIS_KEY)
-    if basis is None:
-        return errors
-    wait = typing.cast(float, correction[_selection.SHARED_WAIT_SECONDS_KEY])
+    wait = typing.cast(float, correction.get(_selection.SHARED_WAIT_SECONDS_KEY, 0))
     if basis == _selection.SHARED_WAIT_ESTIMATED and wait == 0:
         errors.append(Violation("未計測の共有待ちを0秒と推定している", next_action=_NEXT_SHARED_WAIT))
     if basis == _selection.SHARED_WAIT_MEASURED and not correction["参照した記録"]:
         errors.append(Violation("実測とした共有待ちに参照した記録がない", next_action=_NEXT_SHARED_WAIT))
-    if (
-        target_seconds is not None
-        and _completion_estimate(costs, wait) > target_seconds
-        and _selection.TARGET_OVERRUN_COMPARISON_KEY not in selection
-    ):
-        estimate = _completion_estimate(costs, wait)
-        # 違反時は要約を出さずに終了するため、組み直しの規模を判断できるよう差もここで示す。
+    if validate_execution:
+        errors.extend(_check_process_estimate(selection, costs, target_seconds))
+    return errors
+
+
+def _check_process_estimate(
+    selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None
+) -> list[Violation]:
+    """全工程の欠測・依存と通常対象の目標を、比較文と独立して検収する。"""
+    plan = selection.get(_selection.PROCESS_ESTIMATE_KEY)
+    if plan is None:
+        if target_seconds is None:
+            return []
+        return [Violation("全工程の見込みが無く、目標内の実行可能性は未確認", next_action=_NEXT_PROCESS_ESTIMATE)]
+    assignments = {
+        str(item[_selection.WI_KEY]): str(item[_selection.LANE_KEY])
+        for item in typing.cast(list[dict[str, object]], _selection.decisions(selection))
+        if item[_selection.LANE_KEY] != _LANE_NONE
+    }
+    prior = {str(row[_selection.LANE_KEY]): typing.cast(list[str], row.get(_selection.PRIOR_LANES_KEY, [])) for row in costs}
+    result = _estimate.forecast(plan, assignments, prior)
+    errors = [Violation(f"全工程の見込みは未成立: {issue}", next_action=_NEXT_PROCESS_ESTIMATE) for issue in result.issues]
+    if target_seconds is not None and result.normal_seconds is not None and result.normal_seconds > target_seconds:
         errors.append(
             Violation(
-                f"全体の完了見込み秒数{estimate}が目標所要秒数{target_seconds}を超える"
-                f"（差 {estimate - target_seconds}）のに`{_selection.TARGET_OVERRUN_COMPARISON_KEY}`がない",
+                f"通常対象の完了見込み秒数{result.normal_seconds:g}が目標所要秒数{target_seconds:g}を超える"
+                f"（差 {result.normal_seconds - target_seconds:g}、全件の壁時計見込み{result.total_seconds:g}）",
                 next_action=_NEXT_TARGET_OVERRUN,
             )
         )
