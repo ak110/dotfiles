@@ -1,5 +1,6 @@
 """JSON Linesの物理行をLFだけで分ける。解析と空行の採否は呼び出し側が所有する。"""
 
+import json
 import typing
 
 
@@ -28,3 +29,28 @@ def split_lines(text: str | bytes) -> list[str] | list[bytes]:
     if lines[-1] == "":
         lines.pop()
     return [line.removesuffix("\r") for line in lines]
+
+
+def split_joined_line(line: bytes) -> tuple[int, dict[str, typing.Any]] | None:
+    """途中で途切れた記録の断片の直後へ、次の記録が改行なしで続く1行を分ける。
+
+    Claude Codeのセッション記録で、書込みの途中で途切れた断片に完全な記録が連結された行を観測した。
+    行の途中の`{"`から行末までが単独でJSONのobjectとして成立し、`type`キーを持つ最も早い位置を境界とし、
+    境界のバイト位置と後半の記録を返す。`type`を要件にするのは、途切れた文字列の中のJSONらしい文字列を
+    記録と誤認しないためである。判定はバイト列で行い、断片のUTF-8の破損は判定を妨げない。
+    手前の断片が単独で成立する場合は完全な記録を捨てることになるため、連結とみなさず`None`を返す。
+    """
+    start = line.find(b'{"', 1)
+    while start >= 0:
+        try:
+            tail = json.loads(line[start:].decode("utf-8"))
+        except ValueError:
+            tail = None
+        if isinstance(tail, dict) and "type" in tail:
+            try:
+                json.loads(line[:start].decode("utf-8"))
+            except ValueError:
+                return start, tail
+            return None
+        start = line.find(b'{"', start + 1)
+    return None

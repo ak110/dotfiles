@@ -191,6 +191,19 @@ def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> t
     return None, [event for event in events if event.get("kind") in _SCOPE_EVENT_KINDS]
 
 
+def _recovered_line(event: dict[str, Any]) -> str:
+    """回復した1行を、方式ごとに読み手が除いた範囲と根拠を取り違えない形で示す。"""
+    method = event.get("method")
+    if method in ("joined-fragment-superseded", "joined-fragment-lost"):
+        complete = f"{event['superseded_by']}行目" if event.get("superseded_by") is not None else "完全な版なし"
+        return f"- {event['record']}: {event['line']}行目の断片{event['length']}バイトを除外（完全な版: {complete}）"
+    return (
+        f"- {event['record']}: {event['line']}行目 → {event['superseded_by']}行目"
+        f"（ordinal={event['ordinal']}、type={event['entry_type']}"
+        f"{'、除外' if method == 'zero-filled-skipped' else ''}）"
+    )
+
+
 def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, Any]]) -> list[str]:
     """候補件数と区別した確認範囲と回復した記録行を、全ての準備文書へ同じ集合で示す。"""
     lines = ["", "## 未確認範囲", ""]
@@ -209,13 +222,10 @@ def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, A
                 "",
                 f"回復した記録行{len(recovered)}件。JSONとして成立しない行を、直後にある同じordinalとtypeの完全な行で置き換えた。"
                 "NULで始まる断片の行は、前後の完全な行のordinalが連続する場合だけ解析対象から除いた（除外と表示する）。"
+                "途切れた断片と完全な記録が連結された行は、断片だけを除いて後半の記録を同じ行番号で読んだ"
+                "（断片の完全な版が同じ記録にあればその行番号、無ければ「完全な版なし」と表示する）。"
                 "原本は変更していない。全件はbundle/recovered.jsonlへ保持する。",
-                *(
-                    f"- {event['record']}: {event['line']}行目 → {event['superseded_by']}行目"
-                    f"（ordinal={event['ordinal']}、type={event['entry_type']}"
-                    f"{'、除外' if event.get('method') == 'zero-filled-skipped' else ''}）"
-                    for event in recovered[:10]
-                ),
+                *(_recovered_line(event) for event in recovered[:10]),
             ]
         )
     return [*lines, ""]

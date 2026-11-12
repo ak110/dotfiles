@@ -11,7 +11,7 @@ import pathlib
 import typing
 
 from agent_toolkit._common.agy_records import normalize_entries
-from agent_toolkit._common.json_lines import split_lines
+from agent_toolkit._common.json_lines import split_joined_line, split_lines
 
 _MAX_ENTRIES = 3
 SEND_TO_USER_TOOL_SUFFIX = "__send_to_user"
@@ -150,28 +150,40 @@ def read_transcript_bytes(transcript_path: str, *, offset: int = 0) -> bytes | N
 
 
 def read_transcript_lines(transcript_path: str) -> list[str] | None:
-    """記録を行リストとして読み込み、読み取りかUTF-8の解釈に失敗した場合はNoneを返す。"""
+    """記録を物理行の位置を保った行リストとして読み込み、読み取りに失敗した場合はNoneを返す。
+
+    途切れた断片と完全な記録が改行なしで連結された行は、断片を除いた後半の記録を同じ位置に置く。
+    断片がUTF-8の多バイト文字の途中で途切れていても他の行を読めるよう、UTF-8の解釈は行ごとに行う。
+    解釈できない行は、置換文字で偶然JSONとして成立しないよう空文字列とし、利用側の解析対象から外す。
+    """
     data = read_transcript_bytes(transcript_path)
     if data is None:
         return None
-    try:
-        lines = split_lines(data.decode("utf-8"))
-        entries: list[dict] = []
-        positions: list[int] = []
-        for position, line in enumerate(lines):
-            try:
-                entry = json.loads(line)
-            except ValueError:
+    lines: list[str] = []
+    entries: list[dict] = []
+    positions: list[int] = []
+    for position, raw in enumerate(split_lines(data)):
+        try:
+            line = raw.decode("utf-8")
+            entry = json.loads(line)
+        except ValueError:
+            joined = split_joined_line(raw)
+            if joined is None:
+                try:
+                    lines.append(raw.decode("utf-8"))
+                except UnicodeDecodeError:
+                    lines.append("")
                 continue
-            if isinstance(entry, dict):
-                positions.append(position)
-                entries.append(entry)
-        for position, entry, normalized in zip(positions, entries, normalize_entries(entries, hook_view=True), strict=True):
-            if normalized is not entry:
-                lines[position] = json.dumps(normalized, ensure_ascii=False)
-        return lines
-    except UnicodeDecodeError:
-        return None
+            start, entry = joined
+            line = raw[start:].decode("utf-8")
+        lines.append(line)
+        if isinstance(entry, dict):
+            positions.append(position)
+            entries.append(entry)
+    for position, entry, normalized in zip(positions, entries, normalize_entries(entries, hook_view=True), strict=True):
+        if normalized is not entry:
+            lines[position] = json.dumps(normalized, ensure_ascii=False)
+    return lines
 
 
 def read_transcript_entries(transcript_path: str) -> list[dict]:

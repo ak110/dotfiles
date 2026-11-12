@@ -17,6 +17,7 @@ from typing import Any, Literal, NamedTuple, cast
 from agent_toolkit._common import agents_server_tools as _agents_server_tool_names
 from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common.agy_records import is_agy_entry, normalize_entries
+from agent_toolkit._common.json_lines import split_joined_line
 
 _Runtime = Literal["claude", "codex", "agy", "opencode"]
 
@@ -35,19 +36,24 @@ class _Record(NamedTuple):
 
 
 class _RecordRecovery(NamedTuple):
-    """JSONとして成立しない行を、同じ記録の後続の完全な行で置き換えた対応。
+    """JSONとして成立しない行の回復の対応。行番号は1始まりで、原本は変更しない。
 
-    `line`は成立しない行、`superseded_by`は同じ`ordinal`と`type`を持ち、成立しない行の`payload`以降を
-    接頭辞として含む行である。どちらも1始まりの行番号で、原本は変更しない。
-    `method`が`zero-filled-skipped`の対応は、NULで始まる断片を解析対象から除いたものである。
-    この場合の`superseded_by`・`ordinal`・`entry_type`は直後の完全な行の値で、除いた行の内容は確かめられない。
-    除外の根拠は、直前と直後の完全な行の`ordinal`が連続し、記録に欠落が無いことである。
+    `method`ごとの項目の意味は次のとおりである。
+    - `superseded`: `line`を、同じ`ordinal`と`type`を持ち`line`の`payload`以降を接頭辞として含む後続の
+      `superseded_by`行で置き換えた。
+    - `zero-filled-skipped`: NULで始まる断片の`line`を解析対象から除いた。`superseded_by`・`ordinal`・
+      `entry_type`は直後の完全な行の値で、除いた行の内容は確かめられない。除外の根拠は、直前と直後の
+      完全な行の`ordinal`が連続し、記録に欠落が無いことである。
+    - `joined-fragment-superseded`・`joined-fragment-lost`: 途切れた断片と完全な記録が連結された`line`から、
+      断片（`length`バイト）だけを除いて後半の記録を同じ行番号で読んだ。前者は断片を接頭辞に持つ完全な版が
+      同じ記録の`superseded_by`行にあり、`entry_type`はその行の`type`である。後者は完全な版が無く、
+      断片の記録は失われている。どちらも`ordinal`は`None`、後者は`superseded_by`と`entry_type`も`None`。
     """
 
     line: int
-    superseded_by: int
-    ordinal: int
-    entry_type: str
+    superseded_by: int | None
+    ordinal: int | None
+    entry_type: str | None
     length: int
     method: str = "superseded"
 
@@ -236,11 +242,38 @@ class _RecordReadError(ValueError):
         self.failure = failure
 
 
-def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) -> Iterator[_Record]:
-    """JSONLをLF単位で読み、部分書込みの直後の完全行と、欠落の無いNUL始まりの行の除外だけで回復する。
+def _joined_fragment_recovery(path: Path, number: int, fragment: bytes) -> _RecordRecovery:
+    """連結行から除く断片について、断片を接頭辞に持つ完全な版を同じ記録の全行（前方・後方）から探す。"""
+    with path.open("rb") as stream:
+        for other, value in enumerate(stream, start=1):
+            if other == number or not value.startswith(fragment):
+                continue
+            try:
+                complete = json.loads(value.removesuffix(b"\n").removesuffix(b"\r").decode("utf-8"))
+            except ValueError:
+                continue
+            if isinstance(complete, dict):
+                entry_type = complete.get("type")
+                return _RecordRecovery(
+                    number,
+                    other,
+                    None,
+                    entry_type if isinstance(entry_type, str) else None,
+                    len(fragment),
+                    "joined-fragment-superseded",
+                )
+    return _RecordRecovery(number, None, None, None, len(fragment), "joined-fragment-lost")
 
+
+def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) -> Iterator[_Record]:
+    """JSONLをLF単位で読み、記録の欠落が無いか欠落を診断へ残せる破損だけを回復する。
+
+    回復は記録の書式ごとに条件を足すのではなく、欠落の有無を同じファイル内の証拠で確かめられるか、
+    失われた範囲を回復の記録（`recoveries`）へ残して後続の記録を失わない場合に限る。
+    現在の回復は、部分書込みの直後の完全行による置換、欠落の無いNUL始まりの行の除外、
+    途切れた断片と完全な記録が連結された行からの断片の除外である。
+    それ以外の破損は欠落を否定できないため受理せず、呼出側がそれまでの結果を破棄してファイル全体を不成立にする。
     バイナリ反復を使い、JSON文字列内のU+2028を行区切りとしない。
-    途中の失敗では呼出側がそれまでの結果を破棄し、ファイル全体を不成立にする。
     """
     if not raw_path:
         raise _RecordReadError(_RecordLoadFailure("記録のパスが指定されていない"))
@@ -266,6 +299,11 @@ def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) 
                     elif raw.startswith(b"\0"):
                         # 除外の判定で後続の行を消費したため、部分書込みの回復へ進まない。
                         raise _RecordReadError(_RecordLoadFailure(f"{number}行目を読めない: {error}", number)) from error
+                    elif _PARTIAL_HEAD.match(raw) is None and (joined := split_joined_line(raw)) is not None:
+                        # Codex形式の部分書込みは既存の置換で扱い、それ以外の連結行は断片だけを除いて後半を読む。
+                        start = joined[0]
+                        recoveries.append(_joined_fragment_recovery(path, number, raw[:start]))
+                        raw = raw[start:]
                     else:
                         following = next(
                             ((n, value.removesuffix(b"\n").removesuffix(b"\r")) for n, value in lines if value.strip()),

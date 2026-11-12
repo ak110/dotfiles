@@ -30,6 +30,29 @@ def test_read_transcript_lines_preserves_json_strings(tmp_path: pathlib.Path, se
     assert list(iter_latest_assistant_messages(str(path))) == [entries[1]["message"]]
 
 
+def test_read_transcript_lines_reads_record_joined_after_broken_utf8_fragment(tmp_path: pathlib.Path) -> None:
+    """UTF-8の途中で途切れた断片に連結された直前の応答を、同じ位置で読み、他の行も読む。"""
+    fragment = json.dumps(_assistant_entry([_text_block("途切れた応答")]), ensure_ascii=False).encode("utf-8")
+    fragment = fragment[: fragment.index("途切れ".encode()) + 4]
+    latest = _assistant_entry([_text_block("直前の応答")], msg_id="msg_latest")
+    rows = [
+        json.dumps(_user_entry("依頼"), ensure_ascii=False).encode("utf-8"),
+        b'{"type":"user","message":{"role":"user","content":"' + b"\xff" + b'"}}',
+        fragment + json.dumps(latest, ensure_ascii=False).encode("utf-8"),
+    ]
+    path = tmp_path / "joined.jsonl"
+    path.write_bytes(b"\n".join(rows) + b"\n")
+
+    lines = read_transcript_lines(str(path))
+
+    assert lines is not None
+    assert len(lines) == 3
+    assert json.loads(lines[0]) == _user_entry("依頼")
+    assert lines[1] == ""
+    assert json.loads(lines[2]) == latest
+    assert list(iter_latest_assistant_messages(str(path))) == [latest["message"]]
+
+
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_a", stop_reason: str = "end_turn") -> dict:
     return {
         "type": "assistant",
