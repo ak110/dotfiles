@@ -19,8 +19,16 @@ Claude Code・Codex・Agent Plugins向けの既存3形式と原本の品質本�
 共通常時規範は行境界で分割し、各ファイルを24,000バイト以内に保つ。
 生成器は合計20,000トークンの予算をUTF-8の2 bytes/token換算でチェックし、
 超過時は配布前に失敗させる。
+失敗した場合だけ、特定の場面で使う内容をその判断・操作の前に読む資料へ移し、
+整理後の目安17,000トークン以下まで下げる。
+上限以下では、容量を理由に追加の測定・記録・削減を求めない。
+整理後の値は生成の受理上限ではなく、通常の追記を数回吸収するためエージェントが定めた目安である。
+換算・目安の根拠と再確認手順は[常時規範の容量監査](audit-records-antigravity.md#pytools_internalantigravity_pluginpy常時規範の容量2026年11月12日)にある。
+文書記述量の判断は[過剰設計の抑制](concepts-overengineering.md#過剰設計の抑制)と
+`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`の容量検査の規定へ対応する。
 追加の分割ファイルは`trigger: always_on`でロードする。
-プロジェクト独自の規範もホストの同じ予算を使うため、その総量は対象プロジェクトで確認する。
+プロジェクト独自の規範もホストの同じ予算を使う。
+本生成器の検査対象はtoolkitの共通常時規範である。
 
 6イベントのhookは同じ生成rootの`scripts/atk-hook antigravity <イベント名>`を呼ぶ。
 MCPは原本から`agents_server`・`pyfltr`を選び、root参照を絶対パスへ投影する。

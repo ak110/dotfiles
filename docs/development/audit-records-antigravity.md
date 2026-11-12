@@ -38,3 +38,37 @@ agy -p 'reply with OK only' --model gemini-3.8-flash --effort medium --output-fo
 `step_update`の2行には`text_delta`があり、公開ストリームに表示用の本文が含まれることを確認した。
 標準エラーには、slash command expansionを無効にすると`--mode plan`が適用されないという説明が1行出た。
 再検証は`agy --version`で版数を記録し、同じ指示で`--print-timeout`を`3600`と`3600s`へ変えて終了コード、標準エラーおよびイベント種別を確認する。
+
+## pytools/_internal/antigravity_plugin.py：常時規範の容量：2026年11月12日
+
+Antigravity CLI 1.5.6で、共通常時規範の末尾が新規セッションへ届くことを確認した。
+`agy -p`へ、ツールを使わず起動時の`02-agent-operations.md`の最終文だけを答える入力を与えた。
+モデルと実行モードは`--model gemini-3.8-flash --effort low --mode plan`を指定した。
+`--settings '{"toolPermission":"strict"}' --output-format stream-json --print-timeout 120s`も指定した。
+終了コードは0で、回答は生成した2つ目の規範の最終文と一致した。
+出力のイベントにツール実行は無かった。
+この観測時の生成物は23,888バイトと6,157バイトであり、本文の移設は行っていない。
+
+`usage.input_tokens`の22,225は、ツール定義なども含むセッション全体の入力である。
+規範単体の実トークン数として扱わない。
+公開CLIのヘルプと[対話用のcontextパネル](https://antigravity.google/docs/cli/commands/context/)からは
+規範単体をモデルの方式で数える非対話操作を確定できなかった。
+[Gemini APIの計数](https://ai.google.dev/gemini-api/docs/tokens)にはモデル別の`count_tokens`があるが、
+確認した環境ではAPIキーが設定されておらず、単体の実数は未測定である。
+したがって、実数が小さいという仮定で換算を緩めず、既存の2 bytes/tokenを保つ。
+
+[公式のRules資料](https://antigravity.google/docs/rules/)の容量の節は、1ファイル24,000バイトを超えた場合の切り捨てと、
+常時規範の合計20,000トークンを超えた場合に大きいファイルから参照形式へ変える動作を説明している。
+生成器はこれらの上限と超過時の失敗検査を維持する。
+整理後の目安は上限の85%である17,000トークンとし、エージェントが定めた値とする。
+比較の出発点80〜85%のうち、必要な移設量を抑える85%を選んだ。
+超過是正ごとに3,000トークン（既存換算で約6,000バイト）の追記余裕を戻す。
+過去に1文の置換で推定値が約54トークン増えた報告があり、複数回の追記を吸収する余裕と判断した。
+この報告は通常の追記量の分布の実測ではない。
+17,000は生成を拒否する第2の上限にはせず、20,000以下では容量の追加測定・記録・削減を求めない。
+
+再確認は同じモデルと版で新規セッションへ最終文を答えさせ、生成物と逐語比較する。
+規範単体のモデル計数を取得できる環境では、生成した全規範を`count_tokens`で数え、換算の安全幅を再評価する。
+生成の境界と全文保持は`test_only_exceeding_budget_requires_reorganization`、
+`test_size_failure_keeps_previous_distribution`と`antigravity_rules_invariant_test.py`で確認する。
+上限以下の入力は整理後水準を超えても生成でき、超過時だけ水準以下への是正を案内する。

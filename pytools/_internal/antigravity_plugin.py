@@ -14,6 +14,10 @@ PLUGIN_DIRECTORY = "agent-toolkit-agy"
 PLUGIN_NAMES = ("agent-toolkit", "agent-basics")
 RULE_FILE_BYTES = 24_000
 RULE_BUDGET_TOKENS = 20_000
+# 超過時に通常の追記を吸収する余裕へ戻す目安。上限以下の生成を拒否する値ではない。
+# 根拠と再確認はdocs/development/audit-records-antigravity.mdの
+# 「pytools/_internal/antigravity_plugin.py：常時規範の容量：2026年11月12日」に記録する。
+RULE_REORGANIZED_TOKENS = 17_000
 # 更新時に必ず表示する案内。旧版からの更新検証（scripts/check_update_dotfiles_upgrade.py）も同じ文言だけを許容する。
 UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
 EVENTS = ("SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop")
@@ -71,7 +75,10 @@ def _rules(source: Path) -> dict[Path, bytes]:
         for line in text.splitlines(keepends=True):
             size = len(line.encode("utf-8"))
             if size > body_limit:
-                raise ValueError(f"Antigravity規範の1行がファイル上限を超えています: {path}")
+                raise ValueError(
+                    f"Antigravity規範の1行がファイル上限を超えています: {path}。"
+                    "本文と読込順序を保ち、長い行を複数行へ分けてから再実行してください"
+                )
             stripped = line.lstrip()
             # コードフェンス内の`#`行（シェルのコメントなど）は見出しとして扱わない。
             fence = stripped.startswith(("```", "~~~"))
@@ -99,7 +106,9 @@ def _rules(source: Path) -> dict[Path, bytes]:
     if estimated_tokens > RULE_BUDGET_TOKENS:
         raise ValueError(
             f"Antigravity常時規範が予算を超えています: 推定{estimated_tokens} tokens。"
-            "常時規範と条件付きスキルの配置を見直してください"
+            "常時規範のうち特定の場面だけで使う内容を、その判断・操作の前に読む資料へ移し、"
+            f"推定{RULE_REORGANIZED_TOKENS} tokens以下まで整理してください。"
+            "上限以下では容量の追加測定・記録・削減は不要です"
         )
     return {
         Path("rules") / ("AGENTS.md" if index == 0 else f"AGENTS-{index + 1:02d}.md"): (
