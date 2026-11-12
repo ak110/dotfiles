@@ -270,9 +270,10 @@ def _missing_section_references(source: pathlib.Path, plugin_root: pathlib.Path)
 
 
 def _missing_bare_share_sections(source: pathlib.Path, plugin_root: pathlib.Path, number: int, line: str) -> list[str]:
-    """裸の`share/<名前>.md`を`share/<名前>.md`（プラグイン直下）として解決し、添えた節名の見出しの実在を確かめる。
+    """裸の`share/<名前>.md`を`share/<名前>.md`（プラグイン直下）として解決し、参照先ファイルと添えた節名の見出しの実在を確かめる。
 
-    配送側は裸の`share/…`を解決しないため、`material_targets`では参照切れを検出できない。
+    範囲は裸の形式の参照先ファイルと節見出しの実在であり、裸の形式そのものは誤りとして扱わない。
+    `material_targets`は裸の`share/…`を解決しないため、参照切れを検出できない。
     """
     errors: list[str] = []
     for code, _link, quoted in _SECTION_REFERENCE.findall(line):
@@ -280,6 +281,7 @@ def _missing_bare_share_sections(source: pathlib.Path, plugin_root: pathlib.Path
             continue
         target = plugin_root / code
         if not target.is_file():
+            errors.append(f"{source}:{number}: `{code}`が実在しない。実在する資料を指すように参照を直せ")
             continue
         titles = {
             matched[1]
@@ -323,3 +325,16 @@ def test_section_reference_to_missing_heading_is_reported(tmp_path):
     source.write_text("判定は`rule.md`「判定の手順」に従う。\n", encoding="utf-8")
     errors = _missing_section_references(source, tmp_path)
     assert len(errors) == 1 and f"{source}:1:" in errors[0] and "「判定の手順」" in errors[0]
+
+
+def test_bare_share_reference_to_missing_file_or_heading_is_reported(tmp_path):
+    """裸の`share/…`の参照先ファイルの不在と節見出しの不在を報告し、実在する参照は受理する。"""
+    share = tmp_path / "share"
+    share.mkdir()
+    (share / "sample.md").write_text("# 資料\n\n## 手順\n\n本文。\n", encoding="utf-8")
+    source = tmp_path / "consumer.md"
+    assert not _missing_bare_share_sections(source, tmp_path, 1, "`share/sample.md`「手順」に従う。")
+    errors = _missing_bare_share_sections(source, tmp_path, 2, "`share/sample.md`「無い節」に従う。")
+    assert len(errors) == 1 and "「無い節」" in errors[0] and f"{source}:2:" in errors[0]
+    errors = _missing_bare_share_sections(source, tmp_path, 3, "`share/missing.md`「手順」に従う。")
+    assert len(errors) == 1 and "`share/missing.md`が実在しない" in errors[0]
