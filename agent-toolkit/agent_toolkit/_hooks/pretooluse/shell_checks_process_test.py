@@ -241,6 +241,13 @@ class TestBashSelfMatchingPgrep:
             "kill -0 12345",
             # 検索語として現れるだけの語は実行位置ではない。
             "rg -n -F 'pgrep -f' -- notes.md",
+            # 完全一致（`-x`）と不一致の列挙（`-v`）は、ラッパーのシェルを結果に含めない。
+            "pgrep -fx 'sleep 100'",
+            "pgrep -x -f 'sleep 100'",
+            "pgrep -fv worker",
+            # pgrepと解釈の異なるPOSIXの文字クラスと、ラッパーの引用で置き換わる単一引用符は判定しない。
+            "pgrep -f '[[:alpha:]]x'",
+            'pgrep -f "it\'s"',
         ],
     )
     def test_allows(self, command: str):
