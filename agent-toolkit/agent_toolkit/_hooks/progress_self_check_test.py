@@ -65,6 +65,10 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
     assert match is not None
     target = shlex.split(match["posix"])[0] if match["posix"] else match["nt"].replace("''", "'")
     assert pathlib.Path(target).is_file()
+    # 通知が名指しする節は、そのファイルに見出しとして実在する。
+    section = re.search(r"「(?P<name>[^」]+)」節", notice)
+    assert section is not None
+    assert f"\n## {section['name']}\n" in pathlib.Path(target).read_text(encoding="utf-8")
     # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0
     notice_module.record_delivery(notice)
