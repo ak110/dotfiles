@@ -38,7 +38,7 @@ def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixtur
     }
     cli = {name.removeprefix("atk agents ") for name, _, _ in _walk_commands() if name.startswith("atk agents ")}
     assert {"start", "send_message", "kill", "stop"} <= registered - cli
-    assert cli == {"wait", "notify", "list", "show", "logs"}
+    assert cli == {"wait", "notify", "list", "show", "logs", "effort"}
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "--help"])
     output = capsys.readouterr()
