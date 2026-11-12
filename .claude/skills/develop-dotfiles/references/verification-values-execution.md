@@ -34,8 +34,12 @@
      入れ子の実行は祖先の所有を継承する。
 4. 確定した対象へ全チェックを適用するため、初回はMCPの`run`へパスを渡すか、`uv run --frozen pyfltr run <対象ファイルの絶対パス>`を`commands`指定なしで実行する。
    修正後の再実行だけ失敗したチェックへ限定し、同じ内容の2回目以降の静的チェックでは`commands`（CLIは`--commands`）からpytestを除く。
-   失敗テストだけの再確認は`--only-failed`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。
+   失敗テストだけの再確認は`--only-failed --from-run <初回のrun_id>`、単一試験の確認は対象ファイルと必要なら`-k`を渡した直接pytestを使い、収集件数と想定の一致を確かめる。
+   `--from-run`を省いた`--only-failed`は、他の作業ツリーを含むホスト全体の直近の実行を参照する。
+   その実行に失敗が無ければ何も実行せずに終了0となり、自分の失敗が残っていても成功として報告される。
    pytestを含む実行には両プロジェクトの`pytest-always-targets`が加わるため、本書の横断テストの項で重複実行を避ける。
+   commitのhookは、同じ内容でpytestが成功した`pyfltr run`があればpytestを外して実行する（判定条件は`scripts/pyfltr_precommit.py`の冒頭）。
+   commitの直前の`pyfltr run`は、commitする内容が確定した後に実行する。
    - CIが無い、または公開先でCIが実行されずローカルの全体pytestが必要な場合は、`--maxfail=10`を指定し、計画からmanifestまで同じ値を保つ。
      CIが全体を担う本リポジトリの通常のレーン内・統合時・公開前は関連範囲だけを実行する。
      直接pytestでは`--maxfail=10`、pyfltr経由では`--pytest-args='--maxfail=10'`を使い、他のpytest追加引数は同じ値へ併記する。

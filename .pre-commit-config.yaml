@@ -55,7 +55,8 @@ repos:
     hooks:
       - id: pyfltr
         name: pyfltr
-        entry: uv run --project . --frozen pyfltr fast
+        # 同じ内容で成功済みの`pyfltr run`があればpytestだけを外す（判定は`scripts/pyfltr_precommit.py`の冒頭）。
+        entry: uv run --project . --frozen python scripts/pyfltr_precommit.py
         env:
           UV_PROJECT_ENVIRONMENT: .venv
         # 対象ファイルが無いときに起動すると、引数なしのpyfltrがリポジトリ全体を検査するため、常時実行にしない。
