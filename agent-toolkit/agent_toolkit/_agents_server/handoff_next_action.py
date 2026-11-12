@@ -42,5 +42,8 @@ def result_next_action(result: Mapping[str, Any]) -> str | None:
         engine == "codex" and codex_resume_state.handoff_failure(status, error)
     ):
         return None
-    identifier = json.dumps(result.get("session_id"), ensure_ascii=False)
+    session_id = result.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    identifier = json.dumps(session_id, ensure_ascii=False)
     return f'`start`へ`{{"handoff_from": {identifier}}}`だけを渡し、前任の進捗を後任へ引き継ぐ'

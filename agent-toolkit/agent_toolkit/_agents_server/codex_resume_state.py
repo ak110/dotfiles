@@ -100,5 +100,5 @@ def handoff_failure(status: str, error: Any) -> bool:
     message = error.get("message")
     return error.get("codexErrorInfo") == INCOMPATIBLE_STATE or (
         isinstance(message, str)
-        and (message.startswith("Codex App Server stopped:") or message == "Codex connection rejected the request")
+        and (message.startswith("Codex App Server stopped:") or message.startswith("Codex connection rejected the request"))
     )
