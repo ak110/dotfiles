@@ -482,3 +482,57 @@ def test_computed_enum_result_is_not_a_static_constant_copy(
     report = json.loads(capsys.readouterr().out)
     assert not report["diagnostics"]
     assert {item["status"] for item in report["files"][0]["functions"]} == {"unclassified"}
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'state["existing"] = module.FLAG\nrun()\nassert state["writes"] == [1]\n',
+        "state.existing = module.FLAG\nrun()\nassert state.writes == [1]\n",
+        'state[index]["existing"] = module.FLAG\nrun()\nassert index == 1\nassert state[index]["writes"] == [1]\n',
+        'state = {"existing": module.FLAG}\nstate["existing"] = module.OTHER\nrun()\nassert state["writes"] == [1]\n',
+        'for state["existing"] in [module.FLAG]:\n    run()\n    assert state["writes"] == [1]\n',
+    ],
+)
+def test_partial_assignment_does_not_make_observed_state_constant(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    body: str,
+) -> None:
+    path = tmp_path / "state_test.py"
+    path.write_text("import module\ndef test_result(state, index):\n    " + body.replace("\n", "\n    "), encoding="utf-8")
+    assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert not report["diagnostics"]
+
+
+@pytest.mark.parametrize("blank", ["", "\n"])
+@pytest.mark.parametrize("rust", [False, True])
+def test_adjacent_one_line_functions_keep_individual_exception_reasons(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    blank: str,
+    rust: bool,
+) -> None:
+    path = tmp_path / ("sample.rs" if rust else "sample.ts")
+    first = (
+        '#[test] fn one() { assert_eq!(module::REGISTRY, ["a"]); }'
+        if rust
+        else 'test("one", () => { expect(module.REGISTRY).toEqual(["a"]); });'
+    )
+    second = (
+        '#[test] fn two() { assert_eq!(module::REGISTRY, ["b"]); }'
+        if rust
+        else 'test("two", () => { expect(module.REGISTRY).toEqual(["b"]); });'
+    )
+    path.write_text(
+        "// test-copy-contract: 公開契約one\n" + first + "\n" + blank + "// test-copy-contract: 公開契約two\n" + second + "\n",
+        encoding="utf-8",
+    )
+    assert check_test_copies.main(["--root", str(tmp_path), "--json", path.name]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert not report["diagnostics"]
+    assert [(item["id"].split("@")[0], item["status"], item["reason"]) for item in report["files"][0]["functions"]] == [
+        ("one", "exempt", "公開契約one"),
+        ("two", "exempt", "公開契約two"),
+    ]

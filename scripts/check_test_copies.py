@@ -196,10 +196,7 @@ class _PythonAnalysis:
         if isinstance(node, (ast.GeneratorExp, ast.ListComp, ast.SetComp)):
             local = dict(env)
             for generator in node.generators:
-                kind = self.value(generator.iter, local, stack)
-                for target in ast.walk(generator.target):
-                    if isinstance(target, ast.Name):
-                        local[target.id] = kind
+                self.assign(ast.Assign(targets=[generator.target], value=generator.iter), local, stack)
             return self.value(node.elt, local, stack)
         if isinstance(node, ast.Subscript):
             if isinstance(node.slice, ast.Constant) and node.slice.value == "additionalContext":
@@ -268,8 +265,15 @@ class _PythonAnalysis:
         kind = self.value(node.value, env, stack)
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         for target in targets:
+            # 部分更新は状態全体の固定出自を無効にし、添字の変数へ右辺を伝播させない。
+            if isinstance(target, (ast.Subscript, ast.Attribute)):
+                owner = target.value
+                while isinstance(owner, (ast.Subscript, ast.Attribute)):
+                    owner = owner.value
+                if isinstance(owner, ast.Name):
+                    env.update({owner.id: "unknown", "__fragment:" + owner.id: "no", "__source:" + owner.id: "no"})
             for item in ast.walk(target):
-                if isinstance(item, ast.Name):
+                if isinstance(item, ast.Name) and isinstance(item.ctx, ast.Store):
                     env[item.id] = kind
                     env["__fragment:" + item.id] = "yes" if self.fixed_text(node.value, env) else "no"
                     env["__source:" + item.id] = (
@@ -391,11 +395,7 @@ class _PythonAnalysis:
                 checks.append(self.check(node.test, env))
             elif isinstance(node, (ast.For, ast.AsyncFor)):
                 local = dict(env)
-                kind = self.value(node.iter, env)
-                for item in ast.walk(node.target):
-                    if isinstance(item, ast.Name):
-                        local[item.id] = kind
-                        local["__fragment:" + item.id] = "yes" if self.fixed_text(node.iter, env) else "no"
+                self.assign(ast.Assign(targets=[node.target], value=node.iter), local, stack)
                 checks.extend(self.statements(node.body, local, stack))
                 checks.extend(self.statements(node.orelse, dict(env), stack))
             elif isinstance(node, (ast.With, ast.AsyncWith)):
@@ -834,7 +834,7 @@ def _foreign(source: str, rust: bool) -> tuple[list[_Function], dict[int, str]]:
                 line,
                 token.line,
                 tokens[end].line,
-                tokens[opening].line + 1,
+                tokens[min(opening + 1, end)].line,
                 _foreign_checks(tokens, pairs, opening + 1, end, helpers, globals_),
             )
         )
@@ -845,7 +845,7 @@ def _exceptions(functions: list[_Function], comments: dict[int, str]) -> list[tu
     errors = []
     used: set[int] = set()
     for function in functions:
-        locations = [function.start - 1, *range(function.start, function.body_start + 1)]
+        locations = [function.start - 1, *range(function.start, min(function.body_start, function.end) + 1)]
         markers = [(line, comments[line]) for line in locations if line in comments and _MARKER in comments[line]]
         for line, comment in markers:
             if line in used:
