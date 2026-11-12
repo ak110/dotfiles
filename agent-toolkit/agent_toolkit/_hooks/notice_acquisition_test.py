@@ -74,33 +74,26 @@ def test_content_notice_commands_resolve_only_the_required_documents(
     bodies = posttooluse.content_notices(prompt, "notice-acquisition")
     assert len(bodies) == 1
     body = bodies[0]
-    relative = (
-        "user-confirmation-and-report/SKILL.md"
-        if "！！" in prompt
-        else "user-confirmation-and-report/references/user-utterance.md"
-    )
-    _assert_read(body, documents / "skills" / relative, windows=windows)
+    if "！！" in prompt:
+        assert "agent-toolkit:user-confirmation-and-report" in body and "スキルを起動し" in body
+    else:
+        _assert_read(body, documents / "skills/user-confirmation-and-report/references/user-utterance.md", windows=windows)
+        assert "取得せよ" in body or "取得し" in body
     routing = documents / "skills/delegation/references/routing.md"
     if "調査" in prompt:
         _assert_read(body, routing, windows=windows)
     else:
         assert str(routing) not in body
-    assert "取得せよ" in body or "取得し" in body
 
 
-@pytest.mark.parametrize("windows", [False, True])
-def test_confirmation_notice_provides_native_skill_and_shell_acquisition(
-    documents: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], windows: bool
-) -> None:
-    monkeypatch.setattr(user_prompt_submit, "os", types.SimpleNamespace(name="nt" if windows else "posix", environ=os.environ))
+def test_confirmation_notice_asks_to_invoke_the_skill(capsys: pytest.CaptureFixture[str]) -> None:
     session_id = "notice-confirmation"
     session_state.update_state(session_id, lambda state: {**state, "user_confirmation_skill_pending": True})
     assert user_prompt_submit.main(json.dumps({"session_id": session_id, "prompt": "確認して"})) == 0
     body = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert session_state.read_state(session_id)["user_confirmation_skill_pending"] is False
-    _assert_read(body, documents / "skills/user-confirmation-and-report/SKILL.md", windows=windows)
-    assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in body
-    assert "それ以外" in body and "適用せよ" in body
+    assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in body
+    assert "cat --" not in body and "Get-Content" not in body
     assert "agent-basics:bugfix" in body
 
 

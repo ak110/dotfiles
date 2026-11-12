@@ -10,7 +10,6 @@ import json
 import os
 import pathlib
 import re
-import shlex
 import subprocess
 from collections.abc import Callable
 
@@ -187,7 +186,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return f'Skill(skill="{cls._SKILL}")' in context and "次の操作:" in context
+        return f"`{cls._SKILL}`スキルを起動せよ" in context and "次の操作:" in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -372,15 +371,8 @@ class TestMachineInjectedTurn:
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in context
-        document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/SKILL.md"
-        assert document.is_file()
-        command = (
-            "Get-Content -LiteralPath '" + str(document).replace("'", "''") + "' -Encoding utf8"
-            if os.name == "nt"
-            else "cat -- " + shlex.quote(str(document))
-        )
-        assert f"それ以外では`{command}`で全文を取得して適用せよ" in context
+        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in context
+        assert "cat --" not in context and "Get-Content" not in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
 
@@ -584,7 +576,7 @@ class TestRealignNoticeInjection:
             output = json.loads(result.stdout)["hookSpecificOutput"]
             bodies = _notice_bodies(output["additionalContext"])
             assert len(bodies) == 1
-            assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[0]
+            assert "agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」" in bodies[0]
             assert "次の操作:" in bodies[0]
             assert set(_read_state(tmp_path, sid)) == {
                 "termination_evidence",
@@ -739,8 +731,8 @@ class TestExampleScopeNotice:
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
         assert len(bodies) == 3
-        assert 'Skill(skill="agent-toolkit:user-confirmation-and-report")' in bodies[0]
-        assert "agent-toolkit:user-confirmation-and-report`の「認識合わせ」" in bodies[1]
+        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in bodies[0]
+        assert "agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」" in bodies[1]
         assert str(self._UTTERANCE_PATH) in bodies[2]
 
 

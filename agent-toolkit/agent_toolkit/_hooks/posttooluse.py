@@ -115,8 +115,8 @@ importするため、循環importを避けて本モジュールに置く。
 
 _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `{read_command}`で本文を取得し、"
-    "`agent-toolkit:user-confirmation-and-report`の「認識合わせ」に従い、目標と解決したい問題の理解を確かめよ。"
+    "次の操作: `agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」に従い、"
+    "目標と解決したい問題の理解を確かめよ。"
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
@@ -167,13 +167,7 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
     notices: list[str] = []
     subject = subject or prompt
     if "！！" in prompt:
-        path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "SKILL.md"))
-        read_command = (
-            "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
-            if os.name == "nt"
-            else "cat -- " + shlex.quote(path)
-        )
-        body = _REALIGN_NOTICE_BODY.format(read_command=read_command)
+        body = _REALIGN_NOTICE_BODY
         notices.append(_notice_formatter(source)(body, tag="notice", subject=subject))
     if (example := _example_scope_notice(prompt, source, subject=subject)) is not None:
         notices.append(example)

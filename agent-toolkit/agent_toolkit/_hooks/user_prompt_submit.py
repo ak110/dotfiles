@@ -46,7 +46,6 @@ from __future__ import annotations
 import json
 import os
 import re
-lazy import shlex
 
 from agent_toolkit._hooks.notice import begin_delivery, emit_response, informational, resolve_notice, set_warning_session_id
 
@@ -76,7 +75,6 @@ lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: 
     update_state,
 )
 lazy from agent_toolkit._hooks import command_timing, message_format, session_title, termination_evidence, work_contract
-lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -184,17 +182,7 @@ def _claim_user_confirmation_notice(session_id: str) -> bool:
 
 def _user_confirmation_notice() -> str:
     """文脈ごとの既存pending状態で一度だけ選んだ案内を共通の書式へ渡す。"""
-    path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "SKILL.md"))
-    read_command = (
-        "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else "cat -- " + shlex.quote(path)
-    )
-    acquisition = (
-        "応答と作業の着手より前に、"
-        '`Skill`があるホストでは`Skill(skill="agent-toolkit:user-confirmation-and-report")`を使え。'
-        f"それ以外では`{read_command}`で全文を取得して適用せよ。"
-    )
+    acquisition = "応答と作業の着手より前に、`agent-toolkit:user-confirmation-and-report`スキルを起動せよ。"
     body = next_action.with_next_action(
         _USER_CONFIRMATION_NOTICE_BODY, acquisition + _USER_CONFIRMATION_NOTICE_FIX + _BUGFIX_NOTICE_FIX
     )
