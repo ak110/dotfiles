@@ -4,6 +4,7 @@ import datetime
 import json
 import pathlib
 import subprocess
+import time
 from typing import Any
 
 import pyfltr_precommit
@@ -33,7 +34,7 @@ def _install_pyfltr(
     *,
     pytest_started_at: str,
     argv: list[str] | None = None,
-    cwd: pathlib.Path | None = None,
+    cwd: pathlib.Path | str | None = None,
     version: str = _VERSION,
     pytest_status: str = "succeeded",
     list_returncode: int = 0,
@@ -50,7 +51,7 @@ def _install_pyfltr(
     shown = {
         "run_id": "01RUN",
         "meta": {
-            "cwd": str(cwd or repository),
+            "cwd": str(repository if cwd is None else cwd),
             "version": version,
             "argv": argv if argv is not None else ["run", "--no-fix", "src/a.py"],
             "started_at": _RUN_STARTED_AT,
@@ -97,6 +98,7 @@ def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monk
         pytest.param({"argv": ["run", "--commands"]}, id="option-without-value"),
         pytest.param({"argv": ["grep", "x"]}, id="other-subcommand"),
         pytest.param({"cwd_other": True}, id="other-worktree"),
+        pytest.param({"cwd": ""}, id="empty-cwd"),
         pytest.param({"list_returncode": 1}, id="query-failed"),
     ],
 )
@@ -170,3 +172,44 @@ def test_main_disables_only_pytest_when_reusing(
 
     assert pyfltr_precommit.main(["src/a.py"]) == 3
     assert launched == [["/bin/pyfltr", "fast", *expected_extra, "src/a.py"]]
+
+
+@pytest.mark.parametrize(("add_untracked", "reused"), [(False, True), (True, False)], ids=["unchanged", "untracked-added"])
+def test_untracked_file_added_after_pytest_start_is_not_reused(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, add_untracked: bool, reused: bool
+) -> None:
+    """pytestの開始後に加えた未追跡ファイルを、ファイルと親ディレクトリの更新時刻で検出して再利用しない。"""
+    repository = _repository(tmp_path)
+    # 作成した作業ツリーの更新時刻より後、追加するファイルの更新時刻より前にpytestが始まった実行を表す。
+    # 秒未満を記録しないファイルシステムでも作業ツリーの作成と区別できるよう、次の秒に入ってから開始とする。
+    time.sleep(1.05 - time.time() % 1)
+    pytest_started_at = _iso(0)
+    time.sleep(0.05)
+    if add_untracked:
+        (repository / "src" / "b.py").write_text("y = 1\n", encoding="utf-8")
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=pytest_started_at)
+
+    reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr")
+
+    assert (reuse.run_id == "01RUN") is reused
+
+
+def test_main_runs_pytest_when_query_output_is_unexpected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """照会出力の形式の変化などで判定中に例外が出た場合も、hookは止まらずpytestを含めて実行する。"""
+    launched: list[list[str]] = []
+
+    def _find(directory: pathlib.Path, pyfltr: str) -> pyfltr_precommit.Reuse:
+        del directory, pyfltr
+        raise KeyError("run_id")
+
+    def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        launched.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "find_reusable_run", _find)
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", _run)
+
+    assert pyfltr_precommit.main(["src/a.py"]) == 0
+    assert launched == [["/bin/pyfltr", "fast", "src/a.py"]]

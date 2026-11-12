@@ -14,12 +14,20 @@ pyfltrの内部構造には依存しない。次をすべて満たす実行だ�
   pytestは整形段の終了後に始まる（2026年11月12日、pyfltr 3.30.1の`show-run`で、
   整形段の終了とpytestの開始の間隔が約12ミリ秒だったことを観測した）。
   このため時刻の比較に余裕を設けない。
+  ただし秒未満を記録しないファイルシステム（ext3など）では、同じ秒の中の変更が秒の先頭の時刻で記録され、
+  pytestの開始より前の時刻になる。秒未満が0の時刻はその秒の終わりまでに変更されたものとして扱う
+  （2026年11月13日、このリポジトリの開発機のext3で更新時刻の秒未満が常に0であることを観測した）。
 - 実行のcwdがこの作業ツリーで、pyfltrの版が同じで、引数が試験の範囲を変えない形だけである。
 - その実行でpytestが成功している。
 
 `fast`のpytestは不変条件試験だけを対象とし、`run`・`ci`・`fast`のpytestは対象ファイルによらず
 不変条件試験を含むため、上の条件を満たす実行の成功はhookのpytestを被覆する。
-判定できない場合（照会の失敗を含む）は従来どおりpytestを含めて実行する。
+判定できない場合（照会の失敗や想定外の形式の出力を含む）は従来どおりpytestを含めて実行する。
+
+「同じ内容」の根拠はGitの追跡ファイルと、除外指定に当たらない未追跡ファイルに限る。
+除外指定に当たるファイル（`.venv`、生成物、`.env`など）、リポジトリ外の入力（ホーム配下の設定など）、
+環境変数の変化は検出しない。commitの直前に同じ作業ツリーで成功した実行を前提とし、
+commitまでにこれらを変える操作（`uv sync`など）を実行した場合は、commitの前に検証をやり直す。
 """
 
 import argparse
@@ -82,7 +90,11 @@ def main(argv: list[str] | None = None) -> int:
     if pyfltr is None:
         print("pyfltr-precommit: pyfltrが見つからない。`uv sync --frozen`で開発環境を準備する。", file=sys.stderr)
         return 2
-    reuse = find_reusable_run(pathlib.Path.cwd(), pyfltr)
+    try:
+        reuse = find_reusable_run(pathlib.Path.cwd(), pyfltr)
+    except (KeyError, TypeError, AttributeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        # 照会出力の形式の変化やGitの時間切れで判定できない場合も、pytestを外さない側へ倒す。
+        reuse = Reuse(None, f"再利用を判定できない: {type(exc).__name__}: {exc}")
     extra: list[str] = []
     if reuse.run_id is None:
         print(f"pyfltr-precommit: pytestを含めて実行する（{reuse.reason}）。", file=sys.stderr)
@@ -133,8 +145,12 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str) -> Reuse:
         if isinstance(shown, str):
             return Reuse(None, shown)
         meta = shown.get("meta", {})
+        cwd = meta.get("cwd")
+        # 空のパスは現在のディレクトリへ解決され、別の作業ツリーの実行と区別できないため再利用しない。
         if (
-            pathlib.Path(meta.get("cwd", "")).resolve() == root
+            isinstance(cwd, str)
+            and cwd
+            and pathlib.Path(cwd).resolve() == root
             and f"pyfltr {meta.get('version')}" == version.stdout.strip()
             and _neutral_argv(meta.get("argv", []))
             and any(
@@ -171,8 +187,19 @@ def _latest_change_ns(root: pathlib.Path) -> int | str:
         except FileNotFoundError:
             return f"indexにあるファイルが作業ツリーに無い: {path.relative_to(root).as_posix()}"
         # ctimeは改名や属性の変更でも進むため、mtimeを保つ移動も検出できる。
-        latest = max(latest, stat.st_mtime_ns, stat.st_ctime_ns)
+        latest = max(latest, _upper_bound_ns(stat.st_mtime_ns), _upper_bound_ns(stat.st_ctime_ns))
     return latest
+
+
+def _upper_bound_ns(timestamp_ns: int) -> int:
+    """記録された時刻から、実際に変更された可能性がある最も遅い時刻を返す。
+
+    秒未満が0の時刻は、秒単位で切り捨てて記録するファイルシステムの値とみなし、その秒の終わりを返す。
+    秒未満を記録するファイルシステムで偶然0になった時刻も同じ扱いになるが、再利用を控える側へ倒れるだけである。
+    """
+    if timestamp_ns % 1_000_000_000:
+        return timestamp_ns
+    return timestamp_ns + 999_999_999
 
 
 def _query_json(pyfltr: str, root: pathlib.Path, arguments: list[str]) -> dict[str, typing.Any] | str:
