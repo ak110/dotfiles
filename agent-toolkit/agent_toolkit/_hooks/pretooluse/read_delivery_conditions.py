@@ -204,8 +204,8 @@ def _named_reference_rows(
         return []
     root = plugin_resources.plugin_root()
     rows: list[read_triggers.ReadTrigger] = []
+    # `_declaration_sources`は実体のパスを返すため、ここで解決し直さない。
     for source in _declaration_sources(cwd):
-        source = source.resolve()
         if not read_triggers.is_normative_document(source):
             continue
         if source not in selected_sources and not read_delivery.target_ready(records, read_triggers.ReadTarget(source), agent):
