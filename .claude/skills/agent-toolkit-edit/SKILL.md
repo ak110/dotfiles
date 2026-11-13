@@ -50,6 +50,12 @@ description: >
 | サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂（`<役割名>.parent.md`・`<役割名>.subagent.md`を含む） | `references/sub-agents.md`、`references/sub-agents-declarations.md` |
 | プラグインの版数・説明文・派生マニフェストを更新する前、または公開時の採番要否を確定する前 | `references/version-bump.md` |
 
+編集操作で配送する資料は次の表で宣言する。
+
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 工程別モデルの初期値とプリセット（`agent-toolkit/agent_toolkit/_atk/config_settings.py`）を編集する前 | `agent-toolkit:delegation/references/process-model-settings-candidates.md` | 操作 | `path:*/agent-toolkit/agent_toolkit/_atk/config_settings.py` |
+
 ## ファイル構成と参照方向
 
 - `agent-toolkit/`: Agent Plugins、Claude Code、Codexが共有するプラグインルート。

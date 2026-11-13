@@ -2,7 +2,7 @@
 setlocal DisableDelayedExpansion
 set "SCRIPT_DIR=%~dp0.."
 set "UV=%USERPROFILE%\.local\bin\uv.exe"
-if not exist "%UV%" goto missing_uv
+rem bootstrap checks uv------------
 goto start
 :run
 (
@@ -30,33 +30,31 @@ exit /b !UPDATE_DOTFILES_EXIT!
     exit /b 127
 
 :update_uv
+set "UPDATE_DOTFILES_BOOTSTRAP_REPORT=%LOCALAPPDATA%\agent-toolkit\update-bootstrap-%RANDOM%-%RANDOM%.json"
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" exit /b 0
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_uv.ps1" "%UV%"
-if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"
-"%UV%" python install --upgrade 3.15
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%"
 exit /b %ERRORLEVEL%
 
 :start
+if "%~1"=="logs" goto normal
+if "%~1"=="job" goto job_route
+if "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" goto dispatch
+call :update_uv %*
+if errorlevel 1 exit /b %ERRORLEVEL%
+:dispatch
 if defined CODEX_THREAD_ID goto job_route
 if "%~1"=="job" goto job_route
 :normal
 set "UV_SELF_UPDATE_FAILED=0"
-if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" call :update_uv %*
-if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" if errorlevel 1 (
-    echo 管理Pythonの更新に失敗したため中断しました。上の診断を確認し、update-dotfilesを再実行してください。 1>&2
-    exit /b %ERRORLEVEL%
-)
 set "DOTFILES_PRUNE_OUTSIDE_UV=1"
 set "PRUNE_REQUESTED=1"
 if "%~1"=="logs" set "PRUNE_REQUESTED=0"
 goto run
 
 :job_route
-if "%~1"=="logs" goto normal
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" goto normal
-rem Pythonの解決に成功した場合だけパスを取得し、引数はcmdから直接渡す。
 set "UPDATE_PYTHON="
-for /f "delims=" %%P in ('powershell.exe -NoLogo -NoProfile -Command "$python= & $env:UV python find 3.15; if ($LASTEXITCODE -ne 0) { & $env:UV python install 3.15 ^| Out-Host; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; $python= & $env:UV python find 3.15 }; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Write-Output $python"') do set "UPDATE_PYTHON=%%P"
+for /f "delims=" %%P in ('powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -PrepareOnly -PrintPython') do set "UPDATE_PYTHON=%%P"
 if not defined UPDATE_PYTHON exit /b 1
 (
 "%UPDATE_PYTHON%" "%SCRIPT_DIR%\libexec\update_dotfiles_job.py" %*

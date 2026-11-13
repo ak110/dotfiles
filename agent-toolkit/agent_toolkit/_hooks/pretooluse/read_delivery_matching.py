@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
+from agent_toolkit._common.read_triggers_model import WI_SAVE_OPERATIONS
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command, join_words
 from agent_toolkit._hooks import (
@@ -59,6 +60,8 @@ def _pyproject_dependencies(text: str) -> object:
 
 _FILE_SCOPED_OPERATIONS = frozenset({"existing-file-edit", "claude-existing-file-edit"})
 
+_CONFIRMING_OPERATIONS = WI_SAVE_OPERATIONS | {"awi-draft-writing", "uwi-draft-writing", "plan-draft-writing"}
+
 
 def _temporary_path(path: str) -> bool:
     """成果物ではない一時領域（managed-tempの一時rootと、Claude Codeの一時領域）の配下かを返す。
@@ -86,19 +89,29 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     書込先で成立する操作（既存ファイルの編集、`path:`・`write:`・`dependency:`）は、一時領域の書込先を除いて判定する。
     本文の作成（`body-writing`）も、一時領域の書込先だけの場合は成立させない。
     """
+    if operation == "wi-standard-self-review":
+        from agent_toolkit._hooks.pretooluse.read_delivery_roles import incidental_wi_author  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
+
+        if incidental_wi_author():
+            return False
     if operation in _FILE_SCOPED_OPERATIONS:
         written = operation_skills.written_paths(tool_name, tool_input, cwd)
         if written and all(_temporary_path(path) for path in written):
             return False
     if operation == "body-writing":
-        # 一時領域の書込は、使い捨てのスクリプト・データと、作業記録・下書きなどの個人記録であり、成果物の本文に当たらない。
+        # 一時領域の書込は、使い捨てのスクリプト・データと、作業記録などの個人記録であり、成果物の本文に当たらない。
+        # WI原稿と計画初版は一時領域に置いても保存される成果物の原稿であり、本文の形で判定する専用の配送操作
+        # （`awi-draft-writing`・`uwi-draft-writing`・`plan-draft-writing`）が一時領域の書込でも起草規範を届ける。
         written = operation_skills.written_paths(tool_name, tool_input, cwd)
         if written and all(_temporary_path(path) for path in written):
             return False
     matched = operation_skills.operation_matches(operation, tool_name, tool_input, cwd)
     if matched is not None:
         return matched
-    prefix, value = operation.split(":", 1)
+    prefix, separator, value = operation.partition(":")
+    # 受領など別の時点が所有する共通語彙は、PreToolUseでは成立させない。
+    if not separator:
+        return False
     if prefix == "tool":
         return tool_name == value
     if prefix == "write":
@@ -259,10 +272,14 @@ def condition_confirmed(row: read_triggers.ReadTrigger, tool_name: str, tool_inp
     if row.kind != "判断" or not row.condition:
         return True
     # 確認ツールの呼出しは、確認本文・選択肢を起草する操作が成立した観測になる。
-    if "confirmation" in row.operations and matches("confirmation", tool_name, tool_input, cwd):
+    if (
+        row.source == plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+        and "confirmation" in row.operations
+        and matches("confirmation", tool_name, tool_input, cwd)
+    ):
         return True
     # 対象資料の読取だけでは、宣言元の役割・工程などの自然文条件を確定できない。
+    # WIの保存種別と原稿・計画初版の本文は、保存・起草の時点にある観測として条件を確定する。
     return any(
-        operation in {"wi-report-save", "wi-standard-save"} and matches(operation, tool_name, tool_input, cwd)
-        for operation in row.operations
+        operation in _CONFIRMING_OPERATIONS and matches(operation, tool_name, tool_input, cwd) for operation in row.operations
     )

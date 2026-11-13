@@ -4,6 +4,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 import typing
 
 import psutil
@@ -334,6 +335,17 @@ def test_symptomatic_restart_selects_and_stops_current_generation(
     child_command = [sys.executable, "-c", "import time; time.sleep(60)"] + ([str(exe_path)] if current_target else [])
     with subprocess.Popen(child_command) as child:
         try:
+            # Popen直後は親の引数や空のcmdlineを取得することがあるため、対象判定の入力の公開を待つ。
+            deadline = time.monotonic() + 5
+            while True:
+                observed = psutil.Process(child.pid)
+                if observed.exe() == str(pathlib.Path(sys.executable).resolve()) and observed.cmdline() == child_command:
+                    break
+                assert child.poll() is None and time.monotonic() < deadline, (
+                    "子プロセスの起動状態を観測できない。child.poll()、observed.exe()、observed.cmdline()を"
+                    "child_commandと比較して、子の早期終了と実行体・引数の不一致を切り分ける。"
+                )
+                time.sleep(0.01)
             # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
             stale = psutil.Process(child.pid)
             monkeypatch.setattr(stale, "_create_time", 0.0)

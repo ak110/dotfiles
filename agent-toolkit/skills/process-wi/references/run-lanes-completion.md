@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 計画準備の返却を受領する時 | `../../../share/exec-parent-planning.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 計画準備の返却を受領する時 | `../../../share/exec-parent-planning.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-parent-planning.md` |
 
 ## 採否の確定と終了区分
 

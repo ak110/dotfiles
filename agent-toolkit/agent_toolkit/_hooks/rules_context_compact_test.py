@@ -58,8 +58,9 @@ def test_compact_public_notice_uses_current_stage_without_history_paths(tmp_path
     output = _output(capsys)
     assert str(document) not in output
     assert "工程を定めるスキルと役割文書を全文読み直し" in output
+    assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in output
     assert "読込表から次の判断に必要な資料を選んで読め" in output
-    assert "全体作業契約と引き継ぎ記録" in output
+    assert "復元先:" in output
     assert not read_delivery.target_ready(
         read_state("stage").get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(document), "main"
     )

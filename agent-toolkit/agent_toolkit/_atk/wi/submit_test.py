@@ -24,7 +24,7 @@ import pytest
 from agent_toolkit import atk, hook
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add, layout, submit
-from agent_toolkit._common import process_tree, recorded_process, session_registry, state_paths
+from agent_toolkit._common import diagnostic_process, process_tree, recorded_process, session_registry, state_paths
 from agent_toolkit._testing import git_repository, late_descendant
 from agent_toolkit._testing.process_loop_support import set_orchestrate_environment
 
@@ -89,8 +89,8 @@ run = json.loads(path.read_text(encoding="utf-8"))
 count_path = path.parent / "attempts"
 count = int(count_path.read_text()) + 1 if count_path.exists() else 1
 count_path.write_text(str(count))
-print("executor stdout", flush=True)
-print("executor stderr", file=sys.stderr, flush=True)
+print("executor stdout password=fake-stdout", flush=True)
+print("executor stderr token=fake-stderr", file=sys.stderr, flush=True)
 (path.parent / "ready").write_text("ready")
 if mode == "timeout":
     deadline = time.monotonic() + 120
@@ -534,11 +534,13 @@ def _executor(tmp_path, monkeypatch):
     def install(mode):
         @contextlib.contextmanager
         def launch(argv, **kwargs):
+            if len(argv) > 3 and argv[1] == "-c" and "relay_diagnostics" in argv[2]:
+                argv = argv[3:]
             if argv[1:3] != ["-m", "agent_toolkit._atk.wi.submit"] or argv[-2] != "execute":
                 with original(argv, **kwargs) as process:
                     yield process
                 return
-            with original([sys.executable, str(driver), mode, argv[-1]], **kwargs) as process:
+            with original(diagnostic_process.command([sys.executable, str(driver), mode, argv[-1]]), **kwargs) as process:
                 if mode == "timeout":
                     ready = state_paths.state_dir() / "wi-submit/runs" / argv[-1] / "ready"
                     deadline = time.monotonic() + 15
@@ -577,6 +579,8 @@ def test_supervisor_records_failure_and_both_streams(monkeypatch, executor, mode
     assert run["report_synced"]
     assert not session_registry.ProcessIdentity(**run["executor"]).exists()
     folder = pathlib.Path(value["state_file"]).parents[1] / "runs" / run["run_id"]
+    assert "fake-stdout" not in (folder / "stdout.log").read_text(encoding="utf-8")
+    assert "fake-stderr" not in (folder / "stderr.log").read_text(encoding="utf-8")
     assert "executor stdout" in (folder / "stdout.log").read_text(encoding="utf-8")
     assert "executor stderr" in (folder / "stderr.log").read_text(encoding="utf-8")
 

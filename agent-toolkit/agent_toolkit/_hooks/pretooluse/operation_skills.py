@@ -20,6 +20,7 @@ lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
+lazy from agent_toolkit._common.read_triggers_model import WI_SAVE_OPERATIONS
 lazy from agent_toolkit._common.shell_tokens import is_atk_command, split_words
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -155,6 +156,29 @@ def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
         return isinstance(command, str) and _ROOT_CAUSE_HEADING.search(command) is not None
     fields = _tool_input.new_content_fields(tool_name, tool_input)
     return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
+
+
+# 起草規範の配送に使う原稿の目印。いずれも原稿の書式が必ず持つ見出しだけから成る行とする。
+# AWIは`## 反映内容と反映先`、UWIは`## 判断材料`、計画初版は`### 計画メタ情報`を持つ。
+_DRAFT_HEADINGS = {
+    "awi-draft-writing": re.compile(r"^## 反映内容と反映先[ \t]*$", re.MULTILINE),
+    "uwi-draft-writing": re.compile(r"^## 判断材料[ \t]*$", re.MULTILINE),
+    "plan-draft-writing": re.compile(r"^### 計画メタ情報[ \t]*$", re.MULTILINE),
+}
+
+
+def _is_draft_writing(operation: str, tool_name: str, tool_input: dict) -> bool:
+    """WI原稿・計画初版の本文を書く操作かを、書く本文の見出し行で返す。
+
+    原稿は一時領域に置かれることが多いが、保存されてユーザーと後続の担当が読む成果物であり、
+    書込先ではなく本文の形で判定する。判定の範囲は`_is_root_cause_writing`と同じとする。
+    """
+    pattern = _DRAFT_HEADINGS[operation]
+    if tool_name == "Bash":
+        command = tool_input.get("command")
+        return isinstance(command, str) and pattern.search(command) is not None
+    fields = _tool_input.new_content_fields(tool_name, tool_input)
+    return fields is not None and any(pattern.search(value) for _, value in fields)
 
 
 def _is_temp_directory_create(tool_name: str, tool_input: dict) -> bool:
@@ -416,9 +440,22 @@ def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = F
             elif cwd is None and base.unresolved_expression is None:
                 paths.append(value)
 
+    assignments: dict[tuple[object, ...], dict[str, str]] = {(): {}}
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or "", effects=True):
-        found = [target for target in invocation.static_outputs if isinstance(target, str)]
-        tokens = invocation.static_tokens
+        scope = invocation.cwd_scope
+        for length in range(1, len(scope) + 1):
+            assignments.setdefault(scope[:length], assignments[scope[: length - 1]].copy())
+        values = assignments[scope]
+
+        def resolve(value: str, values: dict[str, str] = values) -> str:
+            return re.sub(r"\x00([a-zA-Z_][a-zA-Z_0-9]*)\x00", lambda match: values.get(match[1], STATIC_UNKNOWN), value)
+
+        found = [resolve(target) for target in invocation.variable_outputs if isinstance(target, str)]
+        tokens = tuple(resolve(token) for token in invocation.variable_tokens)
+        # 単独代入だけを後続へ渡す。条件文内の代入は以前の既知値も無効にする。
+        for assignment in invocation.standalone_assignments:
+            name, _, value = assignment.partition("=")
+            values[name] = resolve(value) if invocation.assignments_definite else STATIC_UNKNOWN
         if not invocation.execution_known or not tokens:
             append_paths(found, current)
             continue
@@ -805,7 +842,7 @@ def resolve_subject(payload: dict) -> str:
     return SUBJECT_MAIN
 
 
-def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
+def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str, *, dry_run: bool | None = None) -> set[bool]:
     """保存に渡された本文の報告標識を読む。未指定・読取不能は通常保存として扱う。"""
     if tool_name != "Bash" or not isinstance(tool_input.get("command"), str):
         return set()
@@ -815,6 +852,8 @@ def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
         if not is_atk_command(tokens) or tokens[1:3] not in {("wi", "add"), ("wi", "edit")}:
             continue
         if "--help" in tokens or "-h" in tokens:
+            continue
+        if dry_run is not None and ("--dry-run" in tokens) != dry_run:
             continue
         bodies = [
             tokens[index + 1] if value == "--body-file" and index + 1 < len(tokens) else value.partition("=")[2]
@@ -844,6 +883,9 @@ def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
 
 def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str = "") -> bool | None:
     """共通語彙の操作を判定し、担当外の語彙はNoneを返す。"""
+    if operation in WI_SAVE_OPERATIONS:
+        dry_run = None if operation == "wi-standard-self-review" else operation.endswith("-dry-run")
+        return operation.startswith("wi-report-") in _wi_save_kinds(tool_name, tool_input, cwd, dry_run=dry_run)
     predicates = {
         "delegation": _is_delegation_operation,
         "search": _is_search_operation,
@@ -857,8 +899,9 @@ def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str
         "verification": _is_verification_operation,
         "agent-document-writing": lambda name, data: _is_agent_document_writing(name, data, cwd),
         "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},
-        "wi-report-save": lambda name, data: True in _wi_save_kinds(name, data, cwd),
-        "wi-standard-save": lambda name, data: False in _wi_save_kinds(name, data, cwd),
+        "awi-draft-writing": lambda name, data: _is_draft_writing("awi-draft-writing", name, data),
+        "uwi-draft-writing": lambda name, data: _is_draft_writing("uwi-draft-writing", name, data),
+        "plan-draft-writing": lambda name, data: _is_draft_writing("plan-draft-writing", name, data),
     }
     predicate = predicates.get(operation)
     return predicate(tool_name, tool_input) if predicate is not None else None

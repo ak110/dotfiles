@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import backends, handoff_next_action, plugin_r
 from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session, plugin_environment, process_tree
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.next_action import ActionableError
 
 result_next_action = handoff_next_action.result_next_action
@@ -84,15 +85,19 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
             env=plugin_environment.direct_environment(plugin_root.SERVER_PLUGIN_ROOT, os.environ),
         )
     except (OSError, subprocess.TimeoutExpired) as error:
-        (directory / "prepare.stderr").write_text(str(error), encoding="utf-8")
+        (directory / "prepare.stderr").write_text(redact_secrets(str(error)), encoding="utf-8")
+        if isinstance(error, subprocess.TimeoutExpired):
+            for name, output in (("stdout", error.stdout), ("stderr", error.stderr)):
+                text = output.decode("utf-8", errors="replace") if isinstance(output, bytes) else (output or "")
+                (directory / f"prepare.{name}").write_text(redact_secrets(text), encoding="utf-8")
         raise ActionableError(
             f"前任の会話抽出を完了できません: session_id={session.session_id}, 診断={directory}",
             next_action="保存したprepare.stderrを読み、抽出が成立してから引き継ぎ起動を再発行する",
         ) from error
     if completed.returncode != 0:
         # 診断は失敗時だけ保存する。成功時の両出力は会話の流れの生成に使い終え、後任へ渡すのはconversation.mdだけである。
-        (directory / "prepare.stdout").write_text(completed.stdout, encoding="utf-8")
-        (directory / "prepare.stderr").write_text(completed.stderr, encoding="utf-8")
+        (directory / "prepare.stdout").write_text(redact_secrets(completed.stdout), encoding="utf-8")
+        (directory / "prepare.stderr").write_text(redact_secrets(completed.stderr), encoding="utf-8")
         raise ActionableError(
             f"前任の会話抽出が失敗しました: session_id={session.session_id}, "
             f"exit_code={completed.returncode}, 診断={directory}",
@@ -101,8 +106,8 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
     if session.engine in {"agy", "opencode"}:
         conversation.write_text(completed.stdout, encoding="utf-8")
     if not conversation.is_file():
-        (directory / "prepare.stdout").write_text(completed.stdout, encoding="utf-8")
-        (directory / "prepare.stderr").write_text(completed.stderr, encoding="utf-8")
+        (directory / "prepare.stdout").write_text(redact_secrets(completed.stdout), encoding="utf-8")
+        (directory / "prepare.stderr").write_text(redact_secrets(completed.stderr), encoding="utf-8")
         raise ActionableError(
             f"前任の会話抽出がconversation.mdを生成しませんでした: {directory}",
             next_action="保存したprepare.stdoutとprepare.stderrを読み、抽出の不具合を報告する",

@@ -44,15 +44,13 @@ report-completionと振り返りは委譲先の終了工程の対象外とする
 | --- | --- |
 | 合流した公開対象を判断する前 | `selection-procedure-addition.md` |
 | 目標起点の公開対象を判断する前 | `lanes-goals.md` |
-| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` |
 | 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 公開対象が無い場合の短絡・公開担当の起動と並行工程に関する判断・作業の前 | `finish-session-publishing.md` |
-| 延期adoptと反映後の観測に関する判断・作業の前 | `finish-session-observation.md` |
-| 公開工程の続行不能の回復と再開・公開状態の検収と再起動に関する判断・作業の前 | `finish-session-recovery.md` |
-| 完了報告と終了に関する判断・作業の前 | `finish-session-completion.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 公開対象が無い場合の短絡・公開担当の起動と並行工程に関する判断・作業の前 | `finish-session-publishing.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/process-wi/references/finish-session-publishing.md` |
+| 延期adoptと反映後の観測に関する判断・作業の前 | `finish-session-observation.md` | | |
+| 公開工程の続行不能の回復と再開・公開状態の検収と再起動に関する判断・作業の前 | `finish-session-recovery.md` | 判断 | `delegation-result`、`delegation`、`read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
+| 完了報告と終了に関する判断・作業の前 | `finish-session-completion.md` | | |

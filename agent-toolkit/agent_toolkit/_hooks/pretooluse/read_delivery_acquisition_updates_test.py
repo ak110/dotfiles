@@ -26,7 +26,12 @@ def test_hook_self_edit_twice_preserves_acquired_body(tmp_path, monkeypatch, sta
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:" + tool,), (document,))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
     payload = {"session_id": "self-edit", "cwd": str(tmp_path)}
-    command = read_delivery.acquisition_step(read_triggers.ReadTarget(document), "codex").split("`", 2)[1]
+    command = json.loads(
+        (read_delivery.acquisition_step(read_triggers.ReadTarget(document), "codex"))
+        .split("tools.exec_command(", 1)[1]
+        .splitlines()[0]
+        .removesuffix(");")
+    )["cmd"]
     produced = subprocess.run(
         ["/bin/bash", "-c", command],
         env=host_environ(),

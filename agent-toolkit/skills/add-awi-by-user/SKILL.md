@@ -39,7 +39,9 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 
 起動後の入力は要求として扱い、動作を選ぶモード引数は設けない。
 目的や範囲を変える選択、要件の曖昧さ、選好、不足する認可は手順2で確認する。
-資料に複数の合理的な改善目的がある場合は、関連候補と推奨を示して目指す結果を確認する。
+範囲を限定せずに資料だけを渡す依頼は、資料の全目的を改善候補とする範囲が確定した依頼として扱い、目的が複数あることや本人の用途が別に書かれていないことだけでは確認せずに調査・比較・起草へ進む。
+目的の衝突、依頼本文の限定範囲と資料の目的の不一致、認可の不足など本人の判断が残る場合は、`../user-confirmation-and-report/references/grilling.md`の評価軸の選定に従って確認する。
+扱った目的は作業完了報告の`### 自ら確定した判断`へ示す。
 AWI登録の認可はスキル起動で成立しているため、確定した目的内の技術手段は自ら決め、本文全文の提示による一律の登録可否確認と独立した方針検収を挟まず、手順3の意味検収と保存まで進める。
 投入前レビューで方針段階から本文段階へ進む場合は、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md`の`本文確認`を使う。
 
@@ -55,14 +57,14 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 参考資料から改善候補を起草・採否判定する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
-| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前（操作対象外: ユーザー発話・回答の受領） | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis-stages.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
 | 考慮漏れの指摘を受けて原因を分析する前、参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
 | 既存の規範・手順で充足しているかを判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
 | 疑問形の異議を受けて要求単位へ分ける前 | `../user-confirmation-and-report/references/user-utterance-questions.md` |
 | 考慮漏れ処置後の方針再確認で論点ごとの確認要否を判定する前 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | 対象リポジトリの外部へ成果を反映させる要求の終了状態を判定する前 | `../wi-standards/references/awi-body-completion.md` |
-| 成果物をAWIの登録と更新に限る契約を適用する前 | `../user-confirmation-and-report/references/user-utterance-correction.md` |
+| 成果物をAWIの登録と更新に限る契約を適用する前（操作対象外: ツールと結び付かない判断） | `../user-confirmation-and-report/references/user-utterance-correction.md` |
 | 対象リポジトリの外部に対する操作の認可と確認要否を判定する前 | `../user-confirmation-and-report/references/approval-scope.md` |
 
 ## 読込表
@@ -72,14 +74,14 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 手順2で質問ラウンドを始める前 | `agent-toolkit:user-confirmation-and-report`の`references/grilling.md` | | | |
 | WI作成の調査に入る前（手順2の1） | `../wi-standards/references/drafting-workflow.md`、`../wi-standards/references/drafting-workflow-investigation.md`、`../wi-standards/references/drafting-workflow-requirements.md`、`../wi-standards/references/drafting-completion-decisions.md`、`../wi-standards/references/drafting-completion-scope.md`、`../wi-standards/references/drafting-completion-confirmation.md`、`../wi-standards/references/drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-investigation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-decisions.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-confirmation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md`、`bash:atk wi submission begin` | |
 | 認可・解釈・観測の裏付けに必要な出所を再取得する時 | `../wi-standards/references/drafting-workflow-evidence.md` | | | |
-| 原稿を確定する前 | `../wi-standards/references/drafting-workflow-writing.md`、`../wi-standards/references/drafting-workflow-validation.md`、`../wi-standards/references/drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-writing.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-validation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md`、`wi-standard-save` | |
-| 独立した確認に入る前 | `../wi-standards/references/drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md`、`wi-standard-save` | |
-| 保存操作に入る前 | `../wi-standards/references/drafting-workflow-saving.md`、`../wi-standards/references/drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md`、`wi-standard-save` | |
-| 原稿の意味を確認する前 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-save` | |
-| 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | | | |
-| 独立した方針検収または本文検収を依頼する前 | `${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | | | |
+| 原稿を確定する前 | `../wi-standards/references/drafting-workflow-writing.md`、`../wi-standards/references/drafting-workflow-validation.md`、`../wi-standards/references/drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-writing.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-validation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md`、`wi-standard-dry-run`、`wi-standard-commit` | |
+| 独立した確認に入る前 | `../wi-standards/references/drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md`、`wi-standard-self-review` | |
+| 保存操作に入る前 | `../wi-standards/references/drafting-workflow-saving.md`、`../wi-standards/references/drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md`、`wi-standard-commit` | |
+| 原稿の意味を確認する前 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-self-review` | |
+| 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` | |
+| 独立した方針検収または本文検収を依頼する前 | `${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
 | 完成条件や採否を決める値を測定する前 | `references/measurement.md` | | | |
-| 推奨案や確認の選択肢を提示する前（手順2の2）、質問ラウンドを終える前と原稿を確定する前 | `references/omission-check.md` | | | |
+| 起草の方針を決める前（手順2の2。提示・確認の有無と、方針を伝えるかによらない）、質問ラウンドを終える前と原稿を確定する前 | `references/omission-check.md` | | | |
 | 観測された問題の証拠収集・件数集計を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`../user-confirmation-and-report/references/user-utterance.md` | | | |
 
 ## 手順
@@ -111,7 +113,8 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
       - 観測された問題（失敗、不具合、未対応など）を起点とする要求では、証拠収集・集計の前に、前掲の「母集団と件数を数える層」「原文の保持と取り込み」に従って問題の主文から母集団を定め、確認UWI、追加修正、ユーザーコメント、是正回答などの現れを先に列挙して、各現れを調べるか調べない理由を記録する。
         要求の目的や対象範囲は本手順で確認し、対処方針は手順3の作成主体が初期調査、原因分析、類似箇所の見直しで具体的な対策を確定した後に選ぶ。
         ユーザーへ確認するのは、原因の特定後もユーザー自身の選択が必要な事項に限る。
-   2. 考慮漏れ点検（案が過去に重視された結果と継続費用を損なわない）: 推奨案や確認の選択肢を出す前に`references/omission-check.md`の全類型を点検し、(c)と(d)を推奨しない案を含む提示する全ての案へ適用する。
+   2. 考慮漏れ点検（案が過去に重視された結果と継続費用を損なわない）: 起草の方針を決める前に`references/omission-check.md`の全類型を点検し、(c)と(d)を推奨しない案を含む提示する全ての案へ適用する。
+      確認を経ずに自分で決めて起草へ進む場合と、決めた方針をユーザーへ伝える場合も、この点検を経てから2の3または手順3へ進む。
    3. 提示と質問（少ない往復で判断を得る）: 特定した課題、依頼どおりの案、種類の違う案、点検済みの推奨を、求められた評価・回答とともに提示し、依存するユーザー判断を質問する。
       回答の深さは`../user-confirmation-and-report/references/user-utterance-questions.md`「問い・提案・疑問形の扱い」に従い、調査結果が要る回答は手順3の調査と根拠の確定後に送る。
    4. 受領（割り込みを不足の信号として扱う）: 回答、追加発話、異議は次の質問の前に「指摘の分類と処置」で処理し、その戻り先から再開する。
@@ -172,6 +175,7 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
    - 採用しない提案: 検討の結果採らない提案。
      根拠を示す。
 3. 介入評価（ユーザーの手を煩わせた原因を見逃さない）: 分類とは別に、既存判断を是正した介入を`../user-confirmation-and-report/references/analysis-operations-intervention.md`「ユーザー介入と確認の判定」で評価する。
+   同じ要求単位が以後の同種作業にも適用する方針の候補を含むかは、`../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」で今回の原稿への反映と分けて判定する。
 4. 考慮漏れの処置（同じ仕組みの漏れを防ぐ）: `agent-basics:bugfix`を起動して原因を分析し、同じ仕組みで漏れうる観点を全方針で見直す。
    再発防止策を検討してから方針へ反映する。
    再発防止策は本スキルの成果物制限に従い、`## 原因分析`付きの別AWIとして起草し、元のAWIと一緒に登録する。

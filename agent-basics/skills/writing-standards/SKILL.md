@@ -75,7 +75,7 @@ hookの通知は選択を補助する。
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューの時 | `references/ui-ux.md` | | | |
 | Web性能の改善・設計・レビューを行う時 | `references/ui-ux-accessibility.md`、`references/ui-ux-web-rules.md` | | | |
 | エンドユーザーが操作する画面の新設・変更、その計画・作業項目の起草またはレビューで、フォーム、一覧・データ表、検索、通知、モーダル・パネル、AI機能、自動で切り替わる表示、同意・解約または多言語表示を含む時 | `references/ui-ux-patterns.md` | | | |
-| ユーザーが法令上の義務やプライバシーの確認を依頼した時と、不特定のエンドユーザーへ公開・提供するWebサービスやアプリで、第三者サーバーからのリソース読み込みや解析・広告タグ、操作や入力の記録、宣伝メールの一斉送信、定期課金、エンドユーザーの投稿の公開または会員登録を新設・変更する時（その計画・作業項目の起草またはレビューを含む）。自分用ツール、社内システム、ユーザーが自分で開く単体HTML成果物は、確認の依頼と社外の不特定のエンドユーザーへ公開範囲を広げる変更の場合だけ該当する | `references/public-service-obligations.md` | | | |
+| ユーザーが法令上の義務やプライバシーの確認を依頼した時と、不特定のエンドユーザーへ公開・提供するWebサービスやアプリで、第三者サーバーからのリソース読み込みや解析・広告タグ、操作や入力の記録、宣伝メールの一斉送信、定期課金、エンドユーザーの投稿の公開または会員登録を新設・変更する時（その計画・作業項目の起草またはレビューを含む）。自分用ツール、社内システム、ユーザーが自分で開く単体HTML成果物は、確認の依頼と社外の不特定のエンドユーザーへ公開範囲を広げる変更の場合だけ該当する（操作対象外: ツールと結び付かない判断） | `references/public-service-obligations.md` | | | |
 | 起動時 | `references/quality-principles.md` | 起動時 | `skill:writing-standards` | |
 | 人間が読む文章（ドキュメント、コメント、作業項目の本文など）を書く時 | `references/writing.md`、`references/writing-common.md`、`references/writing-readers.md`、`references/writing-genres.md`、`references/writing-maintenance.md` | 操作 | `body-writing` | |
 | コード・テストコードを書く時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `skill:writing-standards` | `same-document` |
@@ -107,7 +107,7 @@ hookの通知は選択を補助する。
 | クエリ性能を設計・変更・レビューする前 | `references/design-data-interfaces-queries.md` |
 | DB更新と外部送信の整合性を設計・変更・レビューする前 | `references/design-data-interfaces-transactions.md` |
 | Webhook受信を設計・変更・レビューする前 | `references/design-data-interfaces-api.md` |
-| 常駐サービスの設計・変更・レビュー、または子プロセス・委譲先・非同期ジョブなど配下を持つ機能の停止・再開・切替を要件化・設計・変更・レビューする前 | `references/design-runtime-services.md` |
+| 常駐サービスの設計・変更・レビュー、または子プロセス・委譲先・非同期ジョブなど配下を持つ機能の停止・再開・切替を要件化・設計・変更・レビューする前（操作対象外: 設計対象の性質） | `references/design-runtime-services.md` |
 | 負荷制御と外部呼び出しを設計・変更・レビューする前 | `references/design-runtime-services.md` |
 
 ## 技術資料の確認・参照・読取

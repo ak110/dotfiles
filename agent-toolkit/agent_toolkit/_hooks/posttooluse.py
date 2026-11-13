@@ -92,7 +92,6 @@ USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
 # --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
-    "この発話は、事実の主張か是正を求める対象を含む場合がある。"
     "応答の前に、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance-correction.md`"
     "「割り込み・訂正・中止」の4〜6項に従い、現物との比較の要否を判定せよ。"
 )
@@ -164,10 +163,7 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
 
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
-_FREE_TEXT_ANSWER_PROCEDURE = (
-    "この注記は`AskUserQuestion`への回答のうち、提示した選択肢と一致しない自由記述へ返している。"
-    "同書「割り込み・訂正・中止」の13項に従え。"
-)
+_FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答は同書「割り込み・訂正・中止」の13項に従え。"
 """`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
 # Claude Codeが選択肢を選ばずに注記だけを残した質問へ入れる`answers`の値（2.1.283の記録で観測）。
 _NOTES_ONLY_ANSWER = "(notes only)"

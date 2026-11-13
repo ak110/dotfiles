@@ -1,6 +1,6 @@
 """現在の宣言資料へ取得手段と復旧手順を案内する。"""
 
-# 公開入口の差し替えを呼出し時に参照し、モジュール初期化中の逆向きimportを避ける。
+# 公開関数の差し替えを呼出し時に参照し、モジュール初期化中の逆向きimportを避ける。
 # pylintの依存グラフは関数内importも含むため、その参照行だけ循環検査から除く。
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
+from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
 from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 from agent_toolkit._hooks.pretooluse.read_delivery_conditions import _work_record_only
@@ -66,7 +67,7 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
         return step + focus
     if subject == operation_skills.SUBJECT_CODEX:
         ranges = target.line_ranges() if target.heading and path.suffix == ".md" else ()
-        return codex_acquisition(path, ranges).removesuffix("。") + focus
+        return (focus.removeprefix("。") + "。\n" if focus else "") + codex_acquisition(path, ranges)
     return f"Readで`{path}`を取得せよ" + focus
 
 
@@ -258,7 +259,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 dict.fromkeys(
                     target
                     for row in active_rows
-                    if "confirmation" in row.operations
+                    # 質問前の拒否はbootstrapの共通2資料に限る。工程別の追加宣言は警告として配送する。
+                    if row.source == plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+                    and "confirmation" in row.operations
                     for target in active_targets[row]
                     if not ready(target)
                 )
@@ -378,7 +381,11 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     if _acquiring(tool_name, tool_input, cwd):
         _select_targets(session_id, pending, agent, rows=selection_rows)
         return Decision()
-    acquisition_paths = _read_paths(tool_name, tool_input, cwd)
+    acquisition_paths = (
+        [path.resolve() for group in bash_read_paths(tool_input["command"], cwd) for path in group]
+        if tool_name == "Bash" and isinstance(tool_input.get("command"), str)
+        else _read_paths(tool_name, tool_input, cwd)
+    )
     if any(row.selector == "project-skill" and read_delivery.row_matches(row, tool_name, tool_input, cwd) for row in rows):
         # 選択したSKILLの初動資料を案内し、取得操作は遮らずPostToolUseで観測する。
         _select_targets(session_id, pending, agent, rows=selection_rows)
@@ -419,8 +426,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     block=_block_notice(
                         "この質問はまだユーザーへ表示していない。確認の前に全文を読むと定めた資料のうち、"
                         "この文脈で全文の取得を確認できないものがある（一部だけの読取と、行を除いた表示は取得に数えない）。",
-                        fix="。\n".join(steps)
-                        + "。読んだ基準で、質問するか自分で判断するかを決め直せ。質問する場合は同じ呼び出しを出し直せ。"
+                        fix=("\n".join(steps) if subject == operation_skills.SUBJECT_CODEX else "。\n".join(steps))
+                        + "\n読んだ基準で、質問するか自分で判断するかを決め直せ。質問する場合は同じ呼び出しを出し直せ。"
                         + _question_material_guidance(payload, tool_name),
                     )
                 )
@@ -441,13 +448,13 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         has_read = any(target.path not in invocation_paths for target in pending)
         methods = "指定されたSkill・Read" if has_skill and has_read else "指定されたSkill" if has_skill else "指定されたRead"
     followup = "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。" if written and not diagnostic else ""
-    # 受け取る側は「既に読んだ」と考えていることがある。取得に数えない読み方を示し、誤判定との取り違えを防ぐ。
+    # 短縮前後の本文量とモデル別の受信後の操作順の比較は`docs/development/audit-records.md`の
+    # 「agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_guidance.py：取得案内の短縮：2026年11月13日」にある。
     instruction = (
-        f"{label}がある。この文脈では全文の取得（スキルは起動）を確認できていない。"
-        "過去に取得済みでも、会話圧縮で本文が文脈から失われた場合は再取得が必要である。"
-        "一部だけの読取、行を除いた表示、パイプや変数を使った表示は取得に数えない。"
-        f"この操作の結果を使う前に{methods}で必要な基準を取得せよ。"
+        f"{label}があるため、この操作の結果を使う前に{methods}で必要な基準を取得せよ（資料は全文取得、スキルは起動）。"
+        "通知への対処は`agent-toolkit/share/agent-conduct-details.md`「方針が衝突する場合の優先順位」を参照せよ。"
     )
+    instruction += "会話圧縮で本文が文脈から失われた場合は再取得が必要である。"
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
@@ -480,9 +487,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 origins = sorted({str(row.source) for row in selection_rows if target in row.targets})
                 if origins:
                     failures[target] += f"。宣言元: {'、'.join(f'`{origin}`' for origin in origins)}"
-    acquisition = "。\n".join(_merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd)) + "。"
-    if subject == operation_skills.SUBJECT_CODEX:
-        acquisition += "内外の出力枠を確保し、収まらない範囲は分割して取得せよ。"
+    steps = _merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd)
+    acquisition = "\n".join(steps) + "\n" if subject == operation_skills.SUBJECT_CODEX else "。\n".join(steps) + "。"
     if warning_only:
         acquisition += "質問の前提と選択肢を資料の基準で確かめ直せ。"
     notice = _llm_notice(
@@ -533,4 +539,6 @@ def _merged_steps(
             cwd=cwd,
         )
         steps.append(step)
+    if subject == operation_skills.SUBJECT_CODEX and any("```javascript\n" in step for step in steps):
+        steps[0] = "各コードブロックを別々のfunctions.execで順に実行せよ。\n" + steps[0]
     return steps

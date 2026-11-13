@@ -38,6 +38,7 @@ def _generated_requests(context, host_environ):
     """
     blocks = re.findall(r"```javascript\n(.*?)\n```", context, re.DOTALL)
     assert blocks
+    assert len(re.findall(r"^```$", context, re.MULTILINE)) == len(blocks)
     program = (
         "const tools = {exec_command: async request => "
         "({request, output: '本文', exit_code: 7, session_id: 31, diagnostic: '診断'})};\n"
@@ -122,6 +123,8 @@ def test_public_hook_guidance_preserves_selected_body_and_budgets(tmp_path, monk
         assert "行範囲では収まらない" in context and f"{document}:2" in context
     received: dict[str, bytes] = {}
     for request in _generated_requests(context, host_environ):
+        assert context.count(json.dumps(request["cmd"], ensure_ascii=False)) == 1
+        assert "取得コマンド:" not in context
         inputs = {"command": request["cmd"]}
         before = run_hook("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
         assert before.returncode == 0 and not before.stderr

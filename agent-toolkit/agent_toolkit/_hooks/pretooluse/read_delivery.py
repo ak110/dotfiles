@@ -148,7 +148,30 @@ def _declaration_sources(cwd: str) -> list[pathlib.Path]:
 
 @_input_scope
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
-    """現在の操作に関係する宣言資料を配送または案内し、他の担当の手順書の取得へ警告を加え、通常操作の進行を保つ。"""
+    """現在の操作に関係する宣言資料を配送または案内し、他の担当の手順書の取得へ警告を加え、通常操作の進行を保つ。
+
+    ユーザー側の読込表から除いた行は、同じ要求の終わりに警告として示す。
+    """
+    decision = _deliver(payload, tool_name, tool_input, session_id)
+    warnings = tuple(filter(None, map(_declaration_issue_notice, read_triggers.declaration_issues())))
+    return dataclasses.replace(decision, notices=(*decision.notices, *warnings)) if warnings else decision
+
+
+def _declaration_issue_notice(issue: str) -> str:
+    """除いた行の警告。同じ本文は整形関数の記録により同じ会話で1回だけ届く。"""
+    return _llm_notice(
+        f"ユーザー側の読込表の1行を解釈できないため、この行の読込案内と読取記録を省いた: {issue}",
+        tag=_WARN_TAG,
+        removable_cause=True,
+        escalate_on_repeat=False,
+        fix=(
+            "作業はそのまま続けよ。宣言元を編集する担当は、"
+            "`agent-basics:writing-standards`の`references/agent-documents-basics-read-tables.md`「読込表」に合わせてこの行を直せ。"
+        ),
+    )
+
+
+def _deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
     written = operation_skills.written_paths(tool_name, tool_input, str(payload.get("cwd", "")))
     if _work_record_only(written, payload, session_id):
         return Decision()
@@ -226,13 +249,15 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         from agent_toolkit._hooks import result_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         documents = result_reads.observe(session_id, agent, response, deferred=is_codex_payload(payload))
-        _select_result_documents(session_id, agent, documents)
+        _select_result_documents(
+            session_id, agent, documents, host="codex" if is_codex_payload(payload) else "claude", project=cwd
+        )
     edited = document_reads.edited_document(tool_name, tool_input, response, cwd)
     if edited is not None:
         path, before = edited
         records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
         if agent in records.get(document_reads.read_trigger_key(path, before), []):
-            _mark(session_id, path, agent)
+            _mark(session_id, path, agent, host="codex" if is_codex_payload(payload) else "claude", project=cwd)
         if agent in records.get(document_reads.skill_invocation_key(path, before), []):
             update_state(
                 session_id,
@@ -326,5 +351,5 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     document_reads.skill_invocation_key(resolved, document_reads.content_fingerprint(resolved)), agent
                 ),
             )
-            _mark(session_id, resolved, agent)
+            _mark(session_id, resolved, agent, host="codex" if is_codex_payload(payload) else "claude", project=cwd)
         return

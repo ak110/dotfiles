@@ -28,6 +28,54 @@ def _iso(offset_seconds: float) -> str:
     return (datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=offset_seconds)).isoformat()
 
 
+@pytest.mark.parametrize("failure", ["missing-file", "git-listing"])
+def test_consumer_failure_reports_diagnostic_and_retry(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """公開候補操作の失敗は診断を保持し、同じ操作の再試行を案内する。"""
+    repository = _repository(tmp_path)
+    monkeypatch.chdir(repository)
+    source = "src/missing.py" if failure == "missing-file" else "src/a.py"
+    diagnostic = source if failure == "missing-file" else "listing-failed"
+    if failure == "git-listing":
+        monkeypatch.setattr(
+            pyfltr_precommit.git_command,
+            "run",
+            lambda *args, **kwargs: subprocess.CompletedProcess([], 1, b"", b"listing-failed"),
+        )
+    assert pyfltr_precommit.main(["--consumer-tests", source]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert diagnostic in captured.err
+    assert "次の操作:" in captured.err
+    assert "--consumer-tests" in captured.err
+
+
+@pytest.mark.parametrize(
+    "targets, expected",
+    [(["src/a.py"], 1), (["src/a.py", "src/consumer_test.py"], 0), (["src"], 0), ([], 0)],
+)
+@pytest.mark.parametrize("options", [["--output-format", "json"], ["--output-format=json"], []])
+def test_verify_run_discovers_consumers_from_public_argv(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, targets: list[str], expected: int, options: list[str]
+) -> None:
+    """標準の統合呼出しが実ファイルの候補不足を拒否し、明示試験・親ディレクトリ・全体を受理する。"""
+    repository = _repository(tmp_path)
+    (repository / "src" / "consumer_test.py").write_text("import a as alias\n", encoding="utf-8")
+    commit_all(repository, "consumer")
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: name)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=["run", *options, *targets])
+    assert pyfltr_precommit.main(["--verify-run", "01RUN"]) == expected
+
+
+def test_consumer_and_verify_modes_are_exclusive() -> None:
+    """併用によるverify-runの黙った無視を防ぐ。"""
+    with pytest.raises(SystemExit) as exc:
+        pyfltr_precommit.main(["--consumer-tests", "--verify-run", "01RUN"])
+    assert exc.value.code == 2
+
+
 def _install_pyfltr(
     monkeypatch: pytest.MonkeyPatch,
     repository: pathlib.Path,
@@ -179,7 +227,7 @@ def test_main_disables_only_pytest_when_reusing(
 def test_untracked_file_added_after_pytest_start_is_not_reused(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, add_untracked: bool, reused: bool
 ) -> None:
-    """pytestの開始後に加えた未追跡ファイルを、ファイルと親ディレクトリの更新時刻で検出して再利用しない。"""
+    """pytestの開始後に加えた未追跡ファイルは、その更新時刻で検出して再利用しない。"""
     repository = _repository(tmp_path)
     # 作成した作業ツリーの更新時刻より後、追加するファイルの更新時刻より前にpytestが始まった実行を表す。
     # 秒未満を記録しないファイルシステムでも作業ツリーの作成と区別できるよう、次の秒に入ってから開始とする。
@@ -193,6 +241,42 @@ def test_untracked_file_added_after_pytest_start_is_not_reused(
     reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr")
 
     assert (reuse.run_id == "01RUN") is reused
+
+
+@pytest.mark.parametrize("change", ["ignored-create", "ignored-delete", "modify", "delete", "rename"])
+@pytest.mark.parametrize("run_id", [None, "01RUN"])
+def test_reuse_tracks_commit_inputs_not_ignored_directory_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str, run_id: str | None
+) -> None:
+    """除外ファイルの生成・削除は受理し、追跡内容の変更・削除・改名は拒否する。"""
+    repository = _repository(tmp_path)
+    (repository / ".gitignore").write_text("src/*.log\n", encoding="utf-8")
+    commit_all(repository, "ignore logs")
+    ignored = repository / "src" / "output.log"
+    if change == "ignored-delete":
+        ignored.write_text("before", encoding="utf-8")
+    # 秒精度のファイルシステムでも、準備と操作の時刻を分離する。
+    time.sleep(1.05 - time.time() % 1)
+    pytest_started_at = _iso(0)
+    time.sleep(0.05)
+    target = repository / "src" / "a.py"
+    if change == "ignored-create":
+        ignored.write_text("after", encoding="utf-8")
+    elif change == "ignored-delete":
+        ignored.unlink()
+    elif change == "modify":
+        target.write_text("x = 2\n", encoding="utf-8")
+    elif change == "delete":
+        target.unlink()
+    else:
+        target.rename(repository / "src" / "renamed.py")
+    if not change.startswith("ignored-"):
+        subprocess.run(["git", "-C", str(repository), "add", "-A"], check=True)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=pytest_started_at)
+
+    reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id=run_id)
+
+    assert (reuse.run_id == "01RUN") is change.startswith("ignored-")
 
 
 def test_main_runs_pytest_when_query_output_is_unexpected(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -291,7 +375,10 @@ def test_verify_run_requires_head_content(tmp_path: pathlib.Path, monkeypatch: p
     ("reuse", "expected"), [(pyfltr_precommit.Reuse("01RUN", ""), 0), (pyfltr_precommit.Reuse(None, "理由"), 1)]
 )
 def test_main_verify_run_returns_result_without_commit(
-    monkeypatch: pytest.MonkeyPatch, reuse: pyfltr_precommit.Reuse, expected: int
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reuse: pyfltr_precommit.Reuse,
+    expected: int,
 ) -> None:
     """`--verify-run`は`pyfltr fast`を起動せず、確かめた結果を終了コードで返す。"""
     launched: list[list[str]] = []
@@ -307,3 +394,45 @@ def test_main_verify_run_returns_result_without_commit(
 
     assert pyfltr_precommit.main(["--verify-run", "01RUN"]) == expected
     assert not launched
+    if expected == 1:
+        captured = capsys.readouterr()
+        assert reuse.reason in captured.err
+        assert "次の操作:" in captured.err
+        assert "--verify-run" in captured.err
+
+
+@pytest.mark.parametrize("verify", [False, True])
+def test_git_failure_reports_context_independent_index_inspection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, verify: bool
+) -> None:
+    """index照会に失敗した検収では、Gitの診断と対象を調べる公開コマンドを示す。"""
+    repository = _repository(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "current_branch", lambda directory: "develop")
+    original = pyfltr_precommit.git_command.run
+    original_subprocess = subprocess.run
+    launched: list[list[str]] = []
+
+    def fail_index(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if "--git-path" in command:
+            return subprocess.CompletedProcess(command, 128, "", "index lookup failed")
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(pyfltr_precommit.git_command, "run", fail_index)
+
+    def run_command(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if command[0] == "/bin/pyfltr":
+            launched.append(command)
+            return subprocess.CompletedProcess(command, 0)
+        return original_subprocess(command, check=kwargs.pop("check", False), **kwargs)
+
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", run_command)
+
+    assert pyfltr_precommit.main(["--verify-run", "01RUN"] if verify else []) == (1 if verify else 0)
+    error = capsys.readouterr().err
+    assert "index lookup failed" in error
+    assert "git rev-parse --git-path index" in error
+    if not verify:
+        assert "--verify-run" not in error
+    assert launched == ([] if verify else [["/bin/pyfltr", "fast"]])

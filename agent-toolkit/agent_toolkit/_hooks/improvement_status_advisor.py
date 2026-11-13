@@ -21,6 +21,7 @@ from agent_toolkit._common.plugin_roots import resolve_plugin_root
 from agent_toolkit._common.session_state import read_state
 from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
 from agent_toolkit._hooks.agent_id import is_main_agent_context
+from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
@@ -86,7 +87,9 @@ def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
     state = read_state(session_id)
     root = plugin_resources.plugin_root()
     cwd = payload.get("cwd")
-    basics = resolve_plugin_root("agent-basics", root, project=cwd if isinstance(cwd, str) else None)
+    basics = resolve_plugin_root(
+        "agent-basics", root, "codex" if is_codex_payload(payload) else "claude", project=cwd if isinstance(cwd, str) else None
+    )
     paths = [
         basics / "skills/bugfix/references/root-cause-prevention.md",
         root / "skills/delegation/references/waiting-and-monitoring.md",

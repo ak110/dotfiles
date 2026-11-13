@@ -17,9 +17,10 @@
 - 可用性の問題による障害が発生した場合は、次の候補へ進む。
   OpenCodeのCLIが存在しない場合や、接続・認証に失敗した場合も可用性の障害として処理する。
   Claudeの利用上限に伴う待機手順は、`fallback-launch.md`「代替起動」に従う
-- 初期設定として、executeとorchestrateはClaude Opusを最優先、Codex solを予備とする。
-  reviewとchoresはCodex sol/mediumを最優先、Claude Sonnetを予備とし、review_fastとchores_fastはCodex lunaを最優先、Claude Haikuを予備とする。
-  writeはAntigravity Gemini Flash、Claude Opusの順とする
+- 初期設定として、executeはClaude Opus/low、Codex sol/lowの順、orchestrateはClaude Opus/medium、Codex sol/mediumの順とする。
+  reviewはCodex sol/medium、Claude Sonnet/mediumの順、choresはCodex sol/low、Claude Sonnet/lowの順とする。
+  review_fastはCodex luna/medium、Claude Haiku/mediumの順、chores_fastはCodex luna/low、Claude Haiku/lowの順とする。
+  writeはAntigravity Gemini Flash/low、Claude Opus/lowの順とする
 - 初期設定やプリセットの候補を変える前に、変更後の候補でその工程の役割文書を持つ担当（`review`なら実行レビュー担当）を実際の作業で1回以上起動し、最初の応答が返却形式どおりの完了になることを確かめる。
   候補の適否はモデルの挙動で決まり、候補列の保存と実行時解決の配線を確かめる既存の試験では検出できないためである。
   確かめた候補、工程、作業と結果は、候補を変える理由とともにプロジェクトの設計記録か変更のcommit本文へ残す

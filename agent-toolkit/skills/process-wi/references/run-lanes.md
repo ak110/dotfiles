@@ -9,9 +9,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` |
-| レーンの専用worktree・所有登録を作成・再利用・回収する前、`レーン開始時刻`を記録する前、後段レーンの先行調査を始める前 | `lane-resources.md` |
-| 追加WIと即時修正を区別する前 | `immediate-fix.md` |
 | 変更したエージェント向け文書を再取得する時 | `../../../share/exec.parent.md` |
 | 変更したエージェント向け文書を再取得する時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
 

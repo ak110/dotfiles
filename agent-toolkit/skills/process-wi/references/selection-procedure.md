@@ -11,11 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` |
-| 是正要求を分類する前 | `immediate-fix.md` |
-
 ## 読込表
 
 | 時点または条件 | 全文読む資料 |
@@ -31,5 +26,5 @@
 | 処理対象の決定に関する判断・作業の前 | `selection-procedure-candidates.md` |
 | 調査とレーン分け・反映先と上流投入・プロジェクト規範の指定に関する判断・作業の前 | `selection-procedure-allocation.md` |
 | 集合確定直後の処理開始に関する判断・作業の前 | `selection-procedure-starting.md` |
-| 保存後のチェック・保存後の意味検収・選定工程の完了に関する判断・作業の前 | `selection-procedure-validation.md` |
+| 保存後のチェック・保存後の意味検収・選定工程の完了に関する判断・作業の前（操作対象外: 自身の選定結果の検収） | `selection-procedure-validation.md` |
 | 処理対象WIの追加に関する判断・作業の前 | `selection-procedure-addition.md` |

@@ -4,19 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| `agent-toolkit:process-wi all-repos`の統括から、リポジトリ担当として取得済み候補を受領した時 | `all-repos-orchestration.md` |
-| メインが対象選定を開始する前（実行順2）と、処理対象WIを追加する前 | `selection-procedure.md` |
-| 選定YAMLを生成または消費する前 | `selection-format.md` |
-| 専用worktreeとレーンを作成する前（実行順3） | `run-lanes.md` |
-| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
-| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` |
-| 公開工程を開始する前（実行順7） | `finish-session.md` |
-| 公開担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/session-termination.parent.md` |
-| レビュー指摘の比較と採否を判定する時 | `../../../share/exec-review-responses.md` |
-| 委譲済みの主題を自分で読む・調べる・回答する前 | `../../delegation/SKILL.md` |
-| 書込主体を交代する時 | `agent-toolkit:delegation/references/mandatory-rules.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/exec.parent.md` |
+| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時（操作対象外: ユーザー発話・回答の受領） | `immediate-fix.md` | | |
+| レビュー指摘の比較と採否を判定する時 | `../../../share/exec-review-responses.md` | | |
+| 委譲済みの主題を自分で読む・調べる・回答する前（操作対象外: ツールと結び付かない判断） | `../../delegation/SKILL.md` | | |
+| 書込主体を交代する時 | `agent-toolkit:delegation/references/mandatory-rules.md` | | |
 
 ## 同一主題の追加指示
 
@@ -25,7 +19,10 @@
    メイン自身が調査して文脈を持つ主題は、委譲先へ渡し直さずにメインが修正まで行ってよい。
    書込先は次のとおりとし、書込主体の交代は`../../delegation/references/mandatory-rules.md`「作業ツリーの保護」に従う。
 
-   - レーンに割り当てていない主題: メインが別のworktreeで修正し、主作業ツリーへの統合は他のレーンと同じく`../../../share/exec-parent-integration.md`「統合の許可」の条件で行う。
+   - レーンに割り当てていない主題: `selection-procedure-addition.md`「処理対象WIの追加」手順5でメインの直接作業・別のサブエージェントを含めて担当者と資源を比較する。
+     列挙外の手段も同じ基準で扱う。
+     ファイルを変更する場合は選定の所属レーンの専用worktreeで修正する。
+     主作業ツリーへの統合とWI終了には他のレーンと同じく`../../../share/exec-parent-integration.md`「統合の許可」と`run-lanes-integration.md`「統合とAWI終了」の条件を適用する。
      最小限の直接修正の判定と手順は`immediate-fix.md`に従う。
    - レーンの主題: レーン担当へ追加指示として返すのを基本とする。
      レーン担当の終了を確認した後は、メインがそのレーンの専用worktreeを引き取ってよい。

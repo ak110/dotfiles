@@ -13,21 +13,21 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 既存WIとの比較の起点と検索対象を検収する前 | `drafting-completion-duplicates.md` |
-| WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` |
-| add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前 | `../../add-awi-by-user/references/omission-check.md` |
-| 資料起点の採否を検収する前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
-| 参考資料に基づく候補の十分性を検収する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
-| 規範・手順による既存充足を検収する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
-| 依頼の`再発の経過を問う要求`が`該当`、または検収者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求を検収する前 | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む |
-| 複数バグの現象・期待する契約・原因の対応を検収する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
-| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |
-| 引用の認可や解釈のため出所を再取得する時 | `drafting-workflow-evidence.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 既存WIとの比較の起点と検索対象を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `drafting-completion-duplicates.md` | | |
+| WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `wi-standard-self-review`、`read:agent-basics:*/skills/review-standards/SKILL.md` |
+| add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前（操作対象外: 自身の成果物・評価方法の検討） | `../../add-awi-by-user/references/omission-check.md` | | |
+| 資料起点の採否を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-toolkit:add-awi-by-user/SKILL.md` | | |
+| 参考資料に基づく候補の十分性を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | | |
+| 規範・手順による既存充足を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | |
+| 依頼の`再発の経過を問う要求`が`該当`、または検収者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む | | |
+| 複数バグの現象・期待する契約・原因の対応を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-toolkit:wi-standards/references/analysis-records.md` | | |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` | | |
+| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` | | |
+| 本文の参照基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` | | |
+| 引用の認可や解釈のため出所を再取得する時 | `drafting-workflow-evidence.md` | | |
 
 ## ユーザーが読む部分
 
@@ -88,6 +88,7 @@
    元の問いの分析単位を原文から独立に確定し、原因候補を選んだ前提と対応するか判定する。
    依頼の`再発の経過を問う要求`が`該当`、または検収者が逐語本文・趣旨から反復・頻度・悪化・守られなくなった時期への言及と判断した要求は、読込表の2資料を全文読み、個別事象に限定せず分析する。
    原稿が個別原因と再発経過（過去対策、未適用・範囲不足・効果不足・別原因の区分、残る原因条件）を分けていなければ、作成主体へ差し戻す。
+   原因が異なっても同じ害の型の反復が分析から除かれていれば、bugfixの過去対策との比較に従って補完を求める。
    複数バグでは、`analysis-records.md`「原因分析の記録先」に従い、各バグの現象・期待する契約・原因の対応が一意かを確認する。
 
 6. 確定した原要求の対象・時点・結果と、原稿の対象別結論・証拠の母集団を比較する。
@@ -127,8 +128,9 @@
      正式なファイル名への置き換え、および保存後の一致確認は、作成主体が`drafting-workflow-saving.md`「投入」の手順に従って実施する。
 
 7. 委譲元および専念型の投入前レビュー担当は、原稿と成立性の証拠を確認し、対策・回帰防止策の行と再発防止策の2行を比較する。
+   `害の型と反復`行が過去事例を調べた範囲と結果を示し、再発防止策行がその型へ作用することを確かめる。
    4区分の候補行のいずれかが欠けていないこと、採否の行が候補ごとの採否と影響・費用の比較を示し候補数を採用義務として扱っていないことを確かめる。
-   再発防止策の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」における持ち込み試験を実施する。
+   再発防止策の行に挙げられた問題が通常の対策範囲の外にあることを確かめ、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」における持ち込み試験で、原因が異なり同じ害の型を生む例も確認する。
    成立しない原稿は、処置を対策行か回帰防止策行へ移して反映内容節の詳細と対応付け、再発防止策の選び直しまたは不採用理由の記録を求めて作成主体へ差し戻す。
 
 ## 初回と再判定・差戻し

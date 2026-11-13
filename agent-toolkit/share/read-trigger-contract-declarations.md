@@ -42,10 +42,24 @@
   他の未確定な自然文条件は確認候補として示す。
   候補を受けた主体は条件を確かめ、成立する資料の全文を判断前に自分で読む。
   候補は確認のための案内として扱い、必読案内済みの記録と再書込の遮断根拠から除外する。
+  判断の行へ観測可能な操作の案内を補う場合は、元の資料自身の`read:`操作も和集合として保持する。
+  確認時に追加で選ぶ判断条件の案内は候補とし、質問前の拒否はbootstrapの共通基準に限定する。
 - 「配送操作」には、バッククォートで囲んだ操作の和集合を指定する。
   共通の語彙は`delegation`、`search`、`root-cause-writing`、`managed-temp-create`、`body-writing`、`verification`、`agent-document-writing`、`confirmation`とする。
   既存ファイルの編集には`existing-file-edit`、Claude Code固有の編集には`claude-existing-file-edit`を使う。
-  WI保存は`wi-report-save`と`wi-standard-save`で区別する。
+  WI保存は通常WIの`wi-standard-dry-run`・`wi-standard-commit`と、報告用UWIの`wi-report-dry-run`・`wi-report-commit`で本文種別と段階を指定する。
+  `dry-run`は`--dry-run`付きの検証、`commit`は本保存を表す。
+  `wi-standard-self-review`は通常WIの検証・本保存のうち、付随型のWI投入担当を除いた主体による操作を表す。
+  旧語`wi-standard-save`・`wi-report-save`は拒否する。
+  ユーザー側の宣言をhook実行時に寛容に読む場合だけ両段階として受理し、置換を案内する。
+  委譲先の終了結果の受領には`delegation-result`を使う。
+  `atk agents wait`は起動時の役割に対応する親契約の行から、未取得資料の案内を結果へ添える。
+  自然文の条件の成立は受領した主体が確かめ、検収前に該当資料を全文読む。
+  受領・起動・確認・保存を表す条件語がある行で操作に当たらないものには、条件セルへ`（操作対象外: 理由）`を付ける。
+  理由は、条件が実際に扱う判断と操作の実行時点との違いを行ごとに示す。
+  標識は配送漏れ検査の対象外を示し、読み手への読込条件を変えない。
+  不変条件試験はこれらの語を含む行の配送操作の欠落を検出し、理由付きの対象外行を除く。
+  WI原稿と計画初版の本文を書く操作は、書込先によらず本文の見出し行で`awi-draft-writing`（`## 反映内容と反映先`）、`uwi-draft-writing`（`## 判断材料`）、`plan-draft-writing`（`### 計画メタ情報`）とする。
   `--body-file`の先頭frontmatterが`run_skill_report: true`なら報告保存、それ以外（本文未指定・読取不能も含む）は通常保存とする。
   汎用の`bash:atk wi add`・`bash:atk wi edit`による保存宣言は拒否する。
 - 引数付きの操作には`skill:`、`write:`、`path:`、`dependency:`、`tool:`、`bash:`、`role:`、`read:`がある。

@@ -32,7 +32,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | Codexで実行し、計画工程へ着手する前 | `references/codex-runtime.md` | | | |
-| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-requirements.md`、`references/plan-file-standards-design.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md` | | | |
+| 計画ファイルの初版を起草する前（「進め方」手順3） | `references/plan-file-standards.md`、`references/plan-file-standards-structure.md`、`references/plan-file-standards-scope.md`、`references/plan-file-standards-requirements.md`、`references/plan-file-standards-design.md`、`references/plan-file-standards-verification.md`、`references/plan-file-standards-template.md` | 操作 | `plan-draft-writing` | |
 | 計画の採否を左右する技術的不確実性を解消する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | | | |
 | 観測で計画の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` | | | |
 | 計画で観測手段と実行環境を確定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | | |

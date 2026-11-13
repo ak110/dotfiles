@@ -7,7 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | run-skillの旧保存データのUWIを取り込む前 | `../../user-confirmation-and-report/references/answer-transitions.md` |
-| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/add-wi.parent.md`、`../../../share/add-wi-parent-acceptance.md` |
 
 ## 由来と`source`

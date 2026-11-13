@@ -6,19 +6,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
-
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲プロンプトの構成に関する判断・作業の前 | `sending-prompt.md` |
-| 起動と観測に関する判断・作業の前 | `sending-launch.md` |
-| 権限と成果物の取り決めに関する判断・作業の前 | `sending-ownership.md` |
-| 未検証情報の取り扱い・判断材料と一時領域に関する判断・作業の前 | `sending-evidence.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲プロンプトの構成に関する判断・作業の前 | `sending-prompt.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/sending-prompt.md` |
+| 起動と観測に関する判断・作業の前 | `sending-launch.md` | | |
+| 権限と成果物の取り決めに関する判断・作業の前 | `sending-ownership.md` | | |
+| 未検証情報の取り扱い・判断材料と一時領域に関する判断・作業の前 | `sending-evidence.md` | | |
 
 ## 本文参照の取得条件
 

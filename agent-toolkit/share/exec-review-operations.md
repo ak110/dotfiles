@@ -6,11 +6,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `reader-fit-review.parent.md` |
-| 再発防止セルフチェック担当を起動する前 | `recurrence-self-check.parent.md` |
-| 実行する検証を選ぶ前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `reader-fit-review.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/reader-fit-review.parent.md` |
+| 再発防止セルフチェック担当を起動する前 | `recurrence-self-check.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/recurrence-self-check.parent.md` |
+| 実行する検証を選ぶ前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | |
 
 ## 操作区分
 
@@ -24,7 +24,10 @@
 各種記録は、自身のセッションのmanaged-temp配下に保存する。
 完成条件証拠の判定結果と根拠を記述するのは実行レビュー担当のみであり、レビュー対象者（レビューイー）に根拠の補完を求めた場合でも、最終的な反映は本担当が行う。
 
-判定に必要な検証には、レビュー対象HEADにおける対象worktree上で、実装担当が準備した開発環境のまま実行できるコマンドを用いる。
+判定に必要な検証には、レビュー対象HEADの本文に対して、実装担当が準備した開発環境のまま実行できるコマンドを用いる。
+検証の前に対象worktreeの`git status --porcelain=v1`を取得する。
+空なら対象worktree上で検証し、空でなければ「未commitの変更がある作業ツリーでの検証」の手順で検証する。
+レビュー中もレーンは同じ作業ツリーで別の修正を続けることがあり、その未commitの本文はレビュー対象HEADと異なるためである。
 追跡対象ファイルを変更しない公開の確認形式を選び、実行後は既存の`git status --porcelain=v1`確認で作業ツリーに変更がないことを確認する。
 完全な出力ログは自身のセッションのmanaged-temp配下に標準出力と標準エラー出力を分けて保存し、終了コードと実行時のHEADを走査記録に残す。
 対象worktreeやその開発環境、コンテナー、Git管理外のデータ、実行ホスト上のファイルを変更する操作（依存関係の同期や環境構築、追跡ファイルを更新するタスクランナーのターゲット、`docker run`、`docker compose`、ファイルの削除や移動など）は実行しない。
@@ -33,3 +36,19 @@
 該当する操作を伴う検証については、実装担当が記録した検証結果と保存出力を読み取って判定する。
 
 検証コマンドは、対象リポジトリの`AGENTS.md`、`Makefile`、`mise.toml`、および計画の`## 検証`節から特定する（plugin rootの配置を手がかりにPython実行ファイルのパスを組み立てる方法は取らない）。
+
+## 未commitの変更がある作業ツリーでの検証
+
+対象worktreeに未commitの変更がある場合は、レビュー対象HEADの追跡ファイルだけを持つ作業ツリーで検証する。
+
+1. 自身のmanaged-temp内へ`git -C <対象worktree> worktree add --detach <作成先の絶対パス> <レビュー対象HEADの完全OID>`で作業ツリーを作る。
+   Gitの共通ディレクトリへの登録の追加と後の解除は、対象worktreeの追跡ファイル・インデックス・ブランチと開発環境を変えないため、本手順の中で実行してよい。
+2. 依存（`.venv`、`node_modules`など）と、Git管理外で実行に必要なファイル（`.env`、ビルド済みの静的ファイルなど）は、対象worktreeのものを作った作業ツリーの同じ相対パスへシンボリックリンクで参照させる。
+   補うパスは対象リポジトリの規範、`.worktreeinclude`、`.gitignore`の順に確かめて決める。
+   依存を更新する起動形（`uv run`の自動同期など）は使わず、同期を止める指定（`uv run --no-sync`など）か、参照した環境の実行ファイルを直接使う。
+3. 参照した依存の中に対象worktreeの絶対パスを指す記述（editable installの`.pth`など）がある場合は、検証と同じ起動形で、検証対象のモジュールの解決先が作った作業ツリーの中であることを確かめる（Pythonでは`import`したモジュールの`__file__`）。
+   解決先を作った作業ツリーへ向ける手段は、参照した依存を変更しない方法（`PYTHONPATH`などimport先を前置する環境変数）に限る。
+   解決先を確かめられない検証は、対象worktreeの未commitの本文を読んだ可能性があるため、手順5の検証が成立しない場合として扱う。
+4. 走査記録には、作った作業ツリーのパスと作り方、レビュー対象HEAD、参照で補ったパス、解決先の確認結果、終了コードを残す。
+   作った作業ツリーは、検証結果を使う受領処理が終わった後に`git -C <対象worktree> worktree remove <作成先>`で登録を解除して回収する。
+5. この手順で検証が成立しない場合は、前節のとおり必要な操作と対象を委譲元へ返す。

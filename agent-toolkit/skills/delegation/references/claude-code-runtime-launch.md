@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/base-contract-operations.md` |
 
 ## 起動パラメーター
 

@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 「確認要否の判定」を適用する前（Claude Codeで`AskUserQuestion`を呼ぶ前、Codexで構造化質問か`codex-format.md`の固定形式の質問を発行する前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `approval-scope.md` |
-| 起動元の工程が質問ラウンドを指定した時点 | `grilling.md` |
-| 実際のユーザー発話を解釈・取り込み、訂正・割り込み・成果物の制限を扱う時 | `user-utterance.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 「確認要否の判定」を適用する前（Claude Codeで`AskUserQuestion`を呼ぶ前、Codexで構造化質問か`codex-format.md`の固定形式の質問を発行する前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `approval-scope.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
+| 起動元の工程が質問ラウンドを指定した時点 | `grilling.md` | | |
+| 実際のユーザー発話を解釈・取り込み、訂正・割り込み・成果物の制限を扱う時 | `user-utterance.md` | | |
 
 ## 確認要否の判定
 

@@ -12,6 +12,8 @@ import sys
 from collections.abc import Generator
 
 import platformdirs
+import update_dotfiles_report
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 from pytools._internal import sync_report
 
@@ -62,6 +64,9 @@ current_stage_title: str | None = None
 
 last_stderr_tail: str | None = None
 
+# 直前の段が待機上限で打ち切られたか。同じ原因の再発が見込まれるため、実行器は再試行しない。
+last_step_timed_out: bool = False
+
 continued_failures: list[_ContinuedFailure] = []
 
 update_index: pathlib.Path | None = None
@@ -80,6 +85,14 @@ def continue_after_failure(title: str, action: str, detail: str | None = None) -
     """後続の段の前提を壊さない段の失敗を記録し、呼び出し側が後続の段を続けられるようにする。"""
     logger.error("stage失敗のまま続行: %s", title)
     continued_failures.append(_ContinuedFailure(title, action, detail))
+
+
+class _DiagnosticFormatter(logging.Formatter):
+    """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """永続ログ向けに資格情報を除いた本文を返す。"""
+        return redact_secrets(super().format(record))
 
 
 @contextlib.contextmanager
@@ -106,7 +119,7 @@ def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
     with contextlib.ExitStack() as cleanup:
         cleanup.callback(handler.close)
         cleanup.callback(logger.removeHandler, handler)
-        handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
+        handler.setFormatter(_DiagnosticFormatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
         logger.propagate = False
@@ -120,6 +133,21 @@ def finish(returncode: int) -> int:
     同期結果の構造化記録も本関数だけが確定させる。全ての終了経路で本関数を実行するため、
     記録の欠落と、成功した段を失敗として残す書き分けの誤りを避けられる。
     """
+    if current_run_id is not None:
+        try:
+            for title, detail in update_dotfiles_report.bootstrap_failures(LOG_PATH.parent):
+                continue_after_failure(title, "次回のupdate-dotfiles起動時に再試行します。", detail)
+            failures = [(failure.title, failure.detail or "失敗") for failure in continued_failures]
+            if returncode != 0:
+                failures.append((current_stage_title or "更新の開始", last_stderr_tail or f"exit={returncode}"))
+            update_dotfiles_report.report(failures, LOG_PATH.with_name("update-failures.json"), DOTFILES_ROOT)
+        except update_dotfiles_report.process_tree.ReclaimError:
+            # 所有した子孫を止められない状態では、新しい更新や起票を始めない。
+            logger.exception("自動起票の子孫を回収できませんでした")
+            raise
+        except Exception as error:  # noqa: BLE001 -- 起票の未知の障害でも更新と結果の記録を妨げない境界。
+            logger.exception("更新失敗を自動起票できませんでした")
+            continue_after_failure("更新失敗の起票", "update-dotfiles logsで診断を確認してください。", str(error))
     if continued_failures:
         returncode = _report_continued_failures(returncode)
     logger.info("update-dotfiles終了: exit=%d", returncode)

@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点。`AskUserQuestion`の`questions`、Codexの構造化質問または固定形式の質問を組む前と、委譲先の返却が示した論点や問いの案から確認を組む前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `choice-construction.md` |
-| 原要求を復元する資料を取得できず、未確定判断を保留または暫定する前 | `agent-toolkit:user-confirmation-and-report/references/pending-decisions.md` |
-| 回答を得られない確認の保留、無回答後の確認の記録、事前承認の合意判定、対話中のUWIへの回答の受領のいずれかへ進む前（メインエージェント） | `pending-decisions.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点。`AskUserQuestion`の`questions`、Codexの構造化質問または固定形式の質問を組む前と、委譲先の返却が示した論点や問いの案から確認を組む前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `choice-construction.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` |
+| 原要求を復元する資料を取得できず、未確定判断を保留または暫定する前 | `agent-toolkit:user-confirmation-and-report/references/pending-decisions.md` | | |
+| 回答を得られない確認の保留、無回答後の確認の記録、事前承認の合意判定、対話中のUWIへの回答の受領のいずれかへ進む前（メインエージェント）（操作対象外: ユーザー発話・回答の受領） | `pending-decisions.md` | | |
 
 ## 確認を要する事項
 

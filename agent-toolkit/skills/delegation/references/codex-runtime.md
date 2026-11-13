@@ -4,13 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲先と起動手段を選ぶ前 | `runtime-routing.md` |
-| 委譲先と起動手段を選ぶ前 | `process-model-settings.md` |
-| 同一担当の継続・交代を判断する前 | `continuation.md` |
-| 可用性の障害を確認して回復する前 | `fallback-launch.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

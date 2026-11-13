@@ -62,6 +62,11 @@ class BashInvocation:
     environment_assignments: tuple[str, ...] = ()
     """実行前置語または単独の代入。前置代入は子シェルの呼び出しにも継承する。"""
 
+    variable_tokens: tuple[str, ...] = ()
+    variable_outputs: tuple[_OutputTarget, _OutputTarget] = (1, 2)
+    standalone_assignments: tuple[str, ...] = ()
+    assignments_definite: bool = True
+
     @property
     def output_pipe(self) -> bool:
         """標準出力または標準エラーが後段のパイプへ渡るかを返す。"""
@@ -86,6 +91,7 @@ class _BashToken:
     static_value: str = ""
     reserved: bool = False
     unquoted: str = ""
+    variable_value: str = ""
 
 
 _BASH_REDIRECTION = re.compile(r"[0-9]*(?:&>>|&>|<<-|<<<|>>|<<|<>|<&|>&|>\||>|<)")
@@ -217,6 +223,7 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
     """1つの語の引用と展開を区別し、静的な値と置換の本文を返す。"""
     pieces: list[str] = []
     static_pieces: list[str] = []
+    variable_pieces: list[str] = []
     nested: list[str] = []
     unquoted: list[str] = []
     quote: str | None = None
@@ -230,12 +237,14 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
             if command[index + 1] != "\n":
                 pieces.append(command[index : index + 2])
                 static_pieces.append(command[index : index + 2])
+                variable_pieces.append(command[index : index + 2])
             index += 2
             continue
         if char == quote:
             quote = None
             pieces.append(char)
             static_pieces.append(char)
+            variable_pieces.append(char)
             index += 1
             continue
         if quote != "'" and (
@@ -243,11 +252,14 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
             or char == "`"
             or (quote is None and command[index : index + 2] in {"<(", ">("})
         ):
+            start_expansion = index
             body, index = _bash_substitution(command, index)
             if body is not None:
                 nested.append(body)
             pieces.append(_UNKNOWN_BASH_WORD)
             static_pieces.append(STATIC_UNKNOWN)
+            reference = re.fullmatch(r"\$\{([a-zA-Z_][a-zA-Z_0-9]*)\}", command[start_expansion:index])
+            variable_pieces.append(f"\x00{reference[1]}\x00" if reference else STATIC_UNKNOWN)
             known = False
             continue
         if (
@@ -262,6 +274,10 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
                     end += 1
             pieces.append(command[index:end])
             static_pieces.append(STATIC_UNKNOWN)
+            reference = command[index + 1 : end]
+            variable_pieces.append(
+                f"\x00{reference}\x00" if re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9]*", reference) else STATIC_UNKNOWN
+            )
             known = False
             index = end
             continue
@@ -282,6 +298,9 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
             unquoted.append(char)
         pieces.append(char)
         static_pieces.append(STATIC_UNKNOWN if quote is None and (char in "*?[" or (char == "~" and index == start)) else char)
+        variable_pieces.append(
+            STATIC_UNKNOWN if quote is None and (char in "*?[" or (char == "~" and index == start)) else char
+        )
         index += 1
     if quote is not None or not pieces:
         raise ValueError("閉じない引用または未対応の語")
@@ -303,6 +322,7 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
         static_value=shlex.split("".join(static_pieces), posix=True)[0],
         reserved="".join(pieces) == value,
         unquoted="".join(unquoted),
+        variable_value=shlex.split("".join(variable_pieces), posix=True)[0],
     ), index
 
 
@@ -347,6 +367,7 @@ def _bash_command_list(
     """単純なコマンドと括弧・波括弧のグループへ接続を対応付ける。"""
     result: list[BashInvocation] = []
     pipeline_start = 0
+    conditional = False
     index = start
     while index < len(tokens):
         if _bash_closes(tokens[index], closing):
@@ -364,6 +385,7 @@ def _bash_command_list(
         grouped = compound or function or tokens[index].operator and tokens[index].value in {"(", "{"}
         if compound:
             current, index = _bash_compound(tokens, index)
+            current = [dataclasses.replace(item, assignments_definite=False) for item in current]
             words: list[_BashToken] = []
         elif function:
             assert function_body is not None
@@ -405,7 +427,14 @@ def _bash_command_list(
             separator,
             coprocess=coprocess,
         )
-        current = [_inherit_bash_outputs(item, outputs, static_outputs) for item in current]
+        variable_outputs = _bash_output_targets(
+            [(operator, dataclasses.replace(word, value=word.variable_value, known=True)) for operator, word in redirects],
+            separator,
+            coprocess=coprocess,
+        )
+        current = [_inherit_bash_outputs(item, outputs, static_outputs, variable_outputs) for item in current]
+        if conditional:
+            current = [dataclasses.replace(item, assignments_definite=False) for item in current]
         inline_input = False
         for raw, _operand in redirects:
             operator = raw.lstrip("0123456789")
@@ -426,6 +455,10 @@ def _bash_command_list(
             )
         if separator in {";", "\n", "&&", "||", "&"}:
             pipeline_start = len(result)
+        if separator in {";", "\n", "&"}:
+            conditional = False
+        elif separator in {"&&", "||"}:
+            conditional = True
         if index < len(tokens) and _bash_closes(tokens[index], closing):
             return result, index + 1
         if not separator:
@@ -587,6 +620,7 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
                     segment,
                     known,
                     static_tokens=tuple(word.static_value for word in words[-len(segment.tokens) :]),
+                    variable_tokens=tuple(word.variable_value for word in words[-len(segment.tokens) :]),
                     environment_assignments=assignments,
                 )
             )
@@ -596,6 +630,8 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
                 ExecutionSegment(tuple(values[prefix:]), False),
                 False,
                 static_tokens=tuple(word.static_value for word in words[prefix:]),
+                variable_tokens=tuple(word.variable_value for word in words[prefix:]),
+                standalone_assignments=tuple(word.variable_value for word in words[:prefix]) if prefix == len(words) else (),
                 execution_known=False,
                 environment_assignments=tuple(values[:prefix]),
             )
@@ -644,6 +680,7 @@ def _inherit_bash_outputs(
     invocation: BashInvocation,
     outputs: tuple[_OutputTarget, _OutputTarget],
     static_outputs: tuple[_OutputTarget, _OutputTarget],
+    variable_outputs: tuple[_OutputTarget, _OutputTarget],
 ) -> BashInvocation:
     """グループの出力先を、内側で上書きされていない接続へ渡す。"""
     inherited = tuple(
@@ -654,8 +691,15 @@ def _inherit_bash_outputs(
         static_outputs[value - 1] if isinstance(value, int) and not (invocation.captured and value == 1) else value
         for value in invocation.static_outputs
     )
+    variable_inherited = tuple(
+        variable_outputs[value - 1] if isinstance(value, int) and not (invocation.captured and value == 1) else value
+        for value in invocation.variable_outputs
+    )
     return dataclasses.replace(
-        invocation, outputs=(inherited[0], inherited[1]), static_outputs=(static_inherited[0], static_inherited[1])
+        invocation,
+        outputs=(inherited[0], inherited[1]),
+        static_outputs=(static_inherited[0], static_inherited[1]),
+        variable_outputs=(variable_inherited[0], variable_inherited[1]),
     )
 
 

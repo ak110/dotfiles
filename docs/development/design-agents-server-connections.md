@@ -57,7 +57,11 @@ RPC失敗の追加dataは切替判定にだけ使い、公開するerrorへ取�
 providerや切替情報は公開応答・状態・通知・結果・継続プロンプトへ加えず、資格情報なしの診断を
 既存の`agents-server.log`だけへ残す。
 turn開始の拒否を汎用文言`Codex connection rejected the request`へ置き換えるときも、起動時・切替時と同じく、session_id・接続先の識別子・元のエラーのcodeと本文を診断へ1行残す。
-拒否本文と`codexErrorInfo`には認証値が含まれうるため、`codex_protocol.py`で認証ヘッダー、APIキー・token・secret・passwordの値、連続32文字以上の鍵状文字列を伏せる。
+拒否本文と`codexErrorInfo`には認証値が含まれうるため、`codex_protocol.py`は共通の秘匿処理（`_common/diagnostic_redaction.py`）を通してから診断へ残す。
+共通の秘匿処理は、認証ヘッダー、APIキー・token・secret・passwordの値、URLの認証情報、秘密鍵を伏せる。
+拒否本文には、これに加えて連続32文字以上の鍵状文字列も伏せる。
+鍵状文字列の規則を共通の秘匿処理へ広げないのは、原因調査に使うsession識別子やcommit OIDも伏せてしまうためである。
+共通ログの保存handler、終了結果のエラー、前任の会話抽出の失敗診断も、共通の秘匿処理を通してから保存する。
 同じ秘匿処理をturn開始時の一般例外にも適用し、改行はエスケープして診断を1行に保つ。
 codeと秘匿対象以外の拒否理由を残すことで、資格情報を保存せず原因を追跡できる。
 公開するerrorには、原因が同じsession_idの診断ログにあることを示す案内だけを加える。

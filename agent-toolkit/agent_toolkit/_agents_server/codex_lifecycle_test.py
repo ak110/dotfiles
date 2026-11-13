@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agent_toolkit._agents_server import codex, manager, resume_waits, state
+from agent_toolkit._common.delegated_session import FINAL_RESPONSE_NOTICE
 from agent_toolkit._testing.agents_server_support import FakeCodexClient, install_backend
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -221,3 +222,7 @@ async def test_self_message_and_child_share_resume_and_restore_rejected_delivery
         await owner._advance_child_session_wait(session)
         assert session.turn_seq == 2 and session.codex_self_message_repair_consumed
         assert len([r for r in client.requests if r[0] == "turn/start"]) == 2
+        # 修復文は委譲元が受け取る本文の範囲を重ねて述べず、FINAL_RESPONSE_NOTICEを1回だけ含める。
+        repair = repr([r for r in client.requests if r[0] == "turn/start"][-1])
+        assert "自分宛てに送った本文は委譲元へ届いていない" in repair
+        assert repair.count(FINAL_RESPONSE_NOTICE) == 1

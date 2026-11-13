@@ -5,17 +5,20 @@ set -euo pipefail
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SELF}")/.." && pwd)"
 UV="$HOME/.local/bin/uv"
-if [[ ! -x "$UV" ]]; then
-    echo "uvが見つかりません。次の操作: https://docs.astral.sh/uv/getting-started/installation/ の公式手順でuvを導入し、update-dotfilesを再実行してください。" >&2
-    exit 127
+help_requested=0
+for argument in "$@"; do
+    case "$argument" in -h | --help) help_requested=1 ;; esac
+done
+if [[ "${1:-}" != "logs" && "${1:-}" != job && "$help_requested" == 0 && "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != 1 ]]; then
+    source "${SCRIPT_DIR}/libexec/update_bootstrap.sh" "$UV"
 fi
 if [[ "${1:-}" == "job" || -n "${CODEX_THREAD_ID:-}" ]]; then
     case " ${*} " in
     *" --help "* | *" -h "* | " logs ") ;;
     *)
-        if ! native_python="$("$UV" python find 3.15)"; then
-            "$UV" python install 3.15
-            native_python="$("$UV" python find 3.15)"
+        if ! native_python="$(timeout --kill-after=10 60 "$UV" python find 3.15)"; then
+            AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1 source "${SCRIPT_DIR}/libexec/update_bootstrap.sh" "$UV"
+            native_python="$(timeout --kill-after=10 60 "$UV" python find 3.15)"
         fi
         # このblockは更新中のランチャー置換前に解析される。
         {
@@ -24,29 +27,12 @@ if [[ "${1:-}" == "job" || -n "${CODEX_THREAD_ID:-}" ]]; then
         ;;
     esac
 fi
-self_update_failed=0
-help_requested=0
-for argument in "$@"; do
-    case "$argument" in -h | --help) help_requested=1 ;; esac
-done
-if [[ "${1:-}" != "logs" && "$help_requested" == 0 && "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != "1" ]]; then
-    bash "${SCRIPT_DIR}/libexec/update_uv.sh" "$UV" || self_update_failed=1
-    python_exit=0
-    "$UV" python install --upgrade 3.15 || python_exit=$?
-    if ((python_exit != 0)); then
-        printf '%s\n' '管理Pythonの更新に失敗したため中断しました。上の診断を確認し、update-dotfilesを再実行してください。' >&2
-        exit "$python_exit"
-    fi
-fi
 run_exit=0
 # 更新中にランチャーが置換されても、解析済みの終了処理を実行する。
 {
     DOTFILES_PRUNE_OUTSIDE_UV=1 "$UV" run --no-project --script "${SCRIPT_DIR}/libexec/update_dotfiles.py" "$@" || run_exit=$?
     if [[ "$run_exit" == 0 && "$help_requested" == 0 && "${1:-}" != "logs" ]]; then
         "$HOME/.local/bin/dotfiles-post-apply" --prune-only-if-minimal "$@" || run_exit=$?
-    fi
-    if ((self_update_failed != 0)); then
-        echo "uvの自己更新に失敗しました。既存のuvでdotfiles更新を実行し、次回のupdate-dotfiles起動時に自己更新を再試行します。対応不要（dotfilesの更新処理は継続しました）。" >&2
     fi
     exit "$run_exit"
 }

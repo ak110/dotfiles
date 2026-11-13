@@ -59,12 +59,19 @@ def _write_fake_uv(path: pathlib.Path, name: str) -> None:
         f"""#!/usr/bin/env bash
 printf '\\036{name}\\000' >> "$UV_CALL_LOG"
 printf '%s\\000' "$@" >> "$UV_CALL_LOG"
+if [[ ( "${{STALL_STAGE:-}}" == 'uvの自己更新' && "${{1-}} ${{2-}}" == 'self update' ) ||
+      ( "${{STALL_STAGE:-}}" == '管理Pythonの更新' && "${{1-}} ${{2-}} ${{3-}}" == 'python install --upgrade' ) ||
+      ( "${{STALL_STAGE:-}}" == '管理Pythonの導入' && "${{1-}} ${{2-}} ${{3-}}" == 'python install 3.15' ) ]]; then sleep 60; fi
 if [[ "${{1-}}" == "self" && "${{2-}}" == "update" ]]; then
     [[ -z "${{UV_SELF_UPDATE_MESSAGE-}}" ]] || printf '%s\n' "$UV_SELF_UPDATE_MESSAGE" >&2
     exit "${{UV_SELF_UPDATE_EXIT:-0}}"
 fi
 if [[ "${{1-}} ${{2-}}" == "python install" ]]; then
+    if [[ "${{STALL_UPGRADE:-0}}" == 1 && "${{3-}}" == --upgrade ]]; then while :; do :; done; fi
     exit "${{PYTHON_UPGRADE_EXIT:-0}}"
+fi
+if [[ "${{1-}} ${{2-}}" == "python find" ]]; then
+    exit "${{PYTHON_FIND_EXIT:-0}}"
 fi
 if [[ "${{1-}}" == "run" ]]; then
     printf 'uv run stderr\n' >&2
@@ -80,7 +87,7 @@ def _make_path(tmp_path: pathlib.Path, *, with_uv: bool) -> pathlib.Path:
     """ランチャーが必要とするコマンドだけを持つPATHを作成する。"""
     path_dir = tmp_path / "path"
     path_dir.mkdir()
-    for command in ("bash", "sh", "dirname", "readlink"):
+    for command in ("bash", "sh", "dirname", "readlink", "timeout", "sleep"):
         command_path = shutil.which(command)
         assert command_path is not None
         (path_dir / command).symlink_to(command_path)
@@ -111,6 +118,10 @@ def _run_launcher(
     self_update_message: str = "",
     installer_exit: int | None = None,
     python_upgrade_exit: int = 0,
+    python_find_exit: int = 0,
+    timeout_available: bool = True,
+    stall_upgrade: bool = False,
+    stall_stage: str = "",
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """隔離したHOMEとPATHでLinuxランチャーを実行する。"""
     home = tmp_path / "home"
@@ -121,10 +132,23 @@ def _run_launcher(
         post_apply.write_text('#!/usr/bin/env bash\nprintf "%s\\0" "$@" >> "$POST_APPLY_CALL_LOG"\n', encoding="utf-8")
         post_apply.chmod(0o755)
     path_dir = _make_path(tmp_path, with_uv=path_uv)
+    if not timeout_available:
+        (path_dir / "timeout").unlink()
+    if stall_upgrade or stall_stage:
+        timeout = shutil.which("timeout")
+        assert timeout is not None
+        (path_dir / "timeout").unlink()
+        (path_dir / "timeout").write_text(
+            '#!/usr/bin/env bash\n[[ "$1" == --kill-after=10 ]] || exit 99\nshift 2\n'
+            f'exec "{timeout}" --kill-after=.1 .3 "$@"\n',
+            encoding="utf-8",
+        )
+        (path_dir / "timeout").chmod(0o755)
     if installer_exit is not None:
         installer = path_dir / "curl"
         installer.write_text(
             "#!/usr/bin/env bash\n"
+            'if [[ "${STALL_STAGE:-}" == "uvの導入" ]]; then sleep 60; fi\n'
             '[[ "${*: -1}" == https://astral.sh/uv/install.sh ]] || exit 33\n'
             f"[[ {installer_exit} == 0 ]] || exit {installer_exit}\n"
             "cat <<'INSTALLER'\n"
@@ -149,6 +173,9 @@ def _run_launcher(
             "UV_SELF_UPDATE_MESSAGE": self_update_message,
             "UV_RUN_EXIT": str(run_exit),
             "PYTHON_UPGRADE_EXIT": str(python_upgrade_exit),
+            "PYTHON_FIND_EXIT": str(python_find_exit),
+            "STALL_UPGRADE": "1" if stall_upgrade else "0",
+            "STALL_STAGE": stall_stage,
             "POST_APPLY_CALL_LOG": str(tmp_path / "post-apply-calls"),
         }
     )
@@ -210,6 +237,7 @@ def test_native_uv_updates_before_run_and_preserves_arguments(tmp_path: pathlib.
     assert calls == [
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
+        ["native", "python", "find", "3.15"],
         [
             "native",
             "run",
@@ -242,6 +270,7 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
     assert calls == [
         ["native", "self", "update"],
         ["native", "python", "install", "--upgrade", "3.15"],
+        ["native", "python", "find", "3.15"],
         [
             "native",
             "run",
@@ -250,18 +279,16 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
             str(_ROOT / "libexec" / "update_dotfiles.py"),
         ],
     ]
-    assert result.stderr.splitlines() == ["uv run stderr", _UPDATE_WARNING]
+    assert result.stderr.splitlines() == [_UPDATE_WARNING, "uv run stderr"]
 
 
 @_LINUX_ONLY
-def test_python_upgrade_failure_stops_before_dependency_installation(tmp_path: pathlib.Path) -> None:
-    """管理Pythonを更新できない時は、古い実行体で依存を導入せず失敗を返す。"""
-    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, python_upgrade_exit=17)
-    assert result.returncode == 17
-    assert calls == [
-        ["native", "self", "update"],
-        ["native", "python", "install", "--upgrade", "3.15"],
-    ]
+def test_python_upgrade_failure_continues_with_existing_python(tmp_path: pathlib.Path) -> None:
+    """更新本体まで進み、本体の代用品が返す集約済みの1を伝播する。"""
+    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, python_upgrade_exit=17, run_exit=1)
+    assert result.returncode == 1, result.stderr
+    assert any(call[1:3] == ["python", "find"] for call in calls)
+    assert any(call[1] == "run" for call in calls)
     assert not (tmp_path / "post-apply-calls").exists()
 
 
@@ -442,57 +469,18 @@ def _windows_warning_script(content: str) -> str:
     return script.removesuffix('"')
 
 
+# test-copy-contract: Windowsの配布形式と旧batchが再開する終了処理の構造を検査する。
 def test_windows_launcher_preserves_encoding_and_uv_contract() -> None:
-    """Windows側の行末、公式uv必須、自己更新、引数伝播を固定する。"""
+    """WindowsはCP932・CRLFと解析済み終了処理を保ち、起動前の更新を補助へ委ねる。"""
     raw = _WINDOWS_LAUNCHER.read_bytes()
     assert b"\n" not in raw.replace(b"\r\n", b"")
     content = raw.decode("cp932")
-
-    native = 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"'
-    missing = 'if not exist "%UV%" goto missing_uv'
-    update_state = 'set "UV_SELF_UPDATE_FAILED=0"'
-    process_loop_guard = 'if not "%~1"=="logs" if not "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" call :update_uv %*'
-    update = 'powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\\libexec\\update_uv.ps1" "%UV%"'
-    update_failure = 'if errorlevel 1 set "UV_SELF_UPDATE_FAILED=1"'
-    run = '"%UV%" run --no-project --script "%SCRIPT_DIR%\\libexec\\update_dotfiles.py" %*'
-    capture_run_exit = 'call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"'
-    warning_state = f'set "UV_SELF_UPDATE_WARNING={_UPDATE_WARNING}"'
-    warning = 'if "%UV_SELF_UPDATE_FAILED%"=="1" powershell.exe -NoLogo -NoProfile -Command '
-    return_run_exit = "exit /b !UPDATE_DOTFILES_EXIT!"
-    assert native in content
-    assert missing in content
-    assert update_state in content
-    assert process_loop_guard in content
-    assert update in content
-    assert update_failure in content
-    assert 'set "UV=uv"' not in content
-    assert run in content
-    assert capture_run_exit in content
-    assert warning_state in content
-    assert warning in content
-    warning_script = _windows_warning_script(content)
-    assert "$env:UV_SELF_UPDATE_WARNING" in warning_script
-    assert "[Console]::IsErrorRedirected" in warning_script
-    assert "[System.Text.UTF8Encoding]::new($false)" in warning_script
-    assert "[Console]::Error.WriteLine($message)" in warning_script
-    assert f"echo {_UPDATE_WARNING}" not in content
-    assert return_run_exit in content
-    assert "self update || exit /b 1" not in content
-    assert (
-        content.index(native)
-        < content.index(missing)
-        < content.index(run)
-        < content.index(capture_run_exit)
-        < content.index(warning_state)
-        < content.index(warning)
-        < content.index(return_run_exit)
-    )
-    assert content.index("\r\n:start\r\n") < content.index(update_state) < content.index(process_loop_guard)
-    assert "goto start\r\n:run\r\n" in content
-    assert content.index("\r\n:update_uv\r\n") < content.index(update) < content.index(update_failure)
-    python_upgrade = '"%UV%" python install --upgrade 3.15'
-    assert content.index(update_failure) < content.index(python_upgrade) < content.index("\r\n:start\r\n")
-    assert "exit /b %ERRORLEVEL%" in content[content.index(python_upgrade) : content.index("\r\n:start\r\n")]
+    assert 'set "UV=%USERPROFILE%\\.local\\bin\\uv.exe"' in content
+    assert "update_bootstrap.ps1" in content
+    assert "python install --upgrade" not in content
+    assert 'call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"' in content
+    assert "exit /b !UPDATE_DOTFILES_EXIT!" in content
+    assert "[Console]::IsErrorRedirected" in _windows_warning_script(content)
 
 
 @pytest.mark.skipif(shutil.which("powershell.exe") is None, reason="Windows PowerShellが必要")
@@ -676,6 +664,8 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     assert job_source.count(endpoint) == 1
     job_source = job_source.replace(endpoint, 'sys.executable, str(_ROOT / "libexec/prune.py")')
     (libexec / "update_dotfiles_job.py").write_text(job_source, encoding="utf-8")
+    for name in ("update_bootstrap.ps1", "locking_process.ps1"):
+        shutil.copy2(_ROOT / "libexec" / name, libexec / name)
     prune_calls = tmp_path / "prune-calls"
     (libexec / "prune.py").write_text(
         "import pathlib, sys\n"
@@ -732,3 +722,57 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     assert (prune_calls.read_text(encoding="utf-8").splitlines() if prune_calls.exists() else []) == (
         [] if run_exit else ["post-apply"]
     )
+
+
+@_LINUX_ONLY
+def test_missing_python_aborts_after_install_recovery(tmp_path: pathlib.Path) -> None:
+    """既存3.15が無く、再試行しても導入できない場合は本体へ進まない。"""
+    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, python_upgrade_exit=17, python_find_exit=2)
+    assert result.returncode == 17
+    assert calls.count(["native", "python", "install", "3.15"]) == 2
+    assert not any(row[1] == "run" for row in calls)
+
+
+@_LINUX_ONLY
+def test_missing_timeout_never_starts_unbounded_update(tmp_path: pathlib.Path) -> None:
+    """時間上限を保証できなければ、外部の更新操作を始めない。"""
+    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, timeout_available=False)
+    assert result.returncode == 127
+    assert not calls
+    assert "coreutils" in result.stderr
+
+
+@_LINUX_ONLY
+def test_bootstrap_timeout_continues_with_existing_python(tmp_path: pathlib.Path) -> None:
+    """管理Python更新の無期限停止を時間切れに変換し、既存Pythonで本体へ進む。"""
+    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, stall_upgrade=True)
+    assert result.returncode == 0, result.stderr
+    assert "exit=124" in result.stderr
+    assert any(row[1] == "run" for row in calls)
+
+
+@pytest.mark.parametrize("stage", ["uvの導入", "uvの自己更新", "管理Pythonの更新", "管理Pythonの導入"])
+@pytest.mark.parametrize("failure_code", [17, 124])
+@_LINUX_ONLY
+def test_bootstrap_native_failures_from_public_launcher(tmp_path: pathlib.Path, stage: str, failure_code: int) -> None:
+    """Python起動前の4段でもnative失敗/timeout結果を分類し、続行段は本体へ進む。"""
+    result, calls = _run_launcher(
+        tmp_path,
+        native_uv=stage != "uvの導入",
+        path_uv=False,
+        run_exit=1,
+        self_update_exit=failure_code if stage == "uvの自己更新" else 0,
+        python_upgrade_exit=failure_code if stage in {"管理Pythonの更新", "管理Pythonの導入"} else 0,
+        python_find_exit=2 if stage == "管理Pythonの導入" else 0,
+        installer_exit=failure_code if stage == "uvの導入" else None,
+        stall_stage=stage if failure_code == 124 else "",
+    )
+    assert stage in result.stderr
+    if stage in {"uvの自己更新", "管理Pythonの更新"}:
+        assert any(call[1:2] == ["run"] for call in calls)
+        assert result.returncode == 1
+    else:
+        assert not any(call[1:2] == ["run"] for call in calls)
+        if stage == "管理Pythonの導入":
+            assert sum(call[1:] == ["python", "install", "3.15"] for call in calls) == 2
+        assert result.returncode != 0

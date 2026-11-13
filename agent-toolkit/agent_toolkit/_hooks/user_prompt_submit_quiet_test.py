@@ -10,7 +10,7 @@ from agent_toolkit._hooks.posttooluse import USER_CONFIRMATION_PENDING_KEY
 
 
 @pytest.mark.parametrize("pending", [False, True])
-def test_simultaneous_prompt_notices_deliver_bugfix_once(
+def test_confirmation_notice_is_delivered_once_per_pending_context(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     pending: bool,
@@ -25,8 +25,9 @@ def test_simultaneous_prompt_notices_deliver_bugfix_once(
     output = capsys.readouterr().out
     if pending:
         body = json.loads(output)["hookSpecificOutput"]["additionalContext"]
-        assert body.count("`agent-basics:bugfix`") == 1
-        assert "認可を要する操作" in body
+        assert body.count("`agent-toolkit:user-confirmation-and-report`スキルを起動せよ") == 1
+        assert "`agent-basics:bugfix`" not in body
+        assert "認可を要する操作" not in body
     else:
         assert not output
     assert user_prompt_submit.main(payload) == 0
@@ -34,4 +35,5 @@ def test_simultaneous_prompt_notices_deliver_bugfix_once(
     session_state.update_state(session_id, lambda state: {**state, USER_CONFIRMATION_PENDING_KEY: True})
     assert user_prompt_submit.main(payload) == 0
     renewed = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert renewed.count("`agent-basics:bugfix`") == 1
+    assert renewed.count("`agent-toolkit:user-confirmation-and-report`スキルを起動せよ") == 1
+    assert "`agent-basics:bugfix`" not in renewed

@@ -15,7 +15,6 @@
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 | 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 
 ## 原因と対策
@@ -86,7 +85,8 @@
 過去項目との比較では、今回と過去の目的、事象、原因、適用条件、実装・配布状態、および処理後の観測を対応付ける。
 `similar_records`が空の場合も、本文を検索して現物と比較する。
 比較結果は、未反映、未適用、範囲不足、適用後の同原因、別原因、効果未確認に分け、根拠の記録位置を残す。
-別原因の事象を過去対策の不足と断定せず、適用機会の無い対策は効果未確認とする。
+原因への処置の効果と、同じ害の型への保証を区別して、bugfixの過去対策との比較に従う。
+別原因でも同じ害の型なら反復として記録し、適用機会の無い対策は効果未確認とする。
 実装・検証と後日効果、検出策の実測と文書試行を区別する。
 完成条件が後日の効果観測を明示する項目は、観測条件と再開手段を保持して公開工程の延期adoptへ渡す。
 一般の効率改善には長期観測を一律に加えない。

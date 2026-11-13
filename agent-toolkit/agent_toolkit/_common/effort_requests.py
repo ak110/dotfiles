@@ -82,6 +82,23 @@ def request(
     processes = payload.get("processes", [])
     if not processes:
         raise ValueError("所有MCPを確認できない。親へ同じ会話の再開を依頼する")
+    declaration = payload.get("effort_receiver")
+    supported = False
+    try:
+        owner = session_registry.ProcessIdentity.parse(processes[0])
+        if isinstance(declaration, dict) and declaration.get("version") == 1:
+            receiver = session_registry.ProcessIdentity.parse(declaration.get("process"))
+            current = session_registry.ProcessIdentity.of(owner.pid)
+            supported = receiver == owner and current == owner
+    except ValueError, TypeError, KeyError:
+        pass
+    if not supported:
+        return {
+            "session_id": target,
+            "error": "所有MCPの稼働プロセスはeffort要求に未対応、または対応する世代を確認できない",
+            "request_sent": False,
+            "next_action": "要求は未送信。他の委譲先の作業と会話を保護してから所有MCPを更新・再起動する",
+        }
     token = uuid.uuid4().hex
     request_path = path.parent / f"{token}.effort-request"
     response_path = request_path.with_suffix(".effort-response")

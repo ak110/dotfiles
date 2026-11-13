@@ -10,9 +10,7 @@
 | 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
 | 参照基準の適用前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/SKILL.md` |
 | 参照基準の適用前 | `../../user-confirmation-and-report/references/user-utterance-incorporation.md` |
-| 実作業の経験の恒久化候補を選ぶ前 | `agent-basics:writing-standards/references/investigation-experience.md` |
 
 ## 設計・実装方針
 

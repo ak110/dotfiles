@@ -89,6 +89,7 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
         assert successor.launch_kind == launch_kind
         assert successor.model_type == predecessor.model_type == "execute"
         assert requested == ["execute"] * 2
+        assert not any(item["scope"] == "model-override" for item in response.get("warnings", []))
         assert len(first.start_calls) == 1
         assert len(second.start_calls) == 1
         assert "追送全文" in successor.prompt
@@ -133,6 +134,31 @@ async def test_public_handoff_selects_explicit_model_and_keeps_full_input(
         assert "訂正の全要件" in successor.prompt
         assert "最初の応答全文" in successor.prompt
         assert "確定済み成果と残工程" in successor.prompt
+
+
+@pytest.mark.parametrize("override", [None, "chores"])
+@pytest.mark.asyncio
+async def test_handoff_direct_candidate_warning_and_return_to_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path, override: str | None
+) -> None:
+    """省略時の直接候補継承と、工程名明示による現在設定への復帰を区別する。"""
+    del record_extractor
+    before = "codex:before/medium"
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:configured/low")
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await manager.start(before, "元の依頼", str(tmp_path))
+        previous = manager.sessions[started["session_id"]]
+        _complete(previous, message="残工程")
+        response = await mcp_tools.start(handoff_from=previous.session_id, model_type=override)
+        successor = manager.sessions[response["session_id"]]
+        warnings = [item for item in response.get("warnings", []) if item["scope"] == "model-override"]
+        assert bool(warnings) == (override is None)
+        assert successor.model_type == (before if override is None else "chores")
+        assert successor.model == ("before" if override is None else "configured")
+        if warnings:
+            assert before in warnings[0]["message"]
+            assert "元の工程名" in warnings[0]["message"]
 
 
 @pytest.mark.asyncio
@@ -376,3 +402,27 @@ def test_handoff_prepares_conversation_through_registered_script(
     assert str(record) in prompt
     # 成功時の両出力は会話の流れの生成に使い終えるため、診断ファイルとして残さない。
     assert sorted(path.name for path in conversation.parent.iterdir() if path.name.startswith("prepare.")) == []
+
+
+@pytest.mark.parametrize("failure", ["exit", "missing", "timeout"])
+def test_handoff_failure_redacts_saved_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path, failure: str
+) -> None:
+    """抽出失敗だけを診断として秘匿し、抽出の成否判定を保つ。"""
+    del record_extractor
+    directory = tmp_path / "diagnostics"
+    directory.mkdir()
+    monkeypatch.setattr(session_handoff.managed_temp, "create_output_temp", lambda *_args: directory)
+
+    def extract(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(command, 270, output=b"api_key=fake-output", stderr=b"password=fake-error")
+        return subprocess.CompletedProcess(command, 1 if failure == "exit" else 0, "api_key=fake-output", "password=fake-error")
+
+    monkeypatch.setattr(session_handoff.process_tree, "run_with_timeout", extract)
+    session = state.SessionState("codex-session", str(tmp_path), engine="codex", prompt="本文", model_type="execute")
+    with pytest.raises(ActionableError):
+        session_handoff.prepare_prompt(session)
+    for name in ("prepare.stdout", "prepare.stderr"):
+        saved = (directory / name).read_text(encoding="utf-8")
+        assert "fake-output" not in saved and "fake-error" not in saved

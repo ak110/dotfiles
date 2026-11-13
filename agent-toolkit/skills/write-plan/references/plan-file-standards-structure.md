@@ -7,13 +7,10 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 共通参照AWI読解前 | `../../wi-standards/references/cross-repository-submission.md` |
-| 参照基準の適用前 | `../../wi-standards/references/wi-standards-origin.md` |
-| 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-severity.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-actions.md` |
 | 参照基準の適用前 | `agent-basics:bugfix/references/root-cause-prevention.md` |
 | 参照基準の適用前 | `../../../share/exec-review-responses.md` |
-| 参照基準の適用前 | `../../process-wi/SKILL.md` |
 
 ## 計画ファイルの構成
 
@@ -83,6 +80,5 @@ WIの再導出は`関連WI: なし`・対応節欠落・現物との乖離確認
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIとUWIの共通規範の基準を適用する前 | `../../wi-standards/SKILL.md` |
 | 計画ファイル作成基準：初回起草の雛形の基準を適用する前 | `plan-file-standards-template.md` |
 | 計画ファイル作成基準：検証と公開工程の基準を適用する前 | `plan-file-standards-verification.md` |

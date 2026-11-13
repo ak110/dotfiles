@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| セッション状態と内部フラグの参照範囲を選ぶ前 | `session-state-and-flags.md` |
-
 ## 待機と終了結果・通知
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |

@@ -30,6 +30,7 @@ from agent_toolkit._hooks.pretooluse.large_reads import (
     display_read_paths,
 )
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
+from agent_toolkit._hooks.pretooluse.read_delivery_cache import HOOK_PAYLOAD, _input_cached
 from agent_toolkit._hooks.pretooluse.read_delivery_paths import _document_owner, _read_paths
 from agent_toolkit._hooks.pretooluse.read_delivery_receipts import _record_receipts
 lazy from agent_toolkit._common import task_documents
@@ -84,6 +85,39 @@ def _delivered_launch_text(text: str) -> str:
     if not rest.rstrip().endswith("</atk-auto>"):
         return text
     return rest[len(_DELIVERY_OPENING) : rest.rfind("</atk-auto>")]
+
+
+@_input_cached
+def incidental_wi_author() -> bool:
+    """正式な起動本文が付随型のWI投入担当を指定している場合だけ真にする。"""
+    payload = HOOK_PAYLOAD.get() or {}
+    path = payload.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return False
+    agent = payload.get("agent_id")
+    if agent and agent != "main":
+        path = str(pathlib.Path(path).parent / str(payload.get("session_id", "")) / "subagents" / f"agent-{agent}.jsonl")
+    for raw in transcript.read_transcript_lines(path) or ():
+        try:
+            entry = json.loads(raw)
+        except ValueError:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        for text in _user_texts(entry):
+            launch = _delivered_launch_text(text)
+            first = launch.splitlines()[:1]
+            role = task_documents.launched_task_document(first[0]) if first else None
+            if role is None:
+                continue
+            if role.resolve() != plugin_resources.plugin_root().resolve() / "share/add-wi.subagent.md":
+                return False
+            try:
+                inputs = task_documents.task_prompt_inputs(launch)
+            except ValueError:
+                return False
+            return inputs.get("投入経路", "付随型") == "付随型"
+    return False
 
 
 def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> set[pathlib.Path]:
@@ -182,6 +216,8 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                                 agent,
                                 [*previous, *document_reads.receipt_candidates([target])],
                                 [delivered, *bodies],
+                                host="codex" if is_codex_payload(payload) else "claude",
+                                project=payload.get("cwd"),
                             )
             # 保存済みsessionの正式な参照だけの配送も、同じ実体指定として受理する。
             legacy = re.search(

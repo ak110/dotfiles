@@ -20,10 +20,6 @@ Apache License 2.0の著作権・許諾表示は[第三者表示](../../../THIRD
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 機能の正しさを確認するテスト層を選ぶ時 | `testing-selection.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

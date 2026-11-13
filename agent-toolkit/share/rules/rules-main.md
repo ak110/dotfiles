@@ -18,7 +18,7 @@
 
 取り消しが難しい操作前は指示と対象の整合を確かめる。
 
-継続的な方針の反映先は読込表の「恒久化・リファクタリング」で判定し、凍結後は変更受入・レビュー指摘管理表を使う。
+継続的な方針（受領した指摘・WIコメント・UWI回答から`agent-toolkit:user-confirmation-and-report`で分けた候補を含む）の反映先は読込表の「恒久化・リファクタリング」で判定し、凍結後は変更受入・レビュー指摘管理表を使う。
 計画がなくても必要時に読む成果物へ反映し、担当外は方針と出所を所有者へ渡す。
 
 ### 目的との一致の確認
@@ -110,7 +110,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 改善点を発見し、処置・AWI化・報告を行う前 | `../main-improvements.md` |
-| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards-design.md` |
+| 会話で継続的な方針を受け取った時（操作対象外: ユーザー発話・回答の受領） | `../../skills/write-plan/references/plan-file-standards-design.md` |
 | process-wi中の`気付いた改善点:`の処置・AWI化ステータス決定、追加AWIへの方針反映、ユーザーの「即時対応」指示を扱う前 | `../../skills/process-wi/references/immediate-fix.md` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` |
 

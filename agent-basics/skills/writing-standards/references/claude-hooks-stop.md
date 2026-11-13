@@ -18,4 +18,4 @@
 | --- | --- |
 | 遮断の条件と再帰呼び出し対策・入力に関する判断・作業の前 | `claude-hooks-stop-common.md` |
 | Codexの差分に関する判断・作業の前 | `claude-hooks-stop-codex.md` |
-| 委譲先での発火に関する判断・作業の前 | `claude-hooks-stop-delegates.md` |
+| 委譲先での発火に関する判断・作業の前（操作対象外: hookの適用範囲の設計） | `claude-hooks-stop-delegates.md` |

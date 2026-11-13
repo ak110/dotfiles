@@ -9,8 +9,6 @@
 | 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
 | 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
 | 初回実装で「前提を疑う観点」を適用する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/managed-temp/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/commit/SKILL.md` |
 | レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
 | CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` |
@@ -19,7 +17,6 @@
 | 手動観測を保存する前 | `verification-evidence-observation.md` |
 | `検証結果`を書く前 | `verification-evidence-records.md` |
 | 変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-verification-failure.md](../skills/process-wi/references/lane-verification-failure.md) |
-| `実装なし`の確定後かレビュー収束後に統合入力を確定するとき、またはメインから統合指示を受領したとき | `${CLAUDE_PLUGIN_ROOT}/share/lane-integration.subagent.md` |
 | ユーザーが直接記入した質問への回答下書きを作成する直前 | `agent-toolkit:wi-standards`の`SKILL.md`（語の基準） |
 | `レビュー修正担当`か`CI修正担当`として修正へ着手する前と、レビュー修正の履歴統合に着手する前 | `exec-review-fix.md` |
 | レビュー指摘管理表へ担当が行を足す前 | `review-table-operations.md` |
@@ -101,8 +98,8 @@
 14. 変更範囲の検証を実行する前に（計画なし、レビュー修正、CI修正、および会話圧縮後の再開時を含む）、直接影響範囲を確定する。
     1. 外部から観測可能な文言や挙動を変更した場合は、`plan-file-standards.md`「要件・外部仕様」の直接影響範囲に関する記述に従い、検索語を固定文字列で個別に検索する。
        動的に値を組み立てる生成コードの場合は、変更前の実行結果から旧値を列挙するか、生成元を利用するすべてのテストを実行する。
-    2. 検出された直接影響範囲の実装ファイルに対応するテストを、変更範囲の検証対象に追加する。
-       追加しない場合はその理由を記録する。
+    2. `agent-basics:check-execution/references/verification-scope-selection.md`「範囲の決め方」に従い、探索で検出した試験と、生成値・共有ヘルパー・一覧全体を検査する利用側試験を実行対象へ引き継ぐ。
+       実装ファイルに直接対応する試験に対象を限定せず、除外した候補は理由を記録する。
     3. 計画起草時に確定した検証対象と実装の現物を突き合わせ、`agent-toolkit:/share/verification-operations.md`の類型に基づいて漏れていた対象を追加する。
     4. 検索語、検出結果、採否、テスト実行の採否、検証対象ごとの結果、および除外理由を、自身のセッションのmanaged-temp内のファイルへ保存し、`検証結果`から参照できるようにする。
     5. 検証の実行後、手順2および手順3で選定した消費側のテストごとに、保存された結果の合否を紐付ける。

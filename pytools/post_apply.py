@@ -26,6 +26,7 @@ from pathlib import Path
 import platformdirs
 from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import dotfiles_mode, process_tree
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 from pytools import update_ssh_config
 from pytools._internal import (
@@ -88,6 +89,14 @@ def _run_id() -> str:
     return os.environ.get(_UPDATE_RUN_ID_ENV, f"post-apply-{os.getpid()}")
 
 
+class _DiagnosticFormatter(logging.Formatter):
+    """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """永続ログ向けに資格情報を除いた本文を返す。"""
+        return redact_secrets(super().format(record))
+
+
 class _BelowWarningFilter(logging.Filter):
     """WARNING未満のレコードだけを通す。"""
 
@@ -146,7 +155,7 @@ def _configure_logging() -> Generator[bool]:
         else:
             cleanup.callback(file_handler.close)
             file_handler.setLevel(logging.INFO)
-            file_handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
+            file_handler.setFormatter(_DiagnosticFormatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
             handlers.append(file_handler)
             persistent_log_ready = True
         root_logger = logging.getLogger()

@@ -31,7 +31,7 @@ def test_generated_read_output_records_current_body(scenario, host_environ, host
     assert str(path) in guide
     _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
     step = read_delivery.acquisition_step(read_triggers.ReadTarget(path), "codex")
-    command = step.split("`", 2)[1]
+    command = json.loads((step).split("tools.exec_command(", 1)[1].splitlines()[0].removesuffix(");"))["cmd"]
     if syntax == "for":
         command = f'for f in {shlex.quote(str(path))}; do cmp -s "$f" "$f"; done && {command}'
     elif syntax == "variable":

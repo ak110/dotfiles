@@ -86,7 +86,11 @@ _NEXT_EDGE_FAILURE = (
 )
 _NEXT_COMPONENT_LINK = "不可分成分の構成WIを有効な結合条件で連結させるか、初回選定の記録から成分を分け直す"
 _NEXT_COMPONENT_LANE = "不可分成分の全WIを同じ初回レーンへ割り当てる"
-_NEXT_LANE_BOUND = "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う"
+_NEXT_LANE_BOUND = (
+    "メインの直接作業・別のサブエージェント・既存レーンへの合流を品質・費用・時間で比較し、"
+    "統合済み・後段を含めて上限内のレーンへまとめ、複数成分は同じレーンで順に扱う。"
+    "担当者の選択とレーンという資源の数を区別し、selection-procedure-addition.md手順5に従う"
+)
 
 
 def _explicit_model(value: object) -> bool:

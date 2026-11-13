@@ -23,8 +23,11 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 def test_unknown_body_preserves_pre_and_post_operation_classification(tmp_path, command):
     """元入力と別形態を前後イベントへ渡し、取得記録の例外も検出する。"""
     inputs = {"command": command}
-    assert operation_skills.operation_matches("wi-standard-save", "Bash", inputs, str(tmp_path)) is True
-    assert operation_skills.operation_matches("wi-report-save", "Bash", inputs, str(tmp_path)) is False
+    assert any(
+        operation_skills.operation_matches(operation, "Bash", inputs, str(tmp_path))
+        for operation in ("wi-standard-commit", "wi-standard-dry-run")
+    )
+    assert operation_skills.operation_matches("wi-report-commit", "Bash", inputs, str(tmp_path)) is False
     payload = {"session_id": "unknown-wi-body", "cwd": str(tmp_path), "tool_name": "Bash", "tool_input": inputs}
     for event, entry in (("PreToolUse", "pretooluse"), ("PostToolUse", "posttooluse")):
         result = _run_hook_in_process(entry, {**payload, "hook_event_name": event, "tool_response": ""})
@@ -42,5 +45,8 @@ def test_known_and_unknown_bodies_are_classified_independently(tmp_path):
     for option in ("--body-file ", "--body-file="):
         command = f'atk wi add {option}"$d/file.md"; atk wi add {option}"{report}"; atk wi edit x.md {option}"{normal}"'
         inputs = {"command": command}
-        assert operation_skills.operation_matches("wi-standard-save", "Bash", inputs, str(tmp_path)) is True
-        assert operation_skills.operation_matches("wi-report-save", "Bash", inputs, str(tmp_path)) is True
+        assert any(
+            operation_skills.operation_matches(operation, "Bash", inputs, str(tmp_path))
+            for operation in ("wi-standard-commit", "wi-standard-dry-run")
+        )
+        assert operation_skills.operation_matches("wi-report-commit", "Bash", inputs, str(tmp_path)) is True

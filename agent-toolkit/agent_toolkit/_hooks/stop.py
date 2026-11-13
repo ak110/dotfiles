@@ -20,9 +20,11 @@
 
 import importlib
 import json
+import os
 import sys
 
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
+lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import transcript as _transcript
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
@@ -190,16 +192,26 @@ def evaluate(payload_text: str) -> dict[str, object]:
                 update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
                 return _finalize({})
             update_state(session_id, lambda item: _set_consecutive_block_count(item, current_count + 1))
-        return _finalize({"decision": "block", "reason": "\n\n".join([*block_reasons, *notifications])})
+        return _finalize(
+            {"decision": "block", "reason": "\n\n".join([*block_reasons, *notifications, *_continuation_notice()])}
+        )
     if session_id:
         update_state(session_id, lambda item: _set_consecutive_block_count(item, 0))
     result: dict[str, object] = {"continue": False} if yield_for_delivery else {}
     if notifications:
         result["hookSpecificOutput"] = {
             "hookEventName": "Stop",
-            "additionalContext": "\n\n".join(notifications),
+            "additionalContext": "\n\n".join([*notifications, *_continuation_notice()]),
         }
     return _finalize(result)
+
+
+def _continuation_notice() -> tuple[str, ...]:
+    """継続を返すときに、agents_serverの委譲先へ委譲元が受け取る本文の範囲を1回だけ伝える。
+
+    継続を起こす判定は`CHECK_MODULE_NAMES`とCodex用の組に分かれるため、各判定ではなく集約側で添える。
+    """
+    return (_delegated_session.FINAL_RESPONSE_NOTICE,) if _delegated_session.is_delegated(os.environ) else ()
 
 
 def _approve() -> None:

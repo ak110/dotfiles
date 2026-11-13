@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 後続へ渡す検証を起動する前 | `verification-evidence-observation.md` |
-
 ## 保存した実行出力の取得
 
 出力を保存する前に、生成元ツールが公開している出力オプションを確認し、目的に合致したフォーマットと対象範囲を選択する。

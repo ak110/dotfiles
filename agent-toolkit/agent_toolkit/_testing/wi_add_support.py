@@ -98,7 +98,7 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _awi_cause_items_table() -> str:
-    """AWIの`## 原因分析`の2列表（8行）を、計画の調査表と同じ記入値で組み立てる。"""
+    """AWIの`## 原因分析`の2列表（9行）を、計画の調査表と同じ記入値で組み立てる。"""
     rows = [plan_fixture.item_row(row, plan_fixture.BUG_FILLER) for row in add_module.AWI_CAUSE_TABLE_ROWS]
     return "\n".join(["| 項目 | 内容 |", "| --- | --- |", *rows])
 
@@ -121,7 +121,7 @@ _PREVIOUS_AWI_CAUSE_ITEMS_TABLE = "\n".join(
 
 
 def _with_direct_cause(body: str, value: str) -> str:
-    """通常AWIの本文へ、原因分析表の作り込み要因のL1へ原因の記述を置いた原因分析（8行表）を加える。"""
+    """通常AWIの本文へ、原因分析表の作り込み要因のL1へ原因の記述を置いた原因分析（9行表）を加える。"""
     cause = plan_fixture.bug_cause_table().replace(
         f"| 作り込み要因 | {plan_fixture.CAUSE_FILLER} |", f"| 作り込み要因 | {value} |", 1
     )

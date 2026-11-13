@@ -12,10 +12,6 @@ CIが実行しないチェックと、変更ファイルを対象にするcommit
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 必要なテストが収集され実行されたことを個別の結果から確かめ、追加検証を選ぶ前 | `diagnostics-results.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

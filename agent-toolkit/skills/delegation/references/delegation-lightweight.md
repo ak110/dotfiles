@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲プロンプトや返却の文章を作成・検収する前 | `quality-standards.md` |
-| explore・shellの入力、権限、受領を確定する前 | `base-contract.md`、`mandatory-rules.md`、`sending.md`、`receiving.md` |
-| 作業全体の分割を判定する前 | `routing.md` |
-| 委譲先のモデルを選ぶ前 | `process-model-settings.md` |
-| 完了通知の処理、ならびに待機や停滞の判定を行う時 | `waiting-and-monitoring.md` |
-| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲プロンプトや返却の文章を作成・検収する前（操作対象外: 自身の成果物・評価方法の検討） | `quality-standards.md` | | |
+| explore・shellの入力、権限、受領を確定する前 | `base-contract.md`、`mandatory-rules.md`、`sending.md`、`receiving.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/base-contract.md`、`read:agent-toolkit:*/skills/delegation/references/mandatory-rules.md`、`read:agent-toolkit:*/skills/delegation/references/sending.md`、`read:agent-toolkit:*/skills/delegation/references/receiving.md` |
+| 作業全体の分割を判定する前 | `routing.md` | | |
+| 委譲先のモデルを選ぶ前 | `process-model-settings.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
+| 完了通知の処理、ならびに待機や停滞の判定を行う時 | `waiting-and-monitoring.md` | | |
+| 結果本文の保存期間と回収手順を決める前 | `agent-toolkit:managed-temp/SKILL.md` | | |
 
 ## explore・shellの起動
 

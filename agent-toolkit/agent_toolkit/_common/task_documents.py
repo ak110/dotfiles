@@ -126,6 +126,9 @@ class TaskDocumentDeclaration:
     writes_worktree: bool
     continuations: tuple[ContinuationDeclaration, ...] = ()
     model_type: str | None = None
+    # 共通の状態行（`状態:`）以外に、返却形式が先頭の固定行として定める値。
+    # `:`で終わる値は前方一致、それ以外は行全体の一致（直後の全角括弧の補足を許す）で受理する。
+    result_heads: tuple[str, ...] = ()
 
     @property
     def accepted(self) -> frozenset[str]:
@@ -282,6 +285,7 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
             launch_kind=mode,
             writes_worktree=writes,
             model_type=values["model_type"],
+            result_heads=tuple(values.get("result_heads", [])),
             continuations=tuple(
                 ContinuationDeclaration(
                     instruction=entry["instruction"],

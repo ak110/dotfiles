@@ -19,12 +19,12 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 検証結果と実行記録・検証記録の引き渡しに関する判断・作業の前 | `report-formats-verification.md` |
-| 作業完了報告のフォーマットに関する判断・作業の前 | `report-formats-completion.md` |
-| 振り返り結果報告のフォーマット・AWI投入結果報告のフォーマットに関する判断・作業の前 | `report-formats-retrospective.md` |
-| 報告用UWIのフォーマット・報告用UWIの確認と保存に関する判断・作業の前 | `report-formats-uwi.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 検証結果と実行記録・検証記録の引き渡しに関する判断・作業の前 | `report-formats-verification.md` | | |
+| 作業完了報告のフォーマットに関する判断・作業の前 | `report-formats-completion.md` | | |
+| 振り返り結果報告のフォーマット・AWI投入結果報告のフォーマットに関する判断・作業の前（操作対象外: 報告本文の作成） | `report-formats-retrospective.md` | | |
+| 報告用UWIのフォーマット・報告用UWIの確認と保存に関する判断・作業の前 | `report-formats-uwi.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
 
 ## 本文参照の取得条件
 

@@ -19,13 +19,15 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
 会話・委譲の環境変数入力を追加するときは、`_testing/isolation.py`の共通隔離との対応を`agent-toolkit/session_environment_invariant_test.py`で確認する。
 
 - 横断テスト: `testing.md`「テスト配置」に記載された`*_invariant_test.py`を指す。
-  変更範囲の検証には`uv run --frozen pyfltr fast --commands=pytest`（個別ファイルを渡さず、リポジトリルートで1回実行）を含める。
+  群の焦点検証とレーンの統合前検証の実行時機は、`verification-values-execution.md`手順4に従う。
+  レーンの統合前検証には`uv run --frozen pyfltr fast --commands=pytest`（個別ファイルを渡さず、リポジトリルートで1回実行）を含める。
   この1回の実行により、ルートリポジトリとサブプロジェクト`agent-toolkit/`の両方がまとめてテストされる。
   保存した出力結果から`# subproject: .`と`# subproject: agent-toolkit`それぞれのpytestの終了状態を確認し、双方のプロジェクトにまたがる横断検証の結果として採用する。
   ルートと`agent-toolkit/`の`pytest-always-targets`設定により、pytestを実行する他のpyfltr操作（対象ファイルを指定した`run`やMCP経由の`run`、`commands`未指定の実行など）でも、同じ横断テストが自動的に追加されて実行される。
   変更範囲の検証にそうした実行が含まれている場合は、その実行結果からサブプロジェクトごとの終了状態を確認して横断検証の結果に充てることができ、同じ内容に対してfastを重ねて実行する必要はない。
-  直接pytestや手で選んだテストファイルの一覧など、`pytest-always-targets`が加わらない起動形で最初の検証を組む場合は、追跡済みの`*_invariant_test.py`全件（`git ls-files -- '*_invariant_test.py'`）を同じ実行の対象へ加える。
-  commitフックの`pyfltr fast`はこれらを実行するため、最初の検証から漏れるとcommitの時点で初めて失敗する。
+  統合前の確認を、`pytest-always-targets`が加わらない直接pytestなどで行う場合も、追跡済みの不変条件試験全件を加える。
+  対象は`git ls-files -- '*_invariant_test.py'`で確認する。
+  commitフックの実行範囲と成功結果の再利用は、`verification-values-execution.md`手順4に従う。
   コミット時にprekが実行するfastも、対象集合・入力・依存条件と保存出力を確認でき、フック後の最終内容へ適用できる場合は同じ横断検証の結果に充てる。
   フックで不足する検証や、結果に影響する更新があった範囲だけを追加し、コミットフックの実行自体は省略しない。
   前提条件と再検証の手順は`docs/development/audit-records-project-verification.md`に記載されている。
@@ -42,6 +44,7 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
   検証には`uv run --frozen pytest -p no:cacheprovider agent-toolkit/agent_toolkit/_atk/serve`を実行する。
   共有ヘルパーを利用するテストは`app*_test.py`、`assets*_test.py`、`cli*_test.py`、`config*_test.py`、`state*_test.py`に分かれており、変更したファイル名だけから利用側のテストを特定することが難しいため、serveモジュール全体を検証対象とする。
 - 期待値を保持するテスト: `agent-toolkit/agent_toolkit/_hooks/`にあるエンドユーザー向け通知メッセージを変更した場合は、各hookに対応する`<hook名>_test.py`が期待値を持っているため、対象のテストを実行する。
+  通知や復旧案内を撤去する場合は、生成関数名と旧文言の両方から、別ファイルのmockと期待値も探索する。
   serveのAPIの辞書へ項目を足す変更では、既存の兄弟キーを固定文字列で検索し、辞書全体を完全一致で比べるテスト関数を特定して含める。
   比べる試験は`agent-toolkit/agent_toolkit/_atk/serve/assets_test.py`、`assets_detail_test.py`、`cli_detail_test.py`などにある。
   hooks設定を新たに読む処理を加える変更では、その処理を実行するテストのfixture（`agent-toolkit/agent_toolkit/_agents_server/mcp_projection_test.py`の設定fixtureなど）を含める。
@@ -51,6 +54,8 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
   `agent-toolkit/hooks/hooks.json`や`hooks.codex.json`の登録内容を変更した場合、および`agent-toolkit/agent_toolkit/hook.py`や各イベント処理が読み込むモジュールを変更した場合は、`agent-toolkit/agent_toolkit/hook_test.py`を含める。
   いずれも変更されたファイル名からは自動選定されないため注意する。
 - 共有契約を変更した場合は、その契約の参照元から特定した利用側の試験を実行する。
+  設定の初期値やプリセットでは、通常の設定試験に加え、既存設定の移行と未指定時の既定値を読む試験を探索する。
+  CLIの登録追加では、新しい名前だけでなく既存の兄弟コマンドと登録列挙の利用側から、公開ヘルプの一覧と結果区分の全要素を検査する試験を探索する。
   対象となるのは、`_common/`配下、`_hooks/`の通知生成元で使われる`source`や`kind`、`atk.py`のサブコマンド登録、および2つ以上の`atk`サブコマンドから呼ばれる共通処理や出力契約の変更である。
   また、`agents_server`のMCPツールや`atk agents wait`における公開レスポンスの項目（内容、形式、条件、項目の有無）を変更した場合も含まれる。
   同一レスポンスの各項目を読むMCP層・CLI待機処理・自動再開後処理の各テストを、配置にかかわらず追跡する。

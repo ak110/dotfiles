@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲プロンプトや返却の文章を作成・検収する前 | `quality-standards.md` |
-| 役割文書を持つ委譲の入力値を確定する前 | `base-contract.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲プロンプトや返却の文章を作成・検収する前（操作対象外: 自身の成果物・評価方法の検討） | `quality-standards.md` | | |
+| 役割文書を持つ委譲の入力値を確定する前 | `base-contract.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/base-contract.md` |
 
 ## `<役割名>.parent.md`を持つ委譲の起動
 

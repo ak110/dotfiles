@@ -23,6 +23,8 @@ Codex固有の公開機能と常時規範との差分を規定し、メインエ
   bashが無い場合は`Get-Content -LiteralPath <絶対パス> -Encoding utf8 | Select-Object -Skip <開始行-1> -First <行数>`で同じ行範囲を読み、全文の取得、切り詰めの回収、終了コードの保持は同じ基準で行う。
   資料の取得範囲は`02-agent-operations.md`「標準の読取・実行・一時領域」に従う。
   全体を読む資料の出力が切り詰められた場合は、行範囲を進めて末尾まで取得する。
+- 外側`functions.exec`だけの出力省略は、内側`exec_command`のPostToolUse観測では捕捉できない。
+  hook通知の有無で読了を判断せず、実際に受信した範囲を要求と比べて未取得部分を補う。
 - hookは本文を代替配送せず、外側functions.execで実配送された必要範囲を取得として判定する。
   hookが通知詳細の保存先を返した場合は、その全文を取得して必要な案内を読む。
   通知詳細の取得と参照先資料本文の取得を区別する。
@@ -103,11 +105,21 @@ Claude Codeと同じ規範で作業するためである。
 ファイル・ディレクトリの不在と一致0件は正常な空集合とし、読取・一覧取得の権限エラーなどは区別して診断する。
 
 確認は、不在なら空出力・終了0、取得失敗なら診断・非0を保つ1回のコマンドで行う。
+失敗した候補や区間があっても残りを実行し、全区間の実行後に総合の終了状態を返す。
+部分出力だけで探索完了とみなさず、診断のあった候補・区間の参照先と読取・検索権限を確認して再取得する。
+取得できない対象の所在・診断・必要な権限や入力は、委譲先は委譲元へ、メインはユーザーへ報告する。
 シンボリックリンクは起点・配下とも実在する参照先をたどる。
 ユーザー単位の例:
 
 ```sh
-if test -d "$HOME/.claude"; then find -L "$HOME/.claude" -maxdepth 2 \( -path "$HOME/.claude/CLAUDE.md" -o -path "$HOME/.claude/rules/*.local.md" \) -type f; fi
+status=0
+check_rule() { if test -f "$1" && test -r "$1"; then printf '%s\n' "$1"; elif test -e "$1" || test -L "$1"; then printf '規範を読めない: %s（参照先と権限を確認し、取得不能なら委譲先は委譲元へ、メインはユーザーへ報告）\n' "$1" >&2; status=1; fi; }
+check_dir() { if { test -d "$1" && ! test -x "$1"; } || { test -L "$1" && ! test -d "$1"; }; then printf '規範ディレクトリを検索できない: %s（参照先と権限を確認し、取得不能なら委譲先は委譲元へ、メインはユーザーへ報告）\n' "$1" >&2; status=1; fi; }
+check_dir "$HOME/.claude"; check_dir "$HOME/.claude/rules"
+if test -d "$HOME/.claude/rules" && ! test -r "$HOME/.claude/rules"; then printf '規範一覧を読めない: %s（権限を確認し、取得不能なら委譲先は委譲元へ、メインはユーザーへ報告）\n' "$HOME/.claude/rules" >&2; status=1; fi
+check_rule "$HOME/.claude/CLAUDE.md"
+for candidate in "$HOME"/.claude/rules/*.local.md; do check_rule "$candidate"; done
+test "$status" -eq 0
 ```
 
 作業ディレクトリと上位、およびプロジェクト単位の例（`project`に対象worktree、`current`に作業ディレクトリの絶対パスを指定）:
@@ -115,16 +127,22 @@ if test -d "$HOME/.claude"; then find -L "$HOME/.claude" -maxdepth 2 \( -path "$
 ```sh
 project=/absolute/path/to/worktree
 current=/absolute/path/to/working-directory
-while test -d "$current"; do
-  find -L "$current" -maxdepth 1 -type f \( -name CLAUDE.local.md -o \( -name CLAUDE.md ! -exec test -e "$current/AGENTS.md" \; \) \) -print || exit "$?"
-  parent=$(dirname -- "$current") || exit "$?"
-  test "$parent" != "$current" || break
+status=0
+check_rule() { if test -f "$1" && test -r "$1"; then printf '%s\n' "$1"; elif test -e "$1" || test -L "$1"; then printf '規範を読めない: %s（参照先と権限を確認し、取得不能なら委譲先は委譲元へ、メインはユーザーへ報告）\n' "$1" >&2; status=1; fi; }
+check_dir() { if { test -d "$1" && ! test -x "$1"; } || { test -L "$1" && ! test -d "$1"; }; then printf '規範ディレクトリを検索できない: %s（参照先と権限を確認し、取得不能なら委譲先は委譲元へ、メインはユーザーへ報告）\n' "$1" >&2; status=1; fi; }
+while :; do
+  check_dir "$current"
+  check_rule "$current/CLAUDE.local.md"
+  if ! test -e "$current/AGENTS.md"; then check_rule "$current/CLAUDE.md"; fi
+  parent=$(dirname -- "$current")
+  if test "$parent" = "$current"; then break; fi
   current=$parent
-done &&
-if test -d "$project"; then
-  if test -d "$project/.agents/skills"; then find -L "$project/.agents/skills" -type f; fi &&
-  if test -d "$project/.claude/rules"; then find -L "$project/.claude/rules" -type f; fi
-fi
+done
+for directory in "$project/.agents/skills" "$project/.claude/rules"; do
+  check_dir "$directory"
+  if test -d "$directory" && ! find -L "$directory" -type f; then status=1; fi
+done
+test "$status" -eq 0
 ```
 
 - 作業ディレクトリからファイルシステムのルートまでの各ディレクトリの`CLAUDE.local.md`と、同じディレクトリに`AGENTS.md`が存在しない場合の`CLAUDE.md`を読む。
@@ -270,6 +288,7 @@ pytilpackのキューへ投入できない環境では、作業完了報告だ�
 まずQuality（品質）を守り、その範囲でCost（トークンと保守の負担）とDelivery（成果までの時間）を比べる（QCD）。
 QCDの定義、長い工程の進捗と目標の比較、対象・操作・設計の判定順（許容性・必要性・実装品質）は`agent-basics:writing-standards/references/quality-principles-qcd.md`「QCDと3段判定」が定め、採否・手段・進め方の判断前に全文読む。
 目標時間は優先度を決める目安として使い、作業の停止、品質確認の省略、要求の縮小の理由から除く。
+規範の読込・通知への処置・手順上の確認などの必要な工程を省くと手戻りで所要が増えるため、省けば速いという見込みを判断の根拠から除く。
 ユーザーが示した手段・規範・確定した方針から外れる案を評価する前、成立済みの承認を適用する前、付帯作業の範囲を決める前は、`agent-toolkit/share/agent-conduct-details.md`「QCDと3段判定」を全文読む。
 
 ### 行動と手順の目的
@@ -279,7 +298,7 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 硬い制約と、独立文脈レビュー・所有権・認可・必読資料・終了観測は費用によらず守る。
 工程の並行・分割と自動チェック対象の記述の前は`agent-toolkit/share/agent-conduct-details.md`「行動と手順の目的」を全文読む。
 進捗点検の通知（`source="progress-self-check"`）を受けた時は、同書「進捗点検」を全文読んで従う。
-会話圧縮の後は、次の判断より前に、圧縮前に進めていた工程を定めるスキルと役割文書を全文読み直す。
+会話圧縮の後は、次の判断より前に`agent-toolkit/share/compaction-recovery.md`を全文読み、圧縮前に進めていた工程を定めるスキルと役割文書を全文読み直す。
 その読込表から、委譲先の返却、背景待機の完了、定期の再確認、ユーザーの回答への対応を含む次の判断に必要な資料を選んで読む。
 目的、承認状態、残る工程を、計画、WI、受け取った`引き継ぎ記録先`などの記録から復元し、全体作業契約と引き継ぎ記録が次工程の資料を指す場合はそれも読む。
 圧縮前の取得履歴は、一括再取得の義務として扱わない。

@@ -145,13 +145,16 @@ def test_guidance_gives_mandatory_host_steps_and_edit_review(tmp_path, monkeypat
         requests = [json.loads(line[len(prefix) : -2]) for line in notice.splitlines() if line.startswith(prefix)]
         assert [request["cmd"] for request in requests] == [f"cat -- {path}" for path in paths]
         assert all(request["max_output_tokens"] > 0 for request in requests)
-        assert notice.count("内外の出力枠") == 1
+        assert notice.count("各コードブロックを別々のfunctions.exec") == 1
     for path in paths:
         _assert_acquired(payload, path, False)
 
 
 def test_confirmation_denial_has_all_paths_until_read(tmp_path, monkeypatch, memory):
     paths = _rows(tmp_path, monkeypatch, "confirmation", count=30)
+    bootstrap = read_delivery.plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+    rows = [ReadTrigger(bootstrap, 1, "判断", ("confirmation",), tuple(paths))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     for _ in range(2):
         decision = read_delivery.deliver({}, "AskUserQuestion", {}, "test")
         assert decision.block is not None
@@ -160,6 +163,39 @@ def test_confirmation_denial_has_all_paths_until_read(tmp_path, monkeypatch, mem
         not read_delivery.target_ready(memory.get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(path), "main")
         for path in paths
     )
+
+
+@pytest.mark.parametrize("count", [1, 3])
+@pytest.mark.usefixtures("memory")
+def test_codex_small_edit_has_one_acquisition_command_per_document(tmp_path, monkeypatch, count):
+    """数行のEditでも取得後に結果を使う順序と、通知への対処を定める規定の所在を示す。"""
+    paths = _rows(tmp_path, monkeypatch, "tool:Edit", count=count)
+    decision = read_delivery.deliver(
+        {"cwd": str(tmp_path), "turn_id": "turn"},
+        "Edit",
+        {"file_path": str(tmp_path / "output.py"), "old_string": "a = 1\n", "new_string": "a = 2\n"},
+        "test",
+    )
+    body = _notice_body(decision)
+    instruction = body.splitlines()[1]
+    assert "この操作の結果を使う前に" in instruction
+    assert "agent-conduct-details.md`「方針が衝突する場合の優先順位」" in instruction
+    assert body.count("各コードブロックを別々のfunctions.exec") == 1
+    assert all(body.count(f"cat -- {path}") == 1 for path in paths)
+    assert "session_idが返ったら" not in body and "内外の出力枠" not in body
+    assert decision.block is None
+
+
+@pytest.mark.parametrize("read", ["cat -- {path}", "sed -n '1,$p' -- {path}", "sed -n '1,2p' -- {path}"])
+@pytest.mark.usefixtures("memory")
+def test_same_call_only_full_reads_are_excluded_from_missing_guidance(tmp_path, monkeypatch, read):
+    """未取得の確定資料も、全文読取予定だけを案内から外し、取得済みにはしない。"""
+    path = _rows(tmp_path, monkeypatch, "tool:Bash", count=1)[0]
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [])
+    payload = {"cwd": str(tmp_path), "turn_id": "turn"}
+    decision = read_delivery.deliver(payload, "Bash", {"command": read.format(path=path) + " && date"}, "test")
+    assert bool(_guidance(decision)) is ("1,2p" in read)
+    _assert_acquired(payload, path, False)
 
 
 @pytest.mark.parametrize("tool", ["AskUserQuestion", "ExitPlanMode", "request_user_input", "request_user_input_async"])

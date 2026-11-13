@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 返却形式を確認する時 | `exec-review.parent.md` |
+| 返却形式を確認する時（操作対象外: 自身の返却形式の確認） | `exec-review.parent.md` |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
 | 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |
 
@@ -18,7 +18,8 @@
 
 1. 計画ファイルの進捗ログや引き継ぎ記録にある実装担当の`検証結果`、および受け取ったCI記録やWI記録（`exec-review-subagent-inputs.md`「入力」で保存した入力記録）を確認し、各記録の出所と、保存されている出力や実際の観測結果を個別に突き合わせる。
    記録と現物に食い違いや不足がある場合は、該当する条件を`根拠不足`と判定し、必要に応じて指摘を登録する
-2. 判定に必要な検証を、レビュー対象のHEADを指している対象worktree上で自ら実行する（実行範囲は`exec-review-operations.md`「操作区分」に従う）。
+2. 判定に必要な検証を、レビュー対象のHEADの本文に対して自ら実行する（実行範囲は`exec-review-operations.md`「操作区分」に従う）。
+   検証の前に対象worktreeの`git status --porcelain=v1`を取得し、空でなければ同書「未commitの変更がある作業ツリーでの検証」の作業ツリーで実行して、その記録を走査記録へ残す。
    計画の`## 検証`に記載された行や、条件で明示された公開呼び出し手段を優先し、実行したコマンド、終了コード、および判定に使用した出力の要点を記録する。
    実装担当が記録した検証結果を同じHEADで再現できた場合でも、自ら観測した結果を判定の根拠とする
 3. AWIの形式は`agent-toolkit:wi-standards`の`references/awi-body.md`冒頭に従って判別する。

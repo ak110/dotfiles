@@ -380,7 +380,7 @@ PLAN_BUG_CAUSE_TABLE_HEADER: tuple[str, ...] = ("要因系統", "L1 現象", "L2
 PLAN_BUG_CAUSE_TABLE_ROWS: tuple[str, ...] = ("作り込み要因", "見逃し要因")
 """バグ単位の原因分析表の固定5列2行。`agent-basics:bugfix`の原因分析の段階と対応させる。"""
 
-PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
+PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS: tuple[str, ...] = (
     "現象",
     "期待する契約",
     "対策",
@@ -398,6 +398,13 @@ PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
 直接的原因と原因分析の根拠は原因分析表の該当セルと証拠参照へ統合したため、独立した行を持たない。
 処置の候補は作り込み・見逃しの系統ごとの行に、候補の採否は採否の行に分けて記録する。
 """
+
+PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
+    *PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS[:2],
+    "害の型と反復",
+    *PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS[2:],
+)
+"""害の型と反復を含む現行の調査表。直前の11行形式は読み取り互換と移行案内に残す。"""
 
 PLAN_PREVIOUS_BUG_TABLE_ROWS: tuple[str, ...] = (
     "現象",

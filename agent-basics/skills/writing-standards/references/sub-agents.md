@@ -7,10 +7,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` |
-
 ## ディレクトリ構成
 
 `agents/`ディレクトリ配下にはサブエージェント定義ファイルのみを配置する。
@@ -22,5 +18,5 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| `<役割名>.parent.md`と`<役割名>.subagent.md`の構成・返却形式の設計・名前付きagent、`<役割名>.subagent.md`およびskillの責務分離・手順設計時の確認に関する判断・作業の前 | `sub-agents-contracts.md` |
+| `<役割名>.parent.md`と`<役割名>.subagent.md`の構成・返却形式の設計・名前付きagent、`<役割名>.subagent.md`およびskillの責務分離・手順設計時の確認に関する判断・作業の前（操作対象外: 役割文書の設計） | `sub-agents-contracts.md` |
 | Claude Codeのfrontmatter・コンテキスト境界に関する判断・作業の前 | `sub-agents-claude.md` |

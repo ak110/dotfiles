@@ -7,12 +7,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 類似見直しの検索と個別判定を依頼・検収する前 | `../../../share/similar-review.parent.md` |
-| 委譲元が調査対象の外で動き、起動時の`cwd`を決める時 | `agent-toolkit:process-wi/references/lanes.md` |
-| 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
-| 調査担当の返却の類似見直しと処置を検収する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`、`agent-basics:bugfix/references/root-cause-prevention-requirements.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 類似見直しの検索と個別判定を依頼・検収する前 | `../../../share/similar-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/similar-review.parent.md` |
+| 委譲元が調査対象の外で動き、起動時の`cwd`を決める時 | `agent-toolkit:process-wi/references/lanes.md` | | |
+| 調査担当の返却の各欄を検収する時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/bugfix/references/root-cause-severity-impact.md` |
+| 調査担当の返却の類似見直しと処置を検収する時 | `agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`、`agent-basics:bugfix/references/root-cause-prevention-requirements.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/bugfix/references/root-cause-remediation.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-actions-hierarchy.md`、`read:agent-basics:*/skills/bugfix/references/root-cause-prevention-requirements.md` |
 
 ## 調査の進め方と委譲時の入力
 
@@ -106,7 +106,7 @@ AWIとして登録して処理する場合（`agent-toolkit:process-wi`におけ
 対策: <変更する対象、変更の内容および修正後に確かめる観測>
 回帰防止策: <今回の事象そのものの再発を検出する回帰テストなどの処置>
 横展開処置: <類似見直しで該当とした各対象への処置>
-再発防止策: <処置と、その処置が作用する根本原因の単位>
+再発防止策: <処置と、作用する害の型および根本原因の単位>
 ```
 
 各欄の値は、`agent-basics:bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に基づいて判定する。

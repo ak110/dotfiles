@@ -59,12 +59,7 @@ def codex_acquisition(path: pathlib.Path, ranges: Sequence[tuple[int, int]] = ()
             chunks.append((start, last))
     if not lines:
         chunks.append((1, 0))
-    steps = [
-        f"{size}バイト、予算目安{(size + 2) // 3}トークン。"
-        "以下の各コードブロックを別々のfunctions.execとして順に実行せよ。"
-        "内側コマンドと外側セルの予算は本文・JSON表示・終了情報の余裕を含む。"
-        "同じセルへまとめる場合は外側max_output_tokensを内側の合計以上にせよ。"
-    ]
+    steps = [f"{size}バイト。"]
     quoted = shlex.quote(str(path))
     for start, end in chunks:
         command = (
@@ -75,14 +70,9 @@ def codex_acquisition(path: pathlib.Path, ranges: Sequence[tuple[int, int]] = ()
         budget = _TOKEN_LIMIT
         arguments = json.dumps({"cmd": command, "max_output_tokens": budget}, ensure_ascii=False)
         steps.append(
-            f"取得コマンド: `{command}`\n```javascript\n"
+            "```javascript\n"
             f'// @exec: {{"max_output_tokens": {budget}}}\n'
             f"const result = await tools.exec_command({arguments});\ntext(result);\n```"
         )
     steps.extend(constraints)
-    steps.append(
-        "session_idが返ったら同じ実行をwrite_stdinで終了まで回収し、返却全体をtext(result)で保持せよ。"
-        "外側cell_idはfunctions.waitで回収せよ。省略が観測された範囲は取得済みにせず、"
-        "original token countが枠に収まる場合だけ予算を増やして再取得し、収まらなければ範囲を狭めよ。"
-    )
     return "\n".join(steps)

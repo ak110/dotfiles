@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` |
-| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` |
-| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| Claude Codeのバックグラウンドタスクの起動形を判断する時 | `waiting-claude-code.md` | | |
+| 停滞の検知と巻き取りへ進む時 | `waiting-stalls.md` | | |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/continuation.md` |
 
 ## 待機手段の選択
 
@@ -27,9 +27,9 @@
 
 通知を受け取れない担当を新規起動へ切り替える場合も、`continuation.md`「継続と新規起動」に従って欠陥の処置を別に判定する。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/continuation.md` |
 
 1. 起動手段と終了観測手段の組み合わせは、起動前に`references/runtime-routing.md`の「実行手段」に従って決定する
 

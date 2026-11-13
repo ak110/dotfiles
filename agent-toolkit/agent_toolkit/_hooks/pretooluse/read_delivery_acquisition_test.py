@@ -31,7 +31,7 @@ def test_compact_recovery_first_output_survives_notice_cycle(tmp_path, monkeypat
     )
     assert result.returncode == 0 and not result.stderr
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "会話圧縮後の復元" in context
+    assert "agent-toolkit/share/compaction-recovery.md" in context
     assert str(document) not in context
     assert state.get("notice_fingerprints")
 

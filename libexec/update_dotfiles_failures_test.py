@@ -45,8 +45,9 @@ class TestStepFailureStopsExecution:
         monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
         assert update_dotfiles.main() == 3
-        assert len(calls) == 2
+        assert len(calls) == 3
         assert calls[1][:2] == ["chezmoi", "init"]
+        assert calls[2][:2] == ["chezmoi", "init"]
 
     def test_dotfiles_pull_failure_stops_before_init(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """dotfiles自身のpullの失敗は、不確定なソースを配備しないよう以降の段を止める。"""

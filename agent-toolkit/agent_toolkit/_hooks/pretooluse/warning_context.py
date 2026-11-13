@@ -81,7 +81,7 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
             else "cat -- " + shlex.quote(str(path))
         )
         reference = format_notice(
-            f"{CODEX_NOTICE_REFERENCE_PREFIX}{path}\n詳細は通知と取得手順であり、参照先の資料本文を取得済みとは扱うな。",
+            f"{CODEX_NOTICE_REFERENCE_PREFIX}{path}",
             tag="warn",
             removable_cause=False,
             fix=f"`{read_saved}`を実行し、必要な案内を読め。",

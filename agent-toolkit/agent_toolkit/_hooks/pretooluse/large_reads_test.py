@@ -544,7 +544,8 @@ def test_dispatch_codex_warns_and_allows_bash_full_read(tmp_path: pathlib.Path, 
     assert str(target) in message
     assert "tools.exec_command(" in message and "text(result)" in message
     assert 'kind="warn"' in message
-    assert "内側コマンドと外側セル" in message
+    assert '// @exec: {"max_output_tokens": 20000}' in message
+    assert '"max_output_tokens": 20000' in message
 
 
 @pytest.mark.parametrize("multiple", [False, True])
@@ -606,7 +607,7 @@ def test_large_read_budget_guidance(tmp_path, multiple):
         path.write_text("本文\n" * 12000, encoding="utf-8")
     notice = _codex_read(shlex.join(["cat", "--", *map(str, paths)]), tmp_path)
     assert notice is not None
-    assert "original token count" in notice and "write_stdin" in notice
+    assert "original token count" not in notice and "write_stdin" not in notice
     assert _execute_guidance(notice) == {str(path): path.read_bytes() for path in paths}
 
 

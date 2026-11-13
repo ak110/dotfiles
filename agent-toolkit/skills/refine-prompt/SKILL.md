@@ -34,9 +34,6 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../write-plan/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../report-completion/SKILL.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../delegation/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 
 ## 読込表
@@ -44,7 +41,7 @@ description: >
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | 改善案を作成する前（エージェント向け文書が対象の場合） | `agent-basics:writing-standards/SKILL.md` | | | |
-| 対話と成果物を評価する多ターン試行を選んだ時と結果を受領する時 | `references/multi-turn-trials.md` | | | |
+| 対話と成果物を評価する多ターン試行を選んだ時と結果を受領する時 | `references/multi-turn-trials.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/refine-prompt/references/multi-turn-trials.md` | |
 | 実セッションから小課題を作り、条文変更の効果を比較する方法を選んだ時 | `references/multi-turn-trials.md` | | | |
 | `audit`で文書を点検する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md`、`agent-basics:writing-standards/references/host-official-references.md` | 判断 | `skill:refine-prompt` | |
 

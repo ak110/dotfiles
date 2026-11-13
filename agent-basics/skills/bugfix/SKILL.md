@@ -9,7 +9,8 @@ description: >
 
 # バグ対応
 
-観測された不具合は、本来あるべき仕様（期待契約）と直接の原因を確定してから修正し、同じ原因による別の問題の発生も防ぐ。
+観測された不具合は、本来あるべき仕様（期待契約）と直接の原因を確定してから修正し、原因が異なっても同じ害の型の問題を防ぐ。
+害の型の定義は`references/root-cause-actions-hierarchy.md`「処置の階層」に従う。
 期待される結果・品質・手順・判断からの逸脱、またはその疑いを認識して診断・訂正・対処を始めるときは、対象の種類、工程、発見者、修正の有無を問わず、原因分析と類似見直しを行う。
 ユーザーの介入、セルフレビューと他者のレビュー指摘、lint・型検査・自動テスト・CIのエラー、エージェントの行動誤りを示すhookの拒否、自分で気付いた作業ミスは、その例である。
 エージェントの作業ミスは、その行動を生成・許容した規範と適用経路・作業構造の不具合として分析する。
@@ -55,8 +56,12 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、�
 4. 影響に合う深さを選ぶため、エンドユーザーや利用システムへの影響、波及範囲、回復可能性からQ影響と重大度を判断し、根拠を残す。
    Q影響とC・Dだけの問題を区別し、後段の確認・再実行で回復した誤りと、どちらに当たるか判断が分かれる問題もQ影響として扱う。
    未知の問題の探索終了基準と是正範囲は分けて決める。
-5. 同じ原因の問題を防ぐため、原因から調査母集団を導き、重大度によらず段階的な類似見直しを行い、重大度を母集団の広さと判定の深さへ反映する。
+5. 利用主体から見た害の型を定め、`references/root-cause-remediation.md`「類似見直し」の標準母集団で、原因を問わず同じ害の型の過去事例を調べる。
+   期間外の反復にユーザーが言及した場合は、その発話を事例に含める。
+   過去事例があれば原因ごとの修正だけで完了にせず、害の型へ作用する再発防止策を検討する。
+   原因から調査母集団を導き、重大度によらず段階的な類似見直しを行い、重大度を母集団の広さと判定の深さへ反映する。
    初回検出の例外を踏まえ、対策・回帰防止策と、類似見直し観点・再発防止策の作り込み・見逃しの各候補を区別し、採否は影響度と総費用で別に決める。
+   再発防止策を見送る前に、`references/root-cause-prevention-selection.md`「再発防止策」に従い、原因となった入力・条文・参照経路を除去・改訂する案を候補に含めて比べる。
    認可の境界と指定された結果を維持し、結果を変える処置や認可を要する操作は事前に合意を得る。
    採用した処置の適用と有効性、修正後の解消を確認する。
    未再現・解消済み・文書の誤りは手順3の参照先に従い、軽微な問題は調査範囲と限界を示す。
@@ -68,28 +73,28 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、�
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| QCD・3段判定、事実と推論、硬い制約・努力目標を判断へ用いる前 | `../writing-standards/references/quality-principles-qcd.md`、`../writing-standards/references/quality-principles-facts.md`、`../writing-standards/references/quality-principles-constraints.md` |
-| 期待・実際と直接的原因を確定する前（他担当へ引き渡す場合も含む） | `references/root-cause-analysis-initial.md`、`references/root-cause-analysis-evidence.md` |
-| 根本原因と重大度を確定する前 | `references/root-cause-severity.md` |
-| 類似見直しの範囲・観点を定め、是正対象と予防対象を調べる前 | `references/root-cause-remediation.md` |
-| 対策と直接影響範囲、処置の階層を確定する前 | `references/root-cause-actions.md` |
-| 再発防止策の候補・採否・有効性と、類似見直しを含む処置の完了を判断する前 | `references/root-cause-prevention.md` |
-| 同じ指摘や症状が反復した時、調査が停滞した時、修正で別の症状や回避処理が増えた時 | `references/root-cause-scenarios-recurrence.md` |
-| テストの失敗を調べる時 | `references/root-cause-scenarios-testing.md` |
-| テストの失敗を調べる時 | `references/root-cause-prevention-verification.md` |
-| 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-testing.md` |
-| 規範に従ったのに目的を達成できなかった事象（停止、差し戻し、空回り、要求を満たさない成果物など）を調べる時 | `references/root-cause-scenarios-recurrence.md` |
-| 検索・読取は成功したのに必要な情報へ到達しなかった事象（案内不足・誤参照を含む）を調べる時 | `references/root-cause-scenarios-investigation.md` |
-| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-reports.md` |
-| 原因を確定する前（拡張原因分析へ進まない場合も、2系統・L1〜L4の結論と該当なしの判定に使う） | `references/causal-analysis-stages.md` |
-| 拡張原因分析へ進む時、または原因確定に履歴・記録の探索を用いる前 | `references/causal-analysis.md` |
-| 再発防止セルフチェックへの追加を選ぶ前 | `references/recurrence-self-check.md` |
-| 原因分析の記録を作成する前 | `references/analysis-records.md` |
-| 独立した調査を依頼・検収する前 | `references/investigation-delegation.md` |
-| CI失敗の分類と対処を選ぶ前 | `references/ci-failure-handling.md` |
-| 分岐条件の効果を検証する前 | `../writing-standards/references/testing-conditions.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| QCD・3段判定、事実と推論、硬い制約・努力目標を判断へ用いる前 | `../writing-standards/references/quality-principles-qcd.md`、`../writing-standards/references/quality-principles-facts.md`、`../writing-standards/references/quality-principles-constraints.md` | | |
+| 期待・実際と直接的原因を確定する前（他担当へ引き渡す場合も含む） | `references/root-cause-analysis-initial.md`、`references/root-cause-analysis-evidence.md` | | |
+| 根本原因と重大度を確定する前 | `references/root-cause-severity.md` | | |
+| 類似見直しの範囲・観点を定め、是正対象と予防対象を調べる前 | `references/root-cause-remediation.md` | | |
+| 対策と直接影響範囲、処置の階層を確定する前 | `references/root-cause-actions.md` | | |
+| 再発防止策の候補・採否・有効性と、類似見直しを含む処置の完了を判断する前 | `references/root-cause-prevention.md` | | |
+| 同じ指摘や症状が反復した時、調査が停滞した時、修正で別の症状や回避処理が増えた時 | `references/root-cause-scenarios-recurrence.md` | | |
+| テストの失敗を調べる時 | `references/root-cause-scenarios-testing.md` | | |
+| テストの失敗を調べる時 | `references/root-cause-prevention-verification.md` | | |
+| 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-testing.md` | | |
+| 規範に従ったのに目的を達成できなかった事象（停止、差し戻し、空回り、要求を満たさない成果物など）を調べる時 | `references/root-cause-scenarios-recurrence.md` | | |
+| 検索・読取は成功したのに必要な情報へ到達しなかった事象（案内不足・誤参照を含む）を調べる時 | `references/root-cause-scenarios-investigation.md` | | |
+| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-reports.md` | | |
+| 原因を確定する前（拡張原因分析へ進まない場合も、2系統・L1〜L4の結論と該当なしの判定に使う） | `references/causal-analysis-stages.md` | | |
+| 拡張原因分析へ進む時、または原因確定に履歴・記録の探索を用いる前 | `references/causal-analysis.md` | | |
+| 再発防止セルフチェックへの追加を選ぶ前 | `references/recurrence-self-check.md` | | |
+| 原因分析の記録を作成する前 | `references/analysis-records.md` | | |
+| 独立した調査を依頼・検収する前 | `references/investigation-delegation.md` | 判断 | `delegation`、`delegation-result`、`read:agent-basics:*/skills/bugfix/references/investigation-delegation.md` |
+| CI失敗の分類と対処を選ぶ前 | `references/ci-failure-handling.md` | | |
+| 分岐条件の効果を検証する前 | `../writing-standards/references/testing-conditions.md` | | |
 
 ## 本文参照の取得条件
 

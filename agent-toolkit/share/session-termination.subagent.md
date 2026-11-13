@@ -1,6 +1,8 @@
 ---
 mode: delegate
 model_type: execute
+result_heads:
+- 公開完了
 required_inputs:
 - bump種別
 - 引き継ぎ記録先

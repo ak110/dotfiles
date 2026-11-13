@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
 
 ## 登録集合
 
@@ -59,7 +59,7 @@ resumeは既存の準備済み実体と未完了成果をそのまま再利用�
 
 **8.** 統括が結果を保存してCLIを終了した後、常駐は開始側と同じ現行の着手可否を使い、当初候補の今回進められる作業、対象全体のprocessing、対処を要する不正metadata、未統合laneを確認する。
 
-必要な判断が済んだ有効な未来のcooldown、未回答UWIへの依存、外部の先行項目への依存で進められない項目は、今回の再実行が必要な残件から除く。
+`all-repos-completion.md`「結果と終了」手順8で定義した正当な先送りに当たる項目は、今回の再実行が必要な残件から除く。
 同じ実行内で解消できる内部依存は残件に含め、再開記録の文章だけで作業を残件から除かない。
 処理済み部分の公開・CI検収が終わり、残りが正当に先送りされていれば、WI自体は未完了でも今回の処理結果としてcompletedを受理する。
 先送りする前の判断と解決の見込みは、既存の確認・依存・冷却の契約で確定し、常駐は意味判定や追加の申告フラグを持たない。

@@ -54,55 +54,33 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` |
-| 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
-| 基準の参照時 | `agent-basics:review-standards/SKILL.md` |
-| 基準の参照時 | `exec-subagent-implementation.md` |
-| 検証結果を記録する前 | `verification-evidence-records.md` |
-| 手動観測を保存する前 | `verification-evidence-observation.md` |
-| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` |
-| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
-| 基準の参照時 | `exec-review-recording-evidence.md` |
-| 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` |
-| 基準の参照時 | `usability-review.parent.md` |
-| 基準の参照時 | `reader-fit-review.parent.md` |
-| 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
-| 基準の参照時 | `../skills/delegation/references/base-contract-handoff.md` |
-| 基準の参照時 | `review-loop-coordination-rounds.md` |
-| 基準の参照時 | `agent-basics:secret-files/SKILL.md` |
-| 基準の参照時 | `../skills/delegation/SKILL.md` |
-| 基準の参照時 | `exec.parent.md`、`exec-parent-integration.md` |
-| 基準の参照時 | `../skills/wi-standards/references/origin-and-approval.md` |
-| 基準の参照時 | `exec-review-recording-integration.md` |
-| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` |
-| 基準の参照時 | `review-loop-coordination-escalation.md` |
-| 基準の参照時 | `add-wi.parent.md` |
-| 基準の参照時 | `agent-basics:bugfix/SKILL.md` |
-| 基準の参照時 | `../skills/wi-standards/references/wi-standards-origin.md` |
-| 基準の参照時 | `../skills/report-completion/references/report-formats-completion.md` |
-| 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` |
-| 基準の参照時 | `add-wi-parent-acceptance.md` |
-| 基準の参照時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` |
-| 基準の参照時 | `../skills/delegation/references/sending.md` |
-| 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
-| 基準の参照時 | `exec-parent-launch.md` |
-| 基準の参照時 | `../skills/commit/references/history-rewrite-wi-records.md` |
-| 基準の参照時 | `exec-review-responses-completion.md` |
-| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
-| 基準の参照時 | `lane-integration-subagent-operation.md` |
-| 基準の参照時 | `agent-toolkit:write-plan/references/plan-file-storage.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 形式判別前 | `../skills/wi-standards/references/awi-body.md` | | |
+| 基準の参照時 | `agent-basics:review-standards/SKILL.md` | | |
+| 検証結果を記録する前 | `verification-evidence-records.md` | | |
+| 手動観測を保存する前 | `verification-evidence-observation.md` | | |
+| 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` | | |
+| 保存済み成功と失敗限定の結果を合成する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` | | |
+| 基準の参照時 | `exec-review-recording-evidence.md` | | |
+| 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` | | |
+| 基準の参照時 | `usability-review.parent.md` | | |
+| 基準の参照時 | `reader-fit-review.parent.md` | | |
+| 基準の参照時 | `../skills/delegation/references/base-contract-handoff.md` | | |
+| 基準の参照時 | `exec.parent.md`、`exec-parent-integration.md` | | |
+| 基準の参照時 | `../skills/wi-standards/references/origin-and-approval.md` | | |
+| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
+| 基準の参照時 | `../skills/wi-standards/references/wi-standards-origin.md` | | |
+| 基準の参照時 | `../skills/report-completion/references/report-formats-completion.md` | | |
+| 基準の参照時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` | | |
+| 基準の参照時 | `../skills/commit/references/history-rewrite-wi-records.md` | | |
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
-| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` |
+| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` | | |
 
 <!-- return-contract:exec-review:start -->
 <!-- 生成元: share/exec-review.subagent.md「出力」。手動編集しない。 -->
@@ -178,12 +156,12 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 起動方法別のレビュー基準・レビュー指摘管理表のパス・入力・起動に関する判断・作業の前 | `exec-review-parent-launch.md` |
-| 完成条件証拠の受領確認に関する判断・作業の前 | `exec-review-parent-acceptance.md` |
-| 返却に含まれる既存不良の受領に関する判断・作業の前 | `exec-review-parent-existing-defects.md` |
-| レビュー修正・レビュー指摘管理表の保存に関する判断・作業の前 | `exec-review-parent-correction.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 起動方法別のレビュー基準・レビュー指摘管理表のパス・入力・起動に関する判断・作業の前 | `exec-review-parent-launch.md` | | |
+| 完成条件証拠の受領確認に関する判断・作業の前 | `exec-review-parent-acceptance.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-parent-acceptance.md` |
+| 返却に含まれる既存不良の受領に関する判断・作業の前 | `exec-review-parent-existing-defects.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
+| レビュー修正・レビュー指摘管理表の保存に関する判断・作業の前 | `exec-review-parent-correction.md` | | |
 
 ## 本文参照の取得条件
 

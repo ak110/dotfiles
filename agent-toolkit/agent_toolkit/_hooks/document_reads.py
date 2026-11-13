@@ -10,12 +10,24 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-import hashlib
 import json
 import pathlib
 from collections.abc import Callable, Sequence
-from typing import Any
 
+from agent_toolkit._git.document_acquisition import (
+    READ_TRIGGER_PREFIX,
+    RECEIPT_PREFIX,
+    acquisition_state,
+    bytes_fingerprint,
+    content_fingerprint,
+    content_ready,
+    document_owner,
+    document_plugin,
+    logical_document,
+    read_trigger_key,
+    receipt_candidates,
+    receipt_key,
+)
 from agent_toolkit._hooks.document_reads_fragments import (
     delivered_fragments,
     fragment_candidates,
@@ -25,31 +37,37 @@ from agent_toolkit._hooks.document_reads_fragments import (
 )
 from agent_toolkit._hooks.document_reads_receipts import (
     accumulate_fragments,
-    acquisition_state,
     receipt_metadata,
     received_candidates,
     restrict_receipts,
 )
 from agent_toolkit._hooks.document_reads_text import (
-    _line_hashes,
     returned_texts,
 )
 lazy from agent_toolkit._common import read_triggers
 lazy from agent_toolkit._common.plugin_roots import (
-    PluginRootError,
-    codex_plugin_source_root,
     resolve_plugin_root,
     sibling_plugin_root,
 )
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
-lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._hooks import plugin_resources
 
 __all__ = [
+    "READ_TRIGGER_PREFIX",
+    "RECEIPT_PREFIX",
     "accumulate_fragments",
     "acquisition_state",
+    "bytes_fingerprint",
+    "content_fingerprint",
+    "content_ready",
+    "document_owner",
+    "document_plugin",
+    "logical_document",
+    "read_trigger_key",
+    "receipt_candidates",
+    "receipt_key",
     "delivered_fragments",
     "fragment_candidates",
     "fragment_coverage",
@@ -92,16 +110,6 @@ class DocumentRead:
     """観測した実体。別ホストの導入情報で識別行を推定しないために保持する。"""
 
 
-def document_plugin(argument: str) -> str:
-    """実在するmanifestから資料の所有プラグインを識別する。"""
-    for parent in pathlib.Path(argument).expanduser().resolve().parents:
-        manifest = parent / ".claude-plugin/plugin.json"
-        if manifest.is_file():
-            data = json.loads(manifest.read_text(encoding="utf-8"))
-            return data.get("name", "agent-toolkit")
-    return "agent-toolkit"
-
-
 def skill_document(argument: str) -> tuple[str, str] | None:
     """パスの引数がスキルの`SKILL.md`か`references/`直下の資料を指す場合に、短縮名と相対パスを返す。"""
     parts = pathlib.PurePosixPath(argument.replace("\\", "/")).parts
@@ -117,11 +125,6 @@ def skill_document(argument: str) -> tuple[str, str] | None:
     if len(parts) >= 4 and parts[-2] == "references" and parts[-4] == "skills" and parts[-1].endswith(".md"):
         return parts[-3], f"references/{parts[-1]}"
     return None
-
-
-def document_owner(path: pathlib.Path) -> pathlib.Path | None:
-    """選択された実体のmanifestを持つ所有rootを返す。別版の探索はしない。"""
-    return next((parent for parent in path.resolve().parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
 
 
 def skill_name(path: pathlib.Path, *, owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner) -> str | None:
@@ -273,127 +276,6 @@ def response_text(response: object) -> str | None:
     return None
 
 
-READ_TRIGGER_PREFIX = "read-trigger:"
-
-"""読込案内の取得記録のキーの接頭辞。キーは`read-trigger:<絶対パス>#sha256:<内容ハッシュ>`の形をとる。"""
-
-RECEIPT_PREFIX = "received-document:"
-
-"""本文を保存せず、論理資料・範囲・受信版を主体別に保持する。"""
-
-
-@functools.cache
-def _repository_identity(root: pathlib.Path) -> str:
-    result = git_command.run(
-        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=5,
-    )
-    return str(pathlib.Path(result.stdout.strip()).resolve()) if result.returncode == 0 else str(root)
-
-
-def logical_document(path: pathlib.Path) -> str:
-    """実在manifestとGit共通ディレクトリで裏付けられる配布元だけを統合する。"""
-    path = path.resolve()
-    owner = document_owner(path)
-    repository = next((parent for parent in path.parents if (parent / ".git").exists()), None)
-    if repository is None and owner is not None:
-        source = _distribution_source(owner, document_plugin(str(path)))
-        if source is not None:
-            repository = next((parent for parent in (source, *source.parents) if (parent / ".git").exists()), source)
-    if repository is not None:
-        origin = _repository_identity(repository)
-        relative = path.relative_to(owner if owner else repository).as_posix()
-        return json.dumps([origin, document_plugin(str(path)) if owner else "project", relative], ensure_ascii=False)
-    # 出所を確認できない配布cacheや同名ファイルを、名前だけで統合しない。
-    return str(path)
-
-
-@functools.cache
-def _distribution_source(owner: pathlib.Path, name: str) -> pathlib.Path | None:
-    try:
-        return codex_plugin_source_root(owner, name)
-    except PluginRootError:
-        # 出所を取得できない実体は別資料として扱う。本文そのものの一致による再利用は保つ。
-        return None
-
-
-def receipt_key(metadata: dict) -> str:
-    """受信した範囲の識別子を既存の主体別マッピングへ格納する。"""
-    return RECEIPT_PREFIX + json.dumps(metadata, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-
-
-def receipt_candidates(
-    targets: Sequence[read_triggers.ReadTarget],
-    *,
-    bodies: dict[pathlib.Path, str] | None = None,
-    fragment_paths: set[pathlib.Path] | None = None,
-) -> list[dict]:
-    """既知資料の現在の範囲digestを作る。未知ファイル全体や本文の写しは保存しない。"""
-    candidates = []
-    for path in dict.fromkeys(target.path for target in targets):
-        if not path.is_file():
-            continue
-        try:
-            text = bodies[path] if bodies is not None and path in bodies else path.read_bytes().decode("utf-8")
-        except OSError, UnicodeError:
-            # 明示されたReadには画像なども含まれる。本文候補は読めたUTF-8資料に限る。
-            continue
-        lines = text.splitlines(keepends=True)
-        logical = logical_document(path)
-        version = bytes_fingerprint(text.encode("utf-8"))
-        # 範囲の要約値は、対象が名指しした範囲と資料全体だけに作る。全文の受信は版の一致で再利用する。
-        headings = [target.heading for target in targets if target.path == path]
-        for heading in dict.fromkeys(["", *headings]):
-            target = read_triggers.ReadTarget(path, heading)
-            try:
-                ranges = target.line_ranges(text) if heading else ((1, len(lines)),)
-                if path.name == "Makefile" and heading.startswith("make:"):
-                    parts = [target.body(text).rstrip("\n")]
-                else:
-                    parts = ["".join(lines[start - 1 : end]).rstrip("\n") for start, end in ranges]
-            except ValueError:
-                continue
-            if not parts or any(not part for part in parts):
-                continue
-            metadata: dict[str, Any] = {
-                "path": str(path),
-                "logical": logical,
-                "heading": heading,
-                "version": version,
-                "parts": [[bytes_fingerprint(part.encode("utf-8")), len(part), len(part.splitlines())] for part in parts],
-                "ranges": [
-                    [start, start + len(piece.splitlines()) - 1]
-                    for start, end in ranges
-                    if (piece := "".join(lines[start - 1 : end]).rstrip("\n"))
-                ],
-            }
-            if read_triggers.is_normative_document(path):
-                metadata["line_chars"] = [len(line) for line in text.rstrip("\n").splitlines(keepends=True)]
-            if not heading and fragment_paths is not None and path in fragment_paths:
-                metadata["lines"] = _line_hashes(text)
-            candidates.append(metadata)
-    return candidates
-
-
-def content_fingerprint(path: pathlib.Path) -> str:
-    """資料の現在版を表す内容ハッシュを返す。"""
-    return bytes_fingerprint(path.read_bytes())
-
-
-def bytes_fingerprint(raw: bytes) -> str:
-    """読み込み済みの本文から、`content_fingerprint`と同じ内容ハッシュを返す。"""
-    return hashlib.sha256(raw).hexdigest()
-
-
-def read_trigger_key(path: pathlib.Path, fingerprint: str) -> str:
-    """取得を観測した資料の実体パスと内容識別子から記録キーを返す。"""
-    return READ_TRIGGER_PREFIX + str(path.resolve()) + "#sha256:" + fingerprint
-
-
 def skill_invocation_key(path: pathlib.Path, fingerprint: str) -> str:
     """資料参照の成功と区別して、同じ主体・本文のSkill起動を識別する。"""
     return "read-trigger-skill:" + str(path.resolve()) + "#sha256:" + fingerprint
@@ -402,15 +284,6 @@ def skill_invocation_key(path: pathlib.Path, fingerprint: str) -> str:
 def reference_only(operations: Sequence[Sequence[str]]) -> bool:
     """選択元がすべて名指し参照である場合だけ、Readによる取得を案内する。"""
     return bool(operations) and all(any(value.startswith("read:") for value in group) for group in operations)
-
-
-def content_ready(records: dict, fingerprint: str, agent: str) -> bool:
-    """同じ主体の全文受信版を、記録時のパスを問わずに照会する。旧形式のキーも保持する。"""
-    suffix = "#sha256:" + fingerprint
-    return any(
-        key.startswith(READ_TRIGGER_PREFIX) and key.endswith(suffix) and isinstance(actors, list) and agent in actors
-        for key, actors in records.items()
-    )
 
 
 def edited_document(tool_name: str, tool_input: dict, response: object, cwd: str) -> tuple[pathlib.Path, str] | None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
+import sys
 import threading
 import time
 
@@ -14,6 +16,7 @@ from agent_toolkit._agents_server import effort_control
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._common import effort_requests, session_layout, session_registry
+from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
 
 
 @pytest.mark.parametrize("engine", ["agy", "opencode"])
@@ -68,6 +71,7 @@ async def test_cli_without_conversation_environment_resolves_only_own_executor(e
 
 
 def _session():
+    session_registry.declare_effort_receiver()
     session = SessionState(session_id="child", cwd="/work", model="test-model", effort="low", model_type="review", turn_seq=1)
     session.publish_registry = True
     session.launcher_session_id = "parent"
@@ -214,3 +218,91 @@ async def test_independent_next_turn_consumes_self_resume_reservation():
 
     await effort_control.resume_changed({"child": session}, unexpected)
     assert session.effort_resume_turn is None
+
+
+@pytest.mark.parametrize("fault", ["missing", "version", "owner", "generation"])
+def test_cli_refuses_unverified_receiver_without_saving(fault):
+    """未宣言・別世代では会話を保持し、要求を送らない。"""
+    _session()
+    path = session_registry.registry_directory() / "child.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if fault == "missing":
+        payload.pop("effort_receiver")
+    elif fault == "version":
+        payload["effort_receiver"]["version"] = 2
+    elif fault == "owner":
+        payload["effort_receiver"]["process"]["pid"] += 1
+    else:
+        payload["processes"][0]["create_time"] += 1
+        payload["processes"][0].pop("start_id", None)
+        payload["effort_receiver"]["process"] = payload["processes"][0]
+    before = json.dumps(payload)
+    path.write_text(before, encoding="utf-8")
+    result = effort_requests.request("up", "child", {"CODEX_THREAD_ID": "parent"})
+    assert result["request_sent"] is False and result["error"] and result["next_action"]
+    assert path.read_text(encoding="utf-8") == before
+    assert not list(path.parent.glob("*.effort-request"))
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="forkを提供するOSだけで親宣言の継承を確認する")
+def test_fork_does_not_publish_parent_receiver_declaration(tmp_path):
+    # pytest workerの監視スレッドとロックを継承しない、新しいPythonで実forkする。
+    sample = tmp_path / "fork_sample.py"
+    sample.write_text(
+        """import os
+import pathlib
+import sys
+import threading
+from agent_toolkit._common import session_registry
+
+state_root = pathlib.Path(sys.argv[1])
+assert threading.active_count() == 1
+session_registry.declare_effort_receiver()
+pid = os.fork()
+if pid == 0:
+    owner = session_registry.owner_process()
+    assert owner is not None
+    session_registry.publish(
+        "fork-child", state=session_registry.PublicationState.RESULT_COMPLETED,
+        processes=[owner], state_root=state_root,
+    )
+    os._exit(0)
+waited, status = os.waitpid(pid, 0)
+assert waited == pid and os.waitstatus_to_exitcode(status) == 0
+print(pid)
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [sys.executable, "-W", "error::DeprecationWarning", str(sample), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=15,
+    )
+    pid = int(result.stdout.strip())
+    payload = json.loads((session_registry.registry_directory(tmp_path) / "fork-child.json").read_text(encoding="utf-8"))
+    assert payload["processes"][0]["pid"] == pid
+    assert "effort_receiver" not in payload
+
+
+@pytest.mark.asyncio
+async def test_completed_child_parent_change_is_used_by_next_turn(monkeypatch):
+    session = _session()
+    session.status = "completed"
+    session.record_turn_completed()
+    session.publish_registration()
+    async with AgentsServerManager(status_writer=None) as manager:
+        manager.sessions[session.session_id] = session
+        monkeypatch.setattr(manager, "_effort_catalog", _catalog)
+        manager.activate()
+        result = await asyncio.to_thread(effort_requests.request, "up", "child", {"CODEX_THREAD_ID": "parent"})
+        assert result["effort"] == "medium" and result["applies"] == "next_turn"
+        assert session.status == "completed" and session.effort_resume_turn is None
+        backend = FakeBackend(manager.sessions, "codex")
+        install_backend(manager, "codex", backend)
+        await manager.send_message("child", "続けよ")
+        resumed = manager.sessions["child"]
+        assert resumed.session_id == "child" and resumed.effort == "medium" and resumed.turn_seq == 2
+        info = session_registry.resolve("child").resume_info
+        assert info is not None and info.effort == "medium"

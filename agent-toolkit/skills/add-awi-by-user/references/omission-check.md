@@ -1,20 +1,23 @@
 # WI保存前の考慮漏れ点検
 
 WI起草者と投入前レビュー担当が、原文・原稿・調査根拠から考慮漏れを探すための資料である。
-推奨案や確認の選択肢を提示する前、質問ラウンドを終える前、原稿確定前、登録0件で終える前、候補を不採用にする前に、次の全類型を点検する。
+起草の方針（対象・範囲・採否・手段）を決める前、質問ラウンドを終える前、原稿確定前、登録0件で終える前、候補を不採用にする前に、次の全類型を点検する。
+最初の時点は、方針をどう伝えるかによらず、方針を決める判断の前である。
+推奨案や選択肢を提示する場合、確認を経ずに起草へ進むと決める場合、自分で決めた方針をユーザーへ伝える場合（「〜するAWIを起草する」と予告する途中報告を含む）、方針を伝える工程を持たない起草の流れ（プロジェクト固有のWI作成スキルを含む）は、いずれもこの時点に当たる。
 選択肢を提示する前は、過去の判断との関係(c)と継続費用を含む過剰さ(d)を、推奨しない案を含む提示する全ての案と、推奨の結果として登録しないことになる候補へ適用する（推奨案が「登録しない」の場合を含む）。
+自分で決めた方針にも全類型を適用し、とくに範囲の限定(a)、既存の仕組み・過去の判断との関係(c)、過剰さ(d)を確かめてから伝える。
 再発した考慮漏れの予防は、該当する類型をこの資料へ統合して次の点検へ戻す。
 
 ## 名指し参照の読込方法
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
-| (d)で推奨しない案と不採用にする候補を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
-| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow-writing.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | |
+| (d)で推奨しない案と不採用にする候補を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | | |
+| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow-writing.md` | | |
 
 ## 点検類型
 

@@ -123,7 +123,14 @@ def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.
     assert any(f"固定{len(_plan_format.PLAN_BUG_TABLE_ROWS)}行" in error for error in errors), errors
 
 
-@pytest.mark.parametrize("variant", [_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS, _plan_fixture.BUG_VARIANT_LEGACY_ROWS])
+@pytest.mark.parametrize(
+    "variant",
+    [
+        _plan_fixture.BUG_VARIANT_BEFORE_HARM_ROWS,
+        _plan_fixture.BUG_VARIANT_PREVIOUS_ROWS,
+        _plan_fixture.BUG_VARIANT_LEGACY_ROWS,
+    ],
+)
 def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], variant: str) -> None:
     """新規作成では現行より前の行構成を持つ調査表をエラーにする。"""
     work_dir, base = repo
@@ -139,13 +146,14 @@ def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], 
     assert any("現行より前の行構成" in error for error in errors), errors
 
 
-def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str]) -> None:
+@pytest.mark.parametrize("row", ["害の型と反復", "再発防止策の採否"])
+def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str], row: str) -> None:
     """計画ファイル（バグ）の`内容`空欄を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     invalid_bug_file = _plan_fixture.bug_file().replace(
-        _plan_fixture.bug_row("再発防止策の採否"),
-        "| 再発防止策の採否 |  |",
+        _plan_fixture.bug_row(row),
+        f"| {row} |  |",
     )
     errors, _warnings = _check_new(work_dir, main_content, detail_content, bug_file_content=invalid_bug_file)
     assert any("空の`内容`" in error for error in errors), errors

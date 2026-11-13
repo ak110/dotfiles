@@ -1,7 +1,7 @@
 """commitのhookで`pyfltr fast`を起動し、統合前のブランチか同じ内容で成功済みのpytestがあればpytestだけを外す。
 
 `develop`・`master`・`main`以外のブランチ（レーンや内部群の作業ブランチ）では、pytestを外す。
-これらのブランチの変更は、統合の前に不変条件試験を含む全量の`pyfltr run`を成功させ、統合する側が
+これらのブランチの変更は、統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させ、統合する側が
 その成功を確かめてから取り込む。commitごとに不変条件試験を実行すると共有の検証枠を占め、検証の待ちが
 巡回の所要の大半になったためである（2026年11月13日、同時数8の比較の集計）。
 統合先のブランチへのcommitと、ブランチを特定できない状態（detached HEADなど）では、従来どおりpytestを含める。
@@ -13,8 +13,8 @@ commitの直前に同じ内容へ`pyfltr run`を成功させている場合、�
 pyfltrの内部構造には依存しない。次をすべて満たす実行だけを再利用する。
 
 - 作業ツリーとindexが一致する（commit対象の内容と作業ツリーが同じ）。
-- 追跡ファイル・未追跡ファイルとその親ディレクトリの更新時刻が、その実行のpytestの開始より前である
-  （ファイルの追加・削除・改名は親ディレクトリの更新時刻に現れる）。
+- 追跡ファイル・除外対象以外の現存する未追跡ファイルとGit indexの更新時刻が、その実行のpytestの開始より前である。
+  追跡対象の削除・改名はindexと作業ツリーの比較およびindexの更新時刻で検出する。
   基準を実行の開始にしないのは、`pyfltr run`の整形段（`sync-generated-files`など）が
   内容を変えずにファイルを書き直し、pytestの開始の直前に更新時刻を進めるためである。
   pytestは整形段の終了後に始まる（2026年11月12日、pyfltr 3.30.1の`show-run`で、
@@ -48,6 +48,7 @@ import sys
 import typing
 
 from agent_toolkit._git import command as git_command
+from verification_targets import consumer_tests, uncovered_tests
 
 from pytools._internal.common import format_cli_error, run_subprocess
 
@@ -93,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="*")
+    parser.add_argument("--consumer-tests", action="store_true", help="固定文字列参照と命名による利用試験候補をJSONで返す。")
     parser.add_argument(
         "--verify-run",
         metavar="RUN_ID",
@@ -100,6 +102,21 @@ def main(argv: list[str] | None = None) -> int:
         "統合する側が、統合入力の作業ツリーでff統合の前に使う。成立すれば終了0、しなければ終了1。",
     )
     args = parser.parse_args(argv)
+    if args.consumer_tests and args.verify_run is not None:
+        parser.error("--consumer-testsと--verify-runは併用できない")
+    if args.consumer_tests:
+        try:
+            print(json.dumps(consumer_tests(pathlib.Path.cwd(), args.files), ensure_ascii=False))
+        except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
+            print(f"候補列挙を確認できない: {exc}", file=sys.stderr)
+            print(
+                "次の操作: 入力パスがリポジトリ内の実在ファイルか確認せよ。"
+                "取得や読取に失敗した場合は、診断に示したGit状態とファイルの読取権限を確認せよ。"
+                "問題を直し、同じ引数で--consumer-testsを再実行せよ。",
+                file=sys.stderr,
+            )
+            return 1
+        return 0
     pyfltr = shutil.which("pyfltr")
     if pyfltr is None:
         print("pyfltr-precommit: pyfltrが見つからない。`uv sync --frozen`で開発環境を準備する。", file=sys.stderr)
@@ -107,11 +124,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_run is not None:
         try:
             verified = find_reusable_run(pathlib.Path.cwd(), pyfltr, run_id=args.verify_run)
-        except (KeyError, TypeError, AttributeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        except (KeyError, TypeError, AttributeError, ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
             verified = Reuse(None, f"判定できない: {type(exc).__name__}: {exc}")
         if verified.run_id is None:
             print(
                 f"pyfltr-precommit: run {args.verify_run}は現在のHEADの内容の成功と確かめられない（{verified.reason}）。",
+                file=sys.stderr,
+            )
+            print(
+                "次の操作: 診断の原因と対象HEADを確認し、必要な利用側試験を含むpyfltr runを成功させよ。"
+                "その実行IDを--verify-runへ渡せ。",
                 file=sys.stderr,
             )
             return 1
@@ -121,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     if branch is not None and branch not in _INTEGRATION_BRANCHES:
         print(
             f"pyfltr-precommit: 統合前のブランチ{branch}のためpytestを外して実行する。"
-            "統合の前に不変条件試験を含む全量の`pyfltr run`を成功させる。",
+            "統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させる。",
             file=sys.stderr,
         )
         return subprocess.run([pyfltr, "fast", "--disable", "pytest", *args.files], check=False).returncode
@@ -229,12 +251,24 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
                 for command in shown.get("commands", [])
             )
         ):
+            if run_id is not None:
+                targets = _argv_targets(meta["argv"])
+                sources = [target for target in targets if target.endswith(".py")]
+                missing = uncovered_tests(root, consumer_tests(root, sources), targets)
+                if missing:
+                    return Reuse(None, f"利用試験が不足: {', '.join(missing)}。これらを加えてpyfltr runを再実行する")
             return Reuse(run["run_id"], "")
     return Reuse(None, "現在の内容でpytestが成功した実行が無い")
 
 
 def _latest_change_ns(root: pathlib.Path) -> int | str:
-    """対象ファイルと親ディレクトリの更新時刻の最大値を返す。判定できない場合は理由を返す。"""
+    """現存する対象ファイルとGit indexの更新時刻を比較する。
+
+    親ディレクトリは除外ファイルの生成・削除でも更新されるため比較しない。
+    追跡対象の削除・改名は先行するdiffとindexの更新で検出する。
+    未追跡ファイルの削除は検出しないが、commitする追跡内容は変わらない。
+    実行時の未追跡入力への依存は、従来の親時刻の比較でも保証できない。
+    """
     listed = git_command.run(
         ["-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         capture_output=True,
@@ -242,13 +276,23 @@ def _latest_change_ns(root: pathlib.Path) -> int | str:
     )
     if listed.returncode:
         return f"ファイル一覧を取得できない: exit {listed.returncode}"
-    paths: set[pathlib.Path] = {root}
+    index = git_command.run(
+        ["-C", str(root), "rev-parse", "--path-format=absolute", "--git-path", "index"],
+        capture_output=True,
+        text=True,
+        timeout=_QUERY_TIMEOUT_SECONDS,
+    )
+    if index.returncode or not index.stdout.strip():
+        return (
+            f"Git indexのパスを取得できない: {format_cli_error(index)}。"
+            "対象worktreeで`git rev-parse --git-path index`を実行し、Gitの診断とindexの所在を確認する"
+        )
+    paths: set[pathlib.Path] = {pathlib.Path(index.stdout.strip())}
     for name in listed.stdout.split(b"\0"):
         if not name:
             continue
         path = root / os.fsdecode(name)
         paths.add(path)
-        paths.update(parent for parent in path.parents if parent.is_relative_to(root))
     latest = 0
     for path in paths:
         try:
@@ -302,6 +346,18 @@ def _neutral_argv(argv: list[str]) -> bool:
         if token.startswith("-"):
             return False
     return True
+
+
+def _argv_targets(argv: list[str]) -> list[str]:
+    """中立性を確認済みのargvから、値付きオプションの値を除いて対象を返す。"""
+    targets: list[str] = []
+    tokens = iter(argv[1:])
+    for token in tokens:
+        if token in _NEUTRAL_VALUE_OPTIONS:
+            next(tokens)
+        elif not token.startswith("-"):
+            targets.append(token)
+    return targets
 
 
 def _to_ns(value: typing.Any) -> int:

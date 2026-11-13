@@ -153,7 +153,8 @@ async def test_public_start_keeps_connection_and_mcp_diagnostics(
         agents_server_support.install_backend(current, "claude", DiagnosticBackend(current.sessions, "claude"))
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         response = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
-        assert response["warnings"] == ["接続設定の診断", mcp_diagnostic]
+        assert response["warnings"][:2] == ["接続設定の診断", mcp_diagnostic]
+        assert len(response["warnings"]) == 3 and response["warnings"][2]["scope"] == "model-override"
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])

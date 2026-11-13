@@ -222,7 +222,16 @@ def dynamic_targets(
     raise ValueError(f"未登録の資料選択子: {row.selector}")
 
 
-def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = "", *, record_scopes: bool = True) -> None:
+def _mark(
+    session_id: str,
+    path: pathlib.Path,
+    agent: str,
+    fingerprint: str = "",
+    *,
+    record_scopes: bool = True,
+    host: str = "claude",
+    project: str | None = None,
+) -> None:
     from agent_toolkit._hooks import result_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
     from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
@@ -261,15 +270,15 @@ def _mark(session_id: str, path: pathlib.Path, agent: str, fingerprint: str = ""
             return state
 
         read_delivery.update_state(session_id, parsed)
-    _select_result_documents(session_id, agent, result_reads.observe_file(session_id, agent, path))
+    _select_result_documents(session_id, agent, result_reads.observe_file(session_id, agent, path), host=host, project=project)
 
 
-def _select_result_documents(session_id: str, agent: str, documents: list[str]) -> None:
+def _select_result_documents(session_id: str, agent: str, documents: list[str], *, host: str, project: str | None) -> None:
     targets = []
     root = plugin_resources.plugin_root()
     for document in documents:
         name, _separator, heading = document.partition("#")
-        path = read_triggers.resolve_document(name, root / "share/read-trigger-contract.md", root)
+        path = read_triggers.resolve_document(name, root / "share/read-trigger-contract.md", root, host, project=project)
         if path is None or not path.is_file():
             raise ValueError(f"結果の判断資料を解決できない: {document}")
         targets.append(read_triggers.ReadTarget(path, heading))

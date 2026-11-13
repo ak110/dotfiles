@@ -17,6 +17,7 @@ from agent_toolkit._common.plugin_roots import (
 _INPUT_CACHE: contextvars.ContextVar[dict[tuple, object] | None] = contextvars.ContextVar(
     "read_delivery_input_cache", default=None
 )
+HOOK_PAYLOAD: contextvars.ContextVar[dict | None] = contextvars.ContextVar("read_delivery_payload", default=None)
 
 type _HookEntry[Result] = Callable[[dict, str, dict, str], Result]
 
@@ -31,10 +32,12 @@ def _input_scope[R](function: _HookEntry[R]) -> _HookEntry[R]:
     @functools.wraps(function)
     def scoped(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> R:
         token = _INPUT_CACHE.set({})
+        payload_token = HOOK_PAYLOAD.set(payload)
         try:
             with plugin_resolution_scope(session_id=session_id), read_triggers.resolution_scope():
                 return function(payload, tool_name, tool_input, session_id)
         finally:
+            HOOK_PAYLOAD.reset(payload_token)
             _INPUT_CACHE.reset(token)
 
     return scoped

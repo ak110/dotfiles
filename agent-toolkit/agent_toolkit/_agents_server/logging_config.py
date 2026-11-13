@@ -25,6 +25,7 @@ from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.diagnostic_redaction import redact_diagnostic_values, redact_secrets
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.next_action import next_action_line
 
@@ -57,6 +58,13 @@ class _StderrHandler(logging.StreamHandler):  # type: ignore[type-arg]
     """
 
 
+class _RedactingFileHandler(logging.handlers.RotatingFileHandler):
+    """書式引数・例外チェーンを含む整形済み本文を保存境界で伏せる。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_secrets(super().format(record))
+
+
 class _LogFileHandler(logging.Handler):
     """agents_serverが追加した永続ファイル向けhandler。
 
@@ -65,7 +73,7 @@ class _LogFileHandler(logging.Handler):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
-        self._sink = logging.handlers.RotatingFileHandler(*args, **kwargs)
+        self._sink = _RedactingFileHandler(*args, **kwargs)
         self.baseFilename = self._sink.baseFilename
         self._records: queue.Queue[logging.LogRecord | None] = queue.Queue()
         self._accepting = True
@@ -207,7 +215,10 @@ def append_instance_event(path: pathlib.Path, *, writer: str, event: str, **fiel
 
     上限を超える追記は行わず、上限に達した時点で`truncated`を1行だけ書く。書込失敗は例外を送出しない。
     """
-    line = json.dumps({"at": _now(), "event": event, "writer": writer, **fields}, ensure_ascii=False) + "\n"
+    line = (
+        json.dumps({"at": _now(), "event": event, "writer": writer, **redact_diagnostic_values(fields)}, ensure_ascii=False)
+        + "\n"
+    )
     encoded = line.encode("utf-8")
     try:
         with _INSTANCE_LOCK:

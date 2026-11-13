@@ -15,14 +15,14 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| add-awi-by-userの投入前レビュー結果を検収する前 | `../skills/add-awi-by-user/references/omission-check.md` |
-| 指摘が繰り返される原因を分析する前 | `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
-| 投入前レビューの起動要否を判定する前 | `../skills/wi-standards/references/drafting-workflow-review-route.md` |
-| 要件との不一致を指摘された時に、値の出所と`source`を確かめる前 | `../skills/wi-standards/references/origin-and-approval-origin.md` |
-| 修正した方式全体の整合性を確かめる前 | `../skills/wi-standards/references/drafting-completion-decisions.md` |
-| 正式名への置換だけの差分を保存へ進める前 | `../skills/wi-standards/references/drafting-workflow-saving.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| add-awi-by-userの投入前レビュー結果を検収する前 | `../skills/add-awi-by-user/references/omission-check.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/add-awi-by-user/references/omission-check.md` |
+| 指摘が繰り返される原因を分析する前 | `agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` | | |
+| 投入前レビューの起動要否を判定する前 | `../skills/wi-standards/references/drafting-workflow-review-route.md` | | |
+| 要件との不一致を指摘された時に、値の出所と`source`を確かめる前 | `../skills/wi-standards/references/origin-and-approval-origin.md` | | |
+| 修正した方式全体の整合性を確かめる前 | `../skills/wi-standards/references/drafting-completion-decisions.md` | | |
+| 正式名への置換だけの差分を保存へ進める前 | `../skills/wi-standards/references/drafting-workflow-saving.md` | | |
 
 ## 入力
 
@@ -85,7 +85,7 @@ add-awi-by-userでは4条件によらず毎回実施し、考慮漏れの点検�
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | add-awi-by-userで受けた指摘の分類・処置を確定する前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
-| 実ユーザー発話やWI記入欄の指摘を受領・分類する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
+| 実ユーザー発話やWI記入欄の指摘を受領・分類する前（操作対象外: ユーザー発話・回答の受領） | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 
 1. 方針段階と本文段階のどちらでも、指摘の受領後、採否・修正を確定する前に、呼出元が定める分類と処置を適用する。
    `agent-toolkit:add-awi-by-user`の分類は同スキルの「指摘の分類と処置」に従う。

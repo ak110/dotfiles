@@ -481,3 +481,27 @@ class TestRun:
         captured = capsys.readouterr()
         assert captured.err.count(notice.message) == 1
         assert captured.err.count(notice.command) == 1
+
+
+@pytest.mark.parametrize("failed", [step.name for step in post_apply.DEFAULT_STEPS])
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_all_declared_step_boundaries_continue(capsys: pytest.CaptureFixture[str], failed: str, timed_out: bool) -> None:
+    """実工程境界の未知例外は後続を止めず、公開mainの一覧と終了1に届く。"""
+    visited: list[str] = []
+
+    def invoke(name: str) -> post_apply_outcome.PostApplyOutcome:
+        visited.append(name)
+        if name == failed:
+            if timed_out:
+                raise subprocess.TimeoutExpired(name, 1)
+            raise RuntimeError("injected unknown failure")
+        return post_apply_outcome.PostApplyOutcome()
+
+    steps = [(step.name, lambda name=step.name: invoke(name)) for step in post_apply.DEFAULT_STEPS]
+    with pytest.raises(SystemExit) as result:
+        post_apply.main(runner=lambda: post_apply.run(steps))
+    assert result.value.code == 1
+    assert sorted(visited) == sorted(step.name for step in post_apply.DEFAULT_STEPS)
+    output = capsys.readouterr()
+    assert failed in output.err + output.out
+    assert "次の操作:" in output.err

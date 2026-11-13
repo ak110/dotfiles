@@ -6,8 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 要求単位・完成条件と観測の達成を判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
-| 実行レビューを判定する前 | `agent-basics:review-standards/references/reviewer-execution.md` |
 | 要求の縮小を判定する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
 | AWIの新旧形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
 

@@ -54,6 +54,10 @@ async def test_start_explore_result_matches_delivered_role(
         session = manager.sessions[response["session_id"]]
         assert backend.start_calls[0][2] == "explore" and backend.prompts
         cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
+        if "続行できない理由:" in message:
+            assert session.result_contract_recovery_pending and not session.result_available
+            session.result_contract_recovery_consumed = True
+            cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
         shown = await mcp_tools.show_session(session.session_id)
         assert shown["status"] == "completed" and shown["result_available"]
         assert session.agent_message == message and not session.result_contract_recovery_pending

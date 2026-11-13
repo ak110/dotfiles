@@ -80,8 +80,9 @@ def test_unconfirmed_judgment_is_not_restored_as_mandatory_from_old_selection(tm
 
 
 def test_confirmation_operation_remains_an_observable_judgment_condition(tmp_path):
-    """確認本文・選択肢の起草を観測できる契機は保つ。"""
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("confirmation",), (), condition="確認本文を書く前")
+    """共通の確認基準は、確認本文・選択肢の起草を観測できる契機を保つ。"""
+    source = read_delivery.plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+    row = ReadTrigger(source, 1, "判断", ("confirmation",), (), condition="確認本文を書く前")
     assert read_delivery.condition_confirmed(row, "AskUserQuestion", {"questions": []}, str(tmp_path))
 
 
@@ -229,3 +230,60 @@ def test_named_reference_rows_are_not_resolved_for_unrelated_reads(tmp_path, mon
     assert not called
     _run_hook_in_process("pretooluse", _partial_read(tmp_path, reference))
     assert called == [source]
+
+
+@pytest.mark.parametrize(
+    "command,candidate",
+    [
+        ("cat -- {path}", False),
+        ("cat -- {path} && date", False),
+        ("sed -n '1,$p' -- {path} && date", False),
+        ("sed -n '1,10p' -- {path} && date", True),
+        ("cat -- {path} | head -n 10", True),
+    ],
+)
+def test_same_call_full_read_is_not_a_named_reference_candidate(
+    tmp_path, monkeypatch, _named_reference_skill, command, candidate
+):
+    """全文読取予定だけを候補から外し、部分読取・パイプは取得と取り違えない。"""
+    source, reference = _named_reference_skill
+    row = ReadTrigger(source, 3, "判断", ("tool:Bash",), (reference,), condition="資料を選択して取得する時")
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    read_delivery._mark("test", source, "main")  # pylint: disable=protected-access
+    result = _run_hook_in_process(
+        "pretooluse",
+        {
+            "session_id": "test",
+            "cwd": str(tmp_path),
+            "tool_name": "Bash",
+            "tool_input": {"command": command.format(path=reference)},
+        },
+    )
+    assert result.returncode == 0 and not result.stderr
+    assert ("読込条件の候補" in result.stdout) is candidate
+    assert not read_delivery.target_ready(
+        read_delivery.read_state("test").get("operation_skill_delivered_agents", {}), ReadTarget(reference), "main"
+    )
+
+
+def test_same_call_full_read_is_removed_from_a_multi_document_candidate(tmp_path, monkeypatch, _named_reference_skill):
+    """同じ宣言に未取得資料が残る場合も、今回読む資料を候補へ再掲しない。"""
+    source, reference = _named_reference_skill
+    other = tmp_path / "other.md"
+    other.write_text("# 別の必要資料\n", encoding="utf-8")
+    row = ReadTrigger(source, 3, "判断", ("tool:Bash",), (reference, other), condition="資料を選択して取得する時")
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
+    read_delivery._mark("test", source, "main")  # pylint: disable=protected-access
+    result = _run_hook_in_process(
+        "pretooluse",
+        {
+            "session_id": "test",
+            "cwd": str(tmp_path),
+            "tool_name": "Bash",
+            "tool_input": {"command": f"cat -- {reference} && date"},
+        },
+    )
+    assert result.returncode == 0 and not result.stderr
+    context = _additional_context(result)
+    assert "読込条件の候補" in context and str(other) in context
+    assert str(reference) not in context

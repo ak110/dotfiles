@@ -102,14 +102,7 @@ _HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT
 _USER_PROMPT_SOURCE_KEY = "source"
 _USER_PROMPT_SOURCE_USER = "user"
 _llm_notice = _notice_formatter("user_prompt_submit")
-_USER_CONFIRMATION_NOTICE_BODY = (
-    "この発話を受けた時点で、この文脈で`agent-toolkit:user-confirmation-and-report`を起動・全文取得したことを確認できない。"
-    "部分表示やパイプ・変数を使った表示は取得操作に数えない。"
-)
-_USER_CONFIRMATION_NOTICE_FIX = (
-    "是正の認可は`agent-toolkit:user-confirmation-and-report`の「起動契機」から「認可を要する操作」へ進んで判定せよ。"
-)
-_BUGFIX_NOTICE_FIX = "不具合の有無・原因・直し方を回答や確認の案へ含める場合は、診断より前に`agent-basics:bugfix`を起動せよ。"
+_USER_CONFIRMATION_NOTICE_BODY = "この文脈では`agent-toolkit:user-confirmation-and-report`の起動・全文取得を確認できない。"
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -180,9 +173,7 @@ def _claim_user_confirmation_notice(session_id: str) -> bool:
 def _user_confirmation_notice() -> str:
     """文脈ごとの既存pending状態で一度だけ選んだ案内を共通の書式へ渡す。"""
     acquisition = "応答と作業の着手より前に、`agent-toolkit:user-confirmation-and-report`スキルを起動せよ。"
-    body = next_action.with_next_action(
-        _USER_CONFIRMATION_NOTICE_BODY, acquisition + _USER_CONFIRMATION_NOTICE_FIX + _BUGFIX_NOTICE_FIX
-    )
+    body = next_action.with_next_action(_USER_CONFIRMATION_NOTICE_BODY, acquisition)
     return message_format.llm_notice(body, "user_prompt_submit", tag="notice")
 
 

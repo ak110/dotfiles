@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | 所要時間の基準を適用する前 | `agent-toolkit:review-session/references/duration-analysis.md` | | |
 | 対象の分析を始める前 | `session-analysis.md` | | |
-| AWIを投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | | |
+| AWIを投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` |
 | 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
 
 ## 起動

@@ -13,9 +13,13 @@
 | 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` |
 | 介入を扱う前 | `../../../share/exec-review-responses.md` |
 | 残工程の担当を選ぶ前 | `routing.md` |
-| 委譲した成果が受入れ基準に届かず、再委譲やeffort・モデルの変更を判断する前 | `model-and-effort.md` |
+| 委譲した成果が受入れ基準に届かず、再委譲やeffort・モデルの変更を判断する前（操作対象外: ツールと結び付かない判断） | `model-and-effort.md` |
 
 ## 継続と新規起動
+
+handoff_fromでmodel_typeを省略すると前任の指定値を継承する。
+直接候補列の継承は現在の工程設定とは異なり、warningsに継承値を示す。
+現在設定へ戻すには、model_typeへ前任の役割に定めた元の工程名を明示する。
 
 1. 文脈を再利用するため、委譲済み要求の精読・調査・回答の前に、元担当へユーザー原文、未確定の論点、参照記録を渡して調査・技術判断を委ねる。
    稼働中なら追送し、終了後は以下の継続・回復・置換条件に従う。

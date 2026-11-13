@@ -7,8 +7,8 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 統合前の完成条件判定を確認する時 | `../../../share/exec-review-recording-integration.md` |
-| 統合指示の委任と検収を行う時 | `../../../share/exec.parent.md` |
-| 統合指示の委任と検収を行う時 | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
+| 統合指示の委任と検収を行う時（操作対象外: 自身の成果物・評価方法の検討） | `../../../share/exec.parent.md` |
+| 統合指示の委任と検収を行う時（操作対象外: 自身の成果物・評価方法の検討） | `../../../share/exec.parent.md`、`../../../share/exec-parent-integration.md` |
 
 ## 統合とAWI終了
 

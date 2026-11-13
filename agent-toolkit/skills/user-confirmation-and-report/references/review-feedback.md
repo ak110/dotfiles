@@ -9,6 +9,7 @@
    作業契約の凍結後に行われた変更や指摘の採否は、レビュー指摘管理表へ記録する。
    作業契約への反映手順は`../../../share/work-contract-updates.md`「更新する時点」に従う。
    `review_contract`の保持と再生成は、`${CLAUDE_PLUGIN_ROOT}/share/exec-review-contract-generation.md`「`review_contract`の生成」に従う。
+   指摘が今回の修正に加えて以後にも適用する方針の候補を含むかは、`user-utterance-incorporation.md`「原文の保持と取り込み」で判定する。
 2. 指摘の対象が、自動処理待ちの未完了な既存WIなら、事実確認する前に`agent-toolkit:wi-standards`の`references/states-and-dependencies.md`に従って対象を「保留」状態にして保護する。
    この保留は、要求に同意したことや本文を変更したことを意味するのではなく、内容を比較検討している間に古い要求に基づいて処理が進んでしまうのを防ぐための処置である。
 3. 現物と突き合わせた結果がユーザーの発言と一致しない場合は、同意や修正より先に根拠と代替案を説明する。

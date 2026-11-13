@@ -4,25 +4,24 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 基準の参照時 | `exec-subagent-implementation.md` |
-| 検証結果を記録する前 | `verification-evidence-records.md` |
-| 基準の参照時 | `reader-fit-review.parent.md` |
-| 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
-| 基準の参照時 | `review-loop-coordination-rounds.md` |
-| 基準の参照時 | `agent-toolkit:/share/reader-fit-review.parent.md` |
-| 基準の参照時 | `agent-basics:secret-files/SKILL.md` |
-| 基準の参照時 | `../skills/delegation/SKILL.md` |
-| 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
-| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
-| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
-| レビュー工程の判定・記録を始める前 | `review-table-operations.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 基準の参照時 | `exec-subagent-implementation.md` | | |
+| 検証結果を記録する前 | `verification-evidence-records.md` | | |
+| 基準の参照時 | `reader-fit-review.parent.md` | | |
+| 初回起動前 | `../skills/delegation/references/process-model-settings.md` | | |
+| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` | | |
+| 基準の参照時 | `review-loop-coordination-rounds.md` | | |
+| 基準の参照時 | `agent-toolkit:/share/reader-fit-review.parent.md` | | |
+| 基準の参照時 | `agent-basics:secret-files/SKILL.md` | | |
+| 基準の参照時 | `../skills/delegation/SKILL.md` | | |
+| 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | | |
+| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` | | |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` |
+| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` | | |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | |
+| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | | |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` | | |
 
 ## 起動方法別のレビュー基準
 
@@ -119,6 +118,8 @@ rebaseでコミットOIDだけが変わった場合は再レビュー不要で�
 **5.** 入力と所属を点検してから、確定した単位でレビューを起動する。
 
 証拠の引渡しは`verification-evidence-records.md`「完成条件証拠の検証記録」に従う。
+起動した後もレーンは同じ作業ツリーで別の修正を続けてよい。
+その間のレビュー担当の検証の場所は、`exec-review-operations.md`「操作区分」の手順で対象worktreeの未commitの変更の有無から決まる。
 
 次の引数で`agents_server`の`start`を呼ぶ。
 

@@ -60,9 +60,9 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 | 通常起動時と、作業完了報告の到達水準を判定する前 | 起動のwhole_contract_pathまたはその正式な解決結果、メインでは自身のmanaged-temp直下にある現行の作業契約 | 起動時 | `skill:report-completion` | `input:作業契約` |
 | 作業完了報告の本文を書く前 | `references/report-formats-verification.md`、`references/report-formats-completion.md` | | | |
 | 振り返り結果報告かその予告を書く前 | `references/report-formats-retrospective.md` | | | |
-| AWI投入結果報告を書く前 | `references/report-formats-retrospective.md` | | | |
-| 独立したWI投入を受付して投入元の終了を判定するとき | `../../share/wi-submission.md` | | | |
-| 報告用UWIを書く前 | `references/report-formats-uwi.md`、`../wi-standards/references/uwi-format.md`、`../wi-standards/references/wi-standards-operations.md`、`../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-save` | |
+| AWI投入結果報告を書く前（操作対象外: 投入結果の報告・受付） | `references/report-formats-retrospective.md` | | | |
+| 独立したWI投入を受付して投入元の終了を判定するとき（操作対象外: 投入結果の報告・受付） | `../../share/wi-submission.md` | | | |
+| 報告用UWIを書く前 | `references/report-formats-uwi.md`、`../wi-standards/references/uwi-format.md`、`../wi-standards/references/wi-standards-operations.md`、`../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-dry-run`、`wi-report-commit` | |
 | 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | | | |
 | Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | | | |
 
@@ -179,9 +179,9 @@ Claude Codeの終了時に本スキルの読込不足を警告された場合は
 
 ## 工程で参照する運用資料
 
-| 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
-| --- | --- | --- | --- | --- |
-| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md`、`../delegation/references/claude-code-runtime-communication.md` | | | |
+| 時点または条件 | 全文読む資料 | 資料選択子 |
+| --- | --- | --- |
+| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `references/claude-hooks-stop.md`、`../delegation/references/claude-code-runtime-communication.md` | |
 
 ## 本文参照の取得条件
 

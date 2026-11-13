@@ -41,9 +41,9 @@ def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, mo
     )
     assert result.returncode == 0 and not result.stderr
     step = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "19バイト、予算目安7トークン" in step
+    assert "19バイト。" in step
     assert "sed -n '3,5p' --" in step
-    assert step.count("内外の出力枠") == 1
+    assert step.count("各コードブロックを別々のfunctions.exec") == 1
     assert "前提・例外" in step
     whole = _merged_steps(  # pylint: disable=protected-access
         [target, read_triggers.ReadTarget(document)], {}, "codex"
@@ -96,7 +96,7 @@ def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeyp
             assert resumed.returncode == 0 and not resumed.stderr
             guidance = resumed.stdout
         if route in {"normal", "compact"}:
-            assert "内外の出力枠" in guidance
+            assert "max_output_tokens" in guidance and "text(result)" in guidance
         else:
             assert "必要範囲の本文を実出力として返せ" in guidance
             assert "省略・退避した部分は実際に回収" in guidance

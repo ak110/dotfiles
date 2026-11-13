@@ -7,12 +7,15 @@ import os
 import pathlib
 import subprocess
 import sys
+from typing import cast
 
+import psutil
 import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import update_dotfiles  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
+import update_dotfiles_stages  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_test_helpers import (  # noqa: E402  # pylint: disable=wrong-import-position
     _INTERLEAVED_CHILD_CODE,
     _fake_run,
@@ -26,24 +29,35 @@ from update_dotfiles_test_helpers import _separate_git_recovery as _separate_git
 from update_dotfiles_test_helpers import _skip_agent_toolkit_prepare as _skip_agent_toolkit_prepare  # noqa: E402  # pylint: disable=wrong-import-position
 
 
-def test_run_step_does_not_receive_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """git pull以外のchezmoi工程へ待機上限を渡さない。"""
-    calls: list[list[str]] = []
+def test_run_step_passes_declared_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """chezmoi工程へは宣言表の待機上限を渡し、上限の無い段にはNoneを渡す。"""
+    timeouts: list[float | None] = []
 
     def run(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append(argv)
-        assert "timeout" not in kwargs
+        timeouts.append(cast(float | None, kwargs["timeout"]))
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", run)
-    for argv in (
-        ["chezmoi", "init"],
-        ["chezmoi", "status"],
-        ["chezmoi", "diff"],
-        ["chezmoi", "apply"],
-    ):
-        assert update_dotfiles._run_step(1, 1, "test", argv)[0] == 0  # pylint: disable=protected-access
-    assert len(calls) == 4
+    for stage in update_dotfiles_stages.STAGES:
+        if stage.where == "executor" and stage.name.startswith("chezmoi"):
+            assert update_dotfiles._run_step(1, 1, stage.name, ["chezmoi", "x"], timeout=stage.timeout_sec)[0] == 0  # pylint: disable=protected-access
+            assert timeouts[-1] == stage.timeout_sec
+            assert stage.timeout_sec is not None
+    assert update_dotfiles._run_step(1, 1, "test", ["chezmoi", "x"])[0] == 0  # pylint: disable=protected-access
+    assert timeouts[-1] is None
+
+
+def test_run_step_timeout_kills_descendants_and_fails(tmp_path: pathlib.Path) -> None:
+    """待機上限を超えた段は、親を失った孫も回収して失敗（終了コード1）にし、再試行対象から外す。"""
+    marker = tmp_path / "grandchild.pid"
+    grandchild_code = f"import os,time,pathlib; pathlib.Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)"
+    code = f"import subprocess, sys, time\np = subprocess.Popen([sys.executable, '-c', {grandchild_code!r}])\ntime.sleep(60)\n"
+    update_dotfiles_runtime.last_step_timed_out = False
+    returncode, _ = update_dotfiles._run_step(1, 1, "slow", [sys.executable, "-c", code], timeout=2)  # pylint: disable=protected-access
+    assert returncode == 1
+    assert update_dotfiles_runtime.last_step_timed_out is True
+    grandchild = int(marker.read_text(encoding="utf-8"))
+    assert not psutil.pid_exists(grandchild) or psutil.Process(grandchild).status() == psutil.STATUS_ZOMBIE
 
 
 def test_run_step_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch) -> None:

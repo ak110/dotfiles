@@ -7,7 +7,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 本文の条件に従い「直接的原因と事象時点の確定」を判断する前 | `root-cause-analysis-evidence.md` |
-| 本文の条件に従い「類似見直し」を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 | 本文の条件に従い「反復した指摘の原因判定」を判断する前 | `root-cause-scenarios-recurrence.md` |
 | 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/quality-principles.md` |
 | 本文の条件に従い参照先の基準を使う前 | `agent-basics:bugfix/references/causal-analysis-stages.md` |

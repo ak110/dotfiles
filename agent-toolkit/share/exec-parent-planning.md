@@ -4,13 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 実装完了の受領と実行レビューの起動へ進む前 | `exec-parent-implementation.md` |
-| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
-| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 実装完了の受領と実行レビューの起動へ進む前 | `exec-parent-implementation.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-parent-implementation.md` |
+| 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-subagent-inputs.md` |
+| 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` | | |
 
 ## 計画準備の受領
 

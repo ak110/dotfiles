@@ -82,7 +82,7 @@ def test_compact_extracts_original_user_events(
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "--conversation-only" in output
     assert "次の判断より前に" in output and "工程を定めるスキルと役割文書を全文読み直し" in output
-    assert "全体作業契約と引き継ぎ記録" in output
+    assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in output
     saved = tmp_path / "compaction-user-events.jsonl"
     assert saved.exists() is not delegated
     if not delegated:
@@ -302,10 +302,11 @@ def test_compact_recovery_command_is_delivered_once(tmp_path, monkeypatch, capsy
     arguments = shlex.split(commands[0])
     assert arguments[arguments.index("--transcript") + 1] == str(path)
     assert "--conversation-only" in arguments
-    # 復元の最初の取得は直近の少量表示とし、全期間の流れは不足する場合の手段として案内する。
+    # 直近の少量表示の引数を保ち、追加取得の手順は参照先へ集約する。
     assert arguments[-3:] == ["--conversation-window", "--conversation-recent", "30"]
     assert not any(line.startswith(("会話ID:", "原本ログ:", "この会話のtranscript:")) for line in output.splitlines())
-    assert "`--conversation-window --conversation-recent 30`を外して全期間の流れを取得せよ" in output
+    assert "session-records.md「会話の少量取得」" in output
+    assert "それでも復元できない場合だけ" not in output
 
 
 # test-copy-contract: 原本パス不明のcompact入力から会話IDを照会CLIへ渡し、別会話の原文を取得しない回復契約。

@@ -44,7 +44,9 @@ def _read_output(command, host_environ):
 
 def _produce(target, host_environ):
     """案内が生成した取得コマンドを実行し、未加工のstdout・stderrを返す。"""
-    command = read_delivery.acquisition_step(target, "codex").split("`", 2)[1]
+    command = json.loads(
+        (read_delivery.acquisition_step(target, "codex")).split("tools.exec_command(", 1)[1].splitlines()[0].removesuffix(");")
+    )["cmd"]
     result = _read_output(command, host_environ)
     return command, {"stdout": result.stdout, "stderr": result.stderr, "exit_code": result.returncode}
 

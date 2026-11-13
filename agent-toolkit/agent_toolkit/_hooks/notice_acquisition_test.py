@@ -94,7 +94,7 @@ def test_confirmation_notice_asks_to_invoke_the_skill(capsys: pytest.CaptureFixt
     assert session_state.read_state(session_id)["user_confirmation_skill_pending"] is False
     assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in body
     assert "cat --" not in body and "Get-Content" not in body
-    assert "agent-basics:bugfix" in body
+    assert "agent-basics:bugfix" not in body
 
 
 @pytest.mark.parametrize("prompt", ["通常の依頼", "`例えば調査`は引用"])

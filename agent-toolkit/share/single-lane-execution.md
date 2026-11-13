@@ -12,22 +12,22 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` |
-| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing-selection.md` |
-| 実装に着手する前、実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` |
-| WI要求の範囲で実装・修正に着手する前 | `exec-subagent-implementation.md` |
-| 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` |
-| 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review-parent-acceptance.md`、`exec-review-parent-existing-defects.md` |
-| レビュー指摘の修正と管理表の保存に着手する前 | `exec-review-parent-correction.md` |
-| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` |
-| 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` |
-| 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` |
-| レビュー指摘への対応を開始する前 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
-| レーン専用資源を使い統合前の検収を行う前 | `exec.parent.md`、`exec-parent-integration.md` |
-| レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` |
-| 初期選定が複数レーンで`統合準備完了`を返す前 | `exec.subagent.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 計画または実装の品質基準を適用する前 | `agent-basics:writing-standards/SKILL.md` | | |
+| 実装前に検証単位を選定する前 | `agent-basics:writing-standards/references/testing-selection.md` | | |
+| 実装に着手する前、実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review.parent.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review.parent.md` |
+| WI要求の範囲で実装・修正に着手する前 | `exec-subagent-implementation.md` | | |
+| 実行レビュー担当を起動する前 | `exec-review-parent-launch.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/exec-review-parent-launch.md` |
+| 実行レビューの返却を受領する前、または実行レビューから既存不良を受領する前 | `exec-review-parent-acceptance.md`、`exec-review-parent-existing-defects.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-parent-acceptance.md`、`read:agent-toolkit:*/share/exec-review-parent-existing-defects.md` |
+| レビュー指摘の修正と管理表の保存に着手する前 | `exec-review-parent-correction.md` | | |
+| 未コミット検証の実行前と検証結果の記録前 | `verification-evidence.md` | | |
+| 画面差分があり、ユーザビリティレビュー担当を起動する前 | `usability-review.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/usability-review.parent.md` |
+| 受入確認と通常検証を比較する前 | `agent-toolkit:/share/verification-operations.md` | | |
+| レビュー指摘への対応を開始する前 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` | | |
+| レーン専用資源を使い統合前の検収を行う前（操作対象外: 自身の成果物・評価方法の検討） | `exec.parent.md`、`exec-parent-integration.md` | | |
+| レーン専用資源を使い、統合入力を確定する前 | `lane-integration.subagent.md` | | |
+| 初期選定が複数レーンで`統合準備完了`を返す前 | `exec.subagent.md` | | |
 
 ## 入力と書込所有
 

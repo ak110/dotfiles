@@ -50,28 +50,7 @@ function Test-ExpectedShims {
 $needsReinstall = ($currentHash -ne $cachedHash) -or (-not (Test-ExpectedShims))
 
 $mediaRemoteBin = Join-Path $env:USERPROFILE '.local\bin\dotfiles-media-remote.exe'
-$escapedMediaRemoteBin = [System.Management.Automation.WildcardPattern]::Escape($mediaRemoteBin)
-function Test-MediaRemoteProcess {
-    param([object] $Process)
-    if ($Process.ExecutablePath -and
-        $Process.ExecutablePath.Equals($mediaRemoteBin, [System.StringComparison]::OrdinalIgnoreCase)) {
-        return $true
-    }
-    if (-not $Process.CommandLine) { return $false }
-    return ($Process.CommandLine -like "*$escapedMediaRemoteBin*") -or
-        ($Process.CommandLine -like '*pytools.media_remote*')
-}
-function Get-PytoolsEnvLockingProcess {
-    $prefix = $uvToolDir.TrimEnd('\') + '\'
-    foreach ($process in Get-CimInstance Win32_Process -ErrorAction SilentlyContinue) {
-        $isMediaRemote = Test-MediaRemoteProcess $process
-        $isInToolEnv = $process.ExecutablePath -and
-            $process.ExecutablePath.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
-        if ($isInToolEnv -or $isMediaRemote) {
-            $process | Select-Object *, @{Name = 'IsMediaRemote'; Expression = { $isMediaRemote } }
-        }
-    }
-}
+. "{{ joinPath .chezmoi.workingTree "libexec/locking_process.ps1" }}"
 # uv tool venvの場所はOSと環境変数（UV_TOOL_DIR等）で変動する。
 # `uv tool dir`の出力を一次情報源とし、取得失敗時はuvがWindowsで使う`%APPDATA%\uv\tools`へフォールバックする。
 $uvToolBaseDir = $null
@@ -99,7 +78,15 @@ $reinstallDeferred = $false
 $env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
 $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
 if ($needsReinstall) {
-    $lockingProcs = @(Get-PytoolsEnvLockingProcess)
+    try {
+        $lockingProcs = @(Get-PytoolsEnvLockingProcess)
+    } catch {
+        $lockingProcs = @()
+        $reinstallDeferred = $true
+        $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'
+        $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = "使用中プロセスの判定に失敗: $_"
+        Write-Host "  [pytools] 使用中を判定できないため再インストールを延期し、既存版で続行します: $_"
+    }
     $restorableProcs = @()
     $unrestorableProcs = @()
     foreach ($p in $lockingProcs) {

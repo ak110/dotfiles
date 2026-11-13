@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.server
+import io
 import json
 import os
 import pathlib
@@ -264,3 +265,42 @@ def test_invalid_http_response_preserves_error_and_partial_resource(tmp_path: pa
             server.shutdown()
             thread.join(timeout=10)
         assert not thread.is_alive()
+
+
+def test_diagnostic_redacts_command_response_without_changing_result(tmp_path, monkeypatch):
+    """返却値と終了コードを保持し、保存用stdout/stderrだけを伏せる。"""
+    monkeypatch.setattr(worktree_hooks, "_hooks", lambda *_args: [{"type": "command", "command": "unused", "_environment": {}}])
+    monkeypatch.setattr(
+        worktree_hooks.process_tree,
+        "run_with_timeout",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, b"password=fake-output\n", b"E401 token=fake-stderr\n"),
+    )
+    diagnostics = tmp_path / "diagnostics"
+    with pytest.raises(ValueError, match="ディレクトリ"):
+        worktree_hooks.create(tmp_path, "fixed", "owner", 1, diagnostics_directory=diagnostics)
+    saved = json.loads((diagnostics / "WorktreeCreate-0.json").read_text(encoding="utf-8"))
+    assert "fake-output" not in saved["stdout"] and "fake-stderr" not in saved["stderr"]
+    assert saved["exit_code"] == 0 and "E401" in saved["stderr"]
+
+
+@pytest.mark.parametrize("kind", ["http", "exception"])
+def test_diagnostic_redacts_http_and_exception(tmp_path, monkeypatch, kind):
+    """HTTP応答と起動例外の本文を、判定に使った後で保存用に伏せる。"""
+    hook = {"type": "http", "url": "http://127.0.0.1/", "_environment": {}}
+    monkeypatch.setattr(worktree_hooks, "_hooks", lambda *_args: [hook])
+
+    def response(*_args, **_kwargs):
+        if kind == "exception":
+            raise OSError("E503 password=fake-exception")
+        return io.BytesIO(b'{"token":"fake-response"}')
+
+    monkeypatch.setattr(worktree_hooks.urllib.request, "urlopen", response)
+    diagnostics = tmp_path / "diagnostics"
+    if kind == "exception":
+        with pytest.raises(ValueError, match="E503"):
+            worktree_hooks.create(tmp_path, "fixed", "owner", 1, diagnostics_directory=diagnostics)
+    else:
+        with pytest.raises(ValueError):
+            worktree_hooks.create(tmp_path, "fixed", "owner", 1, diagnostics_directory=diagnostics)
+    saved = (diagnostics / "WorktreeCreate-0.json").read_text(encoding="utf-8")
+    assert "fake-response" not in saved and "fake-exception" not in saved

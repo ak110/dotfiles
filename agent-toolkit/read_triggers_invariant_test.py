@@ -7,9 +7,20 @@ import shutil
 import pytest
 
 from agent_toolkit._common import plugin_roots, read_triggers
+from agent_toolkit._common.read_triggers_operations import missing_operation_rows
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+def test_observable_read_conditions_have_delivery_operations():
+    """受領・起動・確認・保存の条件が、配送操作か対象外の理由を持つ。"""
+    roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / "agent-basics/skills"]
+    issues = []
+    with read_triggers.resolution_scope():
+        for source in sorted({path for root in roots for path in root.rglob("*.md")}):
+            issues.extend(missing_operation_rows(read_triggers.parse_tables(source, _PLUGIN_ROOT)))
+    assert not issues, "\n".join(issues)
 
 
 @pytest.mark.parametrize("role", sorted(path.name for path in (_PLUGIN_ROOT / "share").glob("*.subagent.md")))
@@ -51,6 +62,20 @@ def test_all_read_tables_have_valid_declarations_and_routes():
             except ValueError as error:
                 errors.append(f"{source}: {error}")
     assert not errors, "\n".join(errors)
+
+
+def test_documents_read_together_do_not_repeat_read_table_rows():
+    """同じ読込表の1行で同時に全文を読む資料どうしが、同じ条件と資料の行を重ねないことを確かめる。"""
+    roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]
+    basics = _PLUGIN_ROOT.parent / "agent-basics/skills"
+    if basics.is_dir():
+        roots.append(basics)
+    sources = sorted({path for root in roots for path in root.rglob("*.md")})
+    assert sources
+    with read_triggers.resolution_scope():
+        rows = {source: read_triggers.parse_tables(source, _PLUGIN_ROOT) for source in sources}
+    issues = read_triggers.simultaneous_duplicate_rows(rows)
+    assert not issues, "\n".join(issues)
 
 
 @pytest.mark.parametrize(

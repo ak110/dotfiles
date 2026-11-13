@@ -1,6 +1,8 @@
 ---
 mode: delegate
 model_type: review
+result_heads:
+- '判定:'
 required_inputs:
 - 要求と出所
 - 成立性の証拠
@@ -27,7 +29,7 @@ continuations:
 wi-standardsの読込表から最初に取得する資料は、本文段階の`${CLAUDE_PLUGIN_ROOT}/skills/wi-standards/references/draft-semantic-review.md`と、原稿の種別に対応する次の資料に限り、取得した資料は再利用する。
 `draft-semantic-review.md`は各原稿に個別に適用する。
 
-- 通常AWI: `awi-body-content.md`と`drafting-completion-validation.md`
+- 通常AWI: `awi-body-content.md`と`drafting-completion-validation.md`、`agent-basics:writing-standards/references/design-heuristics-screening.md`（採用案の必要性の判定）
 - 不具合を起点とする通常AWI: 上記に加えて`awi-body-evidence.md`と、bugfixの起動および`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`
 - UWI: `uwi-format.md`
 
@@ -65,6 +67,8 @@ wi-standardsの読込表から最初に取得する資料は、本文段階の`$
    非該当なら条件と自己確認を省略理由へ記す。
    再判定時の同一抽出は前回の識別子・返却を再利用する。
 4. 各原稿を読み、共通の意味基準を原文・対象リポジトリ・証拠へ独立に適用し、引用・構造だけでなく意味と根拠の不足・矛盾を確認する。
+   採用案の必要性は`design-heuristics-screening.md`「設計案の予備選別」で元要求から判定し、起草者が補った目標を外すと既存の仕組みの修正・削除だけで元の問題が解消しないかを比べる。
+   合格と判定するのは、元要求に照らして採用案の必要性を確かめた場合に限る。
    原稿と抽出の一致は新規・編集dry-runの`--compare-opening-file <抽出の絶対パス>`で確認し、複数では`--body-file`と同順で指定する。
    既存の読み比べ・検証結果を再利用し、引用の再取込や機械検証を省く。
    原稿変更時は作成主体から新しいdry-runの抽出を受け取り、手順3へ戻る。

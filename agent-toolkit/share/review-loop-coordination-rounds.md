@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-
 ## ラウンドの遷移
 
 1. レビュー担当が対象HEADをレビューし、検出した指摘をレビュー指摘管理表へ登録する。

@@ -10,8 +10,8 @@
 | 外部更新の反映待ちを選ぶ前 | `../../delegation/references/waiting-and-monitoring-external.md` |
 | 回答内容と要求が両立しない場合の確認要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | 依存関係を確定する前 | `states-and-dependencies.md` |
-| WI投入担当への委譲を選ぶ前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
-| WIの起草主体と独立した検収を選ぶ前 | `drafting-workflow.md` |
+| WI投入担当への委譲を選ぶ前（操作対象外: ツールと結び付かない判断） | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` |
+| WIの起草主体と独立した検収を選ぶ前（操作対象外: 自身の成果物・評価方法の検討） | `drafting-workflow.md` |
 | WIの由来を確定する前 | `origin-and-approval-origin.md` |
 
 ## 投入と取得
@@ -58,9 +58,3 @@
    終了0なら本文の再取得は不要とする。
    意味・構造や保存操作の警告・エラーを確認し、表現だけの推敲と表記診断の確認は対象外とする。
    未プッシュ通知がある場合だけ`atk wi commit`で反映する。
-
-## 本文参照の取得条件
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| ユーザー確認とユーザーへの報告の基準を適用する前 | `../../user-confirmation-and-report/SKILL.md` |

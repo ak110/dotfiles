@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| add-awi-by-userの投入作業の作業完了報告を作る前 | `agent-toolkit:add-awi-by-user/SKILL.md` | | |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
 
 ## 報告用UWIのフォーマット
 
@@ -91,10 +91,10 @@
    失敗時にファイル名を取得済みなら、同じUWIを`atk wi edit --body-file`で修復する。
    未プッシュ通知は既存の投入手順で反映し、保存成功と警告の検収を終えて伝達完了とする。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` |
-| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 報告用UWIを確認・保存する前 | `../../wi-standards/references/uwi-format.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` |
+| 報告用UWIの保存操作を選ぶ前 | `../../wi-standards/references/wi-standards-operations.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` |
 
 ## 本文参照の取得条件
 

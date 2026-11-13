@@ -8,13 +8,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
-| process-wi中の是正要求や改善点を扱う前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 本文の参照基準を適用する前 | `agent-toolkit:/share/verification-operations.md` |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前（操作対象外: ユーザー発話・回答の受領） | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
 | 本文の参照基準を適用する前 | `../../report-completion/SKILL.md` |
-| 本文の参照基準を適用する前 | `../../report-completion/references/termination-evidence.md` |
-| 本文の参照基準を適用する前 | `../../delegation/references/routing.md` |
 | 本文の参照基準を適用する前 | `../../wi-standards/SKILL.md` |
 | 本資料の基準で判断する前 | `../SKILL.md` |
 

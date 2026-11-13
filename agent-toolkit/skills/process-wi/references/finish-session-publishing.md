@@ -4,12 +4,12 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
-| 公開版反映後の役割起動で稼働実装と資源の版相違が示された時 | `../../delegation/references/wait-anomalies-failures.md` |
-| WI実装commitの対応を継承する時 | `../../commit/references/history-rewrite-wi-records.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` | | |
+| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/share/wi-submission.md` |
+| 公開版反映後の役割起動で稼働実装と資源の版相違が示された時 | `../../delegation/references/wait-anomalies-failures.md` | | |
+| WI実装commitの対応を継承する時 | `../../commit/references/history-rewrite-wi-records.md` | | |
 
 ## 公開対象が無い場合の短絡
 

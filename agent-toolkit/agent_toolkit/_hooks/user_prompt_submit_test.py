@@ -194,8 +194,10 @@ class TestUserConfirmationSkillPrompt:
         self._session_start(source, tmp_path)
         context = self._prompt("表示が変わった原因は何か", tmp_path)
         assert self._has_notice(context)
-        assert "診断より前に`agent-basics:bugfix`を起動" in context
-        assert "「起動契機」から「認可を要する操作」" in context
+        assert "応答と作業の着手より前に" in context
+        assert "部分表示やパイプ" not in context
+        assert "「起動契機」から「認可を要する操作」" not in context
+        assert "診断より前に" not in context
         assert not self._has_notice(self._prompt("続けて", tmp_path))
         self._invoke_skill(tmp_path)
         assert not self._has_notice(self._prompt("次の依頼", tmp_path))
@@ -243,7 +245,7 @@ class TestUserConfirmationSkillPrompt:
         assert not self._has_notice(self._prompt(prompt, tmp_path, host=host))
         context = self._prompt("依頼", tmp_path, host=host)
         assert self._has_notice(context)
-        assert "診断より前に`agent-basics:bugfix`を起動" in context
+        assert "診断より前に" not in context
 
     def test_usage_limit_resume_prompt_is_machine_injected(
         self, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
@@ -293,7 +295,7 @@ class TestUserConfirmationSkillPrompt:
         self._session_start(source, tmp_path, host="codex")
         context = self._prompt("表示が変わった原因は何か", tmp_path, host="codex")
         assert self._has_notice(context)
-        assert "診断より前に`agent-basics:bugfix`を起動" in context
+        assert "診断より前に" not in context
         assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 
 

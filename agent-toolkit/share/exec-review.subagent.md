@@ -57,12 +57,8 @@ continuations:
 | --- | --- |
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md` |
-| 本文でこの資料の基準を参照・取得する時 | `exec-subagent-implementation.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/commit/references/history-rewrite-wi-records.md` |
-| 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/managed-temp/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md` |
 | 本文でこの資料の基準を参照・取得する時 | `exec.parent.md`、`exec-parent-integration.md` |
 | 本文でこの資料の基準を参照・取得する時 | `recurrence-self-check-items.md` |
 
@@ -71,16 +67,16 @@ continuations:
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 | 資料選択子 |
 | --- | --- | --- | --- | --- |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | | |
-| 条件表を検収する前 | `exec-review-recording-contract.md` | | | |
+| 条件表を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `exec-review-recording-contract.md` | | | |
 | 初回レビューに入る前 | `exec-review-criteria.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:write-plan/references/testing-branch-verification.md` | | | |
-| `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | | | |
-| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
+| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | | | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合（操作対象外: 役割の開始入力） | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | | | |
-| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | | | |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/recurrence-self-check.parent.md` | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
 | 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | | | |
@@ -156,9 +152,9 @@ continuations:
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 入力・差分とWIの取得・条項の生成に関する判断・作業の前 | `exec-review-subagent-inputs.md` |
-| 再レビューに関する判断・作業の前 | `exec-review-subagent-followup.md` |
-| 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `exec-review-subagent-exploration.md` |
-| 返却前の処理に関する判断・作業の前 | `exec-review-subagent-completion.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 入力・差分とWIの取得・条項の生成に関する判断・作業の前 | `exec-review-subagent-inputs.md` | | |
+| 再レビューに関する判断・作業の前 | `exec-review-subagent-followup.md` | | |
+| 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `exec-review-subagent-exploration.md` | 判断 | `delegation-result`、`delegation`、`read:agent-toolkit:*/share/exec-review-subagent-exploration.md` |
+| 返却前の処理に関する判断・作業の前（操作対象外: 自身の返却の準備） | `exec-review-subagent-completion.md` | | |
