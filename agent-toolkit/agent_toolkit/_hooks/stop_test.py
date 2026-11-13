@@ -130,6 +130,45 @@ def test_internal_stop_failure_keeps_approval_and_existing_log(tmp_path, monkeyp
     assert expected in log
 
 
+@pytest.mark.parametrize("delegated", [False, True])
+@pytest.mark.parametrize("decision", ["notify", "block", "codex-block", "approve"])
+def test_continuation_tells_delegate_to_rewrite_full_report(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, delegated: bool, decision: str
+) -> None:
+    """agents_serverの委譲先へ継続を返すときだけ、最後の応答へ完了報告の全文を書き直す指示を1回添える。
+
+    委譲元が受け取るのは最後の応答だけのため、継続後の追記だけでは先の完了報告が失われる。
+    """
+    _set_state_directory(monkeypatch, tmp_path)
+    if delegated:
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
+    payload: dict[str, str] = {"session_id": f"continuation-{decision}-{delegated}"}
+    if decision == "codex-block":
+        # Codexは非遮断通知を配送できず、継続は遮断の`reason`だけで委譲先へ届く。
+        payload["turn_id"] = "turn"
+        _replace_checks(monkeypatch, {"submission_report_advisor": ("block", "再報告せよ")})
+    elif decision != "approve":
+        _replace_checks(
+            monkeypatch,
+            {"agents_server_session_advisor": (decision, "未観測session"), "bugfix_gate": ("notify", "別の通知")},
+        )
+
+    result = stop.evaluate(json.dumps(payload))
+
+    text = json.dumps(result, ensure_ascii=False)
+    expected_count = 1 if delegated and decision != "approve" else 0
+    # 継続本文の中に、委譲元が最後の応答だけを受け取る旨と全文の書き直しの指示が、判定の数によらず1回だけ入る。
+    assert text.count("最後の応答の本文だけ") == expected_count
+    assert text.count("完了報告の全文を書き直せ") == expected_count
+    if decision == "approve":
+        assert not result
+    elif decision == "notify":
+        assert "decision" not in result
+    else:
+        assert result["decision"] == "block"
+
+
 def test_suppressed_notifications_do_not_emit_empty_context(monkeypatch: pytest.MonkeyPatch) -> None:
     """共通noticeが抑止した本文は、空の通知応答へ変換しない。"""
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})

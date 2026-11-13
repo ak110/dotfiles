@@ -39,6 +39,7 @@ from agent_toolkit._agents_server.resume_waits import (
 from agent_toolkit._agents_server.state import ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
 from agent_toolkit._common import session_registry, task_documents
+from agent_toolkit._common.delegated_session import FINAL_RESPONSE_NOTICE
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -99,14 +100,20 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 delivery = await self._send_with_resources(
                     session,
                     wrap_delivery_body(
-                        "直前の返却は返却形式の契約に適合しない。"
-                        f"診断: {reason}\n"
+                        (
+                            "直前の不足申告の前提を一度再確認する。形式違反と判定したものではない。"
+                            if result_contract.invalid_result_reason(session, pending) is None
+                            else "直前の返却は返却形式の契約に適合しない。"
+                        )
+                        + f"診断: {reason}\n"
                         + (
                             f"作業を最後まで進められるよう、このturnからeffortを{raised[0]}から{raised[1]}へ上げた。"
                             if raised is not None
                             else ""
                         )
                         + "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
+                        + "取得可能な未読・保存出力・残工程を補い、補えない不足だけを試した手段と再開条件付きで返せ。"
+                        "権限拒否・認可不足の回避は求めない。実行済みの非冪等操作と保存成果を保持し、残工程だけを進めよ。"
                         + (
                             "未読・未走査の範囲を担当内で完了させ、正常返却は先頭を状態: completedとする"
                             "（既存の末尾状態行も受理する）。前提不足が残る単位は、同じインデントで"
@@ -116,6 +123,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                             and task_documents.launched_task_document(session.prompt) is None
                             else ""
                         )
+                        + f"\n{FINAL_RESPONSE_NOTICE}"
                     ),
                 )
                 if delivery.get("delivery") == "reply_failed":
@@ -124,11 +132,14 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.clear_hold()
                 session.status = "failed"
                 session.agent_message = pending["agent_message"]
-                session.error = {
+                recovery_error: dict[str, Any] = {
                     "message": f"{type(exc).__name__}: {exc}",
                     "resultContract": reason,
                     "nextAction": result_contract.RECOVERY_NEXT_ACTION,
                 }
+                if effort_error := session.effort_request_results.get("result-contract"):
+                    recovery_error["effortRecovery"] = effort_error
+                session.error = recovery_error
                 session.record_turn_completed()
                 session.touch()
             return
@@ -215,11 +226,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 )
                 + (
                     "\n`send_message`で自分宛てに送った本文は委譲元へ届いていない。"
-                    "agents_serverの委譲先の返却は最終応答の本文だけである。"
                     "送ろうとした内容の全文を最終応答へ書いて返せ。"
                     if repair_message
                     else ""
-                ),
+                )
+                + f"\n{FINAL_RESPONSE_NOTICE}",
             )
             if repair_message:
                 session.codex_self_message_repair_consumed = True

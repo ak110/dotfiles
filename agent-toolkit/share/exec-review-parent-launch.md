@@ -119,6 +119,8 @@ rebaseでコミットOIDだけが変わった場合は再レビュー不要で�
 **5.** 入力と所属を点検してから、確定した単位でレビューを起動する。
 
 証拠の引渡しは`verification-evidence-records.md`「完成条件証拠の検証記録」に従う。
+起動した後もレーンは同じ作業ツリーで別の修正を続けてよい。
+その間のレビュー担当の検証の場所は、`exec-review-operations.md`「操作区分」の手順で対象worktreeの未commitの変更の有無から決まる。
 
 次の引数で`agents_server`の`start`を呼ぶ。
 

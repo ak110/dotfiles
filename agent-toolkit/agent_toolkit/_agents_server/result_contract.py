@@ -59,7 +59,9 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
         if match is None:
             continue
         has_reason = True
-        if not line.removeprefix(match.group("indent") + _REASON_PREFIX).strip():
+        if not line.removeprefix(match.group("indent") + _REASON_PREFIX).strip() and (
+            document is None or document.name != "reader-fit-review.subagent.md"
+        ):
             return f"{index + 1}行目の続行できない理由が空です"
         if index == 0:
             return f"{index + 1}行目の続行できない理由の直前に同じインデントの続行できない区分がありません"
@@ -132,6 +134,30 @@ def _current_named_input(session: SessionState, document: pathlib.Path, name: st
     return task_documents.task_prompt_inputs(session.prompt)[name]
 
 
+_MULTILINE_VALUE_HINT = "値は欄名と同じ行の`:`の後に書くか、次行へ3文字以上字下げするか先頭2空白の`  - `で続けてください"
+
+_READER_FIT_FIELD = re.compile(r"^  ([^\s:-][^:\n]*):(?: (.*))?$")
+
+
+def _reader_fit_fields(item_lines: list[str]) -> list[tuple[str, str, str]]:
+    """対象別の欄を、欄名・同じ行の値・続く行を含む値の組で返す。
+
+    欄の行は2文字の字下げに続く`- `以外の文字で始まる。欄名の行の下で`  - `か3文字以上の字下げで続く行は、
+    直前の欄の値に含め、その中の`- 逐語引用1: …`のような行を別の欄として数えない。
+    雛形は値を1行に限らず、根拠には複数の事実と引用が入るためである。
+    """
+    entries: list[tuple[str, str, str]] = []
+    for line in item_lines:
+        field = _READER_FIT_FIELD.match(line)
+        if field is not None:
+            inline = field[2] or ""
+            entries.append((field[1], inline, inline))
+        elif entries and line.strip() and (line.startswith("   ") or line.startswith("  - ")):
+            key, inline, value = entries[-1]
+            entries[-1] = (key, inline, value + "\n" + line.strip())
+    return entries
+
+
 def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: str) -> str | None:
     """入力成果物と個別返却を同じ集合で検収する。集約記述を個別完了へ代用しない。"""
     try:
@@ -162,24 +188,26 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
             if line.strip() and not line.startswith("  "):
                 break
             item_lines.append(line)
-        entries = re.findall(r"(?m)^  ([^:\n]+): (.+)$", "\n".join(item_lines))
-        if len(entries) != len({key for key, _ in entries}):
+        entries = _reader_fit_fields(item_lines)
+        if len(entries) != len({key for key, _, _ in entries}):
             return f"{match[1]}: 対象別の項目に重複があります"
-        fields = dict(entries)
-        state = fields.get("完了状態")
+        # 閉集合の欄は同じ行の1語で判定し、自由記述の欄は字下げして続く行も値に含める。
+        inline = {key: value for key, value, _ in entries}
+        values = {key: value for key, _, value in entries}
+        state = inline.get("完了状態")
         if state not in {"completed", "blocked"}:
             return f"{match[1]}: 完了状態はcompletedまたはblockedを1つ記載してください"
         for field in ("比較資料", "根拠"):
-            if not fields.get(field, "").strip():
-                return f"{match[1]}: {field}が不足しています"
-        if state == "completed" and not fields.get("判定", "").strip():
-            return f"{match[1]}: 完了した対象の判定が不足しています"
-        if state == "completed" and ("続行できない区分" in fields or "続行できない理由" in fields):
+            if not values.get(field, "").strip():
+                return f"{match[1]}: {field}が不足しています。{_MULTILINE_VALUE_HINT}"
+        if state == "completed" and not values.get("判定", "").strip():
+            return f"{match[1]}: 完了した対象の判定が不足しています。{_MULTILINE_VALUE_HINT}"
+        if state == "completed" and ("続行できない区分" in inline or "続行できない理由" in inline):
             return f"{match[1]}: 続行不能の対象は完了状態をblockedにしてください"
         if state == "blocked":
             blocked = True
-            if fields.get("続行できない区分") not in _VALID_CLASSIFICATIONS or not fields.get("続行できない理由", "").strip():
-                return f"{match[1]}: blockedには有効な区分と非空の理由が必要です"
+            if inline.get("続行できない区分") not in _VALID_CLASSIFICATIONS or not values.get("続行できない理由", "").strip():
+                return f"{match[1]}: blockedには有効な区分と非空の理由が必要です。{_MULTILINE_VALUE_HINT}"
     overall = re.findall(r"(?m)^状態: (.+)$", message)
     if blocked and overall:
         return "reader-fitの個別未完了対象がある返却へ全体の状態: completedを付けないでください"
@@ -189,10 +217,24 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
 
 
 def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
-    """契約に違反した結果を1回だけ保留し、監視側の同一session継続へ渡す。"""
+    """形式違反とexploreの不足申告を同じ1回の保留・継続へ渡す。"""
+    effort_error = session.effort_request_results.get("result-contract")
+    if effort_error is not None:
+        error = result.get("error")
+        result["error"] = {**(error if isinstance(error, dict) else {}), "effortRecovery": effort_error}
     reason = invalid_result_reason(session, result)
     if reason is None:
-        return False
+        # 有効な不足申告の真偽は機械判定せず、exploreだけ同じ回復枠で一度再確認する。
+        message = result.get("agent_message")
+        if (
+            session.launch_kind != "explore"
+            or result.get("status") != "completed"
+            or not isinstance(message, str)
+            or not re.search(r"(?m)^\s*続行できない理由:", message)
+            or session.result_contract_recovery_consumed
+        ):
+            return False
+        reason = "不足の前提を再確認し、担当内で補える残工程を完遂してください"
     if session.result_contract_recovery_consumed:
         error = result.get("error")
         details = dict(error) if isinstance(error, dict) else {}

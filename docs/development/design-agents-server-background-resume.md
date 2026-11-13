@@ -11,6 +11,8 @@ Claude backendは、委譲先がClaude Codeのバックグラウンドタスク�
 記録先は`error`の`unfinishedBackgroundTasks`と`unobservedSessions`であり、待機対象が残ったまま確定したことを`heldResultFinalized`で示し、`atk agents wait`の`終了行:`へ`unfinished_waits`を加える。
 `unfinished_waits`は待機対象を残した確定を示す`heldResultFinalized`を持つ結果へ付ける。
 保留した結果は待機表明であり、委譲元が終了行と結果本文だけから再開したturnの結果と区別できるようにするためである。
+委譲元が受け取るのは最後のturnの最終応答だけなので、委譲先のturnを続けさせる処理（Stopの継続通知、子終了と返却形式の回復の自動再開入力）は、最後の応答へ完了報告の全文を書き直すよう委譲先へ伝える（`delegated_session.FINAL_RESPONSE_NOTICE`）。
+turnを続けさせる処理を新しく加える担当は、同じ指示を加えるかを判断する（2026年11月12日に、完了報告の後の短い追記だけが返り、完了報告が失われた）。
 Claude Code CLIはturnを終えた後に受けた中断要求へ`ResultMessage`を返さないため、保留中の`kill`は中断要求を配送したうえで保留した結果をそのまま確定して返す。
 保留中は活動時刻が進まず停滞と区別できないため、`show`は`result_held`と追跡中のバックグラウンドタスク（`live_background_tasks`）を公開する。
 結果を公開してよいのは、そのsessionで次のturnが発生しないと確定した後に限る。

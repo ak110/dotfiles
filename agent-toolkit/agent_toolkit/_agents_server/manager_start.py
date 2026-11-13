@@ -51,6 +51,31 @@ from agent_toolkit._common.plugin_roots import PluginRootError
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
+def model_override_warnings(
+    model_type: str | None, *, default_type: str | None = None, inherited: bool = False
+) -> list[dict[str, str]]:
+    """起動前の入力差分を示す。認可の真偽は呼出し元が判断する。"""
+    if model_type is None or (model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type)):
+        return []
+    restore = (
+        f"model_typeへ元の工程名（{default_type or '前任の役割に定めた工程'}）を明示する"
+        if inherited
+        else "taskではmodel_typeを省略し、自由本文では該当する工程名を指定する"
+    )
+    return [
+        {
+            "scope": "model-override",
+            "message": (
+                f"モデル設定の{'直接候補継承' if inherited else '上書き'}: "
+                f"適用工程={default_type or '候補列直接指定（工程設定を参照しない）'}; 指定値={model_type}。"
+                f"現在の工程設定を使うには{restore}。"
+                "正当なユーザー指定・試行・同じ要求への個別引上げは受理する。条件は"
+                "agent-toolkit:delegation/references/process-model-settings.mdとmodel-and-effort.mdを確認する。"
+            ),
+        }
+    ]
+
+
 class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancestors  # 責務別のmixinへ分割したため。
     """モデル候補を順に評価し、起動したsessionを公開する。"""
 
@@ -349,6 +374,9 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         excluded = {candidate: reason} if candidate is not None and reason is not None else {}
         prompt = await run_file_operation(session_handoff.prepare_prompt, predecessor)
         assert predecessor.model_type is not None
+        warnings = model_override_warnings(
+            predecessor.model_type if model_type is None else model_type, inherited=model_type is None
+        )
         response = await self.start(
             predecessor.model_type if model_type is None else model_type,
             prompt,
@@ -358,6 +386,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             excluded_candidates=excluded,
         )
         response["cwd"] = predecessor.cwd
+        if warnings:
+            response.setdefault("warnings", []).extend(warnings)
         return response
 
     async def _save_started_session(self, session: SessionState) -> list[dict[str, str]]:

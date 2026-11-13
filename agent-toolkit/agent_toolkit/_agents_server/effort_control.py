@@ -15,7 +15,7 @@ from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._common import effort, effort_requests, message_format, session_registry
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.effort")
-# 返却形式の違反による自動引き上げを、本人・親の操作と区別して変更履歴へ残す操作主体。
+# 結果の回復による自動引き上げを、本人・親の操作と区別して変更履歴へ残す操作主体。
 _RESULT_CONTRACT_ACTOR = "agents-server"
 
 
@@ -102,13 +102,13 @@ async def raise_for_result_contract(
     catalog: Callable[[str], Awaitable[list[dict[str, Any]]]],
     apply: Callable[[SessionState, str], Awaitable[None]],
 ) -> tuple[str, str] | None:
-    """返却形式の違反で回復入力を送る前に、通常委譲のeffortを1段上げる。
+    """結果の回復入力を送る前に、通常委譲とexploreのeffortを1段上げる。
 
     低い推論量の担当が作業途中で返却形式外の本文を返したとき、同じ推論量のまま促しても同じ早期返却を繰り返しやすい。
-    相対操作の対象（orchestrateを除くdelegate）だけを上げ、最上段・段の取得失敗では変更せずに回復入力を任せる。
+    公開の相対操作とは別にexploreも対象とし、最上段・段の取得失敗では変更せずに回復入力を任せる。
     変更した場合は変更前後の値を返す。
     """
-    if session.launch_kind != "delegate" or session.model_type == "orchestrate":
+    if session.launch_kind not in {"delegate", "explore"} or session.model_type == "orchestrate":
         return None
     try:
         levels = session.effort_levels
@@ -132,17 +132,25 @@ async def raise_for_result_contract(
             session.touch()
         warning = await session.publish_registration_async()
         if warning is not None:
+            session.effort_request_results["result-contract"] = {
+                "error": warning,
+                "nextAction": "親がatk agents showで現在のeffortと登録保存の状態を確認する",
+            }
             _LOG.warning(
                 "effort引き上げ後の登録を保存できない。回復入力は送る。共有状態のeffortが変更前のままの可能性があるため、"
                 "`atk agents show %s`でeffortを確かめよ: %s",
                 session.session_id,
                 warning,
             )
-    except Exception:  # pylint: disable=broad-exception-caught
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        session.effort_request_results["result-contract"] = {
+            "error": f"{type(error).__name__}: {error}",
+            "nextAction": "親が現在のeffortと対応する段を確認し、同じ要求の継続または後任への引上げを判断する",
+        }
         # 引き上げは回復の補助であり、失敗しても回復入力は送る。
         _LOG.exception(
             "返却形式の回復前にeffortを上げられない。effortを変えずに回復入力を送る。"
-            "上げる場合は委譲元が`atk agents effort up %s`を実行し、失敗の原因は続く例外で確かめよ",
+            "委譲元は`atk agents show %s`で現在値と続く例外を確かめ、同じ要求の継続または後任を判断せよ",
             session.session_id,
         )
         return None

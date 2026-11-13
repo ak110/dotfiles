@@ -13,6 +13,7 @@ import pytest
 
 from agent_toolkit._agents_server import claude, launch_requests, manager, result_contract, state
 from agent_toolkit._atk import config
+from agent_toolkit._common import delegated_session
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     QueueClaudeClient,
@@ -53,6 +54,9 @@ async def test_reader_fit_requires_individual_completion(tmp_path, case):
     """有効対象を保持し、入力集合・個別完了に反する返却を同じ回復へ渡す。"""
     paths, prompt, kind, blocks = _reader_request(tmp_path)
     session = state.SessionState("reader-fit", str(tmp_path), prompt=prompt, launch_kind=kind)
+    if case == "blocked":
+        # 不足申告の一度の再確認を終えた後の、個別返却の形式を検収する。
+        session.result_contract_recovery_consumed = True
     if case == "missing":
         blocks.pop()
     elif case == "duplicate":
@@ -155,6 +159,8 @@ async def test_reader_fit_recovery_receives_complete_resubmission(tmp_path, monk
             result = await owner.wait()
         assert result["status"] == "completed" and result["agent_message"] == final
         assert len(client.queries) == 2 and session.result_contract_recovery_consumed
+        # 回復入力は、前の応答が委譲元へ届かず最後の応答へ全文を書く必要があることを伝える。
+        assert client.queries[1].count(delegated_session.FINAL_RESPONSE_NOTICE) == 1
         assert not session.pending_result and not session.result_contract_recovery_reason
         assert publications and all(message == final for message in publications)
     assert client.disconnected and client.readers == 0

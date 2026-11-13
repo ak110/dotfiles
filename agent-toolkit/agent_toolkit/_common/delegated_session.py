@@ -24,6 +24,15 @@ LAUNCH_KIND_ENV = "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND"
 PLUGIN_ROOT_ENV = "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"
 """委譲先のhookが資料とCLI案内に使う、起動側が選択した配布物の絶対パス。"""
 
+FINAL_RESPONSE_NOTICE = (
+    "agents_serverの委譲元が受け取るのは最後の応答の本文だけである。"
+    "完了報告を書いた後に作業を続けた場合は、最後の応答へ完了報告の全文を書き直せ（前の応答を参照して省かない）。"
+)
+"""委譲先のturnを続けさせる処理（Stopの継続、自動再開の入力）が委譲先へ伝える、委譲元が受け取る本文の範囲。
+
+agents_serverは最後のturnの最終応答だけを委譲元へ返すため、続けた後の追記だけでは先の完了報告が失われる。
+"""
+
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
 """スキルを使わない前提で起動する軽量起動の区分。
 

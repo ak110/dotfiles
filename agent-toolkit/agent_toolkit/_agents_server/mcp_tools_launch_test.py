@@ -50,6 +50,7 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
 
         assert requested == [override] * 4
         for launch_kind, response in responses.items():
+            assert any(item["scope"] == "model-override" for item in response["warnings"])
             shown = await manager.show_session(response["session_id"])
             assert shown["model_type"] == override
             assert shown["launch_kind"] == launch_kind
@@ -62,12 +63,54 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 
-        await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査")
-        await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type="review")
+        default = await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査")
+        named = await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type="review")
+        assert not default.get("warnings")
+        assert not named.get("warnings")
         await mcp_tools.start(str(tmp_path), mode="shell", command="make test", summary_policy="終了状態")
         await mcp_tools.start(str(tmp_path), mode="write", prompt="起草")
 
         assert requested == ["chores_fast", "review", "chores_fast", "write"]
+
+
+@pytest.mark.parametrize("role", ["add-wi", "exec"])
+@pytest.mark.parametrize("override", [None, "execute", "chores", "codex:model/high"])
+@pytest.mark.asyncio
+async def test_role_override_warning_keeps_requested_candidate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: str, override: str | None
+) -> None:
+    """役割文書の工程との差だけを警告し、個別に認可された上書きも受理する。"""
+    requested = _recording_candidates(monkeypatch)
+    document = launch_requests._SHARE_DIRECTORY / f"{role}.subagent.md"
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        response = await mcp_tools.start(
+            str(tmp_path),
+            subagent_md_path=str(document),
+            extra_params=_observed_input_params(document.name, tmp_path),
+            model_type=override,
+        )
+        assert requested == [override or "execute"]
+        warnings = [item for item in response.get("warnings", []) if item["scope"] == "model-override"]
+        assert bool(warnings) == (override not in (None, "execute"))
+        if warnings:
+            assert override is not None
+            assert "execute" in warnings[0]["message"]
+            assert override in warnings[0]["message"]
+            assert "省略" in warnings[0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_free_prompt_direct_candidates_warn_without_rejection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """自由本文でも候補直接指定は設定を参照しない旨を公開する。"""
+    requested = _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="確定済み作業", model_type="codex:model/high")
+        assert requested == ["codex:model/high"]
+        assert any(item["scope"] == "model-override" for item in response["warnings"])
 
 
 @pytest.mark.asyncio

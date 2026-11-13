@@ -28,6 +28,7 @@ from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import task_document_label, task_document_request, validate_start_inputs
 from agent_toolkit._agents_server.manager import DEFAULT_KILL_TIMEOUT, DEFAULT_SEND_MESSAGE_TIMEOUT, AgentsServerManager
+from agent_toolkit._agents_server.manager_start import model_override_warnings
 from agent_toolkit._agents_server.mcp_transport import AgentsServerMCP
 from agent_toolkit._agents_server.responses import public_send_message_response, public_start_response, resolve_display_label
 from agent_toolkit._agents_server.tool_descriptions import (
@@ -239,6 +240,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if cwd is None:
         launch_requests.require_start_cwd()
     assert cwd is not None
+    warnings = model_override_warnings(model_type)
     validate_start_inputs(
         mode,
         subagent_md_path=subagent_md_path,
@@ -263,6 +265,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         )
         context = await run_file_operation(_manager().launcher_record_context)
         task_prompt = launch_requests.with_launcher_record(task_prompt, context)
+        warnings = model_override_warnings(model_type, default_type=task_model_type)
         response = await _manager().start(
             model_type or task_model_type,
             task_prompt,
@@ -272,6 +275,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
             startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
         )
+        if warnings:
+            response.setdefault("warnings", []).extend(warnings)
         if handoff_path is not None:
             public = public_start_response(response)
             public["handoff_record_path"] = str(handoff_path)
@@ -286,6 +291,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             launcher_session_id=launcher,
         )
         response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
+        if warnings:
+            response.setdefault("warnings", []).extend(warnings)
         public = public_start_response(response)
         public["handoff_record_path"] = str(handoff_path)
         return public
@@ -298,6 +305,8 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     else:
         assert command is not None and summary_policy is not None
         response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
+    if mode != "task" and warnings:
+        response.setdefault("warnings", []).extend(warnings)
     return public_start_response(response)
 
 

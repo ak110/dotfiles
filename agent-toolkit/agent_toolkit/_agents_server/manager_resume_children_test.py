@@ -20,6 +20,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import resume_waits, shared_layout, shared_roots, state, status_file, wait_output_tracking
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common.delegated_session import FINAL_RESPONSE_NOTICE
 from agent_toolkit._testing.agents_server_support import (
     FakeBackend,
     ThreadReadBackend,
@@ -137,6 +138,8 @@ async def test_wait_delivers_child_session_result_without_kill(
         # 子sessionの終了を観測した待機が、killを伴わずに継続指示を1回配送する。
         assert pending["status"] == "running"
         assert backend.send_calls == 1
+        # 保留した前の結果は新しいturnの結果で差し替わるため、継続入力は最後の応答へ全文を書くよう伝える。
+        assert backend.prompts[-1].count(FINAL_RESPONSE_NOTICE) == 1
         assert (shared_layout.results_directory("root-session", tmp_path) / f"{child.session_id}.json").is_file()
 
         _complete(delegate, message="子sessionを確認した最終結果")

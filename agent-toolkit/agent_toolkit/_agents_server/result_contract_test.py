@@ -17,6 +17,7 @@ from agent_toolkit._agents_server import (
     cli_turn,
     codex,
     launch_prompts,
+    launch_requests,
     manager,
     opencode,
     result_contract,
@@ -66,6 +67,50 @@ def test_reader_fit_result_reads_front_loaded_and_legacy_targets(tmp_path: pathl
     assert reason is not None and target in reason
 
 
+def _reader_fit_session(tmp_path: pathlib.Path) -> tuple[state.SessionState, str]:
+    """実際の役割文書で起動したreader-fitのsessionと、その入力成果物を返す。"""
+    target = tmp_path / "対象.md"
+    target.write_text("# 対象\n本文\n", encoding="utf-8")
+    role = pathlib.Path(__file__).resolve().parents[2] / "share/reader-fit-review.subagent.md"
+    _, prompt, kind, _ = launch_requests.task_document_request(
+        str(role),
+        {
+            "成果物": str(target),
+            "種別": "エンドユーザー向け文書",
+            "読者像": "画面設計を読む開発者",
+            "修正範囲": "新規の全文",
+            "比較資料": f'[{{"比較元本文": "新規", "今回差分": "全文", "現行本文": "{target}"}}]',
+        },
+    )
+    return state.SessionState("reader-fit", str(tmp_path), prompt=prompt, launch_kind=kind), str(target)
+
+
+def _reader_fit_reason(session: state.SessionState, message: str) -> str | None:
+    return result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message})
+
+
+def test_reader_fit_accepts_multiline_reason_returned_on_2026_11_13(tmp_path: pathlib.Path) -> None:
+    """`  根拠:`の下へ箇条書きと下位項目で続けた根拠を受理し、下位項目を別の欄として数えない。
+
+    2026年11月13日の読者別探索の返却と同じ形で、旧検査は根拠の不足として2回拒否した。
+    """
+    session, target = _reader_fit_session(tmp_path)
+    message = (
+        f"状態: completed\n未解決の指摘数: 0\n対象別の判定と証拠:\n- 成果物: {target}\n"
+        "  完了状態: completed\n  比較資料: 新規・全文\n  判定: 指摘なし\n  根拠:\n"
+        "  - 画面の各状態の記述を実装の分岐と照合した\n"
+        "  - 用語は画面の表示文言と一致する\n"
+        "    - 逐語引用1: 「送信中は入力欄を無効にする」\n"
+        "    - 逐語引用2: 「エラー時は再送ボタンを表示する」\n"
+        "  - 未確認の範囲は無い\n新しい要件: なし\n"
+    )
+    assert _reader_fit_reason(session, message) is None
+    empty = message.split("  根拠:\n", maxsplit=1)[0] + "  根拠:\n新しい要件: なし\n"
+    reason = _reader_fit_reason(session, empty)
+    # 値が同じ行にも続く行にも無い欄は従来どおり拒否し、受理する書き方を診断で示す。
+    assert reason is not None and "根拠" in reason and "字下げ" in reason and "同じ行" in reason
+
+
 @pytest.mark.parametrize(
     "ending", ["状態: completed", "続行できない区分: inaccessible_input\n続行できない理由: 対象に到達できない"]
 )
@@ -73,7 +118,7 @@ def test_explore_final_line_is_accepted(tmp_path: pathlib.Path, ending: str) -> 
     """自由本文のexploreは正当な最終行をそのまま公開する。"""
     session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
     result = {"status": "completed", "agent_message": f"観測結果\n{ending}\n", "error": None}
-    assert not result_contract.hold_invalid_result(session, result)
+    assert result_contract.hold_invalid_result(session, result) is ending.startswith("続行できない区分:")
 
 
 @pytest.mark.asyncio
@@ -135,6 +180,9 @@ def test_explore_empty_reason_is_held(tmp_path: pathlib.Path, message: str) -> N
 async def test_freeform_explore_publishes_common_contract(tmp_path: pathlib.Path, message: str, valid: bool) -> None:
     """自由本文の調査結果を公開する境界で、全理由と追加報告を含む共通契約を検査する。"""
     session = state.SessionState("explore", str(tmp_path), launch_kind="explore")
+    # 有効な不足申告の初回再確認は別試験で扱い、ここでは形式の正否を検収する。
+    if valid and "続行できない理由:" in message:
+        session.result_contract_recovery_consumed = True
     cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
     assert session.result_available is valid
     assert session.result_contract_recovery_pending is not valid
@@ -263,7 +311,8 @@ async def test_backend_terminal_boundary_checks_task_result(
     session.result_contract_recovery_consumed = recovered
     session.agent_message = message
     fails = recovered and held and launch_kind == "explore"
-    held = held and not recovered
+    recheck = launch_kind == "explore" and not held and "続行できない理由:" in message
+    held = (held or recheck) and not recovered
     if engine == "codex":
         async with codex.AppServerManager() as backend:
             backend.sessions[session.session_id] = session
@@ -427,7 +476,7 @@ def test_role_task_requires_fixed_line_or_classified_reason(name: str, message: 
     [
         ("delegate", "low", "medium", False),
         ("delegate", "max", "max", False),
-        ("explore", "low", "low", False),
+        ("explore", "low", "medium", False),
         ("delegate", "low", "low", True),
     ],
 )
@@ -476,8 +525,8 @@ async def test_role_free_text_recovery_raises_effort_once(
     else:
         backend.set_effort.assert_not_awaited()
         assert "effortを" not in prompts[0]
-    # 段を取得できない場合は、回復を続けた事実と委譲元が手動で上げる操作をログで案内する。
-    assert (f"`atk agents effort up {session.session_id}`" in caplog.text) is lookup_fails
+    # 公開effort操作の対象外でも実行できる照会から、同じ要求の継続を判断させる。
+    assert (f"`atk agents show {session.session_id}`" in caplog.text) is lookup_fails
     result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
     assert not result_contract.hold_invalid_result(session, result)
     error = result["error"]

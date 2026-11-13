@@ -249,6 +249,8 @@ SESSION_ID_DESCRIPTION = parameter_description(
 
 
 MODEL_TYPE_DESCRIPTION = parameter_description(
+    "役割文書の工程の変更と候補列直接指定はwarningsへ示す。taskで現在設定を使うにはmodel_typeを省略する。"
+    "handoff_fromの省略は前任候補を継承する。現在設定へ戻すには元の工程名を明示する。"
     "委譲先のモデルを選ぶ。工程名（`execute`・`review`・`review_fast`・`chores`・`chores_fast`・`orchestrate`・`write`）か、"
     "ASCIIカンマ区切りの`<claude|codex|agy>:<model>[/<effort>]`か`opencode:<provider>/<model>[@<effort>]`の候補列"
     "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
@@ -320,6 +322,9 @@ START_DESCRIPTION = "\n".join(
         '引き継ぎ起動は`{"handoff_from": "<終了した前任session_id>"}`を渡し、'
         "後任のモデル候補を指定する場合だけmodel_typeを加える。他の通常起動入力との混在は拒否する。",
         DELEGATION_INPUT_GUIDANCE,
+        "exploreの続行不能返却は一度だけ前提を再確認し、2回目の正当な不足はそのまま公開する。"
+        "形式検査は意味上の完遂を保証せず、親が要求と成果証拠を検収する。"
+        "外側セルだけの出力省略は内側hookでは観測できない。",
         "返した`session_id`は同じ応答で`atk agents wait`を単独実行して観測し、不要なら`kill`で破棄する。"
         "waitは`session_id`を引数に取らず、登録済みの全sessionの終了を待つ。",
         "exploreは対象成果物への書込禁止。読取ツール管理の保存出力を使え、成果ファイル生成の調査はdelegateへ。返却は委譲元が保存する。",
