@@ -131,7 +131,7 @@ def _project(tmp_path: pathlib.Path, native: pathlib.Path, stage: str, mode: str
         PYTHON_ROOT=str(tmp_path / "python"),
         PYTHON_PATH=str(tmp_path / "python/python.exe"),
         AGENT_TOOLKIT_PROCESS_LOOP_SESSION="0",
-        UPDATE_DOTFILES_BOOTSTRAP_REPORT=str(tmp_path / "report.json"),
+        UPDATE_DOTFILES_BOOTSTRAP_REPORT=str(tmp_path / "update-bootstrap-1-1.json"),
     )
     environment.pop("CODEX_THREAD_ID", None)
     if stage == "uv-install":
@@ -186,6 +186,7 @@ def test_windows_bootstrap_native_failure_boundaries(
             monkeypatch.setattr(update_dotfiles_runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
             monkeypatch.setattr(update_dotfiles_runtime.update_dotfiles_report, "report", lambda *_args: None)
             assert update_dotfiles_runtime.finish(0) == 1
+            assert not pathlib.Path(environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"]).exists()
         else:
             assert not result.stdout.strip()
             assert "再実行" in result.stderr
