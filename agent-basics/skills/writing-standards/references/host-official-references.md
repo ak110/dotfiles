@@ -23,8 +23,11 @@
 
 - Claude: [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices)と、同サイトのモデル別ガイドを確認する。
   [Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)はeffort調整、思考量の指示、内部推論の再現要求を扱う。
-  [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)は、effortの選び方、作業を最後まで完了させる指示、承認規則の書き方、コードの所有者の明示、進捗の伝え方、委譲の指示、注意書きの蓄積、以前のモデル向けの指示の見直し、最終報告の書き方、拒否応答を扱う
-- OpenAI: [Prompt engineering](https://platform.openai.com/docs/guides/prompt-engineering)から、使用するモデルの公式ガイドと推論設定の資料へ進む
+  [Prompting Claude Fable 5.2](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-2)は、effortの選び方、作業を最後まで完了させる指示、承認規則の書き方、コードの所有者の明示、進捗の伝え方、委譲の指示、注意書きの蓄積、以前のモデル向けの指示の見直し、最終報告の書き方、拒否応答を扱う。
+- OpenAI: [Prompt engineering](https://platform.openai.com/docs/guides/prompt-engineering)から、使用するモデルの公式ガイドと推論設定の資料へ進む。
+  [GPT-6.1 Solのモデルページ](https://developers.openai.com/api/docs/models/gpt-6.1-sol)は、プロンプトと移行の資料として[Using GPT-6](https://developers.openai.com/api/docs/guides/latest-model#gpt-61-sol)を案内する。
+  同ガイドのPrompting best practicesはGPT-6モデル群への出発点であり、挙動の説明はGPT-6 Astraでの観測に基づく。
+  Sol固有の仕様と共通の指針を区別し、指針の効果は使用するモデルと課題で確かめる。
 
 ## 子Claudeへ環境値を渡す
 
