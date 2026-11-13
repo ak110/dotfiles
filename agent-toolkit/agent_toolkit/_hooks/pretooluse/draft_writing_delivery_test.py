@@ -1,7 +1,11 @@
-"""WI原稿・計画初版の書込と工程別初期値の編集で、起草・編集の規範を案内する宣言を確かめる。"""
+"""WI原稿・計画初版の書込と工程別初期値の編集で、起草・編集の規範を案内することを確かめる。
+
+宣言の一致は現物の読込表で、担当へ届く案内は公開のPreToolUse hookの出力で確かめる。
+"""
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
@@ -9,6 +13,7 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks.pretooluse import read_delivery_matching
+from agent_toolkit._testing.document_delivery import run_hook
 
 _PLUGIN = pathlib.Path(__file__).resolve().parents[3]
 _REPOSITORY = _PLUGIN.parent
@@ -61,3 +66,55 @@ def test_default_model_settings_edit_reaches_trial_rule(name: str, expected: boo
     edit = {"file_path": str(path), "old_string": "a", "new_string": "b"}
     matched = _matched(_REPOSITORY / ".claude/skills/agent-toolkit-edit/SKILL.md", "Edit", edit)
     assert ("process-model-settings-candidates.md" in matched) is expected
+
+
+@pytest.fixture(autouse=True)
+def _editable_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    """リポジトリ保護は未登録のリポジトリの書込を拒否して案内の生成へ進まないため、対象リポジトリを編集許可として登録する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", json.dumps({"github.com/ak110/dotfiles": {"edit": "allow"}}))
+
+
+def _guided(tool_name: str, tool_input: dict) -> str:
+    """公開のPreToolUse hookへ操作を渡し、拒否されずに担当へ届く追加文脈を返す。"""
+    payload = {
+        "session_id": "draft-writing",
+        "cwd": str(_REPOSITORY),
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+    }
+    result = run_hook("pretooluse", payload)
+    assert result.returncode == 0 and not result.stderr
+    output = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
+    # 拒否時は案内の生成まで進まず、追加文脈だけを見ると案内の欠落と区別できない。
+    assert output.get("permissionDecision") != "deny", output.get("permissionDecisionReason")
+    return output.get("additionalContext", "")
+
+
+def _read_step(path: pathlib.Path) -> str:
+    return f"Readで`{path}`を取得せよ"
+
+
+@pytest.mark.parametrize(
+    ("content", "documents"),
+    [
+        (_AWI, ("skills/wi-standards/references/awi-body.md", "skills/wi-standards/references/analysis-records.md")),
+        (_UWI, ("skills/wi-standards/references/uwi-format.md",)),
+        (_PLAN, ("skills/write-plan/references/plan-file-standards.md",)),
+    ],
+)
+def test_public_hook_guides_drafting_standards_for_temporary_drafts(content: str, documents: tuple[str, ...]) -> None:
+    """一時領域の原稿を書く操作で、公開hookが起草規範の取得を案内し、使い捨てのコードでは案内しない。"""
+    draft = managed_temp.temp_root_path() / "session-test" / "draft.md"
+    guided = _guided("Write", {"file_path": str(draft), "content": content})
+    assert all(_read_step(_PLUGIN / document) in guided for document in documents)
+    script = draft.with_name("count.py")
+    unrelated = _guided("Write", {"file_path": str(script), "content": "print(1)\n"})
+    assert not any(str(_PLUGIN / document) in unrelated for document in documents)
+
+
+def test_public_hook_guides_trial_rule_for_default_model_settings_edit() -> None:
+    """工程別モデルの初期値を編集する操作で、公開hookが実作業での試行を定める候補資料の取得を案内する。"""
+    path = _PLUGIN / "agent_toolkit/_atk/config_settings.py"
+    guided = _guided("Edit", {"file_path": str(path), "old_string": "a", "new_string": "b"})
+    assert _read_step(_PLUGIN / "skills/delegation/references/process-model-settings-candidates.md") in guided
