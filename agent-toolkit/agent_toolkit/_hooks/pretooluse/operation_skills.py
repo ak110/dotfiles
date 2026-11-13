@@ -439,9 +439,22 @@ def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = F
             elif cwd is None and base.unresolved_expression is None:
                 paths.append(value)
 
+    assignments: dict[tuple[object, ...], dict[str, str]] = {(): {}}
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd or "", effects=True):
-        found = [target for target in invocation.static_outputs if isinstance(target, str)]
-        tokens = invocation.static_tokens
+        scope = invocation.cwd_scope
+        for length in range(1, len(scope) + 1):
+            assignments.setdefault(scope[:length], assignments[scope[: length - 1]].copy())
+        values = assignments[scope]
+
+        def resolve(value: str, values: dict[str, str] = values) -> str:
+            return re.sub(r"\x00([a-zA-Z_][a-zA-Z_0-9]*)\x00", lambda match: values.get(match[1], STATIC_UNKNOWN), value)
+
+        found = [resolve(target) for target in invocation.variable_outputs if isinstance(target, str)]
+        tokens = tuple(resolve(token) for token in invocation.variable_tokens)
+        # 単独代入だけを後続へ渡す。条件文内の代入は以前の既知値も無効にする。
+        for assignment in invocation.standalone_assignments:
+            name, _, value = assignment.partition("=")
+            values[name] = resolve(value) if invocation.assignments_definite else STATIC_UNKNOWN
         if not invocation.execution_known or not tokens:
             append_paths(found, current)
             continue
