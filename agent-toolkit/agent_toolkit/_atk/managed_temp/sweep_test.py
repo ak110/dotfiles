@@ -557,3 +557,49 @@ def test_space_pressure_keeps_area_whose_owner_process_is_alive(monkeypatch: pyt
 
     assert result.pressure is not None
     assert direct.exists() and nested.exists() and not dead.exists()
+
+
+def test_pressure_retry_interval_keeps_free_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """不足が続いても全走査は5分に一度とし、空きの確認は各起動で行う。"""
+    _first_sweep_done()
+    _area("protected-recent", days=0)
+    observed: list[object] = []
+
+    def usage(path: object, **_kwargs: typing.Any) -> typing.Any:
+        observed.append(path)
+        return shutil._ntuple_diskusage(1000, 950, 50)  # pylint: disable=protected-access
+
+    monkeypatch.setattr(sweep, "_disk_usage", usage)
+    first = managed_temp.sweep_managed_temp(now=_NOW)
+    assert first.pressure is not None and first.pressure.still_low
+    calls = len(observed)
+    with monkeypatch.context() as guarded:
+        guarded.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("再帰走査を反復した"))
+        guarded.setattr(sweep, "_tree_bytes", lambda *_args: pytest.fail("使用量計算を反復した"))
+        for seconds in (0, 1, 299):
+            assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(seconds=seconds)).pressure is None
+    assert len(observed) > calls
+    assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(seconds=300)).pressure is not None
+
+
+@pytest.mark.parametrize("record", ["broken", "99999999999999999999999999", "-1"])
+def test_pressure_invalid_record_retries(monkeypatch: pytest.MonkeyPatch, record: str) -> None:
+    """壊れた記録や未来・負の時刻を正常な抑制期間と誤認しない。"""
+    _first_sweep_done()
+    (paths.state_root() / ".sweep/last-pressure").write_text(record, encoding="ascii")
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 950, 50))  # pylint: disable=protected-access
+    assert managed_temp.sweep_managed_temp(now=_NOW).pressure is not None
+
+
+def test_pressure_busy_lock_does_not_wait_or_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """他の試行がロックを保持する間は待たず、共有領域の再帰走査を重ねない。"""
+    _first_sweep_done()
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 950, 50))  # pylint: disable=protected-access
+    monkeypatch.setattr(sweep, "_latest_update_and_worktree", lambda *_args: pytest.fail("並行走査した"))
+    lock_path = paths.state_root() / ".sweep/pressure.lock"
+    with lock_path.open("a+", encoding="utf-8") as locked:
+        file_lock.acquire_lock(locked, blocking=False)
+        try:
+            assert managed_temp.sweep_managed_temp(now=_NOW).pressure is None
+        finally:
+            file_lock.release_lock(locked)

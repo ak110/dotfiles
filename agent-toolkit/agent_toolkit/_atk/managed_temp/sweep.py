@@ -25,6 +25,8 @@ from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_t
 from agent_toolkit._common import file_lock, plugin_root_leases, process_identity, session_registry
 
 _RECORD_NAME = ".sweep/last-sweep"
+_PRESSURE_RECORD_NAME = ".sweep/last-pressure"
+_PRESSURE_INTERVAL_NS = 300 * 1_000_000_000
 _OLD_SCHEDULE_NAME = ".sweep/schedule"
 """対象ごとの予定表を持っていた版の記録。読まずに削除する。"""
 _NANOSECONDS_PER_SECOND = 1_000_000_000
@@ -86,18 +88,20 @@ class SpacePressure(typing.NamedTuple):
         return self.free_after < self.total * _min_free_ratio()
 
 
-def _sweep_due(state_root: pathlib.Path, now_ns: int) -> bool:
+def _sweep_due(
+    state_root: pathlib.Path, now_ns: int, *, record_name: str = _RECORD_NAME, interval_ns: int = _SWEEP_INTERVAL_NS
+) -> bool:
     """前回の掃引から間隔が過ぎたかを返す。記録の欠落・破損と、未来の時刻では真を返す。"""
     try:
-        last_ns = int((state_root / _RECORD_NAME).read_text(encoding="ascii"))
+        last_ns = int((state_root / record_name).read_text(encoding="ascii"))
     except OSError, ValueError:
         return True
-    return not 0 <= now_ns - last_ns < _SWEEP_INTERVAL_NS
+    return not 0 <= now_ns - last_ns < interval_ns
 
 
-def _save_sweep_time(state_root: pathlib.Path, now_ns: int) -> None:
+def _save_sweep_time(state_root: pathlib.Path, now_ns: int, *, record_name: str = _RECORD_NAME) -> None:
     """掃引を終えた時刻を置き換える。書けない場合は次回の起動が掃引するだけなので、失敗を報告しない。"""
-    record = state_root / _RECORD_NAME
+    record = state_root / record_name
     temporary = record.with_name(f".last-sweep-{secrets.token_hex(8)}.tmp")
     try:
         record.parent.mkdir(mode=0o700, exist_ok=True)
@@ -410,6 +414,34 @@ def _below_floor(temp_root: pathlib.Path) -> bool:
 
 
 def _reclaim_for_space(
+    state_root: pathlib.Path,
+    temp_root: pathlib.Path,
+    now_ns: int,
+    protected_sessions: set[pathlib.Path],
+    deleted: list[pathlib.Path],
+    failed: list[tuple[pathlib.Path, str]],
+) -> SpacePressure | None:
+    """空きは毎回確認し、再帰走査と警告を共有の5分間隔へまとめる。"""
+    if not _below_floor(temp_root):
+        return None
+    lock = state_root / ".sweep/pressure.lock"
+    try:
+        lock.parent.mkdir(mode=0o700, exist_ok=True)
+    except OSError:
+        return None
+    # 待たずに戻ることで、別プロセスの長い走査を起動の待ち時間へ転嫁しない。
+    # ロックファイルは削除せず、異なるinodeへの同時ロックを防ぐ。
+    with _try_lock(lock) as locked:
+        if not locked or not _sweep_due(
+            state_root, now_ns, record_name=_PRESSURE_RECORD_NAME, interval_ns=_PRESSURE_INTERVAL_NS
+        ):
+            return None
+        # 試行開始を記録し、失敗や中断でも次の起動による即時の全走査を避ける。
+        _save_sweep_time(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME)
+        return _reclaim_space(state_root, temp_root, now_ns, protected_sessions, deleted, failed)
+
+
+def _reclaim_space(
     state_root: pathlib.Path,
     temp_root: pathlib.Path,
     now_ns: int,
