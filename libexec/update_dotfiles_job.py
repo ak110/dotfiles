@@ -280,30 +280,6 @@ def _worker(job: pathlib.Path) -> int:
             libc = ctypes.CDLL(None, use_errno=True)
             if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
                 raise OSError(ctypes.get_errno(), "更新workerの子孫所有を設定できません")
-        update_failed = False
-        if os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1":
-            update = (
-                [
-                    "powershell.exe",
-                    "-NoLogo",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(_ROOT / "libexec/update_uv.ps1"),
-                    uv,
-                ]
-                if sys.platform == "win32"
-                else ["bash", str(_ROOT / "libexec/update_uv.sh"), uv]
-            )
-            update_code = _run_command(update, job, deadline, env)
-            if update_code in (124, 130):
-                code = update_code
-                return code
-            update_failed = update_code != 0
-            code = _run_command([uv, "python", "install", "--upgrade", "3.15"], job, deadline, env)
-            if code:
-                return code
         code = _run_command(
             [uv, "run", "--no-project", "--script", str(_ROOT / "libexec/update_dotfiles.py"), *arguments], job, deadline, env
         )
@@ -318,8 +294,6 @@ def _worker(job: pathlib.Path) -> int:
                 deadline,
                 env,
             )
-        if update_failed:
-            print(_WARNING, file=sys.stderr, flush=True)
         return code
     except (OSError, subprocess.SubprocessError, RuntimeError) as error:
         print(f"更新jobを完了できませんでした: {error}。保存出力を確認して再実行してください。", file=sys.stderr, flush=True)

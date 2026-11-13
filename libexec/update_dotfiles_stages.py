@@ -133,6 +133,7 @@ def stage(name: str) -> Stage:
 def run_stages(
     runners: Mapping[str, Runner],
     *,
+    where: Where = "executor",
     fatal: tuple[type[BaseException], ...] = (),
     sleep: Callable[[float], None] = time.sleep,
 ) -> int:
@@ -143,12 +144,12 @@ def run_stages(
     時間切れ（`_run_step`が`timed_out`を立てた失敗）は同じ原因の再発が見込まれるため再試行しない。
     `fatal`の例外は、続行段でも止める必要があるもの（子プロセスを回収できない場合など）であり、そのまま伝える。
     """
-    expected = {item.name for item in STAGES if item.where == "executor"}
-    if set(runners) != expected:
-        raise ValueError(f"runnerと宣言表の段が一致しません: {sorted(set(runners) ^ expected)}")
-    for item in STAGES:
-        if item.where != "executor":
-            continue
+    declared = [item for item in STAGES if item.where == where]
+    expected = {item.name for item in declared}
+    if missing := expected - set(runners):
+        raise ValueError(f"宣言された段の実装がありません: {sorted(missing)}")
+    # 拡張された処理が分類表にまだ無い場合にも、既定の続行を適用する。
+    for item in [*declared, *(Stage(name) for name in runners if name not in expected)]:
         code = _run_stage(item, runners[item.name], fatal=fatal, sleep=sleep)
         if code != 0 and item.abort:
             return code

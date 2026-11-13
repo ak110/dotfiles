@@ -1,6 +1,7 @@
 """post-applyテンプレートの最終実行順序を検証する。"""
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -111,8 +112,8 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     assert "Stop-Process" not in text[guard:stop_loop]
     assert "再インストールを次回へ延期" in text[guard:stop_loop]
     assert "既存版で後続処理を継続" in text[deferred:]
-    assert text.count("Get-CimInstance Win32_Process") == 1
-    assert text.count("Get-PytoolsEnvLockingProcess") == 2
+    assert "locking_process.ps1" in text
+    assert text.count("Get-PytoolsEnvLockingProcess") == 1
 
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が見つからない")
@@ -123,10 +124,8 @@ def test_windows_locking_processes_classify_and_record_restart_state(
     powershell = POWERSHELL
     assert powershell is not None
     text = _read(WINDOWS_TEMPLATE)
-    classifier_start = text.index("$escapedMediaRemoteBin =")
     prologue = text[text.index("$originalOutputEncoding = [Console]::OutputEncoding") : text.index("try {")]
-    classifier_end = text.index("\n# uv tool venv", classifier_start)
-    classifier = text[classifier_start:classifier_end]
+    classifier = (WINDOWS_TEMPLATE.parent.parent / "libexec/locking_process.ps1").read_text(encoding="utf-8-sig")
     start = text.index("if ($needsReinstall) {")
     end = text.index("\n\n# post-apply 配下の出力", start)
     process_handling = text[start:end]
@@ -344,3 +343,69 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
     assert install < hash_write < failure
     assert 'DOTFILES_PYTOOLS_INSTALL_STATE="failed"' in text[hash_write:failure]
     assert "export DOTFILES_PYTOOLS_INSTALL_STATE DOTFILES_PYTOOLS_INSTALL_DETAIL" in text[failure:]
+
+
+@pytest.mark.skipif(POWERSHELL is None or os.name == "nt", reason="LinuxのpwshでWindowsプロセスを模擬する")
+@pytest.mark.parametrize("blocked,upgrade_exit", [(False, 0), (False, 17), (True, 0)])
+def test_windows_python_bootstrap_process_ownership(tmp_path: Path, blocked: bool, upgrade_exit: int) -> None:
+    """使用中の分類から停止・更新・復帰、または見送りまでを実行する。"""
+    log = tmp_path / "calls"
+    fake_uv = tmp_path / "uv"
+    tool_python = tmp_path / "tools/pytools/Scripts/python.exe"
+    tool_python.parent.mkdir(parents=True)
+    tool_python.write_text('#!/usr/bin/env bash\nprintf "restart\\n" >> "$BOOTSTRAP_LOG"\n', encoding="utf-8")
+    tool_python.chmod(0o755)
+    fake_uv.write_text(
+        "#!/usr/bin/env bash\n"
+        'if [[ "$1 $2" == "python install" ]]; then printf "upgrade\\n" >> "$BOOTSTRAP_LOG"; exit "$UPGRADE_EXIT"; fi\n'
+        'if [[ "$1 $2" == "tool dir" ]]; then printf "%s\\n" "$TOOL_BASE"; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+    powershell_stub = tmp_path / "powershell.exe"
+    powershell_stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    powershell_stub.chmod(0o755)
+    driver = tmp_path / "driver.ps1"
+    command = "arbitrary-python" if blocked else "pytools.media_remote"
+    driver.write_text(
+        "New-PSDrive -Name C -PSProvider FileSystem -Root $env:BOOTSTRAP_ROOT | Out-Null\n"
+        "$env:APPDATA = 'C:\\appdata'\n"
+        "function global:Join-Path { param([string]$Path,[string]$ChildPath)\n"
+        "if ($Path -like 'C:*') { return $Path.TrimEnd('\\') + '\\' + $ChildPath }; "
+        "Microsoft.PowerShell.Management\\Join-Path $Path $ChildPath }\n"
+        "function global:Get-CimInstance { param([string]$ClassName)\n"
+        "[pscustomobject]@{ ProcessId=101; ParentProcessId=0; Name='python.exe'; "
+        f"ExecutablePath='C:\\appdata\\uv\\python\\cpython-3.15.2\\python.exe'; CommandLine='{command}' }}\n"
+        "}\n"
+        'function global:Stop-Process { param([int]$Id,[switch]$Force) Add-Content $env:BOOTSTRAP_LOG "stop:$Id" }\n'
+        f"& '{REPO_ROOT / 'libexec/update_bootstrap.ps1'}' '{fake_uv}'\n",
+        encoding="utf-8-sig",
+    )
+    environment = os.environ.copy()
+    environment.update(
+        PATH=str(tmp_path) + os.pathsep + environment["PATH"],
+        APPDATA=str(tmp_path / "appdata"),
+        LOCALAPPDATA=str(tmp_path / "state"),
+        USERPROFILE=str(tmp_path / "home"),
+        BOOTSTRAP_ROOT=str(tmp_path),
+        BOOTSTRAP_LOG=str(log),
+        TOOL_BASE=str(tmp_path / "tools"),
+        UPGRADE_EXIT=str(upgrade_exit),
+        AGENT_TOOLKIT_PROCESS_LOOP_SESSION="0",
+    )
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-File", str(driver)],
+        env=environment,
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    if blocked:
+        assert not log.exists()
+        assert "連続1回" in result.stderr
+        assert "PID=101" in result.stderr
+    else:
+        assert log.read_text(encoding="utf-8").splitlines() == ["stop:101", "upgrade", "restart"]

@@ -1,6 +1,7 @@
 """宣言した段へ未知の失敗を注入し、続行と中断の契約を検証する。"""
 
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -11,7 +12,18 @@ import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-pos
 import update_dotfiles_stages as stages  # noqa: E402  # pylint: disable=wrong-import-position
 
 
-@pytest.mark.parametrize("failed", [item for item in stages.STAGES if item.where == "executor"], ids=lambda item: item.name)
+@pytest.mark.parametrize("name", ["update_bootstrap.sh", "update_bootstrap.ps1"])
+def test_bootstrap_classification_matches_declarations(name: str) -> None:
+    """外側の更新段も宣言表と同じ中断集合を使う。"""
+    text = pathlib.Path(__file__).with_name(name).read_text(encoding="utf-8-sig")
+    declarations = re.findall(r"(?:run_stage|Invoke-UpdateStage) '([^']+)' (abort|continue)", text)
+    expected = {item.name: item.abort for item in stages.STAGES if item.where == "bootstrap"}
+    assert {title for title, _classification in declarations} == set(expected)
+    for title, classification in declarations:
+        assert (classification == "abort") == expected[title]
+
+
+@pytest.mark.parametrize("failed", stages.STAGES, ids=lambda item: item.name)
 @pytest.mark.parametrize("error", [RuntimeError("injected"), subprocess.TimeoutExpired("injected", 1)])
 def test_injected_failure_preserves_progress(failed: stages.Stage, error: Exception, monkeypatch: pytest.MonkeyPatch) -> None:
     """新しい段も、宣言に従って再試行または最後まで続行する。"""
@@ -24,8 +36,8 @@ def test_injected_failure_preserves_progress(failed: stages.Stage, error: Except
             raise error
         return 0
 
-    declared = [item.name for item in stages.STAGES if item.where == "executor"]
-    result = stages.run_stages(dict.fromkeys(declared, run), sleep=lambda _seconds: None)
+    declared = [item.name for item in stages.STAGES if item.where == failed.where]
+    result = stages.run_stages(dict.fromkeys(declared, run), where=failed.where, sleep=lambda _seconds: None)
     assert {
         "git timeout設定の検証",
         "更新ロックの取得",

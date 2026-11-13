@@ -36,6 +36,7 @@ def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]])
     common.mkdir(parents=True)
     shutil.copy2(_ROOT / "agent-toolkit/agent_toolkit/_common/windows_job.py", common / "windows_job.py")
     shutil.copy2(_ROOT / "bin/update-dotfiles", root / "bin/update-dotfiles")
+    shutil.copy2(_ROOT / "libexec/update_bootstrap.sh", root / "libexec/update_bootstrap.sh")
     (root / "libexec/update_uv.sh").write_text('"$1" self update\n', encoding="utf-8")
     child_source = (
         "import os,pathlib; pathlib.Path(os.environ['CHILD_READY']).write_text(str(os.getpid())); "
@@ -156,10 +157,9 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     metadata = json.loads((job / "input.json").read_text(encoding="utf-8"))
     assert metadata["arguments"] == ["--prune"] and metadata["thread_id"] == "own-thread"
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
-    assert calls[:4] == ["python find 3.15", "python install 3.15", "python find 3.15", "self update"]
-    assert calls[4] == "python install --upgrade 3.15"
-    assert calls[5].startswith("run --no-project --script ")
-    assert calls[6:] == ([] if run_exit else ["prune --prune-only-if-minimal --prune"])
+    assert calls[:4] == ["self update", "python install --upgrade 3.15", "python find 3.15", "python find 3.15"]
+    assert calls[4].startswith("run --no-project --script ")
+    assert calls[5:] == ([] if run_exit else ["prune --prune-only-if-minimal --prune"])
     explicit = _invoke(project, "job", job.name)
     own = _invoke(project, "job")
     assert explicit.returncode == own.returncode == result.returncode
@@ -199,15 +199,15 @@ def test_process_loop_job_skips_uv_self_update(project: tuple[pathlib.Path, dict
 
 
 @_POSIX
-def test_python_upgrade_failure_stops_before_update(project: tuple[pathlib.Path, dict[str, str]]) -> None:
-    """管理Pythonの更新失敗を伝え、更新本体と整理を開始しない。"""
+def test_python_upgrade_failure_continues_with_existing_python(project: tuple[pathlib.Path, dict[str, str]]) -> None:
+    """Pythonを起動する前に更新し、失敗しても既存版でjobを完了する。"""
     _root, environment = project
     environment["PYTHON_EXIT"] = "17"
     result = _invoke(project)
-    assert result.returncode == 17, result.stdout + result.stderr
+    assert result.returncode == 0, result.stdout + result.stderr
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
-    assert calls == ["python find 3.15", "self update", "python install --upgrade 3.15"]
-    assert not pathlib.Path(environment["READY"]).exists()
+    assert "python install --upgrade 3.15" in calls
+    assert pathlib.Path(environment["READY"]).exists()
 
 
 @pytest.mark.parametrize("arguments", [[], ["--mode", "minimal"], ["--mode", "full", "--prune"]])
