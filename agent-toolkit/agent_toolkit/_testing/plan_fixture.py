@@ -67,6 +67,8 @@ BUG_VARIANT_LEGACY_ROWS: str = "legacy_rows"
 """統廃合前の調査表。原因分析表を伴い、行構成だけが旧い。"""
 BUG_VARIANT_LEGACY_STANDALONE: str = "legacy_standalone"
 """原因分析表を持たない旧調査表。"""
+BUG_VARIANT_BEFORE_HARM_ROWS: str = "before_harm_rows"
+"""害の型を追加する前の11行の調査表。読み取り互換専用。"""
 BUG_VARIANT_PREVIOUS_ROWS: str = "previous_rows"
 """6区分化より前の8行の調査表。原因分析表を伴い、行構成だけが旧い。"""
 
@@ -122,7 +124,10 @@ def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRE
     ``variant``は``BUG_VARIANT_CURRENT``、``BUG_VARIANT_PREVIOUS_ROWS``、``BUG_VARIANT_LEGACY_ROWS``、
     ``BUG_VARIANT_LEGACY_STANDALONE``のいずれかを受理する。
     """
-    if variant == BUG_VARIANT_LEGACY_STANDALONE:
+    if variant == BUG_VARIANT_BEFORE_HARM_ROWS:
+        table = bug_investigation_table().replace(f"{bug_row('害の型と反復')}\n", "")
+        body = f"{bug_cause_table()}\n\n{table}"
+    elif variant == BUG_VARIANT_LEGACY_STANDALONE:
         body = rows_table(_plan_format.PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS, BUG_FILLER)
     elif variant == BUG_VARIANT_LEGACY_ROWS:
         body = f"{bug_cause_table()}\n\n{legacy_bug_investigation_table()}"

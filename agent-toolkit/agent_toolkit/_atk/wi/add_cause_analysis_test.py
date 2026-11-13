@@ -28,6 +28,8 @@ from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_note
 @pytest.mark.parametrize(
     "case",
     [
+        "missing_harm",
+        "empty_harm",
         "empty_l4",
         "bare_l4",
         "missing_creation_review",
@@ -57,7 +59,7 @@ def test_public_add_cause_analysis_format(
 ) -> None:
     """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
 
-    AWIの2列表は処置の6区分と採否2行の8行とし、4区分の候補行・採否行・回帰防止策の欠落と空欄、
+    AWIの2列表は害の型と処置の6区分と採否2行の9行とし、4区分の候補行・採否行・回帰防止策の欠落と空欄、
     6区分化前の5行表と、バグ単位のL4表に対応する処置表が無い記録（2単位の片方だけ欠ける場合を含む）を拒否する。
     """
     notes = _setup_notes(tmp_path)
@@ -69,12 +71,14 @@ def test_public_add_cause_analysis_format(
     cause = plan_fixture.bug_cause_table()
     table = _awi_cause_items_table()
     removed = {
+        "missing_harm": "害の型と反復",
         "missing_creation_review": "類似見直し観点（作り込み）",
         "missing_detection_prevention": "再発防止策（見逃し）",
         "missing_regression": "回帰防止策",
         "missing_decision": "再発防止策の採否",
     }
     emptied = {
+        "empty_harm": "害の型と反復",
         "empty_detection_review": "類似見直し観点（見逃し）",
         "empty_decision": "類似見直しの採否",
         "empty_countermeasure": "対策",
@@ -120,10 +124,11 @@ def test_public_add_cause_analysis_format(
         assert "成功:" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("legacy_format", ["five_rows", "eight_rows"])
 def test_public_append_keeps_saved_legacy_cause_table(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], legacy_format: str
 ) -> None:
-    """保存済みの6区分化前の5行表を持つAWIへの追記は、原因分析節を変えないため拒否しない。
+    """保存済みの旧形式の表を持つAWIへの追記は、原因分析節を変えないため拒否しない。
 
     書式の改訂前に保存された未終了の項目へ、訂正や記録を追記できる必要がある。
     """
@@ -131,7 +136,11 @@ def test_public_append_keeps_saved_legacy_cause_table(
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
-    legacy = _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
+    legacy = (
+        _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
+        if legacy_format == "five_rows"
+        else "\n".join(line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 害の型と反復 |"))
+    )
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{plan_fixture.bug_cause_table()}\n\n{legacy}"
     _write_awi_file(notes, "legacy.md", body=body, source="test")
     appended = tmp_path / "append.md"

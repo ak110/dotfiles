@@ -11,8 +11,9 @@
 ## 再発の記録
 
 本節は、dotfilesの不具合を原因分析した担当（process-wiのレーン、add-awi-by-user、review-sessionなど）に適用する。
-`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」の分類で過去の対策と同じ原因（範囲不足・未適用・効果不足）と判定したら、その分析の中で次の2つを記録する。
-記録は振り返りが原因ごとに再発を数え、同じ対策を繰り返す前に条文や仕組みを見直す材料になる。
+`agent-basics:bugfix/references/root-cause-prevention-requirements.md`「再発防止策の必須性」の分類で、過去対策と同じ原因か、別原因でも同じ害の型の反復かを判定する。
+該当する場合は分析の中で次の事項を記録する。
+記録は振り返りが原因と害の型を区別して再発を数え、同じ対策を繰り返す前に条文や仕組みを見直す材料になる。
 
 - `docs/development/incidents*.md`の該当事例へ`再発（YYYY年M月D日）:`行を加え、分類、事象、是正の内容を書く。
   公開する文書のため、作業項目のファイル名などの個人記録の識別子は書かない（`agent-basics:writing-standards/references/writing-common.md`の個人記録の規定）。

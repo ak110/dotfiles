@@ -16,6 +16,7 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS,
     PLAN_METADATA_BUG_FIELD,
     PLAN_PREVIOUS_BUG_TABLE_ROWS,
+    PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS,
 )
 from agent_toolkit._plan.structure.markdown import (
     _EMPTY_CELL_FIX,
@@ -160,7 +161,13 @@ def _check_bug_unit_sections(
         investigation_tables = [
             table
             for table in tables
-            if table.row_labels() in (PLAN_BUG_TABLE_ROWS, PLAN_PREVIOUS_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
+            if table.row_labels()
+            in (
+                PLAN_BUG_TABLE_ROWS,
+                PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS,
+                PLAN_PREVIOUS_BUG_TABLE_ROWS,
+                PLAN_LEGACY_BUG_TABLE_ROWS,
+            )
         ]
         if len(investigation_tables) != 1 or investigation_tables[0].header != PLAN_BUG_TABLE_HEADER:
             errors.append(
@@ -267,7 +274,7 @@ def has_legacy_bug_investigation_table(content: str) -> bool:
     tables = extract_tables(list(iter_markdown_body_lines(content)))
     return any(
         table.header == PLAN_BUG_TABLE_HEADER
-        and table.row_labels() in (PLAN_PREVIOUS_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
+        and table.row_labels() in (PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS, PLAN_PREVIOUS_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
         for table in tables
     )
 

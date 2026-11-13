@@ -334,7 +334,14 @@ def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[path
     assert not warnings
 
 
-@pytest.mark.parametrize("variant", [_plan_fixture.BUG_VARIANT_PREVIOUS_ROWS, _plan_fixture.BUG_VARIANT_LEGACY_ROWS])
+@pytest.mark.parametrize(
+    "variant",
+    [
+        _plan_fixture.BUG_VARIANT_BEFORE_HARM_ROWS,
+        _plan_fixture.BUG_VARIANT_PREVIOUS_ROWS,
+        _plan_fixture.BUG_VARIANT_LEGACY_ROWS,
+    ],
+)
 def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str], variant: str) -> None:
     """6区分化前と統廃合前の行構成を持つ調査表を読み取りで受理し、移行warningを返す。"""
     work_dir, base = repo
