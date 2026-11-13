@@ -10,7 +10,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 状態や業務ルールを持つ要求の曖昧さを洗い出す前 | `agent-basics:writing-standards/references/design-time-state.md` |
-| WI作成工程で質問ラウンドを終える前と原稿を確定する前 | `../../add-awi-by-user/references/omission-check.md` |
+| WI作成工程で起草の方針を決める前、質問ラウンドを終える前と原稿を確定する前 | `../../add-awi-by-user/references/omission-check.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../report-completion/references/report-formats-completion.md` |
 
 ## 確認対象
@@ -27,7 +27,7 @@
    後続工程に残すのは、登録時点の調査では判明せず、実際の処理時に初めて明らかになる曖昧さに限る。
    登録時点で確認できる曖昧さを後続工程に残すと、自律モードで対象項目が保留となり、ユーザーの回答を待つ間作業が停止してしまうためである。
 
-   WI作成工程では、質問ラウンドを終える前と原稿確定前に`../../add-awi-by-user/references/omission-check.md`で考慮漏れを点検し、同資料に従って処置を確定し、終了時に報告する。
+   WI作成工程では、起草の方針を決める前（方針を提示するか、確認を経るかによらない）、質問ラウンドを終える前と原稿確定前に`../../add-awi-by-user/references/omission-check.md`で考慮漏れを点検し、同資料に従って処置を確定し、終了時に報告する。
    状態や業務ルールを持つ要求では、`agent-basics:writing-standards/references/design-time-state.md`「状態と業務ルールの条件」の時機の区別も、登録前に洗い出す曖昧さへ含める。
 
    ユーザーが判定基準を示した集合に属する対象や、その集合から派生するペアの対象（その対象を前提とする規範条文、テストコード、設定など）に同じ基準を適用する判断は起草者が確定する。
