@@ -16,6 +16,33 @@ from pytools._internal.post_apply_test_helpers import _isolate_sync_report as _i
 from pytools._internal.post_apply_test_helpers import _isolate_update_log as _isolate_update_log
 
 
+def test_persistent_log_redacts_plugin_output_only(capsys: pytest.CaptureFixture[str]) -> None:
+    """プラグインの出力と例外を保存時だけ伏せ、画面には元の診断を保つ。"""
+    output = "api_key=fake-plugin-key\n-----BEGIN " + "PRIVATE KEY-----\nfake-private-body\n-----END PRIVATE KEY-----"
+
+    def runner():
+        plugin_logger = logging.getLogger("pytools._internal.apply_dotfiles_plugins")
+        plugin_logger.warning("stage=plugin exit=7 stderr:\n%s", output)
+        try:
+            raise RuntimeError("Authorization: Basic fake-plugin-basic")
+        except RuntimeError:
+            plugin_logger.exception("plugin失敗")
+        return post_apply.run(steps=[])
+
+    with pytest.raises(SystemExit) as result:
+        post_apply.main(runner=runner)
+    assert result.value.code == 0
+    saved = post_apply._UPDATE_LOG_PATH.read_text(encoding="utf-8")  # noqa: SLF001
+    screen = capsys.readouterr().err
+    for value in ("fake-plugin-key", "fake-private-body", "fake-plugin-basic"):
+        assert value not in saved
+        assert value in screen
+    assert output in screen
+    assert "stage=plugin exit=7 stderr:\n" in saved
+    assert "RuntimeError" in saved
+    assert "[REDACTED]" in saved
+
+
 def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Path) -> None:
     """失敗したステップの名前、例外の内容、tracebackの末尾を同期結果の記録へ残す。"""
     steps = [

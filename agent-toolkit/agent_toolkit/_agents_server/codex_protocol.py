@@ -11,31 +11,17 @@ from typing import Any
 
 from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES
+from agent_toolkit._common import diagnostic_redaction
 
 DEFAULT_WAIT_TIMEOUT = 300.0
 
-# 外部の拒否本文は認証値を反射しうる。任意dataの選別だけでは本文の秘密を除去できない。
-_DIAGNOSTIC_VALUE = r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]&]+)"""
-_DIAGNOSTIC_AUTH = re.compile(
-    r"""(\b(?:proxy[-_])?authorization(?:\\?["'])?\s*[:=]\s*)"""
-    r"""(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\r\n;]+)""",
-    re.IGNORECASE,
-)
-_DIAGNOSTIC_SECRET = re.compile(
-    r"""(\b[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*(?:\\?["'])?\s*[:=]\s*)""" + _DIAGNOSTIC_VALUE,
-    re.IGNORECASE,
-)
-_DIAGNOSTIC_BEARER = re.compile(r"(\b(?:Bearer|Basic)\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+# 拒否本文は名前の付かない鍵も反射するため、共通の規則に加えて連続32文字以上の鍵用文字を保守的に伏せる。
 _DIAGNOSTIC_KEY = re.compile(r"[A-Za-z0-9_+/=-]{32,}")
 
 
 def redact_diagnostic(message: str) -> str:
     """Codexの拒否診断から認証値と長い鍵状文字列を伏せ、1行へ整形する。"""
-    message = _DIAGNOSTIC_AUTH.sub(r'\1"[REDACTED]"', message)
-    message = _DIAGNOSTIC_SECRET.sub(r'\1"[REDACTED]"', message)
-    message = _DIAGNOSTIC_BEARER.sub(r"\1[REDACTED]", message)
-    # 名前の付かない鍵も反射されるため、連続32文字以上の鍵用文字を保守的に伏せる。
-    message = _DIAGNOSTIC_KEY.sub("[REDACTED]", message)
+    message = _DIAGNOSTIC_KEY.sub(diagnostic_redaction.REDACTED, diagnostic_redaction.redact_secrets(message))
     return message.replace("\r", r"\r").replace("\n", r"\n")
 
 

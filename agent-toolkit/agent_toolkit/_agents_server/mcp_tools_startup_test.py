@@ -223,7 +223,10 @@ async def test_mcp_lifespan_persists_activate_failure(
 
 
 @pytest.mark.parametrize("stop_requested", [False, True])
-def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stop_requested: bool) -> None:
+@pytest.mark.parametrize("secret_message", [False, True])
+def test_serve_records_exception_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stop_requested: bool, secret_message: bool
+) -> None:
     """stdio起動が例外で終わると、起動単位の終了診断へ例外型とメッセージを記録し、例外を呼出元へ伝える。
 
     `serve`はこの試験ではpytestのプロセスの中で動く。終了時の回収は自プロセスの全子孫を対象にするため、
@@ -242,14 +245,16 @@ def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path:
     for name in ("CLAUDE_CODE_SESSION_ID", logging_config.LAUNCH_RECORD_ENV):
         monkeypatch.delenv(name, raising=False)
 
+    message = "token=" + "fake-long-value" * 300 + " stage=start" if secret_message else "transport broke"
+
     def fail(**_kwargs: Any) -> None:
         if stop_requested:
             assert mcp_tools.mcp.server_lifetime is not None
             mcp_tools.mcp.server_lifetime.request_stop()
-        raise RuntimeError("transport broke")
+        raise RuntimeError(message)
 
     monkeypatch.setattr(mcp_tools.mcp, "run", fail)
-    with pytest.raises(RuntimeError, match="transport broke"):
+    with pytest.raises(RuntimeError):
         mcp_tools.serve()
 
     [path] = logging_config.instance_directory(tmp_path).glob("*.jsonl")
@@ -261,7 +266,7 @@ def test_serve_records_exception_exit(monkeypatch: pytest.MonkeyPatch, tmp_path:
         "writer": "server",
         "outcome": "exception",
         "exception_type": "RuntimeError",
-        "message": "transport broke",
+        "message": 'token="[REDACTED]" stage=start' if secret_message else "transport broke",
     }
     # 終えた起動単位は同じプロセスの後続の記録へ書かない。
     assert logging_config.current_server_instance() is None

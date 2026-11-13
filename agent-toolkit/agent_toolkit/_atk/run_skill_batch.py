@@ -37,12 +37,14 @@ from agent_toolkit._atk.wi.constants import (
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import (
     delegated_session,
+    diagnostic_process,
     plugin_environment,
     private_notes,
     session_activity,
     session_registry,
     session_review,
 )
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 lazy from agent_toolkit._atk import run_skill_state
 lazy from agent_toolkit._common import windows_job
 
@@ -112,14 +114,16 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
             try:
                 # 時間上限なし: 長時間の子セッションの実行そのものであり、終了は監督の仕組みが扱う。
                 process = subprocess.Popen(  # pylint: disable=consider-using-with
-                    [
-                        sys.executable,
-                        str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
-                        "run-skill",
-                        "--args",
-                        "batch",
-                        "agent-toolkit:review-session",
-                    ],
+                    diagnostic_process.command(
+                        [
+                            sys.executable,
+                            str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
+                            "run-skill",
+                            "--args",
+                            "batch",
+                            "agent-toolkit:review-session",
+                        ]
+                    ),
                     cwd=PLUGIN_ROOT,
                     env=env,
                     stdin=subprocess.DEVNULL,
@@ -128,7 +132,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
                     **flags,
                 )
             except OSError as error:
-                log.write(str(error).encode("utf-8"))
+                log.write(redact_secrets(str(error)).encode("utf-8"))
                 value.attach(None).save(launch_path)
                 return notice
         identity = session_registry.ProcessIdentity.of(process.pid)

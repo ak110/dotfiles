@@ -226,3 +226,24 @@ def test_report_sync_uses_current_branch_config_with_ref_collisions(tmp_path: pa
     assert wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
     report.write_text(content + "未commitの変更\n", encoding="utf-8")
     assert not wi_add.has_synced_run_report(notes, run_id="run-1", skill="my-skill")
+
+
+def test_diagnostic_stream_preserves_conversation_but_redacts_errors(engine_env, capsys):
+    """正常会話は原文を保持し、標準エラーとエラーイベントだけを保存前に伏せる。"""
+    conversation = '{"type":"assistant","text":"password=fake-conversation"}'
+    error = '{"type":"error","message":"password=fake-error"}'
+    engine = engine_env.bin_dir / "claude"
+    script = engine.read_text(encoding="utf-8")
+    engine.write_text(
+        script.replace('print("session stdout line")', f"print({conversation!r})\nprint({error!r})").replace(
+            'print("session stderr line", file=sys.stderr)', 'print("E401 password=fake-stderr", file=sys.stderr)'
+        ),
+        encoding="utf-8",
+    )
+    code, _out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
+    assert code == 0, err
+    path = _log_files(engine_env)[0]
+    saved = path.read_text(encoding="utf-8")
+    assert conversation in saved
+    assert "fake-error" not in saved and "fake-stderr" not in saved
+    assert "E401" in saved

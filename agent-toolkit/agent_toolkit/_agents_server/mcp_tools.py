@@ -628,7 +628,7 @@ def _serve(*, check_dependencies: bool = False) -> int:
             "exited",
             outcome="exception",
             exception_type=type(exc).__name__,
-            message=str(exc)[: logging_config.MESSAGE_LIMIT],
+            message=logging_config.redact_secrets(str(exc))[: logging_config.MESSAGE_LIMIT],
         )
         _end_server_instance()
         logging_config.close_logging()

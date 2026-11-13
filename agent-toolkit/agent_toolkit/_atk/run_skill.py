@@ -44,12 +44,13 @@ from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
+from agent_toolkit._common import diagnostic_process, mcp_environment, recorded_process, session_review, skill_modes
 from agent_toolkit._common import host_homes as _host_homes
-from agent_toolkit._common import mcp_environment, recorded_process, session_review, skill_modes
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import process_tree as _process_tree
 from agent_toolkit._common import session_registry as _registry
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as _git_command
 lazy from agent_toolkit._atk import run_skill_state as _run_state
@@ -808,6 +809,7 @@ def _copy_stream(
 
     主スレッドからcloseすると読み取り中のロックを待ち、出力待機の上限を超えるため行わない。
     """
+    private_key = False
     with stream:
         for raw in iter(stream.readline, b""):
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
@@ -815,7 +817,11 @@ def _copy_stream(
                 if log.closed:
                     # 読み取りを打ち切った後に届いた出力は、閉じたログへ書けないため捨てる。
                     return
-                log.write(f"[{label}] {line}\n")
+                diagnostic = label == "stderr" or _error_event(line)
+                saved = line
+                if diagnostic:
+                    saved, private_key = diagnostic_process.redact_stream_line(line, private_key)
+                log.write(f"[{label}] {saved}\n")
                 log.flush()
                 if output is not None:
                     output.receive(line)
@@ -885,5 +891,17 @@ def _write_header(log: typing.TextIO, *, repo_root: pathlib.Path, args: argparse
 
 def _log_line(log: typing.TextIO, text: str) -> None:
     """ログへ1行書いて直ちに反映する。"""
-    log.write(f"{text}\n")
+    log.write(f"{redact_secrets(text)}\n")
     log.flush()
+
+
+def _error_event(line: str) -> bool:
+    try:
+        event = json.loads(line)
+    except ValueError:
+        return False
+    return isinstance(event, dict) and (
+        event.get("is_error") is True
+        or event.get("type") in {"error", "turn.failed"}
+        or isinstance(event.get("error"), (dict, str))
+    )

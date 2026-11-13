@@ -12,6 +12,7 @@ import typing
 import urllib.request
 
 from agent_toolkit._common import atomic_file, claude_settings_sources, process_tree
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 
 def _hooks(repo: pathlib.Path, event: str) -> list[dict[str, typing.Any]]:
@@ -111,6 +112,9 @@ def _execute(
             record["error"] = str(error)
             raise ValueError(f"{event} hookが失敗した。途中資源を保持した: {path}: {error}") from error
         finally:
+            for key in ("stdout", "stderr", "error"):
+                if isinstance(record.get(key), str):
+                    record[key] = redact_secrets(record[key])
             atomic_file.atomic_write(path, json.dumps(record, ensure_ascii=False) + "\n")
     return output
 

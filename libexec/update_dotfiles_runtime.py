@@ -12,6 +12,7 @@ import sys
 from collections.abc import Generator
 
 import platformdirs
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 from pytools._internal import sync_report
 
@@ -82,6 +83,14 @@ def continue_after_failure(title: str, action: str, detail: str | None = None) -
     continued_failures.append(_ContinuedFailure(title, action, detail))
 
 
+class _DiagnosticFormatter(logging.Formatter):
+    """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """永続ログ向けに資格情報を除いた本文を返す。"""
+        return redact_secrets(super().format(record))
+
+
 @contextlib.contextmanager
 def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
     """更新診断用のログを開き、終了時に登録を外して閉じる。構成不能時はNoneを渡す。"""
@@ -106,7 +115,7 @@ def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
     with contextlib.ExitStack() as cleanup:
         cleanup.callback(handler.close)
         cleanup.callback(logger.removeHandler, handler)
-        handler.setFormatter(logging.Formatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
+        handler.setFormatter(_DiagnosticFormatter(f"%(asctime)s run={run_id} %(levelname)s %(message)s"))
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)
         logger.propagate = False

@@ -219,3 +219,37 @@ async def test_writer_serializes_announced_sessions_and_removes_delivered(
     assert not result_path.exists()
     writer.deactivate()
     assert not writer.path.parent.exists()
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.asyncio
+async def test_terminal_error_saved_redacted_without_changing_live_result(tmp_path: pathlib.Path, asynchronous: bool) -> None:
+    """同期・非同期の結果保存でエラーだけを伏せ、会話本文と判定コードを保つ。"""
+    error = {
+        "message": "password=fake-terminal",
+        "stderr": "api_key=fake-stderr",
+        "detail": [{"api_key": "fake-bare-terminal", "max_tokens": 123}],
+        "code": 429,
+    }
+    session = state.SessionState("session-redaction", str(tmp_path), error=error, status="failed")
+    session.agent_message = "会話 password=fake-conversation"
+    session.record_turn_completed()
+    session.touch()
+    writer = subject.StatusFileWriter(
+        {session.session_id: session},
+        shared_roots.StatusFileIdentity("root-session", "root.json", None),
+        state_root=tmp_path,
+    )
+    if asynchronous:
+        await writer.retain_result_async(session)
+    else:
+        writer.retain_result(session)
+    saved = writer.read_result(session.session_id)
+    assert saved is not None
+    assert "fake-terminal" not in str(saved["error"]) and "fake-stderr" not in str(saved["error"])
+    assert saved["error"]["code"] == 429
+    assert "fake-bare-terminal" not in str(saved["error"])
+    assert saved["error"]["detail"][0]["max_tokens"] == 123
+    assert saved["agent_message"] == session.agent_message
+    assert session.error == error
+    assert "fake-terminal" not in (session.terminal_error or "")

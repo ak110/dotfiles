@@ -3,6 +3,7 @@
 
 # pylint: disable=protected-access
 
+import io
 import logging
 import pathlib
 import sys
@@ -21,6 +22,33 @@ from update_dotfiles_test_helpers import _real_stash_runtime as _real_stash_runt
 from update_dotfiles_test_helpers import _run_logs_cli  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_test_helpers import _separate_git_recovery as _separate_git_recovery  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_test_helpers import _skip_agent_toolkit_prepare as _skip_agent_toolkit_prepare  # noqa: E402  # pylint: disable=wrong-import-position
+
+
+def test_persistent_log_redacts_only_saved_diagnostic() -> None:
+    """書式引数と例外を保存時に伏せ、診断元と別handlerの本文は保つ。"""
+    output = "api_key=fake-update-key\nhttps://fake-user:fake-pass@example.invalid/path?token=fake-query\n"
+    screen = io.StringIO()
+    handler = logging.StreamHandler(screen)
+    update_dotfiles_runtime.logger.addHandler(handler)
+    try:
+        with update_dotfiles_runtime.configure_persistent_log("redaction-test"):
+            update_dotfiles_runtime.logger.error("stage=child exit=7 stdout:\n%s", output)
+            try:
+                raise RuntimeError("Authorization: Bearer fake-update-bearer")
+            except RuntimeError:
+                update_dotfiles_runtime.logger.exception("child失敗")
+    finally:
+        update_dotfiles_runtime.logger.removeHandler(handler)
+        handler.close()
+    saved = update_dotfiles_runtime.LOG_PATH.read_text(encoding="utf-8")
+    for value in ("fake-update-key", "fake-user", "fake-pass", "fake-query", "fake-update-bearer"):
+        assert value not in saved
+        assert value in screen.getvalue()
+    assert output in screen.getvalue()
+    assert "stage=child exit=7 stdout:\n" in saved
+    assert "example.invalid/path?token=" in saved
+    assert "RuntimeError" in saved
+    assert "[REDACTED]" in saved
 
 
 def test_main_closes_persistent_log_when_start_record_is_interrupted(
