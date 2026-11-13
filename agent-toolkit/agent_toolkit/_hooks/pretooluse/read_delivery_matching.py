@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
+from agent_toolkit._common.read_triggers_model import WI_SAVE_OPERATIONS
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_atk_command, join_words
 from agent_toolkit._hooks import (
@@ -59,9 +60,7 @@ def _pyproject_dependencies(text: str) -> object:
 
 _FILE_SCOPED_OPERATIONS = frozenset({"existing-file-edit", "claude-existing-file-edit"})
 
-_CONFIRMING_OPERATIONS = frozenset(
-    {"wi-report-save", "wi-standard-save", "awi-draft-writing", "uwi-draft-writing", "plan-draft-writing"}
-)
+_CONFIRMING_OPERATIONS = WI_SAVE_OPERATIONS | {"awi-draft-writing", "uwi-draft-writing", "plan-draft-writing"}
 
 
 def _temporary_path(path: str) -> bool:
@@ -90,6 +89,11 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     書込先で成立する操作（既存ファイルの編集、`path:`・`write:`・`dependency:`）は、一時領域の書込先を除いて判定する。
     本文の作成（`body-writing`）も、一時領域の書込先だけの場合は成立させない。
     """
+    if operation == "wi-standard-self-review":
+        from agent_toolkit._hooks.pretooluse.read_delivery_roles import incidental_wi_author  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
+
+        if incidental_wi_author():
+            return False
     if operation in _FILE_SCOPED_OPERATIONS:
         written = operation_skills.written_paths(tool_name, tool_input, cwd)
         if written and all(_temporary_path(path) for path in written):

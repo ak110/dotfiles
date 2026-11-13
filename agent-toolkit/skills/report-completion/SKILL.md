@@ -62,7 +62,7 @@ Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン
 | 振り返り結果報告かその予告を書く前 | `references/report-formats-retrospective.md` | | | |
 | AWI投入結果報告を書く前 | `references/report-formats-retrospective.md` | | | |
 | 独立したWI投入を受付して投入元の終了を判定するとき | `../../share/wi-submission.md` | | | |
-| 報告用UWIを書く前 | `references/report-formats-uwi.md`、`../wi-standards/references/uwi-format.md`、`../wi-standards/references/wi-standards-operations.md`、`../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-save` | |
+| 報告用UWIを書く前 | `references/report-formats-uwi.md`、`../wi-standards/references/uwi-format.md`、`../wi-standards/references/wi-standards-operations.md`、`../wi-standards/SKILL.md` | 判断 | `read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md`、`wi-report-dry-run`、`wi-report-commit` | |
 | 手順4で、協調モードの確認済みの公開範囲がcommitより先へ及ぶ場合 | `agent-toolkit:commit`の`references/publish.md` | | | |
 | Stop hookが本スキルの起動不足を示して遮断した時と、ユーザーの中止・置換、回答や委譲先の待機、技術的不成立の判断を記録する時 | `references/termination-evidence.md` | | | |
 

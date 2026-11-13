@@ -182,6 +182,20 @@ def _row_trigger(  # noqa: PLR0913 -- 解析の条件を呼出元と同じキー
     row = dict(zip(headers, cells, strict=True))
     kind = row.get("契機", "").strip("` ")
     operations = tuple(_CODE.findall(row.get("配送操作", "")))
+    legacy = {"wi-standard-save": "wi-standard", "wi-report-save": "wi-report"}
+    if any(value in legacy for value in operations):
+        message = (
+            f"{source}:{number}: WI保存は段階付きの`wi-standard-dry-run`・`wi-standard-commit`・"
+            "`wi-report-dry-run`・`wi-report-commit`へ置換せよ"
+        )
+        if strict or not user_side_source(source):
+            raise ValueError(message)
+        record_declaration_issue(message)
+        operations = tuple(
+            replacement
+            for value in operations
+            for replacement in ((legacy[value] + "-dry-run", legacy[value] + "-commit") if value in legacy else (value,))
+        )
     # 両方の省略は、資料を選んで読む判断の宣言として扱う。配送操作は資料自身の読取を導出する。
     derived = not kind and not row.get("配送操作", "").strip()
     if derived:
@@ -193,7 +207,9 @@ def _row_trigger(  # noqa: PLR0913 -- 解析の条件を呼出元と同じキー
     if any(not read_triggers_resolution.known_operation(value) for value in operations):
         raise ValueError(f"{source}:{number}: 未登録の配送操作: {operations}")
     if strict and any(value in {"bash:atk wi add", "bash:atk wi edit"} for value in operations):
-        raise ValueError(f"{source}:{number}: WI保存は`wi-report-save`または`wi-standard-save`で本文の種別を限定せよ")
+        raise ValueError(
+            f"{source}:{number}: WI保存は`wi-standard-dry-run`・`wi-standard-commit`などで本文種別と段階を限定せよ"
+        )
     if strict:
         for operation in operations:
             if not operation.startswith("skill:"):

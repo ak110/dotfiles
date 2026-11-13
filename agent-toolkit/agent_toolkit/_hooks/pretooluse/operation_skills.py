@@ -20,6 +20,7 @@ lazy from agent_toolkit._common import shell_cwd
 lazy from agent_toolkit._common import shell_segments as _shell_segments
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, extract_bash_invocations
 lazy from agent_toolkit._common.heredocs import heredoc_bodies
+lazy from agent_toolkit._common.read_triggers_model import WI_SAVE_OPERATIONS
 lazy from agent_toolkit._common.shell_tokens import is_atk_command, split_words
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -841,7 +842,7 @@ def resolve_subject(payload: dict) -> str:
     return SUBJECT_MAIN
 
 
-def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
+def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str, *, dry_run: bool | None = None) -> set[bool]:
     """保存に渡された本文の報告標識を読む。未指定・読取不能は通常保存として扱う。"""
     if tool_name != "Bash" or not isinstance(tool_input.get("command"), str):
         return set()
@@ -851,6 +852,8 @@ def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
         if not is_atk_command(tokens) or tokens[1:3] not in {("wi", "add"), ("wi", "edit")}:
             continue
         if "--help" in tokens or "-h" in tokens:
+            continue
+        if dry_run is not None and ("--dry-run" in tokens) != dry_run:
             continue
         bodies = [
             tokens[index + 1] if value == "--body-file" and index + 1 < len(tokens) else value.partition("=")[2]
@@ -880,6 +883,9 @@ def _wi_save_kinds(tool_name: str, tool_input: dict, cwd: str) -> set[bool]:
 
 def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str = "") -> bool | None:
     """共通語彙の操作を判定し、担当外の語彙はNoneを返す。"""
+    if operation in WI_SAVE_OPERATIONS:
+        dry_run = None if operation == "wi-standard-self-review" else operation.endswith("-dry-run")
+        return operation.startswith("wi-report-") in _wi_save_kinds(tool_name, tool_input, cwd, dry_run=dry_run)
     predicates = {
         "delegation": _is_delegation_operation,
         "search": _is_search_operation,
@@ -893,8 +899,6 @@ def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str
         "verification": _is_verification_operation,
         "agent-document-writing": lambda name, data: _is_agent_document_writing(name, data, cwd),
         "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},
-        "wi-report-save": lambda name, data: True in _wi_save_kinds(name, data, cwd),
-        "wi-standard-save": lambda name, data: False in _wi_save_kinds(name, data, cwd),
         "awi-draft-writing": lambda name, data: _is_draft_writing("awi-draft-writing", name, data),
         "uwi-draft-writing": lambda name, data: _is_draft_writing("uwi-draft-writing", name, data),
         "plan-draft-writing": lambda name, data: _is_draft_writing("plan-draft-writing", name, data),

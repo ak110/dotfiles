@@ -21,25 +21,35 @@ if TYPE_CHECKING:
 
 
 KINDS = frozenset({"操作", "起動時", "判断"})
-
-OPERATIONS = frozenset(
+WI_SAVE_OPERATIONS = frozenset(
     {
-        "delegation",
-        "search",
-        "root-cause-writing",
-        "managed-temp-create",
-        "body-writing",
-        "existing-file-edit",
-        "claude-existing-file-edit",
-        "verification",
-        "agent-document-writing",
-        "confirmation",
-        "wi-report-save",
-        "wi-standard-save",
-        "awi-draft-writing",
-        "uwi-draft-writing",
-        "plan-draft-writing",
+        "wi-standard-dry-run",
+        "wi-standard-commit",
+        "wi-report-dry-run",
+        "wi-report-commit",
+        "wi-standard-self-review",
     }
+)
+
+OPERATIONS = (
+    frozenset(
+        {
+            "delegation",
+            "search",
+            "root-cause-writing",
+            "managed-temp-create",
+            "body-writing",
+            "existing-file-edit",
+            "claude-existing-file-edit",
+            "verification",
+            "agent-document-writing",
+            "confirmation",
+            "awi-draft-writing",
+            "uwi-draft-writing",
+            "plan-draft-writing",
+        }
+    )
+    | WI_SAVE_OPERATIONS
 )
 
 PREFIXES = ("skill:", "write:", "path:", "dependency:", "tool:", "bash:", "role:", "read:")
