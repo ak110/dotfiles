@@ -124,9 +124,9 @@ C8の集計は、実行ごとの記録（`pyfltr list-runs`と`show-run`）か�
 
 同じ巡回で、上側を下げる2つの打ち手を両方入れた。
 1つ目として、群の検証とcommitから不変条件試験を外し、レーンの統合前に1回だけ実行する形にした。
-群の検証はpyfltr 3.31.0で加えた`--no-always-targets`を使い、変更ファイルに対応する試験だけを実行する。
+群の検証はpyfltr 3.31.0で加えた`--no-always-targets`を使い、変更ファイルと、変更した契約から特定した利用側試験を実行する。
 commitのhookは、`develop`・`master`・`main`以外のブランチではpytestを外す。
-保護を弱めないため、統合前には変更範囲の全量を実行し、`scripts/pyfltr_precommit.py --verify-run <run_id>`で、そのrunが現在のHEADの内容でpytestに成功したことを確かめる。
+保護を弱めないため、統合前には変更ファイル、加えた利用側試験、不変条件試験を実行し、`scripts/pyfltr_precommit.py --verify-run <run_id>`で、そのrunが現在のHEADの内容でpytestに成功し、列挙できた利用側試験を対象に含むことを確かめる。
 2つ目として、hookの宣言文書の列挙で実体パスの解決を起点ごとに1回にし、operation_skillsの契約試験は直列で65.8秒から37.9秒になった。
 実測では、群の検証のpytestは変更した試験1ファイルだけになり71秒だった。
 統合前の全量は86〜372秒で、load averageに強く依存した（33〜39の時間帯で372秒）。

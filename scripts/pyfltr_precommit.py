@@ -1,7 +1,7 @@
 """commitのhookで`pyfltr fast`を起動し、統合前のブランチか同じ内容で成功済みのpytestがあればpytestだけを外す。
 
 `develop`・`master`・`main`以外のブランチ（レーンや内部群の作業ブランチ）では、pytestを外す。
-これらのブランチの変更は、統合の前に不変条件試験を含む全量の`pyfltr run`を成功させ、統合する側が
+これらのブランチの変更は、統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させ、統合する側が
 その成功を確かめてから取り込む。commitごとに不変条件試験を実行すると共有の検証枠を占め、検証の待ちが
 巡回の所要の大半になったためである（2026年11月13日、同時数8の比較の集計）。
 統合先のブランチへのcommitと、ブランチを特定できない状態（detached HEADなど）では、従来どおりpytestを含める。
@@ -48,6 +48,7 @@ import sys
 import typing
 
 from agent_toolkit._git import command as git_command
+from verification_targets import consumer_tests, uncovered_tests
 
 from pytools._internal.common import format_cli_error, run_subprocess
 
@@ -93,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", nargs="*")
+    parser.add_argument("--consumer-tests", action="store_true", help="固定文字列参照と命名による利用試験候補をJSONで返す。")
     parser.add_argument(
         "--verify-run",
         metavar="RUN_ID",
@@ -100,6 +102,15 @@ def main(argv: list[str] | None = None) -> int:
         "統合する側が、統合入力の作業ツリーでff統合の前に使う。成立すれば終了0、しなければ終了1。",
     )
     args = parser.parse_args(argv)
+    if args.consumer_tests and args.verify_run is not None:
+        parser.error("--consumer-testsと--verify-runは併用できない")
+    if args.consumer_tests:
+        try:
+            print(json.dumps(consumer_tests(pathlib.Path.cwd(), args.files), ensure_ascii=False))
+        except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
+            print(f"候補列挙を確認できない: {exc}", file=sys.stderr)
+            return 1
+        return 0
     pyfltr = shutil.which("pyfltr")
     if pyfltr is None:
         print("pyfltr-precommit: pyfltrが見つからない。`uv sync --frozen`で開発環境を準備する。", file=sys.stderr)
@@ -107,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_run is not None:
         try:
             verified = find_reusable_run(pathlib.Path.cwd(), pyfltr, run_id=args.verify_run)
-        except (KeyError, TypeError, AttributeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
+        except (KeyError, TypeError, AttributeError, ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
             verified = Reuse(None, f"判定できない: {type(exc).__name__}: {exc}")
         if verified.run_id is None:
             print(
@@ -121,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     if branch is not None and branch not in _INTEGRATION_BRANCHES:
         print(
             f"pyfltr-precommit: 統合前のブランチ{branch}のためpytestを外して実行する。"
-            "統合の前に不変条件試験を含む全量の`pyfltr run`を成功させる。",
+            "統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させる。",
             file=sys.stderr,
         )
         return subprocess.run([pyfltr, "fast", "--disable", "pytest", *args.files], check=False).returncode
@@ -229,6 +240,12 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
                 for command in shown.get("commands", [])
             )
         ):
+            if run_id is not None:
+                targets = _argv_targets(meta["argv"])
+                sources = [target for target in targets if target.endswith(".py")]
+                missing = uncovered_tests(root, consumer_tests(root, sources), targets)
+                if missing:
+                    return Reuse(None, f"利用試験が不足: {', '.join(missing)}。これらを加えてpyfltr runを再実行する")
             return Reuse(run["run_id"], "")
     return Reuse(None, "現在の内容でpytestが成功した実行が無い")
 
@@ -302,6 +319,18 @@ def _neutral_argv(argv: list[str]) -> bool:
         if token.startswith("-"):
             return False
     return True
+
+
+def _argv_targets(argv: list[str]) -> list[str]:
+    """中立性を確認済みのargvから、値付きオプションの値を除いて対象を返す。"""
+    targets: list[str] = []
+    tokens = iter(argv[1:])
+    for token in tokens:
+        if token in _NEUTRAL_VALUE_OPTIONS:
+            next(tokens)
+        elif not token.startswith("-"):
+            targets.append(token)
+    return targets
 
 
 def _to_ns(value: typing.Any) -> int:

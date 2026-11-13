@@ -82,7 +82,7 @@
         "absent": []
       },
       "fixtures": {
-        "revision": "62fd933e3a2b316a334173185042312741d3e0c0",
+        "revision": "6a638b785b2ad26357e54e2213656daf193ffabc",
         "plan": "review-eval/correct-verification-table-scope/plan.md",
         "contract": "review-eval/correct-verification-table-scope/review-contract.md"
       },
@@ -96,6 +96,33 @@
         "20261103-221100-002.md": "1560cdac8693c2594935952fc557ba5a54f945be",
         "20261104-104521-002.md": "1560cdac8693c2594935952fc557ba5a54f945be",
         "20261103-215751-001.md": "1560cdac8693c2594935952fc557ba5a54f945be"
+      }
+    },
+    {
+      "id": "missed-known-consumer-tests",
+      "kind": "見逃し",
+      "role": "exec-review",
+      "repo": "dotfiles",
+      "plan": "plans/2026/11/12-0335_process-wi_レーン03",
+      "revision": "221a501544c0bb205629c557781409f64f266b3d",
+      "description": "変更した設定・通知契約・CLI登録を使う試験が検証対象から漏れ、探索済みの候補も個別合否へ対応付けられないままレビューを通過した変更（385c0c32f）",
+      "fixtures": {
+        "revision": "9d42e7f74c1e8966e45096f9f037cdf08eeb2625",
+        "plan": "review-eval/missed-known-consumer-tests/plan.md",
+        "contract": "review-eval/missed-known-consumer-tests/review-contract.md"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "known-consumer-not-executed",
+            "description": "変更契約を利用する試験と検証対象・個別結果の不整合を指摘する",
+            "patterns": [
+              "rules_context_temp_test|config_migration_test|atk_help_test",
+              "未実行|実行対象|検証対象|実行結果|個別.*(結果|合否)|不足|漏れ"
+            ]
+          }
+        ],
+        "absent": []
       }
     },
     {

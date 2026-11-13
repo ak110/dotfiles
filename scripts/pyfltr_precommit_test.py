@@ -28,6 +28,31 @@ def _iso(offset_seconds: float) -> str:
     return (datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=offset_seconds)).isoformat()
 
 
+@pytest.mark.parametrize(
+    "targets, expected",
+    [(["src/a.py"], 1), (["src/a.py", "src/consumer_test.py"], 0), (["src"], 0), ([], 0)],
+)
+@pytest.mark.parametrize("options", [["--output-format", "json"], ["--output-format=json"], []])
+def test_verify_run_discovers_consumers_from_public_argv(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, targets: list[str], expected: int, options: list[str]
+) -> None:
+    """標準の統合呼出しが実ファイルの候補不足を拒否し、明示試験・親ディレクトリ・全体を受理する。"""
+    repository = _repository(tmp_path)
+    (repository / "src" / "consumer_test.py").write_text("import a as alias\n", encoding="utf-8")
+    commit_all(repository, "consumer")
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: name)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=["run", *options, *targets])
+    assert pyfltr_precommit.main(["--verify-run", "01RUN"]) == expected
+
+
+def test_consumer_and_verify_modes_are_exclusive() -> None:
+    """併用によるverify-runの黙った無視を防ぐ。"""
+    with pytest.raises(SystemExit) as exc:
+        pyfltr_precommit.main(["--consumer-tests", "--verify-run", "01RUN"])
+    assert exc.value.code == 2
+
+
 def _install_pyfltr(
     monkeypatch: pytest.MonkeyPatch,
     repository: pathlib.Path,
