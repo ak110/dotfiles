@@ -277,7 +277,11 @@ def _update_owned_git(step_no: int, total: int, *, timeout: float | None) -> int
     if status and stash_ref is None:
         return 1
 
-    pull_code = update_dotfiles_process.run_git_pull(step_no, total, timeout=timeout)
+    remote = update_dotfiles_process.git_value("config", "--get", f"branch.{branch}.remote")
+    remote_url = (
+        update_dotfiles_process.git_value("config", "--get", f"remote.{remote}.url") if remote and remote != "." else None
+    )
+    pull_code = update_dotfiles_process.run_git_pull(step_no, total, timeout=timeout, remote_url=remote_url)
     rebase_in_progress = any(_git_path_exists(name) for name in ("rebase-merge", "rebase-apply"))
     if pull_code != 0 and not rebase_in_progress:
         if stash_ref is not None and update_dotfiles_stashing.restore_worktree(stash_ref):

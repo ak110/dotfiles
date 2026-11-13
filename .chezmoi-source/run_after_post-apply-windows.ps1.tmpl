@@ -106,11 +106,14 @@ if ($needsReinstall) {
         foreach ($p in $restorableProcs) {
             $mediaRemoteWasRunning = $true
             Write-Host "  [pytools] $($p.Name) (PID=$($p.ProcessId)) を一時停止"
-            Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue
         }
-        if ($restorableProcs.Count -gt 0) {
-            # プロセス停止からファイルハンドル解放までの遅延を吸収するため短時間待機する。
-            Start-Sleep -Milliseconds 500
+        try {
+            Invoke-PytoolsMediaRemoteStop -Processes $restorableProcs
+        } catch {
+            $reinstallDeferred = $true
+            $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'
+            $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = "停止を確認できないため延期: $_"
+            Write-Host "  [pytools] 停止を確認できないため既存版で続行します: $_"
         }
     }
 }

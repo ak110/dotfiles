@@ -1,5 +1,6 @@
 """pytools._internal.setup_media_remote のテスト。"""
 
+import base64
 import os
 import pathlib
 import subprocess
@@ -256,7 +257,6 @@ def _patch_processes(monkeypatch: pytest.MonkeyPatch, processes: list[_FakeProce
         ("", "", True, True),
     ],
 )
-@pytest.mark.parametrize("has_vbs", [True, False])
 @pytest.mark.usefixtures("startup_dir")
 def test_restart_after_reinstall_and_symptomatic_restart(
     monkeypatch: pytest.MonkeyPatch,
@@ -266,18 +266,13 @@ def test_restart_after_reinstall_and_symptomatic_restart(
     reinstall: str,
     expected_kill: bool,
     expected_start: bool,
-    has_vbs: bool,
 ) -> None:
-    """再導入で停止した回は起動だけ、再導入しない回は停止→起動を行い、VBSラッパーが無ければ実行ファイルを直接起動する。"""
+    """再導入で停止した回は起動だけ、再導入しない回は停止して対話トークンで起動する。"""
     monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, stopped)
     monkeypatch.setenv(setup_media_remote.REINSTALL_ENV, reinstall)
     monkeypatch.setattr(setup_media_remote.common, "run_subprocess", _make_static_fake([]))
     monkeypatch.setattr(setup_media_remote, "_is_up_to_date", lambda _lnk, _vbs: True)
-    monkeypatch.setattr(setup_media_remote, "_ensure_vbs", lambda _vbs, _exe: False)
-    if has_vbs:
-        vbs_path.parent.mkdir(parents=True, exist_ok=True)
-        vbs_path.write_text("", encoding="utf-8")
     killed: list[int] = []
     processes = [
         _FakeProcess(1, str(exe_path).upper(), [str(exe_path), "serve"], killed),
@@ -288,17 +283,22 @@ def test_restart_after_reinstall_and_symptomatic_restart(
     monkeypatch.setattr(setup_media_remote.psutil, "wait_procs", lambda procs, timeout: (procs, []))
     launched: list[list[str]] = []
 
-    def fake_popen(command: list[str], **_kwargs: object) -> None:
+    def fake_start(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         launched.append(command)
+        return _ok()
 
-    monkeypatch.setattr(setup_media_remote.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(setup_media_remote.common, "run_subprocess", fake_start)
 
     outcome = setup_media_remote.run()
 
     assert outcome.failure is None
     assert killed == ([1, 2] if expected_kill else [])
-    expected_command = [setup_media_remote.WSCRIPT_PATH, str(vbs_path)] if has_vbs else [str(exe_path), "serve"]
-    assert launched == ([expected_command] if expected_start else [])
+    assert len(launched) == int(expected_start)
+    if expected_start:
+        script = base64.b64decode(launched[0][-1]).decode("utf-16le")
+        assert str(vbs_path) in script
+        assert "-LogonType Interactive" in script
+        assert "SessionId -in $sessions" in script
 
 
 @pytest.mark.usefixtures("startup_dir")
@@ -308,9 +308,33 @@ def test_restart_does_nothing_on_other_hosts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "euryale")
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "1")
     monkeypatch.setattr(setup_media_remote.psutil, "process_iter", lambda *_args, **_kwargs: pytest.fail("停止しない"))
-    monkeypatch.setattr(setup_media_remote.subprocess, "Popen", lambda *_args, **_kwargs: pytest.fail("起動しない"))
+    monkeypatch.setattr(setup_media_remote.common, "run_subprocess", lambda *_args, **_kwargs: pytest.fail("起動しない"))
 
     assert setup_media_remote.run().failure is None
+
+
+@pytest.mark.parametrize("unavailable", [True, False])
+@pytest.mark.usefixtures("startup_dir")
+def test_interactive_restart_failure_is_not_reported_as_restored(monkeypatch: pytest.MonkeyPatch, unavailable: bool) -> None:
+    """対話セッション不在や一時タスクの失敗を復帰済みとして扱わず、診断を保持する。"""
+    monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
+    monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "1")
+    monkeypatch.setattr(setup_media_remote, "_is_up_to_date", lambda _lnk, _vbs: True)
+    failure = None if unavailable else subprocess.CompletedProcess([], 23, "task failed", "interactive session unavailable")
+
+    def failed_start(_command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str] | None:
+        return failure
+
+    monkeypatch.setattr(setup_media_remote.common, "run_subprocess", failed_start)
+
+    outcome = setup_media_remote.run()
+
+    assert outcome.failure is not None
+    if unavailable:
+        assert "実行に失敗" in outcome.failure
+    else:
+        assert "interactive session unavailable" in outcome.failure
+        assert "task failed" in outcome.failure
 
 
 @pytest.mark.skipif(
@@ -331,7 +355,6 @@ def test_symptomatic_restart_selects_and_stops_current_generation(
     monkeypatch.setenv(setup_media_remote.REINSTALL_ENV, "")
     monkeypatch.setattr(setup_media_remote.common, "run_subprocess", _make_static_fake([]))
     monkeypatch.setattr(setup_media_remote, "_is_up_to_date", lambda _lnk, _vbs: True)
-    monkeypatch.setattr(setup_media_remote, "_ensure_vbs", lambda _vbs, _exe: False)
     child_command = [sys.executable, "-c", "import time; time.sleep(60)"] + ([str(exe_path)] if current_target else [])
     with subprocess.Popen(child_command) as child:
         try:
@@ -360,15 +383,17 @@ def test_symptomatic_restart_selects_and_stops_current_generation(
             monkeypatch.setattr(psutil, "process_iter", own_process)
             launched: list[list[str]] = []
 
-            def fake_popen(command: list[str], **_kwargs: object) -> None:
+            def fake_start(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
                 launched.append(command)
+                return _ok()
 
-            monkeypatch.setattr(setup_media_remote.subprocess, "Popen", fake_popen)
+            monkeypatch.setattr(setup_media_remote.common, "run_subprocess", fake_start)
 
             outcome = setup_media_remote.run()
 
             assert outcome.failure is None
-            assert launched == [[str(exe_path), "serve"]]
+            assert len(launched) == 1
+            assert "-EncodedCommand" in launched[0]
             if current_target:
                 child.wait(timeout=10)
             else:

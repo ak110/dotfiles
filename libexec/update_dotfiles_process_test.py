@@ -11,6 +11,7 @@ import pathlib
 import subprocess
 import sys
 import types
+import typing
 from typing import Self
 
 import psutil
@@ -69,6 +70,75 @@ def test_run_git_pull_decodes_output_as_utf8(monkeypatch: pytest.MonkeyPatch) ->
 
     assert update_dotfiles_process.run_git_pull(1, 4) == 0  # pylint: disable=protected-access
     assert encodings == ["utf-8"]
+
+
+@pytest.mark.parametrize("probe", ["timeout", "success", "denied"])
+def test_github_transport_recovery_preserves_repository_and_budget(monkeypatch: pytest.MonkeyPatch, probe: str) -> None:
+    """非対話SSHの停滞だけを同repoのHTTPSへ回復し、残予算内でpullする。"""
+    calls: list[list[str]] = []
+    environments: list[dict[str, str]] = []
+    timeouts: list[int | None] = []
+    reclaimed: list[int] = []
+    url = "git@github.com:example/dotfiles.git"
+
+    def popen(argv: list[str], **kwargs: typing.Any) -> _FakePopen:
+        if "ls-remote" in argv and probe == "timeout":
+            environments.append(dict(kwargs["env"]))
+            return _TimeoutPopen(argv, calls, communicate_timeouts=timeouts)
+        return _FakePopen(
+            argv,
+            calls,
+            returncode=128 if "ls-remote" in argv and probe == "denied" else 0,
+            communicate_timeouts=timeouts,
+            environments=environments,
+            **kwargs,
+        )
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda child: reclaimed.append(child.pid))
+    monkeypatch.setattr(sys, "stdin", types.SimpleNamespace(isatty=lambda: False))
+    ticks = iter([10.0, 12.0])
+    monkeypatch.setattr(update_dotfiles_process.time, "monotonic", lambda: next(ticks, 12.0))
+
+    assert update_dotfiles_process.run_git_pull(1, 4, timeout=60, remote_url=url) == 0
+    assert calls[0][-3:] == ["ls-remote", url, "HEAD"]
+    pull = calls[1]
+    if probe == "timeout":
+        assert "url.https://github.com/example/dotfiles.git.insteadOf=" + url in pull
+        assert "credential.helper=" in pull
+        assert environments[-1]["GIT_TERMINAL_PROMPT"] == "0"
+        assert reclaimed == [_FakePopen.pid]
+    else:
+        assert not any("insteadOf" in argument for argument in pull)
+        assert not reclaimed
+    assert timeouts[-1] == 58
+
+
+@pytest.mark.parametrize(
+    "url", ["git@other.example:org/repo.git", "git@github.com:../repo.git", "https://github.com/org/repo.git"]
+)
+def test_transport_recovery_does_not_rewrite_other_urls(monkeypatch: pytest.MonkeyPatch, url: str) -> None:
+    """正準GitHub SSH以外を別のURLへ切り替えない。"""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    monkeypatch.setattr(sys, "stdin", types.SimpleNamespace(isatty=lambda: False))
+    assert update_dotfiles_process.run_git_pull(1, 4, remote_url=url) == 0
+    assert len(calls) == 1
+    assert not any("insteadOf" in argument for argument in calls[0])
+
+
+@pytest.mark.parametrize(("interactive", "timeout"), [(True, 60), (False, None)])
+def test_transport_recovery_preserves_terminal_and_explicit_unlimited_wait(
+    monkeypatch: pytest.MonkeyPatch, interactive: bool, timeout: int | None
+) -> None:
+    """端末でのSSH認証と、ユーザーが指定した無期限待機は事前プローブで変更しない。"""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    monkeypatch.setattr(sys, "stdin", types.SimpleNamespace(isatty=lambda: interactive))
+    assert update_dotfiles_process.run_git_pull(1, 4, timeout=timeout, remote_url="git@github.com:example/dotfiles.git") == 0
+    assert len(calls) == 1
+    assert "pull" in calls[0]
+    assert not any("insteadOf" in argument for argument in calls[0])
 
 
 @pytest.mark.parametrize(
@@ -277,7 +347,7 @@ def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
     assert holder_pid is not None and not psutil.pid_exists(holder_pid)
 
 
-@pytest.mark.parametrize("operation", ["pull", "stash"])
+@pytest.mark.parametrize("operation", ["pull", "stash", "probe"])
 def test_git_subprocess_closes_both_pipes_when_one_close_fails(monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
     """POSIXのpipe解放の片側が失敗しても、残る側を閉じて元の例外を返す。"""
 
@@ -294,9 +364,12 @@ def test_git_subprocess_closes_both_pipes_when_one_close_fails(monkeypatch: pyte
     monkeypatch.setattr(update_dotfiles_runtime, "git_env", lambda: {})
     monkeypatch.setattr(update_dotfiles_process, "os", type("Platform", (), {"name": "posix"}))
     monkeypatch.setattr(update_dotfiles_stashing, "os", type("Platform", (), {"name": "posix"}))
+    monkeypatch.setattr(sys, "stdin", types.SimpleNamespace(isatty=lambda: False))
     with pytest.raises(OSError, match="pipe close failed"):
         if operation == "pull":
             update_dotfiles_process.run_git_pull(1, 4, timeout=1)
+        elif operation == "probe":
+            update_dotfiles_process.run_git_pull(1, 4, timeout=1, remote_url="git@github.com:example/dotfiles.git")
         else:
             update_dotfiles_stashing._run_worktree_stash("save")
     assert process.stdout.closed and process.stderr.closed
