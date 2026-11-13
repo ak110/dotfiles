@@ -31,7 +31,7 @@ from agent_toolkit._agents_server.state import (
     remove_terminal_listener,
     remove_touch_listener,
 )
-from agent_toolkit._common import session_release
+from agent_toolkit._common import session_registry, session_release
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -62,6 +62,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
 
     def activate(self) -> None:
         """状態ファイル出力を有効化する。"""
+        session_registry.declare_effort_receiver()
         self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
         if self._status_writer is not None:
             self._status_writer.activate()
@@ -69,6 +70,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
 
     async def activate_async(self) -> None:
         """初回保存を待ってから常駐監視を開始する。"""
+        session_registry.declare_effort_receiver()
         if self._status_writer is not None:
             await self._status_writer.activate_async()
             self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())

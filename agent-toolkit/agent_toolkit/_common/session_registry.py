@@ -93,6 +93,13 @@ class Resolution(enum.StrEnum):
 
 
 _OWNER_PROCESS: ProcessIdentity | None = None
+_EFFORT_RECEIVER: ProcessIdentity | None = None
+
+
+def declare_effort_receiver() -> None:
+    """監視を開始する稼働コードだけが、そのプロセス世代の対応を宣言する。"""
+    global _EFFORT_RECEIVER  # pylint: disable=global-statement
+    _EFFORT_RECEIVER = owner_process()
 
 
 def owner_process() -> ProcessIdentity | None:
@@ -404,6 +411,9 @@ def publish(
         payload["turn_id"] = turn_id
     if processes:
         payload["processes"] = [process_payload(process) for process in processes]
+        # forkで継承した宣言や、他の所有者を公開する処理へ対応情報を流用しない。
+        if _EFFORT_RECEIVER is not None and _EFFORT_RECEIVER.pid == os.getpid() and processes[0] == _EFFORT_RECEIVER:
+            payload["effort_receiver"] = {"version": 1, "process": process_payload(_EFFORT_RECEIVER)}
     if interruption is not None:
         payload["interruption"] = interruption
     if engine == "codex" and fast_mode is not None:

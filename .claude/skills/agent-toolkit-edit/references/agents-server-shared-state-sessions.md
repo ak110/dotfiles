@@ -183,6 +183,11 @@ Managerによる問い合わせ、復元、結果回収には非同期APIを使�
 
 ## effort操作
 
+Managerの`activate`・`activate_async`がeffort監視への対応をプロセス世代とともに宣言する。
+`session_registry.publish`は、宣言した現プロセスが`processes`先頭の所有者である場合だけ`effort_receiver`を既存登録簿へ射影する。
+CLIは保存前に宣言・所有者・現在のPID世代を照合し、確認できなければ要求を作らず未送信と安全な更新・再起動の案内を返す。
+配布ファイルの版だけでは稼働側の対応を推定しない。
+
 相対effortの要求は`<状態ディレクトリ>/sessions/<uuid>.effort-request`、応答は同名の`.effort-response`で受け渡す。
 会話IDを環境へ渡さないAntigravity・OpenCodeのCLI呼出元は、所有ルート内の状態ファイルにあるsessionと登録簿を読む。
 登録済み実行プロセスのPID世代が呼出元の最も近い祖先に一致するsessionだけを本人とし、同距離の複数候補や不一致では操作を拒否する。
