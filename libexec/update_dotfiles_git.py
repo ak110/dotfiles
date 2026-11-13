@@ -5,19 +5,30 @@ import os
 import pathlib
 import shutil
 import signal
-import subprocess
 import sys
 import tempfile
 import time
 from collections.abc import Generator
 from types import FrameType
 
-import psutil
 import update_dotfiles_process
 import update_dotfiles_runtime
 import update_dotfiles_stashing
+from agent_toolkit._git import stale_lock
 
 from pytools._internal import sync_report
+
+
+def _scan_git_processes() -> stale_lock.ProcessScan:
+    """対象worktreeのindex準備後も存続するGitプロセスを探す。"""
+    git_dir = update_dotfiles_process.git_value("rev-parse", "--absolute-git-dir")
+    if git_dir is None:
+        return stale_lock.ProcessScan((), True)
+    return stale_lock.scan_git_processes(
+        stale_lock.Target(pathlib.Path(git_dir).resolve()),
+        probe_cwd=update_dotfiles_runtime.DOTFILES_ROOT,
+        base_env=update_dotfiles_runtime.child_env,
+    )
 
 
 def _git_operation_in_progress() -> str | bool:
@@ -31,54 +42,11 @@ def _git_operation_in_progress() -> str | bool:
             candidate = update_dotfiles_runtime.DOTFILES_ROOT / candidate
         if candidate.exists():
             return name
-    git_dir = update_dotfiles_process.git_value("rev-parse", "--absolute-git-dir")
-    if git_dir is None:
-        return True
-    target = pathlib.Path(git_dir).resolve()
-    for process in psutil.process_iter(["name", "cmdline"]):
-        try:
-            command = process.info["cmdline"] or []
-            if not command or pathlib.Path(command[0]).name.lower() not in {"git", "git.exe"}:
-                continue
-            # -C、--git-dir等の解釈とlinked worktreeの対応はGit自身へ委ねる。
-            options: list[str] = []
-            position = 1
-            while position < len(command) and command[position].startswith("-"):
-                option = command[position]
-                options.append(option)
-                position += 1
-                if option in {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"}:
-                    options.append(command[position])
-                    position += 1
-            env = update_dotfiles_runtime.child_env()
-            process_env = process.environ()
-            for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"):
-                env.pop(name, None)
-                if name in process_env:
-                    env[name] = process_env[name]
-            env["GIT_OPTIONAL_LOCKS"] = "0"
-            # 走査中に消える他プロセスのcwdはGit自身に検査させる。
-            # probeの起動cwdを固定し、消失をプロセス起動のOSErrorへ変換しない。
-            result = subprocess.run(
-                ["git", "-C", process.cwd(), *options, "rev-parse", "--absolute-git-dir"],
-                cwd=update_dotfiles_runtime.DOTFILES_ROOT,
-                env=env,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                check=False,
-            )
-            if result.returncode == 0 and pathlib.Path(result.stdout.strip()).resolve() == target:
-                return True
-        except psutil.NoSuchProcess, psutil.ZombieProcess:
-            continue
-        except psutil.AccessDenied, OSError, IndexError:
-            # Gitを確認できない場合は内容変更を開始しない。
-            return True
-    return False
+    scan = _scan_git_processes()
+    return bool(scan.processes) or scan.indeterminate
 
 
-def _skip_git_update(reason: str, operation: str | bool = False) -> int:
+def _skip_git_update(reason: str, operation: str | bool = False, *, action: str | None = None) -> int:
     """未完了の理由と再試行契機を全ての診断先へ残す。"""
     update_dotfiles_runtime.current_stage_title = "Git更新の所有確認"
     commands = {
@@ -89,17 +57,17 @@ def _skip_git_update(reason: str, operation: str | bool = False) -> int:
         "REVERT_HEAD": "revert",
     }
     command = commands.get(operation) if isinstance(operation, str) else None
-    if command:
+    if action is None and command:
         action = (
             f"git statusで進行中の操作を確認し、git {command} --continueで完了するか、"
             f"git {command} --abortで中止してからupdate-dotfilesを再実行してください。"
         )
-    elif operation == "sequencer":
+    elif action is None and operation == "sequencer":
         action = (
             "git statusで進行中の操作を確認し、git cherry-pickまたはgit revertの"
             "--continueで完了するか、同じ操作の--abortで中止してからupdate-dotfilesを再実行してください。"
         )
-    else:
+    elif action is None:
         action = "進行中のGit操作が終了してからupdate-dotfilesを再実行してください。"
     message = f"{reason}のためGit更新は未完了です。{action}"
     update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(message)
@@ -129,12 +97,19 @@ def _git_update_signals() -> Generator[None]:
 
 
 @contextlib.contextmanager
-def _locked_git_index(index: pathlib.Path) -> Generator[None]:
-    """標準ロックを保持し、終了状態の代替indexを公開して自身の一時物を回収する。"""
+def _locked_git_index(index: pathlib.Path, *, wait_seconds: float) -> Generator[None]:
+    """標準ロックを保持し、終了状態の代替indexを公開して自身の一時物を回収する。
+
+    競合中は`wait_seconds`まで待ち、所有者が終了した残存ロックは回収する。取得できなければ`LockBusy`を送出する。
+    """
     lock = index.with_name(index.name + ".lock")
-    # 排他的作成に成功したロックだけをfinallyで扱う。
-    with lock.open("xb") as owned_lock:
-        identity = os.fstat(owned_lock.fileno())
+    # 取得に成功したロックだけをfinallyで扱う。
+    identity = stale_lock.acquire(
+        lock,
+        index=index,
+        context=stale_lock.LockContext(git_operation=_git_operation_in_progress, scan_git=_scan_git_processes),
+        wait_seconds=wait_seconds,
+    )
     alternate: pathlib.Path | None = None
     prepared = False
     try:
@@ -165,10 +140,7 @@ def _locked_git_index(index: pathlib.Path) -> Generator[None]:
                     finally:
                         alternate.with_name(alternate.name + ".lock").unlink(missing_ok=True)
             finally:
-                with contextlib.suppress(FileNotFoundError):
-                    current = lock.stat()
-                    if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
-                        lock.unlink()
+                stale_lock.release(lock, identity)
 
 
 def _git_path_exists(name: str) -> bool:
@@ -202,13 +174,19 @@ def update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -
     if not index.is_absolute():
         index = update_dotfiles_runtime.DOTFILES_ROOT / index
     try:
-        with _git_update_signals(), _locked_git_index(index):
+        wait_seconds = stale_lock.lock_wait_seconds(None if timeout is None else float(timeout))
+        with _git_update_signals(), _locked_git_index(index, wait_seconds=wait_seconds):
             operation = _git_operation_in_progress()
             if operation:
                 return _skip_git_update("ロック取得前に開始したGit操作が進行中", operation)
             return _update_owned_git(step_no, total, timeout=timeout)
-    except FileExistsError:
-        return _skip_git_update("対象indexの標準ロックが使用中")
+    except stale_lock.LockBusy as busy:
+        diagnosis = busy.diagnosis
+        guidance = "update-dotfiles logsで永続ログを確認し、所有者が終了していることを確かめてから再実行してください。"
+        return _skip_git_update(
+            f"対象indexの標準ロックを取得できず、{diagnosis.reason}",
+            action=diagnosis.text(guidance),
+        )
     except OSError as error:
         update_dotfiles_runtime.logger.exception("Git更新のindex管理に失敗")
         return _skip_git_update(f"対象indexの管理に失敗: {error}")

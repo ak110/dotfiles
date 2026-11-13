@@ -9,6 +9,7 @@ import time
 
 import psutil
 import update_dotfiles_runtime
+from agent_toolkit._git import stale_lock
 
 from pytools._internal import sync_report
 
@@ -67,7 +68,41 @@ def run_git_pull(
     timeout: float | None = update_dotfiles_runtime.GIT_TIMEOUT_DEFAULT_SEC,
     plugin: pathlib.Path | None = None,
 ) -> int:
-    """Git更新段を実行し、正常終了時の出力を標準出力へ正規化する。
+    """Git更新段を実行する。プラグインのpullが標準ロックの競合で失敗した場合は、待機と回収の後に1回だけ再実行する。
+
+    pullはロック作成に失敗した時点で変更を始めていないため、再実行は安全である。
+    本体のpullは、`update_dotfiles_git`が保持するindexロックの外で実行されない（代替indexを使う）ため対象外とする。
+    """
+    code = _run_git_pull_once(step_no, total, timeout=timeout, plugin=plugin)
+    if code == 0 or plugin is None:
+        return code
+    recovery = stale_lock.recover_after_failure(
+        update_dotfiles_runtime.last_stderr_tail or "",
+        plugin,
+        wait_seconds=stale_lock.lock_wait_seconds(None if timeout is None else float(timeout)),
+    )
+    if recovery.retry:
+        return _run_git_pull_once(step_no, total, timeout=timeout, plugin=plugin)
+    if recovery.diagnosis is not None:
+        message = recovery.diagnosis.text(
+            "update-dotfiles logsで永続ログを確認し、所有者が終了していることを確かめてから再実行してください。"
+        )
+        print(message, file=sys.stderr)
+        update_dotfiles_runtime.logger.warning(message)
+        update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(
+            f"{update_dotfiles_runtime.last_stderr_tail}\n{message}"
+        )
+    return code
+
+
+def _run_git_pull_once(
+    step_no: int,
+    total: int,
+    *,
+    timeout: float | None,
+    plugin: pathlib.Path | None,
+) -> int:
+    """Git更新段を1回実行し、正常終了時の出力を標準出力へ正規化する。
 
     `submodule.recurse=false`は、dotfilesリポジトリがsubmoduleを持たないため不要な再帰を無効化する。
     ユーザー設定でこの再帰が有効な場合、`git pull`が`git-submodule`を起動する。`git-submodule`は
