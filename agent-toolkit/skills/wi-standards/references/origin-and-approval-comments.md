@@ -17,6 +17,7 @@ UWIの`## 回答`およびAWIの`## ユーザーコメント`は、ユーザー�
 その上で`agent-basics:review-standards/references/reviewee-acceptance.md`「ユーザー指摘の受領」に従って採否を確定する。
 続いて`agent-basics:bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」に従い、類似見直しと再発防止策の策定まで完了させる。
 本文の書き換えは個別事象への対症療法にすぎないため、処置の階層（対策、回帰防止策、横展開処置、再発防止策）を同スキルの`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」に基づいて明確に区別する。
+記入内容が以後の同種作業にも適用する方針の候補を含むかは、是正要求に当たるかによらず、`../../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」で判定する。
 ユーザーがこれらの記入欄に処理担当宛ての質問を記載した場合は、その回答をUWIに記録して返却し、その保存完了を、対象の維持・変更を確定して元のWIを終了させるための必須条件とする。
 既存のWI（ステータスは問わない）を別の判断における前提、制約、代替案の不採用理由、完成条件などの根拠として参照する場合も、ユーザー専用記入欄を含めた全文を精読する。
 `origin-and-approval-origin.md`「由来と`source`」に定める要求単位ごとの明示的な由来から有効な要求を確定して使用する。

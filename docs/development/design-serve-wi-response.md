@@ -67,5 +67,5 @@ process-loopと各レーンの`atk wi`が同じ保存リポジトリでGit操作
 保存ショートカットを設けず、IME確定で回答を送信しない。
 
 画面が完了させるのは回答の保存までであり、元AWIの独自再開や方針原本への自動反映は行わない。
-継続適用を明示した回答の反映は、[回答後の状態遷移](../../agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md#回答後の状態遷移)から既存の恒久化判断へ渡し、読み手・適用範囲・出所と元の認可を保つ。
+継続適用を明示した回答と、以後の方針の候補と判定した回答の反映は、[回答後の状態遷移](../../agent-toolkit/skills/user-confirmation-and-report/references/answer-transitions.md#回答後の状態遷移)から既存の恒久化判断へ渡し、読み手・適用範囲・出所と元の認可を保つ。
 今回限りの回答の一般化と、回答保存を方針反映完了として扱う案は採らない。
