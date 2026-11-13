@@ -14,7 +14,7 @@ import pytest
 
 from agent_toolkit import atk, hook
 from agent_toolkit._atk import run_script, run_skill
-from agent_toolkit._common import session_activity, session_review
+from agent_toolkit._common import diagnostic_process, session_activity, session_review
 
 
 def _capture_batch_launches(monkeypatch):
@@ -30,9 +30,12 @@ def _capture_batch_launches(monkeypatch):
         "agent-toolkit:review-session",
     ]
 
+    # 起動は診断出力の秘匿中継で包まれるため、包んだ引数と一致する起動だけを捕まえ、中継前の引数を記録する。
+    wrapped = diagnostic_process.command(expected)
+
     def spawn(argv, **kwargs):
-        if list(argv) == expected:
-            requests.append((argv, kwargs["env"]))
+        if list(argv) == wrapped:
+            requests.append((expected, kwargs["env"]))
             return types.SimpleNamespace(pid=None, wait=lambda: 0)
         return original_popen(argv, **kwargs)
 
