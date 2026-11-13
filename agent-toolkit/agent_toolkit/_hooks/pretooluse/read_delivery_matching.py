@@ -59,6 +59,10 @@ def _pyproject_dependencies(text: str) -> object:
 
 _FILE_SCOPED_OPERATIONS = frozenset({"existing-file-edit", "claude-existing-file-edit"})
 
+_CONFIRMING_OPERATIONS = frozenset(
+    {"wi-report-save", "wi-standard-save", "awi-draft-writing", "uwi-draft-writing", "plan-draft-writing"}
+)
+
 
 def _temporary_path(path: str) -> bool:
     """成果物ではない一時領域（managed-tempの一時rootと、Claude Codeの一時領域）の配下かを返す。
@@ -91,7 +95,9 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
         if written and all(_temporary_path(path) for path in written):
             return False
     if operation == "body-writing":
-        # 一時領域の書込は、使い捨てのスクリプト・データと、作業記録・下書きなどの個人記録であり、成果物の本文に当たらない。
+        # 一時領域の書込は、使い捨てのスクリプト・データと、作業記録などの個人記録であり、成果物の本文に当たらない。
+        # WI原稿と計画初版は一時領域に置いても保存される成果物の原稿であり、本文の形で判定する専用の配送操作
+        # （`awi-draft-writing`・`uwi-draft-writing`・`plan-draft-writing`）が一時領域の書込でも起草規範を届ける。
         written = operation_skills.written_paths(tool_name, tool_input, cwd)
         if written and all(_temporary_path(path) for path in written):
             return False
@@ -262,7 +268,7 @@ def condition_confirmed(row: read_triggers.ReadTrigger, tool_name: str, tool_inp
     if "confirmation" in row.operations and matches("confirmation", tool_name, tool_input, cwd):
         return True
     # 対象資料の読取だけでは、宣言元の役割・工程などの自然文条件を確定できない。
+    # WIの保存種別と原稿・計画初版の本文は、保存・起草の時点にある観測として条件を確定する。
     return any(
-        operation in {"wi-report-save", "wi-standard-save"} and matches(operation, tool_name, tool_input, cwd)
-        for operation in row.operations
+        operation in _CONFIRMING_OPERATIONS and matches(operation, tool_name, tool_input, cwd) for operation in row.operations
     )

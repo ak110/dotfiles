@@ -25,6 +25,7 @@
 | 確認本文と選択肢を起草する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `confirmation` |
 | 期待からの逸脱を認識し、診断・訂正・対処を判断する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `skill:agent-basics:bugfix` |
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
+| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `../skills/wi-standards/references/analysis-records.md` | 操作 | `root-cause-writing` |
 | レビュー指摘管理表を作成・更新する前 | `review-table-operations.md` | 判断 | `skill:agent-basics:review-standards` |
 | エージェント向け文書の編集前 | `agent-toolkit:/share/writing-operations.md`、`agent-toolkit:/share/agent-documents-operations.md` | 操作 | `agent-document-writing` |
 
@@ -70,7 +71,6 @@ hookの確認候補を受けたら条件を自分で確かめ、該当する資�
 | `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `agent-toolkit:report-completion/references/claude-hooks-stop.md` |
 | auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:user-confirmation-and-report`が扱う） | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
 | エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:refine-prompt/references/evaluation-triggers.md` |
-| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
 | 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` |
 | CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` |
 | 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:process-wi/references/ci-fix-series.md` |

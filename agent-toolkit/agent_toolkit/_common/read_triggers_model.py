@@ -36,6 +36,9 @@ OPERATIONS = frozenset(
         "confirmation",
         "wi-report-save",
         "wi-standard-save",
+        "awi-draft-writing",
+        "uwi-draft-writing",
+        "plan-draft-writing",
     }
 )
 

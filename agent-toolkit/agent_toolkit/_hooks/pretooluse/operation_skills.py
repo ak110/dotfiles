@@ -157,6 +157,29 @@ def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
     return fields is not None and any(_ROOT_CAUSE_HEADING.search(value) for _, value in fields)
 
 
+# 起草規範の配送に使う原稿の目印。いずれも原稿の書式が必ず持つ見出しだけから成る行とする。
+# AWIは`## 反映内容と反映先`、UWIは`## 判断材料`、計画初版は`### 計画メタ情報`を持つ。
+_DRAFT_HEADINGS = {
+    "awi-draft-writing": re.compile(r"^## 反映内容と反映先[ \t]*$", re.MULTILINE),
+    "uwi-draft-writing": re.compile(r"^## 判断材料[ \t]*$", re.MULTILINE),
+    "plan-draft-writing": re.compile(r"^### 計画メタ情報[ \t]*$", re.MULTILINE),
+}
+
+
+def _is_draft_writing(operation: str, tool_name: str, tool_input: dict) -> bool:
+    """WI原稿・計画初版の本文を書く操作かを、書く本文の見出し行で返す。
+
+    原稿は一時領域に置かれることが多いが、保存されてユーザーと後続の担当が読む成果物であり、
+    書込先ではなく本文の形で判定する。判定の範囲は`_is_root_cause_writing`と同じとする。
+    """
+    pattern = _DRAFT_HEADINGS[operation]
+    if tool_name == "Bash":
+        command = tool_input.get("command")
+        return isinstance(command, str) and pattern.search(command) is not None
+    fields = _tool_input.new_content_fields(tool_name, tool_input)
+    return fields is not None and any(pattern.search(value) for _, value in fields)
+
+
 def _is_temp_directory_create(tool_name: str, tool_input: dict) -> bool:
     """`agent-toolkit:managed-temp`の起動の契機とする、個別の一時ディレクトリを作成する`mktemp -d`の実行かを返す。
 
@@ -859,6 +882,9 @@ def operation_matches(operation: str, tool_name: str, tool_input: dict, cwd: str
         "confirmation": lambda name, _input: name in {"AskUserQuestion", "request_user_input", "request_user_input_async"},
         "wi-report-save": lambda name, data: True in _wi_save_kinds(name, data, cwd),
         "wi-standard-save": lambda name, data: False in _wi_save_kinds(name, data, cwd),
+        "awi-draft-writing": lambda name, data: _is_draft_writing("awi-draft-writing", name, data),
+        "uwi-draft-writing": lambda name, data: _is_draft_writing("uwi-draft-writing", name, data),
+        "plan-draft-writing": lambda name, data: _is_draft_writing("plan-draft-writing", name, data),
     }
     predicate = predicates.get(operation)
     return predicate(tool_name, tool_input) if predicate is not None else None

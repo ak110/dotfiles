@@ -61,19 +61,19 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 | run-skillの起動入力に独立WI受付があるとき | `../../share/wi-submission.md` | | | |
 | 対象リポジトリとprivate-notesを扱う前 | `references/repository-scope.md` | | | |
 | 委譲先が`atk wi`でキュー項目の状態を変更する場合 | `references/subagent-queue-ops.md` | | | |
-| 通常AWIを起草する前 | `references/awi-body.md`、`references/awi-body-content.md`、`references/awi-body-evidence.md`、`references/awi-body-completion.md`、`references/awi-body-placement.md` | | | |
+| 通常AWIを起草する前 | `references/awi-body.md`、`references/awi-body-content.md`、`references/awi-body-evidence.md`、`references/awi-body-completion.md`、`references/awi-body-placement.md` | 操作 | `awi-draft-writing` | |
 | 通常AWIの要求を読解・採否判定する前 | `references/awi-body.md`、`references/awi-body-content.md`、`references/awi-body-completion.md` | | | |
 | 観測した不具合・ユーザーの指摘・エラー・hookの誤動作を起点とするWIの調査に入る前 | `agent-basics:bugfix/SKILL.md`、`agent-toolkit:wi-standards/references/awi-body-evidence.md` | | | |
 | AWIの逐語引用を取り込む前 | `references/awi-body-quotation.md` | | | |
 | 外部の既存挙動の再現を完成条件へ採る前 | `references/awi-body-external.md` | | | |
 | 報告用UWIを除くWI作成の調査に入る前 | `references/drafting-workflow.md`、`references/drafting-workflow-investigation.md`、`references/drafting-workflow-requirements.md`、`references/drafting-completion-decisions.md`、`references/drafting-completion-scope.md`、`references/drafting-completion-confirmation.md`、`references/drafting-completion-policies.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-investigation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-requirements.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-decisions.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-scope.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-confirmation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-policies.md`、`bash:atk wi submission begin` | |
 | 認可・解釈・観測の裏付けに必要な出所を再取得する時 | `references/drafting-workflow-evidence.md` | | | |
-| 報告用UWIを除く原稿を確定する前 | `references/drafting-workflow-writing.md`、`references/drafting-workflow-validation.md`、`references/drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-writing.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-validation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md`、`wi-standard-save` | |
+| 報告用UWIを除く原稿を確定する前 | `references/drafting-workflow-writing.md`、`references/drafting-workflow-validation.md`、`references/drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-writing.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-validation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md`、`wi-standard-save`、`awi-draft-writing` | |
 | 報告用UWIを除くWIの独立した確認に入る前 | `references/drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md`、`wi-standard-save` | |
 | 報告用UWIを除くWIの保存操作に入る前 | `references/drafting-workflow-saving.md`、`references/drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md`、`wi-standard-save` | |
 | 報告用UWIを除く投入済みWIへ着手する前の対象集合と除外の確認 | `references/drafting-completion-validation.md` | | | |
 | report-completionが定義する報告用UWIの原稿確定・意味確認・保存に入る前 | `../report-completion/references/report-formats-uwi.md`、`references/uwi-format.md` | | | |
-| UWIを起草する場合 | `references/uwi-format.md` | | | |
+| UWIを起草する場合 | `references/uwi-format.md` | 操作 | `uwi-draft-writing` | |
 | WIの調査・要件分類・由来の検収に入る前 | `references/origin-and-approval-origin.md`、`references/origin-and-approval-comments.md` | | | |
 | 逐語引用を扱う前 | `references/origin-and-approval-quotation.md` | | | |
 | WIの状態、状態遷移、依存、冷却時間、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` | | | |
@@ -85,7 +85,7 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 | WIの起草・投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | | | |
 | 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-save` | |
 | 規範・基準・手順による既存の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | | |
-| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `references/analysis-records.md` | | | |
+| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `references/analysis-records.md` | 操作 | `root-cause-writing` | |
 | 通常AWIの本文の構成と、起票目的別の登録条件を判定する前 | `references/wi-standards-body.md` | | | |
 | WIの由来（`source`）と承認、人間由来の要求の不採用を判断する前 | `references/wi-standards-origin.md` | | | |
 | WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | | | |
