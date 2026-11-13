@@ -611,28 +611,49 @@ def test_pytest_notifies_once_while_waiting_for_slot_held_by_other_process(tmp_p
     assert "待機時間は試験の処理時間に含まれない" in errors
 
 
-def test_test_shards_partition_collected_tests_across_runs(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("mode", ["weighted", "unknown", "empty", "missing", "invalid"])
+def test_test_shards_partition_collected_tests_across_runs(tmp_path: pathlib.Path, mode: str) -> None:
     """全分割の実行結果を合わせると、xdistのworkerを含めて各試験がちょうど1回実行される。"""
     (tmp_path / "shard_test.py").write_text(
         textwrap.dedent("""\
-            import pytest
-
-            @pytest.mark.parametrize("value", range(30))
-            def test_value(value):
-                pass
-
-            def test_single():
-                pass
+            def test_a(): pass
+            def test_b(): pass
+            def test_c(): pass
+            def test_d(): pass
         """),
         encoding="utf-8",
     )
-    expected = {f"shard_test.py::test_value[{value}]" for value in range(30)} | {"shard_test.py::test_single"}
+    # 記録の配置だけを隔離し、公開CLIからの読込・収集・選択は実物を通す。
+    (tmp_path / "conftest.py").write_text(
+        "import pathlib\nfrom agent_toolkit._testing import pytest_plugin\n"
+        "pytest_plugin.__file__ = str(pathlib.Path(__file__).with_name('pytest_plugin.py'))\n",
+        encoding="utf-8",
+    )
+    nodeids = [f"shard_test.py::test_{name}" for name in "abcd"]
+    weights = {"weighted": [8, 4, 4, 2], "unknown": [6, 2], "empty": [], "invalid": [-1]}
+    if mode != "missing":
+        recorded = dict(zip(nodeids, weights[mode], strict=False))
+        (tmp_path / "test_durations.json").write_text(json.dumps(recorded), encoding="utf-8")
+    expected_shards = {
+        "weighted": [{nodeids[0], nodeids[3]}, {nodeids[1], nodeids[2]}],
+        "unknown": [{nodeids[0], nodeids[1]}, {nodeids[2], nodeids[3]}],
+        "empty": [{nodeids[0], nodeids[2]}, {nodeids[1], nodeids[3]}],
+        "missing": [{nodeids[0], nodeids[2]}, {nodeids[1], nodeids[3]}],
+    }
+    if mode == "invalid":
+        result = _run_child_pytest(tmp_path, "--test-shard=1/2", "shard_test.py")
+        assert result.returncode == pytest.ExitCode.USAGE_ERROR, result.stdout + result.stderr
+        assert "所要が不正" in result.stderr
+        return
+    expected = set(nodeids)
     executed: list[set[str]] = []
     # 子pytestの起動回数を抑えるため2分割で確かめ、2番目はworker間で同じ集合を選ぶことも見るためxdistで実行する。
     for index, workers in ((1, []), (2, ["-p", "xdist.plugin", "-n", "2"])):
-        result = _run_child_pytest(tmp_path, "-rA", *workers, f"--test-shard={index}/2", "shard_test.py")
+        targets = nodeids if index == 1 else list(reversed(nodeids))
+        result = _run_child_pytest(tmp_path, "-rA", *workers, f"--test-shard={index}/2", *targets)
         assert result.returncode == 0, result.stdout + result.stderr
         executed.append(set(re.findall(r"^PASSED (\S+)$", result.stdout, re.MULTILINE)))
+        assert executed[-1] == expected_shards[mode][index - 1]
     assert all(executed)
     assert set().union(*executed) == expected
     assert sum(len(shard) for shard in executed) == len(expected)
