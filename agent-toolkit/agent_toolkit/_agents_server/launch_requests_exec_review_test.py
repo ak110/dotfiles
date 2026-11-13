@@ -19,7 +19,20 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.parametrize(
     "defect",
-    ["omitted", "direct", "columns", "major", "supplement", "duplicate", "missing-wi", "valid", "old", "old-scope", "human"],
+    [
+        "omitted",
+        "direct",
+        "columns",
+        "major",
+        "supplement",
+        "duplicate",
+        "missing-wi",
+        "multiple",
+        "valid",
+        "old",
+        "old-scope",
+        "human",
+    ],
 )
 @pytest.mark.parametrize("input_kind", ["record", "record-file", "plan"])
 @pytest.mark.asyncio
@@ -55,6 +68,12 @@ async def test_exec_review_condition_table_preflight(
         content = header + major
     elif defect == "duplicate":
         content = header + major + supplement.replace("| 2 |", "| 1 |")
+    elif defect == "multiple":
+        content = header + major + major
+        body += "## 反映内容と反映先\n- 反映する\n"
+        (directory / name).write_text(body, encoding="utf-8")
+        other = "20261028-130047-002.md"
+        (directory / other).write_text(body, encoding="utf-8")
     contract.write_text(content, encoding="utf-8")
     params = {
         "レビュー基準": "WI",
@@ -62,13 +81,17 @@ async def test_exec_review_condition_table_preflight(
         "WI記録": name,
         "開始時のHEAD": "abc1234",
     }
+    if defect == "multiple":
+        params["WI記録"] += ", 20261028-130047-002.md"
     if input_kind == "record-file":
         record = tmp_path / "wi-record.md"
-        record.write_text(name, encoding="utf-8")
+        record.write_text(params["WI記録"], encoding="utf-8")
         params["WI記録"] = str(record)
     elif input_kind == "plan":
         plan = tmp_path / "plan.md"
         plan.write_text(f"# 計画\n## 概要\n### 計画メタ情報\n- 関連WI:\n  - {name}: 要求\n", encoding="utf-8")
+        if defect == "multiple":
+            plan.write_text(plan.read_text(encoding="utf-8") + "  - 20261028-130047-002.md: 要求\n", encoding="utf-8")
         params.pop("WI記録")
         params.pop("開始時のHEAD")
         params["レビュー基準"] = "計画"
@@ -93,6 +116,12 @@ async def test_exec_review_condition_table_preflight(
         with pytest.raises(ActionableError, match="review_contract") as rejected:
             await mcp_tools.start(str(tmp_path), subagent_md_path=str(document), extra_params=params)
         assert "exec-review-recording.md" in str(rejected.value)
+        if defect == "multiple":
+            message = str(rejected.value)
+            assert "補足条件 0/1件" in message
+            assert "条件番号が不正または重複" in message
+            assert "反映内容1" in message
+            assert "20261028-130047-002.md: 主要完成状態 0/1件" in message
         sender.assert_not_awaited()
 
 

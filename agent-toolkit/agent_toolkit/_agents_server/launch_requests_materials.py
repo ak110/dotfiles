@@ -55,15 +55,19 @@ def _material_paths(name: str, value: str) -> list[pathlib.Path]:
     if not items:
         raise _material_error(name, "保存ファイルの絶対パスが無い")
     paths = [pathlib.Path(item) for item in items]
+    errors: list[str] = []
     for path in paths:
         if not path.is_absolute() or not path.is_file():
-            raise _material_error(name, f"通常ファイルを参照できない: {path}")
+            errors.append(f"通常ファイルを参照できない: {path}")
+            continue
         try:
             with path.open(encoding="utf-8") as stream:
                 for _line in stream:
                     pass
         except (OSError, UnicodeError) as error:
-            raise _material_error(name, f"UTF-8で読めない: {path}: {error}") from error
+            errors.append(f"UTF-8で読めない: {path}: {error}")
+    if errors:
+        raise _material_error(name, "\n".join(errors))
     return paths
 
 
