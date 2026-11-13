@@ -10,7 +10,12 @@ from agent_toolkit._hooks import plugin_resources, work_contract
 from agent_toolkit._hooks.pretooluse import shell_checks
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.document_delivery import run_hook
-from agent_toolkit._testing.pretooluse_support import _plan_file_state_env, _run, codex_execution_payload
+from agent_toolkit._testing.pretooluse_support import (
+    _plan_file_state_env,
+    _run,
+    codex_execution_payload,
+    run_after_read_delivery,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +42,7 @@ def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subpr
         acquisition = codex_execution_payload(acquisition, pathlib.Path(env_overrides["TMPDIR"]), exit_code=0)
     recorded = run_hook("posttooluse", acquisition, env_overrides)
     assert recorded.returncode == 0
-    return _run(payload, env_overrides=env_overrides)
+    return run_after_read_delivery(payload, env_overrides=env_overrides)
 
 
 def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:

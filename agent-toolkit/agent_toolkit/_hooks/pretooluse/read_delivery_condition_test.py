@@ -80,8 +80,9 @@ def test_unconfirmed_judgment_is_not_restored_as_mandatory_from_old_selection(tm
 
 
 def test_confirmation_operation_remains_an_observable_judgment_condition(tmp_path):
-    """確認本文・選択肢の起草を観測できる契機は保つ。"""
-    row = ReadTrigger(tmp_path / "SKILL.md", 1, "判断", ("confirmation",), (), condition="確認本文を書く前")
+    """共通の確認基準は、確認本文・選択肢の起草を観測できる契機を保つ。"""
+    source = read_delivery.plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+    row = ReadTrigger(source, 1, "判断", ("confirmation",), (), condition="確認本文を書く前")
     assert read_delivery.condition_confirmed(row, "AskUserQuestion", {"questions": []}, str(tmp_path))
 
 
