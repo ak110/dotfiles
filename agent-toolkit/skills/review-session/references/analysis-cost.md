@@ -6,7 +6,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
 | 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 
 ## 比較して探す観点

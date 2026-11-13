@@ -53,6 +53,20 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     assert not errors, "\n".join(errors)
 
 
+def test_documents_read_together_do_not_repeat_read_table_rows():
+    """同じ読込表の1行で同時に全文を読む資料どうしが、同じ条件と資料の行を重ねないことを確かめる。"""
+    roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]
+    basics = _PLUGIN_ROOT.parent / "agent-basics/skills"
+    if basics.is_dir():
+        roots.append(basics)
+    sources = sorted({path for root in roots for path in root.rglob("*.md")})
+    assert sources
+    with read_triggers.resolution_scope():
+        rows = {source: read_triggers.parse_tables(source, _PLUGIN_ROOT) for source in sources}
+    issues = read_triggers.simultaneous_duplicate_rows(rows)
+    assert not issues, "\n".join(issues)
+
+
 @pytest.mark.parametrize(
     "relative",
     [

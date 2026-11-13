@@ -10,7 +10,6 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | X投稿などの外部資料の本文・日時・添付画像を取得する前 | `../../fetch-sources/SKILL.md` |
-| 経験の保存先と索引を選ぶ前 | `agent-documents-basics-placement.md` |
 
 ## 条件別資料
 

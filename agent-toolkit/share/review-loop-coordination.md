@@ -12,7 +12,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
 | 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination-recurrence.md` |
 | 判断要請を受領し対処を確定する前 | `review-loop-coordination-escalation.md` |
 

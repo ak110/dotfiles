@@ -30,17 +30,10 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
 | 計画準備の返却を受領し、要求単位の由来の扱いを確かめる時 | `exec-subagent-inputs.md` |
 | 要求内の計画外編集と要求を超える変更を区別する時 | `exec-subagent-implementation.md` |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
 
 ## 読込表
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
 
 <!-- return-contract:exec:start -->
 <!-- 生成元: share/exec.subagent.md「出力」。手動編集しない。 -->

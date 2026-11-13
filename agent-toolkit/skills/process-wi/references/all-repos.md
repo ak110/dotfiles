@@ -16,10 +16,7 @@
 | --- | --- |
 | 共通の受渡し規範を選択して取得する時 | `all-repos-orchestration.md` |
 | リポジトリ担当の処理規範を選択して取得する時 | `../SKILL.md` |
-| 統括がlane_limit 2以上の対象を直接処理する時 | `lanes.md` |
-| 統括がlane_limit 1以下の対象を直接処理する時 | `single-lane.md` |
 | リポジトリ担当の引き継ぎ記録先を指定する時 | `../../delegation/references/base-contract-handoff.md` |
-| 先行工程を次の巡回へ回す前 | `agent-toolkit:process-wi/references/lane-resources.md` |
 
 ## リポジトリ担当の起動と受領
 

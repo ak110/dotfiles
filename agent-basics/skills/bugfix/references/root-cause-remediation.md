@@ -9,7 +9,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の条件に従い「QとC・Dの区別」「原因分析の品質確認」を判断する前 | `root-cause-severity-quality.md`、`root-cause-severity-impact.md` |
 | 本文の条件に従い「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention-verification.md` |
 | 本文の条件に従い参照先の基準を使う前 | `agent-basics:bugfix/references/causal-analysis-stages.md` |
 

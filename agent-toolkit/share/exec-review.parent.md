@@ -56,10 +56,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` |
 | 形式判別前 | `../skills/wi-standards/references/awi-body.md` |
 | 基準の参照時 | `agent-basics:review-standards/SKILL.md` |
-| 基準の参照時 | `exec-subagent-implementation.md` |
 | 検証結果を記録する前 | `verification-evidence-records.md` |
 | 手動観測を保存する前 | `verification-evidence-observation.md` |
 | 最終の検証と有限の手動観測の時機を判断する前 | `../skills/commit/references/commit-verification.md` |
@@ -68,34 +66,14 @@
 | 基準の参照時 | `agent-toolkit:/share/workflow-phases.md` |
 | 基準の参照時 | `usability-review.parent.md` |
 | 基準の参照時 | `reader-fit-review.parent.md` |
-| 初回起動前 | `../skills/delegation/references/process-model-settings.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
 | 基準の参照時 | `../skills/delegation/references/base-contract-handoff.md` |
-| 基準の参照時 | `review-loop-coordination-rounds.md` |
-| 基準の参照時 | `agent-basics:secret-files/SKILL.md` |
-| 基準の参照時 | `../skills/delegation/SKILL.md` |
 | 基準の参照時 | `exec.parent.md`、`exec-parent-integration.md` |
 | 基準の参照時 | `../skills/wi-standards/references/origin-and-approval.md` |
-| 基準の参照時 | `exec-review-recording-integration.md` |
 | 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` |
-| 基準の参照時 | `review-loop-coordination-escalation.md` |
-| 基準の参照時 | `add-wi.parent.md` |
-| 基準の参照時 | `agent-basics:bugfix/SKILL.md` |
 | 基準の参照時 | `../skills/wi-standards/references/wi-standards-origin.md` |
 | 基準の参照時 | `../skills/report-completion/references/report-formats-completion.md` |
-| 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` |
-| 基準の参照時 | `add-wi-parent-acceptance.md` |
 | 基準の参照時 | `agent-basics:bugfix/references/root-cause-severity-impact.md`、`agent-basics:bugfix/references/root-cause-remediation.md`、`agent-basics:bugfix/references/root-cause-prevention-verification.md` |
-| 基準の参照時 | `../skills/delegation/references/sending.md` |
-| 基準の参照時 | `review-loop-coordination.md`、`review-loop-coordination-rounds.md` |
-| 基準の参照時 | `exec-parent-launch.md` |
 | 基準の参照時 | `../skills/commit/references/history-rewrite-wi-records.md` |
-| 基準の参照時 | `exec-review-responses-completion.md` |
-| 本文が再レビュー省略の条件を確認する時 | `agent-basics:review-standards/references/reviewee-verification.md` |
-| 基準の参照時 | `lane-integration-subagent-operation.md` |
-| 基準の参照時 | `agent-toolkit:write-plan/references/plan-file-storage.md` |
 
 ## 読込表
 

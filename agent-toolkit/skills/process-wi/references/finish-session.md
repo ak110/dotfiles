@@ -44,9 +44,7 @@ report-completionと振り返りは委譲先の終了工程の対象外とする
 | --- | --- |
 | 合流した公開対象を判断する前 | `selection-procedure-addition.md` |
 | 目標起点の公開対象を判断する前 | `lanes-goals.md` |
-| 未達条件の延期とユーザー確認・冷却を選ぶ前 | `../../wi-standards/references/states-and-dependencies-dependencies.md` |
 | 統合後の即時修正の担当と時機を決める前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 公開後にも独立して成立するWI投入を別実行へ引き継ぐ前 | `../../../share/wi-submission.md` |
 
 ## 条件別資料
 

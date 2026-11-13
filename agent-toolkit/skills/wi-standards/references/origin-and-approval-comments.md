@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 手動process-wiの公開承認を判定する前 | `../../process-wi/references/lanes-completion.md` |
-
 ## ユーザー専用の記入欄と是正要求
 
 UWIの`## 回答`およびAWIの`## ユーザーコメント`は、ユーザーのみが編集できる節である。

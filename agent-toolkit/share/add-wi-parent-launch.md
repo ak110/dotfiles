@@ -6,12 +6,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 対象集合の見直し・存廃・要否・仕分けを求める依頼（先行成果物から登録項目を選ぶ依頼を含む）を渡す前 | `../skills/wi-standards/references/drafting-completion-scope.md` |
 | 要件と委譲元の判断を分類する前 | `../skills/wi-standards/references/drafting-workflow-requirements.md` |
 | 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/add-awi-by-user/SKILL.md` |
 | 委譲元が投入先の対象の外で動き、起動時の`cwd`を決める時 | `../skills/process-wi/references/lanes.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/wi-standards/references/cross-repository-submission.md` |
 
 ## 起動方法
 

@@ -15,7 +15,6 @@
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`agent-basics:bugfix/references/root-cause-severity-quality.md`、`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md` |
 | 本文で基準を使う資料の選択・取得時 | `../../wi-standards/SKILL.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:wi-standards/references/analysis-records.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 | 類似見直し前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
 
 ## 原因と対策

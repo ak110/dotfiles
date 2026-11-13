@@ -4,12 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文の条件に従い「QとC・Dの区別」「原因分析の品質確認」を判断する前 | `root-cause-severity-quality.md`、`root-cause-severity-impact.md` |
-| 本文の条件に従い「処置の階層」を判断する前 | `root-cause-actions-hierarchy.md` |
-| 本文の条件に従い「類似見直し」を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-
 ## 類似見直しと再発防止の完了
 
 すべての重大度で、`root-cause-remediation.md`の絞り込み型手順を完了し、候補ごとの分類・処置の要否と調査の限界を確定する。

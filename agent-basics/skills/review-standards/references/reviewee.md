@@ -10,11 +10,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 指摘前の判断記録と比較する前 | `exec-review-recording.md` |
-| 調査の停滞や修正による症状・回避処理の増加に対処する前 | `../../bugfix/references/root-cause-scenarios-recurrence.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

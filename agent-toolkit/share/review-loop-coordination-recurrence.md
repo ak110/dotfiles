@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| process-wi中に既存不良による続行不能への処置を判断する前 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-
 ## 反復原因の判定
 
 再レビューの指摘を受け取って修正指示を確定する前に、`atk review-table show <表の絶対パス> --track <対象track> --format=jsonl`を実行して過去の指摘・応答内容と今回の指摘内容を確認する。

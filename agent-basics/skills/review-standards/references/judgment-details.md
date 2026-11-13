@@ -6,14 +6,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-prevention-requirements.md` |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-severity-quality.md`、`../../bugfix/references/root-cause-severity-impact.md` |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-analysis-evidence.md` |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-actions-selection.md` |
-| 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation-experience.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

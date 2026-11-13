@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import pathlib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from agent_toolkit._common.plugin_roots import plugin_resolution_scope
@@ -156,6 +156,47 @@ def validate_reference_routes(source: pathlib.Path, plugin_root: pathlib.Path, r
                 f"{source}:{number}: 参照先が存在しない: {target.path}。"
                 "所属スキルを`agent-toolkit:<スキル>`の`references/...`の形で明記してください。"
             )
+
+
+def simultaneous_duplicate_rows(
+    rows_by_source: Mapping[pathlib.Path, Sequence[read_triggers.ReadTrigger]],
+) -> list[str]:
+    """同じ読込表の1行で同時に全文を読む資料どうしが、同じ条件と資料の組の行を持つ箇所を返す。
+
+    読み手は同時に読む資料の表を続けて読むため、同じ行が重なると同じ案内を繰り返し読む。
+    資料を分けたときに元の表を全分割先へ写すと生じる（`agent-documents-basics-read-tables.md`「読込表」）。
+    表の解析は呼出元が`parse_tables`で済ませた結果を受け取り、行の判定を別に組み立てない。
+    同時に読む範囲は1行の資料列が指す資料に限る。同じ条件を複数行に書いた表は、汎用の条件で
+    別々に選ぶ資料を並べることがあり、同時に読む組と区別できないため対象にしない。
+    """
+    resolved = {path.resolve(): rows for path, rows in rows_by_source.items()}
+    reported: set[tuple[str, tuple[str, ...], tuple[tuple[str, int], ...]]] = set()
+    issues: list[str] = []
+    for entry_rows in rows_by_source.values():
+        for entry in entry_rows:
+            documents = sorted({path.resolve() for path in entry.documents} & resolved.keys())
+            if len(documents) < 2:
+                continue
+            holders: dict[tuple[str, tuple[str, ...]], list[tuple[pathlib.Path, int]]] = {}
+            for document in documents:
+                for row in resolved[document]:
+                    key = (row.condition, tuple(sorted(str(path.resolve()) for path in row.documents)))
+                    holders.setdefault(key, []).append((document, row.line))
+            for (condition, materials), places in holders.items():
+                if len({path for path, _line in places}) < 2:
+                    continue
+                identity = (condition, materials, tuple(sorted((str(path), line) for path, line in places)))
+                if identity in reported:
+                    continue
+                reported.add(identity)
+                where = "、".join(f"{path}:{line}" for path, line in places)
+                issues.append(
+                    f"{where}: 同時に全文を読む資料どうしで同じ読込表の行が重なる"
+                    f"（条件: {condition}、資料: {'、'.join(materials)}、同時に読ませる行: {entry.source}:{entry.line}）。"
+                    "次の操作: 本文がその条件を判断する資料1つに行を残し、他の資料から削る"
+                    "（`agent-basics:writing-standards/references/agent-documents-basics-read-tables.md`「読込表」）。"
+                )
+    return issues
 
 
 def validate_plugin_relative_references(source: pathlib.Path) -> None:

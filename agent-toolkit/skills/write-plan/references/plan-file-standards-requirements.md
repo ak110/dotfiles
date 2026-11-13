@@ -11,7 +11,6 @@
 | 参照基準の適用前 | `agent-basics:writing-standards/references/design-time.md` |
 | 参照基準の適用前 | `agent-toolkit:/share/exec-review-recording.md` |
 | 参照基準の適用前 | `agent-toolkit:/share/acceptance-scenarios.md` |
-| 参照基準の適用前 | `../../wi-standards/references/awi-body.md` |
 
 ## 要件・外部仕様
 

@@ -12,12 +12,6 @@
 | 基準の参照時 | `agent-basics:bugfix/SKILL.md` |
 | 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` |
 | 基準の参照時 | `add-wi-parent-acceptance.md` |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
-| `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
-| レビュー工程の判定・記録を始める前 | `review-table-operations.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` |
 
 ## 返却に含まれる既存不良の受領
 

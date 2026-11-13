@@ -4,10 +4,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 返却形式を確認する時 | `exec-review.parent.md` |
-
 ## 判定の値
 
 判定結果は、`達成`、`未達`、`根拠不足`の3つのいずれかとする。

@@ -27,7 +27,6 @@ description: >
 | --- | --- | --- | --- | --- |
 | エージェント向け文書を編集する前 | `docs/development/concepts.md`と`docs/development/incidents.md`。編集するエージェント自身が全文を読む（要約、見出し一覧、部分読取、他のエージェントの読取結果では代えない）。さらに索引から、変更対象のファイル名・工程名・機能名に関連する分割ファイルの節を選んで読む（方針の本文は分割ファイル側にある） | 操作 | `agent-document-writing` | |
 | 規範を追記・新設・移動する置き場所を選ぶ前、および置き場所を実行レビューで判定する前 | `references/norm-layer-map.md`と`agent-basics:writing-standards/references/agent-documents-placement-selection.md` | | | |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../agent-toolkit-edit/SKILL.md` | | | |
 | 不具合の原因が過去の対策と同じかを分類する前、同じ原因（範囲不足・未適用・効果不足）と判定した時に記録する前 | `references/recurrence-record.md` | | | |
 | 規範を編集する作業の開始時（モデルIDとホストの版の点検記録との比較） | `references/model-host-audit.md` | | | |
 | `agent-toolkit:process-wi`の選定工程でAWIごとの`プロジェクト規範の指定`を記述する前 | `references/project-norm-designation.md` | | | |

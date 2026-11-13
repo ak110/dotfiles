@@ -21,7 +21,6 @@
 | `review_contract`の要否を判断し、生成・再生成する前 | `exec-review-contract-generation.md` |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` |
 | レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-responses.md` |
 | レビュー工程の判定・記録を始める前 | `exec-review-recording.md` |
 
 ## 起動方法別のレビュー基準

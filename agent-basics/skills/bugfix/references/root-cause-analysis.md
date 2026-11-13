@@ -18,12 +18,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の条件に従い「QとC・Dの区別」「前提の再検討」を判断する前 | `root-cause-severity-quality.md`、`root-cause-severity-impact.md` |
-| 本文の条件に従い「処置の階層」を判断する前 | `root-cause-actions-hierarchy.md` |
-| 本文の条件に従い「類似見直し」を判断する前 | `agent-basics:bugfix/references/root-cause-remediation.md` |
-| 本文の条件に従い「再発防止策の必須性」「類似見直しと再発防止の完了」を判断する前 | `root-cause-prevention-requirements.md`、`root-cause-prevention-verification.md` |
-| 本文の条件に従い「反復した指摘の原因判定」を判断する前 | `root-cause-scenarios-recurrence.md` |
-| 本文の条件に従い参照先の基準を使う前 | `../../writing-standards/references/quality-principles-source-consistency.md` |
 | 文書・規範・出力メッセージを変える対策を提案する前 | `../../writing-standards/SKILL.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/writing-common.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../writing-standards/references/design-heuristics-screening.md` |

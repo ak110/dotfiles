@@ -13,11 +13,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/SKILL.md` |
 | 公開工程の`cwd`にする主作業ツリーを確定する前 | `../skills/process-wi/references/lanes.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/process-wi/references/finish-session-recovery.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/base-contract-handoff.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/report-completion/SKILL.md` |
 | 公開工程を直接実行する前 | `agent-toolkit:/share/session-termination.subagent.md` |
 | 直接実行中に全体検証またはCIが失敗したとき | `../skills/process-wi/references/termination-ci-failure.md` |
 

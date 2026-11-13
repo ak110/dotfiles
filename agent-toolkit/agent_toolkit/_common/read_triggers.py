@@ -23,6 +23,7 @@ from agent_toolkit._common.read_triggers_model import (
 from agent_toolkit._common.read_triggers_references import (
     named_reference_rows,
     reference_method_targets,
+    simultaneous_duplicate_rows,
     validate_plugin_relative_references,
     validate_reference_routes,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "resolve_document",
     "resolve_plugin_root",
     "resolve_read_source",
+    "simultaneous_duplicate_rows",
     "skill_invocation_required",
     "startup_context",
     "startup_documents",

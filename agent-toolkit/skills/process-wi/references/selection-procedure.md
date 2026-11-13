@@ -11,11 +11,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 目標起点の判断を行う前 | `lanes-goals.md` |
-| 是正要求を分類する前 | `immediate-fix.md` |
-
 ## 読込表
 
 | 時点または条件 | 全文読む資料 |

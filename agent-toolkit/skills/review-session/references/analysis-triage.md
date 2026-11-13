@@ -6,11 +6,8 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-basics:writing-standards/references/claude-hooks-block-warn.md` |
 | 本文で基準を使う資料の選択・取得時 | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
-| 本文で基準を使う資料の選択・取得時 | `agent-basics:bugfix/references/root-cause-severity-impact.md` |
-| 通読で比較するとき、または規範の未適用と目的逸脱を分析する前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md` |
 
 ## 一次選別
 
@@ -94,5 +91,3 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 場面別の原因分析：情報探索の問題の基準を適用する前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md` |
-| 振り返りの判断基準：原因と対策の基準を適用する前 | `analysis-actions.md` |
-| 振り返りの判断基準：比較して探す観点の基準を適用する前 | `analysis-cost.md` |

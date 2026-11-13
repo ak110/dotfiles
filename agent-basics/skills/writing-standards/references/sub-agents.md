@@ -7,10 +7,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲の分担の採否を比べる時 | `design-heuristics-decisions.md` |
-
 ## ディレクトリ構成
 
 `agents/`ディレクトリ配下にはサブエージェント定義ファイルのみを配置する。

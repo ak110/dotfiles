@@ -10,8 +10,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 不良・是正要求・改善点を観測または受領した時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 配下担当の進捗を点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 | リポジトリ担当として統括の全体工程と対象集合の扱いを確認する時 | `../../process-wi/references/all-repos.md` |
 
 ## 条件別資料

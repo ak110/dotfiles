@@ -15,10 +15,6 @@ UWIの書式については`uwi-format.md`を参照する。
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |
@@ -33,7 +29,3 @@ UWIの書式については`uwi-format.md`を参照する。
 | 既存証拠の再利用に関する判断・作業の前 | `drafting-completion-evidence.md` |
 
 ## 本文参照の取得条件
-
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 作業完了報告とセッションの完了処理の基準を適用する前 | `../../report-completion/SKILL.md` |

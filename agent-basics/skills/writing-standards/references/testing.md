@@ -14,10 +14,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 失敗したテストの撤去を判断する前 | `design-heuristics-necessity.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

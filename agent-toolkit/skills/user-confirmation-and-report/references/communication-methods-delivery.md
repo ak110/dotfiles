@@ -13,7 +13,6 @@
 | 本文の参照基準を適用する前 | `../../wi-standards/references/uwi-format.md` |
 | 拒否またはclassifierの判定不能について確認・報告の手段を選ぶ前 | `permission-denial.md` |
 | `予定`の改善点を確定して完了報告へ記載する前 | `agent-toolkit:report-completion/SKILL.md` |
-| 進捗のセルフチェック通知を受けて点検する時 | `../../delegation/references/waiting-and-monitoring-progress.md` |
 
 ## 手段の選択
 

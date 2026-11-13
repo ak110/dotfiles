@@ -6,11 +6,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

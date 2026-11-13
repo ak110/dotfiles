@@ -14,17 +14,12 @@
 | 条件表を検収する前 | `exec-review-recording-contract.md` | | | |
 | 初回レビューに入る前 | `exec-review-criteria.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
-| 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
-| テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:write-plan/references/testing-branch-verification.md` | | | |
 | `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | | | |
 | `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | | | |
-| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | | | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
-| 初回レビューで種類7の作成規範を点検する前 | `agent-basics:writing-standards/references/review-only-criteria.md` | | | |
-| 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | | | |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | | |
 | レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | | | |
 | レビュー工程の判定・記録を始める前 | `exec-review-recording.md`、`exec-review-recording-verdicts.md` | | | |

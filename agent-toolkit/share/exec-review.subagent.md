@@ -57,12 +57,8 @@ continuations:
 | --- | --- |
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `workflow-phases.md` |
-| 本文でこの資料の基準を参照・取得する時 | `exec-subagent-implementation.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/commit/references/history-rewrite-wi-records.md` |
-| 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/managed-temp/SKILL.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` |
-| 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md` |
 | 本文でこの資料の基準を参照・取得する時 | `exec.parent.md`、`exec-parent-integration.md` |
 | 本文でこの資料の基準を参照・取得する時 | `recurrence-self-check-items.md` |
 

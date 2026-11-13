@@ -7,10 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
-| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
-| 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
-| `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
 
 ## 入力
 

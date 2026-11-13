@@ -8,7 +8,6 @@
 | --- | --- |
 | 原因分析の書式を使う前 | `agent-toolkit:wi-standards/references/analysis-records.md` |
 | 原因分析の処置を記録する前 | `agent-basics:bugfix/references/root-cause-actions-hierarchy.md` |
-| 複数リポジトリの共通本文を参照するAWIを読む前 | `cross-repository-submission.md` |
 
 ## エージェント向け文書の構成
 

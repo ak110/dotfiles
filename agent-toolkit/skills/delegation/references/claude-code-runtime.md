@@ -8,12 +8,6 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲入力の言語指定を確定する前 | `base-contract-operations.md` |
-| `Agent`ツールで起動した担当を継続する前 | `continuation.md` |
-| `Agent`ツールで起動した担当を継続する前 | `agent-tool-continuation.md` |
-
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

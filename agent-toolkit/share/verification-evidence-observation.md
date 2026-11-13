@@ -6,13 +6,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| OSを模擬した試験の保証と環境条件を記録する前 | `agent-basics:writing-standards/references/testing-selection.md`、`agent-basics:writing-standards/references/testing-platforms.md` |
 | 受入シナリオを起動する前 | `agent-toolkit:/share/acceptance-scenarios.md` |
-| 訂正済み検証表を使う前 | `../skills/write-plan/references/plan-file-standards-verification.md` |
 | 保存出力を取得する前 | `check-execution-operations-output.md` |
-| 取得版の異なる観測を検証結果へ書く前 | `exec-review-recording-grounds.md` |
 | レビューへ渡す最終観測を取得する前 | `../skills/commit/references/commit-verification.md` |
-| 保存済みの成功集合と限定再検証から被覆を判定する前 | `agent-basics:check-execution/references/verification-scope-reruns.md` |
 
 ## 手動観測の保存
 
