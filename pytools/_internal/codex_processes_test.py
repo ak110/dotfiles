@@ -255,7 +255,10 @@ def test_stale_enumeration_cache_does_not_change_classification(
                 observed = psutil.Process(child.pid)
                 if observed.exe() == str(pathlib.Path(executable).resolve()) and observed.cmdline() == child_command:
                     break
-                assert child.poll() is None and time.monotonic() < deadline, "子プロセスの起動状態を観測できない"
+                assert child.poll() is None and time.monotonic() < deadline, (
+                    "子プロセスの起動状態を観測できない。child.poll()、observed.exe()、observed.cmdline()を"
+                    "child_commandと比較して、子の早期終了と実行体・引数の不一致を切り分ける。"
+                )
                 time.sleep(0.01)
             current_exe = psutil.Process(child.pid).exe()
             if current_is_codex:

@@ -341,7 +341,10 @@ def test_symptomatic_restart_selects_and_stops_current_generation(
                 observed = psutil.Process(child.pid)
                 if observed.exe() == str(pathlib.Path(sys.executable).resolve()) and observed.cmdline() == child_command:
                     break
-                assert child.poll() is None and time.monotonic() < deadline, "子プロセスの起動状態を観測できない"
+                assert child.poll() is None and time.monotonic() < deadline, (
+                    "子プロセスの起動状態を観測できない。child.poll()、observed.exe()、observed.cmdline()を"
+                    "child_commandと比較して、子の早期終了と実行体・引数の不一致を切り分ける。"
+                )
                 time.sleep(0.01)
             # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
             stale = psutil.Process(child.pid)
