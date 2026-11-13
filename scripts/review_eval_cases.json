@@ -115,7 +115,7 @@
         "detect": [
           {
             "id": "known-consumer-not-executed",
-            "description": "変更契約を利用する試験と検証対象・個別結果の不整合を指摘する",
+            "description": "変更した契約を利用する試験と検証対象・個別結果の不整合を指摘する",
             "patterns": [
               "rules_context_temp_test|config_migration_test|atk_help_test",
               "未実行|実行対象|検証対象|実行結果|個別.*(結果|合否)|不足|漏れ"

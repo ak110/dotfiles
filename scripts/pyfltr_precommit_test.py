@@ -28,6 +28,29 @@ def _iso(offset_seconds: float) -> str:
     return (datetime.datetime.now(datetime.UTC) + datetime.timedelta(seconds=offset_seconds)).isoformat()
 
 
+@pytest.mark.parametrize("failure", ["missing-file", "git-listing"])
+def test_consumer_failure_reports_diagnostic_and_retry(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    """公開候補操作の失敗は診断を保持し、同じ操作の再試行を案内する。"""
+    repository = _repository(tmp_path)
+    monkeypatch.chdir(repository)
+    source = "src/missing.py" if failure == "missing-file" else "src/a.py"
+    diagnostic = source if failure == "missing-file" else "listing-failed"
+    if failure == "git-listing":
+        monkeypatch.setattr(
+            pyfltr_precommit.git_command,
+            "run",
+            lambda *args, **kwargs: subprocess.CompletedProcess([], 1, b"", b"listing-failed"),
+        )
+    assert pyfltr_precommit.main(["--consumer-tests", source]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert diagnostic in captured.err
+    assert "次の操作:" in captured.err
+    assert "--consumer-tests" in captured.err
+
+
 @pytest.mark.parametrize(
     "targets, expected",
     [(["src/a.py"], 1), (["src/a.py", "src/consumer_test.py"], 0), (["src"], 0), ([], 0)],
@@ -316,7 +339,10 @@ def test_verify_run_requires_head_content(tmp_path: pathlib.Path, monkeypatch: p
     ("reuse", "expected"), [(pyfltr_precommit.Reuse("01RUN", ""), 0), (pyfltr_precommit.Reuse(None, "理由"), 1)]
 )
 def test_main_verify_run_returns_result_without_commit(
-    monkeypatch: pytest.MonkeyPatch, reuse: pyfltr_precommit.Reuse, expected: int
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    reuse: pyfltr_precommit.Reuse,
+    expected: int,
 ) -> None:
     """`--verify-run`は`pyfltr fast`を起動せず、確かめた結果を終了コードで返す。"""
     launched: list[list[str]] = []
@@ -332,3 +358,8 @@ def test_main_verify_run_returns_result_without_commit(
 
     assert pyfltr_precommit.main(["--verify-run", "01RUN"]) == expected
     assert not launched
+    if expected == 1:
+        captured = capsys.readouterr()
+        assert reuse.reason in captured.err
+        assert "次の操作:" in captured.err
+        assert "--verify-run" in captured.err

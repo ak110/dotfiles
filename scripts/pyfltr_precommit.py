@@ -109,6 +109,12 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(consumer_tests(pathlib.Path.cwd(), args.files), ensure_ascii=False))
         except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
             print(f"候補列挙を確認できない: {exc}", file=sys.stderr)
+            print(
+                "次の操作: 入力パスがリポジトリ内の実在ファイルか確認せよ。"
+                "取得や読取に失敗した場合は、診断に示したGit状態とファイルの読取権限を確認せよ。"
+                "問題を直し、同じ引数で--consumer-testsを再実行せよ。",
+                file=sys.stderr,
+            )
             return 1
         return 0
     pyfltr = shutil.which("pyfltr")
@@ -123,6 +129,11 @@ def main(argv: list[str] | None = None) -> int:
         if verified.run_id is None:
             print(
                 f"pyfltr-precommit: run {args.verify_run}は現在のHEADの内容の成功と確かめられない（{verified.reason}）。",
+                file=sys.stderr,
+            )
+            print(
+                "次の操作: 診断の原因と対象HEADを確認し、必要な利用側試験を含むpyfltr runを成功させよ。"
+                "その実行IDを--verify-runへ渡せ。",
                 file=sys.stderr,
             )
             return 1

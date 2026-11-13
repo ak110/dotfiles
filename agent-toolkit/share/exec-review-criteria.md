@@ -20,7 +20,7 @@
 | 要求の縮小を判定する時 | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-authorization.md` |
 | AWIの新旧形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
 
-利用側試験の被覆は、`agent-basics:review-standards/references/reviewer-execution.md`「直接影響範囲」の独自列挙と、提出探索の既知候補から個別の合否までの対応で判定する。
+利用側試験の被覆は、`agent-basics:review-standards/references/reviewer-execution.md`「実行レビューの判定」の直接影響範囲の項に従い、独自列挙と、提出探索の既知候補から個別の合否までの対応で判定する。
 探索出力だけを取得し、その候補が検証へ引き継がれたかを未確認のまま合格にしない。
 
 ## 専用レビュータスク契約
