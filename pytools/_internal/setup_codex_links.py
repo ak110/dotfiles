@@ -5,6 +5,7 @@ Linux/macOSではシンボリックリンクを、Windowsではディレクト�
 """
 
 import logging
+import ntpath
 import os
 import sys
 from pathlib import Path
@@ -83,16 +84,32 @@ def sync_directory_link(dest: Path, target: Path) -> bool:
     """ディレクトリリンクを期待する参照先へ収束させる。"""
     # is_symlink単独だとリンク切れも捕捉できるが、リンク切れのジャンクションは
     # is_symlinkがFalseを返すため_is_link_likeも条件へ加え、CreateJunctionの衝突を避ける。
-    if dest.exists() or dest.is_symlink() or _is_link_like(dest):
-        if not _is_link_like(dest):
-            raise FileExistsError(dest)
+    if _is_link_like(dest):
+        stored = dest.readlink()
+        stored = stored if stored.is_absolute() else dest.parent / stored
+        if _normalized_link_path(stored) == _normalized_link_path(target):
+            return False
         if dest.resolve() == target.resolve():
             return False
         _remove_link(dest)
+    elif dest.exists():
+        raise FileExistsError(dest)
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     _create_link(dest, target)
     return True
+
+
+def _normalized_link_path(path: Path) -> str:
+    """参照先へアクセスせず、リンクに格納された絶対パスを比較する。"""
+    value = os.path.abspath(path)
+    if sys.platform == "win32":
+        if value.startswith("\\\\?\\UNC\\"):
+            value = "\\\\" + value[8:]
+        elif value.startswith("\\\\?\\"):
+            value = value[4:]
+        return ntpath.normcase(ntpath.normpath(value))
+    return os.path.normpath(value)
 
 
 def _is_link_like(path: Path) -> bool:

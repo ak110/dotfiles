@@ -1,5 +1,6 @@
 """pytools._internal.setup_codex_links のテスト。"""
 
+import errno
 import logging
 import sys
 from pathlib import Path
@@ -9,6 +10,46 @@ import pytest
 from pytools._internal import claude_common, common, setup_codex_links, sync_agent_toolkit_rules
 
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
+
+
+@pytest.mark.parametrize("error_number", [errno.EACCES, errno.EIO])
+def test_readlink_failure_does_not_scan_or_replace(monkeypatch, tmp_path: Path, error_number: int) -> None:
+    """格納情報の取得失敗を残し、走査や置換で隠さない。"""
+    dest = tmp_path / "alias"
+    dest.symlink_to("target", target_is_directory=True)
+
+    def denied(path: Path, **kwargs: object) -> Path:
+        del path, kwargs
+        raise OSError(error_number, "readlink denied")
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        pytest.fail("格納情報が不明なリンクを走査または置換した")
+
+    monkeypatch.setattr(Path, "readlink", denied)
+    monkeypatch.setattr(Path, "resolve", forbidden)
+    monkeypatch.setattr(setup_codex_links, "_remove_link", forbidden)
+    with pytest.raises(OSError) as caught:
+        setup_codex_links.sync_directory_link(dest, tmp_path / "target")
+    assert caught.value.errno == error_number
+
+
+def test_stored_destination_is_kept_without_target_access(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """格納先が一致するリンクは、別名経由の走査が拒否されても保持する。"""
+    dest = tmp_path / "alias"
+    target = tmp_path / "target"
+    dest.symlink_to("target", target_is_directory=True)
+    original = Path.resolve
+
+    def resolve(path: Path, *, strict: bool = False, **kwargs: object) -> Path:
+        del kwargs
+        if path == dest:
+            raise PermissionError("alias denied")
+        return original(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    assert setup_codex_links.sync_directory_link(dest, target) is False
+    assert dest.readlink() == Path("target")
 
 
 @pytest.fixture(name="env")
@@ -270,6 +311,7 @@ def test_windows_recreates_link_when_junction_like_dangling(
 
     monkeypatch.setattr(setup_codex_links.sys, "platform", "win32")
     monkeypatch.setattr(setup_codex_links, "_is_link_like", lambda path: path == dest)
+    monkeypatch.setattr(Path, "readlink", lambda path: dotfiles_root / "missing")
 
     calls: list[str] = []
     monkeypatch.setattr(setup_codex_links, "_remove_link", lambda path: calls.append("remove"))

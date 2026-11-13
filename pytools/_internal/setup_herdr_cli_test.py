@@ -1,5 +1,6 @@
 """pytools._internal.setup_herdr_cliのテスト。"""
 
+import errno
 import os
 import subprocess
 from collections.abc import Callable
@@ -9,6 +10,106 @@ import httpx
 import pytest
 
 from pytools._internal import post_apply_outcome, setup_herdr_cli
+
+
+@pytest.mark.parametrize("operation", ["readlink", "resolve", "stat"])
+@pytest.mark.parametrize("error_number", [errno.EACCES, errno.EIO])
+def test_windows_io_failure_never_reinstalls(monkeypatch, tmp_path: Path, operation: str, error_number: int) -> None:
+    """リンク・本体の権限不足と未知I/O失敗は未導入に変換しない。"""
+    monkeypatch.setattr(setup_herdr_cli.sys, "platform", "win32")
+    home = tmp_path / "home"
+    monkeypatch.setenv("HERDR_HOME", str(home))
+    monkeypatch.setenv("HERDR_INSTALL_DIR", str(tmp_path / "visible"))
+    release = home / "packages/standalone/releases/version"
+    release.mkdir(parents=True)
+    executable = release / "herdr.exe"
+    executable.write_bytes(b"native")
+    current = release.parent.parent / "current"
+    current.symlink_to(release, target_is_directory=True)
+    original = getattr(Path, operation)
+    rejected = current if operation == "readlink" else executable
+
+    def inspect(path: Path, *args, **kwargs):
+        if path == rejected:
+            raise OSError(error_number, "inspection denied")
+        return original(path, *args, **kwargs)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        pytest.fail("I/O失敗後に導入または本体実行を行った")
+
+    monkeypatch.setattr(Path, operation, inspect)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", forbidden)
+    monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "run_official_installer", forbidden)
+    with pytest.raises(OSError) as caught:
+        setup_herdr_cli.run()
+    assert caught.value.errno == error_number
+
+
+@pytest.mark.parametrize("kind", ["missing", "outside", "cycle", "npm"])
+def test_windows_unowned_launcher_is_not_executed(monkeypatch, tmp_path: Path, kind: str) -> None:
+    """未導入と不正なリンク、旧ランチャーだけの状態から未知の本体を起動しない。"""
+    monkeypatch.setattr(setup_herdr_cli.sys, "platform", "win32")
+    home = tmp_path / "home"
+    visible = tmp_path / "bin"
+    monkeypatch.setenv("HERDR_HOME", str(home))
+    monkeypatch.setenv("HERDR_INSTALL_DIR", str(visible))
+    root = home / "packages/standalone"
+    (root / "releases").mkdir(parents=True)
+    current = root / "current"
+    if kind == "outside":
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "herdr.exe").write_bytes(b"native")
+        current.symlink_to(outside, target_is_directory=True)
+    elif kind == "cycle":
+        current.symlink_to(current, target_is_directory=True)
+    elif kind == "npm":
+        visible.mkdir()
+        (visible / "herdr.cmd").write_text("node missing.js", encoding="utf-8")
+    installers: list[bool] = []
+
+    def installer(*args: object, **kwargs: object) -> tuple[None, str]:
+        del args, kwargs
+        installers.append(True)
+        return None, "installer unavailable"
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        pytest.fail("未知の本体を起動した")
+
+    monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "run_official_installer", installer)
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", forbidden)
+    assert setup_herdr_cli.run().changed is False
+    assert installers == [True]
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_windows_owned_release_update_avoids_visible_alias(monkeypatch, tmp_path: Path, failure: bool) -> None:
+    """設定先の版実体で更新と確認を行い、本体の失敗は変更成功にしない。"""
+    monkeypatch.setattr(setup_herdr_cli.sys, "platform", "win32")
+    home = tmp_path / "custom-home"
+    monkeypatch.setenv("HERDR_HOME", str(home))
+    monkeypatch.setenv("HERDR_INSTALL_DIR", str(tmp_path / "custom-bin"))
+    release = home / "packages/standalone/releases/version"
+    release.mkdir(parents=True)
+    executable = release / "herdr.exe"
+    executable.write_bytes(b"native")
+    (release.parent.parent / "current").symlink_to(release, target_is_directory=True)
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        del kwargs
+        calls.append(command)
+        return subprocess.CompletedProcess(command, int(failure), "", "unknown failure" if failure else "")
+
+    monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", run)
+    monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", lambda path: None)
+    outcome = setup_herdr_cli.run()
+    assert outcome.changed is not failure
+    assert calls == (
+        [[str(executable), "update"]] if failure else [[str(executable), "update"], [str(executable), "--version"]]
+    )
 
 
 def _fake_client(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.Client:
@@ -175,7 +276,9 @@ def test_run_installs_windows_direct_install(
         monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
     else:
         monkeypatch.delenv("LOCALAPPDATA", raising=False)
-    launcher = local_app_data / "Programs" / "Herdr" / "bin" / "herdr.exe"
+    monkeypatch.setenv("HERDR_HOME", str(tmp_path / ".herdr"))
+    monkeypatch.delenv("HERDR_INSTALL_DIR", raising=False)
+    launcher = tmp_path / ".herdr/packages/standalone/releases/version/herdr.exe"
     requested: list[str] = []
     commands: list[list[str]] = []
     installer_curl_home: list[Path] = []
@@ -194,6 +297,7 @@ def test_run_installs_windows_direct_install(
         if command[0] == "pwsh":
             launcher.parent.mkdir(parents=True)
             launcher.write_text("", encoding="utf-8")
+            (launcher.parent.parent.parent / "current").symlink_to(launcher.parent, target_is_directory=True)
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
     monkeypatch.setattr(setup_herdr_cli.common, "run_subprocess", fake_run)
@@ -236,10 +340,13 @@ def test_run_passes_same_curl_home_to_all_windows_children(
     monkeypatch.setattr(setup_herdr_cli.setup_cli_common, "prepend_path", lambda path: None)
     monkeypatch.setenv("CURL_HOME", str(tmp_path / "original-curl-home"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
-    launcher = tmp_path / "local" / "Programs" / "Herdr" / "bin" / "herdr.exe"
+    monkeypatch.setenv("HERDR_HOME", str(tmp_path / ".herdr"))
+    monkeypatch.delenv("HERDR_INSTALL_DIR", raising=False)
+    launcher = tmp_path / ".herdr/packages/standalone/releases/version/herdr.exe"
     if installed:
         launcher.parent.mkdir(parents=True)
         launcher.write_text("", encoding="utf-8")
+        (launcher.parent.parent.parent / "current").symlink_to(launcher.parent, target_is_directory=True)
     received: list[tuple[list[str], object, str | None]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -251,6 +358,7 @@ def test_run_passes_same_curl_home_to_all_windows_children(
         if command[0] == "pwsh":
             launcher.parent.mkdir(parents=True)
             launcher.write_text("", encoding="utf-8")
+            (launcher.parent.parent.parent / "current").symlink_to(launcher.parent, target_is_directory=True)
         returncode = update_returncode if command[-1] == "update" else 0
         return subprocess.CompletedProcess(command, returncode, "ok", "update failed")
 

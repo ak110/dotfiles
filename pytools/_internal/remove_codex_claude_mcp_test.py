@@ -1,6 +1,7 @@
 """CodexのClaude MCP登録削除処理を検証する。"""
 
 import subprocess
+import types
 from collections.abc import Callable
 from pathlib import Path
 
@@ -13,9 +14,26 @@ type Result = subprocess.CompletedProcess[str] | None
 
 
 @pytest.fixture(autouse=True)
-def _resolve_codex(monkeypatch: pytest.MonkeyPatch) -> None:
+def _resolve_codex(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
     """Codex CLIをテスト用のコマンド名へ固定する。"""
-    monkeypatch.setattr(remove_codex_claude_mcp.common, "resolve_executable", lambda _name: Path("codex"))
+    if request.node.name != "test_wrapper_alone_does_not_trigger_removal":
+        monkeypatch.setattr(remove_codex_claude_mcp.codex_runtime, "find_runtime_launcher", lambda **kwargs: Path("codex"))
+
+
+def test_wrapper_alone_does_not_trigger_removal(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """wrapperだけが見つかる未導入環境では削除コマンドを実行しない。"""
+    monkeypatch.setattr(remove_codex_claude_mcp, "sys", types.SimpleNamespace(platform="win32"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty"))
+    monkeypatch.setenv("CODEX_INSTALL_DIR", str(tmp_path / "empty-visible"))
+    monkeypatch.setattr(remove_codex_claude_mcp.codex_runtime, "sys", types.SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(remove_codex_claude_mcp.common, "resolve_executable", lambda name: tmp_path / "codex.cmd")
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        pytest.fail("未導入の本体を起動した")
+
+    monkeypatch.setattr(remove_codex_claude_mcp.common, "run_subprocess", forbidden)
+    assert remove_codex_claude_mcp.run().changed is False
 
 
 def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
@@ -88,7 +106,7 @@ def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_run_skips_when_codex_is_unresolved(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     """Codex CLIを解決できない場合は手動確認を促して変更なしとする。"""
-    monkeypatch.setattr(remove_codex_claude_mcp.common, "resolve_executable", lambda _name: None)
+    monkeypatch.setattr(remove_codex_claude_mcp.codex_runtime, "find_runtime_launcher", lambda **kwargs: None)
     monkeypatch.setattr(
         remove_codex_claude_mcp.common,
         "run_subprocess",
