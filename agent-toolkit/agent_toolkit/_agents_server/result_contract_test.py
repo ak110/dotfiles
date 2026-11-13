@@ -434,7 +434,12 @@ def test_role_task_requires_fixed_line_or_classified_reason(name: str, message: 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_role_free_text_recovery_raises_effort_once(
-    monkeypatch: pytest.MonkeyPatch, launch_kind: str, effort: str, expected: str, lookup_fails: bool
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    launch_kind: str,
+    effort: str,
+    expected: str,
+    lookup_fails: bool,
 ) -> None:
     """自由文の早期返却は保留し、回復入力の前に通常委譲のeffortを1段上げ、2回目は診断付きで公開する。
 
@@ -471,6 +476,8 @@ async def test_role_free_text_recovery_raises_effort_once(
     else:
         backend.set_effort.assert_not_awaited()
         assert "effortを" not in prompts[0]
+    # 段を取得できない場合は、回復を続けた事実と委譲元が手動で上げる操作をログで案内する。
+    assert (f"`atk agents effort up {session.session_id}`" in caplog.text) is lookup_fails
     result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
     assert not result_contract.hold_invalid_result(session, result)
     error = result["error"]

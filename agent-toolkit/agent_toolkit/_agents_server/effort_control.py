@@ -132,10 +132,19 @@ async def raise_for_result_contract(
             session.touch()
         warning = await session.publish_registration_async()
         if warning is not None:
-            _LOG.warning("effort引き上げ後の登録を保存できない: session_id=%s %s", session.session_id, warning)
+            _LOG.warning(
+                "effort引き上げ後の登録を保存できない。回復入力は送る。共有状態のeffortが変更前のままの可能性があるため、"
+                "`atk agents show %s`でeffortを確かめよ: %s",
+                session.session_id,
+                warning,
+            )
     except Exception:  # pylint: disable=broad-exception-caught
-        # 引き上げは回復の補助であり、失敗しても回復入力は送る。原因は所有MCPのログで確かめる。
-        _LOG.exception("返却形式の回復前にeffortを上げられない: session_id=%s", session.session_id)
+        # 引き上げは回復の補助であり、失敗しても回復入力は送る。
+        _LOG.exception(
+            "返却形式の回復前にeffortを上げられない。effortを変えずに回復入力を送る。"
+            "上げる場合は委譲元が`atk agents effort up %s`を実行し、失敗の原因は続く例外で確かめよ",
+            session.session_id,
+        )
         return None
     return previous or "", updated
 
