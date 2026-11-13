@@ -27,5 +27,3 @@ UWIの書式については`uwi-format.md`を参照する。
 | 投入前の読み直しに関する判断・作業の前 | `drafting-completion-validation.md` |
 | 方針と判断の記録との比較に関する判断・作業の前 | `drafting-completion-policies.md` |
 | 既存証拠の再利用に関する判断・作業の前 | `drafting-completion-evidence.md` |
-
-## 本文参照の取得条件
