@@ -222,11 +222,13 @@ def test_pop_removes_only_matching_content_from_stop_and_advisor(tmp_path: pathl
     ]
     assert _background_tasks.queued_task_notification_contents(entries) == [second, first]
     transcript = _write_transcript(tmp_path, entries)
-    assert _background_tasks.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+    assert _background_tasks.is_pending_async_work(str(transcript), "queued-session", background_tasks=[], session_state=None)
     entries.extend([_queue(operation, first), _queue(operation, second)])
     transcript = _write_transcript(tmp_path, entries)
     assert _evaluate(transcript) == ("approve", "")
-    assert not _background_tasks.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+    assert not _background_tasks.is_pending_async_work(
+        str(transcript), "queued-session", background_tasks=[], session_state=None
+    )
 
 
 @pytest.mark.parametrize("operation", ["popAll", "popOne"])
@@ -257,7 +259,9 @@ def test_notification_delivered_after_reclaimed_input_is_silent(tmp_path: pathli
     transcript = _write_transcript(tmp_path, entries)
 
     assert _evaluate(transcript) == ("approve", "")
-    assert not _background_tasks.is_pending_async_work(str(transcript), "queued-session", background_tasks=[])
+    assert not _background_tasks.is_pending_async_work(
+        str(transcript), "queued-session", background_tasks=[], session_state=None
+    )
 
 
 def test_notification_stays_when_agent_message_is_dequeued_first(tmp_path: pathlib.Path) -> None:

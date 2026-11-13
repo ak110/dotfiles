@@ -129,12 +129,23 @@ def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool
     return len(valid_tasks), non_teammate_tasks, len(valid_tasks) == len(background_tasks)
 
 
+def is_pending_async_work_from_payload(payload: dict, session_id: str, *, session_state: object) -> bool:
+    """Stop入力のtranscriptパスを正規化し、入力と保存状態から非同期待機を判定する。"""
+    raw_transcript = payload.get("transcript_path", "")
+    return is_pending_async_work(
+        raw_transcript if isinstance(raw_transcript, str) else "",
+        session_id,
+        background_tasks=payload.get("background_tasks"),
+        session_state=session_state,
+    )
+
+
 def is_pending_async_work(
     transcript_path: str,
     session_id: str,
     *,
     background_tasks: object = None,
-    session_state: object = None,
+    session_state: object,
     owner_agent_id: str = "main",
 ) -> bool:
     """セッションが構造的に継続中の場合に真を返す。
@@ -192,6 +203,8 @@ def is_pending_async_work(
     transcriptを読み取れない異常系ではtranscript由来の根拠を偽とし、
     Stop入力とセッション状態の根拠は独立に判定する。
     `session_id`は常時ログ（`append_stop_log`）の宛先ファイル特定にのみ使う。
+    `session_state`は省略できない。省くとagents_serverの未回収の終了結果を根拠にした待機を判定できず、
+    呼び出し元ごとの付け忘れが待機中のセッションの誤判定になるため、状態を持たない呼び出しは`None`を明示する。
     """
     cache_key = _pending_cache_key(transcript_path, session_id, background_tasks, session_state)
     if cache_key in _PENDING_ASYNC_WORK_CACHE:

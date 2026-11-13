@@ -179,7 +179,8 @@ def test_saved_stage_combinations(tmp_path: pathlib.Path, flags: tuple[bool, boo
         assert ownership.unfinished_repository_ids((owner.repo_id,)) == (set() if flags[0] else {owner.repo_id})
     else:
         with pytest.raises(ValueError, match="段階の組合せ"):
-            ownership.unfinished_repository_ids((owner.repo_id,))
+            ownership.try_acquire(owner.repo_id, worktree=repo)
+        assert not ownership.unfinished_repository_ids((owner.repo_id,))
 
 
 @pytest.mark.parametrize("key", ["completed", "released", "held"])
@@ -194,6 +195,43 @@ def test_saved_stage_requires_bool(tmp_path: pathlib.Path, key: str, value: obje
     owner.path.write_text(json.dumps(record), encoding="utf-8")
     with pytest.raises(ValueError, match="bool"):
         ownership.try_acquire(owner.repo_id, worktree=repo)
+
+
+@pytest.mark.parametrize("failure", ["directory", "writers", "residual", "mode"])
+def test_unreadable_record_is_excluded_from_resume(tmp_path: pathlib.Path, failure: str) -> None:
+    """読取失敗と形式不正は再開先から除き、取得時は対象限定の失敗として返す。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    owner = ownership.try_acquire("example.test/team/repo", worktree=repo, mode="coordinator")
+    assert owner is not None
+    stored = json.loads(owner.path.read_text(encoding="utf-8"))
+    if failure == "directory":
+        owner.path.unlink()
+        owner.path.mkdir()
+    else:
+        stored.update(
+            {"writer_sessions": 1}
+            if failure == "writers"
+            else {"residual_processes": [{"pid": 1}]}
+            if failure == "residual"
+            else {"mode": []}
+        )
+        owner.path.write_text(json.dumps(stored), encoding="utf-8")
+    assert ownership.coordinator_session(owner.repo_id) is None
+    assert not ownership.unfinished_repository_ids((owner.repo_id,))
+    with pytest.raises(ownership.UnreadableOwnershipError):
+        ownership.try_acquire(owner.repo_id, worktree=repo)
+
+
+def test_ownership_write_failure_is_not_a_read_failure(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """保存自体の障害は読めない記録として隠さず伝播させる。"""
+    repo = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+
+    def fail_write(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("保存拒否")
+
+    monkeypatch.setattr(ownership, "atomic_write", fail_write)
+    with pytest.raises(PermissionError, match="保存拒否"):
+        ownership.try_acquire("example.test/team/repo", worktree=repo)
 
 
 @pytest.mark.parametrize("residual", [{}, [{}], [{"pid": "1"}], [{"command": "codex exec"}]])

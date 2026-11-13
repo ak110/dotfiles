@@ -26,7 +26,7 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
-lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work
+lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work_from_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 lazy from agent_toolkit._plan.locations import working_plans_root
@@ -70,17 +70,11 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_process_loop_session", {})
         return "approve", ""
 
-    raw_transcript = payload.get("transcript_path", "")
-    transcript_path = raw_transcript if isinstance(raw_transcript, str) else ""
-    if is_pending_async_work(
-        transcript_path,
-        session_id,
-        background_tasks=payload.get("background_tasks"),
-    ):
+    state = read_state(session_id)
+    if is_pending_async_work_from_payload(payload, session_id, session_state=state):
         append_stop_log(session_id, "approve_pending_async", {})
         return "approve", ""
 
-    state = read_state(session_id)
     if state.get(_PROCESS_WI_STATE_KEY) is True:
         append_stop_log(session_id, "approve_process_wi_running", {})
         return "approve", ""

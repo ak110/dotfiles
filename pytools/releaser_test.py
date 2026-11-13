@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import pytest
 import yaml
+from agent_toolkit._git import stale_lock
 from agent_toolkit._testing import git_repository
 
 from pytools import releaser
@@ -496,3 +497,51 @@ def test_sync_local_repo_without_upstream_fails(tmp_path: Path, monkeypatch: pyt
         _sync_local_repo()
 
     assert subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout == head
+
+
+def _stale_lock_sync_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """上流に新しいcommitがあるローカルリポジトリを作り、その`.git/index.lock`のパスを返す。"""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "master", str(origin)], check=True)
+    upstream_work = tmp_path / "upstream-work"
+    _setup_git_repo(upstream_work)
+    _make_commit(upstream_work, "first")
+    subprocess.run(["git", "-C", str(upstream_work), "push", "-q", str(origin), "master"], check=True)
+    local = tmp_path / "local"
+    subprocess.run(["git", "clone", "-q", str(origin), str(local)], check=True)
+    _make_commit(upstream_work, "second")
+    subprocess.run(["git", "-C", str(upstream_work), "push", "-q", str(origin), "master"], check=True)
+    monkeypatch.chdir(local)
+    monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter([]))
+    monkeypatch.setattr(stale_lock, "POLL_INITIAL_SECONDS", 0.02)
+    monkeypatch.setattr(stale_lock, "POLL_MAX_SECONDS", 0.05)
+    monkeypatch.setattr(stale_lock, "DEFAULT_WAIT_SECONDS", 0.5)
+    return local / ".git" / "index.lock"
+
+
+def test_sync_local_repo_recovers_from_stale_index_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """リリース後の同期は、所有者のいない`index.lock`を回収して1回だけ再実行し、上流へ追従する。"""
+    lock = _stale_lock_sync_setup(tmp_path, monkeypatch)
+    lock.write_bytes(b"")
+
+    _sync_local_repo()
+
+    assert not lock.exists()
+    local_head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout
+    upstream_head = subprocess.run(["git", "rev-parse", "@{upstream}"], capture_output=True, text=True, check=True).stdout
+    assert local_head == upstream_head
+
+
+def test_sync_local_repo_keeps_lock_of_live_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """生存中の所有者のロックは回収せず、判定結果を標準エラーへ示して失敗する。"""
+    lock = _stale_lock_sync_setup(tmp_path, monkeypatch)
+    lock.write_bytes(b"")
+    stale_lock.write_record(lock.parent, lock.with_name("index"), lock.stat())
+
+    with pytest.raises(subprocess.CalledProcessError):
+        _sync_local_repo()
+
+    assert lock.exists()
+    assert "回収しませんでした" in capsys.readouterr().err

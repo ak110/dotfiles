@@ -109,6 +109,7 @@ def test_stop_accepts_task_notification_wait_turn(
     """完了通知を最新入力とする待機の回を人間の新しい発話として扱わない。"""
     output = _stop([_HUMAN, notification, _assistant("…")], tmp_path, capsys)
     assert output.get("decision") != "block"
+    assert not _has_advisor_notice(output)
 
 
 @pytest.mark.parametrize(
@@ -308,3 +309,143 @@ def test_contract_guidance_update_and_ellipsis_reaches_public_stop(tmp_path, mon
     assert stopped.returncode == 0 and not stopped.stderr
     context = output_text(json.loads(stopped.stdout)) if stopped.stdout else ""
     assert ('source="user_response_advisor"' in context) is (prompt != "OK")
+
+
+def _bash_launch(tool_use_id: str, task_id: str, command: str = "sleep 1") -> list[dict]:
+    """背景Bashの起動呼び出しと、`backgroundTaskId`を持つ起動結果の記録を返す。"""
+    call = {
+        "type": "assistant",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": tool_use_id,
+                    "name": "Bash",
+                    "input": {"command": command, "run_in_background": True},
+                }
+            ]
+        },
+    }
+    result = {
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": "started"}]},
+        "toolUseResult": {"backgroundTaskId": task_id},
+    }
+    return [call, result]
+
+
+# test-copy-contract: 常駐だけでは応答不足通知を免除せず、有限Bashの待機だけ免除する契約。
+@pytest.mark.parametrize("command, warns", [("uvicorn app:app", True), ("sleep 1", False)])
+def test_stop_distinguishes_resident_and_finite_bash(
+    command: str, warns: bool, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """常駐だけの未応答は通知し、有限Bashを待つ終了は免除する。"""
+    entries = [_HUMAN, *_bash_launch("toolu_b1", "bg1", command), _assistant("…")]
+    assert _has_advisor_notice(_stop(entries, tmp_path, capsys)) is warns
+
+
+def _agent_launch(tool_use_id: str, agent_id: str, *, background: bool) -> list[dict]:
+    """Agentの起動呼び出しと結果の記録を返す。前景は同期完了の結果、背景は`async_launched`を持つ。"""
+    call = {
+        "type": "assistant",
+        "message": {"content": [{"type": "tool_use", "id": tool_use_id, "name": "Agent", "input": {"prompt": "調査"}}]},
+    }
+    status = "async_launched" if background else "completed"
+    result = {
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": "結果"}]},
+        "toolUseResult": {"status": status, "agentId": agent_id},
+    }
+    return [call, result]
+
+
+def _completion(tool_use_id: str, task_id: str) -> dict:
+    """完了通知の記録を返す。"""
+    prompt = (
+        f"<task-notification><task-id>{task_id}</task-id><tool-use-id>{tool_use_id}</tool-use-id>"
+        "<status>completed</status></task-notification>"
+    )
+    return {
+        "type": "attachment",
+        "attachment": {"type": "queued_command", "commandMode": "task-notification", "prompt": prompt},
+    }
+
+
+def _task_stop(task_id: str) -> dict:
+    """TaskStopの停止成功結果の記録を返す。"""
+    return {
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_stop", "content": "停止した"}]},
+        "toolUseResult": {"task_id": task_id, "message": "Successfully stopped task: " + task_id},
+    }
+
+
+def _has_advisor_notice(output: dict) -> bool:
+    return 'source="user_response_advisor"' in output.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+
+# test-copy-contract: 通知前の背景Bash・背景Agent待機の`…`へ応答不足の通知を返さない契約。
+@pytest.mark.parametrize(
+    "launch",
+    [_bash_launch("toolu_b1", "bg1"), _agent_launch("toolu_a1", "agent1", background=True)],
+    ids=["background-bash", "background-agent"],
+)
+def test_stop_accepts_ellipsis_while_waiting_for_background_task(
+    launch: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """人間入力の後に起動した未完了のバックグラウンドタスクを待つ`…`だけの終了は、警告しない。"""
+    output = _stop([_HUMAN, *launch, _assistant("…")], tmp_path, capsys)
+    assert not _has_advisor_notice(output)
+
+
+# test-copy-contract: 待機対象が無い未応答・同期完了・空本文・新しい人間入力の後・全対象終了後は応答不足を通知する契約。
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [_HUMAN, _assistant("…")],
+        [_HUMAN, *_agent_launch("toolu_a1", "agent1", background=False), _assistant("…")],
+        [_HUMAN, *_bash_launch("toolu_b1", "bg1"), _assistant("")],
+        [*_bash_launch("toolu_b1", "bg1"), _HUMAN, _assistant("…")],
+        [_HUMAN, *_bash_launch("toolu_b1", "bg1"), _QUEUED, _assistant("…")],
+        [_HUMAN, *_bash_launch("toolu_b1", "bg1"), _task_stop("bg1"), _assistant("…")],
+        [
+            _HUMAN,
+            *_bash_launch("toolu_b1", "bg1"),
+            *_bash_launch("toolu_b2", "bg2"),
+            _task_stop("bg1"),
+            _task_stop("bg2"),
+            _assistant("…"),
+        ],
+    ],
+    ids=["no-task", "sync-agent", "empty-body", "launched-before-input", "new-human-input", "stopped", "all-stopped"],
+)
+def test_stop_notifies_when_no_background_task_is_awaited(
+    entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """待機対象の無い未応答、同期完了、空本文、新しい人間入力の後、全対象の終了後は従来どおり警告する。"""
+    assert _has_advisor_notice(_stop(entries, tmp_path, capsys))
+
+
+# test-copy-contract: 一部のバックグラウンドタスクが残る間の`…`待機へ通知を返さない契約。
+def test_stop_accepts_ellipsis_while_some_background_tasks_remain(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """複数のバックグラウンドタスクの一部が終了しても、残る対象を待つ`…`は警告しない。"""
+    entries = [_HUMAN, *_bash_launch("toolu_b1", "bg1"), *_bash_launch("toolu_b2", "bg2"), _task_stop("bg1"), _assistant("…")]
+    assert not _has_advisor_notice(_stop(entries, tmp_path, capsys))
+
+
+# test-copy-contract: 通知後の新しい人間入力で本文が無い終了は通知する契約。
+def test_stop_notifies_after_completion_notification_and_empty_reply(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """通知前の待機を免除しても、通知後の新しい人間入力で本文が無い終了は警告する。"""
+    entries = [
+        _HUMAN,
+        *_bash_launch("toolu_b1", "bg1"),
+        _assistant("…"),
+        _completion("toolu_b1", "bg1"),
+        _QUEUED,
+        _assistant("…"),
+    ]
+    assert _has_advisor_notice(_stop(entries, tmp_path, capsys))

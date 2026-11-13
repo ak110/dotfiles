@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import json
+import logging
 from typing import Any
 
 import pytest
@@ -17,6 +18,54 @@ from agent_toolkit._testing.codex_provider_support import ProviderClient, backen
 # pylint: disable=protected-access
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+async def test_turn_start_rejection_keeps_diagnostic_log_for_generic_error(monkeypatch, tmp_path, provider_environment, caplog):
+    """上限中のサブスクリプションを除いた従量課金の拒否は、公開errorへ接続先を出さず診断ログへ残す。"""
+    del provider_environment
+    caplog.set_level(logging.INFO, logger="agent-toolkit.agents-server.codex")
+    async with manager.AgentsServerManager() as root:
+        client = ProviderClient()
+        client.allowed = False
+        async with backend_with_client(monkeypatch, client, root) as backend:
+            install_backend(root, "codex", backend)
+            original_request = client.request
+
+            async def request(method, params=None, **kwargs):
+                if method == "turn/start":
+                    raise codex.JsonRpcResponseError(
+                        method,
+                        -32600,
+                        "payg provider refused the turn",
+                        {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401}}},
+                    )
+                return await original_request(method, params, **kwargs)
+
+            monkeypatch.setattr(client, "request", request)
+            monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.01)
+            root.activate()
+            try:
+                started = await asyncio.wait_for(root.start("codex:gpt-6-sol/high", "元の作業", str(tmp_path)), 5)
+                root._wait_timeouts["main"] = 3
+                result = await asyncio.wait_for(root.wait(), 5)
+                session = root.sessions["thread-codex"]
+                message = result["error"]["message"]
+                assert message.startswith("Codex connection rejected the request")
+                assert f"session_id={session.session_id}" in message
+                assert "paid-a" not in message and "payg provider refused" not in message
+                assert "paid-a" not in json.dumps(started)
+                logged = [
+                    r.getMessage()
+                    for r in caplog.records
+                    if session.session_id in r.getMessage() and "汎用文言" in r.getMessage()
+                ]
+                # 従量課金の候補ごとの拒否が1行ずつ残る。
+                assert len(logged) == 2
+                assert "provider=paid-a" in logged[0] and "provider=paid-b" in logged[1]
+                assert all("payg provider refused the turn" in line and "code=-32600" in line for line in logged)
+            finally:
+                await root.close()
 
 
 @pytest.mark.asyncio

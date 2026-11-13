@@ -119,3 +119,16 @@ def test_record_survives_restart_and_is_cleared(tmp_path: pathlib.Path, monkeypa
     )
     loop.cmd_process_loop(args, notes)
     assert not list(gate.record_directory().glob("*.json"))
+
+
+def test_unreadable_no_progress_record_launches_with_warning(capsys: pytest.CaptureFixture[str]) -> None:
+    """解釈できない無進捗記録は例外にせず、警告を出して記録なしとして担当を起動する。"""
+    path = gate._path(_REPO)  # pylint: disable=protected-access
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{", encoding="utf-8")
+
+    decision = gate.decide(_REPO, gate.LaunchInput(frozenset({("a.md", "h", "ready")}), None))
+
+    assert decision.launch
+    stderr = capsys.readouterr().err
+    assert str(path) in stderr and "記録なしとして担当を起動する" in stderr

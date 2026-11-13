@@ -12,6 +12,7 @@ from typing import Any, Self, cast
 import platformdirs
 import psutil
 import pytest
+from agent_toolkit._git import stale_lock
 from agent_toolkit._testing.isolation import restore_host_environment
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -69,7 +70,9 @@ def _own_git_process_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     実ガードが更新を見送ると、回復処理を検証する試験の合否が環境で変わる。
     照合と走査例外の扱い自体は製品の判定を通し、専用試験が走査結果を個別に差し替えて確かめる。
     """
-    monkeypatch.setattr(update_dotfiles_git.psutil, "process_iter", _own_process_iter)
+    monkeypatch.setattr(stale_lock.psutil, "process_iter", _own_process_iter)
+    # 取得後の生存gitの終了待ちは、試験では短くする。
+    monkeypatch.setattr(update_dotfiles_git, "_PROCESS_EXIT_GRACE_SECONDS", 0.3)
 
 
 @pytest.fixture(autouse=True)

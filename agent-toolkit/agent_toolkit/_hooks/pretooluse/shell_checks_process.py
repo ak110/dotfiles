@@ -7,7 +7,7 @@ import re
 import warnings
 lazy from collections.abc import Sequence
 
-lazy from agent_toolkit._common.bash_invocations import BashInvocation, extract_bash_invocations
+lazy from agent_toolkit._common.bash_invocations import _bash_substitution, extract_bash_invocations
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments, split_bash_segments
 lazy from agent_toolkit._common.shell_tokens import split_words
 lazy from agent_toolkit._common.uv_arguments import is_python_token
@@ -16,18 +16,28 @@ lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice
 lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._hooks.pretooluse.shell_checks_search import (
     _PROCESS_KILL_BY_PATTERN_RE,
-    _PROCESS_KILL_LITERAL_SEARCH_COMMANDS,
-    _PROCESS_KILL_UNSAFE_MARKERS,
     _git_grep_literal_pattern_indices,
     _git_log_literal_search_indices,
 )
 
+# 区間の先頭にあって実行するコマンドの位置を後ろへずらす語（制御構文・グループ）。環境変数の代入も同様に除いて数える。
+_SHELL_PREFIX_WORDS = frozenset({"(", "{", "!", "if", "then", "else", "elif", "while", "until", "do"})
+_ASSIGNMENT_RE = re.compile(r"[A-Za-z_]\w*=")
 
-def _has_active_process_kill_syntax(segment: str) -> bool:
-    """区間に引用で無効化されていないシェル構文があれば真を返す。"""
+
+def _has_process_kill_substitution(segment: str) -> bool:
+    """能動的なコマンド置換・プロセス置換の本文に終了コマンド名があるかを返す。
+
+    置換の終端は共通解析で求め、外側のデータ引数にだけある語を置換内の語として扱わない。
+    閉じない置換や改行を含む未確定の区間は保守的に真とする。
+    通常の変数展開（`"$f"`）は実行位置を作らないため対象にしない。
+    """
     quote: str | None = None
     escaped = False
-    for character in segment:
+    index = 0
+    while index < len(segment):
+        character = segment[index]
+        index += 1
         if escaped:
             escaped = False
             continue
@@ -38,15 +48,23 @@ def _has_active_process_kill_syntax(segment: str) -> bool:
             if character == "'":
                 quote = None
             continue
+        start = index - 1
+        if character == "`" or segment.startswith("$(", start) or quote is None and segment.startswith(("<(", ">("), start):
+            try:
+                _, end = _bash_substitution(segment, start)
+            except ValueError:
+                return True
+            if _PROCESS_KILL_BY_PATTERN_RE.search(segment[start:end]):
+                return True
+            index = end
+            continue
         if quote == '"':
             if character == '"':
                 quote = None
-            elif character in "$`":
-                return True
             continue
         if character in {"'", '"'}:
             quote = character
-        elif character in _PROCESS_KILL_UNSAFE_MARKERS or character in "\n\r":
+        elif character in "\n\r":
             return True
     return False
 
@@ -106,45 +124,21 @@ _ARGUMENT_EXECUTORS = frozenset(
 検索語として安全な`git grep`・`git log`の位置は後段の判定が扱う。
 """
 
+# 引数が常にプログラムの起動指定になるコマンド（端末多重化、名前空間への入場、一時実行ツール）。
+_STANDALONE_LAUNCHERS = frozenset({"bunx", "nsenter", "npx", "pipx", "screen", "tmux", "uvx"})
 
-def _process_kill_word_only_in_data(invocations: Sequence[BashInvocation]) -> bool:
-    """共通解析が確定した全ての実行位置で、終了コマンド名がデータ引数にだけ現れるかを返す。
-
-    `pkill`・`killall`自体を実行する呼出し、引数からプログラムを実行するコマンドの引数に現れる場合、
-    値の決まらない引数を持つ呼出し、解析できない入力（呼出しが空）は、データ引数と確定できないため偽を返す。
-    読取・検索の解析（`large_reads.arguments_are_data`）が引数をデータと確定した呼出しは、実行名の形の語もデータとして扱う。
-    """
-    if not invocations:
-        return False
-    for invocation in invocations:
-        tokens = invocation.segment.tokens
-        if not invocation.arguments_known or not tokens:
-            return False
-        name = pathlib.PurePosixPath(tokens[0]).name
-        if name in {"pkill", "killall"}:
-            return False
-        # 読取・検索の解析が引数をデータと確定した呼出し（`sed -n '1p'`・`awk '{print}'`の読取を含む）は、
-        # 引数を実行し得るコマンド名でも引数を実行しない。
-        data = large_reads.arguments_are_data(tokens)
-        executor = name in _ARGUMENT_EXECUTORS or is_python_token(name)
-        if not data and executor and any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in tokens[1:]):
-            return False
-        # 引数から実行するコマンドの集合は網羅できないため（`docker exec`、`npm exec`など）、読取・検索の解析が
-        # データと確定した呼出しを除き、語が実行名の形で現れる引数（語そのもの、または後ろに空白が続く本文）は
-        # データと確定しない。
-        if not data and any(_process_kill_command_shaped(token) for token in tokens[1:]):
-            return False
-    return True
+# サブコマンドや区切りで別のプログラムを起動するコマンドと、その起動を示す引数。
+_SUBCOMMAND_LAUNCHERS = frozenset({"docker", "kubectl", "mise", "npm", "pnpm", "podman", "uv", "yarn"})
+_LAUNCH_ARGUMENTS = frozenset({"--", "dlx", "exec", "run", "x"})
 
 
 def _process_kill_command_shaped(token: str) -> bool:
-    """引数の語が、別のコマンドに実行名として渡され得る形かを返す。
+    """引数の本文が、別のコマンドに実行名として渡され得る形かを返す。
 
-    語そのものか、本文の先頭・空白・区切り記号の直後に置かれて後ろに空白が続く場合を実行名の形とする。
+    本文の先頭・空白・区切り記号の直後に置かれて後ろに空白が続く語を実行名の形とする（`'pkill -f x'`など）。
+    `tmux send-keys`のような未知の起動手段へ渡る文字列を保護する。
     `/tmp/pkill dir/out.log`のようにパスの区切りの直後にある語はディレクトリ名として扱う。
     """
-    if pathlib.PurePosixPath(token).name in {"pkill", "killall"}:
-        return True
     return any(
         token[match.end() : match.end() + 1].isspace()
         and (match.start() == 0 or token[match.start() - 1].isspace() or token[match.start() - 1] in ";&|(`'\"")
@@ -152,52 +146,89 @@ def _process_kill_command_shaped(token: str) -> bool:
     )
 
 
+def _command_position_tokens(tokens: Sequence[str]) -> Sequence[str]:
+    """環境変数の代入と制御構文の語を除き、実行するコマンドから始まる語を返す。"""
+    index = 0
+    while index < len(tokens) and (tokens[index] in _SHELL_PREFIX_WORDS or _ASSIGNMENT_RE.match(tokens[index])):
+        index += 1
+    return tokens[index:]
+
+
+def _expands_command_name(segment: str) -> bool:
+    """区間のコマンド名の位置が、変数展開やコマンド置換で決まるかを返す。"""
+    try:
+        tokens = _command_position_tokens(split_words(segment))
+    except ValueError:
+        return False
+    return bool(tokens) and any(character in tokens[0] for character in "$`")
+
+
+def _git_process_kill_match(segment: str, raw_tokens: Sequence[str]) -> bool:
+    """`git`の区間で、語が検索語として安全な位置以外にあるかを返す。"""
+    parsed_segments = extract_execution_segments(segment)
+    if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
+        return True
+    subcommand = git_subcommand_tokens(parsed_segments[0])
+    if subcommand is None or subcommand[0] not in {"grep", "log"}:
+        return True
+    name, arguments = subcommand
+    prefix = raw_tokens[: len(raw_tokens) - len(arguments)]
+    if any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in prefix):
+        return True
+    safe_indices = (
+        _git_grep_literal_pattern_indices(arguments) if name == "grep" else _git_log_literal_search_indices(arguments)
+    )
+    return any(
+        (
+            _PROCESS_KILL_BY_PATTERN_RE.search(token)
+            or name == "grep"
+            and token.startswith("-O")
+            and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:])
+        )
+        and index not in safe_indices
+        for index, token in enumerate(arguments)
+    )
+
+
+def _runs_arguments(name: str, tokens: Sequence[str]) -> bool:
+    """コマンドが、引数に渡された語をプログラムとして実行し得るかを返す。"""
+    if name in _ARGUMENT_EXECUTORS or is_python_token(name):
+        # 読取・検索の解析が引数をデータと確定した呼出し（`sed -n '1p'`・`awk '{print}'`の読取を含む）は引数を実行しない。
+        return not large_reads.arguments_are_data(tokens)
+    if name in _STANDALONE_LAUNCHERS:
+        return True
+    if name in _SUBCOMMAND_LAUNCHERS:
+        return not _LAUNCH_ARGUMENTS.isdisjoint(tokens[1:])
+    # 外部プログラムを起動する検索の指定（`rg --pre`）は実行位置と区別できない。
+    return name == "rg" and any(token == "--pre" or token.startswith("--pre=") for token in tokens[1:])
+
+
 def _has_unsafe_process_kill_match(segment: str) -> bool:
-    """共通解析の実行位置とデータ引数を分け、未確定の実行と既知の終了操作を保護する。"""
+    """区間で、語が実行され得る位置にあるかを返す。
+
+    コマンド名の位置、置換の中、実行名の形の本文、引数を実行し得るコマンドの引数にある語を実行位置とする。
+    それ以外のコマンドの引数に語やその断片があるだけの区間は、検索・表示のデータとして扱う。
+    """
     try:
         raw_tokens = split_words(segment)
     except ValueError:
         return True
     if not raw_tokens:
         return False
-    command_name = pathlib.PurePosixPath(raw_tokens[0]).name
-    attached_pager_match = command_name == "git" and any(
-        token.startswith("-O") and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:]) for token in raw_tokens
-    )
-    if not attached_pager_match and not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens):
-        return False
-    if _has_active_process_kill_syntax(segment):
+    if _has_process_kill_substitution(segment):
         return True
-    if not attached_pager_match and _process_kill_word_only_in_data(extract_bash_invocations(segment)):
-        return False
-    if command_name == "git":
-        parsed_segments = extract_execution_segments(segment)
-        if len(parsed_segments) != 1 or tuple(raw_tokens) != parsed_segments[0].tokens:
-            return True
-        subcommand = git_subcommand_tokens(parsed_segments[0])
-        if subcommand is None or subcommand[0] not in {"grep", "log"}:
-            return True
-        name, arguments = subcommand
-        prefix = raw_tokens[: len(raw_tokens) - len(arguments)]
-        if any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in prefix):
-            return True
-        safe_indices = (
-            _git_grep_literal_pattern_indices(arguments) if name == "grep" else _git_log_literal_search_indices(arguments)
-        )
-        return any(
-            (
-                _PROCESS_KILL_BY_PATTERN_RE.search(token)
-                or name == "grep"
-                and token.startswith("-O")
-                and _PROCESS_KILL_BY_PATTERN_RE.search(token[2:])
-            )
-            and index not in safe_indices
-            for index, token in enumerate(arguments)
-        )
-    # 検索語のリテラルは許可するが、外部プログラムを起動する検索の指定（`rg --pre`）は実行位置と区別できない。
-    if command_name not in _PROCESS_KILL_LITERAL_SEARCH_COMMANDS or not large_reads.arguments_are_data(raw_tokens):
+    tokens = _command_position_tokens(raw_tokens)
+    if not tokens or _PROCESS_KILL_BY_PATTERN_RE.search(tokens[0]):
+        return bool(tokens)
+    name = pathlib.PurePosixPath(tokens[0]).name
+    arguments = tokens[1:]
+    if name == "git":
+        return _git_process_kill_match(segment, raw_tokens)
+    if any(_process_kill_command_shaped(token) for token in arguments):
         return True
-    return not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in raw_tokens[1:])
+    if not any(_PROCESS_KILL_BY_PATTERN_RE.search(token) for token in arguments):
+        return False
+    return _runs_arguments(name, tokens)
 
 
 def _check_bash_process_kill_by_pattern(command: str) -> str | None:
@@ -205,19 +236,27 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
 
     対象の所有権を確認できないパターン一致の一括終了は他者のプロセスを停止する危険があるため禁止する。
     自身が起動して識別子（PID）を確認したプロセスに対する`kill <PID>`形式は対象外とする。
-    ヒアドキュメント本文をマスクした文字列を共通解析へ渡し、終了コマンド名がデータ引数にだけ現れる読取・表示・検索と、
-    既知の検索用リテラルを許可する。語の存在だけでは終了操作と判定しない。
-    実行位置を確定できない入力、引数を実行し得るコマンド、置換・グループを含む区間は保守的な判定を維持する。
+    判定は、語の出現ではなく、語が実行され得る位置にあるかで行う（`_has_unsafe_process_kill_match`）。
+    形ごとの許可を足して誤遮断を直す方式は、列挙外の正常な形が必ず誤遮断になるため、同じ種類の誤遮断を繰り返した。
+    許可リストへ戻さず、実行位置の列挙を直すこと。
+    未知のラッパーへ語を独立した引数で渡す形は見逃すが、規範の保護が主であり、誤遮断を避けるため許容する。
     """
-    matching_segments = [segment for segment in split_bash_segments(command) if "pkill" in segment or "killall" in segment]
-    if not matching_segments or not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments):
+    segments = split_bash_segments(command)
+    matching_segments = [segment for segment in segments if "pkill" in segment or "killall" in segment]
+    if not matching_segments:
+        return None
+    # 語のある入力のどこかでコマンド名が変数展開で決まる場合は、展開の結果が終了コマンドかを確定できない。
+    if not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments) and not any(
+        _expands_command_name(segment) for segment in segments
+    ):
         return None
     return _block_notice(
         "blocked: パターン一致によるプロセス終了（`pkill`／`killall`）は、対象プロセスの所有を確認できないため禁止する。",
         fix=(
             "自身が起動しPIDで特定したプロセスに対して`kill <PID>`を使え。"
-            "検索語として使う場合は`rg`・`grep`・`git grep`・`git log -S`の引数へリテラルで書くか、"
-            "`p[k]ill`のように文字クラスで書け。"
+            "この遮断は、語がコマンド名、`sudo`・`xargs`・`sh -c`・`docker exec`などの起動する引数、"
+            "コマンド置換、変数展開したコマンド名、実行名の形（`'pkill -f x'`）の本文にある場合に限る。"
+            "検索・表示のコマンドの引数に語を書くだけなら遮断されないため、その位置へ移すか、`p[k]ill`のように文字クラスで書け。"
         ),
     )
 

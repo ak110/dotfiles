@@ -12,6 +12,8 @@
 末尾の記号・絵文字、読点による了承語どうしの連結だけから成るかを構成規則で確かめる。`?`は受理する記号に含めないため、問いは了承に当たらない。
 了承後の内部作業から伝える内容が生じたかは機械判定せず、送達の義務は規範とエージェントの意味判断へ委ねる。
 同じターンで可視本文を出力すれば解除できる。通知は伝える予定だった内容の出力を案内する。
+例外として、最新の人間入力の後に起動した有限のバックグラウンドタスクが終了通知も停止も無く残る間の`…`だけの本文は、
+完了通知で再開する途中の待機として通知しない（待機の記録は残さず、そのStopだけを免除する）。
 同じ人間入力の不足は共通noticeで反復を抑止し、新しい入力と解消後の再発を区別する。
 
 通知を置く根拠: 発話本文を可視の本文へ置く規範を加えた後も同じ欠落が再発した。
@@ -33,7 +35,9 @@ from agent_toolkit._hooks.notice import _WARN_TAG
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
 lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.termination_order_advisor import _resident_bash_ids
 
 _notice = notice.formatter("user_response_advisor", default_tag=_WARN_TAG)
 
@@ -88,6 +92,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     # 最後の可視本文より後の人間の入力が全て了承か、`…`だけの本文を出力したかを記録する。
     acknowledged_only = False
     ellipsis_only = False
+    # 最後の人間入力以降の記録と、最後の本文が`…`だけかを、背景待機の免除判定のために保つ。
+    scanned: list[dict] = []
+    human_start = 0
+    last_ellipsis = False
     for index, line in enumerate(lines):
         try:
             entry = json.loads(line)
@@ -95,10 +103,12 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             continue
         if not isinstance(entry, dict) or entry.get("isSidechain"):
             continue
+        scanned.append(entry)
         prompt = _input_text(entry)
         if prompt is not None:
             if _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
                 input_subject = f"{index}|{line}"
+                human_start = len(scanned) - 1
                 if not needs_response:
                     acknowledged_only, ellipsis_only = True, False
                 acknowledged_only = acknowledged_only and _is_acknowledgement(prompt)
@@ -110,12 +120,17 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             if entry.get("isApiErrorMessage") or isinstance(message, dict) and message.get("model") == "<synthetic>":
                 continue
             text = transcript.visible_assistant_text(message)
+            last_ellipsis = "…" in text
             if any(not char.isspace() and char != "…" for char in text):
                 needs_response = False
             elif needs_response:
                 ellipsis_only = ellipsis_only or "…" in text
 
-    if not needs_response or (acknowledged_only and ellipsis_only):
+    if (
+        not needs_response
+        or (acknowledged_only and ellipsis_only)
+        or (last_ellipsis and _awaits_background(scanned[human_start:], session_id, path))
+    ):
         notice.resolve_notice(session_id, "user_response_advisor", "evaluate", subject="main")
         return "approve", ""
     _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
@@ -127,6 +142,18 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         subject=input_subject,
     )
     return ("notify", body) if body else ("approve", "")
+
+
+def _awaits_background(entries: list[dict], session_id: str, transcript_path: str) -> bool:
+    """最新の人間入力の後に起動したバックグラウンドタスクに、終了通知も停止も無いものが残るかを返す。
+
+    完了通知で同一セッションが再開するため、`…`だけの終了は途中の待機であり応答の欠落ではない。
+    人間入力より前の起動は数えず、起動済みという事実だけでは免除しない。
+    終了通知を待てない常駐Bashは、既存の常駐判定に従って除く。
+    定期起動や`agents_server`の未回収結果は通知で再開しないため対象にしない。
+    """
+    launched, completed, _reported = describe_pending_background_entries(entries, session_id)
+    return bool(launched - completed - _resident_bash_ids(transcript_path))
 
 
 def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:

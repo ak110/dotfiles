@@ -26,6 +26,14 @@ from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _remote
 
 
+class UnreadableOwnershipError(_next_action.ActionableError):
+    """処理所有記録を解釈できず、その対象リポジトリの所有を判定できない。
+
+    読めない記録の影響はその記録の対象リポジトリだけに限る。呼び出し側は対象を見送り、他のリポジトリの処理を続ける。
+    同じリポジトリを2つの統括が同時に処理しない保護を保つため、所有を判定できない間は取得しない。
+    """
+
+
 class OwnershipStage(enum.Enum):
     """永続所有の段階。プロセスとsessionの生存は別に照会する。"""
 
@@ -108,11 +116,20 @@ def _read(path: pathlib.Path) -> _Record | None:
         record = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return None
+    except OSError as error:
+        raise ValueError(f"処理所有記録を読み取れない: {path}: {error}") from error
     if not isinstance(record, dict) or not isinstance(record.get("token"), str):
         raise ValueError(f"処理所有記録を解釈できない: {path}")
+    writers = record.get("writer_sessions", [])
+    if not isinstance(writers, list) or not all(isinstance(writer, str) for writer in writers):
+        raise ValueError(f"処理所有記録のwriter_sessionsが不正: {path}")
+    for key in ("mode", "session_id"):
+        if record.get(key) is not None and not isinstance(record[key], str):
+            raise ValueError(f"処理所有記録の{key}が不正: {path}")
     residual = record.get(_RESIDUAL_KEY, [])
     if not isinstance(residual, list) or not all(
-        isinstance(entry, dict) and isinstance(entry.get("pid"), int) for entry in residual
+        isinstance(entry, dict) and isinstance(entry.get("pid"), int) and isinstance(entry.get("create_time"), (int, float))
+        for entry in residual
     ):
         # PIDを欠く項目もあり得るため、PIDに頼らない確認手段（起動コマンドか対象リポジトリのパスによる対象限定）も示す。
         raise ValueError(
@@ -289,11 +306,20 @@ def try_acquire(
     path = _path(repo_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     with filelock.FileLock(str(path.with_suffix(".lock")), timeout=10):
-        prior = _read(path)
-        if prior is not None and prior.stage in {OwnershipStage.OWNED, OwnershipStage.HELD}:
-            _reclaim_residual(path, prior)
-        if prior is not None and _live(prior):
-            return None
+        try:
+            prior = _read(path)
+            if prior is not None and prior.stage in {OwnershipStage.OWNED, OwnershipStage.HELD}:
+                _reclaim_residual(path, prior)
+            if prior is not None and _live(prior):
+                return None
+        except ValueError as error:
+            raise UnreadableOwnershipError(
+                f"処理所有記録を解釈できないため{repo_id}の処理を見送る: {path}: {error}",
+                next_action=(
+                    f"記録の`session_id`と`writer_sessions`の担当が終了済みかを`atk agents show <session_id>`で確かめ、"
+                    f"終了済みなら{path}を退避または削除する（次の反復で同じリポジトリを再び処理する）"
+                ),
+            ) from error
         if prior is not None and prior.stage is OwnershipStage.HELD:
             prior.release(completed=False)
             _save(path, prior)
@@ -330,7 +356,11 @@ def try_acquire(
 
 def coordinator_session(repo_id: str) -> str | None:
     """未完了の統括会話だけを返し、旧リポジトリ担当を区別する。"""
-    record = _read(_path(repo_id))
+    try:
+        record = _read(_path(repo_id))
+    except ValueError:
+        # 読めない記録は未完了の再開先として扱わない。取得時に`try_acquire`が対象リポジトリだけを見送り、回復手段を示す。
+        return None
     if (
         record is not None
         and record.data.get("mode") == "coordinator"
@@ -358,7 +388,11 @@ def unfinished_repository_ids(repositories: tuple[str, ...]) -> set[str]:
     """登録集合内で未完了のall-repos担当がある対象だけを返す。"""
     unfinished: set[str] = set()
     for repo_id in repositories:
-        record = _read(_path(_remote.normalize_remote_url(repo_id)))
+        try:
+            record = _read(_path(_remote.normalize_remote_url(repo_id)))
+        except ValueError:
+            # 読めない記録は取得時に`try_acquire`が対象リポジトリだけを見送るため、他の対象の再開判定を止めない。
+            continue
         if (
             record is not None
             and record.data.get("mode") in {"all-repos", "coordinator"}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import re
 import typing
 from typing import Any
 
@@ -12,6 +13,30 @@ from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES
 
 DEFAULT_WAIT_TIMEOUT = 300.0
+
+# 外部の拒否本文は認証値を反射しうる。任意dataの選別だけでは本文の秘密を除去できない。
+_DIAGNOSTIC_VALUE = r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]&]+)"""
+_DIAGNOSTIC_AUTH = re.compile(
+    r"""(\b(?:proxy[-_])?authorization(?:\\?["'])?\s*[:=]\s*)"""
+    r"""(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\r\n;]+)""",
+    re.IGNORECASE,
+)
+_DIAGNOSTIC_SECRET = re.compile(
+    r"""(\b[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*(?:\\?["'])?\s*[:=]\s*)""" + _DIAGNOSTIC_VALUE,
+    re.IGNORECASE,
+)
+_DIAGNOSTIC_BEARER = re.compile(r"(\b(?:Bearer|Basic)\s+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
+_DIAGNOSTIC_KEY = re.compile(r"[A-Za-z0-9_+/=-]{32,}")
+
+
+def redact_diagnostic(message: str) -> str:
+    """Codexの拒否診断から認証値と長い鍵状文字列を伏せ、1行へ整形する。"""
+    message = _DIAGNOSTIC_AUTH.sub(r'\1"[REDACTED]"', message)
+    message = _DIAGNOSTIC_SECRET.sub(r'\1"[REDACTED]"', message)
+    message = _DIAGNOSTIC_BEARER.sub(r"\1[REDACTED]", message)
+    # 名前の付かない鍵も反射されるため、連続32文字以上の鍵用文字を保守的に伏せる。
+    message = _DIAGNOSTIC_KEY.sub("[REDACTED]", message)
+    return message.replace("\r", r"\r").replace("\n", r"\n")
 
 
 class AppServerError(session_errors.DelegateBackendError):
@@ -55,7 +80,7 @@ class JsonRpcResponseError(AppServerError):
     """App ServerがJSON-RPC error responseを返した。"""
 
     def __init__(self, method: str, code: Any, message: str, data: Any = None) -> None:
-        super().__init__(f"{method}: {message}")
+        super().__init__(f"{method}: {redact_diagnostic(message)}")
         self.method = method
         self.code = code
         self.data = data
@@ -63,13 +88,13 @@ class JsonRpcResponseError(AppServerError):
     def diagnostic(self) -> tuple[str, str]:
         """拒否理由を、エラー本文に使う形とログに使う形で返す。
 
-        `data`は任意の構造を持ちうるため、`codexErrorInfo`の値だけを含める。
+        `data`は任意の構造を持ちうるため、`codexErrorInfo`の値だけを含め、認証値を伏せる。
         """
         info = self.data.get("codexErrorInfo") if isinstance(self.data, dict) else None
         encoded = None if info is None else json.dumps(info, ensure_ascii=False)
         return (
-            f"code={self.code}: {self}" + ("" if encoded is None else f" (codexErrorInfo={encoded})"),
-            f"code={self.code} reason={self}" + ("" if encoded is None else f" codexErrorInfo={encoded}"),
+            redact_diagnostic(f"code={self.code}: {self}" + ("" if encoded is None else f" (codexErrorInfo={encoded})")),
+            redact_diagnostic(f"code={self.code} reason={self}" + ("" if encoded is None else f" codexErrorInfo={encoded}")),
         )
 
 

@@ -27,12 +27,6 @@ _GIT_GREP_VALUED_OPTIONS = frozenset(
 _PROCESS_KILL_BY_PATTERN_RE = re.compile(r"(?<![\w-])(pkill|killall)(?![\w-])")
 
 
-_PROCESS_KILL_UNSAFE_MARKERS = frozenset("$`(){}")
-
-
-_PROCESS_KILL_LITERAL_SEARCH_COMMANDS = frozenset({"egrep", "fgrep", "grep", "rg"})
-
-
 _GIT_GREP_SHORT_FLAGS = frozenset("EFGPivwahnHIlLczonqrsuVpWN")
 
 

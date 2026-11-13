@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import typing
 from typing import Any
 
@@ -16,6 +17,7 @@ from agent_toolkit._agents_server.codex_protocol import (
     TurnStartResponseError,
     _client_pid,
     _WaitCompactionTurn,
+    redact_diagnostic,
 )
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -23,6 +25,11 @@ from agent_toolkit._agents_server.state import SessionState
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.codex")
+
+# 公開エラーの先頭に置く汎用文言。引き継ぎ判定は接頭辞で一致させる。
+CONNECTION_REJECTED_MESSAGE = "Codex connection rejected the request"
 
 
 class CodexTurnsMixin:
@@ -71,7 +78,23 @@ class CodexTurnsMixin:
             and not writer_conflict
             and changed is None
         ):
-            session.error = {"message": "Codex connection rejected the request"}
+            # 接続先と元のエラーは公開せず、資格情報を含まない診断だけをsession_id付きで残す。
+            logged = (
+                error.diagnostic()[1]
+                if isinstance(error, JsonRpcResponseError)
+                else redact_diagnostic(f"{type(error).__name__}: {error}")
+            )
+            _LOG.info(
+                "Codex turn開始の拒否を汎用文言へ置き換えました: session_id=%s provider=%s %s",
+                session.session_id,
+                session.codex_model_provider,
+                logged,
+            )
+            session.error = {
+                "message": (
+                    f"{CONNECTION_REJECTED_MESSAGE}。接続先と元のエラーはagents-server.logのsession_id={session.session_id}の行にある"
+                )
+            }
         session.agent_message = ""
         session.protocol_warnings = []
         session.record_turn_rejected()

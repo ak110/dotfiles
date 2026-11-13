@@ -14,6 +14,7 @@ from typing import Any
 
 import psutil
 import pytest
+from agent_toolkit._git import stale_lock
 from agent_toolkit._testing import late_descendant
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -53,7 +54,7 @@ def test_update_skips_when_git_process_scan_is_denied(monkeypatch: pytest.Monkey
     monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", local)
     monkeypatch.setattr(update_dotfiles_process, "run_git_pull", lambda *_args, **_kwargs: pytest.fail("pull開始"))
     monkeypatch.setattr(
-        update_dotfiles_git.psutil, "process_iter", lambda *_args, **_kwargs: iter([_UnreadableGitProcess(pid=os.getpid())])
+        stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter([_UnreadableGitProcess(pid=os.getpid())])
     )
 
     assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 5, timeout=30) == 1
@@ -95,7 +96,7 @@ def test_update_ignores_unrelated_git_with_removed_cwd(monkeypatch: pytest.Monke
             assert snapshot.cwd() == str(directory)
             # 最初の走査後、index取得までの間に消えたcwdを2回目の検査へ渡す。
             scans = iter([[], [snapshot]])
-            monkeypatch.setattr(update_dotfiles_git.psutil, "process_iter", lambda *_args, **_kwargs: iter(next(scans)))
+            monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter(next(scans)))
 
             assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == 0
         finally:
@@ -303,10 +304,18 @@ def test_update_preserves_index_when_ownership_is_not_ready(
     monkeypatch.setattr(update_dotfiles_git, "_update_owned_git", lambda *_args, **_kwargs: pytest.fail("変更開始"))
     lock = local / ".git" / "index.lock"
     if race == "started-before-lock":
-        checks = iter([False, True])
-        monkeypatch.setattr(update_dotfiles_git, "_git_operation_in_progress", lambda: next(checks))
+        calls: list[int] = []
+
+        def started_after_first_check() -> bool:
+            calls.append(1)
+            return len(calls) > 1
+
+        monkeypatch.setattr(update_dotfiles_git, "_git_operation_in_progress", started_after_first_check)
     elif race == "foreign-lock":
+        # 生存中の別主体のロックは、待機の上限まで待っても回収しない。
+        monkeypatch.setattr(stale_lock, "POLL_INITIAL_SECONDS", 0.01)
         lock.write_bytes(b"foreign")
+        stale_lock.write_record(lock.parent, lock.with_name("index"), lock.stat())
     else:
 
         def interrupt_copy(source: pathlib.Path, destination: pathlib.Path, **_kwargs: object) -> None:
@@ -319,9 +328,9 @@ def test_update_preserves_index_when_ownership_is_not_ready(
         with pytest.raises(KeyboardInterrupt):
             _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5)
     else:
-        assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5) == 1
+        assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=1) == 1
     assert _dirty_snapshot(local) == before
-    assert not list((local / ".git").glob("update-dotfiles-index-*"))
+    assert not [path for path in (local / ".git").glob("update-dotfiles-index-*") if path.name != stale_lock.RECORD_NAME]
     if race == "foreign-lock":
         assert lock.read_bytes() == b"foreign"
     else:

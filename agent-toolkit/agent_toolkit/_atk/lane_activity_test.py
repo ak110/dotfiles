@@ -526,3 +526,47 @@ async def test_lane_returns_independent_activity_after_owner_release_without_rep
             assert record["branch"] in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
         else:
             assert not worktree.exists() and result["removed"] == ["lane-01"]
+
+
+def test_unreadable_registration_stops_destructive_operations_with_recovery(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """読めない担当登録は、削除を止めて登録の絶対パスと回復手段を示し、新しいworktreeの作成は止めない。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    directory = session_registry.registry_directory()
+    directory.mkdir(parents=True, exist_ok=True)
+    broken = directory / "broken-writer.json"
+    broken.write_text("{", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="担当登録を読めない") as raised:
+        _lane_activity.running_sessions(pathlib.Path(record["worktree"]))
+    error = str(raised.value)
+    assert str(broken.resolve()) in error
+    assert "atk agents show broken-writer" in error and "退避または削除" in error
+    code, held, _stderr = _invoke(capsys, "delete")
+    assert code == 1 and held["retained"] and pathlib.Path(record["worktree"]).is_dir()
+    assert str(broken.resolve()) in held["retained"][0]["reason"]
+    selected = tmp_path / "selection.yaml"
+    code, created, stderr = _create_in(capsys, monkeypatch, "new-session", repo, selected, lane_id="lane-02")
+    assert code == 0, stderr
+    assert created["ready"] and pathlib.Path(created["worktree"]).is_dir()
+    code, _result, stderr = _create_in(
+        capsys, monkeypatch, "reuse-session", repo, selected, "--reuse-record", record["record_path"]
+    )
+    assert code == 2
+    assert str(broken.resolve()) in stderr
+    assert "atk agents show broken-writer" in stderr and "退避または削除" in stderr
+    assert pathlib.Path(record["record_path"]).is_file()
+
+
+def test_readable_registration_of_another_worktree_is_excluded_from_decision(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """読める登録が対象外のworktreeのものなら、判定から除かれて削除が成功する。"""
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    elsewhere = repo / ".claude/worktrees/elsewhere"
+    git_repository.run_git(repo, "worktree", "add", "-b", "elsewhere", str(elsewhere))
+    session_registry.publish("elsewhere-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(elsewhere))
+    assert not _lane_activity.running_sessions(pathlib.Path(record["worktree"]))
+    code, result, stderr = _invoke(capsys, "delete")
+    assert code == 0 and not result["retained"], stderr

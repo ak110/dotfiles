@@ -13,7 +13,7 @@ import pytest
 
 from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
-from agent_toolkit._common.session_state import read_state
+from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import busy_loop_guard, stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
@@ -23,6 +23,8 @@ _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _ENV_SESSION_ID = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _SESSION_ID = "session-busy-loop"
+# 試験用の`calls`フィクスチャが差し替える前の実装を、未回収結果の判定の確認に使う。
+_REAL_IS_PENDING_ASYNC_WORK = _background_tasks.is_pending_async_work
 
 
 class _Target:
@@ -187,6 +189,28 @@ def test_pending_async_work_resets_count(
 ) -> None:
     """委譲先またはバックグラウンドタスクの完了待ちのターンは無進捗として数えない。"""
     monkeypatch.setattr(busy_loop_guard, "is_pending_async_work", lambda *args, **kwargs: True)
+    entries: list[dict] = []
+    for index in range(4):
+        entries = [*entries, _text_entry()]
+        decision, _ = _turn(tmp_path, index, entries)
+        assert decision == "approve"
+
+    assert calls == {"terminate": 0}
+    assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 0
+
+
+def test_unretrieved_agents_server_result_is_not_a_no_progress_turn(
+    tmp_path: pathlib.Path,
+    calls: dict[str, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """agents_serverの未回収の終了結果だけを待つターンは、無進捗として数えず停止を要求しない。"""
+    monkeypatch.setattr(_background_tasks, "is_pending_async_work", _REAL_IS_PENDING_ASYNC_WORK)
+    monkeypatch.setattr(busy_loop_guard, "is_pending_async_work", _REAL_IS_PENDING_ASYNC_WORK)
+    update_state(
+        _SESSION_ID,
+        lambda _state: {"agents_server_sessions": {"child": {"pending_observation": True, "owner_agent_id": "main"}}},
+    )
     entries: list[dict] = []
     for index in range(4):
         entries = [*entries, _text_entry()]

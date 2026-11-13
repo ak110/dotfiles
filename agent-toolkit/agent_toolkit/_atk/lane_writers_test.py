@@ -184,7 +184,8 @@ def test_integrate_rejects_unresolvable_registration(
         capsys, *_integration_args(record, repo, _finalization_manifest(tmp_path), record["initial_head"])
     )
 
-    assert code == 2 and "担当登録の形式を確認できない" in stderr
+    assert code == 2 and "担当登録を読めない" in stderr
+    assert str((directory / "broken.json").resolve()) in stderr and "atk agents show broken" in stderr
 
 
 @pytest.mark.parametrize("no_merge", [False, True])

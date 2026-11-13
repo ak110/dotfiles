@@ -41,6 +41,7 @@ def test_result_guidance_preserves_backend_availability_contract(engine: str, st
         ({"codexErrorInfo": "threadWriterConflict"}, "再送"),
         ({"codexErrorInfo": "threadStateIncompatible"}, "handoff_from"),
         ({"message": "Codex connection rejected the request"}, "handoff_from"),
+        ({"message": "Codex connection rejected the request。詳細はログにある"}, "handoff_from"),
         ({"message": "再開の一般的な拒否"}, None),
     ],
 )
@@ -56,3 +57,16 @@ def test_result_guidance_distinguishes_resume_failure(error: dict[str, str], exp
         if expected == "再送":
             assert "未配送" in action and "可能性" in action and "解放を確認" in action
             assert "handoff_from" not in action
+
+
+@pytest.mark.parametrize("session_id", [None, "", 0])
+def test_result_guidance_omits_handoff_without_predecessor_id(session_id: Any) -> None:
+    """前任のsession_idが無い失敗では、`handoff_from: null`の案内を出さない。"""
+    result = {
+        "engine": "codex",
+        "status": "failed",
+        "error": {"message": "Codex connection rejected the request"},
+    }
+    if session_id is not None:
+        result["session_id"] = session_id
+    assert handoff_next_action.result_next_action(result) is None
