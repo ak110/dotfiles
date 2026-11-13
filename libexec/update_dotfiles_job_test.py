@@ -203,8 +203,10 @@ def test_python_upgrade_failure_continues_with_existing_python(project: tuple[pa
     """Pythonを起動する前に更新し、失敗しても既存版でjobを完了する。"""
     _root, environment = project
     environment["PYTHON_EXIT"] = "17"
+    # 本体で集約する契約はmainの統合試験で固定し、ここではその1をworkerが伝播することを確認する。
+    environment["RUN_EXIT"] = "1"
     result = _invoke(project)
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode == 1, result.stdout + result.stderr
     calls = pathlib.Path(environment["CALLS"]).read_text(encoding="utf-8").splitlines()
     assert "python install --upgrade 3.15" in calls
     assert pathlib.Path(environment["READY"]).exists()

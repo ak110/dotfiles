@@ -2,7 +2,7 @@
 setlocal DisableDelayedExpansion
 set "SCRIPT_DIR=%~dp0.."
 set "UV=%USERPROFILE%\.local\bin\uv.exe"
-rem bootstrap checks uv            
+rem bootstrap checks uv------------
 goto start
 :run
 (
@@ -38,9 +38,10 @@ exit /b %ERRORLEVEL%
 :start
 if "%~1"=="logs" goto normal
 if "%~1"=="job" goto job_route
-if "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" goto normal
+if "%AGENT_TOOLKIT_PROCESS_LOOP_SESSION%"=="1" goto dispatch
 call :update_uv %*
 if errorlevel 1 exit /b %ERRORLEVEL%
+:dispatch
 if defined CODEX_THREAD_ID goto job_route
 if "%~1"=="job" goto job_route
 :normal
@@ -54,6 +55,8 @@ goto run
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" goto normal
 set "UPDATE_PYTHON="
 for /f "delims=" %%P in ('"%UV%" python find 3.15') do set "UPDATE_PYTHON=%%P"
+if not defined UPDATE_PYTHON powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -PrepareOnly
+if not defined UPDATE_PYTHON for /f "delims=" %%P in ('"%UV%" python find 3.15') do set "UPDATE_PYTHON=%%P"
 if not defined UPDATE_PYTHON exit /b 1
 (
 "%UPDATE_PYTHON%" "%SCRIPT_DIR%\libexec\update_dotfiles_job.py" %*

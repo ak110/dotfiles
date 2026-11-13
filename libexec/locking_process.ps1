@@ -16,7 +16,7 @@ function Test-MediaRemoteProcess {
 function Get-PytoolsEnvLockingProcess {
     param([string]$Directory = $uvToolDir, [int[]]$ExcludeIds = @())
     $prefix = $Directory.TrimEnd('\') + '\'
-    foreach ($process in Get-CimInstance Win32_Process -ErrorAction SilentlyContinue) {
+    foreach ($process in Get-CimInstance Win32_Process -OperationTimeoutSec 30 -ErrorAction Stop) {
         if ($process.ProcessId -in $ExcludeIds) { continue }
         $isMediaRemote = Test-MediaRemoteProcess $process
         $isInToolEnv = $process.ExecutablePath -and

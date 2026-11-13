@@ -12,6 +12,7 @@ import sys
 from collections.abc import Generator
 
 import platformdirs
+import update_dotfiles_report
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 from pytools._internal import sync_report
@@ -132,6 +133,20 @@ def finish(returncode: int) -> int:
     同期結果の構造化記録も本関数だけが確定させる。全ての終了経路で本関数を実行するため、
     記録の欠落と、成功した段を失敗として残す書き分けの誤りを避けられる。
     """
+    if current_run_id is not None:
+        try:
+            for title, detail in update_dotfiles_report.bootstrap_failures(LOG_PATH.parent):
+                continue_after_failure(title, "次回のupdate-dotfiles起動時に再試行します。", detail)
+            failures = [(failure.title, failure.detail or "失敗") for failure in continued_failures]
+            if returncode != 0:
+                failures.append((current_stage_title or "更新の開始", last_stderr_tail or f"exit={returncode}"))
+            update_dotfiles_report.report(failures, LOG_PATH.with_name("update-failures.json"), DOTFILES_ROOT)
+        except update_dotfiles_report.process_tree.ReclaimError:
+            # 所有した子孫を止められない状態では、新しい更新や起票を始めない。
+            logger.exception("自動起票の子孫を回収できませんでした")
+            raise
+        except Exception:  # noqa: BLE001 -- 起票の未知の障害でも更新と結果の記録を妨げない境界。
+            logger.exception("更新失敗を自動起票できませんでした")
     if continued_failures:
         returncode = _report_continued_failures(returncode)
     logger.info("update-dotfiles終了: exit=%d", returncode)

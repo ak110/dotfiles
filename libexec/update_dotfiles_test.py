@@ -245,12 +245,19 @@ def test_child_python_output_uses_utf8(monkeypatch: pytest.MonkeyPatch) -> None:
     assert update_dotfiles_runtime.child_env()["PYTHONIOENCODING"] == "utf-8:replace"  # noqa: SLF001
 
 
+@pytest.mark.parametrize("unknown_error", [False, True])
 def test_missing_persistent_log_continues_updates(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, sync_report_path: pathlib.Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, sync_report_path: pathlib.Path, unknown_error: bool
 ) -> None:
     """永続ログを開始できなくても更新を続け、終了コード1と失敗した段を残す。"""
     calls: list[list[str]] = []
-    monkeypatch.setattr(update_dotfiles_runtime, "configure_persistent_log", lambda _run_id: contextlib.nullcontext(None))
+
+    def configure(_run_id: str) -> contextlib.AbstractContextManager[None]:
+        if unknown_error:
+            raise RuntimeError("injected log error")
+        return contextlib.nullcontext(None)
+
+    monkeypatch.setattr(update_dotfiles_runtime, "configure_persistent_log", configure)
     monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
     monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
     monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
@@ -258,6 +265,20 @@ def test_missing_persistent_log_continues_updates(
     assert update_dotfiles.main() == 1
     assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
     assert json.loads(sync_report_path.read_text(encoding="utf-8"))["failed_stage"] == "永続ログの開始"
+
+
+def test_bootstrap_failure_is_reported_after_successful_apply(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, sync_report_path: pathlib.Path
+) -> None:
+    """bootstrapの失敗があってもapplyまで実行し、その後に失敗を集約する。"""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
+    monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_FAILURES", "管理Pythonの更新: exit=17\n")
+    assert update_dotfiles.main() == 1
+    assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
+    assert json.loads(sync_report_path.read_text(encoding="utf-8"))["failed_stage"] == "管理Pythonの更新"
 
 
 @pytest.mark.parametrize("argument", ["--force", "--unknown"])

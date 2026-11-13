@@ -1,5 +1,6 @@
 """update_dotfiles試験の共通fixture・入力と補助関数。"""
 
+import functools
 import io
 import json
 import os
@@ -23,6 +24,16 @@ import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-pos
 
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles_git.update_git_with_recovery  # pylint: disable=protected-access
 
+_REAL_SUBPROCESS_RUN = subprocess.run
+_REAL_RUN_WITH_TIMEOUT = update_dotfiles.process_tree.run_with_timeout
+
+
+def _run_with_test_double(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    """既存の段の試験のコマンド代用は保ち、実プロセス試験では共通の回収処理を通す。"""
+    runner = _REAL_RUN_WITH_TIMEOUT if subprocess.run is _REAL_SUBPROCESS_RUN else subprocess.run
+    return runner(*args, check=kwargs.pop("check", False), **kwargs)
+
+
 _REAL_PREPARE_AGENT_TOOLKIT_ENVIRONMENT = update_dotfiles._prepare_agent_toolkit_environment  # pylint: disable=protected-access
 
 _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolkit" / "scripts"
@@ -32,6 +43,13 @@ _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolk
 def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """段階順の単体テストでは、Git回復の統合挙動を低水準pullから分離する。"""
     monkeypatch.setattr(update_dotfiles_runtime, "LOG_PATH", tmp_path / "state" / "update-dotfiles.log")
+    monkeypatch.setattr(update_dotfiles.process_tree, "run_with_timeout", _run_with_test_double)
+    # 呼出順と回復の回数を確認する単体試験では、本番の再試行待機を実時間で繰り返さない。
+    monkeypatch.setattr(
+        update_dotfiles.update_dotfiles_stages,
+        "run_stages",
+        functools.partial(update_dotfiles.update_dotfiles_stages.run_stages, sleep=lambda _seconds: None),
+    )
     monkeypatch.setattr(
         update_dotfiles_git,
         "update_git_with_recovery",
@@ -86,6 +104,8 @@ def _isolate_sync_report(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     """同期結果の記録先を一時領域へ向け、実行環境の状態ディレクトリを書き換えないようにする。"""
     report_path = tmp_path / "state" / "sync-report.json"
     monkeypatch.setattr(update_dotfiles.sync_report, "REPORT_PATH", report_path)
+    # 更新の段の試験はキューへ作用させない。起票は専用試験で公開CLIの呼出しまで確かめる。
+    monkeypatch.setattr(update_dotfiles_runtime.update_dotfiles_report, "report", lambda *_args: None)
     return report_path
 
 

@@ -39,6 +39,7 @@ class Stage:
     # 中断段が失敗したときの自己回復の再試行回数と、再試行前の待機秒数。
     retries: int = 0
     retry_wait_sec: float = 0.0
+    platforms: tuple[str, ...] = ("linux", "win32")
 
     def __post_init__(self) -> None:
         """中断理由と回復の宣言を検証する。"""
@@ -94,7 +95,8 @@ STAGES: tuple[Stage, ...] = (
         retries=1,
         retry_wait_sec=_RETRY_WAIT,
     ),
-    Stage(update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE, where="inline"),
+    Stage(update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE, where="inline", platforms=("linux",)),
+    Stage("更新失敗の起票", where="inline", timeout_sec=120),
     Stage(
         "uvの導入",
         where="bootstrap",
@@ -146,17 +148,21 @@ def run_stages(
     """
     declared = [item for item in STAGES if item.where == where]
     expected = {item.name for item in declared}
-    if missing := expected - set(runners):
-        raise ValueError(f"宣言された段の実装がありません: {sorted(missing)}")
+
+    def unregistered(item: Stage) -> int:
+        raise LookupError(f"段の処理が未登録です: {item.name}")
+
     # 拡張された処理が分類表にまだ無い場合にも、既定の続行を適用する。
     for item in [*declared, *(Stage(name) for name in runners if name not in expected)]:
-        code = _run_stage(item, runners[item.name], fatal=fatal, sleep=sleep)
+        code = _run_stage(item, runners.get(item.name, unregistered), fatal=fatal, sleep=sleep)
         if code != 0 and item.abort:
             return code
     return 0
 
 
 def _run_stage(item: Stage, runner: Runner, *, fatal: tuple[type[BaseException], ...], sleep: Callable[[float], None]) -> int:
+    update_dotfiles_runtime.current_stage_title = item.name
+    update_dotfiles_runtime.last_stderr_tail = None
     attempts = item.retries + 1
     code = 0
     recorded = len(update_dotfiles_runtime.continued_failures)

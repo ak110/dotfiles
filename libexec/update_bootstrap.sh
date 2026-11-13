@@ -45,8 +45,11 @@ if [[ "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != 1 ]]; then
     run_stage 'uvの自己更新' continue 300 bash "$root/update_uv.sh" "$uv_path"
     run_stage '管理Pythonの更新' continue 900 "$uv_path" python install --upgrade 3.15
 fi
-if ! timeout --kill-after=10 60 "$uv_path" python find 3.15 >/dev/null; then
+if ! python_path="$(timeout --kill-after=10 60 "$uv_path" python find 3.15)"; then
     run_stage '管理Pythonの導入' abort 900 "$uv_path" python install 3.15 ||
         run_stage '管理Pythonの導入' abort 900 "$uv_path" python install 3.15
-    timeout --kill-after=10 60 "$uv_path" python find 3.15 >/dev/null
+    python_path="$(timeout --kill-after=10 60 "$uv_path" python find 3.15)"
+fi
+if [[ "$UPDATE_DOTFILES_BOOTSTRAP_FAILURES" == *'管理Pythonの更新'* && "$python_path" =~ 3\.15\.[0-9]+(a|b|rc)[0-9]+ ]]; then
+    printf '%s\n' "残った管理Pythonはpre-releaseです: $python_path。次回起動時に更新を再試行します。" >&2
 fi

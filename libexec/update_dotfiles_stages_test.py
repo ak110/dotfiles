@@ -23,6 +23,31 @@ def test_bootstrap_classification_matches_declarations(name: str) -> None:
         assert (classification == "abort") == expected[title]
 
 
+@pytest.mark.parametrize("missing_runner", [False, True])
+def test_unknown_optional_stage_never_prevents_known_updates(monkeypatch: pytest.MonkeyPatch, missing_runner: bool) -> None:
+    """追加段の宣言か実装の片方しか届かない場合も、既知の更新段を完了する。"""
+    monkeypatch.setattr(update_dotfiles_runtime, "continued_failures", [])
+    declared = [item.name for item in stages.STAGES if item.where == "executor"]
+    visited: list[str] = []
+
+    def run(item: stages.Stage) -> int:
+        visited.append(item.name)
+        if item.name == "future optional stage":
+            raise RuntimeError("unknown failure")
+        return 0
+
+    runners = dict.fromkeys(declared, run)
+    if missing_runner:
+        monkeypatch.setattr(stages, "STAGES", (*stages.STAGES, stages.Stage("future optional stage")))
+    else:
+        runners["future optional stage"] = run
+    result = stages.run_stages(runners)
+    assert result == 0
+    assert visited[: len(declared)] == declared
+    assert update_dotfiles_runtime.continued_failures[-1].title == "future optional stage"
+    assert update_dotfiles_runtime.finish(result) == 1
+
+
 @pytest.mark.parametrize("failed", stages.STAGES, ids=lambda item: item.name)
 @pytest.mark.parametrize("error", [RuntimeError("injected"), subprocess.TimeoutExpired("injected", 1)])
 def test_injected_failure_preserves_progress(failed: stages.Stage, error: Exception, monkeypatch: pytest.MonkeyPatch) -> None:

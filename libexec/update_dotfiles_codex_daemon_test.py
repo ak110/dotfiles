@@ -51,6 +51,20 @@ class TestCodexDaemonPause:
     def _commands(calls: list[list[str]]) -> list[str]:
         return [f"daemon {call[-1]}" if call[0] == _FAKE_CODEX else call[1] for call in calls]
 
+    @pytest.mark.parametrize("operation", ["_pause_codex_daemon", "_resume_codex_daemon"])
+    def test_unknown_daemon_error_does_not_skip_apply(
+        self, monkeypatch: pytest.MonkeyPatch, codex_env: list[list[str]], operation: str
+    ) -> None:
+        """内側の任意段の未知の例外でも、必須の配備を実行し失敗として集計する。"""
+
+        def fail(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("injected daemon failure")
+
+        monkeypatch.setattr(update_dotfiles, operation, fail)
+        monkeypatch.setattr(subprocess, "run", _fake_run({}, codex_env, stdout_by_command={"diff": "change"}))
+        assert update_dotfiles.main() == 1
+        assert "apply" in self._commands(codex_env)
+
     def test_unchanged_apply_keeps_running_daemon(
         self,
         monkeypatch: pytest.MonkeyPatch,

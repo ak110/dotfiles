@@ -278,12 +278,12 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
 
 @_LINUX_ONLY
 def test_python_upgrade_failure_continues_with_existing_python(tmp_path: pathlib.Path) -> None:
-    """更新失敗でも既存の3.15で更新本体まで進む。"""
-    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, python_upgrade_exit=17)
-    assert result.returncode == 0, result.stderr
+    """更新本体まで進み、本体の代用品が返す集約済みの1を伝播する。"""
+    result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, python_upgrade_exit=17, run_exit=1)
+    assert result.returncode == 1, result.stderr
     assert any(call[1:3] == ["python", "find"] for call in calls)
     assert any(call[1] == "run" for call in calls)
-    assert (tmp_path / "post-apply-calls").exists()
+    assert not (tmp_path / "post-apply-calls").exists()
 
 
 @pytest.mark.parametrize("run_exit", [0, 23])

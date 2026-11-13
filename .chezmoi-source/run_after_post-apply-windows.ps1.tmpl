@@ -78,7 +78,15 @@ $reinstallDeferred = $false
 $env:DOTFILES_PYTOOLS_INSTALL_STATE = ''
 $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
 if ($needsReinstall) {
-    $lockingProcs = @(Get-PytoolsEnvLockingProcess)
+    try {
+        $lockingProcs = @(Get-PytoolsEnvLockingProcess)
+    } catch {
+        $lockingProcs = @()
+        $reinstallDeferred = $true
+        $env:DOTFILES_PYTOOLS_INSTALL_STATE = 'deferred'
+        $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = "使用中プロセスの判定に失敗: $_"
+        Write-Host "  [pytools] 使用中を判定できないため再インストールを延期し、既存版で続行します: $_"
+    }
     $restorableProcs = @()
     $unrestorableProcs = @()
     foreach ($p in $lockingProcs) {

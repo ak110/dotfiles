@@ -16,9 +16,9 @@ if [[ "${1:-}" == "job" || -n "${CODEX_THREAD_ID:-}" ]]; then
     case " ${*} " in
     *" --help "* | *" -h "* | " logs ") ;;
     *)
-        if ! native_python="$("$UV" python find 3.15)"; then
-            "$UV" python install 3.15
-            native_python="$("$UV" python find 3.15)"
+        if ! native_python="$(timeout --kill-after=10 60 "$UV" python find 3.15)"; then
+            AGENT_TOOLKIT_PROCESS_LOOP_SESSION=1 source "${SCRIPT_DIR}/libexec/update_bootstrap.sh" "$UV"
+            native_python="$(timeout --kill-after=10 60 "$UV" python find 3.15)"
         fi
         # このblockは更新中のランチャー置換前に解析される。
         {

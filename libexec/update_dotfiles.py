@@ -64,6 +64,7 @@ post-applyの診断ログ復元と不要pluginの除去が、利用セッショ�
 """
 
 import argparse
+import contextlib
 import dataclasses
 import io
 import os
@@ -85,7 +86,7 @@ import update_dotfiles_git  # noqa: E402  # pylint: disable=wrong-import-positio
 import update_dotfiles_process  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_stages  # noqa: E402  # pylint: disable=wrong-import-position
-from agent_toolkit._common import dotfiles_mode  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._common import dotfiles_mode, process_tree  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_process import run_git_pull  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_runtime import child_env  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -119,35 +120,32 @@ def _run_step(
         print(f"=== [{step_no}/{total}] {title} ===", flush=True)
     update_dotfiles_runtime.logger.info("stage開始: %d/%d %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
-    tracker = update_dotfiles_process.DescendantTracker()
     try:
-        with tracker:
-            if capture:
-                result = subprocess.run(
-                    argv,
-                    cwd=update_dotfiles_runtime.DOTFILES_ROOT,
-                    check=False,
-                    capture_output=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    env=update_dotfiles_runtime.child_env(),
-                    timeout=timeout,
-                )
-                returncode, stdout, output_tail = result.returncode, result.stdout, result.stderr
-                if result.stderr:
-                    sys.stderr.write(result.stderr)
-            else:
-                result = subprocess.run(
-                    argv,
-                    cwd=update_dotfiles_runtime.DOTFILES_ROOT,
-                    check=False,
-                    env=update_dotfiles_runtime.child_env(),
-                    timeout=timeout,
-                )
-                returncode, output_tail = result.returncode, ""
-                stdout = ""
+        if capture:
+            result = process_tree.run_with_timeout(
+                argv,
+                cwd=update_dotfiles_runtime.DOTFILES_ROOT,
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                env=update_dotfiles_runtime.child_env(),
+                timeout=timeout,
+            )
+            returncode, stdout, output_tail = result.returncode, result.stdout, result.stderr
+            if result.stderr:
+                sys.stderr.write(result.stderr)
+        else:
+            result = process_tree.run_with_timeout(
+                argv,
+                cwd=update_dotfiles_runtime.DOTFILES_ROOT,
+                check=False,
+                env=update_dotfiles_runtime.child_env(),
+                timeout=timeout,
+            )
+            returncode, output_tail = result.returncode, ""
+            stdout = ""
     except subprocess.TimeoutExpired:
-        tracker.kill_all()
         message = (
             f"{title}が{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
             "未完了です。原因（通信の停止、入力待ちなど）を解消してupdate-dotfilesを再実行してください。"
@@ -159,6 +157,8 @@ def _run_step(
         update_dotfiles_runtime.last_step_timed_out = True
         update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(message)
         return 1, ""
+    except process_tree.ReclaimError as error:
+        raise update_dotfiles_process.GitReclaimError(str(error)) from error
     except OSError as error:
         update_dotfiles_runtime.logger.exception(
             "stage起動失敗: %d/%d %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title
@@ -427,11 +427,15 @@ def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
         return 0
 
     def chezmoi_apply(stage: update_dotfiles_stages.Stage) -> int:
-        daemon_pause = (
-            _pause_codex_daemon()
-            if context.diff_output.strip() and not (dotfiles_mode.is_minimal() and context.args.prune)
-            else None
-        )
+        daemon_pause = None
+        daemon_errors: list[str] = []
+        try:
+            if context.diff_output.strip() and not (dotfiles_mode.is_minimal() and context.args.prune):
+                daemon_pause = _pause_codex_daemon()
+            if daemon_pause is not None and daemon_pause.stop_error is not None:
+                daemon_errors.append(daemon_pause.stop_error)
+        except Exception as error:  # noqa: BLE001 -- 任意のdaemon操作は配備の前提を壊さない。
+            daemon_errors.append(str(error))
         try:
             returncode, _ = _run_step(
                 context.total,
@@ -442,18 +446,19 @@ def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
                 timeout=stage.timeout_sec,
             )
         finally:
-            resume_error = None if daemon_pause is None else _resume_codex_daemon(daemon_pause)
-        if returncode != 0:
-            return returncode
-        stop_error = None if daemon_pause is None else daemon_pause.stop_error
-        daemon_errors = [error for error in (stop_error, resume_error) if error is not None]
-        if daemon_errors:
-            update_dotfiles_runtime.continue_after_failure(
-                update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
-                "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
-                "\n".join(daemon_errors),
-            )
-        return 0
+            try:
+                resume_error = None if daemon_pause is None else _resume_codex_daemon(daemon_pause)
+                if resume_error is not None:
+                    daemon_errors.append(resume_error)
+            except Exception as error:  # noqa: BLE001 -- 復帰失敗も記録し、applyの終了値を保つ。
+                daemon_errors.append(str(error))
+            if daemon_errors:
+                update_dotfiles_runtime.continue_after_failure(
+                    update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
+                    "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
+                    "\n".join(daemon_errors),
+                )
+        return returncode
 
     runners = {
         "dotfiles自身のGit更新": git_update,
@@ -476,7 +481,14 @@ def main(argv: list[str] | None = None) -> int:
     update_dotfiles_runtime.current_stage_title = None
     update_dotfiles_runtime.last_stderr_tail = None
     update_dotfiles_runtime.continued_failures.clear()
-    with update_dotfiles_runtime.configure_persistent_log(update_dotfiles_runtime.current_run_id) as log_handler:
+    with contextlib.ExitStack() as cleanup:
+        try:
+            log_handler = cleanup.enter_context(
+                update_dotfiles_runtime.configure_persistent_log(update_dotfiles_runtime.current_run_id)
+            )
+        except Exception as error:  # noqa: BLE001 -- ログの未知の障害でも配備を妨げない。
+            print(f"永続ログの開始に失敗しました: {error}", file=sys.stderr)
+            log_handler = None
         try:
             sync_report.write_start(update_dotfiles_runtime.current_run_id, sync_report.now_text())
             update_dotfiles_runtime.logger.info("update-dotfiles開始: root=%s", update_dotfiles_runtime.DOTFILES_ROOT)

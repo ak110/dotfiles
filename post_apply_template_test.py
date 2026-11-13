@@ -136,6 +136,7 @@ def test_windows_locking_processes_classify_and_record_restart_state(
         setup: str,
         body: str,
         result_expression: str,
+        unavailable: bool = False,
     ) -> tuple[dict[str, object], list[str]]:
         script = tmp_path / f"{name}.ps1"
         script.write_text(
@@ -144,6 +145,7 @@ $ErrorActionPreference = 'Stop'
 """
             + prologue
             + setup
+            + f"$getCimFails = ${str(unavailable).lower()}\n"
             + """
 $stopped = @()
 $getCimCalls = 0
@@ -153,8 +155,9 @@ $fixtures = @(
             + """)
 function Get-CimInstance {
     [CmdletBinding()]
-    param([string] $ClassName)
+    param([string] $ClassName, [int] $OperationTimeoutSec)
     $script:getCimCalls += 1
+    if ($getCimFails) { throw 'inventory unavailable' }
     return $fixtures
 }
 function Stop-Process {
@@ -186,7 +189,7 @@ function Start-Sleep {
         output = completed.stdout.splitlines()
         return json.loads(output[-1]), output[:-1]
 
-    def run_reinstall_scenario(name: str, fixtures: str) -> tuple[dict[str, object], list[str]]:
+    def run_reinstall_scenario(name: str, fixtures: str, unavailable: bool = False) -> tuple[dict[str, object], list[str]]:
         return run_scenario(
             name,
             fixtures,
@@ -209,7 +212,12 @@ $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
     GetCimCalls = $getCimCalls
 } | ConvertTo-Json -Compress
 """,
+            unavailable=unavailable,
         )
+
+    unavailable, _ = run_reinstall_scenario("inventory-unavailable", "", unavailable=True)
+    assert unavailable["ReinstallDeferred"] is True
+    assert not unavailable["Stopped"]
 
     distributed_fixture = """    [pscustomobject]@{
         ProcessId = 1
@@ -345,43 +353,27 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
     assert "export DOTFILES_PYTOOLS_INSTALL_STATE DOTFILES_PYTOOLS_INSTALL_DETAIL" in text[failure:]
 
 
-@pytest.mark.skipif(POWERSHELL is None or os.name == "nt", reason="LinuxのpwshでWindowsプロセスを模擬する")
-@pytest.mark.parametrize("blocked,upgrade_exit", [(False, 0), (False, 17), (True, 0)])
-def test_windows_python_bootstrap_process_ownership(tmp_path: Path, blocked: bool, upgrade_exit: int) -> None:
-    """使用中の分類から停止・更新・復帰、または見送りまでを実行する。"""
+@pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が必要")
+@pytest.mark.parametrize(
+    "blocked,upgrade_exit,preview,inventory_error,missing",
+    [
+        (False, 0, False, False, False),
+        (False, 17, False, False, False),
+        (True, 0, False, False, False),
+        (False, 17, True, False, False),
+        (False, 0, False, True, False),
+        (False, 17, False, False, True),
+    ],
+)
+def test_windows_python_bootstrap_process_ownership(
+    tmp_path: Path, blocked: bool, upgrade_exit: int, preview: bool, inventory_error: bool, missing: bool
+) -> None:
+    """CIMだけを模擬し、native子の停止・更新・復帰か見送りをWindowsとpwshで実行する。"""
     log = tmp_path / "calls"
-    fake_uv = tmp_path / "uv"
+    fake_uv = tmp_path / ("uv.exe" if os.name == "nt" else "uv")
     tool_python = tmp_path / "tools/pytools/Scripts/python.exe"
     tool_python.parent.mkdir(parents=True)
-    tool_python.write_text('#!/usr/bin/env bash\nprintf "restart\\n" >> "$BOOTSTRAP_LOG"\n', encoding="utf-8")
-    tool_python.chmod(0o755)
-    fake_uv.write_text(
-        "#!/usr/bin/env bash\n"
-        'if [[ "$1 $2" == "python install" ]]; then printf "upgrade\\n" >> "$BOOTSTRAP_LOG"; exit "$UPGRADE_EXIT"; fi\n'
-        'if [[ "$1 $2" == "tool dir" ]]; then printf "%s\\n" "$TOOL_BASE"; fi\n'
-        "exit 0\n",
-        encoding="utf-8",
-    )
-    fake_uv.chmod(0o755)
     powershell_stub = tmp_path / "powershell.exe"
-    powershell_stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
-    powershell_stub.chmod(0o755)
-    driver = tmp_path / "driver.ps1"
-    command = "arbitrary-python" if blocked else "pytools.media_remote"
-    driver.write_text(
-        "New-PSDrive -Name C -PSProvider FileSystem -Root $env:BOOTSTRAP_ROOT | Out-Null\n"
-        "$env:APPDATA = 'C:\\appdata'\n"
-        "function global:Join-Path { param([string]$Path,[string]$ChildPath)\n"
-        "if ($Path -like 'C:*') { return $Path.TrimEnd('\\') + '\\' + $ChildPath }; "
-        "Microsoft.PowerShell.Management\\Join-Path $Path $ChildPath }\n"
-        "function global:Get-CimInstance { param([string]$ClassName)\n"
-        "[pscustomobject]@{ ProcessId=101; ParentProcessId=0; Name='python.exe'; "
-        f"ExecutablePath='C:\\appdata\\uv\\python\\cpython-3.15.2\\python.exe'; CommandLine='{command}' }}\n"
-        "}\n"
-        'function global:Stop-Process { param([int]$Id,[switch]$Force) Add-Content $env:BOOTSTRAP_LOG "stop:$Id" }\n'
-        f"& '{REPO_ROOT / 'libexec/update_bootstrap.ps1'}' '{fake_uv}'\n",
-        encoding="utf-8-sig",
-    )
     environment = os.environ.copy()
     environment.update(
         PATH=str(tmp_path) + os.pathsep + environment["PATH"],
@@ -393,19 +385,130 @@ def test_windows_python_bootstrap_process_ownership(tmp_path: Path, blocked: boo
         TOOL_BASE=str(tmp_path / "tools"),
         UPGRADE_EXIT=str(upgrade_exit),
         AGENT_TOOLKIT_PROCESS_LOOP_SESSION="0",
+        PREVIEW_PATH="C:\\uv\\python\\cpython-3.15.0a7\\python.exe" if preview else "",
+        FIND_EXIT="2" if missing else "0",
+        CIM_FAIL="1" if inventory_error else "0",
+        BOOTSTRAP_IS_WINDOWS="1" if os.name == "nt" else "0",
+        BOOTSTRAP_SCRIPT=str(REPO_ROOT / "libexec/update_bootstrap.ps1"),
+        BOOTSTRAP_UV=str(fake_uv),
+        BOOTSTRAP_BINARY=str(fake_uv),
+        UPDATE_DOTFILES_BOOTSTRAP_REPORT=str(tmp_path / "state/agent-toolkit/update-bootstrap-11-22.json"),
+        PYTHON_BASE="C:\\appdata\\uv\\python",
     )
-    result = subprocess.run(
-        [str(POWERSHELL), "-NoProfile", "-File", str(driver)],
-        env=environment,
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-        timeout=30,
+    if os.name == "nt":
+        # Windows PowerShell 5.1の標準コンパイラーで、実際のWin32プロセスとなる代用品を作る。
+        build = tmp_path / "build.ps1"
+        build.write_text(
+            """Add-Type -OutputAssembly $env:BOOTSTRAP_BINARY -OutputType ConsoleApplication -TypeDefinition @'
+using System;
+using System.IO;
+public class Program {
+    public static int Main(string[] args) {
+        Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+        string name = Path.GetFileNameWithoutExtension(System.Reflection.Assembly.GetExecutingAssembly().Location);
+        string log = Environment.GetEnvironmentVariable("BOOTSTRAP_LOG");
+        if (name == "powershell") return 0;
+        if (name == "python") { File.AppendAllText(log, "restart\\n"); return 0; }
+        if (args.Length < 2) return 0;
+        if (args[0] == "python" && args[1] == "install") {
+            File.AppendAllText(log, "upgrade\\n");
+            return int.Parse(Environment.GetEnvironmentVariable("UPGRADE_EXIT"));
+        }
+        if (args[0] == "tool" && args[1] == "dir") Console.WriteLine(Environment.GetEnvironmentVariable("TOOL_BASE"));
+        if (args[0] == "python" && args[1] == "dir") Console.WriteLine(Environment.GetEnvironmentVariable("PYTHON_BASE"));
+        if (args[0] == "python" && args[1] == "find") {
+            Console.WriteLine(Environment.GetEnvironmentVariable("PREVIEW_PATH"));
+            return int.Parse(Environment.GetEnvironmentVariable("FIND_EXIT"));
+        }
+        return 0;
+    }
+}
+'@
+""",
+            encoding="utf-8-sig",
+        )
+        compiled = subprocess.run(
+            [str(POWERSHELL), "-NoProfile", "-File", str(build)],
+            env=environment,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+        )
+        assert compiled.returncode == 0, compiled.stderr + compiled.stdout
+        shutil.copy2(fake_uv, tool_python)
+        shutil.copy2(fake_uv, powershell_stub)
+    else:
+        tool_python.write_text('#!/usr/bin/env bash\nprintf "restart\\n" >> "$BOOTSTRAP_LOG"\n', encoding="utf-8")
+        tool_python.chmod(0o755)
+        fake_uv.write_text(
+            "#!/usr/bin/env bash\n"
+            'if [[ "$1 $2" == "python install" ]]; then printf "upgrade\\n" >> "$BOOTSTRAP_LOG"; exit "$UPGRADE_EXIT"; fi\n'
+            'if [[ "$1 $2" == "tool dir" ]]; then printf "%s\\n" "$TOOL_BASE"; fi\n'
+            'if [[ "$1 $2" == "python dir" ]]; then printf "%s\\n" "$PYTHON_BASE"; fi\n'
+            'if [[ "$1 $2" == "python find" ]]; then printf "%s\\n" "$PREVIEW_PATH"; exit "$FIND_EXIT"; fi\n'
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        fake_uv.chmod(0o755)
+        powershell_stub.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        powershell_stub.chmod(0o755)
+    driver = tmp_path / "driver.ps1"
+    command = "arbitrary-python" if blocked else "pytools.media_remote"
+    driver.write_text(
+        "if ($env:BOOTSTRAP_IS_WINDOWS -ne '1') { "
+        "New-PSDrive -Name C -PSProvider FileSystem -Root $env:BOOTSTRAP_ROOT | Out-Null }\n"
+        "$env:APPDATA = 'C:\\appdata'\n"
+        "function global:Join-Path { param([string]$Path,[string]$ChildPath)\n"
+        "if ($Path -like 'C:*') { return $Path.TrimEnd('\\') + '\\' + $ChildPath }; "
+        "Microsoft.PowerShell.Management\\Join-Path $Path $ChildPath }\n"
+        "function global:Get-Process { param([int]$Id) return $null }\n"
+        "function global:Get-CimInstance { param([string]$ClassName, [int]$OperationTimeoutSec)\n"
+        "if ($env:CIM_FAIL -eq '1') { throw 'inventory unavailable' }\n"
+        "[pscustomobject]@{ ProcessId=101; ParentProcessId=0; Name='python.exe'; "
+        f"ExecutablePath='C:\\appdata\\uv\\python\\cpython-3.15.2\\python.exe'; CommandLine='{command}' }}\n"
+        "}\n"
+        'function global:Stop-Process { param([int]$Id,[switch]$Force) Add-Content $env:BOOTSTRAP_LOG "stop:$Id" }\n'
+        "& $env:BOOTSTRAP_SCRIPT $env:BOOTSTRAP_UV\nexit $LASTEXITCODE\n",
+        encoding="utf-8-sig",
     )
-    assert result.returncode == 0, result.stderr + result.stdout
+
+    def invoke() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [str(POWERSHELL), "-NoProfile", "-File", str(driver)],
+            env=environment,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+        )
+
+    result = invoke()
+    assert result.returncode == (1 if missing else 0), result.stderr + result.stdout
+    if not missing:
+        payload = Path(environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"])
+        if blocked or upgrade_exit or inventory_error:
+            failures = json.loads(payload.read_text(encoding="utf-8-sig"))
+            assert isinstance(failures, list)
+            assert any(item["title"] == "管理Pythonの更新" for item in failures)
+        else:
+            assert not payload.exists()
     if blocked:
         assert not log.exists()
         assert "連続1回" in result.stderr
         assert "PID=101" in result.stderr
-    else:
+        assert "連続2回" in invoke().stderr
+        deferred = tmp_path / "state/agent-toolkit/python-upgrade-deferred.txt"
+        assert deferred.read_text(encoding="utf-8-sig").strip() == "2"
+        driver.write_text(
+            driver.read_text(encoding="utf-8-sig").replace("arbitrary-python", "pytools.media_remote"), encoding="utf-8-sig"
+        )
+        recovered = invoke()
+        assert recovered.returncode == 0, recovered.stderr
+        assert not deferred.exists()
+    elif inventory_error:
+        assert not log.exists()
+        assert "inventory unavailable" in result.stderr
+    elif not missing:
         assert log.read_text(encoding="utf-8").splitlines() == ["stop:101", "upgrade", "restart"]
+        assert ("pre-release" in result.stderr) is preview
