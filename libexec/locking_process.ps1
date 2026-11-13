@@ -26,3 +26,28 @@ function Get-PytoolsEnvLockingProcess {
         }
     }
 }
+
+function Invoke-PytoolsMediaRemoteStop {
+    param([object[]]$Processes)
+    foreach ($listed in $Processes) {
+        if (-not $listed.IsMediaRemote) { throw '再起動できないプロセスは停止しません。' }
+        $current = Get-Process -Id $listed.ProcessId -ErrorAction SilentlyContinue
+        if (-not $current) { continue }
+        try {
+            # ハンドルを保持してから世代を比べ、PID再利用で別のプロセスを停止しない。
+            [void]$current.Handle
+            if ($current.HasExited) { continue }
+            # CIMの生成日時はマイクロ秒精度なので、100nsの末尾桁をそろえる。
+            $started = $current.StartTime.ToUniversalTime()
+            $started = $started.AddTicks(-($started.Ticks % 10))
+            if ($started -ne $listed.CreationDate.ToUniversalTime()) {
+                throw "PID=$($listed.ProcessId)の所有者が変わったため更新を見送ります。"
+            }
+            $current.Kill()
+            if (-not $current.WaitForExit(5000)) { throw "PID=$($listed.ProcessId)が停止しません。" }
+        } catch {
+            # 親の停止で列挙済みの子も先に消える。消滅は停止の成功である。
+            if (-not $current.HasExited) { throw }
+        } finally { $current.Dispose() }
+    }
+}

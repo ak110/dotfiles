@@ -86,7 +86,7 @@ def test_windows_template_limits_to_reinstall() -> None:
     assert "wscript" not in text
     assert "'serve'" not in text
     assert "launch.vbs" not in text
-    assert "Stop-Process -Id $p.ProcessId" in text
+    assert "Invoke-PytoolsMediaRemoteStop -Processes $restorableProcs" in text
     assert f"$env:{setup_media_remote.STOPPED_ENV} = " in text
     assert f"$env:{setup_media_remote.REINSTALL_ENV} = " in text
     # 渡した後にpost-applyを起動する。
@@ -100,7 +100,7 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
     classification = text.index("$unrestorableProcs += $p")
     guard = text.index("if ($unrestorableProcs.Count -gt 0)")
     stop_loop = text.index("foreach ($p in $restorableProcs)")
-    stop_process = text.index("Stop-Process -Id $p.ProcessId", stop_loop)
+    stop_process = text.index("Invoke-PytoolsMediaRemoteStop -Processes $restorableProcs", stop_loop)
     install_guard = text.index("if ($needsReinstall -and -not $reinstallDeferred)")
     install = text.index('& uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}"')
     deferred = text.index("} elseif ($reinstallDeferred) {")
@@ -171,10 +171,8 @@ function Start-Sleep {
 }
 """
             + classifier
-            + "\n"
-            + body
-            + "\n"
-            + result_expression,
+            + "\nfunction Invoke-PytoolsMediaRemoteStop { param($Processes) "
+            "foreach ($p in $Processes) { Stop-Process -Id $p.ProcessId } }\n" + "\n" + body + "\n" + result_expression,
             encoding="utf-8-sig",
         )
         completed = subprocess.run(
@@ -516,7 +514,8 @@ public class Program {
         assert not log.exists()
         assert "inventory unavailable" in result.stderr
     elif not missing:
-        assert log.read_text(encoding="utf-8").splitlines() == ["stop:101", "upgrade", "restart"]
+        # Get-Processは列挙後に消えたPIDを返す。消滅は停止済みとして更新・復帰へ進む。
+        assert log.read_text(encoding="utf-8").splitlines() == ["upgrade", "restart"]
         assert ("pre-release" in result.stderr) is preview
 
 

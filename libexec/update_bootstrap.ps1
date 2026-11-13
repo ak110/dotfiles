@@ -106,12 +106,8 @@ try {
         } else {
             $stopped = @()
             try {
-                foreach ($item in $locking) {
-                    Stop-Process -Id $item.ProcessId -Force -ErrorAction Stop
-                    $stopped += $item
-                    $owned = Get-Process -Id $item.ProcessId -ErrorAction SilentlyContinue
-                    if ($owned) { $owned | Wait-Process -Timeout 5 -ErrorAction Stop }
-                }
+                $stopped = @($locking)
+                Invoke-PytoolsMediaRemoteStop -Processes $locking
                 $code = Invoke-UpdateStage '管理Pythonの更新' continue 900 $UvPath @('python', 'install', '--upgrade', '3.15')
                 if ($code -eq 0) { Remove-Item -LiteralPath $state -ErrorAction SilentlyContinue }
             } finally {

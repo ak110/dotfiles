@@ -17,10 +17,11 @@ post-applyテンプレートがpytoolsの再導入のために停止した場合
 ハングの原因は未特定である。`launch.vbs`と実行ファイルのパスは本モジュールだけが持つ。
 """
 
+import base64
 import logging
 import os
 import pathlib
-import subprocess
+import uuid
 
 # 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import psutil
@@ -140,22 +141,66 @@ def _is_media_remote(info: dict[str, object], exe: pathlib.Path) -> bool:
 
 
 def _start(vbs: pathlib.Path, exe: pathlib.Path) -> None:
-    """VBSラッパーがあればその経由で、無ければ実行ファイルを直接、非表示で起動する。
-
-    起動したプロセスへ標準入出力を引き継がない。引き継ぐと、post-applyの出力を読む`update-dotfiles`が
-    media-remoteの終了までパイプの終了を待ち続ける。
-    """
-    command = [WSCRIPT_PATH, str(vbs)] if vbs.is_file() else [str(exe), "serve"]
+    """同じユーザーの対話トークンで起動し、SSHの終了後も操作対象のデスクトップで常駐させる。"""
+    if not vbs.is_file():
+        raise OSError(f"常駐の起動に必要なVBSがありません: {vbs}")
+    arguments = _shortcut_arguments(vbs)
+    task_name = f"dotfiles-media-remote-{uuid.uuid4().hex}"
+    # DETACHED_PROCESSだけではWindows OpenSSHの起動単位から独立せず、CIM起動ではSession0になる。
+    # 一時タスクに既存VBSを実行させることで、非表示・対話セッション・接続終了後の寿命をそろえる。
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$sessions = @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" | ForEach-Object {{
+    $owner = Invoke-CimMethod -InputObject $_ -MethodName GetOwnerSid
+    if ($owner.Sid -eq $identity.User.Value -and $_.SessionId -ne 0) {{ $_.SessionId }}
+}})
+if (-not $sessions.Count) {{ throw '同じユーザーの対話セッションがありません。Windowsへログオンして再実行してください。' }}
+$name = '{task_name}'
+$registered = $false
+try {{
+    $action = New-ScheduledTaskAction -Execute '{_ps_escape(WSCRIPT_PATH)}' -Argument '{_ps_escape(arguments)}'
+    $principal = New-ScheduledTaskPrincipal -UserId $identity.Name -LogonType Interactive -RunLevel Limited
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    Register-ScheduledTask -TaskName $name -Action $action -Principal $principal -Settings $settings | Out-Null
+    $registered = $true
+    Start-ScheduledTask -TaskName $name
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {{
+        $task = Get-ScheduledTask -TaskName $name
+        $info = Get-ScheduledTaskInfo -TaskName $name
+        $running = @(Get-CimInstance Win32_Process -Filter "Name='dotfiles-media-remote.exe'" | Where-Object {{
+            $_.ExecutablePath -eq '{_ps_escape(str(exe))}' -and $_.SessionId -in $sessions
+        }})
+        $complete = $task.State -eq 'Ready' -and $info.LastTaskResult -eq 0 -and $info.LastRunTime.Year -gt 2000
+        if ($running.Count -and $complete) {{ break }}
+        if ($info.LastRunTime.Year -gt 2000 -and $task.State -eq 'Ready' -and $info.LastTaskResult -ne 0) {{
+            throw "常駐の起動に失敗しました: task result=$($info.LastTaskResult)"
+        }}
+        if ([DateTime]::UtcNow -ge $deadline) {{ throw '対話セッションでメディアリモコンの起動を確認できません。' }}
+        Start-Sleep -Milliseconds 100
+    }} while ($true)
+}} finally {{
+    if ($registered) {{ Unregister-ScheduledTask -TaskName $name -Confirm:$false }}
+}}
+"""
     logger.info(log_format.format_status("media-remote", "dotfiles-media-remote を再起動"))
-    subprocess.Popen(  # pylint: disable=consider-using-with  # 常駐させるため終了を待たない
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        # コンソールを持たせずに起動する。定数はWindowsにだけあり、他のOSでは0を渡す。
-        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+    result = common.run_subprocess(
+        [
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-EncodedCommand",
+            base64.b64encode(script.encode("utf-16le")).decode("ascii"),
+        ],
+        timeout=30.0,
+        tag="media-remote",
     )
+    if result is None or result.returncode != 0:
+        raise OSError(f"対話セッションでmedia-remoteを起動できない: {common.format_cli_error(result)}")
 
 
 def _startup_dir() -> pathlib.Path:

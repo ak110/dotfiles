@@ -429,7 +429,7 @@ def _patch_real_pull(monkeypatch: pytest.MonkeyPatch, local: pathlib.Path) -> No
     """競合回復テストのpullだけを一時Gitリポジトリへ向ける。"""
     monkeypatch.setenv("PATH", os.pathsep.join((str(_REPOSITORY_ATK_BIN), os.environ.get("PATH", ""))))
 
-    def _pull(_step_no: int, _total: int, *, timeout: int | None) -> int:
+    def _pull(_step_no: int, _total: int, *, timeout: int | None, **_kwargs: object) -> int:
         del timeout
         return subprocess.run(  # noqa: S603
             ["git", "-C", str(local), "pull", "--rebase", "--quiet"],
