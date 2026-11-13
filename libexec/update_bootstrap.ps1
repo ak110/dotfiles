@@ -27,13 +27,23 @@ function Invoke-UpdateStage {
         if ($Probe) { $outputTask = $process.StandardOutput.ReadToEndAsync() }
         if (-not $process.WaitForExit($Seconds * 1000)) {
             try {
-                $killer = Start-Process -FilePath taskkill.exe -ArgumentList @('/PID', $process.Id, '/T', '/F') -PassThru -NoNewWindow
+                # 探索結果のstdoutへtaskkillの成功文を混ぜると、cmdが文面をPythonパスとして実行してしまう。
+                $killer = New-Object System.Diagnostics.Process
+                $killer.StartInfo.FileName = 'taskkill.exe'
+                $killer.StartInfo.Arguments = "/PID $($process.Id) /T /F"
+                $killer.StartInfo.UseShellExecute = $false
+                $killer.StartInfo.CreateNoWindow = $true
+                $killer.StartInfo.RedirectStandardOutput = $true
+                $killer.StartInfo.RedirectStandardError = $true
                 try {
+                    [void]$killer.Start()
+                    $killOutput = $killer.StandardOutput.ReadToEndAsync()
+                    $killError = $killer.StandardError.ReadToEndAsync()
                     if (-not $killer.WaitForExit(10000)) {
                         $killer.Kill()
                         throw 'taskkillが完了しませんでした'
                     }
-                    if ($killer.ExitCode -ne 0 -or -not $process.WaitForExit(10000)) { throw '子孫が残っています' }
+                    if ($killer.ExitCode -ne 0 -or -not $process.WaitForExit(10000)) { throw "子孫が残っています: $($killOutput.Result) $($killError.Result)" }
                 } finally { $killer.Dispose() }
             } catch {
                 throw [System.TimeoutException]::new("PID=$($process.Id)の子孫を回収できません。表示されたPIDを確認して終了させてください: $_")

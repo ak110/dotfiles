@@ -531,7 +531,7 @@ def test_job_python_probe_timeout_reclaims_process(tmp_path: Path) -> None:
     )
     uv.chmod(0o755)
     killer = tmp_path / "taskkill.exe"
-    killer.write_text('#!/usr/bin/env bash\nkill -KILL "$2"\n', encoding="utf-8")
+    killer.write_text('#!/usr/bin/env bash\necho taskkill-success\nkill -KILL "$2"\n', encoding="utf-8")
     killer.chmod(0o755)
     bootstrap = tmp_path / "update_bootstrap.ps1"
     # 実時間の試験だけ待機値を縮め、同じProcess/WaitForExit/回収経路を使う。
