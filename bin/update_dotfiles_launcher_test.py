@@ -664,6 +664,8 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     assert job_source.count(endpoint) == 1
     job_source = job_source.replace(endpoint, 'sys.executable, str(_ROOT / "libexec/prune.py")')
     (libexec / "update_dotfiles_job.py").write_text(job_source, encoding="utf-8")
+    for name in ("update_bootstrap.ps1", "locking_process.ps1"):
+        shutil.copy2(_ROOT / "libexec" / name, libexec / name)
     prune_calls = tmp_path / "prune-calls"
     (libexec / "prune.py").write_text(
         "import pathlib, sys\n"
