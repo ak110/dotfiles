@@ -73,16 +73,22 @@ def run_git_pull(
     pullはロック作成に失敗した時点で変更を始めていないため、再実行は安全である。
     本体のpullは、`update_dotfiles_git`が保持するindexロックの外で実行されない（代替indexを使う）ため対象外とする。
     """
+    started = time.monotonic()
     code = _run_git_pull_once(step_no, total, timeout=timeout, plugin=plugin)
     if code == 0 or plugin is None:
         return code
+
+    def remaining() -> float | None:
+        """初回実行で使った時間を差し引いた、待機と再実行に使える秒数。"""
+        return None if timeout is None else max(timeout - (time.monotonic() - started), 1.0)
+
     recovery = stale_lock.recover_after_failure(
         update_dotfiles_runtime.last_stderr_tail or "",
         plugin,
-        wait_seconds=stale_lock.lock_wait_seconds(None if timeout is None else float(timeout)),
+        wait_seconds=stale_lock.lock_wait_seconds(remaining()),
     )
     if recovery.retry:
-        return _run_git_pull_once(step_no, total, timeout=timeout, plugin=plugin)
+        return _run_git_pull_once(step_no, total, timeout=remaining(), plugin=plugin)
     if recovery.diagnosis is not None:
         message = recovery.diagnosis.text(
             "update-dotfiles logsで永続ログを確認し、所有者が終了していることを確かめてから再実行してください。"

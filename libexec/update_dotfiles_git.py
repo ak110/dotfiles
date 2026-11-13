@@ -31,8 +31,8 @@ def _scan_git_processes() -> stale_lock.ProcessScan:
     )
 
 
-def _git_operation_in_progress() -> str | bool:
-    """対象worktreeの操作状態と、index準備後も存続するGitプロセスを調べる。"""
+def _git_state_operation() -> str | bool:
+    """進行中のmerge・rebaseなどの操作状態を調べる。操作名、判定不能は`True`、無ければ`False`を返す。"""
     for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
         path = update_dotfiles_process.git_value("rev-parse", "--git-path", name)
         if path is None:
@@ -42,8 +42,34 @@ def _git_operation_in_progress() -> str | bool:
             candidate = update_dotfiles_runtime.DOTFILES_ROOT / candidate
         if candidate.exists():
             return name
+    return False
+
+
+def _git_operation_in_progress() -> str | bool:
+    """対象worktreeの操作状態と、index準備後も存続するGitプロセスを調べる。"""
+    state = _git_state_operation()
+    if state:
+        return state
     scan = _scan_git_processes()
     return bool(scan.processes) or scan.indeterminate
+
+
+_PROCESS_EXIT_GRACE_SECONDS = 2.0
+"""ロック取得後に、直前のロック保持者のgitが終了するまで待つ秒数。
+
+gitはロックを解放してからプロセスが終了するため、取得直後の走査にはまだ生存中として現れうる。
+操作状態（merge・rebaseなど）は終了を待たず、この猶予の対象にしない。
+"""
+
+
+def _git_operation_after_lock() -> str | bool:
+    """ロック取得後の`_git_operation_in_progress`。直前の保持者の終了だけを短時間待つ。"""
+    deadline = time.monotonic() + _PROCESS_EXIT_GRACE_SECONDS
+    while True:
+        operation = _git_operation_in_progress()
+        if not operation or isinstance(operation, str) or time.monotonic() >= deadline:
+            return operation
+        time.sleep(0.05)
 
 
 def _skip_git_update(reason: str, operation: str | bool = False, *, action: str | None = None) -> int:
@@ -162,24 +188,35 @@ def _discard_mise_lock_changes() -> bool:
     return not status or update_dotfiles_process.run_git_change("checkout", "HEAD", "--", update_dotfiles_runtime.MISE_LOCK)
 
 
+_LOG_GUIDANCE = "update-dotfiles logsで永続ログと原因を確認し、解消しない場合はログを添えてdotfilesの作者へ報告してください。"
+
+
 def update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -> int:
-    """最初の変更前に所有を確認し、Git更新区間を標準indexロックで保護する。"""
-    operation = _git_operation_in_progress()
-    if operation:
-        return _skip_git_update("既存のGit操作が進行中", operation)
+    """最初の変更前に所有を確認し、Git更新区間を標準indexロックで保護する。
+
+    `timeout`はロックの待機と更新の合計の上限であり、待機に使った時間は更新へ渡す上限から差し引く。
+    """
+    started = time.monotonic()
     value = update_dotfiles_process.git_value("rev-parse", "--git-path", "index")
     if value is None:
-        return _skip_git_update("対象indexを解決できない")
+        return _skip_git_update("対象indexを解決できない", action=_LOG_GUIDANCE)
     index = pathlib.Path(value)
     if not index.is_absolute():
         index = update_dotfiles_runtime.DOTFILES_ROOT / index
+    # 標準ロックが存在する間は、保持者（gitの一時的な操作を含む）の解放を待つ。
+    # 待機せずに見送るのは、進行中のmerge・rebaseなどの操作状態と、ロックを保持しない生存中のgitだけとする。
+    lock_present = index.with_name(index.name + ".lock").exists()
+    operation = _git_state_operation() if lock_present else _git_operation_in_progress()
+    if operation:
+        return _skip_git_update("既存のGit操作が進行中", operation)
     try:
         wait_seconds = stale_lock.lock_wait_seconds(None if timeout is None else float(timeout))
         with _git_update_signals(), _locked_git_index(index, wait_seconds=wait_seconds):
-            operation = _git_operation_in_progress()
+            operation = _git_operation_after_lock()
             if operation:
                 return _skip_git_update("ロック取得前に開始したGit操作が進行中", operation)
-            return _update_owned_git(step_no, total, timeout=timeout)
+            remaining = None if timeout is None else max(timeout - (time.monotonic() - started), 1.0)
+            return _update_owned_git(step_no, total, timeout=remaining)
     except stale_lock.LockBusy as busy:
         diagnosis = busy.diagnosis
         guidance = "update-dotfiles logsで永続ログを確認し、所有者が終了していることを確かめてから再実行してください。"
@@ -189,10 +226,10 @@ def update_git_with_recovery(step_no: int, total: int, *, timeout: int | None) -
         )
     except OSError as error:
         update_dotfiles_runtime.logger.exception("Git更新のindex管理に失敗")
-        return _skip_git_update(f"対象indexの管理に失敗: {error}")
+        return _skip_git_update(f"対象indexの管理に失敗: {error}", action=_LOG_GUIDANCE)
 
 
-def _update_owned_git(step_no: int, total: int, *, timeout: int | None) -> int:
+def _update_owned_git(step_no: int, total: int, *, timeout: float | None) -> int:
     """所有区間内で更新し、競合時は復旧参照を保持して上流へ合わせる。"""
     if update_dotfiles_runtime.update_index is None:
         raise RuntimeError("Git更新にはindexの所有が必要です")

@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from agent_toolkit._git import stale_lock
+
 # ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import yaml
 
@@ -704,8 +706,31 @@ def _sync_local_repo() -> None:
             f"git branch --set-upstream-to=<remote>/<branch>で上流を設定し、git "
             f"fetch <remote> --tagsとgit merge --ff-only @{{upstream}}で同期してください。"
         )
-    subprocess.run(["git", "fetch", remote, "--tags", "--prune"], check=True)
-    subprocess.run(["git", "merge", "--ff-only", "@{upstream}"], check=True)
+    _run_git_with_lock_recovery(["git", "fetch", remote, "--tags", "--prune"])
+    _run_git_with_lock_recovery(["git", "merge", "--ff-only", "@{upstream}"])
+
+
+def _run_git_with_lock_recovery(args: list[str]) -> None:
+    """`git`の更新系コマンドを実行し、標準ロックの競合で失敗した場合は待機と回収の後に1回だけ再実行する。
+
+    Gitはロック作成に失敗した時点で変更を始めていないため、再実行は安全である。
+    標準エラーは取得して端末へ転送する。失敗は`subprocess.run(check=True)`と同じ`CalledProcessError`で報告する。
+    """
+    for attempt in range(2):
+        result = subprocess.run(args, stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", check=False)
+        stderr = result.stderr if isinstance(result.stderr, str) else ""
+        if stderr:
+            sys.stderr.write(stderr)
+        if result.returncode == 0:
+            return
+        if attempt == 0 and ".lock" in stderr:
+            recovery = stale_lock.recover_after_failure(stderr, None, wait_seconds=stale_lock.lock_wait_seconds())
+            if recovery.retry:
+                continue
+            if recovery.diagnosis is not None:
+                guidance = "所有者が終了していることを確かめ、ロックを手動で削除してから再実行してください。"
+                print(recovery.diagnosis.text(guidance), file=sys.stderr)
+        raise subprocess.CalledProcessError(result.returncode, args, stderr=stderr)
 
 
 if __name__ == "__main__":

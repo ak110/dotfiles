@@ -71,6 +71,8 @@ def _own_git_process_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     照合と走査例外の扱い自体は製品の判定を通し、専用試験が走査結果を個別に差し替えて確かめる。
     """
     monkeypatch.setattr(stale_lock.psutil, "process_iter", _own_process_iter)
+    # 取得後の生存gitの終了待ちは、試験では短くする。
+    monkeypatch.setattr(update_dotfiles_git, "_PROCESS_EXIT_GRACE_SECONDS", 0.3)
 
 
 @pytest.fixture(autouse=True)

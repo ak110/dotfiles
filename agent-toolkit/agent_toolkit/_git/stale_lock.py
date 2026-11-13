@@ -10,12 +10,15 @@
 - 記録の無いロック（Git自身が作ったロックや、旧版の残存）: 対象の管理ディレクトリを操作する生存中のGitと、
   他のupdate-dotfilesの更新主体が居らず、同じロックを2回続けて観測できた場合だけ回収できる。
   走査中のプロセスを確認できない場合は回収しない。
-- 回収の排他: `RECLAIM_NAME`の排他的作成を取得した主体だけが回収する。
-  取得後、判定時と同じ`st_dev`・`st_ino`・`st_mtime_ns`のロックであることを再確認してから削除する。
+- 回収の排他: `RECLAIM_NAME`へOSのファイルロックを取得した主体だけが回収する。
+  OSのファイルロックは保持者の終了で解放されるため、残存した排他を経過時間で判定して削除する必要が無い。
+  回収は、標準ロックを別名へ移し、移した実体が判定時と同じ`st_dev`・`st_ino`・`st_mtime_ns`であることを確かめてから削除する。
+  別の実体だった場合は元の名前へ戻す。確認から削除までの間に別主体が作り直したロックを削除しないためである。
 - 回収後、または待機後にロックが消えていれば、呼び出し側は変更開始前の取得・実行を再試行できる。
   Gitはロック作成に失敗した時点でまだ変更を始めていないため、同じコマンドの再実行は安全である。
 """
 
+import contextlib
 import dataclasses
 import datetime
 import json
@@ -32,13 +35,14 @@ from typing import Any
 
 import psutil
 
+from agent_toolkit._common import file_lock
 from agent_toolkit._git import command
 
 RECORD_NAME = "update-dotfiles-index-lock.json"
 """update-dotfilesが作ったindexロックの所有記録の名前。"""
 
 RECLAIM_NAME = "update-dotfiles-index-reclaim.lock"
-"""残存ロックを回収できる主体を1つに限定する排他の名前。"""
+"""残存ロックを回収できる主体を1つに限定する、OSのファイルロックの対象ファイルの名前。"""
 
 RECORD_FORMAT = 1
 DEFAULT_WAIT_SECONDS = 120.0
@@ -48,11 +52,8 @@ POLL_INITIAL_SECONDS = 0.5
 POLL_MAX_SECONDS = 2.0
 """ポーリング間隔は初期値から上限まで倍々に増やす。"""
 
-RECLAIM_ORPHAN_SECONDS = 10.0
-"""回収の排他の作成直後（内容を書く前）に中断した場合に、書き込み中でないとみなす経過秒数。"""
-
 _GIT_NAMES = frozenset({"git", "git.exe"})
-_UPDATER_STEMS = frozenset({"update_dotfiles", "update-dotfiles"})
+_UPDATER_STEMS = frozenset({"update_dotfiles", "update-dotfiles", "update_dotfiles_job"})
 _UPDATER_EXECUTABLE_PREFIXES = ("python", "uv", "update-dotfiles", "update_dotfiles")
 _OPTIONS_WITH_VALUE = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"})
 # Gitのエラー文はロケールで翻訳されるため、「File exists」には依存せず、引用された`.lock`のパスで検出する。
@@ -115,8 +116,12 @@ def scan_update_dotfiles_processes() -> ProcessScan:
     for process in psutil.process_iter(["name", "cmdline", "create_time"]):
         try:
             info = process.info
-            name = info.get("name") or ""
+            name = info.get("name")
             if (process.pid, info.get("create_time")) in excluded:
+                continue
+            if not name:
+                # 名前を照会できないプロセスは、更新主体かどうかを判定できない。
+                indeterminate = True
                 continue
             if not name.lower().startswith(_UPDATER_EXECUTABLE_PREFIXES):
                 continue
@@ -241,12 +246,22 @@ def _owner_state(record: Record) -> str:
     return _process_state(record.pid, record.create_time)
 
 
+class RecordUnreadable(Exception):  # noqa: N818  # 所有記録の有無を判定できない状態を表す。
+    """所有記録が存在するのに読めない、または形式が不完全・未知である。回収しない側へ分類する。"""
+
+
 def read_record(directory: pathlib.Path) -> Record | None:
-    """所有記録を読む。無い・壊れている・形式が違う場合は`None`を返す。"""
+    """所有記録を読む。記録が無ければ`None`を返し、読めない・不完全・未知の形式なら`RecordUnreadable`を送出する。"""
     try:
-        data = json.loads((directory / RECORD_NAME).read_text(encoding="utf-8"))
+        text = (directory / RECORD_NAME).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as error:
+        raise RecordUnreadable(str(error)) from error
+    try:
+        data = json.loads(text)
         if data["format"] != RECORD_FORMAT:
-            return None
+            raise RecordUnreadable(f"未知の形式: {data['format']!r}")
         return Record(
             pid=int(data["pid"]),
             create_time=float(data["create_time"]),
@@ -255,8 +270,8 @@ def read_record(directory: pathlib.Path) -> Record | None:
             lock_dev=int(data["lock_dev"]),
             lock_ino=int(data["lock_ino"]),
         )
-    except OSError, ValueError, KeyError, TypeError:
-        return None
+    except (ValueError, KeyError, TypeError) as error:
+        raise RecordUnreadable(f"不完全な記録: {error!r}") from error
 
 
 def write_record(directory: pathlib.Path, index: pathlib.Path, identity: os.stat_result) -> None:
@@ -289,10 +304,13 @@ def write_record(directory: pathlib.Path, index: pathlib.Path, identity: os.stat
         raise
 
 
-def _remove_record(directory: pathlib.Path, identity: os.stat_result) -> None:
-    """記録が指すロックが`identity`と一致する場合だけ、所有記録を消す。"""
-    record = read_record(directory)
-    if record is not None and (record.lock_dev, record.lock_ino) == (identity.st_dev, identity.st_ino):
+def _remove_record(directory: pathlib.Path, dev: int, ino: int) -> None:
+    """記録が指すロックが`dev`・`ino`と一致する場合だけ、所有記録を消す。"""
+    try:
+        record = read_record(directory)
+    except RecordUnreadable:
+        return
+    if record is not None and (record.lock_dev, record.lock_ino) == (dev, ino):
         (directory / RECORD_NAME).unlink(missing_ok=True)
 
 
@@ -306,7 +324,7 @@ def release(lock: pathlib.Path, identity: os.stat_result) -> None:
         if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino):
             lock.unlink()
     finally:
-        _remove_record(lock.parent, identity)
+        _remove_record(lock.parent, identity.st_dev, identity.st_ino)
 
 
 def _normalize_options(argv: Sequence[str]) -> list[str]:
@@ -353,6 +371,7 @@ def scan_git_processes(
                 env=env,
                 capture_output=True,
                 text=True,
+                recover_stale_lock=False,
             )
             if result.returncode != 0:
                 continue
@@ -378,6 +397,7 @@ def resolve_target(cwd: pathlib.Path | str | None) -> Target | None:
             cwd,
             capture_output=True,
             text=True,
+            recover_stale_lock=False,
         )
     except OSError, subprocess.SubprocessError:
         return None
@@ -415,8 +435,14 @@ def assess(lock: pathlib.Path, context: LockContext) -> Assessment:
     except OSError:
         return Assessment("owner-unknown", False)
     key = _stat_key(status)
-    record = read_record(lock.parent)
+    try:
+        record = read_record(lock.parent)
+    except RecordUnreadable:
+        # 所有者の記録があるはずなのに確認できないため、回収しない。
+        return Assessment("owner-unknown", False, False, key)
     if record is not None and (record.lock_dev, record.lock_ino) == (status.st_dev, status.st_ino):
+        if pathlib.Path(record.index).resolve() != lock.with_name(lock.name.removesuffix(".lock")).resolve():
+            return Assessment("owner-unknown", False, False, key)
         state = _owner_state(record)
         if state == "dead":
             return Assessment("owner-gone", True, True, key)
@@ -432,45 +458,43 @@ def assess(lock: pathlib.Path, context: LockContext) -> Assessment:
     return Assessment("orphan", True, False, key)
 
 
-def _reclaim_holder_state(path: pathlib.Path) -> str:
-    """回収の排他を作った主体の`alive`・`dead`・`unknown`を返す。"""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return _process_state(int(data["pid"]), float(data["create_time"]))
-    except ValueError, KeyError, TypeError:
-        # 作成直後に中断して内容が無い排他は、書き込み中の猶予を過ぎたら放棄されたものとして扱う。
-        try:
-            age = time.time() - path.stat().st_mtime
-        except OSError:
-            return "unknown"
-        return "dead" if age > RECLAIM_ORPHAN_SECONDS else "unknown"
-    except OSError:
-        return "unknown"
-
-
 def _reclaim(lock: pathlib.Path, expected: _Key) -> bool:
-    """排他を取得し、判定時と同じロックだけを削除する。回収したら真を返す。"""
-    reclaim = lock.parent / RECLAIM_NAME
+    """回収の排他を取得し、判定時と同じロックだけを削除する。回収したら真を返す。"""
+    with (lock.parent / RECLAIM_NAME).open("a+b") as exclusion:
+        try:
+            file_lock.acquire_lock(exclusion, blocking=False)
+        except OSError:
+            return False
+        try:
+            return _remove_if_unchanged(lock, expected)
+        finally:
+            file_lock.release_lock(exclusion)
+
+
+def _remove_if_unchanged(lock: pathlib.Path, expected: _Key) -> bool:
+    """ロックを別名へ移し、移した実体が`expected`と一致する場合だけ削除する。
+
+    確認してから削除するまでの間に別主体がロックを作り直すと、その新しいロックを削除してしまう。
+    移した後の実体を確認することで、この取り違えを確認の時点に限定せず検出できる。
+    別の実体だった場合は、元の名前へ戻す。
+    """
+    moved = lock.with_name(f"{lock.name}.reclaim-{os.getpid()}-{time.time_ns()}")
     try:
-        with reclaim.open("xb") as owned:
-            owned.write(json.dumps({"pid": os.getpid(), "create_time": psutil.Process().create_time()}).encode("utf-8"))
-    except FileExistsError:
-        # 作成者が終了していれば排他自体を回収し、次の周回で取り直す。
-        if _reclaim_holder_state(reclaim) == "dead":
-            reclaim.unlink(missing_ok=True)
+        os.rename(lock, moved)
+    except OSError:
         return False
     try:
-        try:
-            current = lock.stat()
-        except FileNotFoundError:
-            return False
-        if _stat_key(current) != expected:
-            return False
-        lock.unlink()
-        _remove_record(lock.parent, current)
-        return True
-    finally:
-        reclaim.unlink(missing_ok=True)
+        if _stat_key(moved.stat()) == expected:
+            moved.unlink()
+            _remove_record(lock.parent, expected[0], expected[1])
+            return True
+        # 戻す先に別のロックが既にあれば戻せないため、その場合は取り込んだ実体を残さない。
+        with contextlib.suppress(OSError):
+            os.link(moved, lock)
+        moved.unlink(missing_ok=True)
+        return False
+    except OSError:
+        return False
 
 
 def _alternates(directory: pathlib.Path) -> tuple[str, ...]:

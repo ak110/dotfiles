@@ -304,8 +304,13 @@ def test_update_preserves_index_when_ownership_is_not_ready(
     monkeypatch.setattr(update_dotfiles_git, "_update_owned_git", lambda *_args, **_kwargs: pytest.fail("変更開始"))
     lock = local / ".git" / "index.lock"
     if race == "started-before-lock":
-        checks = iter([False, True])
-        monkeypatch.setattr(update_dotfiles_git, "_git_operation_in_progress", lambda: next(checks))
+        calls: list[int] = []
+
+        def started_after_first_check() -> bool:
+            calls.append(1)
+            return len(calls) > 1
+
+        monkeypatch.setattr(update_dotfiles_git, "_git_operation_in_progress", started_after_first_check)
     elif race == "foreign-lock":
         # 生存中の別主体のロックは、待機の上限まで待っても回収しない。
         monkeypatch.setattr(stale_lock, "POLL_INITIAL_SECONDS", 0.01)

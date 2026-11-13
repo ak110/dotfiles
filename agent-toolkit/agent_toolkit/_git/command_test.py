@@ -10,6 +10,7 @@ import psutil
 import pytest
 
 from agent_toolkit._git import command as subject
+from agent_toolkit._git import stale_lock
 
 pytestmark = pytest.mark.windows
 
@@ -265,3 +266,101 @@ def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
     while psutil.pid_exists(grandchild) and psutil.Process(grandchild).status() != psutil.STATUS_ZOMBIE:
         assert time.monotonic() < deadline, f"gitの子孫のプロセスが残っている: {grandchild}"
         time.sleep(0.05)
+
+
+@pytest.fixture(name="stale_lock_repo")
+def _stale_lock_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
+    """追跡対象のファイルを持つリポジトリを返す。実行環境のプロセスを走査せず、待機は短くする。"""
+    repo = tmp_path / "repo"
+    subject.run_quiet(["init", "--initial-branch=main", str(repo)], tmp_path)
+    (repo / "file.txt").write_text("content\n", encoding="utf-8")
+    monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter([]))
+    monkeypatch.setattr(stale_lock, "POLL_INITIAL_SECONDS", 0.02)
+    monkeypatch.setattr(stale_lock, "POLL_MAX_SECONDS", 0.05)
+    monkeypatch.setattr(stale_lock, "DEFAULT_WAIT_SECONDS", 0.5)
+    return repo
+
+
+def _add(repo: pathlib.Path, *, recover: bool = True) -> subprocess.CompletedProcess[str]:
+    return subject.run(["add", "file.txt"], repo, capture_output=True, text=True, recover_stale_lock=recover)
+
+
+def _hold_with_live_owner(repo: pathlib.Path) -> pathlib.Path:
+    lock = repo / ".git" / "index.lock"
+    lock.write_bytes(b"")
+    stale_lock.write_record(lock.parent, lock.with_name("index"), lock.stat())
+    return lock
+
+
+def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path) -> None:
+    """所有者のいない`index.lock`を回収し、同じコマンドを再実行して成功する。"""
+    lock = stale_lock_repo / ".git" / "index.lock"
+    lock.write_bytes(b"")
+
+    result = _add(stale_lock_repo)
+
+    assert result.returncode == 0, result.stderr
+    assert not lock.exists()
+    assert "file.txt" in subject.output(["diff", "--cached", "--name-only"], stale_lock_repo)
+
+
+def test_run_keeps_lock_of_live_owner_and_reports_decision(stale_lock_repo: pathlib.Path) -> None:
+    """生存中の所有者のロックは回収せず、元のエラーに判定結果を添えて返す。"""
+    lock = _hold_with_live_owner(stale_lock_repo)
+
+    result = _add(stale_lock_repo)
+
+    assert result.returncode != 0
+    assert "index.lock" in result.stderr
+    assert "回収しませんでした" in result.stderr
+    assert str(lock) in result.stderr
+    assert lock.exists()
+
+
+def test_run_keeps_lock_while_git_is_running(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """記録の無いロックでも、対象を操作中のgitが居れば回収せず候補を示す。"""
+    lock = stale_lock_repo / ".git" / "index.lock"
+    lock.write_bytes(b"")
+    monkeypatch.setattr(
+        stale_lock,
+        "scan_git_processes",
+        lambda *_args, **_kwargs: stale_lock.ProcessScan((stale_lock.ProcessInfo(4242, "git"),)),
+    )
+
+    result = _add(stale_lock_repo)
+
+    assert result.returncode != 0
+    assert "PID 4242" in result.stderr
+    assert lock.exists()
+
+
+def test_run_wait_is_bounded_by_timeout_scope(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """待機は`timeout_scope`の残り秒数以内で打ち切る。"""
+    monkeypatch.setattr(stale_lock, "DEFAULT_WAIT_SECONDS", 60.0)
+    _hold_with_live_owner(stale_lock_repo)
+    started = time.monotonic()
+
+    with subject.timeout_scope(1.0):
+        result = _add(stale_lock_repo)
+
+    assert result.returncode != 0
+    assert time.monotonic() - started < 10
+
+
+def test_run_can_disable_stale_lock_recovery(stale_lock_repo: pathlib.Path) -> None:
+    """`recover_stale_lock=False`では回収も再実行もしない。"""
+    lock = stale_lock_repo / ".git" / "index.lock"
+    lock.write_bytes(b"")
+
+    result = _add(stale_lock_repo, recover=False)
+
+    assert result.returncode != 0
+    assert lock.exists()
+
+
+def test_run_leaves_unrelated_failure_unchanged(stale_lock_repo: pathlib.Path) -> None:
+    """ロックと無関係の失敗には判定結果を添えない。"""
+    result = subject.run(["rev-parse", "--verify", "missing"], stale_lock_repo, capture_output=True, text=True)
+
+    assert result.returncode != 0
+    assert "回収しませんでした" not in result.stderr

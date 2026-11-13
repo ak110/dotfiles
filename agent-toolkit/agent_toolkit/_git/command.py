@@ -34,6 +34,9 @@ from collections.abc import Generator, Mapping, Sequence
 
 lazy from agent_toolkit._common import process_tree
 
+# stale_lockはcommandを使うため、遅延importで実行時の循環を避ける。
+lazy from agent_toolkit._git import stale_lock  # pylint: disable=cyclic-import
+
 type _Cwd = str | pathlib.Path | None
 type _Stream = int | typing.IO[typing.Any] | None
 _DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar("git_deadline", default=None)
@@ -154,6 +157,7 @@ def run(
     env: Mapping[str, str] | None = None,
     stdout: _Stream = None,
     stderr: _Stream = None,
+    recover_stale_lock: bool = True,
 ) -> subprocess.CompletedProcess[str]: ...
 
 
@@ -170,6 +174,7 @@ def run(
     env: Mapping[str, str] | None = None,
     stdout: _Stream = None,
     stderr: _Stream = None,
+    recover_stale_lock: bool = True,
 ) -> subprocess.CompletedProcess[bytes]: ...
 
 
@@ -185,6 +190,7 @@ def run(
     env: Mapping[str, str] | None = None,
     stdout: _Stream = None,
     stderr: _Stream = None,
+    recover_stale_lock: bool = True,
 ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
     r"""`git`へ引数列を渡して起動し、完了した結果を返す。
 
@@ -199,6 +205,28 @@ def run(
     `text=True`の出力は、UTF-8として復号して改行を`\\n`へ正規化した文字列で返す。
     """
     raw_input = input.encode("utf-8") if isinstance(input, str) else input
+    result = _attempt(args, cwd, capture_output, timeout, raw_input, env, stdout, stderr, text)
+    if recover_stale_lock and result.returncode != 0 and isinstance(result.stderr, bytes) and b".lock" in result.stderr:
+        result = _recover_and_retry(result, args, cwd, capture_output, timeout, raw_input, env, stdout, stderr, text)
+    if text:
+        result = subprocess.CompletedProcess(result.args, result.returncode, _decode(result.stdout), _decode(result.stderr))
+    if check:
+        result.check_returncode()
+    return result
+
+
+def _attempt(
+    args: Sequence[str],
+    cwd: _Cwd,
+    capture_output: bool,
+    timeout: float | None,
+    raw_input: bytes | None,
+    env: Mapping[str, str] | None,
+    stdout: _Stream,
+    stderr: _Stream,
+    text: bool,
+) -> subprocess.CompletedProcess[bytes]:
+    """期限を適用して`git`を1回起動し、バイト列の結果を返す。時間切れは`timeout_cwd`付きの例外にする。"""
     deadline = _DEADLINE.get()
     if deadline is not None:
         remaining = deadline - time.monotonic()
@@ -208,7 +236,7 @@ def run(
     elif timeout is None:
         timeout = default_timeout(args)
     try:
-        result = _launch(
+        return _launch(
             command_line(args),
             cwd=cwd,
             check=False,
@@ -222,11 +250,40 @@ def run(
     except subprocess.TimeoutExpired as e:
         captured = (_decode(e.output), _decode(e.stderr)) if text else (e.output, e.stderr)
         raise _timeout_error(args, e.timeout, cwd, stdout=captured[0], stderr=captured[1]) from e
-    if text:
-        result = subprocess.CompletedProcess(result.args, result.returncode, _decode(result.stdout), _decode(result.stderr))
-    if check:
-        result.check_returncode()
-    return result
+
+
+def _recover_and_retry(
+    result: subprocess.CompletedProcess[bytes],
+    args: Sequence[str],
+    cwd: _Cwd,
+    capture_output: bool,
+    timeout: float | None,
+    raw_input: bytes | None,
+    env: Mapping[str, str] | None,
+    stdout: _Stream,
+    stderr: _Stream,
+    text: bool,
+) -> subprocess.CompletedProcess[bytes]:
+    """Gitがロック作成で失敗した場合に、待機と残存ロックの回収を行い、同じコマンドを1回だけ再実行する。
+
+    Gitはロック作成に失敗した時点で変更を始めていないため、再実行は安全である。
+    待機は`timeout_scope`の残りと呼び出しの`timeout`以内に収める。
+    ロックが解消しなかった場合は、元のGitのエラーに判定結果を添えた結果を返す。
+    """
+    deadline = _DEADLINE.get()
+    limits = [None if deadline is None else deadline - time.monotonic(), timeout]
+    recovery = stale_lock.recover_after_failure(
+        result.stderr.decode("utf-8", errors="replace"),
+        cwd,
+        wait_seconds=stale_lock.lock_wait_seconds(*limits),
+    )
+    if recovery.retry:
+        return _attempt(args, cwd, capture_output, timeout, raw_input, env, stdout, stderr, text)
+    if recovery.diagnosis is None:
+        return result
+    guidance = "所有者が終了していることを確かめ、ロックを手動で削除してから再実行してください。"
+    extra = f"\n{recovery.diagnosis.text(guidance)}\n".encode()
+    return subprocess.CompletedProcess(result.args, result.returncode, result.stdout, result.stderr + extra)
 
 
 def _launch(command: list[str], **kwargs: typing.Any) -> subprocess.CompletedProcess[bytes]:

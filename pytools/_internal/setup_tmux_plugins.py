@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pytools._internal import common, log_format, post_apply_outcome
+from pytools._internal import common, git_lock_recovery, log_format, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +139,9 @@ def _update(plugin: _Plugin) -> bool:
 
 
 def _update_to_tag(plugin: _Plugin) -> bool:
-    fetch = common.run_subprocess(
+    fetch = git_lock_recovery.run_git_with_lock_recovery(
         ["git", "-C", str(plugin.dest), "fetch", "--depth", "1", "origin", plugin.pin],
+        repo=plugin.dest,
         tag=_TAG,
     )
     if fetch is None or fetch.returncode != 0:
@@ -151,8 +152,9 @@ def _update_to_tag(plugin: _Plugin) -> bool:
             ),
         )
         return False
-    checkout = common.run_subprocess(
+    checkout = git_lock_recovery.run_git_with_lock_recovery(
         ["git", "-C", str(plugin.dest), "checkout", "FETCH_HEAD"],
+        repo=plugin.dest,
         tag=_TAG,
     )
     if checkout is None or checkout.returncode != 0:
@@ -168,8 +170,9 @@ def _update_to_tag(plugin: _Plugin) -> bool:
 
 
 def _update_to_branch(plugin: _Plugin) -> bool:
-    result = common.run_subprocess(
+    result = git_lock_recovery.run_git_with_lock_recovery(
         ["git", "-C", str(plugin.dest), "pull", "--ff-only"],
+        repo=plugin.dest,
         tag=_TAG,
     )
     if result is None or result.returncode != 0:
