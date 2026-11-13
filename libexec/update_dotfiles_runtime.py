@@ -145,8 +145,9 @@ def finish(returncode: int) -> int:
             # 所有した子孫を止められない状態では、新しい更新や起票を始めない。
             logger.exception("自動起票の子孫を回収できませんでした")
             raise
-        except Exception:  # noqa: BLE001 -- 起票の未知の障害でも更新と結果の記録を妨げない境界。
+        except Exception as error:  # noqa: BLE001 -- 起票の未知の障害でも更新と結果の記録を妨げない境界。
             logger.exception("更新失敗を自動起票できませんでした")
+            continue_after_failure("更新失敗の起票", "update-dotfiles logsで診断を確認してください。", str(error))
     if continued_failures:
         returncode = _report_continued_failures(returncode)
     logger.info("update-dotfiles終了: exit=%d", returncode)

@@ -351,3 +351,90 @@ def test_stage_heading_precedes_child_output_when_stdout_is_not_a_terminal() -> 
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == ["=== [1/4] stage ===", "child", "=== [2/4] next ===", "child2"]
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ["init", "status", "diff", "apply", "prepare", "plugins", "log", "daemon", "report", "git", "validation", "lock"],
+)
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_main_injected_production_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    operation: str,
+    timed_out: bool,
+) -> None:
+    """公開mainから本番の段を通し、下位操作の未知例外と時間切れでも分類と最終結果を保つ。"""
+    calls: list[list[str]] = []
+    attempts: list[str] = []
+    monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", tmp_path)
+    monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "update.lock")
+    monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
+    normal = _fake_run({}, calls, stdout_by_command={"diff": "changed"})
+
+    def fail(*_args: Any, **_kwargs: Any) -> Any:
+        attempts.append(operation)
+        if timed_out:
+            raise subprocess.TimeoutExpired("injected", 1)
+        raise RuntimeError("injected unknown failure")
+
+    def run(argv: list[str], **kwargs: Any) -> Any:
+        if argv[:2] == ["chezmoi", operation]:
+            return fail()
+        return normal(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    if operation == "git":
+        monkeypatch.setattr(subprocess, "Popen", fail)
+    elif operation == "validation":
+        monkeypatch.setattr(update_dotfiles_process, "git_timeout", fail)
+    elif operation == "lock":
+        monkeypatch.setattr(update_dotfiles.filelock, "FileLock", fail)
+    elif operation == "prepare":
+        monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", fail)
+    elif operation == "plugins":
+        (tmp_path / "plugins").mkdir()
+        original = pathlib.Path.iterdir
+
+        def iterdir(path: pathlib.Path) -> Any:
+            return fail() if path == tmp_path / "plugins" else original(path)
+
+        monkeypatch.setattr(pathlib.Path, "iterdir", iterdir)
+    elif operation == "log":
+        monkeypatch.setattr(update_dotfiles_runtime, "configure_persistent_log", fail)
+    elif operation == "daemon":
+        monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", fail)
+    elif operation == "report":
+        monkeypatch.setattr(update_dotfiles_runtime.update_dotfiles_report, "report", fail)
+    assert update_dotfiles.main([]) == (2 if operation == "validation" else 1)
+    output = capsys.readouterr().err
+    assert attempts
+    if operation in {"init", "apply"}:
+        assert len(attempts) == (1 if timed_out else 2)
+        assert output.count("次の操作:") == 1
+    elif operation in {"git", "validation", "lock"}:
+        assert ["chezmoi", "apply", "--force"] not in calls
+        assert output.count("次の操作:") == 1
+    else:
+        assert ["chezmoi", "apply", "--force"] in calls
+        assert "失敗しても後続の段を続けた段:" in output
+
+
+# test-copy-contract: 本体の宣言段追加時に本番境界注入の被覆漏れを検出する。
+def test_production_injection_covers_non_bootstrap_declarations() -> None:
+    """新しい本体段も、本番境界の注入が無ければ検証を失敗させる。"""
+    assert {stage.name for stage in update_dotfiles.update_dotfiles_stages.STAGES if stage.where != "bootstrap"} == {
+        "永続ログの開始",
+        "git timeout設定の検証",
+        "更新ロックの取得",
+        "dotfiles自身のGit更新",
+        "agent-toolkitの共有依存環境の準備",
+        "dotfilesプラグインのgit pull",
+        "chezmoi init (テンプレート再展開)",
+        "chezmoi status (apply予定のファイル)",
+        "chezmoi diff (上書き前の差分)",
+        "chezmoi apply (post-apply実行)",
+        update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
+        "更新失敗の起票",
+    }

@@ -306,15 +306,24 @@ def test_update_reruns_after_real_forced_stop(
     assert result.returncode == -signal.SIGKILL, (result.stdout, result.stderr)
     lock = local / ".git" / "index.lock"
     assert lock.exists()
-    assert bool(list((local / ".git").glob("update-dotfiles-index-[!lr]*"))) == (stop == "after-alternate")
-    alternates = {path.name for path in (local / ".git").glob("update-dotfiles-index-[!lr]*")}
+    assert bool(
+        {path.name for path in (local / ".git").glob("update-dotfiles-index-*")}
+        - {stale_lock.RECORD_NAME, stale_lock.RECLAIM_NAME}
+    ) == (stop == "after-alternate")
+    alternates = {path.name for path in (local / ".git").glob("update-dotfiles-index-*")} - {
+        stale_lock.RECORD_NAME,
+        stale_lock.RECLAIM_NAME,
+    }
 
     monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", local)
     assert _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=30) == 0
 
     assert _dirty_snapshot(local) == before
     assert not lock.exists()
-    assert {path.name for path in (local / ".git").glob("update-dotfiles-index-[!lr]*")} == alternates
+    assert (
+        {path.name for path in (local / ".git").glob("update-dotfiles-index-*")}
+        - {stale_lock.RECORD_NAME, stale_lock.RECLAIM_NAME}
+    ) == alternates
 
 
 def test_lock_creation_only_file_exists_error_is_classified_as_lock(

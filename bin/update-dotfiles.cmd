@@ -54,9 +54,7 @@ goto run
 :job_route
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" goto normal
 set "UPDATE_PYTHON="
-for /f "delims=" %%P in ('"%UV%" python find 3.15') do set "UPDATE_PYTHON=%%P"
-if not defined UPDATE_PYTHON powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -PrepareOnly
-if not defined UPDATE_PYTHON for /f "delims=" %%P in ('"%UV%" python find 3.15') do set "UPDATE_PYTHON=%%P"
+for /f "delims=" %%P in ('powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -PrepareOnly -PrintPython') do set "UPDATE_PYTHON=%%P"
 if not defined UPDATE_PYTHON exit /b 1
 (
 "%UPDATE_PYTHON%" "%SCRIPT_DIR%\libexec\update_dotfiles_job.py" %*

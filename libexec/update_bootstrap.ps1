@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory = $true)][string]$UvPath, [switch]$PrepareOnly)
+﻿param([Parameter(Mandatory = $true)][string]$UvPath, [switch]$PrepareOnly, [switch]$PrintPython)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:bootstrapFailures = @()
@@ -145,6 +145,7 @@ if ($env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -and $script:bootstrapFailures.Count) 
         [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT))
         ConvertTo-Json -InputObject @($script:bootstrapFailures) -Compress |
             Set-Content -LiteralPath $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -Encoding UTF8
-    } catch { Write-UpdateError ("更新失敗の記録を書けませんでした: $_") }
+    } catch { Write-UpdateError ("更新失敗の記録を書けませんでした（保存先: $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT）: $_。保存先の親ディレクトリの書込権限を修復してupdate-dotfilesを再実行してください。") }
 }
+if ($PrintPython) { [Console]::Out.WriteLine($script:lastStageOutput) }
 exit 0

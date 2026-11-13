@@ -500,7 +500,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
             try:
                 git_timeout = update_dotfiles_process.git_timeout()
-            except ValueError as error:
+            except Exception as error:  # noqa: BLE001 -- 不明な設定読取失敗も安全に中断して結果を保存する。
                 update_dotfiles_runtime.logger.error("git timeout設定が不正: %s", error)
                 print(error, file=sys.stderr)
                 update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(str(error))
@@ -534,6 +534,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 print(lock_message, file=sys.stderr)
                 update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(lock_message)
+                return update_dotfiles_runtime.finish(1)
+            except process_tree.ReclaimError:
+                raise
+            except Exception as error:  # noqa: BLE001 -- ロックの未知の失敗でも未確定の配備へ進まず結果を残す。
+                update_dotfiles_runtime.last_stderr_tail = str(error)
+                print(f"更新ロックを取得・解放できませんでした: {error}", file=sys.stderr)
                 return update_dotfiles_runtime.finish(1)
             return update_dotfiles_runtime.finish(0)
         finally:

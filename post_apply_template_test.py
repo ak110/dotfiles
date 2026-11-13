@@ -355,18 +355,19 @@ def test_linux_install_failure_preserves_hash_and_continues() -> None:
 
 @pytest.mark.skipif(POWERSHELL is None, reason="PowerShell実行体が必要")
 @pytest.mark.parametrize(
-    "blocked,upgrade_exit,preview,inventory_error,missing",
+    "blocked,upgrade_exit,preview,inventory_error,missing,report_failure",
     [
-        (False, 0, False, False, False),
-        (False, 17, False, False, False),
-        (True, 0, False, False, False),
-        (False, 17, True, False, False),
-        (False, 0, False, True, False),
-        (False, 17, False, False, True),
+        (False, 0, False, False, False, False),
+        (False, 17, False, False, False, False),
+        (True, 0, False, False, False, False),
+        (False, 17, True, False, False, False),
+        (False, 0, False, True, False, False),
+        (False, 17, False, False, True, False),
+        (False, 17, False, False, False, True),
     ],
 )
 def test_windows_python_bootstrap_process_ownership(
-    tmp_path: Path, blocked: bool, upgrade_exit: int, preview: bool, inventory_error: bool, missing: bool
+    tmp_path: Path, blocked: bool, upgrade_exit: int, preview: bool, inventory_error: bool, missing: bool, report_failure: bool
 ) -> None:
     """CIMだけを模擬し、native子の停止・更新・復帰か見送りをWindowsとpwshで実行する。"""
     log = tmp_path / "calls"
@@ -395,6 +396,8 @@ def test_windows_python_bootstrap_process_ownership(
         UPDATE_DOTFILES_BOOTSTRAP_REPORT=str(tmp_path / "state/agent-toolkit/update-bootstrap-11-22.json"),
         PYTHON_BASE="C:\\appdata\\uv\\python",
     )
+    if report_failure:
+        environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"] = str(tmp_path)
     if os.name == "nt":
         # Windows PowerShell 5.1の標準コンパイラーで、実際のWin32プロセスとなる代用品を作る。
         build = tmp_path / "build.ps1"
@@ -485,7 +488,10 @@ public class Program {
 
     result = invoke()
     assert result.returncode == (1 if missing else 0), result.stderr + result.stdout
-    if not missing:
+    if report_failure:
+        assert str(tmp_path) in result.stderr
+        assert "書込権限を修復してupdate-dotfilesを再実行" in result.stderr
+    if not missing and not report_failure:
         payload = Path(environment["UPDATE_DOTFILES_BOOTSTRAP_REPORT"])
         if blocked or upgrade_exit or inventory_error:
             failures = json.loads(payload.read_text(encoding="utf-8-sig"))
@@ -512,3 +518,44 @@ public class Program {
     elif not missing:
         assert log.read_text(encoding="utf-8").splitlines() == ["stop:101", "upgrade", "restart"]
         assert ("pre-release" in result.stderr) is preview
+
+
+@pytest.mark.skipif(POWERSHELL is None or os.name == "nt", reason="pwshで時間切れとtaskkill代用を観測する")
+def test_job_python_probe_timeout_reclaims_process(tmp_path: Path) -> None:
+    """jobが使うbootstrap探索は、実際に停止したnative子を回収して有限時間で失敗する。"""
+    uv = tmp_path / "uv"
+    pid_log = tmp_path / "pids"
+    uv.write_text(
+        '#!/usr/bin/env bash\nif [[ "$1 $2" == "python find" ]]; then\necho $$ >> "$PROBE_PIDS"\nexec sleep 60\nfi\nexit 0\n',
+        encoding="utf-8",
+    )
+    uv.chmod(0o755)
+    killer = tmp_path / "taskkill.exe"
+    killer.write_text('#!/usr/bin/env bash\nkill -KILL "$2"\n', encoding="utf-8")
+    killer.chmod(0o755)
+    bootstrap = tmp_path / "update_bootstrap.ps1"
+    # 実時間の試験だけ待機値を縮め、同じProcess/WaitForExit/回収経路を使う。
+    text = _read(REPO_ROOT / "libexec/update_bootstrap.ps1").replace("$Seconds * 1000", "100")
+    bootstrap.write_text(text, encoding="utf-8-sig")
+    shutil.copy2(REPO_ROOT / "libexec/locking_process.ps1", tmp_path / "locking_process.ps1")
+    environment = os.environ.copy()
+    environment.update(PATH=str(tmp_path) + os.pathsep + environment["PATH"], PROBE_PIDS=str(pid_log))
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-File", str(bootstrap), str(uv), "-PrepareOnly", "-PrintPython"],
+        env=environment,
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 1, result.stderr
+    assert "124" in result.stderr
+    assert not result.stdout.strip()
+    import psutil  # pylint: disable=import-outside-toplevel
+
+    for pid in pid_log.read_text(encoding="utf-8").splitlines():
+        assert not psutil.pid_exists(int(pid))
+    launcher = (REPO_ROOT / "bin/update-dotfiles.cmd").read_bytes().decode("cp932")
+    route = launcher[launcher.index(":job_route\r\n") :]
+    assert "-PrepareOnly -PrintPython" in route
+    assert '\'"%UV%" python find' not in route

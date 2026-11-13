@@ -59,6 +59,9 @@ def _write_fake_uv(path: pathlib.Path, name: str) -> None:
         f"""#!/usr/bin/env bash
 printf '\\036{name}\\000' >> "$UV_CALL_LOG"
 printf '%s\\000' "$@" >> "$UV_CALL_LOG"
+if [[ ( "${{STALL_STAGE:-}}" == 'uvの自己更新' && "${{1-}} ${{2-}}" == 'self update' ) ||
+      ( "${{STALL_STAGE:-}}" == '管理Pythonの更新' && "${{1-}} ${{2-}} ${{3-}}" == 'python install --upgrade' ) ||
+      ( "${{STALL_STAGE:-}}" == '管理Pythonの導入' && "${{1-}} ${{2-}} ${{3-}}" == 'python install 3.15' ) ]]; then sleep 60; fi
 if [[ "${{1-}}" == "self" && "${{2-}}" == "update" ]]; then
     [[ -z "${{UV_SELF_UPDATE_MESSAGE-}}" ]] || printf '%s\n' "$UV_SELF_UPDATE_MESSAGE" >&2
     exit "${{UV_SELF_UPDATE_EXIT:-0}}"
@@ -84,7 +87,7 @@ def _make_path(tmp_path: pathlib.Path, *, with_uv: bool) -> pathlib.Path:
     """ランチャーが必要とするコマンドだけを持つPATHを作成する。"""
     path_dir = tmp_path / "path"
     path_dir.mkdir()
-    for command in ("bash", "sh", "dirname", "readlink", "timeout"):
+    for command in ("bash", "sh", "dirname", "readlink", "timeout", "sleep"):
         command_path = shutil.which(command)
         assert command_path is not None
         (path_dir / command).symlink_to(command_path)
@@ -118,6 +121,7 @@ def _run_launcher(
     python_find_exit: int = 0,
     timeout_available: bool = True,
     stall_upgrade: bool = False,
+    stall_stage: str = "",
 ) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     """隔離したHOMEとPATHでLinuxランチャーを実行する。"""
     home = tmp_path / "home"
@@ -130,7 +134,7 @@ def _run_launcher(
     path_dir = _make_path(tmp_path, with_uv=path_uv)
     if not timeout_available:
         (path_dir / "timeout").unlink()
-    if stall_upgrade:
+    if stall_upgrade or stall_stage:
         timeout = shutil.which("timeout")
         assert timeout is not None
         (path_dir / "timeout").unlink()
@@ -144,6 +148,7 @@ def _run_launcher(
         installer = path_dir / "curl"
         installer.write_text(
             "#!/usr/bin/env bash\n"
+            'if [[ "${STALL_STAGE:-}" == "uvの導入" ]]; then sleep 60; fi\n'
             '[[ "${*: -1}" == https://astral.sh/uv/install.sh ]] || exit 33\n'
             f"[[ {installer_exit} == 0 ]] || exit {installer_exit}\n"
             "cat <<'INSTALLER'\n"
@@ -170,6 +175,7 @@ def _run_launcher(
             "PYTHON_UPGRADE_EXIT": str(python_upgrade_exit),
             "PYTHON_FIND_EXIT": str(python_find_exit),
             "STALL_UPGRADE": "1" if stall_upgrade else "0",
+            "STALL_STAGE": stall_stage,
             "POST_APPLY_CALL_LOG": str(tmp_path / "post-apply-calls"),
         }
     )
@@ -741,3 +747,30 @@ def test_bootstrap_timeout_continues_with_existing_python(tmp_path: pathlib.Path
     assert result.returncode == 0, result.stderr
     assert "exit=124" in result.stderr
     assert any(row[1] == "run" for row in calls)
+
+
+@pytest.mark.parametrize("stage", ["uvの導入", "uvの自己更新", "管理Pythonの更新", "管理Pythonの導入"])
+@pytest.mark.parametrize("failure_code", [17, 124])
+@_LINUX_ONLY
+def test_bootstrap_native_failures_from_public_launcher(tmp_path: pathlib.Path, stage: str, failure_code: int) -> None:
+    """Python起動前の4段でもnative失敗/timeout結果を分類し、続行段は本体へ進む。"""
+    result, calls = _run_launcher(
+        tmp_path,
+        native_uv=stage != "uvの導入",
+        path_uv=False,
+        run_exit=1,
+        self_update_exit=failure_code if stage == "uvの自己更新" else 0,
+        python_upgrade_exit=failure_code if stage in {"管理Pythonの更新", "管理Pythonの導入"} else 0,
+        python_find_exit=2 if stage == "管理Pythonの導入" else 0,
+        installer_exit=failure_code if stage == "uvの導入" else None,
+        stall_stage=stage if failure_code == 124 else "",
+    )
+    assert stage in result.stderr
+    if stage in {"uvの自己更新", "管理Pythonの更新"}:
+        assert any(call[1:2] == ["run"] for call in calls)
+        assert result.returncode == 1
+    else:
+        assert not any(call[1:2] == ["run"] for call in calls)
+        if stage == "管理Pythonの導入":
+            assert sum(call[1:] == ["python", "install", "3.15"] for call in calls) == 2
+        assert result.returncode != 0
