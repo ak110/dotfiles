@@ -30,7 +30,7 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
             raise ValueError("frontmatterのキーが重複しています")
         values = yaml.safe_load(body)
         required_fields = {"mode", "model_type", "required_inputs", "writes_worktree"}
-        allowed_fields = required_fields | {"optional_inputs", "continuations"}
+        allowed_fields = required_fields | {"optional_inputs", "continuations", "result_heads"}
         if set(values) - allowed_fields or required_fields - set(values):
             raise ValueError(
                 f"frontmatterの項目が不正です: 必須欠落={sorted(required_fields - set(values))}; "
@@ -57,6 +57,14 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
             return tuple(items)
 
         required, optional = names("required_inputs"), names("optional_inputs")
+        heads = values.get("result_heads", [])
+        if (
+            not isinstance(heads, list)
+            or any(not isinstance(head, str) or not head.strip() or head != head.strip() for head in heads)
+            or len(set(heads)) != len(heads)
+            or "状態:" in heads
+        ):
+            raise ValueError("result_headsは前後に空白の無い重複しない文字列の配列で、共通の`状態:`を含めない")
         if set(required) & set(optional):
             raise ValueError("必須入力と任意入力が重複しています")
         raw_continuations = values.get("continuations", [])
@@ -105,6 +113,7 @@ def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> Tas
             writes_worktree=writes,
             continuations=tuple(continuations),
             model_type=model_type,
+            result_heads=tuple(heads),
         )
     except (TypeError, ValueError, yaml.YAMLError) as error:
         return f"必須入力を確認できません: frontmatterが不正です: {task_document}: {error}"

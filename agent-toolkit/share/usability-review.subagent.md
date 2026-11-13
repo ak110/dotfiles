@@ -1,6 +1,8 @@
 ---
 mode: delegate
 model_type: review
+result_heads:
+- '判定:'
 required_inputs:
 - 対象worktree
 - 変更画面

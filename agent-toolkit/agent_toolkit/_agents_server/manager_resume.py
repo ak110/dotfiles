@@ -10,8 +10,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
 from agent_toolkit._agents_server import (
+    backends,
     claude,
     codex_providers,
+    effort_control,
     launch_prompts,
     launch_requests,
     manager_registry,
@@ -49,6 +51,18 @@ class ResumeClaimedElsewhere(ActionableError):
 class ManagerResume(manager_registry.ManagerRegistry):
     """孫sessionの終了と待機の解除を観測して自動で継続し、保存済みsessionを再開する。"""
 
+    async def _effort_catalog(self, engine: str) -> list[dict[str, Any]]:
+        """所有backendが公開するモデル一覧で、Codexの実受理段を確認する。
+
+        effort要求の監視と、返却形式の回復前の引き上げが同じ段の取得を使う。
+        """
+        return await cast(backends.ModelCatalog, self._backend(engine)).list_models()
+
+    async def _apply_effort(self, session: SessionState, value: str) -> None:
+        """Claudeの所有キューへ設定を渡し、他engineは次turn引数の更新だけを使う。"""
+        if session.engine == "claude":
+            await cast(Any, self._backend("claude")).set_effort(session, value)
+
     async def _send_with_resources(self, session: SessionState, prompt: str) -> dict[str, Any]:
         resources = await run_file_operation(
             launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
@@ -80,13 +94,19 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.result_contract_recovery_consumed = True
             if session.engine not in {"claude", "codex"}:
                 finalize_pending_result(session, touch=False)
+            raised = await effort_control.raise_for_result_contract(session, self._effort_catalog, self._apply_effort)
             try:
                 delivery = await self._send_with_resources(
                     session,
                     wrap_delivery_body(
                         "直前の返却は返却形式の契約に適合しない。"
                         f"診断: {reason}\n"
-                        "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
+                        + (
+                            f"作業を最後まで進められるよう、このturnからeffortを{raised[0]}から{raised[1]}へ上げた。"
+                            if raised is not None
+                            else ""
+                        )
+                        + "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
                         + (
                             "未読・未走査の範囲を担当内で完了させ、正常返却は先頭を状態: completedとする"
                             "（既存の末尾状態行も受理する）。前提不足が残る単位は、同じインデントで"

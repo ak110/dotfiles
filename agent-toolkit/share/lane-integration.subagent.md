@@ -1,6 +1,8 @@
 ---
 mode: delegate
 model_type: execute
+result_heads:
+- 統合完了
 required_inputs:
 - 統合区分
 - 実行レビュー済みHEAD

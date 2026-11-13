@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Mapping
-from typing import Any, Self, cast
+from typing import Any, Self
 
 from agent_toolkit._agents_server import (
     backends,
@@ -95,15 +95,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             for session in awaiting:
                 await self._advance_child_session_wait(session)
             await asyncio.sleep(0.1 if awaiting else 1.0)
-
-    async def _effort_catalog(self, engine: str) -> list[dict[str, Any]]:
-        """所有backendが公開するモデル一覧で、Codexの実受理段を確認する。"""
-        return await cast(backends.ModelCatalog, self._backend(engine)).list_models()
-
-    async def _apply_effort(self, session: SessionState, value: str) -> None:
-        """Claudeの所有キューへ設定を渡し、他engineは次turn引数の更新だけを使う。"""
-        if session.engine == "claude":
-            await cast(Any, self._backend("claude")).set_effort(session, value)
 
     async def _await_start_outcome(self, session: SessionState, timeout: float | None = None) -> None:
         """元のモジュールで外部から差し替えられる待機上限を、起動処理へ渡す。"""

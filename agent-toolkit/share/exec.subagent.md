@@ -1,6 +1,14 @@
 ---
 mode: delegate
 model_type: execute
+result_heads:
+- 実装完了
+- 統合準備完了
+- 統合完了
+- 計画作成完了
+- 計画検査完了
+- 計画なし準備完了
+- 対応完了
 required_inputs:
 - 担当種別
 - 引き継ぎ記録先

@@ -11,7 +11,17 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from agent_toolkit._agents_server import antigravity, claude, cli_turn, codex, manager, opencode, result_contract, state
+from agent_toolkit._agents_server import (
+    antigravity,
+    claude,
+    cli_turn,
+    codex,
+    launch_prompts,
+    manager,
+    opencode,
+    result_contract,
+    state,
+)
 from agent_toolkit._common import session_registry, state_paths, task_documents
 from agent_toolkit._testing.agents_server_support import ResultMessage
 
@@ -384,3 +394,72 @@ async def test_consumption_survives_registry_publication_and_new_owner(
     async with manager.AgentsServerManager() as owner:
         restored = await owner._restore_registry_session(session.session_id)  # noqa: SLF001
     assert restored is not None and restored.result_contract_recovery_consumed
+
+
+def _role_session(name: str, **fields: Any) -> state.SessionState:
+    """配布する役割文書で起動したtaskを作る。宣言と検査の食い違いを実物の文書で検出する。"""
+    document = launch_prompts.SHARE_DIR / name
+    return state.SessionState("role", str(document.parent), prompt=task_documents.task_prompt_header(document), **fields)
+
+
+@pytest.mark.parametrize(
+    ("name", "message", "valid"),
+    [
+        ("add-wi.subagent.md", "調査は未完了のため、completedとは返せない。原因分析が残っている。", False),
+        ("add-wi.subagent.md", "状態: completed\n結果: 投入済み", True),
+        ("add-wi.subagent.md", "待機中: 01a1d000", True),
+        ("add-wi.subagent.md", "結果: 調査済み\n続行できない区分: owner_input\n続行できない理由: 対象の確定が必要", True),
+        ("exec.subagent.md", "実装完了\n検証結果: 全件成功", True),
+        ("exec.subagent.md", "対応完了（再レビュー不要）", True),
+        ("exec.subagent.md", "実装は途中で、統合完了までは進めていない", False),
+        ("usability-review.subagent.md", "判定: 合格\n根拠: 主要シナリオを操作した", True),
+    ],
+)
+def test_role_task_requires_fixed_line_or_classified_reason(name: str, message: str, valid: bool) -> None:
+    """役割taskは状態行・役割固有の固定行・待機・区分付きの続行不能だけを完了として公開する。"""
+    session = _role_session(name)
+    reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message})
+    assert (reason is None) is valid
+
+
+@pytest.mark.parametrize(
+    ("launch_kind", "effort", "expected"),
+    [("delegate", "low", "medium"), ("delegate", "max", "max"), ("explore", "low", "low")],
+)
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_role_free_text_recovery_raises_effort_once(
+    monkeypatch: pytest.MonkeyPatch, launch_kind: str, effort: str, expected: str
+) -> None:
+    """自由文の早期返却は保留し、回復入力の前に通常委譲のeffortを1段上げ、2回目は診断付きで公開する。"""
+    session = _role_session(
+        "defect-investigation.subagent.md", engine="claude", model="opus", effort=effort, launch_kind=launch_kind
+    )
+    message = "調査は未完了…completedとは返せない"
+    assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
+    prompts: list[str] = []
+
+    async def reply(current: state.SessionState, prompt: str) -> dict[str, str]:
+        prompts.append(prompt)
+        state.begin_reply(current, preserve_waits=True)
+        return {"delivery": "reply_started"}
+
+    backend = Mock(send_message=AsyncMock(side_effect=reply), set_effort=AsyncMock())
+    async with manager.AgentsServerManager() as owner:
+        monkeypatch.setattr(owner, "_backend", Mock(return_value=backend))
+        await owner._advance_child_session_wait(session)  # noqa: SLF001
+    assert len(prompts) == 1 and "診断:" in prompts[0]
+    assert session.effort == expected
+    if expected != effort:
+        backend.set_effort.assert_awaited_once_with(session, expected)
+        assert session.effort_history[-1][1:] == (effort, expected, "agents-server")
+        assert f"effortを{effort}から{expected}へ上げた" in prompts[0]
+    else:
+        backend.set_effort.assert_not_awaited()
+        assert "effortを" not in prompts[0]
+    result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
+    assert not result_contract.hold_invalid_result(session, result)
+    error = result["error"]
+    assert isinstance(error, dict)
+    details = dict(error)
+    assert details["resultContract"] and details["nextAction"] == result_contract.RECOVERY_NEXT_ACTION

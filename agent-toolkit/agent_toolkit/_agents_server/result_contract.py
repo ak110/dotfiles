@@ -1,4 +1,4 @@
-"""exploreの完了状態行とtaskの続行不能返却を公開前に検査する。"""
+"""exploreの完了状態行と、役割taskの固定行・続行不能返却を公開前に検査する。"""
 
 from __future__ import annotations
 
@@ -14,6 +14,8 @@ from agent_toolkit._common.next_action import ActionableError
 
 _REASON_PREFIX = "続行できない理由:"
 _CLASSIFICATION_PREFIX = "続行できない区分:"
+# 「返却形式の受け渡し」が全役割に定める正常結果の状態行。役割固有の固定行は宣言の`result_heads`が加える。
+_STATE_HEAD = "状態:"
 RECOVERY_NEXT_ACTION = (
     "agents_server.send_messageのsession_idにこの結果のsession_idを指定し、promptで同じsessionへ、"
     "診断に従い、正常返却は所定の成功行、続行不能は同じインデントの有効な区分と非空の理由の"
@@ -34,7 +36,7 @@ _VALID_CLASSIFICATIONS = frozenset(
 
 
 def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str | None:
-    """自由本文exploreの成功行と、explore・taskの続行不能2行を検査する。"""
+    """自由本文exploreの成功行と、役割taskの固定行、explore・taskの続行不能2行を検査する。"""
     if result.get("status") != "completed":
         return None
     document = task_documents.launched_task_document(session.prompt)
@@ -74,7 +76,38 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
             return "exploreの返却が完了を示しません。先頭または最終行に状態: completedが必要です"
     if document is not None and document.name == "reader-fit-review.subagent.md":
         return _reader_fit_reason(session, document, message)
+    if document is not None and not has_reason:
+        return _role_head_reason(document, message)
     return None
+
+
+def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
+    """役割taskの返却が、状態行か役割文書の宣言する固定行を持つかを検査する。
+
+    低い推論量の担当が作業途中で状態行も区分も無い自由文を返すと、委譲元へ完了として届く。
+    固定行の一覧は返却形式を所有する役割文書の宣言から得て、検査と文書の食い違いを避ける。
+    """
+    declaration = task_documents.read_declaration(document)
+    if not isinstance(declaration, task_documents.TaskDocumentDeclaration):
+        # 宣言を読めない役割は返却形式も確かめられないため、正しい返却の保留を避けて検査しない。
+        return None
+    heads = (_STATE_HEAD, *declaration.result_heads)
+    for line in message.splitlines():
+        stripped = line.strip().removeprefix("- ")
+        if any(_head_matches(stripped, head) for head in heads):
+            return None
+    accepted = "、".join(f"`{head}`" for head in heads)
+    return (
+        "役割文書の返却形式の固定行も、続行できない区分と理由の2行もありません。"
+        f"担当内の作業を完遂して固定行（{accepted}）で返すか、続行不能の単位を区分と理由の2行で返してください"
+    )
+
+
+def _head_matches(line: str, head: str) -> bool:
+    """`:`で終わる固定行は前方一致、それ以外は行全体か直後の全角括弧の補足付きで一致させる。"""
+    if head.endswith(":"):
+        return line.startswith(head)
+    return line == head or line.startswith(head + "（")
 
 
 def _current_named_input(session: SessionState, document: pathlib.Path, name: str) -> str:
