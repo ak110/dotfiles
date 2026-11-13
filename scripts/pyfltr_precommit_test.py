@@ -227,7 +227,7 @@ def test_main_disables_only_pytest_when_reusing(
 def test_untracked_file_added_after_pytest_start_is_not_reused(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, add_untracked: bool, reused: bool
 ) -> None:
-    """pytestの開始後に加えた未追跡ファイルを、ファイルと親ディレクトリの更新時刻で検出して再利用しない。"""
+    """pytestの開始後に加えた未追跡ファイルは、その更新時刻で検出して再利用しない。"""
     repository = _repository(tmp_path)
     # 作成した作業ツリーの更新時刻より後、追加するファイルの更新時刻より前にpytestが始まった実行を表す。
     # 秒未満を記録しないファイルシステムでも作業ツリーの作成と区別できるよう、次の秒に入ってから開始とする。
@@ -241,6 +241,42 @@ def test_untracked_file_added_after_pytest_start_is_not_reused(
     reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr")
 
     assert (reuse.run_id == "01RUN") is reused
+
+
+@pytest.mark.parametrize("change", ["ignored-create", "ignored-delete", "modify", "delete", "rename"])
+@pytest.mark.parametrize("run_id", [None, "01RUN"])
+def test_reuse_tracks_commit_inputs_not_ignored_directory_changes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str, run_id: str | None
+) -> None:
+    """除外ファイルの生成・削除は受理し、追跡内容の変更・削除・改名は拒否する。"""
+    repository = _repository(tmp_path)
+    (repository / ".gitignore").write_text("src/*.log\n", encoding="utf-8")
+    commit_all(repository, "ignore logs")
+    ignored = repository / "src" / "output.log"
+    if change == "ignored-delete":
+        ignored.write_text("before", encoding="utf-8")
+    # 秒精度のファイルシステムでも、準備と操作の時刻を分離する。
+    time.sleep(1.05 - time.time() % 1)
+    pytest_started_at = _iso(0)
+    time.sleep(0.05)
+    target = repository / "src" / "a.py"
+    if change == "ignored-create":
+        ignored.write_text("after", encoding="utf-8")
+    elif change == "ignored-delete":
+        ignored.unlink()
+    elif change == "modify":
+        target.write_text("x = 2\n", encoding="utf-8")
+    elif change == "delete":
+        target.unlink()
+    else:
+        target.rename(repository / "src" / "renamed.py")
+    if not change.startswith("ignored-"):
+        subprocess.run(["git", "-C", str(repository), "add", "-A"], check=True)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=pytest_started_at)
+
+    reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id=run_id)
+
+    assert (reuse.run_id == "01RUN") is change.startswith("ignored-")
 
 
 def test_main_runs_pytest_when_query_output_is_unexpected(monkeypatch: pytest.MonkeyPatch) -> None:

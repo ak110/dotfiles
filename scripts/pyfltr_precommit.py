@@ -13,8 +13,8 @@ commitの直前に同じ内容へ`pyfltr run`を成功させている場合、�
 pyfltrの内部構造には依存しない。次をすべて満たす実行だけを再利用する。
 
 - 作業ツリーとindexが一致する（commit対象の内容と作業ツリーが同じ）。
-- 追跡ファイル・未追跡ファイルとその親ディレクトリの更新時刻が、その実行のpytestの開始より前である
-  （ファイルの追加・削除・改名は親ディレクトリの更新時刻に現れる）。
+- 追跡ファイル・除外対象以外の現存する未追跡ファイルとGit indexの更新時刻が、その実行のpytestの開始より前である。
+  追跡対象の削除・改名はindexと作業ツリーの比較およびindexの更新時刻で検出する。
   基準を実行の開始にしないのは、`pyfltr run`の整形段（`sync-generated-files`など）が
   内容を変えずにファイルを書き直し、pytestの開始の直前に更新時刻を進めるためである。
   pytestは整形段の終了後に始まる（2026年11月12日、pyfltr 3.30.1の`show-run`で、
@@ -262,7 +262,13 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
 
 
 def _latest_change_ns(root: pathlib.Path) -> int | str:
-    """対象ファイルと親ディレクトリの更新時刻の最大値を返す。判定できない場合は理由を返す。"""
+    """現存する対象ファイルとGit indexの更新時刻を比較する。
+
+    親ディレクトリは除外ファイルの生成・削除でも更新されるため比較しない。
+    追跡対象の削除・改名は先行するdiffとindexの更新で検出する。
+    未追跡ファイルの削除は検出しないが、commitする追跡内容は変わらない。
+    実行時の未追跡入力への依存は、従来の親時刻の比較でも保証できない。
+    """
     listed = git_command.run(
         ["-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         capture_output=True,
@@ -270,13 +276,20 @@ def _latest_change_ns(root: pathlib.Path) -> int | str:
     )
     if listed.returncode:
         return f"ファイル一覧を取得できない: exit {listed.returncode}"
-    paths: set[pathlib.Path] = {root}
+    index = git_command.run(
+        ["-C", str(root), "rev-parse", "--path-format=absolute", "--git-path", "index"],
+        capture_output=True,
+        text=True,
+        timeout=_QUERY_TIMEOUT_SECONDS,
+    )
+    if index.returncode or not index.stdout.strip():
+        return f"Git indexのパスを取得できない: {format_cli_error(index)}"
+    paths: set[pathlib.Path] = {pathlib.Path(index.stdout.strip())}
     for name in listed.stdout.split(b"\0"):
         if not name:
             continue
         path = root / os.fsdecode(name)
         paths.add(path)
-        paths.update(parent for parent in path.parents if parent.is_relative_to(root))
     latest = 0
     for path in paths:
         try:
