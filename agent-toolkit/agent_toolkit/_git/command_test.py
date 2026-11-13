@@ -364,3 +364,23 @@ def test_run_leaves_unrelated_failure_unchanged(stale_lock_repo: pathlib.Path) -
 
     assert result.returncode != 0
     assert "回収しませんでした" not in result.stderr
+
+
+def test_run_does_not_reclaim_lock_named_file_outside_git_directory(stale_lock_repo: pathlib.Path) -> None:
+    """Gitのエラーに引用された、管理ディレクトリの外の`foo.lock`（ユーザーが作ったファイル）は回収せず、排他ファイルも作らない。"""
+    subject.run(
+        ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--allow-empty", "-m", "init"],
+        stale_lock_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    user_file = stale_lock_repo / "foo.lock"
+    user_file.write_text("user data\n", encoding="utf-8")
+
+    result = subject.run(["checkout", "HEAD", "--", "foo.lock"], stale_lock_repo, capture_output=True, text=True)
+
+    assert result.returncode != 0
+    assert "foo.lock" in result.stderr
+    assert user_file.read_text(encoding="utf-8") == "user data\n"
+    assert not list(stale_lock_repo.rglob(stale_lock.RECLAIM_NAME))

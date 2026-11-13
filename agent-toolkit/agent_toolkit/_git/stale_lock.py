@@ -53,6 +53,8 @@ POLL_MAX_SECONDS = 2.0
 """ポーリング間隔は初期値から上限まで倍々に増やす。"""
 
 _GIT_NAMES = frozenset({"git", "git.exe"})
+_MOVED_INFIX = ".reclaim-"
+"""回収中のロックを一時的に移す別名の、ロック名の後ろに付ける接頭辞。"""
 _UPDATER_STEMS = frozenset({"update_dotfiles", "update-dotfiles", "update_dotfiles_job"})
 _UPDATER_EXECUTABLE_PREFIXES = ("python", "uv", "update-dotfiles", "update_dotfiles")
 _OPTIONS_WITH_VALUE = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"})
@@ -61,6 +63,19 @@ _OPTIONS_WITH_VALUE = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--name
 _LOCK_PATH_PATTERN = re.compile(r"'([^'\n]+\.lock)'")
 
 type _Key = tuple[int, int, int]
+
+
+def _basename(value: str) -> str:
+    r"""区切りが`/`でも`\`でも末尾の名前を返す。
+
+    実行中のOSと異なるOSのコマンドライン（Windowsの`C:\...\git.exe`など）も判定できるよう、`pathlib`を使わない。
+    """
+    return re.split(r"[\\/]", value)[-1]
+
+
+def _stem(value: str) -> str:
+    """末尾の名前から最後の拡張子を除き、小文字にする。"""
+    return _basename(value).rsplit(".", 1)[0].lower()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -130,7 +145,7 @@ def scan_update_dotfiles_processes() -> ProcessScan:
                 # 照会を拒否されたpython・uvは、更新主体かどうかを判定できない。
                 indeterminate = True
                 continue
-            if any(pathlib.PurePath(argument).stem.lower() in _UPDATER_STEMS for argument in cmdline):
+            if any(_stem(argument) in _UPDATER_STEMS for argument in cmdline):
                 found.append(ProcessInfo(process.pid, name))
         except psutil.NoSuchProcess:
             continue
@@ -349,7 +364,7 @@ def scan_git_processes(
     for process in psutil.process_iter(["name", "cmdline"]):
         try:
             argv = process.info["cmdline"] or []
-            if not argv or pathlib.Path(argv[0]).name.lower() not in _GIT_NAMES:
+            if not argv or _basename(argv[0]).lower() not in _GIT_NAMES:
                 continue
             # -C、--git-dir等の解釈とlinked worktreeの対応はGit自身へ委ねる。
             options = _normalize_options(argv)
@@ -458,17 +473,34 @@ def assess(lock: pathlib.Path, context: LockContext) -> Assessment:
     return Assessment("orphan", True, False, key)
 
 
-def _reclaim(lock: pathlib.Path, expected: _Key) -> bool:
-    """回収の排他を取得し、判定時と同じロックだけを削除する。回収したら真を返す。"""
-    with (lock.parent / RECLAIM_NAME).open("a+b") as exclusion:
+def _reclaim(lock: pathlib.Path, expected: _Key, exclusion_dir: pathlib.Path) -> bool:
+    """回収の排他を取得し、判定時と同じロックだけを削除する。回収したら真を返す。
+
+    排他の対象ファイルは、Gitの管理ディレクトリ（`exclusion_dir`）の直下へ置く。
+    ロックが`refs/`配下などにあっても、作業ツリーやref名前空間へファイルを作らないためである。
+    """
+    with (exclusion_dir / RECLAIM_NAME).open("a+b") as exclusion:
         try:
             file_lock.acquire_lock(exclusion, blocking=False)
         except OSError:
             return False
         try:
+            _settle_interrupted_reclaims(lock)
             return _remove_if_unchanged(lock, expected)
         finally:
             file_lock.release_lock(exclusion)
+
+
+def _settle_interrupted_reclaims(lock: pathlib.Path) -> None:
+    """回収の排他を保持した状態で、以前の回収が別名へ移したまま中断して残したファイルを片付ける。
+
+    排他の保持者は1つだけなので、残っている別名のファイルの作成者は終了している。
+    元の名前が空いていれば戻し（次の判定が改めて回収の要否を決める）、空いていなければ破棄する。
+    """
+    for leftover in lock.parent.glob(f"{lock.name}{_MOVED_INFIX}*"):
+        with contextlib.suppress(OSError):
+            os.link(leftover, lock)
+        leftover.unlink(missing_ok=True)
 
 
 def _remove_if_unchanged(lock: pathlib.Path, expected: _Key) -> bool:
@@ -478,7 +510,7 @@ def _remove_if_unchanged(lock: pathlib.Path, expected: _Key) -> bool:
     移した後の実体を確認することで、この取り違えを確認の時点に限定せず検出できる。
     別の実体だった場合は、元の名前へ戻す。
     """
-    moved = lock.with_name(f"{lock.name}.reclaim-{os.getpid()}-{time.time_ns()}")
+    moved = lock.with_name(f"{lock.name}{_MOVED_INFIX}{os.getpid()}-{time.time_ns()}")
     try:
         os.rename(lock, moved)
     except OSError:
@@ -501,6 +533,8 @@ def _alternates(directory: pathlib.Path) -> tuple[str, ...]:
     """強制停止で残った代替indexの名前。削除はしない。"""
     try:
         names = [path.name for path in directory.glob("update-dotfiles-index-*")]
+        # 回収の途中で強制終了して残った別名のロック。
+        names += [path.name for path in directory.glob(f"*{_MOVED_INFIX}*")]
     except OSError:
         return ()
     return tuple(sorted(name for name in names if name not in {RECORD_NAME, RECLAIM_NAME}))
@@ -514,7 +548,9 @@ def _diagnose(lock: pathlib.Path, assessment: Assessment, waited: float) -> Diag
     return Diagnosis(lock, modified, waited, assessment, _alternates(lock.parent))
 
 
-def _settle[T](lock: pathlib.Path, context: LockContext, wait_seconds: float, attempt: Callable[[], T | None]) -> T:
+def _settle[T](
+    lock: pathlib.Path, context: LockContext, wait_seconds: float, attempt: Callable[[], T | None], exclusion_dir: pathlib.Path
+) -> T:
     """`attempt`が成功するまで、期限内でロックの解消を待ち、回収できる残存ロックを回収する。
 
     回収は、所有記録で所有者の終了を確認できた場合を除き、同じロックを2回続けて観測してから行う。
@@ -532,7 +568,7 @@ def _settle[T](lock: pathlib.Path, context: LockContext, wait_seconds: float, at
             observed = None
             continue
         if assessment.reclaimable and assessment.key is not None and (assessment.immediate or observed == assessment.key):
-            if _reclaim(lock, assessment.key):
+            if _reclaim(lock, assessment.key, exclusion_dir):
                 observed = None
                 continue
             assessment = dataclasses.replace(assessment, verdict="reclaim-busy", reclaimable=False)
@@ -558,7 +594,7 @@ def acquire(lock: pathlib.Path, *, index: pathlib.Path, context: LockContext, wa
         except FileExistsError:
             return None
 
-    identity = _settle(lock, context, wait_seconds, attempt)
+    identity = _settle(lock, context, wait_seconds, attempt, lock.parent)
     try:
         write_record(lock.parent, index, identity)
     except BaseException:
@@ -571,6 +607,12 @@ def acquire(lock: pathlib.Path, *, index: pathlib.Path, context: LockContext, wa
 def lock_wait_seconds(*limits: float | None) -> float:
     """待機の上限（`DEFAULT_WAIT_SECONDS`）と、指定された上限（`None`は指定なし）のうち最も短いものを返す。"""
     return max(0.0, min([DEFAULT_WAIT_SECONDS, *(value for value in limits if value is not None)]))
+
+
+def _inside(lock: pathlib.Path, target: Target) -> bool:
+    """`lock`がGitの管理ディレクトリまたは共通ディレクトリの中にあるか。"""
+    resolved = lock.parent.resolve() / lock.name
+    return any(resolved.is_relative_to(base) for base in (target.git_dir, target.common_dir) if base is not None)
 
 
 def _released(lock: pathlib.Path) -> Callable[[], bool | None]:
@@ -587,19 +629,33 @@ def recover_after_failure(
     ロックが消えた、または残存ロックを回収できた場合に限り`retry`が真になる。
     """
     base = pathlib.Path(cwd) if cwd is not None else pathlib.Path.cwd()
-    locks: list[pathlib.Path] = []
+    candidates: list[pathlib.Path] = []
     for match in _LOCK_PATH_PATTERN.findall(stderr):
         candidate = pathlib.Path(match)
         if not candidate.is_absolute():
             candidate = base / candidate
-        if candidate not in locks and os.path.lexists(candidate):
-            locks.append(candidate)
+        if candidate not in candidates and os.path.lexists(candidate):
+            candidates.append(candidate)
+    if not candidates:
+        return Recovery(False)
+    # 標準エラーに引用された`.lock`のうち、Git自身が解決した管理ディレクトリ（共通ディレクトリを含む）の中だけを対象にする。
+    # 作業ツリー内のユーザーのファイル（例: pathspecに指定した`foo.lock`）は、Gitのロックではないため回収しない。
+    target = resolve_target(cwd)
+    if target is None:
+        return Recovery(False)
+    locks = [lock for lock in candidates if _inside(lock, target)]
     if not locks:
         return Recovery(False)
     deadline = time.monotonic() + max(wait_seconds, 0.0)
     for lock in locks:
         try:
-            _settle(lock, context or command_context(lock, cwd), deadline - time.monotonic(), _released(lock))
+            _settle(
+                lock,
+                context or command_context(lock, cwd),
+                deadline - time.monotonic(),
+                _released(lock),
+                target.git_dir,
+            )
         except LockBusy as busy:
             return Recovery(False, busy.diagnosis)
     return Recovery(True)

@@ -227,7 +227,7 @@ def test_reclaim_refuses_lock_replaced_just_before_removal(monkeypatch: pytest.M
 
     monkeypatch.setattr(stale_lock.os, "rename", replace_then_rename)
 
-    assert not stale_lock._reclaim(lock, key)
+    assert not stale_lock._reclaim(lock, key, tmp_path)
     assert lock.read_bytes() == b"other"
     assert not list(tmp_path.glob("index.lock.reclaim-*"))
 
@@ -254,12 +254,12 @@ def test_reclaim_exclusion_follows_owner_lifetime(tmp_path: pathlib.Path) -> Non
     ) as process:
         try:
             _wait_process_ready(process, ready)
-            assert not stale_lock._reclaim(lock, key)
+            assert not stale_lock._reclaim(lock, key, tmp_path)
             assert lock.exists()
         finally:
             process.kill()
             process.communicate(timeout=15)
-    assert stale_lock._reclaim(lock, key)
+    assert stale_lock._reclaim(lock, key, tmp_path)
     assert not lock.exists()
 
 
@@ -472,3 +472,74 @@ def test_plugin_pull_shares_deadline_with_retry(monkeypatch: pytest.MonkeyPatch,
     assert timeouts[0] == 10
     assert timeouts[1] is not None
     assert timeouts[1] < 9.7
+
+
+def test_reclaim_restores_or_discards_interrupted_reclaim(tmp_path: pathlib.Path) -> None:
+    """回収が別名へ移した後で中断して残したファイルを、次の回収で片付け、診断にも示す。"""
+    lock = tmp_path / "index.lock"
+    leftover = tmp_path / "index.lock.reclaim-1-2"
+    leftover.write_bytes(b"")
+    assert leftover.name in stale_lock._alternates(tmp_path)
+
+    lock.write_bytes(b"")
+    key = stale_lock._stat_key(lock.stat())
+    assert stale_lock._reclaim(lock, key, tmp_path)
+
+    assert not leftover.exists()
+    assert not lock.exists()
+
+
+class _FakeProcess:
+    """別OSの表現（Windowsの名前・コマンドライン・パス）を持つ偽のプロセス。"""
+
+    def __init__(self, pid: int, name: str, cmdline: list[str]) -> None:
+        self.pid = pid
+        self.info = {"name": name, "cmdline": cmdline, "create_time": 1.0}
+
+    def environ(self) -> dict[str, str]:
+        return {}
+
+    def cwd(self) -> str:
+        return "C:\\repo"
+
+
+@pytest.mark.parametrize(
+    ("name", "cmdline", "detected"),
+    [
+        ("python.exe", ["C:\\Python\\python.exe", "C:\\dotfiles\\libexec\\update_dotfiles_job.py", "--worker", "job-1"], True),
+        ("uv.exe", ["C:\\Users\\a\\uv.exe", "run", "C:\\dotfiles\\libexec\\update_dotfiles.py"], True),
+        ("Python.EXE", ["C:\\Python\\Python.EXE", "C:\\dotfiles\\libexec\\UPDATE_DOTFILES.PY"], True),
+        ("update-dotfiles.exe", ["C:\\bin\\update-dotfiles.exe"], True),
+        ("python.exe", ["C:\\Python\\python.exe", "C:\\work\\other.py"], False),
+        ("python.exe", ["C:\\Python\\python.exe", "C:\\work\\update_dotfiles_other.py"], False),
+    ],
+)
+def test_updater_scan_understands_windows_command_lines(
+    monkeypatch: pytest.MonkeyPatch, name: str, cmdline: list[str], detected: bool
+) -> None:
+    """Windowsの実行ファイル名・バックスラッシュのパスでも、更新主体をOSに依存せず判定する。"""
+    fake = _FakeProcess(4321, name, cmdline)
+    monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter([fake]))
+
+    scan = stale_lock.scan_update_dotfiles_processes()
+
+    assert bool(scan.processes) == detected
+    assert not scan.indeterminate
+
+
+def test_git_scan_understands_windows_command_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """`git.exe`とバックスラッシュのパスのgitプロセスを検出し、大域オプションを維持して照会する。"""
+    fake = _FakeProcess(4321, "git.exe", ["C:\\Program Files\\Git\\cmd\\git.exe", "-C", "C:\\repo", "-c", "a=b", "commit"])
+    monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter([fake]))
+    queries: list[list[str]] = []
+
+    def fake_run(args: list[str], *_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        queries.append(args)
+        return subprocess.CompletedProcess(args, 0, f"{tmp_path.resolve()}\n", "")
+
+    monkeypatch.setattr(stale_lock.command, "run", fake_run)
+
+    scan = stale_lock.scan_git_processes(stale_lock.Target(tmp_path.resolve()), probe_cwd=tmp_path)
+
+    assert [(item.pid, item.name) for item in scan.processes] == [(4321, "git.exe")]
+    assert queries == [["-C", "C:\\repo", "-C", "C:\\repo", "-c", "a=b", "rev-parse", "--absolute-git-dir"]]
