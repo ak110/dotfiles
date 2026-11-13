@@ -399,3 +399,26 @@ def test_main_verify_run_returns_result_without_commit(
         assert reuse.reason in captured.err
         assert "次の操作:" in captured.err
         assert "--verify-run" in captured.err
+
+
+def test_verify_run_reports_git_failure_and_how_to_inspect_index(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """index照会に失敗した検収では、Gitの診断と対象を調べる公開コマンドを示す。"""
+    repository = _repository(tmp_path)
+    monkeypatch.chdir(repository)
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    original = pyfltr_precommit.git_command.run
+
+    def fail_index(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if "--git-path" in command:
+            return subprocess.CompletedProcess(command, 128, "", "index lookup failed")
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(pyfltr_precommit.git_command, "run", fail_index)
+
+    assert pyfltr_precommit.main(["--verify-run", "01RUN"]) == 1
+    error = capsys.readouterr().err
+    assert "index lookup failed" in error
+    assert "git rev-parse --git-path index" in error
+    assert "--verify-run" in error

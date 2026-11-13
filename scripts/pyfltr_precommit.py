@@ -283,7 +283,11 @@ def _latest_change_ns(root: pathlib.Path) -> int | str:
         timeout=_QUERY_TIMEOUT_SECONDS,
     )
     if index.returncode or not index.stdout.strip():
-        return f"Git indexのパスを取得できない: {format_cli_error(index)}"
+        return (
+            f"Git indexのパスを取得できない: {format_cli_error(index)}。"
+            "対象worktreeで`git rev-parse --git-path index`を実行してGitの診断とindexの所在を確認し、"
+            "原因を解消してから同じ`--verify-run`を再実行する"
+        )
     paths: set[pathlib.Path] = {pathlib.Path(index.stdout.strip())}
     for name in listed.stdout.split(b"\0"):
         if not name:
