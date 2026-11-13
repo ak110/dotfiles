@@ -12,7 +12,7 @@
 | 文章成果物の初回レビュー・再レビュー・引き継ぎ再レビューで、読者別探索の起動または省略を判断する前 | `${CLAUDE_PLUGIN_ROOT}/share/reader-fit-review.parent.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:write-plan/references/testing-branch-verification.md` | | | |
-| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | | | |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/recurrence-self-check.parent.md` | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
 | 操作や検証手段を選ぶ前 | `agent-toolkit:/share/exec-review-operations.md` | | | |

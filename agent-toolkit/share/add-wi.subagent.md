@@ -48,13 +48,13 @@ continuations:
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 規範読込の改善案でrefine-promptを利用すると判断した時 | `agent-toolkit:refine-prompt/SKILL.md` |
-| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 |
-| AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 |
-| 受領した要求にUWIが含まれる場合 | `agent-toolkit:wi-standards`の`references/uwi-format.md` |
-| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合 | `agent-basics:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 規範読込の改善案でrefine-promptを利用すると判断した時 | `agent-toolkit:refine-prompt/SKILL.md` | | |
+| 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
+| AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 | | |
+| 受領した要求にUWIが含まれる場合（操作対象外: 役割の開始入力） | `agent-toolkit:wi-standards`の`references/uwi-format.md` | | |
+| 受領した要求が観測された欠陥（不具合、未対応、デグレードを含む）を起点とする場合（操作対象外: 役割の開始入力） | `agent-basics:bugfix`の読込表のうち、原因分析の条件を満たす行の資料 | | |
 
 ## 入力
 

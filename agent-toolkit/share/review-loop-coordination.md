@@ -10,10 +10,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination-recurrence.md` |
-| 判断要請を受領し対処を確定する前 | `review-loop-coordination-escalation.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 再レビューの指摘を受領し修正指示を確定する前 | `review-loop-coordination-recurrence.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/review-loop-coordination-recurrence.md` |
+| 判断要請を受領し対処を確定する前 | `review-loop-coordination-escalation.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/review-loop-coordination-escalation.md` |
 
 ## 条件別資料
 

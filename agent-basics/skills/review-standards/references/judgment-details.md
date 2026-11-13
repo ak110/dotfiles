@@ -12,4 +12,4 @@
 | --- | --- |
 | 既存記述との重複と方針との整合に関する判断・作業の前 | `judgment-details-consistency.md` |
 | 問題と手段の比例性・解決案の比較・判断の点検・規定の適用可否・前提の再検討に関する判断・作業の前 | `judgment-details-decisions.md` |
-| 検収手段の到達可能性・矛盾の原因調査に関する判断・作業の前 | `judgment-details-feasibility.md` |
+| 検収手段の到達可能性・矛盾の原因調査に関する判断・作業の前（操作対象外: 検収方法の評価） | `judgment-details-feasibility.md` |

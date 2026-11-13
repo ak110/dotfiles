@@ -4,15 +4,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 基準の参照時 | `exec-review-recording-integration.md` |
-| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` |
-| 基準の参照時 | `review-loop-coordination-escalation.md` |
-| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` |
-| レビュー工程の判定・記録を始める前 | `review-table-operations.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` |
-| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 基準の参照時 | `exec-review-recording-integration.md` | | |
+| 返却の`達成`行の根拠を受領確認する前 | `exec-review-recording-grounds.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/exec-review-recording-grounds.md` |
+| 基準の参照時 | `review-loop-coordination-escalation.md` | | |
+| 完成条件証拠の検収時に、計画や委譲プロンプトから複数のWI名を取得する場合 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/wi-standards/references/wi-show-bulk.md` |
+| レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | |
+| レビュー工程の判定・記録を始める前 | `exec-review-criteria.md` | | |
+| レビュー工程の判定・記録を始める前 | `exec-review-recording.md` | | |
 
 ## 完成条件証拠の受領確認
 

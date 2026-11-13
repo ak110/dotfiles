@@ -73,28 +73,28 @@ QCD・3段判定、事実と推論、硬い制約・努力目標の定義は、�
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| QCD・3段判定、事実と推論、硬い制約・努力目標を判断へ用いる前 | `../writing-standards/references/quality-principles-qcd.md`、`../writing-standards/references/quality-principles-facts.md`、`../writing-standards/references/quality-principles-constraints.md` |
-| 期待・実際と直接的原因を確定する前（他担当へ引き渡す場合も含む） | `references/root-cause-analysis-initial.md`、`references/root-cause-analysis-evidence.md` |
-| 根本原因と重大度を確定する前 | `references/root-cause-severity.md` |
-| 類似見直しの範囲・観点を定め、是正対象と予防対象を調べる前 | `references/root-cause-remediation.md` |
-| 対策と直接影響範囲、処置の階層を確定する前 | `references/root-cause-actions.md` |
-| 再発防止策の候補・採否・有効性と、類似見直しを含む処置の完了を判断する前 | `references/root-cause-prevention.md` |
-| 同じ指摘や症状が反復した時、調査が停滞した時、修正で別の症状や回避処理が増えた時 | `references/root-cause-scenarios-recurrence.md` |
-| テストの失敗を調べる時 | `references/root-cause-scenarios-testing.md` |
-| テストの失敗を調べる時 | `references/root-cause-prevention-verification.md` |
-| 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-testing.md` |
-| 規範に従ったのに目的を達成できなかった事象（停止、差し戻し、空回り、要求を満たさない成果物など）を調べる時 | `references/root-cause-scenarios-recurrence.md` |
-| 検索・読取は成功したのに必要な情報へ到達しなかった事象（案内不足・誤参照を含む）を調べる時 | `references/root-cause-scenarios-investigation.md` |
-| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-reports.md` |
-| 原因を確定する前（拡張原因分析へ進まない場合も、2系統・L1〜L4の結論と該当なしの判定に使う） | `references/causal-analysis-stages.md` |
-| 拡張原因分析へ進む時、または原因確定に履歴・記録の探索を用いる前 | `references/causal-analysis.md` |
-| 再発防止セルフチェックへの追加を選ぶ前 | `references/recurrence-self-check.md` |
-| 原因分析の記録を作成する前 | `references/analysis-records.md` |
-| 独立した調査を依頼・検収する前 | `references/investigation-delegation.md` |
-| CI失敗の分類と対処を選ぶ前 | `references/ci-failure-handling.md` |
-| 分岐条件の効果を検証する前 | `../writing-standards/references/testing-conditions.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| QCD・3段判定、事実と推論、硬い制約・努力目標を判断へ用いる前 | `../writing-standards/references/quality-principles-qcd.md`、`../writing-standards/references/quality-principles-facts.md`、`../writing-standards/references/quality-principles-constraints.md` | | |
+| 期待・実際と直接的原因を確定する前（他担当へ引き渡す場合も含む） | `references/root-cause-analysis-initial.md`、`references/root-cause-analysis-evidence.md` | | |
+| 根本原因と重大度を確定する前 | `references/root-cause-severity.md` | | |
+| 類似見直しの範囲・観点を定め、是正対象と予防対象を調べる前 | `references/root-cause-remediation.md` | | |
+| 対策と直接影響範囲、処置の階層を確定する前 | `references/root-cause-actions.md` | | |
+| 再発防止策の候補・採否・有効性と、類似見直しを含む処置の完了を判断する前 | `references/root-cause-prevention.md` | | |
+| 同じ指摘や症状が反復した時、調査が停滞した時、修正で別の症状や回避処理が増えた時 | `references/root-cause-scenarios-recurrence.md` | | |
+| テストの失敗を調べる時 | `references/root-cause-scenarios-testing.md` | | |
+| テストの失敗を調べる時 | `references/root-cause-prevention-verification.md` | | |
+| 所要の増大や不要仕事を調べる時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-testing.md` | | |
+| 規範に従ったのに目的を達成できなかった事象（停止、差し戻し、空回り、要求を満たさない成果物など）を調べる時 | `references/root-cause-scenarios-recurrence.md` | | |
+| 検索・読取は成功したのに必要な情報へ到達しなかった事象（案内不足・誤参照を含む）を調べる時 | `references/root-cause-scenarios-investigation.md` | | |
+| 外部の不具合報告、母集団の件数、作業途中の発見を扱う時 | `references/root-cause-scenarios-investigation.md`、`references/root-cause-scenarios-reports.md` | | |
+| 原因を確定する前（拡張原因分析へ進まない場合も、2系統・L1〜L4の結論と該当なしの判定に使う） | `references/causal-analysis-stages.md` | | |
+| 拡張原因分析へ進む時、または原因確定に履歴・記録の探索を用いる前 | `references/causal-analysis.md` | | |
+| 再発防止セルフチェックへの追加を選ぶ前 | `references/recurrence-self-check.md` | | |
+| 原因分析の記録を作成する前 | `references/analysis-records.md` | | |
+| 独立した調査を依頼・検収する前 | `references/investigation-delegation.md` | 判断 | `delegation`、`delegation-result`、`read:agent-basics:*/skills/bugfix/references/investigation-delegation.md` |
+| CI失敗の分類と対処を選ぶ前 | `references/ci-failure-handling.md` | | |
+| 分岐条件の効果を検証する前 | `../writing-standards/references/testing-conditions.md` | | |
 
 ## 本文参照の取得条件
 

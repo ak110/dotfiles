@@ -35,6 +35,7 @@ OPERATIONS = (
     frozenset(
         {
             "delegation",
+            "delegation-result",
             "search",
             "root-cause-writing",
             "managed-temp-create",

@@ -4,9 +4,9 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
 
 ## 会話を引き継ぐ委譲
 

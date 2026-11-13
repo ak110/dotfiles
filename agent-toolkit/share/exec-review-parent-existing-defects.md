@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` |
-| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 基準の参照時 | `add-wi.parent.md` |
-| 基準の参照時 | `agent-basics:bugfix/SKILL.md` |
-| 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` |
-| 基準の参照時 | `add-wi-parent-acceptance.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 差分外の不良を受領して対処時機を決める前 | `../skills/delegation/references/receiving-followup.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/receiving-followup.md` |
+| process-wi中に差分外の既存不良や正式改善AWIを受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 基準の参照時 | `add-wi.parent.md` | | |
+| 基準の参照時 | `agent-basics:bugfix/SKILL.md` | | |
+| 基準の参照時 | `../skills/user-confirmation-and-report/SKILL.md` | | |
+| 基準の参照時 | `add-wi-parent-acceptance.md` | | |
 
 ## 返却に含まれる既存不良の受領
 

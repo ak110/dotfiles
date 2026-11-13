@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` |
-| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-escalation.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| process-wi中の不良・是正要求・改善点を受領した時 | `agent-toolkit:process-wi/references/immediate-fix.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/immediate-fix.md` |
+| 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../../share/review-loop-coordination-escalation.md` | | |
 
 ## 受領後の扱い
 

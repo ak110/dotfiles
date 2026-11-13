@@ -17,5 +17,5 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 担当の役割に関する判断・作業の前 | `all-repos-orchestration-roles.md` |
-| 取得済み候補の受領に関する判断・作業の前 | `all-repos-orchestration-inputs.md` |
+| 取得済み候補の受領に関する判断・作業の前（操作対象外: 役割の開始入力） | `all-repos-orchestration-inputs.md` |
 | 登録集合・worktreeと資源・所有・継続・回収に関する判断・作業の前 | `all-repos-orchestration-resources.md` |

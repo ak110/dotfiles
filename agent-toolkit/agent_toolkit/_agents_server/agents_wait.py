@@ -19,6 +19,7 @@ from agent_toolkit._agents_server import (
     notice_inbox,
     owner_lost,
     result_projection,
+    result_read_delivery,
     retained_results,
     session_handoff,
     shared_layout,
@@ -705,7 +706,11 @@ def _wait_for_result(
                                 )
                         if notices:
                             result["notices"] = notices
-                        collected.append(_with_result_next_action(result))
+                        collected.append(
+                            result_read_delivery.with_read_guidance(
+                                _with_result_next_action(result), env, state_root=state_root
+                            )
+                        )
                         wait_targets.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
                         continue
                     if notices:

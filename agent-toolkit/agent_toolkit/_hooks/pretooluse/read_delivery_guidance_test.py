@@ -152,6 +152,9 @@ def test_guidance_gives_mandatory_host_steps_and_edit_review(tmp_path, monkeypat
 
 def test_confirmation_denial_has_all_paths_until_read(tmp_path, monkeypatch, memory):
     paths = _rows(tmp_path, monkeypatch, "confirmation", count=30)
+    bootstrap = read_delivery.plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+    rows = [ReadTrigger(bootstrap, 1, "判断", ("confirmation",), tuple(paths))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     for _ in range(2):
         decision = read_delivery.deliver({}, "AskUserQuestion", {}, "test")
         assert decision.block is not None

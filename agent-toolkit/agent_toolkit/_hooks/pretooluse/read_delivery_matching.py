@@ -108,7 +108,10 @@ def matches(operation: str, tool_name: str, tool_input: dict, cwd: str) -> bool:
     matched = operation_skills.operation_matches(operation, tool_name, tool_input, cwd)
     if matched is not None:
         return matched
-    prefix, value = operation.split(":", 1)
+    prefix, separator, value = operation.partition(":")
+    # 受領など別の時点が所有する共通語彙は、PreToolUseでは成立させない。
+    if not separator:
+        return False
     if prefix == "tool":
         return tool_name == value
     if prefix == "write":
@@ -269,7 +272,11 @@ def condition_confirmed(row: read_triggers.ReadTrigger, tool_name: str, tool_inp
     if row.kind != "判断" or not row.condition:
         return True
     # 確認ツールの呼出しは、確認本文・選択肢を起草する操作が成立した観測になる。
-    if "confirmation" in row.operations and matches("confirmation", tool_name, tool_input, cwd):
+    if (
+        row.source == plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+        and "confirmation" in row.operations
+        and matches("confirmation", tool_name, tool_input, cwd)
+    ):
         return True
     # 対象資料の読取だけでは、宣言元の役割・工程などの自然文条件を確定できない。
     # WIの保存種別と原稿・計画初版の本文は、保存・起草の時点にある観測として条件を確定する。

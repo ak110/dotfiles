@@ -4,11 +4,11 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` |
-| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` |
-| 再委譲の制限が委譲先へ自動で届くかを起動の形から確かめる時 | `delivery-scope.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 確定済みの既存ファイル編集を委譲する前 | `agent-basics:writing-standards/references/file-editing.md` | 判断 | `delegation`、`read:agent-basics:*/skills/writing-standards/references/file-editing.md` |
+| Claude CodeのEditまたはWriteによる既存更新を委譲する前 | `agent-basics:writing-standards/references/file-editing-claude.md` | 判断 | `delegation`、`read:agent-basics:*/skills/writing-standards/references/file-editing-claude.md` |
+| 再委譲の制限が委譲先へ自動で届くかを起動の形から確かめる時（操作対象外: ツールと結び付かない判断） | `delivery-scope.md` | | |
 
 ## 委譲プロンプトの構成
 

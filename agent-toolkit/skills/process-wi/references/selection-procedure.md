@@ -26,5 +26,5 @@
 | 処理対象の決定に関する判断・作業の前 | `selection-procedure-candidates.md` |
 | 調査とレーン分け・反映先と上流投入・プロジェクト規範の指定に関する判断・作業の前 | `selection-procedure-allocation.md` |
 | 集合確定直後の処理開始に関する判断・作業の前 | `selection-procedure-starting.md` |
-| 保存後のチェック・保存後の意味検収・選定工程の完了に関する判断・作業の前 | `selection-procedure-validation.md` |
+| 保存後のチェック・保存後の意味検収・選定工程の完了に関する判断・作業の前（操作対象外: 自身の選定結果の検収） | `selection-procedure-validation.md` |
 | 処理対象WIの追加に関する判断・作業の前 | `selection-procedure-addition.md` |

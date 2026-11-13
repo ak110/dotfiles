@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前 | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
+| 実ユーザー発話やWI記入欄を受領・分類して既存判断への介入を評価する前（操作対象外: ユーザー発話・回答の受領） | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 本文の参照基準を適用する前 | `../../delegation/references/routing.md` |
 | 本文の参照基準を適用する前 | `grilling.md` |
 | 本文の参照基準を適用する前 | `pending-decisions.md` |

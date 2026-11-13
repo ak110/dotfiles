@@ -14,7 +14,7 @@
 | 配置や形式が判断で果たす機能の保持を判定する前 | `agent-basics:writing-standards/references/agent-documents-additions-volume.md` |
 | 複数リポジトリの共通本文を参照するAWIを読む前 | `agent-toolkit:wi-standards/references/cross-repository-submission.md` |
 | 本文の参照基準を適用する前 | `agent-basics:bugfix/SKILL.md` |
-| 検出策の実測を記録・検収する前 | `agent-basics:bugfix/references/analysis-records.md` |
+| 検出策の実測を記録・検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:bugfix/references/analysis-records.md` |
 | 原因分析の各段と該当なしを記録する前 | `agent-basics:bugfix/references/causal-analysis-stages.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../../write-plan/references/plan-file-standards-verification.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `agent-toolkit:write-plan/references/plan-file-storage.md` |

@@ -6,9 +6,9 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 通常AWIの本文を起草・検収する前 | `awi-body.md` |
+| 通常AWIの本文を起草・検収する前（操作対象外: 自身の成果物・評価方法の検討） | `awi-body.md` |
 | 報告用UWIを確認する前 | `../../report-completion/references/report-formats-uwi.md` |
-| 報告用を除くUWIの本文を起草・検収する前 | `uwi-format.md` |
+| 報告用を除くUWIの本文を起草・検収する前（操作対象外: 自身の成果物・評価方法の検討） | `uwi-format.md` |
 | 既存WIとの重複を判定する前 | `drafting-completion-duplicates.md` |
 
 ## 通常AWIの本文

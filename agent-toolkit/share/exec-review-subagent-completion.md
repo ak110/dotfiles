@@ -9,10 +9,10 @@
 | 本文の起動指定に従って作成規範を取得する前 | `agent-basics:writing-standards/SKILL.md` | | | |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/delegation/references/runtime-routing.md` | | | |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | | |
-| 条件表を検収する前 | `exec-review-recording-contract.md` | | | |
+| 条件表を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `exec-review-recording-contract.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
-| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | | | |
+| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `recurrence-self-check.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/recurrence-self-check.parent.md` | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |
 | レビュー工程の判定・記録を始める前 | `review-table-operations.md` | | | |

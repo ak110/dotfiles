@@ -22,4 +22,4 @@
 | --- | --- |
 | 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
 | 手順3の置換を適用する前 | `agent-basics:writing-standards/references/file-editing.md` |
-| 手順5の個別の書き直しを検収する前 | `agent-basics:writing-standards/references/textlint-violations.md` |
+| 手順5の個別の書き直しを検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/textlint-violations.md` |

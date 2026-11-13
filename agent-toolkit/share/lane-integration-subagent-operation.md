@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | manifestの`verification`へ渡すローカル検証の上限を決める前 | `agent-basics:check-execution/references/verification-scope.md` |
-| 省略された変更の保持とWI継承を検収する時 | `../skills/commit/references/history-rewrite-wi-records.md` |
+| 省略された変更の保持とWI継承を検収する時（操作対象外: 自身の成果物・評価方法の検討） | `../skills/commit/references/history-rewrite-wi-records.md` |
 | 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
 | 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |

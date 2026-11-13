@@ -18,11 +18,11 @@ WI作成専用では件数によらずメイン自身が作業し、専念型担
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` |
-| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` |
-| 専念型担当の起動条件を判定する前 | `../../../share/add-wi-parent-launch.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 報告用UWIの確認・保存手順へ切り替える前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
+| エージェント向け文書を追加・変更するAWIを起草する前 | `agent-basics:writing-standards/references/agent-documents-additions.md` | | |
+| 専念型担当の起動条件を判定する前 | `../../../share/add-wi-parent-launch.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi-parent-launch.md` |
 
 ## 起票目的別の調査出口
 
@@ -32,10 +32,10 @@ WI作成専用では件数によらずメイン自身が作業し、専念型担
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 直接起草と独立した検収の選択に関する判断・作業の前 | `drafting-workflow-review-route.md` |
+| 直接起草と独立した検収の選択に関する判断・作業の前（操作対象外: 起草と検収の担当の選択） | `drafting-workflow-review-route.md` |
 | 出所と観測の取得に関する判断・作業の前 | `drafting-workflow-evidence.md` |
 | 投入条件の判定・前提と観測の確認に関する判断・作業の前 | `drafting-workflow-investigation.md` |
-| 確定した要件と委譲元の判断・未確定事項に関する判断・作業の前 | `drafting-workflow-requirements.md` |
+| 確定した要件と委譲元の判断・未確定事項に関する判断・作業の前（操作対象外: 要件の分類） | `drafting-workflow-requirements.md` |
 | エージェント向け文書の構成・本文の起草に関する判断・作業の前 | `drafting-workflow-writing.md` |
 | 保存前の確認に関する判断・作業の前 | `drafting-workflow-validation.md` |
 | 投入に関する判断・作業の前 | `drafting-workflow-saving.md` |

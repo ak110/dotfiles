@@ -71,25 +71,25 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 | 報告用UWIを除く原稿を確定する前 | `references/drafting-workflow-writing.md`、`references/drafting-workflow-validation.md`、`references/drafting-completion-validation.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-writing.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-validation.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-validation.md`、`wi-standard-dry-run`、`wi-standard-commit`、`awi-draft-writing` | |
 | 報告用UWIを除くWIの独立した確認に入る前 | `references/drafting-workflow-review-route.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-review-route.md`、`wi-standard-self-review` | |
 | 報告用UWIを除くWIの保存操作に入る前 | `references/drafting-workflow-saving.md`、`references/drafting-completion-duplicates.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/drafting-workflow-saving.md`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion-duplicates.md`、`wi-standard-commit` | |
-| 報告用UWIを除く投入済みWIへ着手する前の対象集合と除外の確認 | `references/drafting-completion-validation.md` | | | |
-| report-completionが定義する報告用UWIの原稿確定・意味確認・保存に入る前 | `../report-completion/references/report-formats-uwi.md`、`references/uwi-format.md` | | | |
+| 報告用UWIを除く投入済みWIへ着手する前の対象集合と除外の確認（操作対象外: ツールと結び付かない判断） | `references/drafting-completion-validation.md` | | | |
+| report-completionが定義する報告用UWIの原稿確定・意味確認・保存に入る前 | `../report-completion/references/report-formats-uwi.md`、`references/uwi-format.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md`、`read:agent-toolkit:*/skills/wi-standards/references/uwi-format.md` | |
 | UWIを起草する場合 | `references/uwi-format.md` | 操作 | `uwi-draft-writing` | |
-| WIの調査・要件分類・由来の検収に入る前 | `references/origin-and-approval-origin.md`、`references/origin-and-approval-comments.md` | | | |
+| WIの調査・要件分類・由来の検収に入る前（操作対象外: 自身の成果物・評価方法の検討） | `references/origin-and-approval-origin.md`、`references/origin-and-approval-comments.md` | | | |
 | 逐語引用を扱う前 | `references/origin-and-approval-quotation.md` | | | |
 | WIの状態、状態遷移、依存、冷却時間、保留と終了を扱う前。既存WIの更新・修復・採否の見直しが必要と判明した時点や、既存WIに対する具体的な懸念を受けた時点（調査や認識合わせより先） | `references/states-and-dependencies.md` | | | |
-| 複数リポジトリへ投入する場合、および同じ成果の整合を要求する複数のAWIを登録する場合 | `references/cross-repository-submission.md` | | | |
+| 複数リポジトリへ投入する場合、および同じ成果の整合を要求する複数のAWIを登録する場合（操作対象外: ツールと結び付かない判断） | `references/cross-repository-submission.md` | | | |
 | 同じ対象リポジトリの複数項目を一括取得する場合 | `references/wi-show-bulk.md` | | | |
-| 通常AWIの投入、または投入済みAWIの内容の更新を、WI投入担当へ委譲するか自分で起草するかを決める前 | `../../share/add-wi-parent-launch.md` | | | |
-| WI投入担当を起動する前（委譲すると決めた後） | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`。起動・受領の契約として全文を読む | | | |
+| 通常AWIの投入、または投入済みAWIの内容の更新を、WI投入担当へ委譲するか自分で起草するかを決める前 | `../../share/add-wi-parent-launch.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi-parent-launch.md` | |
+| WI投入担当を起動する前（委譲すると決めた後） | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md`。起動・受領の契約として全文を読む | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` | |
 | WIから最終成果物へ転記する前 | `references/notation-rules.md` | | | |
-| WIの起草・投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | | | |
+| WIの起草・投入前検収の品質水準を適用する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:review-standards/SKILL.md` | | | |
 | 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-self-review` | |
 | 規範・基準・手順による既存の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | | |
 | AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `references/analysis-records.md` | 操作 | `root-cause-writing` | |
-| 通常AWIの本文の構成と、起票目的別の登録条件を判定する前 | `references/wi-standards-body.md` | | | |
+| 通常AWIの本文の構成と、起票目的別の登録条件を判定する前（操作対象外: ツールと結び付かない判断） | `references/wi-standards-body.md` | | | |
 | WIの由来（`source`）と承認、人間由来の要求の不採用を判断する前 | `references/wi-standards-origin.md` | | | |
-| WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | | | |
-| WIの投入、取得、回答済みUWIとの整合確認を行う前 | `references/wi-standards-operations.md` | | | |
+| WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` | |
+| WIの投入、取得、回答済みUWIとの整合確認を行う前 | `references/wi-standards-operations.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-operations.md` | |
 
 本文は`agent-basics:writing-standards`に従い、引き継いだエージェントが対象と期待する結果を正確に理解して完了まで作業を進められる粒度で書く。
 AWIの粒度は要求の同一性に基づいて判断する。

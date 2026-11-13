@@ -6,15 +6,15 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` |
-| レビュー指摘管理表へ担当が行を足す前 | `../../../share/review-table-operations.md` |
-| 統合指示を再受領して統合を再開する時 | `../../../share/lane-integration-subagent-operation.md` |
-| rebase競合の解消後に履歴を確認する時 | `../../commit/references/history-rewrite-verification.md` |
-| 解消後の対応表を検収して引き継ぐ時 | `../../commit/references/history-rewrite-wi-records.md` |
-| レビュー修正の履歴統合の返却値を返す時 | `../../../share/exec-subagent-history.md` |
-| 統合後の検証失敗の是正に着手する前 | `agent-basics:bugfix/SKILL.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 統合後の是正で変更範囲の検証の対象を選び直す前 | `agent-basics:check-execution/references/verification-scope-selection.md` | | |
+| レビュー指摘管理表へ担当が行を足す前 | `../../../share/review-table-operations.md` | | |
+| 統合指示を再受領して統合を再開する時 | `../../../share/lane-integration-subagent-operation.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
+| rebase競合の解消後に履歴を確認する時 | `../../commit/references/history-rewrite-verification.md` | | |
+| 解消後の対応表を検収して引き継ぐ時（操作対象外: 自身の成果物・評価方法の検討） | `../../commit/references/history-rewrite-wi-records.md` | | |
+| レビュー修正の履歴統合の返却値を返す時（操作対象外: 自身の返却形式の確認） | `../../../share/exec-subagent-history.md` | | |
+| 統合後の検証失敗の是正に着手する前 | `agent-basics:bugfix/SKILL.md` | | |
 
 ## rebaseの競合
 

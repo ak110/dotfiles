@@ -51,10 +51,10 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 | レビュー担当が要求単位・完成条件と観測の達成を判定する前、実行レビューを判定する前 | `references/reviewer-execution.md` | | | |
 | ロゴ、ワードマーク、ブランドマークとそのアイコン展開をレビューする前 | `../writing-standards/references/logo-quality.md` | | | |
 | 画面のユーザビリティを判定する前 | `references/reviewer-usability.md` | | | |
-| 是正要求等（レビュー指摘、改善提案、ユーザーの割り込みや是正要求、作業中の想定外の発見）を受領して採否と修正を確定する前、および外部の記事や資料から自分で構成した改善案の採否を判定する前 | `references/reviewee.md` | | | |
+| 是正要求等（レビュー指摘、改善提案、ユーザーの割り込みや是正要求、作業中の想定外の発見）を受領して採否と修正を確定する前、および外部の記事や資料から自分で構成した改善案の採否を判定する前 | `references/reviewee.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/review-standards/references/reviewee.md` | |
 | 役割を問わず、計画・設計の採用案や是正要求等の妥当性を評価する前 | `references/judgment-details-decisions.md` | | | |
 | 既存記述との重複・方針との整合を判定する前 | `references/judgment-details-consistency.md` | | | |
-| 検収手段の到達可能性を判定する前、矛盾の原因を調べる前 | `references/judgment-details-feasibility.md` | | | |
+| 検収手段の到達可能性を判定する前、矛盾の原因を調べる前（操作対象外: 自身の成果物・評価方法の検討） | `references/judgment-details-feasibility.md` | | | |
 | 要求ごとの観測と判定根拠を記録・再利用する前 | `references/exec-review-recording.md` | | | |
 | 起動時 | `agent-basics:writing-standards/references/quality-principles.md` | 起動時 | `skill:review-standards` | |
 | いずれの役割でも、判定を始める前 | 対象成果物に対応する作成規範 | 判断 | `skill:review-standards` | `artifact-standards` |

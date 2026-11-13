@@ -4,10 +4,10 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` |
-| `notices`に`助言依頼:`で始まる通知を受け取り、助言を返す前 | `advice-request-receiving.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 通知を受け取れない担当を新規起動へ切り替える前 | `continuation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/continuation.md` |
+| `notices`に`助言依頼:`で始まる通知を受け取り、助言を返す前 | `advice-request-receiving.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/advice-request-receiving.md` |
 
 ## `atk agents wait`の応答の扱い
 

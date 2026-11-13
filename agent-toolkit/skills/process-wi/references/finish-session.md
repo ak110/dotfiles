@@ -48,9 +48,9 @@ report-completionと振り返りは委譲先の終了工程の対象外とする
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 公開対象が無い場合の短絡・公開担当の起動と並行工程に関する判断・作業の前 | `finish-session-publishing.md` |
-| 延期adoptと反映後の観測に関する判断・作業の前 | `finish-session-observation.md` |
-| 公開工程の続行不能の回復と再開・公開状態の検収と再起動に関する判断・作業の前 | `finish-session-recovery.md` |
-| 完了報告と終了に関する判断・作業の前 | `finish-session-completion.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 公開対象が無い場合の短絡・公開担当の起動と並行工程に関する判断・作業の前 | `finish-session-publishing.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/process-wi/references/finish-session-publishing.md` |
+| 延期adoptと反映後の観測に関する判断・作業の前 | `finish-session-observation.md` | | |
+| 公開工程の続行不能の回復と再開・公開状態の検収と再起動に関する判断・作業の前 | `finish-session-recovery.md` | 判断 | `delegation-result`、`delegation`、`read:agent-toolkit:*/skills/process-wi/references/finish-session-recovery.md` |
+| 完了報告と終了に関する判断・作業の前 | `finish-session-completion.md` | | |

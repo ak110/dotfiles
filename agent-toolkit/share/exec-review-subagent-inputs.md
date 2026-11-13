@@ -11,12 +11,12 @@
 | 本文でこの資料の基準を参照・取得する時 | `agent-basics:secret-files/SKILL.md` | | | |
 | 本文でこの資料の基準を参照・取得する時 | `../skills/wi-standards/references/origin-and-approval.md` | | | |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | | |
-| 条件表を検収する前 | `exec-review-recording-contract.md` | | | |
+| 条件表を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `exec-review-recording-contract.md` | | | |
 | 初回レビューに入る前 | `exec-review-criteria.md` | | | |
 | 再レビュー・引き継ぎ再レビューに入る前 | `exec-review-criteria.md` | | | |
 | 差分を判定する前 | `agent-basics:writing-standards`が変更ファイルの成果物種別ごとに定める資料 | | | |
-| `計画`を受領し、条項を生成する前 | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | | | |
-| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合 | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
+| `計画`を受領し、条項を生成する前（操作対象外: 役割の開始入力） | `../skills/write-plan/references/plan-file-standards.md`、`../skills/write-plan/references/plan-file-standards-structure.md`、`../skills/write-plan/references/plan-file-standards-scope.md`、`../skills/write-plan/references/plan-file-standards-requirements.md`、`../skills/write-plan/references/plan-file-standards-design.md`、`../skills/write-plan/references/plan-file-standards-verification.md` | | | |
+| `計画`を受領し、計画が過去の契約へ戻す変更、過去の契約を撤去する変更、または保持・不変性・完全復元の契約を含む場合（操作対象外: 役割の開始入力） | `agent-toolkit:write-plan`の`references/plan-restoration-contracts.md` | | | |
 | 複数のWIを`atk wi show`で取得する前 | `agent-toolkit:wi-standards`の`references/wi-show-bulk.md` | | | |
 | 指摘を登録するか完成条件証拠を書く直前 | `agent-basics:review-standards/SKILL.md`、`exec-review-recording-issues.md`、`exec-review-recording-evidence.md`、`exec-review-recording-grounds.md` | | | |
 | 着手時 | `exec-review-criteria.md`、`exec-review-criteria-execution.md` | 起動時 | `role:exec-review` | |

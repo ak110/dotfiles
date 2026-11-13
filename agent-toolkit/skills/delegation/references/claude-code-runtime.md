@@ -10,12 +10,12 @@
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 起動パラメーター・委譲プロンプトへ含める前提・計画ファイル作成のplan mode下委譲に関する判断・作業の前 | `claude-code-runtime-launch.md` |
-| 実行時能力と通信scope・委譲先での発火に関する判断・作業の前 | `claude-code-runtime-communication.md` |
-| 一時領域と成果物の観測・結果の受け取り方・稼働状態の観測と継続依頼に関する判断・作業の前 | `claude-code-runtime-receiving.md` |
-| 検証コマンドの実行形態・待機中の定期再確認と背景転換に関する判断・作業の前 | `claude-code-runtime-waiting.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 起動パラメーター・委譲プロンプトへ含める前提・計画ファイル作成のplan mode下委譲に関する判断・作業の前 | `claude-code-runtime-launch.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/claude-code-runtime-launch.md` |
+| 実行時能力と通信scope・委譲先での発火に関する判断・作業の前（操作対象外: 実行環境の機能の判定） | `claude-code-runtime-communication.md` | | |
+| 一時領域と成果物の観測・結果の受け取り方・稼働状態の観測と継続依頼に関する判断・作業の前 | `claude-code-runtime-receiving.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/delegation/references/claude-code-runtime-receiving.md` |
+| 検証コマンドの実行形態・待機中の定期再確認と背景転換に関する判断・作業の前 | `claude-code-runtime-waiting.md` | | |
 
 ## 本文参照の取得条件
 

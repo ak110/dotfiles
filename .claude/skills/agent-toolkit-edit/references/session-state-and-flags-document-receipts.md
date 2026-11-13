@@ -20,7 +20,10 @@
   `received-document:<JSON>`は論理資料・実体パス・必要範囲・受信版・範囲digestを保持する。
   分割受信は同じ主体・論理資料・版の行範囲を集約し、必要範囲が完成した時点で取得済みにする。
   部分記録は更新案内の根拠から除く。
-  `document_reads.acquisition_state`が取得済み・取得後の更新・未取得を区別する。
+  `_git/document_acquisition.py`の`acquisition_state`が取得済み・取得後の更新・未取得を区別する。
+  hookの`document_reads`とCLIの`atk agents wait`が同じ判定を参照する。
+  waitは受領した役割の親契約から`delegation-result`の行を選び、委譲元自身の未取得資料の案内を結果へ添える。
+  waitは取得状態を書き換えず、本文の受信と圧縮による失効は既存hookが記録する。
   同じ必要本文を別実体から受信した場合も再利用する。
   規範はファイル全体の受信版を照合し、規範以外は必要な確認範囲を照合する。
   旧形式の`read-trigger:<絶対パス>#sha256:<本文hash>`も、受信時の版のまま保持する。

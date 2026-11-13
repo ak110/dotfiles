@@ -11,7 +11,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent_toolkit._hooks.document_reads_text import _json_fragments, _text_variants, _truncated_parts
-lazy from agent_toolkit._common import read_triggers
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._hooks import codex_read_observation
@@ -135,42 +134,3 @@ def accumulate_fragments(records: dict, packet: dict, blocks: Sequence[dict], ag
     if not _covers(coverage, source["ranges"]):
         records.setdefault(document_reads.receipt_key(metadata), []).append(agent)
     return [metadata for metadata in packet["scopes"] if _covers(coverage, metadata.get("ranges", [[1, len(source["lines"])]]))]
-
-
-def acquisition_state(records: dict, target: read_triggers.ReadTarget, agent: str) -> str:
-    """現在範囲の取得・旧版取得後の更新・未取得を共通の意味で返す。"""
-    from agent_toolkit._hooks import document_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
-
-    if read_triggers.is_normative_document(target.path):
-        target = read_triggers.ReadTarget(target.path)
-    raw = target.path.read_bytes()
-    if target.heading:
-        try:
-            target.body(raw.decode("utf-8"))
-        except ValueError:
-            return "missing"
-    if document_reads.content_ready(records, document_reads.bytes_fingerprint(raw), agent):
-        return "current"
-    current = next((item for item in document_reads.receipt_candidates([target]) if item["heading"] == target.heading), None)
-    if current is None:
-        return "missing"
-    receipts = [
-        json.loads(key.removeprefix(document_reads.RECEIPT_PREFIX))
-        for key, actors in records.items()
-        if key.startswith(document_reads.RECEIPT_PREFIX) and isinstance(actors, list) and agent in actors
-    ]
-    receipts = [item for item in receipts if not item.get("partial")]
-    known = {tuple(part) for item in receipts for part in item["parts"]}
-    if all(tuple(part) in known for part in current["parts"]):
-        return "current"
-    # 節単位の候補は名指しされた読取でだけ作るため、旧版を全文で受信した記録も同じ節の旧版の取得として扱う。
-    if any(item["logical"] == current["logical"] and item["heading"] in {current["heading"], ""} for item in receipts):
-        return "updated"
-    # 旧形式の証拠は保持する。新版の受信記録へ変換せず、全文の更新として区別する。
-    if not target.heading and any(
-        key.startswith(document_reads.READ_TRIGGER_PREFIX + str(target.path) + "#sha256:") and agent in actors
-        for key, actors in records.items()
-        if isinstance(actors, list)
-    ):
-        return "updated"
-    return "missing"

@@ -259,7 +259,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 dict.fromkeys(
                     target
                     for row in active_rows
-                    if "confirmation" in row.operations
+                    # 質問前の拒否はbootstrapの共通2資料に限る。工程別の追加宣言は警告として配送する。
+                    if row.source == plugin_resources.plugin_root() / "share/read-trigger-bootstrap.md"
+                    and "confirmation" in row.operations
                     for target in active_targets[row]
                     if not ready(target)
                 )

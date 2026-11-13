@@ -6,17 +6,17 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` |
-| 委譲する部分を選び、起動手段とモデルを確定する前 | `process-model-settings.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 委譲する部分を選び、起動手段とモデルを確定する前 | `runtime-routing.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/runtime-routing.md` |
+| 委譲する部分を選び、起動手段とモデルを確定する前 | `process-model-settings.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/process-model-settings.md` |
 
 ## 条件別資料
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 要否判定に関する判断・作業の前 | `routing-decisions.md` |
-| 委譲単位の確定に関する判断・作業の前 | `routing-units.md` |
-| 会話を引き継ぐ委譲に関する判断・作業の前 | `routing-fork.md` |
-| コンテキスト消費が大きい調査の切り出し・検索結果に基づく探索の分担に関する判断・作業の前 | `routing-investigation.md` |
-| 実行結果の検証に関する判断・作業の前 | `routing-experiments.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 要否判定に関する判断・作業の前 | `routing-decisions.md` | | |
+| 委譲単位の確定に関する判断・作業の前 | `routing-units.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/routing-units.md` |
+| 会話を引き継ぐ委譲に関する判断・作業の前 | `routing-fork.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/routing-fork.md` |
+| コンテキスト消費が大きい調査の切り出し・検索結果に基づく探索の分担に関する判断・作業の前 | `routing-investigation.md` | | |
+| 実行結果の検証に関する判断・作業の前 | `routing-experiments.md` | | |

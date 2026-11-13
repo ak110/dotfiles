@@ -7,9 +7,20 @@ import shutil
 import pytest
 
 from agent_toolkit._common import plugin_roots, read_triggers
+from agent_toolkit._common.read_triggers_operations import missing_operation_rows
 from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
+
+
+def test_observable_read_conditions_have_delivery_operations():
+    """受領・起動・確認・保存の条件が、配送操作か対象外の理由を持つ。"""
+    roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / "agent-basics/skills"]
+    issues = []
+    with read_triggers.resolution_scope():
+        for source in sorted({path for root in roots for path in root.rglob("*.md")}):
+            issues.extend(missing_operation_rows(read_triggers.parse_tables(source, _PLUGIN_ROOT)))
+    assert not issues, "\n".join(issues)
 
 
 @pytest.mark.parametrize("role", sorted(path.name for path in (_PLUGIN_ROOT / "share").glob("*.subagent.md")))

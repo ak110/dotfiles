@@ -50,37 +50,37 @@
 hookの確認候補を受けたら条件を自分で確かめ、該当する資料を判断前に取得する。
 品質の定義元はagent-basics、運用本文の定義元は各工程の資料とする。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:/share/agent-documents-operations.md` |
-| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-toolkit:/share/investigation-operations.md` |
-| セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` |
-| process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `agent-toolkit:workflow-overview/references/orchestrator-runtime.md` |
-| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:/share/writing-operations.md` |
-| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/delegation-sending.md` |
-| 人間向け文書の役割と残す内容を選ぶ時 | `agent-toolkit:workflow-overview/references/document-types.md` |
-| 既存の対象を名前で指す時と新しい名前を付ける時 | `agent-toolkit:workflow-overview/references/defined-names.md` |
-| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-time.md` |
-| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:write-plan/references/testing-branch-verification.md` |
-| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:/share/ui-ux-operations.md` |
-| `ps1`・`ps1.tmpl`・`psm1`・`psd1`を編集する時 | `agent-toolkit:/share/powershell-operations.md` |
-| スキル（`SKILL.md`・`references/`）を新設・編集する時 | `agent-toolkit:/share/agent-skills-operations.md` |
-| process-wiのレーンworktreeを作成・保持・回収する時 | `agent-toolkit:process-wi/references/lane-worktree-management.md` |
-| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` |
-| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents-context.md` |
-| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `agent-toolkit:report-completion/references/claude-hooks-stop.md` |
-| auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:user-confirmation-and-report`が扱う） | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` |
-| エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:refine-prompt/references/evaluation-triggers.md` |
-| 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` |
-| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` |
-| 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:process-wi/references/ci-fix-series.md` |
-| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前 | `agent-toolkit:review-session/references/analysis-operations-root-cause.md`、`agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
-| 検証対象の選定と計画・保存結果の実行・取得前（実行レビューで直接影響範囲だけを求める場合を除く） | `agent-toolkit:/share/verification-operations.md` |
-| 実行レビューで直接影響範囲を求める前 | `agent-toolkit:/share/verification-operations.md` |
-| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:/share/acceptance-scenarios.md` |
-| 専用レビュータスク契約を受領し、判定と返却する前 | `agent-toolkit:/share/exec-review-criteria.md` |
-| 読者別探索を起動・検収する前 | `agent-toolkit:/share/exec-review-criteria.md` |
-| 計画・WIの要件と証拠を判定する前 | `agent-toolkit:/share/exec-review-criteria.md` |
-| レビューイーとして採否と修正を確定する前 | `agent-toolkit:/share/exec-review-responses.md` |
-| 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `agent-toolkit:/share/exec-review-recording.md` |
-| 実機確認だけを目的としてエージェントCLIや検証用委譲を起動する前 | `../skills/delegation/references/routing-experiments.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| エージェント向け文書の責務と配置を決める前 | `agent-toolkit:/share/agent-documents-operations.md` | | |
+| 成果物、報告・回答、委譲プロンプトへ書く事実主張を調査する時 | `agent-toolkit:/share/investigation-operations.md` | | |
+| セッション記録の集計・分析 | `agent-toolkit:review-session/references/session-records.md` | | |
+| process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `agent-toolkit:workflow-overview/references/orchestrator-runtime.md` | | |
+| ユーザーの入力素材を整理して取り込む時 | `agent-toolkit:/share/writing-operations.md` | | |
+| 文章の書き直しを委ねる時 | `agent-toolkit:delegation/references/delegation-sending.md` | | |
+| 人間向け文書の役割と残す内容を選ぶ時 | `agent-toolkit:workflow-overview/references/document-types.md` | | |
+| 既存の対象を名前で指す時と新しい名前を付ける時 | `agent-toolkit:workflow-overview/references/defined-names.md` | | |
+| 計画ファイルを作成する時と、公開インターフェース、エンドユーザー向けのメッセージ、永続データの形式を新設・変更する時 | `agent-basics:writing-standards/references/design-time.md` | | |
+| テストコードを書く時とレビューする時、条件分岐と判定条件を新設・変更する時 | `agent-toolkit:write-plan/references/testing-branch-verification.md` | | |
+| エンドユーザーが操作する画面の新設・変更、その計画またはレビューの時 | `agent-toolkit:/share/ui-ux-operations.md` | | |
+| `ps1`・`ps1.tmpl`・`psm1`・`psd1`を編集する時 | `agent-toolkit:/share/powershell-operations.md` | | |
+| スキル（`SKILL.md`・`references/`）を新設・編集する時 | `agent-toolkit:/share/agent-skills-operations.md` | | |
+| process-wiのレーンworktreeを作成・保持・回収する時 | `agent-toolkit:process-wi/references/lane-worktree-management.md` | | |
+| エージェント向け文書の置き場所を選ぶ時 | `agent-toolkit:delegation/references/delivery-scope.md` | | |
+| サブエージェント定義ファイルの編集、およびサブエージェントが関与する手順の作成・改訂 | `agent-toolkit:delegation/references/sub-agents-context.md` | | |
+| `Stop`・`SubagentStop`のhookと、終了工程の証拠を新設・変更する時 | `agent-toolkit:report-completion/references/claude-hooks-stop.md` | | |
+| auto modeのカスタムルール編集（権限拒否に遭遇した場面は`agent-toolkit:user-confirmation-and-report`が扱う） | `agent-toolkit:user-confirmation-and-report/references/auto-mode.md` | | |
+| エージェント向け文書を新しく作る時、新しい規定を追記する時、指示文の改訂が必要と確定した時と、文書の記述量を管理する時 | `agent-basics:writing-standards/references/agent-documents-additions.md`、`agent-toolkit:refine-prompt/references/evaluation-triggers.md` | | |
+| 事象単位の調査を委譲する前 | `agent-toolkit:delegation/references/investigation-delegation.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/investigation-delegation.md` |
+| CI失敗を扱う前 | `agent-toolkit:commit/references/ci-failure-handling.md` | | |
+| 修正commitが必要なCI失敗の修正担当・CI記録・修正系列を扱う前 | `agent-toolkit:process-wi/references/ci-fix-series.md` | | |
+| ユーザー介入・確認、規範の未適用を分析する前と、類似見直しの委譲・記録・受渡しの前（操作対象外: 過去の確認の分析） | `agent-toolkit:review-session/references/analysis-operations-root-cause.md`、`agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` | | |
+| 検証対象の選定と計画・保存結果の実行・取得前（実行レビューで直接影響範囲だけを求める場合を除く） | `agent-toolkit:/share/verification-operations.md` | | |
+| 実行レビューで直接影響範囲を求める前 | `agent-toolkit:/share/verification-operations.md` | | |
+| 受入シナリオの文書試行・常駐サービスの公開前観測の前 | `agent-toolkit:/share/acceptance-scenarios.md` | | |
+| 専用レビュータスク契約を受領し、判定と返却する前（操作対象外: 役割の開始入力） | `agent-toolkit:/share/exec-review-criteria.md` | | |
+| 読者別探索を起動・検収する前 | `agent-toolkit:/share/exec-review-criteria.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/exec-review-criteria.md` |
+| 計画・WIの要件と証拠を判定する前 | `agent-toolkit:/share/exec-review-criteria.md` | | |
+| レビューイーとして採否と修正を確定する前 | `agent-toolkit:/share/exec-review-responses.md` | | |
+| 実行レビューの指摘登録・完成条件の判定と証拠記入の前 | `agent-toolkit:/share/exec-review-recording.md` | | |
+| 実機確認だけを目的としてエージェントCLIや検証用委譲を起動する前 | `../skills/delegation/references/routing-experiments.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/delegation/references/routing-experiments.md` |

@@ -110,7 +110,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 改善点を発見し、処置・AWI化・報告を行う前 | `../main-improvements.md` |
-| 会話で継続的な方針を受け取った時 | `../../skills/write-plan/references/plan-file-standards-design.md` |
+| 会話で継続的な方針を受け取った時（操作対象外: ユーザー発話・回答の受領） | `../../skills/write-plan/references/plan-file-standards-design.md` |
 | process-wi中の`気付いた改善点:`の処置・AWI化ステータス決定、追加AWIへの方針反映、ユーザーの「即時対応」指示を扱う前 | `../../skills/process-wi/references/immediate-fix.md` |
 | 説明・報告・確認の前 | `agent-basics:writing-standards/references/writing.md` |
 

@@ -23,13 +23,13 @@ user-invocable: false
 
 ## 読込表
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` |
-| process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `references/orchestrator-runtime.md` |
-| 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` |
-| レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes-launch.md`、`../process-wi/references/run-lanes-integration.md`、`../process-wi/references/lane-resources.md` |
-| 開始後の新着WIの確認と今回追加の判断を扱う前 | `../process-wi/references/immediate-fix.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 工程の責務、受渡しまたは出口を対策や説明の根拠にする前 | `${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md` | | |
+| process-loop・run-skillの統括の挙動（起動、turn終了、再開、外からの制御）を前提に、案・回答・確認の選択肢を出す前 | `references/orchestrator-runtime.md` | | |
+| 登録した複数リポジトリの担当起動・制御・再開を扱う前 | `../process-wi/references/all-repos-orchestration.md` | 判断 | `delegation`、`read:agent-toolkit:*/skills/process-wi/references/all-repos-orchestration.md` |
+| レーンの準備・統合・回復・回収を扱う前 | `../process-wi/references/run-lanes-launch.md`、`../process-wi/references/run-lanes-integration.md`、`../process-wi/references/lane-resources.md` | | |
+| 開始後の新着WIの確認と今回追加の判断を扱う前 | `../process-wi/references/immediate-fix.md` | | |
 
 ## 利用形態と起動主体
 

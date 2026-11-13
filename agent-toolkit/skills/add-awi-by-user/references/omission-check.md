@@ -12,12 +12,12 @@ WI起草者と投入前レビュー担当が、原文・原稿・調査根拠か
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
-| (d)で推奨しない案と不採用にする候補を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
-| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow-writing.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| 点検でユーザー確認の要否を判断する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| (f)の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | |
+| (d)で推奨しない案と不採用にする候補を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | | |
+| (b)でエージェント向け文書の変更を点検する前 | `agent-toolkit:wi-standards/references/drafting-workflow-writing.md` | | |
 
 ## 点検類型
 

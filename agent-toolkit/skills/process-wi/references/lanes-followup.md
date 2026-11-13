@@ -4,13 +4,13 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` |
-| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時 | `immediate-fix.md` |
-| レビュー指摘の比較と採否を判定する時 | `../../../share/exec-review-responses.md` |
-| 委譲済みの主題を自分で読む・調べる・回答する前 | `../../delegation/SKILL.md` |
-| 書込主体を交代する時 | `agent-toolkit:delegation/references/mandatory-rules.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| レーン担当を起動する前 | `${CLAUDE_PLUGIN_ROOT}/share/exec.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/exec.parent.md` |
+| 不良またはユーザーの是正要求を受け取った時と、ユーザーが時機の指示として「即時対応」や同義の表現を使った時（操作対象外: ユーザー発話・回答の受領） | `immediate-fix.md` | | |
+| レビュー指摘の比較と採否を判定する時 | `../../../share/exec-review-responses.md` | | |
+| 委譲済みの主題を自分で読む・調べる・回答する前（操作対象外: ツールと結び付かない判断） | `../../delegation/SKILL.md` | | |
+| 書込主体を交代する時 | `agent-toolkit:delegation/references/mandatory-rules.md` | | |
 
 ## 同一主題の追加指示
 

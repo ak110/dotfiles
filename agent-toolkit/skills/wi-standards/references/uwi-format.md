@@ -6,12 +6,12 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| UWIの問い・選択肢・帰結を起草する前 | `../../user-confirmation-and-report/references/choice-construction.md` |
-| UWIの確認の質問文を起草・検収する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-questions.md` |
-| UWIの保存・是正で確認の要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
-| UWIの承認後の操作と影響範囲を書く前 | `../../user-confirmation-and-report/references/approval-scope-preparation.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| UWIの問い・選択肢・帰結を起草する前 | `../../user-confirmation-and-report/references/choice-construction.md` | | |
+| UWIの確認の質問文を起草・検収する前（操作対象外: 自身の成果物・評価方法の検討） | `../../user-confirmation-and-report/references/user-confirmation-and-report-questions.md` | | |
+| UWIの保存・是正で確認の要否を判定する前 | `../../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
+| UWIの承認後の操作と影響範囲を書く前 | `../../user-confirmation-and-report/references/approval-scope-preparation.md` | | |
 
 ## 構成
 
@@ -89,9 +89,9 @@ UWIの本文は、ユーザーが対象ファイルや他のキュー項目を�
 同スキルの基準は`../../report-completion/references/report-formats-uwi.md`「報告用UWIのフォーマット」「報告用UWIの確認と保存」に従う。
 通常の事後承認型UWIには共通起草手順を適用し、`--question-type=post-approval`だけでは報告用と判定しない。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| report-completionが定義する報告用UWIを確認・保存する前 | `../../report-completion/references/report-formats-uwi.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| report-completionが定義する報告用UWIを確認・保存する前 | `../../report-completion/references/report-formats-uwi.md` | 判断 | `wi-report-dry-run`、`wi-report-commit`、`read:agent-toolkit:*/skills/report-completion/references/report-formats-uwi.md` |
 
 事前承認型のUWIでは、確認を要する解釈の相違やユーザーのみが持つ情報、各案を採用した際に対外的に生じる影響、推奨案、回答を待つ元項目のファイル名と対象範囲、および必要な回答や資料を`## 判断材料`に記載する。
 元項目とUWIの対応関係は、UWIの本文内のみに記録する。

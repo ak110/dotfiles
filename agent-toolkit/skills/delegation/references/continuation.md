@@ -13,7 +13,7 @@
 | 書込権限を移す前 | `agent-toolkit:delegation/references/mandatory-rules.md` |
 | 介入を扱う前 | `../../../share/exec-review-responses.md` |
 | 残工程の担当を選ぶ前 | `routing.md` |
-| 委譲した成果が受入れ基準に届かず、再委譲やeffort・モデルの変更を判断する前 | `model-and-effort.md` |
+| 委譲した成果が受入れ基準に届かず、再委譲やeffort・モデルの変更を判断する前（操作対象外: ツールと結び付かない判断） | `model-and-effort.md` |
 
 ## 継続と新規起動
 

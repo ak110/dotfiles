@@ -6,7 +6,7 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 返却形式を確認する時 | `exec-review.parent.md` |
+| 返却形式を確認する時（操作対象外: 自身の返却形式の確認） | `exec-review.parent.md` |
 | AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
 | 検証の実行範囲を判断する前 | `agent-toolkit:/share/exec-review-operations.md` |
 

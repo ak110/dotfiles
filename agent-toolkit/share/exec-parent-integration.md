@@ -4,14 +4,14 @@
 
 名指し参照は`agent-basics:writing-standards/references/read-method.md`に従う。
 
-| 時点または条件 | 全文読む資料 |
-| --- | --- |
-| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` |
-| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` |
-| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` |
-| 統合結果のWI状態を一括取得する前 | `../skills/wi-standards/references/wi-show-bulk.md` |
-| 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/process-wi/references/finish-session.md` |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` |
+| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
+| --- | --- | --- | --- |
+| AWIの形式を判断する前 | `../skills/wi-standards/references/awi-body.md` | | |
+| 統合の返却で検証結果の警告の判定を受領する時 | `lane-integration-subagent-operation.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/share/lane-integration-subagent-operation.md` |
+| 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | | |
+| 統合結果のWI状態を一括取得する前 | `../skills/wi-standards/references/wi-show-bulk.md` | | |
+| 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/process-wi/references/finish-session.md` | | |
+| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
 
 ## 統合の許可
 

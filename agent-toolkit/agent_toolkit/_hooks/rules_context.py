@@ -29,6 +29,7 @@ lazy from typing import Any
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import mcp_environment, message_format, plugin_environment, read_triggers
+from agent_toolkit._git.document_acquisition import OPERATION_SKILL_READY_KEY
 from agent_toolkit._hooks import plugin_resources
 from agent_toolkit._hooks.notice import forget_subject_notices
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -154,13 +155,6 @@ USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
 """文脈ごとに`agent-toolkit:user-confirmation-and-report`の起動案内を一度届ける配送待ちのキー。"""
 _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 """会話の文脈を引き継がずに始まるSessionStartの`source`。`resume`と`fork`は文脈を引き継ぐため含めない。"""
-OPERATION_SKILL_READY_KEY = "operation_skill_delivered_agents"
-"""操作を起動の契機とするスキルの必須資料の識別子から、取得済みの呼び出し主体の一覧への対応を持つセッション状態のキー。
-
-PostToolUseが成功したSkill起動・対象パスの読取を観測した時点で記録する。
-資料の実体・内容hash・主体に結び付け、選択した資料、入力と文脈境界も同じ対応表へ保持する。
-キー名は既存の読み取り側との互換を保つ。本文を返さない未取得警告は取得済みとして記録しない。
-"""
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
 """メイン会話の起動済みの記録を除くSessionStartの`source`。新しいセッションの`startup`は記録を持たない。"""
 READ_CONTEXT_RESET_KEY = "startup-context-reset"
