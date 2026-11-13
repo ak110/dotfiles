@@ -90,6 +90,29 @@ def resolution_scope() -> Generator[None]:
         _RESOLUTION_CACHE.reset(token)
 
 
+_DECLARATION_ISSUES_KEY = ("declaration-issues",)
+
+
+def record_declaration_issue(message: str) -> None:
+    """宣言から除いた行の診断を、現在の要求の範囲へ記録する。
+
+    要求の範囲の外では記録せず、行の除外だけが行われる。同じ診断は1回だけ保持する。
+    """
+    cache = _RESOLUTION_CACHE.get()
+    if cache is None:
+        return
+    issues = cache.setdefault(_DECLARATION_ISSUES_KEY, {})
+    if isinstance(issues, dict):
+        issues[message] = None
+
+
+def declaration_issues() -> tuple[str, ...]:
+    """現在の要求の範囲で、宣言から除いた行の診断を記録順に返す。"""
+    cache = _RESOLUTION_CACHE.get()
+    issues = cache.get(_DECLARATION_ISSUES_KEY) if cache is not None else None
+    return tuple(issues) if isinstance(issues, dict) else ()
+
+
 def _scope_cached[**P, R](function: Callable[P, R]) -> Callable[P, R]:
     """循環検出用の訪問済み資料を含む全入力が同じ解決だけを、解析中に保存する。"""
 
@@ -132,7 +155,16 @@ class ReadTrigger:
         from agent_toolkit._common.read_triggers import _row_targets  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
         if self.plugin_root is not None:
-            return _row_targets(self.material, self.source, self.line, self.plugin_root, self.host, self.project, self.selector)
+            try:
+                return _row_targets(
+                    self.material, self.source, self.line, self.plugin_root, self.host, self.project, self.selector
+                )
+            except ValueError as error:
+                # 資料の解決を遅らせた行は、解析時と同じくユーザー側の宣言元だけを行単位で除く。
+                if not read_triggers.user_side_source(self.source):
+                    raise
+                record_declaration_issue(str(error))
+                return ()
         headings = self.headings or ("",) * len(self.documents)
         return tuple(read_triggers.ReadTarget(path, heading) for path, heading in zip(self.documents, headings, strict=True))
 

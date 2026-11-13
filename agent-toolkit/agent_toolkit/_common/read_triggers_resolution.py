@@ -19,6 +19,20 @@ if TYPE_CHECKING:
     from agent_toolkit._common import read_triggers  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
 
+# プロジェクト・ユーザーのスキル置き場の`skills`ディレクトリを持つ親の名前。
+_SKILL_HOMES = frozenset({".claude", ".codex", ".agents", ".gemini"})
+
+
+def user_side_source(path: pathlib.Path) -> bool:
+    """プラグインの外にある、プロジェクト・ユーザーのスキル置き場の文書かを返す。
+
+    これらの宣言はユーザーのリポジトリやホームにあり、プラグインの不変条件テストが保存前に検査できない。
+    """
+    if any((parent / ".claude-plugin/plugin.json").is_file() for parent in path.parents):
+        return False
+    return any(parent.name == "skills" and parent.parent.name in _SKILL_HOMES for parent in path.parents)
+
+
 def read_operation(path: pathlib.Path) -> str:
     """資料自身の読取を表す配送操作を返す。
 
@@ -31,7 +45,7 @@ def read_operation(path: pathlib.Path) -> str:
     if owner is not None:
         return f"read:{_plugin_manifest(owner).get('name')}:*/{path.relative_to(owner).as_posix()}"
     for parent in path.parents:
-        if parent.name == "skills" and parent.parent.name in {".claude", ".codex", ".agents", ".gemini"}:
+        if parent.name == "skills" and parent.parent.name in _SKILL_HOMES:
             return f"read:*/{path.relative_to(parent.parent.parent).as_posix()}"
     project = next((parent for parent in path.parents if (parent / "AGENTS.md").is_file() or (parent / ".git").exists()), None)
     return f"read:*/{path.relative_to(project).as_posix()}" if project is not None else f"read:{path.as_posix()}"
@@ -153,6 +167,10 @@ def _direct_document(
         project = next((parent for parent in source.parents if (parent / "AGENTS.md").is_file()), None)
         if project is not None:
             return project / value
+    if not path.is_absolute() and value.startswith(".claude/") and local_skills is not None:
+        # プロジェクトのスキルは`.claude/`で始まる値をリポジトリの根からのパスとして書く。
+        # 最も近い`.claude/skills`を使い、入れ子のworktreeでは主checkout側の同名ファイルを指さない。
+        return (local_skills.parent.parent / path).resolve()
     if not path.is_absolute() and value.startswith(("docs/", "agent-toolkit/")):
         project = next((parent for parent in source.parents if (parent / "AGENTS.md").is_file()), None)
         if project is not None:

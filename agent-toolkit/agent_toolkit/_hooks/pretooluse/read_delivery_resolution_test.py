@@ -157,3 +157,78 @@ def test_unselected_material_does_not_replace_selected_acquisition_failure(tmp_p
     assert result.returncode == 0 and not result.stderr
     assert "選択資料の取得失敗" in result.stdout
     assert "想定外のエラーが起きた" not in result.stdout and "missing.md" not in result.stdout
+
+
+def _project_skills(project: pathlib.Path, rows: str) -> tuple[pathlib.Path, pathlib.Path]:
+    """読込表がリポジトリの根からのパスで別スキルを指す、プロジェクトのスキルの配置を作る。
+
+    資料列の書き方は、宣言をリポジトリ相対パスで書く規約を持つユーザーのプロジェクトの実例に合わせた。
+    行は`tool:Read`の操作で選ばれるため、どの読取でもhookが資料を解決する。
+    """
+    (project / ".git").mkdir(parents=True, exist_ok=True)
+    backend = project / ".claude/skills/backend/SKILL.md"
+    database = project / ".claude/skills/database/SKILL.md"
+    for path in (backend, database):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    database.write_text("# データベース\n", encoding="utf-8")
+    backend.write_text(
+        "# バックエンド\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n" + rows,
+        encoding="utf-8",
+    )
+    (project / "notes.txt").write_text("作業メモ\n", encoding="utf-8")
+    return backend.resolve(), database.resolve()
+
+
+def _pretooluse(project: pathlib.Path, session_id: str, tool_name: str, tool_input: dict) -> subprocess.CompletedProcess[str]:
+    return pretooluse_support.run_hook_with_notice_details(
+        "pretooluse",
+        {"session_id": session_id, "cwd": str(project), "tool_name": tool_name, "tool_input": tool_input},
+    )
+
+
+def _write_notes(project: pathlib.Path, session_id: str) -> subprocess.CompletedProcess[str]:
+    """`tool:Write`の行を選ぶ書込で、読込案内の配送を観測する。"""
+    return _pretooluse(project, session_id, "Write", {"file_path": str(project / "notes.txt"), "content": "追記\n"})
+
+
+_DATABASE_ROW = "| DBを書く前 | `.claude/skills/database/SKILL.md` | 操作 | `tool:Write` |\n"
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_project_skill_resolves_repository_relative_material(tmp_path: pathlib.Path, nested: bool) -> None:
+    """`.claude/`で始まる資料は、最も近い`.claude/skills`を持つリポジトリの根から解決し、hookを止めない。"""
+    main = tmp_path / "main"
+    if nested:
+        # 主checkout側にも同名のスキルを置き、入れ子のworktree側の実体へ解決することを確かめる。
+        _project_skills(main, "")
+    project = main / ".claude/worktrees/lane" if nested else main
+    backend, database = _project_skills(project, _DATABASE_ROW)
+    rows = read_triggers.parse_tables(backend, read_delivery.plugin_resources.plugin_root(), project=str(project))
+    assert [row.documents for row in rows] == [(database,)]
+    result = _pretooluse(project, f"repository-relative-{nested}", "Read", {"file_path": str(backend)})
+    assert result.returncode == 0 and not result.stderr
+    assert "想定外のエラーが起きた" not in result.stdout
+
+
+def test_project_skill_missing_material_row_is_skipped_with_single_warning(tmp_path: pathlib.Path) -> None:
+    """ユーザー側の表で、改名で消えたスキルを指す行だけを除き、他の行を保ち、同じ会話で警告を繰り返さない。"""
+    project = tmp_path / "project"
+    backend, database = _project_skills(
+        project, _DATABASE_ROW + "| 移行の前 | `.claude/skills/retired/SKILL.md` | 操作 | `tool:Write` |\n"
+    )
+    with read_triggers.resolution_scope():
+        rows = read_triggers.parse_tables(
+            backend, read_delivery.plugin_resources.plugin_root(), project=str(project), defer_material=True
+        )
+        assert [row.targets for row in rows] == [(read_triggers.ReadTarget(database),), ()]
+        issues = read_triggers.declaration_issues()
+    assert len(issues) == 1 and issues[0].startswith(f"{backend}:6: 資料が存在しない")
+    assert str(backend.parents[1] / "retired/SKILL.md") in issues[0]
+    first = _write_notes(project, "missing-material")
+    assert first.returncode == 0 and not first.stderr
+    assert "想定外のエラーが起きた" not in first.stdout
+    assert f"{backend}:6" in first.stdout and f"{backend}:5" not in first.stdout
+    # 不備の行を除いた後も、同じ表の正常な行の読込案内は同じ呼び出しで配送される。
+    assert "`Skill`で`database`を起動せよ" in first.stdout
+    repeated = _write_notes(project, "missing-material")
+    assert repeated.returncode == 0 and f"{backend}:6" not in repeated.stdout

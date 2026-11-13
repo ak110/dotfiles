@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._common import plugin_roots
+from agent_toolkit._common import plugin_roots, read_triggers
 from agent_toolkit._common.plugin_roots import PluginRootError
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
 from agent_toolkit._hooks import rules_context
@@ -454,3 +454,41 @@ def test_marker_words_in_document_body_do_not_block_read(tmp_path, monkeypatch, 
     _assert_acquired(payload, path, True, invocation=method == "Skill")
     final = _run_hook_in_process("pretooluse", operation)
     assert final.returncode == 0 and str(path) not in final.stdout
+
+
+def test_user_side_rows_with_retired_vocabulary_keep_other_declarations_and_receipts(tmp_path):
+    """過去の版の作業ツリーにある廃止済みの配送操作や列数の誤りは、その行だけを除いて宣言と読取記録を続ける。
+
+    `section:*/Makefile#make:update`は、dotfilesの過去の版のプロジェクトのスキルにあった配送操作である。
+    """
+    project = tmp_path / "project"
+    (project / ".git").mkdir(parents=True)
+    skill = project / ".claude/skills/legacy/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    reference = skill.parent / "reference.md"
+    reference.write_text("# 参照資料\n更新の基準\n", encoding="utf-8")
+    skill.write_text(
+        "# 過去の版のスキル\n\n| 時点または条件 | 全文読む資料 | 契機 | 配送操作 |\n| --- | --- | --- | --- |\n"
+        "| 依存を更新する前 | `reference.md` | 操作 | `section:*/Makefile#make:update` |\n"
+        "| 編集する前 | `reference.md` | 操作 | `tool:Write` |\n"
+        "| 列が足りない行 | `reference.md` |\n",
+        encoding="utf-8",
+    )
+    skill = skill.resolve()
+    with read_triggers.resolution_scope():
+        rows = [row for row in read_delivery.declarations(str(project)) if row.source == skill]
+        issues = read_triggers.declaration_issues()
+    assert [(row.line, row.operations) for row in rows] == [(6, ("tool:Write",))]
+    assert {issue.partition(": ")[0] for issue in issues if issue.startswith(str(skill))} == {f"{skill}:5", f"{skill}:7"}
+    payload = {"session_id": "retired-vocabulary", "cwd": str(project)}
+    read = {**payload, "tool_name": "Read", "tool_input": {"file_path": str(skill)}}
+    guided = _run_hook_in_process("pretooluse", read)
+    assert guided.returncode == 0 and not guided.stderr
+    assert "想定外のエラーが起きた" not in guided.stdout
+    assert f"{skill}:5" in guided.stdout and f"{skill}:7" in guided.stdout and f"{skill}:6" not in guided.stdout
+    acquired = _run_hook_in_process(
+        "posttooluse",
+        {**read, "hook_event_name": "PostToolUse", "tool_response": skill.read_text(encoding="utf-8")},
+    )
+    assert acquired.returncode == 0 and "想定外のエラーが起きた" not in acquired.stdout
+    _assert_acquired(payload, skill, True)
