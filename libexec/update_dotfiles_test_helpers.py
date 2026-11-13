@@ -47,7 +47,7 @@ def _skip_agent_toolkit_prepare(monkeypatch: pytest.MonkeyPatch) -> None:
 
     準備の位置と失敗時の続行は専用の試験が実際の関数へ戻して確かめる。
     """
-    monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", lambda _total: None)
+    monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", lambda _total, **_kwargs: None)
 
 
 _REAL_PROCESS_ITER = psutil.process_iter

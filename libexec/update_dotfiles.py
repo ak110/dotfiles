@@ -84,6 +84,7 @@ sys.path.insert(0, str(SOURCE_ROOT / "libexec"))
 import update_dotfiles_git  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_process  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
+import update_dotfiles_stages  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._common import dotfiles_mode  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_process import run_git_pull  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_runtime import child_env  # noqa: E402  # pylint: disable=wrong-import-position
@@ -100,8 +101,11 @@ def _run_step(
     capture: bool = False,
     show_heading: bool = True,
     log_step_no: int | None = None,
+    timeout: float | None = None,
 ) -> tuple[int, str]:
     """1段を実行し、画面と診断ログへそれぞれの段番号を記録する。
+
+    `timeout`秒を超えた場合は、実行中に控えた子孫プロセスも含めて終了し、失敗（終了コード1）として返す。
 
     `capture=False`の段は、子へ両ストリームを継承し、書き込み順と出力先を保つ。
     `capture=True`時は標準出力を文字列で返し、標準エラーは段の終了後に親の標準エラーへ転送する。
@@ -115,26 +119,46 @@ def _run_step(
         print(f"=== [{step_no}/{total}] {title} ===", flush=True)
     update_dotfiles_runtime.logger.info("stage開始: %d/%d %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
+    tracker = update_dotfiles_process.DescendantTracker()
     try:
-        if capture:
-            result = subprocess.run(
-                argv,
-                cwd=update_dotfiles_runtime.DOTFILES_ROOT,
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                env=update_dotfiles_runtime.child_env(),
-            )
-            returncode, stdout, output_tail = result.returncode, result.stdout, result.stderr
-            if result.stderr:
-                sys.stderr.write(result.stderr)
-        else:
-            result = subprocess.run(
-                argv, cwd=update_dotfiles_runtime.DOTFILES_ROOT, check=False, env=update_dotfiles_runtime.child_env()
-            )
-            returncode, output_tail = result.returncode, ""
-            stdout = ""
+        with tracker:
+            if capture:
+                result = subprocess.run(
+                    argv,
+                    cwd=update_dotfiles_runtime.DOTFILES_ROOT,
+                    check=False,
+                    capture_output=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    env=update_dotfiles_runtime.child_env(),
+                    timeout=timeout,
+                )
+                returncode, stdout, output_tail = result.returncode, result.stdout, result.stderr
+                if result.stderr:
+                    sys.stderr.write(result.stderr)
+            else:
+                result = subprocess.run(
+                    argv,
+                    cwd=update_dotfiles_runtime.DOTFILES_ROOT,
+                    check=False,
+                    env=update_dotfiles_runtime.child_env(),
+                    timeout=timeout,
+                )
+                returncode, output_tail = result.returncode, ""
+                stdout = ""
+    except subprocess.TimeoutExpired:
+        tracker.kill_all()
+        message = (
+            f"{title}が{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
+            "未完了です。原因（通信の停止、入力待ちなど）を解消してupdate-dotfilesを再実行してください。"
+        )
+        update_dotfiles_runtime.logger.error(
+            "stage時間切れ: %d/%d %s timeout=%s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title, timeout
+        )
+        print(message, file=sys.stderr)
+        update_dotfiles_runtime.last_step_timed_out = True
+        update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(message)
+        return 1, ""
     except OSError as error:
         update_dotfiles_runtime.logger.exception(
             "stage起動失敗: %d/%d %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title
@@ -242,12 +266,20 @@ def _run_codex_daemon_command(codex: str, action: str, timeout: int) -> str | No
     return None
 
 
-def _prepare_agent_toolkit_environment(total: int) -> None:
+def _prepare_agent_toolkit_environment(total: int, *, timeout: float | None = None) -> None:
     """主checkoutのatkが使う共有依存環境を、Git更新の直後に準備する。失敗は記録して後続の段を続ける。"""
     title = "agent-toolkitの共有依存環境の準備"
     launcher = update_dotfiles_runtime.DOTFILES_ROOT / "agent-toolkit" / "scripts" / "launch.py"
     argv = ["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher)]
-    returncode, _ = _run_step(1, total, title, [*argv, "--prepare", "agent_toolkit/atk.py"], capture=True, show_heading=False)
+    returncode, _ = _run_step(
+        1,
+        total,
+        title,
+        [*argv, "--prepare", "agent_toolkit/atk.py"],
+        capture=True,
+        show_heading=False,
+        timeout=timeout,
+    )
     if returncode != 0:
         update_dotfiles_runtime.continue_after_failure(
             title,
@@ -317,6 +349,124 @@ def _show_logs() -> int:
     return 0
 
 
+@dataclasses.dataclass
+class _Context:
+    """段の間で共有する引数と先行段の結果。"""
+
+    args: argparse.Namespace
+    total: int
+    git_timeout: int | None
+    diff_output: str = ""
+
+
+def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
+    """宣言表の`executor`の段ごとの処理を返す。段の名前と分類は`update_dotfiles_stages.STAGES`が持つ。"""
+
+    def git_update(_stage: update_dotfiles_stages.Stage) -> int:
+        return update_dotfiles_git.update_git_with_recovery(1, context.total, timeout=context.git_timeout)
+
+    def prepare_environment(stage: update_dotfiles_stages.Stage) -> int:
+        _prepare_agent_toolkit_environment(context.total, timeout=stage.timeout_sec)
+        return 0
+
+    def plugin_pulls(_stage: update_dotfiles_stages.Stage) -> int:
+        plugins_root = update_dotfiles_runtime.DOTFILES_ROOT / "plugins"
+        plugins = sorted(plugins_root.iterdir(), key=lambda path: path.name) if plugins_root.exists() else []
+        for plugin in plugins:
+            if plugin.is_dir() and (plugin / ".git").exists():
+                returncode = update_dotfiles_process.run_git_pull(1, context.total, timeout=context.git_timeout, plugin=plugin)
+                if returncode != 0:
+                    update_dotfiles_runtime.continue_after_failure(
+                        update_dotfiles_runtime.current_stage_title or f"dotfilesプラグイン {plugin.name}: git pull",
+                        f"{plugin}で git status と git pull --rebase を実行して原因を確かめてください。",
+                        update_dotfiles_runtime.last_stderr_tail,
+                    )
+        return 0
+
+    def chezmoi_init(stage: update_dotfiles_stages.Stage) -> int:
+        return _run_step(
+            2,
+            context.total,
+            stage.name,
+            ["chezmoi", "init", f"--source={update_dotfiles_runtime.DOTFILES_ROOT}"],
+            timeout=stage.timeout_sec,
+        )[0]
+
+    def chezmoi_status(stage: update_dotfiles_stages.Stage) -> int:
+        returncode, status_output = _run_step(
+            3, context.total, stage.name, ["chezmoi", "status", "-x", "scripts"], capture=True, timeout=stage.timeout_sec
+        )
+        if returncode != 0:
+            update_dotfiles_runtime.continue_after_failure(
+                stage.name,
+                "表示専用の段であり、chezmoi applyは続けます。chezmoi statusを単独で実行して原因を確かめてください。",
+                update_dotfiles_runtime.last_stderr_tail,
+            )
+        for line in _filter_apply_pending(status_output):
+            print(line)
+        return 0
+
+    def chezmoi_diff(stage: update_dotfiles_stages.Stage) -> int:
+        returncode, diff_output = _run_step(
+            4,
+            context.total,
+            stage.name,
+            ["chezmoi", "diff", "--no-pager"],
+            capture=True,
+            show_heading=False,
+            timeout=stage.timeout_sec,
+        )
+        context.diff_output = diff_output
+        update_dotfiles_runtime.logger.info("chezmoi diffの出力:\n%s", diff_output)
+        if returncode != 0:
+            update_dotfiles_runtime.continue_after_failure(
+                stage.name,
+                "差分の記録だけの段であり、chezmoi applyは続けます。chezmoi diffを単独で実行して原因を確かめてください。",
+                update_dotfiles_runtime.last_stderr_tail,
+            )
+        return 0
+
+    def chezmoi_apply(stage: update_dotfiles_stages.Stage) -> int:
+        daemon_pause = (
+            _pause_codex_daemon()
+            if context.diff_output.strip() and not (dotfiles_mode.is_minimal() and context.args.prune)
+            else None
+        )
+        try:
+            returncode, _ = _run_step(
+                context.total,
+                context.total,
+                stage.name,
+                ["chezmoi", "apply", "--force"],
+                log_step_no=update_dotfiles_runtime.LOG_STAGE_TOTAL,
+                timeout=stage.timeout_sec,
+            )
+        finally:
+            resume_error = None if daemon_pause is None else _resume_codex_daemon(daemon_pause)
+        if returncode != 0:
+            return returncode
+        stop_error = None if daemon_pause is None else daemon_pause.stop_error
+        daemon_errors = [error for error in (stop_error, resume_error) if error is not None]
+        if daemon_errors:
+            update_dotfiles_runtime.continue_after_failure(
+                update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
+                "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
+                "\n".join(daemon_errors),
+            )
+        return 0
+
+    runners = {
+        "dotfiles自身のGit更新": git_update,
+        "agent-toolkitの共有依存環境の準備": prepare_environment,
+        "dotfilesプラグインのgit pull": plugin_pulls,
+        "chezmoi init (テンプレート再展開)": chezmoi_init,
+        "chezmoi status (apply予定のファイル)": chezmoi_status,
+        "chezmoi diff (上書き前の差分)": chezmoi_diff,
+        "chezmoi apply (post-apply実行)": chezmoi_apply,
+    }
+    return runners
+
+
 def main(argv: list[str] | None = None) -> int:
     """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
     args = _parse_args(argv)
@@ -353,94 +503,12 @@ def main(argv: list[str] | None = None) -> int:
                     dotfiles_mode.select(args.mode)
                     if args.prune:
                         os.environ["DOTFILES_PRUNE"] = "1"
-                    returncode = update_dotfiles_git.update_git_with_recovery(1, total, timeout=git_timeout)
-                    if returncode != 0:
-                        return update_dotfiles_runtime.finish(returncode)
-
-                    # 主checkoutの版が進んだ直後に準備し、plugin更新の待ちの間も未準備の区間を残さない。
-                    _prepare_agent_toolkit_environment(total)
-
-                    plugins_root = update_dotfiles_runtime.DOTFILES_ROOT / "plugins"
-                    plugins = sorted(plugins_root.iterdir(), key=lambda path: path.name) if plugins_root.exists() else []
-                    for plugin in plugins:
-                        if plugin.is_dir() and (plugin / ".git").exists():
-                            returncode = update_dotfiles_process.run_git_pull(1, total, timeout=git_timeout, plugin=plugin)
-                            if returncode != 0:
-                                update_dotfiles_runtime.continue_after_failure(
-                                    update_dotfiles_runtime.current_stage_title
-                                    or f"dotfilesプラグイン {plugin.name}: git pull",
-                                    f"{plugin}で git status と git pull --rebase を実行して原因を確かめてください。",
-                                    update_dotfiles_runtime.last_stderr_tail,
-                                )
-
-                    returncode, _ = _run_step(
-                        2,
-                        total,
-                        "chezmoi init (テンプレート再展開)",
-                        ["chezmoi", "init", f"--source={update_dotfiles_runtime.DOTFILES_ROOT}"],
+                    returncode = update_dotfiles_stages.run_stages(
+                        _runners(_Context(args=args, total=total, git_timeout=git_timeout)),
+                        fatal=(update_dotfiles_process.GitReclaimError,),
                     )
                     if returncode != 0:
                         return update_dotfiles_runtime.finish(returncode)
-
-                    returncode, status_output = _run_step(
-                        3,
-                        total,
-                        "chezmoi status (apply予定のファイル)",
-                        ["chezmoi", "status", "-x", "scripts"],
-                        capture=True,
-                    )
-                    if returncode != 0:
-                        update_dotfiles_runtime.continue_after_failure(
-                            "chezmoi status (apply予定のファイル)",
-                            "表示専用の段であり、chezmoi applyは続けます。"
-                            "chezmoi statusを単独で実行して原因を確かめてください。",
-                            update_dotfiles_runtime.last_stderr_tail,
-                        )
-                    for line in _filter_apply_pending(status_output):
-                        print(line)
-
-                    returncode, diff_output = _run_step(
-                        4,
-                        total,
-                        "chezmoi diff (上書き前の差分)",
-                        ["chezmoi", "diff", "--no-pager"],
-                        capture=True,
-                        show_heading=False,
-                    )
-                    update_dotfiles_runtime.logger.info("chezmoi diffの出力:\n%s", diff_output)
-                    if returncode != 0:
-                        update_dotfiles_runtime.continue_after_failure(
-                            "chezmoi diff (上書き前の差分)",
-                            "差分の記録だけの段であり、chezmoi applyは続けます。"
-                            "chezmoi diffを単独で実行して原因を確かめてください。",
-                            update_dotfiles_runtime.last_stderr_tail,
-                        )
-
-                    daemon_pause = (
-                        _pause_codex_daemon()
-                        if diff_output.strip() and not (dotfiles_mode.is_minimal() and args.prune)
-                        else None
-                    )
-                    try:
-                        returncode, _ = _run_step(
-                            total,
-                            total,
-                            "chezmoi apply (post-apply実行)",
-                            ["chezmoi", "apply", "--force"],
-                            log_step_no=update_dotfiles_runtime.LOG_STAGE_TOTAL,
-                        )
-                    finally:
-                        resume_error = None if daemon_pause is None else _resume_codex_daemon(daemon_pause)
-                    if returncode != 0:
-                        return update_dotfiles_runtime.finish(returncode)
-                    stop_error = None if daemon_pause is None else daemon_pause.stop_error
-                    daemon_errors = [error for error in (stop_error, resume_error) if error is not None]
-                    if daemon_errors:
-                        update_dotfiles_runtime.continue_after_failure(
-                            update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
-                            "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
-                            "\n".join(daemon_errors),
-                        )
             except update_dotfiles_process.GitReclaimError as error:
                 update_dotfiles_runtime.logger.exception("Git子プロセスの回収失敗")
                 print(str(error), file=sys.stderr)

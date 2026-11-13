@@ -63,6 +63,9 @@ current_stage_title: str | None = None
 
 last_stderr_tail: str | None = None
 
+# 直前の段が待機上限で打ち切られたか。同じ原因の再発が見込まれるため、実行器は再試行しない。
+last_step_timed_out: bool = False
+
 continued_failures: list[_ContinuedFailure] = []
 
 update_index: pathlib.Path | None = None

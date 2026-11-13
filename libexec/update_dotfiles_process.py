@@ -5,7 +5,9 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 import time
+from typing import Self
 
 import psutil
 import update_dotfiles_runtime
@@ -34,6 +36,62 @@ class GitReclaimError(RuntimeError):
     残ったGit操作がindexや作業ツリーを書き換え得るため、任意プラグイン更新の失敗として続行せず、
     chezmoiの適用へ進まずに更新全体を止める。
     """
+
+
+class StageReclaimError(GitReclaimError):
+    """待機上限を超えた段の子孫プロセスを回収できない。残った子孫が作業ツリーや配備先を書き換え得るため更新全体を止める。"""
+
+
+class DescendantTracker:
+    """段の実行中に自プロセスの子孫を一定間隔で控え、上限超過時にまとめて回収する。
+
+    `subprocess.run`は上限超過時に直接の子だけを終了し、孫は親を失って列挙できなくなる。
+    実行中に控えた子孫は、`psutil.Process`が作成時刻でPIDの再利用を見分けるため、後から安全に終了できる。
+    """
+
+    _SAMPLE_INTERVAL_SEC = 0.5
+
+    def __init__(self) -> None:
+        self._seen: dict[int, psutil.Process] = {}
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._sample, daemon=True)
+
+    def __enter__(self) -> Self:
+        """子孫の観測を開始する。"""
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        """観測スレッドの終了を待つ。"""
+        self._stop.set()
+        self._thread.join(timeout=5)
+
+    def _sample(self) -> None:
+        while True:
+            with contextlib.suppress(psutil.Error):
+                for child in psutil.Process().children(recursive=True):
+                    self._seen.setdefault(child.pid, child)
+            if self._stop.wait(self._SAMPLE_INTERVAL_SEC):
+                return
+
+    def kill_all(self) -> None:
+        """控えた子孫のうち生存しているものを終了する。終了しないものが残れば`StageReclaimError`を送出する。"""
+        self._stop.set()
+        self._thread.join(timeout=5)
+        with contextlib.suppress(psutil.Error):
+            for child in psutil.Process().children(recursive=True):
+                self._seen.setdefault(child.pid, child)
+        targets = [process for process in self._seen.values() if process.is_running()]
+        for process in targets:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                process.kill()
+        _gone, alive = psutil.wait_procs(targets, timeout=update_dotfiles_runtime.PROCESS_TREE_WAIT_TIMEOUT_SEC)
+        if alive:
+            raise StageReclaimError(
+                "待機上限を超えた段の子プロセスを回収できないため更新を中止しました: "
+                + ", ".join(str(item.pid) for item in alive)
+                + "。表示されたPIDのプロセスを確認して終了させ、update-dotfilesを再実行してください。"
+            )
 
 
 def kill_process_tree(process: subprocess.Popen[str]) -> None:
