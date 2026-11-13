@@ -423,15 +423,29 @@ def test_role_task_requires_fixed_line_or_classified_reason(name: str, message: 
 
 
 @pytest.mark.parametrize(
-    ("launch_kind", "effort", "expected"),
-    [("delegate", "low", "medium"), ("delegate", "max", "max"), ("explore", "low", "low")],
+    ("launch_kind", "effort", "expected", "lookup_fails"),
+    [
+        ("delegate", "low", "medium", False),
+        ("delegate", "max", "max", False),
+        ("explore", "low", "low", False),
+        ("delegate", "low", "low", True),
+    ],
 )
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_role_free_text_recovery_raises_effort_once(
-    monkeypatch: pytest.MonkeyPatch, launch_kind: str, effort: str, expected: str
+    monkeypatch: pytest.MonkeyPatch, launch_kind: str, effort: str, expected: str, lookup_fails: bool
 ) -> None:
-    """自由文の早期返却は保留し、回復入力の前に通常委譲のeffortを1段上げ、2回目は診断付きで公開する。"""
+    """自由文の早期返却は保留し、回復入力の前に通常委譲のeffortを1段上げ、2回目は診断付きで公開する。
+
+    最上段・軽量起動・段の取得失敗ではeffortを変えずに回復入力だけを送る。
+    """
+    if lookup_fails:
+
+        def fail(*_: object) -> tuple[str, ...]:
+            raise OSError("段の一覧を取得できない")
+
+        monkeypatch.setattr("agent_toolkit._common.effort.cli_levels", fail)
     session = _role_session(
         "defect-investigation.subagent.md", engine="claude", model="opus", effort=effort, launch_kind=launch_kind
     )
