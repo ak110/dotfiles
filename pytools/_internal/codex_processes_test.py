@@ -4,6 +4,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import time
 import typing
 from types import SimpleNamespace
 
@@ -245,8 +246,17 @@ def test_stale_enumeration_cache_does_not_change_classification(
     launcher.parent.mkdir(parents=True)
     launcher.symlink_to(sys.executable)
     executable = str(launcher) if current_is_codex else sys.executable
-    with subprocess.Popen([executable, "-c", "import time; time.sleep(60)"]) as child:
+    child_command = [executable, "-c", "import time; time.sleep(60)"]
+    with subprocess.Popen(child_command) as child:
         try:
+            # 実行体の公開前に走査すると、親のcmdlineを子の起動形と取り違える。
+            deadline = time.monotonic() + 5
+            while True:
+                observed = psutil.Process(child.pid)
+                if observed.exe() == str(pathlib.Path(executable).resolve()) and observed.cmdline() == child_command:
+                    break
+                assert child.poll() is None and time.monotonic() < deadline, "子プロセスの起動状態を観測できない"
+                time.sleep(0.01)
             current_exe = psutil.Process(child.pid).exe()
             if current_is_codex:
                 _inject_previous_generation(monkeypatch, child.pid, name="python", exe="/previous/other")
