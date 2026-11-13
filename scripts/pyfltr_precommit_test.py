@@ -401,14 +401,18 @@ def test_main_verify_run_returns_result_without_commit(
         assert "--verify-run" in captured.err
 
 
-def test_verify_run_reports_git_failure_and_how_to_inspect_index(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("verify", [False, True])
+def test_git_failure_reports_context_independent_index_inspection(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, verify: bool
 ) -> None:
     """index照会に失敗した検収では、Gitの診断と対象を調べる公開コマンドを示す。"""
     repository = _repository(tmp_path)
     monkeypatch.chdir(repository)
     monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "current_branch", lambda directory: "develop")
     original = pyfltr_precommit.git_command.run
+    original_subprocess = subprocess.run
+    launched: list[list[str]] = []
 
     def fail_index(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         if "--git-path" in command:
@@ -417,8 +421,18 @@ def test_verify_run_reports_git_failure_and_how_to_inspect_index(
 
     monkeypatch.setattr(pyfltr_precommit.git_command, "run", fail_index)
 
-    assert pyfltr_precommit.main(["--verify-run", "01RUN"]) == 1
+    def run_command(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if command[0] == "/bin/pyfltr":
+            launched.append(command)
+            return subprocess.CompletedProcess(command, 0)
+        return original_subprocess(command, check=kwargs.pop("check", False), **kwargs)
+
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", run_command)
+
+    assert pyfltr_precommit.main(["--verify-run", "01RUN"] if verify else []) == (1 if verify else 0)
     error = capsys.readouterr().err
     assert "index lookup failed" in error
     assert "git rev-parse --git-path index" in error
-    assert "--verify-run" in error
+    if not verify:
+        assert "--verify-run" not in error
+    assert launched == ([] if verify else [["/bin/pyfltr", "fast"]])

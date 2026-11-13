@@ -285,8 +285,7 @@ def _latest_change_ns(root: pathlib.Path) -> int | str:
     if index.returncode or not index.stdout.strip():
         return (
             f"Git indexのパスを取得できない: {format_cli_error(index)}。"
-            "対象worktreeで`git rev-parse --git-path index`を実行してGitの診断とindexの所在を確認し、"
-            "原因を解消してから同じ`--verify-run`を再実行する"
+            "対象worktreeで`git rev-parse --git-path index`を実行し、Gitの診断とindexの所在を確認する"
         )
     paths: set[pathlib.Path] = {pathlib.Path(index.stdout.strip())}
     for name in listed.stdout.split(b"\0"):
