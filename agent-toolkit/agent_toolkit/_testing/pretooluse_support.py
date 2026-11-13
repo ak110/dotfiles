@@ -463,7 +463,13 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
                 for target in read_delivery.selected_targets(records, agent)
                 if not read_delivery.target_ready(records, target, agent)
             ]
-            if not targets and any("操作前に読む資料が未取得" in notice for notice in decision.notices):
+            # 他のチェックの通過試験では、条件付き候補も取得済みの前提にそろえる。
+            # 候補の未取得通知そのものは、準備を使わないread_deliveryの試験で検証する。
+            if not targets and any(
+                marker in notice
+                for notice in decision.notices
+                for marker in ("操作前に読む資料が未取得", "現在の操作に関連する読込条件の候補")
+            ):
                 targets = [
                     target
                     for row in read_delivery.declarations(str(payload.get("cwd", "")))
@@ -471,6 +477,7 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
                         row, payload.get("tool_name", ""), payload.get("tool_input", {}), str(payload.get("cwd", ""))
                     )
                     for target in row.targets
+                    if not read_delivery.target_ready(records, target, agent)
                 ]
             if not targets:
                 return
