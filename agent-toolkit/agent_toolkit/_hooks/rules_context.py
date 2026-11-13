@@ -297,10 +297,9 @@ def acquisition_failure(
 def _compact_recovery_context() -> str:
     """次の判断前に、現在の工程を定める文書から必要な知識を回復させる。"""
     return _llm_notice(
-        "会話が圧縮され、以前取得した資料の本文は文脈から失われている。次の判断より前に、"
-        "`agent-toolkit/share/agent-conduct-details.md`「会話圧縮後の復元」に従い、"
+        "会話が圧縮された。次の判断より前に、"
         "工程を定めるスキルと役割文書を全文読み直し、読込表から次の判断に必要な資料を選んで読め。"
-        "全体作業契約と引き継ぎ記録が次工程の資料を指す場合は、それも読め。"
+        "復元先: `agent-toolkit/share/compaction-recovery.md`を全文読め。"
     )
 
 
@@ -432,9 +431,6 @@ def _compaction_notice(
     # 全期間の通常表示（数万文字）は不足する場合の手段にとどめる。
     lines = [
         f"圧縮前の直近の操作は`{conversation}`でconversation.mdを取得して確かめよ。"
-        "復元の判断は`agent-conduct-details.md`「会話圧縮後の復元」に従え。"
-        "それでも復元できない場合だけ、同じコマンドから`--conversation-window --conversation-recent 30`を外して"
-        "全期間の流れを取得せよ。"
         "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
     ]
     if delegated:

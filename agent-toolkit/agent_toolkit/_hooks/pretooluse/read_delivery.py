@@ -226,13 +226,15 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         from agent_toolkit._hooks import result_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         documents = result_reads.observe(session_id, agent, response, deferred=is_codex_payload(payload))
-        _select_result_documents(session_id, agent, documents)
+        _select_result_documents(
+            session_id, agent, documents, host="codex" if is_codex_payload(payload) else "claude", project=cwd
+        )
     edited = document_reads.edited_document(tool_name, tool_input, response, cwd)
     if edited is not None:
         path, before = edited
         records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
         if agent in records.get(document_reads.read_trigger_key(path, before), []):
-            _mark(session_id, path, agent)
+            _mark(session_id, path, agent, host="codex" if is_codex_payload(payload) else "claude", project=cwd)
         if agent in records.get(document_reads.skill_invocation_key(path, before), []):
             update_state(
                 session_id,
@@ -326,5 +328,5 @@ def observe(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
                     document_reads.skill_invocation_key(resolved, document_reads.content_fingerprint(resolved)), agent
                 ),
             )
-            _mark(session_id, resolved, agent)
+            _mark(session_id, resolved, agent, host="codex" if is_codex_payload(payload) else "claude", project=cwd)
         return

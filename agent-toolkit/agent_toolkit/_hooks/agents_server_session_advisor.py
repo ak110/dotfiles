@@ -44,16 +44,8 @@ lazy from agent_toolkit._hooks.host import is_antigravity_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "agents_server_session_advisor"
-_WARNING_BODY = (
-    "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-    "観測しないまま終了すると、その作業の成果を回収する主体が残らない。"
-)
-_WARNING_FIX = (
-    "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
-    "`send_message`は新しい作業を配送するだけで観測しないため、この警告は解消しない。"
-    "ホストが待機コマンドを停止した場合は、`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`"
-    "「ホストが待機コマンドを停止した場合」に従え。"
-)
+_WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
+_WARNING_FIX = "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 

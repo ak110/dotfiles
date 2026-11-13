@@ -176,6 +176,10 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
     result = _run(_ask_user_question_payload("content-notices", response), state_dir=tmp_path)
     assert result.returncode == 0, result.stderr
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "事実の主張か是正を求める対象を含む場合がある" not in context
+    assert "この注記は`AskUserQuestion`" not in context
+    assert "references/user-utterance-correction.md" in context
+    assert "「割り込み・訂正・中止」" in context
     assert ("認識合わせ" in context) == ("！！" in text)
     has_example = not text.startswith("`") and "例えば" in text
     assert ("「原文の保持と取り込み」" in context) == has_example
@@ -198,7 +202,7 @@ def test_free_text_notices_distinguish_replays_questions_and_answers(tmp_path: p
         return json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
 
     first = context(payload)
-    for marker in ("提示した選択肢と一致しない自由記述", "認識合わせ", "範囲語か開放列挙"):
+    for marker in ("自由記述の回答", "認識合わせ", "範囲語か開放列挙"):
         assert marker in first
     assert not context(payload)
 

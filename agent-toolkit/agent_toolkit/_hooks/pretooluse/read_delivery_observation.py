@@ -167,7 +167,13 @@ def _observe_content(payload: dict, tool_name: str, tool_input: dict, session_id
             read_delivery.update_state(session_id, prepare)
         return
     _record_receipts(
-        session_id, agent, [*candidates, *current], texts, fragments=[(packet, packet["blocks"]) for packet in packets]
+        session_id,
+        agent,
+        [*candidates, *current],
+        texts,
+        fragments=[(packet, packet["blocks"]) for packet in packets],
+        host="codex" if is_codex_payload(payload) else "claude",
+        project=payload.get("cwd"),
     )
 
 

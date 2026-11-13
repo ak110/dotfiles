@@ -182,6 +182,8 @@ def active_roles(payload: dict, session_id: str, records: dict, agent: str) -> s
                                 agent,
                                 [*previous, *document_reads.receipt_candidates([target])],
                                 [delivered, *bodies],
+                                host="codex" if is_codex_payload(payload) else "claude",
+                                project=payload.get("cwd"),
                             )
             # 保存済みsessionの正式な参照だけの配送も、同じ実体指定として受理する。
             legacy = re.search(

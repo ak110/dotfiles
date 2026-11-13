@@ -1,6 +1,6 @@
 """宣言の復旧操作と未確定の読込条件を判定する。"""
 
-# 公開入口の差し替えを呼出し時に参照し、モジュール初期化中の逆向きimportを避ける。
+# 公開関数の差し替えを呼出し時に参照し、モジュール初期化中の逆向きimportを避ける。
 # pylintの依存グラフは関数内importも含むため、その参照行だけ循環検査から除く。
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from agent_toolkit._hooks.host import is_codex_payload
 from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import (
+    bash_read_paths,
     sed_read_range,
 )
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
@@ -141,6 +142,12 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
     records = records if isinstance(records, dict) else {}
     roles = read_delivery.active_roles(payload, session_id, records, agent) | _subagent_task_documents(payload)
     selected_sources = {target.path for target in read_delivery.selected_targets(records, agent)} | roles
+    command = tool_input.get("command")
+    acquisition_paths = (
+        {path.resolve() for group in bash_read_paths(command, cwd) for path in group}
+        if tool_name == "Bash" and isinstance(command, str)
+        else set()
+    )
     try:
         host = "codex" if is_codex_payload(payload) else "claude"
         rows = [
@@ -158,18 +165,20 @@ def _condition_candidate_notice(payload: dict, tool_name: str, tool_input: dict,
                 or row.source.is_file()
                 and read_delivery.target_ready(records, read_triggers.ReadTarget(row.source), agent)
             )
-            and any(not read_delivery.target_ready(records, target, agent) for target in row.targets)
+            and any(
+                target.path not in acquisition_paths and not read_delivery.target_ready(records, target, agent)
+                for target in row.targets
+            )
         ]
     except OSError, UnicodeError, ValueError:
         # 宣言の取得失敗は本体の診断が通知する。
         return ""
     if not candidates:
         return ""
-    candidates = list(
-        {(row.condition, tuple(sorted(str(target) for target in row.targets))): row for row in candidates}.values()
-    )
+    shown_targets = {row: tuple(target for target in row.targets if target.path not in acquisition_paths) for row in candidates}
+    candidates = list({(row.condition, tuple(sorted(map(str, shown_targets[row])))): row for row in candidates}.values())
     shown = "\n".join(
-        f"- 条件: {row.condition}。資料: {'、'.join(str(target) for target in row.targets)}（宣言: {row.source}:{row.line}）"
+        f"- 条件: {row.condition}。資料: {'、'.join(map(str, shown_targets[row]))}（宣言: {row.source}:{row.line}）"
         for row in candidates
     )
     return _llm_notice(

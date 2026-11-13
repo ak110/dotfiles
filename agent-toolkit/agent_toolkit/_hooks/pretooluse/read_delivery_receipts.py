@@ -93,7 +93,16 @@ def _receipt_targets(
 
 
 def _record_receipts(
-    session_id: str, agent: str, candidates: list[dict], texts: list[str], *, fragments=None, requests=None, coverage=None
+    session_id: str,
+    agent: str,
+    candidates: list[dict],
+    texts: list[str],
+    *,
+    fragments=None,
+    requests=None,
+    coverage=None,
+    host="claude",
+    project=None,
 ) -> None:
     from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
     from agent_toolkit._hooks.pretooluse.read_delivery import _mark  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
@@ -136,7 +145,7 @@ def _record_receipts(
     for metadata in full:
         path = pathlib.Path(metadata["path"])
         if path.is_file() and document_reads.content_fingerprint(path) == metadata["version"]:
-            _mark(session_id, path, agent, metadata["version"], record_scopes=False)
+            _mark(session_id, path, agent, metadata["version"], record_scopes=False, host=host, project=project)
         else:
             read_delivery.update_state(
                 session_id, operation_skills.mark_ready(read_delivery.document_key(path, metadata["version"]), agent)
@@ -245,7 +254,9 @@ def _fragment_requests(payload: dict, tool_name: str, tool_input: dict) -> dict[
     return result
 
 
-def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], texts: list[str]) -> None:
+def _record_codex_delivery(
+    session_id: str, agent: str, candidates: list[dict], texts: list[str], *, project: str | None
+) -> None:
     from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
     pending = read_delivery.read_state(session_id).get("document_read_pending", {}).get(agent, [])
@@ -282,7 +293,7 @@ def _record_codex_delivery(session_id: str, agent: str, candidates: list[dict], 
     if not all(any(packet is item and blocks == packet["blocks"] for item, blocks in selected) for packet in pending):
         selected.extend(document_reads.partial_fragment_deliveries(pending, texts))
     coverage = document_reads.fragment_coverage(pending)
-    _record_receipts(session_id, agent, candidates, texts, fragments=selected, coverage=coverage)
+    _record_receipts(session_id, agent, candidates, texts, fragments=selected, coverage=coverage, host="codex", project=project)
     if selected:
 
         def advance(value: dict) -> dict:
@@ -363,10 +374,16 @@ def _refresh_receipts(payload: dict, tool_name: str, tool_input: dict, session_i
                 texts = []
             else:
                 for text in texts:
-                    _record_codex_delivery(session_id, agent, [*candidates, *current], text)
+                    _record_codex_delivery(session_id, agent, [*candidates, *current], text, project=payload.get("cwd"))
                     from agent_toolkit._hooks import result_reads  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
-                    _select_result_documents(session_id, agent, result_reads.observe_outer(session_id, agent, text))
+                    _select_result_documents(
+                        session_id,
+                        agent,
+                        result_reads.observe_outer(session_id, agent, text),
+                        host="codex",
+                        project=payload.get("cwd"),
+                    )
 
                 def advance(value: dict) -> dict:
                     positions = value.setdefault("document_read_offsets", {})

@@ -171,6 +171,9 @@ def test_pending_observation_emits_stop_hook_event_and_additional_context(tmp_pa
     assert _WARNING_BODY in hook_output["additionalContext"]
     assert "対象session: session-a, session-b" in hook_output["additionalContext"]
     assert _NEXT_ACTION_PATTERN.search(hook_output["additionalContext"]) is not None
+    assert "成果を回収する主体が残らない" not in hook_output["additionalContext"]
+    assert "`send_message`" not in hook_output["additionalContext"]
+    assert "ホストが待機コマンドを停止した場合" not in hook_output["additionalContext"]
 
 
 def test_start_only_record_emits_warning(tmp_path: pathlib.Path) -> None:

@@ -97,7 +97,12 @@ def test_json_value_cut_keeps_received_prefix(scenario, host_environ, inner_cap,
     write = {"file_path": str(path.parent / "out.md"), "content": "成果"}
     invoke("codex", "PreToolUse", "Write", write)
     _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
-    command = read_delivery.acquisition_step(read_triggers.ReadTarget(path), "codex").split("`", 2)[1]
+    command = json.loads(
+        (read_delivery.acquisition_step(read_triggers.ReadTarget(path), "codex"))
+        .split("tools.exec_command(", 1)[1]
+        .splitlines()[0]
+        .removesuffix(");")
+    )["cmd"]
     invoke("codex", "PreToolUse", "Bash", {"command": command})
     produced_command, response = _produce(read_triggers.ReadTarget(path), host_environ)
     assert produced_command == command
