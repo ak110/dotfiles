@@ -19,7 +19,7 @@
 | WIの投入前検収の品質水準を適用する前 | `agent-basics:review-standards/SKILL.md` | 判断 | `wi-standard-self-review`、`read:agent-basics:*/skills/review-standards/SKILL.md` |
 | add-awi-by-userまたはgrillingによるWI作成の考慮漏れを検収する前（操作対象外: 自身の成果物・評価方法の検討） | `../../add-awi-by-user/references/omission-check.md` | | |
 | 資料起点の採否を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-toolkit:add-awi-by-user/SKILL.md` | | |
-| 参考資料に基づく候補の十分性を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` | | |
+| 外部資料に基づく案の提案・採否、資料起点の既存充足を評価する前（候補の十分性の検収を含む）（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/design-heuristics-proportionality.md`、`agent-basics:writing-standards/references/design-heuristics-external-evidence.md` | | |
 | 規範・手順による既存充足を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | |
 | 依頼の`再発の経過を問う要求`が`該当`、または検収者が逐語本文・趣旨から失敗・誤り・指摘の反復、頻度、悪化、いつからか守られなくなったことへの言及と判断した要求を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:bugfix/references/root-cause-severity-quality.md`と`agent-basics:bugfix/references/root-cause-scenarios-recurrence.md`を全文読む | | |
 | 複数バグの現象・期待する契約・原因の対応を検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-toolkit:wi-standards/references/analysis-records.md` | | |

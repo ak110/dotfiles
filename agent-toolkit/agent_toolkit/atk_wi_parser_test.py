@@ -225,6 +225,7 @@ def test_note_file_preserves_utf8_text(tmp_path: pathlib.Path, monkeypatch: pyte
 def test_note_file_read_error_precedes_environment_changes(
     tmp_path: pathlib.Path,
     invalid_bytes: bytes | None,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """存在しないまたはUTF-8でないメモはprivate-notesの準備前に拒否する。"""
     note_file = tmp_path / "note.txt"
@@ -236,6 +237,12 @@ def test_note_file_read_error_precedes_environment_changes(
 
     assert exc_info.value.code == 2
     assert not (tmp_path / "private-notes").exists()
+    message = capsys.readouterr().err
+    assert f"--note-fileをUTF-8として読み込めません: {note_file}:" in message
+    cause = "Errno 2" if invalid_bytes is None else "invalid start byte"
+    assert cause in message
+    assert "対象ファイルの存在・読取権限・UTF-8の文字コードを確認" in message
+    assert message.count("同じ--note-file付きコマンドを再実行してください") == 1
 
 
 @pytest.mark.parametrize("subcommand", ("adopt", "reject", "rm"))

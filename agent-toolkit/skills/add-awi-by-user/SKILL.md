@@ -56,7 +56,7 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 参考資料から改善候補を起草・採否判定する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md` |
+| 外部資料に基づく案の提案・採否、資料起点の既存充足を評価する前 | `agent-basics:writing-standards/references/design-heuristics-proportionality.md`、`agent-basics:writing-standards/references/design-heuristics-external-evidence.md` |
 | 実ユーザー発話やWI記入欄の指摘を受領・分類する前（操作対象外: ユーザー発話・回答の受領） | `agent-toolkit:user-confirmation-and-report/references/analysis-operations-intervention.md` |
 | 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis-stages.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
 | 考慮漏れの指摘を受けて原因を分析する前、参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |

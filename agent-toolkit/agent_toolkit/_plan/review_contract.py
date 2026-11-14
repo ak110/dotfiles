@@ -59,19 +59,22 @@ def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
             elif set(columns).issubset(header) and len(cells) == len(header):
                 rows.append([cells[header.index(column)] for column in columns])
             row = None
+    errors: list[str] = []
     for name, (count, reflection_count) in required.items():
         own = [row for row in rows if row[0] == name]
         major = sum(row[2] == "主要完成状態" for row in own)
         supplements = sum(row[2] == "補足条件" for row in own)
         if major < 1 or supplements < count:
-            raise ValueError(f"{name}: 主要完成状態 {major}/1件、補足条件 {supplements}/{count}件")
+            errors.append(f"{name}: 主要完成状態 {major}/1件、補足条件 {supplements}/{count}件")
         numbers = [row[1] for row in own]
         if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
-            raise ValueError(f"{name}: 条件番号が不正または重複")
+            errors.append(f"{name}: 条件番号が不正または重複")
         covered = {int(number) for row in own for number in re.findall(r"反映内容([1-9][0-9]*)(?![0-9])", row[4])}
         uncovered = [f"反映内容{number}" for number in range(1, reflection_count + 1) if number not in covered]
         if uncovered:
-            raise ValueError(
+            errors.append(
                 f"{name}: 出典に対応する行が無い項目: {'、'.join(uncovered)}。"
                 "各項目の主要完成状態または除外理由を記した行を追加し、出典へ`反映内容N`を記す"
             )
+    if errors:
+        raise ValueError("\n".join(errors))

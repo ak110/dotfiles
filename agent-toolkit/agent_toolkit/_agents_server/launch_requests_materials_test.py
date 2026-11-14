@@ -361,15 +361,21 @@ async def test_start_checks_all_external_evidence_files(
     params = _observed_input_params("external-write-review.subagent.md", tmp_path)
     first = tmp_path / "diff.patch"
     second = tmp_path / "CI result.txt"
+    third = tmp_path / "additional.txt"
     params["根拠の所在"] = (
-        json.dumps([str(first), str(second)]) if json_array else f"`{first}`（commit `abc123`）\n`{second}`（run ID `123`）"
+        json.dumps([str(first), str(second), str(third)])
+        if json_array
+        else f"`{first}`（commit `abc123`）\n`{second}`（run ID `123`）\n`{third}`"
     )
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    with pytest.raises(ActionableError):
+    with pytest.raises(ActionableError) as rejected:
         await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
+    assert str(second) in str(rejected.value)
+    assert str(third) in str(rejected.value)
     manager.start.assert_not_awaited()
 
     second.write_text("成功したCIの保存結果\n", encoding="utf-8")
+    third.write_text("追加の証拠\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
     manager.start.assert_awaited_once()

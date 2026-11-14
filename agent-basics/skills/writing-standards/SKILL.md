@@ -61,6 +61,7 @@ hookの通知は選択を補助する。
 | X投稿などの外部資料の本文・日時・添付画像を取得・確認する前 | `../fetch-sources/SKILL.md` | | | |
 | ホスト機能の可否・入出力契約を調べる時 | `references/host-official-references.md` | | | |
 | 設計判断を確定する時、計画と実装を同じエージェントが続けて実施する時、コードレビューの時、計画の起草、実現方式の確定、実装の完了前と実行レビューで、変更後の設計品質や累積したファイル構成を評価する時（エージェント向け文書だけの変更を含む）と、外部資料（論文、ベンチマーク、他プロジェクトの事例など）に基づく改善案を提案・評価する時 | `references/design-heuristics-screening.md`、`references/design-heuristics-necessity.md`、`references/design-heuristics-mechanisms.md`、`references/design-heuristics-responsibility.md`、`references/design-heuristics-proportionality.md`、`references/design-heuristics-decisions.md`、`references/design-heuristics-quality.md` | | | |
+| 外部資料に基づく案の提案・採否、資料起点の既存充足を評価する前 | `references/design-heuristics-external-evidence.md` | | | |
 | 技術記事・操作手順などの技術文書を書く時 | `references/writing-technical.md` | | | |
 | 業務・仕様文書を書く時（変更説明、障害報告、提案書、議事録、規程、作業項目などを含む） | `references/writing-business.md` | | | |
 | 体験を述べる文章を書く時 | `references/writing-experience.md` | | | |

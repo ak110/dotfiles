@@ -7,7 +7,6 @@ import os
 import shutil
 import stat
 import subprocess
-import sys
 import types
 import typing
 from pathlib import Path
@@ -16,7 +15,7 @@ import psutil
 import pytest
 from agent_toolkit._common import dotfiles_mode
 
-from pytools._internal import common, prune_installation, setup_mise
+from pytools._internal import _test_helpers, common, prune_installation, setup_mise
 
 
 def _prepare(tmp_path, monkeypatch, mode):
@@ -326,10 +325,9 @@ def test_active_users_reads_current_generation(monkeypatch: pytest.MonkeyPatch, 
     """列挙キャッシュに対象実体を指す以前の世代の実行ファイルが残っていても、現在の属性で参照を判定する。"""
     environment = tmp_path / "environments/old"
     monkeypatch.setattr(prune_installation.codex_processes, "codex_processes", lambda: ())
-    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
-        try:
-            _inject_previous_generation(monkeypatch, child.pid, name="python", exe=str(environment / "bin/python"))
-            active = prune_installation._active_users((environment,))
-        finally:
-            child.kill()
+    with _test_helpers.ResidentProcesses(tmp_path, monkeypatch) as resident:
+        child = resident.start("python")
+        # 起動完了の観測後に古いキャッシュを注入し、起動途中の空cmdlineと区別する。
+        _inject_previous_generation(monkeypatch, child.pid, name="python", exe=str(environment / "bin/python"))
+        active = prune_installation._active_users((environment,))
     assert not active

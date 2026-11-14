@@ -7,6 +7,8 @@ package collectorが収集順で再生成されても、fixtureの登録を失�
 import asyncio
 import contextlib
 import datetime
+import json
+import math
 import os
 import pathlib
 import re
@@ -14,7 +16,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import zlib
 from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
 from typing import Any
@@ -337,7 +338,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--test-shard",
         metavar="INDEX/COUNT",
         default=None,
-        help="収集した試験をnode IDのCRC32でCOUNT個へ分け、INDEX番目（1始まり）だけを実行する",
+        help="収集した試験を記録所要でCOUNT個へ均衡配分し、INDEX番目（1始まり）だけを実行する",
     )
 
 
@@ -353,21 +354,46 @@ def _parse_test_shard(value: str) -> tuple[int, int]:
     )
 
 
+def _assign_test_shards(nodeids: list[str], durations: dict[str, float], count: int) -> dict[str, int]:
+    """全workerで同じ入力から所要降順の貪欲割当を再現する。"""
+    if not isinstance(durations, dict) or any(
+        not isinstance(nodeid, str)
+        or not nodeid
+        or isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+        for nodeid, value in durations.items()
+    ):
+        raise pytest.UsageError("test_durations.jsonの所要が不正です。正の有限値で再生成してください")
+    default = sum(durations.values()) / len(durations) if durations else 1.0
+    totals = [0.0] * count
+    assignments: dict[str, int] = {}
+    for nodeid in sorted(nodeids, key=lambda nodeid: (-durations.get(nodeid, default), nodeid)):
+        shard = min(range(count), key=lambda index: (totals[index], index))
+        assignments[nodeid] = shard
+        totals[shard] += durations.get(nodeid, default)
+    return assignments
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """`--test-shard`の指定時は、担当外の試験を選択解除する。
 
-    node IDの文字列だけから担当を決めるため、xdistの各workerと各runnerが同じ集合へ同じ分割を与え、
-    全分割を合わせると各試験がちょうど1回実行される。収集順や試験の追加に依存しない。
+    同じ所要記録とnode ID集合から担当を決め、収集順に依存しない。
+    全分割を合わせると各試験がちょうど1回実行される。
     試験ファイル単位でなく試験単位で分けるのは、多数のparametrizeを持つ重いファイルを1つのrunnerへ偏らせないためである。
     """
     value = config.getoption("test_shard")
     if value is None:
         return
     index, count = _parse_test_shard(value)
+    path = pathlib.Path(__file__).with_name("test_durations.json")
+    durations = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    assignments = _assign_test_shards([item.nodeid for item in items], durations, count)
     selected: list[pytest.Item] = []
     deselected: list[pytest.Item] = []
     for item in items:
-        shard = zlib.crc32(item.nodeid.encode("utf-8")) % count
+        shard = assignments[item.nodeid]
         (selected if shard == index else deselected).append(item)
     if deselected:
         config.hook.pytest_deselected(items=deselected)

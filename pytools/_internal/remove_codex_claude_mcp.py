@@ -1,8 +1,9 @@
 """Codex設定に残るClaude MCP登録を削除する。"""
 
 import logging
+import sys
 
-from pytools._internal import common, post_apply_outcome
+from pytools._internal import codex_runtime, common, post_apply_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,7 @@ _NOT_FOUND_ERROR = "Error: No MCP server named 'claude' found."
 
 def run() -> post_apply_outcome.PostApplyOutcome:
     """Claude MCP登録が存在すれば削除し、変更の有無を返す。"""
-    codex = common.resolve_executable("codex")
+    codex = codex_runtime.find_runtime_launcher(windows=sys.platform == "win32")
     if codex is None:
         logger.warning(
             "codexコマンドが見つからないためClaude MCP登録を確認できません。"

@@ -2,11 +2,14 @@
 
 import collections.abc
 import contextlib
+import errno
 import logging
+import ntpath
 import os
+import stat
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from agent_toolkit._common import dotfiles_mode
 
@@ -28,11 +31,57 @@ _NOT_UPDATED_MARKER = "Herdr was not updated."
 
 def _launcher_path() -> Path:
     """公式直接インストール版Herdrの安定したランチャー位置を返す。"""
+    if value := os.environ.get("HERDR_INSTALL_DIR"):
+        return Path(value) / ("herdr.exe" if sys.platform == "win32" else "herdr")
     if sys.platform == "win32":
         local_app_data = os.environ.get("LOCALAPPDATA")
         base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
         return base / "Programs" / "Herdr" / "bin" / "herdr.exe"
     return Path.home() / ".local" / "bin" / "herdr"
+
+
+def _comparison_path(path: Path) -> PureWindowsPath:
+    """実体検証後のWindowsパスをnamespace表記に依存せず比較する。"""
+    value = str(path)
+    if value[:8].lower() == "\\\\?\\unc\\":
+        value = "\\\\" + value[8:]
+    elif value.startswith("\\\\?\\"):
+        value = value[4:]
+    return PureWindowsPath(ntpath.normpath(value))
+
+
+def _find_launcher() -> Path | None:
+    """所有する版実体をリンクの格納情報から選ぶ。"""
+    visible = _launcher_path()
+    if sys.platform != "win32":
+        return visible if visible.is_file() else None
+    home = Path(os.environ.get("HERDR_HOME") or Path.home() / ".herdr")
+    standalone = home / "packages" / "standalone"
+    for link in (standalone / "current", visible.parent):
+        try:
+            try:
+                stored = link.readlink()
+            except OSError as error:
+                if error.errno == errno.EINVAL:
+                    continue
+                raise
+            release = (stored if stored.is_absolute() else link.parent / stored).resolve(strict=True)
+            releases = (standalone / "releases").resolve(strict=True)
+            executable = (release / "herdr.exe").resolve(strict=True)
+            if (
+                _comparison_path(release) != _comparison_path(releases)
+                and _comparison_path(release).is_relative_to(_comparison_path(releases))
+                and _comparison_path(executable).is_relative_to(_comparison_path(release))
+                and stat.S_ISREG(executable.stat().st_mode)
+            ):
+                return executable
+        except OSError as error:
+            if error.errno not in {errno.ENOENT, errno.ENOTDIR, errno.ELOOP}:
+                raise
+            continue
+        except RuntimeError:
+            continue
+    return None
 
 
 def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
@@ -66,10 +115,10 @@ def _curl_env_overrides() -> collections.abc.Generator[dict[str, str] | None]:
 
 
 def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> post_apply_outcome.PostApplyOutcome:
-    launcher = _launcher_path()
+    launcher = _find_launcher()
     update_deferred = False
     restart_deferred = False
-    if launcher.is_file():
+    if launcher is not None:
         result = common.run_subprocess(
             [str(launcher), "update"], timeout=_COMMAND_TIMEOUT, tag=_TAG, env_overrides=env_overrides
         )
@@ -94,6 +143,7 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
         if reason:
             logger.warning(log_format.format_status(_TAG, f"{reason}。`update-dotfiles`を再実行する"))
             return post_apply_outcome.PostApplyOutcome()
+        launcher = _find_launcher()
     if result is None or (result.returncode != 0 and not update_deferred):
         logger.warning(
             log_format.format_status(
@@ -102,14 +152,18 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
             ),
         )
         return post_apply_outcome.PostApplyOutcome()
-    verification = common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG, env_overrides=env_overrides)
+    verification = (
+        common.run_subprocess([str(launcher), "--version"], timeout=30, tag=_TAG, env_overrides=env_overrides)
+        if launcher is not None
+        else None
+    )
     if verification is None or verification.returncode != 0:
         detail = common.format_cli_error(verification)
         logger.warning(
             log_format.format_status(_TAG, f"導入または更新後の確認に失敗: {detail}。`update-dotfiles`を再実行する"),
         )
         return post_apply_outcome.PostApplyOutcome()
-    setup_cli_common.prepend_path(launcher.parent)
+    setup_cli_common.prepend_path(_launcher_path().parent)
     if update_deferred or restart_deferred:
         return post_apply_outcome.PostApplyOutcome(
             changed=False,

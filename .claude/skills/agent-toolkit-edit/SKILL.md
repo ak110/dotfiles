@@ -34,7 +34,7 @@ description: >
 | `agents_server`が起動した委譲先が動作しない事象（起動失敗、初期化未到達、委譲先の無応答、結果の欠落）を調査する前 | `references/agents-server-investigation.md`。ログの所在、診断項目、委譲先CLIへ渡す引数を変更する場合は、同一の変更単位で同資料も更新する |
 | toolkitのPython実装を新設・変更する前 | `references/python.md` |
 | 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` |
-| 環境変数を新設・変更する前、環境変数の一覧から名称と用途を確認する前 | `references/claude-hooks.md` |
+| 環境変数を新設・変更する前、既存の環境変数の名称・用途・参照主体を確認する前 | `references/claude-hooks-environment.md` |
 | レビュー担当への指示・モデルの割り当てを変える前 | `references/review-eval-set.md` |
 | WindowsのCodex境界試験の記録、またはpytest回収失敗時の標準エラー`resource-diagnostics:`を調べる前 | `references/agents-server-investigation-resource-diagnostics.md` |
 | `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
@@ -72,7 +72,7 @@ description: >
   Codex固有の差分が必要な場合は`rules-subagent.codex.md`を追加する。
   振り分け基準は`agent-basics:writing-standards/references/agent-documents-additions-additions.md`「規範追記時の判定」に従う。
 - 環境変数の命名規則として、配布物内で完結するものは`AGENT_TOOLKIT_<PURPOSE>`、個人環境で完結するものは`DOTFILES_`を接頭辞とする。
-  一覧は`references/claude-hooks.md`にある。
+  一覧は`references/claude-hooks-environment.md`にある。
 
 参照方向は「dotfilesリポジトリ → プラグイン」および「プラグイン ↔ ルールファイル」を許容する。
 `pytools/`は同一リポジトリ内のagent-toolkitをeditableインストールして解決するため、`_`で始まるプライベートなサブパッケージもインポートしてよい。

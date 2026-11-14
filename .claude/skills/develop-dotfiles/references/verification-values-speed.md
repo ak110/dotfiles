@@ -43,3 +43,16 @@ CI workflowの全体基準は、対象HEADの実行開始から必須ジョブ�
 公開工程と必要な検証は、所要超過時も継続する。
 同条件比較では必須テスト集合、並列度、依存版、コンテナーと環境隔離の一致を確かめる。
 この固有数値の適用範囲はdotfilesに限る。
+
+## toolkitの所要記録更新
+
+公開担当はtoolkitの3shardに偏りを観測したとき、同じ成功runの全3shardのJUnit XMLを取得する。
+次のコマンドで所要記録を再生成し、記録をcommitする。
+
+```sh
+python3 scripts/update_test_durations.py shard1.xml shard2.xml shard3.xml --output agent-toolkit/agent_toolkit/_testing/test_durations.json
+```
+
+入力は全件を検査し、保存対象は1秒以上とする。
+CI中に前runを取得せず、各runnerは同一commitの記録を使う。
+公開後の全体所要と最大shard所要/平均shard所要の比較、JUnit和集合と同commitの収集集合の一致は公開担当が確認する。
