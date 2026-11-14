@@ -20,9 +20,12 @@ from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
 from typing import Any
 
+import playwright.async_api
 import pytest
+import pytest_asyncio
 import watchdog.observers
 import watchdog.observers.polling
+from _pytest.terminal import TerminalReporter
 from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
@@ -53,6 +56,58 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 from agent_toolkit._testing.wi_mutations_support import _AGENT_ENVIRONMENT_VARIABLES
 
 local_time_jst = session_evidence_support.local_time_jst
+
+_BROWSER_REPORTS = pytest.StashKey[dict[str, pytest.TestReport]]()
+_BROWSER_EVIDENCE = pytest.StashKey[pathlib.Path]()
+
+
+@pytest.fixture(scope="session", name="browser_evidence_root")
+def _browser_evidence_root() -> pathlib.Path:
+    """試験単位のHOME隔離より前に、cleanup対象外の証拠保存先を固定する。"""
+    root = (
+        pathlib.Path(os.environ["RUNNER_TEMP"])
+        if os.environ.get("CI") and os.environ.get("RUNNER_TEMP")
+        else managed_temp.temp_root_path()
+    )
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session", name="shared_serve_browser")
+async def _shared_serve_browser() -> Any:
+    """Chromiumの起動を共有し、各試験はcontextだけを所有する。"""
+    async with playwright.async_api.async_playwright() as instance:
+        browser = await instance.chromium.launch()
+        try:
+            yield browser
+        finally:
+            await browser.close()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[Any]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """fixture終了時にも本体の失敗理由を参照できるようにする。"""
+    del call
+    report = yield
+    assert isinstance(report.when, str)
+    item.stash.setdefault(_BROWSER_REPORTS, {})[report.when] = report
+    if report.when == "teardown" and (evidence := item.stash.get(_BROWSER_EVIDENCE, None)) is not None:
+        failures = [result for result in item.stash[_BROWSER_REPORTS].values() if result.failed]
+        if failures:
+            try:
+                (evidence / "failure.txt").write_text(
+                    item.nodeid + "\n" + "\n".join(str(result.longrepr) for result in failures), encoding="utf-8"
+                )
+            except OSError as error:
+                report.sections.append(("ブラウザー証拠保存", str(error)))
+            if isinstance(terminal := item.config.pluginmanager.getplugin("terminalreporter"), TerminalReporter):
+                terminal.write_line(f"ブラウザー失敗証拠: {evidence}")
+        else:
+            shutil.rmtree(evidence, ignore_errors=True)
+    return report
+
 
 _PACKAGE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _ORIGINAL_WAIT_FOR_END_TURN = _transcript_scan.wait_for_end_turn

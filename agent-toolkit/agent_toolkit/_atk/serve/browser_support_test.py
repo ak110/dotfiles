@@ -6,6 +6,7 @@ import dataclasses
 import json
 import os
 import socket
+import tempfile
 import threading
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -28,6 +29,7 @@ from agent_toolkit._atk.wi import uwi as uwi_mutations
 from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import wi_entry_files
+from agent_toolkit._testing.pytest_plugin import _BROWSER_EVIDENCE
 
 _SERVER_START_TIMEOUT_SEC = 10.0
 _LONG_UNKNOWN_FRONTMATTER_KEY = "unknown_" + "x" * (500 - len("unknown_"))
@@ -415,14 +417,46 @@ def _write_entries(root: Path) -> None:
         )
 
 
-@pytest_asyncio.fixture(scope="session", loop_scope="session", name="browser")
-async def _browser_fixture() -> AsyncGenerator[playwright.async_api.Browser]:
-    async with playwright.async_api.async_playwright() as playwright_instance:
-        browser = await playwright_instance.chromium.launch()
-        try:
-            yield browser
-        finally:
-            await browser.close()
+@pytest_asyncio.fixture(loop_scope="session", name="browser")
+async def _browser_fixture(
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    shared_serve_browser: playwright.async_api.Browser,
+    browser_evidence_root: Path,
+) -> AsyncGenerator[playwright.async_api.Browser]:
+    evidence = Path(tempfile.mkdtemp(prefix="browser-failure-", dir=browser_evidence_root))
+    request.node.stash[_BROWSER_EVIDENCE] = evidence
+    browser = shared_serve_browser
+    create_context = browser.new_context
+    contexts: list[playwright.async_api.BrowserContext] = []
+
+    async def traced_context(**kwargs: Any) -> playwright.async_api.BrowserContext:
+        context = await create_context(**kwargs)
+        contexts.append(context)
+        await context.tracing.start(screenshots=True, snapshots=True, sources=True)
+        close = context.close
+        index = len(contexts)
+
+        async def close_with_evidence(**options: Any) -> None:
+            try:
+                for number, page in enumerate(context.pages):
+                    with contextlib.suppress(Exception):
+                        await page.screenshot(path=evidence / f"{index}-{number}.png")
+                await context.tracing.stop(path=evidence / f"{index}-trace.zip")
+            except Exception as error:
+                request.node.add_report_section("teardown", "ブラウザー証拠保存", str(error))
+            finally:
+                await close(**options)
+
+        monkeypatch.setattr(context, "close", close_with_evidence)
+        return context
+
+    monkeypatch.setattr(browser, "new_context", traced_context)
+    try:
+        yield browser
+    finally:
+        for context in list(browser.contexts):
+            await context.close()
 
 
 @pytest_asyncio.fixture(loop_scope="session", name="browser_harness")

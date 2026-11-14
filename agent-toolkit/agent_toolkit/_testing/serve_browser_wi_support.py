@@ -26,6 +26,13 @@ def _entry_path(root: pathlib.Path, filename: str) -> pathlib.Path:
     return path
 
 
+async def _wait_for_detail_reload_deferred(page: playwright.async_api.Page) -> None:
+    """公開された状態の生きた参照を取得し、保留の成立を同期の真偽値で待つ。"""
+    # wait_for_functionへasync関数を渡すと、falseを解決するPromise自体がtruthyとして成立する。
+    await page.evaluate("async () => { window.__detailReloadState = (await import('/static/wi_state.js')).wiState; }")
+    await page.wait_for_function("window.__detailReloadState.detailReloadDeferred", timeout=5000)
+
+
 def _state_text(content: str, state: str) -> str:
     """外部操作を再現する入力の状態をfrontmatterへ設定する。"""
     parsed = wi_frontmatter.parse_frontmatter(content)

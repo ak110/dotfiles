@@ -141,6 +141,14 @@ async def test_mermaid_strict_security_blocks_active_content(screen_harness: _Sc
         }""",
     )
 
+    # callbackと通信の観測器を実際に発火させ、禁止側の0件が観測器の故障で成立しないことを確かめる。
+    await harness.page.evaluate("window.someFunction()")
+    assert await harness.page.evaluate("window.__dangerousCallCount") == 1
+    async with harness.page.expect_request("**/mermaid-observer-control"):
+        await harness.page.evaluate("fetch('/mermaid-observer-control')")
+    assert any("mermaid-observer-control" in url for url in harness.requests)
+    await harness.page.evaluate("window.__dangerousCallCount = 0")
+
     await harness.notify_file_update(
         "# Mermaidセキュリティ\n\n"
         "```mermaid\n"
@@ -158,6 +166,7 @@ async def test_mermaid_strict_security_blocks_active_content(screen_harness: _Sc
     await harness.page.get_by_role("heading", name="Mermaidセキュリティ").wait_for(state="visible")
     mermaid = harness.page.locator("#preview .diagram-mermaid svg")
     await mermaid.wait_for(state="visible")
+    await playwright.async_api.expect(harness.page.locator("#preview")).to_have_attribute("aria-busy", "false")
     nodes = mermaid.locator("g.node")
     assert await nodes.count() == 3
     await nodes.nth(0).click()

@@ -73,8 +73,10 @@ class _DelayedResponse:
         self.requested = asyncio.Event()
         self.release = asyncio.Event()
         self.fulfilled = asyncio.Event()
+        self.url = ""
 
     async def __call__(self, route: playwright.async_api.Route) -> None:
+        self.url = route.request.url
         response = await route.fetch() if self.succeeds else None
         self.requested.set()
         await self.release.wait()
@@ -86,6 +88,21 @@ class _DelayedResponse:
 
     async def finish(self, page: playwright.async_api.Page) -> None:
         """応答を返し、画面が応答を処理するまで待つ。"""
+        # selectEntryのfinallyは旧行のbusyを解除し、searchFullTextは結果反映かcatchでstatusを更新する。
+        # どちらも呼出側の末尾の観測点なので、本文の消費後にawaitが増えても早く解放しない。
+        if urllib.parse.urlsplit(self.url).path.startswith("/api/entries/"):
+            row = page.locator('.entry-select[data-key="awi.md"]').locator("xpath=..")
+            await playwright.async_api.expect(row).to_have_attribute("aria-busy", "true")
+
+            def completed():
+                return playwright.async_api.expect(row).not_to_have_attribute("aria-busy", "true", timeout=5000)
+        else:
+            status = page.locator("#search-status")
+            await playwright.async_api.expect(status).to_have_text("検索中")
+
+            def completed():
+                return playwright.async_api.expect(status).not_to_have_text("検索中", timeout=5000)
+
         self.release.set()
         await asyncio.wait_for(self.fulfilled.wait(), timeout=5)
-        await page.wait_for_timeout(50)
+        await completed()

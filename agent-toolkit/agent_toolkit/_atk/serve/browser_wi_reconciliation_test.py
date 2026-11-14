@@ -11,7 +11,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _BrowserHarness,
     _screen_harness_fixture,
 )
-from agent_toolkit._testing.serve_browser_wi_support import _entry_path, _set_entry_state
+from agent_toolkit._testing.serve_browser_wi_support import _entry_path, _set_entry_state, _wait_for_detail_reload_deferred
 
 pytestmark = [
     pytest.mark.browser,
@@ -147,10 +147,12 @@ async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     harness.operations.arm_remove_delay()
     await delete_dialog.get_by_role("button", name="削除する").click()
     assert await asyncio.to_thread(harness.operations.remove_started.wait, 5)
-    async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
-        harness.current_state.publish()
-    await page.wait_for_timeout(300)
-    harness.operations.remove_release.set()
+    try:
+        async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
+            harness.current_state.publish()
+        await _wait_for_detail_reload_deferred(page)
+    finally:
+        harness.operations.remove_release.set()
     await delete_dialog.wait_for(state="hidden")
     await detail.wait_for(state="hidden")
     await page.get_by_role("status").filter(has_text="削除しました").wait_for(state="visible")
@@ -212,10 +214,12 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         await asyncio.wait_for(started.wait(), timeout=5)
         (_entry_path(harness.root, filename)).write_text(updated_content, encoding="utf-8")
         # 更新通知による一覧の再取得が終わり、詳細の再読込が保留へ回るまで応答を返さない。
-        async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
-            harness.current_state.publish()
-        await page.wait_for_timeout(300)
-        release.set()
+        try:
+            async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
+                harness.current_state.publish()
+            await _wait_for_detail_reload_deferred(page)
+        finally:
+            release.set()
         await detail.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
         assert "詳細を閉じて開き直してから保存してください" in await detail.locator("#detail-alert").inner_text()
         await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()

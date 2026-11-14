@@ -302,6 +302,22 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
         ):
             harness.current_state.publish()
 
+    control_number = 0
+
+    async def observe_no_extra_notification() -> None:
+        nonlocal control_number
+        control_number += 1
+        # 同じ通知パイプラインで新規UWIの肯定側を通し、対象変更を含むsnapshotの処理を待つ。
+        control = _entry_path(harness.root, f"notification-control-{control_number}.md")
+        control.write_text(new_unanswered, encoding="utf-8")
+        await publish_and_wait()
+        await page.wait_for_function("window.__notificationCalls.length === 2")
+        assert await page.evaluate("window.__notificationCalls.pop().body") == control.name
+        await page.wait_for_timeout(100)
+        assert await page.evaluate("window.__notificationCalls.length") == 1
+        control.unlink()
+        await publish_and_wait()
+
     marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
     new_path = _entry_path(harness.root, "new-question.md")
     new_unanswered = f"---\ntype: uwi\nstate: inbox\ntarget_repo: new/repo\n---\n\n## 質問\n\n新規\n\n## 回答\n\n{marker}\n"
@@ -328,20 +344,17 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     await publish_and_wait()
     new_path.write_text(new_unanswered, encoding="utf-8")
     await publish_and_wait()
-    await page.wait_for_timeout(100)
-    assert await page.evaluate("window.__notificationCalls.length") == 1
+    await observe_no_extra_notification()
 
     # 保存済みの旧確認キーはAWIの通知を発生させない。
     awi_path = _entry_path(harness.root, "new-awi.md")
     required_awi = "---\ntype: awi\nstate: inbox\ntarget_repo: new/repo\nconfirmation: required\n---\n\n# 要確認\n"
     awi_path.write_text(required_awi, encoding="utf-8")
     await publish_and_wait()
-    await page.wait_for_timeout(100)
-    assert await page.evaluate("window.__notificationCalls.length") == 1
+    await observe_no_extra_notification()
     awi_path.write_text(required_awi.replace("confirmation: required", "confirmation: confirmed"), encoding="utf-8")
     await publish_and_wait()
-    await page.wait_for_timeout(100)
-    assert await page.evaluate("window.__notificationCalls.length") == 1
+    await observe_no_extra_notification()
 
 
 @pytest.mark.asyncio(loop_scope="session")

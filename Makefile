@@ -111,7 +111,8 @@ test-browser:
 	uv run playwright install chromium
 	UV_PROJECT_ENVIRONMENT="$(CURDIR)/agent-toolkit/.venv" uv run --project agent-toolkit playwright install chromium
 	# CIと同じ開発モードで、監視スレッドの異常などを公開前にも検出する。
-	PYTHONDEVMODE=1 $(PYTEST_RUN) -m browser agent-toolkit/agent_toolkit/_atk/serve
+	# addoptsの解除後も、共有ブラウザーと失敗証拠の寿命を管理するpluginは登録する。
+	PYTHONDEVMODE=1 $(PYTEST_RUN) -p agent_toolkit._testing.pytest_plugin -m browser agent-toolkit/agent_toolkit/_atk/serve
 
 # agents_serverの実backendを使うライブ一体テスト
 test-agents-live:

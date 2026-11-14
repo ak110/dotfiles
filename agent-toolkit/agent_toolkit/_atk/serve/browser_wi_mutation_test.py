@@ -23,6 +23,7 @@ from agent_toolkit._testing.serve_browser_wi_support import (
     _record_self_write_warnings,
     _saved_mutation_commit_failure,
     _state_text,
+    _wait_for_detail_reload_deferred,
 )
 
 pytestmark = [
@@ -185,10 +186,12 @@ async def test_detail_mutation_self_write_does_not_warn(browser_harness: _Browse
     await page.locator(case.submit).click()
     await asyncio.wait_for(fetched.wait(), timeout=5)
     # 更新通知が届き、画面が一覧の再取得を終えて詳細の再読込へ進むまで応答を返さない。
-    async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
-        harness.current_state.publish()
-    await page.wait_for_timeout(300)
-    release.set()
+    try:
+        async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
+            harness.current_state.publish()
+        await _wait_for_detail_reload_deferred(page)
+    finally:
+        release.set()
 
     await detail.wait_for(state="hidden")
     await playwright.async_api.expect(page.locator("#operation-notice-message")).to_have_text(f"{key}{case.message}")
@@ -233,6 +236,8 @@ async def test_detail_mutation_conflict_keeps_input(
         await page.locator(mode_button).click()
     user_input = _FREE_FORM_UWI + "\n入力の追記\n" if field == "#edit-content" else "保持する回答"
     await page.locator(field).fill(user_input)
+    request_observed = asyncio.Event()
+    request_release = asyncio.Event()
 
     async def change_before_send(route: playwright.async_api.Route) -> None:
         if route.request.method not in {"POST", "PUT"}:
@@ -240,12 +245,20 @@ async def test_detail_mutation_conflict_keeps_input(
             return
         path.write_text(_FREE_FORM_UWI.replace("方針はどうするか？", "他プロセスが変えた質問"), encoding="utf-8")
         harness.current_state.publish()
-        await page.wait_for_timeout(300)
-        await route.continue_()
+        request_observed.set()
+        try:
+            await request_release.wait()
+        finally:
+            await route.continue_()
 
     await page.route("**/api/entries/answer", change_before_send)
     await page.route("**/api/entries/target.md", change_before_send)
     await page.locator(submit).click()
+    await asyncio.wait_for(request_observed.wait(), timeout=5)
+    try:
+        await _wait_for_detail_reload_deferred(page)
+    finally:
+        request_release.set()
 
     alert = detail.locator("#detail-alert")
     await playwright.async_api.expect(alert).to_contain_text(f"target.md{failure}")

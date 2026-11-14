@@ -408,11 +408,14 @@ export async function reloadOpenDetailFromExternalChange({timing = {}} = {}) {
     wiState.currentEntry = {...wiState.currentEntry, state: resolvedEntry.state};
     wiState.detailOriginKey = entryKey(wiState.currentEntry);
     if (detailChanged) {
+      // 回復操作を求めた後の通知は、保存失敗などの具体的な理由を一般警告で上書きしない。
+      if (!wiState.detailRefreshRequired) {
+        setTextMessage(
+          'detail-alert',
+          '外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。'
+        );
+      }
       wiState.detailRefreshRequired = true;
-      setTextMessage(
-        'detail-alert',
-        '外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。'
-      );
       setDetailMode(mode);
     }
     updateCurrentRowSelection();
