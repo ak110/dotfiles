@@ -47,7 +47,7 @@ Modsは画面やツール呼び出しを拡張するプラグインである。
 APIと[公式サンプル](https://code.claude.com/docs/en/plugins/mods/overview#try-a-sample-mod)、保存・再利用の手順は[公式作成ガイド](https://code.claude.com/docs/en/plugins/mods/create)を参照。
 
 試す前にコードを確認する。
-Modは利用者の権限で動くため、信頼できるものだけを読み込む。
+Modは実行中のOSアカウントの権限で動くため、信頼できるものだけを読み込む。
 読み込み確認・停止・再読み込みは[設定ガイド](claude-code-settings.md#modsの確認と停止)を参照。
 対話CLIの画面と、画面を描画しない`claude -p`・Agent SDKでは利用範囲が異なる（[公式の対応範囲](https://code.claude.com/docs/en/plugins/mods/overview#where-mods-run)）。
 プラグインを読み込む非対話セッションでもhooksは実行されるが、ペインなどの表示は利用できない。
