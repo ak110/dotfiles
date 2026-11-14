@@ -312,6 +312,18 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
     assert _unresolved_references(tmp_path, [source]) == [(f"{_PLUGIN_PREFIX}/skills/contract_test.py", source)]
 
 
+def test_duration_node_ids_are_not_current_skill_invocations(tmp_path: pathlib.Path) -> None:
+    """所要記録の架空入力は案内と区別し、同じ文字列の現行文書は検査する。"""
+    reference = f"{_PLUGIN_PREFIX}:fixture-only"
+    record = pathlib.Path("agent-toolkit/agent_toolkit/_testing/test_durations.json")
+    (tmp_path / record).parent.mkdir(parents=True)
+    (tmp_path / record).write_text(json.dumps({f"example_test.py::test_legacy[{reference}]": 1.0}), encoding="utf-8")
+    current = pathlib.Path("current.md")
+    (tmp_path / current).write_text(reference, encoding="utf-8")
+
+    assert _unresolved_references(tmp_path, [record, current]) == [(reference, current)]
+
+
 def test_captured_source_manifest_resolves_only_recorded_files_at_capture_commit(tmp_path: pathlib.Path) -> None:
     """撤去済みの取得ソースは取得版で確かめ、未取得・架空・版不明の参照は欠損として残す。"""
     reference = f"{_PLUGIN_PREFIX}/agent_toolkit/captured_example.py"
@@ -517,6 +529,9 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
     references: list[tuple[str, pathlib.Path]] = []
     for relative in sources:
         if relative in _VERBATIM_REFERENCE_SOURCES:
+            continue
+        # キーは実行案内ではなく、旧入力や架空の起動名も含むpytest node IDである。
+        if relative == pathlib.Path("agent-toolkit/agent_toolkit/_testing/test_durations.json"):
             continue
         content = (root / relative).read_text(encoding="utf-8")
         references.extend((match.group(), relative) for match in _SKILL_INVOCATION_PATTERN.finditer(content))

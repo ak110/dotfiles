@@ -49,7 +49,7 @@ QCD、3段判定、事実と推論、硬い制約と努力目標の定義は、`
 | --- | --- | --- | --- | --- |
 | レビューを実施するエージェント（レビュー担当）として判定する前 | `references/reviewer.md` | | | |
 | レビュー担当が要求単位・完成条件と観測の達成を判定する前、実行レビューを判定する前 | `references/reviewer-execution.md` | | | |
-| コード実行・OS分岐・テスト層の検収を行う前（文書変更が公開契約や実行経路を変える場合も、影響に応じて含む） | `references/reviewer-execution-code.md` | | | |
+| コード実行・OS分岐・テスト層の検収を行う前（文書変更が公開契約や実行経路を変える場合も、影響に応じて含む）（操作対象外: 実行操作ではなくレビュー対象の性質） | `references/reviewer-execution-code.md` | | | |
 | ロゴ、ワードマーク、ブランドマークとそのアイコン展開をレビューする前 | `../writing-standards/references/logo-quality.md` | | | |
 | 画面のユーザビリティを判定する前 | `references/reviewer-usability.md` | | | |
 | 是正要求等（レビュー指摘、改善提案、ユーザーの割り込みや是正要求、作業中の想定外の発見）を受領して採否と修正を確定する前、および外部の記事や資料から自分で構成した改善案の採否を判定する前 | `references/reviewee.md` | 判断 | `delegation-result`、`read:agent-basics:*/skills/review-standards/references/reviewee.md` | |
