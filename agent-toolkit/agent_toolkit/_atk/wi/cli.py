@@ -148,7 +148,11 @@ def _resolve_note_file(args: argparse.Namespace, parser: argparse.ArgumentParser
     try:
         args.note = note_file.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
-        parser.error(f"--note-fileをUTF-8として読み込めません: {note_file}: {error}")
+        parser.error(
+            f"--note-fileをUTF-8として読み込めません: {note_file}: {error}。"
+            "対象ファイルの存在・読取権限・UTF-8の文字コードを確認し、"
+            "修正後に同じ--note-file付きコマンドを再実行してください"
+        )
 
 
 def _validate_add_args(args: argparse.Namespace) -> None:
