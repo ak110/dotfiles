@@ -151,12 +151,25 @@ class TestUpdateClaudeSettings:
         assert result["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] == "1"
         assert result["env"]["FOO"] == "bar"
 
-    def test_managed_env_enables_function_hooks(self, tmp_path: Path):
-        """配布原本のFunction hooks有効化が既存設定へ反映される。"""
+    @pytest.mark.parametrize("old_value", [None, "0", "1"])
+    def test_managed_env_removes_obsolete_function_hooks_flag(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old_value: str | None
+    ):
+        """廃止した有効化キーを再注入せず、他のenvを保つ。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
-        result = _run(tmp_path, managed, {"env": {"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS": "0", "FOO": "bar"}})
-        assert result["env"]["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] == "1"
+        env = {"FOO": "bar"}
+        if old_value is not None:
+            env["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] = old_value
+        settings_path = _setup_run_paths(tmp_path, monkeypatch, managed)
+        settings_path.write_text(json.dumps({"env": env, "userSetting": True}), encoding="utf-8")
+        outcome = mod.run()
+        assert outcome.failure is None
+        result = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS" not in managed["env"]
+        assert "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS" not in result["env"]
         assert result["env"]["FOO"] == "bar"
+        assert result["userSetting"] is True
+        assert not mod.run().changed
 
     def test_managed_env_directs_playwright_mcp_output_under_home(self, tmp_path: Path):
         """配布原本はPlaywright MCPの自動命名の出力先を作業ツリーの外（ホーム配下のキャッシュ）へ向ける。"""

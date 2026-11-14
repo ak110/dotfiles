@@ -39,6 +39,19 @@ dotfilesユーザーは`chezmoi apply`で`~/dotfiles/agent-toolkit/scripts`がPA
 
 ## 構成と機能
 
+### ModsでClaude Codeを拡張する
+
+Modsは画面やツール呼び出しを拡張するプラグインである。
+既存のstatuslineで足りる状態表示、`atk agents`の委譲操作、[費用集計](claude-code-models.md#費用とレビュー指標の集計)はそのまま使い、独自のペインや操作が必要な場合にModを検討する。
+作成は対話セッションで`/plugin-authoring`を起動して希望を伝える。
+APIと[公式サンプル](https://code.claude.com/docs/en/plugins/mods/overview#try-a-sample-mod)、保存・再利用の手順は[公式作成ガイド](https://code.claude.com/docs/en/plugins/mods/create)を参照。
+
+試す前にコードを確認する。
+Modは利用者の権限で動くため、信頼できるものだけを読み込む。
+読み込み確認・停止・再読み込みは[設定ガイド](claude-code-settings.md#modsの確認と停止)を参照。
+対話CLIの画面と、画面を描画しない`claude -p`・Agent SDKでは利用範囲が異なる（[公式の対応範囲](https://code.claude.com/docs/en/plugins/mods/overview#where-mods-run)）。
+プラグインを読み込む非対話セッションでもhooksは実行されるが、ペインなどの表示は利用できない。
+
 ### 常時有効な仕組み
 
 規範・フック・MCPの役割は[READMEの構成と機能](../../agent-toolkit/README.md#構成と機能)を参照。
