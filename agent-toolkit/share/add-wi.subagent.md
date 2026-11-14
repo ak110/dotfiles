@@ -50,6 +50,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 調査から本人情報の不足を理由に続行不能を返す前（圧縮後も同じ） | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | | |
 | 規範読込の改善案でrefine-promptを利用すると判断した時 | `agent-toolkit:refine-prompt/SKILL.md` | | |
 | 調査前・原稿確定前・独立確認前・保存前の各時点 | `agent-toolkit:wi-standards`の読込表で同一の時点に対応する行。writing-standardsについては、実施する調査や執筆の条件に該当する行 | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/SKILL.md` |
 | AWIの本文を起草・判定する前 | `agent-toolkit:wi-standards`の読込表において、AWIの種別・引用・外部再現の各条件に対応付けられている`references/awi-body.md`の節 | | |
@@ -114,6 +115,10 @@ continuations:
 `成立性の証拠`には原稿自身や既存の作業記録の絶対パスを指定できる。
 出所・判断根拠・検証結果・冒頭抽出の対応を既存資料から直接取得できるようにし、不足分だけを補う。
 原稿や調査過程の重複する証拠要約は作成しない。
+
+本人情報の不足で続行不能を返す前に、確認要否の手順2・4を適用する。
+既存の理由欄と成立性の証拠に、必要な判断、試した取得・代替と限界、残る本人固有の値、並行して完了できる範囲を対応付ける。
+依頼の必要性は、本人値が必要な判断と、許可された取得・代替で満たせない根拠で裏付ける。
 
 続行不能、状態・結果行の抑止と追加報告行は、共通契約`rules/rules-subagent.md`「返却形式の受け渡し」に従う。
 以下の理由・区分の2行は、続行できない要求にだけ配置する。
