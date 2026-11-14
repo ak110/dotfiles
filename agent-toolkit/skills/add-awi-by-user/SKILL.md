@@ -27,7 +27,8 @@ URLや文書などの参考資料だけを受け取った場合は、その内�
 主題語がコードに現れるかどうかでは判定しない。
 他のリポジトリの見直しは、起動したリポジトリの改善から派生して行う（規範の不足を直す場合に、その規範に従って作られたプロジェクトに同じ問題が無いかを見るなど）。
 他のリポジトリだけへ投入する場合も、起動したリポジトリの採否と理由を記録する。
-資料の目的、目的へ作用する具体的な手法、対象の利用場面と実態を対応付け、どの差分が元の目的へ有効か比較する。
+資料の目的と具体的な手法を、対象の現在と改善後の操作手順・便益へ対応付ける。
+提供機能・消費形態と4方式の比較は、方針予告前から`references/omission-check.md`「資料起点の比較」に従う。
 改善の対象は資料が扱う問題と各リポジトリの状況から定める。
 資料の全項目との対応を確認した後も、同じ問題に関係する実行経路・制約・利用場面から資料外の改善候補を検討する。
 候補の十分性は`agent-basics:writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」の共通基準で判断する。
@@ -61,7 +62,7 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 観測された問題を起点とする要求で方針を確認する前 | `agent-basics:bugfix/references/causal-analysis-stages.md`、`agent-toolkit:wi-standards/references/analysis-records.md`、`agent-basics:bugfix/references/root-cause-actions-selection.md` |
 | 考慮漏れの指摘を受けて原因を分析する前、参考資料と照らして対象リポジトリの不足・未対応の有無を判定する前と、報告や結論への異議を受けて分類する前 | `agent-basics:bugfix/SKILL.md` |
 | 既存の規範・手順で充足しているかを判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` |
-| 疑問形の異議を受けて要求単位へ分ける前 | `../user-confirmation-and-report/references/user-utterance-questions.md` |
+| WIの方式・原稿・操作・実施状況・過去判断への質問を受けた時（平叙文の状況照会を含む） | `../user-confirmation-and-report/references/user-utterance-questions.md` |
 | 考慮漏れ処置後の方針再確認で論点ごとの確認要否を判定する前 | `../user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` |
 | 対象リポジトリの外部へ成果を反映させる要求の終了状態を判定する前 | `../wi-standards/references/awi-body-completion.md` |
 | 成果物をAWIの登録と更新に限る契約を適用する前（操作対象外: ツールと結び付かない判断） | `../user-confirmation-and-report/references/user-utterance-correction.md` |
@@ -154,9 +155,14 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
 
 ## 指摘の分類と処置
 
+質問には現在の検討状況と根拠を先に回答し、停止・変更・撤回を明示した原文がある部分だけを要求変更へ取り込む。
+質問だけなら現行要求と作業契約を保持して元工程へ戻る。
+過去判断を問われた場合は方針要約に加え元の質問・全選択肢・実際の回答を取得し、一括採用を個別比較・選択の事実へ置き換えず説明する。
+
 ユーザーからの指摘・追加発話と、独立した方針検収・本文検収の指摘は、受領した時点で次の手順を行う。
 修正・再評価・再確認へは、分類と処置を終えてから進む。
-作業中・完了後の追加発話と従来の`direct`指定を含む全経路に適用し、報告や結論への異議（「〜ということ」「〜無いの」と問う疑問形を含む）も指摘として扱い（疑問形は同資料の同節に従う）、分類と`agent-basics:bugfix`の起動を候補の再評価・修正・確認より先に行う。
+作業中・完了後の追加発話と従来の`direct`指定を含む全経路に適用する。
+報告や結論への異議は、質問への回答と明示変更の判定を終えてから指摘として分類し、`agent-basics:bugfix`の起動を候補の再評価・修正・確認より先に行う。
 
 1. 要求単位への分解（確定済みの範囲を勝手に縮小しない）: 受領した発話は、文章の書き方に対する指示や行動の是正も含めて要求単位に分解する。
    単位ごとに、`agent-toolkit:wi-standards`冒頭の要求の同一性基準に基づいて、既存・起草中のAWIへ合流させるか独立した要求として扱うかを判定する。

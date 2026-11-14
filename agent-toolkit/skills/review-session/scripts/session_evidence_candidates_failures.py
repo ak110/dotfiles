@@ -71,19 +71,29 @@ def _is_permission_denial(event: dict[str, Any]) -> bool:
     """
     if event.get("kind") != "failed-tool":
         return False
+    if event.get("tool") == "CommandExecution" or event.get("exit_code") is not None:
+        return False
     text = event.get("text")
-    return isinstance(text, str) and _PERMISSION_DENIAL_MARKER in text
+    return (
+        isinstance(text, str)
+        and text.lstrip().startswith("Permission for this action was ")
+        and _PERMISSION_DENIAL_MARKER in text.splitlines()[0]
+    )
 
 
 def classify_failure_candidate(candidate_kind: str, event: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
     """抽出と台帳で共通の入力から、除外区分または置換先のhook通知を返す。"""
     if candidate_kind == "tool-failure":
+        # Bashの終了コード行より後はコマンドの出力であり、引用内のhook標識を発生源にしない。
+        if event.get("tool_name") == "Bash" and re.match(r"Exit code \d+(?:\n|$)", str(event.get("text", ""))):
+            return failure_candidate_exclusion(candidate_kind, event), None
         notices = event.get("hook_notices", [])
         if isinstance(notices, list) and any(
             isinstance(notice, dict) and _same_hook_event(candidate_kind, event, notice) for notice in notices
         ):
             return "hook-notice-represented", None
-        hook_event = _hook_originated_event(candidate_kind, event, [])
+        # 実行済みコマンドの出力は、別の実行のhook診断を引用していても通知の生成元ではない。
+        hook_event = None if event.get("tool") == "CommandExecution" else _hook_originated_event(candidate_kind, event, [])
         if hook_event is not None:
             exclusion = _failure_result_exclusion(candidate_kind, _event_without_cd_prefix(event))
             return exclusion, hook_event
@@ -106,7 +116,13 @@ def failure_candidate_exclusion(candidate_kind: str, event: dict[str, Any]) -> s
     if candidate_kind == "command-failure" and _is_normal_negative_result(attributed):
         return "normal-negative-result"
     text = event.get("text")
-    if candidate_kind == "tool-failure" and isinstance(text, str) and _TRANSIENT_CLASSIFIER_ERROR in " ".join(text.split()):
+    if (
+        candidate_kind == "tool-failure"
+        and event.get("tool") != "CommandExecution"
+        and event.get("exit_code") is None
+        and isinstance(text, str)
+        and text.strip().startswith(_TRANSIENT_CLASSIFIER_ERROR)
+    ):
         return "runtime-transient"
     if _is_check_detected(attributed):
         return "check-detected"

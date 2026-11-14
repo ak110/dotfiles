@@ -21,6 +21,47 @@ from agent_toolkit._testing.session_review_evidence_support import _bundle_deleg
 
 
 @pytest.mark.parametrize(
+    "output",
+    [
+        "Permission for this action was denied by the Claude Code auto mode classifier.",
+        "The server-side auto mode classifier gave no verdict (error)",
+        'PreToolUse:Bash hook error: <atk-auto source="pretooluse" kind="warn">確認せよ</atk-auto>',
+        "通常の失敗",
+    ],
+)
+@pytest.mark.parametrize("status", ["failed", "completed"])
+def test_public_bundle_keeps_quoted_diagnostics_as_command_results(tmp_path, capsys, output, status) -> None:
+    """公開入口で引用を実拒否へ変えず、非0終了だけを元の記録位置で保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "item_completed",
+                    "item": {
+                        "type": "CommandExecution",
+                        "status": status,
+                        "command": ["bash", "-lc", "cat history.json; false"],
+                        "exit_code": 1 if status == "failed" else 0,
+                        "output": output,
+                    },
+                },
+            }
+        ],
+    )
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    rows = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
+    candidates = [row for row in rows if row.get("kind") == "candidate"]
+    assert {row["candidate_kind"] for row in candidates} == ({"command-failure"} if status == "failed" else set())
+    if candidates:
+        assert candidates[0]["locators"][0]["line"] == 1
+
+
+@pytest.mark.parametrize(
     ("commands", "diagnostics", "expected_candidates"),
     (
         ([["rg", "-F", "one"], ["rg", "-F", "two"]], ["", ""], 0),

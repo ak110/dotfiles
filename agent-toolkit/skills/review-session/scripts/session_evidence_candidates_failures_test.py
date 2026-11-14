@@ -169,6 +169,27 @@ def _bash_failure(line: int, command: str, text: str = "Exit code 1") -> dict[st
     }
 
 
+@pytest.mark.parametrize("tool", ["CommandExecution", "Bash"])
+@pytest.mark.parametrize(
+    "diagnostic",
+    [
+        "Permission for this action was denied by the Claude Code auto mode classifier. Reason: [Self-Modification].",
+        "The server-side auto mode classifier gave no verdict (error)",
+        'PreToolUse:Bash hook error: <atk-auto source="pretooluse" kind="warn">確認せよ</atk-auto>',
+    ],
+)
+def test_quoted_runtime_diagnostics_keep_original_failure(tool: str, diagnostic: str) -> None:
+    """実行済みの出力にある拒否・障害・hookの引用は、元の失敗と位置を保つ。"""
+    event = _bash_failure(7, "cat history.json; false", f"Exit code 1\n{diagnostic}")
+    kind = "tool-failure"
+    if tool == "CommandExecution":
+        event.update(tool=tool, text=diagnostic, diagnostic=diagnostic, exit_code=1)
+        kind = "command-failure"
+    candidates = evidence_candidates._candidate_events([event], [], [])  # pylint: disable=protected-access
+    assert {row["candidate_kind"] for row in candidates[:-1]} == {kind}
+    assert candidates[0]["locators"] == [{"record": "main", "line": 7}]
+
+
 def test_candidate_events_excludes_empty_negative_search_results_of_claude_bash() -> None:
     """検索が出力なしで一致0件を返した結果を除き、パイプ以外の連結・出力を伴う失敗と別の終了コードは残す。
 
