@@ -263,7 +263,7 @@ def test_missing_skill_document_warns_without_record(
     assert dispatch.main(payload) == 0
     recovered = capsys.readouterr()
     notice = recovered.out + recovered.err
-    assert "必要な基準を取得せよ" in notice
+    assert "次の取得・起動を行え" in notice
     assert "未取得資料" in notice
     assert "agent-basics:search" in notice
     records = read_state("failure").get(rules_context.OPERATION_SKILL_READY_KEY, {})

@@ -35,7 +35,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     text = payload.get("last_assistant_message")
     if not isinstance(text, str):
         return "", ""
-    outcome, body = check_text(text)
+    outcome, _ = check_text(text)
     if outcome is not CheckOutcome.WARN:
         return "", ""
     if not is_codex_payload(payload) and not is_antigravity_payload(payload):
@@ -50,8 +50,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         ):
             return "", ""
     return "block", _block_notice(
-        response_language_check.BLOCK_BODY
-        + f"検出した本文: {response_language_check._plain_text(text)[:200]}\n"  # pylint: disable=protected-access
-        + (body or "完了本文の説明を日本語で書け。"),
+        "今回の完了本文を日本語の説明として判定できないため、終了を止めた。"
+        + f"判定対象の冒頭: {response_language_check._plain_text(text)[:80]}\n",  # pylint: disable=protected-access
         fix="`agent-toolkit/share/agent-conduct-details.md`「使用言語」の「言語検査の通知への対処」に従い、判定して書き直すか再出力してから停止せよ。",
     )

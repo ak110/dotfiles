@@ -7,34 +7,22 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import pathlib
 import re
-import subprocess
 from typing import TYPE_CHECKING
 
-from agent_toolkit._common import delegated_session, read_triggers, transcript
-from agent_toolkit._common.plugin_roots import (
-    PluginRootError,
-)
+from agent_toolkit._common import read_triggers, transcript
 from agent_toolkit._hooks import (
-    agent_id,
     document_reads,
     plugin_resources,
     rules_context,
 )
 from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.notice import _WARN_TAG
 from agent_toolkit._hooks.pretooluse import operation_skills
-from agent_toolkit._hooks.pretooluse.large_reads import (
-    display_read_paths,
-)
-from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 from agent_toolkit._hooks.pretooluse.read_delivery_cache import HOOK_PAYLOAD, _input_cached
-from agent_toolkit._hooks.pretooluse.read_delivery_paths import _document_owner, _read_paths
+from agent_toolkit._hooks.pretooluse.read_delivery_paths import _document_owner
 from agent_toolkit._hooks.pretooluse.read_delivery_receipts import _record_receipts
 lazy from agent_toolkit._common import task_documents
-lazy from agent_toolkit._git import command as git_command
 
 if TYPE_CHECKING:
     pass  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
@@ -259,142 +247,3 @@ def _subagent_task_documents(payload: dict) -> set[pathlib.Path]:
             documents = [launched] if launched is not None else task_documents.find_task_documents(text)
             return {document.resolve() for document in documents}
     return set()
-
-
-def _git_worktree_location(directory: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
-    """ディレクトリが属するGit作業ツリーの最上位と、Gitの共通ディレクトリを返す。Git管理外では`None`を返す。"""
-    try:
-        result = git_command.run(
-            ["rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"],
-            cwd=str(directory),
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=5,
-        )
-    except OSError, subprocess.TimeoutExpired:
-        return None
-    lines = result.stdout.splitlines()
-    if result.returncode or len(lines) != 2:
-        return None
-    return pathlib.Path(lines[0]).resolve(), pathlib.Path(lines[1]).resolve()
-
-
-def _plugin_task_document(path: pathlib.Path, root: pathlib.Path) -> pathlib.Path | None:
-    """読取対象がplugin rootの手順書と同じものなら、plugin root側の手順書のパスを返す。
-
-    process-wiのレーン担当は、plugin rootを含むリポジトリの別worktreeから手順書を読む。
-    同じGit共通ディレクトリを持つworktreeで、リポジトリ最上位からの相対位置が一致するファイルを同じ手順書として扱う。
-    plugin rootがGit管理外の環境では、plugin root配下の手順書だけが対象になる。
-    手順書の候補に当たらない読取でGitを起動しないよう、ファイル名と親ディレクトリ名で先に限定する。
-    """
-    if path.parent.name != "share" or not path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX) or not path.is_file():
-        return None
-    share = root / "share"
-    if path.parent == share:
-        return path
-    read_location = _git_worktree_location(path.parent)
-    plugin_location = _git_worktree_location(root) if read_location is not None else None
-    if read_location is None or plugin_location is None or read_location[1] != plugin_location[1]:
-        return None
-    try:
-        counterpart = plugin_location[0] / path.relative_to(read_location[0])
-    except ValueError:
-        return None
-    return counterpart if counterpart.parent == share and counterpart.is_file() else None
-
-
-def _owned_task_documents(roles: set[pathlib.Path], root: pathlib.Path, payload: dict) -> set[pathlib.Path]:
-    """担当の役割文書と、その役割文書が読込表・名指し参照の表で読むよう指示する手順書を返す。
-
-    execの統合工程が`lane-integration.subagent.md`を読むように、役割文書は自分の工程として別の手順書を読ませることがある。
-    宣言から導くことで、役割文書の読込表を改めたときも除外の範囲が追随する。
-    """
-    owned = set(roles)
-    host = "codex" if is_codex_payload(payload) else "claude"
-    for role in roles:
-        try:
-            targets = [
-                *(target for row in read_triggers.parse_tables(role, root, host=host, named=True) for target in row.targets),
-                *read_triggers.reference_method_targets(role, root, host),
-            ]
-        except OSError, UnicodeError, ValueError:
-            continue
-        owned.update(
-            target.path.resolve() for target in targets if target.path.name.endswith(task_documents.TASK_DOCUMENT_SUFFIX)
-        )
-    return owned
-
-
-def _foreign_task_document_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
-    """他の担当の手順書（`share/<役割名>.subagent.md`）を取得する操作に、非遮断の警告を返す。
-
-    `agent-toolkit:delegation`の`SKILL.md`「送信」は委譲元が起動準備のために手順書の本文を読むことを禁じるが、
-    事後の振り返りだけでは読んだ時点に作用しないため、読取の直前に起動契約へ誘導する。
-    対象はplugin root配下の手順書と、plugin rootと同じリポジトリの別worktreeにある同じ位置の手順書である。
-    別のリポジトリと`share`以外の位置にある同名ファイルは対象外とする。
-    読む主体の担当がその役割である場合と、その役割文書が読むよう指示する手順書は警告しない。
-    編集・返却後の検収・調査を目的の判定なしには区別できないため、遮断せずに続行の条件を示す。
-    変数などで読取先を確定できない操作は対象にしない。コマンドの文字列から対象を推測する経路は、
-    起動契約など手順書でない資料の読取へ警告を出したため撤去した。
-    """
-    from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
-
-    if not session_id or delegated_session.is_lightweight_delegated(os.environ):
-        return None
-    cwd = payload.get("cwd", "")
-    cwd = cwd if isinstance(cwd, str) else ""
-    try:
-        root = plugin_resources.plugin_root().resolve()
-    except OSError, PluginRootError:
-        return None
-    command = tool_input.get("command")
-    candidates = (
-        display_read_paths(command, cwd)
-        if tool_name == "Bash" and isinstance(command, str)
-        else _read_paths(tool_name, tool_input, cwd)
-    )
-    # 読んだパスと、自身の担当の判定・起動契約の解決に使うplugin root側の手順書を組にする。
-    documents = {
-        path: counterpart
-        for path in dict.fromkeys(candidates)
-        if (counterpart := _plugin_task_document(path, root)) is not None
-    }
-    if not documents:
-        return None
-    agent = agent_id.resolve_hook_agent_id(payload)
-    records = read_delivery.read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    records = records if isinstance(records, dict) else {}
-    roles = active_roles(payload, session_id, records, agent) if agent == agent_id.MAIN_AGENT_ID else set()
-    roles |= _subagent_task_documents(payload) if agent != agent_id.MAIN_AGENT_ID else set()
-    own = _owned_task_documents(roles, root, payload)
-    foreign_documents = {path: counterpart for path, counterpart in documents.items() if counterpart not in own}
-    if not foreign_documents:
-        return None
-    foreign = list(foreign_documents)
-    contracts: list[str] = []
-    for path in foreign_documents.values():
-        try:
-            targets = read_triggers.parent_contract_targets(path, root)
-        except OSError, ValueError:
-            targets = ()
-        contracts.extend(
-            f"`{target.path}`" + (f"「{target.heading}」" if target.heading else "")
-            for target in targets
-            if f"`{target.path}`" not in contracts
-        )
-    shown = "、".join(f"`{path}`" for path in foreign)
-    guidance = f"起動契約: {'、'.join(contracts)}。" if contracts else ""
-    return _llm_notice(
-        f"他の担当の手順書{shown}を取得しようとしている。`agent-toolkit:delegation`の`SKILL.md`「送信」は、"
-        "委譲元が起動準備のために`<役割名>.subagent.md`の本文を読むことを禁じている。",
-        tag=_WARN_TAG,
-        fix=(
-            "その担当を起動するなら、手順書ではなく起動契約（`起動対象:`でその手順書を宣言する`<役割名>.parent.md`、"
-            f"または呼び出し元へ統合した契約）と、その生成済みの返却契約を読め。{guidance}"
-            "起動準備なら、手順書の分割読取の続きを行わず呼出側契約へ進め。"
-            "読む目的が起動準備ではない場合の扱いは`agent-toolkit:delegation`の`references/delegation-sending.md`「送信」に従え。"
-        ),
-        removable_cause=True,
-        escalate_on_repeat=False,
-    )

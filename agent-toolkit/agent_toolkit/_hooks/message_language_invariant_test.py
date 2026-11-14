@@ -9,8 +9,9 @@ import subprocess
 
 import pytest
 
-from agent_toolkit._common import session_state
+from agent_toolkit._hooks import work_contract
 from agent_toolkit._testing import fork_runner as _fork_runner
+from agent_toolkit._testing.document_delivery import run_hook
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _ALLOWED_BARE_IDENTIFIERS = frozenset(
@@ -178,19 +179,6 @@ def _run(payload: dict, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[s
     )
 
 
-def _run_user_prompt_submit(payload: dict, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env["TMPDIR"] = str(tmp_path)
-    env["TEMP"] = str(tmp_path)
-    env["TMP"] = str(tmp_path)
-    return _fork_runner.run_script(
-        _SCRIPT,
-        argv=("user_prompt_submit",),
-        input=json.dumps(payload, ensure_ascii=False),
-        env=env,
-    )
-
-
 def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
     command = "p" + "kill -f myserver"
     result = _run({"tool_name": "Bash", "tool_input": {"command": command}}, tmp_path)
@@ -255,11 +243,13 @@ def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repe
         assert _is_japanese_notice(reason)
 
 
-def test_user_prompt_context_notice_is_japanese(tmp_path: pathlib.Path) -> None:
+def test_user_prompt_context_notice_is_japanese(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     sid = "japanese-context-notice"
-    assert session_state.update_state(sid, lambda _previous: {"user_confirmation_skill_pending": True})
+    record = tmp_path / "work-contract.md"
+    record.write_text("目的: 作業を完了する。\n", encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda _session: record)
 
-    result = _run_user_prompt_submit({"session_id": sid, "prompt": "通常のユーザー発話です。"}, tmp_path)
+    result = run_hook("user_prompt_submit", {"session_id": sid, "prompt": "通常のユーザー発話です。"})
 
     assert result.returncode == 0
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]

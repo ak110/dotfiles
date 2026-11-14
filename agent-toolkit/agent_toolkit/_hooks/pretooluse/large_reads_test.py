@@ -1,15 +1,10 @@
-"""大量の全文読取をPreToolUseで警告する条件を検証する。
-
-容量警告はCodexのBash実行だけへ適用し、見出し抽出の警告は両ホストへ適用する。
-"""
+"""原記録・見出し抽出の通知と、受信枠不明の通常読取の非通知を検証する。"""
 
 import json
 import pathlib
 import re
 import shlex
-import stat
 import subprocess
-import types
 
 import pytest
 
@@ -233,7 +228,8 @@ def test_unknown_session_record_cwd_is_not_replaced():
     notice = large_reads.session_record_reference_warning("Bash", {"command": "cat record.jsonl"}, str(root))
     assert notice is not None and "`agent-toolkit:review-session`" in notice
     source = pathlib.Path(__file__).resolve().parents[3] / "skills/review-session/references/session-records.md"
-    assert source.is_file() and str(source) in notice
+    assert source.is_file() and "references/session-records.md" in notice
+    assert str(source) not in notice
     assert large_reads.session_record_reference_warning("Bash", {"command": 'cd "$D" && cat record.jsonl'}, str(root)) is None
 
 
@@ -277,55 +273,6 @@ def test_allowed_reads_do_not_open_regular_files(
 
     monkeypatch.setattr(pathlib.Path, "open", reject_open)
     assert _codex_read(shlex.join(shlex.split(command) + [str(path) for path in operands]), tmp_path) is None
-
-
-@pytest.mark.parametrize("size", [100, _THRESHOLD + 1])
-def test_zero_metadata_size_uses_content(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, size: int) -> None:
-    """サイズ0の仮想ファイルも、閾値前後の内容量で許可と警告を決める。"""
-    target = _sized_file(tmp_path, size)
-    original = pathlib.Path.stat
-
-    def zero_size(self: pathlib.Path, *args, **kwargs):
-        if self == target:
-            return types.SimpleNamespace(st_mode=stat.S_IFREG, st_size=0)
-        return original(self, *args, **kwargs)
-
-    monkeypatch.setattr(pathlib.Path, "stat", zero_size)
-    notice = _codex_read(f"cat {target}", tmp_path)
-    assert (notice is not None) == (size > _THRESHOLD)
-    if notice:
-        assert f"{size}バイト" in notice
-
-
-@pytest.mark.parametrize(
-    "command",
-    [
-        "cat --",
-        "cat -n",
-        "cat -nE",
-        "cat --number --show-ends",
-        "less -N",
-        "less -x 4 --",
-        "less -J",
-        "more -d --",
-        "more --lines=20 --",
-        "more -e",
-        "more --exit-on-eof",
-        "more -20",
-    ],
-)
-def test_full_read_options_and_delivery(tmp_path: pathlib.Path, command: str) -> None:
-    """通常の表示指定でも、配送と警告の双方が終了・cwd・合計容量を解釈する。"""
-    first = _sized_file(tmp_path / "nested", 30 * 1024, "-first.txt")
-    second = _sized_file(first.parent, 20 * 1024, "second.txt")
-    # ハイフン始まりの名前には、指定済みならその終了を使う。
-    suffix = "" if command.endswith("--") else " --"
-    value = f"cd {first.parent} && {command}{suffix} {first.name} {second.name}"
-    assert list(bash_read_paths(value, str(tmp_path), include_partial=True)) == [(first, second)]
-    notice = _codex_read(value, tmp_path)
-    assert notice is not None
-    assert "合計: 51200バイト" in notice
-    assert notice.count("const result = await tools.exec_command(") == 2
 
 
 @pytest.mark.parametrize(
@@ -407,20 +354,11 @@ def _execute_guidance(notice: str) -> dict[str, bytes]:
     return received
 
 
-def test_codex_byte_threshold_boundary(tmp_path: pathlib.Path) -> None:
-    """48KiB以下の全文取得は通し、1バイトでも超えると警告する。"""
-    within = _sized_file(tmp_path, _THRESHOLD, "within.md")
-    over = _sized_file(tmp_path, _THRESHOLD + 1, "over.md")
-
-    assert _codex_read(f"cat {within}", tmp_path) is None
-    assert _codex_read(f"cat {over}", tmp_path) is not None
-
-
 @pytest.mark.parametrize("single_line", [False, True])
 def test_block_notice_leads_to_sed_ranges(tmp_path: pathlib.Path, single_line: bool) -> None:
     """全量が枠を超える通常行を分割し、1行だけの超過は制約として案内する。"""
     path = _sized_file(tmp_path / "with space", 85_000, line_bytes=100000 if single_line else 100)
-    notice = _codex_read(f"cat {shlex.quote(str(path))}", tmp_path)
+    notice = large_reads.codex_acquisition(path)
     assert notice is not None
     if single_line:
         assert "行範囲では収まらない" in notice and "必要な項目を抽出" in notice
@@ -431,26 +369,14 @@ def test_block_notice_leads_to_sed_ranges(tmp_path: pathlib.Path, single_line: b
 
 
 @pytest.mark.parametrize("multiple", [False, True])
-def test_notice_range_commands_roundtrip_utf8(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, multiple: bool) -> None:
+def test_notice_range_commands_roundtrip_utf8(tmp_path: pathlib.Path, multiple: bool) -> None:
     """引用した実パスの計算済み取得例で、日本語とCRLFを末尾の行まで復元する。"""
-    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
     paths = [tmp_path / "file's name.txt", *([tmp_path / "second file.txt"] if multiple else [])]
     for index, path in enumerate(paths):
         path.write_bytes((f"本文{index}\r\n" * 3000).encode("utf-8"))
-    notice = _codex_read(shlex.join(["cat", *map(str, paths)]), tmp_path)
+    notice = "\n".join(large_reads.codex_acquisition(path) for path in paths)
     assert notice is not None
     assert _execute_guidance(notice) == {str(path): path.read_bytes() for path in paths}
-
-
-@pytest.mark.parametrize("change", ["cd", "pushd"])
-@pytest.mark.parametrize("separator", ["&&", ";"])
-def test_codex_resolves_relative_path_after_cwd_change(tmp_path: pathlib.Path, change: str, separator: str) -> None:
-    target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
-
-    notice = _codex_read(f"{change} {target.parent} {separator} cat {target.name}", tmp_path)
-
-    assert notice is not None
-    assert str(target) in notice
 
 
 def test_codex_unresolved_cwd_change_keeps_read_target_unknown(tmp_path: pathlib.Path) -> None:
@@ -460,48 +386,6 @@ def test_codex_unresolved_cwd_change_keeps_read_target_unknown(tmp_path: pathlib
     notice = _codex_read('cd "$DIR" && cat large.txt', tmp_path)
 
     assert notice is None
-
-
-def test_codex_blocks_only_direct_static_full_reads(tmp_path: pathlib.Path) -> None:
-    path = _sized_file(tmp_path, _THRESHOLD + 1)
-    image = _sized_file(tmp_path, _THRESHOLD + 1, "capture.png")
-
-    assert _codex_read(f"cat {path}", tmp_path) is not None
-    assert _codex_read(f"sed -n p {path}", tmp_path) is not None
-    assert _codex_read(f"awk '{{print}}' {path}", tmp_path) is not None
-    assert _codex_read(f"cat {image}", tmp_path) is not None
-    assert _codex_read(f"cat {path} | rg value", tmp_path) is None
-    assert _codex_read(f"cat {path} > output.txt", tmp_path) is None
-
-
-@pytest.mark.parametrize("command", ["cat", "less", "more"])
-def test_codex_blocks_multiple_files_over_total_threshold(tmp_path: pathlib.Path, command: str) -> None:
-    """個別には閾値以内でも、合計が閾値を超える全文取得を警告する。"""
-    first = _sized_file(tmp_path, 30 * 1024, "first.txt")
-    second = _sized_file(tmp_path, 20 * 1024, "second.txt")
-    within_first = _sized_file(tmp_path, 24 * 1024, "within-first.txt")
-    within_second = _sized_file(tmp_path, 24 * 1024, "within-second.txt")
-
-    notice = _codex_read(f"{command} {first} {second}", tmp_path)
-
-    assert notice is not None
-    assert f"`{first}`: " in notice
-    assert f"`{second}`: " in notice
-    assert f"合計: {50 * 1024}バイト" in notice
-    assert _codex_read(f"{command} {within_first} {within_second}", tmp_path) is None
-
-
-def test_codex_applies_environment_override(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    first = tmp_path / "first.txt"
-    second = tmp_path / "second.txt"
-    first.write_text("a" * 60, encoding="utf-8")
-    second.write_text("b" * 41, encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_LARGE_READ_BYTES", "100")
-
-    notice = _codex_read(f"cat {first} {second}", tmp_path)
-
-    assert notice is not None
-    assert "101バイト" in notice
 
 
 @pytest.mark.parametrize("tool_name", ["Read", "Bash"])
@@ -523,29 +407,6 @@ def test_dispatch_claude_large_read_passes_without_correction(tmp_path: pathlib.
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == ""
-
-
-def test_dispatch_codex_warns_and_allows_bash_full_read(tmp_path: pathlib.Path, capsys) -> None:
-    """Codexの全文取得を継続し、出力予算と継続取得の案内を渡す。"""
-    target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
-    # 元turnのturn_contextを持たないPre入力では容量警告を維持する。
-    payload = {
-        "tool_name": "Bash",
-        "tool_input": {"command": f"cd {target.parent} && cat {target.name}"},
-        "session_id": "codex-large-read",
-        "cwd": str(tmp_path),
-        "turn_id": "codex-turn",
-    }
-
-    assert pretooluse.main(json.dumps(payload)) == 0
-    captured = capsys.readouterr()
-    message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
-    assert not captured.err
-    assert str(target) in message
-    assert "tools.exec_command(" in message and "text(result)" in message
-    assert 'kind="warn"' in message
-    assert '// @exec: {"max_output_tokens": 20000}' in message
-    assert '"max_output_tokens": 20000' in message
 
 
 @pytest.mark.parametrize("multiple", [False, True])
@@ -578,34 +439,12 @@ def test_large_original_record_is_guided_to_evidence_query(
 
 
 @pytest.mark.parametrize("multiple", [False, True])
-@pytest.mark.parametrize("original", [False, True])
-def test_large_read_notice_keeps_recovery_without_generic_fallback(tmp_path, monkeypatch, multiple, original):
-    """原記録・通常資料の単体・複数警告が具体的な取得方法を案内する。"""
-    home = tmp_path / "codex"
-    monkeypatch.setenv("CODEX_HOME", str(home))
-    target = _sized_file(home / "sessions" if original else tmp_path, _THRESHOLD + 1, "record.jsonl")
-    extra = _sized_file(tmp_path, 10, "extra.txt")
-    notice = _codex_read(shlex.join(["cat", str(target), *([str(extra)] if multiple else [])]), tmp_path)
-    assert notice is not None
-    assert "次の操作:" in notice
-    assert "実行が許可される担当" not in notice
-    assert "実行が制限される担当" not in notice
-    assert "委譲元へ返し" not in notice
-    if original:
-        assert "session-review-evidence" in notice
-        assert "`agent-toolkit:review-session`" in notice
-        assert "--transcript" in notice
-    else:
-        assert "tools.exec_command(" in notice and "text(result)" in notice
-
-
-@pytest.mark.parametrize("multiple", [False, True])
 def test_large_read_budget_guidance(tmp_path, multiple):
     """日本語85KB程度の資料を、両層の予算と全範囲が対応する取得例で復元する。"""
     paths = [tmp_path / "first.md", *([tmp_path / "second.md"] if multiple else [])]
     for path in paths:
         path.write_text("本文\n" * 12000, encoding="utf-8")
-    notice = _codex_read(shlex.join(["cat", "--", *map(str, paths)]), tmp_path)
+    notice = "\n".join(large_reads.codex_acquisition(path) for path in paths)
     assert notice is not None
     assert "original token count" not in notice and "write_stdin" not in notice
     assert _execute_guidance(notice) == {str(path): path.read_bytes() for path in paths}
@@ -667,3 +506,19 @@ def test_heading_extraction_warns_only_for_normative_files(tmp_path, capsys, cod
     assert ("見出しの正規表現" in context) is (normative and warned)
     if normative and warned:
         assert str(path) in context and "全文" in context and "cat --" in context
+
+
+@pytest.mark.parametrize("multiple", [False, True])
+def test_capacity_without_known_receiver_budget_does_not_warn(tmp_path, capsys, multiple):
+    """受信枠を確定できないPre入力では、大きい通常読取も警告しない。"""
+    first = _sized_file(tmp_path, 85_000)
+    second = _sized_file(tmp_path, 85_000, "second.txt")
+    command = shlex.join(["cat", "--", str(first), *([str(second)] if multiple else [])])
+    assert (
+        pretooluse.main(
+            json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(tmp_path), "turn_id": "turn"})
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert not captured.err and not captured.out

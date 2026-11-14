@@ -94,8 +94,7 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
     mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
     if repeated is None:
         return None, _llm_notice(
-            f"組み込みの汎用定義`{agent_type}`で`{tool_name}`を起動しようとしている。"
-            "再発行の記録を保存できないため、遮断せずに通した。",
+            f"`{tool_name}`の汎用定義`{agent_type}`の起動は通した。再発行の記録を保存できなかった。",
             tag=_WARN_TAG,
             subject=agent_type,
             removable_cause=False,
@@ -104,14 +103,11 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
             ),
         )
     block = _block_notice(
-        f"組み込みの汎用定義`{agent_type}`による`{tool_name}`の起動を拒否した。"
-        "`agents_server`に同等の作業を行える`mode`があるため、標準の委譲手段へ切り替える。",
+        f"組み込みの汎用定義`{agent_type}`による`{tool_name}`の起動を拒否した。`agents_server`に対応する`mode`がある。",
         fix=(
             f"同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行せよ。"
-            "`agents_server`の`MCP`ツールを呼べない場合、ユーザーの明示指示がある場合、"
-            "対応する`mode`で起動したが同等の結果を得られなかった場合のいずれかでは、"
-            "同じ会話の同じ主体から、ツール名と入力全体を変えずに再発行してよい。"
-            "再発行の記録は通過時に消費する。"
+            "例外は`agent-toolkit:delegation`の`references/runtime-routing.md`「実行手段」で確認せよ。"
+            "例外に該当する場合は、同じ会話の同じ主体からツール名と入力全体を変えずに再発行してよい。"
         ),
     )
     return block, None
@@ -176,19 +172,14 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
     if targets & recorded_ids or has_recent_completion(session_id, targets, now=now):
         return None
     return _block_notice(
-        "blocked: TaskStop。現在のセッションには、指定した対象のバックグラウンドタスクの所有記録も停滞検知完了記録も無い。"
-        "バックグラウンドタスクの停止は、ユーザーの明示的な即時停止要求があるか、"
-        "停滞検知の手順を完了した場合に限る。"
-        "この手順の完了条件は`agent-toolkit:delegation`の"
-        f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
-        "「停滞の検知と巻き取り」節が定める。"
-        "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める。",
+        f"TaskStopの対象{', '.join(sorted(targets))}には、バックグラウンドタスクの所有記録も停滞検知完了記録も無い。",
         fix=(
             "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定せよ。"
             "その他の対象は"
             f"{_plugin_resources.skill_reference('delegation', 'references/waiting-and-monitoring.md')}"
             "「停滞の検知と巻き取り」節に従い、"
             "対象別の停滞検知完了記録を作成してからTaskStopを実行せよ。"
+            "ユーザーの介入時は`agent-toolkit:delegation`「継続と新規起動」を確認せよ。"
             "記録は`atk run-script record-stall-detection -- "
             "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
             "終了コード0を返した対象だけを5分以内に停止せよ。"
@@ -265,14 +256,12 @@ def _check_agents_server_continuation_target(session_id: str, tool_input: dict, 
         display_name = tool_name.rsplit("__", 1)[-1]
         return Decision(
             block=_block_notice(
-                f"blocked: {display_name}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。",
+                f"{display_name}の対象`{remote_session_id}`に対応する絶対`cwd`が保存されていない。",
                 fix=(
-                    "自身が起動した対象は、同じ`session_id`を指定して`agents_server`の`show`で照会せよ。"
+                    f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会せよ。"
                     "永続登録の起動元と呼出主体が一致し、応答の識別子と絶対`cwd`を確認できた場合は記録を回復するため、"
                     "元の操作を再発行せよ。所有を確認できない場合は遮断を維持する。"
-                    "対象が自身の起動した対象でない場合は、その対象を起動した委譲先へ`send_message`で追送し、"
-                    "その委譲先に対象を打ち切らせよ。"
-                    "自身が所有する作業を続ける場合は、絶対`cwd`を指定した`agents_server`の`start`で新しいセッションを開始せよ。"
+                    "自身が起動していない対象の扱いは`agent-toolkit:delegation`「継続と新規起動」に従え。"
                 ),
             )
         )

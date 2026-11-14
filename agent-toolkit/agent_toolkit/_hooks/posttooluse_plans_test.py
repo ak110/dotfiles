@@ -183,14 +183,13 @@ class TestPlanFilePostWriteNotice:
         payload = json.loads(result.stdout)
         message = payload["hookSpecificOutput"]["additionalContext"]
         assert "書き込み後に計画の構造を確かめ" in message
-        assert "check_plan_file.py" in message
+        assert "run-script plan-check --" in message
         assert auto_message_opening_attributes(message)["source"] == "posttooluse"
 
     def test_plan_file_write_notice_is_executable_as_written(self, tmp_path: pathlib.Path) -> None:
         """案内文がそのまま実行できる形であること。
 
-        案内文を受け取った側はこれをシェルで実行する。実行するシェルの環境に
-        `${CLAUDE_PLUGIN_ROOT}`は存在しないため、スクリプトは絶対パスで示す。
+        案内文を受け取った側は配送済みの起動部分へサブコマンドと固有引数を続ける。
         照会先を指定しない場合は実行時の作業ディレクトリを使い、対象リポジトリと一致する保証がないため、
         payloadの`cwd`を`--work-dir`へ明示する。
         """
@@ -211,8 +210,8 @@ class TestPlanFilePostWriteNotice:
         assert result.returncode == 0
         message = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert "CLAUDE_PLUGIN_ROOT" not in message
-        expected_script = pathlib.Path(__file__).resolve().parents[2] / "skills/write-plan/scripts/check_plan_file.py"
-        assert str(expected_script) in message
+        command = next(part for part in message.split("`") if part.startswith("run-script plan-check --"))
+        assert shlex.split(command) == ["run-script", "plan-check", "--", str(plan_path), "--work-dir", str(work_dir)]
         # 空白を含むパスは引用しないと単語分割され、意図しない引数として渡る。
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
 

@@ -7,7 +7,7 @@ import { expect, mock, test } from "claude-code/testing";
 
 const PLUGIN = "agent-toolkit";
 const TOOL = `mcp__${PLUGIN}__send_to_user`;
-const DISPLAYED = "ユーザーの画面へ表示した。送達済みの本文の言い換え・要約・抜粋も再掲せず、新しい内容もsend_to_userで送れ。残工程は続け、ターンを終えるときは待機・完了を問わず…だけを返せ。/goalの担当工程を完了した場合だけは、報告を含めず完了を述べる1文を返せ。無発話の注意を受けても同じ規則に従え。";
+const DISPLAYED = "ユーザーの画面へ表示した。送達済み本文は言い換え・要約・抜粋も再掲するな。新しい内容の送達とターン終了はrules-main.claude-code.md「ターンの終え方」に従え。";
 const MESSAGE = "## 作業完了報告\n\n- 変更: `a.py`\n- 検証: 成功\n\n次の工程へ進む。\n\n".repeat(30);
 
 function row(tool: string, input: unknown) {
@@ -246,6 +246,8 @@ test("取得案内の障害は送達を止めず、同じ診断を抑止し復�
   expect(first.result).toBe(DISPLAYED);
   expect(first.deny).toBeUndefined();
   expect(first.context?.[0]).toContain("終了コード 7");
+  expect(first.context?.[0]).toContain("作業中の改善点の報告");
+  expect(first.context?.[0]).toContain("判定資料を読め");
   expect(first.context?.[0]).not.toContain(SECRET_STDERR);
   expect((await $.tool.call({ tool: TOOL, message })).context ?? []).toEqual([]);
   failing = false;

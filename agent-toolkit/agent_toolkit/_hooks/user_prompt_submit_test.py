@@ -193,8 +193,8 @@ class TestUserConfirmationSkillPrompt:
         """Claude Codeでも文脈ごとに起動案内を一度返し、起動の前後とも同じ案内を繰り返さない。"""
         self._session_start(source, tmp_path)
         context = self._prompt("表示が変わった原因は何か", tmp_path)
-        assert self._has_notice(context)
-        assert "応答と作業の着手より前に" in context
+        assert not self._has_notice(context)
+        assert "起動・全文取得を確認できない" not in context
         assert "部分表示やパイプ" not in context
         assert "「起動契機」から「認可を要する操作」" not in context
         assert "診断より前に" not in context
@@ -207,18 +207,18 @@ class TestUserConfirmationSkillPrompt:
         self._session_start("startup", tmp_path)
         self._invoke_skill(tmp_path)
         self._session_start("compact", tmp_path)
-        assert self._has_notice(self._prompt("続けて", tmp_path))
+        assert not self._has_notice(self._prompt("続けて", tmp_path))
 
     @pytest.mark.parametrize("host", ["claude", "codex"])
     def test_consumed_notice_is_delivered_once_again_after_compact(self, tmp_path, host):
         """圧縮した文脈には同じ固定本文を一度再配送し、後続の発話では繰り返さない。"""
         self._session_start("startup", tmp_path, host=host)
         first = self._prompt("依頼", tmp_path, host=host)
-        assert self._has_notice(first)
+        assert not self._has_notice(first)
         assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
         self._session_start("compact", tmp_path, host=host)
         restored = self._prompt("次の依頼", tmp_path, host=host)
-        assert self._has_notice(restored)
+        assert not self._has_notice(restored)
         assert first == restored
         assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
 
@@ -244,7 +244,7 @@ class TestUserConfirmationSkillPrompt:
         self._session_start("startup", tmp_path, host=host)
         assert not self._has_notice(self._prompt(prompt, tmp_path, host=host))
         context = self._prompt("依頼", tmp_path, host=host)
-        assert self._has_notice(context)
+        assert not self._has_notice(context)
         assert "診断より前に" not in context
 
     def test_usage_limit_resume_prompt_is_machine_injected(
@@ -276,7 +276,7 @@ class TestUserConfirmationSkillPrompt:
         before = _read_state(tmp_path, "confirm")
         assert not self._has_notice(self._prompt(generated.stdout, tmp_path))
         assert _read_state(tmp_path, "confirm").get("last_user_prompt_at") == before.get("last_user_prompt_at")
-        assert self._has_notice(self._prompt("依頼", tmp_path))
+        assert not self._has_notice(self._prompt("依頼", tmp_path))
 
     def test_delegated_session_start_does_not_mark(self, tmp_path: pathlib.Path) -> None:
         """委譲先のSessionStartは起動待ちを記録しない。"""
@@ -294,7 +294,7 @@ class TestUserConfirmationSkillPrompt:
         """CodexではSkillの起動を観測できないため、文脈1つにつき最初の実ユーザー発話へ1回だけ返す。"""
         self._session_start(source, tmp_path, host="codex")
         context = self._prompt("表示が変わった原因は何か", tmp_path, host="codex")
-        assert self._has_notice(context)
+        assert not self._has_notice(context)
         assert "診断より前に" not in context
         assert not self._has_notice(self._prompt("続けて", tmp_path, host="codex"))
 
@@ -361,17 +361,16 @@ class TestMachineInjectedTurn:
 
     @staticmethod
     def test_normal_prompt_after_machine_turn_keeps_context_notice(tmp_path: pathlib.Path) -> None:
-        """機械注入では一度の起動案内を消費せず、その後の実入力へ配送する。"""
+        """機械注入に続く実入力にも、撤去した初回未取得通知を出さない。"""
         sid = "machine-then-user"
-        _write_state(sid, {user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True})
         _run(
             {"session_id": sid, "prompt": f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n確認する。"},
             state_dir=tmp_path,
         )
         result = _run({"session_id": sid, "prompt": "実際の依頼"}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
-        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in context
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"] if result.stdout else ""
+        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" not in context
         assert "cat --" not in context and "Get-Content" not in context
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
 
@@ -576,8 +575,8 @@ class TestRealignNoticeInjection:
             output = json.loads(result.stdout)["hookSpecificOutput"]
             bodies = _notice_bodies(output["additionalContext"])
             assert len(bodies) == 1
-            assert "agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」" in bodies[0]
-            assert "次の操作:" in bodies[0]
+            assert "agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」" in bodies[0]
+            assert "目標と問題の理解を確かめよ" in bodies[0]
             assert set(_read_state(tmp_path, sid)) == {
                 "termination_evidence",
                 "notice_fingerprints",
@@ -634,7 +633,7 @@ class TestExampleScopeNotice:
         if not result.stdout:
             return []
         context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
-        return [body for body in _notice_bodies(context) if str(cls._UTTERANCE_PATH) in body] if context else []
+        return [body for body in _notice_bodies(context) if "references/user-utterance.md" in body] if context else []
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_example_with_investigation_request_receives_notice(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
@@ -642,10 +641,10 @@ class TestExampleScopeNotice:
         result = _run({"session_id": "example-notice", "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
-        assert str(self._ROUTING_PATH) in bodies[0]
+        assert "references/routing.md" in bodies[0]
         assert "「原文の保持と取り込み」" in bodies[0]
         assert "「コンテキスト消費が大きい調査の切り出し」" in bodies[0]
-        assert "自ら調査へ着手する前に" in bodies[0]
+        assert "調査へ着手する前" in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize(
@@ -669,8 +668,8 @@ class TestExampleScopeNotice:
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
         assert "「原文の保持と取り込み」" in bodies[0]
-        assert "対応範囲を例示だけに狭めるな" in bodies[0]
-        assert str(self._ROUTING_PATH) not in bodies[0]
+        assert "原文の対象と例示の関係を判断せよ" in bodies[0]
+        assert "references/routing.md" not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -685,7 +684,7 @@ class TestExampleScopeNotice:
         )
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
-        assert str(self._ROUTING_PATH) in bodies[0]
+        assert "references/routing.md" in bodies[0]
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize(
@@ -724,15 +723,13 @@ class TestExampleScopeNotice:
     def test_other_notices_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
         """同じターンで成立した他の2つの注記と1つの`additionalContext`へ結合する。"""
         sid = "example-combined"
-        _write_state(sid, {user_prompt_submit.USER_CONFIRMATION_PENDING_KEY: True})
         result = _run({"session_id": sid, "prompt": self._PROMPT + "！！", **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         output = json.loads(result.stdout)
         bodies = _notice_bodies(output["hookSpecificOutput"]["additionalContext"])
-        assert len(bodies) == 3
-        assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in bodies[0]
-        assert "agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」" in bodies[1]
-        assert str(self._UTTERANCE_PATH) in bodies[2]
+        assert len(bodies) == 2
+        assert "agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」" in bodies[0]
+        assert "references/user-utterance.md" in bodies[1]
 
 
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
@@ -794,7 +791,7 @@ def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathli
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "<atk-auto" in context
     assert "ユーザーの発話ではない" in context
-    assert "日本語で書" in context
+    assert "完了通知で始まったターンの対処" in context
     assert "この発話を受けた時点で" not in context
 
 

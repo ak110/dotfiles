@@ -180,7 +180,7 @@ def _warn_container_root_bind_mount(command: str) -> str | None:
             continue
         return _llm_notice(
             "`root`またはユーザー未指定のコンテナーへ、書き込み可能なホストのバインドマウントを渡している。"
-            "この形では生成物が`root`所有でホストに残り、ホストで実行中のアカウントで削除できなくなった事例がある。",
+            "生成物が`root`所有でホストに残り、実行中の`OS`アカウントで削除できなくなる可能性がある。",
             tag=_WARN_TAG,
             subject=command,
             removable_cause=True,
@@ -188,7 +188,8 @@ def _warn_container_root_bind_mount(command: str) -> str | None:
                 '元の起動のマウントを`--mount "type=bind,src=$PWD,dst=/source,readonly" '
                 "--mount type=volume,dst=/work`にし、コンテナー内で`cp -a /source/. /work/`として専用領域で作業せよ。"
                 'ホストへ書く必要があれば`--user "$(id -u):$(id -g)"`で起動せよ。'
-                "正当な`root`実行では、所有者と回収方法を確認した上で警告を受けたまま実行できる。"
+                "非`root`実行の原則は`agent-basics:writing-standards`の`references/dockerfiles.md`「基本」を確認せよ。"
+                "正当な`root`実行は、所有者と回収方法を確認した上で継続してよい。"
             ),
         )
     return None

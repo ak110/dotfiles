@@ -479,7 +479,7 @@ def launch_notice() -> str | None:
     if not failures:
         return None
     return (
-        "振り返りの自動起動が実行受付前に終了した。pendingは保持している。次のコマンドで診断ログを取得せよ: "
+        "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
         + "、".join(failures)
         + "。原因を確認・是正して`/agent-toolkit:review-session batch`を実行せよ。"
         "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"

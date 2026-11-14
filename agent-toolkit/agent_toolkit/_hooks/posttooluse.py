@@ -17,7 +17,6 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 4. agents_server MCP呼び出しと`atk agents wait`実行後のsession状態記録、開始・再開したsessionの待機対象登録
 5. exit-session起動検知による`autonomous_exit_invoked`の記録と
    `process_wi_skill_invoked`のリセット (Skill)、
-   `agent-toolkit:user-confirmation-and-report`起動による`user_confirmation_skill_pending`の解除 (Skill)、
    読込案内の対象資料の取得の`operation_skill_delivered_agents`への記録
    （内容ハッシュによる現行形式。判定は`pretooluse/read_delivery.py`の`observe`が行う）
 6. 現在の計画ファイルパス記録 (Write / Edit / MultiEdit / apply_patch、plan file判定時)
@@ -40,14 +39,12 @@ import json
 import re
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy import os
 lazy import shlex
 
 from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._atk import run_script as _run_script
-lazy from agent_toolkit._common import plugin_environment
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
@@ -58,7 +55,6 @@ lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import codex_read_observation as _codex_read_observation
 lazy from agent_toolkit._hooks import command_timing, effort_notice, session_title, termination_evidence
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
-lazy from agent_toolkit._hooks import plugin_resources as _plugin_resources
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
@@ -85,15 +81,11 @@ def _executable_name(token: str) -> str:
 # process-wiスキル呼び出し検出。フルネームとスラッシュコマンド短縮名の両方を許容する。
 _PROCESS_WI_SKILL_NAMES = frozenset({"agent-toolkit:process-wi", "process-wi"})
 
-# 起動でUserPromptSubmitの起動促しを止めるスキル。フルネームと短縮名の両方を許容する。
-USER_CONFIRMATION_SKILL_NAMES = frozenset({"agent-toolkit:user-confirmation-and-report", "user-confirmation-and-report"})
-USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
-
 # --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
     "応答の前に、`agent-toolkit:user-confirmation-and-report`の`references/user-utterance-correction.md`"
-    "「割り込み・訂正・中止」の4〜6項に従い、現物との比較の要否を判定せよ。"
+    "「割り込み・訂正・中止」に従い、現物との比較の要否を判定せよ。"
 )
 """ユーザーが書いた文の内容を現物で確かめる手順の所在を示す注記の本文。
 
@@ -107,8 +99,7 @@ importするため、循環importを避けて本モジュールに置く。
 
 _REALIGN_NOTICE_BODY = (
     "ユーザー発話に全角の連続した「！！」が含まれている。"
-    "次の操作: `agent-toolkit:user-confirmation-and-report`スキルを起動し、「認識合わせ」に従い、"
-    "目標と解決したい問題の理解を確かめよ。"
+    "`agent-toolkit:user-confirmation-and-report`を起動し、「認識合わせ」に従って目標と問題の理解を確かめよ。"
 )
 _EXAMPLE_WORDS = ("例えば", "たとえば", "例として")
 _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗い出", "探し", "チェック", "レビュー")
@@ -123,28 +114,14 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     text = QUOTED_MATERIAL_RE.sub("", prompt)
     if not any(word in text for word in _EXAMPLE_WORDS):
         return None
-    path = str(_plugin_resources.skill_document_path("user-confirmation-and-report", "references/user-utterance.md"))
-    read_command = (
-        "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else "cat -- " + shlex.quote(path)
-    )
     body = (
-        "この発話は例示の語を含む。"
-        f"応答や具体化の前に`{read_command}`で本文を取得せよ。"
-        "「原文の保持と取り込み」で、原文が示す上位の対象と例示の関係を判断し、"
-        "対応範囲を例示だけに狭めるな。"
+        "この発話は例示の語を含む。応答や具体化の前に、"
+        "`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`"
+        "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断せよ。"
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
-        path = str(_plugin_resources.skill_document_path("delegation", "references/routing.md"))
-        read_command = (
-            "Get-Content -LiteralPath '" + path.replace("'", "''") + "' -Encoding utf8"
-            if os.name == "nt"
-            else "cat -- " + shlex.quote(path)
-        )
         body += (
-            "範囲語か開放列挙を併せ持つ調査、見直し、点検の依頼である場合は、自ら調査へ着手する前に同節の該当項を適用し、"
-            f"例示を除いた独立した調査を委ねる手段は`{read_command}`で本文を取得し、"
+            "調査へ着手する前の委譲判断は`agent-toolkit:delegation`の`references/routing.md`"
             "「コンテキスト消費が大きい調査の切り出し」に従え。"
         )
     return _notice_formatter(source)(body, tag="notice", subject=subject)
@@ -163,7 +140,7 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
 
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
-_FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答は同書「割り込み・訂正・中止」の13項に従え。"
+_FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答も同節に従え。"
 """`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
 # Claude Codeが選択肢を選ばずに注記だけを残した質問へ入れる`answers`の値（2.1.283の記録で観測）。
 _NOTES_ONLY_ANSWER = "(notes only)"
@@ -364,8 +341,6 @@ def _record_skill_use(session_id: str, skill_name: object) -> None:
         update_state(session_id, _set_invoked)
     if skill_name in _PROCESS_WI_SKILL_NAMES:
         update_state(session_id, _set_process_wi_invoked)
-    if skill_name in USER_CONFIRMATION_SKILL_NAMES:
-        update_state(session_id, clear_user_confirmation_pending)
 
 
 def _free_text_answers(tool_response: object) -> list[str]:
@@ -403,14 +378,6 @@ def _free_text_answers(tool_response: object) -> list[str]:
         if isinstance(notes, str) and notes.strip():
             texts.append(notes)
     return texts
-
-
-def clear_user_confirmation_pending(state: dict) -> dict | None:
-    """`agent-toolkit:user-confirmation-and-report`の起動を待つ状態を解除する。既に解除済みならNoneを返す。"""
-    if not state.get(USER_CONFIRMATION_PENDING_KEY, False):
-        return None
-    state[USER_CONFIRMATION_PENDING_KEY] = False
-    return state
 
 
 def _record_plan_file(session_id: str, file_path: str) -> None:
@@ -455,13 +422,10 @@ def _plan_main_path_for(display_path: str) -> str:
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     """計画ファイル全文書き込み後に実行する計画の構造を確かめるコマンドの案内文を返す。"""
-    project_root = _run_script.PLUGIN_ROOT
-    check_script = project_root / _run_script.SCRIPT_PATHS["plan-check"]
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
         f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめよ:"
-        f" `{shlex.join(plugin_environment.launch_command(project_root, check_script))}{work_dir_option}"
-        f" {shlex.quote(file_path)}`."
+        f" 起動部分へ`run-script plan-check -- {shlex.quote(file_path)}{work_dir_option}`を続けよ。"
         "計画の対象リポジトリがこのセッションの作業ディレクトリと異なる場合は、"
         "`--work-dir`を対象リポジトリへ置き換えよ。",
         tag="notice",
@@ -654,10 +618,10 @@ def main(payload_text: str) -> int:
         notices.append(
             _llm_notice(
                 f"ツール呼び出しの結果を、作業終了時の確認に使う記録へ残せなかった: {error}。"
-                "元の操作の成否はツール結果で確認せよ。",
+                "元の操作の成否とは別の記録失敗である。",
                 tag="warn",
                 removable_cause=False,
-                fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+                fix="元のツール結果で成否と必要な出力を確認せよ。記録の診断を委譲元またはユーザーへ報告せよ。",
             )
         )
     try:

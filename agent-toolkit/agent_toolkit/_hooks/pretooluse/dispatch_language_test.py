@@ -67,6 +67,11 @@ class TestResponseLanguageCheck:
         result = _run({"tool_name": tool_name, "tool_input": tool_input})
         assert result.returncode == 0
         assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+        reason = json.loads(result.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+        assert "日本語で書き直せ" in reason
+        assert "使用言語" in reason
+        assert reason.count("判定できない") == 1
+        assert "`Now`" not in reason and "`Next`" not in reason
         assert not result.stderr
 
 

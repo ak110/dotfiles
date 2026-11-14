@@ -121,7 +121,8 @@ def test_agents_server_continuation_without_saved_cwd_is_blocked(
     output = json.loads(result.stdout)["hookSpecificOutput"]
     assert output["permissionDecision"] == "deny"
     reason = output["permissionDecisionReason"]
-    assert f"blocked: {operation}は、`session_id`に対応する絶対`cwd`が保存されていないため続行できない。" in reason
+    assert f"{operation}の対象`unsaved`" in reason
+    assert "絶対`cwd`が保存されていない" in reason
     assert "show" in reason
     assert "空でない" not in reason
 
@@ -193,17 +194,16 @@ class TestTaskStopBlock:
     def test_block_message_states_the_stop_conditions(self, state_dir: dict[str, str]) -> None:
         """遮断文面が停止の根拠、その完了条件の所在、不十分な理由、確認手段、再実行方法を示す。"""
         reason = _denial_reason(self._invoke("task-stop-message", state_dir))
-        assert "現在のセッションには" in reason
+        assert "TaskStopの対象" in reason
         assert "バックグラウンドタスクの所有記録も停滞検知完了記録も無い" in reason
-        assert "明示的な即時停止要求" in reason
-        assert "停滞検知の手順" in reason
+        assert "対象別の停滞検知完了記録を作成" in reason
         assert "references/waiting-and-monitoring.md" in reason
         assert "「停滞の検知と巻き取り」節" in reason
 
     def test_block_message_refers_user_intervention_to_owner_section(self, state_dir: dict[str, str]) -> None:
         """遮断文面がユーザー介入時の扱いを所有者の節（delegation「継続と新規起動」）へ委ねる。"""
         reason = _denial_reason(self._invoke("task-stop-message-route", state_dir))
-        assert "ユーザーの介入があった場合の扱いは`agent-toolkit:delegation`「継続と新規起動」が定める" in reason
+        assert "ユーザーの介入時は`agent-toolkit:delegation`「継続と新規起動」を確認せよ" in reason
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),
@@ -687,12 +687,11 @@ class TestGenericAgentLaunchBlock:
         env = _plan_file_state_env(tmp_path)
         reason = _denial_reason(_run_after_skill_acquisition(payload, env_overrides=env))
         assert f"組み込みの汎用定義`{agent_type or 'general-purpose'}`" in reason
-        assert "同等の作業を行える`mode`" in reason
+        assert "対応する`mode`" in reason
         mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
         assert f"`mode`が{mode}の`agents_server`の`start`へ発行せよ" in reason
-        assert "`MCP`ツールを呼べない場合" in reason
-        assert "ユーザーの明示指示がある場合" in reason
-        assert "対応する`mode`で起動したが同等の結果を得られなかった場合" in reason
+        assert "references/runtime-routing.md" in reason
+        assert "ツール名と入力全体を変えずに再発行してよい" in reason
         repeated = _run(payload, env_overrides=env)
         assert repeated.returncode == 0, repeated.stderr
         assert not repeated.stderr
@@ -745,18 +744,18 @@ class TestGenericAgentLaunchBlock:
         assert "組み込みの汎用定義" not in result.stdout
 
     @pytest.mark.parametrize("failure", ["missing-session", "unwritable-state"])
-    def test_unrecordable_reissue_passes_with_warning(self, monkeypatch, failure: str) -> None:
+    def test_unrecordable_reissue_passes_with_warning(self, monkeypatch, failure: str, tmp_path) -> None:
         """再発行の記録を保存できない起動は、何度発行しても遮断せず警告だけを返す。"""
         monkeypatch.setattr(agent_checks, "update_state", lambda *_args, **_kwargs: False)
-        payload = {"session_id": "" if failure == "missing-session" else "generic-unwritable"}
+        payload = {"session_id": "" if failure == "missing-session" else "generic-unwritable", "tool_name": "Agent"}
         tool_input = {"subagent_type": "Explore", "prompt": "担当の作業を進める。"}
-        for _ in range(2):
-            # 状態の保存の失敗は公開hookから注入できないため、判定の関数を直接呼ぶ。
-            block, notice = agent_checks._check_generic_agent_launch(  # pylint: disable=protected-access
-                payload, "Agent", tool_input
-            )
-            assert block is None
-            assert notice is not None and "遮断せずに通した" in notice and "`explore`" in notice
+        for attempt in range(2):
+            result = _run({**payload, "tool_input": tool_input}, env_overrides=_plan_file_state_env(tmp_path))
+            assert result.returncode == 0 and not result.stderr
+            assert "deny" not in result.stdout
+            context = _additional_context(result)
+            if attempt == 0:
+                assert "起動は通した" in context and "`explore`" in context
 
 
 class TestWorkflowSkillInvocation:

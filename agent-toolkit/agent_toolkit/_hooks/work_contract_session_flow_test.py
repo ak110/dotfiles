@@ -22,7 +22,6 @@ def test_each_user_prompt_delivers_the_contract_body(
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
-    monkeypatch.setattr(user_prompt_submit, "_claim_user_confirmation_notice", lambda *_args, **_kwargs: False)
     monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
     extra = {"turn_id": "turn"} if codex else {}
     session = "contract-body-" + ("codex" if codex else "claude")
@@ -33,8 +32,8 @@ def test_each_user_prompt_delivers_the_contract_body(
         assert result.returncode == 0
         assert "目的: A全体の完了" in result.stdout
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "追加入力の統合" in context
-        assert str(work_contract.plugin_resources.plugin_root() / "share/work-contract.md") in context
+        assert "work-contract-updates.md" in context
+        assert "`agent-toolkit/share/work-contract.md`の条件別資料" in context
     machine = run_hook(
         "user_prompt_submit",
         {
@@ -59,8 +58,8 @@ def test_compaction_delivers_the_contract_body(
     output = capsys.readouterr().out
     assert "目的: A全体" in output
     context = json.loads(output)["hookSpecificOutput"]["additionalContext"]
-    assert "追加入力の統合" in context
-    assert str(work_contract.plugin_resources.plugin_root() / "share/work-contract.md") in context
+    assert "work-contract-updates.md" in context
+    assert "`agent-toolkit/share/work-contract.md`の条件別資料" in context
 
 
 @pytest.mark.parametrize("initial_prompt", [None, "調査を進めて", '<atk-auto source="process-loop">/goal 作業</atk-auto>'])
@@ -82,17 +81,17 @@ def test_missing_contract_public_hook_flow(tmp_path, monkeypatch, capsys, initia
         assert user_prompt_submit.main(json.dumps({"session_id": session, "prompt": initial_prompt})) == 0
         capsys.readouterr()
     output = operation()
-    assert str(path) in output
-    assert "「作成と所有」" in output
+    assert str(path) not in output
+    assert "「作成と所有」" not in output
     assert "事実回答では作成しない" not in output
     assert "作業契約が未作成" not in operation()
     assert user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "続きを進めて"})) == 0
     capsys.readouterr()
-    assert str(path) in operation()
+    assert str(path) not in operation()
     assert "作業契約が未作成" not in operation()
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": session})) == 0
     capsys.readouterr()
-    assert str(path) in operation()
+    assert str(path) not in operation()
     assert "作業契約が未作成" not in operation()
     path.write_text("目的: 継続\n", encoding="utf-8")
     assert user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "続けて"})) == 0
@@ -125,6 +124,14 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     operation = {"session_id": sid, "tool_name": "Judge", "tool_input": {}, **extra}
     assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
     path.write_text("# 目的\n継続する\n## 即時対応で確定した暫定規則\n契約専用の新規則\n", encoding="utf-8")
+    for tool, tool_input in (
+        ("Skill", {"skill": "agent-toolkit:delegation"}),
+        ("Read", {"file_path": str(path)}),
+        ("Bash", {"command": "cat -- " + str(path)}),
+    ):
+        preparation = run_hook("pretooluse", {**operation, "tool_name": tool, "tool_input": tool_input})
+        assert preparation.returncode == 0
+        assert "全体作業契約が取得後に更新された" not in preparation.stdout
     updated = run_hook("pretooluse", operation)
     assert updated.returncode == 0
     assert "全体作業契約が取得後に更新された" in updated.stdout
@@ -153,7 +160,7 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
         },
     )
     assert compact.returncode == 0
-    assert str(path) in compact.stdout and "全体作業契約の現行版を全文取得したことを確認できない" in compact.stdout
+    assert "全体作業契約の現行版を全文取得したことを確認できない" not in compact.stdout
     assert "契約専用の新規則" not in compact.stdout
     path.write_text("# 目的\n## 即時対応で確定した暫定規則\n次の訂正を適用する\n", encoding="utf-8")
     reupdated = run_hook("pretooluse", operation)
@@ -161,3 +168,43 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     assert "全体作業契約の現行版を全文取得したことを確認できない" in reupdated.stdout
     assert "次の訂正を適用する" not in reupdated.stdout
     assert "全体作業契約の現行版を全文取得したことを確認できない" not in run_hook("pretooluse", operation).stdout
+
+
+@pytest.mark.parametrize("mode", ["oversized", "unreadable", "missing-delegate"])
+def test_contract_diagnostic_reaches_public_response(tmp_path, monkeypatch, capsys, mode):
+    path = tmp_path / "work-contract.md"
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args: path)
+    if mode == "missing-delegate":
+        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+        metadata = json.dumps({"path": str(path), "selectors": ["input:作業契約"]})
+        session_state.update_state(
+            "missing-delegate",
+            lambda state: {**state, rules_context.OPERATION_SKILL_READY_KEY: {"startup-input-target:" + metadata: ["main"]}},
+        )
+        assert pretooluse.main(json.dumps({"session_id": "missing-delegate", "tool_name": "Judge", "tool_input": {}})) == 0
+    else:
+        monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+        path.write_bytes(b"\xff" if mode == "unreadable" else ("要件" * 3000).encode())
+        assert user_prompt_submit.main(json.dumps({"session_id": "diagnostic-" + mode, "prompt": "続けて"})) == 0
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert str(path) in context
+    assert {"oversized": "通知の上限", "unreadable": "UnicodeDecodeError", "missing-delegate": "委譲元"}[mode] in context
+    if mode == "missing-delegate":
+        assert "原本の所在と読取可能性を確認せよ" in context
+        assert "全文読み" not in context
+
+
+def test_compaction_oversized_contract_delivers_location(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    path = tmp_path / "work-contract.md"
+    path.write_text("要件" * 6000, encoding="utf-8")
+    monkeypatch.setattr(work_contract, "record_path", lambda *_args: path)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
+    assert (
+        rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "large-contract"}))
+        == 0
+    )
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert str(path) in context and "現在の目的・要件を確かめよ" in context

@@ -139,9 +139,8 @@ class Observation:
 _RECOVERABLE = "省略は担当内で回収できる不足であり、続行できない理由にしない。"
 TRUNCATED_NOTICE = (
     "この読取の出力は省略された。判断に必要な未取得部分を補え。"
-    "保持可能な枠が元トークン数以上なら内側`exec_command`と外側`functions.exec`の予算を確保して1回再取得せよ。"
-    "枠が不足または不明なら、`sed -n '<開始行>,<終了行>p' -- <絶対パス>`で行範囲を分けて必要箇所を読め"
-    "（資料末尾も必要な場合は最後の範囲を`<開始行>,$p`とする）。" + _RECOVERABLE
+    "`agent-toolkit/share/rules/rules-common.codex.md`「Codex固有の入出力」に従い、予算を確保するか行範囲を分割して回収せよ。"
+    + _RECOVERABLE
 )
 TRUNCATED_OUTPUT_NOTICE = (
     "この出力は省略された。対象や条件を限定するか範囲を分けて再実行し、判断に必要な全量を回収せよ。" + _RECOVERABLE

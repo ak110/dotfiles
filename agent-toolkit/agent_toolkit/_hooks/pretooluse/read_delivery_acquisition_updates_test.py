@@ -230,7 +230,7 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     compact = _run_hook_in_process("rules_context", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
     assert compact.returncode == 0 and not compact.stderr
     context = json.loads(compact.stdout)["hookSpecificOutput"]["additionalContext"]
-    skill_step = "`Skill`で`agent-toolkit:process-wi`"
+    skill_step = "`agent-toolkit:process-wi`"
     assert skill_step not in context
     assert str(skill) not in context
     failure = rules_context.acquisition_failure(

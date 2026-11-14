@@ -7,6 +7,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._common import session_state
+from agent_toolkit._hooks import posttooluse
 from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.posttooluse_support import (
@@ -146,3 +147,26 @@ def test_agent_launch_without_agent_id_records_nothing(tmp_path: pathlib.Path, a
     )
     assert result.returncode == 0
     assert "background_task_ids" not in _read_state(tmp_path, session_id)
+
+
+@pytest.mark.parametrize("failure", ["read", "evidence"])
+def test_record_failure_preserves_tool_result_recovery(monkeypatch, capsys, failure):
+    def fail(*_args, **_kwargs):
+        raise OSError("結果の記録に失敗")
+
+    module = posttooluse._read_delivery if failure == "read" else posttooluse.termination_evidence
+    monkeypatch.setattr(module, "observe" if failure == "read" else "observe_tool", fail)
+    assert (
+        posttooluse.main(
+            json.dumps(
+                {"session_id": "failure-" + failure, "tool_name": "Read", "tool_input": {}, "tool_response": "取得した本文"}
+            )
+        )
+        == 0
+    )
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "結果の記録に失敗" in context
+    assert "ツール結果" in context and "委譲元またはユーザー" in context
+    if failure == "evidence":
+        assert context.count("元のツール結果で成否と必要な出力を確認せよ") == 1
+        assert "元の操作の成否はツール結果で確認せよ" not in context

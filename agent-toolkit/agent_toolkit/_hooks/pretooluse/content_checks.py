@@ -69,7 +69,6 @@ def _collect_edit_operation_warnings(
         _warn_mojibake(tool_name, fields, subject=display_path),
         # PowerShellの改行要件はpatch断片のLF表現から判定できないため、Claudeの`Write`だけへ適用する。
         _check_ps1_eol(tool_name, fields, display_path) if tool_name == "Write" and _is_ps1(display_path) else None,
-        *(_check_lockfiles(tool_name, path) for path in operation.display_paths),
         boundary_warning,
         _check_manifest(tool_name, fields, display_path),
     ]
@@ -164,24 +163,32 @@ _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 )
 
 
-def _check_lockfiles(tool_name: str, file_path: str) -> str | None:
+def _check_lockfiles(tool_name: str, file_paths: list[str]) -> list[str]:
     """lockfileや生成物ディレクトリへの直接編集を検出して警告本文を返す。
 
     手編集した内容はパッケージ管理ツールの再生成で復元できるため、警告で返す。
     """
-    if not file_path:
-        return None
-    normalized = file_path.replace("\\", "/")
-    for label, pattern, hint in _LOCKFILE_RULES:
-        if pattern.search(normalized):
-            fix = "このパスを直接編集せず、パッケージ管理ツールで再生成せよ。" if label in {".venv/", "node_modules/"} else hint
-            return _llm_notice(
-                f"{tool_name}による{label}の直接編集を検出した。対象: {file_path}",
-                tag=_WARN_TAG,
-                fix=fix,
-                removable_cause=True,
-            )
-    return None
+    targets: dict[str, list[str]] = {}
+    for file_path in dict.fromkeys(file_paths):
+        normalized = file_path.replace("\\", "/")
+        for label, pattern, hint in _LOCKFILE_RULES:
+            if pattern.search(normalized):
+                fix = (
+                    "このパスを直接編集せず、パッケージ管理ツールで再生成せよ。"
+                    if label in {".venv/", "node_modules/"}
+                    else hint
+                )
+                targets.setdefault(fix, []).append(file_path)
+                break
+    return [
+        _llm_notice(
+            f"{tool_name}によるlockfile・生成物の直接編集を検出した。対象: " + "、".join(f"`{path}`" for path in paths),
+            tag=_WARN_TAG,
+            fix=fix,
+            removable_cause=True,
+        )
+        for fix, paths in targets.items()
+    ]
 
 
 # --- manifest手編集check (warn) ---

@@ -8,7 +8,7 @@ import pytest
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import rules_context
-from agent_toolkit._hooks.pretooluse import read_delivery
+from agent_toolkit._hooks.pretooluse import read_delivery, read_delivery_guidance
 from agent_toolkit._testing.document_delivery import observe_received
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.read_delivery_support import (
@@ -133,9 +133,7 @@ def test_guidance_gives_mandatory_host_steps_and_edit_review(tmp_path, monkeypat
     decision = read_delivery.deliver(payload, tool, inputs, "test")
     notice = _notice_body(decision)
     instruction = notice.splitlines()[1]
-    assert "この操作の結果を使う前に" in instruction and "必要な基準を取得" in instruction
-    assert ("シェルコマンド" in instruction) is codex
-    assert ("Read" in instruction) is (not codex)
+    assert "この操作の結果を使う前に" in instruction and "取得・起動" in instruction
     if not codex:
         assert all(notice.count(str(path)) == 1 for path in paths)
     assert ("読んだ後に、書いた内容をその基準で見直し、必要なら直" in notice) is write
@@ -179,7 +177,6 @@ def test_codex_small_edit_has_one_acquisition_command_per_document(tmp_path, mon
     body = _notice_body(decision)
     instruction = body.splitlines()[1]
     assert "この操作の結果を使う前に" in instruction
-    assert "agent-conduct-details.md`「方針が衝突する場合の優先順位」" in instruction
     assert body.count("各コードブロックを別々のfunctions.exec") == 1
     assert all(body.count(f"cat -- {path}") == 1 for path in paths)
     assert "session_idが返ったら" not in body and "内外の出力枠" not in body
@@ -501,3 +498,47 @@ def test_public_missing_selected_document_guides_repair_without_blocking(tmp_pat
     assert "委譲元" in result.stdout and "ユーザー" in result.stdout
     assert "permissionDecision" not in result.stdout
     assert not memory.get(rules_context.OPERATION_SKILL_READY_KEY, {})
+
+
+@pytest.mark.parametrize("case", ["declaration-repair", "unresolved-target", "heading-repair"])
+@pytest.mark.usefixtures("memory")
+def test_public_guidance_recovery_branches(tmp_path, monkeypatch, case):
+    """診断対象と修復操作を公開hookの最終応答で対応付ける。"""
+    target = _rows(tmp_path, monkeypatch, "tool:Write", count=1)[0]
+    if case == "declaration-repair":
+
+        def broken(*_args, **_kwargs):
+            raise ValueError(f"{target}: 読込表の列数が一致しない")
+
+        monkeypatch.setattr(read_delivery, "declarations", broken)
+    elif case == "unresolved-target":
+
+        def unresolved(*_args, **_kwargs):
+            raise ValueError("参照先を解決できない")
+
+        monkeypatch.setattr(read_delivery, "condition_confirmed", unresolved)
+    else:
+
+        def missing_heading(*_args, **_kwargs):
+            raise ValueError("見出しを一意に解決できない")
+
+        monkeypatch.setattr(read_delivery_guidance, "acquisition_step", missing_heading)
+    result = _run_hook_in_process(
+        "pretooluse",
+        {
+            "session_id": "guidance-recovery",
+            "cwd": str(tmp_path),
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(target), "content": "修復内容"},
+        },
+    )
+    assert result.returncode == 0 and not result.stderr
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output.get("permissionDecision") != "deny"
+    context = output["additionalContext"]
+    expected = {
+        "declaration-repair": "読込表の列数が一致しない",
+        "unresolved-target": "参照先を解決できない",
+        "heading-repair": "見出しを一意に解決できない",
+    }[case]
+    assert expected in context and "次の操作:" in context

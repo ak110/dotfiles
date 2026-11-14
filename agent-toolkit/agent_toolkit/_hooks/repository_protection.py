@@ -20,7 +20,10 @@ _block = block_formatter("repository-protection")
 def _guidance(repo_id: str, edit: str | None) -> str:
     quoted = shlex.quote(repo_id)
     if edit == "awi":
-        return f"直接編集せず、`atk wi add --target-repo {quoted}`でAWIを投入せよ（cloneは不要）。"
+        return (
+            "直接編集せず、`agent-toolkit:wi-standards`を起動せよ。"
+            f"同スキルの投入手順に従い、対象リポジトリに`{repo_id}`を指定してAWIを投入せよ（cloneは不要）。"
+        )
     if edit == "deny":
         return "編集せず、必要な変更をユーザーへ報告せよ。"
     return (

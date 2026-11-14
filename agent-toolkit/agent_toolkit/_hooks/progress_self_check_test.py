@@ -235,9 +235,6 @@ def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest
     sid = _session_id()
     clock = {"now": 10_000.0}
     monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
-    monkeypatch.setattr(
-        "agent_toolkit._hooks.user_prompt_submit._claim_user_confirmation_notice", lambda *_args, **_kwargs: False
-    )
     events: list[tuple[str, Mapping[str, object]]] = [
         ("user_prompt_submit", {"hook_event_name": "UserPromptSubmit", "prompt": "進めて"}),
         ("posttooluse", _POSTTOOLUSE_PAYLOAD),

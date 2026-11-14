@@ -90,7 +90,7 @@ def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeyp
                 "rules_context_codex", {**payload, "hook_event_name": "SessionStart", "source": "compact"}
             )
             assert result.returncode == 0 and not result.stderr
-            assert "工程を定めるスキルと役割文書を全文読み直し" in result.stdout
+            assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in result.stdout
             assert str(reference) not in result.stdout
             resumed = _run_hook_in_process("pretooluse", writing)
             assert resumed.returncode == 0 and not resumed.stderr
@@ -226,8 +226,8 @@ def test_failed_hook_chain_does_not_acquire(tmp_path, monkeypatch, state, failur
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("own", [False, True])
-def test_piped_foreign_role_warning_keeps_acquisition_boundary(tmp_path, monkeypatch, state, host, own):
-    """相対パス・複数パイプ読取では、他担当の手順書だけへ警告する。"""
+def test_piped_role_read_keeps_acquisition_boundary_without_foreign_warning(tmp_path, monkeypatch, state, host, own):
+    """他担当の読取を警告せず、加工した出力を全文取得の証拠には使わない。"""
     root = tmp_path / "plugin"
     share = root / "share"
     share.mkdir(parents=True)
@@ -248,10 +248,7 @@ def test_piped_foreign_role_warning_keeps_acquisition_boundary(tmp_path, monkeyp
     }
     before = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
     assert before.returncode == 0 and not before.stderr
-    assert ("他の担当の手順書" in before.stdout) is not own
-    if not own:
-        assert str(role) in before.stdout
-        assert str(outside) not in before.stdout
+    assert "他の担当の手順書" not in before.stdout
     after = _run_hook_in_process(
         "posttooluse",
         {**payload, "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": inputs, "tool_response": "本文"},
@@ -321,9 +318,9 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
         )
         return
     if order == "reference-first":
-        assert "Readで" in guidance and "`Skill`で`agent-toolkit:process-wi`" not in guidance
+        assert "Readで" in guidance and "`agent-toolkit:process-wi`" not in guidance
     else:
-        assert "`Skill`で`agent-toolkit:process-wi`" in guidance
+        assert "`agent-toolkit:process-wi`" in guidance
     inputs = {"file_path": str(skill)} if tool == "Read" else {"command": "cat -- " + shlex.quote(str(skill))}
     invoke("PreToolUse", tool, inputs)
     invoke("PostToolUse", tool, inputs, skill.read_text(encoding="utf-8"))
@@ -333,7 +330,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
         select_invocation()
         following = invoke("PreToolUse", "Write", write)
     if order == "reference-first":
-        assert "`Skill`で`agent-toolkit:process-wi`" in following
+        assert "`agent-toolkit:process-wi`" in following
     else:
         _assert_no_read_guidance(following)
     assert not read_delivery.target_ready(

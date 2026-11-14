@@ -32,7 +32,6 @@ _RESULT = "この呼び出しは全体を実行していない（同じ呼び出
         "continuation",
         "free_start",
         "agent_prompt",
-        "large_read",
     ],
 )
 def test_block_notices_preserve_cause_and_next_action(
@@ -45,8 +44,6 @@ def test_block_notices_preserve_cause_and_next_action(
     manifest.parent.mkdir()
     manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     document.write_text("## 入力\n\n```text\n必須入力名: 対象\n作業ツリーへの書込: あり\n```\n", encoding="utf-8")
-    large = tmp_path / "large.txt"
-    large.write_text("a" * (48 * 1024 + 1), encoding="utf-8")
     commands = {
         "atk_pipe": "cat <<'EOF' > sample.txt\n生成する本文\nEOF\natk --help | cat",
         "heredoc": "cat <<EOF\n`date`\nEOF",
@@ -55,7 +52,6 @@ def test_block_notices_preserve_cause_and_next_action(
         "revisions": "git rev-parse --short HEAD HEAD~1",
         "commit_format": "git commit -m 'fix: 件名\n本文'",
         "commit_attribution": "git commit -m 'fix: 件名'",
-        "large_read": f"cat -n -- {large}",
     }
     tool, tool_input = "Bash", {"command": commands.get(case, "")}
     if case == "task_stop":
@@ -78,13 +74,12 @@ def test_block_notices_preserve_cause_and_next_action(
         payload["turn_id"] = "codex-turn"
     code = dispatch.main(json.dumps(payload, ensure_ascii=False))
     captured = capsys.readouterr()
-    if case in {"large_read", "atk_pipe", "options", "revisions", "free_start", "agent_prompt"}:
+    if case in {"atk_pipe", "options", "revisions", "free_start", "agent_prompt"}:
         assert code == 0
         assert _RESULT not in captured.err
-        if codex or case != "large_read":
-            message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
-            assert 'kind="warn"' in message
-            assert "次の操作:" in message
+        message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
+        assert 'kind="warn"' in message
+        assert "次の操作:" in message
         return
     assert code == 0, captured
     assert not captured.err

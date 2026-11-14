@@ -1,24 +1,13 @@
-"""規範の見出し抽出とCodexの大量読取に、全文を受信できる取得方法を案内する。
-
-Codexでは出力予算を超えた取得が本文の省略を招くため、容量と行範囲の分割取得の手段を警告する。
-容量警告は、残りを継続取得できるClaude Codeを対象外とする。
-規範の見出し正規表現による範囲抽出は、両ホストで全文取得を案内する。
-
-内側コマンドと外側セルの予算をhookから確定できないため、通常の読取を継続する。
-全文と終了状態を保持できる予算なら標準読取を使え、省略時は`sed -n '<開始行>,<終了行>p'`の分割取得へ移れる。
-"""
+"""原記録の直接参照と規範の見出し抽出へ、適切な取得方法を案内する。"""
 
 from __future__ import annotations
 
-import os
 import pathlib
-from dataclasses import dataclass
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
 lazy import shlex
-lazy import stat
 lazy from collections.abc import Iterator, Sequence
 
 from agent_toolkit._hooks.notice import formatter
@@ -26,16 +15,8 @@ lazy from agent_toolkit._common import host_homes, read_triggers, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import is_unknown_word
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
-lazy from agent_toolkit._hooks import plugin_resources
 lazy from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 
-# Codexの配布設定の出力上限`tool_output_token_limit = 20000`（トークン）と、
-# agent-toolkitのMarkdownで測った1トークンあたりバイト数の最小値3.10の積は約62,000バイトである。
-# 実行セルが本文へ付加する分の余裕を取り、48KiBを閾値とする。
-# 測定の記録と再検証手段は`docs/development/audit-records.md`の
-# 「agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py：全文取得の閾値：2026年9月29日」にある。
-_DEFAULT_BYTE_THRESHOLD = 48 * 1024
-_BYTE_THRESHOLD_ENV = "AGENT_TOOLKIT_LARGE_READ_BYTES"
 _FULL_READ_COMMANDS = frozenset({"cat", "less", "more"})
 _SEARCH_COMMANDS = frozenset({"rg", "grep", "egrep", "fgrep"})
 _notice = formatter("pretooluse")
@@ -43,36 +24,6 @@ _notice = formatter("pretooluse")
 
 def _large_warning(body: str, *, fix: str, subject: str = "") -> str:
     return _notice(body, tag="warn", fix=fix, removable_cause=False, subject=subject)
-
-
-def _byte_threshold() -> int:
-    """環境指定が正の整数なら採用し、それ以外は指定を省略した場合の値を返す。"""
-    try:
-        threshold = int(os.environ.get(_BYTE_THRESHOLD_ENV, str(_DEFAULT_BYTE_THRESHOLD)))
-    except ValueError:
-        return _DEFAULT_BYTE_THRESHOLD
-    return threshold if threshold > 0 else _DEFAULT_BYTE_THRESHOLD
-
-
-@dataclass(frozen=True)
-class _ReadPlan:
-    line_count: int
-    byte_count: int
-
-
-def _measure_and_plan(path: pathlib.Path) -> _ReadPlan | None:
-    """警告の判定と対象の説明に必要な容量だけを数える。"""
-    if not path.is_file():
-        return None
-    line_count = byte_count = 0
-    try:
-        with path.open("rb") as source:
-            for line in source:
-                line_count += 1
-                byte_count += len(line)
-    except OSError:
-        return None
-    return _ReadPlan(line_count, byte_count)
 
 
 def _resolve_path(value: str, cwd: str) -> pathlib.Path:
@@ -623,57 +574,21 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         paths = _bash_session_record_paths(tool_input["command"], cwd)
     if not paths:
         return None
-    reference = plugin_resources.skill_reference("review-session", "references/session-records.md")
-    query_reference = plugin_resources.skill_reference("review-session", "references/session-records-query.md")
     return _notice(
-        "セッションの原記録の本文を、汎用ツールで直接参照しようとしている。\n対象: " + "、".join(str(path) for path in paths),
+        "セッション原記録の直接参照である。\n対象: " + "、".join(str(path) for path in paths),
         tag="warn",
         fix=(
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"
-            f"オプションの使い分けは{query_reference}に従い、抽出済みの結果を後処理せよ。"
-            f"入力の選択は{reference}に従え。"
+            "今回必要な照会条件は`agent-toolkit:review-session`の`references/session-records-query.md`で選べ。"
+            "入力の選択は同スキルの`references/session-records.md`に従え。"
         ),
         removable_cause=False,
         escalate_on_repeat=False,
     )
 
 
-def _large_read_notice(path: pathlib.Path, plan: _ReadPlan, byte_threshold: int) -> str:
-    if _is_session_record(path):
-        return _large_warning(
-            f"原セッション記録の全文取得の出力量を確認せよ（{plan.byte_count}バイト、"
-            f"通知の閾値: {byte_threshold}バイト）: {path}",
-            fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な場合は、"
-            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`に、目的に応じた照会条件を加えよ。"
-            "`agent-toolkit:review-session`の`references/session-records.md`で入力と照会モードを選べ。",
-        )
-    return _large_warning(
-        f"{plan.line_count}行、{plan.byte_count}バイトの全文取得の出力量を確認せよ"
-        f"（通知の閾値: {byte_threshold}バイト）: {path}",
-        fix="必要な範囲を選べ。全文が必要な場合は、次の実行例で取得せよ。\n" + codex_acquisition(path),
-    )
-
-
-def _large_multi_read_notice(path_counts: Sequence[tuple[pathlib.Path, _ReadPlan]], byte_threshold: int) -> str:
-    if any(_is_session_record(path) for path, _plan in path_counts):
-        return _large_warning(
-            "原セッション記録を含む複数ファイルの全文取得の出力量を確認せよ。",
-            fix="まず取得の必要性と範囲を見直せ。目的に不要なら取得を中止せよ。必要な原記録を"
-            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`へ照会条件を渡し、"
-            "通常の本文は別の呼び出しで取得せよ。入力の選択は`agent-toolkit:review-session`の`references/session-records.md`に従え。",
-            subject="\n".join(str(path) for path, _plan in path_counts),
-        )
-    total_bytes = sum(plan.byte_count for _path, plan in path_counts)
-    details = "、".join(f"`{path}`: {plan.line_count}行、{plan.byte_count}バイト" for path, plan in path_counts)
-    return _large_warning(
-        f"複数ファイルの全文取得の出力量を確認せよ（合計: {total_bytes}バイト、通知の閾値: {byte_threshold}バイト）: {details}",
-        fix="必要な資料と範囲を選べ。全文が必要な資料は、資料ごと・コードブロックごとに別のセルで取得せよ。\n"
-        + "\n".join(codex_acquisition(path) for path, _plan in path_counts),
-    )
-
-
 def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> str | None:
-    """規範の見出し抽出と、Codexの閾値を超える全文取得を警告する。"""
+    """規範の見出し抽出を警告する。受信予算が不明な通常読取は警告しない。"""
     extracted = []
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.segment.tokens
@@ -705,34 +620,4 @@ def check_large_bash_read(command: str, cwd: str, *, is_codex: bool = False) -> 
                 codex_acquisition(path) if is_codex else f"`cat -- {shlex.quote(str(path))}`で全文読め" for path in paths
             ),
         )
-    if not is_codex:
-        return None
-    byte_threshold = _byte_threshold()
-    for paths in bash_read_paths(command, cwd):
-        sizes: list[tuple[pathlib.Path, int, _ReadPlan | None]] = []
-        for path in paths:
-            try:
-                metadata = path.stat()
-            except OSError:
-                continue
-            if not stat.S_ISREG(metadata.st_mode):
-                continue
-            if metadata.st_size > 0:
-                sizes.append((path, metadata.st_size, None))
-            elif (measurement := _measure_and_plan(path)) is not None:
-                # procfsなどのサイズ0の通常ファイルは、内容量をメタデータから確定できない。
-                sizes.append((path, measurement.byte_count, measurement))
-        if sum(size for _path, size, _plan in sizes) <= byte_threshold:
-            continue
-        path_counts = []
-        for path, _size, cached in sizes:
-            measurement = cached or _measure_and_plan(path)
-            if measurement is not None:
-                path_counts.append((path, measurement))
-        if sum(plan.byte_count for _path, plan in path_counts) <= byte_threshold:
-            continue
-        if len(path_counts) == 1:
-            path, plan = path_counts[0]
-            return _large_read_notice(path, plan, byte_threshold)
-        return _large_multi_read_notice(path_counts, byte_threshold)
     return None

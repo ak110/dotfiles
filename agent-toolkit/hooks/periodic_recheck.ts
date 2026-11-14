@@ -38,7 +38,7 @@ function notMounted(reason: string): MountOutcome {
     note: notice(
       "warn",
       `委譲先の起動後に待機状況を定期確認するtaskを、自動作成できなかった（理由: ${reason}）。` +
-        `理由に示したツールの許可と公開状態を確認せよ。待機は${RUNTIME_REFERENCE}の完了通知と終了観測で続けよ。`,
+        `理由に示したツールの許可と公開状態を確認せよ。待機方法は${RUNTIME_REFERENCE}を参照せよ。`,
     ),
     failed: true,
   };
@@ -140,7 +140,7 @@ async function mount($: EngineInterface): Promise<MountOutcome | undefined> {
   return {
     note: notice(
       "notice",
-      `定期再確認のtaskを作成した。再利用とresume・compaction後の確認は${RUNTIME_REFERENCE}に従え。`,
+      `定期再確認のtaskを作成した。再利用条件は${RUNTIME_REFERENCE}に従え。`,
     ),
     failed: false,
   };

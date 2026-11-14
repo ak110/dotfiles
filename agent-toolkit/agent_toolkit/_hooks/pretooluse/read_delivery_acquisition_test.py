@@ -101,7 +101,7 @@ def test_skill_acquisition_respects_model_invocation(tmp_path, monkeypatch, stat
     first = read_delivery.deliver(payload, "Do", {}, "test")
     assert first.notices and not first.block
     if host == "claude":
-        assert ("`Skill`で`local`" in "".join(first.notices)) is not allows_read
+        assert ("`local`" in "".join(first.notices)) is not allows_read
     for response in ({"stdout": "読取失敗", "exit_code": 1},):
         observe_received({**payload, "tool_response": response}, tool, inputs, "test")
         assert not document_reads.content_ready(
@@ -156,7 +156,7 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
     first = _run_hook_in_process("pretooluse", request)
     assert first.returncode == 0 and not first.stderr
     assert (str(skill) in first.stdout) is not inside
-    assert ("`Skill`で`local`" in first.stdout) is inside
+    assert ("`local`" in first.stdout) is inside
     if not inside:
         assert "Readで" in first.stdout
     _assert_continues_without_guidance(_run_hook_in_process("pretooluse", request))
@@ -192,8 +192,8 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
         monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
         compact = _run_hook_in_process("rules_context", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
         assert compact.returncode == 0 and not compact.stderr
-        assert str(skill) not in compact.stdout and "`Skill`で`local`" not in compact.stdout
-        assert "工程を定めるスキルと役割文書" in compact.stdout
+        assert str(skill) not in compact.stdout and "`local`" not in compact.stdout
+        assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in compact.stdout
         failed = _run_hook_in_process(
             "posttooluse",
             {
@@ -457,7 +457,7 @@ def test_selected_shared_skill_keeps_current_role_boundary(tmp_path, monkeypatch
         assert result.returncode == 0 and not result.stderr
         assert '"permissionDecision": "deny"' not in result.stdout
         assert all(str(path) not in result.stdout for path in (planning, integration))
-        assert f"`Skill`で`{skill_name}`" not in result.stdout
+        assert f"`{skill_name}`" not in result.stdout
         assert str(skill) not in result.stdout
         repeated = _run_hook_in_process("pretooluse", {**payload, "tool_name": tool, "tool_input": inputs})
         assert repeated.returncode == 0 and not repeated.stderr

@@ -120,8 +120,7 @@ def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
         for path in missing
     )
     return _notice(
-        "改善点の判定資料について、この文脈で全文取得したことを確認できない。"
-        "部分表示やパイプ・変数を使った表示は取得操作に数えない。",
+        "改善点の判定に使う次の資料の全文取得を確認できない。",
         removable_cause=True,
         subject="\n".join(map(str, missing)),
         fix=f"次の各コマンドで資料を全文読め。\n{commands}\n読んだ基準で処置とAWI化ステータスを見直し、必要なら報告を訂正せよ。",

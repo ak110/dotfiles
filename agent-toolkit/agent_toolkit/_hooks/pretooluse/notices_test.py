@@ -48,7 +48,8 @@ class TestCodexApplyPatchEditChecks:
         assert result.returncode == 0
         assert len(result.stdout.strip().splitlines()) == 1
         context = _additional_context(result)
-        assert context.count("uv add") == 2
+        assert context.count("uv add") == 1
+        assert "one/uv.lock" in context and "two/uv.lock" in context
         assert "この通知は同一セッションで2件目である" not in context
         assert result.stderr == ""
 

@@ -4,36 +4,35 @@ import json
 
 import pytest
 
-from agent_toolkit._common import session_state
 from agent_toolkit._hooks import user_prompt_submit
-from agent_toolkit._hooks.posttooluse import USER_CONFIRMATION_PENDING_KEY
 
 
-@pytest.mark.parametrize("pending", [False, True])
-def test_confirmation_notice_is_delivered_once_per_pending_context(
+@pytest.mark.parametrize("prompt", ["変更を続ける", "$agent-toolkit:user-confirmation-and-report"])
+def test_initial_preparation_does_not_receive_missing_skill_warning(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    pending: bool,
+    prompt: str,
 ) -> None:
-    session_id = f"quiet-output-{pending}"
-    session_state.update_state(session_id, lambda _state: {USER_CONFIRMATION_PENDING_KEY: pending})
+    session_id = "quiet-output"
     monkeypatch.setattr(user_prompt_submit, "_is_machine_injected", lambda *_args: False)
     monkeypatch.setattr(user_prompt_submit.session_title, "proposed_title", lambda *_args: None)
 
-    payload = json.dumps({"session_id": session_id, "prompt": "変更を続ける", "turn_id": "codex"})
+    payload = json.dumps({"session_id": session_id, "prompt": prompt, "turn_id": "codex"})
     assert user_prompt_submit.main(payload) == 0
     output = capsys.readouterr().out
-    if pending:
-        body = json.loads(output)["hookSpecificOutput"]["additionalContext"]
-        assert body.count("`agent-toolkit:user-confirmation-and-report`スキルを起動せよ") == 1
-        assert "`agent-basics:bugfix`" not in body
-        assert "認可を要する操作" not in body
-    else:
-        assert not output
+    assert not output
     assert user_prompt_submit.main(payload) == 0
     assert not capsys.readouterr().out
-    session_state.update_state(session_id, lambda state: {**state, USER_CONFIRMATION_PENDING_KEY: True})
-    assert user_prompt_submit.main(payload) == 0
-    renewed = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert renewed.count("`agent-toolkit:user-confirmation-and-report`スキルを起動せよ") == 1
-    assert "`agent-basics:bugfix`" not in renewed
+
+
+@pytest.mark.parametrize("failure", ["observe_user", "observe_input"])
+def test_record_failure_delivers_recovery_through_public_hook(monkeypatch, capsys, failure):
+    def fail(*_args, **_kwargs):
+        raise OSError("記録先へ書けない")
+
+    module = user_prompt_submit.termination_evidence if failure == "observe_user" else user_prompt_submit.work_contract
+    monkeypatch.setattr(module, failure, fail)
+    assert user_prompt_submit.main(json.dumps({"session_id": "record-" + failure, "prompt": "要求を保持して進めて"})) == 0
+    context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "記録先へ書けない" in context
+    assert "原文" in context and "委譲元またはユーザー" in context

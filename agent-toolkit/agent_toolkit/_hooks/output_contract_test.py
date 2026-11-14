@@ -101,9 +101,7 @@ def _build_fixture(
         plan = home / ".claude" / "plans" / "draft.md"
         plan.parent.mkdir(parents=True)
         plan.write_text("# 計画\n", encoding="utf-8")
-        assert session_state.update_state(
-            session_id, lambda _previous: {"current_plan_file_path": str(plan), "user_confirmation_skill_pending": True}
-        )
+        assert session_state.update_state(session_id, lambda _previous: {"current_plan_file_path": str(plan)})
         payload["prompt"] = "続行します"
         env.update({"HOME": str(home), "USERPROFILE": str(home)})
     return payload, env

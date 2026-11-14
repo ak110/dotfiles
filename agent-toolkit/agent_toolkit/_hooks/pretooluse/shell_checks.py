@@ -135,20 +135,22 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
             else "待機は単独の前景実行とし、CLI自身の期限で返る結果と終了コードを同じターン内に回収せよ。"
             "`Claude Code`の`Bash`では`timeout=600000`を指定し、未終了なら同じコマンドを再発行せよ。"
         )
+        removals = []
+        if invocation.output_pipe or invocation.output_redirected:
+            removals.append("パイプまたはリダイレクト")
+        if is_wait and invocation.background:
+            removals.append("シェルの`&`")
+        action = "と".join(removals) + f"を外して`{label}`を単独で発行せよ。"
+        if invocation.output_pipe or invocation.output_redirected:
+            action += "長い出力は`atk`が示す保存先から読め。"
+        if is_wait and invocation.background:
+            action += waiting
         return _llm_notice(
             f"`{label}`の結果と終了状態を直接受領できない入力（{'、'.join(causes)}）を検出した。",
             tag=_WARN_TAG,
             subject=command,
             removable_cause=True,
-            fix=(
-                "`atk`はパイプとリダイレクトを外して単独で発行し、長い出力は`atk`が示す保存先"
-                "（標準出力の`保存先:`と標準エラーの`標準エラー保存先:`）から読め。"
-                "複数対象は対応するコマンドへまとめて渡し、形は公開ヘルプで確認せよ"
-                "（例: `atk config get execute_model chores_model`）。出力量は対象限定や要約の公開入力で抑えよ。"
-                "`atk agents wait`は`&`も外して単独で発行せよ。"
-                f"{waiting}"
-                "保存した本文の選別は別の呼び出しで行え。"
-            ),
+            fix=action,
         )
     return None
 

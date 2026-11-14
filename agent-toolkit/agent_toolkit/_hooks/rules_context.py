@@ -36,7 +36,7 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter
 lazy from agent_toolkit._common import host_homes, process_tree, wait_schedule
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.json_lines import split_lines
-lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import document_reads, repository_protection, timing, work_contract
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 lazy from agent_toolkit._hooks.message_format import xml_message
@@ -47,7 +47,7 @@ _llm_notice = _notice_formatter(_HOOK_ID)
 RESPONSE_LANGUAGE_NOTICE = "言語の基準は、同時配送された`01-agent.md`「使用言語」を参照せよ。"
 QUALITY_CHECKPOINT_NOTICE = "圧縮後の復元は`01-agent.md`「行動と手順の目的」に従え。"
 BACKGROUND_TASKS_DISABLED_NOTICE = (
-    "この`Claude Code`では`Bash`の背景実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）で、`run_in_background`は使えない。"
+    "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。"
     "待機は`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`「待機区間の構成」に従え。"
 )
 """背景実行を無効にした起動で、使える待機方法をメインと委譲先へ伝える本文。
@@ -151,8 +151,6 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     return "\n\n".join(parts) or None
 
 
-USER_CONFIRMATION_PENDING_KEY = "user_confirmation_skill_pending"
-"""文脈ごとに`agent-toolkit:user-confirmation-and-report`の起動案内を一度届ける配送待ちのキー。"""
 _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 """会話の文脈を引き継がずに始まるSessionStartの`source`。`resume`と`fork`は文脈を引き継ぐため含めない。"""
 _OPERATION_SKILL_RESET_SOURCES = frozenset({"clear", "compact"})
@@ -278,7 +276,7 @@ def acquisition_failure(
     ):
         owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
         name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
-        step = f"`Skill`で`{name}`を起動せよ（資料: `{path}`）"
+        step = f"`{name}`を起動せよ"
         if agent:
             step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
         return prefix + step
@@ -290,27 +288,7 @@ def acquisition_failure(
 
 def _compact_recovery_context() -> str:
     """次の判断前に、現在の工程を定める文書から必要な知識を回復させる。"""
-    return _llm_notice(
-        "会話が圧縮された。次の判断より前に、"
-        "工程を定めるスキルと役割文書を全文読み直し、読込表から次の判断に必要な資料を選んで読め。"
-        "復元先: `agent-toolkit/share/compaction-recovery.md`を全文読め。"
-    )
-
-
-def mark_user_confirmation_pending(session_id: str) -> None:
-    """文脈ごとの`agent-toolkit:user-confirmation-and-report`の案内待ちを記録する。
-
-    同スキルは内容が文脈に無い状態で受けた実ユーザー発話の前に起動する契機を持つ。
-    UserPromptSubmitが実入力へ一度案内して解除する。先行したSkill起動でも解除する。
-    """
-
-    def _mark(current: dict) -> dict | None:
-        if current.get(USER_CONFIRMATION_PENDING_KEY) is True:
-            return None
-        current[USER_CONFIRMATION_PENDING_KEY] = True
-        return current
-
-    update_state(session_id, _mark)
+    return _llm_notice("会話が圧縮された。次の判断より前に、復元先: `agent-toolkit/share/compaction-recovery.md`を全文読め。")
 
 
 def _normative_context(body: str, *, kind: str) -> str:
@@ -424,7 +402,7 @@ def _compaction_notice(
     # 復元で先に読むのは発話の原文と作業契約・計画・引き継ぎ記録である。会話は進行中の操作を補う直近の少量表示を案内し、
     # 全期間の通常表示（数万文字）は不足する場合の手段にとどめる。
     lines = [
-        f"圧縮前の直近の操作は`{conversation}`でconversation.mdを取得して確かめよ。"
+        f"圧縮前の原文と作業記録で要求を復元した後、直近の操作は`{conversation}`でconversation.mdを取得して確かめよ。"
         "原文・結果と継続取得はskills/review-session/references/session-records.md「会話の少量取得」に従え。"
     ]
     if delegated:
@@ -472,9 +450,13 @@ def _compaction_notice(
         # hookは同じ所有対象を次の起動まで保持できないため、その場で回収し直し、残れば対象を示す。
         remaining = error.retry()
         if remaining:
-            lines.append(f"ユーザー発話の抽出の子プロセスを回収できない: {remaining}。PIDと起動コマンドを確かめて終了させよ。")
+            lines.append(
+                f"ユーザー発話の抽出の子プロセスを回収できない: {remaining}。"
+                "各PIDの起動コマンドと自身の所有対象との一致を確認し、一致したプロセスだけを終了させよ。"
+            )
         lines.append(
-            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: {error}）。手動で`{shlex.join(command)}`を実行せよ。"
+            f"ユーザー発話の抽出に失敗した（{type(error).__name__}: context={error.context}、残存={remaining}）。"
+            f"手動で`{shlex.join(command)}`を実行せよ。"
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         if output is not None:
@@ -570,19 +552,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 )
             if source in _OPERATION_SKILL_RESET_SOURCES:
                 reset_main_operation_skill_ready(session_id)
-            if not delegated and source in _CONTEXT_LOSING_SOURCES:
-                mark_user_confirmation_pending(session_id)
             if source == "compact":
                 work_contract.reset_notice(session_id)
-                if delegated:
-                    state = read_state(session_id)
-                    contract_update = work_contract.delegated_notice(
-                        session_id,
-                        state.get(OPERATION_SKILL_READY_KEY, {}),
-                        state,
-                    )
-                    if contract_update:
-                        content = f"{content}\n\n{_llm_notice(contract_update)}"
             if session_temp is not None:
                 temp_text = session_temp_notice(session_temp)
                 contract_context = None

@@ -86,7 +86,7 @@ class TestLanguageRewrite:
                 assert specific["permissionDecision"] == "deny"
                 reason = specific["permissionDecisionReason"]
                 assert "日本語で書き直" in reason
-                assert "識別子と名前" in reason
+                assert "識別子と正式名" in reason
                 assert reason.rstrip().endswith("</atk-auto>")
             else:
                 specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}

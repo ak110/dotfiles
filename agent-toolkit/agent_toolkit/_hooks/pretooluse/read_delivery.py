@@ -40,7 +40,6 @@ from agent_toolkit._hooks.pretooluse.large_reads import (
 from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 from agent_toolkit._hooks.pretooluse.read_delivery_cache import _input_cached, _input_scope
 from agent_toolkit._hooks.pretooluse.read_delivery_conditions import (
-    _condition_candidate_notice,
     _declaration_recovery_operation,
     _work_record_only,
 )
@@ -67,7 +66,6 @@ from agent_toolkit._hooks.pretooluse.read_delivery_paths import (
 )
 from agent_toolkit._hooks.pretooluse.read_delivery_receipts import _receipt_targets, _refresh_receipts
 from agent_toolkit._hooks.pretooluse.read_delivery_roles import (
-    _foreign_task_document_notice,
     active_roles,
 )
 from agent_toolkit._hooks.pretooluse.read_delivery_selection import (
@@ -85,7 +83,6 @@ from agent_toolkit._hooks.pretooluse.read_delivery_selection import (
 lazy from agent_toolkit._common import task_documents
 
 __all__ = [
-    "_condition_candidate_notice",
     "_declaration_recovery_operation",
     "_deliver_documents",
     "_mark",
@@ -148,25 +145,28 @@ def _declaration_sources(cwd: str) -> list[pathlib.Path]:
 
 @_input_scope
 def deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
-    """現在の操作に関係する宣言資料を配送または案内し、他の担当の手順書の取得へ警告を加え、通常操作の進行を保つ。
+    """現在の操作に関係する宣言資料を配送または案内し、通常操作の進行を保つ。
 
     ユーザー側の読込表から除いた行は、同じ要求の終わりに警告として示す。
     """
     decision = _deliver(payload, tool_name, tool_input, session_id)
-    warnings = tuple(filter(None, map(_declaration_issue_notice, read_triggers.declaration_issues())))
-    return dataclasses.replace(decision, notices=(*decision.notices, *warnings)) if warnings else decision
+    issues = read_triggers.declaration_issues()
+    if not issues:
+        return decision
+    warning = _declaration_issue_notice("\n".join(issues))
+    return dataclasses.replace(decision, notices=(*decision.notices, warning))
 
 
 def _declaration_issue_notice(issue: str) -> str:
     """除いた行の警告。同じ本文は整形関数の記録により同じ会話で1回だけ届く。"""
     return _llm_notice(
-        f"ユーザー側の読込表の1行を解釈できないため、この行の読込案内と読取記録を省いた: {issue}",
+        f"読込表の次の行を解釈できず、該当行の案内と読取記録を省いた:\n{issue}",
         tag=_WARN_TAG,
         removable_cause=True,
         escalate_on_repeat=False,
         fix=(
             "作業はそのまま続けよ。宣言元を編集する担当は、"
-            "`agent-basics:writing-standards`の`references/agent-documents-basics-read-tables.md`「読込表」に合わせてこの行を直せ。"
+            "`agent-basics:writing-standards`の`references/agent-documents-basics-read-tables.md`「読込表」に合わせて該当行を直せ。"
         ),
     )
 
@@ -178,9 +178,7 @@ def _deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -
     _refresh_receipts(payload, tool_name, tool_input, session_id)
     decision = _deliver_documents(payload, tool_name, tool_input, session_id)
     if _acquiring(tool_name, tool_input, str(payload.get("cwd", ""))):
-        # 取得操作の依存案内は次の関連操作へ保留する。所有する役割の読取保護は維持する。
-        notice = _foreign_task_document_notice(payload, tool_name, tool_input, session_id)
-        return dataclasses.replace(decision, notices=(*decision.notices, notice)) if notice else decision
+        return decision
     agent = agent_id.resolve_hook_agent_id(payload)
     records = read_state(session_id).get(rules_context.OPERATION_SKILL_READY_KEY, {})
     updates = []
@@ -213,13 +211,7 @@ def _deliver(payload: dict, tool_name: str, tool_input: dict, session_id: str) -
         notice_module.stage_delivery(text, session_id, rules_context.OPERATION_SKILL_READY_KEY, key, agent)
         updates.append(text)
     decision = dataclasses.replace(decision, notices=(*decision.notices, *updates))
-    if decision.block is not None:
-        return decision
-    candidate_notice = _condition_candidate_notice(payload, tool_name, tool_input, session_id)
-    if candidate_notice:
-        decision = dataclasses.replace(decision, notices=(*decision.notices, candidate_notice))
-    notice = _foreign_task_document_notice(payload, tool_name, tool_input, session_id)
-    return dataclasses.replace(decision, notices=(*decision.notices, notice)) if notice else decision
+    return decision
 
 
 @_input_scope
