@@ -13,7 +13,7 @@ import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._common import plugin_environment, plugin_environment_cleanup
 
 ROOT = Path(__file__).resolve().parent
 
@@ -224,3 +224,32 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         json.loads(_run([sys.executable, str(first / "scripts/launch.py"), "probe.py"], environment, tmp_path).stdout)["label"]
         == "old"
     )
+    # 実launcherを置換した子の寿命を保護し、終了後だけ旧依存を回収する。
+    (first / "live_probe.py").write_text("import sys\nprint('ready', flush=True)\nsys.stdin.readline()\n", encoding="utf-8")
+    current = plugin_environment.project_environment(second, environment)
+    with subprocess.Popen(
+        [sys.executable, str(first / "scripts/launch.py"), "live_probe.py"],
+        env=environment,
+        cwd=tmp_path,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    ) as process:
+        try:
+            assert process.stdout is not None
+            assert process.stdout.readline().strip() == "ready"
+            plugin_environment_cleanup.cleanup([current], environment)
+            assert selected.is_dir() and current.is_dir()
+            process.communicate("finish\n", timeout=15)
+            assert process.returncode == 0
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.communicate(timeout=15)
+    plugin_environment_cleanup.cleanup([current], environment)
+    assert not selected.exists() and current.is_dir()
+    # 回収後の現行環境は再準備なしで公開操作を実行できる。
+    current_probe = _run([sys.executable, str(second / "scripts/launch.py"), "probe.py"], environment, tmp_path)
+    assert json.loads(current_probe.stdout)["label"] == "new"

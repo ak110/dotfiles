@@ -99,6 +99,32 @@ def test_prepared_environment_is_published_only_after_completion(tmp_path: Path)
     assert subject.prepared_python(root, environment) is None
     published = subject.publish_prepared_environment(root, environment)
     assert subject.prepared_python(root, environment) == subject.python_path(published)
+    other = _root(tmp_path / "other-plugin")
+    (other / ".claude-plugin/plugin.json").write_text('{"version":"2.0.0"}', encoding="utf-8")
+    subject.publish_prepared_environment(other, environment)
+    sources = json.loads((published / ".agent-toolkit-sources.json").read_text(encoding="utf-8"))
+    assert sources == {str(root.resolve()): "1.0.0", str(other.resolve()): "2.0.0"}
+
+
+@pytest.mark.parametrize("corrupt", ["{broken", "[]"])
+def test_source_metadata_warning_preserves_corruption_until_repaired(tmp_path: Path, caplog, corrupt: str) -> None:
+    """破損情報を警告で特定し、退避後の同じ準備操作で版対応を復元できる。"""
+    root = _root(tmp_path / "plugin")
+    environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
+    target = subject.project_environment(root, environment)
+    target.mkdir(parents=True)
+    metadata = target / ".agent-toolkit-sources.json"
+    metadata.write_text(corrupt, encoding="utf-8")
+    subject.publish_prepared_environment(root, environment)
+    assert metadata.read_text(encoding="utf-8") == corrupt
+    assert str(metadata) in caplog.text
+    assert str(root / ".claude-plugin/plugin.json") in caplog.text
+    assert "退避して削除" in caplog.text
+    backup = metadata.with_suffix(".backup")
+    metadata.rename(backup)
+    subject.publish_prepared_environment(root, environment)
+    assert backup.read_text(encoding="utf-8") == corrupt
+    assert json.loads(metadata.read_text(encoding="utf-8")) == {str(root.resolve()): "1.0.0"}
 
 
 def test_direct_environment_puts_current_root_before_existing_pythonpath(tmp_path: Path) -> None:

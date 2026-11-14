@@ -361,7 +361,11 @@ def test_sweep_preserves_only_registered_external_worktree(
     )
     gitdir = tmp_path / "external-gitdir"
     gitdir.mkdir()
-    area = _area("registered-abc", days=8, files={"repo/.git": f"gitdir: {gitdir}\n"})
+    area = _area(
+        "registered-abc",
+        days=8,
+        files={"repo/.git": f"gitdir: {gitdir}\n", "discarded/payload.txt": "reproducible"},
+    )
     reference = area / "repo/.git" if registered else tmp_path / "other.git"
     reference.touch(exist_ok=True)
     (gitdir / "gitdir").write_text(str(reference), encoding="utf-8")
@@ -370,6 +374,9 @@ def test_sweep_preserves_only_registered_external_worktree(
     assert not result.failed
     assert (area in result.deleted) is not registered
     assert area.exists() is registered
+    assert not (area / "discarded").exists()
+    if registered:
+        assert (area / "repo/.git").is_file()
 
 
 def test_sweep_discards_schedule_of_previous_version() -> None:

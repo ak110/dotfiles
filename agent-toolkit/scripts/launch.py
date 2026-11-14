@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agent_toolkit._common import dotfiles_mode, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+from agent_toolkit._common import dotfiles_mode, environment_usage, next_action, plugin_environment  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 lazy from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
@@ -104,18 +104,25 @@ def main() -> int:
             next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。",
         )
         return 1
-    arguments = [str(python), str(target), *options.arguments]
-    environment = plugin_environment.direct_environment(root, caller_environment)
-    if target == root / _AGENTS_SERVER_TARGET:
-        return _run_agents_server(arguments, environment)
-    if target == root / "agent_toolkit/_common/pyfltr_entry.py" and options.arguments[:1] == ["mcp"]:
-        return _run_agents_server(arguments, environment, record_diagnostics=False)
-    if os.name == "nt":
-        # Windowsのexecveは子の終了を待たず、呼出元へ終了状態を渡せない。
-        # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
-        return subprocess.run(arguments, env=environment, check=False).returncode
-    os.execve(str(python), arguments, environment)
-    return 1
+    try:
+        with environment_usage.lock(plugin_environment.project_environment(root, caller_environment)):
+            # 準備確認と使用開始の間に回収されていないことを、回収と同じ排他下で確かめる。
+            if plugin_environment.prepared_python(root, caller_environment) is None:
+                raise FileNotFoundError("共有依存環境が回収されたため、update-dotfilesで再準備してください")
+            arguments = [str(python), str(target), *options.arguments]
+            environment = plugin_environment.direct_environment(root, caller_environment)
+            if target == root / _AGENTS_SERVER_TARGET:
+                return _run_agents_server(arguments, environment)
+            if target == root / "agent_toolkit/_common/pyfltr_entry.py" and options.arguments[:1] == ["mcp"]:
+                return _run_agents_server(arguments, environment, record_diagnostics=False)
+            if os.name == "nt":
+                # Windowsでは親が子の終了まで共有ロックと終了状態を保持する。
+                return subprocess.run(arguments, env=environment, check=False).returncode
+            os.execve(str(python), arguments, environment)
+            return 1
+    except OSError as exc:
+        next_action.report(str(exc), next_action="`update-dotfiles`を再実行して依存環境を準備してください。")
+        return 1
 
 
 def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
@@ -125,6 +132,7 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
     try:
         with plugin_environment.prepare_lock(target):
             if plugin_environment.prepared_python(root, environment) is not None:
+                plugin_environment.record_source(root, target)
                 return 0
             remaining = _PREPARE_TIMEOUT - (time.monotonic() - started)
             if remaining <= 0:

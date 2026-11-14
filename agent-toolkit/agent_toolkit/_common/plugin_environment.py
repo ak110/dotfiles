@@ -7,6 +7,7 @@
 import errno
 import hashlib
 import json
+import logging
 import os
 import platform
 import shlex
@@ -234,7 +235,44 @@ def publish_prepared_environment(root: Path, environment: Mapping[str, str]) -> 
     temporary = target / f"{_READY_FILE}.tmp-{os.getpid()}"
     temporary.write_text("ready\n", encoding="utf-8")
     temporary.replace(target / _READY_FILE)
+    record_source(root, target)
     return target
+
+
+def record_source(root: Path, target: Path) -> None:
+    """prepareの排他下で、同じ実体を共有する配布rootと版の対応を残す。"""
+    try:
+        _record_source(root, target)
+    except (OSError, ValueError, TypeError) as error:
+        logging.getLogger(__name__).warning(
+            "共有環境の版対応を保存できませんでした: %s。%s と %s の内容・読み書き権限を確認してください。"
+            "壊れた版対応JSONは退避して削除し、配布manifestの破損はプラグインの再インストールで復元してください。"
+            "原因を解消してから元のプラグイン準備操作を再実行してください。起動可能な環境は保持しています",
+            error,
+            target / ".agent-toolkit-sources.json",
+            root / ".claude-plugin/plugin.json",
+        )
+
+
+def _record_source(root: Path, target: Path) -> None:
+    """破損した対応情報は上書きせず、準備完了とも切り離して扱う。"""
+    path = target / ".agent-toolkit-sources.json"
+    try:
+        sources = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        sources = {}
+    if not isinstance(sources, dict):
+        raise ValueError(f"版対応がobjectではありません: {path}")
+    try:
+        manifest = json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        manifest = {}
+    if not isinstance(manifest, dict):
+        raise ValueError(f"plugin manifestがobjectではありません: {root}")
+    sources[str(root.resolve())] = manifest.get("version")
+    temporary = path.with_suffix(f".tmp-{os.getpid()}")
+    temporary.write_text(json.dumps(sources, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    temporary.replace(path)
 
 
 def launch_command(root: Path, target: Path) -> list[str]:

@@ -338,13 +338,31 @@ def _examine(
     cutoff_ns: int,
     now_ns: int,
     protected_sessions: set[pathlib.Path],
+    deleted_children: list[pathlib.Path] | None = None,
 ) -> bool:
     """1件を調べ、削除した場合は真を返す。保持した対象は次の掃引で調べ直す。"""
     if stat.S_ISDIR(metadata.st_mode):
         latest, has_git = _latest_update_and_worktree(child, now_ns)
     else:
         latest, has_git = _update_time(metadata, now_ns), False
-    if latest >= cutoff_ns or child in protected_sessions or has_git or plugin_root_in_use(child):
+    if child in protected_sessions or plugin_root_in_use(child) or _has_live_owner(child):
+        return False
+    if has_git:
+        # 登録worktree自身は木全体を保護し、包含する親では無関係な兄弟だけを期限判定する。
+        with permissions.directory(child) if _DESCRIPTOR_WALK else contextlib.nullcontext():
+            if _registered_worktree(child / ".git", child):
+                return False
+            for nested in child.iterdir():
+                nested_metadata = nested.lstat()
+                if paths.is_link(nested_metadata):
+                    continue
+                if (
+                    _examine(state_root, nested, nested_metadata, cutoff_ns, now_ns, protected_sessions, deleted_children)
+                    and deleted_children is not None
+                ):
+                    deleted_children.append(nested)
+        return False
+    if latest >= cutoff_ns:
         return False
     return _remove(state_root, child, metadata)
 
@@ -381,18 +399,21 @@ def _has_live_owner(area: pathlib.Path) -> bool:
     """
     if not area.is_dir():
         return False
-    candidates = [area]
-    with os.scandir(area) as children:
-        candidates.extend(area / entry.name for entry in children if entry.is_dir(follow_symlinks=False))
-    for candidate in candidates:
-        try:
-            token = (candidate / OWNER_FILE).read_text(encoding="ascii")
-        except FileNotFoundError:
-            continue
-        except OSError, UnicodeDecodeError:
-            return True
-        if owner_alive(token):
-            return True
+    # 期限走査と同じ所有・同一性検証付きの権限回復を使い、保持時は元modeへ戻す。
+    with permissions.directory(area) if _DESCRIPTOR_WALK else contextlib.nullcontext():
+        candidates = [area]
+        with os.scandir(area) as children:
+            candidates.extend(area / entry.name for entry in children if entry.is_dir(follow_symlinks=False))
+        for candidate in candidates:
+            with permissions.directory(candidate) if _DESCRIPTOR_WALK else contextlib.nullcontext():
+                try:
+                    token = (candidate / OWNER_FILE).read_text(encoding="ascii")
+                except FileNotFoundError:
+                    continue
+                except OSError, UnicodeDecodeError:
+                    return True
+                if owner_alive(token):
+                    return True
     return False
 
 
@@ -517,7 +538,7 @@ def _reclaim_space(
 
 
 @plugin_root_leases.reuse_process_observation()
-def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_AGE_DAYS) -> SweepResult:
+def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_AGE_DAYS, force: bool = False) -> SweepResult:
     """一時root直下で配下を含む最終更新から`max_age_days`を超えた対象を削除し、削除結果と失敗を返す。
 
     通常ファイルも同じ期限の対象とする。外部gitdirと逆参照が一致する登録済みworktree、
@@ -532,7 +553,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         state_root = paths.state_root()
     except ManagedTempError as error:
         return SweepResult([], ((paths.temp_root_path(), str(error)),))
-    due = _sweep_due(state_root, now_ns)
+    due = force or _sweep_due(state_root, now_ns)
     if not due:
         # 間隔内の起動は全走査をしない。空きの確認は1回のstatvfsで済むため、下限を割る場合だけ回収へ進む。
         if not _below_floor(temp_root):
@@ -567,7 +588,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         if paths.is_link(metadata):
             continue
         try:
-            if _examine(state_root, child, metadata, cutoff_ns, now_ns, protected_sessions):
+            if _examine(state_root, child, metadata, cutoff_ns, now_ns, protected_sessions, deleted):
                 deleted.append(child)
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):

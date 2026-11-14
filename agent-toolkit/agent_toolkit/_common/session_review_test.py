@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -13,6 +14,98 @@ import types
 import pytest
 
 from agent_toolkit._common import session_review
+
+
+@pytest.mark.parametrize("changed,unconfirmed", [(False, False), (True, False), (False, True)])
+def test_cleanup_prepared_preserves_scope_and_referenced_evidence(tmp_path, changed, unconfirmed) -> None:
+    """成功した世代の全量抽出物だけを回収し、後続の証拠と変更済み抽出物を保持する。"""
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    disposable = bundle / "timeline.jsonl"
+    disposable.write_bytes(b"original")
+    for name in ("scope.json", "review-index.jsonl", "candidate-evidence.jsonl"):
+        (bundle / name).write_bytes(b"evidence")
+    prepared = {
+        "scope_path": str(bundle / "scope.json"),
+        "unconfirmed_scope": ["missing"] if unconfirmed else [],
+        "disposable_bundle_files": {"timeline.jsonl": hashlib.sha256(b"original").hexdigest()},
+    }
+    if changed:
+        disposable.write_bytes(b"new generation")
+    session_review.cleanup_prepared(prepared)
+    session_review.cleanup_prepared(prepared)
+    assert disposable.exists() is (changed or unconfirmed)
+    assert all((bundle / name).exists() for name in ("scope.json", "review-index.jsonl", "candidate-evidence.jsonl"))
+
+
+def test_batch_completion_reclaims_only_after_report_sync(tmp_path, capsys, monkeypatch) -> None:
+    """prepareから報告同期の成功保存まで通し、失敗時保持と成功時回収を観測する。"""
+    transcript = tmp_path / "session.jsonl"
+    _transcript(transcript, "要求")
+    prepared = _prepare(transcript, capsys)
+    writer = session_review.BatchWriter(session_review.directory() / "runs" / "cleanup.json")
+    writer.create({"run_id": "cleanup", "targets": []})
+    writer.prepare(prepared)
+    writer.analyze()
+    timeline = pathlib.Path(prepared["scope_path"]).parent / "timeline.jsonl"
+    with pytest.raises(ValueError, match="report-unsynced"):
+        writer.complete(report_synced=False)
+    assert timeline.exists()
+    resource = timeline.parent / "resource-usage.jsonl"
+    unlink = pathlib.Path.unlink
+
+    def fail_resource(path, *args, **kwargs):
+        if path == resource:
+            raise PermissionError("使用中")
+        return unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pathlib.Path, "unlink", fail_resource)
+        assert writer.complete(report_synced=True)["status"] == "completed"
+    assert session_review.read(writer.path)["status"] == "completed"
+    assert not timeline.exists()
+    assert pathlib.Path(prepared["scope_path"]).exists()
+    assert pathlib.Path(prepared["review_index_path"]).exists()
+    assert resource.exists()
+    session_review.sweep(now=time.time())
+    assert not resource.exists()
+
+
+def test_legacy_bundle_cleanup_and_individual_failure(tmp_path, capsys, monkeypatch, caplog) -> None:
+    """旧manifestの成功scopeを再確認し、個別削除失敗でも他の抽出物を回収して再試行する。"""
+    transcript = tmp_path / "session.jsonl"
+    _transcript(transcript, "要求")
+    prepared = _prepare(transcript, capsys)
+    session_review.complete(prepared)
+    prepared.pop("disposable_bundle_files")
+    bundle = pathlib.Path(prepared["scope_path"]).parent
+    unlink = pathlib.Path.unlink
+
+    def fail_one(path, *args, **kwargs):
+        if path == bundle / "resource-usage.jsonl":
+            raise PermissionError("使用中")
+        return unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pathlib.Path, "unlink", fail_one)
+        assert not session_review.cleanup_prepared(prepared, completed_before=time.time() + 1)
+    assert "削除権限を確認" in caplog.text
+    assert "atk run-skill --args batch agent-toolkit:review-session" in caplog.text
+    assert (bundle / "resource-usage.jsonl").exists()
+    assert not (bundle / "comparison-materials.jsonl").exists()
+    assert session_review.cleanup_prepared(prepared, completed_before=time.time() + 1)
+    assert not (bundle / "resource-usage.jsonl").exists()
+
+
+def test_unconfirmed_legacy_bundle_retention_does_not_warn(tmp_path, capsys, caplog) -> None:
+    """成功範囲との一致を確定できない正常保持を、対処が必要な警告にしない。"""
+    transcript = tmp_path / "session.jsonl"
+    _transcript(transcript, "要求")
+    prepared = _prepare(transcript, capsys)
+    prepared.pop("disposable_bundle_files")
+    assert not session_review.cleanup_prepared(prepared)
+    assert (pathlib.Path(prepared["scope_path"]).parent / "timeline.jsonl").exists()
+    assert not [record for record in caplog.records if record.levelname == "WARNING"]
 
 
 @pytest.mark.parametrize("status", ["starting", "accepted", "settled", "notified"])

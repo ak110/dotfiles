@@ -76,6 +76,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         )
     if dependencies_ready:
         post_apply_cache.save("agents-server-startup", key)
+        plugin_warmup.cleanup_prepared(commands)
     return post_apply_outcome.PostApplyOutcome()
 
 
