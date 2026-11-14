@@ -72,3 +72,49 @@ def test_pending_async_work_and_subagent(tmp_path: pathlib.Path) -> None:
     background = [{"id": "b1", "type": "shell", "status": "running", "description": "待機"}]
     assert _stop(entries, tmp_path, background_tasks=background)["decision"] == "block"
     assert "decision" not in _stop(entries, tmp_path, agent_id="sub-1")
+
+
+@pytest.mark.parametrize("command", ["goal", "restart"])
+@pytest.mark.parametrize("sent_in_current_turn", [False, True])
+def test_originless_command_starts_its_own_delivery_turn(
+    command: str, sent_in_current_turn: bool, tmp_path: pathlib.Path
+) -> None:
+    """Claude Codeのコマンド入力は前ターンの送達を切り離し、今回の送達後の再掲だけを止める。"""
+    command_input = {
+        "type": "user",
+        "promptId": "new-prompt",
+        "message": {
+            "content": f"<command-name>/{command}</command-name>\n"
+            f"<command-message>{command}</command-message>\n<command-args>進捗を教えて</command-args>"
+        },
+    }
+    entries = [_HUMAN, _SEND, _result(), command_input]
+    if sent_in_current_turn:
+        entries += [_SEND, _result()]
+    result = _stop([*entries, _text("今回は作業中です。結果はまだありません。")], tmp_path)
+    assert (result.get("decision") == "block") is sent_in_current_turn
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"isMeta": True},
+        {"isSidechain": True},
+        {"type": "system", "subtype": "local_command"},
+        {"origin": {"kind": "machine"}},
+        {"message": {"content": "機械側の通知"}},
+    ],
+)
+def test_machine_command_record_does_not_reset_delivery(extra: dict, tmp_path: pathlib.Path) -> None:
+    """機械側のコマンド記録やpromptIdの変化で、同じターンの送達を消さない。"""
+    command = {
+        "type": "user",
+        "promptId": "machine-prompt",
+        "message": {
+            "content": "<command-name>/goal</command-name>\n"
+            "<command-message>goal</command-message>\n<command-args>続けて</command-args>"
+        },
+        **extra,
+    }
+    result = _stop([_HUMAN, _SEND, _result(), command, _text("送達済みです。検証も通りました。")], tmp_path)
+    assert result["decision"] == "block"

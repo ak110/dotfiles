@@ -91,3 +91,28 @@ def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
     assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
     assert "decision" not in _stop(entries, tmp_path, monkeypatch, stop_hook_active=True)
     assert "decision" not in _stop([_human("進捗を教えて")], tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize("previous_skill", [False, True])
+@pytest.mark.parametrize("args,defect", [("進捗を教えて", False), ("まだバグがある", True)])
+def test_command_arguments_and_bugfix_invocation_belong_to_current_turn(
+    previous_skill: bool, args: str, defect: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """包装の欠陥語と旧ターンの指摘・起動を除き、今回のコマンド引数だけを両入口で判定する。"""
+    entries = [_human("以前のバグを直して")]
+    if previous_skill:
+        entries.append(_BUGFIX)
+    entries.append(
+        {
+            "type": "user",
+            "promptId": "command-turn",
+            "message": {
+                "content": "<command-name>/goal</command-name>\n<command-message>bugfix</command-message>\n"
+                f"<command-args>{args}</command-args>"
+            },
+        }
+    )
+    assert _pretooluse_denied(_payload(entries, tmp_path)) is defect
+    assert (_stop(entries, tmp_path, monkeypatch).get("decision") == "block") is defect
+    assert not _pretooluse_denied(_payload([*entries, _BUGFIX], tmp_path))
+    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)

@@ -16,6 +16,24 @@ _QUEUED = {
 }
 
 
+# test-copy-contract: origin無しのコマンド後の応答義務をStopで判定し、前ターンの可視本文の混入を検出する。
+@pytest.mark.parametrize("text", ["", "今回の応答です。"])
+def test_originless_command_response_is_checked_in_its_own_turn(
+    text: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """originのないコマンド入力後は、その前の本文を新しい発話への回答に数えない。"""
+    command = {
+        "type": "user",
+        "promptId": "command-turn",
+        "message": {
+            "content": "<command-name>/goal</command-name>\n<command-message>goal</command-message>\n"
+            "<command-args>進捗を教えて</command-args>"
+        },
+    }
+    output = _stop([_HUMAN, _assistant("前の回答です。"), command, _assistant(text)], tmp_path, capsys)
+    assert _has_advisor_notice(output) is (not text)
+
+
 def _assistant(text: str) -> dict:
     return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
 
