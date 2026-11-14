@@ -223,7 +223,11 @@ async def test_detail_mutation_conflict_keeps_input(
 
     保留した詳細の再読込は失敗時に実行するが、その警告で失敗の表示を上書きしない。
     """
-    harness = browser_harness
+    await _detail_conflict(browser_harness, mode_button, field, submit, failure)
+
+
+async def _detail_conflict(harness: _BrowserHarness, mode_button: str | None, field: str, submit: str, failure: str) -> None:
+    """編集中の外部更新を実SSEで届け、409後の入力と回復案内まで進める。"""
     page = harness.page
     harness.operations.enable_file_mutations()
     path = _entry_path(harness.root, "target.md")
@@ -262,10 +266,51 @@ async def test_detail_mutation_conflict_keeps_input(
 
     alert = detail.locator("#detail-alert")
     await playwright.async_api.expect(alert).to_contain_text(f"target.md{failure}")
-    await playwright.async_api.expect(alert).to_contain_text(
-        "target.mdは外部で更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。"
-    )
+    await playwright.async_api.expect(alert).to_contain_text("閉じる前にコピーして退避してください。")
+    await playwright.async_api.expect(alert).to_contain_text("最新の内容へ必要な変更だけを反映")
     assert await page.locator(field).input_value() == user_input
+
+
+@pytest.mark.parametrize("width,height", [(1280, 900), (390, 844), (320, 480)])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_edit_conflict_recovery_preserves_saved_input_and_external_change(
+    browser_harness: _BrowserHarness, width: int, height: int
+) -> None:
+    """案内どおり閉じる前に退避し、最新本文へ自分の変更だけを反映して保存できる。"""
+    harness = browser_harness
+    page = harness.page
+    await page.set_viewport_size({"width": width, "height": height})
+    await _detail_conflict(harness, "#edit-button", "#edit-content", "#save-entry-button", "を保存できませんでした。")
+    detail = page.get_by_role("dialog", name="詳細")
+    field = detail.locator("#edit-content")
+    # コピー操作をブラウザー内で捕捉し、エンドユーザーと共有するOSのクリップボードを書き換えない。
+    await page.evaluate(
+        """document.addEventListener('copy', event => {
+          const field = document.activeElement;
+          window.__recoveryCopy = field.value.slice(field.selectionStart, field.selectionEnd);
+          event.preventDefault();
+        }, {once: true});"""
+    )
+    await field.press("Control+A")
+    await field.press("Control+C")
+    copied = await page.evaluate("window.__recoveryCopy")
+    assert copied == _FREE_FORM_UWI + "\n入力の追記\n"
+    await page.unroute("**/api/entries/target.md")
+    page.once("dialog", lambda dialog: dialog.accept())
+    await detail.get_by_role("button", name="閉じる", exact=True).click()
+    await playwright.async_api.expect(detail).to_be_hidden()
+    await page.locator('.entry-select[data-key="target.md"]').click()
+    await detail.get_by_role("button", name="編集", exact=True).click()
+    latest = await field.input_value()
+    assert "他プロセスが変えた質問" in latest
+    assert "入力の追記" not in latest
+    delta = copied[copied.index("入力の追記") :]
+    await field.fill(latest + "\n" + delta)
+    await detail.get_by_role("button", name="保存", exact=True).click()
+    await page.get_by_role("status").filter(has_text="保存しました").wait_for(state="visible")
+    saved = _entry_path(harness.root, "target.md").read_text(encoding="utf-8")
+    assert "他プロセスが変えた質問" in saved
+    assert saved.endswith(delta)
 
 
 @pytest.mark.asyncio(loop_scope="session")

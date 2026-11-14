@@ -7,7 +7,7 @@ import {
   setTextMessage, showToast
 } from "./wi_feedback.js";
 import {
-  DELETE_CONFLICT_MESSAGE, closeDetailDialog, entryButtonForKey, invalidateDeleteConfirmation,
+  DELETE_CONFLICT_MESSAGE, DETAIL_CONFLICT_RECOVERY, closeDetailDialog, entryButtonForKey, invalidateDeleteConfirmation,
   refreshUserCommentMode, reloadOpenDetailFromExternalChange, setDetailMode, syncDetailMutationAvailability
 } from "./wi_detail.js";
 import {
@@ -45,8 +45,7 @@ function mutationFailureMessage(key, failure, error) {
   if (!recoveryRequired) return failure;
   wiState.detailRefreshRequired = true;
   syncDetailMutationAvailability();
-  const recovery = `${key}は外部で更新されました。入力を保持しています。` +
-    '詳細を閉じて開き直してから保存してください。';
+  const recovery = `${key}は外部で更新されました。${DETAIL_CONFLICT_RECOVERY}`;
   return `${failure} ${recovery}`;
 }
 

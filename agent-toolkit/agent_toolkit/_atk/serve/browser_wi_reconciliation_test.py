@@ -221,7 +221,7 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         finally:
             release.set()
         await detail.get_by_role("alert").filter(has_text="Git同期に失敗しました").wait_for(state="visible")
-        assert "詳細を閉じて開き直してから保存してください" in await detail.locator("#detail-alert").inner_text()
+        assert "閉じる前にコピーして退避" in await detail.locator("#detail-alert").inner_text()
         await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
         assert await field.input_value() == user_input
         await playwright.async_api.expect(detail.get_by_role("button", name=submit_name, exact=True)).to_be_disabled()

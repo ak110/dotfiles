@@ -192,7 +192,8 @@ process.stdout.write(JSON.stringify({
 """
     )
     for name in ("saveGeneral", "answerGeneral", "saveConflict", "answerConflict"):
-        assert "詳細を閉じて開き直してから保存してください" in result[name]["alert"]
+        assert "閉じる前にコピーして退避" in result[name]["alert"]
+        assert "最新の内容へ必要な変更だけを反映" in result[name]["alert"]
         assert result[name]["disabled"] is True
         assert result[name]["mode"] == ("view" if name.startswith("answer") else "edit")
     assert "保存できませんでした。 ［WI / node-test / /notes / entry.md］一般失敗" in result["saveGeneral"]["alert"]
