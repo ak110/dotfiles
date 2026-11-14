@@ -236,7 +236,7 @@ def _pnpm_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
 
 def _codex_claude_mcp_removal_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: tmp_path / "codex")
+    monkeypatch.setattr(remove_codex_claude_mcp.codex_runtime, "find_runtime_launcher", lambda **_kwargs: tmp_path / "codex")
     results = iter([_completed(0, stdout="{}"), _completed(1, stderr="permission denied")])
     monkeypatch.setattr(remove_codex_claude_mcp.common, "run_subprocess", lambda *_args, **_kwargs: next(results))
 
