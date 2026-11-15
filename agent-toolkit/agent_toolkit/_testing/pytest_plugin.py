@@ -46,6 +46,7 @@ from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import (
     agents_server_fixtures,
     cpu_accounting,
+    cpu_probe,
     hook_support,
     isolation,
     resource_diagnostics,
@@ -98,6 +99,9 @@ def pytest_runtest_setup(item: pytest.Item) -> Generator[None, object, object]:
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     """待機時間や子プロセスCPUを含めず本体を計測する。"""
+    if item.nodeid.endswith("mcp_tools_test.py::test_public_start_returns_label_of_started_session"):
+        with cpu_probe.observe_call(item):
+            return (yield from _measure_cpu(item, "call"))
     return (yield from _measure_cpu(item, "call"))
 
 
