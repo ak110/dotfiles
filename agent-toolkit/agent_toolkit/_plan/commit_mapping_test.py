@@ -251,6 +251,41 @@ def test_rejects_range_with_merge_or_non_ancestor(repo: pathlib.Path) -> None:
         commit_mapping.commit_event(repo, "HEAD", group[1], [WI_A], {WI_A})
 
 
+@pytest.mark.parametrize("resolution", ["automatic", "ours", "theirs", "edited"])
+def test_merge_assignment_preserves_parent_choice_and_original_worktree(repo: pathlib.Path, resolution: str) -> None:
+    """両親のどちらかを選ぶ競合解消も記録し、自動統合と元indexの変更は混入させない。"""
+    path = repo / "shared"
+    path.write_text("base\n" + "unchanged\n" * 20 + "end\n", encoding="utf-8")
+    git_repository.commit_all(repo, "共通内容")
+    git_repository.git_output(repo, "switch", "-c", "other")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("end" if resolution == "automatic" else "base", "theirs"), encoding="utf-8"
+    )
+    git_repository.commit_all(repo, "相手の変更")
+    git_repository.git_output(repo, "switch", "main")
+    path.write_text(path.read_text(encoding="utf-8").replace("base", "ours"), encoding="utf-8")
+    previous = git_repository.commit_all(repo, "自身の変更")
+    merge = git_repository.run_git(repo, "merge", "--no-commit", "--no-ff", "other", check=False)
+    assert merge.returncode == (0 if resolution == "automatic" else 1)
+    if resolution != "automatic":
+        path.write_text(resolution + "\n" + "unchanged\n" * 20 + "end\n", encoding="utf-8")
+    merged = git_repository.commit_all(repo, "統合")
+    path.write_text("未保存の内容\n", encoding="utf-8")
+    git_repository.git_output(repo, "add", "shared")
+    before = git_repository.git_output(repo, "status", "--porcelain=v1")
+    if resolution == "automatic":
+        with pytest.raises(commit_mapping.CommitMappingError, match="接続mergeだけ"):
+            commit_mapping.commit_event(repo, merged, previous, [WI_A], {WI_A})
+    else:
+        assert commit_mapping.commit_event(repo, merged, previous, [WI_A], {WI_A}) == {
+            "commits": [_short(repo, merged)],
+            "awi": [WI_A],
+        }
+    assert git_repository.git_output(repo, "status", "--porcelain=v1") == before
+    assert path.read_text(encoding="utf-8") == "未保存の内容\n"
+    assert git_repository.git_output(repo, "show", ":shared") == "未保存の内容"
+
+
 def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
     """WI対応のないcommitを含むrebaseでは、記録済み旧OIDだけの対応表で継承し、記録外OIDと記録済みOIDの欠落を失敗にする。
 

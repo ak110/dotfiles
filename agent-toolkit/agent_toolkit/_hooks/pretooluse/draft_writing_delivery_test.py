@@ -38,8 +38,8 @@ def _matched(source: pathlib.Path, tool_name: str, tool_input: dict) -> set[str]
 @pytest.mark.parametrize(
     ("source", "content", "expected"),
     [
-        ("skills/wi-standards/SKILL.md", _AWI, {"awi-body.md", "drafting-workflow-writing.md", "analysis-records.md"}),
-        ("share/read-trigger-bootstrap.md", _AWI, {"analysis-records.md"}),
+        ("skills/wi-standards/SKILL.md", _AWI, {"awi-body.md", "drafting-workflow-writing.md"}),
+        ("share/read-trigger-bootstrap.md", _AWI, {"SKILL.md"}),
         ("skills/wi-standards/SKILL.md", _UWI, {"uwi-format.md"}),
         ("skills/write-plan/SKILL.md", _PLAN, {"plan-file-standards.md", "plan-file-standards-template.md"}),
     ],
@@ -48,6 +48,8 @@ def test_draft_in_temporary_area_reaches_drafting_standards(source: str, content
     """一時領域の原稿でも、書く時点で起草規範の行が一致し、使い捨てのコードでは一致しない。"""
     draft = managed_temp.temp_root_path() / "session-test" / "draft.md"
     assert expected <= _matched(_PLUGIN / source, "Write", {"file_path": str(draft), "content": content})
+    if content == _AWI:
+        assert "analysis-records.md" not in _matched(_PLUGIN / source, "Write", {"file_path": str(draft), "content": content})
     script = draft.with_name("count.py")
     assert not expected & _matched(_PLUGIN / source, "Write", {"file_path": str(script), "content": "print(1)\n"})
 
@@ -98,7 +100,7 @@ def _read_step(path: pathlib.Path) -> str:
 @pytest.mark.parametrize(
     ("content", "documents"),
     [
-        (_AWI, ("skills/wi-standards/references/awi-body.md", "skills/wi-standards/references/analysis-records.md")),
+        (_AWI, ("skills/wi-standards/references/awi-body.md", "skills/wi-standards/references/drafting-workflow-writing.md")),
         (_UWI, ("skills/wi-standards/references/uwi-format.md",)),
         (_PLAN, ("skills/write-plan/references/plan-file-standards.md",)),
     ],
@@ -108,6 +110,8 @@ def test_public_hook_guides_drafting_standards_for_temporary_drafts(content: str
     draft = managed_temp.temp_root_path() / "session-test" / "draft.md"
     guided = _guided("Write", {"file_path": str(draft), "content": content})
     assert all(_read_step(_PLUGIN / document) in guided for document in documents)
+    if content == _AWI:
+        assert "analysis-records.md" not in guided
     script = draft.with_name("count.py")
     unrelated = _guided("Write", {"file_path": str(script), "content": "print(1)\n"})
     assert not any(str(_PLUGIN / document) in unrelated for document in documents)

@@ -102,7 +102,7 @@ def _git_state(cwd: pathlib.Path) -> tuple[str | None, list[str] | None]:
     head = _git_command.optional_output(["rev-parse", "--verify", "HEAD^{commit}"], cwd, timeout=_GIT_STATE_TIMEOUT_SECONDS)
     try:
         status = _git_command.run(
-            ["status", "--porcelain=v1", "--untracked-files=all"],
+            ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"],
             cwd,
             capture_output=True,
             text=True,

@@ -46,6 +46,8 @@ async def test_flush_failures_preserve_diagnostics_and_heartbeat(
         try:
             writer.schedule()
             messages = ("予約した共有状態の保存に失敗しました", "heartbeatの保存に失敗しました")
+            # 永続ログは最初の書込まで存在しないため、内容の確認前に作成を待つ。
+            await _until(diagnostic_log.exists)
             await _until(lambda: all(message in diagnostic_log.read_text(encoding="utf-8") for message in messages))
             heartbeat_task = manager._heartbeat_task
             assert heartbeat_task is not None and not heartbeat_task.done()
@@ -94,6 +96,7 @@ async def test_terminal_result_write_failure_is_not_reported_as_projection_failu
                 writer.flush()
             assert not isinstance(raised.value, subject.ProjectionWriteError)
             writer.schedule()
+            await _until(diagnostic_log.exists)
             await _until(lambda: "予約した共有状態の保存に失敗しました" in diagnostic_log.read_text(encoding="utf-8"))
             log_text = diagnostic_log.read_text(encoding="utf-8")
             line = next(line for line in log_text.splitlines() if "開始済みsessionの結果・共有状態保存に失敗" in line)

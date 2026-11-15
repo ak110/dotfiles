@@ -13,4 +13,4 @@ runs:
       run: |
         $env:PATH = "$env:USERPROFILE\.local\bin;$env:PATH"
         # hosted runnerはjob終了時に破棄されるため、約1分を要する検証rootの削除を省く。
-        uv run --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --keep-verification-root
+        uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --keep-verification-root
