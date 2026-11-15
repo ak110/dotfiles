@@ -10,6 +10,7 @@ import sys
 import time
 import uuid
 from collections.abc import Generator
+from typing import NoReturn, TextIO
 
 import psutil
 import pytest
@@ -142,6 +143,19 @@ def _project(tmp_path: pathlib.Path, native: pathlib.Path, stage: str, mode: str
     # 導入・自己更新の外部作用だけをnative代用品へ向ける。時間切れは実WaitForExitで発生させる。
     bootstrap = bootstrap.replace("'powershell.exe'", "'" + str(stub).replace("'", "''") + "'")
     bootstrap = bootstrap.replace("$Seconds * 1000", "1000")
+    # 使用中Pythonの探索はこの試験の対象外。回収のCimCmdlets\Get-CimInstanceは実OSへ残す。
+    bootstrap = bootstrap.replace(
+        "function Invoke-UpdateStage {",
+        "function Get-CimInstance { param($ClassName,$OperationTimeoutSec) @() }\nfunction Invoke-UpdateStage {",
+    )
+    bootstrap = bootstrap.replace(
+        "[void]$process.Start()", 'Write-UpdateError ("bootstrap-test: start=$Name"); [void]$process.Start()'
+    ).replace(
+        "$entries = @(CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop)",
+        'Write-UpdateError ("bootstrap-test: reclaim-snapshot-start=$Name"); '
+        "$entries = @(CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop); "
+        'Write-UpdateError ("bootstrap-test: reclaim-snapshot-end=$Name")',
+    )
     (library / "update_bootstrap.ps1").write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
     shutil.copy2(_ROOT / "libexec/locking_process.ps1", library / "locking_process.ps1")
     pids = tmp_path / "pids"
@@ -177,10 +191,39 @@ def _invoke_bootstrap(script: pathlib.Path, environment: dict[str, str]) -> subp
     ]
     output, error = script.with_suffix(".stdout"), script.with_suffix(".stderr")
     with output.open("w", encoding="utf-8") as stdout, error.open("w", encoding="utf-8") as stderr:
-        result = subprocess.run(command, env=environment, stdout=stdout, stderr=stderr, check=False, timeout=30)
+        try:
+            result = subprocess.run(command, env=environment, stdout=stdout, stderr=stderr, check=False, timeout=30)
+        except subprocess.TimeoutExpired as failure:
+            stdout.flush()
+            stderr.flush()
+            calls = pathlib.Path(environment["CALLS"])
+            native_calls = calls.read_text(encoding="utf-8") if calls.exists() else "(native未到達)"
+            raise AssertionError(
+                f"bootstrapが{failure.timeout}秒で時間切れ\nstdout:\n{output.read_text(encoding='utf-8')}"
+                f"\nstderr:\n{error.read_text(encoding='utf-8')}\nnative calls:\n{native_calls}"
+            ) from failure
     return subprocess.CompletedProcess(
         command, result.returncode, output.read_text(encoding="utf-8"), error.read_text(encoding="utf-8")
     )
+
+
+def test_bootstrap_timeout_reports_captured_output_and_calls(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """親の時間切れでも、失敗地点を区別する両出力とnative到達記録が診断へ残る。"""
+    script = tmp_path / "bootstrap.ps1"
+    calls = tmp_path / "calls"
+    calls.write_text("uv-self\n", encoding="utf-8")
+
+    def timeout(_command: object, *, stdout: TextIO, stderr: TextIO, **_kwargs: object) -> NoReturn:
+        stdout.write("probe-output")
+        stderr.write("reclaim-snapshot-start")
+        raise subprocess.TimeoutExpired("bootstrap", 30)
+
+    monkeypatch.setattr(subprocess, "run", timeout)
+    with pytest.raises(AssertionError) as failure:
+        _invoke_bootstrap(script, {"USERPROFILE": str(tmp_path), "CALLS": str(calls)})
+    assert "probe-output" in str(failure.value)
+    assert "reclaim-snapshot-start" in str(failure.value)
+    assert "uv-self" in str(failure.value)
 
 
 @pytest.mark.parametrize("stage", ["uv-install", "uv-self", "python-upgrade", "python-install"])
@@ -197,7 +240,6 @@ def test_windows_bootstrap_native_failure_boundaries(
     driver = tmp_path / "driver.ps1"
     script = root / "libexec/update_bootstrap.ps1"
     driver.write_text(
-        "function global:Get-CimInstance { param($ClassName,$OperationTimeoutSec) @() }\n"
         f"& '{str(script).replace(chr(39), chr(39) * 2)}' '{environment['USERPROFILE']}\\.local\\bin\\uv.exe' -PrintPython\n"
         "exit $LASTEXITCODE\n",
         encoding="utf-8-sig",
