@@ -8,6 +8,7 @@ import concurrent.futures
 import contextlib
 import contextvars
 import dataclasses
+import functools
 import gc
 import sys
 import threading
@@ -50,6 +51,7 @@ _budget: contextvars.ContextVar[CpuBudget | None] = contextvars.ContextVar("pyte
 _pool_start: contextvars.ContextVar[bool] = contextvars.ContextVar("pytest_cpu_pool_start", default=False)
 _original_start = threading.Thread.start
 _original_submit = concurrent.futures.ThreadPoolExecutor.submit
+_original_pool_init = concurrent.futures.ThreadPoolExecutor.__init__
 
 
 @contextlib.contextmanager
@@ -124,6 +126,21 @@ def _submit(executor: concurrent.futures.ThreadPoolExecutor, function: Callable[
         return _original_submit(executor, _owned_call, budget, function, *args, **kwargs)
     finally:
         _pool_start.reset(token)
+
+
+def _init_pool(
+    executor: concurrent.futures.ThreadPoolExecutor,
+    max_workers: int | None = None,
+    thread_name_prefix: str = "",
+    initializer: Callable[..., Any] | None = None,
+    initargs: tuple[Any, ...] = (),
+    **ctxkwargs: Any,
+) -> None:
+    # poolを作成した試験の初期化と、後で各試験が投入する仕事を別々に所有する。
+    budget = _budget.get()
+    if budget is not None and callable(initializer):
+        initializer = functools.partial(_owned_call, budget, initializer)
+    _original_pool_init(executor, max_workers, thread_name_prefix, initializer, initargs, **ctxkwargs)
 
 
 @dataclasses.dataclass
@@ -221,6 +238,7 @@ def start(owner: object) -> None:
     gc.collect = _collect  # ty: ignore[invalid-assignment]
     gc.callbacks.append(_gc_event)
     _state.patches.enter_context(unittest.mock.patch.object(threading.Thread, "start", _start_thread))
+    _state.patches.enter_context(unittest.mock.patch.object(concurrent.futures.ThreadPoolExecutor, "__init__", _init_pool))
     _state.patches.enter_context(unittest.mock.patch.object(concurrent.futures.ThreadPoolExecutor, "submit", _submit))
 
 

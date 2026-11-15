@@ -42,7 +42,10 @@ def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, pha
     assert report.failed == (elapsed >= 0.5)
 
 
-@pytest.mark.parametrize("mode", ["foreign", "thread", "pool", "exception", "nested", "spanning"])
+@pytest.mark.parametrize(
+    "mode",
+    ["foreign", "thread", "pool", "exception", "nested", "spanning", "initializer", "initializer-child", "initializer-error"],
+)
 def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> None:
     """無関係な仕事の誤課金、既存poolの計上漏れ、二重計上、段階をまたぐ計上漏れを検出する。"""
     item = cast(pytest.Item, types.SimpleNamespace(stash=pytest.Stash(), nodeid="cpu_test.py::test_cpu"))
@@ -55,12 +58,12 @@ def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> N
     def work():
         ident = threading.get_ident()
         native_clocks[threading.get_native_id()] = ident
-        clocks[ident] += 0.3 if mode in {"nested", "spanning"} else 0.6
+        clocks[ident] += 0.3 if mode in {"nested", "spanning", "initializer-child"} else 0.6
         if mode == "spanning":
             ready.set()
             assert proceed.wait(10)
             clocks[ident] += 0.3
-        elif mode == "nested":
+        elif mode in {"nested", "initializer-child"}:
 
             def child_work():
                 clocks[threading.get_ident()] += 0.3
@@ -69,7 +72,7 @@ def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> N
             child.start()
             child.join(10)
             assert not child.is_alive()
-        elif mode == "exception":
+        elif mode in {"exception", "initializer-error"}:
             raise ValueError("仕事は失敗してもCPUを所有する")
 
     def foreign_work():
@@ -106,6 +109,14 @@ def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> N
                     proceed.set()
                     foreign.join(10)
                     assert not foreign.is_alive()
+                elif mode.startswith("initializer"):
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1, initializer=work) as initialized:
+                        initial = initialized.submit(lambda: None)
+                        if mode == "initializer-error":
+                            with pytest.raises(RuntimeError):
+                                initial.result(timeout=10)
+                        else:
+                            initial.result(timeout=10)
                 elif mode in {"pool", "exception", "spanning"}:
                     future = executor.submit(work)
                     if mode == "spanning":
