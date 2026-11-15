@@ -299,6 +299,15 @@ def test_sweep_preserves_foreign_owned_tree_and_reports_limited_failure(monkeypa
         return metadata
 
     monkeypatch.setattr(pathlib.Path, "lstat", foreign_lstat)
+    original_rmtree = shutil.rmtree
+
+    def refuse_foreign_removal(path: pathlib.Path | str, *, onexc: typing.Any = None, **_kwargs: typing.Any) -> None:
+        # CIのrootはmode=0でも削除できるため、権限回復が必要な境界を実行アカウントによらず与える。
+        if pathlib.Path(path) == area:
+            raise PermissionError("foreign owner")
+        original_rmtree(path, onexc=onexc)
+
+    monkeypatch.setattr(shutil, "rmtree", refuse_foreign_removal)
     try:
         result = managed_temp.sweep_managed_temp(now=_NOW)
     finally:
