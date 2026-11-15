@@ -44,7 +44,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ): "共通の停止処理で子孫を回収した後、App Serverの終了状態を上限付きで回収する",
     (
         "agent-toolkit/agent_toolkit/_common/codex_models.py",
-        "list_models_from_app_server",
+        "with_app_server",
     ): "共通の停止処理で子孫を回収した後、asyncioの子の終了状態を上限付きで回収する",
     (
         "agent-toolkit/agent_toolkit/_agents_server/launch_requests_preflight.py",
