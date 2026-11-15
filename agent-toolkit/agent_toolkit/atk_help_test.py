@@ -147,13 +147,18 @@ def test_extra_positionals_report_the_accepted_positionals(
 
 @pytest.mark.parametrize(
     "argv",
-    [[], ["wi"], ["plans"], ["agents"], ["review-table"], ["review-audit"]],
+    [[], ["review-table"], ["review-audit"], ["lane"], ["worktree-stash"], ["wi", "submission"]],
 )
 def test_command_without_subcommand_prints_help(
     argv: list[str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    atk.main(argv)
+    if argv:
+        with pytest.raises(SystemExit) as exited:
+            atk.main(argv)
+        assert exited.value.code == 0
+    else:
+        atk.main(argv)
 
     captured = capsys.readouterr()
     assert "位置引数:" in captured.out

@@ -36,7 +36,7 @@ user-invocable: false
 | 利用形態 | 起動主体と公開操作 | 処理の責務 |
 | --- | --- | --- |
 | 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の作成要否は`agent-toolkit:write-plan`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従って決める |
-| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と、登録リポジトリ全体を処理する統括セッションの起動を管理する。統括は`agent-toolkit:process-wi all-repos`を実行する |
+| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と対象別workerの起動を管理する。各対象のメインが`agent-toolkit:process-wi all-repos`で受領対象を処理し、報告まで担当する |
 | まとめ処理型 | ユーザーが`agent-toolkit:process-wi single-lane`を手動起動する | 蓄積されたWIを1回の実行でまとめて処理する |
 | 定期実行型 | ユーザーがcronなどに`atk run-skill`を登録する | WIキューを経由せずにスキル1件を自律モードで実行し、結果は報告用UWIで、判断を要する対応は事前承認型UWIで届ける |
 
@@ -46,35 +46,33 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 リポジトリごとの編集可否・ローカルパス・process-loopの対象・検証OSは`atk config repos`で登録・変更・削除・一覧表示する。
 未登録は編集不可であり、`allow`への登録は編集の認可を確認してから行う。
 `awi`は直接編集せずAWIを投入し、`deny`は必要な変更を報告する。
-常駐はprocess-wiの実行ごとに統括担当を1つ起動し、リポジトリごとの準備・所有・進捗を管理する。
-統括は対象の規範・スキルを明示的に読み、今回の対象が1リポジトリならレーン数上限によらず自ら処理する。
-対象が複数の場合も、今回進められる負荷が最大のリポジトリを統括が直接担当する。
-全対象の上限が1以下なら統括が全件をまとめ、上限2以上の対象がある場合は、直接担当を除く軽い対象群を1担当へまとめ、重い残対象は個別に並行委譲する。
-具体的な選定と通常の継続は`../process-wi/references/all-repos-starting.md`「開始と振り分け」に従う。
-直接処理でも上限が2以上なら通常のレーン処理へ、1以下ならsingle-laneへ接続し、起動したwriterの終了観測と常駐への対象別結果の保存を保つ。
-計画・検証・レビュー・公開は対象worktreeごとに分離し、process-wiの実行全体の完了報告は統括が行う。
-常時処理するリポジトリだけ`process_loop`を有効にし、投入だけを行うリポジトリも`edit=awi`として登録できる。
-非常駐の全体処理は`agent-toolkit:process-wi all-repos`を手動起動する。
-同スキルは`atk wi process-loop --once`で、常駐と共通の対象取得・所有・worktree準備・結果検収・回収を1集合に対して行う。
-対象が0件なら待機せず終了し、未完了・所有待ち・準備失敗が残れば非0で終了する。
-表示された記録を確認し、`atk wi process-loop --once --auto-resume`で再開する。
-手動起動元はCLIの終了を観測して結果を返し、完了報告とUWIの保存は統括が1回行う。
-対象リポジトリの単発処理は`agent-toolkit:process-wi`または`agent-toolkit:process-wi single-lane`を使う。
-登録や再開の条件は`../process-wi/references/all-repos-orchestration.md`に従う。
+常駐の対象別実行と旧集合会話の継続、単回実行、再開予約、制御操作の違いは`references/orchestrator-runtime.md`を参照する。
+通常は各対象のメインが報告まで担当し、旧集合会話の再開では元の統括・委譲の責務を保つ。
 
-process-wiのメインセッションは対象の選定・配分とユーザー確認を担当し、レーン担当が計画、実装、実行レビューの調整、統合を順次進める。
-初回の実行レビューでは詳細に点検し、レビュー限定基準への違反があれば指摘として通知する。
-再レビューでは、前回の指摘事項、修正差分、および直接影響範囲を確認する。
-レーン数によらない継続契約は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に準拠する。
-複数レーンを運用する場合はメインセッションが依存条件を満たしたレーンへ統合を許可し、統合先HEADの更新は`atk lane integrate`が1レーンずつに限る。
-準備は`atk lane create`、統合は`atk lane integrate`、回収は`atk lane delete`の順で進め、各操作の実行前に`../process-wi/references/run-lanes.md`の該当節を確認する。
-保持された資源の回復は、同書ならびに`atk lane delete --help`、`atk lane recover --help`に記載された条件や診断に従って再開する。
+## 要求から公開までの担当
+
+1. 要求の具体化: メインが元の要求・回答・既存認可を確認し、対象を選定して配分する。
+   ユーザー固有の判断が必要な箇所は、その回答に依存する処理の前に確認する。
+   定義元は`agent-toolkit:wi-standards`と`agent-toolkit:user-confirmation-and-report`である。
+2. 計画と実装: レーン担当が割当要求から計画・実装・検証を進め、実行レビューの入力を確定する。
+   レーン数によらない継続と受渡しの条件は`${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md`に従う。
+3. 独立レビュー: 実装を担当していないレビュー担当が成果を検収する。
+   初回は詳細に点検し、レビュー限定基準への違反を指摘する。
+   再レビューは前回指摘、修正差分、直接影響範囲を確認し、レーン担当が指摘への対応を収束させる。
+4. 統合: レーン担当が検収済みの成果を統合する。
+   複数レーンではメインが依存条件を満たしたレーンへ統合を許可し、`atk lane integrate`は統合先HEADを1レーンずつ更新する。
+5. 公開と後始末: メインが`../process-wi/references/finish-session.md`の公開・CI・保存状態を検収し、報告と終了へ進む。
+   準備・統合・回収の公開操作は`atk lane create`、`atk lane integrate`、`atk lane delete`であり、実行前に`../process-wi/references/run-lanes.md`の該当節を確認する。
+   保持資源の回復は同書と`atk lane delete --help`、`atk lane recover --help`の条件・診断に従う。
+
+各段階の入力と出口の定義は`${CLAUDE_PLUGIN_ROOT}/share/workflow-phases.md`を使う。
+必要なユーザー確認は特定の工程末まで延期せず、回答後は次節の担当と契機で再開する。
 
 `run-skill`に由来するUWIは、`source`が`run-skill`、`scope`がスキル名となる。
 `run_skill_report: true`を持つ報告用だけをprocess-wiの選定対象とprocess-loopの起動件数の計算から除外する。
 報告用を除く回答済みの承認用UWIは、由来によらず既存の着手条件に従って対象に含める。
 
-## 登録、回答、振り返り
+## 要求の登録と判断待ちからの再開
 
 目標から必要作業を構成する依頼は、通常対話と、単一リポジトリのprocess-wiへの追加指示で受け付ける。
 通常対話は既存の作業契約と計画へ、process-wiは`../process-wi/references/lanes-goals.md`「明示された目標からの実行」へ接続する。
@@ -97,7 +95,9 @@ process-wiのメインセッションは対象の選定・配分とユーザー�
 次回の定期実行は、process-wiが処理中のUWIを重複して取り込まない。
 処理中のprocess-wiセッションに対してユーザーから回答が伝えられた場合は、同一セッションの処理対象に追加する（`../process-wi/references/selection-procedure-addition.md`「処理対象WIの追加」）。
 
-作業完了後は`agent-toolkit:report-completion`で作業結果を報告して終了する。
+## 完了後の振り返り
+
+作業完了後は、報告を所有するメインが`agent-toolkit:report-completion`で作業結果を報告して終了する。
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`agent-toolkit:review-session batch`が非同期でまとめて分析する。
 batchが投入したAWIは、ユーザーによる内容確認を待たずに採否検討と処理の対象となる。
 エージェント由来の要求の採否は`../wi-standards/references/wi-standards-origin.md`「由来と承認」に従って判断する。
@@ -105,6 +105,10 @@ batchが投入したAWIは、ユーザーによる内容確認を待たずに採
 自動起動は`session_review_auto_start`で切り替え、無効時も待ち記録を保持して手動のbatchで処理できる。
 
 ## 運用変更を検討する観点
+
+process-loopとprocess-wiは、品質を保って単位時間あたりに処理するWI数で評価する。
+巡回・セッションの区切りは規範の再読み込みと`update-dotfiles`のために使い、区切り自体を完了の目的にしない。
+この更新以外の理由で、処理可能なWIの開始を次の区切りまで待たせない。
 
 自動化の新設・運用変更では、起動契機、読み書きする状態とその所有者、実行環境、起動と制御、結果の観測を一続きに検討する。
 成功・失敗・ユーザー判断待ちでどう終了し、何を契機にどの処理を再開するかを、判断結果を保持する既存の仕組みへ対応付ける。

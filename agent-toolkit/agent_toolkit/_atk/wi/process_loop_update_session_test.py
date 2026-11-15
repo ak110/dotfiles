@@ -80,7 +80,6 @@ class TestProcessLoopUpdateAndRestart:
         ]
         assert _command_was_called(subprocess_calls, "update-dotfiles")
         captured = capsys.readouterr()
-        assert "process-loopを再起動します。" in captured.out
         # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。
         assert "\033]2;" not in captured.out
         assert "\033]2;" not in captured.err

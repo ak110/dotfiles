@@ -18,7 +18,6 @@ import watchdog.observers
 from watchdog.observers.api import BaseObserver
 
 from agent_toolkit._atk import git_sync as _atk_git_sync
-from agent_toolkit._atk.wi import process_loop_control as _pl_control
 from agent_toolkit._atk.wi import process_loop_log as _pl_log
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _uwi_scan
@@ -286,7 +285,7 @@ def wait_for_start_permission(private_notes: pathlib.Path, target_repo_ids: set[
     previous: StartDecision | None = None
     with _start_wait_input() as start_input:
         while True:
-            if _pl_control.consume_process_loop_abort():
+            if _pl_log.abort_path().exists():
                 return False
             entry = start_input() if previous is not None else None
             if entry is not None and entry.entered:

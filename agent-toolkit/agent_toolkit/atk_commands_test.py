@@ -21,12 +21,12 @@ def test_process_loop_abort_commands_report_and_transition_state(
     state_file = tmp_path / "state" / "agent-toolkit" / "process-wi-abort"
 
     for command, expected in (
-        ("status", "process-loopへの中断要求: なし\n保持中の追加指示: 0件\n"),
+        ("status", "process-loopへの中断要求: なし\n再開予約: 未予約\n保持中の追加指示: 0件\n"),
         ("abort-cancel", "成功: process-loopへの中断要求は設定されていないため、解除の変更は無い\n"),
         ("abort", "成功: process-loopへ中断を要求した\n"),
-        ("status", "process-loopへの中断要求: あり\n保持中の追加指示: 0件\n"),
+        ("status", "process-loopへの中断要求: あり\n再開予約: 未予約\n保持中の追加指示: 0件\n"),
         ("abort-cancel", "成功: process-loopへの中断要求を解除した\n"),
-        ("status", "process-loopへの中断要求: なし\n保持中の追加指示: 0件\n"),
+        ("status", "process-loopへの中断要求: なし\n再開予約: 未予約\n保持中の追加指示: 0件\n"),
     ):
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "process-loop", command], home=tmp_path)

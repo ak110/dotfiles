@@ -188,9 +188,9 @@ class TestSelectSession:
         assert result == "target"
 
 
-def test_resume_and_auto_resume_are_mutually_exclusive() -> None:
-    """次の操作が`--auto-resume`を外すよう案内する根拠として、両オプションの併用が拒否されることを固定する。"""
+@pytest.mark.parametrize("obsolete", [["--resume", "session-a"], ["--auto-resume"]])
+def test_removed_resume_options_are_rejected(obsolete: list[str]) -> None:
+    """予約への移行後は、旧起動オプションを入力エラーにする。"""
     parser = atk._build_parser()  # pylint: disable=protected-access
-    parser.parse_args(["wi", "process-loop", "--resume", "session-a"])
     with pytest.raises(SystemExit):
-        parser.parse_args(["wi", "process-loop", "--auto-resume", "--resume", "session-a"])
+        parser.parse_args(["wi", "process-loop", *obsolete])

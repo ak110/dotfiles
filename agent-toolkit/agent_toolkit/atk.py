@@ -346,6 +346,20 @@ def main(
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
     _outcome.force_utf8_stdio()
     raw_argv = argv if argv is not None else sys.argv[1:]
+    # 明示操作と同じ子parserを通し、cwd解決や一覧の初期フィルターも継承する。
+    default_operations = {
+        ("config", "repos"): "list",
+        ("wi",): "list",
+        ("plans",): "list",
+        ("agents",): "list",
+        ("lane",): "--help",
+        ("worktree-stash",): "--help",
+        ("review-table",): "--help",
+        ("review-audit",): "--help",
+        ("wi", "submission"): "--help",
+    }
+    if default_operation := default_operations.get(tuple(raw_argv)):
+        raw_argv = [*raw_argv, default_operation]
     parser = _build_parser(None if "_ARGCOMPLETE" in os.environ else (raw_argv[0] if raw_argv else ""))
     # argcomplete自身と同じ起動条件で読み込み、プラグイン単独で補完を実行する。
     if "_ARGCOMPLETE" in os.environ:

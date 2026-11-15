@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import pathlib
+import sys
 import time
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
@@ -79,7 +80,17 @@ def request_release(
                 **({"worktree_paths": [str(path) for path in worktree_paths]} if worktree_paths is not None else {}),
             },
         )
+        started = time.monotonic()
+        next_progress = started
         while True:
+            current = session_registry.resolve(session_id, state_root=state_root)
+            executing = any(process.exists() for process in processes[1:])
+            if not executing and (current.state is session_registry.Resolution.RELEASED or not processes[0].exists()):
+                return None
+            if current.state is session_registry.Resolution.RUNNING:
+                return "解放待機中に担当が再開したため保持した"
+            if current.state is session_registry.Resolution.UNREADABLE:
+                return "解放待機中の担当登録を読めないため保持した"
             if response_path.exists():
                 response = json.loads(response_path.read_text(encoding="utf-8"))
                 if not isinstance(response, dict):
@@ -96,6 +107,14 @@ def request_release(
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return "期限までに所有側の解放応答と実行プロセスの終了を確認できない"
+            now = time.monotonic()
+            if now >= next_progress:
+                print(
+                    f"session_id={session_id}: 解放待機中（経過{now - started:.1f}秒、残り{remaining:.1f}秒）",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                next_progress = now + 5.0
             time.sleep(min(0.05, remaining))
     finally:
         # JSON登録簿と拡張子を分け、異常終了時も既存のsessionファイルの7日掃引へ渡す。

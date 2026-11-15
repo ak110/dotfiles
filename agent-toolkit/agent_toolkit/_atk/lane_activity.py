@@ -17,6 +17,9 @@ from agent_toolkit._git import command as git_command
 from agent_toolkit._git import worktrees as git_worktrees
 lazy from agent_toolkit._common import session_registry, task_documents
 
+# 所有側の解放応答は短い制御操作であり、LLMの結果待機TTLまで引き延ばさない。
+_RELEASE_WAIT_SECONDS = 30.0
+
 
 @dataclasses.dataclass(frozen=True)
 class RunningSession:
@@ -185,7 +188,7 @@ def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> s
             )
         if resolution.state is session_registry.Resolution.TERMINAL:
             if deadline is None:
-                deadline = time.monotonic() + (get_wait_timeout("main") if wait_release else 0)
+                deadline = time.monotonic() + (min(get_wait_timeout("main"), _RELEASE_WAIT_SECONDS) if wait_release else 0)
             reason = session_release.request_release(
                 path.stem, worktree, deadline=deadline, worktree_paths=tuple(entry.path for entry in entries)
             )

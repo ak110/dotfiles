@@ -162,5 +162,6 @@ push前の工程（バージョン更新、生成物同期、push前チェック
 あわせて検収した公開状態の4項目を同書の「公開状態の検収と再起動」へ引き渡す。
 途中で主作業ツリーや対象refの変更、外部からの更新を観測した場合は、同節の指示に従って現在の状態を再取得する。
 
-未終了集合の処置後、同書の「完了報告と終了」に従って`agent-toolkit:report-completion`によって報告し、`atk agents-exit-session`を実行する。
+未終了集合の処置後、`finish-session-observation.md`「報告前に確かめる保存状態」を実行し、延期差集合だけでなく今回の全処置を現キューへ対応付ける。
+確認した保存状態を報告の入力としてから、同書の「完了報告と終了」に従って`agent-toolkit:report-completion`によって報告し、`atk agents-exit-session`を実行する。
 なお、all-reposのリポジトリ担当エージェントは同節に従い、`atk agents-exit-session`を呼び出さず、常駐プログラムへの最終返却で終了する。

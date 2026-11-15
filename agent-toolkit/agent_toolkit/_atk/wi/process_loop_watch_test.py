@@ -420,12 +420,10 @@ def test_abort_precedes_enter_during_continuous_changes(
     monkeypatch.setattr(_pl_watch, "_DEBOUNCE_SEC", 0.2)
     console = _Console()
     _use_windows_console(monkeypatch, console)
-    aborted = [False]
-    monkeypatch.setattr(_pl_control, "consume_process_loop_abort", lambda: aborted[0])
 
     def release() -> None:
         console.keys.append("\r")
-        aborted[0] = True
+        _pl_control.cmd_process_loop_abort()
 
     changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200, on_change=release)
     changes.start()
