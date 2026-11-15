@@ -174,6 +174,7 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
 
 
 @pytest.mark.parametrize("codex", [False, True])
+@pretooluse_support.read_delivery_preparation_scope()
 def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, capsys, codex):
     """確認の前に読む2資料が未取得の間は、公開hookが質問の表示前に毎回拒否する。
 

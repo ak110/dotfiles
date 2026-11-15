@@ -74,6 +74,9 @@ def test_wait_mcp_processes_fails_for_living_process(
 @pytest.mark.timeout(180)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(
+    2.0, reason="配布物を共有する3台の実MCPで元版の更新・削除・回収を確認する最小構成。Linux CI実測CPU0.54秒"
+)
 async def test_stable_plugin_root_shared_across_processes(
     tmp_path: pathlib.Path,
     tmp_path_factory: pytest.TempPathFactory,
@@ -84,7 +87,7 @@ async def test_stable_plugin_root_shared_across_processes(
     manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     version = manifest["version"]
     source = tmp_path / "distribution" / version
-    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules"))
+    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules", "*_test.py"))
     version_file = pathlib.Path("skills/managed-temp/SKILL.md")
     original = (source / version_file).read_bytes()
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)

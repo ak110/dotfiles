@@ -12,7 +12,7 @@ import pytest
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
-from agent_toolkit._hooks.pretooluse import read_delivery_matching
+from agent_toolkit._hooks.pretooluse import read_delivery, read_delivery_matching
 from agent_toolkit._testing.document_delivery import run_hook
 
 _PLUGIN = pathlib.Path(__file__).resolve().parents[3]
@@ -120,8 +120,13 @@ def test_public_hook_guides_drafting_standards_for_temporary_drafts(content: str
     assert not any(str(_PLUGIN / document) in unrelated for document in documents)
 
 
-def test_public_hook_guides_trial_rule_for_default_model_settings_edit() -> None:
+def test_public_hook_guides_trial_rule_for_default_model_settings_edit(monkeypatch: pytest.MonkeyPatch) -> None:
     """工程別モデルの初期値を編集する操作で、公開hookが実作業での試行を定める候補資料の取得を案内する。"""
     path = _PLUGIN / "agent_toolkit/_atk/config_settings.py"
+    expected = _PLUGIN / "skills/delegation/references/process-model-settings-candidates.md"
+    source = _REPOSITORY / ".claude/skills/agent-toolkit-edit/SKILL.md"
+    rows = [row for row in read_triggers.parse_tables(source, _PLUGIN, strict=True) if expected in row.documents]
+    assert rows
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     guided = _guided("Edit", {"file_path": str(path), "old_string": "a", "new_string": "b"})
-    assert _read_step(_PLUGIN / "skills/delegation/references/process-model-settings-candidates.md") in guided
+    assert _read_step(expected) in guided
