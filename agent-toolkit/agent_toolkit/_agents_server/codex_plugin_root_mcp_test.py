@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import os
 import pathlib
 import shutil
 import subprocess
@@ -25,6 +24,7 @@ from agent_toolkit._testing.codex_plugin_support import (
     _REAL_MCP_PREPARE_TIMEOUT,
     _cleanup_entry,
     _real_mcp_environment,
+    _stop_mcp_services,
     _wait_mcp_processes,
 )
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
@@ -127,11 +127,20 @@ async def test_stable_plugin_root_shared_across_processes(
                     records = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
                     leases = [record for record in records if "path" in record]
                     assert len(records) == len(leases)
-                    assert len(leases) == index + 1
+                    assert len(leases) == 2
+                    if owned:
+                        assert {record["pid"] for record in leases} == set(owned)
                     areas = {pathlib.Path(record["path"]) for record in leases}
                     assert len(areas) == 1
                     area = areas.pop()
                     held = area / version
+                    registries = list(state_base.rglob("generations.json"))
+                    assert len(registries) == 1
+                    registry = json.loads(registries[0].read_text(encoding="utf-8"))
+                    current = registry["generations"][registry["current"]]
+                    assert pathlib.Path(current["root"]) == held
+                    if observed:
+                        assert current["process"] == observed[0]["process"]
                     marker = json.loads((area / ".agent-toolkit-plugin-root.json").read_text(encoding="utf-8"))
                     assert marker == {"source": str(source), "version": version, "root_name": version}
                     assert list(area.parent.glob("agents-server-plugin-root-*")) == [area]
@@ -139,11 +148,16 @@ async def test_stable_plugin_root_shared_across_processes(
                     for record in leases:
                         process = psutil.Process(record["pid"])
                         assert process_identity.matches(process, record["created_at"], record.get("start_id"))
-                        ancestors = process_identity.parents(process)
-                        parent_index = next(i for i, parent in enumerate(ancestors) if parent.pid == os.getpid())
-                        for member in (process, *ancestors[:parent_index]):
-                            owned[member.pid] = member
-                    observed.append({"server": index, "tools": sorted(tools), "leases": leases, "marker": marker})
+                        owned[process.pid] = process
+                    observed.append(
+                        {
+                            "server": index,
+                            "process": current["process"],
+                            "tools": sorted(tools),
+                            "leases": leases,
+                            "marker": marker,
+                        }
+                    )
                     if index == 1:
                         (source / version_file).write_text("更新された配布元", encoding="utf-8")
                         assert (held / version_file).read_bytes() == original
@@ -170,7 +184,7 @@ async def test_stable_plugin_root_shared_across_processes(
                 assert area is not None
                 assert (area / version / version_file).read_bytes() == original
     finally:
-        _wait_mcp_processes(owned)
+        _stop_mcp_services(state_base)
         for log in logs:
             print(f"S02 MCP診断 {log.name}:\n" + log.read_text(encoding="utf-8"))
     assert area is not None

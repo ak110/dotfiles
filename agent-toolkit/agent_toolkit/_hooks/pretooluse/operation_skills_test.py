@@ -594,7 +594,7 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
     result = _run(codex, env)
     assert result.returncode == 0
-    assert "/skills/delegation/SKILL.md" in _additional_context(result)
+    assert "`agent-toolkit:delegation`を起動せよ" in _additional_context(result)
     assert result.stderr == ""
     state_file = session_state.state_path("codex-delegation")
     state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
@@ -607,7 +607,7 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
         key.startswith("read-trigger:") and "/skills/delegation/SKILL.md" in key and "main" in owners
         for key, owners in state[rules_context.OPERATION_SKILL_READY_KEY].items()
     )
-    assert "/skills/delegation/SKILL.md" not in _additional_context(_run(codex, env))
+    assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(_run(codex, env))
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:

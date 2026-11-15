@@ -72,6 +72,8 @@ def request(
     if not actor:
         raise ValueError("呼出元の会話IDを確認できない。自身または直接親の会話から実行する")
     target = target or actor
+    if not session_layout.valid_session_id(target):
+        raise ValueError("対象の会話IDが不正")
     with session_registry.registry_lock(target, state_root=state_root):
         path = session_registry.registry_directory(state_root) / f"{target}.json"
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -121,8 +123,9 @@ def request(
             time.sleep(0.05)
         raise TimeoutError("effort変更の応答を確認できない。atk agents showで現在値を確認し、自動で再送しない")
     finally:
-        request_path.unlink(missing_ok=True)
-        response_path.unlink(missing_ok=True)
+        with session_registry.registry_lock(target, state_root=state_root):
+            request_path.unlink(missing_ok=True)
+            response_path.unlink(missing_ok=True)
 
 
 def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:
@@ -138,12 +141,43 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
             payload = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(payload, dict) or payload.get("version") != 1:
                 continue
-            if not session_registry.ProcessIdentity.parse(payload.get("owner")).compatible_with(owner):
+            identifier = payload.get("session_id")
+            if not isinstance(identifier, str) or not session_layout.valid_session_id(identifier):
                 continue
-            if not isinstance(payload.get("deadline"), (int, float)) or payload["deadline"] <= time.monotonic():
-                continue
-            result.append((path, payload))
-        except OSError, ValueError, TypeError, KeyError:
+            expected_owner = session_registry.ProcessIdentity.parse(payload.get("owner"))
+            with session_registry.registry_lock(identifier, state_root=state_root):
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                if not isinstance(payload, dict) or payload.get("session_id") != identifier or payload.get("version") != 1:
+                    continue
+                if (
+                    path.parent != session_registry.registry_directory(state_root)
+                    or path.with_suffix(".effort-response").exists()
+                ):
+                    continue
+                if not isinstance(payload.get("deadline"), (int, float)) or payload["deadline"] <= time.monotonic():
+                    continue
+                previous = session_registry.ProcessIdentity.parse(payload.get("owner"))
+                if previous != expected_owner:
+                    continue
+                record = json.loads((path.parent / f"{identifier}.json").read_text(encoding="utf-8"))
+                if not isinstance(record, dict):
+                    continue
+                declared = session_registry.ProcessIdentity.parse(record["processes"][0])
+                receiver = record.get("effort_receiver")
+                if not isinstance(receiver, dict) or receiver.get("version") != 1:
+                    continue
+                if session_registry.ProcessIdentity.parse(receiver.get("process")) != declared:
+                    continue
+                if session_registry.ProcessIdentity.of(declared.pid) != declared:
+                    continue
+                if declared != owner:
+                    continue
+                if previous != declared:
+                    payload["owner"] = record["processes"][0]
+                    atomic_file.atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+                if declared.compatible_with(owner):
+                    result.append((path, payload))
+        except OSError, ValueError, TypeError, KeyError, IndexError:
             continue
     return result
 

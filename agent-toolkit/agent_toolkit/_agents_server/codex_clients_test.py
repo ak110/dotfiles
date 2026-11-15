@@ -22,6 +22,19 @@ from agent_toolkit._testing.codex_backend_support import _return, _SilentClient
 pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 
+@pytest.mark.asyncio
+async def test_service_export_keeps_running_compaction_owned() -> None:
+    manager = subject.AppServerManager()
+    compactor = Mock(checkpoint=Mock(), close=AsyncMock())
+    manager._wait_compactors["active"] = compactor
+    manager._wait_compaction_turns["active"] = Mock()
+    with pytest.raises(RuntimeError, match="待機圧縮turn"):
+        await manager.export_service_state("active")
+    compactor.checkpoint.assert_not_called()
+    compactor.close.assert_not_awaited()
+    assert "active" in manager._wait_compaction_turns
+
+
 @pytest.mark.parametrize("close_failure", ["residual", "exception"])
 @pytest.mark.asyncio
 async def test_start_failure_retains_unassigned_client_for_close_retry(

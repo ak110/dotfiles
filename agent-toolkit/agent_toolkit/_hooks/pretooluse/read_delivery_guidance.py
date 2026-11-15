@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     pass  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
 
-def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, reference: bool = False, cwd: str = "") -> str:
+def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, cwd: str = "") -> str:
     """主体に合う取得手段と、必要な範囲の容量を示す。"""
     from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
 
@@ -51,19 +51,12 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
     target.body()
     focus = f"。指定節`{target.heading}`と、その成立に必要な前提・例外を読め" if target.heading else ""
     skill = read_delivery.skill_name(path)
-    if (
-        subject != operation_skills.SUBJECT_CODEX
-        and not reference
-        and skill
-        and document_reads.skill_loadable(path, cwd=cwd, owner=_document_owner)
-        and (
-            subject == operation_skills.SUBJECT_SUBAGENT
-            or read_delivery_paths.requires_skill_invocation(path, host="claude", subject=subject, cwd=cwd)
-        )
-    ):
+    # Claudeの起動禁止は受信主体によらず尊重する。Codexはこのfrontmatterを使わない。
+    invocable = subject == operation_skills.SUBJECT_CODEX or read_triggers.skill_invocation_required(
+        path, host="claude", subject="main"
+    )
+    if skill and invocable and document_reads.skill_loadable(path, cwd=cwd, owner=_document_owner):
         step = f"`{skill}`を起動せよ"
-        if subject == operation_skills.SUBJECT_SUBAGENT:
-            step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
         return step + focus
     if subject == operation_skills.SUBJECT_CODEX:
         ranges = target.line_ranges() if target.heading and path.suffix == ".md" else ()
@@ -402,7 +395,6 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     confirmation_pending,
                     {},
                     operation_skills.resolve_subject(payload),
-                    invocation_paths=invocation_paths,
                     cwd=cwd,
                 )
             except OSError, UnicodeError, ValueError:
@@ -434,7 +426,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
-            acquisition_step(target, subject, reference=target.path not in invocation_paths, cwd=cwd)
+            acquisition_step(target, subject, cwd=cwd)
         except (OSError, UnicodeError, ValueError) as error:
             repairs = {row.source.resolve() for row in selection_rows if target in row.targets} | {target.path}
             writes = operation_skills.written_paths(tool_name, tool_input, cwd)
@@ -454,8 +446,6 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 target,
                 error,
                 shell=subject == operation_skills.SUBJECT_CODEX,
-                agent=subject == operation_skills.SUBJECT_SUBAGENT,
-                reference=target.path not in invocation_paths,
                 cwd=cwd,
             )
             if not target.path.is_file():
@@ -463,7 +453,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 origins = sorted({str(row.source) for row in selection_rows if target in row.targets})
                 if origins:
                     failures[target] += f"。宣言元: {'、'.join(f'`{origin}`' for origin in origins)}"
-    steps = _merged_steps(pending, failures, subject, invocation_paths=invocation_paths, cwd=cwd)
+    steps = _merged_steps(pending, failures, subject, cwd=cwd)
     acquisition = "\n".join(steps) + "\n" if subject == operation_skills.SUBJECT_CODEX else "。\n".join(steps) + "。"
     if warning_only:
         acquisition += "質問の前提と選択肢を資料の基準で確かめ直せ。"
@@ -485,7 +475,6 @@ def _merged_steps(
     failures: dict[read_triggers.ReadTarget, str],
     subject: str,
     *,
-    invocation_paths: set[pathlib.Path] | None = None,
     cwd: str = "",
 ) -> list[str]:
     """同じ資料の取得手段を1件へまとめ、注目する節を併記する。
@@ -511,7 +500,6 @@ def _merged_steps(
         step = acquisition_step(
             read_triggers.ReadTarget(key, heading),
             subject,
-            reference=invocation_paths is not None and key not in invocation_paths,
             cwd=cwd,
         )
         steps.append(step)

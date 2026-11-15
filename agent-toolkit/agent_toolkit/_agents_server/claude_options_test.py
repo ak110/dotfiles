@@ -151,7 +151,7 @@ def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch,
 def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, cli_path: str | None) -> None:
     """PATHで見つかったCLIだけをSDKへ渡す。"""
     captured = _capture_options(monkeypatch)
-    monkeypatch.setattr(claude.shutil, "which", lambda _name: cli_path)
+    monkeypatch.setattr(claude.shutil, "which", lambda _name, **_kwargs: cli_path)
 
     claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
 

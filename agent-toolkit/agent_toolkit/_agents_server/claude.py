@@ -22,6 +22,7 @@ from agent_toolkit._agents_server import (
     engine_availability,
     result_projection,
     resume_waits,
+    service_io,
     session_errors,
     session_identity,
 )
@@ -44,6 +45,7 @@ from agent_toolkit._agents_server.claude_options import (
 )
 from agent_toolkit._agents_server.claude_stream import ClaudeStream
 from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._agents_server.service_claude_io import SdkResource
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError, SessionOwnerGoneError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, begin_reply
 from agent_toolkit._atk import claude_connection
@@ -279,6 +281,8 @@ class ClaudeServerManager(ClaudeStream):
         existing_session: SessionState | None = None,
         isolation_env_files: tuple[str, ...] = (),
         handoff_prompt: str = "",
+        adopted_client: SdkResource | None = None,
+        auxiliary: dict | None = None,
     ) -> SessionState:
         """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
@@ -334,6 +338,8 @@ class ClaudeServerManager(ClaudeStream):
                 if isinstance(prompt, str)
                 else handoff_prompt,
                 result_contract_recovery_consumed=result_contract_recovery_consumed,
+                adopted_client=adopted_client,
+                auxiliary=auxiliary,
             )
         )
         self._tasks.add(task)
@@ -377,9 +383,48 @@ class ClaudeServerManager(ClaudeStream):
         session.claude_applied_effort = effort
         return session
 
+    async def export_service_state(self, session_id: str) -> dict:
+        if checkpoint := self._service_compaction_checkpoints.pop(session_id, None):
+            return {"wait_compaction": checkpoint}
+        compactor = self._wait_compactors.get(session_id)
+        if compactor is None:
+            return {}
+        checkpoint = compactor.checkpoint()
+        await compactor.close()
+        return {"wait_compaction": checkpoint}
+
+    async def adopt_session(self, session: SessionState, descriptor: dict, auxiliary: dict) -> None:
+        """既存SDKの生受信列へ新コードの制御だけを接続し、queryを送らない。"""
+        runtime = service_io.current()
+        if runtime is None:
+            raise RuntimeError("サービス実行contextがありません")
+        client = SdkResource.attach(runtime, descriptor)
+        await self._start_owned_task(
+            "",
+            session.cwd,
+            session.model,
+            session.effort,
+            session_id=session.session_id,
+            model_type=session.model_type,
+            launch_kind=session.launch_kind,
+            excluded_candidates=session.excluded_candidates,
+            turn_seq=session.turn_seq,
+            api_env_file=session.claude_api_env_file,
+            connection_kind=session.claude_connection or "inherit",
+            existing_session=session,
+            request_prompt=session.prompt,
+            adopted_client=client,
+            result_contract_recovery_consumed=session.result_contract_recovery_consumed,
+            auxiliary=auxiliary,
+        )
+
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         channel = self._channels.get(session.session_id)
         if channel is None:
+            if service_io.rehoming(session.session_id):
+                previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
+                await self._resume_next_turn(session, prompt)
+                return {"delivery": "reply_started", "previous_result": previous}
             raise SessionOwnerGoneError("the Claude session owner task has ended")
         # 通常の追送と、孫sessionの終了・利用上限・過負荷の後の自動再開は、いずれもここで次のturnを始める。
         # 進行中のturnと、CLIが自ら次のturnを始め得る待機（バックグラウンドタスクなど）では所有タスクを止めない。

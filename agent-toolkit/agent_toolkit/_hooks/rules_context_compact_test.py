@@ -25,7 +25,7 @@ def test_acquisition_failure_uses_host_acquisition(host: str, tmp_path: pathlib.
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有スキル本文\n", encoding="utf-8")
     cwd = str(tmp_path / ("project" if inside else "outside"))
-    loadable = host == "claude" and inside
+    loadable = inside
     failure = rules_context.acquisition_failure(ReadTarget(skill), ValueError("読取失敗"), shell=host != "claude", cwd=cwd)
     assert ("`local`を起動せよ" in failure) is loadable
     assert ("cat --" in failure) is not loadable

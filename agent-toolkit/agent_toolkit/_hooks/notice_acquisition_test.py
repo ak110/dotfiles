@@ -10,7 +10,9 @@ import types
 
 import pytest
 
-from agent_toolkit._hooks import antigravity, posttooluse, user_prompt_submit
+from agent_toolkit._common.read_triggers import ReadTarget
+from agent_toolkit._hooks import antigravity, document_reads, posttooluse, user_prompt_submit
+from agent_toolkit._hooks.pretooluse import read_delivery
 
 
 def _assert_read(body: str, path: pathlib.Path, *, windows: bool) -> None:
@@ -76,3 +78,21 @@ def test_first_prompt_does_not_warn_before_preparation(capsys: pytest.CaptureFix
 @pytest.mark.parametrize("prompt", ["通常の依頼", "`例えば調査`は引用"])
 def test_acquisition_does_not_add_notice_triggers(prompt: str) -> None:
     assert not posttooluse.content_notices(prompt, "notice-acquisition-negative")
+
+
+@pytest.mark.parametrize("subject", ["main", "subagent", "codex"])
+@pytest.mark.parametrize("loadable", [False, True])
+def test_skill_guidance_keeps_unloadable_copy_readable(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, subject: str, loadable: bool
+) -> None:
+    path = tmp_path / ".claude/skills/local/SKILL.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("# 固有本文\n", encoding="utf-8")
+    monkeypatch.setattr(document_reads, "skill_loadable", lambda *_args, **_kwargs: loadable)
+    body = read_delivery.acquisition_step(ReadTarget(path), subject)
+    if loadable:
+        assert body == "`local`を起動せよ"
+        for forbidden in ("Skill(skill=", "cat --", "Get-Content", "Read", "それ以外", "使えない場合"):
+            assert forbidden not in body
+    else:
+        assert str(path) in body and "起動せよ" not in body

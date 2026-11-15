@@ -317,10 +317,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
         )
         return
-    if order == "reference-first":
-        assert "Readで" in guidance and "`agent-toolkit:process-wi`" not in guidance
-    else:
-        assert "`agent-toolkit:process-wi`" in guidance
+    assert "`agent-toolkit:process-wi`を起動せよ" in guidance
     inputs = {"file_path": str(skill)} if tool == "Read" else {"command": "cat -- " + shlex.quote(str(skill))}
     invoke("PreToolUse", tool, inputs)
     invoke("PostToolUse", tool, inputs, skill.read_text(encoding="utf-8"))

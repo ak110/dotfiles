@@ -12,7 +12,7 @@ import pathlib
 import subprocess
 import sys
 from collections.abc import AsyncGenerator
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolRequestParams, ToolAnnotations
@@ -61,6 +61,7 @@ from agent_toolkit._common import (
     mcp_environment,
     response_language_check,
     runtime_inserted,
+    runtime_environment,
     session_registry,
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
@@ -70,8 +71,12 @@ lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
+if TYPE_CHECKING:
+    from agent_toolkit._agents_server.service_context import ServiceManagers
+
 
 _MANAGER = AgentsServerManager()
+_SERVICE_MANAGERS: ServiceManagers | None = None
 _UI_DELEGATED = delegated_session.is_delegated(os.environ)
 _SELECTED_MANAGER: contextvars.ContextVar[AgentsServerManager | None] = contextvars.ContextVar(
     "agents_server_request_manager", default=None
@@ -83,7 +88,8 @@ def _manager() -> AgentsServerManager:
 
 
 async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
-    if _UI_DELEGATED:
+    caller = runtime_environment.current()
+    if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
     identifier = _manager().launcher_session_id()
     if identifier is None:
@@ -92,10 +98,15 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
 
 
 @contextlib.asynccontextmanager
-async def _manager_lifespan(manager: AgentsServerManager, *, ready_for_requests: bool = False) -> AsyncGenerator[None]:
+async def _manager_lifespan(
+    manager: AgentsServerManager, *, ready_for_requests: bool = False, shared_monitor: bool = False
+) -> AsyncGenerator[None]:
     _LOG.info("manager activateを開始します")
     try:
-        await manager.activate_async()
+        if shared_monitor:
+            await manager.activate_async(shared_monitor=True)
+        else:
+            await manager.activate_async()
         await manager.prepare_delegation_recovery()
         if ready_for_requests:
             await manager.initialize_delegation_recovery()
@@ -157,6 +168,9 @@ _REQUEST_MANAGERS: contextvars.ContextVar[_RequestManagers | None] = contextvars
 
 @contextlib.asynccontextmanager
 async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
+    if _SERVICE_MANAGERS is not None:
+        yield
+        return
     async with contextlib.AsyncExitStack() as stack:
         await stack.enter_async_context(_manager_lifespan(_MANAGER))
         token = _REQUEST_MANAGERS.set(_RequestManagers(stack))
@@ -168,6 +182,17 @@ async def _mcp_lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
 
 @contextlib.asynccontextmanager
 async def _request_scope(params: CallToolRequestParams) -> AsyncGenerator[None]:
+    if _SELECTED_MANAGER.get() is not None:
+        yield
+        return
+    if _SERVICE_MANAGERS is not None:
+        async with _SERVICE_MANAGERS.scope(params) as manager:
+            token = _SELECTED_MANAGER.set(manager)
+            try:
+                yield
+            finally:
+                _SELECTED_MANAGER.reset(token)
+        return
     metadata = params.meta
     identifier = metadata.get("threadId") if metadata else None
     if identifier is None:
@@ -388,7 +413,9 @@ async def send_message(
     引数を省略すると270秒を待機上限とする。固有のtimeout要件がなければ引数を省略する。
     待つのは継続要求の配送結果が確定するまでとする。委譲先の応答生成の完了は待たない。
     上限に達した場合は配送の成否が確定しないため、`atk agents wait`で状態を確認する。
-    実行中turnにはsteerし、終了済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
+    Claude・Codexの実行中turnにはsteerする。Antigravity・OpenCodeの実行中turnは受理しない。
+    後者は`atk agents wait`で終了を観測して同じsessionへ`send_message`を再送する。
+    終了済みturnでは結果回収を前提にせず同じsessionのreplyを開始する。
     子session・背景taskの完了待ちの保留中には待機対象を引き継いで新しいturnを開始し、古い待機表明を結果として返さない。
     保持期限を過ぎた場合と、sessionを所有する実行主体が終了している場合も、保持済みの最小状態から会話を暗黙に再開する。
     応答は`delivery`と、指示を配送したsessionが保持する担当名の`label`を含み、
@@ -587,7 +614,8 @@ async def send_to_user(
     message: Annotated[str, Field(description="画面へそのまま表示する日本語のMarkdown本文")],
 ) -> dict[str, Any]:
     """メイン専用。会話内modが表示を確認した場合だけ成功を返す。表示後の本文は再掲しない。"""
-    if _UI_DELEGATED:
+    caller = runtime_environment.current()
+    if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
         raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
     if response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN:
         raise ValueError("本文を日本語で書き直すまで画面へ表示していない。")

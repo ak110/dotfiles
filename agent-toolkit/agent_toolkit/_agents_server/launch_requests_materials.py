@@ -12,7 +12,7 @@ from agent_toolkit._agents_server.launch_requests_preflight import PREFLIGHT_TIM
 from agent_toolkit._atk.wi import entries as wi_entries
 from agent_toolkit._atk.wi import frontmatter, headings
 from agent_toolkit._atk.wi.constants import normalized_wi_type
-from agent_toolkit._common import private_notes, task_documents
+from agent_toolkit._common import private_notes, runtime_environment, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import command as git_command
 from agent_toolkit._plan import commit_mapping, review_contract
@@ -365,7 +365,7 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
         if not names:
             return
         selected, missing = wi_entries.read_named_entries(
-            private_notes.default_private_notes(pathlib.Path.home()),
+            private_notes.default_private_notes(runtime_environment.home()),
             [(name, name) for name in sorted(names)],
             target_repo=None,
         )

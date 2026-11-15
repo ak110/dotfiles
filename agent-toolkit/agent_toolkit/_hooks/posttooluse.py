@@ -477,11 +477,7 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     command = tool_input.get("command")
     if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
         return None
-    operation = (
-        f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/SKILL.md'}`を読め"
-        if is_codex_payload(payload) or is_antigravity_payload(payload)
-        else "Skillで`agent-toolkit:report-completion`を起動せよ"
-    )
+    operation = "`agent-toolkit:report-completion`を起動せよ"
     return _llm_notice(
         f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
         tag="notice",

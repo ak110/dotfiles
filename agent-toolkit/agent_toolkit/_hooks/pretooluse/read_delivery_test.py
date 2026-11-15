@@ -39,20 +39,20 @@ def test_missing_heading_guides_full_read_without_marking(tmp_path, monkeypatch,
     assert _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
 
 
-@pytest.mark.parametrize("agent", [False, True])
-def test_range_failure_skill_fallback_and_missing_target(tmp_path, agent):
+def test_range_failure_skill_fallback_and_missing_target(tmp_path):
     skill = tmp_path / ".claude" / "skills" / "local" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# 固有本文\n", encoding="utf-8")
     target = ReadTarget(skill, "不存在")
-    notice = rules_context.acquisition_failure(target, ValueError("範囲不明"), shell=False, agent=agent, cwd=str(tmp_path))
+    notice = rules_context.acquisition_failure(target, ValueError("範囲不明"), shell=False, cwd=str(tmp_path))
     assert "`local`" in notice and "固有本文" not in notice
-    assert ("Readで全文読" in notice) is agent
+    assert "`local`を起動せよ" in notice
+    assert "Readで全文読" not in notice
     decoding = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
-    notice = rules_context.acquisition_failure(target, decoding, shell=False, agent=agent, cwd=str(tmp_path))
+    notice = rules_context.acquisition_failure(target, decoding, shell=False, cwd=str(tmp_path))
     assert "invalid" in notice and "宣言の見出しと資料を整合" not in notice
     skill.unlink()
-    notice = rules_context.acquisition_failure(target, FileNotFoundError(), shell=False, agent=agent)
+    notice = rules_context.acquisition_failure(target, FileNotFoundError(), shell=False)
     assert str(skill) in notice and "存在しない" in notice and "復旧" in notice
     assert "委譲元" in notice and "ユーザー" in notice and "`Skill`" not in notice
 

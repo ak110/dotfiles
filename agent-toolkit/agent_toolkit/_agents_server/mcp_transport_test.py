@@ -31,7 +31,6 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.message import SessionMessage
 from mcp.types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
-import agent_toolkit.agents_server_mcp as entry_script
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import (
     lifetime,
@@ -40,9 +39,10 @@ from agent_toolkit._agents_server import (
     mcp_transport,
     session_errors,
 )
-from agent_toolkit._common import process_tree, state_paths
+from agent_toolkit._common import process_identity, process_tree, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing.codex_plugin_support import _stop_mcp_services
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -83,13 +83,35 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
         ],
         env=env,
     )
-    with anyio.fail_after(20):
-        async with stdio_client(params) as streams:
-            read, write = streams
-            async with ClientSession(read, write) as client:
-                initialized = await client.initialize()
-                assert initialized.protocol_version == "2025-11-25"
-                yield client
+    service: psutil.Process | None = None
+    supervisor: psutil.Process | None = None
+    identity: process_identity.ProcessIdentity | None = None
+    try:
+        with anyio.fail_after(20):
+            async with stdio_client(params) as streams:
+                read, write = streams
+                async with ClientSession(read, write) as client:
+                    initialized = await client.initialize()
+                    assert initialized.protocol_version == "2025-11-25"
+                    [path] = list(tmp_path.rglob("generations.json"))
+                    registry = json.loads(path.read_text(encoding="utf-8"))
+                    target = registry["generations"][registry["current"]]
+                    service = psutil.Process(int(target["process"].split(":", 1)[0]))
+                    supervisor = service.parent()
+                    assert supervisor is not None and str(path.parent) in supervisor.cmdline()
+                    assert str(path.parent) in service.cmdline()
+                    identity = process_identity.ProcessIdentity.capture(service)
+                    yield client
+    finally:
+        if service is not None and supervisor is not None and identity is not None:
+            assert identity.matches(service)
+            service.terminate()
+            remaining = process_tree.wait_until_released([supervisor], timeout=20)
+            if remaining:
+                _stop_mcp_services(tmp_path)
+                pytest.fail("service停止後もsupervisorが退出しない")
+        else:
+            _stop_mcp_services(tmp_path)
 
 
 _EXPECTED_TOOLS = {
@@ -108,7 +130,7 @@ _EXPECTED_TOOLS = {
 
 @pytest.mark.asyncio
 async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
-    """公開stdioで登録schemaを取得でき、終了時の診断とManager.closeの完了がログへ残る。"""
+    """公開stdioのschemaとinitialize診断を取得し、明示的なservice回収でclose完了を記録する。"""
     async with _stdio_client(tmp_path, host_environ()) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
         assert set(tools) == _EXPECTED_TOOLS
@@ -122,7 +144,16 @@ async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, host_en
     log = (tmp_path / "agent-toolkit" / "agents-server.log").read_text(encoding="utf-8")
     assert "MCP initializeを受信しました" in log
     assert "MCP initialize応答が完了しました" in log
-    assert "manager closeが完了しました" in log
+    if os.name != "nt":
+        assert "manager closeが完了しました" in log
+    else:
+        [path] = (tmp_path / "agent-toolkit" / logging_config.INSTANCE_DIRECTORY_NAME).glob("*.jsonl")
+        events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        assert any(event["event"] == "process_exited" for event in events)
+        reference = logging_config.diagnostics_reference(
+            logging_config.InstanceReference(path.stem, 1), state_root=tmp_path / "agent-toolkit"
+        )
+        assert reference["status"] == "collected"
 
 
 @pytest.mark.asyncio
@@ -151,6 +182,8 @@ async def test_stdio_tool_results(tmp_path: pathlib.Path, host_environ: Callable
 @pytest.mark.usefixtures("transport_tracker")
 async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """ツール処理で起きた例外も、公開transportでは理由と次の操作を持つエラーとして返る。"""
+    # 同一プロセスの合成transportはpytestのtracker等を所有しない。実回収は別プロセスで検証する。
+    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda _self: [])
 
     def fail_list(**_kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("injected processing failure")
@@ -188,6 +221,8 @@ async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> No
 def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """stdio起動でinitializeの受信、応答完了および失敗を永続ログへ記録する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    # pytestが所有するtracker等は旧stdio単位の回収対象にしない。
+    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda _self: [])
 
     # SDK 2.3.0のJSON-RPC型から、受信と送信の公式構造を生成する。
     requests = [SessionMessage(JSONRPCRequest(jsonrpc="2.0", method="initialize", id=i)) for i in range(1, 5)]
@@ -216,7 +251,7 @@ def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(mcp_transport, "stdio_server", transport)
     monkeypatch.setattr(mcp_transport.Server, "run", run)
 
-    assert entry_script.main([]) == 0
+    assert mcp_tools.serve() == 0
 
     content = (tmp_path / "agents-server.log").read_text(encoding="utf-8")
     assert "MCP initializeを受信しました: request_id=1" in content
@@ -330,10 +365,12 @@ class _LaunchedServer:
             else [sys.executable, str(_PLUGIN_ROOT / "scripts" / "launch.py"), "agent_toolkit/agents_server_mcp.py", *arguments]
         )
         self.state_dir = tmp_path / "agent-toolkit"
+        self._state_base = tmp_path
         self.temporary = tmp_path / "tmp"
         # テストを実行する端末のCtrl-Cが子へ届かないよう、独立したセッションで起動する。
         self._owner = contextlib.ExitStack()
         self._closed = False
+        self._services: list[tuple[psutil.Process, process_identity.ProcessIdentity, list[str]]] = []
         self._lines: queue.Queue[bytes] = queue.Queue()
         self.stderr = b""
         self._readers: list[threading.Thread] = []
@@ -376,6 +413,15 @@ class _LaunchedServer:
                 if reader.ident is not None:
                     cleanup.callback(self._join_reader, reader)
             self._owner.close()
+            if not self._services:
+                _stop_mcp_services(self._state_base)
+            # 診断を書くsupervisorを残し、管理本体の終了を先に確定する。
+            for process, identity, arguments in self._services:
+                if not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    continue
+                assert identity.matches(process) and process.cmdline() == arguments
+                result = process_tree.stop_tree(process)
+                assert not result.residual and not result.unresolved, result.descriptions()
 
     @staticmethod
     def _join_reader(reader: threading.Thread) -> None:
@@ -412,6 +458,31 @@ class _LaunchedServer:
         )
         assert "result" in response
         self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        # boundはschema接続ではなく、会話Managerが状態の所有者になった診断である。
+        listed = self.request(10, "tools/call", {"name": "list", "arguments": {}})
+        assert "result" in listed and not listed["result"].get("isError", False)
+        [path] = list(self.state_dir.rglob("generations.json"))
+        registry = json.loads(path.read_text(encoding="utf-8"))
+        target = registry["generations"][registry["current"]]
+        process = psutil.Process(int(target["process"].split(":", 1)[0]))
+        parent = process.parent()
+        assert parent is not None
+        for member in (process, parent):
+            arguments = member.cmdline()
+            assert str(path.parent) in arguments
+            self._services.append((member, process_identity.ProcessIdentity.capture(member), arguments))
+
+    def service_process(self) -> psutil.Process:
+        """initialize時に隔離世代から特定した管理本体を返す。"""
+        process, identity, arguments = self._services[0]
+        assert identity.matches(process) and process.cmdline() == arguments
+        return process
+
+    def supervisor_process(self) -> psutil.Process:
+        """管理本体の専用supervisorを返す。"""
+        process, identity, arguments = self._services[1]
+        assert identity.matches(process) and process.cmdline() == arguments
+        return process
 
     def wait(self) -> int:
         """終了を待ち、読取threadを回収してから全パイプを閉じる。"""
@@ -449,22 +520,34 @@ class _LaunchedServer:
     ),
 )
 def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
-    """親が標準入力を閉じた正常終了を、サーバーとランチャーの双方が時刻付きで記録し、tools/listと終了コード0を保つ。"""
+    """EOFは転送だけを終了し、管理本体の明示回収で正常終了・supervisor診断とtools/listを保つ。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         tools = server.request(2, "tools/list", {})["result"]["tools"]
         assert {tool["name"] for tool in tools} == _EXPECTED_TOOLS
         assert server.process.stdin is not None
         server.process.stdin.close()
-
+        assert server.process.wait(timeout=_LAUNCH_TIMEOUT) == 0
+        assert server.service_process().is_running()
+        # POSIXはgraceful停止、Windowsは強制停止の結果をsupervisorに観測させる。
+        supervisor = server.supervisor_process()
+        server.service_process().terminate()
+        assert not process_tree.wait_until_released([supervisor], timeout=_LAUNCH_TIMEOUT)
         assert server.wait() == 0
         events = server.events()
         names = [event["event"] for event in events]
-        assert names[:2] == ["started", "bound"]
-        assert {"stdin_closed", "exited", "process_exited"} <= set(names)
-        assert next(event for event in events if event["event"] == "exited")["outcome"] == "normal"
+        assert names[0] == "started" and "bound" in names
         exited = next(event for event in events if event["event"] == "process_exited")
-        assert exited["writer"] == "launcher" and exited["returncode"] == 0 and exited["signal"] is None
+        assert exited["writer"] == "launcher"
+        if os.name != "nt":
+            assert next(event for event in events if event["event"] == "exited")["outcome"] == "normal"
+            assert exited["returncode"] == 0 and exited["signal"] is None
+            log = (server.state_dir / "agents-server.log").read_text(encoding="utf-8")
+            assert "manager closeが完了しました" in log
+        else:
+            assert "exited" not in names
+            assert exited["returncode"] != 0 and "stderr_tail" in exited
+            assert server.diagnostics_status() == "collected"
         assert all(event["at"] for event in events)
         assert not list(server.temporary.glob("agent-toolkit-agents-server-launch-*"))
 
@@ -500,15 +583,11 @@ def test_launcher_preserves_signal_exit_status(
     """ランチャーが受けたシグナルを記録し、変更前の起動形と同じ終了状態を呼出元へ返す。
 
     MCPホストと同じく、シグナルは起動したプロセスのpidへ送る（uvもpid宛てのSIGINT・SIGTERMを子へ転送する）。
-    SIGINTを受けたサーバーは標準入力の読取が終わるまで停止しないため（変更前の起動形も同じ）、受信の記録を同期点として標準入力を閉じる。
+    シグナルは転送側だけを終了させ、共有管理本体の寿命を変えない。
     """
 
     def deliver(launched: _LaunchedServer) -> None:
         launched.process.send_signal(signum)
-        if signum == signal.SIGINT:
-            launched.await_event("signal_received")
-            assert launched.process.stdin is not None
-            launched.process.stdin.close()
 
     # 起動の待ち時間を重ねるため、対照とランチャーを同時に起動する。
     with (
@@ -520,13 +599,14 @@ def test_launcher_preserves_signal_exit_status(
         for launched in (control, server):
             deliver(launched)
 
+        expected = server.process.wait(timeout=_LAUNCH_TIMEOUT)
+        assert expected == control.process.wait(timeout=_LAUNCH_TIMEOUT)
+        assert expected == 128 + signum
+        assert server.service_process().is_running() and control.service_process().is_running()
         assert server.wait() == control.wait()
         events = server.events()
-        assert {"event": "signal_received", "signal": signum.name} in [
-            {"event": event["event"], "signal": event.get("signal")} for event in events
-        ]
         exited = next(event for event in events if event["event"] == "process_exited")
-        assert [item["signal"] for item in exited["launcher_signals"]] == [signum.name]
+        assert exited["returncode"] == 0
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
@@ -538,7 +618,9 @@ def test_launcher_records_server_kill(tmp_path: pathlib.Path, launcher_environme
     """サーバーだけが記録できずに終わった場合も、ランチャーが終了状態と標準エラー末尾を記録する。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
-        os.kill(server.server_pid(), signal.SIGKILL)
+        server.service_process().kill()
+        assert server.process.stdin is not None
+        server.process.stdin.close()
         server.wait()
 
         names = [event["event"] for event in server.events()]
@@ -558,12 +640,15 @@ def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher
     """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
-        server_process = psutil.Process(server.server_pid())
+        server_process = server.service_process()
         # ランチャーの死亡を先に確定し、サーバーの終了を観測する主体を残さない。
         # サーバーが標準出力を保持するため、readerの回収は両方を止めた後に行う。
-        server.process.kill()
-        assert server.process.wait(timeout=_LAUNCH_TIMEOUT) == -signal.SIGKILL
+        supervisor = server.supervisor_process()
+        supervisor.kill()
+        assert not process_tree.wait_until_released([supervisor], timeout=5)
         server_process.kill()
+        assert server.process.stdin is not None
+        server.process.stdin.close()
         server.wait()
         deadline = time.monotonic() + _LAUNCH_TIMEOUT
         # 孤児の回収時機はPID 1に依存する。終了済みzombieは記録を書けず、PIDが残っていても停止済みである。

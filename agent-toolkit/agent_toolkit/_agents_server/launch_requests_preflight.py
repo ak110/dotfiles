@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import subprocess
 
+from agent_toolkit._agents_server import child_environment
 from agent_toolkit._common.next_action import ActionableError
 
 # 委譲先のClaude Code・Codexがプラグインを起動するコマンド。MCP設定（`.mcp.json`・`.mcp.codex.json`・`mcp.json`）の
@@ -26,6 +27,7 @@ def _run_preflight_command(command: tuple[str, ...], cwd: str) -> tuple[str, str
         completed = subprocess.run(
             command,
             cwd=cwd,
+            env=child_environment.inherited(),
             capture_output=True,
             text=True,
             encoding="utf-8",

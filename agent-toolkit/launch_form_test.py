@@ -22,7 +22,7 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit._common import plugin_environment, process_tree
+from agent_toolkit._common import plugin_environment, process_tree, windows_job
 from agent_toolkit._testing import late_descendant
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parent
@@ -544,3 +544,99 @@ def test_prepare_timeout_reclaims_its_descendants(
                 break
             assert time.monotonic() < deadline, "準備プロセスの子孫が終了しませんでした"
             time.sleep(0.01)
+
+
+@pytest.mark.parametrize("failure", [None, "assign", "terminate"])
+def test_launcher_windows_job_ownership(launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, failure: str | None) -> None:
+    """元handleで所属してから実行し、起点終了後もJob確認の失敗を伝播する。"""
+    events = []
+
+    class Job:
+        def __enter__(self):
+            events.append("job")
+            return self
+
+        def __exit__(self, *_args):
+            events.append("close-job")
+
+        def close(self):
+            events.append("failed-job-close")
+
+        def assign_suspended(self, handle, pid):
+            assert (handle, pid) == (123, 456)
+            events.append("assign")
+            if failure == "assign":
+                raise OSError("assign")
+
+        def terminate(self, **_kwargs):
+            events.append("terminate")
+            if failure == "terminate":
+                raise OSError("terminate")
+
+    class Process:
+        _handle = 123
+        pid = 456
+        stderr = SimpleNamespace(close=lambda: events.append("close-pipe"))
+
+        def poll(self):
+            return None if failure == "assign" else 0
+
+        def kill(self):
+            events.append("kill")
+
+        def wait(self, **_kwargs):
+            events.append("wait")
+            return 0
+
+    def popen(*_args, **kwargs):
+        assert events == ["job"]
+        assert kwargs["creationflags"] == windows_job.CREATE_SUSPENDED
+        events.append("spawn")
+        return Process()
+
+    monkeypatch.setattr(windows_job, "WindowsJob", Job)
+    monkeypatch.setattr(launcher, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(launcher.subprocess, "Popen", popen)
+    monkeypatch.setattr(launcher, "_tee_stderr", lambda *_args, **_kwargs: None)
+    if failure:
+        with pytest.raises(OSError, match=failure), launcher._server_lifetime([], {}, [], bytearray()):
+            pass
+    else:
+        with launcher._server_lifetime([], {}, [], bytearray()):
+            events.append("body")
+    assert events[:3] == ["job", "spawn", "assign"]
+    assert "terminate" in events
+    assert events[-2:] == ["close-pipe", "close-job"]
+    if failure == "assign":
+        assert "kill" in events
+
+
+@pytest.mark.skipif(os.name != "nt", reason="実Windows Jobの継承とbreakawayが必要")
+def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleType, tmp_path: pathlib.Path) -> None:
+    """起点終了後のstderr保持子を回収し、無関係・明示離脱の寿命を保つ。"""
+    marker = tmp_path / "children.json"
+    child_source = "import time; time.sleep(60)"
+    source = (
+        "import json,pathlib,subprocess,sys; "
+        f"child=subprocess.Popen([sys.executable,'-c',{child_source!r}]); "
+        f"detached=subprocess.Popen([sys.executable,'-c',{child_source!r}],creationflags=0x01000000,"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); "
+        f"pathlib.Path({str(marker)!r}).write_text(json.dumps([child.pid,detached.pid]))"
+    )
+    detached = None
+    with subprocess.Popen([sys.executable, "-c", child_source]) as unrelated:
+        try:
+            with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
+                assert process.wait(timeout=15) == 0
+                child_pid, detached_pid = json.loads(marker.read_text())
+                detached = psutil.Process(detached_pid)
+                assert psutil.pid_exists(child_pid)
+            assert not psutil.pid_exists(child_pid)
+            assert detached.is_running()
+            assert unrelated.poll() is None
+        finally:
+            unrelated.kill()
+            unrelated.wait(timeout=5)
+            if detached is not None:
+                detached.kill()
+                detached.wait(timeout=5)

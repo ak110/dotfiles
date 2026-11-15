@@ -64,24 +64,56 @@ def codex_plugin_script(*, plugin_id: str, plugin_name: str, relative_path: Path
         return None
     try:
         data = json.loads(result.stdout)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as error:
         logger.warning(
             log_format.format_status(
                 tag,
-                "Codex plugin一覧のJSONが不正なためCodex分を除外。`update-dotfiles`を再実行する",
+                f"Codex plugin一覧のJSON解析に失敗したためCodex分を除外: {error}。"
+                f"実行CLI: {codex}、marketplace: {plugin_id.rpartition('@')[2]}、終了状態: {result.returncode}。"
+                f"{shlex.join(['codex', *install_codex_plugins.plugin_list_args(plugin_id.rpartition('@')[2])])} "
+                "で一覧の応答と導入状態を確認し、不整合を修復してから`update-dotfiles`を再実行する",
             ),
         )
         return None
     installed = data.get("installed") if isinstance(data, dict) else None
-    version = enabled_version(installed if isinstance(installed, list) else [], plugin_id)
+    if not isinstance(installed, list):
+        logger.warning(
+            log_format.format_status(
+                tag,
+                f"Codex plugin一覧のinstalledが配列ではないためCodex分を除外。実行CLI: {codex}、"
+                f"marketplace: {plugin_id.rpartition('@')[2]}、終了状態: {result.returncode}。"
+                f"{shlex.join(['codex', *install_codex_plugins.plugin_list_args(plugin_id.rpartition('@')[2])])} "
+                "で応答形式と導入状態を確認し、不整合を修復してから`update-dotfiles`を再実行する",
+            )
+        )
+        return None
+    version = enabled_version(installed, plugin_id)
     if version is None:
         logger.info(
             log_format.format_status(tag, "Codex plugin の有効版が無いためCodex分を除外。未導入のため対応不要"),
         )
         return None
     codex_home = Path(os.environ.get("CODEX_HOME", install_codex_plugins.CODEX_HOME))
+    if version in {"", ".", ".."} or "/" in version or "\\" in version:
+        logger.warning(
+            log_format.format_status(
+                tag,
+                f"Codex pluginの版がキャッシュの単一ディレクトリ名ではありません: plugin={plugin_id}。"
+                "plugin一覧の版と導入状態を修復してから`update-dotfiles`を再実行する",
+            )
+        )
+        return None
     cache_root = codex_home / "plugins" / "cache" / claude_common.MARKETPLACE_NAME / plugin_name
-    return cache_root / version / relative_path
+    candidate = cache_root / version / relative_path
+    if not candidate.is_file():
+        logger.warning(
+            log_format.format_status(
+                tag,
+                f"Codex配布物が欠損: plugin={plugin_id}、有効版={version}、期待相対パス={relative_path}、"
+                f"解決先={candidate}。既存のplugin導入・更新経路で配布物を回復してから`update-dotfiles`を再実行する",
+            )
+        )
+    return candidate
 
 
 def run(
@@ -132,10 +164,11 @@ def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[lis
         return None
     resolved = targets()
     if not resolved:
-        logger.warning(
+        logger.info(
             log_format.format_status(
                 tag,
-                "対象スクリプトが見つからず環境構築を開始できない。`update-dotfiles`を再実行する",
+                "準備対象なし。候補解決時の診断を参照し、未導入・無効なら対応不要。"
+                "一覧の取得失敗や配布物欠損は、その原因を修復してから`update-dotfiles`を再実行する",
             ),
         )
         return None
@@ -281,12 +314,22 @@ def claude_plugin_scripts(
     if not isinstance(entries, list):
         logger.info(log_format.format_status(tag, "Claude Code plugin が未導入のため除外。未導入のため対応不要"))
         return []
-    return [
-        Path(install_path) / relative_path
-        for entry in entries
-        if isinstance(entry, dict)
-        if isinstance(install_path := entry.get("installPath"), str)
-    ]
+    candidates: list[Path] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(install_path := entry.get("installPath"), str):
+            continue
+        candidate = Path(install_path) / relative_path
+        if not candidate.is_file():
+            logger.warning(
+                log_format.format_status(
+                    tag,
+                    f"Claude Code配布物が欠損: plugin={plugin_id}、版={entry.get('version', '不明')}、"
+                    f"期待相対パス={relative_path}、解決先={candidate}。"
+                    "既存のplugin導入・更新経路で配布物を回復してから`update-dotfiles`を再実行する",
+                ),
+            )
+        candidates.append(candidate)
+    return candidates
 
 
 def warmup(

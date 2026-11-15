@@ -8,7 +8,7 @@ import asyncio
 import logging
 from typing import Any, Literal
 
-from agent_toolkit._agents_server import context_usage
+from agent_toolkit._agents_server import context_usage, service_turns
 from agent_toolkit._agents_server.session_errors import SessionOwnerGoneError
 from agent_toolkit._agents_server.state import SessionState
 
@@ -30,6 +30,7 @@ class _CommandChannel:
     def __init__(self) -> None:
         self._queue: asyncio.Queue[_Command] = asyncio.Queue()
         self._closed = False
+        self.tickets: dict[asyncio.Future[_DeliveryResult], service_turns.Ticket | None] = {}
 
     def send(
         self, kind: Literal["prompt", "interrupt", "compact", "plugin_reload", "effort"], prompt: str
@@ -38,6 +39,9 @@ class _CommandChannel:
         if self._closed:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
         future: asyncio.Future[_DeliveryResult] = asyncio.get_running_loop().create_future()
+        gate = service_turns.current()
+        self.tickets[future] = gate.capture() if gate else None
+        future.add_done_callback(lambda done: self.tickets.pop(done, None))
         self._queue.put_nowait((kind, prompt, future))
         return future
 
@@ -45,7 +49,7 @@ class _CommandChannel:
         """所有タスクが次の要求を取り出す。"""
         return await self._queue.get()
 
-    def close(self) -> None:
+    def close(self, error: BaseException | None = None) -> None:
         """以降の受理を止め、未処理の要求を所有タスクの終了として解決する。"""
         self._closed = True
         while True:
@@ -54,7 +58,7 @@ class _CommandChannel:
             except asyncio.QueueEmpty:
                 break
             if not future.done():
-                future.set_exception(SessionOwnerGoneError("the Claude session owner task has ended"))
+                future.set_exception(error or SessionOwnerGoneError("the Claude session owner task has ended"))
 
 
 class _ContextUsageObserver:

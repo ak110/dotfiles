@@ -8,7 +8,7 @@ import typing
 from collections.abc import Coroutine
 from typing import Any
 
-from agent_toolkit._agents_server import lifetime, session_errors
+from agent_toolkit._agents_server import lifetime, service_io, session_errors, wait_compaction
 from agent_toolkit._agents_server.codex_protocol import AppServerError, ResourceReleaseError
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import finish_task
@@ -28,6 +28,63 @@ class CodexClientsMixin:
     # closeが代入する属性の型を、mixinの代入からの推論（Task[None]）ではなく未起動を含む型として宣言する。
     _close_task: asyncio.Task[None] | None = None
 
+    async def export_service_state(self: CodexManager, session_id: str) -> dict:
+        if session_id in self._wait_compaction_turns:
+            raise RuntimeError("実行中の待機圧縮turnの完了後に移譲を再試行してください")
+        compactor = self._wait_compactors.get(session_id)
+        if compactor is None:
+            return {}
+        checkpoint = compactor.checkpoint()
+        await compactor.close()
+        return {"wait_compaction": checkpoint}
+
+    async def adopt_session(self: CodexManager, session: SessionState, descriptor: dict, auxiliary: dict) -> None:
+        runtime = service_io.current()
+        if runtime is None:
+            raise RuntimeError("サービス実行contextがありません")
+        if checkpoint := auxiliary.get("wait_compaction"):
+
+            async def usage() -> dict[str, object]:
+                return {"totalTokens": session.context_tokens, "rawMaxTokens": session.context_window}
+
+            async def enqueue(key: str) -> None:
+                await self._compact_wait(session, key)
+
+            compactor = wait_compaction.WaitCompaction(usage, enqueue)
+            compactor.restore(checkpoint)
+            self._wait_compactors[session.session_id] = compactor
+
+        async def notification(message: dict) -> None:
+            await self._handle_notification(message)
+            params = message.get("params")
+            if (
+                runtime.started is not None
+                and message.get("method") == "turn/started"
+                and isinstance(params, dict)
+                and self._find_session(params) is session
+            ):
+                runtime.started(session)
+            if (
+                runtime.boundary is not None
+                and message.get("method") == "turn/completed"
+                and isinstance(params, dict)
+                and self._find_session(params) is session
+                and self._notification_turn_id(params) == session.turn_id
+                and session.turn_completed
+            ):
+                runtime.boundary(session, client)
+
+        async def request(message: dict) -> None:
+            await self._handle_server_request(message, client)
+
+        async def failure(error: BaseException) -> None:
+            await self._handle_client_failure(error, client)
+
+        self.sessions[session.session_id] = session
+        client = service_io.CodexResource.attach(runtime, descriptor, notification, request, failure)
+        self._clients[session.session_id] = typing.cast(JsonRpcProcess, client)
+        await self._notify_waiters()
+
     def _schedule(self: CodexManager, awaitable: Coroutine[Any, Any, None]) -> None:
         """同じイベントループで回収する管理対象taskを登録する。"""
         task: asyncio.Task[None] = asyncio.create_task(awaitable)
@@ -46,6 +103,36 @@ class CodexClientsMixin:
         サーバー要求への応答と接続障害の反映は、この接続が所有するsessionだけを対象にする。
         """
         client: JsonRpcProcess | None = None
+        runtime = service_io.current()
+
+        async def on_notification(message: dict[str, Any]) -> None:
+            await self._handle_notification(message)
+            params = message.get("params")
+            if (
+                runtime is not None
+                and runtime.started is not None
+                and message.get("method") == "turn/started"
+                and isinstance(params, dict)
+                and (session := self._find_session(params)) is not None
+                and self._clients.get(session.session_id) is client
+            ):
+                runtime.started(session)
+            if (
+                runtime is None
+                or runtime.boundary is None
+                or client is None
+                or message.get("method") != "turn/completed"
+                or not isinstance(params, dict)
+            ):
+                return
+            session = self._find_session(params)
+            if (
+                session is not None
+                and self._clients.get(session.session_id) is client
+                and self._notification_turn_id(params) == session.turn_id
+                and session.turn_completed
+            ):
+                runtime.boundary(session, client)
 
         async def on_server_request(message: dict[str, Any]) -> None:
             assert client is not None
@@ -55,13 +142,23 @@ class CodexClientsMixin:
             assert client is not None
             await self._handle_client_failure(error, client)
 
-        client = JsonRpcProcess(
-            self._handle_notification,
-            on_server_request,
-            on_failure,
-            root_session_id=self._root_session_id,
-            launch_kind=launch_kind,
-            handoff_prompt=handoff_prompt,
+        def factory(notification: Any, server_request: Any, failure: Any) -> JsonRpcProcess:
+            return JsonRpcProcess(
+                notification,
+                server_request,
+                failure,
+                root_session_id=self._root_session_id,
+                launch_kind=launch_kind,
+                handoff_prompt=handoff_prompt,
+            )
+
+        client = (
+            factory(on_notification, on_server_request, on_failure)
+            if runtime is None
+            else typing.cast(
+                JsonRpcProcess,
+                service_io.CodexResource.create(runtime, factory, on_notification, on_server_request, on_failure),
+            )
         )
         self._unassigned_clients[id(client)] = client
         async with contextlib.AsyncExitStack() as resources:

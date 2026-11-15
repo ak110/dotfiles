@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -17,7 +16,7 @@ from agent_toolkit._agents_server import api_credits, engine_availability
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._atk import codex_connection, usage_refresh
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._common import codex_usage_limit
+from agent_toolkit._common import codex_usage_limit, runtime_environment
 
 CONTINUE_PROMPT = "以前の会話と実行結果を確認し、完了済みの操作を繰り返さず、未完了の作業を続けて所定の返却形式を返せ。"
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -53,7 +52,7 @@ def independent_api_auth(provider: dict[str, Any]) -> bool:
     if provider.get("requires_openai_auth", False):
         return False
     env_key = provider.get("env_key")
-    if isinstance(env_key, str) and os.environ.get(env_key):
+    if isinstance(env_key, str) and runtime_environment.environment().get(env_key):
         return True
     if provider.get("experimental_bearer_token"):
         return True
@@ -62,7 +61,7 @@ def independent_api_auth(provider: dict[str, Any]) -> bool:
         return True
     env_headers = provider.get("env_http_headers")
     return isinstance(env_headers, dict) and any(
-        key.lower() == "authorization" and isinstance(value, str) and os.environ.get(value)
+        key.lower() == "authorization" and isinstance(value, str) and runtime_environment.environment().get(value)
         for key, value in env_headers.items()
     )
 

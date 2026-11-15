@@ -6,6 +6,13 @@
 
 ## 配布物保持と掃引
 
+共有serviceは保持plugin rootのleaseを持ち、診断supervisorは依存環境の使用lockを保持する。
+接続ごとの転送が終わっても共有serviceのleaseを解放しない。
+旧世代は担当会話、受入中の要求、保存ACK前イベント、raw資源が全て無くなるまで保持し、期限だけで停止しない。
+`service_generations.py`は退出した自世代だけをretiredにし、配布物が消失した世代や同じcheckoutの古い世代のready JSON・stderr・登録を回収する。
+固定の起動・公開・世代lockは保持する。
+既存セッション・未回収結果・復旧記録の掃引条件は以下を維持する。
+
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
 | 子Claudeがreloadする固定plugin入力 | セッションのmanaged-tempの`claude-plugin-input-<一意な値>/agent-toolkit` | 当該SDK接続のClaude CLI | `claude_plugins.py`が版付きcache由来の明示toolkitだけを複製し、idle時に完成版を固定pathへ切り替える。失敗時は旧完成版へ復旧する。agents_serverのMCP起動定義は所有serverの保持版へ固定し、Python実行基盤とskill/mods入力の寿命を分ける。開発checkoutは元pathを使う。CLIの終了確認後に専用複製を回収し、終了未確認なら監視だけを止めて入力を保持する |

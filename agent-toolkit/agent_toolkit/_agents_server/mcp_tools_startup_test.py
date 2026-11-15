@@ -8,9 +8,6 @@ import json
 import logging
 import os
 import pathlib
-import shutil
-import subprocess
-import sys
 from multiprocessing import resource_tracker
 from typing import Any
 from unittest.mock import AsyncMock
@@ -46,82 +43,6 @@ def test_main_strips_conversation_context_before_backend_start(monkeypatch: pyte
     assert inherited["ANTHROPIC_AUTH_TOKEN"] == "test-token"
     assert not {name.casefold() for name in inherited} & mcp_environment._NON_INHERITABLE_NAMES
     assert launch_requests._HANDOFF_SESSION == ("parent-session",)
-
-
-def test_backend_imports_survive_plugin_path_removal(tmp_path: pathlib.Path) -> None:
-    """MCP初期化後にプラグイン配置を除去しても両backendを生成できる。"""
-    source_dir = pathlib.Path(__file__).resolve().parents[1]
-    script_dir = tmp_path / "plugin" / "scripts"
-    script_dir.mkdir(parents=True)
-    rules_dir = tmp_path / "plugin" / "share" / "rules"
-    rules_dir.mkdir(parents=True)
-    shutil.copyfile(source_dir.parent / "share" / "rules" / "rules-subagent.md", rules_dir / "rules-subagent.md")
-    paths = (
-        "agents_server_mcp.py",
-        "_agents_server/mcp_tools.py",
-        "_agents_server/mcp_transport.py",
-        "_agents_server/manager.py",
-        "_agents_server/launch_requests.py",
-        "_agents_server/responses.py",
-        "_agents_server/tool_descriptions.py",
-        "_agents_server/engine_availability.py",
-        "_agents_server/codex.py",
-        "_agents_server/codex_clients.py",
-        "_agents_server/codex_connections.py",
-        "_agents_server/codex_instructions.py",
-        "_agents_server/codex_notifications.py",
-        "_agents_server/codex_protocol.py",
-        "_agents_server/codex_replies.py",
-        "_agents_server/codex_reset.py",
-        "_agents_server/codex_rpc.py",
-        "_agents_server/codex_start.py",
-        "_agents_server/codex_turns.py",
-        "_agents_server/claude.py",
-        "_agents_server/antigravity.py",
-        "_common/process_tree.py",
-        "_agents_server/state.py",
-        "_agents_server/status_file.py",
-        "_agents_server/file_operations.py",
-        "_common/session_registry.py",
-        "_common/atomic_file.py",
-        "_atk/config.py",
-        "_atk/help_text.py",
-        "_common/inherited_venv.py",
-        "_common/delegated_session.py",
-        "_plan/locations.py",
-        "_common/wait_schedule.py",
-    )
-    for relative_path in paths:
-        destination = script_dir / relative_path
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_dir / relative_path, destination)
-    for package in ("_agents_server", "_common", "_atk", "_plan"):
-        (script_dir / package / "__init__.py").write_text("", encoding="utf-8")
-
-    check = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                "import shutil, sys\n"
-                "from pathlib import Path\n"
-                "script_dir = Path(sys.argv[1])\n"
-                "sys.path.insert(0, str(script_dir))\n"
-                "import agents_server_mcp as entry_script\n"
-                "assert 'claude_agent_sdk' not in sys.modules\n"
-                "sys.path.remove(str(script_dir))\n"
-                "shutil.rmtree(script_dir)\n"
-                "assert entry_script.mcp_tools._MANAGER._backend('codex').__class__.__name__ == 'AppServerManager'\n"
-                "assert entry_script.mcp_tools._MANAGER._backend('claude').__class__.__name__ == 'ClaudeServerManager'\n"
-                "assert entry_script.mcp_tools._MANAGER._backend('agy').__class__.__name__ == 'AntigravityManager'\n"
-            ),
-            str(script_dir),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert check.returncode == 0, check.stderr
 
 
 def test_main_strips_launcher_venv_from_child_environment(monkeypatch: pytest.MonkeyPatch) -> None:

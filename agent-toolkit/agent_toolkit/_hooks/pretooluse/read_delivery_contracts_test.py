@@ -268,7 +268,7 @@ def test_integrated_parent_contract_arrives_before_launch(monkeypatch, role, cod
     decision = read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test")
     targets = read_delivery.read_triggers.parent_contract_targets(role, root)
     assert _guidance(decision)
-    assert all(str(target.path) in _notice_body(decision) for target in targets)
+    assert all((read_delivery.skill_name(target.path) or str(target.path)) in _notice_body(decision) for target in targets)
     assert all(target.body().strip() not in _notice_body(decision) for target in targets)
     assert _guidance(read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test"))
 

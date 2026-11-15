@@ -165,7 +165,7 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
     payload = _payload(tmp_path, True)
     payload["transcript_path"] = str(tmp_path / "outer.jsonl")
     assert dispatch.main(json.dumps(payload)) == 0
-    assert "/agent-basics/skills/bugfix/SKILL.md" in _context(capsys.readouterr())
+    assert "`agent-basics:bugfix`を起動せよ" in _context(capsys.readouterr())
     status = dispatch.main(json.dumps(payload))
     assert status == 0 and not _context(capsys.readouterr())
     seen = set()

@@ -1,0 +1,130 @@
+"""共有PID宛ての制御要求を、別会話で消費しない境界を検証する。"""
+
+# 保存完了と受付予約の内部境界を代用I/Oで検証する。
+# pylint: disable=protected-access
+
+import asyncio
+import json
+import pathlib
+import time
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import AsyncMock
+
+import pytest
+
+from agent_toolkit._agents_server import service_context, service_io, service_turns
+from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._common import effort_requests, runtime_environment, session_registry, session_release
+
+
+@pytest.mark.asyncio
+async def test_effort_request_is_consumed_by_its_conversation_only(monkeypatch, tmp_path):
+    first = SessionState(session_id="first", cwd=str(tmp_path), effort="low", model_type="chores")
+    second = SessionState(session_id="second", cwd=str(tmp_path), effort="low", model_type="chores")
+    first.effort_levels = second.effort_levels = ("low", "medium")
+    request = tmp_path / "request.effort-request"
+    packet = {"session_id": "second", "actor": "parent-second", "direction": "up", "deadline": time.monotonic() + 30}
+    pending = [(request, packet)]
+    responses = []
+    applied = []
+    finished = asyncio.Event()
+
+    def respond(path, value):
+        assert path == request
+        responses.append(value)
+        pending.clear()
+        finished.set()
+
+    original_read = pathlib.Path.read_text
+    original_exists = pathlib.Path.exists
+    record = session_registry.registry_directory(tmp_path) / "second.json"
+    monkeypatch.setattr(
+        pathlib.Path,
+        "read_text",
+        lambda path, *args, **kwargs: (
+            json.dumps({session_registry.LAUNCHER_KEY: "parent-second"})
+            if path == record
+            else original_read(path, *args, **kwargs)
+        ),
+    )
+    monkeypatch.setattr(pathlib.Path, "exists", lambda path: path == request or original_exists(path))
+    monkeypatch.setattr(effort_requests, "pending", lambda **_kwargs: list(pending))
+    monkeypatch.setattr(effort_requests, "respond", respond)
+    monkeypatch.setattr(session_release, "process_requests", AsyncMock())
+
+    async def apply(session, value):
+        applied.append((session.session_id, value, runtime_environment.environment()["CALLER"]))
+
+    def conversation(session, marker):
+        manager = SimpleNamespace(
+            sessions={session.session_id: session},
+            _effort_catalog=AsyncMock(),
+            _apply_effort=apply,
+            _process_auto_resume=AsyncMock(return_value=False),
+            save_control_state=AsyncMock(),
+            _service_paused=set(),
+        )
+        caller = runtime_environment.CallerContext({"HOME": str(tmp_path), "CALLER": marker}, tmp_path)
+        return service_context.Conversation(cast(service_context.AgentsServerManager, manager), caller)
+
+    pool = service_context.ServiceManagers(state_root=tmp_path)
+    pool.conversations.update(first=conversation(first, "first"), second=conversation(second, "second"))
+    async with pool, asyncio.timeout(5):
+        await finished.wait()
+    assert applied == [("second", "medium", "second")]
+    assert first.effort == "low" and second.effort == "medium"
+    assert len(responses) == 1 and responses[0]["changed"] is True
+    assert "error" not in responses[0]
+
+
+@pytest.mark.asyncio
+async def test_accepted_effort_is_drained_through_control_save(monkeypatch, tmp_path):
+    gate = service_turns.TurnGate("old", {"generation": "old", "epoch": 1})
+    saving = asyncio.Event()
+    complete_save = asyncio.Event()
+    applied = []
+    pending = [(tmp_path / "same.effort-request", {"session_id": "child"})]
+
+    async def process(*_args, **_kwargs):
+        applied.append("child")
+        pending.clear()
+
+    async def save():
+        saving.set()
+        await complete_save.wait()
+
+    manager = SimpleNamespace(
+        sessions={"child": object()},
+        _service_paused=set(),
+        _effort_catalog=AsyncMock(),
+        _apply_effort=AsyncMock(),
+        save_control_state=save,
+        _process_auto_resume=AsyncMock(return_value=False),
+    )
+    pool = service_context.ServiceManagers(state_root=tmp_path)
+    pool.conversations["owner"] = service_context.Conversation(
+        cast(service_context.AgentsServerManager, manager),
+        runtime_environment.CallerContext({}, tmp_path),
+        service_io.Runtime("old", {}, cast(service_io.ResourceBroker, None), gate=gate),
+    )
+    monkeypatch.setattr(effort_requests, "pending", lambda **_kwargs: list(pending))
+    monkeypatch.setattr(service_context.effort_control, "process_requests", process)
+    monkeypatch.setattr(session_release, "process_requests", AsyncMock())
+    monitor = asyncio.create_task(pool._monitor())
+    pause = None
+    try:
+        async with asyncio.timeout(3):
+            await saving.wait()
+            pause = asyncio.create_task(gate.pause_session("child"))
+            await asyncio.sleep(0)
+            assert not pause.done()
+            complete_save.set()
+            await pause
+            assert applied == ["child"]
+    finally:
+        complete_save.set()
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+        if pause is not None:
+            await pause

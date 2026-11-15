@@ -233,13 +233,11 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     skill_step = "`agent-toolkit:process-wi`"
     assert skill_step not in context
     assert str(skill) not in context
-    failure = rules_context.acquisition_failure(
-        read_triggers.ReadTarget(skill, "欠落"), ValueError("見出し不明"), shell=False, reference=purpose == "reference"
-    )
-    assert (skill_step in failure) is (purpose != "reference")
+    failure = rules_context.acquisition_failure(read_triggers.ReadTarget(skill, "欠落"), ValueError("見出し不明"), shell=False)
+    assert skill_step in failure
     current = invoke("PreToolUse", "Write", write)
-    assert (str(skill) in current) is (purpose == "reference")
-    assert (skill_step in current) is (purpose != "reference")
+    assert skill_step in current
+    assert f"Readで`{skill}`" not in current
     invoke("PostToolUse", "Read", {"file_path": str(skill)}, skill.read_text(encoding="utf-8"))
     following = invoke("PreToolUse", "Write", write)
     if purpose == "reference":

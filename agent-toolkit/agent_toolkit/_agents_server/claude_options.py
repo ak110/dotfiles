@@ -27,7 +27,7 @@ from agent_toolkit._agents_server.launch_prompts import (
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._common import claude_connection as connection_settings
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._common import plugin_environment, runtime_environment
 
 _ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
 
@@ -64,6 +64,13 @@ def _settings_from_cmdline(cmdline: bytes) -> str | None:
 
 def _parent_settings() -> str | None:
     """親Claude Codeの起動引数からsettingsファイルを返す。"""
+    caller = runtime_environment.current()
+    if caller is not None:
+        settings = caller.parent_settings
+        if settings and not settings.lstrip().startswith("{"):
+            path = pathlib.Path(settings)
+            return str(path if path.is_absolute() else caller.cwd / path)
+        return settings
     try:
         cmdline = pathlib.Path(f"/proc/{os.getppid()}/cmdline").read_bytes()
     except OSError:
@@ -108,7 +115,7 @@ def _build_options(
     from claude_agent_sdk import ClaudeAgentOptions
 
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
-    cli_env = plugin_environment.cli_environment(plugin_root, os.environ)
+    cli_env = plugin_environment.cli_environment(plugin_root, runtime_environment.environment())
     env = {
         _delegated_session.DELEGATED_SESSION_ENV: "1",
         # 委譲先のhookが軽量起動を判別して、スキルの取得を求めない判定に使う。
@@ -158,13 +165,18 @@ def _build_options(
         options["stderr"] = stderr
     if debug_file is not None:
         options["extra_args"] = {"debug-file": str(debug_file)}
-    if (cli_path := shutil.which("claude")) is not None:
+    if (cli_path := shutil.which("claude", path=cli_env["PATH"])) is not None:
         options["cli_path"] = cli_path
     # 起動時に継承環境から除いた接続値は、選択した接続へだけ明示的に戻す。
     connection = connection_settings.Connection(connection_kind, api_env_file, isolation_env_files)
     isolate_auth = connection.kind != "inherit"
     selected_environment = connection_settings.connection_environment(child_environment.inherited(), connection)
-    env.update({key: value for key, value in selected_environment.items() if key not in os.environ})
+    if runtime_environment.current() is not None:
+        env.update(selected_environment)
+        env["PATH"] = cli_env["PATH"]
+        env[plugin_environment.RUNTIME_DATA_ENV] = cli_env[plugin_environment.RUNTIME_DATA_ENV]
+    else:
+        env.update({key: value for key, value in selected_environment.items() if key not in os.environ})
     env.update(connection_settings.connection_overrides(connection))
     # Code Modeは対話ターミナル専用であり、親の通常起動設定をSDKの委譲へ適用しない。
     env["CLAUDE_CODE_EXPERIMENTAL_CODE_MODE"] = "0"

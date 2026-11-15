@@ -82,3 +82,7 @@
   同じ制約を`AskUserQuestion`の本文へ適用する処理が再び置かれたため撤去した（2026年9月16日、ユーザー指示）。
   受理形式の制約とユーザー向け提示本文の扱いは
   `agent-basics/skills/writing-standards/references/claude-hooks-block-warn.md`の「遮断・警告フックの成立条件」にある
+
+人が継続して追記する本文の容量検査も、上限超過時だけ整理後の水準へ下げる2段階で扱う。
+共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」にあり、具体値は各上限の定義・監査記録が持つ。
+上限以下の本文の一律削減、AntigravityのSKILL.md入口の自動分離、実行時の抜粋上限へ手動整理を広げない。

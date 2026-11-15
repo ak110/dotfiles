@@ -5,6 +5,9 @@ agents_serverのMCPサーバーだけは子プロセスとして起動して終�
 通常hookは起動準備と本体を有限時間で監視し、終了時に同じ所有回収を使う。
 """
 
+# stdlib bootstrapを保ち、依存環境内の実装とWindows専用APIは該当分岐だけで読み込む。
+# pylint: disable=import-outside-toplevel
+
 import argparse
 import contextlib
 import ctypes
@@ -28,6 +31,7 @@ from agent_toolkit._common import dotfiles_mode, environment_usage, next_action,
 lazy from agent_toolkit._agents_server import logging_config  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _AGENTS_SERVER_TARGET = Path("agent_toolkit") / "agents_server_mcp.py"
+_AGENTS_SERVICE_TARGET = Path("agent_toolkit") / "_agents_server" / "service.py"
 _STDERR_TAIL_BYTES = 16 * 1024
 _FORWARDED_SIGNALS = ("SIGINT", "SIGTERM", "SIGHUP")
 _STOP_TIMEOUT = 5.0
@@ -44,6 +48,7 @@ def main() -> int:
     parser.add_argument("--persist-claude-env", action="store_true", help="SessionStartのBash環境ファイルへCLIのPATHを追記する")
     parser.add_argument("--prepare", action="store_true", help="共有依存環境を準備して終了する")
     parser.add_argument("--hook-worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--agents-service", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument(
         "--prepare-if-missing",
         action="store_true",
@@ -110,6 +115,11 @@ def main() -> int:
         return 1
     if target == root / "agent_toolkit/hook.py" and not options.hook_worker:
         return _run_hook(root, target, options.arguments, persist_claude_env=options.persist_claude_env)
+    if target == root / _AGENTS_SERVER_TARGET and not options.arguments:
+        # 転送側はstdlibだけで動き、接続の寿命では依存環境の使用ロックを保持しない。
+        from agent_toolkit._agents_server.service_forward import forward
+
+        return forward(root=root, python=python, environment=caller_environment)
     try:
         with environment_usage.lock(plugin_environment.project_environment(root, caller_environment)):
             # 準備確認と使用開始の間に回収されていないことを、回収と同じ排他下で確かめる。
@@ -117,6 +127,17 @@ def main() -> int:
                 raise FileNotFoundError("共有依存環境が回収されたため、update-dotfilesで再準備してください")
             arguments = [str(python), str(target), *options.arguments]
             environment = plugin_environment.direct_environment(root, caller_environment)
+            if options.agents_service:
+                if target != root / _AGENTS_SERVICE_TARGET:
+                    parser.error("--agents-serviceは管理サービスの内部起動だけに使用する")
+                from agent_toolkit._agents_server import plugin_root
+
+                stable = plugin_root.SERVER_PLUGIN_ROOT
+                if stable.resolve() == root:
+                    stable = plugin_root.resolve_stable_plugin_root(root, independent=True)
+                arguments = [str(python), str(stable / _AGENTS_SERVICE_TARGET), *options.arguments]
+                environment["PYTHONPATH"] = str(stable)
+                return _run_agents_server(arguments, environment, independent=True)
             if target == root / _AGENTS_SERVER_TARGET:
                 return _run_agents_server(arguments, environment)
             if target == root / "agent_toolkit/_common/pyfltr_entry.py" and options.arguments[:1] == ["mcp"]:
@@ -232,7 +253,13 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
         return 1
 
 
-def _run_agents_server(arguments: list[str], environment: dict[str, str], *, record_diagnostics: bool = True) -> int:
+def _run_agents_server(
+    arguments: list[str],
+    environment: dict[str, str],
+    *,
+    record_diagnostics: bool = True,
+    independent: bool = False,
+) -> int:
     """MCPサーバーを子として起動し、終了状態・受信シグナル・標準エラー末尾を終了診断へ追記する。
 
     標準入力と標準出力は継承してMCPのstdio通信を中継しない。呼出元へは従来のuv起動と同じ終了コードを返す。
@@ -249,8 +276,8 @@ def _run_agents_server(arguments: list[str], environment: dict[str, str], *, rec
         environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
         received = []
         tail = bytearray()
-        with _server_lifetime(arguments, environment, received, tail) as process:
-            returncode = _wait_server(process, received)
+        with _server_lifetime(arguments, environment, received, tail, quiet=independent) as process:
+            returncode = _wait_owned_server(process, received, lambda: True) if independent else _wait_server(process, received)
         diagnostics = logging_config.read_launch_record(record_path)
         terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
         if diagnostics is None:
@@ -258,7 +285,7 @@ def _run_agents_server(arguments: list[str], environment: dict[str, str], *, rec
             if returncode != 0:
                 next_action.report(
                     "診断ファイルの所在を受け取る前にagents_serverが異常終了したため、終了診断ファイルは未作成である:"
-                    f" returncode={returncode} signal={terminated_by}",
+                    f" returncode={returncode} signal={terminated_by} stderr={bytes(tail).decode('utf-8', errors='replace')}",
                     next_action="この行より前の標準エラーと、親CLIのMCP接続記録の同じ時刻の記録を確認してください。",
                 )
         else:
@@ -335,28 +362,61 @@ def _server_lifetime(
     *,
     stdin: BinaryIO | None = None,
     cwd: Path | None = None,
+    quiet: bool = False,
 ) -> Generator[subprocess.Popen[bytes]]:
     """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。"""
     # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
     # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
-    process = subprocess.Popen(  # pylint: disable=consider-using-with
-        arguments, env=environment, stdin=stdin, cwd=cwd, stderr=subprocess.PIPE, start_new_session=os.name != "nt"
-    )
     with contextlib.ExitStack() as cleanup:
+        job = None
+        if os.name == "nt":
+            from agent_toolkit._common.windows_job import WindowsJob
+
+            job = cleanup.enter_context(WindowsJob())
+        process = subprocess.Popen(  # pylint: disable=consider-using-with
+            arguments,
+            env=environment,
+            stdin=stdin,
+            cwd=cwd,
+            stderr=subprocess.PIPE,
+            start_new_session=os.name != "nt",
+            creationflags=0x00000004 if job is not None else 0,
+        )
         assert process.stderr is not None
         cleanup.callback(process.stderr.close)
         try:
+            if job is not None:
+                owned_process: Any = process
+                owned_process._bootstrap_job = job  # pylint: disable=protected-access  # 所有Jobを停止処理へ引き継ぐ。
+                # Windows版Popenが生成時に保持する元handleを使う。POSIX側の型推論には存在しない。
+                job.assign_suspended(
+                    int(owned_process._handle),  # pylint: disable=no-member,protected-access
+                    process.pid,
+                )
             if os.name != "nt":
                 for name in _FORWARDED_SIGNALS:
                     signum = getattr(signal, name)
                     previous = signal.signal(signum, _forwarding_handler(process, received))
                     cleanup.callback(signal.signal, signum, previous)
-            reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), daemon=True)
+            reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), kwargs={"quiet": quiet}, daemon=True)
             cleanup.callback(_join_reader, reader)
             reader.start()
             yield process
         finally:
-            _stop_server_process(process)
+            if job is None:
+                _stop_server_process(process)
+            else:
+                try:
+                    job.terminate(timeout=_STOP_TIMEOUT)
+                except BaseException:
+                    # 終了照会の失敗を伝播しつつ、kill-on-closeでreaderのwriterも解放する。
+                    job.close()
+                    raise
+                finally:
+                    # 所属前の失敗でも、停止状態の元プロセスを残さない。
+                    if process.poll() is None:
+                        process.kill()
+                    process.wait(timeout=_STOP_TIMEOUT)
 
 
 def _join_reader(reader: threading.Thread) -> None:
@@ -376,21 +436,11 @@ def _stop_server_process(
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(timeout=_STOP_TIMEOUT if graceful_timeout is None else graceful_timeout)
     if os.name == "nt":
-        if process.poll() is not None:
-            return
-        # stdlib起動段階にはpsutilが無い。自ら起動したPIDの子孫だけをWindows標準のtaskkillへ渡す。
-        try:
-            subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=_STOP_TIMEOUT,
-            )
-        finally:
-            if process.poll() is None:
-                process.kill()
-            process.wait(timeout=_STOP_TIMEOUT)
+        job = getattr(process, "_bootstrap_job", None)
+        if job is None:
+            raise OSError("起動時に所有したWindows Jobがありません")
+        job.terminate(timeout=_STOP_TIMEOUT)
+        process.wait(timeout=_STOP_TIMEOUT)
         return
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGTERM)
@@ -413,11 +463,12 @@ def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[s
     return handler
 
 
-def _tee_stderr(stream: Any, tail: bytearray) -> None:
+def _tee_stderr(stream: Any, tail: bytearray, *, quiet: bool = False) -> None:
     """子の標準エラーを受け取った順に自身の標準エラーへ出力し、末尾16KiBを保持する。"""
     while chunk := stream.read1(65536):
-        sys.stderr.buffer.write(chunk)
-        sys.stderr.buffer.flush()
+        if not quiet:
+            sys.stderr.buffer.write(chunk)
+            sys.stderr.buffer.flush()
         tail.extend(chunk)
         del tail[:-_STDERR_TAIL_BYTES]
 

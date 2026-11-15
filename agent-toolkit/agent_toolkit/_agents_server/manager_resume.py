@@ -17,6 +17,8 @@ from agent_toolkit._agents_server import (
     launch_requests,
     manager_registry,
     result_contract,
+    service_io,
+    service_turns,
     shared_layout,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -67,7 +69,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
         resources = await run_file_operation(
             launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
         )
-        return await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
+        async with service_io.next_input(session):
+            return await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
 
     async def _child_result_is_terminal(self, session_id: str) -> bool:
         """孫sessionの共有された終了時の結果ファイルが終了を示すかを返す。
@@ -472,14 +475,40 @@ class ManagerResume(manager_registry.ManagerRegistry):
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions.pop(session_id, None)
         resume_prompt = ResumePrompt(prompt)
-        task = asyncio.create_task(self._run_resume(resume_state, resume_prompt, on_failure))
+        gate = service_turns.current()
+
+        async def owned_resume() -> SessionState:
+            entered = False
+            try:
+                assert gate is not None
+                async with gate.admit(new_turn=True, session_id=session_id):
+                    # eager起動では予約だけを先に保持し、pendingの登録後に実処理を始める。
+                    await asyncio.sleep(0)
+                    entered = True
+                    return await self._run_resume(resume_state, resume_prompt, on_failure)
+            finally:
+                if not entered:
+                    self.expired_sessions[session_id] = resume_state
+                    resume_prompt.close()
+                    pending = self._pending_resumes.get(session_id)
+                    if pending is not None and pending.task is asyncio.current_task():
+                        self._pending_resumes.pop(session_id, None)
+
+        task = (
+            asyncio.create_task(owned_resume(), eager_start=True)
+            if gate is not None
+            else asyncio.create_task(self._run_resume(resume_state, resume_prompt, on_failure))
+        )
+        if task.done() and not task.cancelled() and task.exception() is not None:
+            task.result()
         pending = PendingResume(
             state=resume_state,
             task=task,
             prompt=resume_prompt,
             previous_result=previous_result,
         )
-        self._pending_resumes[session_id] = pending
+        if not task.done():
+            self._pending_resumes[session_id] = pending
         task.add_done_callback(self._consume_resume_exception)
         return pending, resume_prompt.initial_ticket
 

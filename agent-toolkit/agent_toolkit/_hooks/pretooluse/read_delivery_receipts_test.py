@@ -312,3 +312,25 @@ def test_worktree_versions_share_proven_logical_document(scenario, host_environ,
         _assert_acquisition(state, read_triggers.ReadTarget(target, heading), False)
         _assert_allowed_without_guidance(invoke("claude", "PreToolUse", "Write", write))
     git_repository.run_git(repo, "worktree", "remove", "--force", str(worktree))
+
+
+def test_codex_named_skill_guidance_then_body_receipt(scenario, monkeypatch):
+    """名前案内は取得扱いせず、Codexへ届いた実本文だけで取得済みにする。"""
+    state, rows, path, _rollout, invoke, delivered = scenario
+    skill = path.parent / ".claude/skills/local/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 固有スキル\n本文\n", encoding="utf-8")
+    monkeypatch.setattr(document_reads, "skill_loadable", lambda *_args, **_kwargs: True)
+    rows.append(read_triggers.ReadTrigger(path, 1, "操作", ("tool:Write",), (skill,)))
+    target = read_triggers.ReadTarget(skill)
+    write = {"file_path": str(path.parent / "output.md"), "content": "成果"}
+    guide = invoke("codex", "PreToolUse", "Write", write)
+    assert "`local`を起動せよ" in guide and "cat --" not in guide
+    assert not read_delivery.target_ready(state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), target, "main")
+    command = "cat -- " + shlex.quote(str(skill))
+    invoke("codex", "PreToolUse", "Bash", {"command": command})
+    body = skill.read_text(encoding="utf-8")
+    invoke("codex", "PostToolUse", "Bash", {"command": command}, {"stdout": body, "exit_code": 0})
+    delivered(json.dumps({"output": body, "exit_code": 0}, ensure_ascii=False))
+    _assert_allowed_without_guidance(invoke("codex", "PreToolUse", "Write", write))
+    assert read_delivery.target_ready(state[rules_context.OPERATION_SKILL_READY_KEY], target, "main")

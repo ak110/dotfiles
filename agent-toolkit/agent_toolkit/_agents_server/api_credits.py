@@ -1,11 +1,12 @@
-"""APIクレジットの残高不足の観測を、agents_serverのプロセス内で一定時間だけエンジン別に共有する。
+"""APIクレジットの残高不足の観測を、呼出元会話内で一定時間だけエンジン別に共有する。
 
 委譲先の使用順が`credits`を先頭に置く設定では、残高不足の間に起動する新しい委譲先が毎回クレジットで失敗し、
-次の接続への切替と再開の往復を繰り返す。残高不足を観測した時刻をエンジンごとにプロセス内へ保持し、
+次の接続への切替と再開の往復を繰り返す。残高不足を観測した時刻を会話とエンジンごとに非永続で保持し、
 `CREDIT_SHORTAGE_TTL_SECONDS`以内に起動する委譲先では`credits`の候補を後ろへ回す（候補からは外さない）。
 
 APIクレジットは月1回の付与などで外部から回復するため、観測は永続化しない。
-期限を過ぎるか、agents_serverのプロセスを再起動した後は、通常の使用順で`credits`を再び試す。
+期限を過ぎるか会話の管理状態を失った後は、通常の使用順で`credits`を再び試す。
+共有管理を使わない単体backendでは、既存のプロセス内の保持を使う。
 利用上限など残高不足以外の理由の失敗は対象にしない。
 """
 
@@ -13,6 +14,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
+
+from agent_toolkit._common import runtime_environment
 
 CREDIT_SHORTAGE_TTL_SECONDS = 60 * 60
 """残高不足の観測を新しい委譲先の使用順へ反映する期間（秒）。"""
@@ -37,17 +40,21 @@ def is_credit_shortage(text: str) -> bool:
 
 def record_shortage(engine: str, *, now: float | None = None) -> None:
     """エンジンの`credits`接続で残高不足を観測した時刻を記録する。"""
-    _observations[engine] = time.monotonic() if now is None else now
+    caller = runtime_environment.current()
+    observations = _observations if caller is None else caller.credit_shortages
+    observations[engine] = time.monotonic() if now is None else now
 
 
 def clear() -> None:
     """記録した全エンジンの観測を削除する。"""
-    _observations.clear()
+    caller = runtime_environment.current()
+    (_observations if caller is None else caller.credit_shortages).clear()
 
 
 def shortage_active(engine: str, *, now: float | None = None) -> bool:
     """エンジンの残高不足の観測から`CREDIT_SHORTAGE_TTL_SECONDS`未満であるかを返す。"""
-    observed_at = _observations.get(engine)
+    caller = runtime_environment.current()
+    observed_at = (_observations if caller is None else caller.credit_shortages).get(engine)
     if observed_at is None:
         return False
     current = time.monotonic() if now is None else now

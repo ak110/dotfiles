@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import pathlib
 import sys
@@ -13,7 +14,8 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._agents_server import service_transport
+from agent_toolkit._common import plugin_environment, process_identity, process_tree
 from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES, HOME_ENVIRONMENT_NAMES
 
 # 試験が観測する内部境界を準備する。
@@ -150,6 +152,34 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
         "そのテストのClientSessionとstdio_clientの終了処理を調べ、"
         "上記PIDの生成時刻・状態を確認して停止未達の処理を特定する。"
     )
+
+
+def _stop_mcp_services(state_base: pathlib.Path) -> None:
+    """隔離領域の世代記録とleaseの両方に一致する管理プロセスだけを回収する。"""
+    records = list(state_base.rglob("generations.json"))
+    for path in records:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for entry in data["generations"].values():
+            if not entry.get("ready"):
+                continue
+            identity = entry["process"]
+            process = psutil.Process(int(identity.split(":", 1)[0]))
+            assert service_transport.process_identity(process.pid) == identity
+            assert str(path.parent) in process.cmdline()
+            parent = process.parent()
+            assert parent is not None and str(path.parent) in parent.cmdline()
+            leases = [
+                json.loads(item.read_text(encoding="utf-8"))
+                for item in (state_base / "agent-toolkit/plugin-root-leases").glob("*.json")
+            ]
+            for member in (parent, process):
+                lease = next(item for item in leases if item["pid"] == member.pid)
+                assert process_identity.matches(member, lease["created_at"], lease.get("start_id"))
+                assert pathlib.Path(entry["root"]).is_relative_to(pathlib.Path(lease["path"]))
+            pinned = process_identity.ProcessIdentity.capture(parent)
+            assert pinned.matches(parent)
+            result = process_tree.stop_tree(parent)
+            assert not result.residual and not result.unresolved, result.descriptions()
 
 
 # 90cad03ac601a24107d34758748f1d022ed5342cのplugin_root.pyにある、版別rootの

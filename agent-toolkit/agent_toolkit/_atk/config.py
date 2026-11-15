@@ -35,7 +35,7 @@ from agent_toolkit._atk.config_settings import MUTABLE_KEY_DEFAULTS as _MUTABLE_
 from agent_toolkit._atk.config_settings import RETIRED_CONNECTION_KEYS as _RETIRED_CONNECTION_KEYS
 from agent_toolkit._atk.config_settings import config_env_name as _config_env_name
 from agent_toolkit._atk.config_settings import config_file_path as _config_file_path
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, runtime_environment
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
@@ -77,7 +77,9 @@ def connections_configured(engine: str) -> bool:
     _config_migration.check_legacy_environment()
     _config_migration.migrate_legacy_settings()
     stored = _config_settings.load_config()
-    return any(os.environ.get(_config_settings.config_env_name(key), "") or key in stored for key in keys)
+    return any(
+        runtime_environment.environment().get(_config_settings.config_env_name(key), "") or key in stored for key in keys
+    )
 
 
 def resolve_mutable_setting(key: str) -> str:
@@ -87,7 +89,7 @@ def resolve_mutable_setting(key: str) -> str:
     _config_migration.check_legacy_environment()
     _config_migration.migrate_legacy_settings()
     env_name = _config_settings.config_env_name(key)
-    env_value = os.environ.get(env_name, "")
+    env_value = runtime_environment.environment().get(env_name, "")
     value = _config_settings.raw_mutable_setting(key)
     if not env_value:
         value = config_usage.temporary_settings().get(key, value)

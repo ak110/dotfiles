@@ -1,0 +1,131 @@
+"""資源の世代移譲と、保存確認前の生イベント保持を検証する。"""
+
+# 所有制御とcodecの厳密な型、ACK後の内部保持を検証する。
+# pylint: disable=protected-access,unidiomatic-typecheck
+
+import asyncio
+import dataclasses
+
+import pytest
+from claude_agent_sdk import AssistantMessage, TextBlock
+
+from agent_toolkit._agents_server.service_resources import ResourceBroker, sdk_event_codec
+
+
+@pytest.mark.asyncio
+async def test_emit_wakes_an_already_waiting_consumer() -> None:
+    broker = ResourceBroker("G1")
+
+    async def close() -> None:
+        pass
+
+    resource = broker.register({"close": close})
+    reading = asyncio.create_task(broker.events(resource, "G1", 0, wait=30))
+    await asyncio.sleep(0)
+    assert not reading.done()
+    await broker.emit(resource, {"new": "message"})
+    assert await asyncio.wait_for(reading, 1) == [{"sequence": 1, "payload": {"new": "message"}}]
+    await broker.release(resource, "G1")
+
+
+@pytest.mark.asyncio
+async def test_transfer_waits_for_io_and_rejects_old_owner() -> None:
+    broker = ResourceBroker("G1")
+    started, finish = asyncio.Event(), asyncio.Event()
+    closed = []
+
+    async def io() -> dict:
+        started.set()
+        await finish.wait()
+        return {"raw": 1}
+
+    async def close() -> None:
+        closed.append(True)
+
+    resource = broker.register({"read": io, "close": close})
+    call = asyncio.create_task(broker.call(resource, "G1", "read", {}))
+    await started.wait()
+    transfer = asyncio.create_task(broker.transfer(resource, "G1", "G2"))
+    await asyncio.sleep(0)
+    assert not transfer.done()
+    finish.set()
+    assert await call == {"raw": 1}
+    assert await transfer
+    assert await broker.transfer(resource, "G2", "G3")
+    assert not await broker.transfer(resource, "G1", "G2")
+    assert broker.origin_generation == "G1"
+    for owner in ("G1", "G2"):
+        with pytest.raises(PermissionError):
+            await broker.call(resource, owner, "read", {})
+        with pytest.raises(PermissionError):
+            await broker.release(resource, owner)
+        with pytest.raises(PermissionError):
+            await broker.acknowledge(resource, owner, 1)
+    assert not closed
+    await broker.release(resource, "G3")
+    assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_events_replay_ack_and_backpressure() -> None:
+    broker = ResourceBroker("G1")
+
+    async def close() -> None:
+        pass
+
+    resource = broker.register({"close": close})
+    for number in range(256):
+        await broker.emit(resource, {"number": number})
+    blocked = asyncio.create_task(broker.emit(resource, {"number": 256}))
+    await asyncio.sleep(0)
+    assert not blocked.done()
+    assert await broker.transfer(resource, "G1", "G2")
+    first = await broker.events(resource, "G2", 0)
+    assert first == await broker.events(resource, "G2", 0)
+    assert first[0] == {"sequence": 1, "payload": {"number": 0}}
+    first[0]["payload"]["number"] = -1
+    assert (await broker.events(resource, "G2", 0))[0]["payload"] == {"number": 0}
+    await broker.acknowledge(resource, "G2", 1)
+    await asyncio.wait_for(blocked, 1)
+    assert [event["sequence"] for event in await broker.events(resource, "G2", 0)] == list(range(2, 258))
+    await broker.release(resource, "G2")
+    assert len(await broker.events(resource, "G2", 0)) == 256
+    await broker.acknowledge(resource, "G2", 257)
+    assert resource not in broker._resources
+
+
+def test_sdk_codec_preserves_types_and_all_fields() -> None:
+    codec = sdk_event_codec()
+    original = AssistantMessage(content=[TextBlock(text="生の内容")], model="model", parent_tool_use_id=None)
+    restored = codec.decode(codec.encode(original))
+    assert type(restored) is type(original)
+    assert restored == original
+    assert type(restored.content[0]) is TextBlock
+    assert set(codec.encode(original)["fields"]) == {field.name for field in dataclasses.fields(original)}
+    with pytest.raises(TypeError):
+        codec.encode(object())
+    with pytest.raises(KeyError):
+        codec.decode({"kind": "dataclass", "type": "untrusted", "fields": {}})
+
+
+@pytest.mark.asyncio
+async def test_read_does_not_block_write_or_ack() -> None:
+    """raw readの待機中にもwriteを実行でき、移譲は両方の完了を待つ。"""
+    broker = ResourceBroker("G1")
+    started, written = asyncio.Event(), asyncio.Event()
+
+    async def read() -> str:
+        started.set()
+        await written.wait()
+        return "raw"
+
+    async def write() -> None:
+        written.set()
+
+    resource = broker.register({"read": read, "write": write, "close": write})
+    reading = asyncio.create_task(broker.call(resource, "G1", "read", {}))
+    await started.wait()
+    await asyncio.wait_for(broker.call(resource, "G1", "write", {}), 1)
+    assert await asyncio.wait_for(reading, 1) == "raw"
+    assert await broker.transfer(resource, "G1", "G2")
+    await broker.release(resource, "G2")

@@ -25,7 +25,7 @@ from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn, utc_now
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import process_tree, stream_lines
+from agent_toolkit._common import inherited_venv, mcp_environment, process_tree, runtime_environment, stream_lines
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.cli-turn")
@@ -35,7 +35,10 @@ _STOP_TIMEOUT = 5.0
 
 def _child_env(root_session_id: str | None) -> dict[str, str]:
     """委譲先の印とManagerが所有するrootを配送する。"""
-    env = dict(os.environ)
+    env = dict(runtime_environment.environment())
+    if runtime_environment.current() is not None:
+        inherited_venv.strip_inherited_venv(env)
+        mcp_environment.strip_conversation_context(env)
     env[_delegated_session.DELEGATED_SESSION_ENV] = "1"
     if root_session_id is not None:
         env[_delegated_session.OWNER_SESSION_ENV] = root_session_id

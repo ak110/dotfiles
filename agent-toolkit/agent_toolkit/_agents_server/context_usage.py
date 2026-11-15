@@ -27,7 +27,7 @@ def record_context_usage(session: state.SessionState, tokens: object, context_wi
     """観測値を置き換えて表示へ通知し、モデル活動の時刻は進めない。"""
     session.context_tokens = valid_number(tokens)
     session.context_window = valid_number(context_window)
-    state.notify_touch_listeners()
+    state.notify_touch_listeners(session)
 
 
 def format_tokens(tokens: object, context_window: object) -> str | None:

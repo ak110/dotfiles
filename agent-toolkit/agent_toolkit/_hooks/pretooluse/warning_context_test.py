@@ -45,8 +45,9 @@ def test_unavailable_saved_notice_names_read_operation_and_missing_input(tmp_pat
         session_id="" if failure == "session" else "notice-failure",
         reserved_bytes=1900 if failure == "length" else 0,
     )
-    assert str(warning_context.plugin_resources.plugin_root() / "skills/managed-temp/SKILL.md") in result
-    assert "cat --" in result or "Get-Content -LiteralPath" in result
+    assert "`agent-toolkit:managed-temp`を起動し" in result
+    assert "SKILL.md" not in result
+    assert "cat --" not in result and "Get-Content -LiteralPath" not in result
     assert "委譲元（無ければユーザー）" in result
     assert "再試行せよ" in result
     assert "未配送の通知本文" not in result

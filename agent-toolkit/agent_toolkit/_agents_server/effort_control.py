@@ -7,7 +7,7 @@ import json
 import logging
 import pathlib
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -23,9 +23,11 @@ async def process_requests(
     apply: Callable[[SessionState, str], Awaitable[None]],
     *,
     state_root: pathlib.Path | None = None,
+    requests: Sequence[tuple[pathlib.Path, dict[str, Any]]] | None = None,
 ) -> None:
     """所有する通常sessionを更新し、登録を永続化してから応答する。"""
-    for path, payload in await run_file_operation(effort_requests.pending, state_root=state_root):
+    pending = await run_file_operation(effort_requests.pending, state_root=state_root) if requests is None else requests
+    for path, payload in pending:
         session_id = payload.get("session_id")
         session = sessions.get(session_id) if isinstance(session_id, str) else None
         if session is not None and path.stem in session.effort_request_results:

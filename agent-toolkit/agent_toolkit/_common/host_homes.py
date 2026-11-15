@@ -6,9 +6,10 @@ agent-toolkitの各処理（hook、`atk`、agents_server、`atk serve`のSSH先�
 
 from __future__ import annotations
 
-import os
 import pathlib
 from collections.abc import Mapping
+
+from agent_toolkit._common import runtime_environment
 
 CLAUDE_CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
 """Claude Codeの設定ディレクトリを変える環境変数の名前。"""
@@ -24,15 +25,15 @@ def claude_config_dir(environ: Mapping[str, str] | None = None, *, home: pathlib
     Function hooks module（`agent-toolkit/hooks/session_exit.ts`）の`exitStatePath`も同じ規則で解決する。
     `environ`を省略すると現在のプロセスの環境変数を使い、`home`を省略すると現在のユーザーのホームを使う。
     """
-    value = (os.environ if environ is None else environ).get(CLAUDE_CONFIG_DIR_ENV)
+    value = (runtime_environment.environment() if environ is None else environ).get(CLAUDE_CONFIG_DIR_ENV)
     if value and pathlib.Path(value).is_absolute():
         return pathlib.Path(value)
-    return (pathlib.Path.home() if home is None else home) / ".claude"
+    return (runtime_environment.home() if home is None else home) / ".claude"
 
 
 def codex_home(environ: Mapping[str, str] | None = None) -> pathlib.Path:
     """Codexのホームを返す。`CODEX_HOME`が空でなければその値、空か未設定なら`~/.codex`とする。"""
-    value = (os.environ if environ is None else environ).get(CODEX_HOME_ENV)
+    value = (runtime_environment.environment() if environ is None else environ).get(CODEX_HOME_ENV)
     if value:
         return pathlib.Path(value)
-    return pathlib.Path.home() / ".codex"
+    return runtime_environment.home() / ".codex"

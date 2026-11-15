@@ -240,7 +240,7 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
         "first_at": session.overload_first_at,
         "count": session.overload_resume_count,
     }
-    state.notify_touch_listeners()
+    state.notify_touch_listeners(session)
     return True
 
 
@@ -353,7 +353,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
             reason,
             limit.limit_type if limit else "credits",
         )
-        state.notify_touch_listeners()
+        state.notify_touch_listeners(session)
         return True
     if (
         auth_error
@@ -387,7 +387,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     if session.usage_limit_first_at is None:
         session.usage_limit_first_at = utc_now()
     _record_usage_limit_error(session, limit, error)
-    state.notify_touch_listeners()
+    state.notify_touch_listeners(session)
     return True
 
 

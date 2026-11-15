@@ -110,3 +110,15 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 
 再検証は後続版の本体を`develop-dotfiles`「ホスト本体のバイナリの検索」の手順で`mayHaveRun`と`isConcurrencySafe(){return`を検索し、再試行と並行実行の条件を比べる。
 条件が変わった場合は同書の「ホスト固有の条件」を改める。
+
+## agents_serverの説明整理後の水準：2026年11月15日
+
+各ツール説明とserver instructionsの4,096文字の上限に対し、超過を是正した後の目安を各3,200文字以下とする。
+これはエージェントの選定値であり、ホストの制限や通常の追記量の実測値ではない。
+必須入力・modeの選択・最小例・結果受領の説明を残す固定部分と、引数自身の説明へ整理できる部分を区別する。
+896文字の余裕は数回の短い説明段落の追記を見込み、行数の60%を一律適用せずに選んだ。
+共通方針は`agent-basics/skills/writing-standards/references/agent-documents-additions-volume.md`「記述量の水準」に従う。
+上限以下のstart・showなどをこの目安だけで削減せず、既存のtool_descriptions_test.pyの合否上限と全引数説明の検査を保つ。
+2026年11月15日の登録済み説明の手動観測では、startは3,650文字、showは2,685文字、instructionsは1,954文字だった。
+全6ツールとinstructionsが4,096文字以下であり、上限超過が無いため、3,200文字の目安を理由にstartを削減しなかった。
+超過時の再検証では、同じlist_toolsの登録済み説明とinstructionsを取得し、必須引数・最小例を残して整理後の水準へ到達したかを確認する。

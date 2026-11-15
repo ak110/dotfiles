@@ -793,7 +793,7 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
+        assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(result)
 
     def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
         """Skill取得時に条件候補・委譲に関する追加出力を返さない。"""
@@ -808,7 +808,6 @@ class TestWorkflowSkillInvocation:
         assert result.returncode == 0
         context = _additional_context(result)
         assert not context
-        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
 
     def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:
         """サイドチェーンでは委譲の案内を返さない。"""
@@ -822,7 +821,7 @@ class TestWorkflowSkillInvocation:
             env_overrides=_plan_file_state_env(tmp_path),
         )
         assert result.returncode == 0
-        assert "/skills/delegation/SKILL.md" not in _additional_context(result)
+        assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(result)
 
     def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
         """`agent-toolkit:delegation`以外のスキルの起動後のAgent起動も、`agent-toolkit:delegation`の起動状態を問わない。"""
@@ -844,7 +843,7 @@ class TestWorkflowSkillInvocation:
             env_overrides=env,
         )
         assert skill_result.returncode == 0, skill_result.stderr
-        assert "/skills/delegation/SKILL.md" not in _additional_context(skill_result)
+        assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(skill_result)
         assert agent_result.returncode == 0
         specific = json.loads(agent_result.stdout).get("hookSpecificOutput", {}) if agent_result.stdout else {}
         assert specific.get("permissionDecision") != "deny"

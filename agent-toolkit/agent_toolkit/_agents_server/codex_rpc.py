@@ -28,7 +28,7 @@ from agent_toolkit._agents_server.file_operations import finish_task, run_file_o
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, append_bounded, utc_now
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import inherited_venv, plugin_environment, process_tree, windows_job
+from agent_toolkit._common import inherited_venv, plugin_environment, process_tree, runtime_environment, windows_job
 
 if typing.TYPE_CHECKING:
     import psutil
@@ -79,6 +79,9 @@ class JsonRpcProcess:
         self._root_session_id = root_session_id
         self._launch_kind = launch_kind
         self._handoff_prompt = handoff_prompt
+        self._working_directory = (
+            str(runtime_environment.home()) if runtime_environment.current() is not None else APP_SERVER_WORKING_DIRECTORY
+        )
         self.process: asyncio.subprocess.Process | None = None
         self.parent_environment: Mapping[str, str] | None = None
         self._reader_task: asyncio.Task[None] | None = None
@@ -138,7 +141,7 @@ class JsonRpcProcess:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 limit=APP_SERVER_STREAM_LIMIT_BYTES,
-                cwd=APP_SERVER_WORKING_DIRECTORY,
+                cwd=self._working_directory,
                 env=environment,
                 **creation_options,
             )
@@ -159,7 +162,7 @@ class JsonRpcProcess:
         _LOG.info(
             "Codex App Serverを起動しました: command=%s cwd=%s pid=%s",
             " ".join(APP_SERVER_COMMAND),
-            APP_SERVER_WORKING_DIRECTORY,
+            self._working_directory,
             self.process.pid,
         )
         self._reader_task = asyncio.create_task(self._read_stdout())
@@ -206,6 +209,7 @@ class JsonRpcProcess:
         params: dict[str, Any] | None = None,
         *,
         on_sent: Callable[[], None] | None = None,
+        on_sent_async: Callable[[], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
         """JSON-RPC requestを送り、対応するIDの応答を返す。"""
         if self.process is None or self.process.stdin is None:
@@ -221,6 +225,8 @@ class JsonRpcProcess:
             await self._send({"id": request_id, "method": method, "params": params or {}})
             if on_sent is not None:
                 on_sent()
+            if on_sent_async is not None:
+                await on_sent_async()
             response = await future
         finally:
             self._pending.pop(request_id, None)

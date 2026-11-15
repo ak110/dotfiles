@@ -7,7 +7,7 @@
 MCP Python SDK 2系の`MCPServer`が6ツールの登録、入力スキーマと構造化応答を所有する。
 stdioの送受信は公開lowlevel `Server`と`stdio_server`へ接続し、登録側の`list_tools`・`call_tool`を使う。
 通常の`MCPServer.run`では既存のstream監視を挿入できないため、この接続でinitializeの受信、応答送信の成功・失敗と未完了終了を診断する。
-Managerのactivate・closeも同じlowlevelサーバーのlifespanへ接続する。
+接続のlifespanは転送の寿命を管理し、会話ごとのManagerは共有サービスが保持する。
 SDKのprivateサーバー属性へ依存する案と、ツール定義やスキーマ生成を二重に持つ案は採らない。
 ツール処理の`ToolError`は理由と次の操作を持つエラー応答へ変換し、SDKが返す構造化成功応答と区別する。
 
@@ -16,8 +16,10 @@ SDKのprivateサーバー属性へ依存する案と、ツール定義やスキ�
 共有のsession状態機械、待機通知および結果配送境界へ接続する。
 Codex backendは公式stdio App Serverを
 セッション単位で所有し、Claude backendはClaude Agent SDKのclientをセッション単位で所有する。
-共有daemonや永続job registryは使わず、MCP終了時に自身が起動した子プロセスだけをPID指定で終了するため、
-LinuxとWindowsで寿命契約を揃えられる。
+管理処理は同じOSアカウント・状態領域の共有サービスへ集約する。
+既存のセッション登録簿を保持し、受付世代の登録と実行ジョブの記録を分ける。
+接続EOFだけでbackendを停止せず、会話の制御所有とraw資源の生成元を分けて更新する。
+寿命・通信認証・初回移行の制約は[共有管理サービスの設計](design-agents-server-service.md)を参照。
 
 Codex backendは子App Serverの作業ディレクトリへ、実行主体のホームディレクトリを明示指定する。
 MCPサーバー自身の作業ディレクトリはホストの起動条件で決まり、Codexホストではpluginの版数付きcacheディレクトリになる。

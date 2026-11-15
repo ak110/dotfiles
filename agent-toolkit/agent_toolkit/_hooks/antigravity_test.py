@@ -248,7 +248,8 @@ def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.C
     initial = _run(raw, "PreToolUse", capsys)
     assert initial["decision"] == "allow"
     delivered = json.dumps(_run(raw, "PostInvocation", capsys), ensure_ascii=False)
-    assert f"cat -- {skill}" in delivered
+    assert "agent-toolkit:delegation" in delivered
+    assert f"cat -- {skill}" not in delivered
     read = _payload(
         tmp_path,
         toolCall={

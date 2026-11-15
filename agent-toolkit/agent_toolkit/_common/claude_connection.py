@@ -15,7 +15,7 @@ import tempfile
 import uuid
 from collections.abc import Iterable, Mapping
 
-from agent_toolkit._common import claude_settings_sources, host_homes
+from agent_toolkit._common import claude_settings_sources, host_homes, runtime_environment
 from agent_toolkit._common.state_paths import state_dir
 
 AUTH_ENV = frozenset(
@@ -191,7 +191,7 @@ def subscription_available(
     isolation_keys: frozenset[str] = AUTH_ENV,  # pylint: disable=redefined-outer-name  # 公開キーワード名を保持する。
 ) -> bool:
     """OAuth環境またはClaude CodeのOAuth資格情報の存在を値の公開なしに判定する。"""
-    environment = os.environ if env is None else env
+    environment = runtime_environment.environment() if env is None else env
     if environment.get("CLAUDE_CODE_OAUTH_TOKEN"):
         return True
     if platform == "darwin":

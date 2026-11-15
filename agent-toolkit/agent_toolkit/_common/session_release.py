@@ -12,7 +12,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, Protocol
 
-from agent_toolkit._common import atomic_file, path_ownership, session_registry
+from agent_toolkit._common import atomic_file, path_ownership, session_layout, session_registry
 
 
 class OwnedSession(Protocol):
@@ -148,6 +148,8 @@ async def process_requests(
             ):
                 continue
             session_id = payload["session_id"]
+            if not isinstance(session_id, str) or not session_layout.valid_session_id(session_id):
+                continue
             response = {"session_id": session_id, "record_digest": payload["record_digest"]}
             remaining = payload["deadline"] - time.monotonic()
             if remaining <= 0:
@@ -158,6 +160,14 @@ async def process_requests(
                 # 要求の配送中に保持期限か別のstopが解放を完了した場合も、所有側の応答を返す。
                 if resolution.state is session_registry.Resolution.RELEASED and request.exists():
                     _save(response_path, response)
+                else:
+                    _digest, current_processes = _record(session_id, state_root)
+                    original_owner = session_registry.ProcessIdentity.from_payload(
+                        payload["owner"], stable=payload.get("owner_identity")
+                    )
+                    if current_processes and not current_processes[0].compatible_with(original_owner) and request.exists():
+                        response["error"] = "要求後に所有または終了状態が変わった"
+                        _save(response_path, response)
                 continue
             digest, _processes = _record(session_id, state_root)
             if (

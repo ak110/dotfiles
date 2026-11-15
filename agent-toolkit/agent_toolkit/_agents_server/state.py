@@ -61,6 +61,7 @@ ModelCandidate = tuple[str, str, str]
 LaunchKind = task_documents.LaunchKind
 ResumeDelivery = typing.Literal["reply_started", "reply_failed", "reply_ambiguous"]
 _TOUCH_LISTENERS: set[Callable[[], None]] = set()
+_TOUCH_OWNERS: dict[Callable[[], None], dict[str, SessionState]] = {}
 _TERMINAL_LISTENERS: set[Callable[[SessionState], None]] = set()
 _LIFECYCLE_LISTENERS: set[Callable[[SessionState, str], None]] = set()
 
@@ -75,14 +76,17 @@ def remove_lifecycle_listener(listener: Callable[[SessionState, str], None]) -> 
     _LIFECYCLE_LISTENERS.discard(listener)
 
 
-def add_touch_listener(listener: Callable[[], None]) -> None:
+def add_touch_listener(listener: Callable[[], None], *, sessions: dict[str, SessionState] | None = None) -> None:
     """session状態の更新通知先を登録する。"""
     _TOUCH_LISTENERS.add(listener)
+    if sessions is not None:
+        _TOUCH_OWNERS[listener] = sessions
 
 
 def remove_touch_listener(listener: Callable[[], None]) -> None:
     """session状態の更新通知先を解除する。"""
     _TOUCH_LISTENERS.discard(listener)
+    _TOUCH_OWNERS.pop(listener, None)
 
 
 def add_terminal_listener(listener: Callable[[SessionState], None]) -> None:
@@ -90,10 +94,12 @@ def add_terminal_listener(listener: Callable[[SessionState], None]) -> None:
     _TERMINAL_LISTENERS.add(listener)
 
 
-def notify_touch_listeners() -> None:
+def notify_touch_listeners(session: SessionState | None = None) -> None:
     """登録された全ての通知先へ、session状態の更新を通知する。"""
     for listener in tuple(_TOUCH_LISTENERS):
-        listener()
+        owner = _TOUCH_OWNERS.get(listener)
+        if session is None or owner is None or owner.get(session.session_id) is session:
+            listener()
 
 
 def remove_terminal_listener(listener: Callable[[SessionState], None]) -> None:
@@ -598,8 +604,7 @@ class SessionState:
         }
         if retry_at is not None:
             self.api_error["retry_at"] = retry_at
-        for listener in tuple(_TOUCH_LISTENERS):
-            listener()
+        notify_touch_listeners(self)
 
     def touch(self) -> None:
         """状態の更新時刻を現在時刻へ更新する。
@@ -659,8 +664,7 @@ class SessionState:
             )
             for terminal_listener in tuple(_TERMINAL_LISTENERS):
                 terminal_listener(self)
-        for listener in tuple(_TOUCH_LISTENERS):
-            listener()
+        notify_touch_listeners(self)
 
     async def _publish_registration_until_current(self) -> str | None:
         if not session_registry.owner_process_is_cached():

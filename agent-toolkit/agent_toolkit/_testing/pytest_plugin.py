@@ -902,11 +902,14 @@ def _restore_session_listeners() -> Any:
     # テスト間の隔離のため、リスナー登録簿の実体を保存・復元する。
     # pylint: disable=protected-access
     touch_listeners = set(state._TOUCH_LISTENERS)
+    touch_owners = dict(state._TOUCH_OWNERS)
     terminal_listeners = set(state._TERMINAL_LISTENERS)
     lifecycle_listeners = set(state._LIFECYCLE_LISTENERS)
     yield
     state._TOUCH_LISTENERS.clear()
     state._TOUCH_LISTENERS.update(touch_listeners)
+    state._TOUCH_OWNERS.clear()
+    state._TOUCH_OWNERS.update(touch_owners)
     state._TERMINAL_LISTENERS.clear()
     state._TERMINAL_LISTENERS.update(terminal_listeners)
     state._LIFECYCLE_LISTENERS.clear()

@@ -33,6 +33,7 @@ from agent_toolkit._agents_server.shared_layout import (
     valid_session_id,
 )
 from agent_toolkit._common import delegated_session as _delegated_session
+from agent_toolkit._common import registry_forwarding
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.next_action import ActionableError
 
@@ -199,6 +200,16 @@ def write_root_alias(
     state_root: pathlib.Path | None = None,
 ) -> None:
     """現行session識別子のルート索引を書き、参照先を失った索引を回収する。"""
+    forwarded, _ = registry_forwarding.forward(
+        "write_root_alias",
+        {
+            "current_session_id": current_session_id,
+            "root_session_id": root_session_id,
+            "state_root": state_root,
+        },
+    )
+    if forwarded:
+        return
     if not valid_session_id(current_session_id) or not valid_session_id(root_session_id):
         raise ValueError("invalid session_id")
     directory = aliases_directory(state_root)
@@ -341,6 +352,17 @@ def write_host_alias(
     state_root: pathlib.Path | None = None,
 ) -> None:
     """書込主体を委譲元threadへ対応付ける索引を書く。"""
+    forwarded, _ = registry_forwarding.forward(
+        "write_host_alias",
+        {
+            "root_session_id": root_session_id,
+            "writer_session_id": writer_session_id,
+            "host_session_id": host_session_id,
+            "state_root": state_root,
+        },
+    )
+    if forwarded:
+        return
     if not all(valid_session_id(value) for value in (root_session_id, writer_session_id, host_session_id)):
         raise ValueError("invalid session_id")
     payload = {"version": 1, "host_session_id": host_session_id}

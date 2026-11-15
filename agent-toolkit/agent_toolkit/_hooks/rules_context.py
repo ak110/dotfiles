@@ -271,8 +271,6 @@ def acquisition_failure(
     error: Exception,
     *,
     shell: bool,
-    agent: bool = False,
-    reference: bool = False,
     cwd: str = "",
 ) -> str:
     """資料読取または見出し解決の失敗を、主体に応じた取得または復旧へ導く。"""
@@ -285,25 +283,20 @@ def acquisition_failure(
     prefix = f"`{target}`の読取または注目見出しの解決に失敗: {error}。"
     if target.heading and isinstance(error, ValueError) and not isinstance(error, UnicodeError):
         prefix += "読込宣言の見出しと資料を整合させよ。"
-    if shell:
-        return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め。" + shell_acquisition_conditions()
     skill = document_reads.skill_document(str(path))
-    if (
-        not reference
-        and skill
-        and skill[1] == "SKILL.md"
-        and (
-            agent
-            and document_reads.skill_loadable(path, cwd=cwd)
-            or document_reads.requires_skill_invocation(path, host="claude", subject="main", cwd=cwd)
-        )
-    ):
+    # 初回案内と同じく、Claudeの起動禁止スキルは本文取得へ案内する。
+    try:
+        invocable = shell or read_triggers.skill_invocation_required(path, host="claude", subject="main")
+    except OSError, ValueError:
+        # 起動条件も壊れた資料は再解析せず、元の失敗と本文の修復を案内する。
+        invocable = False
+    if skill and skill[1] == "SKILL.md" and invocable and document_reads.skill_loadable(path, cwd=cwd):
         owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
         name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
         step = f"`{name}`を起動せよ"
-        if agent:
-            step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
         return prefix + step
+    if shell:
+        return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め。" + shell_acquisition_conditions()
     step = f"`{path}`をReadで全文読め"
     if skill and not document_reads.skill_loadable(path, cwd=cwd):
         step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"

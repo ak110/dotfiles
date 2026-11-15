@@ -6,6 +6,13 @@
 
 ## バックエンド固有の接続とAPI状態
 
+共有サービスでは`_common/runtime_environment.py`の`CallerContext`が呼出元の環境・cwd・親settingsを非永続で保持する。
+会話の隔離にはbackend生成、設定解決、非同期タスクとfile operationへの明示的な束縛を使い、`os.environ`は保持する。
+同じ会話はcontextを引き継ぎ、別会話の認証・設定・クレジット不足の観測とは分離する。
+不足値は同じ呼出元から再提供を受け、認証値は世代登録・ログ・再開情報への保存対象から除外する。
+制御所有の移譲後もraw SDK・App Serverは元世代の資源とし、新世代が生イベントを解釈する。
+子・背景タスクが終了した次の本来入力で通常releaseし、新しい接続のresumeへ移る。
+
 保存済みCodex会話の再開では、`codex.py`が`thread/resume`の送信前に`hosts`索引を公開する。
 子MCPの起動時に直接親を確定し、その親が起動した孫を復旧候補へ戻すためである。
 
@@ -17,7 +24,7 @@
 | Codex会話の選択済みprovider ID、通常サブスクのprovider IDと検証済みの会話状態生成元`codex_state_provider`（provider IDの種別`credits`・`payg`は現在の`codex_credits_provider`・`codex_payg_provider`との一致で判定し、同じIDを両方へ設定することは拒否する。process-loopのCodex統括担当も選んだprovider IDを登録簿へ保存する） | `SessionState`、リソース解放時の`SessionResumeState`、および既存セッション登録簿内の内部再開情報 | Codexバックエンド、およびManagerの復元処理（公開用の状態、レスポンス、通知、結果の射影データからは読み取らない） | Codexバックエンドが接続先を確定し、新規開始時および互換性を確認した再開時のみ生成元を確定する。所有MCPサーバーはリソース解放済みの記録にもこれを保存し、既存の7日間掃引処理に委ねる。認証情報は保存しない |
 | Claude会話の役割（`orchestrator`・`delegate`）、選択済みの接続（`credits`・`payg`・`subscription`・`inherit`。種別を区別する前の版の`api`は再開時にクレジットのenvファイルとの一致で`credits`か`payg`へ読み替える）とAPI接続のenvファイルの絶対パス | `SessionState`の`claude_role`・`claude_connection`・`claude_api_env_file`、`SessionResumeState`、およびセッション登録簿の内部再開情報 | Claudeバックエンド、Managerの復元処理、およびprocess-loop再開時の可用性判定 | 接続方式はClaudeバックエンドが起動時および切り替え時に確定し、所有MCPサーバーが保存する。process-loopのオーケストレーターも自身の役割と接続方式を登録する。新規セッションは`claude_orchestrator_connections`・`claude_worker_connections`の使用順に従って選択され、再開時には保存済みの接続方式を使用する（その種別を使用順から外した場合だけ使用順の先頭の利用可能な候補へ移す）。利用上限到達によってサブスクリプションからAPI接続へ切り替えた委譲先は、`claude_subscription_retry_at`をメモリー上でのみ保持し、指定時刻を過ぎた最初のプロンプト追送や自動再開のタイミングで、使用順でサブスクリプションが現在の種別より前にあればサブスクリプション接続へと戻す。接続設定を持たない環境で起動した`inherit`会話は、接続を管理しない間は親環境の設定と通常の認証情報を維持する。envファイルの値は各起動時に直接読み取るものとし、登録簿や公開状態へ値を複製・保存することはない |
 | Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`（ルート識別子を受け取らない直接構築時は`settings-<一意な値>`をルート名として使用） | 該当の起動におけるClaude CLI | Claudeバックエンドの`claude_settings.py`。親設定がファイルで与えられている場合や、API環境変数を合成する場合に、実行ユーザーのみ読み取り可能な起動別設定ファイルを生成する。各起動プロセスは、接続終了時・起動失敗時・依存確認の終了時に自身のファイルを削除・回収する |
-| APIクレジットの残高不足の観測時刻（エンジン別） | MCPサーバーのメモリー（`_agents_server/api_credits.py`。`time.monotonic()`の値） | 新しい委譲先の使用順を決めるClaude・Codexバックエンド | 同じMCPサーバーのClaudeバックエンドが`credits`接続のturnの残高不足で、Codexバックエンドが`credits`候補の不受理で記録する。観測から1時間（`CREDIT_SHORTAGE_TTL_SECONDS`）以内に起動する同じエンジンの委譲先では、`credits`候補を使用順の後ろへ回す（候補からは外さない）。オーケストレーターの接続順は変えない。ファイルへ永続化せず、他のMCPサーバーとは共有しない。期限切れかMCPサーバーの再起動で通常の接続順に戻る。API残高は月1回の付与などで外部から回復するため、永続化せずに定期的に再確認するというユーザー要件による |
+| APIクレジットの残高不足の観測時刻（エンジン別） | MCPサーバーのメモリー（`_agents_server/api_credits.py`。`time.monotonic()`の値） | 新しい委譲先の使用順を決めるClaude・Codexバックエンド | 同じMCPサーバーのClaudeバックエンドが`credits`接続のturnの残高不足で、Codexバックエンドが`credits`候補の不受理で記録する。観測から1時間（`CREDIT_SHORTAGE_TTL_SECONDS`）以内に起動する同じエンジンの委譲先では、`credits`候補を使用順の後ろへ回す（候補からは外さない）。オーケストレーターの接続順は変えない。ファイルへ永続化せず、他の会話とは共有しない。期限切れか会話contextの終了で通常の接続順に戻る。API残高は月1回の付与などで外部から回復するため、永続化せずに定期的に再確認するというユーザー要件による |
 | engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動候補リストを解決するMCPサーバー | 当該の状態ディレクトリを共有する各MCPサーバー（ファイルロックを取得した上で読み書きを行う） |
 | Claude・Codexの利用枠と活動時間当たりの消費ペース | `<状態ディレクトリ>/usage-observations.json`と`usage-observations.lock` | `config_usage.py`の表示・候補選択、既存Codex自動reset | `usage_refresh.py`が公式読取・SDK通知を正規化し、`_common/usage_observation.py`が排他して保存する。履歴は30日・最新10000件、最終状態は10000窓まで。超過時は保存を拒否し取得不明の診断を残す。アカウント・契約・枠・設定・観測主体の異なる速度を混ぜない |
 | 単一の期限付き一時設定、利用枠の取得結果と配分判断 | `<状態ディレクトリ>/usage-settings.json`と同stemの`.lock`・`.refresh.lock` | 設定解決・`config usage`・`usage_refresh.py` | 設定CLIが一時上書きを、観測処理が認証環境ごとのメタ情報・5分の取得キャッシュを、候補選択が直前の配分判断を保存する。メタ情報は最新256環境まで。期限後は現行の通常設定へ戻る。認証の値は保存せず、元の資格情報を参照する |

@@ -254,7 +254,7 @@ class AgentsServerMCP(MCPServer[None]):
         return ListToolsResult(tools=await self.list_tools())
 
     async def _call_registered_tool(
-        self, _context: ServerRequestContext[None], params: CallToolRequestParams
+        self, _context: ServerRequestContext[None] | None, params: CallToolRequestParams
     ) -> CallToolResult | InputRequiredResult:
         try:
             async with self._request_scope(params) if self._request_scope is not None else contextlib.nullcontext():

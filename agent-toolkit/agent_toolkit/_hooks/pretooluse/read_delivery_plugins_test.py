@@ -439,8 +439,7 @@ def test_worktree_copy_of_a_distributed_skill_is_released_by_skill_or_read(tmp_p
     _assert_acquired(payload, copy, True)
 
 
-@pytest.mark.parametrize("agent", [False, True])
-def test_acquisition_failure_reads_a_worktree_copy(tmp_path, monkeypatch, agent):
+def test_acquisition_failure_reads_a_worktree_copy(tmp_path, monkeypatch):
     """取得失敗の案内は、`Skill`起動では読み込まれない写しへReadを案内する。"""
     toolkit = tmp_path / "dist/agent-toolkit"
     (toolkit / ".claude-plugin").mkdir(parents=True)
@@ -449,6 +448,6 @@ def test_acquisition_failure_reads_a_worktree_copy(tmp_path, monkeypatch, agent)
     copy = _basics_root(tmp_path / "worktree/agent-basics", "# 検証\n\n作業中の本文\n")
     monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: toolkit)
     for path, loadable in ((active, True), (copy, False)):
-        notice = rules_context.acquisition_failure(ReadTarget(path, "不存在"), ValueError("範囲不明"), shell=False, agent=agent)
+        notice = rules_context.acquisition_failure(ReadTarget(path, "不存在"), ValueError("範囲不明"), shell=False)
         assert ("`agent-basics:check-execution`" in notice) is loadable
-        assert (f"`{path}`をReadで全文読め" in notice) is (not loadable or agent)
+        assert (f"`{path}`をReadで全文読め" in notice) is not loadable

@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 import pathlib
 
+from agent_toolkit._common import runtime_environment
+
 _APP_NAME = "agent-toolkit"
 
 
@@ -25,14 +27,21 @@ def state_dir(*, os_name: str | None = None) -> pathlib.Path:
     `appauthor=False`はWindowsでappnameが二重階層になる挙動を防ぐ。
     `os_name`は`os.name`と同じ値で分岐を選び、省略すると実行中のOSの値を使う。
     """
+    caller = runtime_environment.current()
+    environment = runtime_environment.environment()
     if (os.name if os_name is None else os_name) == "nt":
-        local_app_data = os.environ.get("LOCALAPPDATA")
+        local_app_data = environment.get("LOCALAPPDATA")
         if local_app_data:
             return pathlib.Path(local_app_data) / _APP_NAME
+        if caller is not None:
+            return runtime_environment.home() / "AppData" / "Local" / _APP_NAME
     else:
-        xdg_state_home = os.environ.get("XDG_STATE_HOME")
+        xdg_state_home = environment.get("XDG_STATE_HOME")
         if xdg_state_home and not pathlib.Path(xdg_state_home).is_absolute():
-            return pathlib.Path.home() / ".local" / "state" / _APP_NAME
+            return runtime_environment.home() / ".local" / "state" / _APP_NAME
+        if caller is not None:
+            base = pathlib.Path(xdg_state_home) if xdg_state_home else runtime_environment.home() / ".local" / "state"
+            return base / _APP_NAME
     import platformdirs  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     return pathlib.Path(platformdirs.user_state_dir(_APP_NAME, appauthor=False))

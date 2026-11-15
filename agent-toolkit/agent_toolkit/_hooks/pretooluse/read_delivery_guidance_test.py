@@ -56,9 +56,9 @@ def test_guidance_requires_real_acquisition_for_each_subject(tmp_path, monkeypat
         return
     notice = _notice_body(decision)
     assert str(reference) in notice
-    assert (str(skill) in notice) is (subject in {"codex", "agent"})
+    assert str(skill) not in notice
     assert "スキル固有本文" not in notice and "参照資料固有本文" not in notice
-    assert ("example-plugin:example" in notice) is (subject not in {"codex", "agent"})
+    assert "`example-plugin:example`を起動せよ" in notice
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, ReadTarget(skill), agent)
     assert not read_delivery.target_ready(records, ReadTarget(reference), agent)
