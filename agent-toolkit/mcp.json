@@ -6,6 +6,7 @@
       "command": "uv",
       "args": [
         "run",
+        "--no-cache",
         "--no-config",
         "--no-project",
         "--python",
@@ -21,6 +22,7 @@
       "command": "uv",
       "args": [
         "run",
+        "--no-cache",
         "--no-config",
         "--no-project",
         "--python",

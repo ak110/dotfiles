@@ -80,7 +80,7 @@ def test_plugin_pull_failure_continues_update(
 
     monkeypatch.setattr(subprocess, "Popen", popen)
     monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
-    monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda _process: None)
+    monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda _process, **_kwargs: None)
     assert update_dotfiles.main() == 1
     assert [call[:2] for call in calls if call[0] == "chezmoi"] == [
         ["chezmoi", "git"],

@@ -95,6 +95,7 @@ def test_restart_falls_back_to_exec_without_launcher_env(monkeypatch: pytest.Mon
             [
                 "/resolved/uv",
                 "run",
+                "--no-cache",
                 "--no-config",
                 "--no-project",
                 "--python",

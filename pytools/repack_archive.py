@@ -88,11 +88,19 @@ class _ImageConfig(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid")
 
 
+class _ConditionalDirectoryRule(pydantic.BaseModel):
+    """同じ親の下に別の一致フォルダーがある場合の除外規則。"""
+
+    pattern: str
+    if_sibling: str
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+
 class RepackConfig(pydantic.BaseModel):
     """repack-archive の YAML 設定。"""
 
     ignore_files: list[str] = pydantic.Field(default_factory=list)
-    ignore_dirs: list[str] = pydantic.Field(default_factory=list)
+    ignore_dirs: list[str | _ConditionalDirectoryRule] = pydantic.Field(default_factory=list)
     rename_rules: list[_InlineRenameRule | _PatternFileRule] = pydantic.Field(default_factory=list)
     image: _ImageConfig = pydantic.Field(default_factory=_ImageConfig)
     model_config = pydantic.ConfigDict(extra="forbid")
@@ -106,10 +114,12 @@ class _CompiledRules:
         self,
         ignore_file_patterns: list[str],
         ignore_dir_patterns: list[re.Pattern[str]],
+        conditional_ignore_dirs: list[tuple[re.Pattern[str], re.Pattern[str]]],
         rename_rules: list[rename.RenameRule],
     ) -> None:
         self.ignore_file_patterns = ignore_file_patterns
         self.ignore_dir_patterns = ignore_dir_patterns
+        self.conditional_ignore_dirs = conditional_ignore_dirs
         self.rename_rules = rename_rules
 
     def should_ignore_entry(self, entry_path: str) -> bool:
@@ -232,7 +242,12 @@ def _load_config(path: pathlib.Path | None) -> RepackConfig:
 
 def _compile_rules(config: RepackConfig, base_dir: pathlib.Path) -> _CompiledRules:
     """設定値を判定用の構造に変換する。"""
-    ignore_dir_patterns = [re.compile(p, re.IGNORECASE) for p in config.ignore_dirs]
+    ignore_dir_patterns = [re.compile(p, re.IGNORECASE) for p in config.ignore_dirs if isinstance(p, str)]
+    conditional_ignore_dirs = [
+        (re.compile(rule.pattern, re.IGNORECASE), re.compile(rule.if_sibling, re.IGNORECASE))
+        for rule in config.ignore_dirs
+        if isinstance(rule, _ConditionalDirectoryRule)
+    ]
     rename_rules: list[rename.RenameRule] = []
     for entry in config.rename_rules:
         if isinstance(entry, _InlineRenameRule):
@@ -249,6 +264,7 @@ def _compile_rules(config: RepackConfig, base_dir: pathlib.Path) -> _CompiledRul
     return _CompiledRules(
         ignore_file_patterns=list(config.ignore_files),
         ignore_dir_patterns=ignore_dir_patterns,
+        conditional_ignore_dirs=conditional_ignore_dirs,
         rename_rules=rename_rules,
     )
 
@@ -399,6 +415,10 @@ def _process_target(
             else:
                 entry_failures.extend(_copy_filtered(source_for_extract, work_dir, compiled))
 
+        removed_conditionally = False
+        if not dry_run:
+            removed_conditionally = _remove_conditionally_ignored_directories(work_dir, compiled)
+
         # 4. 画像変換 (rename_rules はアーカイブ内エントリへ適用しない)
         if not dry_run:
             result = imageconverter.convert_directory(
@@ -421,7 +441,7 @@ def _process_target(
             _flatten_single_root(work_dir)
             removed_directories = _remove_ignored_directories(work_dir, compiled)
             _flatten_single_root(work_dir)
-            if removed_directories and not any(work_dir.iterdir()):
+            if (removed_directories or removed_conditionally) and not any(work_dir.iterdir()):
                 raise ValueError("対象ファイルが0件のためスキップします")
 
         # 6. 無圧縮 ZIP 作成 (出力 stem は rename_rules 適用後)
@@ -781,6 +801,29 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
     if target_count == 0:
         raise ValueError("対象ファイルが0件のためスキップします")
     return failures
+
+
+def _remove_conditionally_ignored_directories(work_dir: pathlib.Path, compiled: _CompiledRules) -> bool:
+    """除去前の兄弟関係で対象を確定し、画像変換前の作業コピーから除去する。"""
+    if not compiled.conditional_ignore_dirs:
+        return False
+    siblings: dict[pathlib.Path, list[pathlib.Path]] = {}
+    for path in work_dir.rglob("*"):
+        if path.is_dir():
+            siblings.setdefault(path.parent, []).append(path)
+    # 複数規則で互いを条件にしても、削除順によって判定が変わらないよう先に集合を確定する。
+    selected = {
+        path
+        for directories in siblings.values()
+        for path in directories
+        if any(
+            pattern.search(path.name) and any(other != path and condition.search(other.name) for other in directories)
+            for pattern, condition in compiled.conditional_ignore_dirs
+        )
+    }
+    for path in sorted(selected, key=lambda item: len(item.parts), reverse=True):
+        shutil.rmtree(path)
+    return bool(selected)
 
 
 def _remove_ignored_directories(work_dir: pathlib.Path, compiled: _CompiledRules) -> bool:

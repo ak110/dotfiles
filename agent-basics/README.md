@@ -53,6 +53,13 @@ uvはtoolkitも導入する場合の前提である。
 agent-toolkitはこれらの運用を提供し、品質判断でagent-basicsを参照する。
 併用時の導入と最初の操作は[agent-toolkitのREADME](https://github.com/ak110/dotfiles/tree/master/agent-toolkit)を参照。
 
+## Web実装の追加ガイド
+
+Web技術の選択基準は本プラグインだけで利用でき、Nodeやagent-toolkitは必須ではない。
+詳細ガイドの検索、Baselineによる互換性判断、実験的機能の保護、古い実装パターンの走査を補う場合は、[GoogleChrome Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance)を任意で追加できる。
+導入方法と無効化は同プロジェクトと利用ホストの案内を参照。
+テレメトリを無効にするには`DISABLE_TELEMETRY=1`を設定する。
+
 ## ライセンス
 
 [MIT License](LICENSE)。

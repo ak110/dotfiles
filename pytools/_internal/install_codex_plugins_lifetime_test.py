@@ -19,6 +19,7 @@ def test_plugin_update_reclaims_hook_process_after_reader_start_failure(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, error_type: type[BaseException]
 ) -> None:
     """起動したapp-serverの読取準備が失敗しても、公開更新の終了時に資源が残らない。"""
+    monkeypatch.setattr(install_codex_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
     calls = 0

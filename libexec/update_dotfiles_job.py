@@ -138,26 +138,37 @@ def _stop_tree(process: subprocess.Popen[Any], windows_job: WindowsJob | None = 
             assert windows_job is not None
             windows_job.terminate(timeout=30)
         else:
-            result = subprocess.run(
-                ["ps", "-e", "-o", "pid=,ppid="],
-                check=True,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=10,
-            )
-            parents = [tuple(map(int, line.split())) for line in result.stdout.splitlines()]
-            descendants = {os.getpid()}
-            while children := {pid for pid, parent in parents if parent in descendants} - descendants:
-                descendants.update(children)
-            descendants.discard(os.getpid())
-            for pid in reversed(sorted(descendants)):
-                with contextlib.suppress(ProcessLookupError):
-                    os.kill(pid, signal.SIGKILL)
-            # 回収済みの親の数値PGIDは、別の群へ再利用され得る。
-            if process.poll() is None:
-                with contextlib.suppress(ProcessLookupError):
-                    os.killpg(process.pid, signal.SIGKILL)
+            # この分岐は生成時に分離したgroupだけを所有する。起点終了後の数値PGIDは
+            # 世代を再確認できないため、別の群を巻き込む停止や空集合での成功に使わない。
+            if process.poll() is not None:
+                raise RuntimeError(
+                    f"更新group {process.pid}の起点が終了し、子孫の所有を確認できません。"
+                    "同じjobの保存出力とgroupを確認するまで次の更新を開始しないでください。"
+                )
+            if os.getpgid(process.pid) != process.pid:
+                raise RuntimeError(f"生成時に分離した更新group {process.pid}を確認できません")
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=30)
+            deadline = time.monotonic() + 30
+            while True:
+                result = subprocess.run(
+                    ["ps", "-e", "-o", "pid=,pgid=,stat="],
+                    check=True,
+                    capture_output=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=10,
+                )
+                remaining = [
+                    fields[0]
+                    for line in result.stdout.splitlines()
+                    if len(fields := line.split()) == 3 and fields[1] == str(process.pid) and not fields[2].startswith("Z")
+                ]
+                if not remaining:
+                    return
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(f"更新group {process.pid}の終了を確認できません: {remaining}")
+                time.sleep(0.1)
         process.wait(timeout=30)
     finally:
         # 列挙・子孫回収の診断時にも、Popenの無期限waitへ進めない。

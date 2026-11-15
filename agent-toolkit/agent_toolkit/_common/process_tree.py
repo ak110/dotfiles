@@ -520,14 +520,40 @@ def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
     return [] if failure is None else failure.residual
 
 
-def stop_owned_process(process: subprocess.Popen[Any], *, context: str) -> ReclaimError | None:
-    """所有する子を子孫ごと停止し、回収を確認できなければ再試行に使う所有対象を持つ`ReclaimError`を返す（送出しない）。"""
-    result = stop_tree_by_pid(process.pid)
+def stop_owned_process(
+    process: subprocess.Popen[Any],
+    *,
+    context: str,
+    known: Iterable[psutil.Process] = (),
+    pins: ProcessIdentityPins | None = None,
+) -> ReclaimError | None:
+    """既知の所有対象を回収し、未確認なら再試行用の`ReclaimError`を返す（送出しない）。
+
+    生成側が保持した起点とsnapshotは空の子孫集合も含めて検収する。
+    一度も観測されず、既知の親から既に離れた子孫の回収は保証しない。
+    """
+    known = list(known)
+    returncode = process.poll()
+    # 生成側が保持した全世代の終了を確認できれば、既知の所有は回収済みである。
+    # 通常の短いコマンドごとに、終了済みの親から全OSを再走査する必要はない。
+    if returncode is not None and known:
+        try:
+            if all(not target.is_running() for target in known):
+                _reap_owned_child(process)
+                return None
+        except psutil.Error, OSError:
+            pass
+    # wait済みのPIDは再利用され得るため、数値PIDから別の起点を解決し直さない。
+    result = stop_tree_by_pid(process.pid, known=known, pins=pins) if returncode is None else None
+    if result is None:
+        result = stop_tree(None, known=known, pins=pins)
+        if not known:
+            result.unresolved.append(f"起点pid {process.pid}の終了前に子孫の所有を確認できなかった")
     # 所有する子はzombie表示でも回収済みとは限らないため、`stop_tree`の判定とは別に直接の待機で回収を確かめる。
     _reap_owned_child(process)
-    residual = [] if result is None else result.descriptions(exclude_pid=process.pid)
-    owned = [] if result is None else [target for target in result.residual if target.pid != process.pid]
-    if result is not None and result.unresolved:
+    residual = result.descriptions(exclude_pid=process.pid)
+    owned = [target for target in result.residual if target.pid != process.pid]
+    if result.unresolved:
         # 生成停止を確認できない場合は、残存一覧に無い子孫も再試行で辿れるよう所有対象全体を保持する。
         owned = [target for target in result.targets if target.pid != process.pid]
     if process.poll() is None:
@@ -540,7 +566,7 @@ def stop_owned_process(process: subprocess.Popen[Any], *, context: str) -> Recla
         residual,
         owned,
         context=context,
-        unresolved=[] if result is None else result.unresolved,
+        unresolved=result.unresolved,
         child=process if process.poll() is None else None,
     )
 
@@ -566,20 +592,26 @@ def _reap_owned_child(process: subprocess.Popen[Any]) -> bool:
 def process_scope(
     *popenargs: Any,
     close_streams: bool = True,
+    known: list[psutil.Process] | None = None,
+    pins: ProcessIdentityPins | None = None,
     **kwargs: Any,
 ) -> Generator[subprocess.Popen[Any]]:
     """獲得直後から子プロセスの停止とパイプの解放を所有する。"""
     # Popen.__exit__の無期限waitを避け、停止できない子も上限付きで診断する。
     process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
+    owns_pins = pins is None
+    pins = ProcessIdentityPins() if pins is None else pins
+    known = [] if known is None else known
+    known.extend(collect_descendants(process.pid, pins=pins, include_root=True))
     try:
         yield process
     finally:
         in_flight = sys.exception()
         try:
-            if process.poll() is None:
+            if process.poll() is None or known or in_flight is not None:
                 failure = None
                 try:
-                    failure = stop_owned_process(process, context="process_scope")
+                    failure = stop_owned_process(process, context="process_scope", known=known, pins=pins)
                 finally:
                     # 停止処理自体が失敗しても子を残さない。最終待機の時間切れ・終了要求の失敗はここで送出せず、
                     # 停止を確認できない子は停止処理の結果（回収不能）として伝え、通常の時間上限へ置き換えない。
@@ -594,8 +626,10 @@ def process_scope(
                 elif failure is not None:
                     raise failure
         finally:
-            if close_streams:
-                with contextlib.ExitStack() as cleanup:
+            with contextlib.ExitStack() as cleanup:
+                if owns_pins:
+                    cleanup.callback(pins.close)
+                if close_streams:
                     for stream in (process.stdin, process.stdout, process.stderr):
                         if stream is not None:
                             cleanup.callback(stream.close)
@@ -618,11 +652,12 @@ def run_with_timeout(
         if kwargs.get("stdout") is not None or kwargs.get("stderr") is not None:
             raise ValueError("capture_outputとstdout・stderrは同時に指定できない")
         kwargs["stdout"] = kwargs["stderr"] = subprocess.PIPE
-    with process_scope(*popenargs, **kwargs) as process:
+    known: list[psutil.Process] = []
+    with ProcessIdentityPins() as pins, process_scope(*popenargs, known=known, pins=pins, **kwargs) as process:
         try:
             stdout, stderr = process.communicate(input, timeout=timeout)
         except subprocess.TimeoutExpired as error:
-            failure = stop_owned_process(process, context="run_with_timeout")
+            failure = stop_owned_process(process, context="run_with_timeout", known=known, pins=pins)
             if failure is not None:
                 # 残存がパイプを保持していても待たずに戻り、通常の時間上限と区別して回収不能を伝える。
                 raise failure from error
@@ -638,12 +673,15 @@ def run_with_timeout(
     return subprocess.CompletedProcess(process.args, returncode, stdout, stderr)
 
 
-def collect_descendants(pid: int | None, *, pins: ProcessIdentityPins | None = None) -> list[psutil.Process]:
+def collect_descendants(
+    pid: int | None, *, pins: ProcessIdentityPins | None = None, include_root: bool = False
+) -> list[psutil.Process]:
     """`pid`を起点とする子孫プロセスを列挙する。
 
     起点プロセスが存在しない場合と、権限などで列挙できない場合は空リストを返す。
     回収は委譲の付随処理であり、列挙できないことを委譲の失敗として扱わない。
     `pins`を指定した場合は、親世代を保持できた子孫だけを返し、最終回収まで保持を続ける。
+    生成側が`include_root=True`を指定すると、起点の所有と空の子孫snapshotも終了後へ保持できる。
     """
     if pid is None:
         return []
@@ -652,7 +690,8 @@ def collect_descendants(pid: int | None, *, pins: ProcessIdentityPins | None = N
         if pins is not None and not pins.retain(root):
             return []
         children = root.children(recursive=True)
-        return children if pins is None else [process for process in children if pins.retain(process)]
+        retained = children if pins is None else [process for process in children if pins.retain(process)]
+        return [root, *retained] if include_root else retained
     except psutil.Error, OSError:
         return []
 

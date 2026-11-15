@@ -65,7 +65,7 @@ def test_first_run_clones_and_prepares(tmp_path: pathlib.Path) -> None:
     log = (tmp_path / "uv.log").read_text(encoding="utf-8").splitlines()
     launcher = tmp_path / "src" / "agent-toolkit" / "scripts" / "launch.py"
     assert log == [
-        f"{tmp_path / 'data'}|run --no-config --no-project --python 3.15 python "
+        f"{tmp_path / 'data'}|run --no-cache --no-config --no-project --python 3.15 python "
         f"{launcher} agent_toolkit/agents_server_mcp.py --check-dependencies"
     ]
     lines = result.stdout.splitlines()

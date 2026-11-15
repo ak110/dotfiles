@@ -208,6 +208,7 @@ def test_external_prune_is_not_repeated_inside_update_post_apply(monkeypatch: py
 @pytest.mark.parametrize("platform", ["posix", "nt"])
 def test_standalone_prune_entry_runs_on_both_platforms(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str) -> None:
     """単独の公開--pruneは両OSで通常工程の後に削除を1回行う。"""
+    monkeypatch.setattr(post_apply.warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
     calls: list[str] = []
 
     def prune() -> post_apply_outcome.PostApplyOutcome:
@@ -264,6 +265,7 @@ def test_prune_only_entry_runs_only_prune_and_propagates_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], failure: str | None
 ) -> None:
     """正規rootのprune-onlyは通常の更新工程を起動せず削除結果を返す。"""
+    monkeypatch.setattr(post_apply.warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
     calls: list[str] = []
 
     def prune() -> post_apply_outcome.PostApplyOutcome:
@@ -286,28 +288,29 @@ def test_prune_only_entry_runs_only_prune_and_propagates_failure(
     assert calls == ["prune"]
     captured = capsys.readouterr()
     assert not captured.out
-    assert captured.err == (f"{failure}。次の操作: 権限を確認する\n" if failure else "")
+    assert captured.err == (f"  {failure}。次の操作: 権限を確認する\n" if failure else "")
 
 
 @pytest.mark.parametrize(
     ("saved", "explicit", "prune", "expected"),
     [
         ("minimal", None, False, True),
-        ("full", None, False, False),
+        ("full", None, False, True),
         ("full", None, True, True),
         ("full", "minimal", False, True),
-        ("minimal", "full", False, False),
+        ("minimal", "full", False, True),
         ("minimal", "full", True, True),
     ],
 )
 def test_prune_only_if_minimal_uses_effective_mode(  # noqa: PLR0913 -- 保存mode・明示指定・pruneの組合せを検証する
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, saved: str, explicit: str | None, prune: bool, expected: bool
 ) -> None:
-    """更新後整理は保存modeと明示指定から実効modeを解決し、必要な場合だけpruneを実行する。"""
+    """更新後整理は保存modeと明示指定から実効modeを解決し、モードによらずpruneを実行する。"""
     configuration = tmp_path / "config.json"
     configuration.write_text(json.dumps({"dotfiles_mode": saved}), encoding="utf-8")
     monkeypatch.setattr(post_apply.dotfiles_mode, "configuration_path", lambda: configuration)
     monkeypatch.delenv(post_apply.dotfiles_mode.MODE_ENV, raising=False)
+    monkeypatch.setattr(post_apply.warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
     calls: list[str] = []
 
     def run_prune(**_kwargs: object) -> post_apply_outcome.PostApplyOutcome:

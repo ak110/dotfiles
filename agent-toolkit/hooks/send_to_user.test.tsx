@@ -331,9 +331,9 @@ for (const caller of [undefined, "", "/caller/project-environment"] as const) {
     expect(result.result).toBe(DISPLAYED);
     expect(seen.length).toBe(1);
     const argv = seen[0]!;
-    expect(argv.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
-    expect(argv[7]!.endsWith("/scripts/launch.py")).toBe(true);
-    expect(argv.slice(8)).toEqual([argv[7]!.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/_common/response_language_check.py"), "--text=確認しました。"]);
+    expect(argv.slice(0, 8)).toEqual(["uv", "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python"]);
+    expect(argv[8]!.endsWith("/scripts/launch.py")).toBe(true);
+    expect(argv.slice(9)).toEqual([argv[8]!.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/_common/response_language_check.py"), "--text=確認しました。"]);
   });
 }
 
@@ -348,8 +348,8 @@ for (const message of ["--help", "--text", "", "--Next verify", "-x\n日本語�
     const result = await $.tool.call({ tool: TOOL, message });
     expect(result.result).toBe(DISPLAYED);
     expect(seen.length).toBe(1);
-    expect(seen[0]![7]!.endsWith("/scripts/launch.py")).toBe(true);
-    expect(seen[0]!.slice(8)).toEqual([seen[0]![7]!.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/_common/response_language_check.py"), `--text=${message}`]);
+    expect(seen[0]![8]!.endsWith("/scripts/launch.py")).toBe(true);
+    expect(seen[0]!.slice(9)).toEqual([seen[0]![8]!.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/_common/response_language_check.py"), `--text=${message}`]);
   });
 }
 

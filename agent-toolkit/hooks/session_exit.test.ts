@@ -129,10 +129,10 @@ test("全待機終了の判定は共通promptのtaskだけを一度回収する"
   await $.turn.complete(MAIN_TURN);
   expect(calls).toEqual(["CronList", "CronDelete:common"]);
   expect(writes.get(RECHECK_PATH)).toBe("consumed");
-  expect(argv[0]?.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
-  expect(argv[0]?.[7]?.endsWith("/scripts/launch.py")).toBe(true);
-  expect(argv[0]?.[8]).toBe(argv[0]?.[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
-  expect(argv[0]?.slice(9)).toEqual(["wait-schedule"]);
+  expect(argv[0]?.slice(0, 8)).toEqual(["uv", "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python"]);
+  expect(argv[0]?.[8]?.endsWith("/scripts/launch.py")).toBe(true);
+  expect(argv[0]?.[9]).toBe(argv[0]?.[8]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
+  expect(argv[0]?.slice(10)).toEqual(["wait-schedule"]);
   await $.turn.complete(MAIN_TURN);
   expect(calls).toEqual(["CronList", "CronDelete:common"]);
 });

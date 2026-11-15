@@ -1,14 +1,18 @@
-"""minimal更新または明示的な--pruneで、導入モードの対象外になった実体を削除する。
+"""通常更新で、導入モードの対象外の実体と取得キャッシュを整理する。
 
 実行中のエージェントと依存環境を先に照合し、使用中なら実体を保持して再実行を案内する。
 fullへの更新と依存準備は旧環境を回収しない。
 """
 
+import functools
 import json
 import logging
+import math
 import os
 import shutil
+import time
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
 
 import platformdirs
@@ -77,12 +81,14 @@ def removal_paths() -> tuple[Path, ...]:
         home / ".cache/herdr",
         codex_home / "packages",
         codex_home / "plugins/cache",
+        codex_home / ".tmp/marketplaces/googlechrome",
         codex_home / "agent-toolkit-codex",
         plugin_environment.runtime_data(os.environ) / "environments",
         local / "Programs/OpenAI/Codex",
         local / "Programs/Antigravity",
         local / "agy",
         local / "Programs/Herdr",
+        home / ".gemini/config/skills/modern-web-guidance",
     ]
     for name in ("claude", "codex", "atk-hook", "agy", "herdr", "opencode", "claude-statusline"):
         for suffix in ("", ".exe", ".cmd", ".ps1"):
@@ -115,7 +121,12 @@ def _command(command: list[str]) -> None:
         tag="prune",
         env_overrides={"MISE_AUTO_INSTALL": "0", "UV_LOCK_TIMEOUT": _UV_LOCK_TIMEOUT_SECONDS},
     )
-    if result is not None and result.returncode != 0 and _UV_LOCK_TIMEOUT_MARKER in (result.stderr or ""):
+    if (
+        Path(command[0]).stem == "uv"
+        and result is not None
+        and result.returncode != 0
+        and _UV_LOCK_TIMEOUT_MARKER in (result.stderr or "")
+    ):
         raise _InUseError(f"{command[0]}: {common.format_cli_error(result)}")
     if result is None or result.returncode != 0:
         raise RuntimeError(f"{command[0]}: {common.format_cli_error(result)}")
@@ -152,7 +163,8 @@ def _active_users(paths: tuple[Path, ...]) -> list[str]:
         uses_pyfltr = any(
             Path(value.replace("\\", "/")).name.removesuffix(".exe") in {"pyfltr", "pyfltr-mcp"} for value in values if value
         )
-        if uses_path or uses_pyfltr or name in {"claude", "codex", "agy", "herdr", "opencode", "claude-statusline"}:
+        # rustup本体はtoolchains外にあるが、列挙や導入中も同じ配置を使用する。
+        if uses_path or uses_pyfltr or name in {"claude", "codex", "agy", "herdr", "opencode", "claude-statusline", "rustup"}:
             active.append(f"{name or 'process'} (pid {process.pid})")
     return active
 
@@ -183,7 +195,7 @@ def _remove(path: Path) -> bool:
     return True
 
 
-def run() -> post_apply_outcome.PostApplyOutcome:
+def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
     """実体を保護判定してから削除し、撤去失敗をpost-applyの失敗として返す。"""
     root = common.find_dotfiles_root()
     if root is None:
@@ -193,7 +205,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     changed = False
     try:
         minimal = dotfiles_mode.is_minimal()
-        excluded = excluded_tools(root, minimal=minimal)
+        excluded = excluded_tools(root, minimal=True) if minimal else frozenset()
         paths = (*removal_paths(), root / "agent-toolkit-codex", root / "agent-toolkit/.venv") if minimal else ()
         roots = tuple(Path(os.environ[name]) for name in ("RUSTUP_HOME", "CARGO_HOME") if name in os.environ) if minimal else ()
         for path in (*paths, *roots):
@@ -222,7 +234,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 )
         mise = setup_mise.find_mise_binary()
         if mise is None:
-            raise RuntimeError("miseが見つからず、導入済みツールの削除を開始できません")
+            if minimal:
+                raise RuntimeError("miseが見つからず、導入済みツールの削除を開始できません")
+            return post_apply_outcome.PostApplyOutcome(changed=changed)
         result = common.run_subprocess(
             [str(mise), "ls", "--installed", "--json"], cwd=Path.home(), tag="prune", env_overrides={"MISE_AUTO_INSTALL": "0"}
         )
@@ -238,23 +252,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 changed = True
         for path in paths:
             changed |= _remove(path)
-        for command in ([str(mise), "prune", "-y"], [str(mise), "reshim", "--force"], [str(mise), "cache", "clear"]):
+        for command in ([str(mise), "prune", "-y"], [str(mise), "reshim", "--force"]):
             _command(command)
-        if minimal:
-            uv = common.resolve_executable("uv")
-            if uv is None:
-                raise RuntimeError("uvが見つからずキャッシュ整理を実行できません")
-            _command([str(uv), "cache", "clean"])
-    except _InUseError as error:
-        logger.warning(
-            "prune: 他のuvプロセスがキャッシュを使用中のため整理を保留した: %s\n"
-            "uvを使う他のプロセス（エディター、MCPサーバー、`uv run`で起動した常駐プロセスなど）を終了してから"
-            "`update-dotfiles --prune`を再実行する。"
-            "それらを終了できない場合は再実行を見送ってよい（uvキャッシュの整理は最後の工程であり、"
-            "それより前の削除は完了している。未整理のキャッシュがディスク容量を使い続けるだけである）",
-            error,
-        )
-        return post_apply_outcome.PostApplyOutcome(changed=changed, deferred=True)
     except (OSError, ValueError, RuntimeError, psutil.Error) as error:
         return post_apply_outcome.PostApplyOutcome(
             changed=changed,
@@ -262,3 +261,86 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             next_action="失敗理由に示された環境設定と使用中のプロセスを確認し、update-dotfiles --pruneを再実行してください。",
         )
     return post_apply_outcome.PostApplyOutcome(changed=True)
+
+
+def _clean_uv_cache(uv: Path) -> None:
+    """実キャッシュルートごとの全消去成功から30日間は通常pruneを使う。"""
+    resolved = common.run_subprocess([str(uv), "cache", "dir"], tag="prune", timeout=30)
+    if resolved is None or resolved.returncode != 0:
+        raise RuntimeError(common.format_cli_error(resolved))
+    cache = Path(resolved.stdout.strip())
+    if not resolved.stdout.strip() or not cache.is_absolute():
+        raise ValueError("uv cache dirが絶対パスを返しませんでした")
+    key = os.path.normcase(str(cache.resolve()))
+    state = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "uv-cache-clean.json"
+    try:
+        successes = json.loads(state.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        successes = {}
+    if not isinstance(successes, dict) or any(
+        not isinstance(name, str) or type(value) not in (int, float) or not math.isfinite(value) or value < 0
+        for name, value in successes.items()
+    ):
+        raise ValueError(f"uv全消去の成功記録が不正です: {state}")
+    now = time.time()
+    last = successes.get(key)
+    clean = last is None or now - last >= 30 * 86400
+    _command([str(uv), "cache", "clean" if clean else "prune"])
+    if clean:
+        successes[key] = time.time()
+        state.parent.mkdir(parents=True, exist_ok=True)
+        if not common.atomic_write_json(state, successes, tag="prune"):
+            raise OSError(f"uv全消去の成功日時を保存できません: {state}")
+
+
+def clean_caches() -> post_apply_outcome.PostApplyOutcome:
+    """公式操作で取得キャッシュを整理し、1対象の競合や失敗でも残りを続ける。"""
+    failures: list[str] = []
+    deferred = False
+    changed = False
+    commands: list[tuple[str, list[str]]] = []
+    mise = setup_mise.find_mise_binary()
+    if mise is not None:
+        commands.append(("mise", [str(mise), "cache", "prune"]))
+    for name, arguments in (("npm", ["cache", "verify"]), ("pnpm", ["store", "prune"])):
+        executable = shutil.which(name)
+        if executable is not None:
+            commands.append((name, [str(executable), *arguments]))
+        else:
+            logger.info("prune: %sは未導入のため対象なし", name)
+    uv = common.resolve_executable("uv")
+    targets: list[tuple[str, Callable[[], None]]] = [(name, functools.partial(_command, command)) for name, command in commands]
+    if uv is not None:
+        targets.insert(0, ("uv", functools.partial(_clean_uv_cache, uv)))
+    else:
+        logger.info("prune: uvは未導入のため対象なし")
+    for name, operation in targets:
+        try:
+            operation()
+            changed = True
+            logger.info("prune: %sのキャッシュ整理を完了", name)
+        except _InUseError as error:
+            deferred = True
+            logger.warning("prune: %sの整理を使用中のため保留。次回のupdate-dotfilesで再試行: %s", name, error)
+        except (OSError, ValueError, RuntimeError) as error:
+            failures.append(f"{name}: {error}")
+    return post_apply_outcome.PostApplyOutcome(
+        changed=changed,
+        deferred=deferred,
+        failure=" / ".join(failures) or None,
+        next_action="診断を確認し、update-dotfilesを再実行してください。" if failures else None,
+    )
+
+
+def run() -> post_apply_outcome.PostApplyOutcome:
+    """導入実体の保護判定と取得キャッシュの公式整理を分けて実行する。"""
+    installation = _remove_installation()
+    if installation.failure is not None:
+        return installation
+    caches = clean_caches()
+    return post_apply_outcome.PostApplyOutcome(
+        changed=installation.changed or caches.changed,
+        deferred=installation.deferred or caches.deferred,
+        failure=caches.failure,
+        next_action=caches.next_action,
+    )

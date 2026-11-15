@@ -1,0 +1,24 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      aws-cdk:
+        specifier: 2.1148.0
+        version: 2.1148.0
+
+packages:
+
+  aws-cdk@2.1148.0:
+    resolution: {integrity: sha512-G7MqPDzldsFxrVSFxR8Oj3vf8NutokIatJVygW/g/0COjrepsbDjuCP9OB9iN2hOn3QvOSf10qd5K/P3D5TQcQ==}
+    engines: {node: '>= 18.0.0'}
+    hasBin: true
+
+snapshots:
+
+  aws-cdk@2.1148.0: {}

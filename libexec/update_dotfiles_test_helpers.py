@@ -169,6 +169,7 @@ class _FakePopen:
         self.returncode = returncode
         self._stdout = output_text
         self._stderr = error_text
+        self.stdin = None
         self.stdout = io.StringIO(output_text)
         self.stderr = io.StringIO(error_text)
         self._communicate_timeouts = communicate_timeouts
@@ -188,6 +189,10 @@ class _FakePopen:
     def kill(self) -> None:
         """直接子へのkill呼び出しを記録する。"""
         self.kill_calls += 1
+
+    def poll(self) -> int:
+        """設定済みの終了状態を返す。"""
+        return self.returncode
 
     def __enter__(self) -> Self:
         return self

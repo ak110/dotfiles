@@ -216,8 +216,8 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
     uv.write_text(
         f"#!{sys.executable}\n"
         "import json, os, sys\n"
-        "if sys.argv[1:4] == ['run', '--no-config', '--no-project']:\n"
-        "    os.execv(sys.executable, [sys.executable, '-B', *sys.argv[7:]])\n"
+        "if sys.argv[1:5] == ['run', '--no-cache', '--no-config', '--no-project']:\n"
+        "    os.execv(sys.executable, [sys.executable, '-B', *sys.argv[8:]])\n"
         "print(json.dumps({'args': sys.argv[1:], 'path': os.environ['PATH'], "
         "'data': os.environ['AGENT_TOOLKIT_RUNTIME_DATA'], "
         "'environment': os.environ['UV_PROJECT_ENVIRONMENT'], "

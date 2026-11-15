@@ -67,8 +67,9 @@ class TestProcessLoopUpdateAndRestart:
         assert execv_calls[0][0] == "/resolved/uv"
         assert pathlib.Path(execv_calls[0][1][0]).name == "uv"
         expected_script = pathlib.Path(sys.argv[0]).resolve()
-        assert execv_calls[0][1][1:9] == [
+        assert execv_calls[0][1][1:10] == [
             "run",
+            "--no-cache",
             "--no-config",
             "--no-project",
             "--python",
