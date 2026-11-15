@@ -98,3 +98,14 @@
 - 適用方法: 依存の対応を調べ、対応版の宣言とCI行列へ加え、基準版を変更する場合は`.python-version`・全検査・文書や公開の実行版もそろえる
 - 参照先: `github.com/ak110/pyfltr`の`pyproject.toml`、`.python-version`、`.github/workflows/ci.yaml`と`docs/guide/recommended.md`「CI」
 - 適用済みの見分け方: 対応版の宣言とCIに3.15があり、依存を導入して試験を実行でき、全検査を担う版と開発環境が一致する
+
+## 危険なPython構文をRuffで検出する
+
+- 項目ID: ruff-python-security-syntax
+- 実施日: 2026年11月
+- 内容: 危険なPython構文を検出するRuffの8規則を有効にし、テストコードを除外する
+- 理由: 文章の指針に加えてlintで検出し、テストが故障入力として使う構文は維持する
+- 当てはまる条件: Pythonコードを持ち、Ruffの規則選択が推奨ガイドの危険構文検出に対応していない
+- 適用方法: 推奨ガイドのRuff設定に従い、規則選択と既存のテスト用除外を更新する
+- 参照先: `github.com/ak110/pyfltr`の`docs/guide/recommended.md`「pyproject.toml」
+- 適用済みの見分け方: ガイドの8規則が選択され、同じ危険構文を含む一時入力をRuffへ渡すと本体名で検出され、テスト名で除外される

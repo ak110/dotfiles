@@ -500,7 +500,7 @@ baseline = "arid-baseline.json"
 line-length = 128
 
 [tool.ruff.lint]
-select = ["D", "E", "F", "UP", "B", "SIM", "ICN", "I"]
+select = ["D", "E", "F", "UP", "B", "SIM", "ICN", "I", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 ignore = ["D107", "D415"]
 
 [tool.ruff.lint.pydocstyle]
@@ -512,7 +512,7 @@ convention = "google"
 extend-aliases = { datetime = "datetime" }
 
 [tool.ruff.lint.per-file-ignores]
-"**_test.py" = ["D"]
+"**_test.py" = ["D", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 "**/__init__.py" = ["D104"]
 
 [tool.pyright]
