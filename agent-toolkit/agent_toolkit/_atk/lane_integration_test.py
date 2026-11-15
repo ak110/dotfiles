@@ -115,6 +115,7 @@ def test_integrate_resume_and_preservation(
 
 
 @pytest.mark.parametrize("condition", ["dirty", "review-head", "foreign-owner", "active-session"])
+@pytest.mark.cpu_limit(1.5, reason="実Gitの成果と所有登録で、拒否後のHEADと資源保持を確かめる4阻止条件。所有CPU最大0.533秒。")
 def test_integrate_rejects_unreviewed_or_unowned_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:

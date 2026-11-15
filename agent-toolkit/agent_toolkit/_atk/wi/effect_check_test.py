@@ -118,6 +118,7 @@ def test_public_effect_check_partial_then_complete_preserves_original(
     assert json.loads(capsys.readouterr().out)["effect_check"] == "confirmed"
 
 
+@pytest.mark.cpu_limit(1.5, reason="是正先の有無による保存拒否から、実Gitへ不足判定を保存する最小の遷移。所有CPU最大0.656秒。")
 def test_public_effect_insufficient_requires_saved_corrective_awi(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
@@ -189,6 +190,7 @@ def test_public_effect_rejects_invalid_values(
     assert path.read_bytes() == original
 
 
+@pytest.mark.cpu_limit(1.5, reason="実Gitに部分確認を保存した後の重複拒否で、元記録の非上書きを確かめる。所有CPU最大0.672秒。")
 def test_public_effect_rejects_duplicate_file(effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path]) -> None:
     """部分確認済みのファイルを上書きしない。"""
     notes, worktree, path = effect_repository
@@ -339,6 +341,12 @@ def _adopt(notes: pathlib.Path, worktree: pathlib.Path, filename: str, *commits:
     return finished.value.code
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実commit付きinboxの採用で、保存成功と処理中抜けの警告を両方確認する。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"
+    ),
+)
 def test_adopt_warns_when_inbox_entry_has_commit(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -511,6 +519,10 @@ def test_public_effect_whole_item_verdicts_without_file(
     assert json.loads(capsys.readouterr().out)["filename"] == path.name
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("ファイル指定なしの全体判定を実Gitへ保存し、部分判定と区別する。同じ実Git保存群の所有CPU最大0.672秒を基準にする。"),
+)
 def test_public_effect_whole_item_confirmed_without_file(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
