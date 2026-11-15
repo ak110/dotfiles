@@ -335,6 +335,7 @@ def test_process_scope_exception_reclaims_known_cohort(tmp_path, monkeypatch, pa
     release = tmp_path / "child.release"
     known: list[psutil.Process] = []
     stop = process_tree.stop_owned_process
+    pins = process_tree.ProcessIdentityPins()
 
     def leave_owned(_process, **kwargs):
         return process_tree.ReclaimError(["owned child"], known, context=kwargs["context"])
@@ -345,10 +346,12 @@ def test_process_scope_exception_reclaims_known_cohort(tmp_path, monkeypatch, pa
             process_tree.process_scope(
                 [sys.executable, "-c", _parent_source(late_descendant.held_source(release), tmp_path / "parent.release")],
                 known=known,
+                pins=pins,
             ) as parent,
         ):
             _wait_for_ready_marker(release.with_suffix(".ready"))
-            known.extend(process_tree.collect_descendants(parent.pid, include_root=True))
+            # 起点終了と模擬残存の再試行まで、生成側が観測したWindowsの親世代を保持する。
+            known.extend(process_tree.collect_descendants(parent.pid, pins=pins, include_root=True))
             assert any(target.pid != parent.pid for target in known)
             if parent_exits:
                 parent.kill()
@@ -362,7 +365,10 @@ def test_process_scope_exception_reclaims_known_cohort(tmp_path, monkeypatch, pa
         assert not process_tree.wait_until_released(known, timeout=1)
     finally:
         monkeypatch.setattr(process_tree, "stop_owned_process", stop)
-        assert not process_tree.stop_tree(None, known=known, timeout=1).residual
+        try:
+            assert not process_tree.stop_tree(None, known=known, pins=pins, timeout=1).residual
+        finally:
+            pins.close()
 
 
 def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
