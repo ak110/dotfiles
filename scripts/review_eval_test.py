@@ -601,7 +601,8 @@ def test_store_then_prepare_uses_saved_plan_and_contract(tmp_path, monkeypatch, 
 
 @pytest.mark.parametrize("issues", [[], ["本文配送の方針違反\n  根拠を親指摘へ含める"], ["本文の問題", "配送の方針違反"]])
 @pytest.mark.parametrize("unit", ["", "件"])
-def test_score_draft_review_cli(tmp_path, monkeypatch, capsys, issues, unit) -> None:
+@pytest.mark.parametrize("reports", [False, True])
+def test_score_draft_review_cli(tmp_path, monkeypatch, capsys, issues, unit, reports) -> None:
     """返却原文を公開scoreへ渡し、指摘間をまたぐ語句一致を防ぐ。"""
     cases = _write_cases(tmp_path / "cases.json")
     data = json.loads(cases.read_text(encoding="utf-8"))
@@ -613,7 +614,15 @@ def test_score_draft_review_cli(tmp_path, monkeypatch, capsys, issues, unit) -> 
         f"判定: {'修正要' if issues else '合格'}\n確認段階: 方針\n対象資料: /plan.md\n"
         f"未解決指摘: {len(issues)}{unit}\n指摘:\n"
         + "\n".join(f"- {issue}" for issue in issues or ["なし"])
-        + "\n確認した要求と根拠: 原要求と観測\n",
+        + "\n確認した要求と根拠: 原要求と観測\n"
+        + (
+            "気付いた改善点: 本文配送の方針に関する読込費用\n"
+            "気付いた改善点: 二つ目の読込費用\n"
+            "- 気付いた改善点: 箇条書きの追加報告\n"
+            "- 気付いた改善点: 二つ目の箇条書き報告\n"
+            if reports
+            else ""
+        ),
         encoding="utf-8",
     )
     assert review_eval.main(["score", "--result", f"missed={result}"]) == 0

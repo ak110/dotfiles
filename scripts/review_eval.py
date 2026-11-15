@@ -399,12 +399,15 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
 
 
 def _draft_findings(path: pathlib.Path) -> list[str]:
-    """単一原稿の返却契約を検査し、字下げ補足を親の指摘へ保持する。"""
+    """単一原稿の指摘と追加報告を分け、字下げ補足を親の指摘へ保持する。"""
     text = path.read_text(encoding="utf-8")
     fields = {}
     findings: list[str] = []
     active = False
     for line in text.splitlines():
+        if line.removeprefix("- ").startswith(("気付いた改善点:", "想定外事象:")):
+            active = False
+            continue
         if line.startswith("- ") and active:
             findings.append(line[2:])
         elif line[:1].isspace() and active and findings:
