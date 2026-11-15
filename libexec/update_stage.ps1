@@ -22,10 +22,10 @@ function Invoke-UpdateStage {
         if ($null -ne $process) {
             try {
                 # 起点の自然終了でもJob全体を回収する。所有不明はcontinueへ変換しない。
-                try { & $Stop $process } catch { throw [System.TimeoutException]::new("${Name}のJobを回収できません: $_") }
+                try { & $Stop $process } catch { throw [System.TimeoutException]::new("${Name}のJobを回収できません: $_。この診断を添えて保守担当へ調査を依頼し、所有対象の終了を確認してからupdate-dotfilesを再実行してください。") }
                 if ($Probe) {
                     try { $script:lastStageOutput = (& $Output $process).Trim() }
-                    catch { throw [System.TimeoutException]::new("${Name}の出力を回収できません: $_") }
+                    catch { throw [System.TimeoutException]::new("${Name}の出力を回収できません: $_。この診断を添えて保守担当へ調査を依頼し、出力取得の障害を解消してからupdate-dotfilesを再実行してください。") }
                 }
             } finally { $process.Dispose() }
         }
