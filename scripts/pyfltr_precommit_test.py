@@ -136,12 +136,31 @@ def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monk
 
 
 @pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(["run", "--pytest-args=-n 2 --maxfail=10"], id="integration-values"),
+        pytest.param(["run", "--pytest-args", "--numprocesses=auto"], id="separate-value"),
+    ],
+)
+def test_reuses_run_with_parallelism_and_maxfail_only(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]
+) -> None:
+    """並列数と打ち切り数だけを変える`--pytest-args`は試験の範囲を変えないため再利用する。"""
+    repository = _repository(tmp_path)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=argv)
+
+    assert pyfltr_precommit.find_reusable_run(repository, "pyfltr") == pyfltr_precommit.Reuse("01RUN", "")
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         pytest.param({"pytest_started_at": _iso(-3600)}, id="changed-after-pytest-start"),
         pytest.param({"pytest_status": "failed"}, id="pytest-failed"),
         pytest.param({"version": "3.29.0"}, id="other-version"),
         pytest.param({"argv": ["run", "--pytest-args=-k one"]}, id="narrowed-pytest"),
+        pytest.param({"argv": ["run", "--pytest-args=-n 2 -k one"]}, id="narrowed-with-parallelism"),
+        pytest.param({"argv": ["run", "--pytest-args=--maxfail=auto"]}, id="non-numeric-maxfail"),
         pytest.param({"argv": ["run", "--only-failed"]}, id="only-failed"),
         pytest.param({"argv": ["run", "--commands"]}, id="option-without-value"),
         pytest.param({"argv": ["grep", "x"]}, id="other-subcommand"),

@@ -42,6 +42,7 @@ import io
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -61,7 +62,8 @@ _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 _REUSABLE_SUBCOMMANDS = frozenset({"run", "ci", "fast"})
 # 統合先のブランチ。これらへのcommitでは従来どおり不変条件試験を含めて実行する。
 _INTEGRATION_BRANCHES = frozenset({"develop", "master", "main"})
-# 試験の対象を変えない引数。これ以外の引数（`--pytest-args`、`--only-failed`、`--disable`など）を含む実行は再利用しない。
+# 試験の対象を変えない引数。これ以外の引数を含む実行は再利用しない。
+# 例: 範囲を変える`--pytest-args`、`--only-failed`、`--disable`。
 _NEUTRAL_FLAGS = frozenset(
     {
         "--no-fix",
@@ -78,6 +80,26 @@ _NEUTRAL_FLAGS = frozenset(
 )
 # 値を取る引数のうち、試験の対象を変えないもの。`--commands`はpytestの成功を別に確かめるため受け入れる。
 _NEUTRAL_VALUE_OPTIONS = frozenset({"--output-format", "--commands"})
+# `--pytest-args`のうち、並列数と失敗時の打ち切り数だけを変える引数。統合時の検証値（`-n 2 --maxfail=10`）を受け入れる。
+# 打ち切り数は失敗時だけ作用し、pytestの成功を要件とする再利用の判定では対象を狭めない。
+_NEUTRAL_PYTEST_OPTIONS = frozenset({"-n", "--numprocesses", "--maxfail"})
+
+
+def _neutral_pytest_args(value: str) -> bool:
+    """`--pytest-args`の値が、並列数と打ち切り数の数値指定だけかを返す。"""
+    try:
+        tokens = iter(shlex.split(value))
+    except ValueError:
+        return False
+    for token in tokens:
+        name, separator, number = token.partition("=")
+        if name not in _NEUTRAL_PYTEST_OPTIONS:
+            return False
+        if not separator:
+            number = next(tokens, "")
+        if not (number.isdecimal() or (name != "--maxfail" and number == "auto")):
+            return False
+    return True
 
 
 class Reuse(typing.NamedTuple):
@@ -343,6 +365,13 @@ def _neutral_argv(argv: list[str]) -> bool:
             continue
         if token.split("=", 1)[0] in _NEUTRAL_VALUE_OPTIONS and "=" in token:
             continue
+        if token == "--pytest-args":
+            value = next(tokens, None)
+            if value is None or not _neutral_pytest_args(value):
+                return False
+            continue
+        if token.startswith("--pytest-args=") and _neutral_pytest_args(token.split("=", 1)[1]):
+            continue
         if token.startswith("-"):
             return False
     return True
@@ -353,7 +382,7 @@ def _argv_targets(argv: list[str]) -> list[str]:
     targets: list[str] = []
     tokens = iter(argv[1:])
     for token in tokens:
-        if token in _NEUTRAL_VALUE_OPTIONS:
+        if token in _NEUTRAL_VALUE_OPTIONS or token == "--pytest-args":
             next(tokens)
         elif not token.startswith("-"):
             targets.append(token)
