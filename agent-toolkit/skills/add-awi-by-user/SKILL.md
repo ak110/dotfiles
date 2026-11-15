@@ -81,7 +81,7 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 | 原稿の意味を確認する前 | `../wi-standards/references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-self-review` | |
 | 文脈を分けるためWI投入担当へ委譲する場合 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` | |
 | 独立した方針検収または本文検収を依頼する前 | `${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` | |
-| 手順3の起草・保存、指摘・追加発話への対応、投入の中止・再開の前 | `references/drafting-and-feedback.md` | | | |
+| 手順3の起草・保存、指摘・追加発話への対応、投入の中止・再開、完成判定の前 | `references/drafting-and-feedback.md` | | | |
 | 完成条件や採否を決める値を測定する前 | `references/measurement.md` | | | |
 | 参考資料に対応する実物の調査を始める前、起草の方針を決める前（手順2の2。提示・確認の有無と、方針を伝えるかによらない）、質問ラウンドを終える前と原稿を確定する前 | `references/omission-check.md` | | | |
 | 観測された問題の証拠収集・件数集計を始める前 | `agent-basics:bugfix/references/root-cause-scenarios-investigation.md`、`../user-confirmation-and-report/references/user-utterance.md` | | | |
@@ -92,8 +92,6 @@ AWI登録の認可はスキル起動で成立しているため、確定した�
 原稿や既存の要求分類より先に原文から利用主体・開始状態・到達結果を確定する。
 bugfixの取得済み本文は再利用し、今回の各事象への初動と終了判断は個別に適用する。
 WIの起草・投入前検収は、wi-standardsの意味と必要事項に関する品質水準を用いる。
-
-括弧内は各ステップが守る結果である。
 
 1. `agent-toolkit:wi-standards`を起動する。
    AWIの適切な粒度、由来の管理、投入および取得の手順は同スキルの基準に従う。
@@ -142,14 +140,7 @@ WIの起草・投入前検収は、wi-standardsの意味と必要事項に関す
 
 ## 完成条件
 
-- 登録時点の調査で判明する、要件や結果を左右するユーザー固有の事項について回答を得ていること。
-  処理時に初めて判明する事項だけが、残す理由とともに本文へ記録されていること。
-- 登録されたすべてのAWIが、`../wi-standards/references/wi-standards-body.md`「起票目的別の調査出口」を満たしていること。
-- 必要な認識合わせを完了し、手順3の作成主体が要求の性質に応じた適切な検収を経て要求を登録していること。
-- 登録0件で終える場合は、資料の主張ごとの対応表と分類が作業記録にあり、選好を要する不採用にユーザーの回答を得ていること。
-- `atk wi submission end --findings-file`の検査が成功し、表示された報告用要約を作業完了報告へ記載していること。
-- 全類型の点検結果と処置が質問ラウンドの終了時報告に示され、原稿確定前の再点検、意味検収、機械チェック、投入前レビューの合格と保存結果の検収を完了していること。
-- 対象リポジトリの実装ファイル群および`processing`ステータスのAWIが、スキル起動前の状態のまま保持されていること。
+`references/drafting-and-feedback.md`「完成条件」を満たしてから終了する。
 
 ## 本文参照の取得条件
 
