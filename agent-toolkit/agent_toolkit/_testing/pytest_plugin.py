@@ -45,6 +45,7 @@ from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._plan import creation_times as plan_creation_times
 from agent_toolkit._testing import (
     agents_server_fixtures,
+    cpu_accounting,
     hook_support,
     isolation,
     resource_diagnostics,
@@ -62,36 +63,48 @@ _BROWSER_REPORTS = pytest.StashKey[dict[str, pytest.TestReport]]()
 _BROWSER_EVIDENCE = pytest.StashKey[pathlib.Path]()
 _CPU_TIMES = pytest.StashKey[dict[str, float]]()
 _CPU_LIMIT = pytest.StashKey[tuple[float, str]]()
+_CPU_EXCLUSIONS = pytest.StashKey[dict[str, dict[str, float]]]()
+_CPU_GROSS_LIMIT = pytest.StashKey[float]()
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """共有初期化費用の観測をroot session単位で開始する。"""
+    cpu_accounting.start(session)
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    """自身が所有する観測を終了し、元のimportとcollectorへ戻す。"""
+    cpu_accounting.stop(session)
+
+
+def _measure_cpu(item: pytest.Item, phase: str) -> Generator[None, object, object]:
+    started = time.process_time()
+    excluded = cpu_accounting.snapshot()
+    try:
+        return (yield)
+    finally:
+        after = cpu_accounting.snapshot()
+        finished = time.process_time()
+        item.stash.setdefault(_CPU_TIMES, {})[phase] = finished - started
+        item.stash.setdefault(_CPU_EXCLUSIONS, {})[phase] = {key: after[key] - value for key, value in excluded.items()}
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> Generator[None, object, object]:
     """fixtureの準備を含むプロセスCPUを計測する。"""
-    started = time.process_time()
-    try:
-        return (yield)
-    finally:
-        item.stash.setdefault(_CPU_TIMES, {})["setup"] = time.process_time() - started
+    return (yield from _measure_cpu(item, "setup"))
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
     """待機時間や子プロセスCPUを含めず本体を計測する。"""
-    started = time.process_time()
-    try:
-        return (yield)
-    finally:
-        item.stash.setdefault(_CPU_TIMES, {})["call"] = time.process_time() - started
+    return (yield from _measure_cpu(item, "call"))
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, object, object]:
     """回収が完了してからCPU合算の判定へ進む。"""
-    started = time.process_time()
-    try:
-        return (yield)
-    finally:
-        item.stash.setdefault(_CPU_TIMES, {})["teardown"] = time.process_time() - started
+    return (yield from _measure_cpu(item, "teardown"))
 
 
 @pytest.fixture(scope="session", name="browser_evidence_root")
@@ -129,13 +142,26 @@ def pytest_runtest_makereport(
         times = {phase: recorded.get(phase, 0.0) for phase in ("setup", "call", "teardown")}
         limit, reason = item.stash.get(_CPU_LIMIT, (0.5, "通常上限"))
         total = sum(times.values())
+        excluded = item.stash.get(_CPU_EXCLUSIONS, {})
+        deductions = {kind: sum(row.get(kind, 0.0) for row in excluded.values()) for kind in ("gc", "import")}
+        budget = max(0.0, total - sum(deductions.values()))
+        gross_limit = item.stash.get(_CPU_GROSS_LIMIT, max(2.0, limit))
         report.user_properties.extend(
             [(f"cpu_{phase}_seconds", times.get(phase, 0.0)) for phase in ("setup", "call", "teardown")]
-            + [("cpu_total_seconds", total), ("cpu_limit_seconds", limit), ("cpu_limit_reason", reason)]
+            + [
+                ("cpu_total_seconds", total),
+                ("cpu_excluded_gc_seconds", deductions["gc"]),
+                ("cpu_excluded_import_seconds", deductions["import"]),
+                ("cpu_budget_seconds", budget),
+                ("cpu_limit_seconds", limit),
+                ("cpu_gross_limit_seconds", gross_limit),
+                ("cpu_limit_reason", reason),
+            ]
         )
-        if total >= limit:
+        if budget >= limit or total >= gross_limit:
             diagnostic = (
-                f"CPU上限: {item.nodeid}: {times}, total={total:.6f}s, limit={limit}s, reason={reason}。"
+                f"CPU上限: {item.nodeid}: {times}, total={total:.6f}s, excluded={deductions}, "
+                f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}。"
                 "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
             )
             report.sections.append(("CPU上限", diagnostic))
@@ -519,6 +545,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         ):
             raise pytest.UsageError(f"{item.nodeid}: cpu_limitには正有限値と非空のreasonを指定してください")
         item.stash[_CPU_LIMIT] = (float(seconds), reason)
+        item.stash[_CPU_GROSS_LIMIT] = float(seconds) if marker is not None else max(2.0, default_limit)
     value = config.getoption("test_shard")
     if value is None:
         return

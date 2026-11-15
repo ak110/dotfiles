@@ -256,6 +256,13 @@ print(json.dumps({
 
 
 @pytest.mark.parametrize("caller_pythonpath", [False, True])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "コピーした配布物の実launcherと3種の内部再起動で、PYTHONPATHの有無を各1回確認する必要な境界。"
+        "Windows CPU合計0.656秒と準備・回収の余裕を基準にする。"
+    ),
+)
 def test_public_launcher_child_receives_caller_environment_and_internal_restarts_succeed(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]], caller_pythonpath: bool
 ) -> None:

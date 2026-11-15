@@ -23,6 +23,9 @@ from agent_toolkit._testing.lane_support import _create, _invoke, _selection
 
 
 @pytest.mark.parametrize("planned", [False, True])
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの統合・最終化・冪等再開・資源回収を通す代表2条件。開発モード実測CPU0.82秒へ余裕を確保"
+)
 def test_integrate_public_lifecycle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], planned: bool
 ) -> None:

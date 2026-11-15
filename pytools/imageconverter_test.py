@@ -158,13 +158,12 @@ def test_convert_directory_to_jpeg(tmp_path: pathlib.Path) -> None:
 
 
 def test_convert_directory_resizes_large_image(tmp_path: pathlib.Path) -> None:
-    _make_png(tmp_path / "big.png", size=(4000, 3000))
-    imageconverter.convert_directory(tmp_path, output_type="jpeg", max_width=2048, max_height=1536)
+    _make_png(tmp_path / "big.png", size=(40, 30))
+    imageconverter.convert_directory(tmp_path, output_type="jpeg", max_width=20, max_height=15)
     out = tmp_path / "big.jpg"
     assert out.exists()
     with PIL.Image.open(out) as img:
-        assert img.width <= 2048
-        assert img.height <= 1536
+        assert img.size == (20, 15)
 
 
 def test_convert_directory_keeps_text(tmp_path: pathlib.Path) -> None:
