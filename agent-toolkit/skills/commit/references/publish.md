@@ -71,7 +71,7 @@ push前のチェックやローカルの全体検証はログ出力が膨大に�
 そのため、`agent-toolkit/share/rules/common/02-agent-operations.md`「ツール・コマンド運用」に定める分離実行（`agents_server`の`start`による`shell`実行など）を用いて行う。
 `shell`実行時には、対象リポジトリを`cwd`に、実行コマンドをそのまま`command`に、managed-temp内の一時出力先を`summary_policy`に渡す。
 公開担当は保存出力の実在・内容・終了コード0を検収する。
-警告メッセージについてはその内容と影響を精査し（`agent-basics:bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」を参照）、設定の未適用や処理の未完了を示す警告は作業を続けられない原因として対処する。
+警告メッセージの内容と影響は`agent-basics:bugfix`本体の初動で判断し、設定の未適用や処理の未完了を示す警告は作業を続けられない原因として対処する。
 チェックや検証の失敗は、公開担当が`agent-basics:bugfix`で原因を特定し、認可範囲内で直す。
 `agent-toolkit:process-wi`の完了担当者によるCI修正の手順は、同スキルの`references/termination-ci-failure.md`「検証またはCIの失敗」の定めに従う。
 

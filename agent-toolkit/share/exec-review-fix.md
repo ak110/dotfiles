@@ -17,8 +17,8 @@
 
 ## 担当種別ごとの修正
 
-ユーザー介入、セルフレビューと他者の指摘、lint・自動テスト・CI等のエラーは`agent-basics:bugfix`による原因分析と類似見直しの対象とする。
-類似見直しの検索と個別判定は`similar-review.parent.md`の専用担当を起動して受け取り、原因分析と採否は自身が所有する。
+ユーザー介入、セルフレビューと他者の指摘、lint・自動テスト・CI等のエラーは`agent-basics:bugfix`を起動し、本体の初動で原因・影響と詳細分析の要否を判断する。
+詳細分析で類似見直しを選んだ場合は、検索と個別判定を`similar-review.parent.md`の専用担当から受け取り、原因分析と採否は自身が所有する。
 初回の仕組みによる検出だけ再発防止策を省略できる条件と、反復・ユーザー介入時の検討はbugfixに従う。
 
 レビュー修正やCI修正においても、渡された是正項目とファイル内の他箇所の整合性については、`../skills/delegation/references/base-contract-inputs.md`「入力の適格性と追送」に従う。
@@ -36,7 +36,7 @@
   自動化が可能な検証条件は既存のブラウザテストに追加して保持する（努力目標。同一条件のテストの無駄な重複を避ける）。
 - `CI修正担当`は、CI記録に含まれる7項目を実装契約とし、原因となった失敗のみを修正する。
   原因調査の着手前に`agent-basics:bugfix`を起動する。
-  次の資料に定める共通判定を、CI記録の原因分析結果に適用する。
+  初動で詳細分析を選んだ場合は、次の資料に定める共通判定をCI記録の原因分析結果に適用する。
 
   - `agent-basics:bugfix/references/root-cause-analysis-initial.md`
   - `agent-basics:bugfix/references/root-cause-analysis-evidence.md`

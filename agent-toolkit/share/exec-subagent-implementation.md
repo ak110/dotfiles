@@ -7,7 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 最終実装コミット前に変更後の設計品質を評価する前 | `agent-basics:writing-standards/references/design-heuristics-quality.md` |
-| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
+| bugfixの初動で詳細分析を選び、不具合の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
 | 初回実装の案の前提を評価する前 | `agent-basics:review-standards/references/reviewer-initial.md` |
 | レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` |
@@ -48,7 +48,7 @@
 3. 実装に着手する前に、受入シナリオの消費主体、公開されている呼び出し手段、具体的な入力値と初期状態、有効な期待結果、および検出対象とする失敗を確定する。
    テストの選定は`agent-basics:writing-standards/references/testing-selection.md`「検証単位の選定」に従う。
    計画を作成しない場合やレビュー修正においても、要求と完成条件から同様に対応関係を確定する。
-   不具合の再現と修正後の確認・証拠保存は、`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従う。
+   不具合の再現と修正後の確認・証拠保存はbugfix本体の初動で行い、詳細分析を選んだ場合は`agent-basics:bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従う。
    計画凍結後の仕様変更は既存のレビュー指摘管理表および採否・変更記録と関連付ける。
 
 4. 初回実装では、`lane-planning.md`「計画の起草」で選んだ最も近い既存実装と契約・構造を比較し、入力値・時間経過・操作順・保持状態・反復の境界を検証する。
