@@ -107,6 +107,9 @@ hookの通知は選択を補助する。
 | DBトランザクションを設計・変更・レビューする前 | `references/design-data-interfaces-transactions.md` |
 | クエリ性能を設計・変更・レビューする前 | `references/design-data-interfaces-queries.md` |
 | DB更新と外部送信の整合性を設計・変更・レビューする前 | `references/design-data-interfaces-transactions.md` |
+| DB更新と外部永続資源の作成・更新・削除を組み合わせる処理を設計・変更・レビューする前 | `references/design-data-interfaces-transactions.md` |
+| スキーマ変更の有無によらずデータの削除を設計・変更・レビューする前 | `references/design-time-migration.md`、`references/design-data-interfaces-schema.md` |
+| 日時の意味・保存方式の設計、日時処理の実装・変更・レビューの前 | `references/implementation-time-data.md` |
 | Webhook受信を設計・変更・レビューする前 | `references/design-data-interfaces-api.md` |
 | 常駐サービスの設計・変更・レビュー、または子プロセス・委譲先・非同期ジョブなど配下を持つ機能の停止・再開・切替を要件化・設計・変更・レビューする前（操作対象外: 設計対象の性質） | `references/design-runtime-services.md` |
 | 負荷制御と外部呼び出しを設計・変更・レビューする前 | `references/design-runtime-services.md` |

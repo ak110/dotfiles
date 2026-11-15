@@ -14,4 +14,6 @@
 | 実装方針の選択に関する判断・作業の前 | `design-time-implementation.md` |
 | 状態と業務ルールの条件に関する判断・作業の前 | `design-time-state.md` |
 | エンドユーザーデータの移行に関する判断・作業の前 | `design-time-migration.md` |
+| データの削除を設計・変更・レビューする前 | `design-time-migration.md`、`design-data-interfaces-schema.md` |
+| 日時の意味・保存方式を設計・変更・レビューする前 | `implementation-time-data.md` |
 | エンドユーザー接点と公開インターフェースに関する判断・作業の前 | `design-time-interfaces.md` |
