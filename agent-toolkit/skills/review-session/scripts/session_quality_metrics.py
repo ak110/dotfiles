@@ -63,17 +63,30 @@ def _shown_run(value: str, depth: int = 0) -> dict[str, Any] | None:
     return None
 
 
-def _review_result(body: str) -> str:
-    pointer = re.search(r"(?m)^正式原本: (.+)$", body)
-    if pointer is None:
-        return body
-    path = Path(pointer[1].strip())
-    if not path.is_absolute() or path.suffix != ".md":
+def _review_bodies(body: str) -> list[tuple[str | None, str]]:
+    """公開waitの終了単位を保ち、各sessionの表へ対応付ける。"""
+    parts = re.split(r"(?m)^本文開始: session_id=(\S+)\r?\n", body)
+    return [
+        (None, parts[0]),
+        *[(parts[index], parts[index + 1].split("\n本文終了:", 1)[0]) for index in range(1, len(parts), 2)],
+    ]
+
+
+def _review_result(body: str) -> tuple[str, list[str]]:
+    missing: list[str] = []
+
+    def read_original(match: re.Match[str]) -> str:
+        value = match[1].strip()
+        path = Path(value)
+        if path.is_absolute() and path.suffix == ".md":
+            try:
+                return path.read_text(encoding="utf-8")
+            except OSError, UnicodeError:
+                pass
+        missing.append(value)
         return ""
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError, UnicodeError:
-        return ""
+
+    return re.sub(r"(?m)^正式原本: (.+)$", read_original, body), missing
 
 
 def _condition_outcome(tail: str, findings: int) -> str:
@@ -210,45 +223,67 @@ def collect_quality_events(collected: list[_CollectedRecord], workflow: str) -> 
                 result_tables = (
                     sorted(mapped_tables) if len(mapped_tables) == 1 else active_tables if not review_sessions else []
                 )
-                body = _review_result(body)
-                pattern = (
-                    r"状態: completed\nレビューHEAD: ([0-9a-f]{40})\n未解決の指摘数: ([0-9]+)\n([\s\S]*?前回確認版HEAD: [^\n]+)"
-                )
-                for match in re.finditer(pattern, body):
-                    initial = all(
-                        label in match[3]
-                        for label in ("読者別探索:", "レビュー開始時点:", "前回確認版の開始時点: なし", "前回確認版HEAD: なし")
-                    )
-                    tail = body[match.end() :].split("本文終了:", 1)[0].split("\n状態: completed", 1)[0]
-                    outcome = _condition_outcome(tail, int(match[2]))
-                    previous = re.search(r"(?m)^前回確認版HEAD: ([0-9a-f]{40})$", match[3])
+                fallback_tables = result_tables
+                for session, segment in _review_bodies(body):
+                    result_tables = review_sessions.get(session, fallback_tables) if session is not None else fallback_tables
+                    review_body, missing = _review_result(segment)
                     context = f"table:{result_tables[0]}" if len(result_tables) == 1 else item.record_id
-                    work = (
-                        reviewed_heads.get((context, previous[1]), f"{context}:review:unknown:{previous[1]}")
-                        if previous is not None
-                        else context
-                        if result_tables
-                        else f"{item.record_id}:review:{match[1]}"
+                    for original in missing:
+                        events.append(
+                            {
+                                **common,
+                                "work": context if result_tables else f"{context}:review:original:{session or original}",
+                                "review_tables": result_tables,
+                                "stage": "review",
+                                "version": None,
+                                "outcome": "unknown",
+                                "identity": f"unreadable-original:{session or original}",
+                            }
+                        )
+                    pattern = (
+                        r"状態: completed\nレビューHEAD: ([0-9a-f]{40})\n未解決の指摘数: ([0-9]+)\n"
+                        r"([\s\S]*?前回確認版HEAD: [^\n]+)"
                     )
-                    reviewed_heads[context, match[1]] = work
-                    events.append(
-                        {
-                            **common,
-                            "work": work,
-                            "review_tables": result_tables if len(result_tables) == 1 else [],
-                            "stage": "review",
-                            "version": match[1],
-                            "initial": initial,
-                            "outcome": outcome,
-                            "findings": int(match[2]),
-                            "identity": match[0]
-                            + "\n"
-                            + "\n".join(
-                                re.findall(r"(?m)^.*(?:完成条件\d+|原文要求\d+「.+」): (?:達成|未達|根拠不足).*$", tail)
-                            ),
-                            "scope": re.findall(r"(?m)^((?:\S+ )?(?:完成条件\d+|原文要求\d+「.+」)): ", tail),
-                        }
-                    )
+                    for match in re.finditer(pattern, review_body):
+                        initial = all(
+                            label in match[3]
+                            for label in (
+                                "読者別探索:",
+                                "レビュー開始時点:",
+                                "前回確認版の開始時点: なし",
+                                "前回確認版HEAD: なし",
+                            )
+                        )
+                        tail = review_body[match.end() :].split("本文終了:", 1)[0].split("\n状態: completed", 1)[0]
+                        outcome = _condition_outcome(tail, int(match[2]))
+                        previous = re.search(r"(?m)^前回確認版HEAD: ([0-9a-f]{40})$", match[3])
+                        context = f"table:{result_tables[0]}" if len(result_tables) == 1 else item.record_id
+                        work = (
+                            reviewed_heads.get((context, previous[1]), f"{context}:review:unknown:{previous[1]}")
+                            if previous is not None
+                            else context
+                            if result_tables
+                            else f"{item.record_id}:review:{match[1]}"
+                        )
+                        reviewed_heads[context, match[1]] = work
+                        events.append(
+                            {
+                                **common,
+                                "work": work,
+                                "review_tables": result_tables if len(result_tables) == 1 else [],
+                                "stage": "review",
+                                "version": match[1],
+                                "initial": initial,
+                                "outcome": outcome,
+                                "findings": int(match[2]),
+                                "identity": match[0]
+                                + "\n"
+                                + "\n".join(
+                                    re.findall(r"(?m)^.*(?:完成条件\d+|原文要求\d+「.+」): (?:達成|未達|根拠不足).*$", tail)
+                                ),
+                                "scope": re.findall(r"(?m)^((?:\S+ )?(?:完成条件\d+|原文要求\d+「.+」)): ", tail),
+                            }
+                        )
             if "--verify-run" in command and "pyfltr_precommit" in command:
                 match = re.search(
                     r"pyfltr-precommit: run (\S+)は現在のHEADの内容(でpytestに成功している|の成功と確かめられない)", body

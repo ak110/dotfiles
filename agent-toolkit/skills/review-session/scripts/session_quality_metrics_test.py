@@ -339,3 +339,36 @@ def test_added_requirement_is_a_new_verdict_without_erasing_initial_failure() ->
     assert row["units"][0]["attempts"] == 2
     assert row["units"][0]["scope_change_count"] == 1
     assert row["units"][0]["correction_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "forms", [("original", "original"), ("inline", "original"), ("missing", "original"), ("original", "missing")]
+)
+@pytest.mark.parametrize("table_mapping", [False, True])
+def test_wait_keeps_each_original_or_missing_review(tmp_path: Path, forms: tuple[str, str], table_mapping: bool) -> None:
+    """同じ待機の正式原本・本文・取得不能を各作業へ保持し、成功だけの分母へ縮めない。"""
+    bodies = []
+    outputs = []
+    for index, form in enumerate(forms):
+        head = ("a" if table_mapping else "ab"[index]) * 40
+        session = f"{index + 1:08d}-1111-1111-1111-111111111111"
+        if table_mapping:
+            outputs.append(
+                (f"agents_server start extra_params=/plans/{index}.exec-review.tsv", json.dumps({"session_id": session}))
+            )
+        verdict = (
+            f"状態: completed\nレビューHEAD: {head}\n未解決の指摘数: {index}\n読者別探索: {{}}\n"
+            f"レビュー開始時点: {'d' * 40}\n前回確認版の開始時点: なし\n前回確認版HEAD: なし\n"
+            "work.md 完成条件1: 達成 — 根拠: test PASSED\n"
+        )
+        path = tmp_path / f"review-{index}.md"
+        if form == "original":
+            path.write_text(verdict, encoding="utf-8")
+        content = verdict if form == "inline" else f"状態: completed\n正式原本: {path}\n"
+        bodies.append(f"本文開始: session_id={session}\n{content}本文終了: session_id={session}\n")
+    outputs.append(("atk agents wait", "".join(bodies)))
+    row = next(row for row in _metrics(outputs) if row["stage"] == "review")
+    assert row["observed_count"] == sum(form != "missing" for form in forms)
+    assert row["first_success_count"] == int(forms[0] != "missing")
+    assert row["unknown_count"] == int("missing" in forms)
+    assert row["unresolved_count"] == 1 + int(forms[0] == "missing")

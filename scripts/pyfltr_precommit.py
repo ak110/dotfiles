@@ -111,7 +111,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         review = json.loads(args.consumer_review.read_text(encoding="utf-8")) if args.consumer_review is not None else None
     except (OSError, ValueError) as exc:
-        parser.error(f"意味判定を取得できない: {exc}")
+        parser.error(
+            f"意味判定を取得できない: {exc}\n"
+            "次の操作: --consumer-reviewのパス・読取権限・UTF-8 JSONを確認する。"
+            "修正できない場合は--consumer-tests <変更ファイル...>で候補を再取得し、"
+            "根拠付きdecisionsを記録したJSONのパスを--consumer-reviewへ渡して再実行する。"
+        )
     if args.check_argv is not None:
         return _check_planned_argv(args.check_argv, review)
     if args.consumer_tests:

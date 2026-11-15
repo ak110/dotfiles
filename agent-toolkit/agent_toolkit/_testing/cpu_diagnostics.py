@@ -24,7 +24,7 @@ _PROCESS_CLOCK = time.process_time
 _THREAD_CLOCK = time.thread_time
 # CPythonのimport計時点は型stubへ公開されないため、moduleの実namespaceから扱う。
 _IMPORT_NAMESPACE: Any = vars(_bootstrap)
-_ORIGINAL_IMPORT: Callable[[str, Any], Any] = _IMPORT_NAMESPACE["_find_and_load"]
+_ORIGINAL_IMPORT: Callable[..., Any] = _IMPORT_NAMESPACE["_find_and_load"]
 _LOCK = threading.RLock()
 _LOCAL = threading.local()
 _COUNTERS = {"gc_cpu": 0.0, "import_thread_cpu": 0.0, "import_attempts": 0.0}
@@ -73,12 +73,12 @@ def _gc_event(phase: str, _info: dict[str, int]) -> None:
         _STATE["gc_started"] = None
 
 
-def _import(name: str, import_: Any) -> Any:
+def _import(*args: Any, **kwargs: Any) -> Any:
     depth = getattr(_LOCAL, "depth", 0)
     _LOCAL.depth = depth + 1
     started = _THREAD_CLOCK()
     try:
-        return _ORIGINAL_IMPORT(name, import_)
+        return _ORIGINAL_IMPORT(*args, **kwargs)
     finally:
         _LOCAL.depth = depth
         if not depth:
