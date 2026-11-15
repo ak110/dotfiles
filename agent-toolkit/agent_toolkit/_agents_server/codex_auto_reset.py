@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime
 import errno
 import hashlib
 import json
+import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
@@ -19,6 +21,7 @@ from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
+from agent_toolkit._common.usage_settings import validate_permissions
 
 type Request = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 type Outcome = Literal["reset", "alreadyRedeemed", "nothingToReset", "noCredit"]
@@ -134,9 +137,19 @@ class _Attempt(_Boundary):
     idempotency_key: str
     status: Literal["pending", "success", "closed"]
     credit_id: str | None = None
+    permission_id: str | None = None
+    used_permissions: dict[str, int] = Field(default_factory=dict)
 
 
-async def check_auto_reset(request: Request, *, state_dir: Path, rpc_timeout: float = 30.0) -> AutoResetResult:
+async def check_auto_reset(
+    request: Request,
+    *,
+    state_dir: Path,
+    rpc_timeout: float = 30.0,
+    permissions: list[dict[str, Any]] | None = None,
+    active: bool = True,
+    pace: float | None = None,
+) -> AutoResetResult:
     """1回の確認を行う。消費確定後の再取得失敗は成功と利用枠未確認を分けて返す。
 
     state_dirは既存のstate_dirそのものを受け取り、配下の専用領域だけを使う。
@@ -145,6 +158,8 @@ async def check_auto_reset(request: Request, *, state_dir: Path, rpc_timeout: fl
     """
     if not 0 < rpc_timeout < float("inf"):
         raise ValueError("rpc_timeoutには有限の正数が必要")
+    if permissions is not None:
+        validate_permissions(json.dumps(permissions))
     root = state_dir / "agents-server" / "codex-auto-reset"
     async with _transaction_lock(root) as locked:
         if not locked:
@@ -170,30 +185,77 @@ async def check_auto_reset(request: Request, *, state_dir: Path, rpc_timeout: fl
         same_window = previous is not None and previous.resets_at == weekly.resetsAt
         if same_window and previous is not None and previous.status == "success":
             return AutoResetResult(reset_confirmed=True, rate_limits=raw, diagnostic="同じweekly窓のresetは成功確認済み")
+        permission_id = None
+        permission_end = None
+        used_permissions = dict(previous.used_permissions) if previous is not None else {}
+        if permissions is not None:
+            now = time.time()
+            permitted = []
+            for permission in permissions:
+                if permission.get("engine") != "codex" or permission.get("account") not in {
+                    email,
+                    identity,
+                    raw.get("accountId"),
+                }:
+                    continue
+                if permission.get("scope") != "codex":
+                    continue
+                beginning = datetime.datetime.fromisoformat(permission["from"])
+                ending = datetime.datetime.fromisoformat(permission["until"])
+                if beginning.tzinfo is None or ending.tzinfo is None or not beginning.timestamp() <= now < ending.timestamp():
+                    continue
+                identifier = permission["id"]
+                if previous is not None and previous.status == "pending" and previous.permission_id != identifier:
+                    continue
+                retry = previous is not None and previous.status == "pending" and previous.permission_id == identifier
+                if retry or used_permissions.get(identifier, 0) < permission["count"]:
+                    permitted.append((ending.timestamp(), identifier))
+            if not permitted:
+                return AutoResetResult(
+                    rate_limits=raw, diagnostic="現在のアカウント・対象・期間・回数に対応するreset許可がない"
+                )
+            permission_end, permission_id = min(permitted)
+            retrying = previous is not None and previous.status == "pending"
+            if not retrying:
+                seconds = weekly.resetsAt - now
+                remaining = 100 - weekly.usedPercent
+                needed = remaining <= 0 or (pace is not None and remaining < pace * max(0, seconds))
+                if not active or seconds <= 300 or not needed or weekly.usedPercent < 90:
+                    return AutoResetResult(rate_limits=raw, diagnostic="稼働・自然回復・消費ペースからresetはまだ不要")
         # 未確定の消費は、在庫や使用率が変わっていても同じキーで結果を回収する。
-        if same_window and previous is not None and previous.status == "pending":
+        if previous is not None and previous.status == "pending":
             attempt = previous
         else:
-            if weekly.usedPercent < 99:
+            if permissions is None and weekly.usedPercent < 99:
                 return AutoResetResult(rate_limits=raw)
             reset_credits = selected.reset_credits
             if reset_credits is None or _Credits.model_validate(reset_credits).availableCount == 0:
                 return AutoResetResult(rate_limits=raw, diagnostic="利用可能なreset creditがない")
             credit = _available_credit(reset_credits)
+            if permission_id is not None:
+                used_permissions[permission_id] = used_permissions.get(permission_id, 0) + 1
             attempt = _Attempt(
                 resets_at=weekly.resetsAt,
                 idempotency_key=str(uuid.uuid4()),
                 status="pending",
                 credit_id=credit.id if credit is not None else None,
+                permission_id=permission_id,
+                used_permissions=used_permissions,
             )
             await run_file_operation(_write_attempt, path, attempt)
         params = {"idempotencyKey": attempt.idempotency_key}
         if attempt.credit_id is not None:
             params["creditId"] = attempt.credit_id
+        if permission_end is not None and time.time() >= permission_end:
+            return AutoResetResult(rate_limits=raw, diagnostic="送信前にreset許可期間が終了したため消費を保留した")
         outcome = _Consume.model_validate(
             await _rpc(request, "account/rateLimitResetCredit/consume", params, rpc_timeout)
         ).outcome
         confirmed = outcome in ("reset", "alreadyRedeemed")
+        if not confirmed and attempt.permission_id is not None:
+            used = dict(attempt.used_permissions)
+            used[attempt.permission_id] = max(0, used.get(attempt.permission_id, 0) - 1)
+            attempt = attempt.model_copy(update={"used_permissions": used})
         await run_file_operation(
             _write_attempt, path, attempt.model_copy(update={"status": "success" if confirmed else "closed"})
         )

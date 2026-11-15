@@ -51,6 +51,7 @@ lazy from agent_toolkit._atk import review_table as _review_table  # noqa: E402
 lazy from agent_toolkit._atk import run_script as _run_script  # noqa: E402
 lazy from agent_toolkit._atk import run_skill as _run_skill  # noqa: E402
 lazy from agent_toolkit._atk import setup_project as _setup_project  # noqa: E402
+lazy from agent_toolkit._atk import usage_refresh as _usage_refresh
 lazy from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
 lazy from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
 lazy from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
@@ -319,7 +320,7 @@ _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
         command_dest="worktree_stash_subcommand",
         private_notes=_private_notes.default_private_notes(invocation.home),
     ),
-    "config": lambda invocation: _config_cmd.dispatch(invocation.args, invocation.home),
+    "config": lambda invocation: _config_cmd.dispatch(invocation.args, invocation.home, refresh=_usage_refresh.ensure_fresh),
     "plans": lambda invocation: _plans.dispatch_command(invocation.args, home=invocation.home),
     "review-table": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_table.dispatch),
     "review-audit": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _review_audit.dispatch),

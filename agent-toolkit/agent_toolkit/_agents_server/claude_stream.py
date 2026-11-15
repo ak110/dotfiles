@@ -62,6 +62,9 @@ async def _apply_api_retry(session: SessionState, data: dict[str, Any], started_
 async def _consume_rate_limit(message: Any, session: SessionState | None) -> claude_usage_limit.UsageLimitState | None:
     """利用枠の更新と、既に429を受けた会話の再試行状態を反映する。"""
     limit = claude_usage_limit.from_event(message)
+    from agent_toolkit._atk import usage_refresh
+
+    await run_file_operation(usage_refresh.record_claude_event, getattr(message, "rate_limit_info", None))
     if limit is not None and session is not None:
         session.usage_limit = limit
         if (

@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from agent_toolkit._agents_server import codex_auto_reset
 from agent_toolkit._agents_server.codex_auto_reset import check_auto_reset
 
 
@@ -68,6 +69,72 @@ class _RPC:
     @property
     def consumptions(self) -> list[dict[str, Any]]:
         return [params for method, params in self.calls if method == "account/rateLimitResetCredit/consume"]
+
+
+def _permission(**updates: Any) -> dict[str, Any]:
+    return {
+        "id": "permitted-period",
+        "engine": "codex",
+        "account": "example@example.invalid",
+        "scope": "codex",
+        "count": 1,
+        "from": "1970-01-01T00:00:00+00:00",
+        "until": "1970-01-01T01:00:00+00:00",
+        **updates,
+    }
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"engine": "claude"},
+        {"account": "other"},
+        {"scope": "other"},
+        {"count": 0},
+        {"from": "1970-01-01T00:10:00+00:00"},
+        {"until": "1970-01-01T00:00:30+00:00"},
+    ],
+)
+@pytest.mark.asyncio
+async def test_automatic_allocation_never_consumes_outside_permission(tmp_path, monkeypatch, updates):
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    rpc = _RPC(used=100)
+    result = await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission(**updates)])
+    assert not result.reset_confirmed
+    assert not rpc.consumptions
+
+
+@pytest.mark.asyncio
+async def test_permission_count_survives_window_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    rpc = _RPC(used=100)
+    assert (await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])).reset_confirmed
+    rpc.limits["rateLimits"]["secondary"]["resetsAt"] += 1
+    result = await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])
+    assert not result.reset_confirmed
+    assert len(rpc.consumptions) == 1
+
+
+@pytest.mark.asyncio
+async def test_permission_retry_reuses_reserved_count_and_key(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    rpc = _RPC(used=100)
+    rpc.outcomes = [OSError("response lost"), "alreadyRedeemed"]
+    with pytest.raises(OSError, match="response lost"):
+        await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])
+    rpc.limits["rateLimitResetCredits"]["availableCount"] = 0
+    assert (await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()])).reset_confirmed
+    assert rpc.consumptions[0] == rpc.consumptions[1]
+
+
+@pytest.mark.parametrize("active,reset", [(False, 1900000000), (True, 200)])
+@pytest.mark.asyncio
+async def test_idle_or_near_natural_recovery_does_not_spend(tmp_path, monkeypatch, active, reset):
+    monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
+    rpc = _RPC(used=100)
+    rpc.limits["rateLimits"]["secondary"]["resetsAt"] = reset
+    assert not (await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission()], active=active)).reset_confirmed
+    assert not rpc.consumptions
 
 
 @pytest.mark.parametrize(("used", "count", "expected"), [(98, 1, False), (99, 1, True), (100, 1, True), (100, 0, False)])

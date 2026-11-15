@@ -43,6 +43,31 @@ CONNECTION_GUIDE_NOTICE = (
 """`atk config`と`atk config set`のヘルプへ載せる案内行。"""
 
 HELP: dict[str, dict[str, str]] = {
+    "atk config usage": {
+        "summary": "利用枠・回復時刻と配分理由を確認する",
+        "description": "利用枠・回復時刻と配分理由を確認する。\n\n目的: 残量、観測時刻、配分理由、通常設定・一時指定・継続中の会話を表示する。\n利用場面: 次に使うengineや利用上限の回復を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
+        "epilog": "実行例:\n\n  atk config usage\n  atk config usage --refresh",
+    },
+    "atk config temporary": {
+        "summary": "通常設定に重ねる一時指定を操作する",
+        "description": "通常設定に重ねる一時指定を操作する。\n\n目的: 工程モデル・接続順・速度・待機方針を期限付きで上書きする。\n利用場面: 緊急時の追加課金接続などを一時的に指定するとき。\n対象と出力: ローカルの単一の上書き集合を操作する。通常設定は保存し直さない。\n前提: set、clear、showを指定する。\n復元・後始末: clearで解除する。期限後は最新の通常設定へ戻る。",
+        "epilog": "実行例:\n\n  atk config temporary show\n  atk config temporary clear",
+    },
+    "atk config temporary set": {
+        "summary": "1つの一時設定を変更する",
+        "description": "1つの一時設定を変更する。\n\n目的: KEYをVALUEで一時指定する。\n利用場面: 通常設定を保ったまま次の起動へ別の値を適用するとき。\n対象と出力: 上書き集合へ追加し、--untilを集合全体の期限にする。保存値と実効値をJSONで返す。稼働中のturnは切り替えない。\n前提: 値は通常設定と同じ書式。期限は時差付きISO 8601で指定する。\n復元・後始末: temporary clearで解除する。期限の省略時は明示解除まで維持する。",
+        "epilog": "実行例:\n\n  atk config temporary set codex_fast_mode true\n  atk config temporary set claude_worker_connections payg --until 2030-01-01T12:00:00+09:00",
+    },
+    "atk config temporary clear": {
+        "summary": "一時指定を全て解除する",
+        "description": "一時指定を全て解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 上書き集合を空にし、保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
+        "epilog": "実行例:\n\n  atk config temporary clear",
+    },
+    "atk config temporary show": {
+        "summary": "一時指定と適用期限を表示する",
+        "description": "一時指定と適用期限を表示する。\n\n目的: 保存値と期限・実効値を確認する。\n利用場面: 通常設定との違いや期限切れを確かめるとき。\n対象と出力: ローカルの一時指定をJSONで表示する。\n前提: なし。\n復元・後始末: 読取だけのため不要。",
+        "epilog": "実行例:\n\n  atk config temporary show",
+    },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
         "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2 --accept-rebased-head 0123456789abcdef0123456789abcdef01234567",

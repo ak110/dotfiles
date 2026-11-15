@@ -18,6 +18,7 @@ from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import orchestrator as _orchestrator
+from agent_toolkit._atk import usage_refresh
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -411,7 +412,12 @@ def _run_selected_process_session(
     claude_connection: _connection.Connection | None,
 ) -> bool:
     """選択済み接続の一実行が使う設定を、CLIの終了まで保持する。"""
-    with contextlib.ExitStack() as settings_owner:
+    with (
+        contextlib.ExitStack() as settings_owner,
+        usage_refresh.cli_activity(
+            orchestrator, model, effort, claude_connection.kind if claude_connection is not None else codex_provider
+        ),
+    ):
         session_argv, hook_debug_log = _build_session_argv(
             args,
             session_prompt,
