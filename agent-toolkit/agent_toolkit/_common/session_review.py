@@ -292,7 +292,9 @@ class BatchWriter:
         """finishは分析成功だけを記録し、範囲の確定は起動側へ残す。"""
         with locked():
             value = self._active()
-            if not value.get("prepared") or any(item.get("unconfirmed_scope") for item in value["prepared"]):
+            if not value.get("prepared") or any(
+                item.get("unconfirmed_scope") and item.get("partial_analysis") is not True for item in value["prepared"]
+            ):
                 raise ValueError("未準備または未確認範囲のあるbatchは完了できない")
             return self._save({**value, "analysis_succeeded": True})
 
@@ -328,10 +330,10 @@ class BatchWriter:
             if not value.get("analysis_succeeded"):
                 raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
             for prepared in value["prepared"]:
-                complete(prepared)
+                complete(prepared, allow_partial_analysis=True)
             saved = self._save({**value, "status": BatchStatus.COMPLETED})
             for prepared in saved["prepared"]:
-                cleanup_prepared(prepared)
+                cleanup_prepared(prepared, allow_partial_analysis=True)
             return saved
 
     def retry_interrupted(self, reason: str) -> dict[str, Any]:
@@ -552,7 +554,7 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
         rows = item.records
         prior = previous.get(item.record_id)
         if prior is not None:
-            old_rows = [row for row in rows if row.line <= prior["through_line"]]
+            old_rows = [row for row in rows if row.line <= prior.get("observed_through_line", prior["through_line"])]
             digest = hashlib.sha256("\n".join(row.text for row in old_rows).encode()).hexdigest()
             if digest != prior["digest"]:
                 raise ValueError(f"前回処理済み範囲を再現できない: {item.record_id}")
@@ -569,9 +571,10 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
     return {"version": 1, "records": records}
 
 
-def complete(prepared: Mapping[str, Any]) -> dict[str, Any]:
+def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = False) -> dict[str, Any]:
     """準備済みの範囲だけを成功確定し、並行する再開と追記を保持する。"""
-    if prepared.get("unconfirmed_scope"):
+    partial = allow_partial_analysis and prepared.get("partial_analysis") is True
+    if prepared.get("unconfirmed_scope") and not partial:
         raise ValueError("未確認範囲を含む準備は成功確定できない")
     scope = read(pathlib.Path(str(prepared["scope_path"])))
     if scope.get("version") != 1 or not isinstance(scope.get("records"), dict):
@@ -585,10 +588,15 @@ def complete(prepared: Mapping[str, Any]) -> dict[str, Any]:
         ):
             raise ValueError("準備済みscopeの行境界が不正")
         # prepareと同じJSONL回復・正規化を適用し、元行との一致を判定する。
-        loaded = session_family._load_records_checked(entry["path"])  # pylint: disable=protected-access
+        boundary = entry.get("observed_through_line", entry["through_line"]) if partial else entry["through_line"]
+        if not isinstance(boundary, int) or isinstance(boundary, bool) or boundary < entry["through_line"]:
+            raise ValueError("準備済みscopeの観測行境界が不正")
+        loaded = session_family._load_records_checked(  # pylint: disable=protected-access
+            entry["path"], allow_partial_records=partial
+        )
         if loaded.records is None:
             raise ValueError(f"準備した元記録を再確認できない: {entry['path']}")
-        prefix = [row for row in loaded.records if row.line <= entry["through_line"]]
+        prefix = [row for row in loaded.records if row.line <= boundary]
         if hashlib.sha256("\n".join(row.text for row in prefix).encode()).hexdigest() != entry["digest"]:
             raise ValueError(f"準備後に元記録の接頭辞が変化した: {entry['path']}")
     host, session_id = str(prepared["host"]), str(prepared["session_id"])
@@ -604,7 +612,12 @@ def complete(prepared: Mapping[str, Any]) -> dict[str, Any]:
         scope.update(host=host, session_id=session_id, review_batch=bool((target or old).get("review_batch")))
         # 新しいSessionStart/UserPromptSubmitがあれば、同じ会話でも後続世代を消さない。
         appended = any(
-            any(line.strip() for line in pathlib.Path(entry["path"]).read_bytes().splitlines()[entry["through_line"] :])
+            any(
+                line.strip()
+                for line in pathlib.Path(entry["path"])
+                .read_bytes()
+                .split(b"\n")[entry.get("observed_through_line", entry["through_line"]) :]
+            )
             for entry in scope["records"].values()
         )
         state.complete(scope, prepared.get("generation"), appended=appended)
@@ -622,10 +635,12 @@ def prepare_identity(host: str, session_id: str) -> dict[str, Any]:
         }
 
 
-def cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | None = None) -> bool:
+def cleanup_prepared(
+    prepared: Mapping[str, Any], *, completed_before: float | None = None, allow_partial_analysis: bool = False
+) -> bool:
     """回収の障害を成功確定から分離し、残りは次回sweepへ渡す。"""
     try:
-        return _cleanup_prepared(prepared, completed_before=completed_before)
+        return _cleanup_prepared(prepared, completed_before=completed_before, allow_partial_analysis=allow_partial_analysis)
     except (OSError, ValueError, KeyError, TypeError) as error:
         logging.getLogger(__name__).warning(
             "bundle回収を保留: %s: %s。対象の内容とアクセス権を確認し、破損した記録は原本から復元してください。"
@@ -636,11 +651,11 @@ def cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | N
         return False
 
 
-def _cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | None) -> bool:
+def _cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | None, allow_partial_analysis: bool) -> bool:
     """成功保存後、生成時と同一の全量抽出物だけを回収する。scopeと候補の証拠は残す。"""
-    if prepared.get("unconfirmed_scope"):
+    if prepared.get("unconfirmed_scope") and not (allow_partial_analysis and prepared.get("partial_analysis") is True):
         return False
-    scope = pathlib.Path(str(prepared["scope_path"]))
+    scope = pathlib.Path(str(prepared.get("bundle_scope_path", prepared["scope_path"])))
     bundle = scope.parent
     if bundle.name != "bundle" or bundle.is_symlink():
         return False
@@ -656,7 +671,7 @@ def _cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | 
             )
             return False
         if value.get("status") not in {"completed", "resolved"} and any(
-            pathlib.Path(str(item.get("scope_path", ""))).parent.resolve() == bundle.resolve()
+            pathlib.Path(str(item.get("bundle_scope_path", item.get("scope_path", "")))).parent.resolve() == bundle.resolve()
             for item in value.get("prepared", [])
         ):
             return False
@@ -752,7 +767,7 @@ def sweep(*, now: float) -> None:
                 referenced.update(target["key"] for target in value["targets"])
             elif value.get("status") == "completed":
                 for prepared in value.get("prepared", []):
-                    cleaned = cleanup_prepared(prepared, completed_before=path.stat().st_mtime)
+                    cleaned = cleanup_prepared(prepared, completed_before=path.stat().st_mtime, allow_partial_analysis=True)
                     cleanup_succeeded = cleaned and cleanup_succeeded
             if (
                 cleanup_succeeded

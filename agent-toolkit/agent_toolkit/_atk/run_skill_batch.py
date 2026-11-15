@@ -244,6 +244,8 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
     previous = session_review.previous_scope(target)
     if previous is not None:
         arguments.extend(["--after", str(previous)])
+    # batchは欠測を結果へ明示した部分分析を行う。単発prepareは明示指定時だけ部分読込を選ぶ。
+    arguments.append("--allow-partial-records")
     output = io.StringIO()
     diagnostics = io.StringIO()
     # prepareは成功JSONをstdout、不足項目などの失敗診断をstderrへ出す。分けて捕捉しないと失敗理由が空になる。
@@ -256,8 +258,22 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
         # 成功時の警告は捕捉前と同じく呼び出し元のstderrへ残す。
         print(diagnostics.getvalue(), end="", file=sys.stderr)
     prepared = json.loads(output.getvalue())
-    if prepared.get("unconfirmed_scope"):
-        raise ValueError(f"prepareに未確認範囲がある: {target['session_id']}")
+    prepared["partial_analysis"] = bool(prepared.get("unconfirmed_scope")) or any(
+        item.get("method") == "joined-fragment-lost" for item in prepared.get("recovered_record_lines", [])
+    )
+    if prepared["partial_analysis"]:
+        scope = session_review.read(pathlib.Path(prepared["scope_path"]))
+        scope.update(
+            partial_analysis=True,
+            unconfirmed_scope=prepared.get("unconfirmed_scope", []),
+            recovered_record_lines=prepared.get("recovered_record_lines", []),
+        )
+        for event in prepared.get("unconfirmed_scope", []):
+            if event.get("kind") == "record-gap" and event.get("record") in scope["records"]:
+                entry = scope["records"][event["record"]]
+                # 末尾欠測も観測済み範囲に含め、次回の新規追記と区別する。digestは読めた完全行だけを表す。
+                entry["observed_through_line"] = max(entry.get("observed_through_line", entry["through_line"]), event["line"])
+        session_review.write(pathlib.Path(prepared["scope_path"]), scope)
     # 選定後に再登録された世代を成功処理で消さない。
     prepared["generation"] = target["generation"]
     return prepared
@@ -543,9 +559,10 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                     # 選定後の活動再開は正常な延期であり、失敗抑止せず次の機会へ残す。
                     deferred.add(target["key"])
                     continue
-                # scopeは行位置とdigestだけなので、未確定manifestと同じ寿命で保つ。
+                # 処理範囲と欠測の診断は、抽出物を回収した後もmanifestと同じ寿命で保持する。
                 scope_path = runs / f"{run_id}-{target['key']}.scope"
                 session_review.write(scope_path, session_review.read(pathlib.Path(prepared["scope_path"])))
+                prepared["bundle_scope_path"] = prepared["scope_path"]
                 prepared["scope_path"] = str(scope_path)
                 manifest = writer.prepare(prepared)
             if failed:
