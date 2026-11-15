@@ -265,22 +265,26 @@ def test_same_call_full_read_is_removed_from_a_multi_document_candidate(tmp_path
 
 
 @pytest.mark.parametrize("old_selection", [False, True])
-def test_real_wi_dry_run_does_not_require_independent_submission(tmp_path, monkeypatch, _setup, old_selection):
-    """通常の原稿検証は独立受付資料を要求せず、直接取得は維持する。"""
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_real_wi_dry_run_does_not_require_independent_submission(tmp_path, monkeypatch, _setup, old_selection, dry_run):
+    """実宣言集合で保存操作と工程条件を区別し、1資料だけの非再現で解消としない。"""
     _selected, _unrelated, _row, _state = _setup
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
     root = pathlib.Path(read_delivery.__file__).resolve().parents[3]
     monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: root)
-    rows = read_delivery.read_triggers.parse_tables(root / "skills/wi-standards/SKILL.md", root)
+    sources = read_delivery.read_triggers.document_sources(root, str(tmp_path))
+    rows = [row for source in sources for row in read_delivery.read_triggers.parse_tables(source, root, project=str(tmp_path))]
     submission = root / "share/wi-submission.md"
-    row = next(item for item in rows if submission in item.documents)
+    row = next(item for item in rows if item.source.name == "finish-session-publishing.md" and submission in item.documents)
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     if old_selection:
         read_delivery._select_targets("test", [ReadTarget(submission)], "main", rows=[row])  # pylint: disable=protected-access
     draft = tmp_path / "draft.md"
     draft.write_text("# 通常の改善要求\n\n## 反映内容と反映先\n\n必要な本文を改訂する。\n", encoding="utf-8")
-    inputs = {"command": f"atk wi add --dry-run --body-file {draft} --source add-awi-by-user --target-repo {tmp_path}"}
-    assert read_delivery.matches("wi-standard-dry-run", "Bash", inputs, str(tmp_path))
+    option = "--dry-run " if dry_run else ""
+    inputs = {"command": f"atk wi add {option}--body-file {draft} --source add-awi-by-user --target-repo {tmp_path}"}
+    operation = "wi-standard-dry-run" if dry_run else "wi-standard-commit"
+    assert read_delivery.matches(operation, "Bash", inputs, str(tmp_path))
     result = _run_hook_in_process(
         "pretooluse",
         {
