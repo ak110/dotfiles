@@ -17,6 +17,8 @@ import pathlib
 import subprocess
 import sys
 
+import pytest
+
 _ROOT = pathlib.Path(__file__).resolve().parent
 
 
@@ -97,6 +99,9 @@ def _violations(root: pathlib.Path, tests: list[pathlib.Path], search_path: tupl
     ]
 
 
+@pytest.mark.cpu_limit(
+    9.5, reason="全追跡試験のASTと導入済み検索パスを照合し、実行組合せ依存のimportを検出する（Linux CI CPU4.422秒）"
+)
 def test_tracked_tests_resolve_imports_without_run_state() -> None:
     """追跡中のテストの裸の名前のimportが、実行の組合せによらず解決できる。"""
     violations = _violations(_ROOT, _tracked_tests(_ROOT), _installed_search_path())

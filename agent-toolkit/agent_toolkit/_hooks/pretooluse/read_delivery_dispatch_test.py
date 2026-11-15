@@ -42,6 +42,13 @@ def _payload(tmp_path, codex):
     return payload
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "原因分析を含む短文Writeを公開Pre2回へ渡し、正規Skill案内・本文非配送・未取得状態を同時に検証する（Linu"
+        "x限定再確認のCPU合計最大0.762秒）。"
+    ),
+)
 def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_path, capsys):
     payload = _payload(tmp_path, False)
     assert dispatch.main(json.dumps(payload)) == 0
@@ -57,6 +64,13 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
 
 
 @pretooluse_support.read_delivery_preparation_scope()
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "正規宣言から必要資料を選択し公開Pre/Postで全件取得して、元のWriteの案内が終了するまで検証する（Linux限"
+        "定再確認のCPU合計最大2.266秒）。"
+    ),
+)
 def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     payload = _payload(tmp_path, False)
     assert dispatch.main(json.dumps(payload)) == 0
@@ -105,6 +119,13 @@ def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
 
 
 @pretooluse_support.read_delivery_preparation_scope()
+@pytest.mark.cpu_limit(
+    4.5,
+    reason=(
+        "正規資料のまとめcatと外側配送を公開Pre/Postへ通し、元の原因分析patchの通過と案内終了を検証する（Linu"
+        "x限定再確認のCPU合計最大2.003秒）。"
+    ),
+)
 def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_path, capsys):
     payload = _payload(tmp_path, True)
     payload["transcript_path"] = str(tmp_path / "outer.jsonl")

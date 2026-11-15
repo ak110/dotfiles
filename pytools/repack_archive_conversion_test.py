@@ -26,6 +26,9 @@ from pytools._internal.repack_archive_test_helpers import (
 class TestImageConversionBackupRetention:
     """画像変換の警告・失敗で原本バックアップが保持されることの検証。"""
 
+    @pytest.mark.cpu_limit(
+        1.5, reason="実PNGのCRC異常をPillowで読みZIP更新と原本保持まで確かめる最小2エントリ（Linux CI CPU0.611秒）"
+    )
     def test_corrupt_text_png_warning_keeps_backup(
         self,
         tmp_path: pathlib.Path,
@@ -295,6 +298,9 @@ class TestZeroTargetAfterFilter:
 class TestProcessPdf:
     """PDF 直接入力をページ画像へ再パックする挙動の検証。"""
 
+    @pytest.mark.cpu_limit(
+        1.5, reason="実PDFの2ページで自然順と縮小有無の両境界を通し、実変換とZIP保存を確認する（Linux CI CPU0.526秒）"
+    )
     def test_pdf_input_repacks_pages(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """複数ページ PDF が連番 JPEG として自然順で再パックされ、バックアップが残る。"""
         pdf = tmp_path / "book.pdf"

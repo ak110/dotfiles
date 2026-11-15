@@ -876,3 +876,4 @@ codex_stable_plugin_roots = agents_server_fixtures._isolate_stable_plugin_roots
 provider_environment = agents_server_fixtures._configure_provider_environment
 _wait_environment = agents_server_fixtures._wait_environment
 _unchanged_documents_resolution = hook_support._unchanged_documents_resolution
+_without_read_delivery = hook_support._without_read_delivery

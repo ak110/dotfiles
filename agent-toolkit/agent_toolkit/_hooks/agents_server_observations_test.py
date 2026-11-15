@@ -19,7 +19,7 @@ from agent_toolkit._hooks import agents_server_observations, agents_server_sessi
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._testing import agents_server_support
 
-pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
+pytestmark = pytest.mark.usefixtures("_forbid_backend_process", "without_read_delivery")
 
 
 @pytest.mark.parametrize("operation", ["start", "send_message"])

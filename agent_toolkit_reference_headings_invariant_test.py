@@ -5,6 +5,7 @@ from __future__ import annotations
 import pathlib
 import re
 
+import pytest
 from agent_toolkit._common import read_triggers
 
 from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths
@@ -182,6 +183,9 @@ def _unresolved_heading_references(
     return unresolved
 
 
+@pytest.mark.cpu_limit(
+    3.75, reason="規範Markdown全量と各参照先の現物を照合する。局所fixtureでは参照撤去を検出できない（Linux CI CPU1.628秒）"
+)
 def test_normative_heading_references_resolve() -> None:
     """規範Markdownの見出し名参照が、参照先に残る見出しまたは本文の文字列へ解決する。"""
     root = pathlib.Path(__file__).resolve().parent
@@ -194,6 +198,10 @@ def test_normative_heading_references_resolve() -> None:
     assert not unresolved, _format_unresolved(unresolved)
 
 
+@pytest.mark.cpu_limit(
+    2.25,
+    reason="追跡Pythonと設計文書全量の節参照を照合する。元データの走査を省くと追随漏れを検出できない（Linux CI CPU0.902秒）",
+)
 def test_code_and_design_heading_references_resolve() -> None:
     """テスト以外のPythonと設計文書の見出し名参照が、参照先に残る見出しまたは本文の文字列へ解決する。"""
     root = pathlib.Path(__file__).resolve().parent

@@ -230,6 +230,13 @@ def _in_process(subcommand: str, payload: dict) -> str:
     return json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "模擬時刻の11イベントを公開User/Postへ順に渡し、3周期の通知と周期保持を確認する（Linux限定再確認のCPU"
+        "合計最大0.848秒）。"
+    ),
+)
 def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
     """実発話・機械注入・PostToolUseが30分未満の間隔で続いても、期日到達後の最初のイベントで周期どおり通知する。"""
     sid = _session_id()

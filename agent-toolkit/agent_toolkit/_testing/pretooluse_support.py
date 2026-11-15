@@ -22,9 +22,11 @@ from agent_toolkit import hook as _hook
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import persisted_output_reference, read_triggers, state_paths
 from agent_toolkit._common.session_state import state_path
+from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._testing import git_repository
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agent_id, notice, rules_context
+lazy from agent_toolkit._hooks.pretooluse import dispatch as pretooluse_dispatch
 lazy from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
 
 _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
@@ -524,5 +526,17 @@ def prepare_read_delivery(payload: object, env_overrides: dict[str, str] | None 
 
 def run_after_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """宣言読込の前提を満たして、試験対象のチェックへ公開hookから到達する。"""
-    prepare_read_delivery(payload, env_overrides)
-    return _run(payload, env_overrides)
+    with read_delivery_preparation_scope():
+        prepare_read_delivery(payload, env_overrides)
+        return _run(payload, env_overrides)
+
+
+def run_without_read_delivery(payload: object, env_overrides: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    """資料配送が対象外の判定試験で、配送だけを空の境界へ差し替える。
+
+    取得記録・宣言・配送自体の試験はrun_after_read_deliveryか公開hookを使う。
+    対象外の全宣言解析を準備として繰り返さず、他の判定と公開応答は製品を通す。
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(pretooluse_dispatch, "read_delivery", lambda *_args, **_kwargs: Decision())
+        return _run(payload, env_overrides)

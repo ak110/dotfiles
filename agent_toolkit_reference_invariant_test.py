@@ -272,6 +272,9 @@ def _captured_reference_versions(root: pathlib.Path, sources: list[pathlib.Path]
     return captured
 
 
+@pytest.mark.cpu_limit(
+    4.5, reason="配布規範の全参照を実ファイルへ解決し、欠落と曖昧さを検出する全量検査が必要（Linux CI CPU2.004秒）"
+)
 def test_agent_toolkit_references_resolve() -> None:
     """追跡中の`.json`・`.md`・`.py`にあるスキルとPython参照が全て実体へ解決する。"""
     root = pathlib.Path(__file__).resolve().parent

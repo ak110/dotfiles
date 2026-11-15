@@ -85,7 +85,9 @@ def test_planned_argv_rejects_same_non_neutral_input_as_verify(
     monkeypatch.chdir(repository)
     planned = ["run", option, "src/a.py"]
     assert pyfltr_precommit.main(["--check-argv", json.dumps(planned)]) == 1
-    assert option in capsys.readouterr().err
+    diagnostic = capsys.readouterr().err
+    assert option in diagnostic
+    assert "次の操作:" in diagnostic and "--check-argv" in diagnostic
     _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=planned)
     result = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN")
     assert result.run_id is None
@@ -122,6 +124,8 @@ def test_ambiguous_candidate_proof_is_shared_by_preflight_and_verify(
     assert pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN", review=review).run_id == "01RUN"
     (repository / "unrelated_test.py").write_text("# 別の内容でa.pyに言及\n", encoding="utf-8")
     assert pyfltr_precommit.main(["--check-argv", json.dumps(planned), "--consumer-review", str(proof)]) == 1
+    diagnostic = capsys.readouterr().err
+    assert "次の操作:" in diagnostic and "--consumer-tests" in diagnostic and "--consumer-review" in diagnostic
 
 
 @pytest.mark.parametrize("value", ["{}", "[1]", "null", "invalid"])

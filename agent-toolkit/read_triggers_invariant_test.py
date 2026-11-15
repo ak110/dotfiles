@@ -13,6 +13,10 @@ from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parent
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("全配布資料の読込表を解析し、観測可能な条件に配送操作がない宣言を検出する（Linux CI CPU合計最大0.585秒）。"),
+)
 def test_observable_read_conditions_have_delivery_operations():
     """受領・起動・確認・保存の条件が、配送操作か対象外の理由を持つ。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / "agent-basics/skills"]
@@ -40,6 +44,13 @@ def test_role_writing_skill_matches_operation_bootstrap(role):
     assert not started or set(started) == {expected}, (role, started, expected)
 
 
+@pytest.mark.cpu_limit(
+    8.5,
+    reason=(
+        "skills/share/project/basics全資料の宣言と参照を解析し、任意の資料の無効な配送経路を検出する（Linux"
+        " CI CPU合計最大4.031秒）。"
+    ),
+)
 def test_all_read_tables_have_valid_declarations_and_routes():
     """未分類、資料の不在、未登録操作、経路の無い参照を拒否する。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]
@@ -64,6 +75,10 @@ def test_all_read_tables_have_valid_declarations_and_routes():
     assert not errors, "\n".join(errors)
 
 
+@pytest.mark.cpu_limit(
+    3.25,
+    reason=("全資料の宣言を解析してから同時読込の関係を照合し、別資料間の重複を検出する（Linux CI CPU合計最大1.475秒）。"),
+)
 def test_documents_read_together_do_not_repeat_read_table_rows():
     """同じ読込表の1行で同時に全文を読む資料どうしが、同じ条件と資料の行を重ねないことを確かめる。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]
@@ -323,6 +338,10 @@ def _missing_bare_share_sections(source: pathlib.Path, plugin_root: pathlib.Path
     return errors
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("全配布資料の節参照を実見出しへ解決し、別資料の変更で生じる参照欠落を検出する（Linux CI CPU合計最大0.786秒）。"),
+)
 def test_section_references_point_to_documents_that_have_the_heading():
     """規範が資料名と節名で指す基準は、指された資料を全文読めば得られる。"""
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / ".claude/skills"]

@@ -344,6 +344,13 @@ def test_dispatch_keeps_worktree_inputs_independent(
 
 
 @pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "外部cwdと隔離homeから実登録済みplan-createを起動し、独立したimport解決と保存を確認する（Linux CI "
+        "CPU合計最大0.815秒）。"
+    ),
+)
 def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_path: pathlib.Path) -> None:
     repository = git_repository.init_repository(tmp_path / "repository", commit_message="base")
     source = tmp_path / "source.md"
@@ -456,6 +463,12 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
 
 
 @pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=(
+        "実配布launcherのplan-progress入口で撤去引数を拒否し、起動した資源の回収を確認する（Linux CI CPU合計最大1.242秒）。"
+    ),
+)
 def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib.Path) -> None:
     """公開された`atk run-script plan-progress`へ撤去した`--start-head`を渡すと引数エラーで終わる。
 

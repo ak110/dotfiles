@@ -366,6 +366,12 @@ async def test_owner_lost_executor_stops_before_same_id_resume(
 
 @pytest.mark.parametrize("collection_order", ["writer", "observer", "between-state-and-claim"])
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "親2個の同時復帰をEventで同期し公開MCP startとwaitでwriter1個と結果消費1回を確かめる（Linux CI CPU合計最大1.047秒）。"
+    ),
+)
 async def test_simultaneous_parent_resumes_start_one_writer_and_collect_once(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

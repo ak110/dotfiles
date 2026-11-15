@@ -4,6 +4,8 @@ import ast
 import pathlib
 import subprocess
 
+import pytest
+
 # キーは追跡ファイルと関数。停止・時間上限を許可する理由を箇所ごとに残す。
 _ALLOWED: dict[tuple[str, str], str] = {
     (
@@ -117,6 +119,9 @@ def _violations(path: pathlib.Path, source: str) -> list[str]:
     return failures
 
 
+@pytest.mark.cpu_limit(
+    8.0, reason="全追跡製品PythonのASTで子孫回収を迂回する停止処理を検出する全量走査が必要（Linux CI CPU3.606秒）"
+)
 def test_timeouts_and_kills_use_process_tree_helpers():
     """追跡済み製品Pythonの停止処理が共通関数または理由付き許可箇所へ収まる。"""
     root = pathlib.Path(__file__).resolve().parent

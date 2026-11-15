@@ -44,6 +44,13 @@ def test_main_work_contract_write_gets_no_writing_guidance(tmp_path, _contract):
     assert _WRITING_GUIDE in _guidance("Write", _write(tmp_path / "session" / "draft.md"), session_id="record-draft")
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "契約と原稿の2パスpatchとsubのWriteを公開Pre2回へ渡し、正規writing資料の案内を検証する（Linu"
+        "x限定再確認のCPU合計最大1.291秒）。"
+    ),
+)
 def test_mixed_and_subagent_writes_stay_guided(tmp_path, _contract):
     """作業記録と原稿を1回の編集でまとめて書く操作と、サブエージェントによるメインの作業契約への書込は、案内の対象に保つ。"""
     draft = tmp_path / "session" / "draft.md"

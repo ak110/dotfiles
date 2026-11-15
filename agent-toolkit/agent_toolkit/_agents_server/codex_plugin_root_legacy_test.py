@@ -37,6 +37,9 @@ from agent_toolkit._testing.plugin_environment_support import prepare_plugin_env
 pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 
+@pytest.mark.cpu_limit(
+    5.5, reason="旧配布形式の実MCP起動とOSのprocess/file保護・公開cleanupを確認する必要がある（Windows CI CPU2.438秒）"
+)
 @pytest.mark.windows
 @pytest.mark.timeout(180)
 @pytest.mark.asyncio

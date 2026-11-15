@@ -192,6 +192,7 @@ def test_pytest_cleanup_preserves_failure_and_reports_cause_path(
         pluginmanager=pytest.PytestPluginManager(),
         option=types.SimpleNamespace(basetemp=None, collectonly=False),
         getoption=lambda *_args, **_kwargs: None,
+        addinivalue_line=lambda *_args, **_kwargs: None,
         add_cleanup=callbacks.append,
     )
     monkeypatch.setattr(sys, "platform", "win32")

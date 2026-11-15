@@ -230,6 +230,9 @@ sys.exit(255)
 """
 
 
+@pytest.mark.cpu_limit(
+    3.5, reason="実gitが起動した無応答remoteの子孫回収を確認する。待機はCPUへ含めない（Windows CI CPU1.532秒）"
+)
 def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

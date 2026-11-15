@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/notices.py のテスト。
 
-subprocessで起動しexit code・stderr・stdoutを検証する。
+資料配送を対象外の境界へ差し替え、公開hookのexit code・stderr・stdoutを検証する。
 """
 
 import pathlib
@@ -16,7 +16,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _write_session_state,
 )
 from agent_toolkit._testing.pretooluse_support import (
-    run_after_read_delivery as _run,
+    run_without_read_delivery as _run,
 )
 
 

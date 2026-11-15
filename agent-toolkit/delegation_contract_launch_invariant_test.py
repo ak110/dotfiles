@@ -40,6 +40,13 @@ def test_parent_launch_section_without_role_is_reported(tmp_path: pathlib.Path) 
     assert not _launch_role_errors(tmp_path)
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "全起動契約の資料を走査し、条件付き読込と受信側の手順が起動前へ混入しないことを照合する（Linux CI CPU合計最大0.726"
+        "秒）。"
+    ),
+)
 def test_launch_contracts_do_not_route_recipient_procedure_before_launch() -> None:
     """起動対象を宣言する全文書が、その委譲先の手順書を時点を限らない条件で読ませない。"""
     share = pathlib.Path(__file__).resolve().parent / "share"

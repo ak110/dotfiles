@@ -8,9 +8,18 @@ import pytest
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import posttooluse, pretooluse
 
+pytestmark = pytest.mark.usefixtures("without_read_delivery", "unchanged_documents_resolution")
+
 
 @pytest.mark.parametrize("operation", ["send_message", "kill"])
 @pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "Skill/startの公開Postとtempdir変更前後のPreで、旧状態移行と起動済み子の追送/停止の所有を検証する。"
+        "Linux CPU合計最大0.505秒。"
+    ),
+)
 def test_restart_keeps_delegation_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], operation: str, legacy: bool
 ) -> None:

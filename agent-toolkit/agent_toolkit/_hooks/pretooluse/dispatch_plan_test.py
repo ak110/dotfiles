@@ -17,7 +17,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _user_facing_payload,
     _write_session_state,
 )
-from agent_toolkit._testing.pretooluse_support import run_after_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
 
 
 class TestAtkContractBeforeQuestion:

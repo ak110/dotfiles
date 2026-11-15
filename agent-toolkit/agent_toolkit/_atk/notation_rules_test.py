@@ -73,6 +73,12 @@ def _external_markdown(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.mark.parametrize("kind", ["repository-markdown", "repository-python", "external-markdown"])
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "公開MCPの実コマンドで内外のMarkdown/Pythonを実行し、文書化した入力と完了を確認する（Linux CI CPU合計最大0.709秒）。"
+    ),
+)
 def test_mcp_run_with_documented_arguments_is_completed(kind: str, tmp_path: pathlib.Path) -> None:
     """リポジトリ内のMarkdown・Python、許可指定付きの外部Markdownは完了と判定され、診断取得用の`run_id`を持つ。"""
     target = {
@@ -88,6 +94,13 @@ def test_mcp_run_with_documented_arguments_is_completed(kind: str, tmp_path: pat
 
 
 @pytest.mark.parametrize("include_missing", [False, True])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "公開pyfltr MCPでMarkdown/Pythonの2対象と未到達対象を実行し、完了の被覆と資源回収を確認する（Linux "
+        "CI CPU合計最大0.503秒）。"
+    ),
+)
 def test_mcp_batch_requires_every_target_to_be_reached(tmp_path: pathlib.Path, include_missing: bool) -> None:
     """MarkdownとPythonを同じ実行でチェックし、1件でも未到達ならバッチ全体を完了と扱わない。"""
     targets = [_external_markdown(tmp_path), _REPOSITORY_PYTHON]

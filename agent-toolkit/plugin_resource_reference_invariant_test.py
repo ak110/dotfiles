@@ -8,6 +8,8 @@
 import pathlib
 import re
 
+import pytest
+
 _PREFIX = "${CLAUDE_PLUGIN_ROOT}/"
 _REFERENCE_PATTERN = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./-]*[A-Za-z0-9_/]")
 
@@ -43,6 +45,10 @@ def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
     return "\n".join(f"{relative} <- {source}" for relative, source in entries)
 
 
+@pytest.mark.cpu_limit(
+    4.25,
+    reason=("配布資源全体のmd/json/pyを2回走査し、実際の全参照と欠落を照合する（Linux CI CPU合計最大1.973秒）。"),
+)
 def test_plugin_root_references_resolve() -> None:
     """配布物のplugin root参照が全て実体へ解決する。"""
     root = pathlib.Path(__file__).resolve().parent

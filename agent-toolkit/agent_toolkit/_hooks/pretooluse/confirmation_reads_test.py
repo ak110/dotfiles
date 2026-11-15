@@ -167,6 +167,13 @@ def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> di
         pytest.param([_bash(f"cat {_APPROVAL} {_CHOICE}")], [_APPROVAL, _CHOICE], id="bash-without-result"),
     ],
 )
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "未取得/部分/圧縮/失敗/結果欠落の公開Pre2回とPostで、取得状態と毎回の拒否を照合する（Linux限定再確認のC"
+        "PU合計最大1.370秒）。"
+    ),
+)
 def test_unread_reference_is_denied_until_read(tmp_path: pathlib.Path, entries: list[dict], unread: list[pathlib.Path]) -> None:
     """最後の会話圧縮より後に読んでいない資料の絶対パスと次の操作を示して、質問の表示前に毎回拒否する。
 
@@ -185,6 +192,13 @@ def test_unread_reference_is_denied_until_read(tmp_path: pathlib.Path, entries: 
 
 
 @pytest.mark.parametrize("tool", _CONFIRMATION_TOOLS)
+@pytest.mark.cpu_limit(
+    4.75,
+    reason=(
+        "各確認toolから正規2資料の未取得拒否と全文取得後通過まで公開Pre3回/Post4回で検証する（Linux限定再確認"
+        "のCPU合計最大2.207秒）。"
+    ),
+)
 def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path: pathlib.Path, tool: str) -> None:
     """3つの確認ツールを同じ判定で拒否し、2資料を全文読んだ後は通す。"""
     unread = {**_payload(tmp_path, []), "tool_name": tool}
@@ -211,6 +225,13 @@ def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path
         ),
     ],
 )
+@pytest.mark.cpu_limit(
+    5.25,
+    reason=(
+        "Read/cat/sedの実記録と公開Pre/Postで正規2資料の全文取得を検証し、Codexでは外側配送観測まで通す"
+        "（Linux限定再確認のCPU合計最大2.454秒）。"
+    ),
+)
 def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]) -> None:
     codex = any(entry.get("message", {}).get("content", [{}])[0].get("name") == "Bash" for entry in entries)
     result = _run(_payload(tmp_path, entries, **({"turn_id": "turn"} if codex else {})))
@@ -222,6 +243,13 @@ def test_read_references_do_not_warn(tmp_path: pathlib.Path, entries: list[dict]
 
 @pytest.mark.parametrize(
     "operation", ["printf '%s'", "ls", "test -e", "python3 -c \"print('approval-scope.md choice-construction.md')\""]
+)
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=(
+        "2資料への非読取言及を公開Pre/Postへ渡し、両正規資料が未取得である状態まで検証する（Linux限定再確認のCPU"
+        "合計最大0.991秒）。"
+    ),
 )
 def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.Path, operation: str) -> None:
     """成功しても対象本文を読まない操作では、未取得資料の拒否を保持する。"""
@@ -235,6 +263,12 @@ def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.
 
 
 @pytest.mark.parametrize("tool", ["Read", "Bash"])
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=(
+        "別場所の同名資料の公開取得とPreで、正規2資料の未取得を状態と通知から検証する（Linux限定再確認のCPU合計最大0.909秒）。"
+    ),
+)
 def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.Path, tool: str) -> None:
     """別の場所の同名資料への成功した読取を、hookが案内する資料の取得へ変換しない。"""
     other = tmp_path / "other/skills/user-confirmation-and-report/references/approval-scope.md"
@@ -247,6 +281,13 @@ def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.
     _assert_reference_state(_APPROVAL, False)
 
 
+@pytest.mark.cpu_limit(
+    4.75,
+    reason=(
+        "2資料の途中読取・圧縮・後続取得を公開Pre2回/Post5回で照合し、未完了を取得へ補わないことを検証する（Linux"
+        "限定再確認のCPU合計最大2.182秒）。"
+    ),
+)
 def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path: pathlib.Path) -> None:
     """圧縮をまたぐ未完了の読取結果を除き、圧縮後の成功だけで不足を解消する。"""
     entries = [_read(_APPROVAL), _COMPACT, _result("read-approval-scope.md"), *_successful_read(_CHOICE)]
@@ -261,6 +302,13 @@ def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path
     _assert_reference_state(_CHOICE, True)
 
 
+@pytest.mark.cpu_limit(
+    4.25,
+    reason=(
+        "sub/delegate/不明履歴の3入力を公開Pre各1回と準備Postへ渡し、誤拒否と誤案内を検証する（Linux限"
+        "定再確認のCPU合計最大1.932秒）。"
+    ),
+)
 def test_non_main_or_unreadable_context_is_neither_denied_nor_warned(tmp_path: pathlib.Path) -> None:
     """処置できない主体と判定できない入力では、拒否も警告もしない。"""
     missing = {**_payload(tmp_path, []), "transcript_path": str(tmp_path / "absent.jsonl")}
@@ -286,6 +334,13 @@ def test_unresolvable_declarations_warn_without_denying(tmp_path: pathlib.Path, 
     assert "読込表を取得できない" in _additional_context(result)
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "計画と文字化け質問の2入力を公開Pre2回/Post2回で通し、取得拒否と既存警告の併存を検証する（Linux限定再確認"
+        "のCPU合計最大1.351秒）。"
+    ),
+)
 def test_exit_plan_mode_and_mojibake_warning_are_unchanged(tmp_path: pathlib.Path) -> None:
     """`ExitPlanMode`は対象外とし、文字化けの警告は未読の拒否と並べて返す。"""
     plan = {**_payload(tmp_path, []), "tool_name": "ExitPlanMode", "tool_input": {"plan": "計画"}}

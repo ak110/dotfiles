@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/agent_checks.py のテスト。
 
-subprocessで起動しexit code・stderr・stdoutを検証する。
+対象外の資料配送を分離し、公開hookのexit code・stderr・stdoutを検証する。
 """
 
 import json
@@ -22,12 +22,13 @@ from agent_toolkit._testing.pretooluse_support import (
     _plan_file_state_env,
     _process_loop_log_env,
     _read_session_state,
-    _run,
     _run_posttooluse,
     _stage_model_env,
     _write_session_state,
-    run_after_read_delivery,
 )
+from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
+
+pytestmark = pytest.mark.usefixtures("unchanged_documents_resolution")
 
 
 @pytest.fixture(autouse=True)
@@ -41,8 +42,8 @@ def _existing_work_contract(tmp_path, monkeypatch):
 def _run_after_skill_acquisition(
     payload: dict, env_overrides: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """操作前の基準を共通配送で取得し、agent_checksが判定した再発行の結果を返す。"""
-    return run_after_read_delivery(payload, env_overrides)
+    """対象外の資料配送を代用し、agent_checksの公開応答を確認する。"""
+    return _run(payload, env_overrides)
 
 
 def _run_after_generic_reissue(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -641,6 +642,13 @@ class TestAgentTaskLaunchIndependence:
         assert "agent-toolkit:delegation" not in result.stderr
 
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
+    @pytest.mark.cpu_limit(
+        1.5,
+        reason=(
+            "main/sidechainの初回拒否と同一入力再発行を公開Pre4回で確認する。対象外の資料配送は分離済み（Linux"
+            "限定再確認のCPU合計最大0.554秒）。"
+        ),
+    )
     def test_main_launch_with_delegation_or_sidechain_passes(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         env = {"TMPDIR": str(tmp_path), "TEMP": str(tmp_path), "TMP": str(tmp_path)}
         allowed = _run_after_generic_reissue(

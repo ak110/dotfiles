@@ -212,6 +212,13 @@ def test_existing_work_contract_body_delivery_is_received(scenario, monkeypatch)
     )
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "資料1件の公開取得後に共有解析scopeを終了し、main取得/別agent未取得の永続状態を照合する（Linux限定再"
+        "確認のCPU合計最大0.579秒）。"
+    ),
+)
 def test_session_state_persists_after_preparation_scope(tmp_path):
     """準備scope終了後の公開hookが、取得証拠を実保存先へ書き込む。"""
     path = tmp_path / "rules.md"

@@ -1,6 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/pretooluse/task_document_launch.py のテスト。
 
-PreToolUseフックをsubprocessで起動し、配布物の`<役割名>.subagent.md`を指す委譲プロンプトの終了コードと通知を検証する。
+資料配送を対象外の境界へ差し替え、配布物の`<役割名>.subagent.md`を指す委譲プロンプトの終了コードと通知を検証する。
 """
 
 import json
@@ -14,9 +14,8 @@ from agent_toolkit._testing.pretooluse_support import (
     _SHARE_DIR,
     _additional_context,
     _plan_file_state_env,
-    _run,
-    _run_posttooluse,
 )
+from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
 
 _EXEC_DOCUMENT = _SHARE_DIR / "exec.subagent.md"
 
@@ -67,17 +66,7 @@ def _invoke(
         tool_input["mode"] = mode
     session_id = f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}-{mode}"
     env = _plan_file_state_env(tmp_path)
-    # 本文の取得後の文脈で、役割文書の入力判定だけを検証する。
-    recorded = _run_posttooluse(
-        {
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Skill",
-            "tool_input": {"skill": "agent-toolkit:delegation"},
-            "session_id": session_id,
-        },
-        env,
-    )
-    assert recorded.returncode == 0
+    # 資料取得は対象外の境界へ分離し、役割文書の入力判定だけを検証する。
     payload = {
         "tool_name": tool_name,
         "tool_input": tool_input,

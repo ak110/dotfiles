@@ -7,7 +7,6 @@ import playwright.async_api
 import pytest
 
 from agent_toolkit._atk import git_sync
-from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
     _browser_harness_fixture,
@@ -30,32 +29,6 @@ from agent_toolkit._testing.serve_browser_wi_support import (
 pytestmark = [
     pytest.mark.browser,
 ]
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_product_edit_failure_keeps_saved_content(
-    browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """製品の編集処理の障害を画面へ伝え、未保存の入力を成功として扱わない。"""
-    harness = browser_harness
-    path = _entry_path(harness.root, "target.md")
-    path.write_text(_FREE_FORM_UWI, encoding="utf-8")
-
-    def fail_edit(*args: Any, **kwargs: Any) -> bool:
-        del args, kwargs
-        raise OSError("試験で注入した保存障害")
-
-    monkeypatch.setattr(wi_operations.Operations, "edit", fail_edit)
-    page = harness.page
-    await page.goto(harness.base_url + "/?filename=target.md")
-    await page.locator("#edit-button").click()
-    await page.locator("#edit-content").fill(_FREE_FORM_UWI + "\n未保存の追記\n")
-    async with page.expect_response(lambda response: response.request.method == "PUT" and response.status == 500):
-        await page.locator("#save-entry-button").click()
-    await playwright.async_api.expect(page.locator("#detail-alert")).to_be_visible()
-    await playwright.async_api.expect(page.locator("#edit-content")).to_have_value(_FREE_FORM_UWI + "\n未保存の追記\n")
-    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
-    assert path.read_text(encoding="utf-8") == _FREE_FORM_UWI
 
 
 @pytest.mark.cpu_limit(

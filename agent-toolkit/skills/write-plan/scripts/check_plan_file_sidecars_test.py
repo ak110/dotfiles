@@ -131,6 +131,10 @@ def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.
         _plan_fixture.BUG_VARIANT_LEGACY_ROWS,
     ],
 )
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの旧計画とsidecarを3構成で検査し、新規作成時の旧bug行拒否を確認する（Linux CI CPU合計最大0.840秒）。"),
+)
 def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], variant: str) -> None:
     """新規作成では現行より前の行構成を持つ調査表をエラーにする。"""
     work_dir, base = repo

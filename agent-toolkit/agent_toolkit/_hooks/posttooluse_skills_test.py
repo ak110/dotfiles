@@ -106,6 +106,13 @@ class TestUwiCompletionNotice:
             "AGENT_TOOLKIT_OWNER_SESSION",
         ],
     )
+    @pytest.mark.cpu_limit(
+        2.5,
+        reason=(
+            "UWI3件の回答差分をPost3回と主体別1回で確認し、通知と永続状態の両方を検証する（Linux限定再確認のCPU合計"
+            "最大1.110秒）。"
+        ),
+    )
     def test_answer_transition_is_delivered_only_to_main(self, tmp_path, monkeypatch, capsys, excluded):
         for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
             monkeypatch.delenv(name, raising=False)

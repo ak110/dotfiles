@@ -7,7 +7,7 @@ runs:
     - name: Windows境界テスト
       shell: pwsh
       working-directory: ${{ env.DOTFILES_DIR }}
-      run: uv run --python 3.15 pytest -v -m windows
+      run: uv run --frozen --python 3.15 pytest -v -m windows --maxfail=0
     - name: Codex CLI 0.163.0の導入
       shell: pwsh
       run: '& "$env:DOTFILES_DIR\scripts\ci_install_codex.ps1"'

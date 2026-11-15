@@ -63,6 +63,13 @@ def test_compaction_delivers_the_contract_body(
 
 
 @pytest.mark.parametrize("initial_prompt", [None, "調査を進めて", '<atk-auto source="process-loop">/goal 作業</atk-auto>'])
+@pytest.mark.cpu_limit(
+    3.75,
+    reason=(
+        "不在から作成後、追加入力と圧縮までの公開Pre7回/User/Startで作成案内の解除を検証する（Linux限定再確認"
+        "のCPU合計最大1.697秒）。"
+    ),
+)
 def test_missing_contract_public_hook_flow(tmp_path, monkeypatch, capsys, initial_prompt):
     """初回、自動goal、追加入力、圧縮後の最初の操作だけで作成条件を届ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -108,6 +115,13 @@ def test_delegated_public_hook_has_no_missing_notice(tmp_path, monkeypatch, caps
 
 
 @pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.cpu_limit(
+    5.75,
+    reason=(
+        "契約2更新と圧縮の公開Pre10回/Post/Startで、取得後と更新後の案内と本文非配送を検証する（Linux限定再"
+        "確認のCPU合計最大2.695秒）。"
+    ),
+)
 def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, monkeypatch, codex):
     """起動時の読了後に更新した契約を1回案内し、実読取と圧縮をまたいで現行版へ戻る。"""
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")

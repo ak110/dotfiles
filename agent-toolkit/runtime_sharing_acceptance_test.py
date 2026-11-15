@@ -67,6 +67,13 @@ def _run(arguments: list[str], environment: dict[str, str], cwd: Path, *, input_
 
 @pytest.mark.usefixtures("share_package_caches")
 @pytest.mark.timeout(240)
+@pytest.mark.cpu_limit(
+    5.75,
+    reason=(
+        "旧/新2rootからCLI/hook/MCPを実起動し、共有依存とコード版分離・生存子保護・停止後回収を確認する（Linux CI"
+        " CPU合計最大2.724秒）。"
+    ),
+)
 def test_real_shared_environment_offline_public_entries_and_current_code(tmp_path, host_environ):
     """同じ依存を共有し、更新版と旧版のコードをそれぞれのrootから起動する。"""
     first = tmp_path / "old-plugin"

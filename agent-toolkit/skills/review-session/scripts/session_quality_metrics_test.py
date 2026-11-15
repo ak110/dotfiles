@@ -56,14 +56,26 @@ def _metrics(outputs: list[tuple[str, str]]) -> list[dict[str, Any]]:
 
 def test_final_run_failure_is_not_replaced_by_later_success() -> None:
     """正式show-runの失敗と次の成功を同じ作業の履歴として渡す。"""
-    failed = {
+    failed: dict[str, Any] = {
         "run_id": "first",
-        "meta": {"argv": ["run", "--no-fix", "source.py"], "cwd": "/repo", "version": "1"},
+        "meta": {
+            "argv": ["run", "--no-fix", "source.py"],
+            "cwd": "/repo",
+            "version": "1",
+            "commands": ["pytest"],
+            "exit_code": 1,
+        },
         "commands": [{"command": "pytest", "status": "failed"}],
     }
-    passed = {**failed, "run_id": "second", "commands": [{"command": "pytest", "status": "succeeded"}]}
+    passed = {
+        **failed,
+        "meta": {**failed["meta"], "exit_code": 0},
+        "run_id": "second",
+        "commands": [{"command": "pytest", "status": "succeeded"}],
+    }
     rows = _metrics(
         [
+            ("atk review-table show /plans/one.exec-review.tsv", ""),
             ("pyfltr show-run first", json.dumps(failed)),
             ("pyfltr show-run second", json.dumps({"output": json.dumps(passed)})),
             ("pyfltr show-run second", json.dumps(passed)),
@@ -81,6 +93,7 @@ def test_ci_polling_and_rerun_do_not_erase_first_failure() -> None:
     """同じCI URLの再表示を重複計上せず、後続成功は未解決だけを更新する。"""
     rows = _metrics(
         [
+            ("atk review-table show /plans/one.exec-review.tsv", ""),
             ("atk wait-ci", "CI: completed/failure https://example.invalid/runs/1"),
             ("atk wait-ci", "CI: completed/failure https://example.invalid/runs/1"),
             ("atk wait-ci", "CI: completed/success https://example.invalid/runs/1"),
@@ -202,12 +215,127 @@ def test_malformed_command_results_remain_unknown() -> None:
 @pytest.mark.parametrize("status,exit_code", [("succeeded", 0), ("skipped", 0), ("succeeded", 1)])
 def test_public_jsonl_run_preserves_completion_status(status: str, exit_code: int) -> None:
     """公開JSONLを包絡から読み、未実行や非0終了を初回成功としない。"""
-    meta = {"kind": "meta", "run_id": "jsonl", "argv": ["run", "--no-fix"], "cwd": "/repo", "exit_code": exit_code}
+    meta = {
+        "kind": "meta",
+        "run_id": "jsonl",
+        "argv": ["run", "--no-fix"],
+        "cwd": "/repo",
+        "exit_code": exit_code,
+        "commands": ["pytest"],
+    }
     command = {"kind": "command", "command": "pytest", "status": status}
     body = "\n".join(json.dumps(row) for row in (meta, command))
     row = next(
         row
-        for row in _metrics([("pyfltr show-run jsonl", json.dumps({"output": body}))])
+        for row in _metrics(
+            [
+                ("atk review-table show /plans/one.exec-review.tsv", ""),
+                ("pyfltr show-run jsonl", json.dumps({"output": body})),
+            ]
+        )
         if row["stage"] == "final-verification"
     )
     assert row["first_success_count"] == int(status == "succeeded" and exit_code == 0)
+    assert row["not_performed_count"] == int(status == "skipped")
+
+
+def test_filtered_run_output_cannot_prove_all_commands_succeeded() -> None:
+    """pytestだけを表示した結果から、未表示のlintの成否を補わない。"""
+    shown = {
+        "run_id": "filtered",
+        "meta": {"argv": ["run", "--no-fix"], "cwd": "/repo", "commands": ["pytest", "ruff-check"], "exit_code": 0},
+        "commands": [{"command": "pytest", "status": "succeeded"}],
+    }
+    row = next(
+        row
+        for row in _metrics(
+            [
+                ("atk review-table show /plans/one.exec-review.tsv", ""),
+                ("pyfltr show-run filtered --commands pytest", json.dumps(shown)),
+            ]
+        )
+        if row["stage"] == "final-verification"
+    )
+    assert row["unknown_count"] == 1
+    assert row["observed_count"] == 0
+
+
+def test_independent_initial_reviews_and_revision_chain_are_separate_units() -> None:
+    """同じ親が回収する独立初回を分け、前回HEADを持つ修正は元の初回へ関連付ける。"""
+
+    def verdict(head: str, findings: int, previous: str | None = None) -> str:
+        return (
+            f"状態: completed\nレビューHEAD: {head * 40}\n未解決の指摘数: {findings}\n"
+            f"読者別探索: {{}}\nレビュー開始時点: {'d' * 40}\n"
+            f"前回確認版の開始時点: {'d' * 40 if previous else 'なし'}\n"
+            f"前回確認版HEAD: {previous * 40 if previous else 'なし'}\n"
+            "work.md 完成条件1: 達成 — 根拠: test PASSED\n"
+        )
+
+    rows = _metrics(
+        [("atk agents wait", verdict("a", 1)), ("atk agents wait", verdict("b", 0, "a")), ("atk agents wait", verdict("c", 0))]
+    )
+    row = next(row for row in rows if row["stage"] == "review")
+    assert row["observed_count"] == 2
+    assert row["first_success_count"] == 1
+    assert row["first_success_ratio"] == 0.5
+    assert row["unresolved_count"] == 0
+    assert sorted(unit["attempts"] for unit in row["units"]) == [1, 2]
+    assert sorted(unit["correction_count"] for unit in row["units"]) == [0, 1]
+    assert all(unit["scope_change_count"] == 0 for unit in row["units"])
+
+
+def test_explicit_tables_keep_independent_work_and_findings_separate() -> None:
+    """親が表を切り替えた後の独立初回を、前の表や版へ合算しない。"""
+    header = (
+        "状態: completed\nレビューHEAD: "
+        + "a" * 40
+        + "\n未解決の指摘数: 0\n読者別探索: {}\nレビュー開始時点: "
+        + "b" * 40
+        + "\n前回確認版の開始時点: なし\n前回確認版HEAD: なし\n完成条件1: 達成 — 根拠: 試験\n"
+    )
+    rows = _metrics(
+        [
+            ("atk review-table show /plans/one.exec-review.tsv", ""),
+            ("atk agents wait", header),
+            ("atk review-table show /plans/two.exec-review.tsv", ""),
+            ("atk agents wait", header.replace("未解決の指摘数: 0", "未解決の指摘数: 1")),
+        ]
+    )
+    row = next(row for row in rows if row["stage"] == "review")
+    assert row["observed_count"] == 2 and row["first_success_count"] == 1
+    assert [unit["review_tables"] for unit in row["units"]] == [["one.exec-review.tsv"], ["two.exec-review.tsv"]]
+
+
+def test_unlinked_runs_do_not_guess_logical_work_from_parent_session() -> None:
+    """対応する計画・表が不明なrunを、親1件という推定の分母へ加えない。"""
+    shown = {
+        "run_id": "unlinked",
+        "meta": {"argv": ["run", "--no-fix"], "cwd": "/repo", "commands": ["pytest"], "exit_code": 0},
+        "commands": [{"command": "pytest", "status": "succeeded"}],
+    }
+    row = next(
+        row for row in _metrics([("pyfltr show-run unlinked", json.dumps(shown))]) if row["stage"] == "final-verification"
+    )
+    assert row["observed_count"] == 0 and row["unknown_count"] == 1
+
+
+def test_added_requirement_is_a_new_verdict_without_erasing_initial_failure() -> None:
+    """同じHEADでも契約追加後の正式再判定を数え、初回不足と修正版数を区別する。"""
+    first = (
+        f"状態: completed\nレビューHEAD: {'a' * 40}\n未解決の指摘数: 0\n読者別探索: {{}}\n"
+        f"レビュー開始時点: {'d' * 40}\n前回確認版の開始時点: なし\n前回確認版HEAD: なし\n"
+        "work.md 完成条件1: 未達 — 根拠: 初回不足\n"
+    )
+    revised = first.replace("前回確認版の開始時点: なし", f"前回確認版の開始時点: {'d' * 40}")
+    revised = revised.replace("前回確認版HEAD: なし", f"前回確認版HEAD: {'a' * 40}")
+    revised = revised.replace("未達 — 根拠: 初回不足", "達成 — 根拠: 修正確認") + "work.md 完成条件2: 達成 — 根拠: 範囲追加\n"
+    row = next(
+        row
+        for row in _metrics([("atk agents wait", first), ("atk agents wait", revised), ("atk agents wait", revised)])
+        if row["stage"] == "review"
+    )
+    assert row["observed_count"] == 1 and row["first_success_count"] == 0 and row["unresolved_count"] == 0
+    assert row["units"][0]["attempts"] == 2
+    assert row["units"][0]["scope_change_count"] == 1
+    assert row["units"][0]["correction_count"] == 0

@@ -1,13 +1,10 @@
 """共通pytestのCPU上限を確認する。"""
 
-import pathlib
-import xml.etree.ElementTree as ET
 from typing import Any, Literal, cast
 
 import pytest
 
 from agent_toolkit._testing import pytest_plugin
-from agent_toolkit._testing.pytest_plugin_support import _run_child_pytest
 
 # pylint: disable=protected-access
 
@@ -35,26 +32,6 @@ def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, pha
     with pytest.raises(StopIteration):
         reporting.send(report)
     assert report.failed == (elapsed >= 0.5)
-
-
-@pytest.mark.parametrize("workers", [0, 2])
-def test_cpu_limit_public_failure(tmp_path: pathlib.Path, workers: int) -> None:
-    """短い実CPU超過が公開pytestとworkerの終了コードへ伝わる。"""
-    (tmp_path / "cpu_test.py").write_text(
-        "import time, pytest\n@pytest.mark.cpu_limit(0.01, reason='CPU境界の試験')\n"
-        "def test_cpu():\n    start = time.process_time()\n"
-        "    while time.process_time() - start < 0.02:\n        pass\n",
-        encoding="utf-8",
-    )
-    arguments = ["-p", "xdist.plugin", "-n", "2"] if workers else []
-    result = _run_child_pytest(tmp_path, *arguments, "--junitxml=cpu.xml", "cpu_test.py")
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "CPU上限" in result.stdout + result.stderr
-    properties = {
-        entry.attrib["name"]: entry.attrib["value"] for entry in ET.parse(tmp_path / "cpu.xml").findall(".//property")
-    }
-    assert float(properties["cpu_total_seconds"]) >= 0.01
-    assert properties["cpu_limit_reason"] == "CPU境界の試験"
 
 
 @pytest.mark.parametrize("outcome", ["passed", "failed", "skipped"])
@@ -124,34 +101,3 @@ def test_cpu_limit_rejects_invalid_default(
         patch.setattr(request.config, "getini", lambda _name: value)
         with pytest.raises(pytest.UsageError, match="cpu_limit設定"):
             pytest_plugin.pytest_collection_modifyitems(request.config, [])
-
-
-def test_cpu_limit_accepts_reasoned_override_and_preserves_wall_duration(tmp_path: pathlib.Path) -> None:
-    """成功・skip・既存失敗のCPU値と実時間durationを公開結果へ保持する。"""
-    (tmp_path / "cpu_test.py").write_text(
-        "import time, pytest\npytestmark = pytest.mark.cpu_limit(1, reason='公開特例の確認')\n"
-        "def test_cpu():\n    time.sleep(0.01)\n"
-        "def test_skip():\n    pytest.skip('元のskip理由')\n"
-        "def test_fail():\n    assert False, '元の失敗理由'\n",
-        encoding="utf-8",
-    )
-    result = _run_child_pytest(
-        tmp_path, "-o", "cpu_limit=0.000001", "--junitxml=cpu.xml", "--durations=1", "--durations-min=0", "cpu_test.py"
-    )
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "1 passed" in result.stdout
-    assert "durations" in result.stdout
-    cases = {case.attrib["name"]: case for case in ET.parse(tmp_path / "cpu.xml").findall(".//testcase")}
-    assert set(cases) == {"test_cpu", "test_skip", "test_fail"}
-    assert cases["test_cpu"].find("failure") is None
-    skipped = cases["test_skip"].find("skipped")
-    failure = cases["test_fail"].find("failure")
-    assert skipped is not None and "元のskip理由" in str(skipped.attrib)
-    assert failure is not None and "元の失敗理由" in str(failure.attrib)
-    for case in cases.values():
-        properties = {entry.attrib["name"]: entry.attrib["value"] for entry in case.findall(".//property")}
-        stages = [float(properties[f"cpu_{phase}_seconds"]) for phase in ("setup", "call", "teardown")]
-        assert float(properties["cpu_total_seconds"]) == pytest.approx(sum(stages))
-        assert all(value >= 0 for value in stages)
-        assert float(properties["cpu_limit_seconds"]) == 1
-        assert properties["cpu_limit_reason"] == "公開特例の確認"

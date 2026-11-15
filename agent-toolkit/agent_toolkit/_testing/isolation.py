@@ -170,13 +170,23 @@ def build_isolated_path(path_value: str, link_root: pathlib.Path) -> str:
     """
     entries: list[str] = []
     for index, directory in enumerate(path_value.split(os.pathsep)):
-        if not directory or not any(shutil.which(name, path=directory) for name in AGENT_CLI_NAMES):
+        if not directory:
+            entries.append(directory)
+            continue
+        try:
+            items = list(pathlib.Path(directory).iterdir())
+        except OSError:
+            items = None
+        # Windowsのwhichは名前ごとにPATHEXTを走査する。実在する候補だけを照会し、
+        # CLIを含まないPATH項目への同じファイル属性照会の反復を省く。
+        names = {item.name.split(".", 1)[0].lower() for item in items} if items is not None else set(AGENT_CLI_NAMES)
+        if not any(shutil.which(name, path=directory) for name in AGENT_CLI_NAMES if name in names):
             entries.append(directory)
             continue
         replacement = link_root / str(index)
         replacement.mkdir(parents=True, exist_ok=True)
         try:
-            for item in pathlib.Path(directory).iterdir():
+            for item in items if items is not None else pathlib.Path(directory).iterdir():
                 if item.name.split(".", 1)[0].lower() in AGENT_CLI_NAMES:
                     continue
                 (replacement / item.name).symlink_to(item)

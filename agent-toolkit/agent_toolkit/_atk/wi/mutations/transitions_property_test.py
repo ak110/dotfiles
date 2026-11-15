@@ -56,6 +56,13 @@ def _state(notes: pathlib.Path) -> str | None:
 
 @settings(max_examples=35, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(actions=st.lists(st.sampled_from(_ACTIONS), min_size=1, max_size=20))
+@pytest.mark.cpu_limit(
+    3.25,
+    reason=(
+        "35生成例の1-20状態操作を実ファイルへ適用し、受理・拒否の前後本文と状態を参照モデルへ照合する（Linux CI CPU合計最"
+        "大1.387秒）。"
+    ),
+)
 def test_transition_sequences_match_reference_model(actions: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
     """受理と拒否の操作列で、配置・本文・一意性をモデルと一致させる。"""
     _disable_git(monkeypatch)

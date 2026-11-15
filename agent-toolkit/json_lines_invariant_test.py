@@ -130,6 +130,10 @@ def _violations(source: str, filename: str = "<sample>") -> list[int]:
     return sorted(violations)
 
 
+@pytest.mark.cpu_limit(
+    6.0,
+    reason=("追跡本体Python全量を読み、JSON Lines読取でLF以外を行区切りにする処理を検出する（Linux CI CPU合計最大2.834秒）。"),
+)
 def test_json_lines_readers_use_lf() -> None:
     """Git追跡の全本体Pythonを検査する。テストと_testingは対象外とする。"""
     result = command.run(["ls-files", "-z", "--", "*.py"], _ROOT, capture_output=True, text=True, check=True)

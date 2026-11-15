@@ -108,6 +108,10 @@ def _build_fixture(
 
 
 @pytest.mark.parametrize(("event_name", "subcommand"), sorted(_FIXTURES))
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("登録hook子を1回起動しイベントfixtureと公開Schemaを照合する最小起動（Linux限定再確認のCPU合計最大0.520秒）。"),
+)
 def test_registered_hook_output_matches_event_contract(
     event_name: str,
     subcommand: str,
@@ -423,6 +427,13 @@ def test_claude_pretooluse_retains_permission_decisions(decision: str) -> None:
 
 @pytest.mark.parametrize("host", ["claude-code", "codex"])
 @pytest.mark.parametrize("scenario", ["pass", "warning", "block"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実hook子を1回起動し各hostの公開応答Schemaを検証する。親の資料準備と子の回収を含む（Linux限定再確認の"
+        "CPU合計最大0.791秒）。"
+    ),
+)
 def test_pretooluse_public_entry_returns_host_output(
     tmp_path: pathlib.Path, host: str, scenario: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:

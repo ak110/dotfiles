@@ -89,6 +89,12 @@ def _run_plan_launcher(
 
 
 @pytest.mark.parametrize("case", ["complete", "missing", "extra"])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "99件のWI集合と欠落/余剰を実配布plan-checkへ渡し、CLI入口から全件の照合を検証する（Linux CI CPU合計最大1.293秒）。"
+    ),
+)
 def test_cli_checks_expected_wi_set(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -109,6 +115,12 @@ def test_cli_checks_expected_wi_set(
         assert f"余剰=['{extra}']" in result.stderr
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "同じ計画の2件から3件への追加を実plan-checkの3起動で確認し、先行対象の保持を検証する（Linux CI CPU合計最大1.037秒）。"
+    ),
+)
 def test_cli_expected_wi_tracks_explicit_addition(
     repo: tuple[pathlib.Path, str], host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -128,6 +140,13 @@ def test_cli_expected_wi_tracks_explicit_addition(
 
 
 @pytest.mark.parametrize("case", ["match", "missing", "extra", "resumed", "prior", "multiple"])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "match/missing/extra/resumed/prior/multipleの6入力を実CLIへ渡し、選定と追加WI集合の"
+        "保持を検証する（Linux CI CPU合計最大1.256秒）。"
+    ),
+)
 def test_cli_preserves_lane_selection_with_expected_wi_extension(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -163,6 +182,12 @@ def test_cli_preserves_lane_selection_with_expected_wi_extension(
 
 
 @pytest.mark.parametrize("case", ["invalid", "combined", "duplicate-expected", "duplicate-related"])
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "不正/複合/重複4入力を実配布plan-checkへ渡し、選定と先行計画を含む公開拒否を検証する（Linux CI CPU合計最大1.010秒）。"
+    ),
+)
 def test_cli_expected_wi_reports_invalid_or_duplicate_input(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
@@ -279,6 +304,10 @@ def test_cli_plan_set_accepts_agent_rule_path_in_any_plan(
 
 
 @pytest.mark.parametrize(("total_lines", "warned"), [(1200, False), (1201, True)])
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=("計画2件を1200/1201行境界で検査し、計画集合と個別の助言境界を同時に確認する（Linux CI CPU合計最大1.222秒）。"),
+)
 def test_cli_plan_set_keeps_line_warning_boundary_per_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, total_lines: int, warned: bool
 ) -> None:

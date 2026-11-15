@@ -456,6 +456,13 @@ def test_marker_words_in_document_body_do_not_block_read(tmp_path, monkeypatch, 
     assert final.returncode == 0 and str(path) not in final.stdout
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実スキル表3行の不正/有効宣言と資料1件を公開Pre2回/Postで読み、有効宣言と取得記録の保持を照合する（Linux"
+        "限定再確認のCPU合計最大0.812秒）。"
+    ),
+)
 def test_user_side_rows_with_retired_vocabulary_keep_other_declarations_and_receipts(tmp_path):
     """過去の版の作業ツリーにある廃止済みの配送操作や列数の誤りは、その行だけを除いて宣言と読取記録を続ける。
 

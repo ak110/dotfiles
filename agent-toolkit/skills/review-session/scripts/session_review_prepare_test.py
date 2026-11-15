@@ -23,6 +23,12 @@ from agent_toolkit._testing.session_review_prepare_support import _isolate_failu
 
 
 @pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "3engineの登録IDから4000反復本文の実記録を解決し、公開prepareのwindow文書を確認する（Linux CI CPU合計最大1.047秒）。"
+    ),
+)
 def test_agents_session_id_resolves_conversation(tmp_path, monkeypatch, capsys, engine):
     """登録済み委譲先の識別子だけで、上限付きの会話抜粋へ到達できる。"""
     session_id = "019a0000-1111-7222-8333-444444444444"

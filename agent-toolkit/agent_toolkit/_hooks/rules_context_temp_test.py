@@ -127,6 +127,13 @@ def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
         ),
     ],
 )
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=(
+        "main/subの取得、SessionStart、両主体の再操作の5公開hookで再取得の分離を検証する（Linux限定"
+        "再確認のCPU合計最大0.903秒）。"
+    ),
+)
 def test_session_start_resets_operation_skill_ready_for_main(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],

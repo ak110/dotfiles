@@ -289,6 +289,12 @@ def test_rejects_progress_log_rows_only_for_new_creation(repo: tuple[pathlib.Pat
     assert any("起草時に内容行を置かない" in error for error in create_errors), create_errors
 
 
+@pytest.mark.cpu_limit(
+    3.25,
+    reason=(
+        "1201行と旧2ファイル構成を実Git fixtureの計画検査へ渡し、拒否と助言を独立に確認する（Linux CI CPU合計最大1.486秒）。"
+    ),
+)
 def test_keeps_plan_size_advisory_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
     """旧形式を拒否する場合も行数の助言を警告に残す。"""
     work_dir, _base = repo

@@ -147,6 +147,13 @@ def _wait_receipt(identifier: str) -> dict[str, Any]:
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのshebangと独立セッションの実境界を確認する")
 @pytest.mark.parametrize("batched", [False, True], ids=["single", "batch"])
 @pytest.mark.usefixtures("share_package_caches")
+@pytest.mark.cpu_limit(
+    4.0,
+    reason=(
+        "配布コピーと独立した実子を使い、親/配布物撤去後の完了・再送ticket同一性と同期を確認する（Linux CI CPU合計最大1"
+        ".869秒）。"
+    ),
+)
 def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatch, capsys, host_environ, batched):
     """親は受付直後に終了し、子が正式WI・finish・同一実行報告を保存する。"""
     bin_dir = tmp_path / "bin"

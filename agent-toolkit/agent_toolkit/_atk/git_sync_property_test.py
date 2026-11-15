@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ast
+import itertools
 import pathlib
 import subprocess
 import tempfile
@@ -15,6 +16,9 @@ from hypothesis import strategies as st
 
 from agent_toolkit._atk import git_sync
 from agent_toolkit._testing import git_repository
+
+# 5個の真偽値は全32通りを列挙でき、生成・縮小を使わず同じ状態空間を確かめられる。
+_SYNC_STATE_CASES = tuple(itertools.product((False, True), repeat=5))
 
 
 def _direct_git_init_lines(source: str) -> list[int]:
@@ -34,6 +38,12 @@ def _direct_git_init_lines(source: str) -> list[int]:
     return lines
 
 
+@pytest.mark.cpu_limit(
+    12.25,
+    reason=(
+        "全追跡試験のASTを走査し、別ファイルに追加される直接Git初期化も検出する必要がある（Linux CI CPU合計最大5.914秒）。"
+    ),
+)
 def test_git_initialization_is_owned_by_shared_test_helper() -> None:
     """テスト内の直接初期化の混入を、呼び出す関数名によらず検出する。"""
     assert _direct_git_init_lines('subprocess.run(["git", "init", "repo"])') == [1]
@@ -66,6 +76,13 @@ def _init_synced_repositories(root: pathlib.Path) -> tuple[pathlib.Path, pathlib
 # 分岐判定と回復操作の網羅は、Gitを差し替える下記のプロパティテストが多数の例で担う。
 @settings(max_examples=5, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(choices=st.lists(st.integers(min_value=0, max_value=100), min_size=8, max_size=18))
+@pytest.mark.cpu_limit(
+    3.5,
+    reason=(
+        "実Gitの5生成例で固定8操作と生成8-18操作を通し、履歴と未commit本文を参照モデルへ照合する（Linux CI CPU合"
+        "計最大1.534秒）。"
+    ),
+)
 def test_generated_operations_preserve_history_and_uncommitted_content(tmp_path: pathlib.Path, choices: list[int]) -> None:
     """有効な操作列を独立した変更集合モデルと実Gitへ順に適用し、各遷移の内容と履歴を比較する。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
@@ -177,13 +194,9 @@ class _GitDouble:
         raise AssertionError(command)
 
 
-@settings(max_examples=80, deadline=None)
-@given(
-    local_ancestor=st.booleans(),
-    remote_ancestor=st.booleans(),
-    tree_matches=st.booleans(),
-    dirty=st.booleans(),
-    redundant=st.booleans(),
+@pytest.mark.parametrize(
+    "local_ancestor,remote_ancestor,tree_matches,dirty,redundant",
+    _SYNC_STATE_CASES,
 )
 def test_divergence_recovery_matches_reference_model(
     local_ancestor: bool,
@@ -349,13 +362,9 @@ def test_pull_event_sequence_matches_reference_model(
         assert expected in fake.mutations
 
 
-@settings(max_examples=40, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(
-    local_ancestor=st.booleans(),
-    remote_ancestor=st.booleans(),
-    tree_matches=st.booleans(),
-    dirty=st.booleans(),
-    redundant=st.booleans(),
+@pytest.mark.parametrize(
+    "local_ancestor,remote_ancestor,tree_matches,dirty,redundant",
+    _SYNC_STATE_CASES,
 )
 def test_rejected_push_sequence_matches_reference_model(
     local_ancestor: bool,

@@ -51,6 +51,13 @@ def _ref_labels(repo: pathlib.Path) -> set[str]:
         max_size=12,
     )
 )
+@pytest.mark.cpu_limit(
+    4.0,
+    reason=(
+        "20生成例の1-12操作を実Gitへ適用し、gcを含むref・保護ref・stash・未commit状態を照合する（Linux C"
+        "I CPU合計最大1.807秒）。"
+    ),
+)
 def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]], tmp_path: pathlib.Path) -> None:
     """共有stashと固有refの保持・削除を固定lock内の参照モデルと一致させる。"""
     repo = _repository(tmp_path)

@@ -6,6 +6,8 @@
 範囲の選択と取得済み本文の再利用は`agent-basics:writing-standards/references/read-method.md`に従う。
 
 受入シナリオ検証における工程の定義は、`agent-toolkit:/share/workflow-phases.md`の「用語」に従う。
+要求を受け入れるための観測と、毎回実行する自動試験の常設は別に判断する。
+各シナリオには既存試験・読解・実装時の手動観測から必要な結果を確認する方法を選び、試験の新設は`agent-basics:writing-standards/references/testing.md`の価値判断に従う。
 
 ## 名指し参照の読込方法
 

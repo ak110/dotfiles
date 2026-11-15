@@ -227,6 +227,13 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実App Serverプロセスでstop失敗後の再試行とregistry解放を確認し、所有子を回収する必要がある（Linux CI"
+        " CPU合計最大0.529秒）。"
+    ),
+)
 async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """子孫を回収できないstopは再試行の方法とともに失敗し、解放済みと記録せず、再発行で回収を完了する。"""
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):

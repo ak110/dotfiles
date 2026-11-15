@@ -407,9 +407,24 @@ def _check_planned_argv(value: str, review: object) -> int:
             reason = _coverage_problem(pathlib.Path.cwd(), planned, review)
     except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
         print(f"事前確認を確定できない: {exc}", file=sys.stderr)
+        print(
+            "次の操作: `uv run --frozen python scripts/pyfltr_precommit.py --help`で公開入力を確認し、"
+            "予定argvのJSONと対象パスを修正して再実行する。",
+            file=sys.stderr,
+        )
         return 2
     if reason:
         print(reason, file=sys.stderr)
+        if "判定" in reason or "曖昧候補" in reason:
+            action = (
+                "`uv run --frozen python scripts/pyfltr_precommit.py --consumer-tests <変更ファイル...>`で候補を再取得し、"
+                "現行HEADの全曖昧候補へ根拠付きdecisionsを記録して--consumer-reviewへ渡す。"
+            )
+        elif reason.startswith("argv不適合:"):
+            action = "表示した未確認の追加オプションを予定argvから外し、pytestを含むrun/ciの予定argvを--check-argvへ再度渡す。"
+        else:
+            action = "表示した必要試験と対象パスを予定argvへ加え、run/ciを使って--check-argvを再実行する。"
+        print(f"次の操作: {action}", file=sys.stderr)
         return 1
     print("予定argvと必須試験範囲は適合。実runの成功・版・cwd・HEAD/index・実行後不変は未確認。verify-runで確認する。")
     return 0

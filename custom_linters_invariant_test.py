@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pyfltr.command.targets
 import pyfltr.config.config
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -96,6 +97,9 @@ AGENT_DOC_TONE_REPRESENTATIVES = (
 )
 
 
+@pytest.mark.cpu_limit(
+    5.75, reason="実効pyfltr設定から全追跡ファイルの対象展開とsymlink解決を確認する境界が必要（Linux CI CPU2.642秒）"
+)
 def test_agent_doc_tone_covers_every_population_root() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     globs = pyproject["tool"]["pyfltr"]["custom-commands"]["agent-doc-tone"]["targets"]

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import gc
 import json
 import os
 import weakref
@@ -636,7 +635,6 @@ def test_cost_metrics_releases_family_before_next_root(
     def tracked(path: str | None, **_kwargs: Any) -> _RecordLoad:
         assert path is not None
         group = "other" if Path(path).name == "rollout-other.jsonl" else "parent"
-        gc.collect()
         assert all(reference() is None for key, refs in references.items() if key != group for reference in refs)
         loaded = original(path)
         assert loaded.records is not None
@@ -651,7 +649,6 @@ def test_cost_metrics_releases_family_before_next_root(
     events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")
     assert events[0]["root_session_count"]["all"] == 2
     assert set(references) == {"parent", "other"}
-    gc.collect()
     assert all(reference() is None for refs in references.values() for reference in refs)
 
 

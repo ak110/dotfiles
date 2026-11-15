@@ -103,6 +103,13 @@ def _read_step(path: pathlib.Path) -> str:
         (_PLAN, ("skills/write-plan/references/plan-file-standards.md",)),
     ],
 )
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "一時原稿とコードの2公開Preで、正規writing資料への案内と対象外入力の無案内を検証する（Linux限定再確認のC"
+        "PU合計最大0.580秒）。"
+    ),
+)
 def test_public_hook_guides_drafting_standards_for_temporary_drafts(content: str, documents: tuple[str, ...]) -> None:
     """一時領域の原稿を書く操作で、公開hookが起草規範の取得を案内し、使い捨てのコードでは案内しない。"""
     draft = managed_temp.temp_root_path() / "session-test" / "draft.md"

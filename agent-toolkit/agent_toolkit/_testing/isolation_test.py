@@ -435,6 +435,13 @@ def test_restore_host_environment_excludes_parent_venv_operation_environment(mon
 
 
 @pytest.mark.parametrize("route", ["fixture", "host_environ", "restore_host_environment"])
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "子pytestと実uvを最小projectで起動し、親venv指定を含む3経路でも外部venvのsentinelが保持される境界を検証する。"
+        "Linux CPU合計0.634秒。"
+    ),
+)
 def test_child_uv_uses_test_project_after_fixture_and_host_restoration(
     tmp_path: pathlib.Path, host_environ: typing.Callable[[], dict[str, str]], route: str
 ) -> None:

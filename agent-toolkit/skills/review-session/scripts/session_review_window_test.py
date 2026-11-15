@@ -168,6 +168,12 @@ def test_window_budget_and_long_locator(tmp_path: pathlib.Path, capsys: pytest.C
 
 
 @pytest.mark.parametrize("conversation_only", [False, True])
+@pytest.mark.cpu_limit(
+    12.75,
+    reason=(
+        "3000呼出し/1000途中発話と委譲を公開prepare/detailへ渡し、全期間と詳細の両方を検証する（Linux CI CPU合計最大6.157秒）。"
+    ),
+)
 def test_long_session_overview_covers_whole_period(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, conversation_only: bool
 ) -> None:
@@ -269,6 +275,12 @@ def test_overview_shows_return_only_for_observed_assistant_utterances(
     assert document.count("\n- 委譲先への依頼 ") == 3
 
 
+@pytest.mark.cpu_limit(
+    2.75,
+    reason=(
+        "300発話と1010委譲を公開prepareへ渡し、文書全体の上限と先頭末尾/省略表示を検証する（Linux CI CPU合計最大1.189秒）。"
+    ),
+)
 def test_many_utterances_and_delegates_fit_whole_document_budget(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -295,6 +307,13 @@ def test_many_utterances_and_delegates_fit_whole_document_budget(
     assert "（省略: " in document
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "1010子ファイルで旧1000件境界を超え、公開prepareと中間のdetailが全期間へ到達することを検証する（Linux C"
+        "I CPU合計最大0.720秒）。"
+    ),
+)
 def test_many_delegates_are_spread_over_whole_period(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """委譲先の記録が多い場合も全期間へ配分した概要を返し、省略した記録へ詳細から到達できる。"""
     transcript = tmp_path / "main.jsonl"

@@ -8,6 +8,8 @@ import pytest
 from agent_toolkit._hooks import bugfix_gate, stop
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
+pytestmark = pytest.mark.usefixtures("without_read_delivery")
+
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user"
 
 

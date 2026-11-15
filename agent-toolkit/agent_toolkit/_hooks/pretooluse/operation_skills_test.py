@@ -571,6 +571,13 @@ def test_verification_queries_do_not_require_check_execution(payload: dict) -> N
 
 
 @pytest.mark.parametrize("tool", _DELEGATION_TOOLS)
+@pytest.mark.cpu_limit(
+    4.0,
+    reason=(
+        "両hostの2sessionへ資料1件を取得させ、公開Pre3回/Post2回と外側配送で案内解除と取得状態を検証する（"
+        "Linux限定再確認のCPU合計最大1.848秒）。"
+    ),
+)
 def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: str) -> None:
     """資料不足を警告し、取得を観測するまで準備済みとして記録しない。"""
     env = _plan_file_state_env(tmp_path)

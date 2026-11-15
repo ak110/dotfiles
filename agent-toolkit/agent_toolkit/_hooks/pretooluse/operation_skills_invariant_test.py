@@ -116,6 +116,13 @@ def test_lightweight_launch_kinds_match_agents_server() -> None:
 
 @pytest.mark.parametrize("subject", list(_SUBJECTS))
 @pytest.mark.parametrize("entry", operation_skills.OPERATION_SKILLS, ids=lambda entry: entry.short_name)
+@pytest.mark.cpu_limit(
+    9.25,
+    reason=(
+        "全操作×主体で正規宣言から資料を選び、取得前後の公開Pre/Postと本文非配送・最終通過を検証する。各入力で同じ宣言解"
+        "析は共有済み（Linux限定再確認のCPU合計最大4.415秒）。"
+    ),
+)
 def test_operation_skill_contract_for_every_entry_and_subject(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, entry: operation_skills.OperationSkill, subject: str
 ) -> None:
@@ -236,6 +243,10 @@ async def test_codex_app_server_environment_carries_launch_kind(
         assert captured[0].get(_LAUNCH_KIND) == launch_kind
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="正規資料1件の取得拒否2回と復旧後の公開hookを通し、未取得状態と案内の復帰を確認する。Linux CPU合計0.601秒。",
+)
 def test_missing_skill_document_warns_without_record(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

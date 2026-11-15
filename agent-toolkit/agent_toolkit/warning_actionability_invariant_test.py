@@ -102,6 +102,13 @@ def _violations(source: str, modules: dict[str, dict[str, str]] | None = None) -
     return violations
 
 
+@pytest.mark.cpu_limit(
+    13.75,
+    reason=(
+        "本体とpytools全量を2回のAST解析で照合し、任意ファイルの警告から具体次操作への接続を検証する（Linux CI CPU合"
+        "計最大6.737秒）。"
+    ),
+)
 def test_warning_actionability_invariant() -> None:
     """本体とpytoolsの警告を、参照先定数の本文も含めて走査する。"""
     repository = pathlib.Path(__file__).resolve().parents[2]

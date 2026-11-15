@@ -233,6 +233,13 @@ def test_stop_permission_has_required_native_decision(
 
 
 @pytest.mark.parametrize("encoded", [True, False])
+@pytest.mark.cpu_limit(
+    3.5,
+    reason=(
+        "両prompt形式でnative子への規範案内・取得・配送終了を公開Invocation/Preの最小系列で検証する（L"
+        "inux限定再確認のCPU合計最大1.601秒）。"
+    ),
+)
 def test_native_subagent_receives_rules(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], encoded: bool) -> None:
     """invoke_subagentのPromptへ委譲先の規範を追加し、引数の符号化を保つ。"""
     prompt = json.dumps("調査せよ") if encoded else "調査せよ"

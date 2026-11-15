@@ -18,7 +18,7 @@ from agent_toolkit._testing.pretooluse_support import (
     _stderr_warn_offenders,
     _write_session_state,
 )
-from agent_toolkit._testing.pretooluse_support import run_after_read_delivery as _run
+from agent_toolkit._testing.pretooluse_support import run_without_read_delivery as _run
 
 
 @pytest.mark.parametrize("pending", [False, True])
@@ -117,6 +117,7 @@ def test_second_removable_warning_is_suppressed(tmp_path: pathlib.Path) -> None:
     assert second.stderr == ""
 
 
+@pytest.mark.usefixtures("without_read_delivery")
 def test_irremovable_warning_does_not_advance_removable_repeat_count(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,

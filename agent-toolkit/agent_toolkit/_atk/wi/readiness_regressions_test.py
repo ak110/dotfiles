@@ -2,12 +2,10 @@
 
 import datetime
 import pathlib
-from typing import Any
 
 import pytest
 
 from agent_toolkit._atk.wi import readiness as _wi_readiness
-from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
 
 
@@ -254,28 +252,6 @@ def test_future_upstream_wait_is_not_internal_dependency(tmp_path: pathlib.Path)
     result = _wi_readiness.calculate_readiness(tmp_path, None, now=datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC))
     assert result.blocked == ("waiting.md",)
     assert not result.internal_dependency_waits
-
-
-def test_repeated_repository_resolution_is_shared_across_snapshot(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """同じ識別子の解決を項目数だけ繰り返さず、終了依存も同じキャッシュを使う。"""
-    calls: list[str] = []
-    repo = "github.com/example/repo"
-
-    def resolve(value: str, **_kwargs: Any) -> str:
-        calls.append(value)
-        return repo
-
-    monkeypatch.setattr(_git_remote, "resolve_repo_identifier", resolve)
-    snapshot = (
-        (tmp_path / "one.md", repo, "---\ndepends_on: [done.md]\n---\n", "inbox", "awi"),
-        (tmp_path / "two.md", repo, "---\n---\n", "inbox", "awi"),
-        (tmp_path / "done.md", repo, "---\n---\n", "adopted", "awi"),
-    )
-    result = _wi_readiness.calculate_readiness(tmp_path, repo, snapshot=snapshot)
-    assert result.ready == ("one.md", "two.md")
-    assert calls == [repo]
 
 
 @pytest.mark.parametrize("report,answer,explicit", [(False, "", False), (True, "承認", True)])

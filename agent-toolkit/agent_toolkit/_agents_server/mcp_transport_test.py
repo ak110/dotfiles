@@ -120,6 +120,13 @@ async def test_stdio_tool_results(tmp_path: pathlib.Path, host_environ: Callable
 
 
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実MCP ClientSessionとmemory transportのinitialize/list往復で処理例外の公開応答を確"
+        "認する（Linux CI CPU合計最大0.519秒）。"
+    ),
+)
 async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """ツール処理で起きた例外も、公開transportでは理由と次の操作を持つエラーとして返る。"""
 
@@ -149,6 +156,12 @@ async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> No
             )
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実SDK型のinitialize4結果を公開mainで処理し、永続ログの成功・失敗・未完了を識別する（Linux CI CPU合計最大0.867秒）。"
+    ),
+)
 def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """stdio起動でinitializeの受信、応答完了および失敗を永続ログへ記録する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -405,6 +418,13 @@ class _LaunchedServer:
         return next(event["pid"] for event in self.events() if event["event"] == "started")
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実MCPのinitialize/tools-listとstdin終了を通し、両主体の終了記録と一時資源回収を検証する（Linux "
+        "CI CPU合計最大0.862秒）。"
+    ),
+)
 def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """親が標準入力を閉じた正常終了を、サーバーとランチャーの双方が時刻付きで記録し、tools/listと終了コード0を保つ。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
@@ -426,6 +446,10 @@ def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_envi
         assert not list(server.temporary.glob("agent-toolkit-agents-server-launch-*"))
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実launcherの依存確認をwarmupと確認の2起動で比較し、両起動の資源回収まで検証する（Linux CI CPU合計最大0.852秒）。"),
+)
 def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """起動単位を持たない正常終了は、診断ファイルの所在を受け取れなかった旨を標準エラーへ出力しない。"""
     # 依存準備を済ませた通常起動は、初回と再実行の両方で終了0と静かな終了を保つ。
@@ -439,6 +463,12 @@ def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, laun
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのシグナル転送と終了状態を検証する")
 @pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGINT], ids=["SIGTERM", "SIGINT"])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "実旧入口とlauncherへSIGTERM/SIGINTを送り、公開終了状態を同じ入力で比較する必要がある（Linux CI CPU合計最大1.353秒）。"
+    ),
+)
 def test_launcher_preserves_signal_exit_status(
     tmp_path: pathlib.Path,
     signum: signal.Signals,
@@ -477,6 +507,10 @@ def test_launcher_preserves_signal_exit_status(
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=("実launcher/MCPのserverをSIGKILLし、終了ログとreader回収を検証する（Linux CI CPU合計最大1.339秒）。"),
+)
 def test_launcher_records_server_kill(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """サーバーだけが記録できずに終わった場合も、ランチャーが終了状態と標準エラー末尾を記録する。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
@@ -493,6 +527,10 @@ def test_launcher_records_server_kill(tmp_path: pathlib.Path, launcher_environme
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのSIGKILLを使う")
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=("実launcherとMCPを起動しSIGKILL後の終了記録と子孫回収を確認する境界（Linux CI CPU合計最大0.926秒）。"),
+)
 def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
