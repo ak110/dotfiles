@@ -45,7 +45,9 @@ def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisiti
     root = pathlib.Path(__file__).resolve().parents[3]
     owner = root.parent / "agent-basics/skills/writing-standards/SKILL.md"
     references = tuple(owner.parent / "references" / name for name in ("testing.md", "testing-selection.md"))
-    rows = parse_tables(owner, root, strict=True)
+    # 正規の試験編集行を使い、今回の取得消費に関係する2基準へ配送対象を限定する。
+    rows = [row for row in parse_tables(owner, root, strict=True) if set(references).issubset(row.documents)]
+    assert rows
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
     target = tmp_path / filename

@@ -210,6 +210,9 @@ def test_project_skill_resolves_repository_relative_material(tmp_path: pathlib.P
     assert "想定外のエラーが起きた" not in result.stdout
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実プロジェクト宣言の解決と公開Pre2回で、不正行の除外・正常行の配送・警告の重複防止を確認。Linux CI実測0.91秒"
+)
 def test_project_skill_missing_material_row_is_skipped_with_single_warning(tmp_path: pathlib.Path) -> None:
     """ユーザー側の表で、改名で消えたスキルを指す行だけを除き、他の行を保ち、同じ会話で警告を繰り返さない。"""
     project = tmp_path / "project"

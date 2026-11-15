@@ -132,7 +132,13 @@ def test_exclusions_do_not_hide_budget_or_gross_overrun(gross, gc_cpu, import_cp
 
 @pytest.mark.parametrize(
     ("mode", "expected"),
-    [("initial", {"gc": 0.2, "import": 0.3}), ("explicit", {"gc": 0.0, "import": 0.0}), ("young", {"gc": 0.0, "import": 0.0})],
+    [
+        ("initial", {"gc": 0.2, "import": 0.3}),
+        ("explicit", {"gc": 0.0, "import": 0.0}),
+        ("young", {"gc": 0.0, "import": 0.0}),
+        ("explicit-import", {"gc": 0.0, "import": 0.3}),
+        ("young-import", {"gc": 0.0, "import": 0.3}),
+    ],
 )
 def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode, expected) -> None:
     """公開import/collectとGC通知へ制御区間を与え、重複控除とDUTのGC費用消失を検出する。"""
@@ -142,7 +148,7 @@ def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode
     original_import = cpu_accounting._state.original_import
 
     def collection(*_args, **_kwargs):
-        info = {"generation": 0 if mode == "young" else 2, "collected": 0, "uncollectable": 0}
+        info = {"generation": 0 if mode.startswith("young") else 2, "collected": 0, "uncollectable": 0}
         for callback in gc.callbacks:
             callback("start", info)
         clock[0] += 0.2
@@ -153,7 +159,10 @@ def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode
     def importing(module_name, *args, **kwargs):
         if module_name != name:
             return original_import(module_name, *args, **kwargs)
-        collection()
+        if mode == "explicit-import":
+            gc.collect()
+        else:
+            collection()
         clock[0] += 0.3
         module = types.ModuleType(name)
         sys.modules[name] = module
@@ -164,13 +173,13 @@ def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode
             patch.setattr(cpu_accounting, "_thread_cpu", lambda: clock[0])
             patch.setattr(cpu_accounting._state, "original_import", importing)
             patch.setattr(cpu_accounting._state, "original_collect", collection)
-            if mode == "initial":
+            if mode in {"initial", "explicit-import", "young-import"}:
                 importlib.import_module(name)
             elif mode == "explicit":
                 gc.collect()
             else:
                 collection()
         after = cpu_accounting.snapshot()
-        assert {key: after[key] - value for key, value in before.items()} == pytest.approx(expected)
+        assert {key: after[key] - before[key] for key in expected} == pytest.approx(expected)
     finally:
         sys.modules.pop(name, None)

@@ -79,13 +79,16 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
 def _measure_cpu(item: pytest.Item, phase: str) -> Generator[None, object, object]:
     started = time.process_time()
+    main_started = time.thread_time()
     excluded = cpu_accounting.snapshot()
     try:
         return (yield)
     finally:
         after = cpu_accounting.snapshot()
+        main_finished = time.thread_time()
         finished = time.process_time()
         item.stash.setdefault(_CPU_TIMES, {})[phase] = finished - started
+        item.stash[_CPU_TIMES][f"main_{phase}"] = main_finished - main_started
         item.stash.setdefault(_CPU_EXCLUSIONS, {})[phase] = {key: after[key] - value for key, value in excluded.items()}
 
 
@@ -159,9 +162,12 @@ def pytest_runtest_makereport(
             ]
         )
         if budget >= limit or total >= gross_limit:
+            main_cpu = sum(recorded.get(f"main_{phase}", 0.0) for phase in times)
+            other_gc = sum(row.get("other_gc", 0.0) for row in excluded.values())
             diagnostic = (
                 f"CPU上限: {item.nodeid}: {times}, total={total:.6f}s, excluded={deductions}, "
-                f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}。"
+                f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}, "
+                f"main_thread={main_cpu:.6f}s, other_thread_old_gc={other_gc:.6f}s（明示GCも含む観測値、判定非使用）。"
                 "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
             )
             report.sections.append(("CPU上限", diagnostic))

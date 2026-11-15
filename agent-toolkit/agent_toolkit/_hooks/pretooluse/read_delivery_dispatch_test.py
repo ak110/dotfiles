@@ -208,6 +208,9 @@ def test_pattern_process_termination_stays_blocked_before_document_delivery(tmp_
 @pytest.mark.parametrize("exists", [False, True])
 @pytest.mark.parametrize("temporary", [False, True])
 @pytest.mark.parametrize("filename", ["memo.md", "wait.sh"])
+@pytest.mark.cpu_limit(
+    2.0, reason="両ホストの公開Preから正規規範群を解決し、新規/既存・一時/製品・文書/シェルを区別する。Linux CI実測0.58秒"
+)
 def test_new_body_keeps_writing_standards_without_existing_edit_materials(
     tmp_path, monkeypatch, capsys, codex, exists, temporary, filename
 ):

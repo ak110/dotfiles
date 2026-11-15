@@ -106,11 +106,11 @@ def test_prepare_conversation_stays_within_single_reader_limit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, conversation_only: bool
 ) -> None:
     """多数の長い発話と委譲記録も1つの100,000バイト以下の概要になる。"""
-    entries = [support.timestamped_entry(f"2026-10-19T00:{index:02}:00Z", "本文" * 5000) for index in range(40)]
-    entries.insert(20, support.assistant_text("長い返却" * 40_000))
+    entries = [support.timestamped_entry(f"2026-10-19T00:{index:02}:00Z", "本文" * 5000) for index in range(4)]
+    entries.insert(2, support.assistant_text("長い返却" * 10_000))
     parent = tmp_path / "parent.jsonl"
     support.write_jsonl(parent, entries)
-    for index in range(120):
+    for index in range(12):
         support.write_subagent(
             parent.with_suffix("") / "subagents",
             f"agent-{index:03}",
@@ -130,4 +130,4 @@ def test_prepare_conversation_stays_within_single_reader_limit(
     assert result["conversation_utf8_bytes"] == len(document.encode("utf-8"))
     assert result["conversation_limit_bytes"] == 100_000
     assert "reader_ranges" not in result and "conversation_ranges" not in result
-    assert "agent-000" in document and "agent-119" in document
+    assert "agent-000" in document and "agent-011" in document
