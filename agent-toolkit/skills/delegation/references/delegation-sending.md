@@ -35,7 +35,7 @@ taskの不正な続行不能に対する1回の自動回復と、その後の受
    役割指定の初回入力はサーバーが役割と全入力値を冒頭へ配置し、手順・参照資料を後ろへ区切って届ける。
    具体的な構成と列挙書式は`sending-prompt.md`「委譲プロンプトの構成」に従う。
    プロンプトに含めてよい要素は、`base-contract-inputs.md`「入力の適格性と追送」で定める。
-   exploreおよびshellの起動については次節に従う。
+   exploreおよびshellの起動については`delegation-lightweight.md`「explore・shellの起動」に従う。
 
 ## 文の書き直しの委譲と検収
 

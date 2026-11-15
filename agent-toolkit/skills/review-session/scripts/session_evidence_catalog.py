@@ -332,6 +332,9 @@ def _catalog_scan(
     children: dict[str, list[str]] = {session_id: [] for session_id in loaded}
     referenced: set[str] = set()
     unresolved_references: dict[tuple[str, str], int] = {}
+    by_directory: dict[Path, list[_CollectedRecord]] = {}
+    for path, child in path_items.items():
+        by_directory.setdefault(path.parent, []).append(child)
     for session_id, item in list(loaded.items()):
         for child_id, source_line in metadata[session_id].child_references:
             if child_id not in loaded and (agy_child := _catalog_agy_child(child_id)) is not None:
@@ -344,9 +347,9 @@ def _catalog_scan(
             else:
                 unresolved_references.setdefault((session_id, child_id), source_line)
         if runtime == "claude":
-            subagent_dir = item.path.with_suffix("") / "subagents"
-            for path, child in path_items.items():
-                if path.parent == subagent_dir.resolve() and child.record_id != session_id:
+            subagent_dir = (item.path.with_suffix("") / "subagents").resolve()
+            for child in by_directory.get(subagent_dir, ()):
+                if child.record_id != session_id:
                     if child.record_id not in children[session_id]:
                         children[session_id].append(child.record_id)
                     referenced.add(child.record_id)

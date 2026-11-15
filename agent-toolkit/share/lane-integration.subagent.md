@@ -40,7 +40,7 @@ writes_worktree: true
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 「マージありの統合」でrebaseが競合で停止したとき、またはrebase後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
+| 「マージありの統合」でmergeが競合で停止したとき、またはmerge後の変更範囲の検証が失敗したとき | `agent-toolkit:process-wi`の[references/lane-integration-failure.md](../skills/process-wi/references/lane-integration-failure.md) |
 | `マージあり`の統合を開始する時（統合時の完成条件判定を行う時） | `exec-review-recording-integration.md` |
 | 「マージありの統合」の検証を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` |
 | `adopt`・`reject`のメモを書く直前 | `../skills/wi-standards/SKILL.md`、`../skills/wi-standards/references/states-and-dependencies-completion.md` |
@@ -57,7 +57,7 @@ writes_worktree: true
 ## 出力
 
 `変更したエージェント向け文書`には、統合先worktreeで`atk run-script agent-doc-changes -- <統合前HEAD> <統合後のHEAD>`を単独実行し、終了コード0で取得したJSON配列をそのまま使用する。
-統合前HEADは、このレーンの短い更新の直前の統合先HEAD（所有登録の`.integration.new_base`、rebaseしなかった場合は`.integration.verified_base`）とする。
+統合前HEADは、このレーンの短い更新の直前の統合先HEAD（所有登録の`.integration.new_base`、mergeしなかった場合は`.integration.verified_base`）とする。
 `マージなし`の場合は空配列とする。
 同一レーンの統合を再度実行する場合は、前回までに返却した値との重複のない和集合を返す（メインエージェントはこの値を用いてレーン全体の規範変更を再取得する）。
 返却するたびに、その値を引き継ぎ記録先へ記録する。

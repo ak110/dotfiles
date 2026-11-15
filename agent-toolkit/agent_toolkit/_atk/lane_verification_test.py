@@ -10,11 +10,11 @@ from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit._atk import lane
+from agent_toolkit._atk import lane, lane_integration_input
 from agent_toolkit._testing.lane_integration_support import (
     _integration_args,
     _integration_selection,
-    _rebased_integration,
+    _merged_integration,
     _timed_integration,
     _write_empty_finalization_manifest,
 )
@@ -64,14 +64,11 @@ def test_integrate_restart_review_after_failed_rebased_verification(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """検証失敗後、argvだけの是正をrebase前のレビューHEADで再開し検収を経る。"""
-    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
+    repo, record, manifest, value, original = _merged_integration(tmp_path, monkeypatch, capsys, failed=True)
     value["verification"] = [[sys.executable, "-c", "pass"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    args = _integration_args(record, repo, manifest, original["old_head"])
-    code, pending, stderr = _invoke(capsys, *args, "--restart-review", "--accept-rebased-head", original["new_head"])
-    assert code == 1 and pending["new_head"] == original["new_head"], stderr
-    assert pending["phase"] == "awaiting-validation"
-    code, final, stderr = _invoke(capsys, *args, "--accept-rebased-head", pending["new_head"])
+    args = _integration_args(record, repo, manifest, original["new_head"])
+    code, final, stderr = _invoke(capsys, *args, "--restart-review")
     assert code == 0 and final["phase"] == "finalized", stderr
 
 
@@ -82,13 +79,13 @@ def test_integrate_rejects_changed_input_with_restart_guidance(
     record_property: Callable[[str, object], None],
 ) -> None:
     """manifest是正だけの再開が、検収へ戻る操作を拒否文から選べる。"""
-    repo, record, manifest, value, original = _rebased_integration(tmp_path, monkeypatch, capsys)
+    repo, record, manifest, value, original = _merged_integration(tmp_path, monkeypatch, capsys, failed=True)
     value["verification"] = [[sys.executable, "-c", "assert True"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
-    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, original["old_head"]))
+    code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, original["new_head"]))
     record_property("restart_diagnostic", stderr)
     assert code == 2
-    assert all(word in stderr for word in ("--restart-review", "検証argv", "最終化argv", "handoff", "検収待ち"))
+    assert all(word in stderr for word in ("--restart-review", "検証argv", "最終化argv", "handoff"))
 
 
 @pytest.mark.parametrize("rebased", [False, True])
@@ -97,6 +94,15 @@ def test_integrate_verification_is_not_limited_by_procedure_timeout(
 ) -> None:
     """検証argvは自身の上限で終わり、固有手順向けのprocedure_timeoutで打ち切られずに統合が進む。"""
     repo, record, handoff, head, argv = _timed_integration(tmp_path, monkeypatch, capsys, rebased=rebased)
+    # 選定更新の実境界はlifecycle試験が扱う。この試験の短いprocedure上限を、その起動費用へ適用しない。
+    script = lane_integration_input.atk_script
+
+    def verification_only(*arguments: str) -> list[str]:
+        if arguments[:2] == ("run-script", "pick-wi-check"):
+            return [sys.executable, "-c", "pass"]
+        return script(*arguments)
+
+    monkeypatch.setattr(lane_integration_input, "atk_script", verification_only)
     manifest = tmp_path / "integration.json"
     manifest.write_text(
         json.dumps(
@@ -110,10 +116,7 @@ def test_integrate_verification_is_not_limited_by_procedure_timeout(
         encoding="utf-8",
     )
     code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
-    if rebased:
-        assert code == 1 and result["phase"] == "awaiting-validation", stderr
-    else:
-        assert code == 0 and result["phase"] == "finalized", stderr
+    assert code == 0 and result["phase"] == "finalized", stderr
     assert "verification-0" in result["completed"]
 
 

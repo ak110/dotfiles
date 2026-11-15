@@ -69,7 +69,7 @@ def structure_errors(plan: object) -> list[str]:
     data = typing.cast(dict[str, typing.Any], plan)
     errors: list[str] = []
     concurrency = data["並列数"]
-    if not _keys(concurrency, {"モデル同時数", "資源上限", "サービス上限", "根拠"}):
+    if not _keys(concurrency, {"モデル同時数", "資源上限", "サービス上限", "根拠"}, {"検証同時数"}):
         errors.append("並列数: モデル同時数・資源上限・サービス上限・根拠が必要")
     else:
         limits = [concurrency[key] for key in ("モデル同時数", "資源上限", "サービス上限")]
@@ -78,7 +78,11 @@ def structure_errors(plan: object) -> list[str]:
         elif limits[0] > min(limits[1:]):
             errors.append("並列数: モデル同時数が資源上限またはサービス上限を超えている")
         evidence = concurrency["根拠"]
-        if not _keys(evidence, {"資源", "サービス", "費用"}) or not all(_text(v) for v in evidence.values()):
+        verification = concurrency.get("検証同時数", 2)
+        if not isinstance(verification, int) or isinstance(verification, bool) or verification <= 0:
+            errors.append("並列数: 検証同時数はbool以外の正の整数が必要")
+        required_evidence = {"資源", "サービス", "費用"} | ({"検証"} if "検証同時数" in concurrency else set())
+        if not _keys(evidence, required_evidence, {"検証"}) or not all(_text(v) for v in evidence.values()):
             errors.append("並列数.根拠: 資源・サービス・費用の非空文字列が必要")
     rows = data["工程"]
     if not isinstance(rows, (list, tuple)) or not rows:
@@ -220,7 +224,8 @@ def forecast(
     if any(node.seconds is None for node in nodes):
         return Forecast(None, None, issues, excluded, work, {}, None)
     durations = {node.id: typing.cast(float, node.seconds) for node in nodes}
-    capacities = {"モデル": data["並列数"]["モデル同時数"], "検証": 2, "直列": 1}
+    # 旧保存記録は当時の容量で読めるようにし、新規入力の容量とは区別する。
+    capacities = {"モデル": data["並列数"]["モデル同時数"], "検証": data["並列数"].get("検証同時数", 2), "直列": 1}
     total, wait, dependency = _schedule(nodes, order, durations, capacities)
     normal_durations = {node.id: 0.0 if node.wis and set(node.wis) <= set(excluded) else durations[node.id] for node in nodes}
     normal, _, _ = _schedule(nodes, order, normal_durations, capacities)

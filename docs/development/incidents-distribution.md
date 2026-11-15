@@ -104,3 +104,14 @@
   | 外部コマンドの不在など環境差 | ps不在、systemdユーザーマネージャーの停止への対処 | 非必須段は続行。中断段は回復後に具体的な操作を案内 |
   | 更新中のランチャー置換 | 旧batchの再開位置と終了値取得の回帰試験 | 解析済み終了blockとbyte位置を保持 |
   | 文字コードの不一致 | UTF-8での出力取得 | 未知の例外の続行と全段への注入試験 |
+
+- 2026年11月15日: sthenoのセッション記録一覧の取得が、uvの管理Python探索のos error 448で失敗した。
+  直接原因: 省略版3.15のJUNCTIONを、RedirectionGuardが有効なSSHプロセスから追従できなかった。
+  リンク先の具体版3.15.2は実在し、省略版の参照先も同じ実体を指していた。
+  背景原因: SSH配下のプロセスはProcessRedirectionTrustPolicyのEnforceRedirectionTrustが有効だった。
+  [Microsoftの仕様](https://www.microsoft.com/en-us/msrc/blog/2025/06/redirectionguard-mitigating-unsafe-junction-traversal-in-windows)では、非管理者による生成・更新の信頼属性を持つJUNCTIONが拒否される。
+  元の生成操作の実行者は履歴から特定していない。
+  対策: ユーザーの認可を得て、管理者token・JUNCTION属性・リンク先・本体の実在を再確認し、対象リンク1個をrmdir（/Sなし）とmklink /Jで同じ実体へ再生成した。
+  保護設定、レジストリ、Python本体、他リンク、PATHは維持した。
+  同じSSHのuv python find 3.15と、稼働中serveの記録一覧APIが警告なしで成功した。
+  非管理者のuv更新がリンクを再生成すると再発しうるため、その場合も対象とリンク先を再確認し、保護を維持した管理者によるリンクの修復を選ぶ

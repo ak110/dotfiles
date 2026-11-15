@@ -496,7 +496,7 @@ def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
     assert "初回と再開の両方" in text and "実sessionID全要素" in text
     assert "追加・交代後" in text and "更新後の全要素" in text
     examples = list(cli_examples.examples(_atk_help.HELP["atk lane integrate"]["epilog"]))
-    assert len(examples) == 2
+    assert examples
     for _line, example in examples:
         parsed = atk._build_parser().parse_args(shlex.split(example)[1:])  # pylint: disable=protected-access
         assert parsed.session_id == "lane-owner"

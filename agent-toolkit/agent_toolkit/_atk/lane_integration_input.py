@@ -163,9 +163,10 @@ def expand(record: dict[str, typing.Any], values: dict[str, str] | None, argv: l
     """
     if not values:
         return argv
+    replacements = values
 
     def replace(text: str) -> str:
-        return REFERENCE.sub(lambda match: values.get(match.group(1), match.group(0)), text)
+        return REFERENCE.sub(lambda match: replacements.get(match.group(1), match.group(0)), text)
 
     def resolve(match: re.Match[str]) -> str:
         name, separator, file = match.group(1).partition(":")
@@ -226,20 +227,6 @@ def verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: l
             integration_command(record, state, key, argv, cwd, timeout=state["input"]["manifest"].get("verification_timeout"))
 
 
-def rebase_unpublished(worktree: pathlib.Path, base: str, record: dict[str, typing.Any], state: dict[str, typing.Any]) -> None:
-    current = _lane_records.git(worktree, "rev-parse", "HEAD")
-    old_base = _lane_records.git(worktree, "merge-base", base, current)
-    commits = _lane_records.git(worktree, "rev-list", f"{old_base}..{current}").splitlines()
-    _lane_records.git(worktree, "fetch", "--all", "--no-tags")
-    for commit in commits:
-        if _lane_records.git(worktree, "for-each-ref", "--format=%(refname)", f"--contains={commit}", "refs/remotes"):
-            raise ValueError(f"push済みcommitの書換えを拒否した: {commit}")
-    state.update(phase="rebasing", new_base=base)
-    record["integration"] = state
-    _lane_records.save(pathlib.Path(record["record_path"]), record)
-    _lane_records.git(worktree, "-c", "submodule.recurse=false", "rebase", base)
-
-
 def atk_script(*arguments: str) -> list[str]:
     # 統合先cwdやPATH上の旧プラグインへ版を切り替えず、現在のCLIと同じ実体・依存環境を使う。
     root = pathlib.Path(__file__).resolve().parents[2]
@@ -252,9 +239,9 @@ def atk_script(*arguments: str) -> list[str]:
 
 def amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing.Any], digest: str) -> None:
     previous = state["input"]
-    if state["phase"] not in {"awaiting-validation", "git-integrated"}:
+    if state["phase"] not in {"verified", "git-integrated"}:
         raise ValueError(
-            "最終化入力の補完はrebase後の検収待ちかGit統合済みの工程で行う。"
+            "最終化入力の補完はmerge後の検証済み状態かGit統合済みの工程で行う。"
             f"現在の工程は{state['phase']}のため、--amend-finalizationを外して同じ入力で再実行する"
         )
     if any(previous[key] != identity[key] for key in ("reviewed_head", "target", "branch", "no_merge")):
@@ -319,75 +306,6 @@ def assert_integration_tree(
             if pathlib.Path(_lane_records.git(tree, "rev-parse", "--path-format=absolute", "--git-path", name)).exists():
                 raise ValueError(f"Gitの中断状態がある: {tree}: {name}")
     return worktree
-
-
-def compare_integration_history(
-    record: dict[str, typing.Any],
-    state: dict[str, typing.Any],
-    worktree: pathlib.Path,
-    resolved: list[str],
-    excluded: list[list[str]],
-) -> None:
-    directory = _lane_records.integration_directory(record)
-    directory.mkdir(parents=True, exist_ok=True)
-    mapping = directory / "rewrite-map.json"
-    comparison = state.get("comparison", state)
-    output = directory / "comparison-map.json" if state.get("rewrite_prefix") else mapping
-    if state.get("rewrite_map") != str(mapping) or not output.is_file():
-        state["completed"] = [key for key in state["completed"] if key != "history-compare"]
-    integration_command(
-        record,
-        state,
-        "history-compare",
-        atk_script(
-            "run-script",
-            "history-compare",
-            "--",
-            "--operation",
-            "rebase",
-            "--work-dir",
-            str(worktree),
-            "--old-base",
-            comparison["old_base"],
-            "--old-head",
-            comparison["old_head"],
-            "--new-base",
-            comparison["new_base"],
-            "--new-head",
-            comparison.get("new_head", state["new_head"]),
-            "--output",
-            str(output),
-            *(argument for oid in resolved for argument in ("--resolved-conflict", oid)),
-            *(argument for oid, path in excluded for argument in ("--exclude-path", oid, path)),
-        ),
-        worktree,
-        timeout=record["procedure_timeout"],
-    )
-    # 省略時に再利用する入力は、消費する工程の成功後に保存する。
-    # 拒否された指定を先に保存すると、次回に指定を外しても公開入力だけでは復帰できなくなる。
-    state["resolved_conflicts"] = resolved
-    state["excluded_paths"] = excluded
-    state["comparison"] = {
-        **{key: comparison.get(key, state[key]) for key in ("old_base", "old_head", "new_base", "new_head")},
-        "resolved_conflicts": resolved,
-        "excluded_paths": excluded,
-    }
-    if prefix := state.get("rewrite_prefix"):
-        current = commit_mapping.load_rewrite_map(output)
-        prefix_path, continuation = directory / "rewrite-prefix.json", directory / "rewrite-continuation.json"
-        _lane_records.save(prefix_path, prefix)
-        # 最初の旧系列の対応表へ、後から追加したcommitを混ぜずに合成する。
-        endpoints = {oid for value in prefix.values() for oid, _names in commit_mapping.rewrite_destinations(value)}
-        following = {old: new for old, new in current.items() if old in endpoints}
-        _lane_records.save(continuation, following)
-        composed = commit_mapping.load_range_rewrite(
-            worktree, [prefix_path, *([continuation] if following else [])], state["old_head"]
-        )
-        _lane_records.save(mapping, composed)
-        state["additional_rewrites"] = {old: current.get(new, new) for old, new in state.get("additional_rewrites", {}).items()}
-    state["additional_commits"] = list(dict.fromkeys(state.get("additional_rewrites", {}).values()))
-    state["rewrite_map"] = str(mapping)
-    _lane_records.save(pathlib.Path(record["record_path"]), record)
 
 
 def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Path) -> None:
@@ -459,3 +377,28 @@ def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Pa
             names = {wi_filenames.normalize_md_filename(name) for name in adopted.filenames}
             if names != {row["name"]} or commits != expected or (row.get("no_merge") and commits):
                 raise ValueError(f"{row['name']}: 指定値={specified}、期待集合={sorted(expected)}。{action}")
+
+
+def check_legacy_mapping(state: dict[str, typing.Any], manifest: dict[str, typing.Any], worktree: pathlib.Path) -> None:
+    """旧rebase成果の対応継承が必要な場合だけ、保存した証拠を使う汎用操作へ戻す。"""
+    sources = {row["commit_record"] for row in manifest["wis"] if row.get("commit_record")}
+    if manifest.get("handoff"):
+        sources.add(manifest["handoff"])
+    for source in sorted(sources):
+        path = pathlib.Path(source)
+        events = commit_mapping.read_events(path, path.read_text(encoding="utf-8"))
+        names = {
+            name for event in events if isinstance(values := event.get("awi"), list) for name in values if isinstance(name, str)
+        }
+        if not names:
+            continue
+        mapping = commit_mapping.read_mapping(worktree, events, names, allow_missing=True)
+        if commit_mapping.rewritten_commits(worktree, mapping, state["old_head"]):
+            raise ValueError(
+                "旧rebaseのWI対応が未継承。保存した成果・対応表・状態は変更していない。"
+                "atk run-script plan-rewrite -- --worktree <対象worktree> "
+                f"--previous-head {state['old_head']} --rewrite-map {state.get('rewrite_map', '<保存した対応表>')} "
+                "--completed-step 移行 --result 旧rebaseの対応継承 "
+                "--plan <関係する計画> --handoff <関係する引き継ぎ記録>で全記録を継承し、"
+                "plan-commitsでmanifestを更新して、現在HEADを--reviewed-headへ渡して再開する"
+            )

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import importlib
+import pathlib
 import typing
 
 import pytest
@@ -78,16 +80,34 @@ def test_independent_and_serial_groups(capacity: int, expected: float, waiting: 
     assert result.resource_wait_seconds["モデル"] == waiting
 
 
-def test_three_verifications_share_two_slots() -> None:
+@pytest.mark.parametrize(("slots", "total", "wait"), [(1, 34, 30), (2, 24, 10)])
+def test_verifications_use_input_capacity(slots: int, total: int, wait: int) -> None:
     plan = _plan((0, 0, 0), 3)
+    plan["並列数"]["検証同時数"] = slots
+    plan["並列数"]["根拠"]["検証"] = "検証環境の設定"
     for index in range(3):
         _row(plan, f"v{index}")["秒数"] = 10
     result = selection_estimate.forecast(plan)
     assert not result.issues
-    assert result.total_seconds == 24
+    assert result.total_seconds == total
     assert result.dependency_seconds == 14
     assert result.resource_work_seconds["検証"] == 30
-    assert result.resource_wait_seconds["検証"] == 10
+    assert result.resource_wait_seconds["検証"] == wait
+
+
+def test_selection_lane_target_warning_uses_verification_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
+    scripts = pathlib.Path(__file__).resolve().parents[2] / "skills/process-wi/scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    lanes = importlib.import_module("check_selection_lanes")
+    plan = _plan((0, 0, 0), 3)
+    for index in range(3):
+        _row(plan, f"v{index}")["秒数"] = 10
+    plan["並列数"]["根拠"]["検証"] = "検証環境の設定"
+    selection: dict[str, object] = {"全工程の見込み": plan, "選定": [{"WI": f"wi{i}", "レーン": "lane-01"} for i in range(3)]}
+    plan["並列数"]["検証同時数"] = 1
+    assert lanes.process_estimate_warnings(selection, [], 30)
+    plan["並列数"]["検証同時数"] = 2
+    assert not lanes.process_estimate_warnings(selection, [], 30)
 
 
 def test_dependency_model_verification_review_and_serial_integrations() -> None:
@@ -212,7 +232,7 @@ def test_resource_cannot_replace_model_capacity(identifier: str, resource: str) 
     assert selection_estimate.structure_errors(plan)
 
 
-@pytest.mark.parametrize("key", ["モデル同時数", "資源上限", "サービス上限"])
+@pytest.mark.parametrize("key", ["モデル同時数", "検証同時数", "資源上限", "サービス上限"])
 @pytest.mark.parametrize("value", [True, 0, -1, 1.5, "2"])
 def test_invalid_concurrency(key: str, value: object) -> None:
     plan = _plan()
@@ -225,6 +245,15 @@ def test_concurrency_evidence_is_required(key: str) -> None:
     plan = _plan()
     plan["並列数"]["根拠"][key] = " "
     assert selection_estimate.structure_errors(plan)
+
+
+def test_verification_capacity_requires_evidence_without_changing_legacy_input() -> None:
+    plan = _plan()
+    assert not selection_estimate.structure_errors(plan)
+    plan["並列数"]["検証同時数"] = 1
+    assert selection_estimate.structure_errors(plan)
+    plan["並列数"]["根拠"]["検証"] = "pyfltrの版と環境設定"
+    assert not selection_estimate.structure_errors(plan)
 
 
 def test_concurrency_cannot_exceed_either_limit() -> None:

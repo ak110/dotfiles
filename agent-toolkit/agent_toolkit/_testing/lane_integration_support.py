@@ -176,13 +176,13 @@ def prepare_lane_verification(
     capsys: pytest.CaptureFixture[str],
     verification_argv: list[str],
 ) -> list[str]:
-    """共有検証枠の競合試験へ、公開createで準備したlane integrateのargvを渡す。"""
+    """共有実行枠の競合試験へ、公開createで準備したlane integrateのargvを渡す。"""
     tmp_path.mkdir(parents=True, exist_ok=True)
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     head = git_repository.git_output(pathlib.Path(record["worktree"]), "rev-parse", "HEAD")
     handoff = tmp_path / "handoff.md"
-    handoff.write_text("共有検証枠の観測", encoding="utf-8")
+    handoff.write_text("共有実行枠の観測", encoding="utf-8")
     manifest = tmp_path / "integration.json"
     manifest.write_text(
         json.dumps(
@@ -224,7 +224,7 @@ def _write_empty_finalization_manifest(tmp_path: pathlib.Path) -> pathlib.Path:
     return manifest
 
 
-def _rebased_integration(
+def _merged_integration(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -261,7 +261,7 @@ def _rebased_integration(
     }
     manifest.write_text(json.dumps(value), encoding="utf-8")
     code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, reviewed))
-    assert code == (2 if failed else 1), stderr
+    assert code == (2 if failed else 0), stderr
     if failed:
         assert "verification-0" in stderr
     state = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))["integration"]

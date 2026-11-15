@@ -177,6 +177,9 @@ def _bundle_events(
     events.extend(_bundle_warning_events(warnings))
     events.extend(_unresolved_events(unresolved))
     events.extend(_recovery_events(collected))
+    gaps = [event for event in _collection_events(collected, []) if event["kind"] == "record-gap"]
+    if gaps:
+        events = [{**event, "partial": True} for event in [*events, *gaps]]
     return events, 0
 
 

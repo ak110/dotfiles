@@ -14,6 +14,21 @@ from agent_toolkit._common.async_operations import run_sync_operation
 logger = logging.getLogger("agent_toolkit._atk.serve.sessions")
 
 
+def schedule_delivery(
+    state: SessionsState,
+    loop: asyncio.AbstractEventLoop,
+    factory: typing.Callable[[], typing.Coroutine[typing.Any, typing.Any, None]],
+) -> None:
+    """予約が受理され実行されるまでcoroutineを生成せず、停止後の配送を抑える。"""
+
+    def accepted() -> None:
+        if not state.local_rescan_stopping:
+            _ = asyncio.create_task(factory())
+
+    with contextlib.suppress(RuntimeError):
+        loop.call_soon_threadsafe(accepted)
+
+
 async def subscribe(state: SessionsState) -> asyncio.Queue[str]:
     """SSE購読キューを生成して登録し返す。"""
     queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
@@ -96,8 +111,7 @@ def _start_local_record_watch(context: SessionsContext, loop: asyncio.AbstractEv
             for engine, path in records:
                 await deliver_record(context.state, context.hostname, engine, path)
 
-        with contextlib.suppress(RuntimeError):
-            asyncio.run_coroutine_threadsafe(deliver(), loop)
+        schedule_delivery(context.state, loop, deliver)
 
     tracker = session_watch.RecordChangeTracker(
         [(context.claude_home / "projects", "claude"), (context.codex_home / "sessions", "codex")],
@@ -133,6 +147,12 @@ async def start_local_watch_async(context: SessionsContext) -> None:
 
 async def stop_local_watch_async(context: SessionsContext) -> None:
     """監視の全threadが終了してから保持欄を空へ戻す。"""
+    with context.state.local_rescan_flag_lock:
+        context.state.local_rescan_stopping = True
+        thread = context.state.local_rescan_thread
+    if thread is not None:
+        await run_sync_operation(thread.join)
+        context.state.local_rescan_thread = None
     watch = context.state.record_watch
     if watch is not None:
         await run_sync_operation(watch.stop, on_success=lambda _result: setattr(context.state, "record_watch", None))
@@ -143,6 +163,12 @@ async def stop_local_watch_async(context: SessionsContext) -> None:
 
 def stop_local_watch(context: SessionsContext) -> None:
     """ローカルの記録rootの変更監視を終了させる。"""
+    with context.state.local_rescan_flag_lock:
+        context.state.local_rescan_stopping = True
+        thread = context.state.local_rescan_thread
+    if thread is not None:
+        thread.join()
+        context.state.local_rescan_thread = None
     warmer, context.state.cost_warmer = context.state.cost_warmer, None
     if warmer is not None:
         warmer.stop()

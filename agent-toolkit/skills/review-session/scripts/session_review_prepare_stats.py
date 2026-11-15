@@ -139,7 +139,11 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         ("同じ記録内の再取得・再実行", "担当別のrepeats"),
         ("大量結果の直接取込み", "担当別のlargest_resultsと大出力点検"),
         ("スキルと規範の累積読込", "skills_by_nameと担当別skills"),
-        ("委譲入力の過剰・冗長", "comparison-materials.jsonlの直接本文と参照位置"),
+        (
+            "委譲入力の過剰・冗長",
+            "comparison-materials.mdの索引で選択し、表示外はcomparison-materials.jsonlで限定する。"
+            "入力・結果の記録位置を--detailで照会",
+        ),
         ("複数担当の重複調査", "対象別のby_recordと担当別reads"),
         ("モデル段位の不適合", "stats-agent-threadのobserved_identitiesとtokens"),
         ("委譲の総費用", "全担当のtokens・api_messagesと会話の成果"),

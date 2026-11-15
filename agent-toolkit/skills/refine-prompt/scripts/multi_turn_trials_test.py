@@ -107,6 +107,28 @@ def _grade(tmp_path: pathlib.Path, case: str, example: dict) -> tuple[subprocess
 
 
 @pytest.mark.parametrize("case", EXPECTED_CASES)
+def test_all_graders_start_without_site_packages(tmp_path: pathlib.Path, case: str) -> None:
+    """全固定課題を隔離起動し、提出物のimport失敗と採点側の起動失敗を区別する。"""
+    candidate = tmp_path / "candidate.py"
+    candidate.write_text("raise RuntimeError('検出用の提出物エラー')\n", encoding="utf-8")
+    grader = FIXTURES / case.replace("-", "_") / "private" / "grade.py"
+    process = subprocess.run(
+        [sys.executable, "-I", "-S", "-B", str(grader), str(candidate)],
+        cwd=tmp_path,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+        check=False,
+    )
+    assert process.returncode == 0, process.stderr
+    checks = json.loads(process.stdout)
+    assert checks and all(not check["passed"] for check in checks)
+    assert all("検出用の提出物エラー" in check["error"] for check in checks)
+
+
+@pytest.mark.parametrize("case", EXPECTED_CASES)
 def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pathlib.Path, case: str) -> None:
     """準備が公開素材だけを複製し、既存の提出物を上書きしないことを確かめる。"""
     output = tmp_path / "public"

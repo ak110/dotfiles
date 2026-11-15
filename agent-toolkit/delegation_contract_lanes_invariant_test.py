@@ -77,7 +77,7 @@ def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
     generation = _h2_section(selection_text, "調査とレーン分け")
     assert "`書込対象`" in receipt
     assert "`公開工程の書込対象`" in receipt
-    assert "全レーン統合後の公開工程だけ" in output
+    assert "公開単位の統合後、公開担当だけ" in output
     assert "`/`" in output
     assert "パス要素" in generation
     assert "狭い方の範囲" in generation

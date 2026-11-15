@@ -3,11 +3,23 @@
 
 import json
 import pathlib
+import sys
 import typing
 
 import pytest
 import yaml
 
+from agent_toolkit import atk
+from agent_toolkit._plan import locations
+from agent_toolkit._testing import git_repository, plan_fixture, wi_entry_files
+from agent_toolkit._testing.lane_integration_support import (
+    _adopt_argv,
+    _integration_args,
+    _integration_selection,
+    _plan_operation,
+    _record_wi_commit,
+)
+from agent_toolkit._testing.lane_support import _create, _invoke
 from agent_toolkit._testing.selection_check_support import _awi, _dispatch, _initial_allocation, _track, _write_selection
 from agent_toolkit._testing.selection_check_support import fixture_env as fixture_env
 
@@ -34,7 +46,15 @@ def test_require_integrated_checks_all_stages_without_current_wi(
     output = capsys.readouterr()
     assert all(value in output.err for value in ("lane-02", "lane-03", "b.md", "c.md", "2", "3"))
     assert path.read_bytes() == before
+    assert _dispatch(str(path), "--require-integrated", "--publication-lane", "lane-01") == 0
+    assert _dispatch(str(path), "--require-integrated", "--publication-lane", "lane-03") == 1
+    assert _dispatch(str(path), "--require-integrated", "--publication-lane", "unknown") == 2
+    assert path.read_bytes() == before
     data = yaml.safe_load(before)
+    # 公開対象自身が統合済みでも、推移的な先行レーンが未統合なら公開できない。
+    data["レーンの所要時間"][2]["統合状態"] = "統合済み"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--require-integrated", "--publication-lane", "lane-03") == 1
     for row in data["レーンの所要時間"]:
         row["統合状態"] = "統合済み"
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
@@ -53,6 +73,16 @@ def test_require_integrated_rejects_invalid_state(
     assert "統合状態" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("mode", ["--require-integrated", "--history"])
+def test_read_only_modes_reject_new_plan_without_reopen(tmp_path: pathlib.Path, mode: str) -> None:
+    """読取専用の早期終了経路でも、再開対象のない計画切替指定を入力不備として拒否する。"""
+    path = _write_selection(tmp_path / "selection.yaml", [])
+    before = path.read_bytes()
+    assert _dispatch(str(path), mode, "--new-plan") == 2
+    assert path.read_bytes() == before
+    assert _dispatch(str(path), mode) == 0
+
+
 @pytest.mark.parametrize("case", ["empty", "missing", "malformed", "unassigned-lane"])
 def test_require_integrated_empty_and_unreadable_inputs(tmp_path: pathlib.Path, case: str) -> None:
     """正常な0レーンだけを完了とし、読取不能・破損・所属不一致を入力不備として返す。"""
@@ -68,8 +98,9 @@ def test_require_integrated_empty_and_unreadable_inputs(tmp_path: pathlib.Path, 
     assert (path.read_bytes() if path.exists() else None) == before
 
 
+@pytest.mark.parametrize("new_plan", [False, True])
 def test_reopen_wi_retains_original_allocation_and_other_integrations(
-    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, new_plan: bool
 ) -> None:
     """上限使用済みでも同じWIだけを再開し、他の統合履歴を保持して不可分保存する。"""
     repo, notes = env
@@ -86,9 +117,23 @@ def test_reopen_wi_retains_original_allocation_and_other_integrations(
         [{"レーン": "lane-01", "統合状態": "統合済み"}, {"レーン": "lane-02", "統合状態": "統合済み"}],
     )
     before = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert _dispatch(str(path), "--reopen-wi", "a.md", "--output", str(path), "--work-dir", str(repo)) == 0
+    old_plan = str(tmp_path / "removed-worktree" / "old-plan.md")
+    for item in before["選定"][:2]:
+        item["再開位置"] = old_plan
+    before["初回配分"]["不可分成分"] = [
+        {
+            "WI": ["a.md", "b.md"],
+            "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": "再開計画", "根拠": {"計画1": old_plan, "計画2": old_plan}}],
+        },
+        {"WI": ["c.md"], "結合条件": []},
+    ]
+    path.write_text(yaml.safe_dump(before, allow_unicode=True), encoding="utf-8")
+    options = ["--new-plan"] if new_plan else []
+    assert _dispatch(str(path), "--reopen-wi", "a.md", *options, "--output", str(path), "--work-dir", str(repo)) == 0
     after = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert after["初回配分"] == before["初回配分"]
+    assert after["選定"][0].get("再開位置") == ("なし" if new_plan else before["選定"][0].get("再開位置"))
+    assert after["選定"][1]["再開位置"] == old_plan
     assert [row["統合状態"] for row in after["レーンの所要時間"]] == ["未統合", "統合済み"]
     assert [row["統合状態"] for row in after["選定"]] == ["未統合", "統合済み", "統合済み"]
     saved = path.read_bytes()
@@ -392,3 +437,88 @@ def test_unintegrated_missing_write_target_still_rejected(
 
 
 __all__ = ["fixture_env"]
+
+
+def test_changed_requirement_finalizes_new_plan_in_current_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """旧環境を使わず、新計画の検査・保存・WI終了を実Gitのレーン最終化へ接続する。"""
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    _integration_selection(selected, monkeypatch, repo)
+    notes = tmp_path / "notes"
+    git_repository.init_repository(notes, initial_branch="main", commit_message="隔離キュー")
+    wi = "20261023-000000-001.md"
+    other = "20261023-000000-002.md"
+    source = wi_entry_files.entry_path(notes, wi, state="processing")
+    other_source = wi_entry_files.entry_path(notes, other, state="processing")
+    other_source.write_bytes(source.read_bytes())
+    other_before = other_source.read_bytes()
+    old = notes / "plans" / "2026" / "10" / "23-1000_old.md"
+    old.parent.mkdir(parents=True)
+    old.write_text(plan_fixture.current_plan(repo=tmp_path / "reclaimed-worktree"), encoding="utf-8")
+    old_before = old.read_bytes()
+    document = yaml.safe_load(selected.read_text(encoding="utf-8"))
+    document["選定"][0]["再開位置"] = str(old)
+    document["選定"].append({**document["選定"][0], "WI": other, "統合状態": "統合済み"})
+    document["初回配分"]["候補WI"].append(other)
+    document["初回配分"]["レーン割当"][other] = "lane-01"
+    document["初回配分"]["不可分成分"] = [
+        {
+            "WI": [wi, other],
+            "結合条件": [{"WI1": wi, "WI2": other, "種別": "再開計画", "根拠": {"計画1": str(old), "計画2": str(old)}}],
+        }
+    ]
+    selected.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(selected), "--reopen-wi", wi, "--new-plan", "--output", str(selected), "--work-dir", str(repo)) == 0
+    capsys.readouterr()
+    worktree = pathlib.Path(record["worktree"])
+    plan = locations.working_plans_root(pathlib.Path.home()) / "15-1400_requirement-change.md"
+    plan.parent.mkdir(parents=True, exist_ok=True)
+    plan.write_text(plan_fixture.current_plan(repo=worktree), encoding="utf-8")
+    _plan_operation(capsys, "plan-check", "--reject-migration-warnings", "--work-dir", str(worktree), str(plan))
+    # 対象worktree不一致の拒否も維持する。
+    _plan_operation(capsys, "plan-check", "--work-dir", str(repo), str(plan), expected=1)
+    (worktree / "changed.txt").write_text("要求変更の実装", encoding="utf-8")
+    head = git_repository.commit_all(worktree, "要求変更を実装")
+    handoff = tmp_path / "handoff.md"
+    handoff.write_text("新計画と実装HEADをレビュー受理済み。旧計画と対象外WIは保持する。", encoding="utf-8")
+    _record_wi_commit(
+        capsys,
+        handoff,
+        worktree,
+        wi,
+        head,
+        git_repository.git_output(worktree, "rev-parse", "HEAD^"),
+        step="要求変更",
+        result="新計画の実装を記録",
+    )
+    manifest = tmp_path / "finalization.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "plans": [
+                    {"name": old.name, "saved": str(old), "commands": []},
+                    {
+                        "name": plan.name,
+                        "commands": [
+                            [sys.executable, str(pathlib.Path(atk.__file__)), "plans", "commit", str(plan), "--skip-push"]
+                        ],
+                    },
+                ],
+                "wis": [
+                    {"name": wi, "commit_record": str(handoff), "commands": [_adopt_argv(repo, wi, [head])]},
+                    {"name": other, "commands": []},
+                ],
+                "handoff": str(handoff),
+                "verification": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    code, result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
+    assert code == 0 and result["phase"] == "finalized", stderr
+    assert old.read_bytes() == old_before and other_source.read_bytes() == other_before
+    assert not (tmp_path / "reclaimed-worktree").exists()
+    assert not plan.exists()
+    assert list((notes / "plans").rglob(plan.name))
+    assert "state: adopted" in source.read_text(encoding="utf-8")

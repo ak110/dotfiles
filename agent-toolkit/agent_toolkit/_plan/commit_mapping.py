@@ -264,8 +264,7 @@ def commit_event(
 ) -> dict[str, object]:
     """現在のHEADのfirst-parent履歴上の未記録の区間を記録するイベントを返す。
 
-    `revision`は区間の末尾を指し、前HEADから区間の末尾までのfirst-parentの履歴がマージcommitを含まない
-    1件以上のcommitの直列である場合だけ記録する。
+    `revision`は区間の末尾を指し、前HEADから区間の末尾までのfirst-parentを辿り、通常commitと競合解消を持つmergeを記録する。
     """
     names = validate_targets(wis, allowed_wis)
     try:
@@ -291,12 +290,18 @@ def commit_event(
     except (OSError, subprocess.SubprocessError) as error:
         raise _git_fail(f"前HEADから区間の末尾までのcommitを列挙できません: {error}", worktree) from error
     chain = [line.split() for line in lines]
-    if any(len(parts) != 2 for parts in chain):
+    # first-parentだけを辿り、取り込んだ他レーンのcommitは割り当てない。
+    # mergeの再実行差分がある場合だけ競合解消の実装として記録する。
+    commits = [
+        short_oid(worktree, parts[0])
+        for parts in reversed(chain)
+        if len(parts) == 2 or command.output(["show", "--remerge-diff", "--format=", parts[0]], worktree).strip()
+    ]
+    if not commits:
         raise _range_fail(
-            f"前HEADから区間の末尾までの範囲にマージcommitが含まれます: {previous_head}..{revision}",
-            "マージを使わずにcherry-pickかfast-forwardで取り込み直し、取り込み直前のHEADを--previous-headへ渡して再実行する",
+            "範囲は変更のない接続mergeだけで、WI実装commitの追加がありません",
+            "この範囲のcommit記録を省き、既存のWI対応をそのまま使う",
         )
-    commits = [short_oid(worktree, parts[0]) for parts in reversed(chain)]
     mapping = read_mapping(worktree, events or [], allowed_wis, allow_missing=True)
     duplicates = [short for short in commits if any(key.startswith(short) or short.startswith(key) for key in mapping)]
     if duplicates:

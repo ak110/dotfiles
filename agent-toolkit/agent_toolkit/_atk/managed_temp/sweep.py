@@ -505,7 +505,7 @@ def _reclaim_space(
         except FileNotFoundError:
             continue
         except (OSError, ManagedTempError) as error:
-            failed.append((child, str(error)))
+            failed.append((child, _failure_reason(error)))
             continue
         candidates.append((latest, child, metadata))
     candidates.sort(key=lambda item: (item[0], item[1].name))
@@ -520,7 +520,7 @@ def _reclaim_space(
                 continue
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
-                failed.append((child, str(error)))
+                failed.append((child, _failure_reason(error)))
             continue
         deleted.append(child)
         sizes.append((child.name, size))
@@ -535,6 +535,13 @@ def _reclaim_space(
     if pressure.still_low:
         pressure = pressure._replace(temp_root_bytes=_tree_bytes(temp_root))
     return pressure
+
+
+def _failure_reason(error: OSError | ManagedTempError) -> str:
+    """失敗理由を文字列で返す形式を保ち、回復操作を持つ例外の案内も受信側へ渡す。"""
+    if isinstance(error, ManagedTempError):
+        return f"{error}。次の操作: {error.next_action}"
+    return str(error)
 
 
 @plugin_root_leases.reuse_process_observation()
@@ -552,7 +559,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         temp_root = paths.temp_root()
         state_root = paths.state_root()
     except ManagedTempError as error:
-        return SweepResult([], ((paths.temp_root_path(), str(error)),))
+        return SweepResult([], ((paths.temp_root_path(), _failure_reason(error)),))
     due = force or _sweep_due(state_root, now_ns)
     if not due:
         # 間隔内の起動は全走査をしない。空きの確認は1回のstatvfsで済むため、下限を割る場合だけ回収へ進む。
@@ -592,7 +599,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
                 deleted.append(child)
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):
-                failed.append((child, str(error)))
+                failed.append((child, _failure_reason(error)))
     pressure = _reclaim_for_space(state_root, temp_root, now_ns, protected_sessions, deleted, failed)
     with contextlib.suppress(OSError):
         _sweep_legacy_state(state_root)

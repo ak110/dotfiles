@@ -393,7 +393,8 @@ def test_public_check_component_evidence_matches_source(
         {"WI": ["a.md", "b.md"], "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": kind, "根拠": evidence}]}
     ]
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if matches else 1)
+    # 再開計画は初回の履歴なので、現在の再開位置が変わっても有効な結合根拠を保持する。
+    assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if matches or kind == "再開計画" else 1)
 
 
 __all__ = ["fixture_env"]

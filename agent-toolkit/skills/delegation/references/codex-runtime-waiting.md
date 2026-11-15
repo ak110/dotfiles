@@ -10,6 +10,18 @@
 
 ## agents_serverの二層待機
 
+待機前に、通知で同じ担当へ再開できるかと、待つ担当の入力費用を確認する。
+`agents_server`管理下のCodex担当で、未起動の読み取り専用コマンドの終了だけを待ち、独立した先行作業が無い場合は、既存の`mode: shell`へ分ける費用を比較する。
+対象の識別子、CIならSHAとbaseline、コマンド自身の有限期限、終了コードと両出力の保存先を渡す。
+起動・引き継ぎ・子担当の全入力と出力・検収・再開を含む総費用が小さい場合に選び、元担当は子の追跡を成立させて完了通知を待つ。
+総入力の減少だけで採用せず、非キャッシュ入力・出力・所要も比べ、優位を確認できない場合は元担当で回収する。
+子の結果は完了通知後に受領し、元担当の反復回収を通知による再開へ置き換える。
+短いコマンドや小さい文脈で起動費用が上回る場合は、元担当で直接回収する。
+
+起動済みのコマンドは保持したcell ID・session IDで元担当が回収し、委譲のために起動し直さない。
+通知による同一担当の再開保証が無い最上位や、同一turnでの回収が必要な場合は次の手順を使う。
+判断の定義元は`waiting-and-monitoring-intervals.md`「待機区間の構成」である。
+
 1. `functions.exec`の内部で`agents_server`を起動し、`PostToolUse`フックがMCPの応答を直接観測できない環境では、起動応答に含まれる`root_session_id`を保持し、`atk agents wait --root-session-id <値>`へ渡す。
    CLIは状態ディレクトリの実在性と、確認済みのルートセッションとの一致を検証する。
    外側セルの`cell_id`または内側コマンドの`session_id`のいずれかが未回収である場合は、`share/rules/rules-common.codex.md`「Codex固有の入出力」に定める手段を用いて同一の実行結果を回収する。
@@ -32,7 +44,7 @@
    `functions.exec`で1回起動する。
 
    ```javascript
-   // @exec: {"yield_time_ms": 120000}
+   // @exec: {"yield_time_ms": 180000}
    text(await tools.exec_command({
      cmd: "/absolute/path/to/atk agents wait --root-session-id ROOT_SESSION_ID",
      yield_time_ms: 30000
@@ -43,22 +55,23 @@
    内側60000msの待機を外側1000msで包むと、外側の短周期回収が続く。
 
    ```json
-   {"cell_id":"CELL_ID","yield_time_ms":120000}
+   {"cell_id":"CELL_ID","yield_time_ms":180000}
    ```
 
    内側の結果に`exit_code`が無く`session_id`があれば、`functions.exec`から同じコマンドを回収する。
 
    ```javascript
-   // @exec: {"yield_time_ms": 120000}
-   text(await tools.write_stdin({session_id: SESSION_ID, chars: "", yield_time_ms: 120000}));
+   // @exec: {"yield_time_ms": 180000}
+   text(await tools.write_stdin({session_id: SESSION_ID, chars: "", yield_time_ms: 180000}));
    ```
 
    このセルがearly yieldした場合も、返された同じ`cell_id`を前の例の`functions.wait`へ渡す。
-   120000msは受理を確認した回収時間の目安であり、最大値・固定sleep・実行期限を表さない。
-   `exec_command`の初回は公開上限30000ms以内とし、120000を待機CLI自身のtimeoutへ転記しない。
+   180000msは実待機を確認した回収時間の目安であり、最大値・固定sleep・実行期限を表さない。
+   待機状況の報告だけの1000msなどの短い回収は使わず、実際の独立作業や受信済み通知・対話へ戻る場合だけ早くyieldする。
+   `exec_command`の初回は公開上限30000ms以内とし、180000を待機CLI自身のtimeoutへ転記しない。
    先に終了すればその結果を回収し、制御が戻るたびに通知と追加入力を処理する。
    CIの終了確認など別の長いコマンドでも、起動コマンドだけをその正規手段へ替えて同じ二層で回収する。
-   観測条件と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
+   観測条件と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/skills/delegation/references/codex-runtime-waiting.md：agents_serverの二層待機：2026年11月15日」にある。
 
    委譲先の成果物側のみを補助観測する場合は、作業ツリーの状態を`git -C <絶対パス> status --porcelain=v1`と`git -C <絶対パス> rev-parse --short HEAD`で観測する。
    成果物ファイルは`wc -l -- <絶対パス>`および`stat -L -c %Y -- <絶対パス>`（macOSでは`stat -L -f %m -- <絶対パス>`）で観測する。
