@@ -254,6 +254,54 @@ def test_delegation_input_material_wrapper_reaches_quality_owner():
 _SECTION_REFERENCE = re.compile(r"(?:`([^`]+\.md)`|\]\(([^)#]+\.md)(?:#[^)]*)?\))((?:「[^」]+」)+)")
 
 
+def _missing_condition_sections(source: pathlib.Path, plugin_root: pathlib.Path) -> list[str]:
+    """本文の適用・取得を名指す条件だけを検査し、判断場面の引用は含めない。"""
+    errors = []
+    for row in read_triggers.parse_tables(source, plugin_root):
+        headings = re.findall(r"「([^」]+)」(?:を適用する前|へ入る時点)", row.condition)
+        own = re.findall(r"本書「([^」]+)」", row.condition)
+        for heading in set(headings + own):
+            paths = (source,) if heading in own else (source, *row.documents)
+            if not any(
+                shown and re.fullmatch(r"#{1,6}\s+" + re.escape(heading) + r"\s*#*\s*", text)
+                for path in paths
+                for _number, text, shown in read_triggers.document_lines(path.read_text(encoding="utf-8"))
+            ):
+                errors.append(f"{source}:{row.line}: 条件が名指す「{heading}」の本文へ到達できない")
+    return errors
+
+
+def test_read_conditions_reach_named_section_bodies():
+    roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / "agent-basics/skills"]
+    errors = []
+    with read_triggers.resolution_scope():
+        for source in sorted({path for root in roots for path in root.rglob("*.md")}):
+            errors.extend(_missing_condition_sections(source, _PLUGIN_ROOT))
+    assert not errors, "\n".join(errors)
+
+
+def test_named_condition_detects_split_body_but_not_judgment_context(tmp_path):
+    """旧資料の実在だけでは通さず、移動先・自己参照・判断場面を区別する。"""
+    (tmp_path / ".claude-plugin").mkdir()
+    (tmp_path / ".claude-plugin/plugin.json").write_text('{"name": "agent-toolkit"}', encoding="utf-8")
+    source = tmp_path / "consumer.md"
+    old = tmp_path / "old.md"
+    detail = tmp_path / "detail.md"
+    old.write_text("# 旧資料\n", encoding="utf-8")
+    detail.write_text("# 判定\n", encoding="utf-8")
+    table = "| 時点または条件 | 全文読む資料 |\n| --- | --- |\n"
+    source.write_text(table + "| 「判定」を適用する前 | `old.md` |\n", encoding="utf-8")
+    assert _missing_condition_sections(source, tmp_path)
+    source.write_text(table + "| 「判定」を適用する前 | `detail.md` |\n", encoding="utf-8")
+    assert not _missing_condition_sections(source, tmp_path)
+    source.write_text("# 判定\n" + table + "| 本書「判定」を適用する前 | `old.md` |\n", encoding="utf-8")
+    assert not _missing_condition_sections(source, tmp_path)
+    source.write_text(table + "| 本書「判定」を適用する前 | `detail.md` |\n", encoding="utf-8")
+    assert _missing_condition_sections(source, tmp_path)
+    source.write_text(table + "| 「コードの簡潔さ」で共通化を判断する時 | `old.md` |\n", encoding="utf-8")
+    assert not _missing_condition_sections(source, tmp_path)
+
+
 def _missing_section_references(source: pathlib.Path, plugin_root: pathlib.Path) -> list[str]:
     """資料名の直後に節名を添えた参照のうち、指された資料にその見出しが無いものを返す。
 

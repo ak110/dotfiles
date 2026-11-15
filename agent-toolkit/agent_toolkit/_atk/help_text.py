@@ -70,8 +70,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
-        "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2 --accept-rebased-head 0123456789abcdef0123456789abcdef01234567",
-        "description": "レビュー済みレーンを統合し最終化する。\n\n目的: レビュー済みレーンのGit統合と計画保存・WI終了・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。--session-idは所有登録のsession（atk lane createの所有session）とする。manifestのplansは計画名と最終化argv、wisはWI名と終了argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パス、lane_started_atは最初のレーン開始時刻（時差付きISO 8601）を保持する。Git統合の成功後、最終化の最初の操作の前に統合後HEADの短縮OID・完了時刻・lane_started_atからの総経過秒数を1回だけ確定して所有登録へ保存し、plans・wisのargvの{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}を展開する。{{expand-file:ABS}}はテンプレート内の同じ参照を展開した複製の絶対パスへ置き換える。再開では保存した確定値を使う。verificationの各argvは計画・訂正済み検証表の必要チェックと保存済み成功の被覆から選び、レーンworktreeをcwdとしてホスト共有の検証実行枠の下で直接実行する。各argvは自身の時間上限を使う。manifestのverification_timeout（正の有限秒数、未指定またはnullはCLI側の上限なし）を明示した場合だけ、共有実行枠の取得後に処理上限を適用する。時間切れ・中断では所有する子孫の回収を確認する。最終化argvとCLIが内部で起動する操作はatk lane create --timeoutの上限で打ち切る。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割か役割の宣言を持たない起動の担当が残る場合は全件を診断して終了2とする。呼出元とその委譲元の連鎖、explore、書き込まないと宣言した役割の担当は数えない。合意した担当は--writer-sessionで反復指定する。\n復元・後始末: 失敗時は記録と資源を保持し、同じ入力で再開する。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewを指定する。HEADが記録のnew_headのままならold_headかnew_headを--reviewed-headへ渡す。修正commitを足した場合は再レビューを受理した現在HEADを渡す。new_headの子孫でないHEADは終了2で拒否する。rebase記録と旧系列の対応、additional_commitsの追加commit一覧とadditional_rewritesの追加分の旧新対応を保持し、現在HEADで再検証してawaiting-validation（終了1）へ戻る。統合先の前進も検収待ちへ戻る。受理前にmanifestのwisをplan-commitsの現在の出力から作り直す。各adopt行はcommit_recordへ計画か引き継ぎ記録Markdownの絶対パスを指定する。Git統合直前にadoptのcommitが統合HEADの祖先で、同stemの対応記録にあるそのWIの集合と一致することを検査する。実装がないWIでは、commitが指定されず対応記録の集合も空であることを確認する。不一致はGit統合とWI終了を行わず終了2で拒否する。対応表と診断を検収後、--restart-reviewを外して--accept-rebased-headで再開する。Git統合済みなら未完了の最終化から進める。",
+        "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2",
+        "description": "レビュー済みレーンを統合し最終化する。\n\n目的: レーンのGit統合と計画保存・WI終了・選定更新を再開可能に実行する。\n利用場面: レーンのレビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。manifestのplans/wisは最終化argv、verificationはmerge後の検証argv、handoffは計画なしの引き継ぎ記録。verification_recordsは同条件の保存済み成功記録、verification_timeoutは正の有限秒数で未指定はCLI側の上限なし。lane_started_atから確定した{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}と{{expand-file:ABS}}を最終化時に展開し、再開では保存値を使う。工程・HEAD・実行記録JSONを返す。\n前提: 所有登録、cleanなGit状態、レビュー対象HEADとの一致。合意済み書込担当は--writer-sessionへ反復指定する。\n復元・後始末: 分岐時はレーンで最新統合先を通常mergeし、元OIDを保つ。検証後に短い排他で統合先をffする。統合先の前進はtarget_advancedと終了1を返し、現在HEADと--restart-reviewで追加mergeする。競合は成果を保持して解消・commit・レビュー後、現在HEADと--restart-reviewで再開する。検証失敗でも統合先は更新しない。adoptのWI行はcommit_recordを指定し、plan-commitsの現在の出力を--commitへ渡す。Git統合直前に対応集合と祖先到達性を検査する。Git統合後は同じ入力で未完了の最終化だけを再開し、そのargvのみの補完には--amend-finalizationを使う。通常統合では履歴書換え対応表を生成しない。",
     },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
@@ -537,19 +537,12 @@ HELP["atk agents"]["description"] += (
 HELP["atk lane integrate"]["description"] += (
     "\n検証の再利用: manifestの任意のverification_recordsへ保存済み実行記録JSONの絶対パス配列を渡す。"
     "同じcleanなHEAD・argv・cwd・Pythonと環境の実行条件で終了0となり、両出力が保存されている成功だけ再利用する。"
-    "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検収待ちへ戻る。"
-    "\n並行する統合: rebase・検証・最終化は同じレーンの操作だけを排他し、統合先HEADの一致の確認とfast-forwardだけを"
+    "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検証して統合する。"
+    "\n並行する統合: merge・検証・最終化は同じレーンの操作だけを排他し、統合先HEADの一致の確認とfast-forwardだけを"
     "同じ統合先への全レーンで直列にする。統合先が準備の時点から進んでいた場合は統合先を変えず、"
     "target_advancedを返して終了1とする。同じ入力に--restart-reviewを付けて現在HEADで再開する。"
-    "\n競合の解消: rebaseが競合で止まったら競合を解消してrebase --continueで完了し、まず同じ入力を指定なしで再実行する。"
-    "history-compareが変更内容の不一致を示した旧commitだけを--resolved-conflictへ反復指定する。"
-    "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。"
-    "rebaseで省略された旧commitの統合先の同一変更が後続commitで書き換えられたとhistory-compareが示した場合も、"
-    "書換え後の統合先でレーンの変更が成立することを確かめた旧commitだけを同じ指定で明示する。"
-    "旧commitの変更パスの一部を意図して外した場合は、--exclude-path <旧OID> <リポジトリ相対パス>を反復指定する。"
-    "同じ旧commitへの--resolved-conflictとの併用、旧commitが変更していないパス、全変更パスの除外は拒否する。"
-    "history-compareに通った指定だけを所有登録へ保存し、拒否された指定は保存しない。"
-    "指定を省いた後続の再開（--accept-rebased-headなど）は最後に成功した保存値を使う。"
+    "\n競合の解消: mergeが競合で止まったら両側の要求を保って解消しmerge commitを作成する。"
+    "新しい解消差分を影響するWIへ記録し、レビュー後に現在HEADと--restart-reviewで再開する。"
     "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
     "--writer-sessionへ1件ずつ反復指定する。--session-idは資源の所有sessionとして別に保持する。"
     "担当の追加・交代後は合意済み一覧を更新し、再開にも更新後の全要素を渡す。"

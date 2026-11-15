@@ -11,7 +11,7 @@
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | | |
 | 統合結果のWI状態を一括取得する前 | `../skills/wi-standards/references/wi-show-bulk.md` | | |
 | 全レーンの統合後に公開工程へ進む条件を確かめる時 | `../skills/process-wi/references/finish-session.md` | | |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
+| レーン担当の統合の返却が、merge進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
 
 ## 統合の許可
 
@@ -64,13 +64,14 @@
 5. 読込表に定める「統合時の完成条件判定」において、対象となるすべての行が受理条件を満たしていること（各`達成`行に確認場所と観測内容の組み合わせが明記されていることを含む）。
 
 先行レーンの統合によってベースbranchが進んだ場合でも、指示内容は変更しない。
-rebaseおよび変更前後の内容一致確認はレーン担当者が担当する。
+最新統合先のmerge、競合解消と影響範囲の検証はレーン担当者が担当する。
 
 統合先HEADを更新する区間は、`atk lane integrate`が統合先ごとの排他で1レーンずつに限る。
 メインは先に許可したレーンの`統合完了`を待たずに、次のレーンへ指示してよい。
-先行レーンが統合先を進めた後に短い更新へ達したレーンは、終了コード1と`target_advanced`を受けて`--restart-review`で最新の統合先へ追随し、rebase結果の検収をやり直す（`lane-integration-subagent-operation.md`「マージありの統合」）。
+先行レーンが統合先を進めた後に短い更新へ達したレーンは、終了コード1と`target_advanced`を受けて`--restart-review`で最新の統合先を追加mergeする。
+その差分と検証結果を`lane-integration-subagent-operation.md`「マージありの統合」に従って検収する。
 先行レーンの規範改訂は、その`統合完了`を受領した時点で意味確認2に従って読み直し、以後の判断と公開工程へ適用する。
-`git-integrated`は最終化の途中であり、全レーンの`統合完了`を受領するまで公開工程へ進まない（`../skills/process-wi/references/finish-session.md`冒頭）。
+`git-integrated`は最終化の途中であり、公開する単位に属するレーンの`統合完了`を受領するまで公開工程へ進まない（`../skills/process-wi/references/finish-session.md`冒頭）。
 再送・是正レーンも同じ前提を守る。
 
 同一threadへ以下の項目を送信する。
@@ -127,7 +128,7 @@ rebaseおよび変更前後の内容一致確認はレーン担当者が担当�
 3. 変更対象の集合に`<役割名>.parent.md`またはその`起動対象:`である`<役割名>.subagent.md`が含まれる場合、両者を同一のplugin rootから原子的に採用する。
    統合済みworktree側の`<役割名>.parent.md`のrootにすべての起動対象が実際に存在し、委譲起動契約の確認に合格する場合に限り、後続の委譲処理において両者をそのrootから解決する。
    一方の欠落や契約不成立がある場合は、起動開始時のplugin rootに存在する両ファイルを引き続き使用し、異なるrootの版を混在させない。
-4. 統合中に最後の独立文脈レビューの後で追加された変更（rebase後の検証失敗の是正など）がある場合は、追加変更、比較元のHEAD、追加変更後のHEADで行った直接影響範囲の検証を照らし合わせる。
+4. 統合中に最後の独立文脈レビューの後で追加された変更（merge後の検証失敗の是正など）がある場合は、追加変更、比較元のHEAD、追加変更後のHEADで行った直接影響範囲の検証を照らし合わせる。
    追加変更より前のHEADの成功は追加変更の検証に充てない。
    再レビューを省略した追加変更では、変更した定義・文言・構成の変更前の値から消費側を自分でたどり、提出された検証範囲と比べる。
    最後の独立文脈レビューの後に契約の変更が無い場合はこの比較を繰り返さず、同じ版・同じ条件の成功は再利用する。

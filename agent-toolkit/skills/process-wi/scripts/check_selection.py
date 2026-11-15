@@ -361,9 +361,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lane-map", type=pathlib.Path, metavar="PATH", help="追加レーンから最終レーンへの対応JSON")
     parser.add_argument("--output", type=pathlib.Path, metavar="PATH", help="全体チェックに成功した選定結果の保存先")
     parser.add_argument("--require-integrated", action="store_true", help="公開前に全レーンの統合完了を読み取り専用で確認する")
+    parser.add_argument("--publication-lane", action="append", metavar="LANE", help="公開単位のレーン。先行レーンも確認する")
     parser.add_argument(
         "--reopen-wi", action="append", metavar="WI", help="既存WIを元レーンで再開する。--outputと組で反復指定可"
     )
+    parser.add_argument("--new-plan", action="store_true", help="要求変更による再開。--reopen-wiの対象だけ再開位置をなしへ戻す")
     parser.add_argument(
         "--candidate-file",
         type=pathlib.Path,
@@ -391,6 +393,10 @@ def main(argv: list[str] | None = None) -> int:
         args.lane_cost_updates,
         args.body_wi,
     )
+    if args.publication_lane is not None and not args.require_integrated:
+        parser.error("--publication-laneは--require-integratedと組で指定する")
+    if args.new_plan and args.reopen_wi is None:
+        parser.error("--new-planは--reopen-wiと組で指定する")
     if args.history and (
         args.output is not None
         or args.reopen_wi is not None
@@ -402,7 +408,25 @@ def main(argv: list[str] | None = None) -> int:
         if args.output is not None or args.reopen_wi is not None or any(value is not None for value in other_updates):
             parser.error("--require-integratedは更新操作・--body-wiと併用しない")
         try:
-            pending = _selection.pending_lanes(load_selection(args.selection_file))
+            selection = load_selection(args.selection_file)
+            pending = _selection.pending_lanes(selection)
+            if args.publication_lane is not None:
+                rows = typing.cast(list[dict[str, typing.Any]], _selection.lane_costs(selection))
+                costs = {str(row[_selection.LANE_KEY]): row for row in rows}
+                wanted = set(args.publication_lane)
+                unknown = wanted - costs.keys()
+                if unknown:
+                    raise ValueError(f"公開単位のレーンが選定に無い: {sorted(unknown)}")
+                remaining = list(wanted)
+                while remaining:
+                    lane = remaining.pop()
+                    for prior in costs[lane].get(_selection.PRIOR_LANES_KEY, []):
+                        if prior not in costs:
+                            raise ValueError(f"先行レーンが選定に無い: {prior}")
+                        if prior not in wanted:
+                            wanted.add(prior)
+                            remaining.append(prior)
+                pending = [row for row in pending if row[_selection.LANE_KEY] in wanted]
         except (InputError, ValueError) as error:
             _next_action.report(str(error), next_action=_FIX_CONTENT)
             return 2
@@ -416,7 +440,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-        print("全レーン統合済み")
+        print("公開単位の全レーン統合済み" if args.publication_lane is not None else "全レーン統合済み")
         return 0
     if args.reopen_wi is not None and (args.output is None or any(value is not None for value in other_updates)):
         parser.error("--reopen-wiは--outputと組で指定し、他の更新操作・--body-wiと併用しない")
@@ -456,7 +480,7 @@ def main(argv: list[str] | None = None) -> int:
         selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
         if args.reopen_wi is not None:
             try:
-                selection = reopen_wis(selection, args.reopen_wi)
+                selection = reopen_wis(selection, args.reopen_wi, new_plan=args.new_plan)
             except ValueError as error:
                 raise InputError(
                     str(error), next_action="保存済み選定の元WI名と所属を確認して同じ再開操作を実行する"

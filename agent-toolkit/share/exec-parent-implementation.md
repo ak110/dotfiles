@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | レビュー修正で新たな操作・機構・副作用を採用する前 | `exec-parent-planning.md` | | |
 | 統合を指示する前に統合時の完成条件判定を行う時 | `exec-review-recording-integration.md` | | |
-| レーン担当の統合の返却が、rebase進行中の競合か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
+| レーン担当の統合の返却が、merge競合で必要となった判断か、統合先との組合せだけで生じた変更範囲の検証失敗の是正commitを示すとき | `agent-toolkit:process-wi`の`references/integration-failure-receipt.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/process-wi/references/integration-failure-receipt.md` |
 
 ## 実装完了の受領
 
@@ -52,7 +52,7 @@ WIへ直接記入された質問（AWIの`## ユーザーコメント`、UWIの`
 
 作業を続行できない理由を受け取った場合は、`${CLAUDE_PLUGIN_ROOT}/share/review-loop-coordination.md`の`## エスカレーションの事由別の扱い`に従って事由を分類し、必要な回答のみを同一threadへ返信する。
 完成条件の変更や除外に関する判断要請は、同節の該当項目および同書「技術判断で外せる完成条件」の定めに従って処理する。
-統合結果の返却がrebase作業中の競合を示している場合や、統合先との組み合わせによってのみ発生した検証失敗に対する是正commitを示している場合は、読込表の`integration-failure-receipt.md`に従う。
+統合結果の返却がmerge競合で必要となった判断を示している場合や、統合先との組み合わせによってのみ発生した検証失敗に対する是正commitを示している場合は、読込表の`integration-failure-receipt.md`に従う。
 
 ## 本文参照の取得条件
 

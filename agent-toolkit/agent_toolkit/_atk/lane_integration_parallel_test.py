@@ -192,7 +192,7 @@ def test_second_lane_integrates_while_first_lane_verifies(
         ),
         "--restart-review",
     )
-    assert code == 1 and restarted["phase"] == "awaiting-validation", stderr
+    assert code == 0 and restarted["phase"] == "finalized", stderr
     assert restarted["new_base"] == records["lane-02"]["reviewed_head"]
 
 
@@ -214,8 +214,6 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         )
         second_args = _integration_args(records["lane-02"], repo, second_manifest, records["lane-02"]["reviewed_head"])
         code, second, stderr = _invoke(capsys, *second_args)
-        assert code == 1 and second["phase"] == "awaiting-validation", stderr
-        code, second, stderr = _invoke(capsys, *second_args, "--accept-rebased-head", second["new_head"])
         assert code == 0 and second["phase"] == "finalized", stderr
         assert git_repository.git_output(repo, "rev-parse", "HEAD") == second["new_head"]
         assert process.poll() is None, "先行側の最終化が後続の統合の前に終わった"
@@ -233,9 +231,10 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         git_repository.run_git(repo, "merge-base", "--is-ancestor", result["integrated_head"], "main")
         # 統合前HEAD（短い更新の直前の統合先HEAD）からの範囲は、そのレーンの1commitだけを含む。
         before = stored.get("new_base") or stored["verified_base"]
-        assert (
-            git_repository.git_output(repo, "rev-list", f"{before}..{result['integrated_head']}") == result["integrated_head"]
-        )
+        included = git_repository.git_output(repo, "rev-list", f"{before}..{result['integrated_head']}").splitlines()
+        assert records[lane_id]["reviewed_head"] in included
+        assert result["integrated_head"] in included
+
     selected = yaml.safe_load(pathlib.Path(records["lane-01"]["selection_file"]).read_text(encoding="utf-8"))
     assert {row["レーン"]: row["統合状態"] for row in selected["レーンの所要時間"]} == {
         "lane-01": "統合済み",
@@ -271,8 +270,7 @@ def test_target_advance_before_short_update_keeps_target(
     monkeypatch.setattr(lane_integration_input, "verify", original)
     args = _integration_args(record, repo, manifest, record["reviewed_head"])
     code, result, stderr = _invoke(capsys, *args, "--restart-review")
-    assert code == 1 and result["phase"] == "awaiting-validation" and result["new_base"] == advanced[0], stderr
-    code, result, stderr = _invoke(capsys, *args, "--accept-rebased-head", result["new_head"])
+    assert result["new_base"] == advanced[0], stderr
     assert code == 0 and result["phase"] == "finalized", stderr
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == result["new_head"]
 

@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | 所要時間の基準を適用する前 | `agent-toolkit:review-session/references/duration-analysis.md` | | |
 | 対象の分析を始める前 | `session-analysis.md` | | |
-| AWIを投入担当へ渡す前 | `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` | 判断 | `delegation`、`read:agent-toolkit:*/share/add-wi.parent.md` |
+| AWIを起草・独立検収する前 | `agent-toolkit:wi-standards`、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md` | 判断 | `delegation`、`delegation-result`、`read:agent-toolkit:*/share/wi-draft-review.parent.md` |
 | 結果報告の作成・保存に入る前に、メインが起動する | `../../report-completion/SKILL.md` | 判断 | `skill:report-completion` |
 
 ## 起動
@@ -26,7 +26,7 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
 先頭のbatchと残りの着眼点を1つの文字列引数で渡す。
 実際の分析はrun-skillが起動する別セッションで行う。
 進行中の担当がある場合は、分析をその実行へ引き続き委ねる。
-自動起動は前回batch開始から6時間以上経過した場合に限る。
+自動起動は前回batch開始から6時間以上経過し、add-awi-by-userを起動した会話が開いていない場合に限る。
 手動起動は間隔制限、自動停止設定と未完了の失敗報告AWIによる抑止を適用しないが、活動判定とアカウント共通排他は維持する。
 batch自身のセッションも振り返り対象に含める。
 非活動の選定対象がbatch自身の記録だけの場合は見送り、通常セッションと混在する場合にまとめて分析する。
@@ -51,13 +51,16 @@ batch自身のセッションも振り返り対象に含める。
    不採用率の高いモデルやlevel、同じ理由区分の不採用の反復、前の期間からの増加を分析候補にし、`review-adoption-rejection`の行の管理表を読んで不採用の理由を判断する。
    移管は`transferred`として別に数え、不採用率の分析候補から除く。
    判断主体のラベルが無い旧表は`判断主体不明`として集計する。
-   原因・対策・既存AWIの被覆を確定した要求から、分析中に手順3の起草へ渡す（`session-analysis.md`「工程5」）。
+   原因・対策・既存AWIの被覆を確定した要求から、手順3の直接起草を進める（`session-analysis.md`「工程5」）。
    モデル不明の表は件数に含めたまま報告する。
    モデル不明の表の割合が前の期間より増えた場合は、限界として報告する前に、不明の表を1件選んで表の名前を含むセッション記録を探し、帰属できない理由を確かめる。
    実行レビュー担当の記録が存在するのに帰属できていない場合は、集計の不具合として扱う。
    記録が残っていない表だけが不明である場合に、その理由を集計の限界として報告する。
-3. 原因と対策を確定したAWIを `agent-toolkit:wi-standards` と `${CLAUDE_PLUGIN_ROOT}/share/add-wi.parent.md` の契約で登録する。
-   起草は手順2と並行し、全対象の分析と横断整理後に全要求を予告してから`保存開始`を送る（`session-analysis.md`「工程5」）。
+3. 原因と対策を確定した要求から、batchのメインが `agent-toolkit:wi-standards` に従ってAWIを直接起草する。
+   WI投入担当への中継を省き、調査済みの証拠と判断を再利用する。
+   同スキルの`references/drafting-workflow-review-route.md`「直接起草と独立した検収の選択」に従い、`${CLAUDE_PLUGIN_ROOT}/share/wi-draft-review.parent.md`の投入前レビューを経て保存する。
+   原因分析を含む原稿の独立検収は省かない。
+   全対象の分析と横断整理後に全要求を予告し、合格した原稿を保存する（`session-analysis.md`「工程5」）。
    sourceは `session-review` とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
    所要時間目標、計測の起点と終点、超過分析は`duration-analysis.md`「所要時間の分析と改善」のbatchの定義に従う。
    目標は改善案の必須性だけに使い、対象ごとの必要な調査を完遂する。

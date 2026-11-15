@@ -7,6 +7,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 委譲の総費用と判断の所有を確かめる前（操作対象外: ツールと結び付かない判断） | `routing-decisions.md` |
+| 複数担当の書込先を決める前 | `agent-basics:writing-standards/references/design-runtime-concurrency.md` |
 
 ## 委譲単位の確定
 
@@ -49,7 +50,8 @@
   各worktreeで書き込みを行う担当者は1名とし、1つのbranchに対してcommitやamendを実行する主体も1名に限定する。
   各群の担当者は自身のworktreeにおけるcommitおよびGit hookの処理を所有し、hookによって更新された生成物も同一のcommitに含める。
 - 群の粒度と総数は、同時に稼働させる担当者の数と分けて、前述の比較検討に基づいて決定する。
-  process-wiでは巡回全体の同時数Cを`../../process-wi/references/selection-procedure-allocation.md`「内部担当の同時数と巨大WIの判定」で選び、内部群を増やしてもレーン数上限と共有2枠の検証は維持する。
+  process-wiでは巡回全体の同時数Cを`../../process-wi/references/selection-procedure-allocation.md`「内部担当の同時数と巨大WIの判定」で選び、内部群を増やしてもレーン数上限と共有実行枠での検証は維持する。
+  共有実行枠は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」に従う。
   粒度の選定を誤った場合の不利益は作業速度の低下にとどまり、品質自体は各群の検収によって担保する。
 - 実装・焦点検証・commitが完了した群から、作成側と独立したレビューへ渡す。
   対象のHEAD・要求・直接影響集合・成功証拠を固定し、他群の編集中の本文を保存HEADのレビューへ混ぜない。

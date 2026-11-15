@@ -94,32 +94,12 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         ),
     )
     integrate_parser.add_argument("--no-merge", action="store_true", help="Gitを変更せず計画保存・WI終了だけ行う。")
-    integrate_parser.add_argument("--accept-rebased-head", help="対応表と再検証の診断を受理したHEADの完全なOID。")
     integrate_parser.add_argument(
         "--restart-review",
         action="store_true",
-        help="Git統合前の入力是正から再開し、最新統合先へ追随する。同条件成功を再利用し、必要な検証後に検収待ちへ戻る。",
+        help="Git統合前の入力是正から再開し、最新統合先へ追随する。同条件成功を再利用し、必要な検証後に統合する。",
     )
     integrate_parser.add_argument("--session-id", help="所有登録のsession（atk lane createの所有session）。")
-    integrate_parser.add_argument(
-        "--resolved-conflict",
-        action="append",
-        default=None,
-        metavar="OID",
-        help=(
-            "rebase --continueの後にまず指定なしで再開し、history-compareが変更内容の不一致を示した旧commitだけを指定する。"
-            "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。"
-            "統合先で書き換えられた同一変更として省略を示された旧commitも、成立を確かめた場合だけ指定する。複数指定可能。"
-        ),
-    )
-    integrate_parser.add_argument(
-        "--exclude-path",
-        action="append",
-        nargs=2,
-        default=None,
-        metavar=("OID", "PATH"),
-        help="rebaseの競合解消で変更パスの一部を意図して外した旧commitと、外したリポジトリ相対パス。複数指定可能。",
-    )
     integrate_parser.add_argument(
         "--amend-finalization", action="store_true", help="全計画・WIの集合を変えずに、未完了の最終化操作のargvを補完する。"
     )
@@ -158,9 +138,6 @@ def dispatch(args: argparse.Namespace) -> int:
         else:
             result = _lane_cleanup.cleanup_session(session_id)
         print(json.dumps(result, ensure_ascii=False))
-        if result.get("phase") == "awaiting-validation":
-            outcome.report_warning("rebase後の検収を待っている", next_action=result["next_action"])
-            return 1
         if result.get("target_advanced"):
             outcome.report_warning(
                 f"統合先が準備の時点から進んだ: {result['target_advanced']['actual']}", next_action=result["next_action"]

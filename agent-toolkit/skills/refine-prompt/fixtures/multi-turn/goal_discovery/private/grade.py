@@ -3,17 +3,17 @@
 import json
 import pathlib
 import runpy
+import subprocess
 import sys
 import tempfile
-
-from agent_toolkit._common import process_tree
 
 
 def _report(task, records):
     with tempfile.TemporaryDirectory(dir=pathlib.Path(task.__file__).parent) as directory:
         source = pathlib.Path(directory) / "orders.json"
         source.write_text(json.dumps(records), encoding="utf-8")
-        result = process_tree.run_with_timeout(
+        # 採点は-Iで起動するため、配布物のbootstrapに依存せず標準ライブラリだけで実行する。
+        result = subprocess.run(
             [sys.executable, "-I", "-B", task.__file__, "report", str(source)],
             capture_output=True,
             text=True,

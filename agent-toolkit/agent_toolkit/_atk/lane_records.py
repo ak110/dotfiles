@@ -287,20 +287,6 @@ def persist_observed(record: dict[str, typing.Any], key: str, observed: dict[str
     return persisted
 
 
-def materials_missing(state: dict[str, typing.Any]) -> bool:
-    """検収待ちの対応表か検証記録が失われているかを返す。"""
-    mapping = state.get("rewrite_map")
-    if not isinstance(mapping, str) or not pathlib.Path(mapping).is_file():
-        return True
-    for key, observed in state.get("results", {}).items():
-        if key.startswith("verification-") and isinstance(observed, dict):
-            for field in ("record_path", "stdout_path", "stderr_path"):
-                value = observed.get(field)
-                if isinstance(value, str) and not pathlib.Path(value).is_file():
-                    return True
-    return False
-
-
 def commands(path: pathlib.Path | None) -> dict[str, list[str]]:
     if path is None:
         return {}

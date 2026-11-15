@@ -5,6 +5,7 @@ import json
 import pytest
 
 from agent_toolkit._agents_server import launch_requests
+from agent_toolkit._common import session_state
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks import rules_context
@@ -22,6 +23,27 @@ from agent_toolkit._testing.read_delivery_support import (
     _notice_body,
     _rows,
 )
+
+
+@pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.parametrize("full", [False, True])
+@pytest.mark.parametrize("agent", ["main", "helper"])
+def test_add_awi_history_requires_whole_acquisition(tmp_path, monkeypatch, codex, full, agent):
+    """両ホストのメインの全文取得だけを相談の開始として保持する。"""
+    root = tmp_path / "plugin"
+    skill = root / "skills/add-awi-by-user/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# 相談\n本文の残り\n", encoding="utf-8")
+    monkeypatch.setattr(read_delivery.plugin_resources, "_PLUGIN_ROOT", root)
+    monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [])
+    payload = {"cwd": str(tmp_path), "tool_response": skill.read_text() if full else "# 相談\n"}
+    if agent != "main":
+        payload["agent_id"] = agent
+    if codex:
+        payload["turn_id"] = "turn"
+    observe_received(payload, "Read", {"file_path": str(skill)}, "consultation-read")
+    assert bool(session_state.read_state("consultation-read").get("add_awi_skill_invoked")) is (full and agent == "main")
+
 
 __all__ = ["_assert_acquired", "_canonical_method", "_guidance", "_local_plugin_root", "_memory", "_notice_body", "_rows"]
 

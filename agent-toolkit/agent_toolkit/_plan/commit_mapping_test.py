@@ -231,20 +231,22 @@ def test_records_range_added_by_fast_forward(repo: pathlib.Path) -> None:
     base, group = _branch_with_two_commits(repo)
     git_repository.git_output(repo, "merge", "--ff-only", "group")
     event = commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
+    assert isinstance(event["commits"], list)
     assert event == {"commits": [_short(repo, oid) for oid in group], "awi": [WI_A]}
     assert commit_mapping.get_commits(repo, [event], [WI_A], {WI_A}) == {WI_A: [_short(repo, oid) for oid in group]}
 
 
 def test_rejects_range_with_merge_or_non_ancestor(repo: pathlib.Path) -> None:
-    """マージcommitを含む範囲と、前HEADがfirst-parentの祖先でない場合を理由と次の操作を示して拒否する。"""
+    """接続mergeと他レーンのcommitを除き、first-parent外の起点は拒否する。"""
     base, group = _branch_with_two_commits(repo)
     _commit(repo, "lane")
     git_repository.git_output(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "merge", "--no-ff", "-m", "merge", "group"
     )
-    with pytest.raises(commit_mapping.CommitMappingError, match="マージcommit") as merged:
-        commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
-    assert "cherry-pick" in merged.value.next_action
+    event = commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
+    assert isinstance(event["commits"], list)
+    assert len(event["commits"]) == 1
+    assert not set(event["commits"]) & {_short(repo, oid) for oid in group}
     with pytest.raises(commit_mapping.CommitMappingError, match="first-parentの祖先ではありません"):
         commit_mapping.commit_event(repo, "HEAD", group[1], [WI_A], {WI_A})
 
