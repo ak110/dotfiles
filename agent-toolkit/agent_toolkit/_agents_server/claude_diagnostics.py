@@ -159,23 +159,32 @@ def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path | None:
     try:
         directory.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        logger.warning("診断ログの保存先を準備できません: path=%s error=%s。debug指定なしで再開します", directory, exc)
+        logger.warning(
+            "診断ログの保存先を準備できません。debug指定なしで再開します。"
+            "%sがディレクトリかと書込権限・空き容量を確認してください: %s",
+            directory,
+            exc,
+        )
         return None
     existing: list[tuple[float, pathlib.Path]] = []
     try:
         for path in directory.glob("*.log"):
             try:
                 existing.append((path.stat().st_mtime, path))
+            except FileNotFoundError:
+                continue
             except OSError as exc:
-                logger.warning("診断ログを整理対象から除外します: path=%s error=%s。再開処理は続行します", path, exc)
+                logger.warning("診断ログを整理できません。%sの読取権限を確認してください: %s", path, exc)
     except OSError as exc:
-        logger.warning("診断ログの一覧を取得できません: path=%s error=%s。再開処理は続行します", directory, exc)
+        logger.warning("診断ログの一覧を取得できません。%sの読取権限を確認してください: %s", directory, exc)
     existing.sort(key=lambda item: item[0])
     for _mtime, stale in existing[: max(0, len(existing) - _DEBUG_LOG_RETENTION + 1)]:
         try:
             stale.unlink()
+        except FileNotFoundError:
+            continue
         except OSError as exc:
-            logger.warning("古い診断ログを整理できません: path=%s error=%s。再開処理は続行します", stale, exc)
+            logger.warning("古い診断ログを整理できません。%sの削除権限を確認してください: %s", stale, exc)
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%f")
     return directory / f"{stamp}-{launch_kind}.log"
 

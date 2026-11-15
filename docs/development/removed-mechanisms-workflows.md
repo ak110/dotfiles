@@ -4,6 +4,7 @@
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
+| 返却形式外の早期返却や探索の不足申告に対し、回復前にeffortを自動で1段上げる | 2026-11-15（本行を含む撤去commit） | 入力不足や結果検査の欠落は根本原因を修正するというユーザー判断による。 | `agent-toolkit/skills/delegation/references/model-and-effort.md`「成果が受入れ基準に届かないときの引き上げ順」 | 早期返却への自動引上げを認める新しいユーザー判断がある場合 |
 | 個人プロジェクトの検証付き実装委譲を日付の奇偶でlow開始と設定どおりの群へ分け、再委譲の目印から評価する試行 | 2026-11-12（本行を含む撤去commit） | ユーザーが試行を終えて相対effort操作と工程のlow初期値へ統合することを選んだ。 | `docs/development/design-agents-runtime-effort.md`「対象と権限」、`.chezmoi-source/dot_claude/rules/myprojects-common.md` | 同じ試行を再開する新しいユーザー判断がある場合 |
 | effortだけを変える場合も、新しい会話へ再委譲する運用 | 2026-11-12（本行を含む撤去commit） | 同じ会話のまま本人と直接親が相対変更できるようになり、推論量の調整で文脈を捨てる必要が無くなった。 | `agent-toolkit/skills/delegation/references/model-and-effort.md`「同じ会話のeffortの上げ下げ」、`docs/development/design-agents-runtime-effort.md` | 同じ会話での変更が技術的に成立しなくなり、文脈を保つ代替案と比べて再委譲が必要と確認できる場合 |
 | ユーザーとの認識合わせを独立スキルの起動へ分ける | 2026-10-06、commit: ba7e256a8 | 認識合わせと確認規範の相互参照を解消して集約する判断による。 | 確認と認識合わせはuser-confirmation-and-reportへ集約する。docs/development/concepts-confirmation-decisions.md「確認要否の判定」、docs/development/design-hosts-authorization.md「ユーザーとの認識合わせ」 | 撤去理由を解消できることを示した場合 |

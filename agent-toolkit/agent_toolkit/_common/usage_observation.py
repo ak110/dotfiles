@@ -180,6 +180,35 @@ def snapshot(*, now: float | None = None) -> dict[str, Any]:
         if row["rate"] is not None and now - window["observed_at"] <= 600:
             key = rate_key(QuotaWindow(**window))
             rates[key] = row["rate"]
+    # 設定を切り替えても同じ回復期間の学習値を比較できるよう、設定別の最終実績を履歴から読む。
+    latest = {rate_key(QuotaWindow(**row["window"])): row["window"] for row in rows}
+    previous_windows: dict[tuple[str, ...], dict[str, Any]] = {}
+    for row in sorted(data["observations"], key=lambda item: item["window"]["observed_at"]):
+        window = row["window"]
+        key = rate_key(QuotaWindow(**window))
+        identity = tuple(window[field] for field in ("engine", "account", "window_id", "scope"))
+        prior = previous_windows.get(identity)
+        if prior is not None and (
+            rate_key(QuotaWindow(**prior)) != key
+            or prior["resets_at"] != window["resets_at"]
+            or (
+                prior["used_percent"] is not None
+                and window["used_percent"] is not None
+                and window["used_percent"] < prior["used_percent"]
+            )
+        ):
+            for setting in setting_rates.values():
+                setting.pop(rate_key(QuotaWindow(**prior)), None)
+        previous_windows[identity] = window
+        current_window = latest.get(key)
+        if (
+            row["rate"] is not None
+            and now - window["observed_at"] <= 600
+            and current_window is not None
+            and window["resets_at"] == current_window["resets_at"]
+            and current_window["used_percent"] is not None
+            and window["used_percent"] <= current_window["used_percent"]
+        ):
             setting_rates.setdefault(row["setting"], {})[key] = row["rate"]
     activity_ratios = []
     for engine in {row["window"]["engine"] for row in rows}:
@@ -198,7 +227,7 @@ def snapshot(*, now: float | None = None) -> dict[str, Any]:
             == (current[row["window"]["engine"]]["account"], current[row["window"]["engine"]]["contract"])
         ],
         "rates": rates,
-        "setting_rates": setting_rates,
+        "setting_rates": {setting: values for setting, values in setting_rates.items() if values},
         "mixed": data["mixed"],
         "activity_ratio": max(activity_ratios) if activity_ratios else None,
         "last_observed_at": max((row["window"]["observed_at"] for row in rows), default=None),

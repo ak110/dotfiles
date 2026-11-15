@@ -14,6 +14,7 @@ from typing import Any
 from agent_toolkit._agents_server import (
     advice_request,
     backends,
+    child_environment,
     launch_prompts,
     launch_requests,
     manager_wait,
@@ -93,7 +94,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
         """
         await self._drain_candidate_records()
-        await run_file_operation(usage_refresh.ensure_fresh)
+        await run_file_operation(usage_refresh.ensure_fresh, environment=child_environment.inherited())
         try:
             candidates = await run_file_operation(_atk_config.parse_unresolved_model_candidates, model_type)
         except ValueError as error:

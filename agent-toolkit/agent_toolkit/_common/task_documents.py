@@ -279,13 +279,23 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
         writes = values["writes_worktree"]
         if mode not in LAUNCH_KINDS or not isinstance(writes, bool):
             raise ValueError("modeまたはwrites_worktreeの値が不正です")
+        heads = values.get("result_heads", [])
+        if not isinstance(heads, list) or any(
+            not isinstance(head, str)
+            or not head.strip()
+            or "\n" in head
+            or head.startswith("状態:")
+            and not head.removeprefix("状態:").strip()
+            for head in heads
+        ):
+            raise ValueError("result_headsは値を含む固定行の配列で指定する")
         return TaskDocumentDeclaration(
             required=tuple(values["required_inputs"]),
             optional=tuple(values.get("optional_inputs", [])),
             launch_kind=mode,
             writes_worktree=writes,
             model_type=values["model_type"],
-            result_heads=tuple(values.get("result_heads", [])),
+            result_heads=tuple(heads),
             continuations=tuple(
                 ContinuationDeclaration(
                     instruction=entry["instruction"],

@@ -66,7 +66,12 @@ def record_metadata(engine: str, metadata: dict[str, Any]) -> None:
     try:
         _save_metadata(engine, metadata)
     except (OSError, ValueError, KeyError, TypeError) as error:
-        logging.getLogger("agent-toolkit.usage").warning("利用枠の付随情報を保存できません: %s", error)
+        logging.getLogger("agent-toolkit.usage").warning(
+            "利用枠の付随情報を保存できません。保存先%sの権限と空き容量を確認し、"
+            "atk config usage --refreshで再取得してください: %s",
+            settings_path(),
+            error,
+        )
 
 
 def _save_metadata(engine: str, metadata: dict[str, Any]) -> None:

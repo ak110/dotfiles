@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent_toolkit._atk import usage_refresh
+from agent_toolkit._atk import config_usage, usage_refresh
 from agent_toolkit._atk.usage_refresh import _ActivityClock
 from agent_toolkit._common import state_paths, usage_observation, usage_settings
 
@@ -155,3 +155,66 @@ def test_refresh_cache_reuses_one_observation_until_expiry(monkeypatch: pytest.M
     clock[0] = 401
     usage_refresh.ensure_fresh()
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("auth", [None, "not-json", "{}", '{"email":"changed@example.test","subscriptionType":"plan"}'])
+def test_failed_refresh_preserves_verified_identity_unless_account_changed(
+    monkeypatch: pytest.MonkeyPatch, auth: str | None
+) -> None:
+    usage_settings.record_metadata("claude", {"account": "known", "contract": "plan"})
+    usage_observation.observe(
+        [usage_observation.QuotaWindow("claude", "known", "weekly", 70, 1000, 100, contract="plan")],
+        setting_signature="A",
+        active_seconds=0,
+    )
+
+    async def unavailable(*_args, **_kwargs):
+        raise ValueError("synthetic read failure")
+
+    def run(argv, **_kwargs):
+        return SimpleNamespace(returncode=0 if auth is not None and "auth" in argv else 1, stdout=auth or "")
+
+    monkeypatch.setattr(usage_refresh.codex_models, "with_app_server", unavailable)
+    monkeypatch.setattr(
+        usage_refresh.claude_connection,
+        "candidates",
+        lambda *_args, **_kwargs: SimpleNamespace(connections=[SimpleNamespace(kind="subscription")]),
+    )
+    monkeypatch.setattr(usage_refresh.claude_connection, "connection_environment", lambda *_args: {})
+    monkeypatch.setattr(usage_refresh.claude_connection, "isolation_keys", lambda *_args: frozenset())
+    monkeypatch.setattr(usage_refresh.claude_settings, "merge_settings", lambda *_args, **_kwargs: "{}")
+    monkeypatch.setattr(usage_refresh.subprocess, "run", run)
+    assert usage_refresh.refresh(quiet=True)
+    windows = usage_observation.snapshot()["windows"]
+    assert windows[0]["observed_at"] == 100
+    changed = auth is not None and auth.startswith('{"email"')
+    # 認証境界の回帰を、表示対象の選別まで通す。
+    assert bool(config_usage._profile_windows({"windows": windows})) is not changed  # pylint: disable=protected-access
+    if not changed:
+        assert usage_settings.read_metadata("claude")["account"] == "known"
+
+
+def test_refresh_uses_explicit_authentication_after_parent_isolation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """親がOAuthを退避しても、候補判定と両読取コマンドは明示した同じ認証を使う。"""
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "subscription")
+    environments = []
+
+    async def unavailable(*_args, **_kwargs):
+        raise ValueError("synthetic Codex unavailable")
+
+    def run(argv, **kwargs):
+        environments.append(kwargs["env"])
+        content = (
+            '{"email":"synthetic@example.test","subscriptionType":"plan"}'
+            if "auth" in argv
+            else '{"usage_report":{"rate_limits":{"limits":[{"kind":"weekly","percent":75}]}}}'
+        )
+        return SimpleNamespace(returncode=0, stdout=content)
+
+    monkeypatch.setattr(usage_refresh.codex_models, "with_app_server", unavailable)
+    monkeypatch.setattr(usage_refresh.subprocess, "run", run)
+    usage_refresh.ensure_fresh(force=True, environment={"CLAUDE_CODE_OAUTH_TOKEN": "synthetic-oauth"})
+    assert len(environments) == 2
+    assert all(environment["CLAUDE_CODE_OAUTH_TOKEN"] == "synthetic-oauth" for environment in environments)
+    assert usage_observation.snapshot()["windows"][0]["used_percent"] == 75

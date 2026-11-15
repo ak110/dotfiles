@@ -1,6 +1,8 @@
 ---
 mode: delegate
 model_type: execute
+result_heads:
+- "状態: drafted"
 required_inputs:
 - 投入する要求
 - 引き継ぎ記録先

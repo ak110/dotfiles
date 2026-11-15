@@ -271,6 +271,23 @@ def test_payg_rejection_after_successful_turn_moves_to_next_connection(
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
+def test_api_recovery_uses_preserved_oauth(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """SDK継承環境からOAuthを外した後も、回復候補の認証判定は保持値を使う。"""
+    path = tmp_path / "payg.env"
+    path.write_text("ANTHROPIC_API_KEY=synthetic-api\nPAYG_ONLY=synthetic\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "payg,subscription")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "synthetic-oauth")
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
+    child_environment.prepare(os.environ)
+    session = state.SessionState("recover-oauth", str(tmp_path), engine="claude", claude_connection="payg")
+    assert resume_waits.begin_usage_limit_wait(
+        session, {"status": "failed", "error": {"apiErrorStatus": 401}, "agent_message": ""}
+    )
+    assert session.claude_connection == "subscription"
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.parametrize(
     ("message", "shared"),
     [

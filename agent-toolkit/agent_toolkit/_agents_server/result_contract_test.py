@@ -400,7 +400,7 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
             assert session.error is not None
             assert session.error["nextAction"] == result_contract.RECOVERY_NEXT_ACTION
         else:
-            final = "結果: 完了\n状態: completed" if explore and not role else "結果: 完了"
+            final = "結果: 完了\n状態: completed" if explore and not role else "状態: completed\n結果: 完了"
             cli_turn.finalize_turn(session, {"status": "completed", "agent_message": final, "error": None})
             assert session.result_available and session.agent_message == final
         await owner._advance_child_session_wait(session)  # noqa: SLF001
@@ -474,23 +474,22 @@ def test_role_task_requires_fixed_line_or_classified_reason(name: str, message: 
 @pytest.mark.parametrize(
     ("launch_kind", "effort", "expected", "lookup_fails"),
     [
-        ("delegate", "low", "medium", False),
+        ("delegate", "low", "low", False),
         ("delegate", "max", "max", False),
-        ("explore", "low", "medium", False),
+        ("explore", "low", "low", False),
         ("delegate", "low", "low", True),
     ],
 )
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
-async def test_role_free_text_recovery_raises_effort_once(
+async def test_role_free_text_recovery_preserves_effort_once(
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
     launch_kind: str,
     effort: str,
     expected: str,
     lookup_fails: bool,
 ) -> None:
-    """自由文の早期返却は保留し、回復入力の前に通常委譲のeffortを1段上げ、2回目は診断付きで公開する。
+    """自由文の早期返却は同じeffortで一度継続し、再違反を診断付きで公開する。
 
     最上段・軽量起動・段の取得失敗ではeffortを変えずに回復入力だけを送る。
     """
@@ -518,18 +517,29 @@ async def test_role_free_text_recovery_raises_effort_once(
         await owner._advance_child_session_wait(session)  # noqa: SLF001
     assert len(prompts) == 1 and "診断:" in prompts[0]
     assert session.effort == expected
-    if expected != effort:
-        backend.set_effort.assert_awaited_once_with(session, expected)
-        assert session.effort_history[-1][1:] == (effort, expected, "agents-server")
-        assert f"effortを{effort}から{expected}へ上げた" in prompts[0]
-    else:
-        backend.set_effort.assert_not_awaited()
-        assert "effortを" not in prompts[0]
-    # 公開effort操作の対象外でも実行できる照会から、同じ要求の継続を判断させる。
-    assert (f"`atk agents show {session.session_id}`" in caplog.text) is lookup_fails
+    backend.set_effort.assert_not_awaited()
+    assert not session.effort_history
+    assert "effortを" not in prompts[0]
     result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
     assert not result_contract.hold_invalid_result(session, result)
     error = result["error"]
     assert isinstance(error, dict)
     details = dict(error)
     assert details["resultContract"] and details["nextAction"] == result_contract.RECOVERY_NEXT_ACTION
+
+
+@pytest.mark.parametrize(
+    "role,value,valid",
+    [
+        ("exec.subagent.md", "状態: 未完了", False),
+        ("exec.subagent.md", "状態: unfinished", False),
+        ("exec.subagent.md", "状態: completed extra", False),
+        ("add-wi.subagent.md", "状態: drafted", True),
+        ("repository-process.subagent.md", "状態: incomplete", True),
+        ("repository-process.subagent.md", "状態: pending", True),
+    ],
+)
+def test_role_state_values_match_declaration(role, value, valid):
+    session = _role_session(role)
+    reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": value})
+    assert (reason is None) is valid

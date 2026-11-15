@@ -12,7 +12,7 @@ import math
 import os
 import subprocess
 import time
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Awaitable, Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -298,7 +298,7 @@ async def _codex_usage(request: Callable[..., Awaitable[dict[str, Any]]]) -> dic
     return raw
 
 
-def refresh(*, quiet: bool = False) -> list[str]:
+def refresh(*, quiet: bool = False, environment: Mapping[str, str] | None = None) -> list[str]:
     """turnを起動しない読取だけを行い、片側の失敗でも取得できた側を保持する。"""
     errors = []
     try:
@@ -307,9 +307,11 @@ def refresh(*, quiet: bool = False) -> list[str]:
         errors.append(f"Codex: {type(error).__name__}: {error}")
     try:
         selected = next(
-            item for item in claude_connection.candidates("delegate").connections if item.kind in {"subscription", "inherit"}
+            item
+            for item in claude_connection.candidates("delegate", env=environment).connections
+            if item.kind in {"subscription", "inherit"}
         )
-        environment = claude_connection.connection_environment(os.environ, selected)
+        environment = claude_connection.connection_environment(os.environ if environment is None else environment, selected)
         settings = claude_settings.merge_settings(
             None, {}, None, isolate_auth=selected.kind != "inherit", isolation_keys=claude_connection.isolation_keys(selected)
         )
@@ -322,12 +324,17 @@ def refresh(*, quiet: bool = False) -> list[str]:
             timeout=30,
             check=False,
         )
-        try:
-            profile = json.loads(auth.stdout) if auth.returncode == 0 else {}
-        except ValueError:
-            profile = {}
-        if not isinstance(profile, dict):
-            profile = {}
+        if auth.returncode != 0:
+            raise ValueError(
+                f"auth statusが終了{auth.returncode}で失敗した。"
+                "claude auth statusで認証状態を確認し、atk config usage --refreshで再取得してください"
+            )
+        profile = json.loads(auth.stdout)
+        if not isinstance(profile, dict) or not profile.get("email") or profile.get("loggedIn") is False:
+            raise ValueError(
+                "auth statusから認証済みアカウントを確認できない。"
+                "claude auth statusで認証状態を確認し、atk config usage --refreshで再取得してください"
+            )
         identity = hashlib.sha256(
             json.dumps([profile.get("email"), profile.get("organization"), environment.get("CLAUDE_CONFIG_DIR")]).encode()
         ).hexdigest()
@@ -379,7 +386,7 @@ def refresh(*, quiet: bool = False) -> list[str]:
     return errors
 
 
-def ensure_fresh(*, force: bool = False) -> None:
+def ensure_fresh(*, force: bool = False, environment: Mapping[str, str] | None = None) -> None:
     """起動境界で5分の共有キャッシュを使い、同時照会は1主体へ集約する。"""
     automatic = enabled(force=True)
     if not force and not automatic:
@@ -401,7 +408,7 @@ def ensure_fresh(*, force: bool = False) -> None:
                 and time.time() - previous < 300
             ):
                 return
-            errors = refresh(quiet=True)
+            errors = refresh(quiet=True, environment=environment)
             with path.with_suffix(".lock").open("a+", encoding="utf-8") as settings_lock:
                 acquire_lock(settings_lock)
                 try:

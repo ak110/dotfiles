@@ -1,6 +1,9 @@
 ---
 mode: delegate
 model_type: orchestrate
+result_heads:
+- "状態: incomplete"
+- "状態: pending"
 required_inputs:
 - 引き継ぎ記録先
 optional_inputs:

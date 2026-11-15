@@ -7,7 +7,6 @@ import contextlib
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import json
-import multiprocessing
 import os
 import pathlib
 import queue
@@ -17,9 +16,7 @@ import subprocess
 import sys
 import threading
 import time
-import warnings
 from collections.abc import AsyncGenerator, Callable, Generator
-from multiprocessing import resource_tracker
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -52,25 +49,9 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @pytest.fixture
-def transport_tracker(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
-    """通信試験の実回収を隔離し、次のspawn資源利用まで同じtrackerを保つ。"""
-    context = multiprocessing.get_context("spawn")
-    kept = context.Semaphore()
-    tracker = resource_tracker._resource_tracker
-    pid = getattr(tracker, "_pid", None)
-    process = psutil.Process(pid) if pid is not None else None
-    generation = process.create_time() if process is not None else None
+def transport_tracker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """通信の判定だけを検証し、interpreter共用資源の実回収を実行しない。"""
     monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda *_args, **_kwargs: [])
-    yield
-    assert getattr(tracker, "_pid", None) == pid
-    if process is not None:
-        assert process.is_running() and process.create_time() == generation
-        assert process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
-    with warnings.catch_warnings(record=True) as observed:
-        warnings.simplefilter("always")
-        following = context.Semaphore()
-    assert not observed, observed
-    del following, kept
 
 
 @contextlib.asynccontextmanager

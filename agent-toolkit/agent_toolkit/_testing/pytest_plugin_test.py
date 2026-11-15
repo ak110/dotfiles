@@ -12,6 +12,7 @@ import sys
 import textwrap
 import time
 import xml.etree.ElementTree as ET
+from types import SimpleNamespace
 from typing import Any, cast
 
 import claude_agent_sdk
@@ -443,37 +444,35 @@ def _run_child_pytest(
     )
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIXのresource_trackerを検証する")
-@pytest.mark.parametrize("mode", ["unused", "initial", "continued", "foreign", "killed", "new-killed"])
-def test_tracker_guard_attributes_death_to_test(tmp_path: pathlib.Path, mode: str) -> None:
-    """隔離workerの誤停止だけを失敗にし、正常な起動と別interpreterの終了を許す。"""
-    (tmp_path / "tracker_test.py").write_text(
-        textwrap.dedent(f"""\
-            import multiprocessing, os, signal, subprocess, sys
-            from multiprocessing import resource_tracker
-            import psutil
-            KEPT = []
-            def test_a_prepare():
-                if {mode!r} in ('continued', 'killed'):
-                    KEPT.append(multiprocessing.get_context('spawn').Semaphore())
-            def test_b_probe():
-                if {mode!r} in ('initial', 'continued', 'new-killed'):
-                    KEPT.append(multiprocessing.get_context('spawn').Semaphore())
-                if {mode!r} == 'foreign':
-                    program = "import multiprocessing; s = multiprocessing.get_context('spawn').Semaphore()"
-                    subprocess.run([sys.executable, '-c', program], check=True, timeout=15)
-                if {mode!r} in ('killed', 'new-killed'):
-                    pid = resource_tracker._resource_tracker._pid
-                    os.kill(pid, signal.SIGKILL)
-                    psutil.Process(pid).wait(timeout=15)
-        """),
-        encoding="utf-8",
+@pytest.mark.parametrize(
+    "before,after,failed",
+    [
+        ((None, None, False), (None, None, False), False),
+        ((None, None, False), (7, 1.0, True), False),
+        ((7, 1.0, True), (7, 1.0, True), False),
+        ((7, 1.0, True), (7, 1.0, False), True),
+        ((7, 1.0, True), (7, 2.0, True), True),
+        ((None, None, False), (7, None, False), True),
+        ((7, None, False), (7, None, False), False),
+    ],
+)
+def test_tracker_guard_classifies_generation_boundary(monkeypatch: pytest.MonkeyPatch, before, after, failed) -> None:
+    """実プロセスを停止せず、世代交代・死亡・既存の死亡の帰属を判定する。"""
+    snapshots = iter([before, after])
+    monkeypatch.setattr(pytest_plugin, "_tracker_state", lambda: next(snapshots))
+    reports = []
+    item = SimpleNamespace(
+        nodeid="probe",
+        location=("probe.py", 1, "probe"),
+        ihook=SimpleNamespace(pytest_runtest_logreport=lambda **kwargs: reports.append(kwargs["report"])),
     )
-    result = _run_child_pytest(tmp_path, "tracker_test.py")
-    output = result.stdout + result.stderr
-    assert result.returncode == (1 if mode in ("killed", "new-killed") else 0), output
-    if mode in ("killed", "new-killed"):
-        assert "test_b_probe" in output and "before=" in output and "after=" in output
+    protocol = pytest_plugin.pytest_runtest_protocol(cast(pytest.Item, item), None)
+    next(protocol)
+    with pytest.raises(StopIteration):
+        protocol.send(None)
+    assert bool(reports) is failed
+    if failed:
+        assert reports[0].nodeid == "probe" and reports[0].when == "teardown"
 
 
 def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> None:

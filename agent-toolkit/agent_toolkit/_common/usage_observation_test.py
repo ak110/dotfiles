@@ -56,3 +56,21 @@ def test_activity_counters_from_other_producer_are_not_subtracted(tmp_path, monk
     assert not subject.snapshot()["rates"]
     subject.observe([replace(base, used_percent=40, observed_at=400)], setting_signature="s", active_seconds=1010)
     assert list(subject.snapshot()["rates"].values()) == [1.0]
+
+
+def test_setting_history_survives_switch_without_crossing_reset(tmp_path, monkeypatch):
+    monkeypatch.setattr(subject, "state_dir", lambda: tmp_path)
+    monkeypatch.setattr(subject.time, "time", lambda: 500.0)
+    base = subject.QuotaWindow("codex", "a", "w", 10, 1000, 100, contract="plan")
+    for at, used, signature, seconds in [
+        (100, 10, "A", 0),
+        (200, 20, "A", 10),
+        (300, 30, "B", 20),
+        (400, 35, "B", 30),
+        (500, 40, "A", 40),
+    ]:
+        subject.observe([replace(base, observed_at=at, used_percent=used)], setting_signature=signature, active_seconds=seconds)
+    key = subject.rate_key(base)
+    assert subject.snapshot()["setting_rates"] == {"A": {key: 1.0}, "B": {key: 0.5}}
+    subject.observe([replace(base, observed_at=600, used_percent=1, resets_at=2000)], setting_signature="A", active_seconds=50)
+    assert not subject.snapshot()["setting_rates"]
