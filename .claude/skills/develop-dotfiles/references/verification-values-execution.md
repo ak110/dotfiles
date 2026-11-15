@@ -76,6 +76,30 @@
      意味判定が不要なら`--consumer-review`は省略する。
      このコマンドは、最終内容の単一runにおけるpytestの成功、変更状態と実行時点、および列挙できた利用側試験の被覆を確認する。
      最終run_idとverify-runの結果は、既存の検証記録と統合結果へ対応付ける。
+     manifestへ渡すときは、run成功・run_id取得・同じclean入力のverify-run成功までを失敗伝達付きの1操作へまとめる。
+     以下のshellファイルは、ログの絶対パスprefix・意味判定JSONの絶対パス・選定済みのrun引数を順に受け取る例である。
+
+     ```bash
+     #!/usr/bin/env bash
+     set -euo pipefail
+     log_prefix=$1
+     consumer_review=$2
+     shift 2
+     uv run --frozen pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err"
+     run_id=$(jq -er 'select(.kind == "header") | .run_id' "$log_prefix.out")
+     uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review"
+     ```
+
+     スクリプトは自身のmanaged-tempへ保存し、次のargvをverificationの1項目へ渡す。
+     山括弧の値を実在値へ置換し、複数の対象パスは別々の要素にする。
+
+     ```json
+     ["bash", "<スクリプトの絶対パス>", "<ログprefixの絶対パス>", "<意味判定JSONの絶対パス>", "--no-fix", "--commands=<選定した全チェック>", "<対象パス>"]
+     ```
+
+     意味判定が不要な場合は、その入力と`--consumer-review`の指定を省いたスクリプトを使う。
+     手動で最終runを完了した場合も、同入力のverify-runをff前に実行し、両成功とHEAD/indexの証拠を保持してから統合へ渡す。
+     検証だけの保存成功を理由にverificationを空にせず、空にする場合は受理まで完了した同入力の両出力・終了状態を既存記録へ対応付ける。
      最終検証が失敗した場合はffせず、既存の是正・必要な再レビュー・統合再開へ戻す。
      検証後の編集や統合先の前進で入力が変わった場合は、追随後の新しい内容で必要な検証と確認をやり直す。
      準備時の成功や過去の別内容の成功は、この最終確認へ代用しない。
