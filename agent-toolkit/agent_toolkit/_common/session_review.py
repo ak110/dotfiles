@@ -606,9 +606,18 @@ def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = Fals
         old = state.reviewed.model_dump(exclude_unset=True) if state.reviewed is not None else {"records": {}}
         for record_id, entry in scope["records"].items():
             previous = old["records"].get(record_id)
-            if previous is not None and previous["through_line"] > entry["through_line"]:
+            if previous is not None and previous.get("observed_through_line", previous["through_line"]) > entry.get(
+                "observed_through_line", entry["through_line"]
+            ):
                 scope["records"][record_id] = previous
         scope["records"] = {**old["records"], **scope["records"]}
+        if old.get("partial_analysis") or scope.get("partial_analysis"):
+            # 遅い結果でも、新しい成功範囲に含まれる欠測・回復情報を失わない。
+            scope["partial_analysis"] = True
+            for field in ("unconfirmed_scope", "recovered_record_lines"):
+                scope[field] = list(
+                    {json.dumps(item, sort_keys=True): item for item in [*old.get(field, []), *scope.get(field, [])]}.values()
+                )
         scope.update(host=host, session_id=session_id, review_batch=bool((target or old).get("review_batch")))
         # 新しいSessionStart/UserPromptSubmitがあれば、同じ会話でも後続世代を消さない。
         appended = any(

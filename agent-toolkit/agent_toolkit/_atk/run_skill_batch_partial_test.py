@@ -127,7 +127,7 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
     assert all(path.read_bytes() == content for path, content in originals.items())
 
 
-@pytest.mark.parametrize("change", ["none", "append", "generation", "prefix"])
+@pytest.mark.parametrize("change", ["none", "append", "generation", "prefix", "older"])
 def test_partial_completion_preserves_new_input(tmp_path, change):
     """モデル/実Gitなしで、末尾欠測の消費と新入力・接頭辞変更の保護を区別する。"""
     path = tmp_path / "partial.jsonl"
@@ -159,6 +159,15 @@ def test_partial_completion_preserves_new_input(tmp_path, change):
         path.write_text(path.read_text(encoding="utf-8") + row + "\n", encoding="utf-8")
     elif change == "prefix":
         path.write_text(row.replace("要求", "変更") + "\n\0\0broken\n", encoding="utf-8")
+    elif change == "older":
+        path.write_text(path.read_text(encoding="utf-8") + "\0more-missing\n", encoding="utf-8")
+        newer = session_review.read(scope)
+        newer["records"]["claude:partial"]["observed_through_line"] = 3
+        newer["unconfirmed_scope"].append({"kind": "record-gap", "record": "claude:partial", "line": 3})
+        with session_review.locked():
+            state = session_review.TargetGeneration("claude", path.stem)
+            state.register({**target, "generation": "new"})
+            state.complete(newer, "new", appended=True)
     writer = session_review.BatchWriter(session_review.directory() / "runs" / "partial.json")
     writer.create({"run_id": "partial", "targets": [target], "prepared": [prepared]})
     writer.analyze()
@@ -168,3 +177,9 @@ def test_partial_completion_preserves_new_input(tmp_path, change):
     else:
         assert writer.complete(report_synced=True)["status"] == "completed"
     assert bool(session_review.pending()) is (change != "none")
+    if change == "older":
+        reviewed_path = session_review.previous_scope(target)
+        assert reviewed_path is not None
+        reviewed = session_review.read(reviewed_path)
+        assert reviewed["records"]["claude:partial"]["observed_through_line"] == 3
+        assert [event["line"] for event in reviewed["unconfirmed_scope"]] == [2, 3]
