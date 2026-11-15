@@ -145,6 +145,13 @@ def test_live_external_process_holds_worktree_until_it_ends(
 
 
 @pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実Git worktreeと生存所有者を保持し、稼働中/無応答で回収を拒否する代表2条件。"
+        "同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 def test_lane_preserves_session_when_running_or_owner_unresponsive(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal: bool
 ) -> None:
@@ -325,6 +332,12 @@ def test_integrate_ignores_session_in_nested_lane_worktree(
 
 
 @pytest.mark.parametrize("relative", [".", "direct"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実Gitの統合先/子dirを使う合意外のwriterを検出する代表2条件。同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 def test_integrate_rejects_session_in_target_outside_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], relative: str
 ) -> None:
@@ -353,6 +366,13 @@ def test_worktree_activity_ignores_nested_worktree(
 
 
 @pytest.mark.parametrize("source", ["cwd", "argv"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "プロセス列挙は代用し、実Git worktreeの入れ子所属だけをcwd/argvで検収する。"
+        "同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 def test_process_activity_ignores_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], source: str
 ) -> None:

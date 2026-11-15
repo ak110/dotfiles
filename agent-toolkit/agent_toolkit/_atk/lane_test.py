@@ -124,6 +124,13 @@ def test_fixed_creation_reclaims_missing_previous_resource(
     assert not pathlib.Path(record["record_path"]).exists()
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実Gitの登録だけ残したworktree消失を、同じ登録の再利用拒否と回復案内で検収する。"
+        "同じ実Git資源群の所有CPU観測と起動数から有限上限を設定する。"
+    ),
+)
 def test_reuse_rejects_record_whose_worktree_is_missing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -299,6 +306,13 @@ def test_project_create_procedure_receives_the_fixed_placement(
         assert code == 0 and deleted["removed"] == ["lane-01"], stderr
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実Gitの固定作成先にある所有不明の成果を、登録せず変更しないことを確認する。"
+        "同じ実Git資源群の所有CPU観測と起動数から有限上限を設定する。"
+    ),
+)
 def test_fixed_placement_does_not_overwrite_unregistered_entity(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -419,6 +433,13 @@ def test_hook_owned_resource(
 
 
 @pytest.mark.parametrize("returned", ["main", "other", "other-detached"])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "実hookから返る主作業先/別所有のworktreeで、履歴と未保存成果が変わらない境界を残す。"
+        "同じ実Git資源群の所有CPU観測と起動数から有限上限を設定する。"
+    ),
+)
 def test_hook_cannot_adopt_preexisting_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], returned: str
 ) -> None:

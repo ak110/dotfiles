@@ -296,6 +296,13 @@ async def test_live_owner_is_observed_and_cli_collects_old_root_result_and_notic
 
 
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "モデルは代用し、所有者喪失で残る実CLIの世代が終了した後だけ同じIDを再開する。"
+        "同じ最小実境界群の所有CPU観測を基準に、通常上限と分ける。"
+    ),
+)
 async def test_owner_lost_executor_stops_before_same_id_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
