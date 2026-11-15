@@ -1,8 +1,6 @@
 # atk serveの画面と選定設定
 
-## 推奨ワークフロー
-
-### atk serveの画面
+## atk serveの画面
 
 `atk serve`を実行し、起動ログに表示されたURL（初期値は`http://127.0.0.1:28766/`、Windowsではポート28876）をブラウザーで開く。
 終了するにはそのターミナルで`Ctrl+C`を押す。
@@ -73,7 +71,7 @@ atk config set serve_sessions_remote_hosts '["remote-host"]'
 リモートホストの自動更新と費用表示には、リモートホスト側のdotfilesの更新が必要である。
 画面の詳細な振る舞いは[design-serve.md](../development/design-serve.md)を参照。
 
-### 選定結果の確認設定
+## 選定結果の確認設定
 
 対象リポジトリの`pyproject.toml`に`[tool.agent-toolkit.pick-wi-check]`の`norm-spec`を置くと、AWIの選定時に、条件に当たる項目へ指定の規範を書くことを求められる。
 各条件は`paths`と`suffixes`か`agent-doc = true`（エージェント向け文書）で対象を選び、`require-paths = true`か`require-text`で求める記載を指定する。

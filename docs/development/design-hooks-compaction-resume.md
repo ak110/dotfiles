@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、会話圧縮と利用上限後の再開予約の記録である。
 
-## Function hooks moduleの個別設計
-
-### メインの会話圧縮予約
+## メインの会話圧縮予約
 
 `compact_conversation`はClaude Codeのメインへ引数なしの会話圧縮予約を提供する。
 `register.ts`がメイン専用の登録と委譲先の判定を「send_to_userツール」と共有し、同じ判定を自動経路にも渡す。
@@ -45,7 +43,7 @@ Codexの独立圧縮turnと合わせ、所有と結果保留の構造は[design-
 原本を使う復元は要約を生成するホストでも共通とし、目的・最新訂正・認可・未完了を発話順・主体・参照位置から確認する。
 実機の適用範囲と再検証はaudit-records.md「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
 
-### 利用上限後のメインの再開予約
+## 利用上限後のメインの再開予約
 
 観測と再検証手段は`docs/development/audit-records-usage-limit.md`の「docs/development/design-hooks-compaction-resume.md：利用上限後のメインの再開予約：2026年10月14日」にある。
 

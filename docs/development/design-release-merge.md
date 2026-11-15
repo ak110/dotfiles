@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)と[branch・CI所有権・公開・終了の設計記録](design-release.md)から参照する主題別の記録である。
 
-## developとmasterのbranch・リリース設計
-
-### rulesetの更新手順
+## rulesetの更新手順
 
 ruleset `21524717`のrequired checkは共通8名と`statusline-version`の9件とし、`statusline-version`以外は共通CIのjob表示名と一致させる。
 ruleset更新前の個別GETでは、応答の完全IDが`21524717`、`source`が`ak110/dotfiles`、`target`が`branch`であり、条件が`refs/heads/master`を対象とすることを確認する。
@@ -27,7 +25,7 @@ ruleset一覧には個別ref条件が含まれないため、同名候補の完�
 GitHubのruleset API仕様は、2026年8月26日時点の[Rulesets REST API](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10)を参照する。
 workflowの`workflow_run`入力境界は同日時点の[workflow_runイベント仕様](https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#workflow_run)を参照する。
 
-### マージ後の同期と検収
+## マージ後の同期と検収
 
 PRマージ後は、`origin/master`をマージコミットの基準として保持し、`git rev-parse --short=7 origin/master`で人間可読の識別子を取得する。
 その後に`origin/master:refs/heads/develop`を明示したrefspecで`origin/develop`をpushする。
@@ -54,7 +52,7 @@ statuslineの差分がない場合はRelease成果物を検収しない。
 
 PRマージ、branch同期およびRelease検収の詳細は、プロジェクトスキル[merge-pr](../../.claude/skills/merge-pr/SKILL.md)を実行時の手順とする。
 
-### 初回のbranch初期化
+## 初回のbranch初期化
 
 初回branch初期化は1回だけ実行する。
 実装済みHEADのrefからローカル`develop`を作成して公開し、developのCIを確認する。

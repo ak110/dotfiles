@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、常時規範とplugin manifestの記録である。
 
-## Claude CodeとCodexの規範配置
-
-### 共有原本とCodex固有の上書き
+## 共有原本とCodex固有の上書き
 
 Codexのコマンド回収は、外側の`functions.exec`のcellと内側の`exec_command`のsessionを別の実行識別子として扱う。
 返却本文とともに`exit_code`と`session_id`を保持し、cellは`functions.wait`、sessionは`write_stdin`で同じ起動の終了まで回収する。
@@ -31,7 +29,7 @@ Claude Code固有の委譲先規範はCodexへ配送しない。
 共有文書をCodex用に複製する案は、原本・生成器・自動テストの同期対象を増やすため採用しない。
 Codex事情を共有ルールへ直接改訂する案は、Claude Codeへホスト固有の挙動を波及させるため採用しない。
 
-### plugin manifestと生成物
+## plugin manifestと生成物
 
 公開動作を追加または変更するpluginは、各pluginの`.claude-plugin/plugin.json`（`agent-toolkit/`と`agent-basics/`のそれぞれ）を版数の基準とする。
 版数は`agent_toolkit_bump.py --plugin <plugin名> minor`などの正式な手順で更新する。

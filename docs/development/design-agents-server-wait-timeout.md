@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、待機上限の記録である。
 
-## 公開ツールの契約
-
-### 待機上限
+## 待機上限
 
 `atk agents wait`の待機上限は固定値を持たない。
 `_agents_server/agents_wait.py`の`wait_for_result`が待機開始時に、`_common/wait_schedule.py`の`get_cli_wait_timeout("main")`から上限を導出する。

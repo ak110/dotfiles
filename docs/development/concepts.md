@@ -162,7 +162,7 @@
 
 - `model_context_window=1000000`と`model_auto_compact_token_limit=900000`は、別の改善で圧縮の頻度が下がることを実作業で観測するまで、減らさず標準へ戻さない。
 
-## [確認・合意の運用](concepts-confirmation-decisions.md#確認合意の運用)
+## [確認・合意の運用](concepts-confirmation-decisions.md)
 
 - 要件・意図の曖昧さで結果が少しでも変わるなら、着手前に全件を列挙してユーザーへ確認する。
 - 区分や解釈を決めかねる場合に確認を選ぶ扱いを置かず、判断の目的に照らして確定する。

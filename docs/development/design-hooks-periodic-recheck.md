@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、定期再確認の装着と回収の記録である。
 
-## Function hooks moduleの個別設計
-
-### `start`の処理の中での定期再確認の装着
+## `start`の処理の中での定期再確認の装着
 
 2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。
 ユーザーが`<役割名>.parent.md`による起動までの手順の多さを指摘し、`start`の後の自動化を求めたためである。

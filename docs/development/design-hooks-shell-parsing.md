@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、Bashコマンドの解析とheredoc遮断の記録である。
 
-## フックの責務境界
-
-### Bashコマンドの解析とheredoc遮断
+## Bashコマンドの解析とheredoc遮断
 
 Bashの引数所属と出力接続は、`_common/bash_invocations.py`の`extract_bash_invocations`が解析する。
 外側の語と能動的な置換内の呼び出しを分け、引用・エスケープ・入れ子と、展開結果が未確定であることを保持する。

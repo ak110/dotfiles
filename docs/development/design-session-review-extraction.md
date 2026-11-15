@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)と[振り返り・知見集約の設計記録](design-session-review.md)から参照する主題別の記録である。
 
-## review-sessionの構成と候補抽出
-
-### 証拠抽出スクリプトの構成
+## 証拠抽出スクリプトの構成
 
 `--summary-only`は既存の照会結果から件数・判定・保存先を生成側で選ぶ。
 grep・fixed-string・context-at・tool-calls・warn・bundleと統計を対象にし、未解決・エラーの診断と終了コード、結果が参照する記録の由来を保つ。

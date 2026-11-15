@@ -1,8 +1,6 @@
 # アーキテクチャ: post-applyとPython依存環境
 
-## agent-toolkitのホスト別配布
-
-### `post_apply.py`の工程間の順序
+## `post_apply.py`の工程間の順序
 
 - dotfilesプラグインの適用は`pytools/_internal/apply_dotfiles_plugins.py`が担い、本体の後処理が終わってから実行する。
   プラグインごとのchezmoi永続状態を本体から分離し、本体と配布先が重なる場合は警告してプラグインの内容を上書きする。
@@ -37,7 +35,7 @@
   この環境変数が無い`dotfiles-post-apply`の単独実行では、post-applyの集計の行（`完了: 更新 N 件 / スキップ N 件 / 失敗 N 件`）の後に出す
 - 開始行、ロガー`httpx`のINFO、`claude` CLIの実行記録、実行中のOSを対象外とする工程の行は永続ログ（`update-dotfiles.log`）にだけ残す
 
-### Python依存環境の共有
+## Python依存環境の共有
 
 `plugin_environment.py`は選択したPythonの実行ファイルパス、OS・アーキテクチャ、依存導入に作用するpyproject設定と`uv.lock`を正規化して共有環境を識別する。
 配布root、プラグイン版、文書・コード・lint設定の差は環境を分ける条件に含めない。

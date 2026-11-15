@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)と[WIキューと要求本文の設計記録](design-wi.md)から参照する主題別の記録である。
 
-## WIキューと実行準備
-
-### キュー状態と公開一覧
+## キュー状態と公開一覧
 
 重要フラグは状態とは独立したfrontmatterの`important: true`で表す。
 キーが欠ける項目はfalseとし、解除時はキーを削除する。
@@ -33,7 +31,7 @@ CLIのファイル名指定による`adopt`・`reject`は`processing`、`inbox`�
 ユーザーはブラウザーUIから同じ再開・保留と終了項目の削除を行える。
 誤終了を削除と再投入だけで復旧する案は、元項目の由来と本文を保てないため採用しない。
 
-### 一覧出力
+## 一覧出力
 
 `atk wi list`は`AI_AGENT`、`CODEX_CI`、`CLAUDECODE`、`CURSOR_AGENT`のいずれかが設定されたエージェント環境ではオプション指定が無い場合にJSON Linesを出力する。
 `--jsonl`はJSON Lines、`--no-jsonl`は従来のテキスト表示、`--count`は件数だけの表示として優先する。
