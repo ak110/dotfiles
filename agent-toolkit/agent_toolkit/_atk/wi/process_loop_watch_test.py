@@ -422,8 +422,8 @@ def test_abort_precedes_enter_during_continuous_changes(
     _use_windows_console(monkeypatch, console)
 
     def release() -> None:
-        console.keys.append("\r")
         _pl_control.cmd_process_loop_abort()
+        console.keys.append("\r")
 
     changes = _ContinuousChanges(monkeypatch, notes / "entry.md", interval=0.05, count=200, on_change=release)
     changes.start()
