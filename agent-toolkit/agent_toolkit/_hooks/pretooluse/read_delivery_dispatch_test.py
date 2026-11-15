@@ -170,6 +170,8 @@ def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, caps
         reason = _denial(dispatch.main(json.dumps(payload)), capsys.readouterr())
         assert "approval-scope.md" in reason
         assert "choice-construction.md" in reason
+        assert "user-confirmation-and-report-decisions.md" in reason
+        assert "user-confirmation-and-report-questions.md" in reason
         assert "取得後に確認の要否を判断し直せ" in reason
 
 

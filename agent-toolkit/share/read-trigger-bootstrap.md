@@ -21,8 +21,8 @@
 | 個別の一時領域の作成の前 | `../skills/managed-temp/SKILL.md` | 操作 | `managed-temp-create` |
 | 本文の作成・更新の前 | `agent-basics:writing-standards/SKILL.md` | 操作 | `body-writing` |
 | 検証の実行の前 | `agent-basics:check-execution/SKILL.md`、`check-execution-operations.md`、`verification-operations.md` | 操作 | `verification` |
-| 要件・技術判断を分類し、確認要否を判定する前 | `../skills/user-confirmation-and-report/references/approval-scope.md` | 判断 | `skill:user-confirmation-and-report` |
-| 確認本文と選択肢を起草する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/choice-construction.md` | 判断 | `confirmation` |
+| 要件・技術判断を分類し、確認要否を判定する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `skill:user-confirmation-and-report` |
+| 確認本文と選択肢を起草する前 | `../skills/user-confirmation-and-report/references/approval-scope.md`、`../skills/user-confirmation-and-report/references/choice-construction.md`、`../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`、`../skills/user-confirmation-and-report/references/user-confirmation-and-report-questions.md` | 判断 | `confirmation` |
 | 期待からの逸脱を認識し、診断・訂正・対処を判断する前 | `agent-basics:bugfix/SKILL.md` | 判断 | `skill:agent-basics:bugfix` |
 | 原因分析の判断前と記述前 | `agent-basics:bugfix/references/root-cause-analysis.md` | 判断 | `skill:agent-basics:bugfix`、`root-cause-writing` |
 | AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `../skills/wi-standards/references/analysis-records.md` | 操作 | `root-cause-writing` |
