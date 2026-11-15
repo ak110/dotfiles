@@ -80,7 +80,7 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
                 "recorded_result_utf8_bytes": len(result.encode("utf-8")) if result is not None else None,
                 **(_persisted_result_metrics(entries[call.result_line], call.call_id) if call.result_line is not None else {}),
                 "read_range": {key: inputs[key] for key in ("offset", "limit", "start", "max_bytes") if key in inputs},
-                "summary": call.text,
+                "summary": call.text if len(call.text) <= 1200 else call.text[:600] + "…" + call.text[-600:],
             }
             events.append(event)
     return events

@@ -59,8 +59,8 @@ def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pyt
     assert window["excerpt_count"] > 0 and window["has_more"]
     assert "末尾の原文" not in document
     assert "表示から除く機械資料" not in document
-    bundle = work / "bundle" / "conversation.jsonl"
-    assert json.loads(bundle.read_text(encoding="utf-8").split("\n")[0])["text"] == text
+    # 原本から継続できるscopeだけを保存し、表示しない全文を複製しない。
+    assert not (work / "bundle" / "conversation.jsonl").exists()
     assert _run([str(transcript), "--detail", "claude:main:1"], "session-review-evidence") == 0
     details = [json.loads(line) for line in capsys.readouterr().out.split("\n") if line.strip()]
     assert any(text in event.get("text", "") for event in details)
@@ -78,6 +78,9 @@ def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pyt
     positions = [int(value) for value in re.findall(r"^- \[(\d+)\]", continuation, re.MULTILINE)]
     assert positions and min(positions) > window["next_after"]
     assert "後から追記した発話" not in continuation
+    support.write_jsonl(transcript, [support.timestamped_entry("2026-11-01T00:00:00Z", "変更された接頭辞"), *entries[1:]])
+    assert _run(command_arguments) == 2
+    assert "前回処理済み範囲を再現できない" in capsys.readouterr().err
 
 
 def test_window_selection_unknown_time_and_incomplete_call(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -347,8 +350,8 @@ def test_window_exact_fixed_budget_and_saved_jsonl_diagnostic(
     assert result["conversation_window"]["unresolved_count"] == 0
     assert _run([*base, *options, "--conversation-after", "0", "--conversation-max-bytes", str(budget - 1)]) == 2
     assert "最小固定部" in capsys.readouterr().err
-    path = work / "bundle" / "conversation.jsonl"
-    path.write_text(path.read_text(encoding="utf-8") + '{"unfinished":\n', encoding="utf-8")
+    path = work / "bundle" / "unconfirmed.jsonl"
+    path.write_text('\n{"unfinished":\n', encoding="utf-8")
     assert _run([*base, "--conversation-after", "0"]) == 2
     assert f"{path}:2（物理行）" in capsys.readouterr().err
 

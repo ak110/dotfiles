@@ -235,7 +235,7 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
 def test_comparison_index_capacity_and_counts(
     count: int, known_zero: bool, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開準備の容量・全量保存と、表示内外から原入力・結果への照会を検収する。"""
+    """全件の位置・量を保存し、有限の比較概要と表示内外の原文照会を検収する。"""
     transcript = tmp_path / "comparison.jsonl"
     parent = [support.timestamped_entry("2026-09-06T12:00:00Z", "依頼")]
     children: dict[int, list[dict]] = {}
@@ -277,8 +277,13 @@ def test_comparison_index_capacity_and_counts(
         locator = f"{event['record']}:{event['line']}"
         (shown if f"入力={locator}、" in document else omitted).append(event)
         inputs, _ = expected[(event["record"], event["line"])]
+        if any(len(value.encode("utf-8")) > 32000 for value in inputs.values()):
+            assert len(event["summary"].encode("utf-8")) < 32000
+        if "prompt" in inputs:
+            assert event["observed_body_characters"] == len(inputs["prompt"])
         assert all(
-            value in event["summary"] or value in json.dumps(event["target"], ensure_ascii=False) for value in inputs.values()
+            value[:100] in event["summary"] or value in json.dumps(event["target"], ensure_ascii=False)
+            for value in inputs.values()
         )
     for category in ("delegation", "explicit-read", "opaque-command"):
         total = sum(event["category"] == category for event in materials)

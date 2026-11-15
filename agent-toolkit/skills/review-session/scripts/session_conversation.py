@@ -134,8 +134,7 @@ def window_document(
             f"本文抜粋{clipped}件。\n"
             f"継続位置: {cursor}。同じbundle・条件の続き: `{continue_command} --conversation-after {cursor}`\n"
             "継続時は同じwork-dirの保存bundleを使う。件数条件の省略分はrecentを外してafter 0で取得する。\n"
-            f"全文はbundle/conversation.jsonl。詳細: `{detail_command} --detail <記録>:<行番号>`。"
-            "ツール入力の詳細で省略された本文もbundle/conversation.jsonlに保持する。\n"
+            f"全文は元記録から取得する。詳細: `{detail_command} --detail <記録>:<行番号>`。\n"
         )
 
     # 案内が長い入力でも文書全体の予算を守る。固定部を短縮すると対象や再取得操作が曖昧になるため拒否する。
@@ -162,7 +161,7 @@ def window_document(
                 raise ValueError("会話表示の記録位置を含む最小行が予算を超えた。次の操作: --conversation-max-bytesを増やす")
             break
         body = _clip(full_body, body_budget)
-        clipped += body != full_body
+        clipped += body != full_body or bool(event.get("text_truncated"))
         row = prefix + body + "\n"
         rows.append(row)
         used += len(row.encode("utf-8"))

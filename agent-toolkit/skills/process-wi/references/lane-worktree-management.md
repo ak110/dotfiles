@@ -11,7 +11,9 @@
 
 1. `atk lane create`で、主作業ツリー配下の`.claude/worktrees/process-wi-<レーン識別子>`に作成し、worktree・branch・所有セッションを紐付けて登録する。
    メインエージェントによる所有資源の手作業での再登録は禁止する。
-2. 統合後も追加変更に備えて保持し、全工程と外部プロセスの終了後に`atk lane delete`で回収する。
+2. 統合・最終化の検収と消費工程が終わったレーンは、巡回全体の終了を待たず、メインが`atk lane delete`で回収する。
+   同一threadへの追加は、保存したcommit・計画・引き継ぎを使い、`atk lane create`で環境を再作成してから再開する。
+   担当と外部プロセスが終了していない対象は同CLIの保護判定に従って保持する。
    回収順は`atk lane create --commands-file`に渡したdeleteコマンド、worktree、branch、以前の構成の個別managed-tempとする。
    通常終了時の`atk agents-exit-session`とprocess-loopの子セッション終了後の処理も同じ回収処理を呼ぶ。
 3. CLIが未統合・dirty・稼働中・状態不明・一部失敗の資源を保持したら、メインが共通判断で理由を調べる。

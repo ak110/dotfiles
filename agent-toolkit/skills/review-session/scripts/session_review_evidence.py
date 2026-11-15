@@ -10,11 +10,13 @@ import functools
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 import session_evidence_failures
 from session_evidence_ancestors import RESOLVE_NEXT_ACTION, AmbiguousOwnerRecord, delegation_record, owner_record
 from session_evidence_bundle import (
     _bundle_events,
+    _conversation_bundle,
 )
 from session_evidence_catalog import (
     CATALOG_PARENT_FIELDS,
@@ -92,7 +94,13 @@ from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.session_family import _RecordRecovery, _started_after_boundary
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(
+    argv: list[str] | None = None,
+    *,
+    conversation_output: list[dict[str, Any]] | None = None,
+    conversation_scope: Path | None = None,
+    conversation_only: bool = False,
+) -> int:
     """証拠または照会結果を1イベント1 JSONのJSONLとして標準出力へ書く。"""
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
@@ -478,13 +486,25 @@ def main(argv: list[str] | None = None) -> int:
     gaps = [event for event in _collection_events(collected, []) if event["kind"] == "record-gap"]
 
     if args.bundle is not None:
-        events, exit_code = _bundle_events(
-            collected,
-            unresolved,
-            Path(args.bundle),
-            compaction_record_dir,
-            after=Path(args.after) if args.after else None,
-        )
+        if conversation_only:
+            assert conversation_output is not None
+            events, exit_code = _conversation_bundle(
+                collected,
+                unresolved,
+                Path(args.bundle),
+                conversation_output,
+                after=Path(args.after) if args.after else None,
+                saved_scope=conversation_scope,
+            )
+        else:
+            events, exit_code = _bundle_events(
+                collected,
+                unresolved,
+                Path(args.bundle),
+                compaction_record_dir,
+                after=Path(args.after) if args.after else None,
+                conversation_output=conversation_output,
+            )
         provenance = _referenced_provenance_events(collected, events)
         _print_events(
             [
