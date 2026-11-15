@@ -19,6 +19,7 @@ from session_evidence_extract import _CollectedRecord, _load_records, _parse_tim
 from session_evidence_hook_notices import _hook_notice_events
 from session_evidence_records import _collect_records
 from session_evidence_stats import _add_tokens, _codex_normalized_tokens, _parse_cli_timestamp, _stats_summary_data
+from session_quality_metrics import collect_quality_events, first_pass_metrics
 
 from agent_toolkit._agents_server import record_paths
 from agent_toolkit._atk import review_table, session_record_format
@@ -58,6 +59,7 @@ def _new_week(day: str) -> dict[str, Any]:
         "week": day,
         "adopted_awi_count": 0,
         "hook_notices": [],
+        "first_pass": [],
         "tokens": {
             scope: {"total": _empty_tokens(), "by_runtime": {runtime: _empty_tokens() for runtime in ("claude", "codex")}}
             for scope in ("all", "process-wi")
@@ -207,6 +209,17 @@ def _queue_metrics(
         weeks[week]["adopted_awi_count"] = len(names)
 
     saved = saved_review_tables(repo, history, since, until)
+    by_name = {table.path.name: table for table in saved.tables}
+    for week in weeks.values():
+        for quality in week["first_pass"]:
+            if quality["stage"] != "review":
+                continue
+            for unit in quality["units"]:
+                names = unit.get("review_tables", [])
+                if names and all(name in by_name for name in names):
+                    findings = [row for name in names for _, row in by_name[name].rows]
+                    unit["finding_count"] = len(findings)
+                    unit["accepted_finding_count"] = sum(review_table.response_state(row) == "adopted" for row in findings)
     for table in saved.tables:
         rows = table.rows
         rounds = max((int(row[0]) for _, row in rows), default=0)
@@ -354,6 +367,8 @@ def _session_metrics(
         )
         item = family[0]
         workflow, _ = _workflow_evidence(item)
+        for quality in first_pass_metrics(collect_quality_events(family, workflow), since, until):
+            weeks[quality["week"]]["first_pass"].append(quality)
         scopes = ("all", "process-wi") if workflow == "process-wi" else ("all",)
         for scope in scopes:
             week["root_session_count"][scope] += 1

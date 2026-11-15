@@ -89,6 +89,7 @@ from session_evidence_user_events import (
 from session_evidence_warn import (
     _warning_collection_events,
 )
+from session_quality_metrics import quality_metrics
 
 from agent_toolkit._agents_server import record_paths as _record_paths
 from agent_toolkit._common import host_homes as _host_homes
@@ -890,7 +891,7 @@ def main(argv: list[str] | None = None) -> int:
         events.extend(results)
         exit_code = max(exit_code, code)
     if args.stats:
-        stats = _stats_events(collected, compaction_record_dir)
+        stats = [*_stats_events(collected, compaction_record_dir), *quality_metrics(collected)]
         if args.summary_only:
             stats = [
                 event

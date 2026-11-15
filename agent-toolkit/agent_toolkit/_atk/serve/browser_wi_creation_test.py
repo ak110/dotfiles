@@ -11,6 +11,7 @@ from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pyl
     _BrowserHarness,
     _screen_harness_fixture,
 )
+from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
 from agent_toolkit._testing.serve_browser_wi_support import _entry_path
 
 pytestmark = [
@@ -108,14 +109,21 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
     await page.get_by_role("status").filter(has_text="1件を取り込みました").wait_for(state="visible")
     await page.locator('.entry-select[data-key="imported.md"]').wait_for(state="visible")
     assert (_entry_path(harness.root, "imported.md")).read_text(encoding="utf-8") == (
-        "---\ntarget_repo: batch/repo\ntype: awi\nstate: inbox\n---\n\n一括取り込みの本文\n"
+        "---\nstate: inbox\ntarget_repo: batch/repo\ntype: awi\n---\n\n一括取り込みの本文\n"
     )
+    before = {path: path.read_bytes() for path in harness.root.rglob("*.md")}
+    repeated = await page.request.post(harness.base_url + "/api/entries/batch", data={"text": batch_text})
+    assert repeated.status == 201
+    assert (await repeated.json())["skipped"] == ["imported.md"]
+    assert {path: path.read_bytes() for path in harness.root.rglob("*.md")} == before
 
     await page.get_by_role("button", name="新規追加").click()
     await create_dialog.wait_for(state="visible")
     await playwright.async_api.expect(create_dialog.locator("#create-repo-fields")).to_be_visible()
     await playwright.async_api.expect(create_dialog.locator("#create-target")).to_have_value("")
-    await create_dialog.locator("#create-content").fill("---\ntarget_repo: frontmatter/repo\n---\n\nfrontmatter指定の本文")
+    await create_dialog.locator("#create-content").fill(
+        "---\ntarget_repo: github.com/frontmatter/repo\n---\n\nfrontmatter指定の本文"
+    )
     async with page.expect_request(lambda request: request.url.endswith("/api/entries") and request.method == "POST"):
         await create_dialog.get_by_role("button", name="追加").click()
     await create_dialog.wait_for(state="hidden")
@@ -175,7 +183,7 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
     await page.locator('.entry-select[data-key="auto-imported.md"]').wait_for(state="visible")
     assert harness.operations.batch_calls[-1] == show_text
     assert (_entry_path(harness.root, "auto-imported.md")).read_text(encoding="utf-8") == (
-        "---\ntarget_repo: batch/repo\ntype: awi\nstate: inbox\n---\n\n自動切替の本文  \n"
+        "---\nstate: inbox\ntarget_repo: batch/repo\ntype: awi\n---\n\n自動切替の本文  \n"
     )
 
 
@@ -192,7 +200,7 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
     await playwright.async_api.expect(dialog.locator("label[for='create-choices']")).to_have_text(
         "選択肢（1行1件、2件以上必須）"
     )
-    await dialog.locator("#create-target").fill("example/repo")
+    await dialog.locator("#create-target").fill("github.com/example/repo")
     await dialog.locator("#create-content").fill("質問の本文")
     choices = dialog.locator("#create-choices")
     await choices.fill("一択")
@@ -211,7 +219,20 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
     assert single_payload["choices"] == ["第一", "第二"]
     await dialog.wait_for(state="hidden")
     assert harness.operations.add_calls[-1]["messages"] == ["質問の本文"]
-    await page.locator('.entry-select[data-key="created-1-0.md"]').wait_for(state="visible")
+    created = page.locator("#entry-list .entry-select").filter(has_text="質問の本文")
+    await created.wait_for(state="visible")
+    filename = await created.get_attribute("data-key")
+    assert filename is not None
+    saved = wi_frontmatter.parse_frontmatter(_entry_path(harness.root, filename).read_text(encoding="utf-8"))
+    assert saved is not None
+    metadata, body = saved
+    assert metadata["type"] == "uwi"
+    assert metadata["state"] == "inbox"
+    assert metadata["target_repo"] == "github.com/example/repo"
+    assert metadata["question_type"] == "choice"
+    assert metadata["choices"] == "第一,第二"
+    assert "source" not in metadata
+    assert body == ("\n## 質問\n\n質問の本文\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n")
 
     await page.get_by_role("button", name="新規追加").click()
     await dialog.locator("#create-kind").select_option("uwi")
@@ -239,7 +260,7 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
     await dialog.wait_for(state="hidden")
     assert harness.operations.batch_calls[-1] == show_text
     assert (_entry_path(harness.root, "pasted.md")).read_text(encoding="utf-8") == (
-        "---\ntarget_repo: batch/repo\ntype: awi\nstate: inbox\n---\n\n貼り付けた本文\n"
+        "---\nstate: inbox\ntarget_repo: batch/repo\ntype: awi\n---\n\n貼り付けた本文\n"
     )
     await page.locator('.entry-select[data-key="pasted.md"]').wait_for(state="visible")
 
@@ -269,6 +290,14 @@ async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_
     assert harness.operations.batch_calls == []
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "不正な入力欄へフォーカスが戻った直後に対応するエラーの全文が見え、本文をスクロールしてもヘッダー"
+        "とフッターの位置は変わらない。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.748"
+        "秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize(("width", "height"), [(320, 720), (700, 720), (1280, 720), (1280, 900)])
 @pytest.mark.parametrize("input_height", [None, 480])

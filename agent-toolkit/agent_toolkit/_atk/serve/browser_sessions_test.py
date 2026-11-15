@@ -204,6 +204,10 @@ async def test_session_details_use_exclusive_default_closed_sections(screen_harn
     await playwright.async_api.expect(sections.nth(1)).to_have_attribute("open", "")
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("挿入本文だけを閉じ、一覧の検索値と通常発話を保つ。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.612秒）。"),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> None:
     """挿入本文だけを閉じ、一覧の検索値と通常発話を保つ。"""

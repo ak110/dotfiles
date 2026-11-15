@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Generator, Iterator
 from multiprocessing import resource_tracker
 from typing import Any
@@ -59,6 +60,38 @@ local_time_jst = session_evidence_support.local_time_jst
 
 _BROWSER_REPORTS = pytest.StashKey[dict[str, pytest.TestReport]]()
 _BROWSER_EVIDENCE = pytest.StashKey[pathlib.Path]()
+_CPU_TIMES = pytest.StashKey[dict[str, float]]()
+_CPU_LIMIT = pytest.StashKey[tuple[float, str]]()
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_setup(item: pytest.Item) -> Generator[None, object, object]:
+    """fixtureの準備を含むプロセスCPUを計測する。"""
+    started = time.process_time()
+    try:
+        return (yield)
+    finally:
+        item.stash.setdefault(_CPU_TIMES, {})["setup"] = time.process_time() - started
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
+    """待機時間や子プロセスCPUを含めず本体を計測する。"""
+    started = time.process_time()
+    try:
+        return (yield)
+    finally:
+        item.stash.setdefault(_CPU_TIMES, {})["call"] = time.process_time() - started
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, object, object]:
+    """回収が完了してからCPU合算の判定へ進む。"""
+    started = time.process_time()
+    try:
+        return (yield)
+    finally:
+        item.stash.setdefault(_CPU_TIMES, {})["teardown"] = time.process_time() - started
 
 
 @pytest.fixture(scope="session", name="browser_evidence_root")
@@ -91,6 +124,24 @@ def pytest_runtest_makereport(
     """fixture終了時にも本体の失敗理由を参照できるようにする。"""
     del call
     report = yield
+    if report.when == "teardown":
+        recorded = item.stash.get(_CPU_TIMES, {})
+        times = {phase: recorded.get(phase, 0.0) for phase in ("setup", "call", "teardown")}
+        limit, reason = item.stash.get(_CPU_LIMIT, (0.5, "通常上限"))
+        total = sum(times.values())
+        report.user_properties.extend(
+            [(f"cpu_{phase}_seconds", times.get(phase, 0.0)) for phase in ("setup", "call", "teardown")]
+            + [("cpu_total_seconds", total), ("cpu_limit_seconds", limit), ("cpu_limit_reason", reason)]
+        )
+        if total >= limit:
+            diagnostic = (
+                f"CPU上限: {item.nodeid}: {times}, total={total:.6f}s, limit={limit}s, reason={reason}。"
+                "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
+            )
+            report.sections.append(("CPU上限", diagnostic))
+            if report.passed:
+                report.outcome = "failed"
+                report.longrepr = diagnostic
     assert isinstance(report.when, str)
     item.stash.setdefault(_BROWSER_REPORTS, {})[report.when] = report
     if report.when == "teardown" and (evidence := item.stash.get(_BROWSER_EVIDENCE, None)) is not None:
@@ -301,6 +352,7 @@ def pytest_configure(config: pytest.Config) -> None:
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
     _validate_import_root(config)
+    config.addinivalue_line("markers", "cpu_limit(seconds, reason): 理由付きプロセスCPU上限")
     if not config.pluginmanager.is_registered(xdist_stop):
         config.pluginmanager.register(xdist_stop, "dotfiles-xdist-stop")
     # 不正な分割指定は、xdistのworkerが収集を始める前に1回だけ報告する。
@@ -389,6 +441,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """CIで1つの試験集合を複数runnerへ分ける`--test-shard`を登録する。"""
+    parser.addini("cpu_limit", "試験ごとのプロセスCPU上限（秒）", default="0.5")
     parser.addoption(
         "--test-shard",
         metavar="INDEX/COUNT",
@@ -438,6 +491,34 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     全分割を合わせると各試験がちょうど1回実行される。
     試験ファイル単位でなく試験単位で分けるのは、多数のparametrizeを持つ重いファイルを1つのrunnerへ偏らせないためである。
     """
+    try:
+        configured_limit = config.getini("cpu_limit")
+        if isinstance(configured_limit, bool):
+            raise ValueError("真偽値はCPU秒数でない")
+        default_limit = float(configured_limit)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise pytest.UsageError("cpu_limit設定には正の有限秒数を指定してください") from error
+    if not math.isfinite(default_limit) or default_limit <= 0:
+        raise pytest.UsageError("cpu_limit設定には正の有限秒数を指定してください")
+    for item in items:
+        marker = item.get_closest_marker("cpu_limit")
+        seconds: Any = default_limit
+        reason = "通常上限"
+        if marker is not None:
+            if len(marker.args) != 1 or set(marker.kwargs) != {"reason"}:
+                raise pytest.UsageError(f"{item.nodeid}: cpu_limit(seconds, reason=...) が必要")
+            seconds, reason = marker.args[0], marker.kwargs["reason"]
+        if (
+            isinstance(seconds, bool)
+            or not isinstance(seconds, (int, float))
+            or abs(seconds) > sys.float_info.max
+            or not math.isfinite(seconds)
+            or seconds <= 0
+            or not isinstance(reason, str)
+            or not reason.strip()
+        ):
+            raise pytest.UsageError(f"{item.nodeid}: cpu_limitには正有限値と非空のreasonを指定してください")
+        item.stash[_CPU_LIMIT] = (float(seconds), reason)
     value = config.getoption("test_shard")
     if value is None:
         return

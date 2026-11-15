@@ -9,7 +9,6 @@ from agent_toolkit import atk
 from agent_toolkit._atk.wi import constants as _wi_constants
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import entry_text, formatters, frontmatter
-from agent_toolkit._atk.wi import readiness as _readiness
 from agent_toolkit._atk.wi.mutations import content as _mutations_content
 from agent_toolkit._atk.wi.mutations import targets as _mutations_targets
 from agent_toolkit._git import remote as _git_remote
@@ -74,18 +73,14 @@ def test_typeless_entry_guides_to_report_instead_of_edit(tmp_path: pathlib.Path,
     with pytest.raises(SystemExit):
         _wi_entries.entry_type_from_metadata(path, {"target_repo": "github.com/example/foo"})
     common_next_action = _next_action_of(capsys)
-    with pytest.raises(SystemExit):
-        _readiness._require_type(path, _TYPELESS_ENTRY)  # pylint: disable=protected-access
-    readiness_next_action = _next_action_of(capsys)
     # 案内した`atk wi edit`に`--body-file`で本文を渡した場合は、同じ検証で拒否されることを確かめる。
     with pytest.raises(SystemExit):
         _mutations_content._build_noninteractive_edit_content(path, _TYPELESS_ENTRY, "# 新しい本文\n")  # pylint: disable=protected-access
     capsys.readouterr()
 
-    for next_action in (common_next_action, readiness_next_action):
-        assert f"`atk wi show {path.name}`" in next_action
-        assert "ユーザーへ報告する" in next_action
-        assert "でtypeを追記" not in next_action
+    assert f"`atk wi show {path.name}`" in common_next_action
+    assert "ユーザーへ報告する" in common_next_action
+    assert "でtypeを追記" not in common_next_action
 
 
 @pytest.mark.parametrize(

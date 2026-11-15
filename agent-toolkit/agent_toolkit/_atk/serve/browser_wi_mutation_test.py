@@ -7,6 +7,7 @@ import playwright.async_api
 import pytest
 
 from agent_toolkit._atk import git_sync
+from agent_toolkit._atk.serve import wi_operations
 from agent_toolkit._atk.serve.browser_support_test import (  # noqa: F401  # pylint: disable=unused-import
     _browser_fixture,
     _browser_harness_fixture,
@@ -31,6 +32,39 @@ pytestmark = [
 ]
 
 
+@pytest.mark.asyncio(loop_scope="session")
+async def test_product_edit_failure_keeps_saved_content(
+    browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """製品の編集処理の障害を画面へ伝え、未保存の入力を成功として扱わない。"""
+    harness = browser_harness
+    path = _entry_path(harness.root, "target.md")
+    path.write_text(_FREE_FORM_UWI, encoding="utf-8")
+
+    def fail_edit(*args: Any, **kwargs: Any) -> bool:
+        del args, kwargs
+        raise OSError("試験で注入した保存障害")
+
+    monkeypatch.setattr(wi_operations.Operations, "edit", fail_edit)
+    page = harness.page
+    await page.goto(harness.base_url + "/?filename=target.md")
+    await page.locator("#edit-button").click()
+    await page.locator("#edit-content").fill(_FREE_FORM_UWI + "\n未保存の追記\n")
+    async with page.expect_response(lambda response: response.request.method == "PUT" and response.status == 500):
+        await page.locator("#save-entry-button").click()
+    await playwright.async_api.expect(page.locator("#detail-alert")).to_be_visible()
+    await playwright.async_api.expect(page.locator("#edit-content")).to_have_value(_FREE_FORM_UWI + "\n未保存の追記\n")
+    await playwright.async_api.expect(page.locator("#operation-notice")).to_be_hidden()
+    assert path.read_text(encoding="utf-8") == _FREE_FORM_UWI
+
+
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実ファイル監視による再取得の前後で、保存済み・未反映と復旧手順を保つ。実ブラウザーの観測とtra"
+        "ce回収が必要（CPU最大実測0.509秒）。"
+    ),
+)
 @pytest.mark.parametrize("timing", ["natural", "during"])
 @pytest.mark.parametrize(
     "operation", ["save", "answer", "user-comment", "important", "adopt", "hold", "delete", "create", "batch"]
@@ -47,6 +81,13 @@ async def test_saved_mutation_commit_failure_with_watcher(
     await _saved_mutation_commit_failure(browser_harness, monkeypatch, request, operation, timing)
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "400%拡大相当の高さでも保存後の通知全文と操作を重ねず、スクロールとTabで到達できる。実ブラ"
+        "ウザーの観測とtrace回収が必要（CPU最大実測0.717秒）。"
+    ),
+)
 @pytest.mark.parametrize("operation", ["save", "important", "adopt", "hold"])
 @pytest.mark.asyncio(loop_scope="session")
 async def test_low_height_saved_notice_and_controls_are_reachable(
@@ -158,7 +199,6 @@ async def test_detail_mutation_self_write_does_not_warn(browser_harness: _Browse
     case = _DETAIL_MUTATION_CASES[case_name]
     harness = browser_harness
     page = harness.page
-    harness.operations.enable_file_mutations()
     (_entry_path(harness.root, "target.md")).write_text(_state_text(case.content, case.state), encoding="utf-8")
     key = "target.md"
     await page.goto(f"{harness.base_url}/?filename=target.md")
@@ -199,7 +239,21 @@ async def test_detail_mutation_self_write_does_not_warn(browser_harness: _Browse
     if case.final_state is None:
         assert not list(harness.root.rglob("target.md"))
     else:
-        assert wi_entries.entry_state_of(_entry_path(harness.root, "target.md")) == case.final_state
+        saved_path = _entry_path(harness.root, "target.md")
+        assert wi_entries.entry_state_of(saved_path) == case.final_state
+        saved = saved_path.read_text(encoding="utf-8")
+        if case_name == "save":
+            assert saved == case.content + "\n保存追記\n"
+        elif case_name in {"answer", "answer-auto-adopt"}:
+            assert case.field is not None
+            answer = saved.split("<!-- ユーザーはこの行以降に回答を追記する -->\n", 1)[1]
+            answer = answer.split("\n## 処理結果\n", 1)[0]
+            assert answer.strip() == case.field[1]
+            assert "## 質問" in saved
+        elif case_name == "user-comment":
+            assert saved == case.content + "\n## ユーザーコメント\n\nユーザーのコメント\n"
+        else:
+            assert "変更操作の対象" in saved
     if case_name == "answer-auto-adopt":
         assert "その対応で問題無い" in _entry_path(harness.root, "target.md").read_text(encoding="utf-8")
         await _open_filters(page)
@@ -229,7 +283,6 @@ async def test_detail_mutation_conflict_keeps_input(
 async def _detail_conflict(harness: _BrowserHarness, mode_button: str | None, field: str, submit: str, failure: str) -> None:
     """編集中の外部更新を実SSEで届け、409後の入力と回復案内まで進める。"""
     page = harness.page
-    harness.operations.enable_file_mutations()
     path = _entry_path(harness.root, "target.md")
     path.write_text(_FREE_FORM_UWI, encoding="utf-8")
     await page.goto(f"{harness.base_url}/?filename=target.md")
@@ -269,6 +322,7 @@ async def _detail_conflict(harness: _BrowserHarness, mode_button: str | None, fi
     await playwright.async_api.expect(alert).to_contain_text("閉じる前にコピーして退避してください。")
     await playwright.async_api.expect(alert).to_contain_text("最新の内容へ必要な変更だけを反映")
     assert await page.locator(field).input_value() == user_input
+    assert path.read_text(encoding="utf-8") == _FREE_FORM_UWI.replace("方針はどうするか？", "他プロセスが変えた質問")
 
 
 @pytest.mark.parametrize("width,height", [(1280, 900), (390, 844), (320, 480)])
@@ -328,7 +382,6 @@ async def test_answer_and_delete_target_the_visible_state(browser_harness: _Brow
         prefix = "processing-" if state_name == "processing" else ""
         _entry_path(harness.root, prefix + "answer-same.md").write_text(_state_text(uwi_content, state_name), encoding="utf-8")
         _entry_path(harness.root, prefix + "remove-same.md").write_text(_state_text(awi_content, state_name), encoding="utf-8")
-    harness.operations.enable_file_mutations()
     await page.goto(harness.base_url + "/")
 
     answer_row = page.locator('.entry-select[data-key="answer-same.md"]')
@@ -377,7 +430,6 @@ async def test_answer_rebase_in_progress_shows_recovery(
     """
     harness = browser_harness
     page = harness.page
-    harness.operations.enable_file_mutations()
     rebasing = [True]
     answer_uwi = harness.operations.answer_uwi
 

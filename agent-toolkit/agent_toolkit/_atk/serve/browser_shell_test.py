@@ -27,6 +27,13 @@ pytestmark = [
 ]
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "初期接続または初期取得を保留している間は測定へ進まず、解放後の可視化更新を検証できる。実ブラウザ"
+        "ーの観測とtrace回収が必要（CPU最大実測0.600秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("delayed_path", ["/api/events", "/api/entries"])
 async def test_initial_screen_acquisition_is_consumed_before_observation(
@@ -64,6 +71,13 @@ async def test_initial_screen_acquisition_is_consumed_before_observation(
     await _resynchronize_visible(page)
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "対象画面の可視化経路を無効にすると、別画面や初期取得の成功だけでは更新を受理しない。実ブラウザー"
+        "の観測とtrace回収が必要（CPU最大実測0.509秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("screen", ["wi", "sessions"])
 async def test_visibility_observation_rejects_a_disabled_update_path(
@@ -144,6 +158,13 @@ async def test_initial_screen_request_does_not_block_other_screen_prefetch(
         await harness.page.unroute("**/api/sessions/list", delay_sessions)
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "通知もheartbeatも届かない時間が閾値を超えると、3画面とも再接続して一覧を取り直す。実ブ"
+        "ラウザーの観測とtrace回収が必要（CPU最大実測0.521秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_silent_sse_is_reconnected_and_lists_are_refetched(
     screen_harness: _ScreenHarness,
@@ -188,6 +209,13 @@ async def test_regular_heartbeat_keeps_sse_without_refetching(
     assert {path: _request_count(screen_harness, path) for path in before} == before
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "タブが表示へ戻るとWI画面とセッション画面が一覧を取り直し、bfcacheからの復帰では再接続す"
+        "る。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.563秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harness: _ScreenHarness) -> None:
     """タブが表示へ戻るとWI画面とセッション画面が一覧を取り直し、bfcacheからの復帰では再接続する。"""

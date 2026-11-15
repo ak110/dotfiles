@@ -86,7 +86,6 @@ async def test_post_approval_fixed_choices_show_saved_state(
         "<!-- ユーザーはこの行以降に回答を追記する -->\n",
         encoding="utf-8",
     )
-    harness.operations.enable_file_mutations()
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator(f'.entry-select[data-key="{filename}"]').click()
@@ -128,7 +127,6 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
         "## 質問\n\n問題はありますか？\n\n## 回答\n\n<!-- ユーザーはこの行以降に回答を追記する -->\n",
         encoding="utf-8",
     )
-    harness.operations.enable_file_mutations()
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator(f'.entry-select[data-key="{filename}"]').click()
@@ -157,7 +155,6 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
 async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
     """既存回答の変更、終了状態の本文編集、削除および識別子表示を検証する。"""
     harness = browser_harness
-    harness.operations.persist_mutations = True
     page = harness.page
     question_path = _entry_path(harness.root, "question.md")
     question_path.write_text(question_path.read_text(encoding="utf-8") + "既存回答\n", encoding="utf-8")
@@ -233,7 +230,6 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
 async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harness: _BrowserHarness) -> None:
     """両終了状態のWIを画面から再開・保留・削除し、結果まで確認する。"""
     harness = browser_harness
-    harness.operations.persist_mutations = True
     page = harness.page
     delete_paths = {}
     for state in ("adopted", "rejected"):
@@ -273,6 +269,13 @@ async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harne
         assert not path.exists()
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "初回と既知項目の属性変化を通知せず、新規の未回答UWIを通知する。実ブラウザーの観測とtrace"
+        "回収が必要（CPU最大実測0.704秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_browser_notification_uses_filename_registration_identity(browser_harness: _BrowserHarness) -> None:
     """初回と既知項目の属性変化を通知せず、新規の未回答UWIを通知する。"""
@@ -468,7 +471,6 @@ async def test_uwi_detail_offers_answer_and_other_operations_at_once(browser_har
     """
     harness = browser_harness
     page = harness.page
-    harness.operations.enable_file_mutations()
     await page.set_viewport_size({"width": 1600, "height": 900})
     path = _entry_path(harness.root, "target.md")
     path.write_text(_POST_APPROVAL_UWI, encoding="utf-8")

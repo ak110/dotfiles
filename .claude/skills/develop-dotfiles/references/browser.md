@@ -6,6 +6,21 @@
 
 ## 画面とブラウザー
 
+準備済みの環境で、目的に合う既存試験とfixtureを選ぶ。
+期待値・セレクター・起動実装は試験側を正本とし、全試験名を別管理しない。
+
+| 目的 | データ・代表操作・結果 | 既存試験の入口（`agent-toolkit/agent_toolkit/_atk/serve/`配下） |
+| --- | --- | --- |
+| WIの登録・回答・編集・状態変更と外部更新時の入力保持 | 隔離WIを開き本文を編集・保存し、表示と保存本文・状態を確かめる。画面制御だけの代用と製品更新・実保存の保証を区別する | `browser_wi_mutation_test.py`と`browser_support_test.py`、共有fixtureは`agent-toolkit/agent_toolkit/_testing/serve_browser_wi_support.py` |
+| 計画の選択・本文・図・変更反映 | 一時計画を一覧から選択し、本文更新後の描画を確認する | `browser_plans_test.py` |
+| 保存済み会話の一覧・検索・選択・発話とツール入力 | 両engineのfixtureを使い、会話を検索・選択して内容を確認する | `browser_sessions_test.py` |
+
+既存の`make test-browser`の準備・起動条件を再利用する。
+代表操作は選んだ試験の入力とassertionへ対応付ける。
+手動描画では下記の保存先確認を先に行い、通常データから分離した一時データだけを操作する。
+実行後は表示だけでなく対象試験が観測する最終成果を確かめ、失敗証拠を保持する。
+手動で起動した所有プロセスは起動時の識別子で終了を確認し、参照を終えた一時データを回収する。
+
 - ブラウザー試験の失敗出力にある「ブラウザー失敗証拠」の保存先から`failure.txt`と`*-trace.zip`を取得する。
   `uv run --frozen playwright show-trace <trace.zipの絶対パス>`で標準Trace Viewerを開く。
   CIではブラウザー失敗証拠artifactから取得する。

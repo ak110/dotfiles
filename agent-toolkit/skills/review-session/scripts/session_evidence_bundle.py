@@ -42,6 +42,7 @@ from session_evidence_user_events import (
 from session_evidence_warn import (
     _warning_collection_events,
 )
+from session_quality_metrics import quality_metrics
 
 from agent_toolkit._common import session_review
 
@@ -118,7 +119,7 @@ def _bundle_events(
     warnings = [*metadata, *_warning_collection_events(collected, [])]
     if after is not None:
         warnings = [event for event in warnings if _in_scope(event, scope)]
-    stats = [*metadata, *_stats_events(incremental, compaction_record_dir)]
+    stats = [*metadata, *_stats_events(incremental, compaction_record_dir), *quality_metrics(incremental)]
     hook_notices = [*metadata, *_hook_notice_events([record for item in incremental for record in item.records])]
     main_record = next(item for item in collected if item.role == "main")
     candidates = _candidate_events(

@@ -48,6 +48,13 @@ async def test_narrow_work_items_keep_unique_identifiers_visible(browser_harness
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "カード・列表示の画面幅で横overflow、固定領域、タッチ寸法、Markdown表示を検証する"
+        "。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.669秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _BrowserHarness) -> None:
     """カード・列表示の画面幅で横overflow、固定領域、タッチ寸法、Markdown表示を検証する。"""
@@ -270,6 +277,13 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
     assert metrics["documentScrollWidth"] <= metrics["viewportWidth"]
 
 
+@pytest.mark.cpu_limit(
+    1.75,
+    reason=(
+        "最長の状態表示を含む一覧でも固定列を折り返さず、全行を同じ高さで描画する。実ブラウザーの観測とt"
+        "race回収が必要（CPU最大実測0.632秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harness: _ScreenHarness) -> None:
     """最長の状態表示を含む一覧でも固定列を折り返さず、全行を同じ高さで描画する。"""

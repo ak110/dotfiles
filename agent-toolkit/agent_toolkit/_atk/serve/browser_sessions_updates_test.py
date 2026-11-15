@@ -173,6 +173,13 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
     assert concurrency["total"] <= 2
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "右ペインは末尾まで読み進めるたびに続きを自動で描画して記録の最後まで到達し、追記で表示状態を保つ"
+        "。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.512秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("opened_from", ["list", "subagent"])
 async def test_session_detail_follows_appended_events_and_keeps_view_state(
@@ -337,6 +344,13 @@ async def test_session_without_user_message_appears_after_first_message(
     await playwright.async_api.expect(listing).to_contain_text("/home/aki/silent-codex")
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "一覧の取得失敗と、選択した記録の取得失敗・消失を、実ブラウザーの画面操作で起こし、区別できる表示"
+        "を確かめる。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.509秒）。"
+    ),
+)
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("failure", ["list", "detail", "disappeared"])
 async def test_session_failures_preserve_host_engine_and_record(screen_harness: _ScreenHarness, failure: str) -> None:

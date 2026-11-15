@@ -6,7 +6,6 @@ import pathlib
 from collections.abc import Iterable
 from typing import Literal
 
-from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi.constants import (
     WI_PROCESSABLE_STATES,
@@ -16,9 +15,6 @@ from agent_toolkit._atk.wi.constants import (
     WI_STATES,
     WI_TYPE_AWI,
     WI_TYPE_UWI,
-    WI_TYPES,
-    normalized_wi_type,
-    unrepairable_entry_next_action,
 )
 from agent_toolkit._atk.wi.entry_text import EntryText, EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.uwi_scan import is_uwi_answered as _is_uwi_answered
@@ -78,22 +74,6 @@ class ReadinessResult:
             *self.invalid_cooldowns,
         }
         return len(set(self.ready) | repair_targets)
-
-
-def _require_type(path: pathlib.Path, text: str) -> str | None:
-    """エントリの種別を検証して返す。"""
-    parsed = parse_frontmatter(text)
-    if parsed is None:
-        return None
-    entry_type = normalized_wi_type(parsed[0].get("type"))
-    if entry_type is None:
-        # 終了コード2で処理を打ち切るため、失敗行で返す。
-        _outcome.report_failure(
-            f"frontmatterのtypeが不正または欠落している（{'・'.join(WI_TYPES)}のいずれかが必要）: {path}",
-            next_action=unrepairable_entry_next_action(path.name),
-        )
-        raise SystemExit(2)
-    return entry_type
 
 
 def _normalized_repo_or_none(

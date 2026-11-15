@@ -76,6 +76,66 @@ def test_consumer_and_verify_modes_are_exclusive() -> None:
     assert exc.value.code == 2
 
 
+@pytest.mark.parametrize("option", ["--pytest-args=-v", "--pytest-args=-v -rA --maxfail=10", "--only-failed"])
+def test_planned_argv_rejects_same_non_neutral_input_as_verify(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], option: str
+) -> None:
+    """長い試験を起動する前と実受理で同じ引数の拒否理由を取得する。"""
+    repository = _repository(tmp_path)
+    monkeypatch.chdir(repository)
+    planned = ["run", option, "src/a.py"]
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(planned)]) == 1
+    assert option in capsys.readouterr().err
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=planned)
+    result = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN")
+    assert result.run_id is None
+    assert option in result.reason
+
+
+def test_ambiguous_candidate_proof_is_shared_by_preflight_and_verify(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """偶然一致の除外理由は受理するが、欠落・古い候補の判定は受理しない。"""
+    repository = _repository(tmp_path)
+    (repository / "unrelated_test.py").write_text("# a.pyという名称への言及だけ\n", encoding="utf-8")
+    commit_all(repository, "candidate")
+    monkeypatch.chdir(repository)
+    planned = ["run", "src/a.py"]
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(planned)]) == 1
+    snapshot = pyfltr_precommit.consumer_tests(repository, ["src/a.py"])
+    proof = tmp_path / "proof.json"
+    review = {
+        **snapshot,
+        "decisions": [
+            {
+                "source": "src/a.py",
+                "test": "unrelated_test.py",
+                "include": False,
+                "reason": "コメントでのみ名称へ言及し、対象の処理を利用しない",
+            }
+        ],
+    }
+    proof.write_text(json.dumps(review), encoding="utf-8")
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(planned), "--consumer-review", str(proof)]) == 0
+    assert "未確認" in capsys.readouterr().out
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=planned)
+    assert pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN", review=review).run_id == "01RUN"
+    (repository / "unrelated_test.py").write_text("# 別の内容でa.pyに言及\n", encoding="utf-8")
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(planned), "--consumer-review", str(proof)]) == 1
+
+
+@pytest.mark.parametrize("value", ["{}", "[1]", "null", "invalid"])
+def test_preflight_rejects_invalid_argv_json(value: str) -> None:
+    """公開境界で不正な入力を実行済みの成功へ変換しない。"""
+    assert pyfltr_precommit.main(["--check-argv", value]) == 2
+
+
+@pytest.mark.parametrize("planned", [["fast"], ["run", "--commands=ruff-check"], ["run", "--commands", "ruff-check"]])
+def test_preflight_rejects_known_pytest_scope_omissions(planned: list[str]) -> None:
+    """不変条件だけのfastやpytestを外す指定を最終検証として受理しない。"""
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(planned)]) == 1
+
+
 def _install_pyfltr(
     monkeypatch: pytest.MonkeyPatch,
     repository: pathlib.Path,
