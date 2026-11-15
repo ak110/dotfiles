@@ -41,15 +41,26 @@ function Invoke-UpdateStage {
                                 if ($owned.ContainsKey([int]$entry.ProcessId) -or -not $owned.ContainsKey([int]$entry.ParentProcessId)) { continue }
                                 $parent = $owned[[int]$entry.ParentProcessId]
                                 if ($entry.CreationDate.ToUniversalTime() -lt $parent.StartTime.ToUniversalTime()) { continue }
-                                $child = [System.Diagnostics.Process]::GetProcessById([int]$entry.ProcessId)
+                                $child = $null
+                                $retained = $false
                                 try {
+                                    $child = [System.Diagnostics.Process]::GetProcessById([int]$entry.ProcessId)
                                     [void]$child.Handle
                                     # CIMの時刻はマイクロ秒までなので、100ns単位のStartTimeを同じ精度へそろえる。
                                     $createdTicks = $child.StartTime.ToUniversalTime().Ticks
-                                    if (($createdTicks - ($createdTicks % 10)) -ne $entry.CreationDate.ToUniversalTime().Ticks) { throw '列挙した子のPID世代が変わりました' }
+                                    if (($createdTicks - ($createdTicks % 10)) -ne $entry.CreationDate.ToUniversalTime().Ticks) { continue }
                                     $owned[$child.Id] = $child
+                                    $retained = $true
                                     $added = $true
-                                } catch { $child.Dispose(); throw }
+                                } catch [System.ArgumentException] {
+                                    # snapshot取得後に消滅した候補への停止は不要。再利用先は次の一覧で所属を判定する。
+                                    continue
+                                } catch {
+                                    if ($null -ne $child -and $child.HasExited) { continue }
+                                    throw
+                                } finally {
+                                    if ($null -ne $child -and -not $retained) { $child.Dispose() }
+                                }
                             }
                         } while ($added)
                         $alive = @($owned.Values | Where-Object { -not $_.HasExited })
