@@ -107,6 +107,9 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
     events: list[dict[str, Any]] = []
     start = 0
     for index, entry in enumerate(entries):
+        if index > start and entry.get("_record_gap_before"):
+            events.extend(_extract_for_runtime(entries[start:index], runtime, numbers[start:index]))
+            start = index
         if _turn_finished(entry, runtime):
             events.extend(_finalize(_extract_for_runtime(entries[start : index + 1], runtime, numbers[start : index + 1])))
             start = index + 1
@@ -281,6 +284,11 @@ def _collection_events(
     """全収集照会が同じ記録由来と未解決の対象、回復した記録行を出力する。"""
     return [
         *(
+            {"kind": "record-gap", "record": item.record_id, "line": gap.line, "reason": gap.reason, "partial": True}
+            for item in collected
+            for gap in item.gaps
+        ),
+        *(
             {
                 "kind": "record-provenance",
                 "record": item.record_id,
@@ -318,7 +326,11 @@ def _referenced_provenance_events(collected: list[_CollectedRecord], events: lis
         if source is not None and source not in referenced:
             referenced.add(source)
             pending.append(source)
-    return [event for event in _collection_events(collected, [], recoveries=False) if event["record"] in referenced]
+    return [
+        event
+        for event in _collection_events(collected, [], recoveries=False)
+        if event["kind"] == "record-provenance" and event["record"] in referenced
+    ]
 
 
 _CATALOG_ROOT_NEXT_ACTION = (

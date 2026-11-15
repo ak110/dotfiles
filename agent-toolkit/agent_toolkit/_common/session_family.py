@@ -71,6 +71,7 @@ class _RecordLoad(NamedTuple):
     records: list[_Record] | None
     recoveries: tuple[_RecordRecovery, ...] = ()
     failure: _RecordLoadFailure | None = None
+    gaps: tuple[_RecordLoadFailure, ...] = ()
 
 
 class _CollectedRecord(NamedTuple):
@@ -86,6 +87,7 @@ class _CollectedRecord(NamedTuple):
     role: Literal["main", "subagent", "session"]
     aliases: tuple[str, ...] = ()
     recoveries: tuple[_RecordRecovery, ...] = ()
+    gaps: tuple[_RecordLoadFailure, ...] = ()
 
 
 class _UnresolvedRecord(NamedTuple):
@@ -326,17 +328,80 @@ def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) 
         raise _RecordReadError(_RecordLoadFailure(f"記録を読み取れない: {error}")) from error
 
 
-def _load_records_checked(raw_path: str | None) -> _RecordLoad:
+def _load_records_checked(raw_path: str | None, *, allow_partial_records: bool = False) -> _RecordLoad:
     """絶対パスのJSONLを行番号付きで読み、回復した行と読めない理由を併せて返す。"""
     recoveries: list[_RecordRecovery] = []
     try:
         records = list(_iter_record_lines(raw_path, recoveries))
     except _RecordReadError as error:
+        if allow_partial_records and raw_path is not None and error.failure.line is not None:
+            return _partial_record_load(Path(raw_path))
         return _RecordLoad(None, failure=error.failure)
+    if allow_partial_records and raw_path is not None:
+        return _partial_record_load(Path(raw_path))
     normalized = normalize_entries([record.entry for record in records])
     return _RecordLoad(
         [record._replace(entry=entry) for record, entry in zip(records, normalized, strict=True)], tuple(recoveries)
     )
+
+
+def _partial_record_load(path: Path) -> _RecordLoad:
+    """既存の回復を試み、回復不能行だけを欠測として保持する。"""
+    try:
+        with path.open("rb") as stream:
+            lines = [(number, raw.removesuffix(b"\n").removesuffix(b"\r")) for number, raw in enumerate(stream, 1)]
+    except OSError as error:
+        return _RecordLoad(None, failure=_RecordLoadFailure(str(error)))
+    records = []
+    recoveries = []
+    gaps = []
+    skipped: set[int] = set()
+    previous_ordinal = None
+    for index, (number, raw) in enumerate(lines):
+        if number in skipped or not raw.strip():
+            continue
+        try:
+            text = raw.decode("utf-8")
+            entry = json.loads(text)
+            if not isinstance(entry, dict):
+                raise ValueError("JSON objectではない")
+        except ValueError as error:
+            following = next(((n, value) for n, value in lines[index + 1 :] if value.strip()), None)
+            replacement = _superseding_line(raw, [following] if following else [])
+            zero = _skipped_zero_filled_lines((number, raw), iter(lines[index + 1 :]), previous_ordinal)
+            if zero is not None:
+                recovered, _ = zero
+                recoveries.extend(recovered)
+                skipped.update(item.line for item in recovered)
+                continue
+            if replacement is not None:
+                recoveries.append(replacement._replace(line=number))
+                continue
+            joined = split_joined_line(raw) if _PARTIAL_HEAD.match(raw) is None else None
+            if joined is None:
+                gaps.append(_RecordLoadFailure(str(error), number))
+                continue
+            start = joined[0]
+            recoveries.append(_joined_fragment_recovery(path, number, raw[:start]))
+            text = raw[start:].decode("utf-8")
+            entry = json.loads(text)
+        ordinal = entry.get("ordinal")
+        previous_ordinal = ordinal if isinstance(ordinal, int) else None
+        records.append(_Record(number, text, _analysis_entry(entry)))
+    normalized = normalize_entries([record.entry for record in records])
+    records = [record._replace(entry=entry) for record, entry in zip(records, normalized, strict=True)]
+    return _RecordLoad(_mark_record_gaps(records, gaps), tuple(recoveries), gaps=tuple(gaps))
+
+
+def _mark_record_gaps(records: list[_Record], gaps: list[_RecordLoadFailure]) -> list[_Record]:
+    """欠測直後を示し、文脈と呼出し対応を欠測越しに推定させない。"""
+    previous = 0
+    marked = []
+    for record in records:
+        crossed = any(gap.line is not None and previous < gap.line < record.line for gap in gaps)
+        marked.append(record._replace(entry={**record.entry, "_record_gap_before": True}) if crossed else record)
+        previous = record.line
+    return marked
 
 
 class _RecordMetadata(NamedTuple):
@@ -579,7 +644,7 @@ def _thread_ids_from_record(
     識別子は実行系をまたいで一意であるため、呼び出しに現れる実行系の指定は取り出さない。
     """
     entry = record.entry
-    found: list[str] = list(_native_agent_thread_ids(entry))
+    found: list[str] = _native_agent_thread_ids(entry) if "SubAgentActivity" in record.text else []
 
     def add_mapping(value: Any) -> None:
         mapping = value if isinstance(value, dict) else _json_object(value)
@@ -753,6 +818,7 @@ def _subagent_records(
                 "subagent",
                 (legacy_id,) if legacy_id != record_id else (),
                 loaded.recoveries,
+                loaded.gaps,
             )
         )
     return selected
@@ -880,6 +946,7 @@ def _collect_records(
                         "session",
                         (),
                         loaded.recoveries,
+                        loaded.gaps,
                     )
                 )
     return collected, unresolved

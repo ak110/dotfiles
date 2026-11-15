@@ -212,6 +212,8 @@ class SessionsState:
     local_scan_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     # 再利用の上限時間を過ぎた後の背景の再走査が動いているか。同時に1つだけ動かす。
     local_rescan_running: bool = False
+    local_rescan_thread: threading.Thread | None = None
+    local_rescan_stopping: bool = False
     # `local_rescan_running`の確認と設定だけを守る。走査中も保持する`local_scan_lock`を使うと、
     # 背景の走査の間に届いた要求が走査の終わりまで待たされるためである。
     local_rescan_flag_lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)

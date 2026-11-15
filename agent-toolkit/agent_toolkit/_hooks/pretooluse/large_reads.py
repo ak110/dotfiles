@@ -580,6 +580,7 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         fix=(
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"
             "今回必要な照会条件は`agent-toolkit:review-session`の`references/session-records-query.md`で選べ。"
+            "失敗文言の横断照会は`--tool-calls --failure-fixed-string <文言>`と同資料のscan指定を使え。"
             "入力の選択は同スキルの`references/session-records.md`に従え。"
         ),
         removable_cause=False,

@@ -70,6 +70,7 @@ _STATS_MAX_BYTES = 30_000
 def _build_parser() -> argparse.ArgumentParser:
     """コマンドライン引数を定義する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--allow-partial-records", action="store_true", help="欠測付きの正常行を取得する。")
     session = parser.add_mutually_exclusive_group(required=True)
     session.add_argument("--transcript", metavar="PATH", help="Claude Codeのtranscriptパス。")
     session.add_argument("--codex-thread-id", metavar="ID", help="Codexのthread ID。")
@@ -175,7 +176,7 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
 
 
 # 未解決の対象と回復した記録行は、どのbundleファイルにも保存されず標準出力だけで届く。
-_SCOPE_EVENT_KINDS = frozenset({"unresolved-record", "unresolved-delegation", "recovered-record-line"})
+_SCOPE_EVENT_KINDS = frozenset({"unresolved-record", "unresolved-delegation", "recovered-record-line", "record-gap"})
 
 
 def _extract_bundle(session_arguments: list[str], bundle_dir: pathlib.Path) -> tuple[str | None, list[dict[str, Any]]]:
@@ -315,6 +316,8 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
     if args.after is not None:
         session_arguments.extend(["--after", args.after])
+    if args.allow_partial_records:
+        session_arguments.append("--allow-partial-records")
     bundle_dir = work_dir / "bundle"
     bundle_dir.mkdir(exist_ok=True)
     source_path = bundle_dir / "conversation-source.json"
@@ -407,6 +410,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
                     "conversation_limit_bytes": conversation_limit,
                     "conversation_window": conversation_window,
                     "unconfirmed_scope": unresolved,
+                    "partial": any(event["kind"] == "record-gap" for event in unresolved),
                     "recovered_record_lines": recovered,
                 },
                 ensure_ascii=False,
@@ -531,6 +535,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         },
         "failure_ledger_skipped": ledger_skipped,
         "unconfirmed_scope": unresolved,
+        "partial": any(event["kind"] == "record-gap" for event in unresolved),
         "recovered_record_lines": recovered,
         "improvement_lines": list(dict.fromkeys(line for event in timeline for line in event.get("reported_improvements", []))),
         "elapsed_seconds": total.get("elapsed_seconds"),

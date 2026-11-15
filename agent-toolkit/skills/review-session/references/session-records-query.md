@@ -13,6 +13,8 @@
 `rg -L`はシンボリックリンクを追従して本文を返す指定であり、ファイル名だけを返す`grep -L`と区別する。
 見つかった各パスを`--transcript <記録の絶対パス>`へ渡し、`--grep <正規表現>`・`--fixed-string <文字列>`・`--detail <record:line>`で本文を照会する。
 `--fixed-string`は単一の`--transcript`だけで使える。
+値を取る引数であり、`--grep`と排他的に指定する。
+ハイフン始まりの文字列は`--fixed-string=--help`のように等号で渡す。
 期間と親セッションの一覧が必要な場合は、カタログへ`--since`と`--observation-boundary`を指定する。
 
 - 検索キーワードから該当箇所を検索する: `--grep`
@@ -23,6 +25,23 @@
 - 位置が特定できているレコードの構造のみを調べる: `--record-schema`
 - 特定のツールの入力を絞って取得する: `--tool-calls --tool <名前> --input-regex <正規表現>`
 - ツール呼び出しを呼び出し単位で一覧列挙する: `--tool-calls`（1つのセッションにおける発話とツール呼び出しの時系列推移は、`--bundle`が生成する`conversation.jsonl`に記録される）
+
+単一記録の`--tool-calls --since <ISO時刻>`は、境界より後の呼び出しだけを取得する。
+`--tool`と`--input-regex`を併用すると全条件の一致で限定する。
+時刻が無いか不正な呼び出しは除外され、`tool-call-summary.missing_timestamps`で除外件数を確認する。
+`--since`を省いた取得では時刻不明の呼び出しも保持する。
+
+失敗したツール結果の文言を調べる場合は`--tool-calls --failure-fixed-string <文字列>`を使う。
+複数のClaude projectを収納するディレクトリには`--scan-claude-projects <絶対パス>`、Codexの履歴には`--scan-codex-history <絶対パス>`を指定する。
+横断走査には`--since`と`--observation-boundary`で窓を指定し、両scan指定は同時に使わない。
+親一覧を作るカタログとは別の照会であり、結果に保持された入力・結果の元位置から詳細へ進む。
+成功結果や会話内の引用だけの一致は失敗として数えない。
+
+破損がある記録の正常部分だけを照会する場合は、evidenceまたはprepareに`--allow-partial-records`を明示する。
+部分取得を指定しない読取では、元の厳格読取と条件付き回復を維持する。
+部分取得では全欠測を`record-gap`の`record`・`line`・`reason`で確認する。
+`partial: true`を持つ結果と、欠測をまたぐ文脈・対応・集計を完全な取得として扱わない。
+原本は変更されず、部分性は抽出・検索・bundle・prepareへ引き継がれる。
 
 既知のCodex形式の`--detail`は入力構造、結果本文、コマンドと終了状態を役割別に返す。
 元レコード全体の構造は`--record-schema`で調べる。

@@ -44,9 +44,8 @@ Codex固有の公開機能と常時規範との差分を規定し、メインエ
   `exec_command`を呼び出す場合は、返却されたオブジェクト全体を`text(r)`へ渡し、本文、診断情報、`exit_code`、`session_id`を保持する。
   外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`を用いて同一ターン内に終了まで回収する。
   `exit_code`が存在せず`session_id`が存在する結果は実行中として扱い、同一実行のコマンドを重複して再発行することは避ける。
-  独立作業と受信済み通知の処理が尽きた長い終了待ちでは、外側の先頭pragma（`// @exec: {"yield_time_ms": 120000}`）、`functions.wait`、空入力の`write_stdin`の`yield_time_ms`に120,000msを指定することを目安とする。
-  起動時の上限30,000msとCLI自身の期限を保ち、独立作業・受信済み通知・対話・短い操作では早く制御を返し、待機状況の報告だけなら長めに回収する。
-  観測条件と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
+  長い終了待ちの所有者と二層の回収時間は、`agent-toolkit:delegation/references/codex-runtime-waiting.md`に従って選ぶ。
+  同一turnで回収する場合も、起動時の上限30,000msとコマンド自身の有限期限を保つ。
 - 明示的な指示がない限り、Officeファイルは原本を直接変更せずに取り扱う。
   CSVファイルは利用側の要求仕様に従って処理し、仕様が不明な場合はUTF-8（BOM付き）で保存する。
 - `apply_patch`を用いて既存ファイルを全面的に置換する場合も、同一パスに対するUpdate操作を使用する。

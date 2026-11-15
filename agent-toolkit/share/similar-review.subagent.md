@@ -44,6 +44,11 @@ writes_worktree: false
    | 直近7日間のセッションログ | `atk run-script session-review-evidence -- --catalog-claude-project <project絶対パス> --since <開始日時> --observation-boundary <終了日時> --grep <検索式> --summary-only`を使い、Codex記録では`--catalog-codex-history <履歴絶対パス>`へ切り替える |
 
    WIの`--since`は指定日を含む、ファイル名の投入日時の下限である。
+   `--catalog-claude-project`は配下を再帰解析するが、親候補は指定root直下のJSONLから選ぶ。
+   渡された全projectとglobalを、取得先ごとに照会する。
+   親0件の場合は、取得先と親セッションのJSONLの配置、指定期間、読込失敗を確認する。
+   入力場所の誤りや取得不能を母集団全体の不在とせず、正当な期間内0件と区別して調査の限界へ記す。
+   探索範囲は渡された取得先と指定された母集団に限定する。
    下限日から取得時点までを検索し、追加の期間指定があれば候補の投入日時をファイル名で確認する。
    Gitの指定版には`git grep -E -c -e <検索式> <commit> -- .`を使い、候補本文は`git show <commit>:<パス>`で読む。
    現在の未コミット変更を含む版では表の形式で検索する。

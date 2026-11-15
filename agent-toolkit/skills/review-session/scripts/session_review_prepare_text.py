@@ -68,7 +68,7 @@ def _full_body_lines(text: str, *, title: str) -> list[str]:
     return lines
 
 
-def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> str:
+def _comparison_document_full(events: list[dict[str, Any]], detail_command: str) -> str:
     """正常な操作を比較する事実と全文位置を示し、量の多寡と欠陥の判定を分ける。"""
     lines = [
         "",
@@ -82,7 +82,7 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
     previous_record: str | None = None
     for event in events:
         if event["record"] != previous_record:
-            lines.extend(["", f"### {event['record']}（{event['role']}）", ""])
+            lines.extend(["", f"### {_clip_utf8(event['record'], 240)}（{event['role']}）", ""])
             previous_record = event["record"]
         locator = f"{event['record']}:{event['line']}"
         result = f"{event['record']}:{event['result_line']}" if event.get("result_line") is not None else "未確認"
@@ -90,7 +90,7 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
         result_count = event.get("recorded_result_characters")
         persisted = f"退避あり、退避前={event.get('original_utf8_bytes', '未確認')}バイト、" if event.get("persisted") else ""
         lines.append(
-            f"- {event['category']} {event['tool']}、担当={event['record']}（{event['role']}）、"
+            f"- {event['category']} {event['tool']}、担当={_clip_utf8(event['record'], 240)}（{event['role']}）、"
             f"時点={event.get('timestamp') or '未確認'}、形式={event['input_form']}、"
             f"直接本文={body_count if body_count is not None else '未確認'}字、"
             f"記録の結果本文={result_count if result_count is not None else '未確認'}字、"
@@ -98,6 +98,73 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
             f"対象={json.dumps(event['target'], ensure_ascii=False)}、入力={locator}、結果={result}、"
             f"代表入力={_one_line(str(event.get('summary', '')))}"
         )
-        lines.extend(_full_body_lines(str(event.get("summary", "")), title=f"入力 {locator}"))
     lines.extend(["", f"全文と参照先は`{detail_command} --detail <入力または結果の記録位置>`から取得する。", ""])
     return "\n".join(lines)
+
+
+def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> str:
+    """区分と担当を巡回して選び、索引全体のUTF-8容量を制限する。"""
+    categories: tuple[str, ...] = ("delegation", "explicit-read", "opaque-command")
+    queues: dict[str, dict[str, list[int]]] = {category: {} for category in categories}
+    for index, event in enumerate(events):
+        queues[event["category"]].setdefault(event["record"], []).append(index)
+    for owners in queues.values():
+        for indices in owners.values():
+            indices.sort(
+                key=lambda index: (
+                    -max(
+                        (
+                            value
+                            for key in ("observed_body_characters", "recorded_result_characters")
+                            if (value := events[index].get(key)) is not None
+                        ),
+                        default=-1,
+                    ),
+                    events[index]["line"],
+                    index,
+                )
+            )
+            indices.reverse()
+    selected: list[int] = []
+    cursors: dict[str, int] = dict.fromkeys(categories, 0)
+    totals = {category: sum(event["category"] == category for event in events) for category in categories}
+    lookup = (
+        detail_command
+        if len(detail_command.encode("utf-8")) <= 2000
+        else ("atk run-script session-review-evidence -- --transcript <元記録の絶対パス>")
+    )
+
+    def render(indices: list[int]) -> str:
+        rows = []
+        for index in sorted(indices, key=lambda index: (events[index]["record"], events[index]["line"], index)):
+            row = dict(events[index])
+            for field in ("target", "summary", "tool", "role", "timestamp", "input_form"):
+                row[field] = _clip_utf8(str(row.get(field, "")), 240)
+            rows.append(row)
+        counts = []
+        for category in categories:
+            total = totals[category]
+            shown = sum(events[index]["category"] == category for index in indices)
+            counts.append(f"- {category}: 全件{total}件、表示{shown}件、省略{total - shown}件")
+        return (
+            _comparison_document_full(rows, lookup)
+            + "\n"
+            + "\n".join(counts)
+            + "\n省略は不在・確認済みを意味しない。全量と元の記録位置は"
+            "bundle/comparison-materials.jsonlに保持する。表示外も同JSONLのrecord・line・result_lineで詳細照会できる。\n"
+        )
+
+    # 位置は完全な値を保持し、容量に入らない項目は全量JSONLから照会する。
+    while any(indices for owners in queues.values() for indices in owners.values()):
+        for category, owners in queues.items():
+            names = list(owners)
+            for offset in range(len(names)):
+                cursor = (cursors[category] + offset) % len(names)
+                indices = owners[names[cursor]]
+                if indices:
+                    candidate = indices.pop()
+                    cursors[category] = (cursor + 1) % len(names)
+                    if len(render([*selected, candidate]).encode("utf-8")) <= 32_000:
+                        selected.append(candidate)
+                    break
+    return render(selected)

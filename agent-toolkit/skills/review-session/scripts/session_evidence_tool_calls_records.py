@@ -178,6 +178,10 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
     結果はClaude Code形式の`tool_result`の`tool_use_id`と、Codex形式の`function_call_output`・
     `custom_tool_call_output`の`call_id`で対応付ける。
     """
+    boundaries = [index for index, record in enumerate(records) if index and record.entry.get("_record_gap_before")]
+    if boundaries:
+        starts = [0, *boundaries, len(records)]
+        return [call for start, end in zip(starts, starts[1:], strict=False) for call in _record_tool_calls(records[start:end])]
     records = [
         record._replace(entry=entry)
         for record, entry in zip(records, agy_records.normalize_entries([record.entry for record in records]), strict=True)
