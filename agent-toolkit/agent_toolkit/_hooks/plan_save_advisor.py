@@ -18,6 +18,7 @@ r"""`~/.claude/plans`に残る計画バンドルの保存確認Stopフック。
 
 import os
 import pathlib
+import shlex
 
 from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -84,13 +85,13 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         append_stop_log(session_id, "approve_no_working_plans", {})
         return "approve", ""
 
-    path_list = ", ".join(str(path) for path in paths)
+    commands = "\n".join(f"`atk plans commit {shlex.quote(str(path))}`" for path in paths)
     body = _notice(
-        f"現在のセッションが所有する計画バンドルが`~/.claude/plans`に残っている: {path_list}",
+        "現在のセッションが所有する計画バンドルが残っている。\n" + commands,
         fix=(
             "保存の契機に達したバンドルだけを"
-            "`atk plans commit <~/.claude/plans直下の計画ファイル（メイン）名>`で`private-notes`へ保存せよ。"
-            "契機は現在のセッションがどのスキルから起動したかに応じて`agent-toolkit:write-plan`の`plan-file-storage.md`が定める。"
+            "上記の対応するコマンドで`private-notes`へ保存せよ。"
+            "保存の契機は`agent-toolkit:write-plan`の`references/plan-file-storage.md`で確認せよ。"
             "残りのバンドルはその場に残してターンを終了せよ。"
         ),
         removable_cause=True,

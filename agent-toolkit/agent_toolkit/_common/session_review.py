@@ -10,6 +10,7 @@ import datetime
 import enum
 import hashlib
 import json
+import logging
 import os
 import pathlib
 import shlex
@@ -326,7 +327,10 @@ class BatchWriter:
                 raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
             for prepared in value["prepared"]:
                 complete(prepared)
-            return self._save({**value, "status": BatchStatus.COMPLETED})
+            saved = self._save({**value, "status": BatchStatus.COMPLETED})
+            for prepared in saved["prepared"]:
+                cleanup_prepared(prepared)
+            return saved
 
     def retry_interrupted(self, reason: str) -> dict[str, Any]:
         """診断を残さずに実行プロセスが終了した回を終了扱いにし、対象を待ちに残して次の選定で再試行させる。"""
@@ -479,7 +483,7 @@ def launch_notice() -> str | None:
     if not failures:
         return None
     return (
-        "振り返りの自動起動が実行受付前に終了した。pendingは保持している。次のコマンドで診断ログを取得せよ: "
+        "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
         + "、".join(failures)
         + "。原因を確認・是正して`/agent-toolkit:review-session batch`を実行せよ。"
         "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
@@ -611,6 +615,94 @@ def prepare_identity(host: str, session_id: str) -> dict[str, Any]:
         }
 
 
+def cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | None = None) -> bool:
+    """回収の障害を成功確定から分離し、残りは次回sweepへ渡す。"""
+    try:
+        return _cleanup_prepared(prepared, completed_before=completed_before)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        logging.getLogger(__name__).warning(
+            "bundle回収を保留: %s: %s。対象の内容とアクセス権を確認し、破損した記録は原本から復元してください。"
+            "原因の解消後、atk run-skill --args batch agent-toolkit:review-session で回収を再試行できます",
+            prepared.get("scope_path", "scopeの所在不明"),
+            error,
+        )
+        return False
+
+
+def _cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | None) -> bool:
+    """成功保存後、生成時と同一の全量抽出物だけを回収する。scopeと候補の証拠は残す。"""
+    if prepared.get("unconfirmed_scope"):
+        return False
+    scope = pathlib.Path(str(prepared["scope_path"]))
+    bundle = scope.parent
+    if bundle.name != "bundle" or bundle.is_symlink():
+        return False
+    for manifest in (directory() / "runs").glob("*.json"):
+        try:
+            value = read(manifest)
+        except (OSError, ValueError) as error:
+            logging.getLogger(__name__).warning(
+                "bundle回収を保留: %s: %s。対象JSONの内容とアクセス権を確認し、破損した記録は原本から復元してください。"
+                "原因の解消後、atk run-skill --args batch agent-toolkit:review-session で回収を再試行できます",
+                manifest,
+                error,
+            )
+            return False
+        if value.get("status") not in {"completed", "resolved"} and any(
+            pathlib.Path(str(item.get("scope_path", ""))).parent.resolve() == bundle.resolve()
+            for item in value.get("prepared", [])
+        ):
+            return False
+    names = {
+        "timeline.jsonl",
+        "warnings.jsonl",
+        "hook-notices.jsonl",
+        "conversation.jsonl",
+        "resource-usage.jsonl",
+        "comparison-materials.jsonl",
+    }
+    fingerprints = prepared.get("disposable_bundle_files")
+    if fingerprints is None:
+        # 旧生成物は成功scopeとの一致と、完了保存より古い実体だけを根拠にする。
+        try:
+            previous = previous_scope(prepared)
+            if completed_before is None or previous is None or read(previous)["records"] != read(scope)["records"]:
+                logging.getLogger(__name__).info("旧bundleを保持（成功scopeとの一致を未確認、操作不要）: %s", scope)
+                return False
+        except (OSError, ValueError, KeyError) as error:
+            logging.getLogger(__name__).warning(
+                "旧bundle回収を保留: %s: %s。scopeと成功済み範囲記録の内容・アクセス権を確認してください。"
+                "破損した記録は原本から復元し、atk run-skill --args batch agent-toolkit:review-session で再試行してください",
+                scope,
+                error,
+            )
+            return False
+        fingerprints = dict.fromkeys(names)
+    succeeded = True
+    for name, digest in fingerprints.items():
+        if name not in names:
+            continue
+        path = bundle / name
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            if digest is None:
+                if completed_before is None or path.stat().st_mtime > completed_before:
+                    continue
+            elif hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                continue
+            path.unlink()
+        except OSError as error:
+            succeeded = False
+            logging.getLogger(__name__).warning(
+                "bundle回収失敗: %s: %s。対象を使用中の操作が終わるまで待ち、削除権限を確認してください。"
+                "原因の解消後、atk run-skill --args batch agent-toolkit:review-session で回収を再試行できます",
+                path,
+                error,
+            )
+    return succeeded
+
+
 def protected_logs() -> set[pathlib.Path]:
     """未確定の振り返りが参照するログを年齢回収から保護する。"""
     protected = set()
@@ -642,6 +734,7 @@ def sweep(*, now: float) -> None:
         referenced: set[str] = set()
         for path in runs:
             value = read(path)
+            cleanup_succeeded = True
             if (
                 value.get("status") == "failed"
                 and value.get("report_synced")
@@ -650,7 +743,15 @@ def sweep(*, now: float) -> None:
                 value = BatchWriter(path).resolve(waiting=waiting)
             if value.get("status") not in {"completed", "resolved"}:
                 referenced.update(target["key"] for target in value["targets"])
-            elif now - path.stat().st_mtime > 30 * 24 * 60 * 60:
+            elif value.get("status") == "completed":
+                for prepared in value.get("prepared", []):
+                    cleaned = cleanup_prepared(prepared, completed_before=path.stat().st_mtime)
+                    cleanup_succeeded = cleaned and cleanup_succeeded
+            if (
+                cleanup_succeeded
+                and value.get("status") in {"completed", "resolved"}
+                and now - path.stat().st_mtime > 30 * 24 * 60 * 60
+            ):
                 for prepared in value.get("prepared", []):
                     scope = pathlib.Path(prepared["scope_path"])
                     if scope.parent == path.parent and scope.name.startswith(value["run_id"] + "-"):

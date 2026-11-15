@@ -56,6 +56,11 @@ _ACKNOWLEDGEMENT = re.compile(
 # 了承の末尾に付く記号。問いを表す`?`は含めない。
 _TRAILING_MARKS = frozenset("!。.・…~〜ー♪")
 _TRAILING_CATEGORIES = frozenset({"So", "Sk", "Mn", "Me", "Cf"})
+# Claude Codeの組み込みコマンドはoriginを持たない。包装は区間の切断にだけ使い、内容の判定へは引数を渡す。
+_COMMAND_INPUT = re.compile(
+    r"\s*<command-name>/[^<\s]+</command-name>\s*"
+    r"<command-message>[^<]*</command-message>\s*<command-args>([\s\S]*)</command-args>\s*"
+)
 
 
 def _is_acknowledgement(prompt: str) -> bool:
@@ -106,14 +111,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         scanned.append(entry)
         prompt = _input_text(entry)
         if prompt is not None:
-            if _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(prompt):
+            human_prompt = _human_prompt(entry, prompt)
+            if human_prompt is not None:
                 input_subject = f"{index}|{line}"
                 human_start = len(scanned) - 1
                 if not needs_response:
                     acknowledged_only, ellipsis_only = True, False
-                acknowledged_only = acknowledged_only and _is_acknowledgement(prompt)
+                acknowledged_only = acknowledged_only and _is_acknowledgement(human_prompt)
                 needs_response = True
-            elif not _is_human_input(entry) and prompt.lstrip().startswith("<task-notification>"):
+            elif prompt.lstrip().startswith("<task-notification>"):
                 needs_response = False
         elif entry.get("type") == "assistant":
             message = entry.get("message")
@@ -134,9 +140,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         notice.resolve_notice(session_id, "user_response_advisor", "evaluate", subject="main")
         return "approve", ""
     _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
-    delivery = "応答本文" if is_codex_payload(payload) else "mcp__agent-toolkit__send_to_user（無い環境では応答本文）"
+    delivery = "応答本文" if is_codex_payload(payload) else "`send_to_user`（無い環境では応答本文）"
     body = _notice(
-        "人間の発話の後に、ユーザーへ届いた応答本文が無い。思考とツール操作だけでは応答本文として扱わない。",
+        "人間の発話の後に、ユーザーへ届いた応答本文が無い。",
         fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届けよ。",
         removable_cause=True,
         subject=input_subject,
@@ -170,8 +176,9 @@ def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:
             continue
         if not isinstance(entry, dict) or entry.get("isSidechain"):
             continue
-        text = _input_text(entry)
-        if text is not None and _is_human_input(entry) and not entry.get("isMeta") and not _is_hook_input(text):
+        raw_text = _input_text(entry)
+        text = _human_prompt(entry, raw_text) if raw_text is not None else None
+        if text is not None:
             prompt, entries = text, []
         elif prompt is not None:
             entries.append(entry)
@@ -202,3 +209,15 @@ def _is_human_input(entry: dict) -> bool:
     source = entry.get("attachment") if entry.get("type") == "attachment" else entry
     origin = source.get("origin") if isinstance(source, dict) else None
     return isinstance(origin, dict) and origin.get("kind") == "human"
+
+
+def _human_prompt(entry: dict, text: str) -> str | None:
+    """通常発話と組み込みコマンドを同じターン境界へ正規化し、機械入力を除く。"""
+    if entry.get("isMeta") or _is_hook_input(text):
+        return None
+    human = _is_human_input(entry)
+    if entry.get("type") == "user" and (human or "origin" not in entry):
+        command = _COMMAND_INPUT.fullmatch(text)
+        if command is not None:
+            return command[1].strip()
+    return text if human else None

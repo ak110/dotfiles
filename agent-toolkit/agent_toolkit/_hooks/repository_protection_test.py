@@ -44,7 +44,7 @@ def _payload(repository: pathlib.Path, kind: str, *, target: pathlib.Path | None
 
 @pytest.mark.parametrize(
     "edit, expected",
-    [(None, "承認後"), ("awi", "atk wi add --target-repo"), ("deny", "ユーザーへ報告"), ("allow", None)],
+    [(None, "承認後"), ("awi", "agent-toolkit:wi-standards"), ("deny", "ユーザーへ報告"), ("allow", None)],
 )
 @pytest.mark.parametrize("kind", ["Write", "Edit", "NotebookEdit", "patch", "commit"])
 def test_public_edit_and_commit_protection(
@@ -268,4 +268,4 @@ def test_session_start_notifies_delegates(
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(repository)})) == 0
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert "example.test/team/repo" in context and "atk wi add --target-repo" in context
+    assert "example.test/team/repo" in context and "agent-toolkit:wi-standards" in context

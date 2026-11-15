@@ -104,8 +104,8 @@ def test_notifies_target_skill_without_completion_report_once(tmp_path: pathlib.
     decision, body = _evaluate_delivered(_payload("sess-missing", str(trace)))
     assert decision == "notify"
     assert f"{skill}の開始" in body
-    assert "`Skill`で`agent-toolkit:report-completion`を起動し" in body
-    assert "公開工程" in body
+    assert "`agent-toolkit:report-completion`を起動せよ" in body
+    assert "終了方法の分岐" in body
     assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")
     _start_skill("sess-missing", trace, "agent-toolkit:report-completion", "toolu_report")
     assert _evaluate_delivered(_payload("sess-missing", str(trace))) == ("approve", "")

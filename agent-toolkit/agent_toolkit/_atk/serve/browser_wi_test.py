@@ -302,6 +302,22 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
         ):
             harness.current_state.publish()
 
+    control_number = 0
+
+    async def observe_no_extra_notification() -> None:
+        nonlocal control_number
+        control_number += 1
+        # 同じ通知パイプラインで新規UWIの肯定側を通し、対象変更を含むsnapshotの処理を待つ。
+        control = _entry_path(harness.root, f"notification-control-{control_number}.md")
+        control.write_text(new_unanswered, encoding="utf-8")
+        await publish_and_wait()
+        await page.wait_for_function("window.__notificationCalls.length === 2")
+        assert await page.evaluate("window.__notificationCalls.pop().body") == control.name
+        await page.wait_for_timeout(100)
+        assert await page.evaluate("window.__notificationCalls.length") == 1
+        control.unlink()
+        await publish_and_wait()
+
     marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
     new_path = _entry_path(harness.root, "new-question.md")
     new_unanswered = f"---\ntype: uwi\nstate: inbox\ntarget_repo: new/repo\n---\n\n## 質問\n\n新規\n\n## 回答\n\n{marker}\n"
@@ -328,20 +344,17 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     await publish_and_wait()
     new_path.write_text(new_unanswered, encoding="utf-8")
     await publish_and_wait()
-    await page.wait_for_timeout(100)
-    assert await page.evaluate("window.__notificationCalls.length") == 1
+    await observe_no_extra_notification()
 
     # 保存済みの旧確認キーはAWIの通知を発生させない。
     awi_path = _entry_path(harness.root, "new-awi.md")
     required_awi = "---\ntype: awi\nstate: inbox\ntarget_repo: new/repo\nconfirmation: required\n---\n\n# 要確認\n"
     awi_path.write_text(required_awi, encoding="utf-8")
     await publish_and_wait()
-    await page.wait_for_timeout(100)
-    assert await page.evaluate("window.__notificationCalls.length") == 1
+    await observe_no_extra_notification()
     awi_path.write_text(required_awi.replace("confirmation: required", "confirmation: confirmed"), encoding="utf-8")
     await publish_and_wait()
-    await page.wait_for_timeout(100)
-    assert await page.evaluate("window.__notificationCalls.length") == 1
+    await observe_no_extra_notification()
 
 
 @pytest.mark.asyncio(loop_scope="session")
@@ -403,7 +416,12 @@ async def test_work_item_important_conflict_preserves_latest_content(
     await page.route("**/api/entries/important", update_before_important)
     await page.get_by_role("button", name="重要設定", exact=True).click()
     await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text("重要設定できませんでした")
-    await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text("詳細を閉じて開き直して")
+    await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text(
+        "未保存の入力があれば、閉じる前にコピーして退避してください。"
+    )
+    await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text(
+        "詳細を開き直し、最新の内容へ必要な変更だけを反映して保存してください。"
+    )
     await playwright.async_api.expect(page.get_by_role("button", name="重要設定", exact=True)).to_be_disabled()
     saved = next(harness.root.rglob("awi.md")).read_text(encoding="utf-8")
     assert saved.endswith("外部から追記\n")

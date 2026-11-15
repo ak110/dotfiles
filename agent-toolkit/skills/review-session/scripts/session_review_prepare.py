@@ -18,6 +18,7 @@ import argparse
 import collections
 import contextlib
 import datetime
+import hashlib
 import io
 import json
 import pathlib
@@ -495,6 +496,17 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     record = {
         **identity,
         "scope_path": str(bundle_dir / "scope.json"),
+        "disposable_bundle_files": {
+            name: hashlib.sha256((bundle_dir / name).read_bytes()).hexdigest()
+            for name in (
+                "timeline.jsonl",
+                "warnings.jsonl",
+                "hook-notices.jsonl",
+                "conversation.jsonl",
+                "resource-usage.jsonl",
+                "comparison-materials.jsonl",
+            )
+        },
         "work_dir": str(work_dir),
         "conversation_path": str(conversation_path),
         "conversation_utf8_bytes": conversation_bytes,

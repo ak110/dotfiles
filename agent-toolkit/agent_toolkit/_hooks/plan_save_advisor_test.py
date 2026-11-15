@@ -87,10 +87,10 @@ def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path)
 
     assert first_result["hookSpecificOutput"]["hookEventName"] == "Stop"
     notification = first_result["hookSpecificOutput"]["additionalContext"]
-    assert str(first) in notification
-    assert str(second) in notification
+    assert first.name in notification
+    assert second.name in notification
     assert "残りのバンドルはその場に残して" in notification
-    assert "atk plans commit <~/.claude/plans直下の計画ファイル（メイン）名>" in notification
+    assert "atk plans commit" in notification
     assert not second_result
 
 

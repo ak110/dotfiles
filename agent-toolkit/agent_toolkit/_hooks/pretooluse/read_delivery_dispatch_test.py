@@ -156,7 +156,7 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
 def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, capsys, codex):
     """確認の前に読む2資料が未取得の間は、公開hookが質問の表示前に毎回拒否する。
 
-    送達ツールを持つClaude Codeにだけ、判断材料を先に送って質問を短く保つ手順を案内する。
+    共通の資料取得と、取得後の確認要否の再判断を案内する。
     """
     payload = {
         "session_id": "confirmation-acceptance",
@@ -170,7 +170,7 @@ def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, caps
         reason = _denial(dispatch.main(json.dumps(payload)), capsys.readouterr())
         assert "approval-scope.md" in reason
         assert "choice-construction.md" in reason
-        assert ("「ユーザー確認（`AskUserQuestion`）」" in reason) is not codex
+        assert "取得後に確認の要否を判断し直せ" in reason
 
 
 @pytest.mark.parametrize("codex", [False, True])

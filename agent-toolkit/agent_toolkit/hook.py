@@ -161,10 +161,10 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
         specific["hookEventName"] = events[subcommand]
         warning = _notice_formatter("hook")(
             f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: {type(error).__name__}: {error}。"
-            "元の操作の成否はツール結果で確認せよ。",
+            "この診断は元の操作の成否を示さない。",
             tag="warn",
             removable_cause=False,
-            fix="再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+            fix="元の操作の結果を確認せよ。自動処理の失敗が再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
         )
         specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
     if response is None and result:

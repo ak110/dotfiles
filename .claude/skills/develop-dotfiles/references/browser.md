@@ -6,6 +6,11 @@
 
 ## 画面とブラウザー
 
+- ブラウザー試験の失敗出力にある「ブラウザー失敗証拠」の保存先から`failure.txt`と`*-trace.zip`を取得する。
+  `uv run --frozen playwright show-trace <trace.zipの絶対パス>`で標準Trace Viewerを開く。
+  CIではブラウザー失敗証拠artifactから取得する。
+  ローカルの証拠はmanaged-tempの保持期限内に確認する。
+
 - `make setup-browser`（Chromiumとシステム依存パッケージ）および`make setup-pwsh`（Ubuntu/Debian向けPowerShell）は、ユーザーが自身の端末で直接実行する初期セットアップ用のコマンドである。
   エージェントが`make test-browser`の前提環境の不足を検知した場合は、システム依存パッケージのインストールを勝手に行わず、不足している前提条件と未実施の検証項目をユーザーに報告する。
 - `atk serve`のブラウザーUI、ブラウザー経由でアクセスされるサーバー側処理、静的ファイル、または実ブラウザーテストを変更した場合は、`make test-browser`を実行して動作を確認する。

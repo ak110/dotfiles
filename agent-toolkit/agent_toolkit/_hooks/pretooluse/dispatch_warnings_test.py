@@ -21,6 +21,32 @@ from agent_toolkit._testing.pretooluse_support import (
 from agent_toolkit._testing.pretooluse_support import run_after_read_delivery as _run
 
 
+@pytest.mark.parametrize("pending", [False, True])
+def test_pending_background_output_read_distinguishes_progress_from_result(monkeypatch, tmp_path, pending):
+    """未完了出力の読取には用途と再取得を示し、完了した出力には警告しない。"""
+    output = tmp_path / "background-output.log"
+    output.write_text("途中の出力", encoding="utf-8")
+    _write_session_state(tmp_path, "pending-output-read", {"background_task_ids": ["task-1"]})
+    monkeypatch.setattr(
+        pretooluse._background_task_outputs,
+        "pending_task_output_paths",
+        lambda *_args: {str(output)} if pending else set(),
+    )
+    result = _run(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": f"cat -- {output}"},
+            "session_id": "pending-output-read",
+            "transcript_path": str(tmp_path / "transcript.jsonl"),
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0 and not result.stderr
+    context = _additional_context(result)
+    assert ("途中経過は進捗の材料に限れ" in context) is pending
+    assert ("同じ出力ファイルを全量読み直して" in context) is pending
+
+
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
 def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
     """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""

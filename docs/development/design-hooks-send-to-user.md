@@ -34,7 +34,9 @@ Function hooks module（`agent-toolkit/hooks/send_to_user.tsx`、`register.ts`�
 
 メインへ初回から登録する理由は、どの報告でも必要になる小さな1ツールの定義を初回から渡すだけで、ToolSearchでこのツールを選ばずに報告する事態を除けるためである。
 短い登録名とモデル側の完全名は別の層の名前であり、再起動や別名の追加では呼出名の不一致を解消しない。
-ツールの登録と表示を同じmoduleに置くため、moduleを読み込まないClaude Code（管理設定の`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`が無い環境）とCodexにはツールが現れない。
+ツールの登録と表示を同じmoduleに置くため、プラグインのmoduleを読み込まないClaude CodeとCodexにはツールが現れない。
+現行のCLIでは2.1.287以降のMods対応とプラグインの有効化が必要であり、`disableAllHooks`や組織の管理設定などによって読み込みが止まる場合がある。
+旧`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`は同版以降無視されるため、有効化条件として使わない（[公式の条件](https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off)）。
 その環境のメインは`rules-main.claude-code.md`「ツールの入出力」に従い、届ける内容をターンを終える応答の本文へ書く。
 
 このツールはユーザーの画面を持つメインの報告手段であり、`agents_server`などが起動した委譲先は提供の範囲から外す。

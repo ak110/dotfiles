@@ -137,10 +137,7 @@ export function register(on: On, session: { delegated: boolean }): void {
           // 受け取る側は圧縮が起きたことを知らない。出来事、要約が無いこと、最初の操作の順で伝える。
           // 原本の所在はこの直後に届くSessionStartの通知が示すため、ここでは重ねない。
           "会話が圧縮され、圧縮前のやり取りと要約は現在の文脈にない。" +
-          "直後の復元通知が示すファイルとコマンドで、ユーザー発話の原文と会話の流れを取得せよ。" +
-          "作業契約、計画と進捗、引き継ぎ記録から未完了の工程を復元せよ。" +
-          "次の判断前に工程を定めるスキルと役割文書を全文読み直せ。" +
-          "`agent-toolkit/share/compaction-recovery.md`を全文読め。"),
+          "`agent-toolkit/share/compaction-recovery.md`を全文読み、直後の復元通知が示す原本から作業状態を復元せよ。"),
         toolUses: [],
       }],
     };

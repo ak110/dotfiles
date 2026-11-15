@@ -99,7 +99,7 @@ def test_wait_requests_unread_role_acceptance_material(
 
 
 def test_conditional_confirmation_guidance_does_not_expand_question_denial(tmp_path, monkeypatch):
-    """工程別の確認条件は判断候補を示し、共通2資料以外の未取得で質問を拒否しない。"""
+    """未確定の工程別条件を列挙せず、共通2資料以外の未取得で質問を拒否しない。"""
     source = tmp_path / "rules.md"
     target = tmp_path / "conditional.md"
     source.write_text("# 工程の規範\n", encoding="utf-8")
@@ -123,10 +123,9 @@ def test_conditional_confirmation_guidance_does_not_expand_question_denial(tmp_p
         },
     )
     assert result.returncode == 0
-    output = json.loads(result.stdout)["hookSpecificOutput"]
+    output = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
     assert output.get("permissionDecision") != "deny"
-    assert str(target) in output["additionalContext"]
-    assert "候補" in output["additionalContext"]
+    assert str(target) not in output.get("additionalContext", "")
 
 
 @pytest.mark.parametrize("failure", ["timeout", "invalid-record"])

@@ -6,6 +6,7 @@
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
+| 続行不能の返却から質問・資料提供UWIを組む前（圧縮後も同じ） | `../skills/user-confirmation-and-report/references/user-confirmation-and-report-decisions.md` | 判断 | `delegation-result`、`confirmation` |
 | 要件と委譲元の判断を分類する前（操作対象外: ツールと結び付かない判断） | `../skills/wi-standards/references/drafting-workflow-requirements.md` | | |
 | 原稿の意味を検収する前 | `agent-toolkit:wi-standards`の`references/drafting-completion.md`の採否・成立性の共通基準（同スキルの読込表の調査前・原稿確定前の範囲）と`references/draft-semantic-review.md` | 判断 | `delegation-result`、`read:agent-toolkit:*/skills/wi-standards/references/drafting-completion.md`、`read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md` |
 
@@ -46,6 +47,13 @@
    組み込み委譲では`agent-toolkit:delegation`の`references/sending.md`にある生成CLIを使う。
 
 ### 続行できない理由の扱い
+
+原要求と取得済み証拠から必要な結果を独立に定め、本人値がその結果に不可欠か、現在の認可・取得手段で自力調査を続けられないかを検収する。
+本人環境の取得不能を、そのまま回答待ちの必要性としない。
+公開資料・生成値・正常系との差などが未確認なら具体的な残調査を同じ担当へ戻し、委譲元だけが取得できる観測は既存認可の範囲で渡す。
+取得済み調査は対象版・環境・権限・到達先が今回と一致する範囲で再利用し、変わった条件は現在の認可内で確かめる。
+必要性が裏付けられた値だけを質問へ渡す。
+回答が従前の仮説に不利なら調査方法を選び直す。
 
 1. 投入先の外部にある対象を新しい要求と投入先の組へ展開する前に、根本原因が発生する条件がその対象の実物または明文化された方針において成立しているという根拠を検収する。
    単なる可能性や、同一のツールを使用していることだけを根拠としている対象については、対応不要とする根拠（非所属根拠）を記録するよう元担当者へ差し戻す。

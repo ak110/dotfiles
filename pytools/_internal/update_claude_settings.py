@@ -111,6 +111,7 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
 # share/claude_settings_json_managed.* から廃止した env キーを列挙する。
 # dict は再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
 _REMOVED_ENV_KEYS: tuple[removal_registry.Registered[str], ...] = (
+    removal_registry.Registered("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS", datetime.date(2026, 11, 15)),
     removal_registry.Registered("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", datetime.date(2026, 8, 7)),
     removal_registry.Registered("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", datetime.date(2026, 5, 30)),
 )

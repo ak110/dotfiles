@@ -33,8 +33,6 @@
 - `AGENT_TOOLKIT_SESSION_START_INPUT`: process-loop・run-skillが渡す起動元、スキル、モードと可変入力のJSON。
   SessionStartがメインへ機械生成標識付きで配送し、委譲先の環境継承とテスト環境では除去する。
   Claudeの出力上限を超える場合はmanaged-tempの原本参照を配送する。
-- `AGENT_TOOLKIT_LARGE_READ_BYTES`: CodexのBash実行によるファイル全文取得を分割読取へ誘導する、`pretooluse/large_reads`のバイト数閾値。
-  正の整数のみを採用し、それ以外はデフォルト値を使用する。
 - `AGENT_TOOLKIT_RUNTIME_DATA`: 配布ルートの外側に配置する共有依存環境の保存先。
   起動処理がパスを確定し、委譲先へも明示的に引き継ぐ。
 - `AGENT_TOOLKIT_RUNTIME_ENVIRONMENT`・`AGENT_TOOLKIT_CALLER_UV_PROJECT_ENVIRONMENT`: 起動処理が選定した依存環境、および呼び出し元の`UV_PROJECT_ENVIRONMENT`を保持する内部値。

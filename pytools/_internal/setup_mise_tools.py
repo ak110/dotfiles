@@ -2,6 +2,7 @@
 
 import json
 import os
+import secrets
 import subprocess
 import typing
 from pathlib import Path
@@ -227,7 +228,62 @@ def ensure_tools_installed(mise_bin: Path) -> bool:
         )
         return False
     setup_mise_common.logger.info(log_format.format_status("mise", "`install` を実行しました"))
+    if not dotfiles_mode.is_minimal():
+        installs = _installed_tool_paths(mise_bin, working_tree_with_config())
+        if installs is None or not _connect_typescript_lsp(installs):
+            return False
     return True
+
+
+def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
+    """独立prefixのLSPへtsserverを接続し、完了時はTrueを返す。独自成果は保持する。"""
+    servers = [path for path, (tool, _) in installs.items() if tool == "npm:typescript-language-server"]
+    typescripts = [path for path, (tool, version) in installs.items() if tool == "npm:typescript" and version.startswith("6.")]
+    if not servers:
+        return True
+    try:
+        if len(typescripts) != 1:
+            raise OSError("現行のTypeScript 6導入先を一意に取得できない")
+        source = typescripts[0] / "node_modules" / "typescript"
+        if not (source / "lib" / "tsserver.js").is_file():
+            raise OSError(f"tsserver.jsが見つからない: {source}")
+        for server in servers:
+            link = server / "node_modules" / "typescript"
+            if link.is_symlink():
+                previous = link.readlink()
+                if previous == source:
+                    continue
+                # この処理が作る絶対リンクと同じmise管理prefixだけを更新する。
+                # dangling linkも字句上の配置で判定し、参照先の実体は削除しない。
+                if (
+                    not previous.is_absolute()
+                    or previous.parent.name != "node_modules"
+                    or previous.name != "typescript"
+                    or previous.parent.parent.parent != typescripts[0].parent
+                ):
+                    if (link / "lib" / "tsserver.js").is_file():
+                        continue
+                    raise OSError(f"独自リンクを保持した: {link} -> {previous}")
+            elif link.exists():
+                if (link / "lib" / "tsserver.js").is_file():
+                    continue
+                raise OSError(f"既存の実体を保持した: {link}")
+            temporary = link.with_name(f".typescript-{secrets.token_hex(8)}")
+            try:
+                temporary.symlink_to(source, target_is_directory=True)
+                temporary.replace(link)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return True
+    except OSError as error:
+        setup_mise_common.logger.warning(
+            log_format.format_status(
+                "mise",
+                f"TypeScript LSPの接続を完了できない（処理は継続した）: {error}。"
+                "導入先とリンクの権限・独自設定を確認して`update-dotfiles`を再実行する",
+            ),
+        )
+        return False
 
 
 def ensure_tool_bin_paths_present(mise_bin: Path) -> bool:

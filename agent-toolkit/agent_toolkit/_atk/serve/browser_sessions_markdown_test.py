@@ -148,7 +148,19 @@ async def test_session_assistant_markdown_escapes_raw_html(
         await _open_session(page, base_url, "browser-test", path)
         body = page.locator("#detail .event.kind-assistant .event-markdown")
         await playwright.async_api.expect(body).to_contain_text("<script>window.__sessionXss = 1</script>")
+        assert await page.evaluate("window.__sessionXss") is None
+        # 同じ実行環境では生scriptが動き、試験用の観測値へ反映されることを先に確認する。
+        await page.evaluate(
+            """() => {
+                const script = document.createElement('script');
+                script.textContent = 'window.__sessionXss = 1';
+                document.body.append(script);
+                script.remove();
+            }"""
+        )
+        assert await page.evaluate("window.__sessionXss") == 1
+        await page.evaluate("delete window.__sessionXss")
         assert await body.locator("script, img").count() == 0
         assert await body.locator('a[href^="javascript:"]').count() == 0
-        await page.wait_for_timeout(200)
+        await page.wait_for_timeout(100)
         assert await page.evaluate("window.__sessionXss") is None

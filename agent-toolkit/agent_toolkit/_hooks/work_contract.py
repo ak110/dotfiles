@@ -11,7 +11,7 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
 from agent_toolkit._common.delegated_session import is_delegated
 from agent_toolkit._common.session_state import update_state
-from agent_toolkit._hooks import document_reads, plugin_resources
+from agent_toolkit._hooks import document_reads
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
 
@@ -26,7 +26,8 @@ Claude Codeは`additionalContext`を10,000文字で保存先とプレビュー�
 """
 
 RETURN_CRITERION = (
-    "要求の統合・回答後の再開・完了判断は、`{read_command}`で取得する「追加入力の統合」「工程境界での要求と成果の確認」に従え。"
+    "要求の統合・回答後の再開・完了判断は、`agent-toolkit/share/work-contract.md`の条件別資料"
+    "`work-contract-updates.md`と`work-contract-boundaries.md`に従え。"
 )
 
 
@@ -78,7 +79,7 @@ def reset_notice(session_id: str) -> None:
     resolve_notice(session_id, "pretooluse", "main", subject="main")
 
 
-def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str = "main") -> str | None:
+def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str = "main") -> tuple[str, str] | None:
     """受領した全体契約の未読版を、本文配送や遮断をせず1回案内する。"""
     if not is_delegated(os.environ):
         return None
@@ -94,52 +95,24 @@ def delegated_notice(session_id: str, records: dict, state: dict, *, agent: str 
         try:
             fingerprint = document_reads.content_fingerprint(path)
         except OSError:
-            return f"全体作業契約を取得できない: {path}。委譲元へ所在と読取可能性を確認せよ。"
+            return (
+                f"全体作業契約を取得できない。原本: `{path}`。",
+                "委譲元へ原本の所在と読取可能性を確認せよ。",
+            )
         status = document_reads.acquisition_state(records, read_triggers.ReadTarget(path), agent)
         if status == "current" or fingerprint in seen:
             continue
         text = (
-            (
-                "全体作業契約が取得後に更新された。"
-                if status == "updated"
-                else "全体作業契約の現行版を全文取得したことを確認できない。"
-            )
-            + "「即時対応で確定した暫定規則」を含む要求を確かめ、配布前の暫定規則に従え。"
-            f"`{_read_command(path)}`で全文を取得してから判断・操作へ進め。"
+            f"全体作業契約が取得後に更新された。原本: `{path}`。"
+            if status == "updated"
+            else f"全体作業契約の現行版を全文取得したことを確認できない。原本: `{path}`。"
         )
         notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, fingerprint)
-        return text
+        action = "現行要求を確かめ、「即時対応で確定した暫定規則」を含めて続行へ適用せよ。"
+        if status == "missing":
+            action = "原本を全文読み、" + action
+        return text, action
     return None
-
-
-def missing_notice(session_id: str, *, agent_id: object = None) -> str | None:
-    """未作成のメインへ、入力ごとの最初の操作で作成条件を示す。"""
-    if not session_id or agent_id or is_delegated(os.environ):
-        return None
-    path = record_path(session_id)
-    if path is None:
-        path = managed_temp.session_temp_path(session_id) / RECORD_NAME
-    if path.is_file():
-        return None
-    claimed = False
-
-    def claim(state: dict) -> dict | None:
-        nonlocal claimed
-        sequence = state.get("work_contract_input_sequence", 0)
-        if state.get("work_contract_notified_sequence") == sequence:
-            return None
-        claimed = True
-        return {**state, "work_contract_notified_sequence": sequence}
-
-    update_state(session_id, claim)
-    if not claimed:
-        return None
-    return (
-        "現行の作業契約が未作成。\n"
-        f"`{_read_command(plugin_resources.plugin_root() / 'share/work-contract.md')}`で「作成と所有」を読め。"
-        "作成が必要なら、編集ツール（`Write`の`file_path`や`apply_patch`の`Add File`など）へ"
-        f"`{path}`を指定し、作業契約の本文を保存せよ。"
-    )
 
 
 def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
@@ -151,7 +124,6 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     path = record_path(session_id)
     if path is None or not path.is_file():
         return None
-    criterion = RETURN_CRITERION.format(read_command=_read_command(plugin_resources.plugin_root() / "share/work-contract.md"))
     try:
         body = path.read_bytes().decode("utf-8").rstrip("\n")
     except (OSError, UnicodeDecodeError) as error:
@@ -160,13 +132,14 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
             f"権限や文字コードの原因を解消した後、`{_read_command(path)}`で現在の目的・要件を確かめよ。"
             "解消できなければ、会話の原文と計画・WIから現在の目的・要件を確かめて作業を続け、"
             "所在と診断を委譲元（委譲元が無ければユーザー）へ報告せよ。"
-            f"{criterion}"
+            f"{RETURN_CRITERION}"
         )
     if len(body) > budget:
         return (
-            f"現行の作業契約は通知の上限{budget}文字を超える。`{_read_command(path)}`で現在の目的・要件を確かめよ。{criterion}"
+            f"現行の作業契約は通知の上限{budget}文字を超える。"
+            f"`{_read_command(path)}`で現在の目的・要件を確かめよ。{RETURN_CRITERION}"
         )
-    text = f"現行の作業契約（機械生成の参照資料。原本: {path}）:\n{body}\n\n{criterion}"
+    text = f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"
     for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
         notice_module.stage_delivery(
             text, session_id, "operation_skill_delivered_agents", document_reads.receipt_key(metadata), "main"

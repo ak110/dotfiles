@@ -33,7 +33,7 @@ Agent / Task:
 
 Bash:
 
-- Codexで48KiBを超える通常ファイルの全文取得の警告 (warn)。通知は受信予算と分割取得を案内する
+- 規範資料を見出しだけに限定して抽出する読取の警告 (warn)
 - 区切り語を引用しないheredocの本文にあるコマンド置換の遮断 (block)
 - パターン一致によるプロセス終了（`pkill`・`killall`等）の遮断 (block)
 - 読取の引数・診断破棄、atk出力の接続とwaitの背景化の警告 (warn)
@@ -69,7 +69,7 @@ Write / Edit / MultiEdit / apply_patch:
 
 - 編集入力は`_hook_tool_input`が共通の操作記録へ正規化し、各判定処理はホストを区別しない
 - 空でない文字列の`turn_id`を持つ入力をCodexと判定し、この判定はpayloadの読込直後に一度だけ行う
-- 大量読取の警告はCodexだけへ適用し、PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
+- PowerShellの改行を確かめる処理はClaudeの`Write`へ限定する
 - 警告は1つの`hookSpecificOutput.additionalContext`へ結合し、遮断は最初の違反を`permissionDecisionReason`へ返す
 """
 
@@ -110,7 +110,11 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _clear_current_plan_file_path,
     _record_iss_sidechain_probe,
 )
-lazy from agent_toolkit._hooks.pretooluse.content_checks import _collect_edit_operation_warnings, _warn_mojibake
+lazy from agent_toolkit._hooks.pretooluse.content_checks import (
+    _check_lockfiles,
+    _collect_edit_operation_warnings,
+    _warn_mojibake,
+)
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._hooks.pretooluse.large_reads import (
     bash_read_paths,
@@ -119,6 +123,8 @@ lazy from agent_toolkit._hooks.pretooluse.large_reads import (
 )
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 lazy from agent_toolkit._hooks.pretooluse.read_delivery import deliver as read_delivery
+lazy from agent_toolkit._hooks.pretooluse.read_delivery_conditions import _work_record_only
+lazy from agent_toolkit._hooks.pretooluse.read_delivery_paths import _acquiring
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _check_bash_atk_output_loss,
     _check_bash_option_after_terminator,
@@ -205,10 +211,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
     operations = [entry.operation for entry in _operation_skills.OPERATION_SKILLS if entry.matches(tool_name, tool_input)]
     scope = "pretooluse:" + str(tool_name) + ":" + ",".join(operations)
     with notice_cycle(session_id, scope, _agent_id.resolve_hook_agent_id(payload)):
-        contract_notice = work_contract.missing_notice(session_id, agent_id=payload.get("agent_id"))
         pending_notices: list[str] = list(initial_notices)
-        if contract_notice:
-            pending_notices.append(_llm_notice(contract_notice, tag="notice"))
         if tool_name not in _USER_FACING_TEXT_TOOL_NAMES:
             _language_retry(payload, tool_name, tool_input, remember=False)
         decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
@@ -229,18 +232,27 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
         if (effort_advice := effort_notice.observe(payload)) is not None:
             pending_notices.append(effort_advice)
         state = read_state(session_id)
-        contract_update = work_contract.delegated_notice(
-            session_id,
-            state.get(rules_context.OPERATION_SKILL_READY_KEY, {}),
-            state,
-            agent=_agent_id.resolve_hook_agent_id(payload),
+        cwd = str(payload.get("cwd", ""))
+        preparing = _acquiring(tool_name, tool_input, cwd) or _work_record_only(
+            _operation_skills.written_paths(tool_name, tool_input, cwd), payload, session_id
+        )
+        # 操作の分類はPreToolUseが所有し、契約の所在・版の判定から分離する。
+        contract_update = (
+            None
+            if preparing
+            else work_contract.delegated_notice(
+                session_id,
+                state.get(rules_context.OPERATION_SKILL_READY_KEY, {}),
+                state,
+                agent=_agent_id.resolve_hook_agent_id(payload),
+            )
         )
         if contract_update:
             pending_notices.append(
                 _llm_notice(
-                    contract_update,
+                    contract_update[0],
                     tag="warn",
-                    fix="案内された全体作業契約を全文読み、現行要求で続行せよ。",
+                    fix=contract_update[1],
                     removable_cause=True,
                     escalate_on_repeat=False,
                 )
@@ -548,14 +560,13 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
         # 本文・説明の英語判定と文字化け判定には、この除外を適用しない。
         if tool_name == "AskUserQuestion" and name.endswith(".label"):
             text = text.removesuffix("(Recommended)").rstrip()
-        outcome, body = _response_language_check.check_text(text)
+        outcome, _ = _response_language_check.check_text(text)
         if outcome is _response_language_check.CheckOutcome.WARN:
             if recoverable and repeated:
                 continue
             return Decision(
                 block=_block_notice(
-                    f"対象の入力欄: `{name}`。この入力本文を英語主体と判定し、呼び出しを止めた。"
-                    f"{(body or '').replace('直前のアシスタント応答の地の文', 'この入力本文の説明')}",
+                    f"対象の入力欄: `{name}`。この入力本文を日本語の説明として判定できないため、呼び出しを止めた。",
                     fix=(
                         _response_language_check.WARNING_FIX
                         + "引用・入力素材だけが英語で、説明が日本語なら、同じ主体から同じツールへ同一入力を再発行せよ。"
@@ -577,7 +588,7 @@ def _decide_edit_tool(tool_name: str, tool_input: dict, cwd: str) -> Decision:
     if operations is None:
         return Decision()
     images: dict[int, _hook_tool_input.MaterializedEdit | None] = {}
-    warnings: list[str] = []
+    warnings = _check_lockfiles(tool_name, [path for operation in operations for path in operation.display_paths])
     for index, operation in enumerate(operations):
         warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images))
     return Decision(context=format_warning_context(warnings) if warnings else None)

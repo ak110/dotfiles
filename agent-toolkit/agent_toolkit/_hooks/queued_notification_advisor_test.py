@@ -64,7 +64,7 @@ def test_enqueued_notification_reports_task_id_and_output_file(tmp_path: pathlib
     assert _OUTPUT_FILE in body
     assert "そのパスを`Read`の`file_path`に指定して全量を読み" in body
     assert "工程を進めよ" in body
-    assert "再発行するな" in body
+    assert "出力先が未通知" in body and "委譲元" in body
 
 
 @pytest.mark.parametrize("stop_hook_active", [False, True])

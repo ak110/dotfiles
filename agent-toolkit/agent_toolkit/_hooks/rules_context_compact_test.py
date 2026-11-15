@@ -27,7 +27,7 @@ def test_acquisition_failure_uses_host_acquisition(host: str, tmp_path: pathlib.
     cwd = str(tmp_path / ("project" if inside else "outside"))
     loadable = host == "claude" and inside
     failure = rules_context.acquisition_failure(ReadTarget(skill), ValueError("読取失敗"), shell=host != "claude", cwd=cwd)
-    assert ("`Skill`で`local`" in failure) is loadable
+    assert ("`local`を起動せよ" in failure) is loadable
     assert ("cat --" in failure) is not loadable
 
 
@@ -57,9 +57,9 @@ def test_compact_public_notice_uses_current_stage_without_history_paths(tmp_path
     )
     output = _output(capsys)
     assert str(document) not in output
-    assert "工程を定めるスキルと役割文書を全文読み直し" in output
+    assert "会話が圧縮された" in output
     assert "agent-toolkit/share/compaction-recovery.md`を全文読め" in output
-    assert "読込表から次の判断に必要な資料を選んで読め" in output
+    assert "compaction-recovery.md" in output
     assert "復元先:" in output
     assert not read_delivery.target_ready(
         read_state("stage").get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(document), "main"
@@ -83,7 +83,7 @@ def test_compact_skill_becomes_ready_only_after_skill_success(capsys, monkeypatc
         )
     )
     output = _output(capsys)
-    assert "固有スキル本文" not in output and "`Skill`で`local`" not in output
+    assert "固有スキル本文" not in output and "`local`を起動せよ" not in output
     records = read_state("compact-skill").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert not read_delivery.target_ready(records, target, "main")
     read_delivery.observe(
@@ -170,7 +170,7 @@ def test_compact_keeps_large_target_unread_without_listing_it(
     output = _output(capsys)
     records = read_state("compact-budget").get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert str(document) not in output
-    assert "工程を定めるスキルと役割文書" in output
+    assert "compaction-recovery.md" in output
     assert not read_delivery.target_ready(records, target, "main")
     assert len(output) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 

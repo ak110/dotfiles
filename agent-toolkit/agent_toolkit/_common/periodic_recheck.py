@@ -30,34 +30,9 @@ LEGACY_PERIODIC_RECHECK_MARKER = _message_format.opening_tag(
 """旧形式の役割標識。過去に装着したtaskの発火を同じく機械注入と判定するために読む。"""
 
 _PERIODIC_RECHECK_BODY_LINES: tuple[str, ...] = (
-    "待機中の対象を次の順に再確認せよ。",
-    "1. 待機対象を記録側から列挙せよ。agents_serverのsessionは保持した`session_id`と`atk agents list`、"
-    "バックグラウンドタスクは起動結果が返した識別子と出力ファイル、その他は計画ファイルや引き継ぎ記録など"
-    "現在の作業状態を正とする記録から読み直せ。",
-    "2. `atk agents wait`かそれを起動したバックグラウンドタスクが終了の`status`を返していない間は、"
-    "それが所有する対象へ状態照会を発行せず、その終了応答か完了通知で受け取れ。",
-    "3. 所有されていない対象は記録側の状態と完了通知を確かめ、完了した対象があれば既存の受領手順へ進め。",
-    "4. 成果物の状況は補助観測として、その回の記録から解決したGit作業ツリーなら"
-    '`git -C "$worktree_path" status --porcelain=v1`と`git -C "$worktree_path" rev-parse --short HEAD`、'
-    '通常のファイルなら`wc -l -- "$artifact_path"`と`stat -L -c %Y -- "$artifact_path"`'
-    '（macOSは`stat -L -f %m -- "$artifact_path"`。最終更新のepoch秒）で補え。'
-    "稼働と終了は待機対象ごとの終了状態と完了通知から判定せよ。",
-    "5. このpromptの終了タグの前に経過時間起動の義務の行がある場合は、"
-    "各行の測定コマンドで経過を測定し、判定閾値へ到達した義務を実行せよ。"
-    "行が無い場合も、そのセッションに適用される経過時間起動の義務（定期報告、cooldown解除、期限監視、"
-    "投入済みで未回答のUWIの`atk wi`による回答確認など）を記録と規範から確かめ、"
-    "確定した義務はその行を加えたpromptでこのtaskを作成し直せ。",
-    "6. 全対象が未完了で到達した義務も無ければ、ユーザー向けの報告を出力せずに待機を続けよ。"
-    "この発火を完了と停滞の判定の入力に含めるな。",
-    "7. 待機する全対象の終了と結果回収後、共通promptのtaskはmodが自動回収する。"
-    "`/goal`を設定したセッションでは、目標の評価がmodの回収より前に動いて残るtaskを未完了と判定するため、"
-    "全対象の終了と結果回収後、最終ターンを閉じる前に、modが装着した分を含む共通promptの非durableのtaskを"
-    "`CronList`で特定して`CronDelete`で削除せよ。"
-    "追加した経過時間起動の義務を持つtaskは通常回収で保持し、セッション終了時にmodが回収する。"
-    "modが無い環境で自ら装着したtaskは、全対象の終了後に保持したIDを`CronDelete`へ渡して削除せよ。"
-    "自動回収の失敗通知が届いた場合は、その理由と次の操作を確認せよ。",
-    "詳細は`agent-toolkit:delegation`の`references/claude-code-runtime.md`「待機中の定期再確認と背景転換」と"
-    "`references/waiting-and-monitoring.md`「完了通知を待ってターンを終える場合」に従え。",
+    "待機対象を現行の作業記録から読み直し、終了通知と経過時間に応じた義務を再確認せよ。",
+    "`agent-toolkit:delegation`の`references/claude-code-runtime-waiting.md`"
+    "「待機中の定期再確認と背景転換」に従い、結果の受領・待機の継続・所有taskの回収を判断せよ。",
 )
 
 PERIODIC_RECHECK_PROMPT = _message_format.auto_message(

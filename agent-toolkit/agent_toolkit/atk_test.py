@@ -441,5 +441,7 @@ def test_report_space_pressure_warns_with_usage_when_still_low(
 
     output = capsys.readouterr()
     assert output.out == ""
-    assert "回収できる対象が無い" in output.err
+    assert "自動掃引後も空きが不足" in output.err
+    assert "回収できる対象が無い" not in output.err
+    assert "作成者が終了すると次の起動で回収できる" not in output.err
     assert "空き 3.0GiB / 容量 100.0GiB、一時rootの使用量 20.0GiB" in output.err

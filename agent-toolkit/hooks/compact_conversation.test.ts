@@ -48,10 +48,8 @@ for (const trigger of ["manual", "auto", "plugin", "precompute"] as const) {
       expect(result.messages?.length).toBe(1);
       const text = result.messages?.[0]?.text ?? "";
       expect(text).toMatch(/^<[^>]+>\s*会話が圧縮され、圧縮前のやり取りと要約は現在の文脈にない。/);
-      expect(text).toMatch(/直後の復元通知が示すファイルとコマンドで、ユーザー発話の原文と会話の流れを取得せよ/);
-      expect(text).toMatch(/作業契約、計画と進捗、引き継ぎ記録から未完了の工程を復元せよ/);
-      expect(text).toMatch(/工程を定めるスキルと役割文書を全文読み直/);
-      expect(text).toContain("agent-toolkit/share/compaction-recovery.md`を全文読め");
+      expect(text).toContain("agent-toolkit/share/compaction-recovery.md`を全文読み");
+      expect(text).toContain("直後の復元通知が示す原本から作業状態を復元せよ");
       expect(text).not.toMatch(/会話の要約生成を省き|会話ID:|原本ログ:|\/records\/current-session.jsonl/);
       expect("usage" in result).toBe(false);
     }

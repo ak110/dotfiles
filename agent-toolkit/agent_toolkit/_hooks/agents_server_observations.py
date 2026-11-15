@@ -530,7 +530,7 @@ def observe_tool(
             return []
         return [
             ObservationWarning(
-                f"warn: `list`の応答で{', '.join(missing)}が欠落しているか不正であり、"
+                f"`list`の応答で{', '.join(missing)}が欠落しているか不正であり、"
                 "待機対象を識別するための記録を更新できなかった。",
                 "`list`の結果にある対象の`session_id`を指定して`show`で照会せよ。"
                 "`session_id`が無い場合と欠落が続く場合は、この診断を`agents_server`の不具合として委譲元かユーザーへ報告せよ。",
@@ -546,8 +546,7 @@ def observe_tool(
         if missing:
             warnings.append(
                 ObservationWarning(
-                    f"warn: {operation}の応答で{', '.join(missing)}が欠落しているか不正である。"
-                    "観測待ちの記録が欠けるため、ターン終了時の未観測警告が出ない。",
+                    f"{operation}の応答で{', '.join(missing)}が欠落しているか不正であり、終了観測の必要な対象を記録できない。",
                     "起動したセッションは`atk agents wait`で終了を観測するか、結果が不要なら`kill`で破棄せよ。"
                     "欠落が続く場合は`agents_server`の不具合としてユーザーへ報告せよ。",
                 )

@@ -3,7 +3,9 @@
 本書は、Playwright Testを用いてブラウザテストを作成・レビューする際の実装基準をまとめたものである。
 対象バージョンはPlaywright Test v1系（参考実利用バージョン: 1.60）である。
 公式のベストプラクティスについては、<https://playwright.dev/docs/best-practices>を参照する。
-本書はPythonバインディング（`playwright.async_api`、`playwright.sync_api`）を使用するテストにも適用し、メソッド名などの綴りが異なるAPIはPython側の対応する名前に読み替えて適用する。
+ロケーター、アサーション、隔離の基準はPythonバインディングにも適用する。
+設定はランナーごとの契約に従う。
+Playwright Testの設定をPythonのAPI名へ読み替えて適用しない。
 
 ## 名指し参照の読込方法
 
@@ -44,6 +46,15 @@
   あわせて`failOnFlakyTests`設定（CLI引数では`--fail-on-flaky-tests`）を有効にし、再試行によって最終的にパスしたテストについても、`testing-platforms.md`「失敗テストの除外による回避禁止」に従って根本原因を特定・修正する。
 - 設定ファイルで`trace: 'on-first-retry'`を指定し、CI環境で発生した失敗のデバッグにはトレースビューアーを優先して活用する。
 
+上記の`retries`、`failOnFlakyTests`、`trace`はPlaywright Testの設定である。
+Pythonのpytest-playwrightが標準で提供するfixtureでは、同プラグインの`--tracing=retain-on-failure`と出力先を使う。
+自作の`browser.new_context()`には、そのCLI設定は適用されない。
+自作コンテキストを所有するfixtureは、操作前の`context.tracing.start()`、終了時の`stop()`、失敗時の保持と成功時の破棄を管理する。
+traceはassertion自体を含まないため、試験識別子とランナーの失敗内容も対応付けて残す。
+保存先はfixtureのcleanup対象から分離し、CIのartifact取得後まで実体が残ることを確認する。
+証拠保存の失敗で元の試験失敗を上書きせず、ブラウザーとサーバーは通常どおり終了する。
+Pythonで診断採取だけのために再試行を必須にしない。
+
 ## Page Object Model採用の判断基準
 
 Page Object Model（POM）はテストコードを構造化するための一手法であり、コードの再利用性やUI変更時の修正箇所の集約といったメリットが、POMクラスの保守コストを上回る場合に採用する。
@@ -52,5 +63,5 @@ Page Object Model（POM）はテストコードを構造化するための一手
 ## 並列実行・CI設定
 
 - CIでのテスト実行はコード変更に近いタイミングで実行し、計測された総実行時間に応じてシャーディング（sharding）による並列分割を検討する。
-- テスト対象のブラウザ環境はPlaywright設定の`projects`で明確に分離し、Playwright本体および同梱されるブラウザバイナリを定期的に最新化する。
+- テスト対象のブラウザ環境はPlaywright Testでは`projects`、Pythonではランナーのブラウザー選択とfixtureで分離し、Playwright本体および同梱されるブラウザバイナリを定期的に最新化する。
 - 非同期関数の呼び出しにおける`await`の付け忘れなどによる処理の完了待ちは、テスト実行時だけでなく静的解析（lint）の段階でも検知できるように設定しておく。

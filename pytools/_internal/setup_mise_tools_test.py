@@ -412,3 +412,77 @@ def test_install_failure_is_skipped_warning_with_separate_next_action(
     assert "storage.googleapis.com" in output
     for progress in ("installing", "WARN", "1/2", "\x1b"):
         assert progress not in record.getMessage()
+
+
+class TestTypeScriptLspConnection:
+    """通常更新が独立prefixを接続し、独自成果を保持する。"""
+
+    @staticmethod
+    def _layout(tmp_path: Path, mise_stub: _MiseSubprocessStub) -> tuple[Path, Path]:
+        server = tmp_path / "installs" / "npm-typescript-language-server" / "6.0.3"
+        typescript = tmp_path / "installs" / "npm-typescript" / "6.0.3"
+        (server / "node_modules").mkdir(parents=True)
+        source = typescript / "node_modules" / "typescript"
+        (source / "lib").mkdir(parents=True)
+        (source / "lib" / "tsserver.js").write_text("", encoding="utf-8")
+        mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
+        mise_stub.handlers[("ls", "--current", "--installed", "--json")] = _ls_response(
+            {
+                "npm:typescript-language-server": [{"version": "6.0.3", "install_path": str(server)}],
+                "npm:typescript": [
+                    {"version": "7.0.2", "install_path": str(typescript.parent / "7.0.2")},
+                    {"version": "6.0.3", "install_path": str(typescript)},
+                ],
+            }
+        )
+        return server / "node_modules" / "typescript", source
+
+    def test_run_connects_and_repeats_without_changing_link(
+        self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
+        link, source = self._layout(tmp_path, mise_stub)
+        _setup_mise.run()
+        assert link.is_symlink()
+        assert link.readlink() == source
+        before = link.lstat()
+        _setup_mise.run()
+        assert link.lstat() == before
+        assert (link / "lib" / "tsserver.js").is_file()
+
+    @pytest.mark.parametrize("kind", ["directory", "custom-link", "old-link"])
+    def test_run_preserves_custom_entries_and_updates_old_managed_link(
+        self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, kind: str
+    ) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
+        link, source = self._layout(tmp_path, mise_stub)
+        old = source.parent.parent.parent / "6.0.2" / "node_modules" / "typescript"
+        if kind == "directory":
+            link.mkdir()
+            marker = link / "custom.txt"
+        else:
+            target = old if kind == "old-link" else tmp_path / "custom"
+            target.mkdir(parents=True)
+            link.symlink_to(target, target_is_directory=True)
+            marker = target / "custom.txt"
+        marker.write_text("keep", encoding="utf-8")
+        _setup_mise.run()
+        assert marker.read_text(encoding="utf-8") == "keep"
+        if kind == "old-link":
+            assert link.readlink() == source
+        elif kind == "directory":
+            assert not link.is_symlink()
+        else:
+            assert link.readlink() == tmp_path / "custom"
+
+    @pytest.mark.parametrize("mode", ["minimal", "failed-install"])
+    def test_run_does_not_connect_when_install_is_not_eligible(
+        self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, mode: str
+    ) -> None:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "minimal" if mode == "minimal" else "full")
+        link, _ = self._layout(tmp_path, mise_stub)
+        if mode == "failed-install":
+            mise_stub.handlers[("install",)] = _completed(returncode=1, stderr="install failed")
+        _setup_mise.run()
+        assert not link.exists()
+        assert not link.is_symlink()

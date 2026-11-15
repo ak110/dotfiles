@@ -7,8 +7,27 @@ import sys
 
 import pytest
 
+from agent_toolkit._hooks import termination_evidence
 from agent_toolkit._testing.helpers import auto_message_opening_attributes
 from agent_toolkit._testing.hook_support import _copy_entrypoint
+from agent_toolkit._testing.pretooluse_support import _additional_context, _run
+
+
+def test_pretooluse_record_failure_preserves_operation_result_boundary(monkeypatch) -> None:
+    """開始記録の失敗を元操作の失敗とせず、公開hookの最終通知へ届ける。"""
+
+    def fail_record(*_args, **_kwargs):
+        raise OSError("開始記録の試験用障害")
+
+    monkeypatch.setattr(termination_evidence, "observe_tool", fail_record)
+    result = _run({"tool_name": "ObserveDelivery", "tool_input": {}})
+    assert result.returncode == 0
+    assert not result.stderr
+    context = _additional_context(result)
+    assert "開始記録の試験用障害" in context
+    assert "元の操作の成否はこの診断では分からない" in context
+    assert "元の操作の結果を確認せよ" in context
+    assert "permissionDecision" not in result.stdout
 
 
 class TestEntrypointExceptionStages:
@@ -64,18 +83,20 @@ class TestEntrypointExceptionStages:
         assert not result.stdout
         assert not result.stderr
 
+    @pytest.mark.parametrize("subcommand", ["pretooluse", "posttooluse", "user_prompt_submit"])
     def test_non_approve_fallback_subcommand_exception_returns_0_without_json(
         self,
         tmp_path: pathlib.Path,
+        subcommand: str,
     ) -> None:
-        """approve対象外のサブコマンドは例外時もJSONなしでfail-openする。"""
+        """通知を受理するイベントは機構の障害を単一JSONで返し、元操作の失敗と混同しない。"""
         entrypoint = self._copy_entrypoint(tmp_path)
-        (tmp_path / "_hooks" / "pretooluse.py").write_text(
+        (tmp_path / "_hooks" / f"{subcommand}.py").write_text(
             "def main(payload_text: str) -> int:\n    del payload_text\n    raise RuntimeError('boom')\n",
             encoding="utf-8",
         )
         result = subprocess.run(
-            [sys.executable, str(entrypoint), "pretooluse"],
+            [sys.executable, str(entrypoint), subcommand],
             input="",
             capture_output=True,
             text=True,
@@ -84,7 +105,9 @@ class TestEntrypointExceptionStages:
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert auto_message_opening_attributes(context) == {"source": "hook", "kind": "warn"}
-        assert "agent-toolkitの自動処理pretooluseで想定外のエラーが起きた: RuntimeError: boom" in context
+        assert f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: RuntimeError: boom" in context
+        assert "この診断は元の操作の成否を示さない" in context
+        assert "元の操作の結果を確認せよ" in context
         assert not result.stderr
 
     def test_session_end_cleanup_exception_returns_0_without_json(

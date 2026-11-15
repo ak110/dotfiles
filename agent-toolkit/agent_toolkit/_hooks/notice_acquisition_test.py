@@ -10,23 +10,7 @@ import types
 
 import pytest
 
-from agent_toolkit._common import session_state
-from agent_toolkit._hooks import antigravity, plugin_resources, posttooluse, user_prompt_submit
-
-
-@pytest.fixture(name="documents")
-def _documents(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    root = tmp_path / "資料 ' [$value]; (root)"
-    for relative in (
-        "user-confirmation-and-report/SKILL.md",
-        "user-confirmation-and-report/references/user-utterance.md",
-        "delegation/references/routing.md",
-    ):
-        path = root / "skills" / relative
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("取得対象の本文\n", encoding="utf-8")
-    monkeypatch.setattr(plugin_resources, "plugin_root", lambda: root)
-    return root
+from agent_toolkit._hooks import antigravity, posttooluse, user_prompt_submit
 
 
 def _assert_read(body: str, path: pathlib.Path, *, windows: bool) -> None:
@@ -65,36 +49,28 @@ def test_unreadable_transcript_separates_recovery_from_hook_retry(
     assert "確認せよ" in action and "報告せよ" in action
 
 
-@pytest.mark.parametrize("windows", [False, True])
 @pytest.mark.parametrize("prompt", ["例えば表示を直して", "例えば設定を調査して", "理解が違う！！"])
-def test_content_notice_commands_resolve_only_the_required_documents(
-    documents: pathlib.Path, monkeypatch: pytest.MonkeyPatch, windows: bool, prompt: str
-) -> None:
-    monkeypatch.setattr(posttooluse, "os", types.SimpleNamespace(name="nt" if windows else "posix"))
+def test_content_notice_references_only_the_required_documents(prompt: str) -> None:
     bodies = posttooluse.content_notices(prompt, "notice-acquisition")
     assert len(bodies) == 1
     body = bodies[0]
     if "！！" in prompt:
-        assert "agent-toolkit:user-confirmation-and-report" in body and "スキルを起動し" in body
+        assert "`agent-toolkit:user-confirmation-and-report`を起動し" in body
     else:
-        _assert_read(body, documents / "skills/user-confirmation-and-report/references/user-utterance.md", windows=windows)
-        assert "取得せよ" in body or "取得し" in body
-    routing = documents / "skills/delegation/references/routing.md"
+        assert "`references/user-utterance.md`" in body
+    routing = "`references/routing.md`"
     if "調査" in prompt:
-        _assert_read(body, routing, windows=windows)
+        assert routing in body
     else:
-        assert str(routing) not in body
-
-
-def test_confirmation_notice_asks_to_invoke_the_skill(capsys: pytest.CaptureFixture[str]) -> None:
-    session_id = "notice-confirmation"
-    session_state.update_state(session_id, lambda state: {**state, "user_confirmation_skill_pending": True})
-    assert user_prompt_submit.main(json.dumps({"session_id": session_id, "prompt": "確認して"})) == 0
-    body = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert session_state.read_state(session_id)["user_confirmation_skill_pending"] is False
-    assert "`agent-toolkit:user-confirmation-and-report`スキルを起動せよ" in body
+        assert routing not in body
     assert "cat --" not in body and "Get-Content" not in body
-    assert "agent-basics:bugfix" not in body
+
+
+def test_first_prompt_does_not_warn_before_preparation(capsys: pytest.CaptureFixture[str]) -> None:
+    session_id = "notice-confirmation"
+    assert user_prompt_submit.main(json.dumps({"session_id": session_id, "prompt": "確認して"})) == 0
+    captured = capsys.readouterr()
+    assert not captured.out and not captured.err
 
 
 @pytest.mark.parametrize("prompt", ["通常の依頼", "`例えば調査`は引用"])

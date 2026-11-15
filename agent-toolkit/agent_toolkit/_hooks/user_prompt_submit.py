@@ -12,9 +12,6 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 
 セッション名はUserPromptSubmitのコマンドhookが通常状態から設定する。
 
-セッション開始後と会話圧縮後で`agent-toolkit:user-confirmation-and-report`がまだ起動されていない間は、
-最初の実ユーザー発話へ同スキルの起動を促す注記を一度返す。
-発話の内容を現物で確かめる一般手順は同スキルが定め、経過時間による固定本文の再配送は行わない。
 全角の連続した感嘆符を含む実ユーザー発話では、経過時間によらず`agent-toolkit:user-confirmation-and-report`の「認識合わせ」を促す。
 例示の語（「例えば」「たとえば」「例として」）を含む実ユーザー発話では、経過時間と状態によらず、
 `agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`「原文の保持と取り込み」の所在を示し、
@@ -54,14 +51,10 @@ from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: 
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
     _PLAN_MODE_SKILL_NAMES,
     _PROCESS_WI_SKILL_NAMES,
-    USER_CONFIRMATION_PENDING_KEY,
-    USER_CONFIRMATION_SKILL_NAMES,
-    clear_user_confirmation_pending,
     content_notices,
 )
 lazy from agent_toolkit._common import (
     automated_prompt,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    next_action,
 )
 lazy from agent_toolkit._common.delegated_session import (
     is_delegated,  # noqa: E402  # pylint: disable=wrong-import-position,import-error
@@ -71,10 +64,9 @@ lazy from agent_toolkit._common.periodic_recheck import (  # noqa: E402  # pylin
     PERIODIC_RECHECK_MARKER,
 )
 lazy from agent_toolkit._common.session_state import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
-    read_state,
     update_state,
 )
-lazy from agent_toolkit._hooks import command_timing, message_format, session_title, termination_evidence, work_contract
+lazy from agent_toolkit._hooks import command_timing, session_title, termination_evidence, work_contract
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
@@ -102,7 +94,6 @@ _HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT
 _USER_PROMPT_SOURCE_KEY = "source"
 _USER_PROMPT_SOURCE_USER = "user"
 _llm_notice = _notice_formatter("user_prompt_submit")
-_USER_CONFIRMATION_NOTICE_BODY = "この文脈では`agent-toolkit:user-confirmation-and-report`の起動・全文取得を確認できない。"
 
 
 def _is_harness_message(prompt: str) -> bool:
@@ -158,25 +149,6 @@ def _set_process_wi_invoked(state: dict) -> dict | None:
     return state
 
 
-def _claim_user_confirmation_notice(session_id: str) -> bool:
-    """`agent-toolkit:user-confirmation-and-report`の起動を促す注記を返す場合に真を返す。
-
-    SessionStartが記録した配送待ちを消費する。両ホストで文脈1つにつき一度返し、
-    取得や起動の不足は関連操作のread_deliveryとスキルの起動契機で扱う。
-    """
-    if read_state(session_id).get(USER_CONFIRMATION_PENDING_KEY) is not True:
-        return False
-    update_state(session_id, clear_user_confirmation_pending)
-    return True
-
-
-def _user_confirmation_notice() -> str:
-    """文脈ごとの既存pending状態で一度だけ選んだ案内を共通の書式へ渡す。"""
-    acquisition = "応答と作業の着手より前に、`agent-toolkit:user-confirmation-and-report`スキルを起動せよ。"
-    body = next_action.with_next_action(_USER_CONFIRMATION_NOTICE_BODY, acquisition)
-    return message_format.llm_notice(body, "user_prompt_submit", tag="notice")
-
-
 def _emit_hook_output(*, additional_context: str | None, title: str | None = None) -> None:
     """UserPromptSubmitの値を持つ応答欄を1つのJSONとして出力する。"""
     hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
@@ -227,7 +199,7 @@ def main(payload_text: str) -> int:
                 f"今回のユーザー発話を、作業終了時の確認に使う記録へ残せなかった: {error}",
                 tag="warn",
                 removable_cause=False,
-                fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+                fix="会話の原文から現在の要求を確認して保持せよ。記録の診断は委譲元またはユーザーへ報告せよ。",
             )
         )
 
@@ -244,7 +216,7 @@ def main(payload_text: str) -> int:
                 informational(
                     _llm_notice(
                         "このターンは`Claude Code`のバックグラウンドタスク完了の自動通知で始まった。"
-                        "ユーザーの発話ではない。応答と成果物は日本語で書け。"
+                        "ユーザーの発話ではない。"
                         "対処は`agent-toolkit:delegation`の`references/waiting-and-monitoring-intervals.md`"
                         "「完了通知で始まったターンの対処」に従え。",
                         tag="notice",
@@ -266,13 +238,6 @@ def main(payload_text: str) -> int:
     is_normal_prompt = not machine_injected
     # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
     notices: list[str] = list(initial_notices)
-    if is_normal_prompt and first_line.startswith(command_prefix):
-        command = first_line[len(command_prefix) :].split(maxsplit=1)
-        if command and command[0] in USER_CONFIRMATION_SKILL_NAMES:
-            # ユーザー自身がスキルを起動した発話では、その起動で内容が文脈へ入る。
-            update_state(session_id, clear_user_confirmation_pending)
-    if is_normal_prompt and _claim_user_confirmation_notice(session_id):
-        notices.append(_user_confirmation_notice())
     if is_normal_prompt:
         try:
             contract_notice = work_contract.observe_input(session_id)
@@ -282,7 +247,7 @@ def main(payload_text: str) -> int:
                     f"今回のユーザー発話と現行の作業契約との対応を記録できない: {error}",
                     tag="warn",
                     removable_cause=False,
-                    fix="再発する場合はagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+                    fix="会話の原文から現在の要求を確認して保持せよ。記録の診断は委譲元またはユーザーへ報告せよ。",
                 )
             )
         else:

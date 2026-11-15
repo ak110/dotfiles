@@ -19,5 +19,12 @@ runs:
       run: make setup-browser
       shell: bash
     - name: ブラウザーE2E
-      run: uv run pytest -v -m browser agent-toolkit/agent_toolkit/_atk/serve -o addopts='' -p no:cacheprovider
+      run: uv run pytest -v -m browser agent-toolkit/agent_toolkit/_atk/serve -o addopts='' -p no:cacheprovider -p agent_toolkit._testing.pytest_plugin
       shell: bash
+    - name: ブラウザー失敗証拠の保存
+      if: ${{ failure() }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: browser-failure-${{ github.job }}-${{ strategy.job-index }}
+        path: ${{ runner.temp }}/browser-failure-*
+        if-no-files-found: ignore

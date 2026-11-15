@@ -199,8 +199,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         + "\n"
         + termination_evidence.decision_hint(payload),
         fix=(
-            "`Skill`で`agent-toolkit:report-completion`を起動し、作業完了報告、最終報告、公開工程へ進め。"
-            "起動を省く場合と、中止・置換・待機・技術的不成立で終える場合の記録操作は、"
+            "`agent-toolkit:report-completion`を起動せよ。起動の省略と終了方法の判断は、"
             f"`{_run_script.PLUGIN_ROOT / 'skills/report-completion/references/termination-evidence.md'}`"
             "「終了方法の分岐」に従え。"
         ),

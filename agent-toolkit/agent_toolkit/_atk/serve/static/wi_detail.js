@@ -269,6 +269,10 @@ export function invalidateDeleteConfirmation() {
 
 const DELETE_RECONFIRM_MESSAGE =
   '外部更新により削除確認を閉じました。詳細を確認し、削除操作をやり直してください。';
+export const DETAIL_CONFLICT_RECOVERY =
+  '未保存の入力があれば、閉じる前にコピーして退避してください。' +
+  '詳細を開き直し、最新の内容へ必要な変更だけを反映して保存してください。';
+
 export const DELETE_CONFLICT_MESSAGE =
   '外部更新により削除確認を閉じました。詳細を閉じて開き直してから削除してください。';
 
@@ -408,11 +412,14 @@ export async function reloadOpenDetailFromExternalChange({timing = {}} = {}) {
     wiState.currentEntry = {...wiState.currentEntry, state: resolvedEntry.state};
     wiState.detailOriginKey = entryKey(wiState.currentEntry);
     if (detailChanged) {
+      // 回復操作を求めた後の通知は、保存失敗などの具体的な理由を一般警告で上書きしない。
+      if (!wiState.detailRefreshRequired) {
+        setTextMessage(
+          'detail-alert',
+          '外部で項目が更新されました。' + DETAIL_CONFLICT_RECOVERY
+        );
+      }
       wiState.detailRefreshRequired = true;
-      setTextMessage(
-        'detail-alert',
-        '外部で項目が更新されました。入力を保持しています。詳細を閉じて開き直してから保存してください。'
-      );
       setDetailMode(mode);
     }
     updateCurrentRowSelection();

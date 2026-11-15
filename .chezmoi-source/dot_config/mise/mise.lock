@@ -143,6 +143,24 @@ aube = { path = ".mise/locks/npm-aws-cdk/2.1147.0", digest = "sha256:ecd5d5714cb
 backend = "npm:aws-cdk"
 specifiers = ["latest"]
 
+[[tools."npm:typescript"]]
+version = "7.0.2"
+aube = { path = ".mise/locks/npm-typescript/7.0.2", digest = "sha256:3d06b3b23564c68cdad7815c356edb1506fab1c42bfb8c54234134fd9650ec17" }
+backend = "npm:typescript"
+specifiers = ["latest"]
+
+[[tools."npm:typescript"]]
+version = "6.0.3"
+aube = { path = ".mise/locks/npm-typescript/6.0.3", digest = "sha256:bfd4f60761264c1fe455bfca4cc3841cabe82be4d3aa7c85d578f29f6a674804" }
+backend = "npm:typescript"
+specifiers = ["6"]
+
+[[tools."npm:typescript-language-server"]]
+version = "6.0.3"
+aube = { path = ".mise/locks/npm-typescript-language-server/6.0.3", digest = "sha256:e4cdcc07515542ffa6a9a4f6a23faa66433e1c1b54b110d71fc149e9894775c9" }
+backend = "npm:typescript-language-server"
+specifiers = ["latest"]
+
 [[tools.ripgrep]]
 version = "15.2.0"
 backend = "aqua:BurntSushi/ripgrep"

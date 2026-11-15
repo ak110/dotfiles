@@ -486,6 +486,11 @@ def test_user_side_rows_with_retired_vocabulary_keep_other_declarations_and_rece
     assert guided.returncode == 0 and not guided.stderr
     assert "想定外のエラーが起きた" not in guided.stdout
     assert f"{skill}:5" in guided.stdout and f"{skill}:7" in guided.stdout and f"{skill}:6" not in guided.stdout
+    context = json.loads(guided.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert context.count("宣言元を編集する担当") == 1
+    repeated = _run_hook_in_process("pretooluse", read)
+    assert repeated.returncode == 0 and not repeated.stderr
+    assert f"{skill}:5" not in repeated.stdout and f"{skill}:7" not in repeated.stdout
     acquired = _run_hook_in_process(
         "posttooluse",
         {**read, "hook_event_name": "PostToolUse", "tool_response": skill.read_text(encoding="utf-8")},

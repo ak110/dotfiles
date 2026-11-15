@@ -2,7 +2,10 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
-## agent-toolkit/agent_toolkit/_hooks/pretooluse/large_reads.py：全文取得の閾値：2026年9月29日
+## agent-toolkit/share/rules/rules-common.codex.md：Codex固有の入出力：2026年10月30日
+
+取得予算と省略時の回復の現行契約を指す。
+以下の9月29日の測定は、撤去済みの容量警告の判断根拠として残すものであり、48KiBを現行の読取可否の基準にはしない。
 
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。
 分割前の最大の文書`agent-toolkit/skills/wi-standards/SKILL.md`（60,005バイト）は16,945トークンだった。
@@ -15,7 +18,7 @@
 
 ### 補完読取と出力予算の契約更新（2026年10月30日）
 
-前述の48KiBは大量読取を案内する閾値であり、個々の出力が省略されない保証値ではない。
+前述の48KiBは当時の大量読取を案内する閾値であり、個々の出力が省略されない保証値ではない。
 文章主体の内側`max_output_tokens`はUTF-8バイト数÷3の切上げ以上、外側セルは内側予算の合計以上とする。
 nativeの`original token count`が設定予算を超えた場合は、その値以上で1回再取得し、文脈容量を超える本文は分割する。
 この値は取得予算の最低値であり、前述の測定を新たな全資料・全モデルへ一般化した実測値ではない。
@@ -24,7 +27,7 @@ nativeの`original token count`が設定予算を超えた場合は、その値�
 この補完読取と、それに合わせてPreの容量案内を省く判定は、2026年10月31日に本文配送とともに撤去した。
 当時は`codex_read_observation.py`が省略の無い成功読取だけを読了としていた。
 現行の取得成功契約と構造は[design-hooks.md](design-hooks-read-declarations.md#宣言型読込表による操作前配送)にある。
-再検証では`codex_read_observation_test.py`と`pretooluse/large_reads_test.py`で、省略の有無ごとの読了判定、本文を返さないこと、および単一・複数ファイルの予算案内を比較する。
+再検証では`codex_read_observation_test.py`と`pretooluse/large_reads_test.py`で、省略の有無ごとの読了判定、本文を返さないこと、および受信予算を確定できない容量警告が出ないことを比較する。
 本節は確定契約と実装の参照先を記録するものであり、文書更新担当によるテストの再実行結果ではない。
 
 ## agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery.py：並行Readの公開入力：2026年10月30日

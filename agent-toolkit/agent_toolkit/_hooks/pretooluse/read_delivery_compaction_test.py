@@ -178,7 +178,6 @@ def test_public_guidance_distinguishes_new_scope_target_and_compaction(tmp_path,
     rows = [ReadTrigger(source, 1, "操作", ("tool:Write",), (path,), ("初動",))]
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(rules_context, "update_state", lambda _session, mutate: mutate(memory))
-    monkeypatch.setattr(rules_context, "read_state", lambda _session: memory)
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(rules_context, "_compaction_notice", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
@@ -206,6 +205,6 @@ def test_public_guidance_distinguishes_new_scope_target_and_compaction(tmp_path,
     restored = _run_hook_in_process("pretooluse", operation)
     assert restored.returncode == 0 and not restored.stderr
     assert str(other) in restored.stdout and str(path) not in restored.stdout
-    assert "会話圧縮で本文が文脈から失われた場合は再取得が必要" in restored.stdout
+    assert "compaction-recovery.md`を全文読め" in compact.stdout
     assert not _run_hook_in_process("pretooluse", operation).stdout
     _assert_acquired(payload, other, False)

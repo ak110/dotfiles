@@ -106,8 +106,7 @@ def _check_free_text_start(mode: str, prompt: str) -> Decision:
     return Decision(
         notices=(
             _llm_notice(
-                f"`start`の`{mode}`で渡した`prompt`が`{document}`の手順を実行する命令を持つ。"
-                "`<役割名>.subagent.md`を持つ委譲は自由本文の起動の対象外である。この警告では起動を止めていない。",
+                f"`start`の`{mode}`で渡した`prompt`が`{document}`の手順を実行する命令を持つ。この警告では起動を止めていない。",
                 tag=_WARN_TAG,
                 subject=prompt,
                 removable_cause=True,
@@ -170,10 +169,10 @@ def _check_agent_prompt(prompt: str) -> Decision:
                 subject=prompt,
                 removable_cause=True,
                 fix=(
-                    f"1行目を`{expected_first}`とし、2行目以降は`<入力名>: <値>`の行と"
+                    f"次回は1行目を`{expected_first}`とし、2行目以降は`<入力名>: <値>`の行と"
                     "半角空白2字で字下げした続きの行だけにせよ。"
                     f"受理する入力名: {', '.join(sorted(accepted))}。"
-                    "手順、権限、返却形式は`<役割名>.subagent.md`が定めるため書くな。"
+                    "今回の起動結果を確認し、同じ作業を重複起動するな。次回の入力から宣言外の行を除け。"
                 ),
             ),
         )

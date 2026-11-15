@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import datetime
 import json
 import logging
 import os
@@ -14,7 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
-from agent_toolkit._common import plugin_environment, process_tree
+from agent_toolkit._atk.managed_temp import sweep
+from agent_toolkit._common import plugin_environment, plugin_environment_cleanup, process_tree, session_review
 
 from pytools._internal import claude_common, common, install_codex_plugins, log_format, post_apply_outcome
 
@@ -165,6 +167,49 @@ def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> list[list
                 )
             )
     return commands
+
+
+def cleanup_prepared(commands: Sequence[Sequence[str]]) -> None:
+    """実際に準備した全有効rootの依存環境を保持し、full更新後の旧資源を回収する。"""
+    try:
+        required = [
+            plugin_environment.project_environment(
+                Path(command[command.index("--project") + 1]), os.environ, python_executable=Path(command[0])
+            )
+            for command in commands
+        ]
+        # 同じ依存keyを使う全rootの版を、prepareを省略したrootも含めて記録する。
+        for command, target in zip(commands, required, strict=True):
+            if target.is_dir():
+                with plugin_environment.prepare_lock(target):
+                    plugin_environment.record_source(Path(command[command.index("--project") + 1]), target)
+        plugin_environment_cleanup.cleanup(required, os.environ)
+    except (OSError, ValueError, IndexError, psutil.Error) as error:
+        logger.warning(
+            "共有環境の回収を完了できませんでした: %s: %s。共有環境のアクセス権と配布元のJSONを確認してください。"
+            "原因を修復した後にupdate-dotfilesを再実行すると回収を再試行します",
+            plugin_environment.runtime_data(os.environ) / "environments",
+            error,
+        )
+    try:
+        session_review.sweep(now=time.time())
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        logger.warning(
+            "完了済み振り返りの回収を保留: %s: %s。表示したディレクトリ内のJSONとアクセス権を確認し、"
+            "破損した記録は原本から復元してください。原因の解消後にupdate-dotfilesを再実行すると回収を再試行します",
+            session_review.directory(),
+            error,
+        )
+    result = sweep.sweep_managed_temp(now=datetime.datetime.now(datetime.UTC), force=True)
+    for target, error in result.failed:
+        logger.warning(
+            "一時資源の回収を保留: %s: %s。対象を使用中の操作が終わるまで待ち、削除権限を確認してください。"
+            "原因の解消後にupdate-dotfilesを再実行すると回収を再試行します",
+            target,
+            error,
+        )
+    for target in result.deleted:
+        logger.info("一時資源を回収: %s", target)
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:

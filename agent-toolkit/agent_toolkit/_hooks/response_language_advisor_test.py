@@ -100,6 +100,8 @@ def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, 
     assert decision == "block"
     assert isinstance(reason, str)
     assert "再出力してから停止" in reason
+    assert reason.count("判定できない") == 1
+    assert "`Now`" not in reason and "`Next`" not in reason
     payload["stop_hook_active"] = True
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
 

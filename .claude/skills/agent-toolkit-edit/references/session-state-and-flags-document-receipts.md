@@ -10,12 +10,6 @@
 
 ## 確認・操作スキル系
 
-- `user_confirmation_skill_pending`: 各文脈における`agent-toolkit:user-confirmation-and-report`の起動案内が配送待ちであるかを示す真偽値
-  `agent-toolkit/agent_toolkit/_hooks/rules_context.py`が、SessionStartの`source`が`startup`、`clear`、`compact`であり、かつ委譲先エージェントではない場合に真にする（`resume`や`fork`の場合は変更しない）。
-  `agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py`が人間の実際の発話を受けたときにこの値を参照し、真であれば同スキルの起動を促す注記を返す（機械的に注入されたターンでは参照も変更も行わない）。
-  注記を返した時点で偽に戻す。
-  また、PostToolUse(Skill)が同スキルの起動を観測した場合や、UserPromptSubmitがユーザーによる同スキルのスラッシュコマンド実行を観測した場合も偽に戻す。
-  生存期間はセッション状態ファイルと同一とする。
 - `operation_skill_delivered_agents`: 資料識別子から受信主体へのマッピング。
   `received-document:<JSON>`は論理資料・実体パス・必要範囲・受信版・範囲digestを保持する。
   分割受信は同じ主体・論理資料・版の行範囲を集約し、必要範囲が完成した時点で取得済みにする。
@@ -64,8 +58,8 @@
   予約は最終出力へ採用した場合だけ確定する。
   未取得が続いても同じ案内を反復せず、再書込は許可する。
   取得証拠は同じ主体が実際に受信した本文だけから記録する。
-  純粋Read・静的Bash読取・Skill起動では依存案内と未確定条件の候補通知を保留し、次の関連する非取得操作で必要範囲を再評価する。
-  候補は役割・選択済み資料・同じ主体が取得した宣言元へ限定し、同じ条件と必要範囲を統合する。
+  純粋Read・静的Bash読取・Skill起動では依存案内を保留し、次の関連する非取得操作で確定した未取得資料を再評価する。
+  未確定条件は宣言元の読込表で判断し、候補一覧の通知は生成しない。
   受信判定は`document_reads.acquisition_state`を再利用する。
   Claudeは実tool_response、Codexは後続PreToolUse時点の外側配送本文を観測する。
   取得の記録は、応答に実際に含まれた必要範囲に限る。

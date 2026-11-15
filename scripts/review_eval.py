@@ -6,7 +6,8 @@
 
 起動は`uv run --frozen python scripts/review_eval.py <prepare|score|store> ...`とする。
 レビュー担当の起動はagents_serverのMCP（`start`）からしか行えないため、本コマンドは起動に渡す入力の準備と、
-返却された管理表の採点だけを担う。手順は`.claude/skills/agent-toolkit-edit/references/review-eval-set.md`にある。
+返却された管理表の採点と、消費済み評価worktreeの回収を担う。
+手順は`.claude/skills/agent-toolkit-edit/references/review-eval-set.md`にある。
 """
 
 from __future__ import annotations
@@ -14,12 +15,15 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 from typing import Any
 
+import psutil
 from agent_toolkit._atk import review_table
 from agent_toolkit._atk.wi import frontmatter, headings, sync
 from agent_toolkit._atk.wi.constants import normalized_wi_type
@@ -386,7 +390,7 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
             "missing": [path for path in referenced if not pathlib.Path(path).exists()],
         },
         "start": {"cwd": str(worktree), "subagent_md_path": case.role, "extra_params": extra_params},
-        "cleanup": ["git", "-C", str(repo), "worktree", "remove", "--force", str(worktree)],
+        "cleanup": ["git", "-C", str(repo), "worktree", "remove", str(worktree)],
     }
 
 
@@ -437,6 +441,82 @@ def _parse_repos(values: list[str]) -> dict[str, pathlib.Path]:
     return repos
 
 
+def _cleanup_retained_environment(worktree: pathlib.Path) -> str:
+    """コードを保持した評価worktreeの、再生成できる未使用venvだけを回収する。"""
+    target = worktree / ".venv"
+    try:
+        if target.is_symlink() or not target.is_dir():
+            return ".venvは実ディレクトリでないため保持"
+        if any(not (worktree / name).is_file() for name in ("pyproject.toml", "uv.lock")):
+            return ".venvの再生成指定がないため保持"
+        config = target / "pyvenv.cfg"
+        if config.is_symlink() or not config.is_file():
+            return "pyvenv.cfgで識別できないため保持"
+        if _git(worktree, "ls-files", "--", ".venv") or _git(worktree, "ls-tree", "HEAD", "--", ".venv"):
+            return "Git追跡された.venvを保持"
+        registered = _git(worktree, "worktree", "list", "--porcelain")
+        if f"worktree {worktree}" not in registered.splitlines():
+            return "登録worktreeを確認できないため.venvを保持"
+        identity = target.stat()
+        username = psutil.Process().username()
+        prefix = os.path.normcase(str(target))
+        for process in psutil.process_iter():
+            try:
+                if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    continue
+                command = process.cmdline()
+                references = list(command)
+                executable = ""
+                try:
+                    executable = process.exe()
+                    references.append(executable)
+                except psutil.AccessDenied:
+                    if not command:
+                        return "プロセスの使用参照を確認できないため.venvを保持"
+                try:
+                    cwd = process.cwd()
+                except psutil.AccessDenied:
+                    # cwdを使って環境を暗黙解決するPython/uvだけは、所在が不明なら保持する。
+                    # 無関係なOSサービスのcwd拒否は、このvenvの使用を示さない。
+                    program = pathlib.Path(executable or (command[0] if command else "")).name.lower()
+                    if not command or program.startswith(("python", "pypy")) or program in {"uv", "uv.exe"}:
+                        return "プロセスの使用参照を確認できないため.venvを保持"
+                    cwd = ""
+                references.append(cwd)
+                # uvなどはcwdの.venvを暗黙に使い、argvへ絶対パスを載せない。
+                if (cwd and pathlib.Path(cwd).is_relative_to(worktree)) or any(
+                    prefix in os.path.normcase(value.replace("/", os.sep)) for value in references
+                ):
+                    return "実行中プロセスが参照する.venvを保持"
+            except psutil.NoSuchProcess:
+                continue
+            except psutil.Error, OSError:
+                return "プロセスの使用参照を確認できないため.venvを保持"
+        if target.is_symlink() or target.stat() != identity:
+            return "確認中に変化した.venvを保持"
+        shutil.rmtree(target)
+        return "未使用の再生成可能な.venvを回収"
+    except (OSError, RuntimeError, psutil.Error) as error:
+        return f".venvの回収を保留（次回scoreで再試行）: {error}"
+
+
+def _cleanup_scored(case: _Case, table: pathlib.Path, *, retain: bool) -> dict[str, str]:
+    """採点を保存した評価だけをGitで回収し、拒否と後続利用は保持理由として返す。"""
+    worktree = table.resolve().parent / "worktree"
+    if not worktree.exists():
+        return {"status": "absent"}
+    if worktree.parent.name != case.id or not (worktree / ".git").is_file():
+        return {"status": "retained", "reason": "評価用worktreeの配置を確認できない"}
+    if retain:
+        return {"status": "retained", "reason": "後続参照あり。" + _cleanup_retained_environment(worktree)}
+    try:
+        common = pathlib.Path(_git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+        _git(common, "worktree", "remove", str(worktree))
+    except (OSError, RuntimeError) as error:
+        return {"status": "retained", "reason": str(error) + "。" + _cleanup_retained_environment(worktree)}
+    return {"status": "removed"}
+
+
 def _select(cases: list[_Case], ids: list[str]) -> list[_Case]:
     if not ids:
         return cases
@@ -460,6 +540,7 @@ def main(argv: list[str] | None = None) -> int:
     prep.add_argument("--private-notes", type=pathlib.Path, default=pathlib.Path.home() / "private-notes")
     sc = sub.add_parser("score", help="返却された管理表を採点し、事例別の結果と合計をJSON Linesで出す")
     sc.add_argument("--result", action="append", required=True, help="<事例ID>=<管理表の絶対パス>（反復指定）")
+    sc.add_argument("--retain-worktree", action="store_true", help="後続参照のため評価worktreeを保持する")
     st = sub.add_parser(
         "store", help="評価用の計画と確かめた条件表をprivate-notesへ保存し、事例定義のfixturesへ書く値をJSONで出す"
     )
@@ -487,7 +568,14 @@ def main(argv: list[str] | None = None) -> int:
             case_id, separator, path = value.partition("=")
             if not separator:
                 raise ValueError(f"--resultの形式が違う: {value}。--result <事例ID>=<管理表の絶対パス>で指定する")
-            result = score(_select(cases, [case_id])[0], pathlib.Path(path))
+            case = _select(cases, [case_id])[0]
+            result = score(case, pathlib.Path(path))
+            pathlib.Path(path).with_suffix(".score.json").write_text(
+                json.dumps(result, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+            cleanup = _cleanup_scored(case, pathlib.Path(path), retain=args.retain_worktree or bool(result["unclassified"]))
+            if cleanup["status"] == "retained":
+                print(f"評価worktreeを保持: {cleanup['reason']}", file=sys.stderr)
             for key in totals:
                 totals[key] += len(result[key])
             print(json.dumps(result, ensure_ascii=False))

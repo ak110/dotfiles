@@ -103,16 +103,15 @@ def _invoke(
     ],
 )
 def test_free_text_start_pointing_task_document_is_warned(tool_name: str, mode: str, tmp_path: pathlib.Path) -> None:
-    """自由本文のmodeで`<役割名>.subagent.md`を指すと遮断し、taskの`start`と役割名の`subagent_md_path`での起動を案内する。
-
-    通すと、`<役割名>.subagent.md`の宣言を経ない委譲プロンプトが委譲先のコンテキストへ取り込まれる。
-    """
+    """自由本文の起動を通し、重複起動せず次回から構造化入力を使うよう案内する。"""
     result = _invoke(tool_name, f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path, mode)
 
     assert result.returncode == 0
     assert "subagent_md_path=exec`" in _additional_context(result)
     assert f"`{_EXEC_DOCUMENT}`" in _additional_context(result)
     assert f"`start`の`{mode}`" in _additional_context(result)
+    assert "重複起動するな" in _additional_context(result)
+    assert "次にこの役割を起動する際" in _additional_context(result)
 
 
 @pytest.mark.parametrize("mode", [None, "shell"])

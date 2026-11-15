@@ -76,6 +76,7 @@ def test_score_counts_detected_false_and_unclassified(tmp_path, monkeypatch, cap
     assert result["false_findings"] == ["noise"]
     assert result["unclassified"] == [{"row": 3, "location": "file2.py"}]
     assert total == {"total": {"detected": 1, "missed": 0, "false_findings": 1, "unclassified": 1}}
+    assert json.loads(table.with_suffix(".score.json").read_text(encoding="utf-8")) == result
 
 
 def test_score_reports_missed_when_patterns_match_different_rows(tmp_path, monkeypatch, capsys) -> None:
@@ -141,6 +142,86 @@ def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True).stdout.strip()
 
 
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "unused",
+        "unclassified",
+        "dirty",
+        "tracked",
+        "symlink",
+        "missing-lock",
+        "missing-config",
+        "exe",
+        "argv",
+        "cwd",
+        "relative-argv",
+        "unknown",
+        "delete-error",
+    ],
+)
+def test_score_reclaims_only_unused_regenerable_environment(tmp_path, monkeypatch, capsys, condition) -> None:
+    """評価コードを保持しても未使用venvを回収し、原本・使用中・確認不能な環境を保護する。"""
+    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+    repo, _base, _old, head = _case_repository(tmp_path)
+    case_dir = tmp_path / "missed"
+    case_dir.mkdir()
+    worktree = case_dir / "worktree"
+    _git(repo, "worktree", "add", "--detach", str(worktree), head)
+    for name in ("pyproject.toml", "uv.lock", "user-code.txt"):
+        (worktree / name).write_text("固有の成果", encoding="utf-8")
+    environment = worktree / ".venv"
+    environment.mkdir()
+    (environment / "pyvenv.cfg").write_text("home = python", encoding="utf-8")
+    (environment / "library.py").write_text("generated = True", encoding="utf-8")
+    if condition == "tracked":
+        _git(worktree, "add", "-f", ".venv")
+    elif condition == "symlink":
+        is_symlink = pathlib.Path.is_symlink
+        monkeypatch.setattr(pathlib.Path, "is_symlink", lambda path: path == environment or is_symlink(path))
+    elif condition == "missing-lock":
+        (worktree / "uv.lock").unlink()
+    elif condition == "missing-config":
+        (environment / "pyvenv.cfg").unlink()
+    process = SimpleNamespace(
+        username=lambda: "account",
+        status=lambda: "running",
+        exe=lambda: str(environment / "python") if condition == "exe" else "python",
+        cwd=lambda: (
+            str(environment) if condition == "cwd" else str(worktree) if condition == "relative-argv" else str(tmp_path)
+        ),
+        cmdline=lambda: [str(environment / "python")] if condition == "argv" else [".venv/bin/python"],
+    )
+    if condition == "unknown":
+
+        def denied():
+            raise review_eval.psutil.AccessDenied()
+
+        process.cwd = denied
+    monkeypatch.setattr(review_eval.psutil, "Process", lambda: process)
+    monkeypatch.setattr(review_eval.psutil, "process_iter", lambda: iter([process]))
+    rmtree = review_eval.shutil.rmtree
+    if condition == "delete-error":
+
+        def fail_delete(_path):
+            raise PermissionError("使用中")
+
+        monkeypatch.setattr(review_eval.shutil, "rmtree", fail_delete)
+    issues = ["無関係な指摘"] if condition == "unclassified" else []
+    table = _prepared_table(case_dir / "review.exec-review.tsv", issues, capsys)
+    argv = ["score", "--result", f"missed={table}"]
+    if condition not in {"dirty", "unclassified"}:
+        argv.append("--retain-worktree")
+    assert review_eval.main(argv) == 0
+    assert environment.exists() is (condition not in {"unused", "dirty", "unclassified"})
+    assert (worktree / "user-code.txt").read_text(encoding="utf-8") == "固有の成果"
+    assert table.exists() and table.with_suffix(".score.json").exists()
+    if condition == "delete-error":
+        monkeypatch.setattr(review_eval.shutil, "rmtree", rmtree)
+        assert review_eval.main(argv) == 0
+        assert not environment.exists()
+
+
 def _case_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str, str]:
     """3つのcommitを持つリポジトリを作り、base・書換え前・書換え後のOIDを返す。"""
     repo = tmp_path / "repo"
@@ -193,8 +274,19 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
     assert prepared["table"].endswith("01-0000_case.exec-review.tsv")
     assert prepared["start"]["subagent_md_path"] == "exec-review"
     assert base != old
-    subprocess.run(prepared["cleanup"], check=True)
+    assert "--force" not in prepared["cleanup"]
+    (worktree / "unsaved.txt").write_text("未保存成果", encoding="utf-8")
+    assert subprocess.run(prepared["cleanup"], check=False, capture_output=True).returncode != 0
+    assert (worktree / "unsaved.txt").exists()
+    (worktree / "unsaved.txt").unlink()
+    table = _prepared_table(pathlib.Path(prepared["table"]), [], capsys)
+    assert review_eval.main(["score", "--result", f"missed={table}", "--retain-worktree"]) == 0
+    assert worktree.exists()
+    capsys.readouterr()
+    monkeypatch.setattr(review_eval, "_cleanup_retained_environment", lambda _path: pytest.fail("全回収時の重複走査"))
+    assert review_eval.main(["score", "--result", f"missed={table}"]) == 0
     assert not worktree.exists()
+    assert table.with_suffix(".score.json").exists()
 
 
 @pytest.mark.parametrize("form", ["list", "paragraph", "legacy"])

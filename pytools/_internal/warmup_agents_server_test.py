@@ -6,6 +6,7 @@
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -13,6 +14,7 @@ import sys
 
 import anyio
 import pytest
+from agent_toolkit._common import session_review
 from agent_toolkit._testing import late_descendant
 
 from pytools._internal import common as _common
@@ -159,6 +161,41 @@ class TestPrerequisites:
 
 class TestTargets:
     """ウォームアップ対象の列挙。"""
+
+    def test_cached_full_update_reclaims_completed_bundle(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    ) -> None:
+        """MCPの起動確認を省略する更新も、成功確定済みの抽出物を回収する。"""
+        _setup(monkeypatch, tmp_path)
+        monkeypatch.setattr(_warmup.post_apply_cache, "matches", lambda *_args, **_kwargs: True)
+        bundle = tmp_path / "bundle"
+        bundle.mkdir()
+        scope = bundle / "scope.json"
+        scope.write_text('{"version":1,"records":{}}', encoding="utf-8")
+        raw = bundle / "timeline.jsonl"
+        raw.write_bytes(b"reproducible")
+        runs = session_review.directory() / "runs"
+        runs.mkdir(parents=True, exist_ok=True)
+        (runs / "old-completed.json").write_text(
+            json.dumps(
+                {
+                    "run_id": "old-completed",
+                    "status": "completed",
+                    "targets": [],
+                    "prepared": [
+                        {
+                            "scope_path": str(scope),
+                            "disposable_bundle_files": {
+                                "timeline.jsonl": hashlib.sha256(b"reproducible").hexdigest(),
+                            },
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
+        assert not raw.exists() and scope.is_file()
 
     def test_warms_all_existing_targets_once(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """実在する2系統のpluginパスへ解決済みPythonで依存検査付きの起動確認を実行する。"""

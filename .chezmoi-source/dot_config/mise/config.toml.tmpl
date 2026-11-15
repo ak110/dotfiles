@@ -20,6 +20,10 @@
 {{ end }}
 {{ if eq $mode "full" }}
 "npm:aws-cdk" = "latest"
+"npm:typescript-language-server" = "latest"
+# TypeScript 7はtsserver.jsを提供しないため、LSP用に6も併設する。
+# LSPが7系列を扱えるようになったら、6の併設とsetup_mise_toolsの接続処理を除く。
+"npm:typescript" = ["latest", "6"]
 {{ end }}
 chezmoi = "latest"
 # dotnetは共有ランタイムのルートへのsymlinkとして導入される。symlinkで導入済みの版は

@@ -154,7 +154,8 @@ test("CronCreateの許可の判定がdenyなら作成せず、許可確認の案
   expect(recorded.calls).toEqual(["start", "CronList"]);
   expect(result.context?.[0]).toContain('kind="warn"');
   expect(result.context?.[0]).toContain("`CronCreate`の許可の判定が`deny`");
-  expect(result.context?.[0]).toContain("完了通知と終了観測");
+  expect(result.context?.[0]).toContain("待機方法は");
+  expect(result.context?.[0]).toContain("references/claude-code-runtime.md");
 });
 
 test("CronListの許可の判定がdenyなら一覧も作成も呼ばずに案内を届ける", async ($, on) => {

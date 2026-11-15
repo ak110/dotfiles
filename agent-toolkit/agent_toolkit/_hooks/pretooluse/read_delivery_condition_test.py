@@ -112,7 +112,7 @@ def test_real_main_launch_declaration_stays_conditional_after_review_contract_re
 
 
 def test_selected_source_candidates_are_deferred_and_deduplicated(tmp_path, monkeypatch, _setup):
-    """取得の次の関連編集に限り、選択済み資料の同じ条件を1件案内する。"""
+    """選択済み資料に未確定条件があっても、読取と関連編集へ候補を通知しない。"""
     selected, unrelated, _row, state = _setup
     source = tmp_path / "selected.md"
     source.write_text("# 選択資料\n", encoding="utf-8")
@@ -136,32 +136,9 @@ def test_selected_source_candidates_are_deferred_and_deduplicated(tmp_path, monk
     result = _run_hook_in_process("pretooluse", _progress(tmp_path))
     assert result.returncode == 0
     # 出力にはユーザー画面向けの写しも入るため、エージェント宛ての本文で数える。
-    assert _additional_context(result).count("条件: 設計を確定する前") == 1
+    assert "読込条件の候補" not in _additional_context(result)
     assert "別工程の条件" not in result.stdout
     assert not read_delivery.target_ready(state.get("operation_skill_delivered_agents", {}), ReadTarget(source), "main")
-
-
-@pytest.mark.parametrize("matches,confirmed,expected", [(False, False, 0), (True, True, 0), (True, False, 1)])
-def test_candidate_checks_source_acquisition_only_after_light_conditions(
-    tmp_path, monkeypatch, _setup, matches, confirmed, expected
-):
-    """非該当・確定済みの宣言で、宣言元の本文取得判定を繰り返さない。"""
-    selected, _unrelated, _row, _state = _setup
-    row = ReadTrigger(selected, 1, "判断", ("tool:Read",), (selected,), condition="資料を選ぶ前")
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
-    monkeypatch.setattr(read_delivery, "row_matches", lambda *_args, **_kwargs: matches)
-    monkeypatch.setattr(read_delivery, "condition_confirmed", lambda *_args, **_kwargs: confirmed)
-    calls = []
-
-    def ready(_records, target, _actor, **_kwargs):
-        calls.append(target)
-        return False
-
-    monkeypatch.setattr(read_delivery, "target_ready", ready)
-    assert not read_delivery._condition_candidate_notice(  # pylint: disable=protected-access
-        {"cwd": str(tmp_path)}, "Grep", {"pattern": "x"}, "test"
-    )
-    assert len(calls) == expected
 
 
 @pytest.fixture
@@ -201,16 +178,14 @@ def _partial_read(tmp_path, reference):
 
 
 def test_partial_read_of_named_reference_notifies_supplied_condition(tmp_path, _named_reference_skill):
-    """本文の名指しへ補った宣言でも、資料を一部だけ読むと定型の条件と資料で読込条件の候補を通知する。"""
+    """取得済み宣言元の名指し資料を部分取得しても、未確定条件を通知しない。"""
     source, reference = _named_reference_skill
     unread = _run_hook_in_process("pretooluse", _partial_read(tmp_path, reference))
     assert unread.returncode == 0 and "読込条件の候補" not in unread.stdout
     read_delivery._mark("test", source, "main")  # pylint: disable=protected-access
     result = _run_hook_in_process("pretooluse", _partial_read(tmp_path, reference))
     assert result.returncode == 0
-    assert "読込条件の候補" in result.stdout
-    assert "本文がこの資料の基準を使う場面で、資料を選択して取得する時" in result.stdout
-    assert str(reference) in result.stdout and f"{source}:3" in result.stdout
+    assert "読込条件の候補" not in result.stdout
 
 
 def test_named_reference_rows_are_not_resolved_for_unrelated_reads(tmp_path, monkeypatch, _named_reference_skill):
@@ -229,7 +204,7 @@ def test_named_reference_rows_are_not_resolved_for_unrelated_reads(tmp_path, mon
     _run_hook_in_process("pretooluse", _partial_read(tmp_path, other))
     assert not called
     _run_hook_in_process("pretooluse", _partial_read(tmp_path, reference))
-    assert called == [source]
+    assert not called
 
 
 @pytest.mark.parametrize(
@@ -238,14 +213,14 @@ def test_named_reference_rows_are_not_resolved_for_unrelated_reads(tmp_path, mon
         ("cat -- {path}", False),
         ("cat -- {path} && date", False),
         ("sed -n '1,$p' -- {path} && date", False),
-        ("sed -n '1,10p' -- {path} && date", True),
-        ("cat -- {path} | head -n 10", True),
+        ("sed -n '1,10p' -- {path} && date", False),
+        ("cat -- {path} | head -n 10", False),
     ],
 )
 def test_same_call_full_read_is_not_a_named_reference_candidate(
     tmp_path, monkeypatch, _named_reference_skill, command, candidate
 ):
-    """全文読取予定だけを候補から外し、部分読取・パイプは取得と取り違えない。"""
+    """全文・部分読取へ未確定条件を通知せず、取得証拠とも取り違えない。"""
     source, reference = _named_reference_skill
     row = ReadTrigger(source, 3, "判断", ("tool:Bash",), (reference,), condition="資料を選択して取得する時")
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
@@ -285,5 +260,5 @@ def test_same_call_full_read_is_removed_from_a_multi_document_candidate(tmp_path
     )
     assert result.returncode == 0 and not result.stderr
     context = _additional_context(result)
-    assert "読込条件の候補" in context and str(other) in context
+    assert "読込条件の候補" not in context
     assert str(reference) not in context

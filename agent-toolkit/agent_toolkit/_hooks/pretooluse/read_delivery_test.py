@@ -46,7 +46,7 @@ def test_range_failure_skill_fallback_and_missing_target(tmp_path, agent):
     skill.write_text("# 固有本文\n", encoding="utf-8")
     target = ReadTarget(skill, "不存在")
     notice = rules_context.acquisition_failure(target, ValueError("範囲不明"), shell=False, agent=agent, cwd=str(tmp_path))
-    assert "`Skill`で`local`" in notice and "固有本文" not in notice
+    assert "`local`" in notice and "固有本文" not in notice
     assert ("Readで全文読" in notice) is agent
     decoding = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid")
     notice = rules_context.acquisition_failure(target, decoding, shell=False, agent=agent, cwd=str(tmp_path))

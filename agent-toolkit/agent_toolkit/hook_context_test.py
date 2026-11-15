@@ -16,7 +16,36 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import notice, rules_context
+from agent_toolkit._hooks.pretooluse import warning_context
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
+
+
+@pytest.mark.parametrize("failure", ["session", "write", "length"])
+def test_codex_final_notice_reports_unreceived_details(monkeypatch, failure):
+    """詳細を配送できない障害を、公開hookの最終応答で案内する。"""
+    module = importlib.import_module("agent_toolkit._hooks.pretooluse")
+
+    def handler(_payload, **_kwargs):
+        notice.emit_response({"hookSpecificOutput": {"additionalContext": "配送対象の固有本文" * 1000}})
+        return 0
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("試験用の保存障害")
+
+    monkeypatch.setattr(module, "main", handler)
+    if failure == "write":
+        monkeypatch.setattr(warning_context, "atomic_write", fail_write)
+    elif failure == "length":
+        monkeypatch.setattr(warning_context, "CODEX_CONTEXT_BYTES", 80)
+    result = _run_hook_in_process(
+        "pretooluse", {"session_id": "" if failure == "session" else "final-notice-failure", "turn_id": "turn"}
+    )
+    assert result.returncode == 0 and not result.stderr
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "未配送" in context
+    assert "委譲元（無ければユーザー）" in context
+    assert "再試行せよ" in context
+    assert "配送対象の固有本文" not in context
 
 
 @pytest.mark.parametrize("additional", [False, True])

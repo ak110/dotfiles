@@ -61,7 +61,7 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
             or read_delivery_paths.requires_skill_invocation(path, host="claude", subject=subject, cwd=cwd)
         )
     ):
-        step = f"`Skill`で`{skill}`を起動せよ"
+        step = f"`{skill}`を起動せよ"
         if subject == operation_skills.SUBJECT_SUBAGENT:
             step += f"。`Skill`を使えない場合は`{path}`をReadで全文読め"
         return step + focus
@@ -69,17 +69,6 @@ def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, referenc
         ranges = target.line_ranges() if target.heading and path.suffix == ".md" else ()
         return (focus.removeprefix("。") + "。\n" if focus else "") + codex_acquisition(path, ranges)
     return f"Readで`{path}`を取得せよ" + focus
-
-
-def _question_material_guidance(payload: dict, tool_name: str) -> str:
-    """拒否した質問を出し直す時の、判断材料の送り方の案内を返す。
-
-    拒否で失われるのは質問本文の作り直しである。送達ツールを持つClaude Codeの確認ツールに限り、
-    材料を先に送って質問を短く保つ手順を示す。他のホストは質問本文へ材料を書く規定のため案内しない。
-    """
-    if tool_name != "AskUserQuestion" or operation_skills.resolve_subject(payload) == operation_skills.SUBJECT_CODEX:
-        return ""
-    return "質問の前に、`rules-main.claude-code.md`「ユーザー確認（`AskUserQuestion`）」の判断材料の送り方に従え。"
 
 
 def _declarations_unavailable(error: Exception) -> Decision:
@@ -90,8 +79,7 @@ def _declarations_unavailable(error: Exception) -> Decision:
                 f"現在の操作の前に読む資料を定める読込表を取得できない: {error}",
                 tag=_WARN_TAG,
                 fix=(
-                    "診断が示すファイルとプラグインの導入状態を確かめ、読込表か不足する依存を正規の手順で直せ。"
-                    "必要な資料を取得してから、判断とその他の変更へ進め。"
+                    "診断が示すファイルとプラグインの導入状態を確認せよ。読込表か不足する依存を正規の手順で直し、必要な資料を取得せよ。"
                 ),
                 removable_cause=True,
                 escalate_on_repeat=False,
@@ -136,7 +124,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     _llm_notice(
                         f"現在の操作の前に読む資料を定める読込表を取得できない: {error}",
                         tag=_WARN_TAG,
-                        fix="診断が示すファイルの読込表と参照先を確かめて直し、回答に依存する次の操作の前に、必要な資料を読んで質問の前提を確かめ直せ。",
+                        fix="診断が示す読込表と参照先を確認せよ。修復・取得後に質問の前提を確かめ直せ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -164,7 +152,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 _llm_notice(
                     f"現在の操作の前に読む資料を定める読込表を取得できない: {error}",
                     tag=_WARN_TAG,
-                    fix="診断が示すファイルの読込表と参照先を確かめ、誤った記述や所在を直してから必要な資料を読め。",
+                    fix="診断が示す読込表と参照先を確認せよ。誤った記述や所在を直し、必要な資料を取得せよ。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
@@ -352,7 +340,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                     _llm_notice(
                         f"読込表が指す資料を、現在の入力から特定できない: {error}",
                         tag=_WARN_TAG,
-                        fix="診断が示す入力と参照先を確かめ、回答に依存する次の操作の前に取得対象を特定して読み、質問の前提を確かめ直せ。",
+                        fix="診断が示す入力と読込表の参照先を確認せよ。対象の取得後に質問の前提を確かめ直せ。",
                         removable_cause=True,
                         escalate_on_repeat=False,
                     ),
@@ -363,7 +351,7 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 _llm_notice(
                     f"読込表が指す資料を、現在の入力から特定できない: {error}",
                     tag=_WARN_TAG,
-                    fix="診断が示す入力と参照先を確かめ、実在する取得対象を特定して読め。",
+                    fix="診断が示す入力と読込表の参照先を確認し、実在する対象を取得せよ。",
                     removable_cause=True,
                     escalate_on_repeat=False,
                 ),
@@ -424,11 +412,9 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 # 警告は回答と一緒に届き、基準を適用しないまま質問する害を防げない。未取得が解消するまで毎回拒否する。
                 return Decision(
                     block=_block_notice(
-                        "この質問はまだユーザーへ表示していない。確認の前に全文を読むと定めた資料のうち、"
-                        "この文脈で全文の取得を確認できないものがある（一部だけの読取と、行を除いた表示は取得に数えない）。",
+                        "この質問はまだユーザーへ表示していない。確認の前に全文を読むと定めた資料のうち、未取得資料がある。",
                         fix=("\n".join(steps) if subject == operation_skills.SUBJECT_CODEX else "。\n".join(steps))
-                        + "\n読んだ基準で、質問するか自分で判断するかを決め直せ。質問する場合は同じ呼び出しを出し直せ。"
-                        + _question_material_guidance(payload, tool_name),
+                        + "\n取得後に確認の要否を判断し直せ。",
                     )
                 )
     _select_targets(session_id, pending, agent, rows=selection_rows)
@@ -441,20 +427,10 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     ]
     label = "未起動スキル" if len(uninvoked) == len(pending) else "未取得資料・未起動スキル" if uninvoked else "未取得資料"
     subject = operation_skills.resolve_subject(payload)
-    if subject == operation_skills.SUBJECT_CODEX:
-        methods = "指定されたシェルコマンド"
-    else:
-        has_skill = any(target.path in invocation_paths for target in pending)
-        has_read = any(target.path not in invocation_paths for target in pending)
-        methods = "指定されたSkill・Read" if has_skill and has_read else "指定されたSkill" if has_skill else "指定されたRead"
     followup = "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。" if written and not diagnostic else ""
     # 短縮前後の本文量とモデル別の受信後の操作順の比較は`docs/development/audit-records.md`の
     # 「agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_guidance.py：取得案内の短縮：2026年11月13日」にある。
-    instruction = (
-        f"{label}があるため、この操作の結果を使う前に{methods}で必要な基準を取得せよ（資料は全文取得、スキルは起動）。"
-        "通知への対処は`agent-toolkit/share/agent-conduct-details.md`「方針が衝突する場合の優先順位」を参照せよ。"
-    )
-    instruction += "会話圧縮で本文が文脈から失われた場合は再取得が必要である。"
+    instruction = f"{label}がある。この操作の結果を使う前に、次の取得・起動を行え。"
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
