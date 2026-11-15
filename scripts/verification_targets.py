@@ -1,7 +1,8 @@
-"""固定文字列参照と命名による利用試験候補を列挙する。意味上の網羅性は保証しない。"""
+"""import参照と命名による利用試験候補を列挙する。意味上の網羅性は保証しない。"""
 
 import os
 import pathlib
+import re
 import subprocess
 
 from agent_toolkit._git import command as git_command
@@ -10,10 +11,11 @@ from pytools._internal.common import format_cli_error
 
 
 def consumer_tests(root: pathlib.Path, files: list[str]) -> list[str]:
-    """追跡試験の固定文字列参照と同接頭辞を候補にする。
+    """追跡試験のうち変更モジュールを直接参照するものと同接頭辞のものを候補にする。
 
     中間importや動的・設定契約は担当の探索で補う。自動依存解析の維持費用を避けるため、
-    モジュールstemの直接参照だけを補助し、意味上の網羅性は保証しない。
+    モジュールのimport文と親パッケージ付きの参照だけを補助し、意味上の網羅性は保証しない。
+    stemの部分一致は`cli`などの短い名前で無関係な試験を大量に拾うため使わない。
     """
     root = root.resolve()
     changed: set[pathlib.Path] = set()
@@ -32,11 +34,12 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> list[str]:
     paths = {(root / os.fsdecode(name)).resolve() for name in listed.stdout.split(b"\0") if name}
     if any(not path.is_relative_to(root) for path in paths):
         raise ValueError("追跡ファイルがリポジトリ外を参照している")
+    patterns = [_reference_pattern(root, source) for source in changed]
     affected = {
         path
         for path in paths
         if (path.stem.endswith("_test") or path.name.startswith("test_"))
-        and any(source.stem in path.read_text(encoding="utf-8") for source in changed)
+        and any(pattern.search(path.read_text(encoding="utf-8")) for pattern in patterns)
     }
     return sorted(
         path.relative_to(root).as_posix()
@@ -47,6 +50,16 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> list[str]:
             or any(path.parent == source.parent and path.stem.startswith(source.stem + "_") for source in changed)
         )
     )
+
+
+def _reference_pattern(root: pathlib.Path, source: pathlib.Path) -> re.Pattern[str]:
+    """`import x`・`from x import`・`from <親> import x`・`<親>.x`の参照に一致する。"""
+    stem = re.escape(source.stem)
+    alternatives = [rf"^\s*import\s+{stem}\b", rf"^\s*from\s+{stem}\s+import\b"]
+    if source.parent != root:
+        parent = re.escape(source.parent.name)
+        alternatives += [rf"\b{parent}\.{stem}\b", rf"\bfrom\s+[\w.]*\b{parent}\s+import\s+[\w\s,()]*\b{stem}\b"]
+    return re.compile("|".join(alternatives), re.MULTILINE)
 
 
 def uncovered_tests(root: pathlib.Path, tests: list[str], targets: list[str]) -> list[str]:
