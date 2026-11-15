@@ -170,6 +170,11 @@ class SdkResource:
                     if self._detached:
                         return
                     payload = event["payload"]
+                    if "error" in payload or "end" in payload:
+                        # 終了イベントも保存確認後にACKする。consumer終了後には再びACKする主体が残らない。
+                        await self.resource.runtime.save()
+                        await self.resource.operation("acknowledge", sequence=event["sequence"])
+                        self._sequence = event["sequence"]
                     if "error" in payload:
                         if payload.get("backend_error"):
                             raise DelegateBackendError(payload["error"])

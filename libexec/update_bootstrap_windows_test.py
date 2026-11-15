@@ -32,8 +32,9 @@ public class Program {
             return 0;
         }
         if (args.Length > 0 && args[0] == "--child") {
-            File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
-                Process.GetCurrentProcess().Id.ToString()), "child");
+            string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), Process.GetCurrentProcess().Id.ToString());
+            File.WriteAllText(marker + ".tmp", "child");
+            File.Move(marker + ".tmp", marker);
             if (Environment.GetEnvironmentVariable("INJECT_MODE") == "stale") {
                 while (!File.Exists(Environment.GetEnvironmentVariable("RELEASE_CHILD"))) Thread.Sleep(1);
                 return 0;
@@ -60,15 +61,20 @@ public class Program {
             }
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
                 Process.GetCurrentProcess().Id.ToString()), "parent");
-            File.WriteAllText(Environment.GetEnvironmentVariable("TREE_READY"), "ready");
+            string ready = Environment.GetEnvironmentVariable("TREE_READY");
+            File.WriteAllText(ready + ".tmp", "ready");
+            File.Move(ready + ".tmp", ready);
             Thread.Sleep(60000); return 0;
         }
         using (Process child = Process.Start(new ProcessStartInfo(self, "--child") { UseShellExecute=false })) {
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
                 Process.GetCurrentProcess().Id.ToString()), "parent");
+            string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), child.Id.ToString());
+            while (!File.Exists(marker)) Thread.Sleep(1);
+            string ready = Environment.GetEnvironmentVariable("TREE_READY");
+            File.WriteAllText(ready + ".tmp", "ready");
+            File.Move(ready + ".tmp", ready);
             if (Environment.GetEnvironmentVariable("INJECT_MODE") == "orphan") {
-                string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), child.Id.ToString());
-                while (!File.Exists(marker)) Thread.Sleep(1);
                 return 17;
             }
             Thread.Sleep(60000);
@@ -114,6 +120,8 @@ def _owned_native_pids(directory: pathlib.Path, executable: pathlib.Path) -> Gen
         yield
     finally:
         for marker in directory.iterdir():
+            if not marker.name.isdecimal():
+                continue
             with contextlib.suppress(psutil.NoSuchProcess):
                 process = psutil.Process(int(marker.name))
                 if pathlib.Path(process.exe()).resolve() in {executable.resolve(), directory.parent / "powershell-stub.exe"}:
@@ -121,7 +129,7 @@ def _owned_native_pids(directory: pathlib.Path, executable: pathlib.Path) -> Gen
                     process.wait(timeout=10)
 
 
-def _run_stage(tmp_path: pathlib.Path, body: str) -> subprocess.CompletedProcess[str]:
+def _run_stage(tmp_path: pathlib.Path, body: str, *, timeout: float = 30) -> subprocess.CompletedProcess[str]:
     if _PS is None:
         pytest.skip("PowerShellが必要")
     script = tmp_path / "stage.ps1"
@@ -132,9 +140,39 @@ def _run_stage(tmp_path: pathlib.Path, body: str) -> subprocess.CompletedProcess
         "function Write-UpdateError { param($Message) [Console]::Error.WriteLine($Message) }\n" + body,
         encoding="utf-8-sig",
     )
-    return subprocess.run(
-        [str(_PS), "-NoProfile", "-File", str(script)], capture_output=True, encoding="utf-8", check=False, timeout=30
-    )
+    try:
+        return subprocess.run(
+            [str(_PS), "-NoProfile", "-File", str(script)], capture_output=True, encoding="utf-8", check=False, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as error:
+        stdout = error.stdout.decode("utf-8", errors="replace") if isinstance(error.stdout, bytes) else error.stdout
+        stderr = error.stderr.decode("utf-8", errors="replace") if isinstance(error.stderr, bytes) else error.stderr
+        calls = tmp_path / "calls"
+        pids = tmp_path / "pids"
+        raise AssertionError(
+            f"PowerShellが{error.timeout}秒で時間切れ: {script}\nstdout:\n{stdout}\nstderr:\n{stderr}\n"
+            f"native calls:\n{calls.read_text(encoding='utf-8') if calls.exists() else '(未到達)'}\n"
+            f"TREE_READY={(tmp_path / 'ready').exists()}、"
+            f"所有PID={[path.name for path in pids.iterdir()] if pids.exists() else []}"
+        ) from error
+
+
+def test_stage_timeout_diagnostic_preserves_outputs_and_owned_targets(tmp_path, monkeypatch):
+    """後段のassertに届かない時間切れでも、両出力・同期点・所有対象を診断へ残す。"""
+    monkeypatch.setattr(importlib.import_module(__name__), "_PS", pathlib.Path("powershell.exe"))
+    (tmp_path / "calls").write_text("observed-native-call\n", encoding="utf-8")
+    (tmp_path / "pids").mkdir()
+    (tmp_path / "pids/123").write_text("child", encoding="utf-8")
+
+    def fail_run(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired("PowerShell", 30, output=b"probe-output", stderr=b"before-stop")
+
+    monkeypatch.setattr(subprocess, "run", fail_run)
+    with pytest.raises(AssertionError) as failure:
+        _run_stage(tmp_path, "")
+    diagnostic = str(failure.value)
+    assert all(value in diagnostic for value in ("probe-output", "before-stop", "observed-native-call", "123"))
+    assert "TREE_READY=False" in diagnostic
 
 
 def test_stage_classification(tmp_path: pathlib.Path) -> None:
@@ -190,8 +228,16 @@ def test_stage_native_job_reaps_tree(
     with _owned_native_pids(pids, native_program):
         result = _run_stage(
             tmp_path,
-            f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe; "
+            "$clock=[DateTime]::UtcNow; "
+            f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe -Clock {{$clock}} "
+            "-Wait { param($p,$ms) $readyDeadline=[DateTime]::UtcNow.AddSeconds(20); "
+            "while (-not (Test-Path -LiteralPath $env:TREE_READY)) { "
+            "if ([DateTime]::UtcNow -ge $readyDeadline) { throw [System.TimeoutException]::new('TREE_READY未到達') }; "
+            "if ($p.Wait(20) -and -not (Test-Path -LiteralPath $env:TREE_READY)) { throw '準備前に起点終了' } }; "
+            "$p.Wait($ms) }; "
             "if ($code -notin @(17,124)) {throw 'exit'}",
+            # 準備20秒、準備後のtimeout2秒とJob/pipeの有限回収を、外側の期限より内側へ収める。
+            timeout=45,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         assert any(marker.read_text() == "child" for marker in pids.iterdir())

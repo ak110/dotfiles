@@ -16,6 +16,45 @@ from agent_toolkit._agents_server.service_resources import ResourceBroker, sdk_e
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [False, True])
+async def test_terminal_event_does_not_strand_released_resource(failure):
+    """正常EOFと受信失敗の後にも、保存・ACKを終えて元世代を退出可能にする。"""
+    broker = ResourceBroker("G1")
+    saved = []
+
+    async def save():
+        saved.append(True)
+
+    class Raw:
+        def __init__(self, _options):
+            pass
+
+        async def connect(self, prompt=None):
+            del prompt
+
+        async def receive_messages(self):
+            if failure:
+                raise RuntimeError("connection failed")
+            messages: tuple[SystemMessage, ...] = ()
+            for message in messages:
+                yield message
+
+        async def disconnect(self):
+            pass
+
+    client = SdkResource.create(Runtime("G1", {"generation": "G1"}, broker, save), Raw, None)
+    await client.connect()
+    if failure:
+        with pytest.raises(RuntimeError, match="connection failed"):
+            await anext(client.receive_messages())
+    else:
+        assert [message async for message in client.receive_messages()] == []
+    await client.disconnect()
+    assert saved == [True]
+    assert not broker._resources
+
+
+@pytest.mark.asyncio
 async def test_three_generations_keep_unacknowledged_event(monkeypatch):
     broker = ResourceBroker("G1")
     calls = []
