@@ -153,7 +153,8 @@ def _run_stage(tmp_path: pathlib.Path, body: str, *, timeout: float = 30) -> sub
             f"PowerShellが{error.timeout}秒で時間切れ: {script}\nstdout:\n{stdout}\nstderr:\n{stderr}\n"
             f"native calls:\n{calls.read_text(encoding='utf-8') if calls.exists() else '(未到達)'}\n"
             f"TREE_READY={(tmp_path / 'ready').exists()}、"
-            f"所有PID={[path.name for path in pids.iterdir()] if pids.exists() else []}"
+            f"所有PID={[path.name for path in pids.iterdir()] if pids.exists() else []}\n"
+            "対処: 上記の両出力とnative callsを読み、stage.ps1の停止箇所とfixtureの準備状態を調べてから再検証せよ。"
         ) from error
 
 
@@ -232,8 +233,10 @@ def test_stage_native_job_reaps_tree(
             f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe -Clock {{$clock}} "
             "-Wait { param($p,$ms) $readyDeadline=[DateTime]::UtcNow.AddSeconds(20); "
             "while (-not (Test-Path -LiteralPath $env:TREE_READY)) { "
-            "if ([DateTime]::UtcNow -ge $readyDeadline) { throw [System.TimeoutException]::new('TREE_READY未到達') }; "
-            "if ($p.Wait(20) -and -not (Test-Path -LiteralPath $env:TREE_READY)) { throw '準備前に起点終了' } }; "
+            "if ([DateTime]::UtcNow -ge $readyDeadline) { throw [System.TimeoutException]::new("
+            '"TREE_READY未到達: ${env:PIDS}のPID記録を読み、fixtureの子孫起動が止まった箇所を調べよ") }; '
+            "if ($p.Wait(20) -and -not (Test-Path -LiteralPath $env:TREE_READY)) { "
+            'throw "準備前に起点終了: ${env:PIDS}のPID記録と標準エラーを読み、fixtureの起動失敗を調べよ" } }; '
             "$p.Wait($ms) }; "
             "if ($code -notin @(17,124)) {throw 'exit'}",
             # 準備20秒、準備後のtimeout2秒とJob/pipeの有限回収を、外側の期限より内側へ収める。
