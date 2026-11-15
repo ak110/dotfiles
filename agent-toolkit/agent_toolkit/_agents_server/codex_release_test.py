@@ -130,6 +130,13 @@ async def test_other_release_paths_terminate_owned_resources(
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "実App Serverの生成停止を拒否し、同じPIDの再回収とregistry解放を確認する。"
+        "単一sessionの実停止境界を残す（所有thread合計CPUはLinuxで1.399秒、CI旧原計測0.585秒）。"
+    ),
+)
 async def test_unresolved_generation_stop_is_retried_instead_of_reported_released(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -65,6 +65,8 @@ _CPU_TIMES = pytest.StashKey[dict[str, float]]()
 _CPU_LIMIT = pytest.StashKey[tuple[float, str]]()
 _CPU_EXCLUSIONS = pytest.StashKey[dict[str, dict[str, float]]]()
 _CPU_GROSS_LIMIT = pytest.StashKey[float]()
+_CPU_BUDGET = pytest.StashKey[cpu_accounting.CpuBudget]()
+_CPU_PROCESS_STARTED = pytest.StashKey[float]()
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -78,20 +80,24 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
 
 def _measure_cpu(item: pytest.Item, phase: str) -> Generator[None, object, object]:
-    started = time.process_time()
-    excluded = cpu_accounting.snapshot()
-    try:
-        return (yield)
-    finally:
-        after = cpu_accounting.snapshot()
-        finished = time.process_time()
-        item.stash.setdefault(_CPU_TIMES, {})[phase] = finished - started
-        item.stash.setdefault(_CPU_EXCLUSIONS, {})[phase] = {key: after[key] - value for key, value in excluded.items()}
+    budget = item.stash.setdefault(_CPU_BUDGET, cpu_accounting.CpuBudget())
+    with cpu_accounting.activate(budget):
+        excluded = cpu_accounting.main_snapshot()
+        if _CPU_PROCESS_STARTED not in item.stash:
+            item.stash[_CPU_PROCESS_STARTED] = time.process_time()
+        started = time.thread_time()
+        try:
+            return (yield)
+        finally:
+            finished = time.thread_time()
+            after = cpu_accounting.main_snapshot()
+            item.stash.setdefault(_CPU_TIMES, {})[phase] = finished - started
+            item.stash.setdefault(_CPU_EXCLUSIONS, {})[phase] = {key: after[key] - excluded[key] for key in ("gc", "import")}
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> Generator[None, object, object]:
-    """fixtureの準備を含むプロセスCPUを計測する。"""
+    """fixtureの準備を含む、試験が所有するCPUを計測する。"""
     return (yield from _measure_cpu(item, "setup"))
 
 
@@ -141,15 +147,23 @@ def pytest_runtest_makereport(
         recorded = item.stash.get(_CPU_TIMES, {})
         times = {phase: recorded.get(phase, 0.0) for phase in ("setup", "call", "teardown")}
         limit, reason = item.stash.get(_CPU_LIMIT, (0.5, "通常上限"))
-        total = sum(times.values())
+        owner = item.stash.get(_CPU_BUDGET, None)
+        # phase間も所有workerは動き得るため、完了reportで試験の累計を1回だけ加える。
+        workers = cpu_accounting.snapshot(owner) if owner is not None else {"worker": 0.0, "gc": 0.0, "import": 0.0}
+        total = sum(times.values()) + workers["worker"]
+        process_start = item.stash.get(_CPU_PROCESS_STARTED, None)
+        process_total = time.process_time() - process_start if process_start is not None else 0.0
         excluded = item.stash.get(_CPU_EXCLUSIONS, {})
-        deductions = {kind: sum(row.get(kind, 0.0) for row in excluded.values()) for kind in ("gc", "import")}
+        deductions = {kind: sum(row.get(kind, 0.0) for row in excluded.values()) + workers[kind] for kind in ("gc", "import")}
         budget = max(0.0, total - sum(deductions.values()))
         gross_limit = item.stash.get(_CPU_GROSS_LIMIT, max(2.0, limit))
         report.user_properties.extend(
             [(f"cpu_{phase}_seconds", times.get(phase, 0.0)) for phase in ("setup", "call", "teardown")]
             + [
                 ("cpu_total_seconds", total),
+                ("cpu_worker_seconds", workers["worker"]),
+                ("cpu_process_seconds", process_total),
+                ("cpu_unattributed_seconds", max(0.0, process_total - total)),
                 ("cpu_excluded_gc_seconds", deductions["gc"]),
                 ("cpu_excluded_import_seconds", deductions["import"]),
                 ("cpu_budget_seconds", budget),
@@ -160,7 +174,8 @@ def pytest_runtest_makereport(
         )
         if budget >= limit or total >= gross_limit:
             diagnostic = (
-                f"CPU上限: {item.nodeid}: {times}, total={total:.6f}s, excluded={deductions}, "
+                f"CPU上限: {item.nodeid}: {times}, worker={workers['worker']:.6f}s, total={total:.6f}s, "
+                f"process={process_total:.6f}s, excluded={deductions}, "
                 f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}。"
                 "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
             )
@@ -378,7 +393,7 @@ def pytest_configure(config: pytest.Config) -> None:
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
     _validate_import_root(config)
-    config.addinivalue_line("markers", "cpu_limit(seconds, reason): 理由付きプロセスCPU上限")
+    config.addinivalue_line("markers", "cpu_limit(seconds, reason): 理由付き所有CPU上限")
     if not config.pluginmanager.is_registered(xdist_stop):
         config.pluginmanager.register(xdist_stop, "dotfiles-xdist-stop")
     # 不正な分割指定は、xdistのworkerが収集を始める前に1回だけ報告する。
@@ -467,7 +482,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 def pytest_addoption(parser: pytest.Parser) -> None:
     """CIで1つの試験集合を複数runnerへ分ける`--test-shard`を登録する。"""
-    parser.addini("cpu_limit", "試験ごとのプロセスCPU上限（秒）", default="0.5")
+    parser.addini("cpu_limit", "試験が所有するCPUの上限（秒）", default="0.5")
     parser.addoption(
         "--test-shard",
         metavar="INDEX/COUNT",

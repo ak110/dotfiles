@@ -28,7 +28,8 @@ def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, pha
     item = cast(pytest.Item, Item())
     clock = iter([0.0, elapsed])
     with monkeypatch.context() as patch:
-        patch.setattr(pytest_plugin.time, "process_time", lambda: next(clock))
+        patch.setattr(pytest_plugin.time, "thread_time", lambda: next(clock))
+        patch.setattr(cpu_accounting, "main_snapshot", lambda: {"gc": 0.0, "import": 0.0})
         hook = getattr(pytest_plugin, f"pytest_runtest_{phase}")(item)
         next(hook)
         with pytest.raises(StopIteration):
@@ -39,6 +40,112 @@ def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, pha
     with pytest.raises(StopIteration):
         reporting.send(report)
     assert report.failed == (elapsed >= 0.5)
+
+
+@pytest.mark.parametrize("mode", ["foreign", "thread", "pool", "exception", "nested", "spanning"])
+def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> None:
+    """無関係な仕事の誤課金、既存poolの計上漏れ、二重計上、段階をまたぐ計上漏れを検出する。"""
+    item = cast(pytest.Item, types.SimpleNamespace(stash=pytest.Stash(), nodeid="cpu_test.py::test_cpu"))
+    clocks: collections.defaultdict[int, float] = collections.defaultdict(float)
+    main = threading.get_ident()
+    ready, proceed = threading.Event(), threading.Event()
+    native_clocks: dict[int, int] = {}
+    future: concurrent.futures.Future[None] | None = None
+
+    def work():
+        ident = threading.get_ident()
+        native_clocks[threading.get_native_id()] = ident
+        clocks[ident] += 0.3 if mode in {"nested", "spanning"} else 0.6
+        if mode == "spanning":
+            ready.set()
+            assert proceed.wait(10)
+            clocks[ident] += 0.3
+        elif mode == "nested":
+
+            def child_work():
+                clocks[threading.get_ident()] += 0.3
+
+            child = threading.Thread(target=child_work)
+            child.start()
+            child.join(10)
+            assert not child.is_alive()
+        elif mode == "exception":
+            raise ValueError("仕事は失敗してもCPUを所有する")
+
+    def foreign_work():
+        assert proceed.wait(10)
+        work()
+
+    def thread_clocks():
+        return [
+            types.SimpleNamespace(id=native, user_time=clocks[ident], system_time=0.0)
+            for native, ident in native_clocks.items()
+        ]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(lambda: None).result(timeout=10)  # 既存workerへの投入も所有する。
+        foreign = threading.Thread(target=foreign_work) if mode == "foreign" else None
+        if foreign is not None:
+            token = cpu_accounting._budget.set(None)
+            try:
+                foreign.start()
+            finally:
+                cpu_accounting._budget.reset(token)
+        automatic = gc.isenabled()
+        gc.disable()
+        try:
+            with monkeypatch.context() as patch:
+                patch.setattr(cpu_accounting, "_thread_cpu", lambda: clocks[threading.get_ident()])
+                patch.setattr(pytest_plugin.time, "thread_time", lambda: clocks[threading.get_ident()])
+                patch.setattr(pytest_plugin.time, "process_time", lambda: sum(clocks.values()))
+                patch.setattr(cpu_accounting, "_process_threads", thread_clocks)
+                hook = pytest_plugin.pytest_runtest_setup(item)
+                next(hook)
+                clocks[main] += 0.01
+                if foreign is not None:
+                    proceed.set()
+                    foreign.join(10)
+                    assert not foreign.is_alive()
+                elif mode in {"pool", "exception", "spanning"}:
+                    future = executor.submit(work)
+                    if mode == "spanning":
+                        assert ready.wait(10)
+                    elif mode == "exception":
+                        with pytest.raises(ValueError):
+                            future.result(timeout=10)
+                    else:
+                        future.result(timeout=10)
+                else:
+                    thread = threading.Thread(target=work)
+                    thread.start()
+                    thread.join(10)
+                    assert not thread.is_alive()
+                with pytest.raises(StopIteration):
+                    hook.send(None)
+                if mode == "spanning":
+                    assert future is not None
+                    assert cpu_accounting.snapshot(item.stash[pytest_plugin._CPU_BUDGET])["worker"] == pytest.approx(0.3)
+                    # report生成前のphase間の仕事も、試験自身の累計から失わない。
+                    proceed.set()
+                    future.result(timeout=10)
+                    hook = pytest_plugin.pytest_runtest_call(item)
+                    next(hook)
+                    with pytest.raises(StopIteration):
+                        hook.send(None)
+                report = pytest.TestReport(item.nodeid, ("cpu_test.py", 0, "test_cpu"), {}, "passed", None, "teardown")
+                reporting = pytest_plugin.pytest_runtest_makereport(item, cast(Any, None))
+                next(reporting)
+                with pytest.raises(StopIteration):
+                    reporting.send(report)
+                assert report.failed is (mode != "foreign")
+                properties = dict(report.user_properties)
+                assert properties["cpu_total_seconds"] == pytest.approx(0.01 if mode == "foreign" else 0.61)
+                assert properties["cpu_process_seconds"] == pytest.approx(0.61)
+                assert properties["cpu_unattributed_seconds"] == pytest.approx(0.6 if mode == "foreign" else 0.0)
+        finally:
+            proceed.set()
+            if automatic:
+                gc.enable()
 
 
 @pytest.mark.parametrize("outcome", ["passed", "failed", "skipped"])

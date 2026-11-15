@@ -1,21 +1,28 @@
-"""CPU予算から、初回importと共有heapの旧世代自動GCの区間和を除く。
+"""試験が所有するthreadのCPUと、共有初期化費用を観測する。
 
-process CPUの原計測は呼出側が所有する。主測定threadの初回importと、各threadの
-共有旧世代GCを控除し、DUTの仕事、若い世代のGC、明示的なcollectは原計測へ残す。
+試験実行threadと当該試験から起動・投入した仕事を数える。主測定threadの初回importと
+所有threadの旧世代自動GCを控除し、若い世代のGCと明示collectは仕事量へ残す。
 """
 
+import concurrent.futures
+import contextlib
+import contextvars
 import dataclasses
 import gc
 import sys
 import threading
 import time
-from collections.abc import Callable
+import unittest.mock
+from collections.abc import Callable, Generator
 from importlib import _bootstrap
 from typing import Any
+
+import psutil
 
 # CPythonの遅延importの計時点は型stubへ公開されない。
 _IMPORT_NAMESPACE: Any = vars(_bootstrap)
 _thread_cpu = time.thread_time
+_process_threads = psutil.Process().threads
 
 
 @dataclasses.dataclass
@@ -27,6 +34,96 @@ class _ThreadGc:
     gc_work_started: float | None = None
     gc_cpu: float = 0.0
     gc_work_cpu: float = 0.0
+    import_cpu: float = 0.0
+
+
+@dataclasses.dataclass
+class CpuBudget:
+    """1試験が起動・投入したthread処理のCPUを、その試験へ帰属させる。"""
+
+    completed: dict[str, float] = dataclasses.field(default_factory=lambda: {"worker": 0.0, "gc": 0.0, "import": 0.0})
+    active: dict[int, tuple[float, _ThreadGc, float, float]] = dataclasses.field(default_factory=dict)
+    lock: Any = dataclasses.field(default_factory=threading.RLock)
+
+
+_budget: contextvars.ContextVar[CpuBudget | None] = contextvars.ContextVar("pytest_cpu_budget", default=None)
+_pool_start: contextvars.ContextVar[bool] = contextvars.ContextVar("pytest_cpu_pool_start", default=False)
+_original_start = threading.Thread.start
+_original_submit = concurrent.futures.ThreadPoolExecutor.submit
+
+
+@contextlib.contextmanager
+def activate(budget: CpuBudget) -> Generator[None]:
+    """各段階で使う試験の所有者を、同期処理と非同期taskへ伝える。"""
+    token = _budget.set(budget)
+    try:
+        yield
+    finally:
+        _budget.reset(token)
+
+
+def _owned_call(budget: CpuBudget, function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    observed = _thread_gc()
+    native = threading.get_native_id()
+    # 同じthreadの入れ子は外側の区間だけを数える。
+    with budget.lock:
+        nested = native in budget.active
+    if nested:
+        return function(*args, **kwargs)
+    with budget.lock:
+        started = _thread_cpu()
+        budget.active[native] = (started, observed, observed.gc_cpu, observed.import_cpu)
+    token = _pool_start.set(False)
+    try:
+        with activate(budget):
+            return function(*args, **kwargs)
+    finally:
+        _pool_start.reset(token)
+        with budget.lock:
+            _, _, gc_before, import_before = budget.active.pop(native)
+            budget.completed["worker"] += _thread_cpu() - started
+            budget.completed["gc"] += observed.gc_cpu - gc_before
+            budget.completed["import"] += observed.import_cpu - import_before
+
+
+def _start_thread(thread: threading.Thread) -> None:
+    budget = _budget.get()
+    if budget is None or _pool_start.get():
+        _original_start(thread)
+        return
+    original = thread.run
+    own_run = "run" in vars(thread)
+
+    def run() -> None:
+        try:
+            _owned_call(budget, original)
+        finally:
+            if own_run:
+                vars(thread)["run"] = original
+            else:
+                del thread.run
+
+    vars(thread)["run"] = run
+    try:
+        _original_start(thread)
+    except BaseException:
+        if own_run:
+            vars(thread)["run"] = original
+        else:
+            del thread.run
+        raise
+
+
+def _submit(executor: concurrent.futures.ThreadPoolExecutor, function: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+    budget = _budget.get()
+    # poolのthread寿命ではなく、投入した仕事の区間を所有する。既存poolも同じ扱いにする。
+    token = _pool_start.set(True)
+    try:
+        if budget is None:
+            return _original_submit(executor, function, *args, **kwargs)
+        return _original_submit(executor, _owned_call, budget, function, *args, **kwargs)
+    finally:
+        _pool_start.reset(token)
 
 
 @dataclasses.dataclass
@@ -41,6 +138,7 @@ class _Observer:
     local: threading.local = dataclasses.field(default_factory=threading.local)
     original_import: Callable[..., Any] = _IMPORT_NAMESPACE["_find_and_load"]
     original_collect: Callable[..., int] = gc.collect
+    patches: contextlib.ExitStack = dataclasses.field(default_factory=contextlib.ExitStack)
 
 
 _state = _Observer()
@@ -102,7 +200,9 @@ def _import(name: str, *args: Any, **kwargs: Any) -> Any:
         _state.import_depth -= 1
         if initial and sys.modules.get(name) is not None:
             # 同じthreadのGCだけを引く。他threadのGCを引くとimportの控除量を失う。
-            _state.import_cpu += max(0.0, _thread_cpu() - started - (observed.gc_cpu + observed.gc_work_cpu - gc_before))
+            elapsed = max(0.0, _thread_cpu() - started - (observed.gc_cpu + observed.gc_work_cpu - gc_before))
+            observed.import_cpu += elapsed
+            _state.import_cpu += elapsed
 
 
 def start(owner: object) -> None:
@@ -120,6 +220,8 @@ def start(owner: object) -> None:
     # 組込みcollectorを同じ公開signatureで一時的に計時する。
     gc.collect = _collect  # ty: ignore[invalid-assignment]
     gc.callbacks.append(_gc_event)
+    _state.patches.enter_context(unittest.mock.patch.object(threading.Thread, "start", _start_thread))
+    _state.patches.enter_context(unittest.mock.patch.object(concurrent.futures.ThreadPoolExecutor, "submit", _submit))
 
 
 def stop(owner: object) -> None:
@@ -132,10 +234,28 @@ def stop(owner: object) -> None:
         gc.collect = _state.original_collect
     if _gc_event in gc.callbacks:
         gc.callbacks.remove(_gc_event)
+    _state.patches.close()
     _state.owner, _state.thread = None, None
     _state.local = threading.local()
 
 
-def snapshot() -> dict[str, float]:
+def snapshot(budget: CpuBudget | None = None) -> dict[str, float]:
     """段階前後の差を得るため、累計CPU秒数を返す。"""
-    return {"gc": _state.gc_cpu, "import": _state.import_cpu}
+    if budget is None:
+        return {"gc": _state.gc_cpu, "import": _state.import_cpu}
+    with budget.lock:
+        result = {**budget.completed}
+        # phaseをまたぐ仕事も、その所有試験だけへ数える。終了済みのthreadは累計へ移す。
+        if budget.active:
+            clocks = {row.id: row.user_time + row.system_time for row in _process_threads()}
+            for native, (started, worker, gc_before, import_before) in budget.active.items():
+                result["worker"] += max(0.0, clocks.get(native, started) - started)
+                result["gc"] += worker.gc_cpu - gc_before
+                result["import"] += worker.import_cpu - import_before
+        return result
+
+
+def main_snapshot() -> dict[str, float]:
+    """試験実行threadの控除量を、他threadの累計と分けて返す。"""
+    observed = _thread_gc()
+    return {"gc": observed.gc_cpu, "import": observed.import_cpu}
