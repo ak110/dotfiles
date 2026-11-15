@@ -416,7 +416,12 @@ async def test_work_item_important_conflict_preserves_latest_content(
     await page.route("**/api/entries/important", update_before_important)
     await page.get_by_role("button", name="重要設定", exact=True).click()
     await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text("重要設定できませんでした")
-    await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text("詳細を閉じて開き直して")
+    await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text(
+        "未保存の入力があれば、閉じる前にコピーして退避してください。"
+    )
+    await playwright.async_api.expect(detail.get_by_role("alert")).to_contain_text(
+        "詳細を開き直し、最新の内容へ必要な変更だけを反映して保存してください。"
+    )
     await playwright.async_api.expect(page.get_by_role("button", name="重要設定", exact=True)).to_be_disabled()
     saved = next(harness.root.rglob("awi.md")).read_text(encoding="utf-8")
     assert saved.endswith("外部から追記\n")

@@ -1,6 +1,7 @@
 """更新が共有環境を回収しても、実行中・構築中の利用を壊さないことを確かめる。"""
 
 import json
+import os
 import types
 from pathlib import Path
 from typing import Any
@@ -80,7 +81,7 @@ def test_cleanup_preserves_preparation_and_legacy_process_references(
         path.mkdir(parents=True)
 
     def legacy_reference(**_kwargs: Any) -> tuple[list[str], bool]:
-        return [str(legacy / "bin/python")], False
+        return [os.path.normcase(str(legacy / "bin/python"))], False
 
     monkeypatch.setattr(subject, "_process_references", legacy_reference)
     with plugin_environment.prepare_lock(preparing):
