@@ -238,6 +238,10 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
 
 
 @pytest.mark.parametrize(("count", "known_zero"), [(0, False), (1, False), (300, False), (300, True)])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="容量境界を超える記録の代表選択・省略・全量照会を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.783秒。",
+)
 def test_comparison_index_capacity_and_counts(
     count: int, known_zero: bool, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

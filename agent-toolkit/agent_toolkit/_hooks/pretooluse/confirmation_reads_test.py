@@ -217,6 +217,10 @@ def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path
 
 
 @pytest.mark.parametrize("missing", [_DECISIONS, _QUESTIONS])
+@pytest.mark.cpu_limit(
+    7.0,
+    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大3.716秒。",
+)
 def test_split_confirmation_body_is_required_then_not_requested_again(tmp_path, missing):
     """従来の2資料だけでは、分割された判定・手順の本文の取得を代替しない。"""
     entries = [*_successful_read(_APPROVAL), *_successful_read(_CHOICE)]
@@ -339,6 +343,10 @@ def test_non_main_or_unreadable_context_is_neither_denied_nor_warned(tmp_path: p
         assert not _denial(result) and _WARNING not in _additional_context(result)
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.865秒。",
+)
 def test_unresolvable_declarations_warn_without_denying(tmp_path: pathlib.Path, monkeypatch) -> None:
     """読込宣言を取得できない場合は、判定基盤の不調で質問を止めないよう警告にとどめる。"""
     from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel

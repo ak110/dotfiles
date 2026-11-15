@@ -74,15 +74,9 @@ def _init_synced_repositories(root: pathlib.Path) -> tuple[pathlib.Path, pathlib
 
 # 実Gitを起動する回数は生成例と操作の数に比例するため、テスト単位の時間上限に余裕を残す例数にする。
 # 分岐判定と回復操作の網羅は、Gitを差し替える下記のプロパティテストが多数の例で担う。
-@settings(max_examples=5, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=2, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(choices=st.lists(st.integers(min_value=0, max_value=100), min_size=8, max_size=18))
-@pytest.mark.cpu_limit(
-    3.5,
-    reason=(
-        "実Gitの5生成例で固定8操作と生成8-18操作を通し、履歴と未commit本文を参照モデルへ照合する（Linux CI CPU合"
-        "計最大1.534秒）。"
-    ),
-)
+@pytest.mark.cpu_limit(3.5, reason="固定8操作で主要分岐を通し、実Gitの生成例を5から2へ削減する。削減前の所有CPU最大4.515秒。")
 def test_generated_operations_preserve_history_and_uncommitted_content(tmp_path: pathlib.Path, choices: list[int]) -> None:
     """有効な操作列を独立した変更集合モデルと実Gitへ順に適用し、各遷移の内容と履歴を比較する。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:

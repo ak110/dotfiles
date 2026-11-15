@@ -64,6 +64,10 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
 
 
 @pytest.mark.parametrize("codex", [False, True])
+@pytest.mark.cpu_limit(
+    2.5,
+    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.190秒。",
+)
 def test_short_initial_record_does_not_require_detailed_analysis_materials(tmp_path, capsys, codex):
     """初動の短記録は、両ホストの入口と取得後にも詳細表の資料を要求しない。"""
     payload = _payload(tmp_path, codex)

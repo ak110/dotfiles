@@ -32,6 +32,10 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    4.0,
+    reason=("実App Server/MCPの停止とregistryの整合を実プロセスで確認する。所有thread合計CPUのLinux観測最大1.960秒。"),
+)
 async def test_stop_terminates_owned_app_server_and_mcp(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -62,6 +66,10 @@ async def test_stop_terminates_owned_app_server_and_mcp(
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=("実App Server/MCPの停止とregistryの整合を実プロセスで確認する。所有thread合計CPUのLinux観測最大0.832秒。"),
+)
 async def test_release_keeps_other_session_and_resumes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """一方の委譲のstopは他方のApp Serverを残し、他方への追送と破棄した会話の再開がどちらも成功する。"""
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
@@ -235,11 +243,8 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.cpu_limit(
-    1.5,
-    reason=(
-        "実App Serverプロセスでstop失敗後の再試行とregistry解放を確認し、所有子を回収する必要がある（Linux CI"
-        " CPU合計最大0.529秒）。"
-    ),
+    4.0,
+    reason=("実App Server/MCPの停止とregistryの整合を実プロセスで確認する。所有thread合計CPUのLinux観測最大2.006秒。"),
 )
 async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """子孫を回収できないstopは再試行の方法とともに失敗し、解放済みと記録せず、再発行で回収を完了する。"""

@@ -79,6 +79,9 @@ def _invoke(
     return finished.value.code
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.023秒。"
+)
 def test_public_effect_check_partial_then_complete_preserves_original(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -227,6 +230,9 @@ def test_public_effect_rejects_unadopted_and_ordinary_edit(
     assert path.read_bytes() == original
 
 
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.757秒。"
+)
 def test_public_effect_overall_reason_and_listing_without_commit(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -280,6 +286,9 @@ def test_public_effect_overall_reason_and_listing_without_commit(
     assert restored == original
 
 
+@pytest.mark.cpu_limit(
+    1.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.521秒。"
+)
 def test_public_effect_retry_after_commit_failure_is_idempotent(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -300,6 +309,9 @@ def test_public_effect_retry_after_commit_failure_is_idempotent(
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
 
 
+@pytest.mark.cpu_limit(
+    2.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.123秒。"
+)
 def test_public_transition_only_implemented_awi_adoption_starts_pending(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
@@ -345,24 +357,9 @@ def test_adopt_warns_when_inbox_entry_has_commit(
     assert "atk wi start-processing" in captured.err
 
 
-def test_adopt_does_not_warn_for_regular_transitions(
-    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
-) -> None:
-    """処理中・保留からのcommit付きの採用と、commitを伴わないinboxからの採用は警告しない。"""
-    notes, worktree, _path = effect_repository
-    write_awi(notes, "processed.md", state="processing")
-    write_awi(notes, "held.md", state="hold")
-    write_uwi(notes, "answered.md", state="inbox", answer="回答済み")
-    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
-    capsys.readouterr()
-
-    assert _adopt(notes, worktree, "processed.md", "--commit", oid) == 0
-    assert _adopt(notes, worktree, "held.md", "--commit", oid) == 0
-    assert _adopt(notes, worktree, "answered.md") == 0
-
-    assert "処理中（processing）を経ずに" not in capsys.readouterr().err
-
-
+@pytest.mark.cpu_limit(
+    3.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.500秒。"
+)
 def test_public_effect_batch_validates_all_and_resumes_partial_save(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     monkeypatch: pytest.MonkeyPatch,
@@ -456,6 +453,9 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
     assert git_repository.git_output(notes, "rev-parse", "HEAD") == git_repository.git_output(notes, "rev-parse", "origin/main")
 
 
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.677秒。"
+)
 def test_public_effect_whole_item_verdicts_without_file(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:

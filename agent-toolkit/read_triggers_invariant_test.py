@@ -286,6 +286,9 @@ def _missing_condition_sections(source: pathlib.Path, plugin_root: pathlib.Path)
     return errors
 
 
+@pytest.mark.cpu_limit(
+    1.5, reason="実規範全体で別ファイルの参照先の見出し到達性を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.602秒。"
+)
 def test_read_conditions_reach_named_section_bodies():
     roots = [_PLUGIN_ROOT / "skills", _PLUGIN_ROOT / "share", _PLUGIN_ROOT.parent / "agent-basics/skills"]
     errors = []

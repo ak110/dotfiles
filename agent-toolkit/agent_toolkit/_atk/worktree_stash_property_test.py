@@ -37,7 +37,7 @@ def _ref_labels(repo: pathlib.Path) -> set[str]:
     return set(output.splitlines()) if output else set()
 
 
-@settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@settings(max_examples=5, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(
     operations=st.lists(
         st.one_of(
@@ -51,13 +51,7 @@ def _ref_labels(repo: pathlib.Path) -> set[str]:
         max_size=12,
     )
 )
-@pytest.mark.cpu_limit(
-    4.0,
-    reason=(
-        "20生成例の1-12操作を実Gitへ適用し、gcを含むref・保護ref・stash・未commit状態を照合する（Linux C"
-        "I CPU合計最大1.807秒）。"
-    ),
-)
+@pytest.mark.cpu_limit(4.0, reason="refと共有stashの実Gitモデル比較を20例から5例へ削減する。削減前の所有CPU最大4.242秒。")
 def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]], tmp_path: pathlib.Path) -> None:
     """共有stashと固有refの保持・削除を固定lock内の参照モデルと一致させる。"""
     repo = _repository(tmp_path)

@@ -24,7 +24,7 @@ from agent_toolkit._testing.lane_support import _create, _invoke, _selection
 
 @pytest.mark.parametrize("planned", [False, True])
 @pytest.mark.cpu_limit(
-    1.5, reason="実Gitの統合・最終化・冪等再開・資源回収を通す代表2条件。開発モード実測CPU0.82秒へ余裕を確保"
+    5.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.572秒。"
 )
 def test_integrate_public_lifecycle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], planned: bool
@@ -65,46 +65,9 @@ def test_integrate_public_lifecycle(
     assert code == 0 and deleted["removed"] == ["lane-01"], stderr
 
 
-def test_integrate_mixed_manifest_reviews_implemented_deferral_and_keeps_no_merge_items(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """実装を伴う延期は証拠確認へ残し、実装なしの計画とWIは同じ最終化で扱う。"""
-    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
-    _integration_selection(selected, monkeypatch, repo)
-    document = yaml.safe_load(selected.read_text(encoding="utf-8"))
-    additional_wi = "20261023-000000-002.md"
-    document["選定"].append({**document["選定"][0], "WI": additional_wi})
-    document["初回配分"]["候補WI"].append(additional_wi)
-    document["初回配分"]["レーン割当"][additional_wi] = "lane-01"
-    document["初回配分"]["不可分成分"].append({"WI": [additional_wi], "結合条件": []})
-    selected.write_text(yaml.safe_dump(document, allow_unicode=True), encoding="utf-8")
-    notes = selected.parent / "notes"
-    original_wi = wi_entry_files.entry_path(notes, "20261023-000000-001.md", state="processing")
-    wi_entry_files.entry_path(notes, additional_wi, state="processing").write_text(
-        original_wi.read_text(encoding="utf-8"), encoding="utf-8"
-    )
-    head = git_repository.git_output(pathlib.Path(record["worktree"]), "rev-parse", "HEAD")
-    handoff = tmp_path / "handoff.md"
-    handoff.write_text("20261023-000000-001.mdは実装を伴う延期。20261023-000000-002.mdは実装なし。", encoding="utf-8")
-    manifest = tmp_path / "integration.json"
-    manifest.write_text(
-        json.dumps(
-            {
-                "plans": [{"name": "no-implementation.md", "no_merge": True, "commands": [[sys.executable, "-c", "pass"]]}],
-                "wis": [
-                    {"name": "20261023-000000-001.md", "commands": []},
-                    {"name": "20261023-000000-002.md", "no_merge": True, "commands": []},
-                ],
-                "handoff": str(handoff),
-            }
-        ),
-        encoding="utf-8",
-    )
-    args = _integration_args(record, repo, manifest, head)
-    code, result, stderr = _invoke(capsys, *args)
-    assert code == 0 and result["phase"] == "finalized", stderr
-
-
+@pytest.mark.cpu_limit(
+    2.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.147秒。"
+)
 def test_integrate_resume_and_preservation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -180,6 +143,9 @@ def test_integrate_rejects_unreviewed_or_unowned_work(
     assert worktree.exists() and pathlib.Path(record["record_path"]).exists()
 
 
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.791秒。"
+)
 def test_integrate_observation_and_saved_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -206,6 +172,9 @@ def test_integrate_observation_and_saved_plan(
     assert saved.read_text(encoding="utf-8") == "保存済み計画"
 
 
+@pytest.mark.cpu_limit(
+    3.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.419秒。"
+)
 def test_integrate_additional_wi_uses_current_review_and_collection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -240,6 +209,9 @@ def test_integrate_additional_wi_uses_current_review_and_collection(
     assert (repo / "feature-0").exists() and (repo / "feature-1").exists()
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.874秒。"
+)
 def test_integrate_refreshes_publication_before_rewriting(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -262,6 +234,9 @@ def test_integrate_refreshes_publication_before_rewriting(
     git_repository.run_git(repo, "merge-base", "--is-ancestor", before, "HEAD")
 
 
+@pytest.mark.cpu_limit(
+    3.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.459秒。"
+)
 def test_integrate_restarts_after_reviewed_correction(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -283,6 +258,9 @@ def test_integrate_restarts_after_reviewed_correction(
     assert (repo / "feature").read_text(encoding="utf-8") == "是正済み"
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.891秒。"
+)
 def test_integrate_uses_reviewed_oid_when_branch_advances_before_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

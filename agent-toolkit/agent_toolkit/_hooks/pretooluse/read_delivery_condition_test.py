@@ -266,6 +266,10 @@ def test_same_call_full_read_is_removed_from_a_multi_document_candidate(tmp_path
 
 @pytest.mark.parametrize("old_selection", [False, True])
 @pytest.mark.parametrize("dry_run", [False, True])
+@pytest.mark.cpu_limit(
+    2.5,
+    reason="実規範の宣言集合と公開Pre/Postによる取得状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.368秒。",
+)
 def test_real_wi_dry_run_does_not_require_independent_submission(tmp_path, monkeypatch, _setup, old_selection, dry_run):
     """実宣言集合で保存操作と工程条件を区別し、1資料だけの非再現で解消としない。"""
     _selected, _unrelated, _row, _state = _setup

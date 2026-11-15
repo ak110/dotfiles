@@ -28,6 +28,9 @@ from agent_toolkit._testing.lane_support import _create, _create_args, _create_i
 __all__ = ["prepare_lane_verification"]
 
 
+@pytest.mark.cpu_limit(
+    3.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.766秒。"
+)
 def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -62,6 +65,9 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     assert json.loads(pathlib.Path(deleted["result_path"]).read_text(encoding="utf-8"))["removed"] == ["lane-01"]
 
 
+@pytest.mark.cpu_limit(
+    4.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.137秒。"
+)
 def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -99,6 +105,9 @@ def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     assert yaml.safe_load(selected.read_text(encoding="utf-8"))["レーンの所要時間"][0]["統合状態"] == "統合済み"
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.881秒。"
+)
 def test_fixed_creation_reclaims_missing_previous_resource(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -132,6 +141,9 @@ def test_reuse_rejects_record_whose_worktree_is_missing(
 
 
 @pytest.mark.parametrize("phase", ["create", "prepare"])
+@pytest.mark.cpu_limit(
+    3.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.905秒。"
+)
 def test_failed_preparation_recovers_using_the_same_registered_resource(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], phase: str
 ) -> None:
@@ -158,6 +170,9 @@ def test_failed_preparation_recovers_using_the_same_registered_resource(
     assert deleted["removed"] == ["lane-01"]
 
 
+@pytest.mark.cpu_limit(
+    5.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.653秒。"
+)
 def test_interrupted_lane_can_transfer_to_new_session_without_losing_uncommitted_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -182,8 +197,7 @@ def test_interrupted_lane_can_transfer_to_new_session_without_losing_uncommitted
 
 
 @pytest.mark.cpu_limit(
-    2.0,
-    reason="実Gitの2repo・linked worktreeと3所有sessionを通し、回収後も固定先を共有する最小系列（Linux CI CPU0.538秒）。",
+    8.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大4.279秒。"
 )
 def test_fixed_placement_is_shared_across_sessions_callers_and_recreation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -224,6 +238,9 @@ def test_fixed_placement_is_shared_across_sessions_callers_and_recreation(
 
 
 @pytest.mark.parametrize("condition", ["dirty", "unintegrated", "active-session"])
+@pytest.mark.cpu_limit(
+    2.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.122秒。"
+)
 def test_fixed_placement_keeps_previous_unfinished_resource_and_returns_recovery(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
@@ -260,6 +277,9 @@ def test_fixed_placement_keeps_previous_unfinished_resource_and_returns_recovery
     assert resumed["worktree"] == original["worktree"] and resumed["session_id"] == "next-session"
 
 
+@pytest.mark.cpu_limit(
+    6.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大3.193秒。"
+)
 def test_project_create_procedure_receives_the_fixed_placement(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -296,6 +316,9 @@ def test_fixed_placement_does_not_overwrite_unregistered_entity(
     assert code == 0 and not listed["records"], stderr
 
 
+@pytest.mark.cpu_limit(
+    3.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.916秒。"
+)
 def test_legacy_managed_temp_lane_is_resumed_and_cleaned_with_its_area(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -323,6 +346,9 @@ def test_legacy_managed_temp_lane_is_resumed_and_cleaned_with_its_area(
 
 @pytest.mark.parametrize("remove_exit_code", [0, 7])
 @pytest.mark.parametrize("detached", [False, True])
+@pytest.mark.cpu_limit(
+    4.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大2.323秒。"
+)
 def test_hook_owned_resource(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

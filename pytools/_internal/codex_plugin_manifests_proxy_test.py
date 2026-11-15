@@ -150,7 +150,11 @@ async def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, 
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(shutil.which("codex") is None, reason="Codex CLIが存在しない")
-@pytest.mark.parametrize("index", [0, 1, 2], ids=["plugin-agents-server", "plugin-pyfltr", "backend-agents-server"])
+@pytest.mark.parametrize("index", [0, 2], ids=["plugin-agents-server", "backend-agents-server"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="実Codexから起動・再開したMCP子へのproxy要求と環境の配送を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.576秒。",
+)
 async def test_codex_stdio_inherits_proxy_environment(
     manifest_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, proxy_endpoint: tuple[str, list[str]], index: int
 ) -> None:

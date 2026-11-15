@@ -22,6 +22,9 @@ from agent_toolkit._testing.process_loop_coordinator_support import _manifest, _
 
 @pytest.mark.parametrize("wait_kind", ["cooldown", "uwi", "external"])
 @pytest.mark.parametrize("interrupted", [False, True])
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.648秒。"
+)
 def test_public_once_accepts_deferred_candidates_and_recovers_completion(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, wait_kind: str, interrupted: bool
 ) -> None:
@@ -179,6 +182,9 @@ def test_completed_result_preserves_actionable_work_and_unintegrated_lanes(
     assert not json.loads(next(ownership.ownership_directory().glob("*.json")).read_text(encoding="utf-8"))["completed"]
 
 
+@pytest.mark.cpu_limit(
+    2.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.900秒。"
+)
 def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, monkeypatch, capsys):
     """元会話がprocessingと公開作成した未統合laneを再利用し、保存成果から作業を進める。"""
     notes, snapshots = _targets(tmp_path, monkeypatch, (1,))

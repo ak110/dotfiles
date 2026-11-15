@@ -572,6 +572,9 @@ def _executor(tmp_path, monkeypatch):
     ],
 )
 @pytest.mark.usefixtures("notes")
+@pytest.mark.cpu_limit(
+    1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.567秒。"
+)
 def test_supervisor_records_failure_and_both_streams(monkeypatch, executor, mode, reason):
     executor(mode)
     _pending("request-1")
