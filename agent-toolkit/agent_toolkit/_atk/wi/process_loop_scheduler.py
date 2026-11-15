@@ -241,7 +241,7 @@ class RepositoryScheduler:
                 if record.get("remaining"):
                     next_action.report(
                         f"{repo}: {record['remaining']}（ログ: {worker.directory}）",
-                        next_action="ログのworker.stderrを確認し、原因を解消してからatk wi process-loop resume autoで再開する",
+                        next_action="ログのstderr.logを確認し、原因を解消してからatk wi process-loop resume autoで再開する",
                     )
             if code is not None:
                 del self.active[repo_id]
