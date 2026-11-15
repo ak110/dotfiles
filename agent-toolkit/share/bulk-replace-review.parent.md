@@ -18,12 +18,13 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 指摘の原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
-| 一括置換後の指摘を処置する前 | `similar-review.parent.md` |
+| bugfixの初動で詳細化条件が成立し、広域の類似見直しを行う前 | `similar-review.parent.md` |
 
 ## 運用条件
 
-指摘の受領時は`agent-basics:bugfix`による原因分析と類似見直しを行い、検索と個別判定は`share/similar-review.parent.md`の専用担当へ渡す。
-初回検出時の再発防止例外と短い記録はbugfixに従い、結果の採否は委譲元が確定する。
+指摘の受領時はまず`agent-basics:bugfix`を起動し、本体の「初動の判断」に従う。
+詳細化条件が成立して広域の類似見直しが必要な場合だけ、検索と個別判定を`share/similar-review.parent.md`の専用担当へ渡す。
+発見経路だけでは詳細化せず、修正・再検証と短い記録による終了の条件はbugfixに従い、結果の採否は委譲元が確定する。
 
 - `git diff --word-diff=plain --word-diff-regex=.`による文字単位の差分をmanaged-tempへ保存し、後述の「起動」「受領」に従って変更箇所を全件レビューさせる。
   意図しない誤置換が多発する場合は、置換候補を絞り込んで再試行する。

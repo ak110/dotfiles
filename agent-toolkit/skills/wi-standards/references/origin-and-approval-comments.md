@@ -11,8 +11,9 @@ UWIの`## 回答`およびAWIの`## ユーザーコメント`は、ユーザー�
 エージェント由来の項目に記載されたユーザーコメントや回答が、その項目の前提、対象、方針、採否を否定している場合は、ユーザーからの是正要求として扱う。
 これを受け取ったエージェントは、対象項目が未終了であれば先に`states-and-dependencies-editing.md`「保留と本文修正」に沿って保留（hold）する。
 その上で`agent-basics:review-standards/references/reviewee-acceptance.md`「ユーザー指摘の受領」に従って採否を確定する。
-続いて`agent-basics:bugfix/references/root-cause-analysis-initial.md`「問題を見つけたときの対処」に従い、類似見直しと再発防止策の策定まで完了させる。
-本文の書き換えは個別事象への対症療法にすぎないため、処置の階層（対策、回帰防止策、横展開処置、再発防止策）を同スキルの`agent-basics:bugfix/references/root-cause-actions-hierarchy.md`「処置の階層」に基づいて明確に区別する。
+続いて`agent-basics:bugfix`を起動し、本体の「初動の判断」で原因と影響、必要な処置を確認する。
+詳細化条件が成立した場合だけ詳細資料を取得し、広域の類似見直しと再発防止策の検討へ進む。
+WI記入欄での是正という発見経路だけでは詳細化せず、条件が成立しなければ修正・再検証と短い記録で終了できる。
 記入内容が以後の同種作業にも適用する方針の候補を含むかは、是正要求に当たるかによらず、`../../user-confirmation-and-report/references/user-utterance-incorporation.md`「原文の保持と取り込み」で判定する。
 ユーザーがこれらの記入欄に処理担当宛ての質問を記載した場合は、その回答をUWIに記録して返却し、その保存完了を、対象の維持・変更を確定して元のWIを終了させるための必須条件とする。
 既存のWI（ステータスは問わない）を別の判断における前提、制約、代替案の不採用理由、完成条件などの根拠として参照する場合も、ユーザー専用記入欄を含めた全文を精読する。
@@ -25,6 +26,6 @@ UWIの`## 回答`およびAWIの`## ユーザーコメント`は、ユーザー�
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 初動と直接的原因の確認：問題を見つけたときの対処の基準を適用する前 | `agent-basics:bugfix/references/root-cause-analysis-initial.md` |
+| 是正要求への対処を始める前 | `agent-basics:bugfix/SKILL.md` |
 | レビューイー側心得：レビュー指摘の位置付けの基準を適用する前 | `agent-basics:review-standards/references/reviewee-acceptance.md` |
 | 由来と承認：由来と`source`の基準を適用する前 | `origin-and-approval-origin.md` |

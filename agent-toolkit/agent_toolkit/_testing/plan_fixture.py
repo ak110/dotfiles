@@ -126,6 +126,7 @@ def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRE
     """
     if variant == BUG_VARIANT_BEFORE_HARM_ROWS:
         table = bug_investigation_table().replace(f"{bug_row('害の型と反復')}\n", "")
+        table = table.replace(f"\n{bug_row('処置が生む問題の検討')}", "")
         body = f"{bug_cause_table()}\n\n{table}"
     elif variant == BUG_VARIANT_LEGACY_STANDALONE:
         body = rows_table(_plan_format.PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS, BUG_FILLER)
