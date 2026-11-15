@@ -499,11 +499,19 @@ def _cleanup_retained_environment(worktree: pathlib.Path) -> str:
     try:
         registered = _git(worktree, "worktree", "list", "--porcelain")
         if f"worktree {worktree}" not in registered.splitlines():
-            return "登録worktreeを確認できないため環境を保持"
+            return (
+                "登録worktreeを確認できないため環境を保持。"
+                "次の操作: git worktree list --porcelainで対象の登録を確認し、同じscoreコマンドを再実行する"
+            )
         result = resources.cleanup_regenerable(worktree, references=functools.cache(resources.process_references))
+        if result["retained"]:
+            result["next_action"] = (
+                "保持対象の再生成入力・使用参照・アクセス権を確認し、"
+                "消費工程と使用プロセスの終了後に同じscoreコマンドを再実行する"
+            )
         return json.dumps(result, ensure_ascii=False)
     except (OSError, RuntimeError) as error:
-        return f"再生成環境の回収を保留（次回scoreで再試行）: {error}"
+        return f"再生成環境の回収を保留: {error}。次の操作: 対象のGit登録とアクセス権を確認し、同じscoreコマンドを再実行する"
 
 
 def _cleanup_scored(case: _Case, table: pathlib.Path, *, retain: bool) -> dict[str, str]:

@@ -120,7 +120,7 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
         return result
 
     def unreadable(error: OSError) -> None:
-        result["retained"].append({"path": str(error.filename), "reason": f"走査不能、次回掃引で再試行: {error}"})
+        result["retained"].append({"path": str(error.filename), "reason": f"走査不能: {error}"})
 
     for directory, children, _files in os.walk(root, followlinks=False, onerror=unreadable):
         parent = pathlib.Path(directory)
@@ -166,5 +166,5 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
                 shutil.rmtree(path)
                 result["removed"].append(str(path))
             except (OSError, subprocess.SubprocessError) as error:
-                result["retained"].append({"path": str(path), "reason": f"回収失敗、次回掃引で再試行: {error}"})
+                result["retained"].append({"path": str(path), "reason": f"回収失敗: {error}"})
     return result
