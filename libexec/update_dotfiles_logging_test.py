@@ -98,6 +98,7 @@ def test_logs_cli_shows_latest_update_only(logs_path: pathlib.Path) -> None:
     assert not result.stderr
 
 
+@pytest.mark.windows
 def test_update_parent_and_post_apply_child_can_rotate_the_same_log(
     logs_path: pathlib.Path,
     tmp_path: pathlib.Path,
