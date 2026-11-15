@@ -24,27 +24,59 @@ function Invoke-UpdateStage {
     }
     try {
         [void]$process.Start()
+        # 終了と列挙が競合しても、回収完了まで起点PIDを別世代へ再利用させない。
+        [void]$process.Handle
         if ($Probe) { $outputTask = $process.StandardOutput.ReadToEndAsync() }
         if (-not $process.WaitForExit($Seconds * 1000)) {
             try {
-                # 探索結果のstdoutへtaskkillの成功文を混ぜると、cmdが文面をPythonパスとして実行してしまう。
-                $killer = New-Object System.Diagnostics.Process
-                $killer.StartInfo.FileName = 'taskkill.exe'
-                $killer.StartInfo.Arguments = "/PID $($process.Id) /T /F"
-                $killer.StartInfo.UseShellExecute = $false
-                $killer.StartInfo.CreateNoWindow = $true
-                $killer.StartInfo.RedirectStandardOutput = $true
-                $killer.StartInfo.RedirectStandardError = $true
+                $owned = @{}
+                $owned[$process.Id] = $process
                 try {
-                    [void]$killer.Start()
-                    $killOutput = $killer.StandardOutput.ReadToEndAsync()
-                    $killError = $killer.StandardError.ReadToEndAsync()
-                    if (-not $killer.WaitForExit(10000)) {
-                        $killer.Kill()
-                        throw 'taskkillが完了しませんでした'
+                    # Windowsは親の終了後もPPIDを保持する。世代を保持した全起点から毎回辿り直す。
+                    for ($round = 0; $round -lt 10; $round++) {
+                        $entries = @(CimCmdlets\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop)
+                        do {
+                            $added = $false
+                            foreach ($entry in $entries) {
+                                if ($owned.ContainsKey([int]$entry.ProcessId) -or -not $owned.ContainsKey([int]$entry.ParentProcessId)) { continue }
+                                $parent = $owned[[int]$entry.ParentProcessId]
+                                if ($entry.CreationDate.ToUniversalTime() -lt $parent.StartTime.ToUniversalTime()) { continue }
+                                $child = $null
+                                $retained = $false
+                                try {
+                                    $child = [System.Diagnostics.Process]::GetProcessById([int]$entry.ProcessId)
+                                    [void]$child.Handle
+                                    # CIMの時刻はマイクロ秒までなので、100ns単位のStartTimeを同じ精度へそろえる。
+                                    $createdTicks = $child.StartTime.ToUniversalTime().Ticks
+                                    if (($createdTicks - ($createdTicks % 10)) -ne $entry.CreationDate.ToUniversalTime().Ticks) { continue }
+                                    $owned[$child.Id] = $child
+                                    $retained = $true
+                                    $added = $true
+                                } catch [System.ArgumentException] {
+                                    # snapshot取得後に消滅した候補への停止は不要。再利用先は次の一覧で所属を判定する。
+                                    continue
+                                } catch {
+                                    if ($null -ne $child -and $child.HasExited) { continue }
+                                    throw
+                                } finally {
+                                    if ($null -ne $child -and -not $retained) { $child.Dispose() }
+                                }
+                            }
+                        } while ($added)
+                        $alive = @($owned.Values | Where-Object { -not $_.HasExited })
+                        if (-not $alive.Count) { break }
+                        foreach ($target in $alive) {
+                            try { $target.Kill() }
+                            catch { if (-not $target.HasExited) { throw } }
+                        }
+                        foreach ($target in $alive) {
+                            if (-not $target.WaitForExit(1000)) { throw "PID=$($target.Id)が残っています" }
+                        }
                     }
-                    if ($killer.ExitCode -ne 0 -or -not $process.WaitForExit(10000)) { throw "子孫が残っています: $($killOutput.Result) $($killError.Result)" }
-                } finally { $killer.Dispose() }
+                    if ($round -eq 10) { throw '子孫の生成が止まりませんでした' }
+                } finally {
+                    foreach ($target in $owned.Values) { if ($target -ne $process) { $target.Dispose() } }
+                }
             } catch {
                 throw [System.TimeoutException]::new("PID=$($process.Id)の子孫を回収できません。表示されたPIDを確認して終了させてください: $_")
             }

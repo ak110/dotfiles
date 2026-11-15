@@ -7,6 +7,7 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import time
 import uuid
 from collections.abc import Generator
 
@@ -21,7 +22,7 @@ _PS = shutil.which("powershell.exe") or shutil.which("pwsh")
 sys.path.insert(0, str(_ROOT / "libexec"))
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
 
-# 同じ代用品で、PowerShellの実Process起動・WaitForExit・taskkillまで通す。
+# 同じ代用品で、PowerShellの実Process起動・待機・子孫回収まで通す。
 _NATIVE_SOURCE = r"""
 using System;
 using System.Diagnostics;
@@ -30,9 +31,21 @@ using System.Threading;
 public class Program {
     public static int Main(string[] args) {
         string stage = "";
+        string self = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        if (args.Length > 0 && args[0] == "--middle") {
+            using (Process child = Process.Start(new ProcessStartInfo(self, "--child") { UseShellExecute=false })) {
+                string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), child.Id.ToString());
+                while (!File.Exists(marker)) Thread.Sleep(1);
+            }
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "--child") {
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
                 Process.GetCurrentProcess().Id.ToString()), "child");
+            if (Environment.GetEnvironmentVariable("INJECT_MODE") == "stale") {
+                while (!File.Exists(Environment.GetEnvironmentVariable("RELEASE_CHILD"))) Thread.Sleep(1);
+                return 0;
+            }
             Thread.Sleep(60000); return 0;
         }
         if (args.Length > 0 && args[0] == "-NoProfile")
@@ -49,10 +62,23 @@ public class Program {
         }
         if (stage != Environment.GetEnvironmentVariable("INJECT_STAGE")) return 0;
         if (Environment.GetEnvironmentVariable("INJECT_MODE") == "exit") return 17;
-        string self = System.Reflection.Assembly.GetExecutingAssembly().Location;
+        if (Environment.GetEnvironmentVariable("INJECT_MODE") == "unlinked") {
+            using (Process middle = Process.Start(new ProcessStartInfo(self, "--middle") { UseShellExecute=false })) {
+                middle.WaitForExit();
+            }
+            File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
+                Process.GetCurrentProcess().Id.ToString()), "parent");
+            File.WriteAllText(Environment.GetEnvironmentVariable("TREE_READY"), "ready");
+            Thread.Sleep(60000); return 0;
+        }
         using (Process child = Process.Start(new ProcessStartInfo(self, "--child") { UseShellExecute=false })) {
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
                 Process.GetCurrentProcess().Id.ToString()), "parent");
+            if (Environment.GetEnvironmentVariable("INJECT_MODE") == "orphan") {
+                string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), child.Id.ToString());
+                while (!File.Exists(marker)) Thread.Sleep(1);
+                return 17;
+            }
             Thread.Sleep(60000);
         }
         return 0;
@@ -139,6 +165,24 @@ def _project(tmp_path: pathlib.Path, native: pathlib.Path, stage: str, mode: str
     return root, environment
 
 
+def _invoke_bootstrap(script: pathlib.Path, environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    """残存の負例でも継承されたpipeを待たずに、実PS入口の結果を取得する。"""
+    command = [
+        str(_PS),
+        "-NoProfile",
+        "-File",
+        str(script),
+        str(pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"),
+        "-PrintPython",
+    ]
+    output, error = script.with_suffix(".stdout"), script.with_suffix(".stderr")
+    with output.open("w", encoding="utf-8") as stdout, error.open("w", encoding="utf-8") as stderr:
+        result = subprocess.run(command, env=environment, stdout=stdout, stderr=stderr, check=False, timeout=30)
+    return subprocess.CompletedProcess(
+        command, result.returncode, output.read_text(encoding="utf-8"), error.read_text(encoding="utf-8")
+    )
+
+
 @pytest.mark.parametrize("stage", ["uv-install", "uv-self", "python-upgrade", "python-install"])
 @pytest.mark.parametrize("mode", ["exit", "timeout"])
 def test_windows_bootstrap_native_failure_boundaries(
@@ -196,7 +240,7 @@ def test_windows_bootstrap_native_failure_boundaries(
 
 
 def test_windows_cmd_probe_hang_reaps_descendants(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
-    """実cmd入口から探索を停止させ、実taskkillが親孫を回収しパスを渡さず終了1になる。"""
+    """実cmd入口から探索を停止させ、親孫を回収しパスを渡さず終了1になる。"""
     root, environment = _project(tmp_path, native_program, "probe", "timeout")
     (root / "bin").mkdir()
     launcher = root / "bin/update-dotfiles.cmd"
@@ -217,3 +261,161 @@ def test_windows_cmd_probe_hang_reaps_descendants(tmp_path: pathlib.Path, native
         assert "124" in result.stderr
         assert any(marker.read_text() == "child" for marker in pids.iterdir())
         assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+
+
+def test_windows_bootstrap_residual_aborts(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
+    """終了要求を拒否されて子孫が残るときは本体を起動しない。"""
+    root, environment = _project(tmp_path, native_program, "uv-self", "timeout")
+    script = root / "libexec/update_bootstrap.ps1"
+    bootstrap = script.read_text(encoding="utf-8-sig")
+    bootstrap = bootstrap.replace("$target.Kill()", "throw '試験用の終了拒否'")
+    script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
+    pids = pathlib.Path(environment["PIDS"])
+    # 残存させる代用品がpipeを継承するため、試験側のcommunicateを待たせない実ファイルへ出力する。
+    with (
+        _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"),
+        (tmp_path / "stdout").open("w", encoding="utf-8") as stdout,
+        (tmp_path / "stderr").open("w", encoding="utf-8") as stderr,
+    ):
+        result = subprocess.run(
+            [str(_PS), "-NoProfile", "-File", str(script), str(pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe")],
+            env=environment,
+            stdout=stdout,
+            stderr=stderr,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+        )
+        stdout.flush()
+        stderr.flush()
+        assert result.returncode == 1, (tmp_path / "stderr").read_text(encoding="utf-8")
+        assert not (tmp_path / "stdout").read_text(encoding="utf-8").strip()
+        assert "回収できません" in (tmp_path / "stderr").read_text(encoding="utf-8")
+        assert any(psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+
+
+@pytest.mark.parametrize("mode", ["exit", "orphan"])
+def test_windows_bootstrap_exit_at_timeout_reaps_orphans(
+    tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str
+) -> None:
+    """時間切れ観測の直後に親が終了しても、残る子だけを回収して本体へ進む。"""
+    root, environment = _project(tmp_path, native_program, "uv-self", mode)
+    script = root / "libexec/update_bootstrap.ps1"
+    bootstrap = script.read_text(encoding="utf-8-sig")
+    # OS負荷に依存せず、待機のfalseと回収の間に自然終了する順序を固定する。
+    bootstrap = bootstrap.replace(
+        "if (-not $process.WaitForExit(1000)) {",
+        "if (-not (& { if ($Name -eq 'uvの自己更新') { "
+        "if (-not $process.WaitForExit(10000)) { throw '代用品が終了しません' }; "
+        "return $false }; return $process.WaitForExit(1000) })) {",
+        1,
+    )
+    script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
+    pids = pathlib.Path(environment["PIDS"])
+    with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
+        result = _invoke_bootstrap(script, environment)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.strip() == environment["PYTHON_PATH"]
+        assert "124" in result.stderr
+        if mode == "orphan":
+            assert any(marker.read_text() == "child" for marker in pids.iterdir())
+        assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+
+
+def test_windows_bootstrap_snapshot_child_exit_continues(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
+    """実CIM一覧に載った子を自然終了させ、世代取得前の消滅で更新を中断しない。"""
+    root, environment = _project(tmp_path, native_program, "uv-self", "stale")
+    environment["RELEASE_CHILD"] = str(tmp_path / "release")
+    script = root / "libexec/update_bootstrap.ps1"
+    bootstrap = script.read_text(encoding="utf-8-sig").replace(
+        "CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop", "Get-TestSnapshot"
+    )
+    snapshot = r"""
+$script:released = $false
+function Get-TestSnapshot {
+    if ($script:released) { return @(CimCmdlets\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop) }
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    do {
+        $markers = @(Get-ChildItem -LiteralPath $env:PIDS | Where-Object { (Get-Content $_.FullName -Raw) -eq 'child' })
+        if ([DateTime]::UtcNow -gt $deadline) { throw '子の準備が終わりません' }
+        if (-not $markers.Count) { Start-Sleep -Milliseconds 10 }
+    } while (-not $markers.Count)
+    $child = [System.Diagnostics.Process]::GetProcessById([int]$markers[0].Name)
+    try {
+        $entries = @(CimCmdlets\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop)
+        if (-not @($entries | Where-Object { $_.ProcessId -eq $child.Id }).Count) { throw '実CIM一覧に子がありません' }
+        [IO.File]::WriteAllText($env:RELEASE_CHILD, 'exit')
+        if (-not $child.WaitForExit(10000)) { throw '子が自然終了しません' }
+        $script:released = $true
+        return $entries
+    } finally { $child.Dispose() }
+}
+"""
+    script.write_text(
+        bootstrap.replace("function Invoke-UpdateStage {", snapshot + "\nfunction Invoke-UpdateStage {"),
+        encoding="utf-8-sig",
+        newline="\r\n",
+    )
+    pids = pathlib.Path(environment["PIDS"])
+    with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
+        result = _invoke_bootstrap(script, environment)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.strip() == environment["PYTHON_PATH"]
+        assert "124" in result.stderr
+        assert pathlib.Path(environment["RELEASE_CHILD"]).exists()
+        assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+
+
+def test_windows_bootstrap_exited_intermediate_matches_taskkill_boundary(
+    tmp_path: pathlib.Path, native_program: pathlib.Path
+) -> None:
+    """中間親が先に消えた同じツリーで、旧taskkill方式より回収範囲を悪化させない。"""
+    remaining = []
+    for boundary in ("taskkill", "bootstrap"):
+        root, environment = _project(tmp_path / boundary, native_program, "uv-self", "unlinked")
+        ready = tmp_path / boundary / "ready"
+        environment["TREE_READY"] = str(ready)
+        script = root / "libexec/update_bootstrap.ps1"
+        pids = pathlib.Path(environment["PIDS"])
+        with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
+            if boundary == "taskkill":
+                process = subprocess.Popen(  # pylint: disable=consider-using-with
+                    [str(tmp_path / boundary / "powershell-stub.exe"), "-NoProfile"],
+                    env=environment,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                try:
+                    deadline = time.monotonic() + 10
+                    while not ready.exists():
+                        assert time.monotonic() < deadline, "中間親の終了待ちが完了しない"
+                        time.sleep(0.01)
+                    # 26faf04cbの停止境界（/T /Fと直接の子の終了確認）を同じ実Win32ツリーへ適用する。
+                    result = subprocess.run(
+                        ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"], capture_output=True, check=False, timeout=10
+                    )
+                    assert result.returncode == 0, result.stdout + result.stderr
+                    process.wait(timeout=10)
+                finally:
+                    if process.poll() is None:
+                        process.kill()
+                        process.wait(timeout=10)
+            else:
+                bootstrap = script.read_text(encoding="utf-8-sig")
+                bootstrap = bootstrap.replace(
+                    "$process.WaitForExit(1000)",
+                    "(& { if ($Name -eq 'uvの自己更新') { $deadline = [DateTime]::UtcNow.AddSeconds(10); "
+                    "while (-not (Test-Path -LiteralPath $env:TREE_READY)) { "
+                    "if ([DateTime]::UtcNow -gt $deadline) { throw '中間親の終了待ちが完了しない' }; "
+                    "Start-Sleep -Milliseconds 10 } }; "
+                    "return $process.WaitForExit(100) })",
+                    1,
+                )
+                script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
+                observed = _invoke_bootstrap(script, environment)
+                assert observed.returncode == 0, observed.stdout + observed.stderr
+                assert "124" in observed.stderr
+            remaining.append(
+                sum(marker.read_text() == "child" and psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+            )
+    assert remaining[1] <= remaining[0], f"旧taskkillの残存数={remaining[0]}, 修正版の残存数={remaining[1]}"
