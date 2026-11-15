@@ -117,8 +117,3 @@ def stop(owner: object) -> None:
 def snapshot() -> dict[str, float]:
     """段階前後の差を得るため、累計CPU秒数を返す。"""
     return {"gc": _state.gc_cpu, "import": _state.import_cpu}
-
-
-def diagnostic_gc_work_cpu() -> float:
-    """控除しないGCの累計を、失敗時の帰属診断へ渡す。"""
-    return _state.gc_work_cpu

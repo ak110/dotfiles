@@ -285,6 +285,10 @@ def test_cli_plan_set_rejects_duplicate_paths(repo: tuple[pathlib.Path, str], mo
     assert code == 2, stderr
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="計画2件の実Markdown検査をCLIで2回通し、全計画を合わせた規範パスの受理と欠落拒否を検証する（Linux CI CPU0.595秒）。",
+)
 def test_cli_plan_set_accepts_agent_rule_path_in_any_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

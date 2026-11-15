@@ -17,6 +17,12 @@ from agent_toolkit._testing.launch_requests_support import TaskManager
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.fixture(autouse=True)
+def _without_startup_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """起動前の契約判定を対象とし、別試験が担う資料本文の配送を省く。"""
+    monkeypatch.setattr(launch_requests.read_triggers, "startup_context", lambda *_args, **_kwargs: "")
+
+
 @pytest.mark.parametrize(
     "defect",
     [

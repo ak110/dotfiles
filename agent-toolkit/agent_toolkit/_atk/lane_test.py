@@ -181,6 +181,10 @@ def test_interrupted_lane_can_transfer_to_new_session_without_losing_uncommitted
     assert deleted["removed"] == ["lane-01"]
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason="実Gitの2repo・linked worktreeと3所有sessionを通し、回収後も固定先を共有する最小系列（Linux CI CPU0.538秒）。",
+)
 def test_fixed_placement_is_shared_across_sessions_callers_and_recreation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -65,7 +65,6 @@ _CPU_TIMES = pytest.StashKey[dict[str, float]]()
 _CPU_LIMIT = pytest.StashKey[tuple[float, str]]()
 _CPU_EXCLUSIONS = pytest.StashKey[dict[str, dict[str, float]]]()
 _CPU_GROSS_LIMIT = pytest.StashKey[float]()
-_CPU_TOP_FIXTURE = pytest.StashKey[tuple[str, float]]()
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -81,30 +80,13 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 def _measure_cpu(item: pytest.Item, phase: str) -> Generator[None, object, object]:
     started = time.process_time()
     excluded = cpu_accounting.snapshot()
-    gc_work_started = cpu_accounting.diagnostic_gc_work_cpu()
     try:
         return (yield)
     finally:
         after = cpu_accounting.snapshot()
-        gc_work_finished = cpu_accounting.diagnostic_gc_work_cpu()
         finished = time.process_time()
         item.stash.setdefault(_CPU_TIMES, {})[phase] = finished - started
         item.stash.setdefault(_CPU_EXCLUSIONS, {})[phase] = {key: after[key] - value for key, value in excluded.items()}
-        item.stash[_CPU_EXCLUSIONS][phase]["gc_work"] = gc_work_finished - gc_work_started
-
-
-@pytest.hookimpl(wrapper=True, tryfirst=True)
-def pytest_fixture_setup(fixturedef: pytest.FixtureDef[Any], request: pytest.FixtureRequest) -> Generator[None, object, object]:
-    """setup超過の帰属を確かめる間、最大のfixtureだけを一時保持する。"""
-    started = time.process_time()
-    try:
-        return (yield)
-    finally:
-        elapsed = time.process_time() - started
-        # session fixtureも、それを初めて要求した試験へ対応付ける。
-        item = getattr(request, "_pyfuncitem", None)
-        if isinstance(item, pytest.Item) and elapsed > item.stash.get(_CPU_TOP_FIXTURE, ("", 0.0))[1]:
-            item.stash[_CPU_TOP_FIXTURE] = (fixturedef.argname, elapsed)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
@@ -177,12 +159,9 @@ def pytest_runtest_makereport(
             ]
         )
         if budget >= limit or total >= gross_limit:
-            fixture_name, fixture_cpu = item.stash.get(_CPU_TOP_FIXTURE, ("なし", 0.0))
-            gc_work = sum(row.get("gc_work", 0.0) for row in excluded.values())
             diagnostic = (
                 f"CPU上限: {item.nodeid}: {times}, total={total:.6f}s, excluded={deductions}, "
-                f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}, "
-                f"max_fixture={fixture_name}:{fixture_cpu:.6f}s, gc_work={gc_work:.6f}s（帰属の観測値、判定非使用）。"
+                f"budget={budget:.6f}s, limit={limit}s, gross_limit={gross_limit}s, reason={reason}。"
                 "不要な処理を削減し、必要な実境界には理由付きcpu_limitを指定してください"
             )
             report.sections.append(("CPU上限", diagnostic))
