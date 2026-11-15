@@ -21,7 +21,7 @@ _PS = shutil.which("powershell.exe") or shutil.which("pwsh")
 sys.path.insert(0, str(_ROOT / "libexec"))
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
 
-# 同じ代用品で、PowerShellの実Process起動・WaitForExit・taskkillまで通す。
+# 同じ代用品で、PowerShellの実Process起動・待機・子孫回収まで通す。
 _NATIVE_SOURCE = r"""
 using System;
 using System.Diagnostics;
@@ -53,6 +53,11 @@ public class Program {
         using (Process child = Process.Start(new ProcessStartInfo(self, "--child") { UseShellExecute=false })) {
             File.WriteAllText(Path.Combine(Environment.GetEnvironmentVariable("PIDS"),
                 Process.GetCurrentProcess().Id.ToString()), "parent");
+            if (Environment.GetEnvironmentVariable("INJECT_MODE") == "orphan") {
+                string marker = Path.Combine(Environment.GetEnvironmentVariable("PIDS"), child.Id.ToString());
+                while (!File.Exists(marker)) Thread.Sleep(1);
+                return 17;
+            }
             Thread.Sleep(60000);
         }
         return 0;
@@ -196,7 +201,7 @@ def test_windows_bootstrap_native_failure_boundaries(
 
 
 def test_windows_cmd_probe_hang_reaps_descendants(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
-    """実cmd入口から探索を停止させ、実taskkillが親孫を回収しパスを渡さず終了1になる。"""
+    """実cmd入口から探索を停止させ、親孫を回収しパスを渡さず終了1になる。"""
     root, environment = _project(tmp_path, native_program, "probe", "timeout")
     (root / "bin").mkdir()
     launcher = root / "bin/update-dotfiles.cmd"
@@ -216,4 +221,77 @@ def test_windows_cmd_probe_hang_reaps_descendants(tmp_path: pathlib.Path, native
         assert environment["PYTHON_PATH"] not in result.stdout
         assert "124" in result.stderr
         assert any(marker.read_text() == "child" for marker in pids.iterdir())
+        assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+
+
+def test_windows_bootstrap_residual_aborts(tmp_path: pathlib.Path, native_program: pathlib.Path) -> None:
+    """終了要求を拒否されて子孫が残るときは本体を起動しない。"""
+    root, environment = _project(tmp_path, native_program, "uv-self", "timeout")
+    script = root / "libexec/update_bootstrap.ps1"
+    bootstrap = script.read_text(encoding="utf-8-sig")
+    bootstrap = bootstrap.replace("$target.Kill()", "throw '試験用の終了拒否'")
+    script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
+    pids = pathlib.Path(environment["PIDS"])
+    # 残存させる代用品がpipeを継承するため、試験側のcommunicateを待たせない実ファイルへ出力する。
+    with (
+        _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"),
+        (tmp_path / "stdout").open("w", encoding="utf-8") as stdout,
+        (tmp_path / "stderr").open("w", encoding="utf-8") as stderr,
+    ):
+        result = subprocess.run(
+            [str(_PS), "-NoProfile", "-File", str(script), str(pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe")],
+            env=environment,
+            stdout=stdout,
+            stderr=stderr,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+        )
+        stdout.flush()
+        stderr.flush()
+        assert result.returncode == 1, (tmp_path / "stderr").read_text(encoding="utf-8")
+        assert not (tmp_path / "stdout").read_text(encoding="utf-8").strip()
+        assert "回収できません" in (tmp_path / "stderr").read_text(encoding="utf-8")
+        assert any(psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
+
+
+@pytest.mark.parametrize("mode", ["exit", "orphan"])
+def test_windows_bootstrap_exit_at_timeout_reaps_orphans(
+    tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str
+) -> None:
+    """時間切れ観測の直後に親が終了しても、残る子だけを回収して本体へ進む。"""
+    root, environment = _project(tmp_path, native_program, "uv-self", mode)
+    script = root / "libexec/update_bootstrap.ps1"
+    bootstrap = script.read_text(encoding="utf-8-sig")
+    # OS負荷に依存せず、待機のfalseと回収の間に自然終了する順序を固定する。
+    bootstrap = bootstrap.replace(
+        "if (-not $process.WaitForExit(1000)) {",
+        "if (-not (& { if ($Name -eq 'uvの自己更新') { "
+        "if (-not $process.WaitForExit(10000)) { throw '代用品が終了しません' }; "
+        "return $false }; return $process.WaitForExit(1000) })) {",
+        1,
+    )
+    script.write_text(bootstrap, encoding="utf-8-sig", newline="\r\n")
+    pids = pathlib.Path(environment["PIDS"])
+    with _owned_native_pids(pids, pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"):
+        result = subprocess.run(
+            [
+                str(_PS),
+                "-NoProfile",
+                "-File",
+                str(script),
+                str(pathlib.Path(environment["USERPROFILE"]) / ".local/bin/uv.exe"),
+                "-PrintPython",
+            ],
+            env=environment,
+            capture_output=True,
+            encoding="utf-8",
+            check=False,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.strip() == environment["PYTHON_PATH"]
+        assert "124" in result.stderr
+        if mode == "orphan":
+            assert any(marker.read_text() == "child" for marker in pids.iterdir())
         assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())

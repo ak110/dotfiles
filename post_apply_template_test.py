@@ -519,7 +519,7 @@ public class Program {
         assert ("pre-release" in result.stderr) is preview
 
 
-@pytest.mark.skipif(POWERSHELL is None or os.name == "nt", reason="pwshで時間切れとtaskkill代用を観測する")
+@pytest.mark.skipif(POWERSHELL is None or os.name == "nt", reason="pwshで直接の子の時間切れと回収を観測する")
 def test_job_python_probe_timeout_reclaims_process(tmp_path: Path) -> None:
     """jobが使うbootstrap探索は、実際に停止したnative子を回収して有限時間で失敗する。"""
     uv = tmp_path / "uv"
@@ -529,12 +529,11 @@ def test_job_python_probe_timeout_reclaims_process(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     uv.chmod(0o755)
-    killer = tmp_path / "taskkill.exe"
-    killer.write_text('#!/usr/bin/env bash\necho taskkill-success\nkill -KILL "$2"\n', encoding="utf-8")
-    killer.chmod(0o755)
     bootstrap = tmp_path / "update_bootstrap.ps1"
     # 実時間の試験だけ待機値を縮め、同じProcess/WaitForExit/回収経路を使う。
     text = _read(REPO_ROOT / "libexec/update_bootstrap.ps1").replace("$Seconds * 1000", "100")
+    # LinuxにはCIMが無い。この代用品はexecした直接の子だけなので、子孫一覧は空とする。
+    text = text.replace("CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop", "@()")
     bootstrap.write_text(text, encoding="utf-8-sig")
     shutil.copy2(REPO_ROOT / "libexec/locking_process.ps1", tmp_path / "locking_process.ps1")
     environment = os.environ.copy()
