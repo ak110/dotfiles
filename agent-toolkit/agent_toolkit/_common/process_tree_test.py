@@ -45,6 +45,10 @@ def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch):
 
 @pytest.mark.parametrize("ownership", ["unknown", "known", "finished"])
 @pytest.mark.parametrize("depth", [1, 2])
+@pytest.mark.cpu_limit(
+    3.0,
+    reason="実際に終了した親の既知/未知の子の世代を検収する。Linux所有CPU最大0.414秒と既存Windows同種境界最大2.03秒に基づく。",
+)
 def test_owned_stop_after_parent_exit_preserves_known_or_unconfirmed_ownership(ownership, depth, host_environ):
     """起点をwaitした後も既知の子を回収し、未観測の所有を成功へ変換しない。"""
     leaf = "import time; time.sleep(30)"

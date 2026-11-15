@@ -57,6 +57,15 @@ def test_public_small_operation_does_not_resolve_unselected_material_or_initiali
             cold.setattr(markdown_it, "MarkdownIt", unexpected_initialization)
             importlib.reload(task_document_launch)
         with monkeypatch.context() as operation:
+            # 非選択行の解決抑止を確かめるため、非該当の宣言1行だけを入力にする。
+            source = tmp_path / "SKILL.md"
+            source.write_text("# 非該当の宣言\n", encoding="utf-8")
+            rows = [
+                read_triggers.ReadTrigger(
+                    source, 1, "操作", ("tool:Write",), (), material="`unselected.md`", plugin_root=tmp_path
+                )
+            ]
+            operation.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
             operation.setattr(read_triggers, "material_targets", unexpected_initialization)
             operation.setattr(task_document_launch, "_markdown", unexpected_initialization)
             result = pretooluse_support.run_hook_with_notice_details(

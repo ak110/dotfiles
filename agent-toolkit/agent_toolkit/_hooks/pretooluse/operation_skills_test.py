@@ -15,7 +15,7 @@ import pytest
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers, session_state
 from agent_toolkit._hooks import document_reads, plugin_resources, rules_context
-from agent_toolkit._hooks.pretooluse import operation_skills
+from agent_toolkit._hooks.pretooluse import operation_skills, read_delivery
 from agent_toolkit._testing.document_delivery import run_hook
 from agent_toolkit._testing.pretooluse_support import (
     _additional_context,
@@ -108,8 +108,12 @@ def test_non_search_commands_do_not_warn(command: str) -> None:
         ("-ne-R /dev/null", False),
     ],
 )
-def test_grep_long_values_preserve_public_search_guidance(tmp_path, codex, arguments, recursive):
+def test_grep_long_values_preserve_public_search_guidance(tmp_path, monkeypatch, codex, arguments, recursive):
     """長形式の値が終端や再帰指定と同形でも、実際の再帰指定だけで検索基準を案内する。"""
+    # grepの引数判定に関係しない全規範の解析を避け、検索操作の宣言だけを渡す。
+    guide = pathlib.Path(__file__).resolve().parents[4] / "agent-basics/skills/search/SKILL.md"
+    rows = [read_triggers.ReadTrigger(guide, 1, "操作", ("search",), (guide,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     payload = _bash("grep " + arguments, "grep-value-boundary", **({"turn_id": "t"} if codex else {}))
     result = _run(payload, _plan_file_state_env(tmp_path))
     assert result.returncode == 0 and not result.stderr
