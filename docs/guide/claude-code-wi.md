@@ -61,7 +61,7 @@ atk wi answer <UWIファイル名> '<回答本文>'
 ## 処理対象と検証OS
 
 `atk config repos`で登録済みリポジトリと属性を一覧表示する。
-`edit`は編集の許可、`process_loop`は常駐処理の対象、`platforms`はテストを実行するOSを表す。
+`edit`は編集の許可、`process_loop`はprocess-loop（`atk wi process-loop`）の対象、`platforms`はテストを実行するOSを表す。
 `platforms`を省略した登録は`linux,windows`となり、リポジトリの内容から自動判定される値ではない。
 テストをWindowsで実行する対象は、次のように変更できる。
 
@@ -75,7 +75,7 @@ Linux上のエージェントは、その環境で可能なクロスビルドな
 gv・lcはLinuxでも開発用のコンパイル確認ができるため、`platforms windows`はLinuxでの作業自体を禁止する設定ではない。
 Linuxで行うテストも検証へ含めたい場合は`--platforms linux,windows`を使う。
 
-## 常駐処理と再開予約
+## process-loopと再開予約
 
 `atk wi process-loop`は登録した対象を継続処理する。
 各対象は独立して終了・検収されるため、別の対象が処理中でも、終了した対象の新着を次の実行へ渡せる。
