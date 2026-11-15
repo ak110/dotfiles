@@ -36,6 +36,7 @@ from session_evidence_stats import (
     _stats_events,
 )
 from session_evidence_tool_calls import comparison_material_events, definition_body_read_events, resource_usage_events
+from session_evidence_tool_calls_records import _conversation_body
 from session_evidence_user_events import (
     _conversation_events,
 )
@@ -77,6 +78,7 @@ def _bundle_events(
     compaction_record_dir: Path,
     *,
     after: Path | None = None,
+    conversation_output: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """4走査を1回の記録読み込みで行い、走査ごとの全量をファイルへ書いて要約だけを返す。
 
@@ -89,6 +91,8 @@ def _bundle_events(
     その走査を単独で実行した出力から未解決記録のイベントと`record-provenance`を除き、全収集記録の
     `record-provenance`を加えたものと一致する。単独実行の標準出力は結果が参照する記録の由来だけを返すが、
     `session_review_prepare.py`は`timeline.jsonl`から候補の記録の由来を取得するため、ファイルは全記録の由来を保つ。
+    conversationのツール本文は原文量と抜粋だけを保存し、表示用の入力は呼出側へメモリー上で渡す。
+    結果全文の取得はdetailと原本位置へ分離する。
     """
     if not directory.is_dir():
         return [
@@ -140,8 +144,24 @@ def _bundle_events(
         resolved, _candidate_evidence_events(collected, candidates, timeline, warnings, hook_notices)
     )
     events: list[dict[str, Any]] = []
-    scans = (timeline, warnings, stats, hook_notices, candidates, candidate_evidence, _conversation_events(incremental))
+    conversation = _conversation_events(incremental, compact=True)
+    if conversation_output is not None:
+        conversation_output.extend([*metadata, *conversation])
+    scans = (
+        timeline,
+        warnings,
+        stats,
+        hook_notices,
+        candidates,
+        candidate_evidence,
+        conversation,
+    )
     for filename, scan_events in zip(_BUNDLE_SCAN_FILENAMES, scans, strict=True):
+        if filename == "conversation.jsonl":
+            scan_events = [
+                {**event, **_conversation_body(event["text"], True)} if event.get("kind") == "tool-call" else event
+                for event in scan_events
+            ]
         path = resolved / filename
         path.write_text(
             "".join(f"{json.dumps(event, ensure_ascii=False)}\n" for event in scan_events),
@@ -196,6 +216,45 @@ def _in_scope(event: dict[str, Any], scope: dict[str, Any]) -> bool:
     return any(
         _in_scope(item, scope) for name in ("locators", "calls") for item in event.get(name, []) if isinstance(item, dict)
     )
+
+
+def _conversation_bundle(
+    collected: list[_CollectedRecord],
+    unresolved: list[_UnresolvedRecord],
+    directory: Path,
+    output: list[dict[str, Any]],
+    *,
+    after: Path | None,
+    saved_scope: Path | None,
+) -> tuple[list[dict[str, Any]], int]:
+    """会話専用では分析を走査せず、再取得の範囲だけを保存する。
+
+    本文は表示を選ぶ呼出側へメモリー上で渡す。継続は保存scopeの原本接頭辞から再構成するため、
+    全担当の本文キャッシュやページごとの全量コピーを持たない。
+    """
+    try:
+        if saved_scope is None:
+            scope = session_review.scope_records(collected, after=after)
+        else:
+            scope = session_review.read(saved_scope)
+            by_id = {item.record_id: item for item in collected}
+            collected = [
+                by_id[record_id]._replace(
+                    records=[row for row in by_id[record_id].records if row.line <= entry["through_line"]]
+                )
+                for record_id, entry in scope["records"].items()
+            ]
+            session_review.scope_records(collected, after=saved_scope)
+        session_review.write(directory / "scope.json", scope)
+    except (OSError, ValueError, KeyError) as error:
+        return [_error_event(str(error), next_action="元記録と保存scopeを確認し、初回取得からやり直す")], 2
+    incremental = [
+        item._replace(records=[row for row in item.records if row.line > scope["records"][item.record_id]["after_line"]])
+        for item in collected
+    ]
+    output.extend(_collection_events(collected, [], recoveries=False))
+    output.extend(_conversation_events(incremental, compact=True))
+    return [*_unresolved_events(unresolved), *_recovery_events(collected)], 0
 
 
 def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -14,17 +14,16 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import functools
 import json
-import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 from typing import Any
 
-import psutil
 from agent_toolkit._atk import review_table
+from agent_toolkit._atk.managed_temp import resources
 from agent_toolkit._atk.wi import frontmatter, headings, sync
 from agent_toolkit._atk.wi.constants import normalized_wi_type
 from agent_toolkit._common.json_lines import split_lines
@@ -496,62 +495,23 @@ def _parse_repos(values: list[str]) -> dict[str, pathlib.Path]:
 
 
 def _cleanup_retained_environment(worktree: pathlib.Path) -> str:
-    """コードを保持した評価worktreeの、再生成できる未使用venvだけを回収する。"""
-    target = worktree / ".venv"
+    """コードを保持した評価worktreeの、未使用の再生成環境を回収する。"""
     try:
-        if target.is_symlink() or not target.is_dir():
-            return ".venvは実ディレクトリでないため保持"
-        if any(not (worktree / name).is_file() for name in ("pyproject.toml", "uv.lock")):
-            return ".venvの再生成指定がないため保持"
-        config = target / "pyvenv.cfg"
-        if config.is_symlink() or not config.is_file():
-            return "pyvenv.cfgで識別できないため保持"
-        if _git(worktree, "ls-files", "--", ".venv") or _git(worktree, "ls-tree", "HEAD", "--", ".venv"):
-            return "Git追跡された.venvを保持"
         registered = _git(worktree, "worktree", "list", "--porcelain")
         if f"worktree {worktree}" not in registered.splitlines():
-            return "登録worktreeを確認できないため.venvを保持"
-        identity = target.stat()
-        username = psutil.Process().username()
-        prefix = os.path.normcase(str(target))
-        for process in psutil.process_iter():
-            try:
-                if process.username() != username or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
-                    continue
-                command = process.cmdline()
-                references = list(command)
-                executable = ""
-                try:
-                    executable = process.exe()
-                    references.append(executable)
-                except psutil.AccessDenied:
-                    if not command:
-                        return "プロセスの使用参照を確認できないため.venvを保持"
-                try:
-                    cwd = process.cwd()
-                except psutil.AccessDenied:
-                    # cwdを使って環境を暗黙解決するPython/uvだけは、所在が不明なら保持する。
-                    # 無関係なOSサービスのcwd拒否は、このvenvの使用を示さない。
-                    program = pathlib.Path(executable or (command[0] if command else "")).name.lower()
-                    if not command or program.startswith(("python", "pypy")) or program in {"uv", "uv.exe"}:
-                        return "プロセスの使用参照を確認できないため.venvを保持"
-                    cwd = ""
-                references.append(cwd)
-                # uvなどはcwdの.venvを暗黙に使い、argvへ絶対パスを載せない。
-                if (cwd and pathlib.Path(cwd).is_relative_to(worktree)) or any(
-                    prefix in os.path.normcase(value.replace("/", os.sep)) for value in references
-                ):
-                    return "実行中プロセスが参照する.venvを保持"
-            except psutil.NoSuchProcess:
-                continue
-            except psutil.Error, OSError:
-                return "プロセスの使用参照を確認できないため.venvを保持"
-        if target.is_symlink() or target.stat() != identity:
-            return "確認中に変化した.venvを保持"
-        shutil.rmtree(target)
-        return "未使用の再生成可能な.venvを回収"
-    except (OSError, RuntimeError, psutil.Error) as error:
-        return f".venvの回収を保留（次回scoreで再試行）: {error}"
+            return (
+                "登録worktreeを確認できないため環境を保持。"
+                "次の操作: git worktree list --porcelainで対象の登録を確認し、同じscoreコマンドを再実行する"
+            )
+        result = resources.cleanup_regenerable(worktree, references=functools.cache(resources.process_references))
+        if any(item["retryable"] for item in result["retained"]):
+            result["next_action"] = (
+                "保持対象の再生成入力・使用参照・アクセス権を確認し、"
+                "消費工程と使用プロセスの終了後に同じscoreコマンドを再実行する"
+            )
+        return json.dumps(result, ensure_ascii=False)
+    except (OSError, RuntimeError) as error:
+        return f"再生成環境の回収を保留: {error}。次の操作: 対象のGit登録とアクセス権を確認し、同じscoreコマンドを再実行する"
 
 
 def _cleanup_scored(case: _Case, table: pathlib.Path, *, retain: bool) -> dict[str, str]:

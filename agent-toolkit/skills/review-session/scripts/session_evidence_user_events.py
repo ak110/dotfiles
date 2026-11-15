@@ -30,6 +30,7 @@ from session_evidence_records import _codex_record_thread_id, _collect_records
 from session_evidence_tool_calls import (
     _conversation_tool_calls,
 )
+from session_evidence_tool_calls_records import _conversation_body
 
 from agent_toolkit._common import message_format
 
@@ -175,9 +176,9 @@ def _query_user_events(
     return events
 
 
-def _conversation_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
+def _conversation_events(collected: list[_CollectedRecord], *, compact: bool = False) -> list[dict[str, Any]]:
     """収集できた全担当の発話・操作・結果を、記録別の前後関係と全文を保って返す。"""
-    return [event for item in collected for event in _record_conversation_events(item)]
+    return [event for item in collected for event in _record_conversation_events(item, compact=compact)]
 
 
 def last_compaction_line(records: list[_Record]) -> int:
@@ -213,7 +214,7 @@ def extract_session_context(path: Path) -> dict[str, Any]:
     }
 
 
-def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str, Any]]:
+def _record_conversation_events(main_record: _CollectedRecord, *, compact: bool = False) -> list[dict[str, Any]]:
     """1記録の通読イベントを、元の行順で返す。"""
     token = _TEXT_LIMIT.set(None)
     try:
@@ -240,7 +241,7 @@ def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str,
                         "line": event.get("line"),
                         "timestamp": event.get("timestamp"),
                         "call_id": event.get("tool"),
-                        "text": text,
+                        **_conversation_body(text, compact),
                     },
                 )
             )
@@ -285,7 +286,7 @@ def _record_conversation_events(main_record: _CollectedRecord) -> list[dict[str,
         )
     ordered.extend(
         (call["line"], 1 if call["kind"] == "tool-call" else 2, {**call, "record": main_record.record_id})
-        for call in _conversation_tool_calls(main_record.records)
+        for call in _conversation_tool_calls(main_record.records, compact=compact)
     )
     ordered.sort(key=lambda item: (item[0], item[1]))
     return [item for _, _, item in ordered]

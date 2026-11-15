@@ -24,7 +24,7 @@ writes_worktree: true
 
 計画の起草と実装を担当したレーン担当スレッドが、専用ブランチの統合と作成した計画の最終化を実施し、AWIの採否を確定する。
 リモートへのpushは委譲元が担当する。
-専用worktreeとブランチは統合後も追加作業に備えて保持し、その回収は、全工程および外部プロセスの完了後に所有登録に基づいて資源を回収する通常の手順や、process-loopの子プロセスの終了後処理で行う。
+専用worktreeとブランチは、統合・最終化の検収と消費工程の終了後に、`../skills/process-wi/references/lane-worktree-management.md`に従って回収する。
 
 担当工程に着手する前に、`${CLAUDE_PLUGIN_ROOT}/share/work-contract-boundaries.md`「工程境界での要求と成果の確認」に従って`全体作業契約`を読み、判定結果を自身の記録に残す。
 

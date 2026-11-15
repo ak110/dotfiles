@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import functools
 import hashlib
 import json
+import logging
 import os
 import pathlib
 import secrets
@@ -19,7 +21,7 @@ import typing
 
 import psutil
 
-from agent_toolkit._atk.managed_temp import creation, paths, permissions
+from agent_toolkit._atk.managed_temp import creation, paths, permissions, resources
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
 from agent_toolkit._common import file_lock, plugin_root_leases, process_identity, session_registry
@@ -345,7 +347,7 @@ def _examine(
         latest, has_git = _latest_update_and_worktree(child, now_ns)
     else:
         latest, has_git = _update_time(metadata, now_ns), False
-    if child in protected_sessions or plugin_root_in_use(child) or _has_live_owner(child):
+    if child in protected_sessions or plugin_root_in_use(child) or has_live_owner(child):
         return False
     if has_git:
         # 登録worktree自身は木全体を保護し、包含する親では無関係な兄弟だけを期限判定する。
@@ -392,7 +394,7 @@ def owner_alive(token: str) -> bool:
         return True
 
 
-def _has_live_owner(area: pathlib.Path) -> bool:
+def has_live_owner(area: pathlib.Path) -> bool:
     """領域か直下の子が記録した作成プロセスが実行中、または記録を読めない場合に真を返す。
 
     セッションの領域は`atk-command-*`などの子に記録を持つため、直下の子まで調べる。
@@ -499,7 +501,7 @@ def _reclaim_space(
                 or has_git
                 or plugin_root_in_use(child)
                 or latest >= now_ns - _PRESSURE_GRACE_NS
-                or _has_live_owner(child)
+                or has_live_owner(child)
             ):
                 continue
         except FileNotFoundError:
@@ -584,6 +586,7 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
     }
     deleted: list[pathlib.Path] = []
     failed: list[tuple[pathlib.Path, str]] = []
+    references = functools.cache(resources.process_references)
     with os.scandir(temp_root) as children:
         listed = sorted(children, key=lambda child: child.name)
     for entry in listed:
@@ -595,6 +598,17 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         if paths.is_link(metadata):
             continue
         try:
+            # 記録の7日保持とは別に、消費が終了した作業環境だけを先に回収する。
+            if (
+                child.is_dir()
+                and child not in protected_sessions
+                and not plugin_root_in_use(child)
+                and not has_live_owner(child)
+            ):
+                cleaned = resources.cleanup_regenerable(child, references=references)
+                deleted.extend(pathlib.Path(path) for path in cleaned["removed"])
+                if cleaned["retained"]:
+                    logging.getLogger(__name__).info("再生成物を保持（次回掃引で再試行）: %s", cleaned["retained"])
             if _examine(state_root, child, metadata, cutoff_ns, now_ns, protected_sessions, deleted):
                 deleted.append(child)
         except (OSError, ManagedTempError) as error:

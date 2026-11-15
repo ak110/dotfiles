@@ -373,4 +373,5 @@ def test_prepare_counts_received_preview_and_keeps_restored_result(tmp_path, cap
     assert comparison[0]["recorded_result_utf8_bytes"] == received_bytes
     assert comparison[0]["original_utf8_bytes"] == 986_043
     conversation = [json.loads(line) for line in (work / "bundle/conversation.jsonl").read_text(encoding="utf-8").splitlines()]
-    assert next(row["text"] for row in conversation if row["kind"] == "tool-result") == original
+    assert next(row["text"] for row in conversation if row["kind"] == "tool-result") == preview
+    assert saved.read_text(encoding="utf-8") == original

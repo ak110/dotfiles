@@ -17,10 +17,10 @@ from agent_toolkit._common.persisted_output_reference import PERSISTED_OUTPUT_PR
 _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 
 
-def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
+def _conversation_tool_calls(records: list[_Record], *, compact: bool = False) -> list[dict[str, Any]]:
     """記録上の全呼び出しと結果を、入力全文・識別子・位置の対応を保って返す。"""
     entries = {record.line: record.entry for record in records}
-    events = []
+    events: list[dict[str, Any]] = []
     for record in records:
         entry = record.entry
         step = entry.get("step_update")
@@ -38,8 +38,12 @@ def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
         }
         events.extend(
             [
-                {**common, "kind": "tool-call", "text": json.dumps(info.get("parameters"), ensure_ascii=False)},
-                {**common, "kind": "tool-result", "text": json.dumps(info, ensure_ascii=False)},
+                {
+                    **common,
+                    "kind": "tool-call",
+                    **_conversation_body(json.dumps(info.get("parameters"), ensure_ascii=False), False),
+                },
+                {**common, "kind": "tool-result", **_conversation_body(json.dumps(info, ensure_ascii=False), compact)},
             ]
         )
     for call in _record_tool_calls(records):
@@ -54,16 +58,24 @@ def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
                 "timestamp": call.timestamp,
                 "tool": call.tool,
                 "call_id": call.call_id,
-                "text": json.dumps(inputs, ensure_ascii=False)
-                if inputs
-                else raw_input
-                if isinstance(raw_input, str)
-                else call.text,
+                **_conversation_body(
+                    json.dumps(inputs, ensure_ascii=False)
+                    if inputs
+                    else raw_input
+                    if isinstance(raw_input, str)
+                    else call.text,
+                    False,
+                ),
                 "result_line": call.result_line,
             }
         )
         if call.result_line is not None:
-            result = _restored_result(entries[call.result_line], call.call_id)
+            # 概要のために退避された巨大本文を展開しない。全文照会はdetailが所有する。
+            result = (
+                _recorded_result(entries[call.result_line], call.call_id)
+                if compact
+                else _restored_result(entries[call.result_line], call.call_id)
+            )
             if result is not None:
                 events.append(
                     {
@@ -73,11 +85,22 @@ def _conversation_tool_calls(records: list[_Record]) -> list[dict[str, Any]]:
                         "timestamp": entries[call.result_line].get("timestamp"),
                         "call_id": call.call_id,
                         "tool": call.tool,
-                        "text": result,
+                        **_conversation_body(result, compact),
                         "input_line": call.line,
                     }
                 )
     return events
+
+
+def _conversation_body(text: str, compact: bool) -> dict[str, Any]:
+    """概要は保存前から抜粋と原文量だけを持ち、全呼出しの巨大本文を同時に複製しない。"""
+    if not compact:
+        return {"text": text}
+    return {
+        "text": text if len(text) <= 1200 else text[:600] + "…" + text[-600:],
+        "text_utf8_bytes": len(text.encode("utf-8")),
+        "text_truncated": len(text) > 1200,
+    }
 
 
 def _recorded_input(entry: dict[str, Any], call_id: str | None) -> dict[str, Any]:

@@ -38,7 +38,7 @@ def _activity_summary(events: list[dict[str, Any]]) -> str:
     tool_text = "、".join(f"{name}×{count}" for name, count in tools.most_common(6)) or "なし"
     if len(tools) > 6:
         tool_text += f"、他{len(tools) - 6}種"
-    input_bytes = sum(len(str(item.get("text", "")).encode("utf-8")) for item in calls)
+    input_bytes = sum(item.get("text_utf8_bytes", len(str(item.get("text", "")).encode("utf-8"))) for item in calls)
     if calls:
         first = f"{calls[0]['record']}:{calls[0]['line']}"
         last = f"{calls[-1]['record']}:{calls[-1]['line']}"
@@ -316,7 +316,7 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
         "委譲元の依頼本文の抜粋を含み、機械生成の内包資料と結果本文は除く。"
         "表示予算を超える会話では、ツール呼出しを区間ごとの操作要約へ集約し、それでも収まらない場合は"
         "ユーザー発話、委譲の依頼・返却、アシスタント発話の順に優先して全期間へ均等に行を残し、省略した区間の行数と記録位置を示す。"
-        f"全文は`{detail_command} --detail <記録位置>`、全イベントは`bundle/conversation.jsonl`から取得し、"
+        f"原文は`{detail_command} --detail <記録位置>`で照会し、省略があれば由来が示す元記録の該当位置を読む。"
         "区間を限定した通読は同じ準備コマンドへ`--conversation-window`と`--conversation-since`・`--conversation-until`を加えて行う。",
         "",
         "## 時系列",
