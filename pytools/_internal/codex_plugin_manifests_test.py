@@ -179,6 +179,7 @@ def test_sync_is_deterministic(manifest_root: Path) -> None:
                 "command": "uv",
                 "args": [
                     "run",
+                    "--no-cache",
                     "--no-config",
                     "--no-project",
                     "--python",

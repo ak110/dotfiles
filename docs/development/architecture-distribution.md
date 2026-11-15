@@ -18,7 +18,7 @@ OpenCodeの対話ホストには、同じ原本からスキルと常時規範を
 
 `pytools/_internal/codex_plugin_manifests.py`がAgent PluginsとCodexの生成物の生成と差の確認を担い、生成器の起動スクリプト`scripts/sync_codex_plugin_manifests.py`とpost-applyがこれを使う。
 Codex向け`agents_server`はplugin rootを作業ディレクトリに固定する。
-起動定義は`uv run --no-config --no-project --python 3.15 python scripts/launch.py agent_toolkit/agents_server_mcp.py`として生成する。
+起動定義は`uv run --no-cache --no-config --no-project --python 3.15 python scripts/launch.py agent_toolkit/agents_server_mcp.py`として生成する。
 Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
 

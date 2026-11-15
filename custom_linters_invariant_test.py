@@ -100,7 +100,9 @@ def test_agent_doc_tone_covers_every_population_root() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     globs = pyproject["tool"]["pyfltr"]["custom-commands"]["agent-doc-tone"]["targets"]
     config = pyfltr.config.config.load_config(config_dir=REPO_ROOT)
-    all_files = pyfltr.command.targets.expand_all_files([Path(".")], config=config, start_cwd=REPO_ROOT)
+    # 全体走査は作業ツリーの規模に比例して重いため、代表パスだけを除外・gitignore判定込みで展開する。
+    representatives = [Path(relative) for relative in AGENT_DOC_TONE_REPRESENTATIVES]
+    all_files = pyfltr.command.targets.expand_all_files(representatives, config=config, start_cwd=REPO_ROOT)
     reached = {(REPO_ROOT / path).resolve() for path in pyfltr.command.targets.filter_by_globs(all_files, globs)}
 
     for relative in AGENT_DOC_TONE_REPRESENTATIVES:

@@ -115,10 +115,10 @@ test("taskを持たないメインのstartはJSONのcronとpromptで1件作成�
   expect(recorded.calls).toEqual(["start", "CronList", "CronCreate"]);
   expect(recorded.created).toEqual([{ cron: "*/30 * * * *", prompt: SCHEDULE_PROMPT, recurring: true }]);
   const argv = recorded.argv[0] ?? [];
-  expect(argv.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
-  expect(argv[7]?.endsWith("/scripts/launch.py")).toBe(true);
-  expect(argv[8]).toBe(argv[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
-  expect(argv.slice(9)).toEqual(["wait-schedule"]);
+  expect(argv.slice(0, 8)).toEqual(["uv", "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python"]);
+  expect(argv[8]?.endsWith("/scripts/launch.py")).toBe(true);
+  expect(argv[9]).toBe(argv[8]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
+  expect(argv.slice(10)).toEqual(["wait-schedule"]);
   expect(result.context?.length).toBe(1);
   expect(result.context?.[0]).toMatch(/作成した.*references\/claude-code-runtime.md.*従え/);
   expect(result.context?.[0]).not.toMatch(/task ID:|request bucket:|cron-main/);

@@ -179,10 +179,10 @@ for (const mode of ["long", "low", "ineligible-wait-owner", "running", "delegate
     expect(calls.compactions).toBe(eligible ? 1 : 0);
     expect(calls.queries.length).toBe(eligible || mode === "ineligible-wait-owner" ? 1 : 0);
     for (const query of calls.queries) {
-      expect(query.slice(0, 7)).toEqual(["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python"]);
-      expect(query[7]?.endsWith("/scripts/launch.py")).toBe(true);
-      expect(query[8]).toBe(query[7]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
-      expect(query.slice(9, 12)).toEqual(["run-script", "wait-compaction-context", "--"]);
+      expect(query.slice(0, 8)).toEqual(["uv", "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python"]);
+      expect(query[8]?.endsWith("/scripts/launch.py")).toBe(true);
+      expect(query[9]).toBe(query[8]?.replace(/\/scripts\/launch\.py$/, "/agent_toolkit/atk.py"));
+      expect(query.slice(10, 13)).toEqual(["run-script", "wait-compaction-context", "--"]);
       expect(query).not.toContain("--not-before");
       expect(query).toContain("--session-id");
       expect(query[query.indexOf("--session-id") + 1]).toBe("wait-main");

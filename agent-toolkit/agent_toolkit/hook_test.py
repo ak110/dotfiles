@@ -64,7 +64,7 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
     shell = shutil.which("sh")
     assert shell is not None
     command = json.loads(definition.read_text(encoding="utf-8"))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
-    launcher = "uv run --no-config --no-project --python 3.15 python "
+    launcher = "uv run --no-cache --no-config --no-project --python 3.15 python "
     assert command.startswith(launcher)
     command = shlex.quote(sys.executable) + " " + command.removeprefix(launcher)
     environment = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(_SCRIPT.parents[1]), "PLUGIN_ROOT": str(_SCRIPT.parents[1])}
@@ -207,7 +207,7 @@ def test_hook_launch_failure_exits_with_non_blocking_code(tmp_path: pathlib.Path
     del name
     shell = shutil.which("sh")
     assert shell is not None
-    launcher = "uv run --no-config --no-project --python 3.15 python "
+    launcher = "uv run --no-cache --no-config --no-project --python 3.15 python "
     assert command.startswith(launcher)
     # uvの解決は実行環境（miseのshimなど）に左右されるため、同じPythonの起動に置き換えて末尾の変換だけを確かめる。
     resolved = (

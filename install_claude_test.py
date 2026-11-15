@@ -137,7 +137,7 @@ def test_warms_claude_and_codex_plugin_scripts(kind: str, tmp_path: pathlib.Path
     warmups = [
         line
         for line in read_log_lines(stub_log)
-        if line.startswith("uv run --no-config --no-project --python 3.15 python ") and "scripts/launch.py" in line
+        if line.startswith("uv run --no-cache --no-config --no-project --python 3.15 python ") and "scripts/launch.py" in line
     ]
     assert len(warmups) == 4
     assert sum("--prepare" in command for command in warmups) == 2

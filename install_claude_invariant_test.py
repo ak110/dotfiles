@@ -55,7 +55,7 @@ def test_deploys_rules_and_configures_both_agents(kind: str, tmp_path: pathlib.P
         "codex plugin marketplace add ak110/dotfiles --json",
         "codex plugin marketplace upgrade ak110-dotfiles --json",
         "codex plugin add agent-toolkit@ak110-dotfiles --json",
-        "uv run --no-config --no-project --python 3.15 python",
+        "uv run --no-cache --no-config --no-project --python 3.15 python",
         "scripts/launch.py",
         "agents_server_mcp.py --check-dependencies",
     ]

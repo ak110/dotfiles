@@ -13,6 +13,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+import psutil
+
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
@@ -555,18 +557,23 @@ def _stop_orchestrator(
     *,
     context: str,
     on_residual: Callable[[process_tree.ReclaimError], None] | None,
+    known: list[psutil.Process] | None = None,
+    pins: process_tree.ProcessIdentityPins | None = None,
+    raise_on_residual: bool = False,
 ) -> list[str]:
     """統括CLIを子孫ごと停止し、回収できなかった対象を診断して呼び出し元へ渡し、その記述を返す。
 
     回収できない子孫は所有資源の停止未完了であり、警告ログだけで次の処理へ進むと同じ対象の次の統括と資源を奪い合う。
     呼び出し元（`process_loop.run_coordinator`）は識別を所有記録へ保存し、消滅を確かめるまで所有を保持する。
     """
-    failure = process_tree.stop_owned_process(process, context=context)
+    failure = process_tree.stop_owned_process(process, context=context, known=known or (), pins=pins)
     if failure is None:
         return []
     process_tree.log_residual(failure.residual, context=context)
     if on_residual is not None:
         on_residual(failure)
+    if raise_on_residual:
+        raise failure
     return failure.residual
 
 
@@ -575,6 +582,9 @@ def _raise_claude_usage_limit(
     env: dict[str, str],
     identifier: str | None,
     on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
+    *,
+    known: list[psutil.Process],
+    pins: process_tree.ProcessIdentityPins,
 ) -> None:
     """StopFailureの要求を読み、旧CLIの終了を確認して接続選択へ戻す。"""
     if identifier is None:
@@ -586,7 +596,9 @@ def _raise_claude_usage_limit(
         return
     if not limited:
         return
-    residual = _stop_orchestrator(process, context="process-loop usage-limit switch", on_residual=on_residual)
+    residual = _stop_orchestrator(
+        process, context="process-loop usage-limit switch", on_residual=on_residual, known=known, pins=pins
+    )
     if residual:
         raise _next_action.ActionableError(
             f"接続切替前に旧Claude CLIの終了を確認できない: {residual}",
@@ -617,7 +629,11 @@ def _run_cli_session(
     rollout: pathlib.Path | None = None
     published: str | None = None
     # 時間上限なし: 長時間の子セッションの実行そのものであり、無出力の監視と中断は呼び出し側の待機ループが扱う。
-    with subprocess.Popen(argv, env=env, cwd=cwd, creationflags=_pl_env.session_creation_flags(orchestrator)) as process:
+    with (
+        process_tree.ProcessIdentityPins() as pins,
+        subprocess.Popen(argv, env=env, cwd=cwd, creationflags=_pl_env.session_creation_flags(orchestrator)) as process,
+    ):
+        known = process_tree.collect_descendants(process.pid, pins=pins, include_root=True)
         try:
             identity = _registry.ProcessIdentity.of(process.pid)
             if identity is None:
@@ -628,6 +644,9 @@ def _run_cli_session(
             if on_process_started is not None:
                 on_process_started(identity)
             while True:
+                for target in process_tree.collect_descendants(process.pid, pins=pins):
+                    if target not in known:
+                        known.append(target)
                 if orchestrator == "codex" and rollout is None:
                     known_session = env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV)
                     if known_session is not None:
@@ -663,11 +682,11 @@ def _run_cli_session(
                 try:
                     returncode = process.wait(timeout=1)
                     if orchestrator == "claude":
-                        _raise_claude_usage_limit(process, env, identifier, on_residual)
+                        _raise_claude_usage_limit(process, env, identifier, on_residual, known=known, pins=pins)
                     return subprocess.CompletedProcess(argv, returncode)
                 except subprocess.TimeoutExpired:
                     if orchestrator == "claude":
-                        _raise_claude_usage_limit(process, env, identifier, on_residual)
+                        _raise_claude_usage_limit(process, env, identifier, on_residual, known=known, pins=pins)
                     record = (
                         _record_paths.find_session_record(
                             identifier,
@@ -680,15 +699,26 @@ def _run_cli_session(
                     updated = max((path.stat().st_mtime for path in record.paths), default=started_at) if record else started_at
                     if time.time() - updated > 9600:
                         _process_loop_log.append("session_stalled", session_id=identifier or "")
-                        _stop_orchestrator(process, context="process-loop stalled", on_residual=on_residual)
+                        _stop_orchestrator(
+                            process, context="process-loop stalled", on_residual=on_residual, known=known, pins=pins
+                        )
                         return subprocess.CompletedProcess(argv, 1)
                     if orchestrator == "codex" and rollout is not None and _codex_usage_limit.from_rollout(rollout) is not None:
                         _process_loop_log.append("session_usage_limit", rollout_path=str(rollout))
-                        _stop_orchestrator(process, context="process-loop usage-limit", on_residual=on_residual)
+                        _stop_orchestrator(
+                            process, context="process-loop usage-limit", on_residual=on_residual, known=known, pins=pins
+                        )
                         return subprocess.CompletedProcess(argv, 0)
-        except BaseException:
-            if process.poll() is None:
-                _stop_orchestrator(process, context="process-loop exception", on_residual=on_residual)
+        except BaseException as error:
+            if not isinstance(error, _ClaudeUsageLimit):
+                _stop_orchestrator(
+                    process,
+                    context="process-loop exception",
+                    on_residual=on_residual,
+                    known=known,
+                    pins=pins,
+                    raise_on_residual=True,
+                )
             raise
 
 

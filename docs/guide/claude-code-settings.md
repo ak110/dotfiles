@@ -28,7 +28,8 @@ agent-toolkitの実効設定は`atk config list`で一覧表示し、`atk config
 
 claude-plugins-officialのプラグインは次の方針で扱う。
 
-- 推奨: `context7`・`typescript-lsp`（必要な`typescript-language-server`と`typescript`は`update-dotfiles`の`full`モードで導入する）
+- 推奨: `typescript-lsp`（必要な`typescript-language-server`と`typescript`は`update-dotfiles`の`full`モードで導入する）
+- 無効: `context7`（認証が必要なため推奨を廃止し、インストール済みなら自動で無効化）
 - 任意: `skill-creator`
 - 参照のみ（有効化しない）: `plugin-dev`・`mcp-server-dev`（エージェントが品質基準の案内に従って資料として読むため導入は不要。有効化するとスキルが自動で起動し、質問が増える）
 - 無効: `pyright-lsp`（Claude Codeがインストールを推奨するが誤動作が発生するため、インストール後に`Disable`）

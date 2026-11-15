@@ -61,6 +61,7 @@ else:
 @pytest.fixture(name="codex_fixture")
 def _codex_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
     """source・marketplace・cache・CLIを1件の隔離領域に用意する。"""
+    monkeypatch.setattr(install_codex_plugins.external_web_guidance, "run", lambda _host: False)
     root = tmp_path / "source"
     marketplace = root / ".agents/plugins/marketplace.json"
     marketplace.parent.mkdir(parents=True)

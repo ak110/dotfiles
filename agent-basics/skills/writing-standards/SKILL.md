@@ -195,7 +195,7 @@ hookの通知は選択を補助する。
 | Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python-analysis.md` | | | |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` | | | |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` | | | |
-| エンドユーザーが操作する画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` | | | |
+| エンドユーザーが操作する画面をHTML、CSS、クライアント側JavaScriptで実装・変更・レビューする判断の前 | `references/ui-ux-web-rules.md` | | | |
 | hookスクリプトと機械チェックスクリプトを書く時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `skill:writing-standards` | `same-document` |
 
 ## エージェント向け文書の編集時に読む資料
