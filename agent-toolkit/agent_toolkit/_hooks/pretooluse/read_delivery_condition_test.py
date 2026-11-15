@@ -262,3 +262,59 @@ def test_same_call_full_read_is_removed_from_a_multi_document_candidate(tmp_path
     context = _additional_context(result)
     assert "読込条件の候補" not in context
     assert str(reference) not in context
+
+
+@pytest.mark.parametrize("old_selection", [False, True])
+def test_real_wi_dry_run_does_not_require_independent_submission(tmp_path, monkeypatch, _setup, old_selection):
+    """通常の原稿検証は独立受付資料を要求せず、直接取得は維持する。"""
+    _selected, _unrelated, _row, _state = _setup
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
+    root = pathlib.Path(read_delivery.__file__).resolve().parents[3]
+    monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: root)
+    rows = read_delivery.read_triggers.parse_tables(root / "skills/wi-standards/SKILL.md", root)
+    submission = root / "share/wi-submission.md"
+    row = next(item for item in rows if submission in item.documents)
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    if old_selection:
+        read_delivery._select_targets("test", [ReadTarget(submission)], "main", rows=[row])  # pylint: disable=protected-access
+    draft = tmp_path / "draft.md"
+    draft.write_text("# 通常の改善要求\n\n## 反映内容と反映先\n\n必要な本文を改訂する。\n", encoding="utf-8")
+    inputs = {"command": f"atk wi add --dry-run --body-file {draft} --source add-awi-by-user --target-repo {tmp_path}"}
+    assert read_delivery.matches("wi-standard-dry-run", "Bash", inputs, str(tmp_path))
+    result = _run_hook_in_process(
+        "pretooluse",
+        {
+            "session_id": "test",
+            "cwd": str(tmp_path),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": inputs,
+        },
+    )
+    assert result.returncode == 0
+    assert str(submission) not in result.stdout
+    direct = _run_hook_in_process(
+        "pretooluse",
+        {
+            "session_id": "test",
+            "cwd": str(tmp_path),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(submission)},
+        },
+    )
+    assert direct.returncode == 0
+    assert not read_delivery.target_ready(_state.get("operation_skill_delivered_agents", {}), ReadTarget(submission), "main")
+    observed = _run_hook_in_process(
+        "posttooluse",
+        {
+            "session_id": "test",
+            "cwd": str(tmp_path),
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Read",
+            "tool_input": {"file_path": str(submission)},
+            "tool_response": {"stdout": submission.read_text(encoding="utf-8"), "exit_code": 0},
+        },
+    )
+    assert observed.returncode == 0
+    assert read_delivery.target_ready(_state.get("operation_skill_delivered_agents", {}), ReadTarget(submission), "main")

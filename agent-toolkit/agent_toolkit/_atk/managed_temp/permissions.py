@@ -83,8 +83,8 @@ def _same_directory(opened: int, before: os.stat_result, path: pathlib.Path | st
 def _require_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
     if metadata.st_uid != os.geteuid():
         raise ManagedTempError(
-            f"所有者が異なるため権限を回復できない: {path} (uid={metadata.st_uid})",
-            next_action=f"所有者uid={metadata.st_uid}の権限で{path}を削除してから同じ回収操作を再実行する。できない場合はユーザーへ報告する",
+            f"所有者が異なるため現在のOSアカウントでは権限を補えない: {path} (uid={metadata.st_uid})",
+            next_action=f"対象: {path} (uid={metadata.st_uid})。{ManagedTempError.PERMISSION_NEXT_ACTION}",
         )
 
 
