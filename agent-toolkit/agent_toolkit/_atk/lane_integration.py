@@ -26,7 +26,7 @@ def _update_target(
     """統合先を更新する短い区間。統合先が準備の前提から進んでいれば更新せず、前提と現在のHEADを返す。
 
     検証と人の判断は区間の外で終えておき、統合先単位の排他は統合先HEADの確認と更新の間だけ保持する。
-    前進を検出した場合は工程を変えずに返し、既存の`--restart-review`による再rebase・比較・検収へ戻す。
+    前進を検出した場合は工程を変えずに返し、既存の`--restart-review`による追加merge・検証へ戻す。
     """
     # --no-mergeも統合先を書かないが同じ排他を取る。他レーンのfast-forwardが一時的に作るロックファイルを
     # 中断状態と誤判定せず、その更新の終了を待ってから統合先の作業ツリーと中断状態を確かめるためである。
@@ -101,76 +101,24 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             # 観測だけの再開ではHEADとmanifestが同じでも、選定の未統合を処置する必要がある。
             record["previous_integration"] = state
             state = None
+        if state is not None and (
+            state["phase"] in {"rebasing", "rebased", "awaiting-validation"}
+            or (state["phase"] == "verified" and "rewrite_map" in state)
+        ):
+            if state.get("new_head"):
+                _lane_records.git(worktree, "merge-base", "--is-ancestor", state["new_head"], reviewed)
+            _lane_integration_input.check_legacy_mapping(state, manifest, worktree)
+            # 旧方式の証拠は退避し、既に保存したGit成果を新方式の起点にする。
+            record["previous_integration"] = state
+            state = None
         if state is not None and args.restart_review:
             if state["phase"] in {"git-integrated", "finalized"}:
-                raise ValueError("Git統合後は--restart-reviewで再開せず、同じ入力で残る最終化を実行する")
-            current = _lane_records.git(worktree, "rev-parse", "HEAD")
+                raise ValueError("Git統合後は同じ入力で未完了の最終化を再開する")
+            if _lane_records.git(worktree, "rev-parse", "HEAD") != reviewed:
+                raise ValueError("再レビューしたHEADが現在HEADと一致しない")
+            _lane_records.git(worktree, "merge-base", "--is-ancestor", state.get("new_head", state["old_head"]), reviewed)
             record["previous_integration"] = state
-            if state["phase"] in {"rebased", "awaiting-validation", "verified"} and all(
-                state.get(name) for name in ("old_base", "old_head", "new_base", "new_head")
-            ):
-                ancestor = git_command.run(
-                    ["merge-base", "--is-ancestor", state["new_head"], current], worktree, check=False
-                ).returncode
-                if ancestor not in {0, 1}:
-                    raise ValueError("保存したnew_headと現在HEADの祖先判定が失敗した。Git実体と所有記録を確認して再実行する")
-                if ancestor == 1:
-                    raise ValueError(
-                        f"現在HEAD {current}は記録のnew_head {state['new_head']}の子孫ではない。"
-                        "保存したrebase系列を復元して再レビューし、--restart-reviewで再開する"
-                    )
-                if reviewed not in ({state["old_head"], current} if current == state["new_head"] else {current}):
-                    raise ValueError(
-                        "再開のレビュー対象HEADは、HEADが変わった場合は現在HEAD、同じ場合はold_headかnew_headを指定する"
-                    )
-                previous_head = state["new_head"]
-                state = {
-                    **state,
-                    "input_digest": digest,
-                    "input": identity,
-                    "phase": "rebased",
-                    "completed": [key for key in state["completed"] if not key.startswith("verification-")],
-                    "results": dict(state.get("results", {})),
-                    "additional_rewrites": dict(state.get("additional_rewrites", {})),
-                }
-                record["integration"] = state
-                if current != previous_head:
-                    state.setdefault(
-                        "comparison", {key: state[key] for key in ("old_base", "old_head", "new_base", "new_head")}
-                    )
-                    additions = _lane_records.git(worktree, "rev-list", "--reverse", f"{previous_head}..{current}").splitlines()
-                    state["additional_rewrites"].update({oid: oid for oid in additions})
-                    state["new_head"] = current
-                base = _lane_records.git(target, "rev-parse", "HEAD")
-                if base != state["new_base"]:
-                    if state["additional_rewrites"]:
-                        _lane_integration_input.compare_integration_history(
-                            record,
-                            state,
-                            worktree,
-                            state.get("comparison", {}).get("resolved_conflicts", state.get("resolved_conflicts", [])),
-                            state.get("comparison", {}).get("excluded_paths", state.get("excluded_paths", [])),
-                        )
-                        state["rewrite_prefix"] = json.loads(pathlib.Path(state["rewrite_map"]).read_text(encoding="utf-8"))
-                        # 再rebaseの旧系列には前回の競合解消が織り込まれている。指定の再利用も比較する系列ごとに保つ。
-                        state["comparison"] = {
-                            "old_base": state["new_base"],
-                            "old_head": current,
-                            "new_base": base,
-                            "resolved_conflicts": [],
-                            "excluded_paths": [],
-                        }
-                    else:
-                        state.pop("comparison", None)
-                    state["completed"] = [key for key in state["completed"] if key != "history-compare"]
-                    _lane_integration_input.rebase_unpublished(worktree, base, record, state)
-                    state.update(phase="rebased", new_head=_lane_records.git(worktree, "rev-parse", "HEAD"))
-                record["integration"] = state
-                _lane_records.save(path, record)
-            else:
-                if current != reviewed:
-                    raise ValueError("再レビューしたHEADが現在HEADと一致しない")
-                state = None
+            state = None
         if state is not None and state["input_digest"] != digest:
             if args.amend_finalization:
                 _lane_integration_input.amend_finalization(state, identity, digest)
@@ -178,7 +126,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             elif state["phase"] != "finalized":
                 raise ValueError(
                     "統合途中の入力が異なる。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewで再開する。"
-                    "HEADが記録のnew_headのままならold_headかnew_headを--reviewed-headへ渡し、rebase結果を再検証して検収待ちへ戻る。"
+                    "現在HEADを--reviewed-headへ渡し、merge結果を再検証する。"
                     "未完了の最終化argvだけの補完は--amend-finalizationを指定する"
                 )
             else:
@@ -200,87 +148,22 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             "new_head", state["old_head"]
         ):
             raise ValueError("前回最終化後に現在HEADが変わっている。今回のレビュー対象HEADとmanifestを渡す")
-        if state["phase"] == "prepared" and not args.no_merge:
-            current = _lane_records.git(worktree, "rev-parse", "HEAD")
-            if current != reviewed:
-                raise ValueError("現在HEADがレビュー対象HEADと一致しない")
+        if state["phase"] in {"prepared", "merging"} and not args.no_merge:
             base = _lane_records.git(target, "rev-parse", "HEAD")
+            current = _lane_records.git(worktree, "rev-parse", "HEAD")
+            if state["phase"] == "merging" and current != state["old_head"]:
+                raise ValueError("merge解消後の現在HEADをレビューし、--reviewed-headと--restart-reviewで再開する")
             ancestor = git_command.run(["merge-base", "--is-ancestor", base, current], worktree, check=False).returncode
             if ancestor not in {0, 1}:
                 raise ValueError("統合先との祖先判定が失敗した")
             if ancestor == 1:
-                old_base = _lane_records.git(worktree, "merge-base", base, current)
                 if not manifest.get("verification"):
-                    raise ValueError("rebase後の検証argvがmanifestに無い")
-                state["old_base"] = old_base
-                _lane_integration_input.rebase_unpublished(worktree, base, record, state)
-                state.update(phase="rebased", new_head=_lane_records.git(worktree, "rev-parse", "HEAD"))
+                    raise ValueError("merge後の検証argvがmanifestに無い")
+                state.update(phase="merging", new_base=base)
                 _lane_records.save(path, record)
-            else:
-                # 短い更新で統合先がこの時点から進んでいないことを確かめるため、前提のHEADを保持する。
-                state.update(phase="verified", new_head=current, verified_base=base)
-                _lane_records.save(path, record)
-        if state["phase"] == "rebasing":
-            state.update(phase="rebased", new_head=_lane_records.git(worktree, "rev-parse", "HEAD"))
-            _lane_records.save(path, record)
-        if state["phase"] == "awaiting-validation" and _lane_records.materials_missing(state):
-            # 旧状態の対応表・検証記録が期限付き領域から失われた。保存済みの両系列から再生成して検収待ちへ戻る。
-            state.update(
-                phase="rebased",
-                completed=[
-                    key for key in state["completed"] if key != "history-compare" and not key.startswith("verification-")
-                ],
-            )
-            _lane_records.save(path, record)
-        saved_resolved = state.get("comparison", {}).get("resolved_conflicts", state.get("resolved_conflicts", []))
-        saved_excluded = state.get("comparison", {}).get("excluded_paths", state.get("excluded_paths", []))
-        resolved = saved_resolved
-        excluded_paths = saved_excluded
-        if state["phase"] in {"rebased", "awaiting-validation"}:
-            # 競合解消の指定はhistory-compareへ渡す入力で、同じ統合入力の再開に付けるためinput_digestへ含めない。
-            # 指定を省いた再開（検収待ちの受理など）は保存済みの集合を使い、集合が変わった場合だけhistory-compareをやり直す。
-            if args.resolved_conflict is not None:
-                resolved = sorted(
-                    {
-                        _lane_records.git(worktree, "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}")
-                        for value in args.resolved_conflict
-                    }
-                )
-            if args.exclude_path is not None:
-                excluded_paths = [
-                    list(pair)
-                    for pair in sorted(
-                        {
-                            (
-                                _lane_records.git(worktree, "rev-parse", "--verify", "--end-of-options", f"{oid}^{{commit}}"),
-                                name,
-                            )
-                            for oid, name in args.exclude_path
-                        }
-                    )
-                ]
-            if saved_resolved != resolved or saved_excluded != excluded_paths:
-                state.update(
-                    phase="rebased",
-                    completed=[key for key in state["completed"] if key != "history-compare"],
-                )
-                _lane_records.save(path, record)
-        if state["phase"] == "rebased":
-            _lane_integration_input.compare_integration_history(record, state, worktree, resolved, excluded_paths)
-            _lane_integration_input.verify(record, state, manifest["verification"], worktree)
-            state["phase"] = "awaiting-validation"
-            _lane_records.save(path, record)
-        if state["phase"] == "awaiting-validation":
-            if args.restart_review or args.accept_rebased_head != state["new_head"]:
-                return dict(
-                    state,
-                    record_path=str(path),
-                    next_action=(
-                        "保存済み対応表・検証診断とcommit対応を検収し、"
-                        f"同じ操作に--accept-rebased-head {state['new_head']}を指定する"
-                    ),
-                )
-            state["phase"] = "verified"
+                _lane_records.git(worktree, "-c", "submodule.recurse=false", "merge", "--no-edit", base)
+                current = _lane_records.git(worktree, "rev-parse", "HEAD")
+            state.update(phase="verified", new_head=current, verified_base=base, new_base=base)
             _lane_records.save(path, record)
         if state["phase"] == "verified" or (state["phase"] == "prepared" and args.no_merge):
             _lane_integration_input.verify(record, state, manifest.get("verification", []), worktree)

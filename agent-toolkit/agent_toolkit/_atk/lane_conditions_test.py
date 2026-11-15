@@ -33,18 +33,22 @@ def test_public_acceptance_in_another_process_preserves_reuse_boundaries(
     (target / "upstream.txt").write_text("upstream\n", encoding="utf-8")
     git_repository.commit_all(target, "先行統合")
     arguments[arguments.index("--reviewed-head") + 1] = reviewed
+    manifest = pathlib.Path(arguments[arguments.index("--manifest") + 1])
+    value = json.loads(manifest.read_text(encoding="utf-8"))
+    value["verification"].append([sys.executable, "-c", "raise SystemExit(3)"])
+    manifest.write_text(json.dumps(value), encoding="utf-8")
     first = subprocess.run(
         arguments, env=dict(os.environ), capture_output=True, text=True, encoding="utf-8", timeout=45, check=False
     )
-    assert first.returncode == 1, first.stderr
-    pending = json.loads(first.stdout)
-    assert pending["phase"] == "awaiting-validation" and marker.read_text(encoding="utf-8") == "1"
+    assert first.returncode == 2, first.stderr
+    pending = json.loads(record_path.read_text(encoding="utf-8"))["integration"]
+    assert pending["phase"] == "verified" and marker.read_text(encoding="utf-8") == "1"
     environment = dict(os.environ)
     environment["LANE_VERIFICATION_INPUT"] = "new-private-input"
     if difference == "normalized-launch":
         environment[inherited_venv.LAUNCH_RESTORE_KEY] = json.dumps({"LANE_VERIFICATION_INPUT": [None, "new-private-input"]})
     accepted = subprocess.run(
-        [*arguments, "--accept-rebased-head", pending["new_head"]],
+        arguments,
         env=environment,
         capture_output=True,
         text=True,
@@ -52,9 +56,9 @@ def test_public_acceptance_in_another_process_preserves_reuse_boundaries(
         timeout=45,
         check=False,
     )
-    assert accepted.returncode == 0, accepted.stderr
-    result = json.loads(accepted.stdout)
-    assert result["phase"] == "finalized"
+    assert accepted.returncode == 2, accepted.stderr
+    result = json.loads(record_path.read_text(encoding="utf-8"))["integration"]
+    assert result["phase"] == "verified"
     assert marker.read_text(encoding="utf-8") == ("1" if difference == "normalized-launch" else "2")
     verification = result["results"]["verification-0"]
     assert ("reused_from" in verification) == (difference == "normalized-launch")

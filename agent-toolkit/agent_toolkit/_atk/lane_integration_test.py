@@ -16,7 +16,7 @@ from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.lane_integration_support import (
     _integration_args,
     _integration_selection,
-    _rebased_integration,
+    _merged_integration,
     _write_empty_finalization_manifest,
 )
 from agent_toolkit._testing.lane_support import _create, _invoke, _selection
@@ -254,16 +254,16 @@ def test_integrate_refreshes_publication_before_rewriting(
     before = git_repository.commit_all(repo, "先行統合")
     manifest = _write_empty_finalization_manifest(tmp_path)
     code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, head))
-    assert code == 2 and "push済みcommit" in stderr
-    assert git_repository.git_output(worktree, "rev-parse", "HEAD") == head
-    assert git_repository.git_output(repo, "rev-parse", "HEAD") == before
+    assert code == 0, stderr
+    git_repository.run_git(repo, "merge-base", "--is-ancestor", head, "HEAD")
+    git_repository.run_git(repo, "merge-base", "--is-ancestor", before, "HEAD")
 
 
 def test_integrate_restarts_after_reviewed_correction(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Git統合前の検証失敗は記録を残し、是正後の独立文脈レビュー入力で公開操作から再開する。"""
-    repo, record, manifest, value, _original = _rebased_integration(tmp_path, monkeypatch, capsys, failed=True)
+    repo, record, manifest, value, _original = _merged_integration(tmp_path, monkeypatch, capsys, failed=True)
     worktree = pathlib.Path(record["worktree"])
     (worktree / "feature").write_text("是正済み", encoding="utf-8")
     reviewed = git_repository.commit_all(worktree, "是正")
@@ -273,16 +273,9 @@ def test_integrate_restarts_after_reviewed_correction(
     code, _result, stderr = _invoke(capsys, *args)
     assert code == 2 and "--restart-review" in stderr
     code, result, stderr = _invoke(capsys, *args, "--restart-review")
-    assert code == 1 and result["phase"] == "awaiting-validation", stderr
-    assert result["old_head"] == _original["old_head"]
-    assert result["additional_commits"] == [reviewed]
-    assert json.loads(pathlib.Path(result["rewrite_map"]).read_text(encoding="utf-8")) == {
-        _original["old_head"]: _original["new_head"]
-    }
-    code, result, stderr = _invoke(capsys, *args, "--accept-rebased-head", reviewed)
     assert code == 0 and result["phase"] == "finalized", stderr
     stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
-    assert stored["previous_integration"]["phase"] == "rebased"
+    assert stored["previous_integration"]["phase"] == "verified"
     assert "verification-0" in result["completed"]
     assert (repo / "feature").read_text(encoding="utf-8") == "是正済み"
 

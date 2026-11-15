@@ -100,7 +100,7 @@ CIが全体を担う本リポジトリでは、列挙しきれなかった利用
   使用するコンテナーイメージや導入パッケージ、バージョン情報は`Makefile`内の変数で管理されており、`ci_workflow_test.py`によってCI定義との整合性が検証される。
   なお、このチェックにはDockerが必要であり、1バージョンあたり約1分を要する。
   再検証の記録は`docs/development/audit-records-project-verification.md`「.claude/skills/develop-dotfiles/references/verification-values.md：変更範囲の検証の値：2026年10月18日」にある。
-- 統合後の検証: rebase後のブランチの組み合わせはコミット時には検証できないため、fast-forwardマージを行う前に専用worktree上で`make sync`を実行し、続けて以下を一括で1回実行する。
+- 統合後の検証: merge後のブランチの組み合わせはコミット時には検証できないため、fast-forwardマージを行う前に専用worktree上で`make sync`を実行し、続けて以下を一括で1回実行する。
   - 変更箇所と特定した利用側に関するpytest
     列挙が難しい場合も関連モジュールまでとし、未確認範囲を記録する
   - `uv run --frozen pyfltr fast --commands=pytest`

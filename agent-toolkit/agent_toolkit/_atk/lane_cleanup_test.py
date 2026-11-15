@@ -18,10 +18,16 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import agents_exit_session, lane, managed_temp
+from agent_toolkit._atk import agents_exit_session, lane, lane_activity, managed_temp
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.lane_integration_support import _finalize_lane_for_cleanup, _legacy
 from agent_toolkit._testing.lane_support import _create, _create_in, _invoke, _selection
+
+
+@pytest.fixture(name="idle_lane")
+def _idle_lane(monkeypatch: pytest.MonkeyPatch) -> None:
+    """固有撤去の再開試験では、別途activity試験で扱うOSプロセス探索を隔離する。"""
+    monkeypatch.setattr(lane_activity, "process_activity", lambda _worktree: None)
 
 
 def test_delete_retains_resources_and_explains_retry_after_ignore_check_failure(
@@ -290,6 +296,7 @@ def test_delete_protects_git_content_before_project_teardown(
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの所有者保護を検証する")
 @pytest.mark.parametrize("teardown", ["none", "failure", "leftover"])
+@pytest.mark.usefixtures("idle_lane")
 def test_delete_keeps_foreign_ignored_output_until_teardown_is_resolved(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -448,6 +455,7 @@ def test_lane_keeps_foreign_os_owner_and_reports_owner_action(
     assert payload.read_text(encoding="utf-8") == "保持する成果"
 
 
+@pytest.mark.usefixtures("idle_lane")
 def test_project_teardown_failure_preserves_record_and_retries_remaining_cleanup(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -476,6 +484,7 @@ def test_project_teardown_failure_preserves_record_and_retries_remaining_cleanup
     assert deleted["removed"] == ["lane-01"]
 
 
+@pytest.mark.usefixtures("idle_lane")
 def test_cleanup_rechecks_git_registration_after_project_teardown(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
