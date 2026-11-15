@@ -27,6 +27,7 @@ _FINISHED_TURN_ENTRIES = [
 ]
 
 _FIXTURES: dict[tuple[str, str], tuple[str, bool]] = {
+    ("PreCompact", "precompact"): ("empty", False),
     ("SessionStart", "rules_context"): ("rules_context_session_start", True),
     ("SubagentStart", "rules_context"): ("rules_context_subagent_start", True),
     ("PreToolUse", "pretooluse"): ("pretooluse", True),

@@ -33,7 +33,7 @@
   JSON各値と通常の標準出力は10,000文字の前後で保存先とプレビューを確認する。
   標準エラーの単一条件の成功から、配送量が無制限とは判断しない
 
-## agent-basics/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日
+## agent-basics/skills/writing-standards/references/claude-hooks-output-organization.md：組織向け設定：2026年10月20日
 
 - 観測日: 2026年10月20日の起草時調査記録にある、本体の読解と組織設定のユーザー表示の観測による。
   今回の文書追随では本体の読解を再実行していない

@@ -161,7 +161,7 @@ export function register(on: On): void {
     const apiError = detail?.api_error && typeof detail.api_error === "object" && !Array.isArray(detail.api_error) ? objectOf(detail.api_error) : undefined;
     const active = Array.isArray(detail?.active_tool_uses) ? detail.active_tool_uses.at(-1) : undefined;
     const action = detail?.progress || (active && typeof active === "object" ? active.type ?? active.tool_name : undefined) || "未取得";
-    const waitReason = apiError ? `${String(apiError.type ?? "API待機")} / 解除: ${String(apiError.resets_at ?? "未取得")}` : detail?.result_held === true ? "子・背景タスクの完了待ち" : "待機の申告なし";
+    const waitReason = apiError ? `${String(apiError.type ?? "API待機")} / 解除: ${String(apiError.resets_at ?? "未取得")}` : detail?.result_held === true ? "子・バックグラウンドタスクの完了待ち" : "待機の申告なし";
     return Box({ flexDirection: "column", children: [
       Text({ children: [summary] }),
       Box({ flexDirection: "row", columnGap: 1, children: [

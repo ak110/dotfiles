@@ -46,7 +46,7 @@ export function register(on: On, session: { delegated: boolean; processLoop?: bo
         throw error;
       }
     } catch (error) {
-      return { text: `再起動の準備を完了できないため再起動していない。${String(error)}。この診断と/tasksの背景タスク一覧をプラグイン管理者へ報告せよ。` };
+      return { text: `再起動の準備を完了できないため再起動していない。${String(error)}。この診断と/tasksのバックグラウンドタスク一覧をプラグイン管理者へ報告せよ。` };
     }
   });
 }

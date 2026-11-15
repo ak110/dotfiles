@@ -65,13 +65,15 @@ def test_cli_defaults_do_not_hide_explicit_rules(monkeypatch: pytest.MonkeyPatch
     def run(*_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
         return next(results)
 
-    monkeypatch.setattr(approval_classifier.subprocess, "run", run)
+    monkeypatch.setattr(approval_classifier.process_tree, "run_with_timeout", run)
     result = approval_classifier.inspect("[Local Cleanup]", cwd=str(tmp_path))
     assert result.eligible
     assert result.default_fields == ("hard_deny",)
 
 
-@pytest.mark.parametrize("failure", ["missing", "timeout", "exit", "json", "version", "defaults_exit", "defaults_json"])
+@pytest.mark.parametrize(
+    "failure", ["missing", "timeout", "exit", "json", "version", "defaults_exit", "defaults_json", "replacement"]
+)
 def test_snapshot_failure_cannot_authorize(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, failure: str) -> None:
     executable = tmp_path / "claude-fixture"
     executable.touch()
@@ -89,13 +91,17 @@ def test_snapshot_failure_cannot_authorize(monkeypatch: pytest.MonkeyPatch, tmp_
             raise subprocess.TimeoutExpired("claude", 15)
         if calls == 1:
             return subprocess.CompletedProcess([], 0, "changed format" if failure == "version" else "2.1.325 (Claude Code)", "")
+        if failure == "replacement":
+            return subprocess.CompletedProcess(
+                [], 0, json.dumps({**_config(), "environment": ["\ufffd"]}, ensure_ascii=False), ""
+            )
         if failure.startswith("defaults"):
             return subprocess.CompletedProcess(
                 [], int(calls == 3 and failure == "defaults_exit"), "invalid JSON" if calls == 3 else json.dumps(_config()), ""
             )
         return subprocess.CompletedProcess([], 1 if failure == "exit" else 0, "invalid JSON", "")
 
-    monkeypatch.setattr(approval_classifier.subprocess, "run", run)
+    monkeypatch.setattr(approval_classifier.process_tree, "run_with_timeout", run)
     assert not approval_classifier.inspect("[Local Cleanup]", cwd=str(tmp_path)).eligible
 
 

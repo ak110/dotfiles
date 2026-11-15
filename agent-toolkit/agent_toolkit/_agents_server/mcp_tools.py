@@ -617,10 +617,15 @@ async def send_to_user(
 
 @mcp.tool(name="permissions", title="操作権限の状態・要求・取消", annotations=ToolAnnotations(destructive_hint=True))
 async def permissions(
-    action: Literal["list", "get", "prepare", "adopt", "revoke"] = "list",
-    request_id: str | None = None,
-    source_session: str | None = None,
-    scope: str | None = None,
+    action: Annotated[
+        Literal["list", "get", "prepare", "adopt", "revoke"],
+        Field(description="一覧・詳細取得・要求準備・所有子からの引継ぎ・取消を選ぶ。承認は書き込まない"),
+    ] = "list",
+    request_id: Annotated[str | None, Field(description="list以外で対象とする要求ID")] = None,
+    source_session: Annotated[
+        str | None, Field(description="adoptで拒否を引き継ぐ、現在のManagerが所有する子のsession ID")
+    ] = None,
+    scope: Annotated[str | None, Field(description="prepareで表示する試行範囲。onceまたはcount:N")] = None,
 ) -> dict[str, Any]:
     """listで入力本文を除く一覧、getとrequest_idで1要求の全文を得る。prepare/adopt/revokeは要求の準備・子からの引継ぎ・取消。承認や回答は書き込まない。scopeはonceかcount:N。"""
     manager = _manager()

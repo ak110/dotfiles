@@ -12,6 +12,7 @@ import subprocess
 
 import pydantic
 
+from agent_toolkit._common import process_tree
 from agent_toolkit._common.operation_approvals import fingerprint
 
 # PermissionDeniedのreasonは構造化された区分を持たない。観測していない版の書式を推測して許可しない。
@@ -116,11 +117,12 @@ def inspect(reason: str, *, cwd: str) -> Classification:
         return Classification(False, "Claude Codeの公開CLIが見つからない")
     try:
         executable = str(pathlib.Path(executable).resolve(strict=True))
-        version_result = subprocess.run(
+        version_result = process_tree.run_with_timeout(
             [executable, "--version"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
             timeout=15,
             check=False,
         )
@@ -130,33 +132,35 @@ def inspect(reason: str, *, cwd: str) -> Classification:
         version = matched.group(1)
         if version != OBSERVED_CLAUDE_VERSION:
             return Classification(False, "拒否書式を観測したClaude Codeの版と一致しない", version=version)
-        result = subprocess.run(
+        result = process_tree.run_with_timeout(
             [executable, "auto-mode", "config"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
             timeout=15,
             check=False,
         )
-        if result.returncode != 0:
+        if result.returncode != 0 or "\ufffd" in result.stdout:
             return Classification(False, "公開CLIから実効設定を取得できない", version=version)
         config = json.loads(result.stdout)
         classified = classify(reason, config, version=version)
         if not classified.eligible:
             return classified
-        defaults = subprocess.run(
+        defaults = process_tree.run_with_timeout(
             [executable, "auto-mode", "defaults"],
             cwd=cwd,
             capture_output=True,
             encoding="utf-8",
+            errors="replace",
             timeout=15,
             check=False,
         )
-        if defaults.returncode != 0:
+        if defaults.returncode != 0 or "\ufffd" in defaults.stdout:
             return Classification(False, "公開CLIからデフォルトの拒否規則を取得できない", version=version)
         baseline = _EffectiveConfig.model_validate(json.loads(defaults.stdout))
         # merged readは未指定の規則を展開しない。同じ実行版の公開defaultsと実効configが等しい項目だけ補える。
         fields = tuple(field for field in ("soft_deny", "hard_deny") if config[field] == getattr(baseline, field))
         return dataclasses.replace(classified, default_fields=fields)
-    except OSError, UnicodeError, subprocess.TimeoutExpired, ValueError:
+    except OSError, UnicodeError, subprocess.TimeoutExpired, ValueError, process_tree.ReclaimError:
         return Classification(False, "公開CLIの実効設定または版の取得に失敗した")

@@ -92,12 +92,26 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
                 yield client
 
 
+_EXPECTED_TOOLS = {
+    "start",
+    "send_message",
+    "kill",
+    "stop",
+    "list",
+    "show",
+    "permissions",
+    "send_to_user",
+    "compact_conversation",
+    "apply_runtime_changes",
+}
+
+
 @pytest.mark.asyncio
 async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
     """公開stdioで登録schemaを取得でき、終了時の診断とManager.closeの完了がログへ残る。"""
     async with _stdio_client(tmp_path, host_environ()) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
-        assert set(tools) == {"start", "send_message", "kill", "stop", "list", "show"}
+        assert set(tools) == _EXPECTED_TOOLS
         for tool in tools.values():
             assert tool.description
             assert tool.input_schema["type"] == "object"
@@ -419,7 +433,7 @@ def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_envi
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         tools = server.request(2, "tools/list", {})["result"]["tools"]
-        assert {tool["name"] for tool in tools} == {"start", "send_message", "kill", "stop", "list", "show"}
+        assert {tool["name"] for tool in tools} == _EXPECTED_TOOLS
         assert server.process.stdin is not None
         server.process.stdin.close()
 

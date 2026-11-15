@@ -3,6 +3,11 @@ import type { EngineInterface, On } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
 import { exitStatePath } from "./session_exit.ts";
 
+// 実ホストの版・入力・結果と再検証はdocs/development/audit-records-compaction.mdの
+// 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月9日」に記録する。
+// 待機時の自動処理とsession.compactの契約は同資料の
+// 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月23日」にある。
+
 import type { BackgroundWait } from "./ui_requests.tsx";
 type Decision = { at: string; task: string; reason: string; tokens?: number; window?: number; pending: boolean; turnRunning: boolean };
 type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; delayed: Set<string>; decisions: Decision[] };
