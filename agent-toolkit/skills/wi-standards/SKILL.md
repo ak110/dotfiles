@@ -85,7 +85,7 @@ WIはユーザーの手元に残す記録であるため、外部の読者が参
 | WIの起草・投入前検収の品質水準を適用する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:review-standards/SKILL.md` | | | |
 | 報告用UWIを除くWIの意味確認で、この資料を選択して取得する時 | `references/draft-semantic-review.md` | 判断 | `read:agent-toolkit:*/skills/wi-standards/references/draft-semantic-review.md`、`wi-standard-self-review` | |
 | 規範・基準・手順による既存の被覆を判定する前 | `agent-basics:writing-standards/references/agent-documents-basics-ownership.md` | | | |
-| AWIの原因分析を起草する前、計画ファイル（バグ）を作成する前 | `references/analysis-records.md` | 操作 | `root-cause-writing` | |
+| 詳細分析のAWI・計画の固定表を記録する前 | `references/analysis-records.md` | 判断 | `read:agent-basics:*/skills/bugfix/references/analysis-records.md` | |
 | 通常AWIの本文の構成と、起票目的別の登録条件を判定する前（操作対象外: ツールと結び付かない判断） | `references/wi-standards-body.md` | | | |
 | WIの由来（`source`）と承認、人間由来の要求の不採用を判断する前 | `references/wi-standards-origin.md` | | | |
 | WIの保存先、状態、重要フラグを扱う前 | `references/wi-standards-states.md` | 判断 | `wi-standard-dry-run`、`wi-standard-commit`、`read:agent-toolkit:*/skills/wi-standards/references/wi-standards-states.md` | |

@@ -157,6 +157,148 @@
         "20261106-110145-001.md": "204f21beaab576b848153b02599f25ed3041a9fa",
         "20261106-130404-001.md": "204f21beaab576b848153b02599f25ed3041a9fa"
       }
+    },
+    {
+      "id": "draft-cache-effect-missing",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "repo": "dotfiles",
+      "plan": "plans/2026/10/30-0137_single-lane-process",
+      "revision": "c4711ed2fa4e84e53bcdb2535e42a38b91cc09dd",
+      "description": "原要求への効果の根拠不足。仮想対照は実製品の観測と区別する",
+      "extra_params": {
+        "確認段階": "方針",
+        "方針": "{plan}",
+        "要求と出所": "{plan}",
+        "成立性の証拠": "{plan}",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "resident-lock",
+            "description": "常駐条件で回収へ進む根拠不足",
+            "patterns": [
+              "常駐|ロック",
+              "根拠|不足|未確認|保留"
+            ]
+          },
+          {
+            "id": "old-package",
+            "description": "旧パッケージの実回収根拠不足",
+            "patterns": [
+              "旧|古い",
+              "パッケージ|バージョン|版",
+              "回収|削除",
+              "根拠|不足|未確認|保証"
+            ]
+          }
+        ],
+        "absent": []
+      },
+      "fixtures": {
+        "revision": "1dd3dd20664cd280c73401fcfffe33f51d03a837",
+        "plan": "review-eval/draft-cache-effect-missing/plan.md"
+      }
+    },
+    {
+      "id": "draft-cache-effect-sufficient",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "repo": "dotfiles",
+      "plan": "plans/2026/10/30-0137_single-lane-process",
+      "revision": "c4711ed2fa4e84e53bcdb2535e42a38b91cc09dd",
+      "description": "十分な証拠の正常対照。仮想対照は実製品の観測と区別する",
+      "extra_params": {
+        "確認段階": "方針",
+        "方針": "{plan}",
+        "要求と出所": "{plan}",
+        "成立性の証拠": "{plan}",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "unnecessary-investigation",
+            "description": "十分な対象・条件・結果の証拠に追加調査を要求しない",
+            "patterns": [
+              "根拠|証拠|調査|検証",
+              "不足|追加|未確認|必要"
+            ]
+          }
+        ]
+      },
+      "fixtures": {
+        "revision": "d12855accfab53c73addb9c8395a0115681ff849",
+        "plan": "review-eval/draft-cache-effect-sufficient/plan.md"
+      }
+    },
+    {
+      "id": "draft-export-effect-missing",
+      "kind": "見逃し",
+      "role": "wi-draft-review",
+      "repo": "dotfiles",
+      "plan": "plans/2026/10/30-0137_single-lane-process",
+      "revision": "c4711ed2fa4e84e53bcdb2535e42a38b91cc09dd",
+      "description": "原要求への効果の根拠不足。仮想対照は実製品の観測と区別する",
+      "extra_params": {
+        "確認段階": "方針",
+        "方針": "{plan}",
+        "要求と出所": "{plan}",
+        "成立性の証拠": "{plan}",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [
+          {
+            "id": "export-types",
+            "description": "全要求種別の出力証拠不足",
+            "patterns": [
+              "添付|コメント|権限",
+              "不足|未確認|根拠|含まれ"
+            ]
+          }
+        ],
+        "absent": []
+      },
+      "fixtures": {
+        "revision": "e8b49a79775cafe95df249220f667efcf0694894",
+        "plan": "review-eval/draft-export-effect-missing/plan.md"
+      }
+    },
+    {
+      "id": "draft-export-effect-sufficient",
+      "kind": "正常対照",
+      "role": "wi-draft-review",
+      "repo": "dotfiles",
+      "plan": "plans/2026/10/30-0137_single-lane-process",
+      "revision": "c4711ed2fa4e84e53bcdb2535e42a38b91cc09dd",
+      "description": "十分な証拠の正常対照。仮想対照は実製品の観測と区別する",
+      "extra_params": {
+        "確認段階": "方針",
+        "方針": "{plan}",
+        "要求と出所": "{plan}",
+        "成立性の証拠": "{plan}",
+        "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
+      },
+      "expect": {
+        "detect": [],
+        "absent": [
+          {
+            "id": "unnecessary-investigation",
+            "description": "十分な対象・条件・結果の証拠に追加調査を要求しない",
+            "patterns": [
+              "根拠|証拠|調査|検証",
+              "不足|追加|未確認|必要"
+            ]
+          }
+        ]
+      },
+      "fixtures": {
+        "revision": "7a52e312876c61f0d939b2875e6c416e03660e86",
+        "plan": "review-eval/draft-export-effect-sufficient/plan.md"
+      }
     }
   ]
 }

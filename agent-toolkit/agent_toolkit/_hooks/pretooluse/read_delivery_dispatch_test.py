@@ -56,6 +56,37 @@ def test_claude_guidance_does_not_send_document_body_or_record_acquisition(tmp_p
     assert not read_delivery.target_ready(records, read_delivery.read_triggers.ReadTarget(root_cause), "main")
 
 
+@pytest.mark.parametrize("codex", [False, True])
+def test_short_initial_record_does_not_require_detailed_analysis_materials(tmp_path, capsys, codex):
+    """初動の短記録は、両ホストの入口と取得後にも詳細表の資料を要求しない。"""
+    payload = _payload(tmp_path, codex)
+    if codex:
+        payload["transcript_path"] = str(tmp_path / "outer.jsonl")
+    assert dispatch.main(json.dumps(payload)) == 0
+    context = _context(capsys.readouterr())
+    assert "agent-basics" in context
+    assert "analysis-records.md" not in context
+    assert "root-cause-analysis.md" not in context
+    skill = plugin_resources.plugin_root().parent / "agent-basics/skills/bugfix/SKILL.md"
+    result = {**payload, "hook_event_name": "PostToolUse"}
+    if codex:
+        result.update(
+            tool_name="Bash",
+            tool_input={"command": "cat -- " + shlex.quote(str(skill))},
+            tool_response={"stdout": skill.read_text(encoding="utf-8"), "exit_code": 0},
+        )
+    else:
+        result.update(tool_name="Skill", tool_input={"skill": "agent-basics:bugfix"}, tool_response="起動成功")
+    assert posttooluse.main(json.dumps(result)) == 0
+    capsys.readouterr()
+    if codex:
+        pretooluse_support.codex_delivered_payload(result)
+    assert dispatch.main(json.dumps(payload)) == 0
+    context = _context(capsys.readouterr())
+    assert "analysis-records.md" not in context
+    assert "root-cause-analysis.md" not in context
+
+
 @pretooluse_support.read_delivery_preparation_scope()
 def test_claude_reissues_after_all_declared_bodies_arrive(tmp_path, capsys):
     payload = _payload(tmp_path, False)

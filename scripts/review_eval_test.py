@@ -597,3 +597,48 @@ def test_store_then_prepare_uses_saved_plan_and_contract(tmp_path, monkeypatch, 
     assert saved["temporary_evidence"] == {"referenced": 0, "missing": []}
     for prepared in (generated, saved):
         subprocess.run(prepared["cleanup"], check=True)
+
+
+@pytest.mark.parametrize("issues", [[], ["本文配送の方針違反\n  根拠を親指摘へ含める"], ["本文の問題", "配送の方針違反"]])
+@pytest.mark.parametrize("unit", ["", "件"])
+def test_score_draft_review_cli(tmp_path, monkeypatch, capsys, issues, unit) -> None:
+    """返却原文を公開scoreへ渡し、指摘間をまたぐ語句一致を防ぐ。"""
+    cases = _write_cases(tmp_path / "cases.json")
+    data = json.loads(cases.read_text(encoding="utf-8"))
+    data["cases"][0]["role"] = "wi-draft-review"
+    cases.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setattr(review_eval, "CASES_PATH", cases)
+    result = tmp_path / "result.md"
+    result.write_text(
+        f"判定: {'修正要' if issues else '合格'}\n確認段階: 方針\n対象資料: /plan.md\n"
+        f"未解決指摘: {len(issues)}{unit}\n指摘:\n"
+        + "\n".join(f"- {issue}" for issue in issues or ["なし"])
+        + "\n確認した要求と根拠: 原要求と観測\n",
+        encoding="utf-8",
+    )
+    assert review_eval.main(["score", "--result", f"missed={result}"]) == 0
+    scored = _results(capsys)[0]
+    assert scored["detected"] == (["policy"] if len(issues) == 1 else [])
+    assert result.with_suffix(".score.json").is_file()
+
+
+@pytest.mark.parametrize("change", ["count", "decision", "required", "empty", "body"])
+def test_score_draft_review_rejects_invalid_contract(tmp_path, monkeypatch, capsys, change) -> None:
+    cases = _write_cases(tmp_path / "cases.json")
+    data = json.loads(cases.read_text(encoding="utf-8"))
+    data["cases"][0]["role"] = "wi-draft-review"
+    cases.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setattr(review_eval, "CASES_PATH", cases)
+    text = "判定: 合格\n確認段階: 方針\n対象資料: /plan.md\n未解決指摘: 0\n指摘:\n- なし\n確認した要求と根拠: 原要求\n"
+    replacements = {
+        "count": ("未解決指摘: 0", "未解決指摘: 1"),
+        "decision": ("合格", "修正要"),
+        "required": ("対象資料: /plan.md\n", ""),
+        "empty": ("- なし\n", ""),
+        "body": ("方針", "本文"),
+    }
+    result = tmp_path / "result.md"
+    result.write_text(text.replace(*replacements[change]), encoding="utf-8")
+    assert review_eval.main(["score", "--result", f"missed={result}"]) == 1
+    assert "不正" in capsys.readouterr().err
+    assert not result.with_suffix(".score.json").exists()
