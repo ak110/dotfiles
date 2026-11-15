@@ -23,9 +23,13 @@ EXPECTED_CASES = {
     "goal-discovery": "single",
     "strategy-update": "single",
     "purpose-boundary": "dialogue",
+    "protection-removal-agent": "dialogue",
+    "protection-removal-user": "dialogue",
 }
 # 保存例ごとに未達となる検査ID。課題の期待集合（private/grade.py）と保存例の提出内容から導いた。
 _FAILED_CHECKS: dict[str, dict[str, set[str]]] = {
+    "protection-removal-agent": {"failure": {"stages"}},
+    "protection-removal-user": {"failure": {"stages"}},
     "goal-discovery": {"failure": {"report", "empty"}},
     "strategy-update": {"failure": {"mixed", "decimal"}},
     "purpose-boundary": {"failure": {"discovery", "strategy", "coordination", "verification"}},
