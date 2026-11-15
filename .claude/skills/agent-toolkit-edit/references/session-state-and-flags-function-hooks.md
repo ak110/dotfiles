@@ -45,6 +45,28 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 保持期限の管理とファイル回収処理は`agents_exit_session.sweep_function_hook_files`が担当する。
 各ファイルに保存する文字列は、用途ごとに定めた固定値に限る。
 
+## 会話内操作の要求と再開
+
+MCP・設定hookとmodは、`ui-request-{session_id}-{要求ID}.txt`と`ui-response-{session_id}-{要求ID}.txt`で期限付きの要求と応答を交換する。
+これらは`ui-requests/{セッションIDのASCII和を64で割った余りの2桁hex}/`へ置き、終了目印など過去会話の状態をポーリングの列挙対象から分離する。
+分割先は固定64ディレクトリに限り、要求・応答ファイルには既存の保持期限による回収も適用する。
+Python側が要求をatomicに保存し、modが同じ要求IDの描画・予約・観測結果を書く。
+同期要求は呼出元がfinallyで両ファイルを回収し、非同期観測は応答後、未処理要求は期限後に`_common/function_hook_requests.py`が回収する。
+許可判定用の対話APIは実surface・実行中の版・実効autoModeを取得し、承認要求と実入力の一致を確認する側へ結果を渡す。
+
+`restart-{session_id}.txt`はmodが所有する1回限りの再開印である。
+背景waitの停止後、またはprocess-loopの再起動時に、`phase: pending`と停止したwaitのID・commandをJSONで保存する。
+SessionStartが自動続行の送信前に`phase: resumed`へ変更する。
+通常終了では保持し、clearと期限切れ回収は既存の`sweep_function_hook_files`へ統合する。
+modの会話状態には描画本文・処理済みID・背景待機・反映予約を置き、再読込を越える寿命をホストへ委ねる。
+
+Code Modeの通常awaitでは、内側Bashの`tool_use_id`を圧縮の待機識別に使う。
+設定PreToolUseが`repl_`付きBashの開始を、PostToolUse・PostToolUseFailureが終了を同じ要求形式でmodへ渡す。
+この待機は`replExpiresAt`を持ち、TaskStopとStopの`background_tasks`一覧による回収から除く。
+外側REPLのtask IDとの対応は作らない。
+期限はBashの`timeout`（省略時は`BASH_DEFAULT_TIMEOUT_MS`、未設定時120000ms）に5秒を加える。
+modは期限の単発タイマーを置き、再読込後も再設定するため、Postが届かなくても期限後は圧縮候補から外れる。
+
 ## 条件別資料
 
 | 時点または条件 | 全文読む資料 |

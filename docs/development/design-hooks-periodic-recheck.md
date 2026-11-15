@@ -4,6 +4,11 @@
 
 ## `start`の処理の中での定期再確認の装着
 
+Code Mode対応後は、設定PostToolUseが成功した`start`と主体を観測し、会話別の期限付き要求へ装着を依頼する。
+modは既存のCron操作を実行し、装着結果を生成元の明らかな通知で届ける。
+以下の作成前回収能力確認、共通prompt、durable保持、同じ失敗の反復抑止は維持する。
+ツールを監視するmodイベントへの登録は使わない。
+
 2026年10月7日、`agents_server`の`start`での定期再確認の装着を、モデルが起動前に行う手順からClaude Codeのmod（`agent-toolkit/hooks/periodic_recheck.ts`）が`start`の処理の中で行う方式へ改めた。
 ユーザーが`<役割名>.parent.md`による起動までの手順の多さを指摘し、`start`の後の自動化を求めたためである。
 装着が`allow`を要する`CronList`・`CronDelete`・`CronCreate`は配布原本`share/claude_settings_json_managed.json`の`permissions.allow`へ置く。

@@ -256,15 +256,29 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
     own_paths = (
         {
             *exit_paths,
-            *(directory / f"{kind}-{keep_session_id}.txt" for kind in ("recheck", "rate-limit", "compaction")),
+            *(directory / f"{kind}-{keep_session_id}.txt" for kind in ("recheck", "rate-limit", "compaction", "restart")),
         }
         if exit_paths
         else set()
     )
     threshold = time.time() - _STATE_MAX_AGE_SECONDS
-    for pattern in ("marker-*.txt", "request-*.txt", "recheck-*.txt", "rate-limit-*.txt", "compaction-*.txt"):
+    for pattern in (
+        "marker-*.txt",
+        "request-*.txt",
+        "recheck-*.txt",
+        "rate-limit-*.txt",
+        "compaction-*.txt",
+        "restart-*.txt",
+        "ui-request-*.txt",
+        "ui-response-*.txt",
+        "ui-requests/[0-3][0-9a-f]/ui-request-*.txt",
+        "ui-requests/[0-3][0-9a-f]/ui-response-*.txt",
+    ):
         for path in directory.glob(pattern):
-            if own_paths and path in own_paths:
+            if pattern.startswith("ui-requests/") and (path.parent.is_symlink() or path.parent.parent.is_symlink()):
+                continue
+            ui_name = re.fullmatch(r"ui-(?:request|response)-(.+)-[a-f0-9]{32}\.txt", path.name)
+            if own_paths and (path in own_paths or ui_name is not None and ui_name[1] == keep_session_id):
                 if clear:
                     path.unlink(missing_ok=True)
                 continue

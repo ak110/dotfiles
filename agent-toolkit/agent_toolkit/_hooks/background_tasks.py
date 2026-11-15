@@ -49,9 +49,11 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
+import time
 
-lazy from agent_toolkit._common import agy_records
+lazy from agent_toolkit._common import agy_records, delegated_session, function_hook_requests
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks.background_tasks_constants import (
@@ -83,6 +85,40 @@ lazy from agent_toolkit._hooks.transcript_scan import (
 )
 
 __all__ = ["async_agent_launch_id", "collect_background_task_id_tool_use_ids", "is_agent_task_notification"]
+
+
+def observe_repl_bash(payload: dict, *, completed: bool = False) -> None:
+    """Code ModeのBashを圧縮だけの待機として観測し、TaskStopの所有記録とは分ける。"""
+    identifier = payload.get("tool_use_id")
+    session = payload.get("session_id")
+    if (
+        payload.get("tool_name") != "Bash"
+        or payload.get("agent_id") is not None
+        or delegated_session.is_delegated(os.environ)
+        or not isinstance(identifier, str)
+        or re.fullmatch(r"repl_[A-Za-z0-9_-]{1,128}", identifier) is None
+        or not isinstance(session, str)
+        or not session
+    ):
+        return
+    try:
+        if completed:
+            function_hook_requests.enqueue(session, "background_complete", {"id": identifier})
+            return
+        inputs = payload.get("tool_input")
+        if not isinstance(inputs, dict) or not isinstance(inputs.get("command"), str):
+            return
+        # 公開Bashのデフォルト値。取消時のPostが届かなくても、実行期限の5秒後に圧縮候補から外す。
+        timeout = inputs.get("timeout", int(os.environ.get("BASH_DEFAULT_TIMEOUT_MS", "120000")))
+        if not isinstance(timeout, int) or isinstance(timeout, bool) or not 0 < timeout <= 7_200_000:
+            return
+        function_hook_requests.enqueue(
+            session,
+            "repl_bash_started",
+            {"id": identifier, "command": inputs["command"], "expires": time.time() + timeout / 1000 + 5},
+        )
+    except (OSError, ValueError) as error:
+        append_stop_log(session, "repl_bash_observation_error", {"error": str(error)})
 
 
 def _pending_cache_key(

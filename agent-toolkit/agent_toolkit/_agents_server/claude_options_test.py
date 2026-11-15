@@ -42,7 +42,15 @@ def test_build_options_inherits_parent_settings(
             captured.update(kwargs)
             self.settings = kwargs["settings"]
 
-    parent = {"env": {"CLAUDE_CODE_PROMPT_CACHE_TTL": "1h", "OTHER": "secret-parent-value"}, "disableAllHooks": True}
+    parent = {
+        "env": {
+            "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
+            "OTHER": "secret-parent-value",
+            "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "1",
+        },
+        "disableAllHooks": True,
+    }
+    monkeypatch.setenv("CLAUDE_CODE_EXPERIMENTAL_CODE_MODE", "1")
     path = tmp_path / "parent.json"
     path.write_text(json.dumps(parent), encoding="utf-8")
     settings = {
@@ -71,6 +79,7 @@ def test_build_options_inherits_parent_settings(
     env = captured["env"]
     assert isinstance(env, dict)
     assert all(value["env"][key] == item for key, item in env.items())
+    assert env["CLAUDE_CODE_EXPERIMENTAL_CODE_MODE"] == "0"
     if settings_kind in {"json", "file"}:
         assert value["env"]["OTHER"] == "secret-parent-value"
         assert value["disableAllHooks"] is True
@@ -183,6 +192,7 @@ async def test_claude_options_use_owned_base_instructions(tmp_path: pathlib.Path
         "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "AGENT_TOOLKIT_OWNER_SESSION": "owner-session",
         "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "1h",
+        "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "0",
     }
 
 

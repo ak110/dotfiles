@@ -5,7 +5,8 @@
 ## メインの会話圧縮予約
 
 `compact_conversation`はClaude Codeのメインへ引数なしの会話圧縮予約を提供する。
-`register.ts`がメイン専用の登録と委譲先の判定を「send_to_userツール」と共有し、同じ判定を自動経路にも渡す。
+既存agents_server MCPが予約を受け、設定PreToolUseとMCPの双方でメイン限定を確認する。
+会話内modの確認応答を受けて受付を返し、同じmodがターン間で圧縮を実行する。
 Codexにはこのmodを配らない。
 `compact_conversation.ts`は受付と完了を分け、turn間の単発タイマーから圧縮を実行する。
 surfaceを持つ会話では公開APIの`session.compact()`、headlessでは公開`command.run`の`compact`を使う。
@@ -25,7 +26,7 @@ process-loopは`--debug=hooks`で起動し、modの診断はそのdebugログに
 新しい背景待機では、直前の圧縮の成功・見送り・失敗によらず使用量と所有条件を再評価する。
 使用量の低下を観測しなくても次の待機へ進めるよう、待機単位の消費と未完了予約だけで重複を抑止する。
 完了通知で待機を除き、turnと単発タイマーで判定する。
-永続予約・継続ポーリング・追加のモデル呼出しによる判定は設けない。
+予約の監視は既存mod内で行い、別の常駐プロセスや追加のモデル呼出しによる判定は設けない。
 圧縮の実装と結果はホスト、予約と自動発動条件はmodが持つ。
 状態保存と通知後の復元はdelegationのwaiting-and-monitoring.mdが所有する。
 2026年10月9日のcommand.run方式の観測は監査記録へ保持し、現在の公開APIとturn間の契約は同月23日の記録へ分ける。
@@ -41,9 +42,27 @@ headlessの`compact`コマンドはホスト側の圧縮として原本置換hoo
 SDKの委譲先はターン間の同APIが未対応なので、所有backendが公開`/compact`入力を配送する。
 Codexの独立圧縮turnと合わせ、所有と結果保留の構造は[design-agents-server.md](design-agents-server-hold-state.md#結果の保留と自動再開)が扱う。
 原本を使う復元は要約を生成するホストでも共通とし、目的・最新訂正・認可・未完了を発話順・主体・参照位置から確認する。
+組織ガードで`session.compact`が省略される場合も登録は残し、設定PreCompactから原本復元を優先する短い要約を依頼する。
+PreCompactは要約APIそのものを省略する契約ではない。
 実機の適用範囲と再検証はaudit-records.md「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
 
+<<<<<<< HEAD
 ## 利用上限後のメインの再開予約
+=======
+### 再起動と同一会話への反映
+
+ユーザーが入力した`/restart`では、設定hookが実測した背景待機の共有一覧から、既存の所有照会が子担当を返す`atk agents wait`だけを停止する。
+一般の背景処理は停止しない。
+停止後は会話別の再開印を保存し、次のSessionStartが送信前に消費して自動続行を1回だけ予約する。
+modからの`/restart`制限を回避する経路は作らない。
+
+`apply_runtime_changes`はメインから対象を予約し、turn完了後に公開のMCP再接続コマンドとプラグイン再読込を実行する。
+再読込前に消費状態と個別応答を会話状態へ保存し、操作の重複実行を防ぐ。
+途中でmodが再読込された場合は、応答済みと未確認を区別して継続を通知する。
+受付、コマンド応答、反映後の動作確認はそれぞれ独立した結果として扱う。
+
+### 利用上限後のメインの再開予約
+>>>>>>> 1c3f6f612 (feat: Claude Codeの会話操作とCode Mode接続を整える)
 
 観測と再検証手段は`docs/development/audit-records-usage-limit.md`の「docs/development/design-hooks-compaction-resume.md：利用上限後のメインの再開予約：2026年10月14日」にある。
 

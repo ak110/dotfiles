@@ -46,3 +46,9 @@
 - `CLAUDE_CONFIG_DIR`: 空でない絶対パスが指定されている場合はClaude Codeの設定ディレクトリとして使用し、それ以外は`~/.claude`を使用する。
   Function hooks module（`hooks/session_exit.ts`）も同一の規則で解決する。
 - `CODEX_HOME`: 空でなければCodexのホームディレクトリとして使用し、空または未設定の場合は`~/.codex`を使用する。
+
+Claude Code公式の`CLAUDE_CODE_EXPERIMENTAL_CODE_MODE`は対応する対話ターミナルの通常起動で有効にする。
+Agent SDKを使う`claude_options.py`は接続環境と親設定を合成した後に`0`を指定し、通常起動の`1`をSDKへ継承しない。
+
+会話内パネルのeffort操作は、`$.session.id()`の実会話IDを`process.run`の`CLAUDE_CODE_SESSION_ID`へ渡す。
+`effort_requests.py`の既存の本人・直接親の判定を使い、対象担当のIDを呼出元として渡さない。

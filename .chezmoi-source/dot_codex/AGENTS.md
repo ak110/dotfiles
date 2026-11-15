@@ -410,7 +410,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
 発話は常体とする。
 ハーネスやhookの英文を言語指定として引き継がない。
 内部連絡・委譲の返却と、言語の是正の扱いは`agent-toolkit/share/agent-conduct-details.md`「使用言語」に従う。
-成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比フレーミングと限定の書き方は、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
+成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比・限定、防御的な説明、自明な補足の扱いは、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
 </atk-auto>
 
 <atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/02-agent-operations.md">

@@ -15,14 +15,16 @@ export function exitStatePath(
   sessionId: string,
   configured: string | undefined,
   home: string | undefined,
-  kind: "marker" | "request" | "recheck" | "rate-limit" | "compaction",
+  kind: "marker" | "request" | "recheck" | "rate-limit" | "compaction" | "ui-request" | "ui-response" | "restart",
 ): string | undefined {
   if (!SESSION_ID.test(sessionId)) return undefined;
   let root: string | undefined;
   if (configured && isAbsolute(configured)) root = configured;
   else if (home && isAbsolute(home)) root = `${home}/.claude`;
   if (!root) return undefined;
-  return `${root}/agent-toolkit-function-hooks/${kind}-${sessionId}.txt`;
+  const shard = [...sessionId].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 64;
+  const directory = kind === "ui-request" || kind === "ui-response" ? `ui-requests/${shard.toString(16).padStart(2, "0")}/` : "";
+  return `${root}/agent-toolkit-function-hooks/${directory}${kind}-${sessionId}.txt`;
 }
 
 async function statePath($: EngineInterface, sessionId: string, kind: "marker" | "request" | "recheck"): Promise<string | undefined> {

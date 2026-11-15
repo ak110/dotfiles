@@ -2,6 +2,16 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
+## agent-toolkit/share/rules/rules-main.claude-code.md：ツールの入出力：2026年11月15日
+
+- 観測日: 2026年11月15日。
+- 観測版: Claude Code 2.1.325、Opus 5.5、Linuxのtmux対話会話。
+- 再検証: 作業ツリーのagent-toolkitを`--plugin-dir`で読む。
+  ユーザー設定の`env.CLAUDE_CODE_EXPERIMENTAL_CODE_MODE="1"`を有効にした新規会話で初回確認を選ぶ。
+  Code Modeの有効表示とREPLによる2ファイルの読取を確認する。
+  `mcp__plugin_agent-toolkit_agents_server__send_to_user`から送った原文の画面表示と`ok:true`を対応付ける。
+  transcriptの実ツール呼出しが`<synthetic>`を持つ場合も、API失敗の代替本文と区別してStopの応答有無判定を確認する。
+
 ## agent-toolkit/share/rules-main.claude-code.md：ユーザー確認（`AskUserQuestion`）：2026年8月31日
 
 2026年8月31日、Claude Code v2.1.251・Fable 5で、ツール結果と次のツール呼び出しの間へ置いた地の文が`· summarized`付きの短縮文へ置換されることを確認した。

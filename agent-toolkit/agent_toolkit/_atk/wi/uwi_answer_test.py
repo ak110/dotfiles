@@ -4,13 +4,16 @@
 import contextlib
 import pathlib
 import subprocess
+from collections.abc import Iterable
 from typing import Any
 
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi as uwi_module
+from agent_toolkit._common import operation_approvals
 from agent_toolkit._testing.wi_entry_files import entry_path as _fixed_path
 from agent_toolkit._testing.wi_uwi_support import _AGENT_ENVIRONMENT_VARIABLES
 from agent_toolkit._testing.wi_uwi_support import _clear_agent_environment as _clear_agent_environment
@@ -22,6 +25,44 @@ from agent_toolkit.atk_test import (
     _write_awi_file,
     _write_uwi_file,
 )
+
+
+def test_answer_saves_operation_binding(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """共有回答保存を通して許可を保存し、回答変更で失効させる。"""
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    request = {
+        "request_id": "r1",
+        "tool_name": "Bash",
+        "tool_input": {"command": "echo ok"},
+        "cwd": "/repo",
+        "target_repo": "github.com/example/foo",
+        "scope": "once",
+        "allow_choice": "許可する",
+    }
+    path = _fixed_path(notes, "operation.md")
+    metadata = {
+        "state": "inbox",
+        "type": "uwi",
+        "target_repo": "github.com/example/foo",
+        "permission_request": request,
+        "choices": ["許可する", "拒否する"],
+    }
+    question = operation_approvals.request_display(request) + "\n"
+    path.write_text(frontmatter.serialize_frontmatter(metadata, question + uwi_module.ANSWER_MARKER + "\n"), encoding="utf-8")
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer="許可する")
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    saved, body = parsed
+    question, answer = body.rsplit(uwi_module.ANSWER_MARKER, 1)
+    assert operation_approvals.matches(saved, question, answer, request)
+    assert uwi_module.answer_uwi(notes, filename=path.name, answer="続けてよいと思う")
+    parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+    assert parsed is not None
+    assert parsed[0]["operation_approval"]["state"] == "revoked"
+    assert parsed[1].endswith("続けてよいと思う\n")
 
 
 class TestUwiAnswer:
@@ -61,7 +102,7 @@ class TestUwiAnswerEditorFailure:
     ) -> None:
         """エディターが非ゼロ終了コードで終了した場合、中断してexit 1を返しcommitしない。"""
         notes = _setup_notes(tmp_path)
-        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q?", answer="")
+        _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
         monkeypatch.setenv("EDITOR", "fake-editor")
         git_calls: list[_GitCall] = []
 
@@ -87,7 +128,7 @@ class TestUwiAnswerEditorFailure:
 class TestUwiAnswerNonInteractive:
     """answerサブコマンド: ファイル名と回答本文を引数で渡し、非対話で回答できることを検証する。
 
-    自律モードで動くエージェントが`$EDITOR`を介さずに回答を記録できることを担保する。
+    ユーザーが`$EDITOR`を介さずに回答を記録できることを担保する。
     """
 
     def test_arguments_record_answer_without_editor(
@@ -103,6 +144,12 @@ class TestUwiAnswerNonInteractive:
         monkeypatch.delenv("EDITOR", raising=False)
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
+        committed: list[tuple[str, ...]] = []
+
+        def commit(_notes: pathlib.Path, _message: str, paths: Iterable[str], **_kwargs: object) -> None:
+            committed.append(tuple(paths))
+
+        monkeypatch.setattr(_wi_sync, "commit_and_push", commit)
 
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "answer", filename, "採用する"], home=tmp_path)
@@ -113,7 +160,7 @@ class TestUwiAnswerNonInteractive:
         captured = capsys.readouterr()
         assert f"成功: UWIへ回答を反映した: {filename}" in captured.out
         assert "$EDITOR" not in captured.err
-        assert [c["cmd"] for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
+        assert committed == [(str(path.relative_to(notes)),)]
 
     def test_answer_marker_in_body_is_rejected(
         self,

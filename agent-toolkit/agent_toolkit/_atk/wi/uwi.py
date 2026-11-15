@@ -29,6 +29,7 @@ from agent_toolkit._atk.wi.constants import (
 from agent_toolkit._atk.wi.layout import iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common import operation_approvals
 
 ANSWER_MARKER = "<!-- ユーザーはこの行以降に回答を追記する -->"
 """UWIエントリの回答欄開始位置を示すHTMLコメント。
@@ -269,6 +270,13 @@ def answer_uwi(
         # 既存データにマーカーが重複するエントリが存在するため最後のマーカーを基準に分割する。
         # 最初のマーカーで分割すると回答見出しが消失し質問本文が途中で切断される。
         content = text.rsplit(ANSWER_MARKER, maxsplit=1)[0] + ANSWER_MARKER + "\n" + answer.strip() + "\n"
+        parsed_content = _frontmatter.parse_frontmatter(content)
+        if parsed_content is not None:
+            metadata, body = parsed_content
+            if "permission_request" in metadata or "operation_approval" in metadata:
+                question, saved_answer = body.rsplit(ANSWER_MARKER, maxsplit=1)
+                operation_approvals.bind_answer(metadata, question, saved_answer)
+                content = _frontmatter.serialize_frontmatter(metadata, body)
         auto_adopt = _is_affirmative_post_approval(text, answer)
         if text == content and not auto_adopt:
             return False

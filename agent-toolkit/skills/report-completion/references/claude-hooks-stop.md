@@ -23,7 +23,7 @@
 
 ## 入力
 
-Claude Codeでは、assistantの`text`要素および`mcp__agent-toolkit__send_to_user`の文字列引数`message`を可視本文として扱う。
+Claude Codeでは、assistantの`text`要素および`mcp__plugin_agent-toolkit_agents_server__send_to_user`の文字列引数`message`を可視本文として扱う。
 
 ## Codexの差分
 

@@ -36,7 +36,7 @@ description: >
 手動の`agent-toolkit:review-session`は独立した依頼として実施する。
 
 報告の送達方法は`agent-toolkit:user-confirmation-and-report`「手段の選択」に従う。
-Claude Codeでは`mcp__agent-toolkit__send_to_user`、Codexの通常のターン終了では必要なツール処理後の`final`を使い、その本文自体を作業完了報告にする。
+Claude Codeでは`mcp__plugin_agent-toolkit_agents_server__send_to_user`、Codexの通常のターン終了では必要なツール処理後の`final`を使い、その本文自体を作業完了報告にする。
 最終報告の末尾にのみ次の固定文を記載する。
 
 ```text
