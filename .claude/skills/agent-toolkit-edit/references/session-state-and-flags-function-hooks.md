@@ -52,7 +52,7 @@ MCP・設定hookとmodは、`ui-request-{session_id}-{要求ID}.txt`と`ui-respo
 分割先は固定64ディレクトリに限り、要求・応答ファイルには既存の保持期限による回収も適用する。
 Python側が要求をatomicに保存し、modが同じ要求IDの描画・予約・観測結果を書く。
 同期要求は呼出元がfinallyで両ファイルを回収し、非同期観測は応答後、未処理要求は期限後に`_common/function_hook_requests.py`が回収する。
-許可判定用の対話APIは実surface・実行中の版・実効autoModeを取得し、承認要求と実入力の一致を確認する側へ結果を渡す。
+許可判定用の対話APIは`$.session.surfaces()`が返す対話画面の種別・実行中の版・実効autoModeを取得し、承認要求と実入力の一致を確認する側へ結果を渡す。
 
 `restart-{session_id}.txt`はmodが所有する1回限りの再開印である。
 背景waitの停止後、またはprocess-loopの再起動時に、`phase: pending`と停止したwaitのID・commandをJSONで保存する。
