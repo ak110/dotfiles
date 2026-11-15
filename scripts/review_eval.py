@@ -504,7 +504,7 @@ def _cleanup_retained_environment(worktree: pathlib.Path) -> str:
                 "次の操作: git worktree list --porcelainで対象の登録を確認し、同じscoreコマンドを再実行する"
             )
         result = resources.cleanup_regenerable(worktree, references=functools.cache(resources.process_references))
-        if result["retained"]:
+        if any(item["retryable"] for item in result["retained"]):
             result["next_action"] = (
                 "保持対象の再生成入力・使用参照・アクセス権を確認し、"
                 "消費工程と使用プロセスの終了後に同じscoreコマンドを再実行する"

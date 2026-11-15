@@ -116,11 +116,11 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
     """
     result: dict[str, Any] = {"removed": [], "retained": []}
     if root.is_symlink() or root.is_junction() or not root.is_dir():
-        result["retained"].append({"path": str(root), "reason": "所有領域の実体を確認できない"})
+        result["retained"].append({"path": str(root), "reason": "所有領域の実体を確認できない", "retryable": True})
         return result
 
     def unreadable(error: OSError) -> None:
-        result["retained"].append({"path": str(error.filename), "reason": f"走査不能: {error}"})
+        result["retained"].append({"path": str(error.filename), "reason": f"走査不能: {error}", "retryable": True})
 
     for directory, children, _files in os.walk(root, followlinks=False, onerror=unreadable):
         parent = pathlib.Path(directory)
@@ -133,21 +133,26 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
                     continue
                 if paths.is_link(metadata):
                     children.remove(name)
-                    result["retained"].append({"path": str(path), "reason": "リンク先の所有と再生成指定を確認しない"})
+                    result["retained"].append(
+                        {"path": str(path), "reason": "リンク先の所有と再生成指定を確認しない", "retryable": False}
+                    )
                     continue
                 if not _regenerable(path):
                     if name in {".venv", "node_modules", "target"} or (path / "pyvenv.cfg").exists():
                         children.remove(name)
-                        result["retained"].append({"path": str(path), "reason": "再生成の前提が未確認"})
+                        result["retained"].append({"path": str(path), "reason": "再生成の前提が未確認", "retryable": True})
                     continue
                 children.remove(name)
                 protected, usage_root = _git_protected(path, root)
                 reason = None
+                retryable = False
                 if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
                     reason = "異なる所有者の再生成物"
                 elif protected:
                     reason = "Git原本または生成物としての無視指定がない"
                 else:
+                    # 正常な所有・Git保護と、消費終了や確認・修復後に再試行できる保持を区別する。
+                    retryable = True
                     # 再生成物が無い起動・掃引ではプロセス一覧も取得しない。
                     observed = references()
                     if observed is None:
@@ -161,10 +166,10 @@ def cleanup_regenerable(root: pathlib.Path, *, references: Callable[[], list[pat
                     ):
                         reason = "確認中に対象が変化した"
                 if reason:
-                    result["retained"].append({"path": str(path), "reason": reason})
+                    result["retained"].append({"path": str(path), "reason": reason, "retryable": retryable})
                     continue
                 shutil.rmtree(path)
                 result["removed"].append(str(path))
             except (OSError, subprocess.SubprocessError) as error:
-                result["retained"].append({"path": str(path), "reason": f"回収失敗: {error}"})
+                result["retained"].append({"path": str(path), "reason": f"回収失敗: {error}", "retryable": True})
     return result

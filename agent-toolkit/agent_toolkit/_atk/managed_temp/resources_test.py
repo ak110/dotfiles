@@ -52,4 +52,8 @@ def test_cleanup_selection_preserves_sources_and_live_resources(tmp_path, monkey
     result = resources.cleanup_regenerable(project, references=lambda: references)
     assert removed == ([target] if state == "unused" else [])
     assert result["removed"] == [str(path) for path in removed]
+    if state in {"tracked", "link"}:
+        assert result["retained"] and all(not item["retryable"] for item in result["retained"])
+    elif state in {"busy", "unknown"}:
+        assert result["retained"] and all(item["retryable"] for item in result["retained"])
     assert target.exists()  # 副作用を実行せず、判定対象を原本のまま保つ。
