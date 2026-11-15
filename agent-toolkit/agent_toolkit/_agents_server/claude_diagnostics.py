@@ -5,8 +5,8 @@ from __future__ import annotations
 # Codexだけを使う場合はClaude Agent SDKを読み込まない。
 # pylint: disable=import-outside-toplevel
 import asyncio
-import contextlib
 import datetime
+import logging
 import os
 import pathlib
 from typing import Any
@@ -148,18 +148,34 @@ def _owned_runtime_processes(
     return list(owned)
 
 
-def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path:
+def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path | None:
     """委譲先CLIの診断ログの保存先を用意し、保持世代を超えた記録を削除する。
 
     session識別子は初期化の完了まで確定しないため、開始時点では時刻を名前に使う。
     確定後の改名は`rename_debug_file_for_session`が行う。
     """
     directory = _state_paths.state_dir() / _DEBUG_LOG_DIR_NAME
-    directory.mkdir(parents=True, exist_ok=True)
-    existing = sorted(directory.glob("*.log"), key=lambda path: path.stat().st_mtime)
-    for stale in existing[: max(0, len(existing) - _DEBUG_LOG_RETENTION + 1)]:
-        with contextlib.suppress(OSError):
+    logger = logging.getLogger("agent-toolkit.agents-server.claude")
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning("診断ログの保存先を準備できません: path=%s error=%s。debug指定なしで再開します", directory, exc)
+        return None
+    existing: list[tuple[float, pathlib.Path]] = []
+    try:
+        for path in directory.glob("*.log"):
+            try:
+                existing.append((path.stat().st_mtime, path))
+            except OSError as exc:
+                logger.warning("診断ログを整理対象から除外します: path=%s error=%s。再開処理は続行します", path, exc)
+    except OSError as exc:
+        logger.warning("診断ログの一覧を取得できません: path=%s error=%s。再開処理は続行します", directory, exc)
+    existing.sort(key=lambda item: item[0])
+    for _mtime, stale in existing[: max(0, len(existing) - _DEBUG_LOG_RETENTION + 1)]:
+        try:
             stale.unlink()
+        except OSError as exc:
+            logger.warning("古い診断ログを整理できません: path=%s error=%s。再開処理は続行します", stale, exc)
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%f")
     return directory / f"{stamp}-{launch_kind}.log"
 

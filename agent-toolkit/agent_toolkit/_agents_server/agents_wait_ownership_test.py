@@ -141,6 +141,7 @@ def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
         encoding="utf-8",
     )
     shared_roots.write_host_alias("root-session", "writer-session", "codex-thread", tmp_path)
+    shared_roots.write_host_alias("root-session", "old-writer", "codex-thread", tmp_path)
     environment = {"AGENT_TOOLKIT_OWNER_SESSION": "root-session", "CODEX_THREAD_ID": "codex-thread"}
 
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 3
@@ -155,11 +156,15 @@ def test_codex_delegate_wait_resolves_writer_alias_and_releases_target(
         json.dumps({"status": "completed", "owner_status_file": "writer-session.json"}),
         encoding="utf-8",
     )
+    old_result = results / "old-result.json"
+    old_result.write_text(json.dumps({"status": "completed", "owner_status_file": "old-writer.json"}), encoding="utf-8")
     (shared_layout.hosts_directory("root-session", tmp_path) / "writer-session.json").unlink()
 
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 0
     assert json.loads(capsys.readouterr().out) == {"session_id": "remote-session", "status": "completed"}
     assert not result_path.exists()
+    assert old_result.exists()
+    assert (shared_layout.hosts_directory("root-session", tmp_path) / "old-writer.json").exists()
     retained, error = wait_targets.read_wait_targets("root-session", "writer-session.json", tmp_path)
     assert retained == set()
     assert error is None

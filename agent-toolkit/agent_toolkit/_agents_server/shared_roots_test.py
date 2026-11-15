@@ -274,3 +274,18 @@ def test_resolve_status_owner_identity_rejects_ambiguous_aliases(tmp_path: pathl
 
     with pytest.raises(ValueError, match="書込主体を一意に解決できません"):
         shared_roots.resolve_status_owner_identity(environment, tmp_path)
+
+
+def test_resolve_status_owner_identity_rejects_two_current_writers(tmp_path: pathlib.Path) -> None:
+    """公開状態も有効な複数の所有者は、旧索引混在の回復と区別して拒否する。"""
+    root = shared_layout.status_directory("root", tmp_path)
+    root.mkdir(parents=True)
+    for writer in ("writer-a", "writer-b"):
+        shared_roots.write_host_alias("root", writer, "thread", tmp_path)
+        (root / f"{writer}.json").write_text(
+            json.dumps({"version": 1, "host_session_id": "thread", "sessions": []}), encoding="utf-8"
+        )
+    with pytest.raises(ValueError, match="書込主体を一意に解決できません"):
+        shared_roots.resolve_status_owner_identity(
+            {"AGENT_TOOLKIT_OWNER_SESSION": "root", "CODEX_THREAD_ID": "thread"}, tmp_path
+        )

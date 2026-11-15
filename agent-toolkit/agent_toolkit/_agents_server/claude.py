@@ -163,7 +163,7 @@ class ClaudeServerManager(ClaudeStream):
                     result_contract_recovery_consumed=result_contract_recovery_consumed,
                     api_env_file=connection.api_env_file,
                     connection_kind=connection.kind,
-                    isolation_env_file=connection.isolation_env_file,
+                    isolation_env_files=connection.isolation_env_files,
                 )
                 session.claude_connection_diagnostics = choices.warnings
                 _LOG.info("claude_connection_selected session_id=%s connection=%s", session.session_id, connection.kind)
@@ -204,7 +204,7 @@ class ClaudeServerManager(ClaudeStream):
         request_prompt: str | None = None,
         result_contract_recovery_consumed: bool = False,
         existing_session: SessionState | None = None,
-        isolation_env_file: str | None = None,
+        isolation_env_files: tuple[str, ...] = (),
         handoff_prompt: str = "",
     ) -> SessionState:
         """保存済みClaude sessionを新しい所有タスクで再開する。
@@ -216,7 +216,7 @@ class ClaudeServerManager(ClaudeStream):
             connection_settings.Connection(
                 existing_session.claude_connection or "inherit" if existing_session else connection_kind,
                 api_env_file or (existing_session.claude_api_env_file if existing_session else None),
-                isolation_env_file,
+                isolation_env_files,
             ),
             role=(existing_session.claude_role if existing_session else None)
             or ("orchestrator" if model_type == "orchestrate" else "delegate"),
@@ -224,7 +224,7 @@ class ClaudeServerManager(ClaudeStream):
         )
         connection_kind = selected_connection.kind
         api_env_file = selected_connection.api_env_file
-        isolation_env_file = selected_connection.isolation_env_file
+        isolation_env_files = selected_connection.isolation_env_files
         await self._stop_owned_task(session_id)
         if existing_session is not None:
             begin_reply(existing_session, preserve_waits=True)
@@ -247,7 +247,7 @@ class ClaudeServerManager(ClaudeStream):
                 api_env_file=api_env_file,
                 connection_kind=selected,
                 existing_session=existing_session,
-                isolation_env_file=isolation_env_file,
+                isolation_env_files=isolation_env_files,
                 handoff_prompt=handoff_prompt,
             )
         except (OSError, ValueError, RuntimeError, SessionInitializationTimeoutError) as error:
@@ -277,19 +277,19 @@ class ClaudeServerManager(ClaudeStream):
         request_prompt: str | None = None,
         result_contract_recovery_consumed: bool = False,
         existing_session: SessionState | None = None,
-        isolation_env_file: str | None = None,
+        isolation_env_files: tuple[str, ...] = (),
         handoff_prompt: str = "",
     ) -> SessionState:
         """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
-        if connection_kind == "subscription" and isolation_env_file is None:
-            isolation_env_file = claude_connection.apply_current_settings(
+        if connection_kind == "subscription" and not isolation_env_files:
+            isolation_env_files = claude_connection.apply_current_settings(
                 connection_settings.Connection(connection_kind),
                 role="orchestrator" if model_type == "orchestrate" else "delegate",
                 env=child_environment.inherited(),
-            ).isolation_env_file
+            ).isolation_env_files
         debug_file = await run_file_operation(_prepare_debug_file, launch_kind)
-        diagnostic.debug_file = str(debug_file)
+        diagnostic.debug_file = str(debug_file) if debug_file is not None else None
         options = await run_file_operation(
             _build_options,
             cwd,
@@ -302,7 +302,7 @@ class ClaudeServerManager(ClaudeStream):
             root_session_id=self._root_session_id,
             api_env_file=api_env_file,
             connection_kind=connection_kind,
-            isolation_env_file=isolation_env_file,
+            isolation_env_files=isolation_env_files,
             handoff_prompt=existing_session.prompt
             if existing_session
             else prompt
@@ -369,9 +369,10 @@ class ClaudeServerManager(ClaudeStream):
             diagnostic.record_exception(exc)
             _LOG.error("Claude session初期化失敗: diagnostic=%s", await diagnostic.public_async())
             raise
-        diagnostic.debug_file = str(
-            await run_file_operation(rename_debug_file_for_session, debug_file, session.session_id, launch_kind)
-        )
+        if debug_file is not None:
+            diagnostic.debug_file = str(
+                await run_file_operation(rename_debug_file_for_session, debug_file, session.session_id, launch_kind)
+            )
         await session.drain_registration()
         session.claude_applied_effort = effort
         return session

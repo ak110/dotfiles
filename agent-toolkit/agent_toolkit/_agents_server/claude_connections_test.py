@@ -205,7 +205,7 @@ def test_delegate_started_on_subscription_moves_to_api_on_usage_limit(
         claude_connection,
         "candidates",
         lambda *_args, **_kwargs: claude_connection.Candidates(
-            (claude_connection.Connection("credits", "api.env", "api.env"), claude_connection.Connection("subscription"))
+            (claude_connection.Connection("credits", "api.env", ("api.env",)), claude_connection.Connection("subscription"))
         ),
     )
     assert resume_waits.begin_usage_limit_wait(
@@ -220,9 +220,9 @@ def _three_kinds(*_args: object, **_kwargs: object) -> claude_connection.Candida
     """設定上の使用順`credits,subscription,payg`の3種別の候補を返す。"""
     return claude_connection.Candidates(
         (
-            claude_connection.Connection("credits", "credits.env", "credits.env"),
+            claude_connection.Connection("credits", "credits.env", ("credits.env",)),
             claude_connection.Connection("subscription"),
-            claude_connection.Connection("payg", "payg.env", "payg.env"),
+            claude_connection.Connection("payg", "payg.env", ("payg.env",)),
         )
     )
 
@@ -255,7 +255,7 @@ def test_payg_rejection_after_successful_turn_moves_to_next_connection(
         claude_connection,
         "candidates",
         lambda *_args, **_kwargs: claude_connection.Candidates(
-            (claude_connection.Connection("payg", "payg.env", "payg.env"), claude_connection.Connection("subscription"))
+            (claude_connection.Connection("payg", "payg.env", ("payg.env",)), claude_connection.Connection("subscription"))
         ),
     )
     session = state.SessionState(
@@ -427,10 +427,13 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
     path.write_text(
         "CUSTOM_CONNECTION=api-only\nAWS_PROFILE=api-profile\nANTHROPIC_DEFAULT_SONNET_MODEL=api-model\n", encoding="utf-8"
     )
-    connection = claude_connection.Connection("subscription", isolation_env_file=str(path))
+    payg_path = tmp_path / "payg.env"
+    payg_path.write_text("PAYG_ONLY=payg-endpoint\n", encoding="utf-8")
+    connection = claude_connection.Connection("subscription", isolation_env_files=(str(path), str(payg_path)))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(payg_path))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((connection,)))
-    keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL")
+    keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL", "PAYG_ONLY")
     for key in keys:
         if injection == "settings-only":
             monkeypatch.delenv(key, raising=False)

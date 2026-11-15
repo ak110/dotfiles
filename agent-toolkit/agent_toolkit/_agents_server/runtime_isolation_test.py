@@ -50,7 +50,7 @@ async def test_sdk_child_environment(
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth")
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     child_environment.prepare(os.environ)
-    selected = claude_connection.Connection(kind, str(api) if kind == "payg" else None, str(api))
+    selected = claude_connection.Connection(kind, str(api) if kind == "payg" else None, (str(api),))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((selected,)))
     effective: list[dict[str, str]] = []
 

@@ -3,12 +3,65 @@
 import asyncio
 import json
 import logging
+import multiprocessing
 import pathlib
 
 import pytest
 
 from agent_toolkit._agents_server import logging_config
+from agent_toolkit._agents_server.logging_config import _LogFileHandler
 from agent_toolkit._common import state_paths
+
+
+def _rotate_shared_log(path: pathlib.Path) -> None:
+    handler = _LogFileHandler(path, maxBytes=80, backupCount=3, encoding="utf-8")
+    try:
+        handler.handle(logging.makeLogRecord({"msg": "x" * 70}))
+        handler.handle(logging.makeLogRecord({"msg": "rotated"}))
+    finally:
+        handler.close()
+
+
+@pytest.mark.windows
+def test_file_handler_follows_other_process_rotation(tmp_path: pathlib.Path) -> None:
+    """先に開いた書き手も別プロセスによる回転後の現在ログへ追従する。"""
+    path = tmp_path / "shared.log"
+    handler = _LogFileHandler(path, maxBytes=80, backupCount=3, encoding="utf-8")
+    child = multiprocessing.get_context("spawn").Process(target=_rotate_shared_log, args=(path,))
+    try:
+        handler.handle(logging.makeLogRecord({"msg": "first"}))
+        child.start()
+        child.join(timeout=30)
+        assert child.exitcode == 0
+        handler.handle(logging.makeLogRecord({"msg": "current"}))
+        assert path.read_text(encoding="utf-8").splitlines() == ["rotated", "current"]
+        assert not path.with_name(path.name + ".2").exists()
+    finally:
+        if child.pid is not None:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=10)
+            assert not child.is_alive()
+            child.close()
+        handler.close()
+
+
+@pytest.mark.windows
+def test_file_handlers_follow_rotation(tmp_path: pathlib.Path) -> None:
+    """別の書き手が回転した後も現在のログへ追記する。"""
+    path = tmp_path / "shared.log"
+    first = _LogFileHandler(path, maxBytes=80, backupCount=3, encoding="utf-8")
+    second = _LogFileHandler(path, maxBytes=80, backupCount=3, encoding="utf-8")
+    try:
+        first.handle(logging.makeLogRecord({"msg": "first"}))
+        second.handle(logging.makeLogRecord({"msg": "x" * 70}))
+        second.handle(logging.makeLogRecord({"msg": "rotated"}))
+        first.handle(logging.makeLogRecord({"msg": "current"}))
+        assert "current" in path.read_text(encoding="utf-8")
+        assert "rotated" in path.read_text(encoding="utf-8")
+    finally:
+        first.close()
+        second.close()
 
 
 def test_configure_logging_reuses_handlers_and_rotation(
