@@ -99,7 +99,18 @@ async def test_stable_plugin_root_shared_across_processes(
     logs: list[pathlib.Path] = []
     observed: list[dict[str, Any]] = []
     area: pathlib.Path | None = None
-    expected_tools = {"start", "send_message", "kill", "stop", "list", "show"}
+    expected_tools = {
+        "start",
+        "send_message",
+        "kill",
+        "stop",
+        "list",
+        "show",
+        "permissions",
+        "send_to_user",
+        "compact_conversation",
+        "apply_runtime_changes",
+    }
     try:
         # 配布元と保持先の2環境のcold導入に、実MCP操作の予算を加える。
         with contextlib.ExitStack() as files, anyio.fail_after(135):

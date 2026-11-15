@@ -42,6 +42,9 @@ def request_path(session_id: str, kind: str, identifier: str) -> pathlib.Path:
 
 def cleanup(session_id: str) -> None:
     """期限切れと、応答済みの非同期観測だけを回収する。"""
+    # UI要求を作れない識別子には回収対象も無い。通常hookの後続観測は維持する。
+    if re.fullmatch(r"[A-Za-z0-9_-]+", session_id) is None:
+        return
     base = state_path(session_id, "ui-request")
     for path in base.parent.glob(f"{base.stem}-*.txt"):
         identifier = path.name[len(base.stem) + 1 : -4]

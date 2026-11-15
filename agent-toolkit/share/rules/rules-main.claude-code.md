@@ -13,7 +13,7 @@
 - ユーザー向け本文は`mcp__plugin_agent-toolkit_agents_server__send_to_user`の`message`で送る。
   拡張思考は表示未確認、地の文はAPIで要約され得るためである。
   確認質問は`AskUserQuestion`を使う。
-  既存agents_server MCPの登録名は`send_to_user`、遅延時はToolSearchの`select:mcp__plugin_agent-toolkit_agents_server__send_to_user`で取得する。
+  遅延時はToolSearchへ`select:`に上記ツール名を続けて渡す。
   ユーザー画面への実描画を確認した成功応答だけを送達済みとして扱う。
   未提供なら最終応答に本文を書く。
   同手段で伝えた回答だけを委譲入力・記録に「回答済み」と書く。

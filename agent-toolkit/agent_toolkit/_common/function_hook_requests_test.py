@@ -86,10 +86,13 @@ async def test_missing_acknowledgement_is_not_success():
     assert not requests.state_path("conversation", "ui-request").exists()
 
 
-def test_session_path_validation():
+@pytest.mark.parametrize("session_id", ["../outside", "with space", "quoted'identifier"])
+def test_session_path_validation(session_id, monkeypatch):
     """会話IDによるディレクトリ外への書込みを拒否する。"""
+    monkeypatch.setattr(requests.host_homes, "claude_config_dir", lambda: pytest.fail("不正IDで保存領域を参照した"))
     with pytest.raises(ValueError, match="会話ID"):
-        requests.state_path("../outside", "ui-request")
+        requests.state_path(session_id, "ui-request")
+    requests.cleanup(session_id)
 
 
 def test_interactive_missing_reply_is_false_even_with_ready_marker(monkeypatch):
