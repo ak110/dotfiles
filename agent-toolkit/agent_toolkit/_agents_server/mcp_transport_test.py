@@ -7,6 +7,7 @@ import contextlib
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 import json
+import multiprocessing
 import os
 import pathlib
 import queue
@@ -16,7 +17,9 @@ import subprocess
 import sys
 import threading
 import time
+import warnings
 from collections.abc import AsyncGenerator, Callable, Generator
+from multiprocessing import resource_tracker
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -34,6 +37,7 @@ from mcp.types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 import agent_toolkit.agents_server_mcp as entry_script
 from agent_toolkit._agents_server import codex as codex_backend
 from agent_toolkit._agents_server import (
+    lifetime,
     logging_config,
     mcp_tools,
     mcp_transport,
@@ -45,6 +49,28 @@ from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.fixture
+def transport_tracker(monkeypatch: pytest.MonkeyPatch) -> Generator[None]:
+    """通信試験の実回収を隔離し、次のspawn資源利用まで同じtrackerを保つ。"""
+    context = multiprocessing.get_context("spawn")
+    kept = context.Semaphore()
+    tracker = resource_tracker._resource_tracker
+    pid = getattr(tracker, "_pid", None)
+    process = psutil.Process(pid) if pid is not None else None
+    generation = process.create_time() if process is not None else None
+    monkeypatch.setattr(lifetime.ServerLifetime, "_reclaim", lambda *_args, **_kwargs: [])
+    yield
+    assert getattr(tracker, "_pid", None) == pid
+    if process is not None:
+        assert process.is_running() and process.create_time() == generation
+        assert process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+    with warnings.catch_warnings(record=True) as observed:
+        warnings.simplefilter("always")
+        following = context.Semaphore()
+    assert not observed, observed
+    del following, kept
 
 
 @contextlib.asynccontextmanager
@@ -120,6 +146,7 @@ async def test_stdio_tool_results(tmp_path: pathlib.Path, host_environ: Callable
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("transport_tracker")
 async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
     """ツール処理で起きた例外も、公開transportでは理由と次の操作を持つエラーとして返る。"""
 
@@ -149,6 +176,7 @@ async def test_stdio_processing_exception(monkeypatch: pytest.MonkeyPatch) -> No
             )
 
 
+@pytest.mark.usefixtures("transport_tracker")
 def test_main_persists_mcp_initialize_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """stdio起動でinitializeの受信、応答完了および失敗を永続ログへ記録する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)

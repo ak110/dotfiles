@@ -443,6 +443,39 @@ def _run_child_pytest(
     )
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIXのresource_trackerを検証する")
+@pytest.mark.parametrize("mode", ["unused", "initial", "continued", "foreign", "killed", "new-killed"])
+def test_tracker_guard_attributes_death_to_test(tmp_path: pathlib.Path, mode: str) -> None:
+    """隔離workerの誤停止だけを失敗にし、正常な起動と別interpreterの終了を許す。"""
+    (tmp_path / "tracker_test.py").write_text(
+        textwrap.dedent(f"""\
+            import multiprocessing, os, signal, subprocess, sys
+            from multiprocessing import resource_tracker
+            import psutil
+            KEPT = []
+            def test_a_prepare():
+                if {mode!r} in ('continued', 'killed'):
+                    KEPT.append(multiprocessing.get_context('spawn').Semaphore())
+            def test_b_probe():
+                if {mode!r} in ('initial', 'continued', 'new-killed'):
+                    KEPT.append(multiprocessing.get_context('spawn').Semaphore())
+                if {mode!r} == 'foreign':
+                    program = "import multiprocessing; s = multiprocessing.get_context('spawn').Semaphore()"
+                    subprocess.run([sys.executable, '-c', program], check=True, timeout=15)
+                if {mode!r} in ('killed', 'new-killed'):
+                    pid = resource_tracker._resource_tracker._pid
+                    os.kill(pid, signal.SIGKILL)
+                    psutil.Process(pid).wait(timeout=15)
+        """),
+        encoding="utf-8",
+    )
+    result = _run_child_pytest(tmp_path, "tracker_test.py")
+    output = result.stdout + result.stderr
+    assert result.returncode == (1 if mode in ("killed", "new-killed") else 0), output
+    if mode in ("killed", "new-killed"):
+        assert "test_b_probe" in output and "before=" in output and "after=" in output
+
+
 def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> None:
     """spawnの資源を終了まで保持する試験の後も、未解放の資源を報告する警告を出力せず、試験が残した子だけを回収する。
 
