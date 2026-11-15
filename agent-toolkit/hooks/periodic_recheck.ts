@@ -36,7 +36,7 @@ function notMounted(reason: string): MountOutcome {
   return {
     note: notice(
       "warn",
-      `委譲先の起動後に待機状況を定期確認するtaskを、自動作成できなかった（理由: ${reason}）。` +
+      `待機状況の定期確認taskを自動作成できなかった（理由: ${reason}）。` +
         `理由に示したツールの許可と公開状態を確認せよ。待機方法は${RUNTIME_REFERENCE}を参照せよ。`,
     ),
     failed: true,

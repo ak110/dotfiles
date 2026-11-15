@@ -118,7 +118,7 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     if not any(word in text for word in _EXAMPLE_WORDS):
         return None
     body = (
-        "この発話は例示の語を含む。応答や具体化の前に、"
+        "発話に例示の語がある。応答・具体化の前に、"
         "`agent-toolkit:user-confirmation-and-report`の`references/user-utterance.md`"
         "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断せよ。"
     )
@@ -479,7 +479,7 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
         return None
     operation = "`agent-toolkit:report-completion`を起動せよ"
     return _llm_notice(
-        f"作業を完了してユーザーへ成果を報告するときは、報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
+        f"作業完了報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
         tag="notice",
         subject=json.dumps([payload.get("cwd"), command, response], ensure_ascii=False, sort_keys=True),
     )

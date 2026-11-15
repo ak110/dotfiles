@@ -79,7 +79,9 @@ def _normative(body: str, *, kind: str) -> str:
 SUBAGENT_RULES = _read_share("rules/rules-subagent.md")
 
 
-CLAUDE_CODE_SUBAGENT_RULES = _read_share("rules/rules-subagent.claude-code.md")
+CLAUDE_CODE_SUBAGENT_RULES = (
+    _read_share("rules/rules-common.claude-code.md") + "\n\n" + _read_share("rules/rules-subagent.claude-code.md")
+)
 
 
 # 委譲先の実行主体は、両backendが用意する指示ではユーザーと直接対話する主体として起動される。

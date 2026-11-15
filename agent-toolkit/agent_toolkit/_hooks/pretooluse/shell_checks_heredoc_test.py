@@ -108,7 +108,7 @@ class TestBashUnquotedHeredocSubstitution:
             assert substitution in _denial_reason(result)
         else:
             assert result.returncode == 0
-            assert "`agent-basics:writing-standards`を起動せよ" in _additional_context(result)
+            assert "`agent-basics:writing-standards`" in _additional_context(result)
             assert result.stderr == ""
 
     @pytest.mark.parametrize(

@@ -4,6 +4,7 @@
 
 | 働き | 撤去 | 理由 | 方針の所在 | 再導入の条件 |
 | --- | --- | --- | --- | --- |
+| 資料ごとに取得命令・シェル/JavaScriptコード・予算説明をhook通知へ生成する | 2026-11-16（本行を含む撤去commit） | 固定の取得方法と今回の対象を同じ通知へ重ね、合流時の受信量を増やしていた。対象一覧へ置き換え、取得方法はホスト別規範へ集約した。 | `agent-basics/skills/writing-standards/references/claude-hooks-messages-format.md`「通知本文の整形」 | ホスト側の取得規範と一意な対象名だけでは取得できない実例を示し、既知の説明を通知ごとに反復しない場合 |
 | 機械確定できない読込条件を候補一覧として毎操作へ通知する | 2026-11-15（本行を含む撤去commit） | 条件原本と重なる大量列挙が、受信者に必要な判断と最初の操作を不明確にした。 | `agent-toolkit/share/read-trigger-contract-acquisition.md`「取得とチェック」、`agent-basics/skills/writing-standards/references/claude-hooks-messages-format.md`「通知本文の整形」 | 原本の読込表と確定必読の案内だけでは不足する実例を示し、無関係な列挙と誤必読化を増やさず解消できる場合 |
 | 初回入力直後のスキル未取得と、最初のツールでの作業契約未作成を通知する | 2026-11-15（本行を含む撤去commit） | 正しい準備を始める前や途中にも回避不能な欠如を指摘していた。 | `agent-basics/skills/writing-standards/references/claude-hooks-messages-format.md`「通知本文の整形」、`agent-toolkit/share/work-contract-updates.md`「更新する時点」 | 正しい準備操作を妨げず、依存する後続操作との境界で必要な対処だけを案内できる場合 |
 | 他担当の手順書を読む目的を推測し、起動契約へ切り替えるよう警告する | 2026-11-15（本行を含む撤去commit） | 正当な調査・検収と起動準備を区別できず、正しい読取にも警告した。 | `agent-toolkit/skills/delegation/references/delegation-sending.md`「送信」 | 読取目的を区別し、正当な調査・編集・検収を誤警告しないと確認できる場合 |

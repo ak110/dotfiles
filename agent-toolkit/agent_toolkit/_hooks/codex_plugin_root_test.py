@@ -72,7 +72,7 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
             }
             assert dispatch.main(json.dumps(payload)) == 0
             first = capsys.readouterr()
-            assert str(reference) in first.out and str(foreign) not in first.out
+            assert "agent-toolkit:sample/reference.md" in first.out and str(foreign) not in first.out
             read = {**payload, "tool_name": "Bash", "tool_input": {"command": "cat -- " + shlex.quote(str(reference))}}
             assert dispatch.main(json.dumps(read)) == 0
             capsys.readouterr()

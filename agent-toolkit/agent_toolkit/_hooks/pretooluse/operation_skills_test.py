@@ -590,11 +590,11 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
     _record_skill(env, "ready", "agent-toolkit:delegation")
     payload = {"tool_name": tool, "tool_input": {"prompt": "調査する", "subagent_type": "specialist"}, "session_id": "ready"}
     # 起動手段の拒否とは分け、許可された専用定義で取得前後の案内を検証する。
-    assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(_run(payload, env))
+    assert "`agent-toolkit:delegation`" not in _additional_context(_run(payload, env))
     codex = {**payload, "session_id": "codex-delegation", "turn_id": "turn-1"}
     result = _run(codex, env)
     assert result.returncode == 0
-    assert "`agent-toolkit:delegation`を起動せよ" in _additional_context(result)
+    assert "`agent-toolkit:delegation`" in _additional_context(result)
     assert result.stderr == ""
     state_file = session_state.state_path("codex-delegation")
     state = _read_session_state(tmp_path, "codex-delegation") if state_file.exists() else {}
@@ -607,7 +607,7 @@ def test_delegation_ready_and_codex_acquisition(tmp_path: pathlib.Path, tool: st
         key.startswith("read-trigger:") and "/skills/delegation/SKILL.md" in key and "main" in owners
         for key, owners in state[rules_context.OPERATION_SKILL_READY_KEY].items()
     )
-    assert "`agent-toolkit:delegation`を起動せよ" not in _additional_context(_run(codex, env))
+    assert "`agent-toolkit:delegation`" not in _additional_context(_run(codex, env))
 
 
 def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> None:
@@ -619,14 +619,13 @@ def test_blocked_delegation_does_not_consume_warning(tmp_path: pathlib.Path) -> 
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
     assert specific["permissionDecisionReason"]
-    assert "`agent-toolkit:delegation`を起動せよ" not in specific["permissionDecisionReason"]
     state_file = session_state.state_path("blocked")
     state = _read_session_state(tmp_path, "blocked") if state_file.exists() else {}
     assert rules_context.OPERATION_SKILL_READY_KEY not in state
     valid = {**blocked, "tool_name": _DELEGATION_TOOLS[5], "tool_input": {}}
     delivered = _run(valid, env)
     assert delivered.returncode == 0
-    assert "`agent-toolkit:delegation`を起動せよ" in _additional_context(delivered)
+    assert "`agent-toolkit:delegation`" in _additional_context(delivered)
     state = _read_session_state(tmp_path, "blocked")
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
     target = read_triggers.ReadTarget(plugin_resources.skill_document_path("delegation", "SKILL.md"))
@@ -730,7 +729,7 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, monkeypatch: pytest.
         )
     payload = {"tool_name": tool, "tool_input": inputs[tool], "session_id": "handoff-exempt"}
     result = _run(payload, env)
-    assert ("`agent-basics:writing-standards`を起動せよ" in _additional_context(result)) is (target != "own")
+    assert ("`agent-basics:writing-standards`" in _additional_context(result)) is (target != "own")
     state = _read_session_state(tmp_path, "handoff-exempt") if session_state.state_path("handoff-exempt").exists() else {}
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
     assert document_reads.acquisition_state(records, read_triggers.ReadTarget(author), "main") == "missing"

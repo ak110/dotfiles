@@ -152,6 +152,6 @@ def test_edit_warning_keeps_specific_recovery(tmp_path, name, body, required):
     )
     assert result.returncode == 0
     notice = _additional_context(result)
-    assert "次の操作:" in notice and required in notice
+    assert required in notice
     assert "委譲元へ返す" not in notice
     assert "許可される担当" not in notice

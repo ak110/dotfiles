@@ -89,7 +89,7 @@ def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path)
     notification = first_result["hookSpecificOutput"]["additionalContext"]
     assert first.name in notification
     assert second.name in notification
-    assert "残りのバンドルはその場に残して" in notification
+    assert "残りは保持して" in notification
     assert "atk plans commit" in notification
     assert not second_result
 

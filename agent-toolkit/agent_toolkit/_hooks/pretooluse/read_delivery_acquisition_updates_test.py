@@ -1,6 +1,7 @@
 """役割の起動配送と、主体別の取得手段をまたぐ読込契約を確かめる。"""
 
 import json
+import shlex
 import subprocess
 
 import pytest
@@ -26,12 +27,7 @@ def test_hook_self_edit_twice_preserves_acquired_body(tmp_path, monkeypatch, sta
     row = read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:" + tool,), (document,))
     monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
     payload = {"session_id": "self-edit", "cwd": str(tmp_path)}
-    command = json.loads(
-        (read_delivery.acquisition_step(read_triggers.ReadTarget(document), "codex"))
-        .split("tools.exec_command(", 1)[1]
-        .splitlines()[0]
-        .removesuffix(");")
-    )["cmd"]
+    command = "cat -- " + shlex.quote(str(document))
     produced = subprocess.run(
         ["/bin/bash", "-c", command],
         env=host_environ(),
@@ -234,7 +230,7 @@ def test_public_compact_preserves_skill_acquisition_purpose(tmp_path, monkeypatc
     assert skill_step not in context
     assert str(skill) not in context
     failure = rules_context.acquisition_failure(read_triggers.ReadTarget(skill, "欠落"), ValueError("見出し不明"), shell=False)
-    assert skill_step in failure
+    assert str(skill) + "#欠落" in failure
     current = invoke("PreToolUse", "Write", write)
     assert skill_step in current
     assert f"Readで`{skill}`" not in current

@@ -62,7 +62,7 @@ def test_public_edit_and_commit_protection(
     assert result.returncode == 0 and not result.stderr
     if expected:
         reason = denial_reason(result)
-        assert expected in reason and "次の操作:" in reason
+        assert expected in reason
     else:
         assert json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
 

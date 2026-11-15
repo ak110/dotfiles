@@ -150,6 +150,7 @@ def test_session_start_main_claude_includes_main_and_claude_rules(
     normative_body = output.split(normative_start, maxsplit=1)[1]
     assert rules_context.MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip() in normative_body
     assert rules_context.MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip() in normative_body
+    assert normative_body.count(rules_context.COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip()) == 1
 
 
 @pytest.mark.parametrize(

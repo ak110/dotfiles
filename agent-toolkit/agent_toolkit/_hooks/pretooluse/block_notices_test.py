@@ -85,7 +85,6 @@ def test_block_notices_preserve_cause_and_next_action(
         assert _RESULT not in captured.err
         message = json.loads(captured.out)["hookSpecificOutput"]["additionalContext"]
         assert 'kind="warn"' in message
-        assert "次の操作:" in message
         return
     assert code == 0, captured
     assert not captured.err
@@ -97,7 +96,7 @@ def test_block_notices_preserve_cause_and_next_action(
     assert len(blocks) == 1, captured.out
     body = blocks[0]
     assert _RESULT not in body
-    reason, action = body.split("次の操作:", 1)
+    reason, action = body.split("\n", 1)
     assert reason.strip()
     assert action.strip()
 

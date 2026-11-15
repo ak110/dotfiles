@@ -165,7 +165,7 @@ def test_codex_read_acquisition_is_allowed_then_original_operation_passes(tmp_pa
     payload = _payload(tmp_path, True)
     payload["transcript_path"] = str(tmp_path / "outer.jsonl")
     assert dispatch.main(json.dumps(payload)) == 0
-    assert "`agent-basics:bugfix`を起動せよ" in _context(capsys.readouterr())
+    assert "`agent-basics:bugfix`" in _context(capsys.readouterr())
     status = dispatch.main(json.dumps(payload))
     assert status == 0 and not _context(capsys.readouterr())
     seen = set()
@@ -233,7 +233,7 @@ def test_confirmation_entry_is_denied_while_references_are_unread(tmp_path, caps
         assert "choice-construction.md" in reason
         assert "user-confirmation-and-report-decisions.md" in reason
         assert "user-confirmation-and-report-questions.md" in reason
-        assert "取得後に確認の要否を判断し直せ" in reason
+        assert "確認の要否を判断" in reason
 
 
 @pytest.mark.parametrize("codex", [False, True])

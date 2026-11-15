@@ -61,8 +61,7 @@ def test_generated_read_output_records_current_body(scenario, host_environ, host
     guide = invoke(host, "PreToolUse", "Write", write)
     assert str(path) in guide
     _assert_allowed_without_guidance(invoke(host, "PreToolUse", "Write", write))
-    step = read_delivery.acquisition_step(read_triggers.ReadTarget(path), "codex")
-    command = json.loads((step).split("tools.exec_command(", 1)[1].splitlines()[0].removesuffix(");"))["cmd"]
+    command = "cat -- " + shlex.quote(str(path))
     if syntax == "for":
         command = f'for f in {shlex.quote(str(path))}; do cmp -s "$f" "$f"; done && {command}'
     elif syntax == "variable":
@@ -325,7 +324,7 @@ def test_codex_named_skill_guidance_then_body_receipt(scenario, monkeypatch):
     target = read_triggers.ReadTarget(skill)
     write = {"file_path": str(path.parent / "output.md"), "content": "成果"}
     guide = invoke("codex", "PreToolUse", "Write", write)
-    assert "`local`を起動せよ" in guide and "cat --" not in guide
+    assert "`local`" in guide and "cat --" not in guide
     assert not read_delivery.target_ready(state.get(rules_context.OPERATION_SKILL_READY_KEY, {}), target, "main")
     command = "cat -- " + shlex.quote(str(skill))
     invoke("codex", "PreToolUse", "Bash", {"command": command})

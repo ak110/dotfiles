@@ -85,8 +85,7 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert 'kind="warn"' in context
         assert "root_session_id" in context
-        next_action = context.split("\n次の操作: ", maxsplit=1)[1]
-        assert all(name in next_action for name in next_action_names)
+        assert all(name in context for name in next_action_names)
 
     def test_reduced_terminal_start_status_is_recorded(self, tmp_path: pathlib.Path) -> None:
         """全候補不可用のstartが返す終了statusをそのまま記録する。"""

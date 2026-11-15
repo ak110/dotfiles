@@ -198,7 +198,6 @@ def test_internal_observation_failure_uses_one_marked_context(monkeypatch, subco
     context = response["hookSpecificOutput"]["additionalContext"]
     assert f'source="{subcommand}" kind="warn"' in context
     assert "観測の故障注入" in context
-    assert "次の操作:" in context
     assert response.get("decision") != "block"
 
 

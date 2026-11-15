@@ -43,10 +43,10 @@ def _read_output(command, host_environ):
 
 
 def _produce(target, host_environ):
-    """案内が生成した取得コマンドを実行し、未加工のstdout・stderrを返す。"""
-    command = json.loads(
-        (read_delivery.acquisition_step(target, "codex")).split("tools.exec_command(", 1)[1].splitlines()[0].removesuffix(");")
-    )["cmd"]
+    """ホストの標準読取で必要範囲を取得し、未加工のstdout・stderrを返す。"""
+    path = shlex.quote(str(target.path))
+    ranges = target.line_ranges() if target.heading and not read_triggers.is_normative_document(target.path) else ()
+    command = " && ".join(f"sed -n '{start},{end}p' -- {path}" for start, end in ranges) if ranges else f"cat -- {path}"
     result = _read_output(command, host_environ)
     return command, {"stdout": result.stdout, "stderr": result.stderr, "exit_code": result.returncode}
 

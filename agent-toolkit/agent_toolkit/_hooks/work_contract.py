@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import shlex
 
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import read_triggers
@@ -35,15 +34,9 @@ SHORT_NOTICE = "現行の作業契約を取得せよ: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
 
 
-def _read_command(path: pathlib.Path) -> str:
-    if os.name == "nt":
-        return "Get-Content -LiteralPath '" + str(path).replace("'", "''") + "' -Encoding utf8"
-    return "cat -- " + shlex.quote(str(path))
-
-
 def short_notice(path: pathlib.Path) -> str:
     """本文の代わりに、既知の契約原本を読む操作を示す。"""
-    return SHORT_NOTICE + f"`{_read_command(path)}`"
+    return SHORT_NOTICE + f"`{path}`"
 
 
 def exists(session_id: str) -> bool:
@@ -129,16 +122,13 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     except (OSError, UnicodeDecodeError) as error:
         return (
             f"現行の作業契約を読めない（{type(error).__name__}: {error}）。\n"
-            f"権限や文字コードの原因を解消した後、`{_read_command(path)}`で現在の目的・要件を確かめよ。"
+            f"権限や文字コードの原因を解消した後、`{path}`を読み、現在の目的・要件を確かめよ。"
             "解消できなければ、会話の原文と計画・WIから現在の目的・要件を確かめて作業を続け、"
             "所在と診断を委譲元（委譲元が無ければユーザー）へ報告せよ。"
             f"{RETURN_CRITERION}"
         )
     if len(body) > budget:
-        return (
-            f"現行の作業契約は通知の上限{budget}文字を超える。"
-            f"`{_read_command(path)}`で現在の目的・要件を確かめよ。{RETURN_CRITERION}"
-        )
+        return f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめよ。{RETURN_CRITERION}"
     text = f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"
     for metadata in document_reads.receipt_candidates([read_triggers.ReadTarget(path)]):
         notice_module.stage_delivery(

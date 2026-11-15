@@ -196,6 +196,33 @@ def requires_skill_invocation(
     )
 
 
+def reference_name(
+    path: pathlib.Path,
+    *,
+    cwd: str = "",
+    invocation: bool = True,
+    owner: Callable[[pathlib.Path], pathlib.Path | None] = document_owner,
+) -> str:
+    """通知の対象名を返す。別版の写しを稼働版へ読み替えないよう、実体が異なる場合はパスを保つ。"""
+    name = skill_name(path, owner=owner)
+    if name is not None:
+        return name if invocation and skill_loadable(path, cwd=cwd, owner=owner) else str(path)
+    root = owner(path)
+    if root is None:
+        return str(path)
+    plugin = document_plugin(str(path))
+    active = active_skill_root(plugin)
+    if active is None or active.resolve() != root.resolve():
+        return str(path)
+    relative = path.resolve().relative_to(root.resolve())
+    if relative.parts[0] == "skills":
+        relative = pathlib.Path(*relative.parts[1:])
+    candidates = (root / relative, root / "skills" / relative, root / "skills" / relative / "SKILL.md")
+    if {candidate.resolve() for candidate in candidates if candidate.is_file()} != {path.resolve()}:
+        return str(path)
+    return f"{plugin}:{relative.as_posix()}"
+
+
 def bash_document_reads(command: str) -> list[DocumentRead]:
     """Bashのコマンドが実行する、スキル配下の資料の読取を返す。ヘルプ表示と検索・抽出のコマンドは含めない。"""
     reads: list[DocumentRead] = []

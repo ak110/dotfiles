@@ -34,7 +34,7 @@ async function statePath($: EngineInterface, sessionId: string, kind: "marker" |
 }
 
 function cleanupWarning(reason: string): string {
-  return automatedMessage("periodic-recheck", "warn", `待機状況を定期確認するtaskを自動削除できなかった（理由: ${reason}）。` +
+  return automatedMessage("periodic-recheck", "warn", `待機状況の定期確認taskを自動削除できなかった（理由: ${reason}）。` +
     "taskは保持した。`CronList`・`CronDelete`の許可と公開状態を確認せよ。" +
     "次にターンを終えるとき、待機対象が全て終了していれば自動削除を再判定する。");
 }

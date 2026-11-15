@@ -58,6 +58,7 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 SHARE_DIR = plugin_resources.plugin_root() / "share"
 # SHARE_DIRはplugin rootの算出にも使うため基点を保ち、役割別の規範だけ`share/rules/`から読む。
 RULES_DIR = SHARE_DIR / "rules"
+COMMON_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-common.claude-code.md"
 MAIN_RULES_PATH = RULES_DIR / "rules-main.md"
 MAIN_RULES_CLAUDE_CODE_PATH = RULES_DIR / "rules-main.claude-code.md"
 MAIN_RULES_CODEX_PATH = RULES_DIR / "rules-main.codex.md"
@@ -166,6 +167,7 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     if not delegated:
         normative_parts.append(MAIN_RULES_PATH.read_text(encoding="utf-8").rstrip("\n"))
         if host == "claude":
+            normative_parts.append(COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
             normative_parts.append(MAIN_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
         elif host == "codex":
             normative_parts.append(MAIN_RULES_CODEX_PATH.read_text(encoding="utf-8").rstrip("\n"))
@@ -258,14 +260,6 @@ def reset_main_operation_skill_ready(session_id: str) -> None:
     update_state(session_id, _reset)
 
 
-def shell_acquisition_conditions() -> str:
-    """取得観測が受理するシェル実行と、取得後の再試行を案内する。"""
-    return (
-        "必要範囲の本文を実出力として返せ。省略・退避した部分は実際に回収してから進め。"
-        "取得後は、止められた元の書き込みを再発行できる"
-    )
-
-
 def acquisition_failure(
     target: read_triggers.ReadTarget,
     error: Exception,
@@ -273,34 +267,20 @@ def acquisition_failure(
     shell: bool,
     cwd: str = "",
 ) -> str:
-    """資料読取または見出し解決の失敗を、主体に応じた取得または復旧へ導く。"""
+    """失敗した実体と原因を示し、資料または参照先の修復へ導く。"""
     path = target.path
     if not path.is_file():
-        return (
-            f"資料`{path}`は存在しない。資料と読込宣言の参照先を復旧せよ。"
-            "復旧できない場合、委譲先は委譲元へ、それ以外はユーザーへ報告せよ"
-        )
-    prefix = f"`{target}`の読取または注目見出しの解決に失敗: {error}。"
+        return f"資料`{path}`は存在しない。資料と読込表の参照先を修復せよ。直せない場合は委譲元（無ければユーザー）へ報告せよ。"
+    prefix = f"`{target}`の取得に失敗: {error}。"
     if target.heading and isinstance(error, ValueError) and not isinstance(error, UnicodeError):
-        prefix += "読込宣言の見出しと資料を整合させよ。"
-    skill = document_reads.skill_document(str(path))
-    # 初回案内と同じく、Claudeの起動禁止スキルは本文取得へ案内する。
+        return prefix + "読込表の見出しと資料を整合させ、資料を取得して元の操作へ戻れ。"
     try:
         invocable = shell or read_triggers.skill_invocation_required(path, host="claude", subject="main")
     except OSError, ValueError:
         # 起動条件も壊れた資料は再解析せず、元の失敗と本文の修復を案内する。
         invocable = False
-    if skill and skill[1] == "SKILL.md" and invocable and document_reads.skill_loadable(path, cwd=cwd):
-        owner = next((parent for parent in path.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
-        name = f"{document_reads.document_plugin(str(path))}:{skill[0]}" if owner else skill[0]
-        step = f"`{name}`を起動せよ"
-        return prefix + step
-    if shell:
-        return prefix + f"全文を`cat -- {shlex.quote(str(path))}`で読め。" + shell_acquisition_conditions()
-    step = f"`{path}`をReadで全文読め"
-    if skill and not document_reads.skill_loadable(path, cwd=cwd):
-        step += f"。Bashでは`cat -- {shlex.quote(str(path))}`で取得せよ"
-    return prefix + step
+    name = document_reads.reference_name(path, cwd=cwd, invocation=invocable)
+    return prefix + f"原因を修復し、`{name}`を取得して元の操作へ戻れ。"
 
 
 def _compact_recovery_context() -> str:
@@ -508,6 +488,7 @@ def compose_subagent_start(*, host: str) -> str:
     """SubagentStartへ追加する本文を返す。"""
     parts = [SUBAGENT_RULES_PATH.read_text(encoding="utf-8").rstrip("\n")]
     if host == "claude":
+        parts.append(COMMON_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
         parts.append(SUBAGENT_RULES_CLAUDE_CODE_PATH.read_text(encoding="utf-8").rstrip("\n"))
     return (
         _normative_context("\n\n".join(parts), kind=NORMATIVE_KIND_SUBAGENT)

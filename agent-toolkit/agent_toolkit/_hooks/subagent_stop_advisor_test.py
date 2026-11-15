@@ -76,8 +76,8 @@ def test_empty_completion_report_is_blocked(capsys: pytest.CaptureFixture[str]) 
         "kind": "block",
     }
     assert "委譲元へ返す最終応答の本文が空" in decision["reason"]
-    assert "\n次の操作:" in decision["reason"]
-    assert "返すつもりだった成果・判断・未達" in decision["reason"]
+    assert "完了報告を書いてから停止せよ" in decision["reason"]
+    assert "成果・判断・未達" in decision["reason"]
     assert "指定の返却形式" in decision["reason"]
 
 

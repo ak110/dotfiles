@@ -14,7 +14,6 @@
 import json
 import os
 import re
-import shlex
 
 from agent_toolkit._common import mcp_environment, read_triggers, runtime_inserted
 from agent_toolkit._common.plugin_roots import resolve_plugin_root
@@ -129,16 +128,13 @@ def read_guidance_notice(payload: object, *, include_reads: bool = True) -> str:
         return ""
     set_warning_session_id(session_id)
     commands = "\n".join(
-        "Get-Content -LiteralPath '" + str(path).replace("'", "''") + "' -Encoding utf8"
-        if os.name == "nt"
-        else f"cat -- {shlex.quote(str(path))}"
-        for path in missing
+        f"- {document_reads.reference_name(path, cwd=cwd if isinstance(cwd, str) else '')}" for path in missing
     )
     return _notice(
-        "改善点の判定に使う次の資料の全文取得を確認できない。",
+        "改善点の判定資料の全文取得を確認できない。\n" + commands,
         removable_cause=True,
         subject="\n".join(map(str, missing)),
-        fix=f"次の各コマンドで資料を全文読め。\n{commands}\n読んだ基準で処置とAWI化ステータスを見直し、必要なら報告を訂正せよ。",
+        fix="資料を取得し、処置とAWI化ステータスを見直せ。必要なら報告を訂正せよ。",
     )
 
 

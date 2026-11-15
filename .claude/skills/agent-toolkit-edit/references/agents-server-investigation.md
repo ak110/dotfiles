@@ -102,10 +102,10 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 
 - 共有serviceの更新では、新版readyと受付先の切替、状態writerの切替、実turn終了後の制御移譲、raw資源の回収を別々に確認する。
   `state_dir/services/agents-server/generations.json`と世代ごとのready JSON・stderr、既存登録簿と終了診断を対応付ける。
-  接続EOFだけで会話終了と判断せず、健康な旧raw資源の提供者をowner-lost障害へ分類しない。
+  接続EOFだけで会話終了と判断せず、健康な旧raw資源の提供者を`owner_lost`障害へ分類しない。
   移譲の成否不明ではqueryを再送せず、既存登録簿とbackendの物理記録で復旧する。
   初回の非協力型旧stdioは自然終了まで旧接続を保持し、新しい通常MCP起動から共有serviceを使う。
-  詳細は`docs/development/design-agents-server-service.md`を参照する。
+  資源の定義と移譲は[管理サービス設計の「受付・状態writer・実行資源の移譲」](../../../../docs/development/design-agents-server-service.md#受付状態writer実行資源の移譲)を参照する。
 - `start`ツールの応答に含まれる`persistence_warnings`は、セッション情報の永続化に失敗したことを示している。
   セッション開始の成否は`status`および`excluded_candidates`も併せて確認し、すべての候補が除外されていた場合は返されたセッションを利用不能と判断する。
   正常に開始できたセッションであれば、同じ`session_id`を用いて`show`、`send_message`、`atk agents wait`を継続して実行し、保存失敗の原因は診断ログ側で確認する。

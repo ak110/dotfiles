@@ -244,6 +244,6 @@ def test_project_skill_missing_material_row_is_skipped_with_single_warning(tmp_p
     assert "想定外のエラーが起きた" not in first.stdout
     assert f"{backend}:6" in first.stdout and f"{backend}:5" not in first.stdout
     # 不備の行を除いた後も、同じ表の正常な行の読込案内は同じ呼び出しで配送される。
-    assert "`database`を起動せよ" in first.stdout
+    assert "`database`" in first.stdout
     repeated = _write_notes(project, "missing-material")
     assert repeated.returncode == 0 and f"{backend}:6" not in repeated.stdout

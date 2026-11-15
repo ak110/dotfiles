@@ -1,9 +1,7 @@
-"""公開hookの取得例から実本文の配送まで、二層予算と未確定対象の契約を確かめる。"""
+"""公開hookの未確定対象と、本文受領・継続の境界を確かめる。"""
 
 import argparse
 import json
-import pathlib
-import re
 import shlex
 import subprocess
 
@@ -29,123 +27,6 @@ def _state(monkeypatch):
 
     prepare_state(monkeypatch, read, update)
     return state
-
-
-def _generated_requests(context, host_environ):
-    """生成したJSの実行結果から引数を取り出し、pragmaとの予算対応を検査する。
-
-    toolsとtextはCodexの公開契約に沿う代役であり、シェル実行とhook配送は呼出側で実施する。
-    """
-    blocks = re.findall(r"```javascript\n(.*?)\n```", context, re.DOTALL)
-    assert blocks
-    assert len(re.findall(r"^```$", context, re.MULTILINE)) == len(blocks)
-    program = (
-        "const tools = {exec_command: async request => "
-        "({request, output: '本文', exit_code: 7, session_id: 31, diagnostic: '診断'})};\n"
-        "const text = value => process.stdout.write(JSON.stringify(value) + '\\n');\n"
-        + "\n".join("{\n" + block + "\n}" for block in blocks)
-    )
-    result = subprocess.run(
-        ["node", "--input-type=module"],
-        input=program,
-        env=host_environ(),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=10,
-        check=False,
-    )
-    assert result.returncode == 0 and not result.stderr
-    results = [json.loads(line) for line in result.stdout.splitlines()]
-    for value in results:
-        assert {key: value[key] for key in ("output", "exit_code", "session_id", "diagnostic")} == {
-            "output": "本文",
-            "exit_code": 7,
-            "session_id": 31,
-            "diagnostic": "診断",
-        }
-    requests = [value["request"] for value in results]
-    assert len(requests) == len(blocks)
-    for block, request in zip(blocks, requests, strict=True):
-        outer = json.loads(block.splitlines()[0].removeprefix("// @exec: "))["max_output_tokens"]
-        # rules-common.codexの初回取得契約は両層20,000を明示する。
-        assert request["max_output_tokens"] == outer == 20_000
-    return requests
-
-
-@pytest.mark.parametrize("scenario", ["short", "japanese", "sections", "normative-sections", "multiple", "one-line"])
-def test_public_hook_guidance_preserves_selected_body_and_budgets(tmp_path, monkeypatch, state, host_environ, scenario):
-    """短文・不均等な85KB・非連続節・複数資料・超長行を、公開hookと実取得で検査する。"""
-    document = tmp_path / ("AGENTS.md" if scenario == "normative-sections" else "file's $name.md")
-    sections = ["必須A", "必須B"] if scenario in {"sections", "normative-sections"} else [""]
-    if scenario in {"sections", "normative-sections"}:
-        first, last = "## 必須A\n第一の固有基準\n", "## 必須B\n第二の固有基準\n"
-        body = "# 資料\n" + first + "## 対象外\n不要本文\n" + last + "## 後続\n不要末尾\n"
-        expected = (body if scenario == "normative-sections" else first + last).encode("utf-8")
-    elif scenario == "japanese":
-        body = '# 資料\n短文"\\\n' + "長" * 14000 + "\r\n" + "末" * 14000
-        expected = body.encode("utf-8")
-    elif scenario == "one-line":
-        body = "# 資料\n" + "超" * 30000 + "\n## 末尾\n取得可能な本文\n"
-        expected = "# 資料\n## 末尾\n取得可能な本文\n".encode()
-    else:
-        body = "# 資料\n短い固有基準\n"
-        expected = body.encode("utf-8")
-    document.write_bytes(body.encode("utf-8"))
-    paths = [document]
-    expected_by_path = {str(document): expected}
-    if scenario == "multiple":
-        other = tmp_path / "other.md"
-        other.write_text("# 別資料\n" + "別の基準\n" * 6000, encoding="utf-8")
-        paths.append(other)
-        expected_by_path[str(other)] = other.read_bytes()
-    rows = [
-        read_triggers.ReadTrigger(tmp_path / "source.md", 1, "操作", ("tool:Write",), (path,), (heading,))
-        for path in paths
-        for heading in sections
-    ]
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
-    payload = {"session_id": "acquisition-budget", "turn_id": "turn", "cwd": str(tmp_path)}
-    guided = run_hook(
-        "pretooluse",
-        {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"}},
-    )
-    assert guided.returncode == 0 and not guided.stderr
-    specific = json.loads(guided.stdout)["hookSpecificOutput"]
-    assert specific.get("permissionDecision") != "deny"
-    context = specific["additionalContext"]
-    # 最終hookは長い取得案内を全文ファイルへ保存する。案内の公開読取コマンドで取り出す。
-    reference = re.search(r"cat -- (.+?) を実行", context)
-    if reference is not None:
-        command = shlex.split("cat -- " + reference[1])
-        context = pathlib.Path(command[-1]).read_text(encoding="utf-8")
-    if scenario == "one-line":
-        assert "行範囲では収まらない" in context and f"{document}:2" in context
-    received: dict[str, bytes] = {}
-    for request in _generated_requests(context, host_environ):
-        assert context.count(json.dumps(request["cmd"], ensure_ascii=False)) == 1
-        assert "取得コマンド:" not in context
-        inputs = {"command": request["cmd"]}
-        before = run_hook("pretooluse", {**payload, "tool_name": "Bash", "tool_input": inputs})
-        assert before.returncode == 0 and not before.stderr
-        produced = subprocess.run(shlex.split(request["cmd"]), capture_output=True, timeout=10, check=False)
-        assert produced.returncode == 0 and not produced.stderr
-        response = {"stdout": produced.stdout.decode("utf-8"), "stderr": "", "exit_code": produced.returncode}
-        displayed_size = len(json.dumps(response, ensure_ascii=False).encode("utf-8"))
-        assert request["max_output_tokens"] >= (displayed_size + 2) // 3
-        path = shlex.split(request["cmd"])[-1]
-        received[path] = received.get(path, b"") + produced.stdout
-        observed = run_hook(
-            "posttooluse",
-            {**payload, "hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": inputs, "tool_response": response},
-        )
-        assert observed.returncode == 0 and not observed.stderr
-    assert received == expected_by_path
-    records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    for path in paths:
-        for heading in sections:
-            ready = read_delivery.target_ready(records, read_triggers.ReadTarget(path, heading), "main")
-            assert ready is (scenario != "one-line")
 
 
 @pytest.mark.parametrize("scenario", ["brace", "brace-shadow", "generated", "quoted", "literal", "normal"])

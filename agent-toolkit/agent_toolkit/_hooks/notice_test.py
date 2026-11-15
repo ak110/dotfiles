@@ -49,7 +49,7 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
     message = format_block("blocked", fix="retry")
 
     assert auto_message_opening_attributes(message) == {"source": "test/hook", "kind": "block"}
-    assert "\nblocked\n次の操作: retry\n" in message
+    assert "\nblocked\nretry\n" in message
     assert message.endswith("</atk-auto>")
 
 
@@ -83,7 +83,7 @@ def test_warning_formatter_never_escalates_repetition(monkeypatch: pytest.Monkey
 
     assert not first_blocks
     assert not second_blocks
-    assert "次の操作: retry" in first
+    assert "retry" in first
     assert second == ""
 
 
@@ -129,7 +129,7 @@ def test_repeated_warning_keeps_action_in_the_first_notice_only(monkeypatch: pyt
         record_delivery(message)
     blocks = consume_warning_blocks()
 
-    assert "\n次の操作: 対象を直して再実行する。\n" in messages[0]
+    assert "\n対象を直して再実行する。\n" in messages[0]
     assert messages[1:] == ["", ""]
     assert not blocks
 

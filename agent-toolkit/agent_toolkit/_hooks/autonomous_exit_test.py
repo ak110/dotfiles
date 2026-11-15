@@ -240,7 +240,7 @@ class TestBlockCondition:
         reason = decision.get("reason")
         assert isinstance(reason, str)
         assert "atk agents-exit-session" in reason
-        assert "\n次の操作: " in reason
+        assert "単独で実行せよ" in reason
         assert reason.startswith('<atk-auto source="autonomous_exit" kind="block">')
 
     def test_nested_session_id_approves(self, tmp_path: pathlib.Path):

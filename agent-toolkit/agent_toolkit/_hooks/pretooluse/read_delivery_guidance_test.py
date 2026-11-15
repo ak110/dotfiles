@@ -6,8 +6,8 @@ import pathlib
 import pytest
 
 from agent_toolkit._common.read_triggers import ReadTarget, ReadTrigger, parse_tables
+from agent_toolkit._hooks import document_reads, rules_context
 from agent_toolkit._hooks import notice as notice_module
-from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery, read_delivery_guidance
 from agent_toolkit._testing.document_delivery import observe_received
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
@@ -22,6 +22,67 @@ from agent_toolkit._testing.read_delivery_support import (
 )
 
 __all__ = ["_PERSISTED_REPLACEMENT", "_assert_acquired", "_guidance", "_local_plugin_root", "_memory", "_notice_body", "_rows"]
+
+
+@pytest.mark.parametrize("kind", ["active", "copy", "ambiguous", "external"])
+@pytest.mark.parametrize("codex", [False, True])
+def test_listed_reference_resolves_to_required_body_only(tmp_path, monkeypatch, memory, kind, codex):
+    """名前をホスト規範で解決し、別版・同名資料の本文で誤って取得済みにしない。"""
+    active = tmp_path / "active"
+    copied = tmp_path / "copied"
+    for root in (active, copied):
+        manifest = root / ".claude-plugin/plugin.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text('{"name":"agent-toolkit"}', encoding="utf-8")
+        reference = root / "skills/example/references/rule.md"
+        reference.parent.mkdir(parents=True)
+        reference.write_text(f"# {root.name}\n{root.name}固有の基準\n", encoding="utf-8")
+    required = (copied if kind == "copy" else active) / "skills/example/references/rule.md"
+    wrong = (active if kind == "copy" else copied) / "skills/example/references/rule.md"
+    if kind == "ambiguous":
+        collision = active / "example/references/rule.md"
+        collision.parent.mkdir(parents=True)
+        collision.write_text("# 同名の別資料\n別の基準\n", encoding="utf-8")
+        wrong = collision
+    if kind == "external":
+        required = tmp_path / "external.md"
+        required.write_text("# 外部資料\n外部の必須基準\n", encoding="utf-8")
+    monkeypatch.setattr(document_reads.plugin_resources, "_PLUGIN_ROOT", active)
+    rows = [ReadTrigger(tmp_path / "caller.md", 1, "操作", ("tool:Do",), (required,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
+    monkeypatch.setattr(read_delivery.read_triggers, "reference_method_targets", lambda *_args, **_kwargs: ())
+    payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
+    first = _run_hook_in_process("pretooluse", {**payload, "session_id": "test", "tool_name": "Do", "tool_input": {}})
+    assert first.returncode == 0 and not first.stderr
+    body = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
+    item = next(line[3:-1] for line in body.splitlines() if line.startswith("- `"))
+    if kind == "active":
+        plugin, relative = item.split(":", 1)
+        assert plugin == "agent-toolkit"
+        # 受信側の規範はroot直下とskills配下から一意な実在資料を選ぶ。
+        choices = [path for path in (active / relative, active / "skills" / relative) if path.is_file()]
+        assert len(choices) == 1
+        selected = choices[0]
+    else:
+        selected = pathlib.Path(item)
+    assert selected == required
+    for path, expected in ((wrong, False), (selected, True)):
+        result = _run_hook_in_process(
+            "posttooluse",
+            {
+                **payload,
+                "session_id": "test",
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Read",
+                "tool_input": {"file_path": str(path)},
+                "tool_response": path.read_text(encoding="utf-8"),
+            },
+        )
+        assert result.returncode == 0 and not result.stderr
+        assert (
+            read_delivery.target_ready(memory.get(rules_context.OPERATION_SKILL_READY_KEY, {}), ReadTarget(required), "main")
+            is expected
+        )
 
 
 @pytest.mark.parametrize("kind", ["操作", "判断"])
@@ -58,7 +119,7 @@ def test_guidance_requires_real_acquisition_for_each_subject(tmp_path, monkeypat
     assert str(reference) in notice
     assert str(skill) not in notice
     assert "スキル固有本文" not in notice and "参照資料固有本文" not in notice
-    assert "`example-plugin:example`を起動せよ" in notice
+    assert "`example-plugin:example`" in notice
     records = memory[rules_context.OPERATION_SKILL_READY_KEY]
     assert not read_delivery.target_ready(records, ReadTarget(skill), agent)
     assert not read_delivery.target_ready(records, ReadTarget(reference), agent)
@@ -125,7 +186,7 @@ def test_missing_full_and_partial_reads(tmp_path, monkeypatch, codex):
 @pytest.mark.parametrize("codex", [False, True])
 @pytest.mark.parametrize("write", [False, True])
 @pytest.mark.usefixtures("memory")
-def test_guidance_gives_mandatory_host_steps_and_edit_review(tmp_path, monkeypatch, codex, write):
+def test_guidance_lists_targets_without_marking_acquired(tmp_path, monkeypatch, codex, write):
     paths = _rows(tmp_path, monkeypatch, "tool:Write" if write else "tool:Do", count=2)
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     tool = "Write" if write else "Do"
@@ -133,17 +194,10 @@ def test_guidance_gives_mandatory_host_steps_and_edit_review(tmp_path, monkeypat
     decision = read_delivery.deliver(payload, tool, inputs, "test")
     notice = _notice_body(decision)
     instruction = notice.splitlines()[1]
-    assert "この操作の結果を使う前に" in instruction and "取得・起動" in instruction
-    if not codex:
-        assert all(notice.count(str(path)) == 1 for path in paths)
-    assert ("読んだ後に、書いた内容をその基準で見直し、必要なら直" in notice) is write
+    assert "結果を使う前に" in instruction and "取得・起動" in instruction
+    assert all(notice.count(str(path)) == 1 for path in paths)
     assert "必須基準0" not in notice and decision.block is None
-    if codex:
-        prefix = "const result = await tools.exec_command("
-        requests = [json.loads(line[len(prefix) : -2]) for line in notice.splitlines() if line.startswith(prefix)]
-        assert [request["cmd"] for request in requests] == [f"cat -- {path}" for path in paths]
-        assert all(request["max_output_tokens"] > 0 for request in requests)
-        assert notice.count("各コードブロックを別々のfunctions.exec") == 1
+    assert "functions.exec" not in notice and "cat --" not in notice
     for path in paths:
         _assert_acquired(payload, path, False)
 
@@ -165,7 +219,7 @@ def test_confirmation_denial_has_all_paths_until_read(tmp_path, monkeypatch, mem
 
 @pytest.mark.parametrize("count", [1, 3])
 @pytest.mark.usefixtures("memory")
-def test_codex_small_edit_has_one_acquisition_command_per_document(tmp_path, monkeypatch, count):
+def test_codex_small_edit_has_one_target_per_document(tmp_path, monkeypatch, count):
     """数行のEditでも取得後に結果を使う順序と、通知への対処を定める規定の所在を示す。"""
     paths = _rows(tmp_path, monkeypatch, "tool:Edit", count=count)
     decision = read_delivery.deliver(
@@ -176,9 +230,8 @@ def test_codex_small_edit_has_one_acquisition_command_per_document(tmp_path, mon
     )
     body = _notice_body(decision)
     instruction = body.splitlines()[1]
-    assert "この操作の結果を使う前に" in instruction
-    assert body.count("各コードブロックを別々のfunctions.exec") == 1
-    assert all(body.count(f"cat -- {path}") == 1 for path in paths)
+    assert "結果を使う前に" in instruction
+    assert all(body.count(str(path)) == 1 for path in paths)
     assert "session_idが返ったら" not in body and "内外の出力枠" not in body
     assert decision.block is None
 
@@ -267,18 +320,18 @@ def test_codex_notice_guides_full_document_reads(tmp_path, monkeypatch):
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: [row])
     payload = {"turn_id": "turn"}
     notice = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
-    assert f"sed -n '2,3p' -- {path}" in notice and "共通" in notice
+    assert str(path) in notice and "共通" in notice
     observe_received({**payload, "tool_response": path.read_text()}, "Bash", {"command": f"cat -- {path}"}, "test")
     assert not _guidance(read_delivery.deliver(payload, "Do", {}, "test"))
 
 
-def test_claude_notice_shows_ranges_for_documents_over_the_budget(tmp_path, monkeypatch, memory):
-    """全資料の行範囲をReadの取得方法で示し、本文を含めない。"""
+def test_claude_notice_lists_targets_without_body(tmp_path, monkeypatch, memory):
+    """全資料の対象名を示し、未取得の本文を配送しない。"""
     del memory
     paths = _rows(tmp_path, monkeypatch, "tool:Do", count=2)
     notice = _notice_body(read_delivery.deliver({}, "Do", {}, "test"))
     assert all(str(path) in notice for path in paths)
-    assert "Read" in notice and "取得" in notice
+    assert "Read" not in notice and "取得" in notice
     assert "必須基準0" not in notice and "必須基準1" not in notice
 
 
@@ -393,7 +446,7 @@ def test_sections_of_the_same_document_share_one_acquisition_step(tmp_path, monk
     rows = [ReadTrigger(tmp_path / "SKILL.md", 1, "操作", ("tool:Do",), (document, document), ("前提", "手順"))]
     monkeypatch.setattr(read_delivery, "declarations", lambda _cwd, **_kwargs: rows)
     body = _notice_body(read_delivery.deliver({"cwd": str(tmp_path)}, "Do", {}, "test"))
-    assert body.count(f"Readで`{document}`を取得せよ") == 1
+    assert body.count(str(document)) == 1
     assert "前提" in body and "手順" in body
 
 
@@ -541,4 +594,4 @@ def test_public_guidance_recovery_branches(tmp_path, monkeypatch, case):
         "unresolved-target": "参照先を解決できない",
         "heading-repair": "見出しを一意に解決できない",
     }[case]
-    assert expected in context and "次の操作:" in context
+    assert expected in context

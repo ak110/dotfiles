@@ -25,7 +25,7 @@ _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
 _DECISIONS = _SKILL_REFERENCES / "user-confirmation-and-report-decisions.md"
 _QUESTIONS = _SKILL_REFERENCES / "user-confirmation-and-report-questions.md"
 _WARNING = "未取得資料"
-_DENIAL = "この質問はまだユーザーへ表示していない"
+_DENIAL = "この質問は未表示"
 _CONFIRMATION_TOOLS = ("AskUserQuestion", "request_user_input", "request_user_input_async")
 _QUESTION_INPUT = {
     "questions": [{"question": "どちらにしますか？", "header": "方針", "options": [{"label": "A"}, {"label": "B"}]}]
@@ -191,10 +191,10 @@ def test_unread_reference_is_denied_until_read(tmp_path: pathlib.Path, entries: 
         result = _run(payload)
         assert result.returncode == 0 and not result.stderr
         reason = _denial(result)
-        assert _DENIAL in reason and "次の操作:" in reason
+        assert _DENIAL in reason
         for path in (_APPROVAL, _CHOICE):
             _assert_reference_state(path, path not in unread)
-            assert (str(path) in reason) == (path in unread)
+            assert (f"agent-toolkit:user-confirmation-and-report/references/{path.name}" in reason) == (path in unread)
 
 
 @pytest.mark.parametrize("tool", _CONFIRMATION_TOOLS)
@@ -280,7 +280,7 @@ def test_name_mentions_and_attributes_do_not_suppress_warning(tmp_path: pathlib.
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0
     reason = _denial(result)
-    assert _DENIAL in reason and str(_APPROVAL) in reason and str(_CHOICE) in reason
+    assert _DENIAL in reason and "approval-scope.md" in reason and "choice-construction.md" in reason
     for path in (_APPROVAL, _CHOICE):
         _assert_reference_state(path, False)
 
@@ -300,7 +300,7 @@ def test_other_copy_of_same_named_reference_is_not_the_target(tmp_path: pathlib.
     entries = _successful_read(other) if tool == "Read" else _successful_bash(f"cat {other}")
     result = _run(_payload(tmp_path, entries))
     assert result.returncode == 0 and not result.stderr
-    assert str(_APPROVAL) in _denial(result)
+    assert "agent-toolkit:user-confirmation-and-report/references/approval-scope.md" in _denial(result)
     _assert_reference_state(_APPROVAL, False)
 
 
@@ -316,8 +316,8 @@ def test_compaction_drops_unfinished_read_and_later_success_restores_it(tmp_path
     entries = [_read(_APPROVAL), _COMPACT, _result("read-approval-scope.md"), *_successful_read(_CHOICE)]
     first = _denial(_run(_payload(tmp_path, entries)))
     assert _DENIAL in first
-    assert str(_APPROVAL) in first
-    assert str(_CHOICE) not in first
+    assert "agent-toolkit:user-confirmation-and-report/references/approval-scope.md" in first
+    assert "agent-toolkit:user-confirmation-and-report/references/choice-construction.md" not in first
     _assert_reference_state(_APPROVAL, False)
     _assert_reference_state(_CHOICE, True)
     assert not _denial(_run(_payload(tmp_path, [*entries, *_successful_read(_APPROVAL)])))

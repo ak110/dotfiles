@@ -215,7 +215,7 @@ def bugfix_pending(lines: list[str]) -> bool:
 def _block_body(delivery: str) -> str:
     return _block_notice(
         f"ユーザーの発話が欠陥の指摘を含み、このターンで`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
-        fix="`Skill`で`agent-basics:bugfix`を起動し、その手順で診断してから報告せよ。"
+        fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告せよ。"
         "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認せよ。",
     )
 

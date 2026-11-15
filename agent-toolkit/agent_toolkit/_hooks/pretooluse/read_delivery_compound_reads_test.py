@@ -145,7 +145,7 @@ def test_mixed_skill_body_does_not_replace_main_skill_invocation(tmp_path, monke
     }
     first = _run_hook_in_process("pretooluse", operation)
     assert first.returncode == 0 and str(reference) in first.stdout
-    assert "`example-plugin:example`を起動せよ" in first.stdout
+    assert "`example-plugin:example`" in first.stdout
     assert str(skill) not in first.stdout
     paths = [reference, skill] if reverse else [skill, reference]
     command = f"cat -- {paths[0]} && sed -n '1,$p' -- {paths[1]}"

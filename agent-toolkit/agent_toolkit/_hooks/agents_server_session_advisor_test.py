@@ -19,7 +19,7 @@ _HOOK = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 _STOP_CHECK_RUNNER = pathlib.Path(_stop_check_runner.__file__)
 # 警告の契約: 未観測の作業が残ることと、実在する観測手段（`atk agents wait`）・破棄手段（`kill`）を次の操作として示すこと。
 _WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-_NEXT_ACTION_PATTERN = re.compile(r"\n次の操作: [^\n]*`atk agents wait`[^\n]*`kill\(session_id\)`")
+_NEXT_ACTION_PATTERN = re.compile(r"\n[^\n]*`atk agents wait`[^\n]*`kill\(session_id\)`")
 
 
 def _environment(state_directory: pathlib.Path) -> dict[str, str]:

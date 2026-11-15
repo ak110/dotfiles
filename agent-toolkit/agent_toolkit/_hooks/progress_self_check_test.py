@@ -8,7 +8,6 @@ import json
 import os
 import pathlib
 import re
-import shlex
 import subprocess
 import uuid
 from collections.abc import Mapping
@@ -67,13 +66,11 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
 
     notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
     assert notice is not None and notice.startswith(_OPENING)
-    # 通知が案内する読取コマンドは、実在する規範ファイルを指す。
-    match = re.search(r"`(?:cat -- (?P<posix>[^`]+)|Get-Content -LiteralPath '(?P<nt>[^`]+?)' -Encoding utf8)`", notice)
-    assert match is not None
-    target = shlex.split(match["posix"])[0] if match["posix"] else match["nt"].replace("''", "'")
-    assert pathlib.Path(target).is_file()
+    target = progress_self_check.plugin_resources.plugin_root() / "share/agent-conduct-details.md"
+    assert "agent-conduct-details.md" in notice
+    assert "cat --" not in notice and "Get-Content" not in notice
     # 通知が名指しする節は、そのファイルに見出しとして実在する。
-    section = re.search(r"「(?P<name>[^」]+)」節", notice)
+    section = re.search(r"「(?P<name>[^」]+)」", notice)
     assert section is not None
     assert f"\n## {section['name']}\n" in pathlib.Path(target).read_text(encoding="utf-8")
     # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。

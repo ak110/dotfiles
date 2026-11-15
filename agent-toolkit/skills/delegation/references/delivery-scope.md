@@ -15,6 +15,7 @@ Codexの生成本文については`scripts/sync_codex_agents.py`も参照する
 | ユーザーが`~/.claude/rules/`に置いた規範ファイル（`~/.codex/AGENTS.md`が埋め込まないもの） | 届く（ユーザー規範） | 届く（`~/.codex/AGENTS.md`の読込指示） | 届く（親のメモリー階層。組み込み`Explore`・`Plan`を除く） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届く（起動・再開指示） | 届く（ユーザー設定の読込元） | 届く（developer指示） | 届く（起動・再開指示） | 届く（`~/.codex/AGENTS.md`の読込指示） |
 | `share/rules/rules-main.md` | 届く（SessionStart） | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules/rules-main.claude-code.md` | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
+| `share/rules/rules-common.claude-code.md` | 届く（SessionStart） | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules/rules-main.codex.md` | 届かない | 届く（SessionStart） | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない | 届かない |
 | `share/rules/rules-common.codex.md` | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届かない | 届く（`~/.codex/AGENTS.md`） | 届かない | 届く（`~/.codex/AGENTS.md`） |
 | `share/rules/rules-subagent.md` | 届かない | 届かない | 届く（SubagentStart） | 届く（システム指示） | 届く（developer指示） | 届く（指示の先頭） | 返却契約短節のみ届く | 返却契約短節のみ届く | 返却契約短節のみ届く | 届く（SubagentStart） |
@@ -39,7 +40,7 @@ OpenCodeも同節を1回だけ注入する。
 | 文書 | OpenCodeの通常起動 | OpenCodeの軽量起動 |
 | --- | --- | --- |
 | `share/rules/common/`配下・ユーザーが`~/.claude/rules/`に置いた規範・`share/rules/rules-subagent.md` | 届く（指示の先頭） | 届く（指示の先頭） |
-| `share/rules/rules-main.md`とホスト別の`rules-main.*.md`・`rules-common.codex.md`・`rules-subagent.claude-code.md` | 届かない | 届かない |
+| `share/rules/rules-main.md`とホスト別の`rules-main.*.md`・`rules-common.*.md`・`rules-subagent.claude-code.md` | 届かない | 届かない |
 | `share/agents-server-delegate-notice.md` | 届く | 届く |
 | `share/agents-server-delegate.md` | 届く | 届かない |
 | `share/agents-server-explore.md`・`agents-server-write.md`・`agents-server-shell.md` | 届かない | 届く（同名のmodeだけ） |

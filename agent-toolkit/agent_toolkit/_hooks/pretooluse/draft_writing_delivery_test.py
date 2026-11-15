@@ -94,7 +94,7 @@ def _guided(tool_name: str, tool_input: dict) -> str:
 
 
 def _read_step(path: pathlib.Path) -> str:
-    return f"Readで`{path}`を取得せよ"
+    return "agent-toolkit:" + path.relative_to(_PLUGIN / "skills").as_posix()
 
 
 @pytest.mark.parametrize(
@@ -121,7 +121,7 @@ def test_public_hook_guides_drafting_standards_for_temporary_drafts(content: str
         assert "analysis-records.md" not in guided
     script = draft.with_name("count.py")
     unrelated = _guided("Write", {"file_path": str(script), "content": "print(1)\n"})
-    assert not any(str(_PLUGIN / document) in unrelated for document in documents)
+    assert not any(_read_step(_PLUGIN / document) in unrelated for document in documents)
 
 
 def test_public_hook_guides_trial_rule_for_default_model_settings_edit(monkeypatch: pytest.MonkeyPatch) -> None:

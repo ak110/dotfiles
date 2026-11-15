@@ -9,7 +9,7 @@ import pytest
 
 from agent_toolkit._common import plugin_roots, read_triggers, read_triggers_targets
 from agent_toolkit._hooks import document_reads, rules_context
-from agent_toolkit._hooks.pretooluse import large_reads, read_acquisition, read_delivery
+from agent_toolkit._hooks.pretooluse import large_reads, read_delivery
 
 
 def test_receipt_candidates_share_document_scan_and_refresh_changed_body(tmp_path, monkeypatch):
@@ -174,10 +174,6 @@ def test_chezmoi_source_and_distribution_link_require_full_body(tmp_path, monkey
     assert document_reads.acquisition_state(records, target, "main") == "current"
     assert read_delivery.target_ready(records, target, "main")
 
-    guidance = read_delivery.acquisition_step(target, "codex")
-    assert "cat --" in guidance and "sed -n" not in guidance and "指定節" not in guidance
-    guidance = read_acquisition.codex_acquisition(path, target.line_ranges())
-    assert "cat --" in guidance and "sed -n" not in guidance
     assert read_delivery.read_guidance_key(target, invocation=False) == read_delivery.read_guidance_key(
         read_triggers.ReadTarget(path), invocation=False
     )

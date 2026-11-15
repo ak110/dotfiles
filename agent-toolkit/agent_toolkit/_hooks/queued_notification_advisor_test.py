@@ -62,7 +62,7 @@ def test_enqueued_notification_reports_task_id_and_output_file(tmp_path: pathlib
     assert decision == "notify"
     assert "b6n4gipz5" in body
     assert _OUTPUT_FILE in body
-    assert "そのパスを`Read`の`file_path`に指定して全量を読み" in body
+    assert "全量を読み" in body
     assert "工程を進めよ" in body
     assert "出力先が未通知" in body and "委譲元" in body
 
@@ -103,7 +103,7 @@ def test_agent_notification_uses_returned_message(tmp_path: pathlib.Path, launch
     transcript = _write_transcript(tmp_path, entries)
     decision, body = _evaluate(transcript)
     assert decision == "notify"
-    assert "返却メッセージの本文を結果として使って" in body
+    assert "本文を結果として" in body and "再取得は不要" in body
     assert "b6n4gipz5" in body
     assert _OUTPUT_FILE not in body
     assert "そのパスを`Read`の`file_path`に指定して" not in body
@@ -136,8 +136,8 @@ def test_mixed_agent_and_bash_notifications_keep_distinct_guidance(tmp_path: pat
     )
     decision, body = _evaluate(transcript)
     assert decision == "notify"
-    assert "返却メッセージの本文を結果として使って" in body
-    assert "そのパスを`Read`の`file_path`に指定して全量を読み" in body
+    assert "本文を結果として" in body and "再取得は不要" in body
+    assert "全量を読み" in body
     assert "/tmp/agent-transcript.jsonl" not in body
     assert "/tmp/bash.output" in body
     assert _evaluate(transcript) == ("approve", "")

@@ -105,7 +105,7 @@ def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisiti
     assert first.returncode == 0 and not first.stderr
     assert json.loads(first.stdout).get("hookSpecificOutput", {}).get("permissionDecision") != "deny" if first.stdout else True
     for reference in references:
-        assert (str(reference) in _additional_context(first)) is (not acquired)
+        assert (f"agent-basics:writing-standards/references/{reference.name}" in _additional_context(first)) is (not acquired)
         _assert_acquired(payload, reference, acquired)
     if not acquired:
         acquire()
@@ -117,7 +117,7 @@ def test_real_test_file_declaration_guides_both_standards_and_consumes_acquisiti
         else True
     )
     for reference in references:
-        assert str(reference) not in _additional_context(repeated)
+        assert f"agent-basics:writing-standards/references/{reference.name}" not in _additional_context(repeated)
         _assert_acquired(payload, reference, True)
 
 

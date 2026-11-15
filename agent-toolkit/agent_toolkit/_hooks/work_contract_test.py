@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pathlib
-import shlex
-import types
 
 import pytest
 
@@ -36,7 +34,7 @@ def test_oversized_contract_falls_back_to_location(tmp_path: pathlib.Path, monke
     assert "上限10文字を超える" in notice
     assert "work-contract-updates.md" in notice
     assert "agent-toolkit/share/work-contract.md" in notice
-    assert "cat --" in notice or "Get-Content -LiteralPath" in notice
+    assert "cat --" not in notice and "Get-Content" not in notice
 
 
 def test_unreadable_contract_reports_diagnostic(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -49,7 +47,7 @@ def test_unreadable_contract_reports_diagnostic(tmp_path: pathlib.Path, monkeypa
     assert str(path) in notice
     assert "work-contract-updates.md" in notice
     assert "agent-toolkit/share/work-contract.md" in notice
-    assert "cat --" in notice or "Get-Content -LiteralPath" in notice
+    assert "cat --" not in notice and "Get-Content" not in notice
 
 
 def test_missing_contract_has_no_notice(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,16 +55,9 @@ def test_missing_contract_has_no_notice(tmp_path: pathlib.Path, monkeypatch: pyt
     assert work_contract.notice("session") is None
 
 
-@pytest.mark.parametrize("system", ["posix", "nt"])
-def test_read_instruction_quotes_path_for_selected_shell(system, monkeypatch):
-    """空白と引用符を含む原本の取得先を、選んだシェルの引数として示す。"""
-    monkeypatch.setattr(work_contract, "os", types.SimpleNamespace(name=system))
+def test_read_instruction_preserves_external_path():
+    """空白と引用符を含む外部原本の所在を保持し、取得手段を重ねない。"""
     path = pathlib.Path("a b'c/work-contract.md")
     instruction = work_contract.short_notice(path)
-    if system == "nt":
-        assert "Get-Content -LiteralPath '" in instruction
-        assert "a b''c" in instruction
-        assert instruction.endswith("-Encoding utf8`")
-    else:
-        command = instruction.removeprefix(work_contract.SHORT_NOTICE).strip("`")
-        assert shlex.split(command) == ["cat", "--", str(path)]
+    assert str(path) in instruction
+    assert "cat --" not in instruction and "Get-Content" not in instruction

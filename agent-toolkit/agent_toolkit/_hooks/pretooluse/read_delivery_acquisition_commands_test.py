@@ -9,7 +9,6 @@ import pytest
 from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks import rules_context
 from agent_toolkit._hooks.pretooluse import read_delivery
-from agent_toolkit._hooks.pretooluse.read_delivery import _merged_steps
 from agent_toolkit._testing.document_delivery import run_hook as _run_hook_in_process
 from agent_toolkit._testing.read_delivery_acquisition_support import (
     _assert_continues_without_guidance,
@@ -18,37 +17,6 @@ from agent_toolkit._testing.read_delivery_acquisition_support import (
 )
 
 __all__ = ["_assert_continues_without_guidance", "_assert_no_read_guidance", "_state"]
-
-
-@pytest.mark.usefixtures("state")
-def test_small_codex_section_guidance_has_capacity_and_both_budgets(tmp_path, monkeypatch):
-    """48KiB未満でも指定節のバイト数を示し、取得範囲と内外の予算へ接続する。"""
-    document = tmp_path / "reference.md"
-    document.write_text("# 資料\n\n## 必須\n基準a\n\n## その他\n別の基準\n", encoding="utf-8")
-    target = read_triggers.ReadTarget(document, "必須")
-    assert len(target.body().encode("utf-8")) == 19
-    row = read_triggers.ReadTrigger(document, 1, "操作", ("tool:Write",), (document,), ("必須",))
-    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: [row])
-    result = _run_hook_in_process(
-        "pretooluse",
-        {
-            "session_id": "small-capacity",
-            "turn_id": "turn",
-            "cwd": str(tmp_path),
-            "tool_name": "Write",
-            "tool_input": {"file_path": str(tmp_path / "out.md"), "content": "本文"},
-        },
-    )
-    assert result.returncode == 0 and not result.stderr
-    step = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-    assert "19バイト。" in step
-    assert "sed -n '3,5p' --" in step
-    assert step.count("各コードブロックを別々のfunctions.exec") == 1
-    assert "前提・例外" in step
-    whole = _merged_steps(  # pylint: disable=protected-access
-        [target, read_triggers.ReadTarget(document)], {}, "codex"
-    )
-    assert len(whole) == 1 and "cat --" in whole[0]
 
 
 @pytest.mark.parametrize("host,route", [("claude", "normal"), ("codex", "normal"), ("codex", "failure"), ("codex", "compact")])
@@ -95,16 +63,7 @@ def test_hook_chain_records_acquisition_without_blocking_write(tmp_path, monkeyp
             resumed = _run_hook_in_process("pretooluse", writing)
             assert resumed.returncode == 0 and not resumed.stderr
             guidance = resumed.stdout
-        if route in {"normal", "compact"}:
-            assert "max_output_tokens" in guidance and "text(result)" in guidance
-        else:
-            assert "必要範囲の本文を実出力として返せ" in guidance
-            assert "省略・退避した部分は実際に回収" in guidance
-        # 成功ケースは通知が示した実コマンドをそのまま取得観測へ渡す。
-        if success:
-            advised = f"cat -- {shlex.quote(str(reference))}"
-            assert advised in guidance
-            command = advised if command.startswith("cat") else f"wc -l {shlex.quote(str(reference))} && {advised}"
+        assert str(reference) in guidance
     observed = _run_hook_in_process(
         "posttooluse",
         {
@@ -317,7 +276,7 @@ def test_named_skill_reference_and_invocation_keep_separate_evidence(tmp_path, m
             state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main", invocation=True
         )
         return
-    assert "`agent-toolkit:process-wi`を起動せよ" in guidance
+    assert "`agent-toolkit:process-wi`" in guidance
     inputs = {"file_path": str(skill)} if tool == "Read" else {"command": "cat -- " + shlex.quote(str(skill))}
     invoke("PreToolUse", tool, inputs)
     invoke("PostToolUse", tool, inputs, skill.read_text(encoding="utf-8"))

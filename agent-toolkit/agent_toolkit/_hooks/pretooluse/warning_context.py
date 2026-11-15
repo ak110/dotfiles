@@ -5,8 +5,6 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 lazy import hashlib
-lazy import os
-lazy import shlex
 
 from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common.persisted_output_reference import CODEX_NOTICE_REFERENCE_PREFIX
@@ -50,9 +48,8 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`を起動し、保存先の解決条件を読め。"
-                    "起動入力の`session_id`が不足し通知が未配送であることを委譲元（無ければユーザー）へ報告し、"
-                    "入力の修復後に元の操作を再試行せよ。"
+                    f"`{read_manual}`の保存先条件を確認せよ。"
+                    "`session_id`不足と未配送を委譲元（無ければユーザー）へ報告し、入力の修復後に元の操作を再試行せよ。"
                 ),
             )
         try:
@@ -65,21 +62,15 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`を起動し、保存先と権限の条件を読め。"
-                    "通知詳細が未配送であることとこの診断を委譲元（無ければユーザー）へ報告し、"
-                    "保存先の修復後に元の操作を再試行せよ。"
+                    f"`{read_manual}`の保存先・権限を確認せよ。"
+                    "未配送と診断を委譲元（無ければユーザー）へ報告し、保存先の修復後に元の操作を再試行せよ。"
                 ),
             )
-        read_saved = (
-            "Get-Content -LiteralPath '" + str(path).replace("'", "''") + "' -Encoding utf8"
-            if os.name == "nt"
-            else "cat -- " + shlex.quote(str(path))
-        )
         reference = format_notice(
             f"{CODEX_NOTICE_REFERENCE_PREFIX}{path}",
             tag="warn",
             removable_cause=False,
-            fix=f"`{read_saved}`を実行し、必要な案内を読め。",
+            fix="保存した通知を取得し、必要な対処を行え。",
         )
         if len(reference.encode("utf-8")) > limit:
             return format_notice(
@@ -87,9 +78,8 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`を起動し、保存先の規定を読め。"
-                    "保存先の絶対パスを通知枠へ収める配置が必要なことを委譲元（無ければユーザー）へ報告し、"
-                    "配置の修復後に元の操作を再試行せよ。"
+                    f"`{read_manual}`の配置を確認せよ。"
+                    "絶対パスが通知枠に収まる配置を委譲元（無ければユーザー）へ報告し、修復後に元の操作を再試行せよ。"
                 ),
             )
         for receipt in receipts:

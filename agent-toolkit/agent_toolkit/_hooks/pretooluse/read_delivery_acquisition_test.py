@@ -157,8 +157,6 @@ def test_project_skill_cwd_boundary_keeps_acquisition_and_invocation_distinct(
     assert first.returncode == 0 and not first.stderr
     assert (str(skill) in first.stdout) is not inside
     assert ("`local`" in first.stdout) is inside
-    if not inside:
-        assert "Readで" in first.stdout
     _assert_continues_without_guidance(_run_hook_in_process("pretooluse", request))
     assert not read_delivery.target_ready(
         state[rules_context.OPERATION_SKILL_READY_KEY], read_triggers.ReadTarget(skill), "main"
@@ -330,7 +328,9 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
         assert result.returncode == 0 and not result.stderr
 
     launched = _run_hook_in_process("pretooluse", {**payload, "tool_name": "Launch", "tool_input": {}})
-    assert launched.returncode == 0 and all(str(path) in launched.stdout for path in (delegation, waiting))
+    assert launched.returncode == 0
+    assert "agent-toolkit:share/delegation.md" in launched.stdout
+    assert "agent-toolkit:share/waiting.md" in launched.stdout
     for path in (delegation, waiting):
         read(path)
     compact = _run_hook_in_process("rules_context_codex", {**payload, "hook_event_name": "SessionStart", "source": "compact"})
@@ -347,9 +347,9 @@ def test_role_finding_save_keeps_current_acquisition_evidence(tmp_path, monkeypa
     }
     first = _run_hook_in_process("pretooluse", operation)
     assert first.returncode == 0 and not first.stderr
-    assert all(str(path) not in first.stdout for path in (delegation, waiting))
+    assert all(f"agent-toolkit:share/{path.name}" not in first.stdout for path in (delegation, waiting))
     if select_current:
-        assert str(needed) in first.stdout
+        assert "agent-toolkit:share/finding.md" in first.stdout
         assert not target.exists()
         for acquisition in (None, "failed"):
             if acquisition:

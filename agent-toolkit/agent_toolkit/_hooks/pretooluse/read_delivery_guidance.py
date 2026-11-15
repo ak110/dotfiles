@@ -27,7 +27,6 @@ from agent_toolkit._hooks.pretooluse import operation_skills
 from agent_toolkit._hooks.pretooluse.decision import Decision
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths
 from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
-from agent_toolkit._hooks.pretooluse.read_acquisition import codex_acquisition
 from agent_toolkit._hooks.pretooluse.read_delivery_conditions import _work_record_only
 from agent_toolkit._hooks.pretooluse.read_delivery_matching import _artifact_written_paths, _temporary_path
 from agent_toolkit._hooks.pretooluse.read_delivery_paths import _acquiring, _document_owner, _read_paths, _row_operation_kinds
@@ -42,26 +41,18 @@ if TYPE_CHECKING:
 
 
 def acquisition_step(target: read_triggers.ReadTarget, subject: str, *, cwd: str = "") -> str:
-    """主体に合う取得手段と、必要な範囲の容量を示す。"""
-    from agent_toolkit._hooks.pretooluse import read_delivery  # noqa: PLC0415  # pylint: disable=import-outside-toplevel,cyclic-import
-
+    """取得対象の実体を検収し、ホストで解決できる名前だけを示す。"""
     if read_triggers.is_normative_document(target.path):
         target = read_triggers.ReadTarget(target.path)
     path = target.path
     target.body()
-    focus = f"。指定節`{target.heading}`と、その成立に必要な前提・例外を読め" if target.heading else ""
-    skill = read_delivery.skill_name(path)
-    # Claudeの起動禁止は受信主体によらず尊重する。Codexはこのfrontmatterを使わない。
+    focus = f"（{target.heading}）" if target.heading else ""
+    # Claudeの起動禁止を尊重し、Codexの既存の取得条件は変えない。
     invocable = subject == operation_skills.SUBJECT_CODEX or read_triggers.skill_invocation_required(
         path, host="claude", subject="main"
     )
-    if skill and invocable and document_reads.skill_loadable(path, cwd=cwd, owner=_document_owner):
-        step = f"`{skill}`を起動せよ"
-        return step + focus
-    if subject == operation_skills.SUBJECT_CODEX:
-        ranges = target.line_ranges() if target.heading and path.suffix == ".md" else ()
-        return (focus.removeprefix("。") + "。\n" if focus else "") + codex_acquisition(path, ranges)
-    return f"Readで`{path}`を取得せよ" + focus
+    name = document_reads.reference_name(path, cwd=cwd, invocation=invocable, owner=_document_owner)
+    return f"`{name}`" + focus
 
 
 def _declarations_unavailable(error: Exception) -> Decision:
@@ -103,7 +94,6 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
         written = []
     if _work_record_only(written, payload, session_id):
         return Decision()
-    diagnostic = operation_skills.is_diagnostic_operation(tool_name, tool_input, cwd)
     warning_only = tool_name in {"AskUserQuestion", "ExitPlanMode", "request_user_input", "request_user_input_async"}
     # 確認ツールは、確認の前に読む資料の未取得だけを表示前に拒否する。宣言や記録を読めない場合は警告にとどめ、質問を止めない。
     confirmation = warning_only and tool_name != "ExitPlanMode"
@@ -404,9 +394,8 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 # 警告は回答と一緒に届き、基準を適用しないまま質問する害を防げない。未取得が解消するまで毎回拒否する。
                 return Decision(
                     block=_block_notice(
-                        "この質問はまだユーザーへ表示していない。確認の前に全文を読むと定めた資料のうち、未取得資料がある。",
-                        fix=("\n".join(steps) if subject == operation_skills.SUBJECT_CODEX else "。\n".join(steps))
-                        + "\n取得後に確認の要否を判断し直せ。",
+                        "この質問は未表示。以下の資料を取得し、確認の要否を判断せよ。",
+                        fix="\n".join(steps),
                     )
                 )
     _select_targets(session_id, pending, agent, rows=selection_rows)
@@ -419,10 +408,13 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
     ]
     label = "未起動スキル" if len(uninvoked) == len(pending) else "未取得資料・未起動スキル" if uninvoked else "未取得資料"
     subject = operation_skills.resolve_subject(payload)
-    followup = "読んだ後に、書いた内容をその基準で見直し、必要なら直せ。" if written and not diagnostic else ""
     # 短縮前後の本文量とモデル別の受信後の操作順の比較は`docs/development/audit-records.md`の
     # 「agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_guidance.py：取得案内の短縮：2026年11月13日」にある。
-    instruction = f"{label}がある。この操作の結果を使う前に、次の取得・起動を行え。"
+    instruction = f"{label}がある。この操作の結果を使う前に、以下の取得・起動を行え。"
+    if written and not operation_skills.is_diagnostic_operation(tool_name, tool_input, cwd):
+        instruction = f"{label}がある。結果を使う前に以下を取得・起動し、成果を見直して必要なら直せ。"
+    if warning_only:
+        instruction = f"{label}がある。以下を取得し、質問の前提と選択肢を確かめ直せ。"
     failures: dict[read_triggers.ReadTarget, str] = {}
     for target in pending:
         try:
@@ -454,15 +446,12 @@ def _deliver_documents(payload: dict, tool_name: str, tool_input: dict, session_
                 if origins:
                     failures[target] += f"。宣言元: {'、'.join(f'`{origin}`' for origin in origins)}"
     steps = _merged_steps(pending, failures, subject, cwd=cwd)
-    acquisition = "\n".join(steps) + "\n" if subject == operation_skills.SUBJECT_CODEX else "。\n".join(steps) + "。"
-    if warning_only:
-        acquisition += "質問の前提と選択肢を資料の基準で確かめ直せ。"
     notice = _llm_notice(
         instruction,
         tag=_WARN_TAG,
         removable_cause=True,
         escalate_on_repeat=False,
-        fix=acquisition + followup,
+        fix="\n".join(steps),
         subject=json.dumps([guidance_key(target) for target in pending]),
     )
     for target in pending:
@@ -477,7 +466,7 @@ def _merged_steps(
     *,
     cwd: str = "",
 ) -> list[str]:
-    """同じ資料の取得手段を1件へまとめ、注目する節を併記する。
+    """同じ資料の対象名を1件へまとめ、注目する節を併記する。
 
     節ごとに取得案内を並べると、共通の前提まで繰り返し読ませる。
     読取または見出しの解決に失敗した対象は、復旧の案内を個別に残す。
@@ -491,7 +480,7 @@ def _merged_steps(
     steps = []
     for key, headings in groups.items():
         if isinstance(key, read_triggers.ReadTarget):
-            steps.append(failures[key])
+            steps.append("- " + failures[key])
             continue
         named = [heading for heading in dict.fromkeys(headings) if heading]
         heading = (
@@ -502,7 +491,5 @@ def _merged_steps(
             subject,
             cwd=cwd,
         )
-        steps.append(step)
-    if subject == operation_skills.SUBJECT_CODEX and any("```javascript\n" in step for step in steps):
-        steps[0] = "各コードブロックを別々のfunctions.execで順に実行せよ。\n" + steps[0]
+        steps.append("- " + step)
     return steps

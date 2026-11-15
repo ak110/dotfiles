@@ -186,7 +186,7 @@ class TestUserConfirmationSkillPrompt:
 
     @classmethod
     def _has_notice(cls, context: str) -> bool:
-        return f"`{cls._SKILL}`スキルを起動せよ" in context and "次の操作:" in context
+        return cls._SKILL in context
 
     @pytest.mark.parametrize("source", ["startup", "clear", "compact"])
     def test_claude_notifies_once_per_context(self, source: str, tmp_path: pathlib.Path) -> None:
@@ -271,7 +271,7 @@ class TestUserConfirmationSkillPrompt:
         assert generated.stdout.startswith('<atk-auto source="usage-limit-resume" kind="notice">\n')
         document = _SCRIPTS_DIR.parent / "skills/user-confirmation-and-report/references/usage-limit.md"
         assert document.is_file()
-        assert f"Readのfile_pathに{json.dumps(str(document), ensure_ascii=False)}を指定" in generated.stdout
+        assert json.dumps(str(document), ensure_ascii=False) in generated.stdout
         self._session_start("startup", tmp_path)
         before = _read_state(tmp_path, "confirm")
         assert not self._has_notice(self._prompt(generated.stdout, tmp_path))

@@ -73,7 +73,7 @@ def test_common_method_is_delivered_for_direct_and_pending_reads_without_startin
     payload = {"cwd": str(tmp_path), **({"turn_id": "turn"} if codex else {})}
     assert not _guidance(read_delivery.deliver(payload, "Read", {"file_path": str(rule)}, "test"))
     first = _notice_body(read_delivery.deliver(payload, "Judge", {}, "test"))
-    assert str(method) in first
+    assert "agent-basics:writing-standards/references/read-method.md" in first
     assert str(skill) not in first
     assert str(extra) not in first
     assert "無関係な技能本文" not in first
@@ -84,7 +84,7 @@ def test_common_method_is_delivered_for_direct_and_pending_reads_without_startin
     assert not _guidance(read_delivery.deliver(payload, "Bash", method_read, "test"))
     memory.clear()
     pending = _notice_body(read_delivery.deliver(payload, "Judge", {}, "test"))
-    assert str(method) in pending
+    assert "agent-basics:writing-standards/references/read-method.md" in pending
     assert str(skill) not in pending
     assert str(extra) not in pending
     assert "無関係な技能本文" not in pending
@@ -268,7 +268,7 @@ def test_integrated_parent_contract_arrives_before_launch(monkeypatch, role, cod
     decision = read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test")
     targets = read_delivery.read_triggers.parent_contract_targets(role, root)
     assert _guidance(decision)
-    assert all((read_delivery.skill_name(target.path) or str(target.path)) in _notice_body(decision) for target in targets)
+    assert all((read_delivery.skill_name(target.path) or target.path.name) in _notice_body(decision) for target in targets)
     assert all(target.body().strip() not in _notice_body(decision) for target in targets)
     assert _guidance(read_delivery.deliver(payload, "Launch", {"subagent_md_path": role}, "test"))
 
@@ -279,7 +279,7 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
     root = tmp_path / "plugin"
     share = root / "share"
     share.mkdir(parents=True)
-    method = _canonical_method(root)
+    _canonical_method(root)
     source = share / "example.subagent.md"
     source.write_text(
         "# 役割\n## 名指し参照の読込方法\n"
@@ -325,7 +325,7 @@ def test_startup_input_target_survives_compaction(tmp_path, monkeypatch, memory,
     restored = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
     assert "起動入力の本文" not in restored
     assert str(original) in restored
-    assert str(method) in restored
+    assert "agent-basics:writing-standards/references/read-method.md" in restored
 
 
 @pytest.mark.parametrize("codex", [False, True])

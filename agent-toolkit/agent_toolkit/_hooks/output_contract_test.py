@@ -475,7 +475,8 @@ def test_pretooluse_public_entry_returns_host_output(
     if scenario == "block":
         specific = output["hookSpecificOutput"]
         assert specific["permissionDecision"] == "deny"
-        assert "cwd" in specific["permissionDecisionReason"] and "次の操作:" in specific["permissionDecisionReason"]
+        assert "cwd" in specific["permissionDecisionReason"]
+        assert "show" in specific["permissionDecisionReason"]
     elif scenario == "warning":
         assert "U+FFFD" in output["hookSpecificOutput"]["additionalContext"]
         assert "permissionDecision" not in output["hookSpecificOutput"]

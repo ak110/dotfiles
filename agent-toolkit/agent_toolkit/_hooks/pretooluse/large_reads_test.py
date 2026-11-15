@@ -2,9 +2,7 @@
 
 import json
 import pathlib
-import re
 import shlex
-import subprocess
 
 import pytest
 
@@ -254,7 +252,7 @@ def test_partial_delivery_keeps_large_read_trigger_unchanged(tmp_path: pathlib.P
     target = _sized_file(tmp_path / "nested", _THRESHOLD + 1)
     command = f"cd {target.parent} && {command}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
-    assert check_large_bash_read(command, str(tmp_path), is_codex=True) is None
+    assert check_large_bash_read(command, str(tmp_path)) is None
 
 
 @pytest.mark.parametrize("command", ["cat", "cat -n", "less -N", "more -d", "sed -n p", "awk '{print}'"])
@@ -328,55 +326,7 @@ def _sized_file(tmp_path: pathlib.Path, size: int, name: str = "large.txt", line
 
 
 def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
-    return check_large_bash_read(command, str(cwd), is_codex=True)
-
-
-def _execute_guidance(notice: str) -> dict[str, bytes]:
-    """生成されたセルの全引数・予算を検査し、案内されたコマンドの本文を結合する。"""
-    blocks = re.findall(
-        r"```javascript\n// @exec: ([^\n]+)\nconst result = await tools.exec_command\(([^\n]+)\);\ntext\(result\);\n```",
-        notice,
-    )
-    assert blocks
-    received: dict[str, bytes] = {}
-    for pragma, arguments in blocks:
-        outer = json.loads(pragma)["max_output_tokens"]
-        request = json.loads(arguments)
-        assert 0 < request["max_output_tokens"] <= outer <= 20_000
-        argv = shlex.split(request["cmd"])
-        result = subprocess.run(argv, capture_output=True, timeout=10, check=False)
-        assert result.returncode == 0 and not result.stderr
-        displayed = json.dumps(
-            {"output": result.stdout.decode("utf-8"), "exit_code": result.returncode}, ensure_ascii=False
-        ).encode("utf-8")
-        assert outer >= (len(displayed) + 2) // 3
-        received[argv[-1]] = received.get(argv[-1], b"") + result.stdout
-    return received
-
-
-@pytest.mark.parametrize("single_line", [False, True])
-def test_block_notice_leads_to_sed_ranges(tmp_path: pathlib.Path, single_line: bool) -> None:
-    """全量が枠を超える通常行を分割し、1行だけの超過は制約として案内する。"""
-    path = _sized_file(tmp_path / "with space", 85_000, line_bytes=100000 if single_line else 100)
-    notice = large_reads.codex_acquisition(path)
-    assert notice is not None
-    if single_line:
-        assert "行範囲では収まらない" in notice and "必要な項目を抽出" in notice
-        assert "tools.exec_command(" not in notice
-    else:
-        assert ",$p' --" in notice
-        assert _execute_guidance(notice) == {str(path): path.read_bytes()}
-
-
-@pytest.mark.parametrize("multiple", [False, True])
-def test_notice_range_commands_roundtrip_utf8(tmp_path: pathlib.Path, multiple: bool) -> None:
-    """引用した実パスの計算済み取得例で、日本語とCRLFを末尾の行まで復元する。"""
-    paths = [tmp_path / "file's name.txt", *([tmp_path / "second file.txt"] if multiple else [])]
-    for index, path in enumerate(paths):
-        path.write_bytes((f"本文{index}\r\n" * 3000).encode("utf-8"))
-    notice = "\n".join(large_reads.codex_acquisition(path) for path in paths)
-    assert notice is not None
-    assert _execute_guidance(notice) == {str(path): path.read_bytes() for path in paths}
+    return check_large_bash_read(command, str(cwd))
 
 
 def test_codex_unresolved_cwd_change_keeps_read_target_unknown(tmp_path: pathlib.Path) -> None:
@@ -438,18 +388,6 @@ def test_large_original_record_is_guided_to_evidence_query(
     assert "sed -n '" not in captured.out
 
 
-@pytest.mark.parametrize("multiple", [False, True])
-def test_large_read_budget_guidance(tmp_path, multiple):
-    """日本語85KB程度の資料を、両層の予算と全範囲が対応する取得例で復元する。"""
-    paths = [tmp_path / "first.md", *([tmp_path / "second.md"] if multiple else [])]
-    for path in paths:
-        path.write_text("本文\n" * 12000, encoding="utf-8")
-    notice = "\n".join(large_reads.codex_acquisition(path) for path in paths)
-    assert notice is not None
-    assert "original token count" not in notice and "write_stdin" not in notice
-    assert _execute_guidance(notice) == {str(path): path.read_bytes() for path in paths}
-
-
 def test_known_read_operand_is_kept_as_a_candidate_with_unknown_arguments(tmp_path):
     """無関係な引数が未知でも、既知のファイル引数を読取候補に残し、全文取得の証明には使わない。"""
     target = tmp_path / "input.md"
@@ -505,7 +443,8 @@ def test_heading_extraction_warns_only_for_normative_files(tmp_path, capsys, cod
     context = specific.get("additionalContext", "")
     assert ("見出しの正規表現" in context) is (normative and warned)
     if normative and warned:
-        assert str(path) in context and "全文" in context and "cat --" in context
+        assert str(path) in context and "全文" in context
+        assert "cat --" not in context and "functions.exec" not in context
 
 
 @pytest.mark.parametrize("multiple", [False, True])

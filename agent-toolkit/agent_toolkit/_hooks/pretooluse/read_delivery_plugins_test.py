@@ -327,7 +327,7 @@ def test_packaged_skill_read_delivers_startup_material_before_its_own_pending_re
 
     first = read_delivery.deliver(payload, tool, inputs, "test")
     assert not _guidance(first)
-    assert str(initial) in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
+    assert "agent-toolkit:search/initial.md" in _notice_body(read_delivery.deliver(payload, "Inspect", {}, "test"))
     observe_received({**payload, "tool_response": initial.read_text()}, "Read", {"file_path": str(initial)}, "test")
     assert _guidance(read_delivery.deliver(payload, tool, inputs, "test")) is None
 
@@ -364,7 +364,7 @@ def test_public_hook_records_the_worktree_project_skill_invoked_in_a_nested_work
     _project_declarations(monkeypatch, read_delivery.plugin_resources.plugin_root().resolve())
     payload = {"cwd": str(worktree)}
     before = _notice_body(read_delivery.deliver(payload, "Do", {}, "test"))
-    assert "`proj-skill`を起動せよ" in before
+    assert "`proj-skill`" in before
     assert str((worktree / ".claude/skills/proj-skill/SKILL.md").resolve()) not in before
     assert str((main / ".claude/skills/proj-skill/SKILL.md").resolve()) not in before
     observe_received(
@@ -420,9 +420,9 @@ def test_worktree_copy_of_a_distributed_skill_is_released_by_skill_or_read(tmp_p
     operation = {"file_path": str(tmp_path / "out.md"), "content": "本文"}
     first = read_delivery.deliver(payload, "Write", operation, "test")
     notice = _notice_body(first)
-    assert notice.count("`agent-basics:check-execution`を起動せよ") == 1
+    assert notice.count("`agent-basics:check-execution`") == 1
     assert str(active) not in notice
-    assert f"Readで`{copy}`を取得せよ" in notice
+    assert f"`{copy}`" in notice
     assert notice.count(str(copy)) == 1
     notice_module.record_delivery("\n".join(first.notices))
     assert not _guidance(read_delivery.deliver(payload, "Write", operation, "test"))
@@ -447,7 +447,6 @@ def test_acquisition_failure_reads_a_worktree_copy(tmp_path, monkeypatch):
     active = _basics_root(tmp_path / "dist/agent-basics", "# 検証\n\n配布物の本文\n")
     copy = _basics_root(tmp_path / "worktree/agent-basics", "# 検証\n\n作業中の本文\n")
     monkeypatch.setattr(read_delivery.plugin_resources, "plugin_root", lambda: toolkit)
-    for path, loadable in ((active, True), (copy, False)):
+    for path in (active, copy):
         notice = rules_context.acquisition_failure(ReadTarget(path, "不存在"), ValueError("範囲不明"), shell=False)
-        assert ("`agent-basics:check-execution`" in notice) is loadable
-        assert (f"`{path}`をReadで全文読め" in notice) is not loadable
+        assert str(path) + "#不存在" in notice

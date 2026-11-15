@@ -3,8 +3,6 @@
 import json
 import os
 import pathlib
-import re
-import shlex
 import types
 
 import pytest
@@ -103,13 +101,9 @@ def test_stop_aggregates_notice_without_blocking(monkeypatch: pytest.MonkeyPatch
     assert "原因を調べていない" in context
 
 
-def _assert_guidance_commands(body: str, paths: list[pathlib.Path], *, windows: bool) -> None:
-    if windows:
-        decoded = re.findall(r"(?m)^Get-Content -LiteralPath '((?:''|[^'])*)' -Encoding utf8$", body)
-        assert [value.replace("''", "'") for value in decoded] == list(map(str, paths))
-    else:
-        commands = [shlex.split(line) for line in body.splitlines() if line.startswith("cat -- ")]
-        assert commands == [["cat", "--", str(path)] for path in paths]
+def _assert_guidance_commands(body: str, paths: list[pathlib.Path]) -> None:
+    assert all(path.name in body for path in paths)
+    assert "cat --" not in body and "Get-Content" not in body
     assert all(path.is_file() for path in paths)
 
 
@@ -133,11 +127,11 @@ def test_missing_guidance_is_notified_before_report(
     )
     assert body
     paths = _guidance_documents if kind != "add-awi" else _guidance_documents[:2]
-    _assert_guidance_commands(body, paths, windows=windows)
+    _assert_guidance_commands(body, paths)
     assert "root-cause-prevention.md" in body
     assert "waiting-and-monitoring.md" in body
     assert ("immediate-fix.md" in body) == (kind != "add-awi")
-    assert "見直し" in body
+    assert "見直せ" in body
 
 
 def test_compaction_requires_guidance_again(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -181,7 +175,7 @@ def test_guidance_hook_entry_returns_nonblocking_context(
     assert not result.stderr
     output = json.loads(result.stdout)
     assert "decision" not in output
-    _assert_guidance_commands(output["hookSpecificOutput"]["additionalContext"], _guidance_documents, windows=windows)
+    _assert_guidance_commands(output["hookSpecificOutput"]["additionalContext"], _guidance_documents)
 
 
 @pytest.mark.parametrize("shape", ["empty", "omitted", "other-report"])

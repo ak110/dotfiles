@@ -188,7 +188,7 @@ def test_session_start_resets_operation_skill_ready_for_main(
     _hook_context(rules_context.main, {"hook_event_name": "SessionStart", "source": source, "session_id": "reset-skill"})
 
     # 専用定義の起動を使い、起動手段の拒否と資料の取得案内を分ける。
-    acquisition = f"`{skill_name}`を起動せよ"
+    acquisition = f"`{skill_name}`"
     assert (acquisition in _operation_context(None)) is main_warns
     assert acquisition not in _operation_context("sub-1")
 
