@@ -48,7 +48,8 @@
 
 種類ごとの確認の要点:
 
-- 受入シナリオ: 各行に対応するテストが実在し、提出結果で合格が確認でき、テスト本文に消費主体が使う呼び出し手段による操作と期待結果の確認が含まれているかを確かめる。
+- 受入シナリオ: 各行の必要な結果と、提出された試験・手動観測・読解の確認箇所、条件、合否が対応するかを確かめる。
+  自動試験の要否は`../../writing-standards/references/testing.md`の検出価値で判定し、試験を選んだ場合は消費主体が使う呼び出し手段と期待結果の確認を読む。
   `../../writing-standards/references/testing-selection.md`に従い、ダブル自身が期待する副作用を生成する試験と、製品処理が副作用を起こす試験を区別する。
   読解で検出力を判断しにくい場合は`../../writing-standards/references/testing-conditions.md`の故障例確認と任意mutationの範囲・生存分類を確認する。
   競合順序を検証する試験は、`../../writing-standards/references/testing-stability.md`の同期基準で、途中の前提状態を通った証拠も確認する。
