@@ -129,8 +129,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-partial-records", action="store_true", help="破損行を欠測として保持して正常行を読む。")
     parser.add_argument("--failure-fixed-string", help="失敗したツール結果の固定文字列。--tool-callsと併用する。")
     scan = parser.add_mutually_exclusive_group()
-    scan.add_argument("--scan-claude-projects")
-    scan.add_argument("--scan-codex-history")
+    scan.add_argument("--scan-claude-projects", metavar="DIR", help="Claudeの複数projectを収納する絶対ディレクトリ。")
+    scan.add_argument("--scan-codex-history", metavar="DIR", help="Codexの履歴を収納する絶対ディレクトリ。")
     parser.add_argument(
         "transcript_path",
         nargs="?",
