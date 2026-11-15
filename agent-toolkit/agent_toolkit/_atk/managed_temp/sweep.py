@@ -538,7 +538,7 @@ def _reclaim_space(
 
 
 def _failure_reason(error: OSError | ManagedTempError) -> str:
-    """文字列の失敗契約を保ち、回復操作を持つ例外の案内も受信側へ渡す。"""
+    """失敗理由を文字列で返す形式を保ち、回復操作を持つ例外の案内も受信側へ渡す。"""
     if isinstance(error, ManagedTempError):
         return f"{error}。次の操作: {error.next_action}"
     return str(error)
