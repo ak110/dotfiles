@@ -21,6 +21,7 @@ from agent_toolkit._common import dotfiles_mode
 from pytools._internal import (
     codex_processes,
     common,
+    external_web_guidance,
     log_format,
     post_apply_outcome,
     setup_codex_links,
@@ -638,6 +639,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
+    external_changed = external_web_guidance.run("codex")
     codex = common.resolve_executable("codex")
     if codex is None:
         logger.info(
@@ -651,7 +653,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     notices: list[post_apply_outcome.PostApplyNotice] = []
     try:
         unused_outcome = _remove_unused_plugins()
-        changed = unused_outcome.changed
+        changed = unused_outcome.changed or external_changed
         notices.extend(unused_outcome.notices)
         unused_deferred = unused_outcome.deferred
         root = common.find_dotfiles_root()

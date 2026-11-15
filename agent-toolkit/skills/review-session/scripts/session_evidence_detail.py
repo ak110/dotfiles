@@ -425,7 +425,7 @@ def _resolve_record_alias(collected: list[_CollectedRecord], record_id: str) -> 
     canonical = [item for item in collected if item.record_id == record_id]
     if canonical:
         return canonical[0], False
-    matches = [item for item in collected if record_id in item.aliases]
+    matches = [item for item in collected if record_id in item.aliases or record_id == str(item.path)]
     if len(matches) == 1:
         return matches[0], False
     return None, len(matches) > 1

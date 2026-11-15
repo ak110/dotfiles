@@ -60,12 +60,16 @@ atk wi process-loop abort
 atk wi process-loop instruct '次の処理へ適用する指示'
 ```
 
-`abort`は処理中のセッションが終わった時点でループを止める。
-`instruct`は次の処理へ1回だけ指示を渡す。
-中断した処理を再開する場合は、`atk wi process-loop --resume <session-ID>`へ統括担当の会話IDを指定するか、`--auto-resume`で保持された未完了の対象を再開する。
+`abort`は新しい対象の起動を止め、処理中の全実行が終了してから常駐を終了する。
+各対象は独立して検収されるため、別対象が処理中でも、完了した対象の新着を開始できる。
+`instruct`は次に実起動する1会話へ指示を渡す。
+中断した処理は`atk wi process-loop resume ID`か`atk wi process-loop resume auto`で次回の再開を予約する。
+値なしの`atk wi process-loop resume`はCLI本来の会話選択画面を予約し、`resume-cancel`で未消費の予約を取り消せる。
+予約コマンド自体は会話を起動しない。
+詳しい操作と検証OSの意味は[WIの登録と回答](claude-code-wi.md)を参照する。
 
 常駐させずに登録全体を1回だけ処理する場合は、`atk wi process-loop --once`を実行する（会話からは`/agent-toolkit:process-wi all-repos`）。
-対象が0件なら直ちに終了し、未完了の対象が残ると非0で終了するため、表示された記録を確認してから`atk wi process-loop --once --auto-resume`で再開する。
+対象が0件なら直ちに終了し、未完了の対象が残ると非0で終了するため、表示された記録を確認して`atk wi process-loop resume auto`を予約し、`atk wi process-loop --once`で再開する。
 
 CIの失敗だけを1回確認してAWIとして登録する場合は、`atk wi check-alerts --target-repo <リポジトリの絶対パス>`を実行する（省略時は現在の作業ツリー）。
 AWIの処理は始めず、取得に失敗した場合は理由を示して終了コード1で終わる。

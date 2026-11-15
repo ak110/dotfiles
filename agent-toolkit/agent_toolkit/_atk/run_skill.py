@@ -34,7 +34,7 @@ lazy import filelock
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk import outcome as _outcome
-from agent_toolkit._atk import usage_limit_policy
+from agent_toolkit._atk import usage_limit_policy, usage_refresh
 from agent_toolkit._atk.run_skill_progress import Progress
 from agent_toolkit._atk.wi import add as _wi_add
 from agent_toolkit._atk.wi.repo import resolve_local_worktree, resolve_repo_id_or_raise
@@ -325,7 +325,7 @@ def _run_locked(
         claude_connection=record.connection if record is not None else None,
     )
     try:
-        orchestrator, model, effort, _, connection = _orchestrator.select_available_with_provider(
+        orchestrator, model, effort, provider, connection = _orchestrator.select_available_with_provider(
             candidates, env, repo_root, context
         )
     except _orchestrator.NoAvailableCandidateError as error:
@@ -429,6 +429,7 @@ def _run_locked(
             return current.exit_code == 0 and current.usage_limit is None and not getattr(args, "batch_manifest", None)
 
         with (
+            usage_refresh.cli_activity(orchestrator, model, effort, connection.kind if connection is not None else provider),
             writer.running(
                 remaining,
                 connection,
@@ -604,6 +605,10 @@ class _SessionOutput:
             return
         if not isinstance(event, dict):
             return
+        if usage_refresh.enabled():
+            usage_refresh.record_claude_event(event.get("rate_limit_info"))
+            if isinstance(report := event.get("usage_report"), dict):
+                usage_refresh.record_claude_report(report)
         conversation = _antigravity.event_session_id(event)
         if conversation is not None and conversation != self.thread_id:
             self.thread_id = conversation

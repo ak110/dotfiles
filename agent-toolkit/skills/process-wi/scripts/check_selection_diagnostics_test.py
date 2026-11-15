@@ -36,7 +36,7 @@ def _diagnostic(output: str, marker: str) -> str:
         ("edge-definitions", "結合根拠が成立しない", ["定義が交わらない", "入力", "出力"]),
         ("edge-dependency", "結合根拠が成立しない", ["depends_on", "a.md", "b.md"]),
         ("source-dependency", "結合根拠が元入力と一致しない", ["depends_on", "invented.md", "frontmatter"]),
-        ("source-plan", "結合根拠が元入力と一致しない", ["計画1", "other.md", "shared.md"]),
+        ("source-plan", "結合根拠が成立しない", ["計画1", "other.md", "shared.md"]),
     ],
 )
 def test_compound_diagnostics_name_failed_condition(
@@ -96,7 +96,7 @@ def test_compound_diagnostics_name_failed_condition(
                 "依存元": "b.md",
                 "depends_on": ["a.md", "invented.md"],
             },
-            "source-plan": {"計画1": str(tmp_path / "other.md"), "計画2": str(tmp_path / "other.md")},
+            "source-plan": {"計画1": str(tmp_path / "other.md"), "計画2": plan},
         }
         evidence = evidences[case]
         kind = {"edge-definitions": "書込重複", "source-plan": "再開計画"}.get(case, "依存")
@@ -120,7 +120,7 @@ _ACTION_CONTRACTS = {
     "prior-missing": ("段階2以上のレーンの`先行レーン`へ", "前段のレーンを挙げる"),
     "edge-failure": ("診断行が示す条件を直す", "書込重複は両端の`書込対象`", "レーンの`段階`", "根拠を元のWIのfrontmatter"),
     "component-link": ("不可分成分の構成WIを", "連結させる", "成分を分け直す"),
-    "source-mismatch": ("一致しない欄を", "`depends_on`・`target_repo`", "`再開位置`が示す計画の値へ直す"),
+    "source-mismatch": ("一致しない欄を", "`depends_on`・`target_repo`", "の値へ直す"),
     "lane-bound": (
         "統合済み・後段を含めて上限内のレーンへまとめ",
         "同じレーンで順に扱う",

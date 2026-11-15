@@ -13,6 +13,12 @@
 意図・認可・外部契約の文章と独立した文脈のレビューを保持し、決定論的であることだけでは新しい検査を導入しない。
 現行の選定基準は`agent-basics/skills/writing-standards/references/design-heuristics-screening.md`「設計案の予備選別」と`design-heuristics-decisions.md`「案の採否と実施順の判定」にある。
 
+2026年11月12日、ユーザーは問題への対策が新たな問題を生まないかを、問題の重大度によらず設計・対策選定とレビューで確かめるよう求めた。
+対策自身の誤判定、状態の欠落、例外や他の処理との相互作用から生じる最悪の結果を、元の問題の最大影響と比較する。
+認可・セキュリティ・データの完全性を守る保護は保持し、主経路の成果を失う案をテストや完成条件との一致だけで正当化しない。
+現行の比較基準は`agent-basics/skills/writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」が持つ。
+記録欄は`agent-toolkit/skills/wi-standards/references/analysis-records.md`が持つ。
+
 - ユーザー本人が設定して使い、原因が分かれば運用で直せる機能では、設定ミスなどへ備える専用処理やフォールバックを増やさずエラーで終了させる。
   開発者向け・システム管理者向け機能もシステムの前提に応じて当てはめる。
   現行の原則は`agent-toolkit/share/rules/common/01-agent.md`「QCDと3段判定」にある。

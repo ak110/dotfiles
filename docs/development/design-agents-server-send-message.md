@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、継続要求の配送の記録である。
 
-## 公開ツールの契約
-
-### `send_message`
+## `send_message`
 
 停止後・保持期限後・所有主体消失後の再開では、要求ごとの`ResumePrompt.delivery`へ配送結果を確定し、`PendingResume`が応答まで保持する。
 backendの開始成功は`reply_started`とし、開始不能と開始不確定はbackendが`record_delivery`でそれぞれ`reply_failed`と`reply_ambiguous`を記録する。

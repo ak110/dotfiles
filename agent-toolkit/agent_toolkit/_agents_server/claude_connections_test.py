@@ -205,7 +205,7 @@ def test_delegate_started_on_subscription_moves_to_api_on_usage_limit(
         claude_connection,
         "candidates",
         lambda *_args, **_kwargs: claude_connection.Candidates(
-            (claude_connection.Connection("credits", "api.env", "api.env"), claude_connection.Connection("subscription"))
+            (claude_connection.Connection("credits", "api.env", ("api.env",)), claude_connection.Connection("subscription"))
         ),
     )
     assert resume_waits.begin_usage_limit_wait(
@@ -220,9 +220,9 @@ def _three_kinds(*_args: object, **_kwargs: object) -> claude_connection.Candida
     """設定上の使用順`credits,subscription,payg`の3種別の候補を返す。"""
     return claude_connection.Candidates(
         (
-            claude_connection.Connection("credits", "credits.env", "credits.env"),
+            claude_connection.Connection("credits", "credits.env", ("credits.env",)),
             claude_connection.Connection("subscription"),
-            claude_connection.Connection("payg", "payg.env", "payg.env"),
+            claude_connection.Connection("payg", "payg.env", ("payg.env",)),
         )
     )
 
@@ -255,7 +255,7 @@ def test_payg_rejection_after_successful_turn_moves_to_next_connection(
         claude_connection,
         "candidates",
         lambda *_args, **_kwargs: claude_connection.Candidates(
-            (claude_connection.Connection("payg", "payg.env", "payg.env"), claude_connection.Connection("subscription"))
+            (claude_connection.Connection("payg", "payg.env", ("payg.env",)), claude_connection.Connection("subscription"))
         ),
     )
     session = state.SessionState(
@@ -268,6 +268,23 @@ def test_payg_rejection_after_successful_turn_moves_to_next_connection(
     assert session.claude_api_env_file is None
     assert session.claude_api_resume_pending
     assert "payg" in session.claude_connection_failures
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+def test_api_recovery_uses_preserved_oauth(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    """SDK継承環境からOAuthを外した後も、回復候補の認証判定は保持値を使う。"""
+    path = tmp_path / "payg.env"
+    path.write_text("ANTHROPIC_API_KEY=synthetic-api\nPAYG_ONLY=synthetic\n", encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", "payg,subscription")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "synthetic-oauth")
+    monkeypatch.setattr(child_environment, "_INHERITED", {})
+    child_environment.prepare(os.environ)
+    session = state.SessionState("recover-oauth", str(tmp_path), engine="claude", claude_connection="payg")
+    assert resume_waits.begin_usage_limit_wait(
+        session, {"status": "failed", "error": {"apiErrorStatus": 401}, "agent_message": ""}
+    )
+    assert session.claude_connection == "subscription"
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -427,10 +444,13 @@ async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
     path.write_text(
         "CUSTOM_CONNECTION=api-only\nAWS_PROFILE=api-profile\nANTHROPIC_DEFAULT_SONNET_MODEL=api-model\n", encoding="utf-8"
     )
-    connection = claude_connection.Connection("subscription", isolation_env_file=str(path))
+    payg_path = tmp_path / "payg.env"
+    payg_path.write_text("PAYG_ONLY=payg-endpoint\n", encoding="utf-8")
+    connection = claude_connection.Connection("subscription", isolation_env_files=(str(path), str(payg_path)))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(payg_path))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((connection,)))
-    keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL")
+    keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL", "PAYG_ONLY")
     for key in keys:
         if injection == "settings-only":
             monkeypatch.delenv(key, raising=False)

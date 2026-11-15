@@ -61,7 +61,8 @@ CIや再現テストで自己確認できる事項を、ユーザーの実機確
   現行の所在は`agent-toolkit:/share/add-wi-parent-launch.md`「起動方法」と`agent-toolkit:delegation/references/routing-units.md`「委譲単位の確定」にある
 - `agent-toolkit:review-session`が対策のAWIを投入する場合は、原因と対策が確定した時点で振り返り結果報告の中身を全て予告として示してからWI投入担当を起動する。
   投入が予告どおりに終わった場合の最終報告は、完了の旨と投入したAWIのファイル名・H1タイトルの一覧だけとする（2026年9月30日、ユーザー指示。AWI登録を待つ間にエージェントが何をしようとしているかをユーザーが分からないことに由来する）。
-  batchでは確定要求の起草を残りの分析と重ね、全対象の横断整理後、`保存開始`の直前に全要求を予告する。
+  batchでは確定要求を分析担当が直接起草し、独立した投入前レビューを経る。
+  全対象の横断整理後、保存の直前に全要求を予告する。
   全要求が揃う時点で予告の内容を保ち、起草待ちの直列区間を減らすためである。
   通常の振り返りは起動前に予告する。
   現行の規定は`agent-toolkit/skills/review-session/references/session-analysis.md`「工程5」と`agent-toolkit/skills/report-completion/SKILL.md`にある

@@ -57,6 +57,8 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk wi process-loop abort-cancel",
         "atk wi process-loop instruct",
         "atk wi process-loop instruct-cancel",
+        "atk wi process-loop resume",
+        "atk wi process-loop resume-cancel",
         "atk wi submission begin",
         "atk wi submission end",
         "atk plans checkout",
@@ -77,6 +79,10 @@ STATE_CHANGE_COMMANDS = frozenset(
 
 VALUE_OUTPUT_COMMANDS = frozenset(
     {
+        "atk config usage",
+        "atk config temporary set",
+        "atk config temporary clear",
+        "atk config temporary show",
         "atk agents effort",
         "atk wi submit",
         "atk worktree-stash save",

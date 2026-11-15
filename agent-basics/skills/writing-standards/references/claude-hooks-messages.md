@@ -23,4 +23,5 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
+| hook通知を新設するか判断する前 | `claude-hooks-block-warn.md`、`agent-documents-additions-additions.md` |
 | 通知の要否・時機・本文・文体を設計・変更・レビューする前 | `claude-hooks-messages-format.md` |

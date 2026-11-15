@@ -21,6 +21,7 @@ from pytools._internal import (
     claude_marketplace,
     claude_plugin_references,
     common,
+    external_web_guidance,
     log_format,
     post_apply_cache,
     post_apply_outcome,
@@ -45,6 +46,7 @@ _PLUGIN_CACHE_DEVELOPMENT_ARTIFACTS: tuple[str, ...] = (".venv", ".mypy_cache", 
 # インストール済みかつ`enabledPlugins`で`false`にされておらず有効なものを `run()` 中に `claude plugin disable` で無効化する。
 _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     {
+        "context7@claude-plugins-official",
         "serena@claude-plugins-official",
         "superpowers@claude-plugins-official",
         "security-guidance@claude-plugins-official",
@@ -60,7 +62,6 @@ _AUTO_DISABLED_PLUGIN_IDS: frozenset[str] = frozenset(
 # `claude plugin enable` の提案として案内に表示する。
 _AUTO_ENABLED_PLUGIN_IDS: frozenset[str] = frozenset(
     {
-        "context7@claude-plugins-official",
         "typescript-lsp@claude-plugins-official",
         "skill-creator@claude-plugins-official",
     }
@@ -76,13 +77,14 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     """
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
+    external_changed = external_web_guidance.run("claude")
     try:
         changed, recommendations, disable_failed_count, artifact_failed_count, deferred = _install_plugins()
     except RuntimeError as error:
         logger.warning(
             log_format.format_status("plugins", f"導入または更新に失敗: {error}。`update-dotfiles`を再実行する"),
         )
-        return post_apply_outcome.PostApplyOutcome()
+        return post_apply_outcome.PostApplyOutcome(changed=external_changed)
     failures: list[str] = []
     if disable_failed_count:
         failures.append(f"外部plugin {disable_failed_count} 件の自動無効化に失敗")
@@ -90,7 +92,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         failures.append(f"plugin cache の開発用生成物 {artifact_failed_count} 件の削除に失敗")
     failure = "、".join(failures) or None
     return post_apply_outcome.PostApplyOutcome(
-        changed=changed,
+        changed=changed or external_changed,
         recommendations=tuple(recommendations),
         failure=failure,
         next_action="`update-dotfiles`を再実行して失敗した処理をやり直す。" if failure is not None else None,

@@ -1,11 +1,14 @@
 import type { EngineInterface, Register } from "claude-code";
 
 import { automatedMessage } from "./automated_message.ts";
-import { COMPACT_CONVERSATION_DELEGATED_DENY, COMPACT_CONVERSATION_TOOL, register as registerCompactConversation } from "./compact_conversation.ts";
+import { register as registerCompactConversation } from "./compact_conversation.ts";
 import { register as registerPeriodicRecheck } from "./periodic_recheck.ts";
-import { register as registerSendToUser, SEND_TO_USER_DELEGATED_DENY, SEND_TO_USER_TOOL } from "./send_to_user.tsx";
 import { exitStatePath, register as registerSessionExit } from "./session_exit.ts";
 import { register as registerUsageLimitResume } from "./usage_limit_resume.ts";
+import { register as registerUIRequests } from "./ui_requests.tsx";
+import { register as registerRuntimeRestart } from "./runtime_restart.ts";
+import { register as registerAgentPanel } from "./agent_panel.ts";
+import { register as registerRuntimeChanges } from "./runtime_changes.ts";
 
 // hooks.jsonの`modules`は1つのプラグインにつき1つのhooks moduleだけを受け付け、照合条件の無い同じイベントのhookは
 // 1回しか登録できない。また`$`は別ファイルの関数へ渡せないため、各機能の`session.start`の処理をここへまとめる。
@@ -19,43 +22,41 @@ async function isDelegated($: EngineInterface): Promise<boolean> {
   return (await $.env.get("AGENT_TOOLKIT_DELEGATED_SESSION")) === "1" || Boolean(await $.env.get("AGENT_TOOLKIT_OWNER_SESSION"));
 }
 
-// 登録と呼出主体の判定は同じ一覧を使う。ここへ追加したツールは全てメイン専用となり、
-// 各機能が登録条件やagentIdの判定を重ねる必要はない。
-const MAIN_ONLY_TOOLS = [
-  { tool: SEND_TO_USER_TOOL, deny: SEND_TO_USER_DELEGATED_DENY },
-  { tool: COMPACT_CONVERSATION_TOOL, deny: COMPACT_CONVERSATION_DELEGATED_DENY },
-] as const;
-
-function mainOnlyDeny(plugin: string, tool: string): string | undefined {
-  const prefix = `mcp__${plugin}__`;
-  const deny = tool.startsWith(prefix) ? MAIN_ONLY_TOOLS.find((entry) => entry.tool.name === tool.slice(prefix.length))?.deny : undefined;
-  return deny === undefined ? undefined : automatedMessage("main-only-tool", "block", deny);
-}
-
 export const register: Register = (on) => {
-  const usageLimitSession = { delegated: true };
-  // ツール名のmatcherを別に列挙せず、登録一覧へ追加した全ツールに同じ判定を適用する。
-  on("tool.check", { tool: /^mcp__/ }, async ($, e, next) => {
-    const reason = mainOnlyDeny($.plugin.name, e.tool);
-    if (reason === undefined) return next(e);
-    return e.agentId !== undefined || (await isDelegated($)) ? { decision: "deny", reason } : { decision: "allow" };
-  }).catch(($, e, next) => next(e));
-  on("tool.call", { tool: /^mcp__/ }, async ($, e, next) => {
-    const reason = mainOnlyDeny($.plugin.name, e.tool);
-    return reason !== undefined && (e.agentId !== undefined || (await isDelegated($))) ? { deny: reason } : next(e);
-  }).catch(($, e, next) => next(e));
+  const usageLimitSession = { delegated: true, backgroundChanged: false, processLoop: false };
   on("session.start", async ($, e, next) => {
     usageLimitSession.delegated = await isDelegated($);
-    // ツールは最初の発話より前に一覧へ載るよう、`next`より前に登録する。
-    // 登録一覧のツールはメイン用であり、委譲先には登録しない。
+    usageLimitSession.processLoop = (await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION")) === "1";
+    // 操作パネルはメイン会話だけへ、最初の発話より前に登録する。
     if (!(await isDelegated($))) {
-      for (const { tool } of MAIN_ONLY_TOOLS) await $.tool.register(tool);
+      await $.command.register({ name: "atk", description: "担当への追送・effort変更・推定費用を表示する", immediate: true });
     }
     const result = await next(e);
+    const change = (await $.state.get({ plugin: "agent-toolkit", key: "runtimeChange" })).value;
+    if (change?.phase === "running" && !change.notified) {
+      await $.state.set({ plugin: "agent-toolkit", key: "runtimeChange" }, { ...change, phase: "done", notified: true });
+      $.clock.after(0, async () => {
+        await $.prompt.submit({ text: automatedMessage("runtime-changes", "notice", "変更反映中にmodが再読込された。消費済み操作は再実行しない。再読込前の応答と、未応答の対象を次の記録で確認して続行せよ。再接続・反映の成功を未確認のまま表示するな。\n" + JSON.stringify(change)) });
+      });
+    }
     // `atk agents-exit-session`の終了要求を受け付ける準備ができたことを示す印を書き、前の要求を消費済みにする。
     const sessionId = await $.session.id();
     const configured = await $.env.get("CLAUDE_CONFIG_DIR");
     const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
+    const restart = exitStatePath(sessionId, configured, home, "restart");
+    if (restart) {
+      let waits: { id: string; command: string }[] | undefined;
+      try {
+        const record: unknown = JSON.parse(await $.fs.read(restart));
+        if (record && typeof record === "object" && "phase" in record && record.phase === "pending" && "waits" in record && Array.isArray(record.waits) && record.waits.every((wait) => wait && typeof wait === "object" && typeof wait.id === "string" && typeof wait.command === "string")) waits = record.waits;
+      } catch { /* 初回起動と未完の書込みは再開の証拠にしない。 */ }
+      if (waits !== undefined && !usageLimitSession.delegated) {
+        await $.fs.write(restart, JSON.stringify({ phase: "resumed", waits }));
+        $.clock.after(0, async () => {
+          await $.prompt.submit({ text: automatedMessage("runtime-restart", "notice", "再起動後の会話を再開した。停止済み待機の識別: " + JSON.stringify(waits) + "。保持した作業記録と委譲先の状態を確認し、引数なしのatk agents waitを背景で発行し直して結果を回収せよ。未完了の工程から続けよ。") });
+        });
+      }
+    }
     const marker = exitStatePath(sessionId, configured, home, "marker");
     const request = exitStatePath(sessionId, configured, home, "request");
     const recheck = exitStatePath(sessionId, configured, home, "recheck");
@@ -78,7 +79,10 @@ export const register: Register = (on) => {
   });
   registerSessionExit(on);
   registerCompactConversation(on, usageLimitSession);
-  registerSendToUser(on);
+  registerUIRequests(on, usageLimitSession);
   registerPeriodicRecheck(on);
   registerUsageLimitResume(on, usageLimitSession);
+  registerRuntimeRestart(on, usageLimitSession);
+  registerAgentPanel(on);
+  registerRuntimeChanges(on);
 };

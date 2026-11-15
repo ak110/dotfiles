@@ -1,0 +1,11 @@
+{
+  "origin": "エージェントが方式として追加した。ユーザーは追加審査方式を指定していない。",
+  "purpose": "草稿の構造不良を提出前に検出する。",
+  "protected": "公開前の架空の草稿",
+  "observations": {
+    "sample_count": 100,
+    "defect_count": 2,
+    "maximum_impact": "草稿内の構造不良が残る。外部送信・データ損失はない。"
+  },
+  "validate": "prepareの実行、草稿の構造、finishへの引渡しを検査する。追加審査と同じ完成条件を全て検収する。"
+}

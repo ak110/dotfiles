@@ -96,8 +96,9 @@ def test_stop_accepts_visible_response_after_human_input(
 
 @pytest.mark.parametrize("human", [_HUMAN, _QUEUED])
 @pytest.mark.parametrize("final", ["…", "担当工程を完了した。"], ids=["ellipsis", "completion-sentence"])
+@pytest.mark.parametrize("model", ["claude", "<synthetic>"])
 def test_stop_accepts_send_to_user_message_after_human_input(
-    human: dict, final: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    human: dict, final: str, model: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """send_to_userの`message`はユーザーの画面へ届く本文であり、応答として数える。
 
@@ -106,10 +107,14 @@ def test_stop_accepts_send_to_user_message_after_human_input(
     call = {
         "type": "tool_use",
         "id": "toolu_1",
-        "name": "mcp__agent-toolkit__send_to_user",
+        "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
         "input": {"message": "原因はAだった。"},
     }
-    output = _stop([human, {"type": "assistant", "message": {"content": [call]}}, _assistant(final)], tmp_path, capsys)
+    output = _stop(
+        [human, {"type": "assistant", "message": {"model": model, "content": [call]}}, _assistant(final)],
+        tmp_path,
+        capsys,
+    )
     assert output.get("decision") != "block"
     assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 

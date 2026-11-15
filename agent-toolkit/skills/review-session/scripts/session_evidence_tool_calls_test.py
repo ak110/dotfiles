@@ -135,6 +135,51 @@ def test_tool_call_locators_round_trip_to_detail(
         assert expected_result in json.dumps(read_jsonl(capsys, raw=True), ensure_ascii=False)
 
 
+def test_tool_calls_since_filters_intersection_and_reports_unknown_times(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """開始境界を含めず、入力の条件と時刻を満たす呼び出しだけを数える。"""
+    entries = []
+    for identity, timestamp, tool, command in (
+        ("before", "2026-11-01T00:00:00Z", "Bash", "wanted"),
+        ("boundary", "2026-11-01T01:00:00Z", "Bash", "wanted"),
+        ("after", "2026-11-01T02:00:00Z", "Bash", "wanted"),
+        ("unknown", None, "Bash", "wanted"),
+        ("invalid", "not-a-time", "Bash", "wanted"),
+        ("other-tool", "2026-11-01T02:00:00Z", "Read", "wanted"),
+        ("other-input", "2026-11-01T02:00:00Z", "Bash", "different"),
+    ):
+        entries.append(
+            {
+                "type": "assistant",
+                "timestamp": timestamp,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": identity, "name": tool, "input": {"command": command}}],
+                },
+            }
+        )
+    transcript = _write_transcript(tmp_path, entries)
+    arguments = [str(transcript), "--tool-calls", "--since", "2026-11-01T01:00:00Z"]
+    assert evidence.main(arguments) == 0
+    events = read_jsonl(capsys, raw=True)
+    assert [event["call_id"] for event in events if event["kind"] == "tool-call"] == ["after", "other-tool", "other-input"]
+    summary = next(event for event in events if event["kind"] == "tool-call-summary")
+    assert summary["count"] == 3
+    assert summary["missing_timestamps"] == 2
+
+    assert evidence.main([*arguments, "--tool", "Bash", "--input-regex", "wanted"]) == 0
+    events = read_jsonl(capsys, raw=True)
+    assert [event["call_id"] for event in events if event["kind"] == "tool-call"] == ["after"]
+    summary = next(event for event in events if event["kind"] == "tool-call-summary")
+    assert summary["count"] == 1
+    assert summary["by_tool"] == {"Bash": 1}
+    assert summary["missing_timestamps"] == 2
+
+    assert evidence.main([str(transcript), "--hook-notices", "--since", "2026-11-01T01:00:00Z"]) == 2
+    assert any(event["kind"] == "error" for event in read_jsonl(capsys, raw=True))
+
+
 @pytest.mark.parametrize(
     "arguments",
     [

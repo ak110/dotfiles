@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、公開ツールの起動契約の記録である。
 
-## 公開ツールの契約
-
-### `start`
+## `start`
 
 公開ツールは`start`、`send_message`、`kill`、`list`、`show`、`stop`の6つとする。
 `list`は保持中のsessionの状態を開始順に返し、結果本文を含めない。

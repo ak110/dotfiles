@@ -14,8 +14,15 @@ _KINDS = {"process-wi": "process-wi", "add-awi-by-user": "add-awi"}
 _ALL_REPOS_TITLE = "process-wi all-repos"
 
 
+def observe_add_awi(session_id: str, skill: str) -> None:
+    """表示名と独立して相談の開始を会話寿命の間保持する。"""
+    if skill == "agent-toolkit:add-awi-by-user":
+        update_state(session_id, lambda state: {**state, "add_awi_skill_invoked": True})
+
+
 def observe_skill(session_id: str, skill: str, arguments: str | None = None) -> None:
     """成功したスキル起動または手動起動の種別を記録する。"""
+    observe_add_awi(session_id, skill)
     kind = _KINDS.get(skill.removeprefix("agent-toolkit:"))
     if kind == "process-wi":
         mode, _ = skill_modes.split_mode(skill, arguments)

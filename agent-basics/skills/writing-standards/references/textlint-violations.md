@@ -8,12 +8,12 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| 指摘・エラーを認識して診断・訂正・対処を始める前 | `agent-basics:bugfix/SKILL.md` |
 | チェッカーがない環境で自己点検する前 | `agent-basics:writing-standards/references/notation-checks.md` |
 
 ## textlint指摘への修正方針
 
-指摘・エラーを受けたときは`agent-basics:bugfix`を起動し、原因分析と絞り込み型の類似見直しを行う。
+指摘・エラーを受けたときは`agent-basics:bugfix`を起動し、本体の初動で原因・影響と必要な処置、詳細分析の要否を判断する。
 再発防止策の要否と初回検出の例外、記録の比例性は同スキルに従う。
 
 1対1の表記変更や、限られた候補から選べる反復表現の指摘については、`notation-rules.md`の「表記の一括置換」にある手順に従って候補を試し、変更した文をすべてレビューする。

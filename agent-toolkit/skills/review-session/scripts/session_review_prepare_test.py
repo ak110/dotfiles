@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import subprocess
 
 import pytest
+import session_review_evidence as evidence
 import session_review_prepare as prepare
 
 from agent_toolkit._common import response_language_check, session_registry
@@ -233,6 +235,106 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
     assert "claude:comparison:2" in comparison and "claude:comparison:3" in comparison
     assert "/inputs/task.md" in comparison and "/rules/shared.md" in comparison
     assert record["candidate_total"] == 0
+
+
+@pytest.mark.parametrize(("count", "known_zero"), [(0, False), (1, False), (300, False), (300, True)])
+def test_comparison_index_capacity_and_counts(
+    count: int, known_zero: bool, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """公開準備の容量・全量保存と、表示内外から原入力・結果への照会を検収する。"""
+    transcript = tmp_path / "comparison.jsonl"
+    parent = [support.timestamped_entry("2026-09-06T12:00:00Z", "依頼")]
+    children: dict[int, list[dict]] = {}
+    expected: dict[tuple[str, int], tuple[dict, str | None]] = {}
+    for index in range(count):
+        owner = index % 10
+        entries = children.setdefault(owner, [])
+        tool, inputs = (
+            ("Agent", {"prompt": f"委譲{index}:" + "本文" * (40000 if index == 0 else 300)}),
+            ("Read", {"file_path": f"/rules/{index}/" + "長" * 300}),
+            ("Bash", {"command": f"echo {index}:" + "命令" * 300}),
+        )[index % 3]
+        result: str | None = f"結果{index}:" + "原結果" * (300 + index)
+        if known_zero:
+            if tool == "Agent":
+                inputs = {"prompt_file": "/task.md"} if index < 30 else {"prompt": ""}
+            result = None if index < 30 else ""
+        line = len(entries) + 1
+        entries.append(support.claude_call("2026-09-06T12:00:01Z", f"call-{index}", tool, inputs))
+        if result is not None:
+            entries.append(support.claude_result("2026-09-06T12:00:02Z", f"call-{index}", result))
+        expected[(f"claude:comparison/agent-child-{owner}", line)] = (inputs, result)
+    support.write_jsonl(transcript, parent)
+    for owner, entries in children.items():
+        support.write_subagent(transcript.with_suffix("") / "subagents", f"agent-child-{owner}", entries)
+    work = _work_dir(tmp_path)
+    assert prepare.main(["--transcript", str(transcript), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+    output = json.loads(capsys.readouterr().out)
+    materials = [
+        json.loads(line) for line in (work / "bundle/comparison-materials.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len(materials) == count
+    assert {(event["record"], event["line"]) for event in materials} == set(expected)
+    document = pathlib.Path(output["comparison_materials_path"]).read_text(encoding="utf-8")
+    assert len(document.encode("utf-8")) <= 32000
+    shown: list[dict] = []
+    omitted: list[dict] = []
+    for event in materials:
+        locator = f"{event['record']}:{event['line']}"
+        (shown if f"入力={locator}、" in document else omitted).append(event)
+        inputs, _ = expected[(event["record"], event["line"])]
+        assert all(
+            value in event["summary"] or value in json.dumps(event["target"], ensure_ascii=False) for value in inputs.values()
+        )
+    for category in ("delegation", "explicit-read", "opaque-command"):
+        total = sum(event["category"] == category for event in materials)
+        displayed = sum(event["category"] == category for event in shown)
+        assert f"{category}: 全件{total}件、表示{displayed}件、省略{total - displayed}件" in document
+    if count == 300:
+        assert shown and omitted
+        assert len({event["record"] for event in shown}) == 10
+        for owner in {event["record"] for event in materials}:
+            for category in ("delegation", "explicit-read", "opaque-command"):
+                group = [event for event in materials if event["record"] == owner and event["category"] == category]
+                displayed = [event for event in shown if event in group]
+                assert displayed
+                if known_zero:
+                    assert all(event["recorded_result_characters"] == 0 for event in displayed)
+                    assert any(event["recorded_result_characters"] is None for event in group)
+                else:
+                    quantities = {
+                        event["line"]: max(len(values[0].get("prompt", "")), len(values[1] or ""))
+                        for event in group
+                        if (values := expected[(event["record"], event["line"])])
+                    }
+                    largest_line = min((-quantity, line) for line, quantity in quantities.items())[1]
+                    assert any(event["line"] == largest_line for event in displayed)
+        positions = [(record, int(line)) for record, line in re.findall(r"入力=([^、]+):(\d+)、", document)]
+        assert positions == sorted(positions)
+    for group in (shown, omitted):
+        if not group:
+            continue
+        event = next((row for row in group if row["line"] != 1), group[0])
+        inputs, result = expected[(event["record"], event["line"])]
+        for line in (event["line"], event["result_line"]):
+            if line is None:
+                continue
+            assert evidence.main([str(transcript), "--detail", f"{event['record']}:{line}"]) == 0
+            details = [json.loads(row) for row in capsys.readouterr().out.splitlines()]
+            rows = [row for row in details if row["kind"] == "detail"]
+            if line == event["line"]:
+                actual = next(row["input"] for row in rows if "input" in row)
+                for key, text in inputs.items():
+                    if len(text) > 8000:
+                        assert actual[key].startswith(text[:1000])
+                        assert any(row.get("omitted") for row in rows)
+                    else:
+                        assert actual[key] == text
+            else:
+                assert result is not None and result in "\n".join(str(row.get("text", "")) for row in rows)
+    stats = pathlib.Path(output["stats_path"]).read_text(encoding="utf-8")
+    guidance = next(line for line in stats.splitlines() if line.startswith("- 委譲入力の過剰・冗長:"))
+    assert re.search(r"comparison-materials.md.*表示外.*comparison-materials.jsonl.*--detail", guidance)
 
 
 @pytest.mark.parametrize("has_identifier", [False, True])

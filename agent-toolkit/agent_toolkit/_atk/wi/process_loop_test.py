@@ -59,43 +59,6 @@ def test_one_coordinator_receives_every_repository(
     assert all(json.loads(path.read_text())["released"] for path in ownership.ownership_directory().glob("*.json"))
 
 
-def test_next_round_starts_new_coordinator_for_unfinished_repository(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """部分完了後の残件は次の巡回の新統括へ渡し、元の準備と再開情報を保つ。"""
-    notes, snapshots = _targets(tmp_path, monkeypatch)
-    rounds: list[tuple[str | None, list[str]]] = []
-
-    def execute(args: argparse.Namespace, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt, child_env).read_text())
-        targets = data["repositories"]
-        rounds.append((args.resume, [target["target_repo"] for target in targets]))
-        identifier = f"coordinator-{len(rounds)}"
-        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = identifier
-        kwargs["on_session_started"](identifier)
-        if len(rounds) == 2:
-            assert targets[0]["previous"]["session_id"] == "coordinator-1"
-            assert targets[0]["previous"]["prepared_worktree"] == targets[0]["worktree"]
-        selected = targets[0]
-        for path in notes.glob(f"2026/10/{selected['target_repo'].rsplit('/', 1)[1]}-*.md"):
-            path.unlink()
-        records = {target["target_repo"]: {"status": "completed" if target is selected else "incomplete"} for target in targets}
-        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}))
-        return True
-
-    monkeypatch.setattr(session, "run_process_session", execute)
-    loop.run_coordinator(argparse.Namespace(resume=None, auto_resume=False, worktree=None), snapshots)
-    assert len(rounds) == 1
-    loop.run_coordinator(
-        argparse.Namespace(resume=None, auto_resume=False, worktree=None),
-        tuple(item for item in listing.configured_repo_snapshot(notes) if item.has_work),
-    )
-    assert rounds == [
-        (None, [item.repository.repo_id for item in snapshots]),
-        (None, [snapshots[1].repository.repo_id]),
-    ]
-
-
 def test_explicitly_resumed_round_ignores_previous_round_repository(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -222,10 +185,21 @@ def test_explicit_resume_without_coordinator_registration(tmp_path: pathlib.Path
 
     def execute(args, _cwd, prompt, child_env, **kwargs):
         observed.append(args.resume)
-        assert kwargs["resume_pending"]
         data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
-        kwargs["on_session_started"](args.resume)
-        child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
+        if args.resume:
+            assert kwargs["resume_pending"]
+            session_registry.publish(
+                args.resume,
+                state=session_registry.PublicationState.RESULT_COMPLETED,
+                engine="claude",
+                cwd=str(snapshots[0].repository.worktree),
+                model="model",
+                effort="medium",
+            )
+            kwargs["on_session_started"](args.resume)
+            child_env[env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
+            assert (notes / "2026/10/repo-0-0.md").exists()
+            return True
         (notes / "2026/10/repo-0-0.md").unlink()
         pathlib.Path(data["result_file"]).write_text(
             json.dumps({"repositories": {snapshots[0].repository.repo_id: {"status": "completed"}}}), encoding="utf-8"
@@ -233,10 +207,11 @@ def test_explicit_resume_without_coordinator_registration(tmp_path: pathlib.Path
         return True
 
     monkeypatch.setattr(session, "run_process_session", execute)
+    control.cmd_process_loop_resume("ordinary-session")
     with pytest.raises(SystemExit) as exited:
-        atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update", "--resume", "ordinary-session"], home=tmp_path)
+        atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
     assert exited.value.code == 0
-    assert observed == ["ordinary-session"]
+    assert observed == ["ordinary-session", None]
 
 
 def test_explicit_resume_uses_frozen_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

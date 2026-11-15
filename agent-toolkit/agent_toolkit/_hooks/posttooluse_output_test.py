@@ -26,7 +26,7 @@ def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
 def test_posttooluse_registration_rejects_missing_webfetch() -> None:
     """外部取得の観測を公開matcherから欠落させる持込負例を検出する。"""
     with pytest.raises(AssertionError):
-        _assert_tool_specific_posttooluse_registration(_registered_posttooluse_names() - {"WebFetch"})
+        _assert_tool_specific_posttooluse_registration(_registered_posttooluse_names() - {"WebFetch", "*"})
 
 
 @pytest.mark.parametrize("tool_name", ["Bash", "PowerShell"])
@@ -86,7 +86,8 @@ def test_registered_task_stop_consumes_only_successful_target(tmp_path: pathlib.
         session_id,
         lambda _previous: {"stall_detection_completed_at_by_task": {"task-1": 1.0, "task-2": 2.0}},
     )
-    if "TaskStop" in _registered_posttooluse_names(event):
+    registered = _registered_posttooluse_names(event)
+    if "*" in registered or "TaskStop" in registered:
         result = _run(
             {"hook_event_name": event, "session_id": session_id, "tool_name": "TaskStop", "tool_input": {id_field: "task-1"}},
             state_dir=tmp_path,

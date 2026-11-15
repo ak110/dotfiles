@@ -5,8 +5,11 @@ MSYS2リポジトリからlibarchiveと動的依存パッケージのDLLを取�
 """
 
 import compression.zstd
+import dataclasses
+import hashlib
 import io
 import logging
+import ntpath
 import pathlib
 import re
 import tarfile
@@ -18,27 +21,21 @@ logger = logging.getLogger(__name__)
 # MSYS2 の mingw64 リポジトリ。カーリング追跡が容易なように定数化する。
 _MSYS2_REPO = "https://repo.msys2.org/mingw/mingw64/"
 
-# libarchive 本体と動的依存パッケージの prefix 一覧。
-# ファイル名は `<prefix>-<version>-<rel>-any.pkg.tar.zst` の形式で、
-# リポジトリのディレクトリインデックスから最新版を動的に発見する。
-_REQUIRED_PACKAGES = [
-    "mingw-w64-x86_64-libarchive",
-    "mingw-w64-x86_64-bzip2",
-    "mingw-w64-x86_64-xz",
-    "mingw-w64-x86_64-zstd",
-    "mingw-w64-x86_64-libxml2",
-    "mingw-w64-x86_64-libiconv",
-    "mingw-w64-x86_64-libb2",
-    "mingw-w64-x86_64-zlib",
-    "mingw-w64-x86_64-expat",
-    "mingw-w64-x86_64-lz4",
-    "mingw-w64-x86_64-openssl",
-]
+_ROOT_PACKAGE = "mingw-w64-x86_64-libarchive"
 
 _INSTALL_DIR = libarchive_resolver.INSTALL_DIR
 _HTTP_TIMEOUT = 60.0
 # 展開後のtarを全量メモリへ置くため、壊れた入力や想定外の巨大パッケージで際限なく確保しないよう上限を設ける。
 _MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
+
+
+@dataclasses.dataclass(frozen=True)
+class _Package:
+    """公式DBが指定した取得物と実行時依存。"""
+
+    filename: str
+    sha256: str
+    dependencies: tuple[str, ...]
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
@@ -62,8 +59,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             logger.warning(
                 log_format.format_status(
                     "libarchive",
-                    f"自動インストールに失敗: {e}。{_MSYS2_REPO}から{', '.join(_REQUIRED_PACKAGES)}の"
-                    f"pkg.tar.zstを取得し、mingw64/bin内のDLLを{_INSTALL_DIR}へ配置してupdate-dotfilesを再実行してください。",
+                    f"自動インストールに失敗: {e}。{_MSYS2_REPO}のmingw64.dbと"
+                    f"{_ROOT_PACKAGE}の実行時依存パッケージの公開状況・接続を確認し、"
+                    "update-dotfilesを再実行してください。",
                 )
             )
             return post_apply_outcome.PostApplyOutcome()
@@ -104,26 +102,21 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _download_dlls() -> bool:
-    """MSYS2リポジトリからDLLを取得して配置する。最新版を検出できないパッケージがあれば偽を返す。"""
-    # Windows専用処理の関数内ローカル依存のため遅延import。
+    """公式DBのパッケージと推移依存を取得し、ハッシュを照合してDLLを配置する。"""
     import httpx  # pylint: disable=import-outside-toplevel
 
     _INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     with httpx.Client(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
-        index_html = client.get(_MSYS2_REPO).text
-        for prefix in _REQUIRED_PACKAGES:
-            filename = _pick_latest(index_html, prefix)
-            if filename is None:
-                logger.warning(
-                    log_format.format_status(
-                        "libarchive",
-                        f"{prefix} の最新版を MSYS2 リポジトリから検出できませんでした。"
-                        f"{_MSYS2_REPO}で{prefix}のpkg.tar.zstの公開状況を確認し、公開後にupdate-dotfilesを再実行してください。",
-                    )
-                )
-                return False
-            logger.info(log_format.format_status("libarchive", f"downloading {filename}"))
-            data = client.get(f"{_MSYS2_REPO}{filename}").content
+        response = client.get(f"{_MSYS2_REPO}mingw64.db")
+        response.raise_for_status()
+        packages = _resolve_packages(_read_database(response.content), _ROOT_PACKAGE)
+        for package in packages:
+            logger.info(log_format.format_status("libarchive", f"downloading {package.filename}"))
+            response = client.get(f"{_MSYS2_REPO}{package.filename}")
+            response.raise_for_status()
+            data = response.content
+            if hashlib.sha256(data).hexdigest() != package.sha256:
+                raise ValueError(f"SHA256が公式DBと一致しない: {package.filename}")
             _extract_dlls(data)
     return True
 
@@ -133,19 +126,46 @@ def _is_loadable() -> bool:
     return libarchive_resolver.is_loadable(_INSTALL_DIR)
 
 
-def _pick_latest(index_html: str, prefix: str) -> str | None:
-    """リポジトリのディレクトリインデックスHTMLから最新のpkg.tar.zstファイル名を返す。
+def _read_database(data: bytes) -> dict[str, _Package]:
+    """MSYS2のdescから、取得と実行時依存の解決に必要な値を読み取る。"""
+    packages = {}
+    with tarfile.open(fileobj=io.BytesIO(_decompress_zst(data)), mode="r:") as tar:
+        for member in tar:
+            if not member.isfile() or not member.name.endswith("/desc"):
+                continue
+            stream = tar.extractfile(member)
+            assert stream is not None
+            with stream:
+                blocks = stream.read().decode("utf-8").strip().split("\n\n")
+            fields = {lines[0]: lines[1:] for block in blocks if (lines := block.splitlines())}
+            (name,) = fields["%NAME%"]
+            (filename,) = fields["%FILENAME%"]
+            (sha256,) = fields["%SHA256SUM%"]
+            if not re.fullmatch(r"[A-Za-z0-9_+~.@-]+\.pkg\.tar\.zst", filename):
+                raise ValueError(f"不正なパッケージファイル名: {filename}")
+            if not re.fullmatch(r"[0-9a-f]{64}", sha256) or name in packages:
+                raise ValueError(f"不正または重複したパッケージ情報: {name}")
+            dependencies = tuple(re.split(r"[<>=]", item, maxsplit=1)[0] for item in fields.get("%DEPENDS%", []))
+            packages[name] = _Package(filename, sha256, dependencies)
+    return packages
 
-    MSYS2は同じprefixで複数バージョンを保持することがあるため、
-    正規表現で該当するファイル名を全件抽出してから文字列順で最大を取る
-    （ファイル名にバージョンが含まれ昇順性が期待できる）。
-    """
-    escaped = re.escape(prefix)
-    pattern = re.compile(rf'href="({escaped}-[^"]+\.pkg\.tar\.zst)"')
-    matches = pattern.findall(index_html)
-    if not matches:
-        return None
-    return max(matches)
+
+def _resolve_packages(database: dict[str, _Package], root: str) -> list[_Package]:
+    """DBの現在版だけを使い、版条件を除いた正確な名前で推移依存を各1回選ぶ。"""
+    pending = [root]
+    seen = set()
+    packages = []
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        if name not in database:
+            raise ValueError(f"公式DBに実行時依存パッケージがない: {name}")
+        seen.add(name)
+        package = database[name]
+        packages.append(package)
+        pending.extend(reversed(package.dependencies))
+    return packages
 
 
 def _decompress_zst(data: bytes) -> bytes:
@@ -162,17 +182,36 @@ def _extract_dlls(pkg_data: bytes) -> None:
     raw = _decompress_zst(pkg_data)
     with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as tar:
         for member in tar.getmembers():
-            if not member.isfile():
+            if not (member.isfile() or member.islnk()):
                 continue
             if not member.name.lower().endswith(".dll"):
                 continue
             if "/bin/" not in member.name.replace("\\", "/"):
                 continue
-            dll_name = pathlib.PurePosixPath(member.name).name
-            fp = tar.extractfile(member)
-            if fp is None:
-                continue
-            (_INSTALL_DIR / dll_name).write_bytes(fp.read())
+            dll_name = pathlib.PurePosixPath(member.name.replace("\\", "/")).name
+            if pathlib.PureWindowsPath(dll_name).name != dll_name or ntpath.isreserved(dll_name):
+                raise ValueError(f"不正なDLLファイル名: {dll_name}")
+            source = _resolve_dll_member(tar, member)
+            stream = tar.extractfile(source)
+            assert stream is not None
+            with stream:
+                (_INSTALL_DIR / dll_name).write_bytes(stream.read())
+
+
+def _resolve_dll_member(tar: tarfile.TarFile, member: tarfile.TarInfo) -> tarfile.TarInfo:
+    """ハードリンクをアーカイブ内だけで解決し、欠落・循環・通常ファイル以外を拒否する。"""
+    seen = set()
+    while member.islnk():
+        if member.name in seen:
+            raise ValueError(f"DLLのハードリンクが循環している: {member.name}")
+        seen.add(member.name)
+        try:
+            member = tar.getmember(member.linkname)
+        except KeyError as error:
+            raise ValueError(f"DLLのハードリンク先がない: {member.linkname}") from error
+    if not member.isfile():
+        raise ValueError(f"DLLのリンク先が通常ファイルでない: {member.name}")
+    return member
 
 
 def _persist_libarchive_env_var() -> bool:

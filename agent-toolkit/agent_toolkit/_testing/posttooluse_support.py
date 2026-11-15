@@ -199,6 +199,8 @@ def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
 
 
 def _assert_tool_specific_posttooluse_registration(registered: set[str]) -> None:
+    if "*" in registered:
+        return
     tool_names = {
         "AskUserQuestion",
         "Skill",

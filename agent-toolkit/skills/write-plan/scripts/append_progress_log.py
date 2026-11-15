@@ -331,8 +331,9 @@ def _add_record_arguments(parser: argparse.ArgumentParser) -> None:
     operation.add_argument(
         "--commit",
         help="対応を記録する区間の末尾commit。現在のHEADか、そのfirst-parentの履歴上のcommitを指定し、"
-        "--previous-headから末尾までの全commitを同じAWI集合へ対応付ける。"
-        "取り込み後もAWI集合ごとの区間を区間ごとに記録できる。マージcommitや記録済みcommitを含む範囲は受け付けない",
+        "--previous-headから末尾までのfirst-parentのcommitを同じAWI集合へ対応付ける。"
+        "mergeは競合解消か追加編集を含む場合だけ記録し、取り込んだ他レーンのcommitは対応付けない。"
+        "取り込み後もAWI集合ごとの区間を区間ごとに記録できる。記録済みcommitを含む範囲と、変更のない接続mergeだけの範囲は受け付けない",
     )
     parser.add_argument(
         "--previous-head",

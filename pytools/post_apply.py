@@ -23,6 +23,7 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
+import filelock
 import platformdirs
 from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import dotfiles_mode, process_tree
@@ -36,6 +37,7 @@ from pytools._internal import (
     cleanup_user_path,
     codex_plugin_manifests,
     common,
+    external_web_guidance,
     install_claude_plugins,
     install_codex_plugins,
     install_libarchive,
@@ -68,6 +70,7 @@ from pytools._internal import (
     sync_report,
     update_claude_settings,
     update_gemini_settings,
+    update_log,
     update_npmrc,
     update_vscode_settings,
     warmup_agents_server,
@@ -140,10 +143,10 @@ def _configure_logging() -> Generator[bool]:
         persistent_log_ready = False
         try:
             _UPDATE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.handlers.RotatingFileHandler(
+            file_handler = update_log.ProcessSafeRotatingFileHandler(
                 _UPDATE_LOG_PATH,
-                maxBytes=_UPDATE_LOG_MAX_BYTES,
-                backupCount=_UPDATE_LOG_BACKUP_COUNT,
+                max_bytes=_UPDATE_LOG_MAX_BYTES,
+                backup_count=_UPDATE_LOG_BACKUP_COUNT,
                 encoding="utf-8",
             )
         except OSError as error:
@@ -373,6 +376,11 @@ def _sync_codex_plugin_manifests() -> post_apply_outcome.PostApplyOutcome:
     return post_apply_outcome.PostApplyOutcome(changed=codex_plugin_manifests.sync(codex_plugin_manifests.repo_root()))
 
 
+def _install_antigravity_web_guidance() -> post_apply_outcome.PostApplyOutcome:
+    """Antigravityへ対象を限定した外部Web品質スキルを導入する。"""
+    return post_apply_outcome.PostApplyOutcome(changed=external_web_guidance.run("antigravity"))
+
+
 _WINDOWS = ("win32",)
 _LINUX = ("linux",)
 _MISE = "mise セットアップ"
@@ -452,6 +460,7 @@ DEFAULT_STEPS: list[_StepSpec] = [
         after=(_AGY_CLI, _CODEX_SNAPSHOT, _GEMINI_SETTINGS),
         full_only=True,
     ),
+    _StepSpec("Antigravity Web品質ガイド", _install_antigravity_web_guidance, after=(_AGY_CLI,), full_only=True),
     _StepSpec("libarchive (Windows)", install_libarchive.run, after=(_MISE,), platforms=_WINDOWS),
     # 開発版の取得はmise経由でcargoを使うため、Codex CLI工程のmise操作の後に行う。
     _StepSpec("claude-statusline バイナリの取得", setup_statusline_binary.run, after=(_CODEX_CLI,), full_only=True),
@@ -482,6 +491,21 @@ DEFAULT_STEPS: list[_StepSpec] = [
 ]
 
 
+def _prune_and_warmup() -> post_apply_outcome.PostApplyOutcome:
+    """取得キャッシュを整理した後に、キャッシュ内のMCP環境を準備する。"""
+    result = prune_installation.run()
+    if dotfiles_mode.is_minimal():
+        return result
+    warmup = warmup_pyfltr_mcp.run()
+    failures = [outcome.failure for outcome in (result, warmup) if outcome.failure is not None]
+    return post_apply_outcome.PostApplyOutcome(
+        changed=result.changed or warmup.changed,
+        deferred=result.deferred or warmup.deferred,
+        failure=" / ".join(failures) or None,
+        next_action=result.next_action or warmup.next_action,
+    )
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
@@ -495,11 +519,9 @@ def main(
         help="linked worktreeからの実行を明示的に許可する",
     )
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
-    parser.add_argument("--prune", action="store_true", help="現在のモードで不要な導入済みツールとキャッシュを削除する")
+    parser.add_argument("--prune", action="store_true", help="互換入力。不要ツールとキャッシュは通常更新でも整理する")
     parser.add_argument("--prune-only", action="store_true", help="更新後に不要な導入済みツールとキャッシュだけを削除する")
-    parser.add_argument(
-        "--prune-only-if-minimal", action="store_true", help="minimalまたは明示--pruneの場合だけ更新後の整理を実行する"
-    )
+    parser.add_argument("--prune-only-if-minimal", action="store_true", help="互換入力。モードによらず更新後の整理を実行する")
     args = parser.parse_args([] if runner is not None and argv is None else argv)
     if args.prune_only and (args.prune or args.mode is not None):
         parser.error("--prune-onlyは--pruneおよび--modeと同時に指定できません")
@@ -508,8 +530,6 @@ def main(
     dotfiles_mode.select(args.mode)
     if args.prune:
         os.environ["DOTFILES_PRUNE"] = "1"
-    if args.prune_only_if_minimal and not (dotfiles_mode.is_minimal() or args.prune):
-        return
     if runner is None:
         root = common.find_dotfiles_root()
         if root is None:
@@ -537,10 +557,16 @@ def main(
             )
             sys.exit(2)
     if args.prune_only or args.prune_only_if_minimal:
-        result = prune_installation.run()
-        if result.failure is not None:
-            print(f"{result.failure}。次の操作: {result.next_action}", file=sys.stderr)
-            sys.exit(1)
+        lock = Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "locks/update-dotfiles.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with filelock.FileLock(str(lock), timeout=600, preserve_lock_file=True), _configure_logging():
+                result = _prune_and_warmup()
+                if result.failure is not None:
+                    logger.error("%s。次の操作: %s", result.failure, result.next_action)
+                    sys.exit(1)
+        except filelock.Timeout:
+            print("他の更新が実行中のため整理を保留。次回のupdate-dotfilesで再試行します。", file=sys.stderr)
         return
     # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
     with _configure_logging() as persistent_log_ready:
@@ -799,6 +825,8 @@ def _skip_reason(step: _StepSpec, *, home_substituted: bool) -> str | None:
         return _SKIP_OTHER_PLATFORM
     if step.host_resources and home_substituted:
         return _SKIP_SUBSTITUTED_HOME
+    if step.run is warmup_pyfltr_mcp.run and os.environ.get("DOTFILES_PRUNE_OUTSIDE_UV") == "1":
+        return "キャッシュ整理後の更新後処理で事前構築する"
     return None
 
 
@@ -871,9 +899,9 @@ def run(
     `recommendations` は各ステップが`PostApplyOutcome.recommendations`で返した推奨コマンドを列挙順に並べたもの。
     """
     selected_steps = list(DEFAULT_STEPS if steps is None else steps)
-    if steps is None and os.environ.get("DOTFILES_PRUNE") == "1" and os.environ.get("DOTFILES_PRUNE_OUTSIDE_UV") != "1":
+    if steps is None and os.environ.get("DOTFILES_PRUNE_OUTSIDE_UV") != "1":
         selected_steps.append(
-            _StepSpec("不要ツールとキャッシュの削除", prune_installation.run, after_all_preceding=True, host_resources=True)
+            _StepSpec("不要ツールとキャッシュの削除", _prune_and_warmup, after_all_preceding=True, host_resources=True)
         )
     effective_steps = [_normalize_step(step) for step in selected_steps]
     predecessors = _resolve_predecessors(effective_steps)

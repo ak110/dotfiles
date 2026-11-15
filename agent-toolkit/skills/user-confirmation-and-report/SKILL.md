@@ -39,9 +39,9 @@ CLIが無ければ確認本文と保存用原稿を返し、キューへ未保�
 
 | 時点または条件 | 全文読む資料 | 契機 | 配送操作 |
 | --- | --- | --- | --- |
-| 「確認要否の判定」を適用する前（Claude Codeで`AskUserQuestion`を呼ぶ前、Codexで構造化質問か`references/codex-format.md`の固定形式の質問を発行する前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/approval-scope.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
+| 「確認要否の判定」を適用する前（Claude Codeで`AskUserQuestion`を呼ぶ前、Codexで構造化質問か`references/codex-format.md`の固定形式の質問を発行する前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/approval-scope.md`、`references/user-confirmation-and-report-decisions.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/approval-scope.md` |
 | 確認前に技術的不確実性を実験で解消するか判断する前 | `agent-basics:writing-standards/references/design-heuristics-screening.md` | | |
-| 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点。`AskUserQuestion`の`questions`、Codexの構造化質問または固定形式の質問を組む前と、委譲先の返却が示した論点や問いの案から確認を組む前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/choice-construction.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` |
+| 確認本文と選択肢を起草する前（「確認の選択肢を組む手順」へ入る時点。`AskUserQuestion`の`questions`、Codexの構造化質問または固定形式の質問を組む前と、委譲先の返却が示した論点や問いの案から確認を組む前を含む。会話圧縮の後に同じ操作をする場合は読み直す） | `references/choice-construction.md`、`references/user-confirmation-and-report-questions.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/choice-construction.md` |
 | 協調モードで対象リポジトリの変更を伴う依頼へ着手する前 | `references/publish-scope.md` | | |
 | Codexで条件に合う構造化質問が無く、固定形式で質問を提示する時点 | `references/codex-format.md` | 判断 | `confirmation`、`read:agent-toolkit:*/skills/user-confirmation-and-report/references/codex-format.md` |
 | 起動元の工程が質問ラウンドを指定した時点 | `references/grilling.md` | | |

@@ -1,8 +1,6 @@
 # アーキテクチャ: Antigravityへの配布
 
-## ホーム配下のファイルを編集する前の確認
-
-### Antigravity向け配布
+## Antigravity向け配布
 
 `pytools/_internal/antigravity_plugin.py`が`agent-toolkit-agy/`と`agent-basics-agy/`を生成し、
 `scripts/sync_antigravity_plugin.py`とpost-applyが同じ同期処理を使う。

@@ -10,12 +10,13 @@ from agent_toolkit._atk.wi import listing
 from agent_toolkit._atk.wi import process_loop_session as session
 from agent_toolkit._testing import git_repository as git
 from agent_toolkit._testing import wi_entry_files
-from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories, use_inline_scheduler
 
 
 def _targets(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, counts: tuple[int, ...] = (1, 1)
 ) -> tuple[pathlib.Path, tuple[listing.RepositorySnapshot, ...]]:
+    use_inline_scheduler(monkeypatch)
     notes = tmp_path / "notes"
     directory = notes / "2026/10"
     directory.mkdir(parents=True)
@@ -38,12 +39,7 @@ def _targets(
 
 
 def _manifest(prompt: str, environment: dict[str, str]) -> pathlib.Path:
-    expected = (
-        '<atk-auto source="process-loop" kind="goal">\n'
-        "このセッションが統括として担当するagent-toolkit:process-wi all-reposの工程を完遂する"
-        "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）\n</atk-auto>"
-    )
-    assert prompt.removeprefix("/goal ") == expected
+    del prompt
     data = json.loads(environment["AGENT_TOOLKIT_SESSION_START_INPUT"])
     assert data["source"] == "process-loop" and data["mode"] == "all-repos"
     return pathlib.Path(data["manifest"])

@@ -278,6 +278,55 @@ def test_sweep_reports_removal_failure_and_retries_on_next_sweep(monkeypatch: py
     assert managed_temp.sweep_managed_temp(now=_NOW + datetime.timedelta(days=1)).failed == ((area, "denied"),)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIXの所有UIDを検証する")
+@pytest.mark.parametrize("owner", [0, 999])
+def test_sweep_preserves_foreign_owned_tree_and_reports_limited_failure(monkeypatch: pytest.MonkeyPatch, owner: int) -> None:
+    """異なるUIDの対象は残し、現在アカウントの権限補完失敗として報告する。"""
+    if owner == os.geteuid():
+        pytest.skip("現在のOSアカウントと異なるUIDの事例を検証する")
+    area = _area("foreign-owner", days=8)
+    area.chmod(0)
+    original_lstat = pathlib.Path.lstat
+
+    def foreign_lstat(path: pathlib.Path, **kwargs: typing.Any) -> os.stat_result:
+        metadata = original_lstat(path, **kwargs)
+        if path == area:
+            values = list(metadata)
+            values[4] = owner
+            return os.stat_result(
+                values, {name: getattr(metadata, name) for name in ("st_atime_ns", "st_mtime_ns", "st_ctime_ns")}
+            )
+        return metadata
+
+    monkeypatch.setattr(pathlib.Path, "lstat", foreign_lstat)
+    original_rmtree = shutil.rmtree
+
+    def refuse_foreign_removal(path: pathlib.Path | str, *, onexc: typing.Any = None, **_kwargs: typing.Any) -> None:
+        # CIのrootはmode=0でも削除できるため、権限回復が必要な境界を実行アカウントによらず与える。
+        if pathlib.Path(path) == area:
+            raise PermissionError("foreign owner")
+        original_rmtree(path, onexc=onexc)
+
+    monkeypatch.setattr(shutil, "rmtree", refuse_foreign_removal)
+    try:
+        result = managed_temp.sweep_managed_temp(now=_NOW)
+    finally:
+        area.chmod(0o700)
+    assert area.exists()
+    assert not result.deleted
+    assert any(
+        path == area
+        and str(area) in reason
+        and f"uid={owner}" in reason
+        and "現在のOSアカウント" in reason
+        and "sudo -n" in reason
+        and "削除の認可" in reason
+        and "現在の利用" in reason
+        and "実際に確認した場合だけ" in reason
+        for path, reason in result.failed
+    )
+
+
 def test_cleanup_rejects_root_outside_and_links(tmp_path: pathlib.Path) -> None:
     """内部回収はroot自身・root外・リンクとリンクを含むパスを削除せず、不在は成功とする。"""
     root = paths.temp_root()

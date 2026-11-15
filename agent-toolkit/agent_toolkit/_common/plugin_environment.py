@@ -281,7 +281,7 @@ def launch_command(root: Path, target: Path) -> list[str]:
     配布rootをuvのprojectに指定するとそこへ仮想環境が作成されるため、案内文もlaunch.pyを使う。
     """
     launcher = root.resolve() / "scripts" / "launch.py"
-    return ["uv", "run", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher), str(target)]
+    return ["uv", "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python", str(launcher), str(target)]
 
 
 def cli_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:

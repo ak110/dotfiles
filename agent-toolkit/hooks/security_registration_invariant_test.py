@@ -1,7 +1,17 @@
-"""Claude Code 2.1.304の組織向け設定が省くFunctionイベントの登録を検出する。"""
+"""組織ガードがイベント単位で通知する登録を、理由付きの許可と区別する。"""
 
 import pathlib
 import re
+
+_ALLOWED = {
+    ("compact_conversation.ts", "session.compact"): (
+        "要約省略の登録を維持する要求。組織modでない環境ではガードの省略通知が出る。PreCompactへ短文化を依頼する。"
+    ),
+    ("compact_conversation.ts", "session.append"): (
+        "Claude Code 2.1.325の背景Bash完了通知はsession.receiveへ配送されず、appendのqueue/deliveryで観測した。"
+        "doorがdelivery/queueだけでも組織ガードの省略通知が出る。"
+    ),
+}
 
 
 def test_registered_events_survive_organization_security_defaults() -> None:
@@ -14,6 +24,7 @@ def test_registered_events_survive_organization_security_defaults() -> None:
         "skill.prompt",
         "attribution.text",
         "session.compact",
+        "session.append",
         "settings.read",
     }
     violations = []
@@ -22,9 +33,7 @@ def test_registered_events_survive_organization_security_defaults() -> None:
             continue
         text = path.read_text(encoding="utf-8")
         for event in re.findall(r'\bon\("([^"]+)"', text):
-            # 任意の要約省略は、組織側で省略されても標準圧縮を継続できる。
-            # 実matcherと他機能の保護はcompact_conversation.test.tsで検証する。
-            if path.name == "compact_conversation.ts" and event == "session.compact":
+            if (path.name, event) in _ALLOWED:
                 continue
             if event.startswith("classic.") or event in skipped:
                 violations.append(f"{path.name}: {event}")

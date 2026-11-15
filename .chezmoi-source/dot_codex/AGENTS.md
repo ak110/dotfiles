@@ -44,9 +44,8 @@ Codex固有の公開機能と常時規範との差分を規定し、メインエ
   `exec_command`を呼び出す場合は、返却されたオブジェクト全体を`text(r)`へ渡し、本文、診断情報、`exit_code`、`session_id`を保持する。
   外側の`cell_id`は`functions.wait`、内側の`session_id`は`write_stdin`を用いて同一ターン内に終了まで回収する。
   `exit_code`が存在せず`session_id`が存在する結果は実行中として扱い、同一実行のコマンドを重複して再発行することは避ける。
-  独立作業と受信済み通知の処理が尽きた長い終了待ちでは、外側の先頭pragma（`// @exec: {"yield_time_ms": 120000}`）、`functions.wait`、空入力の`write_stdin`の`yield_time_ms`に120,000msを指定することを目安とする。
-  起動時の上限30,000msとCLI自身の期限を保ち、独立作業・受信済み通知・対話・短い操作では早く制御を返し、待機状況の報告だけなら長めに回収する。
-  観測条件と再検証手順は、`docs/development/audit-records-codex.md`の「agent-toolkit/share/rules-common.codex.md：Codex固有の入出力：2026年11月5日」にある。
+  長い終了待ちの所有者と二層の回収時間は、`agent-toolkit:delegation/references/codex-runtime-waiting.md`に従って選ぶ。
+  同一turnで回収する場合も、起動時の上限30,000msとコマンド自身の有限期限を保つ。
 - 明示的な指示がない限り、Officeファイルは原本を直接変更せずに取り扱う。
   CSVファイルは利用側の要求仕様に従って処理し、仕様が不明な場合はUTF-8（BOM付き）で保存する。
 - `apply_patch`を用いて既存ファイルを全面的に置換する場合も、同一パスに対するUpdate操作を使用する。
@@ -336,6 +335,8 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 確認は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
 
 先送りするのは、影響調査や設計選定をそのセッションで実施できない事象、合意を同じセッションで得られない事象、時間経過や外部公開を待つ残工程、別リポジトリの新しい計画が必要な事象、是正先のリポジトリがこのホストで編集可でない場合に限る。
+process-wiでは、処理を終えたリポジトリでも律速でなく資源に余力があれば、巡回中に見つかった不良・改善を同じ巡回で処理する。
+その対象の今回分が済んだことだけを根拠とする判断は、別リポジトリの新しい計画が必要という先送り理由から除く。
 編集可でないリポジトリは、設定の扱いに従ってAWIを投入するか、必要な変更を報告する。
 スキルが定める次回送りの経路も、本節の先送り条件の内側で使う。
 進行を妨げる欠陥はその場で直す。
@@ -409,7 +410,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
 発話は常体とする。
 ハーネスやhookの英文を言語指定として引き継がない。
 内部連絡・委譲の返却と、言語の是正の扱いは`agent-toolkit/share/agent-conduct-details.md`「使用言語」に従う。
-成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比フレーミングと限定の書き方は、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
+成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比・限定、防御的な説明、自明な補足の扱いは、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
 </atk-auto>
 
 <atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/02-agent-operations.md">

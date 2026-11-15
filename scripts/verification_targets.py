@@ -143,6 +143,16 @@ def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]
     )
 
 
+def _reference_pattern(root: pathlib.Path, source: pathlib.Path) -> re.Pattern[str]:
+    """`import x`・`from x import`・`from <親> import x`・`<親>.x`の参照に一致する。"""
+    stem = re.escape(source.stem)
+    alternatives = [rf"^\s*import\s+{stem}\b", rf"^\s*from\s+{stem}\s+import\b"]
+    if source.parent != root:
+        parent = re.escape(source.parent.name)
+        alternatives += [rf"\b{parent}\.{stem}\b", rf"\bfrom\s+[\w.]*\b{parent}\s+import\s+[\w\s,()]*\b{stem}\b"]
+    return re.compile("|".join(alternatives), re.MULTILINE)
+
+
 def uncovered_tests(root: pathlib.Path, tests: list[str], targets: list[str]) -> list[str]:
     """対象省略は全体、ディレクトリ指定は配下を被覆する。"""
     if not targets:

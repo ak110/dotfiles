@@ -133,7 +133,7 @@ def _resolve_shared_root(root: Path, *, fresh_input: bool = False) -> Path:
 
 def main(arguments: list[str]) -> int:
     """独立投入のbootstrapだけを、保持rootと共有Pythonへ置き換える。"""
-    if len(arguments) != 2 or arguments[0] != "--wi-submit-worker":
+    if len(arguments) != 2 or arguments[0] not in {"--wi-submit-worker", "--process-loop-worker"}:
         return 2
     root = resolve_stable_plugin_root(independent=True)
     executable = plugin_environment.prepared_python(root, os.environ)
@@ -141,7 +141,11 @@ def main(arguments: list[str]) -> int:
         raise RuntimeError("独立投入の共有依存環境が未準備。公開launcherで依存環境を準備して再実行する")
     environment = plugin_environment.cli_environment(root, os.environ)
     environment["PYTHONPATH"] = str(root)
-    command = [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
+    command = (
+        [str(executable), str(root / "agent_toolkit" / "atk.py"), "wi", "process-loop", "--internal-target", arguments[1]]
+        if arguments[0] == "--process-loop-worker"
+        else [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
+    )
     if os.name == "nt":
         # 時間上限なし: 常駐サーバーの実行そのものであり、終了は起動元が決める。
         return subprocess.run(command, env=environment, check=False).returncode

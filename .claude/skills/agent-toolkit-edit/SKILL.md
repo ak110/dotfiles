@@ -36,6 +36,7 @@ description: >
 | 機械チェックスクリプトを新設・改修する前 | `references/check-script-design.md` |
 | 環境変数を新設・変更する前、既存の環境変数の名称・用途・参照主体を確認する前 | `references/claude-hooks-environment.md` |
 | レビュー担当への指示・モデルの割り当てを変える前 | `references/review-eval-set.md` |
+| 確認要否を定める条文を変える前 | `references/confirmation-eval-set.md` |
 | WindowsのCodex境界試験の記録、またはpytest回収失敗時の標準エラー`resource-diagnostics:`を調べる前 | `references/agents-server-investigation-resource-diagnostics.md` |
 | `agent-toolkit/agent_toolkit/_atk/serve/static/`配下のCSS・HTML・JavaScriptを変更する前 | `references/atk-serve-static.md` |
 | 次のいずれかを変更する前、および作業ツリーで改訂した配布物の挙動を確認する前: `atk`のサブコマンドと出力、MCPサーバー識別子とツール名、フックの実装と登録、遮断や警告の判定・出力・通知formatter、プラグイン内の実行時パス、権限設定、marketplaceと配布の手順 | `references/distribution-and-hooks.md` |

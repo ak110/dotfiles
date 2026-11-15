@@ -764,7 +764,7 @@ def test_cli_without_uv_variable_asks_to_restart_with_uv_run(tmp_path: pathlib.P
     assert result.returncode == 1
     assert result.stdout == ""
     assert len(result.stderr.splitlines()) == 1
-    assert "uv run --script" in result.stderr
+    assert "uv run --no-cache --script" in result.stderr
 
 
 @pytest.mark.parametrize("platform_name", ["linux", "windows"])

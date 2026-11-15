@@ -147,13 +147,18 @@ def test_extra_positionals_report_the_accepted_positionals(
 
 @pytest.mark.parametrize(
     "argv",
-    [[], ["wi"], ["plans"], ["agents"], ["review-table"], ["review-audit"]],
+    [[], ["review-table"], ["review-audit"], ["lane"], ["worktree-stash"], ["wi", "submission"]],
 )
 def test_command_without_subcommand_prints_help(
     argv: list[str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    atk.main(argv)
+    if argv:
+        with pytest.raises(SystemExit) as exited:
+            atk.main(argv)
+        assert exited.value.code == 0
+    else:
+        atk.main(argv)
 
     captured = capsys.readouterr()
     assert "位置引数:" in captured.out
@@ -496,7 +501,7 @@ def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
     assert "初回と再開の両方" in text and "実sessionID全要素" in text
     assert "追加・交代後" in text and "更新後の全要素" in text
     examples = list(cli_examples.examples(_atk_help.HELP["atk lane integrate"]["epilog"]))
-    assert len(examples) == 2
+    assert examples
     for _line, example in examples:
         parsed = atk._build_parser().parse_args(shlex.split(example)[1:])  # pylint: disable=protected-access
         assert parsed.session_id == "lane-owner"

@@ -43,10 +43,35 @@ CONNECTION_GUIDE_NOTICE = (
 """`atk config`と`atk config set`のヘルプへ載せる案内行。"""
 
 HELP: dict[str, dict[str, str]] = {
+    "atk config usage": {
+        "summary": "利用枠・回復時刻と配分理由を確認する",
+        "description": "利用枠・回復時刻と配分理由を確認する。\n\n目的: 残量、観測時刻、配分理由、通常設定・一時指定・継続中の会話を表示する。\n利用場面: 次に使うengineや利用上限の回復を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
+        "epilog": "実行例:\n\n  atk config usage\n  atk config usage --refresh",
+    },
+    "atk config temporary": {
+        "summary": "通常設定に重ねる一時指定を操作する",
+        "description": "通常設定に重ねる一時指定を操作する。\n\n目的: 工程モデル・接続順・速度・待機方針を期限付きで上書きする。\n利用場面: 緊急時の追加課金接続などを一時的に指定するとき。\n対象と出力: ローカルの単一の上書き集合を操作する。通常設定は保存し直さない。\n前提: set、clear、showを指定する。\n復元・後始末: clearで解除する。期限後は最新の通常設定へ戻る。",
+        "epilog": "実行例:\n\n  atk config temporary show\n  atk config temporary clear",
+    },
+    "atk config temporary set": {
+        "summary": "1つの一時設定を変更する",
+        "description": "1つの一時設定を変更する。\n\n目的: KEYをVALUEで一時指定する。\n利用場面: 通常設定を保ったまま次の起動へ別の値を適用するとき。\n対象と出力: 上書き集合へ追加し、--untilを集合全体の期限にする。保存値と実効値をJSONで返す。稼働中のturnは切り替えない。\n前提: 値は通常設定と同じ書式。期限は時差付きISO 8601で指定する。\n復元・後始末: temporary clearで解除する。期限の省略時は明示解除まで維持する。",
+        "epilog": "実行例:\n\n  atk config temporary set codex_fast_mode true\n  atk config temporary set claude_worker_connections payg --until 2030-01-01T12:00:00+09:00",
+    },
+    "atk config temporary clear": {
+        "summary": "一時指定を全て解除する",
+        "description": "一時指定を全て解除する。\n\n目的: 通常設定の適用へ戻す。\n利用場面: 緊急運用や一時的な変更を終えるとき。\n対象と出力: 上書き集合を空にし、保存値と実効値をJSONで返す。通常設定は変更しない。\n前提: なし。\n復元・後始末: 再指定にはtemporary setを使う。",
+        "epilog": "実行例:\n\n  atk config temporary clear",
+    },
+    "atk config temporary show": {
+        "summary": "一時指定と適用期限を表示する",
+        "description": "一時指定と適用期限を表示する。\n\n目的: 保存値と期限・実効値を確認する。\n利用場面: 通常設定との違いや期限切れを確かめるとき。\n対象と出力: ローカルの一時指定をJSONで表示する。\n前提: なし。\n復元・後始末: 読取だけのため不要。",
+        "epilog": "実行例:\n\n  atk config temporary show",
+    },
     "atk lane integrate": {
         "summary": "レビュー済みレーンを統合し最終化する",
-        "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2 --accept-rebased-head 0123456789abcdef0123456789abcdef01234567",
-        "description": "レビュー済みレーンを統合し最終化する。\n\n目的: レビュー済みレーンのGit統合と計画保存・WI終了・選定状態の最終化を再開可能な工程として実施する。\n利用場面: レーンの実行レビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。--session-idは所有登録のsession（atk lane createの所有session）とする。manifestのplansは計画名と最終化argv、wisはWI名と終了argv、verificationはrebase後検証argv、handoffは計画なし時の引継ぎ絶対パス、lane_started_atは最初のレーン開始時刻（時差付きISO 8601）を保持する。Git統合の成功後、最終化の最初の操作の前に統合後HEADの短縮OID・完了時刻・lane_started_atからの総経過秒数を1回だけ確定して所有登録へ保存し、plans・wisのargvの{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}を展開する。{{expand-file:ABS}}はテンプレート内の同じ参照を展開した複製の絶対パスへ置き換える。再開では保存した確定値を使う。verificationの各argvは計画・訂正済み検証表の必要チェックと保存済み成功の被覆から選び、レーンworktreeをcwdとしてホスト共有の検証実行枠の下で直接実行する。各argvは自身の時間上限を使う。manifestのverification_timeout（正の有限秒数、未指定またはnullはCLI側の上限なし）を明示した場合だけ、共有実行枠の取得後に処理上限を適用する。時間切れ・中断では所有する子孫の回収を確認する。最終化argvとCLIが内部で起動する操作はatk lane create --timeoutの上限で打ち切る。工程・HEAD・記録JSONを返す。\n前提: 所有登録、cleanな同一Git登録、レビュー対象HEADとの一致。統合先worktreeとレーンworktreeをcwdとする稼働中の担当のうち、書き込む役割か役割の宣言を持たない起動の担当が残る場合は全件を診断して終了2とする。呼出元とその委譲元の連鎖、explore、書き込まないと宣言した役割の担当は数えない。合意した担当は--writer-sessionで反復指定する。\n復元・後始末: 失敗時は記録と資源を保持し、同じ入力で再開する。Git統合前の検証argv・最終化argv・handoffの是正は--restart-reviewを指定する。HEADが記録のnew_headのままならold_headかnew_headを--reviewed-headへ渡す。修正commitを足した場合は再レビューを受理した現在HEADを渡す。new_headの子孫でないHEADは終了2で拒否する。rebase記録と旧系列の対応、additional_commitsの追加commit一覧とadditional_rewritesの追加分の旧新対応を保持し、現在HEADで再検証してawaiting-validation（終了1）へ戻る。統合先の前進も検収待ちへ戻る。受理前にmanifestのwisをplan-commitsの現在の出力から作り直す。各adopt行はcommit_recordへ計画か引き継ぎ記録Markdownの絶対パスを指定する。Git統合直前にadoptのcommitが統合HEADの祖先で、同stemの対応記録にあるそのWIの集合と一致することを検査する。実装がないWIでは、commitが指定されず対応記録の集合も空であることを確認する。不一致はGit統合とWI終了を行わず終了2で拒否する。対応表と診断を検収後、--restart-reviewを外して--accept-rebased-headで再開する。Git統合済みなら未完了の最終化から進める。",
+        "epilog": "実行例:\n\n  atk lane integrate --record /absolute/lane-record.json --reviewed-head 0123456789abcdef --target-worktree /absolute/repository --target-branch develop --manifest /absolute/finalization.json --session-id lane-owner --writer-session agreed-writer-1 --writer-session agreed-writer-2",
+        "description": "レビュー済みレーンを統合し最終化する。\n\n目的: レーンのGit統合と計画保存・WI終了・選定更新を再開可能に実行する。\n利用場面: レーンのレビューと検証が完了したとき。\n対象と出力: --record ABS --reviewed-head OID --target-worktree ABS --target-branch BRANCH --manifest ABS --session-id IDを指定する。manifestのplans/wisは最終化argv、verificationはmerge後の検証argv、handoffは計画なしの引き継ぎ記録。verification_recordsは同条件の保存済み成功記録、verification_timeoutは正の有限秒数で未指定はCLI側の上限なし。lane_started_atから確定した{{integrated_head_short}}・{{completed_at}}・{{lane_seconds}}と{{expand-file:ABS}}を最終化時に展開し、再開では保存値を使う。工程・HEAD・実行記録JSONを返す。\n前提: 所有登録、cleanなGit状態、レビュー対象HEADとの一致。合意済み書込担当は--writer-sessionへ反復指定する。\n復元・後始末: 分岐時はレーンで最新統合先を通常mergeし、元OIDを保つ。検証後に短い排他で統合先をffする。統合先の前進はtarget_advancedと終了1を返し、現在HEADと--restart-reviewで追加mergeする。競合は成果を保持して解消・commit・レビュー後、現在HEADと--restart-reviewで再開する。検証失敗でも統合先は更新しない。adoptのWI行はcommit_recordを指定し、plan-commitsの現在の出力を--commitへ渡す。Git統合直前に対応集合と祖先到達性を検査する。Git統合後は同じ入力で未完了の最終化だけを再開し、そのargvのみの補完には--amend-finalizationを使う。通常統合では履歴書換え対応表を生成しない。",
     },
     "atk info": {
         "summary": "実行環境とpluginの位置・版を表示する",
@@ -208,8 +233,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
-        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象をprocess-wiの実行ごとに1つの統括会話へ渡す。\n利用場面: 登録した全対象を継続的に処理するとき、または--onceで1回だけ処理するとき。\n対象と出力: 起動cwdでorchestrateのprocess-wi all-reposを起動する。少数候補の対象は統括自身が処理し、多数候補だけを対象cwdの担当へ委譲する。所有・進捗・worktree準備・レーン回収は対象別に管理する。--onceは1集合を処理して終了し、対象0件でも待機しない。未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。対象0件では通常は変更待機し、--onceでは終了する。--resume SESSION_IDは統括会話を再開し、--auto-resumeとは同時指定できない。--worktreeは対象別に適用し、対象がdotfilesの場合は無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは現在のセッション終了後に停止し、abort-cancelで取り消す。停止未確認・未統合・dirtyの資源は保持する。",
-        "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
+        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象を、対象別の独立した会話で継続処理する。\n利用場面: 登録した全対象を継続処理するとき、または--onceで開始時集合を各1回処理するとき。\n対象と出力: 常駐が同期・開始判定を共有し、対象workerが所有・準備・process-wi all-repos・結果検収・回収を行う。別対象が継続中でも完了対象の新着を開始できる。未完了は元会話と準備済み成果を保持する。--onceは対象0件でも待機せず、未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。resume [ID|auto]で次回の再開を予約し、値省略はホストCLIの会話選択画面を使う。予約自体は起動せず、CLIの実起動で1回消費する。--worktreeは対象別に適用し、dotfilesは無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは新しい対象の起動を止め、稼働中の全実行が終了してから常駐を止める。abort-cancelで解除する。resume-cancelで未消費の再開予約を取り消す。停止未確認・未統合・dirtyの資源は保持する。",
+        "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop resume auto\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",
@@ -223,8 +248,18 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop status": {
         "summary": "process-loopへの中断要求の有無を表示する",
-        "description": "process-loopへの中断要求の有無を表示する。\n\n目的: 中断要求が設定されているかを表示する。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "process-loopへの中断要求の有無を表示する。\n\n目的: 中断要求と再開予約を表示する。--check-result PATH指定時は起動manifestを現キュー・レーンと読み取り専用で比較しJSONを返す。status=readyはこの前処理の通過であり全体完了ではない。incompleteは残件または比較失敗を示す。--wi FILENAMEは直接処置・追加分を比較母集団へ加える。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk wi process-loop status",
+    },
+    "atk wi process-loop resume": {
+        "summary": "次回の会話再開を予約する",
+        "description": "次回の会話再開を予約する。\n\n目的: ID指定、autoによる未完了所有記録、または引数省略によるCLI本来のpickerを次の起動へ予約する。\n利用場面: 現在の処理を終えてから会話を再開するとき。\n対象と出力: 同じOSアカウントの状態へ1件保存し、後から受理した予約で置き換える。予約時にCLIは起動しない。\n前提: 停止中も設定でき、通常のprocess-loop起動後に使う。起動準備の失敗やabortでは保持し、実起動で1回消費する。\n復元・後始末: 未消費分はresume-cancelで取り消せる。",
+        "epilog": "実行例:\n\n  atk wi process-loop resume SESSION_ID\n  atk wi process-loop resume auto\n  atk wi process-loop resume",
+    },
+    "atk wi process-loop resume-cancel": {
+        "summary": "未消費の再開予約を取り消す",
+        "description": "未消費の再開予約を取り消す。\n\n目的: 次回の再開指定を解除する。\n利用場面: 予約を取り消すとき。\n対象と出力: 同じOSアカウントの未消費予約だけを削除し、結果を表示する。\n前提: 既に起動したCLIは停止しない。\n復元・後始末: 必要ならresumeで予約し直す。",
+        "epilog": "実行例:\n\n  atk wi process-loop resume-cancel",
     },
     "atk wi process-loop instruct": {
         "summary": "次に起動する1セッションへ渡す追加指示を保持する",
@@ -385,7 +420,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
-        "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
+        "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後に現在のセッションを自律終了するとき、または未完了成果を保存して本人IDの再開を予約した後に再起動するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。本人IDの保存済み再開予約がある場合は、未達goalの評価を待たず一致した単一PIDへ終了要求を送る。予約は消費せず、完了とも記録しない。それ以外のFunction hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
     },
     "atk lane": {
@@ -506,25 +541,20 @@ HELP: dict[str, dict[str, str]] = {
 HELP["atk agents"]["description"] += (
     "\n操作の分担: 開始はMCPサーバーagents_serverのstart、追送はsend_message、実行中turnの中断はkill、"
     "終了済みsessionの破棄はstopを呼び出す。引数は各MCPツールの公開説明で確認する。"
+    "操作権限の要求・取消はpermissions、ユーザー画面への本文表示はsend_to_user、"
+    "会話圧縮の予約はcompact_conversation、同一会話への変更反映予約はapply_runtime_changesを使う。"
     "これらはCLIから実行できない。CLIはwaitで待機・回収、notifyで委譲元への通知、"
     "listで一覧、showで詳細、logsで記録の表示を行う。"
 )
 HELP["atk lane integrate"]["description"] += (
     "\n検証の再利用: manifestの任意のverification_recordsへ保存済み実行記録JSONの絶対パス配列を渡す。"
     "同じcleanなHEAD・argv・cwd・Pythonと環境の実行条件で終了0となり、両出力が保存されている成功だけ再利用する。"
-    "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検収待ちへ戻る。"
-    "\n並行する統合: rebase・検証・最終化は同じレーンの操作だけを排他し、統合先HEADの一致の確認とfast-forwardだけを"
+    "条件差・欠損・未完了・失敗した検証は実行する。--restart-reviewは最新統合先へ追随し検証して統合する。"
+    "\n並行する統合: merge・検証・最終化は同じレーンの操作だけを排他し、統合先HEADの一致の確認とfast-forwardだけを"
     "同じ統合先への全レーンで直列にする。統合先が準備の時点から進んでいた場合は統合先を変えず、"
     "target_advancedを返して終了1とする。同じ入力に--restart-reviewを付けて現在HEADで再開する。"
-    "\n競合の解消: rebaseが競合で止まったら競合を解消してrebase --continueで完了し、まず同じ入力を指定なしで再実行する。"
-    "history-compareが変更内容の不一致を示した旧commitだけを--resolved-conflictへ反復指定する。"
-    "旧変更を新しい親へ3-way適用した結果と異なるcommitが対象で、周辺の文脈行だけの変化は含まない。"
-    "rebaseで省略された旧commitの統合先の同一変更が後続commitで書き換えられたとhistory-compareが示した場合も、"
-    "書換え後の統合先でレーンの変更が成立することを確かめた旧commitだけを同じ指定で明示する。"
-    "旧commitの変更パスの一部を意図して外した場合は、--exclude-path <旧OID> <リポジトリ相対パス>を反復指定する。"
-    "同じ旧commitへの--resolved-conflictとの併用、旧commitが変更していないパス、全変更パスの除外は拒否する。"
-    "history-compareに通った指定だけを所有登録へ保存し、拒否された指定は保存しない。"
-    "指定を省いた後続の再開（--accept-rebased-headなど）は最後に成功した保存値を使う。"
+    "\n競合の解消: mergeが競合で止まったら両側の要求を保って解消しmerge commitを作成する。"
+    "新しい解消差分を影響するWIへ記録し、レビュー後に現在HEADと--restart-reviewで再開する。"
     "\n担当集合: 初回と再開の両方で、メインが保持する現在の合意済み書込担当一覧の実session ID全要素を"
     "--writer-sessionへ1件ずつ反復指定する。--session-idは資源の所有sessionとして別に保持する。"
     "担当の追加・交代後は合意済み一覧を更新し、再開にも更新後の全要素を渡す。"

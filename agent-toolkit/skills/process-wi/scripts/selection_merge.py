@@ -44,7 +44,7 @@ def _costs(data: dict[str, object]) -> _Rows:
     return rows
 
 
-def reopen_wis(existing: dict[str, object], names: list[str]) -> dict[str, object]:
+def reopen_wis(existing: dict[str, object], names: list[str], *, new_plan: bool = False) -> dict[str, object]:
     """元の所属と初回配分を保ち、指定した既存WIと所属レーンだけを未統合へ戻す。"""
     result = copy.deepcopy(existing)
     items = typing.cast(_Rows, result.get(_selection.DECISIONS_KEY, result.get("decisions")))
@@ -65,6 +65,8 @@ def reopen_wis(existing: dict[str, object], names: list[str]) -> dict[str, objec
             item.setdefault(_selection.INTEGRATION_STATE_KEY, _selection.INTEGRATED)
     for name in names:
         by_wi[name][_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
+        if new_plan:
+            by_wi[name]["再開位置"] = "なし"
     costs = typing.cast(_Rows, result.get(_selection.LANE_COSTS_KEY, result.get("lane_costs")))
     if not targets <= {lane_of(row) for row in costs}:
         raise ValueError("再開対象WIの元レーンが所要時間に無い")

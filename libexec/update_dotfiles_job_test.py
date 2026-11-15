@@ -667,3 +667,30 @@ def test_state_root_stays_in_isolated_platform_directory(
         "darwin": tmp_path / "home/Library/Application Support",
     }[platform]
     assert update_dotfiles_job.state_root(platform) == base / "agent-toolkit/update-jobs"
+
+
+@_POSIX
+def test_fallback_does_not_claim_reclaimed_group_after_root_exit(
+    monkeypatch: pytest.MonkeyPatch, host_environ: Callable[[], dict[str, str]]
+) -> None:
+    """非Linux分岐の所有不明を成功にせず、未知groupへの停止要求も出さない。"""
+    source = (
+        "import subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
+        "print(child.pid,flush=True)"
+    )
+    with subprocess.Popen(
+        [sys.executable, "-c", source], stdout=subprocess.PIPE, start_new_session=True, encoding="utf-8", env=host_environ()
+    ) as process:
+        assert process.stdout is not None
+        child = psutil.Process(int(process.stdout.readline()))
+        try:
+            assert process.wait(timeout=10) == 0
+            monkeypatch.setattr(update_dotfiles_job.sys, "platform", "darwin")
+            with pytest.raises(RuntimeError, match="所有を確認できません"):
+                update_dotfiles_job._stop_tree(process)  # noqa: SLF001  # pylint: disable=protected-access  # 所有消失の停止境界を検証する。
+            assert child.is_running()
+        finally:
+            with contextlib.suppress(psutil.NoSuchProcess):
+                child.kill()
+            with contextlib.suppress(psutil.NoSuchProcess, psutil.TimeoutExpired):
+                child.wait(timeout=5)

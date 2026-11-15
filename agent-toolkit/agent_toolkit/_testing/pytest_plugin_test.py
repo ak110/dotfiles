@@ -9,7 +9,8 @@ import socket
 import subprocess
 import sys
 import textwrap
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import claude_agent_sdk
 import psutil
@@ -405,3 +406,34 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "8 passed" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "before,after,failed",
+    [
+        ((None, None, False), (None, None, False), False),
+        ((None, None, False), (7, 1.0, True), False),
+        ((7, 1.0, True), (7, 1.0, True), False),
+        ((7, 1.0, True), (7, 1.0, False), True),
+        ((7, 1.0, True), (7, 2.0, True), True),
+        ((None, None, False), (7, None, False), True),
+        ((7, None, False), (7, None, False), False),
+    ],
+)
+def test_tracker_guard_classifies_generation_boundary(monkeypatch: pytest.MonkeyPatch, before, after, failed) -> None:
+    """実プロセスを停止せず、世代交代・死亡・既存の死亡の帰属を判定する。"""
+    snapshots = iter([before, after])
+    monkeypatch.setattr(pytest_plugin, "_tracker_state", lambda: next(snapshots))
+    reports = []
+    item = SimpleNamespace(
+        nodeid="probe",
+        location=("probe.py", 1, "probe"),
+        ihook=SimpleNamespace(pytest_runtest_logreport=lambda **kwargs: reports.append(kwargs["report"])),
+    )
+    protocol = pytest_plugin.pytest_runtest_protocol(cast(pytest.Item, item), None)
+    next(protocol)
+    with pytest.raises(StopIteration):
+        protocol.send(None)
+    assert bool(reports) is failed
+    if failed:
+        assert reports[0].nodeid == "probe" and reports[0].when == "teardown"

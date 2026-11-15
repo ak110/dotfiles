@@ -23,3 +23,22 @@ MCPサーバーの`SessionState`やセッション登録簿自体の更新は、
 レーン管理側は、`_common/session_registry.py`の`resolve`による解決結果（実行中かどうかとcwd）を通じてセッション登録簿を読み取るのみにとどめ、状態の更新や終了登録はMCPサーバー側が担う。
 回収された結果データは専用worktree外のmanaged-tempへ保存され、既存の保持期限ポリシーに従って破棄される。
 なお、未解決のリソース登録は破棄せず保持し、回収処理が削除するのは解決済みのレーン登録のみとする。
+
+## 対象別workerと再開予約
+
+持続する`process_loop.py`のschedulerが、対象別workerのPID世代と実行中の集合を保持する。
+通常は1対象1worker、旧集合会話の再開では元会話の対象群を1つの実行単位にする。
+対象別の候補・所有・lane_session_idの保存先は上表と同じで、独立した完了台帳は設けない。
+
+| 状態 | 保存先 | 読む主体と更新する主体・寿命 |
+| --- | --- | --- |
+| workerの凍結入力・結果・標準出力/標準エラー | managed-tempの`process-loop-worker-*`配下 | `process_loop_scheduler.py`が入力とログを作成し、別プロセスのworkerが検収後の対象別結果を原子的に保存する。schedulerが終了・部分結果・対象を検査し、既存の7日保持に従う |
+| 次回再開予約 | state_dirの`process-wi-resume.json`と同名stemの`.lock` | `process_loop_control.py`のresume/cancelが保存・置換・取消し、statusと常駐が読む。予約・abort操作と実Popenを同じ有限ロックで排他する。実起動成功だけが世代一致の予約を消費し、準備・更新・起動失敗と中断では保持する |
+| 次回の追加指示 | state_dirの`process-wi-instructions`と`.lock` | `process_loop_log.py`の追加・取消と実起動が同じ有限ロックで更新する。実Popen前にmanifestへ反映し、起動成功後に1回消費する |
+| picker等で選択した実ID/cwdと所有確定のACK | managed-tempの`startup-identity-*`配下 | 起動側がnonce・所有PID世代と応答先を既存SessionStart入力へ載せ、hookが実ID/cwdを返す。起動側が選択対象の所有・manifestを確定してACKする。hookは所有側の生存と120秒期限を確認し、実行の保護と7日保持に従う |
+| 非対話Codex/Antigravityの実IDを含むJSON出力 | managed-tempの`process-loop-stream-*`配下 | `process_loop_session.py`が通常ファイルへstdoutを保存し、既存のinit/thread.started解析で実IDを取得する。読み取り用FDは別に開き、パイプのEOF待ちや読取スレッドを追加しない。出力の保存先をworkerログへ渡し、7日保持に従う |
+
+CLI終了後のレーン検収はintegration.phaseが`finalized`のものだけを完了として受理する。
+`git-integrated`は後処理が残る中間状態として保持する。
+報告前のstatus検収も同じ`_remaining_work`と開始側gateを使う。
+レーン管理が登録簿へ書く権限は追加せず、process-loopが起動・観測する本体CLIの公開と、agents_serverの委譲turnの公開を区別する。

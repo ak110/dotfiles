@@ -34,7 +34,8 @@
      シェルからの起動は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の形式と3分類に従う。
    - pytestと統合検証は、開始からworker・子孫の回収まで共有実行枠を保持する。
      収集だけのpytest（`--collect-only`）は枠を取らない。
-     枠はホスト全体で2つあり（pyfltr 3.30.0以降）、3件目以降の検証は空きを待つ。
+     枠の数は`agent-toolkit:/share/check-execution-operations-launch.md`「統合実行ツール経由の起動」の定義に従う。
+     dotfilesのロックファイルの版では、既定で2枠になる。
      入れ子の実行は祖先の所有を継承する。
 4. 確定した対象へ全チェックを適用し、共有実行枠の占有を減らすため、静的チェックを先に通してからpytestを含む実行を1回行う。
    pyfltrは1回の実行の間ずっと枠を保持するため、静的チェックで失敗する実行にpytestを含めると、枠を数分ずつ無駄に占有する。
@@ -69,7 +70,7 @@
      終了0でも実run成功・版・cwd・HEAD/index・実行後不変は未確認なので、実行後のverify-runは省略しない。
      対象はこの集合であり、リポジトリ全体のpytestを意味しない。
      利用側は群の焦点検証と同じ方法で候補を列挙し、契約別の探索で補った試験も引数へ加える。
-     rebaseが必要なら新しい内容で実行し、不要なら現在の統合入力を使う。
+     mergeが必要なら新しい内容で実行し、不要なら現在の統合入力を使う。
      最終の統合入力と本文・環境・対象が同じことを既存の実行記録から確認できる成功runは再利用する。
      indexと作業ツリーを最終統合入力HEADへ一致させる。
      ff直前に`uv run --frozen python scripts/pyfltr_precommit.py --verify-run <run_id> --consumer-review <判定JSONの絶対パス>`を実行し、終了0を確かめる。

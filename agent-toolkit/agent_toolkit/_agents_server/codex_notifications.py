@@ -19,8 +19,10 @@ from agent_toolkit._agents_server.codex_protocol import (
     _thread_id_from,
     _turn_id_from,
 )
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState, append_bounded
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_server_tool_result
+from agent_toolkit._atk import usage_refresh
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import is_agents_wait_command
 
@@ -59,6 +61,10 @@ class CodexNotificationsMixin:
         method = message.get("method")
         params = message.get("params")
         if not isinstance(method, str) or not isinstance(params, dict):
+            return
+        if method == "account/rateLimits/updated":
+            if usage_refresh.enabled():
+                await run_file_operation(usage_refresh.record_codex, params)
             return
         thread_id = _thread_id_from(params)
         compacting = self._wait_compaction_turns.get(thread_id or "")

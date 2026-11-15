@@ -22,6 +22,8 @@ from agent_toolkit._testing.pretooluse_support import _additional_context, _run
 _SKILL_REFERENCES = pathlib.Path(__file__).resolve().parents[3] / "skills" / "user-confirmation-and-report" / "references"
 _APPROVAL = _SKILL_REFERENCES / "approval-scope.md"
 _CHOICE = _SKILL_REFERENCES / "choice-construction.md"
+_DECISIONS = _SKILL_REFERENCES / "user-confirmation-and-report-decisions.md"
+_QUESTIONS = _SKILL_REFERENCES / "user-confirmation-and-report-questions.md"
 _WARNING = "未取得資料"
 _DENIAL = "この質問はまだユーザーへ表示していない"
 _CONFIRMATION_TOOLS = ("AskUserQuestion", "request_user_input", "request_user_input_async")
@@ -119,7 +121,11 @@ _COMPACT = {"type": "system", "subtype": "compact_boundary"}
 def _payload(tmp_path: pathlib.Path, entries: list[dict], **extra: object) -> dict:
     transcript = tmp_path / "transcript.jsonl"
     # 比較対象の2資料とは独立に、共有の読込方法を含む親スキル本文を圧縮後にも取得する。
+    omitted = extra.pop("omit_reference", None)
     entries = [*entries, *_successful_skill()]
+    for path in (_DECISIONS, _QUESTIONS):
+        if path != omitted:
+            entries.extend(_successful_read(path))
     transcript.write_text("".join(json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries), encoding="utf-8")
     payload = {
         "tool_name": "AskUserQuestion",
@@ -208,6 +214,19 @@ def test_every_confirmation_tool_is_denied_then_passes_after_full_reads(tmp_path
     result = _run(read)
     assert result.returncode == 0 and not _denial(result)
     assert _WARNING not in _additional_context(result)
+
+
+@pytest.mark.parametrize("missing", [_DECISIONS, _QUESTIONS])
+def test_split_confirmation_body_is_required_then_not_requested_again(tmp_path, missing):
+    """従来の2資料だけでは、分割された判定・手順の本文の取得を代替しない。"""
+    entries = [*_successful_read(_APPROVAL), *_successful_read(_CHOICE)]
+    result = _run(_payload(tmp_path, entries, omit_reference=missing))
+    assert str(missing) in _denial(result)
+    assert str(_APPROVAL) not in _denial(result)
+    assert str(_CHOICE) not in _denial(result)
+    result = _run(_payload(tmp_path, [*entries, *_successful_read(missing)]))
+    assert not _denial(result)
+    assert str(missing) not in _additional_context(result)
 
 
 @pytest.mark.parametrize(

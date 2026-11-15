@@ -43,5 +43,5 @@
 | --- | --- |
 | 確認・報告の手段と認識合わせ：手段の選択の基準を適用する前 | `communication-methods-delivery.md` |
 | ユーザー発話の解釈と取り込み：問い・提案・疑問形の扱いの基準を適用する前 | `user-utterance-questions.md` |
-| ユーザー確認とユーザーへの報告：認可を要する操作の基準を適用する前 | `user-confirmation-and-report-authorization.md` |
+| WIの完成条件外の不足を「新しい挙動の追加」に分類し、今回の作業に含めるか確認する前 | `user-confirmation-and-report-authorization.md` |
 | ユーザー確認とユーザーへの報告：確認要否の判定の基準を適用する前 | `user-confirmation-and-report-decisions.md` |

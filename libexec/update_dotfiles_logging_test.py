@@ -3,9 +3,11 @@
 
 # pylint: disable=protected-access
 
+import collections.abc
 import io
 import logging
 import pathlib
+import subprocess
 import sys
 from typing import Any
 
@@ -57,7 +59,7 @@ def test_main_closes_persistent_log_when_start_record_is_interrupted(
     """開始記録が中断されても、獲得済みのログファイルを閉じて登録を外す。"""
     original_handlers = update_dotfiles_runtime.logger.handlers.copy()
     created: list[logging.FileHandler] = []
-    real_handler = update_dotfiles_runtime.logging.handlers.RotatingFileHandler
+    real_handler = update_dotfiles_runtime.update_log.ProcessSafeRotatingFileHandler
 
     def handler(*args: Any, **kwargs: Any):
         instance = real_handler(*args, **kwargs)
@@ -70,7 +72,7 @@ def test_main_closes_persistent_log_when_start_record_is_interrupted(
     def interrupt(*_args: object) -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(update_dotfiles_runtime.logging.handlers, "RotatingFileHandler", handler)
+    monkeypatch.setattr(update_dotfiles_runtime.update_log, "ProcessSafeRotatingFileHandler", handler)
     monkeypatch.setattr(update_dotfiles.sync_report, "write_start", interrupt)
     with pytest.raises(KeyboardInterrupt):
         update_dotfiles.main([])
@@ -94,6 +96,53 @@ def test_logs_cli_shows_latest_update_only(logs_path: pathlib.Path) -> None:
     assert result.returncode == 0, result.stderr
     assert result.stdout == latest
     assert not result.stderr
+
+
+@pytest.mark.windows
+def test_update_parent_and_post_apply_child_can_rotate_the_same_log(
+    logs_path: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    host_environ: collections.abc.Callable[[], dict[str, str]],
+) -> None:
+    """親がログを所有したまま子が世代移動し、両者の診断と容量上限を維持する。"""
+    monkeypatch.setattr(update_dotfiles_runtime, "LOG_PATH", logs_path)
+    monkeypatch.setattr(update_dotfiles_runtime, "_LOG_MAX_BYTES", 512)
+    writer = tmp_path / "post_apply_writer.py"
+    writer.write_text(
+        "import logging, pathlib, sys\n"
+        "from pytools import post_apply\n"
+        "post_apply._UPDATE_LOG_PATH = pathlib.Path(sys.argv[1])\n"
+        "post_apply._UPDATE_LOG_MAX_BYTES = 512\n"
+        "post_apply.sync_report.REPORT_PATH = pathlib.Path(sys.argv[2])\n"
+        "def run():\n"
+        "    for number in range(3):\n"
+        "        logging.getLogger('child').warning('child-%s %s', number, 'x' * 180)\n"
+        "    return post_apply.run(steps=[])\n"
+        "post_apply.main(runner=run)\n",
+        encoding="utf-8",
+    )
+    with update_dotfiles_runtime.configure_persistent_log("parent-child-test"):
+        update_dotfiles_runtime.logger.info("parent-before")
+        result = subprocess.run(
+            [sys.executable, str(writer), str(logs_path), str(tmp_path / "child-report.json")],
+            env=host_environ(),
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            check=False,
+        )
+        update_dotfiles_runtime.logger.info("parent-after")
+    assert result.returncode == 0, result.stderr
+    assert "Logging error" not in result.stderr
+    generations = [logs_path, *logs_path.parent.glob(f"{logs_path.name}.[0-9]")]
+    saved = "".join(path.read_text(encoding="utf-8") for path in generations)
+    assert "parent-before" in saved
+    assert "child-2" in saved
+    assert "parent-after" in saved
+    assert 1 < len(generations) <= 4
+    assert all(path.stat().st_size <= 512 for path in generations)
 
 
 @pytest.mark.parametrize("exit_code", [0, 7])

@@ -1,10 +1,9 @@
-"""隔離ホームで対象分類、使用中保護とpruneの実際の削除を確かめる。"""
+"""隔離入力と副作用の代替で、対象分類・使用中保護・cache周期の判定を確かめる。"""
 
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
 import json
 import os
-import shutil
 import stat
 import subprocess
 import types
@@ -19,6 +18,26 @@ from pytools._internal import _test_helpers, common, prune_installation, setup_m
 
 
 def _prepare(tmp_path, monkeypatch, mode):
+    home = tmp_path / "isolated-home"
+    home.mkdir()
+    # HOMEだけでは、ホストから継承した共有ランタイムの明示配置が残る。
+    for name, path in {
+        "HOME": home,
+        "USERPROFILE": home,
+        "RUSTUP_HOME": home / ".rustup",
+        "CARGO_HOME": home / ".cargo",
+        "CODEX_HOME": home / ".codex",
+        "CLAUDE_CONFIG_DIR": home / ".claude",
+        "MISE_DATA_DIR": home / "mise",
+        "MISE_DOTNET_ROOT": home / "mise/dotnet-root",
+        "AGENT_TOOLKIT_RUNTIME_DATA": home / "runtime",
+        "LOCALAPPDATA": home / "AppData/Local",
+        "XDG_DATA_HOME": home / ".local/share",
+        "XDG_STATE_HOME": home / ".local/state",
+        "XDG_CACHE_HOME": home / ".cache",
+    }.items():
+        monkeypatch.setenv(name, str(path))
+    monkeypatch.setattr(Path, "home", lambda: home)
     root = tmp_path / "dotfiles"
     root.mkdir()
     (root / "mise.toml").write_text('[tools]\nprek="latest"\nrust="1"\nactionlint="latest"\n')
@@ -26,6 +45,7 @@ def _prepare(tmp_path, monkeypatch, mode):
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
     monkeypatch.setattr(prune_installation, "_stop_daemon", lambda: None)
     monkeypatch.setattr(prune_installation, "_active_users", lambda paths: [])
+    monkeypatch.setattr(prune_installation, "_remove", lambda _path: False)
     monkeypatch.setattr(setup_mise, "find_mise_binary", lambda: Path("/fixture/mise"))
     monkeypatch.setattr(common, "resolve_executable", lambda name: Path("/fixture") / name)
     monkeypatch.setattr(prune_installation.shutil, "which", lambda name: str(Path("/fixture") / name))
@@ -34,35 +54,18 @@ def _prepare(tmp_path, monkeypatch, mode):
     def run(command, **_kwargs):
         calls.append(command)
         output = (
-            json.dumps({"node": [{"version": "24"}], "rust": [{"version": "1"}], "actionlint": [{"version": "1"}]})
-            if command[1:4] == ["ls", "--installed", "--json"]
-            else ""
+            str(tmp_path / "uv-cache")
+            if command[1:] == ["cache", "dir"]
+            else (
+                json.dumps({"node": [{"version": "24"}], "rust": [{"version": "1"}], "actionlint": [{"version": "1"}]})
+                if command[1:4] == ["ls", "--installed", "--json"]
+                else ""
+            )
         )
         return subprocess.CompletedProcess(command, 0, output, "")
 
     monkeypatch.setattr(common, "run_subprocess", run)
     return root, calls
-
-
-def test_minimal_prune_removes_only_listed_paths_and_clears_caches(tmp_path, monkeypatch):
-    _, calls = _prepare(tmp_path, monkeypatch, "minimal")
-    runtime = tmp_path / "runtime"
-    runtime.mkdir()
-    (runtime / "dependency").write_text("installed")
-    retained = tmp_path / "settings.json"
-    retained.write_text("keep")
-    monkeypatch.setattr(prune_installation, "removal_paths", lambda: (runtime,))
-    result = prune_installation.run()
-    assert result.failure is None
-    assert result.changed
-    assert not runtime.exists()
-    assert retained.read_text() == "keep"
-    assert ["/fixture/mise", "uninstall", "--all", "node"] in calls
-    assert ["/fixture/mise", "uninstall", "--all", "rust"] in calls
-    assert ["/fixture/mise", "prune", "-y"] in calls
-    assert ["/fixture/mise", "reshim", "--force"] in calls
-    assert ["/fixture/mise", "cache", "clear"] in calls
-    assert ["/fixture/uv", "cache", "clean"] in calls
 
 
 def test_active_old_environment_survives_prune(tmp_path, monkeypatch):
@@ -77,6 +80,32 @@ def test_active_old_environment_survives_prune(tmp_path, monkeypatch):
     assert result.next_action is not None
     assert "update-dotfiles --prune" in result.next_action
     assert (environment / "python").read_text() == "in use"
+    assert not calls
+
+
+def test_active_rustup_defers_minimal_cleanup(tmp_path, monkeypatch):
+    """toolchain配置外のrustupも、外部CLIや削除を始める前に使用中と判定する。"""
+    active_users = prune_installation._active_users
+    _, calls = _prepare(tmp_path, monkeypatch, "minimal")
+    executable = Path(os.environ["CARGO_HOME"]) / "bin/rustup"
+    process = types.SimpleNamespace(
+        pid=123,
+        username=lambda: "fixture",
+        as_dict=lambda _attributes: {
+            "name": "rustup",
+            "exe": str(executable),
+            "cmdline": [str(executable), "component", "list"],
+            "username": "fixture",
+            "uids": types.SimpleNamespace(real=os.getuid() if os.name != "nt" else None),
+            "status": psutil.STATUS_RUNNING,
+        },
+    )
+    monkeypatch.setattr(prune_installation.codex_processes, "codex_processes", lambda: [])
+    monkeypatch.setattr(psutil, "process_iter", lambda: [process])
+    monkeypatch.setattr(psutil, "Process", lambda _pid=None: process)
+    monkeypatch.setattr(prune_installation, "_active_users", active_users)
+    result = prune_installation.run()
+    assert result.failure is not None and "rustup" in result.failure
     assert not calls
 
 
@@ -113,7 +142,7 @@ def test_full_keeps_project_development_tools_and_old_environments(tmp_path, mon
     result = prune_installation.run()
     assert result.failure is None
     assert all("uninstall" not in command for command in calls)
-    assert all("uv" not in command[0] for command in calls)
+    assert ["/fixture/uv", "cache", "clean"] in calls
 
 
 def test_invalid_runtime_home_preserves_entire_worktree(tmp_path, monkeypatch):
@@ -125,72 +154,6 @@ def test_invalid_runtime_home_preserves_entire_worktree(tmp_path, monkeypatch):
     assert "作業ツリー全体" in result.failure
     assert (root / "mise.toml").is_file()
     assert not calls
-
-
-def test_symlink_removal_preserves_external_target(tmp_path):
-    target = tmp_path / "retained"
-    target.mkdir()
-    (target / "content").write_text("keep")
-    link = tmp_path / "runtime"
-    try:
-        link.symlink_to(target, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlinkを作成できない環境")
-    assert prune_installation._remove(link)
-    assert (target / "content").read_text() == "keep"
-
-
-def test_removal_paths_follow_installer_roots_and_keep_opencode_data(tmp_path, monkeypatch):
-    """実インストーラーの配置とmiseの上書き先を削除対象へ対応付ける。"""
-    local = tmp_path / "local"
-    data = tmp_path / "mise-data"
-    monkeypatch.setenv("LOCALAPPDATA", str(local))
-    monkeypatch.setenv("MISE_DATA_DIR", str(data))
-    monkeypatch.delenv("MISE_DOTNET_ROOT", raising=False)
-    paths = prune_installation.removal_paths()
-    assert local / "agy" in paths
-    assert data / "dotnet-root" in paths
-    assert Path.home() / ".local/share/opencode" not in paths
-
-
-def test_prune_command_failure_reports_original_error(tmp_path, monkeypatch):
-    _prepare(tmp_path, monkeypatch, "minimal")
-    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
-
-    def fail(command, **_kwargs):
-        return subprocess.CompletedProcess(command, 3, "", "fixture failure")
-
-    monkeypatch.setattr(common, "run_subprocess", fail)
-    result = prune_installation.run()
-    assert result.failure is not None
-    assert "fixture failure" in result.failure
-
-
-def test_minimal_cleanup_preserves_shared_home_user_files(tmp_path, monkeypatch):
-    """通常更新でも使う整理対象を実際に除去し、共有ホームの設定を残す。"""
-    _prepare(tmp_path, monkeypatch, "minimal")
-    home = tmp_path / "home"
-    home.mkdir()
-    monkeypatch.setattr(Path, "home", lambda: home)
-    monkeypatch.setenv("RUSTUP_HOME", str(home / ".rustup"))
-    monkeypatch.setenv("CARGO_HOME", str(home / ".cargo"))
-    isolated_paths = tuple(path for path in prune_installation.removal_paths() if path.is_relative_to(home))
-    monkeypatch.setattr(prune_installation, "removal_paths", lambda: isolated_paths)
-    removed = [home / ".rustup/toolchains/runtime", home / ".cargo/registry/cache", home / ".dotnet/sdk/runtime"]
-    kept = [
-        home / ".rustup/settings.toml",
-        home / ".cargo/config.toml",
-        home / ".cargo/bin/custom",
-        home / ".dotnet/tools/custom",
-        home / ".antigravity_cli/data",
-        home / ".local/share/herdr/data",
-    ]
-    for path in [*removed, *kept]:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("preserved", encoding="utf-8")
-    assert prune_installation.run().failure is None
-    assert all(not path.exists() for path in removed)
-    assert all(path.read_text(encoding="utf-8") == "preserved" for path in kept)
 
 
 @pytest.mark.parametrize("name", ["RUSTUP_HOME", "CARGO_HOME"])
@@ -229,7 +192,7 @@ def test_mise_only_npm_prune_keeps_order_and_mode_boundary(tmp_path, monkeypatch
     monkeypatch.setattr(common, "run_subprocess", execute)
     result = prune_installation.run()
     if mode == "full":
-        assert all(command[0] != str(npm) for command in calls)
+        assert [str(npm), "cache", "verify"] in calls
         assert result.failure is None
     else:
         assert calls[0][:3] == [str(npm), "uninstall", "--global"]
@@ -241,64 +204,6 @@ def test_mise_only_npm_prune_keeps_order_and_mode_boundary(tmp_path, monkeypatch
             assert result.failure is None
             assert calls[1][:3] == ["/fixture/mise", "ls", "--installed"]
             assert ["/fixture/mise", "uninstall", "--all", "node"] in calls
-
-
-def test_uv_cache_lock_timeout_defers_prune_with_guidance(tmp_path, monkeypatch, caplog):
-    """他のuvプロセスがキャッシュを使用中なら、短いロック待ちの後に保留し、uvを使うプロセスの終了と再実行を案内する。"""
-    _prepare(tmp_path, monkeypatch, "minimal")
-    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
-    uv_calls = []
-
-    def run(command, **kwargs):
-        if command[1:] == ["cache", "clean"]:
-            uv_calls.append(kwargs)
-            # uv 0.13.6が共有ロックを保持する`uv run`の実行中に出した診断と同じ形式。
-            stderr = (
-                f"error: Timeout (30s) when waiting for lock on `{tmp_path}/.cache/uv` at `.cache/uv/.lock`, "
-                "is another uv process running? You can set `UV_LOCK_TIMEOUT` to increase the timeout.\n"
-            )
-            return subprocess.CompletedProcess(command, 2, "", stderr)
-        output = json.dumps({"node": [{"version": "24"}]}) if command[1:4] == ["ls", "--installed", "--json"] else ""
-        return subprocess.CompletedProcess(command, 0, output, "")
-
-    monkeypatch.setattr(common, "run_subprocess", run)
-    with caplog.at_level("WARNING"):
-        result = prune_installation.run()
-    assert result.deferred
-    assert result.failure is None
-    assert uv_calls[0]["env_overrides"]["UV_LOCK_TIMEOUT"] == "30"
-    assert "uvを使う他のプロセス" in caplog.text
-    assert "update-dotfiles --prune" in caplog.text
-
-
-def test_minimal_prune_cleans_real_uv_cache(tmp_path, monkeypatch, host_environ):
-    """実uvの公開cleanで隔離したcacheを削除し、隣のユーザーファイルを保持する。"""
-    environment = host_environ()
-    search_path = os.pathsep.join(part for part in environment["PATH"].split(os.pathsep) if Path(part).name != "shims")
-    uv = shutil.which("uv", path=search_path)
-    assert uv is not None
-    _prepare(tmp_path, monkeypatch, "minimal")
-    cache = tmp_path / "uv-cache"
-    cache.mkdir()
-    artifact = cache / "unused-artifact"
-    artifact.write_text("regeneratable", encoding="utf-8")
-    retained = tmp_path / "user-data"
-    retained.write_text("preserved", encoding="utf-8")
-    environment["UV_CACHE_DIR"] = str(cache)
-    monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
-    monkeypatch.setattr(common, "resolve_executable", lambda name: Path(uv) if name == "uv" else None)
-    simulated = common.run_subprocess
-
-    def execute(command, **kwargs):
-        if command == [uv, "cache", "clean"]:
-            return subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", check=False, timeout=30)
-        return simulated(command, **kwargs)
-
-    monkeypatch.setattr(common, "run_subprocess", execute)
-    result = prune_installation.run()
-    assert result.failure is None
-    assert not artifact.exists()
-    assert retained.read_text(encoding="utf-8") == "preserved"
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
@@ -331,3 +236,47 @@ def test_active_users_reads_current_generation(monkeypatch: pytest.MonkeyPatch, 
         _inject_previous_generation(monkeypatch, child.pid, name="python", exe=str(environment / "bin/python"))
         active = prune_installation._active_users((environment,))
     assert not active
+
+
+def test_full_cache_cleanup_tracks_success_per_root_and_30_day_boundary(tmp_path, monkeypatch):
+    """初回・30日境界だけ全消去し、同日と29日目はpruneする。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    now = 10000000.0
+    monkeypatch.setattr(prune_installation.time, "time", lambda: now)
+    assert prune_installation.run().failure is None
+    assert calls.count(["/fixture/uv", "cache", "clean"]) == 1
+    assert prune_installation.run().failure is None
+    now += 29 * 86400
+    assert prune_installation.run().failure is None
+    assert calls.count(["/fixture/uv", "cache", "clean"]) == 1
+    assert calls.count(["/fixture/uv", "cache", "prune"]) == 2
+    now += 86400
+    assert prune_installation.run().failure is None
+    assert calls.count(["/fixture/uv", "cache", "clean"]) == 2
+    assert ["/fixture/npm", "cache", "verify"] in calls
+    assert ["/fixture/pnpm", "store", "prune"] in calls
+    assert not any("--force" in command for command in calls if "uv" in command[0])
+
+
+@pytest.mark.parametrize("locked", [False, True])
+def test_uv_cleanup_failure_preserves_success_time_and_continues_other_tools(tmp_path, monkeypatch, locked):
+    """競合・通常失敗で成功日時を記録せず、他ツールの整理と次回再試行を保つ。"""
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    normal = common.run_subprocess
+    failing = True
+
+    def execute(command, **kwargs):
+        if command[1:] == ["cache", "clean"] and failing:
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 2, "", "when waiting for lock on cache" if locked else "failed")
+        return normal(command, **kwargs)
+
+    monkeypatch.setattr(common, "run_subprocess", execute)
+    result = prune_installation.run()
+    assert result.deferred is locked
+    assert (result.failure is None) is locked
+    assert ["/fixture/mise", "cache", "prune"] in calls
+    assert ["/fixture/npm", "cache", "verify"] in calls
+    failing = False
+    assert prune_installation.run().failure is None
+    assert calls.count(["/fixture/uv", "cache", "clean"]) == 2

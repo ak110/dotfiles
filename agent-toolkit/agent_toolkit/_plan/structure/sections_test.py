@@ -27,7 +27,24 @@ from agent_toolkit._testing.plan_structure_support import (
 
 pytestmark = pytest.mark.windows
 
+
+@pytest.mark.parametrize(
+    "record", ["", "原因を訂正し、期待結果で再検証した。", "| 項目 | 内容 |\n| --- | --- |\n| 対策 | 訂正 |"]
+)
+def test_bug_file_short_record_boundary(record: str) -> None:
+    """表なし短記録だけを受理し、空や不完全な詳細表へ降格しない。"""
+    errors = plan_sections.check_bug_file_structure(f"# 調査\n\n### 事象\n\n{record}\n")
+    assert bool(errors) is (not record or "|" in record)
+
+
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
+
+
+def test_bug_file_accepts_previous_action_table_for_reading() -> None:
+    """専用行のない保存済み調査表は読み取り互換と移行案内を保つ。"""
+    previous = "\n".join(line for line in _BUG_FILE_CONTENT.splitlines() if not line.startswith("| 処置が生む問題の検討 |"))
+    assert not plan_sections.check_bug_file_structure(previous)
+    assert plan_sections.has_legacy_bug_investigation_table(previous)
 
 
 @pytest.mark.parametrize(

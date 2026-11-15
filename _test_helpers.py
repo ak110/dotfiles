@@ -174,14 +174,14 @@ def make_command_stubs(
         uv_stub.write_text(
             "#!/bin/sh\n"
             'printf \'uv %s\\n\' "$*" >> "$CLI_STUB_LOG"\n'
-            'if [ "$#" -lt 8 ] || [ "$1" != run ] || [ "$2" != --no-config ] || '
-            '[ "$3" != --no-project ] || [ "$4" != --python ] || [ "$5" != 3.15 ] || '
-            '[ "$6" != python ]; then\n'
+            'if [ "$#" -lt 9 ] || [ "$1" != run ] || [ "$2" != --no-cache ] || [ "$3" != --no-config ] || '
+            '[ "$4" != --no-project ] || [ "$5" != --python ] || [ "$6" != 3.15 ] || '
+            '[ "$7" != python ]; then\n'
             "    exit 8\n"
             "fi\n"
-            'case "$7" in */scripts/launch.py) exit 0 ;; esac\n'
-            '[ "$7" = - ] || exit 8\n'
-            "shift 6\n"
+            'case "$8" in */scripts/launch.py) exit 0 ;; esac\n'
+            '[ "$8" = - ] || exit 8\n'
+            "shift 7\n"
             f'exec {python_command} "$@"\n',
             encoding="utf-8",
         )

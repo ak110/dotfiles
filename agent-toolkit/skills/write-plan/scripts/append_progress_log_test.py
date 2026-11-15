@@ -714,7 +714,7 @@ def test_record_range_rejections_keep_files(
         "second-parent": (side, base, "first-parentの履歴上にありません"),
         "previous": (second, side, "first-parentの祖先ではありません"),
         "empty": (second, second, "範囲が空"),
-        "merge": ("HEAD", second, "マージcommit"),
+        "merge": ("HEAD", second, "変更のない接続mergeだけ"),
         "duplicate": (first, base, "記録済みのcommit"),
         "overlap": (second, base, "記録済みのcommit"),
     }[case]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 from collections.abc import Mapping, MutableMapping
 
@@ -15,13 +14,10 @@ _INHERITED: dict[str, str] = {}
 def prepare(environment: MutableMapping[str, str]) -> None:
     """agents_serverの起動時に一度、値を外して保持する。"""
     environment.pop(delegated_session.HANDOFF_PATH_ENV, None)
-    keys = claude_connection.AUTH_ENV | {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"}
-    for key in ("claude_credits_env_file", "claude_payg_env_file"):
-        path = config.resolve_mutable_setting(key)
-        if path:
-            # 設定不良は接続候補の選択時に診断する。サーバーの他backendは起動できる。
-            with contextlib.suppress(OSError, ValueError, UnicodeError):
-                keys |= claude_connection.read_api_env_file(path).keys()
+    paths = (
+        path for key in ("claude_credits_env_file", "claude_payg_env_file") if (path := config.resolve_mutable_setting(key))
+    )
+    keys = claude_connection.api_environment_keys(paths) | {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"}
     for key in keys:
         if key in environment:
             _INHERITED[key] = environment.pop(key)

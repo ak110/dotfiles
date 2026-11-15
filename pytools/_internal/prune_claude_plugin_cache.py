@@ -52,6 +52,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         return post_apply_outcome.PostApplyOutcome()
     deadline = time.time() - GRACE_DAYS * 86400
     removed = 0
+    held = 0
     failures: list[str] = []
     for (marketplace, name), installed in sorted(current_paths.items()):
         plugin_dir = cache_root / marketplace / name
@@ -72,12 +73,14 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             for version_dir in expired:
                 reasons = claude_plugin_references.holding_reasons(processes, version_dir, retired=True)
                 if reasons:
+                    held += 1
                     logger.info(
                         log_format.format_status(
                             log_format.home_short(version_dir),
                             f"稼働中の参照があるため旧版を保持: {'、'.join(reasons)}。"
                             "参照の終了後に実行するupdate-dotfilesで削除するため、対応不要です（処理は継続した）。",
-                        )
+                        ),
+                        extra=log_format.LOG_ONLY,
                     )
                     continue
                 try:
@@ -85,8 +88,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                         removed += 1
                 except OSError as error:
                     failures.append(f"{log_format.home_short(version_dir)} の削除に失敗: {error}")
+    if held:
+        logger.info("plugin cache: 稼働中の旧版 %d 件を保持。参照終了後の通常更新で自動整理します。", held)
     return post_apply_outcome.PostApplyOutcome(
         changed=removed > 0,
+        deferred=held > 0,
         failure=" / ".join(failures) or None,
         next_action=(
             "表示された旧版ディレクトリを使うClaude Codeセッションを終了し、"

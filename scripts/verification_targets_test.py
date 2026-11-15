@@ -10,7 +10,7 @@ from verification_targets import consumer_tests, required_tests, uncovered_tests
 
 
 def test_direct_and_named_consumers(tmp_path: pathlib.Path) -> None:
-    """別名の直接importと命名候補を保持し、中間importは手動探索へ委ねる。"""
+    """別名の直接importと命名候補を保持し、中間importと名前の部分一致は候補にしない。"""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     for name, body in {
         "source.py": "",
@@ -18,12 +18,19 @@ def test_direct_and_named_consumers(tmp_path: pathlib.Path) -> None:
         "other_test.py": "import source as alias",
         "indirect_test.py": "from middle import alias",
         "source_interval_test.py": "",
+        "mention_test.py": "resource = 'source'",
+        "pkg/mod.py": "",
+        "pkg_from_test.py": "from root.pkg import (\n    other,\n    mod,\n)",
+        "pkg_dotted_test.py": "monkeypatch.setattr('root.pkg.mod.value', 1)",
+        "pkg_other_test.py": "from root.other import mod",
     }.items():
+        (tmp_path / name).parent.mkdir(exist_ok=True)
         (tmp_path / name).write_text(body, encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
     commit_all(tmp_path, "init")
     snapshot = consumer_tests(tmp_path, ["source.py"])
     assert [(item["test"], item["required"]) for item in snapshot["candidates"]] == [
+        ("mention_test.py", False),
         ("other_test.py", True),
         ("source_interval_test.py", False),
     ]
@@ -32,15 +39,19 @@ def test_direct_and_named_consumers(tmp_path: pathlib.Path) -> None:
     review = {
         **snapshot,
         "decisions": [
+            {"source": "source.py", "test": "mention_test.py", "include": False, "reason": "単なる文字列参照"},
             {
                 "source": "source.py",
                 "test": "source_interval_test.py",
                 "include": True,
                 "reason": "名前で対応する契約を検査する",
-            }
+            },
         ],
     }
     assert required_tests(snapshot, review) == ["other_test.py", "source_interval_test.py"]
+    package = consumer_tests(tmp_path, ["pkg/mod.py"])
+    assert {row["test"] for row in package["candidates"]} == {"pkg_dotted_test.py", "pkg_from_test.py", "pkg_other_test.py"}
+    assert not any(row["required"] for row in package["candidates"])
     assert consumer_tests(tmp_path, [str(tmp_path / "source.py")]) == consumer_tests(tmp_path, ["source.py"])
     assert uncovered_tests(tmp_path, ["other_test.py"], ["source.py"]) == ["other_test.py"]
     assert uncovered_tests(tmp_path, ["other_test.py"], [str(tmp_path)]) == []

@@ -6,15 +6,15 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-severity-quality.md`、`../../bugfix/references/root-cause-severity-impact.md` |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-analysis-evidence.md` |
-| 本文の参照基準を適用する前 | `../../bugfix/references/root-cause-actions-selection.md` |
+| bugfixの初動で詳細分析を選び、重大度と前提を判定する前 | `../../bugfix/references/root-cause-severity-quality.md`、`../../bugfix/references/root-cause-severity-impact.md` |
+| 詳細分析で原因を裏付ける前 | `../../bugfix/references/root-cause-analysis-evidence.md` |
+| 詳細分析で対策を選定する前 | `../../bugfix/references/root-cause-actions-selection.md` |
 | 経験を保存・再利用する案を点検する前 | `../../writing-standards/references/investigation-experience.md` |
 
 ## 問題と手段の比例性
 
-指摘が示す問題に対して処置が必要かどうかは、`../../bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」に沿って判断する。
-指摘の採否や求める処置の決定、修正方針の確定では、同資料の重大度別の判断基準を踏まえた上で、`../../writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」にある比較を適用する。
+指摘が示す問題への処置はbugfixの初動から判断し、詳細分析を選んだ場合は`../../bugfix/references/root-cause-severity-impact.md`「QとC・Dの区別」で重大度を判断する。
+指摘の採否や求める処置の決定、修正方針の確定では、確認した影響に応じて`../../writing-standards/references/design-heuristics-proportionality.md`「問題と手段の比例性」にある比較を適用する。
 検討した各案（何もしない案や既存の操作だけで済ませる案を含む）、それぞれの案が目的を満たせるか、および採用した根拠を、指摘文や採否の応答へ記録する。
 
 ## 解決案の比較
@@ -38,9 +38,11 @@
 - 暫定規範を削除するときは、削除条件の文面に加え、対象の節や警告の種類、実際に観測された値が、削除後にも必要な状態を満たしているかを確認する。
   同じ粒度で比較できない場合は、暫定規範を残したまま条件の記述を修正する
 - ある挙動を一般則として記述する前に、その挙動が発生しない条件を探して実物で確認し、記述する適用範囲を観測で確認できた条件だけに限定する
-- 問題への対策が及ぼす効果の向きは、`agent-basics:bugfix`を起動し、`../../bugfix/references/root-cause-actions-selection.md`「対策の選定」に沿って判定し、その結果に基づいて選択肢の推奨順を決める
+- 問題への対策が及ぼす効果の向きは、`agent-basics:bugfix`の初動で問題と処置自身の影響を比べ、その結果に基づいて選択肢の推奨順を決める。
+  詳細分析を選んだ場合は`../../bugfix/references/root-cause-actions-selection.md`「対策の選定」を適用する
 - 最初に思い浮かんだ仮説や過去の作業パターンに引っ張られていないかを点検し、前提を1つ以上問い直した上で判断を確定する（努力目標）
-- 欠陥の候補を見つけたときは、`agent-basics:bugfix`を起動し、`../../bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」に従って誤認の可能性を反証してから判定する。
+- 欠陥の候補を見つけたときは、`agent-basics:bugfix`の初動で誤認の可能性を反証してから判定する。
+  詳細分析を選んだ場合は`../../bugfix/references/root-cause-analysis-evidence.md`「直接的原因と事象時点の確定」を適用する。
   一般的な事実の主張についても前述の反例を確認して判定し、レビューの指摘として採用するかどうかは独立して確定する
 
 ## 規定の適用可否
@@ -56,7 +58,7 @@
 ## 前提の再検討
 
 指摘が示す問題や規範を改訂する原因は、指摘の反復や未収束の有無にかかわらず、`agent-basics:bugfix`を起動して分析する。
-分析にあたっては、同スキルの`../../bugfix/references/root-cause-severity-quality.md`「前提の再検討」に従い、問題の成立に必要な前提（既存の仕組み、制約、分類、条文など）も原因の候補に含めて検討する。
+初動で局所修正と構造的な修正を比べ、詳細分析を選んだ場合は、同スキルの`../../bugfix/references/root-cause-severity-quality.md`「前提の再検討」に従い、問題の成立に必要な前提（既存の仕組み、制約、分類、条文など）も原因の候補に含めて検討する。
 レビューの場では、`judgment-details-feasibility.md`「検収手段の到達可能性」で得られた結果と共通分析を踏まえて採否を確定する。
 
 ## 本文参照の取得条件

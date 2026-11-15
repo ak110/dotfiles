@@ -21,6 +21,7 @@ from agent_toolkit._agents_server.result_projection import (
     progress_excerpt,
     with_result_next_action,
 )
+from agent_toolkit._atk import usage_refresh
 from agent_toolkit._common import claude_usage_limit, session_registry, task_documents
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
@@ -607,6 +608,7 @@ class SessionState:
         turnを再開した後の終了では、同じ通知を改めて1回行う。
         """
         self.updated_at = utc_now()
+        usage_refresh.track_session(self)
         message = (
             self.agent_message
             if self.result_available

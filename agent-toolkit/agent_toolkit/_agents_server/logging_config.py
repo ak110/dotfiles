@@ -26,6 +26,7 @@ from typing import Any
 
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.diagnostic_redaction import redact_diagnostic_values, redact_secrets
+from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.next_action import next_action_line
 
@@ -64,6 +65,24 @@ class _RedactingFileHandler(logging.handlers.RotatingFileHandler):
     def format(self, record: logging.LogRecord) -> str:
         return redact_secrets(super().format(record))
 
+    def emit(self, record: logging.LogRecord) -> None:
+        # 本体のhandleを排他区間外へ残すと、別プロセスの回転後も旧世代へ書き続ける。
+        lock_path = pathlib.Path(self.baseFilename + ".lock")
+        try:
+            with lock_path.open("a+", encoding="utf-8") as lock_file:
+                acquire_lock(lock_file)
+                try:
+                    super().emit(record)
+                finally:
+                    try:
+                        if self.stream is not None:
+                            self.stream.close()
+                    finally:
+                        self.stream = None
+                        release_lock(lock_file)
+        except OSError:
+            self.handleError(record)
+
 
 class _LogFileHandler(logging.Handler):
     """agents_serverが追加した永続ファイル向けhandler。
@@ -73,6 +92,7 @@ class _LogFileHandler(logging.Handler):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
+        kwargs["delay"] = True
         self._sink = _RedactingFileHandler(*args, **kwargs)
         self.baseFilename = self._sink.baseFilename
         self._records: queue.Queue[logging.LogRecord | None] = queue.Queue()

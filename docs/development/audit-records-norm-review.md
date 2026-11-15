@@ -68,3 +68,30 @@ hook候補の件数とソース容量は、実際に配送される通知本文�
 再点検では同じ対象版から両プラグインのスキル・references、常時規範、hook生成元を列挙する。
 観点別検索で該当文脈を確認し、常時規範と判定を保留した対象を別担当が通読する。
 対象別の判定集合と列挙集合を照合し、提案の採否と実モデルでの効果検証は別工程へ渡す。
+
+### 2026年11月15日
+
+Claude Opus 5.5の公式ガイドと、Claude Code 2.1.322から2.1.323、codex-cli 0.167.1から0.167.2への変更を基準に点検した。
+対象版は`147fbe3fdbcb5eafcbf6f6311f9419228eb5b3dd`に固定した。
+
+- 基準モデル: `claude-opus-5-5`
+- 一次資料: [Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5)、[Claude Code変更履歴](https://raw.githubusercontent.com/anthropics/claude-code/refs/heads/main/CHANGELOG.md)、[Codex v0.167.2](https://github.com/openai/codex/releases/tag/rust-v0.167.2)
+- 実行ホストで観測した版: Claude Code 2.1.325、codex-cli 0.169.0
+  - 点検する変更は上記の旧版間に限定した。
+- 一次走査: 規範文書524と通知生成側97の計621ファイル
+  - 固定文字列14語による候補はR 270、P 10、一致なしN 341だった。
+  - 独立担当が候補280ファイルの一致文脈を確認し、一般的な権限・所有権・復元や部分一致を区別した。
+- 独立通読: 常時規範8を含む38ファイル
+  - 最初の18と追加20を同じ担当が通読した。
+  - 一次Nの全文通読と全621本文の通読は実施していない。
+- 評価モデル: `gpt-6.1-sol`、最終返却のeffortはmedium
+  - Opus 5.5自身の評価と、実ホスト機能の試行は実施していない。
+- 提案3件: effort入力の説明の不整合、モデル間のeffort校正、Codex常時配送の条件付き操作例の分離
+  - 提案の採否と規範への適用は行っていない。
+  - 変更前・変更後・文書なしの比較、費用と品質の改善は未試行である。
+- 提案一覧と全対象の判定: [Opus 5.5・ホスト更新の点検結果](audit-opus55-hosts-2026-11-15.json)。
+
+Code Modeはopt-inであり、通常運用へ一律適用する提案はしていない。
+hookのheartbeatは処理の終了を保証しない。
+Codexの対象変更はVertex AIへのツール更新の送信方式であり、全ホストのツール入力契約の変更とは扱わなかった。
+検索語の一致なしは概念の不在を保証せず、通知生成側の容量は実際の配送量と区別する。

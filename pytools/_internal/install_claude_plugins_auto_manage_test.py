@@ -25,13 +25,14 @@ _REAL_REMOVE_UNUSED_PLUGINS = _install_claude_plugins._remove_unused_plugins  # 
 @pytest.fixture(autouse=True)
 def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     """旧pluginの削除は専用テストへ分ける。"""
+    monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
 
 
 class TestComputeRecommendedCommands:
     """`compute_recommended_commands` の単体テスト (install/enable のみ)。"""
 
-    _ENABLE_TARGET = "context7@claude-plugins-official"
+    _ENABLE_TARGET = "typescript-lsp@claude-plugins-official"
 
     def test_install_recommended_when_missing(self, monkeypatch: pytest.MonkeyPatch):
         """有効化対象が未インストールなら install コマンドを提案する。"""
@@ -310,7 +311,7 @@ class TestRunNoAutomaticStateChange:
             },
         )
         # 有効化対象を全て未インストール状態に限定して検証する
-        target_enable = "context7@claude-plugins-official"
+        target_enable = "typescript-lsp@claude-plugins-official"
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({target_enable})
         )

@@ -5,8 +5,8 @@ import pytest
 from agent_toolkit._agents_server import api_credits
 from agent_toolkit._atk import claude_connection
 
-_CREDITS = claude_connection.Connection("credits", "credits.env", "credits.env")
-_SUBSCRIPTION = claude_connection.Connection("subscription", isolation_env_file="credits.env")
+_CREDITS = claude_connection.Connection("credits", "credits.env", ("credits.env",))
+_SUBSCRIPTION = claude_connection.Connection("subscription", isolation_env_files=("credits.env",))
 _TTL = api_credits.CREDIT_SHORTAGE_TTL_SECONDS
 
 

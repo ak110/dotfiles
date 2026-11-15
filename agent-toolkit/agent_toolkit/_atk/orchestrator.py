@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterable
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
-from agent_toolkit._atk import usage_limit_policy
+from agent_toolkit._atk import usage_limit_policy, usage_refresh
 from agent_toolkit._common import claude_connection as _claude_settings
 from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
@@ -146,6 +146,7 @@ def resolve_specs(*, rerun_action: str) -> list[tuple[str, str, str]]:
     effort未指定は`medium`を補完する。`rerun_action`は候補を変えた後に行う操作の案内とする。
     """
     try:
+        usage_refresh.ensure_fresh()
         candidates = _config.parse_unresolved_model_candidates("orchestrate")
     except _next_action.ActionableError as error:
         _next_action.report(f"orchestrateのモデル設定を読めません。{error}", next_action=error.next_action)

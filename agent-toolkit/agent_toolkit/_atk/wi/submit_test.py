@@ -184,7 +184,7 @@ def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatc
     monkeypatch.setenv("AGENT_TOOLKIT_RUNTIME_DATA", str(tmp_path / "runtime"))
     uv = shutil.which("uv", path=host_environ()["PATH"])
     assert uv is not None
-    bootstrap = [uv, "run", "--no-config", "--no-project", "--python", "3.15", "python"]
+    bootstrap = [uv, "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python"]
     prepared = subprocess.run(
         [*bootstrap, str(source / "scripts/launch.py"), "--prepare", "agent_toolkit/atk.py"],
         cwd=tmp_path,

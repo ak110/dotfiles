@@ -87,7 +87,7 @@ def _build_options(
     root_session_id: str | None = None,
     api_env_file: str | None = None,
     connection_kind: str = "inherit",
-    isolation_env_file: str | None = None,
+    isolation_env_files: tuple[str, ...] = (),
     handoff_prompt: str = "",
 ) -> Any:
     """起動区分ごとの自前システム指示と委譲先の印を持つSDKオプションを組む。
@@ -161,11 +161,13 @@ def _build_options(
     if (cli_path := shutil.which("claude")) is not None:
         options["cli_path"] = cli_path
     # 起動時に継承環境から除いた接続値は、選択した接続へだけ明示的に戻す。
-    connection = connection_settings.Connection(connection_kind, api_env_file, isolation_env_file)
+    connection = connection_settings.Connection(connection_kind, api_env_file, isolation_env_files)
     isolate_auth = connection.kind != "inherit"
     selected_environment = connection_settings.connection_environment(child_environment.inherited(), connection)
     env.update({key: value for key, value in selected_environment.items() if key not in os.environ})
     env.update(connection_settings.connection_overrides(connection))
+    # Code Modeは対話ターミナル専用であり、親の通常起動設定をSDKの委譲へ適用しない。
+    env["CLAUDE_CODE_EXPERIMENTAL_CODE_MODE"] = "0"
     if lightweight:
         options.update(
             skills=[],

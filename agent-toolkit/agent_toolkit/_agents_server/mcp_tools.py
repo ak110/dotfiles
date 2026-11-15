@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import json
 import logging
 import os
 import pathlib
+import subprocess
+import sys
 from collections.abc import AsyncGenerator
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import CallToolRequestParams, ToolAnnotations
@@ -52,14 +55,24 @@ from agent_toolkit._agents_server.tool_descriptions import (
     parameter_description,
     schema_text,
 )
+from agent_toolkit._common import (
+    delegated_session,
+    function_hook_requests,
+    mcp_environment,
+    response_language_check,
+    runtime_inserted,
+    session_registry,
+)
 from agent_toolkit._common import inherited_venv as _inherited_venv
-from agent_toolkit._common import mcp_environment, session_registry
 from agent_toolkit._common.next_action import ActionableError
+lazy from agent_toolkit._atk.wi import operation_permissions
+lazy from agent_toolkit._common.operation_approvals import request_display
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 _MANAGER = AgentsServerManager()
+_UI_DELEGATED = delegated_session.is_delegated(os.environ)
 _SELECTED_MANAGER: contextvars.ContextVar[AgentsServerManager | None] = contextvars.ContextVar(
     "agents_server_request_manager", default=None
 )
@@ -67,6 +80,15 @@ _SELECTED_MANAGER: contextvars.ContextVar[AgentsServerManager | None] = contextv
 
 def _manager() -> AgentsServerManager:
     return _SELECTED_MANAGER.get() or _MANAGER
+
+
+async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
+    if _UI_DELEGATED:
+        raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
+    identifier = _manager().launcher_session_id()
+    if identifier is None:
+        raise ValueError("呼出元会話を解決できない。Claude CodeでMCPへ再接続する。")
+    return await function_hook_requests.request(identifier, operation, inputs)
 
 
 @contextlib.asynccontextmanager
@@ -558,6 +580,109 @@ async def show_session(
     """
     await _manager().take_over_orphaned_session(session_id)
     return await _manager().show_session(session_id, verbose=verbose)
+
+
+@mcp.tool(name="send_to_user", title="ユーザー画面への本文表示", annotations=ToolAnnotations(destructive_hint=False))
+async def send_to_user(
+    message: Annotated[str, Field(description="画面へそのまま表示する日本語のMarkdown本文")],
+) -> dict[str, Any]:
+    """メイン専用。会話内modが表示を確認した場合だけ成功を返す。表示後の本文は再掲しない。"""
+    if _UI_DELEGATED:
+        raise ValueError("メイン専用ツール。結果本文は委譲元へ最終応答で返せ。")
+    if response_language_check.check_text(message)[0] is response_language_check.CheckOutcome.WARN:
+        raise ValueError("本文を日本語で書き直すまで画面へ表示していない。")
+    try:
+        guidance = ""
+        if runtime_inserted.reported_improvement_lines(message):
+            root = pathlib.Path(__file__).resolve().parents[2]
+            checked = await run_file_operation(
+                subprocess.run,
+                [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/hook.py", "improvement_status_advisor"],
+                input=json.dumps({"session_id": _manager().launcher_session_id(), "last_assistant_message": message}),
+                capture_output=True,
+                encoding="utf-8",
+                timeout=30,
+                check=False,
+            )
+            if checked.returncode != 0:
+                raise ValueError("改善点報告の案内を取得するhookが失敗した")
+            guidance = json.loads(checked.stdout)["hookSpecificOutput"]["additionalContext"]
+    except Exception:  # noqa: BLE001 -- 補助案内の失敗で本文の送達を止めない
+        _LOG.exception("改善点報告の取得案内を作成できない")
+        guidance = "改善点の判定資料を確認できなかった。share/rules/rules-main.mdの作業中の改善点の報告を確認せよ。"
+    result = await _ui_request("send_to_user", {"message": message})
+    result["guidance"] = guidance
+    return result
+
+
+@mcp.tool(name="permissions", title="操作権限の状態・要求・取消", annotations=ToolAnnotations(destructive_hint=True))
+async def permissions(
+    action: Annotated[
+        Literal["list", "get", "prepare", "adopt", "revoke"],
+        Field(description="一覧・詳細取得・要求準備・所有子からの引継ぎ・取消を選ぶ。承認は書き込まない"),
+    ] = "list",
+    request_id: Annotated[str | None, Field(description="list以外で対象とする要求ID")] = None,
+    source_session: Annotated[
+        str | None, Field(description="adoptで拒否を引き継ぐ、現在のManagerが所有する子のsession ID")
+    ] = None,
+    scope: Annotated[str | None, Field(description="prepareで表示する試行範囲。onceまたはcount:N")] = None,
+) -> dict[str, Any]:
+    """listで入力本文を除く一覧、getとrequest_idで1要求の全文を得る。prepare/adopt/revokeは要求の準備・子からの引継ぎ・取消。承認や回答は書き込まない。scopeはonceかcount:N。"""
+    manager = _manager()
+    identifier = manager.launcher_session_id()
+    if identifier is None:
+        raise ValueError("呼出元会話を解決できない")
+    if action == "list":
+        if any(value is not None for value in (request_id, source_session, scope)):
+            raise ValueError("listはaction以外の入力を受け取らない")
+        return await run_file_operation(operation_permissions.permission_status, identifier)
+    if not request_id:
+        raise ValueError("request_idが必要")
+    if action != "prepare" and scope is not None:
+        raise ValueError("scopeはprepareだけに指定する")
+    if action != "adopt" and source_session is not None:
+        raise ValueError("source_sessionはadoptだけに指定する")
+    if action == "get":
+        return await run_file_operation(operation_permissions.permission_status, identifier, request_id=request_id)
+    if action == "prepare":
+        request = await run_file_operation(
+            operation_permissions.prepare_request,
+            identifier,
+            request_id,
+            scope="once" if scope is None else scope,
+        )
+    elif action == "adopt":
+        owned = await manager.list_sessions(include_terminated=True)
+        if source_session is None or not any(child["session_id"] == source_session for child in owned["sessions"]):
+            raise ValueError("source_sessionが現在のManagerの所有する子ではない")
+        request = await run_file_operation(operation_permissions.adopt_request, identifier, source_session, request_id)
+    elif action == "revoke":
+        return await run_file_operation(operation_permissions.revoke_permission, identifier, request_id)
+    else:
+        raise ValueError("actionはlist、get、prepare、adopt、revokeだけを指定する")
+    if request is None:
+        raise ValueError("要求が存在しないか、指定した範囲で準備・引継ぎできない")
+    display = request_display(request)
+    status = await run_file_operation(operation_permissions.permission_status, identifier, request_id=request["request_id"])
+    if status["legacy_answers"]:
+        display += "\n既存UWIの回答原文と出所:\n" + json.dumps(status["legacy_answers"], ensure_ascii=False, indent=2)
+    return {"request": request, "display": display}
+
+
+@mcp.tool(name="compact_conversation", title="会話圧縮の予約", annotations=ToolAnnotations(destructive_hint=False))
+async def compact_conversation() -> dict[str, Any]:
+    """メイン専用。会話圧縮を予約する。受付後はターンを終え、ホストの圧縮結果を待つ。受付は完了ではない。"""
+    return await _ui_request("compact_conversation", {})
+
+
+@mcp.tool(name="apply_runtime_changes", title="同一会話への変更反映予約", annotations=ToolAnnotations(destructive_hint=False))
+async def apply_runtime_changes(
+    targets: Annotated[list[str], Field(min_length=1, description="plugins、agents_server、pyfltrから重複せず指定")],
+) -> dict[str, Any]:
+    """メイン専用。ターン完了後のプラグイン再読込・MCP再接続を予約する。受付は反映完了ではない。agents_serverの再接続は子の実行中turnを中断し、既存の復旧で同じ会話を再開する。"""
+    if len(set(targets)) != len(targets) or not set(targets) <= {"plugins", "agents_server", "pyfltr"}:
+        raise ValueError("targetsはplugins、agents_server、pyfltrから重複せず指定する")
+    return await _ui_request("apply_runtime_changes", {"targets": targets})
 
 
 def _prepare_child_environment() -> None:

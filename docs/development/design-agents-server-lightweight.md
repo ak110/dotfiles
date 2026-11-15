@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、軽量起動と継続不能の記録である。
 
-## 公開ツールの契約
-
-### `explore`と`shell`
+## `explore`と`shell`
 
 探索とコマンド分離を選ぶ量の目安は、tool_descriptions.pyのLIGHTWEIGHT_MODE_SELECTIONが1つの定義として持ち、server instructionsとstartのmodeの引数説明が同じ文を使う。
 ツール検索の前に届くserver instructionsへ基準を置き、自ら読むか委譲するかの判断に先行させる。
@@ -81,7 +79,7 @@ Claude Agent SDKの`ClaudeAgentOptions`は`setting_sources`、`skills`、`tools`
 `project_doc_max_bytes`は`AGENTS.md`から読む上限バイト数、`model_instructions_file`は組込指示の置換であり、いずれもグローバル指示だけを外す用途を持たない。
 再検証は同じ2つの一覧から`instruction`、`doc`、`agents`を含むキーを抽出して確認する。
 
-### 継続不能
+## 継続不能
 
 継続不能の詳細な判定条件は`continuation.md`「継続と新規起動」が定める。
 `atk agents wait`は保持期限を過ぎて結果を回収済みのsessionへ`status`が`expired`の応答を返すが、同じsessionの会話再開用の最小状態は保持され、

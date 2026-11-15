@@ -16,6 +16,7 @@ from agent_toolkit._atk import config_repositories
 from agent_toolkit._common import codex_models
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.usage_settings import validate_permissions
 
 CONFIG_FILENAME = "config.json"
 
@@ -137,6 +138,10 @@ MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
     "codex_fast_mode": "false",
     "codex_auto_reset": "false",
+    "usage_auto_allocation": "false",
+    "usage_activity_mode": "continuous",
+    "usage_reset_permissions": "[]",
+    "claude_reset_inventory": "[]",
     **CONNECTION_DEFAULTS,
     "claude_usage_limit_wait": "five-hour",
     "codex_usage_limit_wait": "five-hour",
@@ -353,7 +358,12 @@ def validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: never, five-hour, always")
     elif key == "repositories":
         config_repositories.parse(value)
-    elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start"}:
+    elif key in {"usage_reset_permissions", "claude_reset_inventory"}:
+        validate_permissions(value)
+    elif key == "usage_activity_mode":
+        if value not in {"continuous", "intermittent"}:
+            raise ValueError("受理可能値: continuous, intermittent")
+    elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start", "usage_auto_allocation"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key in MODEL_DEFAULTS:

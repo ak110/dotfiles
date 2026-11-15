@@ -84,7 +84,7 @@ continuations:
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 不具合修正の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
+| bugfixの初動で詳細分析を選び、不具合の再現と修正後の確認を行う前 | `agent-basics:bugfix/references/root-cause-analysis-evidence.md` |
 | 観測で実装の前提が崩れ、次の確認や方針を選ぶ前 | `agent-basics:writing-standards/references/investigation-hypotheses.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/delegation/references/process-model-settings.md` |
 | 本文がこの資料の基準を使う場面で、資料を選択して取得する時 | `../skills/write-plan/references/plan-file-standards-verification.md` |
@@ -96,7 +96,7 @@ continuations:
 | --- | --- | --- | --- |
 | レーン担当として計画または実装を始める前 | `${CLAUDE_PLUGIN_ROOT}/share/single-lane-execution.md` | | |
 | 計画の起草前、計画なしで実装へ着手する直前、レビュー修正担当とCI修正担当が修正へ着手する直前 | `agent-toolkit:delegation`の`references/routing.md` | | |
-| CI修正担当として原因を調べる前 | `agent-basics:bugfix/SKILL.md` | | |
+| 担当種別によらず、期待からの逸脱を認識して診断・訂正・対処を始める前 | `agent-basics:bugfix/SKILL.md` | | |
 | 計画を起草するか既存計画から再開する直前 | `agent-toolkit:process-wi`の[references/lane-planning.md](../skills/process-wi/references/lane-planning.md) | | |
 | 初回実装（`CI修正担当`では修正）に着手する直前と、変更範囲の検証（履歴統合後の再検証を含む）を実行した後 | `agent-basics:check-execution`の`references/diagnostics.md` | | |
 | 受入シナリオや完成条件を手動で観測する前（実装の途中の観測を含む） | `verification-evidence-observation.md` | | |
@@ -131,7 +131,7 @@ continuations:
 | CI修正担当 | 実施しない | CI記録で認可された失敗のみを修正する | 実行可能 | 実施しない |
 
 上記の操作許可は、委譲プロンプトや追加の指示を受領した後もそのまま維持する。
-レビュー修正における`autosquash`と、`lane-integration-subagent-operation.md`「マージありの統合」における統合先HEADへのrebaseは別個の操作であり、一方の禁止が他方に波及することはない。
+レビュー修正における`autosquash`と、`lane-integration-subagent-operation.md`「マージありの統合」における統合先のmergeは別個の操作であり、一方の禁止が他方に波及することはない。
 担当種別に必須とされる操作が委譲プロンプトや追加指示によって禁止されている場合は、作業に着手せず、禁止事項の文面と必須操作の内容を添えて「続行できない理由」を返す。
 `レビュー修正担当`として起動されたエージェントが統合指示を受け取った場合は、`レーン担当`の役割に戻って統合処理を実施する。
 
@@ -157,7 +157,7 @@ OID変化だけで検証記録を捨てず、結果が変わり得る項目と�
 レーンは全書込終了後に、`agent-basics:check-execution/references/verification-scope.md`の上限に従う変更範囲の検証を1回実行する。
 CIが全体を担う場合は、関連モジュールまでを対象とし、パッケージ全体のpytest・リポジトリ全体の型検査はCIに委ねる。
 後のレビュー修正・統合では、結果に影響する差分が生じた範囲だけを再実行する。
-同じOSアカウントの検証は実行枠（`agent-basics:check-execution`「統合実行ツール経由の起動」）で直列化されるため、書込途中で重ねると他レーンを待たせ、最終状態も検証できない。
+同じOSアカウントの検証は、`check-execution-operations-launch.md`「統合実行ツール経由の起動」で定義する共有実行枠の数までしか同時に動かないため、書込途中で重ねると他レーンを待たせ、最終状態も検証できない。
 
 大量のファイル編集では、スクリプトで完結する処理はモデルを起動せずに実行する。
 定型走査・確定コマンド・判断が一意な表記変更は`chores_fast`、中規模の確定済み書込と確定した比較観点による一次確認は`chores`へ渡す（工程の区分は`../skills/delegation/references/process-model-settings.md`「工程別モデル設定」）。
@@ -216,6 +216,8 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 不一致がある場合は各値とその由来を引き継ぎ情報に残し、観測できなかった場合は未確認として扱う。
 
 工程の区切りでは、本書が定める役割固有の行と、`agent-toolkit/share/rules/rules-subagent.md`「返却形式の受け渡し」が定める状態行、続行不能の区分と理由、標識行および一行返却を使用する。
+続行不能を選ぶ前に、実際に失敗した操作と診断を担当内の次の操作と比較する。
+未読・出力退避・分量の説明は資料補完や検証へ進むための入力であり、実行機能への到達不能の証拠にはしない。
 
 ## 条件別資料
 

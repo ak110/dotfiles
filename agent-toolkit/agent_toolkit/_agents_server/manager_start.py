@@ -14,6 +14,7 @@ from typing import Any
 from agent_toolkit._agents_server import (
     advice_request,
     backends,
+    child_environment,
     launch_prompts,
     launch_requests,
     manager_wait,
@@ -44,6 +45,7 @@ from agent_toolkit._agents_server.session_errors import ActionableRuntimeError, 
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, SessionResumeState, SessionState
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import usage_refresh
 from agent_toolkit._common import codex_models, read_triggers, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
@@ -92,6 +94,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         除外後に候補が残らない場合は、記録を無視して全候補を設定順で返す。
         """
         await self._drain_candidate_records()
+        await run_file_operation(usage_refresh.ensure_fresh, environment=child_environment.inherited())
         try:
             candidates = await run_file_operation(_atk_config.parse_unresolved_model_candidates, model_type)
         except ValueError as error:

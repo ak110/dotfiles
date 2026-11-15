@@ -39,7 +39,8 @@ async def test_explore_rechecks_preconditions_once(monkeypatch, tmp_path, classi
     assert len(prompts) == 1
     assert "形式違反と判定したものではない" in prompts[0]
     assert "試した手段と再開条件" in prompts[0] and "権限拒否・認可不足の回避は求めない" in prompts[0]
-    assert session.effort == ("low" if fault == "effort" else "medium")
+    assert session.effort == "low"
+    assert not session.effort_history
     if fault == "delivery":
         assert session.status == "failed" and session.agent_message == message
         assert session.error["nextAction"]
@@ -47,9 +48,6 @@ async def test_explore_rechecks_preconditions_once(monkeypatch, tmp_path, classi
         cli_turn.finalize_turn(session, {"status": "completed", "agent_message": message, "error": None})
         assert session.result_available and session.status == "completed"
         assert session.agent_message == message and not session.result_contract_recovery_pending
-        if fault == "effort":
-            assert session.error["effortRecovery"]["nextAction"]
-            assert "effortを変更できない" in session.error["effortRecovery"]["error"]
 
 
 @pytest.mark.parametrize("message", ["状態: completed\n結果: 調査済み", "待機中: child"])

@@ -93,10 +93,33 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
     """
     parts: list[str] = []
     if not delegated:
+        startup_instruction = ""
         if raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV):
             data = json.loads(raw)
             if not isinstance(data, dict) or data.get("source") not in ("process-loop", "run-skill"):
                 raise ValueError("起動入力はsourceがprocess-loopまたはrun-skillのJSON objectで指定する")
+            identity_request = data.pop("identity", None)
+            resume_only = False
+            if identity_request is not None:
+                from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+                response = startup_identity.read(os.environ)
+                if response is not None and response.get("ack") and response.get("resume_only"):
+                    parts.append(
+                        message_format.auto_message(
+                            "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元のgoalを確認し、"
+                            "最初の未完了工程から続行せよ。未達goalを達成扱いに変えず、成功済みの操作を繰り返すな。",
+                            source="process-loop",
+                            kind="resume",
+                        )
+                    )
+                    resume_only = True
+                    manifest = data.get("manifest")
+                    if not isinstance(manifest, str) or not pathlib.Path(manifest).is_absolute():
+                        raise ValueError("再開時のmanifestは絶対パスで指定する")
+                    startup_instruction = json.loads(pathlib.Path(manifest).read_text(encoding="utf-8")).get("instruction", "")
+                    if not isinstance(startup_instruction, str):
+                        raise ValueError("再開時の追加指示には文字列が必要")
             references = (
                 "agent-toolkit:process-wiのreferences/all-repos.md「結果と終了」"
                 if data["source"] == "process-loop"
@@ -105,17 +128,18 @@ def compose_session_start(source: str, *, delegated: bool, host: str) -> str | N
             )
             if data["source"] == "run-skill" and data.get("batch_manifest"):
                 references += "、agent-toolkit:review-sessionのreferences/batch.md"
-            parts.append(
-                message_format.auto_message(
-                    "起動入力: "
-                    + html.escape(json.dumps(data, ensure_ascii=False))
-                    + "\n指定スキルを起動し、次の終了契約を読め: "
-                    + references,
-                    source=data["source"],
-                    kind="startup-input",
+            if not resume_only:
+                parts.append(
+                    message_format.auto_message(
+                        "起動入力: "
+                        + html.escape(json.dumps(data, ensure_ascii=False))
+                        + "\n指定スキルを起動し、次の終了契約を読め: "
+                        + references,
+                        source=data["source"],
+                        kind="startup-input",
+                    )
                 )
-            )
-        instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip()
+        instruction = os.environ.get(PROCESS_LOOP_INSTRUCTION_ENV, "").strip() or startup_instruction
         if instruction:
             parts.append(
                 xml_message(
@@ -519,6 +543,19 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         source = payload.get("source")
         if not isinstance(source, str):
             raise ValueError("sourceは文字列である必要がある")
+        if source == "resume" and not delegated:
+            from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+            try:
+                startup_identity.capture(payload, host, os.environ)
+            except (OSError, ValueError) as error:
+                reason = (
+                    f"{error}。起動側workerのログを確認し、atk wi process-loop statusで予約を確認する。"
+                    "原因の解消後にatk wi process-loop resume IDで再予約する。"
+                    "予約を取り消す場合はatk wi process-loop resume-cancelを使う。"
+                )
+                print(json.dumps({"continue": False, "stopReason": reason}, ensure_ascii=False))
+                return 1
         session_temp = None
         if isinstance(session_id, str) and session_id:
             with contextlib.suppress(managed_temp.ManagedTempError, OSError):

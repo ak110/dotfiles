@@ -143,6 +143,7 @@ _BLOCK_PROPERTIES = {
 }
 
 HOOK_OUTPUT_SCHEMAS: dict[str, dict[str, Any]] = {
+    "PreCompact": _event_schema("PreCompact"),
     "SessionStart": _event_schema(
         "SessionStart",
         hook_specific={

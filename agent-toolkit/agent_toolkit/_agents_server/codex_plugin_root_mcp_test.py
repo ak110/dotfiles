@@ -18,6 +18,7 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
+from agent_toolkit._agents_server.mcp_transport_test import _EXPECTED_TOOLS
 from agent_toolkit._common import plugin_environment, process_identity
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.codex_plugin_support import (
@@ -102,7 +103,7 @@ async def test_stable_plugin_root_shared_across_processes(
     logs: list[pathlib.Path] = []
     observed: list[dict[str, Any]] = []
     area: pathlib.Path | None = None
-    expected_tools = {"start", "send_message", "kill", "stop", "list", "show"}
+    expected_tools = _EXPECTED_TOOLS
     try:
         # 配布元と保持先の2環境のcold導入に、実MCP操作の予算を加える。
         with contextlib.ExitStack() as files, anyio.fail_after(135):

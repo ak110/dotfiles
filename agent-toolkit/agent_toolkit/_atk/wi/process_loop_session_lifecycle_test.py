@@ -18,7 +18,7 @@ import pytest
 
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
-from agent_toolkit._common import codex_usage_limit, next_action, process_tree, session_record_paths, session_registry
+from agent_toolkit._common import codex_usage_limit, process_tree, session_record_paths, session_registry
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.process_loop_session_support import _ORIGINAL_CODEX_SESSION
 from agent_toolkit._testing.process_loop_session_support import _isolate_process_loop_commands as _isolate_process_loop_commands
@@ -188,6 +188,66 @@ def test_codex_usage_limit_child_continues_next_iteration(
     assert time.monotonic() - started < 15
 
 
+@pytest.mark.parametrize("parent_exits", [False, True])
+@pytest.mark.parametrize("residual", [False, True])
+def test_cli_exception_reclaims_known_descendants(tmp_path, monkeypatch, host_environ, parent_exits, residual):
+    """CLIの本体例外は既知子孫の回収後に伝播し、回収不能なら再試行できる。"""
+    release = tmp_path / "child.release"
+    child_source = late_descendant.held_source(release)
+    source = f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{child_source!r}]); " + late_descendant.held_source(
+        tmp_path / "parent.release"
+    )
+    processes = []
+    cohort = []
+
+    class ReadyPopen(subprocess.Popen):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            processes.append(self)
+            deadline = time.monotonic() + 30
+            while not release.with_suffix(".ready").exists():
+                assert self.poll() is None and time.monotonic() < deadline
+                time.sleep(0.01)
+            cohort.extend(process_tree.collect_descendants(self.pid, include_root=True))
+
+    def started(_identity):
+        assert any(target.pid != processes[0].pid for target in cohort)
+        if parent_exits:
+            processes[0].kill()
+            processes[0].wait(timeout=10)
+        raise ValueError("本体失敗")
+
+    def leave_owned(process, **kwargs):
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=10)
+        return process_tree.ReclaimError(["owned child"], cohort, context=kwargs["context"])
+
+    monkeypatch.setattr(subprocess, "Popen", ReadyPopen)
+    if residual:
+        monkeypatch.setattr(process_tree, "stop_owned_process", leave_owned)
+    received: list[process_tree.ReclaimError] = []
+    try:
+        with pytest.raises(process_tree.ReclaimError if residual else ValueError) as raised:
+            _ORIGINAL_CODEX_SESSION(
+                [sys.executable, "-c", source],
+                host_environ(),
+                tmp_path,
+                orchestrator="claude",
+                on_process_started=started,
+                on_residual=received.append,
+            )
+        if residual:
+            assert isinstance(raised.value, process_tree.ReclaimError)
+            assert received == [raised.value]
+            assert not raised.value.retry()
+        assert not process_tree.wait_until_released(cohort, timeout=1)
+    finally:
+        assert not process_tree.stop_tree(None, known=cohort, timeout=1).residual
+        for process in processes:
+            process.wait(timeout=10)
+
+
 @pytest.mark.parametrize("site", ["stalled", "codex-usage-limit", "exception", "claude-usage-limit"])
 def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, site: str
@@ -198,13 +258,14 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
     survivor = owned.enter_context(late_descendant.held_process(tmp_path))
 
     def reap() -> None:
-        survivor.kill()
+        if survivor.poll() is None:
+            survivor.kill()
         survivor.wait()
 
     request.addfinalizer(reap)
     stopped: list[str] = []
 
-    def stop_owned_process(process: subprocess.Popen[Any], *, context: str) -> Any:
+    def stop_owned_process(process: subprocess.Popen[Any], *, context: str, **_kwargs: Any) -> Any:
         # 停止の結果に、統括CLIの子孫が残った状態を注入する。統括CLI自身は実際に止める。
         process.kill()
         process.wait()
@@ -237,8 +298,8 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
 
     received: list[process_tree.ReclaimError] = []
     expected: type[BaseException] | None = {
-        "exception": RuntimeError,
-        "claude-usage-limit": next_action.ActionableError,
+        "exception": process_tree.ReclaimError,
+        "claude-usage-limit": process_tree.ReclaimError,
     }.get(site)
     with contextlib.ExitStack() as stack:
         if expected is not None:
@@ -251,5 +312,7 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
             on_process_started=started_process,
             on_residual=received.append,
         )
-    assert len(stopped) == 1
-    assert [process.pid for failure in received for process in failure.processes] == [survivor.pid]
+    assert len(stopped) == (2 if site == "claude-usage-limit" else 1)
+    assert all([process.pid for process in failure.processes] == [survivor.pid] for failure in received)
+    assert received
+    monkeypatch.undo()

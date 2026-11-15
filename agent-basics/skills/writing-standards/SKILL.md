@@ -15,7 +15,7 @@ description: >
   これらを除く理解のためのコード読取では起動不要。
 # 編集時の注意点:
 # 著者向けの品質基準だけを扱い、レビュー担当とレビューイーの判断指針はreview-standardsが定める。
-# 規範本文はreferences/配下へ置き、本体には目的と読込条件だけを置く。
+# 共通の初動は本体、条件付きの詳細はreferences/配下へ置く。
 ---
 
 # 成果物の品質基準
@@ -40,6 +40,21 @@ description: >
 次の操作、成果物の種類、判断する事項から読込表の条件を選び、判断前に指定資料の全文を読む。
 hookの通知は選択を補助する。
 同じ版の取得済み本文は再利用し、会話圧縮後は残る作業に必要な範囲を選び直す。
+
+## 判断の初動
+
+原要求から消費主体・利用場面・必要な最終結果と認可範囲を確定し、成果物や提案をその結果へ対応付ける。
+要件・契約で対象・環境を定め、主張に合う対象版・条件・観測範囲を比べる。
+結果は都合の悪いものも正直に報告し、他者の報告・記録は書く時点で出所と比べ、事実・推論・方針・未検証の仮説を分ける。
+処理の開始・受付と完了・成功を区別し、終了状態を決める主体の出力で確かめる。
+観測前は処理中または未確認とし、観測できなければ対象と不足条件を返す。
+着手時に、要求・主体・操作・状態・入力・環境・生成側と消費側などから結果を分ける軸と値を定め、成立する組合せと期待結果を既存の条件表や進捗記録へ対応付ける。
+有限で扱える対象は全件を列挙し、巨大・無限の組合せは同値クラス・到達不能条件・リスクで縮約し、列挙範囲と縮約根拠、残る未確認を示す。
+軸自体の漏れ、境界、異常系、操作順序、相互作用を点検し、対象別の結果・根拠・未確認・除外理由の対応を確かめる。
+途中で要求が加われば集合を更新し、提示された一覧自体の漏れも原要求から確かめる。
+単純な変更では短い記録でよく、組合せの整理を全組合せの試験義務としない。
+次の判断に必要な本文と前提を取得・解決してから適用し、起動・取得・適用を区別する。
+取得済みの同じ本文を再利用し、条件が成立しない資料は取得対象から外す。
 
 ## 名指し参照の読込方法
 
@@ -107,6 +122,9 @@ hookの通知は選択を補助する。
 | DBトランザクションを設計・変更・レビューする前 | `references/design-data-interfaces-transactions.md` |
 | クエリ性能を設計・変更・レビューする前 | `references/design-data-interfaces-queries.md` |
 | DB更新と外部送信の整合性を設計・変更・レビューする前 | `references/design-data-interfaces-transactions.md` |
+| DB更新と外部永続資源の作成・更新・削除を組み合わせる処理を設計・変更・レビューする前 | `references/design-data-interfaces-transactions.md` |
+| スキーマ変更の有無によらずデータの削除を設計・変更・レビューする前 | `references/design-time-migration.md`、`references/design-data-interfaces-schema.md` |
+| 日時の意味・保存方式の設計、日時処理の実装・変更・レビューの前 | `references/implementation-time-data.md` |
 | Webhook受信を設計・変更・レビューする前 | `references/design-data-interfaces-api.md` |
 | 常駐サービスの設計・変更・レビュー、または子プロセス・委譲先・非同期ジョブなど配下を持つ機能の停止・再開・切替を要件化・設計・変更・レビューする前（操作対象外: 設計対象の性質） | `references/design-runtime-services.md` |
 | 負荷制御と外部呼び出しを設計・変更・レビューする前 | `references/design-runtime-services.md` |
@@ -185,7 +203,7 @@ hookの通知は選択を補助する。
 | Pythonの静的解析（ruff・pylint・pyright・mypyなど）の診断へ対処する時と、抑制を追加する時 | `references/python-analysis.md` | | | |
 | 文字エンコーディングを扱う時（日本語環境・ZIPファイル・Unicode正規化など） | `references/encoding.md` | | | |
 | 単体HTML成果物（ユーザーへ単体で提示するレポート・ダッシュボードなど）の作成・修正時 | `references/independent-html.md` | | | |
-| エンドユーザーが操作する画面をHTML、CSS、JavaScriptで実装またはレビューする時 | `references/ui-ux-web-rules.md` | | | |
+| エンドユーザーが操作する画面をHTML、CSS、クライアント側JavaScriptで実装・変更・レビューする判断の前 | `references/ui-ux-web-rules.md` | | | |
 | hookスクリプトと機械チェックスクリプトを書く時 | `agent-basics:writing-standards/SKILL.md` | 判断 | `skill:writing-standards` | `same-document` |
 
 ## エージェント向け文書の編集時に読む資料

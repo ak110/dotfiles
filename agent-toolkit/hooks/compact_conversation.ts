@@ -3,30 +3,14 @@ import type { EngineInterface, On } from "claude-code";
 import { automatedMessage } from "./automated_message.ts";
 import { exitStatePath } from "./session_exit.ts";
 
-const TOOL_NAME = "compact_conversation";
-
-// 実ホストの版・入力・結果と再検証はdocs/development/audit-records.mdの
+// 実ホストの版・入力・結果と再検証はdocs/development/audit-records-compaction.mdの
 // 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月9日」に記録する。
-// 待機時の自動経路とsession.compactの契約は同書の
+// 待機時の自動処理とsession.compactの契約は同資料の
 // 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月23日」にある。
 
-export const COMPACT_CONVERSATION_TOOL = {
-  name: TOOL_NAME,
-  description:
-    "Claude Codeメインの会話圧縮を引数なしで予約する。受付は完了ではない。予約後は現在のターンを終え、ホストの圧縮結果を待つ。未完了の予約は重ねず、完了または失敗後は再予約できる。",
-  inputSchema: {
-    type: "object",
-    additionalProperties: false,
-  },
-  isDeferred: false,
-};
-
-// 委譲先からの呼び出しへ`register.ts`が返す拒否の本文。委譲先への登録と呼び出しの除外は`register.ts`が行う。
-export const COMPACT_CONVERSATION_DELEGATED_DENY = "メイン専用のツールであり、圧縮は予約していない。委譲元へ必要な作業状態を最終応答で返せ。";
-
-type BackgroundWait = { id: string; command: string; used: boolean };
+import type { BackgroundWait } from "./ui_requests.tsx";
 type Decision = { at: string; task: string; reason: string; tokens?: number; window?: number; pending: boolean; turnRunning: boolean };
-type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; waits: Map<string, BackgroundWait>; decisions: Decision[] };
+type CompactState = { pending: boolean; turnRunning: boolean; scheduled: boolean; delayed: Set<string>; decisions: Decision[] };
 
 // 判定の記録は直近だけを保持する。調査で見送り理由を後から確かめる用途に足り、会話中に増え続けない。
 const DECISION_LIMIT = 20;
@@ -60,9 +44,30 @@ function usageThreshold(context: { tokens?: number; window: number }): boolean |
 }
 
 async function automatic($: EngineInterface, state: CompactState, wait: BackgroundWait): Promise<void> {
+  if (wait.replExpiresAt !== undefined && wait.replExpiresAt <= Date.now()) return;
   // 評価済みの待機は前回の判定理由が記録済みで、turn完了ごとの再評価で記録を埋めない。
   if (wait.used) return;
-  if (!state.waits.has(wait.id)) { await diagnose($, state, wait.id, "wait_finished"); return; }
+  if (!(await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value?.[wait.id]) { await diagnose($, state, wait.id, "wait_finished"); return; }
+  const now = await $.clock.now();
+  if (!Number.isFinite(wait.startedAt)) {
+    // 再読込前の状態に開始時刻が無い場合、60秒経過の証拠にはせず、ここから計測する。
+    wait.startedAt = now;
+    const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+    if (waits[wait.id]) await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...waits, [wait.id]: wait });
+  }
+  const remaining = 60_000 - (now - wait.startedAt);
+  if (remaining > 0) {
+    if (!state.delayed.has(wait.id)) {
+      state.delayed.add(wait.id);
+      $.clock.after(remaining, async () => {
+        state.delayed.delete(wait.id);
+        const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+        const current = Object.hasOwn(waits, wait.id) ? waits[wait.id] : undefined;
+        if (current) await automatic($, state, current);
+      });
+    }
+    return;
+  }
   if (state.pending) { await diagnose($, state, wait.id, "pending"); return; }
   try {
     const contextUsage = (await $.session.usage()).context;
@@ -70,13 +75,15 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
     if (high === undefined) { await diagnose($, state, wait.id, "usage_unknown", contextUsage); return; }
     if (!high) { await diagnose($, state, wait.id, "below_threshold", contextUsage); return; }
     wait.used = true;
+    const heldWaits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+    if (heldWaits[wait.id]) await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...heldWaits, [wait.id]: wait });
     const root = $.plugin.root;
     const checked = await $.process.run(pluginLaunchCommand(root, "agent_toolkit/atk.py", [
       "run-script", "wait-compaction-context", "--", "--session-id", await $.session.id(),
       `--command=${wait.command}`,
     ]), { timeoutMs: 30_000 });
     if (checked.exitCode !== 0 || checked.isStdoutTruncated) { await diagnose($, state, wait.id, "ownership_check_failed", contextUsage); return; }
-    if (state.pending || !state.waits.has(wait.id)) { await diagnose($, state, wait.id, "wait_changed", contextUsage); return; }
+    if (state.pending || !(await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value?.[wait.id]) { await diagnose($, state, wait.id, "wait_changed", contextUsage); return; }
     const context: unknown = JSON.parse(checked.stdout);
     if (typeof context !== "object" || context === null || (context as { eligible?: unknown }).eligible !== true) { await diagnose($, state, wait.id, "ownership_unconfirmed", contextUsage); return; }
     state.pending = true;
@@ -85,6 +92,8 @@ async function automatic($: EngineInterface, state: CompactState, wait: Backgrou
   } catch (error) {
     // 同じ背景待機を自動再試行せず、通常の結果回収を続ける。
     wait.used = true;
+    const heldWaits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+    if (heldWaits[wait.id]) await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...heldWaits, [wait.id]: wait });
     $.ui.toast(automatedMessage("compact-conversation", "warn", `待機時の会話圧縮を見送った。原因: ${String(error)}。保持した待機識別子で結果回収を続けよ。`));
   }
 }
@@ -95,8 +104,10 @@ function schedule($: EngineInterface, state: CompactState): void {
     $.clock.after(0, async () => {
       state.scheduled = false;
       if (state.turnRunning || !state.pending) return;
+      await $.state.set({ plugin: "agent-toolkit", key: "compactRequested" }, false);
       try {
-        for (const wait of state.waits.values()) wait.used = true;
+        const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+        await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, Object.fromEntries(Object.entries(waits).map(([id, wait]) => [id, { ...wait, used: true }])));
         // headlessでは直接APIが拒否されるため、ホストが実行する/compactを使う。
         // 実ホストの制約と両経路の観測は監査記録の
         // 「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年11月4日」にある。
@@ -116,9 +127,18 @@ function schedule($: EngineInterface, state: CompactState): void {
     });
 }
 
-export function register(on: On, session: { delegated: boolean }): void {
+export function register(on: On, session: { delegated: boolean; backgroundChanged?: boolean }): void {
   // modはセッションごとに読み込まれる。予約中だけ状態を保持する。
-  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, waits: new Map(), decisions: [] };
+  const state: CompactState = { pending: false, turnRunning: false, scheduled: false, delayed: new Set(), decisions: [] };
+  on("session.start", { cwd: /^/ }, async ($, e, next) => {
+    const result = await next(e);
+    state.turnRunning = (await $.state.get({ plugin: "agent-toolkit", key: "turnRunning" })).value ?? false;
+    if (!session.delegated) {
+      const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+      for (const wait of Object.values(waits)) await automatic($, state, wait);
+    }
+    return result;
+  });
   on("session.compact", { trigger: /^(manual|auto|plugin|precompute)$/ }, async ($, e, next) => {
     if (e.agentId !== undefined) return next(e);
     const sessionId = await $.session.id();
@@ -142,9 +162,20 @@ export function register(on: On, session: { delegated: boolean }): void {
       }],
     };
   }).catch(($, e, next) => next(e));
+  let observing = false;
   on("turn.start", { turnId: /^/ }, async ($, e, next) => {
     if (e.agentId === undefined) {
       state.turnRunning = true;
+      await $.state.set({ plugin: "agent-toolkit", key: "turnRunning" }, true);
+      if (!observing) {
+        observing = true;
+        $.clock.every(100, async () => {
+          if (!session.backgroundChanged || session.delegated) return;
+          session.backgroundChanged = false;
+          const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+          for (const wait of Object.values(waits)) await automatic($, state, wait);
+        });
+      }
     }
     return next(e);
   });
@@ -152,53 +183,33 @@ export function register(on: On, session: { delegated: boolean }): void {
     const result = await next(e);
     if (e.agentId === undefined) {
       state.turnRunning = false;
+      await $.state.set({ plugin: "agent-toolkit", key: "turnRunning" }, false);
+      if ((await $.state.get({ plugin: "agent-toolkit", key: "compactRequested" })).value) {
+        state.pending = true;
+      }
       schedule($, state);
       if (!session.delegated) {
-        for (const wait of state.waits.values()) await automatic($, state, wait);
+        const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+        for (const wait of Object.values(waits)) await automatic($, state, wait);
       }
     }
     return result;
   });
-  on("tool.call", { tool: "Bash" }, async ($, e, next) => {
-    const result = await next(e);
-    const raw: unknown = result.result;
-    const id = typeof raw === "object" && raw !== null ? (raw as { backgroundTaskId?: unknown }).backgroundTaskId : undefined;
-    if (typeof id !== "string" || !id) {
-      // 背景実行を要求したのに待機IDを得られない場合は、hook未実行と区別できるよう理由を残す。
-      // 前景のBashは待機ではないため記録しない。
-      if (e.run_in_background === true) await diagnose($, state, "unknown", id === undefined ? "background_id_missing" : "background_id_invalid");
-      return result;
-    }
-    if (state.waits.has(id)) return result;
-    // 背景待機を登録しない理由も残し、待機を検出しなかった場合と検出後の見送りを区別できるようにする。
-    if (session.delegated) { await diagnose($, state, id, "delegated_session"); return result; }
-    if (e.agentId !== undefined) { await diagnose($, state, id, "subagent"); return result; }
-    if (typeof e.command !== "string") { await diagnose($, state, id, "command_unknown"); return result; }
-    const wait: BackgroundWait = { id, command: e.command, used: false };
-    state.waits.set(id, wait);
-    $.clock.after(0, async () => {
-      await automatic($, state, wait);
-    });
-    return result;
-  });
-  on("session.append", { door: /^(delivery|queue)$/ }, ($, e, next) => {
+  on("session.append", { door: /^(delivery|queue)$/ }, async ($, e, next) => {
     if (e.agentId === undefined) {
       for (const block of e.message.content) {
         if (block.type !== "text" || typeof block.text !== "string") continue;
         for (const notice of block.text.matchAll(/<task-notification>[\s\S]*?<\/task-notification>/g)) {
           const id = notice[0].match(/<task-id>([^<]+)<\/task-id>/)?.[1];
           const status = notice[0].match(/<status>([^<]+)<\/status>/)?.[1];
-          if (id && status && ["completed", "failed", "killed"].includes(status)) state.waits.delete(id);
+          if (id && status && ["completed", "failed", "killed"].includes(status)) {
+            const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
+            delete waits[id];
+            await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, waits);
+          }
         }
       }
     }
     return next(e);
-  });
-  on("tool.call", { tool: /__compact_conversation$/ }, ($, e, next) => {
-    if (e.tool !== `mcp__${$.plugin.name}__${TOOL_NAME}`) return next(e);
-    if (state.pending) return { result: "未完了の圧縮予約があるため追加していない。rules-main.claude-code.md「ターンの終え方」に従い、送達済み本文を再掲せず現在のターンを終えてホストの結果を待て。" };
-    state.pending = true;
-    schedule($, state);
-    return { result: "会話圧縮を予約した。まだ完了していない。rules-main.claude-code.md「ターンの終え方」に従い、送達済み本文を再掲せず現在のターンを終えてホストの圧縮結果を待て。" };
   });
 }

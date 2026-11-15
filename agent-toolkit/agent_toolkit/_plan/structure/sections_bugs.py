@@ -15,6 +15,7 @@ from agent_toolkit._plan.structure.constants import (
     PLAN_LEGACY_BUG_TABLE_ROWS,
     PLAN_LEGACY_STANDALONE_BUG_TABLE_ROWS,
     PLAN_METADATA_BUG_FIELD,
+    PLAN_PREVIOUS_ACTION_BUG_TABLE_ROWS,
     PLAN_PREVIOUS_BUG_TABLE_ROWS,
     PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS,
 )
@@ -128,6 +129,8 @@ def _check_bug_unit_sections(
     for position, heading in children:
         start, end = heading_subtree_range(headings, position)
         tables = extract_tables(lines_within(body, start, end))
+        if not tables and any(line.strip() for _lineno, line in lines_within(body, start, end)):
+            continue
         errors.extend(check_cause_analysis_format("\n".join(line for _lineno, line in lines_within(body, start, end))))
         standalone_tables = [
             table
@@ -164,6 +167,7 @@ def _check_bug_unit_sections(
             if table.row_labels()
             in (
                 PLAN_BUG_TABLE_ROWS,
+                PLAN_PREVIOUS_ACTION_BUG_TABLE_ROWS,
                 PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS,
                 PLAN_PREVIOUS_BUG_TABLE_ROWS,
                 PLAN_LEGACY_BUG_TABLE_ROWS,
@@ -274,7 +278,13 @@ def has_legacy_bug_investigation_table(content: str) -> bool:
     tables = extract_tables(list(iter_markdown_body_lines(content)))
     return any(
         table.header == PLAN_BUG_TABLE_HEADER
-        and table.row_labels() in (PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS, PLAN_PREVIOUS_BUG_TABLE_ROWS, PLAN_LEGACY_BUG_TABLE_ROWS)
+        and table.row_labels()
+        in (
+            PLAN_PREVIOUS_ACTION_BUG_TABLE_ROWS,
+            PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS,
+            PLAN_PREVIOUS_BUG_TABLE_ROWS,
+            PLAN_LEGACY_BUG_TABLE_ROWS,
+        )
         for table in tables
     )
 

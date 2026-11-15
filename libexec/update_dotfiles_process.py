@@ -7,9 +7,11 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 
 import psutil
 import update_dotfiles_runtime
+from agent_toolkit._common import process_tree
 from agent_toolkit._git import stale_lock
 
 from pytools._internal import sync_report
@@ -36,30 +38,24 @@ class GitReclaimError(RuntimeError):
     chezmoiの適用へ進まずに更新全体を止める。
     """
 
+    def __init__(self, message: str, *, reclaim: process_tree.ReclaimError | None = None) -> None:
+        super().__init__(message)
+        self.reclaim = reclaim
 
-def kill_process_tree(process: subprocess.Popen[str]) -> None:
+
+def kill_process_tree(
+    process: subprocess.Popen[str],
+    *,
+    known: Iterable[psutil.Process] = (),
+    pins: process_tree.ProcessIdentityPins | None = None,
+) -> None:
     """直接の子を終了する前に子孫を列挙し、起動したプロセスツリーを回収する。回収できなければ`_GitReclaimError`を送出する。"""
-    processes: list[psutil.Process] = []
-    try:
-        parent = psutil.Process(process.pid)
-        processes = [*parent.children(recursive=True), parent]
-    except psutil.NoSuchProcess:
-        pass
-
-    for child in processes:
-        try:
-            child.kill()
-        except psutil.NoSuchProcess:
-            continue
-    _gone, alive = psutil.wait_procs(processes, timeout=update_dotfiles_runtime.PROCESS_TREE_WAIT_TIMEOUT_SEC)
-    with contextlib.suppress(ProcessLookupError):
-        process.kill()
-    if alive:
+    failure = process_tree.stop_owned_process(process, context="Git更新", known=known, pins=pins)
+    if failure is not None:
         raise GitReclaimError(
-            "Git操作の子プロセスを回収できないため更新を中止しました: "
-            + ", ".join(str(item.pid) for item in alive)
-            + "。表示されたPIDのプロセスを確認して終了させ、update-dotfilesを再実行してください。"
-        )
+            f"Git操作の子プロセスの回収または所有を確認できないため更新を中止しました: {failure}",
+            reclaim=failure,
+        ) from failure
 
 
 def run_git_pull(
@@ -139,11 +135,13 @@ def _github_transport_recovery(remote_url: str | None, *, timeout: float | None)
     except OSError as error:
         update_dotfiles_runtime.logger.warning("Git取得の事前確認を起動できません。通常の取得を試します: %s", error)
         return None
+    pins = process_tree.ProcessIdentityPins()
+    known = process_tree.collect_descendants(process.pid, pins=pins, include_root=True)
     try:
         try:
             process.communicate(timeout=probe_timeout)
         except subprocess.TimeoutExpired:
-            kill_process_tree(process)
+            kill_process_tree(process, known=known, pins=pins)
             try:
                 process.communicate(timeout=update_dotfiles_runtime.GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
             except subprocess.TimeoutExpired as error:
@@ -155,11 +153,12 @@ def _github_transport_recovery(remote_url: str | None, *, timeout: float | None)
             update_dotfiles_runtime.logger.warning("GitHub SSHの事前確認が時間切れ。今回の取得だけHTTPSへ切替")
             return remote_url, https
         except KeyboardInterrupt:
-            kill_process_tree(process)
+            kill_process_tree(process, known=known, pins=pins)
             process.wait(timeout=update_dotfiles_runtime.PROCESS_TREE_WAIT_TIMEOUT_SEC)
             raise
         return remote_url, remote_url
     finally:
+        pins.close()
         if os.name != "nt":
             with contextlib.ExitStack() as cleanup:
                 for stream in (process.stdout, process.stderr):
@@ -235,15 +234,17 @@ def _run_git_pull_once(
         )
         update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(f"{title}: {error}")
         return 1
+    pins = process_tree.ProcessIdentityPins()
+    known = process_tree.collect_descendants(process.pid, pins=pins, include_root=True)
     try:
         try:
             stdout, stderr = process.communicate(timeout=timeout) if timeout is not None else process.communicate()
         except KeyboardInterrupt:
-            kill_process_tree(process)
+            kill_process_tree(process, known=known, pins=pins)
             process.wait(timeout=update_dotfiles_runtime.PROCESS_TREE_WAIT_TIMEOUT_SEC)
             raise
         except subprocess.TimeoutExpired:
-            kill_process_tree(process)
+            kill_process_tree(process, known=known, pins=pins)
             try:
                 stdout, stderr = process.communicate(timeout=update_dotfiles_runtime.GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
             except subprocess.TimeoutExpired:
@@ -294,6 +295,7 @@ def _run_git_pull_once(
         return process.returncode
 
     finally:
+        pins.close()
         if os.name != "nt":
             with contextlib.ExitStack() as cleanup:
                 for stream in (process.stdout, process.stderr):
@@ -304,18 +306,25 @@ def _run_git_pull_once(
 def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
     """dotfilesリポジトリでGitを実行し、標準出力と標準エラーを取得する。"""
     argv = ["git", "-C", str(update_dotfiles_runtime.DOTFILES_ROOT), *arguments]
-    with subprocess.Popen(
-        argv,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        encoding="utf-8",
-        errors="replace",
-        env=update_dotfiles_runtime.git_env(),
-    ) as process:
+    known: list[psutil.Process] = []
+    with (
+        process_tree.ProcessIdentityPins() as pins,
+        process_tree.process_scope(
+            argv,
+            known=known,
+            pins=pins,
+            close_streams=os.name != "nt",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            encoding="utf-8",
+            errors="replace",
+            env=update_dotfiles_runtime.git_env(),
+        ) as process,
+    ):
         try:
             stdout, stderr = process.communicate()
         except KeyboardInterrupt:
-            kill_process_tree(process)
+            kill_process_tree(process, known=known, pins=pins)
             stdout, stderr = process.communicate(timeout=update_dotfiles_runtime.GIT_OUTPUT_RECOVERY_TIMEOUT_SEC)
             update_dotfiles_runtime.logger.warning("Git操作を中断: %s stdout:\n%s\nstderr:\n%s", argv, stdout, stderr)
             raise

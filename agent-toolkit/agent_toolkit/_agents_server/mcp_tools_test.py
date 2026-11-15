@@ -29,8 +29,19 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 def test_public_tools_expose_single_start_with_modes() -> None:
-    """公開ツールは起動の`start`1件と継続・中断・破棄・一覧・詳細の6件とし、`start`はmodeごとの入力を持つ。"""
-    assert set(mcp_tools.mcp._tool_manager._tools) == {"start", "send_message", "kill", "list", "show", "stop"}
+    """公開ツールの集合と、modeごとのstart入力を検証する。"""
+    assert set(mcp_tools.mcp._tool_manager._tools) == {
+        "start",
+        "send_message",
+        "kill",
+        "list",
+        "show",
+        "stop",
+        "send_to_user",
+        "compact_conversation",
+        "apply_runtime_changes",
+        "permissions",
+    }
     start_tool = _start_tool()
     properties = start_tool.parameters["properties"]
     assert properties.keys() == {

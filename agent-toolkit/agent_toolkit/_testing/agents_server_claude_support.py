@@ -81,6 +81,7 @@ def _lightweight_environment(launch_kind: str) -> dict[str, str]:
         "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
         "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
+        "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "0",
     }
 
 

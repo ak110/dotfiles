@@ -154,7 +154,8 @@ def test_notice_reports_elapsed_time_since_session_start(elapsed_seconds: int, e
     now = 100000.0
     _seed(sid, "main", started_at=now - elapsed_seconds, last_notified_at=now - _INTERVAL)
     notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
-    assert notice is not None and f"セッション開始から{expected}たった。" in notice
+    assert notice is not None and f"この主体の初回観測から{expected}たった。" in notice
+    assert "1970-01-02T03:46:40+00:00" in notice
 
 
 def test_agents_in_same_session_have_independent_timers() -> None:
@@ -165,6 +166,30 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert progress_self_check.claim_notice({"session_id": sid, "agent_id": "sub-1"}, now=now) is None
     assert progress_self_check.claim_notice({"session_id": sid}, now=now) is not None
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [(86399.0, "1970-01-01T23:59:59+00:00"), (86400.0, "1970-01-02T00:00:00+00:00")],
+)
+def test_notice_observation_keeps_the_date_at_midnight(now: float, expected: str) -> None:
+    """日付またぎでも、通知生成に使った時計をオフセット付きで伝える。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=now - _INTERVAL, last_notified_at=now - _INTERVAL)
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
+    assert notice is not None and expected in notice
+    progress_self_check.release_reservations()
+
+
+def test_notice_does_not_report_negative_elapsed_after_clock_disagreement() -> None:
+    """起点と時計が食い違っても、負の経過時間を通常の経過として示さない。"""
+    sid = _session_id()
+    _seed(sid, "main", started_at=100000.0, last_notified_at=1000.0)
+    notice = progress_self_check.claim_notice({"session_id": sid}, now=2800.0)
+    assert notice is not None and "経過時間は不明" in notice
+    assert "-1620分" not in notice
+    assert _entries(sid)["main"]["started_at"] == 100000.0
+    progress_self_check.release_reservations()
 
 
 @pytest.mark.parametrize("payload", [{}, {"session_id": ""}, {"session_id": 1}])

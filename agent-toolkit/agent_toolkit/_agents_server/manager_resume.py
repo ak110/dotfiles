@@ -13,7 +13,6 @@ from agent_toolkit._agents_server import (
     backends,
     claude,
     codex_providers,
-    effort_control,
     launch_prompts,
     launch_requests,
     manager_registry,
@@ -55,7 +54,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
     async def _effort_catalog(self, engine: str) -> list[dict[str, Any]]:
         """所有backendが公開するモデル一覧で、Codexの実受理段を確認する。
 
-        effort要求の監視と、返却形式の回復前の引き上げが同じ段の取得を使う。
+        本人・親の明示したeffort要求の監視が段の取得を使う。
         """
         return await cast(backends.ModelCatalog, self._backend(engine)).list_models()
 
@@ -95,7 +94,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             session.result_contract_recovery_consumed = True
             if session.engine not in {"claude", "codex"}:
                 finalize_pending_result(session, touch=False)
-            raised = await effort_control.raise_for_result_contract(session, self._effort_catalog, self._apply_effort)
             try:
                 delivery = await self._send_with_resources(
                     session,
@@ -106,11 +104,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
                             else "直前の返却は返却形式の契約に適合しない。"
                         )
                         + f"診断: {reason}\n"
-                        + (
-                            f"作業を最後まで進められるよう、このturnからeffortを{raised[0]}から{raised[1]}へ上げた。"
-                            if raised is not None
-                            else ""
-                        )
                         + "成果と残作業を確認し、担当内で補える作業を完遂した上で所定の返却形式を返せ。"
                         + "取得可能な未読・保存出力・残工程を補い、補えない不足だけを試した手段と再開条件付きで返せ。"
                         "権限拒否・認可不足の回避は求めない。実行済みの非冪等操作と保存成果を保持し、残工程だけを進めよ。"
@@ -137,8 +130,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
                     "resultContract": reason,
                     "nextAction": result_contract.RECOVERY_NEXT_ACTION,
                 }
-                if effort_error := session.effort_request_results.get("result-contract"):
-                    recovery_error["effortRecovery"] = effort_error
                 session.error = recovery_error
                 session.record_turn_completed()
                 session.touch()

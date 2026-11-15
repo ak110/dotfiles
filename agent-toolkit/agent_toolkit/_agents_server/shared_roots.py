@@ -22,6 +22,7 @@ import pathlib
 import uuid
 from collections.abc import Mapping
 
+from agent_toolkit._agents_server import status_reader
 from agent_toolkit._agents_server.retained_results import read_retained_result
 from agent_toolkit._agents_server.shared_layout import (
     aliases_directory,
@@ -246,14 +247,26 @@ def resolve_status_owner_identity(
             and payload.get("host_session_id") == identity.host_session_id
         ):
             writers.append(path.stem)
-    if not writers:
-        for path in list_status_files(identity.root_session_id, state_root):
-            try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-            except OSError, UnicodeError, json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict) and payload.get("host_session_id") == identity.host_session_id:
-                writers.append(path.stem)
+    current_writers: list[str] = []
+    cutoff = status_reader.heartbeat_cutoff()
+    for path in list_status_files(identity.root_session_id, state_root):
+        try:
+            payload = status_reader.read_payload(path)
+        except (OSError, UnicodeError, ValueError) as error:
+            if path.stem in writers:
+                raise ActionableError(
+                    f"書込主体の現行状態を読めません: {path}: {error}",
+                    next_action="状態ファイルの読取権限とJSONを確認し、同じ待機操作を再実行する",
+                ) from error
+            continue
+        if payload.get("host_session_id") != identity.host_session_id:
+            continue
+        if status_reader.heartbeat_is_current(payload, cutoff):
+            current_writers.append(path.stem)
+    # hostsは過去の対応も保持する。現行の公開状態がある場合は、その所有者で解決する。
+    # 状態未公開の起動と保持結果を壊さないよう、失効した索引自体はここでは削除しない。
+    if current_writers:
+        writers = current_writers
     if not writers:
         return identity
     if len(writers) != 1:

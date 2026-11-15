@@ -46,7 +46,7 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ): "共通の停止処理で子孫を回収した後、App Serverの終了状態を上限付きで回収する",
     (
         "agent-toolkit/agent_toolkit/_common/codex_models.py",
-        "list_models_from_app_server",
+        "with_app_server",
     ): "共通の停止処理で子孫を回収した後、asyncioの子の終了状態を上限付きで回収する",
     (
         "agent-toolkit/agent_toolkit/_agents_server/launch_requests_preflight.py",
@@ -69,6 +69,10 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "agent-toolkit/skills/refine-prompt/scripts/multi_turn_trials.py",
         "_grade",
     ): "固定の採点スクリプトで、提出コードが起動する子の残存は許容する",
+    (
+        "agent-toolkit/skills/refine-prompt/fixtures/multi-turn/goal_discovery/private/grade.py",
+        "_report",
+    ): "隔離Pythonで提出CLIを採点する固定課題で、外側の採点と同じく提出コードの子の残存は許容する",
     ("libexec/update_dotfiles_process.py", "kill_process_tree"): "停止前に列挙して子孫も回収する既存実装",
     (
         "libexec/update_dotfiles_job.py",
@@ -155,3 +159,13 @@ def test_native_update_stop_exception_is_limited_to_tree_owner():
     assert not _violations(pathlib.Path("libexec/update_dotfiles_job.py"), source)
     assert _violations(pathlib.Path("libexec/update_dotfiles.py"), source)
     assert _violations(pathlib.Path("libexec/update_dotfiles_job.py"), source.replace("_stop_tree", "_run_command"))
+
+
+def test_goal_grader_exception_is_limited_to_report():
+    """隔離採点の許可を、固定課題のreport呼出箇所だけに限定する。"""
+    path = pathlib.Path("agent-toolkit/skills/refine-prompt/fixtures/multi-turn/goal_discovery/private/grade.py")
+    source = "def _report(task):\n    subprocess.run([task], timeout=3)\n"
+    assert not _violations(path, source)
+    assert _violations(path, source.replace("_report", "main"))
+    assert _violations(path.with_name("other.py"), source)
+    assert _violations(pathlib.Path("agent-toolkit/skills/refine-prompt/scripts/multi_turn_trials.py"), source)

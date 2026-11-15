@@ -14,7 +14,8 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from agent_toolkit._agents_server import api_credits, engine_availability
-from agent_toolkit._atk import codex_connection
+from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._atk import codex_connection, usage_refresh
 from agent_toolkit._atk import config as atk_config
 from agent_toolkit._common import codex_usage_limit
 
@@ -146,6 +147,13 @@ async def select(
         active_id = routing.get("chatgptAccountId") if isinstance(routing, dict) else None
         snapshot_id = usage.get("accountId")
         if snapshot_id is None or active_id is not None and snapshot_id == active_id:
+            if usage_refresh.enabled():
+                await run_file_operation(
+                    usage_refresh.record_codex,
+                    usage,
+                    account=usage_refresh.codex_account(auth),
+                    contract=str(account.get("planType") or "") if isinstance(account, dict) else "",
+                )
             value = usage.get("ordinaryUsageAllowed")
             allowed = value if isinstance(value, bool) else None
             limit = codex_usage_limit.from_rate_limits(usage.get("rateLimits"))

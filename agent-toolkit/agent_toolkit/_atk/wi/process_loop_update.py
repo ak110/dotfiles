@@ -43,28 +43,6 @@ def _code_hash_directories(plugin_root: pathlib.Path) -> tuple[pathlib.Path, pat
     return plugin_root / _PACKAGE_RELATIVE_PATH, plugin_root / "scripts"
 
 
-def _without_resume_args(argv: list[str]) -> list[str]:
-    """初回限定のresume指定と任意値をargvから除去する。"""
-    result: list[str] = []
-    index = 0
-    while index < len(argv):
-        arg = argv[index]
-        if arg.startswith("--resume="):
-            index += 1
-            continue
-        if arg == "--resume":
-            index += 1
-            if index < len(argv) and not argv[index].startswith("-"):
-                index += 1
-            continue
-        if arg == "--auto-resume":
-            index += 1
-            continue
-        result.append(arg)
-        index += 1
-    return result
-
-
 def _without_internal_mise_refreshed(argv: list[str]) -> list[str]:
     """一回限りのmise再評価済み指定を再起動引数から除去する。"""
     return [arg for arg in argv if arg != _INTERNAL_MISE_REFRESHED_ARG]
@@ -79,7 +57,6 @@ def _build_restart_target(
     argv: list[str],
     dotfiles_root: pathlib.Path | None = None,
     *,
-    resume_consumed: bool = False,
     mise_refreshed: bool = False,
     dotfiles_updated: bool = False,
 ) -> tuple[pathlib.Path, list[str]]:
@@ -96,8 +73,6 @@ def _build_restart_target(
         if canonical.exists():
             script = canonical
     rest = _without_internal_dotfiles_updated(_without_internal_mise_refreshed(argv[1:]))
-    if resume_consumed:
-        rest = _without_resume_args(rest)
     if mise_refreshed:
         rest.append(_INTERNAL_MISE_REFRESHED_ARG)
     if dotfiles_updated:
@@ -109,7 +84,6 @@ def restart_process_loop(
     argv: list[str],
     dotfiles_root: pathlib.Path | None = None,
     *,
-    resume_consumed: bool = False,
     mise_refreshed: bool = False,
     dotfiles_updated: bool = False,
 ) -> None:
@@ -124,7 +98,6 @@ def restart_process_loop(
     script, rest = _build_restart_target(
         argv,
         dotfiles_root,
-        resume_consumed=resume_consumed,
         mise_refreshed=mise_refreshed,
         dotfiles_updated=dotfiles_updated,
     )
@@ -288,6 +261,7 @@ def update_before_session(
     env: dict[str, str],
     *,
     mark_mise_refreshed: bool = False,
+    restart_on_change: bool = True,
 ) -> tuple[bool, bool]:
     """ready項目の処理前にdotfilesとprivate-notesを同期する。
 
@@ -316,7 +290,7 @@ def update_before_session(
         )
     if dotfiles_root is not None and startup_hash is not None:
         current_hash = code_hash(dotfiles_root / "agent-toolkit")
-        if current_hash != startup_hash:
+        if current_hash != startup_hash and restart_on_change:
             print("処理開始前に常駐コードの更新を検知したためprocess-loopを再起動します。")
             _process_loop_log.append("restart_before_session_update")
             restart_process_loop(

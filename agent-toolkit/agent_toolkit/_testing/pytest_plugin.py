@@ -22,6 +22,7 @@ from multiprocessing import resource_tracker
 from typing import Any
 
 import playwright.async_api
+import psutil
 import pytest
 import pytest_asyncio
 import watchdog.observers
@@ -111,6 +112,46 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
 def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, object, object]:
     """回収が完了してからCPU合算の判定へ進む。"""
     return (yield from _measure_cpu(item, "teardown"))
+
+
+def _tracker_state() -> tuple[int | None, float | None, bool]:
+    """検査のためには起動せず、worker自身が保持するtrackerの世代だけを読む。"""
+    pid = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
+    if pid is None:
+        return None, None, False
+    try:
+        process = psutil.Process(pid)
+        return (
+            pid,
+            process.create_time(),
+            process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD),
+        )
+    except psutil.NoSuchProcess:
+        return pid, None, False
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> Generator[None, object, object]:
+    """差し替えの復元後に検査し、trackerの誤停止を起こした試験へ帰属させる。"""
+    del nextitem
+    before = _tracker_state()
+    result = yield
+    after = _tracker_state()
+    if (before[2] and (before[:2] != after[:2] or not after[2])) or (
+        after[0] is not None and not after[2] and before[:2] != after[:2]
+    ):
+        report = pytest.TestReport(
+            nodeid=item.nodeid,
+            location=item.location,
+            keywords={},
+            outcome="failed",
+            longrepr=f"resource_tracker生存検査: {item.nodeid}: before={before}, after={after}",
+            when="teardown",
+            sections=(),
+            duration=0,
+        )
+        item.ihook.pytest_runtest_logreport(report=report)
+    return result
 
 
 @pytest.fixture(scope="session", name="browser_evidence_root")

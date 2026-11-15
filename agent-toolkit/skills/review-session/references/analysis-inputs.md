@@ -20,6 +20,10 @@ OpenCodeでは`--opencode-session-id`と任意の`--opencode-db`で元の記録�
 長い会話の`conversation.md`も全期間を対象とし、省略行の記録位置から必要な本文だけを`--detail`で取得する。
 委譲の入力と規範の読込概要は`comparison-materials.md`、メインエージェントと全担当の費用はセッション統計から取る。
 比較材料から対象、時点、全文の位置を選び、必要な記録位置だけを照会する。
+`comparison-materials.md`はUTF-8で32,000バイト以下の索引である。
+3区分と担当を巡回して選び、担当・区分内では観測済み本文量の大きい項目を優先する。
+区分別の全件・表示・省略件数を確認し、表示外の項目も`bundle/comparison-materials.jsonl`の`record`・`line`・`result_line`から照会する。
+省略を不在や確認済みと解釈しない。
 比較材料では、直接渡された本文とファイル参照、明示的な読取とコマンド文字列だけの観測、返却本文の量と現在のファイルサイズをそれぞれ分ける。
 参照ファイルの内容量、自動配送、読了の有無は、受領記録などの確かな証拠が無ければ未確認とする。
 トークン数とキャッシュ量は実行環境の計数定義に従い、Codexの総入力（total input）へのキャッシュ済み入力（cached input）の二重加算を除く。
@@ -30,8 +34,11 @@ OpenCodeでは`--opencode-session-id`と任意の`--opencode-db`で元の記録�
 圧縮区間の事象も分析し、コンテキスト上で見えないことだけで原因未確定としない。
 
 - 記録位置を`atk run-script session-review-evidence --`の`--detail`へ渡して本文・入力・実行結果を取る。
-  構造の確認は`--record-schema`、検索語で限定するときは`--grep`、固定文字列の検索は`--fixed-string`を使う。
+  構造の確認は`--record-schema`、検索語で限定するときは`--grep <正規表現>`、固定文字列の検索は`--fixed-string <文字列>`を使う。
+  `--fixed-string`は値を取る引数で`--grep`と排他的であり、ハイフンから始まる値は`--fixed-string=--help`の形で渡す。
   委譲先を含むツール呼び出しの列挙には`--tool-calls`、出所付きの改善点全行には`--reported-improvements`を使う。
+  単一記録の`--tool-calls --since <ISO時刻>`は時刻が境界より後の呼び出しだけを返す。
+  `--tool`・`--input-regex`と併用でき、時刻不明・不正の除外件数は要約の`missing_timestamps`で確認する。
   このコマンドは委譲先（Claude Codeのサブエージェント記録や`agents_server`の子セッション記録）も再帰的に集める。
 - 候補の個別証拠は索引の`candidate_id`と`evidence_path`から取得する。
   元の`reported_improvements`はイベント直下の文字列配列であり、本文と出所をまとめて読む場合は上記の公開照会を使う。

@@ -29,11 +29,11 @@ _FIX_MODEL = (
 )
 
 
-_NEXT_SOURCE_MISMATCH = "一致しない欄を、元のWIのfrontmatterの`depends_on`・`target_repo`と選定の`再開位置`が示す計画の値へ直す"
+_NEXT_SOURCE_MISMATCH = "一致しない欄を、元のWIのfrontmatterの`depends_on`・`target_repo`の値へ直す"
 
 
 def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[Violation]:
-    """依存と再開計画の型付き根拠を元のWIのfrontmatterと選定の再開位置へ対応付け、一致しない欄と両方の値を示す。"""
+    """依存の型付き根拠を元のWIのfrontmatterと対応付け、一致しない欄と両方の値を示す。"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     items = {
         item[_selection.WI_KEY]: item for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
@@ -77,12 +77,8 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                         mismatches.append(
                             f"リポジトリ{index}: 根拠={evidence[f'リポジトリ{index}']}、{name}のtarget_repo={resolved}"
                         )
-            else:
-                for index, name in enumerate((first, second), 1):
-                    planned = _resume_plan_id(items[name].get("再開位置"))
-                    recorded = pathlib.PurePosixPath(evidence[f"計画{index}"]).name
-                    if planned != recorded:
-                        mismatches.append(f"計画{index}: 根拠の計画={recorded}、{name}の再開位置の計画={planned}")
+            # 再開計画の根拠は初回の結合履歴であり、要求変更後の現在の再開位置とは比較しない。
+            # 根拠自身の整合性と元レーンの保持は初回配分検査、現在の共有計画はレーン検査が担う。
             if mismatches:
                 errors.append(
                     Violation(
