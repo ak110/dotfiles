@@ -19,15 +19,9 @@
 
 | 起動形・engine | 起動と最初の入力 | turn終了とプロセスの扱い | 再開・外部制御 | 実装の所在 |
 | --- | --- | --- | --- | --- |
-<<<<<<< HEAD
 | process-loop・claude | 通常は非対話の`claude -p --model … --effort … <入力>`。初回は`/goal <目的文>`、再開は元goalの続行入力 | 最終応答で終了するCLIを対象workerが観測する。会話選択画面を使う場合は対話CLIの終了が必要 | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う。外部操作は次節 | `agent_toolkit/_atk/wi/process_loop_session.py`の`build_process_loop_prompt`、`_build_session_argv`、`_run_process_session`、`_run_cli_session` |
 | process-loop・codex | 通常は非対話の`codex exec --model … --json <目的文>`。`/goal`接頭辞を除いて渡す | 最終応答で終了するCLIを対象workerが観測する。会話選択画面は対話型の`codex resume`で開く | 上限を検出するとCLIを停止し、対象別結果と未完了を検収する。同じ会話の再開は予約から`codex exec resume`または対話型の`codex resume`へ接続 | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_cli_session`、`agent_toolkit/_atk/wi/process_loop.py`の`run_coordinator` |
 | process-loop・agy | 通常は非対話の`agy -p <目的文> --model … --effort … --mode auto --output-format stream-json`。`/goal`接頭辞を除いて渡す | 最終応答で終了するCLIを対象workerが観測する | 再開指定は`--conversation`、IDを省略した会話選択は非対応のためIDかautoを案内。Claude用の上限再開ループをagyへ一般化しない | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_process_session`、`_run_cli_session` |
-=======
-| process-loop・claude | 対話型の`claude --model … --effort … <入力>`。初回入力は`/goal <目的文>` | 目標評価による継続とCLIの終了を区別する。監督側はturn終了だけでは戻らず、CLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う。ユーザーの`/restart`・`/update`は同じPID・会話IDで再起動し、modが自動続行する。中断した子は既存の親復帰処理で同じ会話を再開する。外部操作は次節 | `agent_toolkit/_atk/wi/process_loop_session.py`の`build_process_loop_prompt`、`_build_session_argv`、`_run_process_session`、`_run_cli_session`、`hooks/runtime_restart.ts` |
-| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`。`/goal`接頭辞を除いて渡す | turn終了後も対話CLIの終了が必要。監督側はCLIの終了を待つ | 上限を検出するとCLIを停止し、対象別結果と未完了を検収する。同じ会話の再開はprocess-loopの再開指定から`codex resume`へ接続 | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_cli_session`、`agent_toolkit/_atk/wi/process_loop.py`の`run_coordinator` |
-| process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`。`/goal`接頭辞を除いて渡す | 監督側は対話CLIの終了を待つ。CLI内部のturn終了条件はこのコードでは規定しない | 再開指定は`--conversation`、IDが無い再開は`--continue`へ接続。Claude用の上限再開ループをagyへ一般化しない | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_process_session`、`_run_cli_session` |
->>>>>>> 1c3f6f612 (feat: Claude Codeの会話操作とCode Mode接続を整える)
 | run-skill・claude | 非対話の`claude -p --model … --effort …`。初回入力は`/goal <目的文>` | 目標評価の継続を経て最終応答でCLIが終了する構成。起動元は終了後に報告の保存も検収する | 利用上限解除後は同じ会話を`claude -p --resume`で自動再開。明示再開は`atk run-skill --resume <RUN_ID>` | `agent_toolkit/_atk/run_skill.py`の`_run_locked`、`dispatch`、`_wait_session` |
 | run-skill・codex | 非対話の`codex exec --model … -c model_reasoning_effort=… --json <目的文>`。`/goal`を付けない | 最終応答でCLIが終了する構成。起動元は終了後に報告の保存も検収する | 利用上限解除後は同じthreadを`codex exec resume`で自動再開。明示再開はRUN_IDを指定する | `agent_toolkit/_atk/run_skill.py`の`_run_locked`、`dispatch`、`_wait_session` |
 | run-skill・agy | 非対話の`agy -p <目的文> --model … --effort … --output-format stream-json`。`/goal`を付けない | 非対話CLIの終了を待ち、起動元が報告の保存を検収する。ホスト内部の目標評価は仮定しない | 明示再開は同じ会話の`--conversation`へ接続。利用上限の自動再開はCLI出力から上限を検出できた場合に限る | `agent_toolkit/_atk/run_skill.py`の`_run_locked`・`_SessionOutput.receive`・`_wait_session`、`agent_toolkit/_common/antigravity_cli.py`の`build_command` |
@@ -37,6 +31,11 @@
 | ユーザーが直接操作する対話中のメイン・claude | ユーザーが起動引数と入力を選ぶ。統括用の`/goal`を自動設定する経路の対象外 | 対話の入力待ちと、`/goal`設定時の目標評価による継続を分ける。ホスト内部の条件は個別確認する | ユーザーの`/restart`・`/update`は同じPID・会話IDで再起動する。modが自身の背景waitを停止した場合だけ自動続行し、中断した子は`owner_server_stopped`から既存の親復帰処理で同じ会話を再開する。それ以外は入力を待つ | 統括用ランチャー`agent_toolkit/_atk/wi/process_loop_session.py`と`agent_toolkit/_atk/run_skill.py`の対象外。終了要求の連携は`hooks/session_exit.ts`、再起動補助は`hooks/runtime_restart.ts` |
 | ユーザーが直接操作する対話中のメイン・codex | ユーザーが起動引数と入力を選ぶ。統括用ランチャーは適用されない | turn終了後の入力待ちや終了操作は現在のホストの起動条件による | ユーザーの入力・ホストの再開操作を使う | 統括用ランチャー`agent_toolkit/_atk/wi/process_loop_session.py`と`agent_toolkit/_atk/run_skill.py`の対象外。終了要求の連携は`agent_toolkit/_atk/agents_exit_session.py` |
 | ユーザーが直接操作する対話中のメイン・agy | ユーザーが起動引数と入力を選ぶ。統括用ランチャーは適用されない | turn終了後の入力待ちや終了操作は現在のホストの起動条件による。CLI内部の条件は未確認 | ユーザーの入力・ホストの再開操作を使う | 統括用ランチャー`agent_toolkit/_atk/wi/process_loop_session.py`と`agent_toolkit/_atk/run_skill.py`の対象外 |
+
+対話型Claudeのprocess-loopでは、composerからユーザーが入力する`/restart`・`/update`を補助する。
+所有する背景waitだけを停止し、同じPID・会話IDで再開後に待機と作業を一度だけ続行する。
+中断した子は既存の復旧で同じ会話を再開する。
+非対話の自動再起動へは適用しない（`hooks/runtime_restart.ts`）。
 
 agents_serverの配送結果と、受信側による本文の読取・処置の完了は別々に確認する。
 長いツール実行などの途中へ即座に割り込めるという案は、該当engineの配送条件を別途確かめる。

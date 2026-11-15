@@ -46,10 +46,7 @@ Codexの独立圧縮turnと合わせ、所有と結果保留の構造は[design-
 PreCompactは要約APIそのものを省略する契約ではない。
 実機の適用範囲と再検証はaudit-records.md「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。
 
-<<<<<<< HEAD
-## 利用上限後のメインの再開予約
-=======
-### 再起動と同一会話への反映
+## 再起動と同一会話への反映
 
 ユーザーが入力した`/restart`では、設定hookが実測した背景待機の共有一覧から、既存の所有照会が子担当を返す`atk agents wait`だけを停止する。
 一般の背景処理は停止しない。
@@ -61,8 +58,7 @@ modからの`/restart`制限を回避する経路は作らない。
 途中でmodが再読込された場合は、応答済みと未確認を区別して継続を通知する。
 受付、コマンド応答、反映後の動作確認はそれぞれ独立した結果として扱う。
 
-### 利用上限後のメインの再開予約
->>>>>>> 1c3f6f612 (feat: Claude Codeの会話操作とCode Mode接続を整える)
+## 利用上限後のメインの再開予約
 
 観測と再検証手段は`docs/development/audit-records-usage-limit.md`の「docs/development/design-hooks-compaction-resume.md：利用上限後のメインの再開予約：2026年10月14日」にある。
 

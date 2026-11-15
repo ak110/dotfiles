@@ -6,7 +6,7 @@ const cost = { ...amount, breakdown: { self: amount, claude_subagents: { ...amou
 
 async function panel($: Engine, on: On, initialFailure = false) {
   mock.env(on, { HOME: "/home/tester" });
-  const controls = { initialFailure, listFailure: false, sendFailure: true, effortFailure: true, empty: false, sends: [] as unknown[], effortActors: [] as (string | undefined)[], lists: 0, shows: 0, costs: 0 };
+  const controls = { initialFailure, listFailure: false, sendFailure: true, effortFailure: true, empty: false, members: [{ session_id: "worker", status: "running", effort: "medium" }], sends: [] as unknown[], effortActors: [] as (string | undefined)[], lists: 0, shows: 0, costs: 0 };
   on("session.id", () => ({ value: "panel-main" }));
   on("ui.open", () => ({ value: { isPlaced: true } }));
   on("ui.close", () => ({ value: undefined }));
@@ -16,7 +16,7 @@ async function panel($: Engine, on: On, initialFailure = false) {
     if (e.tool === "list") {
       controls.lists++;
       if (controls.initialFailure || controls.listFailure) throw new Error("一覧接続エラー");
-      return { value: { isError: false, content: [{ type: "text", text: JSON.stringify({ sessions: controls.empty ? [] : [{ session_id: "worker", status: "running", effort: "medium" }] }) }] } };
+      return { value: { isError: false, content: [{ type: "text", text: JSON.stringify({ sessions: controls.empty ? [] : controls.members }) }] } };
     }
     if (e.tool === "show") {
       controls.shows++;
@@ -105,4 +105,30 @@ test("配送・effort例外後もbusyを解除し入力本文だけを一度送�
   await $.turn.complete({ answer: "", durationMs: 0, isAborted: false, turnId: "closed-turn", reason: "answer" });
   expect(controls.lists).toBe(closedLists);
   await ui.unmount();
+});
+
+test("未送信の追送は閉じても担当別に保持し配送失敗で消さない", async ($, on) => {
+  const { ui, controls } = await panel($, on);
+  controls.members.push({ session_id: "other-worker", status: "completed", effort: "low" });
+  const draft = "結果の理由も確認してほしい。";
+  await ui.input({ key: "message", text: draft, kind: "change" });
+  await ui.press({ key: "close" });
+  await ui.unmount();
+  await $.command.run({ command: "atk", args: "", origin: { kind: "composer" }, presentation: { isFullscreen: false, columns: 80 } });
+  const reopened = await $.ui.mount({ plugin: "agent-toolkit", surface: "terminal", component: "Pane", requestId: "atk-agents", props: { title: "担当操作", isFocused: true, bodyColumns: 80, placement: "inline", scroll: { offset: 0, bodyRows: 42 }, view: {} } });
+  expect((await reopened.find({ key: "message" }))?.props.value).toBe(draft);
+  await reopened.select({ key: "member", value: "other-worker" });
+  expect((await reopened.find({ key: "message" }))?.props.value).toBe("");
+  await reopened.input({ key: "message", text: "この担当への別の指示", kind: "change" });
+  await reopened.select({ key: "member", value: "worker" });
+  expect((await reopened.find({ key: "message" }))?.props.value).toBe(draft);
+  expect(controls.sends).toEqual([]);
+  await reopened.input({ key: "message", text: draft });
+  expect((await reopened.find({ key: "message" }))?.props.value).toBe(draft);
+  controls.sendFailure = false;
+  await reopened.input({ key: "message", text: draft });
+  expect((await reopened.find({ key: "message" }))?.props.value).toBe("");
+  await reopened.select({ key: "member", value: "other-worker" });
+  expect((await reopened.find({ key: "message" }))?.props.value).toBe("この担当への別の指示");
+  await reopened.unmount();
 });

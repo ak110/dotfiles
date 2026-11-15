@@ -14,7 +14,7 @@ type Panel = {
   breakdown?: Record<string, Cost>; pricingAsOf?: string; usage?: SessionUsage; usageError?: string;
   permissions?: Permissions; permissionsError?: string; permissionsExpanded: boolean;
   permissionId: string; adoptId: string; permissionDetail: string; scope: string;
-  deliveryDetail: string; deliveryExpanded: boolean;
+  deliveryDetail: string; deliveryExpanded: boolean; messageDrafts: Record<string, string>;
   note: string; busy: boolean;
 };
 
@@ -124,7 +124,7 @@ async function refreshPermissions($: EngineInterface, state: Panel): Promise<voi
 }
 
 export function register(on: On): void {
-  const state: Panel = { open: false, tab: "agents", selfId: "", effortTarget: "", selected: "", costDetail: "", costExpanded: false, permissionsExpanded: false, permissionId: "", adoptId: "", permissionDetail: "", scope: "once", deliveryDetail: "", deliveryExpanded: false, note: "", busy: false };
+  const state: Panel = { open: false, tab: "agents", selfId: "", effortTarget: "", selected: "", costDetail: "", costExpanded: false, permissionsExpanded: false, permissionId: "", adoptId: "", permissionDetail: "", scope: "once", deliveryDetail: "", deliveryExpanded: false, messageDrafts: {}, note: "", busy: false };
   on("command.run", { command: "atk" }, async ($) => {
     try {
       const opened = await $.ui.open({ id: "atk-agents", title: "担当操作", focus: true, closeOnEscape: true });
@@ -184,17 +184,21 @@ export function register(on: On): void {
         try { await refreshSelected($, state); } finally { state.busy = false; $.ui.invalidate("ui.render"); }
       } })] : [Text({ children: [state.membersError ?? (state.members ? "担当はいない。" : "担当一覧は未取得。")] })]),
       Text({ children: [detail ? `担当: ${String(detail.label || state.selected)} / 状態: ${String(detail.status ?? "未取得")}\nモデル: ${String(detail.model ?? "未取得")} / effort: ${String(detail.effort ?? "未取得")}\n直近動作: ${String(action)}\n待機理由: ${waitReason}` : state.memberError ?? "担当詳細は未取得。"] }),
-      Input({ key: "message", label: "追送", value: "", onSubmit: async (prompt) => {
+      Input({ key: "message", label: "追送", value: state.messageDrafts[state.selected] ?? "", onInput: (value) => { state.messageDrafts[state.selected] = value; }, onSubmit: async (prompt) => {
         if (state.busy || !state.selected || !prompt.trim()) return;
+        const target = state.selected;
+        state.messageDrafts[target] = prompt;
         state.busy = true;
         state.note = "追送中…";
         $.ui.invalidate("ui.render");
         try {
-          const result = await call($, "send_message", { session_id: state.selected, prompt });
+          const result = await call($, "send_message", { session_id: target, prompt });
           // previous_resultを含む既存の配送応答は保持するが、主会話を勝手に再開するpromptは送らない。
           state.deliveryDetail = JSON.stringify(result, null, 2);
           state.deliveryExpanded = false;
           if (result.delivery === "steered" || result.delivery === "reply_started") {
+            // 配送待ちの間に入力された次の指示は消さない。
+            if (state.messageDrafts[target] === prompt) delete state.messageDrafts[target];
             state.note = `配送済み（${result.delivery}）。`;
             await refreshSelected($, state); await refreshMembers($, state);
           } else state.note = result.delivery === "reply_ambiguous" ? "配送成否は未確認。再送せず担当状態を確認せよ。" : "追送に失敗。担当状態を確認せよ。";
