@@ -22,7 +22,7 @@ from agent_toolkit._common import session_activity
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
-from agent_toolkit._testing.process_loop_support import set_process_loop_repositories
+from agent_toolkit._testing.process_loop_support import set_process_loop_repositories, use_inline_scheduler
 from agent_toolkit.atk_test import _setup_notes
 
 
@@ -35,6 +35,7 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     notes = _setup_notes(tmp_path)
     myrepo = git_repository.init_repository(tmp_path / "myrepo", origin="https://github.com/example/myrepo.git")
     set_process_loop_repositories(monkeypatch, [myrepo])
+    use_inline_scheduler(monkeypatch)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     entries: list[pathlib.Path] = []
 
@@ -93,7 +94,7 @@ def test_native_subagent_stop_keeps_next_process_loop_session_running(
     def fake_cli_session(
         cmd: list[str], _env: dict[str, str], cwd: pathlib.Path, **_kwargs: Any
     ) -> subprocess.CompletedProcess[bytes]:
-        assert cmd[0] == "claude" and cwd == pathlib.Path.cwd()
+        assert cmd[0] == "claude" and cwd == myrepo
         assert any(argument.startswith("/goal ") for argument in cmd)
         manifest = pathlib.Path(json.loads(_env["AGENT_TOOLKIT_SESSION_START_INPUT"])["manifest"])
         data = json.loads(manifest.read_text(encoding="utf-8"))

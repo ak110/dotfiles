@@ -366,7 +366,7 @@ def coordinator_session(repo_id: str) -> str | None:
         and record.data.get("mode") == "coordinator"
         and record.stage is not OwnershipStage.RELEASED_COMPLETED
     ):
-        value = record.data.get("session_id")
+        value = _unfinished_record(record.payload()).get("session_id")
         return value if isinstance(value, str) else None
     return None
 
@@ -409,6 +409,15 @@ def update_session(ownership: Ownership, session_id: str, *, lane_session_id: st
         record.data["session_id"] = session_id
         if lane_session_id is not None:
             record.data["lane_session_id"] = lane_session_id
+        _save(ownership.path, record)
+    return dataclasses.replace(ownership, session_id=session_id)
+
+
+def record_execution_session(ownership: Ownership, session_id: str) -> Ownership:
+    """手動会話の実行を記録し、別の未完了process-wiの再開先は上書きしない。"""
+    with filelock.FileLock(str(ownership.path.with_suffix(".lock")), timeout=10):
+        record = _owned_record(ownership)
+        record.data["executed_session_id"] = session_id
         _save(ownership.path, record)
     return dataclasses.replace(ownership, session_id=session_id)
 

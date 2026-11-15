@@ -1,8 +1,6 @@
 # アーキテクチャ: agents_serverとCodexへの配布
 
-## agent-toolkitのホスト別配布
-
-### agents_server MCPの配置と寿命
+## agents_server MCPの配置と寿命
 
 共有MCP設定の大元が`agents_server`を定義し、`${CLAUDE_PLUGIN_ROOT}/scripts/launch.py`から`agent_toolkit/agents_server_mcp.py`を起動する。
 launch.pyは準備済みの共有依存環境を配布root外のデータ領域から選び、その起動が指定したplugin rootのコードを実行する。
@@ -23,7 +21,7 @@ Claude Agent SDKはCodex実行時の依存と起動コストを増やさない�
 PEP 723の依存importとClaudeAgentOptionsの構築だけを確認する。
 外部Claude/Codex sessionは開始しない。
 
-### `atk`の解決とセッションへの受け渡し
+## `atk`の解決とセッションへの受け渡し
 
 `atk`の実体は`agent-toolkit/scripts/atk`であり、マーケットプレイス経由の導入では`~/.claude/plugins/cache/<marketplace>/agent-toolkit/<version>/scripts/atk`に置かれる。
 版ディレクトリは更新ごとに変わるため、インストーラーは`~/.local/bin/atk`（Windowsでは`atk.cmd`）へ最新版を動的に解決するラッパーを置く。
@@ -33,7 +31,7 @@ Claude CodeのSessionStartは、`CLAUDE_ENV_FILE`が提供される場合にCLI�
 このファイルが提供されない場合も、開始時のコンテキストにCLIの絶対パスを表示する。
 MCPと`agents_server`の委譲先には、起動設定で同じ配布物のCLIとデータ領域を渡す。
 
-### Codex向けの配布構成
+## Codex向けの配布構成
 
 dotfiles導入はCodex向けに次を配置する。
 単体インストーラーは既存の`~/.codex/AGENTS.md`を保護するため、これらを配置しない。

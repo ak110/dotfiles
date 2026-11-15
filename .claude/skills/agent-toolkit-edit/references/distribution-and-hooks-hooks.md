@@ -19,9 +19,9 @@ PreToolUseをはじめとするフックは、配布先の構成や個人の命�
 - `pytools/claude_hook/pretooluse.py`（個人フック）: chezmoiを通じて自身のアカウントの`~/.claude/settings.json`にのみマージされる。
   新規のツール名を対象に含める場合は、`share/claude_settings_json_managed.posix.json`および`.win32.json`の`matcher`設定を確認する。
 - `agent-toolkit/`（プラグイン）: `.claude-plugin/marketplace.json`を通じて他のユーザーにも広く配布されるため、変更を加える際は`version-bump-execution.md`「バージョン更新」の規定に従う。
-- agent-toolkitのCLI、フック、MCPサーバーは、`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py <対象>`というコマンドで起動する。
+- agent-toolkitのCLI、フック、MCPサーバーは、`uv run --no-cache --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py <対象>`というコマンドで起動する。
   `launch.py`は標準ライブラリのみを用いてプラグインルートとデータ領域を解決し、準備済みの共有環境のPythonで対象を起動する。
-  依存の準備には`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
+  依存の準備には`uv run --no-cache --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
 
   `--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。
   依存に作用するpyproject設定、`uv.lock`、選択したPythonの実行ファイルパス、OS・アーキテクチャの組み合わせが未準備の場合に実行する。

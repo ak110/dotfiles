@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)と[branch・CI所有権・公開・終了の設計記録](design-release.md)から参照する主題別の記録である。
 
-## developとmasterのbranch・リリース設計
-
-### CIの実処理所有権
+## CIの実処理所有権
 
 共通CIは`push`と`master`向け`pull_request`の全イベントでjobを開始し、job表示名とmatrixを評価する。
 共通jobの所有・非所有の切り替えはstep-level条件で行い、job表示名をどちらの経路でも評価する。

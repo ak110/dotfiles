@@ -55,7 +55,7 @@ Claude Codeでは、hookがエージェントへ操作や是正を求める通�
 2026年11月10日のユーザーの依頼と確認回答（選択肢「是正する通知を全文」）により、エージェントが気付きにくい改善案をユーザーが思いつけるようにするためである。
 現行の規定は`agent-basics/skills/writing-standards/references/claude-hooks-output.md`「出力フィールドの使い分け」にある。
 
-現行の規定は[design-hosts.md](design-hosts-rules-manifests.md#claude-codeとcodexの規範配置)の「Claude CodeとCodexの規範配置」にある。
+現行の規定は[常時規範とplugin manifestの設計記録](design-hosts-rules-manifests.md)にある。
 
 共通のルール・スキルは`agent-toolkit/`の共有原本へ置き、Codex固有の公開能力との差分は2つのファイルへ集約する。
 Codexの全主体へ適用する差分は`agent-toolkit/share/rules/rules-common.codex.md`、Codexのメインだけへ適用する差分は`agent-toolkit/share/rules/rules-main.codex.md`へ置く。

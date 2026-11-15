@@ -222,7 +222,7 @@ def test_run_records_unfinished_steps_periodically_without_terminal(monkeypatch,
 
     def wait_until_noticed(*args, **kwargs):
         waits.append(kwargs.get("timeout"))
-        # 未完了の工程の記録を観測した後（観測できない場合も待機の4回目以降）に、止まった工程を終わらせる。
+        # 未完了の工程の記録を観測した後（観測できない場合も待機の4回目以降）に、停止中の工程の処理を再開する。
         if capsys.readouterr().out.count("未完了の工程: 止まる工程") or len(waits) > 3:
             release.set()
         return real_wait(*args, **kwargs)

@@ -12,7 +12,6 @@ import subprocess
 import sys
 import types
 import typing
-from typing import Self
 
 import psutil
 import pytest
@@ -95,7 +94,7 @@ def test_github_transport_recovery_preserves_repository_and_budget(monkeypatch: 
         )
 
     monkeypatch.setattr(subprocess, "Popen", popen)
-    monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda child: reclaimed.append(child.pid))
+    monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda child, **_kwargs: reclaimed.append(child.pid))
     monkeypatch.setattr(sys, "stdin", types.SimpleNamespace(isatty=lambda: False))
     ticks = iter([10.0, 12.0])
     monkeypatch.setattr(update_dotfiles_process.time, "monotonic", lambda: next(ticks, 12.0))
@@ -187,11 +186,11 @@ def test_invalid_git_timeout_returns_2_without_starting_process(
     assert "0以上の整数" in error
 
 
-def test_git_timeout_kills_descendants_and_limits_output_recovery(
+def test_git_timeout_reclaims_owned_tree_and_limits_output_recovery(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """上限超過時に子孫と親を終了し、回収上限を付けて未完了を報告する。"""
+    """上限超過時に共通回収へ所有情報を渡し、回収上限を付けて未完了を報告する。"""
     calls: list[list[str]] = []
     communicate_timeouts: list[int | None] = []
     process = _TimeoutPopen(
@@ -203,36 +202,22 @@ def test_git_timeout_kills_descendants_and_limits_output_recovery(
     )
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
 
-    killed: list[int] = []
+    descendants = [types.SimpleNamespace(pid=101), types.SimpleNamespace(pid=102)]
+    tree = update_dotfiles_process.process_tree
+    monkeypatch.setattr(tree, "collect_descendants", lambda *_args, **_kwargs: descendants)
+    reclaimed: list[int] = []
 
-    class Process:
-        def __init__(self, pid: int, children: list[Self] | None = None) -> None:
-            self.pid = pid
-            self._children = children or []
+    def reclaim(child, *, known, pins, **_kwargs):
+        assert child is process and known == descendants and pins is not None
+        reclaimed.append(child.pid)
+        child.kill()
 
-        def children(self, *, recursive: bool) -> list[Self]:
-            assert recursive
-            return self._children
-
-        def kill(self) -> None:
-            killed.append(self.pid)
-
-    descendants = [Process(101), Process(102)]
-    parent = Process(process.pid, descendants)
-    monkeypatch.setattr(psutil, "Process", lambda pid: parent if pid == process.pid else pytest.fail(str(pid)))
-    waited: list[tuple[list[int], int]] = []
-
-    def wait_procs(processes: list[Process], timeout: int) -> tuple[list[Process], list[Process]]:
-        waited.append(([item.pid for item in processes], timeout))
-        return processes, []
-
-    monkeypatch.setattr(psutil, "wait_procs", wait_procs)
+    monkeypatch.setattr(tree, "stop_owned_process", reclaim)
 
     assert update_dotfiles_process.run_git_pull(1, 4, timeout=7) == 1  # pylint: disable=protected-access
 
     assert communicate_timeouts == [7, 30]
-    assert killed == [101, 102, process.pid]
-    assert waited == [([101, 102, process.pid], 5)]
+    assert reclaimed == [process.pid]
     assert process.kill_calls == 1
     captured = capsys.readouterr()
     assert "partial output" in captured.out
@@ -257,15 +242,16 @@ def test_unreclaimed_git_child_stops_update_before_chezmoi(
         monkeypatch.setattr(update_dotfiles_git, "update_git_with_recovery", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
     monkeypatch.setattr(subprocess, "run", _fake_run({}, calls))
-    survivor = types.SimpleNamespace(pid=4242, kill=lambda: None, children=lambda *, recursive: [])
-    monkeypatch.setattr(psutil, "Process", lambda pid: survivor)
-    monkeypatch.setattr(psutil, "wait_procs", lambda processes, timeout: ([], [survivor]))
+    tree = update_dotfiles_process.process_tree
+    failure = tree.ReclaimError(["4242: owned child"], [], context="試験")
+    monkeypatch.setattr(tree, "collect_descendants", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(tree, "stop_owned_process", lambda *_args, **_kwargs: failure)
 
     assert update_dotfiles.main() == 1
 
     # 偽のPopenは起動したGit段を`chezmoi git`として記録する。chezmoiの再展開・適用の段は起動しない。
     assert not [call for call in calls if call[:2] != ["chezmoi", "git"]]
-    assert "回収できないため更新を中止" in capsys.readouterr().err
+    assert "回収または所有を確認できないため更新を中止" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("platform_name", ["posix", "nt"])
@@ -283,7 +269,7 @@ def test_git_timeout_does_not_wait_again_when_output_recovery_times_out(
         communicate_timeouts=communicate_timeouts,
     )
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
-    monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda _process: None)
+    monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda _process, **_kwargs: None)
     # os.name全体を変えるとpathlibの実装選択へ波及するため、対象モジュールだけを差し替える。
     monkeypatch.setattr(update_dotfiles_process, "os", type("Platform", (), {"name": platform_name}))
     monkeypatch.setattr(update_dotfiles_runtime, "child_env", lambda: {})
@@ -341,7 +327,10 @@ def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
         holder_pid = int(pid_path.read_text(encoding="utf-8"))
         monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
         monkeypatch.setattr(update_dotfiles_runtime, "GIT_OUTPUT_RECOVERY_TIMEOUT_SEC", 0.05)
-        assert update_dotfiles_process.run_git_pull(1, 4, timeout=1) == 1
+        with pytest.raises(update_dotfiles_process.GitReclaimError) as raised:
+            update_dotfiles_process.run_git_pull(1, 4, timeout=1)
+        assert raised.value.reclaim is not None and raised.value.reclaim.unresolved
+        assert psutil.pid_exists(holder_pid)
         assert process.stdout is not None and process.stdout.closed
         assert process.stderr is not None and process.stderr.closed
     assert holder_pid is not None and not psutil.pid_exists(holder_pid)
@@ -373,3 +362,42 @@ def test_git_subprocess_closes_both_pipes_when_one_close_fails(monkeypatch: pyte
         else:
             update_dotfiles_stashing._run_worktree_stash("save")
     assert process.stdout.closed and process.stderr.closed
+
+
+@pytest.mark.parametrize("retain", [False, True])
+def test_git_reclaim_after_root_exit_keeps_retry_ownership(
+    retain: bool, host_environ: typing.Callable[[], dict[str, str]]
+) -> None:
+    """Gitの起点終了を空集合成功にせず、保持した既知子孫は回収する。"""
+    source = (
+        "import subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
+        "print(child.pid,flush=True); sys.stdin.readline()"
+    )
+    tree = update_dotfiles_process.process_tree
+    with contextlib.ExitStack() as cleanup:
+        process = cleanup.enter_context(
+            subprocess.Popen(
+                [sys.executable, "-c", source],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                encoding="utf-8",
+                env=host_environ(),
+            )
+        )
+        assert process.stdin is not None and process.stdout is not None
+        child = psutil.Process(int(process.stdout.readline()))
+        cleanup.callback(tree.stop_tree, None, known=[child], timeout=1)
+        with tree.ProcessIdentityPins() as pins:
+            known = tree.collect_descendants(process.pid, pins=pins)
+            process.stdin.write("exit\n")
+            process.stdin.flush()
+            assert process.wait(timeout=10) == 0
+            if retain:
+                update_dotfiles_process.kill_process_tree(process, known=known, pins=pins)
+                assert not tree.wait_until_released(known, timeout=1)
+            else:
+                with pytest.raises(update_dotfiles_process.GitReclaimError) as raised:
+                    update_dotfiles_process.kill_process_tree(process)
+                assert raised.value.reclaim is not None
+                assert raised.value.reclaim.unresolved
+                assert child.is_running()

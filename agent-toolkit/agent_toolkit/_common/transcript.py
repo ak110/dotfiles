@@ -15,7 +15,7 @@ from agent_toolkit._common.json_lines import split_joined_line, split_lines
 
 _MAX_ENTRIES = 3
 SEND_TO_USER_TOOL_SUFFIX = "__send_to_user"
-"""agent-toolkitのFunction hooks moduleが登録する`send_to_user`ツールの名前の末尾（`mcp__<plugin>__send_to_user`）。"""
+"""agent-toolkitのMCPが登録する`send_to_user`ツールの名前の末尾。ホストごとの前置名は判定に使わない。"""
 
 
 def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iterator[dict]:

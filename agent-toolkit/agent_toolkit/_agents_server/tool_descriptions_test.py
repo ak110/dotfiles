@@ -102,6 +102,10 @@ async def test_tool_list_publishes_title_and_side_effect_annotations() -> None:
         "stop": (None, True),
         "list": (True, None),
         "show": (True, None),
+        "permissions": (None, True),
+        "send_to_user": (None, False),
+        "compact_conversation": (None, False),
+        "apply_runtime_changes": (None, False),
     }
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
 

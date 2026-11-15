@@ -47,6 +47,7 @@ _SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "pretooluse",
         "posttooluse",
+        "precompact",
         "stop",
         "improvement_status_advisor",
         "subagent_stop_advisor",

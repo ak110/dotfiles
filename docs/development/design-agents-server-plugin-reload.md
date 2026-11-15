@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、Claude委譲先のプラグイン再読込の記録である。
 
-## backend構成と起動
-
-### Claude委譲先のプラグイン再読込
+## Claude委譲先のプラグイン再読込
 
 `_agents_server/claude_plugins.py`は有効なプラグインの実体と、子Claudeが読む設定・導入一覧のファイル変更を監視する。
 外部一覧の外形と選別に使うscope・設定読込元・enabled・projectPathを確認し、利用対象を決めてからidと実体パスを検証する。

@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、plugin導入と実体の回収の記録である。
 
-## Claude CodeとCodexの規範配置
-
-### Codexのlocal plugin導入
+## Codexのlocal plugin導入
 
 dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLIを準備した後に`agent-toolkit-codex/`を生成し、マーケットプレイス登録とplugin導入をCodex公式CLIへ委譲する。
 `agent-toolkit-codex/`の生成に失敗した場合は、post-applyのstep失敗として永続logへ記録し、全体を非0で終了する。
@@ -53,7 +51,7 @@ Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plug
 そのため、`agent-toolkit-codex/`は全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
 検証条件と再検証手順は「[docs/development/design-hosts-plugin-lifecycle.md：Claude CodeとCodexの規範配置：2026年9月13日](audit-records-codex.md#docsdevelopmentdesign-hosts-plugin-lifecyclemdclaude-codeとcodexの規範配置2026年9月13日)」を参照する。
 
-### plugin実体の回収と稼働中の参照
+## plugin実体の回収と稼働中の参照
 
 更新・回収・修復でplugin実体を削除または置換する処理は、消費側が保持する絶対パスを有効なまま保つ。
 稼働中のhook・skill・MCPは起動時に解決したplugin rootの絶対パスを使い続けるため、参照中に旧版を削除すると実行中の処理が`[Errno 2]`などで失敗する。

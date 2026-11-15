@@ -335,6 +335,8 @@ QCDの定義、長い工程の進捗と目標の比較、対象・操作・設�
 確認は`agent-toolkit:user-confirmation-and-report/references/user-confirmation-and-report-decisions.md`「確認要否の判定」に従う。
 
 先送りするのは、影響調査や設計選定をそのセッションで実施できない事象、合意を同じセッションで得られない事象、時間経過や外部公開を待つ残工程、別リポジトリの新しい計画が必要な事象、是正先のリポジトリがこのホストで編集可でない場合に限る。
+process-wiでは、処理を終えたリポジトリでも律速でなく資源に余力があれば、巡回中に見つかった不良・改善を同じ巡回で処理する。
+その対象の今回分が済んだことだけを根拠とする判断は、別リポジトリの新しい計画が必要という先送り理由から除く。
 編集可でないリポジトリは、設定の扱いに従ってAWIを投入するか、必要な変更を報告する。
 スキルが定める次回送りの経路も、本節の先送り条件の内側で使う。
 進行を妨げる欠陥はその場で直す。
@@ -408,7 +410,7 @@ Claude Code・Codexとも`agents_server`を標準とし、組み込み委譲機�
 発話は常体とする。
 ハーネスやhookの英文を言語指定として引き継がない。
 内部連絡・委譲の返却と、言語の是正の扱いは`agent-toolkit/share/agent-conduct-details.md`「使用言語」に従う。
-成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比フレーミングと限定の書き方は、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
+成果物、コメント、コミットメッセージ、委譲プロンプトを含むすべての文章の対比・限定、防御的な説明、自明な補足の扱いは、`agent-basics:writing-standards/references/writing.md`「日本語の書き方」に従う。
 </atk-auto>
 
 <atk-auto source="agent-toolkit" kind="rules" path="agent-toolkit/share/rules/common/02-agent-operations.md">

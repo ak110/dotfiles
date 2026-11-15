@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、ルールの配置と配送の記録である。
 
-## Claude CodeとCodexの規範配置
-
-### ルールの配置と配送
+## ルールの配置と配送
 
 `agent-toolkit/share/rules/common/`配下にはメインエージェント、サブエージェントおよび委譲先の全てへ適用する条文だけを置く。
 メインエージェントだけに適用する条文は`agent-toolkit/share/rules/rules-main.md`へ置き、Claude Code固有分は`agent-toolkit/share/rules/rules-main.claude-code.md`へ置く。

@@ -130,7 +130,9 @@ def _owned_native_pids(directory: pathlib.Path, executable: pathlib.Path) -> Gen
                     process.wait(timeout=10)
 
 
-def _project(tmp_path: pathlib.Path, native: pathlib.Path, stage: str, mode: str) -> tuple[pathlib.Path, dict[str, str]]:
+def _project(
+    tmp_path: pathlib.Path, native: pathlib.Path, stage: str, mode: str, wait_ms: str = "1000"
+) -> tuple[pathlib.Path, dict[str, str]]:
     root = tmp_path / "project with spaces"
     library = root / "libexec"
     library.mkdir(parents=True)
@@ -142,7 +144,7 @@ def _project(tmp_path: pathlib.Path, native: pathlib.Path, stage: str, mode: str
     bootstrap = (_ROOT / "libexec/update_bootstrap.ps1").read_text(encoding="utf-8-sig")
     # 導入・自己更新の外部作用だけをnative代用品へ向ける。時間切れは実WaitForExitで発生させる。
     bootstrap = bootstrap.replace("'powershell.exe'", "'" + str(stub).replace("'", "''") + "'")
-    bootstrap = bootstrap.replace("$Seconds * 1000", "1000")
+    bootstrap = bootstrap.replace("$Seconds * 1000", wait_ms)
     # 使用中Pythonの探索はこの試験の対象外。回収のCimCmdlets\Get-CimInstanceは実OSへ残す。
     bootstrap = bootstrap.replace(
         "function Invoke-UpdateStage {",
@@ -236,7 +238,8 @@ def test_windows_bootstrap_native_failure_boundaries(
     mode: str,
 ) -> None:
     """実PS入口の4段で、独立したnative失敗/時間切れと回復・続行を観測する。"""
-    root, environment = _project(tmp_path, native_program, stage, mode)
+    # 終了コードを返す正常な起動には、CLR起動を待てる上限を与える。時間切れは1秒で起こす。
+    root, environment = _project(tmp_path, native_program, stage, mode, "1000" if mode == "timeout" else "10000")
     driver = tmp_path / "driver.ps1"
     script = root / "libexec/update_bootstrap.ps1"
     driver.write_text(

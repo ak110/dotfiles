@@ -29,6 +29,9 @@
 - マーケットプレイスの登録形式について、初期セットアップ（bootstrap）時には`install-claude.sh`や`install-claude.ps1`がGitHub参照型として登録する。
   その後の`chezmoi apply`の事後処理によってローカルディレクトリ参照型（絶対パス参照）へと維持管理される（GitHub型の設定が残っている場合も自動で移行される）。
   ローカル環境での編集内容は、`chezmoi apply`（または`update-dotfiles`）を実行した上でClaude Codeを再起動するか、`/reload-plugins`コマンドを実行することで即座に反映される（この際、バージョン番号の更新は不要である）。
+  対話型メインでは、配布後に`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`の`targets`へ`plugins`、`agents_server`、`pyfltr`から必要な対象を指定して反映を予約できる。
+  現在のターンを終え、プラグイン再読込・MCP再接続の結果を確認する。
+  再起動や反映の受付を完了と扱わず、未確認の操作を自動で繰り返さない。
 - Codex向けの生成ファイルである`agent-toolkit/.codex-plugin/plugin.json`および`.agents/plugins/marketplace.json`は、prek経由で実行されるpyfltrの`sync-generated-files`によって毎回自動で再生成される。
   また、Codex用のフック定義は、`pytools/_internal/codex_plugin_manifests.py`がイベント名、マッチャー、入力契約を検証した許可リストに基づいて生成する（手動実行は`scripts/sync_codex_plugin_manifests.py`で行う）。
   `chezmoi apply`の事後処理がCodexのマーケットプレイスを登録し、プラグインの導入と更新を完了させる。

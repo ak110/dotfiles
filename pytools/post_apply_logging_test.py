@@ -130,7 +130,7 @@ def test_persistent_log_uses_size_limited_rotation(monkeypatch: pytest.MonkeyPat
             logging.getLogger("rotation-test").warning("診断%02d: %s", number, "x" * 120)
 
     path = post_apply._UPDATE_LOG_PATH  # noqa: SLF001
-    generations = sorted(path.parent.glob(f"{path.name}*"))
+    generations = sorted([path, *path.parent.glob(f"{path.name}.[0-9]")])
     assert {item.name for item in generations} == {path.name, f"{path.name}.1", f"{path.name}.2"}
     assert all(0 < item.stat().st_size <= 512 for item in generations)
     assert "診断29:" in path.read_text(encoding="utf-8")

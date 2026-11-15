@@ -123,8 +123,16 @@ def evaluate(payload_text: str) -> tuple[str, str]:
                 needs_response = False
         elif entry.get("type") == "assistant":
             message = entry.get("message")
-            if entry.get("isApiErrorMessage") or isinstance(message, dict) and message.get("model") == "<synthetic>":
+            if entry.get("isApiErrorMessage"):
                 continue
+            if isinstance(message, dict) and message.get("model") == "<synthetic>":
+                # Code Modeは実ツール呼出しもsyntheticとして記録する。APIエラーの代替本文だけを除く。
+                content = message.get("content")
+                message = (
+                    {"content": [block for block in content if isinstance(block, dict) and block.get("type") == "tool_use"]}
+                    if isinstance(content, list)
+                    else {}
+                )
             text = transcript.visible_assistant_text(message)
             last_ellipsis = "…" in text
             if any(not char.isspace() and char != "…" for char in text):

@@ -23,7 +23,7 @@ _CODEX_PLUGIN_VALIDATOR = _CODEX_HOME / "skills/.system/plugin-creator/scripts/v
 _CODEX_PLUGIN_VALIDATOR_AVAILABLE = shutil.which("codex") is not None and _CODEX_PLUGIN_VALIDATOR.is_file()
 
 _CODEX_HOOK_PREFIX = (
-    'uv run --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py '
+    'uv run --no-cache --no-config --no-project --python 3.15 python "${PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py '
 )
 
 
@@ -111,7 +111,7 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": "uv run --no-config --no-project --python 3.15 python "
+                                    "command": "uv run --no-cache --no-config --no-project --python 3.15 python "
                                     '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py" agent_toolkit/hook.py permissionrequest'
                                     " || exit 1",
                                 }

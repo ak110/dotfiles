@@ -24,12 +24,16 @@ Bashと種別を判別できない通知には`<task-id>`と`<output-file>`を�
 除外せず案内する。Codexのtranscriptは`queue-operation`を持たないため、Codexでは発火しない。
 """
 
+import json
+import os
 import re
 
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
+lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
+lazy from agent_toolkit._common import delegated_session
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
 lazy from agent_toolkit._hooks import transcript_scan as _transcript_scan
@@ -127,9 +131,13 @@ def evaluate(payload_text: str, *, allow_delivery: bool = False) -> tuple[str, s
 
     notified = _notified_keys(read_state(session_id))
     pending: dict[str, str] = {}
+    restarted_waits = _restarted_wait_ids(session_id, payload)
     entries = _transcript_scan.read_transcript_entries_cached(transcript_path)
     for content in _background_tasks.queued_task_notification_contents(entries):
         for notification in _notification_elements(content):
+            if _first(_TASK_ID_RE, notification) in restarted_waits:
+                # 停止したwaitの通知でgoalをpauseせず、再開promptによる結果の再回収へ進める。
+                continue
             key = _notification_key(notification)
             if key not in pending and (allow_delivery or key not in notified):
                 pending[key] = notification
@@ -154,3 +162,27 @@ def evaluate(payload_text: str, *, allow_delivery: bool = False) -> tuple[str, s
         body = "\n".join([_NOTICE_BODY, *(_describe(notification) for notification in file_notifications)])
         notices.append(_notice(body, fix=_NOTICE_FIX, removable_cause=True, summary=body))
     return "notify", "\n".join(notices)
+
+
+def _restarted_wait_ids(session_id: str, payload: dict) -> set[str]:
+    """process-loopの再起動で停止し、自動続行を消費したwaitだけを区別する。"""
+    if (
+        os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1"
+        or payload.get("agent_id") is not None
+        or delegated_session.is_delegated(os.environ)
+    ):
+        return set()
+    paths = function_hook_paths(session_id)
+    if paths is None:
+        return set()
+    try:
+        record = json.loads(paths[1].with_name(f"restart-{session_id}.txt").read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return set()
+    if not isinstance(record, dict) or record.get("phase") != "resumed" or not isinstance(record.get("waits"), list):
+        return set()
+    return {
+        item["id"]
+        for item in record["waits"]
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("command"), str)
+    }

@@ -71,16 +71,22 @@ def test_instruct_rejection_reports_next_action(
 
 
 def test_instructions_are_consumed_once(monkeypatch, tmp_path) -> None:
-    """消費した追加指示は次の取得で残らない。"""
+    """起動失敗時は指示を保持し、成功した次の起動だけへ配送する。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     process_loop_log.append_instruction("1件目")
     process_loop_log.append_instruction("2件目")
 
-    consumed = process_loop_log.consume_instructions()
-
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"repositories": []}', encoding="utf-8")
+    with pytest.raises(OSError), process_loop_log.launch_instructions(manifest):
+        raise OSError("CLIを起動できない")
+    assert process_loop_log.read_instructions() == ["1件目", "2件目"]
+    with process_loop_log.launch_instructions(manifest):
+        consumed = json.loads(manifest.read_text(encoding="utf-8"))["instruction"]
     assert consumed.split(process_loop_log.INSTRUCTION_SEPARATOR) == ["1件目", "2件目"]
-    assert process_loop_log.read_instructions() == []
-    assert process_loop_log.consume_instructions() == ""
+    assert not process_loop_log.read_instructions()
+    with process_loop_log.launch_instructions(manifest):
+        assert json.loads(manifest.read_text(encoding="utf-8"))["instruction"] == ""
 
 
 def test_discard_instructions_reports_count(monkeypatch, tmp_path) -> None:
@@ -114,6 +120,8 @@ def test_instruction_is_consumed_only_when_a_session_launches(
         return True
 
     def execute(_args: Any, _cwd: pathlib.Path, prompt: str, _env: dict[str, str], **_kwargs: Any) -> bool:
+        with process_loop_log.launch_instructions(_args.instruction_manifest):
+            pass
         data = json.loads(_manifest(prompt, _env).read_text(encoding="utf-8"))
         instructions.append(data["instruction"])
         (notes / "2026/10/arrived.md").unlink()

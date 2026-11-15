@@ -92,7 +92,7 @@ def test_launcher_uses_same_environment_in_directory_with_virtualenv(
     selected = plugin_environment.project_environment(root, environment)
     venv.EnvBuilder(with_pip=False, symlinks=False).create(selected)
     plugin_environment.publish_prepared_environment(root, environment)
-    command = [uv, "run", "--no-config", "--no-project", "--python", "3.15", "python"]
+    command = [uv, "run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python"]
     chosen = subprocess.run(
         [*command, "-c", "import sys; print(sys.executable)"],
         cwd=caller,

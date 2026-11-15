@@ -9,7 +9,7 @@ from verification_targets import consumer_tests, uncovered_tests
 
 
 def test_direct_and_named_consumers(tmp_path: pathlib.Path) -> None:
-    """別名の直接importと命名候補を保持し、中間importは手動探索へ委ねる。"""
+    """別名の直接importと命名候補を保持し、中間importと名前の部分一致は候補にしない。"""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     for name, body in {
         "source.py": "",
@@ -17,10 +17,18 @@ def test_direct_and_named_consumers(tmp_path: pathlib.Path) -> None:
         "other_test.py": "import source as alias",
         "indirect_test.py": "from middle import alias",
         "source_interval_test.py": "",
+        "mention_test.py": "resource = 'source'",
+        "pkg/mod.py": "",
+        "pkg_from_test.py": "from root.pkg import (\n    other,\n    mod,\n)",
+        "pkg_dotted_test.py": "monkeypatch.setattr('root.pkg.mod.value', 1)",
+        "pkg_other_test.py": "from root.other import mod",
     }.items():
+        (tmp_path / name).parent.mkdir(exist_ok=True)
         (tmp_path / name).write_text(body, encoding="utf-8")
     subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    # 名前を含むだけの試験と、親パッケージの異なる同名モジュールの参照は候補にしない。
     assert consumer_tests(tmp_path, ["source.py"]) == ["other_test.py", "source_interval_test.py"]
+    assert consumer_tests(tmp_path, ["pkg/mod.py"]) == ["pkg_dotted_test.py", "pkg_from_test.py"]
     assert consumer_tests(tmp_path, [str(tmp_path / "source.py")]) == consumer_tests(tmp_path, ["source.py"])
     assert uncovered_tests(tmp_path, ["other_test.py"], ["source.py"]) == ["other_test.py"]
     assert uncovered_tests(tmp_path, ["other_test.py"], [str(tmp_path)]) == []

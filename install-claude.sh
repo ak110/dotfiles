@@ -26,7 +26,7 @@ CODEX_PLUGIN_ID="agent-toolkit@ak110-dotfiles"
 BASICS_PLUGIN_ID="agent-basics@ak110-dotfiles"
 INSTALL_TOOLKIT=1
 if [ "${1:-}" = "--basics-only" ]; then INSTALL_TOOLKIT=0; fi
-CODEX_JSON_PYTHON=(uv run --no-config --no-project --python 3.15 python)
+CODEX_JSON_PYTHON=(uv run --no-cache --no-config --no-project --python 3.15 python)
 CLAUDE_INSTALLED_PLUGINS="$HOME/.claude/plugins/installed_plugins.json"
 CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
 CODEX_PLUGIN_CACHE_ROOT="$CODEX_HOME_DIR/plugins/cache/ak110-dotfiles/agent-toolkit"
@@ -108,7 +108,7 @@ _require_command() {
 
 # 失敗すると導入を続けられない Claude CLI の更新を実行する。
 # 成功時は標準出力を抑える。CLI が失敗診断を標準出力へ書く場合があるため、失敗時は捕捉した標準出力も表示する。
-# 標準エラーは捕捉せずそのまま流し、成功時の警告表示を従来どおり保つ。
+# 標準エラーは捕捉せずそのまま出力し、成功時の警告表示を従来どおり保つ。
 _run_required_claude() {
     local output=""
     local status=0
@@ -365,7 +365,7 @@ _install_codex_basics() {
 
 _claude_plugin_scripts() {
     [ -f "$CLAUDE_INSTALLED_PLUGINS" ] || return 0
-    uv run --no-config --no-project --python 3.15 python - "$CLAUDE_INSTALLED_PLUGINS" "$CODEX_PLUGIN_ID" <<'PY'
+    uv run --no-cache --no-config --no-project --python 3.15 python - "$CLAUDE_INSTALLED_PLUGINS" "$CODEX_PLUGIN_ID" <<'PY'
 import json
 import pathlib
 import sys
@@ -394,12 +394,12 @@ _warm_agents_server_path() {
         return 0
     fi
     project_root="$(dirname "$(dirname "$script_path")")"
-    if ! uv run --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" --prepare "$script_path" </dev/null >/dev/null; then
+    if ! uv run --no-cache --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" --prepare "$script_path" </dev/null >/dev/null; then
         echo "agents_serverのuv環境ウォームアップに失敗しました: $script_path" >&2
         echo "次の操作: install-claude.shを再実行してください。" >&2
         return 0
     fi
-    if ! uv run --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" "$script_path" --check-dependencies </dev/null >/dev/null; then
+    if ! uv run --no-cache --no-config --no-project --python 3.15 python "$project_root/scripts/launch.py" "$script_path" --check-dependencies </dev/null >/dev/null; then
         echo "agents_serverの依存検査に失敗しました: $script_path" >&2
         echo "次の操作: install-claude.shを再実行してください。" >&2
     fi
@@ -442,7 +442,7 @@ _warm_agents_server() {
 
 _legacy_user_codex_mcp_status() {
     local config_path="$HOME/.claude.json"
-    uv run --no-config --no-project --python 3.15 python - "$config_path" <<'PY'
+    uv run --no-cache --no-config --no-project --python 3.15 python - "$config_path" <<'PY'
 import json
 import pathlib
 import sys

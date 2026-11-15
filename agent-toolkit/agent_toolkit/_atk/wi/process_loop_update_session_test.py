@@ -67,8 +67,9 @@ class TestProcessLoopUpdateAndRestart:
         assert execv_calls[0][0] == "/resolved/uv"
         assert pathlib.Path(execv_calls[0][1][0]).name == "uv"
         expected_script = pathlib.Path(sys.argv[0]).resolve()
-        assert execv_calls[0][1][1:9] == [
+        assert execv_calls[0][1][1:10] == [
             "run",
+            "--no-cache",
             "--no-config",
             "--no-project",
             "--python",
@@ -79,7 +80,6 @@ class TestProcessLoopUpdateAndRestart:
         ]
         assert _command_was_called(subprocess_calls, "update-dotfiles")
         captured = capsys.readouterr()
-        assert "process-loopを再起動します。" in captured.out
         # テスト実行環境（非TTY）ではコンソールタイトル制御文字を一切出力しないこと。
         assert "\033]2;" not in captured.out
         assert "\033]2;" not in captured.err

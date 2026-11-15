@@ -2,9 +2,7 @@
 
 [設計記録の索引](design.md)から参照する、起動候補と観測identityの記録である。
 
-## backend構成と起動
-
-### 起動候補と観測identity
+## 起動候補と観測identity
 
 Codexの接続先は工程別モデル候補と別に扱う。
 役割別の使用順（`codex_orchestrator_connections`・`codex_worker_connections`）と種別ごとのprovider IDが、主接続先と後続の順を持つ。

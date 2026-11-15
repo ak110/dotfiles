@@ -318,13 +318,13 @@ function Initialize-AgentsServer {
             continue
         }
         $projectRoot = Split-Path (Split-Path $scriptPath -Parent) -Parent
-        $null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') --prepare $scriptPath > $null
+        $null | & uv run --no-cache --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') --prepare $scriptPath > $null
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "agents_serverのuv環境ウォームアップに失敗しました: $scriptPath"
             Write-Warning '次の操作: install-claude.ps1を再実行してください。'
             continue
         }
-        $null | & uv run --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') $scriptPath --check-dependencies > $null
+        $null | & uv run --no-cache --no-config --no-project --python 3.15 python (Join-Path $projectRoot 'scripts/launch.py') $scriptPath --check-dependencies > $null
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "agents_serverの依存検査に失敗しました: $scriptPath"
             Write-Warning '次の操作: install-claude.ps1を再実行してください。'

@@ -233,8 +233,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
-        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象をprocess-wiの実行ごとに1つの統括会話へ渡す。\n利用場面: 登録した全対象を継続的に処理するとき、または--onceで1回だけ処理するとき。\n対象と出力: 起動cwdでorchestrateのprocess-wi all-reposを起動する。少数候補の対象は統括自身が処理し、多数候補だけを対象cwdの担当へ委譲する。所有・進捗・worktree準備・レーン回収は対象別に管理する。--onceは1集合を処理して終了し、対象0件でも待機しない。未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。対象0件では通常は変更待機し、--onceでは終了する。--resume SESSION_IDは統括会話を再開し、--auto-resumeとは同時指定できない。--worktreeは対象別に適用し、対象がdotfilesの場合は無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは現在のセッション終了後に停止し、abort-cancelで取り消す。停止未確認・未統合・dirtyの資源は保持する。",
-        "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
+        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象を、対象別の独立した会話で継続処理する。\n利用場面: 登録した全対象を継続処理するとき、または--onceで開始時集合を各1回処理するとき。\n対象と出力: 常駐が同期・開始判定を共有し、対象workerが所有・準備・process-wi all-repos・結果検収・回収を行う。別対象が継続中でも完了対象の新着を開始できる。未完了は元会話と準備済み成果を保持する。--onceは対象0件でも待機せず、未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。resume [ID|auto]で次回の再開を予約し、値省略はホストCLIの会話選択画面を使う。予約自体は起動せず、CLIの実起動で1回消費する。--worktreeは対象別に適用し、dotfilesは無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは新しい対象の起動を止め、稼働中の全実行が終了してから常駐を止める。abort-cancelで解除する。resume-cancelで未消費の再開予約を取り消す。停止未確認・未統合・dirtyの資源は保持する。",
+        "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop resume auto\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",
@@ -248,8 +248,18 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop status": {
         "summary": "process-loopへの中断要求の有無を表示する",
-        "description": "process-loopへの中断要求の有無を表示する。\n\n目的: 中断要求が設定されているかを表示する。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "process-loopへの中断要求の有無を表示する。\n\n目的: 中断要求と再開予約を表示する。--check-result PATH指定時は起動manifestを現キュー・レーンと読み取り専用で比較しJSONを返す。status=readyはこの前処理の通過であり全体完了ではない。incompleteは残件または比較失敗を示す。--wi FILENAMEは直接処置・追加分を比較母集団へ加える。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk wi process-loop status",
+    },
+    "atk wi process-loop resume": {
+        "summary": "次回の会話再開を予約する",
+        "description": "次回の会話再開を予約する。\n\n目的: ID指定、autoによる未完了所有記録、または引数省略によるCLI本来のpickerを次の起動へ予約する。\n利用場面: 現在の処理を終えてから会話を再開するとき。\n対象と出力: 同じOSアカウントの状態へ1件保存し、後から受理した予約で置き換える。予約時にCLIは起動しない。\n前提: 停止中も設定でき、通常のprocess-loop起動後に使う。起動準備の失敗やabortでは保持し、実起動で1回消費する。\n復元・後始末: 未消費分はresume-cancelで取り消せる。",
+        "epilog": "実行例:\n\n  atk wi process-loop resume SESSION_ID\n  atk wi process-loop resume auto\n  atk wi process-loop resume",
+    },
+    "atk wi process-loop resume-cancel": {
+        "summary": "未消費の再開予約を取り消す",
+        "description": "未消費の再開予約を取り消す。\n\n目的: 次回の再開指定を解除する。\n利用場面: 予約を取り消すとき。\n対象と出力: 同じOSアカウントの未消費予約だけを削除し、結果を表示する。\n前提: 既に起動したCLIは停止しない。\n復元・後始末: 必要ならresumeで予約し直す。",
+        "epilog": "実行例:\n\n  atk wi process-loop resume-cancel",
     },
     "atk wi process-loop instruct": {
         "summary": "次に起動する1セッションへ渡す追加指示を保持する",
@@ -410,7 +420,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
-        "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後にClaude CodeまたはCodexの現在のセッションを自律終了するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。Function hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
+        "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後に現在のセッションを自律終了するとき、または未完了成果を保存して本人IDの再開を予約した後に再起動するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。本人IDの保存済み再開予約がある場合は、未達goalの評価を待たず一致した単一PIDへ終了要求を送る。予約は消費せず、完了とも記録しない。それ以外のFunction hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
     },
     "atk lane": {
@@ -531,6 +541,8 @@ HELP: dict[str, dict[str, str]] = {
 HELP["atk agents"]["description"] += (
     "\n操作の分担: 開始はMCPサーバーagents_serverのstart、追送はsend_message、実行中turnの中断はkill、"
     "終了済みsessionの破棄はstopを呼び出す。引数は各MCPツールの公開説明で確認する。"
+    "操作権限の要求・取消はpermissions、ユーザー画面への本文表示はsend_to_user、"
+    "会話圧縮の予約はcompact_conversation、同一会話への変更反映予約はapply_runtime_changesを使う。"
     "これらはCLIから実行できない。CLIはwaitで待機・回収、notifyで委譲元への通知、"
     "listで一覧、showで詳細、logsで記録の表示を行う。"
 )

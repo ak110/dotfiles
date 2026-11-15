@@ -166,6 +166,8 @@ def _build_options(
     selected_environment = connection_settings.connection_environment(child_environment.inherited(), connection)
     env.update({key: value for key, value in selected_environment.items() if key not in os.environ})
     env.update(connection_settings.connection_overrides(connection))
+    # Code Modeは対話ターミナル専用であり、親の通常起動設定をSDKの委譲へ適用しない。
+    env["CLAUDE_CODE_EXPERIMENTAL_CODE_MODE"] = "0"
     if lightweight:
         options.update(
             skills=[],

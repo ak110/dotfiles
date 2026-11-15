@@ -237,7 +237,7 @@ def test_process_loop_rejects_invalid_worktree_name(
 
 @pytest.mark.usefixtures("process_loop_commands_isolated")
 class TestProcessLoopWorktreeOption:
-    """対象worktree名と、常駐cwdで起動する統括への受渡しを確認する。"""
+    """対象worktree名と、準備した対象で起動するメインへの受渡しを確認する。"""
 
     @pytest.mark.parametrize(
         ("flags", "name"), [([], None), (["--worktree"], "process-loop"), (["--worktree=custom"], "custom")]
@@ -248,5 +248,5 @@ class TestProcessLoopWorktreeOption:
         local = _make_remote_repository(tmp_path, "target")
         sessions, _calls = _run_public_process_loop(monkeypatch, tmp_path, local, flags)
         assert sessions[0]["worktree"] == (local / ".claude/worktrees" / name if name else local)
-        assert sessions[0]["cwd"] == pathlib.Path.cwd()
+        assert sessions[0]["cwd"] == sessions[0]["worktree"]
         assert sessions[0]["target"]["target_repo"] == "github.com/example/repo"

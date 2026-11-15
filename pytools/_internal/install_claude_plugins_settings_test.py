@@ -14,33 +14,15 @@ from pytools._internal import claude_marketplace as _claude_marketplace
 from pytools._internal import common as _common
 from pytools._internal import install_claude_plugins as _install_claude_plugins
 
+from ._test_helpers import _fake_target_info as _fake_target_info  # pylint: disable=useless-import-alias
+from ._test_helpers import _fake_which_present as _fake_which_present  # pylint: disable=useless-import-alias
 from ._test_helpers import _FakeResult, assert_scope_user_install_calls, command_matches, make_fresh_install_fake
-
-
-@pytest.fixture(name="fake_which_present")
-def _fake_which_present(monkeypatch: pytest.MonkeyPatch) -> None:
-    """claude と uv の両方が存在する状態に見せかける。"""
-    monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
-
-
-@pytest.fixture(name="fake_target_info")
-def _fake_target_info(monkeypatch: pytest.MonkeyPatch) -> None:
-    """marketplace.json の読み込み結果を固定値に差し替える。
-
-    テストを実際の marketplace.json の内容から切り離すため。
-    対象プラグインは marketplace.json 由来で決まるため、
-    複数プラグインが正しくループで処理されることを検証できるよう 2 件返す。
-    """
-    monkeypatch.setattr(
-        _install_claude_plugins,
-        "_read_target_info",
-        lambda _root: ({"agent-toolkit": "0.2.0", "sample-plugin": "1.0.0"}, set()),
-    )
 
 
 @pytest.fixture(autouse=True)
 def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     """旧pluginの削除は専用テストへ分ける。"""
+    monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
 
 

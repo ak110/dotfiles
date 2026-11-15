@@ -2,6 +2,20 @@
 
 [監査記録の索引](audit-records.md)に収録対象と記録の書式を示す。
 
+## agent-basics/skills/writing-standards/references/claude-hooks-output-organization.md：組織向け設定：2026年11月15日
+
+- 観測日: 2026年11月12日までの既存調査と、2026年11月15日の公式資料の確認。
+- 観測した版数: 既存調査はClaude Code 2.1.322。
+  doorをdelivery/queueへ限定した後もsession.appendの省略通知が続いた記録である。
+  今回の公開資料確認は2.1.324以降のremote marketplaceの組織mod認識条件も含む。
+- 2.1.325の実機比較: 同じ一時modへ無条件の`session.receive`と`session.append`（`queue|delivery`）を登録した。
+  通常の背景Bashで2秒待機した完了通知は、appendで同じtask-idとcompleted状態を取得でき、receiveには入力がなかった。
+  そのため完了検知のappend登録を維持する。
+- 再検証手段: [公式のMod管理](https://code.claude.com/docs/en/plugins/mods/admin)の省略イベントと組織modの条件を確認する。
+  組織ガード下の新規会話でsession.compactとsession.appendの省略通知を確認する。
+  PreCompactの短文化と実タスク完了による待機除外を比べる。
+  組織modにした対照では通知と要約生成省略を別々に確認する。
+
 ## agent-basics/skills/writing-standards/references/claude-hooks-output.md：出力フィールドの使い分け：2026年9月4日
 
 2026年9月4日、Claude Code 2.1.260の実行ファイルと公式のHooksリファレンスで確認した。
@@ -19,7 +33,7 @@
   JSON各値と通常の標準出力は10,000文字の前後で保存先とプレビューを確認する。
   標準エラーの単一条件の成功から、配送量が無制限とは判断しない
 
-## agent-basics/skills/writing-standards/references/claude-hooks-output.md：組織向け設定：2026年10月20日
+## agent-basics/skills/writing-standards/references/claude-hooks-output-organization.md：組織向け設定：2026年10月20日
 
 - 観測日: 2026年10月20日の起草時調査記録にある、本体の読解と組織設定のユーザー表示の観測による。
   今回の文書追随では本体の読解を再実行していない

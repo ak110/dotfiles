@@ -15,7 +15,7 @@ import platformdirs
 import update_dotfiles_report
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
-from pytools._internal import sync_report
+from pytools._internal import sync_report, update_log
 
 SOURCE_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -101,10 +101,10 @@ def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
     global persistent_log_ready  # noqa: PLW0603
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        handler = logging.handlers.RotatingFileHandler(
+        handler = update_log.ProcessSafeRotatingFileHandler(
             LOG_PATH,
-            maxBytes=_LOG_MAX_BYTES,
-            backupCount=LOG_BACKUP_COUNT,
+            max_bytes=_LOG_MAX_BYTES,
+            backup_count=LOG_BACKUP_COUNT,
             encoding="utf-8",
         )
     except OSError as error:

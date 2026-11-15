@@ -240,7 +240,7 @@ class TestRunLauncherDeployment:
         assert setup_atk_serve.run().changed
 
         content = (prepared / ".local" / "bin" / "atk-serve").read_text(encoding="utf-8")
-        assert "run --no-config --no-project --python 3.15 python" in content
+        assert "run --no-cache --no-config --no-project --python 3.15 python" in content
         assert f'"{prepared}/agent-toolkit/scripts/launch.py" agent_toolkit/atk.py serve "$@"' in content
         assert "plugins/cache" not in content
         assert "--script" not in content

@@ -1,7 +1,5 @@
 # アーキテクチャ: ホスト別配布とOpenCode
 
-## agent-toolkitのホスト別配布
-
 `agent-toolkit/`はAgent Plugins、Claude Code、Codexが共有するプラグインルートである。
 `skills/`の原本を共有し、ホストごとのmanifest、hook、MCP設定と常時規範の配置を生成する。
 OpenCodeの対話ホストには、同じ原本からスキルと常時規範を導入する。
@@ -18,7 +16,7 @@ OpenCodeの対話ホストには、同じ原本からスキルと常時規範を
 
 `pytools/_internal/codex_plugin_manifests.py`がAgent PluginsとCodexの生成物の生成と差の確認を担い、生成器の起動スクリプト`scripts/sync_codex_plugin_manifests.py`とpost-applyがこれを使う。
 Codex向け`agents_server`はplugin rootを作業ディレクトリに固定する。
-起動定義は`uv run --no-config --no-project --python 3.15 python scripts/launch.py agent_toolkit/agents_server_mcp.py`として生成する。
+起動定義は`uv run --no-cache --no-config --no-project --python 3.15 python scripts/launch.py agent_toolkit/agents_server_mcp.py`として生成する。
 Claude Code向けの`${CLAUDE_PLUGIN_ROOT}`展開はCodexの起動契約へ流用しない。
 `scripts/sync_generated_files.py`は同生成器を統合実行し、生成物を冪等に更新する。
 
@@ -55,7 +53,7 @@ chezmoiの`post_apply`を使うdotfiles導入がある。
   `agent-toolkit/share/rules/common/`は`sync_agent_toolkit_rules.py`が配布先へ同期する
 - Codex hookはイベント名、matcher、入力契約を確認した許可表へ登録したものだけを派生manifestへ含める
 
-### OpenCodeの対話ホストへの導入
+## OpenCodeの対話ホストへの導入
 
 `pytools/_internal/install_opencode_toolkit.py`は、OpenCode CLI導入後のfullモードの後処理として動く。
 Linux・Windowsとも`XDG_CONFIG_HOME`、未設定なら`~/.config`配下の`opencode/`を使い、CLI不在時は案内してスキップする。

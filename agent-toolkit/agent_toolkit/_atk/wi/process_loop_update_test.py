@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk  # noqa: E402  # pylint: disable=wrong-import-position
+from agent_toolkit._atk.wi import process_loop_control as control
 from agent_toolkit._atk.wi import process_loop_ownership as ownership
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi import process_loop_update as _pl_update
@@ -18,7 +19,7 @@ from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._testing.process_loop_support import fake_run_with_remote_url, set_orchestrate_model
 from agent_toolkit._testing.process_loop_update_support import (
     _INTERNAL_DOTFILES_UPDATED_ARG,
-    _RESUME_ARGV_CASES,
+    _RESUME_VALUES,
     _command_was_called,
 )
 from agent_toolkit._testing.process_loop_update_support import (
@@ -40,6 +41,7 @@ class TestWaitLoopAutoRestart:
         wait_return: bool,
         has_upstream_diff: bool,
         changed_file_name: str | None = None,
+        resume_value: str | None = None,
         extra_argv: list[str] | None = None,
         dotfiles_root_missing: bool = False,
         create_canonical_entry: bool = False,
@@ -137,6 +139,11 @@ class TestWaitLoopAutoRestart:
 
         monkeypatch.setattr(os, "execv", fake_execv)
 
+        if resume_value is not None:
+            control.cmd_process_loop_resume(resume_value)
+            monkeypatch.setattr(
+                ownership, "unfinished_repository_ids", lambda targets: set(targets) if pending_count else set()
+            )
         argv = ["wi", "process-loop", "--no-alerts", *(extra_argv or [])]
         monkeypatch.setattr(sys, "argv", [str(pathlib.Path(atk.__file__)), *argv])
         with pytest.raises((SystemExit, KeyboardInterrupt)):
@@ -317,12 +324,12 @@ class TestWaitLoopAutoRestart:
         assert not _command_was_called(subprocess_calls, "update-dotfiles")
         assert not execv_calls
 
-    @pytest.mark.parametrize("resume_argv", _RESUME_ARGV_CASES)
+    @pytest.mark.parametrize("resume_value", _RESUME_VALUES)
     def test_wait_loop_restart_preserves_resume_option(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
-        resume_argv: list[str],
+        resume_value: str,
     ) -> None:
         """Claude起動前の待機中再起動ではresume指定を保持する。"""
         _, execv_calls = self._run_until_stop(
@@ -331,21 +338,21 @@ class TestWaitLoopAutoRestart:
             wait_return=False,
             has_upstream_diff=False,
             changed_file_name="agent_toolkit/runtime.py",
-            extra_argv=resume_argv,
+            resume_value=resume_value,
         )
 
         assert execv_calls
         _, restart_argv = execv_calls[0]
-        for arg in resume_argv:
-            assert arg in restart_argv
+        assert control.read_resume_request() is not None
+        assert not any(arg.startswith("--resume") for arg in restart_argv)
         assert "--target-repo" not in restart_argv
 
-    @pytest.mark.parametrize("resume_argv", _RESUME_ARGV_CASES)
+    @pytest.mark.parametrize("resume_value", _RESUME_VALUES)
     def test_session_restart_drops_resume_option_and_value(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
-        resume_argv: list[str],
+        resume_value: str,
     ) -> None:
         """Claudeセッション正常終了後の再起動ではresume指定と値を除去する。"""
         _, execv_calls = self._run_until_stop(
@@ -353,7 +360,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=False,
-            extra_argv=resume_argv,
+            resume_value=resume_value,
             pending_count=1,
         )
 
@@ -376,7 +383,7 @@ class TestWaitLoopAutoRestart:
             tmp_path,
             wait_return=False,
             has_upstream_diff=False,
-            extra_argv=["--resume", "session-id"],
+            resume_value="session-id",
             pending_count=1,
         )
 

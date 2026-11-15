@@ -27,8 +27,12 @@ writes_worktree: true
 
 <!-- parent-read-source: agent-toolkit:/skills/process-wi/references/all-repos.md#リポジトリ担当の起動と受領 -->
 
-`agent-toolkit:process-wi all-repos`の統括担当から単一対象または軽い対象群を受け取り、対象ごとのAWI処理（選定、レーン、実行レビュー、統合、公開、CI検収）を完遂する。
+明示的な委譲で`agent-toolkit:process-wi all-repos`の統括担当から単一対象または軽い対象群を受け取り、対象ごとのAWI処理（選定、レーン、実行レビュー、統合、公開、CI検収）を完遂する。
+常駐が独立して起動した対象別メインは本タスクの委譲先ではなく、自身の対象の報告・終了を所有する。
 登録全体の判断、確認事項のユーザーへの中継、process-wiの実行全体の完了報告と報告用UWIは統括担当が所有する。
+本タスクの担当はreport-completionの起動、報告用UWI、ユーザーへの最終送達、祖先ホストの終了を担当しない。
+担当除外は本書で判断でき、除外確認のためのスキル本体・termination-evidenceの取得や`omit-completion`記録は不要である。
+必要な常時稼働サーバーへの反映は`../skills/report-completion/references/server-reflection.md`を使い、結果を委譲元へ返す。
 起動後は最初に`../skills/process-wi/references/all-repos-orchestration-roles.md`「担当の役割」と対象worktreeの規範を読み、対象ごとの上限に合うモードで`agent-toolkit:process-wi`を起動する。
 
 ## 名指し参照の読込方法

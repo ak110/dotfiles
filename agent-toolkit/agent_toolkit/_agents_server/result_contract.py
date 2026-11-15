@@ -86,7 +86,7 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
 def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
     """役割taskの返却が、状態行か役割文書の宣言する固定行を持つかを検査する。
 
-    低い推論量の担当が作業途中で状態行も区分も無い自由文を返すと、委譲元へ完了として届く。
+    担当が作業途中で状態行も区分も無い自由文を返すと、委譲元へ完了として届く。
     固定行の一覧は返却形式を所有する役割文書の宣言から得て、検査と文書の食い違いを避ける。
     """
     declaration = task_documents.read_declaration(document)

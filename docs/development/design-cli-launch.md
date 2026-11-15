@@ -39,7 +39,7 @@ dotfilesの`bin/atk`はworktreeの選択だけを担い、配布物の実装、P
 
 プラグインのCLIは、Chat・Coworkがインストールを拒否する直下の`bin/`を避けて`scripts/`へ同梱する。
 `scripts/launch.py`は標準ライブラリだけで配布rootと書き込み可能なデータ領域を解決し、準備済みの共有環境のPythonで対象を起動する。
-依存の準備には`uv run --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
+依存の準備には`uv run --no-cache --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py --prepare agent_toolkit/atk.py`を実行する。
 
 `--prepare`の後ろのtargetは配布root内に存在する起動対象を確認する必須引数であり、共有環境の選択には影響しない。
 後述の組み合わせが未準備の場合に実行し、同じ組み合わせなら別の配布rootやworktreeでも準備済み環境を共有する。

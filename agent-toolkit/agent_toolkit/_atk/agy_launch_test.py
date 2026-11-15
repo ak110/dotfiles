@@ -60,8 +60,21 @@ def test_process_loop_agy_interactive_and_resume(
     monkeypatch.setattr(process_loop_session, "cleanup_lane_session", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(process_loop_env, "reset_console", lambda: None)
     monkeypatch.setattr(process_loop_log, "append", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(process_loop_log, "consume_instructions", lambda: "")
     args = argparse.Namespace(resume=resume, no_update=True)
+    if resume == "":
+        with pytest.raises(ValueError, match="picker"):
+            process_loop_session.run_process_session(
+                args,
+                tmp_path,
+                "",
+                {},
+                orchestrator="agy",
+                model="gemini-4-argon",
+                effort="medium",
+                resume_pending=True,
+            )
+        assert not calls
+        return
     process_loop_session.run_process_session(
         args,
         tmp_path,
@@ -84,8 +97,6 @@ def test_process_loop_agy_interactive_and_resume(
     )
     if resume:
         assert argv[argv.index("--conversation") + 1] == resume
-    elif resume is not None:
-        assert "--continue" in argv
 
 
 def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

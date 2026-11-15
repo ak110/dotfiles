@@ -1,6 +1,7 @@
 """install_libarchiveのパッケージ展開と、消費側と同じ解決条件による導入済み判定・再取得のテスト。"""
 
 import compression.zstd
+import hashlib
 import io
 import logging
 import pathlib
@@ -23,15 +24,36 @@ def _compress(data: bytes) -> bytes:
     return compression.zstd.compress(data)
 
 
-def _package(members: dict[str, bytes]) -> bytes:
+def _package(members: dict[str, bytes | str]) -> bytes:
     """MSYS2のpkg.tar.zstと同じ形式のバイト列を生成する。"""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:") as tar:
         for name, content in members.items():
             info = tarfile.TarInfo(name)
-            info.size = len(content)
-            tar.addfile(info, io.BytesIO(content))
+            if isinstance(content, str):
+                info.type = tarfile.LNKTYPE
+                info.linkname = content
+                tar.addfile(info)
+            else:
+                info.size = len(content)
+                tar.addfile(info, io.BytesIO(content))
     return _compress(buffer.getvalue())
+
+
+def _database(packages: dict[str, tuple[str, bytes, tuple[str, ...]]]) -> bytes:
+    """2026年11月15日のMSYS2 mingw64.dbのdesc形式を、必要な4項目へ絞って生成する。"""
+    members: dict[str, bytes | str] = {}
+    for name, (filename, data, dependencies) in packages.items():
+        fields = {
+            "NAME": [name],
+            "FILENAME": [filename],
+            "SHA256SUM": [hashlib.sha256(data).hexdigest()],
+            "DEPENDS": list(dependencies),
+        }
+        members[f"{name}-1/desc"] = (
+            "\n\n".join(f"%{key}%\n" + "\n".join(values) for key, values in fields.items()) + "\n\n"
+        ).encode()
+    return _package(members)
 
 
 def test_extract_dlls_places_only_bin_dlls(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -67,27 +89,38 @@ class _Repository:
 
     def __init__(self) -> None:
         self.requests: list[str] = []
+        self.catalog: dict[str, tuple[str, bytes, tuple[str, ...]]] | None = None
         self.missing: set[str] = set()
         self.broken: set[str] = set()
+        self.tampered: set[str] = set()
         self.omitted_dlls: set[str] = set()
         self.unreachable: set[str] = set()
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request.url.path)
         name = request.url.path.rsplit("/", 1)[-1]
-        if not name:
-            links = "".join(
-                f'<a href="{prefix}-1.0-1-any.pkg.tar.zst">x</a>' for prefix in _REQUIRED if prefix not in self.missing
-            )
-            return httpx.Response(200, text=links)
+        packages = {
+            prefix: _package({} if dll in self.omitted_dlls else {f"mingw64/bin/{dll}": dll.encode()})
+            for prefix, dll in _REQUIRED.items()
+        }
+        if name == "mingw64.db":
+            entries: dict[str, tuple[str, bytes, tuple[str, ...]]] = {
+                prefix: (f"{prefix}-1.0-1-any.pkg.tar.zst", data, ("pkg-zlib",) if prefix == "pkg-archive" else ())
+                for prefix, data in packages.items()
+                if prefix not in self.missing
+            }
+            return httpx.Response(200, content=_database(entries if self.catalog is None else self.catalog))
+        if self.catalog is not None:
+            data = next(data for filename, data, _depends in self.catalog.values() if filename == name)
+            return httpx.Response(200, content=data)
         prefix = name.removesuffix("-1.0-1-any.pkg.tar.zst")
         if prefix in self.unreachable:
             raise httpx.ConnectError("接続できない", request=request)
         if prefix in self.broken:
             return httpx.Response(200, content=b"not-a-zstd-frame")
-        dll = _REQUIRED[prefix]
-        members = {} if dll in self.omitted_dlls else {f"mingw64/bin/{dll}": dll.encode()}
-        return httpx.Response(200, content=_package(members))
+        if prefix in self.tampered:
+            return httpx.Response(200, content=_package({f"mingw64/bin/{_REQUIRED[prefix]}": b"tampered"}))
+        return httpx.Response(200, content=packages[prefix])
 
 
 @pytest.fixture(name="windows_env")
@@ -100,7 +133,7 @@ def windows_env_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch)
     repository = _Repository()
     path_writes: list[str] = []
     monkeypatch.setattr(install_libarchive, "_INSTALL_DIR", install_dir)
-    monkeypatch.setattr(install_libarchive, "_REQUIRED_PACKAGES", list(_REQUIRED))
+    monkeypatch.setattr(install_libarchive, "_ROOT_PACKAGE", "pkg-archive")
     monkeypatch.setattr(install_libarchive, "_persist_libarchive_env_var", lambda: False)
     monkeypatch.setattr(install_libarchive.winutils, "append_user_path", path_writes.append)
     monkeypatch.setattr(libarchive_resolver.sys, "platform", "win32")
@@ -174,7 +207,7 @@ def test_rerun_after_interrupted_download_completes(windows_env, monkeypatch: py
     first_changed, first_log = _run(monkeypatch)
 
     assert not first_changed
-    assert (install_dir / "libarchive-13.dll").is_file()
+    assert (install_dir / "libarchive-13.dll").is_file() is (failure != "missing")
     assert "インストール完了" not in first_log
     assert path_writes == []
     getattr(repository, failure).clear()
@@ -305,3 +338,115 @@ def test_consumer_detects_missing_dependency_and_recovers_after_reinstall(
     code, _archive, _original = _repack(tmp_path / "work", monkeypatch, "after")
     assert code == 0
     assert (tmp_path / "work" / "after.zip").is_file()
+
+
+def test_database_uses_exact_name_and_current_filename_with_transitive_dependencies(windows_env, monkeypatch):
+    """類似名や文字列版順を使わず、メタパッケージ・重複・循環を含む依存を各1回取得する。"""
+    _install_dir, repository, _path_writes = windows_env
+    empty = _package({})
+    repository.catalog = {
+        "pkg-archive": (
+            "pkg-archive-3.8.11-1-any.pkg.tar.zst",
+            _package({"mingw64/bin/libarchive-13.dll": b"dll"}),
+            ("cc-libs>=16", "pkg-zlib"),
+        ),
+        "pkg-archive-tools": ("pkg-archive-tools-99.0-1-any.pkg.tar.zst", empty, ()),
+        "pkg-archive-old": ("pkg-archive-3.8.9-6-any.pkg.tar.zst", empty, ()),
+        "cc-libs": ("cc-libs-16-1-any.pkg.tar.zst", empty, ("libgcc=16",)),
+        "libgcc": ("libgcc-16-1-any.pkg.tar.zst", empty, ("pkg-zlib", "pkg-archive")),
+        "pkg-zlib": ("pkg-zlib-1-1-any.pkg.tar.zst", _package({"mingw64/bin/zlib1.dll": b"dll"}), ()),
+    }
+
+    changed, _log = _run(monkeypatch)
+
+    assert changed
+    assert [path.rsplit("/", 1)[-1] for path in repository.requests] == [
+        "mingw64.db",
+        "pkg-archive-3.8.11-1-any.pkg.tar.zst",
+        "cc-libs-16-1-any.pkg.tar.zst",
+        "libgcc-16-1-any.pkg.tar.zst",
+        "pkg-zlib-1-1-any.pkg.tar.zst",
+    ]
+
+
+@pytest.mark.parametrize("filename", ["../escape.pkg.tar.zst", "x%2fy.pkg.tar.zst", "https://other/x.pkg.tar.zst"])
+def test_database_rejects_unsafe_download_filename(windows_env, monkeypatch, filename):
+    """DBのファイル名で取得元のURLやディレクトリを変更させない。"""
+    install_dir, repository, path_writes = windows_env
+    repository.catalog = {"pkg-archive": (filename, b"body", ())}
+
+    changed, _log = _run(monkeypatch)
+
+    assert not changed
+    assert len(repository.requests) == 1
+    assert not list(install_dir.iterdir())
+    assert not path_writes
+
+
+def test_hardlink_dll_uses_archive_member_without_extracting_target_path(windows_env, monkeypatch):
+    """必要な別名を配置し、参照先をディスク上の相対パスへ展開しない。"""
+    install_dir, repository, _path_writes = windows_env
+    package = _package(
+        {
+            "mingw64/bin/libarchive-13.dll": b"archive",
+            "payload/libz-1.dll": b"dll",
+            "mingw64/bin/zlib1.dll": "payload/libz-1.dll",
+            "mingw64/bin/other.dll": "mingw64/bin/zlib1.dll",
+        }
+    )
+    repository.catalog = {"pkg-archive": ("pkg-archive-1.pkg.tar.zst", package, ())}
+
+    changed, _log = _run(monkeypatch)
+
+    assert changed
+    assert {p.name: p.read_bytes() for p in install_dir.iterdir()} == {
+        "libarchive-13.dll": b"archive",
+        "zlib1.dll": b"dll",
+        "other.dll": b"dll",
+    }
+
+
+@pytest.mark.parametrize(
+    "members",
+    [
+        {"mingw64/bin/zlib1.dll": "missing"},
+        {"mingw64/bin/a.dll": "mingw64/bin/b.dll", "mingw64/bin/b.dll": "mingw64/bin/a.dll"},
+    ],
+)
+def test_hardlink_dll_rejects_missing_or_cyclic_target(windows_env, monkeypatch, members):
+    """参照先欠落と循環を無視して導入完了へ進めない。"""
+    install_dir, repository, path_writes = windows_env
+    repository.catalog = {"pkg-archive": ("pkg-archive-1.pkg.tar.zst", _package(members), ())}
+
+    changed, log = _run(monkeypatch)
+
+    assert not changed
+    assert not list(install_dir.iterdir())
+    assert not path_writes
+    assert "ハードリンク" in log
+
+
+@pytest.mark.parametrize("name", ["mingw64/bin/CON.dll", "mingw64/bin/other:stream.dll", "mingw64/bin/C:escape.dll"])
+def test_dll_rejects_windows_reserved_filename(windows_env, monkeypatch, name):
+    """Windowsの予約名や代替データストリームへの書き込みを拒否する。"""
+    install_dir, repository, path_writes = windows_env
+    repository.catalog = {"pkg-archive": ("pkg-archive-1.pkg.tar.zst", _package({name: b"dll"}), ())}
+
+    changed, _log = _run(monkeypatch)
+
+    assert not changed
+    assert not list(install_dir.iterdir())
+    assert not path_writes
+
+
+def test_valid_archive_with_wrong_checksum_is_not_installed(windows_env, monkeypatch):
+    """ロード可能な形式のtarでも、DBと内容が異なる取得物を配置しない。"""
+    install_dir, repository, path_writes = windows_env
+    repository.tampered.add("pkg-archive")
+
+    changed, log = _run(monkeypatch)
+
+    assert not changed
+    assert not list(install_dir.iterdir())
+    assert not path_writes
+    assert "SHA256" in log

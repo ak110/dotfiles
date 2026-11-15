@@ -51,7 +51,7 @@ main() {
     fi
 
     echo "依存の準備: $RUNTIME_DATA"
-    AGENT_TOOLKIT_RUNTIME_DATA="$RUNTIME_DATA" uv run --no-config --no-project --python 3.15 python \
+    AGENT_TOOLKIT_RUNTIME_DATA="$RUNTIME_DATA" uv run --no-cache --no-config --no-project --python 3.15 python \
         "$SRC_DIR/agent-toolkit/scripts/launch.py" agent_toolkit/agents_server_mcp.py --check-dependencies ||
         _fail "agents_serverの依存を準備できませんでした。Python 3.15とPythonパッケージ配布先へのネットワーク接続を確認してください。"
 

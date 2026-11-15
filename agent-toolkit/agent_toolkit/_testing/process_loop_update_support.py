@@ -18,7 +18,7 @@ from agent_toolkit._atk.wi import process_loop_update as _pl_update
 from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
 from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
-from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
+from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands, use_inline_scheduler
 
 
 @pytest.fixture(autouse=True)
@@ -36,6 +36,7 @@ def _resolve_process_loop_commands(monkeypatch: pytest.MonkeyPatch, tmp_path: pa
 @pytest.fixture(autouse=True)
 def _registered_update_boundary(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """更新試験は取得と統括を隔離し、更新・再起動と対話CLI構築を実行する。"""
+    use_inline_scheduler(monkeypatch)
     repository = _config.ConfiguredRepository("github.com/example/myrepo", tmp_path / "repo", tmp_path / "repo/.git")
     monkeypatch.setattr(_config, "resolve_configured_repositories", lambda: (repository,))
     monkeypatch.setattr(ownership, "resume_repositories", lambda _session, targets: set(targets))
@@ -101,7 +102,4 @@ _INTERNAL_MISE_REFRESHED_ARG = _pl_update._INTERNAL_MISE_REFRESHED_ARG  # pylint
 _INTERNAL_DOTFILES_UPDATED_ARG = _pl_update._INTERNAL_DOTFILES_UPDATED_ARG  # pylint: disable=protected-access
 
 
-_RESUME_ARGV_CASES = [
-    ["--resume", "00000000-0000-0000-0000-000000000000"],
-    ["--resume=00000000-0000-0000-0000-000000000000"],
-]
+_RESUME_VALUES = ["00000000-0000-0000-0000-000000000000", "auto"]
