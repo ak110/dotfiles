@@ -1,8 +1,11 @@
 """共通pytestのCPU上限を確認する。"""
 
+import collections
+import concurrent.futures
 import gc
 import importlib
 import sys
+import threading
 import types
 from typing import Any, Literal, cast
 
@@ -138,20 +141,26 @@ def test_exclusions_do_not_hide_budget_or_gross_overrun(gross, gc_cpu, import_cp
         ("young", {"gc": 0.0, "import": 0.0}),
         ("explicit-import", {"gc": 0.0, "import": 0.3}),
         ("young-import", {"gc": 0.0, "import": 0.3}),
+        ("worker-initial", {"gc": 0.2, "import": 0.0}),
+        ("worker-explicit", {"gc": 0.0, "import": 0.0}),
+        ("worker-young", {"gc": 0.0, "import": 0.0}),
+        ("foreign-gc-import", {"gc": 0.2, "import": 0.3}),
     ],
 )
 def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode, expected) -> None:
     """公開import/collectとGC通知へ制御区間を与え、重複控除とDUTのGC費用消失を検出する。"""
     before = cpu_accounting.snapshot()
-    clock = [0.0]
+    clock: collections.defaultdict[int, float] = collections.defaultdict(float)
+    worker = mode.startswith("worker-")
+    operation = mode.removeprefix("worker-")
     name = "cpu_accounting_controlled_probe"
     original_import = cpu_accounting._state.original_import
 
     def collection(*_args, **_kwargs):
-        info = {"generation": 0 if mode.startswith("young") else 2, "collected": 0, "uncollectable": 0}
+        info = {"generation": 0 if operation.startswith("young") else 2, "collected": 0, "uncollectable": 0}
         for callback in gc.callbacks:
             callback("start", info)
-        clock[0] += 0.2
+        clock[threading.get_ident()] += 0.2
         for callback in gc.callbacks:
             callback("stop", info)
         return 0
@@ -159,27 +168,42 @@ def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode
     def importing(module_name, *args, **kwargs):
         if module_name != name:
             return original_import(module_name, *args, **kwargs)
-        if mode == "explicit-import":
+        if operation == "explicit-import":
             gc.collect()
+        elif operation == "foreign-gc-import":
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                executor.submit(collection).result(timeout=10)
         else:
             collection()
-        clock[0] += 0.3
+        clock[threading.get_ident()] += 0.3
         module = types.ModuleType(name)
         sys.modules[name] = module
         return module
 
+    def execute():
+        if operation in {"initial", "explicit-import", "young-import", "foreign-gc-import"}:
+            importlib.import_module(name)
+        elif operation == "explicit":
+            gc.collect()
+        else:
+            collection()
+
+    automatic = gc.isenabled()
+    # 制御時計の値を実際のGCの観測値にしないよう、自動GCを止める。
+    gc.disable()
     try:
         with monkeypatch.context() as patch:
-            patch.setattr(cpu_accounting, "_thread_cpu", lambda: clock[0])
+            patch.setattr(cpu_accounting, "_thread_cpu", lambda: clock[threading.get_ident()])
             patch.setattr(cpu_accounting._state, "original_import", importing)
             patch.setattr(cpu_accounting._state, "original_collect", collection)
-            if mode in {"initial", "explicit-import", "young-import"}:
-                importlib.import_module(name)
-            elif mode == "explicit":
-                gc.collect()
+            if worker:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    executor.submit(execute).result(timeout=10)
             else:
-                collection()
+                execute()
         after = cpu_accounting.snapshot()
         assert {key: after[key] - before[key] for key in expected} == pytest.approx(expected)
     finally:
+        if automatic:
+            gc.enable()
         sys.modules.pop(name, None)

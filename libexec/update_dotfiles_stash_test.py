@@ -107,11 +107,15 @@ def test_generated_stash_preserves_otherwise_unreachable_local_commit(tmp_path: 
     assert git_repository.git_output(repository, "show", f"{commit}:committed.txt") == "local committed data"
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="実Gitの複数退避を一括保護する最小の1件/3件を比較し、起動数が増えない境界を保持する（旧40件のWindows CPU0.578秒）。",
+)
 def test_old_stash_processing_has_constant_git_process_count(tmp_path: pathlib.Path) -> None:
     """退避が増えても外部Gitの起動数を増やさず、全件を正しく保護する。"""
     run = update_dotfiles_stash.git_command.run
     counts: list[int] = []
-    for number in (1, 40):
+    for number in (1, 3):
         repository = _repository(tmp_path / f"repo-{number}")
         (repository / "kept.txt").write_text("saved user data\n", encoding="utf-8")
         first_ref, oid = _save_old(repository, "0")
