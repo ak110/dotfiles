@@ -212,13 +212,14 @@ AWI_CAUSE_TABLE_ROWS: tuple[str, ...] = (
     "再発防止策（見逃し）",
     "類似見直しの採否",
     "再発防止策の採否",
+    "処置が生む問題の検討",
 )
 
 """AWIの`## 原因分析`の2列表の行。定義元は`wi-standards/references/analysis-records.md`「原因分析の記録先」。"""
 
 
 def _awi_cause_table_errors(section: str) -> list[str]:
-    """AWIの原因分析の2列表が9行をこの順で持ち、全行に内容があることを確かめる。
+    """AWIの原因分析の2列表が10行をこの順で持ち、全行に内容があることを確かめる。
 
     `対策`行か旧5行表の`直接的原因`行を持つ2列表を処置表として識別する。
     4区分の候補行と採否行のいずれかが欠けた記録や空の行と、バグ単位の原因分析表に対応する処置表が無い記録を拒否し、
@@ -234,14 +235,18 @@ def _awi_cause_table_errors(section: str) -> list[str]:
             continue
         found += 1
         if labels != AWI_CAUSE_TABLE_ROWS:
-            errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の9行をこの順に置く: {table.row_location(0)}")
+            errors.append(f"原因分析の表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の10行をこの順に置く: {table.row_location(0)}")
             continue
         for index, row in enumerate(table.rows):
             if len(row) < 2 or not _strip_table_cell(row[1]):
                 errors.append(f"{AWI_CAUSE_TABLE_ROWS[index]}の行が空である: {table.row_location(index)}")
+    if not tables and not body_is_effectively_empty(section):
+        return errors
+    if found and cause_tables != found:
+        errors.append(f"原因分析表{cause_tables}件と処置表{found}件をバグ単位ごとに対応させる")
     if found < max(cause_tables, 1):
         errors.append(
-            f"原因分析の処置表（{'、'.join(AWI_CAUSE_TABLE_ROWS)}の9行）が{found}件で、"
+            f"原因分析の処置表（{'、'.join(AWI_CAUSE_TABLE_ROWS)}の10行）が{found}件で、"
             f"バグ単位の原因分析表{cause_tables}件に足りない"
         )
     return errors
@@ -250,7 +255,7 @@ def _awi_cause_table_errors(section: str) -> list[str]:
 def require_cause_analysis_format(body: str, *, original: str | None = None, entry_type: str = WI_TYPE_AWI) -> None:
     """エージェントが保存する原因分析のL4と系統別候補、AWIの表の行構成を確かめる。
 
-    9行表の規定はAWIの`## 原因分析`の記録先定義であり、UWIには適用しない。
+    10行表の規定はAWIの`## 原因分析`の記録先定義であり、UWIには適用しない。
 
     既存項目の編集で`## 原因分析`節が変わらない場合（追記など）は、保存済みの旧書式を理由に編集を拒否しない。
     """
@@ -270,7 +275,7 @@ def require_cause_analysis_format(body: str, *, original: str | None = None, ent
             "原因分析の書式が不正です: " + "。".join(errors),
             next_action=(
                 "L4へ説明または理由付きの該当なしを書く。"
-                f"2列表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の9行とし、作り込み・見逃しの各行へ候補を1件以上、"
+                f"2列表は{'、'.join(AWI_CAUSE_TABLE_ROWS)}の10行とし、作り込み・見逃しの各行へ候補を1件以上、"
                 "採否の行へ候補ごとの採否と理由、回帰テストを回帰防止策の行へ書く"
             ),
         )

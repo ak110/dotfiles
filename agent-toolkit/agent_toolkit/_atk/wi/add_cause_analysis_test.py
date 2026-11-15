@@ -29,6 +29,9 @@ from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_note
     "case",
     [
         "missing_harm",
+        "missing_action_harm",
+        "empty_action_harm",
+        "short_record",
         "empty_harm",
         "empty_l4",
         "bare_l4",
@@ -41,6 +44,7 @@ from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_note
         "empty_countermeasure",
         "previous_format",
         "missing_table",
+        "missing_cause_table",
         "second_unit_missing_table",
         "two_units",
         "valid",
@@ -59,7 +63,7 @@ def test_public_add_cause_analysis_format(
 ) -> None:
     """原因分析の新検査はエージェントに適用し、人間入力を拒否しない。
 
-    AWIの2列表は害の型と処置の6区分と採否2行の9行とし、4区分の候補行・採否行・回帰防止策の欠落と空欄、
+    AWIの2列表は害の型・処置の6区分・採否2行・処置が生む問題の検討の10行とし、候補行・採否行・回帰防止策の欠落と空欄、
     6区分化前の5行表と、バグ単位のL4表に対応する処置表が無い記録（2単位の片方だけ欠ける場合を含む）を拒否する。
     """
     notes = _setup_notes(tmp_path)
@@ -71,6 +75,7 @@ def test_public_add_cause_analysis_format(
     cause = plan_fixture.bug_cause_table()
     table = _awi_cause_items_table()
     removed = {
+        "missing_action_harm": "処置が生む問題の検討",
         "missing_harm": "害の型と反復",
         "missing_creation_review": "類似見直し観点（作り込み）",
         "missing_detection_prevention": "再発防止策（見逃し）",
@@ -78,6 +83,7 @@ def test_public_add_cause_analysis_format(
         "missing_decision": "再発防止策の採否",
     }
     emptied = {
+        "empty_action_harm": "処置が生む問題の検討",
         "empty_harm": "害の型と反復",
         "empty_detection_review": "類似見直し観点（見逃し）",
         "empty_decision": "類似見直しの採否",
@@ -94,6 +100,8 @@ def test_public_add_cause_analysis_format(
         table = _PREVIOUS_AWI_CAUSE_ITEMS_TABLE
     elif case == "missing_table":
         table = ""
+    elif case == "missing_cause_table":
+        cause = ""
     elif case == "second_unit_missing_table":
         table = f"{table}\n\n{plan_fixture.bug_cause_table()}"
     elif case == "two_units":
@@ -101,6 +109,11 @@ def test_public_add_cause_analysis_format(
     else:
         cause = cause.replace(f"{plan_fixture.CAUSE_FILLER} |", "該当なし。上流管理外の構造だけで生じた。 |")
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{cause}\n\n{table}\n"
+    if case == "short_record":
+        body = (
+            "# 表題\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n"
+            "誤った設定値を訂正した。期待した値で再検証し、影響は当該設定だけと確認したため初動で終了した。\n"
+        )
     args = _cmd_add_args(tmp_path, body, source="test", dry_run=True)
 
     def run() -> None:
@@ -114,7 +127,7 @@ def test_public_add_cause_analysis_format(
         if finished.value.code:
             raise SystemExit(finished.value.code)
 
-    if agent and case not in ("valid", "two_units"):
+    if agent and case not in ("valid", "two_units", "short_record"):
         with pytest.raises(SystemExit) as rejected:
             run()
         assert rejected.value.code != 0
@@ -124,7 +137,7 @@ def test_public_add_cause_analysis_format(
         assert "成功:" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("legacy_format", ["five_rows", "eight_rows"])
+@pytest.mark.parametrize("legacy_format", ["five_rows", "eight_rows", "nine_rows"])
 def test_public_append_keeps_saved_legacy_cause_table(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], legacy_format: str
 ) -> None:
@@ -141,6 +154,10 @@ def test_public_append_keeps_saved_legacy_cause_table(
         if legacy_format == "five_rows"
         else "\n".join(line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 害の型と反復 |"))
     )
+    if legacy_format == "nine_rows":
+        legacy = "\n".join(
+            line for line in _awi_cause_items_table().splitlines() if not line.startswith("| 処置が生む問題の検討 |")
+        )
     body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{plan_fixture.bug_cause_table()}\n\n{legacy}"
     _write_awi_file(notes, "legacy.md", body=body, source="test")
     appended = tmp_path / "append.md"

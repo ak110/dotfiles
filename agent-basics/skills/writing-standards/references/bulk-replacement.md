@@ -11,7 +11,7 @@
    誤置換時は対象条件を絞り、手順3から再実行する。
 5. 文脈ごとの意味を保つため、候補に合わない文、意味が変わりやすい文、指摘を受けた文を個別に書き直し、`textlint-violations.md`「文の書き直しの委譲と検収」の品質条件で検収する。
 6. 完了を確認するため、通常のtextlintチェックと対象の自動テストを実行する。
-   指摘・エラーの受領時は`agent-basics:bugfix`を起動して原因分析と絞り込み型の類似見直しを行う。
+   指摘・エラーの受領時は`agent-basics:bugfix`を起動し、本体の初動で原因・影響と必要な処置、詳細分析の要否を判断する。
    再発防止策の要否、初回検出の例外、記録の比例性も同スキルに従う。
 
 ## 名指し参照の読込方法
@@ -20,6 +20,6 @@
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 指摘・エラーの原因分析と類似見直しを行う前 | `agent-basics:bugfix/SKILL.md` |
+| 指摘・エラーを認識して診断・訂正・対処を始める前 | `agent-basics:bugfix/SKILL.md` |
 | 手順3の置換を適用する前 | `agent-basics:writing-standards/references/file-editing.md` |
 | 手順5の個別の書き直しを検収する前（操作対象外: 自身の成果物・評価方法の検討） | `agent-basics:writing-standards/references/textlint-violations.md` |

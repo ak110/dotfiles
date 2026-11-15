@@ -382,7 +382,11 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
     return {
         "case": case.id,
         "kind": case.kind,
-        "table": str(plan.with_suffix(".exec-review.tsv")),
+        **(
+            {"result": str(case_dir / "wi-draft-review.md")}
+            if case.role == "wi-draft-review"
+            else {"table": str(plan.with_suffix(".exec-review.tsv"))}
+        ),
         # 渡す計画と条件表が参照する一時領域の証拠は保持期限で消える。
         # 評価を始める前に、欠けた入力を持つ事例を把握できるようにする。
         "temporary_evidence": {
@@ -394,11 +398,61 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
     }
 
 
+def _draft_findings(path: pathlib.Path) -> list[str]:
+    """単一原稿の指摘と追加報告を分け、字下げ補足を親の指摘へ保持する。"""
+    text = path.read_text(encoding="utf-8")
+    fields = {}
+    findings: list[str] = []
+    active = False
+    for line in text.splitlines():
+        if line.removeprefix("- ").startswith(("気付いた改善点:", "想定外事象:")):
+            active = False
+            continue
+        if line.startswith("- ") and active:
+            findings.append(line[2:])
+        elif line[:1].isspace() and active and findings:
+            findings[-1] += "\n" + line
+        elif line.strip():
+            key, separator, value = line.partition(":")
+            if not separator or key in fields:
+                raise ValueError(f"投入前レビューの返却形式が不正: {path}")
+            fields[key] = value.strip()
+            active = key == "指摘"
+    required = {"判定", "確認段階", "対象資料", "未解決指摘", "指摘", "確認した要求と根拠"}
+    if fields.get("確認段階") == "本文":
+        required |= {"ユーザー向け部分の確認", "読者別探索"}
+    if not required <= fields.keys() or any(not fields[key] for key in required - {"指摘"}):
+        raise ValueError(f"投入前レビューの必要欄が不足: {path}")
+    if fields["確認段階"] not in {"方針", "本文"}:
+        raise ValueError(f"投入前レビューの確認段階が不正: {path}")
+    if not findings or any(not item.strip() for item in findings):
+        raise ValueError(f"投入前レビューの指摘欄が空: {path}")
+    if len(findings) == 1 and re.fullmatch(r"なし(?:（[^\n]*）)?", findings[0]):
+        findings = []
+    elif any(item.startswith("なし") for item in findings):
+        raise ValueError(f"投入前レビューの指摘が不正: {path}")
+    count = re.fullmatch(r"(\d+)(?:件)?", fields["未解決指摘"])
+    if count is None or int(count[1]) != len(findings):
+        raise ValueError(f"投入前レビューの指摘件数が不一致: {path}")
+    if fields["判定"] != ("修正要" if findings else "合格"):
+        raise ValueError(f"投入前レビューの判定が不一致: {path}")
+    return findings
+
+
 def score(case: _Case, table: pathlib.Path) -> dict[str, Any]:
     """返却された管理表の指摘行を期待と照合し、検出・見逃し・誤指摘・未分類を返す。"""
     try:
-        rows = review_table.read_rows(table)
+        rows = (
+            [["", "", str(table), item] for item in _draft_findings(table)]
+            if case.role == "wi-draft-review"
+            else review_table.read_rows(table)
+        )
     except ValueError as error:
+        if case.role == "wi-draft-review":
+            raise ActionableError(
+                f"投入前レビューの返却が不正: {table}: {error}",
+                next_action="wi-draft-reviewの返却契約に従う単一原稿の返却原文を--resultへ指定する",
+            ) from error
         # 管理表の不存在（ActionableError）と形式不正（ValueError）のどちらも、atk側の案内ではなく
         # 本CLIの引数と管理表の検証手段を示す。
         reason = error.reason if isinstance(error, ActionableError) else f"レビュー指摘管理表の形式が不正: {table}: {error}"

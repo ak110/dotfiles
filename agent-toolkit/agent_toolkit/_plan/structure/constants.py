@@ -399,12 +399,15 @@ PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS: tuple[str, ...] = (
 処置の候補は作り込み・見逃しの系統ごとの行に、候補の採否は採否の行に分けて記録する。
 """
 
-PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (
+PLAN_PREVIOUS_ACTION_BUG_TABLE_ROWS: tuple[str, ...] = (
     *PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS[:2],
     "害の型と反復",
     *PLAN_PREVIOUS_HARM_BUG_TABLE_ROWS[2:],
 )
 """害の型と反復を含む現行の調査表。直前の11行形式は読み取り互換と移行案内に残す。"""
+
+PLAN_BUG_TABLE_ROWS: tuple[str, ...] = (*PLAN_PREVIOUS_ACTION_BUG_TABLE_ROWS, "処置が生む問題の検討")
+"""採用した処置自身の失敗経路と元の問題の比較を末尾に記録する調査表。"""
 
 PLAN_PREVIOUS_BUG_TABLE_ROWS: tuple[str, ...] = (
     "現象",
