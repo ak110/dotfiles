@@ -14,7 +14,7 @@ import pytest
 
 from agent_toolkit import atk, hook
 from agent_toolkit._atk import run_script, run_skill
-from agent_toolkit._common import diagnostic_process, session_activity, session_review
+from agent_toolkit._common import diagnostic_process, session_activity, session_review, session_state
 
 
 def _capture_batch_launches(monkeypatch):
@@ -69,6 +69,60 @@ def _previous(*, legacy, now, elapsed):
         value["started_at"] = datetime.datetime.fromtimestamp(now - elapsed, datetime.UTC).isoformat()
     session_review.write(path, value)
     os.utime(path, (now - elapsed if legacy else now, now - elapsed if legacy else now))
+
+
+@pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
+@pytest.mark.parametrize("codex", [False, True])
+def test_public_hook_defers_open_consultations(tmp_path, monkeypatch, event, codex):
+    """入力待ちの相談が全て閉じるまで、両ホストの公開hookが新規要求を発行しない。"""
+    now = 1793400000.0
+    _previous(legacy=False, now=now, elapsed=21601)
+    _pending("ordinary")
+    living = {"first", "second"}
+    for session in living:
+        session_state.update_state(session, lambda state: {**state, "add_awi_skill_invoked": True})
+    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda **kwargs: frozenset(living))
+    monkeypatch.setattr(session_activity, "host_process", object)
+    monkeypatch.setattr("time.time", lambda: now)
+    monkeypatch.setattr("agent_toolkit._atk.wi.repo.resolve_repo_id_or_raise", lambda *a, **k: None)
+    if codex:
+        monkeypatch.setenv("CODEX_THREAD_ID", "ordinary")
+    calls = _capture_batch_launches(monkeypatch)
+    for closing in ("first", "second", None):
+        payload = {"hook_event_name": event, "source": "startup", "session_id": "ordinary", "cwd": str(tmp_path)}
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())))
+        assert hook.main(["rules_context" if event == "SessionStart" else "session_end_cleanup"]) == 0
+        assert len(calls) == (0 if living else 1)
+        assert any(target["session_id"] == "ordinary" for target in session_review.pending())
+        if closing is not None:
+            living.remove(closing)
+
+
+@pytest.mark.parametrize("manual", [False, True])
+def test_public_cli_rechecks_open_consultation(monkeypatch, manual):
+    """要求発行後に相談が始まっても受付を抑止し、手動batchは通す。"""
+    _pending("ordinary")
+    session_state.update_state("consultation", lambda state: {**state, "add_awi_skill_invoked": True})
+    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda **kwargs: frozenset({"consultation"}))
+    monkeypatch.setattr(session_activity, "review_activity", lambda *args, **kwargs: types.SimpleNamespace(has_activity=False))
+    if not manual:
+        launch_id = "a" * 32
+        monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
+        session_review.write(session_review.directory() / "launches" / f"{launch_id}.json", {"status": "starting"})
+
+    def prepare(*args, **kwargs):
+        raise LookupError("準備まで到達")
+
+    monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._prepare", prepare)
+    if manual:
+        with pytest.raises(LookupError, match="準備まで到達"):
+            atk.main(["run-skill", "--args", "batch", "agent-toolkit:review-session"])
+    else:
+        with pytest.raises(SystemExit) as result:
+            atk.main(["run-skill", "--args", "batch", "agent-toolkit:review-session"])
+        assert result.value.code == 0
+        assert not list((session_review.directory() / "runs").glob("*.json"))
+    assert session_review.pending()
 
 
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])

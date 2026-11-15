@@ -12,6 +12,12 @@
 
 ### 振り返りとモードの状態
 
+- `add_awi_skill_invoked`: add-awi-by-userを起動した会話の履歴。
+  `session_title.observe_skill`、両ホストの明示的なスキル入力、メインのスキル本文の全文取得が、既存のhook状態へ真を記録する。
+  投入完了や表示タイトルの変更では保持し、`session_review.auto_start_due`が生存する会話の履歴を読んで起動を判定する。
+  生存する相談会話だけが自動起動の抑止対象で、手動batchは従来の条件を使う。
+  生存する相談会話の履歴は期限切れ回収でも保持し、会話が閉じれば通常の回収条件へ戻す。
+  状態ファイルの回収・clear・継承は共通設計に従う
 - `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hook→run-skill試行ID。
   `session-review/launches/`のID別JSON/logは起動元・プロセス同一性・診断・状態を持つ。
   `starting`=未受付、`accepted`=manifest移管、`settled`=正常終了/見送り、`notified`=次SessionStart通知済み。

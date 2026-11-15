@@ -362,6 +362,24 @@ class TestDeleteState:
 class TestSweepStaleStates:
     """期限を過ぎた状態ファイルとロックファイルの回収。"""
 
+    def test_open_consultation_survives_expiry(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """相談中の履歴だけは保持し、会話が閉じれば通常の回収へ戻す。"""
+        update_state("open", lambda state: {**state, "add_awi_skill_invoked": True})
+        update_state("ordinary", lambda state: {**state, "add_awi_skill_invoked": False})
+        update_state("closed", lambda state: {**state, "add_awi_skill_invoked": True})
+        for session in ("open", "ordinary", "closed"):
+            self._age(state_path(session), STALE_STATE_MAX_AGE_SECONDS + 60)
+        monkeypatch.setattr(
+            session_state.session_activity, "living_root_session_ids", lambda **kwargs: frozenset({"open", "ordinary"})
+        )
+        assert sweep_stale_states() == 2
+        assert read_state("open")["add_awi_skill_invoked"] is True
+        assert not state_path("ordinary").exists()
+        assert not state_path("closed").exists()
+        monkeypatch.setattr(session_state.session_activity, "living_root_session_ids", lambda **kwargs: frozenset())
+        assert sweep_stale_states() == 1
+        assert not state_path("open").exists()
+
     @staticmethod
     def _age(path: pathlib.Path, seconds: float) -> None:
         stamp = os.stat(path).st_mtime - seconds

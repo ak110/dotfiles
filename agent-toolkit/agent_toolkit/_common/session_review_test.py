@@ -13,7 +13,16 @@ import types
 
 import pytest
 
-from agent_toolkit._common import session_review
+from agent_toolkit._common import session_activity, session_review, session_state
+
+
+def test_auto_start_waits_until_last_consultation_closes(monkeypatch):
+    """生存APIの集合だけを使い、閉じた会話の履歴は起動を妨げない。"""
+    for session in ("first", "second", "closed"):
+        session_state.update_state(session, lambda state: {**state, "add_awi_skill_invoked": True})
+    for living in ({"first", "second"}, {"second"}, set()):
+        monkeypatch.setattr(session_activity, "living_root_session_ids", lambda living=living, **kwargs: frozenset(living))
+        assert session_review.auto_start_due(now=1793400000.0) is (not living)
 
 
 @pytest.mark.parametrize("changed,unconfirmed", [(False, False), (True, False), (False, True)])

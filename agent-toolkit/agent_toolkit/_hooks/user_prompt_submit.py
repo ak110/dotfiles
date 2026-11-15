@@ -263,6 +263,7 @@ def main(payload_text: str) -> int:
         if match is not None:
             name = match.group(1)
             full_name = f"agent-toolkit:{name}"
+            session_title.observe_add_awi(session_id, full_name)
             if not is_codex:
                 session_title.observe_skill(session_id, full_name, prompt[len(command_prefix) + match.end() :])
 

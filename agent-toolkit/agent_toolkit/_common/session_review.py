@@ -24,9 +24,11 @@ import pydantic
 from agent_toolkit._common import (
     atomic_file,
     delegated_session,
+    session_activity,
     session_family,
     session_launchers,
     session_registry,
+    session_state,
     state_paths,
 )
 
@@ -434,7 +436,12 @@ def pending() -> list[dict[str, Any]]:
 
 
 def auto_start_due(*, now: float) -> bool:
-    """直前のbatch開始から6時間以上経過したか返す。"""
+    """相談会話が閉じ、直前のbatch開始から6時間以上経過したか返す。"""
+    if any(
+        session_state.read_state(session_id).get("add_awi_skill_invoked") is True
+        for session_id in session_activity.living_root_session_ids()
+    ):
+        return False
     for path in (directory() / "runs").glob("*.json"):
         value = read(path)
         started_at = value.get("started_at")
