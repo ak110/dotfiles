@@ -102,6 +102,10 @@ async def test_release_keeps_other_session_and_resumes(tmp_path: pathlib.Path, m
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["retention", "candidate", "close"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="期限失効・候補放棄・closeで実App Server/MCPの所属停止を観測する3境界。候補放棄の所有CPU実測0.406秒。",
+)
 async def test_other_release_paths_terminate_owned_resources(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:

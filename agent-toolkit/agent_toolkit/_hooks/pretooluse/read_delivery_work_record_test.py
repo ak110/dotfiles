@@ -5,6 +5,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._common import read_triggers
 from agent_toolkit._hooks.pretooluse import read_delivery
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
@@ -21,6 +22,10 @@ def _contract(tmp_path, monkeypatch):
     path = tmp_path / "session" / "work-contract.md"
     path.parent.mkdir()
     monkeypatch.setattr(read_delivery.work_contract, "record_path", lambda _session: path)
+    # 書込対象の除外を検証する入力は、原稿に必要な1宣言だけで足りる。
+    guide = _REPOSITORY / "agent-basics/skills/writing-standards/SKILL.md"
+    rows = [read_triggers.ReadTrigger(guide, 1, "操作", ("tool:Write", "tool:apply_patch"), (guide,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     return path
 
 
