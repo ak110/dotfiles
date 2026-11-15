@@ -183,7 +183,7 @@ def test_failed_refresh_preserves_verified_identity_unless_account_changed(
     monkeypatch.setattr(usage_refresh.claude_connection, "connection_environment", lambda *_args: {})
     monkeypatch.setattr(usage_refresh.claude_connection, "isolation_keys", lambda *_args: frozenset())
     monkeypatch.setattr(usage_refresh.claude_settings, "merge_settings", lambda *_args, **_kwargs: "{}")
-    monkeypatch.setattr(usage_refresh.subprocess, "run", run)
+    monkeypatch.setattr(usage_refresh.process_tree, "run_with_timeout", run)
     assert usage_refresh.refresh(quiet=True)
     windows = usage_observation.snapshot()["windows"]
     assert windows[0]["observed_at"] == 100
@@ -213,7 +213,7 @@ def test_refresh_uses_explicit_authentication_after_parent_isolation(monkeypatch
         return SimpleNamespace(returncode=0, stdout=content)
 
     monkeypatch.setattr(usage_refresh.codex_models, "with_app_server", unavailable)
-    monkeypatch.setattr(usage_refresh.subprocess, "run", run)
+    monkeypatch.setattr(usage_refresh.process_tree, "run_with_timeout", run)
     usage_refresh.ensure_fresh(force=True, environment={"CLAUDE_CODE_OAUTH_TOKEN": "synthetic-oauth"})
     assert len(environments) == 2
     assert all(environment["CLAUDE_CODE_OAUTH_TOKEN"] == "synthetic-oauth" for environment in environments)

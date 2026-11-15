@@ -18,7 +18,7 @@ from typing import Any
 
 from agent_toolkit._atk import claude_connection, config
 from agent_toolkit._common import claude_connection as claude_settings
-from agent_toolkit._common import codex_models, usage_observation, usage_settings
+from agent_toolkit._common import codex_models, json_lines, process_tree, usage_observation, usage_settings
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 
@@ -315,12 +315,13 @@ def refresh(*, quiet: bool = False, environment: Mapping[str, str] | None = None
         settings = claude_settings.merge_settings(
             None, {}, None, isolate_auth=selected.kind != "inherit", isolation_keys=claude_connection.isolation_keys(selected)
         )
-        auth = subprocess.run(
+        auth = process_tree.run_with_timeout(
             ["claude", "--settings", settings, "auth", "status"],
             env=environment,
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             timeout=30,
             check=False,
         )
@@ -340,7 +341,7 @@ def refresh(*, quiet: bool = False, environment: Mapping[str, str] | None = None
         ).hexdigest()
         contract = str(profile.get("subscriptionType") or f"unknown:{time.time()}")
         usage_settings.record_metadata("claude", {"account": identity, "contract": contract})
-        result = subprocess.run(
+        result = process_tree.run_with_timeout(
             [
                 "claude",
                 "--settings",
@@ -361,13 +362,14 @@ def refresh(*, quiet: bool = False, environment: Mapping[str, str] | None = None
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             timeout=30,
             check=False,
         )
         if result.returncode != 0:
             raise ValueError(f"/usageが終了{result.returncode}で失敗した")
         found = False
-        for line in result.stdout.splitlines():
+        for line in json_lines.split_lines(result.stdout):
             with contextlib.suppress(json.JSONDecodeError):
                 event = json.loads(line)
                 report = event.get("usage_report") if isinstance(event, dict) else None
