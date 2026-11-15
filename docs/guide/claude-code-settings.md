@@ -57,14 +57,15 @@ CLIは`claude --version`で2.1.287以降か確認する。
 旧`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`は不要で、設定更新時に除去する。
 `/plugin`のInstalledタブで読み込まれたModを確認し、個別に無効化できる。
 シェルから更新した後は会話で`/reload-plugins`を実行する。
-`/restart`と`/update`は、自分が起動した背景`atk agents wait`だけを停止し、再起動後に待機と作業を自動で続ける。
-それ以外の背景処理とCode ModeのREPL内実行には、ホストの再起動制限が適用される。
+`/restart`と`/update`は、委譲先の終了を待つ背景コマンド`atk agents wait`を実行している場合、自身の会話の待機だけを停止する。
+再起動後は同じ会話で待機と作業を自動で続ける。
+ほかの背景処理やCode ModeのREPL内実行は停止せず、実行中はClaude Code本体が再起動を拒否することがある。
 `disableAllHooks: true`はユーザーのModsに加えて設定hookとstatuslineも止めるため、個別停止を優先する。
 組織の制御や読み込まれない場合は[公式の読み込み条件](https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off)を参照。
 
-メイン会話で`/atk`を実行すると、担当を選び、指示を追送し、effortを相対変更できるパネルを開く。
+agent-toolkitのModを読み込んだメインのターミナル会話で`/atk`を実行すると、担当を選び、指示を追送し、effortを相対変更できるパネルを開く。
 パネルには既存の集計を使った、会話と子孫の推定費用も表示する。
-effortの変更は次のturnから適用される。
+effortはモデルの推論量を調整する設定であり、変更は対象担当の次のターンから適用される。
 パネルを閉じるには「閉じる」またはEscを使う。
 
 ### 組織でModsを利用する設定

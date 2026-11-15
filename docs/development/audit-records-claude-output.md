@@ -6,6 +6,10 @@
 
 - 観測日: 2026年11月15日。
 - 観測版: Claude Code 2.1.325、Opus 5.5、Linuxのtmux対話会話。
+- 観測結果: 初回確認後にCode Modeの有効表示、REPLによる2ファイルの読取、指定した本文の実描画と`send_to_user`の`ok:true`を確認した。
+  初回は`<synthetic>`を持つ実ツール呼出しをStopが応答へ数えず誤警告したため、API失敗の代替本文との区別を修正した。
+  修正後は模擬transcriptのStop試験で、実ツール呼出しを応答へ数え、API失敗の本文を応答へ数えない結果を確認した。
+  API失敗自体の実機再現は行っていない。
 - 再検証: 作業ツリーのagent-toolkitを`--plugin-dir`で読む。
   ユーザー設定の`env.CLAUDE_CODE_EXPERIMENTAL_CODE_MODE="1"`を有効にした新規会話で初回確認を選ぶ。
   Code Modeの有効表示とREPLによる2ファイルの読取を確認する。

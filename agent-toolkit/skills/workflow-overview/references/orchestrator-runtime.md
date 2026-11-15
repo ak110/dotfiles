@@ -15,6 +15,8 @@
 
 ## 起動形の比較
 
+表中のmodは、Claude Codeの会話イベントを処理するagent-toolkitのFunction hooks moduleを指す。
+
 | 起動形・engine | 起動と最初の入力 | turn終了とプロセスの扱い | 再開・外部制御 | 実装の所在 |
 | --- | --- | --- | --- | --- |
 <<<<<<< HEAD

@@ -67,7 +67,7 @@ description: >
    - 呼び出し元の起動・受領契約と、その`起動対象:`に指定された`<役割名>.subagent.md`は、同一のplugin rootからペアとして適用する。
      契約は共有の`<役割名>.parent.md`、または単一の呼び出し元へ統合した節に記述する。
      入力宣言や起動設定と、呼び出し元での値の確定・検収が整合している版だけを後続の処理に使い、整合性を確認できない場合はセッション開始時の版を使い続ける（入力名や起動設定が異なる版の混在を防ぐためである）。
-   - フック・mod・プラグインMCPの変更は、配布後にメインが`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`で反映を予約できる。
+   - フック・会話イベントを処理するFunction hooks module・プラグインMCPの変更は、配布後にメインが`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`で反映を予約できる。
      `targets`へ`plugins`、`agents_server`、`pyfltr`から必要な対象を指定し、ターン終了後の反映結果を確認してから新しい動作を使う。
      agents_serverを再接続すると実行中の委譲先turnが中断され、既存の復旧で同じ会話を再開する。
      権限設定と、同ツールの反映対象にないスクリプトは、この操作だけで反映済みと扱わない。
