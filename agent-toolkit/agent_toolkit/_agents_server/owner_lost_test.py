@@ -599,6 +599,10 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
 
 
 @pytest.mark.windows
+@pytest.mark.cpu_limit(
+    3.25,
+    reason=("記録した実CLIのPID世代確認から、遅れて生成した子孫の解放までを1系列で検証する所有境界。Windows CPU合計1.422秒。"),
+)
 def test_stop_recorded_executor_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

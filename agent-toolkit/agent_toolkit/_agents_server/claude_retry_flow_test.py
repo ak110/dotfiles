@@ -169,7 +169,7 @@ async def _wait_reason(owner: manager.AgentsServerManager, session_id: str) -> d
 @pytest.mark.cpu_limit(
     2.5,
     reason=(
-        "模擬CLI2台を使い通知位置4種と起動種別4種の公開start/waitで同会話への復帰を検証する最小系列（Linux CI CP"
+        "模擬CLI2台を使い通知位置4種とmode4種の公開start/waitで同会話への復帰を検証する最小系列（Linux CI CP"
         "U合計最大1.016秒）。"
     ),
 )

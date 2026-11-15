@@ -153,18 +153,35 @@ def test_japanese_notice_judgment(text: str, expected: bool) -> None:
     assert _is_japanese_notice(text) is expected
 
 
-def test_hook_source_notice_texts_are_japanese() -> None:
+@pytest.fixture(scope="module", name="hook_notice_texts")
+def _hook_notice_texts() -> list[tuple[str, str]]:
+    """変更しないhookソースの全量解析を、同じモジュールの検証間で共有する。"""
+    return _collect_notice_texts()
+
+
+@pytest.mark.cpu_limit(
+    2.0,
+    reason="全hookソースの通知をASTから抽出し日本語を検査する。共有準備も当該試験へ計上し、Linux CPU合計0.813秒を基準とする。",
+)
+def test_hook_source_notice_texts_are_japanese(hook_notice_texts: list[tuple[str, str]]) -> None:
     """hookのソースが持つ通知の本文と解消手段が、自然言語部分を日本語だけで書く契約を満たすことを検証する。"""
-    texts = _collect_notice_texts()
+    texts = hook_notice_texts
     # 抽出が機能しない変更（呼び出し名の改名など）で対象の文面が空になり、無条件に合格することを防ぐ。
     assert len(texts) >= 40
     failures = [source for source, text in texts if not _is_japanese_notice(text)]
     assert failures == []
 
 
-def test_hook_source_does_not_name_removed_agents_server_tools() -> None:
+@pytest.mark.cpu_limit(
+    2.25,
+    reason=(
+        "全hookソースをASTから抽出し、撤去した操作への案内を検査する。単独起動時の共有準備も含め、"
+        "Linux CPU合計0.935秒を基準とする。"
+    ),
+)
+def test_hook_source_does_not_name_removed_agents_server_tools(hook_notice_texts: list[tuple[str, str]]) -> None:
     """通知が廃止済みの旧ツール名を案内しないことを検証する。"""
-    stale = [source for source, text in _collect_notice_texts() if "codex_start" in text]
+    stale = [source for source, text in hook_notice_texts if "codex_start" in text]
     assert stale == []
 
 

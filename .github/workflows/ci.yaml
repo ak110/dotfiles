@@ -391,7 +391,7 @@ jobs:
             echo "junit=$junit"
             echo "artifact=pytest-toolkit-junit-$shard"
           } >> "$GITHUB_OUTPUT"
-          pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args="-v --maxfail=0 --junitxml=$junit --test-shard=$TEST_SHARD" agent-toolkit
+          pyfltr ci --work-dir agent-toolkit --commands=pytest --pytest-args="-v --maxfail=0 --junitxml=$junit --test-shard=$TEST_SHARD -p agent_toolkit._testing.cpu_diagnostics" agent-toolkit
       - name: pytest toolkitのJUnit XMLを保存
         # 失敗した試験の所要も取得するため、pytestが失敗しても保存する。保存先が決まる前の失敗では実行しない。
         if: ${{ !cancelled() && needs.common-ci-owner.outputs.owns == 'true' && steps.pytest.outputs.junit != '' }}

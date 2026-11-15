@@ -181,11 +181,14 @@ def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch
     assert returned.read_bytes() == snapshot
 
 
-@settings(max_examples=30, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(
-    size=st.integers(min_value=1, max_value=6),
-    completed=st.integers(min_value=0, max_value=6),
-    terminal_state=st.sampled_from(("adopted", "rejected")),
+@pytest.mark.parametrize(
+    ("size", "completed", "terminal_state"),
+    [
+        (size, completed, terminal)
+        for size in range(1, 7)
+        for completed in range(size + 1)
+        for terminal in ("adopted", "rejected")
+    ],
 )
 def test_dependency_order_matches_reference_model(
     size: int,
@@ -196,7 +199,6 @@ def test_dependency_order_matches_reference_model(
     """依存鎖では終了済みの接頭辞に続く1件だけが処理可能になる。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
         notes = _setup_notes(pathlib.Path(directory))
-        completed = min(completed, size)
         names = [f"entry-{index}.md" for index in range(size)]
         for index, name in enumerate(names):
             path = _write_awi_file(notes, name)

@@ -134,6 +134,10 @@ for line in sys.stdin:
 
 @pytest.mark.windows
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    3.25,
+    reason=("実App Serverのstdin/stdoutで一覧を取得した後に、遅れて生成した子孫も解放する代表1系列。Windows CPU合計1.438秒。"),
+)
 async def test_model_list_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

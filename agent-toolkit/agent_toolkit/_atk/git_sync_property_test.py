@@ -306,14 +306,9 @@ class _SyncDouble(_GitDouble):
         return super().result(args, cwd)
 
 
-@settings(max_examples=50, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(
-    local_ancestor=st.booleans(),
-    remote_ancestor=st.booleans(),
-    tree_matches=st.booleans(),
-    dirty=st.booleans(),
-    redundant=st.booleans(),
-    fast_forward=st.booleans(),
+@pytest.mark.parametrize(
+    ("local_ancestor", "remote_ancestor", "tree_matches", "dirty", "redundant", "fast_forward"),
+    tuple(itertools.product((False, True), repeat=6)),
 )
 def test_pull_event_sequence_matches_reference_model(
     local_ancestor: bool,

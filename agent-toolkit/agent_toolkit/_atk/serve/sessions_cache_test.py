@@ -123,8 +123,8 @@ def test_listing_retains_messages_only_for_current_display(
 @pytest.mark.cpu_limit(
     2.0,
     reason=(
-        "2049通常記録と親子記録で一覧3回と追記を行い、2000件を超える実ファイルの再読抑止を検証する（Linux CI CPU合計最"
-        "大0.794秒）。"
+        "2049通常記録と親・サブエージェント記録で一覧3回と追記を行い、2000件を超える実ファイルの再読抑止を検証する"
+        "（Linux CI CPU合計最大0.794秒）。"
     ),
 )
 def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
