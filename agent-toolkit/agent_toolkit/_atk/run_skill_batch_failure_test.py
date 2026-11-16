@@ -63,6 +63,7 @@ def test_deleted_failure_waits_for_new_version_without_duplicate_report(tmp_path
     assert sum("state: inbox\n" in path.read_text(encoding="utf-8") for path in reports) == 1
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 def test_legacy_failure_version_is_saved_once_and_new_generation_is_preserved(tmp_path, monkeypatch):
     run_skill_batch_test._notes()  # pylint: disable=protected-access
     run_skill_batch_test._target(tmp_path, "one")  # pylint: disable=protected-access
@@ -181,6 +182,7 @@ def test_failure_body_survives_manifest_and_log_removal(tmp_path, phase):
     assert "初期要求" not in body and "会話本文の検出用" not in body
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 def test_unreported_failure_is_recovered_before_any_retry(tmp_path, monkeypatch):
     notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
     run_skill_batch_test._target(tmp_path, "one")  # pylint: disable=protected-access
@@ -205,6 +207,7 @@ def test_unreported_failure_is_recovered_before_any_retry(tmp_path, monkeypatch)
     assert prepared == ["one"]
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
 def test_dangling_record_link_remains_a_prepare_failure(tmp_path):
     notes = run_skill_batch_test._notes()  # pylint: disable=protected-access
     run_skill_batch_test._target(tmp_path, "one")  # pylint: disable=protected-access
