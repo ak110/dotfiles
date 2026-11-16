@@ -10,7 +10,7 @@
 `agent-basics:writing-standards`の`references/claude-hooks-block-warn-eligibility.md`の遮断の条件に当たる。
 Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
 
-ユーザー発話に対する遮断は、`send_to_user`を持つClaude Codeのメインだけを対象とする。
+委譲先での実行可否: ユーザー発話に対する遮断は、`send_to_user`を持つClaude Codeのメインだけを対象とする。
 検証失敗後の起動案内は、失敗を観測したメインと委譲先へ、修正・commit・再検証の前に警告する。
 こちらは構造化した失敗と同じ主体の起動成功を使い、自然文の中継だけから失敗を断定しない。
 """
