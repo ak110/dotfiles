@@ -9,6 +9,7 @@ from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._plan.structure import constants as plan_constants
 from agent_toolkit._plan.structure import materials as plan_materials
 from agent_toolkit._plan.structure import parsing as plan_parsing
+from agent_toolkit._plan.structure import references as plan_references
 from agent_toolkit._plan.structure import sections as plan_sections
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 from agent_toolkit._testing.plan_structure_support import (
@@ -630,10 +631,19 @@ def test_progress_log_rows_missing_table_states_next_action(content: str) -> Non
     ],
 )
 def test_transferred_action_requires_registered_wi(
-    tmp_path: pathlib.Path, reason: str, registered: bool, notes_exist: bool, rejected: bool, *, human_format: bool
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reason: str,
+    registered: bool,
+    notes_exist: bool,
+    rejected: bool,
+    *,
+    human_format: bool,
 ) -> None:
     """移管にはWI名と実在が必要で、notes不在時は実在を確認できなかった旨を通知する。"""
     notes = tmp_path / "notes"
+    # この入力は登録ファイルの有無を扱い、Git履歴は持たない。
+    monkeypatch.setattr(plan_references, "_deleted_registration", lambda *_args, **_kwargs: None)
     if notes_exist:
         notes.mkdir()
     if registered:

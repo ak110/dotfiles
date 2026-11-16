@@ -68,10 +68,10 @@ def _run(arguments: list[str] | str, environment: dict[str, str], cwd: Path, *, 
 @pytest.mark.usefixtures("share_package_caches")
 @pytest.mark.timeout(240)
 @pytest.mark.cpu_limit(
-    5.75,
+    12.0 if os.name == "nt" else 5.75,
     reason=(
-        "旧/新2rootからCLI/hook/MCPを実起動し、共有依存とコード版分離・生存子保護・停止後回収を確認する（Linux CI"
-        " CPU合計最大2.724秒）。"
+        "2rootの共有依存・コード版・生存保護と回収を実hook/MCP/代表CLIで確認し、重複6起動を除く。"
+        "Linux実測2.724秒/上限5.75秒、Windows実測6.328秒/上限12秒。"
     ),
 )
 def test_real_shared_environment_offline_public_entries_and_current_code(tmp_path_factory, host_environ):
@@ -160,11 +160,6 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         assert observed["label"] == label
         assert Path(observed["code"]).parent == root / "agent_toolkit"
         assert Path(observed["prefix"]) == selected
-        if os.name != "nt":
-            help_result = _run([str(root / "scripts/atk"), "--help"], environment, tmp_path)
-        else:
-            help_result = _run([str(root / "scripts/atk.cmd"), "--help"], environment, tmp_path)
-        assert "config" in help_result.stdout
         definitions = json.loads((root / "hooks/hooks.json").read_text())
         command = definitions["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
         command = command.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
@@ -184,16 +179,6 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
                     "cwd": str(tmp_path),
                 }
             ),
-        )
-        _run(
-            [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/agents_server_mcp.py", "--check-dependencies"],
-            environment,
-            tmp_path,
-        )
-        _run(
-            [sys.executable, str(root / "scripts/launch.py"), "agent_toolkit/_common/pyfltr_entry.py", "--version"],
-            environment,
-            tmp_path,
         )
         asyncio.run(asyncio.wait_for(_pyfltr_tools(root, environment, tmp_path), timeout=30))
         assert not (root / ".venv").exists()

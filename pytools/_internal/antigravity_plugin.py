@@ -218,7 +218,11 @@ def check_diagnostics(root: Path, plugin_name: str = "agent-toolkit") -> tuple[s
             diagnostics.append(f"{directory}/{relative}: 余剰")
         elif relative not in existing:
             diagnostics.append(f"{directory}/{relative}: 欠落")
-        elif path.is_symlink() or (path.read_bytes(), stat.S_IMODE(path.stat().st_mode)) != expected[relative]:
+        elif (
+            path.is_symlink()
+            or path.read_bytes() != expected[relative][0]
+            or (os.name != "nt" and stat.S_IMODE(path.stat().st_mode) != expected[relative][1])
+        ):
             diagnostics.append(f"{directory}/{relative}: 内容またはmodeの差")
     return tuple(diagnostics)
 
@@ -235,7 +239,13 @@ def sync(root: Path, plugin_name: str = "agent-toolkit") -> bool:
             changed = True
     for relative, (data, mode) in expected.items():
         path = target / relative
-        if path.is_file() and not path.is_symlink() and path.read_bytes() == data and stat.S_IMODE(path.stat().st_mode) == mode:
+        # atomic_write_bytesのmode適用はUnixのみ。Windowsでも同じ比較条件で再同期を判定する。
+        if (
+            path.is_file()
+            and not path.is_symlink()
+            and path.read_bytes() == data
+            and (os.name == "nt" or stat.S_IMODE(path.stat().st_mode) == mode)
+        ):
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.is_symlink():
