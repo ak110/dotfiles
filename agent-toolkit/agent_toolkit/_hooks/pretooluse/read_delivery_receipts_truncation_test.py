@@ -23,6 +23,12 @@ __all__ = ["_assert_acquisition", "_assert_allowed_without_guidance", "_deliver_
 @pytest.mark.parametrize("reader", ["claude-bash", "claude-read", "codex-bash"])
 @pytest.mark.parametrize("repeated", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実cat/sedと生の出力位置を使う。2資料/4区間または4行は全被覆" + "と未被覆の対照に必要。同群Linux CI所有CPU最大0.448秒。"
+    ),
+)
 def test_spooled_documents_follow_saved_offsets(scenario, host_environ, reader, repeated, reverse):
     """複数資料の退避後も、保存先の実読取位置を各原本へ対応付ける。"""
     _state, rows, first, _rollout, invoke, delivered = scenario
@@ -89,6 +95,12 @@ def test_spooled_documents_follow_saved_offsets(scenario, host_environ, reader, 
 @pytest.mark.parametrize("ascii_json", [False, True])
 @pytest.mark.parametrize("pretty", [False, True])
 @pytest.mark.parametrize("ends", ["prefix", "both"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実cat/sedと生の出力位置を使う。2資料/4区間または4行は全被覆" + "と未被覆の対照に必要。同群Linux CI所有CPU最大0.448秒。"
+    ),
+)
 def test_json_value_cut_keeps_received_prefix(scenario, host_environ, inner_cap, field, ascii_json, pretty, ends):
     """実読取のJSON値を外側で省略し、Unicodeと内側capを保って残りを回収する。"""
     _state, rows, path, _rollout, invoke, delivered = scenario
@@ -142,6 +154,12 @@ def test_json_value_cut_keeps_received_prefix(scenario, host_environ, inner_cap,
     _assert_acquisition(_state, path, True)
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実cat/sedと生の出力位置を使う。2資料/4区間または4行は全被覆" + "と未被覆の対照に必要。同群Linux CI所有CPU最大0.448秒。"
+    ),
+)
 def test_json_field_with_unknown_stream_position_stays_unread(scenario, host_environ):
     """異なる生産ストリームの同文を、資料の先頭へ付け替えない。"""
     _state, rows, path, _rollout, invoke, delivered = scenario
@@ -174,6 +192,12 @@ def test_json_field_with_unknown_stream_position_stays_unread(scenario, host_env
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("distinct", [False, True])
 @pytest.mark.parametrize("channel", ["stdout", "stderr"])
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実cat/sedと生の出力位置を使う。2資料/4区間または4行は全被覆" + "と未被覆の対照に必要。同群Linux CI所有CPU最大0.448秒。"
+    ),
+)
 def test_same_response_repetition_keeps_requested_coverage(scenario, host_environ, host, distinct, channel):
     """本文全体に偶然一致する反復出力も、要求位置の全被覆で判定する。"""
     state, rows, path, _rollout, invoke, delivered = scenario
@@ -211,6 +235,12 @@ def test_same_response_repetition_keeps_requested_coverage(scenario, host_enviro
     _assert_allowed_without_guidance(result)
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "実cat/sedと生の出力位置を使う。2資料/4区間または4行は全被覆" + "と未被覆の対照に必要。同群Linux CI所有CPU最大0.448秒。"
+    ),
+)
 def test_codex_truncated_diagnostic_keeps_received_requested_span(scenario, host_environ):
     """必要な読取範囲を全受信していれば、診断出力の省略でその位置を失わない。"""
     state, rows, path, _rollout, invoke, delivered = scenario

@@ -210,6 +210,10 @@ def test_cli_expected_wi_reports_invalid_or_duplicate_input(
     assert ("invalid.md" if case == "invalid" else "--expected-wi" if case == "combined" else "重複") in result.stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
+)
 def test_cli_checks_initial_plan_set_once(repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """初回に分割した3計画を1回の公開CLIで確かめ、各計画の構造とレーンのWI集合が一致すれば成功する。
 
@@ -231,6 +235,10 @@ def test_cli_checks_initial_plan_set_once(repo: tuple[pathlib.Path, str], monkey
         ("duplicate-wi", ("計画間で関連WIが重複する", "20260831-000000-101.md")),
         ("missing-reason", ("plan-2.md: 人間由来行の根拠がない",)),
     ],
+)
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
 )
 def test_cli_plan_set_reports_failing_plan_or_wi(
     repo: tuple[pathlib.Path, str],
@@ -262,6 +270,10 @@ def test_cli_plan_set_reports_failing_plan_or_wi(
         assert fragment in stderr, stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
+)
 def test_cli_plan_set_excludes_resumed_and_includes_prior_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -275,6 +287,10 @@ def test_cli_plan_set_excludes_resumed_and_includes_prior_plan(
     assert not stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
+)
 def test_cli_plan_set_rejects_duplicate_paths(repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """確かめる計画どうし、確かめる計画と先行計画に同じファイルを指定した入力は入力誤り（終了コード2）にする。"""
     work_dir, _base = repo

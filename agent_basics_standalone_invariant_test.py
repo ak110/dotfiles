@@ -79,6 +79,12 @@ def _unresolved_references(path: pathlib.Path, skills: pathlib.Path) -> list[str
     return unresolved
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "配布対象全資料の参照・依存を走査する不変条件。母集団を縮めると欠落を見" + "逃す。同群Linux CI所有CPU最大0.384秒。"
+    ),
+)
 def test_agent_basics_does_not_depend_on_agent_toolkit() -> None:
     """配布物の本文が、agent-toolkitの名前空間・共有文書・atkコマンド・標識・MCPツールを前提にしない。"""
     assert _DISTRIBUTED_DOCUMENTS
@@ -86,6 +92,12 @@ def test_agent_basics_does_not_depend_on_agent_toolkit() -> None:
     assert not found, "\n".join(found)
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "配布対象全資料の参照・依存を走査する不変条件。母集団を縮めると欠落を見" + "逃す。同群Linux CI所有CPU最大0.384秒。"
+    ),
+)
 def test_agent_basics_references_resolve_inside_distribution() -> None:
     """配布物の本文が指す資料は、監査記録を除いてagent-basicsの中に実在する。"""
     unresolved = [line for path in _DISTRIBUTED_DOCUMENTS for line in _unresolved_references(path, _SKILLS)]
@@ -118,6 +130,12 @@ def test_search_skills_are_only_published_from_basics(skill: str) -> None:
     assert not (_REPO_ROOT / "agent-toolkit/skills" / skill / "SKILL.md").exists()
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "配布対象全資料の参照・依存を走査する不変条件。母集団を縮めると欠落を見" + "逃す。同群Linux CI所有CPU最大0.384秒。"
+    ),
+)
 def test_reading_tables_are_not_split_into_other_files() -> None:
     """読込表を別ファイルへ分けた`*-delivery-*.md`と接続の標識が、配布物とプロジェクトスキルに無い。"""
     roots = ["agent-basics", "agent-toolkit", ".claude/skills"]

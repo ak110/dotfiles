@@ -48,7 +48,7 @@ def _copy(root: Path, label: str) -> None:
     )
 
 
-def _run(arguments: list[str], environment: dict[str, str], cwd: Path, *, input_text: str | None = None):
+def _run(arguments: list[str] | str, environment: dict[str, str], cwd: Path, *, input_text: str | None = None):
     result = subprocess.run(
         arguments,
         env=environment,
@@ -170,7 +170,8 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         command = command.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
         shell = shutil.which("cmd" if os.name == "nt" else "sh", path=environment["PATH"])
         assert shell is not None
-        arguments = [shell, "/d", "/s", "/c", command] if os.name == "nt" else [shell, "-c", command]
+        # cmdの本文はargv用のlist2cmdlineへ渡さず、登録済みの引用符をそのまま解釈させる。
+        arguments = f'{subprocess.list2cmdline([shell])} /d /s /c "{command}"' if os.name == "nt" else [shell, "-c", command]
         _run(
             arguments,
             environment,

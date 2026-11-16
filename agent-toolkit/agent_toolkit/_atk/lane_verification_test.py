@@ -21,6 +21,12 @@ from agent_toolkit._testing.lane_integration_support import (
 from agent_toolkit._testing.lane_support import _create, _invoke
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.403秒。"
+    ),
+)
 def test_integrate_manifest_timeout_reclaims_verification_descendants(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -60,6 +66,12 @@ def test_integrate_manifest_timeout_reclaims_verification_descendants(
                     child.kill()
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.403秒。"
+    ),
+)
 def test_integrate_restart_review_after_failed_rebased_verification(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -72,6 +84,12 @@ def test_integrate_restart_review_after_failed_rebased_verification(
     assert code == 0 and final["phase"] == "finalized", stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.403秒。"
+    ),
+)
 def test_integrate_rejects_changed_input_with_restart_guidance(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -89,6 +107,12 @@ def test_integrate_rejects_changed_input_with_restart_guidance(
 
 
 @pytest.mark.parametrize("rebased", [False, True])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.403秒。"
+    ),
+)
 def test_integrate_verification_is_not_limited_by_procedure_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], rebased: bool
 ) -> None:
@@ -120,6 +144,12 @@ def test_integrate_verification_is_not_limited_by_procedure_timeout(
     assert "verification-0" in result["completed"]
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.403秒。"
+    ),
+)
 def test_integrate_finalization_keeps_procedure_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

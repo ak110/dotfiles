@@ -20,6 +20,15 @@ from agent_toolkit._atk.wi import add, frontmatter, layout, sync, uwi
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, late_descendant
 
+_REAL_REPORT_CPU = pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "モデル呼出しは代用し、実Gitの報告保存・復帰か実生存所有者"
+        + "の重複起動拒否だけを実行する。同群Linux CI所有CPU"
+        + "最大0.378秒。"
+    ),
+)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_launch_identity(monkeypatch):
@@ -59,6 +68,7 @@ def _notes():
 
 
 @pytest.mark.parametrize("legacy", [False, True])
+@_REAL_REPORT_CPU
 def test_recovers_finished_analysis_with_saved_report_scope(tmp_path, monkeypatch, legacy):
     notes = _notes()
     origin = git_repository.init_bare_repository(tmp_path / "origin.git")
@@ -241,6 +251,7 @@ def test_hook_launch_normal_outcomes_do_not_report_failure(tmp_path, monkeypatch
     assert bool(session_review.pending()) == (condition == "active")
 
 
+@_REAL_REPORT_CPU
 def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeypatch) -> None:
     notes = _notes()
     _target(tmp_path, "one")
@@ -272,6 +283,7 @@ def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeyp
     assert len(list(layout.iter_entry_paths(notes))) == 1
 
 
+@_REAL_REPORT_CPU
 def test_failure_blocks_auto_but_manual_can_retry_without_duplicate_report(tmp_path, monkeypatch) -> None:
     notes = _notes()
     _target(tmp_path, "one")
@@ -308,6 +320,7 @@ def test_global_lock_prevents_different_repo_execution(tmp_path) -> None:
         assert run_skill_batch.dispatch(_args(), unexpected) == 1
 
 
+@_REAL_REPORT_CPU
 def test_missing_finish_keeps_report_and_suppresses_auto_retry(tmp_path, monkeypatch) -> None:
     """報告だけ保存した中断でも報告は残し、配布元への是正AWIが未完了の間は再起動を抑える。"""
     notes = _notes()
@@ -355,6 +368,7 @@ def test_active_target_is_not_prepared(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.parametrize("other", [None, "ready", "broken"])
+@_REAL_REPORT_CPU
 def test_activity_resumed_after_selection_is_deferred(tmp_path, monkeypatch, other) -> None:
     """選定後の活動再開はpendingへ残し、真の準備失敗だけを抑止する。"""
     notes = _notes()
@@ -420,6 +434,7 @@ def test_config_boolean_contract() -> None:
         config.save_mutable_settings({"session_review_auto_start": "yes"})
 
 
+@_REAL_REPORT_CPU
 def test_failure_awi_close_releases_failed_target(tmp_path, monkeypatch) -> None:
     """是正AWIが未完了の間は同じ対象を起動せず、AWIが終了すると次の自動起動で対象へ戻す。"""
     notes = _notes()
@@ -442,6 +457,7 @@ def test_failure_awi_close_releases_failed_target(tmp_path, monkeypatch) -> None
     assert len(list(layout.iter_entry_paths(notes))) == 2
 
 
+@_REAL_REPORT_CPU
 def test_batch_uses_most_common_repo_and_unknown_repo_fallback(tmp_path) -> None:
     """実際に選んだ対象数で報告先を決め、全対象不明なら配布元URLと独立cwdを使う。"""
     notes = _notes()
@@ -464,6 +480,7 @@ def test_batch_uses_most_common_repo_and_unknown_repo_fallback(tmp_path) -> None
     assert len(list(layout.iter_entry_paths(notes))) == 2
 
 
+@_REAL_REPORT_CPU
 def test_orphan_executor_prevents_new_model_before_pid_publish(tmp_path: pathlib.Path) -> None:
     """PID保存前の親中断でも固有manifestを持つ子が残れば再起動しない。"""
     path = session_review.directory() / "runs" / "orphan.json"
@@ -505,6 +522,7 @@ def _fail_prepare_for(monkeypatch, names: set[str]) -> list[str]:
     return calls
 
 
+@_REAL_REPORT_CPU
 def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monkeypatch) -> None:
     """1対象の準備失敗でも残りの対象でモデルを起動し、失敗対象だけを配布元への是正AWIとともに待ちへ残す。"""
     notes = _notes()
@@ -546,6 +564,7 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
     assert "対象: bad\n" in body and "## 完成条件" in body
 
 
+@_REAL_REPORT_CPU
 def test_manual_prepare_failure_does_not_retry_same_target(tmp_path, monkeypatch) -> None:
     """失敗中の対象も選ぶ手動実行で、同じ呼び出しの中では準備の失敗を繰り返さない。"""
     _notes()
@@ -560,6 +579,7 @@ def test_manual_prepare_failure_does_not_retry_same_target(tmp_path, monkeypatch
     assert session_review.pending()
 
 
+@_REAL_REPORT_CPU
 def test_prepare_failure_diagnostic_reaches_run_record_and_awi(tmp_path) -> None:
     """prepareがstderrへ出す不足項目と詳細を、失敗理由としてrun記録と配布元への是正AWIへ残す。"""
     notes = _notes()
@@ -602,6 +622,7 @@ def test_prepare_success_keeps_json_and_forwards_stderr(tmp_path, monkeypatch, c
 
 
 @pytest.mark.parametrize("detail", ["記録が存在しない", "作業領域を準備できない", "bundleが不正", "表示予算を超えた"])
+@_REAL_REPORT_CPU
 def test_prepare_exit_two_preserves_both_diagnostic_streams(tmp_path, monkeypatch, detail) -> None:
     """準備の失敗原因と次操作を、batchの失敗記録と是正AWIまで保持する。"""
     notes = _notes()
@@ -640,6 +661,7 @@ def test_failure_awi_requires_success_through_failed_phase(tmp_path, reason) -> 
 
 
 @pytest.mark.parametrize("resume", [False, True])
+@_REAL_REPORT_CPU
 def test_child_failure_keeps_scope_unprocessed(tmp_path, resume) -> None:
     """準備後の子回収失敗は具体理由を保存し、対象範囲を未処理のまま保持する。"""
     notes = _notes()
@@ -680,6 +702,7 @@ def test_child_failure_keeps_scope_unprocessed(tmp_path, resume) -> None:
     assert pathlib.Path(records[0]["log_path"]).read_text(encoding="utf-8") == log_path.read_text(encoding="utf-8")
 
 
+@_REAL_REPORT_CPU
 def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path, monkeypatch) -> None:
     """準備失敗の是正AWIが未完了の間は再試行を止め、終了後の自動起動で再試行して再失敗すれば診断付きの新AWIを投入する。"""
     notes = _notes()
@@ -725,6 +748,7 @@ def _report_and_finish(notes, monkeypatch, calls):
 
 
 @pytest.mark.parametrize("other", [False, True])
+@_REAL_REPORT_CPU
 def test_target_without_record_file_is_dropped_without_failure_report(tmp_path, monkeypatch, capsys, other) -> None:
     """発話せずに終了して記録ファイルが作られなかった対象は、失敗報告と抑止にせず待ちから外し、他の対象は処理する。"""
     notes = _notes()
@@ -746,6 +770,7 @@ class _ProcessDied(BaseException):
     """実行プロセスの強制終了を模す。batchの失敗処理が捕捉しない例外で、実行記録を実行中のまま残す。"""
 
 
+@_REAL_REPORT_CPU
 def test_interrupted_run_is_retried_once_before_failure_report(tmp_path, monkeypatch) -> None:
     """診断を残さず実行プロセスが終了した回は、1回目は報告せずに再試行し、同じ対象が続けて中断したら失敗として報告する。"""
     notes = _notes()
@@ -770,6 +795,7 @@ def test_interrupted_run_is_retried_once_before_failure_report(tmp_path, monkeyp
     assert "interrupted: 実行プロセスが終了し成功を確認できない" in failures[0].read_text(encoding="utf-8")
 
 
+@_REAL_REPORT_CPU
 def test_interrupted_run_recovers_on_next_start(tmp_path, monkeypatch) -> None:
     """1回の中断の後、次の起動で同じ対象の振り返りが完了し、失敗報告を残さない。"""
     notes = _notes()

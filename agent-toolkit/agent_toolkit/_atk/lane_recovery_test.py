@@ -18,6 +18,12 @@ from agent_toolkit._testing.lane_support import _create, _create_args, _create_i
 
 
 @pytest.mark.parametrize("integrated", [True, False])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.480秒。"
+    ),
+)
 def test_delete_uses_held_selection_after_selection_file_expires(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], integrated: bool
 ) -> None:
@@ -36,6 +42,12 @@ def test_delete_uses_held_selection_after_selection_file_expires(
         assert pathlib.Path(record["worktree"]).is_dir() and pathlib.Path(record["record_path"]).is_file()
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.480秒。"
+    ),
+)
 def test_integrate_finalizes_and_cleans_after_selection_file_expires(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -79,6 +91,12 @@ def test_integrate_finalizes_and_cleans_after_selection_file_expires(
 
 
 @pytest.mark.parametrize("entity", ["present", "missing"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.480秒。"
+    ),
+)
 def test_recover_releases_legacy_registration_and_keeps_branch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], entity: str
 ) -> None:
@@ -113,6 +131,12 @@ def test_recover_releases_legacy_registration_and_keeps_branch(
     assert code == 0 and repeated["recovered"][0]["head"] == head, stderr
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.480秒。"
+    ),
+)
 def test_recover_keeps_registrations_with_selection_information(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -129,6 +153,12 @@ def test_recover_keeps_registrations_with_selection_information(
 
 
 @pytest.mark.parametrize("condition", ["dirty", "active-session", "foreign-owner", "partial-failure"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.480秒。"
+    ),
+)
 def test_recover_protects_unfinished_work_and_resumes_after_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
@@ -174,6 +204,12 @@ def test_recover_protects_unfinished_work_and_resumes_after_failure(
         assert "recovery" not in stored
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.480秒。"
+    ),
+)
 def test_reuse_switches_held_selection_to_current_selection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

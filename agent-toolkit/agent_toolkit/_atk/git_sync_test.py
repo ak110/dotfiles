@@ -25,6 +25,15 @@ from agent_toolkit._git import command as _git_command
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
+_REAL_GIT_CPU = pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitのindex・分岐・ローカルremoteへの保存/同"
+        + "期を確認し、Git応答の模擬群は通常区分へ残す。同群Linu"
+        + "x CI所有CPU最大0.442秒。"
+    ),
+)
+
 
 @pytest.fixture(autouse=True)
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,6 +156,7 @@ _LOCK_HOLDER_LAUNCHER = (
 )
 
 
+@_REAL_GIT_CPU
 def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -291,6 +301,7 @@ def _init_repo(root: pathlib.Path) -> None:
     git_repository.run_git(root, "commit", "-m", "base")
 
 
+@_REAL_GIT_CPU
 def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """同期基盤のGit実行は成功時に標準出力と標準エラーへ書かない。"""
     _atk_git_sync._run_git(["init", "--initial-branch=main"], tmp_path)
@@ -355,6 +366,7 @@ def _create_matching_tree_divergence(local: pathlib.Path, peer: pathlib.Path) ->
     return git_repository.run_git(peer, "rev-parse", "HEAD").stdout.strip()
 
 
+@_REAL_GIT_CPU
 def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -383,6 +395,7 @@ def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     assert not captured.err
 
 
+@_REAL_GIT_CPU
 def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path) -> None:
     """対象外の差分を無視し、指定したpathだけの変更を判定する。"""
     repo = tmp_path / "repo"
@@ -394,6 +407,7 @@ def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path)
     assert _atk_git_sync.is_worktree_dirty(repo)
 
 
+@_REAL_GIT_CPU
 def test_pending_commit_count_distinguishes_remote_and_upstream_states(tmp_path: pathlib.Path) -> None:
     """remoteなし、upstream不明および未push件数を別の結果で返す。"""
     local_only = tmp_path / "local-only"
@@ -497,6 +511,7 @@ def test_push_pending_defers_diverged_history_when_worktree_is_dirty(
     assert "元の`atk`操作" not in lines[-1]
 
 
+@_REAL_GIT_CPU
 def test_wi_hold_defers_dirty_divergence_and_commit_recovers(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -647,6 +662,7 @@ def test_pull_suppresses_output_of_recovered_first_merge(
 @pytest.mark.parametrize("operation", ["pull", "push"])
 @pytest.mark.parametrize("dirty", [False, True])
 @pytest.mark.parametrize("agent_environment", [False, True])
+@_REAL_GIT_CPU
 def test_sync_recovers_matching_tree_divergence(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -691,6 +707,7 @@ def test_sync_recovers_matching_tree_divergence(
         ),
     ],
 )
+@_REAL_GIT_CPU
 def test_mq_sync_recovers_duplicate_terminal_commit(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -719,6 +736,7 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
     assert not capsys.readouterr().err
 
 
+@_REAL_GIT_CPU
 def test_mq_pull_rebases_clean_divergence(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -741,6 +759,7 @@ def test_mq_pull_rebases_clean_divergence(
     assert git_repository.run_git(local, "status", "--porcelain").stdout == ""
 
 
+@_REAL_GIT_CPU
 def test_mq_pull_reports_dirty_divergence_without_rewriting(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -788,6 +807,7 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
         ),
     ],
 )
+@_REAL_GIT_CPU
 def test_mq_pull_reports_rebase_failure_and_preserves_state(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
@@ -817,6 +837,7 @@ def test_mq_pull_reports_rebase_failure_and_preserves_state(
     )
 
 
+@_REAL_GIT_CPU
 def test_conflicting_divergence_keeps_rebase_and_rejects_next_mutation(tmp_path: pathlib.Path) -> None:
     """Webの同期で競合したrebaseは状態と変更を保持し、次のWebの更新を変更前に拒否する。
 
@@ -908,6 +929,7 @@ def test_require_upstream_names_set_upstream_command(tmp_path: pathlib.Path) -> 
     assert "branch --set-upstream-to=<remote>/<branch>" in exc_info.value.next_action
 
 
+@_REAL_GIT_CPU
 def test_rebase_in_progress_error_keeps_reason_and_next_action(tmp_path: pathlib.Path) -> None:
     """rebase中の拒否は理由だけを`str()`で返し、競合解消の手順を次の操作として持つ。"""
     _init_repo(tmp_path / "repo")
@@ -924,6 +946,7 @@ def test_rebase_in_progress_error_keeps_reason_and_next_action(tmp_path: pathlib
 
 
 @pytest.mark.parametrize("configuration", ["local", "remote", "upstream"])
+@_REAL_GIT_CPU
 def test_notes_cli_with_upstream_states(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

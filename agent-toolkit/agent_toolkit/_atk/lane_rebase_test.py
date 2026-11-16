@@ -21,6 +21,12 @@ from agent_toolkit._testing.lane_support import _create, _invoke
 
 
 @pytest.mark.parametrize("phase", ["rebasing", "rebased", "awaiting-validation", "verified"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.547秒。"
+    ),
+)
 def test_legacy_rebase_migrates_without_losing_wi_mapping(tmp_path, monkeypatch, capsys, phase):
     """保存済み旧対応を汎用操作で継承し、元成果と証拠を保って新方式へ再開する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
@@ -76,6 +82,12 @@ def test_legacy_rebase_migrates_without_losing_wi_mapping(tmp_path, monkeypatch,
 
 
 @pytest.mark.parametrize("advance", [False, True])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.547秒。"
+    ),
+)
 def test_merge_conflict_resolution_and_wi_assignment(tmp_path, monkeypatch, capsys, advance):
     """競合解消mergeの新差分だけをWIへ記録し、先進後も成果OIDを保持する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)

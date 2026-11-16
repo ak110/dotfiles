@@ -92,14 +92,16 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert set(events) == {"SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop"}
     for event, groups in events.items():
         handler = groups[0]["hooks"][0] if event in {"PreToolUse", "PostToolUse"} else groups[0]
-        arguments = shlex.split(handler["command"])
+        arguments = shlex.split(handler["command"], posix=os.name != "nt")
+        if os.name == "nt":
+            arguments[0] = arguments[0].removeprefix('"').removesuffix('"')
         entry = target / ("scripts/atk-hook.cmd" if os.name == "nt" else "scripts/atk-hook")
         assert arguments == [str(entry), "antigravity", event]
         assert entry.is_file()
         assert "${" not in handler["command"]
     mcp = json.loads((target / "mcp_config.json").read_text())["mcpServers"]
     assert set(mcp) == {"agents_server", "pyfltr"}
-    assert mcp["agents_server"]["args"][0] == str(target / "scripts/launch.py")
+    assert Path(mcp["agents_server"]["args"][0]) == target / "scripts/launch.py"
     assert (target / "agents/worker.md").is_file()
     assert (target / "agents/execute.md").is_file()
     assert str(target / "share/execute.subagent.md") in (target / "agents/execute.md").read_text()

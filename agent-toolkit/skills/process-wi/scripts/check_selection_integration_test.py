@@ -439,6 +439,14 @@ def test_unintegrated_missing_write_target_still_rejected(
 __all__ = ["fixture_env"]
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの新計画保存とWI採用まで接続し、旧計画/対象外WIを保持する"
+        + "最小の2WIを確認する。同群Linux CI所有CPU最大0.413秒"
+        + "。"
+    ),
+)
 def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

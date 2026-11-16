@@ -26,6 +26,12 @@ from agent_toolkit._testing.lane_support import _create, _invoke
 
 @pytest.mark.parametrize("placeholder", [False, True], ids=["literal", "placeholder"])
 @pytest.mark.parametrize("expanded_note", [False, True], ids=["literal-note", "expanded-note"])
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.484秒。"
+    ),
+)
 def test_integrate_adopts_same_commit_with_literal_or_placeholder(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -155,6 +161,12 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
         "unexpected",
         "no-source",
     ],
+)
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.484秒。"
+    ),
 )
 def test_integrate_validates_adopt_commits_before_git_and_finalization(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str

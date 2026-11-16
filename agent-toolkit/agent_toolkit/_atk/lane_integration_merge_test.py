@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.lane_integration_support import (
     _integration_args,
@@ -13,6 +15,12 @@ from agent_toolkit._testing.lane_integration_support import (
 from agent_toolkit._testing.lane_support import _create, _invoke
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "実Gitの履歴・所有作業先・公開CLIでしか判定できない状態を最小構成" + "で確認する。同群Linux CI所有CPU最大0.406秒。"
+    ),
+)
 def test_merge_preserves_lane_and_target_oids(tmp_path, monkeypatch, capsys):
     """分岐を接続して元OIDを保ち、同じ公開入力で再開できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)

@@ -704,8 +704,12 @@ def _record_read(env: dict[str, str], session_id: str, path: pathlib.Path, **ext
     ]
     + [("apply_patch", "mixed")],
 )
-def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: str) -> None:
+def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tool: str, target: str) -> None:
     """記録先1件だけへの編集を許し、混在と原稿への編集では基準取得を求める。"""
+    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
+    # 記録先の除外と執筆基準の取得を求める1宣言だけを入力へ渡す。
+    rows = [read_triggers.ReadTrigger(author, 1, "操作", ("body-writing",), (author,))]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     env = _plan_file_state_env(tmp_path)
     own = str(tmp_path / "handoff.md")
     other = str(tmp_path / "awi-draft.md")
@@ -729,7 +733,6 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: s
     assert ("`agent-basics:writing-standards`を起動せよ" in _additional_context(result)) is (target != "own")
     state = _read_session_state(tmp_path, "handoff-exempt") if session_state.state_path("handoff-exempt").exists() else {}
     records = state.get(rules_context.OPERATION_SKILL_READY_KEY, {})
-    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
     assert document_reads.acquisition_state(records, read_triggers.ReadTarget(author), "main") == "missing"
     assert result.returncode == 0
     assert result.stderr == ""
@@ -841,8 +844,13 @@ def test_standard_stream_alias_is_not_discarded_by_name(tmp_path: pathlib.Path, 
     assert operation_skills.operation_matches("body-writing", "Bash", data, str(tmp_path))
 
 
-def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path) -> None:
+def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """公開Pre/Post hookで破棄だけを本文編集やリポジトリ編集として扱わない。"""
+    author = plugin_resources.plugin_root().parent / "agent-basics/skills/writing-standards/SKILL.md"
+    rows = [
+        read_triggers.ReadTrigger(author, 1, "操作", ("body-writing", "existing-file-edit"), (author,)),
+    ]
+    monkeypatch.setattr(read_delivery, "declarations", lambda *_args, **_kwargs: rows)
     env = _plan_file_state_env(tmp_path)
     payload = _bash(f"cat > {os.devnull} <<<'本文'", "discard-public", cwd=str(tmp_path))
     result = _run(payload, env)

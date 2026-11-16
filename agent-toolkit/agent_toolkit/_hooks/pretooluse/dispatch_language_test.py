@@ -190,7 +190,6 @@ def test_repeated_pretooluse_does_not_reinject_language(tmp_path: pathlib.Path) 
 )
 def test_bash_drive_letter_path_warning_reaches_additional_context(
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
     extra_payload: dict[str, str],
     expected_warned: bool,
 ) -> None:
@@ -205,6 +204,7 @@ def test_bash_drive_letter_path_warning_reaches_additional_context(
         "session_id": "dispatch-drive-letter-path",
         **extra_payload,
     }
-    assert pretooluse.main(json.dumps(payload)) == 0
-    out = capsys.readouterr().out
+    result = _run(payload)
+    assert result.returncode == 0
+    out = result.stdout
     assert ("`PATH`へドライブ文字形式の要素" in out) is expected_warned

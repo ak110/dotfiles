@@ -204,7 +204,9 @@ _DATABASE_ROW = "| DBを書く前 | `.claude/skills/database/SKILL.md` | 操作 
 
 
 @pytest.mark.parametrize("nested", [False, True])
-def test_project_skill_resolves_repository_relative_material(tmp_path: pathlib.Path, nested: bool) -> None:
+def test_project_skill_resolves_repository_relative_material(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, nested: bool
+) -> None:
     """`.claude/`で始まる資料は、最も近い`.claude/skills`を持つリポジトリの根から解決し、hookを止めない。"""
     main = tmp_path / "main"
     if nested:
@@ -212,6 +214,7 @@ def test_project_skill_resolves_repository_relative_material(tmp_path: pathlib.P
         _project_skills(main, "")
     project = main / ".claude/worktrees/lane" if nested else main
     backend, database = _project_skills(project, _DATABASE_ROW)
+    monkeypatch.setattr(read_delivery, "_declaration_sources", lambda _cwd: [backend])
     rows = read_triggers.parse_tables(backend, read_delivery.plugin_resources.plugin_root(), project=str(project))
     assert [row.documents for row in rows] == [(database,)]
     result = _pretooluse(project, f"repository-relative-{nested}", "Read", {"file_path": str(backend)})
