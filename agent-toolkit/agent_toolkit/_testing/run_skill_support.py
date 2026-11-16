@@ -205,8 +205,13 @@ class _Env(typing.NamedTuple):
 
 
 @pytest.fixture(name="engine_env")
-def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> _Env:
+def _engine_env(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+) -> _Env:
     """偽の実行ファイル、隔離した状態ディレクトリと対象リポジトリを用意する。"""
+    request.getfixturevalue("leaf_git_commands")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name in ("claude", "codex"):
@@ -274,7 +279,11 @@ def _engine_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request
                 failures.append(error)
         owned.clear()
         if failures:
-            raise BaseExceptionGroup("偽CLIの所有資源を回収できない", failures)
+            raise BaseExceptionGroup(
+                f"偽CLIの所有資源を回収できない。次の操作: {records}のPID・created_atと"
+                "内側の例外を確認し、同じ世代の残存を回収してから試験を再実行する。",
+                failures,
+            )
 
     request.addfinalizer(reclaim)
     monkeypatch.setattr(subprocess, "Popen", OwnedPopen)

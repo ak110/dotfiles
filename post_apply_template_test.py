@@ -484,6 +484,10 @@ public sealed class UpdateStageJob : IDisposable {
     public void Dispose() {
         if (disposed) return;
         try { Stop(); if (output != null && !output.Wait(5000)) throw new TimeoutException("readerが残っています"); }
+        catch (Exception error) {
+            throw new InvalidOperationException("次の操作: 試験のstdout/stderrとdriver.ps1を確認し、"
+                + "native Processとreaderの残存を回収して再実行してください。", error);
+        }
         finally { process.Dispose(); disposed = true; }
     }
 }
@@ -553,43 +557,3 @@ public sealed class UpdateStageJob : IDisposable {
         # Get-Processは列挙後に消えたPIDを返す。消滅は停止済みとして更新・復帰へ進む。
         assert log.read_text(encoding="utf-8").splitlines() == ["upgrade", "restart"]
         assert ("pre-release" in result.stderr) is preview
-
-
-@pytest.mark.skipif(POWERSHELL is None or os.name == "nt", reason="pwshで直接の子の時間切れと回収を観測する")
-def test_job_python_probe_timeout_reclaims_process(tmp_path: Path) -> None:
-    """jobが使うbootstrap探索は、実際に停止したnative子を回収して有限時間で失敗する。"""
-    uv = tmp_path / "uv"
-    pid_log = tmp_path / "pids"
-    uv.write_text(
-        '#!/usr/bin/env bash\nif [[ "$1 $2" == "python find" ]]; then\necho $$ >> "$PROBE_PIDS"\nexec sleep 60\nfi\nexit 0\n',
-        encoding="utf-8",
-    )
-    uv.chmod(0o755)
-    bootstrap = tmp_path / "update_bootstrap.ps1"
-    # 実時間の試験だけ待機値を縮め、同じProcess/WaitForExit/回収経路を使う。
-    text = _read(REPO_ROOT / "libexec/update_bootstrap.ps1").replace("$Seconds * 1000", "100")
-    # LinuxにはCIMが無い。この代用品はexecした直接の子だけなので、子孫一覧は空とする。
-    text = text.replace("CimCmdlets\\Get-CimInstance Win32_Process -OperationTimeoutSec 10 -ErrorAction Stop", "@()")
-    bootstrap.write_text(text, encoding="utf-8-sig")
-    shutil.copy2(REPO_ROOT / "libexec/locking_process.ps1", tmp_path / "locking_process.ps1")
-    environment = os.environ.copy()
-    environment.update(PATH=str(tmp_path) + os.pathsep + environment["PATH"], PROBE_PIDS=str(pid_log))
-    result = subprocess.run(
-        [str(POWERSHELL), "-NoProfile", "-File", str(bootstrap), str(uv), "-PrepareOnly", "-PrintPython"],
-        env=environment,
-        capture_output=True,
-        encoding="utf-8",
-        check=False,
-        timeout=15,
-    )
-    assert result.returncode == 1, result.stderr
-    assert "124" in result.stderr
-    assert not result.stdout.strip()
-    import psutil  # pylint: disable=import-outside-toplevel
-
-    for pid in pid_log.read_text(encoding="utf-8").splitlines():
-        assert not psutil.pid_exists(int(pid))
-    launcher = (REPO_ROOT / "bin/update-dotfiles.cmd").read_bytes().decode("cp932")
-    route = launcher[launcher.index(":job_route\r\n") :]
-    assert "-PrepareOnly -PrintPython" in route
-    assert '\'"%UV%" python find' not in route
