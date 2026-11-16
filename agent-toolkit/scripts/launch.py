@@ -276,8 +276,15 @@ def _run_agents_server(
         environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
         received = []
         tail = bytearray()
-        with _server_lifetime(arguments, environment, received, tail, quiet=independent) as process:
+        with _server_lifetime(arguments, environment, received, tail, inherit_stderr=independent) as process:
             returncode = _wait_owned_server(process, received, lambda: True) if independent else _wait_server(process, received)
+        if independent:
+            # 子が世代stderrへ直接flushしてからpeerを閉じる。tee threadの配送待ちを診断へ残さない。
+            path = Path(arguments[-2]) / f"{arguments[-1]}.stderr.log"
+            with path.open("rb") as stream:
+                size = stream.seek(0, os.SEEK_END)
+                stream.seek(max(0, size - _STDERR_TAIL_BYTES))
+                tail.extend(stream.read(_STDERR_TAIL_BYTES))
         diagnostics = logging_config.read_launch_record(record_path)
         terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
         if diagnostics is None:
@@ -362,7 +369,7 @@ def _server_lifetime(
     *,
     stdin: BinaryIO | None = None,
     cwd: Path | None = None,
-    quiet: bool = False,
+    inherit_stderr: bool = False,
 ) -> Generator[subprocess.Popen[bytes]]:
     """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。"""
     # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
@@ -378,12 +385,12 @@ def _server_lifetime(
             env=environment,
             stdin=stdin,
             cwd=cwd,
-            stderr=subprocess.PIPE,
+            stderr=None if inherit_stderr else subprocess.PIPE,
             start_new_session=os.name != "nt",
             creationflags=0x00000004 if job is not None else 0,
         )
-        assert process.stderr is not None
-        cleanup.callback(process.stderr.close)
+        if process.stderr is not None:
+            cleanup.callback(process.stderr.close)
         try:
             if job is not None:
                 owned_process: Any = process
@@ -398,9 +405,10 @@ def _server_lifetime(
                     signum = getattr(signal, name)
                     previous = signal.signal(signum, _forwarding_handler(process, received))
                     cleanup.callback(signal.signal, signum, previous)
-            reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), kwargs={"quiet": quiet}, daemon=True)
-            cleanup.callback(_join_reader, reader)
-            reader.start()
+            if process.stderr is not None:
+                reader = threading.Thread(target=_tee_stderr, args=(process.stderr, tail), daemon=True)
+                cleanup.callback(_join_reader, reader)
+                reader.start()
             yield process
         finally:
             _stop_server_process(process)
@@ -459,12 +467,11 @@ def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[s
     return handler
 
 
-def _tee_stderr(stream: Any, tail: bytearray, *, quiet: bool = False) -> None:
+def _tee_stderr(stream: Any, tail: bytearray) -> None:
     """子の標準エラーを受け取った順に自身の標準エラーへ出力し、末尾16KiBを保持する。"""
     while chunk := stream.read1(65536):
-        if not quiet:
-            sys.stderr.buffer.write(chunk)
-            sys.stderr.buffer.flush()
+        sys.stderr.buffer.write(chunk)
+        sys.stderr.buffer.flush()
         tail.extend(chunk)
         del tail[:-_STDERR_TAIL_BYTES]
 
