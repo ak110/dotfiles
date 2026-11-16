@@ -523,6 +523,12 @@ def test_sync_local_repo_recovers_from_stale_index_lock(tmp_path: Path, monkeypa
     """リリース後の同期は、所有者のいない`index.lock`を回収して1回だけ再実行し、上流へ追従する。"""
     lock = _stale_lock_sync_setup(tmp_path, monkeypatch)
     lock.write_bytes(b"")
+    context = stale_lock.LockContext(
+        git_operation=lambda: False,
+        scan_git=stale_lock.ProcessScan,
+        scan_updaters=stale_lock.ProcessScan,
+    )
+    monkeypatch.setattr(stale_lock, "command_context", lambda *_args, **_kwargs: context)
 
     _sync_local_repo()
 

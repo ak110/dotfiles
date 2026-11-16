@@ -25,6 +25,12 @@ def test_run_git_with_lock_recovery_reclaims_orphan_lock(tmp_path: Path, monkeyp
     repo = _lock_repo(tmp_path, monkeypatch)
     lock = repo / ".git" / "index.lock"
     lock.write_bytes(b"")
+    context = stale_lock.LockContext(
+        git_operation=lambda: False,
+        scan_git=stale_lock.ProcessScan,
+        scan_updaters=stale_lock.ProcessScan,
+    )
+    monkeypatch.setattr(stale_lock, "command_context", lambda *_args, **_kwargs: context)
 
     result = git_lock_recovery.run_git_with_lock_recovery(["git", "-C", str(repo), "add", "file.txt"], repo=repo)
 

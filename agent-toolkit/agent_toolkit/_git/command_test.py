@@ -260,10 +260,17 @@ def _hold_with_live_owner(repo: pathlib.Path) -> pathlib.Path:
         "Windows実測3.734秒に対し6秒、Linuxは従来2.5秒。"
     ),
 )
-def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path) -> None:
+def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """所有者のいない`index.lock`を回収し、同じコマンドを再実行して成功する。"""
     lock = stale_lock_repo / ".git" / "index.lock"
     lock.write_bytes(b"")
+    # 回収と再実行を検査する。短い待機予算へ、対象外の実Git・OSの走査を含めない。
+    context = stale_lock.LockContext(
+        git_operation=lambda: False,
+        scan_git=stale_lock.ProcessScan,
+        scan_updaters=stale_lock.ProcessScan,
+    )
+    monkeypatch.setattr(stale_lock, "command_context", lambda *_args, **_kwargs: context)
 
     result = _add(stale_lock_repo)
 

@@ -161,6 +161,8 @@ def test_update_skips_while_git_commit_in_progress(
         arguments = ["commit", *(["-a"] if phase == "commit-a" else []), "-m", "同期点"]
     monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", target)
     monkeypatch.setattr(update_dotfiles_stashing, "protect_old_worktree_stashes", lambda: pytest.fail("変更開始"))
+    # 保持したcommitはfinallyまで終了しない。競合の解消を待たず、見送りと内容の保全を検査する。
+    monkeypatch.setattr(stale_lock, "DEFAULT_WAIT_SECONDS", 0.0)
     if scope != "same":
         monkeypatch.setattr(update_dotfiles_git, "_update_owned_git", lambda *_args, **_kwargs: 0)
     with subprocess.Popen(
