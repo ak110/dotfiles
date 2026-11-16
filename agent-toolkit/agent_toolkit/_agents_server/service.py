@@ -219,9 +219,16 @@ async def serve_peer(
         try:
             if connection_id is not None and not peer_state.redirect_acknowledged:
                 await coordinator.disconnect(connection_id)
+        except Exception:
+            _LOG.exception("管理サービスの会話切断処理が失敗しました")
+            raise
         finally:
-            await owned.close()
-            peer_state.pending.clear()
+            try:
+                await owned.close()
+                peer_state.pending.clear()
+            except Exception:
+                _LOG.exception("管理サービスの接続回収が失敗しました")
+                raise
 
 
 async def _rpc(
