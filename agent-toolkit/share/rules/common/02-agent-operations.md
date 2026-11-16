@@ -94,7 +94,7 @@
 
 ### `atk`の呼び出し
 
-- 同じセッションで`atk`の不具合や遅さを直した場合は、修正を検証した後の残工程で、修正を含むworktreeの`agent-toolkit/scripts/atk`から起動する。
+- 同じセッションで`atk`の不具合や遅さを直した場合は、修正を検証した後の残工程で、修正を含むworktreeの`agent-toolkit/scripts/atk`（Windowsでは`agent-toolkit/scripts/atk.cmd`）から起動する。
   起動時に通知される配布版の起動部分は、公開と配布の前の修正を含まないためである。
   hookとMCPはセッションの途中では切り替わらず、公開後に起動したセッションから修正済みの版になる。
 - 複数対象の取得は、`atk config get execute_model chores_model`のように対応するコマンドへまとめて渡す。
