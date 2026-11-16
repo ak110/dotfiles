@@ -11,6 +11,7 @@ import os
 import pathlib
 import socket
 import struct
+import threading
 from collections.abc import Callable, Generator
 from multiprocessing import connection
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,8 @@ from agent_toolkit._common import runtime_environment, state_paths
 
 if TYPE_CHECKING:
     import asyncio
+
+_DISCONNECT_LOCK = threading.Lock()
 
 
 class AsyncPeer:
@@ -171,9 +174,12 @@ def receive(peer: connection.Connection) -> dict[str, Any]:
 
 def disconnect(peer: connection.Connection) -> None:
     """終了処理で別threadの読取を解除してから、接続handleを閉じる。"""
-    if peer.closed:
-        return
-    if os.name != "nt":
-        with contextlib.suppress(OSError, ValueError), socket.socket(fileno=os.dup(peer.fileno())) as stream:
-            stream.shutdown(socket.SHUT_RDWR)
-    peer.close()
+    # Connection.closeのclosed判定とCloseHandleは別操作なので、複数threadのcloseを原子的にする。
+    # 送信側の状態ロックとは分け、待機中の送信をshutdown/closeで解除できるようにする。
+    with _DISCONNECT_LOCK:
+        if peer.closed:
+            return
+        if os.name != "nt":
+            with contextlib.suppress(OSError, ValueError), socket.socket(fileno=os.dup(peer.fileno())) as stream:
+                stream.shutdown(socket.SHUT_RDWR)
+        peer.close()

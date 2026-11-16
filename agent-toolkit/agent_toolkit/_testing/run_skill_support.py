@@ -268,7 +268,16 @@ def _engine_env(
                 if not process_identity.matches(recorded_process, record["created_at"]):
                     continue
                 command = recorded_process.cmdline()
-                if not command and recorded_process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                # kill後のexit途中ではcmdlineが先に空になり、statusは一時的にrunningのままになる。
+                # 所有不明のまま信号を送らず、同世代の資源解放だけを有限に確認する。
+                if (
+                    not command
+                    and not process_tree.wait_until_released([recorded_process], timeout=1)
+                    and (
+                        not recorded_process.is_running()
+                        or recorded_process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+                    )
+                ):
                     continue
                 assert any(
                     pathlib.Path(item).is_absolute() and pathlib.Path(item).is_relative_to(tmp_path) for item in command[:2]

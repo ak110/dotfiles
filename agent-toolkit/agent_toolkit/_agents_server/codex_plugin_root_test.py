@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import pathlib
 import shutil
 from types import SimpleNamespace
@@ -12,6 +14,7 @@ import pytest
 
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk.managed_temp import paths
 from agent_toolkit._common import state_paths
 from agent_toolkit._testing.codex_plugin_support import _lease_plugin_source, _make_plugin_root
 
@@ -19,6 +22,38 @@ from agent_toolkit._testing.codex_plugin_support import _lease_plugin_source, _m
 # pylint: disable=protected-access
 
 pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="8.3別名の同一実体をPOSIXの祖先aliasで代用し、包含分岐だけ検証する")
+def test_retained_root_alias_keeps_containment_and_link_guards(tmp_path, monkeypatch):
+    """保持先の別名は再利用しても、境界外のmarkerとリンクを使用しない。"""
+    parent = tmp_path / "long-parent"
+    parent.mkdir()
+    alias = tmp_path / "short-parent"
+    alias.symlink_to(parent, target_is_directory=True)
+    cache = parent / "managed"
+    root = cache / "area" / "agent-toolkit"
+    root.mkdir(parents=True)
+    marker = json.dumps({"root_name": "agent-toolkit"})
+    (root.parent / plugin_roots._SHARED_MARKER).write_text(marker)
+    configured = alias / "managed"
+    monkeypatch.setattr(managed_temp, "temp_root_path", lambda: configured)
+    monkeypatch.setattr(paths, "temp_root_path", lambda: configured)
+    assert plugin_roots.resolve_stable_plugin_root(root, independent=True) == root
+    outside = tmp_path / "outside" / "agent-toolkit"
+    outside.mkdir(parents=True)
+    (outside.parent / plugin_roots._SHARED_MARKER).write_text(marker)
+    with pytest.raises(managed_temp.ManagedTempError):
+        plugin_roots.resolve_stable_plugin_root(outside, independent=True)
+    linked_area = configured / "linked-area"
+    linked_area.symlink_to(root.parent, target_is_directory=True)
+    with pytest.raises(managed_temp.ManagedTempError, match="リンク"):
+        plugin_roots.resolve_stable_plugin_root(linked_area / root.name, independent=True)
+    linked_cache = tmp_path / "linked-cache"
+    linked_cache.symlink_to(cache, target_is_directory=True)
+    configured = linked_cache
+    with pytest.raises(managed_temp.ManagedTempError, match="リンク"):
+        plugin_roots.resolve_stable_plugin_root(root, independent=True)
 
 
 @pytest.mark.parametrize("root_is_version", [True, False])

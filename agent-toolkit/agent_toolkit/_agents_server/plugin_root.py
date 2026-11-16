@@ -92,7 +92,17 @@ def _resolve_shared_root(root: Path, *, fresh_input: bool = False) -> Path:
     # 保持先から起動した内側MCPも同じ実体を使い、自身の使用記録を加える。
     if (root.parent / _SHARED_MARKER).is_file():
         with plugin_root_leases.plugin_root_lock(root.parent):
-            _managed_temp.validate_managed_temp(root.parent)
+            area = root.parent
+            managed_root = _managed_temp.temp_root_path()
+            if managed_root.is_symlink() or managed_root.is_junction():
+                raise _managed_temp.ManagedTempError(f"一時rootがリンクであるため使用しない: {managed_root}")
+            try:
+                # __file__の長名とLOCALAPPDATAの8.3表記が違っても、同一rootの直下だけを検証する。
+                if area.parent.samefile(managed_root):
+                    area = managed_root / area.name
+            except FileNotFoundError:
+                pass
+            _managed_temp.validate_managed_temp(area)
             record = json.loads((root.parent / _SHARED_MARKER).read_text(encoding="utf-8"))
             if isinstance(record, dict) and record.get("root_name") == root.name:
                 plugin_root_leases.register_plugin_root_use(root.parent)

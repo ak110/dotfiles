@@ -252,6 +252,7 @@ class _Forwarder:
             with self.condition:
                 self.input_closed = True
                 peer = self.peer
+                self.peer = None
                 self.condition.notify_all()
             if peer is not None:
                 service_transport.disconnect(peer)
@@ -312,6 +313,8 @@ class _Forwarder:
 
     def close(self) -> None:
         with self.condition:
+            if self.closed:
+                return
             self.closed = True
             peer = self.peer
             self.peer = None
@@ -355,12 +358,11 @@ def forward(
         bridge.reader.start()
         while True:
             with service_transport.connect(target["endpoint"], target["process"]) as peer:
-                if not bridge.attach(peer):
-                    return 0 if bridge.failure is None else 1
                 try:
-                    bridge.receive(peer)
-                except EOFError, OSError:
-                    pass
+                    if not bridge.attach(peer):
+                        return 0 if bridge.failure is None else 1
+                    with contextlib.suppress(EOFError, OSError):
+                        bridge.receive(peer)
                 finally:
                     bridge.detach(peer)
             if bridge.input_closed:
