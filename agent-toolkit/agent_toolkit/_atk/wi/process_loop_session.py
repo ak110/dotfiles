@@ -203,10 +203,6 @@ def _build_session_argv(
 ) -> tuple[list[str], pathlib.Path | None]:
     """選択したオーケストレーターの対話セッション用argvを構築する。"""
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
-    if getattr(args, "headless", False):
-        # 非対話CLIは最終応答で終了する。対話CLIへの明示的なexitを要求する印は継承しない。
-        # 結果・報告・writerの検収はmanifestと呼出元が引き続き所有する。
-        env.pop(_pl_env.PROCESS_LOOP_SESSION_ENV, None)
     if orchestrator == "claude":
         info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
         if claude_connection is not None:
@@ -238,8 +234,6 @@ def _build_session_argv(
             "--debug-file",
             str(hook_debug_log),
         ]
-        if getattr(args, "headless", False):
-            argv.extend(("-p", "--output-format", "stream-json", "--verbose", "--permission-prompts", "none"))
         if resume_pending:
             argv.extend(("--model", model, "--effort", effort))
             argv.append("--resume" if not args.resume else f"--resume={args.resume}")
@@ -297,20 +291,13 @@ def _build_session_argv(
         elif resume_pending:
             raise ValueError("このengineには会話pickerがないため、再開IDまたはautoを指定する")
         # 再開時も今回のmanifest・結果保存先を配送する。/goalはClaude専用。
-        if getattr(args, "headless", False):
-            argv.extend(("--output-format", "stream-json", "-p", prompt.removeprefix("/goal ")))
-        else:
-            argv.extend(("-i", prompt.removeprefix("/goal ")))
+        argv.extend(("-i", prompt.removeprefix("/goal ")))
         return argv, None
 
     argv = ["codex"]
-    if getattr(args, "headless", False):
-        argv.append("exec")
     if resume_pending:
         argv.append("resume")
     argv.extend(("--model", model, "-c", f"model_reasoning_effort={effort}"))
-    if getattr(args, "headless", False):
-        argv.append("--json")
     if codex_provider is not None:
         argv.extend(_codex_connection.provider_arguments(codex_provider))
     if resume_pending and args.resume:

@@ -61,7 +61,8 @@ atk wi process-loop instruct '次の処理へ適用する指示'
 ```
 
 `abort`は新しい対象の起動を止め、処理中の全実行が終了してから常駐を終了する。
-各対象は独立して検収されるため、別対象が処理中でも、完了した対象の新着を開始できる。
+登録した全リポジトリを1つの統括会話が処理し、その対話CLIが端末の前景に表示されるため、画面を見て直接入力できる。
+前回の会話は、`resume`で予約した場合だけ再開する。
 `instruct`は次に実起動する1会話へ指示を渡す。
 中断した処理は`atk wi process-loop resume ID`か`atk wi process-loop resume auto`で次回の再開を予約する。
 値なしの`atk wi process-loop resume`はCLI本来の会話選択画面を予約し、`resume-cancel`で未消費の予約を取り消せる。

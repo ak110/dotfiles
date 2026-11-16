@@ -438,7 +438,13 @@ class _LaunchedServer:
                     if not identity.matches(process):
                         assert not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
                         continue
-                    assert process.cmdline() == arguments
+                    command = process.cmdline()
+                    if not command and (
+                        not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+                    ):
+                        # 状態確認の後に終了した子は、zombieになった時点でcmdlineが空になる。
+                        continue
+                    assert command == arguments
                     result = process_tree.stop_tree(process)
                     assert not result.residual and not result.unresolved, result.descriptions()
                 except psutil.NoSuchProcess, psutil.ZombieProcess:

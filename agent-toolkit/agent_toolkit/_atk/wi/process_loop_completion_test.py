@@ -1,6 +1,7 @@
 """延期した候補と未完了の成果を、次回の統括へ引き継ぐ契約を検証する。"""
 
 import argparse
+import contextlib
 import datetime
 import json
 import pathlib
@@ -254,6 +255,10 @@ def test_public_next_round_restores_processing_and_unintegrated_lane(tmp_path, m
 
     monkeypatch.setattr(session, "run_process_session", execute)
     for count in (1, 2):
+        if count == 2:
+            # 元会話の再開は予約した場合に限り、予約のない起動は新しい会話で始める。
+            with contextlib.suppress(SystemExit):
+                atk.main(["wi", "process-loop", "resume", "auto"], home=tmp_path)
         with pytest.raises(SystemExit) as ended:
             atk.main(["wi", "process-loop", "--once", "--no-alerts", "--no-update"], home=tmp_path)
         assert ended.value.code == 1
