@@ -44,7 +44,11 @@ def _assert_categories_match(sender: str, rules: str, prevention: str, waiting: 
 @pytest.fixture(name="definitions", scope="module")
 def _definitions() -> tuple[str, str, str, str]:
     sender = (_ROOT / "hooks/send_to_user.tsx").read_text(encoding="utf-8")
-    rules = (_ROOT / "share/rules/rules-main.md").read_text(encoding="utf-8")
+    rules = read_contract(
+        _ROOT / "share/rules/rules-main.md",
+        _ROOT,
+        ("../main-improvements.md", "改善点の処置・AWI化・報告"),
+    )
     prevention = read_contract(
         _ROOT.parent / "agent-basics/skills/bugfix/references/root-cause-prevention.md",
         _ROOT,

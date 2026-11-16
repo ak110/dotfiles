@@ -225,7 +225,7 @@ def test_split_confirmation_body_is_required_then_not_requested_again(tmp_path, 
     """従来の2資料だけでは、分割された判定・手順の本文の取得を代替しない。"""
     entries = [*_successful_read(_APPROVAL), *_successful_read(_CHOICE)]
     result = _run(_payload(tmp_path, entries, omit_reference=missing))
-    assert str(missing) in _denial(result)
+    assert f"agent-toolkit:user-confirmation-and-report/references/{missing.name}" in _denial(result)
     assert str(_APPROVAL) not in _denial(result)
     assert str(_CHOICE) not in _denial(result)
     result = _run(_payload(tmp_path, [*entries, *_successful_read(missing)]))

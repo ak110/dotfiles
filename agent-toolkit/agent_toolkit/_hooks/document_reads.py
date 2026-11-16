@@ -215,12 +215,13 @@ def reference_name(
     if active is None or active.resolve() != root.resolve():
         return str(path)
     relative = path.resolve().relative_to(root.resolve())
+    prefix = "" if relative.parts[0] == "skills" else "/"
     if relative.parts[0] == "skills":
         relative = pathlib.Path(*relative.parts[1:])
     candidates = (root / relative, root / "skills" / relative, root / "skills" / relative / "SKILL.md")
     if {candidate.resolve() for candidate in candidates if candidate.is_file()} != {path.resolve()}:
         return str(path)
-    return f"{plugin}:{relative.as_posix()}"
+    return f"{plugin}:{prefix}{relative.as_posix()}"
 
 
 def bash_document_reads(command: str) -> list[DocumentRead]:

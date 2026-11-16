@@ -183,7 +183,7 @@ def test_reference_to_another_root_does_not_activate_its_whole_skill_tree(tmp_pa
     project.write_text(
         "| 条件 | 全文読む資料 | 契機 | 配送操作 |\n"
         "| --- | --- | --- | --- |\n"
-        f"| 選択時 | `{selected}` | 判断 | `read:*/search/SKILL.md` |\n",
+        f"| 選択時 | `{selected}` | 判断 | `read:*/delegation/SKILL.md` |\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(read_delivery.read_triggers, "document_sources", lambda *_args: [project])
