@@ -1,4 +1,4 @@
-"""対象別workerの寿命を保持し、終了した対象の結果を回収する。"""
+"""統括会話を起動するworkerの寿命を保持し、終了した対象の結果を回収する。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from agent_toolkit._common import mcp_environment, next_action, process_tree
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.plugin_environment import launch_command
 
-# 対話CLIが常駐の端末を前景で使うため、同時に起動するメイン会話を1つに保つ。
+# 統括の対話CLIが常駐の端末を前景で使うため、同時に起動するworkerを1つに保つ。
 MAX_ACTIVE_TARGETS = 1
 
 
@@ -176,12 +176,15 @@ class RepositoryScheduler:
         with contextlib.ExitStack() as resources:
             # worker自身の各外部操作とCLI監視が上限を持つ。常駐の実作業に固定期限を追加しない。
             # workerと対話CLIは常駐の端末を引き継ぎ、ユーザーが画面を見て直接入力できる。
+            # 複数対象の統括会話は常駐のcwdで起動し、1対象だけの会話はその対象のworktreeで起動する。
             process = resources.enter_context(
-                process_tree.process_scope(command, env=env, cwd=snapshots[0].repository.worktree)
+                process_tree.process_scope(
+                    command, env=env, cwd=snapshots[0].repository.worktree if len(snapshots) == 1 else None
+                )
             )
             self.active[repo_id] = _Worker(process, resources.pop_all(), directory, repositories, request.resume_request_id)
         self.started.update(repositories)
-        print(f"{repo_id}: 対象別workerを開始した（pid={process.pid}、入出力の記録={directory}）", flush=True)
+        print(f"{repo_id}: workerを開始した（pid={process.pid}、入出力の記録={directory}）", flush=True)
 
     def poll(self) -> dict[str, dict[str, Any]]:
         """終了した対象だけを回収し、他対象の観測と未開始集合を保持する。"""
@@ -229,7 +232,7 @@ class RepositoryScheduler:
                 self.results[repo] = record
                 completed[repo] = record
                 worker.reported.add(repo)
-                event = "対象の処理を回収した" if code is None else f"対象別workerが終了した（終了{code}）"
+                event = "対象の処理を回収した" if code is None else f"workerが終了した（終了{code}）"
                 print(f"{repo}: {event}: {record['status']}", flush=True)
                 if record.get("remaining"):
                     next_action.report(

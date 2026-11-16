@@ -36,7 +36,7 @@ user-invocable: false
 | 利用形態 | 起動主体と公開操作 | 処理の責務 |
 | --- | --- | --- |
 | 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の作成要否は`agent-toolkit:write-plan`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:user-confirmation-and-report`「確認要否の判定」に従って決める |
-| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と対象別workerの起動を管理する。各対象のメインが`agent-toolkit:process-wi all-repos`で受領対象を処理し、報告まで担当する |
+| 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と統括会話の起動を管理する。統括が`agent-toolkit:process-wi all-repos`で登録全体の対象を処理し、報告まで担当する |
 | まとめ処理型 | ユーザーが`agent-toolkit:process-wi single-lane`を手動起動する | 蓄積されたWIを1回の実行でまとめて処理する |
 | 定期実行型 | ユーザーがcronなどに`atk run-skill`を登録する | WIキューを経由せずにスキル1件を自律モードで実行し、結果は報告用UWIで、判断を要する対応は事前承認型UWIで届ける |
 
@@ -46,8 +46,8 @@ process-loopの起動・待機・制御を扱う際は、事前に`atk wi proces
 リポジトリごとの編集可否・ローカルパス・process-loopの対象・検証OSは`atk config repos`で登録・変更・削除・一覧表示する。
 未登録は編集不可であり、`allow`への登録は編集の認可を確認してから行う。
 `awi`は直接編集せずAWIを投入し、`deny`は必要な変更を報告する。
-常駐の対象別実行と旧集合会話の継続、単回実行、再開予約、制御操作の違いは`references/orchestrator-runtime.md`を参照する。
-通常は各対象のメインが報告まで担当し、旧集合会話の再開では元の統括・委譲の責務を保つ。
+常駐の実行、単回実行、再開予約、制御操作の違いは`references/orchestrator-runtime.md`を参照する。
+統括が報告まで担当し、会話の再開では元の統括・委譲の責務を保つ。
 
 ## 要求から公開までの担当
 

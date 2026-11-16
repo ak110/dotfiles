@@ -233,7 +233,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi process-loop": {
         "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
-        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象を、対象別の独立した会話で継続処理する。\n利用場面: 登録した全対象を継続処理するとき、または--onceで開始時集合を各1回処理するとき。\n対象と出力: 常駐が同期・開始判定を共有し、対象workerが所有・準備・process-wi all-repos・結果検収・回収を行う。会話は対話CLIとしてこの端末の前景に1つずつ起動し、次の対象は実行中の会話の終了後に開始する。未完了は元会話と準備済み成果を保持する。--onceは対象0件でも待機せず、未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。resume [ID|auto]で次回の再開を予約し、値省略はホストCLIの会話選択画面を使う。予約自体は起動せず、CLIの実起動で1回消費する。--worktreeは対象別に適用し、dotfilesは無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは新しい対象の起動を止め、稼働中の全実行が終了してから常駐を止める。abort-cancelで解除する。resume-cancelで未消費の再開予約を取り消す。停止未確認・未統合・dirtyの資源は保持する。",
+        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象を、1つの統括会話で継続処理する。\n利用場面: 登録した全対象を継続処理するとき、または--onceで開始時集合を各1回処理するとき。\n対象と出力: 常駐が同期・開始判定・所有・準備・結果検収・回収を行い、今回の全対象をprocess-wi all-reposの統括会話へ渡す。統括会話は対話CLIとしてこの端末の前景に起動する。未完了は準備済み成果を保持し、元会話はresumeで予約した場合に再開する。--onceは対象0件でも待機せず、未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。resume [ID|auto]で次回の再開を予約し、値省略はホストCLIの会話選択画面を使う。予約自体は起動せず、CLIの実起動で1回消費する。--worktreeは対象別に適用し、dotfilesは無指定でも隔離する。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは新しい対象の起動を止め、稼働中の全実行が終了してから常駐を止める。abort-cancelで解除する。resume-cancelで未消費の再開予約を取り消す。停止未確認・未統合・dirtyの資源は保持する。",
         "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop resume auto\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
     },
     "atk wi process-loop abort": {

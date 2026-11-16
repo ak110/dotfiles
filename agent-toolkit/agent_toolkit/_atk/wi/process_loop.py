@@ -332,7 +332,7 @@ def _run_coordinator(
     requested = getattr(args, "resume", None)
     lookup = getattr(args, "reservation_lookup", False)
     resume = requested
-    if resume is None:
+    if resume is None and getattr(args, "auto_resume", False):
         previous = {
             value
             for snapshot in snapshots
@@ -944,22 +944,8 @@ def _run_scheduled_loop(
             names = [snapshot.repository.repo_id for snapshot in launching]
             print(f"{len(launching)}件のリポジトリの所有・準備と統括処理を開始します: {', '.join(names)}", flush=True)
             gate.started()
-            if args.resume is not None or args.auto_resume:
-                # 明示再開は一つの予約として起動し、autoでは元会話ごとの結果を途中回収する。
-                scheduler.start(args, tuple(launching), {repo: launch_inputs[repo] for repo in names})
-            else:
-                groups: dict[str, list[_listing.RepositorySnapshot]] = {}
-                for snapshot in launching:
-                    repo = snapshot.repository.repo_id
-                    groups.setdefault(_ownership.coordinator_session(repo) or repo, []).append(snapshot)
-                for group in groups.values():
-                    if len(scheduler.active) >= _scheduler.MAX_ACTIVE_TARGETS:
-                        break
-                    scheduler.start(
-                        args,
-                        tuple(group),
-                        {snapshot.repository.repo_id: launch_inputs[snapshot.repository.repo_id] for snapshot in group},
-                    )
+            # 今回の全対象を1つの統括会話へ渡す。autoの再開では元会話ごとの結果をworkerが途中回収する。
+            scheduler.start(args, tuple(launching), {repo: launch_inputs[repo] for repo in names})
             args.resume = None
             args.auto_resume = False
             scheduler.wait()

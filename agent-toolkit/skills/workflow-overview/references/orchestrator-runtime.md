@@ -19,9 +19,9 @@
 
 | 起動形・engine | 起動と最初の入力 | turn終了とプロセスの扱い | 再開・外部制御 | 実装の所在 |
 | --- | --- | --- | --- | --- |
-| process-loop・claude | 対話型の`claude --model … --effort … <入力>`を常駐の端末の前景で起動する。初回は`/goal <目的文>`、再開は元goalの続行入力 | 目標評価による継続とCLIの終了を区別する。対象workerはturn終了だけでは戻らず、CLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う。外部操作は次節 | `agent_toolkit/_atk/wi/process_loop_session.py`の`build_process_loop_prompt`、`_build_session_argv`、`_run_process_session`、`_run_cli_session` |
-| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末の前景で起動する。`/goal`接頭辞を除いて渡す | turn終了後も対話CLIの終了が必要。対象workerはCLIの終了を待つ | 上限を検出するとCLIを停止し、対象別結果と未完了を検収する。同じ会話の再開は予約から`codex resume`へ接続 | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_cli_session`、`agent_toolkit/_atk/wi/process_loop.py`の`run_coordinator` |
-| process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`を常駐の端末の前景で起動する。`/goal`接頭辞を除いて渡す | 対象workerは対話CLIの終了を待つ。CLI内部のturn終了条件はこのコードでは規定しない | 再開指定は`--conversation`、IDを省略した会話選択は非対応のためIDかautoを案内。Claude用の上限再開ループをagyへ一般化しない | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_process_session`、`_run_cli_session` |
+| process-loop・claude | 対話型の`claude --model … --effort … <入力>`を常駐の端末の前景で起動する。初回は`/goal <目的文>`、再開は元goalの続行入力 | 目標評価による継続とCLIの終了を区別する。workerはturn終了だけでは戻らず、CLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う。外部操作は次節 | `agent_toolkit/_atk/wi/process_loop_session.py`の`build_process_loop_prompt`、`_build_session_argv`、`_run_process_session`、`_run_cli_session` |
+| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末の前景で起動する。`/goal`接頭辞を除いて渡す | turn終了後も対話CLIの終了が必要。workerはCLIの終了を待つ | 上限を検出するとCLIを停止し、対象別結果と未完了を検収する。同じ会話の再開は予約から`codex resume`へ接続 | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_cli_session`、`agent_toolkit/_atk/wi/process_loop.py`の`run_coordinator` |
+| process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`を常駐の端末の前景で起動する。`/goal`接頭辞を除いて渡す | workerは対話CLIの終了を待つ。CLI内部のturn終了条件はこのコードでは規定しない | 再開指定は`--conversation`、IDを省略した会話選択は非対応のためIDかautoを案内。Claude用の上限再開ループをagyへ一般化しない | `agent_toolkit/_atk/wi/process_loop_session.py`の`_build_session_argv`、`_run_process_session`、`_run_cli_session` |
 | run-skill・claude | 非対話の`claude -p --model … --effort …`。初回入力は`/goal <目的文>` | 目標評価の継続を経て最終応答でCLIが終了する構成。起動元は終了後に報告の保存も検収する | 利用上限解除後は同じ会話を`claude -p --resume`で自動再開。明示再開は`atk run-skill --resume <RUN_ID>` | `agent_toolkit/_atk/run_skill.py`の`_run_locked`、`dispatch`、`_wait_session` |
 | run-skill・codex | 非対話の`codex exec --model … -c model_reasoning_effort=… --json <目的文>`。`/goal`を付けない | 最終応答でCLIが終了する構成。起動元は終了後に報告の保存も検収する | 利用上限解除後は同じthreadを`codex exec resume`で自動再開。明示再開はRUN_IDを指定する | `agent_toolkit/_atk/run_skill.py`の`_run_locked`、`dispatch`、`_wait_session` |
 | run-skill・agy | 非対話の`agy -p <目的文> --model … --effort … --output-format stream-json`。`/goal`を付けない | 非対話CLIの終了を待ち、起動元が報告の保存を検収する。ホスト内部の目標評価は仮定しない | 明示再開は同じ会話の`--conversation`へ接続。利用上限の自動再開はCLI出力から上限を検出できた場合に限る | `agent_toolkit/_atk/run_skill.py`の`_run_locked`・`_SessionOutput.receive`・`_wait_session`、`agent_toolkit/_common/antigravity_cli.py`の`build_command` |
@@ -44,10 +44,10 @@ process-loopの対話CLIを制御する公開操作は次節の表で確認す�
 
 ## 対象の分担と単回実行
 
-常駐schedulerは対象別workerを1つずつ別プロセスで起動し、対象ごとの準備・所有・終了検収・次回開始を管理する。
-workerが起動する対話CLIは常駐の端末を前景で使うため、同時に起動する対象は1つとし、次の対象は実行中のCLIの終了後に開始する。
-各対象のメインは、選定・レビュー・公開・CI・完了報告・報告用UWI・結果保存まで担当する。
-複数対象の未完了作業を持つ旧会話の明示再開では、元の会話と集合を保持し、次の統括・委譲の分担を引き継ぐ。
+常駐は今回の全対象を1つの統括会話へ渡し、対象ごとの準備・所有・終了検収を管理する。
+統括の対話CLIは常駐の端末を前景で使い、同時に起動する統括会話は1つとする。
+統括は選定・レビュー・公開・CI・完了報告・報告用UWI・結果保存まで担当する。
+会話の再開は`resume [ID|auto]`で予約した場合に限り、予約のない起動は新しい会話で始める。
 統括は対象の規範・スキルを明示的に読み、今回の対象が1リポジトリならレーン数上限によらず自ら処理する。
 対象が複数の場合も、今回進められる負荷が最大のリポジトリを統括が直接担当する。
 全対象の上限が1以下なら統括が全件をまとめ、上限2以上の対象がある場合は、直接担当を除く軽い対象群を1担当へまとめ、重い残対象は個別に並行委譲する。
@@ -69,8 +69,8 @@ workerが起動する対話CLIは常駐の端末を前景で使うため、同�
 
 ## 常駐・単発・明示再開の違い
 
-- `atk wi process-loop`は対象別workerを保持し、その対象のCLI終了後に結果・残件・writerの終了を検収する。
-  次の対象は、実行中の対象のCLI終了と検収の後に開始する。
+- `atk wi process-loop`は統括会話のCLI終了後に、対象ごとの結果・残件・writerの終了を検収する。
+  次の統括会話は、その検収の後に開始する。
   `--once`は同じ起動・検収を1集合で終え、未完了などが残れば非0で終了する。
   手動の`agent-toolkit:process-wi all-repos`は`--once`へ接続し、起動元がCLIの終了を観測する。
   根拠は`agent_toolkit/_atk/wi/process_loop.py`の`run_coordinator`・`_run_loop`と、`../../process-wi/references/all-repos-starting.md`にある。
