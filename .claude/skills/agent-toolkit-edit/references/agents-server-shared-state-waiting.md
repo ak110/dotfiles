@@ -11,7 +11,7 @@
 実turn終了までは旧backendが解釈し、保存を現行writerへ転送する。
 移譲後は新backendが旧資源のrawイベントを解釈し、既存の結果・通知保存が成功してから受領を確定する。
 保存ACK前のイベントを残す旧世代を期限だけで停止せず、移譲のための圧縮・query・中断・promptを追加しない。
-子と背景タスクの終了後、次の本来入力を送る境界で通常releaseと新SDK・App Serverのresumeへ進む。
+子とバックグラウンドタスクの終了後、次の本来入力を送る境界で通常releaseと新SDK・App Serverのresumeへ進む。
 以下の回収と未確認対象の保持条件は、MCP接続の切断と世代更新でも維持する。
 イベントの解釈・保存・受領は[管理サービス設計の「受付・状態writer・実行資源の移譲」](../../../../docs/development/design-agents-server-service.md#受付状態writer実行資源の移譲)を参照する。
 

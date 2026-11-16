@@ -111,7 +111,7 @@ MCPツールの`isConcurrencySafe`は`annotations?.readOnlyHint??!1`を返すた
 再検証は後続版の本体を`develop-dotfiles`「ホスト本体のバイナリの検索」の手順で`mayHaveRun`と`isConcurrencySafe(){return`を検索し、再試行と並行実行の条件を比べる。
 条件が変わった場合は同書の「ホスト固有の条件」を改める。
 
-## agents_serverの説明整理後の水準：2026年11月15日
+## docs/development/design-hosts-rules-delivery.md：agents_serverの説明整理後の水準：2026年11月15日
 
 各ツール説明とserver instructionsの4,096文字の上限に対し、超過を是正した後の目安を各3,200文字以下とする。
 これはエージェントの選定値であり、ホストの制限や通常の追記量の実測値ではない。

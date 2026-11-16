@@ -403,20 +403,7 @@ def _server_lifetime(
             reader.start()
             yield process
         finally:
-            if job is None:
-                _stop_server_process(process)
-            else:
-                try:
-                    job.terminate(timeout=_STOP_TIMEOUT)
-                except BaseException:
-                    # 終了照会の失敗を伝播しつつ、kill-on-closeでreaderのwriterも解放する。
-                    job.close()
-                    raise
-                finally:
-                    # 所属前の失敗でも、停止状態の元プロセスを残さない。
-                    if process.poll() is None:
-                        process.kill()
-                    process.wait(timeout=_STOP_TIMEOUT)
+            _stop_server_process(process)
 
 
 def _join_reader(reader: threading.Thread) -> None:
@@ -439,8 +426,17 @@ def _stop_server_process(
         job = getattr(process, "_bootstrap_job", None)
         if job is None:
             raise OSError("起動時に所有したWindows Jobがありません")
-        job.terminate(timeout=_STOP_TIMEOUT)
-        process.wait(timeout=_STOP_TIMEOUT)
+        try:
+            job.terminate(timeout=_STOP_TIMEOUT)
+        except BaseException:
+            # 所属照会の失敗を伝播しつつ、所有handleを閉じてpipe writerを解放する。
+            job.close()
+            raise
+        finally:
+            # Jobへの所属前に失敗した停止状態の起点も、元Popenから回収する。
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=_STOP_TIMEOUT)
         return
     with contextlib.suppress(ProcessLookupError):
         os.killpg(process.pid, signal.SIGTERM)

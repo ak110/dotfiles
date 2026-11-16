@@ -9,6 +9,10 @@ import pytest
 # キーは追跡ファイルと関数。停止・時間上限を許可する理由を箇所ごとに残す。
 _ALLOWED: dict[tuple[str, str], str] = {
     (
+        "agent-toolkit/agent_toolkit/_agents_server/service_forward.py",
+        "ensure_service",
+    ): "準備失敗時だけ、生成前に作った所有Jobを共通WindowsJob APIで全所属回収する。一般Popenの単独停止ではない",
+    (
         "agent-toolkit/scripts/launch.py",
         "_stop_server_process",
     ): "stdlibだけのbootstrapで、独立sessionとして起動した子のprocess groupを有限時間で回収する",

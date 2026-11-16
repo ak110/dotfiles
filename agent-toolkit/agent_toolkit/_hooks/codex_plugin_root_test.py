@@ -22,7 +22,7 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
 ) -> None:
     """同名の異なる資料を持つhook配置でも、起動側が選んだ実体だけを案内・記録する。"""
     selected = tmp_path / "selected/agent-toolkit"
-    skill = selected / "skills/sample/SKILL.md"
+    skill = selected / "skills/delegation/SKILL.md"
     skill.parent.mkdir(parents=True)
     (selected / ".claude-plugin").mkdir()
     (selected / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -34,7 +34,7 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
     reference = skill.parent / "reference.md"
     reference.write_text("# 選択版の資料\n選択版本文\n", encoding="utf-8")
     foreign = tmp_path / "foreign/agent-toolkit"
-    alternate = foreign / "skills/sample/reference.md"
+    alternate = foreign / "skills/delegation/reference.md"
     alternate.parent.mkdir(parents=True)
     alternate.write_text("# 別配置の資料\n異版本文\n", encoding="utf-8")
     (alternate.parent / "SKILL.md").write_text(skill.read_text(encoding="utf-8"), encoding="utf-8")
@@ -72,7 +72,7 @@ async def test_start_resume_root_reaches_foreign_hook_and_acquisition(
             }
             assert dispatch.main(json.dumps(payload)) == 0
             first = capsys.readouterr()
-            assert "agent-toolkit:sample/reference.md" in first.out and str(foreign) not in first.out
+            assert "agent-toolkit:delegation/reference.md" in first.out and str(foreign) not in first.out
             read = {**payload, "tool_name": "Bash", "tool_input": {"command": "cat -- " + shlex.quote(str(reference))}}
             assert dispatch.main(json.dumps(read)) == 0
             capsys.readouterr()

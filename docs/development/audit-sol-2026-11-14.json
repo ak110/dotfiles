@@ -144,7 +144,7 @@
     {"path":"agent-toolkit/agent_toolkit/_hooks/plugin_resources.py","一次判定":"該当なし","独立通読":false},
     {"path":"agent-toolkit/agent_toolkit/_hooks/pretooluse/__init__.py","一次判定":"該当なし","独立通読":false},
     {"path":"agent-toolkit/agent_toolkit/_hooks/pretooluse/operation_skills.py","一次判定":"該当なし","独立通読":false},
-    {"path":"agent-toolkit/agent_toolkit/_hooks/pretooluse/read_acquisition.py","一次判定":"該当なし","独立通読":false},
+    {"path":"b6af4c7d916e572102ad5c4ff028f7f25438b7b7:agent-toolkit/agent_toolkit/_hooks/pretooluse/read_acquisition.py","path_note":"対象版のGitオブジェクト指定。現行ファイルは撤去済み","一次判定":"該当なし","独立通読":false},
     {"path":"agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_conditions.py","一次判定":"該当なし","独立通読":false},
     {"path":"agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_observation.py","一次判定":"該当なし","独立通読":false},
     {"path":"agent-toolkit/agent_toolkit/_hooks/pretooluse/read_delivery_receipts.py","一次判定":"該当なし","独立通読":false},

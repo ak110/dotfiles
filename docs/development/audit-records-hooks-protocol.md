@@ -96,7 +96,7 @@
   実機では、PreToolUseで`additionalContext`だけを返すhookを置いて`Agent`ツールを呼び、呼び出しが実行されたうえで通知がツール結果と同時に表示されることを確かめる。
   2026年11月10日には、組み込みのweb-fetchとExploreの起動に対する警告が起動を止めず、起動の結果と同時に表示された。
 
-## SessionStartの整理後の水準：2026年11月15日
+## docs/development/design-hosts-rules-delivery.md：SessionStartの整理後の水準：2026年11月15日
 
 最終出力10,000文字の上限に対し、超過を是正した後の目安を8,000文字とする。
 これはエージェントの選定値であり、ホストの新しい制限や実測した追記量ではない。

@@ -1,4 +1,4 @@
-﻿"""PS bootstrapのnative境界と、実Windowsランチャーの時間切れを検証する。"""
+"""PS bootstrapのnative境界と、実Windowsランチャーの時間切れを検証する。"""
 
 import contextlib
 import importlib
