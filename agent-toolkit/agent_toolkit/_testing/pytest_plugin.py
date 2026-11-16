@@ -33,7 +33,7 @@ from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
 
 import agent_toolkit
-from agent_toolkit._agents_server import api_credits, claude, claude_stream, launch_requests, state
+from agent_toolkit._agents_server import api_credits, claude, claude_stream, launch_requests
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk import orchestrator as _orchestrator
@@ -892,31 +892,6 @@ def _forbid_backend_process(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def _restore_session_listeners() -> Any:
-    """テストが登録した共有リスナーを、テスト終了時に元の集合へ戻す。
-
-    `SessionState.touch`のリスナー集合はプロセス全体で共有される。
-    有効化したままの`StatusFileWriter`が残ると、後続の別モジュールのテストが`touch`を呼んだ時点で
-    実行中のイベントループを要求して失敗するため、テストごとに登録を元へ戻す。
-    """
-    # テスト間の隔離のため、リスナー登録簿の実体を保存・復元する。
-    # pylint: disable=protected-access
-    touch_listeners = set(state._TOUCH_LISTENERS)
-    touch_owners = dict(state._TOUCH_OWNERS)
-    terminal_listeners = set(state._TERMINAL_LISTENERS)
-    lifecycle_listeners = set(state._LIFECYCLE_LISTENERS)
-    yield
-    state._TOUCH_LISTENERS.clear()
-    state._TOUCH_LISTENERS.update(touch_listeners)
-    state._TOUCH_OWNERS.clear()
-    state._TOUCH_OWNERS.update(touch_owners)
-    state._TERMINAL_LISTENERS.clear()
-    state._TERMINAL_LISTENERS.update(terminal_listeners)
-    state._LIFECYCLE_LISTENERS.clear()
-    state._LIFECYCLE_LISTENERS.update(lifecycle_listeners)
-
-
-@pytest.fixture
 def _short_start_availability_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     """起動直後の終了確認を短縮し、実行中のまま返るsessionでテストを待たせない。"""
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.05)
@@ -999,5 +974,6 @@ diagnostic_log = agents_server_fixtures._diagnostic_log
 codex_stable_plugin_roots = agents_server_fixtures._isolate_stable_plugin_roots
 provider_environment = agents_server_fixtures._configure_provider_environment
 _wait_environment = agents_server_fixtures._wait_environment
+_restore_session_listeners = agents_server_fixtures._restore_session_listeners
 _unchanged_documents_resolution = hook_support._unchanged_documents_resolution
 _without_read_delivery = hook_support._without_read_delivery

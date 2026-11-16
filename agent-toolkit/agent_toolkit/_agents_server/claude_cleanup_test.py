@@ -34,6 +34,10 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
     ],
 )
 @pytest.mark.asyncio
+@pytest.mark.cpu_limit(
+    1.5,
+    reason="実親子・無関係プロセスの所有と切断後の回収を最小構成で確認する（Linux CPU合計0.514秒、worker0.386秒）。",
+)
 async def test_disconnect_tracks_new_descendant_until_parent_exits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ, outcome: str, delay_collection: bool
 ) -> None:
