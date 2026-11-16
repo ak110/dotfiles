@@ -76,6 +76,14 @@ def _live_record(lock: pathlib.Path) -> None:
     _write_record(lock, pid=os.getpid(), create_time=psutil.Process().create_time())
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "生存中の所有者が数秒後に解放したロックを、同じ実行で取得して更新を進め"
+        + "る。 実Gitの標準indexと未保存成果、または実排他の所有者寿命を"
+        + "確認する最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_update_waits_for_lock_released_by_live_owner(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """生存中の所有者が数秒後に解放したロックを、同じ実行で取得して更新を進める。"""
     local, lock = _repository(monkeypatch, tmp_path)
@@ -99,6 +107,14 @@ def test_update_waits_for_lock_released_by_live_owner(monkeypatch: pytest.Monkey
     assert not (lock.parent / stale_lock.RECORD_NAME).exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "旧版の残存ロック（所有記録なし）をGit・更新主体の不在を確認して回収"
+        + "し、更新を進める。 実Gitの標準indexと未保存成果、または実排他"
+        + "の所有者寿命を確認する最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_update_reclaims_lock_without_owner_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """旧版の残存ロック（所有記録なし）をGit・更新主体の不在を確認して回収し、更新を進める。"""
     local, lock = _repository(monkeypatch, tmp_path)
@@ -110,6 +126,15 @@ def test_update_reclaims_lock_without_owner_record(monkeypatch: pytest.MonkeyPat
     assert not lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "所有者が終了した記録つきロックを、再観測を待たずに回収する。PIDの再"
+        + "利用も終了とみなす。 実Gitの標準indexと未保存成果、または実排"
+        + "他の所有者寿命を確認する最小構成。Linux同群CPU最大0.593秒"
+        + "。"
+    ),
+)
 @pytest.mark.parametrize("reuse", [False, True])
 def test_update_reclaims_lock_of_finished_owner(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, reuse: bool) -> None:
     """所有者が終了した記録つきロックを、再観測を待たずに回収する。PIDの再利用も終了とみなす。"""
@@ -124,6 +149,15 @@ def test_update_reclaims_lock_of_finished_owner(monkeypatch: pytest.MonkeyPatch,
     assert not lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "生存中・照会不能・Git操作中・他の更新主体ありのロックは回収せず、期"
+        + "限内に非0で終え、診断を残す。 実Gitの標準indexと未保存成果、"
+        + "または実排他の所有者寿命を確認する最小構成。Linux同群CPU最大0"
+        + ".593秒。"
+    ),
+)
 @pytest.mark.parametrize(
     "cause",
     [
@@ -232,6 +266,14 @@ def test_reclaim_refuses_lock_replaced_just_before_removal(monkeypatch: pytest.M
     assert not list(tmp_path.glob("index.lock.reclaim-*"))
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "回収の排他を保持するプロセスが居る間は後発が回収せず、強制終了した後は"
+        + "回収できる。 実Gitの標準indexと未保存成果、または実排他の所有"
+        + "者寿命を確認する最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_reclaim_exclusion_follows_owner_lifetime(tmp_path: pathlib.Path) -> None:
     """回収の排他を保持するプロセスが居る間は後発が回収せず、強制終了した後は回収できる。"""
     lock = tmp_path / "index.lock"
@@ -263,6 +305,15 @@ def test_reclaim_exclusion_follows_owner_lifetime(tmp_path: pathlib.Path) -> Non
     assert not lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "公開入口の実行を指定地点でSIGKILLし、再実行で回復して、"
+        + "stage済み・未stage・未追跡の変更と代替indexを保持する。"
+        + " 実Gitの標準indexと未保存成果、または実排他の所有者寿命を確認"
+        + "する最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 @pytest.mark.skipif(sys.platform == "win32", reason="実SIGKILLによる強制停止はPOSIX上で検証する")
 @pytest.mark.usefixtures("real_stash_runtime")
 @pytest.mark.parametrize("stop", ["before-record", "after-alternate"])
@@ -326,6 +377,14 @@ def test_update_reruns_after_real_forced_stop(
     ) == alternates
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "ロック作成以外の`FileExistsError`は標準ロックの競合と"
+        + "して扱わない。 実Gitの標準indexと未保存成果、または実排他の所"
+        + "有者寿命を確認する最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_lock_creation_only_file_exists_error_is_classified_as_lock(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -347,6 +406,14 @@ def test_lock_creation_only_file_exists_error_is_classified_as_lock(
     assert not lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "プラグインのpullが残存ロックで失敗したら、回収して1回だけ再実行す"
+        + "る。 実Gitの標準indexと未保存成果、または実排他の所有者寿命を"
+        + "確認する最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_plugin_pull_recovers_from_stale_lock(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """プラグインのpullが残存ロックで失敗したら、回収して1回だけ再実行する。"""
     plugin, lock = _repository(monkeypatch, tmp_path)
@@ -365,6 +432,14 @@ def test_plugin_pull_recovers_from_stale_lock(monkeypatch: pytest.MonkeyPatch, t
     assert not lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "生存中の所有者のロックでは再実行せず、診断を標準エラーへ出す。 実"
+        + "Gitの標準indexと未保存成果、または実排他の所有者寿命を確認する"
+        + "最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_plugin_pull_does_not_retry_when_lock_is_live(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -386,6 +461,15 @@ def test_plugin_pull_does_not_retry_when_lock_is_live(
     assert lock.exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "実gitが`index.lock`を保持している間は待ち、解放後に同じ"
+        + "呼び出しで更新を進める。 実Gitの標準indexと未保存成果、または"
+        + "実排他の所有者寿命を確認する最小構成。Linux同群CPU最大0."
+        + "593秒。"
+    ),
+)
 @pytest.mark.usefixtures("real_stash_runtime")
 def test_update_waits_for_real_git_holding_index_lock(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
@@ -434,6 +518,14 @@ def test_update_waits_for_real_git_holding_index_lock(
     assert not (local / ".git" / "index.lock").exists()
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "ロックの待機に使った時間を、更新へ渡す上限から差し引く。 実Gitの標"
+        + "準indexと未保存成果、または実排他の所有者寿命を確認する最小構成。"
+        + "Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_update_deducts_lock_wait_from_timeout(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """ロックの待機に使った時間を、更新へ渡す上限から差し引く。"""
     _local, lock = _repository(monkeypatch, tmp_path)
@@ -463,6 +555,14 @@ def test_update_deducts_lock_wait_from_timeout(monkeypatch: pytest.MonkeyPatch, 
     assert 1.0 <= received[0] <= 4.5
 
 
+@pytest.mark.cpu_limit(
+    2.5,
+    reason=(
+        "プラグインpullの再実行へ、初回と待機で使った時間を差し引いた上限を"
+        + "渡す。 実Gitの標準indexと未保存成果、または実排他の所有者寿命"
+        + "を確認する最小構成。Linux同群CPU最大0.593秒。"
+    ),
+)
 def test_plugin_pull_shares_deadline_with_retry(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """プラグインpullの再実行へ、初回と待機で使った時間を差し引いた上限を渡す。"""
     plugin, lock = _repository(monkeypatch, tmp_path)

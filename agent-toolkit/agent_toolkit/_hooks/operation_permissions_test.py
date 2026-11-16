@@ -32,6 +32,15 @@ def _classifier_snapshot(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[str]
     return config
 
 
+@pytest.mark.cpu_limit(
+    2.0,
+    reason=(
+        "UWIの投入・回答保存とhook判定を通し、許可と拒否の境界を確かめる"
+        + "。 実Gitのworkとnotesで許可要求/回答の保存から公開"
+        + "hookの消費・取消までを確認する。Linux CPU最大0.613秒"
+        + "。"
+    ),
+)
 @pytest.mark.parametrize(
     "reason,allowed,changed,scope,attempts,interactive,cancel,tool,legacy",
     [
@@ -136,6 +145,14 @@ def test_uwi_creation_answer_and_pretooluse(
     assert result.get("hookSpecificOutput", {}).get("permissionDecision") != "allow"
 
 
+@pytest.mark.cpu_limit(
+    1.5,
+    reason=(
+        "本物の回答イベントを記録し、入力answersによるプログラム回答は採"
+        + "用しない。 実Gitの所属を持つ要求を回答イベントへ結び付け、入力によ"
+        + "る偽の回答を拒否する。同群CPU最大0.613秒。"
+    ),
+)
 @pytest.mark.usefixtures("classifier_snapshot")
 def test_direct_answer_is_bound_to_displayed_request(tmp_path: pathlib.Path) -> None:
     """本物の回答イベントを記録し、入力answersによるプログラム回答は採用しない。"""

@@ -14,6 +14,15 @@ from agent_toolkit._testing import git_repository
 pytestmark = pytest.mark.windows
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "主作業ツリー直下の規範を所属内として受理し、入れ子worktreeの規"
+        + "範は拒否する。 実Gitの主/入れ子worktreeを使い、"
+        + "WindowsのGit形式の規範所属を区別する。Windows "
+        + "CPU2.250秒。"
+    ),
+)
 def test_omission_policy_accepts_main_root_policy_and_rejects_nested_worktree_policy(tmp_path: pathlib.Path) -> None:
     """主作業ツリー直下の規範を所属内として受理し、入れ子worktreeの規範は拒否する。"""
     repository = git_repository.init_repository(

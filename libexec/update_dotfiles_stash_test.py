@@ -26,6 +26,15 @@ def _save_old(repository: pathlib.Path, label: str) -> tuple[str, str]:
     return ref, oid
 
 
+@pytest.mark.cpu_limit(
+    10.0,
+    reason=(
+        "保護の有無によらずmise.lockだけの退避を回収し、現在の作業内容"
+        + "を保持する。 実Gitの退避と保護refを実際に保存し、現在の未保存成"
+        + "果と回復元を保持する最小構成。Windows同群CPU最大4.938秒"
+        + "。"
+    ),
+)
 @pytest.mark.parametrize("protected", [False, True])
 @pytest.mark.parametrize("change_kind", ["unstaged", "index-only", "untracked"])
 def test_generated_only_old_stash_is_collected(
@@ -55,6 +64,15 @@ def test_generated_only_old_stash_is_collected(
     assert not capsys.readouterr().out
 
 
+@pytest.mark.cpu_limit(
+    7.0,
+    reason=(
+        "indexだけ・未追跡・別ディレクトリの変更も保全し、保護済みは繰り返"
+        + "し表示しない。 実Gitの退避と保護refを実際に保存し、現在の未保存"
+        + "成果と回復元を保持する最小構成。Windows同群CPU最大4.938"
+        + "秒。"
+    ),
+)
 @pytest.mark.parametrize("kind", ["tracked", "index-only", "untracked", "nested-lock"])
 def test_user_content_is_protected_and_not_reported_again(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], kind: str
@@ -91,6 +109,15 @@ def test_user_content_is_protected_and_not_reported_again(
         assert path.read_text(encoding="utf-8") == "saved user data\n"
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "生成差分だけでも、退避元のローカルcommitが唯一の参照ならその履歴"
+        + "を保持する。 実Gitの退避と保護refを実際に保存し、現在の未保存成"
+        + "果と回復元を保持する最小構成。Windows同群CPU最大4.938秒"
+        + "。"
+    ),
+)
 def test_generated_stash_preserves_otherwise_unreachable_local_commit(tmp_path: pathlib.Path) -> None:
     """生成差分だけでも、退避元のローカルcommitが唯一の参照ならその履歴を保持する。"""
     repository = _repository(tmp_path / "repo")
@@ -108,8 +135,12 @@ def test_generated_stash_preserves_otherwise_unreachable_local_commit(tmp_path: 
 
 
 @pytest.mark.cpu_limit(
-    1.5,
-    reason="実Gitの複数退避を一括保護する最小の1件/3件を比較し、起動数が増えない境界を保持する（旧40件のWindows CPU0.578秒）。",
+    10.0,
+    reason=(
+        "退避が増えても外部Gitの起動数を増やさず、全件を正しく保護する。 実"
+        + "Gitの退避と保護refを実際に保存し、現在の未保存成果と回復元を保持"
+        + "する最小構成。Windows同群CPU最大4.938秒。"
+    ),
 )
 def test_old_stash_processing_has_constant_git_process_count(tmp_path: pathlib.Path) -> None:
     """退避が増えても外部Gitの起動数を増やさず、全件を正しく保護する。"""
@@ -132,6 +163,14 @@ def test_old_stash_processing_has_constant_git_process_count(tmp_path: pathlib.P
     assert counts[0] == counts[1]
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "共有保護と固有退避が不一致なら、自動生成差分でも両方を保持して止まる。"
+        + " 実Gitの退避と保護refを実際に保存し、現在の未保存成果と回復元を"
+        + "保持する最小構成。Windows同群CPU最大4.938秒。"
+    ),
+)
 def test_inconsistent_protection_preserves_both_values(tmp_path: pathlib.Path) -> None:
     """共有保護と固有退避が不一致なら、自動生成差分でも両方を保持して止まる。"""
     repository = _repository(tmp_path / "repo")
@@ -146,6 +185,14 @@ def test_inconsistent_protection_preserves_both_values(tmp_path: pathlib.Path) -
     assert git_repository.git_output(repository, "rev-parse", shared_ref) == head
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "private-notesでは生成差分を含む旧退避も変更しない。 実"
+        + "Gitの退避と保護refを実際に保存し、現在の未保存成果と回復元を保持"
+        + "する最小構成。Windows同群CPU最大4.938秒。"
+    ),
+)
 def test_queue_repository_is_not_changed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """private-notesでは生成差分を含む旧退避も変更しない。"""
     repository = _repository(tmp_path / "repo")
@@ -157,6 +204,14 @@ def test_queue_repository_is_not_changed(tmp_path: pathlib.Path, monkeypatch: py
     assert git_repository.git_output(repository, "rev-parse", ref) == oid
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "ロックを共有しない手動更新が途中に入っても、旧値を条件にして全回収を取"
+        + "り消す。 実Gitの退避と保護refを実際に保存し、現在の未保存成果と"
+        + "回復元を保持する最小構成。Windows同群CPU最大4.938秒。"
+    ),
+)
 def test_changed_ref_aborts_entire_cleanup_transaction(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """ロックを共有しない手動更新が途中に入っても、旧値を条件にして全回収を取り消す。"""
     repository = _repository(tmp_path / "repo")
@@ -182,6 +237,15 @@ def test_changed_ref_aborts_entire_cleanup_transaction(tmp_path: pathlib.Path, m
     assert (repository / "kept.txt").read_text(encoding="utf-8") == "new user data\n"
 
 
+@pytest.mark.cpu_limit(
+    7.0,
+    reason=(
+        "同labelのmain・linked退避を区別し、現在worktree"
+        + "の整理だけを行う。 実Gitの退避と保護refを実際に保存し、現在の未"
+        + "保存成果と回復元を保持する最小構成。Windows同群CPU最大4."
+        + "938秒。"
+    ),
+)
 def test_linked_worktree_uses_its_own_protection_and_cleanup(tmp_path: pathlib.Path) -> None:
     """同labelのmain・linked退避を区別し、現在worktreeの整理だけを行う。"""
     repository = _repository(tmp_path / "repo")
@@ -207,6 +271,15 @@ def test_linked_worktree_uses_its_own_protection_and_cleanup(tmp_path: pathlib.P
     assert git_repository.git_output(linked, "rev-parse", linked_shared) == linked_oid
 
 
+@pytest.mark.cpu_limit(
+    6.0,
+    reason=(
+        "履歴の保持先branchが判定後に移動しても、退避元commitの唯一"
+        + "の参照を削除しない。 実Gitの退避と保護refを実際に保存し、現在の"
+        + "未保存成果と回復元を保持する最小構成。Windows同群CPU最大4."
+        + "938秒。"
+    ),
+)
 def test_retention_branch_change_aborts_cleanup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """履歴の保持先branchが判定後に移動しても、退避元commitの唯一の参照を削除しない。"""
     repository = _repository(tmp_path / "repo")
@@ -229,6 +302,15 @@ def test_retention_branch_change_aborts_cleanup(tmp_path: pathlib.Path, monkeypa
     assert git_repository.git_output(repository, "show", f"{commit}:committed.txt") == "local committed data"
 
 
+@pytest.mark.cpu_limit(
+    8.0,
+    reason=(
+        "origin/HEADの別名と実体を区別し、通常cloneの回収を二重"
+        + "ロックで止めない。 実Gitの退避と保護refを実際に保存し、現在の未"
+        + "保存成果と回復元を保持する最小構成。Windows同群CPU最大4."
+        + "938秒。"
+    ),
+)
 def test_symbolic_remote_head_does_not_lock_same_ref_twice(tmp_path: pathlib.Path) -> None:
     """origin/HEADの別名と実体を区別し、通常cloneの回収を二重ロックで止めない。"""
     repository = _repository(tmp_path / "repo")
@@ -241,6 +323,15 @@ def test_symbolic_remote_head_does_not_lock_same_ref_twice(tmp_path: pathlib.Pat
     assert git_repository.run_git(repository, "show-ref", "--verify", "--quiet", ref, check=False).returncode == 1
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "ユーザーのdiff設定でsubmodule差分が省略されても、保存した"
+        + "Gitlink変更を捨てない。 実Gitの退避と保護refを実際に保存"
+        + "し、現在の未保存成果と回復元を保持する最小構成。Windows同群"
+        + "CPU最大4.938秒。"
+    ),
+)
 def test_user_diff_configuration_does_not_hide_saved_gitlink(tmp_path: pathlib.Path) -> None:
     """ユーザーのdiff設定でsubmodule差分が省略されても、保存したGitlink変更を捨てない。"""
     repository = _repository(tmp_path / "repo")

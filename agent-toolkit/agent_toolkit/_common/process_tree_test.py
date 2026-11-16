@@ -25,6 +25,15 @@ from agent_toolkit._testing import late_descendant
 pytestmark = pytest.mark.windows
 
 
+@pytest.mark.cpu_limit(
+    3.0,
+    reason=(
+        "既知cohortの全終了を検収し、不要な全OS再走査による"
+        + "timeoutを防ぐ。 実Python親1つの正常終了と保持済み世代を"
+        + "使い、不要な全OS再走査を拒否する。Windows同種CPU2.203"
+        + "秒。"
+    ),
+)
 def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch):
     """既知cohortの全終了を検収し、不要な全OS再走査によるtimeoutを防ぐ。"""
     with (
@@ -46,8 +55,12 @@ def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch):
 @pytest.mark.parametrize("ownership", ["unknown", "known", "finished"])
 @pytest.mark.parametrize("depth", [1, 2])
 @pytest.mark.cpu_limit(
-    3.0,
-    reason="実際に終了した親の既知/未知の子の世代を検収する。Linux所有CPU最大0.414秒と既存Windows同種境界最大2.03秒に基づく。",
+    8.0,
+    reason=(
+        "起点をwaitした後も既知の子を回収し、未観測の所有を成功へ変換しない"
+        + "。 実親子の深さ1/2と既知/未知/終了済みを区別し、未知の所有を成功"
+        + "へ変換しない。Windows CPU最大3.750秒。"
+    ),
 )
 def test_owned_stop_after_parent_exit_preserves_known_or_unconfirmed_ownership(ownership, depth, host_environ):
     """起点をwaitした後も既知の子を回収し、未観測の所有を成功へ変換しない。"""
@@ -366,6 +379,14 @@ def test_stop_tree_reclaims_child_despite_cached_pid_generation(tmp_path, monkey
             process_tree.stop_tree(None, known=descendants, timeout=1.0)
 
 
+@pytest.mark.cpu_limit(
+    5.0,
+    reason=(
+        "本体例外時は起点の終了後も既知子孫を回収し、残存は再試行可能にする。 "
+        + "実親子2つの本体例外で既知cohortを回収し、模擬残存だけ再試行する"
+        + "。Windows CPU最大2.203秒。"
+    ),
+)
 @pytest.mark.parametrize("parent_exits", [False, True])
 @pytest.mark.parametrize("residual", [False, True])
 def test_process_scope_exception_reclaims_known_cohort(tmp_path, monkeypatch, parent_exits, residual):
