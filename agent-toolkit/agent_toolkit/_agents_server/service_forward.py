@@ -107,9 +107,13 @@ def ensure_service(
                     flags = {"creationflags": 0x01000000 | 0x08000200 | windows_job.CREATE_SUSPENDED}
                 stderr = startup.enter_context((directory / f"{generation}.stderr.log").open("wb"))
                 # サービスの寿命を転送側へ結び付けない。終了診断はサービスの起動単位が保存する。
-                process = subprocess.Popen(  # pylint: disable=consider-using-with
-                    command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=root, env=env, **flags
-                )
+                try:
+                    process = subprocess.Popen(  # pylint: disable=consider-using-with
+                        command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stderr, cwd=root, env=env, **flags
+                    )
+                except OSError as error:
+                    error.add_note(f"管理サービス起動: executable={command[0]} cwd={root} flags={flags}")
+                    raise
                 try:
                     if job is not None:
                         native_process: Any = process
@@ -140,7 +144,10 @@ def ensure_service(
                                 threading.Thread(target=process.wait, name="agents-service-reaper", daemon=True).start()
                                 return published
                         if process.poll() is not None:
-                            raise RuntimeError(f"管理サービスの起動に失敗: exit={process.returncode}、診断={stderr.name}")
+                            detail = pathlib.Path(stderr.name).read_text(encoding="utf-8", errors="replace")
+                            raise RuntimeError(
+                                f"管理サービスの起動に失敗: exit={process.returncode}、診断={stderr.name}\n{detail}"
+                            )
                         if time.monotonic() >= deadline:
                             raise TimeoutError(f"管理サービスのreadyを確認できません。診断: {stderr.name}")
                         time.sleep(0.05)

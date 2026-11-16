@@ -148,7 +148,13 @@ _HOST_ENVIRON = {
     name: host_value for name in _HOST_RESTORED_ENVIRONMENT_NAMES if (host_value := os.environ.get(name)) is not None
 }
 # 取得物の保存先を指定する環境変数。`share_package_caches`がホストの位置へ向ける。
-PACKAGE_CACHE_ENVIRONMENT_NAMES = ("npm_config_cache_dir", "npm_config_store_dir", "COREPACK_HOME")
+PACKAGE_CACHE_ENVIRONMENT_NAMES = (
+    "npm_config_cache_dir",
+    "npm_config_store_dir",
+    "pnpm_config_cache_dir",
+    "pnpm_config_store_dir",
+    "COREPACK_HOME",
+)
 _HOST_PACKAGE_CACHE_ENVIRON = {
     name: host_value
     for name in (*PACKAGE_CACHE_ENVIRONMENT_NAMES, "PNPM_HOME", "UV_CACHE_DIR")
@@ -331,8 +337,11 @@ def package_cache_environ(environ: Mapping[str, str], platform: str) -> dict[str
         or path.join(home, *(("AppData", "Local") if windows else (".cache",)))
     )
     derived = {
-        "npm_config_cache_dir": cache_dir,
-        "npm_config_store_dir": store_dir,
+        "npm_config_cache_dir": environ.get("pnpm_config_cache_dir") or cache_dir,
+        "npm_config_store_dir": environ.get("pnpm_config_store_dir") or store_dir,
+        # pnpm 11はnpm_config_*を読まない。開発機の10系とCIの11系で同じ取得物を共有する。
+        "pnpm_config_cache_dir": environ.get("npm_config_cache_dir") or cache_dir,
+        "pnpm_config_store_dir": environ.get("npm_config_store_dir") or store_dir,
         "COREPACK_HOME": path.join(corepack_base, "node", "corepack"),
     }
     return {name: environ.get(name) or derived[name] for name in PACKAGE_CACHE_ENVIRONMENT_NAMES}

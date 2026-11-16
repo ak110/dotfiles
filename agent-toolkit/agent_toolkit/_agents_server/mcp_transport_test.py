@@ -432,11 +432,17 @@ class _LaunchedServer:
                 _stop_mcp_services(self._state_base)
             # 診断を書くsupervisorを残し、管理本体の終了を先に確定する。
             for process, identity, arguments in self._services:
-                if not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                try:
+                    if not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                        continue
+                    if not identity.matches(process):
+                        assert not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
+                        continue
+                    assert process.cmdline() == arguments
+                    result = process_tree.stop_tree(process)
+                    assert not result.residual and not result.unresolved, result.descriptions()
+                except psutil.NoSuchProcess, psutil.ZombieProcess:
                     continue
-                assert identity.matches(process) and process.cmdline() == arguments
-                result = process_tree.stop_tree(process)
-                assert not result.residual and not result.unresolved, result.descriptions()
 
     @staticmethod
     def _join_reader(reader: threading.Thread) -> None:

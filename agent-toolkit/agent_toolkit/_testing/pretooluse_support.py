@@ -236,6 +236,10 @@ def _stderr_warn_offenders(source: str) -> list[int]:
     間接的な受け渡しは検出しない。仮引数へ渡る値の由来を追跡しないためである。
     """
     tree = ast.parse(source)
+    nodes = tuple(ast.walk(tree))
+    bindings = tuple(
+        node for node in nodes if isinstance(node, ast.Assign | ast.AnnAssign | ast.FunctionDef | ast.AsyncFunctionDef)
+    )
 
     # ASTはこの解析中に変えない。値の伝播の各反復で同じ部分木を走査し直さない。
     @functools.cache
@@ -258,7 +262,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
 
     while True:
         before = (len(warn_names), len(warn_functions))
-        for node in ast.walk(tree):
+        for node in bindings:
             if isinstance(node, ast.Assign) and is_warn_value(node.value):
                 warn_names.update(target.id for target in node.targets if isinstance(target, ast.Name))
             elif (
@@ -277,7 +281,7 @@ def _stderr_warn_offenders(source: str) -> list[int]:
             break
 
     offenders: list[int] = []
-    for node in ast.walk(tree):
+    for node in nodes:
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name) or node.func.id != "print":
             continue
         if not any(keyword.arg == "file" and ast.unparse(keyword.value) == "sys.stderr" for keyword in node.keywords):
