@@ -7,7 +7,15 @@ runs:
     - name: Windows境界テスト
       shell: pwsh
       working-directory: ${{ env.DOTFILES_DIR }}
-      run: uv run --frozen --python 3.15 pytest -v -m windows --maxfail=0
+      run: uv run --frozen --python 3.15 pytest -v -m windows --maxfail=0 --junitxml="$env:RUNNER_TEMP/pytest-windows-junit.xml"
+    - name: Windows境界テストのJUnit XMLを保存
+      if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: pytest-windows-junit-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/pytest-windows-junit.xml
+        if-no-files-found: error
+        retention-days: 1
     - name: Codex CLI 0.163.0の導入
       shell: pwsh
       run: '& "$env:DOTFILES_DIR\scripts\ci_install_codex.ps1"'
