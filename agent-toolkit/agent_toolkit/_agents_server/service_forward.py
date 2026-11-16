@@ -101,11 +101,30 @@ def ensure_service(
             flags: dict[str, Any] = {"start_new_session": True}
             with contextlib.ExitStack() as startup:
                 job = None
+                host_job_warning = ""
                 if os.name == "nt":
                     # 成功後のserviceは転送側から独立する。準備失敗時だけ全所属を回収する。
                     job = startup.enter_context(windows_job.WindowsJob(kill_on_close=False))
-                    flags = {"creationflags": 0x01000000 | 0x08000200 | windows_job.CREATE_SUSPENDED}
+                    creation_flags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
+                    parent_limits = job.current_job_limit_flags()
+                    if parent_limits is not None:
+                        host_job_warning = (
+                            f"起動元のWindows即時JobのLimitFlags={parent_limits:#x}。上位Jobの制限は変更しません。"
+                            "離脱を許可しない上位Jobがある場合、そのJob終了後のサービス生存は保証しません。"
+                        )
+                    if parent_limits is None or parent_limits & 0x00000800:
+                        creation_flags |= 0x01000000
+                    elif not parent_limits & 0x00001000:
+                        host_job_warning = (
+                            "起動元のWindows Jobは離脱を許可していません。外側Jobの制限を継承して管理サービスを起動します。"
+                            "そのJob終了後のサービス生存は保証しません。"
+                        )
+                    flags = {"creationflags": creation_flags}
                 stderr = startup.enter_context((directory / f"{generation}.stderr.log").open("wb"))
+                if host_job_warning:
+                    print(host_job_warning, file=sys.stderr)
+                    stderr.write((host_job_warning + "\n").encode("utf-8"))
+                    stderr.flush()
                 # サービスの寿命を転送側へ結び付けない。終了診断はサービスの起動単位が保存する。
                 try:
                     process = subprocess.Popen(  # pylint: disable=consider-using-with
@@ -153,7 +172,13 @@ def ensure_service(
                         time.sleep(0.05)
                 except BaseException:
                     if job is not None:
-                        job.terminate()
+                        try:
+                            job.terminate()
+                        finally:
+                            # Job所属の前に失敗した停止中のrootも、保持している元handleで回収する。
+                            if process.poll() is None:
+                                process.kill()
+                            process.wait(timeout=5)
                     else:
                         with contextlib.suppress(ProcessLookupError):
                             os.killpg(process.pid, signal.SIGTERM)

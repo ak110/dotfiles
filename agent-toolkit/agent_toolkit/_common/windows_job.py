@@ -80,6 +80,8 @@ class WindowsJob:
             "SetInformationJobObject": ([wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32], wintypes.BOOL),
             "AssignProcessToJobObject": ([wintypes.HANDLE, wintypes.HANDLE], wintypes.BOOL),
             "GetProcessId": ([wintypes.HANDLE], ctypes.c_uint32),
+            "GetCurrentProcess": ([], wintypes.HANDLE),
+            "IsProcessInJob": ([wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)], wintypes.BOOL),
             "CreateToolhelp32Snapshot": ([ctypes.c_uint32, ctypes.c_uint32], wintypes.HANDLE),
             "Thread32First": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
             "Thread32Next": ([wintypes.HANDLE, ctypes.POINTER(_ThreadEntry)], wintypes.BOOL),
@@ -114,6 +116,18 @@ class WindowsJob:
 
     def __exit__(self, *_exception: object) -> None:
         self.close()
+
+    def current_job_limit_flags(self) -> int | None:
+        """起動元の即時Jobの制限を照会し、所属が無ければNoneを返す。制限は変更しない。"""
+        in_job = wintypes.BOOL(0)
+        if not self._kernel.IsProcessInJob(self._kernel.GetCurrentProcess(), None, ctypes.byref(in_job)):
+            raise self._error()
+        if not in_job.value:
+            return None
+        limits = _ExtendedLimits()
+        if not self._kernel.QueryInformationJobObject(None, 9, ctypes.byref(limits), ctypes.sizeof(limits), None):
+            raise self._error()
+        return limits.basic.flags
 
     def assign_suspended(self, process_handle: int, pid: int) -> None:
         """元世代のhandleをJobへ登録してから、その世代だけを再開する。"""

@@ -268,6 +268,8 @@ def _engine_env(
                 if not process_identity.matches(recorded_process, record["created_at"]):
                     continue
                 command = recorded_process.cmdline()
+                if not command and recorded_process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    continue
                 assert any(
                     pathlib.Path(item).is_absolute() and pathlib.Path(item).is_relative_to(tmp_path) for item in command[:2]
                 ), command[:2]
