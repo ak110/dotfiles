@@ -27,6 +27,7 @@ import pytest
 import pytest_asyncio
 import watchdog.observers
 import watchdog.observers.polling
+from _pytest.runner import runtestprotocol
 from _pytest.terminal import TerminalReporter
 from pyfltr.colloquial import check as _colloquial_check
 from pyfltr.command import execution_slot
@@ -68,6 +69,39 @@ _CPU_EXCLUSIONS = pytest.StashKey[dict[str, dict[str, float]]]()
 _CPU_GROSS_LIMIT = pytest.StashKey[float]()
 _CPU_BUDGET = pytest.StashKey[cpu_accounting.CpuBudget]()
 _CPU_PROCESS_STARTED = pytest.StashKey[float]()
+_CPU_RETRY_CI = pytest.StashKey[bool]()
+_CPU_ONLY_FAILURE = pytest.StashKey[bool]()
+
+
+@pytest.hookimpl(specname="pytest_runtest_protocol", tryfirst=True)
+def pytest_runtest_cpu_retry(item: pytest.Item, nextitem: pytest.Item | None) -> bool | None:
+    """CIのCPU単独超過だけを再確認し、未確定の初回失敗を集計へ送らない。"""
+    if not item.config.stash.get(_CPU_RETRY_CI, False):
+        return None
+    item.ihook.pytest_runtest_logstart(nodeid=item.nodeid, location=item.location)
+    reports = runtestprotocol(item, log=False, nextitem=nextitem)
+    initial = reports[-1]
+    if item.stash.get(_CPU_ONLY_FAILURE, False) and all(report.passed for report in reports[:-1]):
+        history = list(initial.user_properties)
+        diagnostics = list(initial.sections)
+        keys: list[pytest.StashKey[Any]] = [
+            _CPU_TIMES,
+            _CPU_EXCLUSIONS,
+            _CPU_BUDGET,
+            _CPU_PROCESS_STARTED,
+            _BROWSER_REPORTS,
+        ]
+        for key in keys:
+            if key in item.stash:
+                del item.stash[key]
+        reports = runtestprotocol(item, log=False, nextitem=nextitem)
+        final = reports[-1]
+        final.user_properties.extend((f"cpu_first_attempt_{name}", value) for name, value in history if name.startswith("cpu_"))
+        final.sections.extend(("CPU初回超過", text) for name, text in diagnostics if name == "CPU上限")
+    for report in reports:
+        item.ihook.pytest_runtest_logreport(report=report)
+    item.ihook.pytest_runtest_logfinish(nodeid=item.nodeid, location=item.location)
+    return True
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -185,6 +219,7 @@ def pytest_runtest_makereport(
     del call
     report = yield
     if report.when == "teardown":
+        item.stash[_CPU_ONLY_FAILURE] = False
         recorded = item.stash.get(_CPU_TIMES, {})
         times = {phase: recorded.get(phase, 0.0) for phase in ("setup", "call", "teardown")}
         limit, reason = item.stash.get(_CPU_LIMIT, (0.5, "通常上限"))
@@ -222,6 +257,7 @@ def pytest_runtest_makereport(
             )
             report.sections.append(("CPU上限", diagnostic))
             if report.passed:
+                item.stash[_CPU_ONLY_FAILURE] = True
                 report.outcome = "failed"
                 report.longrepr = diagnostic
     assert isinstance(report.when, str)
@@ -434,6 +470,7 @@ def pytest_configure(config: pytest.Config) -> None:
     保存先そのものを検証するテストは、明示した環境の辞書か`delenv`で上書きする。
     """
     _validate_import_root(config)
+    config.stash[_CPU_RETRY_CI] = bool(os.environ.get("CI"))
     config.addinivalue_line("markers", "cpu_limit(seconds, reason): 理由付き所有CPU上限")
     if not config.pluginmanager.is_registered(xdist_stop):
         config.pluginmanager.register(xdist_stop, "dotfiles-xdist-stop")

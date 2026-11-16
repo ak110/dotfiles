@@ -4,16 +4,82 @@ import collections
 import concurrent.futures
 import gc
 import importlib
+import json
+import pathlib
 import sys
 import threading
 import types
+import xml.etree.ElementTree as ET
 from typing import Any, Literal, cast
 
 import pytest
 
 from agent_toolkit._testing import cpu_accounting, pytest_plugin
+from agent_toolkit._testing.pytest_plugin_support import _run_child_pytest
 
 # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize(
+    ("ci", "workers", "phase"),
+    [(False, 0, "call"), (True, 0, "call"), (True, 2, "setup"), (True, 2, "call"), (True, 2, "teardown")],
+)
+def test_cpu_retry_keeps_functional_failures_and_attempt_evidence(
+    tmp_path: pathlib.Path, monkeypatch, ci, workers, phase
+) -> None:
+    """公開protocolでCPUだけの再試行・機能失敗維持・回数上限を検出する。"""
+    monkeypatch.setenv("CI", "1" if ci else "")
+    (tmp_path / "conftest.py").write_text(
+        "import json, pathlib, pytest\n"
+        "from agent_toolkit._testing import pytest_plugin as p\n"
+        "attempts = {}\n"
+        "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+        "def pytest_runtest_makereport(item, call):\n"
+        "    if call.when == 'setup':\n"
+        "        attempts[item.name] = attempts.get(item.name, 0) + 1\n"
+        f"        path = pathlib.Path({str(tmp_path)!r}) / (item.name + '.json')\n"
+        "        path.write_text(json.dumps(attempts[item.name]), encoding='utf-8')\n"
+        "    if call.when == 'teardown':\n"
+        "        recovered = item.name == 'test_recovers' and attempts[item.name] == 2\n"
+        "        cpu = 0.499 if item.name == 'test_before' or recovered else 0.501\n"
+        f"        item.stash[p._CPU_TIMES] = {{{phase!r}: cpu}}\n"
+        "        item.stash[p._CPU_EXCLUSIONS] = {}\n"
+        "        item.stash[p._CPU_BUDGET] = p.cpu_accounting.CpuBudget()\n"
+        "    report = yield\n"
+        "    return report\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "probe_test.py").write_text(
+        "def test_before(): pass\n"
+        "def test_recovers(): pass\n"
+        "def test_repeats(): pass\n"
+        "def test_functional(): assert False, 'functional failure'\n",
+        encoding="utf-8",
+    )
+    arguments = ["-p", "xdist.plugin", "-n", str(workers)] if workers else []
+    result = _run_child_pytest(tmp_path, *arguments, "-rA", "--junitxml=result.xml", "probe_test.py")
+    assert result.returncode == pytest.ExitCode.TESTS_FAILED, result.stdout + result.stderr
+    expected = {
+        "test_before": 1,
+        "test_recovers": 2 if ci else 1,
+        "test_repeats": 2 if ci else 1,
+        "test_functional": 1,
+    }
+    assert {name: json.loads((tmp_path / f"{name}.json").read_text(encoding="utf-8")) for name in expected} == expected
+    assert "functional failure" in result.stdout
+    xml = (tmp_path / "result.xml").read_text(encoding="utf-8")
+    cases = {case.get("name"): case for case in ET.fromstring(xml).iter("testcase")}
+    assert cases["test_repeats"].find("error") is not None
+    assert (cases["test_recovers"].find("error") is None) is ci
+    for name in ("test_recovers", "test_repeats"):
+        properties = {prop.attrib["name"]: prop.attrib["value"] for prop in cases[name].findall("properties/property")}
+        assert float(properties["cpu_budget_seconds"]) == pytest.approx(0.499 if ci and name == "test_recovers" else 0.501)
+        assert float(properties["cpu_limit_seconds"]) == 0.5
+        if ci:
+            assert float(properties["cpu_first_attempt_cpu_budget_seconds"]) == pytest.approx(0.501)
+            assert float(properties["cpu_first_attempt_cpu_limit_seconds"]) == 0.5
+        else:
+            assert "cpu_first_attempt_cpu_budget_seconds" not in properties
 
 
 @pytest.mark.parametrize("elapsed", [0.499, 0.5, 0.501])
