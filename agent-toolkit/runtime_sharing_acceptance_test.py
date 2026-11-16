@@ -74,8 +74,10 @@ def _run(arguments: list[str], environment: dict[str, str], cwd: Path, *, input_
         " CPU合計最大2.724秒）。"
     ),
 )
-def test_real_shared_environment_offline_public_entries_and_current_code(tmp_path, host_environ):
+def test_real_shared_environment_offline_public_entries_and_current_code(tmp_path_factory, host_environ):
     """同じ依存を共有し、更新版と旧版のコードをそれぞれのrootから起動する。"""
+    # Windowsの共有環境のhashとDLL名を含むパスも通常のロード上限内に保つ。
+    tmp_path = tmp_path_factory.mktemp("r")
     first = tmp_path / "old-plugin"
     second = tmp_path / "new-plugin"
     _copy(first, "old")
@@ -113,7 +115,7 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         environment[key] = str(home)
     environment.update(
         {
-            "AGENT_TOOLKIT_RUNTIME_DATA": str(tmp_path / "runtime"),
+            "AGENT_TOOLKIT_RUNTIME_DATA": str(tmp_path / "v"),
             "UV_OFFLINE": "1",
             "UV_PYTHON_DOWNLOADS": "never",
             "UV_PYTHON": sys.executable,

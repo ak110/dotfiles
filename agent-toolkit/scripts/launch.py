@@ -140,8 +140,14 @@ def _run_hook(root: Path, target: Path, arguments: list[str], *, persist_claude_
         next_action.report(str(exc), next_action="hookへ有効なJSON入力を渡して再実行してください。")
         return 1
     cwd = decoded.get("cwd") if isinstance(decoded, dict) else None
+    if arguments and arguments[0] == "antigravity" and isinstance(decoded, dict):
+        workspace = decoded.get("workspacePaths")
+        cwd = next((value for value in workspace if isinstance(value, str)), None) if isinstance(workspace, list) else None
     if not isinstance(cwd, str) or not Path(cwd).is_absolute():
-        next_action.report("hookのcwdが絶対パスではありません。", next_action="ホストが渡すhook入力のcwdを確認してください。")
+        next_action.report(
+            "hookの作業ディレクトリが絶対パスではありません。",
+            next_action="ホスト入力のcwdまたはworkspacePathsの実在する絶対パスを確認してください。",
+        )
         return 1
     command = [sys.executable, str(Path(__file__).resolve()), "--project", str(root), "--hook-worker"]
     if persist_claude_env:

@@ -37,7 +37,7 @@ def _installed_root() -> Path:
     try:
         result = subprocess.run(
             # marketplaceを指定しない一覧はリモートカタログへ接続し、接続先が応答しないと時間上限まで待つ。
-            ["codex", "plugin", "list", "--json", "--marketplace", _MARKETPLACE],
+            [shutil.which("codex") or "codex", "plugin", "list", "--json", "--marketplace", _MARKETPLACE],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -162,7 +162,7 @@ def _current_claude_root() -> Path | None:
     """実行projectの公開導入情報から互換hook用の配布物を返す。"""
     try:
         result = subprocess.run(
-            ["claude", "plugin", "list", "--json"],
+            [shutil.which("claude") or "claude", "plugin", "list", "--json"],
             capture_output=True,
             encoding="utf-8",
             errors="replace",
@@ -237,11 +237,14 @@ def _external_root() -> Path:
 
 
 @contextlib.contextmanager
-def _restored_hook_input() -> Generator[None]:
+def _restored_hook_input(*, antigravity: bool) -> Generator[None]:
     """project外でのuv起動後、保持版の選別より前に元cwdとstdinを復元する。"""
     raw = sys.stdin.buffer.read()
     payload = json.loads(raw)
     cwd = payload.get("cwd") if isinstance(payload, dict) else None
+    if antigravity and isinstance(payload, dict):
+        workspace = payload.get("workspacePaths")
+        cwd = next((value for value in workspace if isinstance(value, str)), None) if isinstance(workspace, list) else None
     if not isinstance(cwd, str) or not Path(cwd).is_absolute():
         raise ValueError("hook入力のcwdには絶対パスが必要です")
     os.chdir(cwd)
@@ -260,10 +263,15 @@ def main(*, restore_cwd: bool = False) -> int:
         print("次の操作: hook定義の起動コマンドへホスト形式とイベント名を渡す", file=sys.stderr)
         return 2
     source = Path(__file__).resolve()
-    try:
-        if restore_cwd:
-            with _restored_hook_input():
+    if restore_cwd:
+        try:
+            with _restored_hook_input(antigravity=antigravity):
                 return main()
+        except (OSError, ValueError) as error:
+            print(f"hook入力を復元できません: {error}", file=sys.stderr)
+            print("次の操作: ホスト入力のJSONと、cwdまたはworkspacePathsの実在する絶対パスを確認する", file=sys.stderr)
+            return 1
+    try:
         bundled = source.parent.name == "scripts"
         root = source.parent.parent if bundled else _external_root()
         launcher = root / "scripts" / "launch.py"

@@ -187,14 +187,7 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
             "type": "command",
             "command": _command(
                 [
-                    "uv",
-                    "run",
-                    "--no-config",
-                    "--no-project",
-                    "--python",
-                    "3.15",
-                    "python",
-                    str(target / "scripts/atk-hook"),
+                    str(target / ("scripts/atk-hook.cmd" if os.name == "nt" else "scripts/atk-hook")),
                     "antigravity",
                     event,
                 ]
