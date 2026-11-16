@@ -65,6 +65,7 @@ from pytools._internal import (
     setup_statusline_binary,
     setup_tmpfiles_clean,
     setup_tmux_plugins,
+    setup_usage_allocation,
     setup_user_env,
     sync_agent_toolkit_rules,
     sync_report,
@@ -414,6 +415,7 @@ DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("VSCode 設定", update_vscode_settings.run),
     _StepSpec("SSH config", update_ssh_config.run),
     _StepSpec(_CLEANUP, _cleanup_removed_paths),
+    _StepSpec("利用枠自動配分の初期設定", setup_usage_allocation.run, full_only=True),
     _StepSpec(_NPM_SUPPLY_CHAIN, update_npmrc.run),
     # Windowsでは bin PATH 登録と同じユーザーPATHを読んで書き戻す。
     _StepSpec(_MISE, setup_mise.run, after=(_NPM_SUPPLY_CHAIN, _BIN_PATH)),

@@ -33,7 +33,11 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 
 ClaudeとCodexの残量・回復時刻・観測した消費ペースから、保存済みモデル候補のエンジン順を調整できる。
 モデル名とeffort、既存のプリセットは維持する。
-自動配分は初期状態では無効であり、次の操作で選択する。
+dotfilesの通常構成（`full`）では、`update-dotfiles`の後処理が未設定の場合に自動配分を有効にする。
+活動モードには実際の稼働・停止の比率を使う`intermittent`を補う。
+Linux・Windows共通で適用し、既存の設定値は保持する。
+`atk config set usage_auto_allocation false`で無効化した値も、更新時に上書きしない。
+agent-toolkitだけを導入した環境では初期状態で無効になっており、次の操作で有効化する。
 
 ```sh
 atk config usage --refresh
