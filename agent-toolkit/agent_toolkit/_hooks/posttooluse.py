@@ -44,7 +44,6 @@ lazy import shlex
 from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-lazy from agent_toolkit._atk import run_script as _run_script
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import function_hook_requests
 lazy from agent_toolkit._common.json_lines import split_lines
@@ -62,7 +61,7 @@ lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
-lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import dispatch as _pretooluse_dispatch
 lazy from agent_toolkit._hooks.pretooluse import read_delivery as _read_delivery
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import _PLAN_MODE_SKILL_NAMES
